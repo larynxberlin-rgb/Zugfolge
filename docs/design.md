@@ -1,0 +1,204 @@
+# Design
+
+Dieses Dokument enthält die **früh bindenden** Gestaltungsentscheidungen — die,
+die auf jeder Fläche auftauchen und deshalb teuer nachzuziehen wären. Die
+eigentliche Gestaltungsarbeit entsteht mit den ersten Oberflächen in M3.
+Abschnitt 8 listet auf, was bewusst offenbleibt.
+
+## 1. Grundsatz: Domänensprache statt Markenzitat (E17)
+
+Zugfolge soll unverkennbar nach deutschem Eisenbahnbetrieb aussehen. Das
+erreicht es über die **Sprache der Domäne**, nicht über das Zitat einer Firma:
+
+- die Farblogik des Signalwesens — Rot heißt Halt, Gelb heißt Vorsicht;
+- die Konventionen des Bildfahrplans, ein über hundert Jahre gewachsenes
+  Weg-Zeit-Diagramm, das Fachleute fließend lesen;
+- die Grammatik der Bahnsteig-Wegeleitung: knappe Zeile, klare Hierarchie,
+  Zeit rechtsbündig, Ziel links;
+- die Anmutung einer Leitstelle: dunkel, dicht, wenig Dekoration, viel Zustand.
+
+**In dieser Domäne schlägt Konvention Originalität.** Das Publikum ist
+fachkundig. Einen Bildfahrplan neu zu erfinden macht ihn schlechter, nicht
+moderner.
+
+Was ausdrücklich **nicht** übernommen wird, steht in Abschnitt 7.
+
+## 2. Farbsystem
+
+### 2.1 Das Prinzip
+
+> **Farbe gehört dem Betrieb. Die Marke ist achromatisch.**
+
+In einer Dispositionsoberfläche *ist* Farbe Information. Jede Farbe, die eine
+Marke belegt, verliert ihre Signalwirkung im Betrieb. Deshalb tragen Wortmarke,
+Rahmen, Navigation und alle Strukturelemente ausschließlich Graustufen — und
+jede farbige Fläche auf dem Bildschirm bedeutet etwas.
+
+Daraus folgt unmittelbar: **Rot wird niemals Markenfarbe.** Es bleibt Störung,
+Sperrung, Ausfall.
+
+### 2.2 Der Normalzustand ist farblos
+
+Bei tausenden Zügen auf einer Karte wäre eine Einfärbung „alles in Ordnung“
+reines Rauschen. Pünktliche Züge bleiben deshalb neutral; **eingefärbt wird nur
+die Abweichung.** Das hält die Karte ruhig und lässt Probleme sofort
+hervortreten.
+
+Nebeneffekt: Grün bleibt frei für Ressourcenzustände und kollidiert nicht mit
+„pünktlich“.
+
+### 2.3 Barrierefreiheitsregel — bindend
+
+> **Ein Zustand wird niemals allein über den Farbton kodiert.**
+
+Rund acht Prozent der Männer haben eine Rot-Grün-Sehschwäche — genau auf der
+Achse, die im Bahnbetrieb am meisten trägt. Jeder Zustand braucht deshalb einen
+**zweiten Kanal**: Zahlenwert, Symbolform, Musterung oder Buchstabe.
+
+Zusätzlich sind alle Verlaufsskalen **helligkeitsmonoton**. Eine Skala, deren
+Helligkeit durchgehend steigt oder fällt, bleibt bei jeder Form von
+Farbfehlsichtigkeit und in Graustufen lesbar — der Farbton ist dann Komfort,
+nicht Voraussetzung.
+
+Kontrastziele nach WCAG 2.2 AA: **4,5:1** für Text, **3:1** für grafische
+Elemente und Bedienelemente. Gilt auch für Zustandsfarben auf der Karte.
+
+### 2.4 Zugzustände
+
+| Zustand | Farbe | Zweiter Kanal |
+|---------|-------|---------------|
+| pünktlich (≤ 1 min) | neutral, keine Einfärbung | — Normalfall ist farblos |
+| 2–5 min | Bernstein, hell | Minutenwert am Symbol |
+| 6–15 min | Bernstein, kräftig | Minutenwert |
+| über 15 min | Rot-Orange | Minutenwert |
+| Ausfall | Rot, gedämpft | durchgestrichenes Symbol |
+| Zusatz- und Leerfahrt | neutral, gedämpft | hohles statt gefülltes Symbol |
+| Eigenbetrieb | neutral, kühl | eigene Randmarkierung, nie wie ein Spieler-EVU |
+
+Die Verspätungsskala ist eine helligkeitsmonotone Rampe von neutral nach warm.
+Sie folgt damit der Erwartung des Fachpublikums und bleibt zugleich ohne Farbton
+lesbar.
+
+### 2.5 Ressourcenzustände
+
+| Zustand | Farbe | Zweiter Kanal |
+|---------|-------|---------------|
+| frei | keine Einfärbung | — |
+| belegt | Neutral, kräftiger | — |
+| Fahrstraße eingestellt | schwaches Grün-Cyan | Richtungspfeil |
+| Langsamfahrstelle | Bernstein | gestrichelte Kante |
+| gesperrt | Rot | Schraffur |
+
+### 2.6 Qualitätsklassen
+
+A, B und C tragen immer ihren Buchstaben. Farbe ist hier nur Unterstützung, nie
+Träger. Klasse C ist zusätzlich gestrichelt dargestellt — sichtbar, aber
+erkennbar nicht bestellbar.
+
+### 2.7 Konkrete Werte
+
+Bewusst noch nicht festgelegt. Hexwerte gehören an die erste echte Fläche in M3,
+wo sie gegen reale Datendichte geprüft werden können. Bindend ist bis dahin
+allein das System oben.
+
+Zwei Richtwerte als Anker, in M3 zu verifizieren: Basisfläche um `#12141A`
+(kein reines Schwarz, siehe 3.), Kartenfläche noch eine Stufe dunkler, damit
+Züge darauf leuchten.
+
+## 3. Dunkelmodus — durchgehend
+
+Eine einzige Palette für alle Flächen. Lange Lesetexte — Verträge,
+Ausschreibungsunterlagen, Ledger — werden **nicht** über einen hellen
+Hintergrund lesbar gemacht, sondern über höheren Kontrast, kürzere Zeilenlänge
+und größere Schrift (siehe 5.).
+
+Regeln:
+
+- **Kein reines Schwarz** als Fläche. Es erzeugt Halation unter hellem Text und
+  lässt keine Ebenen unterscheiden. Tiefe entsteht durch leichte Aufhellung, nicht
+  durch Schlagschatten.
+- **Die Karte ist die dunkelste Fläche.** Sie ist Hintergrund, der Verkehr ist
+  Inhalt.
+- **Sättigung sparsam.** Voll gesättigte Farben flimmern auf dunklem Grund.
+  Zustandsfarben werden leicht entsättigt und in der Helligkeit angehoben.
+- Kein Hellmodus. Das spart dauerhaft die doppelte Pflege jeder Fläche und jedes
+  Diagramms.
+
+## 4. Typografie
+
+**Auswahlkriterien, in dieser Reihenfolge:**
+
+1. **Tabellenziffern** (`tnum`). Zeiten werden in jeder Tabelle und auf der
+   Bildfahrplan-Achse vertikal verglichen. Proportionale Ziffern machen das
+   unbrauchbar. Nicht verhandelbar.
+2. **Eindeutige Zeichen** — 0 gegen O, 1 gegen l gegen I. In einer Oberfläche
+   voller Zugnummern und Gleisbezeichnungen sicherheitsrelevant.
+3. **Lesbarkeit bei kleinen Graden**, weil die Leitstellendichte klein setzt.
+4. **Offene Lizenz.** Das Repository ist Source Available; eine lizenzpflichtige
+   Hausschrift wäre ein Verteilungsproblem.
+5. Vollständiger deutscher Zeichensatz inklusive ß und Umlauten.
+
+**Empfehlung: IBM Plex Sans, dazu IBM Plex Mono** für Zahlenkolonnen und
+Zugnummern. Begründung: exzellente Tabellenziffern, technisch-neutrale
+Infrastrukturanmutung ohne Nähe zu einer Bahnhausschrift, SIL Open Font License,
+sehr breiter Zeichensatz. Alternativen mit vergleichbaren Eigenschaften: Inter,
+Source Sans 3.
+
+**Ausdrücklich nicht:** DB Type und DB Screen Sans. Lizenzpflichtige Hausschrift
+eines Dritten.
+
+## 5. Dichtestufen
+
+Zwei Stufen, **unterschieden allein durch Maß, nie durch Farbe** — beide leben
+auf derselben dunklen Palette.
+
+| Stufe | Wo | Merkmale |
+|-------|-----|----------|
+| **Leitstelle** | Betriebszentrale, Bildfahrplan, Trassenlisten, Livemap-Panels | enge Zeilenhöhe, kleiner Grundgrad, viele Werte je Fläche, minimale Polsterung |
+| **Dokument** | Ausschreibungsunterlagen, Verträge, Tagesbericht, Onboarding, Glossar | größerer Grundgrad, begrenzte Zeilenlänge um 70 Zeichen, großzügige Abstände |
+
+Die Dokumentstufe ist der Ausgleich dafür, dass es keinen Hellmodus gibt.
+
+## 6. Wortmarke
+
+**Reine Wortmarke „Zugfolge“, achromatisch.** Keine Bildmarke. Die Identität
+trägt über Schriftschnitt, Laufweite und Layoutdisziplin — was zur Leitstelle
+passt und dauerhaft billig zu pflegen ist.
+
+**Kleine Größen** — Favicon, App-Icon, Kartenmarkierung des Eigenbetriebs —
+brauchen trotzdem ein Zeichen. Lösung: eine **Kürzung derselben Schrift auf ein
+Monogramm**, kein neues Symbol. Das bleibt eine Wortmarke, nur verkürzt, und
+erzeugt keine zweite zu pflegende Gestalt.
+
+Nie in Rot. Nie in einem Rechteck mit begleitenden Linien. Nie in der Nähe eines
+Bahnrots platziert.
+
+## 7. Rechtliche Leitplanken
+
+Konkret, was nicht übernommen wird — ergänzt E6 um die Gestaltungsseite:
+
+- **kein DB-Logo** und keine daran angelehnte Anordnung aus Buchstaben,
+  Rechteck und begleitenden Linien;
+- **DB Type und DB Screen Sans** werden nicht verwendet;
+- **kein Bahnrot** als Marken- oder Flächenfarbe. Rot erscheint ausschließlich
+  als Betriebszustand — was ohnehin die bessere Gestaltung ist (2.1);
+- **keine Zuggattungsmarken** wie ICE oder IC. Eigene generische Systematik;
+- **keine EVU-Marken und Lackierungen** realer Unternehmen. Der Lackierungs-
+  editor filtert gegen den 1:1-Nachbau geschützter Zeichen;
+- **unbedenklich** ist dagegen die Signalfarblogik nach ESO — regulatorische
+  Konvention, keine Marke. Ebenso die Konventionen des Bildfahrplans.
+
+## 8. Was bewusst bis M3 offenbleibt
+
+- konkrete Farbwerte, geprüft gegen reale Datendichte;
+- Komponentenbibliothek und Bedienelemente;
+- Layout der sieben Hauptflächen;
+- Detailgestaltung von Bildfahrplan und Sperrzeitentreppe;
+- Icon-Set;
+- Kartenstil im Detail — Beschriftungsdichte je Zoomstufe, Darstellung der
+  ausgeschlossenen Netze als blasse Kontextlinien;
+- Lackierungseditor;
+- PWA-Layouts.
+
+Diese Dinge sind billig zu ändern, solange das System aus Abschnitt 2 bis 5
+steht. Deshalb warten sie.
