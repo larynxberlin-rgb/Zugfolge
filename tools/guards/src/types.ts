@@ -42,6 +42,23 @@ export interface Domain {
   readonly rules: readonly string[];
 }
 
+/**
+ * Eine namentliche Ausnahme von der Lizenz-Allowlist.
+ *
+ * Der Unterschied zur Allowlist ist der Punkt: Eine Lizenz in die Allowlist
+ * aufzunehmen erlaubt sie überall und für immer. Eine Ausnahme erlaubt genau
+ * ein Paket, nennt die Lizenz beim Namen und trägt eine Begründung, die im
+ * Bericht erscheint.
+ */
+export interface LicenseException {
+  /** Paketname; Platzhalter wie `lightningcss*` sind zulässig. */
+  readonly package: string;
+  /** Genau die Lizenz, die hier zugelassen wird — nicht „alle". */
+  readonly license: string;
+  /** Warum das vertretbar ist. Pflichtfeld. */
+  readonly reason: string;
+}
+
 /** Inhalt von `guards.config.json`. */
 export interface GuardConfig {
   readonly domains: readonly Domain[];
@@ -54,6 +71,8 @@ export interface GuardConfig {
   readonly allowedLicenses: readonly string[];
   /** Lizenzen, die ausdrücklich unzulässig sind. */
   readonly deniedLicenses: readonly string[];
+  /** Namentliche Ausnahmen mit Begründung. */
+  readonly licenseExceptions: readonly LicenseException[];
   /** Verzeichnisse und Dateien, die kein Wächter liest. */
   readonly ignore: readonly string[];
 }
