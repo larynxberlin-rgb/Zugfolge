@@ -13,11 +13,6 @@ name: Artefakte erzeugen
 
 on:
   workflow_dispatch:
-  # BOOTSTRAP — wird vor dem Zusammenführen wieder entfernt. Solange dieser
-  # Workflow nicht auf dem Standardzweig liegt, lässt er sich nicht von Hand
-  # starten; ohne diesen Auslöser gäbe es keine Sperrdateien.
-  push:
-    branches: ["m0.2-fundament"]
 
 permissions:
   contents: read
