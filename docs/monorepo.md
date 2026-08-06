@@ -51,13 +51,37 @@ Innerhalb einer Funktion ist die Sprache frei; sie verlässt die Datei nicht.
 | Schicht | Werkzeug | Sperrdatei |
 |---------|----------|------------|
 | Rust | Cargo-Workspace, `rust-toolchain.toml` (Kanal `stable`) | `Cargo.lock` |
-| TypeScript | pnpm-Workspace, Node.js 22 LTS | `pnpm-lock.yaml` |
+| TypeScript | pnpm-Workspace, pnpm 11, Node.js 24 LTS („Krypton") | `pnpm-lock.yaml` |
 | Tests | `cargo test`, Vitest | — |
 | Lizenzen | cargo-deny (`deny.toml`), `pnpm licenses list` | — |
+
+Die Lizenz-Allowlist ist kurz. Was nicht darin steht, bricht die CI. Eine
+einzelne Abhängigkeit lässt sich über eine **namentliche Ausnahme** in
+`tools/guards/guards.config.json` zulassen — mit Paketname, genauer Lizenz und
+einer Begründung, die der Wächter erzwingt und die in jedem Lizenzbericht
+erscheint. Wechselt das Paket die Lizenz, greift die Ausnahme nicht mehr.
+
+**Lieferkette:** pnpm installiert Paketversionen erst 24 Stunden nach ihrer
+Veröffentlichung (`minimumReleaseAge` in `pnpm-workspace.yaml`). Kompromittierte
+Releases werden erfahrungsgemäß innerhalb weniger Stunden entdeckt und entfernt;
+die Wartezeit kostet fast nichts und fängt genau dieses Fenster ab.
 
 Beide Sperrdateien gehören ins Repositorium. Wer sie nicht erzeugen kann, weil
 lokal keine Werkzeugkette installiert ist, startet den Workflow
 **Artefakte erzeugen** und committet das Ergebnis.
+
+**Umgebung einrichten** — auf einem frischen Linux-Container, in WSL oder als
+Setup-Skript einer Cloud-Umgebung:
+
+```bash
+bash .claude/setup.sh
+```
+
+Das Skript installiert Rust, Node und pnpm nach `$HOME`, ohne Root-Rechte, und
+lädt danach **alle** Abhängigkeiten vor — geholt *und* übersetzt. Damit läuft
+die Arbeit auch dann weiter, wenn das Netz nach dem Setup eingeschränkt ist.
+Es ist wiederholbar; ein zweiter Lauf installiert nichts neu. Der Workflow
+`setup.yml` prüft es in einem nackten Debian-Container, sobald es sich ändert.
 
 Der Rust-Kanal ist bewusst noch nicht auf eine Patchversion gepinnt. Der Pin
 kommt mit M1.12, wenn `InfraRelease`-Artefakte reproduzierbar sein müssen.

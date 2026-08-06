@@ -11,7 +11,7 @@ repository = "https://github.com/larynxberlin-rgb/Zugfolge"
 publish = false
 
 [workspace.dependencies]
-sha2 = "0.10"
+sha2 = "0.11"
 # Die Version steht ausdrücklich dabei, obwohl der Pfad genügte: Ohne sie ist
 # die Anforderung ein Platzhalter, und `cargo-deny` verbietet Platzhalter
 # (deny.toml, [bans] wildcards).

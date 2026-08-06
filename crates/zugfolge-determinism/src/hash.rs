@@ -188,7 +188,12 @@ impl StateHasher {
     pub fn finish(mut self) -> StateHash {
         let anzahl = self.fields;
         self.write_entry(TAG_END, "", &anzahl.to_be_bytes());
-        StateHash(self.inner.finalize().into())
+        // Über den Umweg des Slice statt über `into()`: Der Ausgabetyp von
+        // `digest` hat schon zweimal gewechselt, die Bytefolge nie.
+        let digest = self.inner.finalize();
+        let mut bytes = [0_u8; 32];
+        bytes.copy_from_slice(&digest);
+        StateHash(bytes)
     }
 
     fn write_entry(&mut self, tag: u8, name: &str, value: &[u8]) {

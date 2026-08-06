@@ -8,6 +8,9 @@
  * ganze Schichten aus dem öffentlichen Repositorium heraushält.
  */
 
+import { globToRegExp } from "./glob.js";
+import type { LicenseException } from "./types.js";
+
 /** Eine Abhängigkeit mit ihrer Lizenzangabe. */
 export interface DependencyLicense {
   readonly name: string;
@@ -16,11 +19,13 @@ export interface DependencyLicense {
 }
 
 /** Das Urteil über eine Lizenzangabe. */
-export type LicenseVerdict = "allowed" | "denied" | "unknown";
+export type LicenseVerdict = "allowed" | "exception" | "denied" | "unknown";
 
 /** Eine bewertete Abhängigkeit. */
 export interface LicenseResult extends DependencyLicense {
   readonly verdict: LicenseVerdict;
+  /** Bei `exception`: warum die Ausnahme vertretbar ist. */
+  readonly reason?: string;
 }
 
 function alsTexte(wert: unknown): string[] {
@@ -143,6 +148,7 @@ export function classifyLicenses(
   dependencies: readonly DependencyLicense[],
   allowed: readonly string[],
   denied: readonly string[],
+  exceptions: readonly LicenseException[] = [],
 ): LicenseResult[] {
   const erlaubt = new Set(allowed);
   const verboten = new Set(denied);
@@ -151,6 +157,19 @@ export function classifyLicenses(
     if (satisfiesLicense(abhaengigkeit.license, erlaubt)) {
       return { ...abhaengigkeit, verdict: "allowed" };
     }
+
+    // Eine Ausnahme gilt für genau ein Paket und genau eine Lizenz. Wechselt
+    // das Paket die Lizenz, greift sie nicht mehr — und der Scan schlägt an,
+    // statt die alte Begründung stillschweigend weiterzutragen.
+    const ausnahme = exceptions.find(
+      (eintrag) =>
+        eintrag.license === abhaengigkeit.license &&
+        globToRegExp(eintrag.package).test(abhaengigkeit.name),
+    );
+    if (ausnahme !== undefined) {
+      return { ...abhaengigkeit, verdict: "exception", reason: ausnahme.reason };
+    }
+
     const marken = tokenisiere(abhaengigkeit.license);
     const trifftVerbot = marken.some((marke) => verboten.has(marke));
     return { ...abhaengigkeit, verdict: trifftVerbot ? "denied" : "unknown" };
@@ -167,17 +186,28 @@ export function licenseReport(results: readonly LicenseResult[]): string {
     "| Paket | Version(en) | Lizenz | Urteil |",
     "|-------|-------------|--------|--------|",
   ];
+  const urteile: Record<LicenseVerdict, string> = {
+    allowed: "zulässig",
+    exception: "Ausnahme",
+    denied: "**unzulässig**",
+    unknown: "**ungeklärt**",
+  };
+
   for (const ergebnis of results) {
-    const urteil =
-      ergebnis.verdict === "allowed"
-        ? "zulässig"
-        : ergebnis.verdict === "denied"
-          ? "**unzulässig**"
-          : "**ungeklärt**";
     zeilen.push(
-      `| ${ergebnis.name} | ${ergebnis.versions.join(", ")} | ${ergebnis.license} | ${urteil} |`,
+      `| ${ergebnis.name} | ${ergebnis.versions.join(", ")} | ${ergebnis.license} | ` +
+        `${urteile[ergebnis.verdict]} |`,
     );
   }
+
+  const ausnahmen = results.filter((ergebnis) => ergebnis.verdict === "exception");
+  if (ausnahmen.length > 0) {
+    zeilen.push("", "## Ausnahmen und ihre Begründung", "");
+    for (const ausnahme of ausnahmen) {
+      zeilen.push(`### ${ausnahme.name} — ${ausnahme.license}`, "", ausnahme.reason ?? "", "");
+    }
+  }
+
   zeilen.push("");
   return zeilen.join("\n");
 }

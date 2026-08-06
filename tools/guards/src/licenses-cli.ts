@@ -58,6 +58,7 @@ function main(argv: readonly string[]): number {
     abhaengigkeiten,
     config.allowedLicenses,
     config.deniedLicenses,
+    config.licenseExceptions,
   );
 
   const berichtsziel = argv
@@ -67,10 +68,21 @@ function main(argv: readonly string[]): number {
     writeFileSync(join(wurzel, berichtsziel), licenseReport(ergebnisse), "utf8");
   }
 
-  const beanstandet = ergebnisse.filter((ergebnis) => ergebnis.verdict !== "allowed");
-  process.stdout.write(
-    `Lizenz-Scan: ${ergebnisse.length} Abhängigkeit(en), ${beanstandet.length} offen.\n`,
+  const ausnahmen = ergebnisse.filter((ergebnis) => ergebnis.verdict === "exception");
+  const beanstandet = ergebnisse.filter(
+    (ergebnis) => ergebnis.verdict !== "allowed" && ergebnis.verdict !== "exception",
   );
+
+  process.stdout.write(
+    `Lizenz-Scan: ${ergebnisse.length} Abhängigkeit(en), ${beanstandet.length} offen, ` +
+      `${ausnahmen.length} per Ausnahme zugelassen.\n`,
+  );
+
+  // Ausnahmen werden jedes Mal genannt. Eine Ausnahme, die niemand mehr sieht,
+  // ist nach zwei Jahren eine Lizenzverletzung, die niemand mehr kennt.
+  for (const ausnahme of ausnahmen) {
+    process.stdout.write(`  Ausnahme: ${ausnahme.name} — ${ausnahme.license}\n`);
+  }
 
   for (const ergebnis of beanstandet) {
     const urteil = ergebnis.verdict === "denied" ? "unzulässig" : "ungeklärt";

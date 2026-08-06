@@ -71,6 +71,12 @@ describe("classifyLicenses", () => {
     { name: "c", versions: ["1"], license: "Irgendwas-1.0" },
   ];
 
+  const ausnahme = {
+    package: "lightning*",
+    license: "MPL-2.0",
+    reason: "Entwicklungsabhängigkeit, unverändert eingebunden, nicht ausgeliefert.",
+  };
+
   it("trennt zulässig, unzulässig und ungeklärt", () => {
     const ergebnisse = classifyLicenses(abhaengigkeiten, ["MIT"], ["AGPL-3.0-only"]);
     expect(ergebnisse.map((ergebnis) => ergebnis.verdict)).toEqual([
@@ -78,6 +84,32 @@ describe("classifyLicenses", () => {
       "denied",
       "unknown",
     ]);
+  });
+
+  it("lässt ein benanntes Paket über eine Ausnahme zu", () => {
+    const mit = [{ name: "lightningcss-linux-x64-gnu", versions: ["1"], license: "MPL-2.0" }];
+    const ergebnisse = classifyLicenses(mit, ["MIT"], [], [ausnahme]);
+    expect(ergebnisse[0]?.verdict).toBe("exception");
+    expect(ergebnisse[0]?.reason).toContain("nicht ausgeliefert");
+  });
+
+  it("greift nicht, wenn das Paket die Lizenz wechselt", () => {
+    // Der eigentliche Zweck der engen Fassung: Eine Begründung, die für
+    // MPL-2.0 geschrieben wurde, darf nicht stillschweigend für GPL gelten.
+    const anders = [{ name: "lightningcss", versions: ["2"], license: "GPL-3.0-only" }];
+    expect(classifyLicenses(anders, ["MIT"], [], [ausnahme])[0]?.verdict).toBe("unknown");
+  });
+
+  it("greift nicht für ein anderes Paket", () => {
+    const fremd = [{ name: "irgendwas", versions: ["1"], license: "MPL-2.0" }];
+    expect(classifyLicenses(fremd, ["MIT"], [], [ausnahme])[0]?.verdict).toBe("unknown");
+  });
+
+  it("schreibt die Begründung in den Bericht", () => {
+    const mit = [{ name: "lightningcss", versions: ["1"], license: "MPL-2.0" }];
+    const bericht = licenseReport(classifyLicenses(mit, ["MIT"], [], [ausnahme]));
+    expect(bericht).toContain("Ausnahme");
+    expect(bericht).toContain("nicht ausgeliefert");
   });
 
   it("berichtet in Markdown", () => {

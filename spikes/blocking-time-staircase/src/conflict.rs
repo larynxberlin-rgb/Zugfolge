@@ -90,7 +90,6 @@ impl OccupationConflict {
     pub const fn overlap_seconds(&self) -> i64 {
         self.overlap_end.seconds() - self.overlap_start.seconds()
     }
-
 }
 
 /// Prüft alle Sperrzeitentreppen gegeneinander.
