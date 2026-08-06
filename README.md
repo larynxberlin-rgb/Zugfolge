@@ -5,9 +5,11 @@ mit hohem betrieblichem, infrastrukturellem und wirtschaftlichem Realismus.
 Öffentliche Welten laufen dauerhaft in 1:1-Echtzeit ohne Wipes. Erste
 Pilotregion: **Leipzig–Halle–Erfurt**.
 
-> **Stand:** Konzeption abgeschlossen, Fundament steht (M0.1, M0.2). Der
-> nächste Schritt ist M0.3 — der Wegwerf-Spike zur Sperrzeitentreppe, der
-> prüft, ob die Konfliktprüfung trägt. Alles Weitere hängt daran.
+> **Stand:** Konzeption abgeschlossen, Fundament steht (M0.1, M0.2). **M0.3 ist
+> geführt:** Der Wegwerf-Spike zur Sperrzeitentreppe erkennt echte
+> Belegungskonflikte und macht sie im Bildfahrplan sichtbar — siehe
+> [`spikes/blocking-time-staircase/`](spikes/blocking-time-staircase/README.md).
+> Der nächste Schritt ist M0.4, das Rechte-Gate.
 
 ## Wo was steht
 
@@ -25,6 +27,7 @@ Pilotregion: **Leipzig–Halle–Erfurt**.
 crates/     Rust — Simulationskern, Solver, Release-Pipeline
 packages/   TypeScript — fachliche Bibliotheken (ab M2)
 apps/       TypeScript — Dienste und Frontend (ab M2 / M4)
+spikes/     Wegwerf-Code mit Verfallsdatum
 tools/      Werkzeuge für CI und Entwicklung
 docs/       Spezifikation, Entscheidungen, Glossar
 ```

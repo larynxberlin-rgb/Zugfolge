@@ -90,3 +90,10 @@ version = "0.0.0"
 dependencies = [
  "sha2",
 ]
+
+[[package]]
+name = "zugfolge-spike-blocking-time-staircase"
+version = "0.0.0"
+dependencies = [
+ "zugfolge-determinism",
+]

@@ -121,16 +121,23 @@ Lastgrößen: `docs/architektur.md`.
 ## Stand
 
 Konzeption abgeschlossen, E1–E20 entschieden, Milestones auf Reihenfolge und
-Vollständigkeit geprüft. **M0.1 und M0.2 sind erledigt** — ADRs, Monorepo, CI,
-Determinismus-Testharnisch, Wächter, Glossar, Lizenz-Scan.
+Vollständigkeit geprüft. **M0.1, M0.2 und M0.3 sind erledigt** — ADRs, Monorepo,
+CI, Determinismus-Testharnisch, Wächter, Glossar, Lizenz-Scan und der
+Wegwerf-Spike zur Sperrzeitentreppe.
 
 - **Alpha-Schnitt:** M0 – M9. Alles ab M10 ist Ausbau.
-- **Kritischer Pfad:** M0.3 → M1 → M3 → M4 → M7.
-- **Nächster Schritt:** M0.3, der Wegwerf-Spike zur Sperrzeitentreppe — drei
-  Betriebsstellen, zwei Züge. Der billigste Zeitpunkt zu prüfen, ob die
-  Konfliktprüfung trägt; alles Weitere hängt daran. Der Spike gehört nach
-  `spikes/` und ist in der Wächterkonfiguration bereits der Domäne
-  `simulation-core` zugeordnet.
+- **Kritischer Pfad:** M0.3 → M1 → M3 → M4 → M7. Der erste Schritt ist geführt.
+- **M0.3 hat getragen:** `spikes/blocking-time-staircase/` rechnet die
+  Sperrzeitentreppe zweier Züge über drei Betriebsstellen, erkennt Gegenfahrt
+  und Zugfolgefall mit Ressource, Zeitfenster und Gegenzug und zeichnet den
+  Bildfahrplan. Drei Befunde wirken weiter: ein Ressourcenmodell trägt beide
+  Konfliktarten (M3.1, M3.3); der Bahnhofskopf braucht Ausschlussmengen statt
+  einzelner Ressourcen (M1.7); die betrieblich richtige Auflösung eines
+  Konflikts ist ein eigenes Verfahren (M3.4). Der Spike **verfällt mit M3.1**
+  und wird dann gelöscht, nicht weitergepflegt.
+- **Nächster Schritt:** M0.4, das Rechte-Gate — dokumentierter Freigabestatus je
+  Datenquelle, einschließlich der Trassenfinder-Nutzungsbedingungen. Es steht
+  vor M1, weil ohne geklärte Rechte kein Import beginnen darf (Invariante 8).
 
 Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` trägt bis
 zum Einsetzen des Volltexts einen Warnblock und ist bis dahin **nicht gültig**.

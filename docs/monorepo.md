@@ -1,28 +1,43 @@
 # Monorepo: Aufbau, Domänengrenzen, Werkzeuge
 
-Ergebnis von **M0.2**. Beschreibt, wo Code liegt, welche Grenzen zwischen
-Domänen gelten und wodurch sie durchgesetzt werden.
+Ergebnis von **M0.2**, fortgeschrieben in **M0.3**. Beschreibt, wo Code liegt,
+welche Grenzen zwischen Domänen gelten und wodurch sie durchgesetzt werden.
 
 ---
 
 ## 1. Verzeichnisse
 
 ```text
-crates/                 Rust — Simulationskern, Solver, Release-Pipeline
-  zugfolge-determinism/ Determinismus-Testharnisch (M0.2)
-packages/               TypeScript — fachliche Bibliotheken (ab M2)
-apps/                   TypeScript — Dienste und Frontend (ab M2 / M4)
-spikes/                 Wegwerf-Code mit Verfallsdatum (M0.3)
-tools/                  Werkzeuge für CI und Entwicklung
-  guards/               die Wächter der harten Invarianten
-docs/                   Spezifikation und Entscheidungen
-.github/workflows/      CI
+crates/                     Rust — Simulationskern, Solver, Release-Pipeline
+  zugfolge-determinism/     Determinismus-Testharnisch (M0.2)
+packages/                   TypeScript — fachliche Bibliotheken (ab M2)
+apps/                       TypeScript — Dienste und Frontend (ab M2 / M4)
+spikes/                     Wegwerf-Code mit Verfallsdatum
+  blocking-time-staircase/  Sperrzeitentreppe und Konfliktprüfung (M0.3)
+tools/                      Werkzeuge für CI und Entwicklung
+  guards/                   die Wächter der harten Invarianten
+docs/                       Spezifikation und Entscheidungen
+.github/workflows/          CI
 ```
 
-`packages/`, `apps/` und `spikes/` sind im pnpm-Workspace beziehungsweise in
-der Wächterkonfiguration bereits vorgesehen und noch leer. Sie werden angelegt,
-wenn der erste Milestone sie füllt — ein leeres Verzeichnis mit Platzhalter ist
-kein Aufbau, sondern eine Behauptung.
+`packages/` und `apps/` sind im pnpm-Workspace bereits vorgesehen und noch
+leer. Sie werden angelegt, wenn der erste Milestone sie füllt — ein leeres
+Verzeichnis mit Platzhalter ist kein Aufbau, sondern eine Behauptung.
+
+**`spikes/` ist Wegwerf-Code, und zwar mit ausgesprochenem Verfallsdatum.** Ein
+Spike hat eine Frage zu beantworten und danach zu verschwinden; bleibt er
+liegen, wird er zur zweiten, ungepflegten Wahrheit neben dem echten Modell.
+Deshalb nennt die README jedes Spikes den Milestone, mit dem er gelöscht wird,
+und kein Paket außerhalb von `spikes/` darf von einem Spike abhängen.
+
+| Spike | Frage | Verfällt mit |
+|-------|-------|--------------|
+| `blocking-time-staircase` | Trägt die Konfliktprüfung über Sperrzeiten? (M0.3) | M3.1 |
+
+Rust-Spikes sind Mitglieder des Cargo-Workspace (`members = ["crates/*",
+"spikes/*"]`). Das ist Absicht: Sie laufen dadurch in derselben CI, unter
+denselben Lints und unter denselben Wächtern wie der spätere Kern. Ein Spike,
+der die Invarianten nicht einhalten muss, beweist über den Kern nichts.
 
 **Sprachregel für Bezeichner:** Öffentliche Bezeichner — Typen, Funktionen,
 Felder, Kommandos, Dateinamen — sind englisch und stehen in `docs/glossar.md`.
@@ -83,7 +98,7 @@ Liste ist keine vollständige Karte des Repositoriums, sondern die Zuordnung
 | Domäne | Pfade | Status | Was dort besonders gilt |
 |--------|-------|--------|-------------------------|
 | `determinism-core` | `crates/zugfolge-determinism/**` | aktiv | ganzzahlig, uhrfrei, geordnet — der Harnisch muss selbst halten, was er prüft |
-| `simulation-core` | `crates/zugfolge-sim/**`, `crates/zugfolge-conflict/**`, `spikes/**` | geplant | vollständiger Kernvertrag: kein Bezahlstatus, keine Uhr, keine Datenbank |
+| `simulation-core` | `crates/zugfolge-sim/**`, `crates/zugfolge-conflict/**`, `spikes/**` | aktiv | vollständiger Kernvertrag: kein Bezahlstatus, keine Uhr, keine Datenbank |
 | `path-allocation` | `crates/zugfolge-planner/**`, `packages/path-allocation/**` | geplant | Reihenfolge und Bezahlstatus beeinflussen das Ergebnis nicht (E4, `infrastruktur.md` 2) |
 | `dispatch` | `crates/zugfolge-rules/**`, `packages/dispatch/**` | geplant | das Betriebsprogramm wirkt offline und für alle gleich (E2, E13) |
 | `demand` | `packages/demand/**`, `crates/zugfolge-demand/**` | geplant | Nachfrage folgt dem Angebot, nie dem Vertrag des Spielers |
@@ -95,7 +110,9 @@ Dateien treffen, eine `geplante` darf keine treffen. Legt jemand
 `crates/zugfolge-sim/` an, schlägt der Wächter `coverage` fehl und verlangt die
 Umstellung auf `aktiv` — womit alle Regeln dieser Domäne ab dem ersten Commit
 greifen. Das ist der Mechanismus, der verhindert, dass Invarianten erst
-nachträglich eingezogen werden.
+nachträglich eingezogen werden. Genau so ist `simulation-core` in M0.3 aktiv
+geworden: Der Spike unter `spikes/` fiel in ihre Pfade, und der Wächter hat den
+Statuswechsel eingefordert, bevor die erste Sperrzeit gerechnet wurde.
 
 ---
 
@@ -103,7 +120,7 @@ nachträglich eingezogen werden.
 
 | # | Invariante | Durchsetzung |
 |---|-----------|--------------|
-| 1 | keine inkompatiblen Belegungen derselben Konfliktressource | Property-Test ab M3 — nichts davon ist heute prüfbar |
+| 1 | keine inkompatiblen Belegungen derselben Konfliktressource | seit M0.3 im Spike gegen eine zweite, unabhängig geschriebene Prüfung getestet (`spikes/blocking-time-staircase/tests/invariante.rs`); der eigentliche Property-Test folgt mit M3 |
 | 2 | kein `now()` im Simulationskern | `clippy.toml` (`disallowed-methods`) und Wächter `no-wallclock` |
 | 3 | keine Gleitkommazahlen im Zustand | `clippy::float_arithmetic`, `clippy::float_cmp`, Wächter `no-floats` |
 | 4 | `world_id` in jeder Abfrage, jedem Index, jedem Event | Wächter `world-id` gegen SQL und Drizzle; vollständiger Nachweis in M2.2 |

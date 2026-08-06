@@ -16,7 +16,9 @@ Ergebnis vorzeigbar ist. Bislang erledigt:
 
 - **M0.1** — die ADRs zu E1–E20, siehe [`adr/`](adr/README.md);
 - **M0.2** — Monorepo, CI, Determinismus-Testharnisch, Wächter und Glossar,
-  siehe [`monorepo.md`](monorepo.md) und [`glossar.md`](glossar.md).
+  siehe [`monorepo.md`](monorepo.md) und [`glossar.md`](glossar.md);
+- **M0.3** — der Wegwerf-Spike zur Sperrzeitentreppe, siehe
+  [`spikes/blocking-time-staircase/`](../spikes/blocking-time-staircase/README.md).
 
 ---
 
@@ -26,13 +28,28 @@ Ergebnis vorzeigbar ist. Bislang erledigt:
 |---|---------------|-------|--------|
 | 0.1 | ADRs schriftlich festhalten — E1 bis E16 sind entschieden und werden dokumentiert, nicht neu verhandelt | S | erledigt |
 | 0.2 | Monorepo, CI, Determinismus-Testharnisch, Domänenglossar, **CI-Wächter gegen Payment-Tier-Felder**, **Lizenz-Scan der Abhängigkeiten** | S | erledigt |
-| 0.3 | **Wegwerf-Spike Sperrzeitentreppe:** 3 Betriebsstellen, eine zweigleisige Strecke plus eingleisiger Ast, zwei Züge, Konfliktprüfung, Bildfahrplan als Bild | M | offen |
+| 0.3 | **Wegwerf-Spike Sperrzeitentreppe:** 3 Betriebsstellen, eine zweigleisige Strecke plus eingleisiger Ast, zwei Züge, Konfliktprüfung, Bildfahrplan als Bild | M | erledigt |
 | 0.4 | Rechte-Gate: dokumentierter Freigabestatus je Datenquelle, inklusive Trassenfinder-Nutzungsbedingungen | S | offen |
 | 0.5 | Lizenz und Rechteschutz: `LICENSE`, CLA, Schichtentrennung von Code, Daten und Marke, Markenanmeldung anstoßen | S | offen |
 
 > **Beweis:** Ein echter Belegungskonflikt wird korrekt erkannt und in einer
 > Sperrzeitentreppe sichtbar gemacht. Das ist die Existenzberechtigung des
 > gesamten Projekts — und der billigste Zeitpunkt, sie zu prüfen.
+>
+> **Geführt in M0.3** (`spikes/blocking-time-staircase/`): Zwei Züge geraten auf
+> dem eingleisigen Ast in Gegenfahrt, zwei weitere in den Zugfolgefall; beide
+> Konflikte werden mit Ressource, Zeitfenster und Gegenzug gemeldet und im
+> Bildfahrplan sichtbar. Die konfliktfreien Gegenproben sind ebenfalls
+> abgelegt, damit die Prüfung nicht bloß immer Rot meldet.
+
+Drei Befunde des Spikes wirken auf spätere Milestones, ausführlich in seiner
+README:
+
+| Befund | Wirkung |
+|--------|---------|
+| Ein Ressourcenmodell trägt beide Konfliktarten — Zugfolge und Gegenfahrt sind eine Eigenschaft des Netzes, keine zweite Regel | M3.1, M3.3 |
+| Der Bahnhofskopf fehlt: Ohne Fahrstraßenausschluss prüft der Konfliktprüfer nur die halbe Wahrheit | M1.7 bleibt der teuerste Posten in M1 |
+| Die Prüfung kennt nur die triviale Auflösung („später fahren"); die betrieblich richtige — kreuzen in einer Betriebsstelle — ist ein eigenes Verfahren | M3.4 ist keine Erweiterung des Prüfers |
 
 ---
 
