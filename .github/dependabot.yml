@@ -1,0 +1,71 @@
+# Dependabot: automatisierte Versions-Updates.
+#
+# Lieferkette ist hier bereits an anderer Stelle eine Grundsatzentscheidung
+# (siehe `docs/monorepo.md`, Abschnitt „Werkzeugkette"): pnpm installiert
+# neue Paketversionen erst 24 Stunden nach ihrer Veröffentlichung
+# (`minimumReleaseAge` in `pnpm-workspace.yaml`). Das fängt kompromittierte
+# Releases ab. Dependabot deckt die andere Hälfte ab — Abhängigkeiten, die
+# schlicht veralten und ihre Sicherheitskorrekturen nicht mehr bekommen.
+#
+# Major-Updates bleiben einzeln und unangetastet, weil sie Lizenz oder API
+# ändern können; genau das prüfen cargo-deny und der Lizenz-Wächter bei
+# jedem PR ohnehin (`docs/monorepo.md`, Abschnitt „Werkzeugkette"). Minor-
+# und Patch-Updates werden je Ökosystem gebündelt, um nicht einen CI-Lauf
+# pro Einzelversion zu erzwingen.
+
+version: 2
+
+updates:
+  # Rust-Workspace: `Cargo.toml` und `crates/*/Cargo.toml`.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 10
+    groups:
+      cargo-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "cargo"
+      include: "scope"
+
+  # pnpm-Workspace: `package.json` an der Wurzel sowie `tools/*`, `packages/*`
+  # und `apps/*` gemäß `pnpm-workspace.yaml`.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 10
+    groups:
+      npm-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "npm"
+      include: "scope"
+
+  # GitHub Actions in `.github/workflows/`.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Berlin"
+    groups:
+      actions-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
