@@ -2,7 +2,7 @@
 
 import { readFileSync } from "node:fs";
 
-import type { Domain, GuardConfig } from "./types.js";
+import type { Domain, GuardConfig, LicenseException } from "./types.js";
 
 function istObjekt(wert: unknown): wert is Record<string, unknown> {
   return typeof wert === "object" && wert !== null && !Array.isArray(wert);
@@ -47,6 +47,25 @@ function leseDomain(roh: unknown, index: number): Domain {
   };
 }
 
+function leseLizenzausnahme(roh: unknown, index: number): LicenseException {
+  if (!istObjekt(roh)) {
+    throw new Error(`guards.config.json: licenseExceptions[${index}] ist kein Objekt`);
+  }
+  const wo = `licenseExceptions[${index}]`;
+  const ausnahme = {
+    package: feldText(roh, "package", wo),
+    license: feldText(roh, "license", wo),
+    reason: feldText(roh, "reason", wo),
+  };
+  if (ausnahme.reason.length < 30) {
+    throw new Error(
+      `guards.config.json: Die Ausnahme für '${ausnahme.package}' braucht eine ` +
+        "tragfähige Begründung — eine Ausnahme ohne Grund ist eine Allowlist mit Umweg.",
+    );
+  }
+  return ausnahme;
+}
+
 /** Liest eine Konfiguration aus JSON-Text. */
 export function parseConfig(text: string): GuardConfig {
   let roh: unknown;
@@ -73,11 +92,17 @@ export function parseConfig(text: string): GuardConfig {
     gesehen.add(domain.id);
   }
 
+  const ausnahmenRoh = roh["licenseExceptions"];
+  if (!Array.isArray(ausnahmenRoh)) {
+    throw new Error("guards.config.json: 'licenseExceptions' muss eine Liste sein");
+  }
+
   return {
     domains,
     brandTokenHashes: feldTexte(roh, "brandTokenHashes"),
     allowedLicenses: feldTexte(roh, "allowedLicenses"),
     deniedLicenses: feldTexte(roh, "deniedLicenses"),
+    licenseExceptions: ausnahmenRoh.map(leseLizenzausnahme),
     ignore: feldTexte(roh, "ignore"),
   };
 }

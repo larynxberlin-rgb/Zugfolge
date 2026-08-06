@@ -22,19 +22,26 @@ jobs:
     name: Sperrdateien, Formatierung, Golden-Master
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
-          version: 10
+          version: 11
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
+
+      - name: Alte Sperrdateien verwerfen
+        # Dieser Workflow erzeugt die Sperrdateien **neu**. Eine bestehende
+        # Datei einfach fortzuschreiben führt dazu, dass alte Auflösungen
+        # überleben — etwa eine Paketversion, die eine später eingeführte
+        # Lieferkettenregel gar nicht mehr zuließe.
+        run: rm -f Cargo.lock pnpm-lock.yaml
 
       - name: Cargo.lock erzeugen
         run: cargo fetch
@@ -51,7 +58,7 @@ jobs:
       - name: pnpm-lock.yaml erzeugen
         run: pnpm install --no-frozen-lockfile
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: artefakte

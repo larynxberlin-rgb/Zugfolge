@@ -11,7 +11,7 @@ repository = "https://github.com/larynxberlin-rgb/Zugfolge"
 publish = false
 
 [workspace.dependencies]
-sha2 = "0.10"
+sha2 = "0.11"
 
 # Die harten Invarianten aus CLAUDE.md, soweit der Compiler sie halten kann.
 # Was der Compiler nicht sieht, prüft `tools/guards` (siehe docs/monorepo.md).

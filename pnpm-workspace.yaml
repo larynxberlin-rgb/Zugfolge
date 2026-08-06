@@ -1,3 +1,25 @@
+# ---------------------------------------------------------------------------
+# Lieferkette
+# ---------------------------------------------------------------------------
+# Frisch veröffentlichte Paketversionen werden 24 Stunden lang nicht
+# installiert. Kompromittierte Releases werden erfahrungsgemäß innerhalb
+# weniger Stunden entdeckt und aus der Registry entfernt — die Wartezeit
+# kostet fast nichts und fängt genau dieses Zeitfenster ab.
+#
+# Seit pnpm 11 ist das der Standardwert. Er steht hier trotzdem ausdrücklich:
+# Ein unsichtbarer Standard ist keine Entscheidung, und ein Projekt, dessen
+# Rechteschutz eine Grundsatzentscheidung ist (E16), sollte auch seine
+# Lieferkette schriftlich haben.
+minimumReleaseAge: 1440
+
+# Kein Paket ohne Veröffentlichungszeitpunkt durchwinken. Wir beziehen
+# ausschließlich von npmjs.org, dort ist der Zeitstempel immer vorhanden.
+minimumReleaseAgeIgnoreMissingTime: false
+
+# Ausnahmen gehören einzeln begründet, nicht pauschal:
+# minimumReleaseAgeExclude:
+#   - paket@1.2.3
+
 packages:
   # Werkzeuge — laufen in CI und auf dem Entwicklungsrechner, nie im Spielbetrieb.
   - "tools/*"

@@ -85,6 +85,13 @@
     "Unlicense",
     "Zlib"
   ],
+  "licenseExceptions": [
+    {
+      "package": "lightningcss*",
+      "license": "MPL-2.0",
+      "reason": "Entwicklungsabhängigkeit von Vite und damit von Vitest; unverändert eingebunden und nicht Teil des ausgelieferten Produkts. MPL-2.0 ist dateibezogenes Copyleft: Die Pflicht zur Offenlegung greift auf geänderte MPL-Dateien, nicht auf das umgebende Werk (Abschnitt 3.3, Larger Work). Damit vereinbar mit PolyForm Shield 1.0.0 (E16). Neu zu prüfen, sobald das Paket in eine Laufzeitabhängigkeit wandert oder wir es abwandeln."
+    }
+  ],
   "deniedLicenses": [
     "AGPL-1.0-only",
     "AGPL-1.0-or-later",

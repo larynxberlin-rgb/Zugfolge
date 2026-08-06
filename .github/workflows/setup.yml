@@ -1,0 +1,58 @@
+name: Setup-Skript prüfen
+
+# Ein Setup-Skript, das niemand prüft, ist nach dem dritten Milestone kaputt —
+# und zwar genau dann, wenn jemand Neues eine Umgebung braucht.
+#
+# Der Lauf startet bewusst in einem **nackten Debian-Container** statt auf dem
+# GitHub-Runner: Der Runner bringt Node und Rust bereits mit, und dann prüfte
+# der Test nur die Erkennungspfade, nie die Installation.
+#
+# Läuft nur, wenn sich das Skript oder dieser Workflow ändert.
+
+on:
+  push:
+    paths:
+      - ".claude/setup.sh"
+      - ".github/workflows/setup.yml"
+  pull_request:
+    paths:
+      - ".claude/setup.sh"
+      - ".github/workflows/setup.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frische-umgebung:
+    name: Nacktes Debian
+    runs-on: ubuntu-latest
+    container: debian:bookworm-slim
+    steps:
+      - name: Grundwerkzeug (das, was das Skript voraussetzt)
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git tar xz-utils build-essential
+          rm -rf /var/lib/apt/lists/*
+
+      - uses: actions/checkout@v7
+
+      - name: Setup-Skript ausführen
+        run: bash .claude/setup.sh
+
+      - name: Zweiter Lauf — das Skript muss wiederholbar sein
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .claude/setup.sh | tee /tmp/zweiter.log
+          # „Wiederholbar" heißt nicht „läuft nochmal durch", sondern
+          # „installiert nichts neu". Ohne diese Prüfung fiel genau das
+          # beim ersten Versuch nicht auf.
+          for werkzeug in Node pnpm; do
+            grep -q "$werkzeug ist vorhanden" /tmp/zweiter.log \
+              || { echo "::error::$werkzeug wurde erneut installiert — das Skript findet seine eigene Installation nicht wieder."; exit 1; }
+          done
+
+      - name: Werkzeuge sind auch in einer neuen Login-Shell da
+        run: bash -lc 'cargo --version && node --version && pnpm --version'

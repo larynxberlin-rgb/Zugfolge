@@ -34,8 +34,9 @@ Vollständig mit Domänengrenzen und Durchsetzung:
 
 ## Loslegen
 
-Vorausgesetzt sind eine Rust-Werkzeugkette (Kanal `stable`), Node.js 22 LTS
-und pnpm 10.
+Vorausgesetzt sind eine Rust-Werkzeugkette (Kanal `stable`), Node.js 24 LTS
+und pnpm 11 — oder ein Lauf von `bash .claude/setup.sh`, das genau das
+einrichtet.
 
 ```bash
 cargo test --workspace

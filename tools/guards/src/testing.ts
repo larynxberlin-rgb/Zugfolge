@@ -25,6 +25,7 @@ export function testConfig(teile: Partial<GuardConfig> = {}): GuardConfig {
     brandTokenHashes: [],
     allowedLicenses: ["MIT"],
     deniedLicenses: ["AGPL-3.0-only"],
+    licenseExceptions: [],
     ignore: [],
     ...teile,
   };
