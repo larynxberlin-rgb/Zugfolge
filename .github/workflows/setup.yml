@@ -36,7 +36,7 @@ jobs:
             ca-certificates curl git tar xz-utils build-essential
           rm -rf /var/lib/apt/lists/*
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup-Skript ausführen
         run: bash .claude/setup.sh

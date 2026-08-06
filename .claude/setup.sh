@@ -19,11 +19,13 @@ set -euo pipefail
 # --------------------------------------------------------------------------
 # Versionen — bewusst grob gepinnt
 # --------------------------------------------------------------------------
-# Node: 22 LTS, passend zu "engines" in package.json.
-# pnpm: 10, passend zur CI (.github/workflows/ci.yml).
+# Node: 24 — die **aktive LTS-Linie** („Krypton"), passend zu "engines" in
+#   package.json. Node 26 ist neuer, aber bis Oktober 2026 keine LTS, und
+#   docs/architektur.md legt für die Game-Services ausdrücklich LTS fest.
+# pnpm: 11, passend zur CI (.github/workflows/ci.yml).
 # Rust: steht in rust-toolchain.toml und wird von rustup selbst geholt.
-NODE_MAJOR="22"
-PNPM_MAJOR="10"
+NODE_MAJOR="24"
+PNPM_MAJOR="11"
 
 WURZEL="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOKAL="$HOME/.local"
