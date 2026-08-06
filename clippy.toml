@@ -1,0 +1,20 @@
+# Verbotene Typen und Methoden im zustandsrelevanten Pfad.
+#
+# Was hier steht, ist kein Stilwunsch, sondern die maschinelle Fassung der
+# harten Invarianten aus CLAUDE.md. Eine Ausnahme ist zulässig, aber nur mit
+# `#[allow(...)]` **und** einer Begründung im Code — nie durch Streichen
+# dieser Liste.
+
+disallowed-types = [
+  { path = "std::collections::HashMap", reason = "Iterationsreihenfolge ist nicht reproduzierbar — BTreeMap verwenden (Invariante: Determinismus)" },
+  { path = "std::collections::HashSet", reason = "Iterationsreihenfolge ist nicht reproduzierbar — BTreeSet verwenden (Invariante: Determinismus)" },
+]
+
+# Gleitkommazahlen fängt `clippy::float_arithmetic` ab (Cargo.toml) und
+# zusätzlich der Wächter `no-floats`, der auch Typdeklarationen ohne Rechnung
+# sieht — etwa ein `f64`-Feld in einer Zustandsstruktur.
+
+disallowed-methods = [
+  { path = "std::time::SystemTime::now", reason = "Invariante 2 — kein now() im Simulationskern; Simulationszeit ist ein expliziter Wert (SimTime)" },
+  { path = "std::time::Instant::now", reason = "Invariante 2 — kein now() im Simulationskern; Simulationszeit ist ein expliziter Wert (SimTime)" },
+]

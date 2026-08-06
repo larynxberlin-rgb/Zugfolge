@@ -1,0 +1,20 @@
+{
+  "name": "@zugfolge/guards",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "CI-Wächter: prüft die harten Invarianten, die kein Compiler sieht",
+  "license": "LicenseRef-PolyForm-Shield-1.0.0",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "guards": "node dist/cli.js",
+    "licenses": "node dist/licenses-cli.js"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

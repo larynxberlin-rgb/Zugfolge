@@ -1,0 +1,33 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+license = "LicenseRef-PolyForm-Shield-1.0.0"
+repository = "https://github.com/larynxberlin-rgb/Zugfolge"
+publish = false
+
+[workspace.dependencies]
+sha2 = "0.10"
+
+# Die harten Invarianten aus CLAUDE.md, soweit der Compiler sie halten kann.
+# Was der Compiler nicht sieht, prüft `tools/guards` (siehe docs/monorepo.md).
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+# Invariante 3 — keine Gleitkommazahlen im zustandsrelevanten Pfad.
+float_arithmetic = "deny"
+float_cmp = "deny"
+# Invariante 2 und 7 sowie Determinismus: verbotene Typen und Methoden
+# stehen in clippy.toml.
+disallowed_types = "deny"
+disallowed_methods = "deny"
+# Ganzzahlige Zustandswerte dürfen nicht still überlaufen oder abschneiden.
+cast_possible_truncation = "deny"
+cast_sign_loss = "deny"
+cast_precision_loss = "deny"

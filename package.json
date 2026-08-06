@@ -1,0 +1,22 @@
+{
+  "name": "zugfolge",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Zugfolge — persistente Eisenbahn-Unternehmenssimulation. Monorepo-Wurzel.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/larynxberlin-rgb/Zugfolge.git"
+  },
+  "license": "LicenseRef-PolyForm-Shield-1.0.0",
+  "engines": {
+    "node": ">=22.11.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --stream build",
+    "typecheck": "pnpm -r --stream typecheck",
+    "test": "pnpm -r --stream test",
+    "guards": "pnpm --filter @zugfolge/guards run guards",
+    "licenses": "pnpm --filter @zugfolge/guards run licenses"
+  }
+}

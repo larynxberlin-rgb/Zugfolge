@@ -1,0 +1,7 @@
+[toolchain]
+# Bewusst noch nicht auf eine Patchversion gepinnt: Solange kein
+# `InfraRelease` erzeugt wird, kostet ein Pin nur Wartung. Er wird mit M1.12
+# gesetzt, wenn Release-Artefakte reproduzierbar sein müssen.
+channel = "stable"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

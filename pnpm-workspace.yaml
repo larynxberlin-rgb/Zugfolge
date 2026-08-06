@@ -1,0 +1,7 @@
+packages:
+  # Werkzeuge — laufen in CI und auf dem Entwicklungsrechner, nie im Spielbetrieb.
+  - "tools/*"
+  # Fachliche Pakete der TypeScript-Plattform (ab M2).
+  - "packages/*"
+  # Ausführbare Dienste und das Frontend (ab M2 beziehungsweise M4).
+  - "apps/*"

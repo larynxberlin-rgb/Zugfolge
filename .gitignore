@@ -1,0 +1,109 @@
+# ─────────────────────────────────────────────────────────────
+# Proprietäre Schichten — dürfen NIEMALS ins öffentliche Repo
+# Siehe docs/geschaeft.md, Abschnitt 4 (Schichtentrennung).
+# Diese Blöcke sind kein Aufräumen, sondern Rechteschutz.
+# ─────────────────────────────────────────────────────────────
+
+# Balancing und Wirtschaftsdaten
+/data/economy/
+/data/balancing/
+/data/fahrzeugkatalog/
+*.economyrelease
+*.economyrelease.json
+
+# Weltdaten, Betriebshistorie, Spielerdaten
+/data/worlds/
+/data/eventlog/
+/data/replays/
+/backups/
+
+# OSM-Extrakte, Höhenmodelle und abgeleitete Releases
+# (ODbL-Pflichten laufen getrennt — siehe docs/daten.md)
+/data/osm/
+/data/dem/
+/data/infra/
+*.pbf
+*.osm
+*.osm.bz2
+*.poly
+*.mbtiles
+*.pmtiles
+*.tif
+*.tiff
+
+# Marken- und Gestaltungsassets
+/assets/brand/
+/assets/liveries/
+
+# ─────────────────────────────────────────────────────────────
+# Geheimnisse
+# ─────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+/config/local.*
+
+# ─────────────────────────────────────────────────────────────
+# Node / TypeScript
+# ─────────────────────────────────────────────────────────────
+node_modules/
+dist/
+build/
+coverage/
+.turbo/
+.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# ─────────────────────────────────────────────────────────────
+# Rust
+# ─────────────────────────────────────────────────────────────
+target/
+**/*.rs.bk
+*.pdb
+# napi-rs Artefakte
+*.node
+
+# ─────────────────────────────────────────────────────────────
+# Datenbank und lokale Dienste
+# ─────────────────────────────────────────────────────────────
+/pgdata/
+*.sqlite
+*.sqlite3
+*.dump
+docker-compose.override.yml
+
+# ─────────────────────────────────────────────────────────────
+# Test- und Werkzeugausgaben
+# ─────────────────────────────────────────────────────────────
+/test-results/
+/playwright-report/
+/benchmarks/out/
+*.profraw
+*.heapsnapshot
+
+# Golden-Master-Fixtures werden versioniert — hier bewusst KEIN Ignore.
+# Ihre *Ausgaben* dagegen schon:
+/tests/**/__actual__/
+
+# ─────────────────────────────────────────────────────────────
+# Betriebssystem und Editor
+# ─────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+.claude/settings.local.json

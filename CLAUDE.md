@@ -17,6 +17,8 @@ lesen, nicht raten.
 |-------|--------|------------|
 | `docs/entscheidungen.md` | E1–E20 mit voller Begründung | eine Entscheidung infrage steht oder geändert werden soll |
 | `docs/adr/` | E1–E20 je als Architecture Decision Record: Kontext, Konsequenzen, Querverweise | eine Grundsatzentscheidung ausführlich nachschlagen oder eine neue festhalten |
+| `docs/monorepo.md` | Verzeichnisaufbau, Domänengrenzen, Werkzeugkette, Durchsetzung der Invarianten | Code beitragen, neues Paket oder Crate anlegen, CI verstehen |
+| `docs/glossar.md` | Domänenglossar: deutscher Fachbegriff → Bezeichner im Code → Bedeutung → Quelle | jede Benennung im Code, jeder neue Fachbegriff |
 | `docs/produkt.md` | Produktdefinition, Oberflächen, Onboarding, Netzabgrenzung, Spielertypen, Anti-Monokultur | Produktfragen, UI, Zielgruppe, Was-gehört-dazu |
 | `docs/infrastruktur.md` | Konfliktressourcen, Trassenvergabe, Fahrplanperiode, Kapazitätsschutz, Simulation, Livemap | Solver, Sperrzeiten, Planner, Livemap |
 | `docs/betrieb.md` | Betriebsprogramm, Fahrzeuge, Personal, Versorgung, Zusatzfahrten, Störungen, Baustellenfahrplan | Disposition, Flotte, Umläufe, Wartung, Baustellen |
@@ -118,15 +120,17 @@ Lastgrößen: `docs/architektur.md`.
 
 ## Stand
 
-Konzeption abgeschlossen, E1–E16 entschieden, Milestones auf Reihenfolge und
-Vollständigkeit geprüft.
+Konzeption abgeschlossen, E1–E20 entschieden, Milestones auf Reihenfolge und
+Vollständigkeit geprüft. **M0.1 und M0.2 sind erledigt** — ADRs, Monorepo, CI,
+Determinismus-Testharnisch, Wächter, Glossar, Lizenz-Scan.
 
 - **Alpha-Schnitt:** M0 – M9. Alles ab M10 ist Ausbau.
 - **Kritischer Pfad:** M0.3 → M1 → M3 → M4 → M7.
 - **Nächster Schritt:** M0.3, der Wegwerf-Spike zur Sperrzeitentreppe — drei
   Betriebsstellen, zwei Züge. Der billigste Zeitpunkt zu prüfen, ob die
-  Konfliktprüfung trägt; alles Weitere hängt daran.
+  Konfliktprüfung trägt; alles Weitere hängt daran. Der Spike gehört nach
+  `spikes/` und ist in der Wächterkonfiguration bereits der Domäne
+  `simulation-core` zugeordnet.
 
-Repository: https://github.com/larynxberlin-rgb/Zugfolge — noch nicht
-initialisiert. `LICENSE` trägt bis zum Einsetzen des Volltexts einen
-Warnblock und ist bis dahin **nicht gültig**.
+Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` trägt bis
+zum Einsetzen des Volltexts einen Warnblock und ist bis dahin **nicht gültig**.

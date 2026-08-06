@@ -1,0 +1,62 @@
+name: Artefakte erzeugen
+
+# Erzeugt die Dateien, die man nicht von Hand schreibt, und lädt sie als
+# Artefakt hoch: Sperrdateien, formatierte Quellen und Golden-Master.
+#
+# Wird von Hand gestartet. Zwei Anlässe:
+#
+# 1. Bootstrap — solange es noch keine Cargo.lock und keine pnpm-lock.yaml
+#    gibt und der erste Golden-Master fehlt.
+# 2. Nach einer bewussten Regeländerung, die einen Golden-Master verschiebt.
+#    Der neue Stand wird heruntergeladen, geprüft und mit Begründung committet
+#    — nie blind überschrieben.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  erzeugen:
+    name: Sperrdateien, Formatierung, Golden-Master
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Cargo.lock erzeugen
+        run: cargo fetch
+
+      - name: Quellen formatieren
+        run: cargo fmt --all
+
+      - name: Golden-Master neu schreiben
+        continue-on-error: true
+        env:
+          ZUGFOLGE_GOLDEN_UPDATE: "1"
+        run: cargo test --workspace
+
+      - name: pnpm-lock.yaml erzeugen
+        run: pnpm install --no-frozen-lockfile
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: artefakte
+          path: |
+            Cargo.lock
+            pnpm-lock.yaml
+            crates/
+          if-no-files-found: error
