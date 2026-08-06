@@ -94,7 +94,9 @@ mod tests {
     }
 
     fn temppfad(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("zugfolge-golden-{name}")).join("wert.hash")
+        std::env::temp_dir()
+            .join(format!("zugfolge-golden-{name}"))
+            .join("wert.hash")
     }
 
     #[test]

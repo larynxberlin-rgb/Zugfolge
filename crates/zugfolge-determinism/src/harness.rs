@@ -76,7 +76,10 @@ pub struct Scenario<C> {
 impl<C> Scenario<C> {
     /// Leeres Szenario zu einem Seed.
     pub const fn new(seed: WorldSeed) -> Self {
-        Self { seed, commands: Vec::new() }
+        Self {
+            seed,
+            commands: Vec::new(),
+        }
     }
 
     /// Hängt ein Kommando an.
@@ -186,7 +189,10 @@ mod tests {
         const SCHEMA: &'static str = "zaehler/v1";
 
         fn apply(&mut self, at: SimTime, command: &i64) {
-            self.summe = self.summe.saturating_add(*command).saturating_add(at.seconds());
+            self.summe = self
+                .summe
+                .saturating_add(*command)
+                .saturating_add(at.seconds());
             self.gezogen.push(self.rng.below(1_000));
         }
 
@@ -201,7 +207,11 @@ mod tests {
     }
 
     fn baue(seed: WorldSeed) -> Zaehler {
-        Zaehler { summe: 0, gezogen: Vec::new(), rng: seed.substream(Substream::Tiebreak) }
+        Zaehler {
+            summe: 0,
+            gezogen: Vec::new(),
+            rng: seed.substream(Substream::Tiebreak),
+        }
     }
 
     fn szenario(seed: WorldSeed) -> Scenario<i64> {
@@ -228,7 +238,10 @@ mod tests {
     fn anderes_kommandolog_anderer_zustand() {
         let seed = WorldSeed::new(1, 1);
         let kurz = Scenario::new(seed).at(SimTime::EPOCH, 5);
-        assert_ne!(run::<Zaehler, _>(&kurz, baue), run::<Zaehler, _>(&szenario(seed), baue));
+        assert_ne!(
+            run::<Zaehler, _>(&kurz, baue),
+            run::<Zaehler, _>(&szenario(seed), baue)
+        );
     }
 
     #[test]

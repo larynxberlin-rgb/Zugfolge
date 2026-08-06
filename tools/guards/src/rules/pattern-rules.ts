@@ -10,7 +10,6 @@ import { patternRule } from "./pattern-rule.js";
 import type { Rule } from "../types.js";
 
 const RUST = [".rs"] as const;
-const TYPESCRIPT = [".ts", ".tsx", ".js", ".mjs", ".cjs"] as const;
 const MANIFESTE = ["Cargo.toml", "package.json"] as const;
 
 /**

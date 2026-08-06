@@ -41,10 +41,10 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Clippy (Invarianten 2, 3 und 7)
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Tests und Golden-Master
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
 
   typescript:
     name: TypeScript
@@ -59,8 +59,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
 
-      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm install --frozen-lockfile
 
       - name: Typprüfung
         run: pnpm -r --stream typecheck
@@ -84,8 +85,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
 
-      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm install --frozen-lockfile
 
       - run: pnpm --filter @zugfolge/guards run build
 
@@ -105,8 +107,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: pnpm
 
-      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm install --frozen-lockfile
 
       - run: pnpm --filter @zugfolge/guards run build
 

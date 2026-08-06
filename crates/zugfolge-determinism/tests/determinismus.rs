@@ -53,7 +53,10 @@ impl DeterministicModel for OccupationBoard {
     fn apply(&mut self, at: SimTime, command: &Command) {
         match *command {
             Command::Occupy { resource, until } => {
-                let belegt = self.occupied_until.get(&resource).is_some_and(|bis| *bis > at);
+                let belegt = self
+                    .occupied_until
+                    .get(&resource)
+                    .is_some_and(|bis| *bis > at);
                 if belegt {
                     // Exakter Gleichstand wird über den veröffentlichten Seed
                     // aufgelöst (docs/infrastruktur.md 2.5) — hier in seiner
@@ -95,23 +98,41 @@ impl DeterministicModel for OccupationBoard {
 /// Ein Szenario mit zwei Zügen, die sich um zwei Ressourcen streiten.
 fn szenario(seed: WorldSeed) -> Scenario<Command> {
     Scenario::new(seed)
-        .at(SimTime::EPOCH, Command::Occupy { resource: 1, until: SimTime::from_seconds(180) })
         .at(
-            SimTime::from_seconds(30),
-            Command::Occupy { resource: 1, until: SimTime::from_seconds(240) },
+            SimTime::EPOCH,
+            Command::Occupy {
+                resource: 1,
+                until: SimTime::from_seconds(180),
+            },
         )
         .at(
             SimTime::from_seconds(30),
-            Command::Occupy { resource: 2, until: SimTime::from_seconds(300) },
+            Command::Occupy {
+                resource: 1,
+                until: SimTime::from_seconds(240),
+            },
+        )
+        .at(
+            SimTime::from_seconds(30),
+            Command::Occupy {
+                resource: 2,
+                until: SimTime::from_seconds(300),
+            },
         )
         .at(SimTime::from_seconds(120), Command::Release { resource: 1 })
         .at(
             SimTime::from_seconds(150),
-            Command::Occupy { resource: 1, until: SimTime::from_seconds(400) },
+            Command::Occupy {
+                resource: 1,
+                until: SimTime::from_seconds(400),
+            },
         )
         .at(
             SimTime::from_seconds(200),
-            Command::Occupy { resource: 2, until: SimTime::from_seconds(500) },
+            Command::Occupy {
+                resource: 2,
+                until: SimTime::from_seconds(500),
+            },
         )
 }
 
@@ -127,8 +148,9 @@ fn zwei_laeufe_ergeben_denselben_zustand() {
 
 #[test]
 fn der_seed_wirkt_auf_die_gleichstandsentscheidung() {
-    let mut hashes: Vec<StateHash> =
-        (1..=8_u64).map(|welt| lauf(WorldSeed::new(welt, 1))).collect();
+    let mut hashes: Vec<StateHash> = (1..=8_u64)
+        .map(|welt| lauf(WorldSeed::new(welt, 1)))
+        .collect();
     hashes.sort_unstable();
     hashes.dedup();
     assert!(
@@ -145,7 +167,10 @@ fn gleichstaende_treten_im_szenario_tatsaechlich_auf() {
     for (at, command) in szenario(WorldSeed::new(20_260_806, 1)).commands() {
         board.apply(*at, command);
     }
-    assert!(!board.tiebreak_draws.is_empty(), "im Szenario gab es keinen Gleichstand");
+    assert!(
+        !board.tiebreak_draws.is_empty(),
+        "im Szenario gab es keinen Gleichstand"
+    );
     assert!(board.granted > 0);
 }
 
@@ -155,11 +180,35 @@ fn einfuegereihenfolge_veraendert_den_zustand_nicht() {
     // abhängen, in welcher Reihenfolge unabhängige Ressourcen belegt wurden.
     let seed = WorldSeed::new(5, 2);
     let vorwaerts = Scenario::new(seed)
-        .at(SimTime::EPOCH, Command::Occupy { resource: 7, until: SimTime::from_seconds(60) })
-        .at(SimTime::EPOCH, Command::Occupy { resource: 3, until: SimTime::from_seconds(90) });
+        .at(
+            SimTime::EPOCH,
+            Command::Occupy {
+                resource: 7,
+                until: SimTime::from_seconds(60),
+            },
+        )
+        .at(
+            SimTime::EPOCH,
+            Command::Occupy {
+                resource: 3,
+                until: SimTime::from_seconds(90),
+            },
+        );
     let rueckwaerts = Scenario::new(seed)
-        .at(SimTime::EPOCH, Command::Occupy { resource: 3, until: SimTime::from_seconds(90) })
-        .at(SimTime::EPOCH, Command::Occupy { resource: 7, until: SimTime::from_seconds(60) });
+        .at(
+            SimTime::EPOCH,
+            Command::Occupy {
+                resource: 3,
+                until: SimTime::from_seconds(90),
+            },
+        )
+        .at(
+            SimTime::EPOCH,
+            Command::Occupy {
+                resource: 7,
+                until: SimTime::from_seconds(60),
+            },
+        );
 
     assert_eq!(
         run::<OccupationBoard, _>(&vorwaerts, OccupationBoard::new),
@@ -171,5 +220,8 @@ fn einfuegereihenfolge_veraendert_den_zustand_nicht() {
 fn golden_master_haelt_ueber_plattformen() {
     // Der eigentliche Beweis von M0.2: Dieser Hash ist auf Linux und auf
     // Windows derselbe, und er bleibt es über die Zeit.
-    assert_golden(golden_path!("occupation-board"), lauf(WorldSeed::new(20_260_806, 1)));
+    assert_golden(
+        golden_path!("occupation-board"),
+        lauf(WorldSeed::new(20_260_806, 1)),
+    );
 }

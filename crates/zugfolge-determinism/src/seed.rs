@@ -92,7 +92,10 @@ impl WorldSeed {
 
     /// Derselbe Weltanteil, aber die angegebene Periode.
     pub const fn for_period(self, period: u32) -> Self {
-        Self { world: self.world, period }
+        Self {
+            world: self.world,
+            period,
+        }
     }
 
     /// Der Zufallsstrom eines benannten Substreams.
@@ -110,7 +113,11 @@ impl WorldSeed {
         hasher.update(SUBSTREAM_DOMAIN);
         hasher.update(self.world.to_be_bytes());
         hasher.update(self.period.to_be_bytes());
-        hasher.update(u64::try_from(name.len()).expect("Name passt in 64 Bit").to_be_bytes());
+        hasher.update(
+            u64::try_from(name.len())
+                .expect("Name passt in 64 Bit")
+                .to_be_bytes(),
+        );
         hasher.update(name.as_bytes());
         let digest = hasher.finalize();
 
@@ -134,7 +141,11 @@ mod tests {
     #[test]
     fn namen_sind_eindeutig() {
         let namen: BTreeSet<&str> = Substream::ALL.iter().map(|s| s.name()).collect();
-        assert_eq!(namen.len(), Substream::ALL.len(), "zwei Ströme teilen sich einen Namen");
+        assert_eq!(
+            namen.len(),
+            Substream::ALL.len(),
+            "zwei Ströme teilen sich einen Namen"
+        );
     }
 
     #[test]
@@ -148,9 +159,15 @@ mod tests {
     #[test]
     fn stroeme_sind_untereinander_verschieden() {
         let seed = WorldSeed::new(42, 3);
-        let werte: BTreeSet<Vec<u64>> =
-            Substream::ALL.iter().map(|&s| erste_werte(seed, s)).collect();
-        assert_eq!(werte.len(), Substream::ALL.len(), "zwei Ströme laufen synchron");
+        let werte: BTreeSet<Vec<u64>> = Substream::ALL
+            .iter()
+            .map(|&s| erste_werte(seed, s))
+            .collect();
+        assert_eq!(
+            werte.len(),
+            Substream::ALL.len(),
+            "zwei Ströme laufen synchron"
+        );
     }
 
     #[test]
@@ -176,12 +193,18 @@ mod tests {
         // Das ist der eigentliche Grund für die Ableitung über den Namen:
         // Ein zusätzlicher Strom darf keine bestehende Welt verändern.
         let seed = WorldSeed::new(42, 3);
-        let vorher: Vec<Vec<u64>> = Substream::ALL.iter().map(|&s| erste_werte(seed, s)).collect();
+        let vorher: Vec<Vec<u64>> = Substream::ALL
+            .iter()
+            .map(|&s| erste_werte(seed, s))
+            .collect();
 
         let mut neuer = seed.named_substream("weather");
         let _ = neuer.next_u64();
 
-        let nachher: Vec<Vec<u64>> = Substream::ALL.iter().map(|&s| erste_werte(seed, s)).collect();
+        let nachher: Vec<Vec<u64>> = Substream::ALL
+            .iter()
+            .map(|&s| erste_werte(seed, s))
+            .collect();
         assert_eq!(vorher, nachher);
     }
 

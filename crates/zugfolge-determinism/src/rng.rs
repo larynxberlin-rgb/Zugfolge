@@ -148,7 +148,10 @@ mod tests {
             let index = usize::try_from(rng.below(3)).expect("kleiner Index");
             gesehen[index] = true;
         }
-        assert!(gesehen.iter().all(|&b| b), "below(3) erreicht nicht alle Werte");
+        assert!(
+            gesehen.iter().all(|&b| b),
+            "below(3) erreicht nicht alle Werte"
+        );
     }
 
     #[test]

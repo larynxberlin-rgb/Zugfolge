@@ -55,7 +55,9 @@ impl StateHash {
         let mut bytes = [0_u8; 32];
         for (index, byte) in bytes.iter_mut().enumerate() {
             let start = index * 2;
-            let paar = text.get(start..start + 2).ok_or(StateHashError::Length(text.len()))?;
+            let paar = text
+                .get(start..start + 2)
+                .ok_or(StateHashError::Length(text.len()))?;
             *byte = u8::from_str_radix(paar, 16).map_err(|_| StateHashError::Digit(paar.into()))?;
         }
         Ok(Self(bytes))
@@ -88,7 +90,10 @@ impl fmt::Display for StateHashError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Length(laenge) => {
-                write!(formatter, "Zustands-Hash braucht 64 Hexziffern, hat aber {laenge}")
+                write!(
+                    formatter,
+                    "Zustands-Hash braucht 64 Hexziffern, hat aber {laenge}"
+                )
             }
             Self::Digit(paar) => write!(formatter, "'{paar}' ist keine Hexzahl"),
         }
@@ -295,7 +300,10 @@ mod tests {
     fn hex_meldet_fehler() {
         assert_eq!(StateHash::parse_hex("abc"), Err(StateHashError::Length(3)));
         let falsch = "z".repeat(64);
-        assert!(matches!(StateHash::parse_hex(&falsch), Err(StateHashError::Digit(_))));
+        assert!(matches!(
+            StateHash::parse_hex(&falsch),
+            Err(StateHashError::Digit(_))
+        ));
     }
 
     #[test]
