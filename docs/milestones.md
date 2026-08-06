@@ -12,8 +12,11 @@ einem Spielerlebnis, nicht einer technischen Eigenschaft.
 
 Jeder Teilabschnitt trägt einen **Status**: `offen` (noch nicht begonnen),
 `in Arbeit` oder `erledigt`. Ein Punkt gilt erst als `erledigt`, wenn sein
-Ergebnis vorzeigbar ist. Bislang erledigt: **M0.1** — die ADRs zu E1–E20, siehe
-[`adr/`](adr/README.md).
+Ergebnis vorzeigbar ist. Bislang erledigt:
+
+- **M0.1** — die ADRs zu E1–E20, siehe [`adr/`](adr/README.md);
+- **M0.2** — Monorepo, CI, Determinismus-Testharnisch, Wächter und Glossar,
+  siehe [`monorepo.md`](monorepo.md) und [`glossar.md`](glossar.md).
 
 ---
 
@@ -22,7 +25,7 @@ Ergebnis vorzeigbar ist. Bislang erledigt: **M0.1** — die ADRs zu E1–E20, si
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
 | 0.1 | ADRs schriftlich festhalten — E1 bis E16 sind entschieden und werden dokumentiert, nicht neu verhandelt | S | erledigt |
-| 0.2 | Monorepo, CI, Determinismus-Testharnisch, Domänenglossar, **CI-Wächter gegen Payment-Tier-Felder**, **Lizenz-Scan der Abhängigkeiten** | S | offen |
+| 0.2 | Monorepo, CI, Determinismus-Testharnisch, Domänenglossar, **CI-Wächter gegen Payment-Tier-Felder**, **Lizenz-Scan der Abhängigkeiten** | S | erledigt |
 | 0.3 | **Wegwerf-Spike Sperrzeitentreppe:** 3 Betriebsstellen, eine zweigleisige Strecke plus eingleisiger Ast, zwei Züge, Konfliktprüfung, Bildfahrplan als Bild | M | offen |
 | 0.4 | Rechte-Gate: dokumentierter Freigabestatus je Datenquelle, inklusive Trassenfinder-Nutzungsbedingungen | S | offen |
 | 0.5 | Lizenz und Rechteschutz: `LICENSE`, CLA, Schichtentrennung von Code, Daten und Marke, Markenanmeldung anstoßen | S | offen |

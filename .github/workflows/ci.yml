@@ -1,0 +1,134 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "m0.*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    # Zwei Betriebssysteme sind hier kein Luxus: Der Golden-Master des
+    # Determinismus-Tests muss auf beiden derselbe sein. Genau das ist der
+    # Beweis von M0.2.
+    name: Rust und Determinismus (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Formatierung
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo fmt --all --check
+
+      - name: Clippy (Invarianten 2, 3 und 7)
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Tests und Golden-Master
+        run: cargo test --workspace --locked
+
+  typescript:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typprüfung
+        run: pnpm -r --stream typecheck
+
+      - name: Bau
+        run: pnpm -r --stream build
+
+      - name: Tests
+        run: pnpm -r --stream test
+
+  guards:
+    name: Wächter (harte Invarianten)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter @zugfolge/guards run build
+
+      - name: Wächter laufen lassen
+        run: pnpm --filter @zugfolge/guards run guards
+
+  licenses-node:
+    name: Lizenz-Scan (Node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter @zugfolge/guards run build
+
+      - name: Lizenzen auswerten
+        run: pnpm licenses list --json | node tools/guards/dist/licenses-cli.js --report=lizenzbericht.md
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lizenzbericht-node
+          path: lizenzbericht.md
+          if-no-files-found: warn
+
+  licenses-rust:
+    name: Lizenz-Scan (Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check bans licenses sources advisories

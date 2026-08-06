@@ -1,0 +1,10 @@
+# Zeilenenden sind eine Determinismusfrage, keine Geschmacksfrage: Golden-Master-
+# Dateien und Spezifikationsdateien werden auf Linux und Windows gelesen und
+# müssen byteweise gleich sein.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.pbf binary
+*.pmtiles binary
+*.tif binary

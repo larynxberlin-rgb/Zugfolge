@@ -1,0 +1,116 @@
+{
+  "domains": [
+    {
+      "id": "determinism-core",
+      "title": "Determinismus-Testharnisch (M0.2)",
+      "status": "active",
+      "paths": ["crates/zugfolge-determinism/**"],
+      "rules": ["no-floats", "no-wallclock", "no-random", "no-unordered-iteration", "no-db-in-core"]
+    },
+    {
+      "id": "simulation-core",
+      "title": "Simulationskern — Sperrzeiten, Fahrdynamik, Zustand (M0.3, M3, M4)",
+      "status": "planned",
+      "paths": ["crates/zugfolge-sim/**", "crates/zugfolge-conflict/**", "spikes/**"],
+      "rules": [
+        "no-payment-tier",
+        "no-floats",
+        "no-wallclock",
+        "no-random",
+        "no-unordered-iteration",
+        "no-db-in-core"
+      ]
+    },
+    {
+      "id": "path-allocation",
+      "title": "Trassen-Planner und Vergabeverfahren (M3)",
+      "status": "planned",
+      "paths": ["crates/zugfolge-planner/**", "packages/path-allocation/**"],
+      "rules": [
+        "no-payment-tier",
+        "no-floats",
+        "no-wallclock",
+        "no-random",
+        "no-unordered-iteration"
+      ]
+    },
+    {
+      "id": "dispatch",
+      "title": "Live-Disposition und Regel-Engine des Betriebsprogramms (M4.4, M7)",
+      "status": "planned",
+      "paths": ["crates/zugfolge-rules/**", "packages/dispatch/**"],
+      "rules": [
+        "no-payment-tier",
+        "no-floats",
+        "no-wallclock",
+        "no-random",
+        "no-unordered-iteration"
+      ]
+    },
+    {
+      "id": "demand",
+      "title": "Nachfrage- und Zugwahlmodell (M10, M11)",
+      "status": "planned",
+      "paths": ["packages/demand/**", "crates/zugfolge-demand/**"],
+      "rules": ["no-payment-tier", "no-wallclock", "no-random"]
+    },
+    {
+      "id": "economy",
+      "title": "Wirtschaft, Ledger, Verträge, Ausschreibungen (M2.4, M6)",
+      "status": "planned",
+      "paths": ["packages/economy/**", "packages/tender/**", "apps/economy-service/**"],
+      "rules": ["no-payment-tier", "no-wallclock", "no-random"]
+    },
+    {
+      "id": "infra-pipeline",
+      "title": "Infra-Release-Pipeline — der einzige Ort mit Gleitkommarechnung (M1)",
+      "status": "planned",
+      "paths": ["crates/zugfolge-infra/**"],
+      "rules": ["no-payment-tier", "no-wallclock", "no-random", "no-unordered-iteration"]
+    }
+  ],
+  "brandTokenHashes": [],
+  "allowedLicenses": [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BlueOak-1.0.0",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib"
+  ],
+  "deniedLicenses": [
+    "AGPL-1.0-only",
+    "AGPL-1.0-or-later",
+    "AGPL-3.0-only",
+    "AGPL-3.0-or-later",
+    "GPL-2.0-only",
+    "GPL-2.0-or-later",
+    "GPL-3.0-only",
+    "GPL-3.0-or-later",
+    "SSPL-1.0"
+  ],
+  "ignore": [
+    ".git",
+    ".git/**",
+    "**/node_modules",
+    "**/node_modules/**",
+    "**/target",
+    "**/target/**",
+    "**/dist",
+    "**/dist/**",
+    ".pnpm-store",
+    ".pnpm-store/**",
+    "pnpm-lock.yaml",
+    "Cargo.lock",
+    "tools/guards/guards.config.json",
+    "tools/guards/src/rules/**",
+    "tools/guards/src/**/*.test.ts"
+  ]
+}
