@@ -36,6 +36,13 @@ jobs:
         with:
           node-version: 24
 
+      - name: Alte Sperrdateien verwerfen
+        # Dieser Workflow erzeugt die Sperrdateien **neu**. Eine bestehende
+        # Datei einfach fortzuschreiben führt dazu, dass alte Auflösungen
+        # überleben — etwa eine Paketversion, die eine später eingeführte
+        # Lieferkettenregel gar nicht mehr zuließe.
+        run: rm -f Cargo.lock pnpm-lock.yaml
+
       - name: Cargo.lock erzeugen
         run: cargo fetch
 
