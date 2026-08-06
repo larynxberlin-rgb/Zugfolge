@@ -51,6 +51,21 @@ merke_pfad() {
   done
 }
 
+# Nimmt die eigenen Installationsorte in den PATH auf, sofern vorhanden.
+#
+# Ohne das fände ein zweiter Lauf seine eigene Installation nicht wieder: Eine
+# frische, nicht-interaktive Shell liest weder .bashrc noch .profile, und das
+# Skript würde Node und pnpm jedes Mal neu herunterladen.
+pfad_voranstellen() {
+  local ordner="$1"
+  [ -d "$ordner" ] || return 0
+  case ":$PATH:" in
+    *":$ordner:"*) ;;
+    *) PATH="$ordner:$PATH" ;;
+  esac
+  export PATH
+}
+
 architektur() {
   case "$(uname -m)" in
     x86_64 | amd64) printf 'x64' ;;
@@ -71,6 +86,11 @@ info "Arbeitsbaum: $WURZEL"
 mkdir -p "$LOKAL/bin"
 export PATH="$LOKAL/bin:$PATH"
 merke_pfad 'export PATH="$HOME/.local/bin:$PATH"'
+
+# Was ein früherer Lauf schon hingelegt hat, wieder auffindbar machen.
+pfad_voranstellen "$LOKAL/node/bin"
+pfad_voranstellen "$HOME/.local/share/pnpm"
+pfad_voranstellen "$HOME/.cargo/bin"
 
 # --------------------------------------------------------------------------
 schritt "Rust"
