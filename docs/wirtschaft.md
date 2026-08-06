@@ -44,7 +44,174 @@ ausgeglichenen Ledger geführt. Alle Balancewerte liegen in einem versionierten
   vertrauliche Unternehmensdaten werden nicht nachgebildet.
 - Kredite, Restrukturierung und Insolvenz gehören zur Wirtschaft.
 
-## 3. Eigenbetrieb — Ausfallsicherung des Aufgabenträgers (E7)
+## 3. Vergabezyklus und Betriebsübergang (E18)
+
+Vertragslaufzeiten skalieren mit der Weltlaufzeit — Werte und Herleitung in
+`produkt.md` 6.1. Der **Ablauf** ist in jeder Welt derselbe.
+
+### 3.1 Der Zyklus
+
+```text
+laufender Verkehrsvertrag des Altbetreibers
+│
+├─ Ausschreibungsvorlauf   (beginnt eine Periode vor Vertragsende)
+│    Leistungsbeschreibung und Auskömmlichkeitsgrenze veröffentlicht,
+│    Angebotsfrist, Wertung, Zuschlag
+│
+├─ Mobilisierungsphase     (Rest der laufenden Periode)
+│    Gewinner sichert Fahrzeuge und Personal, beantragt Trassen
+│    ► Altbetreiber fährt weiter — mit vollen Pflichten und voller Pönale
+│
+└─ Betriebsübergang        (ausschließlich zum Fahrplanstichtag)
+     Trassen gehen über, Verkehrsvertrag wechselt
+```
+
+### 3.2 Die Regeln, die das trägt
+
+**Der Altbetreiber fährt bis zur letzten Sekunde mit unveränderten Pflichten.**
+Pönalen, Qualitätsanforderungen und Nachweispflichten gelten bis zum Tag des
+Übergangs. Ohne diese Regel hätte jeder unterlegene Betreiber einen Anreiz, die
+letzten Wochen schleifen zu lassen — und die Fahrgäste zahlten die Zeche für
+einen Vergabewettbewerb. Die Präqualifikation merkt sich das Endverhalten.
+
+**Der Übergang findet nur zum Fahrplanstichtag statt**, nie mitten in einer
+Periode. Real so, und technisch sauber, weil Trassen ohnehin periodenweise
+vergeben werden.
+
+**Gewinnt der Bisherige, entfällt die Mobilisierung.** Kein Fahrzeug- oder
+Personalwechsel, nahtloser Übergang, keine Umstellungskosten. Das ist ein echter
+Amtsinhabervorteil — real ebenso — und belohnt gute Leistung mit Stabilität statt
+mit einem Bonus.
+
+**Die Mobilisierung ist nachweispflichtig.** Der Gewinner muss vor dem Stichtag
+belegen, dass Fahrzeuge, Personal und Trassen tatsächlich vorhanden sind.
+Schafft er es nicht:
+
+- der Betriebsübergang findet nicht statt;
+- der **Eigenbetrieb** übernimmt (Abschnitt 4);
+- der Gewinner zahlt Vertragsstrafe und trägt einen Präqualifikationsschaden.
+
+Das ist die Sperre gegen Dumping-Gebote von Spielern ohne Substanz. Ohne sie
+wäre die günstigste Strategie, alles zu bieten und später zu sehen, was daraus
+wird.
+
+**Vertragsende durch Weltende ist kein Scheitern.** Läuft eine Welt aus,
+enden die Verträge regulär — keine Insolvenz, keine Pönale, keine
+Präqualifikationsfolge.
+
+### 3.3 Erstvergabe beim Weltstart
+
+**Beim Weltstart hält der Eigenbetrieb sämtliche Lose, und es läuft keine
+einzige Ausschreibung.** Sie werden erst nach und nach freigegeben.
+
+Der Grund: Startete alles gleichzeitig, wäre das Netz binnen einer Periode
+verteilt — und danach gäbe es wochenlang nichts zu bieten, weil die
+Erstverträge erst später auslaufen. Wer in dieser Zeit dazustößt, fände eine
+Welt ohne Einstieg vor.
+
+**Der Vergabekalender**, erzeugt bei Weltstart:
+
+```text
+1. Alle Lose starten beim Eigenbetrieb.
+2. Vergabefenster werden GLEICHMÄSSIG über die erste Welthälfte verteilt.
+3. Lose werden nach Größe und Attraktivität in Schichten geteilt.
+4. Innerhalb jeder Schicht werden sie den Fenstern zufällig zugeordnet
+   — eine Permutation, keine Ziehung.
+5. Jedes Los wird mit Vorlauf angekündigt, bevor die Angebotsfrist öffnet.
+```
+
+Drei Eigenschaften sind dabei nicht verhandelbar:
+
+**Permutation statt Ziehung.** Würde man je Periode und Los würfeln, entstünden
+Häufungen — fünf Lose in einer Periode, keines in der nächsten. Genau das soll
+der Mechanismus verhindern. Die Fenster stehen deshalb fest und gleichmäßig; nur
+die **Zuordnung** ist zufällig.
+
+**Geschichtet, damit es keinen Jackpot gibt.** Fielen die drei attraktivsten
+Lose zufällig in das erste Fenster, hätten die Spieler der ersten Tage einen
+kaum aufholbaren Vorsprung. Die Schichtung sorgt dafür, dass jedes Fenster eine
+Mischung aus großen und kleinen Losen enthält — jedes lohnt sich, keines
+entscheidet die Welt.
+
+**Deterministisch aus dem Weltseed**, Substream `tender_release`. Der Kalender
+ist damit reproduzierbar und im Nachhinein prüfbar. Kein `Math.random()`.
+
+### 3.4 Der Kalender ist öffentlich
+
+> **Zufällig ist, wie der Vergabekalender zustande kam — nicht, ob man ihn
+> kennt.** Er wird bei Weltstart vollständig veröffentlicht.
+
+Das ist zunächst kontraintuitiv, aber zwingend. Erschienen Ausschreibungen zu
+unangekündigten Zeitpunkten, hätte derjenige einen Vorteil, der als Erster
+nachschaut — und **Zeitverfügbarkeit wäre wieder ein Wettbewerbsvorteil**, genau
+das, was das Betriebsprogramm (E2) verhindern soll.
+
+Die Veröffentlichung ist zudem real: Aufgabenträger geben ihre Vergabekalender
+Jahre im Voraus bekannt, und vor jeder Ausschreibung steht ohnehin eine
+Vorinformation. Sie schafft Planungssicherheit — wer weiß, dass ein großes Los
+in drei Perioden kommt, kann Kapital, Fahrzeuge und Personal darauf ausrichten.
+Das ist Strategie, kein Informationsleck.
+
+### 3.5 Das Verfahren ist kurz und abstrahiert (E19)
+
+**Vorlauf ist nicht Wartezeit.** Der Ausschreibungsvorlauf von einer Periode
+beschreibt, wie früh ein Los angekündigt wird — nicht, wie lange der Spieler
+nichts tun kann. Die eigentliche Angebotsfrist ist kurz, und die Zeit danach ist
+aktive Mobilisierung, keine Warteschleife.
+
+```text
+Vorinformation     Los angekündigt, Leistungsbeschreibung einsehbar
+Angebotsfrist      3–7 Tage Echtzeit  ·  kleine Lose 24–48 Stunden
+Zuschlag           sofort bei Fristende, deterministisch gewertet
+Mobilisierung      bis zum Fahrplanstichtag — Fahrzeuge, Personal, Trassen
+Betriebsaufnahme   Fahrplanstichtag
+```
+
+Die **Schnellvergabe kleiner Lose** ist Absicht: Ein neuer Spieler soll seine
+erste eigene Ausschreibung in Tagen gewinnen können, nicht in Wochen. Das
+Startpaket (→ `produkt.md` 3) überbrückt die Zeit davor, damit ab Minute eins
+Züge fahren.
+
+**Die Leistungsbeschreibung ist eine Karte, kein Aktenordner** — in einer halben
+Minute lesbar: Linien, Zugkm je Periode, Takt, Betriebszeiten, Mindest-
+anforderungen an die Fahrzeuge, Laufzeit, Auskömmlichkeitsgrenze, Eckwerte für
+Bonus und Pönale. Alles Weitere liegt aufgeklappt darunter.
+
+**Das Angebot hat wenige Felder**, nicht Dutzende:
+
+| Feld | Wirkung |
+|------|---------|
+| Bestellerentgelt je Zugkm | der zentrale Hebel, muss unter der Auskömmlichkeitsgrenze liegen |
+| Fahrzeugkonzept | Formation und Ausstattung (→ `betrieb.md` 3) — erfüllt die Mindestanforderungen oder übertrifft sie |
+| Optionale Qualitätszusagen | zusätzliche Halte, höhere Pünktlichkeitsgarantie, mehr Sitzplätze — bringen Wertungspunkte und kosten Geld |
+
+**Die Wertung ist vor Abgabe sichtbar.** Der Spieler sieht die Aufschlüsselung
+seines *eigenen* Angebots — Preispunkte, Qualitätspunkte, Gesamtwertung — bevor
+er einreicht. Das lehrt das System nebenbei und ersetzt jede Anleitung. Angebote
+der Konkurrenz bleiben selbstverständlich verborgen.
+
+**Angebotsassistent** als Automatikstufe (→ `produkt.md` 5): Der Spieler gibt
+eine Zielmarge vor, das System rechnet den passenden Preis und zeigt die
+erwartete Wertung. Wer selbst rechnet, holt mehr heraus — dasselbe Muster wie
+überall sonst.
+
+**Nicht modelliert**, weil ohne Entscheidung: Teilnahmewettbewerb, Eignungs-
+formblätter, Nebenangebote, Aufklärungsgespräche, Nachprüfungsverfahren. Die
+Eignung wird über die Präqualifikation abgebildet, die ohnehin mitläuft.
+
+### 3.6 Überlappung von Erst- und Wiedervergabe
+
+Die Erstvergabe läuft über die erste Welthälfte, die ersten Verträge laufen nach
+zwei bis drei Perioden aus. Beide Ströme **überlappen sich damit von selbst** —
+während die letzten Lose erstmals vergeben werden, kommen die frühesten schon
+zur Wiedervergabe. Dadurch gibt es zu keinem Zeitpunkt eine Welt ohne offene
+Ausschreibung, und ein später dazugestoßener Spieler findet immer einen Einstieg.
+
+Diese Überlappung ist eine **Prüfbedingung beim Weltentwurf**, keine Hoffnung:
+Vergabekalender und Vertragslaufzeiten werden gegeneinander geprüft, bevor eine
+Welt startet.
+
+## 4. Eigenbetrieb — Ausfallsicherung des Aufgabenträgers (E7)
 
 **Wann er greift**
 
@@ -85,17 +252,18 @@ derselben Region fällt kleiner aus oder entfällt. Kollektiver Boykott schadet
 allen Beteiligten, ganz ohne künstliche Anti-Absprache-Mechanik.
 
 **Weltstart.** Wenn eine Welt öffnet, hält der Eigenbetrieb das **gesamte**
-SPNV-Netz der Region. Die Welt sieht ab Sekunde eins aus wie eine echte
-Eisenbahn, und die Spieler erobern sie Ausschreibung für Ausschreibung. Das löst
-das schwierigste Problem eines persistenten Spiels — den leeren ersten Tag —
-ohne einen einzigen künstlichen Konkurrenten.
+SPNV-Netz der Region, und es läuft zunächst keine einzige Ausschreibung. Die
+Welt sieht ab Sekunde eins aus wie eine echte Eisenbahn, und die Spieler erobern
+sie Ausschreibung für Ausschreibung nach dem veröffentlichten Vergabekalender
+(3.3). Das löst das schwierigste Problem eines persistenten Spiels — den leeren
+ersten Tag — ohne einen einzigen künstlichen Konkurrenten.
 
 Fernverkehr und Güterverkehr erhalten bewusst **keine** Ausfallsicherung. Beide
 sind eigenwirtschaftlich: fährt niemand, fährt niemand. Unerfüllte Nachfrage
 bleibt aber als offener Marktbedarf sichtbar — als Signal an die Spieler, nicht
 als Füllmasse.
 
-## 4. Insolvenz als Totalverlust (E8)
+## 5. Insolvenz als Totalverlust (E8)
 
 Scheitern beendet das EVU vollständig: Fahrzeuge werden verwertet, Verträge
 gekündigt, Trassen freigegeben, der Restwert geht an die Gläubiger. Der Account
@@ -123,7 +291,7 @@ Vertrag sein. Zwei Sperren:
   Das entspricht der realen Eignungsprüfung im Vergabeverfahren und schließt die
   Lücke, ohne eine künstliche Strafe zu erfinden.
 
-## 5. Kooperation zwischen EVU
+## 6. Kooperation zwischen EVU
 
 Kein Gilden- oder Allianzsystem, sondern spielweltseitig durchgesetzte Verträge
 mit Laufzeit, Entgelt und Pönale:

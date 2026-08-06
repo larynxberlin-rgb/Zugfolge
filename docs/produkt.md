@@ -6,7 +6,10 @@ Zugfolge ist ein persistentes, serverautoritäres Browsergame: eine
 Eisenbahn-Unternehmenssimulation mit hohem betrieblichem, infrastrukturellem und
 wirtschaftlichem Realismus.
 
-- Öffentliche Welten laufen dauerhaft und ohne Wipes in 1:1-Echtzeit.
+- Öffentliche Welten laufen in 1:1-Echtzeit und werden **niemals
+  zurückgesetzt**. Sie laufen ihre von Beginn an angekündigte Laufzeit und enden
+  mit einer Schlusswertung — oder laufen unbefristet weiter. Kein Wipe, aber ein
+  definiertes Ende (siehe 6.).
 - Alle Züge **im Wettbewerb** gehören Spielern. Einzige Ausnahme ist der
   Eigenbetrieb des Aufgabenträgers als Ausfallsicherung (→ `wirtschaft.md`) —
   kein Wettbewerber, sondern eine sichtbare Rückfallebene.
@@ -140,7 +143,75 @@ etwas dünnerer Marge.
 Entscheidend ist nicht, dass ein Tag in Minuten erledigt sein *soll*, sondern
 dass ein **verpasster Tag nicht bestraft**.
 
-## 6. Gestaltungsprinzipien gegen Strategie-Monokultur (E11)
+## 6. Weltlaufzeit und Weltende (E18)
+
+Eine Welt läuft **6 bis 18 Monate**; daneben gibt es **unbefristete Welten**.
+Die Laufzeit steht ab Weltstart fest und ist öffentlich sichtbar.
+
+### 6.1 Alles skaliert mit — sonst passt nichts zusammen
+
+Eine feste Fahrplanperiode von acht Wochen ergäbe in einer Sechsmonatswelt
+gerade drei Perioden. Damit wäre der Saison-Rhythmus nicht spürbar und eine
+Ausschreibung nicht einmal vollständig durchlaufbar. **Die Periodenlänge ist
+deshalb ein Weltparameter, keine Konstante.**
+
+Zwei Zielgrößen halten das Spielgefühl über alle Weltlängen gleich:
+
+- **rund 8 bis 11 Fahrplanperioden je Welt** — der Saison-Rhythmus wird
+  mehrfach erlebt;
+- **rund 3 bis 4 Vergabezyklen je Welt** — Ausschreibungen sind ein wiederholtes
+  Ereignis, aber Verträge fühlen sich stabil an.
+
+| Weltlaufzeit | Fahrplanperiode | Vertragslaufzeit | Perioden gesamt | Vergabezyklen |
+|--------------|-----------------|------------------|-----------------|---------------|
+| 6 Monate | 3 Wochen | 2 Perioden (6 Wochen) | ~8 | ~4 |
+| 12 Monate | 5 Wochen | 3 Perioden (15 Wochen) | ~10 | ~3,5 |
+| 18 Monate | 7 Wochen | 3 Perioden (21 Wochen) | ~11 | ~3,7 |
+| unbefristet | 8 Wochen | 4–6 Perioden (8–11 Monate) | fortlaufend | fortlaufend |
+
+```text
+WorldProfile
+  weltlaufzeit          6–18 Monate | unbefristet
+  fahrplanperiode       Wochen, abgeleitet (3–8)
+  vertragslaufzeit      Perioden, abgeleitet (min. 2)
+  ausschreibungsvorlauf Perioden, abgeleitet (min. 1)
+  vertragsstaffelung    Verteilung der Vertragsenden über die Laufzeit
+```
+
+Abgeleitete Werte sind je Welt einsehbar und ändern sich während der Laufzeit
+nicht. Die unbefristete Welt behält die acht Wochen — den Rhythmus, für den das
+Konzept ursprünglich entworfen wurde.
+
+### 6.2 Durchgehend offener Markt
+
+Zwei Mechanismen sorgen dafür, dass zu **jedem** Zeitpunkt einer Welt irgendwo
+eine Ausschreibung läuft — sonst gäbe es tote Wochen, in denen Neueinsteiger
+keinen Einstieg finden:
+
+- **Erstvergabe nach veröffentlichtem Vergabekalender.** Beim Weltstart hält der
+  Eigenbetrieb alle Lose; sie werden über die erste Welthälfte in gleichmäßigen
+  Fenstern freigegeben, die Zuordnung geschichtet zufällig. Details:
+  `wirtschaft.md` 3.3.
+- **Gestaffelte Vertragsenden.** Liefen alle Verträge gleichzeitig aus, gäbe es
+  ein riesiges Vergabeereignis und danach monatelang nichts.
+
+Beide Ströme überlappen sich: Während die letzten Lose erstmals vergeben werden,
+kommen die frühesten schon zur Wiedervergabe. Das ist eine Prüfbedingung beim
+Weltentwurf, keine Hoffnung.
+
+### 6.3 Weltende
+
+- Die letzte Fahrplanperiode wird nicht mehr ausgeschrieben; laufende Verträge
+  laufen regulär aus. Ein Vertragsende durch Weltende ist **keine** Insolvenz.
+- Es gibt eine **Schlusswertung**, aber bewusst keinen einzigen Sieger (E11):
+  mehrere Ranglisten für Betriebsleistung, Pünktlichkeit, Ergebnis und
+  Marktanteil.
+- Die Betriebshistorie bleibt als Archiv einsehbar; ein Replay-Export der
+  eigenen Welt ist möglich.
+- **Die Präqualifikation stirbt mit der Welt.** Jede neue Welt startet für alle
+  bei null — auch für den, der in der letzten insolvent ging.
+
+## 7. Gestaltungsprinzipien gegen Strategie-Monokultur (E11)
 
 Die verbreitetste Schwäche wirtschaftlicher Verkehrssimulationen: Der Erfolg
 einer Linie kollabiert auf eine einzige Kennzahl. Sobald das passiert, ist die
@@ -162,3 +233,33 @@ ausgeschlossen — durch die Domäne, nicht durch Balancing.
 pausierbares Echtzeitspiel bestraft sonst automatisch jeden, der nicht täglich
 einloggt. Das Betriebsprogramm ist deshalb kein Komfortfeature, sondern eine
 Fairnessbedingung.
+
+## 8. Realismus dient dem Spiel, nicht umgekehrt (E19)
+
+Die Spieler sind interessierte Laien, keine Betriebsplaner. Realismus ist das
+Mittel, mit dem interessante Entscheidungen entstehen — nicht der Zweck.
+
+> **Der Test:** Erzeugt dieser Schritt eine Entscheidung, die der Spieler
+> interessant findet? Wenn nein, wird er abstrahiert oder weggelassen.
+
+Das Grundprinzip muss stimmen; die Verwaltung drumherum nicht. Ein Verfahren
+originalgetreu nachzubauen, das im Spiel nur aus Bestätigungsklicks besteht,
+macht das Spiel nicht realistischer, sondern nur zäher.
+
+**Was daraus schon folgt:** Rangieren ist automatisiert (E12) — der Zeitbedarf
+ist betrieblich relevant, die Ausführung erzeugt keine Entscheidung.
+Schienenersatzverkehr ist Kostenposten und Bewertungsfaktor, kein Fuhrpark
+(1.4). Personal ist ein Qualifikationspool, keine Sammlung von Biografien (→
+`betrieb.md`).
+
+**Wo es am wichtigsten ist: die Ausschreibung.** Ein reales Vergabeverfahren
+besteht zu weiten Teilen aus Formalia — Teilnahmewettbewerb, Eignungsnachweise,
+Formblätter, Aufklärungsgespräche, Nachprüfungsverfahren. Nichts davon erzeugt
+eine interessante Entscheidung. Die Entscheidung ist: *Was verlangt der
+Aufgabenträger, was biete ich, kann ich es leisten, und zu welchem Preis?* Nur
+das wird modelliert. Details: `wirtschaft.md` 3.6.
+
+**Die Gegenprobe** gehört mit dazu, damit das Prinzip nicht zur Ausrede wird:
+Sperrzeiten, Konfliktprüfung, Fahrdynamik, Umlaufbindung und Fristen werden
+**nicht** abstrahiert. Sie sind der Grund, warum das Spiel existiert. Abstrahiert
+wird Verwaltung, nicht Betrieb.

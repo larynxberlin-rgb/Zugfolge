@@ -15,7 +15,8 @@ lesen, nicht raten.
 
 | Datei | Inhalt | Lesen wenn |
 |-------|--------|------------|
-| `docs/entscheidungen.md` | E1–E16 mit voller Begründung | eine Entscheidung infrage steht oder geändert werden soll |
+| `docs/entscheidungen.md` | E1–E20 mit voller Begründung | eine Entscheidung infrage steht oder geändert werden soll |
+| `docs/adr/` | E1–E20 je als Architecture Decision Record: Kontext, Konsequenzen, Querverweise | eine Grundsatzentscheidung ausführlich nachschlagen oder eine neue festhalten |
 | `docs/produkt.md` | Produktdefinition, Oberflächen, Onboarding, Netzabgrenzung, Spielertypen, Anti-Monokultur | Produktfragen, UI, Zielgruppe, Was-gehört-dazu |
 | `docs/infrastruktur.md` | Konfliktressourcen, Trassenvergabe, Fahrplanperiode, Kapazitätsschutz, Simulation, Livemap | Solver, Sperrzeiten, Planner, Livemap |
 | `docs/betrieb.md` | Betriebsprogramm, Fahrzeuge, Personal, Versorgung, Zusatzfahrten, Störungen, Baustellenfahrplan | Disposition, Flotte, Umläufe, Wartung, Baustellen |
@@ -58,7 +59,7 @@ Begründungen: `docs/entscheidungen.md`. Änderungen dort eintragen und begründ
 |-----|--------------|
 | E1 | SPNV ist das erste vollständig spielbare Geschäftsfeld |
 | E2 | Kern-Loop ist das Betriebsprogramm (Dispo-Regelwerk), auch offline wirksam |
-| E3 | Fahrplanperiode = 8 Wochen Echtzeit als Saison-Rhythmus |
+| E3 | Fahrplanperiode ist ein Weltparameter, 3–8 Wochen (8 = unbefristete Welt) |
 | E4 | Kapazität wird aktiv gegen Landgrab geschützt |
 | E5 | Rust-Simulationskern, TypeScript-Plattform — der Schnitt folgt der Last |
 | E6 | Baureihennummern faktisch, Produkt- und Unternehmensmarken eigen |
@@ -73,6 +74,9 @@ Begründungen: `docs/entscheidungen.md`. Änderungen dort eintragen und begründ
 | E15 | Baustellen sind ein eigenes Planungsverfahren, kein bloßer Schaden |
 | E16 | Lizenz PolyForm Shield 1.0.0 — Source Available, nicht Open Source |
 | E17 | Design: Domänensprache statt Markenzitat, achromatische Marke, durchgehend dunkel |
+| E18 | Weltlaufzeit 6–18 Monate oder unbefristet; Perioden- und Vertragslängen skalieren mit |
+| E19 | Realismus dient dem Spiel — Schritte ohne Entscheidung werden abstrahiert |
+| E20 | Fahrzeuge werden konfiguriert bestellt; Werkstätten bauen den Innenraum um |
 
 ---
 

@@ -56,7 +56,75 @@ Die Regel-Engine hängt an der Dispositionsschnittstelle des Simulationskerns
   Freigabe eines nicht durchführbaren Fahrplans.
 - Sicherheits- und Offline-Disposition bleibt für alle Spieler kostenlos.
 
-## 3. Versorgung, Instandhaltung und Zusatzfahrten
+## 3. Fahrzeugkonfiguration (E20)
+
+Fahrzeuge werden beim Hersteller **konfiguriert bestellt**, nicht aus einem
+Katalog gekauft. Die Konfiguration ist eine der interessantesten Entscheidungen
+des Spiels, weil sie in drei Richtungen gleichzeitig wirkt: Kapazität,
+Fahrgastbewertung und **Betrieb**.
+
+### 3.1 Was konfiguriert wird
+
+| Merkmal | Wirkung |
+|---------|---------|
+| Sitzplätze 1. und 2. Klasse | Kapazität je Klasse; im SPNV oft klein oder ganz entfallend |
+| Bestuhlungsdichte | eng = mehr Sitze, schlechtere Bewertung; weit = weniger Sitze, bessere |
+| Sitzart und Anordnung | Reihe, Vis-à-vis, Klapp- und Stehplätze — Komfort gegen Kapazität |
+| Mehrzweckbereich | Fahrrad-, Kinderwagen- und Rollstuhlplätze; kostet Sitze, wird häufig ausgeschrieben |
+| **Türanzahl und -breite** | kürzere Haltezeit, dafür weniger Sitzplätze |
+| Toiletten, barrierefrei | Pflichtmerkmal auf längeren Laufwegen |
+| Klimatisierung, WLAN, Steckdosen, Fahrgastinformation | Ausstattungsstufen, Bewertungswirkung |
+
+### 3.2 Der Zielkonflikt ist der Kern
+
+Türen sind der wichtigste Zusammenhang und der am wenigsten offensichtliche:
+**mehr und breitere Türen verkürzen die Haltezeit**, das verbessert Fahrzeit und
+Pünktlichkeit — und kostet Sitzplätze. Damit greift die Fahrzeugkonfiguration
+direkt in die Simulation ein und ist keine Zahlenkosmetik.
+
+Daraus folgt, dass es **keine allgemein beste Konfiguration** gibt (E11): Eine
+dichte S-Bahn-Linie mit kurzen Abständen will viele Türen und Stehplätze; ein
+Regional-Express über neunzig Minuten will Sitze und Komfort. Dieselbe Baureihe
+unterschiedlich konfiguriert passt auf unterschiedliche Lose — die Flotte wird
+dadurch zum strategischen Vermögenswert statt zur Handelsware.
+
+### 3.3 Ausschreibungen geben Rahmen vor
+
+Eine Ausschreibung kann Mindestsitzplätze je Zug, einen Anteil oder Ausschluss
+der 1. Klasse, Barrierefreiheit, Rollstuhl- und Fahrradstellplätze,
+Klimatisierung oder Fahrgastinformation fordern. Wer darüber hinausgeht,
+sammelt Wertungspunkte — und zahlt dafür.
+
+### 3.4 Umbau in der Werkstatt
+
+Fahrzeuge sind **nicht** auf ihre Erstkonfiguration festgelegt. Ein Umbau kostet
+Geld und Werkstattzeit und belegt dabei eine Anlage — er läuft also durch
+dieselbe Konfliktengine wie alles andere.
+
+| Umbaubar | Baulich fest |
+|----------|--------------|
+| Bestuhlung, Dichte, Sitzart | Türanzahl und -position |
+| Klassenaufteilung | Wagenkastenlänge, Achsfolge |
+| Mehrzweckbereiche | Antrieb, Höchstgeschwindigkeit |
+| Ausstattung: WLAN, Steckdosen, Information | Zugsicherungsgrundausrüstung |
+
+Die Trennung gibt der Erstbestellung bleibendes Gewicht: Wer die Türen falsch
+wählt, korrigiert das nie. Sie erzeugt zugleich einen echten Sekundärmarkt —
+ein Gebrauchtfahrzeug mit passender Grundauslegung ist deutlich mehr wert.
+
+### 3.5 Beschaffungswege und Tempo
+
+| Weg | Lieferzeit | Rolle |
+|-----|-----------|-------|
+| **Leasing** | sofort | Standardkonfiguration von Leasinggesellschaften. Der Weg für kurzfristigen Bedarf und für Einsteiger |
+| **Gebrauchtmarkt** | kurz | vorhandene Konfiguration und vorhandener Fristenstand — passt oder passt nicht |
+| **Neubestellung** | mehrere Perioden | frei konfigurierbar, günstigste Vollkosten, aber nicht für eine gerade gewonnene Ausschreibung |
+
+Dass Neubestellungen lange dauern, ist real und spielerisch wichtig: Es macht
+Leasing zum Einstiegsweg und langfristige Flottenplanung zu einer eigenen
+Disziplin. Ein Einsteiger wartet dadurch nie auf Fahrzeuge.
+
+## 4. Versorgung, Instandhaltung und Zusatzfahrten
 
 Ein Fahrzeug ist nicht verfügbar, wenn es fahrbereit ist, sondern wenn es
 versorgt, entsorgt, gereinigt, fristgerecht **und am richtigen Ort** ist.
@@ -95,7 +163,7 @@ Entscheidung entsteht.
 
 Die drei Eingriffstiefen für die Versorgungsplanung stehen in `produkt.md`.
 
-## 4. Baustellen und Störungen
+## 5. Baustellen und Störungen
 
 Jede Welt konfiguriert Baustellen und ungeplante Störungen unabhängig:
 
@@ -127,7 +195,7 @@ Modi dürfen während einer laufenden Fahrplanperiode nicht unangekündigt
 gewechselt werden. Änderungen treten erst an einem veröffentlichten
 Fahrplanstichtag in Kraft.
 
-## 5. Baustellenfahrplan und Ersatzkonzept (E15)
+## 6. Baustellenfahrplan und Ersatzkonzept (E15)
 
 Eine angekündigte Sperrung ist die interessanteste Planungsaufgabe des Spiels —
 und die, bei der Automatik und Handplanung am weitesten auseinandergehen.

@@ -47,20 +47,29 @@ Trassenplanung vom Fahrzeugkatalog.
 
 ## 3. Fahrplanperiode als Saison (E3)
 
-Acht Wochen Echtzeit je Periode, gleicher Ablauf wie real, nur gestaucht.
+**Die Periodenlänge ist ein Weltparameter, keine Konstante** — sie skaliert mit
+der Weltlaufzeit, damit der Saison-Rhythmus in einer Sechsmonatswelt genauso
+mehrfach erlebbar ist wie in einer unbefristeten. Werte und Herleitung:
+`produkt.md` 6.1. Spanne 3 bis 8 Wochen; **8 Wochen ist der Wert der
+unbefristeten Welt** und der Rhythmus, für den das Konzept entworfen wurde.
 
-| Woche | Phase |
-|-------|-------|
-| 1–2 | Anmeldefenster — `PathRequest` für die kommende Periode |
-| 3 | Koordinierung — deterministischer `PlanningRun`, Alternativangebote, Einspruchsfenster |
-| 4 | Veröffentlichung Netzfahrplan, Annahmefrist, Rahmenvertragsabgleich |
-| 5–8 | Betrieb; parallel Ad-hoc-Trassen aus Restkapazität |
+Der Ablauf ist in jeder Welt derselbe, nur gestaucht. Anteile am Beispiel der
+Achtwochenperiode:
+
+| Anteil | Phase |
+|--------|-------|
+| erstes Viertel | Anmeldefenster — `PathRequest` für die kommende Periode |
+| zweites Achtel | Koordinierung — deterministischer `PlanningRun`, Alternativangebote, Einspruchsfenster |
+| drittes Achtel | Veröffentlichung Netzfahrplan, Annahmefrist, Rahmenvertragsabgleich |
+| zweite Hälfte | Betrieb; parallel Ad-hoc-Trassen aus Restkapazität |
 
 Der Periodenwechsel ist ein Ereignis mit Fahrplanwechsel-Bericht.
 Infrastruktur- und Wirtschafts-Releases treten ausschließlich hier in Kraft.
 
-SPNV-Verkehrsverträge laufen bewusst länger (6–12 Perioden), damit eine
-gewonnene Ausschreibung Planungssicherheit bedeutet.
+**Der Fahrplanstichtag ist zugleich der einzige zulässige Zeitpunkt für einen
+Betriebsübergang** bei Betreiberwechsel im SPNV (→ `wirtschaft.md`). Das ist
+real so und technisch sauber, weil Trassen ohnehin periodenweise vergeben
+werden.
 
 ## 4. Kapazitätsschutz und Markteintritt (E4)
 
