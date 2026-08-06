@@ -1,0 +1,19 @@
+[package]
+name = "zugfolge-spike-blocking-time-staircase"
+description = "Wegwerf-Spike M0.3: Sperrzeitentreppe und Konfliktprüfung an drei Betriebsstellen — verfällt mit M3.1"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "blocking-time-staircase"
+path = "src/main.rs"
+
+[dependencies]
+zugfolge-determinism = { workspace = true }
+
+[lints]
+workspace = true

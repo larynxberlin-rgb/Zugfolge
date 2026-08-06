@@ -19,6 +19,27 @@ Mehrere Züge dürfen auf derselben Strecke fahren, wenn unterschiedliche
 freigegebene Blöcke belegt werden. Ein pauschales Verbot für einen gesamten
 Streckenabschnitt wäre nicht realistisch.
 
+**Die Sperrzeit besteht aus sechs Anteilen** — Fahrstraßenbildezeit,
+Signalsichtzeit, Annäherungsfahrzeit, Fahrzeit, Räumfahrzeit,
+Fahrstraßenauflösezeit. Sie beginnt, bevor der Zug den Abschnitt erreicht, und
+endet, nachdem er ihn geräumt hat; aufeinanderfolgende Abschnitte ergeben
+dadurch die **Sperrzeitentreppe**. Die Mindestzugfolgezeit folgt daraus und ist
+kein eigener Parameter. Zwei Sperrzeiten derselben Ressource dürfen sich
+berühren, aber nicht überschneiden.
+
+Der Wegwerf-Spike aus M0.3 (`spikes/blocking-time-staircase/`) hat dieses Modell
+an drei Betriebsstellen geprüft. Sein Ergebnis für M3.1 und M3.3: **Ein
+Ressourcenmodell trägt beide Konfliktarten.** Ob aus einer Überschneidung ein
+Zugfolgefall oder eine Gegenfahrt wird, entscheidet die Infrastruktur — auf der
+zweigleisigen Strecke ist jedes Richtungsgleis eine eigene Ressource, auf dem
+eingleisigen Abschnitt teilen beide Richtungen sich eine. Der Prüfer braucht
+dafür keine zweite Regel.
+
+Was der Spike offengelassen hat, gehört zum Bahnhofskopf: Weichen, Fahrstraßen
+und kreuzende Bewegungen brauchen **Ausschlussmengen** statt einzelner
+Ressourcen. Sie hängen an der Fahrstraßenableitung (M1.7); bis dahin prüft eine
+reine Blockbetrachtung nur die halbe Wahrheit.
+
 **Anlagen sind Konfliktressourcen wie Gleise.** Werkstätten, Waschanlagen,
 Tankstellen, Entsorgungsanlagen und Abstellgleise laufen durch dieselbe
 Konfliktengine wie der Fahrweg — kein zweites System.

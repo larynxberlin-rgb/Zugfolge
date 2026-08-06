@@ -48,6 +48,12 @@ jobs:
           ZUGFOLGE_GOLDEN_UPDATE: "1"
         run: cargo test --workspace
 
+      # Der Bildfahrplan des M0.3-Spikes ist ebenfalls ein erzeugtes Artefakt:
+      # Er wird gezeichnet, nicht geschrieben, und muss zur Rechnung passen.
+      - name: Bildfahrpläne des Spikes neu zeichnen
+        continue-on-error: true
+        run: cargo run -p zugfolge-spike-blocking-time-staircase
+
       - name: pnpm-lock.yaml erzeugen
         run: pnpm install --no-frozen-lockfile
 
@@ -59,4 +65,5 @@ jobs:
             Cargo.lock
             pnpm-lock.yaml
             crates/
+            spikes/
           if-no-files-found: error

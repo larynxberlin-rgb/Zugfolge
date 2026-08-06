@@ -10,7 +10,7 @@
     {
       "id": "simulation-core",
       "title": "Simulationskern — Sperrzeiten, Fahrdynamik, Zustand (M0.3, M3, M4)",
-      "status": "planned",
+      "status": "active",
       "paths": ["crates/zugfolge-sim/**", "crates/zugfolge-conflict/**", "spikes/**"],
       "rules": [
         "no-payment-tier",
