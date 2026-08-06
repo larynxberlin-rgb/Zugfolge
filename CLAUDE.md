@@ -24,9 +24,11 @@ lesen, nicht raten.
 | `docs/betrieb.md` | Betriebsprogramm, Fahrzeuge, Personal, Versorgung, Zusatzfahrten, Störungen, Baustellenfahrplan | Disposition, Flotte, Umläufe, Wartung, Baustellen |
 | `docs/wirtschaft.md` | Spielkreislauf, Geschäftsfelder, Nachfrage, Ausschreibung, Eigenbetrieb, Insolvenz, Kooperation | Verträge, Märkte, Geld, Ausschreibungen |
 | `docs/daten.md` | Datenlage OSM/ORM, Quellen, Rechte, Qualitätsklassen | Import-Pipeline, InfraRelease, Lizenzfragen zu Daten |
+| `docs/rechte.md` | Rechte-Gate: Freigabestatus je Datenquelle, Quellenregister, Trassenfinder-Nutzungsbedingungen | eine Datenquelle nutzen oder aufnehmen, Import beginnen (Invariante 8) |
 | `docs/architektur.md` | Systemarchitektur, Lastgrößen, irreversible Entscheidungen, Determinismus, Sicherheit | Technischer Entwurf, Skalierung, Persistenz |
 | `docs/design.md` | Farbsystem, Barrierefreiheit, Dunkelmodus, Typografie, Dichte, Wortmarke | jede Oberflächenarbeit, jedes Diagramm, jede Zustandsdarstellung |
 | `docs/geschaeft.md` | Odoo, Monetarisierung, Monetarisierungsgrenze, Lizenz, Marken | Bezahlfunktionen, Lizenz, Namensrechte |
+| `docs/rechteschutz.md` | Umsetzung von M0.5: LICENSE, CLA, Schichtentrennung, Marke — und ihre Durchsetzung | Lizenz einsetzen, Beitrag annehmen, proprietäre Schicht, Marke |
 | `docs/milestones.md` | M0–M13 mit Teilabschnitten und Beweisen | Planung, Reihenfolge, „was als Nächstes“ |
 | `docs/risiken.md` | R1–R15 mit Gegenmaßnahmen | Risikoabwägung, Review |
 
@@ -121,12 +123,12 @@ Lastgrößen: `docs/architektur.md`.
 ## Stand
 
 Konzeption abgeschlossen, E1–E20 entschieden, Milestones auf Reihenfolge und
-Vollständigkeit geprüft. **M0.1, M0.2 und M0.3 sind erledigt** — ADRs, Monorepo,
-CI, Determinismus-Testharnisch, Wächter, Glossar, Lizenz-Scan und der
-Wegwerf-Spike zur Sperrzeitentreppe.
+Vollständigkeit geprüft. **M0 ist abgeschlossen: M0.1 bis M0.5 sind erledigt** —
+ADRs, Monorepo, CI, Determinismus-Testharnisch, Wächter, Glossar, Lizenz-Scan,
+der Wegwerf-Spike zur Sperrzeitentreppe, das Rechte-Gate und der Rechteschutz.
 
 - **Alpha-Schnitt:** M0 – M9. Alles ab M10 ist Ausbau.
-- **Kritischer Pfad:** M0.3 → M1 → M3 → M4 → M7. Der erste Schritt ist geführt.
+- **Kritischer Pfad:** M0.3 → M1 → M3 → M4 → M7. Die ersten Schritte sind geführt.
 - **M0.3 hat getragen:** `spikes/blocking-time-staircase/` rechnet die
   Sperrzeitentreppe zweier Züge über drei Betriebsstellen, erkennt Gegenfahrt
   und Zugfolgefall mit Ressource, Zeitfenster und Gegenzug und zeichnet den
@@ -135,9 +137,15 @@ Wegwerf-Spike zur Sperrzeitentreppe.
   einzelner Ressourcen (M1.7); die betrieblich richtige Auflösung eines
   Konflikts ist ein eigenes Verfahren (M3.4). Der Spike **verfällt mit M3.1**
   und wird dann gelöscht, nicht weitergepflegt.
-- **Nächster Schritt:** M0.4, das Rechte-Gate — dokumentierter Freigabestatus je
-  Datenquelle, einschließlich der Trassenfinder-Nutzungsbedingungen. Es steht
-  vor M1, weil ohne geklärte Rechte kein Import beginnen darf (Invariante 8).
+- **M0.4 und M0.5 haben getragen:** Das Rechte-Gate führt jede Datenquelle mit
+  Freigabestatus im Quellenregister (`tools/guards/quellenregister.json`), und
+  der Wächter `rights-gate` setzt Invariante 8 durch — heute die Registerpflege,
+  ab dem ersten Import auch die Herkunft. `LICENSE` nennt den Rechteinhaber und
+  ist wirksam; der Wächter `layer-separation` hält die proprietären Schichten
+  aus dem öffentlichen Baum. Siehe `docs/rechte.md` und `docs/rechteschutz.md`.
+- **Nächster Schritt:** M1, Betriebsgraph und Infrastruktur-Release — der Import
+  darf beginnen, weil die Rechte je Quelle nun dokumentiert sind (Invariante 8).
 
-Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` trägt bis
-zum Einsetzen des Volltexts einen Warnblock und ist bis dahin **nicht gültig**.
+Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` steht unter
+PolyForm Shield 1.0.0, nennt Sebastian Barowski als Rechteinhaber und ist damit
+**wirksam**.

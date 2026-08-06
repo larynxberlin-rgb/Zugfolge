@@ -22,7 +22,8 @@ Projektinhaber zusätzlich die Rechte ein, ihn im Projekt zu verwenden.
 
 **Zwischen**
 
-- **Projektinhaber:** `<VOLLSTÄNDIGER NAME ODER FIRMA>`, nachfolgend „Inhaber“
+- **Projektinhaber:** Sebastian Barowski (larynxberlin@icloud.com), natürliche
+  Person, nachfolgend „Inhaber“
 - **Beitragende:r:** die Person, die diesen CLA annimmt, nachfolgend
   „Beitragende:r“
 

@@ -18,7 +18,13 @@ Ergebnis vorzeigbar ist. Bislang erledigt:
 - **M0.2** — Monorepo, CI, Determinismus-Testharnisch, Wächter und Glossar,
   siehe [`monorepo.md`](monorepo.md) und [`glossar.md`](glossar.md);
 - **M0.3** — der Wegwerf-Spike zur Sperrzeitentreppe, siehe
-  [`spikes/blocking-time-staircase/`](../spikes/blocking-time-staircase/README.md).
+  [`spikes/blocking-time-staircase/`](../spikes/blocking-time-staircase/README.md);
+- **M0.4** — das Rechte-Gate: Quellenregister mit Freigabestatus je Datenquelle,
+  durchgesetzt vom Wächter `rights-gate`, siehe [`rechte.md`](rechte.md);
+- **M0.5** — Lizenz und Rechteschutz: `LICENSE` mit benanntem Rechteinhaber
+  (wirksam), CLA und durchgesetzte Schichtentrennung (`layer-separation`), siehe
+  [`rechteschutz.md`](rechteschutz.md). Eine Markenregistrierung erfolgt bewusst
+  nicht (Inhaberentscheidung).
 
 ---
 
@@ -29,8 +35,8 @@ Ergebnis vorzeigbar ist. Bislang erledigt:
 | 0.1 | ADRs schriftlich festhalten — E1 bis E16 sind entschieden und werden dokumentiert, nicht neu verhandelt | S | erledigt |
 | 0.2 | Monorepo, CI, Determinismus-Testharnisch, Domänenglossar, **CI-Wächter gegen Payment-Tier-Felder**, **Lizenz-Scan der Abhängigkeiten** | S | erledigt |
 | 0.3 | **Wegwerf-Spike Sperrzeitentreppe:** 3 Betriebsstellen, eine zweigleisige Strecke plus eingleisiger Ast, zwei Züge, Konfliktprüfung, Bildfahrplan als Bild | M | erledigt |
-| 0.4 | Rechte-Gate: dokumentierter Freigabestatus je Datenquelle, inklusive Trassenfinder-Nutzungsbedingungen | S | offen |
-| 0.5 | Lizenz und Rechteschutz: `LICENSE`, CLA, Schichtentrennung von Code, Daten und Marke, Markenanmeldung anstoßen | S | offen |
+| 0.4 | Rechte-Gate: dokumentierter Freigabestatus je Datenquelle, inklusive Trassenfinder-Nutzungsbedingungen | S | erledigt |
+| 0.5 | Lizenz und Rechteschutz: `LICENSE`, CLA, Schichtentrennung von Code, Daten und Marke, Markenanmeldung anstoßen | S | erledigt |
 
 > **Beweis:** Ein echter Belegungskonflikt wird korrekt erkannt und in einer
 > Sperrzeitentreppe sichtbar gemacht. Das ist die Existenzberechtigung des

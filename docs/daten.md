@@ -74,8 +74,9 @@ Zwei Grenzen bleiben unabhängig von der Rechtslage bestehen:
 
 Sinnvolle Nutzung: **in der Entwicklung gegen ihn kalibrieren und validieren, im
 Betrieb ohne ihn auskommen.** Ob eine automatisierte Nutzung mit Speicherung der
-Ergebnisse von den Nutzungsbedingungen gedeckt ist, gehört als Prüfpunkt nach
-M0.4.
+Ergebnisse von den Nutzungsbedingungen gedeckt ist, ist im Rechte-Gate als
+Prüfpunkt festgehalten (`rechte.md` 4; Eintrag `trassenfinder` im
+Quellenregister, Status `entwicklung`).
 
 ## 4. Trassenpreissystem als Vorbild für den `EconomyRelease`
 

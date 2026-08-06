@@ -148,9 +148,10 @@ proprietäre Weitergabe unmöglich machen. Rust und Node sind überwiegend
 MIT/Apache-2.0, das Risiko ist gering — aber ein Lizenz-Scan in CI ab M0.2 macht
 aus „vermutlich in Ordnung“ ein geprüftes Ergebnis.
 
-> Begründete technische Einschätzung, keine Rechtsberatung. CLA,
-> ODbL-Abgrenzung und Markenanmeldung gehören vor Veröffentlichung anwaltlich
-> geprüft.
+> Begründete technische Einschätzung, keine Rechtsberatung. CLA und
+> ODbL-Abgrenzung gehören vor Veröffentlichung anwaltlich geprüft. Eine
+> Markenregistrierung erfolgt bewusst nicht (Inhaberentscheidung, siehe
+> `rechteschutz.md` 3).
 
 ## 5. Marken und Fahrzeugnamen (E6)
 

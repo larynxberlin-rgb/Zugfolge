@@ -1,7 +1,9 @@
 # ─────────────────────────────────────────────────────────────
 # Proprietäre Schichten — dürfen NIEMALS ins öffentliche Repo
-# Siehe docs/geschaeft.md, Abschnitt 4 (Schichtentrennung).
+# Siehe docs/rechteschutz.md 3 und docs/geschaeft.md 4 (Schichtentrennung).
 # Diese Blöcke sind kein Aufräumen, sondern Rechteschutz.
+# .gitignore ist die Bitte; der Wächter 'layer-separation' ist der Riegel
+# und bricht die CI, wenn eine dieser Schichten doch im Baum landet.
 # ─────────────────────────────────────────────────────────────
 
 # Balancing und Wirtschaftsdaten

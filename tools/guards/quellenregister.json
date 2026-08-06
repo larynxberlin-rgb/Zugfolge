@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "hinweis": "Rechte-Gate (M0.4), Durchsetzung von Invariante 8. Maschinenlesbares Verzeichnis jeder Datenquelle mit ihrem Freigabestatus. Nur eine Quelle mit Status 'freigegeben' darf ein Import (Marker 'zugfolge:quelle=<id>') tragen. Fachliche Herleitung und Prozess: docs/rechte.md. Der Wächter 'rights-gate' prüft Aufbau, Vollständigkeit und Freigabe.",
+  "statuswerte": {
+    "freigegeben": "Import und Nutzung sind entschieden erlaubt. Braucht Lizenz und dokumentierte Entscheidung (Datum, Prüfer).",
+    "entwicklung": "Nur als Kalibrier-, Validierungs- oder Interpretationsreferenz der Entwicklung erlaubt, niemals als Laufzeit- oder Importquelle. Braucht Entscheidung und Hinweis.",
+    "pruefung": "In Prüfung, noch nicht nutzbar. Braucht einen Hinweis mit den offenen Punkten.",
+    "gesperrt": "Bis zu einer schriftlichen Entscheidung oder einem Vertrag blockiert. Braucht einen Hinweis mit der Bedingung.",
+    "ausgeschlossen": "Durch Entscheidung ausgeschlossen. Braucht einen Hinweis mit der Begründung."
+  },
+  "quellen": [
+    {
+      "id": "osm-pbf-lhe",
+      "titel": "OSM-PBF-Extract Leipzig–Halle–Erfurt",
+      "status": "freigegeben",
+      "lizenz": "ODbL-1.0",
+      "bereitstellung": "Selbst gezogener, versionierter PBF-Extract der Pilotregion aus einem etablierten Anbieter; Version und Prüfsumme werden im InfraRelease festgehalten.",
+      "attribution": "© OpenStreetMap-Mitwirkende, ODbL 1.0",
+      "nutzung": "Streckentopologie, Geometrie und Railway-Tags des Rohgraphen.",
+      "entscheidung": { "datum": "2026-08-06", "pruefer": "Sebastian Barowski" },
+      "hinweis": "Die ODbL erlaubt Nutzung mit Namensnennung und Share-alike. Die Share-alike-Pflicht trifft den abgeleiteten InfraRelease, nicht den Projektquelltext, und wird als getrennte Datenebene geführt (docs/rechteschutz.md, docs/daten.md 2). Die ODbL kann die Projektlizenz nicht überschreiben.",
+      "milestone": "M1.2"
+    },
+    {
+      "id": "openrailwaymap-doku",
+      "titel": "OpenRailwayMap — Tagging- und Signaldokumentation",
+      "status": "entwicklung",
+      "lizenz": "Dokumentation, nicht importiert",
+      "bereitstellung": "OpenRailwayMap-Wiki und -Renderregeln als Interpretationshilfe für die OSM-Railway-Tags.",
+      "attribution": "OpenRailwayMap-Projekt",
+      "nutzung": "Nur zur Auslegung der OSM-Tags (Signalisierung, Zugbeeinflussung, Blockkennzeichen). Kein separater Datenprovider, kein Import.",
+      "entscheidung": { "datum": "2026-08-06", "pruefer": "Sebastian Barowski" },
+      "hinweis": "Reine Dokumentation. Fließt als Wissen in die Ableitungsregeln ein, nie als Datensatz. Deshalb 'entwicklung', nicht 'freigegeben'.",
+      "milestone": "M1.6"
+    },
+    {
+      "id": "openstation",
+      "titel": "OpenStation — Stationsdaten",
+      "status": "pruefung",
+      "lizenz": "vor Import zu klären",
+      "bereitstellung": "Marketplace-Bereitstellung; Bezugsweg, Version und Bedingungen noch offen.",
+      "attribution": "vor Import festzulegen",
+      "nutzung": "Kandidat für die Stationsdaten-Anreicherung (Bahnsteige, Ausstattung).",
+      "entscheidung": null,
+      "hinweis": "Offen vor Import: Version, Bereitstellungsweg, Marketplace-Bedingungen, Attribution und Feldmapping. Bis zur Genehmigung kein Import (Invariante 8).",
+      "milestone": "M1.8"
+    },
+    {
+      "id": "stada",
+      "titel": "StaDa — Stationsdaten",
+      "status": "pruefung",
+      "lizenz": "vor Import zu klären",
+      "bereitstellung": "Bereitstellungsweg und Nutzungsbedingungen noch offen.",
+      "attribution": "vor Import festzulegen",
+      "nutzung": "Alternativ- oder Ergänzungskandidat zur Stationsdaten-Anreicherung.",
+      "entscheidung": null,
+      "hinweis": "Wie OpenStation: Version, Bereitstellungsweg, Bedingungen, Attribution und Feldmapping müssen vor einem Import genehmigt sein.",
+      "milestone": "M1.8"
+    },
+    {
+      "id": "dem-hoehenmodell",
+      "titel": "Digitales Höhenmodell (DEM) der Pilotregion",
+      "status": "pruefung",
+      "lizenz": "je nach gewählter Quelle (Copernicus DEM oder Landesvermessung)",
+      "bereitstellung": "Quelle noch nicht ausgewählt: Copernicus DEM (offen) gegenüber den DGM der Landesämter Sachsen, Sachsen-Anhalt und Thüringen mit je eigener Lizenz.",
+      "attribution": "je nach Quelle festzulegen",
+      "nutzung": "Ableitung des Neigungsprofils entlang der Gleisgeometrie.",
+      "entscheidung": null,
+      "hinweis": "Vor Import: Quelle wählen, Lizenz und Attribution der gewählten Quelle dokumentieren, Auflösung gegen die Neigungsableitung prüfen.",
+      "milestone": "M1.5"
+    },
+    {
+      "id": "trassenfinder",
+      "titel": "Trassenfinder — Trassenpreis- und Fahrzeitstruktur",
+      "status": "entwicklung",
+      "lizenz": "Nutzungsbedingungen des Betreibers, siehe Hinweis",
+      "bereitstellung": "Öffentlicher Dienst des Infrastrukturbetreibers; genutzt ausschließlich in der Entwicklung.",
+      "attribution": "nicht in Auslieferung enthalten (kein Import)",
+      "nutzung": "Modellierungscheckliste für PathRequest und EconomyRelease und Kalibrierreferenz für eigene Fahrzeit- und Entgeltberechnungen. Niemals Laufzeitabhängigkeit (E10, Invariante 6).",
+      "entscheidung": { "datum": "2026-08-06", "pruefer": "Sebastian Barowski" },
+      "hinweis": "Nutzungsbedingungen-Prüfpunkt (M0.4): Ob eine automatisierte Abfrage mit Speicherung der Ergebnisse von den Nutzungsbedingungen gedeckt ist, ist offen und vor einer solchen Nutzung zu klären. Bis dahin nur manuelle Kalibrierung gegen einzeln erzeugte Beispiele. Werte sind laut Betreiber unverbindliche Richtwerte aus vereinfachter Berechnung — keine Referenzwahrheit. Ausführlich: docs/rechte.md 4.",
+      "milestone": "M1.13"
+    },
+    {
+      "id": "entgeltregeln-tps-sps-aps-inb",
+      "titel": "Entgeltregeln (TPS, SPS, APS, INB, Anlagen- und Stationspreise)",
+      "status": "gesperrt",
+      "lizenz": "periodenbezogene Rechteentscheidung ausstehend",
+      "bereitstellung": "Offizielle Preissysteme der Betreiber; hier nur als Struktur, nicht als konkrete Zahlen.",
+      "attribution": "vor Umsetzung festzulegen",
+      "nutzung": "Vorbild für das Gefüge des EconomyRelease: Kostenarten und Zuschlagslogik, ausdrücklich nicht die konkreten Zahlen.",
+      "entscheidung": null,
+      "hinweis": "Blockiert bis zu einer periodenbezogenen Rechteentscheidung. Erst danach als eigene, versionierte Regeln umgesetzt und gegen zulässige offizielle Beispiele geprüft (docs/daten.md 4).",
+      "milestone": "M6.1"
+    },
+    {
+      "id": "baustellen-stoerungsfeeds",
+      "titel": "Reale Baustellen- und Störungsfeeds",
+      "status": "gesperrt",
+      "lizenz": "Vertrag ausstehend",
+      "bereitstellung": "Externe Echtzeit- oder Ankündigungsfeeds; kein Bezug ohne Vertrag.",
+      "attribution": "im Vertrag zu regeln",
+      "nutzung": "Nur im realistischen Störungsmodus als Adapter (M8.12).",
+      "entscheidung": null,
+      "hinweis": "Blockiert bis zu einem Vertrag, der kommerziellen Abruf, Speicherung, Ableitung, Kartendarstellung, Replay, Audit, Aufbewahrung und Löschung abdeckt (docs/daten.md 2).",
+      "milestone": "M8.12"
+    },
+    {
+      "id": "rinf",
+      "titel": "RINF — Register of Infrastructure",
+      "status": "gesperrt",
+      "lizenz": "Wiederverwendung schriftlich zu klären",
+      "bereitstellung": "Register der EU-Infrastruktur.",
+      "attribution": "vor Nutzung festzulegen",
+      "nutzung": "Potenziell zur Validierung von Infrastrukturattributen — derzeit nicht genutzt.",
+      "entscheidung": null,
+      "hinweis": "Blockiert bis zu einer schriftlichen Wiederverwendungsentscheidung (docs/daten.md 2).",
+      "milestone": "—"
+    },
+    {
+      "id": "pathos",
+      "titel": "pathOS",
+      "status": "ausgeschlossen",
+      "lizenz": "kein Vertrag",
+      "bereitstellung": "Backend des Infrastrukturbetreibers.",
+      "attribution": "—",
+      "nutzung": "Ausgeschlossen als Spiel- oder Validierungsbackend.",
+      "entscheidung": { "datum": "2026-08-06", "pruefer": "Sebastian Barowski" },
+      "hinweis": "Ohne neue Berechtigung und ausdrücklichen Vertrag ausgeschlossen (docs/daten.md 2). Determinismus und Replay verbieten ohnehin einen externen Dienst im heißen Pfad (Invariante 6).",
+      "milestone": "—"
+    },
+    {
+      "id": "tpn",
+      "titel": "TPN — Trassenportal Netz",
+      "status": "ausgeschlossen",
+      "lizenz": "kein Vertrag",
+      "bereitstellung": "Portal des Infrastrukturbetreibers.",
+      "attribution": "—",
+      "nutzung": "Ausgeschlossen als Spiel- oder Validierungsbackend.",
+      "entscheidung": { "datum": "2026-08-06", "pruefer": "Sebastian Barowski" },
+      "hinweis": "Wie pathOS: ohne neue Berechtigung und ausdrücklichen Vertrag ausgeschlossen (docs/daten.md 2).",
+      "milestone": "—"
+    },
+    {
+      "id": "oeffentliche-tiles-nominatim",
+      "titel": "Öffentliche OSM-/OpenRailwayMap-Tiles und öffentliches Nominatim",
+      "status": "ausgeschlossen",
+      "lizenz": "Nutzungsbedingungen der öffentlichen Dienste",
+      "bereitstellung": "Öffentliche Kachel- und Geokodierdienste.",
+      "attribution": "—",
+      "nutzung": "Im Produktivbetrieb ausgeschlossen. Das Spiel erzeugt und hostet eigene Dark-Vector-Tiles.",
+      "entscheidung": { "datum": "2026-08-06", "pruefer": "Sebastian Barowski" },
+      "hinweis": "Öffentliche Tiles und öffentliches Nominatim werden nicht produktiv genutzt (docs/daten.md 2). Eigene Tiles: M4.7.",
+      "milestone": "M4.7"
+    }
+  ]
+}

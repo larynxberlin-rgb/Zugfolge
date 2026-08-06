@@ -14,8 +14,11 @@ Manifeste hinweg oder gegen Dokumentation geprüft werden muss.
 | Datei | Inhalt |
 |-------|--------|
 | `guards.config.json` | die Domänenkarte: welche Pfade, welcher Status, welche Regeln |
+| `quellenregister.json` | das Rechte-Gate-Register: Freigabestatus je Datenquelle (M0.4, `docs/rechte.md`) |
 | `src/rules/pattern-rules.ts` | die Musterregeln — enthält die verbotenen Muster selbst |
 | `src/rules/world-id.ts` | Invariante 4 gegen SQL-Migrationen und Drizzle-Schemata |
+| `src/rules/rights-gate.ts` | Invariante 8: Register hält, was es verspricht, und kein Import zieht an einer nicht freigegebenen Quelle |
+| `src/rules/layer-separation.ts` | E16: keine proprietäre Schicht im öffentlichen Baum (M0.5) |
 | `src/rules/glossary.ts` | Aufbau und Vollständigkeit von `docs/glossar.md` |
 | `src/rules/coverage.ts` | die Regel, die verhindert, dass die Konfiguration verrottet |
 | `src/rules/brand.ts` | Namensnennung, geprüft über Hashes statt über eine Namensliste |
