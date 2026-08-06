@@ -44,6 +44,19 @@ Beide Sperrdateien gehören ins Repositorium. Wer sie nicht erzeugen kann, weil
 lokal keine Werkzeugkette installiert ist, startet den Workflow
 **Artefakte erzeugen** und committet das Ergebnis.
 
+**Umgebung einrichten** — auf einem frischen Linux-Container, in WSL oder als
+Setup-Skript einer Cloud-Umgebung:
+
+```bash
+bash .claude/setup.sh
+```
+
+Das Skript installiert Rust, Node und pnpm nach `$HOME`, ohne Root-Rechte, und
+lädt danach **alle** Abhängigkeiten vor — geholt *und* übersetzt. Damit läuft
+die Arbeit auch dann weiter, wenn das Netz nach dem Setup eingeschränkt ist.
+Es ist wiederholbar; ein zweiter Lauf installiert nichts neu. Der Workflow
+`setup.yml` prüft es in einem nackten Debian-Container, sobald es sich ändert.
+
 Der Rust-Kanal ist bewusst noch nicht auf eine Patchversion gepinnt. Der Pin
 kommt mit M1.12, wenn `InfraRelease`-Artefakte reproduzierbar sein müssen.
 
