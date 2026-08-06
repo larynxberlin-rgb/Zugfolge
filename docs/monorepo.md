@@ -127,12 +127,17 @@ Statuswechsel eingefordert, bevor die erste Sperrzeit gerechnet wurde.
 | 5 | kein Payment-Tier-Feld in spielentscheidenden Domänen | Wächter `no-payment-tier` |
 | 6 | kein externer Dienst im heißen Pfad | Wächter `no-db-in-core` (Netzabhängigkeiten in Kernmanifesten) |
 | 7 | kein Datenbankzugriff aus dem Simulationskern | Wächter `no-db-in-core` |
-| 8 | kein Import ohne dokumentierte Rechtefreigabe | M0.4 — Rechte-Gate, noch offen |
+| 8 | kein Import ohne dokumentierte Rechtefreigabe | Wächter `rights-gate` gegen das Quellenregister (M0.4, `docs/rechte.md`) |
 
 Dazu kommen zwei Regeln, die keine Invariante sind, aber dieselbe Wirkung
 haben: `no-random` (Zufall nur aus benannten Substreams) und
 `no-unordered-iteration` (`BTreeMap` statt `HashMap`). Ohne sie ist Invariante
 „gleicher Seed ⇒ gleicher Zustand" nicht haltbar.
+
+Und der Wächter `layer-separation` (E16, M0.5) hält die proprietären Schichten —
+`EconomyRelease`, Balancing, Fahrzeugkatalog, Weltdaten, Markenassets — aus dem
+öffentlichen Baum. `.gitignore` ist die Bitte, der Wächter der Riegel. Herleitung
+in `docs/rechteschutz.md`.
 
 Vollständige Liste: `pnpm guards -- --list`.
 

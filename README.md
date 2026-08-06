@@ -5,11 +5,11 @@ mit hohem betrieblichem, infrastrukturellem und wirtschaftlichem Realismus.
 Öffentliche Welten laufen dauerhaft in 1:1-Echtzeit ohne Wipes. Erste
 Pilotregion: **Leipzig–Halle–Erfurt**.
 
-> **Stand:** Konzeption abgeschlossen, Fundament steht (M0.1, M0.2). **M0.3 ist
-> geführt:** Der Wegwerf-Spike zur Sperrzeitentreppe erkennt echte
-> Belegungskonflikte und macht sie im Bildfahrplan sichtbar — siehe
-> [`spikes/blocking-time-staircase/`](spikes/blocking-time-staircase/README.md).
-> Der nächste Schritt ist M0.4, das Rechte-Gate.
+> **Stand:** **M0 ist abgeschlossen (M0.1–M0.5).** Fundament, Sperrzeiten-Spike,
+> Rechte-Gate und Rechteschutz stehen. Das Rechte-Gate führt jede Datenquelle mit
+> Freigabestatus ([`docs/rechte.md`](docs/rechte.md)), `LICENSE` nennt den
+> Rechteinhaber und ist wirksam ([`docs/rechteschutz.md`](docs/rechteschutz.md)).
+> Der nächste Schritt ist M1, Betriebsgraph und Infrastruktur-Release.
 
 ## Wo was steht
 
@@ -64,8 +64,8 @@ Test, der ohne ihn fehlschlägt.
 ## Lizenz
 
 PolyForm Shield 1.0.0 — **Source Available**, nicht Open Source. Erlaubt ist
-jede Nutzung außer dem Betrieb eines konkurrierenden Produkts. Siehe
-[`LICENSE`](LICENSE) und [`docs/geschaeft.md`](docs/geschaeft.md).
-
-> **Achtung:** Die Datei `LICENSE` trägt bis zum Einsetzen des Volltexts einen
-> Warnblock und ist bis dahin nicht gültig.
+jede Nutzung außer dem Betrieb eines konkurrierenden Produkts. Die Datei
+[`LICENSE`](LICENSE) nennt Sebastian Barowski als Rechteinhaber und ist damit
+wirksam. Umsetzung und Durchsetzung (CLA, Schichtentrennung):
+[`docs/rechteschutz.md`](docs/rechteschutz.md); Begründung:
+[`docs/geschaeft.md`](docs/geschaeft.md).
