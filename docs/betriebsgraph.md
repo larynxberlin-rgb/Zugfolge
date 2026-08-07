@@ -144,9 +144,6 @@ der CI auf Linux **und** Windows gegen dieselbe Datei geprüft.
 
 | Fehlt | Gehört nach |
 |-------|-------------|
-| Netzfilter: Spurweite, Stromschiene, Netzausschlussliste | M1.3 |
-| Abdeckungsreport je Attribut und Streckenabschnitt, Qualitätsklassen A/B/C | M1.4 |
-| Ableitung des Neigungsprofils aus einem Höhenmodell | M1.5 |
 | Blockabschnitte, virtuelle Blöcke | M1.6 |
 | Weichen, Fahrstraßen, Durchrutschwege, Ausschlussmengen im Bahnhofskopf | M1.7 |
 | Stationsdaten-Anreicherung | M1.8 |
@@ -238,3 +235,80 @@ einzelnen Wert, weil noch kein einzelnes Attribut ausgewählt wurde. Das kommt
 mit der fachlichen Abbildung, die auf M1.3 folgt.
 
 Umsetzung: [`crates/zugfolge-infra/src/import`](../crates/zugfolge-infra/src/import).
+
+---
+
+## 8. Der Netzfilter — Ergebnis von M1.3
+
+Der Rohgraph führt jeden Weg mit einem `railway`-Tag, gleich welchem Wert.
+Der Netzfilter wählt daraus das EBO-Netz aus (E14): ausschließlich
+`railway=rail` in Regelspur, ohne Stromschiene. Jeder andere `railway`-Wert
+fällt heraus — Straßenbahn, Stadtbahn, U-Bahn, Standseil- und
+Einschienenbahn eingeschlossen, aber auch jeder Wert, den die Regel nicht
+ausdrücklich nennt: Unbekanntes wird nicht stillschweigend als Eisenbahn
+behandelt. Schmalspur scheidet zusätzlich über das `gauge`-Tag aus, weil OSM
+sie sowohl als eigenen `railway`-Wert als auch als `railway=rail` mit
+abweichender Spurweite führt. Eine Stromschiene erkennt der Filter am
+OSM-Tag `electrified=rail` — der Bauart, nicht dem System, wie
+`docs/betriebsgraph.md` 2 sie unterscheidet.
+
+**Was bleibt.** Betriebs-, Abstell- und Anschlussgleise sind `railway=rail`
+wie jedes Hauptgleis; der Filter verwirft nichts über ein `service`-Tag. Sie
+bleiben Konfliktressourcen wie jedes andere Gleis und tragen später
+Zusatzfahrten, Abstellung und Versorgung (M5).
+
+Das Ergebnis ist wieder ein `RawGraph` — noch kein `OperatingGraph`. Welches
+Gleis ein Hauptgleis wird, entscheidet die fachliche Abbildung, die auf M1.3
+folgt.
+
+Umsetzung: [`crates/zugfolge-infra/src/network_filter.rs`](../crates/zugfolge-infra/src/network_filter.rs).
+
+---
+
+## 9. Die Abdeckungsmessung — Ergebnis von M1.4
+
+Jedes Band eines Gleisattributs trägt seinen Vertrauensgrad (`Confidence`,
+Abschnitt 1). Die Abdeckungsmessung liest ihn und bildet ihn unmittelbar auf
+die Qualitätsklassen aus `docs/daten.md` 5 ab: erfasst trägt Klasse A,
+abgeleitet höchstens B, angenommen höchstens C. Das ist die einfachste
+Abbildung, die sich heute begründen lässt (E19) — die eigentliche Klasse A
+setzt zusätzlich geprüfte Blöcke und Fahrstraßen voraus (M1.6, M1.7), die
+noch fehlen. Was diese Stufe liefert, ist die datenseitige Obergrenze, auf
+der jene Stufen aufsetzen.
+
+**Je Attribut und Streckenabschnitt**, wie der Milestone verlangt: Der
+Bericht summiert Länge je Vertrauensgrad für jedes der vier Attribute
+getrennt und zerlegt jedes Gleis an jeder Bandgrenze seiner vier Profile neu
+— jeder entstehende Abschnitt trägt die Klasse seines schwächsten Attributs
+an dieser Stelle, dieselbe Regel wie `Track::confidence`, nur ortsaufgelöst
+statt gleisweit. Alle Anteile sind ganzzahlig in Promille (Invariante 3).
+
+Umsetzung: [`crates/zugfolge-infra/src/coverage.rs`](../crates/zugfolge-infra/src/coverage.rs).
+
+---
+
+## 10. Das Neigungsprofil aus dem Höhenmodell — Ergebnis von M1.5
+
+`docs/daten.md` 1 nennt die Längsneigung als eine der drei Angaben, die OSM
+nicht liefert und die deshalb abgeleitet werden müssen — aus einem digitalen
+Höhenmodell (DEM) entlang der Gleisgeometrie. M1.5 liefert das Verfahren:
+Höhenstichproben (Position, Höhe) werden zu einem geglätteten
+`BandProfile<Gradient>` verrechnet, wie `Track::builder` es erwartet. Jedes
+abgeleitete Band trägt `Confidence::Derived`.
+
+**Geglättet**, wie der Milestone verlangt: Statt Stichprobe gegen Stichprobe
+zu rechnen, setzt das Verfahren Stützpunkte im Abstand einer
+Mindestbandlänge, interpoliert die Höhe an jedem Stützpunkt linear aus den
+umliegenden Stichproben und bildet erst zwischen den Stützpunkten ein Band.
+Ein Reststück kürzer als die Mindestbandlänge bekommt kein eigenes Band,
+sondern verlängert das letzte.
+
+**Kein Import.** Das Höhenmodell der Pilotregion steht im Quellenregister
+mit Status `pruefung` — Version, Bereitstellungsweg und Lizenz sind noch
+nicht geklärt (`docs/rechte.md` 3). Invariante 8 verbietet jeden Import ohne
+dokumentierte Freigabe. M1.5 liefert deshalb nur das Verfahren, nicht den
+Import: Es rechnet mit Höhenstichproben, gleich woher sie stammen. Sobald das
+Höhenmodell freigegeben ist, liest ein eigener Import reale Stichproben und
+übergibt sie an dieses Verfahren — daran ändert sich dann nichts.
+
+Umsetzung: [`crates/zugfolge-infra/src/elevation.rs`](../crates/zugfolge-infra/src/elevation.rs).

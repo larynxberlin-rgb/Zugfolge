@@ -177,6 +177,25 @@ pub enum InfraError {
     OperatingPointWithoutTrack(OperatingPointId),
     /// Eine Betriebsstelle hängt an keiner Kante.
     IsolatedOperatingPoint(OperatingPointId),
+    /// Ein Höhenmodell wurde ohne eine einzige Stichprobe angeliefert.
+    EmptyElevationSamples,
+    /// Zwei Höhenstichproben liegen nicht in aufsteigender Reihenfolge — der
+    /// Verlauf entlang des Gleises wäre sonst nicht eindeutig.
+    UnorderedElevationSamples {
+        /// Die Position, an der die Reihenfolge bricht.
+        at: Length,
+    },
+    /// Die Höhenstichproben beginnen nicht am Gleisanfang oder enden nicht am
+    /// Gleisende — ein Neigungsprofil, das nicht das ganze Gleis abdeckt,
+    /// ließe einen Abschnitt ohne Wert.
+    ElevationSamplesDoNotCoverTrack {
+        /// Die Position der ersten Stichprobe.
+        first: Length,
+        /// Die Position der letzten Stichprobe.
+        last: Length,
+        /// Die Länge des Gleises, die die Stichproben abdecken müssten.
+        track_length: Length,
+    },
 }
 
 impl fmt::Display for InfraError {
@@ -326,6 +345,22 @@ impl fmt::Display for InfraError {
             Self::IsolatedOperatingPoint(id) => write!(
                 formatter,
                 "Betriebsstelle {id} hängt an keiner Kante und ist vom Netz getrennt"
+            ),
+            Self::EmptyElevationSamples => formatter.write_str(
+                "Höhenmodell ohne eine einzige Stichprobe — daraus lässt sich kein Neigungsprofil ableiten",
+            ),
+            Self::UnorderedElevationSamples { at } => write!(
+                formatter,
+                "Höhenstichproben sind bei {at} nicht mehr aufsteigend sortiert"
+            ),
+            Self::ElevationSamplesDoNotCoverTrack {
+                first,
+                last,
+                track_length,
+            } => write!(
+                formatter,
+                "Höhenstichproben reichen von {first} bis {last}, das Gleis aber von 0 bis \
+                 {track_length} — der Rest hätte keinen Wert"
             ),
         }
     }

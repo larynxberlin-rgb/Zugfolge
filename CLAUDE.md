@@ -127,8 +127,9 @@ Konzeption abgeschlossen, E1–E20 entschieden, Milestones auf Reihenfolge und
 Vollständigkeit geprüft. **M0 ist abgeschlossen: M0.1 bis M0.5 sind erledigt** —
 ADRs, Monorepo, CI, Determinismus-Testharnisch, Wächter, Glossar, Lizenz-Scan,
 der Wegwerf-Spike zur Sperrzeitentreppe, das Rechte-Gate und der Rechteschutz.
-**M1 hat begonnen: M1.1 und M1.2 sind erledigt** — das Domänenmodell des
-Betriebsgraphen und die Import-Pipeline OSM-PBF → Rohgraph stehen in
+**M1 hat begonnen: M1.1 bis M1.5 sind erledigt** — das Domänenmodell des
+Betriebsgraphen, die Import-Pipeline OSM-PBF → Rohgraph, der Netzfilter, die
+Abdeckungsmessung und das Neigungsprofil aus dem Höhenmodell stehen in
 `crates/zugfolge-infra`.
 
 - **Alpha-Schnitt:** M0 – M9. Alles ab M10 ist Ausbau.
@@ -165,10 +166,28 @@ Betriebsgraphen und die Import-Pipeline OSM-PBF → Rohgraph stehen in
   Geometriepunkte ihrer Kante. Der Rohgraph ist bewusst noch kein
   `OperatingGraph` — das entscheidet erst der Netzfilter. Siehe
   `docs/betriebsgraph.md` Abschnitt 7.
-- **Nächster Schritt:** M1.3, der Netzfilter — er wählt aus dem Rohgraph nur
-  `railway=rail` in Regelspur aus und wirft Tram-, Stadtbahn- und
-  Stromschienennetze über die Netzausschlussliste heraus, behält aber
-  Betriebs-, Abstell- und Anschlussgleise.
+- **M1.3 steht:** Der Netzfilter (`crates/zugfolge-infra/src/network_filter.rs`)
+  wählt aus dem Rohgraph nur `railway=rail` in Regelspur aus und wirft jeden
+  anderen Wert heraus — Tram, Stadtbahn, U-Bahn, Schmalspur, Standseil- und
+  Einschienenbahn eingeschlossen, sowie Stromschienennetze über
+  `electrified=rail`. Betriebs-, Abstell- und Anschlussgleise bleiben
+  erhalten, weil der Filter kein `service`-Tag prüft. Siehe
+  `docs/betriebsgraph.md` Abschnitt 8.
+- **M1.4 steht:** Die Abdeckungsmessung (`crates/zugfolge-infra/src/coverage.rs`)
+  bildet den Vertrauensgrad jedes Bandes auf eine Qualitätsklasse ab und
+  zerlegt jedes Gleis an jeder Bandgrenze seiner vier Profile neu, damit jeder
+  Abschnitt seine eigene erreichbare Klasse trägt — die datenseitige
+  Obergrenze, bevor M1.6 und M1.7 Klasse A tatsächlich erreichbar machen.
+  Siehe `docs/betriebsgraph.md` Abschnitt 9.
+- **M1.5 steht:** Aus Höhenstichproben entlang der Gleisgeometrie leitet
+  `crates/zugfolge-infra/src/elevation.rs` ein geglättetes Neigungsprofil ab —
+  Stützpunkte im Mindestabstand einer Bandlänge statt einer Übersetzung jeder
+  Stichprobe. Das Höhenmodell der Pilotregion selbst ist noch nicht
+  freigegeben (`docs/rechte.md` 3, Status `pruefung`); M1.5 liefert deshalb
+  das Verfahren, keinen Import. Siehe `docs/betriebsgraph.md` Abschnitt 10.
+- **Nächster Schritt:** M1.6, die Blockableitung aus Signalpositionen,
+  Zugbeeinflussung und Topologie, mit virtuellen Blöcken bei Lücken und
+  Qualitätsklassifizierung A/B/C je Block.
 
 Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` steht unter
 PolyForm Shield 1.0.0, nennt Sebastian Barowski als Rechteinhaber und ist damit
