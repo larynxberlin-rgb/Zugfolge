@@ -144,17 +144,17 @@ der CI auf Linux **und** Windows gegen dieselbe Datei geprüft.
 
 | Fehlt | Gehört nach |
 |-------|-------------|
-| Stationsdaten-Anreicherung | M1.8 |
-| Anlagenkataster — Werkstatt, Wäsche, Tankstelle, Entsorgung, Abstellung | M1.11 |
 | `InfraRelease` mit Version, Lizenz, Prüfsumme und Confidence je Attribut | M1.12 |
 
 Das Modell ist auf alle vorbereitet und nimmt keines vorweg. **Ein
-Blockabschnitt ist kein Gleis, und eine Fahrstraße ist keine Kante** — deshalb
-liefern M1.6 (Abschnitt 11) und M1.7 (Abschnitt 12) sie als eigene, abgeleitete
-Artefakte neben dem Modell, nicht als neue Bausteine darin. Die Vorbereitung im
-Modell besteht aus drei Dingen: der Richtungsbindung des Gleises, die beide
-Konfliktarten trägt; dem Bandprofil, in dem Signale und Blöcke ihre Abschnitte
-finden; und dem Vertrauensgrad, den die Abdeckungsmessung liest.
+Blockabschnitt ist kein Gleis, eine Fahrstraße ist keine Kante, eine
+Stationsanreicherung ist keine Betriebsstelle und eine Anlage ist kein Gleis**
+— deshalb liefern M1.6 (Abschnitt 11), M1.7 (Abschnitt 12), M1.8 (Abschnitt 13)
+und M1.11 (Abschnitt 14) sie als eigene, abgeleitete Artefakte neben dem
+Modell, nicht als neue Bausteine darin. Die Vorbereitung im Modell besteht aus
+drei Dingen: der Richtungsbindung des Gleises, die beide Konfliktarten trägt;
+dem Bandprofil, in dem Signale und Blöcke ihre Abschnitte finden; und dem
+Vertrauensgrad, den die Abdeckungsmessung liest.
 
 ---
 
@@ -384,3 +384,70 @@ M1.5 und M1.6 ist das Verfahren **kein Import** — es rechnet mit einer
 gegebenen Weichenlage, gleich woher sie stammt.
 
 Umsetzung: [`crates/zugfolge-infra/src/interlocking.rs`](../crates/zugfolge-infra/src/interlocking.rs).
+
+---
+
+## 13. Die Stationsdaten-Anreicherung — Ergebnis von M1.8
+
+`docs/daten.md` 2 nennt OpenStation und StaDa als Stationsdaten-Kandidaten:
+Bahnhofskategorie und Ausstattung — Barrierefreiheit, Wetterschutz,
+Fahrgastinformation und mehr. `docs/rechte.md` 3 führt beide Quellen noch auf
+`pruefung`; Invariante 8 verbietet jeden Import ohne dokumentierte Freigabe.
+**M1.8 liefert deshalb das Modell und das Verfahren, mit dem eine
+Betriebsstelle angereichert wird, keinen Import** — wie M1.5 für die Neigung
+aus dem Höhenmodell.
+
+**Warum Anreicherung anders ist als Ersterfassung.** Ein `OperatingPoint` oder
+ein `Platform` trägt eine einzige `Provenance` für den ganzen Datensatz, weil
+er in einem Zug entsteht — aus demselben Import, zur selben Zeit. Eine
+Anreicherung dagegen kommt in Schüben: Die Bahnhofskategorie mag aus einer
+Quelle stammen, die Ausstattung erst später aus einer anderen nachgetragen
+werden. `StationEnrichment` trägt seine beiden Angaben deshalb je als
+`Attributed<T>` — mit eigener Quelle und eigenem Vertrauensgrad je Feld, statt
+mit einer gemeinsamen Herkunft für den ganzen Eintrag.
+
+**Was angereichert werden kann.** Nur eine Betriebsstelle mit planmäßigem
+Fahrgastwechsel (`OperatingPointKind::allows_passenger_stop`) hat
+Stationsdaten — an einer Abzweig- oder Blockstelle gibt es keine Station
+anzureichern. `StationEnrichmentCatalogBuilder::build` prüft das gegen einen
+fertigen `OperatingGraph`, zusammen mit der Eindeutigkeit je Betriebsstelle.
+
+Wie M1.5, M1.6 und M1.7 ist das Verfahren **kein Import** — es rechnet mit
+einer gegebenen Bahnhofskategorie und Ausstattung, gleich woher sie stammen.
+Sobald OpenStation oder StaDa freigegeben ist, füllt ein eigener Import
+`StationEnrichment`-Werte; an diesem Modul ändert sich dann nichts.
+
+Umsetzung: [`crates/zugfolge-infra/src/station.rs`](../crates/zugfolge-infra/src/station.rs).
+
+---
+
+## 14. Der Anlagenkataster — Ergebnis von M1.11
+
+`docs/betrieb.md` 4 nennt den Satz wörtlich: **Anlagen sind Konfliktressourcen
+wie Gleise.** Werkstätten, Behandlungs- und Waschanlagen, Tankstellen,
+Entsorgungsanlagen und Abstellgleise haben Kapazität, Öffnungszeiten,
+Nutzlänge und Baureihenkompetenz — erst dadurch können zwei EVU tatsächlich um
+dieselbe Abstellanlage in derselben Nacht konkurrieren, statt dass Versorgung
+eine unbegrenzte Ressource wäre.
+
+**Eine `Facility` liegt auf einem vorhandenen Gleis** — nicht auf einem
+durchgehenden Hauptgleis, auf dem Zugfahrten stattfinden, sondern auf einem
+Neben-, Abstell- oder Anschlussgleis, wie es der Netzfilter aus M1.3
+ausdrücklich erhält. Sie trägt eine `FacilityKind` (Werkstatt,
+Behandlungsanlage, Waschanlage, Tankstelle, Entsorgungsanlage oder als Anlage
+geführtes Abstellgleis), eine Kapazität — gleichzeitig behandelbare Fahrzeuge
+—, eine `OpeningHours`, eine Nutzlänge und eine `FleetCompetence`: die
+Baureihen, die sie behandeln kann, als Menge wie `TrainProtection` auf der
+Strecke. Das ist dieselbe Form, mit der `docs/betrieb.md` 4 sie beschreibt, nur
+je Anlage statt in Prosa.
+
+`FacilityCatalogBuilder::build` prüft jede Anlage gegen einen fertigen
+`OperatingGraph`: Das genannte Gleis muss existieren und darf kein
+Hauptgleis sein, auf dem Zugfahrten stattfinden.
+
+**Was hier bewusst nicht steht.** Die **Belegung** einer Anlage durch eine
+konkrete Zusatzfahrt ist Aufgabe der Konfliktengine (M5.7) — derselben, die
+auch den Fahrweg vergibt. M1.11 liefert nur den Kataster: welche Anlagen es
+gibt und was sie leisten können, nicht, wer sie wann belegt.
+
+Umsetzung: [`crates/zugfolge-infra/src/facility.rs`](../crates/zugfolge-infra/src/facility.rs).

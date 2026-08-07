@@ -10,8 +10,8 @@
 use core::fmt;
 
 use crate::identity::{
-    HeadElementId, HeadNodeId, HeadSignalId, OperatingPointId, PlatformId, SwitchId, TrackEdgeId,
-    TrackId,
+    FacilityId, HeadElementId, HeadNodeId, HeadSignalId, OperatingPointId, PlatformId, SwitchId,
+    TrackEdgeId, TrackId,
 };
 use crate::units::{Length, Speed};
 
@@ -256,6 +256,50 @@ pub enum InfraError {
         /// Das betroffene Signal.
         signal: HeadSignalId,
     },
+    /// Eine Baureihenbezeichnung hat nicht die zulässige Form (M1.11).
+    FleetClass(String),
+    /// Eine Zeitangabe innerhalb eines Tages liegt außerhalb von 0 bis
+    /// 86 399 Sekunden nach Mitternacht (M1.11).
+    TimeOfDay(u32),
+    /// Öffnungszeit und Schließzeit einer täglichen Öffnungszeit sind gleich —
+    /// das wäre weder durchgehend geöffnet noch ein Tagesfenster (M1.11).
+    EmptyOpeningWindow,
+    /// Eine Anlage nennt keine einzige Baureihe, die sie behandeln kann — eine
+    /// Anlage ohne Kompetenz könnte nie belegt werden (M1.11).
+    EmptyFleetCompetence(FacilityId),
+    /// Eine Kapazität muss positiv sein, ist es aber nicht.
+    NonPositiveCapacity {
+        /// Was ohne Kapazität geblieben ist.
+        what: &'static str,
+        /// Der angegebene Wert.
+        value: u32,
+    },
+    /// Eine Anlagenkennung wurde zweimal vergeben (M1.11).
+    DuplicateFacility(FacilityId),
+    /// Eine Anlage liegt auf einem Gleis, das es nicht gibt (M1.11).
+    UnknownFacilityTrack {
+        /// Die betroffene Anlage.
+        facility: FacilityId,
+        /// Das unbekannte Gleis.
+        track: TrackId,
+    },
+    /// Eine Anlage liegt auf einem durchgehenden Hauptgleis — dort finden
+    /// Zugfahrten statt, keine Anlagen (M1.11).
+    FacilityOnMainTrack {
+        /// Die betroffene Anlage.
+        facility: FacilityId,
+        /// Das Hauptgleis.
+        track: TrackId,
+    },
+    /// Eine Betriebsstelle wurde zweimal mit Stationsdaten angereichert
+    /// (M1.8).
+    DuplicateStationEnrichment(OperatingPointId),
+    /// Stationsdaten nennen eine Betriebsstelle, die es nicht gibt (M1.8).
+    UnknownEnrichmentPoint(OperatingPointId),
+    /// Stationsdaten reichern eine Betriebsstelle an, an der planmäßig kein
+    /// Fahrgastwechsel stattfindet — dort gibt es keine Station anzureichern
+    /// (M1.8).
+    EnrichmentWithoutPassengerStop(OperatingPointId),
 }
 
 impl fmt::Display for InfraError {
@@ -463,6 +507,49 @@ impl fmt::Display for InfraError {
             Self::SignalPlacement { signal } => write!(
                 formatter,
                 "Signal {signal} steht nicht an einem Ende eines vorhandenen Elements"
+            ),
+            Self::FleetClass(bezeichnung) => write!(
+                formatter,
+                "'{bezeichnung}' ist keine Baureihenbezeichnung — ein bis zehn Zeichen aus \
+                 Buchstaben, Ziffern, Punkt und Bindestrich"
+            ),
+            Self::TimeOfDay(sekunden) => write!(
+                formatter,
+                "{sekunden} Sekunden nach Mitternacht liegen außerhalb eines Tages (0 bis 86399)"
+            ),
+            Self::EmptyOpeningWindow => formatter.write_str(
+                "Öffnungs- und Schließzeit sind gleich — das wäre weder durchgehend geöffnet \
+                 noch ein Tagesfenster",
+            ),
+            Self::EmptyFleetCompetence(id) => write!(
+                formatter,
+                "Anlage {id} nennt keine einzige Baureihe, die sie behandeln kann"
+            ),
+            Self::NonPositiveCapacity { what, value } => {
+                write!(formatter, "{what} muss positiv sein, ist aber {value}")
+            }
+            Self::DuplicateFacility(id) => write!(formatter, "Anlage {id} ist zweimal angelegt"),
+            Self::UnknownFacilityTrack { facility, track } => write!(
+                formatter,
+                "Anlage {facility} liegt am unbekannten Gleis {track}"
+            ),
+            Self::FacilityOnMainTrack { facility, track } => write!(
+                formatter,
+                "Anlage {facility} liegt am durchgehenden Hauptgleis {track} — dort finden \
+                 Zugfahrten statt, keine Anlagen"
+            ),
+            Self::DuplicateStationEnrichment(id) => write!(
+                formatter,
+                "Betriebsstelle {id} ist zweimal mit Stationsdaten angereichert"
+            ),
+            Self::UnknownEnrichmentPoint(id) => write!(
+                formatter,
+                "Stationsdaten nennen die unbekannte Betriebsstelle {id}"
+            ),
+            Self::EnrichmentWithoutPassengerStop(id) => write!(
+                formatter,
+                "Betriebsstelle {id} hat keinen planmäßigen Fahrgastwechsel — dort gibt es \
+                 keine Station anzureichern"
             ),
         }
     }

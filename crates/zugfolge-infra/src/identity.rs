@@ -110,6 +110,13 @@ kennung!(
     "Fs"
 );
 
+kennung!(
+    /// Kennung einer Anlage im Anlagenkataster — Werkstatt, Behandlungs- oder
+    /// Waschanlage, Tankstelle, Entsorgungsanlage oder Abstellgleis (M1.11).
+    FacilityId,
+    "Anl"
+);
+
 /// Das Betriebsstellenkürzel — im deutschen Netz die Abkürzung nach Ril 100.
 ///
 /// Es ist die Kennung, mit der Menschen arbeiten: Sie steht im Fahrplan, in
@@ -171,7 +178,7 @@ impl Canonical for OperatingPointCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{OperatingPointCode, OperatingPointId, TrackId};
+    use super::{FacilityId, OperatingPointCode, OperatingPointId, TrackId};
     use crate::error::InfraError;
 
     #[test]
@@ -179,6 +186,7 @@ mod tests {
         assert_eq!(OperatingPointId::new(7).value(), 7);
         assert_eq!(OperatingPointId::new(7).to_string(), "Bst7");
         assert_eq!(TrackId::new(7).to_string(), "G7");
+        assert_eq!(FacilityId::new(7).to_string(), "Anl7");
         assert!(OperatingPointId::new(1) < OperatingPointId::new(2));
     }
 
