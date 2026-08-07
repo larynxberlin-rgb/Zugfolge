@@ -30,22 +30,25 @@
 //! nicht gleich viel wert.
 //!
 //! Der Import aus OSM-PBF steht seit M1.2 in [`import_pbf`] — er füllt einen
-//! eigenen [`RawGraph`], noch keinen [`OperatingGraph`]. Was daraus ein
-//! spielbares Netz macht, ist Aufgabe der folgenden Schritte:
+//! eigenen [`RawGraph`], noch keinen [`OperatingGraph`]. Der Netzfilter aus
+//! M1.3 ([`filter_network`]) wählt daraus das EBO-Netz aus, wieder als
+//! [`RawGraph`]. Die Abdeckungsmessung aus M1.4 ([`CoverageReport`]) liest die
+//! Vertrauensgrade eines fertigen [`OperatingGraph`] und sagt je Attribut und
+//! Streckenabschnitt, welche Qualitätsklasse er datenseitig erreichen kann.
+//! Und [`derive_gradient_profile`] aus M1.5 rechnet Höhenstichproben in ein
+//! geglättetes Neigungsprofil um, wie es [`Track::builder`] erwartet. Was
+//! daraus ein spielbares Netz macht, ist Aufgabe der folgenden Schritte:
 //!
 //! ## Was hier bewusst noch nicht steht
 //!
 //! | Fehlt | Gehört nach |
 //! |-------|-------------|
-//! | Netzfilter (Spurweite, Stromschiene, Netzausschluss) | M1.3 |
-//! | Abdeckungsreport je Attribut und Abschnitt | M1.4 |
-//! | Ableitung der Neigung aus einem Höhenmodell | M1.5 |
-//! | Blockabschnitte, virtuelle Blöcke, Qualitätsklassen A/B/C | M1.6 |
+//! | Blockabschnitte, virtuelle Blöcke, Qualitätsklassifizierung A/B/C je Block | M1.6 |
 //! | Weichen, Fahrstraßen, Durchrutschwege, Ausschlussmengen | M1.7 |
 //! | Anlagenkataster | M1.11 |
 //! | `InfraRelease` als versioniertes Artefakt | M1.12 |
 //!
-//! Das Modell ist auf alle acht vorbereitet, nimmt aber keines vorweg. Ein
+//! Das Modell ist auf alle vier vorbereitet, nimmt aber keines vorweg. Ein
 //! Blockabschnitt ist **kein** Gleis, und eine Fahrstraße ist keine Kante — wer
 //! sie hier unterbrächte, müsste sie in M1.6 und M1.7 wieder herausoperieren.
 //!
@@ -75,13 +78,16 @@
 
 mod bands;
 mod canonical;
+mod coverage;
 mod edge;
 mod electrification;
+mod elevation;
 mod error;
 mod example;
 mod graph;
 mod identity;
 mod import;
+mod network_filter;
 mod operating_point;
 mod platform;
 mod protection;
@@ -91,14 +97,21 @@ mod track;
 mod units;
 
 pub use bands::{Band, BandProfile};
+pub use coverage::{
+    AchievableSection, AttributeCoverage, CoverageReport, QualityClass, TrackCoverage,
+};
 pub use edge::{TrackEdge, TravelDirection};
 pub use electrification::{Electrification, PowerSystem};
+pub use elevation::{DEFAULT_MIN_BAND_LENGTH, ElevationSample, derive_gradient_profile};
 pub use error::InfraError;
 pub use example::reference_network;
 pub use graph::{OperatingGraph, OperatingGraphBuilder};
 pub use identity::{OperatingPointCode, OperatingPointId, PlatformId, TrackEdgeId, TrackId};
 pub use import::{
     ImportError, OsmNodeId, OsmWayId, RawEdge, RawEdgeId, RawGraph, RawNode, import_pbf,
+};
+pub use network_filter::{
+    EXCLUDED_RAILWAY_VALUES, ExclusionReason, NetworkFilterOutcome, classify, filter_network,
 };
 pub use operating_point::{Coordinate, OperatingPoint, OperatingPointKind};
 pub use platform::Platform;

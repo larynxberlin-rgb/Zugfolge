@@ -30,7 +30,16 @@ Ergebnis vorzeigbar ist. Bislang erledigt:
   [`crates/zugfolge-infra`](../crates/zugfolge-infra);
 - **M1.2** — die Import-Pipeline OSM-PBF → Rohgraph, siehe
   [`betriebsgraph.md`](betriebsgraph.md) Abschnitt 7 und
-  [`crates/zugfolge-infra/src/import`](../crates/zugfolge-infra/src/import).
+  [`crates/zugfolge-infra/src/import`](../crates/zugfolge-infra/src/import);
+- **M1.3** — der Netzfilter, siehe [`betriebsgraph.md`](betriebsgraph.md)
+  Abschnitt 8 und
+  [`crates/zugfolge-infra/src/network_filter.rs`](../crates/zugfolge-infra/src/network_filter.rs);
+- **M1.4** — die Abdeckungsmessung, siehe [`betriebsgraph.md`](betriebsgraph.md)
+  Abschnitt 9 und
+  [`crates/zugfolge-infra/src/coverage.rs`](../crates/zugfolge-infra/src/coverage.rs);
+- **M1.5** — das Neigungsprofil aus dem Höhenmodell, siehe
+  [`betriebsgraph.md`](betriebsgraph.md) Abschnitt 10 und
+  [`crates/zugfolge-infra/src/elevation.rs`](../crates/zugfolge-infra/src/elevation.rs).
 
 ---
 
@@ -71,9 +80,9 @@ README:
 |---|---------------|-------|--------|
 | 1.1 | Domänenmodell: Betriebsstellen, Kanten, Gleise, Bahnsteige, Elektrifizierung, Zugsicherung, Vmax-Bänder, Neigung | M | erledigt |
 | 1.2 | Import-Pipeline OSM-PBF → Rohgraph mit Topologie, Geometrie, Tags | L | erledigt |
-| 1.3 | **Netzfilter**: nur `railway=rail` in 1435 mm; Tram, Stadtbahn, U-Bahn, Schmalspur, Standseil- und Einschienenbahnen verwerfen; Stromschienennetze über Netzausschlussliste. **Betriebs-, Abstell- und Anschlussgleise bleiben erhalten** | M | offen |
-| 1.4 | **Abdeckungsmessung**: Coverage-Report je Attribut und Streckenabschnitt. Entscheidet *vor* dem Bau, welche Strecke Klasse A erreichen kann | M | offen |
-| 1.5 | **Neigungsprofil aus Höhenmodell** — aus einem DEM entlang der Gleisgeometrie abgeleitet und geglättet | M | offen |
+| 1.3 | **Netzfilter**: nur `railway=rail` in 1435 mm; Tram, Stadtbahn, U-Bahn, Schmalspur, Standseil- und Einschienenbahnen verwerfen; Stromschienennetze über Netzausschlussliste. **Betriebs-, Abstell- und Anschlussgleise bleiben erhalten** | M | erledigt |
+| 1.4 | **Abdeckungsmessung**: Coverage-Report je Attribut und Streckenabschnitt. Entscheidet *vor* dem Bau, welche Strecke Klasse A erreichen kann | M | erledigt |
+| 1.5 | **Neigungsprofil aus Höhenmodell** — aus einem DEM entlang der Gleisgeometrie abgeleitet und geglättet | M | erledigt |
 | 1.6 | **Blockableitung** aus Signalpositionen, Zugbeeinflussung und Topologie; virtuelle Blöcke bei Lücken; Qualitätsklassifizierung A/B/C | L | offen |
 | 1.7 | **Fahrstraßen- und Durchrutschwegableitung** im Bahnhofskopf — aus Weichenlage und Signalstandort erzeugt | **XL** | offen |
 | 1.8 | Stationsdaten-Anreicherung — ausschließlich freigegebene Quellen | M | offen |
@@ -111,6 +120,30 @@ Netzfilter (M1.3). Der PBF-Leser ist von Hand geschrieben — Varint, Zickzack,
 Blob-Rahmen — statt über eine generierte Protobuf-Anbindung, weil das Format
 selbst nur diesen kleinen, stabilen Ausschnitt von Protobuf braucht. Siehe
 `betriebsgraph.md` Abschnitt 7.
+
+**M1.3 trägt:** Der Netzfilter wählt aus dem Rohgraph das EBO-Netz aus —
+ausschließlich `railway=rail` in Regelspur, ohne Stromschiene. Jeder andere
+`railway`-Wert fällt heraus, auch ein hier nicht ausdrücklich genannter: Nur
+`rail` ist zulässig, alles andere gilt als nicht zur EBO gehörig. Betriebs-,
+Abstell- und Anschlussgleise bleiben erhalten, weil der Filter kein
+`service`-Tag prüft. Das Ergebnis ist wieder ein Rohgraph. Siehe
+`betriebsgraph.md` Abschnitt 8.
+
+**M1.4 trägt:** Die Abdeckungsmessung bildet den Vertrauensgrad jedes Bandes
+unmittelbar auf eine Qualitätsklasse ab (erfasst → A, abgeleitet → B,
+angenommen → C) und zerlegt jedes Gleis an jeder Bandgrenze seiner vier
+Profile neu, damit jeder Abschnitt seine eigene erreichbare Klasse trägt.
+Das ist die datenseitige Obergrenze, auf der die Blockableitung (M1.6) und
+die Fahrstraßenableitung (M1.7) erst noch aufsetzen müssen, um Klasse A
+tatsächlich zu erreichen. Siehe `betriebsgraph.md` Abschnitt 9.
+
+**M1.5 trägt:** Aus Höhenstichproben entlang der Gleisgeometrie entsteht ein
+geglättetes Neigungsprofil — Stützpunkte im Mindestabstand einer
+Bandlänge, linear interpoliert, statt jede Stichprobe einzeln in ein Band zu
+übersetzen. Jedes Band trägt `Confidence::Derived`. Das Höhenmodell der
+Pilotregion selbst steht im Quellenregister noch auf `pruefung`
+(`docs/rechte.md` 3) — M1.5 liefert deshalb das Verfahren, keinen Import; der
+folgt erst mit der Freigabe. Siehe `betriebsgraph.md` Abschnitt 10.
 
 Ausführlich: [`betriebsgraph.md`](betriebsgraph.md).
 

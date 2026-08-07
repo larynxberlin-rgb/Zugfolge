@@ -162,6 +162,42 @@ impl RawGraph {
     pub fn edge_count(&self) -> usize {
         self.edges.len()
     }
+
+    /// Baut einen neuen Rohgraphen aus einer Teilmenge der Kanten dieses
+    /// Graphen — für Stufen, die aus einem vorhandenen Rohgraphen einen neuen
+    /// ableiten, statt selbst zu importieren. Der Netzfilter (M1.3) ist der
+    /// erste solche Fall.
+    ///
+    /// Nur die Kanten, für die `keep` wahr liefert, bleiben erhalten; die
+    /// Knotenmenge wird auf die Endpunkte der verbleibenden Kanten verkürzt.
+    /// Ein Knoten, der ausschließlich zu verworfenen Kanten gehörte, wäre
+    /// sonst ein Punkt ohne Anschluss — kein Fund, den eine spätere Stufe
+    /// noch einmal treffen müsste.
+    pub fn subgraph(&self, keep: impl Fn(&RawEdge) -> bool) -> RawGraph {
+        let edges: Vec<RawEdge> = self
+            .edges
+            .iter()
+            .filter(|edge| keep(edge))
+            .cloned()
+            .collect();
+
+        let mut used_node_ids: BTreeSet<OsmNodeId> = BTreeSet::new();
+        for edge in &edges {
+            used_node_ids.insert(edge.from);
+            used_node_ids.insert(edge.to);
+        }
+
+        let nodes = used_node_ids
+            .into_iter()
+            .filter_map(|id| self.nodes.get(&id).cloned().map(|node| (id, node)))
+            .collect();
+
+        RawGraph {
+            source: self.source.clone(),
+            nodes,
+            edges,
+        }
+    }
 }
 
 /// Baut den Rohgraph aus den geparsten OSM-Elementen.
@@ -360,6 +396,73 @@ mod tests {
         let graph = build_raw_graph(quelle(), &nodes, &ways).expect("gültiger Rohgraph");
         assert_eq!(graph.node_count(), 0);
         assert_eq!(graph.edge_count(), 0);
+    }
+
+    #[test]
+    fn ein_teilgraph_behaelt_nur_die_endpunkte_seiner_kanten() {
+        let mut nodes = BTreeMap::new();
+        for (id, laengengrad) in [(1, 0), (2, 1_000_000), (4, 1_500_000)] {
+            let (id, node) = punkt(id, laengengrad);
+            nodes.insert(id, node);
+        }
+        // N3 braucht einen eigenen railway-Tag, um trotz fehlender Verzweigung
+        // ein eigener Knoten zu werden — sonst bliebe er nur Geometriepunkt
+        // seines Wegs, und der Teilgraph hätte nichts zu verkürzen.
+        let mut n3_tags = BTreeMap::new();
+        n3_tags.insert("railway".to_owned(), "switch".to_owned());
+        nodes.insert(
+            OsmNodeId::new(3),
+            OsmNode {
+                id: OsmNodeId::new(3),
+                coordinate: Coordinate::new(510_000_000, 2_000_000).expect("gültige Lage"),
+                tags: n3_tags,
+            },
+        );
+
+        let mut rail = BTreeMap::new();
+        rail.insert("railway".to_owned(), "rail".to_owned());
+        let mut tram = BTreeMap::new();
+        tram.insert("railway".to_owned(), "tram".to_owned());
+
+        let mut ways = BTreeMap::new();
+        ways.insert(
+            OsmWayId::new(10),
+            OsmWay {
+                id: OsmWayId::new(10),
+                nodes: vec![OsmNodeId::new(1), OsmNodeId::new(2)],
+                tags: rail,
+            },
+        );
+        ways.insert(
+            OsmWayId::new(11),
+            OsmWay {
+                id: OsmWayId::new(11),
+                nodes: vec![OsmNodeId::new(2), OsmNodeId::new(3), OsmNodeId::new(4)],
+                tags: tram,
+            },
+        );
+
+        let graph = build_raw_graph(quelle(), &nodes, &ways).expect("gültiger Rohgraph");
+        assert_eq!(graph.node_count(), 4);
+        assert_eq!(
+            graph.edge_count(),
+            3,
+            "Weg 11 zerfällt bei N3 zusätzlich in zwei Abschnitte"
+        );
+
+        let teilgraph =
+            graph.subgraph(|edge| edge.tags().get("railway").map(String::as_str) == Some("rail"));
+
+        assert_eq!(teilgraph.edge_count(), 1);
+        assert_eq!(
+            teilgraph.node_count(),
+            2,
+            "N3 und N4 hingen nur an der verworfenen Straßenbahnkante"
+        );
+        assert!(teilgraph.node(OsmNodeId::new(1)).is_some());
+        assert!(teilgraph.node(OsmNodeId::new(2)).is_some());
+        assert!(teilgraph.node(OsmNodeId::new(4)).is_none());
+        assert_eq!(teilgraph.source(), graph.source());
     }
 
     #[test]
