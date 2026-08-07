@@ -13,8 +13,10 @@ crates/                     Rust — Simulationskern, Solver, Release-Pipeline
   zugfolge-determinism/     Determinismus-Testharnisch (M0.2)
   zugfolge-infra/           Betriebsgraph und Infra-Release-Pipeline (M1)
 packages/                   TypeScript — fachliche Bibliotheken (ab M2)
-  db/                        Postgres-Zugriff über Drizzle, Wurzel der Weltisolation (M2.2)
+  db/                       Postgres-Zugriff über Drizzle, Wurzel der Weltisolation (M2.2)
+  identity/                 Konten, Rollen, Weltzugänge; Keycloak-Verifikation (M2.1)
 apps/                       TypeScript — Dienste und Frontend (ab M2 / M4)
+  game-api/                 Fastify-Dienst: Authentifizierung, Weltzugang, Rollenvergabe (M2.1)
 spikes/                     Wegwerf-Code mit Verfallsdatum
   blocking-time-staircase/  Sperrzeitentreppe und Konfliktprüfung (M0.3)
 tools/                      Werkzeuge für CI und Entwicklung
@@ -23,11 +25,16 @@ docs/                       Spezifikation und Entscheidungen
 .github/workflows/          CI
 ```
 
-`packages/` und `apps/` sind im pnpm-Workspace vorgesehen und werden angelegt,
-wenn der erste Milestone sie füllt — ein leeres Verzeichnis mit Platzhalter ist
-kein Aufbau, sondern eine Behauptung. `packages/db` ist mit M2.2 das erste
-gefüllte Paket: Drizzle-Schema, Postgres-Client und das weltgebundene
-Repository des Event-Logs, siehe Abschnitt 3 und 4.
+`packages/` und `apps/` füllen sich seit **M2**: `packages/db` (M2.2) trägt
+das gemeinsame Drizzle-Schema — `worlds` als Wurzel der Mandantentrennung,
+das append-only Event-Log `domain_events` und, seit M2.1, Weltzugang, Konto
+und Kontorolle —, den Postgres-Client und das weltgebundene Repository des
+Event-Logs (Abschnitt 3 und 4). `packages/identity` (M2.1) bündelt darüber
+die Keycloak-Tokenverifikation und die fachliche Logik von Weltzugang, Konto
+und Rolle; `apps/game-api` verdrahtet das zu einem Fastify-Dienst. Siehe
+[`weltgeruest.md`](weltgeruest.md). Weitere Unterverzeichnisse entstehen,
+sobald ein Milestone sie tatsächlich füllt — ein leeres Verzeichnis mit
+Platzhalter ist kein Aufbau, sondern eine Behauptung.
 
 **`spikes/` ist Wegwerf-Code, und zwar mit ausgesprochenem Verfallsdatum.** Ein
 Spike hat eine Frage zu beantworten und danach zu verschwinden; bleibt er

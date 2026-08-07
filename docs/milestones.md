@@ -69,6 +69,9 @@ Ergebnis vorzeigbar ist. Bislang erledigt:
 
 Damit ist **M1 abgeschlossen**: Betriebsgraph und Infra-Release-Pipeline stehen.
 
+- **M2.1** — Keycloak-Integration, Konten, Rollen, Weltzugänge, siehe
+  [`weltgeruest.md`](weltgeruest.md), [`packages/identity`](../packages/identity)
+  und [`apps/game-api`](../apps/game-api);
 - **M2.2** — Weltisolation: `packages/db` liefert `worlds` als Wurzel der
   Mandantentrennung und das append-only Event-Log `domain_events`, beide über
   Drizzle; der Wächter `world-id` prüft seither Tabelle **und** Index in SQL
@@ -286,7 +289,7 @@ einzuziehen hieße, jede Abfrage und jede Zeile anzufassen.
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 2.1 | Keycloak-Integration, Konten, Rollen, Weltzugänge | M | offen |
+| 2.1 | Keycloak-Integration, Konten, Rollen, Weltzugänge | M | erledigt |
 | 2.2 | **Weltisolation**: `world_id` in jeder Tabelle, jedem Index, jedem Event — mit automatisiertem Nachweis statt Disziplin | M | erledigt |
 | 2.3 | EVU als Entität: Gründung, Stammdaten, Zuordnung zu Welt und Spieler | S | offen |
 | 2.4 | **Ledger-Kern**: Integer-Cent, unveränderlich, ausgeglichen, doppelte Buchführung, Property-Test auf Ausgeglichenheit | M | offen |
@@ -296,6 +299,38 @@ einzuziehen hieße, jede Abfrage und jede Zeile anzufassen.
 > **Beweis:** Zwei Konten in derselben Welt sehen einander, zwei Konten in
 > verschiedenen Welten sehen einander nachweislich nicht — belegt durch einen
 > automatisierten Isolationstest, nicht durch Sichtprüfung.
+
+**M2.1 trägt:** Drei world-geschnittene Tabellen — Weltzugang
+(`worldAccesses`), Konto (`accounts`) und Kontorolle (`accountRoles`), jede
+mit `world_id` als führender Spalte ihres Eindeutigkeitsindex und mit
+Fremdschlüssel auf `worlds` (Invariante 4) — liegen als Drizzle-Schema in
+`packages/db`, neben `worlds` und `domain_events` aus M2.2.
+`packages/identity` bündelt darüber die fachliche Logik: Keycloak bleibt
+eigenständiger OIDC-Identity-Provider (`architektur.md` 5), verifiziert wird
+ein mitgebrachtes Zugriffstoken, gespeichert wird nur, wofür das Spielsystem
+selbst Quelle der Wahrheit ist. Zugang und Konto sind bewusst getrennt, damit
+ein entzogener Zugang die Betriebshistorie eines Kontos nicht mit sich reißt
+(E8). Der erste Weltverwalter (`world_admin`) entsteht durch
+Selbstermächtigung, ausschließlich für das anfragende Konto — jede weitere
+Rollenvergabe verlangt bereits diese Rolle in genau der betroffenen Welt.
+`apps/game-api` verdrahtet das zu einem Fastify-Dienst mit
+Bearer-Token-Authentifizierung. Die Kontoliste einer Welt verlangt selbst ein
+Konto in ihr — der erste, hier bereits nachgewiesene Ausschnitt des Beweises
+von M2. Siehe [`weltgeruest.md`](weltgeruest.md).
+
+**M2.2 trägt:** `packages/db` liefert `worlds` als Wurzel der
+Mandantentrennung — sie *ist* die Welt, keine ihrer Zeilen, und trägt deshalb
+selbst keine `world_id` — und das append-only Event-Log `domain_events`,
+dessen beide Indizes mit `world_id` beginnen. Der Wächter `world-id` prüft
+seither Tabelle **und** Index, in SQL wie in Drizzle, mit genau dieser einen
+benannten Ausnahme. Das weltgebundene Repository `worldEventLog` bindet die
+`world_id` an den Konstruktor statt an jeden Aufruf, und ein Test gegen eine
+echte, eingebettete Postgres-Instanz (PGlite) beweist die Trennung zweier
+Welten — nicht nur, dass das Schema es verspricht. Damit ist der
+Belegungstest aus dem Beweis von M2 vollständig erbracht: Zwei Konten
+derselben Welt sehen einander (M2.1), zwei Welten sehen einander im Event-Log
+nachweislich nicht (M2.2). Siehe [`monorepo.md`](monorepo.md) Abschnitt 3 und
+4 und [`packages/db`](../packages/db).
 
 ---
 

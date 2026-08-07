@@ -23,6 +23,7 @@ lesen, nicht raten.
 | `docs/infrastruktur.md` | Konfliktressourcen, Trassenvergabe, Fahrplanperiode, Kapazitätsschutz, Simulation, Livemap | Solver, Sperrzeiten, Planner, Livemap |
 | `docs/betriebsgraph.md` | Domänenmodell der Infrastruktur (M1.1): Bausteine, Zusicherungen, Einheiten, Fingerabdruck, Abgrenzung | am Betriebsgraphen arbeiten, Import, Netzfilter, Blöcke, Fahrstraßen |
 | `docs/betrieb.md` | Betriebsprogramm, Fahrzeuge, Personal, Versorgung, Zusatzfahrten, Störungen, Baustellenfahrplan | Disposition, Flotte, Umläufe, Wartung, Baustellen |
+| `docs/weltgeruest.md` | Weltgerüst (M2): Konten, Rollen, Weltzugänge, Grenze zur Identität bei Keycloak | Konten, Rollen oder Weltzugänge bearbeiten |
 | `docs/wirtschaft.md` | Spielkreislauf, Geschäftsfelder, Nachfrage, Ausschreibung, Eigenbetrieb, Insolvenz, Kooperation | Verträge, Märkte, Geld, Ausschreibungen |
 | `docs/daten.md` | Datenlage OSM/ORM, Quellen, Rechte, Qualitätsklassen | Import-Pipeline, InfraRelease, Lizenzfragen zu Daten |
 | `docs/rechte.md` | Rechte-Gate: Freigabestatus je Datenquelle, Quellenregister, Trassenfinder-Nutzungsbedingungen | eine Datenquelle nutzen oder aufnehmen, Import beginnen (Invariante 8) |
@@ -135,8 +136,9 @@ Stationsdaten-Anreicherung, die Zugcharakteristik, Fahrdynamik und
 Fahrzeitrechner, der Anlagenkataster, der `InfraRelease` und der Referenzkorpus
 mit Abweichungsreport stehen in `crates/zugfolge-infra`. Damit ist der
 Betriebsgraph samt Infra-Release-Pipeline vollständig.
-**M2 ist begonnen: M2.2 ist erledigt** — die Weltisolation mit `packages/db`,
-siehe unten.
+**M2 ist begonnen: M2.1 und M2.2 sind erledigt** — Keycloak-Integration,
+Konten, Rollen und Weltzugänge (`packages/identity`, `apps/game-api`) sowie
+die Weltisolation mit `packages/db`, siehe unten.
 
 - **Alpha-Schnitt:** M0 – M9. Alles ab M10 ist Ausbau.
 - **Kritischer Pfad:** M0.3 → M1 → M3 → M4 → M7. Die ersten Schritte sind geführt.
@@ -258,6 +260,17 @@ siehe unten.
   Wie M1.5 bis M1.8 ist das Verfahren **kein Import** — der Trassenfinder steht
   auf `entwicklung` (E10) —, es rechnet mit gegebenen Referenzfahrzeiten. Damit
   ist der M1-Beweis erbracht. Siehe `docs/betriebsgraph.md` Abschnitt 18.
+- **M2.1 steht:** `packages/identity` hält Weltzugang (`worldAccesses`), Konto
+  (`accounts`) und Kontorolle (`accountRoles`) als Drizzle-Schema in
+  `packages/db` neben `worlds` — getrennt von der Identität bei Keycloak, die
+  nur verifiziert, nicht gespiegelt wird. Der erste Weltverwalter entsteht
+  durch Selbstermächtigung, ausschließlich für das anfragende Konto selbst;
+  jede weitere Rollenvergabe verlangt bereits `world_admin` in genau dieser
+  Welt. `apps/game-api` verdrahtet das über Fastify: Weltzugang, Kontoliste,
+  Rollenvergabe, alle hinter Bearer-Token-Prüfung. Beide Pakete testen
+  vollständig ohne laufendes PostgreSQL oder Keycloak — dieselbe Migration aus
+  `packages/db` läuft in Tests über `@electric-sql/pglite`, im Betrieb über
+  `@zugfolge/db`s Postgres-Verbindung. Siehe `docs/weltgeruest.md`.
 - **M2.2 steht:** `packages/db` trägt `worlds` — die Wurzel der
   Mandantentrennung, keine ihrer Zeilen — und das append-only Event-Log
   `domain_events`, beide als Drizzle-Schema mit generierter SQL-Migration. Der
@@ -269,9 +282,9 @@ siehe unten.
   eingebettete Postgres-Instanz (PGlite) beweist, dass zwei Welten einander
   nie sehen — nicht nur, dass das Schema es verspricht. Invariante 4 ist damit
   seit M0.2 durchgesetzt und seit M2.2 vollständig bewiesen.
-- **Nächster Schritt:** die übrigen Teilabschnitte von M2 — Keycloak-Konten
-  (M2.1), EVU-Entität (M2.3), Ledger-Kern (M2.4), Postfach (M2.5) und
-  Datenschutz (M2.6) (`docs/milestones.md`).
+- **Nächster Schritt:** die übrigen Teilabschnitte von M2 — EVU-Entität
+  (M2.3), Ledger-Kern (M2.4), Postfach (M2.5) und Datenschutz (M2.6)
+  (`docs/milestones.md`).
 
 Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` steht unter
 PolyForm Shield 1.0.0, nennt Sebastian Barowski als Rechteinhaber und ist damit

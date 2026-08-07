@@ -1,0 +1,27 @@
+{
+  "name": "@zugfolge/identity",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Konten, Rollen und Weltzugänge; Keycloak als OIDC-Identitätsanbieter (M2.1)",
+  "license": "LicenseRef-PolyForm-Shield-1.0.0",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@zugfolge/db": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "jose": "^6.2.8"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.4",
+    "@types/node": "^24.13.3",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}
