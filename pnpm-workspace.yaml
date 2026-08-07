@@ -1,4 +1,16 @@
 # ---------------------------------------------------------------------------
+# Erlaubte Installationsskripte
+# ---------------------------------------------------------------------------
+# Seit pnpm 11 läuft kein Installationsskript einer Abhängigkeit mehr
+# ungefragt — auch nicht in CI, wo „ungefragt" sonst „stillschweigend"
+# bedeutet hätte. `esbuild` kam mit M2.2 über `drizzle-kit` und `vite`
+# neu in den Baum (`packages/db`); sein Installationsskript wählt nur
+# die von pnpm bereits aufgelöste, passende Plattformbinärdatei aus dem
+# eigenen Paket aus. Freigegeben, einzeln benannt.
+allowBuilds:
+  esbuild: true
+
+# ---------------------------------------------------------------------------
 # Lieferkette
 # ---------------------------------------------------------------------------
 # Frisch veröffentlichte Paketversionen werden 24 Stunden lang nicht
@@ -27,14 +39,3 @@ packages:
   - "packages/*"
   # Ausführbare Dienste und das Frontend (ab M2 beziehungsweise M4).
   - "apps/*"
-
-# ---------------------------------------------------------------------------
-# Build-Skripte
-# ---------------------------------------------------------------------------
-# Seit pnpm 11 wird ein Paket ohne ausdrückliche Freigabe hier mit einem
-# Fehler abgelehnt, sobald sein Installationsskript etwas bauen will (statt
-# es nur zu ignorieren) — das frühere "pnpm"-Feld in package.json wird dafür
-# nicht mehr gelesen. esbuild (transitiv über Vitest/Vite) braucht sein
-# Postinstall-Skript, um die passende Plattformbinärdatei zu holen.
-allowBuilds:
-  esbuild: true

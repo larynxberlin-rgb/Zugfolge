@@ -136,9 +136,9 @@ Stationsdaten-Anreicherung, die Zugcharakteristik, Fahrdynamik und
 Fahrzeitrechner, der Anlagenkataster, der `InfraRelease` und der Referenzkorpus
 mit Abweichungsreport stehen in `crates/zugfolge-infra`. Damit ist der
 Betriebsgraph samt Infra-Release-Pipeline vollständig.
-**M2.1 ist erledigt:** Keycloak-Integration, Konten, Rollen und Weltzugänge
-stehen in `packages/identity` und `apps/game-api` — die ersten Pakete
-außerhalb von `crates/`.
+**M2 ist begonnen: M2.1 und M2.2 sind erledigt** — Keycloak-Integration,
+Konten, Rollen und Weltzugänge (`packages/identity`, `apps/game-api`) sowie
+die Weltisolation mit `packages/db`, siehe unten.
 
 - **Alpha-Schnitt:** M0 – M9. Alles ab M10 ist Ausbau.
 - **Kritischer Pfad:** M0.3 → M1 → M3 → M4 → M7. Die ersten Schritte sind geführt.
@@ -261,18 +261,29 @@ außerhalb von `crates/`.
   auf `entwicklung` (E10) —, es rechnet mit gegebenen Referenzfahrzeiten. Damit
   ist der M1-Beweis erbracht. Siehe `docs/betriebsgraph.md` Abschnitt 18.
 - **M2.1 steht:** `packages/identity` hält Weltzugang (`worldAccesses`), Konto
-  (`accounts`) und Kontorolle (`accountRoles`) als eigenes, world-geschnittenes
-  Drizzle-Schema — getrennt von der Identität bei Keycloak, die nur verifiziert,
-  nicht gespiegelt wird. Der erste Weltverwalter entsteht durch
-  Selbstermächtigung, ausschließlich für das anfragende Konto selbst; jede
-  weitere Rollenvergabe verlangt bereits `world_admin` in genau dieser Welt.
-  `apps/game-api` verdrahtet das über Fastify: Weltzugang, Kontoliste,
+  (`accounts`) und Kontorolle (`accountRoles`) als Drizzle-Schema in
+  `packages/db` neben `worlds` — getrennt von der Identität bei Keycloak, die
+  nur verifiziert, nicht gespiegelt wird. Der erste Weltverwalter entsteht
+  durch Selbstermächtigung, ausschließlich für das anfragende Konto selbst;
+  jede weitere Rollenvergabe verlangt bereits `world_admin` in genau dieser
+  Welt. `apps/game-api` verdrahtet das über Fastify: Weltzugang, Kontoliste,
   Rollenvergabe, alle hinter Bearer-Token-Prüfung. Beide Pakete testen
-  vollständig ohne laufendes PostgreSQL oder Keycloak — dieselbe Migration
-  läuft in Tests über `@electric-sql/pglite`, im Betrieb über node-postgres.
-  Siehe `docs/weltgeruest.md`.
-- **Nächster Schritt:** M2.2, die automatisierte Weltisolation — `world_id` in
-  jeder Tabelle, jedem Index, jedem Event, mit Nachweis statt Disziplin
+  vollständig ohne laufendes PostgreSQL oder Keycloak — dieselbe Migration aus
+  `packages/db` läuft in Tests über `@electric-sql/pglite`, im Betrieb über
+  `@zugfolge/db`s Postgres-Verbindung. Siehe `docs/weltgeruest.md`.
+- **M2.2 steht:** `packages/db` trägt `worlds` — die Wurzel der
+  Mandantentrennung, keine ihrer Zeilen — und das append-only Event-Log
+  `domain_events`, beide als Drizzle-Schema mit generierter SQL-Migration. Der
+  Wächter `world-id` (`tools/guards`) ist jetzt vollständig: Er prüft nicht
+  mehr nur die Tabelle, sondern auch jeden Index in SQL und Drizzle, mit genau
+  einer benannten Ausnahme für `worlds` selbst — keiner erfundenen. Das
+  weltgebundene Repository `worldEventLog` bindet die `world_id` an den
+  Konstruktor statt an jeden einzelnen Aufruf, und ein Test gegen eine echte,
+  eingebettete Postgres-Instanz (PGlite) beweist, dass zwei Welten einander
+  nie sehen — nicht nur, dass das Schema es verspricht. Invariante 4 ist damit
+  seit M0.2 durchgesetzt und seit M2.2 vollständig bewiesen.
+- **Nächster Schritt:** die übrigen Teilabschnitte von M2 — EVU-Entität
+  (M2.3), Ledger-Kern (M2.4), Postfach (M2.5) und Datenschutz (M2.6)
   (`docs/milestones.md`).
 
 Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` steht unter

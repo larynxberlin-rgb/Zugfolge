@@ -13,6 +13,7 @@ crates/                     Rust — Simulationskern, Solver, Release-Pipeline
   zugfolge-determinism/     Determinismus-Testharnisch (M0.2)
   zugfolge-infra/           Betriebsgraph und Infra-Release-Pipeline (M1)
 packages/                   TypeScript — fachliche Bibliotheken (ab M2)
+  db/                       Postgres-Zugriff über Drizzle, Wurzel der Weltisolation (M2.2)
   identity/                 Konten, Rollen, Weltzugänge; Keycloak-Verifikation (M2.1)
 apps/                       TypeScript — Dienste und Frontend (ab M2 / M4)
   game-api/                 Fastify-Dienst: Authentifizierung, Weltzugang, Rollenvergabe (M2.1)
@@ -24,12 +25,16 @@ docs/                       Spezifikation und Entscheidungen
 .github/workflows/          CI
 ```
 
-`packages/` und `apps/` füllen sich seit **M2.1**: `packages/identity` trägt
-das Drizzle-Schema für Konten, Rollen und Weltzugänge sowie die
-Keycloak-Tokenverifikation; `apps/game-api` verdrahtet das zu einem
-Fastify-Dienst. Siehe [`weltgeruest.md`](weltgeruest.md). Weitere
-Unterverzeichnisse entstehen, sobald ein Milestone sie tatsächlich füllt — ein
-leeres Verzeichnis mit Platzhalter ist kein Aufbau, sondern eine Behauptung.
+`packages/` und `apps/` füllen sich seit **M2**: `packages/db` (M2.2) trägt
+das gemeinsame Drizzle-Schema — `worlds` als Wurzel der Mandantentrennung,
+das append-only Event-Log `domain_events` und, seit M2.1, Weltzugang, Konto
+und Kontorolle —, den Postgres-Client und das weltgebundene Repository des
+Event-Logs (Abschnitt 3 und 4). `packages/identity` (M2.1) bündelt darüber
+die Keycloak-Tokenverifikation und die fachliche Logik von Weltzugang, Konto
+und Rolle; `apps/game-api` verdrahtet das zu einem Fastify-Dienst. Siehe
+[`weltgeruest.md`](weltgeruest.md). Weitere Unterverzeichnisse entstehen,
+sobald ein Milestone sie tatsächlich füllt — ein leeres Verzeichnis mit
+Platzhalter ist kein Aufbau, sondern eine Behauptung.
 
 **`spikes/` ist Wegwerf-Code, und zwar mit ausgesprochenem Verfallsdatum.** Ein
 Spike hat eine Frage zu beantworten und danach zu verschwinden; bleibt er
@@ -115,6 +120,7 @@ Liste ist keine vollständige Karte des Repositoriums, sondern die Zuordnung
 | `demand` | `packages/demand/**`, `crates/zugfolge-demand/**` | geplant | Nachfrage folgt dem Angebot, nie dem Vertrag des Spielers |
 | `economy` | `packages/economy/**`, `packages/tender/**`, `apps/economy-service/**` | geplant | Ledger in Integer-Cent; Wertung deterministisch aus dem `EconomyRelease` |
 | `infra-pipeline` | `crates/zugfolge-infra/**` | aktiv | **der einzige Ort mit Gleitkommarechnung** — sie endet in ganzzahligen Fahrzeittabellen |
+| `world-isolation` | `packages/db/**` | aktiv | Postgres-Zugriff der Game-Services; Wurzel der Weltisolation — `worlds`, das Event-Log und das weltgebundene Repository (M2.2) |
 
 **Status ist kein Kommentar, sondern eine Prüfung.** Eine `aktive` Domäne muss
 Dateien treffen, eine `geplante` darf keine treffen. Legt jemand
@@ -142,7 +148,7 @@ eine einzige Gleitkommazahl aus, bis hin zu 16,7 Hz in Milli-Hertz.
 | 1 | keine inkompatiblen Belegungen derselben Konfliktressource | seit M0.3 im Spike gegen eine zweite, unabhängig geschriebene Prüfung getestet (`spikes/blocking-time-staircase/tests/invariante.rs`); der eigentliche Property-Test folgt mit M3 |
 | 2 | kein `now()` im Simulationskern | `clippy.toml` (`disallowed-methods`) und Wächter `no-wallclock` |
 | 3 | keine Gleitkommazahlen im Zustand | `clippy::float_arithmetic`, `clippy::float_cmp`, Wächter `no-floats` |
-| 4 | `world_id` in jeder Abfrage, jedem Index, jedem Event | Wächter `world-id` gegen SQL und Drizzle; vollständiger Nachweis in M2.2 |
+| 4 | `world_id` in jeder Abfrage, jedem Index, jedem Event | Wächter `world-id` gegen SQL und Drizzle, prüft Tabelle **und** Index; dazu das weltgebundene Repository in `packages/db` und der Isolationstest gegen eine echte Datenbank (M2.2) |
 | 5 | kein Payment-Tier-Feld in spielentscheidenden Domänen | Wächter `no-payment-tier` |
 | 6 | kein externer Dienst im heißen Pfad | Wächter `no-db-in-core` (Netzabhängigkeiten in Kernmanifesten) |
 | 7 | kein Datenbankzugriff aus dem Simulationskern | Wächter `no-db-in-core` |

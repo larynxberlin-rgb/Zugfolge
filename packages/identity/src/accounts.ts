@@ -8,14 +8,18 @@
  * Weltisolation aus M2.2.
  */
 
+import { accountRoles, accounts, worldAccesses } from "@zugfolge/db";
 import { and, eq } from "drizzle-orm";
-import type { PgDatabase } from "drizzle-orm/pg-core";
+import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
-import { accountRoles, accounts, schema, worldAccesses } from "./schema.js";
 import type { Role } from "./roles.js";
 
-/** Verbindungstyp, unabhängig vom Treiber (node-postgres im Betrieb, PGlite im Test). */
-export type IdentityDatabase = PgDatabase<any, typeof schema>;
+/**
+ * Verbindungstyp, unabhängig vom Treiber (`@zugfolge/db`s postgres-js im
+ * Betrieb, PGlite im Test) — derselbe Schnitt wie `AnyDatabase` in
+ * `packages/db/src/world-scope.ts`.
+ */
+export type IdentityDatabase = PgDatabase<PgQueryResultHKT, Record<string, unknown>, any>;
 
 export interface AccountRecord {
   readonly id: string;

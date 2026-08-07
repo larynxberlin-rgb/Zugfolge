@@ -15,11 +15,12 @@ Zugriffstoken und liest daraus, **wer** sich meldet (`sub`, wahlweise
 `preferred_username` als Vorschlag).
 
 Alles, wofür das Spielsystem selbst Quelle der Wahrheit ist — Weltzugänge,
-Spielerstatus, Rollen —, liegt in einer eigenen, world-geschnittenen
-Datenbank. Ein Anzeigename im Spiel ist deshalb eine **Angabe des
-Spielsystems**, nicht mit Keycloak synchronisiert: ein Spieler wählt ihn beim
-ersten Zugang je Welt und kann ihn dort unabhängig von seinem Keycloak-Konto
-führen.
+Spielerstatus, Rollen —, liegt als Drizzle-Schema in `packages/db`, neben
+`worlds` und dem Event-Log aus M2.2 (Invariante 4 gilt für alle Tabellen einer
+Welt gleich, nicht nur für die eigene Domäne). Ein Anzeigename im Spiel ist
+deshalb eine **Angabe des Spielsystems**, nicht mit Keycloak synchronisiert:
+ein Spieler wählt ihn beim ersten Zugang je Welt und kann ihn dort unabhängig
+von seinem Keycloak-Konto führen.
 
 ## 2. Drei Bausteine
 
@@ -37,8 +38,9 @@ bleibt einer bewussten administrativen Handlung vorbehalten
 (`AccessRevokedError`).
 
 Jede der drei Tabellen trägt `world_id` als führende Spalte ihres
-Eindeutigkeitsindex (Invariante 4) — geprüft vom Wächter `world-id` seit M0.2,
-nicht erst seit dieser Tabelle existiert.
+Eindeutigkeitsindex und einen Fremdschlüssel auf `worlds` (Invariante 4) —
+geprüft vom Wächter `world-id` seit M0.2, nicht erst seit diese Tabellen
+existieren.
 
 ## 3. Rollen und ihre Vergabe
 
@@ -65,8 +67,8 @@ vergeben.
 
 Der Beweis von M2 verlangt: „Zwei Konten derselben Welt sehen einander, zwei
 Konten verschiedener Welten sehen einander nachweislich nicht.“ M2.1 liefert
-dafür bereits die kleinste wirksame Form, vor dem automatisierten
-Isolationsnachweis aus M2.2:
+die Kontoseite dieses Beweises, M2.2 die des Event-Logs (`monorepo.md`
+Abschnitt 4):
 
 - `listAccountsInWorld` verlangt selbst ein Konto in der angefragten Welt —
   wer keins hat, bekommt `AuthorizationError`, keine leere Liste. Eine leere
@@ -85,26 +87,23 @@ einmal über die HTTP-Schnittstelle.
 
 | Ort | Inhalt |
 |-----|--------|
-| `packages/identity/src/schema.ts` | die drei Tabellen als Drizzle-Schema |
+| `packages/db/src/schema/world-accesses.ts`, `accounts.ts`, `account-roles.ts` | die drei Tabellen als Drizzle-Schema, neben `worlds` und `domain_events` (M2.2) |
+| `packages/db/drizzle/` | von `drizzle-kit generate` erzeugte SQL-Migration für das gesamte Schema |
 | `packages/identity/src/keycloak.ts` | Tokenverifikation gegen einen JWKS — testbar ohne echtes Keycloak |
-| `packages/identity/src/accounts.ts` | Weltzugang, Kontoerzeugung, Rollenvergabe, world-geschnittene Abfragen |
-| `packages/identity/migrations/` | von `drizzle-kit generate` erzeugte SQL-Migration |
+| `packages/identity/src/accounts.ts` | Weltzugang, Kontoerzeugung, Rollenvergabe, world-geschnittene Abfragen über das Schema aus `packages/db` |
 | `apps/game-api/src/app.ts` | Fastify-Anwendung: Authentifizierung, Routen für Zugang, Kontoliste, Rollenvergabe |
 | `apps/game-api/src/server.ts` | Produktionseinstieg — echtes PostgreSQL, echter Keycloak-Realm |
 
-**Tests laufen ohne laufendes PostgreSQL oder Keycloak.** Gegen die
-Datenbank läuft dieselbe Migration wie im Betrieb, nur über
-`@electric-sql/pglite` statt eines Datenbankservers; die Tokenverifikation
-läuft gegen ein lokal erzeugtes Schlüsselpaar statt gegen einen echten Realm.
-Die Produktionsverdrahtung (`server.ts`, `packages/identity/src/db.ts`)
-verwendet ausschließlich node-postgres gegen echtes PostgreSQL, wie
-`architektur.md` es festlegt — die Testdoppel betreffen nur die Testläufe,
-nicht das ausgelieferte Verhalten.
+**Tests laufen ohne laufendes PostgreSQL oder Keycloak.** Gegen die Datenbank
+läuft dieselbe Migration wie im Betrieb, nur über `@electric-sql/pglite` statt
+eines Datenbankservers; die Tokenverifikation läuft gegen ein lokal erzeugtes
+Schlüsselpaar statt gegen einen echten Realm. Die Produktionsverdrahtung
+(`server.ts`, `packages/db/src/client.ts`) verwendet ausschließlich
+postgres-js gegen echtes PostgreSQL, wie `architektur.md` es festlegt — die
+Testdoppel betreffen nur die Testläufe, nicht das ausgelieferte Verhalten.
 
 ## 6. Was M2.1 bewusst **nicht** enthält
 
-- Kein automatisierter Isolationsnachweis über die gesamte Plattform — das
-  ist M2.2.
 - Keine EVU-Entität — das ist M2.3.
 - Kein Postfach, kein Ledger — M2.4 und M2.5.
 - Keine Einladungen für private Welten (M13.3) — `worldAccesses` trägt bereits

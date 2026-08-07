@@ -10,7 +10,6 @@ export {
   type AccountRecord,
   type IdentityDatabase,
 } from "./accounts.js";
-export { createIdentityDatabase } from "./db.js";
 export {
   createKeycloakVerifier,
   loadKeycloakConfigFromEnv,
@@ -19,6 +18,4 @@ export {
   type IdentityClaims,
   type KeycloakConfig,
 } from "./keycloak.js";
-export { MIGRATIONS_FOLDER } from "./migrations.js";
 export { isRole, ROLES, type Role } from "./roles.js";
-export { accountRoles, accounts, schema, worldAccesses } from "./schema.js";

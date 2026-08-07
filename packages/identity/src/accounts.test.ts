@@ -1,4 +1,5 @@
 import { PGlite } from "@electric-sql/pglite";
+import { MIGRATIONS_FOLDER, schema, worlds } from "@zugfolge/db";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -13,8 +14,6 @@ import {
   requestWorldAccess,
   revokeWorldAccess,
 } from "./accounts.js";
-import { MIGRATIONS_FOLDER } from "./migrations.js";
-import { schema } from "./schema.js";
 import type { IdentityDatabase } from "./accounts.js";
 
 const WORLD_LHE = "11111111-1111-1111-1111-111111111111";
@@ -28,6 +27,16 @@ beforeEach(async () => {
   const pgliteDb = drizzle(client, { schema });
   await migrate(pgliteDb, { migrationsFolder: MIGRATIONS_FOLDER });
   db = pgliteDb;
+
+  await pgliteDb.insert(worlds).values([
+    { id: WORLD_LHE, name: "Leipzig–Halle–Erfurt", schedulePeriodWeeks: 4, epoch: new Date("2026-01-01T00:00:00Z") },
+    {
+      id: WORLD_MIDDLE_GERMANY,
+      name: "Mitteldeutschland",
+      schedulePeriodWeeks: 4,
+      epoch: new Date("2026-01-01T00:00:00Z"),
+    },
+  ]);
 });
 
 afterEach(async () => {

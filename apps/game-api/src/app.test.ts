@@ -1,5 +1,6 @@
 import { PGlite } from "@electric-sql/pglite";
-import { MIGRATIONS_FOLDER, schema, verifyIdentityToken, type IdentityDatabase } from "@zugfolge/identity";
+import { MIGRATIONS_FOLDER, schema, worlds } from "@zugfolge/db";
+import { verifyIdentityToken, type IdentityDatabase } from "@zugfolge/identity";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
@@ -23,6 +24,16 @@ beforeEach(async () => {
   const pgliteDb = drizzle(client, { schema });
   await migrate(pgliteDb, { migrationsFolder: MIGRATIONS_FOLDER });
   db = pgliteDb;
+
+  await pgliteDb.insert(worlds).values([
+    { id: WORLD_LHE, name: "Leipzig–Halle–Erfurt", schedulePeriodWeeks: 4, epoch: new Date("2026-01-01T00:00:00Z") },
+    {
+      id: WORLD_MIDDLE_GERMANY,
+      name: "Mitteldeutschland",
+      schedulePeriodWeeks: 4,
+      epoch: new Date("2026-01-01T00:00:00Z"),
+    },
+  ]);
 
   const { publicKey, privateKey } = await generateKeyPair("RS256");
   const jwk = await exportJWK(publicKey);

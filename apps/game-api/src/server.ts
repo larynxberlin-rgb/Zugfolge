@@ -1,6 +1,7 @@
 /** Produktionseinstieg: echte Postgres-Verbindung, echter Keycloak-Realm. */
 
-import { createIdentityDatabase, createKeycloakVerifier, loadKeycloakConfigFromEnv } from "@zugfolge/identity";
+import { createDatabase } from "@zugfolge/db";
+import { createKeycloakVerifier, loadKeycloakConfigFromEnv } from "@zugfolge/identity";
 
 import { buildApp } from "./app.js";
 
@@ -12,7 +13,7 @@ function requireEnv(name: string): string {
   return value;
 }
 
-const db = createIdentityDatabase(requireEnv("DATABASE_URL"));
+const db = createDatabase(requireEnv("DATABASE_URL"));
 const verifyToken = createKeycloakVerifier(loadKeycloakConfigFromEnv());
 const app = buildApp({ db, verifyToken });
 

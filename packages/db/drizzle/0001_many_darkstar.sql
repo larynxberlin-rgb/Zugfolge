@@ -23,7 +23,10 @@ CREATE TABLE "world_accesses" (
 	"revoked_at" timestamp with time zone
 );
 --> statement-breakpoint
+ALTER TABLE "account_roles" ADD CONSTRAINT "account_roles_world_id_worlds_id_fk" FOREIGN KEY ("world_id") REFERENCES "public"."worlds"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "account_roles" ADD CONSTRAINT "account_roles_account_id_accounts_id_fk" FOREIGN KEY ("account_id") REFERENCES "public"."accounts"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "accounts" ADD CONSTRAINT "accounts_world_id_worlds_id_fk" FOREIGN KEY ("world_id") REFERENCES "public"."worlds"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "world_accesses" ADD CONSTRAINT "world_accesses_world_id_worlds_id_fk" FOREIGN KEY ("world_id") REFERENCES "public"."worlds"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "account_roles_world_account_role_idx" ON "account_roles" USING btree ("world_id","account_id","role");--> statement-breakpoint
 CREATE UNIQUE INDEX "accounts_world_subject_idx" ON "accounts" USING btree ("world_id","keycloak_subject");--> statement-breakpoint
 CREATE UNIQUE INDEX "world_accesses_world_subject_idx" ON "world_accesses" USING btree ("world_id","keycloak_subject");
