@@ -92,6 +92,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "zugfolge-infra"
+version = "0.0.0"
+dependencies = [
+ "zugfolge-determinism",
+]
+
+[[package]]
 name = "zugfolge-spike-blocking-time-staircase"
 version = "0.0.0"
 dependencies = [

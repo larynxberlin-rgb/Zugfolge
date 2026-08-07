@@ -24,7 +24,10 @@ Ergebnis vorzeigbar ist. Bislang erledigt:
 - **M0.5** — Lizenz und Rechteschutz: `LICENSE` mit benanntem Rechteinhaber
   (wirksam), CLA und durchgesetzte Schichtentrennung (`layer-separation`), siehe
   [`rechteschutz.md`](rechteschutz.md). Eine Markenregistrierung erfolgt bewusst
-  nicht (Inhaberentscheidung).
+  nicht (Inhaberentscheidung);
+- **M1.1** — das Domänenmodell des Betriebsgraphen, siehe
+  [`betriebsgraph.md`](betriebsgraph.md) und
+  [`crates/zugfolge-infra`](../crates/zugfolge-infra).
 
 ---
 
@@ -63,7 +66,7 @@ README:
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 1.1 | Domänenmodell: Betriebsstellen, Kanten, Gleise, Bahnsteige, Elektrifizierung, Zugsicherung, Vmax-Bänder, Neigung | M | offen |
+| 1.1 | Domänenmodell: Betriebsstellen, Kanten, Gleise, Bahnsteige, Elektrifizierung, Zugsicherung, Vmax-Bänder, Neigung | M | erledigt |
 | 1.2 | Import-Pipeline OSM-PBF → Rohgraph mit Topologie, Geometrie, Tags | L | offen |
 | 1.3 | **Netzfilter**: nur `railway=rail` in 1435 mm; Tram, Stadtbahn, U-Bahn, Schmalspur, Standseil- und Einschienenbahnen verwerfen; Stromschienennetze über Netzausschlussliste. **Betriebs-, Abstell- und Anschlussgleise bleiben erhalten** | M | offen |
 | 1.4 | **Abdeckungsmessung**: Coverage-Report je Attribut und Streckenabschnitt. Entscheidet *vor* dem Bau, welche Strecke Klasse A erreichen kann | M | offen |
@@ -81,6 +84,20 @@ README:
 > Fahrzeiten innerhalb definierter Toleranz zur Referenz liegen — begleitet von
 > einem Abdeckungsreport, der je Streckenabschnitt offenlegt, worauf die
 > Qualitätsklasse beruht.
+
+**M1.1 trägt:** `crates/zugfolge-infra` beschreibt Betriebsstellen, Kanten,
+Gleise, Bahnsteige, Elektrifizierung, Zugsicherung, Vmax-Bänder und Neigung,
+prüft beim Bauen jede Zusicherung des Modells und liefert einen kanonischen
+Fingerabdruck, der nicht an der Einfügereihenfolge hängt — die spätere
+Prüfsumme des `InfraRelease` (M1.12). Drei Entscheidungen wirken weiter:
+
+| Entscheidung | Wirkung |
+|--------------|---------|
+| Gefahren wird auf **Gleisen**, die Richtungsbindung liegt am Gleis | Zugfolgefall und Gegenfahrt bleiben eine Eigenschaft des Netzes, keine zweite Regel (M3.1, M3.3) |
+| Vmax, Neigung, Elektrifizierung und Zugsicherung sind **ein** Bandmechanismus | M1.5 und M1.6 füllen Bänder, statt je ein eigenes Modell zu bauen |
+| Die Herkunft hängt am einzelnen **Band**, nicht am Gleis | M1.4 kann je Attribut und Abschnitt messen, ohne das Modell aufzuschneiden |
+
+Ausführlich: [`betriebsgraph.md`](betriebsgraph.md).
 
 ---
 
