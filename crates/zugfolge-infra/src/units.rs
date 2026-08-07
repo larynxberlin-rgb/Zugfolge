@@ -204,9 +204,92 @@ impl Canonical for Gradient {
     }
 }
 
+/// Eine Masse in Kilogramm.
+///
+/// Sie geht in keine Rechnung dieses Crates unmittelbar ein: Anfahr- und
+/// Bremsvermögen (`TrainCharacteristics`, M1.9) sind bereits Beschleunigungen
+/// — die Masse ist in ihnen herausgekürzt, wie es das reale Betriebsprogramm
+/// mit diesen Kennwerten auch hält. Sie wird trotzdem geführt, weil M5.6
+/// (Bedarfsmodell) und M11.5 (Bremshundertstel) sie brauchen werden.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Mass(i64);
+
+impl Mass {
+    /// Masse aus Kilogramm.
+    pub const fn from_kilograms(kilograms: i64) -> Self {
+        Self(kilograms)
+    }
+
+    /// Masse aus vollen Tonnen.
+    pub const fn from_tonnes(tonnes: i64) -> Self {
+        Self(tonnes.saturating_mul(1_000))
+    }
+
+    /// Masse in Kilogramm.
+    pub const fn kilograms(self) -> i64 {
+        self.0
+    }
+
+    /// Ob die Masse größer als null ist.
+    pub const fn is_positive(self) -> bool {
+        self.0 > 0
+    }
+}
+
+impl fmt::Display for Mass {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{} kg", self.0)
+    }
+}
+
+impl Canonical for Mass {
+    fn write_canonical(&self, name: &str, hasher: &mut StateHasher) {
+        hasher.int(name, self.0);
+    }
+}
+
+/// Ein Beschleunigungsvermögen, in Millimetern je Sekunde zum Quadrat.
+///
+/// Der Typ trägt keine Richtung — er beschreibt eine **Fähigkeit** (wie
+/// schnell ein Zug an- oder abbremsen kann), nicht eine gerichtete
+/// Momentanbeschleunigung. Anfahr- und Bremsvermögen einer
+/// `TrainCharacteristics` (M1.9) sind deshalb beide als dieser eine Typ
+/// geführt; die Fahrdynamik (M1.10) entscheidet, wann welches gilt.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Acceleration(i64);
+
+impl Acceleration {
+    /// Beschleunigungsvermögen aus Millimetern je Sekunde zum Quadrat.
+    pub const fn from_millimetres_per_second_squared(value: i64) -> Self {
+        Self(value)
+    }
+
+    /// Beschleunigungsvermögen in Millimetern je Sekunde zum Quadrat.
+    pub const fn millimetres_per_second_squared(self) -> i64 {
+        self.0
+    }
+
+    /// Ob das Beschleunigungsvermögen größer als null ist.
+    pub const fn is_positive(self) -> bool {
+        self.0 > 0
+    }
+}
+
+impl fmt::Display for Acceleration {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{} mm/s²", self.0)
+    }
+}
+
+impl Canonical for Acceleration {
+    fn write_canonical(&self, name: &str, hasher: &mut StateHasher) {
+        hasher.int(name, self.0);
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Gradient, Length, Speed};
+    use super::{Acceleration, Gradient, Length, Mass, Speed};
 
     #[test]
     fn laenge_rechnet_in_millimetern() {
@@ -263,5 +346,22 @@ mod tests {
         assert_eq!(Gradient::from_per_mille_tenths(-5).to_string(), "-0,5 ‰");
         assert_eq!(Speed::from_km_h(160).to_string(), "160 km/h");
         assert_eq!(Length::from_metres(2).to_string(), "2000 mm");
+    }
+
+    #[test]
+    fn masse_rechnet_in_kilogramm() {
+        assert_eq!(Mass::from_tonnes(80).kilograms(), 80_000);
+        assert!(Mass::from_kilograms(1).is_positive());
+        assert!(!Mass::default().is_positive());
+        assert_eq!(Mass::from_tonnes(80).to_string(), "80000 kg");
+    }
+
+    #[test]
+    fn beschleunigungsvermoegen_kennt_seine_einheit() {
+        let anfahrvermoegen = Acceleration::from_millimetres_per_second_squared(600);
+        assert_eq!(anfahrvermoegen.millimetres_per_second_squared(), 600);
+        assert!(anfahrvermoegen.is_positive());
+        assert!(!Acceleration::default().is_positive());
+        assert_eq!(anfahrvermoegen.to_string(), "600 mm/s²");
     }
 }

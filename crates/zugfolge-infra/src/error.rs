@@ -13,7 +13,7 @@ use crate::identity::{
     FacilityId, HeadElementId, HeadNodeId, HeadSignalId, OperatingPointId, PlatformId, SwitchId,
     TrackEdgeId, TrackId,
 };
-use crate::units::{Length, Speed};
+use crate::units::{Acceleration, Length, Mass, Speed};
 
 /// Was am Betriebsgraphen oder einem seiner Bausteine nicht stimmt.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -300,6 +300,75 @@ pub enum InfraError {
     /// Fahrgastwechsel stattfindet — dort gibt es keine Station anzureichern
     /// (M1.8).
     EnrichmentWithoutPassengerStop(OperatingPointId),
+    /// Eine Masse muss positiv sein, ist es aber nicht (M1.9).
+    NonPositiveMass {
+        /// Was ohne Masse geblieben ist.
+        what: &'static str,
+        /// Der angegebene Wert.
+        value: Mass,
+    },
+    /// Ein Beschleunigungsvermögen muss positiv sein, ist es aber nicht
+    /// (M1.9).
+    NonPositiveAcceleration {
+        /// Was ohne Beschleunigungsvermögen geblieben ist.
+        what: &'static str,
+        /// Der angegebene Wert.
+        value: Acceleration,
+    },
+    /// Ein elektrischer Antrieb nennt kein einziges Bahnstromsystem, das er
+    /// beherrscht (M1.9).
+    EmptyElectricSystems,
+    /// Der Fahrweg eines Fahrzeitrechners hat kein einziges Segment (M1.10).
+    EmptyRunPath,
+    /// Der befahrene Bereich eines Gleises ist keiner: Anfang liegt nicht vor
+    /// dem Ende, oder der Bereich reicht über das Gleis hinaus (M1.10).
+    InvalidRunRange {
+        /// Das betroffene Gleis.
+        track: TrackId,
+        /// Der angegebene Anfang.
+        start: Length,
+        /// Das angegebene Ende.
+        end: Length,
+    },
+    /// Ein Bandprofil deckt eine Position nicht ab, die innerhalb des
+    /// geprüften Gleisbereichs liegen müsste — kann bei einem in sich
+    /// gültigen Gleis nicht vorkommen (M1.10).
+    TrackProfileGap {
+        /// Das betroffene Gleis.
+        track: TrackId,
+        /// Die nicht abgedeckte Position.
+        position: Length,
+    },
+    /// Die streckenseitige Zugsicherung und die Fahrzeugausrüstung teilen an
+    /// dieser Stelle kein gemeinsames System (M1.10).
+    TrainProtectionIncompatible {
+        /// Das betroffene Gleis.
+        track: TrackId,
+        /// Die Position, an der die Zugsicherung nicht passt.
+        position: Length,
+    },
+    /// Die Antriebsart des Fahrzeugs passt an dieser Stelle nicht zur
+    /// Elektrifizierung des Gleises (M1.10).
+    TrainTractionIncompatible {
+        /// Das betroffene Gleis.
+        track: TrackId,
+        /// Die Position, an der die Antriebsart nicht passt.
+        position: Length,
+    },
+    /// Auf einem Gefälle übersteigt der Hangabtrieb das Bremsvermögen des
+    /// Fahrzeugs — der Zug könnte auf diesem Abschnitt nicht mehr sicher
+    /// verzögern (M1.10).
+    InsufficientBraking {
+        /// Die Position, an der die Verzögerung nicht mehr ausreicht.
+        position: Length,
+    },
+    /// Auf einer Steigung übersteigt der Hangabtrieb das Anfahrvermögen des
+    /// Fahrzeugs — der Zug käme auf diesem Abschnitt gar nicht mehr voran
+    /// (M1.10).
+    InsufficientTraction {
+        /// Die Position, an der die Beschleunigung nicht mehr ausreicht.
+        position: Length,
+    },
 }
 
 impl fmt::Display for InfraError {
@@ -550,6 +619,44 @@ impl fmt::Display for InfraError {
                 formatter,
                 "Betriebsstelle {id} hat keinen planmäßigen Fahrgastwechsel — dort gibt es \
                  keine Station anzureichern"
+            ),
+            Self::NonPositiveMass { what, value } => {
+                write!(formatter, "{what} muss positiv sein, ist aber {value}")
+            }
+            Self::NonPositiveAcceleration { what, value } => {
+                write!(formatter, "{what} muss positiv sein, ist aber {value}")
+            }
+            Self::EmptyElectricSystems => formatter.write_str(
+                "ein elektrischer Antrieb ohne ein einziges Bahnstromsystem könnte nirgends fahren",
+            ),
+            Self::EmptyRunPath => {
+                formatter.write_str("ein Fahrweg ohne ein einziges Segment hat keine Fahrzeit")
+            }
+            Self::InvalidRunRange { track, start, end } => write!(
+                formatter,
+                "der Bereich {start} bis {end} auf Gleis {track} ist kein gültiger Fahrbereich"
+            ),
+            Self::TrackProfileGap { track, position } => write!(
+                formatter,
+                "Gleis {track} hat bei {position} keinen Attributwert — das Bandprofil müsste \
+                 lückenlos sein"
+            ),
+            Self::TrainProtectionIncompatible { track, position } => write!(
+                formatter,
+                "Gleis {track} verlangt bei {position} eine Zugsicherung, die das Fahrzeug \
+                 nicht trägt"
+            ),
+            Self::TrainTractionIncompatible { track, position } => write!(
+                formatter,
+                "Gleis {track} passt bei {position} nicht zur Antriebsart des Fahrzeugs"
+            ),
+            Self::InsufficientBraking { position } => write!(
+                formatter,
+                "bei {position} übersteigt der Hangabtrieb das Bremsvermögen des Fahrzeugs"
+            ),
+            Self::InsufficientTraction { position } => write!(
+                formatter,
+                "bei {position} übersteigt der Hangabtrieb das Anfahrvermögen des Fahrzeugs"
             ),
         }
     }

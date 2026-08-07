@@ -127,13 +127,13 @@ Konzeption abgeschlossen, E1–E20 entschieden, Milestones auf Reihenfolge und
 Vollständigkeit geprüft. **M0 ist abgeschlossen: M0.1 bis M0.5 sind erledigt** —
 ADRs, Monorepo, CI, Determinismus-Testharnisch, Wächter, Glossar, Lizenz-Scan,
 der Wegwerf-Spike zur Sperrzeitentreppe, das Rechte-Gate und der Rechteschutz.
-**M1 hat begonnen: M1.1 bis M1.8 sowie M1.11 sind erledigt** — das
+**M1 hat begonnen: M1.1 bis M1.11 sind erledigt** — das
 Domänenmodell des Betriebsgraphen, die Import-Pipeline OSM-PBF → Rohgraph, der
 Netzfilter, die Abdeckungsmessung, das Neigungsprofil aus dem Höhenmodell, die
 Blockableitung, die Fahrstraßen- und Durchrutschwegableitung, die
-Stationsdaten-Anreicherung und der Anlagenkataster stehen in
-`crates/zugfolge-infra`. M1.9 und M1.10 (Zugcharakteristik, Fahrdynamik) und
-M1.12/M1.13 (`InfraRelease`, Referenzkorpus) sind noch offen.
+Stationsdaten-Anreicherung, die Zugcharakteristik, Fahrdynamik und
+Fahrzeitrechner sowie der Anlagenkataster stehen in `crates/zugfolge-infra`.
+Nur M1.12/M1.13 (`InfraRelease`, Referenzkorpus) sind noch offen.
 
 - **Alpha-Schnitt:** M0 – M9. Alles ab M10 ist Ausbau.
 - **Kritischer Pfad:** M0.3 → M1 → M3 → M4 → M7. Die ersten Schritte sind geführt.
@@ -219,8 +219,27 @@ M1.12/M1.13 (`InfraRelease`, Referenzkorpus) sind noch offen.
   vorhandenen Gleis, das kein Hauptgleis ist. Die Belegung durch eine
   Zusatzfahrt bleibt M5.7 vorbehalten. Siehe `docs/betriebsgraph.md`
   Abschnitt 14.
-- **Nächster Schritt:** M1.9, die Zugcharakteristik als eigenes Konzept,
-  entkoppelt vom Fahrzeugkatalog (M5).
+- **M1.9 steht:** `crates/zugfolge-infra/src/train.rs` liefert
+  `TrainCharacteristics` — Masse, Länge, Vmax, Anfahr- und Bremsvermögen,
+  Antriebsart (`TractionType`) und Zugsicherung (dieselbe `TrainProtection` wie
+  streckenseitig) — die abstrakte Sicht, mit der Trassen-Planner (M3.4) und
+  Fahrzeitrechnung (M1.10) arbeiten, „Zugcharakteristik statt Fahrzeugliste“
+  (`docs/infrastruktur.md` 2). Kein Fahrzeugkatalog, keine Formation — das
+  bildet M5.2 erst später darauf ab. Siehe `docs/betriebsgraph.md`
+  Abschnitt 15.
+- **M1.10 steht:** `crates/zugfolge-infra/src/dynamics.rs` ist der in
+  `docs/monorepo.md` 3 vorgesehene, **einzige Ort mit Gleitkommarechnung** in
+  diesem Crate. `derive_running_time_table` rechnet über einen `RunPath` in
+  zwei Durchgängen — rückwärts die Bremskurve, vorwärts das aus
+  Anfahrvermögen Erreichbare — ein Trapez- oder Dreiecksgeschwindigkeitsprofil
+  je Segment und rundet die Zeit **aufwärts** in eine ganzzahlige
+  Fahrzeittabelle. Die Neigung mindert Anfahr- oder Bremsvermögen über die
+  Kleinwinkelnäherung `sin θ ≈ Gefälle ‰ / 1000`; reicht eines nicht mehr aus,
+  meldet das Verfahren einen Fehler statt einer unmöglichen Fahrt. Siehe
+  `docs/betriebsgraph.md` Abschnitt 16.
+- **Nächster Schritt:** M1.12, `InfraRelease` als unveränderliches,
+  versioniertes Artefakt mit Herkunft, Lizenz, Checksumme und Confidence je
+  Attribut.
 
 Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` steht unter
 PolyForm Shield 1.0.0, nennt Sebastian Barowski als Rechteinhaber und ist damit
