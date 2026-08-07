@@ -144,7 +144,6 @@ der CI auf Linux **und** Windows gegen dieselbe Datei geprüft.
 
 | Fehlt | Gehört nach |
 |-------|-------------|
-| Import aus OSM-PBF, Geometrie der Kanten | M1.2 |
 | Netzfilter: Spurweite, Stromschiene, Netzausschlussliste | M1.3 |
 | Abdeckungsreport je Attribut und Streckenabschnitt, Qualitätsklassen A/B/C | M1.4 |
 | Ableitung des Neigungsprofils aus einem Höhenmodell | M1.5 |
@@ -167,8 +166,10 @@ liest.
 ## 6. Das Beispielnetz
 
 `reference_network()` ist die Prüfstrecke des Modells. **Seine Daten sind
-erfunden** — der Import ist M1.2, und ein Beispiel mit realen Namen und Werten
-würde vortäuschen, es gäbe schon echte Infrastruktur. Die Größenordnungen sind
+erfunden** — sie prüfen das Modell aus M1.1 für sich, unabhängig von einem
+echten Extract. Ein Beispiel mit realen Namen und Werten würde vortäuschen, es
+gäbe schon echte Infrastruktur, obwohl der Import (M1.2, Abschnitt 7) noch gar
+nicht bis in den Betriebsgraphen hinein abbildet. Die Größenordnungen sind
 realistisch gewählt, sonst prüfte das Beispiel nichts.
 
 ```text
@@ -189,3 +190,51 @@ Die Quellenkennung `beispielnetz` steht bewusst **nicht** im Quellenregister.
 Das Rechte-Gate prüft die Herkunft von Importen (Invariante 8) — hier wurde
 nichts importiert, es gibt also nichts freizugeben. Ein erfundener Eintrag im
 Register wäre eine Freigabe ohne Gegenstand.
+
+---
+
+## 7. Der Rohgraph — Ergebnis von M1.2
+
+Die Import-Pipeline liest einen genehmigten OSM-PBF-Extract (Quelle
+`osm-pbf-lhe`, `docs/rechte.md`) und baut daraus einen **Rohgraph** —
+Topologie, Geometrie und Tags, roh und ungefiltert. Er ist bewusst **kein**
+`OperatingGraph`: Welcher Punkt ein Bahnhof, welches Gleis ein Hauptgleis wird
+und was zum EBO-Netz überhaupt gehört, entscheiden der Netzfilter (M1.3) und
+die spätere fachliche Abbildung, nicht der Import selbst. Der Rohgraph ist die
+gemeinsame Eingabe für alle folgenden Schritte von M1 — jeder von ihnen
+braucht die volle, ungefilterte Topologie, keine schon getroffene Vorauswahl.
+
+**Die Bausteine.**
+
+| Begriff | Bezeichner | Trägt |
+|---------|------------|-------|
+| Rohgraph | `RawGraph` | Quelle, die bedeutsamen Knoten, die Kanten |
+| Rohknoten | `RawNode` | OSM-Kennung, Lage, OSM-Tags |
+| Rohkante | `RawEdge` | OSM-Weg, Start- und Zielknoten, volle Geometrie, OSM-Tags |
+
+**Wann ein OSM-Knoten zum Rohknoten wird.** Ein OSM-Weg trägt in der Regel
+weit mehr Stützpunkte, als betrieblich bedeutsam sind — die meisten
+beschreiben nur die Kurvenform. Ein Knoten wird deshalb nur dann zum eigenen
+`RawNode`, statt bloß ein Punkt auf der Geometrie einer `RawEdge` zu bleiben,
+wenn er
+
+- Anfang oder Ende eines Wegs ist,
+- zwei oder mehr Wege verbindet (eine Verzweigung), oder
+- selbst einen `railway`-Tag trägt — eine Weiche, ein Prellbock, eine
+  Blockkennzeichnung sind betrieblich bedeutsam, auch wenn nur ein Weg sie
+  berührt.
+
+**Was in den Rohgraphen eingeht.** Jeder OSM-Weg mit einem `railway`-Tag,
+gleich welchem Wert — die engere Auswahl nach Spurweite, Betriebsart und
+Netzausschlussliste ist M1.3. Ein Weg, der einen Knoten außerhalb des Extracts
+referenziert, oder ein railway-Weg mit weniger als zwei Knoten, bricht den
+Import mit einer benannten Meldung ab, statt eine unvollständige Topologie
+still auszuliefern.
+
+**Was der Rohgraph bewusst nicht ist.** Kein `OperatingGraph`, keine
+Zusicherungen aus Abschnitt 3 dieses Dokuments, keine Herkunftsangabe je
+Attribut (`Provenance`) — die Quelle hängt hier am ganzen Rohgraphen, nicht am
+einzelnen Wert, weil noch kein einzelnes Attribut ausgewählt wurde. Das kommt
+mit der fachlichen Abbildung, die auf M1.3 folgt.
+
+Umsetzung: [`crates/zugfolge-infra/src/import`](../crates/zugfolge-infra/src/import).

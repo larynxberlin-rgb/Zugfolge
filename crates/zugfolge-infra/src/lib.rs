@@ -29,11 +29,14 @@
 //! Gleis — eine erfasste Geschwindigkeit und eine abgeleitete Neigung sind
 //! nicht gleich viel wert.
 //!
+//! Der Import aus OSM-PBF steht seit M1.2 in [`import_pbf`] — er füllt einen
+//! eigenen [`RawGraph`], noch keinen [`OperatingGraph`]. Was daraus ein
+//! spielbares Netz macht, ist Aufgabe der folgenden Schritte:
+//!
 //! ## Was hier bewusst noch nicht steht
 //!
 //! | Fehlt | Gehört nach |
 //! |-------|-------------|
-//! | Import aus OSM-PBF, Geometrie der Kanten | M1.2 |
 //! | Netzfilter (Spurweite, Stromschiene, Netzausschluss) | M1.3 |
 //! | Abdeckungsreport je Attribut und Abschnitt | M1.4 |
 //! | Ableitung der Neigung aus einem Höhenmodell | M1.5 |
@@ -78,6 +81,7 @@ mod error;
 mod example;
 mod graph;
 mod identity;
+mod import;
 mod operating_point;
 mod platform;
 mod protection;
@@ -93,6 +97,9 @@ pub use error::InfraError;
 pub use example::reference_network;
 pub use graph::{OperatingGraph, OperatingGraphBuilder};
 pub use identity::{OperatingPointCode, OperatingPointId, PlatformId, TrackEdgeId, TrackId};
+pub use import::{
+    ImportError, OsmNodeId, OsmWayId, RawEdge, RawEdgeId, RawGraph, RawNode, import_pbf,
+};
 pub use operating_point::{Coordinate, OperatingPoint, OperatingPointKind};
 pub use platform::Platform;
 pub use protection::{ProtectionSystem, TrainProtection};

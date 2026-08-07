@@ -127,8 +127,9 @@ Konzeption abgeschlossen, E1–E20 entschieden, Milestones auf Reihenfolge und
 Vollständigkeit geprüft. **M0 ist abgeschlossen: M0.1 bis M0.5 sind erledigt** —
 ADRs, Monorepo, CI, Determinismus-Testharnisch, Wächter, Glossar, Lizenz-Scan,
 der Wegwerf-Spike zur Sperrzeitentreppe, das Rechte-Gate und der Rechteschutz.
-**M1 hat begonnen: M1.1 ist erledigt** — das Domänenmodell des Betriebsgraphen
-steht in `crates/zugfolge-infra`.
+**M1 hat begonnen: M1.1 und M1.2 sind erledigt** — das Domänenmodell des
+Betriebsgraphen und die Import-Pipeline OSM-PBF → Rohgraph stehen in
+`crates/zugfolge-infra`.
 
 - **Alpha-Schnitt:** M0 – M9. Alles ab M10 ist Ausbau.
 - **Kritischer Pfad:** M0.3 → M1 → M3 → M4 → M7. Die ersten Schritte sind geführt.
@@ -155,9 +156,19 @@ steht in `crates/zugfolge-infra`.
   Herkunft hängt am einzelnen Band, damit M1.4 je Attribut und Abschnitt messen
   kann. Der Graph liefert einen kanonischen Fingerabdruck — die spätere
   Prüfsumme des `InfraRelease` (M1.12). Siehe `docs/betriebsgraph.md`.
-- **Nächster Schritt:** M1.2, die Import-Pipeline OSM-PBF → Rohgraph — sie darf
-  beginnen, weil die Rechte je Quelle dokumentiert sind (Invariante 8) und das
-  Modell steht, das sie füllt.
+- **M1.2 steht:** `crates/zugfolge-infra/src/import` liest einen genehmigten
+  OSM-PBF-Extract (Quelle `osm-pbf-lhe`) blockweise über einen selbst
+  geschriebenen Protobuf-/Blob-Leser und baut daraus einen Rohgraph —
+  Topologie, Geometrie und Tags, roh und ungefiltert. Ein Knoten wird nur dann
+  zum eigenen Punkt des Rohgraphen, wenn er Anfang, Ende oder Verzweigung
+  eines Wegs ist oder selbst einen `railway`-Tag trägt; alle anderen bleiben
+  Geometriepunkte ihrer Kante. Der Rohgraph ist bewusst noch kein
+  `OperatingGraph` — das entscheidet erst der Netzfilter. Siehe
+  `docs/betriebsgraph.md` Abschnitt 7.
+- **Nächster Schritt:** M1.3, der Netzfilter — er wählt aus dem Rohgraph nur
+  `railway=rail` in Regelspur aus und wirft Tram-, Stadtbahn- und
+  Stromschienennetze über die Netzausschlussliste heraus, behält aber
+  Betriebs-, Abstell- und Anschlussgleise.
 
 Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` steht unter
 PolyForm Shield 1.0.0, nennt Sebastian Barowski als Rechteinhaber und ist damit
