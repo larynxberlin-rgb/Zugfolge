@@ -127,11 +127,13 @@ Konzeption abgeschlossen, E1–E20 entschieden, Milestones auf Reihenfolge und
 Vollständigkeit geprüft. **M0 ist abgeschlossen: M0.1 bis M0.5 sind erledigt** —
 ADRs, Monorepo, CI, Determinismus-Testharnisch, Wächter, Glossar, Lizenz-Scan,
 der Wegwerf-Spike zur Sperrzeitentreppe, das Rechte-Gate und der Rechteschutz.
-**M1 hat begonnen: M1.1 bis M1.7 sind erledigt** — das Domänenmodell des
-Betriebsgraphen, die Import-Pipeline OSM-PBF → Rohgraph, der Netzfilter, die
-Abdeckungsmessung, das Neigungsprofil aus dem Höhenmodell, die Blockableitung
-und die Fahrstraßen- und Durchrutschwegableitung stehen in
-`crates/zugfolge-infra`.
+**M1 hat begonnen: M1.1 bis M1.8 sowie M1.11 sind erledigt** — das
+Domänenmodell des Betriebsgraphen, die Import-Pipeline OSM-PBF → Rohgraph, der
+Netzfilter, die Abdeckungsmessung, das Neigungsprofil aus dem Höhenmodell, die
+Blockableitung, die Fahrstraßen- und Durchrutschwegableitung, die
+Stationsdaten-Anreicherung und der Anlagenkataster stehen in
+`crates/zugfolge-infra`. M1.9 und M1.10 (Zugcharakteristik, Fahrdynamik) und
+M1.12/M1.13 (`InfraRelease`, Referenzkorpus) sind noch offen.
 
 - **Alpha-Schnitt:** M0 – M9. Alles ab M10 ist Ausbau.
 - **Kritischer Pfad:** M0.3 → M1 → M3 → M4 → M7. Die ersten Schritte sind geführt.
@@ -201,8 +203,24 @@ und die Fahrstraßen- und Durchrutschwegableitung stehen in
   Durchrutschweg und **Ausschlussmenge** je Fahrstraße. Das ist die
   Konfliktressource des Bahnhofskopfs, die der Spike aus M0.3 offengelassen
   hatte (M3.1, M3.3). Siehe `docs/betriebsgraph.md` Abschnitt 12.
-- **Nächster Schritt:** M1.8, die Stationsdaten-Anreicherung aus ausschließlich
-  freigegebenen Quellen.
+- **M1.8 steht:** OpenStation und StaDa stehen im Quellenregister noch auf
+  `pruefung` (`docs/rechte.md` 3) — Invariante 8 verbietet deshalb jeden
+  Import. `crates/zugfolge-infra/src/station.rs` liefert stattdessen das
+  Modell: `StationEnrichment` bindet Bahnhofskategorie und Ausstattung an eine
+  Betriebsstelle mit planmäßigem Fahrgastwechsel, mit einer **eigenen
+  Herkunft je Feld**, weil eine Anreicherung anders als eine Ersterfassung in
+  Schüben kommt. Siehe `docs/betriebsgraph.md` Abschnitt 13.
+- **M1.11 steht:** `crates/zugfolge-infra/src/facility.rs` führt den
+  Anlagenkataster — Werkstätten, Behandlungs- und Waschanlagen, Tankstellen,
+  Entsorgungsanlagen und als Anlage geführte Abstellgleise, je mit Kapazität,
+  Öffnungszeit, Nutzlänge und **Baureihenkompetenz** als Menge
+  (`docs/betrieb.md` 4: „Anlagen sind Konfliktressourcen wie Gleise“). Jede
+  Anlage ist gegen einen fertigen `OperatingGraph` geprüft und liegt auf einem
+  vorhandenen Gleis, das kein Hauptgleis ist. Die Belegung durch eine
+  Zusatzfahrt bleibt M5.7 vorbehalten. Siehe `docs/betriebsgraph.md`
+  Abschnitt 14.
+- **Nächster Schritt:** M1.9, die Zugcharakteristik als eigenes Konzept,
+  entkoppelt vom Fahrzeugkatalog (M5).
 
 Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` steht unter
 PolyForm Shield 1.0.0, nennt Sebastian Barowski als Rechteinhaber und ist damit

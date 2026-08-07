@@ -41,18 +41,25 @@
 //! aus Signalpositionen, Zugbeeinflussung und Topologie ab — einschließlich der
 //! reinen LZB- und ETCS-Blöcke ohne ortsfestes Signal — und
 //! [`derive_interlocking_routes`] aus M1.7 erzeugt aus einem [`StationHead`] die
-//! Fahrstraßen, Durchrutschwege und Ausschlussmengen eines Bahnhofskopfs. Was
-//! daraus ein spielbares Netz macht, ist Aufgabe der folgenden Schritte:
+//! Fahrstraßen, Durchrutschwege und Ausschlussmengen eines Bahnhofskopfs.
+//! [`StationEnrichmentCatalog`] aus M1.8 bindet Bahnhofskategorie und
+//! Ausstattung an eine Betriebsstelle mit Fahrgastwechsel — mit einer eigenen
+//! Herkunft je Feld, weil eine Anreicherung keine Ersterfassung ist. Und
+//! [`FacilityCatalog`] aus M1.11 führt Werkstätten, Behandlungs- und
+//! Waschanlagen, Tankstellen, Entsorgungsanlagen und als Anlage geführte
+//! Abstellgleise mit Kapazität, Öffnungszeit, Nutzlänge und
+//! Baureihenkompetenz. Was daraus ein spielbares Netz macht, ist Aufgabe der
+//! folgenden Schritte:
 //!
 //! ## Was hier bewusst noch nicht steht
 //!
 //! | Fehlt | Gehört nach |
 //! |-------|-------------|
-//! | Anlagenkataster | M1.11 |
 //! | `InfraRelease` als versioniertes Artefakt | M1.12 |
 //!
-//! Ein Blockabschnitt ist **kein** Gleis, und eine Fahrstraße ist keine Kante —
-//! deshalb entstehen sie in M1.6 und M1.7 als eigene, abgeleitete Artefakte
+//! Ein Blockabschnitt ist **kein** Gleis, eine Fahrstraße ist keine Kante, eine
+//! Stationsanreicherung ist keine Betriebsstelle und eine Anlage ist kein
+//! Gleis — deshalb entstehen sie ab M1.6 als eigene, abgeleitete Artefakte
 //! neben dem Modell, nicht als neue Bausteine darin.
 //!
 //! ## Beispiel
@@ -88,6 +95,7 @@ mod electrification;
 mod elevation;
 mod error;
 mod example;
+mod facility;
 mod graph;
 mod identity;
 mod import;
@@ -98,6 +106,7 @@ mod platform;
 mod protection;
 mod provenance;
 mod speed;
+mod station;
 mod track;
 mod units;
 
@@ -113,9 +122,13 @@ pub use electrification::{Electrification, PowerSystem};
 pub use elevation::{DEFAULT_MIN_BAND_LENGTH, ElevationSample, derive_gradient_profile};
 pub use error::InfraError;
 pub use example::reference_network;
+pub use facility::{
+    Facility, FacilityCatalog, FacilityCatalogBuilder, FacilityKind, FleetClass, FleetCompetence,
+    OpeningHours, TimeOfDay,
+};
 pub use graph::{OperatingGraph, OperatingGraphBuilder};
 pub use identity::{
-    HeadElementId, HeadNodeId, HeadSignalId, InterlockingRouteId, OperatingPointCode,
+    FacilityId, HeadElementId, HeadNodeId, HeadSignalId, InterlockingRouteId, OperatingPointCode,
     OperatingPointId, PlatformId, SwitchId, TrackEdgeId, TrackId,
 };
 pub use import::{
@@ -134,5 +147,9 @@ pub use platform::Platform;
 pub use protection::{ProtectionSystem, TrainProtection};
 pub use provenance::{Attributed, Confidence, Provenance, SourceId};
 pub use speed::{SpeedCategory, SpeedLimit};
+pub use station::{
+    StationAmenities, StationAmenity, StationCategory, StationEnrichment, StationEnrichmentCatalog,
+    StationEnrichmentCatalogBuilder,
+};
 pub use track::{Track, TrackBuilder, TrackDirection, TrackGauge, TrackKind, TrackOwner};
 pub use units::{Gradient, Length, Speed};

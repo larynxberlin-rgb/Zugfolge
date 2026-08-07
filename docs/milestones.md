@@ -45,7 +45,13 @@ Ergebnis vorzeigbar ist. Bislang erledigt:
   [`crates/zugfolge-infra/src/blocks.rs`](../crates/zugfolge-infra/src/blocks.rs);
 - **M1.7** — die Fahrstraßen- und Durchrutschwegableitung, siehe
   [`betriebsgraph.md`](betriebsgraph.md) Abschnitt 12 und
-  [`crates/zugfolge-infra/src/interlocking.rs`](../crates/zugfolge-infra/src/interlocking.rs).
+  [`crates/zugfolge-infra/src/interlocking.rs`](../crates/zugfolge-infra/src/interlocking.rs);
+- **M1.8** — die Stationsdaten-Anreicherung, siehe
+  [`betriebsgraph.md`](betriebsgraph.md) Abschnitt 13 und
+  [`crates/zugfolge-infra/src/station.rs`](../crates/zugfolge-infra/src/station.rs);
+- **M1.11** — der Anlagenkataster, siehe [`betriebsgraph.md`](betriebsgraph.md)
+  Abschnitt 14 und
+  [`crates/zugfolge-infra/src/facility.rs`](../crates/zugfolge-infra/src/facility.rs).
 
 ---
 
@@ -91,10 +97,10 @@ README:
 | 1.5 | **Neigungsprofil aus Höhenmodell** — aus einem DEM entlang der Gleisgeometrie abgeleitet und geglättet | M | erledigt |
 | 1.6 | **Blockableitung** aus Signalpositionen, Zugbeeinflussung und Topologie; virtuelle Blöcke bei Lücken; reine LZB-/ETCS-Blöcke bei durchgehender Überwachung; Qualitätsklassifizierung A/B/C | L | erledigt |
 | 1.7 | **Fahrstraßen- und Durchrutschwegableitung** im Bahnhofskopf — aus Weichenlage und Signalstandort erzeugt | **XL** | erledigt |
-| 1.8 | Stationsdaten-Anreicherung — ausschließlich freigegebene Quellen | M | offen |
+| 1.8 | Stationsdaten-Anreicherung — ausschließlich freigegebene Quellen | M | erledigt |
 | 1.9 | **Zugcharakteristik** als eigenes Konzept: Masse, Länge, Vmax, Anfahr- und Bremsvermögen, Antriebsart, Zugsicherung. Entkoppelt Fahrzeitrechnung und Trassenplanung vom Fahrzeugkatalog (M5) | M | offen |
 | 1.10 | Fahrdynamik und Fahrzeitrechner → vorberechnete **ganzzahlige** Fahrzeittabellen je Zugcharakteristik | L | offen |
-| 1.11 | **Anlagenkataster**: Werkstätten, Behandlungs- und Waschanlagen, Tankstellen, Entsorgungsanlagen, Abstellgleise — mit Kapazität, Öffnungszeit, Nutzlänge, Baureihenkompetenz | M | offen |
+| 1.11 | **Anlagenkataster**: Werkstätten, Behandlungs- und Waschanlagen, Tankstellen, Entsorgungsanlagen, Abstellgleise — mit Kapazität, Öffnungszeit, Nutzlänge, Baureihenkompetenz | M | erledigt |
 | 1.12 | `InfraRelease` als unveränderliches, versioniertes Artefakt mit Herkunft, Lizenz, Checksumme und Confidence je Attribut | M | offen |
 | 1.13 | Referenzkorpus Leipzig–Halle–Erfurt und Abweichungsreport gegen reale Fahrzeiten | M | offen |
 
@@ -168,6 +174,27 @@ die belegten Elemente, die geforderten Weichenlagen und den Durchrutschweg fest
 und leitet daraus die **Ausschlussmenge** ab — die Konfliktressource des
 Bahnhofskopfs, die der Spike aus M0.3 offengelassen hatte. Siehe
 `betriebsgraph.md` Abschnitt 12.
+
+**M1.8 trägt:** OpenStation und StaDa stehen im Quellenregister noch auf
+`pruefung` (`docs/rechte.md` 3) — Invariante 8 verbietet deshalb jeden Import.
+M1.8 liefert stattdessen das Modell: `StationEnrichment` bindet
+Bahnhofskategorie und Ausstattung an eine Betriebsstelle mit planmäßigem
+Fahrgastwechsel, mit einer **eigenen Herkunft je Feld** (`Attributed<T>`) statt
+einer gemeinsamen für den ganzen Eintrag — eine Anreicherung kommt in Schüben,
+keine Ersterfassung in einem Zug. `StationEnrichmentCatalogBuilder::build`
+prüft jeden Eintrag gegen einen fertigen `OperatingGraph`. Wie M1.5 bis M1.7
+ist das Verfahren kein Import; der folgt erst mit der Freigabe. Siehe
+`betriebsgraph.md` Abschnitt 13.
+
+**M1.11 trägt:** Der Anlagenkataster (`FacilityCatalog`) führt Werkstätten,
+Behandlungs- und Waschanlagen, Tankstellen, Entsorgungsanlagen und als Anlage
+geführte Abstellgleise — jede mit Kapazität, Öffnungszeit, Nutzlänge und
+**Baureihenkompetenz** als Menge, wie `docs/betrieb.md` 4 es fordert: „Anlagen
+sind Konfliktressourcen wie Gleise.“ `FacilityCatalogBuilder::build` prüft
+jede Anlage gegen einen fertigen `OperatingGraph` — ihr Gleis muss existieren
+und darf kein Hauptgleis sein, auf dem Zugfahrten stattfinden. Die **Belegung**
+einer Anlage bleibt M5.7 vorbehalten: M1.11 liefert den Kataster, nicht die
+Konfliktengine. Siehe `betriebsgraph.md` Abschnitt 14.
 
 Ausführlich: [`betriebsgraph.md`](betriebsgraph.md).
 
