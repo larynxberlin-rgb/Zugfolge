@@ -27,3 +27,14 @@ packages:
   - "packages/*"
   # Ausführbare Dienste und das Frontend (ab M2 beziehungsweise M4).
   - "apps/*"
+
+# ---------------------------------------------------------------------------
+# Build-Skripte
+# ---------------------------------------------------------------------------
+# Seit pnpm 11 wird ein Paket ohne ausdrückliche Freigabe hier mit einem
+# Fehler abgelehnt, sobald sein Installationsskript etwas bauen will (statt
+# es nur zu ignorieren) — das frühere "pnpm"-Feld in package.json wird dafür
+# nicht mehr gelesen. esbuild (transitiv über Vitest/Vite) braucht sein
+# Postinstall-Skript, um die passende Plattformbinärdatei zu holen.
+allowBuilds:
+  esbuild: true
