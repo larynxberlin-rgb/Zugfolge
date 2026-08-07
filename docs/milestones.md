@@ -69,6 +69,10 @@ Ergebnis vorzeigbar ist. Bislang erledigt:
 
 Damit ist **M1 abgeschlossen**: Betriebsgraph und Infra-Release-Pipeline stehen.
 
+- **M2.1** — Keycloak-Integration, Konten, Rollen, Weltzugänge, siehe
+  [`weltgeruest.md`](weltgeruest.md), [`packages/identity`](../packages/identity)
+  und [`apps/game-api`](../apps/game-api).
+
 ---
 
 ## M0 — Fundament und Grundsatzentscheidungen
@@ -276,7 +280,7 @@ einzuziehen hieße, jede Abfrage und jede Zeile anzufassen.
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 2.1 | Keycloak-Integration, Konten, Rollen, Weltzugänge | M | offen |
+| 2.1 | Keycloak-Integration, Konten, Rollen, Weltzugänge | M | erledigt |
 | 2.2 | **Weltisolation**: `world_id` in jeder Tabelle, jedem Index, jedem Event — mit automatisiertem Nachweis statt Disziplin | M | offen |
 | 2.3 | EVU als Entität: Gründung, Stammdaten, Zuordnung zu Welt und Spieler | S | offen |
 | 2.4 | **Ledger-Kern**: Integer-Cent, unveränderlich, ausgeglichen, doppelte Buchführung, Property-Test auf Ausgeglichenheit | M | offen |
@@ -286,6 +290,23 @@ einzuziehen hieße, jede Abfrage und jede Zeile anzufassen.
 > **Beweis:** Zwei Konten in derselben Welt sehen einander, zwei Konten in
 > verschiedenen Welten sehen einander nachweislich nicht — belegt durch einen
 > automatisierten Isolationstest, nicht durch Sichtprüfung.
+
+**M2.1 trägt:** `packages/identity` hält drei world-geschnittene Tabellen —
+Weltzugang (`worldAccesses`), Konto (`accounts`) und Kontorolle
+(`accountRoles`), jede mit `world_id` als führender Spalte ihres
+Eindeutigkeitsindex (Invariante 4). Keycloak bleibt eigenständiger
+OIDC-Identity-Provider (`architektur.md` 5): Verifiziert wird ein
+mitgebrachtes Zugriffstoken, gespeichert wird nur, wofür das Spielsystem
+selbst Quelle der Wahrheit ist. Zugang und Konto sind bewusst getrennt, damit
+ein entzogener Zugang die Betriebshistorie eines Kontos nicht mit sich reißt
+(E8). Der erste Weltverwalter (`world_admin`) entsteht durch
+Selbstermächtigung, ausschließlich für das anfragende Konto — jede weitere
+Rollenvergabe verlangt bereits diese Rolle in genau der betroffenen Welt.
+`apps/game-api` verdrahtet das zu einem Fastify-Dienst mit
+Bearer-Token-Authentifizierung. Die Kontoliste einer Welt verlangt selbst ein
+Konto in ihr — der erste, hier bereits nachgewiesene Ausschnitt des Beweises
+von M2, vor dem vollständigen, automatisierten Isolationsnachweis aus M2.2.
+Siehe [`weltgeruest.md`](weltgeruest.md).
 
 ---
 

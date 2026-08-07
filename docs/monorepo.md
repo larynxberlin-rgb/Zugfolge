@@ -13,7 +13,9 @@ crates/                     Rust — Simulationskern, Solver, Release-Pipeline
   zugfolge-determinism/     Determinismus-Testharnisch (M0.2)
   zugfolge-infra/           Betriebsgraph und Infra-Release-Pipeline (M1)
 packages/                   TypeScript — fachliche Bibliotheken (ab M2)
+  identity/                 Konten, Rollen, Weltzugänge; Keycloak-Verifikation (M2.1)
 apps/                       TypeScript — Dienste und Frontend (ab M2 / M4)
+  game-api/                 Fastify-Dienst: Authentifizierung, Weltzugang, Rollenvergabe (M2.1)
 spikes/                     Wegwerf-Code mit Verfallsdatum
   blocking-time-staircase/  Sperrzeitentreppe und Konfliktprüfung (M0.3)
 tools/                      Werkzeuge für CI und Entwicklung
@@ -22,9 +24,12 @@ docs/                       Spezifikation und Entscheidungen
 .github/workflows/          CI
 ```
 
-`packages/` und `apps/` sind im pnpm-Workspace bereits vorgesehen und noch
-leer. Sie werden angelegt, wenn der erste Milestone sie füllt — ein leeres
-Verzeichnis mit Platzhalter ist kein Aufbau, sondern eine Behauptung.
+`packages/` und `apps/` füllen sich seit **M2.1**: `packages/identity` trägt
+das Drizzle-Schema für Konten, Rollen und Weltzugänge sowie die
+Keycloak-Tokenverifikation; `apps/game-api` verdrahtet das zu einem
+Fastify-Dienst. Siehe [`weltgeruest.md`](weltgeruest.md). Weitere
+Unterverzeichnisse entstehen, sobald ein Milestone sie tatsächlich füllt — ein
+leeres Verzeichnis mit Platzhalter ist kein Aufbau, sondern eine Behauptung.
 
 **`spikes/` ist Wegwerf-Code, und zwar mit ausgesprochenem Verfallsdatum.** Ein
 Spike hat eine Frage zu beantworten und danach zu verschwinden; bleibt er

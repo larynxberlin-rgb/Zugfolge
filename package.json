@@ -18,5 +18,10 @@
     "test": "pnpm -r --stream test",
     "guards": "pnpm --filter @zugfolge/guards run guards",
     "licenses": "pnpm --filter @zugfolge/guards run licenses"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }

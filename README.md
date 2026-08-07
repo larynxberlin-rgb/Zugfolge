@@ -5,14 +5,14 @@ mit hohem betrieblichem, infrastrukturellem und wirtschaftlichem Realismus.
 Öffentliche Welten laufen dauerhaft in 1:1-Echtzeit ohne Wipes. Erste
 Pilotregion: **Leipzig–Halle–Erfurt**.
 
-> **Stand:** **M0 ist abgeschlossen (M0.1–M0.5), M1 hat begonnen.** Fundament,
-> Sperrzeiten-Spike, Rechte-Gate und Rechteschutz stehen. Das Rechte-Gate führt
-> jede Datenquelle mit Freigabestatus ([`docs/rechte.md`](docs/rechte.md)),
-> `LICENSE` nennt den Rechteinhaber und ist wirksam
-> ([`docs/rechteschutz.md`](docs/rechteschutz.md)). Mit **M1.1** steht das
-> Domänenmodell des Betriebsgraphen
-> ([`docs/betriebsgraph.md`](docs/betriebsgraph.md)). Der nächste Schritt ist
-> M1.2, die Import-Pipeline.
+> **Stand:** **M0 (M0.1–M0.5) und M1 (M1.1–M1.13) sind abgeschlossen.**
+> Fundament, Rechte-Gate und Rechteschutz stehen; der Betriebsgraph samt
+> Infra-Release-Pipeline für die Pilotregion ist vollständig
+> ([`docs/betriebsgraph.md`](docs/betriebsgraph.md)). Mit **M2.1** stehen
+> Keycloak-Integration, Konten, Rollen und Weltzugänge
+> ([`docs/weltgeruest.md`](docs/weltgeruest.md)) — die ersten Pakete unter
+> `packages/` und `apps/`. Der nächste Schritt ist M2.2, die automatisierte
+> Weltisolation.
 
 ## Wo was steht
 
@@ -31,7 +31,9 @@ crates/     Rust — Simulationskern, Solver, Release-Pipeline
             zugfolge-determinism/  Determinismus-Testharnisch
             zugfolge-infra/        Betriebsgraph und Infra-Release-Pipeline
 packages/   TypeScript — fachliche Bibliotheken (ab M2)
+            identity/              Konten, Rollen, Weltzugänge (M2.1)
 apps/       TypeScript — Dienste und Frontend (ab M2 / M4)
+            game-api/              Fastify-Dienst: Authentifizierung, Weltzugang (M2.1)
 spikes/     Wegwerf-Code mit Verfallsdatum
 tools/      Werkzeuge für CI und Entwicklung
 docs/       Spezifikation, Entscheidungen, Glossar
