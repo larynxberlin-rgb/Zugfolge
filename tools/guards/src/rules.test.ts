@@ -48,6 +48,65 @@ describe("world-id", () => {
     expect(worldIdRule.check([sourceFile("packages/db/schema.ts", text)], testConfig()))
       .toHaveLength(1);
   });
+
+  it("lässt die Weltwurzeltabelle 'worlds' ohne eigene world_id zu", () => {
+    const text = "CREATE TABLE worlds (\n  id uuid primary key,\n  name text\n);";
+    expect(worldIdRule.check([sourceFile("db/001.sql", text)], testConfig())).toEqual([]);
+  });
+
+  it("erlaubt eine Tabelle ohne world_id nur mit sichtbarer Ausnahme", () => {
+    const text =
+      "-- guards:allow world-id — Testfixtur, keine echte Tabelle\n" +
+      "CREATE TABLE spike_only (\n  id uuid primary key\n);";
+    expect(worldIdRule.check([sourceFile("db/001.sql", text)], testConfig())).toEqual([]);
+  });
+
+  it("meldet einen SQL-Index ohne world_id", () => {
+    const text =
+      'CREATE TABLE train_run (world_id uuid not null, id uuid, started_at timestamptz);\n' +
+      'CREATE INDEX train_run_started_idx ON train_run (started_at);';
+    const befunde = worldIdRule.check([sourceFile("db/001.sql", text)], testConfig());
+    expect(befunde).toHaveLength(1);
+    expect(befunde[0]?.message).toContain("train_run_started_idx");
+  });
+
+  it("lässt einen SQL-Index mit world_id zu, auch mit USING-Klausel", () => {
+    const text =
+      'CREATE TABLE train_run (world_id uuid not null, id uuid, started_at timestamptz);\n' +
+      'CREATE INDEX train_run_world_started_idx ON train_run USING btree (world_id, started_at);';
+    expect(worldIdRule.check([sourceFile("db/001.sql", text)], testConfig())).toEqual([]);
+  });
+
+  it("braucht keinen world_id-Index auf der Weltwurzeltabelle", () => {
+    const text =
+      "CREATE TABLE worlds (id uuid primary key, name text);\n" +
+      "CREATE INDEX worlds_name_idx ON worlds (name);";
+    expect(worldIdRule.check([sourceFile("db/001.sql", text)], testConfig())).toEqual([]);
+  });
+
+  it("meldet einen Drizzle-Index ohne worldId", () => {
+    const text =
+      'export const laeufe = pgTable("train_run", {\n' +
+      '  worldId: uuid("world_id").notNull(),\n' +
+      '  startedAt: timestamp("started_at"),\n' +
+      "}, (table) => [\n" +
+      '  index("train_run_started_idx").on(table.startedAt),\n' +
+      "]);";
+    const befunde = worldIdRule.check([sourceFile("packages/db/schema.ts", text)], testConfig());
+    expect(befunde).toHaveLength(1);
+    expect(befunde[0]?.message).toContain("train_run_started_idx");
+  });
+
+  it("lässt einen Drizzle-Index mit worldId zu", () => {
+    const text =
+      'export const laeufe = pgTable("train_run", {\n' +
+      '  worldId: uuid("world_id").notNull(),\n' +
+      '  startedAt: timestamp("started_at"),\n' +
+      "}, (table) => [\n" +
+      '  index("train_run_world_started_idx").on(table.worldId, table.startedAt),\n' +
+      "]);";
+    expect(worldIdRule.check([sourceFile("packages/db/schema.ts", text)], testConfig())).toEqual([]);
+  });
 });
 
 describe("glossary", () => {

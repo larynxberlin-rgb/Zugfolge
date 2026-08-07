@@ -69,6 +69,16 @@ Ergebnis vorzeigbar ist. Bislang erledigt:
 
 Damit ist **M1 abgeschlossen**: Betriebsgraph und Infra-Release-Pipeline stehen.
 
+- **M2.2** — Weltisolation: `packages/db` liefert `worlds` als Wurzel der
+  Mandantentrennung und das append-only Event-Log `domain_events`, beide über
+  Drizzle; der Wächter `world-id` prüft seither Tabelle **und** Index in SQL
+  und Drizzle, mit einer benannten, keiner erfundenen Ausnahme für `worlds`
+  selbst. Das weltgebundene Repository `worldEventLog` macht das Vergessen der
+  `world_id` strukturell unmöglich, und ein Test gegen eine echte, eingebettete
+  Postgres-Instanz (PGlite) beweist die Trennung zweier Welten, nicht nur die
+  Schemaform. Siehe [`monorepo.md`](monorepo.md) Abschnitt 3 und 4 und
+  [`packages/db`](../packages/db).
+
 ---
 
 ## M0 — Fundament und Grundsatzentscheidungen
@@ -277,7 +287,7 @@ einzuziehen hieße, jede Abfrage und jede Zeile anzufassen.
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
 | 2.1 | Keycloak-Integration, Konten, Rollen, Weltzugänge | M | offen |
-| 2.2 | **Weltisolation**: `world_id` in jeder Tabelle, jedem Index, jedem Event — mit automatisiertem Nachweis statt Disziplin | M | offen |
+| 2.2 | **Weltisolation**: `world_id` in jeder Tabelle, jedem Index, jedem Event — mit automatisiertem Nachweis statt Disziplin | M | erledigt |
 | 2.3 | EVU als Entität: Gründung, Stammdaten, Zuordnung zu Welt und Spieler | S | offen |
 | 2.4 | **Ledger-Kern**: Integer-Cent, unveränderlich, ausgeglichen, doppelte Buchführung, Property-Test auf Ausgeglichenheit | M | offen |
 | 2.5 | Postfach-Grundgerüst: Nachrichten, Fristen, Quittierung — trägt später Trassenangebote, Ausschreibungen und Störungsmeldungen | S | offen |
