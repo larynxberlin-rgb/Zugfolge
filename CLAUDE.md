@@ -15,8 +15,8 @@ lesen, nicht raten.
 
 | Datei | Inhalt | Lesen wenn |
 |-------|--------|------------|
-| `docs/entscheidungen.md` | E1–E20 mit voller Begründung | eine Entscheidung infrage steht oder geändert werden soll |
-| `docs/adr/` | E1–E20 je als Architecture Decision Record: Kontext, Konsequenzen, Querverweise | eine Grundsatzentscheidung ausführlich nachschlagen oder eine neue festhalten |
+| `docs/entscheidungen.md` | E1–E21 mit voller Begründung | eine Entscheidung infrage steht oder geändert werden soll |
+| `docs/adr/` | E1–E21 je als Architecture Decision Record: Kontext, Konsequenzen, Querverweise | eine Grundsatzentscheidung ausführlich nachschlagen oder eine neue festhalten |
 | `docs/monorepo.md` | Verzeichnisaufbau, Domänengrenzen, Werkzeugkette, Durchsetzung der Invarianten | Code beitragen, neues Paket oder Crate anlegen, CI verstehen |
 | `docs/glossar.md` | Domänenglossar: deutscher Fachbegriff → Bezeichner im Code → Bedeutung → Quelle | jede Benennung im Code, jeder neue Fachbegriff |
 | `docs/produkt.md` | Produktdefinition, Oberflächen, Onboarding, Netzabgrenzung, Spielertypen, Anti-Monokultur | Produktfragen, UI, Zielgruppe, Was-gehört-dazu |
@@ -83,6 +83,7 @@ Begründungen: `docs/entscheidungen.md`. Änderungen dort eintragen und begründ
 | E18 | Weltlaufzeit 6–18 Monate oder unbefristet; Perioden- und Vertragslängen skalieren mit |
 | E19 | Realismus dient dem Spiel — Schritte ohne Entscheidung werden abstrahiert |
 | E20 | Fahrzeuge werden konfiguriert bestellt; Werkstätten bauen den Innenraum um |
+| E21 | SPNV-Ausschreibungen variieren nach einem angekündigten, seed-deterministischen Vergabeprofil |
 
 ---
 
@@ -124,7 +125,7 @@ Lastgrößen: `docs/architektur.md`.
 
 ## Stand
 
-Konzeption abgeschlossen, E1–E20 entschieden, Milestones auf Reihenfolge und
+Konzeption abgeschlossen, E1–E21 entschieden, Milestones auf Reihenfolge und
 Vollständigkeit geprüft. **M0 ist abgeschlossen: M0.1 bis M0.5 sind erledigt** —
 ADRs, Monorepo, CI, Determinismus-Testharnisch, Wächter, Glossar, Lizenz-Scan,
 der Wegwerf-Spike zur Sperrzeitentreppe, das Rechte-Gate und der Rechteschutz.

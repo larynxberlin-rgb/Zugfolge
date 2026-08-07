@@ -229,6 +229,16 @@ existiert nur relativ zu den Anträgen der Konkurrenz in derselben
 Koordinierungsrunde. Eine berechenbare Einheitsstrategie ist damit strukturell
 ausgeschlossen — durch die Domäne, nicht durch Balancing.
 
+**Und die Nachfrage selbst variiert (E21).** Die beiden Hebel oben wirken
+*innerhalb* einer Ausschreibung und auf der Trassenseite. Auf der Vergabeseite
+kommt ein dritter dazu: Jede SPNV-Ausschreibung trägt ein deterministisch aus
+dem Weltseed gezogenes, vorab veröffentlichtes **Vergabeprofil** — verschobene
+Wertungsgewichte, ein anderer Anforderungs- und Pönaleschwerpunkt, wechselnde
+Sonderauflagen. Dadurch ist eine einmal gewinnende Angebotsschablone beim
+nächsten Los nicht mehr die beste Antwort, und wiederkehrende Ausschreibungen
+bleiben eine Entscheidung statt einer Formularwiederholung. Details:
+`wirtschaft.md` 3.7.
+
 **Zeitverfügbarkeit ist kein Wettbewerbsvorteil.** Ein persistentes, nicht
 pausierbares Echtzeitspiel bestraft sonst automatisch jeden, der nicht täglich
 einloggt. Das Betriebsprogramm ist deshalb kein Komfortfeature, sondern eine

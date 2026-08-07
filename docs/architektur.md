@@ -131,10 +131,11 @@ Trassenvergabe, Audit, Replay-Export und Testbarkeit.
 
 - **Simulationszeit ist ein expliziter Wert.** Nie `now()` im Kern.
 - **Ein Seed je Welt und Periode**, aufgeteilt in benannte Substreams
-  (`disruption`, `tiebreak`, `demand`, `failure`, `tender_release`). Ein neuer
-  Substream verändert die bestehenden nicht. Der Vergabekalender einer Welt
-  entsteht aus `tender_release` und ist dadurch reproduzierbar und im
-  Nachhinein prüfbar.
+  (`disruption`, `tiebreak`, `demand`, `failure`, `tender_release`,
+  `tender_profile`). Ein neuer Substream verändert die bestehenden nicht. Der
+  Vergabekalender einer Welt entsteht aus `tender_release`, das Vergabeprofil
+  jeder Ausschreibung (E21) aus `tender_profile` — beide dadurch reproduzierbar
+  und im Nachhinein prüfbar.
 - **Keine Floats in zustandsrelevanten Werten.** Geld als `i64` Cent, Zeiten als
   Sekunden seit Weltepoche, Positionen als Millimeter entlang Kante. Fahrdynamik
   rechnet mit Floats — aber **einmalig in der Release-Pipeline**; die Simulation

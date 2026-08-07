@@ -14,7 +14,7 @@ Jeder Teilabschnitt trägt einen **Status**: `offen` (noch nicht begonnen),
 `in Arbeit` oder `erledigt`. Ein Punkt gilt erst als `erledigt`, wenn sein
 Ergebnis vorzeigbar ist. Bislang erledigt:
 
-- **M0.1** — die ADRs zu E1–E20, siehe [`adr/`](adr/README.md);
+- **M0.1** — die ADRs zu E1–E20 (E21 später ergänzt), siehe [`adr/`](adr/README.md);
 - **M0.2** — Monorepo, CI, Determinismus-Testharnisch, Wächter und Glossar,
   siehe [`monorepo.md`](monorepo.md) und [`glossar.md`](glossar.md);
 - **M0.3** — der Wegwerf-Spike zur Sperrzeitentreppe, siehe
@@ -408,11 +408,12 @@ nachweislich nicht (M2.2). Siehe [`monorepo.md`](monorepo.md) Abschnitt 3 und
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 6.1 | `EconomyRelease`: Trassen-, Stations-, Anlagenentgelte, Energie, Personal, Verwaltung — versioniert und je Welt gepinnt | L | offen |
+| 6.1 | `EconomyRelease`: Trassen-, Stations-, Anlagenentgelte, Energie, Personal, Verwaltung, **Vergabeprofil-Katalog samt Punktgewichten** (E21) — versioniert und je Welt gepinnt | L | offen |
 | 6.2 | Kostenarten und Kostenstellen auf dem Ledger-Kern aus M2.4 | M | offen |
 | 6.3 | **`WorldProfile`** (E18): Weltlaufzeit, abgeleitete Fahrplanperiode, Vertragslaufzeit, Ausschreibungsvorlauf, Staffelung der Vertragsenden | M | offen |
 | 6.3a | **Vergabekalender** (`wirtschaft.md` 3.3): beim Weltstart hält der Eigenbetrieb alle Lose; gleichmäßige Fenster über die erste Welthälfte, geschichtet zufällige Zuordnung aus Seed-Substream `tender_release`, vollständig veröffentlicht. **Prüfung beim Weltentwurf, dass Erst- und Wiedervergabe sich überlappen** | M | offen |
 | 6.4 | Ausschreibungsgenerator: Leistungsbeschreibung, Qualitätsanforderungen, Laufzeit aus dem `WorldProfile` | M | offen |
+| 6.4a | **Vergabeprofil** (`wirtschaft.md` 3.7, E21): je Ausschreibung ein `TenderProfile` — Wertungsgewichtung, Anforderungs- und Pönaleschwerpunkt, Sonderauflagen — geschichtet zufällig aus Seed-Substream `tender_profile`, aus dem versionierten Katalog in M6.1 gezogen und in der Leistungsbeschreibung veröffentlicht. **Jeder Hebel muss den E19-Test bestehen; kein reaktiver Wiederholungswächter** | M | offen |
 | 6.5 | **Auskömmlichkeitsgrenze**: vor Angebotsöffnung veröffentlicht, deterministisch aus `EconomyRelease` berechnet | M | offen |
 | 6.6 | Angebotsabgabe mit wenigen Feldern (E19): Bestellerentgelt, Fahrzeugkonzept, optionale Qualitätszusagen. **Angebotsfrist 3–7 Tage, kleine Lose 24–48 Stunden, Zuschlag sofort bei Fristende.** Eigene Wertungsaufschlüsselung vor Abgabe sichtbar; Angebotsassistent als Automatikstufe | L | offen |
 | 6.6a | **Fahrzeugvorgaben der Ausschreibung**: Mindestsitzplätze, Klassenanteil, Barrierefreiheit, Fahrrad- und Rollstuhlplätze, Ausstattung — geprüft gegen die Fahrzeugkonfiguration aus M5.1a | M | offen |
