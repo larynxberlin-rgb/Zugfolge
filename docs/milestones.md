@@ -27,7 +27,10 @@ Ergebnis vorzeigbar ist. Bislang erledigt:
   nicht (Inhaberentscheidung);
 - **M1.1** — das Domänenmodell des Betriebsgraphen, siehe
   [`betriebsgraph.md`](betriebsgraph.md) und
-  [`crates/zugfolge-infra`](../crates/zugfolge-infra).
+  [`crates/zugfolge-infra`](../crates/zugfolge-infra);
+- **M1.2** — die Import-Pipeline OSM-PBF → Rohgraph, siehe
+  [`betriebsgraph.md`](betriebsgraph.md) Abschnitt 7 und
+  [`crates/zugfolge-infra/src/import`](../crates/zugfolge-infra/src/import).
 
 ---
 
@@ -67,7 +70,7 @@ README:
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
 | 1.1 | Domänenmodell: Betriebsstellen, Kanten, Gleise, Bahnsteige, Elektrifizierung, Zugsicherung, Vmax-Bänder, Neigung | M | erledigt |
-| 1.2 | Import-Pipeline OSM-PBF → Rohgraph mit Topologie, Geometrie, Tags | L | offen |
+| 1.2 | Import-Pipeline OSM-PBF → Rohgraph mit Topologie, Geometrie, Tags | L | erledigt |
 | 1.3 | **Netzfilter**: nur `railway=rail` in 1435 mm; Tram, Stadtbahn, U-Bahn, Schmalspur, Standseil- und Einschienenbahnen verwerfen; Stromschienennetze über Netzausschlussliste. **Betriebs-, Abstell- und Anschlussgleise bleiben erhalten** | M | offen |
 | 1.4 | **Abdeckungsmessung**: Coverage-Report je Attribut und Streckenabschnitt. Entscheidet *vor* dem Bau, welche Strecke Klasse A erreichen kann | M | offen |
 | 1.5 | **Neigungsprofil aus Höhenmodell** — aus einem DEM entlang der Gleisgeometrie abgeleitet und geglättet | M | offen |
@@ -96,6 +99,18 @@ Prüfsumme des `InfraRelease` (M1.12). Drei Entscheidungen wirken weiter:
 | Gefahren wird auf **Gleisen**, die Richtungsbindung liegt am Gleis | Zugfolgefall und Gegenfahrt bleiben eine Eigenschaft des Netzes, keine zweite Regel (M3.1, M3.3) |
 | Vmax, Neigung, Elektrifizierung und Zugsicherung sind **ein** Bandmechanismus | M1.5 und M1.6 füllen Bänder, statt je ein eigenes Modell zu bauen |
 | Die Herkunft hängt am einzelnen **Band**, nicht am Gleis | M1.4 kann je Attribut und Abschnitt messen, ohne das Modell aufzuschneiden |
+
+**M1.2 trägt:** Die Import-Pipeline liest einen genehmigten OSM-PBF-Extract
+(Quelle `osm-pbf-lhe`, `docs/rechte.md`) blockweise und baut daraus einen
+Rohgraph — Topologie, Geometrie und Tags, roh und ungefiltert. Ein Knoten wird
+nur dann zum eigenen Punkt des Rohgraphen, statt bloß zur Geometrie eines
+Wegabschnitts zu gehören, wenn er Anfang oder Ende eines Wegs ist, zwei Wege
+verbindet oder selbst einen `railway`-Tag trägt. Der Rohgraph ist bewusst noch
+kein `OperatingGraph`: Was zum EBO-Netz gehört, entscheidet erst der
+Netzfilter (M1.3). Der PBF-Leser ist von Hand geschrieben — Varint, Zickzack,
+Blob-Rahmen — statt über eine generierte Protobuf-Anbindung, weil das Format
+selbst nur diesen kleinen, stabilen Ausschnitt von Protobuf braucht. Siehe
+`betriebsgraph.md` Abschnitt 7.
 
 Ausführlich: [`betriebsgraph.md`](betriebsgraph.md).
 

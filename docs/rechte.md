@@ -38,11 +38,12 @@ Der Wächter sammelt jeden solchen Marker im Arbeitsbaum und prüft, dass die
 genannte Quelle im Register steht **und** dort `freigegeben` ist. Ein Marker auf
 eine unbekannte oder nicht freigegebene Quelle bricht die CI.
 
-Diese zweite Hälfte greift heute ins Leere — es gibt noch keinen Import, die
-Import-Pipeline kommt erst mit M1.2. Genau wie der Wächter `world-id`, der schon
-vor der ersten Tabelle steht, wartet sie auf den Augenblick, in dem der erste
-Import entsteht, und macht die Rechtefrage in dem Moment unumgehbar, statt sie
-nachträglich einzuziehen.
+Diese zweite Hälfte griff bis M1.2 ins Leere — es gab noch keinen Import. Seit
+der Import-Pipeline OSM-PBF → Rohgraph trägt der Marker in
+`crates/zugfolge-infra/src/import/pipeline.rs`; der Wächter prüft ihn bei
+jedem Lauf gegen das Register. Genau wie der Wächter `world-id`, der schon vor
+der ersten Tabelle stand, hat sie so die Rechtefrage unumgehbar gemacht, bevor
+der erste Import entstand, statt sie nachträglich einzuziehen.
 
 ---
 

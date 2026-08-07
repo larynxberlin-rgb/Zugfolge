@@ -1,8 +1,10 @@
 //! Ein Beispielnetz — die Prüfstrecke des Domänenmodells.
 //!
-//! **Die Daten sind erfunden.** Der Import ist M1.2; bis dahin gibt es keine
-//! echte Infrastruktur im Modell, und ein Beispiel mit realen Namen und Werten
-//! würde vortäuschen, es gäbe sie. Die Größenordnungen — Blocklängen,
+//! **Die Daten sind erfunden.** Auch der Import (M1.2, `import_pbf`) bildet
+//! noch keinen `OperatingGraph` — er liefert einen `RawGraph`, den erst
+//! spätere Schritte in dieses Modell abbilden. Ein Beispiel mit realen Namen
+//! und Werten würde vortäuschen, es gäbe hier schon echte Infrastruktur. Die
+//! Größenordnungen — Blocklängen,
 //! Bahnsteighöhen, Neigungen, Streckengeschwindigkeiten — sind dagegen
 //! realistisch gewählt, sonst prüfte das Beispiel nichts.
 //!
