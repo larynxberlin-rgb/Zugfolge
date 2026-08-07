@@ -127,9 +127,10 @@ Konzeption abgeschlossen, E1–E20 entschieden, Milestones auf Reihenfolge und
 Vollständigkeit geprüft. **M0 ist abgeschlossen: M0.1 bis M0.5 sind erledigt** —
 ADRs, Monorepo, CI, Determinismus-Testharnisch, Wächter, Glossar, Lizenz-Scan,
 der Wegwerf-Spike zur Sperrzeitentreppe, das Rechte-Gate und der Rechteschutz.
-**M1 hat begonnen: M1.1 bis M1.5 sind erledigt** — das Domänenmodell des
+**M1 hat begonnen: M1.1 bis M1.7 sind erledigt** — das Domänenmodell des
 Betriebsgraphen, die Import-Pipeline OSM-PBF → Rohgraph, der Netzfilter, die
-Abdeckungsmessung und das Neigungsprofil aus dem Höhenmodell stehen in
+Abdeckungsmessung, das Neigungsprofil aus dem Höhenmodell, die Blockableitung
+und die Fahrstraßen- und Durchrutschwegableitung stehen in
 `crates/zugfolge-infra`.
 
 - **Alpha-Schnitt:** M0 – M9. Alles ab M10 ist Ausbau.
@@ -185,9 +186,23 @@ Abdeckungsmessung und das Neigungsprofil aus dem Höhenmodell stehen in
   Stichprobe. Das Höhenmodell der Pilotregion selbst ist noch nicht
   freigegeben (`docs/rechte.md` 3, Status `pruefung`); M1.5 liefert deshalb
   das Verfahren, keinen Import. Siehe `docs/betriebsgraph.md` Abschnitt 10.
-- **Nächster Schritt:** M1.6, die Blockableitung aus Signalpositionen,
-  Zugbeeinflussung und Topologie, mit virtuellen Blöcken bei Lücken und
-  Qualitätsklassifizierung A/B/C je Block.
+- **M1.6 steht:** `crates/zugfolge-infra/src/blocks.rs` leitet mit
+  `derive_block_sections` die Blockabschnitte eines Gleises aus Signalpositionen,
+  Zugbeeinflussung und Topologie ab. Ein Hauptsignal setzt eine Blockgrenze, ein
+  Vorsignal nicht. Eine durchgehend LZB- oder ETCS-geführte Strecke ist ein
+  **realer, führerraumsignalisierter Block** ohne ortsfestes Signal — der reine
+  LZB- und der reine ETCS-Block, gerade keine Datenlücke; nur wo weder ein
+  Kennzeichen noch die durchgehende Überwachung einspringt, entstehen
+  **virtuelle Blöcke**. Jeder Block trägt eine Qualitätsklasse A/B/C. Siehe
+  `docs/betriebsgraph.md` Abschnitt 11.
+- **M1.7 steht:** `crates/zugfolge-infra/src/interlocking.rs` zählt mit
+  `derive_interlocking_routes` aus einem `StationHead` — Weichenlage und
+  Signalstandort — alle Fahrstraßen eines Bahnhofskopfs auf, mit Weichenlagen,
+  Durchrutschweg und **Ausschlussmenge** je Fahrstraße. Das ist die
+  Konfliktressource des Bahnhofskopfs, die der Spike aus M0.3 offengelassen
+  hatte (M3.1, M3.3). Siehe `docs/betriebsgraph.md` Abschnitt 12.
+- **Nächster Schritt:** M1.8, die Stationsdaten-Anreicherung aus ausschließlich
+  freigegebenen Quellen.
 
 Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` steht unter
 PolyForm Shield 1.0.0, nennt Sebastian Barowski als Rechteinhaber und ist damit

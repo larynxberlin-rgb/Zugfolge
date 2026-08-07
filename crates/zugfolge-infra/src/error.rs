@@ -9,7 +9,10 @@
 
 use core::fmt;
 
-use crate::identity::{OperatingPointId, PlatformId, TrackEdgeId, TrackId};
+use crate::identity::{
+    HeadElementId, HeadNodeId, HeadSignalId, OperatingPointId, PlatformId, SwitchId, TrackEdgeId,
+    TrackId,
+};
 use crate::units::{Length, Speed};
 
 /// Was am Betriebsgraphen oder einem seiner Bausteine nicht stimmt.
@@ -196,6 +199,63 @@ pub enum InfraError {
         /// Die Länge des Gleises, die die Stichproben abdecken müssten.
         track_length: Length,
     },
+    /// Ein Signal liegt außerhalb seines Gleises — eine Signalposition muss
+    /// zwischen Gleisanfang und Gleisende liegen (M1.6).
+    SignalOutsideTrack {
+        /// Die Position des Signals.
+        at: Length,
+        /// Die Länge des Gleises.
+        track_length: Length,
+    },
+    /// Zwei Signale liegen nicht in aufsteigender Reihenfolge — die
+    /// Blockableitung erwartet die Signale sortiert entlang des Gleises (M1.6).
+    UnorderedSignals {
+        /// Die Position, an der die Reihenfolge bricht.
+        at: Length,
+    },
+    /// Ein Bahnhofskopf ohne ein einziges Fahrwegelement ist keiner (M1.7).
+    EmptyStationHead,
+    /// Eine Knotenkennung wurde zweimal vergeben (M1.7).
+    DuplicateHeadNode(HeadNodeId),
+    /// Eine Elementkennung wurde zweimal vergeben (M1.7).
+    DuplicateHeadElement(HeadElementId),
+    /// Eine Weichenkennung wurde zweimal vergeben (M1.7).
+    DuplicateSwitch(SwitchId),
+    /// Eine Signalkennung wurde zweimal vergeben (M1.7).
+    DuplicateHeadSignal(HeadSignalId),
+    /// Ein Fahrwegelement endet an einem Knoten, den es nicht gibt (M1.7).
+    UnknownElementNode {
+        /// Das betroffene Element.
+        element: HeadElementId,
+        /// Der unbekannte Knoten.
+        node: HeadNodeId,
+    },
+    /// Ein Fahrwegelement beginnt und endet am selben Knoten (M1.7).
+    SelfLoopHeadElement(HeadElementId),
+    /// Ein Knoten hat nicht die Anzahl Elemente, die seine Art verlangt: ein
+    /// Endpunkt genau eines, ein Stoß genau zwei, eine Weiche genau drei (M1.7).
+    HeadNodeDegree {
+        /// Der betroffene Knoten.
+        node: HeadNodeId,
+        /// Die Art des Knotens.
+        kind: &'static str,
+        /// Die von der Art verlangte Anzahl.
+        expected: usize,
+        /// Die tatsächliche Anzahl.
+        actual: usize,
+    },
+    /// Eine Weiche nennt nicht genau die drei verschiedenen Elemente, die an
+    /// ihrem Knoten liegen — Spitze, Stammgleis und Zweiggleis (M1.7).
+    SwitchNodeMismatch {
+        /// Die betroffene Weiche.
+        switch: SwitchId,
+    },
+    /// Ein Signal steht an einem Element oder Knoten, den es nicht gibt, oder
+    /// der genannte Knoten ist kein Ende des genannten Elements (M1.7).
+    SignalPlacement {
+        /// Das betroffene Signal.
+        signal: HeadSignalId,
+    },
 }
 
 impl fmt::Display for InfraError {
@@ -361,6 +421,48 @@ impl fmt::Display for InfraError {
                 formatter,
                 "Höhenstichproben reichen von {first} bis {last}, das Gleis aber von 0 bis \
                  {track_length} — der Rest hätte keinen Wert"
+            ),
+            Self::SignalOutsideTrack { at, track_length } => write!(
+                formatter,
+                "Signal bei {at} liegt außerhalb des Gleises von 0 bis {track_length}"
+            ),
+            Self::UnorderedSignals { at } => write!(
+                formatter,
+                "Signale sind bei {at} nicht mehr aufsteigend sortiert"
+            ),
+            Self::EmptyStationHead => formatter.write_str(
+                "Bahnhofskopf ohne ein einziges Fahrwegelement — daraus lässt sich keine Fahrstraße ableiten",
+            ),
+            Self::DuplicateHeadNode(id) => write!(formatter, "Knoten {id} ist zweimal angelegt"),
+            Self::DuplicateHeadElement(id) => {
+                write!(formatter, "Fahrwegelement {id} ist zweimal angelegt")
+            }
+            Self::DuplicateSwitch(id) => write!(formatter, "Weiche {id} ist zweimal angelegt"),
+            Self::DuplicateHeadSignal(id) => write!(formatter, "Signal {id} ist zweimal angelegt"),
+            Self::UnknownElementNode { element, node } => write!(
+                formatter,
+                "Fahrwegelement {element} endet am unbekannten Knoten {node}"
+            ),
+            Self::SelfLoopHeadElement(id) => write!(
+                formatter,
+                "Fahrwegelement {id} beginnt und endet am selben Knoten"
+            ),
+            Self::HeadNodeDegree {
+                node,
+                kind,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "Knoten {node} ({kind}) hat {actual} Elemente, erwartet werden {expected}"
+            ),
+            Self::SwitchNodeMismatch { switch } => write!(
+                formatter,
+                "Weiche {switch} nennt nicht genau die drei verschiedenen Elemente an ihrem Knoten"
+            ),
+            Self::SignalPlacement { signal } => write!(
+                formatter,
+                "Signal {signal} steht nicht an einem Ende eines vorhandenen Elements"
             ),
         }
     }
