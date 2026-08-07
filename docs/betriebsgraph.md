@@ -451,3 +451,83 @@ auch den Fahrweg vergibt. M1.11 liefert nur den Kataster: welche Anlagen es
 gibt und was sie leisten können, nicht, wer sie wann belegt.
 
 Umsetzung: [`crates/zugfolge-infra/src/facility.rs`](../crates/zugfolge-infra/src/facility.rs).
+
+---
+
+## 15. Die Zugcharakteristik — Ergebnis von M1.9
+
+`docs/infrastruktur.md` 2 nennt den Satz wörtlich: **„Zugcharakteristik statt
+Fahrzeugliste."** Der Trassen-Planner (M3.4) und die Fahrzeitrechnung (M1.10)
+rechnen mit Masse, Länge, Vmax, Anfahr- und Bremsvermögen, Antriebsart und
+Zugsicherung — nicht mit konkreten Fahrzeugen. Erst `docs/betrieb.md` 1 bildet
+echte Formationen auf eine `TrainCharacteristics` ab (M5.2). So arbeiten reale
+Fahrplanrechner auch, und es entkoppelt die Trassenplanung vom Fahrzeugkatalog,
+der zwei Milestones später entsteht.
+
+**Warum genau diese sechs Angaben.** Sie sind exakt das, was eine
+Fahrzeitrechnung braucht und nichts darüber hinaus. **Masse** geht in keine
+Rechnung dieses Crates unmittelbar ein — Anfahr- und Bremsvermögen sind bereits
+Beschleunigungswerte, in denen die Masse aufgeht, wie es das reale
+Betriebsprogramm auch hält. Sie wird trotzdem geführt, weil M5.6
+(Bedarfsmodell) und M11.5 (Bremshundertstel) sie brauchen werden. **Länge** und
+**Vmax** begrenzen zusammen mit der Infrastruktur, was ein Zug befahren darf.
+**Anfahr- und Bremsvermögen** sind die zwei Kennwerte, die M1.10 in Bewegung
+setzt. **Antriebsart** (`TractionType`) entscheidet, welche Elektrifizierung
+nutzbar ist — dieselbe Schnittmengenfrage wie bei der Zugsicherung: Diesel- und
+Akkubetrieb sind vom Fahrdraht unabhängig, ein elektrischer Antrieb braucht ein
+gemeinsames Bahnstromsystem mit dem Abschnitt. Und **Zugsicherung** ist
+`TrainProtection` — derselbe Typ wie streckenseitig, denn `protection.rs` sagt
+es bereits: „Fahrzeugseitig gilt dasselbe."
+
+**Was hier bewusst nicht steht.** Kein Fahrzeugkatalog, keine Formation, kein
+Zulassungsdatum, keine Eigentumsfrage — das liefert `docs/betrieb.md` 1 erst
+mit M5.1. `TrainCharacteristics` ist die abstrakte Fahrzeitrechnungs-Sicht auf
+einen Zug, keine Zusicherung über ein reales Fahrzeug.
+
+Umsetzung: [`crates/zugfolge-infra/src/train.rs`](../crates/zugfolge-infra/src/train.rs).
+
+---
+
+## 16. Fahrdynamik und Fahrzeitrechner — Ergebnis von M1.10
+
+`docs/monorepo.md` 3 sagt es ausdrücklich: **`infra-pipeline` ist die einzige
+Domäne ohne `no-floats`** — genau, weil dieses eine Modul einmalig mit
+Gleitkomma rechnet und dabei ganzzahlige Fahrzeittabellen ausgibt. Alles, was
+hinein- und herausgeht, bleibt ganzzahlig (Invariante 3); nur die Physik
+dazwischen rechnet in Gleitkomma.
+
+**Das Verfahren.** Ein `RunPath` ist ein Fahrweg als lückenlose Folge von
+`RunSegment`s — Länge, zulässige Geschwindigkeit (schon das Minimum aus Zug-
+und Streckengeschwindigkeit) und Neigung in Fahrtrichtung.
+`RunPath::push_track_range` baut ihn aus einem `Track`, geschnitten an jeder
+Bandgrenze von Vmax- oder Neigungsprofil, und prüft dabei die
+Zugsicherungs- und Antriebskompatibilität — ein Fahrweg, den der Zug gar nicht
+befahren dürfte, bekommt gar keine Fahrzeit. `derive_running_time_table`
+rechnet darüber die maximal mögliche Geschwindigkeit an jeder Segmentgrenze in
+zwei Durchgängen: rückwärts die Bremskurve vor jeder Beschränkung, vorwärts das
+tatsächlich Erreichbare aus Einstiegsgeschwindigkeit und Anfahrvermögen. Aus
+beiden Geschwindigkeiten integriert das Verfahren je Segment ein Trapez- oder
+Dreiecksgeschwindigkeitsprofil — Beschleunigung, Beharrung, Bremsung — zu einer
+Zeit, aufgerundet in die Fahrzeittabelle: Eine vorberechnete Fahrzeit darf nie
+eine schnellere Fahrt versprechen, als physikalisch möglich ist.
+
+**Die Neigung wirkt auf beide Vermögen.** Steigung mindert das Anfahr-,
+Gefälle mindert das Bremsvermögen — `sin θ ≈ Gefälle ‰ / 1000`, die im Bahnbau
+übliche Kleinwinkelnäherung. Reicht ein Vermögen unter der Neigung nicht mehr
+aus, meldet das Verfahren einen Fehler, statt eine unmögliche Fahrt zu
+berechnen — dieselbe Haltung wie beim Domänenmodell: ein Fehler, der beim
+Rechnen nicht auffällt, fiele sonst zum ersten Mal auf, wenn eine Welt schon
+darauf läuft.
+
+**Was hier bewusst nicht steht.** Masse geht nicht in die Rechnung ein —
+Anfahr- und Bremsvermögen (M1.9) sind bereits Beschleunigungswerte, in denen
+sie aufgeht. Kein Halt, keine Räum- oder Fahrstraßenbildezeit:
+`docs/infrastruktur.md` 1 zählt sechs Anteile der Sperrzeit auf, dieses Modul
+liefert genau einen — die Fahrzeit. Die anderen fünf gehören zum
+Sperrzeitenmodell (M3.1). Und kein Fahrweg durch den Graphen — welche Gleise
+ein Zug in welcher Reihenfolge befährt, entscheidet der Planner (M3.4); dieses
+Modul rechnet nur die Zeit über einen bereits gegebenen Fahrweg.
+
+Umsetzung: [`crates/zugfolge-infra/src/dynamics.rs`](../crates/zugfolge-infra/src/dynamics.rs).
+
+Umsetzung: [`crates/zugfolge-infra/src/facility.rs`](../crates/zugfolge-infra/src/facility.rs).

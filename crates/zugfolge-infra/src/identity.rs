@@ -117,6 +117,14 @@ kennung!(
     "Anl"
 );
 
+kennung!(
+    /// Kennung einer Zugcharakteristik — Masse, Länge, Vmax, Anfahr- und
+    /// Bremsvermögen, Antriebsart, Zugsicherung, entkoppelt vom
+    /// Fahrzeugkatalog (M1.9).
+    TrainCharacteristicsId,
+    "Zc"
+);
+
 /// Das Betriebsstellenkürzel — im deutschen Netz die Abkürzung nach Ril 100.
 ///
 /// Es ist die Kennung, mit der Menschen arbeiten: Sie steht im Fahrplan, in
@@ -178,7 +186,9 @@ impl Canonical for OperatingPointCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{FacilityId, OperatingPointCode, OperatingPointId, TrackId};
+    use super::{
+        FacilityId, OperatingPointCode, OperatingPointId, TrackId, TrainCharacteristicsId,
+    };
     use crate::error::InfraError;
 
     #[test]
@@ -187,6 +197,7 @@ mod tests {
         assert_eq!(OperatingPointId::new(7).to_string(), "Bst7");
         assert_eq!(TrackId::new(7).to_string(), "G7");
         assert_eq!(FacilityId::new(7).to_string(), "Anl7");
+        assert_eq!(TrainCharacteristicsId::new(7).to_string(), "Zc7");
         assert!(OperatingPointId::new(1) < OperatingPointId::new(2));
     }
 

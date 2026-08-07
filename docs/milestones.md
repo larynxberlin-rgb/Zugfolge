@@ -49,6 +49,12 @@ Ergebnis vorzeigbar ist. Bislang erledigt:
 - **M1.8** — die Stationsdaten-Anreicherung, siehe
   [`betriebsgraph.md`](betriebsgraph.md) Abschnitt 13 und
   [`crates/zugfolge-infra/src/station.rs`](../crates/zugfolge-infra/src/station.rs);
+- **M1.9** — die Zugcharakteristik, siehe [`betriebsgraph.md`](betriebsgraph.md)
+  Abschnitt 15 und
+  [`crates/zugfolge-infra/src/train.rs`](../crates/zugfolge-infra/src/train.rs);
+- **M1.10** — Fahrdynamik und Fahrzeitrechner, siehe
+  [`betriebsgraph.md`](betriebsgraph.md) Abschnitt 16 und
+  [`crates/zugfolge-infra/src/dynamics.rs`](../crates/zugfolge-infra/src/dynamics.rs);
 - **M1.11** — der Anlagenkataster, siehe [`betriebsgraph.md`](betriebsgraph.md)
   Abschnitt 14 und
   [`crates/zugfolge-infra/src/facility.rs`](../crates/zugfolge-infra/src/facility.rs).
@@ -98,8 +104,8 @@ README:
 | 1.6 | **Blockableitung** aus Signalpositionen, Zugbeeinflussung und Topologie; virtuelle Blöcke bei Lücken; reine LZB-/ETCS-Blöcke bei durchgehender Überwachung; Qualitätsklassifizierung A/B/C | L | erledigt |
 | 1.7 | **Fahrstraßen- und Durchrutschwegableitung** im Bahnhofskopf — aus Weichenlage und Signalstandort erzeugt | **XL** | erledigt |
 | 1.8 | Stationsdaten-Anreicherung — ausschließlich freigegebene Quellen | M | erledigt |
-| 1.9 | **Zugcharakteristik** als eigenes Konzept: Masse, Länge, Vmax, Anfahr- und Bremsvermögen, Antriebsart, Zugsicherung. Entkoppelt Fahrzeitrechnung und Trassenplanung vom Fahrzeugkatalog (M5) | M | offen |
-| 1.10 | Fahrdynamik und Fahrzeitrechner → vorberechnete **ganzzahlige** Fahrzeittabellen je Zugcharakteristik | L | offen |
+| 1.9 | **Zugcharakteristik** als eigenes Konzept: Masse, Länge, Vmax, Anfahr- und Bremsvermögen, Antriebsart, Zugsicherung. Entkoppelt Fahrzeitrechnung und Trassenplanung vom Fahrzeugkatalog (M5) | M | erledigt |
+| 1.10 | Fahrdynamik und Fahrzeitrechner → vorberechnete **ganzzahlige** Fahrzeittabellen je Zugcharakteristik | L | erledigt |
 | 1.11 | **Anlagenkataster**: Werkstätten, Behandlungs- und Waschanlagen, Tankstellen, Entsorgungsanlagen, Abstellgleise — mit Kapazität, Öffnungszeit, Nutzlänge, Baureihenkompetenz | M | erledigt |
 | 1.12 | `InfraRelease` als unveränderliches, versioniertes Artefakt mit Herkunft, Lizenz, Checksumme und Confidence je Attribut | M | offen |
 | 1.13 | Referenzkorpus Leipzig–Halle–Erfurt und Abweichungsreport gegen reale Fahrzeiten | M | offen |
@@ -185,6 +191,32 @@ keine Ersterfassung in einem Zug. `StationEnrichmentCatalogBuilder::build`
 prüft jeden Eintrag gegen einen fertigen `OperatingGraph`. Wie M1.5 bis M1.7
 ist das Verfahren kein Import; der folgt erst mit der Freigabe. Siehe
 `betriebsgraph.md` Abschnitt 13.
+
+**M1.9 trägt:** `docs/infrastruktur.md` 2 sagt es wörtlich — „Zugcharakteristik
+statt Fahrzeugliste": `TrainCharacteristics` bündelt Masse, Länge, Vmax,
+Anfahr- und Bremsvermögen, Antriebsart (`TractionType`) und Zugsicherung
+(dieselbe `TrainProtection` wie streckenseitig) zu genau der abstrakten Sicht,
+mit der Trassen-Planner (M3.4) und Fahrzeitrechnung (M1.10) arbeiten, ohne ein
+konkretes Fahrzeug zu kennen. Die Antriebsart entscheidet über eine
+Schnittmengenfrage — dieselbe Form wie bei der Zugsicherung —, ob ein Zug eine
+Elektrifizierung nutzen kann; Diesel- und Akkubetrieb sind vom Fahrdraht
+unabhängig. Siehe `betriebsgraph.md` Abschnitt 15.
+
+**M1.10 trägt:** Die Fahrdynamik (`crates/zugfolge-infra/src/dynamics.rs`) ist
+der in `docs/monorepo.md` 3 vorgesehene, einzige Ort mit Gleitkommarechnung in
+diesem Crate. `derive_running_time_table` rechnet über einen `RunPath` — einen
+Fahrweg aus `RunSegment`s mit Länge, zulässiger Geschwindigkeit und Neigung —
+in zwei Durchgängen die maximal erreichbare Geschwindigkeit an jeder
+Segmentgrenze: rückwärts die Bremskurve vor jeder Beschränkung, vorwärts das
+tatsächlich Erreichbare aus Anfahrvermögen und Einstiegsgeschwindigkeit. Jedes
+Segment liefert daraus ein Trapez- oder Dreiecksgeschwindigkeitsprofil, dessen
+Zeit aufgerundet in die **ganzzahlige** Fahrzeittabelle eingeht — eine
+vorberechnete Fahrzeit darf nie eine schnellere Fahrt versprechen, als
+physikalisch möglich ist. Die Neigung wirkt auf beide Vermögen; reicht eines
+unter ihr nicht mehr aus, meldet das Verfahren einen Fehler, statt eine
+unmögliche Fahrt zu berechnen. `RunPath::push_track_range` prüft dabei die
+Zugsicherungs- und Antriebskompatibilität gegen das befahrene Gleis. Siehe
+`betriebsgraph.md` Abschnitt 16.
 
 **M1.11 trägt:** Der Anlagenkataster (`FacilityCatalog`) führt Werkstätten,
 Behandlungs- und Waschanlagen, Tankstellen, Entsorgungsanlagen und als Anlage

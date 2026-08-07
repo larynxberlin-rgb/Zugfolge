@@ -44,10 +44,16 @@
 //! Fahrstraßen, Durchrutschwege und Ausschlussmengen eines Bahnhofskopfs.
 //! [`StationEnrichmentCatalog`] aus M1.8 bindet Bahnhofskategorie und
 //! Ausstattung an eine Betriebsstelle mit Fahrgastwechsel — mit einer eigenen
-//! Herkunft je Feld, weil eine Anreicherung keine Ersterfassung ist. Und
-//! [`FacilityCatalog`] aus M1.11 führt Werkstätten, Behandlungs- und
-//! Waschanlagen, Tankstellen, Entsorgungsanlagen und als Anlage geführte
-//! Abstellgleise mit Kapazität, Öffnungszeit, Nutzlänge und
+//! Herkunft je Feld, weil eine Anreicherung keine Ersterfassung ist.
+//! [`TrainCharacteristics`] aus M1.9 ist die Zugcharakteristik — Masse, Länge,
+//! Vmax, Anfahr- und Bremsvermögen, Antriebsart, Zugsicherung —, die
+//! Fahrzeitrechnung und Trassenplanung vom Fahrzeugkatalog entkoppelt.
+//! [`derive_running_time_table`] aus M1.10 rechnet darüber die Fahrdynamik: aus
+//! einem [`RunPath`] und einer Zugcharakteristik eine ganzzahlige
+//! Fahrzeittabelle — der einzige Ort in diesem Crate, der dafür einmalig mit
+//! Gleitkomma rechnet. Und [`FacilityCatalog`] aus M1.11 führt Werkstätten,
+//! Behandlungs- und Waschanlagen, Tankstellen, Entsorgungsanlagen und als
+//! Anlage geführte Abstellgleise mit Kapazität, Öffnungszeit, Nutzlänge und
 //! Baureihenkompetenz. Was daraus ein spielbares Netz macht, ist Aufgabe der
 //! folgenden Schritte:
 //!
@@ -90,6 +96,7 @@ mod bands;
 mod blocks;
 mod canonical;
 mod coverage;
+mod dynamics;
 mod edge;
 mod electrification;
 mod elevation;
@@ -108,6 +115,7 @@ mod provenance;
 mod speed;
 mod station;
 mod track;
+mod train;
 mod units;
 
 pub use bands::{Band, BandProfile};
@@ -116,6 +124,10 @@ pub use blocks::{
 };
 pub use coverage::{
     AchievableSection, AttributeCoverage, CoverageReport, QualityClass, TrackCoverage,
+};
+pub use dynamics::{
+    RunPath, RunSegment, RunningTime, RunningTimeCheckpoint, RunningTimeTable,
+    derive_running_time_table,
 };
 pub use edge::{TrackEdge, TravelDirection};
 pub use electrification::{Electrification, PowerSystem};
@@ -129,7 +141,7 @@ pub use facility::{
 pub use graph::{OperatingGraph, OperatingGraphBuilder};
 pub use identity::{
     FacilityId, HeadElementId, HeadNodeId, HeadSignalId, InterlockingRouteId, OperatingPointCode,
-    OperatingPointId, PlatformId, SwitchId, TrackEdgeId, TrackId,
+    OperatingPointId, PlatformId, SwitchId, TrackEdgeId, TrackId, TrainCharacteristicsId,
 };
 pub use import::{
     ImportError, OsmNodeId, OsmWayId, RawEdge, RawEdgeId, RawGraph, RawNode, import_pbf,
@@ -152,4 +164,5 @@ pub use station::{
     StationEnrichmentCatalogBuilder,
 };
 pub use track::{Track, TrackBuilder, TrackDirection, TrackGauge, TrackKind, TrackOwner};
-pub use units::{Gradient, Length, Speed};
+pub use train::{ElectricSystems, TractionType, TrainCharacteristics};
+pub use units::{Acceleration, Gradient, Length, Mass, Speed};
