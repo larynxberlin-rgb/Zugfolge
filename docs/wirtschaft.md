@@ -211,6 +211,64 @@ Diese Überlappung ist eine **Prüfbedingung beim Weltentwurf**, keine Hoffnung:
 Vergabekalender und Vertragslaufzeiten werden gegeneinander geprüft, bevor eine
 Welt startet.
 
+### 3.7 Jede Ausschreibung variiert (E21)
+
+Das Angebot hat wenige Felder und die Wertung ist vorab sichtbar (3.5) — gewollt,
+damit das Verfahren in Minuten zu spielen ist. Die Kehrseite: Bliebe der Zuschnitt
+über alle Lose gleich, fände ein Spieler einmal die auskömmlichste Kombination
+aus Bestellerentgelt, Fahrzeugkonzept und Qualitätszusagen und wendete diese
+**08/15-Schablone** danach auf jedes weitere Los an. Über 3–4 Vergabezyklen je
+Welt (E18) verkäme die Ausschreibung zur Formularwiederholung.
+
+> **Deshalb trägt jede Ausschreibung ein `TenderProfile`** — eine Kombination
+> von Anforderungs- und Wertungshebeln, die verschiebt, was ein
+> wettbewerbsfähiges Angebot ausmacht. Ein für ein Los optimiertes Angebot samt
+> Flotten- und Betriebsprogrammzuschnitt ist beim nächsten Los nicht mehr die
+> beste Antwort.
+
+**Die Hebel** — jeder verändert eine Entscheidung des Spielers, nicht nur eine
+Zahl (E19):
+
+| Hebel | Was er verschiebt |
+|-------|-------------------|
+| Wertungsgewichtung (`ScoringWeights`) | Verhältnis von Preis- zu Qualitätspunkten: preislastig belohnt das knappe Gebot, qualitätslastig die teureren Zusatzzusagen |
+| Anforderungsschwerpunkt | worauf das Fahrzeugkonzept zielt — Sitzplatzdichte einer S-Bahn, Reisekomfort eines langen RE, Fahrrad- und Rollstuhlkapazität eines touristischen Netzes (E20) |
+| Pönaleschwerpunkt | welche Qualitätsdimension der Vertrag am härtesten sanktioniert — Pünktlichkeit, Ausfälle, Sitzplatzangebot oder Anschlusssicherung; verschiebt die Prioritäten im Betriebsprogramm (E2) |
+| Sonderauflagen | begrenzte, ausdrücklich genannte Zusatzbedingungen — verpflichtende Zusatzhalte, Obergrenze für das Fahrzeugalter, Antriebsauflage auf einem nicht elektrifizierten Ast, gefordertes SEV-Konzept |
+
+**Vier Eigenschaften sind nicht verhandelbar** — dieselben, die auch den
+Vergabekalender (3.3, 3.4) tragen:
+
+- **Deterministisch aus dem Weltseed**, Substream `tender_profile`. Kein
+  `Math.random()`, reproduzierbar und im Nachhinein prüfbar. Ein neuer Substream
+  verändert die bestehenden nicht.
+- **Vorab veröffentlicht.** Das Profil steht in der Leistungsbeschreibung, sobald
+  das Los angekündigt ist. *Zufällig ist, wie das Profil gezogen wurde — nicht,
+  ob man es kennt.* Damit bleibt Planung möglich und Zeitverfügbarkeit kein
+  Vorteil (E2).
+- **Aus einem versionierten, gedeckelten Katalog** im `EconomyRelease`, je Welt
+  gepinnt — Balance im Release, nicht im Code. Die Auskömmlichkeitsgrenze wird
+  für das jeweilige Profil berechnet und wie bisher vor Angebotsöffnung
+  veröffentlicht (4).
+- **Geschichtet, keine Ziehung je Los.** Über eine Welt hinweg kommt eine Spanne
+  von Schwerpunkten vor, kein einzelnes Profil bestimmt eine Welt — Permutation
+  statt Ziehung wie in 3.3. Eine Wiedervergabe desselben Loses kann ein anderes
+  Profil tragen.
+
+**Es bleibt eine Karte (E19).** Das Profil erscheint als wenige beschriftete
+Schwerpunkte auf derselben in einer halben Minute lesbaren Leistungsbeschreibung
+— keine Vergabeakte, keine Dutzend Regler. Der Angebotsassistent (3.5)
+berücksichtigt das aktive Profil.
+
+**Kein reaktiver Wiederholungswächter.** Ausdrücklich *nicht* eingeführt wird ein
+Mechanismus, der gleiche Angebote erkennt und bestraft. Das wäre eine wertende,
+undurchsichtige Serverentscheidung — das Gegenteil der nachrechenbaren Regel, die
+dieses Projekt überall bevorzugt (4). Die Schablone verliert ihren Wert, weil das
+nächste Los andere Antworten verlangt, nicht weil der Server das Wiederholen
+ahndet. So ergänzt E21 die Entscheidung E11 (kein einzelner Optimierungswert):
+E11 hält die Ziele **innerhalb** einer Ausschreibung mehrdimensional, E21 lässt
+das Zielgewicht **zwischen** den Ausschreibungen wandern.
+
 ## 4. Eigenbetrieb — Ausfallsicherung des Aufgabenträgers (E7)
 
 **Wann er greift**
