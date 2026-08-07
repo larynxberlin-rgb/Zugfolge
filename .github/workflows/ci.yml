@@ -63,11 +63,17 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Typprüfung
-        run: pnpm -r --stream typecheck
-
+      # Bau vor Typprüfung: Seit M2.1 hängt apps/game-api als Workspace-Paket
+      # von packages/identity ab und löst es über dessen dist/-Ausgabe auf
+      # (package.json "exports"). pnpm baut rekursive Skripte zwar
+      # topologisch sortiert, aber "typecheck" und "build" sind zwei
+      # getrennte Skriptläufe — ohne einen vorherigen Bau fehlt dist/ noch,
+      # wenn die Typprüfung eines abhängigen Pakets läuft.
       - name: Bau
         run: pnpm -r --stream build
+
+      - name: Typprüfung
+        run: pnpm -r --stream typecheck
 
       - name: Tests
         run: pnpm -r --stream test
