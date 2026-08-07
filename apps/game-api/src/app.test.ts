@@ -191,3 +191,276 @@ describe("Rollenvergabe", () => {
     expect(response.statusCode).toBe(403);
   });
 });
+
+describe("EVU (M2.3)", () => {
+  it("gründet ein EVU und listet es in der Welt", async () => {
+    const annaToken = await sign("kc-anna", "Anna");
+    await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/access`,
+      headers: { authorization: `Bearer ${annaToken}` },
+      payload: { displayName: "Anna" },
+    });
+
+    const foundResponse = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/operators`,
+      headers: { authorization: `Bearer ${annaToken}` },
+      payload: { name: "Elbtalbahn" },
+    });
+    expect(foundResponse.statusCode).toBe(201);
+
+    const roster = await app.inject({
+      method: "GET",
+      url: `/worlds/${WORLD_LHE}/operators`,
+      headers: { authorization: `Bearer ${annaToken}` },
+    });
+    expect(roster.json<{ name: string }[]>().map((operator) => operator.name)).toEqual(["Elbtalbahn"]);
+  });
+
+  it("lehnt die Gründung ohne Weltzugang ab", async () => {
+    const fremdToken = await sign("kc-fremd2", "Fremd");
+    const response = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/operators`,
+      headers: { authorization: `Bearer ${fremdToken}` },
+      payload: { name: "Phantom-Bahn" },
+    });
+    expect(response.statusCode).toBe(403);
+  });
+});
+
+describe("Ledger-Kern (M2.4)", () => {
+  async function gruendeElbtalbahn(): Promise<{ token: string; operatorId: string }> {
+    const token = await sign("kc-ledger", "Ledger-Anna");
+    await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/access`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Ledger-Anna" },
+    });
+    const founded = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/operators`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: "Ledger-Bahn" },
+    });
+    return { token, operatorId: founded.json<{ id: string }>().id };
+  }
+
+  it("eröffnet Ledger-Konten, bucht eine ausgeglichene Transaktion und zeigt die Salden", async () => {
+    const { token, operatorId } = await gruendeElbtalbahn();
+
+    const kasse = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/operators/${operatorId}/ledger/accounts`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: "Kasse" },
+    });
+    const entgelt = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/operators/${operatorId}/ledger/accounts`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: "Trassenentgelt" },
+    });
+    const kasseId = kasse.json<{ id: string }>().id;
+    const entgeltId = entgelt.json<{ id: string }>().id;
+
+    const transactionResponse = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/operators/${operatorId}/ledger/transactions`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        description: "Trassenentgelt Januar",
+        entries: [
+          { ledgerAccountId: kasseId, amountCents: "-1234" },
+          { ledgerAccountId: entgeltId, amountCents: "1234" },
+        ],
+      },
+    });
+    expect(transactionResponse.statusCode).toBe(201);
+
+    const accountsWithBalance = await app.inject({
+      method: "GET",
+      url: `/worlds/${WORLD_LHE}/operators/${operatorId}/ledger/accounts`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const balances = accountsWithBalance.json<{ id: string; balanceCents: string }[]>();
+    expect(balances.find((account) => account.id === kasseId)?.balanceCents).toBe("-1234");
+    expect(balances.find((account) => account.id === entgeltId)?.balanceCents).toBe("1234");
+  });
+
+  it("lehnt eine unausgeglichene Transaktion ab", async () => {
+    const { token, operatorId } = await gruendeElbtalbahn();
+    const kasse = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/operators/${operatorId}/ledger/accounts`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: "Kasse" },
+    });
+    const entgelt = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/operators/${operatorId}/ledger/accounts`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: "Trassenentgelt" },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/operators/${operatorId}/ledger/transactions`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        description: "Unausgeglichen",
+        entries: [
+          { ledgerAccountId: kasse.json<{ id: string }>().id, amountCents: "-100" },
+          { ledgerAccountId: entgelt.json<{ id: string }>().id, amountCents: "50" },
+        ],
+      },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("verweigert ein fremdes Konto den Zugriff auf die Bücher eines EVU", async () => {
+    const { operatorId } = await gruendeElbtalbahn();
+    const fremdToken = await sign("kc-fremd3", "Fremd");
+    await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/access`,
+      headers: { authorization: `Bearer ${fremdToken}` },
+      payload: { displayName: "Fremd" },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/operators/${operatorId}/ledger/accounts`,
+      headers: { authorization: `Bearer ${fremdToken}` },
+      payload: { name: "Kasse" },
+    });
+    expect(response.statusCode).toBe(403);
+  });
+});
+
+describe("Postfach (M2.5)", () => {
+  it("stellt eine Nachricht zu, listet sie im Postfach und quittiert sie", async () => {
+    const adminToken = await sign("kc-postadmin", "Postadmin");
+    await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/access`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { displayName: "Postadmin" },
+    });
+    const adminId = (
+      await app.inject({
+        method: "GET",
+        url: `/worlds/${WORLD_LHE}/accounts`,
+        headers: { authorization: `Bearer ${adminToken}` },
+      })
+    ).json<{ id: string; keycloakSubject: string }[]>().find((account) => account.keycloakSubject === "kc-postadmin")!
+      .id;
+    await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/accounts/${adminId}/roles`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { role: "world_admin" },
+    });
+
+    const spielerToken = await sign("kc-postspieler", "Postspieler");
+    const spielerAccess = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/access`,
+      headers: { authorization: `Bearer ${spielerToken}` },
+      payload: { displayName: "Postspieler" },
+    });
+    const spielerId = spielerAccess.json<{ id: string }>().id;
+
+    const sendResponse = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/accounts/${spielerId}/mailbox`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { messageType: "system.willkommen", payload: { text: "Willkommen" } },
+    });
+    expect(sendResponse.statusCode).toBe(201);
+
+    const inbox = await app.inject({
+      method: "GET",
+      url: `/worlds/${WORLD_LHE}/mailbox`,
+      headers: { authorization: `Bearer ${spielerToken}` },
+    });
+    const messages = inbox.json<{ id: string; acknowledgedAt: string | null }[]>();
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.acknowledgedAt).toBeNull();
+
+    const ackResponse = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/mailbox/${messages[0]!.id}/ack`,
+      headers: { authorization: `Bearer ${spielerToken}` },
+    });
+    expect(ackResponse.statusCode).toBe(200);
+    expect(ackResponse.json<{ acknowledgedAt: string | null }>().acknowledgedAt).not.toBeNull();
+  });
+
+  it("verweigert den Versand einer Nachricht ohne Weltverwalter-Rolle", async () => {
+    const spielerToken = await sign("kc-postspieler2", "Postspieler2");
+    const spielerAccess = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/access`,
+      headers: { authorization: `Bearer ${spielerToken}` },
+      payload: { displayName: "Postspieler2" },
+    });
+    const spielerId = spielerAccess.json<{ id: string }>().id;
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/accounts/${spielerId}/mailbox`,
+      headers: { authorization: `Bearer ${spielerToken}` },
+      payload: { messageType: "system.willkommen", payload: {} },
+    });
+    expect(response.statusCode).toBe(403);
+  });
+});
+
+describe("Datenschutz (M2.6)", () => {
+  it("liefert die eigene Auskunft und erlaubt die Selbstlöschung", async () => {
+    const token = await sign("kc-privacy", "Privacy-Anna");
+    await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/access`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Privacy-Anna" },
+    });
+
+    const exportResponse = await app.inject({
+      method: "GET",
+      url: `/worlds/${WORLD_LHE}/me/export`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(exportResponse.statusCode).toBe(200);
+    expect(exportResponse.json<{ account: { displayName: string } }>().account.displayName).toBe("Privacy-Anna");
+
+    const eraseResponse = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/me/erase`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(eraseResponse.statusCode).toBe(200);
+    expect(eraseResponse.json<{ displayName: string }>().displayName).toBe("Gelöschtes Konto");
+
+    const reaccessResponse = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/access`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Privacy-Anna" },
+    });
+    expect(reaccessResponse.statusCode).toBe(403);
+  });
+
+  it("verweigert die Auskunft ohne Konto in der Welt", async () => {
+    const fremdToken = await sign("kc-privacyfremd", "Fremd");
+    const response = await app.inject({
+      method: "GET",
+      url: `/worlds/${WORLD_LHE}/me/export`,
+      headers: { authorization: `Bearer ${fremdToken}` },
+    });
+    expect(response.statusCode).toBe(404);
+  });
+});

@@ -19,6 +19,8 @@ export const accounts = pgTable(
     keycloakSubject: text("keycloak_subject").notNull(),
     displayName: text("display_name").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Zeitpunkt der Löschung nach Datenschutzanfrage (M2.6); `null` heißt unangetastet. */
+    erasedAt: timestamp("erased_at", { withTimezone: true }),
   },
   (table) => [uniqueIndex("accounts_world_subject_idx").on(table.worldId, table.keycloakSubject)],
 );

@@ -2,6 +2,7 @@ export {
   AccessRevokedError,
   AccountNotFoundError,
   AuthorizationError,
+  getAccount,
   grantRole,
   listAccountsForSubject,
   listAccountsInWorld,

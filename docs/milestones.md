@@ -80,7 +80,23 @@ Damit ist **M1 abgeschlossen**: Betriebsgraph und Infra-Release-Pipeline stehen.
   `world_id` strukturell unmöglich, und ein Test gegen eine echte, eingebettete
   Postgres-Instanz (PGlite) beweist die Trennung zweier Welten, nicht nur die
   Schemaform. Siehe [`monorepo.md`](monorepo.md) Abschnitt 3 und 4 und
-  [`packages/db`](../packages/db).
+  [`packages/db`](../packages/db);
+- **M2.3** — EVU als Entität: Gründung, Stammdaten, Zuordnung zu Welt und
+  gründendem Konto, siehe [`weltgeruest.md`](weltgeruest.md) Abschnitt 7 und
+  [`packages/operators`](../packages/operators);
+- **M2.4** — Ledger-Kern: Integer-Cent, unveränderlich, ausgeglichen, doppelte
+  Buchführung, mit `fast-check` property-getestet auf Ausgeglichenheit, siehe
+  [`weltgeruest.md`](weltgeruest.md) Abschnitt 8 und
+  [`packages/economy`](../packages/economy);
+- **M2.5** — Postfach-Grundgerüst: Nachrichten, Fristen, Quittierung, siehe
+  [`weltgeruest.md`](weltgeruest.md) Abschnitt 9 und
+  [`packages/mailbox`](../packages/mailbox);
+- **M2.6** — Datenschutz: Datenminimierung, Auskunft, Löschung,
+  Aufbewahrungsfristen, siehe [`weltgeruest.md`](weltgeruest.md) Abschnitt 10
+  und [`packages/privacy`](../packages/privacy).
+
+Damit ist **M2 abgeschlossen**: das Weltgerüst — Konten, Weltisolation, EVU,
+Ledger, Postfach, Datenschutz — steht vollständig.
 
 ---
 
@@ -291,10 +307,10 @@ einzuziehen hieße, jede Abfrage und jede Zeile anzufassen.
 |---|---------------|-------|--------|
 | 2.1 | Keycloak-Integration, Konten, Rollen, Weltzugänge | M | erledigt |
 | 2.2 | **Weltisolation**: `world_id` in jeder Tabelle, jedem Index, jedem Event — mit automatisiertem Nachweis statt Disziplin | M | erledigt |
-| 2.3 | EVU als Entität: Gründung, Stammdaten, Zuordnung zu Welt und Spieler | S | offen |
-| 2.4 | **Ledger-Kern**: Integer-Cent, unveränderlich, ausgeglichen, doppelte Buchführung, Property-Test auf Ausgeglichenheit | M | offen |
-| 2.5 | Postfach-Grundgerüst: Nachrichten, Fristen, Quittierung — trägt später Trassenangebote, Ausschreibungen und Störungsmeldungen | S | offen |
-| 2.6 | Datenschutz: Datenminimierung, Auskunft, Löschung, Aufbewahrungsfristen | M | offen |
+| 2.3 | EVU als Entität: Gründung, Stammdaten, Zuordnung zu Welt und Spieler | S | erledigt |
+| 2.4 | **Ledger-Kern**: Integer-Cent, unveränderlich, ausgeglichen, doppelte Buchführung, Property-Test auf Ausgeglichenheit | M | erledigt |
+| 2.5 | Postfach-Grundgerüst: Nachrichten, Fristen, Quittierung — trägt später Trassenangebote, Ausschreibungen und Störungsmeldungen | S | erledigt |
+| 2.6 | Datenschutz: Datenminimierung, Auskunft, Löschung, Aufbewahrungsfristen | M | erledigt |
 
 > **Beweis:** Zwei Konten in derselben Welt sehen einander, zwei Konten in
 > verschiedenen Welten sehen einander nachweislich nicht — belegt durch einen
@@ -331,6 +347,49 @@ Belegungstest aus dem Beweis von M2 vollständig erbracht: Zwei Konten
 derselben Welt sehen einander (M2.1), zwei Welten sehen einander im Event-Log
 nachweislich nicht (M2.2). Siehe [`monorepo.md`](monorepo.md) Abschnitt 3 und
 4 und [`packages/db`](../packages/db).
+
+**M2.3 trägt:** `packages/operators` gründet ein EVU (`Operator`) für ein
+bestehendes Konto und ordnet es Welt und gründendem Konto zu — die Tabelle
+`operators` (`packages/db`) trägt `world_id` als führende Spalte ihres
+Eindeutigkeitsindex, zusammen mit dem Unternehmensnamen: eindeutig je Welt,
+nicht global (E6). Ein Konto kann mehrere EVU gründen, weil Kooperation
+zwischen EVU (`wirtschaft.md` 6) getrennte Rechtsträger voraussetzt. Die
+EVU-Liste einer Welt trägt denselben Belegungstest wie die Kontoliste aus
+M2.1. Siehe [`weltgeruest.md`](weltgeruest.md) Abschnitt 7.
+
+**M2.4 trägt:** `packages/economy` ist der Ledger-Kern aus
+`wirtschaft.md` 1: Integer-Cent als `bigint`, unveränderlich (nur Einfügen
+und Lesen — derselbe Mechanismus wie beim Event-Log aus M2.2), ausgeglichen
+(`postLedgerTransaction` weist jede Transaktion zurück, deren Buchungen
+nicht exakt null Cent ergeben) und doppelt geführt (mindestens zwei
+Buchungen je Transaktion, auf Konten desselben EVU). Die Ausgeglichenheit ist
+mit `fast-check` property-getestet, rein (`balance.property.test.ts`) und
+gegen eine echte, eingebettete Datenbank über beliebig viele Transaktionen
+(`ledger.test.ts`). `packages/economy/**` unterliegt seither der
+Wächterregel `no-wallclock`: Zeitpunkte sind explizite Werte des Aufrufers.
+Kostenarten und Kostenstellen bleiben M6.2 vorbehalten, das nur noch darauf
+aufsetzt. Siehe [`weltgeruest.md`](weltgeruest.md) Abschnitt 8.
+
+**M2.5 trägt:** `packages/mailbox` liefert das Postfach-Grundgerüst —
+Nachrichten mit generischem `messageType` und `payload` (jsonb, derselbe
+Schnitt wie beim Event-Log), optionaler Frist (`deadlineAt`) und Quittierung
+(`acknowledgedAt`). Nur der Empfänger quittiert, nie stellvertretend ein
+Weltverwalter. Trassenangebote, Ausschreibungen und Störungsmeldungen
+(spätere Milestones) werden je ein `messageType`, keine eigene Tabelle.
+Siehe [`weltgeruest.md`](weltgeruest.md) Abschnitt 9.
+
+**M2.6 trägt:** `packages/privacy` trägt Auskunft (`exportAccountData` —
+Konto, Weltzugangsstatus, eigene EVU, Postfach an einer Stelle) und Löschung
+(`eraseAccountData` — Anzeigename anonymisiert, Weltzugang entzogen, Konto
+selbst bleibt bestehen wie bei einer Insolvenz, E8). `revokeWorldAccess`
+(`packages/identity`) trägt dafür seit M2.6 eine Selbstbedienungs-Ausnahme:
+Eine Identität entzieht sich jederzeit selbst den Zugang. Ledger und
+Event-Log bleiben außerhalb der Löschung — unveränderlich und ohne
+natürliche Person — mit `retention.ts` nachvollziehbar begründet. Damit ist
+der Beweis von M2 vollständig: Ein EVU wird gegründet, führt einen
+ausgeglichenen Ledger, empfängt Postfach-Nachrichten, und sein Konto lässt
+sich vollständig auskunfts- und löschbar behandeln. Siehe
+[`weltgeruest.md`](weltgeruest.md) Abschnitt 10.
 
 ---
 

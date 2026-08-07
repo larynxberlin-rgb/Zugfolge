@@ -15,8 +15,12 @@ crates/                     Rust — Simulationskern, Solver, Release-Pipeline
 packages/                   TypeScript — fachliche Bibliotheken (ab M2)
   db/                       Postgres-Zugriff über Drizzle, Wurzel der Weltisolation (M2.2)
   identity/                 Konten, Rollen, Weltzugänge; Keycloak-Verifikation (M2.1)
+  operators/                EVU: Gründung, Stammdaten, Zuordnung zu Welt und Konto (M2.3)
+  economy/                  Ledger-Kern: Integer-Cent, unveränderlich, ausgeglichen (M2.4)
+  mailbox/                  Postfach-Grundgerüst: Nachrichten, Fristen, Quittierung (M2.5)
+  privacy/                  Datenschutz: Auskunft, Löschung, Aufbewahrungsfristen (M2.6)
 apps/                       TypeScript — Dienste und Frontend (ab M2 / M4)
-  game-api/                 Fastify-Dienst: Authentifizierung, Weltzugang, Rollenvergabe (M2.1)
+  game-api/                 Fastify-Dienst: Authentifizierung, Weltzugang, EVU, Ledger, Postfach, Datenschutz (M2)
 spikes/                     Wegwerf-Code mit Verfallsdatum
   blocking-time-staircase/  Sperrzeitentreppe und Konfliktprüfung (M0.3)
 tools/                      Werkzeuge für CI und Entwicklung
@@ -25,16 +29,21 @@ docs/                       Spezifikation und Entscheidungen
 .github/workflows/          CI
 ```
 
-`packages/` und `apps/` füllen sich seit **M2**: `packages/db` (M2.2) trägt
-das gemeinsame Drizzle-Schema — `worlds` als Wurzel der Mandantentrennung,
-das append-only Event-Log `domain_events` und, seit M2.1, Weltzugang, Konto
-und Kontorolle —, den Postgres-Client und das weltgebundene Repository des
-Event-Logs (Abschnitt 3 und 4). `packages/identity` (M2.1) bündelt darüber
-die Keycloak-Tokenverifikation und die fachliche Logik von Weltzugang, Konto
-und Rolle; `apps/game-api` verdrahtet das zu einem Fastify-Dienst. Siehe
-[`weltgeruest.md`](weltgeruest.md). Weitere Unterverzeichnisse entstehen,
-sobald ein Milestone sie tatsächlich füllt — ein leeres Verzeichnis mit
-Platzhalter ist kein Aufbau, sondern eine Behauptung.
+`packages/` und `apps/` füllen sich seit **M2**: `packages/db` trägt das
+gemeinsame Drizzle-Schema — `worlds` als Wurzel der Mandantentrennung, das
+append-only Event-Log `domain_events`, Weltzugang, Konto und Kontorolle
+(M2.1) sowie, seit M2.3–M2.5, `operators`, die drei Ledger-Tabellen und
+`mailbox_messages` —, den Postgres-Client und das weltgebundene Repository
+des Event-Logs (Abschnitt 3 und 4). Darüber bündeln vier fachliche Pakete je
+eine Domäne: `packages/identity` (M2.1) Keycloak-Tokenverifikation, Konto und
+Rolle; `packages/operators` (M2.3) die EVU-Entität; `packages/economy`
+(M2.4) den Ledger-Kern; `packages/mailbox` (M2.5) das Postfach; und
+`packages/privacy` (M2.6) Auskunft, Löschung und Aufbewahrungsfristen quer
+über die anderen vier. `apps/game-api` verdrahtet alle fünf zu einem
+Fastify-Dienst. Siehe [`weltgeruest.md`](weltgeruest.md). Weitere
+Unterverzeichnisse entstehen, sobald ein Milestone sie tatsächlich füllt —
+ein leeres Verzeichnis mit Platzhalter ist kein Aufbau, sondern eine
+Behauptung.
 
 **`spikes/` ist Wegwerf-Code, und zwar mit ausgesprochenem Verfallsdatum.** Ein
 Spike hat eine Frage zu beantworten und danach zu verschwinden; bleibt er
@@ -118,7 +127,7 @@ Liste ist keine vollständige Karte des Repositoriums, sondern die Zuordnung
 | `path-allocation` | `crates/zugfolge-planner/**`, `packages/path-allocation/**` | geplant | Reihenfolge und Bezahlstatus beeinflussen das Ergebnis nicht (E4, `infrastruktur.md` 2) |
 | `dispatch` | `crates/zugfolge-rules/**`, `packages/dispatch/**` | geplant | das Betriebsprogramm wirkt offline und für alle gleich (E2, E13) |
 | `demand` | `packages/demand/**`, `crates/zugfolge-demand/**` | geplant | Nachfrage folgt dem Angebot, nie dem Vertrag des Spielers |
-| `economy` | `packages/economy/**`, `packages/tender/**`, `apps/economy-service/**` | geplant | Ledger in Integer-Cent; Wertung deterministisch aus dem `EconomyRelease` |
+| `economy` | `packages/economy/**`, `packages/tender/**`, `apps/economy-service/**` | aktiv | Ledger in Integer-Cent (M2.4); Wertung deterministisch aus dem `EconomyRelease` (M6) |
 | `infra-pipeline` | `crates/zugfolge-infra/**` | aktiv | **der einzige Ort mit Gleitkommarechnung** — sie endet in ganzzahligen Fahrzeittabellen |
 | `world-isolation` | `packages/db/**` | aktiv | Postgres-Zugriff der Game-Services; Wurzel der Weltisolation — `worlds`, das Event-Log und das weltgebundene Repository (M2.2) |
 
@@ -129,9 +138,10 @@ Umstellung auf `aktiv` — womit alle Regeln dieser Domäne ab dem ersten Commit
 greifen. Das ist der Mechanismus, der verhindert, dass Invarianten erst
 nachträglich eingezogen werden. Genau so ist `simulation-core` in M0.3 aktiv
 geworden: Der Spike unter `spikes/` fiel in ihre Pfade, und der Wächter hat den
-Statuswechsel eingefordert, bevor die erste Sperrzeit gerechnet wurde. Und
-genauso `infra-pipeline` in M1.1, mit dem ersten Domänenmodell des
-Betriebsgraphen.
+Statuswechsel eingefordert, bevor die erste Sperrzeit gerechnet wurde. Genauso
+`infra-pipeline` in M1.1, mit dem ersten Domänenmodell des Betriebsgraphen —
+und `economy` in M2.4, mit dem ersten Code des Ledger-Kerns in
+`packages/economy`.
 
 **`infra-pipeline` ist die einzige Domäne ohne `no-floats`** — und das ist der
 Grund, warum sie überhaupt eine eigene ist. Die Fahrdynamik rechnet dort
