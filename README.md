@@ -5,11 +5,14 @@ mit hohem betrieblichem, infrastrukturellem und wirtschaftlichem Realismus.
 Öffentliche Welten laufen dauerhaft in 1:1-Echtzeit ohne Wipes. Erste
 Pilotregion: **Leipzig–Halle–Erfurt**.
 
-> **Stand:** **M0 ist abgeschlossen (M0.1–M0.5).** Fundament, Sperrzeiten-Spike,
-> Rechte-Gate und Rechteschutz stehen. Das Rechte-Gate führt jede Datenquelle mit
-> Freigabestatus ([`docs/rechte.md`](docs/rechte.md)), `LICENSE` nennt den
-> Rechteinhaber und ist wirksam ([`docs/rechteschutz.md`](docs/rechteschutz.md)).
-> Der nächste Schritt ist M1, Betriebsgraph und Infrastruktur-Release.
+> **Stand:** **M0 ist abgeschlossen (M0.1–M0.5), M1 hat begonnen.** Fundament,
+> Sperrzeiten-Spike, Rechte-Gate und Rechteschutz stehen. Das Rechte-Gate führt
+> jede Datenquelle mit Freigabestatus ([`docs/rechte.md`](docs/rechte.md)),
+> `LICENSE` nennt den Rechteinhaber und ist wirksam
+> ([`docs/rechteschutz.md`](docs/rechteschutz.md)). Mit **M1.1** steht das
+> Domänenmodell des Betriebsgraphen
+> ([`docs/betriebsgraph.md`](docs/betriebsgraph.md)). Der nächste Schritt ist
+> M1.2, die Import-Pipeline.
 
 ## Wo was steht
 
@@ -25,6 +28,8 @@ Pilotregion: **Leipzig–Halle–Erfurt**.
 
 ```text
 crates/     Rust — Simulationskern, Solver, Release-Pipeline
+            zugfolge-determinism/  Determinismus-Testharnisch
+            zugfolge-infra/        Betriebsgraph und Infra-Release-Pipeline
 packages/   TypeScript — fachliche Bibliotheken (ab M2)
 apps/       TypeScript — Dienste und Frontend (ab M2 / M4)
 spikes/     Wegwerf-Code mit Verfallsdatum

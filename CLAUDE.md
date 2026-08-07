@@ -21,6 +21,7 @@ lesen, nicht raten.
 | `docs/glossar.md` | Domänenglossar: deutscher Fachbegriff → Bezeichner im Code → Bedeutung → Quelle | jede Benennung im Code, jeder neue Fachbegriff |
 | `docs/produkt.md` | Produktdefinition, Oberflächen, Onboarding, Netzabgrenzung, Spielertypen, Anti-Monokultur | Produktfragen, UI, Zielgruppe, Was-gehört-dazu |
 | `docs/infrastruktur.md` | Konfliktressourcen, Trassenvergabe, Fahrplanperiode, Kapazitätsschutz, Simulation, Livemap | Solver, Sperrzeiten, Planner, Livemap |
+| `docs/betriebsgraph.md` | Domänenmodell der Infrastruktur (M1.1): Bausteine, Zusicherungen, Einheiten, Fingerabdruck, Abgrenzung | am Betriebsgraphen arbeiten, Import, Netzfilter, Blöcke, Fahrstraßen |
 | `docs/betrieb.md` | Betriebsprogramm, Fahrzeuge, Personal, Versorgung, Zusatzfahrten, Störungen, Baustellenfahrplan | Disposition, Flotte, Umläufe, Wartung, Baustellen |
 | `docs/wirtschaft.md` | Spielkreislauf, Geschäftsfelder, Nachfrage, Ausschreibung, Eigenbetrieb, Insolvenz, Kooperation | Verträge, Märkte, Geld, Ausschreibungen |
 | `docs/daten.md` | Datenlage OSM/ORM, Quellen, Rechte, Qualitätsklassen | Import-Pipeline, InfraRelease, Lizenzfragen zu Daten |
@@ -126,6 +127,8 @@ Konzeption abgeschlossen, E1–E20 entschieden, Milestones auf Reihenfolge und
 Vollständigkeit geprüft. **M0 ist abgeschlossen: M0.1 bis M0.5 sind erledigt** —
 ADRs, Monorepo, CI, Determinismus-Testharnisch, Wächter, Glossar, Lizenz-Scan,
 der Wegwerf-Spike zur Sperrzeitentreppe, das Rechte-Gate und der Rechteschutz.
+**M1 hat begonnen: M1.1 ist erledigt** — das Domänenmodell des Betriebsgraphen
+steht in `crates/zugfolge-infra`.
 
 - **Alpha-Schnitt:** M0 – M9. Alles ab M10 ist Ausbau.
 - **Kritischer Pfad:** M0.3 → M1 → M3 → M4 → M7. Die ersten Schritte sind geführt.
@@ -143,8 +146,18 @@ der Wegwerf-Spike zur Sperrzeitentreppe, das Rechte-Gate und der Rechteschutz.
   ab dem ersten Import auch die Herkunft. `LICENSE` nennt den Rechteinhaber und
   ist wirksam; der Wächter `layer-separation` hält die proprietären Schichten
   aus dem öffentlichen Baum. Siehe `docs/rechte.md` und `docs/rechteschutz.md`.
-- **Nächster Schritt:** M1, Betriebsgraph und Infrastruktur-Release — der Import
-  darf beginnen, weil die Rechte je Quelle nun dokumentiert sind (Invariante 8).
+- **M1.1 steht:** `crates/zugfolge-infra` beschreibt Betriebsstellen, Kanten,
+  Gleise, Bahnsteige, Elektrifizierung, Zugsicherung, Vmax-Bänder und Neigung.
+  Drei Entscheidungen wirken weiter: Gefahren wird auf **Gleisen**, und die
+  Richtungsbindung liegt am Gleis — Zugfolgefall und Gegenfahrt bleiben damit
+  eine Eigenschaft des Netzes (M3.1, M3.3). Die vier veränderlichen Attribute
+  teilen sich **einen** Bandmechanismus (M1.5, M1.6 füllen ihn). Und die
+  Herkunft hängt am einzelnen Band, damit M1.4 je Attribut und Abschnitt messen
+  kann. Der Graph liefert einen kanonischen Fingerabdruck — die spätere
+  Prüfsumme des `InfraRelease` (M1.12). Siehe `docs/betriebsgraph.md`.
+- **Nächster Schritt:** M1.2, die Import-Pipeline OSM-PBF → Rohgraph — sie darf
+  beginnen, weil die Rechte je Quelle dokumentiert sind (Invariante 8) und das
+  Modell steht, das sie füllt.
 
 Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` steht unter
 PolyForm Shield 1.0.0, nennt Sebastian Barowski als Rechteinhaber und ist damit

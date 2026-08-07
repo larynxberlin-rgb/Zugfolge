@@ -2,7 +2,12 @@
 
 ## 1. Konfliktressourcen
 
-Die Infrastruktur wird als betrieblicher Graph modelliert. Konfliktressourcen:
+Die Infrastruktur wird als betrieblicher Graph modelliert. Woraus dieser Graph
+besteht — Betriebsstellen, Kanten, Gleise, Bahnsteige und ihre Attribute —
+steht seit M1.1 im eigenen Dokument: [`betriebsgraph.md`](betriebsgraph.md).
+Hier geht es um das, was auf ihm stattfindet.
+
+Konfliktressourcen:
 
 - reale und konservativ erzeugte Blockabschnitte;
 - Fahrstraßen, Weichen und kreuzende Bewegungen;

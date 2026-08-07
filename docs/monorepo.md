@@ -1,7 +1,8 @@
 # Monorepo: Aufbau, Domänengrenzen, Werkzeuge
 
-Ergebnis von **M0.2**, fortgeschrieben in **M0.3**. Beschreibt, wo Code liegt,
-welche Grenzen zwischen Domänen gelten und wodurch sie durchgesetzt werden.
+Ergebnis von **M0.2**, fortgeschrieben in **M0.3** und **M1.1**. Beschreibt, wo
+Code liegt, welche Grenzen zwischen Domänen gelten und wodurch sie durchgesetzt
+werden.
 
 ---
 
@@ -10,6 +11,7 @@ welche Grenzen zwischen Domänen gelten und wodurch sie durchgesetzt werden.
 ```text
 crates/                     Rust — Simulationskern, Solver, Release-Pipeline
   zugfolge-determinism/     Determinismus-Testharnisch (M0.2)
+  zugfolge-infra/           Betriebsgraph und Infra-Release-Pipeline (M1)
 packages/                   TypeScript — fachliche Bibliotheken (ab M2)
 apps/                       TypeScript — Dienste und Frontend (ab M2 / M4)
 spikes/                     Wegwerf-Code mit Verfallsdatum
@@ -103,7 +105,7 @@ Liste ist keine vollständige Karte des Repositoriums, sondern die Zuordnung
 | `dispatch` | `crates/zugfolge-rules/**`, `packages/dispatch/**` | geplant | das Betriebsprogramm wirkt offline und für alle gleich (E2, E13) |
 | `demand` | `packages/demand/**`, `crates/zugfolge-demand/**` | geplant | Nachfrage folgt dem Angebot, nie dem Vertrag des Spielers |
 | `economy` | `packages/economy/**`, `packages/tender/**`, `apps/economy-service/**` | geplant | Ledger in Integer-Cent; Wertung deterministisch aus dem `EconomyRelease` |
-| `infra-pipeline` | `crates/zugfolge-infra/**` | geplant | **der einzige Ort mit Gleitkommarechnung** — sie endet in ganzzahligen Fahrzeittabellen |
+| `infra-pipeline` | `crates/zugfolge-infra/**` | aktiv | **der einzige Ort mit Gleitkommarechnung** — sie endet in ganzzahligen Fahrzeittabellen |
 
 **Status ist kein Kommentar, sondern eine Prüfung.** Eine `aktive` Domäne muss
 Dateien treffen, eine `geplante` darf keine treffen. Legt jemand
@@ -112,7 +114,15 @@ Umstellung auf `aktiv` — womit alle Regeln dieser Domäne ab dem ersten Commit
 greifen. Das ist der Mechanismus, der verhindert, dass Invarianten erst
 nachträglich eingezogen werden. Genau so ist `simulation-core` in M0.3 aktiv
 geworden: Der Spike unter `spikes/` fiel in ihre Pfade, und der Wächter hat den
-Statuswechsel eingefordert, bevor die erste Sperrzeit gerechnet wurde.
+Statuswechsel eingefordert, bevor die erste Sperrzeit gerechnet wurde. Und
+genauso `infra-pipeline` in M1.1, mit dem ersten Domänenmodell des
+Betriebsgraphen.
+
+**`infra-pipeline` ist die einzige Domäne ohne `no-floats`** — und das ist der
+Grund, warum sie überhaupt eine eigene ist. Die Fahrdynamik rechnet dort
+einmalig mit Gleitkomma und gibt ganzzahlige Fahrzeittabellen aus (M1.10). Was
+sie **liefert**, ist ganzzahlig; das Domänenmodell aus M1.1 kommt dabei ohne
+eine einzige Gleitkommazahl aus, bis hin zu 16,7 Hz in Milli-Hertz.
 
 ---
 
