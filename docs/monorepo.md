@@ -85,8 +85,12 @@ die Arbeit auch dann weiter, wenn das Netz nach dem Setup eingeschränkt ist.
 Es ist wiederholbar; ein zweiter Lauf installiert nichts neu. Der Workflow
 `setup.yml` prüft es in einem nackten Debian-Container, sobald es sich ändert.
 
-Der Rust-Kanal ist bewusst noch nicht auf eine Patchversion gepinnt. Der Pin
-kommt mit M1.12, wenn `InfraRelease`-Artefakte reproduzierbar sein müssen.
+Der Rust-Kanal ist mit **M1.12 auf eine Patchversion gepinnt**
+(`rust-toolchain.toml`): Ein `InfraRelease` ist ein unveränderliches,
+reproduzierbares Artefakt, und seine Prüfsumme darf nicht an der Toolchain
+hängen. rustup installiert die gepinnte Version samt Komponenten selbsttätig;
+der Golden-Master des `InfraRelease` wird gegen genau sie erzeugt, auf Linux und
+Windows. Ein Wechsel ist eine bewusste Entscheidung und im Commit zu begründen.
 
 ---
 

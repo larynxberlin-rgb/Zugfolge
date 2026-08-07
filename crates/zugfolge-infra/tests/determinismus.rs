@@ -12,10 +12,11 @@ use zugfolge_determinism::{
     DeterministicModel, Scenario, WorldSeed, assert_deterministic, assert_golden, golden_path,
 };
 use zugfolge_infra::{
-    BandProfile, Confidence, Coordinate, Electrification, Gradient, Length, OperatingGraph,
-    OperatingGraphBuilder, OperatingPoint, OperatingPointCode, OperatingPointId,
-    OperatingPointKind, PowerSystem, ProtectionSystem, Provenance, SourceId, Speed, SpeedLimit,
-    Track, TrackEdge, TrackEdgeId, TrackId, TrackOwner, TrainProtection, reference_network,
+    BandProfile, Confidence, Coordinate, Electrification, Gradient, InfraRelease, Length,
+    OperatingGraph, OperatingGraphBuilder, OperatingPoint, OperatingPointCode, OperatingPointId,
+    OperatingPointKind, PowerSystem, ProtectionSystem, Provenance, ReleaseSource, ReleaseVersion,
+    SourceId, Speed, SpeedLimit, Track, TrackEdge, TrackEdgeId, TrackId, TrackOwner,
+    TrainProtection, reference_network,
 };
 
 #[test]
@@ -32,6 +33,48 @@ fn der_golden_master_haelt() {
     assert_golden(
         golden_path!("operating-graph"),
         reference_network().state_hash(),
+    );
+}
+
+/// Das Beispiel-Release aus dem Beispielnetz — seine einzige Quelle ist
+/// `beispielnetz` (M1.12, `betriebsgraph.md` 17).
+fn beispiel_release() -> InfraRelease {
+    InfraRelease::builder(
+        ReleaseVersion::new(1, 0, 0),
+        "Beispielnetz",
+        reference_network(),
+    )
+    .source(
+        ReleaseSource::new(
+            SourceId::new("beispielnetz").expect("gültige Quellenkennung"),
+            "erfunden — kein Import (docs/betriebsgraph.md 6)",
+            "Zugfolge-Beispielnetz",
+        )
+        .expect("gültige Quelle"),
+    )
+    .build()
+    .expect("das Beispielnetz nennt nur die Quelle 'beispielnetz'")
+}
+
+#[test]
+fn das_release_ist_reproduzierbar() {
+    // M1.12: Ein `InfraRelease` ist erst dann ein Artefakt, wenn seine
+    // Prüfsumme über zwei Läufe, zwei Betriebssysteme und zwei Jahre dieselbe
+    // ist. Deshalb implementiert es `DeterministicModel` und trägt einen
+    // eigenen Golden-Master — wie der Graph, den es einfriert.
+    let szenario = Scenario::new(WorldSeed::new(1, 1));
+    let hash = assert_deterministic::<InfraRelease, _>("infra-release", &szenario, |_seed| {
+        beispiel_release()
+    });
+    assert_eq!(hash.to_hex().len(), 64);
+    assert_eq!(hash, beispiel_release().checksum());
+}
+
+#[test]
+fn der_release_golden_master_haelt() {
+    assert_golden(
+        golden_path!("infra-release"),
+        beispiel_release().state_hash(),
     );
 }
 

@@ -140,20 +140,20 @@ der CI auf Linux **und** Windows gegen dieselbe Datei geprüft.
 
 ---
 
-## 5. Was bewusst noch nicht dazugehört
-
-| Fehlt | Gehört nach |
-|-------|-------------|
-| `InfraRelease` mit Version, Lizenz, Prüfsumme und Confidence je Attribut | M1.12 |
+## 5. Wie die abgeleiteten Artefakte zum Modell stehen
 
 Das Modell ist auf alle vorbereitet und nimmt keines vorweg. **Ein
 Blockabschnitt ist kein Gleis, eine Fahrstraße ist keine Kante, eine
 Stationsanreicherung ist keine Betriebsstelle und eine Anlage ist kein Gleis**
 — deshalb liefern M1.6 (Abschnitt 11), M1.7 (Abschnitt 12), M1.8 (Abschnitt 13)
 und M1.11 (Abschnitt 14) sie als eigene, abgeleitete Artefakte neben dem
-Modell, nicht als neue Bausteine darin. Die Vorbereitung im Modell besteht aus
-drei Dingen: der Richtungsbindung des Gleises, die beide Konfliktarten trägt;
-dem Bandprofil, in dem Signale und Blöcke ihre Abschnitte finden; und dem
+Modell, nicht als neue Bausteine darin. Ebenso friert der `InfraRelease` (M1.12,
+Abschnitt 17) das geprüfte Modell samt Herkunft, Lizenz, Prüfsumme und
+Abdeckung ein, ohne es zu verändern, und der Referenzkorpus (M1.13,
+Abschnitt 18) stellt seine berechneten Fahrzeiten neben reale — beides neben
+dem Modell, nicht darin. Die Vorbereitung im Modell besteht aus drei Dingen:
+der Richtungsbindung des Gleises, die beide Konfliktarten trägt; dem
+Bandprofil, in dem Signale und Blöcke ihre Abschnitte finden; und dem
 Vertrauensgrad, den die Abdeckungsmessung liest.
 
 ---
@@ -530,4 +530,89 @@ Modul rechnet nur die Zeit über einen bereits gegebenen Fahrweg.
 
 Umsetzung: [`crates/zugfolge-infra/src/dynamics.rs`](../crates/zugfolge-infra/src/dynamics.rs).
 
-Umsetzung: [`crates/zugfolge-infra/src/facility.rs`](../crates/zugfolge-infra/src/facility.rs).
+---
+
+## 17. Der `InfraRelease` — Ergebnis von M1.12
+
+`docs/architektur.md` 3 führt den `InfraRelease` unter den **irreversiblen**
+Entscheidungen: „versioniert und je Welt gepinnt — ohne Pinning keine
+reproduzierbare Welt, kein durchsetzbarer Stichtag." M1.12 macht aus dem
+geprüften `OperatingGraph` (M1.1) genau dieses Artefakt: **unveränderlich,
+versioniert, mit Herkunft, Lizenz, Prüfsumme und Confidence je Attribut**.
+
+`InfraRelease` bündelt fünf Dinge, von denen drei schon standen und zwei hier
+dazukommen:
+
+| Angabe | Träger | Herkunft |
+|--------|--------|----------|
+| Version | `ReleaseVersion` (`major.minor.patch`) | neu in M1.12 |
+| Herkunft **und** Lizenz je Quelle | `ReleaseSource` | neu in M1.12, aus dem Quellenregister (M0.4) |
+| Prüfsumme | `InfraRelease::checksum` | der Fingerabdruck des Graphen (M1.1), umschlossen |
+| Confidence je Attribut und Abschnitt | `CoverageReport` (M1.4) | steht seit M1.4 |
+| das Netz selbst | `OperatingGraph` (M1.1) | steht seit M1.1 |
+
+`docs/daten.md` 2 verlangt es wörtlich: **Jedes importierte Attribut trägt
+Quelle, Lizenz, Gültigkeit, Checksumme und Confidence.** Quelle und Confidence
+hängen seit M1.1 am einzelnen Band (`Provenance`); Lizenz und Prüfsumme kommen
+hier dazu. `InfraReleaseBuilder::build` führt sie zusammen und **friert sie
+ein**: Es sammelt jede Quelle, die irgendein Attribut des Netzes nennt, und
+prüft, dass jede von ihnen mit einer Lizenz deklariert ist — und dass **keine
+Lizenz ohne Gegenstand** deklariert wurde. Eine Quelle, die kein Attribut
+nutzt, wäre eine Freigabe ins Leere, dieselbe Haltung wie beim Beispielnetz,
+das gerade **nicht** im Quellenregister steht (Abschnitt 6).
+
+**Die Prüfsumme** ist der kanonische Zustands-Hash über Version, Region, die
+deklarierten Quellen und den Fingerabdruck des Graphen. Wie der `OperatingGraph`
+implementiert der Release dafür `DeterministicModel` mit dem Kommandotyp
+`Infallible` — er nimmt keine Kommandos entgegen, er ist ein Artefakt. Der
+Fingerabdruck des Graphen (Abschnitt 4) ist der Kern der Release-Prüfsumme;
+Version und Quellen gehen mit ein, damit zwei Releases mit demselben Netz, aber
+verschiedener Version oder Lizenz verschiedene Prüfsummen bekommen — was richtig
+ist, denn sie sind verschiedene Releases. Die Abdeckung geht **nicht** eigens
+ein: Sie ist eine reine Funktion des Graphen und damit schon durch dessen
+Fingerabdruck festgelegt. Ein Golden-Master
+(`tests/golden/infra-release.hash`) hält die Prüfsumme fest, auf Linux **und**
+Windows gegen dieselbe Datei — und mit M1.12 ist der Rust-Kanal auf eine
+Patchversion gepinnt (`rust-toolchain.toml`), damit auch die Toolchain die
+Reproduzierbarkeit nicht bricht.
+
+Umsetzung: [`crates/zugfolge-infra/src/release.rs`](../crates/zugfolge-infra/src/release.rs).
+
+---
+
+## 18. Referenzkorpus und Abweichungsreport — Ergebnis von M1.13
+
+Der Beweis von M1 verlangt „einen signierten `InfraRelease` der Pilotregion,
+dessen berechnete Fahrzeiten innerhalb definierter Toleranz zur Referenz
+liegen — begleitet von einem Abdeckungsreport" (`docs/milestones.md`).
+`CLAUDE.md` nennt dasselbe als Arbeitsprinzip: **Golden-Master-Tests gegen reale
+Fahrplanausschnitte der Pilotregion mit definierter Toleranz.** M1.13 liefert
+das Verfahren: Ein `ReferenceCorpus` hält Referenzläufe — je ein Fahrweg mit
+seiner **realen** Fahrzeit —, und ein `DeviationReport` stellt jeder Referenz
+die aus dem Release berechnete Fahrzeit (M1.10) gegenüber und prüft sie gegen
+eine `Tolerance`.
+
+**Warum eine Toleranz.** `docs/daten.md` 3 ist unmissverständlich: **keine
+Präzisionswahrheit.** Die Fahrdynamik (M1.10) ist eine vereinfachte Rechnung
+ohne Halte-, Räum- und Fahrstraßenbildezeiten; die Referenz enthält betriebliche
+Zuschläge, die das Modell bewusst nicht kennt. Verglichen wird deshalb gegen
+eine **definierte Toleranz** — ein absoluter Sockel in Sekunden und ein
+relativer Anteil in Promille, der größere gilt. Ein Größenordnungsabgleich, kein
+Sekundenvergleich.
+
+**Kein Import — dieselbe Haltung wie M1.5 bis M1.8.** Die realen Fahrzeiten
+stammen aus einem Fahrplanausschnitt oder aus dem Trassenfinder. Der
+Trassenfinder steht im Quellenregister auf `entwicklung` (`docs/rechte.md` 3,
+`docs/daten.md` 3): Kalibrierwerkzeug der Entwicklung, keine
+Laufzeitabhängigkeit (E10), und seine Werte sind laut Betreiber unverbindliche
+Richtwerte, keine Referenzwahrheit; ob eine automatisierte Abfrage mit
+Speicherung von den Nutzungsbedingungen gedeckt ist, ist ein offener Prüfpunkt
+(`docs/rechte.md` 4). M1.13 liefert deshalb — wie M1.5 für die Neigung — **das
+Verfahren, keinen Import**: Es rechnet mit gegebenen Referenzfahrzeiten, gleich
+woher sie stammen. Sobald ein Fahrplanausschnitt freigegeben ist, füllt er den
+Korpus; an diesem Modul ändert sich dann nichts. Der Report meldet einen Fehler
+weiter, wenn ein Fahrweg gar keine Fahrzeit hat, statt eine erfundene Abweichung
+auszuweisen — die Referenz bleibt dann ungeprüft, nicht stillschweigend
+bestätigt.
+
+Umsetzung: [`crates/zugfolge-infra/src/reference.rs`](../crates/zugfolge-infra/src/reference.rs).

@@ -127,13 +127,14 @@ Konzeption abgeschlossen, E1–E20 entschieden, Milestones auf Reihenfolge und
 Vollständigkeit geprüft. **M0 ist abgeschlossen: M0.1 bis M0.5 sind erledigt** —
 ADRs, Monorepo, CI, Determinismus-Testharnisch, Wächter, Glossar, Lizenz-Scan,
 der Wegwerf-Spike zur Sperrzeitentreppe, das Rechte-Gate und der Rechteschutz.
-**M1 hat begonnen: M1.1 bis M1.11 sind erledigt** — das
+**M1 ist abgeschlossen: M1.1 bis M1.13 sind erledigt** — das
 Domänenmodell des Betriebsgraphen, die Import-Pipeline OSM-PBF → Rohgraph, der
 Netzfilter, die Abdeckungsmessung, das Neigungsprofil aus dem Höhenmodell, die
 Blockableitung, die Fahrstraßen- und Durchrutschwegableitung, die
 Stationsdaten-Anreicherung, die Zugcharakteristik, Fahrdynamik und
-Fahrzeitrechner sowie der Anlagenkataster stehen in `crates/zugfolge-infra`.
-Nur M1.12/M1.13 (`InfraRelease`, Referenzkorpus) sind noch offen.
+Fahrzeitrechner, der Anlagenkataster, der `InfraRelease` und der Referenzkorpus
+mit Abweichungsreport stehen in `crates/zugfolge-infra`. Damit ist der
+Betriebsgraph samt Infra-Release-Pipeline vollständig.
 
 - **Alpha-Schnitt:** M0 – M9. Alles ab M10 ist Ausbau.
 - **Kritischer Pfad:** M0.3 → M1 → M3 → M4 → M7. Die ersten Schritte sind geführt.
@@ -237,9 +238,26 @@ Nur M1.12/M1.13 (`InfraRelease`, Referenzkorpus) sind noch offen.
   Kleinwinkelnäherung `sin θ ≈ Gefälle ‰ / 1000`; reicht eines nicht mehr aus,
   meldet das Verfahren einen Fehler statt einer unmöglichen Fahrt. Siehe
   `docs/betriebsgraph.md` Abschnitt 16.
-- **Nächster Schritt:** M1.12, `InfraRelease` als unveränderliches,
-  versioniertes Artefakt mit Herkunft, Lizenz, Checksumme und Confidence je
-  Attribut.
+- **M1.12 steht:** `crates/zugfolge-infra/src/release.rs` friert einen geprüften
+  `OperatingGraph` zu einem `InfraRelease` ein — **unveränderlich, versioniert,
+  mit Herkunft und Lizenz je Quelle (`ReleaseSource`), Prüfsumme und Confidence
+  je Attribut**. `InfraReleaseBuilder::build` prüft, dass jede vom Netz genutzte
+  Quelle mit einer Lizenz deklariert ist und keine ohne Gegenstand. Die
+  Prüfsumme ist der Fingerabdruck des Graphen (M1.1), umschlossen von Version
+  und Quellen; wie er über `DeterministicModel` und einen Golden-Master auf
+  Linux und Windows gesichert. Mit M1.12 ist `rust-toolchain.toml` auf eine
+  Patchversion gepinnt, damit die Reproduzierbarkeit nicht an der Toolchain
+  hängt. Siehe `docs/betriebsgraph.md` Abschnitt 17.
+- **M1.13 steht:** `crates/zugfolge-infra/src/reference.rs` hält mit
+  `ReferenceCorpus` Referenzläufe — je ein Fahrweg mit realer Fahrzeit — und
+  stellt ihnen im `DeviationReport` die aus dem Release berechnete Fahrzeit
+  (M1.10) gegenüber, geprüft gegen eine `Tolerance`. `docs/daten.md` 3 verbietet
+  eine Präzisionswahrheit, verglichen wird gegen eine **definierte Toleranz**.
+  Wie M1.5 bis M1.8 ist das Verfahren **kein Import** — der Trassenfinder steht
+  auf `entwicklung` (E10) —, es rechnet mit gegebenen Referenzfahrzeiten. Damit
+  ist der M1-Beweis erbracht. Siehe `docs/betriebsgraph.md` Abschnitt 18.
+- **Nächster Schritt:** M2, das Weltgerüst — Keycloak-Konten, Weltisolation mit
+  `world_id`, EVU-Entität, Ledger-Kern, Postfach und Datenschutz (`docs/milestones.md`).
 
 Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` steht unter
 PolyForm Shield 1.0.0, nennt Sebastian Barowski als Rechteinhaber und ist damit

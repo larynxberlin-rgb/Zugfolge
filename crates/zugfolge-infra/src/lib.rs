@@ -54,14 +54,17 @@
 //! Gleitkomma rechnet. Und [`FacilityCatalog`] aus M1.11 führt Werkstätten,
 //! Behandlungs- und Waschanlagen, Tankstellen, Entsorgungsanlagen und als
 //! Anlage geführte Abstellgleise mit Kapazität, Öffnungszeit, Nutzlänge und
-//! Baureihenkompetenz. Was daraus ein spielbares Netz macht, ist Aufgabe der
-//! folgenden Schritte:
+//! Baureihenkompetenz.
 //!
-//! ## Was hier bewusst noch nicht steht
+//! [`InfraRelease`] aus M1.12 friert schließlich einen geprüften
+//! [`OperatingGraph`] zu einem **unveränderlichen, versionierten Artefakt** ein
+//! — mit Herkunft und Lizenz je Quelle ([`ReleaseSource`]), einer Prüfsumme
+//! über das Ganze und der Abdeckung je Attribut ([`CoverageReport`]). Und der
+//! [`ReferenceCorpus`] aus M1.13 hält reale Fahrzeiten der Pilotregion, gegen
+//! die ein [`DeviationReport`] die aus dem Release berechneten Fahrzeiten
+//! innerhalb einer definierten [`Tolerance`] prüft — der Beweis von M1.
 //!
-//! | Fehlt | Gehört nach |
-//! |-------|-------------|
-//! | `InfraRelease` als versioniertes Artefakt | M1.12 |
+//! ## Wie die abgeleiteten Artefakte zum Modell stehen
 //!
 //! Ein Blockabschnitt ist **kein** Gleis, eine Fahrstraße ist keine Kante, eine
 //! Stationsanreicherung ist keine Betriebsstelle und eine Anlage ist kein
@@ -112,6 +115,8 @@ mod operating_point;
 mod platform;
 mod protection;
 mod provenance;
+mod reference;
+mod release;
 mod speed;
 mod station;
 mod track;
@@ -158,6 +163,8 @@ pub use operating_point::{Coordinate, OperatingPoint, OperatingPointKind};
 pub use platform::Platform;
 pub use protection::{ProtectionSystem, TrainProtection};
 pub use provenance::{Attributed, Confidence, Provenance, SourceId};
+pub use reference::{DeviationReport, ReferenceCorpus, ReferenceRun, RunDeviation, Tolerance};
+pub use release::{InfraRelease, InfraReleaseBuilder, ReleaseSource, ReleaseVersion};
 pub use speed::{SpeedCategory, SpeedLimit};
 pub use station::{
     StationAmenities, StationAmenity, StationCategory, StationEnrichment, StationEnrichmentCatalog,

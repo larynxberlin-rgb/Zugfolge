@@ -57,7 +57,17 @@ Ergebnis vorzeigbar ist. Bislang erledigt:
   [`crates/zugfolge-infra/src/dynamics.rs`](../crates/zugfolge-infra/src/dynamics.rs);
 - **M1.11** — der Anlagenkataster, siehe [`betriebsgraph.md`](betriebsgraph.md)
   Abschnitt 14 und
-  [`crates/zugfolge-infra/src/facility.rs`](../crates/zugfolge-infra/src/facility.rs).
+  [`crates/zugfolge-infra/src/facility.rs`](../crates/zugfolge-infra/src/facility.rs);
+- **M1.12** — der `InfraRelease` als unveränderliches, versioniertes Artefakt
+  mit Herkunft, Lizenz, Prüfsumme und Confidence je Attribut, siehe
+  [`betriebsgraph.md`](betriebsgraph.md) Abschnitt 17 und
+  [`crates/zugfolge-infra/src/release.rs`](../crates/zugfolge-infra/src/release.rs);
+- **M1.13** — Referenzkorpus und Abweichungsreport gegen reale Fahrzeiten mit
+  definierter Toleranz, siehe [`betriebsgraph.md`](betriebsgraph.md)
+  Abschnitt 18 und
+  [`crates/zugfolge-infra/src/reference.rs`](../crates/zugfolge-infra/src/reference.rs).
+
+Damit ist **M1 abgeschlossen**: Betriebsgraph und Infra-Release-Pipeline stehen.
 
 ---
 
@@ -107,8 +117,8 @@ README:
 | 1.9 | **Zugcharakteristik** als eigenes Konzept: Masse, Länge, Vmax, Anfahr- und Bremsvermögen, Antriebsart, Zugsicherung. Entkoppelt Fahrzeitrechnung und Trassenplanung vom Fahrzeugkatalog (M5) | M | erledigt |
 | 1.10 | Fahrdynamik und Fahrzeitrechner → vorberechnete **ganzzahlige** Fahrzeittabellen je Zugcharakteristik | L | erledigt |
 | 1.11 | **Anlagenkataster**: Werkstätten, Behandlungs- und Waschanlagen, Tankstellen, Entsorgungsanlagen, Abstellgleise — mit Kapazität, Öffnungszeit, Nutzlänge, Baureihenkompetenz | M | erledigt |
-| 1.12 | `InfraRelease` als unveränderliches, versioniertes Artefakt mit Herkunft, Lizenz, Checksumme und Confidence je Attribut | M | offen |
-| 1.13 | Referenzkorpus Leipzig–Halle–Erfurt und Abweichungsreport gegen reale Fahrzeiten | M | offen |
+| 1.12 | `InfraRelease` als unveränderliches, versioniertes Artefakt mit Herkunft, Lizenz, Checksumme und Confidence je Attribut | M | erledigt |
+| 1.13 | Referenzkorpus Leipzig–Halle–Erfurt und Abweichungsreport gegen reale Fahrzeiten | M | erledigt |
 
 > **Beweis:** Ein signierter `InfraRelease` der Pilotregion, dessen berechnete
 > Fahrzeiten innerhalb definierter Toleranz zur Referenz liegen — begleitet von
@@ -227,6 +237,32 @@ jede Anlage gegen einen fertigen `OperatingGraph` — ihr Gleis muss existieren
 und darf kein Hauptgleis sein, auf dem Zugfahrten stattfinden. Die **Belegung**
 einer Anlage bleibt M5.7 vorbehalten: M1.11 liefert den Kataster, nicht die
 Konfliktengine. Siehe `betriebsgraph.md` Abschnitt 14.
+
+**M1.12 trägt:** Der `InfraRelease` friert einen geprüften `OperatingGraph` zu
+einem **unveränderlichen, versionierten Artefakt** ein — mit `ReleaseVersion`,
+Herkunft **und** Lizenz je Quelle (`ReleaseSource`), einer Prüfsumme über das
+Ganze und der Abdeckung je Attribut (`CoverageReport` aus M1.4).
+`InfraReleaseBuilder::build` sammelt jede Quelle, die ein Attribut des Netzes
+nennt, und prüft, dass jede mit einer Lizenz deklariert ist und keine ohne
+Gegenstand — `docs/daten.md` 2: „Jedes importierte Attribut trägt Quelle,
+Lizenz, Gültigkeit, Checksumme und Confidence." Die Prüfsumme ist der
+Fingerabdruck des Graphen (M1.1), umschlossen von Version und Quellen, und wie
+er über `DeterministicModel` und einen Golden-Master auf Linux und Windows
+gesichert; mit M1.12 pinnt `rust-toolchain.toml` zusätzlich die Rust-Version,
+damit die Reproduzierbarkeit nicht an der Toolchain hängt. Siehe
+`betriebsgraph.md` Abschnitt 17.
+
+**M1.13 trägt:** Der `ReferenceCorpus` hält Referenzläufe — je ein Fahrweg mit
+seiner **realen** Fahrzeit —, und der `DeviationReport` stellt jeder Referenz
+die aus dem Release berechnete Fahrzeit (M1.10) gegenüber und prüft sie gegen
+eine `Tolerance` aus absolutem Sockel und relativem Anteil. `docs/daten.md` 3
+verbietet eine Präzisionswahrheit; verglichen wird deshalb gegen eine
+**definierte Toleranz**, ein Größenordnungsabgleich. Wie M1.5 bis M1.8 ist das
+Verfahren **kein Import**: Der Trassenfinder steht auf `entwicklung` (E10,
+`docs/rechte.md` 3), seine Werte sind unverbindliche Richtwerte — M1.13 rechnet
+mit gegebenen Referenzfahrzeiten, gleich woher sie stammen, und meldet einen
+unbefahrbaren Fahrweg als Fehler, statt eine erfundene Abweichung auszuweisen.
+Siehe `betriebsgraph.md` Abschnitt 18.
 
 Ausführlich: [`betriebsgraph.md`](betriebsgraph.md).
 
