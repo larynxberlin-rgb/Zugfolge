@@ -144,19 +144,17 @@ der CI auf Linux **und** Windows gegen dieselbe Datei geprüft.
 
 | Fehlt | Gehört nach |
 |-------|-------------|
-| Blockabschnitte, virtuelle Blöcke | M1.6 |
-| Weichen, Fahrstraßen, Durchrutschwege, Ausschlussmengen im Bahnhofskopf | M1.7 |
 | Stationsdaten-Anreicherung | M1.8 |
 | Anlagenkataster — Werkstatt, Wäsche, Tankstelle, Entsorgung, Abstellung | M1.11 |
 | `InfraRelease` mit Version, Lizenz, Prüfsumme und Confidence je Attribut | M1.12 |
 
 Das Modell ist auf alle vorbereitet und nimmt keines vorweg. **Ein
-Blockabschnitt ist kein Gleis, und eine Fahrstraße ist keine Kante** — wer sie
-hier unterbrächte, müsste sie in M1.6 und M1.7 wieder herausoperieren. Die
-Vorbereitung besteht aus drei Dingen: der Richtungsbindung des Gleises, die
-beide Konfliktarten trägt; dem Bandprofil, in dem Signale und Blöcke später
-ihre Abschnitte finden; und dem Vertrauensgrad, den die Abdeckungsmessung
-liest.
+Blockabschnitt ist kein Gleis, und eine Fahrstraße ist keine Kante** — deshalb
+liefern M1.6 (Abschnitt 11) und M1.7 (Abschnitt 12) sie als eigene, abgeleitete
+Artefakte neben dem Modell, nicht als neue Bausteine darin. Die Vorbereitung im
+Modell besteht aus drei Dingen: der Richtungsbindung des Gleises, die beide
+Konfliktarten trägt; dem Bandprofil, in dem Signale und Blöcke ihre Abschnitte
+finden; und dem Vertrauensgrad, den die Abdeckungsmessung liest.
 
 ---
 
@@ -312,3 +310,77 @@ Höhenmodell freigegeben ist, liest ein eigener Import reale Stichproben und
 übergibt sie an dieses Verfahren — daran ändert sich dann nichts.
 
 Umsetzung: [`crates/zugfolge-infra/src/elevation.rs`](../crates/zugfolge-infra/src/elevation.rs).
+
+---
+
+## 11. Die Blockableitung — Ergebnis von M1.6
+
+`docs/daten.md` 1 führt die Blockabschnitte unter dem, was OSM **nicht** als
+Objekte liefert: Sie müssen aus **Signalstandort, Zugbeeinflussung und
+Topologie** abgeleitet werden. M1.6 liefert das Verfahren —
+`derive_block_sections` zerlegt ein Gleis in die lückenlose Folge seiner
+`BlockSection`s. Es fasst die drei Eingaben so zusammen:
+
+- **Signalpositionen.** Ein Hauptsignal begrenzt einen Block, ein Vorsignal
+  nicht. Neben dem ortsfesten Hauptsignal kennt das Verfahren die
+  **Blockkennzeichen der Führerraumsignalisierung** (`SignalKind`): Eine reine
+  LZB- oder eine reine ETCS-Strecke hat keine ortsfesten Hauptsignale, ihre
+  Blockgrenzen liegen als LZB-Blockkennzeichen oder ETCS-Blockmarken vor. Diese
+  Grenzen und die beiden Gleisenden bilden die realen Blockgrenzen.
+- **Zugbeeinflussung entscheidet die Art des Blocks.** Läuft ein Abschnitt
+  durchgehend unter LZB oder ETCS Level 2, ist er **führerraumsignalisiert**
+  (`BlockKind::CabSignalled`) — ein realer Block, auch ohne ein ortsfestes
+  Signal und auch über große Länge. Das ist der reine LZB- und der reine
+  ETCS-Block, und er wird gerade **nicht** als Datenlücke behandelt. Ein
+  ungesicherter Abschnitt dagegen trägt keine Zugfahrten und erreicht Klasse C.
+- **Lücken werden zu virtuellen Blöcken.** Nur wo weder ein Kennzeichen noch die
+  durchgehende Überwachung einspringt, gilt ein zu langer Abschnitt als
+  Datenlücke und wird konservativ in gleich lange virtuelle Blöcke zerlegt
+  (`BlockKind::Virtual`, Klasse B).
+
+Die **Qualitätsklassifizierung A/B/C** je Block folgt daraus: ein realer Block
+— signalisiert oder führerraumsignalisiert — auf erfasster, durchgehend
+gesicherter Strecke ist Klasse A; ein virtueller Block Klasse B; ein Block über
+einem ungesicherten Abschnitt Klasse C. Das setzt die Abbildung aus M1.4 fort,
+in der die geprüften Blöcke noch fehlten. Ein Block ist **kein Gleis**: Er
+entsteht neben dem Modell, nicht als Baustein darin (Abschnitt 5). Wie M1.5 ist
+das Verfahren **kein Import** — es rechnet mit Signalpositionen, gleich woher
+sie stammen.
+
+Umsetzung: [`crates/zugfolge-infra/src/blocks.rs`](../crates/zugfolge-infra/src/blocks.rs).
+
+---
+
+## 12. Die Fahrstraßen- und Durchrutschwegableitung — Ergebnis von M1.7
+
+`docs/daten.md` 1 nennt Fahrstraßen, Durchrutschwege und Flankenschutz als den
+**schwersten Einzelposten in M1**: Sie müssen aus **Weichenlage und
+Signalstandort** erzeugt werden. Der Spike aus M0.3 hat gezeigt, warum
+(`infrastruktur.md` 1): Der Bahnhofskopf braucht **Ausschlussmengen** statt
+einzelner Ressourcen. M1.7 liefert das Verfahren.
+
+Ein `StationHead` beschreibt den Kopf als kleinen Graphen: `HeadElement`e sind
+die belegbaren Stücke Gleis, `HeadNode`s ihre Verbindungspunkte — Endpunkt, Stoß
+oder Weiche. Eine `Switch` trägt Spitze, Stamm- und Zweiggleis; durch sie führt
+ein Fahrweg nur von der Spitze auf **eines** der beiden Zweige, nie von einem
+Zweig auf den anderen. Genau diese Bindung macht die `SwitchPosition` einer
+Fahrstraße aus. Ein `HeadSignal` steht am Knotenende eines Elements und ist der
+Beginn einer Fahrstraße.
+
+`derive_interlocking_routes` zählt von jedem Signal aus alle Fahrwege durch den
+Weichenfächer auf. Jede `InterlockingRoute` hält fest, welche Elemente sie
+belegt und welche Weichen sie in welche Lage zwingt. Endet sie an einem Signal,
+folgt der **Durchrutschweg** (`OverlapPath`) dahinter — geradeaus über die
+Grundstellung der folgenden Weichen bis zu einer Mindestlänge; endet sie am
+Prellbock oder Gleisende, deckt der Endpunkt selbst. Aus dem Vergleich der
+belegten Elemente und der geforderten Weichenlagen entsteht die
+**Ausschlussmenge** je Fahrstraße: Zwei Fahrstraßen, die sich ein Element oder
+eine Weiche in unterschiedlicher Lage teilen, schließen einander aus; zwei über
+getrennte Elemente dürfen gleichzeitig gestellt werden. Das ist die
+Konfliktressource, die der Spike offengelassen hat (M3.1, M3.3).
+
+Die Qualitätsklasse einer Fahrstraße folgt dem Vertrauensgrad der Kopfdaten. Wie
+M1.5 und M1.6 ist das Verfahren **kein Import** — es rechnet mit einer
+gegebenen Weichenlage, gleich woher sie stammt.
+
+Umsetzung: [`crates/zugfolge-infra/src/interlocking.rs`](../crates/zugfolge-infra/src/interlocking.rs).

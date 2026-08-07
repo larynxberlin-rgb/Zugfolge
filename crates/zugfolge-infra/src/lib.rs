@@ -36,21 +36,24 @@
 //! Vertrauensgrade eines fertigen [`OperatingGraph`] und sagt je Attribut und
 //! Streckenabschnitt, welche Qualitätsklasse er datenseitig erreichen kann.
 //! Und [`derive_gradient_profile`] aus M1.5 rechnet Höhenstichproben in ein
-//! geglättetes Neigungsprofil um, wie es [`Track::builder`] erwartet. Was
+//! geglättetes Neigungsprofil um, wie es [`Track::builder`] erwartet.
+//! [`derive_block_sections`] aus M1.6 leitet die Blockabschnitte eines Gleises
+//! aus Signalpositionen, Zugbeeinflussung und Topologie ab — einschließlich der
+//! reinen LZB- und ETCS-Blöcke ohne ortsfestes Signal — und
+//! [`derive_interlocking_routes`] aus M1.7 erzeugt aus einem [`StationHead`] die
+//! Fahrstraßen, Durchrutschwege und Ausschlussmengen eines Bahnhofskopfs. Was
 //! daraus ein spielbares Netz macht, ist Aufgabe der folgenden Schritte:
 //!
 //! ## Was hier bewusst noch nicht steht
 //!
 //! | Fehlt | Gehört nach |
 //! |-------|-------------|
-//! | Blockabschnitte, virtuelle Blöcke, Qualitätsklassifizierung A/B/C je Block | M1.6 |
-//! | Weichen, Fahrstraßen, Durchrutschwege, Ausschlussmengen | M1.7 |
 //! | Anlagenkataster | M1.11 |
 //! | `InfraRelease` als versioniertes Artefakt | M1.12 |
 //!
-//! Das Modell ist auf alle vier vorbereitet, nimmt aber keines vorweg. Ein
-//! Blockabschnitt ist **kein** Gleis, und eine Fahrstraße ist keine Kante — wer
-//! sie hier unterbrächte, müsste sie in M1.6 und M1.7 wieder herausoperieren.
+//! Ein Blockabschnitt ist **kein** Gleis, und eine Fahrstraße ist keine Kante —
+//! deshalb entstehen sie in M1.6 und M1.7 als eigene, abgeleitete Artefakte
+//! neben dem Modell, nicht als neue Bausteine darin.
 //!
 //! ## Beispiel
 //!
@@ -77,6 +80,7 @@
 //! ```
 
 mod bands;
+mod blocks;
 mod canonical;
 mod coverage;
 mod edge;
@@ -87,6 +91,7 @@ mod example;
 mod graph;
 mod identity;
 mod import;
+mod interlocking;
 mod network_filter;
 mod operating_point;
 mod platform;
@@ -97,6 +102,9 @@ mod track;
 mod units;
 
 pub use bands::{Band, BandProfile};
+pub use blocks::{
+    BlockKind, BlockSection, DEFAULT_MAX_BLOCK_LENGTH, Signal, SignalKind, derive_block_sections,
+};
 pub use coverage::{
     AchievableSection, AttributeCoverage, CoverageReport, QualityClass, TrackCoverage,
 };
@@ -106,9 +114,17 @@ pub use elevation::{DEFAULT_MIN_BAND_LENGTH, ElevationSample, derive_gradient_pr
 pub use error::InfraError;
 pub use example::reference_network;
 pub use graph::{OperatingGraph, OperatingGraphBuilder};
-pub use identity::{OperatingPointCode, OperatingPointId, PlatformId, TrackEdgeId, TrackId};
+pub use identity::{
+    HeadElementId, HeadNodeId, HeadSignalId, InterlockingRouteId, OperatingPointCode,
+    OperatingPointId, PlatformId, SwitchId, TrackEdgeId, TrackId,
+};
 pub use import::{
     ImportError, OsmNodeId, OsmWayId, RawEdge, RawEdgeId, RawGraph, RawNode, import_pbf,
+};
+pub use interlocking::{
+    HeadElement, HeadNode, HeadNodeKind, HeadSignal, InterlockingPlan, InterlockingRoute,
+    OverlapPath, RouteDestination, StationHead, StationHeadBuilder, Switch, SwitchPosition,
+    derive_interlocking_routes,
 };
 pub use network_filter::{
     EXCLUDED_RAILWAY_VALUES, ExclusionReason, NetworkFilterOutcome, classify, filter_network,

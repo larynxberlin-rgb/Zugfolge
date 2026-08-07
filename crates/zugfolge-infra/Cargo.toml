@@ -1,6 +1,6 @@
 [package]
 name = "zugfolge-infra"
-description = "Infra-Release-Pipeline: Domänenmodell des Betriebsgraphen (M1.1), Import-Pipeline OSM-PBF → Rohgraph (M1.2), Netzfilter (M1.3), Abdeckungsmessung (M1.4) und Neigungsprofil aus Höhenmodell (M1.5)"
+description = "Infra-Release-Pipeline: Domänenmodell des Betriebsgraphen (M1.1), Import-Pipeline OSM-PBF → Rohgraph (M1.2), Netzfilter (M1.3), Abdeckungsmessung (M1.4), Neigungsprofil aus Höhenmodell (M1.5), Blockableitung (M1.6) und Fahrstraßen- und Durchrutschwegableitung (M1.7)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

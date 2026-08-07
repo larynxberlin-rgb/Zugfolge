@@ -77,6 +77,39 @@ kennung!(
     "Bs"
 );
 
+kennung!(
+    /// Kennung einer Weiche im Bahnhofskopf (M1.7).
+    SwitchId,
+    "W"
+);
+
+kennung!(
+    /// Kennung eines Knotens im Bahnhofskopf — ein Verbindungspunkt zwischen
+    /// Fahrwegelementen, an dem eine Weiche, ein Endpunkt oder ein bloßer
+    /// Stoß liegt (M1.7).
+    HeadNodeId,
+    "Kn"
+);
+
+kennung!(
+    /// Kennung eines Fahrwegelements im Bahnhofskopf — das kleinste belegbare
+    /// Stück Gleis zwischen zwei Knoten (M1.7).
+    HeadElementId,
+    "El"
+);
+
+kennung!(
+    /// Kennung eines Signals im Bahnhofskopf (M1.7).
+    HeadSignalId,
+    "Sig"
+);
+
+kennung!(
+    /// Kennung einer Fahrstraße durch einen Bahnhofskopf (M1.7).
+    InterlockingRouteId,
+    "Fs"
+);
+
 /// Das Betriebsstellenkürzel — im deutschen Netz die Abkürzung nach Ril 100.
 ///
 /// Es ist die Kennung, mit der Menschen arbeiten: Sie steht im Fahrplan, in

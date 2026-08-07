@@ -39,7 +39,13 @@ Ergebnis vorzeigbar ist. Bislang erledigt:
   [`crates/zugfolge-infra/src/coverage.rs`](../crates/zugfolge-infra/src/coverage.rs);
 - **M1.5** — das Neigungsprofil aus dem Höhenmodell, siehe
   [`betriebsgraph.md`](betriebsgraph.md) Abschnitt 10 und
-  [`crates/zugfolge-infra/src/elevation.rs`](../crates/zugfolge-infra/src/elevation.rs).
+  [`crates/zugfolge-infra/src/elevation.rs`](../crates/zugfolge-infra/src/elevation.rs);
+- **M1.6** — die Blockableitung, siehe [`betriebsgraph.md`](betriebsgraph.md)
+  Abschnitt 11 und
+  [`crates/zugfolge-infra/src/blocks.rs`](../crates/zugfolge-infra/src/blocks.rs);
+- **M1.7** — die Fahrstraßen- und Durchrutschwegableitung, siehe
+  [`betriebsgraph.md`](betriebsgraph.md) Abschnitt 12 und
+  [`crates/zugfolge-infra/src/interlocking.rs`](../crates/zugfolge-infra/src/interlocking.rs).
 
 ---
 
@@ -83,8 +89,8 @@ README:
 | 1.3 | **Netzfilter**: nur `railway=rail` in 1435 mm; Tram, Stadtbahn, U-Bahn, Schmalspur, Standseil- und Einschienenbahnen verwerfen; Stromschienennetze über Netzausschlussliste. **Betriebs-, Abstell- und Anschlussgleise bleiben erhalten** | M | erledigt |
 | 1.4 | **Abdeckungsmessung**: Coverage-Report je Attribut und Streckenabschnitt. Entscheidet *vor* dem Bau, welche Strecke Klasse A erreichen kann | M | erledigt |
 | 1.5 | **Neigungsprofil aus Höhenmodell** — aus einem DEM entlang der Gleisgeometrie abgeleitet und geglättet | M | erledigt |
-| 1.6 | **Blockableitung** aus Signalpositionen, Zugbeeinflussung und Topologie; virtuelle Blöcke bei Lücken; Qualitätsklassifizierung A/B/C | L | offen |
-| 1.7 | **Fahrstraßen- und Durchrutschwegableitung** im Bahnhofskopf — aus Weichenlage und Signalstandort erzeugt | **XL** | offen |
+| 1.6 | **Blockableitung** aus Signalpositionen, Zugbeeinflussung und Topologie; virtuelle Blöcke bei Lücken; reine LZB-/ETCS-Blöcke bei durchgehender Überwachung; Qualitätsklassifizierung A/B/C | L | erledigt |
+| 1.7 | **Fahrstraßen- und Durchrutschwegableitung** im Bahnhofskopf — aus Weichenlage und Signalstandort erzeugt | **XL** | erledigt |
 | 1.8 | Stationsdaten-Anreicherung — ausschließlich freigegebene Quellen | M | offen |
 | 1.9 | **Zugcharakteristik** als eigenes Konzept: Masse, Länge, Vmax, Anfahr- und Bremsvermögen, Antriebsart, Zugsicherung. Entkoppelt Fahrzeitrechnung und Trassenplanung vom Fahrzeugkatalog (M5) | M | offen |
 | 1.10 | Fahrdynamik und Fahrzeitrechner → vorberechnete **ganzzahlige** Fahrzeittabellen je Zugcharakteristik | L | offen |
@@ -144,6 +150,24 @@ Bandlänge, linear interpoliert, statt jede Stichprobe einzeln in ein Band zu
 Pilotregion selbst steht im Quellenregister noch auf `pruefung`
 (`docs/rechte.md` 3) — M1.5 liefert deshalb das Verfahren, keinen Import; der
 folgt erst mit der Freigabe. Siehe `betriebsgraph.md` Abschnitt 10.
+
+**M1.6 trägt:** Die Blockableitung (`derive_block_sections`) zerlegt ein Gleis
+aus Signalpositionen, Zugbeeinflussung und Topologie in seine Blockabschnitte.
+Ein Hauptsignal setzt eine Blockgrenze, ein Vorsignal nicht; eine durchgehend
+LZB- oder ETCS-geführte Strecke ist ein **realer, führerraumsignalisierter
+Block** ohne ortsfestes Signal — der reine LZB- und der reine ETCS-Block, gerade
+keine Datenlücke. Nur wo weder ein Kennzeichen noch die durchgehende Überwachung
+einspringt, füllt das Verfahren eine zu lange Lücke mit **virtuellen Blöcken**.
+Jeder Block trägt eine Qualitätsklasse A/B/C. Siehe `betriebsgraph.md`
+Abschnitt 11.
+
+**M1.7 trägt:** Die Fahrstraßen- und Durchrutschwegableitung
+(`derive_interlocking_routes`) zählt aus Weichenlage und Signalstandort eines
+`StationHead` alle Fahrstraßen durch den Weichenfächer auf, hält je Fahrstraße
+die belegten Elemente, die geforderten Weichenlagen und den Durchrutschweg fest
+und leitet daraus die **Ausschlussmenge** ab — die Konfliktressource des
+Bahnhofskopfs, die der Spike aus M0.3 offengelassen hatte. Siehe
+`betriebsgraph.md` Abschnitt 12.
 
 Ausführlich: [`betriebsgraph.md`](betriebsgraph.md).
 
