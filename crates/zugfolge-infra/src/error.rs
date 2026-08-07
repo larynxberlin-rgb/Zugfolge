@@ -13,6 +13,7 @@ use crate::identity::{
     FacilityId, HeadElementId, HeadNodeId, HeadSignalId, OperatingPointId, PlatformId, SwitchId,
     TrackEdgeId, TrackId,
 };
+use crate::provenance::SourceId;
 use crate::units::{Acceleration, Length, Mass, Speed};
 
 /// Was am Betriebsgraphen oder einem seiner Bausteine nicht stimmt.
@@ -369,6 +370,20 @@ pub enum InfraError {
         /// Die Position, an der die Beschleunigung nicht mehr ausreicht.
         position: Length,
     },
+    /// Eine Quelle eines `InfraRelease` nennt keine Lizenz — eine Datenebene
+    /// ohne benannte Lizenz darf nicht ausgeliefert werden (M1.12).
+    ReleaseSourceWithoutLicense(SourceId),
+    /// Eine Quelle wurde im `InfraRelease` zweimal deklariert (M1.12).
+    DuplicateReleaseSource(SourceId),
+    /// Ein Attribut des Netzes nennt eine Quelle, die der `InfraRelease` nicht
+    /// deklariert — dann fehlte ihre Lizenz (M1.12).
+    UndeclaredReleaseSource(SourceId),
+    /// Eine im `InfraRelease` deklarierte Quelle wird von keinem Attribut
+    /// genutzt — eine Lizenz ins Leere (M1.12).
+    UnusedReleaseSource(SourceId),
+    /// Ein Referenzlauf des Korpus trägt keinen Namen — er wäre im Report nicht
+    /// zuzuordnen (M1.13).
+    UnnamedReferenceRun,
 }
 
 impl fmt::Display for InfraError {
@@ -657,6 +672,28 @@ impl fmt::Display for InfraError {
             Self::InsufficientTraction { position } => write!(
                 formatter,
                 "bei {position} übersteigt der Hangabtrieb das Anfahrvermögen des Fahrzeugs"
+            ),
+            Self::ReleaseSourceWithoutLicense(id) => write!(
+                formatter,
+                "Quelle '{id}' im Release nennt keine Lizenz — eine Datenebene ohne Lizenz \
+                 darf nicht ausgeliefert werden"
+            ),
+            Self::DuplicateReleaseSource(id) => write!(
+                formatter,
+                "Quelle '{id}' ist im Release zweimal deklariert"
+            ),
+            Self::UndeclaredReleaseSource(id) => write!(
+                formatter,
+                "ein Attribut nennt die Quelle '{id}', die der Release nicht deklariert — \
+                 ihre Lizenz fehlte"
+            ),
+            Self::UnusedReleaseSource(id) => write!(
+                formatter,
+                "Quelle '{id}' ist im Release deklariert, wird aber von keinem Attribut \
+                 genutzt — eine Lizenz ins Leere"
+            ),
+            Self::UnnamedReferenceRun => formatter.write_str(
+                "ein Referenzlauf ohne Namen wäre im Abweichungsreport nicht zuzuordnen",
             ),
         }
     }

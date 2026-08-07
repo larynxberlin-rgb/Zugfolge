@@ -1,7 +1,10 @@
 [toolchain]
-# Bewusst noch nicht auf eine Patchversion gepinnt: Solange kein
-# `InfraRelease` erzeugt wird, kostet ein Pin nur Wartung. Er wird mit M1.12
-# gesetzt, wenn Release-Artefakte reproduzierbar sein müssen.
-channel = "stable"
+# Auf eine Patchversion gepinnt mit M1.12: Ein `InfraRelease` ist ein
+# unveränderliches, reproduzierbares Artefakt (docs/architektur.md 3), und
+# seine Prüfsumme darf nicht an der Toolchain hängen. Der Golden-Master des
+# `InfraRelease` (crates/zugfolge-infra/tests/golden/infra-release.hash) wird
+# gegen genau diese Version erzeugt — auf Linux und Windows. Ein Wechsel ist
+# eine bewusste Entscheidung und im Commit zu begründen.
+channel = "1.94.1"
 components = ["rustfmt", "clippy"]
 profile = "minimal"
