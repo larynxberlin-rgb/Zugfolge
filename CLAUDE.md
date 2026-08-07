@@ -135,6 +135,8 @@ Stationsdaten-Anreicherung, die Zugcharakteristik, Fahrdynamik und
 Fahrzeitrechner, der Anlagenkataster, der `InfraRelease` und der Referenzkorpus
 mit Abweichungsreport stehen in `crates/zugfolge-infra`. Damit ist der
 Betriebsgraph samt Infra-Release-Pipeline vollständig.
+**M2 ist begonnen: M2.2 ist erledigt** — die Weltisolation mit `packages/db`,
+siehe unten.
 
 - **Alpha-Schnitt:** M0 – M9. Alles ab M10 ist Ausbau.
 - **Kritischer Pfad:** M0.3 → M1 → M3 → M4 → M7. Die ersten Schritte sind geführt.
@@ -256,8 +258,20 @@ Betriebsgraph samt Infra-Release-Pipeline vollständig.
   Wie M1.5 bis M1.8 ist das Verfahren **kein Import** — der Trassenfinder steht
   auf `entwicklung` (E10) —, es rechnet mit gegebenen Referenzfahrzeiten. Damit
   ist der M1-Beweis erbracht. Siehe `docs/betriebsgraph.md` Abschnitt 18.
-- **Nächster Schritt:** M2, das Weltgerüst — Keycloak-Konten, Weltisolation mit
-  `world_id`, EVU-Entität, Ledger-Kern, Postfach und Datenschutz (`docs/milestones.md`).
+- **M2.2 steht:** `packages/db` trägt `worlds` — die Wurzel der
+  Mandantentrennung, keine ihrer Zeilen — und das append-only Event-Log
+  `domain_events`, beide als Drizzle-Schema mit generierter SQL-Migration. Der
+  Wächter `world-id` (`tools/guards`) ist jetzt vollständig: Er prüft nicht
+  mehr nur die Tabelle, sondern auch jeden Index in SQL und Drizzle, mit genau
+  einer benannten Ausnahme für `worlds` selbst — keiner erfundenen. Das
+  weltgebundene Repository `worldEventLog` bindet die `world_id` an den
+  Konstruktor statt an jeden einzelnen Aufruf, und ein Test gegen eine echte,
+  eingebettete Postgres-Instanz (PGlite) beweist, dass zwei Welten einander
+  nie sehen — nicht nur, dass das Schema es verspricht. Invariante 4 ist damit
+  seit M0.2 durchgesetzt und seit M2.2 vollständig bewiesen.
+- **Nächster Schritt:** die übrigen Teilabschnitte von M2 — Keycloak-Konten
+  (M2.1), EVU-Entität (M2.3), Ledger-Kern (M2.4), Postfach (M2.5) und
+  Datenschutz (M2.6) (`docs/milestones.md`).
 
 Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` steht unter
 PolyForm Shield 1.0.0, nennt Sebastian Barowski als Rechteinhaber und ist damit

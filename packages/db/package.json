@@ -1,0 +1,29 @@
+{
+  "name": "@zugfolge/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Postgres-Zugriff der Game-Services über Drizzle — Wurzel der Weltisolation (Invariante 4, M2.2)",
+  "license": "LicenseRef-PolyForm-Shield-1.0.0",
+  "exports": {
+    ".": "./dist/index.js",
+    "./schema": "./dist/schema/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3.4.9"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.4",
+    "@types/node": "^24.13.3",
+    "drizzle-kit": "^0.31.10",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

@@ -67,6 +67,13 @@
       "status": "active",
       "paths": ["crates/zugfolge-infra/**"],
       "rules": ["no-payment-tier", "no-wallclock", "no-random", "no-unordered-iteration"]
+    },
+    {
+      "id": "world-isolation",
+      "title": "Postgres-Zugriff der Game-Services, Wurzel der Weltisolation (M2.2)",
+      "status": "active",
+      "paths": ["packages/db/**"],
+      "rules": ["world-id"]
     }
   ],
   "brandTokenHashes": [],
