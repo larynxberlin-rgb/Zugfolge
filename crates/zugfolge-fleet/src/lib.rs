@@ -1,10 +1,24 @@
-//! Fahrzeugkonfiguration und Werkstattumbau — **M5.1a und M5.1b**.
+//! Fahrzeugkatalog, individuelle Flotte und Konfiguration — **M5.1 bis M5.1b**.
 //!
-//! Eine Konfiguration trennt die beim Bau festgelegten Türen vom später
-//! umbaubaren Innenraum. Die ganzzahlige Haltezeitfunktion macht den
-//! betrieblichen Zielkonflikt sichtbar. Umbauten sind reservierte,
-//! kostenpflichtige Werkstattaufträge; erst ihre Fertigstellung verändert das
-//! Fahrzeug.
+//! [`VehicleCatalogRelease`] trennt faktische Baureihe und fiktiven Handelsnamen,
+//! führt Bau- und Marktzeiträume sowie exakt belegte Zugsicherungsoptionen.
+//! [`VehicleAsset`] macht daraus weltgebundene Einzelfahrzeuge mit Eigentum,
+//! Zulassungen und Fristen. Die bestehende Konfiguration trennt die beim Bau
+//! festgelegten Türen vom später umbaubaren Innenraum; Umbauten sind
+//! reservierte, kostenpflichtige Werkstattaufträge.
+
+mod assets;
+mod catalog;
+
+pub use assets::{
+    AssetError, FleetSnapshot, MaintenanceDeadline, OwnershipStatus, VehicleApproval, VehicleAsset,
+};
+pub use catalog::{
+    CatalogError, CatalogSource, CatalogSourceId, MarketAvailability, MarketEvidence,
+    OPEN_ENDED_YEAR, ProcurementChannel, ProtectionEquipment, ProtectionFitment, ProtectionOption,
+    VehicleCatalogBuilder, VehicleCatalogEntry, VehicleCatalogRelease, VehicleEra, VehicleTypeId,
+    VehicleWorldSettings, YearRange,
+};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;

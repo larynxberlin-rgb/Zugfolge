@@ -5,17 +5,11 @@ mit hohem betrieblichem, infrastrukturellem und wirtschaftlichem Realismus.
 Öffentliche Welten laufen dauerhaft in 1:1-Echtzeit ohne Wipes. Erste
 Pilotregion: **Leipzig–Halle–Erfurt**.
 
-> **Stand:** **M0, M1 und M2 sind abgeschlossen.** Fundament, Rechte-Gate und
-> Rechteschutz stehen; der Betriebsgraph samt Infra-Release-Pipeline für die
-> Pilotregion ist vollständig ([`docs/betriebsgraph.md`](docs/betriebsgraph.md)),
-> ebenso das Weltgerüst aus Konten, Weltisolation, EVU, Ledger, Postfach und
-> Datenschutz ([`docs/weltgeruest.md`](docs/weltgeruest.md)).
->
-> Von **M3** stehen die Teilabschnitte **M3.1 bis M3.4**: Sperrzeitenmodell,
-> Belegungsprofil, Konfliktprüfer und Trassen-Planner
-> ([`docs/infrastruktur.md`](docs/infrastruktur.md) 6 bis 9). Der Wegwerf-Spike
-> aus M0.3 ist damit abgelöst und gelöscht. Der nächste Schritt ist M3.5, der
-> deterministische `PlanningRun`.
+> **Stand:** **M0 bis M4 sind abgeschlossen.** Fundament, Betriebsgraph,
+> Weltgerüst, Trassenvergabe und der regionale Simulationskern stehen. Von M5
+> sind **M5.1 bis M5.1b** umgesetzt: versionierter Fahrzeugkatalog,
+> individuelle Fahrzeugassets, Konfiguration und Werkstattumbau
+> ([`docs/betrieb.md`](docs/betrieb.md) 2 und 3).
 
 ## Wo was steht
 
@@ -35,6 +29,8 @@ crates/     Rust — Simulationskern, Solver, Release-Pipeline
             zugfolge-infra/        Betriebsgraph und Infra-Release-Pipeline (M1)
             zugfolge-conflict/     Sperrzeiten, Belegungsprofile, Konfliktprüfung (M3.1–M3.3)
             zugfolge-planner/      Trassen-Planner (M3.4)
+            zugfolge-sim/          Ereigniskern, Replay und Livemap-Protokoll (M4)
+            zugfolge-fleet/        Fahrzeugkatalog und individuelle Flotte (M5.1–M5.1b)
 packages/   TypeScript — fachliche Bibliotheken (ab M2)
             db/                    Drizzle-Schema, Wurzel der Weltisolation (M2.2)
             identity/              Konten, Rollen, Weltzugänge (M2.1)

@@ -56,6 +56,67 @@ Die Regel-Engine hängt an der Dispositionsschnittstelle des Simulationskerns
   Freigabe eines nicht durchführbaren Fahrplans.
 - Sicherheits- und Offline-Disposition bleibt für alle Spieler kostenlos.
 
+### 2.1 Fahrzeugkatalog, Weltepochen und Markt (M5.1)
+
+Der `VehicleCatalogRelease` ist ein unveränderliches, versioniertes Artefakt.
+Er trennt die **faktische Baureihenbezeichnung** vom **fiktiven Handelsnamen**
+(E6), nennt den beidseitig eingeschlossenen Bauzeitraum und führt Neubau,
+Leasing und Gebrauchtmarkt als drei getrennte Zeitfenster. Jedes Marktfenster
+kennzeichnet, ob es dokumentiert oder eine ausdrückliche Spielannahme ist.
+Gerade Leasing- und Gebrauchtendjahre dürfen für das Balancing geschätzt werden;
+sie werden dadurch nicht als historische Tatsache ausgegeben.
+
+Die Welteinstellung führt zwei unabhängige Epochen:
+
+| Einstellung | Prüft | Beispiel |
+|-------------|-------|----------|
+| **Bau-Epoche** | tatsächliches Baujahr des einzelnen Fahrzeugs | Eine Gegenwartswelt kann auch Fahrzeuge aus der Bahnreformzeit zulassen |
+| **Beschaffungs-Epoche** | Jahr, in dem das EVU das Fahrzeug übernimmt | Dasselbe ältere Fahrzeug erscheint 2026 nur noch im belegten Leasing-/Gebrauchtfenster |
+
+Beide Epochen können auch auf **alle Jahre** gestellt werden. Ein alter Typ wird
+davon nicht neu produzierbar: Der Neubau bleibt zusätzlich auf seinen
+dokumentierten Bau- und Marktzeitraum begrenzt. Leasing und Gebrauchtmarkt
+liefern ein bereits gebautes, bereits konfiguriertes Fahrzeug. Das
+`VehicleAsset` hält deshalb je Einzelfahrzeug Welt, Typ, Bau- und
+Beschaffungsjahr, Marktkanal, Eigentum oder Leasing, Zulassungen,
+Wartungsfristen und die tatsächlich eingebaute Zugsicherung.
+
+Der redaktionelle Arbeitsstand vom 8. August 2026 umfasst 48 Fahrzeugtypen und
+63 Quellen. Wikipedia dient als breiter Index; Bauzeiträume und kritische
+Technik werden, soweit verfügbar, mit Betreiber-, Aufgabenträger-, Hersteller-
+oder Fachunterlagen gegengeprüft. Die reale Katalogdatei bleibt als
+proprietäres Weltdatum außerhalb des öffentlichen Baums (E16). Öffentlich sind
+das Schema, die Prüfregeln und rein fiktive Testdaten.
+
+### 2.2 Funktionsentscheidung: optionale Zugsicherung
+
+Eine Zugsicherung ist nur dann wähl- oder nachrüstbar, wenn sie für die
+**genaue Baureihe oder Unterbaureihe** zumindest an einem Teilbestand real
+belegt ist. Eine Beobachtung an einem einzelnen Fahrzeug oder Teilbestand
+reicht als Positivbeleg, weil genau daraus die optionale statt serienmäßige
+Einordnung folgt. Eine verwandte Baureihe, eine allgemeine Produktbroschüre oder
+eine bloß geplante Ausrüstung reicht nicht. Das Release erzwingt hierzu
+Quellenbezüge, die den exakten Fahrzeugtyp abdecken.
+
+| Katalogangabe | Spielerentscheidung | Regel |
+|---------------|----------------------|-------|
+| **Serienausrüstung** | keine | ist immer eingebaut und kann nicht abgewählt oder entfernt werden |
+| **Werksoption** (`FactoryOption`) | beim Neukauf | im belegten Optionszeitraum frei wählbar; außerhalb des Zeitraums und auf dem Sekundärmarkt keine kostenlose Umkonfiguration |
+| **Nachrüstung** (`Retrofit`) | ausdrücklicher Werkstattumbau | nur am belegten exakten Typ und nur im Freigabezeitraum; bereits eingebaute Systeme bleiben erhalten |
+
+Damit bedeutet „teilweise mit LZB/ETCS ausgerüstet“ weder „alle Fahrzeuge haben
+es“ noch „die Baureihe hat es nie“. Beim Neukauf entscheidet der Spieler über
+eine belegte Werksoption. Bei Leasing und Gebrauchtkauf wird dagegen die
+konkrete Ist-Ausrüstung des angebotenen Fahrzeugs übernommen. Eine spätere
+Nachrüstung ist nur zulässig, wenn der Katalog sie für diesen Typ ausdrücklich
+belegt; eine Werksoption allein begründet noch keinen Werkstattumbau.
+
+Das offene Endjahr `9999` bedeutet nach dem frühesten belegten Einbau nur eine
+**spielerische Fortschreibung der technischen Einbaubarkeit**, keine
+Marktprognose. M5.1 entscheidet über Zulässigkeit und hält den eingebauten
+Zustand deterministisch fest. Kosten, Dauer, Werkstattkompetenz und
+Anlagenbelegung werden erst mit M5.7 und M5.14 an den Umbau gebunden.
+
 ## 3. Fahrzeugkonfiguration (E20)
 
 Fahrzeuge werden beim Hersteller **konfiguriert bestellt**, nicht aus einem
@@ -106,7 +167,11 @@ dieselbe Konfliktengine wie alles andere.
 | Bestuhlung, Dichte, Sitzart | Türanzahl und -position |
 | Klassenaufteilung | Wagenkastenlänge, Achsfolge |
 | Mehrzweckbereiche | Antrieb, Höchstgeschwindigkeit |
-| Ausstattung: WLAN, Steckdosen, Information | Zugsicherungsgrundausrüstung |
+| Ausstattung: WLAN, Steckdosen, Information | serienmäßige Zugsicherungsgrundausrüstung |
+
+Nicht serienmäßige Zugsicherung ist der einzige bewusst enger geregelte
+Sonderfall: Sie ist nicht frei umbaubar, sondern folgt der typgenauen
+Werksoptions-/Nachrüstungsentscheidung aus Abschnitt 2.2.
 
 Die Trennung gibt der Erstbestellung bleibendes Gewicht: Wer die Türen falsch
 wählt, korrigiert das nie. Sie erzeugt zugleich einen echten Sekundärmarkt —

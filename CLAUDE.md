@@ -161,8 +161,10 @@ Konten, Rollen und Weltzugänge (`packages/identity`, `apps/game-api`), die
 Weltisolation mit `packages/db`, die EVU-Entität (`packages/operators`), der
 Ledger-Kern (`packages/economy`), das Postfach-Grundgerüst
 (`packages/mailbox`) und Datenschutz (`packages/privacy`), siehe unten.
-**M5.1a und M5.1b sind abgeschlossen:** `crates/zugfolge-fleet` führt die
-Fahrzeugkonfiguration mit Haltezeitwirkung der baulich festen Türen sowie den
+**M5.1 bis M5.1b sind abgeschlossen:** `crates/zugfolge-fleet` führt den
+versionierten Fahrzeugkatalog mit getrennten Bau-/Beschaffungsepochen,
+typgenauen Zugsicherungsoptionen und individuellen Fahrzeugassets sowie die
+Fahrzeugkonfiguration mit Haltezeitwirkung der baulich festen Türen und den
 kostenpflichtigen, kapazitätsbelegenden Werkstattumbau des Innenraums ein.
 
 - **Alpha-Schnitt:** M0 – M9. Alles ab M10 ist Ausbau.
