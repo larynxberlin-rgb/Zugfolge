@@ -200,13 +200,17 @@ Konkret, was nicht übernommen wird — ergänzt E6 um die Gestaltungsseite:
 
 ## 8. Komponenten und Dichte (M3.9)
 
-`packages/design-system` liefert Flächen, Schaltflächen, Zustands-Badges und ein
-eigenes, strichbasiertes Icon-Set für Zug, Konflikt, Ebenen und Navigation. Alle
+`packages/design-system` liefert Flächen, Schaltflächen, Zustands-Badges,
+beschriftete Formfelder, Tabellen, Leerzustände und ein eigenes,
+strichbasiertes Icon-Set für Zug, Konflikt, Zeit, Strecke, Sperrung, Bestätigung,
+Ebenen und Navigation. Alle
 Icons verwenden `currentColor`, tragen entweder eine zugängliche Beschriftung
 oder sind ausdrücklich dekorativ und lassen sich deshalb ohne Farblogik nutzen.
 Die Dichtestufen `control` (Leitstelle) und `document` (Dokument) schalten nur
-Schriftgrad, Zeilenhöhe und Abstand. Die Bildfahrplan-Oberfläche macht den
-Wechsel direkt prüfbar.
+Schriftgrad, Zeilenhöhe, Lesedurchschuss und Abstand. Ein gemeinsamer
+`:focus-visible`-Vertrag, Screenreader-Hilfsklasse und immer beschriftete
+Formfelder sind Teil der Komponentenbasis. Die Bildfahrplan-Oberfläche macht
+den Wechsel direkt prüfbar.
 
 ## 9. Was nach M3 offenbleibt
 

@@ -477,12 +477,16 @@ abgearbeitet:
 | **Offen:** die Fahrdynamik fehlt | `derive_running_time_table_with_exit` (M1.10, um die Bremskurve in den Halt ergänzt) |
 | **Offen:** die betrieblich richtige Auflösung ist ein eigenes Verfahren | der Betriebshalt des Planners (M3.4) — er kreuzt zur Wunschzeit, statt später zu fahren |
 
-**M3.9 und M3.10 tragen:** `packages/design-system` konkretisiert Palette, Komponenten,
-Icons und beide Dichtestufen. `apps/game-web` setzt den konventionellen Bildfahrplan
-mit auswählbaren Zugläufen, zuschaltbarer Sperrzeitentreppe, gemustertem
-Konfliktfenster und einer aus sich heraus verständlichen Konflikterklärung um.
-Farbe bleibt stets durch Text, Symbol oder Musterung redundant. Damit ist M3
-vollständig abgeschlossen.
+**M3.9 und M3.10 tragen:** `packages/design-system` konkretisiert Palette,
+Form-, Tabellen-, Feedback- und Navigationsbausteine, Icons, Fokusvertrag und
+beide Dichtestufen. `apps/game-web` setzt den konventionellen Bildfahrplan auf
+einem typisierten Client-Datenvertrag um: dynamische Weg-/Zeitskalierung,
+Tastatur-Zugauswahl, alle sechs Sperrzeitanteile, mehrere Konflikte sowie
+Zugfolge- und Fahrstraßenausschluss-Erklärungen. Eine angebotene, als
+konfliktfrei hinterlegte Alternative verschiebt Zuglauf und Belegungsprofil
+unveränderlich; unbeteiligte Konflikte bleiben erhalten. Farbe bleibt stets
+durch Text, Symbol oder Musterung redundant. Damit ist M3 vollständig
+abgeschlossen.
 
 ---
 
