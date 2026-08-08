@@ -1,0 +1,15 @@
+[package]
+name = "zugfolge-sim"
+description = "Deterministischer, ereignisgesteuerter Simulationskern von Zugfolge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+zugfolge-determinism.workspace = true
+
+[lints]
+workspace = true

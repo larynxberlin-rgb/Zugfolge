@@ -82,5 +82,7 @@ describe("Weltisolation des Event-Logs (M2.2)", () => {
       "welt.angelegt",
       "zug.abgefahren",
     ]);
+    expect(() => logA.appendBatch([{sequence:4,eventType:"lücke",payload:{},occurredAt:new Date("2026-01-01T07:00:00Z")},{sequence:6,eventType:"lücke",payload:{},occurredAt:new Date("2026-01-01T07:01:00Z")}])).toThrow("Sequenzlücke");
+    await expect(logA.append({sequence:2,eventType:"doppelt",payload:{},occurredAt:new Date("2026-01-01T08:00:00Z")})).rejects.toThrow();
   });
 });

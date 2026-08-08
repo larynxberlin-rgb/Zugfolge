@@ -28,6 +28,13 @@ export function worldEventLog<TDatabase extends AnyDatabase>(db: TDatabase, worl
         .returning();
     },
 
+    /** Hängt einen bereits sequenzierten Kern-Batch atomar an. */
+    appendBatch(events: readonly Omit<NewDomainEvent,"worldId">[]) {
+      if(events.length===0)return Promise.resolve([]);
+      for(let index=1;index<events.length;index+=1){if(events[index]!.sequence!==events[index-1]!.sequence+1)throw new Error("Domain-Ereignisbatch hat eine Sequenzlücke.");}
+      return db.insert(domainEvents).values(events.map(event=>({...event,worldId}))).returning();
+    },
+
     /** Alle Ereignisse dieser Welt, in Reihenfolge ihrer Sequenznummer. */
     list() {
       return db

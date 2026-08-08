@@ -494,17 +494,17 @@ abgeschlossen.
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 4.1 | Ereignisgesteuerter Kern, regionale Single-Writer, expliziter Zeitgeber | L | offen |
-| 4.2 | `TrainRun`-Zustandsmodell, Materialisierungsfenster 48–72 h | M | offen |
-| 4.3 | Verspätungs**propagation**: Regelwiderstände, Haltezeiten, Anschlussverzug. Ereignisursachen kommen erst in M8 — hier geht es um Fortpflanzung, nicht um Entstehung | L | offen |
-| 4.4 | **Dispositionsschnittstelle im Kern**: definierter Entscheidungspunkt je Ereignis, zunächst mit konservativem Standardverhalten. Macht M7 zu einer Implementierung statt zu einer Operation am offenen Herzen | M | offen |
-| 4.5 | Regionsübergabe mit Bestätigungsprotokoll | M | offen |
-| 4.6 | Delta-Streaming: Initialsnapshot, Sequenz-Deltas, Interpolation im Client | M | offen |
-| 4.7 | Eigene Dark-Vector-Tiles, Pipeline → PMTiles — Netz zurückhaltend, Verkehr dominant; ausgeschlossene Netze als blasse Kontextlinien | M | offen |
-| 4.8 | Livemap-Frontend inklusive Zuglaufansicht und Sichtbarkeitsregeln; Zustandsdarstellung nach `design.md` 2.4, **Normalzustand farblos** | L | offen |
-| 4.9 | Event-Log, Replay, Determinismus-Test in CI | M | offen |
-| 4.10 | **Zeitumstellung**: Verhalten der Fahrplanperiode und laufender Zugfahrten beim Sommerzeitwechsel — Pflichtfall im 1:1-Echtzeitbetrieb | S | offen |
-| 4.11 | **Lastmessung gegen die Zielgrößen** aus `architektur.md` | M | offen |
+| 4.1 | Ereignisgesteuerter Kern, regionale Single-Writer, expliziter Zeitgeber | L | erledigt |
+| 4.2 | `TrainRun`-Zustandsmodell, Materialisierungsfenster 48–72 h | M | erledigt |
+| 4.3 | Verspätungs**propagation**: Regelwiderstände, Haltezeiten, Anschlussverzug. Ereignisursachen kommen erst in M8 — hier geht es um Fortpflanzung, nicht um Entstehung | L | erledigt |
+| 4.4 | **Dispositionsschnittstelle im Kern**: definierter Entscheidungspunkt je Ereignis, zunächst mit konservativem Standardverhalten. Macht M7 zu einer Implementierung statt zu einer Operation am offenen Herzen | M | erledigt |
+| 4.5 | Regionsübergabe mit Bestätigungsprotokoll | M | erledigt |
+| 4.6 | Delta-Streaming: Initialsnapshot, Sequenz-Deltas, Interpolation im Client | M | erledigt |
+| 4.7 | Eigene Dark-Vector-Tiles, Pipeline → PMTiles — Netz zurückhaltend, Verkehr dominant; ausgeschlossene Netze als blasse Kontextlinien | M | erledigt |
+| 4.8 | Livemap-Frontend inklusive Zuglaufansicht und Sichtbarkeitsregeln; Zustandsdarstellung nach `design.md` 2.4, **Normalzustand farblos** | L | erledigt |
+| 4.9 | Event-Log, Replay, Determinismus-Test in CI | M | erledigt |
+| 4.10 | **Zeitumstellung**: Verhalten der Fahrplanperiode und laufender Zugfahrten beim Sommerzeitwechsel — Pflichtfall im 1:1-Echtzeitbetrieb | S | erledigt |
+| 4.11 | **Lastmessung gegen die Zielgrößen** aus `architektur.md` | M | erledigt |
 
 > **Beweis:** 200 simulierte Züge laufen 24 Stunden stabil, die Karte zeigt sie
 > flüssig, und ein Replay erzeugt bitgleiche Zustände.

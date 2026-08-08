@@ -22,6 +22,7 @@ import {
   UnbalancedTransactionError,
 } from "@zugfolge/economy";
 import { runHealthChecks, type HealthCheck } from "@zugfolge/health";
+import type { LivemapRegistry } from "@zugfolge/livemap-stream";
 import {
   AccessRevokedError,
   AccountNotFoundError,
@@ -59,6 +60,8 @@ export interface AppDependencies {
    * Health Checks anmelden, statt sie später nachzuziehen.
    */
   readonly extraHealthChecks?: readonly HealthCheck[];
+  /** Öffentlicher, weltisolierter Livemap-Fanout (M4.6). */
+  readonly livemap?: LivemapRegistry;
 }
 
 const worldIdParam = {
@@ -144,6 +147,20 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
   app.get("/health/ready", async (_request, reply) => {
     const report = await runHealthChecks(healthChecks);
     return reply.code(report.status === "down" ? 503 : 200).send(report);
+  });
+
+  app.get<{ Params: { worldId: string } }>("/worlds/:worldId/livemap/snapshot", { schema: { params: worldIdParam } }, async (request) => {
+    return deps.livemap?.forWorld(request.params.worldId).snapshot() ?? { worldId: request.params.worldId, sequence: 0, at: 0, trains: [] };
+  });
+
+  app.get<{ Params: { worldId: string } }>("/worlds/:worldId/livemap/events", { schema: { params: worldIdParam } }, async (request, reply) => {
+    const feed=deps.livemap?.forWorld(request.params.worldId);
+    reply.hijack();
+    reply.raw.writeHead(200,{"content-type":"text/event-stream","cache-control":"no-cache, no-transform","connection":"keep-alive"});
+    if(feed===undefined){reply.raw.end();return;}
+    const unsubscribe=feed.subscribe(delta=>reply.raw.write(`id: ${delta.sequence}\ndata: ${JSON.stringify(delta)}\n\n`));
+    request.raw.on("close",unsubscribe);
+    reply.raw.write(": verbunden\n\n");
   });
 
   // ---------------------------------------------------------------------

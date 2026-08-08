@@ -148,7 +148,14 @@ Anmeldefenster, Koordinierung, Veröffentlichung und Betrieb (M3.6,
 `SchedulePeriod`), die Ad-hoc-Vergabe aus Restkapazität mit Stornierung und
 Verfall bei Nichtnutzung (M3.7, `AdHocLedger`) und die Rahmenverträge mit
 Kapazitätsdeckel (M3.8, `FrameworkAgreement`, `crates/zugfolge-conflict`).
-Das Gestaltungssystem (`packages/design-system`) und der Bildfahrplan mit Sperrzeitentreppe und Konflikterklärung (`apps/game-web`) schließen M3.9 und M3.10 ab.
+Das Gestaltungssystem (`packages/design-system`) und der Bildfahrplan mit
+Sperrzeitentreppe und Konflikterklärung (`apps/game-web`) schließen M3.9 und
+M3.10 ab.
+**M4 ist abgeschlossen: M4.1 bis M4.11 sind erledigt** — der reine regionale
+Single-Writer in `crates/zugfolge-sim`, `TrainRun` und Verspätungsfortpflanzung,
+Dispositions- und Übergabeschnittstelle, sequenziertes Livemap-Protokoll,
+PMTiles-Pipeline und `apps/livemap`, Replay, Zeitumstellung sowie der
+24-Stunden-/200-Züge-Lastbeweis stehen. Siehe `docs/simulation.md`.
 **M2 ist abgeschlossen: M2.1 bis M2.6 sind erledigt** — Keycloak-Integration,
 Konten, Rollen und Weltzugänge (`packages/identity`, `apps/game-api`), die
 Weltisolation mit `packages/db`, die EVU-Entität (`packages/operators`), der
@@ -410,7 +417,8 @@ Ledger-Kern (`packages/economy`), das Postfach-Grundgerüst
   vorgegebenen Kapazität in Basispunkten. Eine Bindung ist alles oder nichts —
   sprengt eine einzige betroffene Ressource ihren Deckel, bindet keine. Siehe
   `docs/infrastruktur.md` 13.
-- **Nächster Schritt:** M4.1 — ereignisgesteuerter Simulationskern mit explizitem Zeitgeber (`docs/milestones.md`).
+- **Nächster Schritt:** M5 — Flotte, Personal, Umläufe und Versorgung
+  (`docs/milestones.md`).
 
 Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` steht unter
 PolyForm Shield 1.0.0, nennt Sebastian Barowski als Rechteinhaber und ist damit
