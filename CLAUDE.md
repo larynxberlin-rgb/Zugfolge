@@ -23,7 +23,7 @@ lesen, nicht raten.
 | `docs/infrastruktur.md` | Konfliktressourcen, Trassenvergabe, Fahrplanperiode, Kapazitätsschutz, Simulation, Livemap | Solver, Sperrzeiten, Planner, Livemap |
 | `docs/betriebsgraph.md` | Domänenmodell der Infrastruktur (M1.1): Bausteine, Zusicherungen, Einheiten, Fingerabdruck, Abgrenzung | am Betriebsgraphen arbeiten, Import, Netzfilter, Blöcke, Fahrstraßen |
 | `docs/betrieb.md` | Betriebsprogramm, Fahrzeuge, Personal, Versorgung, Zusatzfahrten, Störungen, Baustellenfahrplan | Disposition, Flotte, Umläufe, Wartung, Baustellen |
-| `docs/weltgeruest.md` | Weltgerüst (M2): Konten, Rollen, Weltzugänge, Grenze zur Identität bei Keycloak | Konten, Rollen oder Weltzugänge bearbeiten |
+| `docs/weltgeruest.md` | Weltgerüst (M2): Konten, Rollen, Weltzugänge, Grenze zur Identität bei Keycloak, EVU, Ledger-Kern, Postfach, Datenschutz | Konten, Rollen, Weltzugänge, EVU, Ledger, Postfach oder Datenschutz bearbeiten |
 | `docs/wirtschaft.md` | Spielkreislauf, Geschäftsfelder, Nachfrage, Ausschreibung, Eigenbetrieb, Insolvenz, Kooperation | Verträge, Märkte, Geld, Ausschreibungen |
 | `docs/daten.md` | Datenlage OSM/ORM, Quellen, Rechte, Qualitätsklassen | Import-Pipeline, InfraRelease, Lizenzfragen zu Daten |
 | `docs/rechte.md` | Rechte-Gate: Freigabestatus je Datenquelle, Quellenregister, Trassenfinder-Nutzungsbedingungen | eine Datenquelle nutzen oder aufnehmen, Import beginnen (Invariante 8) |
@@ -137,9 +137,11 @@ Stationsdaten-Anreicherung, die Zugcharakteristik, Fahrdynamik und
 Fahrzeitrechner, der Anlagenkataster, der `InfraRelease` und der Referenzkorpus
 mit Abweichungsreport stehen in `crates/zugfolge-infra`. Damit ist der
 Betriebsgraph samt Infra-Release-Pipeline vollständig.
-**M2 ist begonnen: M2.1 und M2.2 sind erledigt** — Keycloak-Integration,
-Konten, Rollen und Weltzugänge (`packages/identity`, `apps/game-api`) sowie
-die Weltisolation mit `packages/db`, siehe unten.
+**M2 ist abgeschlossen: M2.1 bis M2.6 sind erledigt** — Keycloak-Integration,
+Konten, Rollen und Weltzugänge (`packages/identity`, `apps/game-api`), die
+Weltisolation mit `packages/db`, die EVU-Entität (`packages/operators`), der
+Ledger-Kern (`packages/economy`), das Postfach-Grundgerüst
+(`packages/mailbox`) und Datenschutz (`packages/privacy`), siehe unten.
 
 - **Alpha-Schnitt:** M0 – M9. Alles ab M10 ist Ausbau.
 - **Kritischer Pfad:** M0.3 → M1 → M3 → M4 → M7. Die ersten Schritte sind geführt.
@@ -283,8 +285,42 @@ die Weltisolation mit `packages/db`, siehe unten.
   eingebettete Postgres-Instanz (PGlite) beweist, dass zwei Welten einander
   nie sehen — nicht nur, dass das Schema es verspricht. Invariante 4 ist damit
   seit M0.2 durchgesetzt und seit M2.2 vollständig bewiesen.
-- **Nächster Schritt:** die übrigen Teilabschnitte von M2 — EVU-Entität
-  (M2.3), Ledger-Kern (M2.4), Postfach (M2.5) und Datenschutz (M2.6)
+- **M2.3 steht:** `packages/operators` gründet ein EVU (`Operator`) für ein
+  bestehendes Konto und ordnet es Welt und gründendem Konto zu
+  (`packages/db/src/schema/operators.ts`). Ein Konto kann mehrere EVU
+  gründen; der Unternehmensname ist je Welt eindeutig (E6), nicht global.
+  Die EVU-Liste einer Welt trägt denselben Belegungstest wie die Kontoliste
+  aus M2.1: nur für Mitglieder dieser Welt sichtbar. Siehe
+  `docs/weltgeruest.md` Abschnitt 7.
+- **M2.4 steht:** `packages/economy` ist der Ledger-Kern — Integer-Cent als
+  `bigint`, unveränderlich (nur Einfügen und Lesen, kein `update`, kein
+  `delete`, wie das Event-Log aus M2.2), ausgeglichen (`postLedgerTransaction`
+  weist jede Transaktion zurück, deren Buchungen nicht exakt null Cent
+  ergeben) und doppelt geführt (mindestens zwei Buchungen je Transaktion, auf
+  Konten desselben EVU). Die Ausgeglichenheit ist mit `fast-check`
+  property-getestet — sowohl rein (`balance.property.test.ts`) als auch gegen
+  eine echte Datenbank über beliebig viele Transaktionen
+  (`ledger.test.ts`). `packages/economy/**` unterliegt der Wächterregel
+  `no-wallclock`: Zeitpunkte sind explizite Werte des Aufrufers, nie aus der
+  Systemuhr gelesen. Siehe `docs/weltgeruest.md` Abschnitt 8.
+- **M2.5 steht:** `packages/mailbox` liefert das Postfach-Grundgerüst —
+  Nachrichten mit generischem `messageType` und `payload` (jsonb), optionaler
+  Frist (`deadlineAt`) und Quittierung (`acknowledgedAt`). Nur der Empfänger
+  quittiert, nie stellvertretend ein Weltverwalter; wiederholte Quittierung
+  ist ein Kein-Op. Trassenangebote, Ausschreibungen und Störungsmeldungen
+  (spätere Milestones) sind je ein `messageType`, keine eigene Tabelle. Siehe
+  `docs/weltgeruest.md` Abschnitt 9.
+- **M2.6 steht:** `packages/privacy` trägt Auskunft (`exportAccountData` —
+  Konto, Weltzugangsstatus, eigene EVU, Postfach an einer Stelle) und Löschung
+  (`eraseAccountData` — Anzeigename anonymisiert, `accounts.erasedAt`
+  gesetzt, Weltzugang entzogen; das Konto selbst bleibt bestehen, wie bei
+  einer Insolvenz, E8). `revokeWorldAccess` (`packages/identity`) trägt dafür
+  seit M2.6 eine Selbstbedienungs-Ausnahme: Eine Identität entzieht sich
+  jederzeit selbst den Zugang. `packages/privacy/src/retention.ts` hält
+  Aufbewahrungsfristen je Datenkategorie fest — Ledger und Event-Log bleiben
+  unbefristet und außerhalb der Löschung, weil beide unveränderlich sind und
+  keine natürliche Person tragen. Siehe `docs/weltgeruest.md` Abschnitt 10.
+- **Nächster Schritt:** M3 — Sperrzeiten, Konfliktengine, Trassenvergabe
   (`docs/milestones.md`).
 
 Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` steht unter

@@ -27,6 +27,8 @@ export interface AccountRecord {
   readonly keycloakSubject: string;
   readonly displayName: string;
   readonly createdAt: Date;
+  /** Zeitpunkt einer Datenschutzlöschung (M2.6); `null` heißt unangetastet. */
+  readonly erasedAt: Date | null;
   readonly roles: readonly Role[];
 }
 
@@ -79,6 +81,19 @@ async function findAccount(
 }
 
 /**
+ * Das Konto eines Keycloak-Subjects in genau einer Welt, samt Rollen — oder
+ * `undefined`, wenn keins existiert. Grundlage für Pakete, die auf ein
+ * bestehendes Konto aufbauen (`packages/operators`, `packages/privacy`),
+ * ohne die interne Kontosuche zu duplizieren.
+ */
+export async function getAccount(
+  db: IdentityDatabase,
+  input: { readonly worldId: string; readonly keycloakSubject: string },
+): Promise<AccountRecord | undefined> {
+  return findAccount(db, input.worldId, input.keycloakSubject);
+}
+
+/**
  * Selbstbedienter Weltzugang: legt bei Bedarf Zugang, Konto und die Rolle
  * `player` an. Ein zuvor entzogener Zugang wird **nicht** stillschweigend
  * reaktiviert — das bleibt einer bewussten administrativen Handlung
@@ -122,6 +137,11 @@ export async function requestWorldAccess(
 /**
  * Entzieht einer Identität den Zugang zu einer Welt. Das Konto selbst und
  * seine Betriebshistorie bleiben bestehen (E8).
+ *
+ * Zwei Wege dorthin: die handelnde Identität ist Weltverwalter — oder sie
+ * entzieht sich **ausschließlich sich selbst** den Zugang (Selbstbedienung,
+ * genutzt von `packages/privacy` für die Löschung nach M2.6). Dritte kann nur
+ * ein Weltverwalter abmelden.
  */
 export async function revokeWorldAccess(
   db: IdentityDatabase,
@@ -131,7 +151,9 @@ export async function revokeWorldAccess(
     readonly actingKeycloakSubject: string;
   },
 ): Promise<void> {
-  await requireWorldAdmin(db, input.worldId, input.actingKeycloakSubject);
+  if (input.actingKeycloakSubject !== input.targetKeycloakSubject) {
+    await requireWorldAdmin(db, input.worldId, input.actingKeycloakSubject);
+  }
   await db
     .update(worldAccesses)
     .set({ status: "revoked", revokedAt: new Date() })

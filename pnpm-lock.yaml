@@ -13,9 +13,21 @@ importers:
       '@zugfolge/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@zugfolge/economy':
+        specifier: workspace:*
+        version: link:../../packages/economy
       '@zugfolge/identity':
         specifier: workspace:*
         version: link:../../packages/identity
+      '@zugfolge/mailbox':
+        specifier: workspace:*
+        version: link:../../packages/mailbox
+      '@zugfolge/operators':
+        specifier: workspace:*
+        version: link:../../packages/operators
+      '@zugfolge/privacy':
+        specifier: workspace:*
+        version: link:../../packages/privacy
       fastify:
         specifier: ^5.11.2
         version: 5.11.2
@@ -64,6 +76,37 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
 
+  packages/economy:
+    dependencies:
+      '@zugfolge/db':
+        specifier: workspace:*
+        version: link:../db
+      '@zugfolge/operators':
+        specifier: workspace:*
+        version: link:../operators
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@electric-sql/pglite@0.5.4)(@types/pg@8.20.4)(pg@8.22.0)(postgres@3.4.9)
+    devDependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.5.4
+        version: 0.5.4
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
+      '@zugfolge/identity':
+        specifier: workspace:*
+        version: link:../identity
+      fast-check:
+        specifier: ^4.9.0
+        version: 4.9.0
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
+
   packages/identity:
     dependencies:
       '@zugfolge/db':
@@ -82,6 +125,87 @@ importers:
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
+
+  packages/mailbox:
+    dependencies:
+      '@zugfolge/db':
+        specifier: workspace:*
+        version: link:../db
+      '@zugfolge/identity':
+        specifier: workspace:*
+        version: link:../identity
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@electric-sql/pglite@0.5.4)(@types/pg@8.20.4)(pg@8.22.0)(postgres@3.4.9)
+    devDependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.5.4
+        version: 0.5.4
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
+
+  packages/operators:
+    dependencies:
+      '@zugfolge/db':
+        specifier: workspace:*
+        version: link:../db
+      '@zugfolge/identity':
+        specifier: workspace:*
+        version: link:../identity
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@electric-sql/pglite@0.5.4)(@types/pg@8.20.4)(pg@8.22.0)(postgres@3.4.9)
+    devDependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.5.4
+        version: 0.5.4
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
+
+  packages/privacy:
+    dependencies:
+      '@zugfolge/db':
+        specifier: workspace:*
+        version: link:../db
+      '@zugfolge/identity':
+        specifier: workspace:*
+        version: link:../identity
+      '@zugfolge/mailbox':
+        specifier: workspace:*
+        version: link:../mailbox
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@electric-sql/pglite@0.5.4)(@types/pg@8.20.4)(pg@8.22.0)(postgres@3.4.9)
+    devDependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.5.4
+        version: 0.5.4
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
+      '@zugfolge/operators':
+        specifier: workspace:*
+        version: link:../operators
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -1016,6 +1140,10 @@ packages:
     resolution: {integrity: sha512-KfYbmpRm0VbLjEvVa9yGwCi9GI34xvi7A/HXYWQO65CSD2u3MczUJSuwXKFIxlGsgBQizV9q5J9NHj4VG0n+pA==}
     engines: {node: '>=12.0.0'}
 
+  fast-check@4.9.0:
+    resolution: {integrity: sha512-7ms6T7SybUev/PQITciI0yLM2pOSFy5zpG8Ty7tQofcVaQUvrMXp6CBwqF6fThLCLOrfBtuHAtwq6Yu4XPCllg==}
+    engines: {node: '>=12.17.0'}
+
   fast-decode-uri-component@1.0.1:
     resolution: {integrity: sha512-WKgKWg5eUxvRZGwW8FvfbaH7AXSh2cL+3j5fMGzUMCxWBJ3dV3a7Wz8y2f/uQ0e3B6WmodD3oS54jTQ9HVTIIg==}
 
@@ -1250,6 +1378,9 @@ packages:
 
   process-warning@5.1.0:
     resolution: {integrity: sha512-jQSaVHsPgtyw60e1rQ/A+/ArPEj/S8pS/vFnyGa/gYFXrKk/6RuDkoqVDQ5NI5MmS01698ltlAk0NoDBNLujRw==}
+
+  pure-rand@8.4.2:
+    resolution: {integrity: sha512-vvuOGgcuPJAirlHvuQw1TrOiw7ptaIXXmIbNuiNOY6lNGJJH49PQ1Kj4nd783nPdQhQdicgOjVI2yI/9BD6/Ng==}
 
   quick-format-unescaped@4.0.4:
     resolution: {integrity: sha512-tYC1Q1hgyRuHgloV/YXs2w15unPVh8qfu/qCTfhTYamaw7fyhumKa2yGpdSo87vY32rIclj+4fWYQXUMs9EHvg==}
@@ -2032,6 +2163,10 @@ snapshots:
 
   expect-type@1.4.0: {}
 
+  fast-check@4.9.0:
+    dependencies:
+      pure-rand: 8.4.2
+
   fast-decode-uri-component@1.0.1: {}
 
   fast-deep-equal@3.1.3: {}
@@ -2260,6 +2395,8 @@ snapshots:
   process-warning@4.0.1: {}
 
   process-warning@5.1.0: {}
+
+  pure-rand@8.4.2: {}
 
   quick-format-unescaped@4.0.4: {}
 

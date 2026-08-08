@@ -1,30 +1,28 @@
 {
-  "name": "@zugfolge/game-api",
+  "name": "@zugfolge/privacy",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Game-API: Keycloak-Authentifizierung, Konten, Rollen, Weltzugänge, EVU, Ledger, Postfach, Datenschutz (M2)",
+  "description": "Datenschutz: Datenminimierung, Auskunft, Löschung, Aufbewahrungsfristen (M2.6)",
   "license": "LicenseRef-PolyForm-Shield-1.0.0",
+  "exports": {
+    ".": "./dist/index.js"
+  },
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "start": "node dist/server.js"
+    "test": "vitest run"
   },
   "dependencies": {
     "@zugfolge/db": "workspace:*",
-    "@zugfolge/economy": "workspace:*",
     "@zugfolge/identity": "workspace:*",
     "@zugfolge/mailbox": "workspace:*",
-    "@zugfolge/operators": "workspace:*",
-    "@zugfolge/privacy": "workspace:*",
-    "fastify": "^5.11.2"
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.4",
     "@types/node": "^24.13.3",
-    "drizzle-orm": "^0.45.2",
-    "jose": "^6.2.8",
+    "@zugfolge/operators": "workspace:*",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }

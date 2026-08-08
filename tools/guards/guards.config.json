@@ -57,7 +57,7 @@
     {
       "id": "economy",
       "title": "Wirtschaft, Ledger, Verträge, Ausschreibungen (M2.4, M6)",
-      "status": "planned",
+      "status": "active",
       "paths": ["packages/economy/**", "packages/tender/**", "apps/economy-service/**"],
       "rules": ["no-payment-tier", "no-wallclock", "no-random"]
     },

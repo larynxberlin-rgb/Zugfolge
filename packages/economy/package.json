@@ -1,0 +1,29 @@
+{
+  "name": "@zugfolge/economy",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Ledger-Kern: Integer-Cent, unveränderlich, ausgeglichen, doppelte Buchführung (M2.4)",
+  "license": "LicenseRef-PolyForm-Shield-1.0.0",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@zugfolge/db": "workspace:*",
+    "@zugfolge/operators": "workspace:*",
+    "drizzle-orm": "^0.45.2"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.4",
+    "@types/node": "^24.13.3",
+    "@zugfolge/identity": "workspace:*",
+    "fast-check": "^4.9.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}
