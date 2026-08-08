@@ -1,0 +1,36 @@
+:root {
+  color-scheme: dark;
+  --zf-canvas: #090b10;
+  --zf-surface-1: #11141b;
+  --zf-surface-2: #181c25;
+  --zf-surface-3: #202530;
+  --zf-line: #343b49;
+  --zf-line-strong: #596274;
+  --zf-text: #f1f3f7;
+  --zf-text-muted: #a5adba;
+  --zf-text-faint: #747d8c;
+  --zf-attention: #f0b75a;
+  --zf-attention-soft: #342a1b;
+  --zf-danger: #ff715f;
+  --zf-danger-soft: #371d1d;
+  --zf-success: #69d5c1;
+  --zf-success-soft: #16302e;
+  --zf-focus: #9fb8e8;
+  --zf-radius: 3px;
+  font-family: "IBM Plex Sans", Inter, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--zf-canvas); color: var(--zf-text); }
+[data-density="control"] { --zf-space: 8px; --zf-row: 32px; --zf-font: 12px; }
+[data-density="document"] { --zf-space: 16px; --zf-row: 44px; --zf-font: 15px; }
+.zf-surface { background: var(--zf-surface-1); border: 1px solid var(--zf-line); border-radius: var(--zf-radius); }
+.zf-button { min-height: var(--zf-row); padding: 0 calc(var(--zf-space) * 1.25); border: 1px solid var(--zf-line); border-radius: var(--zf-radius); background: var(--zf-surface-2); color: var(--zf-text); font: inherit; cursor: pointer; }
+.zf-button:hover { border-color: var(--zf-line-strong); background: var(--zf-surface-3); }
+.zf-button:focus-visible { outline: 2px solid var(--zf-focus); outline-offset: 2px; }
+.zf-badge { display: inline-flex; gap: 6px; align-items: center; padding: 3px 7px; border: 1px solid var(--zf-line); border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: .02em; }
+.zf-badge svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.zf-badge--neutral { color: var(--zf-text-muted); }
+.zf-badge--attention { color: var(--zf-attention); background: var(--zf-attention-soft); border-color: #72572f; }
+.zf-badge--danger { color: var(--zf-danger); background: var(--zf-danger-soft); border-color: #7b3b36; }
+.zf-badge--success { color: var(--zf-success); background: var(--zf-success-soft); border-color: #32665f; }

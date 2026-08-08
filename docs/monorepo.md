@@ -22,8 +22,10 @@ packages/                   TypeScript — fachliche Bibliotheken (ab M2)
   mailbox/                  Postfach-Grundgerüst: Nachrichten, Fristen, Quittierung (M2.5)
   privacy/                  Datenschutz: Auskunft, Löschung, Aufbewahrungsfristen (M2.6)
   health/                   Health-Check-Vertrag und Aggregation für Status-/Monitoringdienste, Grundlage für M9.5
+  design-system/            Palette, Komponenten, Icons und Dichtestufen (M3.9)
 apps/                       TypeScript — Dienste und Frontend (ab M2 / M4)
   game-api/                 Fastify-Dienst: Authentifizierung, Weltzugang, EVU, Ledger, Postfach, Datenschutz (M2)
+  game-web/                 Bildfahrplan, Sperrzeitentreppe und Konflikterklärung (M3.10)
 spikes/                     Wegwerf-Code mit Verfallsdatum — derzeit leer
 tools/                      Werkzeuge für CI und Entwicklung
   guards/                   die Wächter der harten Invarianten
