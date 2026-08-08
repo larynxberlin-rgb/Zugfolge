@@ -149,10 +149,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "zugfolge-load"
+version = "0.0.0"
+dependencies = [
+ "zugfolge-sim",
+]
+
+[[package]]
 name = "zugfolge-planner"
 version = "0.0.0"
 dependencies = [
  "zugfolge-conflict",
  "zugfolge-determinism",
  "zugfolge-infra",
+]
+
+[[package]]
+name = "zugfolge-sim"
+version = "0.0.0"
+dependencies = [
+ "zugfolge-determinism",
 ]

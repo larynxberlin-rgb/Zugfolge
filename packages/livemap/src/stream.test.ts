@@ -1,0 +1,4 @@
+import { describe,expect,it,vi } from "vitest";
+import { LivemapFeed, LivemapRegistry } from "./stream.js";
+const train={id:"7",operator:"EVU",trainNumber:"RE 7",category:"regional",positionMm:1,speedMmPerSecond:2,delaySeconds:0,nextOperatingPoint:"Halle",status:"running"};
+describe("LivemapFeed",()=>{it("sequenziert, materialisiert und verteilt Deltas",()=>{const feed=new LivemapFeed("welt-a");const listener=vi.fn();feed.subscribe(listener);expect(feed.publish({at:10,changed:[train],removed:[]}).sequence).toBe(1);expect(feed.snapshot().trains).toEqual([train]);feed.publish({at:20,changed:[],removed:["7"]});expect(feed.snapshot().trains).toEqual([]);expect(listener).toHaveBeenCalledTimes(2);});it("isoliert Welten",()=>{const registry=new LivemapRegistry();registry.forWorld("a").publish({at:1,changed:[train],removed:[]});expect(registry.forWorld("b").snapshot().trains).toEqual([]);});});

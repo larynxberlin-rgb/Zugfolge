@@ -1,0 +1,8 @@
+{
+  "name": "@zugfolge/livemap",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "tsc --noEmit && vite build", "typecheck": "tsc --noEmit", "test": "vitest run" },
+  "devDependencies": { "vite": "8.2.0", "typescript": "7.0.2", "vitest": "4.1.10" }
+}

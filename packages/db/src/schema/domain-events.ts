@@ -1,4 +1,4 @@
-import { bigint, index, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { bigint, index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 import { worlds } from "./worlds.js";
 
@@ -24,7 +24,7 @@ export const domainEvents = pgTable(
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
   },
   (table) => [
-    index("domain_events_world_sequence_idx").on(table.worldId, table.sequence),
+    uniqueIndex("domain_events_world_sequence_idx").on(table.worldId, table.sequence),
     index("domain_events_world_type_idx").on(table.worldId, table.eventType),
   ],
 );

@@ -1,6 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import { MIGRATIONS_FOLDER, schema, worlds } from "@zugfolge/db";
 import { verifyIdentityToken, type IdentityDatabase } from "@zugfolge/identity";
+import { LivemapRegistry } from "@zugfolge/livemap-stream";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
@@ -18,6 +19,7 @@ let client: PGlite;
 let db: IdentityDatabase;
 let app: FastifyInstance;
 let sign: (subject: string, displayName: string) => Promise<string>;
+let livemap: LivemapRegistry;
 
 beforeEach(async () => {
   client = new PGlite();
@@ -48,9 +50,11 @@ beforeEach(async () => {
       .setExpirationTime("1h")
       .sign(privateKey);
 
+  livemap = new LivemapRegistry();
   app = buildApp({
     db,
     verifyToken: (token) => verifyIdentityToken(token, jwks, { issuer: ISSUER, audience: AUDIENCE }),
+    livemap,
   });
   await app.ready();
 });
@@ -67,6 +71,8 @@ describe("GET /health", () => {
     expect(response.json()).toEqual({ status: "ok" });
   });
 });
+
+describe("Livemap (M4.6)",()=>{it("liefert den öffentlichen, weltisolierten Initialsnapshot",async()=>{livemap.forWorld(WORLD_LHE).publish({at:42,changed:[{id:"1",operator:"EVU",trainNumber:"RE 1",category:"regional",positionMm:5,speedMmPerSecond:2,delaySeconds:0,nextOperatingPoint:"Halle",status:"running"}],removed:[]});const response=await app.inject({method:"GET",url:`/worlds/${WORLD_LHE}/livemap/snapshot`});expect(response.statusCode).toBe(200);expect(response.json<{worldId:string;sequence:number;trains:unknown[]}>()).toMatchObject({worldId:WORLD_LHE,sequence:1});expect(response.json<{trains:unknown[]}>().trains).toHaveLength(1);const other=await app.inject({method:"GET",url:`/worlds/${WORLD_MIDDLE_GERMANY}/livemap/snapshot`});expect(other.json<{trains:unknown[]}>().trains).toEqual([]);});});
 
 describe("GET /health/ready", () => {
   it("meldet den aggregierten Zustand aller Health Checks ohne Authentifizierung", async () => {
