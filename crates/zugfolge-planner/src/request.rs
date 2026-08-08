@@ -177,6 +177,12 @@ impl PathTolerances {
     }
 
     /// Wie viele zusätzliche Betriebshalte zumutbar sind.
+    ///
+    /// Der Planner aus M3.4 legt je Kandidat höchstens **einen** Betriebshalt
+    /// ein; ein Wert über eins wirkt derzeit wie eins. Mehrere Kreuzungen auf
+    /// einem Laufweg sind ein Fall für die Koordinierung aus M3.5, weil sie
+    /// nicht mehr unabhängig voneinander zu wählen sind. Null verbietet den
+    /// Betriebshalt.
     pub const fn max_operational_stops(&self) -> u32 {
         self.max_operational_stops
     }

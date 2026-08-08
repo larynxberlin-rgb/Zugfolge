@@ -363,13 +363,11 @@ impl<'a> TrainPathPlanner<'a> {
                 let angebot = self.angebot(request, laufweg, profil, shift)?;
                 let abfahrt = request.desired_departure().plus_seconds(shift);
                 if self.erste_kollision(ledger, &angebot, abfahrt).is_none() {
+                    let erste_abfahrt = self.erste_abfahrt(&angebot, abfahrt);
                     kandidaten.push(PathCandidate::new(
                         angebot,
                         CandidateDeviation::new(shift, mehrfahrzeit, Vec::new(), umweg),
-                        self.erste_abfahrt(
-                            &self.angebot(request, laufweg, profil, shift)?,
-                            abfahrt,
-                        ),
+                        erste_abfahrt,
                     ));
                     continue;
                 }
@@ -554,7 +552,12 @@ impl<'a> TrainPathPlanner<'a> {
     ) -> Option<DayConflict> {
         let tag0 = departure.seconds().div_euclid(SECONDS_PER_DAY);
         for tag in tag0..tag0.saturating_add(self.options.horizon_days) {
-            let fahrt = pattern.materialise(tag)?;
+            // Ein Tag ohne Verkehr wird übersprungen, nicht als konfliktfrei
+            // gewertet — sonst bliebe bei einem Angebot Montag bis Freitag
+            // alles nach dem ersten Samstag ungeprüft.
+            let Some(fahrt) = pattern.materialise(tag) else {
+                continue;
+            };
             let bericht = ledger.check(&fahrt);
             if !bericht.is_clear() {
                 return Some(DayConflict {

@@ -14,7 +14,7 @@ use zugfolge_conflict::{
         talheim_bis_nordstadt,
     },
 };
-use zugfolge_conflict::{OperatingDays, RelativeOccupation};
+use zugfolge_conflict::{OperatingDays, RelativeOccupation, Weekday};
 use zugfolge_determinism::SimTime;
 use zugfolge_infra::{OperatingPointId, TrackId, TrainCharacteristics};
 use zugfolge_planner::{
@@ -111,6 +111,77 @@ fn buch_mit_gegenzug(infra: &Infrastructure) -> OccupationLedger {
         ));
     }
     buch
+}
+
+/// Derselbe Antrag mit wählbaren Verkehrstagen.
+fn antrag_mit_tagen(
+    zug: TrainCharacteristics,
+    von: u32,
+    nach: u32,
+    toleranz: PathTolerances,
+    tage: OperatingDays,
+) -> PathRequest {
+    PathRequest::new(
+        PathRequestId::new(1),
+        TrainNumber::new(TrainCategory::Regional, 26_802).expect("gültige Zugnummer"),
+        zug,
+        OperatingPointId::new(von),
+        OperatingPointId::new(nach),
+        Vec::new(),
+        SimTime::from_seconds(WUNSCH_S),
+        tage,
+        toleranz,
+    )
+    .expect("gültiger Antrag")
+}
+
+#[test]
+fn ein_verkehrsfreier_tag_beendet_die_pruefung_nicht() {
+    // Die Weltepoche ist ein Montag. Ein Angebot, das montags und mittwochs
+    // fährt, hat am Dienstag keinen Verkehr. Bräche die Prüfung dort ab, bliebe
+    // der Mittwoch ungeprüft — und ein Konflikt an ihm ginge als Annahme durch.
+    let infra = reference_infrastructure();
+    let planner = TrainPathPlanner::new(&infra);
+
+    let hin = nordstadt_bis_talheim(&infra);
+    let zurueck = talheim_bis_nordstadt(&infra);
+    let (hin_von, hin_bis) = ast_fenster(&infra, &hin);
+    let (zurueck_von, zurueck_bis) = ast_fenster(&infra, &zurueck);
+    let versatz = (hin_von + hin_bis) / 2 - (zurueck_von + zurueck_bis) / 2;
+    let profil =
+        derive_occupation_profile(&infra, &zurueck, &regional_train()).expect("gültiges Profil");
+
+    // Der Gegenzug fährt **nur am Mittwoch** — also hinter dem verkehrsfreien
+    // Dienstag des Antrags.
+    let mut buch = OccupationLedger::new(infra.exclusions().clone());
+    buch.insert(&TrainRun::new(
+        TrainNumber::new(TrainCategory::Regional, 26_801).expect("gültige Zugnummer"),
+        SimTime::from_seconds(2 * 86_400 + WUNSCH_S + versatz),
+        &profil,
+    ));
+
+    let montags_und_mittwochs =
+        OperatingDays::from_days([Weekday::Monday, Weekday::Wednesday]).expect("gültige Tage");
+    let ergebnis = planner
+        .plan(
+            &buch,
+            &antrag_mit_tagen(
+                regional_train(),
+                NORDSTADT,
+                TALHEIM,
+                PathTolerances::EXACT,
+                montags_und_mittwochs,
+            ),
+        )
+        .expect("planbar");
+
+    assert_eq!(
+        ergebnis.decision(),
+        PathDecision::Rejected,
+        "der Konflikt am Mittwoch wurde übersehen — die Prüfung hat am \
+         verkehrsfreien Dienstag abgebrochen: {}",
+        ergebnis.explain()
+    );
 }
 
 #[test]
