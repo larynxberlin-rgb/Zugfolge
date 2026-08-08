@@ -73,9 +73,9 @@ der Überblick; die Spalte `id` ist die Kennung, die auch der Importmarker nennt
 |------|--------|--------|----|
 | `osm-pbf-lhe` | OSM-PBF-Extract Leipzig–Halle–Erfurt | `freigegeben` | M1.2 |
 | `openrailwaymap-doku` | OpenRailwayMap — Tagging- und Signaldokumentation | `entwicklung` | M1.6 |
-| `openstation` | OpenStation — Stationsdaten | `pruefung` | M1.8 |
-| `stada` | StaDa — Stationsdaten | `pruefung` | M1.8 |
-| `dem-hoehenmodell` | Digitales Höhenmodell der Pilotregion | `pruefung` | M1.5 |
+| `openstation` | OpenStation — Stationsdaten | `freigegeben` | M1.8 |
+| `stada` | StaDa — Stationsdaten | `freigegeben` | M1.8 |
+| `dem-hoehenmodell` | Digitales Höhenmodell der Pilotregion | `freigegeben` | M1.5 |
 | `trassenfinder` | Trassenfinder — Trassenpreis- und Fahrzeitstruktur | `entwicklung` | M1.13 |
 | `entgeltregeln-tps-sps-aps-inb` | Entgeltregeln (TPS, SPS, APS, INB, Anlagen-/Stationspreise) | `gesperrt` | M6.1 |
 | `baustellen-stoerungsfeeds` | reale Baustellen- und Störungsfeeds | `gesperrt` | M8.12 |
@@ -84,19 +84,21 @@ der Überblick; die Spalte `id` ist die Kennung, die auch der Importmarker nennt
 | `tpn` | TPN — Trassenportal Netz | `ausgeschlossen` | — |
 | `oeffentliche-tiles-nominatim` | öffentliche OSM-/ORM-Tiles und öffentliches Nominatim | `ausgeschlossen` | M4.7 |
 
-**Was heute trägt.** Nur `osm-pbf-lhe` ist `freigegeben` — die ODbL erlaubt
-Nutzung mit Namensnennung und Share-alike, und mehr braucht die Pilotregion für
+**Was heute trägt.** `osm-pbf-lhe` ist `freigegeben` — die ODbL erlaubt Nutzung
+mit Namensnennung und Share-alike, und mehr braucht die Pilotregion für
 Geometrie und Railway-Tags nicht. Das ist Absicht: `daten.md` verlangt, dass die
-Region **allein mit OSM-Extract und eigenen Regeln** spielbar ist. Alles andere
-wird abgeleitet, nicht importiert.
+Region **allein mit OSM-Extract und eigenen Regeln** spielbar ist. Ergänzend
+sind `openstation` (CC0), `stada` (CC BY 4.0) und `dem-hoehenmodell` (Copernicus
+DEM Data Access and Use Terms) seit dem 2026-08-08 `freigegeben` — die Rechte
+sind geklärt, konkreter Bezugsweg, Version, Prüfsumme, Attributionstext und
+Feldmapping werden erst beim jeweiligen Import (M1.8 beziehungsweise M1.5) im
+`InfraRelease` festgehalten, wie schon bei `osm-pbf-lhe`.
 
 **Was blockiert bleibt.** `rinf`, `entgeltregeln-tps-sps-aps-inb` und
 `baustellen-stoerungsfeeds` warten auf eine schriftliche Entscheidung
 beziehungsweise einen Vertrag. `pathos`, `tpn` und `oeffentliche-tiles-nominatim`
 sind ausgeschlossen — teils rechtlich, teils weil ein externer Dienst im heißen
-Pfad ohnehin Invariante 6 verletzt. `openstation`, `stada` und `dem-hoehenmodell`
-stehen in Prüfung, bis Version, Bereitstellungsweg, Lizenz, Attribution und
-Feldmapping geklärt sind.
+Pfad ohnehin Invariante 6 verletzt.
 
 ---
 
