@@ -15,6 +15,7 @@ crates/                     Rust — Simulationskern, Solver, Release-Pipeline
   zugfolge-conflict/        Sperrzeiten, Belegungsprofile, Konfliktprüfung (M3.1–M3.3), Rahmenverträge (M3.8)
   zugfolge-planner/         Trassen-Planner (M3.4), PlanningRun, Fahrplanperiode, Ad-hoc-Trassen (M3.5–M3.7)
   zugfolge-sim/             Ereigniskern, TrainRun, Regionsübergabe, Replay und Livemap-Protokoll (M4)
+  zugfolge-fleet/           Fahrzeugkatalog, individuelle Flotte, Konfiguration und Werkstattumbau (M5.1–M5.1b)
 packages/                   TypeScript — fachliche Bibliotheken (ab M2)
   db/                       Postgres-Zugriff über Drizzle, Wurzel der Weltisolation (M2.2)
   identity/                 Konten, Rollen, Weltzugänge; Keycloak-Verifikation (M2.1)
@@ -71,6 +72,13 @@ und `path-allocation`, Abschnitt 3), weil für die Trassenvergabe eine Regel
 gilt, die für den Prüfer keinen Sinn ergibt: Reihenfolge und Bezahlstatus
 dürfen das Ergebnis nicht beeinflussen. Siehe
 [`infrastruktur.md`](infrastruktur.md) 6 bis 9.
+
+Seit **M5.1** hält `zugfolge-fleet` bewusst zwei Ebenen auseinander: Der
+versionierte `VehicleCatalogRelease` beschreibt Typen, Quellen, Bau-/Marktzeiten
+und belegte Zugsicherungsoptionen; `VehicleAsset` und `FleetSnapshot` halten
+den individuellen, weltgebundenen Zustand. Die echte redaktionelle
+Katalogdatei bleibt als proprietäres Weltdatum außerhalb dieses öffentlichen
+Baums (E16). Im Crate liegen nur Schema, Regeln und fiktive Testdaten.
 
 **`spikes/` ist Wegwerf-Code, und zwar mit ausgesprochenem Verfallsdatum.** Ein
 Spike hat eine Frage zu beantworten und danach zu verschwinden; bleibt er
@@ -159,7 +167,7 @@ Liste ist keine vollständige Karte des Repositoriums, sondern die Zuordnung
 | Domäne | Pfade | Status | Was dort besonders gilt |
 |--------|-------|--------|-------------------------|
 | `determinism-core` | `crates/zugfolge-determinism/**` | aktiv | ganzzahlig, uhrfrei, geordnet — der Harnisch muss selbst halten, was er prüft |
-| `simulation-core` | `crates/zugfolge-sim/**`, `crates/zugfolge-conflict/**`, `spikes/**` | aktiv | vollständiger Kernvertrag: kein Bezahlstatus, keine Uhr, keine Datenbank |
+| `simulation-core` | `crates/zugfolge-sim/**`, `crates/zugfolge-conflict/**`, `crates/zugfolge-fleet/**`, `spikes/**` | aktiv | vollständiger Kernvertrag: kein Bezahlstatus, keine Uhr, keine Datenbank |
 | `path-allocation` | `crates/zugfolge-planner/**`, `packages/path-allocation/**` | aktiv | Reihenfolge und Bezahlstatus beeinflussen das Ergebnis nicht (E4, `infrastruktur.md` 2) |
 | `dispatch` | `crates/zugfolge-rules/**`, `packages/dispatch/**` | geplant | das Betriebsprogramm wirkt offline und für alle gleich (E2, E13) |
 | `demand` | `packages/demand/**`, `crates/zugfolge-demand/**` | geplant | Nachfrage folgt dem Angebot, nie dem Vertrag des Spielers |

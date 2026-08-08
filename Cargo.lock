@@ -144,6 +144,7 @@ dependencies = [
 name = "zugfolge-fleet"
 version = "0.0.0"
 dependencies = [
+ "zugfolge-determinism",
  "zugfolge-infra",
 ]
 

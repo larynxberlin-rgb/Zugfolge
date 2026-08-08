@@ -515,7 +515,7 @@ abgeschlossen.
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 5.1 | Fahrzeugkatalog mit **getrennten Feldern für Baureihenbezeichnung und Handelsname**; Fahrzeug als individuelles Asset mit Fristen, Zulassung, Eigentum | M | offen |
+| 5.1 | Fahrzeugkatalog mit **getrennten Feldern für Baureihenbezeichnung und Handelsname**; Fahrzeug als individuelles Asset mit Fristen, Zulassung, Eigentum | M | erledigt |
 | 5.1a | **Fahrzeugkonfiguration** (E20): Sitzaufteilung nach Klassen, Bestuhlungsdichte, Sitzart, Mehrzweckbereiche, Türanzahl und -breite, Ausstattung. **Türen wirken über die Haltezeit in die Simulation** | L | erledigt |
 | 5.1b | **Werkstattumbau**: Innenraum umbaubar, Türen und Wagenkasten baulich fest; kostet Geld und belegt eine Werkstattanlage | M | erledigt |
 | 5.2 | Formationsbildung, **Abbildung auf Zugcharakteristik (M1.9)**, Kompatibilitätsprüfung gegen Strecke, Bahnsteig, Zugsicherung | M | offen |
@@ -531,6 +531,24 @@ abgeschlossen.
 | 5.12 | **Optimierungslücke sichtbar machen** — Differenz zwischen Automatik und Optimum, mit größtem Hebel | M | offen |
 | 5.13 | Durchführbarkeitsprüfung: kein Fahrplan wird freigegeben, der Umlauf, Personal, Wartung oder Versorgung verletzt | M | offen |
 | 5.14 | Beschaffung: **Leasing sofort verfügbar**, Gebrauchtmarkt kurzfristig, Neubestellung über mehrere Perioden frei konfigurierbar | M | offen |
+
+**M5.1 trägt:** `crates/zugfolge-fleet` friert Typen als
+`VehicleCatalogRelease` (`vehicle-catalog/v2`) ein. Bau- und Beschaffungsepoche
+sind unabhängige Weltparameter; dokumentierte Neubau- und ausdrücklich
+geschätzte Leasing-/Gebrauchtfenster entscheiden danach zusätzlich über die
+Sichtbarkeit. Faktische `class_designation` und fiktiver `trade_name` sind je
+Release eindeutig. Jede verwendete Quelle muss existieren und die genaue
+Baureihe abdecken; unbenutzte Quellen und neue Marktfenster außerhalb des
+Bauzeitraums werden abgewiesen.
+
+`VehicleAsset` hält je Einzelfahrzeug Welt, Typ, Bau-/Beschaffungsjahr,
+Beschaffungsweg, Eigentum, Zulassungen, Wartungsfristen und die eingebaute
+`TrainProtection`. Serienausrüstung ist zwingend. Eine an einem Teilbestand
+belegte `FactoryOption` ist nur beim Neubau und im Optionszeitraum wählbar; ein
+`Retrofit` ist nur als eigener, zeitgebundener Umbau am exakten Typ zulässig.
+Leasing und Gebrauchtmarkt übernehmen die Ist-Ausrüstung. Der deterministische
+`FleetSnapshot` (`fleet-snapshot/v2`) pinnt die Katalog-Prüfsumme; zwei Golden
+Master und Reihenfolgetests sichern Katalog und Flotte.
 
 > **Beweis:** Ein Kurzzeitspieler stellt sein Versorgungsprofil auf Automatik
 > und fährt eine Periode ohne einen Ausfall wegen Frist, Wasser oder Entsorgung.
