@@ -13,8 +13,8 @@ umgeschrieben — ihre Historie ist der Wert.
 
 ## Verhältnis zu den anderen Dokumenten
 
-- `CLAUDE.md` — die bindende Kurztabelle E1–E21. Wird jede Sitzung geladen.
-- `../entscheidungen.md` — E1–E21 mit einzeiliger Begründung, die maßgebliche
+- `CLAUDE.md` — die bindende Kurztabelle E1–E22. Wird jede Sitzung geladen.
+- `../entscheidungen.md` — E1–E22 mit einzeiliger Begründung, die maßgebliche
   Quelle für Wortlaut und Nummerierung.
 - **`docs/adr/`** (dieser Ordner) — dieselben Entscheidungen ausführlich: mit
   Kontext, Konsequenzen und Querverweisen. Ein ADR je Entscheidung.
@@ -42,8 +42,8 @@ Statuswerte: `Angenommen` (bindend), `Vorgeschlagen`, `Abgelöst durch ADR-XXXX`
 ## Index
 
 Die folgenden ADRs wurden aus den zuvor in der Konzeptionsphase getroffenen
-Grundsatzentscheidungen schriftlich festgehalten; E21 kam später als eigene
-Entscheidung hinzu. Alle Status: **Angenommen — bindend**.
+Grundsatzentscheidungen schriftlich festgehalten; E21 und E22 kamen später als
+eigene Entscheidungen hinzu. Alle Status: **Angenommen — bindend**.
 
 | ADR | E | Titel |
 |-----|---|-------|
@@ -68,6 +68,7 @@ Entscheidung hinzu. Alle Status: **Angenommen — bindend**.
 | [0019](0019-realismus-dient-dem-spiel.md) | E19 | Realismus dient dem Spiel |
 | [0020](0020-fahrzeuge-konfiguriert-bestellt.md) | E20 | Fahrzeuge werden konfiguriert bestellt |
 | [0021](0021-ausschreibungen-variieren.md) | E21 | SPNV-Ausschreibungen variieren nach einem angekündigten Vergabeprofil |
+| [0022](0022-jaehrliche-infrastrukturaktualisierung.md) | E22 | Infrastruktur- und Fahrplandaten werden jährlich zum realen Fahrplanwechsel aktualisiert |
 
 > **Hinweis zum Umfang.** Milestone 0.1 nennt „E1 bis E16"; die Formulierung
 > stammt aus der Zeit vor E17–E20. Da diese vier heute gleichrangig bindend

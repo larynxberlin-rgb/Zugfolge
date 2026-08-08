@@ -82,6 +82,18 @@
       "milestone": "M1.13"
     },
     {
+      "id": "trassenfinder-infrastruktur-api",
+      "titel": "Trassenfinder-Infrastruktur-API — Betriebsstellen- und Streckensegment-Stammdaten (openapi.trassenfinder.de)",
+      "status": "freigegeben",
+      "lizenz": "Keine veröffentlichten Nutzungsbedingungen; die API (openapi.trassenfinder.de, Betreiber DB InfraGO) ist öffentlich und ohne Zugangsbeschränkung nutzbar.",
+      "bereitstellung": "Öffentliche OpenAPI unter https://openapi.trassenfinder.de (Endpunkt GET /api/v10/infrastrukturen/{infrastrukturId}). Die Ressource ist an ein Fahrplanjahr gebunden (Felder fahrplanjahr, gueltig_von, gueltig_bis) statt an einen laufenden Abruf — ein einmaliger, offline gehaltener Abgriff pro Fahrplanjahr, analog zu osm-pbf-lhe. Konkrete Version und Prüfsumme werden bei Import im InfraRelease festgehalten.",
+      "attribution": "Betreiber DB InfraGO (einfachbahn@deutschebahn.com); Herkunft wird im InfraRelease vermerkt.",
+      "nutzung": "Zusätzliche, ergänzende Importquelle für Infrastruktur-Stammdaten (Betriebsstellen mit DS100, Elektrifizierung, Geokoordinaten; Streckensegmente) neben osm-pbf-lhe — Grundlage der jährlichen Infrastrukturaktualisierung (E22). Ausdrücklich NICHT umfasst: die berechneten Fahrzeit- und Trassenpreiswerte der Routensuche (/routen) — die bleiben unter dem bestehenden Eintrag 'trassenfinder' auf Status 'entwicklung', reine Kalibrierreferenz, niemals Import (E10, unverändert).",
+      "entscheidung": { "datum": "2026-08-08", "pruefer": "Sebastian Barowski" },
+      "hinweis": "Eng abgegrenzt von der bestehenden Trassenfinder-Kalibrierreferenz: Diese Quelle importiert ausschließlich die Stammdaten-Ressource /infrastrukturen, niemals die berechneten Routensuche-Werte. Keine Nutzungsbedingungen gefunden trotz Suche (OpenAPI-Spezifikation, dbinfrago.com/einfachbahn) — die Freigabe stützt sich auf die uneingeschränkte öffentliche Zugänglichkeit ohne Registrierung oder AGB. E22/ADR-0022 begründet die jährliche Kadenz.",
+      "milestone": "M9"
+    },
+    {
       "id": "entgeltregeln-tps-sps-aps-inb",
       "titel": "Entgeltregeln (TPS, SPS, APS, INB, Anlagen- und Stationspreise)",
       "status": "gesperrt",
