@@ -482,10 +482,11 @@ Form-, Tabellen-, Feedback- und Navigationsbausteine, Icons, Fokusvertrag und
 beide Dichtestufen. `apps/game-web` setzt den konventionellen Bildfahrplan auf
 einem typisierten Client-Datenvertrag um: dynamische Weg-/Zeitskalierung,
 Tastatur-Zugauswahl, alle sechs Sperrzeitanteile, mehrere Konflikte sowie
-Zugfolge- und Fahrstraßenausschluss-Erklärungen. Eine angebotene Alternative
-verschiebt Zuglauf und Belegungsprofil unveränderlich und prüft den verbleibenden
-Konfliktbestand erneut. Farbe bleibt stets durch Text, Symbol oder Musterung
-redundant. Damit ist M3 vollständig abgeschlossen.
+Zugfolge- und Fahrstraßenausschluss-Erklärungen. Eine angebotene, als
+konfliktfrei hinterlegte Alternative verschiebt Zuglauf und Belegungsprofil
+unveränderlich; unbeteiligte Konflikte bleiben erhalten. Farbe bleibt stets
+durch Text, Symbol oder Musterung redundant. Damit ist M3 vollständig
+abgeschlossen.
 
 ---
 
