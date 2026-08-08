@@ -239,6 +239,18 @@ Entscheidung entsteht.
 
 Die drei Eingriffstiefen für die Versorgungsplanung stehen in `produkt.md`.
 
+**Umsetzung M5.2–M5.14:** `crates/zugfolge-fleet/src/operations.rs` bildet
+diese Kette ohne Nebenpfade ab. Formation, Umlauf, Wartungszustand,
+Personalpool und Fahrzeugbedarfe speisen eine gemeinsame Planung; Anlagen und
+Rangierbedarf verwenden die Konfliktressourcen des Fahrwegs. Zusatzfahrten
+sind nur mit Trassen-, Dienst-, Kosten- und Sichtbarkeitsnachweis gültig. Die
+Versorgungsautomatik berücksichtigt die drei Vorgaben Ort, Zeitfenster und
+Anlage und veröffentlicht Score, obere Schranke, Lücke in Promille und den
+größten Hebel. Erst ein leerer, bereichsübergreifender Verletzungsbericht gibt
+den Fahrplan frei. Beschaffungsangebote bilden Leasing ohne Vorlauf,
+kurzfristige Gebrauchtübernahme mit bestehendem Innenraum und frei
+konfigurierbaren Neubau nach mehreren Perioden ab.
+
 ## 5. Baustellen und Störungen
 
 Jede Welt konfiguriert Baustellen und ungeplante Störungen unabhängig:
