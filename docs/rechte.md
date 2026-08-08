@@ -73,10 +73,11 @@ der Überblick; die Spalte `id` ist die Kennung, die auch der Importmarker nennt
 |------|--------|--------|----|
 | `osm-pbf-lhe` | OSM-PBF-Extract Leipzig–Halle–Erfurt | `freigegeben` | M1.2 |
 | `openrailwaymap-doku` | OpenRailwayMap — Tagging- und Signaldokumentation | `entwicklung` | M1.6 |
-| `openstation` | OpenStation — Stationsdaten | `pruefung` | M1.8 |
-| `stada` | StaDa — Stationsdaten | `pruefung` | M1.8 |
-| `dem-hoehenmodell` | Digitales Höhenmodell der Pilotregion | `pruefung` | M1.5 |
+| `openstation` | OpenStation — Stationsdaten | `freigegeben` | M1.8 |
+| `stada` | StaDa — Stationsdaten | `freigegeben` | M1.8 |
+| `dem-hoehenmodell` | Digitales Höhenmodell der Pilotregion | `freigegeben` | M1.5 |
 | `trassenfinder` | Trassenfinder — Trassenpreis- und Fahrzeitstruktur | `entwicklung` | M1.13 |
+| `trassenfinder-infrastruktur-api` | Trassenfinder-Infrastruktur-API — Betriebsstellen-/Streckensegment-Stammdaten | `freigegeben` | M9 |
 | `entgeltregeln-tps-sps-aps-inb` | Entgeltregeln (TPS, SPS, APS, INB, Anlagen-/Stationspreise) | `gesperrt` | M6.1 |
 | `baustellen-stoerungsfeeds` | reale Baustellen- und Störungsfeeds | `gesperrt` | M8.12 |
 | `rinf` | RINF — Register of Infrastructure | `gesperrt` | — |
@@ -84,19 +85,28 @@ der Überblick; die Spalte `id` ist die Kennung, die auch der Importmarker nennt
 | `tpn` | TPN — Trassenportal Netz | `ausgeschlossen` | — |
 | `oeffentliche-tiles-nominatim` | öffentliche OSM-/ORM-Tiles und öffentliches Nominatim | `ausgeschlossen` | M4.7 |
 
-**Was heute trägt.** Nur `osm-pbf-lhe` ist `freigegeben` — die ODbL erlaubt
-Nutzung mit Namensnennung und Share-alike, und mehr braucht die Pilotregion für
+**Was heute trägt.** `osm-pbf-lhe` ist `freigegeben` — die ODbL erlaubt Nutzung
+mit Namensnennung und Share-alike, und mehr braucht die Pilotregion für
 Geometrie und Railway-Tags nicht. Das ist Absicht: `daten.md` verlangt, dass die
-Region **allein mit OSM-Extract und eigenen Regeln** spielbar ist. Alles andere
-wird abgeleitet, nicht importiert.
+Region **allein mit OSM-Extract und eigenen Regeln** spielbar ist. Ergänzend
+sind `openstation` (CC0), `stada` (CC BY 4.0) und `dem-hoehenmodell` (Copernicus
+DEM Data Access and Use Terms) seit dem 2026-08-08 `freigegeben` — die Rechte
+sind geklärt, konkreter Bezugsweg, Version, Prüfsumme, Attributionstext und
+Feldmapping werden erst beim jeweiligen Import (M1.8 beziehungsweise M1.5) im
+`InfraRelease` festgehalten, wie schon bei `osm-pbf-lhe`. Ebenfalls seit dem
+2026-08-08 `freigegeben`: `trassenfinder-infrastruktur-api`, die
+`/infrastrukturen`-Stammdatenressource der öffentlichen, ohne
+Nutzungsbedingungen zugänglichen Trassenfinder-API — als jährliche,
+ergänzende Importquelle für Betriebsstellen und Streckensegmente (E22,
+ADR-0022). Streng abgegrenzt vom bestehenden Eintrag `trassenfinder`: Die
+berechneten Fahrzeit- und Trassenpreiswerte der Routensuche bleiben davon
+unberührt auf `entwicklung`.
 
 **Was blockiert bleibt.** `rinf`, `entgeltregeln-tps-sps-aps-inb` und
 `baustellen-stoerungsfeeds` warten auf eine schriftliche Entscheidung
 beziehungsweise einen Vertrag. `pathos`, `tpn` und `oeffentliche-tiles-nominatim`
 sind ausgeschlossen — teils rechtlich, teils weil ein externer Dienst im heißen
-Pfad ohnehin Invariante 6 verletzt. `openstation`, `stada` und `dem-hoehenmodell`
-stehen in Prüfung, bis Version, Bereitstellungsweg, Lizenz, Attribution und
-Feldmapping geklärt sind.
+Pfad ohnehin Invariante 6 verletzt.
 
 ---
 
@@ -126,6 +136,15 @@ schriftlich beantwortet ist, gilt: nur **manuelle** Kalibrierung gegen einzeln
 erzeugte Beispiele, keine automatisierte Abfrage, keine Ablage von Antworten im
 Repositorium. Sinnvolle Nutzung bleibt: in der Entwicklung gegen ihn kalibrieren
 (M1.13), im Betrieb ohne ihn auskommen.
+
+Dieser Prüfpunkt betrifft ausschließlich die **berechneten** Werte der
+Routensuche (Fahrzeit, Trassenpreis). Die **Stammdatenressource**
+`/infrastrukturen` derselben API ist ein eigener, davon unabhängig geprüfter
+Registereintrag (`trassenfinder-infrastruktur-api`, Status `freigegeben`,
+Abschnitt 3) — öffentlich ohne Nutzungsbedingungen zugänglich, jährlich
+einmalig abgegriffen und offline gehalten (E22). Beides bleibt strikt
+getrennt: Kein automatisierter Abruf der Routensuche, aber ein jährlicher,
+dokumentierter Import der Infrastruktur-Stammdaten.
 
 ---
 

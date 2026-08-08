@@ -598,9 +598,12 @@ Gestaltungssystem und die Oberfläche.
 | 9.7 | Telemetrie, Balancing-Dashboards, Feedbackkanal | M | offen |
 | 9.8 | **Weltende** (E18): letzte Periode ohne Ausschreibung, reguläres Vertragsende ohne Insolvenzfolge, Schlusswertung mit mehreren Ranglisten, Archiv und Replay-Export | M | offen |
 | 9.9 | Geschlossene Alpha in der Pilotregion | M | offen |
+| 9.10 | **Jährliche Infrastrukturaktualisierung** (E22): `InfraRelease`-Neubau aus aktualisiertem `osm-pbf-lhe` und der Trassenfinder-Infrastruktur-API zu jedem realen Fahrplanwechsel; Übernahmeverfahren für eine laufende Welt zum nächsten Periodenwechsel, ohne Invariante 1 zu verletzen | L | offen |
 
 > **Beweis:** 20–50 externe Spieler betreiben die Pilotregion über mehrere
-> vollständige Fahrplanperioden ohne manuellen Eingriff.
+> vollständige Fahrplanperioden ohne manuellen Eingriff, und ein realer
+> Fahrplanwechsel spiegelt sich in der laufenden Welt zum nächsten
+> Periodenwechsel wider, ohne dass ein Konflikt gegen Invariante 1 entsteht.
 
 ---
 

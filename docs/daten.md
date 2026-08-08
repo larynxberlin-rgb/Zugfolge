@@ -78,6 +78,16 @@ Ergebnisse von den Nutzungsbedingungen gedeckt ist, ist im Rechte-Gate als
 Prüfpunkt festgehalten (`rechte.md` 4; Eintrag `trassenfinder` im
 Quellenregister, Status `entwicklung`).
 
+**Davon getrennt (E22):** Dieselbe API stellt unter `/infrastrukturen` eine
+reine Stammdatenressource bereit — Betriebsstellen und Streckensegmente,
+gebunden an ein Fahrplanjahr statt an einen laufenden Abruf, öffentlich ohne
+Nutzungsbedingungen zugänglich. Das ist keine „unverbindliche Richtwert"-Werte
+im Sinne von E10, sondern Stammdaten, und wird als eigene, jährlich einmalig
+gezogene Importquelle geführt (`trassenfinder-infrastruktur-api`, Status
+`freigegeben`) — Grundlage der jährlichen Infrastrukturaktualisierung zum
+realen Fahrplanwechsel. Die beiden Grenzen oben gelten unverändert für die
+Routensuche.
+
 ## 4. Trassenpreissystem als Vorbild für den `EconomyRelease`
 
 Die reale Struktur ist übernahmefähig und liefert von sich aus die
