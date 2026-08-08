@@ -8,6 +8,22 @@ importers:
 
   .: {}
 
+  apps/game-web:
+    dependencies:
+      '@zugfolge/design-system':
+        specifier: workspace:*
+        version: link:../../packages/design-system
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vite:
+        specifier: ^8.2.0
+        version: 8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9)
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
+
   apps/game-api:
     dependencies:
       '@zugfolge/db':
@@ -67,6 +83,15 @@ importers:
         version: 8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9)
       vitest:
         specifier: 4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
+
+  packages/design-system:
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
 
   packages/db:

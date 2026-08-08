@@ -432,8 +432,8 @@ sich vollständig auskunfts- und löschbar behandeln. Siehe
 | 3.6 | Fahrplanperiode als Ablauf: Anmeldefenster, Koordinierung, Veröffentlichung, Betrieb | M | erledigt |
 | 3.7 | Ad-hoc-Trassen aus Restkapazität, Stornierung, Verfall bei Nichtnutzung | M | erledigt |
 | 3.8 | Rahmenverträge mit Kapazitätsdeckel | M | erledigt |
-| 3.9 | **Gestaltungssystem konkretisieren** (`design.md` 2.7): Farbwerte gegen reale Datendichte prüfen, Komponentenbibliothek, Icon-Set, beide Dichtestufen. Erste echte Oberfläche, deshalb hier und nicht früher | L | offen |
-| 3.10 | Bildfahrplan-UI, Sperrzeitentreppe, Konflikterklärung im Client — Konvention vor Originalität | L | offen |
+| 3.9 | **Gestaltungssystem konkretisieren** (`design.md` 2.7): Farbwerte gegen reale Datendichte prüfen, Komponentenbibliothek, Icon-Set, beide Dichtestufen. Erste echte Oberfläche, deshalb hier und nicht früher | L | erledigt |
+| 3.10 | Bildfahrplan-UI, Sperrzeitentreppe, Konflikterklärung im Client — Konvention vor Originalität | L | erledigt |
 
 > **Beweis:** Zwei Spieler beantragen konkurrierende Trassen. Das System
 > entscheidet nachvollziehbar, bietet eine Alternative an, und die Entscheidung
@@ -477,7 +477,12 @@ abgearbeitet:
 | **Offen:** die Fahrdynamik fehlt | `derive_running_time_table_with_exit` (M1.10, um die Bremskurve in den Halt ergänzt) |
 | **Offen:** die betrieblich richtige Auflösung ist ein eigenes Verfahren | der Betriebshalt des Planners (M3.4) — er kreuzt zur Wunschzeit, statt später zu fahren |
 
-Offen bleiben M3.9 und M3.10: das Gestaltungssystem und die Oberfläche.
+**M3.9 und M3.10 tragen:** `packages/design-system` konkretisiert Palette, Komponenten,
+Icons und beide Dichtestufen. `apps/game-web` setzt den konventionellen Bildfahrplan
+mit auswählbaren Zugläufen, zuschaltbarer Sperrzeitentreppe, gemustertem
+Konfliktfenster und einer aus sich heraus verständlichen Konflikterklärung um.
+Farbe bleibt stets durch Text, Symbol oder Musterung redundant. Damit ist M3
+vollständig abgeschlossen.
 
 ---
 
