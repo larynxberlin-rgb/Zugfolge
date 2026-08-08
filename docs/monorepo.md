@@ -21,6 +21,7 @@ packages/                   TypeScript — fachliche Bibliotheken (ab M2)
   economy/                  Ledger-Kern: Integer-Cent, unveränderlich, ausgeglichen (M2.4)
   mailbox/                  Postfach-Grundgerüst: Nachrichten, Fristen, Quittierung (M2.5)
   privacy/                  Datenschutz: Auskunft, Löschung, Aufbewahrungsfristen (M2.6)
+  health/                   Health-Check-Vertrag und Aggregation für Status-/Monitoringdienste, Grundlage für M9.5
 apps/                       TypeScript — Dienste und Frontend (ab M2 / M4)
   game-api/                 Fastify-Dienst: Authentifizierung, Weltzugang, EVU, Ledger, Postfach, Datenschutz (M2)
 spikes/                     Wegwerf-Code mit Verfallsdatum — derzeit leer
@@ -41,7 +42,14 @@ Rolle; `packages/operators` (M2.3) die EVU-Entität; `packages/economy`
 (M2.4) den Ledger-Kern; `packages/mailbox` (M2.5) das Postfach; und
 `packages/privacy` (M2.6) Auskunft, Löschung und Aufbewahrungsfristen quer
 über die anderen vier. `apps/game-api` verdrahtet alle fünf zu einem
-Fastify-Dienst. Siehe [`weltgeruest.md`](weltgeruest.md). Weitere
+Fastify-Dienst. Siehe [`weltgeruest.md`](weltgeruest.md).
+
+Quer zu jedem einzelnen Milestone liegt `packages/health`: der
+Health-Check-Vertrag, gegen den jedes Paket meldet, ob es erreichbar ist.
+`packages/db` (M2.2) trägt darauf die Datenbankprüfung, `apps/game-api`
+aggregiert sie unter `GET /health/ready`. Kein eigener Milestone, sondern die
+früh gelegte Grundlage für die Betriebsreife aus M9.5 — siehe
+[`architektur.md`](architektur.md) Abschnitt 6. Weitere
 Unterverzeichnisse entstehen, sobald ein Milestone sie tatsächlich füllt —
 ein leeres Verzeichnis mit Platzhalter ist kein Aufbau, sondern eine
 Behauptung.

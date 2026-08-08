@@ -1,0 +1,21 @@
+{
+  "name": "@zugfolge/health",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Health-Check-Registry: gemeinsamer Vertrag, gegen den jedes Paket seinen eigenen Gesundheitszustand meldet",
+  "license": "LicenseRef-PolyForm-Shield-1.0.0",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

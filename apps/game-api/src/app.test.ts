@@ -68,6 +68,59 @@ describe("GET /health", () => {
   });
 });
 
+describe("GET /health/ready", () => {
+  it("meldet den aggregierten Zustand aller Health Checks ohne Authentifizierung", async () => {
+    const response = await app.inject({ method: "GET", url: "/health/ready" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      status: "ok",
+      checks: [{ name: "postgres", status: "ok", durationMs: expect.any(Number) }],
+    });
+  });
+
+  it("nimmt zusätzliche Health Checks künftiger Milestones in die Aggregation auf", async () => {
+    const appMitErweiterung = buildApp({
+      db,
+      verifyToken: (token) => verifyIdentityToken(token, createLocalJWKSet({ keys: [] }), { issuer: ISSUER, audience: AUDIENCE }),
+      extraHealthChecks: [{ name: "beispiel", check: async () => ({ status: "degraded", detail: "Testfall" }) }],
+    });
+    await appMitErweiterung.ready();
+    try {
+      const response = await appMitErweiterung.inject({ method: "GET", url: "/health/ready" });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        status: "degraded",
+        checks: expect.arrayContaining([{ name: "beispiel", status: "degraded", detail: "Testfall", durationMs: expect.any(Number) }]),
+      });
+    } finally {
+      await appMitErweiterung.close();
+    }
+  });
+
+  it("antwortet mit 503, sobald eine Prüfung ausfällt", async () => {
+    const appMitAusfall = buildApp({
+      db,
+      verifyToken: (token) => verifyIdentityToken(token, createLocalJWKSet({ keys: [] }), { issuer: ISSUER, audience: AUDIENCE }),
+      extraHealthChecks: [
+        {
+          name: "ausfall",
+          check: async () => {
+            throw new Error("nicht erreichbar");
+          },
+        },
+      ],
+    });
+    await appMitAusfall.ready();
+    try {
+      const response = await appMitAusfall.inject({ method: "GET", url: "/health/ready" });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().status).toBe("down");
+    } finally {
+      await appMitAusfall.close();
+    }
+  });
+});
+
 describe("Weltzugang und Kontoliste", () => {
   it("lehnt eine Anfrage ohne Zugriffstoken ab", async () => {
     const response = await app.inject({ method: "GET", url: `/worlds/${WORLD_LHE}/accounts` });
