@@ -16,6 +16,9 @@ importers:
       '@zugfolge/economy':
         specifier: workspace:*
         version: link:../../packages/economy
+      '@zugfolge/health':
+        specifier: workspace:*
+        version: link:../../packages/health
       '@zugfolge/identity':
         specifier: workspace:*
         version: link:../../packages/identity
@@ -53,6 +56,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@zugfolge/health':
+        specifier: workspace:*
+        version: link:../health
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@electric-sql/pglite@0.5.4)(@types/pg@8.20.4)(pg@8.22.0)(postgres@3.4.9)
@@ -100,6 +106,18 @@ importers:
       fast-check:
         specifier: ^4.9.0
         version: 4.9.0
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
+
+  packages/health:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
       typescript:
         specifier: ^7.0.2
         version: 7.0.2

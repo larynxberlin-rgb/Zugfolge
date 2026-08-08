@@ -593,7 +593,7 @@ Gestaltungssystem und die Oberfläche.
 | 9.2 | **Weltstart mit Eigenbetrieb**: das gesamte SPNV-Netz der Region fährt ab Sekunde eins | M | offen |
 | 9.3 | Onboarding in der öffentlichen Welt: Startpaket, Kapazitäts-Heatmap, Glossar-Layer | M | offen |
 | 9.4 | Admin- und Auditwerkzeuge, Vier-Augen-Prinzip bei Hochrisikoaktionen | M | offen |
-| 9.5 | **Betriebsreife**: Observability, Backup und Restore, Incident-Runbooks. Gehört vor die erste Welt mit echten Spielern, nicht in die Monetarisierungsphase | L | offen |
+| 9.5 | **Betriebsreife**: Observability, Backup und Restore, Incident-Runbooks. Gehört vor die erste Welt mit echten Spielern, nicht in die Monetarisierungsphase. Der Health-Check-Vertrag (`packages/health`, seit M2) liegt bereits — M9.5 baut Alarmierung, Dashboards und Backup darauf, zieht ihn nicht mehr nachträglich ein | L | offen |
 | 9.6 | Rate Limits, Anti-Bot-Prüfungen, Anomalieerkennung für Trassenfenster und Märkte | M | offen |
 | 9.7 | Telemetrie, Balancing-Dashboards, Feedbackkanal | M | offen |
 | 9.8 | **Weltende** (E18): letzte Periode ohne Ausschreibung, reguläres Vertragsende ohne Insolvenzfolge, Schlusswertung mit mehreren Ranglisten, Archiv und Replay-Export | M | offen |

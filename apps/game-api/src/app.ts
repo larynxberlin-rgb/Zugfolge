@@ -9,7 +9,7 @@
  * lokales Schlüsselpaar (`app.test.ts`). Beide laufen über denselben Code.
  */
 
-import { accounts } from "@zugfolge/db";
+import { accounts, createDatabaseHealthCheck } from "@zugfolge/db";
 import {
   DuplicateLedgerAccountNameError,
   ForeignLedgerAccountError,
@@ -21,6 +21,7 @@ import {
   postLedgerTransaction,
   UnbalancedTransactionError,
 } from "@zugfolge/economy";
+import { runHealthChecks, type HealthCheck } from "@zugfolge/health";
 import {
   AccessRevokedError,
   AccountNotFoundError,
@@ -52,6 +53,12 @@ import { createAuthenticator, type TokenVerifier } from "./auth.js";
 export interface AppDependencies {
   readonly db: IdentityDatabase;
   readonly verifyToken: TokenVerifier;
+  /**
+   * Zusätzliche Prüfungen für `/health/ready`, über die Datenbankverbindung
+   * hinaus — der Erweiterungspunkt, an dem künftige Milestones ihre eigenen
+   * Health Checks anmelden, statt sie später nachzuziehen.
+   */
+  readonly extraHealthChecks?: readonly HealthCheck[];
 }
 
 const worldIdParam = {
@@ -125,7 +132,19 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
   const app = Fastify({ logger: false });
   const authenticate = createAuthenticator(deps.verifyToken);
 
+  // `/health` ist Liveness: läuft der Prozess, ohne jede Abhängigkeit zu
+  // prüfen. `/health/ready` ist Readiness für Status- und Monitoringdienste:
+  // sie fragt die Registry, die sich aus der Datenbankprüfung und den
+  // Erweiterungen jedes weiteren Milestones zusammensetzt (M9.5 baut darauf
+  // auf, nicht darauf um).
+  const healthChecks: readonly HealthCheck[] = [createDatabaseHealthCheck(deps.db), ...(deps.extraHealthChecks ?? [])];
+
   app.get("/health", async () => ({ status: "ok" }));
+
+  app.get("/health/ready", async (_request, reply) => {
+    const report = await runHealthChecks(healthChecks);
+    return reply.code(report.status === "down" ? 503 : 200).send(report);
+  });
 
   // ---------------------------------------------------------------------
   // M2.1 — Weltzugang, Konto, Rolle

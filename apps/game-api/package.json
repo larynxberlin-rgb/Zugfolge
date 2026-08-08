@@ -14,6 +14,7 @@
   "dependencies": {
     "@zugfolge/db": "workspace:*",
     "@zugfolge/economy": "workspace:*",
+    "@zugfolge/health": "workspace:*",
     "@zugfolge/identity": "workspace:*",
     "@zugfolge/mailbox": "workspace:*",
     "@zugfolge/operators": "workspace:*",

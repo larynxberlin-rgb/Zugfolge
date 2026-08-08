@@ -27,7 +27,7 @@ lesen, nicht raten.
 | `docs/wirtschaft.md` | Spielkreislauf, Geschäftsfelder, Nachfrage, Ausschreibung, Eigenbetrieb, Insolvenz, Kooperation | Verträge, Märkte, Geld, Ausschreibungen |
 | `docs/daten.md` | Datenlage OSM/ORM, Quellen, Rechte, Qualitätsklassen | Import-Pipeline, InfraRelease, Lizenzfragen zu Daten |
 | `docs/rechte.md` | Rechte-Gate: Freigabestatus je Datenquelle, Quellenregister, Trassenfinder-Nutzungsbedingungen | eine Datenquelle nutzen oder aufnehmen, Import beginnen (Invariante 8) |
-| `docs/architektur.md` | Systemarchitektur, Lastgrößen, irreversible Entscheidungen, Determinismus, Sicherheit | Technischer Entwurf, Skalierung, Persistenz |
+| `docs/architektur.md` | Systemarchitektur, Lastgrößen, irreversible Entscheidungen, Determinismus, Sicherheit, Health Checks | Technischer Entwurf, Skalierung, Persistenz, Monitoring |
 | `docs/design.md` | Farbsystem, Barrierefreiheit, Dunkelmodus, Typografie, Dichte, Wortmarke | jede Oberflächenarbeit, jedes Diagramm, jede Zustandsdarstellung |
 | `docs/geschaeft.md` | Odoo, Monetarisierung, Monetarisierungsgrenze, Lizenz, Marken | Bezahlfunktionen, Lizenz, Namensrechte |
 | `docs/rechteschutz.md` | Umsetzung von M0.5: LICENSE, CLA, Schichtentrennung, Marke — und ihre Durchsetzung | Lizenz einsetzen, Beitrag annehmen, proprietäre Schicht, Marke |
@@ -327,6 +327,15 @@ Ledger-Kern (`packages/economy`), das Postfach-Grundgerüst
   Aufbewahrungsfristen je Datenkategorie fest — Ledger und Event-Log bleiben
   unbefristet und außerhalb der Löschung, weil beide unveränderlich sind und
   keine natürliche Person tragen. Siehe `docs/weltgeruest.md` Abschnitt 10.
+- **Health-Check-Grundlage steht:** `packages/health` trägt den
+  `HealthCheck`-Vertrag und `runHealthChecks`, das zum ungünstigsten Status
+  aggregiert. `packages/db` liefert darauf die Datenbankprüfung,
+  `apps/game-api` verdrahtet sie unter `GET /health/ready`
+  (`GET /health` bleibt reine Liveness) und öffnet mit
+  `AppDependencies.extraHealthChecks` den Anschluss für jeden künftigen
+  Milestone. Kein eigener Milestone-Punkt, sondern bewusst früh gelegt, damit
+  M9.5 (Betriebsreife) Monitoring darauf aufbaut statt es nachträglich über
+  bereits fertige Pakete zu ziehen. Siehe `docs/architektur.md` Abschnitt 6.
 - **M3.1 steht:** `crates/zugfolge-conflict` trägt das Sperrzeitenmodell — die
   sechs Anteile als `RelativeOccupation`, halboffen `[start, end)`, sodass die
   Mindestzugfolgezeit aus dem Modell **herausfällt** statt darin zu stehen.

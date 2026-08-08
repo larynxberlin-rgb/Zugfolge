@@ -162,3 +162,45 @@ Trassenvergabe, Audit, Replay-Export und Testbarkeit.
 - Datenschutz: Datenminimierung, Auskunft, Löschung, definierte
   Aufbewahrungsfristen.
 - Ziel-SLO für Game API und Livemap: 99,9 % monatlich.
+
+## 6. Health Checks
+
+**M9.5 baut die Betriebsreife — Observability, Backup, Runbooks — erst später
+aus, aber ihre Grundlage liegt seit M2 im Code.** Eine intensive Überwachung
+lässt sich nicht rückwirkend über zwölf fertige Pakete streuen, ohne jedes
+einzelne noch einmal anzufassen; deshalb steht der Vertrag von Anfang an, und
+jeder künftige Milestone meldet seine eigene Prüfung an, statt sie am Ende
+nachzuziehen — derselbe Grund, aus dem `world_id` seit M0.2 gilt (Abschnitt 3).
+
+`@zugfolge/health` (`packages/health`) trägt genau diesen Vertrag, unabhängig
+von jedem einzelnen Fachpaket:
+
+- `HealthCheck` — ein Name und eine asynchrone Prüfung, die entweder
+  `{ status, detail? }` liefert oder wirft. Wirft sie, zählt das als `down` —
+  ein Paket muss seinen Fehlerfall nicht selbst in einen Status übersetzen.
+- `HealthStatus` — `ok`, `degraded`, `down`. `degraded` ist erreichbar, aber
+  eingeschränkt, kein Ausfall.
+- `runHealthChecks` — führt alle Prüfungen nebenläufig aus und aggregiert zum
+  **ungünstigsten** Status; eine werfende Prüfung reißt die anderen nicht mit.
+
+`apps/game-api` verdrahtet zwei Endpunkte mit unterschiedlichem Zweck, beide
+ohne Authentifizierung — Status- und Monitoringdienste tragen kein
+Spielertoken:
+
+| Endpunkt | Zweck | Antwort |
+|----------|-------|---------|
+| `GET /health` | Liveness: läuft der Prozess überhaupt | immer `{ status: "ok" }`, ohne Abhängigkeit zu prüfen |
+| `GET /health/ready` | Readiness: sind die Abhängigkeiten erreichbar | aggregierter `HealthReport`; HTTP 503 bei `down`, sonst 200 |
+
+Die Datenbankprüfung (`createDatabaseHealthCheck` aus `packages/db`) ist ab
+M2.2 immer dabei. `AppDependencies.extraHealthChecks` ist der
+Erweiterungspunkt: Jeder künftige Milestone, der eine neue Abhängigkeit
+einführt — Keycloak-Erreichbarkeit, Message-Broker, externer Dienst —, meldet
+dort seine eigene `HealthCheck`-Instanz an, ohne `app.ts` oder die Registry
+selbst zu ändern.
+
+Health Checks sind betrieblich, nicht weltgebunden: Die Datenbankprüfung liest
+keine Tabellenzeile und definiert keine, sondern fragt nur, ob die Verbindung
+antwortet (`select 1`) — der Wächter `world-id` greift dort gar nicht erst
+(Abschnitt 4 in `monorepo.md`). Health Checks laufen nie im heißen Pfad der
+Simulation; sie leben ausschließlich in den Game-Services.
