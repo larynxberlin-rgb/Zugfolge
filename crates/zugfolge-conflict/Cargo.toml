@@ -1,6 +1,6 @@
 [package]
 name = "zugfolge-conflict"
-description = "Sperrzeitenmodell (M3.1), ServicePattern und relatives OccupationProfile (M3.2) sowie Konfliktprüfer mit erklärbarem Ergebnis (M3.3)"
+description = "Sperrzeitenmodell (M3.1), ServicePattern und relatives OccupationProfile (M3.2) sowie Konfliktprüfer mit erklärbarem Ergebnis (M3.3); Rahmenverträge mit Kapazitätsdeckel (M3.8)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

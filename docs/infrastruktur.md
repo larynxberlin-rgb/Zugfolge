@@ -326,3 +326,150 @@ mehrere konkurrierende Anträge eines Planungsfensters gemeinsam und
 reihenfolgeunabhängig behandelt werden — Abschnitt 2.3 bis 2.5 —, ist der
 deterministische `PlanningRun` aus M3.5, mit Seed-Tiebreak und Einspruchsfenster.
 Der Planner ist dessen Baustein, nicht sein Ersatz.
+
+---
+
+## 10. Der deterministische Planungslauf (M3.5)
+
+`crates/zugfolge-planner::run` beantwortet die Frage, die Abschnitt 9.3
+offengelassen hat: Wie werden mehrere konkurrierende Anträge eines
+Planungsfensters **gemeinsam** und **reihenfolgeunabhängig** behandelt?
+`NetworkTimetable` (M3.2, `crates/zugfolge-conflict`) sagt es selbst offen: Es
+ist „kein Vergabeverfahren" — wer zuerst eingereicht wird, bekommt die Trasse.
+Genau das verbietet Abschnitt 2.4: „Reihenfolge innerhalb des Fensters und
+Bezahlstatus beeinflussen das Ergebnis nicht."
+
+### 10.1 Der gesamte Antragsbestand ist ein einziger Gleichstand
+
+Der Kern kennt kein drittes Merkmal, das eine Bevorzugung rechtfertigen
+könnte: Bezahlstatus ist verboten (Invariante 5), Ankunftsreihenfolge ist
+verboten (Abschnitt 2.4). Das Markteintrittskontingent für neue EVU (E4,
+Abschnitt 4) ist eine Entscheidung der Game-Services — der Kern weiß nichts
+von EVU. Ohne ein zulässiges Unterscheidungsmerkmal ist die gesamte Menge der
+Anträge eines Fensters deshalb ein einziger `Tie`: Ihre Kennungen werden
+kanonisch sortiert — unabhängig davon, in welcher Reihenfolge sie dem Lauf
+übergeben wurden — und dann über den Substream `Tiebreak` des `WorldSeed`
+dieser Fahrplanperiode gemischt (Abschnitt 2.5). Das Ergebnis hängt damit
+ausschließlich von der **Menge** der teilnehmenden Anträge und vom Seed ab,
+nie von der Übergabereihenfolge — mit einem Gegenbeweis belegt: Derselbe
+Antragsbestand liefert über zwanzig Perioden hinweg beiden Seiten eines
+Widerstreits mindestens einmal den Zuschlag, nicht immer derselben Kennung.
+
+### 10.2 Koordinierung, Alternativangebote, Einspruchsfenster
+
+Ein Lauf verarbeitet jeden Antrag in dieser Reihenfolge gegen den
+`TrainPathPlanner` aus M3.4 und trägt jedes angenommene Angebot sofort in ein
+mitgeführtes Belegungsbuch ein, bevor der nächste Antrag geprüft wird — genau
+der Tagesbereich, den der Planner selbst schon als konfliktfrei geprüft hat,
+kein zweiter Durchlauf. Ein Antrag, den das Netz unabhängig von jeder
+Konkurrenz nicht tragen kann — kein Laufweg, keine passende Zugsicherung —,
+bricht den Lauf nicht ab; er zählt als eigener Ausgang (`unroutable`), nicht
+als Ablehnung im Wettbewerb.
+
+Das Ergebnis eines Laufs ist zunächst ein **Entwurf**: Wer eine
+Alternativtrasse oder eine Ablehnung erhalten hat, kann binnen des
+`ObjectionWindow` einen geänderten Antrag einreichen — etwa mit einer
+weiteren zulässigen Abweichung. Die Kennung bleibt dabei dieselbe: Ein
+Einspruch ändert einen bestehenden Antrag, er meldet keinen neuen an, und die
+Menge der teilnehmenden Kennungen — und damit die Bearbeitungsreihenfolge aus
+10.1 — bleibt über alle Runden eines Laufs unverändert. Der Lauf wird dann mit
+demselben Seed erneut gerechnet: vollständig deterministisch, weil Seed und
+Anträge zusammen den Ausgang bestimmen. Erst der Abschluss macht den letzten
+Entwurf endgültig; danach nimmt der Lauf weder neue Einsprüche noch weitere
+Koordinierungsrunden an.
+
+---
+
+## 11. Die Fahrplanperiode als Ablauf (M3.6)
+
+`crates/zugfolge-planner::period` bildet Abschnitt 3 als Wert statt als
+Beschreibung ab: `SchedulePeriod` errechnet aus einem Startzeitpunkt und einer
+Periodenlänge (E3: drei bis acht Wochen) die Grenzen ihrer vier Anteile —
+Anmeldefenster, Koordinierung, Veröffentlichung, Betrieb — und die Phase, in
+der ein gegebener Zeitpunkt liegt.
+
+**Die Grenzen liegen in Achteln, ganzzahlig.** Ein Viertel und zwei Achtel und
+eine Hälfte ergeben zusammen genau ein Ganzes (`2/8 + 1/8 + 1/8 + 4/8 = 8/8`).
+Jede Grenze wird deshalb unabhängig als `Periodenlänge · Zähler / 8` in
+Sekunden berechnet (Invariante 3: keine Gleitkommazahl) — bei einer
+Periodenlänge, die nicht durch acht teilbar ist, rundet jede Grenze für sich
+ab, statt einen Rest ungleichmäßig zu verteilen. Das ist keine Ungenauigkeit,
+sondern die einzige Rundung, die nicht driftet: Eine Grenze, ein zweites Mal
+berechnet, bleibt dieselbe. Alle Grenzen sind **halboffen**, wie jedes
+Zeitintervall in diesem Kern — die Grenze selbst gehört bereits zur nächsten
+Phase.
+
+Jede Phase erlaubt genau eine Handlung: Das Anmeldefenster nimmt
+`PathRequest`, die Koordinierung lässt einen `PlanningRun` laufen, die
+Veröffentlichung ist das Fenster für den Rahmenvertragsabgleich (M3.8), und
+der Betrieb öffnet die Ad-hoc-Vergabe (M3.7). Die Folgeperiode schließt
+lückenlos an: Ihr Start ist exakt das Ende der vorigen — der
+Fahrplanstichtag, ohne Lücke und ohne Überlappung.
+
+---
+
+## 12. Ad-hoc-Trassen aus Restkapazität (M3.7)
+
+`crates/zugfolge-planner::adhoc` setzt Abschnitt 2.6 um: „Ad-hoc-Anträge
+verwenden ausschließlich verbleibende Kapazität." Anders als der
+`PlanningRun` verdrängt ein Ad-hoc-Antrag nie eine bereits liegende Trasse —
+`AdHocLedger` prüft jeden Antrag gegen das laufend fortgeschriebene
+Belegungsbuch der Periode, genau wie ein einzelner `TrainPathPlanner::plan`-Aufruf
+es täte, und bucht ein angenommenes Angebot sofort, damit der nächste
+Ad-hoc-Antrag dieselbe Kapazität nicht ein zweites Mal bekommt.
+
+### 12.1 Stornierung
+
+Eine stornierte Ad-hoc-Trasse gibt ihre Kapazität sofort frei. Das
+Belegungsbuch wird dafür — wie `NetworkTimetable::withdraw` (M3.2) — aus dem
+veröffentlichten Netzfahrplan und den verbleibenden Ad-hoc-Trassen neu
+aufgebaut, statt einzelne Einträge herauszulösen: linear in der Zahl der
+Trassen und ohne einen verwaisten Eintrag zurückzulassen.
+
+### 12.2 Verfall bei Nichtnutzung
+
+Abschnitt 4 (Kapazitätsschutz, E4): „**Use it or lose it** — unter einem
+Nutzungsschwellwert liegende Trassen verfallen und lösen Stornoentgelt aus."
+Das Stornoentgelt selbst ist eine wirtschaftliche Folge (`wirtschaft.md`) und
+liegt außerhalb des Kerns; `AdHocLedger` liefert die technische Seite. Die
+tatsächliche Nutzung beobachtet erst der Simulationskern (M4) — bis dahin
+nimmt `report_usage` sie als gegebenen Wert entgegen, je Verkehrstag, ob
+gefahren wurde oder nicht. `is_underused` vergleicht den Anteil in
+Basispunkten (1 % = 100) gegen einen Schwellwert; eine Trasse ohne eine
+einzige gemeldete Fahrt gilt **nicht** als unternutzt — sie hatte noch keine
+Gelegenheit, genutzt zu werden. `sweep_underused` storniert alles, was
+darunterbleibt, in einem Zug.
+
+---
+
+## 13. Rahmenverträge mit Kapazitätsdeckel (M3.8)
+
+`crates/zugfolge-conflict::framework` setzt den Rahmenvertragsdeckel aus
+Abschnitt 4 um: Ein `FrameworkAgreement` ist eine **mehrperiodige**
+Kapazitätszusage — anders als eine einzelne Trasse (`ServicePattern`) bindet
+er keine konkrete Zeitlage, sondern einen Anteil an einer Menge von
+Konfliktressourcen, dem Korridor. Ohne diesen Deckel bänden Früheinsteiger
+einen Korridor mehrperiodig vollständig, und kein Neuling käme je hinein —
+das größte soziale Risiko einer Welt ohne Wipes.
+
+**Die Kapazität eines Korridors ist ein vorgegebener Wert, keine Ableitung
+dieses Moduls.** Wie viele Trassen ein Korridor trägt, hängt von Sperrzeiten,
+Zugcharakteristik und Verkehrsmischung ab — das Ergebnis von M3.1 bis M3.4.
+`FrameworkCapacityLedger::with_capacity` übernimmt diesen Wert je Ressource,
+und der Deckel selbst rechnet in Basispunkten (1 % = 100), damit er
+ganzzahlig bleibt (Invariante 3) — und **rundet ab**: Ein Deckel, der
+aufrundet, wäre keiner.
+
+Eine Bindung (`try_commit`) ist **alles oder nichts**: Nur Ressourcen, die
+zum Korridor des Rahmenvertrags gehören, verbrauchen Kapazität, aber sprengt
+eine einzige davon ihren Deckel, bindet die Trasse keine einzige — dieselbe
+betriebliche Regel wie bei `NetworkTimetable::schedule` (M3.2): halb
+angenommen gibt es nicht. `release` gibt zuvor gebundene Kapazität zurück,
+etwa bei einer Trassenrückgabe.
+
+Der Rahmenvertragsabgleich selbst — welcher `PathRequest` einem
+`FrameworkAgreement` zugeordnet wird und wann das Kapazitätsbuch gegen den
+`PlanningRun` geprüft wird — gehört zur Veröffentlichungsphase der
+Fahrplanperiode (Abschnitt 11) und zu den Game-Services, die Rahmenverträge
+als Vertragsobjekt führen (`wirtschaft.md`); der Kern liefert mit diesem
+Modul nur den Deckel und seine Durchsetzung.

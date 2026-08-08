@@ -10,6 +10,9 @@ use core::fmt;
 
 use zugfolge_infra::{InfraError, Length, OperatingPointId, TrackId, TravelDirection};
 
+use crate::framework::FrameworkAgreementId;
+use crate::resource::ConflictResource;
+
 /// Was an einem Laufweg, einem Belegungsprofil oder einer Parametrierung nicht
 /// stimmt.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -91,6 +94,24 @@ pub enum ConflictError {
     /// Die Fahrzeitrechnung oder der Betriebsgraph hat die Eingabe
     /// zurückgewiesen.
     Infra(InfraError),
+    /// Ein Rahmenvertrag ohne eine einzige Ressource im Korridor (M3.8).
+    EmptyCorridor(FrameworkAgreementId),
+    /// Ein Kapazitätsanteil muss zwischen 1 und 10 000 Basispunkten liegen
+    /// (M3.8).
+    InvalidCapacityShare(u32),
+    /// Zwei Rahmenverträge desselben Kapazitätsbuchs tragen dieselbe Kennung
+    /// (M3.8).
+    DuplicateFrameworkAgreement(FrameworkAgreementId),
+    /// Ein Kapazitätsbuch kennt diesen Rahmenvertrag nicht (M3.8).
+    UnknownFrameworkAgreement(FrameworkAgreementId),
+    /// Der Kapazitätsdeckel eines Rahmenvertrags ist auf dieser Ressource
+    /// bereits ausgeschöpft (M3.8).
+    FrameworkCapacityExceeded {
+        /// Der betroffene Rahmenvertrag.
+        agreement: FrameworkAgreementId,
+        /// Die betroffene Konfliktressource.
+        resource: ConflictResource,
+    },
 }
 
 impl From<InfraError> for ConflictError {
@@ -159,6 +180,29 @@ impl fmt::Display for ConflictError {
                 write!(formatter, "ein Verkehrsangebot ohne Verkehrstag fährt nie")
             }
             Self::Infra(error) => write!(formatter, "{error}"),
+            Self::EmptyCorridor(agreement) => write!(
+                formatter,
+                "Rahmenvertrag {agreement} hat keine einzige Ressource im Korridor"
+            ),
+            Self::InvalidCapacityShare(basis_points) => write!(
+                formatter,
+                "der Kapazitätsanteil {basis_points} Basispunkte liegt außerhalb von 1 bis 10 000"
+            ),
+            Self::DuplicateFrameworkAgreement(agreement) => write!(
+                formatter,
+                "der Rahmenvertrag {agreement} ist im Kapazitätsbuch bereits registriert"
+            ),
+            Self::UnknownFrameworkAgreement(agreement) => write!(
+                formatter,
+                "das Kapazitätsbuch kennt keinen Rahmenvertrag {agreement}"
+            ),
+            Self::FrameworkCapacityExceeded {
+                agreement,
+                resource,
+            } => write!(
+                formatter,
+                "der Kapazitätsdeckel des Rahmenvertrags {agreement} ist auf {resource} ausgeschöpft"
+            ),
         }
     }
 }

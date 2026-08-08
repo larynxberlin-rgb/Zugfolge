@@ -111,7 +111,17 @@ Ledger, Postfach, Datenschutz — steht vollständig.
   [`infrastruktur.md`](infrastruktur.md) 8;
 - **M3.4** — der Trassen-Planner mit Laufweg-, Zeitlagen- und
   Betriebshaltkandidaten, siehe [`infrastruktur.md`](infrastruktur.md) 9 und
-  [`crates/zugfolge-planner`](../crates/zugfolge-planner).
+  [`crates/zugfolge-planner`](../crates/zugfolge-planner);
+- **M3.5** — der deterministische `PlanningRun`: Seed-Tiebreak über den
+  gesamten Antragsbestand eines Planungsfensters und Einspruchsfenster, siehe
+  [`infrastruktur.md`](infrastruktur.md) 10;
+- **M3.6** — die Fahrplanperiode als Ablauf: `SchedulePeriod` mit
+  Anmeldefenster, Koordinierung, Veröffentlichung und Betrieb, siehe
+  [`infrastruktur.md`](infrastruktur.md) 11;
+- **M3.7** — Ad-hoc-Trassen aus Restkapazität, mit Stornierung und Verfall bei
+  Nichtnutzung, siehe [`infrastruktur.md`](infrastruktur.md) 12;
+- **M3.8** — Rahmenverträge mit Kapazitätsdeckel, siehe
+  [`infrastruktur.md`](infrastruktur.md) 13.
 
 ---
 
@@ -418,20 +428,30 @@ sich vollständig auskunfts- und löschbar behandeln. Siehe
 | 3.2 | `ServicePattern` + relatives `OccupationProfile`, inklusive Zugnummernsystematik | M | erledigt |
 | 3.3 | Konfliktprüfer mit erklärbarem Ergebnis: welche Ressource, welches Fenster, welcher Gegenzug | L | erledigt |
 | 3.4 | Trassen-Planner: Laufweg- und Zeitlagenkandidaten, zulässige Abweichungen | **XL** | erledigt |
-| 3.5 | Deterministischer `PlanningRun`, Koordinierungsverfahren, Seed-Tiebreak, Einspruchsfenster | L | offen |
-| 3.6 | Fahrplanperiode als Ablauf: Anmeldefenster, Koordinierung, Veröffentlichung, Betrieb | M | offen |
-| 3.7 | Ad-hoc-Trassen aus Restkapazität, Stornierung, Verfall bei Nichtnutzung | M | offen |
-| 3.8 | Rahmenverträge mit Kapazitätsdeckel | M | offen |
+| 3.5 | Deterministischer `PlanningRun`, Koordinierungsverfahren, Seed-Tiebreak, Einspruchsfenster | L | erledigt |
+| 3.6 | Fahrplanperiode als Ablauf: Anmeldefenster, Koordinierung, Veröffentlichung, Betrieb | M | erledigt |
+| 3.7 | Ad-hoc-Trassen aus Restkapazität, Stornierung, Verfall bei Nichtnutzung | M | erledigt |
+| 3.8 | Rahmenverträge mit Kapazitätsdeckel | M | erledigt |
 | 3.9 | **Gestaltungssystem konkretisieren** (`design.md` 2.7): Farbwerte gegen reale Datendichte prüfen, Komponentenbibliothek, Icon-Set, beide Dichtestufen. Erste echte Oberfläche, deshalb hier und nicht früher | L | offen |
 | 3.10 | Bildfahrplan-UI, Sperrzeitentreppe, Konflikterklärung im Client — Konvention vor Originalität | L | offen |
 
 > **Beweis:** Zwei Spieler beantragen konkurrierende Trassen. Das System
 > entscheidet nachvollziehbar, bietet eine Alternative an, und die Entscheidung
 > ist bei gleichem Seed exakt reproduzierbar.
+>
+> **Geführt in M3.5**: Zwei Anträge derselben Wunschlage geraten in
+> Widerstreit; unabhängig davon, in welcher Reihenfolge sie dem `PlanningRun`
+> übergeben werden, gewinnt derselbe — und über viele Fahrplanperioden hinweg
+> entscheidet dabei tatsächlich der veröffentlichte Seed, nicht eine versteckte
+> Bevorzugung. Der Verlierer erhält im Einspruchsfenster Gelegenheit, seine
+> Abweichungen zu erweitern; ein erneuter Lauf mit demselben Seed liefert dann
+> beiden eine Trasse.
 
-**M3.1 bis M3.4 tragen.** Zwei Crates, weil es zwei Fragen sind: Ist eine Trasse
-**zulässig** (`crates/zugfolge-conflict`, M3.1–M3.3), und welche ist **gut**
-(`crates/zugfolge-planner`, M3.4)?
+**M3.1 bis M3.8 tragen.** Drei Crates, weil es drei Fragen sind: Ist eine
+Trasse **zulässig** (`crates/zugfolge-conflict`, M3.1–M3.3, M3.8), welche ist
+**gut** (`crates/zugfolge-planner`, M3.4), und wie werden **mehrere**
+konkurrierende Anträge gemeinsam entschieden (`crates/zugfolge-planner`,
+M3.5–M3.7)?
 
 | Teilabschnitt | Was steht | Wo |
 |---------------|-----------|-----|
@@ -439,6 +459,10 @@ sich vollständig auskunfts- und löschbar behandeln. Siehe
 | M3.2 | `ServicePattern` mit Verkehrstagen und Zugnummernsystematik über einem relativen `OccupationProfile` — einmal rechnen, oft verschieben | `infrastruktur.md` 7 |
 | M3.3 | Belegungsbuch mit erklärbarem Befund; Invariante 1 gilt darin **durch Konstruktion** und ist als Property-Test über 400 Lagen belegt | `infrastruktur.md` 8 |
 | M3.4 | Laufweg-, Zeitlagen- und Betriebshaltkandidaten; veröffentlichte Rangfolge statt Zielfunktion (E11) | `infrastruktur.md` 9 |
+| M3.5 | `PlanningRun`: der gesamte Antragsbestand eines Fensters als ein `Tie`, aufgelöst über den Seed; Einspruchsfenster mit erneuter, deterministischer Koordinierungsrunde | `infrastruktur.md` 10 |
+| M3.6 | `SchedulePeriod`: Anmeldefenster, Koordinierung, Veröffentlichung, Betrieb als ganzzahlige, halboffene Achtel der Periodenlänge | `infrastruktur.md` 11 |
+| M3.7 | `AdHocLedger`: Restkapazität ohne Verdrängung, Stornierung, Verfall unter einem Nutzungsschwellwert in Basispunkten | `infrastruktur.md` 12 |
+| M3.8 | `FrameworkAgreement` und `FrameworkCapacityLedger`: Kapazitätsdeckel je Korridor, alles-oder-nichts-Bindung, abgerundete Basispunkte | `infrastruktur.md` 13 |
 
 **Der Spike aus M0.3 ist damit abgelöst und gelöscht**, wie seine README es
 angekündigt hatte. Alle drei Befunde und alle drei offenen Punkte sind
@@ -453,9 +477,7 @@ abgearbeitet:
 | **Offen:** die Fahrdynamik fehlt | `derive_running_time_table_with_exit` (M1.10, um die Bremskurve in den Halt ergänzt) |
 | **Offen:** die betrieblich richtige Auflösung ist ein eigenes Verfahren | der Betriebshalt des Planners (M3.4) — er kreuzt zur Wunschzeit, statt später zu fahren |
 
-Offen bleiben M3.5 bis M3.10: der `PlanningRun` mit Seed-Tiebreak, die
-Fahrplanperiode als Ablauf, Ad-hoc-Trassen, Rahmenverträge, das
-Gestaltungssystem und die Oberfläche.
+Offen bleiben M3.9 und M3.10: das Gestaltungssystem und die Oberfläche.
 
 ---
 
