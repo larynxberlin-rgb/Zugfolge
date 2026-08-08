@@ -199,15 +199,20 @@ impl InfrastructureBuilder {
     /// - [`ConflictError::UnknownTrack`], wenn eine Blockteilung ein Gleis
     ///   nennt, das der Graph nicht kennt, oder ein Blockabschnitt auf einem
     ///   anderen Gleis liegt als dem, unter dem er abgelegt ist.
+    /// - [`ConflictError::BlocksOnStationTrack`], wenn für ein Bahnhofsgleis
+    ///   eine Blockteilung hinterlegt ist — sie bliebe wirkungslos.
     /// - [`ConflictError::UnknownOperatingPoint`], wenn ein Fahrstraßenplan
     ///   eine Betriebsstelle nennt, die der Graph nicht kennt.
     pub fn build(self) -> Result<Infrastructure, ConflictError> {
         for (id, sections) in &self.blocks {
-            if self.graph.track(*id).is_none() {
+            let Some(track) = self.graph.track(*id) else {
                 return Err(ConflictError::UnknownTrack(*id));
-            }
+            };
             if sections.iter().any(|section| section.track() != *id) {
                 return Err(ConflictError::UnknownTrack(*id));
+            }
+            if matches!(track.owner(), TrackOwner::OperatingPoint(_)) {
+                return Err(ConflictError::BlocksOnStationTrack(*id));
             }
         }
         for point in self.interlocking.keys() {
@@ -294,6 +299,29 @@ mod tests {
                 "Lücke zwischen zwei Blöcken"
             );
         }
+    }
+
+    #[test]
+    fn eine_blockteilung_am_bahnhofsgleis_faellt_beim_bau_auf() {
+        // Sie bliebe wirkungslos — und wirkungslose Daten sind schlimmer als
+        // fehlende, weil sie aussehen, als täten sie etwas.
+        let netz = reference_network();
+        let gleis = netz.track(TrackId::new(101)).expect("Bahnhofsgleis");
+        let abschnitte = zugfolge_infra::derive_block_sections(
+            gleis,
+            &[],
+            zugfolge_infra::DEFAULT_MAX_BLOCK_LENGTH,
+            zugfolge_infra::SourceId::new("beispielnetz").expect("gültige Quellenkennung"),
+        )
+        .expect("gültige Blockableitung");
+
+        let ergebnis = Infrastructure::builder(netz)
+            .blocks(TrackId::new(101), abschnitte)
+            .build();
+        assert!(matches!(
+            ergebnis,
+            Err(ConflictError::BlocksOnStationTrack(track)) if track == TrackId::new(101)
+        ));
     }
 
     #[test]

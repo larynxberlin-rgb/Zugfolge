@@ -47,6 +47,13 @@ pub enum ConflictError {
         /// Die Stelle im Laufweg, ab null gezählt.
         index: usize,
     },
+    /// Für ein Bahnhofsgleis ist eine Blockteilung hinterlegt.
+    ///
+    /// Ein Bahnhofsgleis ist als Ganzes eine Konfliktressource — auf ihm steht
+    /// ein Zug, und zwei stehen dort nie gleichzeitig. Eine Blockteilung wäre
+    /// wirkungslos, und wirkungslose Daten sind schlimmer als fehlende: Sie
+    /// sehen aus, als täten sie etwas.
+    BlocksOnStationTrack(TrackId),
     /// Auf freier Strecke wird nicht gehalten — ein Halt gehört in eine
     /// Betriebsstelle.
     DwellOnLine {
@@ -121,6 +128,11 @@ impl fmt::Display for ConflictError {
                 "Gleis {track} steht an Stelle {index} des Laufwegs falsch — \
                  ein Laufweg beginnt und endet in einer Betriebsstelle und \
                  wechselt zwischen Bahnhofs- und Streckengleis"
+            ),
+            Self::BlocksOnStationTrack(track) => write!(
+                formatter,
+                "für das Bahnhofsgleis {track} ist eine Blockteilung hinterlegt — \
+                 ein Bahnhofsgleis ist als Ganzes eine Konfliktressource"
             ),
             Self::DwellOnLine { track } => write!(
                 formatter,

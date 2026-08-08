@@ -338,6 +338,11 @@ impl Timeline {
     /// die nächstgelegene vorherige Stützstelle; das ist die Zeit der sicheren
     /// Seite, weil sie die Sperrzeit eher verlängert.
     fn arrival(&self, position: Length) -> i64 {
+        debug_assert!(
+            self.arrival.contains_key(&position),
+            "die Zeitachse hat an {position} keine Stützstelle — der Fahrweg wurde \
+             nicht an jeder gebrauchten Stelle geschnitten"
+        );
         self.arrival
             .get(&position)
             .copied()
