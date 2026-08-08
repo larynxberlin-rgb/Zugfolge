@@ -1,0 +1,29 @@
+import { describe, expect, it } from "vitest";
+import { badge, emptyState, escapeHtml, field, icon } from "./index.js";
+const luminance = (hex: string): number => {
+  const channel = (value: string): number => { const x = Number.parseInt(value, 16) / 255; return x <= .04045 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4; };
+  return .2126 * channel(hex.slice(1, 3)) + .7152 * channel(hex.slice(3, 5)) + .0722 * channel(hex.slice(5, 7));
+};
+const contrast = (a: string, b: string): number => { const [bright, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x); return (bright! + .05) / (dark! + .05); };
+
+describe("Gestaltungssystem", () => {
+  it("liefert Icons ohne alleinige Farbbedeutung", () => {
+    expect(icon("alert", "Konflikt")).toContain('aria-label="Konflikt"');
+    expect(icon("train")).toContain('aria-hidden="true"');
+  });
+  it("maskiert dynamische Beschriftungen", () => {
+    expect(badge("<Gegenzug>", "danger", "alert")).toContain("&lt;Gegenzug&gt;");
+    expect(escapeHtml('A & "B"')).toBe("A &amp; &quot;B&quot;");
+  });
+  it("liefert beschriftete Formulare und Leerzustände", () => {
+    expect(field("train", "Zug", "<R>", "Nummer")).toContain('aria-describedby="train-help"');
+    expect(field("train", "Zug", "<R>")).toContain("&lt;R&gt;");
+    expect(emptyState("Keine Konflikte", "Die Trasse ist frei.")).toContain('role="status"');
+  });
+  it("erfüllt AA für die verbindlichen Textpaare", () => {
+    expect(contrast("#f1f3f7", "#090b10")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#b5bdca", "#11141b")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#ff8070", "#371d1d")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#78dfcc", "#16302e")).toBeGreaterThanOrEqual(4.5);
+  });
+});

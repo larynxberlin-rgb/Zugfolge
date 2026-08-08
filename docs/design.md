@@ -95,15 +95,25 @@ A, B und C tragen immer ihren Buchstaben. Farbe ist hier nur Unterstützung, nie
 Träger. Klasse C ist zusätzlich gestrichelt dargestellt — sichtbar, aber
 erkennbar nicht bestellbar.
 
-### 2.7 Konkrete Werte
+### 2.7 Konkrete Werte (M3.9)
 
-Bewusst noch nicht festgelegt. Hexwerte gehören an die erste echte Fläche in M3,
-wo sie gegen reale Datendichte geprüft werden können. Bindend ist bis dahin
-allein das System oben.
+Die Palette ist am dichten Bildfahrplan aus M3.10 geprüft und als CSS-Tokens in
+`packages/design-system/src/styles.css` verbindlich umgesetzt:
 
-Zwei Richtwerte als Anker, in M3 zu verifizieren: Basisfläche um `#12141A`
-(kein reines Schwarz, siehe 3.), Kartenfläche noch eine Stufe dunkler, damit
-Züge darauf leuchten.
+| Rolle | Wert | Verwendung |
+|-------|------|------------|
+| Kartenfläche | `#090B10` | dunkelste Fläche, Diagrammhintergrund |
+| Basisfläche | `#11141B` | Panels und Navigation |
+| erhöhte Fläche | `#181C25` / `#202530` | Bedienelemente und Hover |
+| Primärtext | `#F1F3F7` | Text mit höchster Hierarchie |
+| Sekundärtext | `#A5ADBA` | Erläuterungen |
+| Aufmerksamkeit | `#F0B75A` | ausgewählte Trasse, Warnung |
+| Störung | `#FF715F` | Konflikt, Sperrung, Ausfall |
+| Fahrstraße/frei | `#69D5C1` | bestätigte zulässige Alternative |
+| Fokus | `#9FB8E8` | Tastaturfokus, kein Betriebszustand |
+
+Die Zustandsfarben stehen nie allein: Konflikte tragen Schraffur und Warnsymbol,
+Alternativen Text und Richtungspfeil, ausgewählte Zugläufe zusätzliche Linienstärke.
 
 ## 3. Dunkelmodus — durchgehend
 
@@ -188,13 +198,23 @@ Konkret, was nicht übernommen wird — ergänzt E6 um die Gestaltungsseite:
 - **unbedenklich** ist dagegen die Signalfarblogik nach ESO — regulatorische
   Konvention, keine Marke. Ebenso die Konventionen des Bildfahrplans.
 
-## 8. Was bewusst bis M3 offenbleibt
+## 8. Komponenten und Dichte (M3.9)
 
-- konkrete Farbwerte, geprüft gegen reale Datendichte;
-- Komponentenbibliothek und Bedienelemente;
-- Layout der sieben Hauptflächen;
-- Detailgestaltung von Bildfahrplan und Sperrzeitentreppe;
-- Icon-Set;
+`packages/design-system` liefert Flächen, Schaltflächen, Zustands-Badges,
+beschriftete Formfelder, Tabellen, Leerzustände und ein eigenes,
+strichbasiertes Icon-Set für Zug, Konflikt, Zeit, Strecke, Sperrung, Bestätigung,
+Ebenen und Navigation. Alle
+Icons verwenden `currentColor`, tragen entweder eine zugängliche Beschriftung
+oder sind ausdrücklich dekorativ und lassen sich deshalb ohne Farblogik nutzen.
+Die Dichtestufen `control` (Leitstelle) und `document` (Dokument) schalten nur
+Schriftgrad, Zeilenhöhe, Lesedurchschuss und Abstand. Ein gemeinsamer
+`:focus-visible`-Vertrag, Screenreader-Hilfsklasse und immer beschriftete
+Formfelder sind Teil der Komponentenbasis. Die Bildfahrplan-Oberfläche macht
+den Wechsel direkt prüfbar.
+
+## 9. Was nach M3 offenbleibt
+
+- Layout der übrigen sechs Hauptflächen;
 - Kartenstil im Detail — Beschriftungsdichte je Zoomstufe, Darstellung der
   ausgeschlossenen Netze als blasse Kontextlinien;
 - Lackierungseditor;
