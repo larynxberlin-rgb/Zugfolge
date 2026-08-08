@@ -138,11 +138,17 @@ Stationsdaten-Anreicherung, die Zugcharakteristik, Fahrdynamik und
 Fahrzeitrechner, der Anlagenkataster, der `InfraRelease` und der Referenzkorpus
 mit Abweichungsreport stehen in `crates/zugfolge-infra`. Damit ist der
 Betriebsgraph samt Infra-Release-Pipeline vollständig.
-**Von M3 sind M3.1 bis M3.4 erledigt** — das Sperrzeitenmodell, das
+**Von M3 sind M3.1 bis M3.8 erledigt** — das Sperrzeitenmodell, das
 wiederkehrende Verkehrsangebot mit relativem Belegungsprofil, der Konfliktprüfer
 mit erklärbarem Ergebnis (`crates/zugfolge-conflict`) und der Trassen-Planner
 (`crates/zugfolge-planner`). Der Wegwerf-Spike aus M0.3 ist damit verfallen und
-gelöscht. Offen bleiben M3.5 bis M3.10.
+gelöscht. Darauf aufbauend tragen der deterministische `PlanningRun` mit
+Seed-Tiebreak und Einspruchsfenster (M3.5), die Fahrplanperiode als Ablauf aus
+Anmeldefenster, Koordinierung, Veröffentlichung und Betrieb (M3.6,
+`SchedulePeriod`), die Ad-hoc-Vergabe aus Restkapazität mit Stornierung und
+Verfall bei Nichtnutzung (M3.7, `AdHocLedger`) und die Rahmenverträge mit
+Kapazitätsdeckel (M3.8, `FrameworkAgreement`, `crates/zugfolge-conflict`).
+Offen bleiben M3.9 und M3.10 — Gestaltungssystem und Bildfahrplan-Oberfläche.
 **M2 ist abgeschlossen: M2.1 bis M2.6 sind erledigt** — Keycloak-Integration,
 Konten, Rollen und Weltzugänge (`packages/identity`, `apps/game-api`), die
 Weltisolation mit `packages/db`, die EVU-Entität (`packages/operators`), der
@@ -363,9 +369,40 @@ Ledger-Kern (`packages/economy`), das Postfach-Grundgerüst
   bleibt. Damit fährt der Zug aus dem Fall des Spikes zur Wunschzeit und kreuzt
   in Sandberg, statt sieben Minuten später zu fahren. Siehe
   `docs/infrastruktur.md` 9.
-- **Nächster Schritt:** M3.5 bis M3.10 — deterministischer `PlanningRun` mit
-  Seed-Tiebreak, Fahrplanperiode als Ablauf, Ad-hoc-Trassen, Rahmenverträge,
-  Gestaltungssystem und Bildfahrplan-Oberfläche (`docs/milestones.md`).
+- **M3.5 steht:** `PlanningRun` (`crates/zugfolge-planner`) behandelt mehrere
+  konkurrierende Anträge eines Planungsfensters gemeinsam. Der Kern kennt kein
+  Merkmal, das eine Bevorzugung rechtfertigt — Bezahlstatus ist verboten,
+  Ankunftsreihenfolge ist verboten (Abschnitt 2.4) —, deshalb ist der gesamte
+  Antragsbestand eines Fensters **ein einziger Gleichstand** (`Tie`),
+  aufgelöst über den Substream `Tiebreak` des Weltseeds: Die Kennungen werden
+  kanonisch sortiert, dann gemischt — unabhängig davon, in welcher Reihenfolge
+  sie übergeben wurden. Wer im Entwurf eine Alternativtrasse oder eine
+  Ablehnung erhält, kann binnen des `ObjectionWindow` einen geänderten Antrag
+  einreichen; der Lauf rechnet mit demselben Seed erneut, bis `finalize` das
+  Ergebnis endgültig macht. Siehe `docs/infrastruktur.md` 10.
+- **M3.6 steht:** `SchedulePeriod` (`crates/zugfolge-planner`) bildet den
+  Ablauf einer Fahrplanperiode als Wert ab: Anmeldefenster, Koordinierung,
+  Veröffentlichung und Betrieb als ganzzahlige, **halboffene** Achtel der
+  Periodenlänge (E3) — ein Viertel, zwei Achtel, eine Hälfte, jede Grenze
+  unabhängig berechnet, damit keine Rundung driftet. Jede Phase erlaubt genau
+  eine Handlung, und die Folgeperiode schließt lückenlos an ihr Ende an. Siehe
+  `docs/infrastruktur.md` 11.
+- **M3.7 steht:** `AdHocLedger` (`crates/zugfolge-planner`) vergibt Trassen
+  ausschließlich aus der **verbleibenden** Kapazität einer laufenden Periode —
+  anders als der `PlanningRun` verdrängt ein Ad-hoc-Antrag nie eine bereits
+  liegende Trasse. Eine Stornierung gibt ihre Kapazität sofort frei; „Use it
+  or lose it" (E4) trägt `report_usage` und `sweep_underused`, die eine Trasse
+  unter einem Nutzungsschwellwert in Basispunkten automatisch verfallen
+  lassen. Siehe `docs/infrastruktur.md` 12.
+- **M3.8 steht:** `FrameworkAgreement` und `FrameworkCapacityLedger`
+  (`crates/zugfolge-conflict`) setzen den Rahmenvertragsdeckel gegen Landgrab
+  um (E4): eine mehrperiodige Kapazitätszusage über einen Korridor aus
+  Konfliktressourcen, gedeckelt auf einen **abgerundeten** Anteil einer
+  vorgegebenen Kapazität in Basispunkten. Eine Bindung ist alles oder nichts —
+  sprengt eine einzige betroffene Ressource ihren Deckel, bindet keine. Siehe
+  `docs/infrastruktur.md` 13.
+- **Nächster Schritt:** M3.9 und M3.10 — das Gestaltungssystem konkretisieren
+  und die Bildfahrplan-Oberfläche (`docs/milestones.md`).
 
 Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` steht unter
 PolyForm Shield 1.0.0, nennt Sebastian Barowski als Rechteinhaber und ist damit

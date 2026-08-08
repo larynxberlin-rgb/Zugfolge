@@ -12,8 +12,8 @@ werden.
 crates/                     Rust — Simulationskern, Solver, Release-Pipeline
   zugfolge-determinism/     Determinismus-Testharnisch (M0.2)
   zugfolge-infra/           Betriebsgraph und Infra-Release-Pipeline (M1)
-  zugfolge-conflict/        Sperrzeiten, Belegungsprofile, Konfliktprüfung (M3.1–M3.3)
-  zugfolge-planner/         Trassen-Planner: Laufweg- und Zeitlagenkandidaten (M3.4)
+  zugfolge-conflict/        Sperrzeiten, Belegungsprofile, Konfliktprüfung (M3.1–M3.3), Rahmenverträge (M3.8)
+  zugfolge-planner/         Trassen-Planner (M3.4), PlanningRun, Fahrplanperiode, Ad-hoc-Trassen (M3.5–M3.7)
 packages/                   TypeScript — fachliche Bibliotheken (ab M2)
   db/                       Postgres-Zugriff über Drizzle, Wurzel der Weltisolation (M2.2)
   identity/                 Konten, Rollen, Weltzugänge; Keycloak-Verifikation (M2.1)

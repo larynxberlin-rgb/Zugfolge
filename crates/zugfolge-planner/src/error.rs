@@ -10,6 +10,8 @@ use core::fmt;
 use zugfolge_conflict::ConflictError;
 use zugfolge_infra::OperatingPointId;
 
+use crate::request::PathRequestId;
+
 /// Was an einem Trassenantrag oder seiner Bearbeitung nicht stimmt.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -39,6 +41,21 @@ pub enum PlannerError {
     /// Der Betriebsgraph, die Fahrdynamik oder das Sperrzeitenmodell hat die
     /// Eingabe zurückgewiesen.
     Conflict(ConflictError),
+    /// Zwei Anträge desselben Planungslaufs tragen dieselbe Kennung (M3.5).
+    DuplicateRequest(PathRequestId),
+    /// Ein Einspruch nennt eine Kennung, die dieser Planungslauf nicht kennt
+    /// (M3.5).
+    UnknownRequest(PathRequestId),
+    /// Der Planungslauf ist bereits abgeschlossen — das Einspruchsfenster ist
+    /// zu (M3.5).
+    ObjectionWindowClosed,
+    /// `finalize` verlangt mindestens einen abgeschlossenen Lauf
+    /// (M3.5).
+    NotYetCoordinated,
+    /// Eine Fahrplanperiode braucht eine positive Länge (M3.6).
+    InvalidPeriodLength(i64),
+    /// Eine Kennung ist in einem Ad-hoc-Belegungsbuch nicht bekannt (M3.7).
+    UnknownAdHocPath(u32),
 }
 
 impl From<ConflictError> for PlannerError {
@@ -77,6 +94,27 @@ impl fmt::Display for PlannerError {
                  Bahnsteig für diese Zuglänge"
             ),
             Self::Conflict(error) => write!(formatter, "{error}"),
+            Self::DuplicateRequest(id) => write!(
+                formatter,
+                "der Antrag {id} ist im Planungslauf mehrfach enthalten"
+            ),
+            Self::UnknownRequest(id) => {
+                write!(formatter, "der Planungslauf kennt keinen Antrag {id}")
+            }
+            Self::ObjectionWindowClosed => write!(
+                formatter,
+                "der Planungslauf ist bereits abgeschlossen — das Einspruchsfenster ist zu"
+            ),
+            Self::NotYetCoordinated => {
+                write!(formatter, "der Planungslauf ist noch nicht koordiniert")
+            }
+            Self::InvalidPeriodLength(days) => write!(
+                formatter,
+                "eine Fahrplanperiode von {days} Tagen ist keine gültige Periodenlänge"
+            ),
+            Self::UnknownAdHocPath(id) => {
+                write!(formatter, "keine Ad-hoc-Trasse mit der Kennung {id}")
+            }
         }
     }
 }

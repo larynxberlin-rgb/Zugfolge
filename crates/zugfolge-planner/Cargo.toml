@@ -1,6 +1,6 @@
 [package]
 name = "zugfolge-planner"
-description = "Trassen-Planner (M3.4): Laufweg- und Zeitlagenkandidaten, zulässige Abweichungen, Annahme, Alternativtrasse oder Ablehnung mit Begründung"
+description = "Trassen-Planner (M3.4): Laufweg- und Zeitlagenkandidaten, zulässige Abweichungen, Annahme, Alternativtrasse oder Ablehnung mit Begründung; deterministischer PlanningRun mit Seed-Tiebreak und Einspruchsfenster (M3.5), Fahrplanperiode als Ablauf (M3.6), Ad-hoc-Trassen aus Restkapazität (M3.7)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

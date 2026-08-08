@@ -60,6 +60,7 @@ mod blocking;
 mod conflict;
 mod error;
 pub mod example;
+mod framework;
 mod infrastructure;
 mod itinerary;
 mod profile;
@@ -74,6 +75,7 @@ pub use conflict::{
     minimum_headway,
 };
 pub use error::ConflictError;
+pub use framework::{FrameworkAgreement, FrameworkAgreementId, FrameworkCapacityLedger};
 pub use infrastructure::{Infrastructure, InfrastructureBuilder, ResourceSpan};
 pub use itinerary::{CheckedLeg, Itinerary, ItineraryLeg};
 pub use profile::{OccupationProfile, derive_occupation_profile, resources_of};
