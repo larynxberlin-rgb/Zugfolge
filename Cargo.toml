@@ -20,6 +20,7 @@ zugfolge-infra = { path = "crates/zugfolge-infra", version = "0.0.0" }
 zugfolge-conflict = { path = "crates/zugfolge-conflict", version = "0.0.0" }
 zugfolge-planner = { path = "crates/zugfolge-planner", version = "0.0.0" }
 zugfolge-sim = { path = "crates/zugfolge-sim", version = "0.0.0" }
+zugfolge-fleet = { path = "crates/zugfolge-fleet", version = "0.0.0" }
 
 # Die harten Invarianten aus CLAUDE.md, soweit der Compiler sie halten kann.
 # Was der Compiler nicht sieht, prüft `tools/guards` (siehe docs/monorepo.md).
