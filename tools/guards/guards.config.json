@@ -23,8 +23,8 @@
     },
     {
       "id": "path-allocation",
-      "title": "Trassen-Planner und Vergabeverfahren (M3)",
-      "status": "planned",
+      "title": "Trassen-Planner und Vergabeverfahren (M3.4)",
+      "status": "active",
       "paths": ["crates/zugfolge-planner/**", "packages/path-allocation/**"],
       "rules": [
         "no-payment-tier",

@@ -17,8 +17,9 @@ Ergebnis vorzeigbar ist. Bislang erledigt:
 - **M0.1** — die ADRs zu E1–E20 (E21 später ergänzt), siehe [`adr/`](adr/README.md);
 - **M0.2** — Monorepo, CI, Determinismus-Testharnisch, Wächter und Glossar,
   siehe [`monorepo.md`](monorepo.md) und [`glossar.md`](glossar.md);
-- **M0.3** — der Wegwerf-Spike zur Sperrzeitentreppe, siehe
-  [`spikes/blocking-time-staircase/`](../spikes/blocking-time-staircase/README.md);
+- **M0.3** — der Wegwerf-Spike zur Sperrzeitentreppe; er ist mit M3.1 verfallen
+  und gelöscht, sein Ergebnis steht in [`infrastruktur.md`](infrastruktur.md) 6
+  bis 9;
 - **M0.4** — das Rechte-Gate: Quellenregister mit Freigabestatus je Datenquelle,
   durchgesetzt vom Wächter `rights-gate`, siehe [`rechte.md`](rechte.md);
 - **M0.5** — Lizenz und Rechteschutz: `LICENSE` mit benanntem Rechteinhaber
@@ -98,6 +99,20 @@ Damit ist **M1 abgeschlossen**: Betriebsgraph und Infra-Release-Pipeline stehen.
 Damit ist **M2 abgeschlossen**: das Weltgerüst — Konten, Weltisolation, EVU,
 Ledger, Postfach, Datenschutz — steht vollständig.
 
+- **M3.1** — das Sperrzeitenmodell mit sechs Anteilen, halboffenen Intervallen
+  und Parametern je Betriebsstelle und Stellwerksbauart, siehe
+  [`infrastruktur.md`](infrastruktur.md) 6 und
+  [`crates/zugfolge-conflict`](../crates/zugfolge-conflict);
+- **M3.2** — `ServicePattern` und relatives `OccupationProfile` samt
+  Zugnummernsystematik und Verkehrstagen, siehe
+  [`infrastruktur.md`](infrastruktur.md) 7;
+- **M3.3** — der Konfliktprüfer mit erklärbarem Ergebnis und das Belegungsbuch,
+  das Invariante 1 durch Konstruktion hält, siehe
+  [`infrastruktur.md`](infrastruktur.md) 8;
+- **M3.4** — der Trassen-Planner mit Laufweg-, Zeitlagen- und
+  Betriebshaltkandidaten, siehe [`infrastruktur.md`](infrastruktur.md) 9 und
+  [`crates/zugfolge-planner`](../crates/zugfolge-planner).
+
 ---
 
 ## M0 — Fundament und Grundsatzentscheidungen
@@ -114,11 +129,11 @@ Ledger, Postfach, Datenschutz — steht vollständig.
 > Sperrzeitentreppe sichtbar gemacht. Das ist die Existenzberechtigung des
 > gesamten Projekts — und der billigste Zeitpunkt, sie zu prüfen.
 >
-> **Geführt in M0.3** (`spikes/blocking-time-staircase/`): Zwei Züge geraten auf
-> dem eingleisigen Ast in Gegenfahrt, zwei weitere in den Zugfolgefall; beide
-> Konflikte werden mit Ressource, Zeitfenster und Gegenzug gemeldet und im
-> Bildfahrplan sichtbar. Die konfliktfreien Gegenproben sind ebenfalls
-> abgelegt, damit die Prüfung nicht bloß immer Rot meldet.
+> **Geführt in M0.3**: Zwei Züge gerieten auf dem eingleisigen Ast in
+> Gegenfahrt, zwei weitere in den Zugfolgefall; beide Konflikte wurden mit
+> Ressource, Zeitfenster und Gegenzug gemeldet und im Bildfahrplan sichtbar
+> gemacht. Der Spike ist mit M3.1 verfallen und gelöscht; seine Befunde tragen
+> seither das Modell in `crates/zugfolge-conflict`.
 
 Drei Befunde des Spikes wirken auf spätere Milestones, ausführlich in seiner
 README:
@@ -128,6 +143,8 @@ README:
 | Ein Ressourcenmodell trägt beide Konfliktarten — Zugfolge und Gegenfahrt sind eine Eigenschaft des Netzes, keine zweite Regel | M3.1, M3.3 |
 | Der Bahnhofskopf fehlt: Ohne Fahrstraßenausschluss prüft der Konfliktprüfer nur die halbe Wahrheit | M1.7 bleibt der teuerste Posten in M1 |
 | Die Prüfung kennt nur die triviale Auflösung („später fahren"); die betrieblich richtige — kreuzen in einer Betriebsstelle — ist ein eigenes Verfahren | M3.4 ist keine Erweiterung des Prüfers |
+
+Alle drei sind mit M3.1 bis M3.4 abgearbeitet; die Zuordnung steht bei M3.
 
 ---
 
@@ -397,10 +414,10 @@ sich vollständig auskunfts- und löschbar behandeln. Siehe
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 3.1 | Sperrzeitenmodell: Fahrstraßenbildezeit, Annäherung, Fahrzeit, Räumung, Auflösung | L | offen |
-| 3.2 | `ServicePattern` + relatives `OccupationProfile`, inklusive Zugnummernsystematik | M | offen |
-| 3.3 | Konfliktprüfer mit erklärbarem Ergebnis: welche Ressource, welches Fenster, welcher Gegenzug | L | offen |
-| 3.4 | Trassen-Planner: Laufweg- und Zeitlagenkandidaten, zulässige Abweichungen | **XL** | offen |
+| 3.1 | Sperrzeitenmodell: Fahrstraßenbildezeit, Annäherung, Fahrzeit, Räumung, Auflösung | L | erledigt |
+| 3.2 | `ServicePattern` + relatives `OccupationProfile`, inklusive Zugnummernsystematik | M | erledigt |
+| 3.3 | Konfliktprüfer mit erklärbarem Ergebnis: welche Ressource, welches Fenster, welcher Gegenzug | L | erledigt |
+| 3.4 | Trassen-Planner: Laufweg- und Zeitlagenkandidaten, zulässige Abweichungen | **XL** | erledigt |
 | 3.5 | Deterministischer `PlanningRun`, Koordinierungsverfahren, Seed-Tiebreak, Einspruchsfenster | L | offen |
 | 3.6 | Fahrplanperiode als Ablauf: Anmeldefenster, Koordinierung, Veröffentlichung, Betrieb | M | offen |
 | 3.7 | Ad-hoc-Trassen aus Restkapazität, Stornierung, Verfall bei Nichtnutzung | M | offen |
@@ -411,6 +428,34 @@ sich vollständig auskunfts- und löschbar behandeln. Siehe
 > **Beweis:** Zwei Spieler beantragen konkurrierende Trassen. Das System
 > entscheidet nachvollziehbar, bietet eine Alternative an, und die Entscheidung
 > ist bei gleichem Seed exakt reproduzierbar.
+
+**M3.1 bis M3.4 tragen.** Zwei Crates, weil es zwei Fragen sind: Ist eine Trasse
+**zulässig** (`crates/zugfolge-conflict`, M3.1–M3.3), und welche ist **gut**
+(`crates/zugfolge-planner`, M3.4)?
+
+| Teilabschnitt | Was steht | Wo |
+|---------------|-----------|-----|
+| M3.1 | sechs Anteile, halboffene Intervalle, Parameter je Betriebsstelle und Stellwerksbauart statt netzweiter Konstanten | `infrastruktur.md` 6 |
+| M3.2 | `ServicePattern` mit Verkehrstagen und Zugnummernsystematik über einem relativen `OccupationProfile` — einmal rechnen, oft verschieben | `infrastruktur.md` 7 |
+| M3.3 | Belegungsbuch mit erklärbarem Befund; Invariante 1 gilt darin **durch Konstruktion** und ist als Property-Test über 400 Lagen belegt | `infrastruktur.md` 8 |
+| M3.4 | Laufweg-, Zeitlagen- und Betriebshaltkandidaten; veröffentlichte Rangfolge statt Zielfunktion (E11) | `infrastruktur.md` 9 |
+
+**Der Spike aus M0.3 ist damit abgelöst und gelöscht**, wie seine README es
+angekündigt hatte. Alle drei Befunde und alle drei offenen Punkte sind
+abgearbeitet:
+
+| Was der Spike hinterließ | Wo es jetzt steht |
+|--------------------------|-------------------|
+| Ein Ressourcenmodell trägt beide Konfliktarten | `ConflictResource` (M3.1) — die Fallunterscheidung liegt im Netz, nicht im Prüfer |
+| Halboffene Intervalle, Mindestzugfolgezeit fällt aus dem Modell | `RelativeOccupation` und `minimum_headway` (M3.1, M3.3) |
+| Der Befund ist von sich aus erklärbar | `OccupationConflict::explain` (M3.3) |
+| **Offen:** der Bahnhofskopf braucht Ausschlussmengen | `ResourceExclusions` aus M1.7, wirksam seit M3.3 |
+| **Offen:** die Fahrdynamik fehlt | `derive_running_time_table_with_exit` (M1.10, um die Bremskurve in den Halt ergänzt) |
+| **Offen:** die betrieblich richtige Auflösung ist ein eigenes Verfahren | der Betriebshalt des Planners (M3.4) — er kreuzt zur Wunschzeit, statt später zu fahren |
+
+Offen bleiben M3.5 bis M3.10: der `PlanningRun` mit Seed-Tiebreak, die
+Fahrplanperiode als Ablauf, Ad-hoc-Trassen, Rahmenverträge, das
+Gestaltungssystem und die Oberfläche.
 
 ---
 

@@ -20,7 +20,7 @@ lesen, nicht raten.
 | `docs/monorepo.md` | Verzeichnisaufbau, Domänengrenzen, Werkzeugkette, Durchsetzung der Invarianten | Code beitragen, neues Paket oder Crate anlegen, CI verstehen |
 | `docs/glossar.md` | Domänenglossar: deutscher Fachbegriff → Bezeichner im Code → Bedeutung → Quelle | jede Benennung im Code, jeder neue Fachbegriff |
 | `docs/produkt.md` | Produktdefinition, Oberflächen, Onboarding, Netzabgrenzung, Spielertypen, Anti-Monokultur | Produktfragen, UI, Zielgruppe, Was-gehört-dazu |
-| `docs/infrastruktur.md` | Konfliktressourcen, Trassenvergabe, Fahrplanperiode, Kapazitätsschutz, Simulation, Livemap | Solver, Sperrzeiten, Planner, Livemap |
+| `docs/infrastruktur.md` | Konfliktressourcen, Trassenvergabe, Fahrplanperiode, Kapazitätsschutz, Simulation, Livemap; ab 6 das Sperrzeitenmodell, Belegungsprofil, Konfliktprüfer und Trassen-Planner (M3.1–M3.4) | Solver, Sperrzeiten, Planner, Livemap |
 | `docs/betriebsgraph.md` | Domänenmodell der Infrastruktur (M1.1): Bausteine, Zusicherungen, Einheiten, Fingerabdruck, Abgrenzung | am Betriebsgraphen arbeiten, Import, Netzfilter, Blöcke, Fahrstraßen |
 | `docs/betrieb.md` | Betriebsprogramm, Fahrzeuge, Personal, Versorgung, Zusatzfahrten, Störungen, Baustellenfahrplan | Disposition, Flotte, Umläufe, Wartung, Baustellen |
 | `docs/weltgeruest.md` | Weltgerüst (M2): Konten, Rollen, Weltzugänge, Grenze zur Identität bei Keycloak, EVU, Ledger-Kern, Postfach, Datenschutz | Konten, Rollen, Weltzugänge, EVU, Ledger, Postfach oder Datenschutz bearbeiten |
@@ -137,6 +137,11 @@ Stationsdaten-Anreicherung, die Zugcharakteristik, Fahrdynamik und
 Fahrzeitrechner, der Anlagenkataster, der `InfraRelease` und der Referenzkorpus
 mit Abweichungsreport stehen in `crates/zugfolge-infra`. Damit ist der
 Betriebsgraph samt Infra-Release-Pipeline vollständig.
+**Von M3 sind M3.1 bis M3.4 erledigt** — das Sperrzeitenmodell, das
+wiederkehrende Verkehrsangebot mit relativem Belegungsprofil, der Konfliktprüfer
+mit erklärbarem Ergebnis (`crates/zugfolge-conflict`) und der Trassen-Planner
+(`crates/zugfolge-planner`). Der Wegwerf-Spike aus M0.3 ist damit verfallen und
+gelöscht. Offen bleiben M3.5 bis M3.10.
 **M2 ist abgeschlossen: M2.1 bis M2.6 sind erledigt** — Keycloak-Integration,
 Konten, Rollen und Weltzugänge (`packages/identity`, `apps/game-api`), die
 Weltisolation mit `packages/db`, die EVU-Entität (`packages/operators`), der
@@ -145,14 +150,15 @@ Ledger-Kern (`packages/economy`), das Postfach-Grundgerüst
 
 - **Alpha-Schnitt:** M0 – M9. Alles ab M10 ist Ausbau.
 - **Kritischer Pfad:** M0.3 → M1 → M3 → M4 → M7. Die ersten Schritte sind geführt.
-- **M0.3 hat getragen:** `spikes/blocking-time-staircase/` rechnet die
-  Sperrzeitentreppe zweier Züge über drei Betriebsstellen, erkennt Gegenfahrt
-  und Zugfolgefall mit Ressource, Zeitfenster und Gegenzug und zeichnet den
-  Bildfahrplan. Drei Befunde wirken weiter: ein Ressourcenmodell trägt beide
-  Konfliktarten (M3.1, M3.3); der Bahnhofskopf braucht Ausschlussmengen statt
-  einzelner Ressourcen (M1.7); die betrieblich richtige Auflösung eines
-  Konflikts ist ein eigenes Verfahren (M3.4). Der Spike **verfällt mit M3.1**
-  und wird dann gelöscht, nicht weitergepflegt.
+- **M0.3 hat getragen und ist abgelöst:** Der Spike
+  `spikes/blocking-time-staircase/` hat die Sperrzeitentreppe zweier Züge über
+  drei Betriebsstellen gerechnet und beide Konfliktarten erkannt. Er ist **mit
+  M3.1 verfallen und gelöscht**, wie angekündigt. Seine drei Befunde und seine
+  drei offenen Punkte stehen jetzt im Modell: das Ressourcenmodell für beide
+  Konfliktarten und die halboffenen Intervalle in M3.1, der erklärbare Befund in
+  M3.3, die Ausschlussmengen des Bahnhofskopfs aus M1.7, die Fahrdynamik aus
+  M1.10 und die betrieblich richtige Auflösung — kreuzen statt warten — im
+  Planner aus M3.4.
 - **M0.4 und M0.5 haben getragen:** Das Rechte-Gate führt jede Datenquelle mit
   Freigabestatus im Quellenregister (`tools/guards/quellenregister.json`), und
   der Wächter `rights-gate` setzt Invariante 8 durch — heute die Registerpflege,
@@ -320,8 +326,45 @@ Ledger-Kern (`packages/economy`), das Postfach-Grundgerüst
   Aufbewahrungsfristen je Datenkategorie fest — Ledger und Event-Log bleiben
   unbefristet und außerhalb der Löschung, weil beide unveränderlich sind und
   keine natürliche Person tragen. Siehe `docs/weltgeruest.md` Abschnitt 10.
-- **Nächster Schritt:** M3 — Sperrzeiten, Konfliktengine, Trassenvergabe
-  (`docs/milestones.md`).
+- **M3.1 steht:** `crates/zugfolge-conflict` trägt das Sperrzeitenmodell — die
+  sechs Anteile als `RelativeOccupation`, halboffen `[start, end)`, sodass die
+  Mindestzugfolgezeit aus dem Modell **herausfällt** statt darin zu stehen.
+  `ConflictResource` fasst Blockabschnitt, Bahnhofsgleis, Fahrstraße und Anlage
+  in **einer** Aufzählung; die Ausschlussmenge aus M1.7 (`ResourceExclusions`)
+  steht daneben, nicht darin — die Ressource ist eine Kennung, die
+  Verträglichkeit eine Eigenschaft des Stellwerks. Die netzweiten Konstanten des
+  Spikes sind durch Werte **je Betriebsstelle und Stellwerksbauart** ersetzt
+  (`SignallingModel`, `InterlockingKind`). Dafür hat M3.1 M1.10 additiv um
+  `derive_running_time_table_with_exit` ergänzt: die Bremskurve in einen Halt
+  hinein, die M1.10 ausdrücklich offengelassen hatte. Siehe
+  `docs/infrastruktur.md` 6.
+- **M3.2 steht:** `ServicePattern` hält wiederkehrenden Verkehr als **eine**
+  Zeile — Zugnummer, Zugcharakteristik, Laufweg, Zeitlage, Verkehrstage — über
+  einem **relativen** `OccupationProfile`. Einmal rechnen, oft verschieben: Ein
+  Verkehrstag ist eine Addition, keine zweite Fahrdynamikrechnung, und genau das
+  macht den Planner bezahlbar. Dazu die Zugnummernsystematik (Gattung über den
+  Nummernbereich, Richtung über die Parität) und die Festlegung, dass die
+  **Weltepoche ein Montag** ist. Siehe `docs/infrastruktur.md` 7.
+- **M3.3 steht:** Das Belegungsbuch `OccupationLedger` ist nach Ressource
+  gruppiert und nimmt über `try_insert` nur konfliktfreie Fahrten auf —
+  **Invariante 1 gilt darin durch Konstruktion**. Der Befund nennt Ressource,
+  Fenster, Gegenzug und Konfliktart und erklärt sich ohne zweite Abfrage. Die
+  Mindestzugfolgezeit ist ein Ergebnis (`minimum_headway`), kein Parameter. Der
+  Nachweis ist ein Property-Test über 400 gestreute Lagen gegen eine zweite,
+  unabhängig geschriebene Prüfung. Siehe `docs/infrastruktur.md` 8.
+- **M3.4 steht:** `crates/zugfolge-planner` beantwortet die andere Frage — nicht
+  ob eine Trasse zulässig ist, sondern welche gut ist. Drei Freiheitsgrade, die
+  der Prüfer nicht hat: Laufweg, Zeitlage und **Betriebshalt**. Der Betriebshalt
+  ist die Kreuzung, und seine Dauer wird aus dem Prüfbericht errechnet, nicht
+  geraten; ein Haltepunkt ohne Weichen kommt nie in Frage. Bewertet wird nach
+  einer **veröffentlichten Rangfolge** statt nach einer Zielfunktion (E11), und
+  der Planner liefert alle zulässigen Kandidaten, damit die Alternative sichtbar
+  bleibt. Damit fährt der Zug aus dem Fall des Spikes zur Wunschzeit und kreuzt
+  in Sandberg, statt sieben Minuten später zu fahren. Siehe
+  `docs/infrastruktur.md` 9.
+- **Nächster Schritt:** M3.5 bis M3.10 — deterministischer `PlanningRun` mit
+  Seed-Tiebreak, Fahrplanperiode als Ablauf, Ad-hoc-Trassen, Rahmenverträge,
+  Gestaltungssystem und Bildfahrplan-Oberfläche (`docs/milestones.md`).
 
 Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` steht unter
 PolyForm Shield 1.0.0, nennt Sebastian Barowski als Rechteinhaber und ist damit

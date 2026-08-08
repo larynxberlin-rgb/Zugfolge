@@ -149,8 +149,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "zugfolge-spike-blocking-time-staircase"
+name = "zugfolge-planner"
 version = "0.0.0"
 dependencies = [
+ "zugfolge-conflict",
  "zugfolge-determinism",
+ "zugfolge-infra",
 ]
