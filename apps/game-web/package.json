@@ -1,0 +1,11 @@
+{
+  "name": "@zugfolge/game-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Bildfahrplan und Konflikterklärung (M3.10)",
+  "license": "LicenseRef-PolyForm-Shield-1.0.0",
+  "scripts": { "build": "vite build", "typecheck": "tsc --noEmit", "test": "vitest run", "dev": "vite --host 0.0.0.0" },
+  "dependencies": { "@zugfolge/design-system": "workspace:*" },
+  "devDependencies": { "typescript": "^7.0.2", "vite": "^8.2.0", "vitest": "^4.1.10" }
+}

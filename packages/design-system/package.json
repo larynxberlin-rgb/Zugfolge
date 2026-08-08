@@ -1,0 +1,11 @@
+{
+  "name": "@zugfolge/design-system",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Achromatisches Gestaltungssystem für die Zugfolge-Betriebsoberflächen (M3.9)",
+  "license": "LicenseRef-PolyForm-Shield-1.0.0",
+  "exports": { ".": "./dist/index.js", "./styles.css": "./src/styles.css" },
+  "scripts": { "build": "tsc", "typecheck": "tsc --noEmit", "test": "vitest run" },
+  "devDependencies": { "typescript": "^7.0.2", "vitest": "^4.1.10" }
+}
