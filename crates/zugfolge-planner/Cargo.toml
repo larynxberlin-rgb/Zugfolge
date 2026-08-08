@@ -1,0 +1,17 @@
+[package]
+name = "zugfolge-planner"
+description = "Trassen-Planner (M3.4): Laufweg- und Zeitlagenkandidaten, zulässige Abweichungen, Annahme, Alternativtrasse oder Ablehnung mit Begründung"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+zugfolge-conflict = { workspace = true }
+zugfolge-determinism = { workspace = true }
+zugfolge-infra = { workspace = true }
+
+[lints]
+workspace = true

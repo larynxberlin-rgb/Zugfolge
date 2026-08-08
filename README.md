@@ -5,14 +5,17 @@ mit hohem betrieblichem, infrastrukturellem und wirtschaftlichem Realismus.
 Öffentliche Welten laufen dauerhaft in 1:1-Echtzeit ohne Wipes. Erste
 Pilotregion: **Leipzig–Halle–Erfurt**.
 
-> **Stand:** **M0 (M0.1–M0.5) und M1 (M1.1–M1.13) sind abgeschlossen.**
-> Fundament, Rechte-Gate und Rechteschutz stehen; der Betriebsgraph samt
-> Infra-Release-Pipeline für die Pilotregion ist vollständig
-> ([`docs/betriebsgraph.md`](docs/betriebsgraph.md)). Mit **M2.1** stehen
-> Keycloak-Integration, Konten, Rollen und Weltzugänge
-> ([`docs/weltgeruest.md`](docs/weltgeruest.md)) — die ersten Pakete unter
-> `packages/` und `apps/`. Der nächste Schritt ist M2.2, die automatisierte
-> Weltisolation.
+> **Stand:** **M0, M1 und M2 sind abgeschlossen.** Fundament, Rechte-Gate und
+> Rechteschutz stehen; der Betriebsgraph samt Infra-Release-Pipeline für die
+> Pilotregion ist vollständig ([`docs/betriebsgraph.md`](docs/betriebsgraph.md)),
+> ebenso das Weltgerüst aus Konten, Weltisolation, EVU, Ledger, Postfach und
+> Datenschutz ([`docs/weltgeruest.md`](docs/weltgeruest.md)).
+>
+> Von **M3** stehen die Teilabschnitte **M3.1 bis M3.4**: Sperrzeitenmodell,
+> Belegungsprofil, Konfliktprüfer und Trassen-Planner
+> ([`docs/infrastruktur.md`](docs/infrastruktur.md) 6 bis 9). Der Wegwerf-Spike
+> aus M0.3 ist damit abgelöst und gelöscht. Der nächste Schritt ist M3.5, der
+> deterministische `PlanningRun`.
 
 ## Wo was steht
 
@@ -29,12 +32,19 @@ Pilotregion: **Leipzig–Halle–Erfurt**.
 ```text
 crates/     Rust — Simulationskern, Solver, Release-Pipeline
             zugfolge-determinism/  Determinismus-Testharnisch
-            zugfolge-infra/        Betriebsgraph und Infra-Release-Pipeline
+            zugfolge-infra/        Betriebsgraph und Infra-Release-Pipeline (M1)
+            zugfolge-conflict/     Sperrzeiten, Belegungsprofile, Konfliktprüfung (M3.1–M3.3)
+            zugfolge-planner/      Trassen-Planner (M3.4)
 packages/   TypeScript — fachliche Bibliotheken (ab M2)
+            db/                    Drizzle-Schema, Wurzel der Weltisolation (M2.2)
             identity/              Konten, Rollen, Weltzugänge (M2.1)
+            operators/             EVU (M2.3)
+            economy/               Ledger-Kern (M2.4)
+            mailbox/               Postfach (M2.5)
+            privacy/               Auskunft, Löschung, Aufbewahrung (M2.6)
 apps/       TypeScript — Dienste und Frontend (ab M2 / M4)
-            game-api/              Fastify-Dienst: Authentifizierung, Weltzugang (M2.1)
-spikes/     Wegwerf-Code mit Verfallsdatum
+            game-api/              Fastify-Dienst des Weltgerüsts (M2)
+spikes/     Wegwerf-Code mit Verfallsdatum — derzeit leer
 tools/      Werkzeuge für CI und Entwicklung
 docs/       Spezifikation, Entscheidungen, Glossar
 ```

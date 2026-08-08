@@ -1,6 +1,6 @@
 [package]
-name = "zugfolge-spike-blocking-time-staircase"
-description = "Wegwerf-Spike M0.3: Sperrzeitentreppe und Konfliktprüfung an drei Betriebsstellen — verfällt mit M3.1"
+name = "zugfolge-conflict"
+description = "Sperrzeitenmodell (M3.1), ServicePattern und relatives OccupationProfile (M3.2) sowie Konfliktprüfer mit erklärbarem Ergebnis (M3.3)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,12 +8,9 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
-[[bin]]
-name = "blocking-time-staircase"
-path = "src/main.rs"
-
 [dependencies]
 zugfolge-determinism = { workspace = true }
+zugfolge-infra = { workspace = true }
 
 [lints]
 workspace = true

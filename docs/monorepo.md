@@ -12,6 +12,8 @@ werden.
 crates/                     Rust — Simulationskern, Solver, Release-Pipeline
   zugfolge-determinism/     Determinismus-Testharnisch (M0.2)
   zugfolge-infra/           Betriebsgraph und Infra-Release-Pipeline (M1)
+  zugfolge-conflict/        Sperrzeiten, Belegungsprofile, Konfliktprüfung (M3.1–M3.3)
+  zugfolge-planner/         Trassen-Planner: Laufweg- und Zeitlagenkandidaten (M3.4)
 packages/                   TypeScript — fachliche Bibliotheken (ab M2)
   db/                       Postgres-Zugriff über Drizzle, Wurzel der Weltisolation (M2.2)
   identity/                 Konten, Rollen, Weltzugänge; Keycloak-Verifikation (M2.1)
@@ -21,8 +23,7 @@ packages/                   TypeScript — fachliche Bibliotheken (ab M2)
   privacy/                  Datenschutz: Auskunft, Löschung, Aufbewahrungsfristen (M2.6)
 apps/                       TypeScript — Dienste und Frontend (ab M2 / M4)
   game-api/                 Fastify-Dienst: Authentifizierung, Weltzugang, EVU, Ledger, Postfach, Datenschutz (M2)
-spikes/                     Wegwerf-Code mit Verfallsdatum
-  blocking-time-staircase/  Sperrzeitentreppe und Konfliktprüfung (M0.3)
+spikes/                     Wegwerf-Code mit Verfallsdatum — derzeit leer
 tools/                      Werkzeuge für CI und Entwicklung
   guards/                   die Wächter der harten Invarianten
 docs/                       Spezifikation und Entscheidungen
@@ -45,6 +46,17 @@ Unterverzeichnisse entstehen, sobald ein Milestone sie tatsächlich füllt —
 ein leeres Verzeichnis mit Platzhalter ist kein Aufbau, sondern eine
 Behauptung.
 
+`crates/` ist seit **M3** um zwei Crates gewachsen, und der Schnitt zwischen
+ihnen ist kein Zufall: `zugfolge-conflict` beantwortet, ob eine Trasse
+**zulässig** ist (Sperrzeiten M3.1, Belegungsprofile M3.2, Konfliktprüfung
+M3.3), `zugfolge-planner`, welche Trasse **gut** ist (M3.4). Das sind zwei
+Fragen und deshalb zwei Crates — der Spike aus M0.3 hatte genau das als Befund
+hinterlassen. Sie liegen auch in verschiedenen Wächterdomänen (`simulation-core`
+und `path-allocation`, Abschnitt 3), weil für die Trassenvergabe eine Regel
+gilt, die für den Prüfer keinen Sinn ergibt: Reihenfolge und Bezahlstatus
+dürfen das Ergebnis nicht beeinflussen. Siehe
+[`infrastruktur.md`](infrastruktur.md) 6 bis 9.
+
 **`spikes/` ist Wegwerf-Code, und zwar mit ausgesprochenem Verfallsdatum.** Ein
 Spike hat eine Frage zu beantworten und danach zu verschwinden; bleibt er
 liegen, wird er zur zweiten, ungepflegten Wahrheit neben dem echten Modell.
@@ -53,7 +65,16 @@ und kein Paket außerhalb von `spikes/` darf von einem Spike abhängen.
 
 | Spike | Frage | Verfällt mit |
 |-------|-------|--------------|
-| `blocking-time-staircase` | Trägt die Konfliktprüfung über Sperrzeiten? (M0.3) | M3.1 |
+| — | derzeit ist kein Spike offen | — |
+
+`blocking-time-staircase` (M0.3) ist **mit M3.1 verfallen und gelöscht**, wie
+seine README es angekündigt hatte. Was er beantwortet hat, steht seither nicht
+mehr in ihm, sondern im Modell: das Ressourcenmodell, das beide Konfliktarten
+trägt, die halboffenen Intervalle und der von sich aus erklärbare Befund —
+alles in `crates/zugfolge-conflict`. Seine offenen Punkte sind ebenfalls
+abgearbeitet: der Bahnhofskopf über die Ausschlussmengen aus M1.7, die
+Fahrdynamik über M1.10, die betrieblich richtige Auflösung über den Planner aus
+M3.4.
 
 Rust-Spikes sind Mitglieder des Cargo-Workspace (`members = ["crates/*",
 "spikes/*"]`). Das ist Absicht: Sie laufen dadurch in derselben CI, unter
@@ -124,7 +145,7 @@ Liste ist keine vollständige Karte des Repositoriums, sondern die Zuordnung
 |--------|-------|--------|-------------------------|
 | `determinism-core` | `crates/zugfolge-determinism/**` | aktiv | ganzzahlig, uhrfrei, geordnet — der Harnisch muss selbst halten, was er prüft |
 | `simulation-core` | `crates/zugfolge-sim/**`, `crates/zugfolge-conflict/**`, `spikes/**` | aktiv | vollständiger Kernvertrag: kein Bezahlstatus, keine Uhr, keine Datenbank |
-| `path-allocation` | `crates/zugfolge-planner/**`, `packages/path-allocation/**` | geplant | Reihenfolge und Bezahlstatus beeinflussen das Ergebnis nicht (E4, `infrastruktur.md` 2) |
+| `path-allocation` | `crates/zugfolge-planner/**`, `packages/path-allocation/**` | aktiv | Reihenfolge und Bezahlstatus beeinflussen das Ergebnis nicht (E4, `infrastruktur.md` 2) |
 | `dispatch` | `crates/zugfolge-rules/**`, `packages/dispatch/**` | geplant | das Betriebsprogramm wirkt offline und für alle gleich (E2, E13) |
 | `demand` | `packages/demand/**`, `crates/zugfolge-demand/**` | geplant | Nachfrage folgt dem Angebot, nie dem Vertrag des Spielers |
 | `economy` | `packages/economy/**`, `packages/tender/**`, `apps/economy-service/**` | aktiv | Ledger in Integer-Cent (M2.4); Wertung deterministisch aus dem `EconomyRelease` (M6) |
@@ -138,7 +159,10 @@ Umstellung auf `aktiv` — womit alle Regeln dieser Domäne ab dem ersten Commit
 greifen. Das ist der Mechanismus, der verhindert, dass Invarianten erst
 nachträglich eingezogen werden. Genau so ist `simulation-core` in M0.3 aktiv
 geworden: Der Spike unter `spikes/` fiel in ihre Pfade, und der Wächter hat den
-Statuswechsel eingefordert, bevor die erste Sperrzeit gerechnet wurde. Genauso
+Statuswechsel eingefordert, bevor die erste Sperrzeit gerechnet wurde. Und
+genauso `path-allocation` in M3.4: Der erste Commit in
+`crates/zugfolge-planner` hat den Wächter ausgelöst, bevor der erste
+Trassenkandidat entstanden war. Genauso
 `infra-pipeline` in M1.1, mit dem ersten Domänenmodell des Betriebsgraphen —
 und `economy` in M2.4, mit dem ersten Code des Ledger-Kerns in
 `packages/economy`.
@@ -155,7 +179,7 @@ eine einzige Gleitkommazahl aus, bis hin zu 16,7 Hz in Milli-Hertz.
 
 | # | Invariante | Durchsetzung |
 |---|-----------|--------------|
-| 1 | keine inkompatiblen Belegungen derselben Konfliktressource | seit M0.3 im Spike gegen eine zweite, unabhängig geschriebene Prüfung getestet (`spikes/blocking-time-staircase/tests/invariante.rs`); der eigentliche Property-Test folgt mit M3 |
+| 1 | keine inkompatiblen Belegungen derselben Konfliktressource | seit M3.3 als Property-Test über 400 gestreute Lagen, geprüft gegen eine zweite, unabhängig geschriebene Prüfung (`crates/zugfolge-conflict/tests/invariante.rs`); das Belegungsbuch hält sie über `try_insert` **durch Konstruktion** |
 | 2 | kein `now()` im Simulationskern | `clippy.toml` (`disallowed-methods`) und Wächter `no-wallclock` |
 | 3 | keine Gleitkommazahlen im Zustand | `clippy::float_arithmetic`, `clippy::float_cmp`, Wächter `no-floats` |
 | 4 | `world_id` in jeder Abfrage, jedem Index, jedem Event | Wächter `world-id` gegen SQL und Drizzle, prüft Tabelle **und** Index; dazu das weltgebundene Repository in `packages/db` und der Isolationstest gegen eine echte Datenbank (M2.2) |
