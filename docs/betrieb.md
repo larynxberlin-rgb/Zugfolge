@@ -112,6 +112,17 @@ Die Trennung gibt der Erstbestellung bleibendes Gewicht: Wer die Türen falsch
 wählt, korrigiert das nie. Sie erzeugt zugleich einen echten Sekundärmarkt —
 ein Gebrauchtfahrzeug mit passender Grundauslegung ist deutlich mehr wert.
 
+**Umsetzung M5.1a/M5.1b:** `crates/zugfolge-fleet` bildet feste
+`StructuralConfiguration` und umbaubare `InteriorConfiguration` als getrennte
+Typen ab. Die Mindesthaltezeit teilt den Fahrgastwechsel ganzzahlig und
+aufrundend durch die gesamte lichte Türbreite einer Fahrzeugseite. Ein
+`WorkshopSchedule` nimmt Umbauten nur in passenden Werkstätten innerhalb der
+Öffnungszeit und freien Kapazität an. Bei Fertigstellung belastet der
+`ConversionLedger` die Kosten, bevor der Innenraum übernommen wird; ein
+fehlgeschlagener Ledger-Aufruf lässt Fahrzeug und Auftrag unverändert. Die
+Belegung ist ein spezialisierter Vorgriff für Umbauten; die gemeinsame
+Konfliktengine für alle Anlagenbelegungen folgt weiterhin mit M5.7.
+
 ### 3.5 Beschaffungswege und Tempo
 
 | Weg | Lieferzeit | Rolle |

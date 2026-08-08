@@ -516,8 +516,8 @@ abgeschlossen.
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
 | 5.1 | Fahrzeugkatalog mit **getrennten Feldern für Baureihenbezeichnung und Handelsname**; Fahrzeug als individuelles Asset mit Fristen, Zulassung, Eigentum | M | offen |
-| 5.1a | **Fahrzeugkonfiguration** (E20): Sitzaufteilung nach Klassen, Bestuhlungsdichte, Sitzart, Mehrzweckbereiche, Türanzahl und -breite, Ausstattung. **Türen wirken über die Haltezeit in die Simulation** | L | offen |
-| 5.1b | **Werkstattumbau**: Innenraum umbaubar, Türen und Wagenkasten baulich fest; kostet Geld und belegt eine Werkstattanlage | M | offen |
+| 5.1a | **Fahrzeugkonfiguration** (E20): Sitzaufteilung nach Klassen, Bestuhlungsdichte, Sitzart, Mehrzweckbereiche, Türanzahl und -breite, Ausstattung. **Türen wirken über die Haltezeit in die Simulation** | L | erledigt |
+| 5.1b | **Werkstattumbau**: Innenraum umbaubar, Türen und Wagenkasten baulich fest; kostet Geld und belegt eine Werkstattanlage | M | erledigt |
 | 5.2 | Formationsbildung, **Abbildung auf Zugcharakteristik (M1.9)**, Kompatibilitätsprüfung gegen Strecke, Bahnsteig, Zugsicherung | M | offen |
 | 5.3 | Umlaufplanung mit Wende-, Abstell- und Servicezeiten | L | offen |
 | 5.4 | Wartung, gestufte Fristen, Werkstattaufenthalte, Ausfallwahrscheinlichkeit | M | offen |

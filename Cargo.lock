@@ -141,6 +141,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "zugfolge-fleet"
+version = "0.0.0"
+dependencies = [
+ "zugfolge-infra",
+]
+
+[[package]]
 name = "zugfolge-infra"
 version = "0.0.0"
 dependencies = [
