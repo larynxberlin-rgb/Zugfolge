@@ -132,7 +132,7 @@ pub use coverage::{
 };
 pub use dynamics::{
     RunPath, RunSegment, RunningTime, RunningTimeCheckpoint, RunningTimeTable,
-    derive_running_time_table,
+    derive_running_time_table, derive_running_time_table_with_exit,
 };
 pub use edge::{TrackEdge, TravelDirection};
 pub use electrification::{Electrification, PowerSystem};

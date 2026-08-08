@@ -352,7 +352,9 @@ impl RunningTimeTable {
 /// `entry_speed` ist die Geschwindigkeit, mit der der Zug den Fahrweg
 /// erreicht — für eine Abfahrt aus dem Stand [`Speed::ZERO`]. Das letzte
 /// Segment erzwingt keinen Halt: Diese Funktion liefert die reine Fahrzeit
-/// (`docs/infrastruktur.md` 1), keine Räum- oder Haltezeit.
+/// (`docs/infrastruktur.md` 1), keine Räum- oder Haltezeit. Wer die Bremskurve
+/// in einen Halt hinein braucht — etwa das Sperrzeitenmodell aus M3.1 —
+/// verwendet [`derive_running_time_table_with_exit`].
 ///
 /// # Errors
 ///
@@ -365,6 +367,44 @@ pub fn derive_running_time_table(
     path: &RunPath,
     train: &TrainCharacteristics,
     entry_speed: Speed,
+) -> Result<RunningTimeTable, InfraError> {
+    laufzeittabelle(path, train, entry_speed, None)
+}
+
+/// Rechnet dieselbe Fahrzeittabelle, erzwingt am Ende des Fahrwegs aber eine
+/// Höchstgeschwindigkeit.
+///
+/// Das ist der Fall, den [`derive_running_time_table`] offenlässt: Ein Zug, der
+/// am Ende des Fahrwegs **hält**, muss davor bremsen, und diese Bremskurve
+/// gehört in die Fahrzeit. Mit `exit_speed` gleich [`Speed::ZERO`] entsteht
+/// genau sie; jeder andere Wert bindet die Ausfahrt an eine
+/// Anschlussgeschwindigkeit. Liegt `exit_speed` über der zulässigen
+/// Geschwindigkeit des letzten Segments, gilt diese.
+///
+/// Das Sperrzeitenmodell (M3.1) braucht diese Fassung, weil ein Laufweg
+/// zwischen zwei Halten endet, nicht an einer beliebigen Stelle.
+///
+/// # Errors
+///
+/// Dieselben wie bei [`derive_running_time_table`].
+pub fn derive_running_time_table_with_exit(
+    path: &RunPath,
+    train: &TrainCharacteristics,
+    entry_speed: Speed,
+    exit_speed: Speed,
+) -> Result<RunningTimeTable, InfraError> {
+    laufzeittabelle(path, train, entry_speed, Some(exit_speed))
+}
+
+/// Der gemeinsame Rechenkern beider Fassungen.
+///
+/// `exit_speed` gleich `None` heißt: Das Ende des Fahrwegs bindet nicht, es
+/// gilt allein die zulässige Geschwindigkeit des letzten Segments.
+fn laufzeittabelle(
+    path: &RunPath,
+    train: &TrainCharacteristics,
+    entry_speed: Speed,
+    exit_speed: Option<Speed>,
 ) -> Result<RunningTimeTable, InfraError> {
     let segments = path.segments();
     if segments.is_empty() {
@@ -412,7 +452,9 @@ pub fn derive_running_time_table(
     // Geschwindigkeit, damit jede nachfolgende Beschränkung noch rechtzeitig
     // erreicht werden kann.
     let mut v_brake = vec![0.0_f64; n.saturating_add(1)];
-    v_brake[n] = limit[n - 1];
+    v_brake[n] = exit_speed.map_or(limit[n - 1], |speed| {
+        (speed.millimetres_per_second() as f64 / 1_000.0).min(limit[n - 1])
+    });
     for i in (0..n).rev() {
         let erreichbar = v_brake[i.saturating_add(1)].powi(2) + 2.0 * decel_eff[i] * length_m[i];
         v_brake[i] = limit[i].min(erreichbar.sqrt());
@@ -492,7 +534,10 @@ fn geschwindigkeit_aus(metres_per_second: f64) -> Speed {
 
 #[cfg(test)]
 mod tests {
-    use super::{RunPath, RunSegment, RunningTime, derive_running_time_table};
+    use super::{
+        RunPath, RunSegment, RunningTime, derive_running_time_table,
+        derive_running_time_table_with_exit,
+    };
     use crate::bands::BandProfile;
     use crate::edge::TravelDirection;
     use crate::electrification::{Electrification, PowerSystem};
@@ -613,6 +658,64 @@ mod tests {
         assert_eq!(checkpoints[2].elapsed(), RunningTime::from_seconds(207));
         assert_eq!(tabelle.total(), RunningTime::from_seconds(207));
         assert_eq!(checkpoints[2].speed(), Speed::from_km_h(18));
+    }
+
+    #[test]
+    fn ein_erzwungener_halt_am_ende_kostet_die_bremskurve() {
+        // Ohne Ausstiegsbindung fährt der Zug am Ende des Fahrwegs mit voller
+        // Geschwindigkeit hinaus; mit Halt muss er davor bremsen. Genau diese
+        // Bremskurve braucht das Sperrzeitenmodell (M3.1), weil ein Laufweg
+        // zwischen zwei Halten endet.
+        let zug = regionaltriebwagen(1_000, 1_000);
+        let mut fahrweg = RunPath::new();
+        fahrweg.push_segment(
+            RunSegment::new(
+                Length::from_metres(1_000),
+                Speed::from_km_h(36),
+                Gradient::LEVEL,
+            )
+            .expect("gültig"),
+        );
+
+        let durchfahrt =
+            derive_running_time_table(&fahrweg, &zug, Speed::ZERO).expect("gültige Fahrzeit");
+        let halt = derive_running_time_table_with_exit(&fahrweg, &zug, Speed::ZERO, Speed::ZERO)
+            .expect("gültige Fahrzeit");
+
+        assert_eq!(durchfahrt.checkpoints()[1].speed(), Speed::from_km_h(36));
+        assert_eq!(halt.checkpoints()[1].speed(), Speed::ZERO);
+        assert!(
+            halt.total().seconds() > durchfahrt.total().seconds(),
+            "der Halt muss Zeit kosten: {halt:?} gegen {durchfahrt:?}",
+            halt = halt.total(),
+            durchfahrt = durchfahrt.total()
+        );
+        // Von Hand: 0 → 10 m/s in 50 m, 10 → 0 m/s in 50 m, 900 m Beharrung
+        // bei 10 m/s ⇒ 10 + 90 + 10 = 110 s.
+        assert_eq!(halt.total(), RunningTime::from_seconds(110));
+    }
+
+    #[test]
+    fn eine_hoehere_ausstiegsgeschwindigkeit_bindet_nicht() {
+        // Über der zulässigen Geschwindigkeit des letzten Segments darf die
+        // Bindung nichts ändern — sonst führe der Zug schneller, als das Gleis
+        // erlaubt.
+        let zug = regionaltriebwagen(1_000, 1_000);
+        let mut fahrweg = RunPath::new();
+        fahrweg.push_segment(
+            RunSegment::new(
+                Length::from_metres(1_000),
+                Speed::from_km_h(36),
+                Gradient::LEVEL,
+            )
+            .expect("gültig"),
+        );
+
+        let frei = derive_running_time_table(&fahrweg, &zug, Speed::ZERO).expect("gültig");
+        let gebunden =
+            derive_running_time_table_with_exit(&fahrweg, &zug, Speed::ZERO, Speed::from_km_h(200))
+                .expect("gültig");
+        assert_eq!(frei, gebunden);
     }
 
     #[test]
