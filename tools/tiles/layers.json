@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "layers": {
+    "rail": { "source": "genehmigter InfraRelease-Export", "minzoom": 5, "maxzoom": 14, "color": "#70747a", "width": 2 },
+    "context": { "source": "ausgeschlossenes Netz aus demselben Rechte-Gate", "minzoom": 5, "maxzoom": 14, "color": "#35383d", "width": 1 }
+  },
+  "runtimeExternalSources": []
+}

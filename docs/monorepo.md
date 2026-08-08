@@ -14,6 +14,7 @@ crates/                     Rust — Simulationskern, Solver, Release-Pipeline
   zugfolge-infra/           Betriebsgraph und Infra-Release-Pipeline (M1)
   zugfolge-conflict/        Sperrzeiten, Belegungsprofile, Konfliktprüfung (M3.1–M3.3), Rahmenverträge (M3.8)
   zugfolge-planner/         Trassen-Planner (M3.4), PlanningRun, Fahrplanperiode, Ad-hoc-Trassen (M3.5–M3.7)
+  zugfolge-sim/             Ereigniskern, TrainRun, Regionsübergabe, Replay und Livemap-Protokoll (M4)
 packages/                   TypeScript — fachliche Bibliotheken (ab M2)
   db/                       Postgres-Zugriff über Drizzle, Wurzel der Weltisolation (M2.2)
   identity/                 Konten, Rollen, Weltzugänge; Keycloak-Verifikation (M2.1)
@@ -22,11 +23,15 @@ packages/                   TypeScript — fachliche Bibliotheken (ab M2)
   mailbox/                  Postfach-Grundgerüst: Nachrichten, Fristen, Quittierung (M2.5)
   privacy/                  Datenschutz: Auskunft, Löschung, Aufbewahrungsfristen (M2.6)
   health/                   Health-Check-Vertrag und Aggregation für Status-/Monitoringdienste, Grundlage für M9.5
+  livemap/                  Weltisolierter Snapshot-/Delta-Fanout (M4.6)
 apps/                       TypeScript — Dienste und Frontend (ab M2 / M4)
   game-api/                 Fastify-Dienst: Authentifizierung, Weltzugang, EVU, Ledger, Postfach, Datenschutz (M2)
+  livemap/                  Vite-Frontend: öffentliche Zuglage, Zuglaufansicht und Delta-Interpolation (M4)
 spikes/                     Wegwerf-Code mit Verfallsdatum — derzeit leer
 tools/                      Werkzeuge für CI und Entwicklung
   guards/                   die Wächter der harten Invarianten
+  load/                     äußerer Lastmessharnisch für 180.000 Fahrten und ≥2 Mio. Ereignisse (M4.11)
+  tiles/                    reproduzierbare GeoJSON-→PMTiles-Pipeline und Layerspezifikation (M4.7)
 docs/                       Spezifikation und Entscheidungen
 .github/workflows/          CI
 ```

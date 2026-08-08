@@ -16,6 +16,7 @@
     "@zugfolge/economy": "workspace:*",
     "@zugfolge/health": "workspace:*",
     "@zugfolge/identity": "workspace:*",
+    "@zugfolge/livemap-stream": "workspace:*",
     "@zugfolge/mailbox": "workspace:*",
     "@zugfolge/operators": "workspace:*",
     "@zugfolge/privacy": "workspace:*",
