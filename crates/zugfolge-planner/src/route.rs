@@ -22,7 +22,7 @@
 //!    die Abwandlungen von hinten nach vorn. Das ist bewusst kein Zufall — die
 //!    Auswahl muss bei gleicher Eingabe dieselbe sein.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 
 use zugfolge_conflict::{Itinerary, ItineraryLeg};
 use zugfolge_infra::{
@@ -38,6 +38,23 @@ use crate::request::PathRequest;
 /// Netz. Ein Laufweg über mehr als 64 Betriebsstellen ist kein Laufweg mehr,
 /// sondern ein Rundkurs.
 const MAX_POINTS: usize = 64;
+
+/// Wie viele Betriebsstellenfolgen die Suche höchstens sammelt.
+///
+/// **Diese Schranke ist kein Geschmacksurteil, sondern eine Notwendigkeit.**
+/// Die Zahl der einfachen Wege zwischen zwei Punkten wächst in einem vermaschten
+/// Netz exponentiell; eine vollständige Aufzählung wäre auf der Pilotregion nicht
+/// zu beenden. Die Suche geht deshalb **in die Breite** und bricht ab, sobald sie
+/// genug hat — was sie dann in der Hand hat, sind die **kürzesten** Folgen, nicht
+/// die zuerst gefundenen. Das ist der Unterschied zwischen einem Deckel und einer
+/// Willkür.
+const MAX_POINT_SEQUENCES: usize = 16;
+
+/// Wie viele Teilwege die Suche höchstens betrachtet.
+///
+/// Das Sicherheitsventil für den Fall, dass das Ziel gar nicht erreichbar ist:
+/// Ohne es liefe die Breitensuche durch das ganze Netz, bevor sie aufgäbe.
+const MAX_EXPANSIONS: usize = 50_000;
 
 /// Ein Schritt einer Betriebsstellenfolge: das Gleis, das gewählt werden muss.
 struct Choice {
@@ -112,66 +129,59 @@ pub fn enumerate_itineraries(
     Ok(laufwege)
 }
 
-/// Alle Betriebsstellenfolgen vom Anfang zum Ziel, die jeden beantragten Halt
-/// berühren.
+/// Die kürzesten Betriebsstellenfolgen vom Anfang zum Ziel, die jeden
+/// beantragten Halt berühren.
 ///
-/// Die Suche geht in die Tiefe und berührt keine Betriebsstelle zweimal. Die
-/// Reihenfolge der Ergebnisse hängt an der Kennung der Nachbarn, nicht am
-/// Zufall der Aufzählung: Kürzere Folgen stehen vorn, gleich lange nach
-/// Kennung.
+/// Die Suche geht **in die Breite**: Sie findet kurze Folgen zuerst und bricht
+/// ab, sobald sie [`MAX_POINT_SEQUENCES`] beisammen hat. Eine Tiefensuche wäre
+/// hier falsch — sie fände zuerst irgendeinen Weg und bei einem Deckel eben
+/// diesen, nicht den kürzesten. Innerhalb einer Ebene ist die Reihenfolge durch
+/// die Kennung der Nachbarn festgelegt, nicht durch den Zufall der Aufzählung.
 fn punktfolgen(graph: &OperatingGraph, request: &PathRequest) -> Vec<Vec<OperatingPointId>> {
     let pflicht: BTreeSet<OperatingPointId> =
         request.stops().iter().map(|halt| halt.point()).collect();
 
     let mut gefunden: Vec<Vec<OperatingPointId>> = Vec::new();
-    let mut pfad: Vec<OperatingPointId> = vec![request.origin()];
-    let mut besucht: BTreeSet<OperatingPointId> = BTreeSet::new();
-    besucht.insert(request.origin());
+    let mut warteschlange: VecDeque<Vec<OperatingPointId>> = VecDeque::new();
+    warteschlange.push_back(vec![request.origin()]);
+    let mut betrachtet = 0_usize;
 
-    suche(
-        graph,
-        request.destination(),
-        &pflicht,
-        &mut pfad,
-        &mut besucht,
-        &mut gefunden,
-    );
+    while let Some(pfad) = warteschlange.pop_front() {
+        betrachtet = betrachtet.saturating_add(1);
+        if betrachtet > MAX_EXPANSIONS {
+            break;
+        }
+        let Some(aktuell) = pfad.last().copied() else {
+            continue;
+        };
+
+        if aktuell == request.destination() {
+            if pflicht.iter().all(|halt| pfad.contains(halt)) {
+                gefunden.push(pfad);
+                if gefunden.len() >= MAX_POINT_SEQUENCES {
+                    break;
+                }
+            }
+            // Über das Ziel hinaus wird nicht weitergesucht: Ein Laufweg endet
+            // dort, wo der Antrag ihn enden lässt.
+            continue;
+        }
+        if pfad.len() >= MAX_POINTS {
+            continue;
+        }
+
+        for nachbar in graph.neighbours(aktuell) {
+            if pfad.contains(&nachbar) {
+                continue;
+            }
+            let mut naechster = pfad.clone();
+            naechster.push(nachbar);
+            warteschlange.push_back(naechster);
+        }
+    }
 
     gefunden.sort_by(|a, b| (a.len(), a.as_slice()).cmp(&(b.len(), b.as_slice())));
     gefunden
-}
-
-/// Der Tiefendurchlauf hinter [`punktfolgen`].
-fn suche(
-    graph: &OperatingGraph,
-    destination: OperatingPointId,
-    required: &BTreeSet<OperatingPointId>,
-    path: &mut Vec<OperatingPointId>,
-    visited: &mut BTreeSet<OperatingPointId>,
-    found: &mut Vec<Vec<OperatingPointId>>,
-) {
-    let Some(aktuell) = path.last().copied() else {
-        return;
-    };
-    if aktuell == destination {
-        if required.iter().all(|halt| path.contains(halt)) {
-            found.push(path.clone());
-        }
-        return;
-    }
-    if path.len() >= MAX_POINTS {
-        return;
-    }
-
-    for nachbar in graph.neighbours(aktuell).collect::<Vec<_>>() {
-        if !visited.insert(nachbar) {
-            continue;
-        }
-        path.push(nachbar);
-        suche(graph, destination, required, path, visited, found);
-        path.pop();
-        visited.remove(&nachbar);
-    }
 }
 
 /// Die Wahlmöglichkeiten je Abschnitt einer Betriebsstellenfolge.
@@ -371,6 +381,24 @@ mod tests {
                     .skip(index + 1)
                     .any(|andere| andere == laufweg),
                 "ein Laufweg steht zweimal in der Liste"
+            );
+        }
+    }
+
+    #[test]
+    fn die_kuerzesten_laufwege_stehen_vorn() {
+        // Die Breitensuche findet kurze Folgen zuerst. Das ist der Grund, warum
+        // der Deckel aus MAX_POINT_SEQUENCES kein willkürlicher Schnitt ist:
+        // Was er abschneidet, sind die längeren Wege.
+        let infra = reference_infrastructure();
+        let laufwege =
+            enumerate_itineraries(infra.graph(), &antrag(regional_train(), 1, 4, &[]), 32)
+                .expect("Laufwege");
+        let erster = laufwege[0].legs().len();
+        for laufweg in &laufwege {
+            assert!(
+                laufweg.legs().len() >= erster,
+                "ein kürzerer Laufweg steht hinter einem längeren"
             );
         }
     }
