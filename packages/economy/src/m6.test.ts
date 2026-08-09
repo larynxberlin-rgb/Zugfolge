@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   accrueCreditInterest, advancePublicOperation, assistBid, awardTender, buildEconomyRelease, calculateProfitAndLoss, classifyPosting,
-  commitAuthorityBudget, createTender, createTenderCalendar, deriveWorldProfile,
+  canonicalSubstreamFirstU64, canonicalSubstreamState, commitAuthorityBudget, createTender, createTenderCalendar, deriveWorldProfile,
   evaluateInsolvency, improveFailedPackage, performOperatingTransition, scoreBid,
   repayCredit, settleContract, startPublicOperation, updatePrequalification, validateVehicle,
   type Bid, type EconomyRelease, type ServiceSpecification, type Tender,
@@ -36,6 +36,9 @@ describe("M6 vollständig", () => {
     expect(a).toEqual(b);
     expect(new Set(a.map((entry) => entry.lotId)).size).toBe(8);
     expect(a.every((entry) => entry.initialOperator === "public")).toBe(true);
+    expect(canonicalSubstreamState(42n, 0, "tender_release")).toBe(465_896_281_649_676_834n);
+    expect(canonicalSubstreamFirstU64(42n, 0, "tender_release")).toBe(15_648_887_706_766_360_790n);
+    expect(canonicalSubstreamFirstU64(42n, 0, "tender_profile")).toBe(2_062_826_105_575_757_761n);
   });
 
   it("prüft Fahrzeugkonfiguration, zeigt Wertung, assistiert und schlägt sofort zu", () => {
@@ -48,10 +51,26 @@ describe("M6 vollständig", () => {
     expect(award.scores.get("b1")?.dimensions).toHaveProperty("punctuality");
   });
 
+  it("wertet den Profilfokus aus und deckelt ihn an der Release-Grenze", () => {
+    const base: Bid = {
+      id: "focus-base",
+      operatorId: "op1",
+      orderingFeeCentsPerTrainKm: tender.viabilityThresholdCentsPerTrainKm,
+      vehicle: { ...vehicle, minimumSeats: spec.requirements.minimumSeats },
+      promises: { extraSeats: 0, punctualityBasisPoints: 8_500, additionalStops: 0 },
+      submittedAt: tender.closesAt,
+    };
+    const focused = scoreBid(tender, { ...base, id: "focus-better", vehicle: { ...vehicle, minimumSeats: 10_000 } });
+    const baseline = scoreBid(tender, base);
+    expect(focused.dimensions.requirementFocus).toBe(release.rules.requirementFocusMaximumPoints);
+    expect(focused.qualityPoints).toBeGreaterThan(baseline.qualityPoints);
+  });
+
   it("führt Mobilisierung, Vertrag, Eigenbetrieb, Nachbesserung und Budget aus", () => {
-    expect(performOperatingTransition({ incumbentOperatorId: "old", winnerOperatorId: "new", proof: { vehicles: false, personnel: true, paths: true }, at: 10, timetableBoundary: 10, failurePenaltyCents: 99n })).toMatchObject({ operatorId: "public", penaltyCents: 99n });
+    expect(performOperatingTransition({ incumbentOperatorId: "old", winnerOperatorId: "new", proof: { source: "m5-release", fleetRevision: 7, formationIds: [], personnelDutyIds: ["duty-1"], pathReservationIds: ["path-1"] }, at: 10, timetableBoundary: 10, failurePenaltyCents: 99n })).toMatchObject({ operatorId: "public", penaltyCents: 99n });
     const settlement = settleContract({ id: "c", worldId: "w1", lotId: "l", operatorId: "op", startsAt: 0, endsAt: 2, orderingFeeCentsPerTrainKm: 1_000n, bonusCentsPerPeriod: 5_000n, penaltyRates: { punctuality: 2n, cancellation: 500n, seats: 10n, connections: 100n }, evidenceRequired: ["operations"] }, { trainKm: 100n, punctualityBasisPoints: 8_800, cancellations: 1, missingSeats: 2, missedConnections: 1, evidence: ["operations"] });
     expect(settlement.netCents).toBe(98_980n);
+    expect(() => settleContract({ id: "c", worldId: "w1", lotId: "l", operatorId: "op", startsAt: 0, endsAt: 2, orderingFeeCentsPerTrainKm: 1_000n, bonusCentsPerPeriod: 5_000n, penaltyRates: { punctuality: 2n, cancellation: 500n, seats: 10n, connections: 100n }, evidenceRequired: [] }, { trainKm: -1n, punctualityBasisPoints: 8_800, cancellations: 0, missingSeats: 0, missedConnections: 0, evidence: [] })).toThrow(RangeError);
     const publicOperation = startPublicOperation("l", ["pool-1"]);
     expect(improveFailedPackage(publicOperation, 2, release.rules)).toMatchObject({ suppliedVehicles: true, retenderAfterPeriods: 2 });
     expect(advancePublicOperation({ ...publicOperation, periodsRemaining: 1 }, 2, release.rules).retender).toBeDefined();

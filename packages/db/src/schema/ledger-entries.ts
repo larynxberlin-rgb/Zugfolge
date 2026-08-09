@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { bigint, index, pgTable, uuid, varchar } from "drizzle-orm/pg-core";
+import { bigint, foreignKey, index, pgTable, uuid, varchar } from "drizzle-orm/pg-core";
 
 import { ledgerAccounts } from "./ledger-accounts.js";
 import { ledgerTransactions } from "./ledger-transactions.js";
@@ -20,12 +20,8 @@ export const ledgerEntries = pgTable(
     worldId: uuid("world_id")
       .notNull()
       .references(() => worlds.id),
-    transactionId: uuid("transaction_id")
-      .notNull()
-      .references(() => ledgerTransactions.id),
-    ledgerAccountId: uuid("ledger_account_id")
-      .notNull()
-      .references(() => ledgerAccounts.id),
+    transactionId: uuid("transaction_id").notNull(),
+    ledgerAccountId: uuid("ledger_account_id").notNull(),
     amountCents: bigint("amount_cents", { mode: "bigint" }).notNull(),
     /** M6.2: fachliche Klassifikation bleibt am unveränderlichen Buchungssatz. */
     costType: varchar("cost_type", { length: 32 }),
@@ -35,6 +31,16 @@ export const ledgerEntries = pgTable(
     index("ledger_entries_world_transaction_idx").on(table.worldId, table.transactionId),
     index("ledger_entries_world_account_idx").on(table.worldId, table.ledgerAccountId),
     index("ledger_entries_world_cost_centre_idx").on(table.worldId, table.costCentreId, table.costType),
+    foreignKey({
+      name: "ledger_entries_world_transaction_fk",
+      columns: [table.worldId, table.transactionId],
+      foreignColumns: [ledgerTransactions.worldId, ledgerTransactions.id],
+    }),
+    foreignKey({
+      name: "ledger_entries_world_account_fk",
+      columns: [table.worldId, table.ledgerAccountId],
+      foreignColumns: [ledgerAccounts.worldId, ledgerAccounts.id],
+    }),
   ],
 );
 

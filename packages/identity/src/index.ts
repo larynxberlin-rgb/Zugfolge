@@ -3,6 +3,7 @@ export {
   AccountNotFoundError,
   AuthorizationError,
   getAccount,
+  getAccountIncludingRevoked,
   grantRole,
   listAccountsForSubject,
   listAccountsInWorld,
@@ -10,9 +11,11 @@ export {
   revokeWorldAccess,
   type AccountRecord,
   type IdentityDatabase,
+  type PublicAccountRecord,
 } from "./accounts.js";
 export {
   createKeycloakVerifier,
+  createKeycloakHealthCheck,
   loadKeycloakConfigFromEnv,
   TokenVerificationError,
   verifyIdentityToken,

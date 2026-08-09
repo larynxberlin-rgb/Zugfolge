@@ -1,4 +1,9 @@
-export { eraseAccountData, ERASED_DISPLAY_NAME } from "./erasure.js";
+export {
+  eraseAccountData,
+  ERASED_DISPLAY_NAME,
+  purgeExpiredAccountData,
+  type RetentionPurgeResult,
+} from "./erasure.js";
 export { exportAccountData, PersonalDataNotFoundError, type PersonalDataExport } from "./export.js";
 export {
   retentionDeadline,

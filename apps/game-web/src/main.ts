@@ -13,16 +13,25 @@ import {
   type Conflict,
   type DiagramData,
 } from "./diagram.js";
+import { GameApiClient } from "./api.js";
 import "./styles.css";
 const root = document.querySelector<HTMLDivElement>("#root");
 if (!root) throw new Error("App-Wurzel fehlt");
 const app = root;
+const parameters = new URLSearchParams(window.location.search);
+const demoMode = parameters.get("demo") === "1";
+const worldId = parameters.get("world") ?? "";
+const accessToken = sessionStorage.getItem("zugfolge.accessToken") ?? "";
+const apiBaseUrl = document.querySelector<HTMLMetaElement>('meta[name="game-api-url"]')?.content ?? "";
+const api = !demoMode && accessToken !== "" ? new GameApiClient(apiBaseUrl, accessToken) : undefined;
 let density: Density = "control",
   showSteps = true,
   selectedTrainId = "t1",
   selectedConflictId = "c1",
   data: DiagramData = sampleData,
-  message = "";
+  message = "",
+  ready = demoMode,
+  loadError = "";
 const train = (id: string) => data.trains.find((t) => t.id === id)!;
 function conflictLabel(c: Conflict): string {
   return c.kind === "sequence" ? "Zugfolgekonflikt" : "Fahrstraßenausschluss";
@@ -62,6 +71,10 @@ function inspector(): string {
 }
 function render(): void {
   app.dataset.density = density;
+  if (!ready) {
+    app.innerHTML = `<main class="shell"><section class="zf-surface" role="status"><h1>Bildfahrplan</h1><p>${escapeHtml(loadError || "Planner-Ergebnis wird geladen …")}</p>${loadError ? '<p><a href="?demo=1">Expliziten Demo-Datensatz öffnen</a></p>' : ""}</section></main>`;
+    return;
+  }
   const [from, to] = extent(data);
   app.innerHTML = `<a class="skip" href="#diagram-card">Zum Bildfahrplan</a><div class="shell"><header class="topbar"><a class="wordmark" href="#">Zugfolge</a><nav aria-label="Hauptnavigation"><a href="#">Welt</a><a class="active" href="#">Trassen</a><a href="#">Betrieb</a><a href="#">Postfach</a></nav><div class="world">Welt LHE 2026 ${badge("veröffentlicht", "success", "check")}</div></header><main><section class="context"><div><p class="eyebrow">Fahrplanperiode 04 · Koordinierung</p><h1>Bildfahrplan <span>${escapeHtml(data.corridor)}</span></h1></div><div class="toolbar"><button class="zf-button" id="density">${icon("layers")} ${density === "control" ? "Leitstelle" : "Dokument"}</button><button class="zf-button ${showSteps ? "pressed" : ""}" id="steps" aria-pressed="${showSteps}">Sperrzeiten</button><span class="period">${formatMinute(from)}–${formatMinute(to)}</span></div></section>${message ? `<p class="notice" role="status">${icon("check")} ${escapeHtml(message)}</p>` : ""}<section class="workspace"><article id="diagram-card" class="diagram-card zf-surface"><div class="legend"><span><i class="line selected"></i> ausgewählt</span><span><i class="line"></i> Zuglauf</span><span><i class="hatch"></i> Konflikt</span></div>${diagram()}</article>${inspector()}</section></main></div>`;
   bind();
@@ -97,13 +110,40 @@ function bind(): void {
       render();
     }),
   );
-  app.querySelector("#alternative")?.addEventListener("click", () => {
+  app.querySelector("#alternative")?.addEventListener("click", async () => {
     const c = data.conflicts.find((x) => x.id === selectedConflictId);
     if (c) {
-      data = shiftedData(data, selectedTrainId, c.proposedShiftMinutes);
-      message = `Alternative für ${train(selectedTrainId).number} angewendet: +${c.proposedShiftMinutes} min.`;
+      if (demoMode) {
+        data = shiftedData(data, selectedTrainId, c.proposedShiftMinutes);
+        message = `Demo-Alternative für ${train(selectedTrainId).number} angewendet: +${c.proposedShiftMinutes} min.`;
+      } else if (api !== undefined && worldId !== "") {
+        try {
+          await api.queueAlternative(worldId, selectedTrainId, c.id, c.proposedShiftMinutes);
+          message = `Alternative für ${train(selectedTrainId).number} wurde dem Planner übergeben.`;
+        } catch (error) {
+          message = error instanceof Error ? error.message : "Alternative konnte nicht übergeben werden.";
+        }
+      }
       render();
     }
   });
 }
-render();
+
+if (demoMode) {
+  render();
+} else if (worldId === "" || api === undefined) {
+  loadError = "Weltkennung oder angemeldete Sitzung fehlt. Der Beispieldatensatz wird im Produktivmodus nicht automatisch verwendet.";
+  render();
+} else {
+  render();
+  void api.loadDiagram(worldId).then((loaded) => {
+    data = loaded;
+    selectedTrainId = loaded.trains[0]?.id ?? "";
+    selectedConflictId = conflictsForTrain(loaded, selectedTrainId)[0]?.id ?? "";
+    ready = true;
+    render();
+  }).catch((error: unknown) => {
+    loadError = error instanceof Error ? error.message : "Planner-Ergebnis konnte nicht geladen werden.";
+    render();
+  });
+}

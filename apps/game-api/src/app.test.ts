@@ -14,6 +14,8 @@ const ISSUER = "https://auth.zugfolge.test/realms/lhe";
 const AUDIENCE = "game-api";
 const WORLD_LHE = "11111111-1111-1111-1111-111111111111";
 const WORLD_MIDDLE_GERMANY = "22222222-2222-2222-2222-222222222222";
+const LIVEMAP_INGEST_TOKEN = "test-only-livemap-ingest-token";
+const SIMULATION_INGEST_TOKEN = "test-only-simulation-ingest-token";
 
 let client: PGlite;
 let db: IdentityDatabase;
@@ -55,6 +57,8 @@ beforeEach(async () => {
     db,
     verifyToken: (token) => verifyIdentityToken(token, jwks, { issuer: ISSUER, audience: AUDIENCE }),
     livemap,
+    livemapIngestToken: LIVEMAP_INGEST_TOKEN,
+    simulationIngestToken: SIMULATION_INGEST_TOKEN,
   });
   await app.ready();
 });
@@ -72,7 +76,136 @@ describe("GET /health", () => {
   });
 });
 
-describe("Livemap (M4.6)",()=>{it("liefert den öffentlichen, weltisolierten Initialsnapshot",async()=>{livemap.forWorld(WORLD_LHE).publish({at:42,changed:[{id:"1",operator:"EVU",trainNumber:"RE 1",category:"regional",positionMm:5,speedMmPerSecond:2,delaySeconds:0,nextOperatingPoint:"Halle",status:"running"}],removed:[]});const response=await app.inject({method:"GET",url:`/worlds/${WORLD_LHE}/livemap/snapshot`});expect(response.statusCode).toBe(200);expect(response.json<{worldId:string;sequence:number;trains:unknown[]}>()).toMatchObject({worldId:WORLD_LHE,sequence:1});expect(response.json<{trains:unknown[]}>().trains).toHaveLength(1);const other=await app.inject({method:"GET",url:`/worlds/${WORLD_MIDDLE_GERMANY}/livemap/snapshot`});expect(other.json<{trains:unknown[]}>().trains).toEqual([]);});});
+describe("Livemap (M4.6)", () => {
+  it("liefert den öffentlichen, weltisolierten Initialsnapshot", async () => {
+    livemap.forWorld(WORLD_LHE).publish({
+      at: 42,
+      changed: [
+        {
+          id: "1",
+          operator: "EVU",
+          trainNumber: "RE 1",
+          category: "regional",
+          positionMm: 5,
+          speedMmPerSecond: 2,
+          delaySeconds: 0,
+          nextOperatingPoint: "Halle",
+          status: "running",
+        },
+      ],
+      removed: [],
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: `/worlds/${WORLD_LHE}/livemap/snapshot`,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ worldId: string; sequence: number; trains: unknown[] }>()).toMatchObject({
+      worldId: WORLD_LHE,
+      sequence: 1,
+    });
+    expect(response.json<{ trains: unknown[] }>().trains).toHaveLength(1);
+    const other = await app.inject({
+      method: "GET",
+      url: `/worlds/${WORLD_MIDDLE_GERMANY}/livemap/snapshot`,
+    });
+    expect(other.json<{ trains: unknown[] }>().trains).toEqual([]);
+  });
+
+  it("legt für eine unbekannte UUID keinen Feed an", async () => {
+    const unknown = "99999999-9999-4999-8999-999999999999";
+    const before = livemap.size;
+    const response = await app.inject({
+      method: "GET",
+      url: `/worlds/${unknown}/livemap/snapshot`,
+    });
+    expect(response.statusCode).toBe(404);
+    expect(livemap.size).toBe(before);
+  });
+
+  it("übernimmt Simulationsdeltas ausschließlich über den geschützten internen Adapter", async () => {
+    const body = {
+      at: 99,
+      changed: [{ id: "sim-1", operator: "EVU", trainNumber: "IC 1", category: "long-distance", positionMm: 10, speedMmPerSecond: 3, delaySeconds: 4, nextOperatingPoint: "Leipzig", status: "running" }],
+      removed: [],
+    };
+    const denied = await app.inject({ method: "POST", url: `/internal/worlds/${WORLD_LHE}/livemap/deltas`, payload: body });
+    expect(denied.statusCode).toBe(401);
+    const accepted = await app.inject({
+      method: "POST",
+      url: `/internal/worlds/${WORLD_LHE}/livemap/deltas`,
+      headers: { authorization: `Bearer ${LIVEMAP_INGEST_TOKEN}` },
+      payload: body,
+    });
+    expect(accepted.statusCode).toBe(202);
+    expect(livemap.forWorld(WORLD_LHE).snapshot()).toMatchObject({ at: 99, sequence: 1, trains: [{ id: "sim-1" }] });
+  });
+});
+
+describe("persistentes Simulations-Eventlog", () => {
+  it("nimmt atomare Batches an, verweigert Lücken und stellt Replay bereit", async () => {
+    const payload = {
+      events: [
+        { sequence: 1, eventType: "simulation.started", payload: { seed: 42 }, occurredAt: "2026-01-01T00:00:00.000Z" },
+        { sequence: 2, eventType: "train.materialized", payload: { id: "1" }, occurredAt: "2026-01-01T00:00:01.000Z" },
+      ],
+    };
+    const accepted = await app.inject({
+      method: "POST",
+      url: `/internal/worlds/${WORLD_LHE}/simulation/events`,
+      headers: { authorization: `Bearer ${SIMULATION_INGEST_TOKEN}` },
+      payload,
+    });
+    expect(accepted.statusCode).toBe(202);
+    expect(accepted.json()).toEqual({ appended: 2, lastSequence: 2 });
+
+    const gap = await app.inject({
+      method: "POST",
+      url: `/internal/worlds/${WORLD_LHE}/simulation/events`,
+      headers: { authorization: `Bearer ${SIMULATION_INGEST_TOKEN}` },
+      payload: { events: [{ sequence: 4, eventType: "gap", payload: {}, occurredAt: "2026-01-01T00:00:02.000Z" }] },
+    });
+    expect(gap.statusCode).toBe(409);
+
+    const token = await sign("event-reader", "Replay");
+    const access = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Replay" } });
+    expect(access.statusCode).toBe(201);
+    const replay = await app.inject({
+      method: "GET",
+      url: `/worlds/${WORLD_LHE}/simulation/events?after=1&limit=10`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toEqual([expect.objectContaining({ sequence: 2, eventType: "train.materialized" })]);
+
+    await app.inject({
+      method: "POST",
+      url: `/internal/worlds/${WORLD_LHE}/simulation/events`,
+      headers: { authorization: `Bearer ${SIMULATION_INGEST_TOKEN}` },
+      payload: { events: [{ sequence: 3, eventType: "planning.diagram", payload: { corridor: "LHE", stations: [], trains: [], occupations: [], conflicts: [] }, occurredAt: "2026-01-01T00:00:03.000Z" }] },
+    });
+    const diagram = await app.inject({ method: "GET", url: `/worlds/${WORLD_LHE}/planning/diagram`, headers: { authorization: `Bearer ${token}` } });
+    expect(diagram.json()).toMatchObject({ sequence: 3, data: { corridor: "LHE" } });
+
+    const queued = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/planning/alternatives`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { idempotencyKey: "ui-1", trainId: "t1", conflictId: "c1", shiftMinutes: 3 },
+    });
+    expect(queued.statusCode).toBe(202);
+    const commandId = queued.json<{ id: string }>().id;
+    const commands = await app.inject({ method: "GET", url: `/internal/worlds/${WORLD_LHE}/simulation/commands`, headers: { authorization: `Bearer ${SIMULATION_INGEST_TOKEN}` } });
+    expect(commands.json()).toEqual([expect.objectContaining({ id: commandId, commandType: "planning.apply-alternative", status: "pending" })]);
+    const acknowledged = await app.inject({
+      method: "POST",
+      url: `/internal/worlds/${WORLD_LHE}/simulation/commands/${commandId}/result`,
+      headers: { authorization: `Bearer ${SIMULATION_INGEST_TOKEN}` },
+      payload: { status: "processed", resultEventSequence: 3, processedAt: "2026-01-01T00:00:04.000Z" },
+    });
+    expect(acknowledged.json()).toMatchObject({ status: "processed", resultEventSequence: 3 });
+  });
+});
 
 describe("GET /health/ready", () => {
   it("meldet den aggregierten Zustand aller Health Checks ohne Authentifizierung", async () => {
@@ -80,7 +213,7 @@ describe("GET /health/ready", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       status: "ok",
-      checks: [{ name: "postgres", status: "ok", durationMs: expect.any(Number) }],
+      checks: [{ name: "postgres", status: "ok", code: "schema_current", durationMs: expect.any(Number) }],
     });
   });
 
@@ -121,6 +254,7 @@ describe("GET /health/ready", () => {
       const response = await appMitAusfall.inject({ method: "GET", url: "/health/ready" });
       expect(response.statusCode).toBe(503);
       expect(response.json().status).toBe("down");
+      expect(response.body).not.toContain("nicht erreichbar");
     } finally {
       await appMitAusfall.close();
     }
@@ -161,6 +295,7 @@ describe("Weltzugang und Kontoliste", () => {
     expect(roster.statusCode).toBe(200);
     const names = roster.json<{ displayName: string }[]>().map((account) => account.displayName);
     expect(names.sort()).toEqual(["Anna", "Ben"]);
+    expect(roster.json<Record<string, unknown>[]>().every((account) => !("keycloakSubject" in account))).toBe(true);
   });
 
   it("verweigert die Kontoliste einem Konto ohne Zugang zu dieser Welt", async () => {
@@ -181,20 +316,13 @@ describe("Rollenvergabe", () => {
     const adminToken = await sign("kc-admin", "Admin");
     const playerToken = await sign("kc-spieler", "Spieler");
 
-    await app.inject({
+    const adminAccess = await app.inject({
       method: "POST",
       url: `/worlds/${WORLD_LHE}/access`,
       headers: { authorization: `Bearer ${adminToken}` },
       payload: { displayName: "Admin" },
     });
-    const adminAccount = (
-      await app.inject({
-        method: "GET",
-        url: `/worlds/${WORLD_LHE}/accounts`,
-        headers: { authorization: `Bearer ${adminToken}` },
-      })
-    ).json<{ id: string; keycloakSubject: string }[]>();
-    const adminId = adminAccount.find((account) => account.keycloakSubject === "kc-admin")!.id;
+    const adminId = adminAccess.json<{ id: string }>().id;
 
     await app.inject({
       method: "POST",
@@ -402,20 +530,13 @@ describe("Ledger-Kern (M2.4)", () => {
 describe("Postfach (M2.5)", () => {
   it("stellt eine Nachricht zu, listet sie im Postfach und quittiert sie", async () => {
     const adminToken = await sign("kc-postadmin", "Postadmin");
-    await app.inject({
+    const adminAccess = await app.inject({
       method: "POST",
       url: `/worlds/${WORLD_LHE}/access`,
       headers: { authorization: `Bearer ${adminToken}` },
       payload: { displayName: "Postadmin" },
     });
-    const adminId = (
-      await app.inject({
-        method: "GET",
-        url: `/worlds/${WORLD_LHE}/accounts`,
-        headers: { authorization: `Bearer ${adminToken}` },
-      })
-    ).json<{ id: string; keycloakSubject: string }[]>().find((account) => account.keycloakSubject === "kc-postadmin")!
-      .id;
+    const adminId = adminAccess.json<{ id: string }>().id;
     await app.inject({
       method: "POST",
       url: `/worlds/${WORLD_LHE}/accounts/${adminId}/roles`,
@@ -511,6 +632,21 @@ describe("Datenschutz (M2.6)", () => {
       payload: { displayName: "Privacy-Anna" },
     });
     expect(reaccessResponse.statusCode).toBe(403);
+
+    const rosterAfterErase = await app.inject({
+      method: "GET",
+      url: `/worlds/${WORLD_LHE}/accounts`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(rosterAfterErase.statusCode).toBe(403);
+
+    const operatorAfterErase = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/operators`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: "Darf nicht entstehen" },
+    });
+    expect(operatorAfterErase.statusCode).toBe(403);
   });
 
   it("verweigert die Auskunft ohne Konto in der Welt", async () => {

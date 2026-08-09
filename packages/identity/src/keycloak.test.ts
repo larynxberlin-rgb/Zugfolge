@@ -1,7 +1,7 @@
 import { SignJWT, exportJWK, generateKeyPair, createLocalJWKSet } from "jose";
 import { describe, expect, it } from "vitest";
 
-import { TokenVerificationError, verifyIdentityToken } from "./keycloak.js";
+import { createKeycloakHealthCheck, TokenVerificationError, verifyIdentityToken } from "./keycloak.js";
 
 const ISSUER = "https://auth.zugfolge.test/realms/lhe";
 const AUDIENCE = "game-api";
@@ -82,5 +82,33 @@ describe("verifyIdentityToken", () => {
     await expect(verifyIdentityToken(token, jwks, { issuer: ISSUER, audience: AUDIENCE })).rejects.toBeInstanceOf(
       TokenVerificationError,
     );
+  });
+});
+
+describe("createKeycloakHealthCheck", () => {
+  it("prüft den konfigurierten JWKS-Endpunkt und aktive Schlüssel", async () => {
+    const requested: string[] = [];
+    const health = createKeycloakHealthCheck(
+      { issuer: ISSUER, audience: AUDIENCE, jwksUri: `${ISSUER}/custom-jwks` },
+      async (input) => {
+        requested.push(String(input));
+        return new Response(JSON.stringify({ keys: [{ kid: "active" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    );
+
+    await expect(health.check()).resolves.toEqual({ status: "ok", code: "jwks_available" });
+    expect(requested).toEqual([`${ISSUER}/custom-jwks`]);
+  });
+
+  it("meldet einen erreichbaren, aber leeren Schlüsselsatz als down", async () => {
+    const health = createKeycloakHealthCheck(
+      { issuer: ISSUER, audience: AUDIENCE },
+      async () => new Response(JSON.stringify({ keys: [] }), { status: 200 }),
+    );
+
+    await expect(health.check()).resolves.toMatchObject({ status: "down", code: "jwks_empty" });
   });
 });

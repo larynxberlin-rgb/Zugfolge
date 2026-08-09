@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { foreignKey, index, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 import { operators } from "./operators.js";
 import { worlds } from "./worlds.js";
@@ -17,13 +17,26 @@ export const ledgerTransactions = pgTable(
     worldId: uuid("world_id")
       .notNull()
       .references(() => worlds.id),
-    operatorId: uuid("operator_id")
-      .notNull()
-      .references(() => operators.id),
+    operatorId: uuid("operator_id").notNull(),
+    /** Fachlicher Schlüssel eines externen Effekts; `null` für interaktive Einzelbuchungen. */
+    idempotencyKey: text("idempotency_key"),
     description: text("description").notNull(),
     postedAt: timestamp("posted_at", { withTimezone: true }).notNull(),
   },
-  (table) => [index("ledger_transactions_world_operator_idx").on(table.worldId, table.operatorId)],
+  (table) => [
+    index("ledger_transactions_world_operator_idx").on(table.worldId, table.operatorId),
+    uniqueIndex("ledger_transactions_world_id_idx").on(table.worldId, table.id),
+    uniqueIndex("ledger_transactions_world_operator_idempotency_idx").on(
+      table.worldId,
+      table.operatorId,
+      table.idempotencyKey,
+    ),
+    foreignKey({
+      name: "ledger_transactions_world_operator_fk",
+      columns: [table.worldId, table.operatorId],
+      foreignColumns: [operators.worldId, operators.id],
+    }),
+  ],
 );
 
 export type LedgerTransaction = typeof ledgerTransactions.$inferSelect;

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { foreignKey, index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 import { accounts } from "./accounts.js";
 import { worlds } from "./worlds.js";
@@ -18,9 +18,9 @@ export const mailboxMessages = pgTable(
     worldId: uuid("world_id")
       .notNull()
       .references(() => worlds.id),
-    recipientAccountId: uuid("recipient_account_id")
-      .notNull()
-      .references(() => accounts.id),
+    recipientAccountId: uuid("recipient_account_id").notNull(),
+    /** Fachlicher Schlüssel eines externen Effekts; `null` für interaktive Nachrichten. */
+    idempotencyKey: text("idempotency_key"),
     messageType: text("message_type").notNull(),
     payload: jsonb("payload").notNull(),
     sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
@@ -29,7 +29,19 @@ export const mailboxMessages = pgTable(
     /** Quittierung durch den Empfänger; `null` heißt ungelesen/unquittiert. */
     acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
   },
-  (table) => [index("mailbox_messages_world_recipient_idx").on(table.worldId, table.recipientAccountId)],
+  (table) => [
+    index("mailbox_messages_world_recipient_idx").on(table.worldId, table.recipientAccountId),
+    uniqueIndex("mailbox_messages_world_recipient_idempotency_idx").on(
+      table.worldId,
+      table.recipientAccountId,
+      table.idempotencyKey,
+    ),
+    foreignKey({
+      name: "mailbox_messages_world_recipient_fk",
+      columns: [table.worldId, table.recipientAccountId],
+      foreignColumns: [accounts.worldId, accounts.id],
+    }),
+  ],
 );
 
 export type MailboxMessage = typeof mailboxMessages.$inferSelect;

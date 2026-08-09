@@ -9,6 +9,7 @@
  */
 
 import { createRemoteJWKSet, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from "jose";
+import type { HealthCheck } from "@zugfolge/health";
 
 export interface KeycloakConfig {
   readonly issuer: string;
@@ -85,4 +86,30 @@ export function createKeycloakVerifier(
   const jwksUri = config.jwksUri ?? `${config.issuer}/protocol/openid-connect/certs`;
   const jwks = createRemoteJWKSet(new URL(jwksUri));
   return (token: string) => verifyIdentityToken(token, jwks, config);
+}
+
+/** Readiness-Prüfung des tatsächlich verwendeten öffentlichen Schlüsselsatzes. */
+export function createKeycloakHealthCheck(
+  config: KeycloakConfig,
+  fetchImplementation: typeof fetch = fetch,
+): HealthCheck {
+  const jwksUri = config.jwksUri ?? `${config.issuer}/protocol/openid-connect/certs`;
+  return {
+    name: "keycloak-jwks",
+    async check(signal?: AbortSignal) {
+      const response = await fetchImplementation(jwksUri, {
+        method: "GET",
+        headers: { accept: "application/json" },
+        signal,
+      });
+      if (!response.ok) {
+        throw new Error(`JWKS antwortet mit HTTP ${response.status}.`);
+      }
+      const document = (await response.json()) as { readonly keys?: unknown };
+      if (!Array.isArray(document.keys) || document.keys.length === 0) {
+        return { status: "down", code: "jwks_empty", detail: "Kein aktiver Signaturschlüssel." };
+      }
+      return { status: "ok", code: "jwks_available" };
+    },
+  };
 }

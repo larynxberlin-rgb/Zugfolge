@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { foreignKey, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 import { accounts } from "./accounts.js";
 import { worlds } from "./worlds.js";
@@ -16,13 +16,19 @@ export const operators = pgTable(
     worldId: uuid("world_id")
       .notNull()
       .references(() => worlds.id),
-    foundingAccountId: uuid("founding_account_id")
-      .notNull()
-      .references(() => accounts.id),
+    foundingAccountId: uuid("founding_account_id").notNull(),
     name: text("name").notNull(),
     foundedAt: timestamp("founded_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [uniqueIndex("operators_world_name_idx").on(table.worldId, table.name)],
+  (table) => [
+    uniqueIndex("operators_world_name_idx").on(table.worldId, table.name),
+    uniqueIndex("operators_world_id_idx").on(table.worldId, table.id),
+    foreignKey({
+      name: "operators_world_account_fk",
+      columns: [table.worldId, table.foundingAccountId],
+      foreignColumns: [accounts.worldId, accounts.id],
+    }),
+  ],
 );
 
 export type Operator = typeof operators.$inferSelect;

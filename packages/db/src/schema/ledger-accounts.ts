@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { foreignKey, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 import { operators } from "./operators.js";
 import { worlds } from "./worlds.js";
@@ -16,14 +16,18 @@ export const ledgerAccounts = pgTable(
     worldId: uuid("world_id")
       .notNull()
       .references(() => worlds.id),
-    operatorId: uuid("operator_id")
-      .notNull()
-      .references(() => operators.id),
+    operatorId: uuid("operator_id").notNull(),
     name: text("name").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex("ledger_accounts_world_operator_name_idx").on(table.worldId, table.operatorId, table.name),
+    uniqueIndex("ledger_accounts_world_id_idx").on(table.worldId, table.id),
+    foreignKey({
+      name: "ledger_accounts_world_operator_fk",
+      columns: [table.worldId, table.operatorId],
+      foreignColumns: [operators.worldId, operators.id],
+    }),
   ],
 );
 

@@ -22,7 +22,10 @@ export const accounts = pgTable(
     /** Zeitpunkt der Löschung nach Datenschutzanfrage (M2.6); `null` heißt unangetastet. */
     erasedAt: timestamp("erased_at", { withTimezone: true }),
   },
-  (table) => [uniqueIndex("accounts_world_subject_idx").on(table.worldId, table.keycloakSubject)],
+  (table) => [
+    uniqueIndex("accounts_world_subject_idx").on(table.worldId, table.keycloakSubject),
+    uniqueIndex("accounts_world_id_idx").on(table.worldId, table.id),
+  ],
 );
 
 export type Account = typeof accounts.$inferSelect;

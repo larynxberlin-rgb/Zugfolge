@@ -1,5 +1,5 @@
 import { PGlite } from "@electric-sql/pglite";
-import { ledgerEntries, MIGRATIONS_FOLDER, mailboxMessages, schema, worlds } from "@zugfolge/db";
+import { economyEffects, ledgerEntries, MIGRATIONS_FOLDER, mailboxMessages, schema, worlds } from "@zugfolge/db";
 import { requestWorldAccess, type IdentityDatabase } from "@zugfolge/identity";
 import { foundOperator } from "@zugfolge/operators";
 import { eq } from "drizzle-orm";
@@ -38,7 +38,8 @@ describe("M6-Plattformadapter", () => {
     const adapters = createEconomyPlatformAdapters({ db, accountsByOperator: { [operator.id]: { cashAccountId: cash.id, revenueAccountId: revenue.id, costAccountIds: costAccounts } } });
 
     await adapters.postJournal({ worldId: WORLD_ID, operatorId: operator.id, idempotencyKey: "settlement:1", at: 1_800_000_000, description: "Periodenabrechnung", revenueCents: 10_000n, postings: [{ amountCents: 2_000n, costType: "energy", costCentreId: "lot-1", reference: "period-1" }] });
-    await adapters.sendNotice({ worldId: WORLD_ID, recipientAccountId: account.id, type: "insolvency-stage-1", at: 1_800_000_000, payload: { forecast: "negative" } });
+    await adapters.sendNotice({ id: "insolvency:1:account", worldId: WORLD_ID, recipientAccountId: account.id, type: "insolvency-stage-1", at: 1_800_000_000, payload: { forecast: "negative" } });
+    await adapters.sendNotice({ id: "insolvency:2:account", worldId: WORLD_ID, recipientAccountId: account.id, type: "insolvency-stage-1", at: 1_800_000_000, payload: { forecast: "still-negative" } });
 
     expect(await listLedgerTransactions(db, { worldId: WORLD_ID, operatorId: operator.id })).toHaveLength(1);
     expect(await ledgerAccountBalance(db, { worldId: WORLD_ID, ledgerAccountId: cash.id })).toBe(8_000n);
@@ -46,10 +47,16 @@ describe("M6-Plattformadapter", () => {
     const classifiedEntries = await db.select().from(ledgerEntries).where(eq(ledgerEntries.worldId, WORLD_ID));
     expect(classifiedEntries).toContainEqual(expect.objectContaining({ costType: "energy", costCentreId: "lot-1" }));
     const messages = await db.select().from(mailboxMessages).where(eq(mailboxMessages.worldId, WORLD_ID));
-    expect(messages).toHaveLength(1);
+    expect(messages).toHaveLength(2);
     expect(messages[0]).toMatchObject({ recipientAccountId: account.id, messageType: "insolvency-stage-1" });
+    expect(messages[0]?.sentAt).toEqual(new Date(1_800_000_000 * 1_000));
 
-    await adapters.postJournal({ worldId: WORLD_ID, operatorId: operator.id, idempotencyKey: "settlement:1", at: 1_800_000_000, description: "Periodenabrechnung", revenueCents: 10_000n, postings: [{ amountCents: 2_000n, costType: "energy", costCentreId: "lot-1", reference: "period-1" }] });
+    // Neustart: Eine neue Adapterinstanz muss dieselben fachlichen Effekte weiterhin erkennen.
+    const restarted = createEconomyPlatformAdapters({ db, accountsByOperator: { [operator.id]: { cashAccountId: cash.id, revenueAccountId: revenue.id, costAccountIds: costAccounts } } });
+    await restarted.postJournal({ worldId: WORLD_ID, operatorId: operator.id, idempotencyKey: "settlement:1", at: 1_800_000_000, description: "Periodenabrechnung", revenueCents: 10_000n, postings: [{ amountCents: 2_000n, costType: "energy", costCentreId: "lot-1", reference: "period-1" }] });
+    await restarted.sendNotice({ id: "insolvency:1:account", worldId: WORLD_ID, recipientAccountId: account.id, type: "insolvency-stage-1", at: 1_800_000_000, payload: { forecast: "changed-on-retry" } });
     expect(await listLedgerTransactions(db, { worldId: WORLD_ID, operatorId: operator.id })).toHaveLength(1);
+    expect(await db.select().from(mailboxMessages)).toHaveLength(2);
+    expect(await db.select().from(economyEffects)).toHaveLength(3);
   });
 });

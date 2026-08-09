@@ -63,12 +63,10 @@ Ergebnis vorzeigbar ist. Bislang erledigt:
   mit Herkunft, Lizenz, Prüfsumme und Confidence je Attribut, siehe
   [`betriebsgraph.md`](betriebsgraph.md) Abschnitt 17 und
   [`crates/zugfolge-infra/src/release.rs`](../crates/zugfolge-infra/src/release.rs);
-- **M1.13** — Referenzkorpus und Abweichungsreport gegen reale Fahrzeiten mit
-  definierter Toleranz, siehe [`betriebsgraph.md`](betriebsgraph.md)
-  Abschnitt 18 und
-  [`crates/zugfolge-infra/src/reference.rs`](../crates/zugfolge-infra/src/reference.rs).
-
-Damit ist **M1 abgeschlossen**: Betriebsgraph und Infra-Release-Pipeline stehen.
+M1.13 ist **in Arbeit**: Modell, Parser und Abweichungsreport stehen, aber der
+lizenzgeprüfte reale Pilotkorpus und dessen extern signiertes Release-Artefakt
+liegen noch nicht im Repository. Deshalb ist M1 als Gesamtbeweis noch nicht
+abgeschlossen.
 
 - **M2.1** — Keycloak-Integration, Konten, Rollen, Weltzugänge, siehe
   [`weltgeruest.md`](weltgeruest.md), [`packages/identity`](../packages/identity)
@@ -174,12 +172,17 @@ Alle drei sind mit M3.1 bis M3.4 abgearbeitet; die Zuordnung steht bei M3.
 | 1.10 | Fahrdynamik und Fahrzeitrechner → vorberechnete **ganzzahlige** Fahrzeittabellen je Zugcharakteristik | L | erledigt |
 | 1.11 | **Anlagenkataster**: Werkstätten, Behandlungs- und Waschanlagen, Tankstellen, Entsorgungsanlagen, Abstellgleise — mit Kapazität, Öffnungszeit, Nutzlänge, Baureihenkompetenz | M | erledigt |
 | 1.12 | `InfraRelease` als unveränderliches, versioniertes Artefakt mit Herkunft, Lizenz, Checksumme und Confidence je Attribut | M | erledigt |
-| 1.13 | Referenzkorpus Leipzig–Halle–Erfurt und Abweichungsreport gegen reale Fahrzeiten | M | erledigt |
+| 1.13 | Referenzkorpus Leipzig–Halle–Erfurt und Abweichungsreport gegen reale Fahrzeiten | M | in Arbeit |
 
 > **Beweis:** Ein signierter `InfraRelease` der Pilotregion, dessen berechnete
 > Fahrzeiten innerhalb definierter Toleranz zur Referenz liegen — begleitet von
 > einem Abdeckungsreport, der je Streckenabschnitt offenlegt, worauf die
 > Qualitätsklasse beruht.
+
+> **Audit-Hinweis:** Dieser Beweis ist noch offen. Die Tests verwenden einen
+> synthetischen Korpus; reale, lizenzgeprüfte Referenzfahrzeiten und eine
+> Signatur durch den Release-Verantwortlichen können nicht aus Quellcode
+> erzeugt oder fingiert werden.
 
 **M1.1 trägt:** `crates/zugfolge-infra` beschreibt Betriebsstellen, Kanten,
 Gleise, Bahnsteige, Elektrifizierung, Zugsicherung, Vmax-Bänder und Neigung,
@@ -433,7 +436,7 @@ sich vollständig auskunfts- und löschbar behandeln. Siehe
 | 3.7 | Ad-hoc-Trassen aus Restkapazität, Stornierung, Verfall bei Nichtnutzung | M | erledigt |
 | 3.8 | Rahmenverträge mit Kapazitätsdeckel | M | erledigt |
 | 3.9 | **Gestaltungssystem konkretisieren** (`design.md` 2.7): Farbwerte gegen reale Datendichte prüfen, Komponentenbibliothek, Icon-Set, beide Dichtestufen. Erste echte Oberfläche, deshalb hier und nicht früher | L | erledigt |
-| 3.10 | Bildfahrplan-UI, Sperrzeitentreppe, Konflikterklärung im Client — Konvention vor Originalität | L | erledigt |
+| 3.10 | Bildfahrplan-UI, Sperrzeitentreppe, Konflikterklärung im Client — Konvention vor Originalität | L | in Arbeit |
 
 > **Beweis:** Zwei Spieler beantragen konkurrierende Trassen. Das System
 > entscheidet nachvollziehbar, bietet eine Alternative an, und die Entscheidung
@@ -499,7 +502,7 @@ abgeschlossen.
 | 4.3 | Verspätungs**propagation**: Regelwiderstände, Haltezeiten, Anschlussverzug. Ereignisursachen kommen erst in M8 — hier geht es um Fortpflanzung, nicht um Entstehung | L | erledigt |
 | 4.4 | **Dispositionsschnittstelle im Kern**: definierter Entscheidungspunkt je Ereignis, zunächst mit konservativem Standardverhalten. Macht M7 zu einer Implementierung statt zu einer Operation am offenen Herzen | M | erledigt |
 | 4.5 | Regionsübergabe mit Bestätigungsprotokoll | M | erledigt |
-| 4.6 | Delta-Streaming: Initialsnapshot, Sequenz-Deltas, Interpolation im Client | M | erledigt |
+| 4.6 | Delta-Streaming: Initialsnapshot, Sequenz-Deltas, Interpolation im Client | M | in Arbeit |
 | 4.7 | Eigene Dark-Vector-Tiles, Pipeline → PMTiles — Netz zurückhaltend, Verkehr dominant; ausgeschlossene Netze als blasse Kontextlinien | M | erledigt |
 | 4.8 | Livemap-Frontend inklusive Zuglaufansicht und Sichtbarkeitsregeln; Zustandsdarstellung nach `design.md` 2.4, **Normalzustand farblos** | L | erledigt |
 | 4.9 | Event-Log, Replay, Determinismus-Test in CI | M | erledigt |
@@ -598,7 +601,7 @@ Umlauf-, Personal-, Wartungs- oder Versorgungsverstoß.
 | 6.5 | **Auskömmlichkeitsgrenze**: vor Angebotsöffnung veröffentlicht, deterministisch aus `EconomyRelease` berechnet | M | erledigt |
 | 6.6 | Angebotsabgabe mit wenigen Feldern (E19): Bestellerentgelt, Fahrzeugkonzept, optionale Qualitätszusagen. **Angebotsfrist 3–7 Tage, kleine Lose 24–48 Stunden, Zuschlag sofort bei Fristende.** Eigene Wertungsaufschlüsselung vor Abgabe sichtbar; Angebotsassistent als Automatikstufe | L | erledigt |
 | 6.6a | **Fahrzeugvorgaben der Ausschreibung**: Mindestsitzplätze, Klassenanteil, Barrierefreiheit, Fahrrad- und Rollstuhlplätze, Ausstattung — geprüft gegen die Fahrzeugkonfiguration aus M5.1a | M | erledigt |
-| 6.7 | **Betriebsübergang** (`wirtschaft.md` 3): Mobilisierungsphase mit Nachweispflicht auf Fahrzeuge, Personal und Trassen; Altbetreiber fährt mit vollen Pflichten bis zum Fahrplanstichtag; nahtlose Fortsetzung, wenn der Bisherige gewinnt; Eigenbetrieb plus Vertragsstrafe, wenn die Mobilisierung scheitert | L | erledigt |
+| 6.7 | **Betriebsübergang** (`wirtschaft.md` 3): Mobilisierungsphase mit Nachweispflicht auf Fahrzeuge, Personal und Trassen; Altbetreiber fährt mit vollen Pflichten bis zum Fahrplanstichtag; nahtlose Fortsetzung, wenn der Bisherige gewinnt; Eigenbetrieb plus Vertragsstrafe, wenn die Mobilisierung scheitert | L | in Arbeit |
 | 6.8 | Verkehrsvertrag im Betrieb: Bestellerentgelt, Bonus, Pönale, Nachweise | M | erledigt |
 | 6.9 | **Eigenbetrieb**: Übernahme, Fahrzeugpool, konservatives Standard-Regelwerk, Kennzeichnung auf der Livemap | L | erledigt |
 | 6.10 | **Nachbesserungsleiter**: Notvergabe auf zwei Perioden befristet, danach Neuausschreibung mit verbessertem Paket | M | erledigt |

@@ -49,9 +49,22 @@ export function scoreBid(tender: Tender, bid: Bid): ScoreBreakdown {
   const threshold = tender.viabilityThresholdCentsPerTrainKm;
   const priceRatio = threshold === 0n ? 10_000 : Number((threshold - bid.orderingFeeCentsPerTrainKm) * 10_000n / threshold);
   const maximum = tender.rules.requirementFocusMaximumPoints;
-  const focusPoints = tender.profile.requirementFocus === "capacity" ? Math.min(maximum, bid.vehicle.minimumSeats - tender.specification.requirements.minimumSeats) * tender.rules.pointsPerExtraSeat : tender.profile.requirementFocus === "comfort" ? Math.min(maximum, bid.vehicle.firstClassBasisPoints - tender.specification.requirements.firstClassBasisPoints) : tender.profile.requirementFocus === "bicycle" ? Math.min(maximum, bid.vehicle.bicyclePlaces - tender.specification.requirements.bicyclePlaces) * tender.rules.pointsPerExtraSeat : bid.vehicle.accessible ? maximum : 0;
-  const dimensions = { extraSeats: bid.promises.extraSeats * tender.rules.pointsPerExtraSeat, punctuality: Math.max(0, bid.promises.punctualityBasisPoints - tender.rules.qualityBaselinePunctualityBasisPoints) * tender.rules.pointsPerPunctualityBasisPoint, additionalStops: bid.promises.additionalStops * tender.rules.pointsPerAdditionalStop, requirementFocus: Math.max(0, focusPoints) };
-  const qualityRatio = dimensions.extraSeats + dimensions.punctuality + dimensions.additionalStops;
+  const uncappedFocusPoints = tender.profile.requirementFocus === "capacity"
+    ? (bid.vehicle.minimumSeats - tender.specification.requirements.minimumSeats) * tender.rules.pointsPerExtraSeat
+    : tender.profile.requirementFocus === "comfort"
+      ? bid.vehicle.firstClassBasisPoints - tender.specification.requirements.firstClassBasisPoints
+      : tender.profile.requirementFocus === "bicycle"
+        ? (bid.vehicle.bicyclePlaces - tender.specification.requirements.bicyclePlaces) * tender.rules.pointsPerExtraSeat
+        : bid.vehicle.accessible
+          ? maximum
+          : 0;
+  const dimensions = {
+    extraSeats: bid.promises.extraSeats * tender.rules.pointsPerExtraSeat,
+    punctuality: Math.max(0, bid.promises.punctualityBasisPoints - tender.rules.qualityBaselinePunctualityBasisPoints) * tender.rules.pointsPerPunctualityBasisPoint,
+    additionalStops: bid.promises.additionalStops * tender.rules.pointsPerAdditionalStop,
+    requirementFocus: Math.min(maximum, Math.max(0, uncappedFocusPoints)),
+  };
+  const qualityRatio = dimensions.extraSeats + dimensions.punctuality + dimensions.additionalStops + dimensions.requirementFocus;
   return Object.freeze({ pricePoints: Math.floor(priceRatio * tender.profile.weights.price / 10_000), qualityPoints: Math.floor(qualityRatio * tender.profile.weights.quality / 10_000), dimensions: Object.freeze(dimensions) });
 }
 

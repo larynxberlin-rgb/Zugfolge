@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { foreignKey, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 import { accounts } from "./accounts.js";
 import { worlds } from "./worlds.js";
@@ -15,13 +15,18 @@ export const accountRoles = pgTable(
     worldId: uuid("world_id")
       .notNull()
       .references(() => worlds.id),
-    accountId: uuid("account_id")
-      .notNull()
-      .references(() => accounts.id),
+    accountId: uuid("account_id").notNull(),
     role: text("role", { enum: ["player", "world_admin"] }).notNull(),
     grantedAt: timestamp("granted_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [uniqueIndex("account_roles_world_account_role_idx").on(table.worldId, table.accountId, table.role)],
+  (table) => [
+    uniqueIndex("account_roles_world_account_role_idx").on(table.worldId, table.accountId, table.role),
+    foreignKey({
+      name: "account_roles_world_account_fk",
+      columns: [table.worldId, table.accountId],
+      foreignColumns: [accounts.worldId, accounts.id],
+    }),
+  ],
 );
 
 export type AccountRole = typeof accountRoles.$inferSelect;

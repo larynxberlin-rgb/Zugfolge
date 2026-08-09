@@ -36,6 +36,27 @@
       "when": 1786237361450,
       "tag": "0004_faulty_shape",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786246258372,
+      "tag": "0005_silly_iron_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786246683981,
+      "tag": "0006_nebulous_captain_flint",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786247131047,
+      "tag": "0007_colorful_kabuki",
+      "breakpoints": true
     }
   ]
 }
