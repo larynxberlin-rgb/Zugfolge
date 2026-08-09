@@ -127,6 +127,9 @@ importers:
       '@zugfolge/db':
         specifier: workspace:*
         version: link:../db
+      '@zugfolge/mailbox':
+        specifier: workspace:*
+        version: link:../mailbox
       '@zugfolge/operators':
         specifier: workspace:*
         version: link:../operators

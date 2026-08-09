@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { bigint, index, pgTable, uuid } from "drizzle-orm/pg-core";
+import { bigint, index, pgTable, uuid, varchar } from "drizzle-orm/pg-core";
 
 import { ledgerAccounts } from "./ledger-accounts.js";
 import { ledgerTransactions } from "./ledger-transactions.js";
@@ -27,10 +27,14 @@ export const ledgerEntries = pgTable(
       .notNull()
       .references(() => ledgerAccounts.id),
     amountCents: bigint("amount_cents", { mode: "bigint" }).notNull(),
+    /** M6.2: fachliche Klassifikation bleibt am unveränderlichen Buchungssatz. */
+    costType: varchar("cost_type", { length: 32 }),
+    costCentreId: varchar("cost_centre_id", { length: 128 }),
   },
   (table) => [
     index("ledger_entries_world_transaction_idx").on(table.worldId, table.transactionId),
     index("ledger_entries_world_account_idx").on(table.worldId, table.ledgerAccountId),
+    index("ledger_entries_world_cost_centre_idx").on(table.worldId, table.costCentreId, table.costType),
   ],
 );
 
