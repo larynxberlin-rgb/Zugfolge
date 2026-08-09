@@ -1,35 +1,50 @@
 {
-  "schema": "zugfolge-model-results/v1",
-  "releaseChecksum": "3b891ef47ac78615465d67f01eb24a0e161b781b4ea689a207b0741200563cdd",
-  "modelInputSha256": "f1a3cdfc5296da4ae12bc7c85acc511d322bc258997fe3626c29d6f598f0821b",
+  "schema": "zugfolge-model-results/v2",
+  "qualification": "calibration-only",
+  "releaseChecksum": "994ff2a6cc06bc9ce324f3691d30645765d574f44f09ea4f102e44c1ccd536d3",
+  "modelInputSha256": "dbbb347c62f4cae0e0c6ad44b58bcae0fa1ae09bffa6990a41bab4509627ab4f",
+  "technicalReference": {
+    "sourceId": "trassenfinder",
+    "artifactSha256": "1de4506127603bceac14f8c1542de35853df214b0dbb09c91e32b067e240b990",
+    "runningSeconds": 1260
+  },
   "results": [
     {
-      "groupId": "d9f37a292a03e5a9",
+      "groupId": "1a70b02af280bd2e",
       "characteristicsId": "mdsb-talent2-v1",
-      "calculatedSeconds": 1014,
-      "runningSeconds": 954,
+      "calibrationMethod": "per-section-effective-speed-grid-search-v1",
+      "rawRunningSeconds": 967,
+      "runningSeconds": 1263,
       "dwellSeconds": 60,
+      "modeledTimetableSeconds": 1323,
+      "technicalReferenceSeconds": 1260,
       "sections": [
         {
           "segmentId": "lhe-leipzig-messe",
-          "runningSeconds": 178,
+          "rawRunningSeconds": 189,
+          "runningSeconds": 301,
+          "effectiveSpeedKph": 83,
           "dwellAfterSeconds": 0,
           "technicalReferenceSeconds": 300,
-          "technicalDeviationSeconds": -122
+          "technicalDeviationSeconds": 1
         },
         {
           "segmentId": "lhe-messe-airport",
-          "runningSeconds": 324,
+          "rawRunningSeconds": 326,
+          "runningSeconds": 421,
+          "effectiveSpeedKph": 116,
           "dwellAfterSeconds": 60,
-          "technicalReferenceSeconds": 480,
-          "technicalDeviationSeconds": -96
+          "technicalReferenceSeconds": 420,
+          "technicalDeviationSeconds": 1
         },
         {
           "segmentId": "lhe-airport-halle",
-          "runningSeconds": 452,
+          "rawRunningSeconds": 452,
+          "runningSeconds": 541,
+          "effectiveSpeedKph": 129,
           "dwellAfterSeconds": 0,
-          "technicalReferenceSeconds": 600,
-          "technicalDeviationSeconds": -148
+          "technicalReferenceSeconds": 540,
+          "technicalDeviationSeconds": 1
         }
       ]
     }

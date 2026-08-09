@@ -4,7 +4,7 @@
   "feedUrl": "https://download.gtfs.de/germany/rv_free/latest.zip",
   "archiveSha256": "0c30da4378f24e287df5cdda9fa1fc12e982318f9353dca3d114642777702650",
   "archiveBytes": 11085165,
-  "configSha256": "2df21bd297a075789db549e9c6e7ae246fd38bb22835e9d9fa5af609647087f8",
+  "configSha256": "ec702aed7967465dee80f21b176ccf04de24c6d09368518b85f2109275ea6ac5",
   "source": {
     "id": "gtfs-de-rv",
     "sourceLicense": "CC BY 4.0",

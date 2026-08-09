@@ -94,7 +94,10 @@ async function main() {
     await writeJson(corpusFile, corpus);
     await writeJson(reportFile, report);
     if (!report.passed) throw new Error("Fahrzeitvergleich liegt außerhalb der dokumentierten Toleranz.");
-    console.log(`${corpus.groups.length} Referenzgruppen, technischer Vergleich bestanden.`);
+    console.log(
+      `${corpus.groups.length} Referenzgruppen, technischer Vergleich bestanden; ` +
+        `Release-Freigabe: ${report.releaseQualified ? "ja" : "nein"}.`,
+    );
     return;
   }
   if (mode === "compare") {
@@ -107,7 +110,10 @@ async function main() {
     const report = compareWithModel(corpus, await readJson(modelFile), config.tolerance);
     await writeJson(reportFile, report);
     if (!report.passed) throw new Error("Fahrzeitvergleich liegt außerhalb der dokumentierten Toleranz.");
-    console.log(`${corpus.groups.length} Referenzgruppen, technischer Vergleich bestanden.`);
+    console.log(
+      `${corpus.groups.length} Referenzgruppen, technischer Vergleich bestanden; ` +
+        `Release-Freigabe: ${report.releaseQualified ? "ja" : "nein"}.`,
+    );
     return;
   }
   if (mode === "sign") {

@@ -39,4 +39,4 @@ dagegen nützlich.
 - **Invarianten:** Trägt Invariante 6 (kein externer Dienst im heißen Pfad) und
   stützt Invariante 3 (Determinismus).
 - **Milestones:** M0.4 (Rechte-Gate inklusive Trassenfinder-Nutzungsbedingungen),
-  M1.13 (Abweichungsreport gegen reale Fahrzeiten).
+  M1.13 (technische Kalibrierung, getrennt vom GTFS-Fahrplan-Holdout).

@@ -17,8 +17,8 @@ use zugfolge_infra::{
     TrainCharacteristicsId, TrainProtection, TravelDirection, derive_running_time_table_with_exit,
 };
 
-const CONFIG_SCHEMA: &str = "zugfolge-pilot-model/v1";
-const RESULTS_SCHEMA: &str = "zugfolge-model-results/v1";
+const CONFIG_SCHEMA: &str = "zugfolge-pilot-model/v2";
+const RESULTS_SCHEMA: &str = "zugfolge-model-results/v2";
 const RELEASE_SCHEMA: &str = "zugfolge-infra-release-manifest/v1";
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -33,6 +33,7 @@ struct ModelConfig {
     operating_points: Vec<OperatingPointConfig>,
     segments: Vec<SegmentConfig>,
     intermediate_dwells: Vec<DwellConfig>,
+    calibration: CalibrationConfig,
     comparison_basis: ComparisonBasis,
 }
 
@@ -117,14 +118,34 @@ struct DwellConfig {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CalibrationConfig {
+    method: String,
+    minimum_effective_speed_kph: i64,
+    step_kph: i64,
+    maximum_section_deviation_seconds: i64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ComparisonBasis {
-    corpus_path: String,
+    timetable_corpus_path: String,
     corpus_group_id: String,
     source_archive_sha256: String,
-    technical_reference_seconds: i64,
-    section_references: Vec<SectionReference>,
+    technical_reference: TechnicalReference,
     dwell_method: String,
+    schedule_allowance_method: String,
     limitation: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TechnicalReference {
+    source_id: String,
+    artifact_path: String,
+    artifact_sha256: String,
+    retrieved_at: String,
+    running_seconds: i64,
+    sections: Vec<SectionReference>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -132,16 +153,45 @@ struct ComparisonBasis {
 struct SectionReference {
     segment_id: String,
     running_seconds: i64,
-    dwell_after_seconds: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ManualTechnicalReferenceArtifact {
+    schema: String,
+    result: ManualTechnicalReferenceResult,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ManualTechnicalReferenceResult {
+    technical_running_seconds: i64,
+    sections: Vec<ManualTechnicalReferenceSection>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ManualTechnicalReferenceSection {
+    technical_running_seconds: i64,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ModelResults<'a> {
     schema: &'static str,
+    qualification: &'static str,
     release_checksum: &'a str,
     model_input_sha256: &'a str,
+    technical_reference: TechnicalReferenceSummary<'a>,
     results: Vec<ModelResult<'a>>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TechnicalReferenceSummary<'a> {
+    source_id: &'a str,
+    artifact_sha256: &'a str,
+    running_seconds: i64,
 }
 
 #[derive(Serialize)]
@@ -149,9 +199,12 @@ struct ModelResults<'a> {
 struct ModelResult<'a> {
     group_id: &'a str,
     characteristics_id: &'a str,
-    calculated_seconds: i64,
+    calibration_method: &'a str,
+    raw_running_seconds: i64,
     running_seconds: i64,
     dwell_seconds: i64,
+    modeled_timetable_seconds: i64,
+    technical_reference_seconds: i64,
     sections: Vec<SectionResult<'a>>,
 }
 
@@ -159,10 +212,19 @@ struct ModelResult<'a> {
 #[serde(rename_all = "camelCase")]
 struct SectionResult<'a> {
     segment_id: &'a str,
+    raw_running_seconds: i64,
     running_seconds: i64,
+    effective_speed_kph: i64,
     dwell_after_seconds: i64,
     technical_reference_seconds: i64,
     technical_deviation_seconds: i64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CalibratedSection {
+    raw_running_seconds: i64,
+    running_seconds: i64,
+    effective_speed_kph: i64,
 }
 
 #[derive(Serialize)]
@@ -186,6 +248,43 @@ fn require(condition: bool, message: impl Into<String>) -> Result<()> {
     } else {
         Err(invalid(message).into())
     }
+}
+
+fn sha256_hex(input: &[u8]) -> String {
+    Sha256::digest(input)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn verify_technical_reference_artifact(config: &ModelConfig, input: &[u8]) -> Result<()> {
+    let expected = &config.comparison_basis.technical_reference;
+    require(
+        sha256_hex(input) == expected.artifact_sha256,
+        "Hash des technischen Referenzartefakts stimmt nicht",
+    )?;
+    let artifact: ManualTechnicalReferenceArtifact = serde_json::from_slice(input)?;
+    require(
+        artifact.schema == "zugfolge-manual-technical-reference/v1",
+        "unbekanntes Schema des technischen Referenzartefakts",
+    )?;
+    require(
+        artifact.result.technical_running_seconds == expected.running_seconds,
+        "Gesamtlaufzeit des technischen Referenzartefakts stimmt nicht",
+    )?;
+    require(
+        artifact.result.sections.len() == expected.sections.len()
+            && artifact
+                .result
+                .sections
+                .iter()
+                .zip(&expected.sections)
+                .all(|(actual, configured)| {
+                    actual.technical_running_seconds == configured.running_seconds
+                }),
+        "Abschnittslaufzeiten des technischen Referenzartefakts stimmen nicht",
+    )?;
+    Ok(())
 }
 
 fn parse_confidence(value: &str) -> Result<Confidence> {
@@ -296,8 +395,35 @@ fn validate(config: &ModelConfig) -> Result<()> {
         "für jede Zwischenbetriebsstelle ist genau eine Haltezeit erforderlich",
     )?;
     require(
-        config.comparison_basis.section_references.len() == config.segments.len(),
+        config.comparison_basis.technical_reference.sections.len() == config.segments.len(),
         "für jedes Segment ist genau eine technische Abschnittsreferenz erforderlich",
+    )?;
+    require(
+        config.calibration.method == "per-section-effective-speed-grid-search-v1",
+        "unbekannte Kalibrierungsmethode",
+    )?;
+    require(
+        config.calibration.minimum_effective_speed_kph > 0
+            && config.calibration.step_kph > 0
+            && config.calibration.maximum_section_deviation_seconds >= 0,
+        "Kalibrierungsgrenzen sind ungültig",
+    )?;
+    require(
+        !config.comparison_basis.timetable_corpus_path.trim().is_empty()
+            && !config.comparison_basis.source_archive_sha256.trim().is_empty(),
+        "Fahrplankorpus oder GTFS-Archivhash fehlt",
+    )?;
+    let technical_reference = &config.comparison_basis.technical_reference;
+    require(
+        !technical_reference.source_id.trim().is_empty()
+            && !technical_reference.artifact_path.trim().is_empty()
+            && technical_reference.artifact_sha256.len() == 64
+            && !technical_reference.retrieved_at.trim().is_empty(),
+        "technische Referenz ist nicht vollständig gebunden",
+    )?;
+    require(
+        technical_reference.source_id == config.release.infrastructure_source.id,
+        "technische Referenz und abgeleitete Infrastruktur müssen dieselbe Quelle nennen",
     )?;
 
     let point_ids: BTreeSet<_> = config
@@ -331,7 +457,11 @@ fn validate(config: &ModelConfig) -> Result<()> {
             segment.maximum_speed_kph > 0,
             format!("Segment '{}' hat keine positive Vmax", segment.id),
         )?;
-        let reference = &config.comparison_basis.section_references[index];
+        require(
+            config.calibration.minimum_effective_speed_kph <= segment.maximum_speed_kph,
+            format!("Segment '{}' liegt unter der minimalen Kalibriergeschwindigkeit", segment.id),
+        )?;
+        let reference = &technical_reference.sections[index];
         require(
             reference.segment_id == segment.id,
             format!(
@@ -340,7 +470,7 @@ fn validate(config: &ModelConfig) -> Result<()> {
             ),
         )?;
         require(
-            reference.running_seconds > 0 && reference.dwell_after_seconds >= 0,
+            reference.running_seconds > 0,
             format!("Abschnittsreferenz für '{}' ist ungültig", segment.id),
         )?;
     }
@@ -371,26 +501,30 @@ fn validate(config: &ModelConfig) -> Result<()> {
     )?;
     let component_total = config
         .comparison_basis
-        .section_references
+        .technical_reference
+        .sections
         .iter()
-        .map(|reference| {
-            reference
-                .running_seconds
-                .saturating_add(reference.dwell_after_seconds)
-        })
+        .map(|reference| reference.running_seconds)
         .sum::<i64>();
     require(
-        component_total == config.comparison_basis.technical_reference_seconds,
+        component_total == technical_reference.running_seconds,
         "Abschnittsreferenzen ergeben nicht die technische Gesamtreferenz",
     )?;
     require(
-        config.release.infrastructure_source.confidence == "assumed",
-        "die provisorische Pilotinfrastruktur muss Confidence 'assumed' tragen",
+        config.release.infrastructure_source.confidence == "derived",
+        "die kalibrierte Pilotinfrastruktur muss Confidence 'derived' tragen",
     )?;
     Ok(())
 }
 
-fn build_release(config: &ModelConfig) -> Result<(InfraRelease, Vec<TrackId>)> {
+fn build_release(
+    config: &ModelConfig,
+    calibrated_sections: &[CalibratedSection],
+) -> Result<(InfraRelease, Vec<TrackId>)> {
+    require(
+        calibrated_sections.len() == config.segments.len(),
+        "Kalibrierung und Segmentliste passen nicht zusammen",
+    )?;
     let operating_point_source = provenance(&config.release.operating_point_source)?;
     let infrastructure_source = provenance(&config.release.infrastructure_source)?;
     let protection = parse_protection(&config.characteristics.protection)?;
@@ -423,7 +557,12 @@ fn build_release(config: &ModelConfig) -> Result<(InfraRelease, Vec<TrackId>)> {
     }
 
     let mut path_tracks = Vec::with_capacity(config.segments.len());
-    for (index, segment) in config.segments.iter().enumerate() {
+    for (index, (segment, calibrated)) in config
+        .segments
+        .iter()
+        .zip(calibrated_sections)
+        .enumerate()
+    {
         let numeric_id = u32::try_from(index + 1)?;
         let edge_id = TrackEdgeId::new(numeric_id);
         let track_id = TrackId::new(2_000 + numeric_id);
@@ -457,7 +596,7 @@ fn build_release(config: &ModelConfig) -> Result<(InfraRelease, Vec<TrackId>)> {
                 TrackOwner::Edge(edge_id),
                 "Pilot-Streckengleis",
                 segment.distance_metres,
-                segment.maximum_speed_kph,
+                calibrated.effective_speed_kph,
                 segment.gradient_per_mille_tenths,
                 &protection,
                 &infrastructure_source,
@@ -505,10 +644,110 @@ fn train(config: &CharacteristicsConfig) -> Result<TrainCharacteristics> {
     )?)
 }
 
+fn section_running_seconds(
+    segment: &SegmentConfig,
+    speed_kph: i64,
+    train: &TrainCharacteristics,
+    protection: &TrainProtection,
+    source: &Provenance,
+    numeric_id: u32,
+) -> Result<i64> {
+    let test_track = track(
+        TrackId::new(20_000 + numeric_id),
+        TrackOwner::Edge(TrackEdgeId::new(10_000 + numeric_id)),
+        "Kalibriersegment",
+        segment.distance_metres,
+        speed_kph,
+        segment.gradient_per_mille_tenths,
+        protection,
+        source,
+    )?;
+    let mut path = RunPath::new();
+    path.push_track_range(
+        train,
+        &test_track,
+        TravelDirection::WithChainage,
+        Length::ZERO,
+        test_track.length(),
+    )?;
+    Ok(
+        derive_running_time_table_with_exit(&path, train, Speed::ZERO, Speed::ZERO)?
+            .total()
+            .seconds(),
+    )
+}
+
+fn calibrate(config: &ModelConfig) -> Result<Vec<CalibratedSection>> {
+    let train = train(&config.characteristics)?;
+    let protection = parse_protection(&config.characteristics.protection)?;
+    let source = provenance(&config.release.infrastructure_source)?;
+    let mut calibrated = Vec::with_capacity(config.segments.len());
+
+    for (index, (segment, reference)) in config
+        .segments
+        .iter()
+        .zip(&config.comparison_basis.technical_reference.sections)
+        .enumerate()
+    {
+        let numeric_id = u32::try_from(index + 1)?;
+        let raw_running_seconds = section_running_seconds(
+            segment,
+            segment.maximum_speed_kph,
+            &train,
+            &protection,
+            &source,
+            numeric_id,
+        )?;
+        let mut best: Option<(i64, i64, i64)> = None;
+        let mut speed_kph = config.calibration.minimum_effective_speed_kph;
+        loop {
+            let running_seconds = section_running_seconds(
+                segment,
+                speed_kph,
+                &train,
+                &protection,
+                &source,
+                numeric_id,
+            )?;
+            let deviation = running_seconds
+                .saturating_sub(reference.running_seconds)
+                .abs();
+            if best.is_none_or(|(best_deviation, best_speed, _)| {
+                deviation < best_deviation
+                    || (deviation == best_deviation && speed_kph > best_speed)
+            }) {
+                best = Some((deviation, speed_kph, running_seconds));
+            }
+            if speed_kph == segment.maximum_speed_kph {
+                break;
+            }
+            speed_kph = speed_kph
+                .saturating_add(config.calibration.step_kph)
+                .min(segment.maximum_speed_kph);
+        }
+        let (deviation, effective_speed_kph, running_seconds) =
+            best.ok_or_else(|| invalid("Kalibrierung lieferte keinen Kandidaten"))?;
+        require(
+            deviation <= config.calibration.maximum_section_deviation_seconds,
+            format!(
+                "Segment '{}' verfehlt die Kalibriergrenze um {} Sekunden",
+                segment.id, deviation
+            ),
+        )?;
+        calibrated.push(CalibratedSection {
+            raw_running_seconds,
+            running_seconds,
+            effective_speed_kph,
+        });
+    }
+    Ok(calibrated)
+}
+
 fn run<'a>(
     config: &'a ModelConfig,
     release: &InfraRelease,
     path_tracks: &[TrackId],
+    calibrated_sections: &[CalibratedSection],
 ) -> Result<ModelResult<'a>> {
     let train = train(&config.characteristics)?;
     let dwells: BTreeMap<_, _> = config
@@ -517,13 +756,15 @@ fn run<'a>(
         .map(|dwell| (dwell.operating_point_id.as_str(), dwell.seconds))
         .collect();
     let mut sections = Vec::with_capacity(config.segments.len());
+    let mut raw_running_seconds = 0_i64;
     let mut running_seconds = 0_i64;
     let mut dwell_seconds = 0_i64;
 
-    for ((segment, reference), track_id) in config
+    for (((segment, reference), calibrated), track_id) in config
         .segments
         .iter()
-        .zip(&config.comparison_basis.section_references)
+        .zip(&config.comparison_basis.technical_reference.sections)
+        .zip(calibrated_sections)
         .zip(path_tracks)
     {
         let track = release
@@ -542,35 +783,37 @@ fn run<'a>(
             derive_running_time_table_with_exit(&path, &train, Speed::ZERO, Speed::ZERO)?
                 .total()
                 .seconds();
+        require(
+            section_running == calibrated.running_seconds,
+            format!("Kalibrierlauf für '{}' ist nicht reproduzierbar", segment.id),
+        )?;
         let dwell_after = dwells
             .get(segment.to_operating_point_id.as_str())
             .copied()
             .unwrap_or(0);
+        raw_running_seconds = raw_running_seconds.saturating_add(calibrated.raw_running_seconds);
         running_seconds = running_seconds.saturating_add(section_running);
         dwell_seconds = dwell_seconds.saturating_add(dwell_after);
         sections.push(SectionResult {
             segment_id: &segment.id,
+            raw_running_seconds: calibrated.raw_running_seconds,
             running_seconds: section_running,
+            effective_speed_kph: calibrated.effective_speed_kph,
             dwell_after_seconds: dwell_after,
-            technical_reference_seconds: reference
-                .running_seconds
-                .saturating_add(reference.dwell_after_seconds),
-            technical_deviation_seconds: section_running
-                .saturating_add(dwell_after)
-                .saturating_sub(
-                    reference
-                        .running_seconds
-                        .saturating_add(reference.dwell_after_seconds),
-                ),
+            technical_reference_seconds: reference.running_seconds,
+            technical_deviation_seconds: section_running.saturating_sub(reference.running_seconds),
         });
     }
 
     Ok(ModelResult {
         group_id: &config.group_id,
         characteristics_id: &config.characteristics.id,
-        calculated_seconds: running_seconds.saturating_add(dwell_seconds),
+        calibration_method: &config.calibration.method,
+        raw_running_seconds,
         running_seconds,
         dwell_seconds,
+        modeled_timetable_seconds: running_seconds.saturating_add(dwell_seconds),
+        technical_reference_seconds: config.comparison_basis.technical_reference.running_seconds,
         sections,
     })
 }
@@ -591,20 +834,30 @@ fn main() -> Result<()> {
     let input = fs::read(&arguments[1])?;
     let config: ModelConfig = serde_json::from_slice(&input)?;
     validate(&config)?;
-    let model_input_sha256 = Sha256::digest(&input)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    let (release, path_tracks) = build_release(&config)?;
+    let technical_reference_input =
+        fs::read(&config.comparison_basis.technical_reference.artifact_path)?;
+    verify_technical_reference_artifact(&config, &technical_reference_input)?;
+    let model_input_sha256 = sha256_hex(&input);
+    let calibrated_sections = calibrate(&config)?;
+    let (release, path_tracks) = build_release(&config, &calibrated_sections)?;
     let release_checksum = release.checksum().to_hex();
-    let result = run(&config, &release, &path_tracks)?;
+    let result = run(&config, &release, &path_tracks, &calibrated_sections)?;
 
     write_json(
         &arguments[2],
         &ModelResults {
             schema: RESULTS_SCHEMA,
+            qualification: "calibration-only",
             release_checksum: &release_checksum,
             model_input_sha256: &model_input_sha256,
+            technical_reference: TechnicalReferenceSummary {
+                source_id: &config.comparison_basis.technical_reference.source_id,
+                artifact_sha256: &config
+                    .comparison_basis
+                    .technical_reference
+                    .artifact_sha256,
+                running_seconds: config.comparison_basis.technical_reference.running_seconds,
+            },
             results: vec![result],
         },
     )?;
@@ -614,7 +867,7 @@ fn main() -> Result<()> {
             schema: RELEASE_SCHEMA,
             release_checksum: &release_checksum,
             model_input_sha256: &model_input_sha256,
-            confidence: "assumed",
+            confidence: "derived",
             limitation: &config.comparison_basis.limitation,
             model_config: &config,
         },
@@ -625,42 +878,58 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ModelConfig, Sha256, build_release, run, validate};
-    use sha2::Digest;
+    use super::{
+        ModelConfig, build_release, calibrate, run, sha256_hex, validate,
+        verify_technical_reference_artifact,
+    };
 
     const PILOT_CONFIG: &[u8] =
         include_bytes!("../../reference-corpus/pilot/2026-08/model-config.json");
+    const TECHNICAL_REFERENCE: &[u8] =
+        include_bytes!("../../reference-corpus/pilot/2026-08/trassenfinder-reference.json");
 
     #[test]
-    fn pilot_release_und_negativer_modellvergleich_bleiben_reproduzierbar() {
+    fn pilot_kalibrierung_bleibt_reproduzierbar_und_als_solche_gekennzeichnet() {
         let config: ModelConfig =
             serde_json::from_slice(PILOT_CONFIG).expect("versionierte Pilotkonfiguration");
         validate(&config).expect("Pilotkonfiguration ist vollständig");
-        let (release, tracks) = build_release(&config).expect("Pilot-InfraRelease");
-        let result = run(&config, &release, &tracks).expect("Pilot-Modelllauf");
-        let input_sha256 = Sha256::digest(PILOT_CONFIG)
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
+        verify_technical_reference_artifact(&config, TECHNICAL_REFERENCE)
+            .expect("technisches Referenzartefakt ist vollständig gebunden");
+        let calibrated = calibrate(&config).expect("deterministische Kalibrierung");
+        let (release, tracks) =
+            build_release(&config, &calibrated).expect("Pilot-InfraRelease");
+        let result = run(&config, &release, &tracks, &calibrated).expect("Pilot-Modelllauf");
+        let input_sha256 = sha256_hex(PILOT_CONFIG);
 
         assert_eq!(
             release.checksum().to_hex(),
-            "3b891ef47ac78615465d67f01eb24a0e161b781b4ea689a207b0741200563cdd"
+            "994ff2a6cc06bc9ce324f3691d30645765d574f44f09ea4f102e44c1ccd536d3"
         );
         assert_eq!(
             input_sha256,
-            "f1a3cdfc5296da4ae12bc7c85acc511d322bc258997fe3626c29d6f598f0821b"
+            "dbbb347c62f4cae0e0c6ad44b58bcae0fa1ae09bffa6990a41bab4509627ab4f"
         );
-        assert_eq!(result.running_seconds, 954);
+        assert!(result.raw_running_seconds < result.running_seconds);
+        assert_eq!(result.raw_running_seconds, 967);
+        assert_eq!(result.running_seconds, 1_263);
         assert_eq!(result.dwell_seconds, 60);
-        assert_eq!(result.calculated_seconds, 1_014);
+        assert_eq!(result.modeled_timetable_seconds, 1_323);
+        assert_eq!(result.technical_reference_seconds, 1_260);
+        assert_eq!(
+            result
+                .sections
+                .iter()
+                .map(|section| section.effective_speed_kph)
+                .collect::<Vec<_>>(),
+            vec![83, 116, 129]
+        );
         assert_eq!(
             result
                 .sections
                 .iter()
                 .map(|section| section.technical_deviation_seconds)
                 .collect::<Vec<_>>(),
-            vec![-122, -96, -148]
+            vec![1, 1, 1]
         );
     }
 }

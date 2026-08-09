@@ -72,11 +72,14 @@ Zwei Grenzen bleiben unabhängig von der Rechtslage bestehen:
   aus. Für einen Größenordnungsabgleich genau richtig, für eine Referenzwahrheit
   nicht.
 
-Sinnvolle Nutzung: **in der Entwicklung gegen ihn kalibrieren und validieren, im
-Betrieb ohne ihn auskommen.** Ob eine automatisierte Nutzung mit Speicherung der
-Ergebnisse von den Nutzungsbedingungen gedeckt ist, ist im Rechte-Gate als
-Prüfpunkt festgehalten (`rechte.md` 4; Eintrag `trassenfinder` im
-Quellenregister, Status `entwicklung`).
+Sinnvolle Nutzung: **in der Entwicklung manuell gegen einzelne Richtwerte
+kalibrieren, im Betrieb ohne ihn auskommen.** Eine solche Abfrage kann ein
+minimales, unmittelbar an den konkreten Kalibrierlauf gebundenes eigenes
+Ergebnisprotokoll erhalten. Automatisierter Abruf, Rohantworten und eine
+systematische Referenzsammlung bleiben gesperrt. Die genaue Grenze steht im
+Rechte-Gate (`rechte.md` 4; Eintrag `trassenfinder` im Quellenregister, Status
+`entwicklung`). Eine gegen denselben Einzelwert eingestellte Rechnung ist noch
+keine unabhängige Validierung.
 
 **Davon getrennt (E22):** Dieselbe API stellt unter `/infrastrukturen` eine
 reine Stammdatenressource bereit — Betriebsstellen und Streckensegmente,

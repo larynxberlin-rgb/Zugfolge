@@ -2,10 +2,10 @@ import { createHash, createPublicKey, KeyObject, sign as cryptoSign, verify as c
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-export const CORPUS_SCHEMA = "zugfolge-reference-corpus/v1";
-export const MODEL_RESULTS_SCHEMA = "zugfolge-model-results/v1";
-export const REPORT_SCHEMA = "zugfolge-reference-report/v1";
-export const BUNDLE_SCHEMA = "zugfolge-pilot-release-bundle/v1";
+export const CORPUS_SCHEMA = "zugfolge-reference-corpus/v2";
+export const MODEL_RESULTS_SCHEMA = "zugfolge-model-results/v2";
+export const REPORT_SCHEMA = "zugfolge-reference-report/v2";
+export const BUNDLE_SCHEMA = "zugfolge-pilot-release-bundle/v2";
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
@@ -34,6 +34,10 @@ function nonEmpty(value, name) {
   invariant(typeof value === "string" && value.trim() !== "", `${name} fehlt.`);
 }
 
+function sha256Hex(value, name) {
+  invariant(typeof value === "string" && /^[0-9a-f]{64}$/u.test(value), `${name} muss ein SHA-256-Hash sein.`);
+}
+
 function quantileNearestRank(sorted, ratio) {
   invariant(sorted.length > 0, "Quantil einer leeren Stichprobe ist nicht definiert.");
   const index = Math.ceil(ratio * sorted.length) - 1;
@@ -55,6 +59,7 @@ function observationGroupKey(observation) {
     observation.direction,
     observation.stopPattern,
     observation.characteristicsId,
+    observation.trainCategory,
   ].join("|");
 }
 
@@ -77,9 +82,15 @@ export function validateObservation(observation, index) {
   }
   integer(observation.plannedDepartureEpochSeconds, `${prefix}.plannedDepartureEpochSeconds`);
   integer(observation.plannedArrivalEpochSeconds, `${prefix}.plannedArrivalEpochSeconds`);
+  integer(observation.scheduledDwellSeconds ?? 0, `${prefix}.scheduledDwellSeconds`);
   invariant(
     observation.plannedArrivalEpochSeconds > observation.plannedDepartureEpochSeconds,
     `${prefix}: Ankunft muss nach Abfahrt liegen.`,
+  );
+  invariant(
+    (observation.scheduledDwellSeconds ?? 0) <=
+      observation.plannedArrivalEpochSeconds - observation.plannedDepartureEpochSeconds,
+    `${prefix}: Haltezeit darf die Gesamtfahrzeit nicht überschreiten.`,
   );
   if (observation.changedDepartureEpochSeconds !== undefined) {
     integer(observation.changedDepartureEpochSeconds, `${prefix}.changedDepartureEpochSeconds`);
@@ -87,7 +98,7 @@ export function validateObservation(observation, index) {
   if (observation.changedArrivalEpochSeconds !== undefined) {
     integer(observation.changedArrivalEpochSeconds, `${prefix}.changedArrivalEpochSeconds`);
   }
-  return Object.freeze({ ...observation });
+  return Object.freeze({ ...observation, scheduledDwellSeconds: observation.scheduledDwellSeconds ?? 0 });
 }
 
 export function buildReferenceCorpus(input) {
@@ -108,8 +119,17 @@ export function buildReferenceCorpus(input) {
       values.length >= (input.minimumSamples ?? 5),
       `${key}: nur ${values.length} statt mindestens ${input.minimumSamples ?? 5} vergleichbare Läufe.`,
     );
-    const planned = values
+    const scheduledDurations = values
       .map((value) => value.plannedArrivalEpochSeconds - value.plannedDepartureEpochSeconds)
+      .sort((a, b) => a - b);
+    const scheduledDwells = values.map((value) => value.scheduledDwellSeconds).sort((a, b) => a - b);
+    const scheduledRunning = values
+      .map(
+        (value) =>
+          value.plannedArrivalEpochSeconds -
+          value.plannedDepartureEpochSeconds -
+          value.scheduledDwellSeconds,
+      )
       .sort((a, b) => a - b);
     const changed = values
       .filter(
@@ -130,18 +150,19 @@ export function buildReferenceCorpus(input) {
         direction: first.direction,
         stopPattern: first.stopPattern,
         characteristicsId: first.characteristicsId,
+        trainCategory: first.trainCategory,
         sampleCount: values.length,
-        // P20 bildet die weitgehend unbehinderte technische Fahrt ab, ohne
-        // einen einzelnen Extremwert zum vermeintlichen Optimum zu erklären.
-        technicalReferenceSeconds: quantileNearestRank(planned, 0.2),
-        // Median und Mittelwert bleiben getrennt sichtbar: Sie enthalten
-        // typische Fahrplanreserven, Kreuzungs- und Überholungsanteile.
-        timetableMedianSeconds: median(planned),
-        timetableMeanSeconds: Math.round(planned.reduce((sum, value) => sum + value, 0) / planned.length),
-        observedMedianSeconds: changed.length >= 3 ? median(changed) : null,
+        scheduledDurationP20Seconds: quantileNearestRank(scheduledDurations, 0.2),
+        scheduledDurationMedianSeconds: median(scheduledDurations),
+        scheduledDurationMeanSeconds: Math.round(
+          scheduledDurations.reduce((sum, value) => sum + value, 0) / scheduledDurations.length,
+        ),
+        scheduledRunningP20Seconds: quantileNearestRank(scheduledRunning, 0.2),
+        scheduledDwellP20Seconds: quantileNearestRank(scheduledDwells, 0.2),
+        observedDurationMedianSeconds: changed.length >= 3 ? median(changed) : null,
         observedSampleCount: changed.length,
-        minimumSeconds: planned[0],
-        maximumSeconds: planned.at(-1),
+        minimumScheduledDurationSeconds: scheduledDurations[0],
+        maximumScheduledDurationSeconds: scheduledDurations.at(-1),
         observationIds: values.map((value) => value.tripId).sort(),
       }),
     );
@@ -154,8 +175,12 @@ export function buildReferenceCorpus(input) {
     generatedAt: input.generatedAt,
     source: input.source,
     methodology: Object.freeze({
-      technicalReference: "P20 der Sollfahrzeiten bei identischer Strecke, Richtung, Haltefolge und Zugcharakteristik",
-      timetableReference: "Median und arithmetisches Mittel derselben Sollfahrzeiten",
+      timetableReference:
+        "P20, Median und arithmetisches Mittel der Sollfahrzeiten bei identischer Linie, Strecke, Richtung, Haltefolge und Zugcharakteristik",
+      scheduledRunning:
+        "Sollfahrzeit abzüglich der in GTFS ausgewiesenen Zwischenhalte; enthält weiterhin Fahrplanreserven und ist keine technische Fahrzeitreferenz",
+      technicalReference:
+        "Muss aus einer unabhängigen Infrastruktur-/Fahrdynamikquelle stammen; GTFS-Sollzeiten werden dafür ausdrücklich nicht verwendet",
       observedReference: "Median vorhandener Istfahrzeiten; nur informativ und erst ab drei Beobachtungen",
     }),
     groups: Object.freeze(groups),
@@ -166,47 +191,85 @@ export function buildReferenceCorpus(input) {
 export function compareWithModel(corpus, modelResults, tolerance = { absoluteSeconds: 30, relativeBasisPoints: 500 }) {
   invariant(corpus.schema === CORPUS_SCHEMA, "Unbekanntes Korpus-Schema.");
   invariant(modelResults?.schema === MODEL_RESULTS_SCHEMA, "Unbekanntes Modellergebnis-Schema.");
-  nonEmpty(modelResults.releaseChecksum, "modelResults.releaseChecksum");
-  nonEmpty(modelResults.modelInputSha256, "modelResults.modelInputSha256");
+  sha256Hex(modelResults.releaseChecksum, "modelResults.releaseChecksum");
+  sha256Hex(modelResults.modelInputSha256, "modelResults.modelInputSha256");
+  invariant(
+    modelResults.qualification === "calibration-only" || modelResults.qualification === "validation",
+    "modelResults.qualification muss 'calibration-only' oder 'validation' sein.",
+  );
+  nonEmpty(modelResults.technicalReference?.sourceId, "modelResults.technicalReference.sourceId");
+  sha256Hex(
+    modelResults.technicalReference?.artifactSha256,
+    "modelResults.technicalReference.artifactSha256",
+  );
+  integer(modelResults.technicalReference?.runningSeconds, "modelResults.technicalReference.runningSeconds", 1);
   invariant(Array.isArray(modelResults.results), "modelResults.results muss eine Liste sein.");
   integer(tolerance.absoluteSeconds, "absoluteSeconds", 0);
   integer(tolerance.relativeBasisPoints, "relativeBasisPoints", 0);
-  const byId = new Map();
+  const corpusById = new Map(corpus.groups.map((group) => [group.id, group]));
+  const seen = new Set();
   for (const result of modelResults.results) {
     nonEmpty(result.groupId, "modelResults.results[].groupId");
-    invariant(!byId.has(result.groupId), `Modellergebnis für Gruppe ${result.groupId} ist doppelt.`);
-    byId.set(result.groupId, result);
   }
-  const comparisons = corpus.groups.map((group) => {
-    const result = byId.get(group.id);
-    invariant(result, `Modellergebnis für Gruppe ${group.id} fehlt.`);
+  const comparisons = modelResults.results.map((result) => {
+    invariant(!seen.has(result.groupId), `Modellergebnis für Gruppe ${result.groupId} ist doppelt.`);
+    seen.add(result.groupId);
+    const group = corpusById.get(result.groupId);
+    invariant(group, `Referenzgruppe ${result.groupId} fehlt im Fahrplankorpus.`);
     invariant(result.characteristicsId === group.characteristicsId, `${group.id}: Zugcharakteristik stimmt nicht überein.`);
-    integer(result.calculatedSeconds, `${group.id}.calculatedSeconds`, 1);
+    nonEmpty(result.calibrationMethod, `${group.id}.calibrationMethod`);
+    integer(result.rawRunningSeconds, `${group.id}.rawRunningSeconds`, 1);
+    integer(result.runningSeconds, `${group.id}.runningSeconds`, 1);
+    integer(result.dwellSeconds, `${group.id}.dwellSeconds`);
+    integer(result.modeledTimetableSeconds, `${group.id}.modeledTimetableSeconds`, 1);
+    integer(result.technicalReferenceSeconds, `${group.id}.technicalReferenceSeconds`, 1);
+    invariant(
+      result.technicalReferenceSeconds === modelResults.technicalReference.runningSeconds,
+      `${group.id}: technische Referenz stimmt nicht mit dem gebundenen Artefakt überein.`,
+    );
     const allowance = Math.max(
       tolerance.absoluteSeconds,
-      Math.ceil((group.technicalReferenceSeconds * tolerance.relativeBasisPoints) / 10_000),
+      Math.ceil((result.technicalReferenceSeconds * tolerance.relativeBasisPoints) / 10_000),
     );
-    const deviation = result.calculatedSeconds - group.technicalReferenceSeconds;
+    const deviation = result.runningSeconds - result.technicalReferenceSeconds;
+    const modeledTimetableSeconds = result.runningSeconds + result.dwellSeconds;
+    invariant(
+      result.modeledTimetableSeconds === modeledTimetableSeconds,
+      `${group.id}: modellierte Fahrplanzeit stimmt nicht mit Lauf- plus Haltezeit überein.`,
+    );
     return Object.freeze({
       groupId: group.id,
       characteristicsId: group.characteristicsId,
-      calculatedSeconds: result.calculatedSeconds,
-      technicalReferenceSeconds: group.technicalReferenceSeconds,
+      trainCategory: group.trainCategory,
+      calibrationMethod: result.calibrationMethod,
+      rawRunningSeconds: result.rawRunningSeconds,
+      calculatedTechnicalSeconds: result.runningSeconds,
+      technicalReferenceSeconds: result.technicalReferenceSeconds,
       technicalDeviationSeconds: deviation,
       toleranceSeconds: allowance,
       technicalWithinTolerance: Math.abs(deviation) <= allowance,
-      timetableMedianSeconds: group.timetableMedianSeconds,
-      scheduledReserveSeconds: group.timetableMedianSeconds - result.calculatedSeconds,
+      scheduledDurationP20Seconds: group.scheduledDurationP20Seconds,
+      scheduledRunningP20Seconds: group.scheduledRunningP20Seconds,
+      scheduledDwellP20Seconds: group.scheduledDwellP20Seconds,
+      modeledTimetableSeconds,
+      scheduledAllowanceSeconds: group.scheduledDurationP20Seconds - modeledTimetableSeconds,
       sampleCount: group.sampleCount,
     });
   });
+  for (const group of corpus.groups) {
+    invariant(seen.has(group.id), `Modellergebnis für Gruppe ${group.id} fehlt.`);
+  }
+  const passed = comparisons.length > 0 && comparisons.every((comparison) => comparison.technicalWithinTolerance);
   return Object.freeze({
     schema: REPORT_SCHEMA,
     corpusSha256: sha256(canonicalJson(corpus)),
     releaseChecksum: modelResults.releaseChecksum,
     modelInputSha256: modelResults.modelInputSha256,
+    technicalReference: modelResults.technicalReference,
+    qualification: modelResults.qualification,
     tolerance,
-    passed: comparisons.every((comparison) => comparison.technicalWithinTolerance),
+    passed,
+    releaseQualified: passed && modelResults.qualification === "validation",
     comparisons: Object.freeze(comparisons),
   });
 }
@@ -224,7 +287,10 @@ export function verifyRegisteredSource(registry, source) {
 
 export function createUnsignedBundle(input) {
   invariant(input.corpus.schema === CORPUS_SCHEMA, "Korpus-Schema ist nicht signierbar.");
-  invariant(input.report.schema === REPORT_SCHEMA && input.report.passed, "Nur ein bestandener Report darf signiert werden.");
+  invariant(
+    input.report.schema === REPORT_SCHEMA && input.report.passed && input.report.releaseQualified,
+    "Nur ein bestandener, unabhängiger Validierungsreport darf signiert werden.",
+  );
   invariant(input.report.corpusSha256 === sha256(canonicalJson(input.corpus)), "Report gehört nicht zu diesem Korpus.");
   nonEmpty(input.report.releaseChecksum, "report.releaseChecksum");
   nonEmpty(input.report.modelInputSha256, "report.modelInputSha256");

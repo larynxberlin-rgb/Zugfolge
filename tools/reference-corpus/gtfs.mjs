@@ -95,6 +95,16 @@ export function normalizeGtfsTables(tables, config) {
         const departure = midnight + gtfsServiceSeconds(origin.departure_time);
         const arrival = midnight + gtfsServiceSeconds(destination.arrival_time);
         if (arrival <= departure) continue;
+        const scheduledDwellSeconds = stopTimes
+          .slice(fromIndex + 1, toIndex)
+          .reduce((total, stopTime) => {
+            if (!stopTime.arrival_time || !stopTime.departure_time) return total;
+            return total + Math.max(
+              0,
+              gtfsServiceSeconds(stopTime.departure_time) -
+                gtfsServiceSeconds(stopTime.arrival_time),
+            );
+          }, 0);
         observations.push({
           sourceId: "gtfs-de-rv",
           tripId: `${tripId}:${serviceDate}`,
@@ -109,6 +119,7 @@ export function normalizeGtfsTables(tables, config) {
           trainNumber: trip.trip_short_name || route.route_short_name || tripId,
           plannedDepartureEpochSeconds: departure,
           plannedArrivalEpochSeconds: arrival,
+          scheduledDwellSeconds,
         });
       }
     }

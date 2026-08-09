@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Reproduzierbarer GTFS-Referenzkorpus und Signaturprüfung",
+  "description": "Technische Fahrzeitreferenz, GTFS-Fahrplan-Holdout und Signaturprüfung",
   "license": "LicenseRef-PolyForm-Shield-1.0.0",
   "scripts": {
     "build": "pnpm --filter @zugfolge/gtfs build",

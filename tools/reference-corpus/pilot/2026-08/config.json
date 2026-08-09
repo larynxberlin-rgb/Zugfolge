@@ -20,7 +20,7 @@
       "toStopNames": ["Halle(Saale)Hbf"],
       "direction": "Halle (Saale)",
       "characteristicsId": "mdsb-talent2-v1",
-      "routeShortNames": ["S5", "S5X"]
+      "routeShortNames": ["S5X"]
     }
   ],
   "source": {

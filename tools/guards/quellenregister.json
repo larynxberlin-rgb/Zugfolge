@@ -76,9 +76,9 @@
       "lizenz": "Nutzungsbedingungen des Betreibers, siehe Hinweis",
       "bereitstellung": "Öffentlicher Dienst des Infrastrukturbetreibers; genutzt ausschließlich in der Entwicklung.",
       "attribution": "nicht in Auslieferung enthalten (kein Import)",
-      "nutzung": "Modellierungscheckliste für PathRequest und EconomyRelease und Kalibrierreferenz für eigene Fahrzeit- und Entgeltberechnungen. Niemals Laufzeitabhängigkeit (E10, Invariante 6).",
+      "nutzung": "Modellierungscheckliste für PathRequest und EconomyRelease sowie manuelle Einzelreferenz für unmittelbar zugeordnete Entwicklungs-Kalibrierungen. Zulässig ist nur ein minimales eigenes Ergebnisprotokoll der konkreten Webabfrage; keine Rohantwort, keine systematische Referenzsammlung und niemals eine Laufzeitabhängigkeit (E10, Invariante 6).",
       "entscheidung": { "datum": "2026-08-06", "pruefer": "Sebastian Barowski" },
-      "hinweis": "Nutzungsbedingungen-Prüfpunkt (M0.4): Ob eine automatisierte Abfrage mit Speicherung der Ergebnisse von den Nutzungsbedingungen gedeckt ist, ist offen und vor einer solchen Nutzung zu klären. Bis dahin nur manuelle Kalibrierung gegen einzeln erzeugte Beispiele. Werte sind laut Betreiber unverbindliche Richtwerte aus vereinfachter Berechnung — keine Referenzwahrheit. Ausführlich: docs/rechte.md 4.",
+      "hinweis": "Der API-Disclaimer schließt zweckfremde Nutzung und Speicherung ohne zeitlich unmittelbare Nutzung aus. Deshalb kein API-Abruf: Bis zu einer ausdrücklichen Betreiberfreigabe sind nur manuelle Einzelabfragen in der Weboberfläche und ein minimales, unmittelbar an die konkrete Kalibrierung gebundenes eigenes Ergebnisprotokoll zulässig. Keine Rohantworten oder systematische Sammlung. Werte sind laut Betreiber unverbindliche Richtwerte aus vereinfachter Berechnung — keine Referenzwahrheit. Ausführlich: docs/rechte.md 4.",
       "milestone": "M1.13"
     },
     {
@@ -88,9 +88,9 @@
       "lizenz": "CC BY 4.0",
       "bereitstellung": "Kostenfreier, tagesaktuell erzeugter statischer GTFS-Feed 'Schienenregionalverkehr Deutschland' unter https://download.gtfs.de/germany/rv_free/latest.zip. Der Feed deckt laut Anbieter die nächsten 30 Tage ab. ZIP, GTFS-Tabellen, Abrufzeit, Konfiguration und SHA-256-Prüfsummen werden in einem Capture-Manifest versioniert.",
       "attribution": "Datenquelle: DELFI e.V. / GTFS.DE, lizenziert unter CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Durch Zugfolge gefiltert, gruppiert und statistisch ausgewertet; Änderungen werden als solche gekennzeichnet.",
-      "nutzung": "Offline-Referenzkorpus für M1.13 aus stop_times.txt, trips.txt, routes.txt, stops.txt und Kalenderdateien. P20 dient als robuste technische Referenz; Median und Mittelwert weisen Fahrplanreserven separat aus. Keine Laufzeitabhängigkeit des Spiels.",
+      "nutzung": "Offline-Fahrplan-Holdout für M1.13 aus stop_times.txt, trips.txt, routes.txt, stops.txt und Kalenderdateien. P20, Median und Mittelwert beschreiben ausschließlich veröffentlichte Sollfahrzeiten; Zwischenhalte werden separat ausgewiesen. GTFS ist keine technische Fahrzeitreferenz und keine Laufzeitabhängigkeit des Spiels.",
       "entscheidung": { "datum": "2026-08-09", "pruefer": "Sebastian Barowski" },
-      "hinweis": "CC BY 4.0 erlaubt Speicherung, Bearbeitung und Weitergabe mit Namensnennung und Änderungskennzeichnung. Das Projekt bewahrt Attribution, Feed-URL, Abrufzeit, ZIP-/Tabellen-Hashes und Transformationskonfiguration. Die Zuordnung auf eine TrainCharacteristics ist eine eigene, geprüfte Projektentscheidung und wird nicht aus route_type oder Linienname geraten.",
+      "hinweis": "CC BY 4.0 erlaubt Speicherung, Bearbeitung und Weitergabe mit Namensnennung und Änderungskennzeichnung. Das Projekt bewahrt Attribution, Feed-URL, Abrufzeit, ZIP-/Tabellen-Hashes und Transformationskonfiguration. Die Zuordnung auf eine TrainCharacteristics ist eine eigene, geprüfte Projektentscheidung und wird nicht aus route_type oder Linienname geraten. Fahrplanreserve und technische Mindestlaufzeit dürfen nicht gleichgesetzt werden.",
       "milestone": "M1.13"
     },
     {
