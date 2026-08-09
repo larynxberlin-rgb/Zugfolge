@@ -30,6 +30,8 @@ pub enum Substream {
     Failure,
     /// Vergabekalender einer Welt (M6.3a).
     TenderRelease,
+    /// Vergabeprofile der SPNV-Ausschreibungen (M6.4a).
+    TenderProfile,
 }
 
 impl Substream {
@@ -37,12 +39,13 @@ impl Substream {
     ///
     /// Dient dem Nachweis, dass jeder Strom einen eigenen Namen hat — nicht
     /// der Iteration im Betrieb.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Disruption,
         Self::Tiebreak,
         Self::Demand,
         Self::Failure,
         Self::TenderRelease,
+        Self::TenderProfile,
     ];
 
     /// Der Name, aus dem der Strom abgeleitet wird.
@@ -58,6 +61,7 @@ impl Substream {
             Self::Demand => "demand",
             Self::Failure => "failure",
             Self::TenderRelease => "tender_release",
+            Self::TenderProfile => "tender_profile",
         }
     }
 }

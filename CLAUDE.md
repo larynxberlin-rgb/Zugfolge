@@ -176,6 +176,12 @@ Fahrwegs. Echte Zusatzfahrten reichen bis zum Materialisierungsbefehl des
 Simulationskerns; zweiphasige Ledger-Ports halten Kosten und Reservierung
 atomar. Ein Dreiwochen-Szenario beweist Automatikbetrieb ohne Frist- oder
 Versorgungssperre und 88 Prozent der Vergleichsplanung.
+**M6 ist abgeschlossen: M6.1 bis M6.14 sind erledigt.** `packages/economy`
+trägt Wirtschafts-Release und Weltprofil, Vergabekalender, Ausschreibung und
+Fahrzeugprüfung, Betriebsübergang und Verkehrsvertrag, Eigenbetrieb und
+Nachbesserung, Budget, Ergebnis und Finanzierung sowie die vollständig
+telegrafierte Insolvenz und weltgebundene Präqualifikation. Der durchgängige
+M6-Test beweist Zuschlag, Betriebsergebnis, Scheitern und nahtlose Übernahme.
 - **Kritischer Pfad:** M0.3 → M1 → M3 → M4 → M7. Die ersten Schritte sind geführt.
 - **M0.3 hat getragen und ist abgelöst:** Der Spike
   `spikes/blocking-time-staircase/` hat die Sperrzeitentreppe zweier Züge über

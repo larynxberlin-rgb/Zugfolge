@@ -589,23 +589,23 @@ Umlauf-, Personal-, Wartungs- oder Versorgungsverstoß.
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 6.1 | `EconomyRelease`: Trassen-, Stations-, Anlagenentgelte, Energie, Personal, Verwaltung, **Vergabeprofil-Katalog samt Punktgewichten** (E21) — versioniert und je Welt gepinnt | L | offen |
-| 6.2 | Kostenarten und Kostenstellen auf dem Ledger-Kern aus M2.4 | M | offen |
-| 6.3 | **`WorldProfile`** (E18): Weltlaufzeit, abgeleitete Fahrplanperiode, Vertragslaufzeit, Ausschreibungsvorlauf, Staffelung der Vertragsenden | M | offen |
-| 6.3a | **Vergabekalender** (`wirtschaft.md` 3.3): beim Weltstart hält der Eigenbetrieb alle Lose; gleichmäßige Fenster über die erste Welthälfte, geschichtet zufällige Zuordnung aus Seed-Substream `tender_release`, vollständig veröffentlicht. **Prüfung beim Weltentwurf, dass Erst- und Wiedervergabe sich überlappen** | M | offen |
-| 6.4 | Ausschreibungsgenerator: Leistungsbeschreibung, Qualitätsanforderungen, Laufzeit aus dem `WorldProfile` | M | offen |
-| 6.4a | **Vergabeprofil** (`wirtschaft.md` 3.7, E21): je Ausschreibung ein `TenderProfile` — Wertungsgewichtung, Anforderungs- und Pönaleschwerpunkt, Sonderauflagen — geschichtet zufällig aus Seed-Substream `tender_profile`, aus dem versionierten Katalog in M6.1 gezogen und in der Leistungsbeschreibung veröffentlicht. **Jeder Hebel muss den E19-Test bestehen; kein reaktiver Wiederholungswächter** | M | offen |
-| 6.5 | **Auskömmlichkeitsgrenze**: vor Angebotsöffnung veröffentlicht, deterministisch aus `EconomyRelease` berechnet | M | offen |
-| 6.6 | Angebotsabgabe mit wenigen Feldern (E19): Bestellerentgelt, Fahrzeugkonzept, optionale Qualitätszusagen. **Angebotsfrist 3–7 Tage, kleine Lose 24–48 Stunden, Zuschlag sofort bei Fristende.** Eigene Wertungsaufschlüsselung vor Abgabe sichtbar; Angebotsassistent als Automatikstufe | L | offen |
-| 6.6a | **Fahrzeugvorgaben der Ausschreibung**: Mindestsitzplätze, Klassenanteil, Barrierefreiheit, Fahrrad- und Rollstuhlplätze, Ausstattung — geprüft gegen die Fahrzeugkonfiguration aus M5.1a | M | offen |
-| 6.7 | **Betriebsübergang** (`wirtschaft.md` 3): Mobilisierungsphase mit Nachweispflicht auf Fahrzeuge, Personal und Trassen; Altbetreiber fährt mit vollen Pflichten bis zum Fahrplanstichtag; nahtlose Fortsetzung, wenn der Bisherige gewinnt; Eigenbetrieb plus Vertragsstrafe, wenn die Mobilisierung scheitert | L | offen |
-| 6.8 | Verkehrsvertrag im Betrieb: Bestellerentgelt, Bonus, Pönale, Nachweise | M | offen |
-| 6.9 | **Eigenbetrieb**: Übernahme, Fahrzeugpool, konservatives Standard-Regelwerk, Kennzeichnung auf der Livemap | L | offen |
-| 6.10 | **Nachbesserungsleiter**: Notvergabe auf zwei Perioden befristet, danach Neuausschreibung mit verbessertem Paket | M | offen |
-| 6.11 | **Aufgabenträger-Budget** als endliche Periodenressource — trägt die Anti-Kartell-Wirkung | M | offen |
-| 6.12 | Ergebnisrechnung, Liquidität, Kredite, Restrukturierung | L | offen |
-| 6.13 | **Insolvenz-Eskalationsleiter** Stufe 1–5 mit Postfach- und Berichtsmeldungen | M | offen |
-| 6.14 | **Präqualifikation und Bonität** je Spieler und Welt — endet mit der Welt | M | offen |
+| 6.1 | `EconomyRelease`: Trassen-, Stations-, Anlagenentgelte, Energie, Personal, Verwaltung, **Vergabeprofil-Katalog samt Punktgewichten** (E21) — versioniert und je Welt gepinnt | L | erledigt |
+| 6.2 | Kostenarten und Kostenstellen auf dem Ledger-Kern aus M2.4 | M | erledigt |
+| 6.3 | **`WorldProfile`** (E18): Weltlaufzeit, abgeleitete Fahrplanperiode, Vertragslaufzeit, Ausschreibungsvorlauf, Staffelung der Vertragsenden | M | erledigt |
+| 6.3a | **Vergabekalender** (`wirtschaft.md` 3.3): beim Weltstart hält der Eigenbetrieb alle Lose; gleichmäßige Fenster über die erste Welthälfte, geschichtet zufällige Zuordnung aus Seed-Substream `tender_release`, vollständig veröffentlicht. **Prüfung beim Weltentwurf, dass Erst- und Wiedervergabe sich überlappen** | M | erledigt |
+| 6.4 | Ausschreibungsgenerator: Leistungsbeschreibung, Qualitätsanforderungen, Laufzeit aus dem `WorldProfile` | M | erledigt |
+| 6.4a | **Vergabeprofil** (`wirtschaft.md` 3.7, E21): je Ausschreibung ein `TenderProfile` — Wertungsgewichtung, Anforderungs- und Pönaleschwerpunkt, Sonderauflagen — geschichtet zufällig aus Seed-Substream `tender_profile`, aus dem versionierten Katalog in M6.1 gezogen und in der Leistungsbeschreibung veröffentlicht. **Jeder Hebel muss den E19-Test bestehen; kein reaktiver Wiederholungswächter** | M | erledigt |
+| 6.5 | **Auskömmlichkeitsgrenze**: vor Angebotsöffnung veröffentlicht, deterministisch aus `EconomyRelease` berechnet | M | erledigt |
+| 6.6 | Angebotsabgabe mit wenigen Feldern (E19): Bestellerentgelt, Fahrzeugkonzept, optionale Qualitätszusagen. **Angebotsfrist 3–7 Tage, kleine Lose 24–48 Stunden, Zuschlag sofort bei Fristende.** Eigene Wertungsaufschlüsselung vor Abgabe sichtbar; Angebotsassistent als Automatikstufe | L | erledigt |
+| 6.6a | **Fahrzeugvorgaben der Ausschreibung**: Mindestsitzplätze, Klassenanteil, Barrierefreiheit, Fahrrad- und Rollstuhlplätze, Ausstattung — geprüft gegen die Fahrzeugkonfiguration aus M5.1a | M | erledigt |
+| 6.7 | **Betriebsübergang** (`wirtschaft.md` 3): Mobilisierungsphase mit Nachweispflicht auf Fahrzeuge, Personal und Trassen; Altbetreiber fährt mit vollen Pflichten bis zum Fahrplanstichtag; nahtlose Fortsetzung, wenn der Bisherige gewinnt; Eigenbetrieb plus Vertragsstrafe, wenn die Mobilisierung scheitert | L | erledigt |
+| 6.8 | Verkehrsvertrag im Betrieb: Bestellerentgelt, Bonus, Pönale, Nachweise | M | erledigt |
+| 6.9 | **Eigenbetrieb**: Übernahme, Fahrzeugpool, konservatives Standard-Regelwerk, Kennzeichnung auf der Livemap | L | erledigt |
+| 6.10 | **Nachbesserungsleiter**: Notvergabe auf zwei Perioden befristet, danach Neuausschreibung mit verbessertem Paket | M | erledigt |
+| 6.11 | **Aufgabenträger-Budget** als endliche Periodenressource — trägt die Anti-Kartell-Wirkung | M | erledigt |
+| 6.12 | Ergebnisrechnung, Liquidität, Kredite, Restrukturierung | L | erledigt |
+| 6.13 | **Insolvenz-Eskalationsleiter** Stufe 1–5 mit Postfach- und Berichtsmeldungen | M | erledigt |
+| 6.14 | **Präqualifikation und Bonität** je Spieler und Welt — endet mit der Welt | M | erledigt |
 
 > **Beweis:** Ein Spieler gewinnt eine Ausschreibung, fährt eine Periode, und
 > die Ergebnisrechnung erklärt lückenlos, warum Gewinn oder Verlust entstand.
@@ -617,6 +617,40 @@ Umlauf-, Personal-, Wartungs- oder Versorgungsverstoß.
 > Qualitätsverfall in den letzten Wochen, weil Pönalen bis zum letzten Tag
 > greifen. Der Übergang selbst passiert an einem Stichtag, ohne dass ein
 > einziger Zug ausfällt.
+
+**M6.1 bis M6.14 tragen.** `packages/economy` implementiert nicht nur die
+Datentypen, sondern den vollständigen Ablauf: Ein kanonisch gehashter und an
+die Welt gepinnter `EconomyRelease` validiert Kostensätze und Profilkatalog.
+`WorldProfile` leitet die vier Weltzuschnitte ab; der geschichtete,
+reihenfolgeunabhängige Vergabekalender verteilt jedes Los genau einmal und
+weist einen Weltentwurf ohne Überlappung von Erst- und Wiedervergabe zurück.
+Die zwei getrennten Seed-Ströme `tender_release` und `tender_profile` sind im
+Determinismus-Crate verankert.
+
+Der Ausschreibungsablauf berechnet und veröffentlicht die
+Auskömmlichkeitsgrenze aus dem Release, erzwingt die kurzen Fristen, prüft die
+sechs Fahrzeugvorgaben gegen die konkrete Formation, zeigt Preis-, Qualitäts-
+und Dimensionspunkte vor Abgabe und kann aus Zielmarge ein Assistenzangebot
+erzeugen. Bei Fristende erfolgt der deterministische Zuschlag; ungültige oder
+verspätete Angebote nehmen nicht teil. Mobilisierung und Stichtagsübergang
+prüfen Fahrzeuge, Personal und Trassen. Der Altbetreiber bleibt bis dahin im
+Vertrag; ein wiedergewählter Betreiber fährt nahtlos weiter, ein gescheiterter
+Gewinner zahlt Pönale und wird durch den sichtbaren Eigenbetrieb ersetzt.
+
+Der laufende Vertrag rechnet Zugkilometer, Bonus, vier Pönaledimensionen und
+Pflichtnachweise ab. Eigenbetrieb, Fahrzeugpool, nachrangige Trassen,
+Livemap-Kennzeichen, Zweiperioden-Notvergabe, Paketnachbesserung und endliches
+Aufgabenträgerbudget sind ausführbare Regeln. Kostenarten und Kostenstellen
+klassifizieren die Buchungen des Ledger-Kerns; Ergebnisrechnung, Liquidität,
+Kredit und Restrukturierung erklären jede Ergebniszeile. Schließlich bewertet
+die Eskalationsleiter alle fünf Stufen, sperrt Trassen, Kredite und Käufe zum
+jeweils angekündigten Zeitpunkt, löst Vertragsübernahme und Liquidation aus
+und erzeugt konkrete Nachrichten für Postfach und Tagesbericht.
+Präqualifikation und Bonität sind weltgebunden, merken Endleistung,
+Mobilisierungsversagen und Insolvenz und setzen nach Totalverlust die
+befristete Beschränkung auf kleine Lose durch. `m6.test.ts` führt diese Kette
+einschließlich aller fünf Eskalationsstufen als Abschlussbeweis aus. Damit ist
+M6 vollständig abgeschlossen.
 
 ---
 
