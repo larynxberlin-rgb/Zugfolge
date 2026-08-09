@@ -9,20 +9,45 @@
  * lokales Schlüsselpaar (`app.test.ts`). Beide laufen über denselben Code.
  */
 
-import { accounts, createDatabaseHealthCheck } from "@zugfolge/db";
+import { timingSafeEqual } from "node:crypto";
+
+import { accounts, createDatabaseHealthCheck, EventSequenceError, simulationCommands, worldEventLog, worlds } from "@zugfolge/db";
 import {
+  announceTender,
+  buildEconomyRelease,
+  decodeEconomyValue,
+  deriveGtfsServiceSpecification,
   DuplicateLedgerAccountNameError,
+  EconomyStateConflictError,
+  escalateOperator,
+  FleetSnapshotValidationError,
   ForeignLedgerAccountError,
+  encodeEconomyValue,
   IncompleteTransactionError,
   ledgerAccountBalance,
   listLedgerAccounts,
   listLedgerTransactions,
+  loadFleetMobilizationSnapshot,
+  loadEconomyWorldState,
   openLedgerAccount,
   postLedgerTransaction,
+  persistEconomyTransition,
+  persistFleetMobilizationSnapshot,
+  resolveVehicleConcept,
+  settleContractPeriod,
+  startEconomyWorld,
+  submitBid,
+  submitMobilizationReference,
   UnbalancedTransactionError,
+  verifyMobilizationReference,
+  type AuthorityBudget,
+  type EconomyRelease,
+  type FleetMobilizationReference,
+  type GtfsPlanningEnvelope,
+  type GtfsPlanningLotReference,
 } from "@zugfolge/economy";
 import { runHealthChecks, type HealthCheck } from "@zugfolge/health";
-import type { LivemapRegistry } from "@zugfolge/livemap-stream";
+import { LivemapCapacityError, type LiveDelta, type LivemapRegistry } from "@zugfolge/livemap-stream";
 import {
   AccessRevokedError,
   AccountNotFoundError,
@@ -46,7 +71,7 @@ import {
   OperatorNotFoundError,
 } from "@zugfolge/operators";
 import { eraseAccountData, exportAccountData, PersonalDataNotFoundError } from "@zugfolge/privacy";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 
 import { createAuthenticator, type TokenVerifier } from "./auth.js";
@@ -62,6 +87,16 @@ export interface AppDependencies {
   readonly extraHealthChecks?: readonly HealthCheck[];
   /** Öffentlicher, weltisolierter Livemap-Fanout (M4.6). */
   readonly livemap?: LivemapRegistry;
+  /** Geteiltes Geheimnis des internen Simulations-zu-Livemap-Adapters. */
+  readonly livemapIngestToken?: string;
+  /** Geteiltes Geheimnis des Simulations-Eventlog-Adapters. */
+  readonly simulationIngestToken?: string;
+  /** Geteiltes Geheimnis des kanonischen M5-Single-Writer-Snapshot-Adapters. */
+  readonly fleetIngestToken?: string;
+  /** Hartes Zeitbudget jedes Readiness-Checks. */
+  readonly healthCheckTimeoutMs?: number;
+  /** Produktion protokolliert strukturiert; Tests dürfen den Logger abschalten. */
+  readonly logger?: boolean;
 }
 
 const worldIdParam = {
@@ -122,17 +157,61 @@ function sendError(reply: FastifyReply, error: unknown): FastifyReply {
   ) {
     return reply.code(404).send({ error: error.message });
   }
-  if (error instanceof DuplicateOperatorNameError || error instanceof DuplicateLedgerAccountNameError) {
+  if (error instanceof DuplicateOperatorNameError || error instanceof DuplicateLedgerAccountNameError || error instanceof EventSequenceError || error instanceof EconomyStateConflictError) {
     return reply.code(409).send({ error: error.message });
   }
-  if (error instanceof IncompleteTransactionError || error instanceof UnbalancedTransactionError) {
+  if (error instanceof IncompleteTransactionError || error instanceof UnbalancedTransactionError || error instanceof FleetSnapshotValidationError) {
     return reply.code(400).send({ error: error.message });
   }
   throw error;
 }
 
+function sendEconomyError(reply: FastifyReply, error: unknown): FastifyReply {
+  if (
+    error instanceof AccessRevokedError
+    || error instanceof AuthorizationError
+    || error instanceof NoAccountInWorldError
+    || error instanceof AccountNotFoundError
+    || error instanceof OperatorNotFoundError
+    || error instanceof EconomyStateConflictError
+    || error instanceof FleetSnapshotValidationError
+  ) return sendError(reply, error);
+  if (error instanceof Error) return reply.code(400).send({ error: error.message });
+  throw error;
+}
+
+function requireExpectedRevision(worldId: string, actual: number, expected: number): void {
+  if (actual !== expected) throw new EconomyStateConflictError(worldId, expected);
+}
+
+function decoded<T>(value: unknown): T {
+  return decodeEconomyValue(value) as T;
+}
+
+function bearerMatches(header: string | undefined, expected: string): boolean {
+  if (header === undefined || !header.startsWith("Bearer ")) return false;
+  const actual = Buffer.from(header.slice("Bearer ".length));
+  const wanted = Buffer.from(expected);
+  return actual.length === wanted.length && timingSafeEqual(actual, wanted);
+}
+
+async function worldExists(db: IdentityDatabase, worldId: string): Promise<boolean> {
+  const [world] = await db
+    .select({ id: worlds.id })
+    .from(worlds)
+    .where(eq(worlds.id, worldId))
+    .limit(1);
+  return world !== undefined;
+}
+
 export function buildApp(deps: AppDependencies): FastifyInstance {
-  const app = Fastify({ logger: false });
+  const app = Fastify({
+    logger: deps.logger ?? process.env["NODE_ENV"] !== "test",
+    // Unbekannte Felder nicht still entfernen: Ein manipulierter Client soll
+    // eine sichtbare 400-Antwort erhalten, statt den Eindruck zu gewinnen,
+    // technische Ausschreibungswerte erfolgreich gesetzt zu haben.
+    ajv: { customOptions: { removeAdditional: false } },
+  });
   const authenticate = createAuthenticator(deps.verifyToken);
 
   // `/health` ist Liveness: läuft der Prozess, ohne jede Abhängigkeit zu
@@ -145,23 +224,760 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
   app.get("/health", async () => ({ status: "ok" }));
 
   app.get("/health/ready", async (_request, reply) => {
-    const report = await runHealthChecks(healthChecks);
+    const report = await runHealthChecks(healthChecks, {
+      timeoutMs: deps.healthCheckTimeoutMs ?? 2_000,
+      onError: (healthCheck, error) => {
+        app.log.error({ err: error, healthCheck }, "Readiness-Prüfung fehlgeschlagen");
+      },
+    });
     return reply.code(report.status === "down" ? 503 : 200).send(report);
   });
 
-  app.get<{ Params: { worldId: string } }>("/worlds/:worldId/livemap/snapshot", { schema: { params: worldIdParam } }, async (request) => {
-    return deps.livemap?.forWorld(request.params.worldId).snapshot() ?? { worldId: request.params.worldId, sequence: 0, at: 0, trains: [] };
-  });
+  app.get<{ Params: { worldId: string } }>(
+    "/worlds/:worldId/economy/state",
+    { preHandler: authenticate, schema: { params: worldIdParam } },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        const account = await getAccount(deps.db, {
+          worldId: request.params.worldId,
+          keycloakSubject: identity.keycloakSubject,
+        });
+        if (account === undefined) throw new AuthorizationError("Kein aktiver Zugang zu dieser Welt.");
+        const state = await loadEconomyWorldState(deps.db, request.params.worldId);
+        if (state === undefined) return reply.code(404).send({ error: "Wirtschaftswelt ist noch nicht gestartet." });
+        return reply.send(encodeEconomyValue(state));
+      } catch (error) {
+        return sendError(reply, error);
+      }
+    },
+  );
 
-  app.get<{ Params: { worldId: string } }>("/worlds/:worldId/livemap/events", { schema: { params: worldIdParam } }, async (request, reply) => {
-    const feed=deps.livemap?.forWorld(request.params.worldId);
-    reply.hijack();
-    reply.raw.writeHead(200,{"content-type":"text/event-stream","cache-control":"no-cache, no-transform","connection":"keep-alive"});
-    if(feed===undefined){reply.raw.end();return;}
-    const unsubscribe=feed.subscribe(delta=>reply.raw.write(`id: ${delta.sequence}\ndata: ${JSON.stringify(delta)}\n\n`));
-    request.raw.on("close",unsubscribe);
-    reply.raw.write(": verbunden\n\n");
-  });
+  app.post<{
+    Params: { worldId: string };
+    Body: {
+      readonly at: number;
+      readonly seed: string;
+      readonly durationMonths: 6 | 12 | 18 | "unlimited";
+      readonly release: unknown;
+      readonly planning: unknown;
+      readonly authorityBudgets: unknown;
+    };
+  }>(
+    "/worlds/:worldId/economy/start",
+    {
+      preHandler: authenticate,
+      schema: {
+        params: worldIdParam,
+        body: {
+          type: "object",
+          required: ["at", "seed", "durationMonths", "release", "planning", "authorityBudgets"],
+          additionalProperties: false,
+          properties: {
+            at: { type: "integer", minimum: 0 },
+            seed: { type: "string", pattern: "^[0-9]+$" },
+            durationMonths: { anyOf: [{ type: "integer", enum: [6, 12, 18] }, { type: "string", const: "unlimited" }] },
+            release: { type: "object" },
+            planning: { type: "object" },
+            authorityBudgets: { type: "array" },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        await requireWorldAdminAccount(deps.db, request.params.worldId, identity.keycloakSubject);
+        if (await loadEconomyWorldState(deps.db, request.params.worldId)) return reply.code(409).send({ error: "Wirtschaftswelt wurde bereits gestartet." });
+        const suppliedRelease = decoded<EconomyRelease>(request.body.release);
+        const release = buildEconomyRelease({
+          version: suppliedRelease.version,
+          rates: suppliedRelease.rates,
+          rules: suppliedRelease.rules,
+          tenderProfiles: suppliedRelease.tenderProfiles,
+        });
+        if (release.checksum !== suppliedRelease.checksum) throw new Error("EconomyRelease-Prüfsumme ist ungültig.");
+        const accountsInWorld = await listAccountsInWorld(deps.db, { worldId: request.params.worldId, requestingKeycloakSubject: identity.keycloakSubject });
+        const started = startEconomyWorld({
+          worldId: request.params.worldId,
+          seed: BigInt(request.body.seed),
+          durationMonths: request.body.durationMonths,
+          release,
+          planning: decoded<GtfsPlanningEnvelope>(request.body.planning),
+          authorityBudgets: decoded<readonly AuthorityBudget[]>(request.body.authorityBudgets),
+          accounts: accountsInWorld.map((account) => account.id),
+        });
+        await persistEconomyTransition(deps.db, { expectedRevision: null, ...started, committedAt: new Date(request.body.at * 1_000) });
+        return reply.code(201).send(encodeEconomyValue(started.state));
+      } catch (error) {
+        return sendEconomyError(reply, error);
+      }
+    },
+  );
+
+  app.post<{
+    Params: { worldId: string };
+    Body: {
+      readonly expectedRevision: number;
+      readonly commandId: string;
+      readonly tenderId: string;
+      readonly planningReference: GtfsPlanningLotReference;
+      readonly announcedAt: number;
+      readonly opensAt: number;
+      readonly closesAt: number;
+      readonly operatingFrom: number;
+      readonly authorityId: string;
+      readonly budgetPeriod: number;
+      readonly vehiclePool: readonly string[];
+      readonly failurePenaltyCents: string;
+    };
+  }>(
+    "/worlds/:worldId/economy/tenders",
+    {
+      preHandler: authenticate,
+      schema: {
+        params: worldIdParam,
+        body: {
+          type: "object",
+          required: ["expectedRevision", "commandId", "tenderId", "planningReference", "announcedAt", "opensAt", "closesAt", "operatingFrom", "authorityId", "budgetPeriod", "vehiclePool", "failurePenaltyCents"],
+          additionalProperties: false,
+          properties: {
+            expectedRevision: { type: "integer", minimum: 0 },
+            commandId: { type: "string", minLength: 1, maxLength: 128 },
+            tenderId: { type: "string", minLength: 1, maxLength: 128 },
+            planningReference: {
+              type: "object",
+              required: ["planningRevision", "snapshotHash", "lotId"],
+              additionalProperties: false,
+              properties: {
+                planningRevision: { type: "integer", minimum: 0 },
+                snapshotHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+                lotId: { type: "string", minLength: 1 },
+              },
+            },
+            announcedAt: { type: "integer", minimum: 0 },
+            opensAt: { type: "integer", minimum: 0 },
+            closesAt: { type: "integer", minimum: 0 },
+            operatingFrom: { type: "integer", minimum: 0 },
+            authorityId: { type: "string", minLength: 1 },
+            budgetPeriod: { type: "integer", minimum: 0 },
+            vehiclePool: { type: "array", items: { type: "string", minLength: 1 } },
+            failurePenaltyCents: { type: "string", pattern: "^[0-9]+$" },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        await requireWorldAdminAccount(deps.db, request.params.worldId, identity.keycloakSubject);
+        const state = await loadEconomyWorldState(deps.db, request.params.worldId);
+        if (state === undefined) return reply.code(404).send({ error: "Wirtschaftswelt ist noch nicht gestartet." });
+        requireExpectedRevision(request.params.worldId, state.revision, request.body.expectedRevision);
+        if (state.planning === undefined) throw new Error("Wirtschaftswelt besitzt keinen GTFS-Planungssnapshot.");
+        const periodDurationSeconds = state.profile.periodWeeks * 7 * 86_400;
+        const planned = deriveGtfsServiceSpecification(
+          state.planning,
+          request.params.worldId,
+          request.body.planningReference,
+          periodDurationSeconds,
+        );
+        const incumbent = [...state.contracts.values()]
+          .filter((contract) => contract.lotId === planned.lot.id)
+          .sort((left, right) => right.endsAt - left.endsAt)[0]?.operatorId ?? "public";
+        const operatorsInWorld = await listOperatorsInWorld(deps.db, { worldId: request.params.worldId, requestingKeycloakSubject: identity.keycloakSubject });
+        const recipientByOperator = Object.fromEntries(operatorsInWorld.map((operator) => [operator.id, operator.foundingAccountId]));
+        const recipients = (await listAccountsInWorld(deps.db, { worldId: request.params.worldId, requestingKeycloakSubject: identity.keycloakSubject })).map((account) => account.id);
+        const announced = announceTender(state, {
+          commandId: request.body.commandId,
+          release: state.release,
+          recipients,
+          tender: {
+            id: request.body.tenderId,
+            worldId: request.params.worldId,
+            lotId: planned.lot.id,
+            incumbentOperatorId: incumbent,
+            specification: planned.specification,
+            planningEvidence: planned.evidence,
+            announcedAt: request.body.announcedAt,
+            opensAt: request.body.opensAt,
+            closesAt: request.body.closesAt,
+            operatingFrom: request.body.operatingFrom,
+            contractPeriods: state.profile.contractPeriods,
+            periodDurationSeconds,
+            smallLot: planned.lot.smallLot,
+          },
+          automation: {
+            authorityId: request.body.authorityId,
+            budgetPeriod: request.body.budgetPeriod,
+            vehiclePool: request.body.vehiclePool,
+            recipientByOperator,
+            failurePenaltyCents: BigInt(request.body.failurePenaltyCents),
+          },
+        });
+        await persistEconomyTransition(deps.db, { expectedRevision: state.revision, ...announced, committedAt: new Date(request.body.announcedAt * 1_000) });
+        return reply.code(201).send(encodeEconomyValue(announced.state));
+      } catch (error) {
+        return sendEconomyError(reply, error);
+      }
+    },
+  );
+
+  app.post<{
+    Params: { worldId: string; tenderId: string; operatorId: string };
+    Body: {
+      readonly expectedRevision: number;
+      readonly commandId: string;
+      readonly bidId: string;
+      readonly orderingFeeCentsPerTrainKm: string;
+      readonly submittedAt: number;
+      readonly vehicleReference: { readonly fleetRevision: number; readonly snapshotHash: string; readonly formationId: string };
+      readonly promises: { readonly extraSeats: number; readonly punctualityBasisPoints: number; readonly additionalStops: number };
+    };
+  }>(
+    "/worlds/:worldId/economy/tenders/:tenderId/operators/:operatorId/bids",
+    { preHandler: authenticate, schema: { params: { type: "object", required: ["worldId", "tenderId", "operatorId"], properties: { worldId: { type: "string", format: "uuid" }, tenderId: { type: "string", minLength: 1 }, operatorId: { type: "string", format: "uuid" } } }, body: { type: "object", required: ["expectedRevision", "commandId", "bidId", "orderingFeeCentsPerTrainKm", "submittedAt", "vehicleReference", "promises"], additionalProperties: false, properties: { expectedRevision: { type: "integer", minimum: 0 }, commandId: { type: "string", minLength: 1 }, bidId: { type: "string", minLength: 1 }, orderingFeeCentsPerTrainKm: { type: "string", pattern: "^[0-9]+$" }, submittedAt: { type: "integer", minimum: 0 }, vehicleReference: { type: "object", required: ["fleetRevision", "snapshotHash", "formationId"], additionalProperties: false, properties: { fleetRevision: { type: "integer", minimum: 0 }, snapshotHash: { type: "string", pattern: "^[a-f0-9]{64}$" }, formationId: { type: "string", minLength: 1 } } }, promises: { type: "object", required: ["extraSeats", "punctualityBasisPoints", "additionalStops"], additionalProperties: false, properties: { extraSeats: { type: "integer", minimum: 0 }, punctualityBasisPoints: { type: "integer", minimum: 0, maximum: 10000 }, additionalStops: { type: "integer", minimum: 0 } } } } } } },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        const state = await loadEconomyWorldState(deps.db, request.params.worldId);
+        if (state === undefined) return reply.code(404).send({ error: "Wirtschaftswelt ist noch nicht gestartet." });
+        requireExpectedRevision(request.params.worldId, state.revision, request.body.expectedRevision);
+        const lifecycle = state.tenders.get(request.params.tenderId);
+        if (lifecycle === undefined) return reply.code(404).send({ error: "Ausschreibung existiert nicht." });
+        const snapshot = await loadFleetMobilizationSnapshot(deps.db, request.params.worldId, request.body.vehicleReference);
+        const vehicle = resolveVehicleConcept(snapshot, request.body.vehicleReference, { operatorId: request.params.operatorId, serviceLineIds: lifecycle.tender.specification.lines, operatingFrom: lifecycle.tender.operatingFrom });
+        const account = await getAccount(deps.db, { worldId: request.params.worldId, keycloakSubject: identity.keycloakSubject });
+        if (account === undefined) throw new AuthorizationError("Kein aktiver Weltzugang.");
+        const smallLot = lifecycle.tender.closesAt - lifecycle.tender.opensAt <= 2 * 86_400;
+        const next = submitBid(state, request.body.commandId, request.params.tenderId, { id: request.body.bidId, operatorId: request.params.operatorId, orderingFeeCentsPerTrainKm: BigInt(request.body.orderingFeeCentsPerTrainKm), vehicle, promises: request.body.promises, submittedAt: request.body.submittedAt }, { accountId: account.id, period: Math.floor(request.body.submittedAt / (state.profile.periodWeeks * 7 * 86_400)), smallLot, minimumScore: 4_000 });
+        await persistEconomyTransition(deps.db, { expectedRevision: state.revision, state: next, effects: { notices: [], journal: [] }, committedAt: new Date(request.body.submittedAt * 1_000) });
+        return reply.code(201).send(encodeEconomyValue(next));
+      } catch (error) {
+        return sendEconomyError(reply, error);
+      }
+    },
+  );
+
+  app.put<{
+    Params: { worldId: string; tenderId: string; operatorId: string };
+    Body: { readonly expectedRevision: number; readonly commandId: string; readonly at: number; readonly reference: FleetMobilizationReference };
+  }>(
+    "/worlds/:worldId/economy/tenders/:tenderId/operators/:operatorId/mobilization",
+    { preHandler: authenticate, schema: { params: { type: "object", required: ["worldId", "tenderId", "operatorId"], properties: { worldId: { type: "string", format: "uuid" }, tenderId: { type: "string", minLength: 1 }, operatorId: { type: "string", format: "uuid" } } }, body: { type: "object", required: ["expectedRevision", "commandId", "at", "reference"], additionalProperties: false, properties: { expectedRevision: { type: "integer", minimum: 0 }, commandId: { type: "string", minLength: 1 }, at: { type: "integer", minimum: 0 }, reference: { type: "object", required: ["fleetRevision", "snapshotHash", "formationIds", "personnelDutyIds", "pathReservationIds"], additionalProperties: false, properties: { fleetRevision: { type: "integer", minimum: 0 }, snapshotHash: { type: "string", pattern: "^[a-f0-9]{64}$" }, formationIds: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } }, personnelDutyIds: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } }, pathReservationIds: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } } } } } } } },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        const state = await loadEconomyWorldState(deps.db, request.params.worldId);
+        if (state === undefined) return reply.code(404).send({ error: "Wirtschaftswelt ist noch nicht gestartet." });
+        requireExpectedRevision(request.params.worldId, state.revision, request.body.expectedRevision);
+        const lifecycle = state.tenders.get(request.params.tenderId);
+        if (lifecycle?.phase !== "awarded") throw new Error("Ausschreibung wurde diesem EVU nicht zugeschlagen.");
+        const snapshot = await loadFleetMobilizationSnapshot(deps.db, request.params.worldId, request.body.reference);
+        verifyMobilizationReference(snapshot, request.body.reference, { operatorId: request.params.operatorId, winningFormationId: lifecycle.winningBid.vehicle.formationId, serviceLineIds: lifecycle.tender.specification.lines, operatingFrom: lifecycle.tender.operatingFrom });
+        const next = submitMobilizationReference(state, { commandId: request.body.commandId, tenderId: request.params.tenderId, operatorId: request.params.operatorId, at: request.body.at, reference: request.body.reference });
+        await persistEconomyTransition(deps.db, { expectedRevision: state.revision, state: next, effects: { notices: [], journal: [] }, committedAt: new Date(request.body.at * 1_000) });
+        return reply.send(encodeEconomyValue(next));
+      } catch (error) {
+        return sendEconomyError(reply, error);
+      }
+    },
+  );
+
+  app.post<{
+    Params: { worldId: string; operatorId: string; contractId: string };
+    Body: { readonly expectedRevision: number; readonly commandId: string; readonly period: number; readonly at: number; readonly performance: { readonly trainKm: string; readonly punctualityBasisPoints: number; readonly cancellations: number; readonly missingSeats: number; readonly missedConnections: number; readonly evidence: readonly string[] }; readonly costs: readonly { readonly amountCents: string; readonly costType: "track" | "station" | "facility" | "energy" | "personnel" | "administration" | "vehicle" | "penalty" | "interest"; readonly costCentreId: string; readonly reference: string }[] };
+  }>(
+    "/worlds/:worldId/economy/operators/:operatorId/contracts/:contractId/settlements",
+    { preHandler: authenticate, schema: { params: { type: "object", required: ["worldId", "operatorId", "contractId"], properties: { worldId: { type: "string", format: "uuid" }, operatorId: { type: "string", format: "uuid" }, contractId: { type: "string", minLength: 1 } } }, body: { type: "object", required: ["expectedRevision", "commandId", "period", "at", "performance", "costs"], additionalProperties: false, properties: { expectedRevision: { type: "integer", minimum: 0 }, commandId: { type: "string", minLength: 1 }, period: { type: "integer", minimum: 0 }, at: { type: "integer", minimum: 0 }, performance: { type: "object" }, costs: { type: "array", items: { type: "object" } } } } } },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        const state = await loadEconomyWorldState(deps.db, request.params.worldId);
+        if (state === undefined) return reply.code(404).send({ error: "Wirtschaftswelt ist noch nicht gestartet." });
+        requireExpectedRevision(request.params.worldId, state.revision, request.body.expectedRevision);
+        if (state.contracts.get(request.params.contractId)?.operatorId !== request.params.operatorId) throw new AuthorizationError("Vertrag gehört einem anderen EVU.");
+        const settled = settleContractPeriod(state, { commandId: request.body.commandId, contractId: request.params.contractId, period: request.body.period, at: request.body.at, performance: { ...request.body.performance, trainKm: BigInt(request.body.performance.trainKm) }, costs: request.body.costs.map((cost) => ({ ...cost, amountCents: BigInt(cost.amountCents) })) });
+        await persistEconomyTransition(deps.db, { expectedRevision: state.revision, state: settled.state, effects: settled.effects, committedAt: new Date(request.body.at * 1_000) });
+        return reply.code(201).send(encodeEconomyValue(settled.result));
+      } catch (error) {
+        return sendEconomyError(reply, error);
+      }
+    },
+  );
+
+  app.post<{
+    Params: { worldId: string; operatorId: string };
+    Body: { readonly expectedRevision: number; readonly commandId: string; readonly accountId: string; readonly period: number; readonly at: number; readonly signals: { readonly liquidCents: string; readonly twoPeriodNeedCents: string; readonly overdueCents: string; readonly creditScore: number; readonly contractTerminated: boolean; readonly unableToPay: boolean } };
+  }>(
+    "/worlds/:worldId/economy/operators/:operatorId/escalations",
+    { preHandler: authenticate, schema: { params: { type: "object", required: ["worldId", "operatorId"], properties: { worldId: { type: "string", format: "uuid" }, operatorId: { type: "string", format: "uuid" } } }, body: { type: "object", required: ["expectedRevision", "commandId", "accountId", "period", "at", "signals"], additionalProperties: false, properties: { expectedRevision: { type: "integer", minimum: 0 }, commandId: { type: "string", minLength: 1 }, accountId: { type: "string", format: "uuid" }, period: { type: "integer", minimum: 0 }, at: { type: "integer", minimum: 0 }, signals: { type: "object" } } } } },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        await requireWorldAdminAccount(deps.db, request.params.worldId, identity.keycloakSubject);
+        const state = await loadEconomyWorldState(deps.db, request.params.worldId);
+        if (state === undefined) return reply.code(404).send({ error: "Wirtschaftswelt ist noch nicht gestartet." });
+        requireExpectedRevision(request.params.worldId, state.revision, request.body.expectedRevision);
+        const escalated = escalateOperator(state, { commandId: request.body.commandId, operatorId: request.params.operatorId, accountId: request.body.accountId, period: request.body.period, at: request.body.at, signals: { ...request.body.signals, liquidCents: BigInt(request.body.signals.liquidCents), twoPeriodNeedCents: BigInt(request.body.signals.twoPeriodNeedCents), overdueCents: BigInt(request.body.signals.overdueCents) } });
+        await persistEconomyTransition(deps.db, { expectedRevision: state.revision, state: escalated.state, effects: escalated.effects, committedAt: new Date(request.body.at * 1_000) });
+        return reply.send(encodeEconomyValue(escalated.decision));
+      } catch (error) {
+        return sendEconomyError(reply, error);
+      }
+    },
+  );
+
+  if (deps.livemap !== undefined && deps.livemapIngestToken !== undefined) {
+    app.post<{
+      Params: { worldId: string };
+      Body: Omit<LiveDelta, "worldId" | "sequence">;
+    }>(
+      "/internal/worlds/:worldId/livemap/deltas",
+      {
+        schema: {
+          params: worldIdParam,
+          body: {
+            type: "object",
+            required: ["at", "changed", "removed"],
+            additionalProperties: false,
+            properties: {
+              at: { type: "integer", minimum: 0 },
+              removed: { type: "array", items: { type: "string", minLength: 1 } },
+              changed: {
+                type: "array",
+                items: {
+                  type: "object",
+                  required: ["id", "operator", "trainNumber", "category", "positionMm", "speedMmPerSecond", "delaySeconds", "nextOperatingPoint", "status"],
+                  additionalProperties: false,
+                  properties: {
+                    id: { type: "string", minLength: 1 },
+                    operator: { type: "string" },
+                    trainNumber: { type: "string" },
+                    category: { type: "string" },
+                    positionMm: { type: "integer" },
+                    speedMmPerSecond: { type: "integer" },
+                    delaySeconds: { type: "integer" },
+                    nextOperatingPoint: { type: "string" },
+                    status: { type: "string", minLength: 1 },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      async (request, reply) => {
+        if (!bearerMatches(request.headers.authorization, deps.livemapIngestToken!)) {
+          return reply.code(401).send({ error: "Ungültige Livemap-Ingest-Autorisierung." });
+        }
+        if (!(await worldExists(deps.db, request.params.worldId))) {
+          return reply.code(404).send({ error: "Welt existiert nicht." });
+        }
+        try {
+          return reply.code(202).send(deps.livemap!.forWorld(request.params.worldId).publish(request.body));
+        } catch (error) {
+          if (error instanceof LivemapCapacityError) return reply.code(503).send({ error: "Livemap-Kapazität erschöpft." });
+          throw error;
+        }
+      },
+    );
+  }
+
+  if (deps.fleetIngestToken !== undefined) {
+    app.post<{
+      Params: { worldId: string };
+      Body: Parameters<typeof persistFleetMobilizationSnapshot>[2];
+    }>(
+      "/internal/worlds/:worldId/fleet/mobilization-snapshots",
+      {
+        schema: {
+          params: worldIdParam,
+          body: {
+            type: "object",
+            required: ["snapshot", "snapshotHash"],
+            additionalProperties: false,
+            properties: {
+              snapshotHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+              snapshot: {
+                type: "object",
+                required: ["schema", "worldId", "revision", "producedAt", "formations", "personnelDuties", "pathReservations"],
+                additionalProperties: false,
+                properties: {
+                  schema: { type: "string", const: "zugfolge-fleet-mobilization/v1" },
+                  worldId: { type: "string", format: "uuid" },
+                  revision: { type: "integer", minimum: 0 },
+                  producedAt: { type: "integer", minimum: 0 },
+                  formations: { type: "array", items: { type: "object" } },
+                  personnelDuties: { type: "array", items: { type: "object" } },
+                  pathReservations: { type: "array", items: { type: "object" } },
+                },
+              },
+            },
+          },
+        },
+      },
+      async (request, reply) => {
+        if (!bearerMatches(request.headers.authorization, deps.fleetIngestToken!)) {
+          return reply.code(401).send({ error: "Ungültige Fleet-Ingest-Autorisierung." });
+        }
+        if (!(await worldExists(deps.db, request.params.worldId))) {
+          return reply.code(404).send({ error: "Welt existiert nicht." });
+        }
+        try {
+          const result = await persistFleetMobilizationSnapshot(
+            deps.db,
+            request.params.worldId,
+            request.body,
+            new Date(),
+          );
+          return reply.code(result.created ? 201 : 200).send(result);
+        } catch (error) {
+          return sendError(reply, error);
+        }
+      },
+    );
+  }
+
+  if (deps.simulationIngestToken !== undefined) {
+    app.post<{
+      Params: { worldId: string };
+      Body: { readonly events: readonly { readonly sequence: number; readonly eventType: string; readonly payload: unknown; readonly occurredAt: string }[] };
+    }>(
+      "/internal/worlds/:worldId/simulation/events",
+      {
+        schema: {
+          params: worldIdParam,
+          body: {
+            type: "object",
+            required: ["events"],
+            additionalProperties: false,
+            properties: {
+              events: {
+                type: "array",
+                minItems: 1,
+                maxItems: 1_000,
+                items: {
+                  type: "object",
+                  required: ["sequence", "eventType", "payload", "occurredAt"],
+                  additionalProperties: false,
+                  properties: {
+                    sequence: { type: "integer", minimum: 1 },
+                    eventType: { type: "string", minLength: 1, maxLength: 128 },
+                    payload: {},
+                    occurredAt: { type: "string", format: "date-time" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      async (request, reply) => {
+        if (!bearerMatches(request.headers.authorization, deps.simulationIngestToken!)) {
+          return reply.code(401).send({ error: "Ungültige Simulations-Ingest-Autorisierung." });
+        }
+        if (!(await worldExists(deps.db, request.params.worldId))) return reply.code(404).send({ error: "Welt existiert nicht." });
+        try {
+          const appended = await worldEventLog(deps.db, request.params.worldId).appendBatch(
+            request.body.events.map((event) => ({ ...event, occurredAt: new Date(event.occurredAt) })),
+          );
+          return reply.code(202).send({ appended: appended.length, lastSequence: appended.at(-1)?.sequence });
+        } catch (error) {
+          return sendError(reply, error);
+        }
+      },
+    );
+  }
+
+  app.get<{ Params: { worldId: string }; Querystring: { after?: number; limit?: number } }>(
+    "/worlds/:worldId/simulation/events",
+    {
+      preHandler: authenticate,
+      schema: {
+        params: worldIdParam,
+        querystring: {
+          type: "object",
+          properties: {
+            after: { type: "integer", minimum: 0, default: 0 },
+            limit: { type: "integer", minimum: 1, maximum: 5_000, default: 500 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        const account = await getAccount(deps.db, { worldId: request.params.worldId, keycloakSubject: identity.keycloakSubject });
+        if (account === undefined) throw new AuthorizationError("Kein aktiver Zugang zu dieser Welt.");
+        return reply.send(
+          await worldEventLog(deps.db, request.params.worldId).listAfter(
+            request.query.after ?? 0,
+            request.query.limit ?? 500,
+          ),
+        );
+      } catch (error) {
+        return sendError(reply, error);
+      }
+    },
+  );
+
+  app.get<{ Params: { worldId: string } }>(
+    "/worlds/:worldId/planning/diagram",
+    { preHandler: authenticate, schema: { params: worldIdParam } },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        const account = await getAccount(deps.db, { worldId: request.params.worldId, keycloakSubject: identity.keycloakSubject });
+        if (account === undefined) throw new AuthorizationError("Kein aktiver Zugang zu dieser Welt.");
+        const event = await worldEventLog(deps.db, request.params.worldId).latestOfType("planning.diagram");
+        if (event === undefined) return reply.code(404).send({ error: "Noch kein Planner-Ergebnis veröffentlicht." });
+        return reply.send({ sequence: event.sequence, data: event.payload });
+      } catch (error) {
+        return sendError(reply, error);
+      }
+    },
+  );
+
+  app.post<{
+    Params: { worldId: string };
+    Body: { readonly idempotencyKey: string; readonly trainId: string; readonly conflictId: string; readonly shiftMinutes: number };
+  }>(
+    "/worlds/:worldId/planning/alternatives",
+    {
+      preHandler: authenticate,
+      schema: {
+        params: worldIdParam,
+        body: {
+          type: "object",
+          required: ["idempotencyKey", "trainId", "conflictId", "shiftMinutes"],
+          additionalProperties: false,
+          properties: {
+            idempotencyKey: { type: "string", minLength: 1, maxLength: 128 },
+            trainId: { type: "string", minLength: 1, maxLength: 128 },
+            conflictId: { type: "string", minLength: 1, maxLength: 128 },
+            shiftMinutes: { type: "integer", minimum: -1_440, maximum: 1_440 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        if (request.body.shiftMinutes === 0) return reply.code(400).send({ error: "Alternative muss die Zeitlage verändern." });
+        const account = await getAccount(deps.db, { worldId: request.params.worldId, keycloakSubject: identity.keycloakSubject });
+        if (account === undefined) throw new AuthorizationError("Kein aktiver Zugang zu dieser Welt.");
+        const values = {
+          worldId: request.params.worldId,
+          requestingAccountId: account.id,
+          idempotencyKey: request.body.idempotencyKey,
+          commandType: "planning.apply-alternative",
+          payload: { trainId: request.body.trainId, conflictId: request.body.conflictId, shiftMinutes: request.body.shiftMinutes },
+          submittedAt: new Date(),
+        };
+        let [command] = await deps.db
+          .insert(simulationCommands)
+          .values(values)
+          .onConflictDoNothing({ target: [simulationCommands.worldId, simulationCommands.requestingAccountId, simulationCommands.idempotencyKey] })
+          .returning();
+        if (command === undefined) {
+          [command] = await deps.db
+            .select()
+            .from(simulationCommands)
+            .where(and(eq(simulationCommands.worldId, request.params.worldId), eq(simulationCommands.requestingAccountId, account.id), eq(simulationCommands.idempotencyKey, request.body.idempotencyKey)))
+            .limit(1);
+        }
+        return reply.code(202).send(command);
+      } catch (error) {
+        return sendError(reply, error);
+      }
+    },
+  );
+
+  if (deps.simulationIngestToken !== undefined) {
+    app.get<{ Params: { worldId: string }; Querystring: { limit?: number } }>(
+      "/internal/worlds/:worldId/simulation/commands",
+      {
+        schema: {
+          params: worldIdParam,
+          querystring: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 1_000, default: 100 } } },
+        },
+      },
+      async (request, reply) => {
+        if (!bearerMatches(request.headers.authorization, deps.simulationIngestToken!)) return reply.code(401).send({ error: "Ungültige Simulations-Ingest-Autorisierung." });
+        return reply.send(
+          await deps.db
+            .select()
+            .from(simulationCommands)
+            .where(and(eq(simulationCommands.worldId, request.params.worldId), eq(simulationCommands.status, "pending")))
+            .orderBy(asc(simulationCommands.submittedAt), asc(simulationCommands.id))
+            .limit(request.query.limit ?? 100),
+        );
+      },
+    );
+
+    app.post<{
+      Params: { worldId: string; commandId: string };
+      Body: { readonly status: "processed" | "failed"; readonly resultEventSequence?: number; readonly failureCode?: string; readonly processedAt: string };
+    }>(
+      "/internal/worlds/:worldId/simulation/commands/:commandId/result",
+      {
+        schema: {
+          params: { type: "object", required: ["worldId", "commandId"], properties: { worldId: { type: "string", format: "uuid" }, commandId: { type: "string", format: "uuid" } } },
+          body: {
+            type: "object",
+            required: ["status", "processedAt"],
+            additionalProperties: false,
+            properties: {
+              status: { type: "string", enum: ["processed", "failed"] },
+              resultEventSequence: { type: "integer", minimum: 1 },
+              failureCode: { type: "string", minLength: 1, maxLength: 128 },
+              processedAt: { type: "string", format: "date-time" },
+            },
+          },
+        },
+      },
+      async (request, reply) => {
+        if (!bearerMatches(request.headers.authorization, deps.simulationIngestToken!)) return reply.code(401).send({ error: "Ungültige Simulations-Ingest-Autorisierung." });
+        if (request.body.status === "processed" && request.body.resultEventSequence === undefined) return reply.code(400).send({ error: "Erfolgreiches Kommando braucht eine Ergebnis-Sequenz." });
+        if (request.body.status === "failed" && request.body.failureCode === undefined) return reply.code(400).send({ error: "Fehlgeschlagenes Kommando braucht einen stabilen Fehlercode." });
+        const [updated] = await deps.db
+          .update(simulationCommands)
+          .set({ status: request.body.status, processedAt: new Date(request.body.processedAt), resultEventSequence: request.body.resultEventSequence, failureCode: request.body.failureCode })
+          .where(and(eq(simulationCommands.worldId, request.params.worldId), eq(simulationCommands.id, request.params.commandId), eq(simulationCommands.status, "pending")))
+          .returning();
+        return updated === undefined ? reply.code(404).send({ error: "Ausstehendes Kommando nicht gefunden." }) : reply.send(updated);
+      },
+    );
+  }
+
+  app.get<{ Params: { worldId: string } }>(
+    "/worlds/:worldId/livemap/snapshot",
+    { schema: { params: worldIdParam } },
+    async (request, reply) => {
+      if (!(await worldExists(deps.db, request.params.worldId))) {
+        return reply.code(404).send({ error: "Welt existiert nicht." });
+      }
+      try {
+        return reply.send(
+          deps.livemap?.forWorld(request.params.worldId).snapshot() ?? {
+            worldId: request.params.worldId,
+            sequence: 0,
+            at: 0,
+            trains: [],
+          },
+        );
+      } catch (error) {
+        if (error instanceof LivemapCapacityError) {
+          return reply.code(503).send({ error: "Livemap vorübergehend ausgelastet." });
+        }
+        throw error;
+      }
+    },
+  );
+
+  app.get<{ Params: { worldId: string } }>(
+    "/worlds/:worldId/livemap/events",
+    { schema: { params: worldIdParam } },
+    async (request, reply) => {
+      if (!(await worldExists(deps.db, request.params.worldId))) {
+        return reply.code(404).send({ error: "Welt existiert nicht." });
+      }
+      let feed;
+      try {
+        feed = deps.livemap?.forWorld(request.params.worldId);
+      } catch (error) {
+        if (error instanceof LivemapCapacityError) {
+          return reply.code(503).send({ error: "Livemap vorübergehend ausgelastet." });
+        }
+        throw error;
+      }
+      if (feed === undefined) {
+        return reply.code(503).send({ error: "Livemap-Publisher nicht verfügbar." });
+      }
+
+      reply.hijack();
+      reply.raw.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache, no-transform",
+        connection: "keep-alive",
+        "x-accel-buffering": "no",
+      });
+
+      const queue: string[] = [];
+      const maximumQueueLength = 128;
+      let waitingForDrain = false;
+      let closed = false;
+      let heartbeat: ReturnType<typeof setInterval> | undefined;
+      let unsubscribe: () => void = () => undefined;
+
+      const cleanup = () => {
+        if (closed) return;
+        closed = true;
+        if (heartbeat !== undefined) clearInterval(heartbeat);
+        unsubscribe();
+      };
+      const flush = () => {
+        if (closed || waitingForDrain) return;
+        while (queue.length > 0) {
+          const payload = queue.shift()!;
+          if (!reply.raw.write(payload)) {
+            waitingForDrain = true;
+            reply.raw.once("drain", () => {
+              waitingForDrain = false;
+              flush();
+            });
+            return;
+          }
+        }
+      };
+      const enqueue = (payload: string) => {
+        if (closed) return;
+        if (queue.length >= maximumQueueLength) {
+          cleanup();
+          reply.raw.end();
+          return;
+        }
+        queue.push(payload);
+        flush();
+      };
+
+      const lastEventHeader = request.headers["last-event-id"];
+      const lastEventId = Number(Array.isArray(lastEventHeader) ? lastEventHeader[0] : lastEventHeader);
+      if (Number.isSafeInteger(lastEventId) && lastEventId >= 0) {
+        const replay = feed.deltasAfter(lastEventId);
+        if (replay === undefined) {
+          enqueue("event: reset\ndata: {}\n\n");
+        } else {
+          replay.forEach((delta) => {
+            enqueue(`id: ${delta.sequence}\ndata: ${JSON.stringify(delta)}\n\n`);
+          });
+        }
+      }
+      unsubscribe = feed.subscribe((delta) => {
+        enqueue(`id: ${delta.sequence}\ndata: ${JSON.stringify(delta)}\n\n`);
+      });
+      heartbeat = setInterval(() => enqueue(": heartbeat\n\n"), 15_000);
+      heartbeat.unref();
+      request.raw.once("close", cleanup);
+      reply.raw.once("error", cleanup);
+      enqueue("retry: 3000\n: verbunden\n\n");
+      return undefined;
+    },
+  );
 
   // ---------------------------------------------------------------------
   // M2.1 — Weltzugang, Konto, Rolle

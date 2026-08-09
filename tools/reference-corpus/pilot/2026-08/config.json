@@ -1,0 +1,37 @@
+{
+  "schema": "zugfolge-gtfs-capture/v1",
+  "feedUrl": "https://download.gtfs.de/germany/rv_free/latest.zip",
+  "timeZone": "Europe/Berlin",
+  "region": "Leipzig–Halle–Erfurt",
+  "schedulePeriod": "2026-08-10/2026-08-14",
+  "generatedAt": "2026-08-09T05:21:56.026Z",
+  "minimumSamples": 5,
+  "serviceDates": [
+    "20260810",
+    "20260811",
+    "20260812",
+    "20260813",
+    "20260814"
+  ],
+  "comparisons": [
+    {
+      "routeId": "leipzig-halle-direct",
+      "fromStopNames": ["Leipzig Hbf", "Leipzig Hbf (tief)"],
+      "toStopNames": ["Halle(Saale)Hbf"],
+      "direction": "Halle (Saale)",
+      "characteristicsId": "mdsb-talent2-v1",
+      "routeShortNames": ["S5X"]
+    }
+  ],
+  "source": {
+    "id": "gtfs-de-rv",
+    "sourceLicense": "CC BY 4.0",
+    "attribution": "Datenquelle: DELFI e.V. / GTFS.DE; durch Zugfolge gefiltert und statistisch ausgewertet; CC BY 4.0",
+    "retrievedAt": "2026-08-09T05:21:56.026Z",
+    "apiVersion": "GTFS static, rv_free/latest.zip"
+  },
+  "tolerance": {
+    "absoluteSeconds": 30,
+    "relativeBasisPoints": 500
+  }
+}

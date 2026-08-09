@@ -1,5 +1,5 @@
 import { PGlite } from "@electric-sql/pglite";
-import { MIGRATIONS_FOLDER, schema, worlds } from "@zugfolge/db";
+import { accountRoles, accounts, MIGRATIONS_FOLDER, schema, worldAccesses, worlds } from "@zugfolge/db";
 import {
   AccessRevokedError,
   AuthorizationError,
@@ -14,7 +14,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { eraseAccountData, ERASED_DISPLAY_NAME } from "./erasure.js";
+import { eraseAccountData, ERASED_DISPLAY_NAME, purgeExpiredAccountData } from "./erasure.js";
 import { exportAccountData, PersonalDataNotFoundError } from "./export.js";
 
 const WORLD_LHE = "11111111-1111-1111-1111-111111111111";
@@ -135,5 +135,36 @@ describe("eraseAccountData (Löschung)", () => {
 
     const nochAuffindbar = await getOperator(db, { worldId: WORLD_LHE, operatorId: operator.id });
     expect(nochAuffindbar.foundingAccountId).toBe(anna.id);
+  });
+
+  it("entkoppelt die Keycloak-Kennung nach 90 Tagen endgültig und idempotent", async () => {
+    const anna = await requestWorldAccess(db, {
+      worldId: WORLD_LHE,
+      keycloakSubject: "kc-anna",
+      displayName: "Anna",
+    });
+    await eraseAccountData(db, {
+      worldId: WORLD_LHE,
+      targetKeycloakSubject: "kc-anna",
+      actingKeycloakSubject: "kc-anna",
+      erasedAt: new Date("2026-03-01T00:00:00Z"),
+    });
+
+    await expect(purgeExpiredAccountData(db, new Date("2026-05-29T23:59:59Z"))).resolves.toEqual({
+      purgedAccountIds: [],
+    });
+    await expect(purgeExpiredAccountData(db, new Date("2026-05-30T00:00:00Z"))).resolves.toEqual({
+      purgedAccountIds: [anna.id],
+    });
+    await expect(purgeExpiredAccountData(db, new Date("2026-06-01T00:00:00Z"))).resolves.toEqual({
+      purgedAccountIds: [],
+    });
+
+    const [account] = await db.select().from(accounts);
+    const [access] = await db.select().from(worldAccesses);
+    expect(account?.keycloakSubject).toBe(`erased:${anna.id}`);
+    expect(access?.keycloakSubject).toBe(`erased:${anna.id}`);
+    expect(account?.keycloakSubject).not.toContain("kc-anna");
+    expect(await db.select().from(accountRoles)).toEqual([]);
   });
 });

@@ -5,11 +5,18 @@ mit hohem betrieblichem, infrastrukturellem und wirtschaftlichem Realismus.
 Öffentliche Welten laufen dauerhaft in 1:1-Echtzeit ohne Wipes. Erste
 Pilotregion: **Leipzig–Halle–Erfurt**.
 
-> **Stand:** **M0 bis M4 sind abgeschlossen.** Fundament, Betriebsgraph,
-> Weltgerüst, Trassenvergabe und der regionale Simulationskern stehen. Von M5
-> sind **M5.1 bis M5.1b** umgesetzt: versionierter Fahrzeugkatalog,
-> individuelle Fahrzeugassets, Konfiguration und Werkstattumbau
-> ([`docs/betrieb.md`](docs/betrieb.md) 2 und 3).
+> **Stand nach dem Projektaudit (August 2026):** M0 und M2 sind vollständig
+> nachgewiesen. Die Domänenimplementierungen von M1 bis M6 sind weitgehend
+> vorhanden; noch nicht als abgeschlossen gilt die unabhängig validierte und
+> signierte Modellfreigabe (M1.13). Die korrigierte Trassenfinder-Kalibrierung
+> besteht mit +3 Sekunden, ist aber bewusst nur `calibration-only`. Ebenfalls
+> offen sind die produktive Planner-Anbindung des Bildfahrplans
+> (M3.10), der vollständige Rust-Runtime-Startpfad zur Livemap (M4.6), der
+> M5-Single-Writer-Betriebsnachweis in der M6-Mobilisierung. Der periodische
+> M6-Kommando-Worker und die GTFS-basierte Losableitung sind implementiert.
+> M7 bis M14 sind offen. Der detaillierte Status steht in
+> [`docs/milestones.md`](docs/milestones.md); „erledigt“ bedeutet dort wieder
+> einen reproduzierbaren Beweis und nicht nur vorhandenen Quellcode.
 
 ## Wo was steht
 
@@ -20,6 +27,8 @@ Pilotregion: **Leipzig–Halle–Erfurt**.
 | Code beitragen | [`docs/monorepo.md`](docs/monorepo.md) und [`CLAUDE.md`](CLAUDE.md) |
 | Begriffe nachschlagen | [`docs/glossar.md`](docs/glossar.md) |
 | die Reihenfolge kennen | [`docs/milestones.md`](docs/milestones.md) |
+| den GTFS-Fahrplan-Referenzkorpus erzeugen | [`docs/referenzkorpus.md`](docs/referenzkorpus.md) |
+| verstehen, wie GTFS zu Linien und Ausschreibungen wird | [`docs/gtfs-angebotsplanung.md`](docs/gtfs-angebotsplanung.md) |
 
 ## Aufbau
 
@@ -35,11 +44,12 @@ packages/   TypeScript — fachliche Bibliotheken (ab M2)
             db/                    Drizzle-Schema, Wurzel der Weltisolation (M2.2)
             identity/              Konten, Rollen, Weltzugänge (M2.1)
             operators/             EVU (M2.3)
-            economy/               Ledger-Kern (M2.4)
+            economy/               Ledger-Kern (M2.4), M6-Zustand und transaktionale Outbox
+            gtfs/                  Fahrtenbilder, Infrastrukturbindung und SPNV-Lose
             mailbox/               Postfach (M2.5)
             privacy/               Auskunft, Löschung, Aufbewahrung (M2.6)
 apps/       TypeScript — Dienste und Frontend (ab M2 / M4)
-            game-api/              Fastify-Dienst des Weltgerüsts (M2)
+            game-api/              Fastify-Dienst, Health, Replay- und Livemap-Adapter
 spikes/     Wegwerf-Code mit Verfallsdatum — derzeit leer
 tools/      Werkzeuge für CI und Entwicklung
 docs/       Spezifikation, Entscheidungen, Glossar

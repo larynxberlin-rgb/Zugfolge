@@ -126,6 +126,8 @@ export async function postLedgerTransaction(
     readonly operatorId: string;
     readonly description: string;
     readonly postedAt: Date;
+    /** Dauerhafter fachlicher Schlüssel; gleiche Welt/EVU/Schlüssel wird exakt einmal gebucht. */
+    readonly idempotencyKey?: string;
     readonly entries: readonly LedgerTransactionEntryInput[];
   },
 ): Promise<LedgerTransaction> {
@@ -159,15 +161,44 @@ export async function postLedgerTransaction(
   }
 
   return db.transaction(async (tx) => {
-    const [transaction] = await tx
-      .insert(ledgerTransactions)
-      .values({
-        worldId: input.worldId,
-        operatorId: input.operatorId,
-        description: input.description,
-        postedAt: input.postedAt,
-      })
-      .returning();
+    let transaction: LedgerTransaction | undefined;
+    const values = {
+      worldId: input.worldId,
+      operatorId: input.operatorId,
+      idempotencyKey: input.idempotencyKey,
+      description: input.description,
+      postedAt: input.postedAt,
+    };
+    if (input.idempotencyKey === undefined) {
+      [transaction] = await tx.insert(ledgerTransactions).values(values).returning();
+    } else {
+      [transaction] = await tx
+        .insert(ledgerTransactions)
+        .values(values)
+        .onConflictDoNothing({
+          target: [
+            ledgerTransactions.worldId,
+            ledgerTransactions.operatorId,
+            ledgerTransactions.idempotencyKey,
+          ],
+        })
+        .returning();
+      if (transaction === undefined) {
+        const [existing] = await tx
+          .select()
+          .from(ledgerTransactions)
+          .where(
+            and(
+              eq(ledgerTransactions.worldId, input.worldId),
+              eq(ledgerTransactions.operatorId, input.operatorId),
+              eq(ledgerTransactions.idempotencyKey, input.idempotencyKey),
+            ),
+          )
+          .limit(1);
+        if (existing === undefined) throw new Error("Idempotente Ledger-Transaktion konnte nicht gelesen werden.");
+        return existing;
+      }
+    }
     if (transaction === undefined) {
       throw new Error("Ledger-Transaktion konnte nicht angelegt werden.");
     }

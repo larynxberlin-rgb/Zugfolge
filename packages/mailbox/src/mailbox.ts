@@ -36,6 +36,9 @@ export async function sendMessage(
     readonly messageType: string;
     readonly payload: unknown;
     readonly deadlineAt?: Date;
+    readonly sentAt?: Date;
+    /** Dauerhafter fachlicher Schlüssel; gleiche Welt/Empfänger/Schlüssel wird exakt einmal zugestellt. */
+    readonly idempotencyKey?: string;
   },
 ): Promise<MailboxMessage> {
   const [recipient] = await db
@@ -47,18 +50,38 @@ export async function sendMessage(
     throw new RecipientNotFoundError(input.worldId, input.recipientAccountId);
   }
 
-  const [created] = await db
-    .insert(mailboxMessages)
-    .values({
-      worldId: input.worldId,
-      recipientAccountId: input.recipientAccountId,
-      messageType: input.messageType,
-      payload: input.payload,
-      deadlineAt: input.deadlineAt,
-    })
-    .returning();
+  const values = {
+    worldId: input.worldId,
+    recipientAccountId: input.recipientAccountId,
+    messageType: input.messageType,
+    payload: input.payload,
+    deadlineAt: input.deadlineAt,
+    sentAt: input.sentAt,
+    idempotencyKey: input.idempotencyKey,
+  };
+  const [created] = input.idempotencyKey === undefined
+    ? await db.insert(mailboxMessages).values(values).returning()
+    : await db
+        .insert(mailboxMessages)
+        .values(values)
+        .onConflictDoNothing({
+          target: [mailboxMessages.worldId, mailboxMessages.recipientAccountId, mailboxMessages.idempotencyKey],
+        })
+        .returning();
   if (created === undefined) {
-    throw new Error("Nachricht konnte nicht zugestellt werden.");
+    const [existing] = await db
+      .select()
+      .from(mailboxMessages)
+      .where(
+        and(
+          eq(mailboxMessages.worldId, input.worldId),
+          eq(mailboxMessages.recipientAccountId, input.recipientAccountId),
+          eq(mailboxMessages.idempotencyKey, input.idempotencyKey!),
+        ),
+      )
+      .limit(1);
+    if (existing === undefined) throw new Error("Nachricht konnte nicht zugestellt werden.");
+    return existing;
   }
   return created;
 }

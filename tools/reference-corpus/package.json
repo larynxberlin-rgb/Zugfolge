@@ -1,0 +1,16 @@
+{
+  "name": "@zugfolge/reference-corpus",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Technische Fahrzeitreferenz, GTFS-Fahrplan-Holdout und Signaturprüfung",
+  "license": "LicenseRef-PolyForm-Shield-1.0.0",
+  "scripts": {
+    "build": "pnpm --filter @zugfolge/gtfs build",
+    "typecheck": "node --check cli.mjs && node --check gtfs.mjs && node --check reference-corpus.mjs",
+    "test": "node --test reference-corpus.test.mjs"
+  },
+  "dependencies": {
+    "@zugfolge/gtfs": "workspace:*"
+  }
+}

@@ -1,10 +1,9 @@
 /**
  * Aufbewahrungsfristen (M2.6): je Datenkategorie, wie lange sie nach dem
- * auslösenden Ereignis aufbewahrt wird. Ein automatischer Räumlauf, der diese
- * Fristen tatsächlich durchsetzt, ist nicht Teil dieses Milestones — dafür
- * fehlt bis zur Betriebsreife (M9.5) ein Scheduler. `retentionDeadline` macht
- * die Frist trotzdem schon jetzt nachrechenbar und testbar, statt sie nur als
- * Prosa in einem Dokument zu behaupten.
+ * auslösenden Ereignis aufbewahrt wird. `purgeExpiredAccountData` setzt die
+ * Kontofrist technisch um; der Produktionsserver plant diesen idempotenten
+ * Lauf täglich ein. `retentionDeadline` macht jede Frist zusätzlich
+ * nachrechenbar und testbar.
  */
 
 export type RetentionCategory = "account" | "worldAccess" | "mailboxMessage" | "domainEvent" | "ledger";

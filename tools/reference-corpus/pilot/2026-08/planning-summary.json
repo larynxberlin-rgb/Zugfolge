@@ -1,0 +1,37 @@
+{
+  "schema": "zugfolge-gtfs-planning-summary/v1",
+  "snapshotHash": "cadf60a49aaf2753e34a0d3ab29ed71917debb1c06017ee588ce3afc08663a7f",
+  "sourceArchiveSha256": "0c30da4378f24e287df5cdda9fa1fc12e982318f9353dca3d114642777702650",
+  "serviceDates": ["20260810", "20260811", "20260812", "20260813", "20260814"],
+  "patterns": [
+    { "id": "sp-1fbe5af23f862b6ce8e1", "lineId": "S5", "from": "Halle(Saale)Hbf", "to": "Leipzig Hbf (tief)", "journeyCount": 121, "medianHeadwaySeconds": 3600, "distanceMeters": 36400, "peakVehicles": 2 },
+    { "id": "sp-db0d714c25483d324e3d", "lineId": "S5", "from": "Leipzig Hbf (tief)", "to": "Halle(Saale)Hbf", "journeyCount": 110, "medianHeadwaySeconds": 3600, "distanceMeters": 36400, "peakVehicles": 2 },
+    { "id": "sp-4020894c9d3a95d6d24b", "lineId": "S5X", "from": "Halle(Saale)Hbf", "to": "Leipzig Hbf (tief)", "journeyCount": 85, "medianHeadwaySeconds": 3600, "distanceMeters": 36400, "peakVehicles": 1 },
+    { "id": "sp-592137de27fabb3cdfa1", "lineId": "S5X", "from": "Leipzig Hbf (tief)", "to": "Halle(Saale)Hbf", "journeyCount": 85, "medianHeadwaySeconds": 3600, "distanceMeters": 36400, "peakVehicles": 1 }
+  ],
+  "lot": {
+    "id": "lot-fdf4b64f36427e846cb0",
+    "lineIds": ["S5", "S5X"],
+    "sizeTrainKmPerDay": 2920,
+    "attractiveness": 8140,
+    "smallLot": false,
+    "sampleServiceDays": 5,
+    "totalTrainMeters": "14596400",
+    "totalStops": "1604",
+    "totalServiceSeconds": "605940",
+    "totalEnergyWh": "116771200",
+    "peakVehicles": 6,
+    "facilityMinutesPerDay": 270,
+    "overnightUnits": 6,
+    "protectionUnits": 6,
+    "requirements": {
+      "minimumSeats": 200,
+      "minimumMaximumSpeedKph": 160,
+      "firstClassBasisPoints": 0,
+      "accessible": true,
+      "bicyclePlaces": 8,
+      "wheelchairPlaces": 2,
+      "requiredEquipment": ["passenger-information"]
+    }
+  }
+}

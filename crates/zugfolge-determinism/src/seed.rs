@@ -223,4 +223,14 @@ mod tests {
             seed.named_substream("tender").next_u64(),
         );
     }
+
+    #[test]
+    fn golden_vector_bleibt_sprachuebergreifend_stabil() {
+        // Derselbe Vektor steht in packages/economy/src/m6.test.ts. Damit
+        // brechen Rust und TypeScript bei jeder Byte-/Endian-Abweichung.
+        let mut release = WorldSeed::new(42, 0).substream(Substream::TenderRelease);
+        let mut profile = WorldSeed::new(42, 0).substream(Substream::TenderProfile);
+        assert_eq!(release.next_u64(), 15_648_887_706_766_360_790);
+        assert_eq!(profile.next_u64(), 2_062_826_105_575_757_761);
+    }
 }

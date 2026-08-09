@@ -28,6 +28,12 @@ minimumReleaseAge: 1440
 # ausschließlich von npmjs.org, dort ist der Zeitstempel immer vorhanden.
 minimumReleaseAgeIgnoreMissingTime: false
 
+# `drizzle-kit` zieht über den veralteten @esbuild-kit-Loader noch eine
+# verwundbare 0.18-Version ein. Die Transform-API ist kompatibel; erzwinge
+# deshalb die erste im Projekt bereits bewährte, gepatchte Linie.
+overrides:
+  "esbuild@<=0.24.2": "0.25.12"
+
 # Ausnahmen gehören einzeln begründet, nicht pauschal:
 # minimumReleaseAgeExclude:
 #   - paket@1.2.3

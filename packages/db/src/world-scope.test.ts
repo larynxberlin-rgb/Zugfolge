@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import * as schema from "./schema/index.js";
 import { worlds } from "./schema/index.js";
-import { worldEventLog } from "./world-scope.js";
+import { EventSequenceError, worldEventLog } from "./world-scope.js";
 
 /**
  * Der automatisierte Isolationsnachweis aus M2.2: Zwei Welten teilen sich
@@ -82,7 +82,21 @@ describe("Weltisolation des Event-Logs (M2.2)", () => {
       "welt.angelegt",
       "zug.abgefahren",
     ]);
-    expect(() => logA.appendBatch([{sequence:4,eventType:"lücke",payload:{},occurredAt:new Date("2026-01-01T07:00:00Z")},{sequence:6,eventType:"lücke",payload:{},occurredAt:new Date("2026-01-01T07:01:00Z")}])).toThrow("Sequenzlücke");
+    await expect(
+      logA.appendBatch([
+        { sequence: 4, eventType: "lücke", payload: {}, occurredAt: new Date("2026-01-01T07:00:00Z") },
+        { sequence: 6, eventType: "lücke", payload: {}, occurredAt: new Date("2026-01-01T07:01:00Z") },
+      ]),
+    ).rejects.toBeInstanceOf(EventSequenceError);
+    await expect(
+      logA.append({ sequence: 99, eventType: "startlücke", payload: {}, occurredAt: new Date("2026-01-01T07:00:00Z") }),
+    ).rejects.toMatchObject({ message: expect.stringContaining("erwartet Sequenz 3") });
     await expect(logA.append({sequence:2,eventType:"doppelt",payload:{},occurredAt:new Date("2026-01-01T08:00:00Z")})).rejects.toThrow();
+    await expect(
+      logA.appendBatch([
+        { sequence: 3, eventType: "drei", payload: {}, occurredAt: new Date("2026-01-01T09:00:00Z") },
+        { sequence: 4, eventType: "vier", payload: {}, occurredAt: new Date("2026-01-01T09:01:00Z") },
+      ]),
+    ).resolves.toHaveLength(2);
   });
 });

@@ -63,12 +63,16 @@ Ergebnis vorzeigbar ist. Bislang erledigt:
   mit Herkunft, Lizenz, Prüfsumme und Confidence je Attribut, siehe
   [`betriebsgraph.md`](betriebsgraph.md) Abschnitt 17 und
   [`crates/zugfolge-infra/src/release.rs`](../crates/zugfolge-infra/src/release.rs);
-- **M1.13** — Referenzkorpus und Abweichungsreport gegen reale Fahrzeiten mit
-  definierter Toleranz, siehe [`betriebsgraph.md`](betriebsgraph.md)
-  Abschnitt 18 und
-  [`crates/zugfolge-infra/src/reference.rs`](../crates/zugfolge-infra/src/reference.rs).
-
-Damit ist **M1 abgeschlossen**: Betriebsgraph und Infra-Release-Pipeline stehen.
+M1.13 ist **in Arbeit**: Werkzeug, echter GTFS.DE-Capture, Rohdaten-Hashes,
+Trennung von technischer Referenz, Haltezeit und Fahrplanreserve,
+Abweichungsreport sowie Ed25519-Gate stehen. Der korrigierte Pilotlauf nutzt
+eine manuelle Trassenfinder-Einzelreferenz von 1.260 Sekunden und besteht nach
+deterministischer Abschnittskalibrierung mit 1.263 Sekunden. Er bleibt jedoch
+korrekt `calibration-only`, weil derselbe Wert für Kalibrierung und Vergleich
+dient. Für den M1-Gesamtbeweis fehlen eine unabhängige Validierung auf
+belastbaren Infrastrukturprofilen und das mit dem Release-Schlüssel signierte
+Artefakt. Siehe
+[`referenzkorpus.md`](referenzkorpus.md).
 
 - **M2.1** — Keycloak-Integration, Konten, Rollen, Weltzugänge, siehe
   [`weltgeruest.md`](weltgeruest.md), [`packages/identity`](../packages/identity)
@@ -174,12 +178,21 @@ Alle drei sind mit M3.1 bis M3.4 abgearbeitet; die Zuordnung steht bei M3.
 | 1.10 | Fahrdynamik und Fahrzeitrechner → vorberechnete **ganzzahlige** Fahrzeittabellen je Zugcharakteristik | L | erledigt |
 | 1.11 | **Anlagenkataster**: Werkstätten, Behandlungs- und Waschanlagen, Tankstellen, Entsorgungsanlagen, Abstellgleise — mit Kapazität, Öffnungszeit, Nutzlänge, Baureihenkompetenz | M | erledigt |
 | 1.12 | `InfraRelease` als unveränderliches, versioniertes Artefakt mit Herkunft, Lizenz, Checksumme und Confidence je Attribut | M | erledigt |
-| 1.13 | Referenzkorpus Leipzig–Halle–Erfurt und Abweichungsreport gegen reale Fahrzeiten | M | erledigt |
+| 1.13 | Technische Fahrzeitreferenz, GTFS-Fahrplan-Holdout und Abweichungsreport Leipzig–Halle–Erfurt | M | in Arbeit |
 
 > **Beweis:** Ein signierter `InfraRelease` der Pilotregion, dessen berechnete
 > Fahrzeiten innerhalb definierter Toleranz zur Referenz liegen — begleitet von
 > einem Abdeckungsreport, der je Streckenabschnitt offenlegt, worauf die
 > Qualitätsklasse beruht.
+
+> **Audit-Hinweis:** Dieser Beweis ist noch offen. Der automatisierte,
+> lizenzgeprüfte Weg von GTFS-Sollplänen bis zum Signatur-Gate ist umgesetzt,
+> und ein echter S5X-Holdout mit 85 Fahrten liegt vor. Der fehlerhafte alte
+> Vergleich ist korrigiert; die Trassenfinder-Kalibrierung besteht mit +3
+> Sekunden. Offen sind die davon unabhängige Validierung auf belastbaren
+> Infrastruktur- und Fahrzeugwerten sowie die Signatur durch den
+> Release-Verantwortlichen. Das Gate weist den aktuellen `calibration-only`-
+> Report deshalb trotz bestandener Toleranz zurück.
 
 **M1.1 trägt:** `crates/zugfolge-infra` beschreibt Betriebsstellen, Kanten,
 Gleise, Bahnsteige, Elektrifizierung, Zugsicherung, Vmax-Bänder und Neigung,
@@ -308,17 +321,21 @@ gesichert; mit M1.12 pinnt `rust-toolchain.toml` zusätzlich die Rust-Version,
 damit die Reproduzierbarkeit nicht an der Toolchain hängt. Siehe
 `betriebsgraph.md` Abschnitt 17.
 
-**M1.13 trägt:** Der `ReferenceCorpus` hält Referenzläufe — je ein Fahrweg mit
-seiner **realen** Fahrzeit —, und der `DeviationReport` stellt jeder Referenz
-die aus dem Release berechnete Fahrzeit (M1.10) gegenüber und prüft sie gegen
-eine `Tolerance` aus absolutem Sockel und relativem Anteil. `docs/daten.md` 3
-verbietet eine Präzisionswahrheit; verglichen wird deshalb gegen eine
-**definierte Toleranz**, ein Größenordnungsabgleich. Wie M1.5 bis M1.8 ist das
-Verfahren **kein Import**: Der Trassenfinder steht auf `entwicklung` (E10,
-`docs/rechte.md` 3), seine Werte sind unverbindliche Richtwerte — M1.13 rechnet
-mit gegebenen Referenzfahrzeiten, gleich woher sie stammen, und meldet einen
-unbefahrbaren Fahrweg als Fehler, statt eine erfundene Abweichung auszuweisen.
-Siehe `betriebsgraph.md` Abschnitt 18.
+**M1.13 trägt:** `tools/reference-corpus` erfasst Sollfahrpläne aus dem unter CC
+BY 4.0 freigegebenen GTFS.DE-Regionalverkehrsfeed, hasht ZIP und Tabellen und
+paart nur Halte derselben `trip_id`. Linie, Richtung, Haltefolge und
+`TrainCharacteristics` gehören zum Gruppenschlüssel. GTFS-P20, Median,
+Mittelwert und Haltezeit bleiben ausdrücklich Fahrplanwerte; die technische
+Referenz stammt getrennt aus einer manuell protokollierten
+Trassenfinder-Einzelabfrage. Der Pilot-`InfraRelease`
+`994ff2a6cc06bc9ce324f3691d30645765d574f44f09ea4f102e44c1ccd536d3`
+rechnet nach deterministischer Abschnittskalibrierung 1.263 statt 1.260
+Sekunden. Der `DeviationReport` besteht bei ±63 Sekunden, trägt aber
+`qualification: calibration-only`; `releaseQualified` bleibt falsch und das
+Ed25519-Gate blockiert die Signatur. So werden Kalibrierung und unabhängige
+Release-Validierung nicht verwechselt. Der Trassenfinder bleibt auf
+`entwicklung` (E10). Siehe `betriebsgraph.md` Abschnitt 18 und
+[`referenzkorpus.md`](referenzkorpus.md).
 
 Ausführlich: [`betriebsgraph.md`](betriebsgraph.md).
 
@@ -433,7 +450,7 @@ sich vollständig auskunfts- und löschbar behandeln. Siehe
 | 3.7 | Ad-hoc-Trassen aus Restkapazität, Stornierung, Verfall bei Nichtnutzung | M | erledigt |
 | 3.8 | Rahmenverträge mit Kapazitätsdeckel | M | erledigt |
 | 3.9 | **Gestaltungssystem konkretisieren** (`design.md` 2.7): Farbwerte gegen reale Datendichte prüfen, Komponentenbibliothek, Icon-Set, beide Dichtestufen. Erste echte Oberfläche, deshalb hier und nicht früher | L | erledigt |
-| 3.10 | Bildfahrplan-UI, Sperrzeitentreppe, Konflikterklärung im Client — Konvention vor Originalität | L | erledigt |
+| 3.10 | Bildfahrplan-UI, Sperrzeitentreppe, Konflikterklärung im Client — Konvention vor Originalität | L | in Arbeit |
 
 > **Beweis:** Zwei Spieler beantragen konkurrierende Trassen. Das System
 > entscheidet nachvollziehbar, bietet eine Alternative an, und die Entscheidung
@@ -499,7 +516,7 @@ abgeschlossen.
 | 4.3 | Verspätungs**propagation**: Regelwiderstände, Haltezeiten, Anschlussverzug. Ereignisursachen kommen erst in M8 — hier geht es um Fortpflanzung, nicht um Entstehung | L | erledigt |
 | 4.4 | **Dispositionsschnittstelle im Kern**: definierter Entscheidungspunkt je Ereignis, zunächst mit konservativem Standardverhalten. Macht M7 zu einer Implementierung statt zu einer Operation am offenen Herzen | M | erledigt |
 | 4.5 | Regionsübergabe mit Bestätigungsprotokoll | M | erledigt |
-| 4.6 | Delta-Streaming: Initialsnapshot, Sequenz-Deltas, Interpolation im Client | M | erledigt |
+| 4.6 | Delta-Streaming: Initialsnapshot, Sequenz-Deltas, Interpolation im Client | M | in Arbeit |
 | 4.7 | Eigene Dark-Vector-Tiles, Pipeline → PMTiles — Netz zurückhaltend, Verkehr dominant; ausgeschlossene Netze als blasse Kontextlinien | M | erledigt |
 | 4.8 | Livemap-Frontend inklusive Zuglaufansicht und Sichtbarkeitsregeln; Zustandsdarstellung nach `design.md` 2.4, **Normalzustand farblos** | L | erledigt |
 | 4.9 | Event-Log, Replay, Determinismus-Test in CI | M | erledigt |
@@ -593,12 +610,13 @@ Umlauf-, Personal-, Wartungs- oder Versorgungsverstoß.
 | 6.2 | Kostenarten und Kostenstellen auf dem Ledger-Kern aus M2.4 | M | erledigt |
 | 6.3 | **`WorldProfile`** (E18): Weltlaufzeit, abgeleitete Fahrplanperiode, Vertragslaufzeit, Ausschreibungsvorlauf, Staffelung der Vertragsenden | M | erledigt |
 | 6.3a | **Vergabekalender** (`wirtschaft.md` 3.3): beim Weltstart hält der Eigenbetrieb alle Lose; gleichmäßige Fenster über die erste Welthälfte, geschichtet zufällige Zuordnung aus Seed-Substream `tender_release`, vollständig veröffentlicht. **Prüfung beim Weltentwurf, dass Erst- und Wiedervergabe sich überlappen** | M | erledigt |
+| 6.3b | **GTFS-Angebotsplanung**: aktive Fahrten auf den Betriebsgraphen binden, stabile Fahrtenbilder und verbundene Lose bilden; Mengengerüst und Fahrzeugvorgaben serverseitig aus einem gehashten Snapshot ableiten | L | erledigt |
 | 6.4 | Ausschreibungsgenerator: Leistungsbeschreibung, Qualitätsanforderungen, Laufzeit aus dem `WorldProfile` | M | erledigt |
 | 6.4a | **Vergabeprofil** (`wirtschaft.md` 3.7, E21): je Ausschreibung ein `TenderProfile` — Wertungsgewichtung, Anforderungs- und Pönaleschwerpunkt, Sonderauflagen — geschichtet zufällig aus Seed-Substream `tender_profile`, aus dem versionierten Katalog in M6.1 gezogen und in der Leistungsbeschreibung veröffentlicht. **Jeder Hebel muss den E19-Test bestehen; kein reaktiver Wiederholungswächter** | M | erledigt |
 | 6.5 | **Auskömmlichkeitsgrenze**: vor Angebotsöffnung veröffentlicht, deterministisch aus `EconomyRelease` berechnet | M | erledigt |
 | 6.6 | Angebotsabgabe mit wenigen Feldern (E19): Bestellerentgelt, Fahrzeugkonzept, optionale Qualitätszusagen. **Angebotsfrist 3–7 Tage, kleine Lose 24–48 Stunden, Zuschlag sofort bei Fristende.** Eigene Wertungsaufschlüsselung vor Abgabe sichtbar; Angebotsassistent als Automatikstufe | L | erledigt |
 | 6.6a | **Fahrzeugvorgaben der Ausschreibung**: Mindestsitzplätze, Klassenanteil, Barrierefreiheit, Fahrrad- und Rollstuhlplätze, Ausstattung — geprüft gegen die Fahrzeugkonfiguration aus M5.1a | M | erledigt |
-| 6.7 | **Betriebsübergang** (`wirtschaft.md` 3): Mobilisierungsphase mit Nachweispflicht auf Fahrzeuge, Personal und Trassen; Altbetreiber fährt mit vollen Pflichten bis zum Fahrplanstichtag; nahtlose Fortsetzung, wenn der Bisherige gewinnt; Eigenbetrieb plus Vertragsstrafe, wenn die Mobilisierung scheitert | L | erledigt |
+| 6.7 | **Betriebsübergang** (`wirtschaft.md` 3): Mobilisierungsphase mit Nachweispflicht auf Fahrzeuge, Personal und Trassen; Altbetreiber fährt mit vollen Pflichten bis zum Fahrplanstichtag; nahtlose Fortsetzung, wenn der Bisherige gewinnt; Eigenbetrieb plus Vertragsstrafe, wenn die Mobilisierung scheitert | L | in Arbeit |
 | 6.8 | Verkehrsvertrag im Betrieb: Bestellerentgelt, Bonus, Pönale, Nachweise | M | erledigt |
 | 6.9 | **Eigenbetrieb**: Übernahme, Fahrzeugpool, konservatives Standard-Regelwerk, Kennzeichnung auf der Livemap | L | erledigt |
 | 6.10 | **Nachbesserungsleiter**: Notvergabe auf zwei Perioden befristet, danach Neuausschreibung mit verbessertem Paket | M | erledigt |
@@ -618,14 +636,18 @@ Umlauf-, Personal-, Wartungs- oder Versorgungsverstoß.
 > greifen. Der Übergang selbst passiert an einem Stichtag, ohne dass ein
 > einziger Zug ausfällt.
 
-**M6.1 bis M6.14 tragen.** `packages/economy` implementiert nicht nur die
+**M6.1 bis M6.14 tragen auf Domänenebene.** `packages/economy` implementiert nicht nur die
 Datentypen, sondern den vollständigen Ablauf: Ein kanonisch gehashter und an
 die Welt gepinnter `EconomyRelease` validiert Kostensätze und Profilkatalog.
 `WorldProfile` leitet die vier Weltzuschnitte ab; der geschichtete,
 reihenfolgeunabhängige Vergabekalender verteilt jedes Los genau einmal und
 weist einen Weltentwurf ohne Überlappung von Erst- und Wiedervergabe zurück.
 Die zwei getrennten Seed-Ströme `tender_release` und `tender_profile` sind im
-Determinismus-Crate verankert.
+Determinismus-Crate verankert. `packages/gtfs` liefert die zuvor fehlende
+Herkunft von Linien und Losen: Kalender, Fahrten und Frequenzen werden gegen
+eine explizite Infrastrukturzuordnung normalisiert; daraus entstehen stabile,
+gehashte Fahrtenbilder und Los-Mengengerüste. Technische Ausschreibungswerte
+können nicht mehr vom Client eingeschleust werden.
 
 Der Ausschreibungsablauf berechnet und veröffentlicht die
 Auskömmlichkeitsgrenze aus dem Release, erzwingt die kurzen Fristen, prüft die
@@ -652,8 +674,11 @@ befristete Beschränkung auf kleine Lose durch. `m6.test.ts`,
 `workflow.test.ts` und `platform-adapters.test.ts` führen diese Kette
 einschließlich aller fünf Eskalationsstufen, echter Ledgerbuchung und echter
 Postfachzustellung als Abschlussbeweis aus. Die unabhängige
-Anforderung-zu-Nachweis-Matrix steht in [`m6-audit.md`](m6-audit.md). Damit ist
-M6 vollständig abgeschlossen.
+Anforderung-zu-Nachweis-Matrix steht in [`m6-audit.md`](m6-audit.md). Der
+persistente Frist-/Outbox-Worker ist in
+[`economy-runtime.md`](economy-runtime.md) dokumentiert. M6.7 bleibt bis zum
+Produktivnachweis des Rust-Single-Writers bewusst `in Arbeit`; M6 ist daher
+noch nicht als vollständiger Betriebsbeweis abgeschlossen.
 
 ---
 

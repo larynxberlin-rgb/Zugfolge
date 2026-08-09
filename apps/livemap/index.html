@@ -1,1 +1,25 @@
-<div id="root"></div><script type="module" src="/src/main.ts"></script>
+<div id="root">
+  <main>
+    <header>
+      <span class="wordmark">ZUGFOLGE</span>
+      <span>Livemap · Welt Leipzig–Halle–Erfurt</span>
+      <time>verbinde …</time>
+    </header>
+    <section class="workspace">
+      <div class="map" aria-label="Livemap">
+        <svg viewBox="0 0 1000 520" role="img">
+          <title>Streckennetz und aktuelle Zugpositionen</title>
+          <path class="context" d="M30 430 L200 350 L370 365 L520 250 L750 180 L970 70"></path>
+          <path class="rail" d="M60 420 L260 330 L450 345 L620 220 L940 90"></path>
+          <path class="rail secondary" d="M450 345 L590 440 L820 460"></path>
+          <g id="trains"></g>
+        </svg>
+        <div class="legend">
+          <span>● Betrieb</span><span class="delay">● Abweichung</span><span class="contextText">― Kontextnetz</span>
+        </div>
+      </div>
+      <aside id="details"><p class="eyebrow">ZUGLAUF</p><p>Eine Zugfahrt auswählen.</p></aside>
+    </section>
+  </main>
+</div>
+<script type="module" src="/src/main.ts"></script>

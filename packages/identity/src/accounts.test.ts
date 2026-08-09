@@ -8,6 +8,7 @@ import {
   AccessRevokedError,
   AccountNotFoundError,
   AuthorizationError,
+  getAccount,
   grantRole,
   listAccountsForSubject,
   listAccountsInWorld,
@@ -87,6 +88,12 @@ describe("requestWorldAccess", () => {
     await expect(
       requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-anna", displayName: "Anna" }),
     ).rejects.toBeInstanceOf(AccessRevokedError);
+    await expect(
+      getAccount(db, { worldId: WORLD_LHE, keycloakSubject: "kc-anna" }),
+    ).rejects.toBeInstanceOf(AccessRevokedError);
+    await expect(
+      listAccountsInWorld(db, { worldId: WORLD_LHE, requestingKeycloakSubject: "kc-anna" }),
+    ).rejects.toBeInstanceOf(AccessRevokedError);
   });
 });
 
@@ -98,6 +105,7 @@ describe("Weltisolation der Kontoliste (Beweis von M2)", () => {
     const roster = await listAccountsInWorld(db, { worldId: WORLD_LHE, requestingKeycloakSubject: "kc-anna" });
 
     expect(roster.map((account) => account.displayName).sort()).toEqual(["Anna", "Ben"]);
+    expect(roster.every((account) => !("keycloakSubject" in account))).toBe(true);
   });
 
   it("ein Konto aus einer anderen Welt taucht in der Liste nicht auf", async () => {
@@ -193,5 +201,16 @@ describe("listAccountsForSubject", () => {
     const memberships = await listAccountsForSubject(db, "kc-anna");
 
     expect(memberships.map((account) => account.worldId).sort()).toEqual([WORLD_LHE, WORLD_MIDDLE_GERMANY].sort());
+  });
+
+  it("blendet einen widerrufenen Weltzugang aus", async () => {
+    await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-anna", displayName: "Anna" });
+    await revokeWorldAccess(db, {
+      worldId: WORLD_LHE,
+      targetKeycloakSubject: "kc-anna",
+      actingKeycloakSubject: "kc-anna",
+    });
+
+    await expect(listAccountsForSubject(db, "kc-anna")).resolves.toEqual([]);
   });
 });

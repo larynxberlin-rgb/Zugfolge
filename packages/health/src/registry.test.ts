@@ -47,17 +47,49 @@ describe("runHealthChecks", () => {
     expect(report.status).toBe("down");
     expect(report.checks.find((c) => c.name === "bricht")).toMatchObject({
       status: "down",
-      detail: "Verbindung verweigert",
+      code: "check_failed",
     });
+    expect(report.checks.find((c) => c.name === "bricht")).not.toHaveProperty("detail");
     expect(report.checks.find((c) => c.name === "laeuft")).toMatchObject({ status: "ok" });
   });
 
-  it("übernimmt den Freitext einer nicht-Error-Ablehnung als Detail", async () => {
+  it("veröffentlicht auch eine nicht-Error-Ablehnung nicht als Detail", async () => {
     const report = await runHealthChecks([
       check("wirft-string", async () => {
         throw "kaputt";
       }),
     ]);
-    expect(report.checks[0]).toMatchObject({ status: "down", detail: "kaputt" });
+    expect(report.checks[0]).toMatchObject({ status: "down", code: "check_failed" });
+    expect(report.checks[0]).not.toHaveProperty("detail");
+  });
+
+  it("begrenzt eine nie auflösende Prüfung und signalisiert den Abbruch", async () => {
+    let aborted = false;
+    const started = Date.now();
+    const report = await runHealthChecks(
+      [
+        check("haengt", (signal) => {
+          signal?.addEventListener("abort", () => {
+            aborted = true;
+          });
+          return new Promise(() => undefined);
+        }),
+      ],
+      { timeoutMs: 20 },
+    );
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(aborted).toBe(true);
+    expect(report.checks[0]).toMatchObject({ status: "down", code: "timeout" });
+  });
+
+  it("leitet die vollständige Ursache nur an den internen Fehlerkanal", async () => {
+    const errors: unknown[] = [];
+    const secret = new Error("postgres://user:secret@internal/db");
+    const report = await runHealthChecks(
+      [check("db", async () => Promise.reject(secret))],
+      { onError: (_name, error) => errors.push(error) },
+    );
+    expect(errors).toEqual([secret]);
+    expect(JSON.stringify(report)).not.toContain("secret");
   });
 });

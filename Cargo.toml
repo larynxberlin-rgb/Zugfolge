@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "spikes/*", "tools/load"]
+members = ["crates/*", "spikes/*", "tools/load", "tools/reference-model"]
 
 [workspace.package]
 version = "0.0.0"

@@ -32,6 +32,9 @@ export interface AccountRecord {
   readonly roles: readonly Role[];
 }
 
+/** Öffentliches Konto-DTO ohne den externen, korrelierbaren Keycloak-Identifier. */
+export type PublicAccountRecord = Omit<AccountRecord, "keycloakSubject">;
+
 /** Die anfragende Identität hat in dieser Welt (noch) keinen Zugang. */
 export class AccessRevokedError extends Error {
   constructor(worldId: string) {
@@ -68,7 +71,21 @@ async function findAccount(
   db: IdentityDatabase,
   worldId: string,
   keycloakSubject: string,
+  requireActiveAccess = true,
 ): Promise<AccountRecord | undefined> {
+  if (requireActiveAccess) {
+    const [access] = await db
+      .select({ status: worldAccesses.status })
+      .from(worldAccesses)
+      .where(and(eq(worldAccesses.worldId, worldId), eq(worldAccesses.keycloakSubject, keycloakSubject)))
+      .limit(1);
+    if (access?.status === "revoked") {
+      throw new AccessRevokedError(worldId);
+    }
+    if (access === undefined || access.status !== "active") {
+      return undefined;
+    }
+  }
   const [row] = await db
     .select()
     .from(accounts)
@@ -91,6 +108,18 @@ export async function getAccount(
   input: { readonly worldId: string; readonly keycloakSubject: string },
 ): Promise<AccountRecord | undefined> {
   return findAccount(db, input.worldId, input.keycloakSubject);
+}
+
+/**
+ * Interner Verwaltungszugriff auf ein historisches Konto. Darf niemals als
+ * Autorisierungsprüfung verwendet werden; er ist ausschließlich für
+ * Datenschutz-Purge und ausdrücklich administrative Historienpflege gedacht.
+ */
+export async function getAccountIncludingRevoked(
+  db: IdentityDatabase,
+  input: { readonly worldId: string; readonly keycloakSubject: string },
+): Promise<AccountRecord | undefined> {
+  return findAccount(db, input.worldId, input.keycloakSubject, false);
 }
 
 /**
@@ -239,13 +268,30 @@ export async function grantRole(
 export async function listAccountsInWorld(
   db: IdentityDatabase,
   input: { readonly worldId: string; readonly requestingKeycloakSubject: string },
-): Promise<readonly AccountRecord[]> {
+): Promise<readonly PublicAccountRecord[]> {
   const requester = await findAccount(db, input.worldId, input.requestingKeycloakSubject);
   if (requester === undefined) {
     throw new AuthorizationError(`Kein Konto in Welt '${input.worldId}' — Kontoliste nicht sichtbar.`);
   }
 
-  const rows = await db.select().from(accounts).where(eq(accounts.worldId, input.worldId));
+  const rows = await db
+    .select({
+      id: accounts.id,
+      worldId: accounts.worldId,
+      displayName: accounts.displayName,
+      createdAt: accounts.createdAt,
+      erasedAt: accounts.erasedAt,
+    })
+    .from(accounts)
+    .innerJoin(
+      worldAccesses,
+      and(
+        eq(worldAccesses.worldId, accounts.worldId),
+        eq(worldAccesses.keycloakSubject, accounts.keycloakSubject),
+        eq(worldAccesses.status, "active"),
+      ),
+    )
+    .where(eq(accounts.worldId, input.worldId));
   return Promise.all(rows.map(async (row) => ({ ...row, roles: await rolesOf(db, input.worldId, row.id) })));
 }
 
@@ -254,6 +300,22 @@ export async function listAccountsForSubject(
   db: IdentityDatabase,
   keycloakSubject: string,
 ): Promise<readonly AccountRecord[]> {
-  const rows = await db.select().from(accounts).where(eq(accounts.keycloakSubject, keycloakSubject));
-  return Promise.all(rows.map(async (row) => ({ ...row, roles: await rolesOf(db, row.worldId, row.id) })));
+  const rows = await db
+    .select({ account: accounts })
+    .from(accounts)
+    .innerJoin(
+      worldAccesses,
+      and(
+        eq(worldAccesses.worldId, accounts.worldId),
+        eq(worldAccesses.keycloakSubject, accounts.keycloakSubject),
+        eq(worldAccesses.status, "active"),
+      ),
+    )
+    .where(eq(accounts.keycloakSubject, keycloakSubject));
+  return Promise.all(
+    rows.map(async ({ account }) => ({
+      ...account,
+      roles: await rolesOf(db, account.worldId, account.id),
+    })),
+  );
 }

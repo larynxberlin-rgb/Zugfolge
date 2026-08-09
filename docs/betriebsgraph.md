@@ -587,32 +587,49 @@ dessen berechnete Fahrzeiten innerhalb definierter Toleranz zur Referenz
 liegen — begleitet von einem Abdeckungsreport" (`docs/milestones.md`).
 `CLAUDE.md` nennt dasselbe als Arbeitsprinzip: **Golden-Master-Tests gegen reale
 Fahrplanausschnitte der Pilotregion mit definierter Toleranz.** M1.13 liefert
-das Verfahren: Ein `ReferenceCorpus` hält Referenzläufe — je ein Fahrweg mit
-seiner **realen** Fahrzeit —, und ein `DeviationReport` stellt jeder Referenz
-die aus dem Release berechnete Fahrzeit (M1.10) gegenüber und prüft sie gegen
-eine `Tolerance`.
+das Verfahren, trennt dabei aber zwei Ebenen: Eine technische Referenz prüft die
+Fahrdynamik; ein `ReferenceCorpus` hält veröffentlichte Sollfahrzeiten und
+Haltezeiten als Fahrplan-Holdout. Ein `DeviationReport` vergleicht nur
+gleichartig benannte Größen und weist die verbleibende Fahrplanreserve separat
+aus.
 
 **Warum eine Toleranz.** `docs/daten.md` 3 ist unmissverständlich: **keine
-Präzisionswahrheit.** Die Fahrdynamik (M1.10) ist eine vereinfachte Rechnung
-ohne Halte-, Räum- und Fahrstraßenbildezeiten; die Referenz enthält betriebliche
-Zuschläge, die das Modell bewusst nicht kennt. Verglichen wird deshalb gegen
-eine **definierte Toleranz** — ein absoluter Sockel in Sekunden und ein
-relativer Anteil in Promille, der größere gilt. Ein Größenordnungsabgleich, kein
-Sekundenvergleich.
+Präzisionswahrheit.** Fahrdynamik und die manuell abgelesene technische
+Referenz sind vereinfachte, gerundete Rechnungen. Verglichen wird deshalb gegen
+eine **vorab definierte Toleranz** — ein absoluter Sockel in Sekunden und ein
+relativer Anteil, der größere gilt. Halte-, Räum-, Konstruktions- und
+Fahrplanreserve werden nicht durch die Toleranz in das Fahrzeugmodell
+hineingedeutet.
 
-**Kein Import — dieselbe Haltung wie M1.5 bis M1.8.** Die realen Fahrzeiten
-stammen aus einem Fahrplanausschnitt oder aus dem Trassenfinder. Der
-Trassenfinder steht im Quellenregister auf `entwicklung` (`docs/rechte.md` 3,
-`docs/daten.md` 3): Kalibrierwerkzeug der Entwicklung, keine
-Laufzeitabhängigkeit (E10), und seine Werte sind laut Betreiber unverbindliche
-Richtwerte, keine Referenzwahrheit; ob eine automatisierte Abfrage mit
-Speicherung von den Nutzungsbedingungen gedeckt ist, ist ein offener Prüfpunkt
-(`docs/rechte.md` 4). M1.13 liefert deshalb — wie M1.5 für die Neigung — **das
-Verfahren, keinen Import**: Es rechnet mit gegebenen Referenzfahrzeiten, gleich
-woher sie stammen. Sobald ein Fahrplanausschnitt freigegeben ist, füllt er den
-Korpus; an diesem Modul ändert sich dann nichts. Der Report meldet einen Fehler
-weiter, wenn ein Fahrweg gar keine Fahrzeit hat, statt eine erfundene Abweichung
-auszuweisen — die Referenz bleibt dann ungeprüft, nicht stillschweigend
-bestätigt.
+**Fahrplan-Holdout, keine Laufzeitabhängigkeit.** Der statische GTFS.DE-Feed
+„Schienenregionalverkehr Deutschland“ ist unter CC BY 4.0 als `gtfs-de-rv`
+freigegeben (`docs/rechte.md` 3). Der Import speichert Feed-URL, Attribution,
+Konfiguration sowie Hash von ZIP und GTFS-Tabellen. Halte werden nur innerhalb
+derselben `trip_id` gepaart; Linie, Richtung, Haltefolge und
+`TrainCharacteristics` bilden gemeinsam die Vergleichsgruppe. P20, Median und
+Mittelwert heißen ausdrücklich Sollfahrplanwerte. Der technische Wert stammt
+stattdessen aus einer einzelnen manuellen Trassenfinder-Webabfrage. Diese
+Quelle bleibt auf `entwicklung`, wird nicht automatisiert importiert und ist
+kein Dienst im Spiel.
 
-Umsetzung: [`crates/zugfolge-infra/src/reference.rs`](../crates/zugfolge-infra/src/reference.rs).
+**Aktueller Pilotbefund.** Die Trassenfinder-Referenz für Leipzig Hbf (tief) –
+Halle Hbf mit Talent 2, vierteilig, beträgt abschnittsweise 300, 420 und 540
+Sekunden, zusammen 1.260 Sekunden. Das rohe Drei-Segment-Modell mit
+durchgehend 160 km/h ist mit 967 Sekunden zu schnell. Eine deterministische
+Gitterkalibrierung ersetzt die noch fehlenden Geschwindigkeitsbänder
+abschnittsweise durch effektive 83, 116 und 129 km/h. Der daraus gebaute
+`InfraRelease`
+`994ff2a6cc06bc9ce324f3691d30645765d574f44f09ea4f102e44c1ccd536d3`
+rechnet 1.263 Sekunden, also +3 Sekunden bei ±63 Sekunden Toleranz.
+
+Der GTFS-Holdout enthält 85 S5X-Fahrten. Sein P20 beträgt 1.380 Sekunden:
+1.263 Sekunden Modelllauf plus 60 Sekunden GTFS-Haltezeit lassen 57 Sekunden
+Fahrplanreserve sichtbar. Der Report besteht technisch, bleibt aber
+`calibration-only`, weil der Trassenfinder-Wert zum Kalibrieren diente.
+`releaseQualified` ist daher falsch und das Signatur-Gate blockiert. Für M1.13
+fehlen belastbare Detailprofile, eine davon unabhängige Validierung und die
+echte Release-Signatur. Der vollständige Ablauf steht in
+[`referenzkorpus.md`](referenzkorpus.md).
+
+Umsetzung: [`crates/zugfolge-infra/src/reference.rs`](../crates/zugfolge-infra/src/reference.rs)
+und [`tools/reference-corpus`](../tools/reference-corpus).

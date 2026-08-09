@@ -1,0 +1,74 @@
+{
+  "schema": "zugfolge-manual-technical-reference/v1",
+  "source": {
+    "id": "trassenfinder",
+    "operator": "DB InfraGO AG",
+    "serviceUrl": "https://trassenfinder.de/",
+    "capturedAt": "2026-08-09T18:37:22+02:00",
+    "captureMethod": "Manuelle Einzelabfrage in der öffentlichen Weboberfläche; kein API-Abruf und keine Laufzeitabhängigkeit",
+    "registryStatus": "entwicklung"
+  },
+  "query": {
+    "infrastructureYear": 2026,
+    "departureAt": "2026-08-10T16:00:00+02:00",
+    "trafficType": "Schienenpersonennahverkehr mit Triebwagen",
+    "route": [
+      { "ds100": "LL T", "name": "Leipzig Hbf (Tiefgleise)", "role": "start" },
+      { "ds100": "LNW H", "name": "Leipzig Messe Hp", "role": "customer-stop", "dwellSeconds": 60 },
+      { "ds100": "LFLU", "name": "Leipzig/Halle Flughafen", "role": "customer-stop", "dwellSeconds": 60 },
+      { "ds100": "LH", "name": "Halle (Saale) Hbf", "role": "destination" }
+    ],
+    "vehicle": {
+      "selection": "E-Tfz - DB 442 (4-teilig)",
+      "description": "E-Triebwagen Bombardier Talent 2 (4-teilig, 3.030 kW, Streckenklasse B1)",
+      "wagonMassTonnes": 0,
+      "wagonLengthMetres": 0,
+      "maximumSpeedKph": 160,
+      "brakePercentage": 160,
+      "brakePosition": "R+Mg",
+      "protection": ["PZB", "LZB"],
+      "etcs": "ohne"
+    }
+  },
+  "result": {
+    "distanceMetres": 37000,
+    "elapsedSeconds": 1380,
+    "technicalRunningSeconds": 1260,
+    "dwellSeconds": 120,
+    "uninterruptedPassThroughSeconds": 1140,
+    "energyKwhWithStops": 131,
+    "sections": [
+      {
+        "fromDs100": "LL T",
+        "toDs100": "LNW H",
+        "distanceMetres": 6400,
+        "technicalRunningSeconds": 300
+      },
+      {
+        "fromDs100": "LNW H",
+        "toDs100": "LFLU",
+        "distanceMetres": 12500,
+        "technicalRunningSeconds": 420
+      },
+      {
+        "fromDs100": "LFLU",
+        "toDs100": "LH",
+        "distanceMetres": 18100,
+        "technicalRunningSeconds": 540
+      }
+    ]
+  },
+  "precision": {
+    "timeResolutionSeconds": 60,
+    "distanceResolutionMetres": 100,
+    "note": "Die Weboberfläche weist Fahrzeiten in vollen Minuten und Abschnittskilometer gerundet aus. Die Toleranz muss diese Auflösung berücksichtigen."
+  },
+  "usage": {
+    "purpose": "Einmalige Entwicklungs-Kalibrierung und Plausibilisierung des Pilotmodells für Issue #48",
+    "limitations": [
+      "Kein importierter Datensatz und keine Referenzwahrheit; die Werte sind ein unabhängig berechnetes, manuell erzeugtes Einzelbeispiel.",
+      "Die Abfrage qualifiziert keinen produktiven InfraRelease und ersetzt weder eine unabhängige Validierungsstrecke noch die Release-Signatur.",
+      "GTFS-Fahrplanzeiten werden separat als Fahrplan-Holdout ausgewertet und nicht als technische Fahrzeit umetikettiert."
+    ]
+  }
+}

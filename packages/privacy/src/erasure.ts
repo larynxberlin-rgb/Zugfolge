@@ -11,9 +11,16 @@
  * bleibt verboten.
  */
 
-import { accounts } from "@zugfolge/db";
-import { AuthorizationError, getAccount, revokeWorldAccess, type AccountRecord, type IdentityDatabase } from "@zugfolge/identity";
-import { and, eq } from "drizzle-orm";
+import { accountRoles, accounts, worldAccesses } from "@zugfolge/db";
+import {
+  AuthorizationError,
+  getAccount,
+  getAccountIncludingRevoked,
+  revokeWorldAccess,
+  type AccountRecord,
+  type IdentityDatabase,
+} from "@zugfolge/identity";
+import { and, eq, isNotNull, lte } from "drizzle-orm";
 
 import { PersonalDataNotFoundError } from "./export.js";
 
@@ -53,7 +60,10 @@ export async function eraseAccountData(
 ): Promise<AccountRecord> {
   await requireSelfOrWorldAdmin(db, input.worldId, input.actingKeycloakSubject, input.targetKeycloakSubject);
 
-  const target = await getAccount(db, { worldId: input.worldId, keycloakSubject: input.targetKeycloakSubject });
+  const target = await getAccountIncludingRevoked(db, {
+    worldId: input.worldId,
+    keycloakSubject: input.targetKeycloakSubject,
+  });
   if (target === undefined) {
     throw new PersonalDataNotFoundError(input.worldId, input.targetKeycloakSubject);
   }
@@ -70,4 +80,60 @@ export async function eraseAccountData(
     .where(and(eq(accounts.worldId, input.worldId), eq(accounts.id, target.id)));
 
   return { ...target, displayName: ERASED_DISPLAY_NAME, erasedAt: input.erasedAt };
+}
+
+const ACCOUNT_RETENTION_MILLISECONDS = 90 * 24 * 60 * 60 * 1000;
+
+export interface RetentionPurgeResult {
+  readonly purgedAccountIds: readonly string[];
+}
+
+/**
+ * Vollzieht die Datenschutzlöschung nach der 90-Tage-Übergangsfrist. Die
+ * fachliche Konto-ID bleibt für unveränderliche Betriebsbelege erhalten, der
+ * externe Keycloak-Identifier wird jedoch irreversibel durch einen lokalen,
+ * nicht weltübergreifend korrelierbaren Platzhalter ersetzt. Frühere Rollen
+ * werden entfernt; der widerrufene Zugang bleibt als Sperrbeleg erhalten.
+ */
+export async function purgeExpiredAccountData(
+  db: IdentityDatabase,
+  asOf: Date,
+): Promise<RetentionPurgeResult> {
+  const cutoff = new Date(asOf.getTime() - ACCOUNT_RETENTION_MILLISECONDS);
+  const candidates = await db
+    .select({
+      id: accounts.id,
+      worldId: accounts.worldId,
+      keycloakSubject: accounts.keycloakSubject,
+    })
+    .from(accounts)
+    .where(and(isNotNull(accounts.erasedAt), lte(accounts.erasedAt, cutoff)));
+
+  const purgedAccountIds: string[] = [];
+  for (const candidate of candidates) {
+    if (candidate.keycloakSubject.startsWith("erased:")) {
+      continue;
+    }
+    const pseudonymousSubject = `erased:${candidate.id}`;
+    await db.transaction(async (tx) => {
+      await tx
+        .update(worldAccesses)
+        .set({ keycloakSubject: pseudonymousSubject })
+        .where(
+          and(
+            eq(worldAccesses.worldId, candidate.worldId),
+            eq(worldAccesses.keycloakSubject, candidate.keycloakSubject),
+          ),
+        );
+      await tx
+        .update(accounts)
+        .set({ keycloakSubject: pseudonymousSubject })
+        .where(and(eq(accounts.worldId, candidate.worldId), eq(accounts.id, candidate.id)));
+      await tx
+        .delete(accountRoles)
+        .where(and(eq(accountRoles.worldId, candidate.worldId), eq(accountRoles.accountId, candidate.id)));
+    });
+    purgedAccountIds.push(candidate.id);
+  }
+  return { purgedAccountIds };
 }

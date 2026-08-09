@@ -1,0 +1,52 @@
+{
+  "schema": "zugfolge-model-results/v2",
+  "qualification": "calibration-only",
+  "releaseChecksum": "994ff2a6cc06bc9ce324f3691d30645765d574f44f09ea4f102e44c1ccd536d3",
+  "modelInputSha256": "dbbb347c62f4cae0e0c6ad44b58bcae0fa1ae09bffa6990a41bab4509627ab4f",
+  "technicalReference": {
+    "sourceId": "trassenfinder",
+    "artifactSha256": "1de4506127603bceac14f8c1542de35853df214b0dbb09c91e32b067e240b990",
+    "runningSeconds": 1260
+  },
+  "results": [
+    {
+      "groupId": "1a70b02af280bd2e",
+      "characteristicsId": "mdsb-talent2-v1",
+      "calibrationMethod": "per-section-effective-speed-grid-search-v1",
+      "rawRunningSeconds": 967,
+      "runningSeconds": 1263,
+      "dwellSeconds": 60,
+      "modeledTimetableSeconds": 1323,
+      "technicalReferenceSeconds": 1260,
+      "sections": [
+        {
+          "segmentId": "lhe-leipzig-messe",
+          "rawRunningSeconds": 189,
+          "runningSeconds": 301,
+          "effectiveSpeedKph": 83,
+          "dwellAfterSeconds": 0,
+          "technicalReferenceSeconds": 300,
+          "technicalDeviationSeconds": 1
+        },
+        {
+          "segmentId": "lhe-messe-airport",
+          "rawRunningSeconds": 326,
+          "runningSeconds": 421,
+          "effectiveSpeedKph": 116,
+          "dwellAfterSeconds": 60,
+          "technicalReferenceSeconds": 420,
+          "technicalDeviationSeconds": 1
+        },
+        {
+          "segmentId": "lhe-airport-halle",
+          "rawRunningSeconds": 452,
+          "runningSeconds": 541,
+          "effectiveSpeedKph": 129,
+          "dwellAfterSeconds": 0,
+          "technicalReferenceSeconds": 540,
+          "technicalDeviationSeconds": 1
+        }
+      ]
+    }
+  ]
+}

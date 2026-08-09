@@ -1,0 +1,25 @@
+{
+  "schema": "zugfolge-gtfs-capture/v1",
+  "capturedAt": "2026-08-09T05:21:56.026Z",
+  "feedUrl": "https://download.gtfs.de/germany/rv_free/latest.zip",
+  "archiveSha256": "0c30da4378f24e287df5cdda9fa1fc12e982318f9353dca3d114642777702650",
+  "archiveBytes": 11085165,
+  "configSha256": "ec702aed7967465dee80f21b176ccf04de24c6d09368518b85f2109275ea6ac5",
+  "source": {
+    "id": "gtfs-de-rv",
+    "sourceLicense": "CC BY 4.0",
+    "attribution": "Datenquelle: DELFI e.V. / GTFS.DE; durch Zugfolge gefiltert und statistisch ausgewertet; CC BY 4.0",
+    "retrievedAt": "2026-08-09T05:21:56.026Z",
+    "apiVersion": "GTFS static, rv_free/latest.zip"
+  },
+  "files": [
+    { "path": "agency.txt", "sha256": "ee8c84f7786f423c4d759e89e8f4f713f68de86de84b196f595dd616eab7c477", "bytes": 9098 },
+    { "path": "stops.txt", "sha256": "7e1bd9365a09bf72fdb0bbadc23e860a19c27619a3d2ca305dec53194344d001", "bytes": 820153 },
+    { "path": "routes.txt", "sha256": "3f94c0c7d8e8e0f5cc96131d47b505a865a3a0ec115691b24c246910b85f41fa", "bytes": 16703 },
+    { "path": "trips.txt", "sha256": "15322505bc427db0de1fa42e0a1ce201cb687e96f38cc2327e765dc32d1379bf", "bytes": 1606926 },
+    { "path": "stop_times.txt", "sha256": "9282a385bacce89f78831c9550cfb61eeae610aa7cfa824027aa8dd89da01b01", "bytes": 75589779 },
+    { "path": "calendar.txt", "sha256": "dfc339a72172c28ffac37555f477b654cf809efc82e3ca1f0abedfa40b3df8ea", "bytes": 131275 },
+    { "path": "calendar_dates.txt", "sha256": "221021a172ce2ada7be403764c2fd6e3f022e744c05fb602548dc7f13ae160a3", "bytes": 140507 },
+    { "path": "feed_info.txt", "sha256": "e1b2e3c9321b9a602224c660ad6816ef03a6bc2abee7b93dcf53059ff88a29b7", "bytes": 231 }
+  ]
+}

@@ -10,14 +10,16 @@ export type HealthStatus = "ok" | "degraded" | "down";
 
 export interface HealthCheckOutcome {
   readonly status: HealthStatus;
-  /** Freitext für Monitoring-Dienste, etwa eine Fehlermeldung oder Kennzahl. */
+  /** Ausschließlich bereits sanitisiertes, öffentlich freigegebenes Detail. */
   readonly detail?: string;
+  /** Stabiler, nicht sensitiver Maschinen-Code für Alarmierung und Runbooks. */
+  readonly code?: string;
 }
 
 /** Eine einzelne, benannte Prüfung. Wirft sie, zählt das als `down`. */
 export interface HealthCheck {
   readonly name: string;
-  check(): Promise<HealthCheckOutcome>;
+  check(signal?: AbortSignal): Promise<HealthCheckOutcome>;
 }
 
 export interface HealthCheckResult extends HealthCheckOutcome {
@@ -29,4 +31,11 @@ export interface HealthReport {
   /** Der ungünstigste Status aller Prüfungen; `ok` bei einer leeren Liste. */
   readonly status: HealthStatus;
   readonly checks: readonly HealthCheckResult[];
+}
+
+export interface HealthCheckRunOptions {
+  /** Hartes Gesamtbudget je parallel laufender Prüfung. */
+  readonly timeoutMs?: number;
+  /** Interne Fehlerablage; die Ursache erscheint niemals im öffentlichen Bericht. */
+  readonly onError?: (checkName: string, error: unknown) => void;
 }

@@ -1,0 +1,70 @@
+name: Roadmap-Synchronisierung
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/milestones.json"
+      - ".github/scripts/sync-milestones.mjs"
+      - ".github/workflows/milestones.yml"
+      - "docs/milestones.md"
+      - "docs/roadmap-status.md"
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+  issues:
+    types: [closed, reopened]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: roadmap-sync
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Roadmap-Manifest pruefen
+    if: github.event_name != 'issues' && !(github.event_name == 'pull_request' && github.event.action == 'closed')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: node --test .github/scripts/sync-milestones.test.mjs
+      - run: node .github/scripts/sync-milestones.mjs check
+
+  sync:
+    name: GitHub-Milestones und Labels synchronisieren
+    if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'issues' ||
+      (github.event_name == 'pull_request' &&
+       (github.event.action == 'closed' || github.event.action == 'reopened'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: node .github/scripts/sync-milestones.mjs check
+      - name: M0-M14, Labels und Arbeitspakete anwenden
+        run: node .github/scripts/sync-milestones.mjs apply
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Remote-Zustand gegen Manifest pruefen
+        run: node .github/scripts/sync-milestones.mjs check-remote
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

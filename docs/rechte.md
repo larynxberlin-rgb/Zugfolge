@@ -77,6 +77,7 @@ der Überblick; die Spalte `id` ist die Kennung, die auch der Importmarker nennt
 | `stada` | StaDa — Stationsdaten | `freigegeben` | M1.8 |
 | `dem-hoehenmodell` | Digitales Höhenmodell der Pilotregion | `freigegeben` | M1.5 |
 | `trassenfinder` | Trassenfinder — Trassenpreis- und Fahrzeitstruktur | `entwicklung` | M1.13 |
+| `gtfs-de-rv` | GTFS.DE/DELFI — Schienenregionalverkehr Deutschland | `freigegeben` | M1.13 |
 | `trassenfinder-infrastruktur-api` | Trassenfinder-Infrastruktur-API — Betriebsstellen-/Streckensegment-Stammdaten | `freigegeben` | M9 |
 | `entgeltregeln-tps-sps-aps-inb` | Entgeltregeln (TPS, SPS, APS, INB, Anlagen-/Stationspreise) | `gesperrt` | M6.1 |
 | `baustellen-stoerungsfeeds` | reale Baustellen- und Störungsfeeds | `gesperrt` | M8.12 |
@@ -101,6 +102,16 @@ ergänzende Importquelle für Betriebsstellen und Streckensegmente (E22,
 ADR-0022). Streng abgegrenzt vom bestehenden Eintrag `trassenfinder`: Die
 berechneten Fahrzeit- und Trassenpreiswerte der Routensuche bleiben davon
 unberührt auf `entwicklung`.
+
+Für M1.13 ist außerdem `gtfs-de-rv` freigegeben. GTFS.DE veröffentlicht den aus
+DELFI-NeTEx-Daten erzeugten Feed „Schienenregionalverkehr Deutschland“
+kostenfrei und tagesaktuell unter CC BY 4.0. Zugfolge nutzt den Feed
+ausschließlich offline, wahrt Namensnennung und Änderungskennzeichnung und
+versioniert Feed-URL, Abrufkonfiguration, Abrufzeit sowie Hash von ZIP und jeder
+verwendeten Tabelle. P20, Median und Mittelwert sind als eigene Bearbeitung
+und ausdrücklich als **Fahrplanwerte** gekennzeichnet. Sie sind ein Holdout,
+keine technische Mindestfahrzeit. Details stehen in
+[`referenzkorpus.md`](referenzkorpus.md).
 
 **Was blockiert bleibt.** `rinf`, `entgeltregeln-tps-sps-aps-inb` und
 `baustellen-stoerungsfeeds` warten auf eine schriftliche Entscheidung
@@ -130,12 +141,23 @@ Zwei Grenzen gelten unabhängig von den Nutzungsbedingungen:
   unverbindliche Richtwerte aus vereinfachter Berechnung aus. Für einen
   Größenordnungsabgleich richtig, als Referenzwahrheit nicht.
 
-**Der offene Prüfpunkt.** Ob eine **automatisierte** Nutzung mit **Speicherung**
-der Ergebnisse von den Nutzungsbedingungen gedeckt ist, ist ungeklärt. Bis das
-schriftlich beantwortet ist, gilt: nur **manuelle** Kalibrierung gegen einzeln
-erzeugte Beispiele, keine automatisierte Abfrage, keine Ablage von Antworten im
-Repositorium. Sinnvolle Nutzung bleibt: in der Entwicklung gegen ihn kalibrieren
-(M1.13), im Betrieb ohne ihn auskommen.
+**Die verbindliche Projektgrenze.** Der Disclaimer der OpenAPI gestattet die
+API nur zur einzelnen Routenermittlung und schließt insbesondere Analyse oder
+Rekonstruktion der zugrunde liegenden Verfahren sowie Speicherung ohne
+zeitlich unmittelbare Nutzung aus. Deshalb ruft Zugfolge die Routensuche nicht
+automatisiert ab. Bis zu einer ausdrücklichen Betreiberfreigabe gilt:
+
+- nur manuelle Einzelabfragen in der öffentlichen Weboberfläche;
+- nur unmittelbar für eine benannte Entwicklungs-Kalibrierung;
+- im Repository höchstens ein eigenes minimales Ergebnisprotokoll mit
+  Abfrageparametern, gerundeten Kennzahlen, Zeitpunkt und Einschränkungen;
+- keine Rohantwort, kein Screenshot-Archiv und keine systematische Sammlung.
+
+Das Pilotprotokoll für Issue #48 erfüllt diese enge Grenze und ist per Hash an
+genau den Kalibrierlauf gebunden. Es wird nicht als freigegebener Datensatz
+oder Referenzwahrheit dargestellt. Diese konservative Auslegung ist keine
+Rechtsberatung; eine systematische Nutzung bleibt bis zur schriftlichen
+Klärung gesperrt.
 
 Dieser Prüfpunkt betrifft ausschließlich die **berechneten** Werte der
 Routensuche (Fahrzeit, Trassenpreis). Die **Stammdatenressource**

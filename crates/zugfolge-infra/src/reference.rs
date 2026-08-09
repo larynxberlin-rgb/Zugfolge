@@ -10,18 +10,14 @@
 //! aus dem Release (M1.10) **berechnete** Fahrzeit gegenüber und prüft sie
 //! gegen eine [`Tolerance`].
 //!
-//! ## Kein Import — dieselbe Haltung wie M1.5 bis M1.8
+//! ## Freigegebener Offline-Import, keine Laufzeitabhängigkeit
 //!
-//! Die realen Fahrzeiten stammen aus einem Fahrplanausschnitt oder aus dem
-//! Trassenfinder. Der Trassenfinder steht im Quellenregister auf `entwicklung`
-//! (`docs/rechte.md` 3, `docs/daten.md` 3): **Kalibrierwerkzeug der Entwicklung,
-//! keine Laufzeitabhängigkeit** (E10), und seine Werte sind laut Betreiber
-//! unverbindliche Richtwerte, keine Referenzwahrheit. Ob eine automatisierte
-//! Abfrage mit Speicherung von den Nutzungsbedingungen gedeckt ist, ist ein
-//! offener Prüfpunkt. M1.13 liefert deshalb — wie M1.5 für die Neigung — **das
-//! Verfahren, keinen Import**: Es rechnet mit gegebenen Referenzfahrzeiten,
-//! gleich woher sie stammen. Sobald ein Fahrplanausschnitt freigegeben ist,
-//! füllt er den Korpus; an diesem Modul ändert sich dann nichts.
+//! Reale Sollfahrzeiten werden offline aus der unter CC BY 4.0 freigegebenen
+//! GTFS.DE-Regionalverkehrsfeed erfasst (`gtfs-de-rv`). Capture-Manifest,
+//! Attribution, Feed-URL und ZIP-/Tabellen-Hashes machen den Import reproduzierbar; die
+//! Zuordnung zu [`TrainCharacteristics`] ist explizite, geprüfte Konfiguration.
+//! Der Trassenfinder bleibt eine Entwicklungsreferenz und wird nicht importiert.
+//! Kein externer Dienst liegt im Laufzeitpfad des Spiels (E10).
 //!
 //! ## Warum eine Toleranz
 //!

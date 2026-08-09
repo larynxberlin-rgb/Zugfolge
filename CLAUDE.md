@@ -130,14 +130,13 @@ Konzeption abgeschlossen, E1–E22 entschieden, Milestones auf Reihenfolge und
 Vollständigkeit geprüft. **M0 ist abgeschlossen: M0.1 bis M0.5 sind erledigt** —
 ADRs, Monorepo, CI, Determinismus-Testharnisch, Wächter, Glossar, Lizenz-Scan,
 der Wegwerf-Spike zur Sperrzeitentreppe, das Rechte-Gate und der Rechteschutz.
-**M1 ist abgeschlossen: M1.1 bis M1.13 sind erledigt** — das
-Domänenmodell des Betriebsgraphen, die Import-Pipeline OSM-PBF → Rohgraph, der
-Netzfilter, die Abdeckungsmessung, das Neigungsprofil aus dem Höhenmodell, die
-Blockableitung, die Fahrstraßen- und Durchrutschwegableitung, die
-Stationsdaten-Anreicherung, die Zugcharakteristik, Fahrdynamik und
-Fahrzeitrechner, der Anlagenkataster, der `InfraRelease` und der Referenzkorpus
-mit Abweichungsreport stehen in `crates/zugfolge-infra`. Damit ist der
-Betriebsgraph samt Infra-Release-Pipeline vollständig.
+**M1.1 bis M1.12 sind implementiert; M1.13 ist in Arbeit.** Domänenmodell,
+Import-Pipeline, Netzfilter, Abdeckungsmessung, Neigungsprofil, Block- und
+Fahrstraßenableitung, Stationsdaten-Anreicherung, Zugcharakteristik,
+Fahrdynamik, Anlagenkataster und `InfraRelease` stehen. Für M1.13 bestehen die
+korrigierte technische Trassenfinder-Kalibrierung und der getrennte
+GTFS-Fahrplan-Holdout; offen sind eine unabhängige Validierung und die echte
+Release-Signatur. Deshalb ist M1 als Gesamtbeweis noch nicht abgeschlossen.
 **M3 ist abgeschlossen: M3.1 bis M3.10 sind erledigt** — das Sperrzeitenmodell, das
 wiederkehrende Verkehrsangebot mit relativem Belegungsprofil, der Konfliktprüfer
 mit erklärbarem Ergebnis (`crates/zugfolge-conflict`) und der Trassen-Planner

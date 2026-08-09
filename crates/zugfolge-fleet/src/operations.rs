@@ -810,10 +810,7 @@ pub fn assess_automation_quality(
     automatic_cost_cents: i64,
     manual_cost_cents: i64,
 ) -> Result<AutomationQuality, OperationsError> {
-    if automatic_cost_cents <= 0
-        || manual_cost_cents <= 0
-        || manual_cost_cents > automatic_cost_cents
-    {
+    if automatic_cost_cents <= 0 || manual_cost_cents <= 0 {
         return Err(OperationsError::InvalidQualityComparison);
     }
     let permille = u16::try_from(
@@ -828,6 +825,45 @@ pub fn assess_automation_quality(
         permille,
         target_reached: permille >= 850,
     })
+}
+
+/// Leitet den Qualitätsnachweis aus zwei tatsächlich geplanten Varianten ab.
+/// Beide Varianten müssen denselben Bedarf decken; bloße Kostenzahlen ohne
+/// fachlich identische Leistung sind kein belastbarer M5.10-Nachweis.
+pub fn assess_supply_plan_quality(
+    automatic: &SupplyPlan,
+    manual: &[SupplyCandidate],
+) -> Result<AutomationQuality, OperationsError> {
+    let automatic_need = automatic
+        .selected
+        .iter()
+        .try_fold(0_u64, |sum, candidate| {
+            sum.checked_add(candidate.need_reduction)
+        })
+        .ok_or(OperationsError::Overflow)?;
+    let manual_need = manual
+        .iter()
+        .try_fold(0_u64, |sum, candidate| {
+            sum.checked_add(candidate.need_reduction)
+        })
+        .ok_or(OperationsError::Overflow)?;
+    if automatic_need == 0 || automatic_need != manual_need {
+        return Err(OperationsError::InvalidQualityComparison);
+    }
+    let automatic_cost = automatic
+        .selected
+        .iter()
+        .try_fold(0_i64, |sum, candidate| {
+            sum.checked_add(candidate.cost_cents)
+        })
+        .ok_or(OperationsError::Overflow)?;
+    let manual_cost = manual
+        .iter()
+        .try_fold(0_i64, |sum, candidate| {
+            sum.checked_add(candidate.cost_cents)
+        })
+        .ok_or(OperationsError::Overflow)?;
+    assess_automation_quality(automatic_cost, manual_cost)
 }
 
 /// Deterministischer Automatikplaner (M5.10–M5.12). Er maximiert gedeckten
@@ -928,6 +964,92 @@ pub fn check_feasibility(input: FeasibilityInput) -> FeasibilityReport {
     }
 }
 
+/// Obergrenzen für die vor einer Fahrplanfreigabe zulässigen Fahrzeugbedarfe.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NeedLimits {
+    pub energy_milli: u64,
+    pub sand_milli: u64,
+    pub fresh_water_milli: u64,
+    pub waste_milli: u64,
+    pub interior_soil: u64,
+    pub exterior_soil: u64,
+}
+
+impl NeedLimits {
+    fn accepts(self, needs: VehicleNeeds) -> bool {
+        needs.energy_milli <= self.energy_milli
+            && needs.sand_milli <= self.sand_milli
+            && needs.fresh_water_milli <= self.fresh_water_milli
+            && needs.waste_milli <= self.waste_milli
+            && needs.interior_soil <= self.interior_soil
+            && needs.exterior_soil <= self.exterior_soil
+    }
+}
+
+/// Für die Freigabe benötigter Wartungs- und Versorgungszustand.
+#[derive(Clone, Copy, Debug)]
+pub struct VehicleReadiness<'a> {
+    pub vehicle_id: VehicleId,
+    pub maintenance: &'a MaintenanceState,
+    pub maintenance_rules: &'a [MaintenanceRule],
+    pub needs: VehicleNeeds,
+    pub limits: NeedLimits,
+}
+
+/// Minimaler Leistungsbezug für die typisierte M5.13-Freigabe.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PlannedService {
+    pub formation_id: u64,
+    pub personnel_pool_id: u64,
+    pub starts_at: SimTime,
+    pub ends_at: SimTime,
+}
+
+/// Verhindert eine Fahrplanfreigabe ohne deckenden Umlauf, Personaldienst,
+/// fristgerechtes Fahrzeug und ausreichende Versorgung.
+pub fn validate_timetable_release(
+    services: &[PlannedService],
+    rotations: &RotationPlan,
+    roster: &DutyRoster,
+    readiness: &[VehicleReadiness<'_>],
+) -> Result<(), OperationsError> {
+    for service in services {
+        if service.starts_at < 0 || service.ends_at <= service.starts_at {
+            return Err(OperationsError::InvalidInterval);
+        }
+        let has_rotation = rotations.legs(service.formation_id).iter().any(|leg| {
+            leg.activity == RotationActivity::Service
+                && leg.starts_at <= service.starts_at
+                && leg.ends_at >= service.ends_at
+        });
+        if !has_rotation {
+            return Err(OperationsError::MissingRotation);
+        }
+        let has_duty = roster
+            .duties(service.personnel_pool_id)
+            .iter()
+            .any(|duty| duty.starts_at <= service.starts_at && duty.ends_at >= service.ends_at);
+        if !has_duty {
+            return Err(OperationsError::MissingPersonnelDuty);
+        }
+        let vehicle = readiness
+            .iter()
+            .find(|vehicle| vehicle.vehicle_id == service.formation_id)
+            .ok_or(OperationsError::MissingVehicleReadiness)?;
+        if !vehicle
+            .maintenance
+            .due(vehicle.maintenance_rules)
+            .is_empty()
+        {
+            return Err(OperationsError::MaintenanceOverdue);
+        }
+        if !vehicle.limits.accepts(vehicle.needs) {
+            return Err(OperationsError::SupplyNeedsExceeded);
+        }
+    }
+    Ok(())
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProcurementLeadTimes {
     pub used_seconds: u64,
@@ -949,6 +1071,31 @@ pub fn procurement_offer(
     lead: ProcurementLeadTimes,
     existing: Option<InteriorConfiguration>,
 ) -> Result<ProcurementOffer, OperationsError> {
+    if ordered_at < 0 || period_seconds == 0 {
+        return Err(OperationsError::InvalidInterval);
+    }
+    let delay = match channel {
+        ProcurementChannel::Leasing => 0,
+        ProcurementChannel::Used => lead.used_seconds,
+        ProcurementChannel::NewBuild => period_seconds
+            .checked_mul(u64::from(lead.new_build_periods))
+            .ok_or(OperationsError::Overflow)?,
+    };
+    let available_at = ordered_at
+        .checked_add(i64::try_from(delay).map_err(|_| OperationsError::Overflow)?)
+        .ok_or(OperationsError::Overflow)?;
+    let configurable = channel == ProcurementChannel::NewBuild;
+    if !configurable && existing.is_none() {
+        return Err(OperationsError::ExistingConfigurationRequired);
+    }
+    Ok(ProcurementOffer {
+        id,
+        channel,
+        available_at,
+        configurable,
+        interior: existing,
+    })
+}
 
 /// Überführt das Ergebnis der Automatik in reale Anlagenbelegungen und wendet
 /// die jeweilige Versorgungsleistung am Fahrzeugzustand an.
@@ -1001,30 +1148,81 @@ pub fn commit_supply_plan(
     }
     Ok(())
 }
-    if ordered_at < 0 || period_seconds == 0 {
-        return Err(OperationsError::InvalidInterval);
+
+/// Kostenport für die verbindliche Beschaffung in Integer-Cent.
+pub trait ProcurementLedger {
+    fn debit_procurement(
+        &mut self,
+        world_id: WorldId,
+        order_id: u64,
+        amount_cents: i64,
+    ) -> Result<(), OperationsError>;
+}
+
+/// Verbindliche Bestellung mit Lieferereignis statt sofortigem Fahrzeug.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProcurementOrder {
+    pub world_id: WorldId,
+    pub id: u64,
+    pub offer: ProcurementOffer,
+    pub price_cents: i64,
+    pub ordered_configuration: InteriorConfiguration,
+    delivered: bool,
+}
+
+impl ProcurementOrder {
+    /// Belastet das Ledger, bevor die Bestellung entsteht.
+    pub fn place(
+        world_id: WorldId,
+        id: u64,
+        offer: ProcurementOffer,
+        price_cents: i64,
+        ordered_configuration: Option<InteriorConfiguration>,
+        ledger: &mut impl ProcurementLedger,
+    ) -> Result<Self, OperationsError> {
+        if price_cents < 0 {
+            return Err(OperationsError::InvalidProcurementPrice);
+        }
+        let configuration = if offer.configurable {
+            ordered_configuration.ok_or(OperationsError::ExistingConfigurationRequired)?
+        } else {
+            let fixed = offer
+                .interior
+                .clone()
+                .ok_or(OperationsError::ExistingConfigurationRequired)?;
+            if ordered_configuration
+                .as_ref()
+                .is_some_and(|requested| requested != &fixed)
+            {
+                return Err(OperationsError::SecondaryConfigurationImmutable);
+            }
+            fixed
+        };
+        configuration
+            .validate()
+            .map_err(|_| OperationsError::InvalidProcurementConfiguration)?;
+        ledger.debit_procurement(world_id, id, price_cents)?;
+        Ok(Self {
+            world_id,
+            id,
+            offer,
+            price_cents,
+            ordered_configuration: configuration,
+            delivered: false,
+        })
     }
-    let delay = match channel {
-        ProcurementChannel::Leasing => 0,
-        ProcurementChannel::Used => lead.used_seconds,
-        ProcurementChannel::NewBuild => period_seconds
-            .checked_mul(u64::from(lead.new_build_periods))
-            .ok_or(OperationsError::Overflow)?,
-    };
-    let available_at = ordered_at
-        .checked_add(i64::try_from(delay).map_err(|_| OperationsError::Overflow)?)
-        .ok_or(OperationsError::Overflow)?;
-    let configurable = channel == ProcurementChannel::NewBuild;
-    if !configurable && existing.is_none() {
-        return Err(OperationsError::ExistingConfigurationRequired);
+
+    /// Liefert genau einmal zum zugesagten Zeitpunkt.
+    pub fn deliver(&mut self, at: SimTime) -> Result<InteriorConfiguration, OperationsError> {
+        if at < self.offer.available_at {
+            return Err(OperationsError::ProcurementNotDue);
+        }
+        if self.delivered {
+            return Err(OperationsError::ProcurementAlreadyDelivered);
+        }
+        self.delivered = true;
+        Ok(self.ordered_configuration.clone())
     }
-    Ok(ProcurementOffer {
-        id,
-        channel,
-        available_at,
-        configurable,
-        interior: existing,
-    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1052,6 +1250,28 @@ pub enum OperationsError {
     DuplicateReservation,
     IncompleteExtraRun,
     ExistingConfigurationRequired,
+    TechnicalDataMismatch,
+    MissingPlatform,
+    IncompatibleElectrification,
+    MaintenanceNotDue,
+    MaintenanceAlreadyCompleted,
+    MaintenanceNotFinished,
+    NotAWorkshop,
+    UnknownReservation,
+    MissingExtraRunDuty,
+    ExtraRunRouteConflict,
+    LedgerRejected,
+    InvalidQualityComparison,
+    InvalidProcurementPrice,
+    SecondaryConfigurationImmutable,
+    InvalidProcurementConfiguration,
+    ProcurementNotDue,
+    ProcurementAlreadyDelivered,
+    MissingRotation,
+    MissingPersonnelDuty,
+    MissingVehicleReadiness,
+    MaintenanceOverdue,
+    SupplyNeedsExceeded,
 }
 impl fmt::Display for OperationsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -1063,6 +1283,12 @@ impl Error for OperationsError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zugfolge_conflict::{
+        OccupationLedger, TrainCategory as RoutedCategory, TrainNumber, TrainRun as RoutedRun,
+        derive_occupation_profile,
+        example::{nordstadt_bis_talheim, reference_infrastructure, regional_train},
+    };
+    use zugfolge_determinism::SimTime as RoutedTime;
 
     #[test]
     fn umlauf_erzwingt_zeit_und_ort() {
@@ -1199,105 +1425,6 @@ mod tests {
     fn freigabe_sammelt_alle_verletzungen() {
         let report = check_feasibility(FeasibilityInput {
             rotation_errors: vec!["Umlauf".into()],
-/// Kostenport für die verbindliche Beschaffung in Integer-Cent.
-pub trait ProcurementLedger {
-    fn debit_procurement(
-        &mut self,
-        world_id: WorldId,
-        order_id: u64,
-        amount_cents: i64,
-    ) -> Result<(), OperationsError>;
-}
-
-/// Verbindliche Bestellung mit Lieferereignis statt sofortigem Fahrzeug.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProcurementOrder {
-    pub world_id: WorldId,
-    pub id: u64,
-    pub offer: ProcurementOffer,
-    pub price_cents: i64,
-    pub ordered_configuration: InteriorConfiguration,
-    delivered: bool,
-}
-
-impl ProcurementOrder {
-    /// Belastet das Ledger, bevor die Bestellung entsteht.
-    pub fn place(
-        world_id: WorldId,
-        id: u64,
-        offer: ProcurementOffer,
-        price_cents: i64,
-        ordered_configuration: Option<InteriorConfiguration>,
-        ledger: &mut impl ProcurementLedger,
-    ) -> Result<Self, OperationsError> {
-        if price_cents < 0 {
-            return Err(OperationsError::InvalidProcurementPrice);
-        }
-        let configuration = if offer.configurable {
-            ordered_configuration.ok_or(OperationsError::ExistingConfigurationRequired)?
-        } else {
-            let fixed = offer
-                .interior
-                .clone()
-                .ok_or(OperationsError::ExistingConfigurationRequired)?;
-            if ordered_configuration
-                .as_ref()
-                .is_some_and(|requested| requested != &fixed)
-            {
-                return Err(OperationsError::SecondaryConfigurationImmutable);
-            }
-            fixed
-        };
-        configuration
-            .validate()
-            .map_err(|_| OperationsError::InvalidProcurementConfiguration)?;
-        ledger.debit_procurement(world_id, id, price_cents)?;
-        Ok(Self {
-            world_id,
-            id,
-            offer,
-            price_cents,
-            ordered_configuration: configuration,
-            delivered: false,
-        })
-    }
-
-    /// Liefert genau einmal zum zugesagten Zeitpunkt.
-    pub fn deliver(&mut self, at: SimTime) -> Result<InteriorConfiguration, OperationsError> {
-        if at < self.offer.available_at {
-            return Err(OperationsError::ProcurementNotDue);
-        }
-        if self.delivered {
-            return Err(OperationsError::ProcurementAlreadyDelivered);
-        }
-        self.delivered = true;
-        Ok(self.ordered_configuration.clone())
-    }
-}
-
-    TechnicalDataMismatch,
-    MissingPlatform,
-    IncompatibleElectrification,
-    MaintenanceNotDue,
-    MaintenanceAlreadyCompleted,
-    MaintenanceNotFinished,
-    NotAWorkshop,
-    UnknownReservation,
-    MissingExtraRunDuty,
-    ExtraRunRouteConflict,
-    LedgerRejected,
-    InvalidQualityComparison,
-    InvalidProcurementPrice,
-    SecondaryConfigurationImmutable,
-    InvalidProcurementConfiguration,
-    ProcurementNotDue,
-    ProcurementAlreadyDelivered,
-    use zugfolge_conflict::{
-        OccupationLedger, TrainCategory as RoutedCategory, TrainNumber, TrainRun as RoutedRun,
-        derive_occupation_profile,
-        example::{nordstadt_bis_talheim, reference_infrastructure, regional_train},
-    };
-    use zugfolge_determinism::SimTime as RoutedTime;
             personnel_errors: vec!["Personal".into()],
             maintenance_errors: vec![],
             supply_errors: vec!["Wasser".into()],
@@ -1318,7 +1445,7 @@ impl ProcurementOrder {
             amenities: BTreeSet::new(),
         }
     }
-}
+
     #[derive(Default)]
     struct TestExtraLedger {
         authorized: bool,
@@ -1461,6 +1588,8 @@ impl ProcurementOrder {
             interior_soil: 500,
             exterior_soil: 500,
         };
+        let mut automatic_plans = Vec::new();
+        let mut manual_selections = Vec::new();
         for day in 0_i64..21 {
             let start = day * 86_400 + 1_000;
             if !maintenance.due(&rules).is_empty() {
@@ -1468,20 +1597,37 @@ impl ProcurementOrder {
             }
             if needs.energy_milli > 400 || needs.waste_milli > 400 {
                 let facility = FacilityId::new(1);
+                let manual = SupplyCandidate {
+                    facility_id: FacilityId::new(2),
+                    location_id: 2,
+                    starts_at: start - 600,
+                    ends_at: start - 300,
+                    need_reduction: 1_000,
+                    deadhead_seconds: 0,
+                    cost_cents: 88,
+                };
                 let plan = plan_supply(
-                    vec![SupplyCandidate {
-                        facility_id: facility,
-                        location_id: 1,
-                        starts_at: start - 600,
-                        ends_at: start - 300,
-                        need_reduction: 1_000,
-                        deadhead_seconds: 0,
-                        cost_cents: 100,
-                    }],
-                    &SupplyPreferences::default(),
+                    vec![
+                        SupplyCandidate {
+                            facility_id: facility,
+                            location_id: 1,
+                            starts_at: start - 600,
+                            ends_at: start - 300,
+                            need_reduction: 1_000,
+                            deadhead_seconds: 0,
+                            cost_cents: 100,
+                        },
+                        manual.clone(),
+                    ],
+                    &SupplyPreferences {
+                        preferred_facilities: vec![facility],
+                        ..SupplyPreferences::default()
+                    },
                     999,
                 );
                 assert_eq!(plan.selected.len(), 1);
+                automatic_plans.push(plan);
+                manual_selections.push(manual);
                 needs.apply(FacilityKind::TreatmentPlant);
             }
             let from = u64::try_from(day % 2).unwrap();
@@ -1542,7 +1688,20 @@ impl ProcurementOrder {
                 5,
             );
         }
-        let quality = assess_automation_quality(10_000, 8_800).unwrap();
+        let automatic = SupplyPlan {
+            selected: automatic_plans
+                .into_iter()
+                .flat_map(|plan| plan.selected)
+                .collect(),
+            score: 0,
+            optimum_bound: 0,
+            gap: OptimizationGap {
+                absolute: 0,
+                permille: 0,
+                largest_lever: None,
+            },
+        };
+        let quality = assess_supply_plan_quality(&automatic, &manual_selections).unwrap();
         assert_eq!(quality.permille, 880);
         assert!(quality.target_reached);
     }
@@ -1591,4 +1750,4 @@ impl ProcurementOrder {
             Err(OperationsError::ProcurementAlreadyDelivered)
         );
     }
-
+}

@@ -23,6 +23,7 @@ jobs:
     # Beweis von M0.2.
     name: Rust und Determinismus (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -49,6 +50,7 @@ jobs:
   typescript:
     name: TypeScript
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -78,9 +80,55 @@ jobs:
       - name: Tests
         run: pnpm -r --stream test
 
+  integration-api:
+    name: API-Integration (Postgres, Auth, Replay, Livemap)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r --stream build
+      - run: pnpm --filter @zugfolge/game-api test
+
+  load:
+    name: Lastziel M4.11
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.9.2
+      - name: 180.000 Zugläufe und mindestens 2 Mio. Ereignisse
+        run: cargo run --release --locked -p zugfolge-load
+
+  security-node:
+    name: Sicherheits-Scan (Node)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Bekannte Schwachstellen ab moderate ablehnen
+        run: pnpm audit --audit-level=moderate
+
   guards:
     name: Wächter (harte Invarianten)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -100,9 +148,28 @@ jobs:
       - name: Wächter laufen lassen
         run: pnpm --filter @zugfolge/guards run guards
 
+  reference-corpus:
+    name: GTFS-Planung, Referenzkorpus und Release-Signatur
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @zugfolge/gtfs build
+      - name: Capture, Planung, Statistik und Manipulationserkennung testen
+        run: pnpm --filter @zugfolge/reference-corpus test
+
   licenses-node:
     name: Lizenz-Scan (Node)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -132,6 +199,7 @@ jobs:
   licenses-rust:
     name: Lizenz-Scan (Rust)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
