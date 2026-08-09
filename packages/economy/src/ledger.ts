@@ -109,6 +109,9 @@ export interface LedgerTransactionEntryInput {
   readonly ledgerAccountId: string;
   /** Integer-Cent; positiv mehrt, negativ mindert das Ledger-Konto. */
   readonly amountCents: bigint;
+  /** M6.2: Beide Felder werden gemeinsam gesetzt oder gemeinsam weggelassen. */
+  readonly costType?: string;
+  readonly costCentreId?: string;
 }
 
 /**
@@ -128,6 +131,9 @@ export async function postLedgerTransaction(
 ): Promise<LedgerTransaction> {
   if (input.entries.length < 2) {
     throw new IncompleteTransactionError();
+  }
+  if (input.entries.some((entry) => (entry.costType === undefined) !== (entry.costCentreId === undefined))) {
+    throw new Error("Kostenart und Kostenstelle müssen gemeinsam angegeben werden.");
   }
 
   const amounts = input.entries.map((entry) => entry.amountCents);
@@ -172,6 +178,8 @@ export async function postLedgerTransaction(
         transactionId: transaction.id,
         ledgerAccountId: entry.ledgerAccountId,
         amountCents: entry.amountCents,
+        costType: entry.costType,
+        costCentreId: entry.costCentreId,
       })),
     );
 

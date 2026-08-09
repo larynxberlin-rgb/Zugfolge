@@ -1,4 +1,5 @@
 import type { PenaltyFocus } from "./release.js";
+import type { EconomyRules } from "./release.js";
 
 export interface MobilizationProof { readonly vehicles: boolean; readonly personnel: boolean; readonly paths: boolean }
 export interface TransitionResult { readonly operatorId: string | "public"; readonly seamless: boolean; readonly penaltyCents: bigint; readonly prequalificationDamage: number }
@@ -20,10 +21,14 @@ export function settleContract(contract: ServiceContract, performance: Performan
   return Object.freeze({ orderingFeeCents: orderingFee, bonusCents: bonus, penaltyCents: penalties, netCents: orderingFee + bonus - penalties, explanation: Object.freeze([`Bestellerentgelt ${orderingFee}`, `Bonus ${bonus}`, `Pönale ${penalties}`]) });
 }
 
-export interface PublicOperation { readonly lotId: string; readonly periodsRemaining: number; readonly minimumServiceOnly: true; readonly qualityBonusEligible: false; readonly livemapMarker: "public-operator"; readonly pathsPriority: "subordinate"; readonly vehiclePool: readonly string[] }
-export function startPublicOperation(lotId: string, vehiclePool: readonly string[]): PublicOperation { return Object.freeze({ lotId, periodsRemaining: 2, minimumServiceOnly: true, qualityBonusEligible: false, livemapMarker: "public-operator", pathsPriority: "subordinate", vehiclePool }); }
-export function improveFailedPackage(operation: PublicOperation, failureCount: number): { readonly orderingFeeIncreaseBasisPoints: number; readonly serviceReductionBasisPoints: number; readonly suppliedVehicles: boolean; readonly retenderAfterPeriods: 2 } {
-  return Object.freeze({ orderingFeeIncreaseBasisPoints: Math.min(2_500, 500 * failureCount), serviceReductionBasisPoints: Math.min(2_000, 400 * Math.max(0, failureCount - 1)), suppliedVehicles: operation.vehiclePool.length > 0 && failureCount >= 2, retenderAfterPeriods: 2 });
+export interface PublicOperation { readonly lotId: string; readonly periodsRemaining: number; readonly minimumServiceOnly: true; readonly qualityBonusEligible: false; readonly livemapMarker: "public-operator"; readonly pathsPriority: "subordinate"; readonly dispatchPolicy: "conservative-no-optimization"; readonly vehiclePool: readonly string[] }
+export function startPublicOperation(lotId: string, vehiclePool: readonly string[]): PublicOperation { return Object.freeze({ lotId, periodsRemaining: 2, minimumServiceOnly: true, qualityBonusEligible: false, livemapMarker: "public-operator", pathsPriority: "subordinate", dispatchPolicy: "conservative-no-optimization", vehiclePool }); }
+export function improveFailedPackage(operation: PublicOperation, failureCount: number, rules: EconomyRules): { readonly orderingFeeIncreaseBasisPoints: number; readonly serviceReductionBasisPoints: number; readonly suppliedVehicles: boolean; readonly retenderAfterPeriods: 2 } {
+  return Object.freeze({ orderingFeeIncreaseBasisPoints: rules.failedPackageFeeStepBasisPoints * failureCount, serviceReductionBasisPoints: rules.failedPackageReductionStepBasisPoints * Math.max(0, failureCount - 1), suppliedVehicles: operation.vehiclePool.length > 0 && failureCount >= 2, retenderAfterPeriods: 2 });
+}
+export function advancePublicOperation(operation: PublicOperation, failureCount: number, rules: EconomyRules): { readonly operation?: PublicOperation; readonly retender?: ReturnType<typeof improveFailedPackage> } {
+  if (operation.periodsRemaining > 1) return { operation: Object.freeze({ ...operation, periodsRemaining: operation.periodsRemaining - 1 }) };
+  return { retender: improveFailedPackage(operation, failureCount, rules) };
 }
 
 export interface AuthorityBudget { readonly authorityId: string; readonly period: number; readonly availableCents: bigint; readonly committedCents: bigint }

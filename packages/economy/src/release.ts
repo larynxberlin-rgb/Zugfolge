@@ -4,12 +4,17 @@ export type PenaltyFocus = "punctuality" | "cancellation" | "seats" | "connectio
 export type RequirementFocus = "capacity" | "comfort" | "bicycle" | "accessibility";
 
 export interface ScoringWeights { readonly price: number; readonly quality: number }
+export type SpecialCondition =
+  | { readonly type: "additional-stop"; readonly minimumAdditionalStops: number }
+  | { readonly type: "maximum-age"; readonly maximumAgeYears: number }
+  | { readonly type: "traction"; readonly allowed: readonly ("electric" | "diesel" | "battery" | "hydrogen")[] }
+  | { readonly type: "replacement-plan" };
 export interface TenderProfile {
   readonly id: string;
   readonly weights: ScoringWeights;
   readonly requirementFocus: RequirementFocus;
   readonly penaltyFocus: PenaltyFocus;
-  readonly specialCondition?: "additional-stop" | "maximum-age" | "traction" | "replacement-plan";
+  readonly specialCondition?: SpecialCondition;
   readonly viabilitySurchargeBasisPoints: number;
 }
 
@@ -25,11 +30,25 @@ export interface EconomyRates {
   readonly protectionEquipmentPerPeriodCents: bigint;
   readonly lateInterestBasisPoints: number;
 }
+export interface EconomyRules {
+  readonly qualityBaselinePunctualityBasisPoints: number;
+  readonly pointsPerExtraSeat: number;
+  readonly pointsPerPunctualityBasisPoint: number;
+  readonly pointsPerAdditionalStop: number;
+  readonly requirementFocusMaximumPoints: number;
+  readonly contractBonusCentsPerPeriod: bigint;
+  readonly penaltyRates: Readonly<Record<PenaltyFocus, bigint>>;
+  readonly penaltyFocusMultiplierBasisPoints: number;
+  readonly publicOperationSurchargeBasisPoints: number;
+  readonly failedPackageFeeStepBasisPoints: number;
+  readonly failedPackageReductionStepBasisPoints: number;
+}
 
 export interface EconomyRelease {
   readonly schema: "economy-release/v1";
   readonly version: string;
   readonly rates: EconomyRates;
+  readonly rules: EconomyRules;
   readonly tenderProfiles: readonly TenderProfile[];
   readonly checksum: string;
 }
@@ -47,9 +66,14 @@ export function buildEconomyRelease(input: Omit<EconomyRelease, "schema" | "chec
   for (const profile of input.tenderProfiles) {
     if (ids.has(profile.id) || profile.weights.price < 0 || profile.weights.quality < 0 || profile.weights.price + profile.weights.quality !== 10_000 || profile.viabilitySurchargeBasisPoints < 0) throw new Error("Ungültiger Vergabeprofil-Katalog.");
     ids.add(profile.id);
+    const special = profile.specialCondition;
+    if (special?.type === "additional-stop" && (!Number.isInteger(special.minimumAdditionalStops) || special.minimumAdditionalStops < 1)) throw new Error("Zusatzhalt-Auflage braucht eine positive Mindestzahl.");
+    if (special?.type === "maximum-age" && (!Number.isInteger(special.maximumAgeYears) || special.maximumAgeYears < 0)) throw new Error("Fahrzeugalter-Auflage ist ungültig.");
+    if (special?.type === "traction" && special.allowed.length === 0) throw new Error("Traktionsauflage braucht mindestens eine Antriebsart.");
   }
   for (const rate of Object.values(input.rates)) if (typeof rate === "bigint" ? rate < 0n : rate < 0) throw new Error("Kostensätze dürfen nicht negativ sein.");
-  const body = { schema: "economy-release/v1" as const, version: input.version, rates: input.rates, tenderProfiles: [...input.tenderProfiles].sort((a, b) => a.id.localeCompare(b.id)) };
+  for (const rule of [...Object.values(input.rules).flatMap((value) => typeof value === "object" ? Object.values(value) : [value])]) if (typeof rule === "bigint" ? rule < 0n : rule < 0) throw new Error("Wirtschaftsregeln dürfen nicht negativ sein.");
+  const body = { schema: "economy-release/v1" as const, version: input.version, rates: input.rates, rules: input.rules, tenderProfiles: [...input.tenderProfiles].sort((a, b) => a.id.localeCompare(b.id)) };
   return Object.freeze({ ...body, checksum: createHash("sha256").update(canonical(body)).digest("hex") });
 }
 

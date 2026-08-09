@@ -182,6 +182,9 @@ Fahrzeugprüfung, Betriebsübergang und Verkehrsvertrag, Eigenbetrieb und
 Nachbesserung, Budget, Ergebnis und Finanzierung sowie die vollständig
 telegrafierte Insolvenz und weltgebundene Präqualifikation. Der durchgängige
 M6-Test beweist Zuschlag, Betriebsergebnis, Scheitern und nahtlose Übernahme.
+Das zustandsbehaftete Workflow-Aggregat bindet die Regeln an den vorhandenen
+Ledger und das Postfach; `docs/m6-audit.md` ordnet jedem Teilabschnitt einen
+ausführbaren Positiv-, Negativ- und Integrationsbeweis zu.
 - **Kritischer Pfad:** M0.3 → M1 → M3 → M4 → M7. Die ersten Schritte sind geführt.
 - **M0.3 hat getragen und ist abgelöst:** Der Spike
   `spikes/blocking-time-staircase/` hat die Sperrzeitentreppe zweier Züge über

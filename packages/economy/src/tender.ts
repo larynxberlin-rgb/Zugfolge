@@ -1,24 +1,25 @@
-import type { EconomyRelease, TenderProfile } from "./release.js";
+import type { EconomyRelease, EconomyRules, TenderProfile } from "./release.js";
 
 export interface VehicleRequirements { readonly minimumSeats: number; readonly firstClassBasisPoints: number; readonly accessible: boolean; readonly bicyclePlaces: number; readonly wheelchairPlaces: number; readonly requiredEquipment: readonly string[] }
-export interface VehicleConcept extends VehicleRequirements { readonly formationId: string; readonly vehicleAgeYears: number; readonly traction: "electric" | "diesel" | "battery" | "hydrogen" }
-export interface ServiceSpecification { readonly lines: readonly string[]; readonly trainKmPerPeriod: bigint; readonly stopsPerPeriod: bigint; readonly serviceHoursPerPeriod: bigint; readonly vehicleCount: bigint; readonly overnightUnits: bigint; readonly protectionUnits: bigint; readonly requirements: VehicleRequirements }
-export interface Tender { readonly id: string; readonly worldId: string; readonly lotId: string; readonly incumbentOperatorId: string | "public"; readonly profile: TenderProfile; readonly specification: ServiceSpecification; readonly announcedAt: number; readonly opensAt: number; readonly closesAt: number; readonly operatingFrom: number; readonly contractPeriods: number; readonly viabilityThresholdCentsPerTrainKm: bigint; readonly status: "announced" | "open" | "awarded" | "failed" }
+export interface VehicleConcept extends VehicleRequirements { readonly formationId: string; readonly vehicleAgeYears: number; readonly traction: "electric" | "diesel" | "battery" | "hydrogen"; readonly replacementPlan: boolean }
+export interface ServiceSpecification { readonly lines: readonly string[]; readonly trainKmPerPeriod: bigint; readonly stopsPerPeriod: bigint; readonly serviceHoursPerPeriod: bigint; readonly facilityHoursPerPeriod: bigint; readonly energyKwhPerPeriod: bigint; readonly vehicleCount: bigint; readonly overnightUnits: bigint; readonly protectionUnits: bigint; readonly requirements: VehicleRequirements }
+export interface Tender { readonly id: string; readonly worldId: string; readonly lotId: string; readonly incumbentOperatorId: string | "public"; readonly profile: TenderProfile; readonly rules: EconomyRules; readonly specification: ServiceSpecification; readonly announcedAt: number; readonly opensAt: number; readonly closesAt: number; readonly operatingFrom: number; readonly contractPeriods: number; readonly periodDurationSeconds: number; readonly viabilityThresholdCentsPerTrainKm: bigint; readonly status: "announced" | "open" | "awarded" | "failed" }
 
 export function calculateViabilityThreshold(release: EconomyRelease, specification: ServiceSpecification, profile: TenderProfile): bigint {
   const r = release.rates;
-  const total = specification.trainKmPerPeriod * r.trackPerTrainKmCents + specification.stopsPerPeriod * r.stationPerStopCents + specification.serviceHoursPerPeriod * r.personnelPerHourCents + specification.vehicleCount * r.vehiclePerPeriodCents + specification.overnightUnits * r.overnightStablingPerPeriodCents + specification.protectionUnits * r.protectionEquipmentPerPeriodCents + r.administrationPerPeriodCents;
+  if (specification.trainKmPerPeriod <= 0n) throw new Error("Leistungsbeschreibung braucht positive Zugkilometer.");
+  const total = specification.trainKmPerPeriod * r.trackPerTrainKmCents + specification.stopsPerPeriod * r.stationPerStopCents + specification.serviceHoursPerPeriod * r.personnelPerHourCents + specification.facilityHoursPerPeriod * r.facilityPerHourCents + specification.energyKwhPerPeriod * r.energyPerKwhCents + specification.vehicleCount * r.vehiclePerPeriodCents + specification.overnightUnits * r.overnightStablingPerPeriodCents + specification.protectionUnits * r.protectionEquipmentPerPeriodCents + r.administrationPerPeriodCents;
   const profiled = total + total * BigInt(profile.viabilitySurchargeBasisPoints) / 10_000n;
   return (profiled + specification.trainKmPerPeriod - 1n) / specification.trainKmPerPeriod;
 }
 
-export function createTender(input: Omit<Tender, "viabilityThresholdCentsPerTrainKm" | "status"> & { readonly release: EconomyRelease; readonly smallLot: boolean }): Tender {
+export function createTender(input: Omit<Tender, "rules" | "viabilityThresholdCentsPerTrainKm" | "status"> & { readonly release: EconomyRelease; readonly smallLot: boolean }): Tender {
   const duration = input.closesAt - input.opensAt;
   const min = input.smallLot ? 86_400 : 3 * 86_400;
   const max = input.smallLot ? 2 * 86_400 : 7 * 86_400;
-  if (duration < min || duration > max || input.announcedAt > input.opensAt || input.operatingFrom <= input.closesAt) throw new Error("Ungültige Fristen im Vergabeverfahren.");
+  if (duration < min || duration > max || input.announcedAt > input.opensAt || input.operatingFrom <= input.closesAt || input.contractPeriods < 2 || !Number.isInteger(input.contractPeriods) || input.periodDurationSeconds <= 0 || !Number.isInteger(input.periodDurationSeconds)) throw new Error("Ungültige Fristen im Vergabeverfahren.");
   const { release, smallLot: _smallLot, ...tender } = input;
-  return Object.freeze({ ...tender, viabilityThresholdCentsPerTrainKm: calculateViabilityThreshold(release, input.specification, input.profile), status: "announced" });
+  return Object.freeze({ ...tender, rules: release.rules, viabilityThresholdCentsPerTrainKm: calculateViabilityThreshold(release, input.specification, input.profile), status: "announced" });
 }
 
 export interface QualityPromises { readonly extraSeats: number; readonly punctualityBasisPoints: number; readonly additionalStops: number }
@@ -39,9 +40,17 @@ export function validateVehicle(requirements: VehicleRequirements, vehicle: Vehi
 export function scoreBid(tender: Tender, bid: Bid): ScoreBreakdown {
   const vehicleFailures = validateVehicle(tender.specification.requirements, bid.vehicle);
   if (vehicleFailures.length > 0 || bid.orderingFeeCentsPerTrainKm > tender.viabilityThresholdCentsPerTrainKm || bid.orderingFeeCentsPerTrainKm < 0n) throw new Error(`Ungültiges Angebot: ${vehicleFailures.join(",") || "Auskömmlichkeitsgrenze"}`);
+  if (bid.promises.extraSeats < 0 || bid.promises.additionalStops < 0 || bid.promises.punctualityBasisPoints < 0 || bid.promises.punctualityBasisPoints > 10_000) throw new Error("Qualitätszusagen sind außerhalb ihres Wertebereichs.");
+  const condition = tender.profile.specialCondition;
+  if (condition?.type === "additional-stop" && bid.promises.additionalStops < condition.minimumAdditionalStops) throw new Error("Sonderauflage Zusatzhalte nicht erfüllt.");
+  if (condition?.type === "maximum-age" && bid.vehicle.vehicleAgeYears > condition.maximumAgeYears) throw new Error("Sonderauflage Fahrzeugalter nicht erfüllt.");
+  if (condition?.type === "traction" && !condition.allowed.includes(bid.vehicle.traction)) throw new Error("Sonderauflage Traktion nicht erfüllt.");
+  if (condition?.type === "replacement-plan" && !bid.vehicle.replacementPlan) throw new Error("Sonderauflage SEV-Konzept nicht erfüllt.");
   const threshold = tender.viabilityThresholdCentsPerTrainKm;
   const priceRatio = threshold === 0n ? 10_000 : Number((threshold - bid.orderingFeeCentsPerTrainKm) * 10_000n / threshold);
-  const dimensions = { extraSeats: Math.min(3_000, bid.promises.extraSeats * 50), punctuality: Math.min(5_000, Math.max(0, bid.promises.punctualityBasisPoints - 8_500)), additionalStops: Math.min(2_000, bid.promises.additionalStops * 400) };
+  const maximum = tender.rules.requirementFocusMaximumPoints;
+  const focusPoints = tender.profile.requirementFocus === "capacity" ? Math.min(maximum, bid.vehicle.minimumSeats - tender.specification.requirements.minimumSeats) * tender.rules.pointsPerExtraSeat : tender.profile.requirementFocus === "comfort" ? Math.min(maximum, bid.vehicle.firstClassBasisPoints - tender.specification.requirements.firstClassBasisPoints) : tender.profile.requirementFocus === "bicycle" ? Math.min(maximum, bid.vehicle.bicyclePlaces - tender.specification.requirements.bicyclePlaces) * tender.rules.pointsPerExtraSeat : bid.vehicle.accessible ? maximum : 0;
+  const dimensions = { extraSeats: bid.promises.extraSeats * tender.rules.pointsPerExtraSeat, punctuality: Math.max(0, bid.promises.punctualityBasisPoints - tender.rules.qualityBaselinePunctualityBasisPoints) * tender.rules.pointsPerPunctualityBasisPoint, additionalStops: bid.promises.additionalStops * tender.rules.pointsPerAdditionalStop, requirementFocus: Math.max(0, focusPoints) };
   const qualityRatio = dimensions.extraSeats + dimensions.punctuality + dimensions.additionalStops;
   return Object.freeze({ pricePoints: Math.floor(priceRatio * tender.profile.weights.price / 10_000), qualityPoints: Math.floor(qualityRatio * tender.profile.weights.quality / 10_000), dimensions: Object.freeze(dimensions) });
 }

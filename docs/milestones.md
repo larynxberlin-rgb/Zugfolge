@@ -648,8 +648,11 @@ jeweils angekündigten Zeitpunkt, löst Vertragsübernahme und Liquidation aus
 und erzeugt konkrete Nachrichten für Postfach und Tagesbericht.
 Präqualifikation und Bonität sind weltgebunden, merken Endleistung,
 Mobilisierungsversagen und Insolvenz und setzen nach Totalverlust die
-befristete Beschränkung auf kleine Lose durch. `m6.test.ts` führt diese Kette
-einschließlich aller fünf Eskalationsstufen als Abschlussbeweis aus. Damit ist
+befristete Beschränkung auf kleine Lose durch. `m6.test.ts`,
+`workflow.test.ts` und `platform-adapters.test.ts` führen diese Kette
+einschließlich aller fünf Eskalationsstufen, echter Ledgerbuchung und echter
+Postfachzustellung als Abschlussbeweis aus. Die unabhängige
+Anforderung-zu-Nachweis-Matrix steht in [`m6-audit.md`](m6-audit.md). Damit ist
 M6 vollständig abgeschlossen.
 
 ---

@@ -24,6 +24,17 @@ export function restructure(plan: LiquidityPlan, cashInjectionCents: bigint, def
   if (cashInjectionCents < 0n || deferredCents < 0n) throw new Error("Restrukturierung darf keine Mittel vernichten.");
   return Object.freeze({ ...plan, liquidCents: plan.liquidCents + cashInjectionCents + deferredCents });
 }
+export function accrueCreditInterest(credit: Credit): Credit {
+  if (credit.interestBasisPoints < 0) throw new Error("Negativer Kreditzins ist nicht zulässig.");
+  const interest = (credit.outstandingCents * BigInt(credit.interestBasisPoints) + 9_999n) / 10_000n;
+  return Object.freeze({ ...credit, outstandingCents: credit.outstandingCents + interest });
+}
+export function repayCredit(plan: LiquidityPlan, creditIndex: number, amountCents: bigint): LiquidityPlan {
+  const credit = plan.credits[creditIndex];
+  if (credit === undefined || amountCents <= 0n || amountCents > credit.outstandingCents || amountCents > plan.liquidCents) throw new Error("Kredittilgung ist nicht gedeckt oder ungültig.");
+  const credits = plan.credits.map((item, index) => index === creditIndex ? { ...item, outstandingCents: item.outstandingCents - amountCents } : item);
+  return Object.freeze({ ...plan, liquidCents: plan.liquidCents - amountCents, credits: Object.freeze(credits) });
+}
 
 export type InsolvencyStage = 0 | 1 | 2 | 3 | 4 | 5;
 export interface InsolvencySignals { readonly liquidCents: bigint; readonly twoPeriodNeedCents: bigint; readonly overdueCents: bigint; readonly creditScore: number; readonly contractTerminated: boolean; readonly unableToPay: boolean }
