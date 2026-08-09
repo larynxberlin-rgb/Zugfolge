@@ -561,10 +561,23 @@ Ressourcendarstellung wie der Fahrweg; Zusatzfahrten weisen Trasse, Personal,
 Kosten und Sichtbarkeit nach, während Rangieren nur als automatisch berechnete
 Belegung existiert. Der deterministische Versorgungsplaner wertet Ort-, Zeit-
 und Anlagenvorgaben, nennt die Lücke zu einer oberen Schranke und den größten
-Hebel. Die abschließende Durchführbarkeitsprüfung sammelt Verstöße aller vier
-Bereiche. Leasing ist ohne Vorlauf, der Gebrauchtmarkt kurzfristig und nur die
 mehrperiodige Neubestellung frei konfigurierbar.
 
+Die zuvor fehlenden Integrationen sind geschlossen: `CapacityLedger` liegt in
+`zugfolge-conflict`, ist weltisoliert und kapazitätsfähig und trägt Anlagen wie
+Rangierbelegungen. Zusatzfahrten reservieren eine echte Sperrzeitentreppe,
+fordern einen deckenden Personaldienst und eine zweiphasig gebuchte
+Integer-Cent-Kostenzusage an und liefern danach ein
+`zugfolge_sim::Command::Materialize`; damit erscheinen sie wie jede andere
+Fahrt in Simulation und Livemap. Wartungsaufträge reservieren eine kompatible
+Werkstatt und setzen den Fristenstand erst nach Ablauf zurück.
+`commit_supply_plan` überführt die Optimierung atomar in reale
+Anlagenreservierungen. Beschaffungsaufträge belasten das Ledger vor Entstehung
+und liefern genau einmal zum kanalabhängigen Termin. Der Dreiwochen-Test
+`automatik_beweist_eine_dreiwoechige_periode_ohne_sperre` fährt die kürzeste
+zulässige Fahrplanperiode durch und belegt 88 Prozent Güte gegenüber derselben
+Handplanung; der typisierte Freigabeprüfer verhindert dabei jede Fahrt mit
+Umlauf-, Personal-, Wartungs- oder Versorgungsverstoß.
 > **Beweis:** Ein Kurzzeitspieler stellt sein Versorgungsprofil auf Automatik
 > und fährt eine Periode ohne einen Ausfall wegen Frist, Wasser oder Entsorgung.
 > Ein Detailverliebter plant dieselbe Flotte von Hand und spart nachweisbar rund

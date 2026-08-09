@@ -147,6 +147,7 @@ dependencies = [
  "zugfolge-conflict",
  "zugfolge-determinism",
  "zugfolge-infra",
+ "zugfolge-sim",
 ]
 
 [[package]]

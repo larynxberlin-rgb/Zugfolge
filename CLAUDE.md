@@ -161,7 +161,7 @@ Konten, Rollen und Weltzugänge (`packages/identity`, `apps/game-api`), die
 Weltisolation mit `packages/db`, die EVU-Entität (`packages/operators`), der
 Ledger-Kern (`packages/economy`), das Postfach-Grundgerüst
 (`packages/mailbox`) und Datenschutz (`packages/privacy`), siehe unten.
-**M5 ist abgeschlossen (M5.1 bis M5.14):** `crates/zugfolge-fleet` führt den
+**M5 ist abgeschlossen: M5.1 bis M5.14 sind erledigt.**
 versionierten Fahrzeugkatalog mit getrennten Bau-/Beschaffungsepochen,
 typgenauen Zugsicherungsoptionen und individuellen Fahrzeugassets sowie die
 Fahrzeugkonfiguration mit Haltezeitwirkung der baulich festen Türen und den
@@ -170,9 +170,12 @@ darauf aufbauende Betriebsplanung umfasst Formation, Umlauf, Wartung, Personal,
 Bedarfe, gemeinsame Anlagenressourcen, Zusatzfahrten, automatisches Rangieren,
 Versorgungsautomatik samt Vorgaben und Optimierungslücke, die abschließende
 Durchführbarkeitsprüfung sowie die drei zeitlich unterschiedlichen
-Beschaffungswege.
-
-- **Alpha-Schnitt:** M0 – M9. Alles ab M10 ist Ausbau.
+Beschaffungswege. `CapacityLedger` in `crates/zugfolge-conflict` vereinheitlicht
+kapazitätsfähige Anlagen- und Rangierbelegungen mit den Konfliktressourcen des
+Fahrwegs. Echte Zusatzfahrten reichen bis zum Materialisierungsbefehl des
+Simulationskerns; zweiphasige Ledger-Ports halten Kosten und Reservierung
+atomar. Ein Dreiwochen-Szenario beweist Automatikbetrieb ohne Frist- oder
+Versorgungssperre und 88 Prozent der Vergleichsplanung.
 - **Kritischer Pfad:** M0.3 → M1 → M3 → M4 → M7. Die ersten Schritte sind geführt.
 - **M0.3 hat getragen und ist abgelöst:** Der Spike
   `spikes/blocking-time-staircase/` hat die Sperrzeitentreppe zweier Züge über

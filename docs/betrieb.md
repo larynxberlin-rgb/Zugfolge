@@ -246,9 +246,12 @@ Rangierbedarf verwenden die Konfliktressourcen des Fahrwegs. Zusatzfahrten
 sind nur mit Trassen-, Dienst-, Kosten- und Sichtbarkeitsnachweis gültig. Die
 Versorgungsautomatik berücksichtigt die drei Vorgaben Ort, Zeitfenster und
 Anlage und veröffentlicht Score, obere Schranke, Lücke in Promille und den
-größten Hebel. Erst ein leerer, bereichsübergreifender Verletzungsbericht gibt
-den Fahrplan frei. Beschaffungsangebote bilden Leasing ohne Vorlauf,
-kurzfristige Gebrauchtübernahme mit bestehendem Innenraum und frei
+konfigurierbaren Neubau nach mehreren Perioden ab. `CapacityLedger` in
+`zugfolge-conflict` stellt die gemeinsame kapazitätsfähige Konfliktengine;
+Zusatzfahrten werden nach Trassen-, Dienst- und Kostenprüfung als echte
+Simulationsfahrt materialisiert. Ein Dreiwochen-Test einschließlich
+Versorgungsautomatik, Wartung und Freigabe-Gate erbringt den Periodenbeweis und
+misst 88 Prozent Güte gegenüber der Handplanung.
 konfigurierbaren Neubau nach mehreren Perioden ab.
 
 ## 5. Baustellen und Störungen

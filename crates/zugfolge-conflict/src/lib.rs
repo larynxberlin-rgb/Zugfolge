@@ -64,6 +64,7 @@ mod framework;
 mod infrastructure;
 mod itinerary;
 mod profile;
+mod reservation;
 mod resource;
 mod service;
 mod signalling;
@@ -79,6 +80,9 @@ pub use framework::{FrameworkAgreement, FrameworkAgreementId, FrameworkCapacityL
 pub use infrastructure::{Infrastructure, InfrastructureBuilder, ResourceSpan};
 pub use itinerary::{CheckedLeg, Itinerary, ItineraryLeg};
 pub use profile::{OccupationProfile, derive_occupation_profile, resources_of};
+pub use reservation::{
+    CapacityConflict, CapacityLedger, ResourceReservation, ResourceReservationId,
+};
 pub use resource::{ConflictResource, ResourceExclusions};
 pub use service::{
     OperatingDays, RunReference, SECONDS_PER_DAY, ServicePattern, TrainCategory, TrainNumber,

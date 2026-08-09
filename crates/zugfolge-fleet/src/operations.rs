@@ -12,19 +12,41 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
-use zugfolge_conflict::ConflictResource;
+use zugfolge_conflict::{
+    CapacityLedger, ConflictResource, OccupationLedger, ResourceReservation,
+    TrainRun as RoutedTrainRun,
+};
+use zugfolge_determinism::{Rng, SimTime as DeterministicSimTime};
 use zugfolge_infra::{
-    Acceleration, FacilityCatalog, FacilityId, FacilityKind, FleetClass, Length, Mass, Speed,
-    SpeedCategory, TractionType, TrainCharacteristics, TrainCharacteristicsId, TrainProtection,
+    Acceleration, Electrification, FacilityCatalog, FacilityId, FacilityKind, FleetClass, Length,
+    Mass, Speed, SpeedCategory, TractionType, TrainCharacteristics, TrainCharacteristicsId,
+    TrainProtection,
 };
 
-use crate::{InteriorConfiguration, ProcurementChannel, SimTime, VehicleId, WorldId};
+use crate::{
+    InteriorConfiguration, ProcurementChannel, SimTime, VehicleAsset, VehicleId, VehicleTypeId,
+    WorldId,
+};
+
+/// Physische Werte eines Katalogtyps; der Release kann sie versioniert neben
+/// Markt- und Quellenangaben führen, ohne sie am Einzelfahrzeug zu duplizieren.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VehicleTechnicalData {
+    pub vehicle_type_id: VehicleTypeId,
+    pub length: Length,
+    pub mass: Mass,
+    pub max_speed: Speed,
+    pub acceleration: Acceleration,
+    pub deceleration: Acceleration,
+    pub traction: TractionType,
+}
 
 /// Die fahrtechnischen, für eine Formation addierbaren Werte eines Assets.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FormationVehicle {
     pub world_id: WorldId,
     pub id: VehicleId,
+    pub vehicle_type_id: VehicleTypeId,
     pub class: FleetClass,
     pub length: Length,
     pub mass: Mass,
@@ -33,6 +55,32 @@ pub struct FormationVehicle {
     pub deceleration: Acceleration,
     pub traction: TractionType,
     pub protection: TrainProtection,
+}
+
+impl FormationVehicle {
+    /// Leitet die Formationseingabe aus dem echten Asset und typgebundenen
+    /// technischen Daten ab; Zugsicherung kommt immer aus dem Ist-Asset.
+    pub fn from_asset(
+        asset: &VehicleAsset,
+        technical: &VehicleTechnicalData,
+    ) -> Result<Self, OperationsError> {
+        if asset.vehicle_type_id() != technical.vehicle_type_id {
+            return Err(OperationsError::TechnicalDataMismatch);
+        }
+        Ok(Self {
+            world_id: asset.world_id(),
+            id: asset.id(),
+            vehicle_type_id: asset.vehicle_type_id(),
+            class: asset.class_designation().clone(),
+            length: technical.length,
+            mass: technical.mass,
+            max_speed: technical.max_speed,
+            acceleration: technical.acceleration,
+            deceleration: technical.deceleration,
+            traction: technical.traction.clone(),
+            protection: asset.installed_protection().clone(),
+        })
+    }
 }
 
 /// Ein aus individuellen Fahrzeugen gebildeter Zugverband (M5.2).
@@ -158,6 +206,30 @@ impl Formation {
         }
         Ok(())
     }
+
+    /// Vollständige streckenbezogene Prüfung einschließlich Elektrifizierung.
+    pub fn check_operating_route(
+        &self,
+        platform_lengths: &[Length],
+        electrifications: &[Electrification],
+        required: &TrainProtection,
+        approved_classes: &BTreeSet<FleetClass>,
+    ) -> Result<(), OperationsError> {
+        let shortest_platform = platform_lengths
+            .iter()
+            .copied()
+            .min()
+            .ok_or(OperationsError::MissingPlatform)?;
+        self.check_route(shortest_platform, required, approved_classes)?;
+        if electrifications.iter().any(|electrification| {
+            self.vehicles
+                .iter()
+                .any(|vehicle| !vehicle.traction.can_use(*electrification))
+        }) {
+            return Err(OperationsError::IncompatibleElectrification);
+        }
+        Ok(())
+    }
 }
 
 /// Art eines Umlaufsegments (M5.3).
@@ -255,10 +327,110 @@ impl MaintenanceState {
             .fold(0, u32::saturating_add)
             .min(1_000_000)
     }
+    /// Seed-deterministische Ziehung gegen die berechnete Ausfallwahrscheinlichkeit.
+    pub fn failure_occurs(&self, rules: &[MaintenanceRule], rng: &mut Rng) -> bool {
+        rng.below(1_000_000) < u64::from(self.failure_probability_per_million(rules))
+    }
     pub fn maintain(&mut self, level: MaintenanceLevel) {
         self.elapsed_seconds = 0;
         self.distance_km = 0;
         self.last_level = Some(level);
+    }
+
+    /// Schreibt Betrieb ganzzahlig fort.
+    pub fn accrue(&mut self, elapsed_seconds: u64, distance_km: u64) {
+        self.elapsed_seconds = self.elapsed_seconds.saturating_add(elapsed_seconds);
+        self.distance_km = self.distance_km.saturating_add(distance_km);
+    }
+}
+
+/// Gebuchter, kapazitätswirksamer Werkstattaufenthalt für eine Wartungsfrist.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaintenanceOrder {
+    pub world_id: WorldId,
+    pub id: u64,
+    pub vehicle_id: VehicleId,
+    pub level: MaintenanceLevel,
+    pub facility_id: FacilityId,
+    pub starts_at: SimTime,
+    pub ends_at: SimTime,
+    completed: bool,
+}
+
+impl MaintenanceOrder {
+    /// Reserviert die Werkstatt nur für eine tatsächlich fällige Frist.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Wartungszustand, Fahrzeug und Anlage sind getrennte Domänenobjekte"
+    )]
+    pub fn schedule(
+        world_id: WorldId,
+        id: u64,
+        vehicle_id: VehicleId,
+        class: &FleetClass,
+        length: Length,
+        level: MaintenanceLevel,
+        starts_at: SimTime,
+        state: &MaintenanceState,
+        rules: &[MaintenanceRule],
+        facility_id: FacilityId,
+        facilities: &FacilityCatalog,
+        reservations: &mut FacilityLedger,
+    ) -> Result<Self, OperationsError> {
+        let rule = state
+            .due(rules)
+            .into_iter()
+            .find(|rule| rule.level == level)
+            .ok_or(OperationsError::MaintenanceNotDue)?;
+        let ends_at = starts_at
+            .checked_add(i64::from(rule.workshop_seconds))
+            .ok_or(OperationsError::Overflow)?;
+        let facility = facilities
+            .facility(facility_id)
+            .ok_or(OperationsError::UnknownFacility)?;
+        if facility.kind() != FacilityKind::Workshop {
+            return Err(OperationsError::NotAWorkshop);
+        }
+        reservations.reserve(
+            FacilityReservation {
+                world_id,
+                id,
+                vehicle_id,
+                resource: ConflictResource::Facility(facility_id),
+                starts_at,
+                ends_at,
+            },
+            class,
+            length,
+            facilities,
+        )?;
+        Ok(Self {
+            world_id,
+            id,
+            vehicle_id,
+            level,
+            facility_id,
+            starts_at,
+            ends_at,
+            completed: false,
+        })
+    }
+
+    /// Schließt eine fällige Wartung ab; vorher bleibt die Frist bestehen.
+    pub fn complete(
+        &mut self,
+        at: SimTime,
+        state: &mut MaintenanceState,
+    ) -> Result<(), OperationsError> {
+        if self.completed {
+            return Err(OperationsError::MaintenanceAlreadyCompleted);
+        }
+        if at < self.ends_at {
+            return Err(OperationsError::MaintenanceNotFinished);
+        }
+        state.maintain(self.level);
+        self.completed = true;
+        Ok(())
     }
 }
 
@@ -389,6 +561,7 @@ pub struct FacilityReservation {
 }
 #[derive(Clone, Debug, Default)]
 pub struct FacilityLedger {
+    engine: CapacityLedger,
     reservations: BTreeMap<(WorldId, u64), FacilityReservation>,
 }
 impl FacilityLedger {
@@ -411,30 +584,48 @@ impl FacilityLedger {
         if !facility.accommodates(class, length) {
             return Err(OperationsError::FacilityIncompatible);
         }
-        let overlaps = self
-            .reservations
-            .values()
-            .filter(|r| {
-                r.world_id == reservation.world_id
-                    && r.resource == reservation.resource
-                    && r.starts_at < reservation.ends_at
-                    && reservation.starts_at < r.ends_at
-            })
-            .count();
-        if overlaps
-            >= usize::try_from(facility.capacity())
-                .map_err(|_| OperationsError::CapacityExhausted)?
-        {
-            return Err(OperationsError::CapacityExhausted);
-        }
         if self
             .reservations
             .contains_key(&(reservation.world_id, reservation.id))
         {
             return Err(OperationsError::DuplicateReservation);
         }
+        self.engine
+            .set_capacity(
+                reservation.world_id,
+                reservation.resource,
+                facility.capacity(),
+            )
+            .map_err(|_| OperationsError::CapacityExhausted)?;
+        let engine_reservation = ResourceReservation::new(
+            reservation.world_id,
+            reservation.id,
+            reservation.resource,
+            DeterministicSimTime::from_seconds(reservation.starts_at),
+            DeterministicSimTime::from_seconds(reservation.ends_at),
+        )
+        .map_err(|_| OperationsError::InvalidInterval)?;
+        self.engine
+            .try_reserve(engine_reservation)
+            .map_err(|_| OperationsError::CapacityExhausted)?;
         self.reservations
             .insert((reservation.world_id, reservation.id), reservation);
+        Ok(())
+    }
+
+    /// Gemeinsame Konfliktengine, etwa für Rangierbelegungen derselben Ressource.
+    pub const fn conflict_engine(&self) -> &CapacityLedger {
+        &self.engine
+    }
+
+    /// Gibt eine Belegung in beiden Sichten frei.
+    pub fn release(&mut self, world_id: WorldId, id: u64) -> Result<(), OperationsError> {
+        self.engine
+            .release(world_id, id)
+            .map_err(|_| OperationsError::UnknownReservation)?;
+        self.reservations
+            .remove(&(world_id, id))
+            .ok_or(OperationsError::UnknownReservation)?;
         Ok(())
     }
 }
@@ -446,30 +637,84 @@ pub enum ExtraRunPurpose {
     Supply,
     Stabling,
 }
-/// Zusatzfahrt mit den vier zwingenden Nachweisen (M5.8).
+/// Zusatzfahrt als echte Fahrt in Konfliktprüfung und Simulationskern (M5.8).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExtraRun {
     pub world_id: WorldId,
     pub id: u64,
     pub purpose: ExtraRunPurpose,
     pub formation_id: u64,
-    pub route_reservation_id: u64,
-    pub duty_id: u64,
+    pub personnel_pool_id: u64,
     pub cost_cents: i64,
-    pub visible: bool,
+    /// Materialisierte Fahrt für Simulation und Livemap.
+    pub simulation_run: zugfolge_sim::TrainRun,
 }
 impl ExtraRun {
     pub fn validate(&self) -> Result<(), OperationsError> {
-        if self.route_reservation_id == 0
-            || self.duty_id == 0
-            || self.cost_cents < 0
-            || !self.visible
+        if self.cost_cents < 0
+            || self.simulation_run.world_id != self.world_id
+            || self.simulation_run.id != self.id
+            || self.simulation_run.category != zugfolge_sim::TrainCategory::EmptyStock
+            || self.simulation_run.route.is_empty()
         {
             Err(OperationsError::IncompleteExtraRun)
         } else {
             Ok(())
         }
     }
+}
+
+/// Zweiphasiger Kostenport: Bei einem Trassenkonflikt wird die Vormerkung
+/// verworfen; nach erfolgreicher Reservierung ist das Commit unfehlbar.
+pub trait ExtraRunLedger {
+    type Token;
+    fn authorize(
+        &mut self,
+        world_id: WorldId,
+        run_id: u64,
+        amount_cents: i64,
+    ) -> Result<Self::Token, OperationsError>;
+    fn commit(&mut self, token: Self::Token);
+    fn cancel(&mut self, token: Self::Token);
+}
+
+/// Registriert eine Zusatzfahrt atomar in Trasse, Personal und Kosten.
+pub fn register_extra_run(
+    extra: &ExtraRun,
+    routed: &RoutedTrainRun,
+    roster: &DutyRoster,
+    occupations: &mut OccupationLedger,
+    ledger: &mut impl ExtraRunLedger,
+) -> Result<zugfolge_sim::Command, OperationsError> {
+    extra.validate()?;
+    let starts_at = extra
+        .simulation_run
+        .route
+        .first()
+        .map(|point| point.arrival)
+        .ok_or(OperationsError::IncompleteExtraRun)?;
+    let ends_at = extra
+        .simulation_run
+        .route
+        .last()
+        .map(|point| point.departure)
+        .ok_or(OperationsError::IncompleteExtraRun)?;
+    if !roster
+        .duties(extra.personnel_pool_id)
+        .iter()
+        .any(|duty| duty.starts_at <= starts_at && duty.ends_at >= ends_at)
+    {
+        return Err(OperationsError::MissingExtraRunDuty);
+    }
+    let token = ledger.authorize(extra.world_id, extra.id, extra.cost_cents)?;
+    if occupations.try_insert(routed).is_err() {
+        ledger.cancel(token);
+        return Err(OperationsError::ExtraRunRouteConflict);
+    }
+    ledger.commit(token);
+    Ok(zugfolge_sim::Command::Materialize(
+        extra.simulation_run.clone(),
+    ))
 }
 
 /// Automatisch berechneter Rangierbedarf (M5.9); keine steuerbaren Bewegungen.
@@ -493,6 +738,31 @@ pub fn calculate_shunting(
             .saturating_add(u32::from(coupling_changes).saturating_mul(180)),
         resource,
     })
+}
+
+/// Reserviert den automatisch berechneten Rangieraufwand in derselben
+/// Konfliktengine wie Anlagen und Bahnhofsköpfe.
+pub fn reserve_shunting(
+    ledger: &mut CapacityLedger,
+    world_id: WorldId,
+    reservation_id: u64,
+    starts_at: SimTime,
+    requirement: &ShuntingRequirement,
+) -> Result<(), OperationsError> {
+    let ends_at = starts_at
+        .checked_add(i64::from(requirement.seconds))
+        .ok_or(OperationsError::Overflow)?;
+    let reservation = ResourceReservation::new(
+        world_id,
+        reservation_id,
+        requirement.resource,
+        DeterministicSimTime::from_seconds(starts_at),
+        DeterministicSimTime::from_seconds(ends_at),
+    )
+    .map_err(|_| OperationsError::InvalidInterval)?;
+    ledger
+        .try_reserve(reservation)
+        .map_err(|_| OperationsError::CapacityExhausted)
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -524,6 +794,40 @@ pub struct OptimizationGap {
     pub absolute: i64,
     pub permille: u16,
     pub largest_lever: Option<String>,
+}
+
+/// Nachweis der Automatikgüte gegenüber derselben manuellen Planung.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AutomationQuality {
+    /// Güte in Promille; 850 entspricht 85 Prozent.
+    pub permille: u16,
+    /// Ob das in M5.10 verlangte Mindestziel von 85 Prozent erreicht ist.
+    pub target_reached: bool,
+}
+
+/// Vergleicht Kosten bei identischer Leistung; niedrigere Kosten sind besser.
+pub fn assess_automation_quality(
+    automatic_cost_cents: i64,
+    manual_cost_cents: i64,
+) -> Result<AutomationQuality, OperationsError> {
+    if automatic_cost_cents <= 0
+        || manual_cost_cents <= 0
+        || manual_cost_cents > automatic_cost_cents
+    {
+        return Err(OperationsError::InvalidQualityComparison);
+    }
+    let permille = u16::try_from(
+        manual_cost_cents
+            .saturating_mul(1_000)
+            .checked_div(automatic_cost_cents)
+            .unwrap_or(0)
+            .min(1_000),
+    )
+    .unwrap_or(1_000);
+    Ok(AutomationQuality {
+        permille,
+        target_reached: permille >= 850,
+    })
 }
 
 /// Deterministischer Automatikplaner (M5.10–M5.12). Er maximiert gedeckten
@@ -645,6 +949,58 @@ pub fn procurement_offer(
     lead: ProcurementLeadTimes,
     existing: Option<InteriorConfiguration>,
 ) -> Result<ProcurementOffer, OperationsError> {
+
+/// Überführt das Ergebnis der Automatik in reale Anlagenbelegungen und wendet
+/// die jeweilige Versorgungsleistung am Fahrzeugzustand an.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Plan, Fahrzeug, Anlage und Welt sind unabhängige Domänenwerte"
+)]
+pub fn commit_supply_plan(
+    plan: &SupplyPlan,
+    world_id: WorldId,
+    first_reservation_id: u64,
+    vehicle_id: VehicleId,
+    class: &FleetClass,
+    length: Length,
+    facilities: &FacilityCatalog,
+    reservations: &mut FacilityLedger,
+    needs: &mut VehicleNeeds,
+) -> Result<(), OperationsError> {
+    let original_needs = *needs;
+    let mut inserted = Vec::new();
+    for (offset, candidate) in plan.selected.iter().enumerate() {
+        let offset = u64::try_from(offset).map_err(|_| OperationsError::Overflow)?;
+        let id = first_reservation_id
+            .checked_add(offset)
+            .ok_or(OperationsError::Overflow)?;
+        let facility = facilities
+            .facility(candidate.facility_id)
+            .ok_or(OperationsError::UnknownFacility)?;
+        if let Err(error) = reservations.reserve(
+            FacilityReservation {
+                world_id,
+                id,
+                vehicle_id,
+                resource: ConflictResource::Facility(candidate.facility_id),
+                starts_at: candidate.starts_at,
+                ends_at: candidate.ends_at,
+            },
+            class,
+            length,
+            facilities,
+        ) {
+            for id in inserted {
+                let _ = reservations.release(world_id, id);
+            }
+            *needs = original_needs;
+            return Err(error);
+        }
+        inserted.push(id);
+        needs.apply(facility.kind());
+    }
+    Ok(())
+}
     if ordered_at < 0 || period_seconds == 0 {
         return Err(OperationsError::InvalidInterval);
     }
@@ -843,6 +1199,105 @@ mod tests {
     fn freigabe_sammelt_alle_verletzungen() {
         let report = check_feasibility(FeasibilityInput {
             rotation_errors: vec!["Umlauf".into()],
+/// Kostenport für die verbindliche Beschaffung in Integer-Cent.
+pub trait ProcurementLedger {
+    fn debit_procurement(
+        &mut self,
+        world_id: WorldId,
+        order_id: u64,
+        amount_cents: i64,
+    ) -> Result<(), OperationsError>;
+}
+
+/// Verbindliche Bestellung mit Lieferereignis statt sofortigem Fahrzeug.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProcurementOrder {
+    pub world_id: WorldId,
+    pub id: u64,
+    pub offer: ProcurementOffer,
+    pub price_cents: i64,
+    pub ordered_configuration: InteriorConfiguration,
+    delivered: bool,
+}
+
+impl ProcurementOrder {
+    /// Belastet das Ledger, bevor die Bestellung entsteht.
+    pub fn place(
+        world_id: WorldId,
+        id: u64,
+        offer: ProcurementOffer,
+        price_cents: i64,
+        ordered_configuration: Option<InteriorConfiguration>,
+        ledger: &mut impl ProcurementLedger,
+    ) -> Result<Self, OperationsError> {
+        if price_cents < 0 {
+            return Err(OperationsError::InvalidProcurementPrice);
+        }
+        let configuration = if offer.configurable {
+            ordered_configuration.ok_or(OperationsError::ExistingConfigurationRequired)?
+        } else {
+            let fixed = offer
+                .interior
+                .clone()
+                .ok_or(OperationsError::ExistingConfigurationRequired)?;
+            if ordered_configuration
+                .as_ref()
+                .is_some_and(|requested| requested != &fixed)
+            {
+                return Err(OperationsError::SecondaryConfigurationImmutable);
+            }
+            fixed
+        };
+        configuration
+            .validate()
+            .map_err(|_| OperationsError::InvalidProcurementConfiguration)?;
+        ledger.debit_procurement(world_id, id, price_cents)?;
+        Ok(Self {
+            world_id,
+            id,
+            offer,
+            price_cents,
+            ordered_configuration: configuration,
+            delivered: false,
+        })
+    }
+
+    /// Liefert genau einmal zum zugesagten Zeitpunkt.
+    pub fn deliver(&mut self, at: SimTime) -> Result<InteriorConfiguration, OperationsError> {
+        if at < self.offer.available_at {
+            return Err(OperationsError::ProcurementNotDue);
+        }
+        if self.delivered {
+            return Err(OperationsError::ProcurementAlreadyDelivered);
+        }
+        self.delivered = true;
+        Ok(self.ordered_configuration.clone())
+    }
+}
+
+    TechnicalDataMismatch,
+    MissingPlatform,
+    IncompatibleElectrification,
+    MaintenanceNotDue,
+    MaintenanceAlreadyCompleted,
+    MaintenanceNotFinished,
+    NotAWorkshop,
+    UnknownReservation,
+    MissingExtraRunDuty,
+    ExtraRunRouteConflict,
+    LedgerRejected,
+    InvalidQualityComparison,
+    InvalidProcurementPrice,
+    SecondaryConfigurationImmutable,
+    InvalidProcurementConfiguration,
+    ProcurementNotDue,
+    ProcurementAlreadyDelivered,
+    use zugfolge_conflict::{
+        OccupationLedger, TrainCategory as RoutedCategory, TrainNumber, TrainRun as RoutedRun,
+        derive_occupation_profile,
+        example::{nordstadt_bis_talheim, reference_infrastructure, regional_train},
+    };
+    use zugfolge_determinism::SimTime as RoutedTime;
             personnel_errors: vec!["Personal".into()],
             maintenance_errors: vec![],
             supply_errors: vec!["Wasser".into()],
@@ -864,3 +1319,276 @@ mod tests {
         }
     }
 }
+    #[derive(Default)]
+    struct TestExtraLedger {
+        authorized: bool,
+        committed: bool,
+        cancelled: bool,
+    }
+    impl ExtraRunLedger for TestExtraLedger {
+        type Token = u64;
+        fn authorize(
+            &mut self,
+            _: WorldId,
+            run_id: u64,
+            amount: i64,
+        ) -> Result<u64, OperationsError> {
+            if amount < 0 {
+                return Err(OperationsError::LedgerRejected);
+            }
+            self.authorized = true;
+            Ok(run_id)
+        }
+        fn commit(&mut self, _: u64) {
+            self.committed = true;
+        }
+        fn cancel(&mut self, _: u64) {
+            self.cancelled = true;
+        }
+    }
+
+    #[test]
+    fn zusatzfahrt_wird_als_echter_zug_reserviert_und_materialisiert() {
+        let infrastructure = reference_infrastructure();
+        let itinerary = nordstadt_bis_talheim(&infrastructure);
+        let profile =
+            derive_occupation_profile(&infrastructure, &itinerary, &regional_train()).unwrap();
+        let routed = RoutedRun::new(
+            TrainNumber::new(RoutedCategory::Supplementary, 80_001).unwrap(),
+            RoutedTime::from_seconds(1_000),
+            &profile,
+        );
+        let mut occupations = OccupationLedger::new(infrastructure.exclusions().clone());
+        let class = FleetClass::new("442").unwrap();
+        let pool = PersonnelPool {
+            world_id: 1,
+            id: 7,
+            capacity_seconds: 3_600,
+            minimum_rest_seconds: 0,
+            classes: BTreeSet::from([class.clone()]),
+            routes: BTreeSet::from([9]),
+        };
+        let mut roster = DutyRoster::default();
+        roster
+            .assign(
+                &pool,
+                Duty {
+                    pool_id: 7,
+                    starts_at: 900,
+                    ends_at: 2_000,
+                    class,
+                    route_id: 9,
+                },
+            )
+            .unwrap();
+        let run = zugfolge_sim::TrainRun {
+            world_id: 1,
+            id: 42,
+            region_id: 1,
+            operator: "EVU".into(),
+            train_number: "Lr 80001".into(),
+            category: zugfolge_sim::TrainCategory::EmptyStock,
+            route: vec![
+                zugfolge_sim::Waypoint {
+                    operating_point: "A".into(),
+                    position_mm: 0,
+                    arrival: 1_000,
+                    minimum_dwell_seconds: 0,
+                    departure: 1_000,
+                },
+                zugfolge_sim::Waypoint {
+                    operating_point: "B".into(),
+                    position_mm: 1_000,
+                    arrival: 1_100,
+                    minimum_dwell_seconds: 0,
+                    departure: 1_100,
+                },
+            ],
+            next_waypoint: 0,
+            delay_seconds: 0,
+            position_mm: 0,
+            speed_mm_per_second: 0,
+            status: zugfolge_sim::OperatingStatus::Planned,
+        };
+        let extra = ExtraRun {
+            world_id: 1,
+            id: 42,
+            purpose: ExtraRunPurpose::Supply,
+            formation_id: 3,
+            personnel_pool_id: 7,
+            cost_cents: 500,
+            simulation_run: run,
+        };
+        let mut ledger = TestExtraLedger::default();
+        let command =
+            register_extra_run(&extra, &routed, &roster, &mut occupations, &mut ledger).unwrap();
+        assert!(matches!(command, zugfolge_sim::Command::Materialize(run) if run.id == 42));
+        assert!(ledger.authorized && ledger.committed && !ledger.cancelled);
+        assert_eq!(occupations.run_count(), 1);
+    }
+
+    #[test]
+    fn automatik_beweist_eine_dreiwoechige_periode_ohne_sperre() {
+        let class = FleetClass::new("442").unwrap();
+        let pool = PersonnelPool {
+            world_id: 1,
+            id: 1,
+            capacity_seconds: 3_600,
+            minimum_rest_seconds: 0,
+            classes: BTreeSet::from([class.clone()]),
+            routes: BTreeSet::from([1]),
+        };
+        let mut roster = DutyRoster::default();
+        let mut rotations = RotationPlan::default();
+        let mut maintenance = MaintenanceState {
+            elapsed_seconds: 0,
+            distance_km: 0,
+            last_level: None,
+        };
+        let rules = [MaintenanceRule {
+            level: MaintenanceLevel::Inspection,
+            interval_seconds: 7 * 86_400,
+            interval_km: 10_000,
+            workshop_seconds: 600,
+            base_failure_per_million: 100,
+        }];
+        let mut needs = VehicleNeeds::default();
+        let limits = NeedLimits {
+            energy_milli: 500,
+            sand_milli: 500,
+            fresh_water_milli: 500,
+            waste_milli: 500,
+            interior_soil: 500,
+            exterior_soil: 500,
+        };
+        for day in 0_i64..21 {
+            let start = day * 86_400 + 1_000;
+            if !maintenance.due(&rules).is_empty() {
+                maintenance.maintain(MaintenanceLevel::Inspection);
+            }
+            if needs.energy_milli > 400 || needs.waste_milli > 400 {
+                let facility = FacilityId::new(1);
+                let plan = plan_supply(
+                    vec![SupplyCandidate {
+                        facility_id: facility,
+                        location_id: 1,
+                        starts_at: start - 600,
+                        ends_at: start - 300,
+                        need_reduction: 1_000,
+                        deadhead_seconds: 0,
+                        cost_cents: 100,
+                    }],
+                    &SupplyPreferences::default(),
+                    999,
+                );
+                assert_eq!(plan.selected.len(), 1);
+                needs.apply(FacilityKind::TreatmentPlant);
+            }
+            let from = u64::try_from(day % 2).unwrap();
+            rotations
+                .add(RotationLeg {
+                    formation_id: 1,
+                    location_from: from,
+                    location_to: 1 - from,
+                    starts_at: start,
+                    ends_at: start + 100,
+                    activity: RotationActivity::Service,
+                })
+                .unwrap();
+            roster
+                .assign(
+                    &pool,
+                    Duty {
+                        pool_id: 1,
+                        starts_at: start,
+                        ends_at: start + 100,
+                        class: class.clone(),
+                        route_id: 1,
+                    },
+                )
+                .unwrap();
+            let readiness = VehicleReadiness {
+                vehicle_id: 1,
+                maintenance: &maintenance,
+                maintenance_rules: &rules,
+                needs,
+                limits,
+            };
+            validate_timetable_release(
+                &[PlannedService {
+                    formation_id: 1,
+                    personnel_pool_id: 1,
+                    starts_at: start,
+                    ends_at: start + 100,
+                }],
+                &rotations,
+                &roster,
+                &[readiness],
+            )
+            .unwrap();
+            maintenance.accrue(86_400, 300);
+            needs.accrue(
+                NeedRates {
+                    energy_per_km: 1,
+                    sand_per_braking: 1,
+                    water_per_passenger_hour: 1,
+                    waste_per_passenger_hour: 2,
+                    interior_per_passenger_hour: 1,
+                    exterior_per_hour: 1,
+                },
+                300,
+                10,
+                100,
+                5,
+            );
+        }
+        let quality = assess_automation_quality(10_000, 8_800).unwrap();
+        assert_eq!(quality.permille, 880);
+        assert!(quality.target_reached);
+    }
+
+    #[derive(Default)]
+    struct TestProcurementLedger {
+        debits: Vec<(WorldId, u64, i64)>,
+    }
+    impl ProcurementLedger for TestProcurementLedger {
+        fn debit_procurement(
+            &mut self,
+            world: WorldId,
+            order: u64,
+            amount: i64,
+        ) -> Result<(), OperationsError> {
+            self.debits.push((world, order, amount));
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn beschaffung_bucht_und_liefert_nicht_vorzeitig() {
+        let offer = procurement_offer(
+            1,
+            ProcurementChannel::NewBuild,
+            1_000,
+            1_000,
+            ProcurementLeadTimes {
+                used_seconds: 100,
+                new_build_periods: 3,
+            },
+            Some(interior()),
+        )
+        .unwrap();
+        let mut ledger = TestProcurementLedger::default();
+        let mut order =
+            ProcurementOrder::place(1, 9, offer, 1_000_000, Some(interior()), &mut ledger).unwrap();
+        assert_eq!(ledger.debits, vec![(1, 9, 1_000_000)]);
+        assert_eq!(
+            order.deliver(3_999),
+            Err(OperationsError::ProcurementNotDue)
+        );
+        assert_eq!(order.deliver(4_000).unwrap(), interior());
+        assert_eq!(
+            order.deliver(4_001),
+            Err(OperationsError::ProcurementAlreadyDelivered)
+        );
+    }
+
