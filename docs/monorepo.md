@@ -15,7 +15,7 @@ crates/                     Rust — Simulationskern, Solver, Release-Pipeline
   zugfolge-conflict/        Sperrzeiten, Belegungsprofile, Konfliktprüfung (M3.1–M3.3), Rahmenverträge (M3.8)
   zugfolge-planner/         Trassen-Planner (M3.4), PlanningRun, Fahrplanperiode, Ad-hoc-Trassen (M3.5–M3.7)
   zugfolge-sim/             Ereigniskern, TrainRun, Regionsübergabe, Replay und Livemap-Protokoll (M4)
-  zugfolge-fleet/           Fahrzeugkatalog, individuelle Flotte, Konfiguration und Werkstattumbau (M5.1–M5.1b)
+  zugfolge-fleet/           Flotte, Formation, Umlauf, Personal, Versorgung und Beschaffung (M5)
 packages/                   TypeScript — fachliche Bibliotheken (ab M2)
   db/                       Postgres-Zugriff über Drizzle, Wurzel der Weltisolation (M2.2)
   identity/                 Konten, Rollen, Weltzugänge; Keycloak-Verifikation (M2.1)
@@ -79,6 +79,14 @@ und belegte Zugsicherungsoptionen; `VehicleAsset` und `FleetSnapshot` halten
 den individuellen, weltgebundenen Zustand. Die echte redaktionelle
 Katalogdatei bleibt als proprietäres Weltdatum außerhalb dieses öffentlichen
 Baums (E16). Im Crate liegen nur Schema, Regeln und fiktive Testdaten.
+
+Seit **M5.8** ist `zugfolge-fleet` der Orchestrator für Zusatzfahrten und darf
+deshalb von `zugfolge-sim` abhängen, nicht umgekehrt: Nach erfolgreicher
+Trassen-, Personal- und Kostenprüfung erzeugt es ausschließlich den reinen
+`Command::Materialize`. Der Simulationskern bleibt dadurch frei von
+Flottenwissen und Datenbankzugriff. Kapazitätsfähige Anlagen- und
+Rangierreservierungen liegen in `zugfolge-conflict`, damit neben
+Sperrzeitentreppen keine zweite Konfliktsemantik entsteht.
 
 **`spikes/` ist Wegwerf-Code, und zwar mit ausgesprochenem Verfallsdatum.** Ein
 Spike hat eine Frage zu beantworten und danach zu verschwinden; bleibt er

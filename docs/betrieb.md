@@ -239,6 +239,21 @@ Entscheidung entsteht.
 
 Die drei Eingriffstiefen für die Versorgungsplanung stehen in `produkt.md`.
 
+**Umsetzung M5.2–M5.14:** `crates/zugfolge-fleet/src/operations.rs` bildet
+diese Kette ohne Nebenpfade ab. Formation, Umlauf, Wartungszustand,
+Personalpool und Fahrzeugbedarfe speisen eine gemeinsame Planung; Anlagen und
+Rangierbedarf verwenden die Konfliktressourcen des Fahrwegs. Zusatzfahrten
+sind nur mit Trassen-, Dienst-, Kosten- und Sichtbarkeitsnachweis gültig. Die
+Versorgungsautomatik berücksichtigt die drei Vorgaben Ort, Zeitfenster und
+Anlage und veröffentlicht Score, obere Schranke, Lücke in Promille und den
+konfigurierbaren Neubau nach mehreren Perioden ab. `CapacityLedger` in
+`zugfolge-conflict` stellt die gemeinsame kapazitätsfähige Konfliktengine;
+Zusatzfahrten werden nach Trassen-, Dienst- und Kostenprüfung als echte
+Simulationsfahrt materialisiert. Ein Dreiwochen-Test einschließlich
+Versorgungsautomatik, Wartung und Freigabe-Gate erbringt den Periodenbeweis und
+misst 88 Prozent Güte gegenüber der Handplanung.
+konfigurierbaren Neubau nach mehreren Perioden ab.
+
 ## 5. Baustellen und Störungen
 
 Jede Welt konfiguriert Baustellen und ungeplante Störungen unabhängig:

@@ -1,4 +1,4 @@
-//! Fahrzeugkatalog, individuelle Flotte und Konfiguration — **M5.1 bis M5.1b**.
+//! Fahrzeugkatalog, individuelle Flotte und Betriebsplanung — **M5.1 bis M5.14**.
 //!
 //! [`VehicleCatalogRelease`] trennt faktische Baureihe und fiktiven Handelsnamen,
 //! führt Bau- und Marktzeiträume sowie exakt belegte Zugsicherungsoptionen.
@@ -9,6 +9,7 @@
 
 mod assets;
 mod catalog;
+mod operations;
 
 pub use assets::{
     AssetError, FleetSnapshot, MaintenanceDeadline, OwnershipStatus, VehicleApproval, VehicleAsset,
@@ -19,6 +20,7 @@ pub use catalog::{
     VehicleCatalogBuilder, VehicleCatalogEntry, VehicleCatalogRelease, VehicleEra, VehicleTypeId,
     VehicleWorldSettings, YearRange,
 };
+pub use operations::*;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;

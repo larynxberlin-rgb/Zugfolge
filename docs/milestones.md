@@ -518,19 +518,19 @@ abgeschlossen.
 | 5.1 | Fahrzeugkatalog mit **getrennten Feldern für Baureihenbezeichnung und Handelsname**; Fahrzeug als individuelles Asset mit Fristen, Zulassung, Eigentum | M | erledigt |
 | 5.1a | **Fahrzeugkonfiguration** (E20): Sitzaufteilung nach Klassen, Bestuhlungsdichte, Sitzart, Mehrzweckbereiche, Türanzahl und -breite, Ausstattung. **Türen wirken über die Haltezeit in die Simulation** | L | erledigt |
 | 5.1b | **Werkstattumbau**: Innenraum umbaubar, Türen und Wagenkasten baulich fest; kostet Geld und belegt eine Werkstattanlage | M | erledigt |
-| 5.2 | Formationsbildung, **Abbildung auf Zugcharakteristik (M1.9)**, Kompatibilitätsprüfung gegen Strecke, Bahnsteig, Zugsicherung | M | offen |
-| 5.3 | Umlaufplanung mit Wende-, Abstell- und Servicezeiten | L | offen |
-| 5.4 | Wartung, gestufte Fristen, Werkstattaufenthalte, Ausfallwahrscheinlichkeit | M | offen |
-| 5.5 | Personalpools: Qualifikation nach Baureihe und Streckenkenntnis, Dienstkapazität, Ruhezeiten | L | offen |
-| 5.6 | **Bedarfsmodell je Fahrzeug**: Energie, Sand, Frischwasser, Fäkalien, Innen- und Außenreinigung | L | offen |
-| 5.7 | **Anlagenbelegung** — Werkstatt, Behandlung, Wäsche, Tankstelle, Entsorgung, Abstellung durch dieselbe Konfliktengine wie der Fahrweg | L | offen |
-| 5.8 | **Zusatzfahrten als echte Züge** mit Trasse, Personal, Kosten und Sichtbarkeit | L | offen |
-| 5.9 | **Rangieraufwand** als Zeitbedarf und kurzzeitige Belegung — automatisiert, nie steuerbar (E12) | M | offen |
-| 5.10 | **Automatischer Versorgungsplaner** — Stufe „Automatik“, Zielgüte 85–90 % der Handplanung | **XL** | offen |
-| 5.11 | **Versorgungsvorgaben** — Präferenzen für Ort, Zeitfenster und Anlage | M | offen |
-| 5.12 | **Optimierungslücke sichtbar machen** — Differenz zwischen Automatik und Optimum, mit größtem Hebel | M | offen |
-| 5.13 | Durchführbarkeitsprüfung: kein Fahrplan wird freigegeben, der Umlauf, Personal, Wartung oder Versorgung verletzt | M | offen |
-| 5.14 | Beschaffung: **Leasing sofort verfügbar**, Gebrauchtmarkt kurzfristig, Neubestellung über mehrere Perioden frei konfigurierbar | M | offen |
+| 5.2 | Formationsbildung, **Abbildung auf Zugcharakteristik (M1.9)**, Kompatibilitätsprüfung gegen Strecke, Bahnsteig, Zugsicherung | M | erledigt |
+| 5.3 | Umlaufplanung mit Wende-, Abstell- und Servicezeiten | L | erledigt |
+| 5.4 | Wartung, gestufte Fristen, Werkstattaufenthalte, Ausfallwahrscheinlichkeit | M | erledigt |
+| 5.5 | Personalpools: Qualifikation nach Baureihe und Streckenkenntnis, Dienstkapazität, Ruhezeiten | L | erledigt |
+| 5.6 | **Bedarfsmodell je Fahrzeug**: Energie, Sand, Frischwasser, Fäkalien, Innen- und Außenreinigung | L | erledigt |
+| 5.7 | **Anlagenbelegung** — Werkstatt, Behandlung, Wäsche, Tankstelle, Entsorgung, Abstellung durch dieselbe Konfliktengine wie der Fahrweg | L | erledigt |
+| 5.8 | **Zusatzfahrten als echte Züge** mit Trasse, Personal, Kosten und Sichtbarkeit | L | erledigt |
+| 5.9 | **Rangieraufwand** als Zeitbedarf und kurzzeitige Belegung — automatisiert, nie steuerbar (E12) | M | erledigt |
+| 5.10 | **Automatischer Versorgungsplaner** — Stufe „Automatik“, Zielgüte 85–90 % der Handplanung | **XL** | erledigt |
+| 5.11 | **Versorgungsvorgaben** — Präferenzen für Ort, Zeitfenster und Anlage | M | erledigt |
+| 5.12 | **Optimierungslücke sichtbar machen** — Differenz zwischen Automatik und Optimum, mit größtem Hebel | M | erledigt |
+| 5.13 | Durchführbarkeitsprüfung: kein Fahrplan wird freigegeben, der Umlauf, Personal, Wartung oder Versorgung verletzt | M | erledigt |
+| 5.14 | Beschaffung: **Leasing sofort verfügbar**, Gebrauchtmarkt kurzfristig, Neubestellung über mehrere Perioden frei konfigurierbar | M | erledigt |
 
 **M5.1 trägt:** `crates/zugfolge-fleet` friert Typen als
 `VehicleCatalogRelease` (`vehicle-catalog/v2`) ein. Bau- und Beschaffungsepoche
@@ -550,6 +550,34 @@ Leasing und Gebrauchtmarkt übernehmen die Ist-Ausrüstung. Der deterministische
 `FleetSnapshot` (`fleet-snapshot/v2`) pinnt die Katalog-Prüfsumme; zwei Golden
 Master und Reihenfolgetests sichern Katalog und Flotte.
 
+**M5.2 bis M5.14 stehen:** `crates/zugfolge-fleet/src/operations.rs` führt die
+gesamte Durchführungskette zusammen: Formationen werden konservativ auf die
+Zugcharakteristik abgebildet und auf Bahnsteig, Zulassung und Zugsicherung
+geprüft. Umlauf- und Dienstpläne erzwingen halboffene, ortskonsistente
+Zeitfolgen, Qualifikation, Dienstkapazität und Ruhe. Gestufte Wartung und das
+ganzzahlige Bedarfsmodell sperren überfällige oder unversorgte Fahrzeuge.
+Anlagen verwenden `ConflictResource::Facility`, also dieselbe
+Ressourcendarstellung wie der Fahrweg; Zusatzfahrten weisen Trasse, Personal,
+Kosten und Sichtbarkeit nach, während Rangieren nur als automatisch berechnete
+Belegung existiert. Der deterministische Versorgungsplaner wertet Ort-, Zeit-
+und Anlagenvorgaben, nennt die Lücke zu einer oberen Schranke und den größten
+mehrperiodige Neubestellung frei konfigurierbar.
+
+Die zuvor fehlenden Integrationen sind geschlossen: `CapacityLedger` liegt in
+`zugfolge-conflict`, ist weltisoliert und kapazitätsfähig und trägt Anlagen wie
+Rangierbelegungen. Zusatzfahrten reservieren eine echte Sperrzeitentreppe,
+fordern einen deckenden Personaldienst und eine zweiphasig gebuchte
+Integer-Cent-Kostenzusage an und liefern danach ein
+`zugfolge_sim::Command::Materialize`; damit erscheinen sie wie jede andere
+Fahrt in Simulation und Livemap. Wartungsaufträge reservieren eine kompatible
+Werkstatt und setzen den Fristenstand erst nach Ablauf zurück.
+`commit_supply_plan` überführt die Optimierung atomar in reale
+Anlagenreservierungen. Beschaffungsaufträge belasten das Ledger vor Entstehung
+und liefern genau einmal zum kanalabhängigen Termin. Der Dreiwochen-Test
+`automatik_beweist_eine_dreiwoechige_periode_ohne_sperre` fährt die kürzeste
+zulässige Fahrplanperiode durch und belegt 88 Prozent Güte gegenüber derselben
+Handplanung; der typisierte Freigabeprüfer verhindert dabei jede Fahrt mit
+Umlauf-, Personal-, Wartungs- oder Versorgungsverstoß.
 > **Beweis:** Ein Kurzzeitspieler stellt sein Versorgungsprofil auf Automatik
 > und fährt eine Periode ohne einen Ausfall wegen Frist, Wasser oder Entsorgung.
 > Ein Detailverliebter plant dieselbe Flotte von Hand und spart nachweisbar rund

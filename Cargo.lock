@@ -144,8 +144,10 @@ dependencies = [
 name = "zugfolge-fleet"
 version = "0.0.0"
 dependencies = [
+ "zugfolge-conflict",
  "zugfolge-determinism",
  "zugfolge-infra",
+ "zugfolge-sim",
 ]
 
 [[package]]

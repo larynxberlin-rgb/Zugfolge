@@ -11,6 +11,8 @@ publish.workspace = true
 [dependencies]
 zugfolge-determinism.workspace = true
 zugfolge-infra.workspace = true
+zugfolge-conflict.workspace = true
+zugfolge-sim.workspace = true
 
 [lints]
 workspace = true
