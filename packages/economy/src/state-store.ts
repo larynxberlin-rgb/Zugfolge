@@ -60,7 +60,7 @@ export async function persistEconomyTransition(
     readonly committedAt: Date;
   },
 ): Promise<void> {
-  if (input.expectedRevision !== null && input.state.revision !== input.expectedRevision + 1) {
+  if (input.expectedRevision !== null && input.state.revision <= input.expectedRevision) {
     throw new EconomyStateConflictError(input.state.worldId, input.expectedRevision);
   }
   if (input.expectedRevision === null && input.state.revision !== 0) {
@@ -119,7 +119,22 @@ export async function loadEconomyWorldState(
     .from(economyWorldStates)
     .where(eq(economyWorldStates.worldId, worldId))
     .limit(1);
-  return row === undefined ? undefined : (decodeEconomyValue(row.state) as EconomyWorldState);
+  if (row === undefined) return undefined;
+  const state = decodeEconomyValue(row.state) as EconomyWorldState;
+  // Vor der Scheduler-Anbindung persistierte M6-Zustände besitzen dieses
+  // Feld noch nicht. Ein leerer Index ist die semantisch korrekte Migration:
+  // bestehende Ausschreibungen werden nicht nachträglich automatisiert.
+  return state.tenderAutomation === undefined
+    ? Object.freeze({ ...state, tenderAutomation: new Map() })
+    : state;
+}
+
+export async function listEconomyWorldIds(db: EconomyDatabase): Promise<readonly string[]> {
+  const rows = await db
+    .select({ worldId: economyWorldStates.worldId })
+    .from(economyWorldStates)
+    .orderBy(asc(economyWorldStates.worldId));
+  return rows.map((row) => row.worldId);
 }
 
 export interface PendingEconomyEffect {

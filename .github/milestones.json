@@ -1,0 +1,254 @@
+{
+  "version": 1,
+  "repository": "larynxberlin-rgb/Zugfolge",
+  "roadmap": "docs/milestones.md",
+  "generatedStatus": "docs/roadmap-status.md",
+  "labels": [
+    { "name": "area:ci", "color": "0052cc", "description": "CI, Build, Quality Gates und Lieferkette" },
+    { "name": "area:database", "color": "bfd4f2", "description": "Persistenz, Schema und Weltisolation" },
+    { "name": "area:dependencies", "color": "c5def5", "description": "Abhaengigkeiten und Supply Chain" },
+    { "name": "area:economy", "color": "e99695", "description": "Oekonomie, Vergabe und Vertraege" },
+    { "name": "area:fleet", "color": "f9d0c4", "description": "Flotte, Personal und Versorgung" },
+    { "name": "area:health", "color": "006b75", "description": "Health-Checks und Observability" },
+    { "name": "area:identity", "color": "d4c5f9", "description": "Identitaet, Autorisierung und Datenschutz" },
+    { "name": "area:infrastructure", "color": "0e8a16", "description": "Betriebsgraph und Infrastruktur-Releases" },
+    { "name": "area:livemap", "color": "1d76db", "description": "Livemap, Streaming und Frontend" },
+    { "name": "area:operations", "color": "7057ff", "description": "Betrieb, Administration und Betriebsreife" },
+    { "name": "area:planning", "color": "c2e0c6", "description": "Trassenplanung und Konfliktloesung" },
+    { "name": "area:roadmap", "color": "5319e7", "description": "Roadmap, Status und Projektdokumentation" },
+    { "name": "area:simulation", "color": "fbca04", "description": "Simulation, Replay und Ereignisverarbeitung" },
+    { "name": "type:bug", "color": "d73a4a", "description": "Bestaetigter Fehler" },
+    { "name": "type:delivery", "color": "0e8a16", "description": "Implementierungs- oder Liefer-PR" },
+    { "name": "type:documentation", "color": "0075ca", "description": "Dokumentation und Statuskommunikation" },
+    { "name": "type:enhancement", "color": "a2eeef", "description": "Verbesserung oder neue Funktion" },
+    { "name": "type:operations", "color": "7057ff", "description": "Externe Betriebs- oder Repository-Aktion" },
+    { "name": "type:security", "color": "b60205", "description": "Sicherheits- oder Datenschutzbefund" },
+    { "name": "priority:p0", "color": "b60205", "description": "Kritisch: blockiert Build, Sicherheit oder Datenintegritaet" },
+    { "name": "priority:p1", "color": "d93f0b", "description": "Hoch: vor dem naechsten Abnahmebeweis beheben" },
+    { "name": "priority:p2", "color": "fbca04", "description": "Normal: geplante Verbesserung" }
+  ],
+  "milestones": [
+    {
+      "key": "M0",
+      "title": "M0 — Fundament und Grundsatzentscheidungen",
+      "goal": "Entscheidungen, Monorepo, CI, Rechte-Gates und reproduzierbare Qualitaetsbarrieren tragen.",
+      "area": "area:ci",
+      "dependsOn": [],
+      "status": { "core": "verified", "integration": "blocked", "operations": "not_applicable", "acceptance": "blocked" },
+      "evidence": [
+        { "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" },
+        { "label": "CI-Definition", "url": ".github/workflows/ci.yml" }
+      ],
+      "items": [
+        { "number": 1, "kind": "pull_request" },
+        { "number": 2, "kind": "pull_request" },
+        { "number": 3, "kind": "pull_request" },
+        { "number": 4, "kind": "pull_request" },
+        { "number": 5, "kind": "pull_request" },
+        { "number": 18, "kind": "pull_request" },
+        { "number": 29, "kind": "issue", "labels": ["area:ci", "type:operations", "priority:p0"] },
+        { "number": 47, "kind": "issue", "labels": ["area:dependencies", "type:security", "priority:p1"] },
+        { "number": 55, "kind": "issue", "labels": ["area:ci", "type:operations", "priority:p0"] },
+        { "number": 56, "kind": "issue", "labels": ["area:roadmap", "type:enhancement", "priority:p1"] },
+        { "number": 57, "kind": "issue", "labels": ["area:ci", "type:enhancement", "priority:p1"] },
+        { "number": 58, "kind": "issue", "labels": ["area:roadmap", "type:documentation", "priority:p1"] }
+      ]
+    },
+    {
+      "key": "M1",
+      "title": "M1 — Betriebsgraph und Infrastruktur-Release",
+      "goal": "Einen lizenzgeprueften, reproduzierbaren und extern signierten InfraRelease der Pilotregion liefern.",
+      "area": "area:infrastructure",
+      "dependsOn": ["M0"],
+      "status": { "core": "in_progress", "integration": "in_progress", "operations": "blocked", "acceptance": "blocked" },
+      "evidence": [{ "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" }],
+      "items": [
+        { "number": 6, "kind": "pull_request" },
+        { "number": 7, "kind": "pull_request" },
+        { "number": 8, "kind": "pull_request" },
+        { "number": 9, "kind": "pull_request" },
+        { "number": 10, "kind": "pull_request" },
+        { "number": 11, "kind": "pull_request" },
+        { "number": 12, "kind": "pull_request" },
+        { "number": 48, "kind": "issue", "labels": ["area:infrastructure", "type:enhancement", "priority:p1"] }
+      ]
+    },
+    {
+      "key": "M2",
+      "title": "M2 — Weltgerüst: Konten, Weltisolation, Ledger",
+      "goal": "Konten, Weltisolation, EVU, Ledger, Postfach und Datenschutz als durchgaengiges Weltgeruest nachweisen.",
+      "area": "area:identity",
+      "dependsOn": ["M0"],
+      "status": { "core": "verified", "integration": "verified", "operations": "in_progress", "acceptance": "in_progress" },
+      "evidence": [{ "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" }],
+      "items": [
+        { "number": 13, "kind": "pull_request" },
+        { "number": 14, "kind": "pull_request" },
+        { "number": 16, "kind": "pull_request" },
+        { "number": 30, "kind": "issue", "labels": ["area:identity", "type:security", "priority:p0"] },
+        { "number": 31, "kind": "issue", "labels": ["area:identity", "type:security", "priority:p1"] },
+        { "number": 32, "kind": "issue", "labels": ["area:identity", "type:security", "priority:p1"] },
+        { "number": 33, "kind": "issue", "labels": ["area:database", "type:bug", "priority:p0"] },
+        { "number": 59, "kind": "issue", "labels": ["area:database", "type:security", "priority:p0"] }
+      ]
+    },
+    {
+      "key": "M3",
+      "title": "M3 — Sperrzeiten, Konfliktengine, Trassenvergabe",
+      "goal": "Konkurrierende Trassen serverautoritaer planen, erklaeren und ueber den echten Client verbindlich anwenden.",
+      "area": "area:planning",
+      "dependsOn": ["M1", "M2"],
+      "status": { "core": "verified", "integration": "in_progress", "operations": "blocked", "acceptance": "blocked" },
+      "evidence": [{ "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" }],
+      "items": [
+        { "number": 17, "kind": "pull_request" },
+        { "number": 20, "kind": "pull_request" },
+        { "number": 21, "kind": "pull_request" },
+        { "number": 23, "kind": "pull_request" },
+        { "number": 53, "kind": "issue", "labels": ["area:planning", "type:enhancement", "priority:p1"] }
+      ]
+    },
+    {
+      "key": "M4",
+      "title": "M4 — Simulationskern und Livemap",
+      "goal": "Simulation, persistentes Replay und robuste Livemap fuer den 24-Stunden-Betrieb integrieren.",
+      "area": "area:simulation",
+      "dependsOn": ["M3"],
+      "status": { "core": "verified", "integration": "in_progress", "operations": "blocked", "acceptance": "blocked" },
+      "evidence": [{ "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" }],
+      "items": [
+        { "number": 22, "kind": "pull_request" },
+        { "number": 34, "kind": "issue", "labels": ["area:livemap", "type:bug", "priority:p0"] },
+        { "number": 35, "kind": "issue", "labels": ["area:livemap", "type:security", "priority:p0"] },
+        { "number": 36, "kind": "issue", "labels": ["area:livemap", "type:security", "priority:p0"] },
+        { "number": 54, "kind": "issue", "labels": ["area:simulation", "area:database", "type:enhancement", "priority:p0"] },
+        { "number": 60, "kind": "issue", "labels": ["area:livemap", "type:enhancement", "priority:p1"] }
+      ]
+    },
+    {
+      "key": "M5",
+      "title": "M5 — Flotte, Personal, Umläufe, Versorgung",
+      "goal": "Flotte, Personal, Wartung und Versorgung durchgaengig und reproduzierbar planbar machen.",
+      "area": "area:fleet",
+      "dependsOn": ["M1", "M2"],
+      "status": { "core": "verified", "integration": "in_progress", "operations": "blocked", "acceptance": "in_progress" },
+      "evidence": [{ "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" }],
+      "items": [
+        { "number": 24, "kind": "pull_request" },
+        { "number": 25, "kind": "pull_request" },
+        { "number": 26, "kind": "pull_request" },
+        { "number": 28, "kind": "issue", "labels": ["area:fleet", "type:bug", "priority:p0"] },
+        { "number": 50, "kind": "issue", "labels": ["area:fleet", "type:bug", "priority:p1"] }
+      ]
+    },
+    {
+      "key": "M6",
+      "title": "M6 — SPNV: Ausschreibung, Vertrag, Geld",
+      "goal": "Ausschreibung, Mobilisierung, Vertrag und Finanzfolgen als persistenten, integrierten Ablauf nachweisen.",
+      "area": "area:economy",
+      "dependsOn": ["M2", "M5"],
+      "status": { "core": "verified", "integration": "in_progress", "operations": "blocked", "acceptance": "blocked" },
+      "evidence": [{ "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" }],
+      "items": [
+        { "number": 15, "kind": "pull_request" },
+        { "number": 27, "kind": "pull_request" },
+        { "number": 40, "kind": "issue", "labels": ["area:economy", "type:bug", "priority:p0"] },
+        { "number": 41, "kind": "issue", "labels": ["area:economy", "type:bug", "priority:p1"] },
+        { "number": 42, "kind": "issue", "labels": ["area:economy", "type:bug", "priority:p1"] },
+        { "number": 43, "kind": "issue", "labels": ["area:economy", "type:bug", "priority:p1"] },
+        { "number": 44, "kind": "issue", "labels": ["area:economy", "type:bug", "priority:p0"] },
+        { "number": 45, "kind": "issue", "labels": ["area:economy", "type:bug", "priority:p1"] },
+        { "number": 46, "kind": "issue", "labels": ["area:economy", "type:bug", "priority:p1"] },
+        { "number": 49, "kind": "issue", "labels": ["area:economy", "type:bug", "priority:p1"] },
+        { "number": 51, "kind": "issue", "labels": ["area:economy", "type:enhancement", "priority:p1"] },
+        { "number": 52, "kind": "issue", "labels": ["area:economy", "area:fleet", "type:enhancement", "priority:p1"] }
+      ]
+    },
+    {
+      "key": "M7",
+      "title": "M7 — Betriebsprogramm und Betriebszentrale",
+      "goal": "Offline-faehige Dispositionsregeln, Betriebszentrale und Tagesberichte liefern.",
+      "area": "area:operations",
+      "dependsOn": ["M4", "M5", "M6"],
+      "status": { "core": "not_started", "integration": "not_started", "operations": "not_started", "acceptance": "not_started" },
+      "evidence": [],
+      "items": []
+    },
+    {
+      "key": "M8",
+      "title": "M8 — Störungen, Baustellen, Ersatzverkehr",
+      "goal": "Stoerungen und Baustellen mit geprueften Ersatzkonzepten und vertraglichen Folgen abbilden.",
+      "area": "area:operations",
+      "dependsOn": ["M4", "M7"],
+      "status": { "core": "not_started", "integration": "not_started", "operations": "not_started", "acceptance": "not_started" },
+      "evidence": [],
+      "items": []
+    },
+    {
+      "key": "M9",
+      "title": "M9 — Onboarding, Betriebsreife, geschlossene Alpha",
+      "goal": "Observability, Wiederherstellung, Schutzmechanismen und eine belastbare geschlossene Alpha nachweisen.",
+      "area": "area:operations",
+      "dependsOn": ["M0", "M4", "M6", "M7", "M8"],
+      "status": { "core": "in_progress", "integration": "in_progress", "operations": "blocked", "acceptance": "blocked" },
+      "evidence": [{ "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" }],
+      "items": [
+        { "number": 19, "kind": "pull_request", "labels": ["area:health", "type:delivery"] },
+        { "number": 37, "kind": "issue", "labels": ["area:health", "type:bug", "priority:p0"] },
+        { "number": 38, "kind": "issue", "labels": ["area:health", "type:security", "priority:p1"] },
+        { "number": 39, "kind": "issue", "labels": ["area:health", "type:bug", "priority:p1"] },
+        { "number": 61, "kind": "pull_request", "labels": ["area:operations", "area:roadmap", "type:delivery"] }
+      ]
+    },
+    {
+      "key": "M10",
+      "title": "M10 — SPFV",
+      "goal": "Fernverkehrsnachfrage, Tarife, Komfort und Linienplanung nachvollziehbar modellieren.",
+      "area": "area:economy",
+      "dependsOn": ["M9"],
+      "status": { "core": "not_started", "integration": "not_started", "operations": "not_started", "acceptance": "not_started" },
+      "evidence": [],
+      "items": []
+    },
+    {
+      "key": "M11",
+      "title": "M11 — SGV",
+      "goal": "Gueterstroeme, Wagen, Terminals und Verlaedervertraege integrieren.",
+      "area": "area:economy",
+      "dependsOn": ["M9"],
+      "status": { "core": "not_started", "integration": "not_started", "operations": "not_started", "acceptance": "not_started" },
+      "evidence": [],
+      "items": []
+    },
+    {
+      "key": "M12",
+      "title": "M12 — Kooperation, Wirtschaftstiefe, Sekundärmarkt",
+      "goal": "EVU-Kooperationen, Sekundaermarkt und oeffentliche Qualitaetswirkungen liefern.",
+      "area": "area:economy",
+      "dependsOn": ["M6", "M10", "M11"],
+      "status": { "core": "not_started", "integration": "not_started", "operations": "not_started", "acceptance": "not_started" },
+      "evidence": [],
+      "items": []
+    },
+    {
+      "key": "M13",
+      "title": "M13 — Odoo und Monetarisierung",
+      "goal": "Odoo-Bridge, Entitlements und bezahlte Komfortfunktionen strikt vom Spielkern trennen.",
+      "area": "area:operations",
+      "dependsOn": ["M9", "M12"],
+      "status": { "core": "not_started", "integration": "not_started", "operations": "not_started", "acceptance": "not_started" },
+      "evidence": [],
+      "items": []
+    },
+    {
+      "key": "M14",
+      "title": "M14 — Netzausweitung",
+      "goal": "Das Netz mit messbarer Datenqualitaet, Lastprofilen und sicheren Migrationsregeln erweitern.",
+      "area": "area:infrastructure",
+      "dependsOn": ["M9"],
+      "status": { "core": "not_started", "integration": "not_started", "operations": "not_started", "acceptance": "not_started" },
+      "evidence": [],
+      "items": []
+    }
+  ]
+}

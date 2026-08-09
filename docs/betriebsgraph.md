@@ -600,19 +600,20 @@ eine **definierte Toleranz** — ein absoluter Sockel in Sekunden und ein
 relativer Anteil in Promille, der größere gilt. Ein Größenordnungsabgleich, kein
 Sekundenvergleich.
 
-**Kein Import — dieselbe Haltung wie M1.5 bis M1.8.** Die realen Fahrzeiten
-stammen aus einem Fahrplanausschnitt oder aus dem Trassenfinder. Der
-Trassenfinder steht im Quellenregister auf `entwicklung` (`docs/rechte.md` 3,
-`docs/daten.md` 3): Kalibrierwerkzeug der Entwicklung, keine
-Laufzeitabhängigkeit (E10), und seine Werte sind laut Betreiber unverbindliche
-Richtwerte, keine Referenzwahrheit; ob eine automatisierte Abfrage mit
-Speicherung von den Nutzungsbedingungen gedeckt ist, ist ein offener Prüfpunkt
-(`docs/rechte.md` 4). M1.13 liefert deshalb — wie M1.5 für die Neigung — **das
-Verfahren, keinen Import**: Es rechnet mit gegebenen Referenzfahrzeiten, gleich
-woher sie stammen. Sobald ein Fahrplanausschnitt freigegeben ist, füllt er den
-Korpus; an diesem Modul ändert sich dann nichts. Der Report meldet einen Fehler
-weiter, wenn ein Fahrweg gar keine Fahrzeit hat, statt eine erfundene Abweichung
-auszuweisen — die Referenz bleibt dann ungeprüft, nicht stillschweigend
-bestätigt.
+**Freigegebener Offline-Import, keine Laufzeitabhängigkeit.** Die reale
+Referenz wird aus dem statischen GTFS.DE-Feed „Schienenregionalverkehr
+Deutschland“ aufgebaut. Diese DELFI-basierte Quelle ist unter CC BY 4.0 als
+`gtfs-de-rv` freigegeben (`docs/rechte.md` 3). Der Import speichert Feed-URL,
+Attribution, Konfiguration sowie Hash von ZIP und GTFS-Tabellen. Halte werden
+nur innerhalb derselben `trip_id` gepaart und über eine
+geprüfte Konfiguration auf exakt dieselbe `TrainCharacteristics` wie die eigene
+Rechnung abgebildet. P20 bildet die technische Referenz; Median und Mittelwert
+halten Fahrplanreserve und planmäßige Warteanteile separat sichtbar. Der
+Trassenfinder bleibt davon unberührt auf `entwicklung` und wird nicht
+automatisiert importiert. Der vollständige Ablauf steht in
+[`referenzkorpus.md`](referenzkorpus.md). Der Report meldet einen Fehler weiter,
+wenn ein Fahrweg gar keine Fahrzeit hat, statt eine erfundene Abweichung
+auszuweisen.
 
-Umsetzung: [`crates/zugfolge-infra/src/reference.rs`](../crates/zugfolge-infra/src/reference.rs).
+Umsetzung: [`crates/zugfolge-infra/src/reference.rs`](../crates/zugfolge-infra/src/reference.rs)
+und [`tools/reference-corpus`](../tools/reference-corpus).

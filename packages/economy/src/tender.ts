@@ -1,9 +1,24 @@
 import type { EconomyRelease, EconomyRules, TenderProfile } from "./release.js";
+import type { TenderPlanningEvidence } from "./service-planning.js";
 
-export interface VehicleRequirements { readonly minimumSeats: number; readonly firstClassBasisPoints: number; readonly accessible: boolean; readonly bicyclePlaces: number; readonly wheelchairPlaces: number; readonly requiredEquipment: readonly string[] }
-export interface VehicleConcept extends VehicleRequirements { readonly formationId: string; readonly vehicleAgeYears: number; readonly traction: "electric" | "diesel" | "battery" | "hydrogen"; readonly replacementPlan: boolean }
+export interface VehicleRequirements { readonly minimumSeats: number; readonly minimumMaximumSpeedKph?: number; readonly firstClassBasisPoints: number; readonly accessible: boolean; readonly bicyclePlaces: number; readonly wheelchairPlaces: number; readonly requiredEquipment: readonly string[] }
+export interface VehicleConcept extends VehicleRequirements {
+  readonly formationId: string;
+  readonly maximumSpeedKph: number;
+  readonly operatingCostCentsPerTrainKm: number;
+  readonly vehicleAgeYears: number;
+  readonly traction: "electric" | "diesel" | "battery" | "hydrogen";
+  readonly replacementPlan: boolean;
+  /** Serverseitig aus einem unveränderlichen M5-Snapshot abgeleitet. */
+  readonly evidence: {
+    readonly source: "zugfolge-fleet-mobilization/v1";
+    readonly fleetRevision: number;
+    readonly snapshotHash: string;
+    readonly formationId: string;
+  };
+}
 export interface ServiceSpecification { readonly lines: readonly string[]; readonly trainKmPerPeriod: bigint; readonly stopsPerPeriod: bigint; readonly serviceHoursPerPeriod: bigint; readonly facilityHoursPerPeriod: bigint; readonly energyKwhPerPeriod: bigint; readonly vehicleCount: bigint; readonly overnightUnits: bigint; readonly protectionUnits: bigint; readonly requirements: VehicleRequirements }
-export interface Tender { readonly id: string; readonly worldId: string; readonly lotId: string; readonly incumbentOperatorId: string | "public"; readonly profile: TenderProfile; readonly rules: EconomyRules; readonly specification: ServiceSpecification; readonly announcedAt: number; readonly opensAt: number; readonly closesAt: number; readonly operatingFrom: number; readonly contractPeriods: number; readonly periodDurationSeconds: number; readonly viabilityThresholdCentsPerTrainKm: bigint; readonly status: "announced" | "open" | "awarded" | "failed" }
+export interface Tender { readonly id: string; readonly worldId: string; readonly lotId: string; readonly incumbentOperatorId: string | "public"; readonly profile: TenderProfile; readonly rules: EconomyRules; readonly specification: ServiceSpecification; readonly planningEvidence?: TenderPlanningEvidence; readonly announcedAt: number; readonly opensAt: number; readonly closesAt: number; readonly operatingFrom: number; readonly contractPeriods: number; readonly periodDurationSeconds: number; readonly viabilityThresholdCentsPerTrainKm: bigint; readonly status: "announced" | "open" | "awarded" | "failed" }
 
 export function calculateViabilityThreshold(release: EconomyRelease, specification: ServiceSpecification, profile: TenderProfile): bigint {
   const r = release.rates;
@@ -28,7 +43,15 @@ export interface ScoreBreakdown { readonly pricePoints: number; readonly quality
 
 export function validateVehicle(requirements: VehicleRequirements, vehicle: VehicleConcept): readonly string[] {
   const failures: string[] = [];
+  if (
+    vehicle.evidence.source !== "zugfolge-fleet-mobilization/v1"
+    || vehicle.evidence.formationId !== vehicle.formationId
+    || !Number.isSafeInteger(vehicle.evidence.fleetRevision)
+    || vehicle.evidence.fleetRevision < 0
+    || !/^[a-f0-9]{64}$/.test(vehicle.evidence.snapshotHash)
+  ) failures.push("fleetSnapshotEvidence");
   if (vehicle.minimumSeats < requirements.minimumSeats) failures.push("minimumSeats");
+  if (requirements.minimumMaximumSpeedKph !== undefined && vehicle.maximumSpeedKph < requirements.minimumMaximumSpeedKph) failures.push("maximumSpeedKph");
   if (vehicle.firstClassBasisPoints < requirements.firstClassBasisPoints) failures.push("firstClassBasisPoints");
   if (requirements.accessible && !vehicle.accessible) failures.push("accessible");
   if (vehicle.bicyclePlaces < requirements.bicyclePlaces) failures.push("bicyclePlaces");

@@ -148,6 +148,24 @@ jobs:
       - name: Wächter laufen lassen
         run: pnpm --filter @zugfolge/guards run guards
 
+  reference-corpus:
+    name: GTFS-Planung, Referenzkorpus und Release-Signatur
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @zugfolge/gtfs build
+      - name: Capture, Planung, Statistik und Manipulationserkennung testen
+        run: pnpm --filter @zugfolge/reference-corpus test
+
   licenses-node:
     name: Lizenz-Scan (Node)
     runs-on: ubuntu-latest

@@ -28,8 +28,9 @@ als Quellcode-Fix ausgegeben.
 | Issues | Umsetzung und Nachweis |
 |---|---|
 | #34 | Geschützter, validierter Simulations-Ingest-Pfad zur Livemap und End-to-End-API-Test. Der reale Rust-Dienst muss diesen Vertrag im Deployment noch aufrufen; das Issue bleibt bis zu diesem Betriebsnachweis offen. |
-| #51 | Revisionierter M6-Weltzustand in JSONB mit BigInt/Map/Set-Codec, optimistischer Konkurrenzkontrolle, transaktionaler Outbox und authentifizierter Lese-API. Der periodische Produktiv-Worker bleibt bis zur Runtime-Verdrahtung offen. |
-| #52 | Mobilisierung akzeptiert keine boolesche Selbstauskunft mehr, sondern konkrete M5-Formations-, Dienst- und Trassenreferenzen samt Fleet-Revision. Der End-to-End-Nachweis mit dem laufenden Rust-Single-Writer bleibt offen. |
+| #51 | Revisionierter M6-Weltzustand in JSONB mit BigInt/Map/Set-Codec, optimistischer Konkurrenzkontrolle und transaktionaler Outbox. Autorisierte API-Kommandos und der überschneidungsfreie Zehn-Sekunden-Worker verarbeiten exakte Fristen, Recovery und Zustellung; Readiness überwacht Scheduler und Outbox. Der E2E-Test führt API, Datenbank, Scheduler, Ledger, Postfach und Prozessneustart zusammen. |
+| #52 | Angebote und Mobilisierung referenzieren einen append-only M5-Snapshot über Revision und SHA-256. Der Server leitet Kapazität, Vmax, Kosten, Zulassung, Verfügbarkeit und Wartungsfrist ab und prüft Formation, Personaldienste und bestätigte Trassen. Rust und TypeScript teilen kanonisches JSON samt Golden-Hash; Fremdwelt, fremdes EVU, ungeeignete/überfällige Formation und manipulierte Referenzen werden negativ getestet. |
+| #62 | Gemeinsamer GTFS-Kern für Kalender, Zeiten über Mitternacht, Frequenzen und Korridorzuordnung; deterministische Fahrtenbilder und nur betrieblich verbundene Lose. Die Ausschreibungs-API akzeptiert ausschließlich Planungsrevision, Hash und Los-ID und leitet die vollständige Leistungsbeschreibung serverseitig ab. Reale S5/S5X-Pilotplanung und Grenzen stehen in `gtfs-angebotsplanung.md`. |
 | #53 | Der Produktivclient verwendet keinen automatischen Beispieldatensatz mehr: Planner-Projektionen kommen aus dem Eventlog über die authentifizierte API; Alternativen werden als idempotente, persistente Simulationskommandos eingereiht. `?demo=1` bleibt ausdrücklich als Demo. |
 | #54 | Persistentes Eventlog, lückenlose Batch-Annahme, authentifiziertes Replay sowie poll-/quittierbare Simulationskommandos. |
 | #57 | Eigene CI-Jobs für API-Integration, M4.11-Lastziel und Node-Sicherheitsaudit; harte Zeitlimits für alle Jobs. |
@@ -40,9 +41,9 @@ als Quellcode-Fix ausgegeben.
 | Issue | Restarbeit und Abschlussbedingung |
 |---|---|
 | #29 | GitHub sperrt Workflow-Starts wegen der Abrechnung des Kontos/der Organisation. Abrechnung entsperren und den PR vollständig neu laufen lassen. |
-| #48 | Reale, lizenzgeprüfte LHE-Referenzfahrzeiten beschaffen, Release-Verantwortlichen benennen und das reale Artefakt extern signieren. Synthetische Daten oder eine von der Software selbst erzeugte „Freigabe“ wären kein Beweis. |
+| #48 | Der reale, lizenzgeprüfte GTFS.DE-Capture und ein Korpus mit 195 LHE-Referenzfahrten liegen nun gehasht vor. Offen bleiben der Modelllauf des exakt zugehörigen `InfraRelease`, der bestandene Abweichungsreport, die benannte Release-Identität und deren echte Signatur. Eine von der Software selbst erzeugte „Freigabe“ wäre kein Beweis. |
 | #55 | Branch-Protection/Ruleset mit den neuen Pflichtchecks im Repository-Admin setzen; die verbundene GitHub-App stellt dafür keinen Schreibendpunkt bereit. |
-| #56 | GitHub-Milestones M0–M14 anlegen und Issues zuordnen; die verbundene GitHub-App stellt dafür keinen Milestone-Schreibendpunkt bereit. `docs/milestones.md` bleibt bis dahin die kanonische Matrix. |
+| #56 | Die deklarative Matrix `.github/milestones.json`, ihr Konsistenztest und der idempotente, manuell/bei `main` ausführbare Sync-Workflow liegen vor. Die erste Ausführung nach dem Merge muss die M0–M14-Milestones im Repository anlegen beziehungsweise aktualisieren und alle referenzierten Issues zuordnen; bis dahin bleibt der externe GitHub-Zustand offen. |
 
 ## Reproduzierbare Verifikation
 

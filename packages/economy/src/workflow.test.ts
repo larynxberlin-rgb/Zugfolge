@@ -47,13 +47,15 @@ const specification: ServiceSpecification = {
 
 const bid: Bid = {
   id: "bid-1", operatorId: "operator-1", orderingFeeCentsPerTrainKm: 100n,
-  vehicle: { formationId: "formation-1", minimumSeats: 120, firstClassBasisPoints: 0, accessible: true, bicyclePlaces: 8, wheelchairPlaces: 2, requiredEquipment: ["passenger-information"], vehicleAgeYears: 3, traction: "electric", replacementPlan: true },
+  vehicle: { formationId: "formation-1", minimumSeats: 120, maximumSpeedKph: 160, operatingCostCentsPerTrainKm: 700, firstClassBasisPoints: 0, accessible: true, bicyclePlaces: 8, wheelchairPlaces: 2, requiredEquipment: ["passenger-information"], vehicleAgeYears: 3, traction: "electric", replacementPlan: true, evidence: { source: "zugfolge-fleet-mobilization/v1", fleetRevision: 7, snapshotHash: "a".repeat(64), formationId: "formation-1" } },
   promises: { extraSeats: 20, punctualityBasisPoints: 9_500, additionalStops: 1 }, submittedAt: 200,
 };
 
 const completeMobilizationProof = {
   source: "m5-release" as const,
+  verifiedBy: "zugfolge-fleet-mobilization/v1" as const,
   fleetRevision: 7,
+  snapshotHash: "a".repeat(64),
   formationIds: ["formation-1"],
   personnelDutyIds: ["duty-1"],
   pathReservationIds: ["path-1"],

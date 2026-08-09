@@ -15,6 +15,8 @@
   },
   "dependencies": {
     "@zugfolge/db": "workspace:*",
+    "@zugfolge/gtfs": "workspace:*",
+    "@zugfolge/health": "workspace:*",
     "@zugfolge/mailbox": "workspace:*",
     "@zugfolge/operators": "workspace:*",
     "drizzle-orm": "^0.45.2"

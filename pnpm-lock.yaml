@@ -47,6 +47,9 @@ importers:
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3
+      '@zugfolge/gtfs':
+        specifier: workspace:*
+        version: link:../../packages/gtfs
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@electric-sql/pglite@0.5.4)(@types/pg@8.20.4)(pg@8.22.0)(postgres@3.4.9)
@@ -130,6 +133,12 @@ importers:
       '@zugfolge/db':
         specifier: workspace:*
         version: link:../db
+      '@zugfolge/gtfs':
+        specifier: workspace:*
+        version: link:../gtfs
+      '@zugfolge/health':
+        specifier: workspace:*
+        version: link:../health
       '@zugfolge/mailbox':
         specifier: workspace:*
         version: link:../mailbox
@@ -152,6 +161,18 @@ importers:
       fast-check:
         specifier: ^4.9.0
         version: 4.9.0
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
+
+  packages/gtfs:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -304,6 +325,12 @@ importers:
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
+
+  tools/reference-corpus:
+    dependencies:
+      '@zugfolge/gtfs':
+        specifier: workspace:*
+        version: link:../../packages/gtfs
 
 packages:
 

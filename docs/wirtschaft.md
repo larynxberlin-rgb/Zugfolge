@@ -49,6 +49,14 @@ ausgeglichenen Ledger geführt. Alle Balancewerte liegen in einem versionierten
 Vertragslaufzeiten skalieren mit der Weltlaufzeit — Werte und Herleitung in
 `produkt.md` 6.1. Der **Ablauf** ist in jeder Welt derselbe.
 
+Die zugrunde liegenden Linien und sinnvollen Lose kommen nicht aus einem
+Spielerformular: Ein gehashter GTFS-Planungssnapshot bildet aktive Fahrten auf
+den internen Betriebsgraphen ab und erzeugt daraus Fahrtenbilder, verbundene
+Liniengruppen und das Mengengerüst der Leistungsbeschreibung. GTFS liefert das
+Angebot; Befahrbarkeit, Energie- und Fahrzeugregeln bleiben versionierte
+Zugfolge-Daten. Der genaue Vertrag einschließlich Pilotnachweis und Grenzen
+steht in [`gtfs-angebotsplanung.md`](gtfs-angebotsplanung.md).
+
 ### 3.1 Der Zyklus
 
 ```text

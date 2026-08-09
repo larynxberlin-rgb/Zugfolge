@@ -1,0 +1,72 @@
+{
+  "worldId": "00000000-0000-4000-8000-000000000001",
+  "revision": 1,
+  "producedAt": 1786245716,
+  "serviceDates": [
+    "20260810",
+    "20260811",
+    "20260812",
+    "20260813",
+    "20260814"
+  ],
+  "infrastructure": {
+    "version": "lhe-pilot-corridor-v1",
+    "nodes": [
+      { "id": "op-leipzig-hbf-tief" },
+      { "id": "op-leipzig-messe" },
+      { "id": "op-leipzig-halle-airport" },
+      { "id": "op-halle-hbf" }
+    ],
+    "edges": [
+      { "id": "lhe-leipzig-messe", "fromNodeId": "op-leipzig-hbf-tief", "toNodeId": "op-leipzig-messe", "distanceMeters": 5900, "active": true, "bidirectional": true, "electrification": "ac" },
+      { "id": "lhe-messe-airport", "fromNodeId": "op-leipzig-messe", "toNodeId": "op-leipzig-halle-airport", "distanceMeters": 12400, "active": true, "bidirectional": true, "electrification": "ac" },
+      { "id": "lhe-airport-halle", "fromNodeId": "op-leipzig-halle-airport", "toNodeId": "op-halle-hbf", "distanceMeters": 18100, "active": true, "bidirectional": true, "electrification": "ac" }
+    ],
+    "stopMappings": [
+      { "gtfsStopId": "116333", "nodeId": "op-leipzig-hbf-tief" },
+      { "gtfsStopId": "507652", "nodeId": "op-leipzig-messe" },
+      { "gtfsStopId": "258207", "nodeId": "op-leipzig-halle-airport" },
+      { "gtfsStopId": "79504", "nodeId": "op-halle-hbf" },
+      { "gtfsStopId": "104617", "nodeId": "op-halle-hbf" },
+      { "gtfsStopId": "512739", "nodeId": "op-halle-hbf" }
+    ],
+    "patternMappings": [
+      { "lineId": "S5", "routeId": "966", "stopIds": ["116333", "507652", "258207", "79504"], "edgeIds": ["lhe-leipzig-messe", "lhe-messe-airport", "lhe-airport-halle"] },
+      { "lineId": "S5", "routeId": "966", "stopIds": ["116333", "507652", "258207", "104617"], "edgeIds": ["lhe-leipzig-messe", "lhe-messe-airport", "lhe-airport-halle"] },
+      { "lineId": "S5", "routeId": "966", "stopIds": ["104617", "258207", "507652", "116333"], "edgeIds": ["lhe-airport-halle", "lhe-messe-airport", "lhe-leipzig-messe"] },
+      { "lineId": "S5", "routeId": "966", "stopIds": ["79504", "258207", "507652", "116333"], "edgeIds": ["lhe-airport-halle", "lhe-messe-airport", "lhe-leipzig-messe"] },
+      { "lineId": "S5", "routeId": "702", "stopIds": ["116333", "507652", "258207", "512739"], "edgeIds": ["lhe-leipzig-messe", "lhe-messe-airport", "lhe-airport-halle"] },
+      { "lineId": "S5", "routeId": "702", "stopIds": ["512739", "258207", "507652", "116333"], "edgeIds": ["lhe-airport-halle", "lhe-messe-airport", "lhe-leipzig-messe"] },
+      { "lineId": "S5X", "routeId": "578", "stopIds": ["116333", "507652", "258207", "79504"], "edgeIds": ["lhe-leipzig-messe", "lhe-messe-airport", "lhe-airport-halle"] },
+      { "lineId": "S5X", "routeId": "578", "stopIds": ["104617", "258207", "507652", "116333"], "edgeIds": ["lhe-airport-halle", "lhe-messe-airport", "lhe-leipzig-messe"] },
+      { "lineId": "S5X", "routeId": "632", "stopIds": ["116333", "507652", "258207", "512739"], "edgeIds": ["lhe-leipzig-messe", "lhe-messe-airport", "lhe-airport-halle"] },
+      { "lineId": "S5X", "routeId": "632", "stopIds": ["512739", "258207", "507652", "116333"], "edgeIds": ["lhe-airport-halle", "lhe-messe-airport", "lhe-leipzig-messe"] }
+    ]
+  },
+  "rules": {
+    "version": "spnv-pilot-v1",
+    "maxLinesPerLot": 2,
+    "smallLotMaximumTrainKmPerDay": 1000,
+    "allowedRouteTypes": ["2"],
+    "linePolicies": [
+      {
+        "lineId": "S5",
+        "energyWhPerTrainKm": 8000,
+        "facilityMinutesPerVehicleDay": 45,
+        "minimumTurnaroundSeconds": 600,
+        "overnightBasisPoints": 10000,
+        "requiredProtection": ["PZB", "ETCS"],
+        "requirements": { "minimumSeats": 200, "minimumMaximumSpeedKph": 160, "firstClassBasisPoints": 0, "accessible": true, "bicyclePlaces": 8, "wheelchairPlaces": 2, "requiredEquipment": ["passenger-information"] }
+      },
+      {
+        "lineId": "S5X",
+        "energyWhPerTrainKm": 8000,
+        "facilityMinutesPerVehicleDay": 45,
+        "minimumTurnaroundSeconds": 600,
+        "overnightBasisPoints": 10000,
+        "requiredProtection": ["PZB", "ETCS"],
+        "requirements": { "minimumSeats": 200, "minimumMaximumSpeedKph": 160, "firstClassBasisPoints": 0, "accessible": true, "bicyclePlaces": 8, "wheelchairPlaces": 2, "requiredEquipment": ["passenger-information"] }
+      }
+    ]
+  }
+}

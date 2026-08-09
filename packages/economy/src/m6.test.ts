@@ -18,7 +18,21 @@ const release: EconomyRelease = buildEconomyRelease({
 });
 const spec: ServiceSpecification = { lines: ["RE 1"], trainKmPerPeriod: 10_000n, stopsPerPeriod: 500n, serviceHoursPerPeriod: 1_000n, facilityHoursPerPeriod: 100n, energyKwhPerPeriod: 50_000n, vehicleCount: 5n, overnightUnits: 5n, protectionUnits: 5n, requirements: { minimumSeats: 200, firstClassBasisPoints: 500, accessible: true, bicyclePlaces: 12, wheelchairPlaces: 2, requiredEquipment: ["wifi"] } };
 const tender: Tender = createTender({ id: "t1", worldId: "w1", lotId: "lot-a", incumbentOperatorId: "public", profile: release.tenderProfiles[0]!, specification: spec, announcedAt: 0, opensAt: 86_400, closesAt: 4 * 86_400, operatingFrom: 21 * 86_400, contractPeriods: 2, periodDurationSeconds: 21 * 86_400, release, smallLot: false });
-const vehicle = { formationId: "f1", minimumSeats: 220, firstClassBasisPoints: 600, accessible: true, bicyclePlaces: 15, wheelchairPlaces: 2, requiredEquipment: ["wifi"], vehicleAgeYears: 5, traction: "electric" as const, replacementPlan: true };
+const vehicle = {
+  formationId: "f1",
+  minimumSeats: 220,
+  firstClassBasisPoints: 600,
+  accessible: true,
+  bicyclePlaces: 15,
+  wheelchairPlaces: 2,
+  requiredEquipment: ["wifi"],
+  vehicleAgeYears: 5,
+  maximumSpeedKph: 160,
+  operatingCostCentsPerTrainKm: 700,
+  traction: "electric" as const,
+  replacementPlan: true,
+  evidence: { source: "zugfolge-fleet-mobilization/v1" as const, fleetRevision: 7, snapshotHash: "a".repeat(64), formationId: "f1" },
+};
 
 describe("M6 vollständig", () => {
   it("friert Release ein und leitet alle Weltprofile ab", () => {
@@ -67,7 +81,7 @@ describe("M6 vollständig", () => {
   });
 
   it("führt Mobilisierung, Vertrag, Eigenbetrieb, Nachbesserung und Budget aus", () => {
-    expect(performOperatingTransition({ incumbentOperatorId: "old", winnerOperatorId: "new", proof: { source: "m5-release", fleetRevision: 7, formationIds: [], personnelDutyIds: ["duty-1"], pathReservationIds: ["path-1"] }, at: 10, timetableBoundary: 10, failurePenaltyCents: 99n })).toMatchObject({ operatorId: "public", penaltyCents: 99n });
+    expect(performOperatingTransition({ incumbentOperatorId: "old", winnerOperatorId: "new", proof: { source: "m5-release", verifiedBy: "zugfolge-fleet-mobilization/v1", fleetRevision: 7, snapshotHash: "a".repeat(64), formationIds: [], personnelDutyIds: ["duty-1"], pathReservationIds: ["path-1"] }, at: 10, timetableBoundary: 10, failurePenaltyCents: 99n })).toMatchObject({ operatorId: "public", penaltyCents: 99n });
     const settlement = settleContract({ id: "c", worldId: "w1", lotId: "l", operatorId: "op", startsAt: 0, endsAt: 2, orderingFeeCentsPerTrainKm: 1_000n, bonusCentsPerPeriod: 5_000n, penaltyRates: { punctuality: 2n, cancellation: 500n, seats: 10n, connections: 100n }, evidenceRequired: ["operations"] }, { trainKm: 100n, punctualityBasisPoints: 8_800, cancellations: 1, missingSeats: 2, missedConnections: 1, evidence: ["operations"] });
     expect(settlement.netCents).toBe(98_980n);
     expect(() => settleContract({ id: "c", worldId: "w1", lotId: "l", operatorId: "op", startsAt: 0, endsAt: 2, orderingFeeCentsPerTrainKm: 1_000n, bonusCentsPerPeriod: 5_000n, penaltyRates: { punctuality: 2n, cancellation: 500n, seats: 10n, connections: 100n }, evidenceRequired: [] }, { trainKm: -1n, punctualityBasisPoints: 8_800, cancellations: 0, missingSeats: 0, missedConnections: 0, evidence: [] })).toThrow(RangeError);

@@ -9,6 +9,7 @@
 
 mod assets;
 mod catalog;
+mod mobilization;
 mod operations;
 
 pub use assets::{
@@ -20,6 +21,7 @@ pub use catalog::{
     VehicleCatalogBuilder, VehicleCatalogEntry, VehicleCatalogRelease, VehicleEra, VehicleTypeId,
     VehicleWorldSettings, YearRange,
 };
+pub use mobilization::*;
 pub use operations::*;
 
 use std::collections::{BTreeMap, BTreeSet};

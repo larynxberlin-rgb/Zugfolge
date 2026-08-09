@@ -4,6 +4,7 @@ export * from "./domain-events.js";
 export * from "./economy-effects.js";
 export * from "./economy-outbox.js";
 export * from "./economy-world-states.js";
+export * from "./fleet-mobilization-snapshots.js";
 export * from "./ledger-accounts.js";
 export * from "./ledger-entries.js";
 export * from "./ledger-transactions.js";

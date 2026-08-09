@@ -13,17 +13,38 @@ import { timingSafeEqual } from "node:crypto";
 
 import { accounts, createDatabaseHealthCheck, EventSequenceError, simulationCommands, worldEventLog, worlds } from "@zugfolge/db";
 import {
+  announceTender,
+  buildEconomyRelease,
+  decodeEconomyValue,
+  deriveGtfsServiceSpecification,
   DuplicateLedgerAccountNameError,
+  EconomyStateConflictError,
+  escalateOperator,
+  FleetSnapshotValidationError,
   ForeignLedgerAccountError,
   encodeEconomyValue,
   IncompleteTransactionError,
   ledgerAccountBalance,
   listLedgerAccounts,
   listLedgerTransactions,
+  loadFleetMobilizationSnapshot,
   loadEconomyWorldState,
   openLedgerAccount,
   postLedgerTransaction,
+  persistEconomyTransition,
+  persistFleetMobilizationSnapshot,
+  resolveVehicleConcept,
+  settleContractPeriod,
+  startEconomyWorld,
+  submitBid,
+  submitMobilizationReference,
   UnbalancedTransactionError,
+  verifyMobilizationReference,
+  type AuthorityBudget,
+  type EconomyRelease,
+  type FleetMobilizationReference,
+  type GtfsPlanningEnvelope,
+  type GtfsPlanningLotReference,
 } from "@zugfolge/economy";
 import { runHealthChecks, type HealthCheck } from "@zugfolge/health";
 import { LivemapCapacityError, type LiveDelta, type LivemapRegistry } from "@zugfolge/livemap-stream";
@@ -70,6 +91,8 @@ export interface AppDependencies {
   readonly livemapIngestToken?: string;
   /** Geteiltes Geheimnis des Simulations-Eventlog-Adapters. */
   readonly simulationIngestToken?: string;
+  /** Geteiltes Geheimnis des kanonischen M5-Single-Writer-Snapshot-Adapters. */
+  readonly fleetIngestToken?: string;
   /** Hartes Zeitbudget jedes Readiness-Checks. */
   readonly healthCheckTimeoutMs?: number;
   /** Produktion protokolliert strukturiert; Tests dürfen den Logger abschalten. */
@@ -134,13 +157,35 @@ function sendError(reply: FastifyReply, error: unknown): FastifyReply {
   ) {
     return reply.code(404).send({ error: error.message });
   }
-  if (error instanceof DuplicateOperatorNameError || error instanceof DuplicateLedgerAccountNameError || error instanceof EventSequenceError) {
+  if (error instanceof DuplicateOperatorNameError || error instanceof DuplicateLedgerAccountNameError || error instanceof EventSequenceError || error instanceof EconomyStateConflictError) {
     return reply.code(409).send({ error: error.message });
   }
-  if (error instanceof IncompleteTransactionError || error instanceof UnbalancedTransactionError) {
+  if (error instanceof IncompleteTransactionError || error instanceof UnbalancedTransactionError || error instanceof FleetSnapshotValidationError) {
     return reply.code(400).send({ error: error.message });
   }
   throw error;
+}
+
+function sendEconomyError(reply: FastifyReply, error: unknown): FastifyReply {
+  if (
+    error instanceof AccessRevokedError
+    || error instanceof AuthorizationError
+    || error instanceof NoAccountInWorldError
+    || error instanceof AccountNotFoundError
+    || error instanceof OperatorNotFoundError
+    || error instanceof EconomyStateConflictError
+    || error instanceof FleetSnapshotValidationError
+  ) return sendError(reply, error);
+  if (error instanceof Error) return reply.code(400).send({ error: error.message });
+  throw error;
+}
+
+function requireExpectedRevision(worldId: string, actual: number, expected: number): void {
+  if (actual !== expected) throw new EconomyStateConflictError(worldId, expected);
+}
+
+function decoded<T>(value: unknown): T {
+  return decodeEconomyValue(value) as T;
 }
 
 function bearerMatches(header: string | undefined, expected: string): boolean {
@@ -160,7 +205,13 @@ async function worldExists(db: IdentityDatabase, worldId: string): Promise<boole
 }
 
 export function buildApp(deps: AppDependencies): FastifyInstance {
-  const app = Fastify({ logger: deps.logger ?? process.env["NODE_ENV"] !== "test" });
+  const app = Fastify({
+    logger: deps.logger ?? process.env["NODE_ENV"] !== "test",
+    // Unbekannte Felder nicht still entfernen: Ein manipulierter Client soll
+    // eine sichtbare 400-Antwort erhalten, statt den Eindruck zu gewinnen,
+    // technische Ausschreibungswerte erfolgreich gesetzt zu haben.
+    ajv: { customOptions: { removeAdditional: false } },
+  });
   const authenticate = createAuthenticator(deps.verifyToken);
 
   // `/health` ist Liveness: läuft der Prozess, ohne jede Abhängigkeit zu
@@ -199,6 +250,290 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         return reply.send(encodeEconomyValue(state));
       } catch (error) {
         return sendError(reply, error);
+      }
+    },
+  );
+
+  app.post<{
+    Params: { worldId: string };
+    Body: {
+      readonly at: number;
+      readonly seed: string;
+      readonly durationMonths: 6 | 12 | 18 | "unlimited";
+      readonly release: unknown;
+      readonly planning: unknown;
+      readonly authorityBudgets: unknown;
+    };
+  }>(
+    "/worlds/:worldId/economy/start",
+    {
+      preHandler: authenticate,
+      schema: {
+        params: worldIdParam,
+        body: {
+          type: "object",
+          required: ["at", "seed", "durationMonths", "release", "planning", "authorityBudgets"],
+          additionalProperties: false,
+          properties: {
+            at: { type: "integer", minimum: 0 },
+            seed: { type: "string", pattern: "^[0-9]+$" },
+            durationMonths: { anyOf: [{ type: "integer", enum: [6, 12, 18] }, { type: "string", const: "unlimited" }] },
+            release: { type: "object" },
+            planning: { type: "object" },
+            authorityBudgets: { type: "array" },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        await requireWorldAdminAccount(deps.db, request.params.worldId, identity.keycloakSubject);
+        if (await loadEconomyWorldState(deps.db, request.params.worldId)) return reply.code(409).send({ error: "Wirtschaftswelt wurde bereits gestartet." });
+        const suppliedRelease = decoded<EconomyRelease>(request.body.release);
+        const release = buildEconomyRelease({
+          version: suppliedRelease.version,
+          rates: suppliedRelease.rates,
+          rules: suppliedRelease.rules,
+          tenderProfiles: suppliedRelease.tenderProfiles,
+        });
+        if (release.checksum !== suppliedRelease.checksum) throw new Error("EconomyRelease-Prüfsumme ist ungültig.");
+        const accountsInWorld = await listAccountsInWorld(deps.db, { worldId: request.params.worldId, requestingKeycloakSubject: identity.keycloakSubject });
+        const started = startEconomyWorld({
+          worldId: request.params.worldId,
+          seed: BigInt(request.body.seed),
+          durationMonths: request.body.durationMonths,
+          release,
+          planning: decoded<GtfsPlanningEnvelope>(request.body.planning),
+          authorityBudgets: decoded<readonly AuthorityBudget[]>(request.body.authorityBudgets),
+          accounts: accountsInWorld.map((account) => account.id),
+        });
+        await persistEconomyTransition(deps.db, { expectedRevision: null, ...started, committedAt: new Date(request.body.at * 1_000) });
+        return reply.code(201).send(encodeEconomyValue(started.state));
+      } catch (error) {
+        return sendEconomyError(reply, error);
+      }
+    },
+  );
+
+  app.post<{
+    Params: { worldId: string };
+    Body: {
+      readonly expectedRevision: number;
+      readonly commandId: string;
+      readonly tenderId: string;
+      readonly planningReference: GtfsPlanningLotReference;
+      readonly announcedAt: number;
+      readonly opensAt: number;
+      readonly closesAt: number;
+      readonly operatingFrom: number;
+      readonly authorityId: string;
+      readonly budgetPeriod: number;
+      readonly vehiclePool: readonly string[];
+      readonly failurePenaltyCents: string;
+    };
+  }>(
+    "/worlds/:worldId/economy/tenders",
+    {
+      preHandler: authenticate,
+      schema: {
+        params: worldIdParam,
+        body: {
+          type: "object",
+          required: ["expectedRevision", "commandId", "tenderId", "planningReference", "announcedAt", "opensAt", "closesAt", "operatingFrom", "authorityId", "budgetPeriod", "vehiclePool", "failurePenaltyCents"],
+          additionalProperties: false,
+          properties: {
+            expectedRevision: { type: "integer", minimum: 0 },
+            commandId: { type: "string", minLength: 1, maxLength: 128 },
+            tenderId: { type: "string", minLength: 1, maxLength: 128 },
+            planningReference: {
+              type: "object",
+              required: ["planningRevision", "snapshotHash", "lotId"],
+              additionalProperties: false,
+              properties: {
+                planningRevision: { type: "integer", minimum: 0 },
+                snapshotHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+                lotId: { type: "string", minLength: 1 },
+              },
+            },
+            announcedAt: { type: "integer", minimum: 0 },
+            opensAt: { type: "integer", minimum: 0 },
+            closesAt: { type: "integer", minimum: 0 },
+            operatingFrom: { type: "integer", minimum: 0 },
+            authorityId: { type: "string", minLength: 1 },
+            budgetPeriod: { type: "integer", minimum: 0 },
+            vehiclePool: { type: "array", items: { type: "string", minLength: 1 } },
+            failurePenaltyCents: { type: "string", pattern: "^[0-9]+$" },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        await requireWorldAdminAccount(deps.db, request.params.worldId, identity.keycloakSubject);
+        const state = await loadEconomyWorldState(deps.db, request.params.worldId);
+        if (state === undefined) return reply.code(404).send({ error: "Wirtschaftswelt ist noch nicht gestartet." });
+        requireExpectedRevision(request.params.worldId, state.revision, request.body.expectedRevision);
+        if (state.planning === undefined) throw new Error("Wirtschaftswelt besitzt keinen GTFS-Planungssnapshot.");
+        const periodDurationSeconds = state.profile.periodWeeks * 7 * 86_400;
+        const planned = deriveGtfsServiceSpecification(
+          state.planning,
+          request.params.worldId,
+          request.body.planningReference,
+          periodDurationSeconds,
+        );
+        const incumbent = [...state.contracts.values()]
+          .filter((contract) => contract.lotId === planned.lot.id)
+          .sort((left, right) => right.endsAt - left.endsAt)[0]?.operatorId ?? "public";
+        const operatorsInWorld = await listOperatorsInWorld(deps.db, { worldId: request.params.worldId, requestingKeycloakSubject: identity.keycloakSubject });
+        const recipientByOperator = Object.fromEntries(operatorsInWorld.map((operator) => [operator.id, operator.foundingAccountId]));
+        const recipients = (await listAccountsInWorld(deps.db, { worldId: request.params.worldId, requestingKeycloakSubject: identity.keycloakSubject })).map((account) => account.id);
+        const announced = announceTender(state, {
+          commandId: request.body.commandId,
+          release: state.release,
+          recipients,
+          tender: {
+            id: request.body.tenderId,
+            worldId: request.params.worldId,
+            lotId: planned.lot.id,
+            incumbentOperatorId: incumbent,
+            specification: planned.specification,
+            planningEvidence: planned.evidence,
+            announcedAt: request.body.announcedAt,
+            opensAt: request.body.opensAt,
+            closesAt: request.body.closesAt,
+            operatingFrom: request.body.operatingFrom,
+            contractPeriods: state.profile.contractPeriods,
+            periodDurationSeconds,
+            smallLot: planned.lot.smallLot,
+          },
+          automation: {
+            authorityId: request.body.authorityId,
+            budgetPeriod: request.body.budgetPeriod,
+            vehiclePool: request.body.vehiclePool,
+            recipientByOperator,
+            failurePenaltyCents: BigInt(request.body.failurePenaltyCents),
+          },
+        });
+        await persistEconomyTransition(deps.db, { expectedRevision: state.revision, ...announced, committedAt: new Date(request.body.announcedAt * 1_000) });
+        return reply.code(201).send(encodeEconomyValue(announced.state));
+      } catch (error) {
+        return sendEconomyError(reply, error);
+      }
+    },
+  );
+
+  app.post<{
+    Params: { worldId: string; tenderId: string; operatorId: string };
+    Body: {
+      readonly expectedRevision: number;
+      readonly commandId: string;
+      readonly bidId: string;
+      readonly orderingFeeCentsPerTrainKm: string;
+      readonly submittedAt: number;
+      readonly vehicleReference: { readonly fleetRevision: number; readonly snapshotHash: string; readonly formationId: string };
+      readonly promises: { readonly extraSeats: number; readonly punctualityBasisPoints: number; readonly additionalStops: number };
+    };
+  }>(
+    "/worlds/:worldId/economy/tenders/:tenderId/operators/:operatorId/bids",
+    { preHandler: authenticate, schema: { params: { type: "object", required: ["worldId", "tenderId", "operatorId"], properties: { worldId: { type: "string", format: "uuid" }, tenderId: { type: "string", minLength: 1 }, operatorId: { type: "string", format: "uuid" } } }, body: { type: "object", required: ["expectedRevision", "commandId", "bidId", "orderingFeeCentsPerTrainKm", "submittedAt", "vehicleReference", "promises"], additionalProperties: false, properties: { expectedRevision: { type: "integer", minimum: 0 }, commandId: { type: "string", minLength: 1 }, bidId: { type: "string", minLength: 1 }, orderingFeeCentsPerTrainKm: { type: "string", pattern: "^[0-9]+$" }, submittedAt: { type: "integer", minimum: 0 }, vehicleReference: { type: "object", required: ["fleetRevision", "snapshotHash", "formationId"], additionalProperties: false, properties: { fleetRevision: { type: "integer", minimum: 0 }, snapshotHash: { type: "string", pattern: "^[a-f0-9]{64}$" }, formationId: { type: "string", minLength: 1 } } }, promises: { type: "object", required: ["extraSeats", "punctualityBasisPoints", "additionalStops"], additionalProperties: false, properties: { extraSeats: { type: "integer", minimum: 0 }, punctualityBasisPoints: { type: "integer", minimum: 0, maximum: 10000 }, additionalStops: { type: "integer", minimum: 0 } } } } } } },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        const state = await loadEconomyWorldState(deps.db, request.params.worldId);
+        if (state === undefined) return reply.code(404).send({ error: "Wirtschaftswelt ist noch nicht gestartet." });
+        requireExpectedRevision(request.params.worldId, state.revision, request.body.expectedRevision);
+        const lifecycle = state.tenders.get(request.params.tenderId);
+        if (lifecycle === undefined) return reply.code(404).send({ error: "Ausschreibung existiert nicht." });
+        const snapshot = await loadFleetMobilizationSnapshot(deps.db, request.params.worldId, request.body.vehicleReference);
+        const vehicle = resolveVehicleConcept(snapshot, request.body.vehicleReference, { operatorId: request.params.operatorId, serviceLineIds: lifecycle.tender.specification.lines, operatingFrom: lifecycle.tender.operatingFrom });
+        const account = await getAccount(deps.db, { worldId: request.params.worldId, keycloakSubject: identity.keycloakSubject });
+        if (account === undefined) throw new AuthorizationError("Kein aktiver Weltzugang.");
+        const smallLot = lifecycle.tender.closesAt - lifecycle.tender.opensAt <= 2 * 86_400;
+        const next = submitBid(state, request.body.commandId, request.params.tenderId, { id: request.body.bidId, operatorId: request.params.operatorId, orderingFeeCentsPerTrainKm: BigInt(request.body.orderingFeeCentsPerTrainKm), vehicle, promises: request.body.promises, submittedAt: request.body.submittedAt }, { accountId: account.id, period: Math.floor(request.body.submittedAt / (state.profile.periodWeeks * 7 * 86_400)), smallLot, minimumScore: 4_000 });
+        await persistEconomyTransition(deps.db, { expectedRevision: state.revision, state: next, effects: { notices: [], journal: [] }, committedAt: new Date(request.body.submittedAt * 1_000) });
+        return reply.code(201).send(encodeEconomyValue(next));
+      } catch (error) {
+        return sendEconomyError(reply, error);
+      }
+    },
+  );
+
+  app.put<{
+    Params: { worldId: string; tenderId: string; operatorId: string };
+    Body: { readonly expectedRevision: number; readonly commandId: string; readonly at: number; readonly reference: FleetMobilizationReference };
+  }>(
+    "/worlds/:worldId/economy/tenders/:tenderId/operators/:operatorId/mobilization",
+    { preHandler: authenticate, schema: { params: { type: "object", required: ["worldId", "tenderId", "operatorId"], properties: { worldId: { type: "string", format: "uuid" }, tenderId: { type: "string", minLength: 1 }, operatorId: { type: "string", format: "uuid" } } }, body: { type: "object", required: ["expectedRevision", "commandId", "at", "reference"], additionalProperties: false, properties: { expectedRevision: { type: "integer", minimum: 0 }, commandId: { type: "string", minLength: 1 }, at: { type: "integer", minimum: 0 }, reference: { type: "object", required: ["fleetRevision", "snapshotHash", "formationIds", "personnelDutyIds", "pathReservationIds"], additionalProperties: false, properties: { fleetRevision: { type: "integer", minimum: 0 }, snapshotHash: { type: "string", pattern: "^[a-f0-9]{64}$" }, formationIds: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } }, personnelDutyIds: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } }, pathReservationIds: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } } } } } } } },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        const state = await loadEconomyWorldState(deps.db, request.params.worldId);
+        if (state === undefined) return reply.code(404).send({ error: "Wirtschaftswelt ist noch nicht gestartet." });
+        requireExpectedRevision(request.params.worldId, state.revision, request.body.expectedRevision);
+        const lifecycle = state.tenders.get(request.params.tenderId);
+        if (lifecycle?.phase !== "awarded") throw new Error("Ausschreibung wurde diesem EVU nicht zugeschlagen.");
+        const snapshot = await loadFleetMobilizationSnapshot(deps.db, request.params.worldId, request.body.reference);
+        verifyMobilizationReference(snapshot, request.body.reference, { operatorId: request.params.operatorId, winningFormationId: lifecycle.winningBid.vehicle.formationId, serviceLineIds: lifecycle.tender.specification.lines, operatingFrom: lifecycle.tender.operatingFrom });
+        const next = submitMobilizationReference(state, { commandId: request.body.commandId, tenderId: request.params.tenderId, operatorId: request.params.operatorId, at: request.body.at, reference: request.body.reference });
+        await persistEconomyTransition(deps.db, { expectedRevision: state.revision, state: next, effects: { notices: [], journal: [] }, committedAt: new Date(request.body.at * 1_000) });
+        return reply.send(encodeEconomyValue(next));
+      } catch (error) {
+        return sendEconomyError(reply, error);
+      }
+    },
+  );
+
+  app.post<{
+    Params: { worldId: string; operatorId: string; contractId: string };
+    Body: { readonly expectedRevision: number; readonly commandId: string; readonly period: number; readonly at: number; readonly performance: { readonly trainKm: string; readonly punctualityBasisPoints: number; readonly cancellations: number; readonly missingSeats: number; readonly missedConnections: number; readonly evidence: readonly string[] }; readonly costs: readonly { readonly amountCents: string; readonly costType: "track" | "station" | "facility" | "energy" | "personnel" | "administration" | "vehicle" | "penalty" | "interest"; readonly costCentreId: string; readonly reference: string }[] };
+  }>(
+    "/worlds/:worldId/economy/operators/:operatorId/contracts/:contractId/settlements",
+    { preHandler: authenticate, schema: { params: { type: "object", required: ["worldId", "operatorId", "contractId"], properties: { worldId: { type: "string", format: "uuid" }, operatorId: { type: "string", format: "uuid" }, contractId: { type: "string", minLength: 1 } } }, body: { type: "object", required: ["expectedRevision", "commandId", "period", "at", "performance", "costs"], additionalProperties: false, properties: { expectedRevision: { type: "integer", minimum: 0 }, commandId: { type: "string", minLength: 1 }, period: { type: "integer", minimum: 0 }, at: { type: "integer", minimum: 0 }, performance: { type: "object" }, costs: { type: "array", items: { type: "object" } } } } } },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        const state = await loadEconomyWorldState(deps.db, request.params.worldId);
+        if (state === undefined) return reply.code(404).send({ error: "Wirtschaftswelt ist noch nicht gestartet." });
+        requireExpectedRevision(request.params.worldId, state.revision, request.body.expectedRevision);
+        if (state.contracts.get(request.params.contractId)?.operatorId !== request.params.operatorId) throw new AuthorizationError("Vertrag gehört einem anderen EVU.");
+        const settled = settleContractPeriod(state, { commandId: request.body.commandId, contractId: request.params.contractId, period: request.body.period, at: request.body.at, performance: { ...request.body.performance, trainKm: BigInt(request.body.performance.trainKm) }, costs: request.body.costs.map((cost) => ({ ...cost, amountCents: BigInt(cost.amountCents) })) });
+        await persistEconomyTransition(deps.db, { expectedRevision: state.revision, state: settled.state, effects: settled.effects, committedAt: new Date(request.body.at * 1_000) });
+        return reply.code(201).send(encodeEconomyValue(settled.result));
+      } catch (error) {
+        return sendEconomyError(reply, error);
+      }
+    },
+  );
+
+  app.post<{
+    Params: { worldId: string; operatorId: string };
+    Body: { readonly expectedRevision: number; readonly commandId: string; readonly accountId: string; readonly period: number; readonly at: number; readonly signals: { readonly liquidCents: string; readonly twoPeriodNeedCents: string; readonly overdueCents: string; readonly creditScore: number; readonly contractTerminated: boolean; readonly unableToPay: boolean } };
+  }>(
+    "/worlds/:worldId/economy/operators/:operatorId/escalations",
+    { preHandler: authenticate, schema: { params: { type: "object", required: ["worldId", "operatorId"], properties: { worldId: { type: "string", format: "uuid" }, operatorId: { type: "string", format: "uuid" } } }, body: { type: "object", required: ["expectedRevision", "commandId", "accountId", "period", "at", "signals"], additionalProperties: false, properties: { expectedRevision: { type: "integer", minimum: 0 }, commandId: { type: "string", minLength: 1 }, accountId: { type: "string", format: "uuid" }, period: { type: "integer", minimum: 0 }, at: { type: "integer", minimum: 0 }, signals: { type: "object" } } } } },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        await requireWorldAdminAccount(deps.db, request.params.worldId, identity.keycloakSubject);
+        const state = await loadEconomyWorldState(deps.db, request.params.worldId);
+        if (state === undefined) return reply.code(404).send({ error: "Wirtschaftswelt ist noch nicht gestartet." });
+        requireExpectedRevision(request.params.worldId, state.revision, request.body.expectedRevision);
+        const escalated = escalateOperator(state, { commandId: request.body.commandId, operatorId: request.params.operatorId, accountId: request.body.accountId, period: request.body.period, at: request.body.at, signals: { ...request.body.signals, liquidCents: BigInt(request.body.signals.liquidCents), twoPeriodNeedCents: BigInt(request.body.signals.twoPeriodNeedCents), overdueCents: BigInt(request.body.signals.overdueCents) } });
+        await persistEconomyTransition(deps.db, { expectedRevision: state.revision, state: escalated.state, effects: escalated.effects, committedAt: new Date(request.body.at * 1_000) });
+        return reply.send(encodeEconomyValue(escalated.decision));
+      } catch (error) {
+        return sendEconomyError(reply, error);
       }
     },
   );
@@ -254,6 +589,61 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         } catch (error) {
           if (error instanceof LivemapCapacityError) return reply.code(503).send({ error: "Livemap-Kapazität erschöpft." });
           throw error;
+        }
+      },
+    );
+  }
+
+  if (deps.fleetIngestToken !== undefined) {
+    app.post<{
+      Params: { worldId: string };
+      Body: Parameters<typeof persistFleetMobilizationSnapshot>[2];
+    }>(
+      "/internal/worlds/:worldId/fleet/mobilization-snapshots",
+      {
+        schema: {
+          params: worldIdParam,
+          body: {
+            type: "object",
+            required: ["snapshot", "snapshotHash"],
+            additionalProperties: false,
+            properties: {
+              snapshotHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+              snapshot: {
+                type: "object",
+                required: ["schema", "worldId", "revision", "producedAt", "formations", "personnelDuties", "pathReservations"],
+                additionalProperties: false,
+                properties: {
+                  schema: { type: "string", const: "zugfolge-fleet-mobilization/v1" },
+                  worldId: { type: "string", format: "uuid" },
+                  revision: { type: "integer", minimum: 0 },
+                  producedAt: { type: "integer", minimum: 0 },
+                  formations: { type: "array", items: { type: "object" } },
+                  personnelDuties: { type: "array", items: { type: "object" } },
+                  pathReservations: { type: "array", items: { type: "object" } },
+                },
+              },
+            },
+          },
+        },
+      },
+      async (request, reply) => {
+        if (!bearerMatches(request.headers.authorization, deps.fleetIngestToken!)) {
+          return reply.code(401).send({ error: "Ungültige Fleet-Ingest-Autorisierung." });
+        }
+        if (!(await worldExists(deps.db, request.params.worldId))) {
+          return reply.code(404).send({ error: "Welt existiert nicht." });
+        }
+        try {
+          const result = await persistFleetMobilizationSnapshot(
+            deps.db,
+            request.params.worldId,
+            request.body,
+            new Date(),
+          );
+          return reply.code(result.created ? 201 : 200).send(result);
+        } catch (error) {
+          return sendError(reply, error);
         }
       },
     );

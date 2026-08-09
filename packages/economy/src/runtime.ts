@@ -1,0 +1,217 @@
+import type { HealthCheck } from "@zugfolge/health";
+
+import type { EconomyDatabase } from "./ledger.js";
+import { loadFleetMobilizationSnapshot, verifyMobilizationReference } from "./fleet-snapshot.js";
+import {
+  dispatchEconomyOutbox,
+  EconomyStateConflictError,
+  listEconomyWorldIds,
+  loadEconomyWorldState,
+  persistEconomyTransition,
+} from "./state-store.js";
+import {
+  closeTender,
+  completeMobilization,
+  openTender,
+  type EconomyEffects,
+  type EconomyJournalEntry,
+  type EconomyNotice,
+  type EconomyWorldState,
+} from "./workflow.js";
+
+export interface EconomyEffectAdapters {
+  readonly postJournal: (entry: EconomyJournalEntry) => Promise<void>;
+  readonly sendNotice: (notice: EconomyNotice) => Promise<void>;
+}
+
+export interface EconomySchedulerSnapshot {
+  readonly startedAtMs: number;
+  readonly lastStartedAtMs?: number;
+  readonly lastCompletedAtMs?: number;
+  readonly lastFailureAtMs?: number;
+  readonly lastFailureCode?: string;
+  readonly running: boolean;
+  readonly processedTransitions: number;
+}
+
+export class EconomySchedulerMonitor {
+  #snapshot: EconomySchedulerSnapshot;
+
+  constructor(startedAtMs: number) {
+    this.#snapshot = { startedAtMs, running: false, processedTransitions: 0 };
+  }
+
+  started(atMs: number): void {
+    this.#snapshot = { ...this.#snapshot, lastStartedAtMs: atMs, running: true };
+  }
+
+  completed(atMs: number, processedTransitions: number): void {
+    this.#snapshot = {
+      ...this.#snapshot,
+      lastCompletedAtMs: atMs,
+      running: false,
+      processedTransitions: this.#snapshot.processedTransitions + processedTransitions,
+    };
+  }
+
+  failed(atMs: number, error: unknown): void {
+    this.#snapshot = {
+      ...this.#snapshot,
+      lastFailureAtMs: atMs,
+      lastFailureCode: error instanceof Error ? error.name : "scheduler_failed",
+      running: false,
+    };
+  }
+
+  snapshot(): EconomySchedulerSnapshot {
+    return Object.freeze({ ...this.#snapshot });
+  }
+}
+
+export function createEconomySchedulerHealthCheck(
+  monitor: EconomySchedulerMonitor,
+  maximumLagMs = 30_000,
+  now: () => number = Date.now,
+): HealthCheck {
+  return {
+    name: "economy-scheduler",
+    async check() {
+      const current = monitor.snapshot();
+      const reference = current.lastCompletedAtMs ?? current.startedAtMs;
+      const lagMs = Math.max(0, now() - reference);
+      if (current.running && current.lastStartedAtMs !== undefined && now() - current.lastStartedAtMs > maximumLagMs) {
+        return { status: "down", code: "scheduler_stuck", detail: `Lauf aktiv seit ${Math.round((now() - current.lastStartedAtMs) / 1_000)} s` };
+      }
+      if (current.lastFailureAtMs !== undefined && (current.lastCompletedAtMs ?? 0) < current.lastFailureAtMs) {
+        return { status: "down", code: "scheduler_failed", detail: `Letzter Fehlercode ${current.lastFailureCode ?? "scheduler_failed"}` };
+      }
+      if (lagMs > maximumLagMs) {
+        return { status: "down", code: "scheduler_lag", detail: `Letzter erfolgreicher Lauf vor ${Math.round(lagMs / 1_000)} s` };
+      }
+      if (current.lastCompletedAtMs === undefined) return { status: "degraded", code: "scheduler_starting" };
+      return { status: "ok", code: "scheduler_current", detail: `${current.processedTransitions} Fristübergänge verarbeitet` };
+    },
+  };
+}
+
+function appendEffects(target: { notices: EconomyNotice[]; journal: EconomyJournalEntry[] }, effects: EconomyEffects): void {
+  target.notices.push(...effects.notices);
+  target.journal.push(...effects.journal);
+}
+
+/**
+ * Holt versäumte exakte Fristen deterministisch nach: Das fachliche Kommando
+ * trägt stets den veröffentlichten Zeitpunkt, nicht die zufällige Workerzeit.
+ */
+async function advanceWorld(
+  db: EconomyDatabase,
+  initial: EconomyWorldState,
+  nowSeconds: number,
+): Promise<{ readonly state: EconomyWorldState; readonly effects: EconomyEffects; readonly transitions: number }> {
+  let state = initial;
+  let transitions = 0;
+  const effects = { notices: [] as EconomyNotice[], journal: [] as EconomyJournalEntry[] };
+  const tenderIds = [...state.tenders.keys()].sort();
+  for (const tenderId of tenderIds) {
+    let current = state.tenders.get(tenderId);
+    if (current?.phase === "announced" && current.tender.opensAt <= nowSeconds) {
+      state = openTender(state, `scheduler:${tenderId}:open:${current.tender.opensAt}`, tenderId, current.tender.opensAt);
+      transitions += 1;
+      current = state.tenders.get(tenderId);
+    }
+    if (current?.phase === "open" && current.tender.closesAt <= nowSeconds) {
+      const automation = state.tenderAutomation.get(tenderId);
+      if (automation === undefined) throw new Error(`Scheduler-Konfiguration für Ausschreibung '${tenderId}' fehlt.`);
+      const closed = closeTender(state, {
+        commandId: `scheduler:${tenderId}:close:${current.tender.closesAt}`,
+        tenderId,
+        at: current.tender.closesAt,
+        authorityId: automation.authorityId,
+        budgetPeriod: automation.budgetPeriod,
+        vehiclePool: automation.vehiclePool,
+        recipientByOperator: automation.recipientByOperator,
+      });
+      state = closed.state;
+      appendEffects(effects, closed.effects);
+      transitions += 1;
+      current = state.tenders.get(tenderId);
+    }
+    const mobilization = state.mobilizations.get(tenderId);
+    if (current?.phase === "awarded" && mobilization !== undefined && !mobilization.completed && current.tender.operatingFrom <= nowSeconds) {
+      const automation = state.tenderAutomation.get(tenderId);
+      if (automation === undefined) throw new Error(`Scheduler-Konfiguration für Mobilisierung '${tenderId}' fehlt.`);
+      const recipientAccountId = automation.recipientByOperator[current.winningBid.operatorId];
+      if (recipientAccountId === undefined) throw new Error(`Empfängerkonto für EVU '${current.winningBid.operatorId}' fehlt.`);
+      let proof;
+      if (mobilization.reference !== undefined) {
+        try {
+          const snapshot = await loadFleetMobilizationSnapshot(db, state.worldId, mobilization.reference);
+          proof = verifyMobilizationReference(snapshot, mobilization.reference, {
+            operatorId: current.winningBid.operatorId,
+            winningFormationId: current.winningBid.vehicle.formationId,
+            serviceLineIds: current.tender.specification.lines,
+            operatingFrom: current.tender.operatingFrom,
+          });
+        } catch {
+          // Ein fehlender oder inzwischen nicht verifizierbarer Beleg führt
+          // deterministisch in den bereits modellierten Eigenbetrieb/Pönale-Pfad.
+          proof = undefined;
+        }
+      }
+      const completed = completeMobilization(state, {
+        commandId: `scheduler:${tenderId}:mobilize:${current.tender.operatingFrom}`,
+        tenderId,
+        at: current.tender.operatingFrom,
+        proof,
+        failurePenaltyCents: automation.failurePenaltyCents,
+        recipientAccountId,
+      });
+      state = completed.state;
+      appendEffects(effects, completed.effects);
+      transitions += 1;
+    }
+  }
+  return { state, effects, transitions };
+}
+
+export async function runEconomySchedulerCycle(
+  db: EconomyDatabase,
+  now: Date,
+  adapters: EconomyEffectAdapters,
+  monitor: EconomySchedulerMonitor,
+): Promise<{ readonly worlds: number; readonly transitions: number; readonly effects: number }> {
+  const startedAtMs = now.getTime();
+  monitor.started(startedAtMs);
+  let transitions = 0;
+  let effects = 0;
+  try {
+    const worldIds = await listEconomyWorldIds(db);
+    for (const worldId of worldIds) {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const initial = await loadEconomyWorldState(db, worldId);
+        if (initial === undefined) break;
+        const advanced = await advanceWorld(db, initial, Math.floor(now.getTime() / 1_000));
+        if (advanced.transitions === 0) break;
+        try {
+          await persistEconomyTransition(db, {
+            expectedRevision: initial.revision,
+            state: advanced.state,
+            effects: advanced.effects,
+            committedAt: now,
+          });
+          transitions += advanced.transitions;
+          effects += advanced.effects.journal.length + advanced.effects.notices.length;
+          break;
+        } catch (error) {
+          if (!(error instanceof EconomyStateConflictError) || attempt === 2) throw error;
+        }
+      }
+      effects += await dispatchEconomyOutbox(db, worldId, adapters, now);
+    }
+    monitor.completed(now.getTime(), transitions);
+    return { worlds: worldIds.length, transitions, effects };
+  } catch (error) {
+    monitor.failed(now.getTime(), error);
+    throw error;
+  }
+}

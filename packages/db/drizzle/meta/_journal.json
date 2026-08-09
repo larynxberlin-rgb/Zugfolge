@@ -57,6 +57,13 @@
       "when": 1786247131047,
       "tag": "0007_colorful_kabuki",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786252235842,
+      "tag": "0008_lying_quentin_quire",
+      "breakpoints": true
     }
   ]
 }

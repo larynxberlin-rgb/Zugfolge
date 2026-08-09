@@ -6,7 +6,7 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 type AnyDatabase = PgDatabase<PgQueryResultHKT, Record<string, unknown>, any>;
 
 /** Zahl der mit diesem Quellstand ausgelieferten Drizzle-Migrationen. */
-export const EXPECTED_SCHEMA_MIGRATIONS = 8;
+export const EXPECTED_SCHEMA_MIGRATIONS = 9;
 
 function firstRow(result: unknown): Record<string, unknown> | undefined {
   if (Array.isArray(result)) return result[0] as Record<string, unknown> | undefined;
@@ -57,6 +57,9 @@ export function createDatabaseHealthCheck(db: AnyDatabase): HealthCheck {
       await db.execute(
         sql`select world_id, status from simulation_commands limit 0`,
       );
+      await db.execute(
+        sql`select world_id, revision, snapshot_hash from fleet_mobilization_snapshots limit 0`,
+      );
       return { status: "ok", code: "schema_current" };
     },
   };
@@ -96,13 +99,24 @@ export function createEconomyOutboxHealthCheck(
     async check() {
       const result = await db.execute(sql`
         select count(*)::int as pending_count,
-               extract(epoch from min(enqueued_at)) * 1000 as oldest_ms
+               extract(epoch from min(enqueued_at)) * 1000 as oldest_ms,
+               count(*) filter (where attempts > 0)::int as failed_count,
+               coalesce(max(attempts), 0)::int as maximum_attempts
         from economy_outbox
         where processed_at is null
       `);
       const row = firstRow(result);
       const pendingCount = Number(row?.["pending_count"] ?? 0);
       if (pendingCount === 0) return { status: "ok", code: "outbox_empty" };
+      const failedCount = Number(row?.["failed_count"] ?? 0);
+      const maximumAttempts = Number(row?.["maximum_attempts"] ?? 0);
+      if (failedCount > 0) {
+        return {
+          status: maximumAttempts >= 3 ? "down" : "degraded",
+          code: "outbox_failures",
+          detail: `${failedCount} Effekte fehlgeschlagen; maximal ${maximumAttempts} Versuche`,
+        };
+      }
       const oldestMs = Number(row?.["oldest_ms"]);
       const ageMs = Math.max(0, now() - oldestMs);
       return ageMs > maximumPendingAgeMs

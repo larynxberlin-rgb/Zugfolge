@@ -77,6 +77,7 @@ der Überblick; die Spalte `id` ist die Kennung, die auch der Importmarker nennt
 | `stada` | StaDa — Stationsdaten | `freigegeben` | M1.8 |
 | `dem-hoehenmodell` | Digitales Höhenmodell der Pilotregion | `freigegeben` | M1.5 |
 | `trassenfinder` | Trassenfinder — Trassenpreis- und Fahrzeitstruktur | `entwicklung` | M1.13 |
+| `gtfs-de-rv` | GTFS.DE/DELFI — Schienenregionalverkehr Deutschland | `freigegeben` | M1.13 |
 | `trassenfinder-infrastruktur-api` | Trassenfinder-Infrastruktur-API — Betriebsstellen-/Streckensegment-Stammdaten | `freigegeben` | M9 |
 | `entgeltregeln-tps-sps-aps-inb` | Entgeltregeln (TPS, SPS, APS, INB, Anlagen-/Stationspreise) | `gesperrt` | M6.1 |
 | `baustellen-stoerungsfeeds` | reale Baustellen- und Störungsfeeds | `gesperrt` | M8.12 |
@@ -101,6 +102,14 @@ ergänzende Importquelle für Betriebsstellen und Streckensegmente (E22,
 ADR-0022). Streng abgegrenzt vom bestehenden Eintrag `trassenfinder`: Die
 berechneten Fahrzeit- und Trassenpreiswerte der Routensuche bleiben davon
 unberührt auf `entwicklung`.
+
+Für M1.13 ist außerdem `gtfs-de-rv` freigegeben. GTFS.DE veröffentlicht den aus
+DELFI-NeTEx-Daten erzeugten Feed „Schienenregionalverkehr Deutschland“
+kostenfrei und tagesaktuell unter CC BY 4.0. Zugfolge nutzt den Feed
+ausschließlich offline, wahrt Namensnennung und Änderungskennzeichnung und
+versioniert Feed-URL, Abrufkonfiguration, Abrufzeit sowie Hash von ZIP und jeder
+verwendeten Tabelle. P20, Median und Mittelwert sind als eigene Bearbeitung
+gekennzeichnet. Details stehen in [`referenzkorpus.md`](referenzkorpus.md).
 
 **Was blockiert bleibt.** `rinf`, `entgeltregeln-tps-sps-aps-inb` und
 `baustellen-stoerungsfeeds` warten auf eine schriftliche Entscheidung

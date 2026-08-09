@@ -8,22 +8,27 @@ import type { EconomyRules } from "./release.js";
  */
 export interface MobilizationProof {
   readonly source: "m5-release";
+  readonly verifiedBy: "zugfolge-fleet-mobilization/v1";
   readonly fleetRevision: number;
+  readonly snapshotHash: string;
   readonly formationIds: readonly string[];
   readonly personnelDutyIds: readonly string[];
   readonly pathReservationIds: readonly string[];
 }
 export interface TransitionResult { readonly operatorId: string | "public"; readonly seamless: boolean; readonly penaltyCents: bigint; readonly prequalificationDamage: number }
-export function isMobilizationProofComplete(proof: MobilizationProof): boolean {
+export function isMobilizationProofComplete(proof: MobilizationProof | undefined): proof is MobilizationProof {
+  if (proof === undefined) return false;
   const validIds = (ids: readonly string[]) => ids.length > 0 && ids.every((id) => id.trim() !== "") && new Set(ids).size === ids.length;
   return proof.source === "m5-release"
+    && proof.verifiedBy === "zugfolge-fleet-mobilization/v1"
     && Number.isSafeInteger(proof.fleetRevision)
     && proof.fleetRevision >= 0
+    && /^[a-f0-9]{64}$/.test(proof.snapshotHash)
     && validIds(proof.formationIds)
     && validIds(proof.personnelDutyIds)
     && validIds(proof.pathReservationIds);
 }
-export function performOperatingTransition(input: { readonly incumbentOperatorId: string | "public"; readonly winnerOperatorId: string; readonly proof: MobilizationProof; readonly at: number; readonly timetableBoundary: number; readonly failurePenaltyCents: bigint }): TransitionResult {
+export function performOperatingTransition(input: { readonly incumbentOperatorId: string | "public"; readonly winnerOperatorId: string; readonly proof?: MobilizationProof; readonly at: number; readonly timetableBoundary: number; readonly failurePenaltyCents: bigint }): TransitionResult {
   if (input.at !== input.timetableBoundary) throw new Error("Betriebsübergang ist nur am Fahrplanstichtag zulässig.");
   if (input.winnerOperatorId === input.incumbentOperatorId) return Object.freeze({ operatorId: input.winnerOperatorId, seamless: true, penaltyCents: 0n, prequalificationDamage: 0 });
   if (!isMobilizationProofComplete(input.proof)) return Object.freeze({ operatorId: "public", seamless: false, penaltyCents: input.failurePenaltyCents, prequalificationDamage: 1_500 });

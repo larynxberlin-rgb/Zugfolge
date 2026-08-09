@@ -82,6 +82,18 @@
       "milestone": "M1.13"
     },
     {
+      "id": "gtfs-de-rv",
+      "titel": "GTFS.DE / DELFI — Schienenregionalverkehr Deutschland",
+      "status": "freigegeben",
+      "lizenz": "CC BY 4.0",
+      "bereitstellung": "Kostenfreier, tagesaktuell erzeugter statischer GTFS-Feed 'Schienenregionalverkehr Deutschland' unter https://download.gtfs.de/germany/rv_free/latest.zip. Der Feed deckt laut Anbieter die nächsten 30 Tage ab. ZIP, GTFS-Tabellen, Abrufzeit, Konfiguration und SHA-256-Prüfsummen werden in einem Capture-Manifest versioniert.",
+      "attribution": "Datenquelle: DELFI e.V. / GTFS.DE, lizenziert unter CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Durch Zugfolge gefiltert, gruppiert und statistisch ausgewertet; Änderungen werden als solche gekennzeichnet.",
+      "nutzung": "Offline-Referenzkorpus für M1.13 aus stop_times.txt, trips.txt, routes.txt, stops.txt und Kalenderdateien. P20 dient als robuste technische Referenz; Median und Mittelwert weisen Fahrplanreserven separat aus. Keine Laufzeitabhängigkeit des Spiels.",
+      "entscheidung": { "datum": "2026-08-09", "pruefer": "Sebastian Barowski" },
+      "hinweis": "CC BY 4.0 erlaubt Speicherung, Bearbeitung und Weitergabe mit Namensnennung und Änderungskennzeichnung. Das Projekt bewahrt Attribution, Feed-URL, Abrufzeit, ZIP-/Tabellen-Hashes und Transformationskonfiguration. Die Zuordnung auf eine TrainCharacteristics ist eine eigene, geprüfte Projektentscheidung und wird nicht aus route_type oder Linienname geraten.",
+      "milestone": "M1.13"
+    },
+    {
       "id": "trassenfinder-infrastruktur-api",
       "titel": "Trassenfinder-Infrastruktur-API — Betriebsstellen- und Streckensegment-Stammdaten (openapi.trassenfinder.de)",
       "status": "freigegeben",

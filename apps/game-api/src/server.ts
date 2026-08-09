@@ -2,6 +2,13 @@
 
 import { createDatabase, createEconomyOutboxHealthCheck, createEventLogHealthCheck } from "@zugfolge/db";
 import {
+  createEconomyPlatformAdapters,
+  createEconomySchedulerHealthCheck,
+  EconomySchedulerMonitor,
+  runEconomySchedulerCycle,
+  type JournalAccounts,
+} from "@zugfolge/economy";
+import {
   createKeycloakHealthCheck,
   createKeycloakVerifier,
   loadKeycloakConfigFromEnv,
@@ -23,18 +30,45 @@ const db = createDatabase(requireEnv("DATABASE_URL"));
 const keycloak = loadKeycloakConfigFromEnv();
 const verifyToken = createKeycloakVerifier(keycloak);
 const livemap = new LivemapRegistry();
+const economyMonitor = new EconomySchedulerMonitor(Date.now());
+const economyAdapters = createEconomyPlatformAdapters({
+  db,
+  accountsByOperator: JSON.parse(requireEnv("ECONOMY_LEDGER_ACCOUNTS_JSON")) as Readonly<Record<string, JournalAccounts>>,
+});
 const app = buildApp({
   db,
   verifyToken,
   livemap,
   livemapIngestToken: requireEnv("LIVEMAP_INGEST_TOKEN"),
   simulationIngestToken: requireEnv("SIMULATION_INGEST_TOKEN"),
+  fleetIngestToken: requireEnv("FLEET_INGEST_TOKEN"),
   extraHealthChecks: [
     createKeycloakHealthCheck(keycloak),
     createEventLogHealthCheck(db),
     createEconomyOutboxHealthCheck(db),
+    createEconomySchedulerHealthCheck(economyMonitor),
     createLivemapHealthCheck(livemap),
   ],
+});
+
+let economyCycle: Promise<void> | undefined;
+const runEconomy = () => {
+  if (economyCycle !== undefined) return;
+  economyCycle = runEconomySchedulerCycle(db, new Date(), economyAdapters, economyMonitor)
+    .then(() => undefined)
+    .catch((error: unknown) => {
+      app.log.error({ err: error }, "Economy-Frist- oder Outbox-Lauf fehlgeschlagen");
+    })
+    .finally(() => {
+      economyCycle = undefined;
+    });
+};
+runEconomy();
+const economyInterval = setInterval(runEconomy, 10_000);
+economyInterval.unref();
+app.addHook("onClose", async () => {
+  clearInterval(economyInterval);
+  await economyCycle;
 });
 
 const purge = () => {
