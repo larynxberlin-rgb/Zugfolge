@@ -195,10 +195,7 @@ impl MobilizationSnapshot {
         for formation in &self.formations {
             non_empty(&formation.operator_id, "formations[].operatorId")?;
             string_list(&formation.vehicle_ids, "formations[].vehicleIds")?;
-            string_list(
-                &formation.service_line_ids,
-                "formations[].serviceLineIds",
-            )?;
+            string_list(&formation.service_line_ids, "formations[].serviceLineIds")?;
             valid_window(
                 formation.available_from,
                 formation.available_until,
@@ -235,10 +232,7 @@ impl MobilizationSnapshot {
         }
         for path in &self.path_reservations {
             non_empty(&path.operator_id, "pathReservations[].operatorId")?;
-            string_list(
-                &path.service_line_ids,
-                "pathReservations[].serviceLineIds",
-            )?;
+            string_list(&path.service_line_ids, "pathReservations[].serviceLineIds")?;
             valid_window(
                 path.valid_from,
                 path.valid_until,
@@ -356,8 +350,7 @@ fn write_json_string(output: &mut String, value: &str) {
             '\r' => output.push_str("\\r"),
             '\t' => output.push_str("\\t"),
             control if control <= '\u{1f}' => {
-                write!(output, "\\u{:04x}", control as u32)
-                    .expect("writing to String cannot fail");
+                write!(output, "\\u{:04x}", control as u32).expect("writing to String cannot fail");
             }
             other => output.push(other),
         }
@@ -397,8 +390,12 @@ fn write_formation(output: &mut String, formation: &MobilizationFormation) {
     )
     .expect("writing to String cannot fail");
     let c = &formation.characteristics;
-    write!(output, ",\"bicyclePlaces\":{},\"equipment\":", c.bicycle_places)
-        .expect("writing to String cannot fail");
+    write!(
+        output,
+        ",\"bicyclePlaces\":{},\"equipment\":",
+        c.bicycle_places
+    )
+    .expect("writing to String cannot fail");
     write_string_array(output, &c.equipment);
     write!(
         output,

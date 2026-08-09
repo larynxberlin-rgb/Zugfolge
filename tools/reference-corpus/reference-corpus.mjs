@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 export const CORPUS_SCHEMA = "zugfolge-reference-corpus/v1";
+export const MODEL_RESULTS_SCHEMA = "zugfolge-model-results/v1";
 export const REPORT_SCHEMA = "zugfolge-reference-report/v1";
 export const BUNDLE_SCHEMA = "zugfolge-pilot-release-bundle/v1";
 
@@ -164,9 +165,18 @@ export function buildReferenceCorpus(input) {
 
 export function compareWithModel(corpus, modelResults, tolerance = { absoluteSeconds: 30, relativeBasisPoints: 500 }) {
   invariant(corpus.schema === CORPUS_SCHEMA, "Unbekanntes Korpus-Schema.");
+  invariant(modelResults?.schema === MODEL_RESULTS_SCHEMA, "Unbekanntes Modellergebnis-Schema.");
+  nonEmpty(modelResults.releaseChecksum, "modelResults.releaseChecksum");
+  nonEmpty(modelResults.modelInputSha256, "modelResults.modelInputSha256");
+  invariant(Array.isArray(modelResults.results), "modelResults.results muss eine Liste sein.");
   integer(tolerance.absoluteSeconds, "absoluteSeconds", 0);
   integer(tolerance.relativeBasisPoints, "relativeBasisPoints", 0);
-  const byId = new Map(modelResults.map((result) => [result.groupId, result]));
+  const byId = new Map();
+  for (const result of modelResults.results) {
+    nonEmpty(result.groupId, "modelResults.results[].groupId");
+    invariant(!byId.has(result.groupId), `Modellergebnis für Gruppe ${result.groupId} ist doppelt.`);
+    byId.set(result.groupId, result);
+  }
   const comparisons = corpus.groups.map((group) => {
     const result = byId.get(group.id);
     invariant(result, `Modellergebnis für Gruppe ${group.id} fehlt.`);
@@ -194,6 +204,7 @@ export function compareWithModel(corpus, modelResults, tolerance = { absoluteSec
     schema: REPORT_SCHEMA,
     corpusSha256: sha256(canonicalJson(corpus)),
     releaseChecksum: modelResults.releaseChecksum,
+    modelInputSha256: modelResults.modelInputSha256,
     tolerance,
     passed: comparisons.every((comparison) => comparison.technicalWithinTolerance),
     comparisons: Object.freeze(comparisons),
@@ -215,6 +226,8 @@ export function createUnsignedBundle(input) {
   invariant(input.corpus.schema === CORPUS_SCHEMA, "Korpus-Schema ist nicht signierbar.");
   invariant(input.report.schema === REPORT_SCHEMA && input.report.passed, "Nur ein bestandener Report darf signiert werden.");
   invariant(input.report.corpusSha256 === sha256(canonicalJson(input.corpus)), "Report gehört nicht zu diesem Korpus.");
+  nonEmpty(input.report.releaseChecksum, "report.releaseChecksum");
+  nonEmpty(input.report.modelInputSha256, "report.modelInputSha256");
   nonEmpty(input.releasePath, "releasePath");
   nonEmpty(input.releaseSha256, "releaseSha256");
   return Object.freeze({
@@ -226,6 +239,7 @@ export function createUnsignedBundle(input) {
     releasePath: input.releasePath,
     releaseSha256: input.releaseSha256,
     releaseChecksum: input.report.releaseChecksum,
+    modelInputSha256: input.report.modelInputSha256,
     source: input.corpus.source,
     createdAt: input.createdAt,
   });

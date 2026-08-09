@@ -97,6 +97,19 @@ async function main() {
     console.log(`${corpus.groups.length} Referenzgruppen, technischer Vergleich bestanden.`);
     return;
   }
+  if (mode === "compare") {
+    const [configFile, corpusFile, modelFile, reportFile] = args;
+    if (!reportFile) throw new Error("Aufruf: compare CONFIG CORPUS MODEL REPORT");
+    const config = await readJson(configFile);
+    const registry = await readJson(path.resolve("tools/guards/quellenregister.json"));
+    verifyRegisteredSource(registry, config.source);
+    const corpus = await readJson(corpusFile);
+    const report = compareWithModel(corpus, await readJson(modelFile), config.tolerance);
+    await writeJson(reportFile, report);
+    if (!report.passed) throw new Error("Fahrzeitvergleich liegt außerhalb der dokumentierten Toleranz.");
+    console.log(`${corpus.groups.length} Referenzgruppen, technischer Vergleich bestanden.`);
+    return;
+  }
   if (mode === "sign") {
     const [corpusFile, reportFile, releaseFile, privateKeyFile, outputFile] = args;
     if (!outputFile) throw new Error("Aufruf: sign CORPUS REPORT RELEASE PRIVATE_KEY OUTPUT");
@@ -138,7 +151,7 @@ async function main() {
     console.log(canonicalJson(await readJson(file)));
     return;
   }
-  throw new Error("Modus: capture-gtfs | normalize-gtfs | plan-gtfs | build | sign | verify | verify-signature | hash | canonical");
+  throw new Error("Modus: capture-gtfs | normalize-gtfs | plan-gtfs | build | compare | sign | verify | verify-signature | hash | canonical");
 }
 
 main().catch((error) => {

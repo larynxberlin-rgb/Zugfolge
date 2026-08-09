@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
@@ -46,6 +47,15 @@ const input = {
   observations: observations([600, 610, 620, 630, 900]),
 };
 
+function modelResults(groupId, characteristicsId = "regional-electric-v1", calculatedSeconds = 615) {
+  return {
+    schema: "zugfolge-model-results/v1",
+    releaseChecksum: "infra-fixture",
+    modelInputSha256: "model-fixture",
+    results: [{ groupId, characteristicsId, calculatedSeconds }],
+  };
+}
+
 test("trennt technische P20-Referenz von Median und durch Wartezeit verzerrtem Mittel", () => {
   const corpus = buildReferenceCorpus(input);
   const group = corpus.groups[0];
@@ -56,24 +66,43 @@ test("trennt technische P20-Referenz von Median und durch Wartezeit verzerrtem M
 
 test("verlangt dieselbe Zugcharakteristik und dokumentiert Fahrplanreserve", () => {
   const corpus = buildReferenceCorpus(input);
-  const report = compareWithModel(corpus, Object.assign([
-    { groupId: corpus.groups[0].id, characteristicsId: "regional-electric-v1", calculatedSeconds: 615 },
-  ], { releaseChecksum: "infra-fixture" }));
+  const report = compareWithModel(corpus, modelResults(corpus.groups[0].id));
   assert.equal(report.passed, true);
   assert.equal(report.comparisons[0].scheduledReserveSeconds, 5);
   assert.throws(
-    () => compareWithModel(corpus, Object.assign([
-      { groupId: corpus.groups[0].id, characteristicsId: "wrong", calculatedSeconds: 615 },
-    ], { releaseChecksum: "infra-fixture" })),
+    () => compareWithModel(corpus, modelResults(corpus.groups[0].id, "wrong")),
     /Zugcharakteristik/,
+  );
+});
+
+test("bindet ein versioniertes Modellergebnis eindeutig an Release und Eingabe", () => {
+  const corpus = buildReferenceCorpus(input);
+  const duplicate = modelResults(corpus.groups[0].id);
+  duplicate.results.push({ ...duplicate.results[0] });
+  assert.throws(() => compareWithModel(corpus, duplicate), /doppelt/);
+  assert.throws(
+    () => compareWithModel(corpus, { ...modelResults(corpus.groups[0].id), releaseChecksum: "" }),
+    /releaseChecksum/,
+  );
+  assert.throws(
+    () => compareWithModel(corpus, { ...modelResults(corpus.groups[0].id), schema: "alt" }),
+    /Schema/,
   );
 });
 
 test("Ed25519-Signatur bindet Korpus, Report und Release-Hash", () => {
   const corpus = buildReferenceCorpus(input);
-  const report = compareWithModel(corpus, Object.assign([
-    { groupId: corpus.groups[0].id, characteristicsId: "regional-electric-v1", calculatedSeconds: 615 },
-  ], { releaseChecksum: "infra-fixture" }));
+  const report = compareWithModel(corpus, modelResults(corpus.groups[0].id));
+  assert.throws(
+    () => createUnsignedBundle({
+      corpus,
+      report: { ...report, modelInputSha256: "" },
+      releasePath: "pilot.infrarelease",
+      releaseSha256: sha256("release"),
+      createdAt: "2026-08-09T00:00:00.000Z",
+    }),
+    /modelInputSha256/,
+  );
   const bundle = createUnsignedBundle({
     corpus,
     report,
@@ -126,4 +155,39 @@ test("GTFS-CSV verarbeitet Anführungszeichen, Kommas und CRLF deterministisch",
     { stop_id: "1", stop_name: "Halle, Hbf" },
     { stop_id: "2", stop_name: 'Leipzig "tief"' },
   ]);
+});
+
+test("der versionierte Pilotvergleich bleibt als fehlgeschlagener Nachweis reproduzierbar", async () => {
+  const pilot = new URL("pilot/2026-08/", import.meta.url);
+  const readPilotJson = async (name) => JSON.parse(await readFile(new URL(name, pilot), "utf8"));
+  const [config, corpus, model, storedReport, release] = await Promise.all([
+    readPilotJson("config.json"),
+    readPilotJson("reference-corpus.json"),
+    readPilotJson("model-results.json"),
+    readPilotJson("deviation-report.json"),
+    readPilotJson("pilot.infrarelease.json"),
+  ]);
+  const report = compareWithModel(corpus, model, config.tolerance);
+
+  assert.deepEqual(report, storedReport);
+  assert.equal(report.passed, false);
+  assert.equal(report.comparisons[0].calculatedSeconds, 1_014);
+  assert.equal(report.comparisons[0].technicalDeviationSeconds, -366);
+  assert.equal(report.comparisons[0].toleranceSeconds, 69);
+  assert.equal(release.releaseChecksum, model.releaseChecksum);
+  assert.equal(release.modelInputSha256, model.modelInputSha256);
+  assert.equal(
+    model.modelInputSha256,
+    sha256(await readFile(new URL("model-config.json", pilot))),
+  );
+  assert.throws(
+    () => createUnsignedBundle({
+      corpus,
+      report,
+      releasePath: "pilot.infrarelease.json",
+      releaseSha256: sha256(canonicalJson(release)),
+      createdAt: "2026-08-09T00:00:00.000Z",
+    }),
+    /Nur ein bestandener Report/,
+  );
 });

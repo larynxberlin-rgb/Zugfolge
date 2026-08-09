@@ -41,7 +41,7 @@ als Quellcode-Fix ausgegeben.
 | Issue | Restarbeit und Abschlussbedingung |
 |---|---|
 | #29 | GitHub sperrt Workflow-Starts wegen der Abrechnung des Kontos/der Organisation. Abrechnung entsperren und den PR vollständig neu laufen lassen. |
-| #48 | Der reale, lizenzgeprüfte GTFS.DE-Capture und ein Korpus mit 195 LHE-Referenzfahrten liegen nun gehasht vor. Offen bleiben der Modelllauf des exakt zugehörigen `InfraRelease`, der bestandene Abweichungsreport, die benannte Release-Identität und deren echte Signatur. Eine von der Software selbst erzeugte „Freigabe“ wäre kein Beweis. |
+| #48 | Der reale, lizenzgeprüfte GTFS.DE-Capture und ein Korpus mit 195 LHE-Referenzfahrten liegen gehasht vor. Der neue Rust-Modellläufer baut einen versionierten Pilot-`InfraRelease` und bindet Ergebnis, Eingabe und Release-Checksum eindeutig. Der erste Lauf ist ein bestätigter negativer Befund: 1.014 statt 1.380 Sekunden, −366 Sekunden bei ±69 Sekunden Toleranz. Offen bleiben belastbare statt angenommene Infrastruktur-/Fahrzeugprofile, ein bestandener Report, die benannte Release-Identität und deren echte Signatur. Eine nachträgliche Kalibrierung oder von der Software selbst erzeugte „Freigabe“ wäre kein Beweis. |
 | #55 | Branch-Protection/Ruleset mit den neuen Pflichtchecks im Repository-Admin setzen; die verbundene GitHub-App stellt dafür keinen Schreibendpunkt bereit. |
 | #56 | Die deklarative Matrix `.github/milestones.json`, ihr Konsistenztest und der idempotente, manuell/bei `main` ausführbare Sync-Workflow liegen vor. Die erste Ausführung nach dem Merge muss die M0–M14-Milestones im Repository anlegen beziehungsweise aktualisieren und alle referenzierten Issues zuordnen; bis dahin bleibt der externe GitHub-Zustand offen. |
 

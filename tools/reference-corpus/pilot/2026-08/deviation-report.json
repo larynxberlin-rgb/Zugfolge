@@ -1,0 +1,25 @@
+{
+  "schema": "zugfolge-reference-report/v1",
+  "corpusSha256": "599b24df8a073b835904d979f1e6d83b78193faf4ce5a27660f61bfe46153e14",
+  "releaseChecksum": "3b891ef47ac78615465d67f01eb24a0e161b781b4ea689a207b0741200563cdd",
+  "modelInputSha256": "f1a3cdfc5296da4ae12bc7c85acc511d322bc258997fe3626c29d6f598f0821b",
+  "tolerance": {
+    "absoluteSeconds": 30,
+    "relativeBasisPoints": 500
+  },
+  "passed": false,
+  "comparisons": [
+    {
+      "groupId": "d9f37a292a03e5a9",
+      "characteristicsId": "mdsb-talent2-v1",
+      "calculatedSeconds": 1014,
+      "technicalReferenceSeconds": 1380,
+      "technicalDeviationSeconds": -366,
+      "toleranceSeconds": 69,
+      "technicalWithinTolerance": false,
+      "timetableMedianSeconds": 1500,
+      "scheduledReserveSeconds": 486,
+      "sampleCount": 195
+    }
+  ]
+}

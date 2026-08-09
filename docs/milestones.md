@@ -65,9 +65,11 @@ Ergebnis vorzeigbar ist. Bislang erledigt:
   [`crates/zugfolge-infra/src/release.rs`](../crates/zugfolge-infra/src/release.rs);
 M1.13 ist **in Arbeit**: Werkzeug, echter GTFS.DE-Capture, Rohdaten-Hashes,
 statistische Trennung von technischer Referenz und Fahrplanreserve,
-Abweichungsreport sowie Ed25519-Bundle stehen. Für den realen Capture fehlen
-noch der Lauf des zugehörigen `InfraRelease`, der bestandene Report und das mit
-dem Release-Schlüssel signierte Artefakt; deshalb ist M1
+Abweichungsreport sowie Ed25519-Bundle stehen. Ein erster versionierter Lauf
+des provisorischen Pilot-`InfraRelease` ist reproduziert; er verfehlt mit 1.014
+statt 1.380 Sekunden die feste Toleranz von 69 Sekunden. Für den realen Capture
+fehlen daher weiterhin ein belastbarer Infrastrukturstand, ein bestandener
+Report und das mit dem Release-Schlüssel signierte Artefakt; deshalb ist M1
 als Gesamtbeweis noch nicht abgeschlossen. Siehe
 [`referenzkorpus.md`](referenzkorpus.md).
 
@@ -185,8 +187,11 @@ Alle drei sind mit M3.1 bis M3.4 abgearbeitet; die Zuordnung steht bei M3.
 > **Audit-Hinweis:** Dieser Beweis ist noch offen. Der automatisierte,
 > lizenzgeprüfte Weg von GTFS-Sollplänen bis zum signierten Bundle ist umgesetzt
 > und ein echter Feed-Capture mit 195 Fahrten liegt vor. Offen sind der reale
-> Modellvergleich und die Signatur durch den Release-Verantwortlichen; beides
-> kann nicht aus Quellcode erzeugt oder fingiert werden.
+> Der erste reale Modellvergleich ist reproduzierbar, aber negativ: Der
+> provisorische Korridor rechnet 366 Sekunden zu schnell. Offen sind der
+> bestandene Vergleich auf belastbaren Infrastruktur- und Fahrzeugwerten sowie
+> die Signatur durch den Release-Verantwortlichen; beides wird nicht durch
+> nachträgliche Kalibrierung oder eine fingierte Software-„Freigabe“ ersetzt.
 
 **M1.1 trägt:** `crates/zugfolge-infra` beschreibt Betriebsstellen, Kanten,
 Gleise, Bahnsteige, Elektrifizierung, Zugsicherung, Vmax-Bänder und Neigung,
@@ -322,7 +327,11 @@ paart nur Halte derselben `trip_id`. Die geprüfte Konfiguration bindet jede Gru
 Referenz; Median und Mittelwert halten Fahrplanreserven separat sichtbar. Der
 `DeviationReport` prüft gegen die vorab definierte Toleranz, und ein
 Ed25519-Bundle bindet Korpus, Report, Release-Prüfsumme und Artefakt. Der
-Trassenfinder bleibt auf `entwicklung` (E10). Siehe `betriebsgraph.md`
+erste Pilotlauf baut den Release-Checksum
+`3b891ef47ac78615465d67f01eb24a0e161b781b4ea689a207b0741200563cdd`,
+rechnet 1.014 Sekunden und weist gegenüber dem GTFS-P20 von 1.380 Sekunden eine
+Abweichung von −366 Sekunden aus; er bleibt damit bewusst ein negativer
+Nachweis. Der Trassenfinder bleibt auf `entwicklung` (E10). Siehe `betriebsgraph.md`
 Abschnitt 18 und [`referenzkorpus.md`](referenzkorpus.md).
 
 Ausführlich: [`betriebsgraph.md`](betriebsgraph.md).

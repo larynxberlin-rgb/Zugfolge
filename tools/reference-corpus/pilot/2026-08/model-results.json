@@ -1,0 +1,37 @@
+{
+  "schema": "zugfolge-model-results/v1",
+  "releaseChecksum": "3b891ef47ac78615465d67f01eb24a0e161b781b4ea689a207b0741200563cdd",
+  "modelInputSha256": "f1a3cdfc5296da4ae12bc7c85acc511d322bc258997fe3626c29d6f598f0821b",
+  "results": [
+    {
+      "groupId": "d9f37a292a03e5a9",
+      "characteristicsId": "mdsb-talent2-v1",
+      "calculatedSeconds": 1014,
+      "runningSeconds": 954,
+      "dwellSeconds": 60,
+      "sections": [
+        {
+          "segmentId": "lhe-leipzig-messe",
+          "runningSeconds": 178,
+          "dwellAfterSeconds": 0,
+          "technicalReferenceSeconds": 300,
+          "technicalDeviationSeconds": -122
+        },
+        {
+          "segmentId": "lhe-messe-airport",
+          "runningSeconds": 324,
+          "dwellAfterSeconds": 60,
+          "technicalReferenceSeconds": 480,
+          "technicalDeviationSeconds": -96
+        },
+        {
+          "segmentId": "lhe-airport-halle",
+          "runningSeconds": 452,
+          "dwellAfterSeconds": 0,
+          "technicalReferenceSeconds": 600,
+          "technicalDeviationSeconds": -148
+        }
+      ]
+    }
+  ]
+}

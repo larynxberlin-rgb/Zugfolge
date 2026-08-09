@@ -7,8 +7,9 @@ Pilotregion: **Leipzig–Halle–Erfurt**.
 
 > **Stand nach dem Projektaudit (August 2026):** M0 und M2 sind vollständig
 > nachgewiesen. Die Domänenimplementierungen von M1 bis M6 sind weitgehend
-> vorhanden; noch nicht als abgeschlossen gelten der signierte Modellvergleich
-> des real erfassten Pilotkorpus (M1.13), die produktive Planner-Anbindung des Bildfahrplans
+> vorhanden; noch nicht als abgeschlossen gelten der bestandene und signierte
+> Modellvergleich des real erfassten Pilotkorpus (M1.13; der erste Lauf
+> verfehlt die Toleranz), die produktive Planner-Anbindung des Bildfahrplans
 > (M3.10), der vollständige Rust-Runtime-Startpfad zur Livemap (M4.6), der
 > M5-Single-Writer-Betriebsnachweis in der M6-Mobilisierung. Der periodische
 > M6-Kommando-Worker und die GTFS-basierte Losableitung sind implementiert.

@@ -615,5 +615,15 @@ automatisiert importiert. Der vollständige Ablauf steht in
 wenn ein Fahrweg gar keine Fahrzeit hat, statt eine erfundene Abweichung
 auszuweisen.
 
+**Aktueller Pilotbefund.** Der erste reale Lauf baut aus der versionierten,
+noch angenommenen LHE-Korridorbeschreibung den `InfraRelease`
+`3b891ef47ac78615465d67f01eb24a0e161b781b4ea689a207b0741200563cdd`.
+M1.10 berechnet einschließlich der aus GTFS getrennt übernommenen 60 Sekunden
+Zwischenhalt 1.014 Sekunden; der P20 der 195 Referenzfahrten beträgt 1.380
+Sekunden. Die Abweichung von −366 Sekunden überschreitet die feste Toleranz von
+69 Sekunden. Der technische Pfad ist damit belegt, der M1.13-Abschluss jedoch
+nicht: Distanzen, Geschwindigkeitsbänder, Neigung und konkrete
+Talent-2-Formation müssen belastbar statt pauschal angenommen werden.
+
 Umsetzung: [`crates/zugfolge-infra/src/reference.rs`](../crates/zugfolge-infra/src/reference.rs)
 und [`tools/reference-corpus`](../tools/reference-corpus).

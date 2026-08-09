@@ -17,10 +17,16 @@ Mittelwert 1.474 Sekunden. Capture-Manifest, Tabellenhashes, Konfiguration und
 abgeleiteter Korpus liegen unter
 [`pilot/2026-08`](../tools/reference-corpus/pilot/2026-08).
 
-M1.13 bleibt dennoch `in Arbeit`: Es fehlen der Modelllauf des exakt
-zugehörigen `InfraRelease`, ein daraus bestandener Abweichungsreport und das
-mit der realen Release-Identität signierte Bundle. Der GTFS-Capture selbst ist
-nicht mehr die offene Arbeit.
+Der erste versionierte Modelllauf liegt nun ebenfalls unter
+[`pilot/2026-08`](../tools/reference-corpus/pilot/2026-08). Er ist ein bewusst
+nicht nachkalibrierter Sensitivitätslauf auf der bereits vorhandenen,
+provisorischen Korridorbeschreibung und **scheitert** mit 1.014 statt 1.380
+Sekunden an der festen Toleranz von 69 Sekunden. M1.13 bleibt daher `in Arbeit`:
+Es fehlen weiterhin ein aus belastbaren Infrastrukturprofilen gebauter
+`InfraRelease`, eine je Fahrt belegte oder enger getrennte Zugcharakteristik,
+ein bestandener Abweichungsreport und das mit der realen Release-Identität
+signierte Bundle. Der GTFS-Capture und der reproduzierbare negative
+Modellvergleich sind nicht mehr die offene Arbeit.
 
 ## Was genau verglichen wird
 
@@ -44,6 +50,47 @@ Bremscharakteristik zugrunde.
 Die Standardtoleranz ist der größere Wert aus 30 Sekunden und fünf Prozent der
 technischen Referenz. Sie ist in der Capture-Konfiguration versioniert und darf
 nicht nachträglich anhand des Ergebnisses verschoben werden.
+
+## Ergebnis des ersten Modellvergleichs
+
+`zugfolge-reference-model` baut aus
+[`model-config.json`](../tools/reference-corpus/pilot/2026-08/model-config.json)
+einen echten `OperatingGraph`, friert ihn als `InfraRelease` ein und rechnet die
+drei Abschnitte mit M1.10 jeweils von Halt zu Halt. Der Release-Checksum ist
+`3b891ef47ac78615465d67f01eb24a0e161b781b4ea689a207b0741200563cdd`, der
+SHA-256 der unveränderten Modelleingabe
+`f1a3cdfc5296da4ae12bc7c85acc511d322bc258997fe3626c29d6f598f0821b`.
+
+Die Zwischenhalte werden nicht in die Fahrdynamik hineingerechnet. Aus
+denselben 195 Fahrten des gehashten Captures ergibt sich je Komponente der P20:
+0 Sekunden Aufenthalt in Leipzig Messe und 60 Sekunden am Flughafen. Diese 60
+Sekunden werden nach der reinen M1.10-Fahrzeit addiert.
+
+| Komponente | M1.10-Modell | GTFS-P20 | Abweichung |
+|---|---:|---:|---:|
+| Leipzig Hbf (tief) → Leipzig Messe | 178 s | 300 s | −122 s |
+| Aufenthalt Leipzig Messe | 0 s | 0 s | 0 s |
+| Leipzig Messe → Leipzig/Halle Flughafen | 324 s | 420 s | −96 s |
+| Aufenthalt Leipzig/Halle Flughafen | 60 s | 60 s | 0 s |
+| Leipzig/Halle Flughafen → Halle(Saale)Hbf | 452 s | 600 s | −148 s |
+| **Gesamt** | **1.014 s** | **1.380 s** | **−366 s** |
+
+Das Ergebnis liegt außerhalb der zulässigen ±69 Sekunden. Es wurde nicht durch
+Herabsetzen von Vmax oder Beschleunigung passend gemacht. Die aktuelle
+Korridorbeschreibung kennt nur drei angenommene Distanzen, durchgehend 160
+km/h und ebene Gradiente; reale Geschwindigkeitswechsel, Neigungen und
+Langsamfahranteile fehlen. Auch GTFS benennt keine konkrete Fahrzeugformation.
+Die Characteristic `mdsb-talent2-v1` weist deshalb Masse, Länge sowie Anfahr-
+und Bremsvermögen ausdrücklich als Annahmen aus. Die einzige externe
+Flottenaussage ist, dass für die S-Bahn Mitteldeutschland 51 Talent-2-Züge
+beschafft wurden ([DB Regio Geschäftsbericht 2013](https://ir.deutschebahn.com/fileadmin/Deutsch/2013/Berichte/2013_gb_dbregio_de-data.pdf)).
+
+Damit beantwortet der Lauf eine wichtige Frage: Der Vergleichsweg funktioniert,
+aber die heutige Pilotinfrastruktur ist für den M1-Abschluss noch nicht
+ausreichend. Der fehlgeschlagene
+[`deviation-report.json`](../tools/reference-corpus/pilot/2026-08/deviation-report.json)
+ist ein versionierter Befund und darf nicht signiert werden; das Signatur-Gate
+weist nicht bestandene Reports zurück.
 
 ## Quelle, Lizenz und Nachvollziehbarkeit
 
@@ -91,19 +138,32 @@ ZIP-Pfade zurück.
    ```
 
 4. Die Fahrzeitrechnung des exakt dazugehörigen `InfraRelease` als
-   `model-results.json` ausgeben. Jeder Eintrag nennt `groupId`, dieselbe
-   `characteristicsId` und `calculatedSeconds`; `releaseChecksum` bindet die
-   Liste an den Release. Dann Korpus und Report erzeugen:
+   `model-results.json` ausgeben. Das versionierte Ergebnisobjekt nennt
+   `releaseChecksum`, den Hash der Modelleingabe und eine `results`-Liste; jeder
+   Eintrag enthält `groupId`, dieselbe `characteristicsId` und
+   `calculatedSeconds`. Für den Pilotlauf:
 
    ```bash
-   node tools/reference-corpus/cli.mjs build \
-     pilot.json artifacts/observations.json artifacts/model-results.json \
-     artifacts/reference-corpus.json artifacts/deviation-report.json
+   cargo run --locked -p zugfolge-reference-model -- \
+     tools/reference-corpus/pilot/2026-08/model-config.json \
+     tools/reference-corpus/pilot/2026-08/model-results.json \
+     tools/reference-corpus/pilot/2026-08/pilot.infrarelease.json
+   ```
+
+   Danach Korpus und Report gemeinsam prüfen:
+
+   ```bash
+   node tools/reference-corpus/cli.mjs compare \
+     tools/reference-corpus/pilot/2026-08/config.json \
+     tools/reference-corpus/pilot/2026-08/reference-corpus.json \
+     tools/reference-corpus/pilot/2026-08/model-results.json \
+     tools/reference-corpus/pilot/2026-08/deviation-report.json
    ```
 
    Ein fehlender Modelllauf, eine abweichende Charakteristik, zu wenige
    Vergleichsfahrten oder eine Toleranzüberschreitung beendet den Lauf mit
-   Fehlerstatus.
+   Fehlerstatus. Der derzeit eingecheckte Pilotlauf endet deshalb absichtlich
+   mit Fehlerstatus, schreibt den negativen Report aber vorher vollständig.
 
 5. Den bestandenen Report und den tatsächlichen `InfraRelease` mit dem
    Ed25519-Release-Schlüssel signieren:
