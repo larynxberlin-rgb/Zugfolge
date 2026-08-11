@@ -1,9 +1,11 @@
 //! Referenzkorpus und Abweichungsreport — **M1.13**.
 //!
-//! Der Beweis von M1 verlangt „einen signierten `InfraRelease` der Pilotregion,
-//! dessen berechnete Fahrzeiten innerhalb definierter Toleranz zur Referenz
-//! liegen" (`docs/milestones.md`). `CLAUDE.md` nennt dasselbe als
-//! Arbeitsprinzip: **Golden-Master-Tests gegen reale Fahrplanausschnitte der
+//! Der Beweis von M1 verlangt einen reproduzierbaren `InfraRelease`-Kandidaten
+//! des Pilotkorridors, dessen berechnete Fahrzeiten innerhalb definierter
+//! Toleranz zur technischen Referenz liegen (`docs/milestones.md`). Die davon
+//! getrennte produktive Release-Qualifizierung und echte Signatur gehören zur
+//! nachgelagerten M9-Betriebsreife. `CLAUDE.md` nennt als Arbeitsprinzip:
+//! **Golden-Master-Tests gegen reale Fahrplanausschnitte der
 //! Pilotregion mit definierter Toleranz.** M1.13 liefert das Verfahren dazu:
 //! Ein [`ReferenceCorpus`] hält Referenzläufe — je ein Fahrweg mit seiner
 //! **realen** Fahrzeit —, und ein [`DeviationReport`] stellt jeder Referenz die

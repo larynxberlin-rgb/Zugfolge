@@ -43,7 +43,7 @@ Lastziel, Referenzkorpus, beide Lizenzprüfungen und der Node-Sicherheits-Scan.
 
 | Bereich | Erreichter Stand | Ausgeführter Beleg | Endstatus |
 |---|---|---|---|
-| M1.13 | Durchgehende Hashkette von Capture und Normalisierung über disjunkte Kalibrierungs-/Validierungsbestände bis Report, Release und Signaturbundle; negative Qualifikationen und Manipulation bleiben gesperrt | 24 fokussierte Tests lokal und Referenzkorpus-Job in Run 31482747553 grün | blockiert — reale unabhängige Pilotqualifikation und Signatur fehlen in #48 |
+| M1.13 | Durchgehende Hashkette von Capture und Normalisierung über disjunkte Kalibrierungs-/Validierungsbestände bis Report, Release und Signaturbundle; negative Qualifikationen und Manipulation bleiben gesperrt | 24 fokussierte Tests lokal und Referenzkorpus-Job in Run 31482747553 grün; reale Trassenfinder-Kalibrierung +3 s innerhalb ±63 s und getrennter 85-Fahrten-GTFS-Holdout | erledigt / nachgewiesen im M1-Abnahmeschnitt; produktive unabhängige Qualifikation und Signatur bleiben getrennt in #48 |
 | M2 Betrieb/Abnahme | Weltisolation, Authentifizierung, Ledger, Postfach, Datenschutz und Replay gemeinsam geprüft | lokaler Vollstack sowie Postgres/API-Job in Run 31482747553 grün | nachgewiesen |
 | M3.10 | Zwei kontogebundene Trassenanträge, echter Rust-PlanningRun, atomarer Worker, revisionsgebundene Alternative und echter Client | Planning-NAPI-Smoke, PGlite-Worker, TypeScript und API-Job in Run 31482747553 grün | erledigt / nachgewiesen |
 | M4.6 | Persistenter Regional-Single-Writer, Commit-vor-Fanout, authentifiziertes Snapshot/SSE, restartfester `streamId:sequence`-Cursor und Client-Re-Snapshot/Interpolation | echter Regional-NAPI-Smoke, API-/Clienttests und Lastjob in Run 31482747553 grün | erledigt / nachgewiesen |
@@ -51,14 +51,19 @@ Lastziel, Referenzkorpus, beide Lizenzprüfungen und der Node-Sicherheits-Scan.
 | M6.7 | Rust-Single-Writer für Stichtag, Wiedergewinn, Wechsel und Mobilisierungsfehler; atomare Events mit Ledger-, Postfach- und Livemap-Projektion | echter M5→M6-NAPI-/PGlite-End-to-End in Run 31482747553 grün | erledigt / nachgewiesen |
 | M9 Kern/Integration | Keine M9-Arbeit begonnen; die vorhandene Health-Grundlage beginnt keinen direkten M9-Teilabschnitt | Manifestwiderspruch gegen die weiterhin offenen M9-Zeilen korrigiert | nicht begonnen; Betrieb/Abnahme durch Abhängigkeiten blockiert |
 
-## Verbleibende externe Voraussetzung
+## Nachgelagerte Betriebsreife-Arbeit
 
-- Issue #48 bleibt offen: M1.13 braucht unabhängig freigegebene
+- Issue #48 bleibt als eigenständiger M9-Folgepunkt offen: Eine produktive
+  Release-Freigabe braucht unabhängig freigegebene
   Infrastruktur-/Fahrzeugprofile, einen nicht zur Kalibrierung verwendeten
   technischen Validierungssatz und die Signatur der benannten
-  Release-Verantwortung. Kein synthetischer Test ersetzt diesen Pilotbeweis.
+  Release-Verantwortung. Kein synthetischer Test ersetzt diesen Nachweis; die
+  fehlende Produktivfreigabe blockiert den fachlich abgenommenen M1-Milestone
+  jedoch nicht.
 
 Die früheren Voraussetzungen #29, #55 und #56 sind geschlossen. GitHub Actions
 läuft wieder; Ruleset und Milestone-Synchronisierung sind daher keine aktuellen
-Blocker mehr. Issue #34 wird durch die auf PR #66 grün nachgewiesene M4.6-
-Implementierung geschlossen, sobald der PR übernommen wird.
+Blocker mehr. Issue #34 wurde mit der auf PR #66 grün nachgewiesenen M4.6-
+Implementierung geschlossen. Die Roadmap-Tracking-Issues für M1.13, M3.10,
+M4.6 und M6.7 werden durch den korrigierten Synchronisierer zusammen mit den
+zugehörigen GitHub-Milestones abgeschlossen.

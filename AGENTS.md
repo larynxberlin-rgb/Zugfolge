@@ -15,8 +15,8 @@ lesen, nicht raten.
 
 | Datei | Inhalt | Lesen wenn |
 |-------|--------|------------|
-| `docs/entscheidungen.md` | E1–E20 mit voller Begründung | eine Entscheidung infrage steht oder geändert werden soll |
-| `docs/adr/` | E1–E20 je als Architecture Decision Record: Kontext, Konsequenzen, Querverweise | eine Grundsatzentscheidung ausführlich nachschlagen oder eine neue festhalten |
+| `docs/entscheidungen.md` | E1–E22 mit voller Begründung | eine Entscheidung infrage steht oder geändert werden soll |
+| `docs/adr/` | E1–E22 je als Architecture Decision Record: Kontext, Konsequenzen, Querverweise | eine Grundsatzentscheidung ausführlich nachschlagen oder eine neue festhalten |
 | `docs/monorepo.md` | Verzeichnisaufbau, Domänengrenzen, Werkzeugkette, Durchsetzung der Invarianten | Code beitragen, neues Paket oder Crate anlegen, CI verstehen |
 | `docs/glossar.md` | Domänenglossar: deutscher Fachbegriff → Bezeichner im Code → Bedeutung → Quelle | jede Benennung im Code, jeder neue Fachbegriff |
 | `docs/produkt.md` | Produktdefinition, Oberflächen, Onboarding, Netzabgrenzung, Spielertypen, Anti-Monokultur | Produktfragen, UI, Zielgruppe, Was-gehört-dazu |
@@ -27,8 +27,8 @@ lesen, nicht raten.
 | `docs/architektur.md` | Systemarchitektur, Lastgrößen, irreversible Entscheidungen, Determinismus, Sicherheit | Technischer Entwurf, Skalierung, Persistenz |
 | `docs/design.md` | Farbsystem, Barrierefreiheit, Dunkelmodus, Typografie, Dichte, Wortmarke | jede Oberflächenarbeit, jedes Diagramm, jede Zustandsdarstellung |
 | `docs/geschaeft.md` | Odoo, Monetarisierung, Monetarisierungsgrenze, Lizenz, Marken | Bezahlfunktionen, Lizenz, Namensrechte |
-| `docs/milestones.md` | M0–M13 mit Teilabschnitten und Beweisen | Planung, Reihenfolge, „was als Nächstes“ |
-| `docs/risiken.md` | R1–R15 mit Gegenmaßnahmen | Risikoabwägung, Review |
+| `docs/milestones.md` | M0–M14 mit Teilabschnitten und Beweisen | Planung, Reihenfolge, „was als Nächstes“ |
+| `docs/risiken.md` | R1–R17 mit Gegenmaßnahmen | Risikoabwägung, Review |
 
 ---
 
@@ -79,6 +79,8 @@ Begründungen: `docs/entscheidungen.md`. Änderungen dort eintragen und begründ
 | E18 | Weltlaufzeit 6–18 Monate oder unbefristet; Perioden- und Vertragslängen skalieren mit |
 | E19 | Realismus dient dem Spiel — Schritte ohne Entscheidung werden abstrahiert |
 | E20 | Fahrzeuge werden konfiguriert bestellt; Werkstätten bauen den Innenraum um |
+| E21 | SPNV-Ausschreibungen variieren nach einem angekündigten, seed-deterministischen Vergabeprofil |
+| E22 | Infrastruktur- und Fahrplandaten werden jährlich zum realen Fahrplanwechsel aktualisiert |
 
 ---
 
@@ -120,17 +122,18 @@ Lastgrößen: `docs/architektur.md`.
 
 ## Stand
 
-Konzeption abgeschlossen, E1–E20 entschieden, Milestones auf Reihenfolge und
-Vollständigkeit geprüft. **M0.1 und M0.2 sind erledigt** — ADRs, Monorepo, CI,
-Determinismus-Testharnisch, Wächter, Glossar, Lizenz-Scan.
+Konzeption abgeschlossen, E1–E22 entschieden, Milestones auf Reihenfolge und
+Vollständigkeit geprüft. **M0 bis M7 sind fachlich abgenommen und
+reproduzierbar nachgewiesen.** M1.13 akzeptiert die Trassenfinder-Kalibrierung
+innerhalb der definierten Toleranz und den getrennten GTFS-Fahrplan-Holdout als
+Milestone-Beweis; die unabhängige produktive Release-Qualifizierung und echte
+Signatur bleiben als M9-Betriebsreife-Folgearbeit in Issue #48 erhalten.
 
 - **Alpha-Schnitt:** M0 – M9. Alles ab M10 ist Ausbau.
-- **Kritischer Pfad:** M0.3 → M1 → M3 → M4 → M7.
-- **Nächster Schritt:** M0.3, der Wegwerf-Spike zur Sperrzeitentreppe — drei
-  Betriebsstellen, zwei Züge. Der billigste Zeitpunkt zu prüfen, ob die
-  Konfliktprüfung trägt; alles Weitere hängt daran. Der Spike gehört nach
-  `spikes/` und ist in der Wächterkonfiguration bereits der Domäne
-  `simulation-core` zugeordnet.
+- **Kritischer Pfad bis M7:** M0.3 → M1 → M3 → M4 → M7 ist erfüllt.
+- **Nächster Schritt:** M8 — Störungen, Baustellen und Ersatzverkehr; danach M9
+  mit Betriebsreife und geschlossener Alpha.
 
-Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` trägt bis
-zum Einsetzen des Volltexts einen Warnblock und ist bis dahin **nicht gültig**.
+Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` steht unter
+PolyForm Shield 1.0.0, nennt Sebastian Barowski als Rechteinhaber und ist damit
+**wirksam**.

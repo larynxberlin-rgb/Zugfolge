@@ -63,15 +63,15 @@ Ergebnis vorzeigbar ist. Bislang erledigt:
   mit Herkunft, Lizenz, Prüfsumme und Confidence je Attribut, siehe
   [`betriebsgraph.md`](betriebsgraph.md) Abschnitt 17 und
   [`crates/zugfolge-infra/src/release.rs`](../crates/zugfolge-infra/src/release.rs);
-M1.13 ist **blockiert**: Die reproduzierbare Werkzeugkette trennt technische
-Referenz, GTFS-Fahrplan-Holdout, Haltezeit und Fahrplanreserve, erzwingt
-disjunkte eingefrorene Kalibrierungs- und Validierungsbestände und bindet alle
-Artefakte bis zum Signaturbundle durch SHA-256. Negative oder unzureichende
-Ergebnisse bleiben am Ed25519-Gate gesperrt. Der reale Pilot bleibt jedoch
-korrekt `calibration-only`, solange unabhängig freigegebene Infrastruktur- und
-Fahrzeugprofile sowie die Signatur der benannten Release-Verantwortung aus
-Issue #48 fehlen. Siehe
-[`referenzkorpus.md`](referenzkorpus.md).
+- **M1.13** — technische Fahrzeitreferenz, GTFS-Fahrplan-Holdout und
+  Abweichungsreport: Die korrigierte Trassenfinder-Kalibrierung besteht mit
+  1.263 gegenüber 1.260 Sekunden innerhalb der definierten Toleranz; der
+  getrennte GTFS-Holdout macht Haltezeit und Fahrplanreserve sichtbar. Das ist
+  als Plausibilitäts- und Milestone-Beweis abgenommen. Der reale Pilot bleibt
+  ehrlich `calibration-only` und `releaseQualified: false`; eine davon
+  unabhängige produktive Release-Qualifizierung und echte Signatur werden in
+  Issue #48 nachgelagert und blockieren M1 nicht. Siehe
+  [`referenzkorpus.md`](referenzkorpus.md).
 
 - **M2.1** — Keycloak-Integration, Konten, Rollen, Weltzugänge, siehe
   [`weltgeruest.md`](weltgeruest.md), [`packages/identity`](../packages/identity)
@@ -177,21 +177,23 @@ Alle drei sind mit M3.1 bis M3.4 abgearbeitet; die Zuordnung steht bei M3.
 | 1.10 | Fahrdynamik und Fahrzeitrechner → vorberechnete **ganzzahlige** Fahrzeittabellen je Zugcharakteristik | L | erledigt |
 | 1.11 | **Anlagenkataster**: Werkstätten, Behandlungs- und Waschanlagen, Tankstellen, Entsorgungsanlagen, Abstellgleise — mit Kapazität, Öffnungszeit, Nutzlänge, Baureihenkompetenz | M | erledigt |
 | 1.12 | `InfraRelease` als unveränderliches, versioniertes Artefakt mit Herkunft, Lizenz, Checksumme und Confidence je Attribut | M | erledigt |
-| 1.13 | Technische Fahrzeitreferenz, GTFS-Fahrplan-Holdout und Abweichungsreport Leipzig–Halle–Erfurt | M | in Arbeit |
+| 1.13 | Technische Fahrzeitreferenz, GTFS-Fahrplan-Holdout und Abweichungsreport für den Pilotkorridor Leipzig–Halle | M | erledigt |
 
-> **Beweis:** Ein signierter `InfraRelease` der Pilotregion, dessen berechnete
-> Fahrzeiten innerhalb definierter Toleranz zur Referenz liegen — begleitet von
-> einem Abdeckungsreport, der je Streckenabschnitt offenlegt, worauf die
-> Qualitätsklasse beruht.
+> **Beweis:** Ein reproduzierbarer `InfraRelease`-Kandidat des Pilotkorridors
+> Leipzig–Halle, dessen
+> berechnete technische Fahrzeit innerhalb definierter Toleranz zur manuell
+> dokumentierten Trassenfinder-Referenz liegt — begleitet von einem
+> Abdeckungsreport und einem getrennten GTFS-Fahrplan-Holdout, der Haltezeit und
+> Fahrplanreserve offenlegt.
 
-> **Audit-Hinweis:** Dieser Beweis ist noch offen. Der automatisierte,
-> lizenzgeprüfte Weg von GTFS-Sollplänen bis zum Signatur-Gate ist umgesetzt,
-> und ein echter S5X-Holdout mit 85 Fahrten liegt vor. Der fehlerhafte alte
-> Vergleich ist korrigiert; die Trassenfinder-Kalibrierung besteht mit +3
-> Sekunden. Offen sind die davon unabhängige Validierung auf belastbaren
-> Infrastruktur- und Fahrzeugwerten sowie die Signatur durch den
-> Release-Verantwortlichen. Das Gate weist den aktuellen `calibration-only`-
-> Report deshalb trotz bestandener Toleranz zurück.
+> **Abnahmegrenze:** Der automatisierte, lizenzgeprüfte Weg von GTFS-Sollplänen
+> bis zum Signatur-Gate ist umgesetzt, und der echte S5X-Holdout umfasst 85
+> Fahrten. Die Trassenfinder-Kalibrierung besteht mit +3 Sekunden. Weil derselbe
+> technische Wert auch zum Kalibrieren verwendet wurde, bleibt der konkrete
+> Report bewusst `calibration-only` und nicht produktiv signierbar. Eine
+> disjunkte technische Validierung auf freigegebenen Infrastruktur- und
+> Fahrzeugwerten sowie die echte Signatur sind eine nachgelagerte
+> Release-Härtung in Issue #48, nicht Teil des M1-Abnahmeschnitts.
 
 **M1.1 trägt:** `crates/zugfolge-infra` beschreibt Betriebsstellen, Kanten,
 Gleise, Bahnsteige, Elektrifizierung, Zugsicherung, Vmax-Bänder und Neigung,
@@ -320,7 +322,7 @@ gesichert; mit M1.12 pinnt `rust-toolchain.toml` zusätzlich die Rust-Version,
 damit die Reproduzierbarkeit nicht an der Toolchain hängt. Siehe
 `betriebsgraph.md` Abschnitt 17.
 
-**Die Werkzeugkette von M1.13 trägt; der Pilotbeweis bleibt blockiert:**
+**M1.13 trägt; die produktive Release-Qualifizierung bleibt getrennt:**
 `tools/reference-corpus` erfasst Sollfahrpläne aus dem unter CC BY 4.0
 freigegebenen GTFS.DE-Regionalverkehrsfeed, hasht ZIP und Tabellen und paart nur
 Halte derselben `trip_id`. Linie, Richtung, Haltefolge und
@@ -337,8 +339,11 @@ Der Linux-Job von Run
 hat diese technische Kette auf Commit `e289511` erfolgreich ausgeführt. Der
 reale Pilot bleibt dennoch `calibration-only`: unabhängig freigegebene
 Infrastruktur- und Fahrzeugwerte sowie die Signatur der benannten
-Release-Verantwortung fehlen weiterhin in Issue #48. Der Trassenfinder bleibt
-auf `entwicklung` (E10). Siehe `betriebsgraph.md` Abschnitt 18 und
+Release-Verantwortung fehlen weiterhin in Issue #48. Das begrenzt eine spätere
+produktive Release-Zertifizierung, nicht den abgenommenen M1-Beweis aus
+technischer Plausibilisierung und getrenntem Fahrplan-Holdout. Der
+Trassenfinder bleibt auf `entwicklung` (E10). Siehe `betriebsgraph.md`
+Abschnitt 18 und
 [`referenzkorpus.md`](referenzkorpus.md).
 
 Ausführlich: [`betriebsgraph.md`](betriebsgraph.md).
@@ -804,6 +809,12 @@ Zustands- und Entscheidungshash.
 | 9.8 | **Weltende** (E18): letzte Periode ohne Ausschreibung, reguläres Vertragsende ohne Insolvenzfolge, Schlusswertung mit mehreren Ranglisten, Archiv und Replay-Export | M | offen |
 | 9.9 | Geschlossene Alpha in der Pilotregion | M | offen |
 | 9.10 | **Jährliche Infrastrukturaktualisierung** (E22): `InfraRelease`-Neubau aus aktualisiertem `osm-pbf-lhe` und der Trassenfinder-Infrastruktur-API zu jedem realen Fahrplanwechsel; Übernahmeverfahren für eine laufende Welt zum nächsten Periodenwechsel, ohne Invariante 1 zu verletzen | L | offen |
+
+Issue #48 gehört als produktiver Betriebsreife-Nachweis zu M9: Vor der ersten
+öffentlichen Welt müssen ein vom Kalibrierungsbestand disjunkter technischer
+Validierungssatz, die benannte Release-Verantwortung und ihre echte Signatur
+den Pilot-`InfraRelease` qualifizieren. Diese Härtung ändert nicht die fachliche
+M1-Abnahme, ist aber Voraussetzung für eine produktive Veröffentlichung.
 
 > **Beweis:** 20–50 externe Spieler betreiben die Pilotregion über mehrere
 > vollständige Fahrplanperioden ohne manuellen Eingriff, und ein realer

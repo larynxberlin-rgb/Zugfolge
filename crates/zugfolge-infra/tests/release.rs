@@ -1,9 +1,10 @@
 //! Der Beweis von M1 — **M1.12 und M1.13** zusammen.
 //!
-//! `docs/milestones.md` M1: „Ein signierter `InfraRelease` der Pilotregion,
-//! dessen berechnete Fahrzeiten innerhalb definierter Toleranz zur Referenz
-//! liegen — begleitet von einem Abdeckungsreport, der je Streckenabschnitt
-//! offenlegt, worauf die Qualitätsklasse beruht."
+//! `docs/milestones.md` M1 verlangt einen reproduzierbaren
+//! `InfraRelease`-Kandidaten des Pilotkorridors, dessen berechnete Fahrzeiten
+//! innerhalb definierter Toleranz zur technischen Referenz liegen — begleitet
+//! von einem Abdeckungsreport und einem getrennten GTFS-Fahrplan-Holdout. Die
+//! produktive unabhängige Qualifizierung und echte Signatur folgen in M9.
 //!
 //! Das Netz ist das Beispielnetz (erfundene Daten, `betriebsgraph.md` 6), nicht
 //! die echte Pilotregion — die Rechte am realen Extract und an den realen

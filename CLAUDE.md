@@ -31,8 +31,8 @@ lesen, nicht raten.
 | `docs/design.md` | Farbsystem, Barrierefreiheit, Dunkelmodus, Typografie, Dichte, Wortmarke | jede Oberflächenarbeit, jedes Diagramm, jede Zustandsdarstellung |
 | `docs/geschaeft.md` | Odoo, Monetarisierung, Monetarisierungsgrenze, Lizenz, Marken | Bezahlfunktionen, Lizenz, Namensrechte |
 | `docs/rechteschutz.md` | Umsetzung von M0.5: LICENSE, CLA, Schichtentrennung, Marke — und ihre Durchsetzung | Lizenz einsetzen, Beitrag annehmen, proprietäre Schicht, Marke |
-| `docs/milestones.md` | M0–M13 mit Teilabschnitten und Beweisen | Planung, Reihenfolge, „was als Nächstes“ |
-| `docs/risiken.md` | R1–R15 mit Gegenmaßnahmen | Risikoabwägung, Review |
+| `docs/milestones.md` | M0–M14 mit Teilabschnitten und Beweisen | Planung, Reihenfolge, „was als Nächstes“ |
+| `docs/risiken.md` | R1–R17 mit Gegenmaßnahmen | Risikoabwägung, Review |
 
 ---
 
@@ -130,13 +130,16 @@ Konzeption abgeschlossen, E1–E22 entschieden, Milestones auf Reihenfolge und
 Vollständigkeit geprüft. **M0 ist abgeschlossen: M0.1 bis M0.5 sind erledigt** —
 ADRs, Monorepo, CI, Determinismus-Testharnisch, Wächter, Glossar, Lizenz-Scan,
 der Wegwerf-Spike zur Sperrzeitentreppe, das Rechte-Gate und der Rechteschutz.
-**M1.1 bis M1.12 sind implementiert; M1.13 ist in Arbeit.** Domänenmodell,
+**M1 ist abgeschlossen: M1.1 bis M1.13 sind erledigt.** Domänenmodell,
 Import-Pipeline, Netzfilter, Abdeckungsmessung, Neigungsprofil, Block- und
 Fahrstraßenableitung, Stationsdaten-Anreicherung, Zugcharakteristik,
-Fahrdynamik, Anlagenkataster und `InfraRelease` stehen. Für M1.13 bestehen die
-korrigierte technische Trassenfinder-Kalibrierung und der getrennte
-GTFS-Fahrplan-Holdout; offen sind eine unabhängige Validierung und die echte
-Release-Signatur. Deshalb ist M1 als Gesamtbeweis noch nicht abgeschlossen.
+Fahrdynamik, Anlagenkataster und `InfraRelease` stehen. M1.13 nimmt die
+korrigierte technische Trassenfinder-Kalibrierung innerhalb definierter
+Toleranz und den getrennten GTFS-Fahrplan-Holdout als reproduzierbaren
+Milestone-Beweis ab. Der konkrete Pilot bleibt `calibration-only` und
+`releaseQualified: false`; unabhängige produktive Validierung und echte
+Release-Signatur sind als Betriebsreife-Folgearbeit in Issue #48 von M1
+getrennt.
 **M3 ist abgeschlossen: M3.1 bis M3.10 sind erledigt** — das Sperrzeitenmodell, das
 wiederkehrende Verkehrsangebot mit relativem Belegungsprofil, der Konfliktprüfer
 mit erklärbarem Ergebnis (`crates/zugfolge-conflict`) und der Trassen-Planner
@@ -303,7 +306,10 @@ ausführbaren Positiv-, Negativ- und Integrationsbeweis zu.
   eine Präzisionswahrheit, verglichen wird gegen eine **definierte Toleranz**.
   Wie M1.5 bis M1.8 ist das Verfahren **kein Import** — der Trassenfinder steht
   auf `entwicklung` (E10) —, es rechnet mit gegebenen Referenzfahrzeiten. Damit
-  ist der M1-Beweis erbracht. Siehe `docs/betriebsgraph.md` Abschnitt 18.
+  ist der M1-Beweis erbracht. Der aktuelle Kandidat bleibt dabei ausdrücklich
+  nicht `releaseQualified`; die unabhängige produktive Zertifizierung und
+  Signatur folgen außerhalb des M1-Abnahmeschnitts in Issue #48. Siehe
+  `docs/betriebsgraph.md` Abschnitt 18.
 - **M2.1 steht:** `packages/identity` hält Weltzugang (`worldAccesses`), Konto
   (`accounts`) und Kontorolle (`accountRoles`) als Drizzle-Schema in
   `packages/db` neben `worlds` — getrennt von der Identität bei Keycloak, die
@@ -438,8 +444,8 @@ ausführbaren Positiv-, Negativ- und Integrationsbeweis zu.
   vorgegebenen Kapazität in Basispunkten. Eine Bindung ist alles oder nichts —
   sprengt eine einzige betroffene Ressource ihren Deckel, bindet keine. Siehe
   `docs/infrastruktur.md` 13.
-- **Nächster Schritt:** M5 — Flotte, Personal, Umläufe und Versorgung
-  (`docs/milestones.md`).
+- **Nächster Schritt:** M8 — Störungen, Baustellen und Ersatzverkehr; danach M9
+  mit Betriebsreife und geschlossener Alpha (`docs/milestones.md`).
 
 Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` steht unter
 PolyForm Shield 1.0.0, nennt Sebastian Barowski als Rechteinhaber und ist damit
