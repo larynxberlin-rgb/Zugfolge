@@ -290,7 +290,12 @@ function decodeFleetInitialized(json: string): FleetWorldInitialized {
 }
 
 function decodeFleetCommandResult(json: string): FleetCommandResult {
-  const value: unknown = JSON.parse(json);
+  let value: unknown;
+  try {
+    value = JSON.parse(json);
+  } catch (error) {
+    throw new Error(`Rust-M5-Kommandoergebnis ist kein JSON: ${json}`, { cause: error });
+  }
   record(value, "Rust-M5-Kommandoergebnis");
   invariant(value["schemaVersion"] === FLEET_COMMAND_RESULT_SCHEMA, "Rust-M5-Kommandoergebnis hat ein unbekanntes Schema.");
   fleetPayload(value, "Rust-M5-Kommandoergebnis");
