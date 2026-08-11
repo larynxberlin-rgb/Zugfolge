@@ -64,15 +64,25 @@ impl VehicleCondition {
     }
 
     /// Laufwerk, Wagenkasten und mechanische Substanz.
-    pub const fn mechanical(self) -> u16 { self.mechanical }
+    pub const fn mechanical(self) -> u16 {
+        self.mechanical
+    }
     /// Antrieb, Energieversorgung und Zugbeeinflussung.
-    pub const fn traction(self) -> u16 { self.traction }
+    pub const fn traction(self) -> u16 {
+        self.traction
+    }
     /// Bremsen und sicherheitsrelevante Funktion.
-    pub const fn braking(self) -> u16 { self.braking }
+    pub const fn braking(self) -> u16 {
+        self.braking
+    }
     /// Tueren und sonstige Betriebszuverlaessigkeit.
-    pub const fn operational(self) -> u16 { self.operational }
+    pub const fn operational(self) -> u16 {
+        self.operational
+    }
     /// Innenraum und sichtbarer Komfortzustand.
-    pub const fn interior(self) -> u16 { self.interior }
+    pub const fn interior(self) -> u16 {
+        self.interior
+    }
 }
 
 /// Verkehrstyp, den ein Vermieter in seinem Angebotsprofil bevorzugen kann.
@@ -119,7 +129,8 @@ impl LessorProfile {
     ) -> Result<Self, VehicleMarketError> {
         let id = id.into();
         let display_name = display_name.into();
-        if id.trim().is_empty() || display_name.trim().is_empty() || market_uplift_basis_points == 0 {
+        if id.trim().is_empty() || display_name.trim().is_empty() || market_uplift_basis_points == 0
+        {
             return Err(VehicleMarketError::InvalidLessorProfile);
         }
         let preferred_class_designations = preferred_class_designations
@@ -157,7 +168,10 @@ impl LessorProfile {
     }
 
     /// Berechnet eine stets strikt ueber dem Referenzmarkt liegende Rate.
-    pub fn quote_above_market(&self, market_reference_cents: i64) -> Result<i64, VehicleMarketError> {
+    pub fn quote_above_market(
+        &self,
+        market_reference_cents: i64,
+    ) -> Result<i64, VehicleMarketError> {
         if market_reference_cents <= 0 {
             return Err(VehicleMarketError::InvalidMarketReference);
         }
@@ -176,8 +190,10 @@ impl LessorProfile {
     /// Liefert die Zahl der sichtbaren Angebots-Passungen, ohne Preise zu
     /// verstecken oder eine Zufallsauswahl zu treffen.
     pub fn preference_score(&self, vehicle: &VehicleAsset, traffic: TrafficKind) -> u8 {
-        u8::from(self.preferred_class_designations.contains(vehicle.class_designation().as_str()))
-            + u8::from(self.preferred_traffic_kinds.contains(&traffic))
+        u8::from(
+            self.preferred_class_designations
+                .contains(vehicle.class_designation().as_str()),
+        ) + u8::from(self.preferred_traffic_kinds.contains(&traffic))
     }
 }
 
@@ -251,7 +267,10 @@ pub enum VehicleMarketStatus {
     /// Das konkrete Fahrzeug kann nur beim genannten Vermieter geleast werden.
     AvailableForLease { lessor_id: String },
     /// Das konkrete eigene Fahrzeug wird auf dem Gebrauchtmarkt angeboten.
-    ListedForUsedSale { seller_id: String, asking_price_cents: i64 },
+    ListedForUsedSale {
+        seller_id: String,
+        asking_price_cents: i64,
+    },
     /// Ausgemustert bleibt es historisch sichtbar, aber nie wieder handelbar.
     Retired,
 }
@@ -273,7 +292,10 @@ pub enum VehicleLifeEventKind {
     /// Erstmalige Aufnahme eines Gebrauchtfahrzeugs in den Weltstartbestand.
     EnteredWorld { lessor_id: String },
     /// Ein Neubau oder Neufahrzeug-Leasing hat das konkrete Asset erzeugt.
-    NewVehicleDelivered { operator_id: String, lessor_id: Option<String> },
+    NewVehicleDelivered {
+        operator_id: String,
+        lessor_id: Option<String>,
+    },
     /// Leasingbeginn mit Preis und bindendem Ende.
     Leased {
         lessor_id: String,
@@ -282,11 +304,21 @@ pub enum VehicleLifeEventKind {
         price_cents: i64,
     },
     /// Ruecklauf zum Vermieter.
-    LeaseReturned { lessor_id: String, reason: LeaseReturnReason },
+    LeaseReturned {
+        lessor_id: String,
+        reason: LeaseReturnReason,
+    },
     /// Angebot eines eigenen Fahrzeugs auf dem Gebrauchtmarkt.
-    ListedForUsedSale { seller_id: String, asking_price_cents: i64 },
+    ListedForUsedSale {
+        seller_id: String,
+        asking_price_cents: i64,
+    },
     /// Verkauf an ein anderes EVU.
-    SoldUsed { seller_id: String, buyer_id: String, price_cents: i64 },
+    SoldUsed {
+        seller_id: String,
+        buyer_id: String,
+        price_cents: i64,
+    },
     /// Sichtbar fortgeschriebener Fahrzeugzustand.
     ConditionRecorded { condition: VehicleCondition },
     /// Endgueltige Ausmusterung.
@@ -348,7 +380,10 @@ pub struct PersistentVehicleMarket {
 impl PersistentVehicleMarket {
     /// Erstellt einen leeren Markt. Ein leerer Weltstartbestand ist absichtlich
     /// zulaessig, wenn ihn die Administration nicht festgelegt hat.
-    pub fn new(world_id: WorldId, lessors: impl IntoIterator<Item = LessorProfile>) -> Result<Self, VehicleMarketError> {
+    pub fn new(
+        world_id: WorldId,
+        lessors: impl IntoIterator<Item = LessorProfile>,
+    ) -> Result<Self, VehicleMarketError> {
         if world_id == 0 {
             return Err(VehicleMarketError::WrongWorld);
         }
@@ -493,15 +528,18 @@ impl PersistentVehicleMarket {
             lessor_id: quote.lessor_id.clone(),
             lease_ends_at,
         };
-        append_history(&mut vehicle.history, VehicleLifeEvent {
-            at,
-            kind: VehicleLifeEventKind::Leased {
-                lessor_id: quote.lessor_id,
-                operator_id: operator_id.to_owned(),
-                lease_ends_at,
-                price_cents: quote.price_cents,
+        append_history(
+            &mut vehicle.history,
+            VehicleLifeEvent {
+                at,
+                kind: VehicleLifeEventKind::Leased {
+                    lessor_id: quote.lessor_id,
+                    operator_id: operator_id.to_owned(),
+                    lease_ends_at,
+                    price_cents: quote.price_cents,
+                },
             },
-        })?;
+        )?;
         Ok(())
     }
 
@@ -521,10 +559,13 @@ impl PersistentVehicleMarket {
         vehicle.status = VehicleMarketStatus::AvailableForLease {
             lessor_id: lessor_id.clone(),
         };
-        append_history(&mut vehicle.history, VehicleLifeEvent {
-            at,
-            kind: VehicleLifeEventKind::LeaseReturned { lessor_id, reason },
-        })?;
+        append_history(
+            &mut vehicle.history,
+            VehicleLifeEvent {
+                at,
+                kind: VehicleLifeEventKind::LeaseReturned { lessor_id, reason },
+            },
+        )?;
         Ok(())
     }
 
@@ -551,13 +592,16 @@ impl PersistentVehicleMarket {
             seller_id: seller_id.to_owned(),
             asking_price_cents,
         };
-        append_history(&mut vehicle.history, VehicleLifeEvent {
-            at,
-            kind: VehicleLifeEventKind::ListedForUsedSale {
-                seller_id: seller_id.to_owned(),
-                asking_price_cents,
+        append_history(
+            &mut vehicle.history,
+            VehicleLifeEvent {
+                at,
+                kind: VehicleLifeEventKind::ListedForUsedSale {
+                    seller_id: seller_id.to_owned(),
+                    asking_price_cents,
+                },
             },
-        })?;
+        )?;
         Ok(())
     }
 
@@ -588,14 +632,17 @@ impl PersistentVehicleMarket {
         vehicle.status = VehicleMarketStatus::Owned {
             operator_id: buyer_id.to_owned(),
         };
-        append_history(&mut vehicle.history, VehicleLifeEvent {
-            at,
-            kind: VehicleLifeEventKind::SoldUsed {
-                seller_id,
-                buyer_id: buyer_id.to_owned(),
-                price_cents,
+        append_history(
+            &mut vehicle.history,
+            VehicleLifeEvent {
+                at,
+                kind: VehicleLifeEventKind::SoldUsed {
+                    seller_id,
+                    buyer_id: buyer_id.to_owned(),
+                    price_cents,
+                },
             },
-        })?;
+        )?;
         Ok(())
     }
 
@@ -620,8 +667,13 @@ impl PersistentVehicleMarket {
             .vehicles
             .iter()
             .filter_map(|(id, vehicle)| match &vehicle.status {
-                VehicleMarketStatus::Owned { operator_id: owner } if owner == operator_id => Some((*id, true)),
-                VehicleMarketStatus::Leased { operator_id: lessee, .. } if lessee == operator_id => Some((*id, false)),
+                VehicleMarketStatus::Owned { operator_id: owner } if owner == operator_id => {
+                    Some((*id, true))
+                }
+                VehicleMarketStatus::Leased {
+                    operator_id: lessee,
+                    ..
+                } if lessee == operator_id => Some((*id, false)),
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -648,10 +700,13 @@ impl PersistentVehicleMarket {
         let vehicle = self.vehicle_mut(vehicle_id)?;
         ensure_history_time(&vehicle.history, at)?;
         vehicle.condition = condition;
-        append_history(&mut vehicle.history, VehicleLifeEvent {
-            at,
-            kind: VehicleLifeEventKind::ConditionRecorded { condition },
-        })?;
+        append_history(
+            &mut vehicle.history,
+            VehicleLifeEvent {
+                at,
+                kind: VehicleLifeEventKind::ConditionRecorded { condition },
+            },
+        )?;
         Ok(())
     }
 
@@ -663,16 +718,21 @@ impl PersistentVehicleMarket {
         }
         ensure_history_time(&vehicle.history, at)?;
         vehicle.status = VehicleMarketStatus::Retired;
-        append_history(&mut vehicle.history, VehicleLifeEvent {
-            at,
-            kind: VehicleLifeEventKind::Retired,
-        })?;
+        append_history(
+            &mut vehicle.history,
+            VehicleLifeEvent {
+                at,
+                kind: VehicleLifeEventKind::Retired,
+            },
+        )?;
         Ok(())
     }
 
     /// Konkretes Fahrzeug nach Kennung.
     pub fn vehicle(&self, vehicle_id: VehicleId) -> Result<&PersistentVehicle, VehicleMarketError> {
-        self.vehicles.get(&vehicle_id).ok_or(VehicleMarketError::UnknownVehicle)
+        self.vehicles
+            .get(&vehicle_id)
+            .ok_or(VehicleMarketError::UnknownVehicle)
     }
 
     /// Alle Fahrzeuge in stabiler Kennungsreihenfolge.
@@ -691,7 +751,10 @@ impl PersistentVehicleMarket {
             hasher
                 .text("lessor-id", &lessor.id)
                 .text("lessor-name", &lessor.display_name)
-                .uint("lessor-uplift", u64::from(lessor.market_uplift_basis_points))
+                .uint(
+                    "lessor-uplift",
+                    u64::from(lessor.market_uplift_basis_points),
+                )
                 .seq("lessor-classes", lessor.preferred_class_designations.len());
             for class in &lessor.preferred_class_designations {
                 hasher.text("lessor-class", class);
@@ -706,10 +769,16 @@ impl PersistentVehicleMarket {
             hasher
                 .uint("vehicle-id", vehicle.asset.id())
                 .uint("vehicle-type", vehicle.asset.vehicle_type_id())
-                .uint("condition-mechanical", u64::from(vehicle.condition.mechanical))
+                .uint(
+                    "condition-mechanical",
+                    u64::from(vehicle.condition.mechanical),
+                )
                 .uint("condition-traction", u64::from(vehicle.condition.traction))
                 .uint("condition-braking", u64::from(vehicle.condition.braking))
-                .uint("condition-operational", u64::from(vehicle.condition.operational))
+                .uint(
+                    "condition-operational",
+                    u64::from(vehicle.condition.operational),
+                )
                 .uint("condition-interior", u64::from(vehicle.condition.interior));
             write_status(&mut hasher, &vehicle.status);
             hasher.seq("history", vehicle.history.len());
@@ -726,11 +795,18 @@ impl PersistentVehicleMarket {
     }
 
     fn lessor(&self, lessor_id: &str) -> Result<&LessorProfile, VehicleMarketError> {
-        self.lessors.get(lessor_id).ok_or(VehicleMarketError::UnknownLessor)
+        self.lessors
+            .get(lessor_id)
+            .ok_or(VehicleMarketError::UnknownLessor)
     }
 
-    fn vehicle_mut(&mut self, vehicle_id: VehicleId) -> Result<&mut PersistentVehicle, VehicleMarketError> {
-        self.vehicles.get_mut(&vehicle_id).ok_or(VehicleMarketError::UnknownVehicle)
+    fn vehicle_mut(
+        &mut self,
+        vehicle_id: VehicleId,
+    ) -> Result<&mut PersistentVehicle, VehicleMarketError> {
+        self.vehicles
+            .get_mut(&vehicle_id)
+            .ok_or(VehicleMarketError::UnknownVehicle)
     }
 
     fn insert_vehicle(
@@ -756,14 +832,20 @@ impl PersistentVehicleMarket {
     }
 }
 
-fn ensure_history_time(history: &[VehicleLifeEvent], at: SimTime) -> Result<(), VehicleMarketError> {
+fn ensure_history_time(
+    history: &[VehicleLifeEvent],
+    at: SimTime,
+) -> Result<(), VehicleMarketError> {
     if at < 0 || at < history.last().map_or(0, VehicleLifeEvent::at) {
         return Err(VehicleMarketError::HistoryTimeRegression);
     }
     Ok(())
 }
 
-fn append_history(history: &mut Vec<VehicleLifeEvent>, event: VehicleLifeEvent) -> Result<(), VehicleMarketError> {
+fn append_history(
+    history: &mut Vec<VehicleLifeEvent>,
+    event: VehicleLifeEvent,
+) -> Result<(), VehicleMarketError> {
     ensure_history_time(history, event.at)?;
     history.push(event);
     Ok(())
@@ -785,7 +867,9 @@ pub struct ServerLeaseQuote {
 fn write_status(hasher: &mut StateHasher, status: &VehicleMarketStatus) {
     match status {
         VehicleMarketStatus::Owned { operator_id } => {
-            hasher.text("status", "owned").text("status-operator", operator_id);
+            hasher
+                .text("status", "owned")
+                .text("status-operator", operator_id);
         }
         VehicleMarketStatus::Leased {
             operator_id,
@@ -799,7 +883,9 @@ fn write_status(hasher: &mut StateHasher, status: &VehicleMarketStatus) {
                 .int("status-lease-ends", *lease_ends_at);
         }
         VehicleMarketStatus::AvailableForLease { lessor_id } => {
-            hasher.text("status", "available-for-lease").text("status-lessor", lessor_id);
+            hasher
+                .text("status", "available-for-lease")
+                .text("status-lessor", lessor_id);
         }
         VehicleMarketStatus::ListedForUsedSale {
             seller_id,
@@ -819,13 +905,17 @@ fn write_status(hasher: &mut StateHasher, status: &VehicleMarketStatus) {
 fn write_event(hasher: &mut StateHasher, event: &VehicleLifeEventKind) {
     match event {
         VehicleLifeEventKind::EnteredWorld { lessor_id } => {
-            hasher.text("event", "entered-world").text("event-lessor", lessor_id);
+            hasher
+                .text("event", "entered-world")
+                .text("event-lessor", lessor_id);
         }
         VehicleLifeEventKind::NewVehicleDelivered {
             operator_id,
             lessor_id,
         } => {
-            hasher.text("event", "new-vehicle-delivered").text("event-operator", operator_id);
+            hasher
+                .text("event", "new-vehicle-delivered")
+                .text("event-operator", operator_id);
             if let Some(lessor_id) = lessor_id {
                 hasher.text("event-lessor", lessor_id);
             }
@@ -929,8 +1019,8 @@ mod tests {
     use zugfolge_infra::{FleetClass, TrainProtection};
 
     use super::{
-        default_server_lessors, LeaseReturnReason, PersistentVehicleMarket, TrafficKind,
-        VehicleCondition, VehicleMarketError, VehicleMarketStatus,
+        LeaseReturnReason, PersistentVehicleMarket, TrafficKind, VehicleCondition,
+        VehicleMarketError, VehicleMarketStatus, default_server_lessors,
     };
     use crate::{ProcurementChannel, VehicleAsset};
 
@@ -960,7 +1050,12 @@ mod tests {
     fn startbestand_ist_gebraucht_und_serverangebot_liegt_ueber_markt() {
         let mut market = PersistentVehicleMarket::new(7, default_server_lessors()).expect("Markt");
         market
-            .add_starter_vehicle(0, "eichenbahn-leasing", asset(1, ProcurementChannel::Used), condition())
+            .add_starter_vehicle(
+                0,
+                "eichenbahn-leasing",
+                asset(1, ProcurementChannel::Used),
+                condition(),
+            )
             .expect("Gebrauchtfahrzeug im Startbestand");
         let quote = market
             .quote_server_lease(1, TrafficKind::Spnv, 10_000)
@@ -982,14 +1077,29 @@ mod tests {
     fn leasingruecklauf_und_insolvenz_erhalten_dasselbe_asset_und_den_lebenslauf() {
         let mut market = PersistentVehicleMarket::new(7, default_server_lessors()).expect("Markt");
         market
-            .add_starter_vehicle(0, "eichenbahn-leasing", asset(1, ProcurementChannel::Used), condition())
+            .add_starter_vehicle(
+                0,
+                "eichenbahn-leasing",
+                asset(1, ProcurementChannel::Used),
+                condition(),
+            )
             .expect("Startbestand");
-        let quote = market.quote_server_lease(1, TrafficKind::Spnv, 10_000).expect("Angebot");
-        market.lease_server_vehicle(1, "evu-a", 20, quote).expect("Leasing");
+        let quote = market
+            .quote_server_lease(1, TrafficKind::Spnv, 10_000)
+            .expect("Angebot");
         market
-            .record_condition(2, 1, VehicleCondition::new(7_000, 7_500, 8_000, 6_000, 4_000).expect("Zustand"))
+            .lease_server_vehicle(1, "evu-a", 20, quote)
+            .expect("Leasing");
+        market
+            .record_condition(
+                2,
+                1,
+                VehicleCondition::new(7_000, 7_500, 8_000, 6_000, 4_000).expect("Zustand"),
+            )
             .expect("Zustandsfortschreibung");
-        market.exit_operator(21, "evu-a", true, &BTreeMap::new()).expect("Insolvenz");
+        market
+            .exit_operator(21, "evu-a", true, &BTreeMap::new())
+            .expect("Insolvenz");
 
         let vehicle = market.vehicle(1).expect("gleiches Fahrzeug");
         assert!(matches!(
@@ -1000,7 +1110,10 @@ mod tests {
         assert_eq!(vehicle.history().len(), 4);
         assert!(matches!(
             vehicle.history().last().expect("Ruecklauf").kind(),
-            super::VehicleLifeEventKind::LeaseReturned { reason: LeaseReturnReason::Insolvency, .. }
+            super::VehicleLifeEventKind::LeaseReturned {
+                reason: LeaseReturnReason::Insolvency,
+                ..
+            }
         ));
     }
 
@@ -1008,16 +1121,26 @@ mod tests {
     fn eigentuemer_fahrzeug_wird_bei_betriebsaufgabe_als_dasselbe_asset_gelistet() {
         let mut market = PersistentVehicleMarket::new(7, default_server_lessors()).expect("Markt");
         market
-            .introduce_new_vehicle(5, asset(9, ProcurementChannel::NewBuild), "evu-a", None, condition())
+            .introduce_new_vehicle(
+                5,
+                asset(9, ProcurementChannel::NewBuild),
+                "evu-a",
+                None,
+                condition(),
+            )
             .expect("Neukauf");
         let mut prices = BTreeMap::new();
         prices.insert(9, 123_456);
-        market.exit_operator(10, "evu-a", false, &prices).expect("Betriebsaufgabe");
+        market
+            .exit_operator(10, "evu-a", false, &prices)
+            .expect("Betriebsaufgabe");
         assert!(matches!(
             market.vehicle(9).expect("Asset").status(),
             VehicleMarketStatus::ListedForUsedSale { seller_id, asking_price_cents: 123_456 } if seller_id == "evu-a"
         ));
-        market.buy_used_vehicle(11, 9, "evu-b", 123_456).expect("Gebrauchtkauf");
+        market
+            .buy_used_vehicle(11, 9, "evu-b", 123_456)
+            .expect("Gebrauchtkauf");
         assert!(matches!(
             market.vehicle(9).expect("Asset").status(),
             VehicleMarketStatus::Owned { operator_id } if operator_id == "evu-b"
@@ -1028,9 +1151,16 @@ mod tests {
     fn lebenslauf_ist_zeitlich_geordnet_und_fehlgeschlagene_aenderung_bleibt_atomisch() {
         let mut market = PersistentVehicleMarket::new(7, default_server_lessors()).expect("Markt");
         market
-            .add_starter_vehicle(5, "eichenbahn-leasing", asset(1, ProcurementChannel::Used), condition())
+            .add_starter_vehicle(
+                5,
+                "eichenbahn-leasing",
+                asset(1, ProcurementChannel::Used),
+                condition(),
+            )
             .expect("Startbestand");
-        let quote = market.quote_server_lease(1, TrafficKind::Spnv, 10_000).expect("Angebot");
+        let quote = market
+            .quote_server_lease(1, TrafficKind::Spnv, 10_000)
+            .expect("Angebot");
         let before = market.state_hash();
         assert_eq!(
             market.lease_server_vehicle(4, "evu-a", 20, quote),
@@ -1046,12 +1176,22 @@ mod tests {
     #[test]
     fn gleicher_ablauf_erzeugt_denselben_persistenten_markthash() {
         fn build() -> PersistentVehicleMarket {
-            let mut market = PersistentVehicleMarket::new(7, default_server_lessors()).expect("Markt");
+            let mut market =
+                PersistentVehicleMarket::new(7, default_server_lessors()).expect("Markt");
             market
-                .add_starter_vehicle(0, "eichenbahn-leasing", asset(1, ProcurementChannel::Used), condition())
+                .add_starter_vehicle(
+                    0,
+                    "eichenbahn-leasing",
+                    asset(1, ProcurementChannel::Used),
+                    condition(),
+                )
                 .expect("Startbestand");
-            let quote = market.quote_server_lease(1, TrafficKind::Spnv, 10_000).expect("Angebot");
-            market.lease_server_vehicle(1, "evu-a", 20, quote).expect("Leasing");
+            let quote = market
+                .quote_server_lease(1, TrafficKind::Spnv, 10_000)
+                .expect("Angebot");
+            market
+                .lease_server_vehicle(1, "evu-a", 20, quote)
+                .expect("Leasing");
             market
         }
         assert_eq!(build().state_hash(), build().state_hash());

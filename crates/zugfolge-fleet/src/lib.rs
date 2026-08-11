@@ -23,10 +23,9 @@ pub use catalog::{
     VehicleWorldSettings, YearRange,
 };
 pub use market::{
-    default_server_lessors, LeaseReturnReason, LessorProfile, PersistentVehicle,
-    PersistentVehicleMarket, ServerLeaseQuote, TrafficKind, VehicleCondition,
-    VehicleLifeEvent, VehicleLifeEventKind, VehicleMarketError, VehicleMarketStatus,
-    CONDITION_MAX,
+    CONDITION_MAX, LeaseReturnReason, LessorProfile, PersistentVehicle, PersistentVehicleMarket,
+    ServerLeaseQuote, TrafficKind, VehicleCondition, VehicleLifeEvent, VehicleLifeEventKind,
+    VehicleMarketError, VehicleMarketStatus, default_server_lessors,
 };
 pub use mobilization::*;
 pub use operations::*;
