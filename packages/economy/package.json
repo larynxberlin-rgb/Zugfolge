@@ -24,7 +24,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.4",
-    "@types/node": "^24.13.3",
+    "@types/node": "24.13.3",
     "@zugfolge/identity": "workspace:*",
     "fast-check": "^4.9.0",
     "typescript": "^7.0.2",
