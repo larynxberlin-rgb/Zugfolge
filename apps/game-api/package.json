@@ -24,7 +24,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.4",
-    "@types/node": "^24.13.3",
+    "@types/node": "24.13.3",
     "@zugfolge/gtfs": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "jose": "^6.2.8",
