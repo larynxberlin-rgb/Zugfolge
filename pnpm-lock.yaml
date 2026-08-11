@@ -351,7 +351,7 @@ importers:
         version: link:../planning-projection
     devDependencies:
       '@types/node':
-        specifier: 24.13.3
+        specifier: ^24.13.3
         version: 24.13.3
       typescript:
         specifier: ^7.0.2
@@ -379,7 +379,7 @@ importers:
         specifier: ^0.5.4
         version: 0.5.4
       '@types/node':
-        specifier: 24.13.3
+        specifier: ^24.13.3
         version: 24.13.3
       typescript:
         specifier: ^7.0.2
@@ -422,7 +422,7 @@ importers:
   packages/runtime-native:
     devDependencies:
       '@types/node':
-        specifier: 24.13.3
+        specifier: ^24.13.3
         version: 24.13.3
       typescript:
         specifier: ^7.0.2
@@ -462,7 +462,7 @@ importers:
         version: 0.45.2(@electric-sql/pglite@0.5.4)(@types/pg@8.20.4)(pg@8.22.0)(postgres@3.4.9)
     devDependencies:
       '@types/node':
-        specifier: 24.13.3
+        specifier: ^24.13.3
         version: 24.13.3
       typescript:
         specifier: ^7.0.2
