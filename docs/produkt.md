@@ -54,7 +54,10 @@ ersten zehn Minuten.
   Fahrzeug leasen → Trasse beantragen → Betriebsprogramm bauen → erste Störung
   überstehen.
 - **Startpaket in der öffentlichen Welt:** ein kleiner, bereits notvergebener
-  Verkehrsvertrag plus Leasingfahrzeug. Kein Startkapital-Cliff.
+  Verkehrsvertrag plus Leasingfahrzeug. Ist für die Welt ein administrativer
+  Startbestand freigegeben, stammt dieses aus dessen konkreten, gebrauchten
+  Fahrzeugen und bleibt mitsamt Zustand und Geschichte persistent. Kein
+  Startkapital-Cliff.
 - **Glossar-Layer** über der gesamten Oberfläche: jeder Fachbegriff — Sperrzeit,
   Durchrutschweg, Wendezeit, Zugsicherung, Bremshundertstel — ist anklickbar
   erklärt. Kein Wiki-Zwang.

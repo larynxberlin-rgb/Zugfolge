@@ -331,9 +331,12 @@ als Füllmasse.
 
 ## 5. Insolvenz als Totalverlust (E8)
 
-Scheitern beendet das EVU vollständig: Fahrzeuge werden verwertet, Verträge
-gekündigt, Trassen freigegeben, der Restwert geht an die Gläubiger. Der Account
-bleibt bestehen, das Unternehmen nicht.
+Scheitern beendet das EVU vollständig: Verträge werden gekündigt, Trassen
+freigegeben und der Restwert geht an die Gläubiger. Die Fahrzeuge verschwinden
+dabei nicht aus der Welt: Leasingfahrzeuge gehen an ihren Leasinggeber zurück;
+eigene Fahrzeuge werden mit tatsächlichem Fristenstand, Zustandsprofil und
+vollständigem Lebenslauf auf dem Gebrauchtmarkt verwertet. Der Account bleibt
+bestehen, das Unternehmen nicht.
 
 Harte Konsequenzen sind nur zulässig, wenn sie **vollständig vorhersehbar**
 sind. Deshalb eine sichtbare Eskalationsleiter — jede Stufe erscheint im
@@ -356,6 +359,12 @@ Vertrag sein. Zwei Sperren:
   Perioden nur für kleine Lose zugelassen und startet mit schlechterer Bonität.
   Das entspricht der realen Eignungsprüfung im Vergabeverfahren und schließt die
   Lücke, ohne eine künstliche Strafe zu erfinden.
+
+Eine freiwillige Betriebsaufgabe verwendet dieselben Rücklaufwege für die
+Flotte. Ihre wirtschaftlichen Folgen bleiben von der Insolvenz getrennt:
+offene Verpflichtungen, Kündigungsfolgen und Gebrauchtmarkterlös werden
+abgerechnet, aber nur eine tatsächlich eingetretene Insolvenz löst die
+weltgebundene Präqualifikationsfolge aus.
 
 ## 6. Kooperation zwischen EVU
 
