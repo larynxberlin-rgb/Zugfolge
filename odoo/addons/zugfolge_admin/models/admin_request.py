@@ -17,7 +17,7 @@ class ZugfolgeAdminRequest(models.Model):
     name = fields.Char(compute="_compute_name", store=True)
     world_projection_id = fields.Many2one("zugfolge.world.projection", required=True, ondelete="restrict", index=True)
     action_type = fields.Selection(
-        [("world_access_revoke", "Weltzugang entziehen"), ("infra_release_adoption", "InfraRelease zur Periode uebernehmen")],
+        [("world_access_revoke", "Weltzugang entziehen"), ("infra_release_adoption", "InfraRelease zur Periode uebernehmen"), ("manual_disruption_create", "Manuelle Stoerung anlegen")],
         required=True,
         tracking=True,
     )
@@ -38,13 +38,34 @@ class ZugfolgeAdminRequest(models.Model):
     game_result = fields.Json(readonly=True, copy=False)
     release_hash = fields.Char()
     requested_period_start = fields.Datetime()
+    game_capability_state = fields.Selection(
+        [("prepared", "Vorbereitet: Game-Milestone fehlt"), ("available", "Vom Game ausfuehrbar"), ("unavailable", "Vom Game vorlaeufig nicht verfuegbar")],
+        compute="_compute_game_capability", readonly=True,
+    )
+    game_capability_detail = fields.Char(compute="_compute_game_capability", readonly=True)
+    manual_disruption_start = fields.Datetime()
+    manual_disruption_end = fields.Datetime()
+    manual_disruption_cause = fields.Text()
+    manual_disruption_resource_ids = fields.Json(default=list)
+    manual_disruption_effect = fields.Json(default=dict)
 
     @api.depends("action_type", "world_projection_id")
     def _compute_name(self):
         for record in self:
             record.name = "%s: %s" % (record.world_projection_id.world_name or "Welt", dict(record._fields["action_type"].selection).get(record.action_type, "Antrag"))
 
-    @api.constrains("reason", "risk_class", "requester_id", "approver_id", "action_type", "release_hash", "requested_period_start")
+    @api.depends("action_type", "world_projection_id")
+    def _compute_game_capability(self):
+        capability_model = self.env["zugfolge.admin.capability"].sudo()
+        for record in self:
+            capability = capability_model.search([
+                ("world_id", "=", record.world_projection_id.world_id),
+                ("action_type", "=", record.action_type),
+            ], limit=1) if record.world_projection_id and record.action_type else capability_model.browse()
+            record.game_capability_state = capability.availability if capability else "prepared"
+            record.game_capability_detail = capability.detail if capability else "Game-Implementierung und signierte Faehigkeitsprojektion stehen noch aus."
+
+    @api.constrains("reason", "risk_class", "requester_id", "approver_id", "action_type", "release_hash", "requested_period_start", "manual_disruption_start", "manual_disruption_end", "manual_disruption_cause", "manual_disruption_resource_ids", "manual_disruption_effect")
     def _check_authoritative_shape(self):
         for record in self:
             if not record.reason or not record.reason.strip():
@@ -55,6 +76,17 @@ class ZugfolgeAdminRequest(models.Model):
                 raise ValidationError(_("Die Uebernahme eines InfraRelease ist immer hochriskant."))
             if record.action_type == "infra_release_adoption" and record.release_hash and len(record.release_hash) != 64:
                 raise ValidationError(_("Der InfraRelease-Hash muss SHA-256 besitzen."))
+            if record.action_type == "manual_disruption_create":
+                if record.risk_class != "high":
+                    raise ValidationError(_("Eine manuelle Stoerung ist immer hochriskant."))
+                if not record.manual_disruption_start or not record.manual_disruption_end or record.manual_disruption_end <= record.manual_disruption_start:
+                    raise ValidationError(_("Manuelle Stoerungen brauchen einen gueltigen Beginn vor dem Ende."))
+                if not record.manual_disruption_cause or not record.manual_disruption_cause.strip():
+                    raise ValidationError(_("Manuelle Stoerungen brauchen eine Ursache."))
+                if not isinstance(record.manual_disruption_resource_ids, list) or not record.manual_disruption_resource_ids or not all(isinstance(resource_id, str) and resource_id.strip() for resource_id in record.manual_disruption_resource_ids):
+                    raise ValidationError(_("Manuelle Stoerungen brauchen betroffene Ressourcen mit stabilen Bezeichnern."))
+                if not isinstance(record.manual_disruption_effect, dict) or not record.manual_disruption_effect:
+                    raise ValidationError(_("Manuelle Stoerungen brauchen eine deklarierte Wirkung."))
 
     def _require_state(self, expected):
         if any(record.state != expected for record in self):
@@ -81,6 +113,8 @@ class ZugfolgeAdminRequest(models.Model):
 
     def action_dispatch(self):
         self._require_state("approved")
+        if any(request.game_capability_state != "available" for request in self):
+            raise UserError(_("Das Game hat diese Verwaltungsfaehigkeit noch nicht als ausfuehrbar projektiert. Der Antrag bleibt freigegeben und wirkungslos."))
         self.write({"state": "dispatched"})
         for record in self:
             record.with_delay(description="Zugfolge-Administrationsantrag an Game senden")._dispatch_signed_game_command()
@@ -101,7 +135,18 @@ class ZugfolgeAdminRequest(models.Model):
                 "releaseHash": record.release_hash or None,
                 "requestedPeriodStart": record.requested_period_start.isoformat() if record.requested_period_start else None,
             }
-            dispatch_signed_game_command(self.env, record.correlation_id, str(self.env.user.id), payload)
+            if record.action_type == "manual_disruption_create":
+                payload["manualDisruption"] = {
+                    "startsAt": record.manual_disruption_start.isoformat(),
+                    "endsAt": record.manual_disruption_end.isoformat(),
+                    "cause": record.manual_disruption_cause,
+                    "affectedResourceIds": record.manual_disruption_resource_ids,
+                    "declaredEffect": record.manual_disruption_effect,
+                }
+            actor_reference = self.env["ir.config_parameter"].sudo().get_param("zugfolge_admin.actor_reference")
+            if not actor_reference:
+                raise UserError(_("Der Zugfolge-Integrationsakteur ist nicht konfiguriert."))
+            dispatch_signed_game_command(self.env, record.correlation_id, actor_reference, payload)
 
     def apply_game_result(self, result):
         """Controller-only projection of the resulting authoritative Game audit event."""

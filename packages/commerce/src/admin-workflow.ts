@@ -1,4 +1,4 @@
-import type { AdminCommandPayload } from "./contracts.js";
+import { isAdminActionType, type AdminCommandPayload } from "./contracts.js";
 
 export const ADMIN_REQUEST_STATES = [
   "draft", "submitted", "approved", "rejected", "dispatched", "accepted", "completed", "failed",
@@ -18,6 +18,9 @@ export class AdminWorkflowError extends Error {
  * Begruendung und kennt keinen Zustand, der Simulation pruefungen umgeht.
  */
 export function validateAdminCommand(command: AdminCommandPayload): void {
+  if (!isAdminActionType(command.actionType) || command.kind !== `admin.${command.actionType}`) {
+    throw new AdminWorkflowError("Administrationsaktion und Kommando-Typ passen nicht zusammen.");
+  }
   if (command.reason.trim().length === 0) throw new AdminWorkflowError("Eine Begruendung ist Pflicht.");
   if (command.riskClass === "high") {
     if (command.approverReference === undefined || command.approverReference.length === 0) {
@@ -34,6 +37,26 @@ export function validateAdminCommand(command: AdminCommandPayload): void {
     }
     if (command.requestedPeriodStart === undefined) {
       throw new AdminWorkflowError("InfraRelease-Uebernahme braucht einen beantragten Periodenwechsel.");
+    }
+  }
+  if (command.actionType === "manual_disruption_create") {
+    const disruption = command.manualDisruption;
+    if (command.riskClass !== "high") {
+      throw new AdminWorkflowError("Eine manuelle Stoerung ist immer hochriskant.");
+    }
+    if (disruption === undefined || disruption.cause.trim().length === 0 || disruption.affectedResourceIds.length === 0) {
+      throw new AdminWorkflowError("Manuelle Stoerungen brauchen Ursache und betroffene Ressourcen.");
+    }
+    if (!disruption.affectedResourceIds.every((resourceId) => typeof resourceId === "string" && resourceId.trim().length > 0)) {
+      throw new AdminWorkflowError("Betroffene Ressourcen muessen stabile Bezeichner besitzen.");
+    }
+    const startsAt = new Date(disruption.startsAt);
+    const endsAt = new Date(disruption.endsAt);
+    if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime()) || endsAt <= startsAt) {
+      throw new AdminWorkflowError("Manuelle Stoerungen brauchen einen gueltigen Beginn vor dem Ende.");
+    }
+    if (typeof disruption.declaredEffect !== "object" || disruption.declaredEffect === null || Array.isArray(disruption.declaredEffect) || Object.keys(disruption.declaredEffect).length === 0) {
+      throw new AdminWorkflowError("Manuelle Stoerungen brauchen eine deklarierte Wirkung.");
     }
   }
 }

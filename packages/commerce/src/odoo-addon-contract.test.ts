@@ -21,6 +21,10 @@ describe("Odoo-Administrationsmodul", () => {
     expect(service).not.toContain("DATABASE_URL");
     const request = await readFile(resolve(addon, "models/admin_request.py"), "utf8");
     expect(request).toContain("with_delay");
+    expect(request).toContain("manual_disruption_create");
+    expect(request).toContain("game_capability_state");
+    const capability = await readFile(resolve(addon, "models/admin_capability.py"), "utf8");
+    expect(capability).toContain("zugfolge_game_projection");
     const invoice = await readFile(resolve(addon, "models/account_move.py"), "utf8");
     expect(invoice).toContain('_inherit = "account.move"');
     expect(invoice).toContain('"entitlement.change"');
@@ -31,6 +35,7 @@ describe("Odoo-Administrationsmodul", () => {
     const receipt = await readFile(resolve(addon, "models/projection_receipt.py"), "utf8");
     expect(controller).toContain("hmac.compare_digest");
     expect(controller).toContain("/zugfolge/reconciliation/snapshot");
+    expect(controller).toContain("admin.capability.projection");
     expect(receipt).toContain("unique(message_id)");
     expect(receipt).toContain("unveränderlich");
   });

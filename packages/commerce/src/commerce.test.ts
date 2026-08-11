@@ -6,7 +6,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { AdminWorkflowError, assertPublicWorldSlot, createOdooWebhookReceiptStore, deriveReconciliationTasks, dispatchOdooProjectionOutbox, entitlementFeatures, processNextOdooCommand, receiveOdooWebhook, reconcileOdooProjectionSnapshot, signPayload, type OdooWebhookEnvelope, type SigningKey, WebhookSignatureError, WebhookValidationError } from "./index.js";
+import { AdminWorkflowError, assertPublicWorldSlot, createOdooWebhookReceiptStore, deriveReconciliationTasks, dispatchOdooProjectionOutbox, enqueueGameAdminCapabilityProjection, entitlementFeatures, processNextOdooCommand, projectionEnvelope, receiveOdooWebhook, reconcileOdooProjectionSnapshot, signPayload, type OdooWebhookEnvelope, type SigningKey, WebhookSignatureError, WebhookValidationError } from "./index.js";
 
 const NOW = new Date("2026-08-11T12:00:00.000Z");
 const WORLD = "11111111-1111-1111-1111-111111111111";
@@ -101,18 +101,62 @@ describe("Vier-Augen-Validierung", () => {
     expect(await db.select().from(odooCommandQueue).where(eq(odooCommandQueue.eventId, payload.eventId))).toHaveLength(0);
   });
 
-  it("materialisiert einen freigegebenen Hochrisikoantrag nur als Game-Audit und Odoo-Rückprojektion", async () => {
+  it("materialisiert einen freigegebenen Hochrisikoantrag nur ueber einen registrierten Game-Handler als Audit und Odoo-Rueckprojektion", async () => {
     const payload: OdooWebhookEnvelope = {
       ...entitlementEnvelope("odoo-event-0004"), actorReference: "admin-service",
       command: { kind: "admin.infra_release_adoption", worldId: WORLD, actionType: "infra_release_adoption", riskClass: "high", requesterReference: "requester", approverReference: "approver", reason: "Jahreswechsel nach Abweichungsbericht", effectPreview: { releaseHash: "a".repeat(64) }, releaseHash: "a".repeat(64), requestedPeriodStart: "2026-12-13T00:00:00.000Z" },
     };
     await receiveOdooWebhook(createOdooWebhookReceiptStore(db), signPayload(payload, KEY, NOW), { tenantId: "zugfolge-production", keys: [KEY], authorizedActors: { "admin-service": ["admin.infra_release_adoption"] } }, NOW);
-    await expect(processNextOdooCommand(db, NOW)).resolves.toMatchObject({ outcome: "accepted" });
+    await expect(processNextOdooCommand(db, NOW, {
+      adminHandlers: {
+        infra_release_adoption: () => ({ gameAuditEventId: "game-audit-infra-001" }),
+      },
+    })).resolves.toMatchObject({ outcome: "accepted" });
     const audit = await db.select().from(schema.gameAdminRequests);
     expect(audit).toHaveLength(1);
-    expect(audit[0]).toMatchObject({ state: "accepted", requesterReference: "requester", approverReference: "approver", gameAuditEventId: expect.stringMatching(/^game-admin-request:/) });
+    expect(audit[0]).toMatchObject({ state: "accepted", requesterReference: "requester", approverReference: "approver", gameAuditEventId: "game-audit-infra-001" });
     const projections = await db.select().from(odooProjectionOutbox);
     expect(projections[0]?.payload).toMatchObject({ outcome: "accepted", gameAuditEventId: audit[0]?.gameAuditEventId });
+  });
+
+  it("haelt eine manuelle Stoerung ohne M8-Game-Handler vorbereitet und sichtbar wirkungslos", async () => {
+    const payload: OdooWebhookEnvelope = {
+      ...entitlementEnvelope("odoo-event-0005"), actorReference: "admin-service",
+      command: {
+        kind: "admin.manual_disruption_create", worldId: WORLD, actionType: "manual_disruption_create", riskClass: "high",
+        requesterReference: "spielleitung-1", approverReference: "spielleitung-2", reason: "Gemeldete Weichenstoerung pruefen",
+        effectPreview: { affectedTrains: "wird durch Game ermittelt" },
+        manualDisruption: {
+          startsAt: "2026-08-11T13:00:00.000Z", endsAt: "2026-08-11T15:00:00.000Z", cause: "Weichenstoerung",
+          affectedResourceIds: ["switch:leipzig:42"], declaredEffect: { kind: "closure" },
+        },
+      },
+    };
+    await receiveOdooWebhook(createOdooWebhookReceiptStore(db), signPayload(payload, KEY, NOW), {
+      tenantId: "zugfolge-production", keys: [KEY], authorizedActors: { "admin-service": ["admin.manual_disruption_create"] },
+    }, NOW);
+
+    await expect(processNextOdooCommand(db, NOW)).resolves.toMatchObject({ outcome: "rejected", code: "GameAdminCapabilityUnavailableError" });
+    expect(await db.select().from(schema.gameAdminRequests)).toHaveLength(0);
+    const [queue] = await db.select().from(odooCommandQueue).where(eq(odooCommandQueue.eventId, payload.eventId));
+    expect(queue).toMatchObject({ status: "rejected", failureCode: "GameAdminCapabilityUnavailableError" });
+    const [result] = await db.select().from(odooProjectionOutbox).where(eq(odooProjectionOutbox.correlationId, payload.correlationId));
+    expect(result?.payload).toMatchObject({ outcome: "rejected", failureCode: "GameAdminCapabilityUnavailableError" });
+  });
+
+  it("veroeffentlicht eine Verwaltungsfaehigkeit nur als signierte Outbox-Projektion fuer die Odoo-Ansicht", async () => {
+    await enqueueGameAdminCapabilityProjection(db, {
+      worldId: WORLD,
+      correlationId: "capability-m8-prepare-001",
+      capability: { actionType: "manual_disruption_create", availability: "prepared", detail: "M8.3 ist noch nicht im Game aktiviert." },
+      occurredAt: NOW,
+    });
+    const [projection] = await db.select().from(odooProjectionOutbox);
+    expect(projectionEnvelope(projection!)).toMatchObject({
+      messageType: "admin.capability.projection",
+      worldId: WORLD,
+      payload: { actionType: "manual_disruption_create", availability: "prepared" },
+    });
   });
 });
 

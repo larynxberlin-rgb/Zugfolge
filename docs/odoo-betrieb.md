@@ -16,7 +16,7 @@ Die Trennung ist verbindlich durch [ADR-0023](adr/0023-odoo-als-administrativer-
 | Odoo Community | Git `19.0` Commit `f8c29412e71af098b2949f485a8011b01b64b368` | LGPL-3.0 | Server und native Apps `base`, `contacts`, `crm`, `account`, `payment`, `mail` |
 | Offizielles Odoo-Image | `odoo@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a` | LGPL-3.0 (Odoo-Code) | optionaler, rootless Containerbetrieb |
 | OCA `queue` | Commit `d2c1759102f1e0bc8f6244629b5b38c7b7882f36`, Modul `queue_job` 19.0.2.0.3 | LGPL-3.0 | persistente Odoo-seitige Zustellung und Wiederholung |
-| Eigenes Add-on | `odoo/addons/zugfolge_admin`, Version `19.0.1.0.0` | PolyForm Shield 1.0.0 / Odoo-Manifesteinstellung `Other proprietary` | Zugfolge-Projektion, Freigabe, Signaturgrenze, Feedback |
+| Eigenes Add-on | `odoo/addons/zugfolge_admin`, Version `19.0.1.1.0` | PolyForm Shield 1.0.0 / Odoo-Manifesteinstellung `Other proprietary` | Zugfolge-Projektion, Freigabe, Signaturgrenze, Feedback |
 
 Odoo Community ist frei selbst hostbar; die Odoo-19-Dokumentation nennt
 Community unter LGPLv3 sowie Python ab 3.10 und PostgreSQL ab 13. Das Add-on
@@ -69,7 +69,7 @@ werden im Secret Store der jeweils getrennten Betriebsumgebung hinterlegt.
 # Game API: Odoo -> Game
 ODOO_WEBHOOK_TENANT_ID=production-tenant-id
 ODOO_WEBHOOK_KEYS_JSON=[{"id":"2026-08","secret":"<secret>","activeFrom":"2026-08-01T00:00:00Z"},{"id":"2026-09","secret":"<next-secret>","activeFrom":"2026-09-01T00:00:00Z"}]
-ODOO_WEBHOOK_AUTHORIZED_ACTORS_JSON={"commerce-service":["entitlement.change"],"admin-service":["admin.world_access_revoke","admin.infra_release_adoption"]}
+ODOO_WEBHOOK_AUTHORIZED_ACTORS_JSON={"commerce-service":["entitlement.change"],"admin-service":["admin.world_access_revoke","admin.infra_release_adoption","admin.manual_disruption_create"]}
 
 # Game API: Game -> Odoo
 ODOO_PROJECTION_URL=https://odoo.example.invalid/zugfolge/projection
@@ -81,7 +81,10 @@ ODOO_RECONCILIATION_URL=https://odoo.example.invalid/zugfolge/reconciliation/sna
 Im Odoo-Systemparameter-Store stehen getrennt `zugfolge_admin.game_webhook_url`,
 `zugfolge_admin.tenant_id`, `zugfolge_admin.webhook_key_id`,
 `zugfolge_admin.webhook_secret` und `zugfolge_admin.projection_keys_json` (JSON-Key-ID→Secret, während Rotation mit beiden aktiven IDs).
-Je Richtung gelten verschiedene Schlüssel. Rotation bedeutet: neuen Schlüssel
+`zugfolge_admin.actor_reference` muss genau den technischen Akteur des
+`ODOO_WEBHOOK_AUTHORIZED_ACTORS_JSON` enthalten, zum Beispiel
+`admin-service`; Antragsteller und Freigeber bleiben zusätzlich im signierten
+Kommando erhalten. Je Richtung gelten verschiedene Schlüssel. Rotation bedeutet: neuen Schlüssel
 zuerst auf der empfangenden Seite zusätzlich aktivieren, Senden umstellen, das
 fünfminütige Zeitfenster abwarten und den alten Schlüssel erst danach entfernen.
 
@@ -120,6 +123,27 @@ Abnahmenachweis ausführbar.
 - **M9.10:** `infra_release_adoption` ist immer hochriskant, trägt
   Release-Hash und gewünschten Periodenwechsel und endet erst nach der
   Game-seitigen Vorabprüfung. Odoo aktiviert niemals einen Release.
+
+## Vollständige Administration und vorbereitete Fähigkeiten
+
+Die Zielarchitektur lässt alle menschlichen administrativen Game-Wirkungen als
+`zugfolge.admin.request` in Odoo beginnen. Die bestehenden M0–M7-Entwicklungs-
+und Bootstraprouten werden vor ihrer produktiven Administrationsfreigabe
+einzeln überführt; spielereigene, regelgebundene Dispositionsentscheidungen
+bleiben ausdrücklich im Game. Odoo erhält dafür keinen Generalschlüssel:
+der Aktionskatalog ist im Add-on und im Game-Vertrag fest definiert. Eine
+signierte `admin.capability.projection` des Games markiert eine Aktion je Welt
+als `available`, `unavailable` oder `prepared`. Ohne diese Projektion zeigt
+Odoo `prepared`, lässt Anträge erfassen und vier Augen prüfen, blendet die
+Auslieferung aber aus. Das Game lehnt einen extern trotzdem eintreffenden,
+nicht registrierten Befehl auditierbar ab.
+
+`manual_disruption_create` bereitet M8.3 vor und ist immer hochriskant. Die
+Odoo-Maske verlangt Beginn, Ende, Ursache, stabile Ressourcenbezeichner und
+deklarierte Wirkung. Solange der M8-Worktree keinen echten Game-Handler und
+dessen Capability-Projektion liefert, entsteht daraus **keine** Störung und
+keine Simulations-, Konflikt- oder Dispositionswirkung. M8.3 bleibt daher in
+`docs/milestones.md` offen.
 
 ## Externer Integrationsnachweis
 

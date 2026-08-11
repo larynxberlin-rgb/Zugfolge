@@ -1,5 +1,5 @@
 import type { OdooWebhookEnvelope } from "./contracts.js";
-import { isOdooCommandType, isProductKind, ODOO_CONTRACT_VERSION } from "./contracts.js";
+import { isAdminActionType, isOdooCommandType, isProductKind, ODOO_CONTRACT_VERSION } from "./contracts.js";
 import { validateAdminCommand } from "./admin-workflow.js";
 import type { SignedPayload, SigningKey } from "./signing.js";
 import { verifyPayload } from "./signing.js";
@@ -38,7 +38,7 @@ function validateShape(envelope: OdooWebhookEnvelope): void {
     if (Number.isNaN(new Date(envelope.command.validFrom).getTime())) throw new WebhookValidationError("command");
     return;
   }
-  if (envelope.command.worldId.length === 0) throw new WebhookValidationError("command");
+  if (envelope.command.worldId.length === 0 || !isAdminActionType(envelope.command.actionType)) throw new WebhookValidationError("command");
   validateAdminCommand(envelope.command);
 }
 

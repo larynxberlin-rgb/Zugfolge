@@ -13,8 +13,30 @@ export const COMMAND_TYPES = [
   "entitlement.change",
   "admin.world_access_revoke",
   "admin.infra_release_adoption",
+  "admin.manual_disruption_create",
 ] as const;
 export type OdooCommandType = (typeof COMMAND_TYPES)[number];
+
+/**
+ * Dieser Katalog ist absichtlich klein und versioniert. Eine Odoo-Ansicht darf
+ * nie eine neue Game-Macht nur durch Konfiguration erfinden: Jede weitere
+ * Aktion braucht zuerst eine Game-Implementierung, einen Vertrag und Tests.
+ */
+export const ADMIN_ACTION_TYPES = [
+  "world_access_revoke",
+  "infra_release_adoption",
+  "manual_disruption_create",
+] as const;
+export type AdminActionType = (typeof ADMIN_ACTION_TYPES)[number];
+
+export type GameAdminCapabilityAvailability = "prepared" | "available" | "unavailable";
+
+/** Signierte Game-Projektion; nur ein echter Game-Handler darf `available` melden. */
+export interface GameAdminCapabilityProjection {
+  readonly actionType: AdminActionType;
+  readonly availability: GameAdminCapabilityAvailability;
+  readonly detail?: string;
+}
 
 export type RiskClass = "standard" | "high";
 
@@ -30,10 +52,18 @@ export interface EntitlementChangePayload {
   readonly sourceReference: string;
 }
 
+export interface ManualDisruption {
+  readonly startsAt: string;
+  readonly endsAt: string;
+  readonly cause: string;
+  readonly affectedResourceIds: readonly string[];
+  readonly declaredEffect: Readonly<Record<string, unknown>>;
+}
+
 export interface AdminCommandPayload {
   readonly kind: Exclude<OdooCommandType, "entitlement.change">;
   readonly worldId: string;
-  readonly actionType: "world_access_revoke" | "infra_release_adoption";
+  readonly actionType: AdminActionType;
   readonly riskClass: RiskClass;
   readonly requesterReference: string;
   readonly approverReference?: string;
@@ -41,6 +71,12 @@ export interface AdminCommandPayload {
   readonly effectPreview: Readonly<Record<string, unknown>>;
   readonly releaseHash?: string;
   readonly requestedPeriodStart?: string;
+  /**
+   * Vertrag fuer M8.3: Odoo erfasst die Pflichtdaten, die Game-Implementierung
+   * prueft Ressourcen, Zeitpunkt und Wirkung erst bei ihrer spaeteren
+   * fachlichen Ausfuehrung.
+   */
+  readonly manualDisruption?: ManualDisruption;
 }
 
 export type OdooCommandPayload = EntitlementChangePayload | AdminCommandPayload;
@@ -59,7 +95,7 @@ export interface OdooWebhookEnvelope {
 export interface OdooProjectionEnvelope {
   readonly schemaVersion: typeof ODOO_CONTRACT_VERSION;
   readonly messageId: string;
-  readonly messageType: "world.projection" | "admin.command.result" | "reconciliation.task";
+  readonly messageType: "world.projection" | "admin.command.result" | "admin.capability.projection" | "reconciliation.task";
   readonly worldId: string;
   readonly occurredAt: string;
   readonly correlationId: string;
@@ -72,4 +108,8 @@ export function isProductKind(value: unknown): value is ProductKind {
 
 export function isOdooCommandType(value: unknown): value is OdooCommandType {
   return typeof value === "string" && (COMMAND_TYPES as readonly string[]).includes(value);
+}
+
+export function isAdminActionType(value: unknown): value is AdminActionType {
+  return typeof value === "string" && (ADMIN_ACTION_TYPES as readonly string[]).includes(value);
 }
