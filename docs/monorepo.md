@@ -160,8 +160,9 @@ Der Rust-Kanal ist mit **M1.12 auf eine Patchversion gepinnt**
 (`rust-toolchain.toml`): Ein `InfraRelease` ist ein unveränderliches,
 reproduzierbares Artefakt, und seine Prüfsumme darf nicht an der Toolchain
 hängen. rustup installiert die gepinnte Version samt Komponenten selbsttätig;
-der Golden-Master des `InfraRelease` wird gegen genau sie erzeugt, auf Linux und
-Windows. Ein Wechsel ist eine bewusste Entscheidung und im Commit zu begründen.
+der Golden-Master des `InfraRelease` wird gegen genau sie auf Linux erzeugt.
+Linux ist die einzige unterstützte Betriebs- und CI-Plattform. Ein Wechsel ist
+eine bewusste Entscheidung und im Commit zu begründen.
 
 ---
 
@@ -249,8 +250,8 @@ Ein neuer Strom verändert die bestehenden dadurch nicht — sonst verschöbe da
 Einfügen eines Stroms rückwirkend jede bereits gelaufene Welt.
 
 Der Golden-Master unter `crates/zugfolge-determinism/tests/golden/` ist der
-eigentliche Nachweis: Die CI erzeugt ihn auf Linux **und** auf Windows und
-vergleicht gegen dieselbe Datei.
+eigentliche Nachweis: Die CI erzeugt ihn auf der unterstützten Linux-Plattform
+und vergleicht ihn gegen die eingecheckte Referenzdatei.
 
 ---
 

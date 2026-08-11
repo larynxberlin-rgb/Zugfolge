@@ -23,7 +23,16 @@ Simulationskern, Trassen-Solver und Release-Pipeline werden in **Rust**
 geschrieben und über napi-rs in-process aus Node angebunden — kein zweiter
 Dienst. Die Game-Services (Verträge, Ausschreibungen, Ledger, Märkte, Postfach)
 bleiben **TypeScript** auf Node.js. Der Schnitt folgt der Last, nicht der
-Bequemlichkeit.
+Bequemlichkeit. Zugfolge wird ausschließlich auf **Linux** betrieben und die
+CI prüft den Rust-Kern deshalb nur auf dieser unterstützten Plattform.
+
+## Akzeptanzszenarien
+
+- **Given** ein Push oder Pull Request, **when** der Rust-CI-Job startet,
+  **then** wird genau ein Linux-Runner und kein Windows-Runner angefordert.
+- **Given** der gepinnte Rust-Kern auf Linux, **when** Formatierung, Clippy,
+  Tests und Golden-Master laufen, **then** müssen alle Prüfungen erfolgreich
+  sein, bevor die Änderung mergefähig ist.
 
 ## Begründung
 
@@ -43,7 +52,9 @@ kostet dauerhaft Tempo.
 - **Kostet / schränkt ein:** Rust ist die schwerere Sprache; ein Kern, den man
   nicht selbst reparieren kann, bleibt ein reales Risiko (R14). Beherrschbar
   gehalten durch stabiles Regelwerk, engen Vertrag und einen kleinen Einstieg
-  (M0.3: drei Betriebsstellen, zwei Züge).
+  (M0.3: drei Betriebsstellen, zwei Züge). Plattformübergreifende Abweichungen
+  werden nicht mehr durch einen Windows-CI-Lauf erkannt; Windows ist keine
+  unterstützte Betriebsplattform.
 - **Invarianten:** Trägt Invariante 2 (kein `now()` im Kern), 3 (keine Floats
   im Zustand), 6 (kein externer Dienst im heißen Pfad) und 7 (kein DB-Zugriff
   aus dem Kern).
