@@ -27,12 +27,14 @@ pub const INITIALIZE_SCHEMA: &str = "zugfolge-regional-simulation-initialize/v1"
 pub const COMMAND_SCHEMA: &str = "zugfolge-regional-simulation-command/v1";
 pub const STATE_SCHEMA: &str = "zugfolge-regional-simulation-state/v1";
 pub const INITIALIZED_SCHEMA: &str = "zugfolge-regional-simulation-initialized/v1";
+pub const RESTORED_SCHEMA: &str = "zugfolge-regional-simulation-restored/v1";
 pub const RESULT_SCHEMA: &str = "zugfolge-regional-simulation-result/v1";
 pub const LIVEMAP_SNAPSHOT_SCHEMA: &str = "zugfolge-regional-livemap-snapshot/v1";
 pub const LIVEMAP_DELTA_SCHEMA: &str = "zugfolge-regional-livemap-delta/v1";
 
 const INTERNAL_WORLD_ID: u64 = 1;
 const INTERNAL_REGION_ID: u32 = 1;
+const MAX_JSON_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeError {
@@ -275,6 +277,15 @@ fn validate_train(train: &TrainInput) -> Result<(), RuntimeError> {
             "invalid_train",
             "route darf nicht leer sein",
         ));
+    }
+    for waypoint in &train.route {
+        validate_identity(&waypoint.operating_point, "operatingPoint")?;
+        if waypoint.position_mm < 0 || waypoint.arrival_s < 0 || waypoint.departure_s < 0 {
+            return Err(RuntimeError::new(
+                "invalid_train",
+                "Positionen und Fahrplanzeiten duerfen nicht negativ sein",
+            ));
+        }
     }
     Ok(())
 }
@@ -613,6 +624,9 @@ fn build_machine(state: &RuntimeState) -> Result<(Machine, Vec<Applied>), Runtim
     validate_identity(&state.region_id, "regionId")?;
     if state.revision != u64::try_from(state.commands.len()).unwrap_or(u64::MAX)
         || state.publisher_sequence != state.revision
+        || state.publisher_sequence > MAX_JSON_SAFE_INTEGER
+        || state.initial_now_s < 0
+        || state.now_s < 0
     {
         return Err(RuntimeError::new(
             "corrupt_state",
@@ -689,6 +703,12 @@ pub fn initialize_regional_simulation(input_json: &str) -> Result<String, Runtim
     }
     validate_identity(&input.world_id, "worldId")?;
     validate_identity(&input.region_id, "regionId")?;
+    if input.now_s < 0 {
+        return Err(RuntimeError::new(
+            "invalid_time",
+            "Initialzeit darf nicht negativ sein",
+        ));
+    }
     MaterializationWindow::new(input.materialization_window_hours)?;
     let mut ids = BTreeSet::new();
     for train in &input.trains {
@@ -725,6 +745,28 @@ pub fn initialize_regional_simulation(input_json: &str) -> Result<String, Runtim
             "snapshot": snapshot,
         }),
         "Initialisierungsergebnis",
+    )
+}
+
+/// Rekonstruiert einen persistierten Zustand durch vollstaendiges Replay und
+/// liefert den aktuellen Rust-Snapshot fuer einen kalten Prozessstart.
+pub fn restore_regional_simulation(state_json: &str) -> Result<String, RuntimeError> {
+    let state: RuntimeState = decode(state_json, "Regionalzustand")?;
+    let (machine, _) = build_machine(&state)?;
+    let snapshot = wire_snapshot(
+        &state,
+        &machine,
+        machine.simulation.snapshot(),
+        state.publisher_sequence,
+    )?;
+    encode(
+        &json!({
+            "schemaVersion": RESTORED_SCHEMA,
+            "state": state,
+            "stateHash": state_hash(&state)?,
+            "snapshot": snapshot,
+        }),
+        "Wiederherstellungsergebnis",
     )
 }
 
@@ -773,6 +815,7 @@ pub fn apply_regional_simulation_command(
                 "stateHash": state_hash(&state)?,
                 "events": original.events,
                 "delta": original.delta,
+                "appliedCommandId": envelope.command_id,
                 "idempotentReplay": true,
             }),
             "Replay-Ergebnis",
@@ -797,6 +840,27 @@ pub fn apply_regional_simulation_command(
             "Publisher-Sequenz ist nicht lueckenlos",
         ));
     }
+    if state.revision >= MAX_JSON_SAFE_INTEGER {
+        return Err(RuntimeError::new(
+            "sequence_exhausted",
+            "JSON-sichere Revisionssequenz ist erschoepft",
+        ));
+    }
+    match &envelope.command {
+        WireCommand::AdvanceTo { at_s } if *at_s < 0 => {
+            return Err(RuntimeError::new(
+                "invalid_time",
+                "Simulationszeit darf nicht negativ sein",
+            ));
+        }
+        WireCommand::DematerializeBefore { before_s } if *before_s < 0 => {
+            return Err(RuntimeError::new(
+                "invalid_time",
+                "Dematerialisierungsgrenze darf nicht negativ sein",
+            ));
+        }
+        _ => {}
+    }
     let applied = apply_wire_command(&state, &mut machine, &envelope.command)?;
     if applied.delta.producer_sequence != state.publisher_sequence.saturating_add(1) {
         return Err(RuntimeError::new(
@@ -804,6 +868,7 @@ pub fn apply_regional_simulation_command(
             "Rust-Delta besitzt eine unerwartete Sequenz",
         ));
     }
+    let applied_command_id = envelope.command_id.clone();
     state.commands.push(StoredCommand {
         command_id: envelope.command_id,
         command_hash: incoming_hash,
@@ -822,6 +887,7 @@ pub fn apply_regional_simulation_command(
             "stateHash": state_hash(&state)?,
             "events": applied.events,
             "delta": applied.delta,
+            "appliedCommandId": applied_command_id,
             "idempotentReplay": false,
         }),
         "Kommandoergebnis",
@@ -967,6 +1033,18 @@ mod tests {
         );
         assert_eq!(restarted["stateHash"], repeated["stateHash"]);
         assert_eq!(restarted["delta"], repeated["delta"]);
+
+        let restored: Value = serde_json::from_str(
+            &restore_regional_simulation(&restarted["state"].to_string()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(restored["schemaVersion"], RESTORED_SCHEMA);
+        assert_eq!(restored["stateHash"], restarted["stateHash"]);
+        assert_eq!(
+            restored["snapshot"]["producerSequence"],
+            restarted["state"]["publisherSequence"]
+        );
+        assert_eq!(restored["snapshot"]["atS"], restarted["state"]["nowS"]);
     }
 
     #[test]

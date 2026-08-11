@@ -1,6 +1,8 @@
 import { createRequire } from "node:module";
 import { isAbsolute } from "node:path";
 
+export * from "./regional-simulation.js";
+
 export const OPERATING_INITIALIZE_SCHEMA = "zugfolge-operating-world-initialize/v1" as const;
 export const OPERATING_STATE_SCHEMA = "zugfolge-operating-world-state/v1" as const;
 export const OPERATING_TRANSITION_SCHEMA = "zugfolge-operating-transition-command/v1" as const;
@@ -209,12 +211,15 @@ export interface OperatingTransitionResult {
   readonly idempotentReplay: boolean;
 }
 
-export interface OperatingRuntime {
+export interface FleetRuntime {
   readonly initializeFleet: (input: FleetWorldInitialization) => FleetWorldInitialized;
   readonly applyFleetCommand: (
     state: NativeFleetWorldState,
     command: NativeFleetCommand,
   ) => FleetCommandResult;
+}
+
+export interface OperatingRuntime {
   /** @deprecated Productive M5 producers use commands and never submit snapshots. */
   readonly verifyFleetMobilizationSnapshot: (snapshot: unknown) => FleetMobilizationVerification;
   readonly initialize: (input: OperatingWorldInitialization) => OperatingWorldInitialized;
@@ -223,6 +228,8 @@ export interface OperatingRuntime {
     command: OperatingTransitionCommand,
   ) => OperatingTransitionResult;
 }
+
+export type NativeRuntime = FleetRuntime & OperatingRuntime;
 
 interface NativeAddon {
   readonly initializeFleetWorld: (inputJson: string) => string;
@@ -333,9 +340,42 @@ function decodeTransition(json: string): OperatingTransitionResult {
   return value as unknown as OperatingTransitionResult;
 }
 
+function fleetCommandEntity(command: NativeFleetCommand): { readonly kind: FleetCommandResult["entityKind"]; readonly id: string } {
+  switch (command.schemaVersion) {
+    case FLEET_FORMATION_COMMAND_SCHEMA:
+      return { kind: "formation", id: command.formation.id };
+    case FLEET_PERSONNEL_DUTY_COMMAND_SCHEMA:
+      return { kind: "personnel-duty", id: command.personnelDuty.id };
+    case FLEET_PATH_RESERVATION_COMMAND_SCHEMA:
+      return { kind: "path-reservation", id: command.pathReservation.id };
+  }
+}
+
 /** Wraps the native ABI. Exported for contract tests; production uses {@link loadOperatingRuntime}. */
-export function operatingRuntimeFromAddon(addon: NativeAddon): OperatingRuntime {
+export function operatingRuntimeFromAddon(addon: NativeAddon): NativeRuntime {
   return Object.freeze({
+    initializeFleet(input: FleetWorldInitialization) {
+      const initialized = decodeFleetInitialized(addon.initializeFleetWorld(JSON.stringify(input)));
+      invariant(initialized.state.worldId === input.worldId, "Rust-M5-Initialisierung verletzte die Weltisolation.");
+      invariant(initialized.state.revision === 0, "Rust-M5-Initialisierung begann nicht bei Revision 0.");
+      invariant(initialized.state.producedAt === input.producedAt, "Rust-M5-Initialisierung veraenderte die Zustandszeit.");
+      return initialized;
+    },
+    applyFleetCommand(state: NativeFleetWorldState, command: NativeFleetCommand) {
+      invariant(state.worldId === command.worldId, "M5-Kommando verletzt die Weltisolation.");
+      safeInteger(command.expectedRevision, "M5-Kommando-Revision");
+      safeInteger(command.atS, "M5-Kommando-Zeit");
+      sha256(command.expectedStateHash, "M5-Kommando-Zustandshash");
+      const entity = fleetCommandEntity(command);
+      invariant(entity.id.length > 0, "M5-Kommando besitzt keine Entitaets-ID.");
+      const result = decodeFleetCommandResult(addon.applyFleetCommand(JSON.stringify(state), JSON.stringify(command)));
+      invariant(result.state.worldId === command.worldId, "Rust-M5-Kommando verletzte die Weltisolation.");
+      invariant(result.appliedCommandId === command.commandId, "Rust-M5-Kommando quittierte eine fremde Kommando-ID.");
+      invariant(result.entityKind === entity.kind && result.entityId === entity.id, "Rust-M5-Kommando quittierte eine fremde Entitaet.");
+      invariant(result.idempotentReplay || result.state.revision === command.expectedRevision + 1, "Rust-M5-Kommando erhoehte die Revision nicht exakt einmal.");
+      invariant(result.idempotentReplay || result.state.producedAt === command.atS, "Rust-M5-Kommando veraenderte die Zustandszeit.");
+      return result;
+    },
     verifyFleetMobilizationSnapshot(snapshot: unknown) {
       const verified = decodeFleetVerification(addon.verifyFleetMobilizationSnapshot(JSON.stringify(snapshot)));
       record(snapshot, "M5-Snapshot");
@@ -366,11 +406,13 @@ export function operatingRuntimeFromAddon(addon: NativeAddon): OperatingRuntime 
  * Loads exactly the configured native addon. There is deliberately no JS
  * fallback: absence or an ABI error prevents production startup.
  */
-export function loadOperatingRuntime(addonPath = process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"]): OperatingRuntime {
+export function loadOperatingRuntime(addonPath = process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"]): NativeRuntime {
   invariant(addonPath !== undefined && addonPath.length > 0, "ZUGFOLGE_RUNTIME_NATIVE_PATH fehlt.");
   invariant(isAbsolute(addonPath), "ZUGFOLGE_RUNTIME_NATIVE_PATH muss absolut sein.");
   const required: unknown = createRequire(import.meta.url)(addonPath);
   record(required, "napi-rs-Addon");
+  invariant(typeof required["initializeFleetWorld"] === "function", "napi-rs-Addon exportiert initializeFleetWorld nicht.");
+  invariant(typeof required["applyFleetCommand"] === "function", "napi-rs-Addon exportiert applyFleetCommand nicht.");
   invariant(typeof required["verifyFleetMobilizationSnapshot"] === "function", "napi-rs-Addon exportiert verifyFleetMobilizationSnapshot nicht.");
   invariant(typeof required["initializeOperatingWorld"] === "function", "napi-rs-Addon exportiert initializeOperatingWorld nicht.");
   invariant(typeof required["applyOperatingTransition"] === "function", "napi-rs-Addon exportiert applyOperatingTransition nicht.");

@@ -8,6 +8,9 @@ use napi::bindgen_prelude::Result as NapiResult;
 #[cfg(feature = "node-addon")]
 use napi_derive::napi;
 
+#[cfg(feature = "node-addon")]
+mod regional_simulation;
+
 /// Initializes the authoritative, revisioned M5 fleet state.
 #[cfg(feature = "node-addon")]
 #[napi(js_name = "initializeFleetWorld")]

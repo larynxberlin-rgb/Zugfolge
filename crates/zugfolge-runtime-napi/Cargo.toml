@@ -19,6 +19,7 @@ node-addon = ["dep:napi", "dep:napi-derive"]
 napi = { version = "=3.4.0", default-features = false, features = ["napi4"], optional = true }
 napi-derive = { version = "=3.2.5", optional = true }
 zugfolge-runtime = { path = "../zugfolge-runtime", version = "0.0.0" }
+zugfolge-sim-runtime = { path = "../zugfolge-sim-runtime", version = "0.0.0" }
 
 [build-dependencies]
 napi-build = "=2.2.4"

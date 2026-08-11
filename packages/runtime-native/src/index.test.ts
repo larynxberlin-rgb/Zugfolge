@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  FLEET_FORMATION_COMMAND_SCHEMA,
+  FLEET_INITIALIZE_SCHEMA,
   OPERATING_INITIALIZE_SCHEMA,
   OPERATING_TRANSITION_SCHEMA,
   operatingRuntimeFromAddon,
@@ -8,9 +10,89 @@ import {
 
 const worldId = "11111111-1111-4111-8111-111111111111";
 
+const fleetAddon = {
+  initializeFleetWorld: () => JSON.stringify({
+    schemaVersion: "zugfolge-fleet-world-initialized/v1",
+    state: { schemaVersion: "zugfolge-fleet-world-state/v1", worldId, revision: 0, producedAt: 0 },
+    stateHash: "d".repeat(64),
+    snapshot: { schema: "zugfolge-fleet-mobilization/v1", worldId, revision: 0, producedAt: 0, formations: [], personnelDuties: [], pathReservations: [] },
+    snapshotHash: "e".repeat(64),
+  }),
+  applyFleetCommand: (_stateJson: string, commandJson: string) => {
+    const command = JSON.parse(commandJson) as { commandId: string; formation: { id: string } };
+    return JSON.stringify({
+      schemaVersion: "zugfolge-fleet-command-result/v1",
+      state: { schemaVersion: "zugfolge-fleet-world-state/v1", worldId, revision: 1, producedAt: 1 },
+      stateHash: "f".repeat(64),
+      snapshot: { schema: "zugfolge-fleet-mobilization/v1", worldId, revision: 1, producedAt: 1, formations: [command.formation], personnelDuties: [], pathReservations: [] },
+      snapshotHash: "a".repeat(64),
+      appliedCommandId: command.commandId,
+      entityKind: "formation",
+      entityId: command.formation.id,
+      idempotentReplay: false,
+    });
+  },
+};
+
 describe("native runtime ABI contract", () => {
+  it("initializes M5 and forwards only a versioned formation command to Rust", () => {
+    const runtime = operatingRuntimeFromAddon({
+      ...fleetAddon,
+      verifyFleetMobilizationSnapshot: () => "{}",
+      initializeOperatingWorld: () => "{}",
+      applyOperatingTransition: () => "{}",
+    });
+    const initialized = runtime.initializeFleet({
+      schemaVersion: FLEET_INITIALIZE_SCHEMA,
+      worldId,
+      producedAt: 0,
+    });
+    const result = runtime.applyFleetCommand(initialized.state, {
+      schemaVersion: FLEET_FORMATION_COMMAND_SCHEMA,
+      worldId,
+      commandId: "formation:create",
+      expectedStateHash: initialized.stateHash,
+      expectedRevision: initialized.state.revision,
+      atS: 1,
+      formation: {
+        id: "formation-1",
+        operatorId: "operator-1",
+        vehicleIds: ["vehicle-1"],
+        serviceLineIds: ["S1"],
+        availability: "available",
+        procurement: "delivered",
+        availableFrom: 0,
+        availableUntil: 10,
+        characteristics: {
+          seats: 100,
+          firstClassBasisPoints: 0,
+          accessible: true,
+          bicyclePlaces: 1,
+          wheelchairPlaces: 1,
+          equipment: [],
+          vehicleAgeYears: 1,
+          maximumSpeedKph: 160,
+          operatingCostCentsPerTrainKm: 1,
+          homologatedLineIds: ["S1"],
+          maintenanceValidUntil: 10,
+          traction: "electric",
+          replacementPlan: true,
+        },
+      },
+    });
+    expect(initialized).toMatchObject({ state: { worldId, revision: 0 }, stateHash: "d".repeat(64) });
+    expect(result).toMatchObject({
+      state: { worldId, revision: 1, producedAt: 1 },
+      appliedCommandId: "formation:create",
+      entityKind: "formation",
+      entityId: "formation-1",
+      idempotentReplay: false,
+    });
+  });
+
   it("rejects a cross-world native result instead of trusting the addon", () => {
     const runtime = operatingRuntimeFromAddon({
+      ...fleetAddon,
       verifyFleetMobilizationSnapshot: () => JSON.stringify({
         schemaVersion: "zugfolge-fleet-mobilization-verification/v1",
         worldId,
@@ -52,6 +134,7 @@ describe("native runtime ABI contract", () => {
 
   it("rejects malformed hashes at the ABI boundary", () => {
     const runtime = operatingRuntimeFromAddon({
+      ...fleetAddon,
       verifyFleetMobilizationSnapshot: () => JSON.stringify({
         schemaVersion: "zugfolge-fleet-mobilization-verification/v1",
         worldId,
@@ -70,6 +153,7 @@ describe("native runtime ABI contract", () => {
 
   it("binds native M5 verification to the supplied world and revision", () => {
     const runtime = operatingRuntimeFromAddon({
+      ...fleetAddon,
       verifyFleetMobilizationSnapshot: () => JSON.stringify({
         schemaVersion: "zugfolge-fleet-mobilization-verification/v1",
         worldId: "other",
