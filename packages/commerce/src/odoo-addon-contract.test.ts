@@ -21,6 +21,9 @@ describe("Odoo-Administrationsmodul", () => {
     expect(service).not.toContain("DATABASE_URL");
     const request = await readFile(resolve(addon, "models/admin_request.py"), "utf8");
     expect(request).toContain("with_delay");
+    const invoice = await readFile(resolve(addon, "models/account_move.py"), "utf8");
+    expect(invoice).toContain('_inherit = "account.move"');
+    expect(invoice).toContain('"entitlement.change"');
   });
 
   it("hat eine signierte Projektions-, Replay- und Reconciliation-Grenze", async () => {

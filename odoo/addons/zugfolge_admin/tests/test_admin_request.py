@@ -29,3 +29,7 @@ class TestZugfolgeAdminRequest(TransactionCase):
             self.env["zugfolge.admin.request"].create({
                 "world_projection_id": self.projection.id, "action_type": "world_access_revoke", "reason": " ", "effect_preview": {},
             })
+
+    def test_invoice_without_product_mapping_emits_no_entitlement(self):
+        invoice = self.env["account.move"].new({"move_type": "out_invoice", "zugfolge_subject_reference": "subject"})
+        self.assertFalse(invoice._zugfolge_command_change())
