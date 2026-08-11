@@ -18,16 +18,11 @@ env:
 
 jobs:
   rust:
-    # Zwei Betriebssysteme sind hier kein Luxus: Der Golden-Master des
-    # Determinismus-Tests muss auf beiden derselbe sein. Genau das ist der
-    # Beweis von M0.2.
-    name: Rust und Determinismus (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    # Zugfolge wird ausschließlich auf Linux betrieben. Der Golden-Master
+    # beweist die Reproduzierbarkeit deshalb auf der unterstützten Plattform.
+    name: Rust und Determinismus
+    runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
 
@@ -38,7 +33,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2.9.2
 
       - name: Formatierung
-        if: matrix.os == 'ubuntu-latest'
         run: cargo fmt --all --check
 
       - name: Clippy (Invarianten 2, 3 und 7)
