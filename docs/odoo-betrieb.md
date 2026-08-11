@@ -53,6 +53,12 @@ Primärquellen: [Odoo Community/Lizenz](https://www.odoo.com/documentation/19.0/
 Das Administrationsmodul wird im Odoo-Apps-Dialog installiert. Es ersetzt
 nicht `res.users`, `res.partner`, CRM-Leads, Rechnungen, Zahlungen, Refunds
 oder Aktivitäten; diese bleiben die nativen Odoo-Modelle und -Workflows.
+`product.template.zugfolge_product_kind` ordnet einem nativen Odoo-Produkt
+einen erlaubten Entitlement-Typ zu. Wenn eine ausgehende Rechnung bezahlt,
+storniert oder rückabgewickelt wird, reiht `account.move` ein idempotentes
+`entitlement.change`-Kommando über `queue_job` ein. Eine Rechnung darf dabei
+höchstens eine solche Produktzeile enthalten; die Game-Event-ID bleibt über
+die Rechnungs-Korrelation stabil.
 
 ## Integrationskonfiguration
 
@@ -123,6 +129,14 @@ auszuführen:
 ```bash
 odoo -d zugfolge_odoo_test -i queue_job,zugfolge_admin --test-enable --stop-after-init
 ```
+
+Dabei ist der End-to-End-Beleg mindestens einmal so auszuführen: natives Odoo-
+Produkt mit `zugfolge_product_kind` anlegen → Rechnung mit einer Produktzeile
+und Zugfolge-Kontoreferenz bezahlen → `queue_job` sendet den signierten
+Webhook → Game-Receiver persistiert Receipt und Queue → Game materialisiert
+das Entitlement → Odoo erhält den autoritativen Auditverweis über die Outbox.
+Ein Hochrisikoantrag folgt analog: Entwurf → zweite Odoo-Freigabe →
+`queue_job`/signierter Befehl → Game-Vorabprüfung → Auditprojektion.
 
 Danach sind mindestens zu dokumentieren: unabhängiger Start ohne Game-
 Datenbankzugriff, Health, Add-on-Tests, Kauf/Refund/Chargeback/Restore,
