@@ -13,7 +13,16 @@ const worldId = "11111111-1111-4111-8111-111111111111";
 const fleetAddon = {
   initializeFleetWorld: () => JSON.stringify({
     schemaVersion: "zugfolge-fleet-world-initialized/v1",
-    state: { schemaVersion: "zugfolge-fleet-world-state/v1", worldId, revision: 0, producedAt: 0 },
+    state: {
+      schemaVersion: "zugfolge-fleet-world-state/v1",
+      worldId,
+      revision: 0,
+      producedAt: 0,
+      formations: {},
+      personnelDuties: {},
+      pathReservations: {},
+      processedCommands: {},
+    },
     stateHash: "d".repeat(64),
     snapshot: { schema: "zugfolge-fleet-mobilization/v1", worldId, revision: 0, producedAt: 0, formations: [], personnelDuties: [], pathReservations: [] },
     snapshotHash: "e".repeat(64),
@@ -22,7 +31,23 @@ const fleetAddon = {
     const command = JSON.parse(commandJson) as { commandId: string; formation: { id: string } };
     return JSON.stringify({
       schemaVersion: "zugfolge-fleet-command-result/v1",
-      state: { schemaVersion: "zugfolge-fleet-world-state/v1", worldId, revision: 1, producedAt: 1 },
+      state: {
+        schemaVersion: "zugfolge-fleet-world-state/v1",
+        worldId,
+        revision: 1,
+        producedAt: 1,
+        formations: { [command.formation.id]: command.formation },
+        personnelDuties: {},
+        pathReservations: {},
+        processedCommands: {
+          [command.commandId]: {
+            commandHash: "9".repeat(64),
+            resultingRevision: 1,
+            entityKind: "formation",
+            entityId: command.formation.id,
+          },
+        },
+      },
       stateHash: "f".repeat(64),
       snapshot: { schema: "zugfolge-fleet-mobilization/v1", worldId, revision: 1, producedAt: 1, formations: [command.formation], personnelDuties: [], pathReservations: [] },
       snapshotHash: "a".repeat(64),
@@ -82,7 +107,17 @@ describe("native runtime ABI contract", () => {
     });
     expect(initialized).toMatchObject({ state: { worldId, revision: 0 }, stateHash: "d".repeat(64) });
     expect(result).toMatchObject({
-      state: { worldId, revision: 1, producedAt: 1 },
+      state: {
+        worldId,
+        revision: 1,
+        producedAt: 1,
+        processedCommands: {
+          "formation:create": {
+            commandHash: "9".repeat(64),
+            resultingRevision: 1,
+          },
+        },
+      },
       appliedCommandId: "formation:create",
       entityKind: "formation",
       entityId: "formation-1",
