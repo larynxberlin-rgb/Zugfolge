@@ -84,4 +84,13 @@ describe("native M3 ABI boundary", () => {
       departureShiftS: 60,
     })).toThrow(domainError);
   });
+
+  it("rejects any native ABI result that is neither JSON nor an Error", () => {
+    const runtime = planningRuntimeFromAddon({
+      coordinatePlanningRun: () => ({ unexpected: true }),
+      applyPlanningAlternative: () => result(input.worldId, 2),
+    });
+
+    expect(() => runtime.coordinate(input)).toThrow(/weder JSON noch einen JavaScript-Fehler/);
+  });
 });

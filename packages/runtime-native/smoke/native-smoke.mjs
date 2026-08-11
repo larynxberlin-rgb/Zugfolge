@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 
 import {
   FLEET_FORMATION_COMMAND_SCHEMA,
@@ -18,6 +19,9 @@ import {
 const worldId = "11111111-1111-4111-8111-111111111111";
 const lotId = "lot-native-smoke";
 const timetableBoundaryS = 604_800;
+const addonPath = process.env.ZUGFOLGE_RUNTIME_NATIVE_PATH;
+assert.ok(addonPath, "ZUGFOLGE_RUNTIME_NATIVE_PATH fehlt");
+const nativeAddon = createRequire(import.meta.url)(addonPath);
 const runtime = loadOperatingRuntime();
 const regionalRuntime = loadRegionalSimulationRuntime();
 
@@ -342,8 +346,17 @@ const initialization = {
   ],
 };
 
+const unsupportedInitialization = {
+  ...initialization,
+  schemaVersion: "zugfolge-operating-world-initialize/v0",
+};
 assert.throws(
-  () => runtime.initialize({ ...initialization, schemaVersion: "zugfolge-operating-world-initialize/v0" }),
+  () => nativeAddon.initializeOperatingWorld(JSON.stringify(unsupportedInitialization)),
+  (error) => error instanceof Error && /^unsupported_schema:/.test(error.message),
+  "the registered M5/M6 napi ABI must throw the stable Rust domain error",
+);
+assert.throws(
+  () => runtime.initialize(unsupportedInitialization),
   /unsupported_schema/,
   "das echte Addon muss ein unbekanntes Initialisierungsschema ablehnen",
 );

@@ -88,11 +88,21 @@ const replay = runtime.applyAlternative(applied.state, "native-smoke-command", c
 assert.equal(replay.idempotentReplay, true);
 assert.equal(replay.stateHash, applied.stateHash);
 assert.deepEqual(replay.projection, applied.projection);
+const forgedCommand = {
+  ...command,
+  departureShiftS: command.departureShiftS + 1,
+};
 assert.throws(
-  () => runtime.applyAlternative(initial.state, "forged-command", {
-    ...command,
-    departureShiftS: command.departureShiftS + 1,
-  }),
+  () => addon.applyPlanningAlternative(
+    JSON.stringify(initial.state),
+    "forged-native-command",
+    JSON.stringify(forgedCommand),
+  ),
+  (error) => error instanceof Error && /^alternative_mismatch:/.test(error.message),
+  "the registered napi ABI must throw the stable Rust domain error",
+);
+assert.throws(
+  () => runtime.applyAlternative(initial.state, "forged-command", forgedCommand),
   /alternative_mismatch/,
 );
 

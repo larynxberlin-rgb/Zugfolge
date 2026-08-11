@@ -4,8 +4,6 @@
 //! this module only translate napi strings and stable error messages.
 
 #[cfg(feature = "node-addon")]
-use napi::bindgen_prelude::Result as NapiResult;
-#[cfg(feature = "node-addon")]
 use napi_derive::napi;
 
 #[cfg(feature = "node-addon")]
@@ -14,7 +12,7 @@ mod regional_simulation;
 /// Initializes the authoritative, revisioned M5 fleet state.
 #[cfg(feature = "node-addon")]
 #[napi(js_name = "initializeFleetWorld")]
-pub fn initialize_fleet_world(input_json: String) -> NapiResult<String> {
+pub fn initialize_fleet_world(input_json: String) -> napi::Result<String> {
     zugfolge_runtime::initialize_fleet_world(&input_json)
         .map_err(|error| napi::Error::from_reason(error.to_string()))
 }
@@ -26,7 +24,7 @@ pub fn apply_fleet_command(
     state_json: String,
     command_json: String,
     replay_receipt_json: Option<String>,
-) -> NapiResult<String> {
+) -> napi::Result<String> {
     zugfolge_runtime::apply_fleet_command(
         &state_json,
         &command_json,
@@ -38,7 +36,7 @@ pub fn apply_fleet_command(
 /// Verifies and hashes a canonical M5 mobilization snapshot in Rust.
 #[cfg(feature = "node-addon")]
 #[napi(js_name = "verifyFleetMobilizationSnapshot")]
-pub fn verify_fleet_mobilization_snapshot(input_json: String) -> NapiResult<String> {
+pub fn verify_fleet_mobilization_snapshot(input_json: String) -> napi::Result<String> {
     zugfolge_runtime::verify_fleet_mobilization_snapshot(&input_json)
         .map_err(|error| napi::Error::from_reason(error.to_string()))
 }
@@ -46,7 +44,7 @@ pub fn verify_fleet_mobilization_snapshot(input_json: String) -> NapiResult<Stri
 /// Initializes a versioned operating-world snapshot.
 #[cfg(feature = "node-addon")]
 #[napi(js_name = "initializeOperatingWorld")]
-pub fn initialize_operating_world(input_json: String) -> NapiResult<String> {
+pub fn initialize_operating_world(input_json: String) -> napi::Result<String> {
     zugfolge_runtime::initialize_operating_world(&input_json)
         .map_err(|error| napi::Error::from_reason(error.to_string()))
 }
@@ -54,7 +52,10 @@ pub fn initialize_operating_world(input_json: String) -> NapiResult<String> {
 /// Applies one revisioned timetable-boundary command.
 #[cfg(feature = "node-addon")]
 #[napi(js_name = "applyOperatingTransition")]
-pub fn apply_operating_transition(state_json: String, command_json: String) -> NapiResult<String> {
+pub fn apply_operating_transition(
+    state_json: String,
+    command_json: String,
+) -> napi::Result<String> {
     zugfolge_runtime::apply_operating_transition(&state_json, &command_json)
         .map_err(|error| napi::Error::from_reason(error.to_string()))
 }
