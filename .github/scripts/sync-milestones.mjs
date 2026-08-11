@@ -203,7 +203,12 @@ function roadmapIsComplete(roadmapMilestone) {
 
 export function desiredMilestoneState(milestone, roadmapMilestone, items) {
   const itemsComplete =
-    milestone.items.length > 0 && milestone.items.every((item) => items.get(item.number)?.state === "closed");
+    milestone.items.length > 0 && milestone.items.every((item) => {
+      const remote = items.get(item.number);
+      if (remote?.state !== "closed") return false;
+      if (item.kind !== "pull_request") return true;
+      return Boolean(remote.merged_at ?? remote.pull_request?.merged_at);
+    });
   const hasEvidence = milestone.evidence.length > 0;
   return roadmapIsComplete(roadmapMilestone) && itemsComplete && hasEvidence ? "closed" : "open";
 }
@@ -280,6 +285,22 @@ async function loadRemoteItems(client, manifest) {
     return item;
   });
   return new Map(records.map((item) => [item.number, item]));
+}
+
+export function roadmapIssueKey(title) {
+  const match = /^\[Roadmap (M\d+\.\d+)\]/.exec(title ?? "");
+  return match?.[1] ?? null;
+}
+
+async function loadRoadmapIssues(client, roadmap) {
+  const remote = await client.list(`${client.basePath}/issues?state=all`);
+  const result = [];
+  for (const item of remote) {
+    const key = roadmapIssueKey(item.title);
+    if (!key || !roadmap.get(key.split(".")[0])?.rows.some((row) => row.key === key.slice(1))) continue;
+    result.push({ number: item.number, kind: item.pull_request ? "pull_request" : "issue", key, remote: item });
+  }
+  return result;
 }
 
 async function ensureLabels(client, manifest, apply) {
@@ -366,6 +387,20 @@ async function synchronizeRemote(manifest, roadmap, apply) {
   }
 
   const items = await loadRemoteItems(client, manifest);
+  const roadmapIssues = await loadRoadmapIssues(client, roadmap);
+  for (const discovered of roadmapIssues) {
+    const row = roadmap.get(discovered.key.split(".")[0]).rows.find((candidate) => candidate.key === discovered.key.slice(1));
+    const remoteMilestone = milestoneResult.byKey.get(discovered.key.split(".")[0]);
+    const item = discovered.remote;
+    if (item.milestone?.number !== remoteMilestone.number) {
+      if (!apply) errors.push(`#${item.number}: Roadmap-Teilpunkt ${discovered.key} ist nicht dem passenden Milestone zugeordnet`);
+      else await client.request(`${client.basePath}/issues/${item.number}`, { method: "PATCH", body: { milestone: remoteMilestone.number } });
+    }
+    if (row.status === "erledigt" && item.state !== "closed") {
+      if (!apply) errors.push(`#${item.number}: Roadmap-Teilpunkt ${discovered.key} muss geschlossen werden`);
+      else await client.request(`${client.basePath}/issues/${item.number}`, { method: "PATCH", body: { state: "closed", state_reason: "completed" } });
+    }
+  }
   for (const milestone of manifest.milestones) {
     const remoteMilestone = milestoneResult.byKey.get(milestone.key);
     for (const definition of milestone.items) {
@@ -393,7 +428,10 @@ async function synchronizeRemote(manifest, roadmap, apply) {
       }
     }
 
-    const desiredState = desiredMilestoneState(milestone, roadmap.get(milestone.key), items);
+    const discoveredForMilestone = roadmapIssues.filter((item) => item.key.startsWith(`${milestone.key}.`));
+    const stateItems = new Map(items);
+    for (const discovered of discoveredForMilestone) stateItems.set(discovered.number, discovered.remote);
+    const desiredState = desiredMilestoneState({ ...milestone, items: [...milestone.items, ...discoveredForMilestone] }, roadmap.get(milestone.key), stateItems);
     if (remoteMilestone.state !== desiredState) {
       if (!apply) errors.push(`${milestone.key}: GitHub-Status ${remoteMilestone.state}, erwartet ${desiredState}`);
       else {
