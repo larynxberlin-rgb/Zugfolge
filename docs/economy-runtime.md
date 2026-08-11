@@ -8,6 +8,31 @@ Workerzeit wird nicht zur Fachzeit: Open, Close und Mobilisierung tragen stets
 den zuvor veröffentlichten Fristzeitpunkt und eine daraus abgeleitete,
 idempotente Kommando-ID.
 
+## Autoritativer M5-Flottennachweis
+
+M6 übernimmt keinen angelieferten Mobilisierungssnapshot mehr. Der Server lädt
+`ZUGFOLGE_FLEET_AUTHORITY_RELEASE_PATH` beim Start fail-closed als absoluten,
+regulären Nicht-Symlink. Der versionierte, weltgebundene Katalog enthält die
+serververtrauenswürdigen Quellfakten zu Fahrzeugassets, technischen Daten,
+Personalqualifikationen und bestätigten Trassenbelegen. Rust normalisiert,
+prüft, friert und hasht diesen Authority-Release beim Initialisieren der
+Flottenwelt.
+
+Danach akzeptiert die interne Game-API ausschließlich drei Intent-Kommandos:
+Formation aus Fahrzeug-IDs und Trassenbeleg, Personaldienst aus Pool-,
+Formations- und Beleg-IDs sowie Trassenreservierung aus einem bestätigten
+Beleg. Verfügbarkeit, Beschaffungszustand, abgeleitete Zugcharakteristik,
+Personalbereitschaft und Trassenbestätigung sind keine Eingabefelder. Rust
+leitet sie aus dem eingefrorenen Zustand mit den M5-Fachregeln ab.
+
+`packages/economy` sperrt die Weltzeile und schreibt jeden Rust-Zustand,
+Zustandshash, kompakten Kommando-Beleg und den abgeleiteten
+Mobilisierungssnapshot atomar. Ein Retry von Kommando A nach einem späteren
+Kommando B lädt den historischen A-Checkpoint, verifiziert Beleg, Zustand und
+Snapshot erneut durch Rust und liefert exakt A zurück, ohne den aktuellen
+DB-Kopf B zu verändern. Der frühere HTTP-Endpunkt für fertige
+Mobilisierungssnapshots existiert nicht mehr.
+
 ## Rust-Single-Writer am Betriebsübergang
 
 Der Fahrplanstichtag wird nicht mehr durch eine zweite TypeScript-Regel
@@ -58,6 +83,11 @@ verschieben. Ein nicht vorhandener oder nicht mehr gültiger M5-Nachweis führt
 zum vorgesehenen Eigenbetriebs-/Pönalepfad und nicht zu einer stillen
 Mobilisierung.
 
+Die Scheduler-Wanduhr wird nur im Adapter gelesen. Vor der fachlichen
+Auswertung lädt der Worker die Weltepoche aus der Datenbank und bildet daraus
+eine ganzzahlige Weltsekunde. Fristen und der Rust-Kern erhalten niemals Unix-
+Sekunden oder `now()` als Simulationszustand.
+
 Für die Produktion sind neben Datenbank und Keycloak die getrennten
 Ingest-Geheimnisse sowie `ECONOMY_LEDGER_ACCOUNTS_JSON` erforderlich. Letzteres
 ordnet jeder EVU-ID das Geld-, Erlös- und die benötigten Kostenkonten zu; eine
@@ -71,15 +101,16 @@ Der CI-Job `Native Runtime ABI (Linux, echtes NAPI)` baut das Addon mit
 `cargo build --release --locked -p zugfolge-runtime-napi --features
 node-addon`, lädt es über den produktiven TypeScript-Adapter und prüft echte
 Initialize-/Apply-Aufrufe, deterministische Hashes und idempotenten Replay.
-Ein separater M6-Native-Integrationsfall führt den Stichtagsablauf über PGlite,
-Ledger, Postfach und Livemap aus.
+Ein separater M6-Native-Integrationsfall initialisiert und verändert M5 über
+die produktiven HTTP-Routen, beweist historische Replays und führt danach den
+Stichtagsablauf über PGlite, Ledger, Postfach und Livemap aus.
 
 Dieser Job ist ein erforderlicher Abnahmebeweis, nicht bloß eine Definition.
-Solange GitHub Actions wegen Issue #29 keine Läufe startet, bleibt der
-Linux-Native- und damit der Produktivnachweis blockiert. Auf dem gewählten
-Windows-GNU-Entwicklungswerkzeug scheitert der Addon-Build zuvor an
-`libnode.dll not found in any search path`; ein TypeScript-Mock ersetzt diesen
-Plattformnachweis nicht.
+Er muss für den abzunehmenden Commit tatsächlich auf Linux grün gelaufen sein.
+Auf dem gewählten Windows-GNU-Entwicklungswerkzeug scheitert ein Node-Addon-
+Featurebuild an `libnode.dll not found in any search path`; ein TypeScript-
+Mock ersetzt deshalb weder den Linux-ABI- noch den komponierten Native-E2E-
+Nachweis.
 
 ## Überwachungsvertrag
 

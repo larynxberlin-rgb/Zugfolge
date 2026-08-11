@@ -9,10 +9,12 @@ import {
 import type { EconomyDatabase } from "./ledger.js";
 import type { MobilizationProof } from "./contracts.js";
 import { loadFleetMobilizationSnapshot, verifyMobilizationReference } from "./fleet-snapshot.js";
+import { compareUtf8 } from "./utf8.js";
 import {
   dispatchEconomyOutbox,
   EconomyStateConflictError,
   listEconomyWorldIds,
+  loadEconomyWorldEpoch,
   loadEconomyWorldState,
   persistEconomyTransition,
 } from "./state-store.js";
@@ -123,7 +125,7 @@ function trainRunsForLot(
   if (lot === undefined) throw new Error(`GTFS-Planung enthaelt Los '${current.tender.lotId}' nicht.`);
   const patterns = state.planning.snapshot.patterns
     .filter((pattern) => lot.patternIds.includes(pattern.id))
-    .sort((left, right) => left.id.localeCompare(right.id));
+    .sort((left, right) => compareUtf8(left.id, right.id));
   const incumbentFormationId = current.winningBid.operatorId === current.tender.incumbentOperatorId
     ? (proof?.formationIds[0] ?? current.winningBid.vehicle.formationId)
     : null;
@@ -132,7 +134,7 @@ function trainRunsForLot(
       trainRunId: `${pattern.id}:${journey.sourceTripId}:${journey.serviceDate}:${journey.departureEpochSeconds}`,
       formationId: incumbentFormationId,
     }))
-    .sort((left, right) => left.trainRunId.localeCompare(right.trainRunId)));
+    .sort((left, right) => compareUtf8(left.trainRunId, right.trainRunId)));
   if (trainRuns.length === 0) throw new Error(`GTFS-Los '${current.tender.lotId}' enthaelt keine Zugfahrt.`);
   return Object.freeze(trainRuns);
 }
@@ -183,7 +185,7 @@ async function advanceWorld(
   let state = initial;
   let transitions = 0;
   const effects = { notices: [] as EconomyNotice[], journal: [] as EconomyJournalEntry[], runtimeEvents: [] as NonNullable<EconomyEffects["runtimeEvents"]>[number][] };
-  const tenderIds = [...state.tenders.keys()].sort();
+  const tenderIds = [...state.tenders.keys()].sort(compareUtf8);
   for (const tenderId of tenderIds) {
     let current = state.tenders.get(tenderId);
     if (current?.phase === "announced" && current.tender.opensAt <= nowSeconds) {
@@ -277,10 +279,15 @@ export async function runEconomySchedulerCycle(
   try {
     const worldIds = await listEconomyWorldIds(db);
     for (const worldId of worldIds) {
+      const epoch = await loadEconomyWorldEpoch(db, worldId);
+      const nowSeconds = Math.floor((now.getTime() - epoch.getTime()) / 1_000);
+      if (!Number.isSafeInteger(nowSeconds)) {
+        throw new RangeError(`Simulationszeit fuer Welt '${worldId}' liegt ausserhalb sicherer Ganzzahlen.`);
+      }
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const initial = await loadEconomyWorldState(db, worldId);
         if (initial === undefined) break;
-        const advanced = await advanceWorld(db, initial, Math.floor(now.getTime() / 1_000), adapters.operatingRuntime);
+        const advanced = await advanceWorld(db, initial, nowSeconds, adapters.operatingRuntime);
         if (advanced.transitions === 0) break;
         try {
           await persistEconomyTransition(db, {

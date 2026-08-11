@@ -3,20 +3,21 @@ import {
   domainEvents,
   economyOutbox,
   economyWorldStates,
+  fleetMobilizationSnapshots,
+  fleetWorldCheckpoints,
   mailboxMessages,
   MIGRATIONS_FOLDER,
   worlds,
 } from "@zugfolge/db";
 import * as schema from "@zugfolge/db/schema";
 import {
-  applyFleetProducerCommand,
   announceTender,
   buildEconomyRelease,
   createEconomyPlatformAdapters,
   EconomySchedulerMonitor,
-  initializeFleetProducer,
   ledgerAccountBalance,
   listLedgerTransactions,
+  loadFleetProducerCheckpoint,
   loadEconomyWorldState,
   openLedgerAccount,
   persistEconomyTransition,
@@ -27,7 +28,6 @@ import {
   submitMobilizationReference,
   type CostType,
   type EconomyDatabase,
-  type FleetMobilizationSnapshot,
 } from "@zugfolge/economy";
 import { createGtfsPlanningEnvelope, type GtfsPlanningSnapshot } from "@zugfolge/gtfs";
 import { requestWorldAccess, type IdentityDatabase } from "@zugfolge/identity";
@@ -35,19 +35,21 @@ import { LivemapRegistry } from "@zugfolge/livemap-stream";
 import { foundOperator } from "@zugfolge/operators";
 import {
   FLEET_FORMATION_COMMAND_SCHEMA,
-  FLEET_INITIALIZE_SCHEMA,
   FLEET_PATH_RESERVATION_COMMAND_SCHEMA,
   FLEET_PERSONNEL_DUTY_COMMAND_SCHEMA,
   loadOperatingRuntime,
   OPERATING_INITIALIZE_SCHEMA,
   OPERATING_TRANSITION_SCHEMA,
+  type FleetAuthorityRelease,
+  type NativeFleetMobilizationSnapshot,
   type OperatingRuntimeEvent,
-  type NativeFleetCommand,
 } from "@zugfolge/runtime-native";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
+import type { FastifyInstance } from "fastify";
 import { describe, expect, it } from "vitest";
 
+import { buildApp } from "./app.js";
 import { projectLivemapOperationEvent } from "./livemap-operation-projection.js";
 
 const WORLD = "77777777-7777-4777-8777-777777777777";
@@ -69,6 +71,15 @@ const COST_TYPES: readonly CostType[] = [
 
 const nativeAddonPath = process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"]?.trim();
 const nativeIt = nativeAddonPath === undefined || nativeAddonPath.length === 0 ? it.skip : it;
+const FLEET_INGEST_TOKEN = "native-m5-e2e-fleet-ingest-token";
+
+type FleetHttpView = Readonly<{
+  revision: number;
+  stateHash: string;
+  snapshotHash: string;
+  snapshot: NativeFleetMobilizationSnapshot;
+  idempotentReplay?: boolean;
+}>;
 
 const release = buildEconomyRelease({
   version: "native-m6-e2e-v1",
@@ -217,79 +228,91 @@ function serviceSpecification(line: string) {
   };
 }
 
-function fleetCommandPayloads(operatorId: string): Pick<
-  FleetMobilizationSnapshot,
-  "formations" | "personnelDuties" | "pathReservations"
-> {
+function fleetAuthorityRelease(operatorId: string): FleetAuthorityRelease {
+  const vehicle = (
+    id: string,
+    numericId: number,
+    serviceLineIds: readonly string[],
+    buildYear: number,
+    procurementChannel: "new-build" | "leasing",
+  ): FleetAuthorityRelease["assets"][number] => ({
+    id,
+    numericId,
+    operatorId,
+    vehicleTypeId: 101,
+    classDesignation: "ET160",
+    tradeName: `Native Testzug ${numericId}`,
+    buildYear,
+    acquisitionYear: 2026,
+    procurementChannel,
+    approvedLineIds: [...serviceLineIds],
+    maintenanceDeadlines: [{ kind: "inspection", dueAt: OPERATING + 10_000 }],
+    installedProtection: ["pzb"],
+    technical: {
+      lengthMm: 70_000,
+      massKg: 120_000,
+      maximumSpeedKph: 160,
+      accelerationMmPerS2: 800,
+      decelerationMmPerS2: 900,
+      traction: "electric",
+      electricSystems: ["ac15kv"],
+    },
+    passenger: {
+      seats: 120,
+      firstClassSeats: 0,
+      accessible: true,
+      bicyclePlaces: 4,
+      wheelchairPlaces: 1,
+      equipment: ["pis"],
+      operatingCostCentsPerTrainKm: 700,
+      replacementPlan: true,
+    },
+    deliveredAt: 0,
+    retiredAt: OPERATING + 10_000,
+  });
+  const pathReceipt = (
+    id: string,
+    numericRouteId: number,
+    serviceLineIds: readonly string[],
+    plannerHashByte: string,
+    conflictHashByte: string,
+  ): FleetAuthorityRelease["pathReceipts"][number] => ({
+    id,
+    numericRouteId,
+    operatorId,
+    serviceLineIds: [...serviceLineIds],
+    decision: "confirmed" as const,
+    validFrom: 0,
+    validUntil: OPERATING + 10_000,
+    platformLengthsMm: [200_000],
+    electrifications: ["overhead-ac15kv"],
+    requiredProtection: ["pzb"],
+    approvedClasses: ["ET160"],
+    plannerStateHash: plannerHashByte.repeat(64),
+    conflictCheckHash: conflictHashByte.repeat(64),
+  });
   return {
-    formations: [
-      {
-        id: "formation-operator",
-        operatorId,
-        vehicleIds: ["vehicle-operator"],
-        serviceLineIds: ["S1", "S2"],
-        availability: "available",
-        procurement: "delivered",
-        availableFrom: 0,
-        availableUntil: OPERATING + 10_000,
-        characteristics: {
-          seats: 120,
-          firstClassBasisPoints: 0,
-          accessible: true,
-          bicyclePlaces: 4,
-          wheelchairPlaces: 1,
-          equipment: ["pis"],
-          vehicleAgeYears: 2,
-          maximumSpeedKph: 160,
-          operatingCostCentsPerTrainKm: 700,
-          homologatedLineIds: ["S1", "S2"],
-          maintenanceValidUntil: OPERATING + 10_000,
-          traction: "electric",
-          replacementPlan: true,
-        },
-      },
-      {
-        id: "formation-success",
-        operatorId,
-        vehicleIds: ["vehicle-success"],
-        serviceLineIds: ["S3"],
-        availability: "available",
-        procurement: "delivered",
-        availableFrom: 0,
-        availableUntil: OPERATING + 10_000,
-        characteristics: {
-          seats: 120,
-          firstClassBasisPoints: 0,
-          accessible: true,
-          bicyclePlaces: 4,
-          wheelchairPlaces: 1,
-          equipment: ["pis"],
-          vehicleAgeYears: 1,
-          maximumSpeedKph: 160,
-          operatingCostCentsPerTrainKm: 700,
-          homologatedLineIds: ["S3"],
-          maintenanceValidUntil: OPERATING + 10_000,
-          traction: "electric",
-          replacementPlan: true,
-        },
-      },
+    schemaVersion: "zugfolge-fleet-authority-release/v1" as const,
+    releaseId: "native-m6-fleet-authority-v1",
+    referenceYear: 2026,
+    assets: [
+      vehicle("vehicle-operator", 1, ["S1", "S2"], 2024, "leasing"),
+      vehicle("vehicle-success", 2, ["S3"], 2025, "new-build"),
     ],
-    personnelDuties: [{
-      id: "duty-success",
+    personnelPools: [{
+      id: "pool-success",
+      numericId: 1,
       operatorId,
-      formationIds: ["formation-success"],
-      status: "ready",
-      validFrom: 0,
-      validUntil: OPERATING + 10_000,
+      capacitySeconds: OPERATING + 10_000,
+      minimumRestSeconds: 0,
+      classDesignations: ["ET160"],
+      pathReceiptIds: ["receipt-success"],
+      qualificationHash: "9".repeat(64),
     }],
-    pathReservations: [{
-      id: "path-success",
-      operatorId,
-      serviceLineIds: ["S3"],
-      status: "confirmed",
-      validFrom: 0,
-      validUntil: OPERATING + 10_000,
-    }],
+    pathReceipts: [
+      pathReceipt("receipt-operator", 1, ["S1", "S2"], "a", "b"),
+      pathReceipt("receipt-success", 2, ["S3"], "c", "d"),
+    ],
   };
 }
 
@@ -310,6 +333,7 @@ function publicTrain(id: string, operator: string) {
 describe("M6 mit echtem Rust-NAPI-Laufzeitkern", () => {
   nativeIt("verbindet Wiedergewinn, Betreiberwechsel, Ersatzbetrieb und atomare Projektionen deterministisch", async () => {
     const client = new PGlite();
+    let fleetApp: FastifyInstance | undefined;
     try {
       const database = drizzle(client, { schema });
       const db = database as unknown as EconomyDatabase;
@@ -341,94 +365,127 @@ describe("M6 mit echtem Rust-NAPI-Laufzeitkern", () => {
 
       const planningEnvelope = planning();
       const operatingRuntime = loadOperatingRuntime(nativeAddonPath);
-      const fleetPayloads = fleetCommandPayloads(operator.id);
-      const fleetInitialized = await initializeFleetProducer({
-        db,
-        runtime: operatingRuntime,
-        initialization: {
-          schemaVersion: FLEET_INITIALIZE_SCHEMA,
-          worldId: WORLD,
-          producedAt: 50,
+      const authorityRelease = fleetAuthorityRelease(operator.id);
+      fleetApp = buildApp({
+        db: identityDb,
+        verifyToken: async () => {
+          throw new Error("Identity-Token wird fuer die interne Fleet-Route nicht verwendet.");
         },
-        ingestedAt: new Date(50_000),
+        fleetIngestToken: FLEET_INGEST_TOKEN,
+        fleetRuntime: operatingRuntime,
+        fleetAuthorityReleases: { [WORLD]: authorityRelease },
+        logger: false,
       });
+      await fleetApp.ready();
+      const rawBypass = await fleetApp.inject({
+        method: "POST",
+        url: `/internal/worlds/${WORLD}/fleet/mobilization-snapshots`,
+        headers: { authorization: `Bearer ${FLEET_INGEST_TOKEN}` },
+        payload: { snapshot: {}, snapshotHash: "0".repeat(64) },
+      });
+      expect(rawBypass.statusCode).toBe(404);
+
+      const postFleet = async (suffix: "initialize" | "commands", payload: object) => {
+        const response = await fleetApp!.inject({
+          method: "POST",
+          url: `/internal/worlds/${WORLD}/fleet/${suffix}`,
+          headers: { authorization: `Bearer ${FLEET_INGEST_TOKEN}` },
+          payload,
+        });
+        expect(response.statusCode, response.body).toBe(200);
+        const view = response.json<FleetHttpView>();
+        expect(view).not.toHaveProperty("state");
+        expect(view).not.toHaveProperty("commandReceipt");
+        expect(view).not.toHaveProperty("authorityRelease");
+        return view;
+      };
+
+      const fleetInitialized = await postFleet("initialize", { producedAt: 50 });
+      expect(Object.keys(fleetInitialized).sort()).toEqual([
+        "revision",
+        "snapshot",
+        "snapshotHash",
+        "stateHash",
+      ]);
       const formationOperatorCommand = {
         schemaVersion: FLEET_FORMATION_COMMAND_SCHEMA,
-        worldId: WORLD,
         commandId: "fleet:formation:operator",
         expectedStateHash: fleetInitialized.stateHash,
-        expectedRevision: fleetInitialized.state.revision,
+        expectedRevision: fleetInitialized.revision,
         atS: 51,
-        formation: fleetPayloads.formations[0]!,
-      } as const satisfies NativeFleetCommand;
-      const formationOperator = await applyFleetProducerCommand({
-        db,
-        runtime: operatingRuntime,
-        current: fleetInitialized,
-        command: formationOperatorCommand,
-        ingestedAt: new Date(51_000),
-      });
+        formationId: "formation-operator",
+        vehicleIds: ["vehicle-operator"],
+        pathReceiptId: "receipt-operator",
+      } as const;
+      const formationOperator = await postFleet("commands", formationOperatorCommand);
       const formationSuccessCommand = {
         schemaVersion: FLEET_FORMATION_COMMAND_SCHEMA,
-        worldId: WORLD,
         commandId: "fleet:formation:success",
         expectedStateHash: formationOperator.stateHash,
-        expectedRevision: formationOperator.state.revision,
+        expectedRevision: formationOperator.revision,
         atS: 52,
-        formation: fleetPayloads.formations[1]!,
-      } as const satisfies NativeFleetCommand;
-      const formationSuccess = await applyFleetProducerCommand({
-        db,
-        runtime: operatingRuntime,
-        current: formationOperator,
-        command: formationSuccessCommand,
-        ingestedAt: new Date(52_000),
-      });
+        formationId: "formation-success",
+        vehicleIds: ["vehicle-success"],
+        pathReceiptId: "receipt-success",
+      } as const;
+      const formationSuccess = await postFleet("commands", formationSuccessCommand);
       const personnelDutyCommand = {
         schemaVersion: FLEET_PERSONNEL_DUTY_COMMAND_SCHEMA,
-        worldId: WORLD,
         commandId: "fleet:personnel-duty:success",
         expectedStateHash: formationSuccess.stateHash,
-        expectedRevision: formationSuccess.state.revision,
+        expectedRevision: formationSuccess.revision,
         atS: 53,
-        personnelDuty: fleetPayloads.personnelDuties[0]!,
-      } as const satisfies NativeFleetCommand;
-      const personnelDuty = await applyFleetProducerCommand({
-        db,
-        runtime: operatingRuntime,
-        current: formationSuccess,
-        command: personnelDutyCommand,
-        ingestedAt: new Date(53_000),
-      });
+        personnelDutyId: "duty-success",
+        personnelPoolId: "pool-success",
+        formationIds: ["formation-success"],
+        pathReceiptId: "receipt-success",
+        validFrom: 60,
+        validUntil: OPERATING + 1_000,
+      } as const;
+      const personnelDuty = await postFleet("commands", personnelDutyCommand);
       const pathReservationCommand = {
         schemaVersion: FLEET_PATH_RESERVATION_COMMAND_SCHEMA,
-        worldId: WORLD,
         commandId: "fleet:path-reservation:success",
         expectedStateHash: personnelDuty.stateHash,
-        expectedRevision: personnelDuty.state.revision,
+        expectedRevision: personnelDuty.revision,
         atS: 54,
-        pathReservation: fleetPayloads.pathReservations[0]!,
-      } as const satisfies NativeFleetCommand;
-      const fleetProjection = await applyFleetProducerCommand({
-        db,
-        runtime: operatingRuntime,
-        current: personnelDuty,
-        command: pathReservationCommand,
-        ingestedAt: new Date(54_000),
-      });
-      const fleetReplay = await applyFleetProducerCommand({
-        db,
-        runtime: operatingRuntime,
-        current: fleetProjection,
-        command: pathReservationCommand,
-        ingestedAt: new Date(55_000),
-      });
+        pathReservationId: "path-success",
+        pathReceiptId: "receipt-success",
+      } as const;
+      const fleetProjection = await postFleet("commands", pathReservationCommand);
+      const fleetReplay = await postFleet("commands", pathReservationCommand);
       expect(fleetReplay).toMatchObject({
         idempotentReplay: true,
         stateHash: fleetProjection.stateHash,
         snapshotHash: fleetProjection.snapshotHash,
       });
-      expect(fleetReplay.state).toEqual(fleetProjection.state);
+      expect(fleetReplay.snapshot).toEqual(fleetProjection.snapshot);
+      const historicalFormationReplay = await postFleet("commands", formationOperatorCommand);
+      expect(historicalFormationReplay).toMatchObject({
+        idempotentReplay: true,
+        stateHash: formationOperator.stateHash,
+        snapshotHash: formationOperator.snapshotHash,
+        revision: 1,
+        snapshot: { revision: 1, formations: [{ id: "formation-operator" }] },
+      });
+      const persistedFleetCheckpoints = (await db.select().from(fleetWorldCheckpoints))
+        .sort((left, right) => left.revision - right.revision);
+      expect(persistedFleetCheckpoints.map((checkpoint) => checkpoint.revision)).toEqual([0, 1, 2, 3, 4]);
+      expect(persistedFleetCheckpoints.slice(1).map((checkpoint) => checkpoint.commandId)).toEqual([
+        formationOperatorCommand.commandId,
+        formationSuccessCommand.commandId,
+        personnelDutyCommand.commandId,
+        pathReservationCommand.commandId,
+      ]);
+      expect(persistedFleetCheckpoints.slice(1).every((checkpoint) =>
+        checkpoint.commandJson !== null && /^[a-f0-9]{64}$/.test(checkpoint.commandHash ?? ""),
+      )).toBe(true);
+      expect(await db.select().from(fleetMobilizationSnapshots)).toHaveLength(5);
+      expect(await loadFleetProducerCheckpoint(db, WORLD)).toMatchObject({
+        stateHash: fleetProjection.stateHash,
+        snapshotHash: fleetProjection.snapshotHash,
+        commandId: pathReservationCommand.commandId,
+      });
       const fleetEnvelope = {
         snapshot: fleetProjection.snapshot,
         snapshotHash: fleetProjection.snapshotHash,
@@ -436,9 +493,22 @@ describe("M6 mit echtem Rust-NAPI-Laufzeitkern", () => {
       expect(fleetEnvelope.snapshot).toMatchObject({
         worldId: WORLD,
         revision: 4,
-        formations: [{ id: "formation-operator" }, { id: "formation-success" }],
-        personnelDuties: [{ id: "duty-success" }],
-        pathReservations: [{ id: "path-success" }],
+        formations: [
+          {
+            id: "formation-operator",
+            availability: "available",
+            procurement: "delivered",
+            characteristics: { seats: 120, maximumSpeedKph: 160 },
+          },
+          {
+            id: "formation-success",
+            availability: "available",
+            procurement: "delivered",
+            characteristics: { seats: 120, maximumSpeedKph: 160 },
+          },
+        ],
+        personnelDuties: [{ id: "duty-success", status: "ready" }],
+        pathReservations: [{ id: "path-success", status: "confirmed" }],
       });
       const vehicleFor = (line: string) => {
         const formationId = line === "S3" ? "formation-success" : "formation-operator";
@@ -779,7 +849,8 @@ describe("M6 mit echtem Rust-NAPI-Laufzeitkern", () => {
         ([lotId, value]) => [lotId, value.stateHash],
       )).toEqual(stateHashes);
     } finally {
+      await fleetApp?.close();
       await client.close();
     }
-  }, 30_000);
+  }, 60_000);
 });

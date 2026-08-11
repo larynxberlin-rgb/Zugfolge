@@ -1,5 +1,32 @@
 import type { HealthCheck } from "@zugfolge/health";
 
+function compareUtf8(left: string, right: string): number {
+  const Encoder = (globalThis as unknown as {
+    readonly TextEncoder?: new () => { encode(value: string): Uint8Array };
+  }).TextEncoder;
+  if (Encoder === undefined) throw new Error("UTF-8-Encoder ist nicht verfuegbar.");
+  const encoder = new Encoder();
+  const leftBytes = encoder.encode(left);
+  const rightBytes = encoder.encode(right);
+  const sharedLength = Math.min(leftBytes.length, rightBytes.length);
+  for (let index = 0; index < sharedLength; index += 1) {
+    const difference = leftBytes[index]! - rightBytes[index]!;
+    if (difference !== 0) return difference;
+  }
+  return leftBytes.length - rightBytes.length;
+}
+
+function randomStreamId(): string {
+  const cryptoProvider = (globalThis as unknown as {
+    readonly crypto?: { readonly randomUUID?: () => string };
+  }).crypto;
+  const randomUUID = cryptoProvider?.randomUUID;
+  if (randomUUID === undefined) {
+    throw new Error("Sichere Livemap-Stream-ID-Erzeugung ist nicht verfuegbar.");
+  }
+  return randomUUID.call(cryptoProvider);
+}
+
 export const PUBLIC_OPERATION_MARKER_SCHEMA = "zugfolge-livemap-operation-marker/v1" as const;
 
 export interface PublicOperationMarker {
@@ -27,6 +54,7 @@ export interface PublicTrain {
 
 export interface LiveSnapshot {
   readonly worldId: string;
+  readonly streamId: string;
   readonly sequence: number;
   readonly at: number;
   readonly trains: readonly PublicTrain[];
@@ -34,6 +62,7 @@ export interface LiveSnapshot {
 
 export interface LiveDelta {
   readonly worldId: string;
+  readonly streamId: string;
   readonly sequence: number;
   readonly at: number;
   readonly changed: readonly PublicTrain[];
@@ -41,6 +70,33 @@ export interface LiveDelta {
 }
 
 export type DeltaListener = (delta: LiveDelta) => void;
+
+export interface LivemapCursor {
+  readonly streamId: string;
+  readonly sequence: number;
+}
+
+function validStreamId(streamId: string): boolean {
+  return /^[A-Za-z0-9_-]{1,128}$/.test(streamId);
+}
+
+export function livemapEventId(cursor: LivemapCursor): string {
+  if (!validStreamId(cursor.streamId) || !Number.isSafeInteger(cursor.sequence) || cursor.sequence < 0) {
+    throw new RangeError("Livemap-Cursor ist ungueltig.");
+  }
+  return `${cursor.streamId}:${cursor.sequence}`;
+}
+
+export function parseLivemapEventId(value: string): LivemapCursor | undefined {
+  const separator = value.lastIndexOf(":");
+  if (separator <= 0) return undefined;
+  const streamId = value.slice(0, separator);
+  const sequenceText = value.slice(separator + 1);
+  if (!validStreamId(streamId) || !/^(0|[1-9][0-9]*)$/.test(sequenceText)) return undefined;
+  const sequence = Number(sequenceText);
+  if (!Number.isSafeInteger(sequence)) return undefined;
+  return Object.freeze({ streamId, sequence });
+}
 
 interface OperationMarkerChange {
   readonly operationMarker: PublicOperationMarker | null;
@@ -61,6 +117,7 @@ export type LivemapSubscription =
 /** Weltisolierter, begrenzt gepufferter In-Process-Fanout. */
 export class LivemapFeed {
   readonly #worldId: string;
+  readonly #streamId: string;
   readonly #historyLimit: number;
   readonly #now: () => number;
   #sequence = 0;
@@ -72,12 +129,21 @@ export class LivemapFeed {
   readonly #listeners = new Set<DeltaListener>();
   readonly #history: LiveDelta[] = [];
 
-  constructor(worldId: string, historyLimit = 256, now: () => number = Date.now) {
+  constructor(
+    worldId: string,
+    historyLimit = 256,
+    now: () => number = Date.now,
+    streamId = randomStreamId(),
+  ) {
     if (worldId.length === 0) throw new RangeError("worldId darf nicht leer sein.");
     if (!Number.isSafeInteger(historyLimit) || historyLimit <= 0) {
       throw new RangeError("historyLimit muss eine positive Ganzzahl sein.");
     }
+    if (!validStreamId(streamId)) {
+      throw new RangeError("streamId muss eine nichtleere opaque Transportkennung sein.");
+    }
     this.#worldId = worldId;
+    this.#streamId = streamId;
     this.#historyLimit = historyLimit;
     this.#now = now;
   }
@@ -93,13 +159,14 @@ export class LivemapFeed {
   snapshot(): LiveSnapshot {
     return {
       worldId: this.#worldId,
+      streamId: this.#streamId,
       sequence: this.#sequence,
       at: this.#at,
-      trains: [...this.#trains.values()].sort((a, b) => a.id.localeCompare(b.id)),
+      trains: [...this.#trains.values()].sort((a, b) => compareUtf8(a.id, b.id)),
     };
   }
 
-  #emit(input: Omit<LiveDelta, "worldId" | "sequence">): LiveDelta {
+  #emit(input: Omit<LiveDelta, "worldId" | "streamId" | "sequence">): LiveDelta {
     input.changed.forEach((train) => this.#trains.set(train.id, train));
     input.removed.forEach((id) => this.#trains.delete(id));
     this.#sequence += 1;
@@ -108,6 +175,7 @@ export class LivemapFeed {
     const delta: LiveDelta = {
       ...input,
       worldId: this.#worldId,
+      streamId: this.#streamId,
       sequence: this.#sequence,
     };
     this.#history.push(delta);
@@ -133,14 +201,15 @@ export class LivemapFeed {
     effectiveAt: number,
   ): boolean {
     const timeline = this.#operationMarkerTimelines.get(trainRunId) ?? [];
-    const duplicate = timeline.some(
-      (item) =>
-        item.effectiveAt === effectiveAt &&
-        (item.operationMarker === null) === (operationMarker === null),
-    );
-    if (duplicate) return false;
-    const change = Object.freeze({ operationMarker, effectiveAt });
     const insertAt = timeline.findIndex((item) => item.effectiveAt > effectiveAt);
+    const previous = timeline[(insertAt === -1 ? timeline.length : insertAt) - 1];
+    if (
+      previous?.effectiveAt === effectiveAt &&
+      (previous.operationMarker === null) === (operationMarker === null)
+    ) {
+      return false;
+    }
+    const change = Object.freeze({ operationMarker, effectiveAt });
     if (insertAt === -1) timeline.push(change);
     else timeline.splice(insertAt, 0, change);
     this.#operationMarkerTimelines.set(trainRunId, timeline);
@@ -164,7 +233,7 @@ export class LivemapFeed {
     return Object.freeze(unmarkedTrain);
   }
 
-  publish(input: Omit<LiveDelta, "worldId" | "sequence">): LiveDelta {
+  publish(input: Omit<LiveDelta, "worldId" | "streamId" | "sequence">): LiveDelta {
     if (!Number.isSafeInteger(input.at) || input.at < 0 || input.at < this.#at) {
       throw new RangeError("Livemap-Deltazeit muss eine sichere, nicht fallende Weltsekunde sein.");
     }
@@ -211,7 +280,7 @@ export class LivemapFeed {
     if (trainRunIds.length === 0) {
       throw new RangeError("Eine Markeraktualisierung braucht mindestens einen Zuglauf.");
     }
-    const identifiers = [...new Set(trainRunIds)].sort((left, right) => left.localeCompare(right));
+    const identifiers = [...new Set(trainRunIds)].sort(compareUtf8);
     if (identifiers.some((id) => id.length === 0)) {
       throw new RangeError("Zuglaufkennungen für Markeraktualisierungen dürfen nicht leer sein.");
     }
@@ -259,8 +328,11 @@ export class LivemapFeed {
    * Ringpuffer nicht zurück, wird kein Listener eingetragen; der Transport
    * muss genau ein `reset` senden und schließen.
    */
-  subscribeAfter(sequence: number, listener: DeltaListener): LivemapSubscription {
-    const replay = this.deltasAfter(sequence);
+  subscribeAfter(cursor: LivemapCursor, listener: DeltaListener): LivemapSubscription {
+    if (cursor.streamId !== this.#streamId) {
+      return { kind: "reset", unsubscribe: () => undefined };
+    }
+    const replay = this.deltasAfter(cursor.sequence);
     if (replay === undefined) {
       return { kind: "reset", unsubscribe: () => undefined };
     }
@@ -284,6 +356,7 @@ export interface LivemapRegistryOptions {
   readonly idleTtlMs?: number;
   readonly historyLimit?: number;
   readonly now?: () => number;
+  readonly createStreamId?: () => string;
 }
 
 export class LivemapCapacityError extends Error {
@@ -295,6 +368,7 @@ export class LivemapCapacityError extends Error {
 
 interface RegistryEntry {
   readonly feed: LivemapFeed;
+  readonly trainIdsByRegion: Map<string, Set<string>>;
   lastAccessMs: number;
   initialized: boolean;
 }
@@ -302,16 +376,22 @@ interface RegistryEntry {
 /** Registry erzwingt Weltkennung, TTL und ein hartes Speicherlimit. */
 export class LivemapRegistry {
   readonly #feeds = new Map<string, RegistryEntry>();
+  readonly #operationMarkerTimelines = new Map<
+    string,
+    Map<string, OperationMarkerChange[]>
+  >();
   readonly #maxFeeds: number;
   readonly #idleTtlMs: number;
   readonly #historyLimit: number;
   readonly #now: () => number;
+  readonly #createStreamId: () => string;
 
   constructor(options: LivemapRegistryOptions = {}) {
     this.#maxFeeds = options.maxFeeds ?? 1_000;
     this.#idleTtlMs = options.idleTtlMs ?? 60 * 60 * 1_000;
     this.#historyLimit = options.historyLimit ?? 256;
     this.#now = options.now ?? Date.now;
+    this.#createStreamId = options.createStreamId ?? randomStreamId;
     if (!Number.isSafeInteger(this.#maxFeeds) || this.#maxFeeds <= 0) {
       throw new RangeError("maxFeeds muss eine positive Ganzzahl sein.");
     }
@@ -325,6 +405,67 @@ export class LivemapRegistry {
     for (const [worldId, entry] of this.#feeds) {
       if (entry.feed.subscriberCount === 0 && now - entry.lastAccessMs >= this.#idleTtlMs) {
         this.#feeds.delete(worldId);
+      }
+    }
+  }
+
+  #recordOperationMarkers(
+    worldId: string,
+    trainRunIds: readonly string[],
+    operationMarker: PublicOperationMarker | null,
+    at: number,
+  ): void {
+    if (!Number.isSafeInteger(at) || at < 0) {
+      throw new RangeError("Markerzeit muss eine sichere, nichtnegative Weltsekunde sein.");
+    }
+    if (
+      operationMarker !== null &&
+      (operationMarker.schemaVersion !== PUBLIC_OPERATION_MARKER_SCHEMA ||
+        operationMarker.kind !== "public-operator")
+    ) {
+      throw new TypeError("Livemap-Betriebsmarker hat ein unbekanntes Schema.");
+    }
+    if (trainRunIds.length === 0) {
+      throw new RangeError("Eine Markeraktualisierung braucht mindestens einen Zuglauf.");
+    }
+    const identifiers = [...new Set(trainRunIds)].sort(compareUtf8);
+    if (identifiers.some((id) => id.length === 0)) {
+      throw new RangeError("Zuglaufkennungen fuer Markeraktualisierungen duerfen nicht leer sein.");
+    }
+    const byTrain =
+    this.#operationMarkerTimelines.get(worldId) ??
+      new Map<string, OperationMarkerChange[]>();
+    for (const trainRunId of identifiers) {
+      const timeline = byTrain.get(trainRunId) ?? [];
+      const insertAt = timeline.findIndex((item) => item.effectiveAt > at);
+      const previous = timeline[(insertAt === -1 ? timeline.length : insertAt) - 1];
+      if (
+        previous?.effectiveAt === at &&
+        (previous.operationMarker === null) === (operationMarker === null)
+      ) {
+        continue;
+      }
+      const change = Object.freeze({
+        operationMarker: operationMarker === null ? null : PUBLIC_OPERATION_MARKER,
+        effectiveAt: at,
+      });
+      if (insertAt === -1) timeline.push(change);
+      else timeline.splice(insertAt, 0, change);
+      byTrain.set(trainRunId, timeline);
+    }
+    this.#operationMarkerTimelines.set(worldId, byTrain);
+  }
+
+  #replayOperationMarkers(worldId: string, feed: LivemapFeed): void {
+    const byTrain = this.#operationMarkerTimelines.get(worldId);
+    if (byTrain === undefined) return;
+    for (const trainRunId of [...byTrain.keys()].sort(compareUtf8)) {
+      for (const change of byTrain.get(trainRunId) ?? []) {
+        feed.setOperationMarker(
+          [trainRunId],
+          change.operationMarker,
+          change.effectiveAt,
+        );
       }
     }
   }
@@ -344,8 +485,19 @@ export class LivemapRegistry {
       if (evictable === undefined) throw new LivemapCapacityError(this.#maxFeeds);
       this.#feeds.delete(evictable[0]);
     }
-    const feed = new LivemapFeed(worldId, this.#historyLimit, this.#now);
-    const entry = { feed, lastAccessMs: now, initialized: false };
+    const feed = new LivemapFeed(
+      worldId,
+      this.#historyLimit,
+      this.#now,
+      this.#createStreamId(),
+    );
+    this.#replayOperationMarkers(worldId, feed);
+    const entry = {
+      feed,
+      trainIdsByRegion: new Map<string, Set<string>>(),
+      lastAccessMs: now,
+      initialized: false,
+    };
     this.#feeds.set(worldId, entry);
     return entry;
   }
@@ -364,19 +516,107 @@ export class LivemapRegistry {
     return this.#feeds.get(worldId)?.initialized ?? false;
   }
 
+  /**
+   * Liefert genau den bereits initialisierten Feed in einem synchronen Schritt.
+   * Abgelaufene Eintraege werden entfernt; ein leerer Ersatzfeed entsteht nie.
+   */
+  initializedWorld(worldId: string): LivemapFeed | undefined {
+    const now = this.#now();
+    this.#pruneExpired(now);
+    const entry = this.#feeds.get(worldId);
+    if (entry === undefined || !entry.initialized) return undefined;
+    entry.lastAccessMs = now;
+    return entry.feed;
+  }
+
   /** Initialisiert den oeffentlichen Feed atomar aus einem Rust-Snapshot. */
   initializeWorld(
     worldId: string,
-    snapshot: Omit<LiveSnapshot, "worldId" | "sequence">,
+    snapshot: Omit<LiveSnapshot, "worldId" | "streamId" | "sequence">,
   ): LiveDelta {
+    return this.initializeRegion(worldId, "__single_region__", snapshot);
+  }
+
+  /**
+   * Initialisiert oder restauriert genau eine Region.
+   *
+   * Nur frueher dieser Region zugeordnete, im neuen Snapshot fehlende Zuege
+   * werden entfernt. Zuege anderer bereits restaurierter Regionen bleiben
+   * erhalten.
+   */
+  initializeRegion(
+    worldId: string,
+    regionId: string,
+    snapshot: Omit<LiveSnapshot, "worldId" | "streamId" | "sequence">,
+  ): LiveDelta {
+    if (regionId.length === 0 || regionId.length > 200) {
+      throw new RangeError("regionId muss 1 bis 200 Zeichen besitzen.");
+    }
     const entry = this.#entryForWorld(worldId);
+    const nextIds = new Set(snapshot.trains.map((train) => train.id));
+    if (nextIds.size !== snapshot.trains.length) {
+      throw new RangeError("Ein Regionssnapshot darf keine doppelten Zuglaufkennungen besitzen.");
+    }
+    const previousIds = entry.trainIdsByRegion.get(regionId) ?? new Set<string>();
+    const ownedElsewhere = (trainRunId: string) =>
+      [...entry.trainIdsByRegion].some(
+        ([otherRegionId, identifiers]) =>
+          otherRegionId !== regionId && identifiers.has(trainRunId),
+      );
+    const removed = [...previousIds]
+      .filter((trainRunId) => !nextIds.has(trainRunId) && !ownedElsewhere(trainRunId))
+      .sort(compareUtf8);
     const delta = entry.feed.publish({
       at: snapshot.at,
       changed: snapshot.trains,
-      removed: [],
+      removed,
     });
+    for (const trainRunId of nextIds) {
+      for (const [otherRegionId, identifiers] of entry.trainIdsByRegion) {
+        if (otherRegionId !== regionId) identifiers.delete(trainRunId);
+      }
+    }
+    entry.trainIdsByRegion.set(regionId, nextIds);
     entry.initialized = true;
     return delta;
+  }
+
+  /**
+   * Publiziert ein Regionsdelta nur auf einen bereits initialisierten Feed.
+   * Ein fehlendes Ergebnis signalisiert, dass ein Vollrestore erforderlich ist.
+   */
+  publishRegionDelta(
+    worldId: string,
+    regionId: string,
+    input: Omit<LiveDelta, "worldId" | "streamId" | "sequence">,
+  ): LiveDelta | undefined {
+    const feed = this.initializedWorld(worldId);
+    if (feed === undefined) return undefined;
+    const entry = this.#feeds.get(worldId);
+    if (entry === undefined) return undefined;
+    const identifiers = entry.trainIdsByRegion.get(regionId) ?? new Set<string>();
+    const ownedElsewhere = (trainRunId: string) =>
+      [...entry.trainIdsByRegion].some(
+        ([otherRegionId, otherIdentifiers]) =>
+          otherRegionId !== regionId && otherIdentifiers.has(trainRunId),
+      );
+    const removed = input.removed.filter((trainRunId) => !ownedElsewhere(trainRunId));
+    const delta = feed.publish({ ...input, removed });
+    for (const train of input.changed) {
+      for (const [otherRegionId, otherIdentifiers] of entry.trainIdsByRegion) {
+        if (otherRegionId !== regionId) otherIdentifiers.delete(train.id);
+      }
+      identifiers.add(train.id);
+    }
+    input.removed.forEach((trainRunId) => identifiers.delete(trainRunId));
+    entry.trainIdsByRegion.set(regionId, identifiers);
+    return delta;
+  }
+
+  /** Sperrt die oeffentlichen Routen nach einem fehlgeschlagenen Fanout. */
+  markUnavailable(worldId: string): void {
+    const entry = this.#feeds.get(worldId);
+    if (entry !== undefined) entry.initialized = false;
   }
 
   peekWorld(worldId: string): LivemapFeed | undefined {
@@ -390,7 +630,7 @@ export class LivemapRegistry {
     trainRunIds: readonly string[],
     at: number,
   ): LiveDelta | undefined {
-    return this.forWorld(worldId).markPublicOperation(trainRunIds, at);
+    return this.setOperationMarker(worldId, trainRunIds, PUBLIC_OPERATION_MARKER, at);
   }
 
   setOperationMarker(
@@ -399,6 +639,7 @@ export class LivemapRegistry {
     operationMarker: PublicOperationMarker | null,
     at: number,
   ): LiveDelta | undefined {
+    this.#recordOperationMarkers(worldId, trainRunIds, operationMarker, at);
     return this.forWorld(worldId).setOperationMarker(trainRunIds, operationMarker, at);
   }
 
@@ -407,7 +648,7 @@ export class LivemapRegistry {
     trainRunIds: readonly string[],
     at: number,
   ): LiveDelta | undefined {
-    return this.forWorld(worldId).clearOperationMarker(trainRunIds, at);
+    return this.setOperationMarker(worldId, trainRunIds, null, at);
   }
 
   freshness(

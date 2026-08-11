@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { compareUtf8 } from "./utf8.js";
+
 export type PenaltyFocus = "punctuality" | "cancellation" | "seats" | "connections";
 export type RequirementFocus = "capacity" | "comfort" | "bicycle" | "accessibility";
 
@@ -56,7 +58,7 @@ export interface EconomyRelease {
 function canonical(value: unknown): string {
   if (typeof value === "bigint") return `"${value.toString()}"`;
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (value !== null && typeof value === "object") return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(",")}}`;
+  if (value !== null && typeof value === "object") return `{${Object.entries(value).sort(([a], [b]) => compareUtf8(a, b)).map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(",")}}`;
   return JSON.stringify(value);
 }
 
@@ -73,7 +75,7 @@ export function buildEconomyRelease(input: Omit<EconomyRelease, "schema" | "chec
   }
   for (const rate of Object.values(input.rates)) if (typeof rate === "bigint" ? rate < 0n : rate < 0) throw new Error("Kostensätze dürfen nicht negativ sein.");
   for (const rule of [...Object.values(input.rules).flatMap((value) => typeof value === "object" ? Object.values(value) : [value])]) if (typeof rule === "bigint" ? rule < 0n : rule < 0) throw new Error("Wirtschaftsregeln dürfen nicht negativ sein.");
-  const body = { schema: "economy-release/v1" as const, version: input.version, rates: input.rates, rules: input.rules, tenderProfiles: [...input.tenderProfiles].sort((a, b) => a.id.localeCompare(b.id)) };
+  const body = { schema: "economy-release/v1" as const, version: input.version, rates: input.rates, rules: input.rules, tenderProfiles: [...input.tenderProfiles].sort((a, b) => compareUtf8(a.id, b.id)) };
   return Object.freeze({ ...body, checksum: createHash("sha256").update(canonical(body)).digest("hex") });
 }
 

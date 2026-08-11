@@ -114,6 +114,28 @@ jobs:
       - name: Initialize-, Apply-, Hash- und Idempotenz-Smoke
         run: pnpm --filter @zugfolge/runtime-native smoke:native
 
+      - name: M3-Planning-Worker und TypeScript-Grenzen bauen
+        run: pnpm --filter @zugfolge/planning-worker... build
+
+      - name: M3-Planning-Node-Addon mit registrierter NAPI-Grenze bauen
+        run: cargo build --release --locked -p zugfolge-planning-runtime-napi --features node-addon
+
+      - name: M3-Planning-cdylib als Node-Addon bereitstellen
+        shell: bash
+        run: |
+          set -euo pipefail
+          addon_path="${RUNNER_TEMP}/zugfolge-planning-runtime-napi.node"
+          test -f target/release/libzugfolge_planning_runtime_napi.so
+          install -m 0755 target/release/libzugfolge_planning_runtime_napi.so "${addon_path}"
+          file "${addon_path}"
+          printf 'ZUGFOLGE_PLANNING_RUNTIME_NATIVE_PATH=%s\n' "${addon_path}" >> "${GITHUB_ENV}"
+
+      - name: Echter PlanningRun-, Projektions-, Apply- und Replay-Smoke
+        run: pnpm --filter @zugfolge/planning-runtime-native smoke:native
+
+      - name: M3-Planning-Worker mit echtem NAPI und PGlite komponieren
+        run: pnpm --filter @zugfolge/planning-worker test:native
+
       - name: M6-End-to-End mit PGlite, Plattformeffekten und Livemap
         run: |
           pnpm --filter @zugfolge/game-api... build

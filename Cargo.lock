@@ -504,6 +504,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "zugfolge-fleet",
+ "zugfolge-infra",
 ]
 
 [[package]]

@@ -31,6 +31,7 @@ import {
   projectOperations,
 } from "@zugfolge/dispatch";
 import {
+  applyFleetProducerCommand,
   announceTender,
   buildEconomyRelease,
   decodeEconomyValue,
@@ -38,10 +39,13 @@ import {
   DuplicateLedgerAccountNameError,
   EconomyStateConflictError,
   escalateOperator,
+  FleetProducerConflictError,
+  FleetProducerUnavailableError,
   FleetSnapshotValidationError,
   ForeignLedgerAccountError,
   encodeEconomyValue,
   IncompleteTransactionError,
+  initializeFleetProducer,
   ledgerAccountBalance,
   listLedgerAccounts,
   listLedgerTransactions,
@@ -50,7 +54,6 @@ import {
   openLedgerAccount,
   postLedgerTransaction,
   persistEconomyTransition,
-  persistFleetMobilizationSnapshot,
   resolveVehicleConcept,
   settleContractPeriod,
   startEconomyWorld,
@@ -60,12 +63,18 @@ import {
   verifyMobilizationReference,
   type AuthorityBudget,
   type EconomyRelease,
+  type EconomyDatabase,
   type FleetMobilizationReference,
   type GtfsPlanningEnvelope,
   type GtfsPlanningLotReference,
 } from "@zugfolge/economy";
 import { runHealthChecks, type HealthCheck } from "@zugfolge/health";
-import { LivemapCapacityError, type LiveDelta, type LivemapRegistry } from "@zugfolge/livemap-stream";
+import {
+  livemapEventId,
+  LivemapCapacityError,
+  parseLivemapEventId,
+  type LivemapRegistry,
+} from "@zugfolge/livemap-stream";
 import {
   AccessRevokedError,
   AccountNotFoundError,
@@ -95,12 +104,45 @@ import {
   type PlanningAlternativeCommandV1,
   type PlanningProjectionV1,
 } from "@zugfolge/planning-projection";
+import {
+  PLANNING_COORDINATE_AUTHORITY_BODY_SCHEMA,
+  PLANNING_PATH_REQUEST_BODY_SCHEMA,
+  PlanningWorkerConflictError,
+  queuePlanningCoordinate,
+  queuePlanningPathRequest,
+  type PlanningCoordinateAuthorityBody,
+  type PlanningPathRequestBody,
+} from "@zugfolge/planning-worker";
 import { eraseAccountData, exportAccountData, PersonalDataNotFoundError } from "@zugfolge/privacy";
-import type { OperatingRuntime } from "@zugfolge/runtime-native";
-import { and, asc, desc, eq } from "drizzle-orm";
-import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
+import {
+  FLEET_FORMATION_COMMAND_SCHEMA,
+  FLEET_INITIALIZE_SCHEMA,
+  FLEET_PATH_RESERVATION_COMMAND_SCHEMA,
+  FLEET_PERSONNEL_DUTY_COMMAND_SCHEMA,
+  REGIONAL_SIMULATION_INITIALIZE_SCHEMA,
+  type FleetAuthorityRelease,
+  type FleetCommandResult,
+  type FleetRuntime,
+  type FleetWorldInitialized,
+  type NativeFleetCommand,
+  type RegionalSimulationCommandPayload,
+  type RegionalSimulationInitialization,
+} from "@zugfolge/runtime-native";
+import { and, asc, desc, eq, notInArray } from "drizzle-orm";
+import Fastify, {
+  type FastifyError,
+  type FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest,
+} from "fastify";
 
 import { createAuthenticator, type TokenVerifier } from "./auth.js";
+import {
+  RegionalSimulationConflictError,
+  RegionalSimulationSequenceError,
+  RegionalSimulationUnavailableError,
+  type RegionalSimulationWorker,
+} from "./regional-simulation-worker.js";
 
 export interface AppDependencies {
   readonly db: IdentityDatabase;
@@ -115,14 +157,18 @@ export interface AppDependencies {
   readonly livemap?: LivemapRegistry;
   /** Authentifizierter, je EVU getrennter Betriebsereignis-Fanout (M7.5/M7.6). */
   readonly operations?: OperationsRegistry;
-  /** Geteiltes Geheimnis des internen Simulations-zu-Livemap-Adapters. */
-  readonly livemapIngestToken?: string;
   /** Geteiltes Geheimnis des Simulations-Eventlog-Adapters. */
   readonly simulationIngestToken?: string;
+  /** Persistenter, in-process angebundener regionaler Rust-Single-Writer (M4). */
+  readonly regionalSimulation?: Pick<RegionalSimulationWorker, "initialize" | "apply">;
+  /** Serverseitig je Welt gebundener Audit-Principal fuer PlanningRun-Koordination. */
+  readonly planningAuthorityAccountIds?: Readonly<Record<string, string>>;
   /** Geteiltes Geheimnis des kanonischen M5-Single-Writer-Snapshot-Adapters. */
   readonly fleetIngestToken?: string;
-  /** Fail-closed Rust-Verifikation fuer jeden eingehenden M5-Snapshot. */
-  readonly verifyFleetMobilizationSnapshot?: OperatingRuntime["verifyFleetMobilizationSnapshot"];
+  /** Fail-closed Rust-Single-Writer fuer M5-Intents und deren Projektion. */
+  readonly fleetRuntime?: FleetRuntime;
+  /** Serverseitig eingefrorener Authority-Release je Welt. */
+  readonly fleetAuthorityReleases?: Readonly<Record<string, FleetAuthorityRelease>>;
   /** Hartes Zeitbudget jedes Readiness-Checks. */
   readonly healthCheckTimeoutMs?: number;
   /** Produktion protokolliert strukturiert; Tests dürfen den Logger abschalten. */
@@ -145,6 +191,240 @@ const operatorIdParam = {
 } as const;
 
 const cents = { type: "string", pattern: "^-?[0-9]+$" } as const;
+
+type FleetCommandWithoutWorld<T> = T extends { readonly worldId: string }
+  ? Omit<T, "worldId">
+  : never;
+type FleetCommandBody = FleetCommandWithoutWorld<NativeFleetCommand>;
+
+const fleetInitializeBody = {
+  type: "object",
+  required: ["producedAt"],
+  additionalProperties: false,
+  properties: {
+    producedAt: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+  },
+} as const;
+
+const fleetCommandHeaderProperties = {
+  commandId: { type: "string", minLength: 1, maxLength: 200 },
+  expectedStateHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+  expectedRevision: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+  atS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+} as const;
+
+const fleetIdentifier = { type: "string", minLength: 1, maxLength: 200 } as const;
+const fleetIdentifierSet = {
+  type: "array",
+  minItems: 1,
+  maxItems: 1_000,
+  uniqueItems: true,
+  items: fleetIdentifier,
+} as const;
+
+const fleetCommandBody = {
+  oneOf: [
+    {
+      type: "object",
+      required: [
+        "schemaVersion",
+        "commandId",
+        "expectedStateHash",
+        "expectedRevision",
+        "atS",
+        "formationId",
+        "vehicleIds",
+        "pathReceiptId",
+      ],
+      additionalProperties: false,
+      properties: {
+        schemaVersion: { type: "string", const: FLEET_FORMATION_COMMAND_SCHEMA },
+        ...fleetCommandHeaderProperties,
+        formationId: fleetIdentifier,
+        vehicleIds: fleetIdentifierSet,
+        pathReceiptId: fleetIdentifier,
+      },
+    },
+    {
+      type: "object",
+      required: [
+        "schemaVersion",
+        "commandId",
+        "expectedStateHash",
+        "expectedRevision",
+        "atS",
+        "personnelDutyId",
+        "personnelPoolId",
+        "formationIds",
+        "pathReceiptId",
+        "validFrom",
+        "validUntil",
+      ],
+      additionalProperties: false,
+      properties: {
+        schemaVersion: { type: "string", const: FLEET_PERSONNEL_DUTY_COMMAND_SCHEMA },
+        ...fleetCommandHeaderProperties,
+        personnelDutyId: fleetIdentifier,
+        personnelPoolId: fleetIdentifier,
+        formationIds: fleetIdentifierSet,
+        pathReceiptId: fleetIdentifier,
+        validFrom: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+        validUntil: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+      },
+    },
+    {
+      type: "object",
+      required: [
+        "schemaVersion",
+        "commandId",
+        "expectedStateHash",
+        "expectedRevision",
+        "atS",
+        "pathReservationId",
+        "pathReceiptId",
+      ],
+      additionalProperties: false,
+      properties: {
+        schemaVersion: { type: "string", const: FLEET_PATH_RESERVATION_COMMAND_SCHEMA },
+        ...fleetCommandHeaderProperties,
+        pathReservationId: fleetIdentifier,
+        pathReceiptId: fleetIdentifier,
+      },
+    },
+  ],
+} as const;
+
+const RESERVED_SINGLE_WRITER_EVENT_TYPES = new Set([
+  "planning.runtime-state",
+  "planning.diagram",
+  "livemap-operation-marked",
+  "livemap-operation-cleared",
+  "operating-duty-ended",
+  "operating-transition-completed",
+  "train-operation-assigned",
+]);
+const RESERVED_PLANNING_COMMAND_TYPES = [
+  "planning.coordinate",
+  "planning.path-request",
+  "planning.apply-alternative",
+] as const;
+
+const regionalSimulationParams = {
+  type: "object",
+  required: ["worldId", "regionId"],
+  additionalProperties: false,
+  properties: {
+    worldId: { type: "string", format: "uuid" },
+    regionId: { type: "string", minLength: 1, maxLength: 200 },
+  },
+} as const;
+
+const regionalSimulationCommandParams = {
+  type: "object",
+  required: ["worldId", "regionId", "commandId"],
+  additionalProperties: false,
+  properties: {
+    ...regionalSimulationParams.properties,
+    commandId: { type: "string", minLength: 1, maxLength: 200 },
+  },
+} as const;
+
+const regionalWaypointSchema = {
+  type: "object",
+  required: [
+    "operatingPoint",
+    "positionMm",
+    "arrivalS",
+    "minimumDwellSeconds",
+    "departureS",
+  ],
+  additionalProperties: false,
+  properties: {
+    operatingPoint: { type: "string", minLength: 1, maxLength: 200 },
+    positionMm: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+    arrivalS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+    minimumDwellSeconds: { type: "integer", minimum: 0, maximum: 4_294_967_295 },
+    departureS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+  },
+} as const;
+
+const regionalTrainSchema = {
+  type: "object",
+  required: ["trainRunId", "operator", "trainNumber", "category", "route"],
+  additionalProperties: false,
+  properties: {
+    trainRunId: { type: "string", minLength: 1, maxLength: 200 },
+    operator: { type: "string", minLength: 1, maxLength: 200 },
+    trainNumber: { type: "string", minLength: 1, maxLength: 200 },
+    category: {
+      type: "string",
+      enum: ["regional", "long-distance", "freight", "empty-stock", "engineering"],
+    },
+    route: {
+      type: "array",
+      minItems: 1,
+      maxItems: 10_000,
+      items: regionalWaypointSchema,
+    },
+  },
+} as const;
+
+const regionalInitializationSchema = {
+  type: "object",
+  required: ["materializationWindowHours", "nowS", "trains"],
+  additionalProperties: false,
+  properties: {
+    materializationWindowHours: { type: "integer", minimum: 48, maximum: 72 },
+    nowS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+    trains: {
+      type: "array",
+      maxItems: 200_000,
+      items: regionalTrainSchema,
+    },
+  },
+} as const;
+
+const regionalCommandSchema = {
+  oneOf: [
+    {
+      type: "object",
+      required: ["type", "train"],
+      additionalProperties: false,
+      properties: {
+        type: { const: "materialize" },
+        train: regionalTrainSchema,
+      },
+    },
+    {
+      type: "object",
+      required: ["type", "atS"],
+      additionalProperties: false,
+      properties: {
+        type: { const: "advance-to" },
+        atS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+      },
+    },
+    {
+      type: "object",
+      required: ["type", "trainRunId", "seconds"],
+      additionalProperties: false,
+      properties: {
+        type: { const: "add-delay" },
+        trainRunId: { type: "string", minLength: 1, maxLength: 200 },
+        seconds: { type: "integer", minimum: 0, maximum: 4_294_967_295 },
+      },
+    },
+    {
+      type: "object",
+      required: ["type", "beforeS"],
+      additionalProperties: false,
+      properties: {
+        type: { const: "dematerialize-before" },
+        beforeS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+      },
+    },
+  ],
+} as const;
 
 async function requireOperatorOwner(
   db: IdentityDatabase,
@@ -208,6 +488,121 @@ function sendError(reply: FastifyReply, error: unknown): FastifyReply {
   throw error;
 }
 
+function sendRegionalSimulationError(
+  reply: FastifyReply,
+  error: unknown,
+): FastifyReply {
+  if (error instanceof RegionalSimulationConflictError) {
+    return reply.code(409).send({ code: error.code, error: error.message });
+  }
+  if (
+    error instanceof RegionalSimulationUnavailableError ||
+    error instanceof RegionalSimulationSequenceError
+  ) {
+    return reply.code(503).send({ code: error.code, error: error.message });
+  }
+  if (error instanceof RangeError) {
+    return reply.code(400).send({
+      code: "regional_simulation_invalid_request",
+      error: error.message,
+    });
+  }
+  if (error instanceof Error) {
+    const nativeCode = /^([a-z][a-z0-9_]*):/.exec(error.message)?.[1];
+    if (nativeCode !== undefined) {
+      const statusCode = [
+        "duplicate_train",
+        "idempotency_conflict",
+        "revision_conflict",
+        "state_hash_conflict",
+      ].includes(nativeCode)
+        ? 409
+        : [
+            "corrupt_state",
+            "identity_exhausted",
+            "publisher_sequence_gap",
+            "sequence_exhausted",
+          ].includes(nativeCode)
+          ? 503
+          : 400;
+      return reply.code(statusCode).send({ code: nativeCode, error: error.message });
+    }
+    return reply.code(500).send({
+      code: "regional_simulation_failed",
+      error: "Regionaler Simulationsaufruf ist fehlgeschlagen.",
+    });
+  }
+  throw error;
+}
+
+function regionalSimulationRouteErrorHandler(
+  error: FastifyError,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): void {
+  if (error.validation !== undefined) {
+    void reply.code(400).send({
+      code: "regional_simulation_invalid_request",
+      error: "Regionaler Simulationsauftrag hat ein ungueltiges Format.",
+    });
+    return;
+  }
+  request.log.error({ err: error }, "Regionaler Simulationsendpunkt fehlgeschlagen");
+  void reply.code(500).send({
+    code: "regional_simulation_failed",
+    error: "Regionaler Simulationsaufruf ist fehlgeschlagen.",
+  });
+}
+
+function sendPlanningQueueError(reply: FastifyReply, error: unknown): FastifyReply {
+  if (error instanceof PlanningWorkerConflictError) {
+    return reply.code(409).send({ code: error.failureCode, error: error.message });
+  }
+  if (error instanceof TypeError || error instanceof RangeError) {
+    return reply.code(400).send({
+      code: "planning_invalid_request",
+      error: error.message,
+    });
+  }
+  return sendError(reply, error);
+}
+
+function planningRouteErrorHandler(
+  error: FastifyError,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): void {
+  if (error.validation !== undefined) {
+    void reply.code(400).send({
+      code: "planning_invalid_request",
+      error: "Planning-Auftrag hat ein ungueltiges Format.",
+    });
+    return;
+  }
+  request.log.error({ err: error }, "Planning-Endpunkt fehlgeschlagen");
+  void reply.code(500).send({
+    code: "planning_failed",
+    error: "Planning-Auftrag ist fehlgeschlagen.",
+  });
+}
+
+async function isActivePlanningAuthorityAccount(
+  db: IdentityDatabase,
+  worldId: string,
+  accountId: string,
+): Promise<boolean> {
+  try {
+    const keycloakSubject = await resolveKeycloakSubject(db, worldId, accountId);
+    const account = await getAccount(db, { worldId, keycloakSubject });
+    return account?.id === accountId;
+  } catch (error) {
+    if (error instanceof AccountNotFoundError || error instanceof AccessRevokedError) {
+      return false;
+    }
+    throw error;
+  }
+}
+
 function sendEconomyError(reply: FastifyReply, error: unknown): FastifyReply {
   if (
     error instanceof AccessRevokedError
@@ -244,6 +639,85 @@ async function worldExists(db: IdentityDatabase, worldId: string): Promise<boole
     .where(eq(worlds.id, worldId))
     .limit(1);
   return world !== undefined;
+}
+
+function fleetResultView(output: FleetWorldInitialized | FleetCommandResult) {
+  const view = {
+    revision: output.state.revision,
+    stateHash: output.stateHash,
+    snapshotHash: output.snapshotHash,
+    snapshot: output.snapshot,
+  };
+  return "idempotentReplay" in output
+    ? { ...view, idempotentReplay: output.idempotentReplay }
+    : view;
+}
+
+function sendFleetProducerError(
+  reply: FastifyReply,
+  error: unknown,
+  authorityReleaseIsServerInput = false,
+): FastifyReply {
+  if (error instanceof FleetProducerConflictError) {
+    return reply.code(409).send({ code: "fleet_conflict", error: error.message });
+  }
+  if (
+    error instanceof FleetProducerUnavailableError
+    || error instanceof FleetSnapshotValidationError
+  ) {
+    return reply.code(503).send({
+      code: "fleet_unavailable",
+      error: "Autoritativer M5-Flottenzustand ist voruebergehend nicht verfuegbar.",
+    });
+  }
+  if (error instanceof Error) {
+    const nativeCode = /^([a-z][a-z0-9_]*):/.exec(error.message)?.[1];
+    if (
+      nativeCode !== undefined
+      && [
+        "idempotency_conflict",
+        "revision_conflict",
+        "state_hash_mismatch",
+        "time_regression",
+      ].includes(nativeCode)
+    ) {
+      return reply.code(409).send({ code: "fleet_conflict", error: error.message });
+    }
+    if (
+      !authorityReleaseIsServerInput
+      && (
+        nativeCode === "invalid_fleet_authority"
+        || nativeCode === "invalid_json"
+        || nativeCode === "unsupported_schema"
+        || error.message.startsWith("M5-Kommando")
+      )
+    ) {
+      return reply.code(400).send({ code: "fleet_invalid_request", error: error.message });
+    }
+  }
+  return reply.code(503).send({
+    code: "fleet_unavailable",
+    error: "Autoritativer M5-Flottenzustand ist voruebergehend nicht verfuegbar.",
+  });
+}
+
+function fleetRouteErrorHandler(
+  error: FastifyError,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): void {
+  if (error.validation !== undefined) {
+    void reply.code(400).send({
+      code: "fleet_invalid_request",
+      error: "M5-Flottenauftrag hat ein ungueltiges Format.",
+    });
+    return;
+  }
+  request.log.error({ err: error }, "M5-Flottenendpunkt fehlgeschlagen");
+  void reply.code(503).send({
+    code: "fleet_unavailable",
+    error: "Autoritativer M5-Flottenzustand ist voruebergehend nicht verfuegbar.",
+  });
 }
 
 const PLANNING_APPLY_ALTERNATIVE_SCHEMA = "planning-apply-alternative/v1" as const;
@@ -628,125 +1102,206 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     },
   );
 
-  if (deps.livemap !== undefined && deps.livemapIngestToken !== undefined) {
+  if (deps.fleetIngestToken !== undefined) {
     app.post<{
       Params: { worldId: string };
-      Body: Omit<LiveDelta, "worldId" | "sequence">;
+      Body: { readonly producedAt: number };
     }>(
-      "/internal/worlds/:worldId/livemap/deltas",
+      "/internal/worlds/:worldId/fleet/initialize",
       {
+        errorHandler: fleetRouteErrorHandler,
         schema: {
           params: worldIdParam,
-          body: {
-            type: "object",
-            required: ["at", "changed", "removed"],
-            additionalProperties: false,
-            properties: {
-              at: { type: "integer", minimum: 0 },
-              removed: { type: "array", items: { type: "string", minLength: 1 } },
-              changed: {
-                type: "array",
-                items: {
-                  type: "object",
-                  required: ["id", "operator", "trainNumber", "category", "positionMm", "speedMmPerSecond", "delaySeconds", "nextOperatingPoint", "status"],
-                  additionalProperties: false,
-                  properties: {
-                    id: { type: "string", minLength: 1 },
-                    operator: { type: "string" },
-                    trainNumber: { type: "string" },
-                    category: { type: "string" },
-                    positionMm: { type: "integer" },
-                    speedMmPerSecond: { type: "integer" },
-                    delaySeconds: { type: "integer" },
-                    nextOperatingPoint: { type: "string" },
-                    status: { type: "string", minLength: 1 },
-                  },
-                },
-              },
-            },
-          },
+          body: fleetInitializeBody,
         },
       },
       async (request, reply) => {
-        if (!bearerMatches(request.headers.authorization, deps.livemapIngestToken!)) {
-          return reply.code(401).send({ error: "Ungültige Livemap-Ingest-Autorisierung." });
+        if (!bearerMatches(request.headers.authorization, deps.fleetIngestToken!)) {
+          return reply.code(401).send({
+            code: "fleet_unauthorized",
+            error: "Ungueltige Fleet-Ingest-Autorisierung.",
+          });
         }
         if (!(await worldExists(deps.db, request.params.worldId))) {
-          return reply.code(404).send({ error: "Welt existiert nicht." });
+          return reply.code(404).send({ code: "world_not_found", error: "Welt existiert nicht." });
+        }
+        if (deps.fleetRuntime === undefined || deps.fleetAuthorityReleases === undefined) {
+          return reply.code(503).send({
+            code: "fleet_unavailable",
+            error: "Autoritativer M5-Flottenzustand ist nicht konfiguriert.",
+          });
+        }
+        const authorityRelease = deps.fleetAuthorityReleases[request.params.worldId];
+        if (authorityRelease === undefined) {
+          return reply.code(404).send({
+            code: "fleet_authority_release_not_found",
+            error: "Fuer diese Welt ist kein M5-Authority-Release konfiguriert.",
+          });
         }
         try {
-          return reply.code(202).send(deps.livemap!.forWorld(request.params.worldId).publish(request.body));
+          const initialized = await initializeFleetProducer({
+            db: deps.db as EconomyDatabase,
+            runtime: deps.fleetRuntime,
+            initialization: {
+              schemaVersion: FLEET_INITIALIZE_SCHEMA,
+              worldId: request.params.worldId,
+              producedAt: request.body.producedAt,
+              authorityRelease,
+            },
+            ingestedAt: new Date(),
+          });
+          return reply.send(fleetResultView(initialized));
         } catch (error) {
-          if (error instanceof LivemapCapacityError) return reply.code(503).send({ error: "Livemap-Kapazität erschöpft." });
-          throw error;
+          return sendFleetProducerError(reply, error, true);
+        }
+      },
+    );
+
+    app.post<{
+      Params: { worldId: string };
+      Body: FleetCommandBody;
+    }>(
+      "/internal/worlds/:worldId/fleet/commands",
+      {
+        errorHandler: fleetRouteErrorHandler,
+        schema: {
+          params: worldIdParam,
+          body: fleetCommandBody,
+        },
+      },
+      async (request, reply) => {
+        if (!bearerMatches(request.headers.authorization, deps.fleetIngestToken!)) {
+          return reply.code(401).send({
+            code: "fleet_unauthorized",
+            error: "Ungueltige Fleet-Ingest-Autorisierung.",
+          });
+        }
+        if (!(await worldExists(deps.db, request.params.worldId))) {
+          return reply.code(404).send({ code: "world_not_found", error: "Welt existiert nicht." });
+        }
+        if (deps.fleetRuntime === undefined || deps.fleetAuthorityReleases === undefined) {
+          return reply.code(503).send({
+            code: "fleet_unavailable",
+            error: "Autoritativer M5-Flottenzustand ist nicht konfiguriert.",
+          });
+        }
+        if (deps.fleetAuthorityReleases[request.params.worldId] === undefined) {
+          return reply.code(404).send({
+            code: "fleet_authority_release_not_found",
+            error: "Fuer diese Welt ist kein M5-Authority-Release konfiguriert.",
+          });
+        }
+        try {
+          const result = await applyFleetProducerCommand({
+            db: deps.db as EconomyDatabase,
+            runtime: deps.fleetRuntime,
+            command: { ...request.body, worldId: request.params.worldId } as NativeFleetCommand,
+            ingestedAt: new Date(),
+          });
+          return reply.send(fleetResultView(result));
+        } catch (error) {
+          return sendFleetProducerError(reply, error);
         }
       },
     );
   }
 
-  if (deps.fleetIngestToken !== undefined) {
+  if (deps.simulationIngestToken !== undefined) {
     app.post<{
-      Params: { worldId: string };
-      Body: Parameters<typeof persistFleetMobilizationSnapshot>[2];
+      Params: { worldId: string; regionId: string };
+      Body: Omit<
+        RegionalSimulationInitialization,
+        "schemaVersion" | "worldId" | "regionId"
+      >;
     }>(
-      "/internal/worlds/:worldId/fleet/mobilization-snapshots",
+      "/internal/worlds/:worldId/regional-simulations/:regionId/initialize",
       {
+        errorHandler: regionalSimulationRouteErrorHandler,
         schema: {
-          params: worldIdParam,
-          body: {
-            type: "object",
-            required: ["snapshot", "snapshotHash"],
-            additionalProperties: false,
-            properties: {
-              snapshotHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
-              snapshot: {
-                type: "object",
-                required: ["schema", "worldId", "revision", "producedAt", "formations", "personnelDuties", "pathReservations"],
-                additionalProperties: false,
-                properties: {
-                  schema: { type: "string", const: "zugfolge-fleet-mobilization/v1" },
-                  worldId: { type: "string", format: "uuid" },
-                  revision: { type: "integer", minimum: 0 },
-                  producedAt: { type: "integer", minimum: 0 },
-                  formations: { type: "array", items: { type: "object" } },
-                  personnelDuties: { type: "array", items: { type: "object" } },
-                  pathReservations: { type: "array", items: { type: "object" } },
-                },
-              },
-            },
-          },
+          params: regionalSimulationParams,
+          body: regionalInitializationSchema,
         },
       },
       async (request, reply) => {
-        if (!bearerMatches(request.headers.authorization, deps.fleetIngestToken!)) {
-          return reply.code(401).send({ error: "Ungültige Fleet-Ingest-Autorisierung." });
+        if (!bearerMatches(request.headers.authorization, deps.simulationIngestToken!)) {
+          return reply.code(401).send({
+            code: "regional_simulation_unauthorized",
+            error: "Ungueltige Simulations-Ingest-Autorisierung.",
+          });
         }
         if (!(await worldExists(deps.db, request.params.worldId))) {
-          return reply.code(404).send({ error: "Welt existiert nicht." });
+          return reply.code(404).send({
+            code: "world_not_found",
+            error: "Welt existiert nicht.",
+          });
         }
-        if (deps.verifyFleetMobilizationSnapshot === undefined) {
-          return reply.code(503).send({ error: "Native M5-Snapshot-Verifikation ist nicht verfuegbar." });
+        if (deps.regionalSimulation === undefined) {
+          return reply.code(503).send({
+            code: "regional_simulation_unavailable",
+            error: "Regionaler Rust-Single-Writer ist nicht verfuegbar.",
+          });
         }
         try {
-          const verified = deps.verifyFleetMobilizationSnapshot(request.body.snapshot);
-          if (
-            verified.worldId !== request.params.worldId
-            || verified.fleetRevision !== request.body.snapshot.revision
-            || verified.snapshotHash !== request.body.snapshotHash
-          ) {
-            throw new FleetSnapshotValidationError(
-              "Rust-verifizierter M5-Snapshot stimmt nicht mit Welt, Revision und Snapshothash ueberein.",
-            );
-          }
-          const result = await persistFleetMobilizationSnapshot(
-            deps.db,
-            request.params.worldId,
-            request.body,
+          const initialized = await deps.regionalSimulation.initialize(
+            {
+              ...request.body,
+              schemaVersion: REGIONAL_SIMULATION_INITIALIZE_SCHEMA,
+              worldId: request.params.worldId,
+              regionId: request.params.regionId,
+            },
             new Date(),
           );
-          return reply.code(result.created ? 201 : 200).send(result);
+          return reply.code(201).send(initialized);
         } catch (error) {
-          return sendError(reply, error);
+          return sendRegionalSimulationError(reply, error);
+        }
+      },
+    );
+
+    app.post<{
+      Params: { worldId: string; regionId: string; commandId: string };
+      Body: RegionalSimulationCommandPayload;
+    }>(
+      "/internal/worlds/:worldId/regional-simulations/:regionId/commands/:commandId",
+      {
+        errorHandler: regionalSimulationRouteErrorHandler,
+        schema: {
+          params: regionalSimulationCommandParams,
+          body: regionalCommandSchema,
+        },
+      },
+      async (request, reply) => {
+        if (!bearerMatches(request.headers.authorization, deps.simulationIngestToken!)) {
+          return reply.code(401).send({
+            code: "regional_simulation_unauthorized",
+            error: "Ungueltige Simulations-Ingest-Autorisierung.",
+          });
+        }
+        if (!(await worldExists(deps.db, request.params.worldId))) {
+          return reply.code(404).send({
+            code: "world_not_found",
+            error: "Welt existiert nicht.",
+          });
+        }
+        if (deps.regionalSimulation === undefined) {
+          return reply.code(503).send({
+            code: "regional_simulation_unavailable",
+            error: "Regionaler Rust-Single-Writer ist nicht verfuegbar.",
+          });
+        }
+        try {
+          const result = await deps.regionalSimulation.apply(
+            {
+              worldId: request.params.worldId,
+              regionId: request.params.regionId,
+              commandId: request.params.commandId,
+              command: request.body,
+            },
+            new Date(),
+          );
+          return reply.send(result);
+        } catch (error) {
+          return sendRegionalSimulationError(reply, error);
         }
       },
     );
@@ -791,6 +1346,15 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           return reply.code(401).send({ error: "Ungültige Simulations-Ingest-Autorisierung." });
         }
         if (!(await worldExists(deps.db, request.params.worldId))) return reply.code(404).send({ error: "Welt existiert nicht." });
+        const reservedEvent = request.body.events.find((event) =>
+          RESERVED_SINGLE_WRITER_EVENT_TYPES.has(event.eventType),
+        );
+        if (reservedEvent !== undefined) {
+          return reply.code(409).send({
+            code: "reserved_single_writer_event_type",
+            error: `Ereignistyp '${reservedEvent.eventType}' darf nur sein fachlicher Single-Writer schreiben.`,
+          });
+        }
         try {
           const appended = await worldEventLog(deps.db, request.params.worldId).appendBatch(
             request.body.events.map((event) => ({ ...event, occurredAt: new Date(event.occurredAt) })),
@@ -853,6 +1417,115 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       }
     },
   );
+
+  app.post<{
+    Params: { worldId: string };
+    Body: PlanningPathRequestBody;
+  }>(
+    "/worlds/:worldId/planning/path-requests",
+    {
+      preHandler: authenticate,
+      errorHandler: planningRouteErrorHandler,
+      schema: {
+        params: worldIdParam,
+        body: PLANNING_PATH_REQUEST_BODY_SCHEMA,
+      },
+    },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) {
+        return reply.code(401).send({
+          code: "planning_unauthorized",
+          error: "Keine Identitaet.",
+        });
+      }
+      if (!(await worldExists(deps.db, request.params.worldId))) {
+        return reply.code(404).send({
+          code: "world_not_found",
+          error: "Welt existiert nicht.",
+        });
+      }
+      try {
+        const account = await getAccount(deps.db, {
+          worldId: request.params.worldId,
+          keycloakSubject: identity.keycloakSubject,
+        });
+        if (account === undefined) {
+          throw new AuthorizationError("Kein aktiver Zugang zu dieser Welt.");
+        }
+        const command = await queuePlanningPathRequest(deps.db, {
+          worldId: request.params.worldId,
+          requestingAccountId: account.id,
+          body: request.body,
+          submittedAt: new Date(),
+        });
+        return reply.code(202).send(command);
+      } catch (error) {
+        return sendPlanningQueueError(reply, error);
+      }
+    },
+  );
+
+  if (deps.simulationIngestToken !== undefined) {
+    app.post<{
+      Params: { worldId: string };
+      Body: PlanningCoordinateAuthorityBody;
+    }>(
+      "/internal/worlds/:worldId/planning/coordinate",
+      {
+        errorHandler: planningRouteErrorHandler,
+        schema: {
+          params: worldIdParam,
+          body: PLANNING_COORDINATE_AUTHORITY_BODY_SCHEMA,
+        },
+      },
+      async (request, reply) => {
+        if (!bearerMatches(request.headers.authorization, deps.simulationIngestToken!)) {
+          return reply.code(401).send({
+            code: "planning_unauthorized",
+            error: "Ungueltige Simulations-Ingest-Autorisierung.",
+          });
+        }
+        if (!(await worldExists(deps.db, request.params.worldId))) {
+          return reply.code(404).send({
+            code: "world_not_found",
+            error: "Welt existiert nicht.",
+          });
+        }
+        const authorityAccountId =
+          deps.planningAuthorityAccountIds?.[request.params.worldId];
+        if (authorityAccountId === undefined) {
+          return reply.code(503).send({
+            code: "planning_authority_unconfigured",
+            error: "Planning-Authority ist fuer diese Welt nicht konfiguriert.",
+          });
+        }
+        if (
+          !(await isActivePlanningAuthorityAccount(
+            deps.db,
+            request.params.worldId,
+            authorityAccountId,
+          ))
+        ) {
+          return reply.code(503).send({
+            code: "planning_authority_unavailable",
+            error: "Konfiguriertes Planning-Authority-Konto ist nicht aktiv.",
+          });
+        }
+        try {
+          const command = await queuePlanningCoordinate(deps.db, {
+            worldId: request.params.worldId,
+            authorityAccountId,
+            body: request.body,
+            submittedAt: new Date(),
+          });
+          return reply.code(202).send(command);
+        } catch (error) {
+          return sendPlanningQueueError(reply, error);
+        }
+      },
+    );
+  }
 
   app.get<{ Params: { worldId: string } }>(
     "/worlds/:worldId/planning/diagram",
@@ -982,7 +1655,11 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           await deps.db
             .select()
             .from(simulationCommands)
-            .where(and(eq(simulationCommands.worldId, request.params.worldId), eq(simulationCommands.status, "pending")))
+            .where(and(
+              eq(simulationCommands.worldId, request.params.worldId),
+              eq(simulationCommands.status, "pending"),
+              notInArray(simulationCommands.commandType, [...RESERVED_PLANNING_COMMAND_TYPES]),
+            ))
             .orderBy(asc(simulationCommands.submittedAt), asc(simulationCommands.id))
             .limit(request.query.limit ?? 100),
         );
@@ -1014,10 +1691,35 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         if (!bearerMatches(request.headers.authorization, deps.simulationIngestToken!)) return reply.code(401).send({ error: "Ungültige Simulations-Ingest-Autorisierung." });
         if (request.body.status === "processed" && request.body.resultEventSequence === undefined) return reply.code(400).send({ error: "Erfolgreiches Kommando braucht eine Ergebnis-Sequenz." });
         if (request.body.status === "failed" && request.body.failureCode === undefined) return reply.code(400).send({ error: "Fehlgeschlagenes Kommando braucht einen stabilen Fehlercode." });
+        const [pending] = await deps.db
+          .select({ commandType: simulationCommands.commandType })
+          .from(simulationCommands)
+          .where(and(
+            eq(simulationCommands.worldId, request.params.worldId),
+            eq(simulationCommands.id, request.params.commandId),
+            eq(simulationCommands.status, "pending"),
+          ))
+          .limit(1);
+        if (
+          pending !== undefined &&
+          RESERVED_PLANNING_COMMAND_TYPES.includes(
+            pending.commandType as (typeof RESERVED_PLANNING_COMMAND_TYPES)[number],
+          )
+        ) {
+          return reply.code(409).send({
+            code: "reserved_planning_command_type",
+            error: `Kommando '${pending.commandType}' darf nur der Planning-Worker abschliessen.`,
+          });
+        }
         const [updated] = await deps.db
           .update(simulationCommands)
           .set({ status: request.body.status, processedAt: new Date(request.body.processedAt), resultEventSequence: request.body.resultEventSequence, failureCode: request.body.failureCode })
-          .where(and(eq(simulationCommands.worldId, request.params.worldId), eq(simulationCommands.id, request.params.commandId), eq(simulationCommands.status, "pending")))
+          .where(and(
+            eq(simulationCommands.worldId, request.params.worldId),
+            eq(simulationCommands.id, request.params.commandId),
+            eq(simulationCommands.status, "pending"),
+            notInArray(simulationCommands.commandType, [...RESERVED_PLANNING_COMMAND_TYPES]),
+          ))
           .returning();
         return updated === undefined ? reply.code(404).send({ error: "Ausstehendes Kommando nicht gefunden." }) : reply.send(updated);
       },
@@ -1039,7 +1741,11 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         if (deps.livemap === undefined) {
           return reply.code(503).send({ error: "Livemap-Publisher nicht verfügbar." });
         }
-        return reply.send(deps.livemap.forWorld(request.params.worldId).snapshot());
+        const feed = deps.livemap.initializedWorld(request.params.worldId);
+        if (feed === undefined) {
+          return reply.code(503).send({ error: "Livemap besitzt noch keinen autoritativen Rust-Initialsnapshot." });
+        }
+        return reply.send(feed.snapshot());
       } catch (error) {
         if (error instanceof LivemapCapacityError) {
           return reply.code(503).send({ error: "Livemap vorübergehend ausgelastet." });
@@ -1062,22 +1768,30 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           keycloakSubject: identity.keycloakSubject,
         });
         if (account === undefined) throw new AuthorizationError("Kein aktiver Zugang zu dieser Welt.");
-        feed = deps.livemap?.forWorld(request.params.worldId);
+        if (deps.livemap === undefined) {
+          return reply.code(503).send({ error: "Livemap-Publisher nicht verfügbar." });
+        }
+        const initializedFeed = deps.livemap.initializedWorld(request.params.worldId);
+        if (initializedFeed === undefined) {
+          return reply.code(503).send({ error: "Livemap besitzt noch keinen autoritativen Rust-Initialsnapshot." });
+        }
+        feed = initializedFeed;
       } catch (error) {
         if (error instanceof LivemapCapacityError) {
           return reply.code(503).send({ error: "Livemap vorübergehend ausgelastet." });
         }
         return sendError(reply, error);
       }
-      if (feed === undefined) {
-        return reply.code(503).send({ error: "Livemap-Publisher nicht verfügbar." });
-      }
-
       const lastEventHeader = request.headers["last-event-id"];
       const rawLastEventId = Array.isArray(lastEventHeader) ? lastEventHeader[0] : lastEventHeader;
-      const lastEventId = rawLastEventId === undefined ? feed.snapshot().sequence : Number(rawLastEventId);
-      if (!Number.isSafeInteger(lastEventId) || lastEventId < 0) {
-        return reply.code(400).send({ error: "Last-Event-ID muss eine nichtnegative Ganzzahl sein." });
+      const currentSnapshot = feed.snapshot();
+      const cursor = rawLastEventId === undefined
+        ? { streamId: currentSnapshot.streamId, sequence: currentSnapshot.sequence }
+        : parseLivemapEventId(rawLastEventId);
+      if (cursor === undefined) {
+        return reply.code(400).send({
+          error: "Last-Event-ID muss aus Streamkennung und nichtnegativer Sequenz bestehen.",
+        });
       }
 
       reply.hijack();
@@ -1127,8 +1841,8 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         flush();
       };
 
-      const subscription = feed.subscribeAfter(lastEventId, (delta) => {
-        enqueue(`id: ${delta.sequence}\ndata: ${JSON.stringify(delta)}\n\n`);
+      const subscription = feed.subscribeAfter(cursor, (delta) => {
+        enqueue(`id: ${livemapEventId(delta)}\ndata: ${JSON.stringify(delta)}\n\n`);
       });
       unsubscribe = subscription.unsubscribe;
       request.raw.once("aborted", cleanup);
@@ -1143,7 +1857,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         return undefined;
       }
       subscription.replay.forEach((delta) => {
-        enqueue(`id: ${delta.sequence}\ndata: ${JSON.stringify(delta)}\n\n`);
+        enqueue(`id: ${livemapEventId(delta)}\ndata: ${JSON.stringify(delta)}\n\n`);
       });
       if (closed) return undefined;
       heartbeat = setInterval(() => enqueue(": heartbeat\n\n"), 15_000);

@@ -17,6 +17,7 @@ import {
 
 const WORLD_ID = "welt-1";
 const TOKEN = "zugriff-token";
+const STREAM_ID = "stream-a";
 
 const baseTrain: PublicTrain = {
   id: "1",
@@ -35,13 +36,19 @@ function snapshot(
   at = sequence * 10,
   train: PublicTrain = { ...baseTrain, positionMm: sequence * 1_000 },
   worldId = WORLD_ID,
+  streamId = STREAM_ID,
 ): Snapshot {
-  return { worldId, sequence, at, trains: [train] };
+  return { worldId, streamId, sequence, at, trains: [train] };
 }
 
-function delta(sequence: number, train: PublicTrain = { ...baseTrain, positionMm: sequence * 1_000 }): Delta {
+function delta(
+  sequence: number,
+  train: PublicTrain = { ...baseTrain, positionMm: sequence * 1_000 },
+  streamId = STREAM_ID,
+): Delta {
   return {
     worldId: WORLD_ID,
+    streamId,
     sequence,
     at: sequence * 10,
     changed: [train],
@@ -78,7 +85,7 @@ class SseChannel {
   }
 
   sendDelta(value: Delta, pieces = 1): void {
-    const payload = `id: ${value.sequence}\ndata: ${JSON.stringify(value)}\n\n`;
+    const payload = `id: ${value.streamId}:${value.sequence}\ndata: ${JSON.stringify(value)}\n\n`;
     if (pieces === 1) {
       this.send(payload);
       return;
@@ -182,6 +189,7 @@ describe("Livemap-Projektion", () => {
     const state = initialState(snapshot(4, 100, baseTrain));
     expect(applyDelta(state, { ...delta(6), at: 101 })).toBeUndefined();
     expect(applyDelta(state, { ...delta(5), at: 99 })).toBeUndefined();
+    expect(applyDelta(state, delta(5, baseTrain, "stream-b"))).toBeUndefined();
   });
 
   it("interpoliert nur zwischen zwei autoritativen Samples und mutiert sie nicht", () => {
@@ -215,7 +223,7 @@ describe("LivemapConnection", () => {
     const streamHeaders = new Headers(fetchMock.mock.calls[1]?.[1]?.headers);
     expect(snapshotHeaders.get("authorization")).toBe(`Bearer ${TOKEN}`);
     expect(streamHeaders.get("authorization")).toBe(`Bearer ${TOKEN}`);
-    expect(streamHeaders.get("last-event-id")).toBe("4");
+    expect(streamHeaders.get("last-event-id")).toBe(`${STREAM_ID}:4`);
 
     channel.sendDelta(delta(5), 5);
     await settle();
@@ -245,7 +253,7 @@ describe("LivemapConnection", () => {
     expect(snapshotCalls(fetchMock)).toBe(1);
     expect(streamCalls(fetchMock)).toBe(2);
     const resumeHeaders = new Headers(fetchMock.mock.calls.at(-1)?.[1]?.headers);
-    expect(resumeHeaders.get("last-event-id")).toBe("1");
+    expect(resumeHeaders.get("last-event-id")).toBe(`${STREAM_ID}:1`);
     resumed.sendDelta(delta(2));
     await settle();
     expect(changes.mock.calls.at(-1)?.[0]).toMatchObject({ sequence: 2 });
@@ -348,6 +356,40 @@ describe("LivemapConnection", () => {
     expect(snapshotCalls(fetchMock)).toBe(2);
     expect(changes.mock.calls.at(-1)?.[0]).toMatchObject({ sequence: 7 });
     expect(changes.mock.calls.at(-1)?.[0].trains.get("1")?.positionMm).toBe(7_777);
+    connection.close();
+  });
+
+  it("uebernimmt bei gleicher Sequenz erst nach Reset die neue Stream-Generation", async () => {
+    const first = new SseChannel();
+    const replacement = new SseChannel();
+    const restarted = snapshot(
+      1,
+      20,
+      { ...baseTrain, positionMm: 9_999 },
+      WORLD_ID,
+      "stream-b",
+    );
+    const fetchMock = fetchHarness(
+      [jsonResponse(snapshot(1)), jsonResponse(restarted)],
+      [first.response, replacement.response],
+    );
+    const changes = vi.fn();
+    const connection = new LivemapConnection("", WORLD_ID, TOKEN, changes, {
+      fetch: fetchMock,
+    });
+    await connection.connect();
+
+    first.sendReset();
+    await settle(20);
+
+    expect(snapshotCalls(fetchMock)).toBe(2);
+    expect(changes.mock.calls.at(-1)?.[0]).toMatchObject({
+      streamId: "stream-b",
+      sequence: 1,
+    });
+    expect(changes.mock.calls.at(-1)?.[0].trains.get("1")?.positionMm).toBe(9_999);
+    const replacementHeaders = new Headers(fetchMock.mock.calls.at(-1)?.[1]?.headers);
+    expect(replacementHeaders.get("last-event-id")).toBe("stream-b:1");
     connection.close();
   });
 

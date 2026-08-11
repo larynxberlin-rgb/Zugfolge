@@ -22,9 +22,17 @@ pub fn initialize_fleet_world(input_json: String) -> NapiResult<String> {
 /// Applies one versioned M5 command and derives the mobilization snapshot.
 #[cfg(feature = "node-addon")]
 #[napi(js_name = "applyFleetCommand")]
-pub fn apply_fleet_command(state_json: String, command_json: String) -> NapiResult<String> {
-    zugfolge_runtime::apply_fleet_command(&state_json, &command_json)
-        .map_err(|error| napi::Error::from_reason(error.to_string()))
+pub fn apply_fleet_command(
+    state_json: String,
+    command_json: String,
+    replay_receipt_json: Option<String>,
+) -> NapiResult<String> {
+    zugfolge_runtime::apply_fleet_command(
+        &state_json,
+        &command_json,
+        replay_receipt_json.as_deref(),
+    )
+    .map_err(|error| napi::Error::from_reason(error.to_string()))
 }
 
 /// Verifies and hashes a canonical M5 mobilization snapshot in Rust.

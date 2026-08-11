@@ -164,6 +164,22 @@ export async function listEconomyWorldIds(db: EconomyDatabase): Promise<readonly
   return rows.map((row) => row.worldId);
 }
 
+/** Loads the explicit SimTime zero point for one world-bound scheduler pass. */
+export async function loadEconomyWorldEpoch(
+  db: EconomyDatabase,
+  worldId: string,
+): Promise<Date> {
+  const [row] = await db
+    .select({ epoch: worlds.epoch })
+    .from(worlds)
+    .where(eq(worlds.id, worldId))
+    .limit(1);
+  if (row === undefined || Number.isNaN(row.epoch.getTime())) {
+    throw new Error(`Weltepoche fuer '${worldId}' fehlt oder ist ungueltig.`);
+  }
+  return row.epoch;
+}
+
 export interface PendingEconomyEffect {
   readonly id: string;
   readonly worldId: string;

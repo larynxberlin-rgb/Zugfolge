@@ -378,6 +378,38 @@ Anträge zusammen den Ausgang bestimmen. Erst der Abschluss macht den letzten
 Entwurf endgültig; danach nimmt der Lauf weder neue Einsprüche noch weitere
 Koordinierungsrunden an.
 
+### 10.3 Produktive Planning-Grenze und Bildfahrplanprojektion
+
+Die produktive Koordinierung besteht aus drei strikt getrennten Verträgen:
+
+1. `POST /worlds/:worldId/planning/path-requests` bindet jeden versionierten
+   Trassenantrag serverseitig an die URL-Welt und das authentifizierte Konto.
+   Zwei konkurrierende Antragsteller bleiben deshalb zwei getrennte,
+   idempotente Command-Log-Einträge.
+2. Der geschützte Authority-Aufruf `planning.coordinate/v1` enthält nur die
+   beiden Request-IDs, Seed, erwartete Projektionsrevision und die ID eines
+   serverseitig eingefrorenen Infrastruktur-Releases. Request- oder
+   Infrastrukturfakten können nicht im Kommando unterschoben werden.
+3. `packages/planning-worker` sperrt die Weltzeile, lädt beide Anträge und das
+   konfigurierte Release, ruft den echten Rust-`PlanningRun` in
+   `zugfolge-planning-runtime` auf und schreibt Commandstatus,
+   `planning.runtime-state` und `planning.diagram` in derselben Transaktion.
+
+Der generische Event-/Commandadapter weist diese Single-Writer-Typen ab. Eine
+angebotene Alternative trägt eine stabile, an die Projektionsrevision
+gebundene ID; `planning.apply-alternative/v1` wird erneut durch Rust angewandt.
+Die Game-API liefert die Projektion als `{ sequence, data }`, und der Client
+lädt nach `202 Accepted` so lange neu, bis eine höhere fachliche Revision
+sichtbar ist. Bildfahrplan, alle sechs Sperrzeitphasen, Ressource, Zeitfenster,
+beteiligte Zugfahrten, Konfliktart, Erklärung und Alternative entstehen aus
+dieser Projektion. Feste Beispieldaten werden nur hinter dem ausdrücklich
+gewählten Demo-Modus geladen und sind kein Normalpfad.
+
+Das Planning-Addon wird fail-closed über einen absoluten Pfad geladen; es gibt
+keinen JavaScript-Entscheider als Ersatz. Der Linux-NAPI-Job komponiert
+PlanningRun, PGlite-Worker, Projektion, Apply und Replay gegen dasselbe gebaute
+Addon.
+
 ---
 
 ## 11. Die Fahrplanperiode als Ablauf (M3.6)

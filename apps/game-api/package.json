@@ -22,6 +22,8 @@
     "@zugfolge/mailbox": "workspace:*",
     "@zugfolge/operators": "workspace:*",
     "@zugfolge/planning-projection": "workspace:*",
+    "@zugfolge/planning-runtime-native": "workspace:*",
+    "@zugfolge/planning-worker": "workspace:*",
     "@zugfolge/privacy": "workspace:*",
     "@zugfolge/runtime-native": "workspace:*",
     "fastify": "^5.11.2"

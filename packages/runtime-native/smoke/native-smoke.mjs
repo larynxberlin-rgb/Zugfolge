@@ -9,6 +9,9 @@ import {
   OPERATING_INITIALIZE_SCHEMA,
   OPERATING_RESULT_SCHEMA,
   OPERATING_TRANSITION_SCHEMA,
+  REGIONAL_SIMULATION_COMMAND_SCHEMA,
+  REGIONAL_SIMULATION_INITIALIZE_SCHEMA,
+  loadRegionalSimulationRuntime,
   loadOperatingRuntime,
 } from "../dist/index.js";
 
@@ -16,6 +19,7 @@ const worldId = "11111111-1111-4111-8111-111111111111";
 const lotId = "lot-native-smoke";
 const timetableBoundaryS = 604_800;
 const runtime = loadOperatingRuntime();
+const regionalRuntime = loadRegionalSimulationRuntime();
 
 function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
@@ -30,17 +34,187 @@ function canonicalJson(value) {
   return JSON.stringify(value);
 }
 
+const privateUseId = "vehicle-\u{e000}";
+const supplementaryId = "vehicle-\u{10000}";
+const authorityVehicle = (id, numericId) => ({
+  id,
+  numericId,
+  operatorId: "operator-incumbent",
+  vehicleTypeId: 101,
+  classDesignation: "ET1",
+  tradeName: "Native-Testzug",
+  buildYear: 2024,
+  acquisitionYear: 2025,
+  procurementChannel: "leasing",
+  approvedLineIds: ["S1"],
+  maintenanceDeadlines: [{ kind: "inspection", dueAt: timetableBoundaryS + 1_000 }],
+  installedProtection: ["pzb"],
+  technical: {
+    lengthMm: 70_000,
+    massKg: 120_000,
+    maximumSpeedKph: 160,
+    accelerationMmPerS2: 800,
+    decelerationMmPerS2: 900,
+    traction: "electric",
+    electricSystems: ["ac15kv"],
+  },
+  passenger: {
+    seats: 60,
+    firstClassSeats: 6,
+    accessible: true,
+    bicyclePlaces: 2,
+    wheelchairPlaces: 1,
+    equipment: ["pis"],
+    operatingCostCentsPerTrainKm: 350,
+    replacementPlan: true,
+  },
+  deliveredAt: 0,
+  retiredAt: timetableBoundaryS + 1_000,
+});
+const authorityRelease = {
+  schemaVersion: "zugfolge-fleet-authority-release/v1",
+  releaseId: "native-smoke-authority-v1",
+  referenceYear: 2026,
+  assets: [authorityVehicle(supplementaryId, 2), authorityVehicle(privateUseId, 1)],
+  personnelPools: [{
+    id: "pool-1",
+    numericId: 1,
+    operatorId: "operator-incumbent",
+    capacitySeconds: 1_000_000,
+    minimumRestSeconds: 10,
+    classDesignations: ["ET1"],
+    pathReceiptIds: ["path-confirmed"],
+    qualificationHash: "a".repeat(64),
+  }],
+  pathReceipts: [{
+    id: "path-confirmed",
+    numericRouteId: 1,
+    operatorId: "operator-incumbent",
+    serviceLineIds: ["S1"],
+    decision: "confirmed",
+    validFrom: 0,
+    validUntil: timetableBoundaryS + 1_000,
+    platformLengthsMm: [200_000],
+    electrifications: ["overhead-ac15kv"],
+    requiredProtection: ["pzb"],
+    approvedClasses: ["ET1"],
+    plannerStateHash: "b".repeat(64),
+    conflictCheckHash: "c".repeat(64),
+  }],
+};
 const fleetInitialized = runtime.initializeFleet({
   schemaVersion: FLEET_INITIALIZE_SCHEMA,
   worldId,
   producedAt: 0,
+  authorityRelease,
 });
 assert.equal(fleetInitialized.state.revision, 0);
 assert.match(fleetInitialized.stateHash, /^[a-f0-9]{64}$/);
+assert.match(fleetInitialized.state.authorityReleaseHash, /^[a-f0-9]{64}$/);
+assert.equal(Object.hasOwn(fleetInitialized.state, "processedCommands"), false);
 assert.deepEqual(fleetInitialized.snapshot.formations, []);
 
-const privateUseId = "vehicle-\u{e000}";
-const supplementaryId = "vehicle-\u{10000}";
+const regionalTrain = (trainRunId) => ({
+  trainRunId,
+  operator: "operator-native",
+  trainNumber: "RE 1",
+  category: "regional",
+  route: [
+    {
+      operatingPoint: "Leipzig Hbf",
+      positionMm: 0,
+      arrivalS: 100,
+      minimumDwellSeconds: 30,
+      departureS: 130,
+    },
+    {
+      operatingPoint: "Halle Hbf",
+      positionMm: 3_600_000,
+      arrivalS: 3_700,
+      minimumDwellSeconds: 30,
+      departureS: 3_730,
+    },
+  ],
+});
+const regionalInitialized = regionalRuntime.initialize({
+  schemaVersion: REGIONAL_SIMULATION_INITIALIZE_SCHEMA,
+  worldId,
+  regionId: "leipzig",
+  materializationWindowHours: 48,
+  nowS: 0,
+  trains: [regionalTrain("native-regional-1")],
+});
+assert.equal(regionalInitialized.state.revision, 0);
+assert.equal(regionalInitialized.snapshot.producerSequence, 0);
+assert.deepEqual(
+  regionalInitialized.snapshot.trains.map((train) => train.id),
+  ["native-regional-1"],
+);
+assert.ok(
+  regionalInitialized.events.some(
+    (event) => event.eventType === "simulation.train-materialized",
+  ),
+  "die Initialisierung muss echte Rust-Materialisierungsereignisse liefern",
+);
+const regionalCommand = (head, commandId, command) => ({
+  schemaVersion: REGIONAL_SIMULATION_COMMAND_SCHEMA,
+  worldId,
+  regionId: "leipzig",
+  commandId,
+  expectedStateHash: head.stateHash,
+  expectedRevision: head.state.revision,
+  expectedPublisherSequence: head.state.publisherSequence,
+  command,
+});
+const regionalMaterializeCommand = regionalCommand(
+  regionalInitialized,
+  "native-regional-materialize",
+  { type: "materialize", train: regionalTrain("native-regional-2") },
+);
+const regionalMaterialized = regionalRuntime.apply(
+  regionalInitialized.state,
+  regionalMaterializeCommand,
+);
+assert.equal(regionalMaterialized.delta.producerSequence, 1);
+assert.deepEqual(
+  regionalMaterialized.delta.changed.map((train) => train.id),
+  ["native-regional-2"],
+);
+const regionalAdvanced = regionalRuntime.apply(
+  regionalMaterialized.state,
+  regionalCommand(regionalMaterialized, "native-regional-advance", {
+    type: "advance-to",
+    atS: 4_000,
+  }),
+);
+assert.equal(regionalAdvanced.delta.producerSequence, 2);
+assert.ok(regionalAdvanced.events.length > 0);
+const regionalRemoveCommand = regionalCommand(
+  regionalAdvanced,
+  "native-regional-remove",
+  { type: "dematerialize-before", beforeS: 5_000 },
+);
+const regionalRemoved = regionalRuntime.apply(
+  regionalAdvanced.state,
+  regionalRemoveCommand,
+);
+assert.equal(regionalRemoved.delta.producerSequence, 3);
+assert.deepEqual(regionalRemoved.delta.removed, [
+  "native-regional-1",
+  "native-regional-2",
+]);
+const regionalRestored = regionalRuntime.restore(regionalRemoved.state);
+assert.equal(regionalRestored.stateHash, regionalRemoved.stateHash);
+assert.equal(regionalRestored.snapshot.producerSequence, 3);
+assert.deepEqual(regionalRestored.snapshot.trains, []);
+const regionalRetry = regionalRuntime.apply(
+  regionalRemoved.state,
+  regionalRemoveCommand,
+);
+assert.equal(regionalRetry.idempotentReplay, true);
+assert.equal(regionalRetry.stateHash, regionalRemoved.stateHash);
+assert.deepEqual(regionalRetry.delta, regionalRemoved.delta);
+
 const formationCommand = {
   schemaVersion: FLEET_FORMATION_COMMAND_SCHEMA,
   worldId,
@@ -48,42 +222,27 @@ const formationCommand = {
   expectedStateHash: fleetInitialized.stateHash,
   expectedRevision: 0,
   atS: 1,
-  formation: {
-    id: "formation-1",
-    operatorId: "operator-incumbent",
-    vehicleIds: [supplementaryId, privateUseId],
-    serviceLineIds: ["S1"],
-    availability: "available",
-    procurement: "delivered",
-    availableFrom: 0,
-    availableUntil: timetableBoundaryS + 1,
-    characteristics: {
-      seats: 120,
-      firstClassBasisPoints: 0,
-      accessible: true,
-      bicyclePlaces: 4,
-      wheelchairPlaces: 1,
-      equipment: ["pis"],
-      vehicleAgeYears: 1,
-      maximumSpeedKph: 160,
-      operatingCostCentsPerTrainKm: 700,
-      homologatedLineIds: ["S1"],
-      maintenanceValidUntil: timetableBoundaryS + 1,
-      traction: "electric",
-      replacementPlan: true,
-    },
-  },
+  formationId: "formation-1",
+  vehicleIds: [supplementaryId, privateUseId],
+  pathReceiptId: "path-confirmed",
 };
 assert.throws(
   () => runtime.applyFleetCommand(fleetInitialized.state, {
     ...formationCommand,
-    snapshot: { worldId: "forged", revision: 999 },
+    availability: "available",
+    characteristics: { seats: 999_999 },
   }),
-  /invalid_json/,
-  "Rust darf keinen angelieferten Snapshot als Kommandoquelle akzeptieren",
+  /alte, unbekannte oder fehlende Intent-Felder/,
+  "abgeleitete Flottenfelder duerfen die Authority-Fakten nicht ueberschreiben",
 );
 const fleetFormation = runtime.applyFleetCommand(fleetInitialized.state, formationCommand);
 assert.equal(fleetFormation.state.revision, 1);
+assert.equal(Object.hasOwn(fleetFormation.state, "processedCommands"), false);
+assert.equal(
+  fleetFormation.commandReceipt.commandHash,
+  createHash("sha256").update(fleetFormation.commandReceipt.canonicalCommandJson).digest("hex"),
+  "die kompakte Receipt muss die kanonische Intent-Darstellung binden",
+);
 assert.deepEqual(
   fleetFormation.snapshot.formations[0].vehicleIds,
   [privateUseId, supplementaryId],
@@ -97,17 +256,15 @@ const dutyCommand = {
   expectedStateHash: fleetFormation.stateHash,
   expectedRevision: 1,
   atS: 2,
-  personnelDuty: {
-    id: "duty-1",
-    operatorId: "operator-incumbent",
-    formationIds: ["formation-1"],
-    status: "ready",
-    validFrom: 0,
-    validUntil: timetableBoundaryS + 1,
-  },
+  personnelDutyId: "duty-1",
+  personnelPoolId: "pool-1",
+  formationIds: ["formation-1"],
+  pathReceiptId: "path-confirmed",
+  validFrom: 0,
+  validUntil: timetableBoundaryS + 1,
 };
 const tamperedFleetState = structuredClone(fleetFormation.state);
-tamperedFleetState.formations["formation-1"].operatorId = "forged-operator";
+tamperedFleetState.formations["formation-1"].pathReceiptId = "forged-receipt";
 assert.throws(
   () => runtime.applyFleetCommand(tamperedFleetState, dutyCommand),
   /state_hash_mismatch/,
@@ -121,14 +278,8 @@ const pathCommand = {
   expectedStateHash: fleetDuty.stateHash,
   expectedRevision: 2,
   atS: 3,
-  pathReservation: {
-    id: "path-1",
-    operatorId: "operator-incumbent",
-    serviceLineIds: ["S1"],
-    status: "confirmed",
-    validFrom: 0,
-    validUntil: timetableBoundaryS + 1,
-  },
+  pathReservationId: "path-1",
+  pathReceiptId: "path-confirmed",
 };
 const fleetResult = runtime.applyFleetCommand(fleetDuty.state, pathCommand);
 assert.equal(fleetResult.state.revision, 3);
@@ -140,11 +291,32 @@ assert.equal(
   createHash("sha256").update(canonicalJson(fleetResult.snapshot)).digest("hex"),
   "der Rust-Snapshothash muss die exakt materialisierten Nutzdaten binden",
 );
-const fleetRetry = runtime.applyFleetCommand(fleetResult.state, pathCommand);
+const fleetRetry = runtime.applyFleetCommand(
+  fleetResult.state,
+  pathCommand,
+  fleetResult.commandReceipt,
+);
 assert.equal(fleetRetry.idempotentReplay, true);
 assert.equal(fleetRetry.stateHash, fleetResult.stateHash);
 assert.equal(fleetRetry.snapshotHash, fleetResult.snapshotHash);
 assert.deepEqual(fleetRetry.state, fleetResult.state);
+const historicalFormationRetry = runtime.applyFleetCommand(
+  fleetFormation.state,
+  formationCommand,
+  fleetFormation.commandReceipt,
+);
+assert.equal(historicalFormationRetry.idempotentReplay, true);
+assert.equal(historicalFormationRetry.stateHash, fleetFormation.stateHash);
+assert.equal(historicalFormationRetry.snapshotHash, fleetFormation.snapshotHash);
+assert.throws(
+  () => runtime.applyFleetCommand(
+    fleetResult.state,
+    formationCommand,
+    fleetFormation.commandReceipt,
+  ),
+  /historischen Zustand/,
+  "eine alte Receipt darf nicht mit dem aktuellen State zu einem gemischten Resultat kombiniert werden",
+);
 assert.throws(
   () => runtime.applyFleetCommand(fleetInitialized.state, {
     ...formationCommand,
@@ -230,6 +402,10 @@ process.stdout.write(
     fleetSnapshotHash: fleetRetry.snapshotHash,
     fleetRevision: fleetRetry.state.revision,
     fleetIdempotentReplay: fleetRetry.idempotentReplay,
+    regionalStateHash: regionalRetry.stateHash,
+    regionalRevision: regionalRetry.state.revision,
+    regionalPublisherSequence: regionalRetry.state.publisherSequence,
+    regionalIdempotentReplay: regionalRetry.idempotentReplay,
     initialStateHash: firstInitialization.stateHash,
     resultingStateHash: retry.stateHash,
     resultingRevision: retry.state.revision,

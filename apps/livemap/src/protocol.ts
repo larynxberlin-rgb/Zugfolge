@@ -29,6 +29,7 @@ export interface PublicTrain {
 
 export interface Snapshot {
   readonly worldId: string;
+  readonly streamId: string;
   readonly sequence: number;
   readonly at: number;
   readonly trains: readonly PublicTrain[];
@@ -36,6 +37,7 @@ export interface Snapshot {
 
 export interface Delta {
   readonly worldId: string;
+  readonly streamId: string;
   readonly sequence: number;
   readonly at: number;
   readonly changed: readonly PublicTrain[];
@@ -44,6 +46,7 @@ export interface Delta {
 
 export interface LiveState {
   readonly worldId: string;
+  readonly streamId: string;
   readonly sequence: number;
   readonly at: number;
   readonly trains: ReadonlyMap<string, PublicTrain>;
@@ -71,6 +74,14 @@ function stringField(record: Record<string, unknown>, field: string): string {
   const value = record[field];
   if (typeof value !== "string" || value.length === 0) {
     throw new TypeError(`Livemap-Feld '${field}' muss eine nichtleere Zeichenkette sein.`);
+  }
+  return value;
+}
+
+function streamIdField(record: Record<string, unknown>): string {
+  const value = stringField(record, "streamId");
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(value)) {
+    throw new TypeError("Livemap-Feld 'streamId' ist keine gueltige Transportkennung.");
   }
   return value;
 }
@@ -144,6 +155,7 @@ export function parseSnapshot(value: unknown): Snapshot {
   if (!isRecord(value)) throw new TypeError("Livemap-Snapshot muss ein Objekt sein.");
   return Object.freeze({
     worldId: stringField(value, "worldId"),
+    streamId: streamIdField(value),
     sequence: integerField(value, "sequence", 0),
     at: integerField(value, "at", 0),
     trains: parseTrains(value["trains"], "trains"),
@@ -158,6 +170,7 @@ export function parseDelta(value: unknown): Delta {
   }
   return Object.freeze({
     worldId: stringField(value, "worldId"),
+    streamId: streamIdField(value),
     sequence: integerField(value, "sequence", 1),
     at: integerField(value, "at", 0),
     changed: parseTrains(value["changed"], "changed"),
@@ -173,6 +186,7 @@ export function initialState(snapshot: Snapshot): LiveState {
   }
   return Object.freeze({
     worldId: snapshot.worldId,
+    streamId: snapshot.streamId,
     sequence: snapshot.sequence,
     at: snapshot.at,
     trains,
@@ -182,6 +196,7 @@ export function initialState(snapshot: Snapshot): LiveState {
 export function applyDelta(state: LiveState, delta: Delta): LiveState | undefined {
   if (
     delta.worldId !== state.worldId ||
+    delta.streamId !== state.streamId ||
     delta.sequence !== state.sequence + 1 ||
     delta.at < state.at
   ) {
@@ -190,7 +205,13 @@ export function applyDelta(state: LiveState, delta: Delta): LiveState | undefine
   const trains = new Map(state.trains);
   delta.changed.forEach((train) => trains.set(train.id, Object.freeze({ ...train })));
   delta.removed.forEach((id) => trains.delete(id));
-  return Object.freeze({ worldId: state.worldId, sequence: delta.sequence, at: delta.at, trains });
+  return Object.freeze({
+    worldId: state.worldId,
+    streamId: state.streamId,
+    sequence: delta.sequence,
+    at: delta.at,
+    trains,
+  });
 }
 
 export function appendRenderSample(
@@ -200,6 +221,7 @@ export function appendRenderSample(
   if (
     samples === undefined ||
     samples.current.worldId !== authoritativeState.worldId ||
+    samples.current.streamId !== authoritativeState.streamId ||
     authoritativeState.sequence <= samples.current.sequence ||
     authoritativeState.at <= samples.current.at
   ) {
@@ -343,10 +365,10 @@ function abortError(error: unknown): boolean {
 }
 
 /**
- * Authentifizierter Snapshot-/SSE-Client. Jeder Stream beginnt bei der zuletzt
- * angewendeten Sequenz. Lücken, Reset und Pufferüberlauf führen zu genau einem
- * laufenden Re-Snapshot; ein fehlgeschlagener Resume-Versuch eskaliert immer
- * zu einem Re-Snapshot.
+ * Authentifizierter Snapshot-/SSE-Client. Jeder Stream beginnt beim zuletzt
+ * angewendeten Generation-/Sequenz-Cursor. Lücken, Generationwechsel, Reset
+ * und Pufferüberlauf führen zu genau einem laufenden Re-Snapshot; ein
+ * fehlgeschlagener Resume-Versuch eskaliert immer zu einem Re-Snapshot.
  */
 export class LivemapConnection {
   readonly #fetch: typeof fetch;
@@ -490,7 +512,7 @@ export class LivemapConnection {
     }
 
     this.#bufferIncoming = false;
-    await this.#replaceStream(state.sequence);
+    await this.#replaceStream(state.streamId, state.sequence);
   }
 
   #drainPending(snapshot: LiveState): { readonly state: LiveState; readonly needsResnapshot: boolean } {
@@ -502,7 +524,7 @@ export class LivemapConnection {
     if (needsResnapshot) return { state, needsResnapshot };
 
     for (const delta of pending) {
-      if (delta.worldId !== this.worldId) {
+      if (delta.worldId !== this.worldId || delta.streamId !== state.streamId) {
         needsResnapshot = true;
         break;
       }
@@ -561,9 +583,9 @@ export class LivemapConnection {
     try {
       const delta = parseDelta(JSON.parse(event.data) as unknown);
       if (event.lastEventId !== undefined && event.lastEventId !== "") {
-        const eventSequence = Number(event.lastEventId);
-        if (!Number.isSafeInteger(eventSequence) || eventSequence !== delta.sequence) {
-          throw new TypeError("SSE-Ereigniskennung und Delta-Sequenz stimmen nicht überein.");
+        const expectedEventId = `${delta.streamId}:${delta.sequence}`;
+        if (event.lastEventId !== expectedEventId) {
+          throw new TypeError("SSE-Ereigniskennung und Delta-Cursor stimmen nicht überein.");
         }
       }
       this.#accept(delta);
@@ -574,7 +596,7 @@ export class LivemapConnection {
     }
   }
 
-  async #replaceStream(lastEventId: number): Promise<void> {
+  async #replaceStream(streamId: string, sequence: number): Promise<void> {
     this.#streamGeneration += 1;
     const generation = this.#streamGeneration;
     this.#streamController?.abort();
@@ -588,7 +610,7 @@ export class LivemapConnection {
         headers: {
           accept: "text/event-stream",
           authorization: this.#authorization,
-          "last-event-id": String(lastEventId),
+          "last-event-id": `${streamId}:${sequence}`,
         },
         signal: controller.signal,
       });
@@ -643,7 +665,7 @@ export class LivemapConnection {
         this.#requestResnapshot();
         return;
       }
-      void this.#replaceStream(this.#state.sequence).catch((error: unknown) => {
+      void this.#replaceStream(this.#state.streamId, this.#state.sequence).catch((error: unknown) => {
         this.#handleRecoveryFailure(error, "resnapshot");
       });
     }, this.#retryDelayMs);

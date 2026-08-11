@@ -6,7 +6,7 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 type AnyDatabase = PgDatabase<PgQueryResultHKT, Record<string, unknown>, any>;
 
 /** Zahl der mit diesem Quellstand ausgelieferten Drizzle-Migrationen. */
-export const EXPECTED_SCHEMA_MIGRATIONS = 11;
+export const EXPECTED_SCHEMA_MIGRATIONS = 12;
 
 function firstRow(result: unknown): Record<string, unknown> | undefined {
   if (Array.isArray(result)) return result[0] as Record<string, unknown> | undefined;
@@ -59,6 +59,9 @@ export function createDatabaseHealthCheck(db: AnyDatabase): HealthCheck {
       );
       await db.execute(
         sql`select world_id, revision, snapshot_hash from fleet_mobilization_snapshots limit 0`,
+      );
+      await db.execute(
+        sql`select world_id, revision, state_hash, command_hash from fleet_world_checkpoints limit 0`,
       );
       await db.execute(
         sql`select world_id, region_id, revision, publisher_sequence from regional_simulation_states limit 0`,

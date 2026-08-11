@@ -10,6 +10,14 @@ Gleitkommazahl. `AdvanceTo` lehnt Zeitreisen ab. Eine nach Zeitpunkt, Zug,
 Wegpunkt und Ereignisart geordnete Queue verarbeitet auch bei großen
 Zeitsprüngen **jedes** Zwischenereignis mit seinem tatsächlichen Zeitpunkt.
 
+`zugfolge-sim-runtime` ist die persistierbare Produktgrenze dieses Kerns. Sie
+initialisiert oder restauriert genau eine Welt/Region, validiert Revision,
+Zustandshash und Producer-Sequenz und wendet ausschließlich versionierte
+Kommandos mit expliziter Weltsekunde an. Die TypeScript-Plattform darf daraus
+keine Deltas erfinden: `RegionalSimulationWorker` schreibt neuen Zustand und
+weltgebundene Ereignisse atomar nach `regional_simulation_states` und
+`domain_events`; erst nach dem Commit publiziert er an die Livemap.
+
 Ein `TrainRun` existiert vollständig nur 48 bis 72 Stunden im Voraus. Sein
 Fahrweg besteht aus monotonen Wegpunkten mit Ankunft, Abfahrt,
 Mindesthaltezeit und ganzzahliger Position. Zwischen zwei Wegpunkten wird die
@@ -49,15 +57,32 @@ Geschwindigkeit, Verspätung, nächster Betriebspunkt und Status. Vertrag,
 Ladung und interne Dispositionsdaten sind nicht Teil von `PublicTrain`.
 
 `packages/livemap` materialisiert die Deltas je Welt und verteilt sie an
-beliebig viele Abonnenten. Die Game-API stellt einen Initialsnapshot und einen
-SSE-Strom mit Sequenzkennungen bereit; der Client lädt bei einer Lücke selbst
-einen neuen Snapshot. `apps/livemap` interpoliert höchstens zehn Sekunden
-voraus und zeigt Zuglaufdetails. Der Normalzustand ist achromatisch;
-Gelb bezeichnet eine betriebliche Abweichung. Das Netz tritt gegenüber den
-Zügen zurück. `tools/tiles/build-pmtiles.mjs` baut aus genehmigten lokalen
-GeoJSON-Artefakten eigene PMTiles. Das ausgeschlossene Netz wird in einem
-separaten, blassen Kontextlayer geführt; kein öffentlicher Kacheldienst ist
-Laufzeitabhängigkeit.
+beliebig viele Abonnenten. Jede Feed-Generation besitzt neben der monotonen
+Sequenz eine neue undurchsichtige `streamId`. Der SSE-Cursor
+`streamId:sequence` kann deshalb nach Prozessneustart oder TTL-Eviction nicht
+versehentlich in eine gleich nummerierte, aber andere Generation fortsetzen.
+Snapshot und atomare `subscribeAfter`-Registrierung schließen die
+Snapshot/Subscribe-Race; eine begrenzte Queue, Heartbeats und Abort-/Close-
+Cleanup verhindern unbegrenztes Wachstum und verwaiste Abonnenten.
+
+Die Game-API authentifiziert Snapshot und Fetch-SSE, prüft Weltzugang und
+liefert bei unbekannter oder nicht aus Rust restaurierter Welt bewusst `503`.
+Beim Start restauriert sie alle persistenten Regionen vor dem Listener; der
+1:1-Scheduler berechnet die Weltsekunde aus der gepinnten Weltepoche und gibt
+sie explizit an Rust. Ein Cursor einer anderen Generation oder eine Lücke
+erzwingt gezielt einen neuen Snapshot. `apps/livemap` interpoliert höchstens
+zehn Sekunden voraus, ohne den autoritativen Fachzustand zu verändern, und
+zeigt Zuglaufdetails. Der Normalzustand ist achromatisch; Gelb bezeichnet eine
+betriebliche Abweichung. Das Netz tritt gegenüber den Zügen zurück.
+`tools/tiles/build-pmtiles.mjs` baut aus genehmigten lokalen GeoJSON-Artefakten
+eigene PMTiles. Das ausgeschlossene Netz wird in einem separaten, blassen
+Kontextlayer geführt; kein öffentlicher Kacheldienst ist Laufzeitabhängigkeit.
+
+Die internen Regionalrouten akzeptieren nur Initialisierungsfakten und
+versionierte Simulationskommandos. Rohzustand, Sequenzkopf und fertige Deltas
+sind kein HTTP-Eingabevertrag. Dadurch bleibt der Rust-Worker der einzige
+Writer; der generische Eventadapter kann den Livemap-Fachzustand nicht
+überschreiben.
 
 ## 5. Replay, Zeitumstellung und Lastbeweis
 

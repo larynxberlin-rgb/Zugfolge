@@ -14,8 +14,13 @@ crates/                     Rust — Simulationskern, Solver, Release-Pipeline
   zugfolge-infra/           Betriebsgraph und Infra-Release-Pipeline (M1)
   zugfolge-conflict/        Sperrzeiten, Belegungsprofile, Konfliktprüfung (M3.1–M3.3), Rahmenverträge (M3.8)
   zugfolge-planner/         Trassen-Planner (M3.4), PlanningRun, Fahrplanperiode, Ad-hoc-Trassen (M3.5–M3.7)
+  zugfolge-planning-runtime/ Persistierbarer PlanningRun-Single-Writer und Bildfahrplanprojektion (M3.10)
+  zugfolge-planning-runtime-napi/ Schmale napi-rs-Grenze des Planning-Single-Writers
   zugfolge-sim/             Ereigniskern, TrainRun, Regionsübergabe, Replay und Livemap-Protokoll (M4)
+  zugfolge-sim-runtime/     Persistierbare, versionierte Single-Writer-/Delta-Grenze (M4.6)
   zugfolge-fleet/           Flotte, Formation, Umlauf, Personal, Versorgung und Beschaffung (M5)
+  zugfolge-runtime/         Autoritativer Flotten- und Betriebsübergangszustand (M5/M6.7)
+  zugfolge-runtime-napi/    Schmale napi-rs-Grenze für M5/M6
   zugfolge-rules/           Betriebsprogramm, Dispositionsregeln, Erklärungen und Rücktest (M7)
 packages/                   TypeScript — fachliche Bibliotheken (ab M2)
   db/                       Postgres-Zugriff über Drizzle, Wurzel der Weltisolation (M2.2)
@@ -26,7 +31,11 @@ packages/                   TypeScript — fachliche Bibliotheken (ab M2)
   privacy/                  Datenschutz: Auskunft, Löschung, Aufbewahrungsfristen (M2.6)
   health/                   Health-Check-Vertrag und Aggregation für Status-/Monitoringdienste, Grundlage für M9.5
   design-system/            Palette, Komponenten, Icons und Dichtestufen (M3.9)
+  planning-projection/      Strikter Clientvertrag für Bildfahrplan und Konflikterklärung (M3.10)
+  planning-runtime-native/  Fail-closed Loader des Planning-Node-Addons
+  planning-worker/          Weltgebundener Command-Consumer und atomare Planning-Projektion
   livemap/                  Weltisolierter Snapshot-/Delta-Fanout (M4.6)
+  runtime-native/           Fail-closed Loader für Flotten-, Betriebs- und Regional-Runtimes
   dispatch/                 Kanonischer M7-Plattformvertrag, EVU-Projektionen und Operations-Stream
 apps/                       TypeScript — Dienste und Frontend (ab M2 / M4)
   game-api/                 Fastify-Dienst: Authentifizierung, Weltzugang, EVU, Ledger, Postfach, Datenschutz (M2)
@@ -78,12 +87,27 @@ gilt, die für den Prüfer keinen Sinn ergibt: Reihenfolge und Bezahlstatus
 dürfen das Ergebnis nicht beeinflussen. Siehe
 [`infrastruktur.md`](infrastruktur.md) 6 bis 9.
 
+M3.10 ergänzt diese Grenze, ohne eine zweite Planungslogik einzuführen:
+`zugfolge-planning-runtime` führt den echten `PlanningRun` aus und erzeugt den
+revisionierten Rust-Zustand sowie die Projektion. `packages/planning-worker`
+ordnet ausschließlich welt- und kontogebundene Kommandos, Infrastruktur-
+Release-Fakten und den atomaren Datenbank-Commit. Der Browser erhält nur den
+strikten Vertrag aus `packages/planning-projection`; weder API noch Client
+dürfen Konflikte oder Alternativen selbst entscheiden.
+
 Seit **M5.1** hält `zugfolge-fleet` bewusst zwei Ebenen auseinander: Der
 versionierte `VehicleCatalogRelease` beschreibt Typen, Quellen, Bau-/Marktzeiten
 und belegte Zugsicherungsoptionen; `VehicleAsset` und `FleetSnapshot` halten
 den individuellen, weltgebundenen Zustand. Die echte redaktionelle
 Katalogdatei bleibt als proprietäres Weltdatum außerhalb dieses öffentlichen
 Baums (E16). Im Crate liegen nur Schema, Regeln und fiktive Testdaten.
+
+Der produktive M5-Pfad liegt in `zugfolge-runtime`: Ein serververtrauenswürdiger,
+weltgebundener Authority-Release wird beim Start geprüft und beim Initialisieren
+in den Rust-Zustand eingefroren. Folgekommandos enthalten nur Kennungen und
+Absichten. `packages/economy` persistiert Rust-Zustand, kompakten Replay-Beleg
+und abgeleiteten Mobilisierungssnapshot in einer Transaktion. Die Game-API
+nimmt deshalb weder fremde Rust-Zustände noch fertige Snapshots entgegen.
 
 Seit **M5.8** ist `zugfolge-fleet` der Orchestrator für Zusatzfahrten und darf
 deshalb von `zugfolge-sim` abhängen, nicht umgekehrt: Nach erfolgreicher
@@ -189,8 +213,8 @@ Liste ist keine vollständige Karte des Repositoriums, sondern die Zuordnung
 | Domäne | Pfade | Status | Was dort besonders gilt |
 |--------|-------|--------|-------------------------|
 | `determinism-core` | `crates/zugfolge-determinism/**` | aktiv | ganzzahlig, uhrfrei, geordnet — der Harnisch muss selbst halten, was er prüft |
-| `simulation-core` | `crates/zugfolge-sim/**`, `crates/zugfolge-conflict/**`, `crates/zugfolge-fleet/**`, `spikes/**` | aktiv | vollständiger Kernvertrag: kein Bezahlstatus, keine Uhr, keine Datenbank |
-| `path-allocation` | `crates/zugfolge-planner/**`, `packages/path-allocation/**` | aktiv | Reihenfolge und Bezahlstatus beeinflussen das Ergebnis nicht (E4, `infrastruktur.md` 2) |
+| `simulation-core` | `crates/zugfolge-sim/**`, `crates/zugfolge-sim-runtime/**`, `crates/zugfolge-runtime/**`, `crates/zugfolge-conflict/**`, `crates/zugfolge-fleet/**`, `spikes/**` | aktiv | vollständiger Kernvertrag: kein Bezahlstatus, keine Uhr, keine Datenbank |
+| `path-allocation` | `crates/zugfolge-planner/**`, `crates/zugfolge-planning-runtime{,-napi}/**`, `packages/path-allocation/**`, `packages/planning-{projection,runtime-native,worker}/**` | aktiv | Reihenfolge und Bezahlstatus beeinflussen das Ergebnis nicht (E4, `infrastruktur.md` 2) |
 | `dispatch` | `crates/zugfolge-rules/**`, `packages/dispatch/**` | aktiv | das Betriebsprogramm wirkt offline und für alle gleich (E2, E13) |
 | `demand` | `packages/demand/**`, `crates/zugfolge-demand/**` | geplant | Nachfrage folgt dem Angebot, nie dem Vertrag des Spielers |
 | `economy` | `packages/economy/**`, `packages/tender/**`, `apps/economy-service/**` | aktiv | Ledger in Integer-Cent (M2.4); Wertung deterministisch aus dem `EconomyRelease` (M6) |

@@ -4,7 +4,9 @@ import {
   createDatabase,
   createEconomyOutboxHealthCheck,
   createEventLogHealthCheck,
+  regionalSimulationStates,
   worldEventLog,
+  worlds,
 } from "@zugfolge/db";
 import { OperationsRegistry } from "@zugfolge/dispatch";
 import {
@@ -24,12 +26,30 @@ import {
   createLivemapHealthCheck,
   LivemapRegistry,
 } from "@zugfolge/livemap-stream";
+import { loadPlanningRuntime } from "@zugfolge/planning-runtime-native";
+import { planningInfrastructureReleaseCatalog } from "@zugfolge/planning-worker";
 import { purgeExpiredAccountData } from "@zugfolge/privacy";
-import { loadOperatingRuntime, type OperatingRuntimeEvent } from "@zugfolge/runtime-native";
+import {
+  FLEET_INITIALIZE_SCHEMA,
+  loadOperatingRuntime,
+  loadRegionalSimulationRuntime,
+  type OperatingRuntimeEvent,
+} from "@zugfolge/runtime-native";
+import { asc, eq } from "drizzle-orm";
 
 import { buildApp } from "./app.js";
+import { loadFleetAuthorityReleaseCatalog } from "./fleet-configuration.js";
 import { projectLivemapOperationEvent } from "./livemap-operation-projection.js";
 import { generateDailyOperationReports, previousBerlinServiceDay } from "./daily-reports.js";
+import {
+  parsePlanningAuthorityAccountIdsJson,
+  parsePlanningInfrastructureReleasesJson,
+  verifyPlanningAuthorityAccounts,
+} from "./planning-configuration.js";
+import { createPlanningScheduler } from "./planning-scheduler.js";
+import { advanceRegionalSimulations } from "./regional-simulation-scheduler.js";
+import { RegionalSimulationWorker } from "./regional-simulation-worker.js";
+import { compareUtf8 } from "./utf8.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -39,6 +59,17 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function persistedRegionalNowS(state: unknown): number {
+  if (typeof state !== "object" || state === null || Array.isArray(state)) {
+    throw new Error("Persistierter regionaler Simulationszustand ist kein Objekt.");
+  }
+  const nowS = (state as Readonly<Record<string, unknown>>)["nowS"];
+  if (!Number.isSafeInteger(nowS) || (nowS as number) < 0) {
+    throw new Error("Persistierter regionaler Simulationszustand hat keine sichere Weltsekunde.");
+  }
+  return nowS as number;
+}
+
 const db = createDatabase(requireEnv("DATABASE_URL"));
 const keycloak = loadKeycloakConfigFromEnv();
 const verifyToken = createKeycloakVerifier(keycloak);
@@ -46,6 +77,51 @@ const livemap = new LivemapRegistry();
 const operations = new OperationsRegistry();
 const economyMonitor = new EconomySchedulerMonitor(Date.now());
 const operatingRuntime = loadOperatingRuntime();
+const fleetAuthorityReleases = await loadFleetAuthorityReleaseCatalog(
+  requireEnv("ZUGFOLGE_FLEET_AUTHORITY_RELEASE_PATH"),
+);
+const regionalSimulationRuntime = loadRegionalSimulationRuntime();
+const planningRuntime = loadPlanningRuntime();
+const planningInfrastructureReleases = planningInfrastructureReleaseCatalog(
+  parsePlanningInfrastructureReleasesJson(
+    requireEnv("PLANNING_INFRASTRUCTURE_RELEASES_JSON"),
+  ),
+);
+const planningAuthorityAccountIds = parsePlanningAuthorityAccountIdsJson(
+  requireEnv("PLANNING_AUTHORITY_ACCOUNT_IDS_JSON"),
+);
+const regionalSimulation = new RegionalSimulationWorker(
+  db,
+  regionalSimulationRuntime,
+  livemap,
+);
+const worldRows = await db
+  .select({ worldId: worlds.id, epoch: worlds.epoch })
+  .from(worlds)
+  .orderBy(asc(worlds.id));
+const worldEpochs = new Map(
+  worldRows.map((world) => [world.worldId, world.epoch] as const),
+);
+const configuredWorldIds = new Set(worldRows.map((world) => world.worldId));
+for (const [worldId, authorityRelease] of Object.entries(fleetAuthorityReleases)) {
+  if (!configuredWorldIds.has(worldId)) {
+    throw new Error(`M5-Authority-Release ist an die unbekannte Welt '${worldId}' gebunden.`);
+  }
+  // Die TS-Konfiguration prueft Form und Grenzen; Rust prueft beim Start
+  // zusaetzlich die fachliche Authority-Konsistenz. Das Ergebnis wird bewusst
+  // verworfen: produktiver Zustand entsteht ausschliesslich atomar per Route.
+  operatingRuntime.initializeFleet({
+    schemaVersion: FLEET_INITIALIZE_SCHEMA,
+    worldId,
+    producedAt: 0,
+    authorityRelease,
+  });
+}
+await verifyPlanningAuthorityAccounts(
+  db,
+  worldRows.map((world) => world.worldId),
+  planningAuthorityAccountIds,
+);
 
 const economyAdapters = {
   ...createEconomyPlatformAdapters({
@@ -78,15 +154,45 @@ for (const worldId of await listEconomyWorldIds(db)) {
     });
   }
 }
+
+// Alle persistierten regionalen Rust-Zustaende werden vor dem ersten
+// Listener restauriert. Welten ohne Zustand bleiben bewusst uninitialisiert
+// und ihre Livemap-Routen damit auf 503.
+for (const world of worldRows) {
+  const persistedRegions = await db
+    .select({
+      regionId: regionalSimulationStates.regionId,
+      state: regionalSimulationStates.state,
+    })
+    .from(regionalSimulationStates)
+    .where(eq(regionalSimulationStates.worldId, world.worldId));
+  persistedRegions.sort(
+    (left, right) => {
+      const leftNowS = persistedRegionalNowS(left.state);
+      const rightNowS = persistedRegionalNowS(right.state);
+      return leftNowS === rightNowS
+        ? compareUtf8(left.regionId, right.regionId)
+        : leftNowS < rightNowS
+          ? -1
+          : 1;
+    },
+  );
+  for (const region of persistedRegions) {
+    await regionalSimulation.restore(world.worldId, region.regionId);
+  }
+}
+
 const app = buildApp({
   db,
   verifyToken,
   livemap,
   operations,
-  livemapIngestToken: requireEnv("LIVEMAP_INGEST_TOKEN"),
   simulationIngestToken: requireEnv("SIMULATION_INGEST_TOKEN"),
+  regionalSimulation,
+  planningAuthorityAccountIds,
   fleetIngestToken: requireEnv("FLEET_INGEST_TOKEN"),
-  verifyFleetMobilizationSnapshot: operatingRuntime.verifyFleetMobilizationSnapshot,
+  fleetRuntime: operatingRuntime,
+  fleetAuthorityReleases,
   extraHealthChecks: [
     createKeycloakHealthCheck(keycloak),
     createEventLogHealthCheck(db),
@@ -94,6 +200,48 @@ const app = buildApp({
     createEconomySchedulerHealthCheck(economyMonitor),
     createLivemapHealthCheck(livemap),
   ],
+});
+
+// Erster expliziter 1:1-Takt noch vor dem Listener: Ein restaurierter Zustand
+// wird nicht fuer einen kurzen Zeitraum mit alter Weltzeit ausgeliefert.
+await advanceRegionalSimulations(regionalSimulation, worldEpochs, new Date());
+let regionalAdvanceCycle: Promise<void> | undefined;
+const runRegionalAdvance = () => {
+  if (regionalAdvanceCycle !== undefined) return;
+  regionalAdvanceCycle = advanceRegionalSimulations(
+    regionalSimulation,
+    worldEpochs,
+    new Date(),
+  )
+    .then(() => undefined)
+    .catch((error: unknown) => {
+      app.log.error({ err: error }, "Regionaler 1:1-Simulationstakt fehlgeschlagen");
+    })
+    .finally(() => {
+      regionalAdvanceCycle = undefined;
+    });
+};
+const regionalAdvanceInterval = setInterval(runRegionalAdvance, 1_000);
+regionalAdvanceInterval.unref();
+app.addHook("onClose", async () => {
+  clearInterval(regionalAdvanceInterval);
+  await regionalAdvanceCycle;
+});
+
+const planningScheduler = createPlanningScheduler(
+  db,
+  planningRuntime,
+  planningInfrastructureReleases,
+  worldRows.map((world) => world.worldId),
+  {
+    onError: (error) => {
+      app.log.error({ err: error }, "Planning-Consumer-Lauf fehlgeschlagen");
+    },
+  },
+);
+planningScheduler.start();
+app.addHook("onClose", async () => {
+  await planningScheduler.close();
 });
 
 let economyCycle: Promise<void> | undefined;

@@ -21,6 +21,20 @@ const train = {
 };
 
 describe("LivemapFeed", () => {
+  it("ordnet nicht-ASCII-Zugkennungen wie Rust nach UTF-8-Bytes", () => {
+    const feed = new LivemapFeed("welt-a");
+    feed.publish({
+      at: 1,
+      changed: [
+        { ...train, id: "ä" },
+        { ...train, id: "z" },
+      ],
+      removed: [],
+    });
+
+    expect(feed.snapshot().trains.map((item) => item.id)).toEqual(["z", "ä"]);
+  });
+
   it("sequenziert, materialisiert und verteilt Deltas", () => {
     const feed = new LivemapFeed("welt-a");
     const listener = vi.fn();
@@ -47,7 +61,10 @@ describe("LivemapFeed", () => {
     feed.publish({ at: 20, changed: [], removed: [] });
     const listener = vi.fn();
 
-    const subscription = feed.subscribeAfter(1, listener);
+    const subscription = feed.subscribeAfter(
+      { streamId: feed.snapshot().streamId, sequence: 1 },
+      listener,
+    );
     expect(subscription.kind).toBe("resume");
     if (subscription.kind !== "resume") throw new Error("Resume erwartet.");
     expect(subscription.replay.map((delta) => delta.sequence)).toEqual([2]);
@@ -66,7 +83,10 @@ describe("LivemapFeed", () => {
     feed.publish({ at: 20, changed: [], removed: [] });
     const listener = vi.fn();
 
-    const subscription = feed.subscribeAfter(0, listener);
+    const subscription = feed.subscribeAfter(
+      { streamId: feed.snapshot().streamId, sequence: 0 },
+      listener,
+    );
     expect(subscription.kind).toBe("reset");
     expect(feed.subscriberCount).toBe(0);
     feed.publish({ at: 30, changed: [], removed: [] });
@@ -197,6 +217,101 @@ describe("LivemapRegistry", () => {
     expect(registry.forWorld("a").snapshot().trains[0]?.operationMarker).toEqual(
       PUBLIC_OPERATION_MARKER,
     );
+    registry.markUnavailable("a");
+    expect(registry.isInitialized("a")).toBe(false);
+  });
+
+  it("liefert nach TTL-Ablauf niemals einen neu erzeugten leeren Initialfeed", () => {
+    let now = 0;
+    const registry = new LivemapRegistry({ idleTtlMs: 100, now: () => now });
+    registry.initializeWorld("a", { at: 1, trains: [train] });
+    expect(registry.initializedWorld("a")?.snapshot().trains).toHaveLength(1);
+
+    now = 101;
+    expect(registry.initializedWorld("a")).toBeUndefined();
+    expect(registry.size).toBe(0);
+  });
+
+  it("erzwingt nach TTL bei gleicher Sequenz und neuer Generation einen Reset", () => {
+    let now = 0;
+    const streamIds = ["generation-a", "generation-b"];
+    const registry = new LivemapRegistry({
+      idleTtlMs: 100,
+      now: () => now,
+      createStreamId: () => streamIds.shift()!,
+    });
+    registry.initializeRegion("a", "east", { at: 1, trains: [train] });
+    const before = registry.initializedWorld("a")!.snapshot();
+
+    now = 101;
+    registry.initializeRegion("a", "east", {
+      at: 2,
+      trains: [{ ...train, positionMm: 999 }],
+    });
+    const feed = registry.initializedWorld("a")!;
+    const after = feed.snapshot();
+    expect({ before: before.sequence, after: after.sequence }).toEqual({
+      before: 1,
+      after: 1,
+    });
+    expect(after.streamId).not.toBe(before.streamId);
+    expect(after.trains[0]?.positionMm).toBe(999);
+    expect(
+      feed.subscribeAfter(
+        { streamId: before.streamId, sequence: before.sequence },
+        vi.fn(),
+      ).kind,
+    ).toBe("reset");
+  });
+
+  it("bewahrt vorgemerkte Betriebsmarker ueber Feed-Eviction und Restore", () => {
+    let now = 0;
+    const registry = new LivemapRegistry({ idleTtlMs: 100, now: () => now });
+    registry.markPublicOperation("a", ["7"], 1);
+    registry.clearOperationMarker("a", ["7"], 1);
+    registry.markPublicOperation("a", ["7"], 1);
+    registry.initializeRegion("a", "east", { at: 2, trains: [train] });
+    expect(registry.initializedWorld("a")?.snapshot().trains[0]?.operationMarker).toEqual(
+      PUBLIC_OPERATION_MARKER,
+    );
+
+    now = 101;
+    expect(registry.initializedWorld("a")).toBeUndefined();
+    registry.initializeRegion("a", "east", { at: 3, trains: [train] });
+    expect(registry.initializedWorld("a")?.snapshot().trains[0]?.operationMarker).toEqual(
+      PUBLIC_OPERATION_MARKER,
+    );
+
+    registry.clearOperationMarker("a", ["7"], 4);
+    now = 202;
+    expect(registry.initializedWorld("a")).toBeUndefined();
+    registry.initializeRegion("a", "east", { at: 5, trains: [train] });
+    expect(
+      registry.initializedWorld("a")?.snapshot().trains[0]?.operationMarker,
+    ).toBeUndefined();
+  });
+
+  it("restauriert Zuege regiongebunden und entfernt keine Nachbarregion", () => {
+    const registry = new LivemapRegistry();
+    const east = { ...train, id: "east" };
+    const west = { ...train, id: "west" };
+    const addedLater = { ...train, id: "east-later" };
+    registry.initializeRegion("a", "east", { at: 1, trains: [east] });
+    registry.initializeRegion("a", "west", { at: 1, trains: [west] });
+    registry.publishRegionDelta("a", "east", {
+      at: 2,
+      changed: [addedLater],
+      removed: ["east"],
+    });
+    expect(
+      registry.initializedWorld("a")?.snapshot().trains.map((item) => item.id),
+    ).toEqual(["east-later", "west"]);
+
+    registry.markUnavailable("a");
+    registry.initializeRegion("a", "east", { at: 2, trains: [] });
+    expect(
+      registry.initializedWorld("a")?.snapshot().trains.map((item) => item.id),
+    ).toEqual(["west"]);
   });
 
   it("projiziert persistierte Eigenbetriebsmarker weltisoliert", () => {
