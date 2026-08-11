@@ -1,244 +1,136 @@
-export interface Station {
-  readonly id: string;
-  readonly name: string;
-  readonly km: number;
-}
-export interface TrainCall {
-  readonly stationId: string;
-  readonly minute: number;
-}
-export interface TrainPath {
-  readonly id: string;
-  readonly number: string;
-  readonly direction: "up" | "down";
-  readonly calls: readonly TrainCall[];
-}
-export type OccupationPhase =
-  | "formation"
-  | "approach"
-  | "running"
-  | "clearing"
-  | "release"
-  | "buffer";
-export interface OccupationStep {
-  readonly trainId: string;
-  readonly resource: string;
-  readonly stationId: string;
-  readonly phase: OccupationPhase;
-  readonly startMinute: number;
-  readonly endMinute: number;
-}
-export interface Conflict {
-  readonly id: string;
-  readonly trainIds: readonly [string, string];
-  readonly resource: string;
-  readonly kind: "sequence" | "exclusion";
-  readonly startMinute: number;
-  readonly endMinute: number;
-  readonly minimumHeadwayMinutes: number;
-  readonly proposedShiftMinutes: number;
-}
-export interface DiagramData {
-  readonly corridor: string;
-  readonly stations: readonly Station[];
-  readonly trains: readonly TrainPath[];
-  readonly occupations: readonly OccupationStep[];
-  readonly conflicts: readonly Conflict[];
-}
-export const phaseLabels: Readonly<Record<OccupationPhase, string>> = {
-  formation: "Fahrstraße bilden",
-  approach: "Annäherung",
-  running: "Fahrt",
-  clearing: "Räumung",
-  release: "Auflösung",
-  buffer: "Puffer",
-};
-export const sampleData: DiagramData = {
-  corridor: "Halle–Leipzig",
-  stations: [
-    { id: "halle", name: "Halle (Saale) Hbf", km: 0 },
-    { id: "schkeuditz", name: "Schkeuditz", km: 13 },
-    { id: "leutzsch", name: "Leipzig-Leutzsch", km: 27 },
-    { id: "leipzig", name: "Leipzig Hbf", km: 34 },
-  ],
-  trains: [
-    {
-      id: "t1",
-      number: "R 74018",
-      direction: "down",
-      calls: [
-        { stationId: "halle", minute: 430 },
-        { stationId: "schkeuditz", minute: 442 },
-        { stationId: "leutzsch", minute: 453 },
-        { stationId: "leipzig", minute: 460 },
-      ],
-    },
-    {
-      id: "t2",
-      number: "R 74021",
-      direction: "up",
-      calls: [
-        { stationId: "leipzig", minute: 432 },
-        { stationId: "leutzsch", minute: 439 },
-        { stationId: "schkeuditz", minute: 452 },
-        { stationId: "halle", minute: 465 },
-      ],
-    },
-    {
-      id: "t3",
-      number: "G 61244",
-      direction: "down",
-      calls: [
-        { stationId: "halle", minute: 441 },
-        { stationId: "schkeuditz", minute: 454 },
-        { stationId: "leutzsch", minute: 466 },
-        { stationId: "leipzig", minute: 473 },
-      ],
-    },
-    {
-      id: "t4",
-      number: "R 74023",
-      direction: "up",
-      calls: [
-        { stationId: "leipzig", minute: 451 },
-        { stationId: "leutzsch", minute: 458 },
-        { stationId: "schkeuditz", minute: 471 },
-        { stationId: "halle", minute: 484 },
-      ],
-    },
-  ],
-  occupations: [
-    {
-      trainId: "t1",
-      resource: "Block SKZ–LL",
-      stationId: "schkeuditz",
-      phase: "formation",
-      startMinute: 446,
-      endMinute: 447,
-    },
-    {
-      trainId: "t1",
-      resource: "Block SKZ–LL",
-      stationId: "schkeuditz",
-      phase: "approach",
-      startMinute: 447,
-      endMinute: 449,
-    },
-    {
-      trainId: "t1",
-      resource: "Block SKZ–LL",
-      stationId: "schkeuditz",
-      phase: "running",
-      startMinute: 449,
-      endMinute: 452,
-    },
-    {
-      trainId: "t1",
-      resource: "Block SKZ–LL",
-      stationId: "leutzsch",
-      phase: "clearing",
-      startMinute: 452,
-      endMinute: 453,
-    },
-    {
-      trainId: "t1",
-      resource: "Block SKZ–LL",
-      stationId: "leutzsch",
-      phase: "release",
-      startMinute: 453,
-      endMinute: 454,
-    },
-    {
-      trainId: "t1",
-      resource: "Block SKZ–LL",
-      stationId: "leutzsch",
-      phase: "buffer",
-      startMinute: 454,
-      endMinute: 455,
-    },
-  ],
-  conflicts: [
-    {
-      id: "c1",
-      trainIds: ["t1", "t2"],
-      resource: "Block Schkeuditz–Leutzsch · 3. Gleis",
-      kind: "sequence",
-      startMinute: 449,
-      endMinute: 452,
-      minimumHeadwayMinutes: 4,
-      proposedShiftMinutes: 3,
-    },
-    {
-      id: "c2",
-      trainIds: ["t3", "t4"],
-      resource: "Fahrstraße 32N · Leipzig-Leutzsch",
-      kind: "exclusion",
-      startMinute: 457,
-      endMinute: 459,
-      minimumHeadwayMinutes: 3,
-      proposedShiftMinutes: 2,
-    },
-  ],
+import type {
+  BlockingPhase,
+  ConflictKind,
+  PlanningConflictProjection,
+  PlanningProjectionV1,
+  PlanningTrainProjection,
+} from "@zugfolge/planning-projection";
+
+export const phaseLabels: Readonly<Record<BlockingPhase, string>> = {
+  "route-setting": "Fahrstrassenbildezeit",
+  "signal-sighting": "Signalsichtzeit",
+  approach: "Annaeherungsfahrzeit",
+  running: "Fahrzeit",
+  clearing: "Raeumfahrzeit",
+  "route-release": "Fahrstrassenaufloesezeit",
 };
 
-export const formatMinute = (m: number): string =>
-  `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-export const extent = (data: DiagramData): readonly [number, number] => {
-  const m = data.trains.flatMap((t) => t.calls.map((c) => c.minute));
-  return [
-    Math.floor((Math.min(...m) - 5) / 5) * 5,
-    Math.ceil((Math.max(...m) + 5) / 5) * 5,
-  ];
+export const conflictLabels: Readonly<Record<ConflictKind, string>> = {
+  headway: "Zugfolge",
+  "opposing-move": "Gegenfahrt",
+  "route-exclusion": "Fahrstrassenausschluss",
+  "facility-contention": "Anlagenbelegung",
 };
-export function stationY(data: DiagramData, id: string, height = 460): number {
-  const s = data.stations.find((x) => x.id === id);
-  if (!s) throw new Error(`Unbekannte Betriebsstelle: ${id}`);
-  const max = Math.max(...data.stations.map((x) => x.km));
-  return 54 + (s.km / max) * (height - 92);
+
+function floorMod(value: number, modulus: number): number {
+  return ((value % modulus) + modulus) % modulus;
 }
-export function timeX(data: DiagramData, minute: number, width = 980): number {
-  const [from, to] = extent(data);
-  return 150 + ((minute - from) / (to - from)) * (width - 180);
+
+/** Darstellung einer ganzzahligen Weltsekunde; der Fachwert bleibt unveraendert. */
+export function formatTimeS(timeS: number): string {
+  const secondOfDay = floorMod(timeS, 86_400);
+  const hours = Math.floor(secondOfDay / 3_600);
+  const minutes = Math.floor((secondOfDay % 3_600) / 60);
+  const seconds = secondOfDay % 60;
+  return [hours, minutes, seconds].map((part) => String(part).padStart(2, "0")).join(":");
 }
-export const pathPoints = (data: DiagramData, train: TrainPath): string =>
-  train.calls
-    .map((c) => `${timeX(data, c.minute)},${stationY(data, c.stationId)}`)
+
+export function formatDurationS(durationS: number): string {
+  const absolute = Math.abs(durationS);
+  const minutes = Math.floor(absolute / 60);
+  const seconds = absolute % 60;
+  return `${durationS < 0 ? "−" : ""}${minutes}:${String(seconds).padStart(2, "0")} min`;
+}
+
+export function formatSignedShiftS(shiftS: number): string {
+  const sign = shiftS < 0 ? "−" : "+";
+  return `${sign}${formatDurationS(Math.abs(shiftS))}`;
+}
+
+export function timeExtentS(projection: PlanningProjectionV1): readonly [number, number] {
+  const values = [
+    ...projection.trains.flatMap((train) => train.calls.map((call) => call.timeS)),
+    ...projection.occupations.flatMap((occupation) => [occupation.startS, occupation.endS]),
+    ...projection.conflicts.flatMap((conflict) => [conflict.window.startS, conflict.window.endS]),
+  ];
+  if (values.length === 0) return [0, 3_600];
+  const minimum = Math.min(...values);
+  const maximum = Math.max(...values);
+  const from = Math.floor((minimum - 300) / 300) * 300;
+  const to = Math.ceil((maximum + 300) / 300) * 300;
+  return to > from ? [from, to] : [from, from + 600];
+}
+
+export function distanceExtentMm(projection: PlanningProjectionV1): readonly [number, number] {
+  const values = [
+    ...projection.stations.map((station) => station.distanceMm),
+    ...projection.occupations.flatMap((occupation) => [
+      occupation.startDistanceMm,
+      occupation.endDistanceMm,
+    ]),
+  ];
+  if (values.length === 0) return [0, 1];
+  const minimum = Math.min(...values);
+  const maximum = Math.max(...values);
+  return maximum > minimum ? [minimum, maximum] : [minimum, minimum + 1];
+}
+
+export function positionY(
+  projection: PlanningProjectionV1,
+  distanceMm: number,
+  height = 460,
+): number {
+  const [minimum, maximum] = distanceExtentMm(projection);
+  return 54 + ((distanceMm - minimum) / (maximum - minimum)) * (height - 92);
+}
+
+export function stationY(
+  projection: PlanningProjectionV1,
+  stationId: string,
+  height = 460,
+): number {
+  const station = projection.stations.find((candidate) => candidate.id === stationId);
+  if (station === undefined) throw new Error(`Unbekannte Betriebsstelle: ${stationId}`);
+  return positionY(projection, station.distanceMm, height);
+}
+
+export function timeX(
+  projection: PlanningProjectionV1,
+  timeS: number,
+  width = 980,
+): number {
+  const [from, to] = timeExtentS(projection);
+  return 150 + ((timeS - from) / (to - from)) * (width - 180);
+}
+
+export function pathPoints(
+  projection: PlanningProjectionV1,
+  train: PlanningTrainProjection,
+): string {
+  return train.calls
+    .map((call) => `${timeX(projection, call.timeS)},${stationY(projection, call.stationId)}`)
     .join(" ");
-export const conflictsForTrain = (
-  data: DiagramData,
-  id: string,
-): readonly Conflict[] => data.conflicts.filter((c) => c.trainIds.includes(id));
-export function shiftedData(
-  data: DiagramData,
+}
+
+export function conflictsForTrain(
+  projection: PlanningProjectionV1,
   trainId: string,
-  minutes: number,
-): DiagramData {
-  return {
-    ...data,
-    trains: data.trains.map((train) =>
-      train.id === trainId
-        ? {
-            ...train,
-            calls: train.calls.map((call) => ({
-              ...call,
-              minute: call.minute + minutes,
-            })),
-          }
-        : train,
-    ),
-    occupations: data.occupations.map((occupation) =>
-      occupation.trainId === trainId
-        ? {
-            ...occupation,
-            startMinute: occupation.startMinute + minutes,
-            endMinute: occupation.endMinute + minutes,
-          }
-        : occupation,
-    ),
-    conflicts: data.conflicts.filter(
-      (conflict) =>
-        !conflict.trainIds.includes(trainId) ||
-        Math.abs(minutes) < conflict.proposedShiftMinutes,
-    ),
-  };
+): readonly PlanningConflictProjection[] {
+  return projection.conflicts.filter((conflict) => conflict.trainIds.includes(trainId));
+}
+
+export function conflictDistanceMm(
+  projection: PlanningProjectionV1,
+  conflict: PlanningConflictProjection,
+): number {
+  const matching = projection.occupations.find(
+    (occupation) =>
+      occupation.resource.id === conflict.resource.id &&
+      conflict.trainIds.includes(occupation.trainId),
+  );
+  if (matching !== undefined) {
+    return Math.floor((matching.startDistanceMm + matching.endDistanceMm) / 2);
+  }
+  const [minimum, maximum] = distanceExtentMm(projection);
+  return Math.floor((minimum + maximum) / 2);
 }

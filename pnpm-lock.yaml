@@ -16,6 +16,9 @@ importers:
       '@zugfolge/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@zugfolge/dispatch':
+        specifier: workspace:*
+        version: link:../../packages/dispatch
       '@zugfolge/economy':
         specifier: workspace:*
         version: link:../../packages/economy
@@ -34,9 +37,15 @@ importers:
       '@zugfolge/operators':
         specifier: workspace:*
         version: link:../../packages/operators
+      '@zugfolge/planning-projection':
+        specifier: workspace:*
+        version: link:../../packages/planning-projection
       '@zugfolge/privacy':
         specifier: workspace:*
         version: link:../../packages/privacy
+      '@zugfolge/runtime-native':
+        specifier: workspace:*
+        version: link:../../packages/runtime-native
       fastify:
         specifier: ^5.11.2
         version: 5.11.2
@@ -68,6 +77,9 @@ importers:
       '@zugfolge/design-system':
         specifier: workspace:*
         version: link:../../packages/design-system
+      '@zugfolge/planning-projection':
+        specifier: workspace:*
+        version: link:../../packages/planning-projection
     devDependencies:
       typescript:
         specifier: ^7.0.2
@@ -89,6 +101,25 @@ importers:
         version: 8.2.1(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9)
       vitest:
         specifier: 4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
+
+  apps/operations-center:
+    dependencies:
+      '@zugfolge/design-system':
+        specifier: workspace:*
+        version: link:../../packages/design-system
+      '@zugfolge/dispatch':
+        specifier: workspace:*
+        version: link:../../packages/dispatch
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vite:
+        specifier: ^8.2.1
+        version: 8.2.1(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9)
+      vitest:
+        specifier: ^4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
 
   packages/db:
@@ -128,6 +159,18 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
 
+  packages/dispatch:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
+
   packages/economy:
     dependencies:
       '@zugfolge/db':
@@ -145,6 +188,9 @@ importers:
       '@zugfolge/operators':
         specifier: workspace:*
         version: link:../operators
+      '@zugfolge/runtime-native':
+        specifier: workspace:*
+        version: link:../runtime-native
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@electric-sql/pglite@0.5.4)(@types/pg@8.20.4)(pg@8.22.0)(postgres@3.4.9)
@@ -283,6 +329,15 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
 
+  packages/planning-projection:
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
+
   packages/privacy:
     dependencies:
       '@zugfolge/db':
@@ -314,6 +369,18 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
 
+  packages/runtime-native:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
+
   tools/guards:
     devDependencies:
       '@types/node':
@@ -325,6 +392,31 @@ importers:
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
+
+  tools/m7-e2e:
+    dependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.5.4
+        version: 0.5.4
+      '@zugfolge/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@zugfolge/dispatch':
+        specifier: workspace:*
+        version: link:../../packages/dispatch
+      '@zugfolge/game-api':
+        specifier: workspace:*
+        version: link:../../apps/game-api
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@electric-sql/pglite@0.5.4)(@types/pg@8.20.4)(pg@8.22.0)(postgres@3.4.9)
+    devDependencies:
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
 
   tools/reference-corpus:
     dependencies:

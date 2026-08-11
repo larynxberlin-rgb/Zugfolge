@@ -133,25 +133,91 @@ Der Modelllauf ist an folgende Identitäten gebunden:
 
 ## Kalibrierung ist keine Release-Validierung
 
-Der Report besitzt zwei getrennte Zustände:
+Der Legacy-Report besitzt zwei getrennte Zustände:
 
 - `passed` sagt, dass die Rechnung innerhalb der technischen Toleranz liegt;
 - `releaseQualified` sagt zusätzlich, dass der Wert aus einem unabhängigen
   Validierungssatz stammt.
 
 Für den aktuellen Pilot gilt `passed: true`, aber `releaseQualified: false`.
-Das Signatur-Gate akzeptiert nur einen Report, bei dem beide Bedingungen
-erfüllt sind. Damit kann ein passend kalibriertes Modell nicht versehentlich
-als unabhängig bewiesener Release ausgegeben werden.
+Sein Schema `v2` enthält jetzt zusätzlich einen expliziten
+`qualificationBlocker`. Selbst ein nachträglich eingesetztes
+`qualification: "validation"` kann einen Legacy-Report nicht freigeben.
 
-Für den Abschluss von M1.13 fehlen weiterhin:
+Ein releasefähiger `v3`-Report besitzt deshalb kein vertrauenswürdiges
+`qualification`-Eingabefeld. Die Freigabe wird ausschließlich aus einem
+gehashten `zugfolge-qualification-evidence/v1` abgeleitet. Der Nachweis bindet
+je eine eingefrorene Kalibrierungs- und Validierungsdatei sowie deren getrennte
+Auswertungskonfiguration. Folgende Bedingungen werden maschinell geprüft:
 
-- detaillierte, belastbare Infrastrukturprofile anstelle effektiver
-  Ersatzgeschwindigkeiten;
-- mindestens eine getrennte technische Validierungsstrecke oder ein vor der
-  Validierung eingefrorener Referenzsatz, der nicht zur Kalibrierung diente;
-- die Freigabe durch die benannte Release-Verantwortung und eine echte
-  Ed25519-Signatur.
+- Datensatz-ID, Datensatzhash, Konfigurations-ID und Konfigurationshash sind
+  zwischen Kalibrierung und Validierung verschieden;
+- die sortierten Stichproben-IDs besitzen eigene Hashes und überlappen nicht;
+- beide Datensätze und Konfigurationen tragen denselben expliziten
+  Einfrierzeitpunkt wie ihre jeweilige Partition;
+- die bereits in der gehashten Capture-Konfiguration eingefrorene
+  Mindestanzahl beider Partitionen ist erreicht;
+- jedes Modellergebnis verweist auf genau eine Validierungsstichprobe, keine
+  Kalibrierungsstichprobe, und alle eingefrorenen Validierungsstichproben werden
+  genau einmal ausgewertet;
+- technische Referenzsekunden, Referenzgruppe und Zugcharakteristik stammen
+  aus dieser gebundenen Validierungsstichprobe, nicht aus einem freien Feld des
+  Modellergebnisses.
+
+Erst wenn alle Vergleiche innerhalb der vorab versionierten Toleranz liegen,
+setzt der reproduzierte Report `passed: true` und `releaseQualified: true`.
+
+### Durchgehende Hashkette
+
+Das signierbare Bundle `zugfolge-pilot-release-bundle/v3` verweist auf eine
+exakte Artefaktkettendatei. Die Ed25519-Signatur bindet deren Byte-Hash; die
+Vollprüfung liest anschließend jedes Artefakt erneut und prüft jede Kante:
+
+| Von | Nach | maschinell geprüfte Bindung |
+|---|---|---|
+| Capture-Konfiguration | Capture-Manifest | exakter Dateihash und kanonischer Inhalts-Hash |
+| Capture-Manifest | ZIP und Tabellen | SHA-256, Bytezahl, vollständige geordnete Tabellenliste |
+| Capture-Manifest | normalisierte Beobachtungen | Manifest-, Konfigurations-, Archiv- und Tabellenlistenhash |
+| normalisierte Beobachtungen | Referenzkorpus | exakter Dateihash und Hash der kanonischen Beobachtungsliste |
+| Referenzkorpus und Evidenzpartitionen | Modellkonfiguration | exakte Hashes aller Capture-, Korpus-, Kalibrierungs- und Validierungsartefakte |
+| Modellkonfiguration | Modellergebnis | SHA-256 der unveränderten Konfigurationsbytes und identische Artefaktbindungen |
+| Modellergebnis | Abweichungsreport | exakter Ergebnisdateihash; Report wird vollständig neu berechnet |
+| Abweichungsreport | qualifiziertes Release-Manifest | exakte Hashes von Kandidat, Korpus, Evidenz, Ergebnis und Report |
+| Release-Manifest | Bundle | exakter Manifesthash, Kettenhash und Release-Checksum unter Ed25519 |
+
+`signBundle` akzeptiert im Prozess nur ein Bundle, das unmittelbar zuvor gegen
+alle Dateien geprüft wurde. `verify-signature` prüft bewusst nur die
+kryptographische Signatur und reicht nicht für eine Veröffentlichung;
+`verify` ist die vorgeschriebene Vollprüfung der Signatur und jeder
+Artefaktkante.
+
+### Ehrlicher Pilotstatus und konkrete Voraussetzungen
+
+Es wurde kein realer Pilot-Release erzeugt oder signiert. Der eingecheckte
+Pilot bleibt ein bestandener Kalibrierlauf und ist aus folgenden, getrennt zu
+behandelnden Gründen nicht releasefähig:
+
+1. Das ursprüngliche Feed-ZIP, die gehashten Tabellen und das daraus erzeugte
+   normalisierte Beobachtungsartefakt liegen nicht gemeinsam als prüfbare
+   Artefaktmenge vor. Das vorhandene Capture-Manifest und der aggregierte
+   Korpus ersetzen diese Dateien nicht.
+2. Das Trassenfinder-Einzelbeispiel wurde zum Einstellen der effektiven
+   Abschnittsgeschwindigkeiten verwendet. Es ist damit Kalibrierung, kein
+   unabhängiger Validierungsholdout.
+3. Es fehlen ein separat freigegebener technischer Validierungsdatensatz, eine
+   getrennte eingefrorene Validierungskonfiguration und belastbare
+   Infrastrukturprofile anstelle der effektiven Ersatzgeschwindigkeiten.
+4. Nach Vorliegen dieser Eingaben muss der Modelllauf ein
+   `zugfolge-model-results/v3` ohne behauptetes `qualification`-Feld und mit
+   den exakten Artefaktbindungen erzeugen; erst danach kann der `v3`-Report
+   reproduziert werden.
+5. Zuletzt fehlen die namentliche Release-Freigabe und die Signatur mit dem
+   außerhalb des Repositorys verwahrten echten Ed25519-Release-Schlüssel.
+
+Die Punkte 1 bis 3 und 5 benötigen externe Datenbereitstellung,
+Rechte-/Verantwortungsfreigabe oder Schlüsselzugriff. Sie dürfen weder durch
+den synthetischen Positivtest noch durch neu heruntergeladene, inhaltlich
+abweichende Daten ersetzt werden.
 
 ## Quellen, Rechte und Nachvollziehbarkeit
 
@@ -171,62 +237,86 @@ einzuholen. Das ist eine konservative Projektregel, keine Rechtsberatung.
 
 ## Reproduzierbarer Ablauf
 
-1. GTFS-Feed herunterladen, sicher entpacken und hashen:
+Der gehärtete Ablauf beginnt mit einer Capture-Konfiguration im Schema
+`zugfolge-gtfs-capture/v2`. Alle Pfade in Evidenz-, Finalisierungs- und
+Kettenkonfigurationen sind relativ zum angegebenen Artefaktordner.
+
+1. GTFS-Feed herunterladen, sicher entpacken und Konfigurationsbytes, Archiv
+   sowie jede Tabelle hashen:
 
    ```bash
-   node tools/reference-corpus/cli.mjs capture-gtfs \
-     pilot.json artifacts/gtfs-raw artifacts/capture-manifest.json
+   node tools/reference-corpus/cli.mjs capture-gtfs artifacts/capture-config.json artifacts/gtfs-raw artifacts/capture-manifest.json
    ```
 
-2. Fahrten derselben `trip_id` normalisieren. Linie, Richtung, Haltefolge und
-   `characteristicsId` werden explizit gefiltert:
+2. Fahrten derselben `trip_id` normalisieren. Das Ergebnis ist ein Envelope mit
+   den exakten Capture-Bindungen und dem Hash der Beobachtungsliste:
 
    ```bash
-   node tools/reference-corpus/cli.mjs normalize-gtfs \
-     pilot.json artifacts/capture-manifest.json artifacts/gtfs-raw \
-     artifacts/observations.json
+   node tools/reference-corpus/cli.mjs normalize-gtfs artifacts/capture-config.json artifacts/capture-manifest.json artifacts/gtfs-raw artifacts/normalized-observations.json
    ```
 
-3. Das manuell erstellte technische Referenzprotokoll fachlich prüfen und
-   dessen Hash in `model-config.json` binden. Dann Modell und Manifest bauen:
+3. Den Referenzkorpus aus genau diesem normalisierten Artefakt bauen:
 
    ```bash
-   cargo run --locked -p zugfolge-reference-model -- \
-     tools/reference-corpus/pilot/2026-08/model-config.json \
-     tools/reference-corpus/pilot/2026-08/model-results.json \
-     tools/reference-corpus/pilot/2026-08/pilot.infrarelease.json
+   node tools/reference-corpus/cli.mjs build-corpus artifacts/capture-config.json artifacts/normalized-observations.json artifacts/reference-corpus.json
    ```
 
-4. Technische Referenz und Fahrplan-Holdout vergleichen:
+4. Kalibrierungs- und Validierungsdatensatz sowie ihre getrennten
+   Konfigurationen fachlich freigeben und unveränderlich ablegen. Ihre Pfade,
+   Hashes, IDs, Stichproben-IDs, Mindestanzahlen und Einfrierzeitpunkte werden
+   in `qualification-evidence.json` gebunden. Die Modellkonfiguration bindet
+   diesen Nachweis und den Korpus; das Modellergebnis im Schema `v3` bindet die
+   exakten Modellkonfigurationsbytes und verweist ausschließlich auf die
+   Validierungsstichproben.
+
+5. Report aus allen gebundenen Dateien reproduzieren. Die Datensatz- und
+   Konfigurationsdateien aus dem Qualifikationsnachweis werden unter
+   `artifacts/` erneut gehasht:
 
    ```bash
-   node tools/reference-corpus/cli.mjs compare \
-     tools/reference-corpus/pilot/2026-08/config.json \
-     tools/reference-corpus/pilot/2026-08/reference-corpus.json \
-     tools/reference-corpus/pilot/2026-08/model-results.json \
-     tools/reference-corpus/pilot/2026-08/deviation-report.json
+   node tools/reference-corpus/cli.mjs compare artifacts/capture-config.json artifacts/reference-corpus.json artifacts/model/model-results.json artifacts/qualification-evidence.json artifacts artifacts/deviation-report.json
    ```
 
-5. Erst ein bestandener **und** unabhängig qualifizierter Report darf mit dem
-   nicht im Repository liegenden Ed25519-Release-Schlüssel signiert werden:
+6. Ein `finalize-config.json` mit `createdAt` und den relativen Pfaden
+   `candidateManifest`, `referenceCorpus`, `qualificationEvidence`,
+   `modelResults` und `report` erzeugt das exakte qualifizierte
+   Release-Manifest. Dieser Schritt scheitert bei negativem oder
+   unzureichendem Report:
 
    ```bash
-   node tools/reference-corpus/cli.mjs sign \
-     artifacts/reference-corpus.json artifacts/deviation-report.json \
-     artifacts/pilot.infrarelease release-private.pem \
-     artifacts/pilot-release.bundle.json
+   node tools/reference-corpus/cli.mjs finalize-release artifacts/finalize-config.json artifacts artifacts/release/qualified-release-manifest.json
    ```
 
-6. Vor Veröffentlichung Signatur und Artefakt-Hash prüfen:
+7. Ein `artifact-paths.json` nennt die relativen Pfade aller Stufen und den
+   Rohdatentabellenordner. Daraus wird die vollständige Kette erzeugt und noch
+   vor dem Schreiben einmal vollständig geprüft:
 
    ```bash
-   node tools/reference-corpus/cli.mjs verify \
-     artifacts/pilot-release.bundle.json release-public.pem artifacts
+   node tools/reference-corpus/cli.mjs chain artifacts/artifact-paths.json artifacts artifacts/release-chain.json
    ```
 
-Die Tests prüfen zusätzlich die Trennung von S5 und S5X, die Benennung der
-GTFS-Werte, Haltezeitbildung, Hashbindungen, das Kalibrier-/Validierungsgate und
-die Manipulationserkennung der Signatur.
+8. Erst die bestandene Kette darf mit explizitem Signaturzeitpunkt und dem
+   nicht im Repository liegenden privaten Ed25519-Schlüssel signiert werden:
+
+   ```bash
+   node tools/reference-corpus/cli.mjs sign artifacts/release-chain.json artifacts release-private.pem 2026-08-10T00:00:00.000Z artifacts/pilot-release.bundle.json
+   ```
+
+9. Vor Veröffentlichung Signatur, exakte Kettendatei, jedes Artefakt und jede
+   semantische Verbindung erneut prüfen:
+
+   ```bash
+   node tools/reference-corpus/cli.mjs verify artifacts/pilot-release.bundle.json release-public.pem artifacts
+   ```
+
+Der synthetische Positivtest in
+[`synthetic-validation.mjs`](../tools/reference-corpus/fixtures/synthetic-validation.mjs)
+materialisiert zwei getrennte eingefrorene Partitionen, erzeugt Report,
+Release-Manifest und Kette und signiert ausschließlich mit einem kurzlebigen
+Testschlüssel. Die Negativtests decken Überlappung, zu kleine Stichproben,
+Toleranzverletzung, ein behauptetes `qualification`-Feld, jede semantische
+Hashkante, jede veränderte Artefaktdatei, Bundle-Manipulation und einen falschen
+Release-Schlüssel ab. Das ist ein Verfahrensnachweis, kein Pilot-Release.
 
 Der zweite Verwendungszweck desselben gehashten Captures — Ableitung von
 Fahrtenbildern, Linien, Losen und Ausschreibungsmengen — ist in

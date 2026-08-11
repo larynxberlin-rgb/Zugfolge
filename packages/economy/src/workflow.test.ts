@@ -61,6 +61,33 @@ const completeMobilizationProof = {
   pathReservationIds: ["path-1"],
 };
 
+function rustTransition(operatorId: string, kind: "operator-change" | "public-operation") {
+  const publicOperation = kind === "public-operation";
+  return {
+    schemaVersion: "zugfolge-operating-transition-result/v1" as const,
+    state: { schemaVersion: "zugfolge-operating-world-state/v1" as const, worldId: "world-1", revision: 1 },
+    stateHash: "b".repeat(64),
+    outcome: {
+      lotId: "lot-0",
+      previousOperatorId: "public",
+      operatorId,
+      kind,
+      seamless: false,
+      penaltyRequired: publicOperation,
+      trainRunIds: ["train-1", "train-2"],
+      livemapMarker: publicOperation ? "public-operator" as const : null,
+    },
+    events: [
+      { eventId: "transition:0", worldId: "world-1", eventType: "operating-duty-ended", atS: 4 * 86_400, payload: { worldId: "world-1", lotId: "lot-0" } },
+      { eventId: "transition:1", worldId: "world-1", eventType: "operating-transition-completed", atS: 4 * 86_400, payload: { worldId: "world-1", lotId: "lot-0" } },
+      { eventId: "transition:2", worldId: "world-1", eventType: "train-operation-assigned", atS: 4 * 86_400, payload: { worldId: "world-1", trainRunId: "train-1" } },
+      { eventId: "transition:3", worldId: "world-1", eventType: "train-operation-assigned", atS: 4 * 86_400, payload: { worldId: "world-1", trainRunId: "train-2" } },
+      { eventId: "transition:4", worldId: "world-1", eventType: publicOperation ? "livemap-operation-marked" : "livemap-operation-cleared", atS: 4 * 86_400, payload: { worldId: "world-1", trainRunIds: ["train-1", "train-2"], marker: publicOperation ? "public-operator" : null } },
+    ],
+    idempotentReplay: false,
+  };
+}
+
 function world() {
   return startEconomyWorld({
     worldId: "world-1", seed: 42n, durationMonths: 6, release,
@@ -89,7 +116,7 @@ describe("zustandsbehafteter M6-Gesamtablauf", () => {
     expect(state.tenders.get("tender-1")?.phase).toBe("awarded");
     expect(state.budgets.get("authority-1:0")?.committedCents).toBeGreaterThan(0n);
 
-    const mobilized = completeMobilization(state, { commandId: "mobilize", tenderId: "tender-1", at: 4 * 86_400, proof: completeMobilizationProof, failurePenaltyCents: 50_000n, recipientAccountId: "account-1" });
+    const mobilized = completeMobilization(state, { commandId: "mobilize", tenderId: "tender-1", at: 4 * 86_400, proof: completeMobilizationProof, failurePenaltyCents: 50_000n, recipientAccountId: "account-1", publicVehiclePool: ["reserve-1"], operatingTransition: rustTransition("operator-1", "operator-change") });
     state = mobilized.state;
     expect(state.publicOperations.has("lot-0")).toBe(false);
     expect(state.contracts.get("tender-1")?.operatorId).toBe("operator-1");
@@ -105,8 +132,8 @@ describe("zustandsbehafteter M6-Gesamtablauf", () => {
     state = announceTender(state, { commandId: "a", release, recipients: [], tender: { id: "t", worldId: "world-1", lotId: "lot-0", incumbentOperatorId: "public", specification, announcedAt: 100, opensAt: 150, closesAt: 3 * 86_400 + 150, operatingFrom: 4 * 86_400, contractPeriods: 2, periodDurationSeconds: 21 * 86_400, smallLot: false } }).state;
     state = openTender(state, "o", "t", 150);
     state = submitBid(state, "s", "t", bid, { accountId: "account-1", period: 1, smallLot: false, minimumScore: 4_000 });
-    state = closeTender(state, { commandId: "c", tenderId: "t", at: 3 * 86_400 + 150, authorityId: "authority-1", budgetPeriod: 0, vehiclePool: [], recipientByOperator: { "operator-1": "account-1" } }).state;
-    const failed = completeMobilization(state, { commandId: "m", tenderId: "t", at: 4 * 86_400, proof: { ...completeMobilizationProof, personnelDutyIds: [] }, failurePenaltyCents: 50_000n, recipientAccountId: "account-1" });
+    state = closeTender(state, { commandId: "c", tenderId: "t", at: 3 * 86_400 + 150, authorityId: "authority-1", budgetPeriod: 0, vehiclePool: ["public-1"], recipientByOperator: { "operator-1": "account-1" } }).state;
+    const failed = completeMobilization(state, { commandId: "m", tenderId: "t", at: 4 * 86_400, proof: { ...completeMobilizationProof, personnelDutyIds: [] }, failurePenaltyCents: 50_000n, recipientAccountId: "account-1", publicVehiclePool: ["public-1"], operatingTransition: rustTransition("public", "public-operation") });
     expect(failed.state.publicOperations.get("lot-0")?.livemapMarker).toBe("public-operator");
     expect(failed.state.contracts.has("t")).toBe(false);
     expect(failed.effects.journal[0]?.postings[0]?.costType).toBe("penalty");
@@ -119,7 +146,7 @@ describe("zustandsbehafteter M6-Gesamtablauf", () => {
     state = openTender(state, "o", "t", 150);
     state = submitBid(state, "s", "t", bid, { accountId: "account-1", period: 1, smallLot: false, minimumScore: 4_000 });
     state = closeTender(state, { commandId: "c", tenderId: "t", at: 3 * 86_400 + 150, authorityId: "authority-1", budgetPeriod: 0, vehiclePool: [], recipientByOperator: { "operator-1": "account-1" } }).state;
-    state = completeMobilization(state, { commandId: "m", tenderId: "t", at: 4 * 86_400, proof: completeMobilizationProof, failurePenaltyCents: 1n, recipientAccountId: "account-1" }).state;
+    state = completeMobilization(state, { commandId: "m", tenderId: "t", at: 4 * 86_400, proof: completeMobilizationProof, failurePenaltyCents: 1n, recipientAccountId: "account-1", publicVehiclePool: [], operatingTransition: rustTransition("operator-1", "operator-change") }).state;
     const insolvency = escalateOperator(state, { commandId: "i", operatorId: "operator-1", accountId: "account-1", period: 2, at: 4 * 86_400 + 2, signals: { liquidCents: 0n, twoPeriodNeedCents: 1_000n, overdueCents: 1_000n, creditScore: 0, contractTerminated: true, unableToPay: true } });
     expect(insolvency.decision).toMatchObject({ stage: 5, liquidated: true, publicOperatorTakesOver: true });
     expect(insolvency.effects.notices).toHaveLength(2);

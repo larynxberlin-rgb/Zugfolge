@@ -1,0 +1,18 @@
+{
+  "name": "@zugfolge/m7-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Plattformübergreifende 48h-Abnahme Rust-Kern → Event-Log → Betriebszentrale → Tagesbericht",
+  "license": "LicenseRef-PolyForm-Shield-1.0.0",
+  "scripts": { "build": "tsc", "typecheck": "tsc --noEmit", "test:e2e": "node dist/run.js" },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.4",
+    "@zugfolge/db": "workspace:*",
+    "@zugfolge/dispatch": "workspace:*",
+    "@zugfolge/game-api": "workspace:*",
+    "drizzle-orm": "^0.45.2"
+  },
+  "devDependencies": { "@types/node": "^24.13.3", "typescript": "^7.0.2" }
+}
+

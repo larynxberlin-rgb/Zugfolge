@@ -1,18 +1,120 @@
 import { describe, expect, it, vi } from "vitest";
 
+import {
+  PLANNING_PROJECTION_SCHEMA_VERSION,
+  type PlanningProjectionV1,
+} from "@zugfolge/planning-projection";
+
 import { GameApiClient } from "./api.js";
-import { sampleData } from "./diagram.js";
+
+function projection(revision: number): PlanningProjectionV1 {
+  return {
+    schemaVersion: PLANNING_PROJECTION_SCHEMA_VERSION,
+    projectionRevision: revision,
+    worldId: "world-1",
+    corridor: { id: "lhe", name: "Leipzig–Halle–Erfurt" },
+    stations: [],
+    trains: [],
+    occupations: [],
+    conflicts: [],
+  };
+}
+
+function envelope(revision: number, sequence = revision): Response {
+  return new Response(JSON.stringify({ sequence, data: projection(revision) }), { status: 200 });
+}
 
 describe("GameApiClient", () => {
-  it("lädt die veröffentlichte Planner-Projektion mit Bearer-Token", async () => {
-    const fetchImplementation = vi.fn(async () => new Response(JSON.stringify({ sequence: 7, data: sampleData }), { status: 200 }));
-    const client = new GameApiClient("https://api.test/", "token", fetchImplementation as typeof fetch);
-    await expect(client.loadDiagram("world-1")).resolves.toEqual(sampleData);
-    expect(fetchImplementation).toHaveBeenCalledWith("https://api.test/worlds/world-1/planning/diagram", expect.objectContaining({ headers: { authorization: "Bearer token" } }));
+  it("laedt und validiert die veroeffentlichte Weltprojektion mit Bearer-Token", async () => {
+    const fetchImplementation = vi.fn(async () => envelope(7, 99));
+    const client = new GameApiClient(
+      "https://api.test/",
+      "token",
+      fetchImplementation as typeof fetch,
+    );
+    await expect(client.loadProjection("world-1")).resolves.toEqual(projection(7));
+    expect(fetchImplementation).toHaveBeenCalledWith(
+      "https://api.test/worlds/world-1/planning/diagram",
+      expect.objectContaining({ headers: { authorization: "Bearer token" } }),
+    );
   });
 
-  it("verwirft unvollständige Event-Payloads", async () => {
-    const client = new GameApiClient("", "token", async () => new Response(JSON.stringify({ data: { corridor: "x" } }), { status: 200 }));
-    await expect(client.loadDiagram("world-1")).rejects.toThrow(/ungültiges Format/);
+  it("verwirft unversionierte, fremde und strukturell unvollstaendige Payloads", async () => {
+    const invalidClient = new GameApiClient(
+      "",
+      "token",
+      async () => new Response(JSON.stringify({ sequence: 1, data: { corridor: "x" } })),
+    );
+    await expect(invalidClient.loadProjection("world-1")).rejects.toThrow(/ungueltiges Format/);
+
+    const foreign = { ...projection(1), worldId: "world-2" };
+    const foreignClient = new GameApiClient(
+      "",
+      "token",
+      async () => new Response(JSON.stringify({ sequence: 1, data: foreign })),
+    );
+    await expect(foreignClient.loadProjection("world-1")).rejects.toThrow(/anderen Welt/);
+  });
+
+  it("verwendet bei Queue-Retry denselben serverautoritaeren Befehl und pollt bis zur neueren Fachrevision", async () => {
+    const responses: (Response | Error)[] = [
+      new Error("Verbindung nach Annahme abgerissen"),
+      new Response(null, { status: 202 }),
+      envelope(7, 900),
+      envelope(8, 2),
+    ];
+    const fetchImplementation = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+      const response = responses.shift();
+      if (response instanceof Error) throw response;
+      if (response === undefined) throw new Error("unerwarteter Abruf");
+      return response;
+      },
+    );
+    const wait = vi.fn(async () => undefined);
+    const client = new GameApiClient("", "token", fetchImplementation as typeof fetch, wait);
+
+    await expect(
+      client.applyAlternative("world-1", 7, "offer-stable", {
+        queueRetryDelayMs: 0,
+        pollIntervalMs: 0,
+      }),
+    ).resolves.toEqual(projection(8));
+
+    const posts = fetchImplementation.mock.calls.filter((call) => {
+      const init = call[1] as RequestInit | undefined;
+      return init?.method === "POST";
+    });
+    expect(posts).toHaveLength(2);
+    expect(posts[0]![1]).toMatchObject({ body: posts[1]![1]?.body });
+    const body = JSON.parse(String(posts[0]![1]?.body)) as Record<string, unknown>;
+    expect(body).toEqual({
+      schemaVersion: "planning-alternative-command/v1",
+      projectionRevision: 7,
+      alternativeId: "offer-stable",
+      idempotencyKey: "alternative:7:offer-stable",
+    });
+    expect(body).not.toHaveProperty("trainId");
+    expect(body).not.toHaveProperty("departureShiftS");
+  });
+
+  it("bricht bei einer rueckwaerts laufenden Revision ab", async () => {
+    const client = new GameApiClient("", "token", async () => envelope(6));
+    await expect(
+      client.waitForNewerProjection("world-1", 7, { pollAttempts: 1, pollIntervalMs: 0 }),
+    ).rejects.toThrow(/zurueckgefallen/);
+  });
+
+  it("meldet einen sicheren Fehler, wenn nur die Eventsequenz und nie die Fachrevision steigt", async () => {
+    let sequence = 100;
+    const client = new GameApiClient(
+      "",
+      "token",
+      async () => envelope(7, sequence++),
+      async () => undefined,
+    );
+    await expect(
+      client.waitForNewerProjection("world-1", 7, { pollAttempts: 2, pollIntervalMs: 0 }),
+    ).rejects.toThrow(/noch keine neuere Projektion/);
   });
 });

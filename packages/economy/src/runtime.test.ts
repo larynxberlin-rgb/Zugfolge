@@ -1,13 +1,15 @@
 import { PGlite } from "@electric-sql/pglite";
-import { MIGRATIONS_FOLDER, schema, worlds } from "@zugfolge/db";
+import { MIGRATIONS_FOLDER, schema, worldEventLog, worlds } from "@zugfolge/db";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { OperatingRuntime } from "@zugfolge/runtime-native";
 
 import type { EconomyDatabase } from "./ledger.js";
 import { buildEconomyRelease } from "./release.js";
 import {
   createFleetMobilizationEnvelope,
+  fleetSnapshotHash,
   persistFleetMobilizationSnapshot,
   resolveVehicleConcept,
   verifyMobilizationReference,
@@ -21,6 +23,42 @@ const WORLD = "55555555-5555-4555-8555-555555555555";
 const OPEN = 100;
 const CLOSE = OPEN + 3 * 86_400;
 const OPERATING = CLOSE + 10_000;
+
+const testOperatingRuntime: OperatingRuntime = {
+  verifyFleetMobilizationSnapshot(snapshot) {
+    const fleetSnapshot = snapshot as FleetMobilizationSnapshot;
+    return {
+      schemaVersion: "zugfolge-fleet-mobilization-verification/v1",
+      worldId: fleetSnapshot.worldId,
+      fleetRevision: fleetSnapshot.revision,
+      snapshotHash: fleetSnapshotHash(fleetSnapshot),
+    };
+  },
+  initialize(input) {
+    return {
+      schemaVersion: "zugfolge-operating-world-initialized/v1",
+      state: { schemaVersion: "zugfolge-operating-world-state/v1", worldId: input.worldId, revision: 0 },
+      stateHash: "a".repeat(64),
+    };
+  },
+  applyTransition(_state, command) {
+    const success = command.mobilizationProof !== null;
+    const operatorId = success ? command.winnerOperatorId : "public";
+    return {
+      schemaVersion: "zugfolge-operating-transition-result/v1",
+      state: { schemaVersion: "zugfolge-operating-world-state/v1", worldId: command.worldId, revision: command.expectedRevision + 1 },
+      stateHash: "b".repeat(64),
+      outcome: { lotId: command.lotId, previousOperatorId: "public", operatorId, kind: success ? "operator-change" : "public-operation", seamless: false, penaltyRequired: !success, trainRunIds: ["test-train-1"], livemapMarker: success ? null : "public-operator" },
+      events: [
+        { eventId: `${command.commandId}:0`, worldId: command.worldId, eventType: "operating-duty-ended", atS: command.atS, payload: { worldId: command.worldId, lotId: command.lotId } },
+        { eventId: `${command.commandId}:1`, worldId: command.worldId, eventType: "operating-transition-completed", atS: command.atS, payload: { worldId: command.worldId, lotId: command.lotId } },
+        { eventId: `${command.commandId}:2`, worldId: command.worldId, eventType: "train-operation-assigned", atS: command.atS, payload: { worldId: command.worldId, trainRunId: "test-train-1" } },
+        { eventId: `${command.commandId}:3`, worldId: command.worldId, eventType: success ? "livemap-operation-cleared" : "livemap-operation-marked", atS: command.atS, payload: { worldId: command.worldId, trainRunIds: ["test-train-1"], marker: success ? null : "public-operator" } },
+      ],
+      idempotentReplay: false,
+    };
+  },
+};
 
 const release = buildEconomyRelease({
   version: "scheduler-v1",
@@ -98,8 +136,10 @@ describe("restart-sicherer Economy-Scheduler", () => {
 
     const sendNotice = vi.fn(async () => undefined);
     const postJournal = vi.fn(async () => undefined);
+    const publishRuntimeEvents = vi.fn(async () => undefined);
+    const adapters = { sendNotice, postJournal, operatingRuntime: testOperatingRuntime, publishRuntimeEvents };
     const firstMonitor = new EconomySchedulerMonitor(0);
-    expect(await runEconomySchedulerCycle(db, new Date(OPEN * 1_000), { sendNotice, postJournal }, firstMonitor)).toMatchObject({ transitions: 1 });
+    expect(await runEconomySchedulerCycle(db, new Date(OPEN * 1_000), adapters, firstMonitor)).toMatchObject({ transitions: 1 });
 
     let state = (await loadEconomyWorldState(db, WORLD))!;
     const fleetEnvelope = createFleetMobilizationEnvelope(fleet());
@@ -110,7 +150,7 @@ describe("restart-sicherer Economy-Scheduler", () => {
 
     // Neuer Monitor simuliert einen Prozessneustart vor dem Zuschlag.
     const restartedMonitor = new EconomySchedulerMonitor(CLOSE * 1_000 - 1);
-    expect(await runEconomySchedulerCycle(db, new Date((CLOSE + 5) * 1_000), { sendNotice, postJournal }, restartedMonitor)).toMatchObject({ transitions: 1 });
+    expect(await runEconomySchedulerCycle(db, new Date((CLOSE + 5) * 1_000), adapters, restartedMonitor)).toMatchObject({ transitions: 1 });
     state = (await loadEconomyWorldState(db, WORLD))!;
     expect(state.tenders.get("tender-1")?.phase).toBe("awarded");
 
@@ -119,11 +159,16 @@ describe("restart-sicherer Economy-Scheduler", () => {
     const referenced = submitMobilizationReference(state, { commandId: "api:mobilization", tenderId: "tender-1", operatorId: "operator-1", at: CLOSE + 5, reference });
     await persistEconomyTransition(db, { expectedRevision: state.revision, state: referenced, effects: { notices: [], journal: [] }, committedAt: new Date((CLOSE + 5) * 1_000) });
 
-    expect(await runEconomySchedulerCycle(db, new Date((OPERATING + 10) * 1_000), { sendNotice, postJournal }, restartedMonitor)).toMatchObject({ transitions: 1 });
+    expect(await runEconomySchedulerCycle(db, new Date((OPERATING + 10) * 1_000), adapters, restartedMonitor)).toMatchObject({ transitions: 1 });
     const completed = (await loadEconomyWorldState(db, WORLD))!;
     expect(completed.contracts.get("tender-1")?.operatorId).toBe("operator-1");
     expect(completed.mobilizations.get("tender-1")?.proof?.snapshotHash).toBe(fleetEnvelope.snapshotHash);
-    const replay = await runEconomySchedulerCycle(db, new Date((OPERATING + 20) * 1_000), { sendNotice, postJournal }, restartedMonitor);
+    expect(completed.operatingRuntimeByLot.get("lot-0")?.stateHash).toBe("b".repeat(64));
+    expect((await worldEventLog(db, WORLD).list()).map((event) => event.eventType)).toContain("operating-transition-completed");
+    expect(publishRuntimeEvents).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ eventType: "operating-transition-completed", worldId: WORLD }),
+    ]));
+    const replay = await runEconomySchedulerCycle(db, new Date((OPERATING + 20) * 1_000), adapters, restartedMonitor);
     expect(replay.transitions).toBe(0);
     expect(completed.processedCommands).toEqual((await loadEconomyWorldState(db, WORLD))?.processedCommands);
     expect(sendNotice).toHaveBeenCalled();

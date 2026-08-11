@@ -1,0 +1,1014 @@
+//! Persistierbare, versionierte Befehlsgrenze vor dem regionalen M4-Single-Writer.
+//!
+//! Der Zustand enthält ausschließlich Initialdaten und das kanonische
+//! Kommandolog. Jeder Aufruf rekonstruiert daraus [`zugfolge_sim::Simulation`]
+//! und [`zugfolge_sim::DeltaPublisher`]. Damit gibt es weder native Handles
+//! noch einen Prozesszustand, der bei einem Neustart verloren gehen kann.
+#![allow(
+    missing_docs,
+    reason = "die versionierten JSON-Felder werden durch Vertragstests beschrieben"
+)]
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error;
+use std::fmt;
+use std::fmt::Write as _;
+
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use zugfolge_sim::{
+    Command, ConservativeDispatcher, DeltaPublisher, DispatchDecision, DispatchTrigger,
+    DomainEvent, EventKind, LiveDelta, LiveSnapshot, MaterializationWindow, OperatingStatus,
+    PublicTrain, SimError, Simulation, TrainCategory, TrainRun, Waypoint,
+};
+
+pub const INITIALIZE_SCHEMA: &str = "zugfolge-regional-simulation-initialize/v1";
+pub const COMMAND_SCHEMA: &str = "zugfolge-regional-simulation-command/v1";
+pub const STATE_SCHEMA: &str = "zugfolge-regional-simulation-state/v1";
+pub const INITIALIZED_SCHEMA: &str = "zugfolge-regional-simulation-initialized/v1";
+pub const RESULT_SCHEMA: &str = "zugfolge-regional-simulation-result/v1";
+pub const LIVEMAP_SNAPSHOT_SCHEMA: &str = "zugfolge-regional-livemap-snapshot/v1";
+pub const LIVEMAP_DELTA_SCHEMA: &str = "zugfolge-regional-livemap-delta/v1";
+
+const INTERNAL_WORLD_ID: u64 = 1;
+const INTERNAL_REGION_ID: u32 = 1;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeError {
+    code: &'static str,
+    detail: String,
+}
+
+impl RuntimeError {
+    fn new(code: &'static str, detail: impl Into<String>) -> Self {
+        Self {
+            code,
+            detail: detail.into(),
+        }
+    }
+}
+
+impl fmt::Display for RuntimeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}: {}", self.code, self.detail)
+    }
+}
+
+impl Error for RuntimeError {}
+
+impl From<SimError> for RuntimeError {
+    fn from(error: SimError) -> Self {
+        Self::new("simulation_rejected", error.to_string())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Initialization {
+    schema_version: String,
+    world_id: String,
+    region_id: String,
+    materialization_window_hours: u8,
+    now_s: i64,
+    trains: Vec<TrainInput>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TrainInput {
+    train_run_id: String,
+    operator: String,
+    train_number: String,
+    category: WireTrainCategory,
+    route: Vec<WaypointInput>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct WaypointInput {
+    operating_point: String,
+    position_mm: i64,
+    arrival_s: i64,
+    minimum_dwell_seconds: u32,
+    departure_s: i64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum WireTrainCategory {
+    Regional,
+    LongDistance,
+    Freight,
+    EmptyStock,
+    Engineering,
+}
+
+impl From<WireTrainCategory> for TrainCategory {
+    fn from(category: WireTrainCategory) -> Self {
+        match category {
+            WireTrainCategory::Regional => Self::Regional,
+            WireTrainCategory::LongDistance => Self::LongDistance,
+            WireTrainCategory::Freight => Self::Freight,
+            WireTrainCategory::EmptyStock => Self::EmptyStock,
+            WireTrainCategory::Engineering => Self::Engineering,
+        }
+    }
+}
+
+impl From<&TrainCategory> for WireTrainCategory {
+    fn from(category: &TrainCategory) -> Self {
+        match category {
+            TrainCategory::Regional => Self::Regional,
+            TrainCategory::LongDistance => Self::LongDistance,
+            TrainCategory::Freight => Self::Freight,
+            TrainCategory::EmptyStock => Self::EmptyStock,
+            TrainCategory::Engineering => Self::Engineering,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CommandEnvelope {
+    schema_version: String,
+    world_id: String,
+    region_id: String,
+    command_id: String,
+    expected_state_hash: String,
+    expected_revision: u64,
+    expected_publisher_sequence: u64,
+    command: WireCommand,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
+enum WireCommand {
+    Materialize {
+        train: TrainInput,
+    },
+    AdvanceTo {
+        #[serde(rename = "atS")]
+        at_s: i64,
+    },
+    AddDelay {
+        train_run_id: String,
+        seconds: u32,
+    },
+    DematerializeBefore {
+        #[serde(rename = "beforeS")]
+        before_s: i64,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct StoredCommand {
+    command_id: String,
+    command_hash: String,
+    command: WireCommand,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RuntimeState {
+    schema_version: String,
+    world_id: String,
+    region_id: String,
+    materialization_window_hours: u8,
+    initial_now_s: i64,
+    now_s: i64,
+    initial_trains: Vec<TrainInput>,
+    revision: u64,
+    publisher_sequence: u64,
+    commands: Vec<StoredCommand>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WirePublicTrain {
+    id: String,
+    operator: String,
+    train_number: String,
+    category: WireTrainCategory,
+    position_mm: i64,
+    speed_mm_per_second: u32,
+    delay_seconds: i64,
+    next_operating_point: String,
+    status: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WireSnapshot {
+    schema_version: &'static str,
+    world_id: String,
+    region_id: String,
+    producer_sequence: u64,
+    at_s: i64,
+    trains: Vec<WirePublicTrain>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WireDelta {
+    schema_version: &'static str,
+    world_id: String,
+    region_id: String,
+    producer_sequence: u64,
+    at_s: i64,
+    changed: Vec<WirePublicTrain>,
+    removed: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WireEvent {
+    event_id: String,
+    world_id: String,
+    region_id: String,
+    simulation_sequence: u64,
+    event_type: &'static str,
+    at_s: i64,
+    payload: Value,
+}
+
+struct Machine {
+    simulation: Simulation<ConservativeDispatcher>,
+    publisher: DeltaPublisher,
+    internal_by_external: BTreeMap<String, u64>,
+    external_by_internal: BTreeMap<u64, String>,
+    next_internal_id: u64,
+}
+
+struct Applied {
+    events: Vec<WireEvent>,
+    delta: WireDelta,
+}
+
+fn decode<T: for<'de> Deserialize<'de>>(json: &str, name: &str) -> Result<T, RuntimeError> {
+    serde_json::from_str(json)
+        .map_err(|error| RuntimeError::new("invalid_json", format!("{name}: {error}")))
+}
+
+fn encode<T: Serialize>(value: &T, name: &str) -> Result<String, RuntimeError> {
+    serde_json::to_string(value)
+        .map_err(|error| RuntimeError::new("serialization_failed", format!("{name}: {error}")))
+}
+
+fn validate_identity(value: &str, name: &str) -> Result<(), RuntimeError> {
+    if value.is_empty() || value.len() > 200 {
+        return Err(RuntimeError::new(
+            "invalid_identity",
+            format!("{name} muss 1 bis 200 Zeichen besitzen"),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_train(train: &TrainInput) -> Result<(), RuntimeError> {
+    validate_identity(&train.train_run_id, "trainRunId")?;
+    validate_identity(&train.operator, "operator")?;
+    validate_identity(&train.train_number, "trainNumber")?;
+    if train.route.is_empty() {
+        return Err(RuntimeError::new(
+            "invalid_train",
+            "route darf nicht leer sein",
+        ));
+    }
+    Ok(())
+}
+
+fn canonical_hash<T: Serialize>(domain: &str, value: &T) -> Result<String, RuntimeError> {
+    let json = encode(value, "kanonischer Zustand")?;
+    let mut hasher = Sha256::new();
+    hasher.update(domain.as_bytes());
+    hasher.update([0]);
+    hasher.update(json.as_bytes());
+    let digest = hasher.finalize();
+    let mut output = String::with_capacity(64);
+    for byte in digest {
+        write!(&mut output, "{byte:02x}")
+            .map_err(|error| RuntimeError::new("hash_failed", error.to_string()))?;
+    }
+    Ok(output)
+}
+
+fn state_hash(state: &RuntimeState) -> Result<String, RuntimeError> {
+    canonical_hash("zugfolge/regional-simulation-state/v1", state)
+}
+
+fn command_hash(envelope: &CommandEnvelope) -> Result<String, RuntimeError> {
+    canonical_hash(
+        "zugfolge/regional-simulation-command/v1",
+        &json!({
+            "worldId": envelope.world_id,
+            "regionId": envelope.region_id,
+            "command": envelope.command,
+        }),
+    )
+}
+
+fn make_train(input: &TrainInput, internal_id: u64) -> TrainRun {
+    TrainRun {
+        world_id: INTERNAL_WORLD_ID,
+        id: internal_id,
+        region_id: INTERNAL_REGION_ID,
+        operator: input.operator.clone(),
+        train_number: input.train_number.clone(),
+        category: input.category.into(),
+        route: input
+            .route
+            .iter()
+            .map(|point| Waypoint {
+                operating_point: point.operating_point.clone(),
+                position_mm: point.position_mm,
+                arrival: point.arrival_s,
+                minimum_dwell_seconds: point.minimum_dwell_seconds,
+                departure: point.departure_s,
+            })
+            .collect(),
+        next_waypoint: 0,
+        delay_seconds: 0,
+        position_mm: 0,
+        speed_mm_per_second: 0,
+        status: OperatingStatus::Planned,
+    }
+}
+
+fn allocate_train(machine: &mut Machine, train: &TrainInput) -> Result<u64, RuntimeError> {
+    validate_train(train)?;
+    if machine
+        .internal_by_external
+        .contains_key(&train.train_run_id)
+    {
+        return Err(RuntimeError::new(
+            "duplicate_train",
+            format!("Zuglauf '{}' existiert bereits", train.train_run_id),
+        ));
+    }
+    let internal_id = machine.next_internal_id;
+    machine.next_internal_id = machine
+        .next_internal_id
+        .checked_add(1)
+        .ok_or_else(|| RuntimeError::new("identity_exhausted", "interne Zugkennung erschoepft"))?;
+    machine
+        .internal_by_external
+        .insert(train.train_run_id.clone(), internal_id);
+    machine
+        .external_by_internal
+        .insert(internal_id, train.train_run_id.clone());
+    Ok(internal_id)
+}
+
+fn external_train_id(machine: &Machine, internal_id: u64) -> Result<String, RuntimeError> {
+    machine
+        .external_by_internal
+        .get(&internal_id)
+        .cloned()
+        .ok_or_else(|| RuntimeError::new("unknown_internal_train", internal_id.to_string()))
+}
+
+fn wire_train(machine: &Machine, train: PublicTrain) -> Result<WirePublicTrain, RuntimeError> {
+    Ok(WirePublicTrain {
+        id: external_train_id(machine, train.id)?,
+        operator: train.operator,
+        train_number: train.train_number,
+        category: WireTrainCategory::from(&train.category),
+        position_mm: train.position_mm,
+        speed_mm_per_second: train.speed_mm_per_second,
+        delay_seconds: train.delay_seconds,
+        next_operating_point: train.next_operating_point,
+        status: match train.status {
+            OperatingStatus::Planned => "planned",
+            OperatingStatus::Running => "running",
+            OperatingStatus::Waiting => "waiting",
+            OperatingStatus::AtPlatform => "at_platform",
+            OperatingStatus::Completed => "completed",
+            OperatingStatus::Cancelled => "cancelled",
+        },
+    })
+}
+
+fn wire_snapshot(
+    state: &RuntimeState,
+    machine: &Machine,
+    snapshot: LiveSnapshot,
+    producer_sequence: u64,
+) -> Result<WireSnapshot, RuntimeError> {
+    let trains = snapshot
+        .trains
+        .into_iter()
+        .map(|train| wire_train(machine, train))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(WireSnapshot {
+        schema_version: LIVEMAP_SNAPSHOT_SCHEMA,
+        world_id: state.world_id.clone(),
+        region_id: state.region_id.clone(),
+        producer_sequence,
+        at_s: snapshot.at,
+        trains,
+    })
+}
+
+fn wire_delta(
+    state: &RuntimeState,
+    machine: &Machine,
+    delta: LiveDelta,
+) -> Result<WireDelta, RuntimeError> {
+    let changed = delta
+        .changed
+        .into_iter()
+        .map(|train| wire_train(machine, train))
+        .collect::<Result<Vec<_>, _>>()?;
+    let removed = delta
+        .removed
+        .into_iter()
+        .map(|id| external_train_id(machine, id))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(WireDelta {
+        schema_version: LIVEMAP_DELTA_SCHEMA,
+        world_id: state.world_id.clone(),
+        region_id: state.region_id.clone(),
+        producer_sequence: delta.sequence,
+        at_s: delta.at,
+        changed,
+        removed,
+    })
+}
+
+fn event_payload(
+    machine: &Machine,
+    kind: &EventKind,
+) -> Result<(&'static str, Value), RuntimeError> {
+    let result = match kind {
+        EventKind::Materialized { train_run_id } => (
+            "simulation.train-materialized",
+            json!({ "trainRunId": external_train_id(machine, *train_run_id)? }),
+        ),
+        EventKind::Arrived {
+            train_run_id,
+            operating_point,
+        } => (
+            "simulation.train-arrived",
+            json!({ "trainRunId": external_train_id(machine, *train_run_id)?, "operatingPoint": operating_point }),
+        ),
+        EventKind::Departed {
+            train_run_id,
+            operating_point,
+        } => (
+            "simulation.train-departed",
+            json!({ "trainRunId": external_train_id(machine, *train_run_id)?, "operatingPoint": operating_point }),
+        ),
+        EventKind::DelayChanged {
+            train_run_id,
+            delay_seconds,
+        } => (
+            "simulation.delay-changed",
+            json!({ "trainRunId": external_train_id(machine, *train_run_id)?, "delaySeconds": delay_seconds }),
+        ),
+        EventKind::HandoverRequested {
+            train_run_id,
+            token,
+            target_region,
+        } => (
+            "simulation.handover-requested",
+            json!({ "trainRunId": external_train_id(machine, *train_run_id)?, "token": token, "targetRegion": target_region }),
+        ),
+        EventKind::HandoverCompleted {
+            train_run_id,
+            token,
+            target_region,
+        } => (
+            "simulation.handover-completed",
+            json!({ "trainRunId": external_train_id(machine, *train_run_id)?, "token": token, "targetRegion": target_region }),
+        ),
+        EventKind::Completed { train_run_id } => (
+            "simulation.train-completed",
+            json!({ "trainRunId": external_train_id(machine, *train_run_id)? }),
+        ),
+        EventKind::DispatchApplied {
+            train_run_id,
+            decision_id,
+            trigger,
+            decision,
+        } => (
+            "simulation.dispatch-applied",
+            json!({
+                "trainRunId": external_train_id(machine, *train_run_id)?,
+                "decisionId": decision_id,
+                "trigger": dispatch_trigger_name(*trigger),
+                "decision": dispatch_decision_name(*decision),
+            }),
+        ),
+    };
+    Ok(result)
+}
+
+fn dispatch_trigger_name(trigger: DispatchTrigger) -> &'static str {
+    match trigger {
+        DispatchTrigger::Arrival => "arrival",
+        DispatchTrigger::Departure => "departure",
+        DispatchTrigger::DelayThreshold => "delay-threshold",
+        DispatchTrigger::ConnectionRisk => "connection-risk",
+        DispatchTrigger::VehicleFailure => "vehicle-failure",
+        DispatchTrigger::PersonnelDutyExceeded => "personnel-duty-exceeded",
+        DispatchTrigger::RouteClosure => "route-closure",
+        DispatchTrigger::PlatformChange => "platform-change",
+        DispatchTrigger::TurnaroundShortfall => "turnaround-shortfall",
+        DispatchTrigger::AdHocPathConflict => "ad-hoc-path-conflict",
+    }
+}
+
+fn dispatch_decision_name(decision: DispatchDecision) -> &'static str {
+    match decision {
+        DispatchDecision::Proceed => "proceed",
+        DispatchDecision::HoldUntil(_) => "hold-until",
+        DispatchDecision::BreakConnection => "break-connection",
+        DispatchDecision::SkipStop => "skip-stop",
+        DispatchDecision::ShortTurn => "short-turn",
+        DispatchDecision::ShortenTrain => "shorten-train",
+        DispatchDecision::StrengthenTrain => "strengthen-train",
+        DispatchDecision::Cancel => "cancel",
+        DispatchDecision::ActivateReserveRotation => "activate-reserve-rotation",
+        DispatchDecision::ProvideReplacementVehicle => "provide-replacement-vehicle",
+        DispatchDecision::RequestReroute => "request-reroute",
+        DispatchDecision::ReturnPath => "return-path",
+        DispatchDecision::TriggerRailReplacement => "trigger-rail-replacement",
+    }
+}
+
+fn wire_events(
+    state: &RuntimeState,
+    machine: &Machine,
+    events: Vec<DomainEvent>,
+) -> Result<Vec<WireEvent>, RuntimeError> {
+    events
+        .into_iter()
+        .map(|event| {
+            let (event_type, payload) = event_payload(machine, &event.kind)?;
+            Ok(WireEvent {
+                event_id: format!(
+                    "simulation:{}:{}:{}",
+                    state.world_id, state.region_id, event.sequence
+                ),
+                world_id: state.world_id.clone(),
+                region_id: state.region_id.clone(),
+                simulation_sequence: event.sequence,
+                event_type,
+                at_s: event.at,
+                payload,
+            })
+        })
+        .collect()
+}
+
+fn apply_wire_command(
+    state: &RuntimeState,
+    machine: &mut Machine,
+    command: &WireCommand,
+) -> Result<Applied, RuntimeError> {
+    let events = match command {
+        WireCommand::Materialize { train } => {
+            let internal_id = allocate_train(machine, train)?;
+            machine
+                .simulation
+                .apply(Command::Materialize(make_train(train, internal_id)))?
+        }
+        WireCommand::AdvanceTo { at_s } => machine.simulation.apply(Command::AdvanceTo(*at_s))?,
+        WireCommand::AddDelay {
+            train_run_id,
+            seconds,
+        } => {
+            let internal_id = machine
+                .internal_by_external
+                .get(train_run_id)
+                .copied()
+                .ok_or_else(|| RuntimeError::new("unknown_train", train_run_id.clone()))?;
+            machine.simulation.apply(Command::AddDelay {
+                train_run_id: internal_id,
+                seconds: *seconds,
+            })?
+        }
+        WireCommand::DematerializeBefore { before_s } => {
+            machine.simulation.dematerialize_before(*before_s);
+            Vec::new()
+        }
+    };
+    let delta = machine.publisher.publish(&machine.simulation.snapshot())?;
+    Ok(Applied {
+        events: wire_events(state, machine, events)?,
+        delta: wire_delta(state, machine, delta)?,
+    })
+}
+
+fn build_machine(state: &RuntimeState) -> Result<(Machine, Vec<Applied>), RuntimeError> {
+    if state.schema_version != STATE_SCHEMA {
+        return Err(RuntimeError::new(
+            "wrong_schema",
+            "unbekanntes Zustandsschema",
+        ));
+    }
+    validate_identity(&state.world_id, "worldId")?;
+    validate_identity(&state.region_id, "regionId")?;
+    if state.revision != u64::try_from(state.commands.len()).unwrap_or(u64::MAX)
+        || state.publisher_sequence != state.revision
+    {
+        return Err(RuntimeError::new(
+            "corrupt_state",
+            "Revision, Publisher-Sequenz und Kommandolog widersprechen sich",
+        ));
+    }
+    let window = MaterializationWindow::new(state.materialization_window_hours)?;
+    let simulation = Simulation::new(
+        INTERNAL_WORLD_ID,
+        INTERNAL_REGION_ID,
+        state.initial_now_s,
+        window,
+        ConservativeDispatcher,
+    );
+    let placeholder_snapshot = simulation.snapshot();
+    let mut machine = Machine {
+        simulation,
+        publisher: DeltaPublisher::new(&placeholder_snapshot),
+        internal_by_external: BTreeMap::new(),
+        external_by_internal: BTreeMap::new(),
+        next_internal_id: 1,
+    };
+    for train in &state.initial_trains {
+        let internal_id = allocate_train(&mut machine, train)?;
+        machine
+            .simulation
+            .apply(Command::Materialize(make_train(train, internal_id)))?;
+    }
+    machine.publisher = DeltaPublisher::new(&machine.simulation.snapshot());
+
+    let mut command_ids = BTreeSet::new();
+    let mut applied = Vec::with_capacity(state.commands.len());
+    for stored in &state.commands {
+        validate_identity(&stored.command_id, "commandId")?;
+        if !command_ids.insert(stored.command_id.clone()) {
+            return Err(RuntimeError::new("corrupt_state", "doppelte commandId"));
+        }
+        let expected_hash = canonical_hash(
+            "zugfolge/regional-simulation-command/v1",
+            &json!({
+                "worldId": state.world_id,
+                "regionId": state.region_id,
+                "command": stored.command,
+            }),
+        )?;
+        if stored.command_hash != expected_hash {
+            return Err(RuntimeError::new(
+                "corrupt_state",
+                format!(
+                    "Kommando '{}' besitzt einen falschen Hash",
+                    stored.command_id
+                ),
+            ));
+        }
+        applied.push(apply_wire_command(state, &mut machine, &stored.command)?);
+    }
+    if machine.simulation.snapshot().at != state.now_s {
+        return Err(RuntimeError::new(
+            "corrupt_state",
+            "gespeicherte Simulationszeit stimmt nicht mit Replay ueberein",
+        ));
+    }
+    Ok((machine, applied))
+}
+
+/// Initialisiert einen echten regionalen M4-Kern samt DeltaPublisher.
+pub fn initialize_regional_simulation(input_json: &str) -> Result<String, RuntimeError> {
+    let mut input: Initialization = decode(input_json, "Initialisierung")?;
+    if input.schema_version != INITIALIZE_SCHEMA {
+        return Err(RuntimeError::new(
+            "wrong_schema",
+            "unbekanntes Initialisierungsschema",
+        ));
+    }
+    validate_identity(&input.world_id, "worldId")?;
+    validate_identity(&input.region_id, "regionId")?;
+    MaterializationWindow::new(input.materialization_window_hours)?;
+    let mut ids = BTreeSet::new();
+    for train in &input.trains {
+        validate_train(train)?;
+        if !ids.insert(train.train_run_id.clone()) {
+            return Err(RuntimeError::new(
+                "duplicate_train",
+                train.train_run_id.clone(),
+            ));
+        }
+    }
+    input
+        .trains
+        .sort_by(|left, right| left.train_run_id.cmp(&right.train_run_id));
+    let state = RuntimeState {
+        schema_version: STATE_SCHEMA.to_owned(),
+        world_id: input.world_id,
+        region_id: input.region_id,
+        materialization_window_hours: input.materialization_window_hours,
+        initial_now_s: input.now_s,
+        now_s: input.now_s,
+        initial_trains: input.trains,
+        revision: 0,
+        publisher_sequence: 0,
+        commands: Vec::new(),
+    };
+    let (machine, _) = build_machine(&state)?;
+    let snapshot = wire_snapshot(&state, &machine, machine.simulation.snapshot(), 0)?;
+    encode(
+        &json!({
+            "schemaVersion": INITIALIZED_SCHEMA,
+            "state": state,
+            "stateHash": state_hash(&state)?,
+            "snapshot": snapshot,
+        }),
+        "Initialisierungsergebnis",
+    )
+}
+
+/// Wendet genau ein idempotentes Kommando an und liefert echte Rust-Ereignisse
+/// sowie das von [`DeltaPublisher`] erzeugte Delta.
+pub fn apply_regional_simulation_command(
+    state_json: &str,
+    command_json: &str,
+) -> Result<String, RuntimeError> {
+    let mut state: RuntimeState = decode(state_json, "Regionalzustand")?;
+    let envelope: CommandEnvelope = decode(command_json, "Regionalkommando")?;
+    if envelope.schema_version != COMMAND_SCHEMA {
+        return Err(RuntimeError::new(
+            "wrong_schema",
+            "unbekanntes Kommandoschema",
+        ));
+    }
+    if envelope.world_id != state.world_id || envelope.region_id != state.region_id {
+        return Err(RuntimeError::new(
+            "wrong_scope",
+            "Kommando und Regionalzustand gehoeren nicht zusammen",
+        ));
+    }
+    validate_identity(&envelope.command_id, "commandId")?;
+    let incoming_hash = command_hash(&envelope)?;
+    let (mut machine, replayed) = build_machine(&state)?;
+    if let Some((index, stored)) = state
+        .commands
+        .iter()
+        .enumerate()
+        .find(|(_, stored)| stored.command_id == envelope.command_id)
+    {
+        if stored.command_hash != incoming_hash {
+            return Err(RuntimeError::new(
+                "idempotency_conflict",
+                "commandId wurde mit anderem Inhalt wiederholt",
+            ));
+        }
+        let original = replayed
+            .get(index)
+            .ok_or_else(|| RuntimeError::new("corrupt_state", "Replay-Ergebnis fehlt"))?;
+        return encode(
+            &json!({
+                "schemaVersion": RESULT_SCHEMA,
+                "state": state,
+                "stateHash": state_hash(&state)?,
+                "events": original.events,
+                "delta": original.delta,
+                "idempotentReplay": true,
+            }),
+            "Replay-Ergebnis",
+        );
+    }
+    let current_hash = state_hash(&state)?;
+    if envelope.expected_state_hash != current_hash {
+        return Err(RuntimeError::new(
+            "state_hash_conflict",
+            "Zustandshash ist veraltet",
+        ));
+    }
+    if envelope.expected_revision != state.revision {
+        return Err(RuntimeError::new(
+            "revision_conflict",
+            "Zustandsrevision ist veraltet",
+        ));
+    }
+    if envelope.expected_publisher_sequence != state.publisher_sequence {
+        return Err(RuntimeError::new(
+            "publisher_sequence_gap",
+            "Publisher-Sequenz ist nicht lueckenlos",
+        ));
+    }
+    let applied = apply_wire_command(&state, &mut machine, &envelope.command)?;
+    if applied.delta.producer_sequence != state.publisher_sequence.saturating_add(1) {
+        return Err(RuntimeError::new(
+            "publisher_sequence_gap",
+            "Rust-Delta besitzt eine unerwartete Sequenz",
+        ));
+    }
+    state.commands.push(StoredCommand {
+        command_id: envelope.command_id,
+        command_hash: incoming_hash,
+        command: envelope.command,
+    });
+    state.revision = state
+        .revision
+        .checked_add(1)
+        .ok_or_else(|| RuntimeError::new("revision_exhausted", "Revision ist erschoepft"))?;
+    state.publisher_sequence = applied.delta.producer_sequence;
+    state.now_s = applied.delta.at_s;
+    encode(
+        &json!({
+            "schemaVersion": RESULT_SCHEMA,
+            "state": state,
+            "stateHash": state_hash(&state)?,
+            "events": applied.events,
+            "delta": applied.delta,
+            "idempotentReplay": false,
+        }),
+        "Kommandoergebnis",
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn train(id: &str) -> Value {
+        json!({
+            "trainRunId": id,
+            "operator": "operator-1",
+            "trainNumber": "RE 1",
+            "category": "regional",
+            "route": [
+                { "operatingPoint": "A", "positionMm": 0, "arrivalS": 100, "minimumDwellSeconds": 30, "departureS": 130 },
+                { "operatingPoint": "B", "positionMm": 3_600_000, "arrivalS": 3_700, "minimumDwellSeconds": 30, "departureS": 3_730 }
+            ]
+        })
+    }
+
+    fn initialize(world_id: &str) -> Value {
+        let result = initialize_regional_simulation(
+            &json!({
+                "schemaVersion": INITIALIZE_SCHEMA,
+                "worldId": world_id,
+                "regionId": "region-leipzig",
+                "materializationWindowHours": 48,
+                "nowS": 0,
+                "trains": [train("pattern-1:trip-1:20260811:4600")]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        serde_json::from_str(&result).unwrap()
+    }
+
+    fn command(state: &Value, id: &str, body: Value) -> Value {
+        json!({
+            "schemaVersion": COMMAND_SCHEMA,
+            "worldId": state["state"]["worldId"],
+            "regionId": state["state"]["regionId"],
+            "commandId": id,
+            "expectedStateHash": state["stateHash"],
+            "expectedRevision": state["state"]["revision"],
+            "expectedPublisherSequence": state["state"]["publisherSequence"],
+            "command": body,
+        })
+    }
+
+    fn apply(state: &Value, id: &str, body: Value) -> Value {
+        let result = apply_regional_simulation_command(
+            &state["state"].to_string(),
+            &command(state, id, body).to_string(),
+        )
+        .unwrap();
+        serde_json::from_str(&result).unwrap()
+    }
+
+    #[test]
+    fn materialize_advance_remove_uses_real_publisher() {
+        let initialized = initialize("11111111-1111-4111-8111-111111111111");
+        assert_eq!(initialized["snapshot"]["producerSequence"], 0);
+        assert_eq!(
+            initialized["snapshot"]["trains"][0]["id"],
+            "pattern-1:trip-1:20260811:4600"
+        );
+
+        let materialized = apply(
+            &initialized,
+            "materialize-2",
+            json!({ "type": "materialize", "train": train("pattern-2:trip-2:20260811:4700") }),
+        );
+        assert_eq!(materialized["delta"]["producerSequence"], 1);
+        assert_eq!(
+            materialized["delta"]["changed"][0]["id"],
+            "pattern-2:trip-2:20260811:4700"
+        );
+
+        let advanced = apply(
+            &materialized,
+            "advance",
+            json!({ "type": "advance-to", "atS": 4_000 }),
+        );
+        assert_eq!(advanced["delta"]["producerSequence"], 2);
+        assert!(
+            advanced["events"]
+                .as_array()
+                .is_some_and(|events| !events.is_empty())
+        );
+
+        let removed = apply(
+            &advanced,
+            "remove",
+            json!({ "type": "dematerialize-before", "beforeS": 5_000 }),
+        );
+        assert_eq!(removed["delta"]["producerSequence"], 3);
+        assert_eq!(
+            removed["delta"]["removed"].as_array().map(Vec::len),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn restart_and_idempotency_are_hash_equal() {
+        let initialized = initialize("11111111-1111-4111-8111-111111111111");
+        let first_command = command(
+            &initialized,
+            "advance-1",
+            json!({ "type": "advance-to", "atS": 100 }),
+        );
+        let first: Value = serde_json::from_str(
+            &apply_regional_simulation_command(
+                &initialized["state"].to_string(),
+                &first_command.to_string(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let retry: Value = serde_json::from_str(
+            &apply_regional_simulation_command(
+                &first["state"].to_string(),
+                &first_command.to_string(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(retry["idempotentReplay"], true);
+        assert_eq!(retry["stateHash"], first["stateHash"]);
+        assert_eq!(retry["delta"], first["delta"]);
+
+        let restarted = apply(
+            &first,
+            "advance-2",
+            json!({ "type": "advance-to", "atS": 130 }),
+        );
+        let repeated = apply(
+            &first,
+            "advance-2",
+            json!({ "type": "advance-to", "atS": 130 }),
+        );
+        assert_eq!(restarted["stateHash"], repeated["stateHash"]);
+        assert_eq!(restarted["delta"], repeated["delta"]);
+    }
+
+    #[test]
+    fn rejects_publisher_gap_and_wrong_world() {
+        let initialized = initialize("11111111-1111-4111-8111-111111111111");
+        let mut gap = command(
+            &initialized,
+            "gap",
+            json!({ "type": "advance-to", "atS": 100 }),
+        );
+        gap["expectedPublisherSequence"] = json!(7);
+        let error =
+            apply_regional_simulation_command(&initialized["state"].to_string(), &gap.to_string())
+                .unwrap_err();
+        assert!(error.to_string().starts_with("publisher_sequence_gap:"));
+
+        let mut foreign = command(
+            &initialized,
+            "foreign",
+            json!({ "type": "advance-to", "atS": 100 }),
+        );
+        foreign["worldId"] = json!("22222222-2222-4222-8222-222222222222");
+        let error = apply_regional_simulation_command(
+            &initialized["state"].to_string(),
+            &foreign.to_string(),
+        )
+        .unwrap_err();
+        assert!(error.to_string().starts_with("wrong_scope:"));
+    }
+
+    #[test]
+    fn rejects_tampered_persisted_state() {
+        let initialized = initialize("11111111-1111-4111-8111-111111111111");
+        let mut state = initialized["state"].clone();
+        state["nowS"] = json!(99);
+        let envelope = command(
+            &initialized,
+            "tampered",
+            json!({ "type": "advance-to", "atS": 100 }),
+        );
+        let error = apply_regional_simulation_command(&state.to_string(), &envelope.to_string())
+            .unwrap_err();
+        assert!(error.to_string().starts_with("corrupt_state:"));
+    }
+}

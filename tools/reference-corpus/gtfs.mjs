@@ -13,7 +13,8 @@ import {
 
 import { canonicalJson, sha256 } from "./reference-corpus.mjs";
 
-export const GTFS_CAPTURE_SCHEMA = "zugfolge-gtfs-capture/v1";
+export const GTFS_CAPTURE_SCHEMA = "zugfolge-gtfs-capture/v2";
+const LEGACY_GTFS_CAPTURE_SCHEMA = "zugfolge-gtfs-capture/v1";
 const REQUIRED_FILES = ["agency.txt", "stops.txt", "routes.txt", "trips.txt", "stop_times.txt"];
 const OPTIONAL_FILES = ["calendar.txt", "calendar_dates.txt", "feed_info.txt", "frequencies.txt"];
 const execFileAsync = promisify(execFile);
@@ -140,6 +141,7 @@ async function listZipEntries(zipPath) {
 export async function captureGtfsFeed(config, options) {
   invariant(config.schema === GTFS_CAPTURE_SCHEMA, `config.schema muss '${GTFS_CAPTURE_SCHEMA}' sein.`);
   nonEmpty(config.feedUrl, "feedUrl");
+  invariant(/^[0-9a-f]{64}$/u.test(options.configArtifactSha256 ?? ""), "configArtifactSha256 fehlt oder ist ungültig.");
   const response = await options.fetchImpl(config.feedUrl, { headers: { Accept: "application/zip" } });
   invariant(response.ok, `GTFS-Download antwortet mit ${response.status}.`);
   const payload = Buffer.from(await response.arrayBuffer());
@@ -165,6 +167,7 @@ export async function captureGtfsFeed(config, options) {
     archiveSha256: sha256(payload),
     archiveBytes: payload.length,
     configSha256: sha256(canonicalJson(config)),
+    configArtifactSha256: options.configArtifactSha256,
     source: config.source,
     files,
   };
@@ -181,7 +184,10 @@ async function readTable(rootDirectory, manifest, file, optional = false) {
 }
 
 export async function loadCapturedGtfsTables(config, manifest, rootDirectory) {
-  invariant(manifest.schema === GTFS_CAPTURE_SCHEMA, "Unbekanntes GTFS-Capture-Manifest.");
+  invariant(
+    manifest.schema === GTFS_CAPTURE_SCHEMA || manifest.schema === LEGACY_GTFS_CAPTURE_SCHEMA,
+    "Unbekanntes GTFS-Capture-Manifest.",
+  );
   invariant(manifest.configSha256 === sha256(canonicalJson(config)), "GTFS-Capture und Konfiguration gehören nicht zusammen.");
   const tables = {
     agency: await readTable(rootDirectory, manifest, "agency.txt"),

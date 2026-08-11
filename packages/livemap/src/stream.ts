@@ -1,5 +1,17 @@
 import type { HealthCheck } from "@zugfolge/health";
 
+export const PUBLIC_OPERATION_MARKER_SCHEMA = "zugfolge-livemap-operation-marker/v1" as const;
+
+export interface PublicOperationMarker {
+  readonly schemaVersion: typeof PUBLIC_OPERATION_MARKER_SCHEMA;
+  readonly kind: "public-operator";
+}
+
+export const PUBLIC_OPERATION_MARKER: PublicOperationMarker = Object.freeze({
+  schemaVersion: PUBLIC_OPERATION_MARKER_SCHEMA,
+  kind: "public-operator",
+});
+
 export interface PublicTrain {
   readonly id: string;
   readonly operator: string;
@@ -10,6 +22,7 @@ export interface PublicTrain {
   readonly delaySeconds: number;
   readonly nextOperatingPoint: string;
   readonly status: string;
+  readonly operationMarker?: PublicOperationMarker;
 }
 
 export interface LiveSnapshot {
@@ -29,6 +42,22 @@ export interface LiveDelta {
 
 export type DeltaListener = (delta: LiveDelta) => void;
 
+interface OperationMarkerChange {
+  readonly operationMarker: PublicOperationMarker | null;
+  readonly effectiveAt: number;
+}
+
+export type LivemapSubscription =
+  | {
+      readonly kind: "resume";
+      readonly replay: readonly LiveDelta[];
+      readonly unsubscribe: () => void;
+    }
+  | {
+      readonly kind: "reset";
+      readonly unsubscribe: () => void;
+    };
+
 /** Weltisolierter, begrenzt gepufferter In-Process-Fanout. */
 export class LivemapFeed {
   readonly #worldId: string;
@@ -38,10 +67,16 @@ export class LivemapFeed {
   #at = 0;
   #lastPublishedAtMs: number | undefined;
   readonly #trains = new Map<string, PublicTrain>();
+  readonly #operationMarkerTimelines = new Map<string, OperationMarkerChange[]>();
+  readonly #latestOperationMarkers = new Map<string, OperationMarkerChange>();
   readonly #listeners = new Set<DeltaListener>();
   readonly #history: LiveDelta[] = [];
 
   constructor(worldId: string, historyLimit = 256, now: () => number = Date.now) {
+    if (worldId.length === 0) throw new RangeError("worldId darf nicht leer sein.");
+    if (!Number.isSafeInteger(historyLimit) || historyLimit <= 0) {
+      throw new RangeError("historyLimit muss eine positive Ganzzahl sein.");
+    }
     this.#worldId = worldId;
     this.#historyLimit = historyLimit;
     this.#now = now;
@@ -64,17 +99,142 @@ export class LivemapFeed {
     };
   }
 
-  publish(input: Omit<LiveDelta, "worldId" | "sequence">): LiveDelta {
+  #emit(input: Omit<LiveDelta, "worldId" | "sequence">): LiveDelta {
     input.changed.forEach((train) => this.#trains.set(train.id, train));
     input.removed.forEach((id) => this.#trains.delete(id));
     this.#sequence += 1;
     this.#at = input.at;
     this.#lastPublishedAtMs = this.#now();
-    const delta: LiveDelta = { ...input, worldId: this.#worldId, sequence: this.#sequence };
+    const delta: LiveDelta = {
+      ...input,
+      worldId: this.#worldId,
+      sequence: this.#sequence,
+    };
     this.#history.push(delta);
     if (this.#history.length > this.#historyLimit) this.#history.shift();
     this.#listeners.forEach((listener) => listener(delta));
     return delta;
+  }
+
+  #operationMarkerAt(trainRunId: string, at: number): OperationMarkerChange | undefined {
+    const timeline = this.#operationMarkerTimelines.get(trainRunId);
+    if (timeline === undefined) return undefined;
+    let effective: OperationMarkerChange | undefined;
+    for (const change of timeline) {
+      if (change.effectiveAt > at) break;
+      effective = change;
+    }
+    return effective;
+  }
+
+  #recordOperationMarker(
+    trainRunId: string,
+    operationMarker: PublicOperationMarker | null,
+    effectiveAt: number,
+  ): boolean {
+    const timeline = this.#operationMarkerTimelines.get(trainRunId) ?? [];
+    const duplicate = timeline.some(
+      (item) =>
+        item.effectiveAt === effectiveAt &&
+        (item.operationMarker === null) === (operationMarker === null),
+    );
+    if (duplicate) return false;
+    const change = Object.freeze({ operationMarker, effectiveAt });
+    const insertAt = timeline.findIndex((item) => item.effectiveAt > effectiveAt);
+    if (insertAt === -1) timeline.push(change);
+    else timeline.splice(insertAt, 0, change);
+    this.#operationMarkerTimelines.set(trainRunId, timeline);
+
+    const latest = this.#latestOperationMarkers.get(trainRunId);
+    if (latest !== undefined && latest.effectiveAt > effectiveAt) return false;
+    this.#latestOperationMarkers.set(trainRunId, change);
+    return true;
+  }
+
+  #projectOperationMarker(
+    train: PublicTrain,
+    operationMarker: PublicOperationMarker | null,
+  ): PublicTrain {
+    if (operationMarker !== null) {
+      if (train.operationMarker === PUBLIC_OPERATION_MARKER) return train;
+      return Object.freeze({ ...train, operationMarker: PUBLIC_OPERATION_MARKER });
+    }
+    if (train.operationMarker === undefined) return train;
+    const { operationMarker: _operationMarker, ...unmarkedTrain } = train;
+    return Object.freeze(unmarkedTrain);
+  }
+
+  publish(input: Omit<LiveDelta, "worldId" | "sequence">): LiveDelta {
+    if (!Number.isSafeInteger(input.at) || input.at < 0 || input.at < this.#at) {
+      throw new RangeError("Livemap-Deltazeit muss eine sichere, nicht fallende Weltsekunde sein.");
+    }
+    const changed = input.changed.map((train) => {
+      if (
+        train.operationMarker !== undefined &&
+        (train.operationMarker.schemaVersion !== PUBLIC_OPERATION_MARKER_SCHEMA ||
+          train.operationMarker.kind !== "public-operator")
+      ) {
+        throw new TypeError("Livemap-Betriebsmarker hat ein unbekanntes Schema.");
+      }
+      const effective = this.#operationMarkerAt(train.id, input.at);
+      return effective === undefined
+        ? train
+        : this.#projectOperationMarker(train, effective.operationMarker);
+    });
+    return this.#emit({ ...input, changed });
+  }
+
+  /**
+   * Setzt oder entfernt den Eigenbetriebsmarker, ohne eine Position zu erzeugen.
+   *
+   * Noch nicht materialisierte Zugläufe werden lediglich vorgemerkt. Bereits
+   * bekannte Zugläufe erhalten ein neues Delta mit ihrer letzten
+   * autoritativen Position und deren unveränderter Sample-Zeit; die
+   * Ereigniszeit bleibt als Wirksamkeitsgrenze erhalten. Historische Samples
+   * vor dieser Grenze werden nicht nachträglich umgedeutet.
+   */
+  setOperationMarker(
+    trainRunIds: readonly string[],
+    operationMarker: PublicOperationMarker | null,
+    at: number,
+  ): LiveDelta | undefined {
+    if (!Number.isSafeInteger(at) || at < 0) {
+      throw new RangeError("Markerzeit muss eine sichere, nichtnegative Weltsekunde sein.");
+    }
+    if (
+      operationMarker !== null &&
+      (operationMarker.schemaVersion !== PUBLIC_OPERATION_MARKER_SCHEMA ||
+        operationMarker.kind !== "public-operator")
+    ) {
+      throw new TypeError("Livemap-Betriebsmarker hat ein unbekanntes Schema.");
+    }
+    if (trainRunIds.length === 0) {
+      throw new RangeError("Eine Markeraktualisierung braucht mindestens einen Zuglauf.");
+    }
+    const identifiers = [...new Set(trainRunIds)].sort((left, right) => left.localeCompare(right));
+    if (identifiers.some((id) => id.length === 0)) {
+      throw new RangeError("Zuglaufkennungen für Markeraktualisierungen dürfen nicht leer sein.");
+    }
+
+    const changed: PublicTrain[] = [];
+    for (const id of identifiers) {
+      const normalizedMarker = operationMarker === null ? null : PUBLIC_OPERATION_MARKER;
+      const changesCurrentProjection = this.#recordOperationMarker(id, normalizedMarker, at);
+      const train = this.#trains.get(id);
+      if (train === undefined || !changesCurrentProjection || at > this.#at) continue;
+      const projected = this.#projectOperationMarker(train, normalizedMarker);
+      if (projected !== train) changed.push(projected);
+    }
+    if (changed.length === 0) return undefined;
+    return this.#emit({ at: this.#at, changed, removed: [] });
+  }
+
+  markPublicOperation(trainRunIds: readonly string[], at: number): LiveDelta | undefined {
+    return this.setOperationMarker(trainRunIds, PUBLIC_OPERATION_MARKER, at);
+  }
+
+  clearOperationMarker(trainRunIds: readonly string[], at: number): LiveDelta | undefined {
+    return this.setOperationMarker(trainRunIds, null, at);
   }
 
   /** Deltas nach einer Client-Sequenz; `undefined`, wenn der Ringpuffer nicht reicht. */
@@ -89,6 +249,33 @@ export class LivemapFeed {
   subscribe(listener: DeltaListener): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
+  }
+
+  /**
+   * Verbindet Ringpuffer-Replay und laufenden Fanout ohne zeitliche Lücke.
+   *
+   * Der Aufruf ist synchron: Zwischen der Bestimmung des Replays und dem
+   * Eintragen des Listeners kann kein Publish-Turn laufen. Reicht der
+   * Ringpuffer nicht zurück, wird kein Listener eingetragen; der Transport
+   * muss genau ein `reset` senden und schließen.
+   */
+  subscribeAfter(sequence: number, listener: DeltaListener): LivemapSubscription {
+    const replay = this.deltasAfter(sequence);
+    if (replay === undefined) {
+      return { kind: "reset", unsubscribe: () => undefined };
+    }
+
+    this.#listeners.add(listener);
+    let subscribed = true;
+    return {
+      kind: "resume",
+      replay,
+      unsubscribe: () => {
+        if (!subscribed) return;
+        subscribed = false;
+        this.#listeners.delete(listener);
+      },
+    };
   }
 }
 
@@ -165,6 +352,31 @@ export class LivemapRegistry {
     const entry = this.#feeds.get(worldId);
     if (entry !== undefined) entry.lastAccessMs = this.#now();
     return entry?.feed;
+  }
+
+  markPublicOperation(
+    worldId: string,
+    trainRunIds: readonly string[],
+    at: number,
+  ): LiveDelta | undefined {
+    return this.forWorld(worldId).markPublicOperation(trainRunIds, at);
+  }
+
+  setOperationMarker(
+    worldId: string,
+    trainRunIds: readonly string[],
+    operationMarker: PublicOperationMarker | null,
+    at: number,
+  ): LiveDelta | undefined {
+    return this.forWorld(worldId).setOperationMarker(trainRunIds, operationMarker, at);
+  }
+
+  clearOperationMarker(
+    worldId: string,
+    trainRunIds: readonly string[],
+    at: number,
+  ): LiveDelta | undefined {
+    return this.forWorld(worldId).clearOperationMarker(trainRunIds, at);
   }
 
   freshness(

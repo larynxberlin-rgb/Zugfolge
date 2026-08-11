@@ -1,6 +1,7 @@
 export * from "./account-roles.js";
 export * from "./accounts.js";
 export * from "./domain-events.js";
+export * from "./daily-operation-reports.js";
 export * from "./economy-effects.js";
 export * from "./economy-outbox.js";
 export * from "./economy-world-states.js";
@@ -10,6 +11,7 @@ export * from "./ledger-entries.js";
 export * from "./ledger-transactions.js";
 export * from "./mailbox-messages.js";
 export * from "./operators.js";
+export * from "./operating-program-versions.js";
 export * from "./simulation-commands.js";
 export * from "./world-accesses.js";
 export * from "./worlds.js";

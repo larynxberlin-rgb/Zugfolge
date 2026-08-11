@@ -1,149 +1,179 @@
-import { badge, escapeHtml, icon, type Density } from "@zugfolge/design-system";
+import type { Density } from "@zugfolge/design-system";
 import "@zugfolge/design-system/styles.css";
-import {
-  conflictsForTrain,
-  extent,
-  formatMinute,
-  pathPoints,
-  phaseLabels,
-  sampleData,
-  shiftedData,
-  stationY,
-  timeX,
-  type Conflict,
-  type DiagramData,
-} from "./diagram.js";
+import type { PlanningProjectionV1 } from "@zugfolge/planning-projection";
+
 import { GameApiClient } from "./api.js";
+import { conflictsForTrain } from "./diagram.js";
+import { renderLoadState, renderProjection } from "./view.js";
 import "./styles.css";
+
 const root = document.querySelector<HTMLDivElement>("#root");
-if (!root) throw new Error("App-Wurzel fehlt");
+if (root === null) throw new Error("App-Wurzel fehlt");
 const app = root;
+
 const parameters = new URLSearchParams(window.location.search);
 const demoMode = parameters.get("demo") === "1";
 const worldId = parameters.get("world") ?? "";
 const accessToken = sessionStorage.getItem("zugfolge.accessToken") ?? "";
-const apiBaseUrl = document.querySelector<HTMLMetaElement>('meta[name="game-api-url"]')?.content ?? "";
-const api = !demoMode && accessToken !== "" ? new GameApiClient(apiBaseUrl, accessToken) : undefined;
-let density: Density = "control",
-  showSteps = true,
-  selectedTrainId = "t1",
-  selectedConflictId = "c1",
-  data: DiagramData = sampleData,
-  message = "",
-  ready = demoMode,
-  loadError = "";
-const train = (id: string) => data.trains.find((t) => t.id === id)!;
-function conflictLabel(c: Conflict): string {
-  return c.kind === "sequence" ? "Zugfolgekonflikt" : "Fahrstraßenausschluss";
+const apiBaseUrl =
+  document.querySelector<HTMLMetaElement>('meta[name="game-api-url"]')?.content ?? "";
+const api =
+  !demoMode && accessToken !== ""
+    ? new GameApiClient(apiBaseUrl, accessToken)
+    : undefined;
+
+let density: Density = "control";
+let showBlockingTimes = true;
+let selectedTrainId = "";
+let selectedConflictId = "";
+let projection: PlanningProjectionV1 | undefined;
+let loadError = "";
+let message = "";
+let messageTone: "status" | "error" = "status";
+let applyingAlternativeId = "";
+let demoApply: ((current: PlanningProjectionV1, alternativeId: string) => PlanningProjectionV1) | undefined;
+
+function explicitDemoUrl(): string {
+  const demoParameters = new URLSearchParams(window.location.search);
+  demoParameters.set("demo", "1");
+  return `?${demoParameters.toString()}`;
 }
-function diagram(): string {
-  const [from, to] = extent(data),
-    ticks = Array.from(
-      { length: Math.floor((to - from) / 10) + 1 },
-      (_, i) => from + i * 10,
-    );
-  const active = data.conflicts.find((c) => c.id === selectedConflictId);
-  return `<svg class="diagram" viewBox="0 0 980 460" role="img" aria-labelledby="diagram-title diagram-description"><title id="diagram-title">Bildfahrplan ${escapeHtml(data.corridor)}</title><desc id="diagram-description">Weg-Zeit-Diagramm mit ${data.trains.length} Zugläufen und ${data.conflicts.length} Konflikten.</desc><defs><pattern id="conflict-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6"/></pattern></defs>
-${ticks.map((m) => `<g class="time-grid"><line x1="${timeX(data, m)}" y1="38" x2="${timeX(data, m)}" y2="426"/><text x="${timeX(data, m)}" y="25">${formatMinute(m)}</text></g>`).join("")}${data.stations.map((s) => `<g class="station-grid"><line x1="140" y1="${stationY(data, s.id)}" x2="950" y2="${stationY(data, s.id)}"/><text x="128" y="${stationY(data, s.id) + 4}">${escapeHtml(s.name)}</text><text class="km" x="956" y="${stationY(data, s.id) + 4}">${s.km},0</text></g>`).join("")}
-${data.conflicts.map((c) => `<rect class="conflict-zone ${c.id === selectedConflictId ? "active" : ""}" x="${timeX(data, c.startMinute)}" y="${Math.min(...c.trainIds.map((id) => stationY(data, train(id).calls[1]!.stationId))) - 10}" width="${Math.max(8, timeX(data, c.endMinute) - timeX(data, c.startMinute))}" height="55"><title>${escapeHtml(conflictLabel(c))}: ${formatMinute(c.startMinute)}–${formatMinute(c.endMinute)}</title></rect>`).join("")}
-${data.trains.map((t) => `<g class="train ${t.id === selectedTrainId ? "train--selected" : ""}" data-train="${t.id}" tabindex="0" role="button" aria-pressed="${t.id === selectedTrainId}" aria-label="Zug ${escapeHtml(t.number)} auswählen"><polyline points="${pathPoints(data, t)}"/><text x="${timeX(data, t.calls[0]!.minute) + 5}" y="${stationY(data, t.calls[0]!.stationId) - 7}">${escapeHtml(t.number)}</text></g>`).join("")}
-${
-  showSteps
-    ? `<g class="steps" aria-label="Sechsteilige Sperrzeitentreppe">${data.occupations
-        .filter((o) => o.trainId === selectedTrainId)
-        .map(
-          (o) =>
-            `<rect class="phase-${o.phase}" x="${timeX(data, o.startMinute)}" y="${stationY(data, o.stationId) - 8}" width="${Math.max(3, timeX(data, o.endMinute) - timeX(data, o.startMinute))}" height="12"><title>${phaseLabels[o.phase]} · ${escapeHtml(o.resource)} · ${formatMinute(o.startMinute)}–${formatMinute(o.endMinute)}</title></rect>`,
-        )
-        .join("")}</g>`
-    : ""
-}${active ? `<text class="conflict-marker" x="${timeX(data, active.startMinute)}" y="445">⚠ ${formatMinute(active.startMinute)}</text>` : ""}</svg>`;
+
+function chooseInitialSelection(current: PlanningProjectionV1): void {
+  selectedTrainId = current.trains[0]?.id ?? "";
+  selectedConflictId = conflictsForTrain(current, selectedTrainId)[0]?.id ?? "";
 }
-function inspector(): string {
-  const available = conflictsForTrain(data, selectedTrainId),
-    conflict =
-      available.find((c) => c.id === selectedConflictId) ?? available[0];
-  if (!conflict)
-    return `<aside class="inspector zf-surface"><div class="no-conflict">${badge("Konfliktfrei", "success", "check")}<h2>${escapeHtml(train(selectedTrainId).number)}</h2><p>Für diesen Zuglauf liegen keine Belegungsüberschneidungen vor.</p></div></aside>`;
-  selectedConflictId = conflict.id;
-  const [a, b] = conflict.trainIds.map(train);
-  return `<aside class="inspector zf-surface"><div class="inspector-head"><div>${badge(conflictLabel(conflict), "danger", "alert")}<span class="counter">${available.indexOf(conflict) + 1} von ${available.length}</span></div><h2>${escapeHtml(conflict.resource)}</h2><p>${formatMinute(conflict.startMinute)}–${formatMinute(conflict.endMinute)}</p></div><div class="conflict-nav">${available.map((c) => `<button class="zf-button ${c.id === conflict.id ? "pressed" : ""}" data-conflict="${c.id}">${escapeHtml(conflictLabel(c))}</button>`).join("")}</div><div class="cause"><p class="eyebrow">Beteiligte Zugläufe</p><div class="train-pair"><span>${icon("train")}<strong>${escapeHtml(a!.number)}</strong><small>beantragte Trasse</small></span><b>×</b><span>${icon("train")}<strong>${escapeHtml(b!.number)}</strong><small>bereits eingeplant</small></span></div></div><dl><div><dt>Konfliktressource</dt><dd><strong>${escapeHtml(conflict.resource)}</strong></dd></div><div><dt>Überlappung</dt><dd><strong>${conflict.endMinute - conflict.startMinute} min</strong><br>${formatMinute(conflict.startMinute)}–${formatMinute(conflict.endMinute)}</dd></div><div><dt>Mindestzugfolgezeit</dt><dd><strong>${conflict.minimumHeadwayMinutes} min</strong><br>aus Belegungsprofil</dd></div></dl><div class="explanation"><h3>Warum entsteht der Konflikt?</h3><p>Die Belegungsprofile von <strong>${escapeHtml(a!.number)}</strong> und <strong>${escapeHtml(b!.number)}</strong> überschneiden sich auf derselben Ressource.</p></div><div class="proposal"><p class="eyebrow">Zulässige Alternative</p><h3>Abfahrt +${conflict.proposedShiftMinutes} min</h3><p>Die hinterlegte konfliktfreie Alternative verschiebt Zuglauf und Sperrzeiten gemeinsam.</p><button class="zf-button primary" id="alternative">Alternative anwenden ${icon("chevron")}</button></div></aside>`;
+
+function reconcileSelection(current: PlanningProjectionV1): void {
+  if (!current.trains.some((train) => train.id === selectedTrainId)) {
+    selectedTrainId = current.trains[0]?.id ?? "";
+  }
+  const available = conflictsForTrain(current, selectedTrainId);
+  if (!available.some((conflict) => conflict.id === selectedConflictId)) {
+    selectedConflictId = available[0]?.id ?? "";
+  }
 }
+
 function render(): void {
   app.dataset.density = density;
-  if (!ready) {
-    app.innerHTML = `<main class="shell"><section class="zf-surface" role="status"><h1>Bildfahrplan</h1><p>${escapeHtml(loadError || "Planner-Ergebnis wird geladen …")}</p>${loadError ? '<p><a href="?demo=1">Expliziten Demo-Datensatz öffnen</a></p>' : ""}</section></main>`;
+  if (projection === undefined) {
+    app.innerHTML = renderLoadState(
+      loadError === "" ? "loading" : "error",
+      loadError === "" ? "Planner-Ergebnis wird geladen …" : loadError,
+      loadError === "" ? undefined : explicitDemoUrl(),
+    );
     return;
   }
-  const [from, to] = extent(data);
-  app.innerHTML = `<a class="skip" href="#diagram-card">Zum Bildfahrplan</a><div class="shell"><header class="topbar"><a class="wordmark" href="#">Zugfolge</a><nav aria-label="Hauptnavigation"><a href="#">Welt</a><a class="active" href="#">Trassen</a><a href="#">Betrieb</a><a href="#">Postfach</a></nav><div class="world">Welt LHE 2026 ${badge("veröffentlicht", "success", "check")}</div></header><main><section class="context"><div><p class="eyebrow">Fahrplanperiode 04 · Koordinierung</p><h1>Bildfahrplan <span>${escapeHtml(data.corridor)}</span></h1></div><div class="toolbar"><button class="zf-button" id="density">${icon("layers")} ${density === "control" ? "Leitstelle" : "Dokument"}</button><button class="zf-button ${showSteps ? "pressed" : ""}" id="steps" aria-pressed="${showSteps}">Sperrzeiten</button><span class="period">${formatMinute(from)}–${formatMinute(to)}</span></div></section>${message ? `<p class="notice" role="status">${icon("check")} ${escapeHtml(message)}</p>` : ""}<section class="workspace"><article id="diagram-card" class="diagram-card zf-surface"><div class="legend"><span><i class="line selected"></i> ausgewählt</span><span><i class="line"></i> Zuglauf</span><span><i class="hatch"></i> Konflikt</span></div>${diagram()}</article>${inspector()}</section></main></div>`;
+  app.innerHTML = renderProjection(projection, {
+    density,
+    showBlockingTimes,
+    selectedTrainId,
+    selectedConflictId,
+    message,
+    messageTone,
+    applyingAlternativeId: applyingAlternativeId === "" ? undefined : applyingAlternativeId,
+  });
   bind();
 }
+
 function bind(): void {
   app.querySelector("#density")?.addEventListener("click", () => {
     density = density === "control" ? "document" : "control";
     render();
   });
   app.querySelector("#steps")?.addEventListener("click", () => {
-    showSteps = !showSteps;
+    showBlockingTimes = !showBlockingTimes;
     render();
   });
-  app.querySelectorAll<HTMLElement>("[data-train]").forEach((n) => {
-    const select = () => {
-      selectedTrainId = n.dataset.train ?? "t1";
+  app.querySelectorAll<HTMLElement>("[data-train]").forEach((node) => {
+    const select = (): void => {
+      selectedTrainId = node.dataset.train ?? "";
       selectedConflictId =
-        conflictsForTrain(data, selectedTrainId)[0]?.id ?? "";
+        projection === undefined
+          ? ""
+          : (conflictsForTrain(projection, selectedTrainId)[0]?.id ?? "");
       message = "";
       render();
     };
-    n.addEventListener("click", select);
-    n.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
+    node.addEventListener("click", select);
+    node.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
         select();
       }
     });
   });
-  app.querySelectorAll<HTMLButtonElement>("[data-conflict]").forEach((n) =>
-    n.addEventListener("click", () => {
-      selectedConflictId = n.dataset.conflict ?? "";
+  app.querySelectorAll<HTMLButtonElement>("[data-conflict]").forEach((node) => {
+    node.addEventListener("click", () => {
+      selectedConflictId = node.dataset.conflict ?? "";
+      message = "";
       render();
-    }),
-  );
-  app.querySelector("#alternative")?.addEventListener("click", async () => {
-    const c = data.conflicts.find((x) => x.id === selectedConflictId);
-    if (c) {
-      if (demoMode) {
-        data = shiftedData(data, selectedTrainId, c.proposedShiftMinutes);
-        message = `Demo-Alternative für ${train(selectedTrainId).number} angewendet: +${c.proposedShiftMinutes} min.`;
-      } else if (api !== undefined && worldId !== "") {
-        try {
-          await api.queueAlternative(worldId, selectedTrainId, c.id, c.proposedShiftMinutes);
-          message = `Alternative für ${train(selectedTrainId).number} wurde dem Planner übergeben.`;
-        } catch (error) {
-          message = error instanceof Error ? error.message : "Alternative konnte nicht übergeben werden.";
-        }
-      }
-      render();
-    }
+    });
+  });
+  app.querySelectorAll<HTMLButtonElement>("[data-apply-alternative]").forEach((node) => {
+    node.addEventListener("click", () => {
+      const alternativeId = node.dataset.applyAlternative ?? "";
+      if (alternativeId !== "") void applyAlternative(alternativeId);
+    });
   });
 }
 
-if (demoMode) {
+async function applyAlternative(alternativeId: string): Promise<void> {
+  if (projection === undefined || applyingAlternativeId !== "") return;
+  const previousRevision = projection.projectionRevision;
+  applyingAlternativeId = alternativeId;
+  message = "Alternative wurde eingereiht; der Client wartet auf die neue Planner-Projektion.";
+  messageTone = "status";
   render();
-} else if (worldId === "" || api === undefined) {
-  loadError = "Weltkennung oder angemeldete Sitzung fehlt. Der Beispieldatensatz wird im Produktivmodus nicht automatisch verwendet.";
-  render();
-} else {
-  render();
-  void api.loadDiagram(worldId).then((loaded) => {
-    data = loaded;
-    selectedTrainId = loaded.trains[0]?.id ?? "";
-    selectedConflictId = conflictsForTrain(loaded, selectedTrainId)[0]?.id ?? "";
-    ready = true;
+  try {
+    if (demoMode && demoApply !== undefined) {
+      projection = demoApply(projection, alternativeId);
+    } else if (api !== undefined && worldId !== "") {
+      projection = await api.applyAlternative(worldId, previousRevision, alternativeId);
+    } else {
+      throw new Error("Weltkennung oder angemeldete Sitzung fehlt.");
+    }
+    reconcileSelection(projection);
+    message = `Serverautoritaere Planner-Projektion Revision ${projection.projectionRevision} wurde geladen.`;
+    messageTone = "status";
+  } catch (error) {
+    message =
+      error instanceof Error
+        ? error.message
+        : "Alternative konnte nicht angewendet werden.";
+    messageTone = "error";
+  } finally {
+    applyingAlternativeId = "";
     render();
-  }).catch((error: unknown) => {
-    loadError = error instanceof Error ? error.message : "Planner-Ergebnis konnte nicht geladen werden.";
-    render();
-  });
+  }
 }
+
+async function boot(): Promise<void> {
+  render();
+  if (demoMode) {
+    const demo = await import("./demo.js");
+    demoApply = demo.applyDemoAlternative;
+    projection = demo.demoProjection;
+    chooseInitialSelection(projection);
+    render();
+    return;
+  }
+  if (worldId === "" || api === undefined) {
+    loadError =
+      "Weltkennung oder angemeldete Sitzung fehlt. Im Produktivmodus werden keine Beispieldaten eingesetzt.";
+    render();
+    return;
+  }
+  try {
+    projection = await api.loadProjection(worldId);
+    chooseInitialSelection(projection);
+  } catch (error) {
+    loadError =
+      error instanceof Error
+        ? error.message
+        : "Planner-Ergebnis konnte nicht geladen werden.";
+  }
+  render();
+}
+
+void boot();

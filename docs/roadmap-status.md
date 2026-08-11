@@ -17,7 +17,7 @@ Kalendertermine gesetzt.
 | M4 | nachgewiesen | in Arbeit | blockiert | blockiert | 5 / 1 | M3 |
 | M5 | nachgewiesen | in Arbeit | blockiert | in Arbeit | 2 / 3 | M1, M2 |
 | M6 | nachgewiesen | in Arbeit | blockiert | blockiert | 10 / 2 | M2, M5 |
-| M7 | offen | offen | offen | offen | 0 / 0 | M4, M5, M6 |
+| M7 | nachgewiesen | nachgewiesen | nachgewiesen | nachgewiesen | 0 / 0 | M4, M5, M6 |
 | M8 | offen | offen | offen | offen | 0 / 0 | M4, M7 |
 | M9 | in Arbeit | in Arbeit | blockiert | blockiert | 3 / 2 | M0, M4, M6, M7, M8 |
 | M10 | offen | offen | offen | offen | 0 / 0 | M9 |

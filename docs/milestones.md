@@ -686,17 +686,45 @@ noch nicht als vollständiger Betriebsbeweis abgeschlossen.
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 7.1 | Regelmodell: Auslöser, Bedingungen, Maßnahmen, Grenzen, Priorisierung | L | offen |
-| 7.2 | Regel-Engine an der Dispositionsschnittstelle aus M4.4 — deterministisch, offline wirksam | L | offen |
-| 7.3 | Regeleditor als Bedingungsbaum plus Einsteigervorlagen | L | offen |
-| 7.4 | Backtesting gegen die eigenen letzten Betriebstage | M | offen |
-| 7.5 | Betriebszentrale: laufende Fahrten, Anschlüsse, Umläufe, Störungen, manueller Eingriff | L | offen |
-| 7.6 | Ereignis-Fenster: Push bei Großstörung, manuelle Disposition mit echtem Mehrwert | M | offen |
-| 7.7 | Tagesbericht als asynchroner Feedback-Loop | M | offen |
+| 7.1 | Regelmodell: Auslöser, Bedingungen, Maßnahmen, Grenzen, Priorisierung | L | erledigt |
+| 7.2 | Regel-Engine an der Dispositionsschnittstelle aus M4.4 — deterministisch, offline wirksam | L | erledigt |
+| 7.3 | Regeleditor als Bedingungsbaum plus Einsteigervorlagen | L | erledigt |
+| 7.4 | Backtesting gegen die eigenen letzten Betriebstage | M | erledigt |
+| 7.5 | Betriebszentrale: laufende Fahrten, Anschlüsse, Umläufe, Störungen, manueller Eingriff | L | erledigt |
+| 7.6 | Ereignis-Fenster: Push bei Großstörung, manuelle Disposition mit echtem Mehrwert | M | erledigt |
+| 7.7 | Tagesbericht als asynchroner Feedback-Loop | M | erledigt |
 
 > **Beweis:** Ein Spieler ist 48 Stunden offline, eine Streckensperrung tritt
 > ein, sein Regelwerk hält den Betrieb erklärbar aufrecht — und der Tagesbericht
 > sagt ihm, welche Regel wann was getan hat und warum.
+
+**M7 steht vollständig:** `crates/zugfolge-rules` implementiert das
+versionierte `operating-program/v1` mit allen acht Auslösern, zwölf Maßnahmen,
+verschachtelten Bedingungen, stabiler Priorität und dreizehn konkreten
+Betriebsgrenzen direkt am mutierbaren M4.4-`Dispatcher`. Jede Entscheidung
+liefert eine vollständige `DecisionExplanation`; M5-Flottenfehler und die
+M3-Planerentscheidung fließen über typisierte Adapter ein. Der Rücktest nutzt
+dieselbe Rust-Engine gegen historische Ereignisfakten und verändert weder Log
+noch Simulationszustand. Manuelle Eingriffe gelten nur für eine
+`decision_id`, brauchen eine Begründung und bestehen dieselben Grenzen.
+
+`packages/dispatch`, Migration `0009_early_freak.sql` und `apps/game-api`
+persistieren kanonische SHA-256-Versionen je Welt und EVU, aktivieren sie über
+die bestehende Single-Writer-Warteschlange, projizieren das append-only
+Event-Log, liefern einen authentifizierten EVU-SSE-Strom mit Resume und
+begrenztem Rückstau und erzeugen idempotente Tagesberichte. Das dunkle,
+zugängliche `apps/operations-center` enthält Bedingungsbaum, Vorlagen,
+Maus-/Touch-/Tastatur-Sortierung, Rücktest, Live-Betrieb, begründeten
+Einzelfall-Override und Berichte ohne produktiven Demo-Fallback. Architektur,
+API und Betrieb stehen in [`betriebsprogramm.md`](betriebsprogramm.md).
+
+Der Abschlussbeweis `tools/m7-e2e` führt `tools/m7-acceptance` über exakt
+172.800 Simulationssekunden aus: Der echte Rust-Kern verarbeitet eine
+Streckensperrung, hält die unbetroffene Fahrt aufrecht und erzeugt Abschluss-
+und Großereignis. Dieselben Ereignisse laufen danach durch migrierte Datenbank,
+Event-Log, EVU-Betriebsprojektion und Tagesbericht. Rust und TypeScript sehen
+nachweislich denselben kanonischen Programmhash; zwei Replays liefern denselben
+Zustands- und Entscheidungshash.
 
 ---
 

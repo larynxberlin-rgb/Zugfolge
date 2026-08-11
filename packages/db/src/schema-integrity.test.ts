@@ -9,11 +9,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   accountRoles,
   accounts,
+  dailyOperationReports,
   ledgerAccounts,
   ledgerEntries,
   ledgerTransactions,
   mailboxMessages,
   operators,
+  operatingProgramVersions,
   worlds,
 } from "./schema/index.js";
 import * as schema from "./schema/index.js";
@@ -68,6 +70,30 @@ describe("weltgebundene Datenbank-Referenzen", () => {
       .insert(operators)
       .values({ worldId: worldB, foundingAccountId: accountB!.id, name: "Bahn B" })
       .returning();
+    await expect(
+      db.insert(operatingProgramVersions).values({
+        worldId: worldA,
+        operatorId: operatorB!.id,
+        version: 1,
+        schema: "operating-program/v1",
+        enabled: true,
+        canonicalProgram: {},
+        checksum: "a".repeat(64),
+        createdByAccountId: accountA!.id,
+        createdAt: new Date(0),
+      }),
+    ).rejects.toThrow();
+    await expect(
+      db.insert(dailyOperationReports).values({
+        worldId: worldA,
+        operatorId: operatorB!.id,
+        serviceDay: "2026-08-11",
+        sourceFromSequence: 1,
+        sourceThroughSequence: 1,
+        projection: {},
+        generatedAt: new Date(0),
+      }),
+    ).rejects.toThrow();
     await expect(
       db.insert(ledgerAccounts).values({ worldId: worldA, operatorId: operatorB!.id, name: "Falsch" }),
     ).rejects.toThrow();

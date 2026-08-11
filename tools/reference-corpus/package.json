@@ -7,8 +7,8 @@
   "license": "LicenseRef-PolyForm-Shield-1.0.0",
   "scripts": {
     "build": "pnpm --filter @zugfolge/gtfs build",
-    "typecheck": "node --check cli.mjs && node --check gtfs.mjs && node --check reference-corpus.mjs",
-    "test": "node --test reference-corpus.test.mjs"
+    "typecheck": "node --check cli.mjs && node --check gtfs.mjs && node --check reference-corpus.mjs && node --check artifact-chain.mjs && node --check fixtures/synthetic-validation.mjs",
+    "test": "node --test *.test.mjs"
   },
   "dependencies": {
     "@zugfolge/gtfs": "workspace:*"

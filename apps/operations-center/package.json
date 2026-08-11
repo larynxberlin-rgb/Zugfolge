@@ -1,0 +1,24 @@
+{
+  "name": "@zugfolge/operations-center",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Dunkle, zugängliche EVU-Betriebszentrale und Betriebsprogramm-Editor (M7)",
+  "license": "LicenseRef-PolyForm-Shield-1.0.0",
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "dev": "vite --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@zugfolge/design-system": "workspace:*",
+    "@zugfolge/dispatch": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.2.1",
+    "vitest": "^4.1.10"
+  }
+}
+

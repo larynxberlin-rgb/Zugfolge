@@ -1,60 +1,105 @@
 import { describe, expect, it } from "vitest";
+
 import {
+  PLANNING_PROJECTION_SCHEMA_VERSION,
+  type PlanningProjectionV1,
+} from "@zugfolge/planning-projection";
+
+import {
+  conflictLabels,
   conflictsForTrain,
-  extent,
-  formatMinute,
+  formatDurationS,
+  formatTimeS,
   pathPoints,
-  sampleData,
-  shiftedData,
+  phaseLabels,
   stationY,
+  timeExtentS,
 } from "./diagram.js";
-describe("Bildfahrplan-Domänenadapter", () => {
-  it("skaliert Betriebsstellen und Zeiten aus den Daten", () => {
-    expect(stationY(sampleData, "halle")).toBeLessThan(
-      stationY(sampleData, "leipzig"),
-    );
-    expect(
-      pathPoints(sampleData, sampleData.trains[0]!).split(" "),
-    ).toHaveLength(4);
-    expect(extent(sampleData)).toEqual([425, 490]);
+
+function projection(): PlanningProjectionV1 {
+  const resource = { id: "block", kind: "block" as const, label: "Block A–B" };
+  return {
+    schemaVersion: PLANNING_PROJECTION_SCHEMA_VERSION,
+    projectionRevision: 1,
+    worldId: "world-1",
+    corridor: { id: "ab", name: "A–B" },
+    stations: [
+      { id: "a", name: "A", distanceMm: 0 },
+      { id: "b", name: "B", distanceMm: 10_000_000 },
+    ],
+    trains: [
+      {
+        id: "t1",
+        number: "R 1",
+        direction: "with-chainage",
+        calls: [
+          { stationId: "a", timeS: 25_800 },
+          { stationId: "b", timeS: 26_400 },
+        ],
+      },
+      {
+        id: "t2",
+        number: "R 2",
+        direction: "against-chainage",
+        calls: [
+          { stationId: "b", timeS: 25_900 },
+          { stationId: "a", timeS: 26_500 },
+        ],
+      },
+    ],
+    occupations: [],
+    conflicts: [
+      {
+        id: "c1",
+        kind: "opposing-move",
+        resource,
+        window: { startS: 26_000, endS: 26_100 },
+        trainIds: ["t1", "t2"],
+        explanation: "Gegenfahrt auf demselben Block.",
+        alternative: null,
+      },
+    ],
+  };
+}
+
+describe("Bildfahrplan-Projektionsadapter", () => {
+  it("skaliert ausschliesslich aus Sekunden und ganzzahligen Millimetern", () => {
+    const data = projection();
+    expect(stationY(data, "a")).toBeLessThan(stationY(data, "b"));
+    expect(pathPoints(data, data.trains[0]!).split(" ")).toHaveLength(2);
+    expect(timeExtentS(data)).toEqual([25_500, 27_000]);
   });
-  it("formatiert Zeit und weist unbekannte Betriebsstellen zurück", () => {
-    expect(formatMinute(449)).toBe("07:29");
-    expect(() => stationY(sampleData, "nirgendwo")).toThrow(
-      "Unbekannte Betriebsstelle",
-    );
+
+  it("formatiert Anzeigezeiten, ohne den Fachwert in Minuten umzuschreiben", () => {
+    expect(formatTimeS(25_800)).toBe("07:10:00");
+    expect(formatDurationS(125)).toBe("2:05 min");
+    expect(() => stationY(projection(), "nirgendwo")).toThrow("Unbekannte Betriebsstelle");
   });
-  it("bildet alle sechs fachlichen Sperrzeitanteile ab", () =>
-    expect(new Set(sampleData.occupations.map((o) => o.phase))).toEqual(
-      new Set([
-        "formation",
-        "approach",
-        "running",
-        "clearing",
-        "release",
-        "buffer",
-      ]),
-    ));
-  it("ordnet Konflikte ausschließlich beteiligten Zügen zu", () => {
-    expect(conflictsForTrain(sampleData, "t1").map((c) => c.id)).toEqual([
-      "c1",
+
+  it("kennt alle sechs fachlichen Phasen einschliesslich Signalsicht und alle Konfliktarten", () => {
+    expect(Object.keys(phaseLabels)).toEqual([
+      "route-setting",
+      "signal-sighting",
+      "approach",
+      "running",
+      "clearing",
+      "route-release",
     ]);
-    expect(conflictsForTrain(sampleData, "t3").map((c) => c.kind)).toEqual([
-      "exclusion",
+    expect(Object.keys(conflictLabels)).toEqual([
+      "headway",
+      "opposing-move",
+      "route-exclusion",
+      "facility-contention",
     ]);
   });
-  it("wendet eine ausreichende Alternative unveränderlich auf Lauf und Belegung an", () => {
-    const shifted = shiftedData(sampleData, "t1", 3);
-    expect(shifted.trains[0]!.calls[0]!.minute).toBe(433);
-    expect(shifted.occupations[0]!.startMinute).toBe(449);
-    expect(conflictsForTrain(shifted, "t1")).toHaveLength(0);
-    expect(shifted.conflicts.map((c) => c.id)).toEqual(["c2"]);
-    expect(sampleData.trains[0]!.calls[0]!.minute).toBe(430);
+
+  it("ordnet Konflikte ausschliesslich den zwei beteiligten Zugfahrten zu", () => {
+    expect(conflictsForTrain(projection(), "t1").map((conflict) => conflict.id)).toEqual(["c1"]);
+    expect(conflictsForTrain(projection(), "unbeteiligt")).toEqual([]);
   });
-  it("behält den Konflikt bei einer zu kleinen Verschiebung bei", () =>
-    expect(
-      conflictsForTrain(shiftedData(sampleData, "t1", 2), "t1").map(
-        (c) => c.id,
-      ),
-    ).toEqual(["c1"]));
+
+  it("liefert fuer eine leere Projektion einen stabilen Darstellungsbereich", () => {
+    const empty = { ...projection(), stations: [], trains: [], conflicts: [] };
+    expect(timeExtentS(empty)).toEqual([0, 3_600]);
+  });
 });

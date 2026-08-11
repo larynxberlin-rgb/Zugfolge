@@ -170,8 +170,12 @@
       "goal": "Offline-faehige Dispositionsregeln, Betriebszentrale und Tagesberichte liefern.",
       "area": "area:operations",
       "dependsOn": ["M4", "M5", "M6"],
-      "status": { "core": "not_started", "integration": "not_started", "operations": "not_started", "acceptance": "not_started" },
-      "evidence": [],
+      "status": { "core": "verified", "integration": "verified", "operations": "verified", "acceptance": "verified" },
+      "evidence": [
+        { "label": "M7-Architektur, API und Abnahme", "url": "docs/betriebsprogramm.md" },
+        { "label": "Roadmap und 48h-Abnahmebeweis", "url": "docs/milestones.md" },
+        { "label": "Plattformübergreifender E2E-Harness", "url": "tools/m7-e2e/src/run.ts" }
+      ],
       "items": []
     },
     {

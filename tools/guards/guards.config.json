@@ -42,7 +42,7 @@
     {
       "id": "dispatch",
       "title": "Live-Disposition und Regel-Engine des Betriebsprogramms (M4.4, M7)",
-      "status": "planned",
+      "status": "active",
       "paths": ["crates/zugfolge-rules/**", "packages/dispatch/**"],
       "rules": [
         "no-payment-tier",

@@ -87,4 +87,35 @@ describe("persistenter M6-Weltzustand und Outbox", () => {
       persistEconomyTransition(db, { expectedRevision: 0, state: closed, effects: { notices: [], journal: [] }, committedAt: new Date(5_000) }),
     ).rejects.toBeInstanceOf(EconomyStateConflictError);
   });
+
+  it("rollt Zustand und Rust-Ereignisse bei verletzter Weltisolation gemeinsam zurueck", async () => {
+    const started = startEconomyWorld({
+      worldId: WORLD_ID,
+      seed: 7n,
+      durationMonths: 6,
+      release,
+      lots: Array.from({ length: 8 }, (_, index) => ({ id: `rollback-${index}`, size: 100 - index, attractiveness: index })),
+      authorityBudgets: [],
+      accounts: [],
+    });
+    await persistEconomyTransition(db, { expectedRevision: null, ...started, committedAt: new Date(0) });
+    const closed = closeEconomyWorld(started.state, "close-with-foreign-event");
+    await expect(persistEconomyTransition(db, {
+      expectedRevision: 0,
+      state: closed,
+      effects: {
+        notices: [],
+        journal: [],
+        runtimeEvents: [{
+          eventId: "foreign:1",
+          worldId: "44444444-4444-4444-8444-444444444444",
+          eventType: "operating-transition-completed",
+          atS: 1,
+          payload: {},
+        }],
+      },
+      committedAt: new Date(1_000),
+    })).rejects.toThrow(/Weltisolation/);
+    expect((await loadEconomyWorldState(db, WORLD_ID))?.revision).toBe(0);
+  });
 });

@@ -64,6 +64,13 @@
       "when": 1786252235842,
       "tag": "0008_lying_quentin_quire",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786433577566,
+      "tag": "0009_early_freak",
+      "breakpoints": true
     }
   ]
 }

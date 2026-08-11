@@ -16,6 +16,7 @@ crates/                     Rust — Simulationskern, Solver, Release-Pipeline
   zugfolge-planner/         Trassen-Planner (M3.4), PlanningRun, Fahrplanperiode, Ad-hoc-Trassen (M3.5–M3.7)
   zugfolge-sim/             Ereigniskern, TrainRun, Regionsübergabe, Replay und Livemap-Protokoll (M4)
   zugfolge-fleet/           Flotte, Formation, Umlauf, Personal, Versorgung und Beschaffung (M5)
+  zugfolge-rules/           Betriebsprogramm, Dispositionsregeln, Erklärungen und Rücktest (M7)
 packages/                   TypeScript — fachliche Bibliotheken (ab M2)
   db/                       Postgres-Zugriff über Drizzle, Wurzel der Weltisolation (M2.2)
   identity/                 Konten, Rollen, Weltzugänge; Keycloak-Verifikation (M2.1)
@@ -26,14 +27,18 @@ packages/                   TypeScript — fachliche Bibliotheken (ab M2)
   health/                   Health-Check-Vertrag und Aggregation für Status-/Monitoringdienste, Grundlage für M9.5
   design-system/            Palette, Komponenten, Icons und Dichtestufen (M3.9)
   livemap/                  Weltisolierter Snapshot-/Delta-Fanout (M4.6)
+  dispatch/                 Kanonischer M7-Plattformvertrag, EVU-Projektionen und Operations-Stream
 apps/                       TypeScript — Dienste und Frontend (ab M2 / M4)
   game-api/                 Fastify-Dienst: Authentifizierung, Weltzugang, EVU, Ledger, Postfach, Datenschutz (M2)
   game-web/                 Bildfahrplan, Sperrzeitentreppe und Konflikterklärung (M3.10)
   livemap/                  Vite-Frontend: öffentliche Zuglage, Zuglaufansicht und Delta-Interpolation (M4)
+  operations-center/        Vite-Frontend: Regel-Editor, Betriebszentrale und Tagesberichte (M7)
 spikes/                     Wegwerf-Code mit Verfallsdatum — derzeit leer
 tools/                      Werkzeuge für CI und Entwicklung
   guards/                   die Wächter der harten Invarianten
   load/                     äußerer Lastmessharnisch für 180.000 Fahrten und ≥2 Mio. Ereignisse (M4.11)
+  m7-acceptance/            echter 48h-Rust-Ereigniserzeuger für die M7-Abnahme
+  m7-e2e/                   Rust → Event-Log → Betriebszentrale → Tagesbericht
   tiles/                    reproduzierbare GeoJSON-→PMTiles-Pipeline und Layerspezifikation (M4.7)
 docs/                       Spezifikation und Entscheidungen
 .github/workflows/          CI
@@ -88,6 +93,13 @@ Flottenwissen und Datenbankzugriff. Kapazitätsfähige Anlagen- und
 Rangierreservierungen liegen in `zugfolge-conflict`, damit neben
 Sperrzeitentreppen keine zweite Konfliktsemantik entsteht.
 
+Seit **M7** implementiert `zugfolge-rules` als einzige Engine die
+Dispositionsentscheidung am M4.4-Vertrag. `packages/dispatch` darf die
+versionierte Struktur validieren und Ereignisse projizieren, aber keine Regel
+auswerten. `apps/game-api` ist Persistenz- und Autorisierungsgrenze;
+`apps/operations-center` ist ein reiner Client dieser serverautoritativen
+Schnittstelle. Vollständiger Vertrag: [`betriebsprogramm.md`](betriebsprogramm.md).
+
 **`spikes/` ist Wegwerf-Code, und zwar mit ausgesprochenem Verfallsdatum.** Ein
 Spike hat eine Frage zu beantworten und danach zu verschwinden; bleibt er
 liegen, wird er zur zweiten, ungepflegten Wahrheit neben dem echten Modell.
@@ -107,8 +119,9 @@ abgearbeitet: der Bahnhofskopf über die Ausschlussmengen aus M1.7, die
 Fahrdynamik über M1.10, die betrieblich richtige Auflösung über den Planner aus
 M3.4.
 
-Rust-Spikes sind Mitglieder des Cargo-Workspace (`members = ["crates/*",
-"spikes/*"]`). Das ist Absicht: Sie laufen dadurch in derselben CI, unter
+Rust-Spikes und explizite Rust-Werkzeuge sind Mitglieder des Cargo-Workspace
+(`crates/*`, `spikes/*` und die benannten Werkzeuge unter `tools/`). Das ist
+Absicht: Sie laufen dadurch in derselben CI, unter
 denselben Lints und unter denselben Wächtern wie der spätere Kern. Ein Spike,
 der die Invarianten nicht einhalten muss, beweist über den Kern nichts.
 
@@ -178,7 +191,7 @@ Liste ist keine vollständige Karte des Repositoriums, sondern die Zuordnung
 | `determinism-core` | `crates/zugfolge-determinism/**` | aktiv | ganzzahlig, uhrfrei, geordnet — der Harnisch muss selbst halten, was er prüft |
 | `simulation-core` | `crates/zugfolge-sim/**`, `crates/zugfolge-conflict/**`, `crates/zugfolge-fleet/**`, `spikes/**` | aktiv | vollständiger Kernvertrag: kein Bezahlstatus, keine Uhr, keine Datenbank |
 | `path-allocation` | `crates/zugfolge-planner/**`, `packages/path-allocation/**` | aktiv | Reihenfolge und Bezahlstatus beeinflussen das Ergebnis nicht (E4, `infrastruktur.md` 2) |
-| `dispatch` | `crates/zugfolge-rules/**`, `packages/dispatch/**` | geplant | das Betriebsprogramm wirkt offline und für alle gleich (E2, E13) |
+| `dispatch` | `crates/zugfolge-rules/**`, `packages/dispatch/**` | aktiv | das Betriebsprogramm wirkt offline und für alle gleich (E2, E13) |
 | `demand` | `packages/demand/**`, `crates/zugfolge-demand/**` | geplant | Nachfrage folgt dem Angebot, nie dem Vertrag des Spielers |
 | `economy` | `packages/economy/**`, `packages/tender/**`, `apps/economy-service/**` | aktiv | Ledger in Integer-Cent (M2.4); Wertung deterministisch aus dem `EconomyRelease` (M6) |
 | `infra-pipeline` | `crates/zugfolge-infra/**` | aktiv | **der einzige Ort mit Gleitkommarechnung** — sie endet in ganzzahligen Fahrzeittabellen |

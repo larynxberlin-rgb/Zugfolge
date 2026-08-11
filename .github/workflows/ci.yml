@@ -41,6 +41,84 @@ jobs:
       - name: Tests und Golden-Master
         run: cargo test --workspace --locked
 
+  m7-acceptance:
+    name: M7 48h-Offlineszenario
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          shared-key: m7-acceptance
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: M7-Plattform und Abnahmeharnisch bauen
+        run: pnpm --filter @zugfolge/m7-e2e... build
+
+      - name: Gespeichertes Betriebsprogramm 48 Stunden offline ausführen
+        run: pnpm --filter @zugfolge/m7-e2e test:e2e
+
+  native-runtime-smoke:
+    name: Native Runtime ABI (Linux, echtes NAPI)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          shared-key: native-runtime-node-addon
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: TypeScript-Grenze bauen
+        run: pnpm --filter @zugfolge/runtime-native build
+
+      - name: Linux-Node-Addon mit registrierter NAPI-Grenze bauen
+        run: cargo build --release --locked -p zugfolge-runtime-napi --features node-addon
+
+      - name: cdylib als Node-Addon bereitstellen
+        shell: bash
+        run: |
+          set -euo pipefail
+          addon_path="${RUNNER_TEMP}/zugfolge-runtime-napi.node"
+          test -f target/release/libzugfolge_runtime_napi.so
+          install -m 0755 target/release/libzugfolge_runtime_napi.so "${addon_path}"
+          file "${addon_path}"
+          printf 'ZUGFOLGE_RUNTIME_NATIVE_PATH=%s\n' "${addon_path}" >> "${GITHUB_ENV}"
+
+      - name: Initialize-, Apply-, Hash- und Idempotenz-Smoke
+        run: pnpm --filter @zugfolge/runtime-native smoke:native
+
+      - name: M6-End-to-End mit PGlite, Plattformeffekten und Livemap
+        run: |
+          pnpm --filter @zugfolge/game-api... build
+          pnpm --filter @zugfolge/game-api exec vitest run src/economy-native.integration.test.ts
+
   typescript:
     name: TypeScript
     runs-on: ubuntu-latest

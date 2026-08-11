@@ -1,18 +1,15 @@
 import assert from "node:assert/strict";
-import { generateKeyPairSync } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import {
   buildReferenceCorpus,
-  canonicalJson,
   compareWithModel,
-  createUnsignedBundle,
   sha256,
-  signBundle,
-  verifySignedBundle,
 } from "./reference-corpus.mjs";
-import { normalizeGtfsTables, parseCsv } from "./gtfs.mjs";
+import { captureGtfsFeed, normalizeGtfsTables, parseCsv } from "./gtfs.mjs";
 
 function observations(seconds, trainCategory = "RE") {
   return seconds.map((duration, index) => ({
@@ -102,11 +99,12 @@ test("trennt Linienkategorien trotz identischer Strecke und Charakteristik", () 
   assert.deepEqual(corpus.groups.map((group) => group.trainCategory).sort(), ["S5", "S5X"]);
 });
 
-test("verlangt dieselbe Zugcharakteristik und vergleicht nur mit unabhängiger technischer Referenz", () => {
+test("Legacy-v2 kann eine Validierung nicht durch ein qualification-Feld behaupten", () => {
   const corpus = buildReferenceCorpus(input);
   const report = compareWithModel(corpus, modelResults(corpus.groups[0].id));
   assert.equal(report.passed, true);
-  assert.equal(report.releaseQualified, true);
+  assert.equal(report.releaseQualified, false);
+  assert.match(report.qualificationBlocker, /keinen maschinengeprüften/);
   assert.equal(report.comparisons[0].technicalReferenceSeconds, 600);
   assert.equal(report.comparisons[0].scheduledAllowanceSeconds, -25);
   assert.throws(
@@ -151,34 +149,6 @@ test("bindet ein versioniertes Modellergebnis eindeutig an Release und Eingabe",
   );
 });
 
-test("Ed25519-Signatur bindet Korpus, Report und Release-Hash", () => {
-  const corpus = buildReferenceCorpus(input);
-  const report = compareWithModel(corpus, modelResults(corpus.groups[0].id));
-  assert.throws(
-    () => createUnsignedBundle({
-      corpus,
-      report: { ...report, modelInputSha256: "" },
-      releasePath: "pilot.infrarelease",
-      releaseSha256: sha256("release"),
-      createdAt: "2026-08-09T00:00:00.000Z",
-    }),
-    /modelInputSha256/,
-  );
-  const bundle = createUnsignedBundle({
-    corpus,
-    report,
-    releasePath: "pilot.infrarelease",
-    releaseSha256: sha256("release"),
-    createdAt: "2026-08-09T00:00:00.000Z",
-  });
-  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
-  const signed = signBundle(bundle, privateKey);
-  assert.deepEqual(verifySignedBundle(signed, publicKey), bundle);
-  const tampered = JSON.parse(canonicalJson(signed));
-  tampered.bundle.releaseChecksum = "manipuliert";
-  assert.throws(() => verifySignedBundle(tampered, publicKey), /ungültig/);
-});
-
 test("GTFS paart Halte derselben Fahrt und bindet sie an eine geprüfte Charakteristik", () => {
   const result = normalizeGtfsTables({
     stops: [
@@ -221,6 +191,47 @@ test("GTFS-CSV verarbeitet Anführungszeichen, Kommas und CRLF deterministisch",
   ]);
 });
 
+test("Capture-v2 bindet die exakten Konfigurationsbytes sowie Archiv- und Tabellenhashes", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "zugfolge-gtfs-capture-"));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const files = new Map([
+    ["agency.txt", "agency_id,agency_name\na,Fixture\n"],
+    ["stops.txt", "stop_id,stop_name\nL,Leipzig\n"],
+    ["routes.txt", "route_id,route_short_name\nr,SYN\n"],
+    ["trips.txt", "route_id,service_id,trip_id\nr,s,t\n"],
+    ["stop_times.txt", "trip_id,stop_id,stop_sequence\nt,L,1\n"],
+  ]);
+  const config = {
+    schema: "zugfolge-gtfs-capture/v2",
+    feedUrl: "https://invalid.example.test/feed.zip",
+    source: { retrievedAt: "2026-08-10T00:00:00.000Z" },
+  };
+  const configArtifactSha256 = "d".repeat(64);
+  const archive = Buffer.from("synthetic archive");
+  const result = await captureGtfsFeed(config, {
+    outputDirectory: root,
+    configArtifactSha256,
+    fetchImpl: async () => ({ ok: true, status: 200, arrayBuffer: async () => archive }),
+    listEntries: async () => [...files.keys()],
+    extract: async (_archivePath, directory) => {
+      for (const [name, content] of files) await writeFile(path.join(directory, name), content);
+    },
+  });
+  assert.equal(result.manifest.configArtifactSha256, configArtifactSha256);
+  assert.equal(result.manifest.archiveSha256, sha256(archive));
+  assert.deepEqual(
+    result.manifest.files.map(({ path: file, sha256: hash }) => [file, hash]),
+    [...files].map(([file, content]) => [file, sha256(content)]),
+  );
+  await assert.rejects(
+    () => captureGtfsFeed(config, {
+      outputDirectory: root,
+      fetchImpl: async () => ({ ok: true, status: 200, arrayBuffer: async () => archive }),
+    }),
+    /configArtifactSha256/,
+  );
+});
+
 test("der versionierte Pilotvergleich trennt bestandene Kalibrierung von Release-Freigabe", async () => {
   const pilot = new URL("pilot/2026-08/", import.meta.url);
   const readPilotJson = async (name) => JSON.parse(await readFile(new URL(name, pilot), "utf8"));
@@ -257,14 +268,5 @@ test("der versionierte Pilotvergleich trennt bestandene Kalibrierung von Release
     model.modelInputSha256,
     sha256(await readFile(new URL("model-config.json", pilot))),
   );
-  assert.throws(
-    () => createUnsignedBundle({
-      corpus,
-      report,
-      releasePath: "pilot.infrarelease.json",
-      releaseSha256: sha256(canonicalJson(release)),
-      createdAt: "2026-08-09T00:00:00.000Z",
-    }),
-    /unabhängiger Validierungsreport/,
-  );
+  assert.match(report.qualificationBlocker, /Legacy-v2/);
 });

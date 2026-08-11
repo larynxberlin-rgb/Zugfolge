@@ -1,10 +1,17 @@
 /** Produktionseinstieg: echte Postgres-Verbindung, echter Keycloak-Realm. */
 
-import { createDatabase, createEconomyOutboxHealthCheck, createEventLogHealthCheck } from "@zugfolge/db";
+import {
+  createDatabase,
+  createEconomyOutboxHealthCheck,
+  createEventLogHealthCheck,
+  worldEventLog,
+} from "@zugfolge/db";
+import { OperationsRegistry } from "@zugfolge/dispatch";
 import {
   createEconomyPlatformAdapters,
   createEconomySchedulerHealthCheck,
   EconomySchedulerMonitor,
+  listEconomyWorldIds,
   runEconomySchedulerCycle,
   type JournalAccounts,
 } from "@zugfolge/economy";
@@ -13,10 +20,16 @@ import {
   createKeycloakVerifier,
   loadKeycloakConfigFromEnv,
 } from "@zugfolge/identity";
-import { createLivemapHealthCheck, LivemapRegistry } from "@zugfolge/livemap-stream";
+import {
+  createLivemapHealthCheck,
+  LivemapRegistry,
+} from "@zugfolge/livemap-stream";
 import { purgeExpiredAccountData } from "@zugfolge/privacy";
+import { loadOperatingRuntime, type OperatingRuntimeEvent } from "@zugfolge/runtime-native";
 
 import { buildApp } from "./app.js";
+import { projectLivemapOperationEvent } from "./livemap-operation-projection.js";
+import { generateDailyOperationReports, previousBerlinServiceDay } from "./daily-reports.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -30,18 +43,50 @@ const db = createDatabase(requireEnv("DATABASE_URL"));
 const keycloak = loadKeycloakConfigFromEnv();
 const verifyToken = createKeycloakVerifier(keycloak);
 const livemap = new LivemapRegistry();
+const operations = new OperationsRegistry();
 const economyMonitor = new EconomySchedulerMonitor(Date.now());
-const economyAdapters = createEconomyPlatformAdapters({
-  db,
-  accountsByOperator: JSON.parse(requireEnv("ECONOMY_LEDGER_ACCOUNTS_JSON")) as Readonly<Record<string, JournalAccounts>>,
-});
+const operatingRuntime = loadOperatingRuntime();
+
+const economyAdapters = {
+  ...createEconomyPlatformAdapters({
+    db,
+    accountsByOperator: JSON.parse(requireEnv("ECONOMY_LEDGER_ACCOUNTS_JSON")) as Readonly<Record<string, JournalAccounts>>,
+  }),
+  operatingRuntime,
+  async publishRuntimeEvents(events: readonly OperatingRuntimeEvent[]) {
+    events.forEach((event) => projectLivemapOperationEvent(livemap, event));
+  },
+};
+
+// The database event log remains authoritative across process restarts. Replay
+// all durable marker changes before snapshots or live scheduler work are served.
+for (const worldId of await listEconomyWorldIds(db)) {
+  for (const event of await worldEventLog(db, worldId).listOfTypes([
+    "livemap-operation-marked",
+    "livemap-operation-cleared",
+  ])) {
+    const atS = event.occurredAt.getTime() / 1_000;
+    if (!Number.isSafeInteger(atS)) throw new Error("Persistiertes Livemap-Betriebsereignis liegt nicht auf einer Weltsekunde.");
+    if (typeof event.payload !== "object" || event.payload === null || Array.isArray(event.payload)) {
+      throw new Error("Persistiertes Livemap-Betriebsereignis besitzt keine Nutzdaten.");
+    }
+    projectLivemapOperationEvent(livemap, {
+      worldId,
+      eventType: event.eventType,
+      atS,
+      payload: event.payload as Readonly<Record<string, unknown>>,
+    });
+  }
+}
 const app = buildApp({
   db,
   verifyToken,
   livemap,
+  operations,
   livemapIngestToken: requireEnv("LIVEMAP_INGEST_TOKEN"),
   simulationIngestToken: requireEnv("SIMULATION_INGEST_TOKEN"),
   fleetIngestToken: requireEnv("FLEET_INGEST_TOKEN"),
+  verifyFleetMobilizationSnapshot: operatingRuntime.verifyFleetMobilizationSnapshot,
   extraHealthChecks: [
     createKeycloakHealthCheck(keycloak),
     createEventLogHealthCheck(db),
@@ -69,6 +114,23 @@ economyInterval.unref();
 app.addHook("onClose", async () => {
   clearInterval(economyInterval);
   await economyCycle;
+});
+
+let dailyReportCycle: Promise<void> | undefined;
+const runDailyReports = () => {
+  if (dailyReportCycle !== undefined) return;
+  const now = new Date();
+  dailyReportCycle = generateDailyOperationReports(db, previousBerlinServiceDay(now), now)
+    .then(() => undefined)
+    .catch((error: unknown) => app.log.error({ err: error }, "M7-Tagesberichtslauf fehlgeschlagen"))
+    .finally(() => { dailyReportCycle = undefined; });
+};
+runDailyReports();
+const dailyReportInterval = setInterval(runDailyReports, 60 * 60 * 1_000);
+dailyReportInterval.unref();
+app.addHook("onClose", async () => {
+  clearInterval(dailyReportInterval);
+  await dailyReportCycle;
 });
 
 const purge = () => {
