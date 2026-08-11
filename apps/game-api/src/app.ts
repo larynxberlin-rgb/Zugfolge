@@ -20,7 +20,22 @@ import {
   simulationCommands,
   worldEventLog,
   worlds,
+  worldAccesses,
 } from "@zugfolge/db";
+import {
+  assertPrivateWorldEntitlement,
+  assertPublicWorldSlot,
+  activeEntitlementsForSubject,
+  PrivateWorldEntitlementError,
+  PublicWorldSlotError,
+  receiveOdooWebhook,
+  WebhookSignatureError,
+  WebhookValidationError,
+  type OdooWebhookReceiptStore,
+  type OdooWebhookReceiverOptions,
+  type OdooWebhookEnvelope,
+  type SignedPayload,
+} from "@zugfolge/commerce";
 import {
   ACTIONS,
   buildDailyReport,
@@ -173,6 +188,9 @@ export interface AppDependencies {
   readonly healthCheckTimeoutMs?: number;
   /** Produktion protokolliert strukturiert; Tests dürfen den Logger abschalten. */
   readonly logger?: boolean;
+  /** Optionaler, vom normalen Keycloak-Pfad getrennter Odoo-Webhook-Receiver (E23). */
+  readonly odooWebhookStore?: OdooWebhookReceiptStore;
+  readonly odooWebhookOptions?: OdooWebhookReceiverOptions;
 }
 
 const worldIdParam = {
@@ -464,6 +482,8 @@ function sendError(reply: FastifyReply, error: unknown): FastifyReply {
     error instanceof AuthorizationError ||
     error instanceof NoAccountInWorldError ||
     error instanceof ForeignLedgerAccountError
+    || error instanceof PublicWorldSlotError
+    || error instanceof PrivateWorldEntitlementError
   ) {
     return reply.code(403).send({ error: error.message });
   }
@@ -796,6 +816,51 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     });
     return reply.code(report.status === "down" ? 503 : 200).send(report);
   });
+
+  // Dieser Endpunkt ist absichtlich nicht mit Keycloak geschuetzt: Er ist die
+  // isolierte Maschinen-Grenze von Odoo zum Game. Signatur, Zeitfenster,
+  // Mandant, Akteur und typisierter Inhalt werden vor dem persistierten Queue-
+  // Commit geprueft; der nachgelagerte Worker entscheidet fachlich erneut.
+  app.post<{ Body: OdooWebhookEnvelope }>(
+    "/integrations/odoo/webhooks",
+    {
+      schema: {
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["schemaVersion", "eventId", "eventType", "occurredAt", "correlationId", "tenantId", "actorReference", "command"],
+          properties: {
+            schemaVersion: { type: "string" }, eventId: { type: "string" }, eventType: { type: "string" },
+            occurredAt: { type: "string", format: "date-time" }, correlationId: { type: "string" }, tenantId: { type: "string" },
+            actorReference: { type: "string" }, command: { type: "object" },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      if (deps.odooWebhookStore === undefined || deps.odooWebhookOptions === undefined) {
+        return reply.code(503).send({ error: "Odoo-Webhook-Receiver ist nicht konfiguriert." });
+      }
+      const keyId = request.headers["x-zugfolge-odoo-key-id"];
+      const timestamp = request.headers["x-zugfolge-odoo-timestamp"];
+      const signature = request.headers["x-zugfolge-odoo-signature"];
+      if (typeof keyId !== "string" || typeof timestamp !== "string" || typeof signature !== "string") {
+        return reply.code(401).send({ error: "Signaturkopf fehlt." });
+      }
+      try {
+        const result = await receiveOdooWebhook(
+          deps.odooWebhookStore,
+          { keyId, timestamp, signature, payload: request.body } satisfies SignedPayload<OdooWebhookEnvelope>,
+          deps.odooWebhookOptions,
+        );
+        return reply.code(result.duplicate ? 200 : 202).send(result);
+      } catch (error) {
+        if (error instanceof WebhookSignatureError) return reply.code(401).send({ error: error.message, code: error.code });
+        if (error instanceof WebhookValidationError) return reply.code(403).send({ error: error.message, code: error.code });
+        throw error;
+      }
+    },
+  );
 
   app.get<{ Params: { worldId: string } }>(
     "/worlds/:worldId/economy/state",
@@ -1890,12 +1955,56 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         return reply.code(401).send({ error: "Keine Identität." });
       }
       try {
+        const [targetWorld] = await deps.db
+          .select({ worldKind: worlds.worldKind, lifecycleStatus: worlds.lifecycleStatus })
+          .from(worlds)
+          .where(eq(worlds.id, request.params.worldId))
+          .limit(1);
+        if (targetWorld?.worldKind === "public" && targetWorld.lifecycleStatus === "active") {
+          const memberships = await deps.db
+            .select({ worldId: accounts.worldId })
+            .from(accounts)
+            .innerJoin(worlds, eq(accounts.worldId, worlds.id))
+            .innerJoin(worldAccesses, and(eq(accounts.worldId, worldAccesses.worldId), eq(accounts.keycloakSubject, worldAccesses.keycloakSubject)))
+            .where(and(eq(accounts.keycloakSubject, identity.keycloakSubject), eq(worlds.worldKind, "public"), eq(worlds.lifecycleStatus, "active"), eq(worldAccesses.status, "active")));
+          if (!memberships.some((membership) => membership.worldId === request.params.worldId)) {
+            const entitlements = await activeEntitlementsForSubject(deps.db, identity.keycloakSubject);
+            assertPublicWorldSlot(entitlements.map((record) => ({ subject: record.keycloakSubject, productKind: record.productKind, status: record.status, validFrom: record.validFrom, validUntil: record.validUntil ?? undefined, quantity: Number(record.quantity) })), memberships.length);
+          }
+        }
         const account = await requestWorldAccess(deps.db, {
           worldId: request.params.worldId,
           keycloakSubject: identity.keycloakSubject,
           displayName: request.body.displayName,
         });
         return reply.code(201).send(account);
+      } catch (error) {
+        return sendError(reply, error);
+      }
+    },
+  );
+
+  app.post<{ Body: { name: string; schedulePeriodWeeks: number; epoch: string } }>(
+    "/private-worlds",
+    {
+      preHandler: authenticate,
+      schema: {
+        body: {
+          type: "object", additionalProperties: false, required: ["name", "schedulePeriodWeeks", "epoch"],
+          properties: { name: { type: "string", minLength: 1, maxLength: 80 }, schedulePeriodWeeks: { type: "integer", minimum: 3, maximum: 8 }, epoch: { type: "string", format: "date-time" } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        const entitlements = await activeEntitlementsForSubject(deps.db, identity.keycloakSubject);
+        assertPrivateWorldEntitlement(entitlements.map((record) => ({ subject: record.keycloakSubject, productKind: record.productKind, status: record.status, validFrom: record.validFrom, validUntil: record.validUntil ?? undefined, quantity: Number(record.quantity) })));
+        const [world] = await deps.db.insert(worlds).values({ name: request.body.name, schedulePeriodWeeks: request.body.schedulePeriodWeeks, epoch: new Date(request.body.epoch), worldKind: "private", rankingStatus: "unranked" }).returning();
+        if (world === undefined) throw new Error("Private Welt konnte nicht angelegt werden.");
+        await requestWorldAccess(deps.db, { worldId: world.id, keycloakSubject: identity.keycloakSubject, displayName: identity.displayName });
+        return reply.code(201).send(world);
       } catch (error) {
         return sendError(reply, error);
       }

@@ -29,6 +29,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Abstellgleis | `StablingTrack` | Gleis zum Abstellen nicht eingesetzter Fahrzeuge; Konfliktressource wie jedes andere Gleis | `betrieb.md` 4 |
 | Abweichungsreport | `DeviationReport` | stellt je Referenzlauf die aus dem Release berechnete Fahrzeit der realen gegenüber und prüft sie gegen die Toleranz | `betriebsgraph.md` 18 |
 | Ad-hoc-Trasse | `AdHocPath` | Trasse aus der Restkapazität einer laufenden Fahrplanperiode | `infrastruktur.md` 12 |
+| Administrationsantrag | `AdminCommandPayload` | typisierter, begründeter und korrelierter Antrag aus Odoo; das Game prüft und auditiert ihn erneut, bevor irgendeine Wirkung entsteht | `adr/0023-odoo-als-administrativer-kontrollpunkt.md` |
 | Anlage | `Facility` | Werkstatt, Behandlungs- oder Waschanlage, Tankstelle, Entsorgungsanlage oder als Anlage geführtes Abstellgleis mit Kapazität, Öffnungszeit, Nutzlänge und Baureihenkompetenz | `betrieb.md` 4 |
 | Anlagenkataster | `FacilityCatalog` | geprüfte Sammlung aller Anlagen einer Welt, gegen den Betriebsgraphen validiert — welches Gleis, welche Kapazität, welche Baureihenkompetenz | `betriebsgraph.md` 14 |
 | Annäherungsabschnitt | `ApproachSection` | Abschnitt vor einem Hauptsignal — der Vorsignalabstand; seine Durchfahrzeit gehört zur Sperrzeit des folgenden Abschnitts | `infrastruktur.md` 1 |
@@ -68,6 +69,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Einspruchsfenster | `ObjectionWindow` | Frist nach der Koordinierung, in der ein Trassenangebot beanstandet werden kann | `infrastruktur.md` 10 |
 | Eisenbahnverkehrsunternehmen (EVU) | `Operator` | das Unternehmen eines Spielers; Träger von Fahrzeugen, Personal, Trassen und Verträgen | `wirtschaft.md` 5, `weltgeruest.md` 7 |
 | Elektrifizierung | `Electrification` | Bauart der Fahrstromversorgung — Oberleitung, Stromschiene oder keine — samt Bahnstromsystem; als Bandprofil je Gleis geführt | `betriebsgraph.md` 2 |
+| Entitlement | `EntitlementRecord` | revisionssicherer Game-Zustand für Laufzeit und Umfang eines kaufmännisch ausgelösten Produkts; enthält keine Spielwerte oder Plannerrechte | `odoo-betrieb.md` |
 | Ersatzkonzept | `ReplacementPlan` | eigener kleiner Planungslauf gegen die Restkapazität einer Baustelle | `betrieb.md` 6 |
 | Event-Log | `DomainEvent` | append-only Eintrag im Ereignisprotokoll einer Welt (`domain_events`); Wahrheit des Betriebsverlaufs, Träger von Replay und Audit | `architektur.md` 2 |
 | Fahrplanperiode | `SchedulePeriod` | Saison aus Anmeldung, Koordinierung, Veröffentlichung und Betrieb; Länge ist Weltparameter, 3 bis 8 Wochen | `infrastruktur.md` 11 |
@@ -113,7 +115,9 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Netzfilter | `filter_network` | wählt aus dem Rohgraph das EBO-Netz aus — `railway=rail` in Regelspur, ohne Stromschiene | `betriebsgraph.md` 8 |
 | Notvergabe | `EmergencyAward` | auf zwei Perioden befristete Übernahme durch den Eigenbetrieb nach gescheiterter Ausschreibung | `wirtschaft.md` 4 |
 | Nutzlänge | `usable_length` | der Teil eines Gleises oder Bahnsteigs, auf dem Fahrzeuge stehen dürfen; begrenzt die zulässige Formation | `betriebsgraph.md` 2 |
+| Odoo-Projektion | `OdooProjectionEnvelope` | minimaler, versionierter und idempotenter Game-zu-Odoo-Datensatz mit Welt, Datenstand und Korrelation; keine zweite fachliche Wahrheit | `adr/0023-odoo-als-administrativer-kontrollpunkt.md` |
 | Öffnungszeit | `OpeningHours` | durchgehende oder tägliche Zeitspanne, in der eine Anlage nutzbar ist | `betrieb.md` 4 |
+| Outbox | `odooProjectionOutbox` | im selben Commit wie der Game-Zustand geschriebene, erneut zustellbare Projektion an Odoo; sie liegt nie im Simulationspfad | `odoo-betrieb.md` |
 | Planungslauf | `PlanningRun` | deterministische, gemeinsame Behandlung aller Trassenanträge eines Planungsfensters | `infrastruktur.md` 10 |
 | Pönale | `Penalty` | vertragliche Sanktion für Qualitätsmängel; wirkt bis zum letzten Tag der Vertragslaufzeit | `wirtschaft.md` 3 |
 | Postfach | `mailboxMessages` | Grundgerüst für Nachrichten, Fristen und Quittierung eines Kontos in einer Welt | `weltgeruest.md` 9 |
@@ -126,6 +130,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Rangieren | `Shunting` | Fahrzeugbewegung ohne Zugfahrt; ausschließlich automatisiert, als Zeitbedarf und kurze Belegung verrechnet | `betrieb.md` 4 |
 | Räumfahrzeit | `ClearingTime` | Anteil der Sperrzeit, in dem der Zug mit voller Länge den Abschnitt und den Durchrutschweg räumt | `infrastruktur.md` 1 |
 | Rechte-Gate | `RightsGate` | Durchsetzung von Invariante 8: kein Import ohne dokumentierte Freigabe der Datenquelle | `rechte.md` 1 |
+| Reconciliation-Aufgabe | `ReconciliationTask` | auditierte Korrekturaufgabe aus dem nächtlichen Abgleich stabiler Bridge-IDs und Hashes; überschreibt keine Daten still | `odoo-betrieb.md` |
 | Referenzkorpus | `ReferenceCorpus` | Versionierte Vergleichsgrundlage einer Region: technische Referenzen für Fahrdynamik sowie davon getrennte veröffentlichte Fahrplanwerte und Haltezeiten; Herkunft und Verwendungszweck jeder Größe bleiben explizit | `betriebsgraph.md` 18 |
 | Referenzlauf | `ReferenceRun` | ein Fahrweg mit Zugcharakteristik und explizit benannter Vergleichsgröße — technische Laufzeit oder Fahrplanzeit dürfen nicht vermischt werden | `betriebsgraph.md` 18 |
 | Regelgrenze | `LimitKind` | konkrete betriebliche Zulässigkeitsprüfung einer Dispositionsmaßnahme, etwa Kapazität, Streckenkenntnis, Fahrzeug, Personal, Vertrag oder Kosten | `betriebsprogramm.md` 2 |

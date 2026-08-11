@@ -13,8 +13,8 @@ umgeschrieben — ihre Historie ist der Wert.
 
 ## Verhältnis zu den anderen Dokumenten
 
-- `CLAUDE.md` — die bindende Kurztabelle E1–E22. Wird jede Sitzung geladen.
-- `../entscheidungen.md` — E1–E22 mit einzeiliger Begründung, die maßgebliche
+- `CLAUDE.md` — die bindende Kurztabelle E1–E23. Wird jede Sitzung geladen.
+- `../entscheidungen.md` — E1–E23 mit einzeiliger Begründung, die maßgebliche
   Quelle für Wortlaut und Nummerierung.
 - **`docs/adr/`** (dieser Ordner) — dieselben Entscheidungen ausführlich: mit
   Kontext, Konsequenzen und Querverweisen. Ein ADR je Entscheidung.
@@ -69,6 +69,7 @@ eigene Entscheidungen hinzu. Alle Status: **Angenommen — bindend**.
 | [0020](0020-fahrzeuge-konfiguriert-bestellt.md) | E20 | Fahrzeuge werden konfiguriert bestellt |
 | [0021](0021-ausschreibungen-variieren.md) | E21 | SPNV-Ausschreibungen variieren nach einem angekündigten Vergabeprofil |
 | [0022](0022-jaehrliche-infrastrukturaktualisierung.md) | E22 | Infrastruktur- und Fahrplandaten werden jährlich zum realen Fahrplanwechsel aktualisiert |
+| [0023](0023-odoo-als-administrativer-kontrollpunkt.md) | E23 | Odoo ist administrativer Kontroll- und Freigabepunkt, nie fachliche Source of Truth |
 
 > **Hinweis zum Umfang.** Milestone 0.1 nennt „E1 bis E16"; die Formulierung
 > stammt aus der Zeit vor E17–E20. Da diese vier heute gleichrangig bindend

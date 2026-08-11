@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@zugfolge/db": "workspace:*",
+    "@zugfolge/commerce": "workspace:*",
     "@zugfolge/dispatch": "workspace:*",
     "@zugfolge/economy": "workspace:*",
     "@zugfolge/health": "workspace:*",

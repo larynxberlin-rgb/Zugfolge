@@ -2,6 +2,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { MIGRATIONS_FOLDER, schema, worlds } from "@zugfolge/db";
 import { requestWorldAccess, type IdentityDatabase } from "@zugfolge/identity";
 import { drizzle } from "drizzle-orm/pglite";
+import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -13,6 +14,7 @@ import {
   listOperatorsInWorld,
   NoAccountInWorldError,
   OperatorNotFoundError,
+  PublicWorldOperatorLimitError,
 } from "./operators.js";
 
 const WORLD_LHE = "11111111-1111-1111-1111-111111111111";
@@ -82,7 +84,19 @@ describe("foundOperator", () => {
     ).resolves.toMatchObject({ worldId: WORLD_MIDDLE_GERMANY, name: "Elbtalbahn" });
   });
 
-  it("erlaubt einem Konto, mehrere EVU zu gründen", async () => {
+  it("lehnt ein zweites eigenes EVU in derselben öffentlichen Welt ab", async () => {
+    await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-anna", displayName: "Anna" });
+    await foundOperator(db, { worldId: WORLD_LHE, foundingKeycloakSubject: "kc-anna", name: "Elbtalbahn" });
+    await expect(
+      foundOperator(db, { worldId: WORLD_LHE, foundingKeycloakSubject: "kc-anna", name: "Saalebahn Cargo" }),
+    ).rejects.toBeInstanceOf(PublicWorldOperatorLimitError);
+
+    const eigene = await listOperatorsForAccount(db, "kc-anna");
+    expect(eigene.map((operator) => operator.name).sort()).toEqual(["Elbtalbahn"]);
+  });
+
+  it("erlaubt mehrere EVU nur in einer privaten ungewerteten Welt", async () => {
+    await db.update(worlds).set({ worldKind: "private", rankingStatus: "unranked" }).where(eq(worlds.id, WORLD_LHE));
     await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-anna", displayName: "Anna" });
     await foundOperator(db, { worldId: WORLD_LHE, foundingKeycloakSubject: "kc-anna", name: "Elbtalbahn" });
     await foundOperator(db, { worldId: WORLD_LHE, foundingKeycloakSubject: "kc-anna", name: "Saalebahn Cargo" });
