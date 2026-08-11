@@ -893,9 +893,9 @@ M1-Abnahme, ist aber Voraussetzung für eine produktive Veröffentlichung.
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 13.1 | Odoo Community selbst gehostet, strikt getrennt, OCA-Module versionsgepinnt | M | offen |
-| 13.2 | Game-Outbox → Bridge → Odoo, signierter Webhook-Receiver, nächtlicher Reconciler | L | offen |
-| 13.3 | Entitlements, Zugfolge Plus, Kosmetik, Weltplätze, private Welten | M | offen |
+| 13.1 | Odoo Community selbst gehostet, strikt getrennt, OCA-Module versionsgepinnt | M | in Arbeit |
+| 13.2 | Game-Outbox → Bridge → Odoo, signierter Webhook-Receiver, nächtlicher Reconciler | L | in Arbeit |
+| 13.3 | Entitlements, Zugfolge Plus, Kosmetik, Weltplätze, private Welten | M | in Arbeit |
 | 13.4 | **Planungsarbeitsplatz**: mehrere Bildfahrplanfenster, Layouts, Vergleichsansichten | M | offen |
 | 13.5 | **Sammelbearbeitung und Vorlagenverwaltung** für die Handplanung | M | offen |
 | 13.6 | **Exporte**: Bildfahrplan, Umlauf- und Dienstpläne, Geschäftsberichte, Replay-Filme | M | offen |
