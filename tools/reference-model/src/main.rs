@@ -274,14 +274,11 @@ fn verify_technical_reference_artifact(config: &ModelConfig, input: &[u8]) -> Re
     )?;
     require(
         artifact.result.sections.len() == expected.sections.len()
-            && artifact
-                .result
-                .sections
-                .iter()
-                .zip(&expected.sections)
-                .all(|(actual, configured)| {
+            && artifact.result.sections.iter().zip(&expected.sections).all(
+                |(actual, configured)| {
                     actual.technical_running_seconds == configured.running_seconds
-                }),
+                },
+            ),
         "Abschnittslaufzeiten des technischen Referenzartefakts stimmen nicht",
     )?;
     Ok(())
@@ -409,8 +406,16 @@ fn validate(config: &ModelConfig) -> Result<()> {
         "Kalibrierungsgrenzen sind ungültig",
     )?;
     require(
-        !config.comparison_basis.timetable_corpus_path.trim().is_empty()
-            && !config.comparison_basis.source_archive_sha256.trim().is_empty(),
+        !config
+            .comparison_basis
+            .timetable_corpus_path
+            .trim()
+            .is_empty()
+            && !config
+                .comparison_basis
+                .source_archive_sha256
+                .trim()
+                .is_empty(),
         "Fahrplankorpus oder GTFS-Archivhash fehlt",
     )?;
     let technical_reference = &config.comparison_basis.technical_reference;
@@ -459,7 +464,10 @@ fn validate(config: &ModelConfig) -> Result<()> {
         )?;
         require(
             config.calibration.minimum_effective_speed_kph <= segment.maximum_speed_kph,
-            format!("Segment '{}' liegt unter der minimalen Kalibriergeschwindigkeit", segment.id),
+            format!(
+                "Segment '{}' liegt unter der minimalen Kalibriergeschwindigkeit",
+                segment.id
+            ),
         )?;
         let reference = &technical_reference.sections[index];
         require(
@@ -557,11 +565,8 @@ fn build_release(
     }
 
     let mut path_tracks = Vec::with_capacity(config.segments.len());
-    for (index, (segment, calibrated)) in config
-        .segments
-        .iter()
-        .zip(calibrated_sections)
-        .enumerate()
+    for (index, (segment, calibrated)) in
+        config.segments.iter().zip(calibrated_sections).enumerate()
     {
         let numeric_id = u32::try_from(index + 1)?;
         let edge_id = TrackEdgeId::new(numeric_id);
@@ -785,7 +790,10 @@ fn run<'a>(
                 .seconds();
         require(
             section_running == calibrated.running_seconds,
-            format!("Kalibrierlauf für '{}' ist nicht reproduzierbar", segment.id),
+            format!(
+                "Kalibrierlauf für '{}' ist nicht reproduzierbar",
+                segment.id
+            ),
         )?;
         let dwell_after = dwells
             .get(segment.to_operating_point_id.as_str())
@@ -852,10 +860,7 @@ fn main() -> Result<()> {
             model_input_sha256: &model_input_sha256,
             technical_reference: TechnicalReferenceSummary {
                 source_id: &config.comparison_basis.technical_reference.source_id,
-                artifact_sha256: &config
-                    .comparison_basis
-                    .technical_reference
-                    .artifact_sha256,
+                artifact_sha256: &config.comparison_basis.technical_reference.artifact_sha256,
                 running_seconds: config.comparison_basis.technical_reference.running_seconds,
             },
             results: vec![result],
@@ -896,8 +901,7 @@ mod tests {
         verify_technical_reference_artifact(&config, TECHNICAL_REFERENCE)
             .expect("technisches Referenzartefakt ist vollständig gebunden");
         let calibrated = calibrate(&config).expect("deterministische Kalibrierung");
-        let (release, tracks) =
-            build_release(&config, &calibrated).expect("Pilot-InfraRelease");
+        let (release, tracks) = build_release(&config, &calibrated).expect("Pilot-InfraRelease");
         let result = run(&config, &release, &tracks, &calibrated).expect("Pilot-Modelllauf");
         let input_sha256 = sha256_hex(PILOT_CONFIG);
 
