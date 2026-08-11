@@ -85,11 +85,22 @@ export interface FleetWorldInitialization {
   readonly producedAt: number;
 }
 
+export interface NativeProcessedFleetCommand {
+  readonly commandHash: string;
+  readonly resultingRevision: number;
+  readonly entityKind: "formation" | "personnel-duty" | "path-reservation";
+  readonly entityId: string;
+}
+
 export type NativeFleetWorldState = Readonly<Record<string, unknown>> & {
   readonly schemaVersion: typeof FLEET_STATE_SCHEMA;
   readonly worldId: string;
   readonly revision: number;
   readonly producedAt: number;
+  readonly formations: Readonly<Record<string, NativeFleetFormation>>;
+  readonly personnelDuties: Readonly<Record<string, NativeFleetPersonnelDuty>>;
+  readonly pathReservations: Readonly<Record<string, NativeFleetPathReservation>>;
+  readonly processedCommands: Readonly<Record<string, NativeProcessedFleetCommand>>;
 };
 
 interface FleetCommandBase {
@@ -243,6 +254,14 @@ function invariant(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
+function parseNativeJson(json: string, name: string): unknown {
+  try {
+    return JSON.parse(json);
+  } catch (error) {
+    throw new Error(`${name} ist kein JSON: ${json}`, { cause: error });
+  }
+}
+
 function record(value: unknown, name: string): asserts value is Record<string, unknown> {
   invariant(typeof value === "object" && value !== null && !Array.isArray(value), `${name} ist kein Objekt.`);
 }
@@ -269,6 +288,25 @@ function fleetPayload(
   invariant(typeof value["state"]["worldId"] === "string" && value["state"]["worldId"].length > 0, `${name}-Zustand hat keine Welt.`);
   safeInteger(value["state"]["revision"], `${name}-Zustandsrevision`);
   safeInteger(value["state"]["producedAt"], `${name}-Zustandszeit`);
+  record(value["state"]["formations"], `${name}-Zustandsformationen`);
+  record(value["state"]["personnelDuties"], `${name}-Zustandspersonaldienste`);
+  record(value["state"]["pathReservations"], `${name}-Zustandstrassen`);
+  record(value["state"]["processedCommands"], `${name}-Kommandoquittungen`);
+  for (const [commandId, rawProcessed] of Object.entries(value["state"]["processedCommands"])) {
+    invariant(commandId.length > 0, `${name}-Kommandoquittung hat keine Kommando-ID.`);
+    record(rawProcessed, `${name}-Kommandoquittung`);
+    sha256(rawProcessed["commandHash"], `${name}-Kommandoquittungshash`);
+    safeInteger(rawProcessed["resultingRevision"], `${name}-Kommandoquittungsrevision`);
+    invariant(
+      (rawProcessed["resultingRevision"] as number) <= (value["state"]["revision"] as number),
+      `${name}-Kommandoquittung verweist auf eine zukuenftige Revision.`,
+    );
+    invariant(
+      ["formation", "personnel-duty", "path-reservation"].includes(rawProcessed["entityKind"] as string),
+      `${name}-Kommandoquittung hat eine unbekannte Entitaetsart.`,
+    );
+    invariant(typeof rawProcessed["entityId"] === "string" && rawProcessed["entityId"].length > 0, `${name}-Kommandoquittung hat keine Entitaets-ID.`);
+  }
   sha256(value["stateHash"], `${name}-Zustandshash`);
   record(value["snapshot"], `${name}-Snapshot`);
   invariant(value["snapshot"]["schema"] === "zugfolge-fleet-mobilization/v1", `${name}-Snapshot hat ein unbekanntes Schema.`);
@@ -282,7 +320,7 @@ function fleetPayload(
 }
 
 function decodeFleetInitialized(json: string): FleetWorldInitialized {
-  const value: unknown = JSON.parse(json);
+  const value: unknown = parseNativeJson(json, "Rust-M5-Initialisierung");
   record(value, "Rust-M5-Initialisierung");
   invariant(value["schemaVersion"] === FLEET_INITIALIZED_SCHEMA, "Rust-M5-Initialisierung hat ein unbekanntes Schema.");
   fleetPayload(value, "Rust-M5-Initialisierung");
@@ -290,12 +328,7 @@ function decodeFleetInitialized(json: string): FleetWorldInitialized {
 }
 
 function decodeFleetCommandResult(json: string): FleetCommandResult {
-  let value: unknown;
-  try {
-    value = JSON.parse(json);
-  } catch (error) {
-    throw new Error(`Rust-M5-Kommandoergebnis ist kein JSON: ${json}`, { cause: error });
-  }
+  const value: unknown = parseNativeJson(json, "Rust-M5-Kommandoergebnis");
   record(value, "Rust-M5-Kommandoergebnis");
   invariant(value["schemaVersion"] === FLEET_COMMAND_RESULT_SCHEMA, "Rust-M5-Kommandoergebnis hat ein unbekanntes Schema.");
   fleetPayload(value, "Rust-M5-Kommandoergebnis");
@@ -307,7 +340,7 @@ function decodeFleetCommandResult(json: string): FleetCommandResult {
 }
 
 function decodeInitialized(json: string): OperatingWorldInitialized {
-  const value: unknown = JSON.parse(json);
+  const value: unknown = parseNativeJson(json, "Rust-Initialisierung");
   record(value, "Rust-Initialisierung");
   invariant(value["schemaVersion"] === "zugfolge-operating-world-initialized/v1", "Rust-Initialisierung hat ein unbekanntes Schema.");
   record(value["state"], "Rust-Zustand");
@@ -319,7 +352,7 @@ function decodeInitialized(json: string): OperatingWorldInitialized {
 }
 
 function decodeFleetVerification(json: string): FleetMobilizationVerification {
-  const value: unknown = JSON.parse(json);
+  const value: unknown = parseNativeJson(json, "Rust-M5-Verifikation");
   record(value, "Rust-M5-Verifikation");
   invariant(
     value["schemaVersion"] === FLEET_MOBILIZATION_VERIFICATION_SCHEMA,
@@ -332,7 +365,7 @@ function decodeFleetVerification(json: string): FleetMobilizationVerification {
 }
 
 function decodeTransition(json: string): OperatingTransitionResult {
-  const value: unknown = JSON.parse(json);
+  const value: unknown = parseNativeJson(json, "Rust-Uebergang");
   record(value, "Rust-Uebergang");
   invariant(value["schemaVersion"] === OPERATING_RESULT_SCHEMA, "Rust-Uebergang hat ein unbekanntes Schema.");
   record(value["state"], "Rust-Zustand");
@@ -379,6 +412,10 @@ export function operatingRuntimeFromAddon(addon: NativeAddon): NativeRuntime {
       invariant(result.entityKind === entity.kind && result.entityId === entity.id, "Rust-M5-Kommando quittierte eine fremde Entitaet.");
       invariant(result.idempotentReplay || result.state.revision === command.expectedRevision + 1, "Rust-M5-Kommando erhoehte die Revision nicht exakt einmal.");
       invariant(result.idempotentReplay || result.state.producedAt === command.atS, "Rust-M5-Kommando veraenderte die Zustandszeit.");
+      const processed = result.state.processedCommands[command.commandId];
+      invariant(processed !== undefined, "Rust-M5-Zustand enthaelt keine Kommandoquittung.");
+      invariant(processed.entityKind === entity.kind && processed.entityId === entity.id, "Rust-M5-Kommandoquittung gehoert zu einer fremden Entitaet.");
+      invariant(result.idempotentReplay || processed.resultingRevision === result.state.revision, "Rust-M5-Kommandoquittung bindet nicht die neue Revision.");
       return result;
     },
     verifyFleetMobilizationSnapshot(snapshot: unknown) {
