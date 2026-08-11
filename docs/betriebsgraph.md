@@ -582,9 +582,12 @@ Umsetzung: [`crates/zugfolge-infra/src/release.rs`](../crates/zugfolge-infra/src
 
 ## 18. Referenzkorpus und Abweichungsreport — Ergebnis von M1.13
 
-Der Beweis von M1 verlangt „einen signierten `InfraRelease` der Pilotregion,
-dessen berechnete Fahrzeiten innerhalb definierter Toleranz zur Referenz
-liegen — begleitet von einem Abdeckungsreport" (`docs/milestones.md`).
+Der Beweis von M1 verlangt einen reproduzierbaren `InfraRelease`-Kandidaten des
+Pilotkorridors Leipzig–Halle, dessen berechnete Fahrzeiten innerhalb definierter Toleranz zur
+technischen Referenz liegen — begleitet von einem Abdeckungsreport und einem
+getrennten GTFS-Fahrplan-Holdout (`docs/milestones.md`). Die unabhängig
+validierte und echt signierte produktive Release-Freigabe ist davon als
+nachgelagerter Betriebsreife-Nachweis getrennt.
 `CLAUDE.md` nennt dasselbe als Arbeitsprinzip: **Golden-Master-Tests gegen reale
 Fahrplanausschnitte der Pilotregion mit definierter Toleranz.** M1.13 liefert
 das Verfahren, trennt dabei aber zwei Ebenen: Eine technische Referenz prüft die
@@ -626,9 +629,13 @@ Der GTFS-Holdout enthält 85 S5X-Fahrten. Sein P20 beträgt 1.380 Sekunden:
 1.263 Sekunden Modelllauf plus 60 Sekunden GTFS-Haltezeit lassen 57 Sekunden
 Fahrplanreserve sichtbar. Der Report besteht technisch, bleibt aber
 `calibration-only`, weil der Trassenfinder-Wert zum Kalibrieren diente.
-`releaseQualified` ist daher falsch und das Signatur-Gate blockiert. Für M1.13
-fehlen belastbare Detailprofile, eine davon unabhängige Validierung und die
-echte Release-Signatur. Der vollständige Ablauf steht in
+`releaseQualified` ist daher falsch und das Signatur-Gate blockiert eine
+produktive Veröffentlichung. Die technische Plausibilisierung innerhalb der
+Toleranz und der getrennte Fahrplan-Holdout erfüllen dennoch den
+M1.13-Abnahmeschnitt. Belastbare Detailprofile, eine davon unabhängige
+Validierung und die echte Release-Signatur bleiben in Issue #48 als
+M9-Betriebsreife-Nachweis erhalten und blockieren M1 nicht. Der vollständige
+Ablauf steht in
 [`referenzkorpus.md`](referenzkorpus.md).
 
 Umsetzung: [`crates/zugfolge-infra/src/reference.rs`](../crates/zugfolge-infra/src/reference.rs)

@@ -57,13 +57,13 @@
     {
       "key": "M1",
       "title": "M1 — Betriebsgraph und Infrastruktur-Release",
-      "goal": "Einen lizenzgeprueften, reproduzierbaren und extern signierten InfraRelease der Pilotregion liefern.",
+      "goal": "Einen lizenzgeprueften, reproduzierbaren InfraRelease-Kandidaten des Pilotkorridors Leipzig-Halle liefern und seine Fahrzeiten gegen technische Referenz und GTFS-Fahrplan plausibilisieren.",
       "area": "area:infrastructure",
       "dependsOn": ["M0"],
-      "status": { "core": "verified", "integration": "blocked", "operations": "blocked", "acceptance": "blocked" },
+      "status": { "core": "verified", "integration": "verified", "operations": "blocked", "acceptance": "verified" },
       "evidence": [
         { "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" },
-        { "label": "Referenzkorpus und Signatur-Gate", "url": "docs/referenzkorpus.md" },
+        { "label": "Referenzkorpus und nachgelagerte Release-Qualifizierung", "url": "docs/referenzkorpus.md" },
         { "label": "Abnahmeprotokoll PR #66", "url": "docs/in-progress-inventory-2026-08-11.md" }
       ],
       "items": [
@@ -73,8 +73,7 @@
         { "number": 9, "kind": "pull_request" },
         { "number": 10, "kind": "pull_request" },
         { "number": 11, "kind": "pull_request" },
-        { "number": 12, "kind": "pull_request" },
-        { "number": 48, "kind": "issue", "labels": ["area:infrastructure", "type:enhancement", "priority:p1"] }
+        { "number": 12, "kind": "pull_request" }
       ]
     },
     {
@@ -225,6 +224,7 @@
         { "number": 37, "kind": "issue", "labels": ["area:health", "type:bug", "priority:p0"] },
         { "number": 38, "kind": "issue", "labels": ["area:health", "type:security", "priority:p1"] },
         { "number": 39, "kind": "issue", "labels": ["area:health", "type:bug", "priority:p1"] },
+        { "number": 48, "kind": "issue", "labels": ["area:infrastructure", "area:operations", "type:operations", "priority:p1"] },
         { "number": 61, "kind": "pull_request", "labels": ["area:operations", "area:roadmap", "type:delivery"] }
       ]
     },

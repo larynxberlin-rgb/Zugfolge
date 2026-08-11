@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   desiredMilestoneState,
   parseRoadmap,
+  recordRoadmapIssueUpdate,
   renderMilestoneDescription,
   renderStatusDocument,
   roadmapIssueKey,
@@ -46,7 +47,23 @@ test("Roadmap-Parser liest Titel und Statuszeilen", () => {
 
 test("Roadmap-Issues tragen einen maschinenlesbaren Teilpunkt-Schluessel", () => {
   assert.equal(roadmapIssueKey("[Roadmap M3.10] Bildfahrplan"), "M3.10");
+  assert.equal(roadmapIssueKey("[Roadmap 3.10] Bildfahrplan"), "M3.10");
+  assert.equal(roadmapIssueKey("[Roadmap 6.3a] Vertragsoption"), "M6.3a");
   assert.equal(roadmapIssueKey("[Livemap] anderer Befund"), null);
+});
+
+test("Geschlossene Roadmap-Issues wirken im selben Sync-Lauf auf den Milestone", () => {
+  const discovered = { remote: { number: 84, state: "open" } };
+  recordRoadmapIssueUpdate(discovered, { number: 84, state: "closed" });
+  assert.deepEqual(discovered.remote, { number: 84, state: "closed" });
+  assert.equal(
+    desiredMilestoneState(
+      { ...milestone, items: [{ number: 84, kind: "issue" }] },
+      roadmap.get("M0"),
+      new Map([[84, discovered.remote]]),
+    ),
+    "closed",
+  );
 });
 
 test("Milestone schliesst nur bei erledigter Roadmap, geschlossenen Items und Beleg", () => {

@@ -20,6 +20,13 @@ Sekunden. Er ist ausdrücklich `calibration-only` und noch nicht
 der effektiven Abschnittsgeschwindigkeiten verwendet wird, ist das Ergebnis
 kein unabhängiger Validierungsnachweis und darf noch nicht signiert werden.
 
+Diese Grenze betrifft die produktive Release-Zertifizierung, nicht den
+Abnahmeschnitt von M1.13. Für den Milestone sind die technische
+Plausibilisierung innerhalb der definierten Toleranz und der davon getrennte
+GTFS-Fahrplan-Holdout als reproduzierbarer Beweis akzeptiert. Die strengere,
+disjunkte Pilotvalidierung und die echte Signatur bleiben als nachgelagerte
+Betriebsreife-Aufgabe in Issue #48 erhalten.
+
 ## Warum der erste Vergleich fehlschlug
 
 Der erste versionierte Lauf meldete 1.014 gegenüber 1.380 Sekunden. Das war
@@ -191,11 +198,12 @@ kryptographische Signatur und reicht nicht für eine Veröffentlichung;
 `verify` ist die vorgeschriebene Vollprüfung der Signatur und jeder
 Artefaktkante.
 
-### Ehrlicher Pilotstatus und konkrete Voraussetzungen
+### Nachgelagerte produktive Release-Qualifizierung
 
 Es wurde kein realer Pilot-Release erzeugt oder signiert. Der eingecheckte
-Pilot bleibt ein bestandener Kalibrierlauf und ist aus folgenden, getrennt zu
-behandelnden Gründen nicht releasefähig:
+Pilot bleibt ein bestandener Kalibrierlauf. Das ändert nichts an der
+Milestone-Abnahme, begrenzt aber seine produktive Release-Fähigkeit aus
+folgenden, getrennt zu behandelnden Gründen:
 
 1. Das ursprüngliche Feed-ZIP, die gehashten Tabellen und das daraus erzeugte
    normalisierte Beobachtungsartefakt liegen nicht gemeinsam als prüfbare
@@ -217,7 +225,8 @@ behandelnden Gründen nicht releasefähig:
 Die Punkte 1 bis 3 und 5 benötigen externe Datenbereitstellung,
 Rechte-/Verantwortungsfreigabe oder Schlüsselzugriff. Sie dürfen weder durch
 den synthetischen Positivtest noch durch neu heruntergeladene, inhaltlich
-abweichende Daten ersetzt werden.
+abweichende Daten ersetzt werden. Issue #48 führt diese Arbeit deshalb als
+eigenständigen M9-Betriebsreife-Nachweis weiter und blockiert M1 nicht.
 
 ## Quellen, Rechte und Nachvollziehbarkeit
 

@@ -288,8 +288,12 @@ async function loadRemoteItems(client, manifest) {
 }
 
 export function roadmapIssueKey(title) {
-  const match = /^\[Roadmap (M\d+\.\d+)\]/.exec(title ?? "");
-  return match?.[1] ?? null;
+  const match = /^\[Roadmap M?(\d+\.\d+[a-z]?)\]/.exec(title ?? "");
+  return match ? `M${match[1]}` : null;
+}
+
+export function recordRoadmapIssueUpdate(discovered, remote) {
+  discovered.remote = remote;
 }
 
 async function loadRoadmapIssues(client, roadmap) {
@@ -398,7 +402,15 @@ async function synchronizeRemote(manifest, roadmap, apply) {
     }
     if (row.status === "erledigt" && item.state !== "closed") {
       if (!apply) errors.push(`#${item.number}: Roadmap-Teilpunkt ${discovered.key} muss geschlossen werden`);
-      else await client.request(`${client.basePath}/issues/${item.number}`, { method: "PATCH", body: { state: "closed", state_reason: "completed" } });
+      else {
+        recordRoadmapIssueUpdate(
+          discovered,
+          await client.request(`${client.basePath}/issues/${item.number}`, {
+            method: "PATCH",
+            body: { state: "closed", state_reason: "completed" },
+          }),
+        );
+      }
     }
   }
   for (const milestone of manifest.milestones) {

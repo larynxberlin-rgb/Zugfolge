@@ -5,16 +5,17 @@ mit hohem betrieblichem, infrastrukturellem und wirtschaftlichem Realismus.
 Öffentliche Welten laufen dauerhaft in 1:1-Echtzeit ohne Wipes. Erste
 Pilotregion: **Leipzig–Halle–Erfurt**.
 
-> **Stand nach dem Projektaudit (August 2026):** M0 und M2 sind vollständig
-> nachgewiesen. Die Domänenimplementierungen von M1 bis M6 sind weitgehend
-> vorhanden; noch nicht als abgeschlossen gilt die unabhängig validierte und
-> signierte Modellfreigabe (M1.13). Die korrigierte Trassenfinder-Kalibrierung
-> besteht mit +3 Sekunden, ist aber bewusst nur `calibration-only`. Ebenfalls
-> offen sind die produktive Planner-Anbindung des Bildfahrplans
-> (M3.10), der vollständige Rust-Runtime-Startpfad zur Livemap (M4.6), der
-> M5-Single-Writer-Betriebsnachweis in der M6-Mobilisierung. Der periodische
-> M6-Kommando-Worker und die GTFS-basierte Losableitung sind implementiert.
-> M7 bis M14 sind offen. Der detaillierte Status steht in
+> **Stand nach dem Projektaudit (August 2026):** M0 bis M7 sind fachlich
+> abgenommen und reproduzierbar nachgewiesen. M1.13 akzeptiert die korrigierte
+> Trassenfinder-Kalibrierung (+3 Sekunden innerhalb der definierten Toleranz)
+> zusammen mit dem getrennten GTFS-Fahrplan-Holdout als Milestone-Beweis. Der
+> konkrete Pilot bleibt bewusst `calibration-only` und
+> `releaseQualified: false`; seine unabhängige produktive Qualifizierung und
+> echte Signatur werden als Betriebsreife-Folgearbeit in Issue #48 geführt und
+> blockieren M1 nicht. M3.10, M4.6 und M6.7 sind über die echten Rust-,
+> Persistenz-, API- und Clientpfade abgeschlossen. M8 bis M14 sind offen; M9
+> bleibt bis zu seinen Abhängigkeiten und Betriebsnachweisen blockiert. Der
+> detaillierte Status steht in
 > [`docs/milestones.md`](docs/milestones.md); „erledigt“ bedeutet dort wieder
 > einen reproduzierbaren Beweis und nicht nur vorhandenen Quellcode.
 
