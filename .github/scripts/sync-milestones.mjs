@@ -330,16 +330,16 @@ async function ensureMilestones(client, manifest, apply) {
       }
       current = await client.request(`${client.basePath}/milestones`, {
         method: "POST",
-        body: { title: milestone.title, description, state: "open", due_on: null },
+        body: { title: milestone.title, description, state: "open" },
       });
       remote.push(current);
-    } else if (current.title !== milestone.title || current.description !== description || current.due_on !== null) {
+    } else if (current.title !== milestone.title || current.description !== description) {
       if (!apply) {
         errors.push(`Milestone ${milestone.key}: Titel, Beschreibung oder Termin weicht ab`);
       } else {
         current = await client.request(`${client.basePath}/milestones/${current.number}`, {
           method: "PATCH",
-          body: { title: milestone.title, description, due_on: null },
+          body: { title: milestone.title, description },
         });
       }
     }
