@@ -1,0 +1,25 @@
+{
+  "name": "@zugfolge/commerce",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Entitlements, signierte Odoo-Grenze und idempotente Commerce-Bridge (M13)",
+  "license": "LicenseRef-PolyForm-Shield-1.0.0",
+  "exports": { ".": "./dist/index.js" },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@zugfolge/db": "workspace:*",
+    "@zugfolge/health": "workspace:*",
+    "drizzle-orm": "^0.45.2"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.4",
+    "@types/node": "24.13.3",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

@@ -13,6 +13,9 @@ importers:
 
   apps/game-api:
     dependencies:
+      '@zugfolge/commerce':
+        specifier: workspace:*
+        version: link:../../packages/commerce
       '@zugfolge/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -124,6 +127,31 @@ importers:
       vite:
         specifier: ^8.2.1
         version: 8.2.1(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9)
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
+
+  packages/commerce:
+    dependencies:
+      '@zugfolge/db':
+        specifier: workspace:*
+        version: link:../db
+      '@zugfolge/health':
+        specifier: workspace:*
+        version: link:../health
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@electric-sql/pglite@0.5.4)(@types/pg@8.20.4)(pg@8.22.0)(postgres@3.4.9)
+    devDependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.5.4
+        version: 0.5.4
+      '@types/node':
+        specifier: 24.13.3
+        version: 24.13.3
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))

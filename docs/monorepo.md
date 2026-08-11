@@ -37,6 +37,8 @@ packages/                   TypeScript — fachliche Bibliotheken (ab M2)
   livemap/                  Weltisolierter Snapshot-/Delta-Fanout (M4.6)
   runtime-native/           Fail-closed Loader für Flotten-, Betriebs- und Regional-Runtimes
   dispatch/                 Kanonischer M7-Plattformvertrag, EVU-Projektionen und Operations-Stream
+  commerce/                 Entitlements, signierte Odoo-Grenze, idempotente Queue und Bridge (M13)
+odoo/addons/zugfolge_admin/ Eigenes Odoo-Administrationsmodul; keine Odoo-Instanz oder OCA-Quellkopie
 apps/                       TypeScript — Dienste und Frontend (ab M2 / M4)
   game-api/                 Fastify-Dienst: Authentifizierung, Weltzugang, EVU, Ledger, Postfach, Datenschutz (M2)
   game-web/                 Bildfahrplan, Sperrzeitentreppe und Konflikterklärung (M3.10)

@@ -3,11 +3,14 @@ import {
   ledgerTransactions,
   mailboxMessages,
   MIGRATIONS_FOLDER,
+  commerceEntitlements,
+  odooCommandQueue,
   schema,
   simulationCommands,
   worldEventLog,
   worlds,
 } from "@zugfolge/db";
+import { createOdooWebhookReceiptStore, signPayload, type OdooWebhookEnvelope, type SigningKey } from "@zugfolge/commerce";
 import {
   buildEconomyRelease,
   createEconomyPlatformAdapters,
@@ -48,6 +51,7 @@ const WORLD_LHE = "11111111-1111-1111-1111-111111111111";
 const WORLD_MIDDLE_GERMANY = "22222222-2222-2222-2222-222222222222";
 const SIMULATION_INGEST_TOKEN = "test-only-simulation-ingest-token";
 const FLEET_INGEST_TOKEN = "test-only-fleet-ingest-token";
+const ODOO_KEY: SigningKey = { id: "test-2026", secret: "odoo-test-secret", activeFrom: new Date("2026-01-01T00:00:00Z") };
 
 function planningProjection(
   worldId = WORLD_LHE,
@@ -177,6 +181,12 @@ beforeEach(async () => {
     livemap,
     simulationIngestToken: SIMULATION_INGEST_TOKEN,
     fleetIngestToken: FLEET_INGEST_TOKEN,
+    odooWebhookStore: createOdooWebhookReceiptStore(db),
+    odooWebhookOptions: {
+      tenantId: "zugfolge-test",
+      keys: [ODOO_KEY],
+      authorizedActors: { "commerce-service": ["entitlement.change"] },
+    },
   });
   await app.ready();
 });
@@ -184,6 +194,66 @@ beforeEach(async () => {
 afterEach(async () => {
   await app.close();
   await client.close();
+});
+
+describe("M13 signierter Odoo-Receiver", () => {
+  it("nimmt einen signierten Kauf genau einmal entgegen und weist Replay, falsche Mandanten und abgelaufene Signaturen ab", async () => {
+    const payload: OdooWebhookEnvelope = {
+      schemaVersion: "zugfolge-odoo/v1",
+      eventId: "odoo-api-event-0001",
+      eventType: "commerce.command",
+      occurredAt: "2026-08-11T12:00:00.000Z",
+      correlationId: "odoo-api-correlation-0001",
+      tenantId: "zugfolge-test",
+      actorReference: "commerce-service",
+      command: {
+        kind: "entitlement.change",
+        subject: "kc-anna",
+        productKind: "cosmetic",
+        change: "grant",
+        validFrom: "2026-08-11T12:00:00.000Z",
+        quantity: 1,
+        sourceReference: "invoice-api-1",
+      },
+    };
+    const signed = signPayload(payload, ODOO_KEY);
+    const headers = {
+      "x-zugfolge-odoo-key-id": signed.keyId,
+      "x-zugfolge-odoo-timestamp": signed.timestamp,
+      "x-zugfolge-odoo-signature": signed.signature,
+    };
+    const accepted = await app.inject({ method: "POST", url: "/integrations/odoo/webhooks", headers, payload });
+    expect(accepted.statusCode).toBe(202);
+    expect(accepted.json()).toEqual({ accepted: true, duplicate: false });
+    const replay = await app.inject({ method: "POST", url: "/integrations/odoo/webhooks", headers, payload });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toEqual({ accepted: true, duplicate: true });
+    expect(await db.select().from(odooCommandQueue)).toHaveLength(1);
+
+    const wrongTenant = { ...payload, eventId: "odoo-api-event-0002", tenantId: "other" };
+    const wrongTenantSigned = signPayload(wrongTenant, ODOO_KEY);
+    expect((await app.inject({ method: "POST", url: "/integrations/odoo/webhooks", headers: { "x-zugfolge-odoo-key-id": wrongTenantSigned.keyId, "x-zugfolge-odoo-timestamp": wrongTenantSigned.timestamp, "x-zugfolge-odoo-signature": wrongTenantSigned.signature }, payload: wrongTenant })).statusCode).toBe(403);
+
+    const expired = signPayload({ ...payload, eventId: "odoo-api-event-0003" }, ODOO_KEY, new Date("2026-01-02T00:00:00.000Z"));
+    expect((await app.inject({ method: "POST", url: "/integrations/odoo/webhooks", headers: { "x-zugfolge-odoo-key-id": expired.keyId, "x-zugfolge-odoo-timestamp": expired.timestamp, "x-zugfolge-odoo-signature": expired.signature }, payload: expired.payload })).statusCode).toBe(401);
+  });
+});
+
+describe("M13 Entitlement-Grenzen", () => {
+  it("begrenzt öffentliche Weltplätze im Game und erzeugt private Welten nur ungewertet", async () => {
+    const token = await sign("kc-entitlement", "Entitlement Test");
+    expect((await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Entitlement Test" } })).statusCode).toBe(201);
+    expect((await app.inject({ method: "POST", url: `/worlds/${WORLD_MIDDLE_GERMANY}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Entitlement Test" } })).statusCode).toBe(403);
+    expect((await app.inject({ method: "POST", url: "/private-worlds", headers: { authorization: `Bearer ${token}` }, payload: { name: "Privat", schedulePeriodWeeks: 4, epoch: "2026-01-01T00:00:00.000Z" } })).statusCode).toBe(403);
+
+    await db.insert(commerceEntitlements).values({ externalEventId: "direct-test-plus", keycloakSubject: "kc-entitlement", productKind: "zugfolge_plus", status: "active", validFrom: new Date("2026-01-01T00:00:00.000Z"), quantity: "1", correlationId: "entitlement-test", sourceReference: "test" });
+    expect((await app.inject({ method: "POST", url: `/worlds/${WORLD_MIDDLE_GERMANY}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Entitlement Test" } })).statusCode).toBe(201);
+
+    await db.insert(commerceEntitlements).values({ externalEventId: "direct-test-private", keycloakSubject: "kc-entitlement", productKind: "private_unranked_world", status: "active", validFrom: new Date("2026-01-01T00:00:00.000Z"), quantity: "1", correlationId: "private-test", sourceReference: "test" });
+    const privateWorld = await app.inject({ method: "POST", url: "/private-worlds", headers: { authorization: `Bearer ${token}` }, payload: { name: "Privat", schedulePeriodWeeks: 4, epoch: "2026-01-01T00:00:00.000Z" } });
+    expect(privateWorld.statusCode).toBe(201);
+    expect(privateWorld.json()).toMatchObject({ worldKind: "private", rankingStatus: "unranked" });
+  });
 });
 
 describe("M7 Betriebsprogramm und Betriebszentrale", () => {

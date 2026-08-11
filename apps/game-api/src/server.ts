@@ -8,6 +8,17 @@ import {
   worldEventLog,
   worlds,
 } from "@zugfolge/db";
+import {
+  createHttpOdooProjectionClient,
+  createHttpOdooReconciliationClient,
+  createOdooBridgeHealthCheck,
+  createOdooWebhookReceiptStore,
+  dispatchOdooProjectionOutbox,
+  processNextOdooCommand,
+  reconcileOdooProjectionSnapshot,
+  type OdooWebhookReceiverOptions,
+  type SigningKey,
+} from "@zugfolge/commerce";
 import { OperationsRegistry } from "@zugfolge/dispatch";
 import {
   createEconomyPlatformAdapters,
@@ -59,6 +70,34 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function optionalEnv(name: string): string | undefined {
+  const value = process.env[name];
+  return value === undefined || value.length === 0 ? undefined : value;
+}
+
+function parseSigningKeys(value: string): readonly SigningKey[] {
+  const parsed: unknown = JSON.parse(value);
+  if (!Array.isArray(parsed)) throw new Error("ODOO_WEBHOOK_KEYS_JSON muss eine Schluesselliste sein.");
+  return parsed.map((entry): SigningKey => {
+    if (typeof entry !== "object" || entry === null) throw new Error("Odoo-Schluessel ist kein Objekt.");
+    const record = entry as Record<string, unknown>;
+    if (typeof record["id"] !== "string" || typeof record["secret"] !== "string" || typeof record["activeFrom"] !== "string") {
+      throw new Error("Odoo-Schluessel ist unvollstaendig.");
+    }
+    const activeFrom = new Date(record["activeFrom"]);
+    const activeUntil = typeof record["activeUntil"] === "string" ? new Date(record["activeUntil"]) : undefined;
+    if (Number.isNaN(activeFrom.getTime()) || (activeUntil !== undefined && Number.isNaN(activeUntil.getTime()))) throw new Error("Odoo-Schluessel hat ungueltige Zeitgrenzen.");
+    return { id: record["id"], secret: record["secret"], activeFrom, activeUntil };
+  });
+}
+
+function loadOptionalOdooWebhookOptions(): OdooWebhookReceiverOptions | undefined {
+  const tenantId = optionalEnv("ODOO_WEBHOOK_TENANT_ID");
+  if (tenantId === undefined) return undefined;
+  const authorizedActors = JSON.parse(requireEnv("ODOO_WEBHOOK_AUTHORIZED_ACTORS_JSON")) as Readonly<Record<string, readonly string[]>>;
+  return { tenantId, keys: parseSigningKeys(requireEnv("ODOO_WEBHOOK_KEYS_JSON")), authorizedActors };
+}
+
 function persistedRegionalNowS(state: unknown): number {
   if (typeof state !== "object" || state === null || Array.isArray(state)) {
     throw new Error("Persistierter regionaler Simulationszustand ist kein Objekt.");
@@ -71,6 +110,23 @@ function persistedRegionalNowS(state: unknown): number {
 }
 
 const db = createDatabase(requireEnv("DATABASE_URL"));
+const odooWebhookOptions = loadOptionalOdooWebhookOptions();
+const odooWebhookStore = odooWebhookOptions === undefined ? undefined : createOdooWebhookReceiptStore(db);
+const odooProjectionUrl = optionalEnv("ODOO_PROJECTION_URL");
+const odooProjectionKey = odooProjectionUrl === undefined
+  ? undefined
+  : {
+    id: requireEnv("ODOO_PROJECTION_KEY_ID"),
+    secret: requireEnv("ODOO_PROJECTION_SECRET"),
+    activeFrom: new Date("1970-01-01T00:00:00.000Z"),
+  };
+const odooProjectionClient = odooProjectionUrl === undefined
+  ? undefined
+  : createHttpOdooProjectionClient(odooProjectionUrl, odooProjectionKey!);
+const odooReconciliationUrl = optionalEnv("ODOO_RECONCILIATION_URL");
+const odooReconciliationClient = odooReconciliationUrl === undefined || odooProjectionKey === undefined
+  ? undefined
+  : createHttpOdooReconciliationClient(odooReconciliationUrl, odooProjectionKey);
 const keycloak = loadKeycloakConfigFromEnv();
 const verifyToken = createKeycloakVerifier(keycloak);
 const livemap = new LivemapRegistry();
@@ -199,7 +255,10 @@ const app = buildApp({
     createEconomyOutboxHealthCheck(db),
     createEconomySchedulerHealthCheck(economyMonitor),
     createLivemapHealthCheck(livemap),
+    createOdooBridgeHealthCheck(db),
   ],
+  odooWebhookStore,
+  odooWebhookOptions,
 });
 
 // Erster expliziter 1:1-Takt noch vor dem Listener: Ein restaurierter Zustand
@@ -226,6 +285,48 @@ regionalAdvanceInterval.unref();
 app.addHook("onClose", async () => {
   clearInterval(regionalAdvanceInterval);
   await regionalAdvanceCycle;
+});
+
+// Commerce laeuft ausserhalb jedes Simulations-, Planner- und Loginpfads.
+// Auch ein langer Odoo-Ausfall laesst nur die Outbox wachsen; der Prozess
+// bleibt erreichbar und bestehende Entitlements bleiben lokal gueltig.
+let commerceCycle: Promise<void> | undefined;
+const runCommerce = () => {
+  if (commerceCycle !== undefined) return;
+  commerceCycle = (async () => {
+    while (await processNextOdooCommand(db, new Date()) !== undefined) {
+      // Alle bereits vorliegenden Befehle abarbeiten, ohne auf Odoo zu warten.
+    }
+    if (odooProjectionClient !== undefined) await dispatchOdooProjectionOutbox(db, odooProjectionClient, new Date());
+  })().catch((error: unknown) => {
+    app.log.error({ err: error }, "Odoo-Bridge-Lauf fehlgeschlagen");
+  }).finally(() => { commerceCycle = undefined; });
+};
+runCommerce();
+const commerceInterval = setInterval(runCommerce, 5_000);
+commerceInterval.unref();
+app.addHook("onClose", async () => {
+  clearInterval(commerceInterval);
+  await commerceCycle;
+});
+
+let reconciliationCycle: Promise<void> | undefined;
+const runOdooReconciliation = () => {
+  if (reconciliationCycle !== undefined || odooReconciliationClient === undefined) return;
+  reconciliationCycle = odooReconciliationClient.snapshot()
+    .then((snapshot) => reconcileOdooProjectionSnapshot(db, snapshot, new Date()))
+    .then(() => undefined)
+    .catch((error: unknown) => {
+      app.log.error({ err: error }, "Odoo-Nachtabgleich fehlgeschlagen");
+    })
+    .finally(() => { reconciliationCycle = undefined; });
+};
+runOdooReconciliation();
+const reconciliationInterval = setInterval(runOdooReconciliation, 24 * 60 * 60 * 1_000);
+reconciliationInterval.unref();
+app.addHook("onClose", async () => {
+  clearInterval(reconciliationInterval);
+  await reconciliationCycle;
 });
 
 const planningScheduler = createPlanningScheduler(

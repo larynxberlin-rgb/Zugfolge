@@ -1,0 +1,12 @@
+// E17: dunkle, dichte Information; Farbe ist nie der einzige Zustandskanal.
+.zugfolge-dashboard {
+  --zugfolge-panel: #15171a;
+  --zugfolge-line: #59636e;
+  --zugfolge-text: #f1f3f5;
+  background: var(--zugfolge-panel);
+  color: var(--zugfolge-text);
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--zugfolge-line);
+}
+.zugfolge-dashboard .o_field_widget[name="freshness"]::before { content: "Datenstand: "; font-weight: 700; }
+.zugfolge-dashboard .o_field_widget[name="world_status"]::before { content: "Weltstatus: "; font-weight: 700; }

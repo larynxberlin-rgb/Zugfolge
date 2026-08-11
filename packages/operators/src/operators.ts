@@ -11,7 +11,7 @@
  * eine öffentliche EVU-Liste braucht, bleibt die engere Regel richtig.
  */
 
-import { accounts, operators, type Operator } from "@zugfolge/db";
+import { accounts, operators, worlds, type Operator } from "@zugfolge/db";
 import { AuthorizationError, getAccount, type IdentityDatabase } from "@zugfolge/identity";
 import { and, eq } from "drizzle-orm";
 
@@ -28,6 +28,14 @@ export class DuplicateOperatorNameError extends Error {
   constructor(worldId: string, name: string) {
     super(`Unternehmensname '${name}' ist in Welt '${worldId}' bereits vergeben.`);
     this.name = "DuplicateOperatorNameError";
+  }
+}
+
+/** In einer öffentlichen Welt darf ein Spieler genau ein eigenes EVU besitzen (M13.3). */
+export class PublicWorldOperatorLimitError extends Error {
+  constructor(worldId: string) {
+    super(`In der öffentlichen Welt '${worldId}' ist nur ein eigenes EVU je Spieler erlaubt.`);
+    this.name = "PublicWorldOperatorLimitError";
   }
 }
 
@@ -52,6 +60,20 @@ export async function foundOperator(
   const account = await getAccount(db, { worldId: input.worldId, keycloakSubject: input.foundingKeycloakSubject });
   if (account === undefined) {
     throw new NoAccountInWorldError(input.worldId);
+  }
+
+  const [world] = await db
+    .select({ worldKind: worlds.worldKind })
+    .from(worlds)
+    .where(eq(worlds.id, input.worldId))
+    .limit(1);
+  if (world?.worldKind === "public") {
+    const [owned] = await db
+      .select({ id: operators.id })
+      .from(operators)
+      .where(and(eq(operators.worldId, input.worldId), eq(operators.foundingAccountId, account.id)))
+      .limit(1);
+    if (owned !== undefined) throw new PublicWorldOperatorLimitError(input.worldId);
   }
 
   const [existing] = await db
