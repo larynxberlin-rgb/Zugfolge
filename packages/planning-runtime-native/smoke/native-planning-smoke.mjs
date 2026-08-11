@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { isAbsolute } from "node:path";
 
+import { loadPlanningRuntime } from "../dist/index.js";
+
 const addonPath = process.env.ZUGFOLGE_PLANNING_RUNTIME_NATIVE_PATH;
 assert.ok(addonPath, "ZUGFOLGE_PLANNING_RUNTIME_NATIVE_PATH fehlt");
 assert.ok(isAbsolute(addonPath), "ZUGFOLGE_PLANNING_RUNTIME_NATIVE_PATH muss absolut sein");
 const addon = createRequire(import.meta.url)(addonPath);
 assert.equal(typeof addon.coordinatePlanningRun, "function");
 assert.equal(typeof addon.applyPlanningAlternative, "function");
+const runtime = loadPlanningRuntime(addonPath);
 
 const request = (id, trainId, number, origin, destination) => ({
   requestNumericId: id,
@@ -55,9 +58,8 @@ const input = {
   requests: [firstRequest, secondRequest],
 };
 
-const coordinate = (value) => JSON.parse(addon.coordinatePlanningRun(JSON.stringify(value)));
-const initial = coordinate(input);
-const reordered = coordinate({ ...input, requests: [...input.requests].reverse() });
+const initial = runtime.coordinate(input);
+const reordered = runtime.coordinate({ ...input, requests: [...input.requests].reverse() });
 assert.equal(initial.schemaVersion, "zugfolge-planning-runtime-result/v1");
 assert.equal(initial.projection.schemaVersion, "planning-projection/v1");
 assert.equal(initial.projection.projectionRevision, 1);
@@ -78,19 +80,19 @@ const command = {
   trainId: conflict.alternative.trainId,
   departureShiftS: conflict.alternative.departureShiftS,
 };
-const apply = (state, commandId, payload) => JSON.parse(
-  addon.applyPlanningAlternative(JSON.stringify(state), commandId, JSON.stringify(payload)),
-);
-const applied = apply(initial.state, "native-smoke-command", command);
+const applied = runtime.applyAlternative(initial.state, "native-smoke-command", command);
 assert.equal(applied.projection.projectionRevision, 2);
 assert.deepEqual(applied.projection.conflicts, []);
 assert.equal(applied.idempotentReplay, false);
-const replay = apply(applied.state, "native-smoke-command", command);
+const replay = runtime.applyAlternative(applied.state, "native-smoke-command", command);
 assert.equal(replay.idempotentReplay, true);
 assert.equal(replay.stateHash, applied.stateHash);
 assert.deepEqual(replay.projection, applied.projection);
 assert.throws(
-  () => apply(initial.state, "forged-command", { ...command, departureShiftS: command.departureShiftS + 1 }),
+  () => runtime.applyAlternative(initial.state, "forged-command", {
+    ...command,
+    departureShiftS: command.departureShiftS + 1,
+  }),
   /alternative_mismatch/,
 );
 

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  PLANNING_APPLY_ALTERNATIVE_SCHEMA,
   PLANNING_COORDINATE_SCHEMA,
   planningRuntimeFromAddon,
   type PlanningCoordinateCommand,
+  type PlanningRuntimeState,
 } from "./index.js";
 
 const input = {
@@ -63,5 +65,23 @@ describe("native M3 ABI boundary", () => {
       applyPlanningAlternative: () => result(input.worldId, 2),
     });
     expect(() => runtime.coordinate(input)).toThrow(/monotone Fachrevision/);
+  });
+
+  it("preserves a domain error returned by the real napi-rs ABI", () => {
+    const domainError = new Error("alternative_mismatch: payload differs from the offered alternative");
+    const runtime = planningRuntimeFromAddon({
+      coordinatePlanningRun: () => result(input.worldId),
+      applyPlanningAlternative: () => domainError,
+    });
+    const state = JSON.parse(result(input.worldId)) as { state: PlanningRuntimeState };
+
+    expect(() => runtime.applyAlternative(state.state, "command-1", {
+      schemaVersion: PLANNING_APPLY_ALTERNATIVE_SCHEMA,
+      projectionRevision: 1,
+      alternativeId: "alternative-1",
+      conflictId: "conflict-1",
+      trainId: "train-1",
+      departureShiftS: 60,
+    })).toThrow(domainError);
   });
 });

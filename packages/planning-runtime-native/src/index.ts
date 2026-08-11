@@ -120,12 +120,12 @@ export interface PlanningRuntime {
 }
 
 export interface PlanningNativeAddon {
-  readonly coordinatePlanningRun: (inputJson: string) => string;
+  readonly coordinatePlanningRun: (inputJson: string) => unknown;
   readonly applyPlanningAlternative: (
     stateJson: string,
     commandId: string,
     commandJson: string,
-  ) => string;
+  ) => unknown;
 }
 
 function invariant(condition: unknown, message: string): asserts condition {
@@ -140,8 +140,14 @@ function safeInteger(value: unknown, name: string): asserts value is number {
   invariant(Number.isSafeInteger(value) && (value as number) >= 0, `${name} ist keine nichtnegative sichere Ganzzahl.`);
 }
 
-function decodeResult(json: string, expectedWorldId: string): PlanningRuntimeResult {
-  const value: unknown = JSON.parse(json);
+function nativeResultJson(value: unknown, operation: string): string {
+  if (value instanceof Error) throw value;
+  invariant(typeof value === "string", `${operation} lieferte weder JSON noch einen JavaScript-Fehler.`);
+  return value;
+}
+
+function decodeResult(nativeResult: unknown, expectedWorldId: string, operation: string): PlanningRuntimeResult {
+  const value: unknown = JSON.parse(nativeResultJson(nativeResult, operation));
   record(value, "Rust-Planning-Ergebnis");
   invariant(value["schemaVersion"] === PLANNING_RUNTIME_RESULT_SCHEMA, "Rust-Planning-Ergebnis hat ein unbekanntes Schema.");
   record(value["state"], "Rust-Planning-Zustand");
@@ -163,7 +169,11 @@ export function planningRuntimeFromAddon(addon: PlanningNativeAddon): PlanningRu
   return Object.freeze({
     coordinate(input: PlanningCoordinateCommand) {
       invariant(input.schemaVersion === PLANNING_COORDINATE_SCHEMA, "PlanningRun-Eingang hat ein unbekanntes Schema.");
-      const result = decodeResult(addon.coordinatePlanningRun(JSON.stringify(input)), input.worldId);
+      const result = decodeResult(
+        addon.coordinatePlanningRun(JSON.stringify(input)),
+        input.worldId,
+        "Rust-PlanningRun",
+      );
       const expectedRevision = input.expectedProjectionRevision === null ? 1 : input.expectedProjectionRevision + 1;
       invariant(result.projection.projectionRevision === expectedRevision, "Rust-PlanningRun lieferte keine monotone Fachrevision.");
       invariant(!result.idempotentReplay, "Eine neue PlanningRun-Koordinierung darf kein Apply-Replay behaupten.");
@@ -180,6 +190,7 @@ export function planningRuntimeFromAddon(addon: PlanningNativeAddon): PlanningRu
       const result = decodeResult(
         addon.applyPlanningAlternative(JSON.stringify(state), commandId, JSON.stringify(command)),
         state.worldId,
+        "Rust-Planning-Alternative",
       );
       invariant(
         result.idempotentReplay || result.projection.projectionRevision === state.projectionRevision + 1,
