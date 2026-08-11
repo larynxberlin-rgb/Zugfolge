@@ -30,16 +30,35 @@ einen lokalen Ersatznachweis als erfuellt dargestellt.
 | M6 Integration | TypeScript-Persistenz ist integriert; der verbindliche Rust-Uebergang fehlt. | M6.7-E2E ueber den echten Single-Writer. |
 | M9 Kern, Integration | Alle direkten M9-Teilabschnitte stehen noch auf `offen`; vorhanden ist nur die vorgezogene Health-Grundlage. M7 und M8 sind nicht begonnen und laut Auftrag ausserhalb des Scopes. | Den Manifestwiderspruch korrigieren. M9 darf weder als begonnen noch als abgeschlossen gelten; externe CI-, Ruleset-, Monitoring-, Backup-/Restore- und Alpha-Nachweise bleiben getrennt. |
 
-## Bereits bekannte externe Voraussetzungen
+## Ergebnis auf PR #66
 
-- GitHub Actions startet wegen des Account-/Billing-Locks nicht (Issue #29).
-- Das `main`-Ruleset mit Pflichtchecks braucht Repository-Administration
-  (Issue #55).
-- Die erste GitHub-Milestone-Synchronisierung braucht einen lauffaehigen
-  Actions-Lauf (Issue #56).
-- M1.13 braucht freigegebene, belastbare Infrastruktur-/Fahrzeugprofile, einen
-  nicht zur Kalibrierung verwendeten technischen Validierungssatz und die
-  Signatur der benannten Release-Verantwortung (Issue #48).
+Der finale Implementierungsstand ist Commit
+[`e289511`](https://github.com/larynxberlin-rgb/Zugfolge/commit/e289511bf12832b320b5c18718939de6df2e9e92)
+auf [PR #66](https://github.com/larynxberlin-rgb/Zugfolge/pull/66). Run
+[`31482747553`](https://github.com/larynxberlin-rgb/Zugfolge/actions/runs/31482747553)
+lief auf genau diesem Head vollständig grün. Dazu gehören der echte
+Linux-NAPI-Pfad, der mit PGlite komponierte Planning-Worker, der M6-End-to-End-
+Fall, Postgres/API-Integration, Rust und Determinismus, TypeScript, Wächter,
+Lastziel, Referenzkorpus, beide Lizenzprüfungen und der Node-Sicherheits-Scan.
 
-Diese Punkte koennen Code-Abnahmen nicht ersetzen und werden nur nach einem
-wirklich ausgefuehrten externen Nachweis geschlossen.
+| Bereich | Erreichter Stand | Ausgeführter Beleg | Endstatus |
+|---|---|---|---|
+| M1.13 | Durchgehende Hashkette von Capture und Normalisierung über disjunkte Kalibrierungs-/Validierungsbestände bis Report, Release und Signaturbundle; negative Qualifikationen und Manipulation bleiben gesperrt | 24 fokussierte Tests lokal und Referenzkorpus-Job in Run 31482747553 grün | blockiert — reale unabhängige Pilotqualifikation und Signatur fehlen in #48 |
+| M2 Betrieb/Abnahme | Weltisolation, Authentifizierung, Ledger, Postfach, Datenschutz und Replay gemeinsam geprüft | lokaler Vollstack sowie Postgres/API-Job in Run 31482747553 grün | nachgewiesen |
+| M3.10 | Zwei kontogebundene Trassenanträge, echter Rust-PlanningRun, atomarer Worker, revisionsgebundene Alternative und echter Client | Planning-NAPI-Smoke, PGlite-Worker, TypeScript und API-Job in Run 31482747553 grün | erledigt / nachgewiesen |
+| M4.6 | Persistenter Regional-Single-Writer, Commit-vor-Fanout, authentifiziertes Snapshot/SSE, restartfester `streamId:sequence`-Cursor und Client-Re-Snapshot/Interpolation | echter Regional-NAPI-Smoke, API-/Clienttests und Lastjob in Run 31482747553 grün | erledigt / nachgewiesen |
+| M5 Integration/Abnahme | Rust friert Authority-Fakten ein und leitet Mobilisierung nur aus Intent-Kommandos ab; Checkpoint, Replay-Beleg und Snapshot werden atomar persistiert | produktive M5-HTTP-Routen und historischer Replay im M6-Native-End-to-End von Run 31482747553 grün | nachgewiesen |
+| M6.7 | Rust-Single-Writer für Stichtag, Wiedergewinn, Wechsel und Mobilisierungsfehler; atomare Events mit Ledger-, Postfach- und Livemap-Projektion | echter M5→M6-NAPI-/PGlite-End-to-End in Run 31482747553 grün | erledigt / nachgewiesen |
+| M9 Kern/Integration | Keine M9-Arbeit begonnen; die vorhandene Health-Grundlage beginnt keinen direkten M9-Teilabschnitt | Manifestwiderspruch gegen die weiterhin offenen M9-Zeilen korrigiert | nicht begonnen; Betrieb/Abnahme durch Abhängigkeiten blockiert |
+
+## Verbleibende externe Voraussetzung
+
+- Issue #48 bleibt offen: M1.13 braucht unabhängig freigegebene
+  Infrastruktur-/Fahrzeugprofile, einen nicht zur Kalibrierung verwendeten
+  technischen Validierungssatz und die Signatur der benannten
+  Release-Verantwortung. Kein synthetischer Test ersetzt diesen Pilotbeweis.
+
+Die früheren Voraussetzungen #29, #55 und #56 sind geschlossen. GitHub Actions
+läuft wieder; Ruleset und Milestone-Synchronisierung sind daher keine aktuellen
+Blocker mehr. Issue #34 wird durch die auf PR #66 grün nachgewiesene M4.6-
+Implementierung geschlossen, sobald der PR übernommen wird.

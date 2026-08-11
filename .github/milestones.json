@@ -34,7 +34,7 @@
       "goal": "Entscheidungen, Monorepo, CI, Rechte-Gates und reproduzierbare Qualitaetsbarrieren tragen.",
       "area": "area:ci",
       "dependsOn": [],
-      "status": { "core": "verified", "integration": "blocked", "operations": "not_applicable", "acceptance": "blocked" },
+      "status": { "core": "verified", "integration": "verified", "operations": "not_applicable", "acceptance": "verified" },
       "evidence": [
         { "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" },
         { "label": "CI-Definition", "url": ".github/workflows/ci.yml" }
@@ -60,8 +60,12 @@
       "goal": "Einen lizenzgeprueften, reproduzierbaren und extern signierten InfraRelease der Pilotregion liefern.",
       "area": "area:infrastructure",
       "dependsOn": ["M0"],
-      "status": { "core": "in_progress", "integration": "in_progress", "operations": "blocked", "acceptance": "blocked" },
-      "evidence": [{ "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" }],
+      "status": { "core": "verified", "integration": "blocked", "operations": "blocked", "acceptance": "blocked" },
+      "evidence": [
+        { "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" },
+        { "label": "Referenzkorpus und Signatur-Gate", "url": "docs/referenzkorpus.md" },
+        { "label": "Abnahmeprotokoll PR #66", "url": "docs/in-progress-inventory-2026-08-11.md" }
+      ],
       "items": [
         { "number": 6, "kind": "pull_request" },
         { "number": 7, "kind": "pull_request" },
@@ -79,8 +83,12 @@
       "goal": "Konten, Weltisolation, EVU, Ledger, Postfach und Datenschutz als durchgaengiges Weltgeruest nachweisen.",
       "area": "area:identity",
       "dependsOn": ["M0"],
-      "status": { "core": "verified", "integration": "verified", "operations": "in_progress", "acceptance": "in_progress" },
-      "evidence": [{ "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" }],
+      "status": { "core": "verified", "integration": "verified", "operations": "verified", "acceptance": "verified" },
+      "evidence": [
+        { "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" },
+        { "label": "Weltgeruest", "url": "docs/weltgeruest.md" },
+        { "label": "Abnahmeprotokoll PR #66", "url": "docs/in-progress-inventory-2026-08-11.md" }
+      ],
       "items": [
         { "number": 13, "kind": "pull_request" },
         { "number": 14, "kind": "pull_request" },
@@ -98,8 +106,12 @@
       "goal": "Konkurrierende Trassen serverautoritaer planen, erklaeren und ueber den echten Client verbindlich anwenden.",
       "area": "area:planning",
       "dependsOn": ["M1", "M2"],
-      "status": { "core": "verified", "integration": "in_progress", "operations": "blocked", "acceptance": "blocked" },
-      "evidence": [{ "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" }],
+      "status": { "core": "verified", "integration": "verified", "operations": "verified", "acceptance": "verified" },
+      "evidence": [
+        { "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" },
+        { "label": "Produktive Planning-Grenze", "url": "docs/infrastruktur.md" },
+        { "label": "Abnahmeprotokoll PR #66", "url": "docs/in-progress-inventory-2026-08-11.md" }
+      ],
       "items": [
         { "number": 17, "kind": "pull_request" },
         { "number": 20, "kind": "pull_request" },
@@ -114,8 +126,12 @@
       "goal": "Simulation, persistentes Replay und robuste Livemap fuer den 24-Stunden-Betrieb integrieren.",
       "area": "area:simulation",
       "dependsOn": ["M3"],
-      "status": { "core": "verified", "integration": "in_progress", "operations": "blocked", "acceptance": "blocked" },
-      "evidence": [{ "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" }],
+      "status": { "core": "verified", "integration": "verified", "operations": "verified", "acceptance": "verified" },
+      "evidence": [
+        { "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" },
+        { "label": "Simulation und Streaming", "url": "docs/simulation.md" },
+        { "label": "Abnahmeprotokoll PR #66", "url": "docs/in-progress-inventory-2026-08-11.md" }
+      ],
       "items": [
         { "number": 22, "kind": "pull_request" },
         { "number": 34, "kind": "issue", "labels": ["area:livemap", "type:bug", "priority:p0"] },
@@ -131,8 +147,12 @@
       "goal": "Flotte, Personal, Wartung und Versorgung durchgaengig und reproduzierbar planbar machen.",
       "area": "area:fleet",
       "dependsOn": ["M1", "M2"],
-      "status": { "core": "verified", "integration": "in_progress", "operations": "blocked", "acceptance": "in_progress" },
-      "evidence": [{ "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" }],
+      "status": { "core": "verified", "integration": "verified", "operations": "verified", "acceptance": "verified" },
+      "evidence": [
+        { "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" },
+        { "label": "Autoritativer Flottenpfad", "url": "docs/economy-runtime.md" },
+        { "label": "Abnahmeprotokoll PR #66", "url": "docs/in-progress-inventory-2026-08-11.md" }
+      ],
       "items": [
         { "number": 24, "kind": "pull_request" },
         { "number": 25, "kind": "pull_request" },
@@ -147,8 +167,12 @@
       "goal": "Ausschreibung, Mobilisierung, Vertrag und Finanzfolgen als persistenten, integrierten Ablauf nachweisen.",
       "area": "area:economy",
       "dependsOn": ["M2", "M5"],
-      "status": { "core": "verified", "integration": "in_progress", "operations": "blocked", "acceptance": "blocked" },
-      "evidence": [{ "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" }],
+      "status": { "core": "verified", "integration": "verified", "operations": "verified", "acceptance": "verified" },
+      "evidence": [
+        { "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" },
+        { "label": "Rust-Single-Writer und Plattformeffekte", "url": "docs/economy-runtime.md" },
+        { "label": "Abnahmeprotokoll PR #66", "url": "docs/in-progress-inventory-2026-08-11.md" }
+      ],
       "items": [
         { "number": 15, "kind": "pull_request" },
         { "number": 27, "kind": "pull_request" },
@@ -194,8 +218,8 @@
       "goal": "Observability, Wiederherstellung, Schutzmechanismen und eine belastbare geschlossene Alpha nachweisen.",
       "area": "area:operations",
       "dependsOn": ["M0", "M4", "M6", "M7", "M8"],
-      "status": { "core": "in_progress", "integration": "in_progress", "operations": "blocked", "acceptance": "blocked" },
-      "evidence": [{ "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" }],
+      "status": { "core": "not_started", "integration": "not_started", "operations": "blocked", "acceptance": "blocked" },
+      "evidence": [],
       "items": [
         { "number": 19, "kind": "pull_request", "labels": ["area:health", "type:delivery"] },
         { "number": 37, "kind": "issue", "labels": ["area:health", "type:bug", "priority:p0"] },

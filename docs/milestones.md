@@ -63,15 +63,14 @@ Ergebnis vorzeigbar ist. Bislang erledigt:
   mit Herkunft, Lizenz, Prüfsumme und Confidence je Attribut, siehe
   [`betriebsgraph.md`](betriebsgraph.md) Abschnitt 17 und
   [`crates/zugfolge-infra/src/release.rs`](../crates/zugfolge-infra/src/release.rs);
-M1.13 ist **in Arbeit**: Werkzeug, echter GTFS.DE-Capture, Rohdaten-Hashes,
-Trennung von technischer Referenz, Haltezeit und Fahrplanreserve,
-Abweichungsreport sowie Ed25519-Gate stehen. Der korrigierte Pilotlauf nutzt
-eine manuelle Trassenfinder-Einzelreferenz von 1.260 Sekunden und besteht nach
-deterministischer Abschnittskalibrierung mit 1.263 Sekunden. Er bleibt jedoch
-korrekt `calibration-only`, weil derselbe Wert für Kalibrierung und Vergleich
-dient. Für den M1-Gesamtbeweis fehlen eine unabhängige Validierung auf
-belastbaren Infrastrukturprofilen und das mit dem Release-Schlüssel signierte
-Artefakt. Siehe
+M1.13 ist **blockiert**: Die reproduzierbare Werkzeugkette trennt technische
+Referenz, GTFS-Fahrplan-Holdout, Haltezeit und Fahrplanreserve, erzwingt
+disjunkte eingefrorene Kalibrierungs- und Validierungsbestände und bindet alle
+Artefakte bis zum Signaturbundle durch SHA-256. Negative oder unzureichende
+Ergebnisse bleiben am Ed25519-Gate gesperrt. Der reale Pilot bleibt jedoch
+korrekt `calibration-only`, solange unabhängig freigegebene Infrastruktur- und
+Fahrzeugprofile sowie die Signatur der benannten Release-Verantwortung aus
+Issue #48 fehlen. Siehe
 [`referenzkorpus.md`](referenzkorpus.md).
 
 - **M2.1** — Keycloak-Integration, Konten, Rollen, Weltzugänge, siehe
@@ -321,20 +320,25 @@ gesichert; mit M1.12 pinnt `rust-toolchain.toml` zusätzlich die Rust-Version,
 damit die Reproduzierbarkeit nicht an der Toolchain hängt. Siehe
 `betriebsgraph.md` Abschnitt 17.
 
-**M1.13 trägt:** `tools/reference-corpus` erfasst Sollfahrpläne aus dem unter CC
-BY 4.0 freigegebenen GTFS.DE-Regionalverkehrsfeed, hasht ZIP und Tabellen und
-paart nur Halte derselben `trip_id`. Linie, Richtung, Haltefolge und
+**Die Werkzeugkette von M1.13 trägt; der Pilotbeweis bleibt blockiert:**
+`tools/reference-corpus` erfasst Sollfahrpläne aus dem unter CC BY 4.0
+freigegebenen GTFS.DE-Regionalverkehrsfeed, hasht ZIP und Tabellen und paart nur
+Halte derselben `trip_id`. Linie, Richtung, Haltefolge und
 `TrainCharacteristics` gehören zum Gruppenschlüssel. GTFS-P20, Median,
 Mittelwert und Haltezeit bleiben ausdrücklich Fahrplanwerte; die technische
-Referenz stammt getrennt aus einer manuell protokollierten
-Trassenfinder-Einzelabfrage. Der Pilot-`InfraRelease`
-`994ff2a6cc06bc9ce324f3691d30645765d574f44f09ea4f102e44c1ccd536d3`
-rechnet nach deterministischer Abschnittskalibrierung 1.263 statt 1.260
-Sekunden. Der `DeviationReport` besteht bei ±63 Sekunden, trägt aber
-`qualification: calibration-only`; `releaseQualified` bleibt falsch und das
-Ed25519-Gate blockiert die Signatur. So werden Kalibrierung und unabhängige
-Release-Validierung nicht verwechselt. Der Trassenfinder bleibt auf
-`entwicklung` (E10). Siehe `betriebsgraph.md` Abschnitt 18 und
+Referenz ist ein getrenntes Artefakt. `artifact-chain.mjs` bindet Capture,
+normalisierte Tabellen, disjunkte Kalibrierungs- und Validierungsbestände,
+Modell, Report, Release und Bundle durchgehend per Hash. Negative Tests sperren
+Überlappung, unzureichende Stichproben, Toleranzverletzung und jede
+nachträgliche Manipulation.
+
+Der Linux-Job von Run
+[`31482747553`](https://github.com/larynxberlin-rgb/Zugfolge/actions/runs/31482747553)
+hat diese technische Kette auf Commit `e289511` erfolgreich ausgeführt. Der
+reale Pilot bleibt dennoch `calibration-only`: unabhängig freigegebene
+Infrastruktur- und Fahrzeugwerte sowie die Signatur der benannten
+Release-Verantwortung fehlen weiterhin in Issue #48. Der Trassenfinder bleibt
+auf `entwicklung` (E10). Siehe `betriebsgraph.md` Abschnitt 18 und
 [`referenzkorpus.md`](referenzkorpus.md).
 
 Ausführlich: [`betriebsgraph.md`](betriebsgraph.md).
@@ -450,7 +454,7 @@ sich vollständig auskunfts- und löschbar behandeln. Siehe
 | 3.7 | Ad-hoc-Trassen aus Restkapazität, Stornierung, Verfall bei Nichtnutzung | M | erledigt |
 | 3.8 | Rahmenverträge mit Kapazitätsdeckel | M | erledigt |
 | 3.9 | **Gestaltungssystem konkretisieren** (`design.md` 2.7): Farbwerte gegen reale Datendichte prüfen, Komponentenbibliothek, Icon-Set, beide Dichtestufen. Erste echte Oberfläche, deshalb hier und nicht früher | L | erledigt |
-| 3.10 | Bildfahrplan-UI, Sperrzeitentreppe, Konflikterklärung im Client — Konvention vor Originalität | L | in Arbeit |
+| 3.10 | Bildfahrplan-UI, Sperrzeitentreppe, Konflikterklärung im Client — Konvention vor Originalität | L | erledigt |
 
 > **Beweis:** Zwei Spieler beantragen konkurrierende Trassen. Das System
 > entscheidet nachvollziehbar, bietet eine Alternative an, und die Entscheidung
@@ -496,14 +500,21 @@ abgearbeitet:
 
 **M3.9 und M3.10 tragen:** `packages/design-system` konkretisiert Palette,
 Form-, Tabellen-, Feedback- und Navigationsbausteine, Icons, Fokusvertrag und
-beide Dichtestufen. `apps/game-web` setzt den konventionellen Bildfahrplan auf
-einem typisierten Client-Datenvertrag um: dynamische Weg-/Zeitskalierung,
-Tastatur-Zugauswahl, alle sechs Sperrzeitanteile, mehrere Konflikte sowie
-Zugfolge- und Fahrstraßenausschluss-Erklärungen. Eine angebotene, als
-konfliktfrei hinterlegte Alternative verschiebt Zuglauf und Belegungsprofil
-unveränderlich; unbeteiligte Konflikte bleiben erhalten. Farbe bleibt stets
-durch Text, Symbol oder Musterung redundant. Damit ist M3 vollständig
-abgeschlossen.
+beide Dichtestufen. Zwei authentifizierte Konten stellen getrennte,
+weltgebundene Trassenanträge. `packages/planning-worker` lädt sie mit dem
+serverseitig eingefrorenen Infrastruktur-Release, führt den echten Rust-
+`PlanningRun` über die fail-closed napi-rs-Grenze aus und schreibt Runtime-
+Zustand und `planning.diagram` atomar. Angebote sind revisionsgebunden; eine
+angewandte Alternative wird erneut durch Rust geprüft und als höhere
+Projektion persistiert.
+
+`apps/game-web` lädt diese Projektion über die echte API und zeigt Bildfahrplan,
+alle sechs Sperrzeitanteile, Ressource, Zeitfenster, beteiligte Züge,
+Konfliktart, Erklärung und Alternative. Lade-, Leer- und Fehlerzustand sind
+robust; Farbe bleibt durch Text, Symbol oder Musterung redundant. Run
+[`31482747553`](https://github.com/larynxberlin-rgb/Zugfolge/actions/runs/31482747553)
+beweist auf `e289511` den echten PlanningRun-Smoke, Apply/Replay und den mit
+PGlite komponierten Worker. Damit ist M3.10 reproduzierbar nachgewiesen.
 
 ---
 
@@ -516,7 +527,7 @@ abgeschlossen.
 | 4.3 | Verspätungs**propagation**: Regelwiderstände, Haltezeiten, Anschlussverzug. Ereignisursachen kommen erst in M8 — hier geht es um Fortpflanzung, nicht um Entstehung | L | erledigt |
 | 4.4 | **Dispositionsschnittstelle im Kern**: definierter Entscheidungspunkt je Ereignis, zunächst mit konservativem Standardverhalten. Macht M7 zu einer Implementierung statt zu einer Operation am offenen Herzen | M | erledigt |
 | 4.5 | Regionsübergabe mit Bestätigungsprotokoll | M | erledigt |
-| 4.6 | Delta-Streaming: Initialsnapshot, Sequenz-Deltas, Interpolation im Client | M | in Arbeit |
+| 4.6 | Delta-Streaming: Initialsnapshot, Sequenz-Deltas, Interpolation im Client | M | erledigt |
 | 4.7 | Eigene Dark-Vector-Tiles, Pipeline → PMTiles — Netz zurückhaltend, Verkehr dominant; ausgeschlossene Netze als blasse Kontextlinien | M | erledigt |
 | 4.8 | Livemap-Frontend inklusive Zuglaufansicht und Sichtbarkeitsregeln; Zustandsdarstellung nach `design.md` 2.4, **Normalzustand farblos** | L | erledigt |
 | 4.9 | Event-Log, Replay, Determinismus-Test in CI | M | erledigt |
@@ -525,6 +536,18 @@ abgeschlossen.
 
 > **Beweis:** 200 simulierte Züge laufen 24 Stunden stabil, die Karte zeigt sie
 > flüssig, und ein Replay erzeugt bitgleiche Zustände.
+
+**M4.6 trägt:** `zugfolge-sim-runtime` und der
+`RegionalSimulationWorker` restaurieren je Welt und Region den autoritativen
+Rust-Zustand, prüfen Revision, Hash und Producersequenz und persistieren Zustand
+und Events vor jeder Livemap-Publikation atomar. Snapshot und Fetch-SSE sind
+authentifiziert und weltisoliert. `streamId:sequence`, atomare Subscription,
+begrenzte Queue, Heartbeats, Cleanup und gezielter Re-Snapshot schließen Race,
+Lücken und Restart-Verwechslungen. Der Client interpoliert nur die Anzeige und
+ändert keinen Fachzustand. Run
+[`31482747553`](https://github.com/larynxberlin-rgb/Zugfolge/actions/runs/31482747553)
+beweist auf `e289511` den echten Linux-NAPI-Publisher, Postgres/API-Pfad,
+Resume/Reset und das Lastziel.
 
 ---
 
@@ -595,6 +618,17 @@ und liefern genau einmal zum kanalabhängigen Termin. Der Dreiwochen-Test
 zulässige Fahrplanperiode durch und belegt 88 Prozent Güte gegenüber derselben
 Handplanung; der typisierte Freigabeprüfer verhindert dabei jede Fahrt mit
 Umlauf-, Personal-, Wartungs- oder Versorgungsverstoß.
+
+Der produktive Flottenpfad nimmt keine fertigen Mobilisierungssnapshots mehr
+entgegen. Rust friert einen serververtrauenswürdigen Authority-Release ein und
+leitet Formation, Personalbereitschaft, Trassenstatus und den gehashten
+Mobilisierungssnapshot ausschließlich aus Intent-Kommandos ab. Zustand,
+kompakter Replay-Beleg, historischer Checkpoint und Snapshot werden atomar
+persistiert. Run
+[`31482747553`](https://github.com/larynxberlin-rgb/Zugfolge/actions/runs/31482747553)
+beweist auf `e289511` diesen M5-Pfad über die produktiven HTTP-Routen bis zum
+M6-Single-Writer, Ledger, Postfach und zur Livemap.
+
 > **Beweis:** Ein Kurzzeitspieler stellt sein Versorgungsprofil auf Automatik
 > und fährt eine Periode ohne einen Ausfall wegen Frist, Wasser oder Entsorgung.
 > Ein Detailverliebter plant dieselbe Flotte von Hand und spart nachweisbar rund
@@ -616,7 +650,7 @@ Umlauf-, Personal-, Wartungs- oder Versorgungsverstoß.
 | 6.5 | **Auskömmlichkeitsgrenze**: vor Angebotsöffnung veröffentlicht, deterministisch aus `EconomyRelease` berechnet | M | erledigt |
 | 6.6 | Angebotsabgabe mit wenigen Feldern (E19): Bestellerentgelt, Fahrzeugkonzept, optionale Qualitätszusagen. **Angebotsfrist 3–7 Tage, kleine Lose 24–48 Stunden, Zuschlag sofort bei Fristende.** Eigene Wertungsaufschlüsselung vor Abgabe sichtbar; Angebotsassistent als Automatikstufe | L | erledigt |
 | 6.6a | **Fahrzeugvorgaben der Ausschreibung**: Mindestsitzplätze, Klassenanteil, Barrierefreiheit, Fahrrad- und Rollstuhlplätze, Ausstattung — geprüft gegen die Fahrzeugkonfiguration aus M5.1a | M | erledigt |
-| 6.7 | **Betriebsübergang** (`wirtschaft.md` 3): Mobilisierungsphase mit Nachweispflicht auf Fahrzeuge, Personal und Trassen; Altbetreiber fährt mit vollen Pflichten bis zum Fahrplanstichtag; nahtlose Fortsetzung, wenn der Bisherige gewinnt; Eigenbetrieb plus Vertragsstrafe, wenn die Mobilisierung scheitert | L | in Arbeit |
+| 6.7 | **Betriebsübergang** (`wirtschaft.md` 3): Mobilisierungsphase mit Nachweispflicht auf Fahrzeuge, Personal und Trassen; Altbetreiber fährt mit vollen Pflichten bis zum Fahrplanstichtag; nahtlose Fortsetzung, wenn der Bisherige gewinnt; Eigenbetrieb plus Vertragsstrafe, wenn die Mobilisierung scheitert | L | erledigt |
 | 6.8 | Verkehrsvertrag im Betrieb: Bestellerentgelt, Bonus, Pönale, Nachweise | M | erledigt |
 | 6.9 | **Eigenbetrieb**: Übernahme, Fahrzeugpool, konservatives Standard-Regelwerk, Kennzeichnung auf der Livemap | L | erledigt |
 | 6.10 | **Nachbesserungsleiter**: Notvergabe auf zwei Perioden befristet, danach Neuausschreibung mit verbessertem Paket | M | erledigt |
@@ -676,9 +710,13 @@ einschließlich aller fünf Eskalationsstufen, echter Ledgerbuchung und echter
 Postfachzustellung als Abschlussbeweis aus. Die unabhängige
 Anforderung-zu-Nachweis-Matrix steht in [`m6-audit.md`](m6-audit.md). Der
 persistente Frist-/Outbox-Worker ist in
-[`economy-runtime.md`](economy-runtime.md) dokumentiert. M6.7 bleibt bis zum
-Produktivnachweis des Rust-Single-Writers bewusst `in Arbeit`; M6 ist daher
-noch nicht als vollständiger Betriebsbeweis abgeschlossen.
+[`economy-runtime.md`](economy-runtime.md) dokumentiert. Run
+[`31482747553`](https://github.com/larynxberlin-rgb/Zugfolge/actions/runs/31482747553)
+führt auf `e289511` den echten Rust-Single-Writer über die produktiven
+M5-HTTP-Routen aus: Altbetreiberpflicht, Wiedergewinn, erfolgreicher Wechsel,
+gescheiterte Mobilisierung, Eigenbetrieb, Pönale, Ledger, Postfach,
+Livemap-Kennzeichnung sowie deterministischer Replay werden gemeinsam
+nachgewiesen. Damit ist M6.7 als Betriebsbeweis abgeschlossen.
 
 ---
 

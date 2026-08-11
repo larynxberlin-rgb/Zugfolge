@@ -10,16 +10,16 @@ Kalendertermine gesetzt.
 
 | Milestone | Kern | Integration | Betrieb | Abnahme | Issues / PRs | Abhaengigkeiten |
 |---|---|---|---|---|---:|---|
-| M0 | nachgewiesen | blockiert | nicht relevant | blockiert | 6 / 6 | — |
-| M1 | in Arbeit | in Arbeit | blockiert | blockiert | 1 / 7 | M0 |
-| M2 | nachgewiesen | nachgewiesen | in Arbeit | in Arbeit | 5 / 3 | M0 |
-| M3 | nachgewiesen | in Arbeit | blockiert | blockiert | 1 / 4 | M1, M2 |
-| M4 | nachgewiesen | in Arbeit | blockiert | blockiert | 5 / 1 | M3 |
-| M5 | nachgewiesen | in Arbeit | blockiert | in Arbeit | 2 / 3 | M1, M2 |
-| M6 | nachgewiesen | in Arbeit | blockiert | blockiert | 10 / 2 | M2, M5 |
+| M0 | nachgewiesen | nachgewiesen | nicht relevant | nachgewiesen | 6 / 6 | — |
+| M1 | nachgewiesen | blockiert | blockiert | blockiert | 1 / 7 | M0 |
+| M2 | nachgewiesen | nachgewiesen | nachgewiesen | nachgewiesen | 5 / 3 | M0 |
+| M3 | nachgewiesen | nachgewiesen | nachgewiesen | nachgewiesen | 1 / 4 | M1, M2 |
+| M4 | nachgewiesen | nachgewiesen | nachgewiesen | nachgewiesen | 5 / 1 | M3 |
+| M5 | nachgewiesen | nachgewiesen | nachgewiesen | nachgewiesen | 2 / 3 | M1, M2 |
+| M6 | nachgewiesen | nachgewiesen | nachgewiesen | nachgewiesen | 10 / 2 | M2, M5 |
 | M7 | nachgewiesen | nachgewiesen | nachgewiesen | nachgewiesen | 0 / 0 | M4, M5, M6 |
 | M8 | offen | offen | offen | offen | 0 / 0 | M4, M7 |
-| M9 | in Arbeit | in Arbeit | blockiert | blockiert | 3 / 2 | M0, M4, M6, M7, M8 |
+| M9 | offen | offen | blockiert | blockiert | 3 / 2 | M0, M4, M6, M7, M8 |
 | M10 | offen | offen | offen | offen | 0 / 0 | M9 |
 | M11 | offen | offen | offen | offen | 0 / 0 | M9 |
 | M12 | offen | offen | offen | offen | 0 / 0 | M6, M10, M11 |
