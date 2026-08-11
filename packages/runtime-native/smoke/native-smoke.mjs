@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 
 import {
+  FLEET_FORMATION_COMMAND_SCHEMA,
+  FLEET_INITIALIZE_SCHEMA,
+  FLEET_PATH_RESERVATION_COMMAND_SCHEMA,
+  FLEET_PERSONNEL_DUTY_COMMAND_SCHEMA,
   OPERATING_INITIALIZE_SCHEMA,
   OPERATING_RESULT_SCHEMA,
   OPERATING_TRANSITION_SCHEMA,
@@ -12,19 +16,143 @@ const worldId = "11111111-1111-4111-8111-111111111111";
 const lotId = "lot-native-smoke";
 const timetableBoundaryS = 604_800;
 const runtime = loadOperatingRuntime();
-const fleetSnapshot = JSON.parse(readFileSync(
-  new URL("../../../crates/zugfolge-fleet/tests/fixtures/mobilization-snapshot-v1.json", import.meta.url),
-  "utf8",
-));
-const fleetHash = readFileSync(
-  new URL("../../../crates/zugfolge-fleet/tests/fixtures/mobilization-snapshot-v1.sha256", import.meta.url),
-  "utf8",
-).trim();
-const fleetVerification = runtime.verifyFleetMobilizationSnapshot(fleetSnapshot);
-assert.equal(fleetVerification.schemaVersion, "zugfolge-fleet-mobilization-verification/v1");
-assert.equal(fleetVerification.worldId, fleetSnapshot.worldId);
-assert.equal(fleetVerification.fleetRevision, fleetSnapshot.revision);
-assert.equal(fleetVerification.snapshotHash, fleetHash);
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value).sort(([left], [right]) =>
+      Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8")),
+    );
+    return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(",")}}`;
+  }
+  assert.ok(value === null || ["string", "boolean", "number"].includes(typeof value));
+  if (typeof value === "number") assert.ok(Number.isSafeInteger(value));
+  return JSON.stringify(value);
+}
+
+const fleetInitialized = runtime.initializeFleet({
+  schemaVersion: FLEET_INITIALIZE_SCHEMA,
+  worldId,
+  producedAt: 0,
+});
+assert.equal(fleetInitialized.state.revision, 0);
+assert.match(fleetInitialized.stateHash, /^[a-f0-9]{64}$/);
+assert.deepEqual(fleetInitialized.snapshot.formations, []);
+
+const privateUseId = "vehicle-\u{e000}";
+const supplementaryId = "vehicle-\u{10000}";
+const formationCommand = {
+  schemaVersion: FLEET_FORMATION_COMMAND_SCHEMA,
+  worldId,
+  commandId: "native-smoke:formation",
+  expectedStateHash: fleetInitialized.stateHash,
+  expectedRevision: 0,
+  atS: 1,
+  formation: {
+    id: "formation-1",
+    operatorId: "operator-incumbent",
+    vehicleIds: [supplementaryId, privateUseId],
+    serviceLineIds: ["S1"],
+    availability: "available",
+    procurement: "delivered",
+    availableFrom: 0,
+    availableUntil: timetableBoundaryS + 1,
+    characteristics: {
+      seats: 120,
+      firstClassBasisPoints: 0,
+      accessible: true,
+      bicyclePlaces: 4,
+      wheelchairPlaces: 1,
+      equipment: ["pis"],
+      vehicleAgeYears: 1,
+      maximumSpeedKph: 160,
+      operatingCostCentsPerTrainKm: 700,
+      homologatedLineIds: ["S1"],
+      maintenanceValidUntil: timetableBoundaryS + 1,
+      traction: "electric",
+      replacementPlan: true,
+    },
+  },
+};
+assert.throws(
+  () => runtime.applyFleetCommand(fleetInitialized.state, {
+    ...formationCommand,
+    snapshot: { worldId: "forged", revision: 999 },
+  }),
+  /invalid_json/,
+  "Rust darf keinen angelieferten Snapshot als Kommandoquelle akzeptieren",
+);
+const fleetFormation = runtime.applyFleetCommand(fleetInitialized.state, formationCommand);
+assert.equal(fleetFormation.state.revision, 1);
+assert.deepEqual(
+  fleetFormation.snapshot.formations[0].vehicleIds,
+  [privateUseId, supplementaryId],
+  "Rust und TypeScript muessen dieselbe UTF-8-Byteordnung verwenden",
+);
+
+const dutyCommand = {
+  schemaVersion: FLEET_PERSONNEL_DUTY_COMMAND_SCHEMA,
+  worldId,
+  commandId: "native-smoke:duty",
+  expectedStateHash: fleetFormation.stateHash,
+  expectedRevision: 1,
+  atS: 2,
+  personnelDuty: {
+    id: "duty-1",
+    operatorId: "operator-incumbent",
+    formationIds: ["formation-1"],
+    status: "ready",
+    validFrom: 0,
+    validUntil: timetableBoundaryS + 1,
+  },
+};
+const tamperedFleetState = structuredClone(fleetFormation.state);
+tamperedFleetState.formations["formation-1"].operatorId = "forged-operator";
+assert.throws(
+  () => runtime.applyFleetCommand(tamperedFleetState, dutyCommand),
+  /state_hash_mismatch/,
+  "das naechste Kommando muss exakt an den vorherigen Rust-Zustandshash gebunden sein",
+);
+const fleetDuty = runtime.applyFleetCommand(fleetFormation.state, dutyCommand);
+const pathCommand = {
+  schemaVersion: FLEET_PATH_RESERVATION_COMMAND_SCHEMA,
+  worldId,
+  commandId: "native-smoke:path",
+  expectedStateHash: fleetDuty.stateHash,
+  expectedRevision: 2,
+  atS: 3,
+  pathReservation: {
+    id: "path-1",
+    operatorId: "operator-incumbent",
+    serviceLineIds: ["S1"],
+    status: "confirmed",
+    validFrom: 0,
+    validUntil: timetableBoundaryS + 1,
+  },
+};
+const fleetResult = runtime.applyFleetCommand(fleetDuty.state, pathCommand);
+assert.equal(fleetResult.state.revision, 3);
+assert.equal(fleetResult.snapshot.revision, 3);
+assert.equal(fleetResult.snapshot.personnelDuties[0].id, "duty-1");
+assert.equal(fleetResult.snapshot.pathReservations[0].id, "path-1");
+assert.equal(
+  fleetResult.snapshotHash,
+  createHash("sha256").update(canonicalJson(fleetResult.snapshot)).digest("hex"),
+  "der Rust-Snapshothash muss die exakt materialisierten Nutzdaten binden",
+);
+const fleetRetry = runtime.applyFleetCommand(fleetResult.state, pathCommand);
+assert.equal(fleetRetry.idempotentReplay, true);
+assert.equal(fleetRetry.stateHash, fleetResult.stateHash);
+assert.equal(fleetRetry.snapshotHash, fleetResult.snapshotHash);
+assert.deepEqual(fleetRetry.state, fleetResult.state);
+assert.throws(
+  () => runtime.applyFleetCommand(fleetInitialized.state, {
+    ...formationCommand,
+    worldId: "22222222-2222-4222-8222-222222222222",
+    commandId: "native-smoke:foreign",
+  }),
+  /Weltisolation/,
+);
 
 const initialization = {
   schemaVersion: OPERATING_INITIALIZE_SCHEMA,
@@ -98,6 +226,10 @@ assert.deepEqual(retry.events, firstResult.events);
 process.stdout.write(
   `${JSON.stringify({
     schemaVersion: retry.schemaVersion,
+    fleetStateHash: fleetRetry.stateHash,
+    fleetSnapshotHash: fleetRetry.snapshotHash,
+    fleetRevision: fleetRetry.state.revision,
+    fleetIdempotentReplay: fleetRetry.idempotentReplay,
     initialStateHash: firstInitialization.stateHash,
     resultingStateHash: retry.stateHash,
     resultingRevision: retry.state.revision,

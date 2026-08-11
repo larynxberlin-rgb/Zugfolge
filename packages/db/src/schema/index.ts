@@ -12,6 +12,7 @@ export * from "./ledger-transactions.js";
 export * from "./mailbox-messages.js";
 export * from "./operators.js";
 export * from "./operating-program-versions.js";
+export * from "./regional-simulation-states.js";
 export * from "./simulation-commands.js";
 export * from "./world-accesses.js";
 export * from "./worlds.js";

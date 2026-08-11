@@ -613,7 +613,9 @@ fn apply_wire_command(
     })
 }
 
-fn build_machine(state: &RuntimeState) -> Result<(Machine, Vec<Applied>), RuntimeError> {
+fn build_machine(
+    state: &RuntimeState,
+) -> Result<(Machine, Vec<WireEvent>, Vec<Applied>), RuntimeError> {
     if state.schema_version != STATE_SCHEMA {
         return Err(RuntimeError::new(
             "wrong_schema",
@@ -649,13 +651,17 @@ fn build_machine(state: &RuntimeState) -> Result<(Machine, Vec<Applied>), Runtim
         external_by_internal: BTreeMap::new(),
         next_internal_id: 1,
     };
+    let mut initial_domain_events = Vec::new();
     for train in &state.initial_trains {
         let internal_id = allocate_train(&mut machine, train)?;
-        machine
-            .simulation
-            .apply(Command::Materialize(make_train(train, internal_id)))?;
+        initial_domain_events.extend(
+            machine
+                .simulation
+                .apply(Command::Materialize(make_train(train, internal_id)))?,
+        );
     }
     machine.publisher = DeltaPublisher::new(&machine.simulation.snapshot());
+    let initial_events = wire_events(state, &machine, initial_domain_events)?;
 
     let mut command_ids = BTreeSet::new();
     let mut applied = Vec::with_capacity(state.commands.len());
@@ -689,7 +695,7 @@ fn build_machine(state: &RuntimeState) -> Result<(Machine, Vec<Applied>), Runtim
             "gespeicherte Simulationszeit stimmt nicht mit Replay ueberein",
         ));
     }
-    Ok((machine, applied))
+    Ok((machine, initial_events, applied))
 }
 
 /// Initialisiert einen echten regionalen M4-Kern samt DeltaPublisher.
@@ -735,7 +741,7 @@ pub fn initialize_regional_simulation(input_json: &str) -> Result<String, Runtim
         publisher_sequence: 0,
         commands: Vec::new(),
     };
-    let (machine, _) = build_machine(&state)?;
+    let (machine, events, _) = build_machine(&state)?;
     let snapshot = wire_snapshot(&state, &machine, machine.simulation.snapshot(), 0)?;
     encode(
         &json!({
@@ -743,6 +749,7 @@ pub fn initialize_regional_simulation(input_json: &str) -> Result<String, Runtim
             "state": state,
             "stateHash": state_hash(&state)?,
             "snapshot": snapshot,
+            "events": events,
         }),
         "Initialisierungsergebnis",
     )
@@ -752,7 +759,7 @@ pub fn initialize_regional_simulation(input_json: &str) -> Result<String, Runtim
 /// liefert den aktuellen Rust-Snapshot fuer einen kalten Prozessstart.
 pub fn restore_regional_simulation(state_json: &str) -> Result<String, RuntimeError> {
     let state: RuntimeState = decode(state_json, "Regionalzustand")?;
-    let (machine, _) = build_machine(&state)?;
+    let (machine, _, _) = build_machine(&state)?;
     let snapshot = wire_snapshot(
         &state,
         &machine,
@@ -792,7 +799,7 @@ pub fn apply_regional_simulation_command(
     }
     validate_identity(&envelope.command_id, "commandId")?;
     let incoming_hash = command_hash(&envelope)?;
-    let (mut machine, replayed) = build_machine(&state)?;
+    let (mut machine, _, replayed) = build_machine(&state)?;
     if let Some((index, stored)) = state
         .commands
         .iter()

@@ -451,6 +451,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "zugfolge-planning-runtime"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "zugfolge-conflict",
+ "zugfolge-determinism",
+ "zugfolge-infra",
+ "zugfolge-planner",
+]
+
+[[package]]
+name = "zugfolge-planning-runtime-napi"
+version = "0.0.0"
+dependencies = [
+ "napi",
+ "napi-build",
+ "napi-derive",
+ "zugfolge-planning-runtime",
+]
+
+[[package]]
 name = "zugfolge-reference-model"
 version = "0.0.0"
 dependencies = [
@@ -491,6 +514,7 @@ dependencies = [
  "napi-build",
  "napi-derive",
  "zugfolge-runtime",
+ "zugfolge-sim-runtime",
 ]
 
 [[package]]

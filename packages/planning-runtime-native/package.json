@@ -1,0 +1,23 @@
+{
+  "name": "@zugfolge/planning-runtime-native",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Fail-closed Node adapter for the native M3 PlanningRun single-writer",
+  "license": "LicenseRef-PolyForm-Shield-1.0.0",
+  "exports": { ".": "./dist/index.js" },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "smoke:native": "node smoke/native-planning-smoke.mjs"
+  },
+  "dependencies": {
+    "@zugfolge/planning-projection": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

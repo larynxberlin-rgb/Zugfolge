@@ -296,6 +296,7 @@ export class LivemapCapacityError extends Error {
 interface RegistryEntry {
   readonly feed: LivemapFeed;
   lastAccessMs: number;
+  initialized: boolean;
 }
 
 /** Registry erzwingt Weltkennung, TTL und ein hartes Speicherlimit. */
@@ -328,13 +329,13 @@ export class LivemapRegistry {
     }
   }
 
-  forWorld(worldId: string): LivemapFeed {
+  #entryForWorld(worldId: string): RegistryEntry {
     const now = this.#now();
     this.#pruneExpired(now);
     const existing = this.#feeds.get(worldId);
     if (existing !== undefined) {
       existing.lastAccessMs = now;
-      return existing.feed;
+      return existing;
     }
     if (this.#feeds.size >= this.#maxFeeds) {
       const evictable = [...this.#feeds.entries()]
@@ -344,8 +345,38 @@ export class LivemapRegistry {
       this.#feeds.delete(evictable[0]);
     }
     const feed = new LivemapFeed(worldId, this.#historyLimit, this.#now);
-    this.#feeds.set(worldId, { feed, lastAccessMs: now });
-    return feed;
+    const entry = { feed, lastAccessMs: now, initialized: false };
+    this.#feeds.set(worldId, entry);
+    return entry;
+  }
+
+  forWorld(worldId: string): LivemapFeed {
+    return this.#entryForWorld(worldId).feed;
+  }
+
+  /**
+   * Wahr erst nach einem autoritativen Rust-Initialsnapshot.
+   *
+   * Das blosse Anlegen eines Feeds oder das Vormerken von Betriebsmarkern
+   * schaltet eine Welt ausdruecklich nicht frei.
+   */
+  isInitialized(worldId: string): boolean {
+    return this.#feeds.get(worldId)?.initialized ?? false;
+  }
+
+  /** Initialisiert den oeffentlichen Feed atomar aus einem Rust-Snapshot. */
+  initializeWorld(
+    worldId: string,
+    snapshot: Omit<LiveSnapshot, "worldId" | "sequence">,
+  ): LiveDelta {
+    const entry = this.#entryForWorld(worldId);
+    const delta = entry.feed.publish({
+      at: snapshot.at,
+      changed: snapshot.trains,
+      removed: [],
+    });
+    entry.initialized = true;
+    return delta;
   }
 
   peekWorld(worldId: string): LivemapFeed | undefined {

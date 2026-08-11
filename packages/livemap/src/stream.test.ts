@@ -184,6 +184,21 @@ describe("LivemapRegistry", () => {
     expect(registry.forWorld("b").snapshot().trains).toEqual([]);
   });
 
+  it("schaltet eine Welt erst durch einen autoritativen Initialsnapshot frei", () => {
+    const registry = new LivemapRegistry();
+    registry.forWorld("a");
+    registry.markPublicOperation("a", ["7"], 1);
+    expect(registry.isInitialized("a")).toBe(false);
+
+    const initial = registry.initializeWorld("a", { at: 2, trains: [train] });
+    expect(initial.sequence).toBe(1);
+    expect(registry.isInitialized("a")).toBe(true);
+    expect(registry.isInitialized("b")).toBe(false);
+    expect(registry.forWorld("a").snapshot().trains[0]?.operationMarker).toEqual(
+      PUBLIC_OPERATION_MARKER,
+    );
+  });
+
   it("projiziert persistierte Eigenbetriebsmarker weltisoliert", () => {
     const registry = new LivemapRegistry();
     registry.setOperationMarker("a", ["7"], PUBLIC_OPERATION_MARKER, 1);

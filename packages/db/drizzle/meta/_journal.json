@@ -71,6 +71,13 @@
       "when": 1786433577566,
       "tag": "0009_early_freak",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786437500185,
+      "tag": "0010_shiny_veda",
+      "breakpoints": true
     }
   ]
 }
