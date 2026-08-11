@@ -17,7 +17,7 @@ use zugfolge_determinism::{
 use zugfolge_infra::{FleetClass, ProtectionSystem, TrainProtection};
 
 use crate::catalog::{
-    ProcurementChannel, VehicleCatalogEntry, VehicleCatalogRelease, VehicleTypeId,
+    OPEN_ENDED_YEAR, ProcurementChannel, VehicleCatalogEntry, VehicleCatalogRelease, VehicleTypeId,
     VehicleWorldSettings,
 };
 use crate::{SimTime, VehicleId, WorldId};
@@ -107,6 +107,93 @@ pub struct VehicleAsset {
 }
 
 impl VehicleAsset {
+    /// Stellt ein Fahrzeug ausschließlich aus serververtrauenswürdigen Fakten
+    /// eines versionierten Authority-Releases wieder her.
+    ///
+    /// Anders als die Beschaffungspfade wertet dieser Restore keine
+    /// clientseitig angelieferten Katalog- oder Mobilisierungs-DTOs aus. Der
+    /// Release wird als domänengetrennter Hash gepinnt, sodass anschließend nur
+    /// Fahrzeuge desselben Releases in einen [`FleetSnapshot`] gelangen.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "der Authority-Release liefert diese getrennten, bereits fachlich belegten Fahrzeugfakten"
+    )]
+    pub fn from_authority_release(
+        release_id: &str,
+        world_id: WorldId,
+        id: VehicleId,
+        vehicle_type_id: VehicleTypeId,
+        class_designation: FleetClass,
+        trade_name: impl Into<String>,
+        build_year: u16,
+        acquisition_year: u16,
+        procurement_channel: ProcurementChannel,
+        approvals: impl IntoIterator<Item = VehicleApproval>,
+        maintenance_deadlines: impl IntoIterator<Item = MaintenanceDeadline>,
+        installed_protection: TrainProtection,
+    ) -> Result<Self, AssetError> {
+        let catalog_checksum = authority_release_checksum(release_id)?;
+        if world_id == 0 {
+            return Err(AssetError::InvalidWorldId);
+        }
+        if id == 0 {
+            return Err(AssetError::InvalidVehicleId);
+        }
+        if vehicle_type_id == 0 {
+            return Err(AssetError::InvalidVehicleTypeId);
+        }
+        if build_year == 0
+            || acquisition_year == 0
+            || build_year > OPEN_ENDED_YEAR
+            || acquisition_year > OPEN_ENDED_YEAR
+        {
+            return Err(AssetError::InvalidYear);
+        }
+        if build_year > acquisition_year {
+            return Err(AssetError::BuildAfterAcquisition);
+        }
+        let trade_name = trade_name.into();
+        if trade_name.trim().is_empty() {
+            return Err(AssetError::EmptyTradeName);
+        }
+
+        let mut approval_set = BTreeSet::new();
+        for approval in approvals {
+            if !approval_set.insert(approval) {
+                return Err(AssetError::DuplicateApproval);
+            }
+        }
+        let mut deadline_map = BTreeMap::new();
+        for deadline in maintenance_deadlines {
+            if deadline_map
+                .insert(deadline.kind.clone(), deadline)
+                .is_some()
+            {
+                return Err(AssetError::DuplicateMaintenanceDeadline);
+            }
+        }
+        let ownership = match procurement_channel {
+            ProcurementChannel::NewBuild | ProcurementChannel::Used => OwnershipStatus::Owned,
+            ProcurementChannel::Leasing => OwnershipStatus::Leased,
+        };
+
+        Ok(Self {
+            world_id,
+            id,
+            vehicle_type_id,
+            class_designation,
+            trade_name,
+            build_year,
+            acquisition_year,
+            procurement_channel,
+            ownership,
+            approvals: approval_set,
+            maintenance_deadlines: deadline_map,
+            installed_protection,
+            catalog_checksum,
+        })
+    }
+
     /// Kauft ein neues Fahrzeug und übernimmt ausschließlich zulässige
     /// Werksoptionen des genauen Typs.
     #[allow(
@@ -379,6 +466,15 @@ fn validate_years(
     Ok(())
 }
 
+fn authority_release_checksum(release_id: &str) -> Result<StateHash, AssetError> {
+    if release_id.trim().is_empty() {
+        return Err(AssetError::EmptyAuthorityReleaseId);
+    }
+    let mut hasher = StateHasher::new("vehicle-authority-release/v1");
+    hasher.text("release-id", release_id);
+    Ok(hasher.finish())
+}
+
 /// Deterministischer Schnappschuss aller Fahrzeuge einer Welt.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FleetSnapshot {
@@ -395,6 +491,29 @@ impl FleetSnapshot {
             catalog_checksum: catalog.checksum(),
             vehicles: BTreeMap::new(),
         }
+    }
+
+    /// Stellt einen Snapshot aus Fahrzeugen desselben Authority-Releases her.
+    ///
+    /// Die vorhandene Einfügeprüfung erzwingt Welt, Release-Pin und eindeutige
+    /// Fahrzeugkennungen auch beim Restore.
+    pub fn from_authority_release(
+        world_id: WorldId,
+        release_id: &str,
+        vehicles: impl IntoIterator<Item = VehicleAsset>,
+    ) -> Result<Self, AssetError> {
+        if world_id == 0 {
+            return Err(AssetError::InvalidWorldId);
+        }
+        let mut snapshot = Self {
+            world_id,
+            catalog_checksum: authority_release_checksum(release_id)?,
+            vehicles: BTreeMap::new(),
+        };
+        for vehicle in vehicles {
+            snapshot.insert(vehicle)?;
+        }
+        Ok(snapshot)
     }
 
     /// Fügt ein Fahrzeug derselben Welt und desselben Katalog-Releases ein.
@@ -427,7 +546,7 @@ impl FleetSnapshot {
         self.vehicles.is_empty()
     }
 
-    /// Gepinnte Fahrzeugkatalog-Prüfsumme.
+    /// Gepinnte Fahrzeugkatalog- oder Authority-Release-Prüfsumme.
     pub const fn catalog_checksum(&self) -> StateHash {
         self.catalog_checksum
     }
@@ -487,8 +606,13 @@ impl DeterministicModel for FleetSnapshot {
     reason = "die selbsterklärenden Varianten sind stabile, maschinenlesbare Diagnosen"
 )]
 pub enum AssetError {
+    EmptyAuthorityReleaseId,
+    InvalidWorldId,
     UnknownVehicleType,
     InvalidVehicleId,
+    InvalidVehicleTypeId,
+    InvalidYear,
+    EmptyTradeName,
     BuildAfterAcquisition,
     BuildOutsideConstructionPeriod,
     ConstructionEraExcluded,
@@ -500,6 +624,7 @@ pub enum AssetError {
     MissingStandardProtection,
     UnsupportedProtection,
     InvalidApproval,
+    DuplicateApproval,
     InvalidMaintenanceDeadline,
     DuplicateMaintenanceDeadline,
     WrongCatalogRelease,
@@ -518,3 +643,160 @@ impl fmt::Display for AssetError {
 }
 
 impl Error for AssetError {}
+
+#[cfg(test)]
+mod authority_restore_tests {
+    use super::{
+        AssetError, FleetSnapshot, MaintenanceDeadline, OwnershipStatus, VehicleApproval,
+        VehicleAsset,
+    };
+    use crate::catalog::ProcurementChannel;
+    use zugfolge_infra::{FleetClass, ProtectionSystem, TrainProtection};
+
+    #[derive(Clone)]
+    struct AuthorityFacts {
+        release_id: &'static str,
+        world_id: u64,
+        id: u64,
+        vehicle_type_id: u64,
+        trade_name: &'static str,
+        build_year: u16,
+        acquisition_year: u16,
+        channel: ProcurementChannel,
+        approvals: Vec<VehicleApproval>,
+        deadlines: Vec<MaintenanceDeadline>,
+    }
+
+    impl AuthorityFacts {
+        fn valid() -> Self {
+            Self {
+                release_id: "fleet-release-2026-08",
+                world_id: 7,
+                id: 2,
+                vehicle_type_id: 423,
+                trade_name: "Silberstrom",
+                build_year: 1998,
+                acquisition_year: 2026,
+                channel: ProcurementChannel::Leasing,
+                approvals: vec![VehicleApproval::new("DE").unwrap()],
+                deadlines: vec![MaintenanceDeadline::new("revision", 2_000).unwrap()],
+            }
+        }
+
+        fn restore(self) -> Result<VehicleAsset, AssetError> {
+            VehicleAsset::from_authority_release(
+                self.release_id,
+                self.world_id,
+                self.id,
+                self.vehicle_type_id,
+                FleetClass::new("423").unwrap(),
+                self.trade_name,
+                self.build_year,
+                self.acquisition_year,
+                self.channel,
+                self.approvals,
+                self.deadlines,
+                TrainProtection::single(ProtectionSystem::Pzb),
+            )
+        }
+    }
+
+    fn valid_asset(release_id: &'static str, world_id: u64, id: u64) -> VehicleAsset {
+        AuthorityFacts {
+            release_id,
+            world_id,
+            id,
+            ..AuthorityFacts::valid()
+        }
+        .restore()
+        .unwrap()
+    }
+
+    fn assert_invalid(change: impl FnOnce(&mut AuthorityFacts), expected: AssetError) {
+        let mut facts = AuthorityFacts::valid();
+        change(&mut facts);
+        assert_eq!(facts.restore(), Err(expected));
+    }
+
+    #[test]
+    fn authority_release_pin_and_ownership_are_deterministic() {
+        let leased = valid_asset("fleet-release-2026-08", 7, 2);
+        let owned = AuthorityFacts {
+            id: 1,
+            acquisition_year: 2025,
+            channel: ProcurementChannel::Used,
+            approvals: Vec::new(),
+            deadlines: Vec::new(),
+            ..AuthorityFacts::valid()
+        }
+        .restore()
+        .unwrap();
+        assert_eq!(leased.ownership(), OwnershipStatus::Leased);
+        assert_eq!(owned.ownership(), OwnershipStatus::Owned);
+
+        let first = FleetSnapshot::from_authority_release(
+            7,
+            "fleet-release-2026-08",
+            [leased.clone(), owned.clone()],
+        )
+        .unwrap();
+        let reversed =
+            FleetSnapshot::from_authority_release(7, "fleet-release-2026-08", [owned, leased])
+                .unwrap();
+        assert_eq!(first.catalog_checksum(), reversed.catalog_checksum());
+        assert_eq!(first.checksum(), reversed.checksum());
+        let other = FleetSnapshot::from_authority_release(7, "other-release", []).unwrap();
+        assert_ne!(first.catalog_checksum(), other.catalog_checksum());
+    }
+
+    #[test]
+    fn authority_facts_reject_empty_ids_years_names_and_duplicates() {
+        assert_invalid(
+            |facts| facts.release_id = " ",
+            AssetError::EmptyAuthorityReleaseId,
+        );
+        assert_invalid(|facts| facts.world_id = 0, AssetError::InvalidWorldId);
+        assert_invalid(|facts| facts.id = 0, AssetError::InvalidVehicleId);
+        assert_invalid(
+            |facts| facts.vehicle_type_id = 0,
+            AssetError::InvalidVehicleTypeId,
+        );
+        assert_invalid(|facts| facts.trade_name = " ", AssetError::EmptyTradeName);
+        assert_invalid(|facts| facts.build_year = 0, AssetError::InvalidYear);
+        assert_invalid(
+            |facts| facts.build_year = facts.acquisition_year + 1,
+            AssetError::BuildAfterAcquisition,
+        );
+        assert_invalid(
+            |facts| {
+                let duplicate = facts.approvals[0].clone();
+                facts.approvals.push(duplicate);
+            },
+            AssetError::DuplicateApproval,
+        );
+        assert_invalid(
+            |facts| {
+                let duplicate = facts.deadlines[0].clone();
+                facts.deadlines.push(duplicate);
+            },
+            AssetError::DuplicateMaintenanceDeadline,
+        );
+    }
+
+    #[test]
+    fn authority_snapshot_reuses_insert_guards() {
+        let vehicle = valid_asset("release-a", 7, 1);
+        assert_eq!(
+            FleetSnapshot::from_authority_release(7, "release-a", [vehicle.clone(), vehicle]),
+            Err(AssetError::DuplicateVehicle)
+        );
+        assert_eq!(
+            FleetSnapshot::from_authority_release(7, "release-a", [valid_asset("release-a", 8, 1)]),
+            Err(AssetError::WrongWorld)
+        );
+        assert_eq!(
+            FleetSnapshot::from_authority_release(7, "release-a", [valid_asset("release-b", 7, 1)]),
+            Err(AssetError::WrongCatalogRelease)
+        );
+    }
+}

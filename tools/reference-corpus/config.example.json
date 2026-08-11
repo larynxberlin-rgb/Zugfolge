@@ -1,5 +1,5 @@
 {
-  "schema": "zugfolge-gtfs-capture/v1",
+  "schema": "zugfolge-gtfs-capture/v2",
   "feedUrl": "https://download.gtfs.de/germany/rv_free/latest.zip",
   "timeZone": "Europe/Berlin",
   "region": "Leipzig–Halle–Erfurt",
@@ -33,5 +33,9 @@
   "tolerance": {
     "absoluteSeconds": 30,
     "relativeBasisPoints": 500
+  },
+  "qualificationPolicy": {
+    "minimumCalibrationSamples": 2,
+    "minimumValidationSamples": 2
   }
 }

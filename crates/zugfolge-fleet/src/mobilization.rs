@@ -11,12 +11,14 @@
 
 use std::fmt::Write as _;
 
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 pub const FLEET_MOBILIZATION_SCHEMA: &str = "zugfolge-fleet-mobilization/v1";
 const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum MobilizationAvailability {
     Available,
     Committed,
@@ -35,7 +37,8 @@ impl MobilizationAvailability {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum MobilizationProcurement {
     Delivered,
     Ordered,
@@ -52,7 +55,8 @@ impl MobilizationProcurement {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum MobilizationTraction {
     Electric,
     Diesel,
@@ -71,7 +75,8 @@ impl MobilizationTraction {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum MobilizationDutyStatus {
     Ready,
     Planned,
@@ -88,7 +93,8 @@ impl MobilizationDutyStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum MobilizationPathStatus {
     Confirmed,
     Requested,
@@ -105,7 +111,8 @@ impl MobilizationPathStatus {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MobilizationCharacteristics {
     pub seats: u32,
     pub first_class_basis_points: u16,
@@ -122,7 +129,8 @@ pub struct MobilizationCharacteristics {
     pub replacement_plan: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MobilizationFormation {
     pub id: String,
     pub operator_id: String,
@@ -135,7 +143,8 @@ pub struct MobilizationFormation {
     pub characteristics: MobilizationCharacteristics,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MobilizationPersonnelDuty {
     pub id: String,
     pub operator_id: String,
@@ -145,7 +154,8 @@ pub struct MobilizationPersonnelDuty {
     pub valid_until: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MobilizationPathReservation {
     pub id: String,
     pub operator_id: String,
@@ -155,8 +165,10 @@ pub struct MobilizationPathReservation {
     pub valid_until: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MobilizationSnapshot {
+    pub schema: String,
     pub world_id: String,
     pub revision: u64,
     pub produced_at: u64,
@@ -167,6 +179,7 @@ pub struct MobilizationSnapshot {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MobilizationSnapshotError {
+    UnsupportedSchema,
     EmptyField(&'static str),
     EmptyList(&'static str),
     DuplicateId(&'static str),
@@ -177,6 +190,9 @@ pub enum MobilizationSnapshotError {
 
 impl MobilizationSnapshot {
     pub fn validate(&self) -> Result<(), MobilizationSnapshotError> {
+        if self.schema != FLEET_MOBILIZATION_SCHEMA {
+            return Err(MobilizationSnapshotError::UnsupportedSchema);
+        }
         non_empty(&self.world_id, "worldId")?;
         safe_integer(self.revision, "revision")?;
         safe_integer(self.produced_at, "producedAt")?;
@@ -475,6 +491,7 @@ mod tests {
 
     fn fixture() -> MobilizationSnapshot {
         MobilizationSnapshot {
+            schema: FLEET_MOBILIZATION_SCHEMA.into(),
             world_id: "11111111-1111-4111-8111-111111111111".into(),
             revision: 7,
             produced_at: 1_786_233_600,

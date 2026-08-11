@@ -15,6 +15,7 @@
   },
   "passed": true,
   "releaseQualified": false,
+  "qualificationBlocker": "Legacy-v2 enthält keinen maschinengeprüften, eingefrorenen und disjunkten Kalibrierungs-/Validierungsnachweis.",
   "comparisons": [
     {
       "groupId": "1a70b02af280bd2e",

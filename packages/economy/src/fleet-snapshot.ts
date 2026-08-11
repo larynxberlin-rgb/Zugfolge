@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { Buffer } from "node:buffer";
 
 import { fleetMobilizationSnapshots } from "@zugfolge/db";
 import { and, desc, eq } from "drizzle-orm";
@@ -102,10 +103,15 @@ function integer(value: unknown, name: string, minimum = 0): asserts value is nu
   invariant(Number.isSafeInteger(value) && (value as number) >= minimum, `${name} ist keine ganze Zahl >= ${minimum}.`);
 }
 
+/** Rust-Strings werden lexikografisch nach ihren UTF-8-Bytes geordnet. */
+export function compareFleetUtf8(left: string, right: string): number {
+  return Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
+}
+
 function uniqueIds(values: readonly { readonly id: string }[], name: string): void {
   values.forEach((value, index) => nonEmpty(value.id, `${name}[${index}].id`));
   invariant(new Set(values.map((value) => value.id)).size === values.length, `${name} enthält doppelte IDs.`);
-  invariant(values.every((value, index) => index === 0 || values[index - 1]!.id.localeCompare(value.id) < 0), `${name} ist nicht kanonisch nach ID sortiert.`);
+  invariant(values.every((value, index) => index === 0 || compareFleetUtf8(values[index - 1]!.id, value.id) < 0), `${name} ist nicht kanonisch nach ID sortiert.`);
 }
 
 function validWindow(from: unknown, until: unknown, name: string): void {
@@ -118,7 +124,7 @@ function validStringList(values: unknown, name: string, allowEmpty = false): ass
   invariant(Array.isArray(values) && (allowEmpty || values.length > 0), `${name} fehlt oder ist leer.`);
   values.forEach((value, index) => nonEmpty(value, `${name}[${index}]`));
   invariant(new Set(values).size === values.length, `${name} enthält doppelte IDs.`);
-  invariant(values.every((value, index) => index === 0 || values[index - 1]!.localeCompare(value) < 0), `${name} ist nicht kanonisch sortiert.`);
+  invariant(values.every((value, index) => index === 0 || compareFleetUtf8(values[index - 1]!, value) < 0), `${name} ist nicht kanonisch sortiert.`);
 }
 
 /** Kanonisches JSON: identische M5-Nutzdaten ergeben sprachübergreifend denselben SHA-256. */
@@ -126,7 +132,7 @@ export function canonicalFleetJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalFleetJson).join(",")}]`;
   if (value !== null && typeof value === "object") {
     return `{${Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => compareFleetUtf8(left, right))
       .map(([key, item]) => {
         invariant(item !== undefined, `Kanonischer Snapshot enthält undefined in '${key}'.`);
         return `${JSON.stringify(key)}:${canonicalFleetJson(item)}`;

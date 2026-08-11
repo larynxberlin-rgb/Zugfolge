@@ -1,5 +1,6 @@
 import type { EconomyRelease, EconomyRules, TenderProfile } from "./release.js";
 import type { TenderPlanningEvidence } from "./service-planning.js";
+import { compareUtf8 } from "./utf8.js";
 
 export interface VehicleRequirements { readonly minimumSeats: number; readonly minimumMaximumSpeedKph?: number; readonly firstClassBasisPoints: number; readonly accessible: boolean; readonly bicyclePlaces: number; readonly wheelchairPlaces: number; readonly requiredEquipment: readonly string[] }
 export interface VehicleConcept extends VehicleRequirements {
@@ -104,7 +105,7 @@ export function awardTender(tender: Tender, bids: readonly Bid[], at: number): {
     const scoreDifference = (b.score.pricePoints + b.score.qualityPoints) - (a.score.pricePoints + a.score.qualityPoints);
     if (scoreDifference !== 0) return scoreDifference;
     if (a.bid.orderingFeeCentsPerTrainKm !== b.bid.orderingFeeCentsPerTrainKm) return a.bid.orderingFeeCentsPerTrainKm < b.bid.orderingFeeCentsPerTrainKm ? -1 : 1;
-    return a.bid.id.localeCompare(b.bid.id);
+    return compareUtf8(a.bid.id, b.bid.id);
   });
   return Object.freeze({ winner: valid[0]?.bid, scores: new Map(valid.map((entry) => [entry.bid.id, entry.score])), status: valid.length === 0 ? "failed" : "awarded" });
 }

@@ -1,11 +1,20 @@
 import type { HealthCheck } from "@zugfolge/health";
+import {
+  OPERATING_INITIALIZE_SCHEMA,
+  OPERATING_TRANSITION_SCHEMA,
+  type OperatingRuntime,
+  type OperatingTransitionResult,
+} from "@zugfolge/runtime-native";
 
 import type { EconomyDatabase } from "./ledger.js";
+import type { MobilizationProof } from "./contracts.js";
 import { loadFleetMobilizationSnapshot, verifyMobilizationReference } from "./fleet-snapshot.js";
+import { compareUtf8 } from "./utf8.js";
 import {
   dispatchEconomyOutbox,
   EconomyStateConflictError,
   listEconomyWorldIds,
+  loadEconomyWorldEpoch,
   loadEconomyWorldState,
   persistEconomyTransition,
 } from "./state-store.js";
@@ -16,12 +25,16 @@ import {
   type EconomyEffects,
   type EconomyJournalEntry,
   type EconomyNotice,
+  type TenderLifecycle,
   type EconomyWorldState,
 } from "./workflow.js";
 
 export interface EconomyEffectAdapters {
   readonly postJournal: (entry: EconomyJournalEntry) => Promise<void>;
   readonly sendNotice: (notice: EconomyNotice) => Promise<void>;
+  readonly operatingRuntime: OperatingRuntime;
+  /** Publishes already committed Rust events into in-memory projections. */
+  readonly publishRuntimeEvents: (events: readonly NonNullable<EconomyEffects["runtimeEvents"]>[number][]) => Promise<void>;
 }
 
 export interface EconomySchedulerSnapshot {
@@ -94,9 +107,69 @@ export function createEconomySchedulerHealthCheck(
   };
 }
 
-function appendEffects(target: { notices: EconomyNotice[]; journal: EconomyJournalEntry[] }, effects: EconomyEffects): void {
+function appendEffects(target: { notices: EconomyNotice[]; journal: EconomyJournalEntry[]; runtimeEvents: NonNullable<EconomyEffects["runtimeEvents"]>[number][] }, effects: EconomyEffects): void {
   target.notices.push(...effects.notices);
   target.journal.push(...effects.journal);
+  target.runtimeEvents.push(...(effects.runtimeEvents ?? []));
+}
+
+type AwardedTender = Extract<TenderLifecycle, { readonly phase: "awarded" }>;
+
+function trainRunsForLot(
+  state: EconomyWorldState,
+  current: AwardedTender,
+  proof: MobilizationProof | undefined,
+): readonly { readonly trainRunId: string; readonly formationId: string | null }[] {
+  if (state.planning === undefined) return [];
+  const lot = state.planning.snapshot.lots.find((candidate) => candidate.id === current.tender.lotId);
+  if (lot === undefined) throw new Error(`GTFS-Planung enthaelt Los '${current.tender.lotId}' nicht.`);
+  const patterns = state.planning.snapshot.patterns
+    .filter((pattern) => lot.patternIds.includes(pattern.id))
+    .sort((left, right) => compareUtf8(left.id, right.id));
+  const incumbentFormationId = current.winningBid.operatorId === current.tender.incumbentOperatorId
+    ? (proof?.formationIds[0] ?? current.winningBid.vehicle.formationId)
+    : null;
+  const trainRuns = patterns.flatMap((pattern) => pattern.journeys
+    .map((journey) => ({
+      trainRunId: `${pattern.id}:${journey.sourceTripId}:${journey.serviceDate}:${journey.departureEpochSeconds}`,
+      formationId: incumbentFormationId,
+    }))
+    .sort((left, right) => compareUtf8(left.trainRunId, right.trainRunId)));
+  if (trainRuns.length === 0) throw new Error(`GTFS-Los '${current.tender.lotId}' enthaelt keine Zugfahrt.`);
+  return Object.freeze(trainRuns);
+}
+
+function applyOperatingTransition(
+  runtime: OperatingRuntime,
+  state: EconomyWorldState,
+  current: AwardedTender,
+  proof: MobilizationProof | undefined,
+  publicVehiclePool: readonly string[],
+  commandId: string,
+): OperatingTransitionResult {
+  const existing = state.operatingRuntimeByLot.get(current.tender.lotId);
+  const initialized = existing ?? runtime.initialize({
+    schemaVersion: OPERATING_INITIALIZE_SCHEMA,
+    worldId: state.worldId,
+    lots: [{
+      lotId: current.tender.lotId,
+      incumbentOperatorId: current.tender.incumbentOperatorId,
+      timetableBoundaryS: current.tender.operatingFrom,
+      trainRuns: trainRunsForLot(state, current, proof),
+    }],
+  });
+  return runtime.applyTransition(initialized.state, {
+    schemaVersion: OPERATING_TRANSITION_SCHEMA,
+    worldId: state.worldId,
+    commandId,
+    expectedStateHash: initialized.stateHash,
+    expectedRevision: initialized.state.revision,
+    lotId: current.tender.lotId,
+    atS: current.tender.operatingFrom,
+    winnerOperatorId: current.winningBid.operatorId,
+    mobilizationProof: proof ?? null,
+    publicVehiclePool,
+  });
 }
 
 /**
@@ -107,11 +180,12 @@ async function advanceWorld(
   db: EconomyDatabase,
   initial: EconomyWorldState,
   nowSeconds: number,
+  operatingRuntime: OperatingRuntime,
 ): Promise<{ readonly state: EconomyWorldState; readonly effects: EconomyEffects; readonly transitions: number }> {
   let state = initial;
   let transitions = 0;
-  const effects = { notices: [] as EconomyNotice[], journal: [] as EconomyJournalEntry[] };
-  const tenderIds = [...state.tenders.keys()].sort();
+  const effects = { notices: [] as EconomyNotice[], journal: [] as EconomyJournalEntry[], runtimeEvents: [] as NonNullable<EconomyEffects["runtimeEvents"]>[number][] };
+  const tenderIds = [...state.tenders.keys()].sort(compareUtf8);
   for (const tenderId of tenderIds) {
     let current = state.tenders.get(tenderId);
     if (current?.phase === "announced" && current.tender.opensAt <= nowSeconds) {
@@ -146,6 +220,14 @@ async function advanceWorld(
       if (mobilization.reference !== undefined) {
         try {
           const snapshot = await loadFleetMobilizationSnapshot(db, state.worldId, mobilization.reference);
+          const nativeVerification = operatingRuntime.verifyFleetMobilizationSnapshot(snapshot);
+          if (
+            nativeVerification.worldId !== state.worldId
+            || nativeVerification.fleetRevision !== mobilization.reference.fleetRevision
+            || nativeVerification.snapshotHash !== mobilization.reference.snapshotHash
+          ) {
+            throw new Error("Rust-verifizierter M5-Snapshot stimmt nicht mit der persistierten Mobilisierungsreferenz ueberein.");
+          }
           proof = verifyMobilizationReference(snapshot, mobilization.reference, {
             operatorId: current.winningBid.operatorId,
             winningFormationId: current.winningBid.vehicle.formationId,
@@ -158,6 +240,14 @@ async function advanceWorld(
           proof = undefined;
         }
       }
+      const operatingTransition = applyOperatingTransition(
+        operatingRuntime,
+        state,
+        current,
+        proof,
+        automation.vehiclePool,
+        `scheduler:${tenderId}:mobilize:${current.tender.operatingFrom}`,
+      );
       const completed = completeMobilization(state, {
         commandId: `scheduler:${tenderId}:mobilize:${current.tender.operatingFrom}`,
         tenderId,
@@ -165,6 +255,8 @@ async function advanceWorld(
         proof,
         failurePenaltyCents: automation.failurePenaltyCents,
         recipientAccountId,
+        publicVehiclePool: automation.vehiclePool,
+        operatingTransition,
       });
       state = completed.state;
       appendEffects(effects, completed.effects);
@@ -187,10 +279,15 @@ export async function runEconomySchedulerCycle(
   try {
     const worldIds = await listEconomyWorldIds(db);
     for (const worldId of worldIds) {
+      const epoch = await loadEconomyWorldEpoch(db, worldId);
+      const nowSeconds = Math.floor((now.getTime() - epoch.getTime()) / 1_000);
+      if (!Number.isSafeInteger(nowSeconds)) {
+        throw new RangeError(`Simulationszeit fuer Welt '${worldId}' liegt ausserhalb sicherer Ganzzahlen.`);
+      }
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const initial = await loadEconomyWorldState(db, worldId);
         if (initial === undefined) break;
-        const advanced = await advanceWorld(db, initial, Math.floor(now.getTime() / 1_000));
+        const advanced = await advanceWorld(db, initial, nowSeconds, adapters.operatingRuntime);
         if (advanced.transitions === 0) break;
         try {
           await persistEconomyTransition(db, {
@@ -199,6 +296,9 @@ export async function runEconomySchedulerCycle(
             effects: advanced.effects,
             committedAt: now,
           });
+          // The database event log is authoritative. Projection fanout happens
+          // only after the state and Rust events committed atomically.
+          await adapters.publishRuntimeEvents(advanced.effects.runtimeEvents ?? []);
           transitions += advanced.transitions;
           effects += advanced.effects.journal.length + advanced.effects.notices.length;
           break;

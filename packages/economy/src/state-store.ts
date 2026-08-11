@@ -1,5 +1,5 @@
-import { economyOutbox, economyWorldStates } from "@zugfolge/db";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { domainEvents, economyOutbox, economyWorldStates, worlds } from "@zugfolge/db";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 
 import type { EconomyDatabase } from "./ledger.js";
 import type { EconomyEffects, EconomyJournalEntry, EconomyNotice, EconomyWorldState } from "./workflow.js";
@@ -68,6 +68,14 @@ export async function persistEconomyTransition(
   }
 
   await db.transaction(async (tx) => {
+    const runtimeEvents = input.effects.runtimeEvents ?? [];
+    for (const event of runtimeEvents) {
+      if (event.worldId !== input.state.worldId) throw new Error("Rust-Ereignis verletzt Weltisolation.");
+      if (!Number.isSafeInteger(event.atS) || event.atS < 0) throw new Error("Rust-Ereignis besitzt keine gueltige Simulationszeit.");
+    }
+    if (runtimeEvents.length > 0) {
+      await tx.execute(sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${input.state.worldId} for update`);
+    }
     const stateValue = {
       worldId: input.state.worldId,
       revision: input.state.revision,
@@ -107,6 +115,23 @@ export async function persistEconomyTransition(
         .values(rows)
         .onConflictDoNothing({ target: [economyOutbox.worldId, economyOutbox.effectType, economyOutbox.effectId] });
     }
+    if (runtimeEvents.length > 0) {
+      const [last] = await tx
+        .select({ sequence: domainEvents.sequence })
+        .from(domainEvents)
+        .where(eq(domainEvents.worldId, input.state.worldId))
+        .orderBy(desc(domainEvents.sequence))
+        .limit(1);
+      const firstSequence = (last?.sequence ?? 0) + 1;
+      if (!Number.isSafeInteger(firstSequence + runtimeEvents.length - 1)) throw new Error("Domain-Ereignissequenz ist erschoepft.");
+      await tx.insert(domainEvents).values(runtimeEvents.map((event, index) => ({
+        worldId: input.state.worldId,
+        sequence: firstSequence + index,
+        eventType: event.eventType,
+        payload: { ...event.payload, worldId: event.worldId, runtimeEventId: event.eventId },
+        occurredAt: new Date(event.atS * 1_000),
+      })));
+    }
   });
 }
 
@@ -125,8 +150,10 @@ export async function loadEconomyWorldState(
   // Feld noch nicht. Ein leerer Index ist die semantisch korrekte Migration:
   // bestehende Ausschreibungen werden nicht nachträglich automatisiert.
   return state.tenderAutomation === undefined
-    ? Object.freeze({ ...state, tenderAutomation: new Map() })
-    : state;
+    ? Object.freeze({ ...state, tenderAutomation: new Map(), operatingRuntimeByLot: state.operatingRuntimeByLot ?? new Map() })
+    : state.operatingRuntimeByLot === undefined
+      ? Object.freeze({ ...state, operatingRuntimeByLot: new Map() })
+      : state;
 }
 
 export async function listEconomyWorldIds(db: EconomyDatabase): Promise<readonly string[]> {
@@ -135,6 +162,22 @@ export async function listEconomyWorldIds(db: EconomyDatabase): Promise<readonly
     .from(economyWorldStates)
     .orderBy(asc(economyWorldStates.worldId));
   return rows.map((row) => row.worldId);
+}
+
+/** Loads the explicit SimTime zero point for one world-bound scheduler pass. */
+export async function loadEconomyWorldEpoch(
+  db: EconomyDatabase,
+  worldId: string,
+): Promise<Date> {
+  const [row] = await db
+    .select({ epoch: worlds.epoch })
+    .from(worlds)
+    .where(eq(worlds.id, worldId))
+    .limit(1);
+  if (row === undefined || Number.isNaN(row.epoch.getTime())) {
+    throw new Error(`Weltepoche fuer '${worldId}' fehlt oder ist ungueltig.`);
+  }
+  return row.epoch;
 }
 
 export interface PendingEconomyEffect {

@@ -1,0 +1,21 @@
+[package]
+name = "zugfolge-planning-runtime"
+description = "Produktiver PlanningRun-Adapter und revisionierter M3-Single-Writer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+sha2.workspace = true
+zugfolge-conflict = { workspace = true }
+zugfolge-determinism = { workspace = true }
+zugfolge-infra = { workspace = true }
+zugfolge-planner = { workspace = true }
+
+[lints]
+workspace = true

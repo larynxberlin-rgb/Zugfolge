@@ -82,6 +82,10 @@ describe("Weltisolation des Event-Logs (M2.2)", () => {
       "welt.angelegt",
       "zug.abgefahren",
     ]);
+    expect(await logA.listOfTypes(["zug.abgefahren"])).toEqual([
+      expect.objectContaining({ worldId: weltA, sequence: 2, eventType: "zug.abgefahren" }),
+    ]);
+    expect(await logB.listOfTypes(["zug.abgefahren"])).toEqual([]);
     await expect(
       logA.appendBatch([
         { sequence: 4, eventType: "lücke", payload: {}, occurredAt: new Date("2026-01-01T07:00:00Z") },

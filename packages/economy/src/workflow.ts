@@ -1,5 +1,5 @@
 import type { AuthorityBudget, MobilizationProof, PerformanceEvidence, PublicOperation, ServiceContract } from "./contracts.js";
-import { commitAuthorityBudget, performOperatingTransition, settleContract, startPublicOperation } from "./contracts.js";
+import { commitAuthorityBudget, isMobilizationProofComplete, settleContract, startPublicOperation } from "./contracts.js";
 import type { ClassifiedPosting, InsolvencyDecision, InsolvencySignals, Prequalification, ProfitAndLoss } from "./finance.js";
 import { assertPrequalified, calculateProfitAndLoss, evaluateInsolvency, updatePrequalification } from "./finance.js";
 import type { EconomyRelease, WorldEconomyPin } from "./release.js";
@@ -10,6 +10,11 @@ import type { Lot, TenderCalendarEntry, WorldProfile } from "./world.js";
 import { createTenderCalendar, deriveWorldProfile, deterministicProfileOrder } from "./world.js";
 import type { FleetMobilizationReference } from "./fleet-snapshot.js";
 import type { GtfsPlanningEnvelope } from "@zugfolge/gtfs";
+import type {
+  OperatingRuntimeEvent,
+  OperatingTransitionResult,
+  OperatingWorldInitialized,
+} from "@zugfolge/runtime-native";
 import { lotsFromGtfsPlanning } from "./service-planning.js";
 
 export interface EconomyNotice {
@@ -35,6 +40,12 @@ export interface EconomyJournalEntry {
 export interface EconomyEffects {
   readonly notices: readonly EconomyNotice[];
   readonly journal: readonly EconomyJournalEntry[];
+  readonly runtimeEvents?: readonly OperatingRuntimeEvent[];
+}
+
+export interface OperatingRuntimeSnapshot {
+  readonly state: OperatingWorldInitialized["state"];
+  readonly stateHash: string;
 }
 
 export type TenderLifecycle =
@@ -81,6 +92,7 @@ export interface EconomyWorldState {
   readonly operatorRestrictions: ReadonlyMap<string, InsolvencyDecision>;
   readonly settledPeriods: ReadonlySet<string>;
   readonly processedCommands: ReadonlySet<string>;
+  readonly operatingRuntimeByLot: ReadonlyMap<string, OperatingRuntimeSnapshot>;
   readonly revision: number;
 }
 
@@ -117,7 +129,7 @@ export function startEconomyWorld(input: {
   const publicOperations = new Map<string, PublicOperation>(lots.map((lot) => [lot.id, startPublicOperation(lot.id, [])]));
   const notices = input.accounts.map((recipientAccountId) => ({ id: `world-start:calendar:${recipientAccountId}`, worldId: input.worldId, recipientAccountId, type: "tender-calendar-published", at: 0, payload: { calendar } }));
   return {
-    state: Object.freeze({ worldId: input.worldId, seed: input.seed, profile, releasePin: pinEconomyRelease(input.worldId, input.release), release: input.release, lots: Object.freeze([...lots]), ...(input.planning === undefined ? {} : { planning: input.planning }), calendar, tenders: new Map<string, TenderLifecycle>(), contracts: new Map<string, ServiceContract>(), mobilizations: new Map<string, Mobilization>(), tenderAutomation: new Map<string, TenderAutomation>(), publicOperations, budgets, prequalifications, insolventOperators: new Set<string>(), operatorRestrictions: new Map<string, InsolvencyDecision>(), settledPeriods: new Set<string>(), processedCommands: new Set<string>(), revision: 0 }),
+    state: Object.freeze({ worldId: input.worldId, seed: input.seed, profile, releasePin: pinEconomyRelease(input.worldId, input.release), release: input.release, lots: Object.freeze([...lots]), ...(input.planning === undefined ? {} : { planning: input.planning }), calendar, tenders: new Map<string, TenderLifecycle>(), contracts: new Map<string, ServiceContract>(), mobilizations: new Map<string, Mobilization>(), tenderAutomation: new Map<string, TenderAutomation>(), publicOperations, budgets, prequalifications, insolventOperators: new Set<string>(), operatorRestrictions: new Map<string, InsolvencyDecision>(), settledPeriods: new Set<string>(), processedCommands: new Set<string>(), operatingRuntimeByLot: new Map<string, OperatingRuntimeSnapshot>(), revision: 0 }),
     effects: { notices, journal: [] },
   };
 }
@@ -231,12 +243,48 @@ export function submitMobilizationReference(
   return withCommand(state, input.commandId, { mobilizations });
 }
 
-export function completeMobilization(state: EconomyWorldState, input: { readonly commandId: string; readonly tenderId: string; readonly at: number; readonly proof?: MobilizationProof; readonly failurePenaltyCents: bigint; readonly recipientAccountId: string }): { readonly state: EconomyWorldState; readonly effects: EconomyEffects } {
+export function completeMobilization(state: EconomyWorldState, input: { readonly commandId: string; readonly tenderId: string; readonly at: number; readonly proof?: MobilizationProof; readonly failurePenaltyCents: bigint; readonly recipientAccountId: string; readonly publicVehiclePool: readonly string[]; readonly operatingTransition: OperatingTransitionResult }): { readonly state: EconomyWorldState; readonly effects: EconomyEffects } {
   if (!requireNewCommand(state, input.commandId)) return { state, effects: { notices: [], journal: [] } };
   const current = lifecycle(state, input.tenderId);
   const mobilization = state.mobilizations.get(input.tenderId);
   if (current.phase !== "awarded" || mobilization === undefined || mobilization.completed || input.at !== current.tender.operatingFrom) throw new Error("Mobilisierung kann nur einmal am Fahrplanstichtag abgeschlossen werden.");
-  const transition = performOperatingTransition({ incumbentOperatorId: current.tender.incumbentOperatorId, winnerOperatorId: current.winningBid.operatorId, proof: input.proof, at: input.at, timetableBoundary: current.tender.operatingFrom, failurePenaltyCents: input.failurePenaltyCents });
+  const transition = input.operatingTransition;
+  const previousRuntimeRevision = state.operatingRuntimeByLot.get(current.tender.lotId)?.state.revision ?? 0;
+  const eventIds = new Set(transition.events.map((event) => event.eventId));
+  const trainRunIds = new Set(transition.outcome.trainRunIds);
+  if (
+    transition.schemaVersion !== "zugfolge-operating-transition-result/v1"
+    || transition.state.worldId !== state.worldId
+    || transition.state.revision !== previousRuntimeRevision + 1
+    || transition.idempotentReplay
+    || transition.outcome.lotId !== current.tender.lotId
+    || transition.outcome.previousOperatorId !== current.tender.incumbentOperatorId
+    || transition.outcome.trainRunIds.length === 0
+    || trainRunIds.size !== transition.outcome.trainRunIds.length
+    || eventIds.size !== transition.events.length
+    || transition.events.some((event) => event.worldId !== state.worldId || event.atS !== input.at)
+    || !transition.events.some((event) => event.eventType === "operating-duty-ended")
+    || !transition.events.some((event) => event.eventType === "operating-transition-completed")
+    || transition.events.filter((event) => event.eventType === "train-operation-assigned").length !== transition.outcome.trainRunIds.length
+    || !/^[a-f0-9]{64}$/.test(transition.stateHash)
+  ) throw new Error("Rust-Betriebsuebergang passt nicht zu Welt, Los oder Altbetreiber.");
+  const proofComplete = isMobilizationProofComplete(input.proof);
+  const expectedOperator = current.winningBid.operatorId === current.tender.incumbentOperatorId || proofComplete
+    ? current.winningBid.operatorId
+    : "public";
+  if (transition.outcome.operatorId !== expectedOperator) throw new Error("Rust-Betriebsuebergang widerspricht den verifizierten Mobilisierungsfakten.");
+  if ((expectedOperator === "public") !== transition.outcome.penaltyRequired) throw new Error("Rust-Betriebsuebergang widerspricht der Vertragsstrafenfolge.");
+  const expectedKind = expectedOperator === "public"
+    ? "public-operation"
+    : current.winningBid.operatorId === current.tender.incumbentOperatorId
+      ? "seamless-continuation"
+      : "operator-change";
+  if (
+    transition.outcome.kind !== expectedKind
+    || transition.outcome.seamless !== (expectedKind === "seamless-continuation")
+    || transition.outcome.livemapMarker !== (expectedKind === "public-operation" ? "public-operator" : null)
+    || !transition.events.some((event) => event.eventType === (expectedKind === "public-operation" ? "livemap-operation-marked" : "livemap-operation-cleared"))
+  ) throw new Error("Rust-Betriebsuebergang besitzt eine widerspruechliche Betriebsart oder Livemap-Folge.");
   const mobilizations = mutableMap(state.mobilizations);
   mobilizations.set(input.tenderId, { ...mobilization, ...(input.proof === undefined ? {} : { proof: input.proof }), completed: true });
   const contracts = mutableMap(state.contracts);
@@ -244,19 +292,22 @@ export function completeMobilization(state: EconomyWorldState, input: { readonly
   const prequalifications = mutableMap(state.prequalifications);
   const notices: EconomyNotice[] = [];
   const journal: EconomyJournalEntry[] = [];
-  if (transition.operatorId === "public") {
-    publicOperations.set(current.tender.lotId, startPublicOperation(current.tender.lotId, []));
+  const operatingRuntimeByLot = mutableMap(state.operatingRuntimeByLot);
+  operatingRuntimeByLot.set(current.tender.lotId, { state: transition.state, stateHash: transition.stateHash });
+  if (transition.outcome.operatorId === "public") {
+    if (input.publicVehiclePool.length === 0) throw new Error("Eigenbetrieb braucht eine nachgewiesene Ersatzfahrzeugflotte.");
+    publicOperations.set(current.tender.lotId, startPublicOperation(current.tender.lotId, input.publicVehiclePool));
     const accountRecord = [...prequalifications.values()].find((record) => record.accountId === input.recipientAccountId);
     if (accountRecord !== undefined) prequalifications.set(accountRecord.accountId, updatePrequalification(accountRecord, { mobilizationFailed: true }));
-    notices.push({ id: `${input.commandId}:mobilization-failed:${input.recipientAccountId}`, worldId: state.worldId, recipientAccountId: input.recipientAccountId, type: "mobilization-failed", at: input.at, payload: { tenderId: input.tenderId, penaltyCents: transition.penaltyCents.toString() } });
-    journal.push({ worldId: state.worldId, operatorId: current.winningBid.operatorId, idempotencyKey: `${input.commandId}:penalty`, at: input.at, description: "Vertragsstrafe wegen gescheiterter Mobilisierung", revenueCents: 0n, postings: [{ amountCents: transition.penaltyCents, costType: "penalty", costCentreId: current.tender.lotId, reference: input.tenderId }] });
+    notices.push({ id: `${input.commandId}:mobilization-failed:${input.recipientAccountId}`, worldId: state.worldId, recipientAccountId: input.recipientAccountId, type: "mobilization-failed", at: input.at, payload: { tenderId: input.tenderId, penaltyCents: input.failurePenaltyCents.toString(), trainRunIds: transition.outcome.trainRunIds, livemapMarker: transition.outcome.livemapMarker } });
+    journal.push({ worldId: state.worldId, operatorId: current.winningBid.operatorId, idempotencyKey: `${input.commandId}:penalty`, at: input.at, description: "Vertragsstrafe wegen gescheiterter Mobilisierung", revenueCents: 0n, postings: [{ amountCents: input.failurePenaltyCents, costType: "penalty", costCentreId: current.tender.lotId, reference: input.tenderId }] });
   } else {
     publicOperations.delete(current.tender.lotId);
     const basePenalties = { ...current.tender.rules.penaltyRates };
     basePenalties[current.tender.profile.penaltyFocus] = basePenalties[current.tender.profile.penaltyFocus] * BigInt(current.tender.rules.penaltyFocusMultiplierBasisPoints) / 10_000n;
-    contracts.set(input.tenderId, { id: input.tenderId, worldId: state.worldId, lotId: current.tender.lotId, operatorId: transition.operatorId, startsAt: input.at, endsAt: input.at + current.tender.contractPeriods * current.tender.periodDurationSeconds, orderingFeeCentsPerTrainKm: current.winningBid.orderingFeeCentsPerTrainKm, bonusCentsPerPeriod: current.tender.rules.contractBonusCentsPerPeriod, penaltyRates: basePenalties, evidenceRequired: ["vehicles", "personnel", "paths"] });
+    contracts.set(input.tenderId, { id: input.tenderId, worldId: state.worldId, lotId: current.tender.lotId, operatorId: transition.outcome.operatorId, startsAt: input.at, endsAt: input.at + current.tender.contractPeriods * current.tender.periodDurationSeconds, orderingFeeCentsPerTrainKm: current.winningBid.orderingFeeCentsPerTrainKm, bonusCentsPerPeriod: current.tender.rules.contractBonusCentsPerPeriod, penaltyRates: basePenalties, evidenceRequired: ["vehicles", "personnel", "paths"] });
   }
-  return { state: withCommand(state, input.commandId, { mobilizations, contracts, publicOperations, prequalifications }), effects: { notices, journal } };
+  return { state: withCommand(state, input.commandId, { mobilizations, contracts, publicOperations, prequalifications, operatingRuntimeByLot }), effects: { notices, journal, runtimeEvents: transition.events } };
 }
 
 export function settleContractPeriod(state: EconomyWorldState, input: { readonly commandId: string; readonly contractId: string; readonly period: number; readonly at: number; readonly performance: PerformanceEvidence; readonly costs: readonly ClassifiedPosting[] }): { readonly state: EconomyWorldState; readonly effects: EconomyEffects; readonly result: ProfitAndLoss } {
@@ -326,5 +377,5 @@ export async function dispatchEconomyEffects(effects: EconomyEffects, adapters: 
 /** Reguläres Weltende: Verträge und Welt-Präqualifikation enden ohne Insolvenzfolge. */
 export function closeEconomyWorld(state: EconomyWorldState, commandId: string): EconomyWorldState {
   if (!requireNewCommand(state, commandId)) return state;
-  return withCommand(state, commandId, { contracts: new Map(), mobilizations: new Map(), tenderAutomation: new Map(), prequalifications: new Map(), publicOperations: new Map(), operatorRestrictions: new Map(), settledPeriods: new Set() });
+  return withCommand(state, commandId, { contracts: new Map(), mobilizations: new Map(), tenderAutomation: new Map(), prequalifications: new Map(), publicOperations: new Map(), operatorRestrictions: new Map(), settledPeriods: new Set(), operatingRuntimeByLot: new Map() });
 }

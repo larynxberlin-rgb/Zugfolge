@@ -19,6 +19,7 @@
     "@zugfolge/health": "workspace:*",
     "@zugfolge/mailbox": "workspace:*",
     "@zugfolge/operators": "workspace:*",
+    "@zugfolge/runtime-native": "workspace:*",
     "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {

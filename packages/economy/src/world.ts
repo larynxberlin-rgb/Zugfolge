@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { compareUtf8 } from "./utf8.js";
+
 export interface WorldProfile {
   readonly durationMonths: 6 | 12 | 18 | "unlimited";
   readonly periodWeeks: 3 | 5 | 7 | 8;
@@ -106,19 +108,19 @@ export function createTenderCalendar(
   if (lots.length === 0) throw new Error("Vergabekalender braucht Lose.");
   const half = profile.totalPeriods === undefined ? Math.max(4, profile.contractPeriods * 2) : Math.floor(profile.totalPeriods / 2);
   const windows = Math.min(half, lots.length);
-  const sorted = [...lots].sort((a, b) => b.size + b.attractiveness - (a.size + a.attractiveness) || a.id.localeCompare(b.id));
+  const sorted = [...lots].sort((a, b) => b.size + b.attractiveness - (a.size + a.attractiveness) || compareUtf8(a.id, b.id));
   const buckets = Array.from({ length: windows }, () => [] as Lot[]);
   sorted.forEach((lot, index) => buckets[index % windows]!.push(lot));
   const rng = new CanonicalRng(canonicalSubstreamState(worldSeed, period, "tender_release"));
   const entries = buckets.flatMap((bucket, window) => {
-    bucket.sort((a, b) => a.id.localeCompare(b.id));
+    bucket.sort((a, b) => compareUtf8(a.id, b.id));
     rng.shuffle(bucket);
     return bucket.map((lot) => ({ lotId: lot.id, announcementPeriod: window, tenderPeriod: window + profile.tenderLeadPeriods, initialOperator: "public" as const }));
   });
   const earliestRepeat = Math.min(...entries.map((entry) => entry.tenderPeriod + profile.contractPeriods));
   const latestInitial = Math.max(...entries.map((entry) => entry.tenderPeriod));
   if (earliestRepeat > latestInitial) throw new Error("Weltentwurf überlappt Erst- und Wiedervergabe nicht.");
-  return Object.freeze(entries.sort((a, b) => a.tenderPeriod - b.tenderPeriod || a.lotId.localeCompare(b.lotId)));
+  return Object.freeze(entries.sort((a, b) => a.tenderPeriod - b.tenderPeriod || compareUtf8(a.lotId, b.lotId)));
 }
 
 export function deterministicProfileOrder<T extends { readonly id: string }>(
@@ -126,7 +128,7 @@ export function deterministicProfileOrder<T extends { readonly id: string }>(
   worldSeed: bigint,
   period = 0,
 ): readonly T[] {
-  const ordered = [...profiles].sort((a, b) => a.id.localeCompare(b.id));
+  const ordered = [...profiles].sort((a, b) => compareUtf8(a.id, b.id));
   const rng = new CanonicalRng(canonicalSubstreamState(worldSeed, period, "tender_profile"));
   rng.shuffle(ordered);
   return ordered;

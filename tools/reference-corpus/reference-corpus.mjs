@@ -1,11 +1,12 @@
-import { createHash, createPublicKey, KeyObject, sign as cryptoSign, verify as cryptoVerify } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
+import { createHash } from "node:crypto";
 
-export const CORPUS_SCHEMA = "zugfolge-reference-corpus/v2";
-export const MODEL_RESULTS_SCHEMA = "zugfolge-model-results/v2";
-export const REPORT_SCHEMA = "zugfolge-reference-report/v2";
-export const BUNDLE_SCHEMA = "zugfolge-pilot-release-bundle/v2";
+export const NORMALIZED_OBSERVATIONS_SCHEMA = "zugfolge-normalized-observations/v1";
+export const CORPUS_SCHEMA = "zugfolge-reference-corpus/v3";
+export const MODEL_RESULTS_SCHEMA = "zugfolge-model-results/v3";
+export const REPORT_SCHEMA = "zugfolge-reference-report/v3";
+export const LEGACY_CORPUS_SCHEMA = "zugfolge-reference-corpus/v2";
+export const LEGACY_MODEL_RESULTS_SCHEMA = "zugfolge-model-results/v2";
+export const LEGACY_REPORT_SCHEMA = "zugfolge-reference-report/v2";
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
@@ -101,10 +102,55 @@ export function validateObservation(observation, index) {
   return Object.freeze({ ...observation, scheduledDwellSeconds: observation.scheduledDwellSeconds ?? 0 });
 }
 
-export function buildReferenceCorpus(input) {
+export function createNormalizedObservations(input) {
   invariant(Array.isArray(input.observations), "observations muss eine Liste sein.");
-  integer(input.minimumSamples ?? 5, "minimumSamples", 2);
+  invariant(
+    input.captureManifest?.schema === "zugfolge-gtfs-capture/v2",
+    "Nur ein Capture-Manifest mit exakter Konfigurationsbindung kann normalisiert werden.",
+  );
+  sha256Hex(input.captureManifestSha256, "captureManifestSha256");
+  sha256Hex(input.captureConfigSha256, "captureConfigSha256");
+  invariant(
+    input.captureManifest.configArtifactSha256 === input.captureConfigSha256,
+    "Capture-Manifest und Capture-Konfigurationsartefakt stimmen nicht überein.",
+  );
   const observations = input.observations.map(validateObservation);
+  return Object.freeze({
+    schema: NORMALIZED_OBSERVATIONS_SCHEMA,
+    capture: Object.freeze({
+      manifestSha256: input.captureManifestSha256,
+      configSha256: input.captureConfigSha256,
+      archiveSha256: input.captureManifest.archiveSha256,
+      sourceTablesSha256: sha256(canonicalJson(input.captureManifest.files)),
+    }),
+    observationsSha256: sha256(canonicalJson(observations)),
+    observations: Object.freeze(observations),
+  });
+}
+
+export function buildReferenceCorpus(input) {
+  const hardened = input.normalizedObservations !== undefined;
+  let observationsInput;
+  if (hardened) {
+    const normalized = input.normalizedObservations;
+    invariant(normalized?.schema === NORMALIZED_OBSERVATIONS_SCHEMA, "Unbekanntes Schema der normalisierten Beobachtungen.");
+    sha256Hex(input.normalizedObservationsSha256, "normalizedObservationsSha256");
+    sha256Hex(normalized.capture?.configSha256, "normalized.capture.configSha256");
+    sha256Hex(normalized.capture?.manifestSha256, "normalized.capture.manifestSha256");
+    sha256Hex(normalized.capture?.archiveSha256, "normalized.capture.archiveSha256");
+    sha256Hex(normalized.capture?.sourceTablesSha256, "normalized.capture.sourceTablesSha256");
+    invariant(Array.isArray(normalized.observations), "normalized.observations muss eine Liste sein.");
+    invariant(
+      normalized.observationsSha256 === sha256(canonicalJson(normalized.observations)),
+      "Hash der normalisierten Beobachtungen stimmt nicht.",
+    );
+    observationsInput = normalized.observations;
+  } else {
+    invariant(Array.isArray(input.observations), "observations muss eine Liste sein.");
+    observationsInput = input.observations;
+  }
+  integer(input.minimumSamples ?? 5, "minimumSamples", 2);
+  const observations = observationsInput.map(validateObservation);
   const byGroup = new Map();
   for (const observation of observations) {
     const key = observationGroupKey(observation);
@@ -168,8 +214,8 @@ export function buildReferenceCorpus(input) {
     );
   }
 
-  return Object.freeze({
-    schema: CORPUS_SCHEMA,
+  const corpus = {
+    schema: hardened ? CORPUS_SCHEMA : LEGACY_CORPUS_SCHEMA,
     region: input.region,
     schedulePeriod: input.schedulePeriod,
     generatedAt: input.generatedAt,
@@ -185,33 +231,28 @@ export function buildReferenceCorpus(input) {
     }),
     groups: Object.freeze(groups),
     observationsSha256: sha256(canonicalJson(observations)),
-  });
+  };
+  if (hardened) {
+    corpus.artifactBinding = Object.freeze({
+      captureConfigSha256: input.normalizedObservations.capture.configSha256,
+      captureManifestSha256: input.normalizedObservations.capture.manifestSha256,
+      sourceArchiveSha256: input.normalizedObservations.capture.archiveSha256,
+      sourceTablesSha256: input.normalizedObservations.capture.sourceTablesSha256,
+      normalizedObservationsSha256: input.normalizedObservationsSha256,
+      observationsSha256: input.normalizedObservations.observationsSha256,
+    });
+  }
+  return Object.freeze(corpus);
 }
 
-export function compareWithModel(corpus, modelResults, tolerance = { absoluteSeconds: 30, relativeBasisPoints: 500 }) {
-  invariant(corpus.schema === CORPUS_SCHEMA, "Unbekanntes Korpus-Schema.");
-  invariant(modelResults?.schema === MODEL_RESULTS_SCHEMA, "Unbekanntes Modellergebnis-Schema.");
-  sha256Hex(modelResults.releaseChecksum, "modelResults.releaseChecksum");
-  sha256Hex(modelResults.modelInputSha256, "modelResults.modelInputSha256");
-  invariant(
-    modelResults.qualification === "calibration-only" || modelResults.qualification === "validation",
-    "modelResults.qualification muss 'calibration-only' oder 'validation' sein.",
-  );
-  nonEmpty(modelResults.technicalReference?.sourceId, "modelResults.technicalReference.sourceId");
-  sha256Hex(
-    modelResults.technicalReference?.artifactSha256,
-    "modelResults.technicalReference.artifactSha256",
-  );
-  integer(modelResults.technicalReference?.runningSeconds, "modelResults.technicalReference.runningSeconds", 1);
+function compareResults(corpus, modelResults, tolerance, technicalReferenceForResult) {
   invariant(Array.isArray(modelResults.results), "modelResults.results muss eine Liste sein.");
   integer(tolerance.absoluteSeconds, "absoluteSeconds", 0);
   integer(tolerance.relativeBasisPoints, "relativeBasisPoints", 0);
   const corpusById = new Map(corpus.groups.map((group) => [group.id, group]));
   const seen = new Set();
-  for (const result of modelResults.results) {
-    nonEmpty(result.groupId, "modelResults.results[].groupId");
-  }
   const comparisons = modelResults.results.map((result) => {
+    nonEmpty(result.groupId, "modelResults.results[].groupId");
     invariant(!seen.has(result.groupId), `Modellergebnis für Gruppe ${result.groupId} ist doppelt.`);
     seen.add(result.groupId);
     const group = corpusById.get(result.groupId);
@@ -222,16 +263,17 @@ export function compareWithModel(corpus, modelResults, tolerance = { absoluteSec
     integer(result.runningSeconds, `${group.id}.runningSeconds`, 1);
     integer(result.dwellSeconds, `${group.id}.dwellSeconds`);
     integer(result.modeledTimetableSeconds, `${group.id}.modeledTimetableSeconds`, 1);
-    integer(result.technicalReferenceSeconds, `${group.id}.technicalReferenceSeconds`, 1);
+    const reference = technicalReferenceForResult(result, group);
+    integer(reference.runningSeconds, `${group.id}.technicalReferenceSeconds`, 1);
     invariant(
-      result.technicalReferenceSeconds === modelResults.technicalReference.runningSeconds,
-      `${group.id}: technische Referenz stimmt nicht mit dem gebundenen Artefakt überein.`,
+      result.technicalReferenceSeconds === reference.runningSeconds,
+      `${group.id}: technische Referenz stimmt nicht mit der gebundenen Validierungsstichprobe überein.`,
     );
     const allowance = Math.max(
       tolerance.absoluteSeconds,
-      Math.ceil((result.technicalReferenceSeconds * tolerance.relativeBasisPoints) / 10_000),
+      Math.ceil((reference.runningSeconds * tolerance.relativeBasisPoints) / 10_000),
     );
-    const deviation = result.runningSeconds - result.technicalReferenceSeconds;
+    const deviation = result.runningSeconds - reference.runningSeconds;
     const modeledTimetableSeconds = result.runningSeconds + result.dwellSeconds;
     invariant(
       result.modeledTimetableSeconds === modeledTimetableSeconds,
@@ -242,9 +284,11 @@ export function compareWithModel(corpus, modelResults, tolerance = { absoluteSec
       characteristicsId: group.characteristicsId,
       trainCategory: group.trainCategory,
       calibrationMethod: result.calibrationMethod,
+      validationSampleId: reference.sampleId ?? null,
+      validationSourceId: reference.sourceId,
       rawRunningSeconds: result.rawRunningSeconds,
       calculatedTechnicalSeconds: result.runningSeconds,
-      technicalReferenceSeconds: result.technicalReferenceSeconds,
+      technicalReferenceSeconds: reference.runningSeconds,
       technicalDeviationSeconds: deviation,
       toleranceSeconds: allowance,
       technicalWithinTolerance: Math.abs(deviation) <= allowance,
@@ -256,12 +300,29 @@ export function compareWithModel(corpus, modelResults, tolerance = { absoluteSec
       sampleCount: group.sampleCount,
     });
   });
-  for (const group of corpus.groups) {
-    invariant(seen.has(group.id), `Modellergebnis für Gruppe ${group.id} fehlt.`);
-  }
+  for (const group of corpus.groups) invariant(seen.has(group.id), `Modellergebnis für Gruppe ${group.id} fehlt.`);
+  return Object.freeze(comparisons);
+}
+
+function compareLegacyModel(corpus, modelResults, tolerance) {
+  invariant(corpus.schema === LEGACY_CORPUS_SCHEMA, "Unbekanntes Korpus-Schema.");
+  invariant(modelResults?.schema === LEGACY_MODEL_RESULTS_SCHEMA, "Unbekanntes Modellergebnis-Schema.");
+  sha256Hex(modelResults.releaseChecksum, "modelResults.releaseChecksum");
+  sha256Hex(modelResults.modelInputSha256, "modelResults.modelInputSha256");
+  invariant(
+    modelResults.qualification === "calibration-only" || modelResults.qualification === "validation",
+    "modelResults.qualification muss 'calibration-only' oder 'validation' sein.",
+  );
+  nonEmpty(modelResults.technicalReference?.sourceId, "modelResults.technicalReference.sourceId");
+  sha256Hex(modelResults.technicalReference?.artifactSha256, "modelResults.technicalReference.artifactSha256");
+  integer(modelResults.technicalReference?.runningSeconds, "modelResults.technicalReference.runningSeconds", 1);
+  const comparisons = compareResults(corpus, modelResults, tolerance, () => ({
+    runningSeconds: modelResults.technicalReference.runningSeconds,
+    sourceId: modelResults.technicalReference.sourceId,
+  }));
   const passed = comparisons.length > 0 && comparisons.every((comparison) => comparison.technicalWithinTolerance);
   return Object.freeze({
-    schema: REPORT_SCHEMA,
+    schema: LEGACY_REPORT_SCHEMA,
     corpusSha256: sha256(canonicalJson(corpus)),
     releaseChecksum: modelResults.releaseChecksum,
     modelInputSha256: modelResults.modelInputSha256,
@@ -269,8 +330,106 @@ export function compareWithModel(corpus, modelResults, tolerance = { absoluteSec
     qualification: modelResults.qualification,
     tolerance,
     passed,
-    releaseQualified: passed && modelResults.qualification === "validation",
-    comparisons: Object.freeze(comparisons),
+    releaseQualified: false,
+    qualificationBlocker: "Legacy-v2 enthält keinen maschinengeprüften, eingefrorenen und disjunkten Kalibrierungs-/Validierungsnachweis.",
+    comparisons: Object.freeze(comparisons.map(({ validationSampleId: _sample, validationSourceId: _source, ...comparison }) => comparison)),
+  });
+}
+
+function nonEmptyStringList(value, name) {
+  invariant(Array.isArray(value) && value.length > 0, `${name} muss mindestens einen Eintrag enthalten.`);
+  for (const [index, item] of value.entries()) nonEmpty(item, `${name}[${index}]`);
+  return Object.freeze([...value]);
+}
+
+export function compareWithModel(
+  corpus,
+  modelResults,
+  tolerance = { absoluteSeconds: 30, relativeBasisPoints: 500 },
+  context,
+) {
+  if (corpus?.schema === LEGACY_CORPUS_SCHEMA || modelResults?.schema === LEGACY_MODEL_RESULTS_SCHEMA) {
+    return compareLegacyModel(corpus, modelResults, tolerance);
+  }
+  invariant(corpus?.schema === CORPUS_SCHEMA, "Unbekanntes Korpus-Schema.");
+  invariant(modelResults?.schema === MODEL_RESULTS_SCHEMA, "Unbekanntes Modellergebnis-Schema.");
+  invariant(context?.qualification?.qualified === true, "Ein maschinengeprüfter Qualifikationsnachweis fehlt.");
+  sha256Hex(context.corpusArtifactSha256, "corpusArtifactSha256");
+  sha256Hex(context.modelResultsArtifactSha256, "modelResultsArtifactSha256");
+  sha256Hex(context.qualificationEvidenceSha256, "qualificationEvidenceSha256");
+  sha256Hex(modelResults.releaseChecksum, "modelResults.releaseChecksum");
+  sha256Hex(modelResults.modelInputSha256, "modelResults.modelInputSha256");
+  invariant(modelResults.qualification === undefined, "qualification darf nicht als vertrauenswürdiges Modellergebnisfeld gesetzt werden.");
+  const expectedBindings = {
+    ...corpus.artifactBinding,
+    referenceCorpusSha256: context.corpusArtifactSha256,
+    qualificationEvidenceSha256: context.qualificationEvidenceSha256,
+    calibrationDatasetSha256: context.qualification.calibration.dataset.sha256,
+    calibrationConfigSha256: context.qualification.calibration.config.sha256,
+    validationDatasetSha256: context.qualification.validation.dataset.sha256,
+    validationConfigSha256: context.qualification.validation.config.sha256,
+  };
+  invariant(
+    canonicalJson(modelResults.artifactBinding) === canonicalJson(expectedBindings),
+    "Modellergebnis ist nicht exakt an Korpus und Qualifikationsartefakte gebunden.",
+  );
+  const infrastructureAssumptions = nonEmptyStringList(modelResults.assumptions?.infrastructure, "assumptions.infrastructure");
+  const vehicleAssumptions = nonEmptyStringList(modelResults.assumptions?.vehicle, "assumptions.vehicle");
+  const validationIds = new Set(context.qualification.validation.sampleIds);
+  const usedValidationIds = new Set();
+  const comparisons = compareResults(corpus, modelResults, tolerance, (result, group) => {
+    nonEmpty(result.validationSampleId, `${group.id}.validationSampleId`);
+    invariant(validationIds.has(result.validationSampleId), `${group.id}: Validierungsstichprobe ist nicht im eingefrorenen Holdout enthalten.`);
+    invariant(!usedValidationIds.has(result.validationSampleId), `${group.id}: Validierungsstichprobe wird mehrfach ausgewertet.`);
+    usedValidationIds.add(result.validationSampleId);
+    invariant(!context.qualification.calibration.sampleIds.includes(result.validationSampleId), `${group.id}: Kalibrierungswert wird als Validierungswert wiederverwendet.`);
+    const sample = context.qualification.validationSamplesById.get(result.validationSampleId);
+    invariant(sample, `${group.id}: gebundene Validierungsstichprobe fehlt im Datensatz.`);
+    invariant(sample.groupId === group.id, `${group.id}: Validierungsstichprobe gehört zu einer anderen Referenzgruppe.`);
+    invariant(sample.characteristicsId === group.characteristicsId, `${group.id}: Validierungsstichprobe hat eine andere Zugcharakteristik.`);
+    return { sampleId: sample.id, sourceId: sample.sourceId, runningSeconds: sample.technicalRunningSeconds };
+  });
+  invariant(
+    canonicalJson([...usedValidationIds].sort()) === canonicalJson(context.qualification.validation.sampleIds),
+    "Modellergebnis wertet nicht exakt alle eingefrorenen Validierungsstichproben aus.",
+  );
+  const passed = comparisons.length > 0 && comparisons.every((comparison) => comparison.technicalWithinTolerance);
+  const reportBinding = Object.freeze({
+    ...expectedBindings,
+    modelInputSha256: modelResults.modelInputSha256,
+    modelResultsSha256: context.modelResultsArtifactSha256,
+  });
+  return Object.freeze({
+    schema: REPORT_SCHEMA,
+    artifactBinding: reportBinding,
+    releaseChecksum: modelResults.releaseChecksum,
+    modelInputSha256: modelResults.modelInputSha256,
+    sources: Object.freeze({
+      timetableHoldout: corpus.source,
+      technicalValidation: Object.freeze({
+        datasetId: context.qualification.validation.datasetId,
+        datasetSha256: context.qualification.validation.dataset.sha256,
+        sampleIdsSha256: context.qualification.validation.sampleIdsSha256,
+        source: context.qualification.validationDataset.source,
+      }),
+    }),
+    assumptions: Object.freeze({
+      infrastructure: infrastructureAssumptions,
+      vehicle: vehicleAssumptions,
+    }),
+    qualification: Object.freeze({
+      basis: "verified-disjoint-frozen-artifacts",
+      frozenAt: context.qualification.evidence.frozenAt,
+      calibrationDatasetId: context.qualification.calibration.datasetId,
+      validationDatasetId: context.qualification.validation.datasetId,
+      calibrationSampleCount: context.qualification.calibration.sampleIds.length,
+      validationSampleCount: context.qualification.validation.sampleIds.length,
+      disjoint: true,
+    }),
+    tolerance,
+    passed,
+    releaseQualified: passed,
+    comparisons,
   });
 }
 
@@ -283,78 +442,4 @@ export function verifyRegisteredSource(registry, source) {
   nonEmpty(source.retrievedAt, "source.retrievedAt");
   nonEmpty(source.apiVersion, "source.apiVersion");
   return entry;
-}
-
-export function createUnsignedBundle(input) {
-  invariant(input.corpus.schema === CORPUS_SCHEMA, "Korpus-Schema ist nicht signierbar.");
-  invariant(
-    input.report.schema === REPORT_SCHEMA && input.report.passed && input.report.releaseQualified,
-    "Nur ein bestandener, unabhängiger Validierungsreport darf signiert werden.",
-  );
-  invariant(input.report.corpusSha256 === sha256(canonicalJson(input.corpus)), "Report gehört nicht zu diesem Korpus.");
-  nonEmpty(input.report.releaseChecksum, "report.releaseChecksum");
-  nonEmpty(input.report.modelInputSha256, "report.modelInputSha256");
-  nonEmpty(input.releasePath, "releasePath");
-  nonEmpty(input.releaseSha256, "releaseSha256");
-  return Object.freeze({
-    schema: BUNDLE_SCHEMA,
-    region: input.corpus.region,
-    schedulePeriod: input.corpus.schedulePeriod,
-    corpusSha256: sha256(canonicalJson(input.corpus)),
-    reportSha256: sha256(canonicalJson(input.report)),
-    releasePath: input.releasePath,
-    releaseSha256: input.releaseSha256,
-    releaseChecksum: input.report.releaseChecksum,
-    modelInputSha256: input.report.modelInputSha256,
-    source: input.corpus.source,
-    createdAt: input.createdAt,
-  });
-}
-
-export function signBundle(bundle, privateKeyPem) {
-  invariant(bundle.schema === BUNDLE_SCHEMA, "Unbekanntes Bundle-Schema.");
-  const publicKey = createPublicKey(privateKeyPem);
-  const payload = Buffer.from(canonicalJson(bundle));
-  return Object.freeze({
-    bundle,
-    signature: Object.freeze({
-      algorithm: "Ed25519",
-      publicKeySha256: sha256(publicKey.export({ type: "spki", format: "der" })),
-      valueBase64: cryptoSign(null, payload, privateKeyPem).toString("base64"),
-    }),
-  });
-}
-
-export function verifySignedBundle(signedBundle, publicKeyPem) {
-  invariant(signedBundle.bundle?.schema === BUNDLE_SCHEMA, "Unbekanntes Bundle-Schema.");
-  invariant(signedBundle.signature?.algorithm === "Ed25519", "Nur Ed25519-Signaturen sind zulässig.");
-  const publicKey = publicKeyPem instanceof KeyObject && publicKeyPem.type === "public"
-    ? publicKeyPem
-    : createPublicKey(publicKeyPem);
-  invariant(
-    signedBundle.signature.publicKeySha256 === sha256(publicKey.export({ type: "spki", format: "der" })),
-    "Signatur wurde nicht mit dem erwarteten Release-Schlüssel erstellt.",
-  );
-  invariant(
-    cryptoVerify(
-      null,
-      Buffer.from(canonicalJson(signedBundle.bundle)),
-      publicKey,
-      Buffer.from(signedBundle.signature.valueBase64, "base64"),
-    ),
-    "Signatur des Pilot-Releases ist ungültig.",
-  );
-  return signedBundle.bundle;
-}
-
-export async function verifyBundleFiles(signedBundle, publicKeyPem, rootDirectory) {
-  const bundle = verifySignedBundle(signedBundle, publicKeyPem);
-  const releasePath = path.resolve(rootDirectory, bundle.releasePath);
-  invariant(
-    releasePath.startsWith(`${path.resolve(rootDirectory)}${path.sep}`),
-    "releasePath darf den Artefaktordner nicht verlassen.",
-  );
-  const release = await readFile(releasePath);
-  invariant(sha256(release) === bundle.releaseSha256, "InfraRelease-Artefakt stimmt nicht mit dem signierten Hash überein.");
-  return bundle;
 }

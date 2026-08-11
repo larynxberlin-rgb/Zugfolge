@@ -1,0 +1,18 @@
+[package]
+name = "zugfolge-m7-acceptance"
+description = "Deterministischer 48h-M7-Abnahmeerzeuger für den plattformübergreifenden E2E-Lauf"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+zugfolge-rules.workspace = true
+zugfolge-sim.workspace = true
+
+[lints]
+workspace = true
+

@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { EconomyDatabase } from "./ledger.js";
 import {
   canonicalFleetJson,
+  compareFleetUtf8,
   createFleetMobilizationEnvelope,
   fleetSnapshotHash,
   loadFleetMobilizationSnapshot,
@@ -144,5 +145,21 @@ describe("persistente M5→M6-Snapshot-Grenze", () => {
     expect(validateFleetMobilizationSnapshot(fromRust)).toBe(fromRust);
     expect(fleetSnapshotHash(fromRust)).toBe(expectedHash);
     expect(canonicalFleetJson(fromRust)).toBe(canonical);
+  });
+
+  it("verwendet dieselbe UTF-8-Byteordnung wie Rust statt localeCompare oder UTF-16", () => {
+    const privateUse = "id-\u{e000}";
+    const supplementary = "id-\u{10000}";
+    expect(compareFleetUtf8(privateUse, supplementary)).toBeLessThan(0);
+
+    const current = snapshot();
+    expect(validateFleetMobilizationSnapshot(snapshot({
+      formations: [{ ...current.formations[0]!, vehicleIds: [privateUse, supplementary] }],
+    }))).toBeDefined();
+    expect(() => validateFleetMobilizationSnapshot(snapshot({
+      formations: [{ ...current.formations[0]!, vehicleIds: [supplementary, privateUse] }],
+    }))).toThrow(/kanonisch sortiert/);
+    expect(canonicalFleetJson({ [supplementary]: 2, [privateUse]: 1 }))
+      .toBe(`{"${privateUse}":1,"${supplementary}":2}`);
   });
 });

@@ -9,6 +9,8 @@
 )]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error;
+use std::fmt;
 use zugfolge_determinism::{StateHash, StateHasher};
 
 /// Stabile Kennung einer Welt.
@@ -195,7 +197,17 @@ impl TrainRun {
 pub enum DispatchDecision {
     Proceed,
     HoldUntil(SimTime),
+    BreakConnection,
+    SkipStop,
+    ShortTurn,
+    ShortenTrain,
+    StrengthenTrain,
     Cancel,
+    ActivateReserveRotation,
+    ProvideReplacementVehicle,
+    RequestReroute,
+    ReturnPath,
+    TriggerRailReplacement,
 }
 
 /// Fachlicher Ereignistyp am Dispositionsentscheidungspunkt.
@@ -203,16 +215,123 @@ pub enum DispatchDecision {
 pub enum DispatchTrigger {
     Arrival,
     Departure,
+    DelayThreshold,
+    ConnectionRisk,
+    VehicleFailure,
+    PersonnelDutyExceeded,
+    RouteClosure,
+    PlatformChange,
+    TurnaroundShortfall,
+    AdHocPathConflict,
+}
+
+/// Vollständige, bereits von ihren Herkunftsdomänen geprüfte Grenzen einer
+/// Dispositionsentscheidung. Der Kern erhält Fakten, nie Datenbankzugriff.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DispatchLimits {
+    pub capacity_available: bool,
+    pub train_characteristics_compatible: bool,
+    pub route_knowledge_available: bool,
+    pub train_protection_compatible: bool,
+    pub electrification_compatible: bool,
+    pub train_length_allowed: bool,
+    pub vehicle_available: bool,
+    pub maintenance_valid: bool,
+    pub personnel_qualified: bool,
+    pub rest_time_compliant: bool,
+    pub rotation_feasible: bool,
+    pub contract_allows: bool,
+    pub cost_within_limit: bool,
+}
+
+impl Default for DispatchLimits {
+    fn default() -> Self {
+        Self {
+            capacity_available: true,
+            train_characteristics_compatible: true,
+            route_knowledge_available: true,
+            train_protection_compatible: true,
+            electrification_compatible: true,
+            train_length_allowed: true,
+            vehicle_available: true,
+            maintenance_valid: true,
+            personnel_qualified: true,
+            rest_time_compliant: true,
+            rotation_feasible: true,
+            contract_allows: true,
+            cost_within_limit: true,
+        }
+    }
+}
+
+/// Konkrete, ganzzahlige Auswirkung einer möglichen Maßnahme.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct DispatchImpact {
+    pub affected_train_runs: u32,
+    pub affected_connections: u32,
+    pub affected_rotations: u32,
+    pub affected_personnel_pools: u32,
+    pub affected_vehicles: u32,
+    pub cost_cents: i64,
+    pub contract_penalty_cents: i64,
+    pub cancelled_stops: u32,
+    pub cause: String,
+    pub affected_resource: String,
+    pub contract_effect: String,
+}
+
+/// Ereignisfakten am M4.4-Entscheidungspunkt. Alle Zeit- und Geldwerte sind
+/// explizit und ganzzahlig; `manual_override` gilt nur für `decision_id`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DispatchFacts {
+    pub decision_id: u64,
+    pub delay_seconds: i64,
+    pub connection_threatened: bool,
+    pub vehicle_failed: bool,
+    pub duty_excess_seconds: u32,
+    pub route_closed: bool,
+    pub platform_changed: bool,
+    pub turnaround_shortfall_seconds: u32,
+    pub adhoc_conflict: bool,
+    pub hold_until: SimTime,
+    pub limits: DispatchLimits,
+    pub impact: DispatchImpact,
+    pub manual_override: Option<DispatchDecision>,
+    pub manual_reason: Option<String>,
+}
+
+impl DispatchFacts {
+    /// Neutrale Fakten für die konservativen M4-Ankunfts-/Abfahrtsentscheidungen.
+    #[must_use]
+    pub fn neutral(decision_id: u64, at: SimTime) -> Self {
+        Self {
+            decision_id,
+            delay_seconds: 0,
+            connection_threatened: false,
+            vehicle_failed: false,
+            duty_excess_seconds: 0,
+            route_closed: false,
+            platform_changed: false,
+            turnaround_shortfall_seconds: 0,
+            adhoc_conflict: false,
+            hold_until: at,
+            limits: DispatchLimits::default(),
+            impact: DispatchImpact::default(),
+            manual_override: None,
+            manual_reason: None,
+        }
+    }
 }
 
 /// Austauschbare Dispositionsschnittstelle für M7.
 pub trait Dispatcher {
     /// Entscheidet ohne Seiteneffekt über das nächste Ereignis.
     fn decide(
-        &self,
+        &mut self,
         train: &TrainRun,
         event_at: SimTime,
         trigger: DispatchTrigger,
+        facts: &DispatchFacts,
     ) -> DispatchDecision;
 }
 
@@ -221,10 +340,11 @@ pub trait Dispatcher {
 pub struct ConservativeDispatcher;
 impl Dispatcher for ConservativeDispatcher {
     fn decide(
-        &self,
+        &mut self,
         train: &TrainRun,
         event_at: SimTime,
         _trigger: DispatchTrigger,
+        _facts: &DispatchFacts,
     ) -> DispatchDecision {
         let waypoint = &train.route[train.next_waypoint];
         DispatchDecision::HoldUntil(event_at.max(waypoint.departure + train.delay_seconds.max(0)))
@@ -243,6 +363,13 @@ pub enum Command {
     ConfirmHandover {
         token: u64,
         target_region: RegionId,
+    },
+    /// Von M8-Erzeugung getrenntes, explizit eingespeistes Dispositionsereignis.
+    Dispatch {
+        train_run_id: TrainRunId,
+        at: SimTime,
+        trigger: DispatchTrigger,
+        facts: DispatchFacts,
     },
 }
 
@@ -276,6 +403,12 @@ pub enum EventKind {
     },
     Completed {
         train_run_id: TrainRunId,
+    },
+    DispatchApplied {
+        train_run_id: TrainRunId,
+        decision_id: u64,
+        trigger: DispatchTrigger,
+        decision: DispatchDecision,
     },
 }
 
@@ -430,8 +563,92 @@ impl<D: Dispatcher> Simulation<D> {
                     },
                 ));
             }
+            Command::Dispatch {
+                train_run_id,
+                at,
+                trigger,
+                facts,
+            } => {
+                if at < self.now {
+                    return Err(SimError::TimeReversal);
+                }
+                self.advance(at, &mut kinds);
+                let train = self
+                    .trains
+                    .get(&train_run_id)
+                    .ok_or(SimError::UnknownTrain)?
+                    .clone();
+                let decision = self.dispatcher.decide(&train, at, trigger, &facts);
+                self.apply_external_dispatch(train_run_id, at, decision)?;
+                kinds.push((
+                    at,
+                    EventKind::DispatchApplied {
+                        train_run_id,
+                        decision_id: facts.decision_id,
+                        trigger,
+                        decision,
+                    },
+                ));
+            }
         }
         Ok(self.events(kinds))
+    }
+
+    fn apply_external_dispatch(
+        &mut self,
+        train_run_id: TrainRunId,
+        at: SimTime,
+        decision: DispatchDecision,
+    ) -> Result<(), SimError> {
+        let train = self
+            .trains
+            .get_mut(&train_run_id)
+            .ok_or(SimError::UnknownTrain)?;
+        match decision {
+            DispatchDecision::Cancel | DispatchDecision::TriggerRailReplacement => {
+                train.status = OperatingStatus::Cancelled;
+                self.schedule
+                    .retain(|event| event.train_run_id != train_run_id);
+            }
+            DispatchDecision::ShortTurn => {
+                train.status = OperatingStatus::Completed;
+                self.schedule
+                    .retain(|event| event.train_run_id != train_run_id);
+            }
+            DispatchDecision::HoldUntil(until) if until > at => {
+                train.status = OperatingStatus::Waiting;
+                if train.next_waypoint < train.route.len() {
+                    self.schedule.insert(ScheduledEvent {
+                        at: until,
+                        train_run_id,
+                        waypoint: train.next_waypoint,
+                        kind: ScheduledKind::Depart,
+                    });
+                }
+            }
+            DispatchDecision::SkipStop if train.next_waypoint + 1 < train.route.len() => {
+                train.next_waypoint += 1;
+                train.status = OperatingStatus::Running;
+                let next = &train.route[train.next_waypoint];
+                self.schedule.insert(ScheduledEvent {
+                    at: next.arrival.saturating_add(train.delay_seconds).max(at),
+                    train_run_id,
+                    waypoint: train.next_waypoint,
+                    kind: ScheduledKind::Arrive,
+                });
+            }
+            DispatchDecision::Proceed
+            | DispatchDecision::HoldUntil(_)
+            | DispatchDecision::BreakConnection
+            | DispatchDecision::SkipStop
+            | DispatchDecision::ShortenTrain
+            | DispatchDecision::StrengthenTrain
+            | DispatchDecision::ActivateReserveRotation
+            | DispatchDecision::ProvideReplacementVehicle
+            | DispatchDecision::RequestReroute
+            | DispatchDecision::ReturnPath => {}
+        }
+        Ok(())
     }
 
     fn advance(&mut self, target: SimTime, kinds: &mut Vec<(SimTime, EventKind)>) {
@@ -491,12 +708,32 @@ impl<D: Dispatcher> Simulation<D> {
                         operating_point: waypoint.operating_point.clone(),
                     },
                 ));
-                match self
-                    .dispatcher
-                    .decide(train, event.at, DispatchTrigger::Arrival)
-                {
-                    DispatchDecision::Cancel => train.status = OperatingStatus::Cancelled,
-                    DispatchDecision::Proceed => {
+                match self.dispatcher.decide(
+                    train,
+                    event.at,
+                    DispatchTrigger::Arrival,
+                    &DispatchFacts::neutral(0, event.at),
+                ) {
+                    DispatchDecision::Cancel | DispatchDecision::TriggerRailReplacement => {
+                        train.status = OperatingStatus::Cancelled;
+                    }
+                    DispatchDecision::ShortTurn => train.status = OperatingStatus::Completed,
+                    DispatchDecision::SkipStop => {
+                        self.schedule.insert(ScheduledEvent {
+                            at: event.at,
+                            train_run_id: event.train_run_id,
+                            waypoint: event.waypoint,
+                            kind: ScheduledKind::Depart,
+                        });
+                    }
+                    DispatchDecision::Proceed
+                    | DispatchDecision::BreakConnection
+                    | DispatchDecision::ShortenTrain
+                    | DispatchDecision::StrengthenTrain
+                    | DispatchDecision::ActivateReserveRotation
+                    | DispatchDecision::ProvideReplacementVehicle
+                    | DispatchDecision::RequestReroute
+                    | DispatchDecision::ReturnPath => {
                         self.schedule_departure(event.train_run_id, event.waypoint, event.at)
                     }
                     DispatchDecision::HoldUntil(until) => self.schedule_departure(
@@ -507,19 +744,34 @@ impl<D: Dispatcher> Simulation<D> {
                 }
             }
             ScheduledKind::Depart => {
-                match self
-                    .dispatcher
-                    .decide(train, event.at, DispatchTrigger::Departure)
-                {
-                    DispatchDecision::Cancel => {
+                match self.dispatcher.decide(
+                    train,
+                    event.at,
+                    DispatchTrigger::Departure,
+                    &DispatchFacts::neutral(0, event.at),
+                ) {
+                    DispatchDecision::Cancel | DispatchDecision::TriggerRailReplacement => {
                         train.status = OperatingStatus::Cancelled;
+                        return;
+                    }
+                    DispatchDecision::ShortTurn => {
+                        train.status = OperatingStatus::Completed;
                         return;
                     }
                     DispatchDecision::HoldUntil(until) if until > event.at => {
                         self.schedule.insert(ScheduledEvent { at: until, ..event });
                         return;
                     }
-                    DispatchDecision::Proceed | DispatchDecision::HoldUntil(_) => {}
+                    DispatchDecision::Proceed
+                    | DispatchDecision::HoldUntil(_)
+                    | DispatchDecision::BreakConnection
+                    | DispatchDecision::SkipStop
+                    | DispatchDecision::ShortenTrain
+                    | DispatchDecision::StrengthenTrain
+                    | DispatchDecision::ActivateReserveRotation
+                    | DispatchDecision::ProvideReplacementVehicle
+                    | DispatchDecision::RequestReroute
+                    | DispatchDecision::ReturnPath => {}
                 }
                 let point = waypoint.operating_point.clone();
                 kinds.push((
@@ -770,6 +1022,12 @@ impl<D: Dispatcher> Simulation<D> {
                 .uint("event-kind", event.kind as u64);
         }
         hasher.finish()
+    }
+
+    /// Read-only-Zugriff auf die regelgebundene Disposition für Audit-Ausgaben.
+    #[must_use]
+    pub const fn dispatcher(&self) -> &D {
+        &self.dispatcher
     }
 }
 
@@ -1169,6 +1427,14 @@ pub enum SimError {
     SequenceGap,
     ResourceOccupied,
 }
+
+impl fmt::Display for SimError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{self:?}")
+    }
+}
+
+impl Error for SimError {}
 
 /// Prüft, dass jede aktive Fahrt höchstens einmal vorkommt (Hilfsinvariante des Single-Writers).
 #[must_use]

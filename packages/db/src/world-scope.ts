@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { domainEvents, worlds, type NewDomainEvent } from "./schema/index.js";
@@ -76,6 +76,20 @@ export function worldEventLog<TDatabase extends AnyDatabase>(db: TDatabase, worl
         .select()
         .from(domainEvents)
         .where(eq(domainEvents.worldId, worldId))
+        .orderBy(asc(domainEvents.sequence));
+    },
+
+    /** Ausgewählte Ereignistypen dieser Welt, ohne das übrige Log zu laden. */
+    async listOfTypes(eventTypes: readonly string[]) {
+      const types = [...new Set(eventTypes)];
+      if (types.length > 64 || types.some((eventType) => eventType.length === 0)) {
+        throw new RangeError("Ereignistypfilter ist ungültig.");
+      }
+      if (types.length === 0) return [];
+      return db
+        .select()
+        .from(domainEvents)
+        .where(and(eq(domainEvents.worldId, worldId), inArray(domainEvents.eventType, types)))
         .orderBy(asc(domainEvents.sequence));
     },
 

@@ -1,0 +1,37 @@
+[package]
+name = "zugfolge-planning-runtime-napi"
+description = "Narrow napi-rs adapter for the M3 PlanningRun single-writer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+default = []
+node-addon = ["dep:napi", "dep:napi-derive"]
+
+[dependencies]
+napi = { version = "=3.4.0", default-features = false, features = ["napi4"], optional = true }
+napi-derive = { version = "=3.2.5", optional = true }
+zugfolge-planning-runtime = { path = "../zugfolge-planning-runtime", version = "0.0.0" }
+
+[build-dependencies]
+napi-build = "=2.2.4"
+
+[lints.rust]
+unsafe_code = "allow"
+missing_docs = "warn"
+
+[lints.clippy]
+float_arithmetic = "deny"
+float_cmp = "deny"
+disallowed_types = "deny"
+disallowed_methods = "deny"
+cast_possible_truncation = "deny"
+cast_sign_loss = "deny"
+cast_precision_loss = "deny"

@@ -21,5 +21,7 @@ export * from "./workflow.js";
 export * from "./platform-adapters.js";
 export * from "./state-store.js";
 export * from "./fleet-snapshot.js";
+export * from "./utf8.js";
+export * from "./fleet-native-producer.js";
 export * from "./runtime.js";
 export * from "./service-planning.js";

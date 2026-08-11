@@ -6,6 +6,7 @@ import {
   parseRoadmap,
   renderMilestoneDescription,
   renderStatusDocument,
+  roadmapIssueKey,
 } from "./sync-milestones.mjs";
 
 const roadmap = parseRoadmap(`
@@ -43,13 +44,22 @@ test("Roadmap-Parser liest Titel und Statuszeilen", () => {
   assert.deepEqual(roadmap.get("M1").rows, [{ key: "1.1", status: "in Arbeit" }]);
 });
 
+test("Roadmap-Issues tragen einen maschinenlesbaren Teilpunkt-Schluessel", () => {
+  assert.equal(roadmapIssueKey("[Roadmap M3.10] Bildfahrplan"), "M3.10");
+  assert.equal(roadmapIssueKey("[Livemap] anderer Befund"), null);
+});
+
 test("Milestone schliesst nur bei erledigter Roadmap, geschlossenen Items und Beleg", () => {
   assert.equal(
-    desiredMilestoneState(milestone, roadmap.get("M0"), new Map([[1, { state: "closed" }]])),
+    desiredMilestoneState(milestone, roadmap.get("M0"), new Map([[1, { state: "closed", merged_at: "2026-08-11T00:00:00Z" }]])),
     "closed",
   );
   assert.equal(
-    desiredMilestoneState(milestone, roadmap.get("M0"), new Map([[1, { state: "open" }]])),
+    desiredMilestoneState(milestone, roadmap.get("M0"), new Map([[1, { state: "open", merged_at: null }]])),
+    "open",
+  );
+  assert.equal(
+    desiredMilestoneState(milestone, roadmap.get("M0"), new Map([[1, { state: "closed", merged_at: null }]])),
     "open",
   );
   assert.equal(
