@@ -1,5 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import {
+  accountRoles,
+  disruptionProviderStates,
   ledgerTransactions,
   mailboxMessages,
   MIGRATIONS_FOLDER,
@@ -35,12 +37,18 @@ import {
   PLANNING_PROJECTION_SCHEMA_VERSION,
   type PlanningProjectionV1,
 } from "@zugfolge/planning-projection";
-import type { OperatingRuntime } from "@zugfolge/runtime-native";
+import {
+  REGIONAL_LIVEMAP_DELTA_SCHEMA,
+  REGIONAL_SIMULATION_RESULT_SCHEMA,
+  REGIONAL_SIMULATION_STATE_SCHEMA,
+  type OperatingRuntime,
+  type RegionalSimulationResult,
+} from "@zugfolge/runtime-native";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 
 import { buildApp } from "./app.js";
@@ -284,7 +292,7 @@ describe("M7 Betriebsprogramm und Betriebszentrale", () => {
       headers: { authorization: `Bearer ${SIMULATION_INGEST_TOKEN}` },
       payload: { events: [
         { sequence: 1, eventType: "operations.train-outcome", occurredAt: "2026-08-11T08:00:00.000Z", payload: { operatorId, trainRunId: "RE-1", status: "cancelled", delaySeconds: 900 } },
-        { sequence: 2, eventType: "dispatch.major-event", occurredAt: "2026-08-11T08:01:00.000Z", payload: { operatorId, trainRunId: "RE-1", decisionId: "decision-1", action: "trigger_rail_replacement", cause: "Streckensperrung", affectedResource: "Abzweig Gröbers", outcomeReason: "Ersatzverkehr", major: true, impact: { affected_train_runs: 4, cost_cents: 1000, contract_penalty_cents: 200, personnel_effect: "Bereitschaft", vehicle_effect: "Busreserve" } } },
+        { sequence: 2, eventType: "disruption.replacement-plan", occurredAt: "2026-08-11T08:01:00.000Z", payload: { operatorId, trainRunId: "RE-1", decisionId: "decision-1", action: "trigger_rail_replacement", cause: "Streckensperrung", causeCode: 25, causeLabel: "Anlagen Leit- und Sicherungstechnik", affectedResource: "Abzweig Gröbers", outcomeReason: "Umleitung abgelehnt; Ersatzverkehr", major: true, rejectedAlternatives: [{ action: "request_reroute", reason: "Restkapazität vergeben" }], impact: { affected_train_runs: 4, cost_cents: 1000, contract_penalty_cents: 200, personnel_effect: "Bereitschaft", vehicle_effect: "Busreserve" } } },
         { sequence: 3, eventType: "economy.settlement", occurredAt: "2026-08-11T23:59:00.000Z", payload: { operatorId, revenueCents: "5000", costCents: "250", contractPenaltyCents: "50" } },
       ] },
     });
@@ -292,7 +300,7 @@ describe("M7 Betriebsprogramm und Betriebszentrale", () => {
 
     const operations = await app.inject({ method: "GET", url: `${base}/operations`, headers: { authorization: `Bearer ${ownerToken}` } });
     expect(operations.statusCode).toBe(200);
-    expect(operations.json()).toMatchObject({ throughSequence: 3, majorEvents: [{ decisionId: "decision-1" }] });
+    expect(operations.json()).toMatchObject({ throughSequence: 3, majorEvents: [{ decisionId: "decision-1", causeCode: 25, causeLabel: "Anlagen Leit- und Sicherungstechnik" }] });
 
     const override = await app.inject({ method: "POST", url: `${base}/operations/decisions/decision-1/override`, headers: { authorization: `Bearer ${ownerToken}` }, payload: { idempotencyKey: "override-1", action: "request_reroute", reason: "Leitstellenentscheidung wegen verfügbarer Umleitung", at: 1_786_435_260 } });
     expect(override.statusCode).toBe(202);
@@ -312,6 +320,182 @@ describe("M7 Betriebsprogramm und Betriebszentrale", () => {
     expect(reportRetry.json<{ id: string }>().id).toBe(report.json<{ id: string }>().id);
     const reports = await app.inject({ method: "GET", url: `${base}/operations/reports`, headers: { authorization: `Bearer ${ownerToken}` } });
     expect(reports.json<unknown[]>()).toHaveLength(1);
+  });
+});
+
+describe("M8 Störungsrichtlinie und manueller Spielleitermodus", () => {
+  it("plant den Policywechsel nur am Stichtag und schreibt manuelle Eingriffe weltisoliert in die Kommandoqueue", async () => {
+    const adminToken = await sign("kc-m8-admin", "M8 Spielleitung");
+    const playerToken = await sign("kc-m8-player", "M8 Spieler");
+    const adminAccess = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${adminToken}` }, payload: { displayName: "M8 Spielleitung" } });
+    await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${playerToken}` }, payload: { displayName: "M8 Spieler" } });
+    await db.insert(accountRoles).values({
+      worldId: WORLD_LHE,
+      accountId: adminAccess.json<{ id: string }>().id,
+      role: "world_admin",
+    });
+    const boundary = 4 * 7 * 86_400;
+    const blockedRealistic = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/disruptions/policies`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        requestedAtS: 100,
+        effectiveAtS: boundary,
+        plannedWorksMode: "REALISTIC",
+        operationalIncidentMode: "REALISTIC",
+        providerSetId: "public-infrastructure-restrictions/de-v1",
+        simulationProfile: { id: "lhe/v1", eventsPerPeriod: 6 },
+        rulesetVersion: "disruption-rules/v1",
+        reason: "Provider ohne Rechtefreigabe darf nicht aktiviert werden",
+      },
+    });
+    expect(blockedRealistic.statusCode).toBe(400);
+    const policy = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/disruptions/policies`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        requestedAtS: 100,
+        effectiveAtS: boundary,
+        plannedWorksMode: "SIMULATED",
+        operationalIncidentMode: "MANUAL",
+        simulationProfile: { id: "lhe/v1", eventsPerPeriod: 6 },
+        rulesetVersion: "disruption-rules/v1",
+        reason: "Veröffentlichter Wechsel zur nächsten Fahrplanperiode",
+      },
+    });
+    expect(policy.statusCode).toBe(201);
+    expect(policy.json()).toMatchObject({ worldId: WORLD_LHE, version: 1, status: "scheduled", validFromS: boundary });
+    await db.insert(disruptionProviderStates).values({
+      worldId: WORLD_LHE,
+      providerSetId: "public-infrastructure-restrictions/de-v1",
+      rightsStatus: "approved",
+      enabled: "enabled",
+      rightsReference: "Quellenregister: Freigabe 2026-08-11",
+      checkedAt: new Date("2026-08-11T15:00:00Z"),
+    });
+    const realistic = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/disruptions/policies`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        requestedAtS: boundary,
+        effectiveAtS: boundary * 2,
+        plannedWorksMode: "REALISTIC",
+        operationalIncidentMode: "REALISTIC",
+        providerSetId: "public-infrastructure-restrictions/de-v1",
+        simulationProfile: { id: "lhe/v1", eventsPerPeriod: 6 },
+        rulesetVersion: "disruption-rules/v1",
+        reason: "Rechtegepruefter realistischer Datenmodus zur naechsten Periode",
+      },
+    });
+    expect(realistic.statusCode).toBe(201);
+    const tooEarly = await app.inject({ method: "GET", url: `/worlds/${WORLD_LHE}/disruptions/policy?atS=${boundary - 1}`, headers: { authorization: `Bearer ${adminToken}` } });
+    expect(tooEarly.statusCode).toBe(404);
+    const active = await app.inject({ method: "GET", url: `/worlds/${WORLD_LHE}/disruptions/policy?atS=${boundary}`, headers: { authorization: `Bearer ${adminToken}` } });
+    expect(active.json()).toMatchObject({ version: 1, rulesetVersion: "disruption-rules/v1" });
+
+    const body = {
+      idempotencyKey: "manual-m8-1",
+      regionId: "leipzig",
+      kind: "planned",
+      publishedAtS: boundary,
+      startsAtS: boundary + 1_000,
+      endsAtS: boundary + 2_000,
+      positionMm: 1_200_000,
+      causeCode: 25,
+      fineCauseId: "signalling.interlocking",
+      cause: "Signaltechnische Untersuchung",
+      affectedResources: [{ kind: "track", id: 4 }],
+      affectedResource: "track:4",
+      affectedTrainRunIds: [],
+      delaySeconds: 0,
+      effect: { kind: "closure" },
+    };
+    const denied = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/disruptions/manual`, headers: { authorization: `Bearer ${playerToken}` }, payload: body });
+    expect(denied.statusCode).toBe(403);
+    const effectless = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/disruptions/manual`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { ...body, idempotencyKey: "manual-m8-effectless", effect: { kind: "radio-unavailable" } },
+    });
+    expect(effectless.statusCode).toBe(400);
+    const queued = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/disruptions/manual`, headers: { authorization: `Bearer ${adminToken}` }, payload: body });
+    expect(queued.statusCode).toBe(202);
+    expect(queued.json()).toMatchObject({ worldId: WORLD_LHE, commandType: "disruption.manual", payload: { worldId: WORLD_LHE, causeCode: 25, fineCauseId: "signalling.interlocking" } });
+    const replay = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/disruptions/manual`, headers: { authorization: `Bearer ${adminToken}` }, payload: body });
+    expect(replay.json<{ id: string }>().id).toBe(queued.json<{ id: string }>().id);
+
+    const regionalApply = vi.fn(async (work: {
+      readonly worldId: string;
+      readonly regionId: string;
+      readonly commandId: string;
+    }): Promise<RegionalSimulationResult> => ({
+      schemaVersion: REGIONAL_SIMULATION_RESULT_SCHEMA,
+      state: {
+        schemaVersion: REGIONAL_SIMULATION_STATE_SCHEMA,
+        worldId: work.worldId,
+        regionId: work.regionId,
+        initialNowS: 0,
+        nowS: boundary,
+        revision: 1,
+        publisherSequence: 1,
+        commands: [{}],
+      },
+      stateHash: "d".repeat(64),
+      events: [],
+      delta: {
+        schemaVersion: REGIONAL_LIVEMAP_DELTA_SCHEMA,
+        worldId: work.worldId,
+        regionId: work.regionId,
+        producerSequence: 1,
+        atS: boundary,
+        changed: [],
+        removed: [],
+        changedDisruptions: [],
+        removedDisruptionIds: [],
+      },
+      appliedCommandId: work.commandId,
+      idempotentReplay: false,
+    }));
+    const integrated = buildApp({
+      db,
+      verifyToken: verifyTokenForTest,
+      regionalSimulation: {
+        initialize: async () => { throw new Error("in diesem Test nicht verwendet"); },
+        apply: regionalApply,
+      },
+    });
+    await integrated.ready();
+    try {
+      const applied = await integrated.inject({
+        method: "POST",
+        url: `/worlds/${WORLD_LHE}/disruptions/manual`,
+        headers: { authorization: `Bearer ${adminToken}` },
+        payload: { ...body, idempotencyKey: "manual-m8-integrated" },
+      });
+      expect(applied.statusCode).toBe(200);
+      expect(regionalApply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          worldId: WORLD_LHE,
+          regionId: "leipzig",
+          command: expect.objectContaining({
+            type: "register-disruption",
+            disruption: expect.objectContaining({
+              kind: "planned",
+              effect: "closure",
+              fineCauseId: "signalling.interlocking",
+            }),
+          }),
+        }),
+        expect.any(Date),
+      );
+      expect(applied.json()).toMatchObject({ command: { status: "processed" } });
+    } finally {
+      await integrated.close();
+    }
   });
 });
 

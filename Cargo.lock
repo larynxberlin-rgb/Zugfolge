@@ -406,6 +406,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "zugfolge-disruption"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "zugfolge-conflict",
+ "zugfolge-determinism",
+ "zugfolge-infra",
+ "zugfolge-planner",
+ "zugfolge-sim",
+]
+
+[[package]]
 name = "zugfolge-fleet"
 version = "0.0.0"
 dependencies = [
@@ -532,5 +545,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "zugfolge-disruption",
  "zugfolge-sim",
 ]

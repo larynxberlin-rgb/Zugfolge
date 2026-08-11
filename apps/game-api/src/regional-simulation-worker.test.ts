@@ -1,11 +1,15 @@
 import { PGlite } from "@electric-sql/pglite";
 import {
+  accounts,
   domainEvents,
+  mailboxMessages,
   MIGRATIONS_FOLDER,
+  operators,
   regionalSimulationStates,
   worlds,
 } from "@zugfolge/db";
 import * as schema from "@zugfolge/db/schema";
+import { OperationsRegistry } from "@zugfolge/dispatch";
 import {
   LivemapRegistry,
 } from "@zugfolge/livemap-stream";
@@ -18,6 +22,7 @@ import {
   REGIONAL_SIMULATION_RESULT_SCHEMA,
   REGIONAL_SIMULATION_STATE_SCHEMA,
   type RegionalLivemapDelta,
+  type RegionalPublicDisruption,
   type RegionalPublicTrain,
   type RegionalSimulationCommand,
   type RegionalSimulationEvent,
@@ -50,6 +55,7 @@ type FakeState = RegionalSimulationState & {
   readonly materializationWindowHours: number;
   readonly initialTrains: readonly unknown[];
   readonly trains: readonly RegionalPublicTrain[];
+  readonly disruptions: readonly RegionalPublicDisruption[];
   readonly commands: readonly FakeStoredCommand[];
 };
 
@@ -82,6 +88,7 @@ function fakeRuntime(gap = false): RegionalSimulationRuntime {
       producerSequence: state.publisherSequence,
       atS: state.nowS,
       trains: state.trains,
+      disruptions: state.disruptions,
     } as const;
   }
 
@@ -97,6 +104,7 @@ function fakeRuntime(gap = false): RegionalSimulationRuntime {
         nowS: input.nowS,
         initialTrains: input.trains,
         trains,
+        disruptions: [],
         revision: 0,
         publisherSequence: 0,
         commands: [],
@@ -137,10 +145,14 @@ function fakeRuntime(gap = false): RegionalSimulationRuntime {
       }
 
       let trains = [...state.trains];
+      let disruptions = [...state.disruptions];
       let nowS = state.nowS;
       let changed: RegionalPublicTrain[] = [];
       let removed: string[] = [];
+      let changedDisruptions: RegionalPublicDisruption[] = [];
+      let removedDisruptionIds: string[] = [];
       let eventType = "simulation.time-advanced";
+      let eventPayload: Readonly<Record<string, unknown>> = {};
       if (envelope.command.type === "materialize") {
         const train = publicTrain(envelope.command.train);
         trains.push(train);
@@ -158,6 +170,49 @@ function fakeRuntime(gap = false): RegionalSimulationRuntime {
         );
         changed = trains.filter((train) => train.id === envelope.command.trainRunId);
         eventType = "simulation.delay-changed";
+      } else if (envelope.command.type === "register-disruption") {
+        const input = envelope.command.disruption;
+        const disruption: RegionalPublicDisruption = {
+          schemaVersion: "zugfolge-livemap-disruption/v1",
+          disruptionId: input.disruptionId,
+          kind: input.kind,
+          publishedAtS: input.publishedAtS,
+          startsAtS: input.startsAtS,
+          validUntilS: input.validUntilS,
+          positionMm: input.positionMm,
+          causeCode: input.causeCode,
+          causeLabel: "Anlagen Leit- und Sicherungstechnik",
+          fineCauseId: input.fineCauseId,
+          fineCauseLabel: "Stellwerk gestört",
+          effect: input.effect,
+          affectedResource: input.affectedResource,
+        };
+        disruptions.push(disruption);
+        changedDisruptions = [disruption];
+        eventType = "disruption.registered";
+      } else if (envelope.command.type === "activate-disruption") {
+        const affectedOperators = trains
+          .filter((train) => envelope.command.affectedTrainRunIds.includes(train.id))
+          .map((train) => train.operator);
+        trains = trains.map((train) =>
+          envelope.command.affectedTrainRunIds.includes(train.id)
+            ? { ...train, delaySeconds: train.delaySeconds + envelope.command.delaySeconds }
+            : train,
+        );
+        changed = trains.filter((train) => envelope.command.affectedTrainRunIds.includes(train.id));
+        eventType = "disruption.applied";
+        eventPayload = {
+          operatorIds: affectedOperators,
+          affectedTrainRunIds: envelope.command.affectedTrainRunIds,
+          action: "apply_disruption",
+          causeCode: 25,
+          causeLabel: "Anlagen Leit- und Sicherungstechnik",
+          fineCauseId: "signalling.interlocking",
+          fineCauseLabel: "Stellwerk gestört",
+          affectedResource: "block:A:B:1",
+          outcomeReason: "Betriebswirksame Einschränkung angewendet",
+          impact: { affected_train_runs: envelope.command.affectedTrainRunIds.length, affected_resource: "block:A:B:1" },
+        };
       } else {
         removed = trains.map((train) => train.id);
         trains = [];
@@ -172,6 +227,8 @@ function fakeRuntime(gap = false): RegionalSimulationRuntime {
         atS: nowS,
         changed,
         removed,
+        changedDisruptions,
+        removedDisruptionIds,
       };
       const events: readonly RegionalSimulationEvent[] = [
         {
@@ -181,7 +238,7 @@ function fakeRuntime(gap = false): RegionalSimulationRuntime {
           simulationSequence: nextRevision,
           eventType,
           atS: nowS,
-          payload: {},
+          payload: eventPayload,
         },
       ];
       const stored: FakeStoredCommand = {
@@ -196,6 +253,7 @@ function fakeRuntime(gap = false): RegionalSimulationRuntime {
         ...state,
         nowS,
         trains,
+        disruptions,
         revision: nextRevision,
         publisherSequence: nextRevision,
         commands,
@@ -250,6 +308,167 @@ async function testDatabase() {
 }
 
 describe("regionaler M4-Simulationsworker", () => {
+  it("liefert eine angewendete Störung atomar an Event-Log, EVU-Push und Postfach", async () => {
+    const { client, db } = await testDatabase();
+    const worldId = "88888888-8888-4888-8888-888888888888";
+    const livemap = new LivemapRegistry();
+    const operations = new OperationsRegistry();
+    const worker = new RegionalSimulationWorker(db, fakeRuntime(), livemap, operations);
+    try {
+      await db.insert(worlds).values({
+        id: worldId,
+        name: "Störungszustellwelt",
+        schedulePeriodWeeks: 4,
+        epoch: new Date(0),
+      });
+      const [account] = await db.insert(accounts).values({
+        worldId,
+        keycloakSubject: "operator-owner",
+        displayName: "Leitstelle",
+      }).returning();
+      const [operator] = await db.insert(operators).values({
+        worldId,
+        foundingAccountId: account!.id,
+        name: "Testverkehr",
+      }).returning();
+      await worker.initialize(initialization(worldId), new Date(0));
+      await worker.apply({
+        worldId,
+        regionId,
+        commandId: "materialize-disrupted-run",
+        command: { type: "materialize", train: { ...train("run-1"), operator: operator!.id } },
+      }, new Date(1_000));
+      await worker.apply({
+        worldId,
+        regionId,
+        commandId: "register-unplanned-disruption",
+        command: {
+          type: "register-disruption",
+          disruption: {
+            disruptionId: "unplanned-1",
+            kind: "unplanned",
+            publishedAtS: 0,
+            startsAtS: 0,
+            validUntilS: 3_600,
+            positionMm: 1_200_000,
+            causeCode: 25,
+            fineCauseId: "signalling.interlocking",
+            effect: "closure",
+            affectedResource: "block:A:B:1",
+            affectedTrainRunIds: [],
+            delaySeconds: 0,
+          },
+        },
+      }, new Date(2_000));
+
+      const pushed: unknown[] = [];
+      operations.forOperator(worldId, operator!.id).subscribe((event) => pushed.push(event));
+      const activationWork = {
+        worldId,
+        regionId,
+        commandId: "activate-unplanned-disruption",
+        command: {
+          type: "activate-disruption" as const,
+          disruptionId: "unplanned-1",
+          affectedTrainRunIds: ["run-1"],
+          delaySeconds: 300,
+        },
+      };
+      await worker.apply(activationWork, new Date(3_000));
+
+      expect(pushed).toEqual([
+        expect.objectContaining({
+          worldId,
+          operatorId: operator!.id,
+          decision: expect.objectContaining({
+            action: "apply_disruption",
+            fineCauseId: "signalling.interlocking",
+          }),
+        }),
+      ]);
+      expect(await db.select().from(mailboxMessages).where(eq(mailboxMessages.worldId, worldId))).toEqual([
+        expect.objectContaining({
+          recipientAccountId: account!.id,
+          messageType: "disruption.applied",
+        }),
+      ]);
+      const appliedEvents = await db.select().from(domainEvents).where(and(
+        eq(domainEvents.worldId, worldId),
+        eq(domainEvents.eventType, "disruption.applied"),
+      ));
+      expect(appliedEvents[0]?.payload).toMatchObject({
+        operatorIds: [operator!.id],
+        fineCauseId: "signalling.interlocking",
+        affectedResource: "block:A:B:1",
+      });
+
+      expect(await db.select().from(mailboxMessages).where(eq(mailboxMessages.worldId, worldId))).toHaveLength(1);
+      expect(pushed).toHaveLength(1);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("publiziert geplante Infrastrukturmarker getrennt von Zügen und restauriert sie", async () => {
+    const { client, db } = await testDatabase();
+    const worldId = "77777777-7777-4777-8777-777777777777";
+    const livemap = new LivemapRegistry();
+    const worker = new RegionalSimulationWorker(db, fakeRuntime(), livemap);
+    try {
+      await db.insert(worlds).values({
+        id: worldId,
+        name: "Störungskartenwelt",
+        schedulePeriodWeeks: 4,
+        epoch: new Date(0),
+      });
+      await worker.initialize(initialization(worldId), new Date(0));
+      await worker.apply(
+        {
+          worldId,
+          regionId,
+          commandId: "register-planned-closure",
+          command: {
+            type: "register-disruption",
+            disruption: {
+              disruptionId: "planned-closure-1",
+              kind: "planned",
+              publishedAtS: 0,
+              startsAtS: 86_400,
+              validUntilS: 172_800,
+              positionMm: 1_200_000,
+              causeCode: 25,
+              fineCauseId: "signalling.interlocking",
+              effect: "closure",
+              affectedResource: "block:A:B:1",
+              affectedTrainRunIds: [],
+              delaySeconds: 0,
+            },
+          },
+        },
+        new Date(1_000),
+      );
+      expect(livemap.forWorld(worldId).snapshot()).toMatchObject({
+        trains: [],
+        disruptions: [
+          expect.objectContaining({
+            disruptionId: "planned-closure-1",
+            kind: "planned",
+            effect: "closure",
+          }),
+        ],
+      });
+
+      const restartedLivemap = new LivemapRegistry();
+      const restarted = new RegionalSimulationWorker(db, fakeRuntime(), restartedLivemap);
+      await restarted.restore(worldId, regionId);
+      expect(restartedLivemap.forWorld(worldId).snapshot().disruptions).toEqual([
+        expect.objectContaining({ disruptionId: "planned-closure-1", kind: "planned" }),
+      ]);
+    } finally {
+      await client.close();
+    }
+  });
+
   it("persistiert Materialize/Advance/Remove vor Fanout und restauriert nach Neustart", async () => {
     const { client, db } = await testDatabase();
     const worldId = "11111111-1111-4111-8111-111111111111";

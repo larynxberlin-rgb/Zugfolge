@@ -14,6 +14,10 @@ export interface OperationsDecision {
   readonly decisionId: string;
   readonly action: string;
   readonly cause: string;
+  readonly causeCode: number | null;
+  readonly causeLabel: string;
+  readonly fineCauseId: string;
+  readonly fineCauseLabel: string;
   readonly affectedResource: string;
   readonly outcomeReason: string;
   readonly impact: Record<string, unknown>;

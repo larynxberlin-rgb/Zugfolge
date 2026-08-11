@@ -81,6 +81,15 @@ der Überblick; die Spalte `id` ist die Kennung, die auch der Importmarker nennt
 | `trassenfinder-infrastruktur-api` | Trassenfinder-Infrastruktur-API — Betriebsstellen-/Streckensegment-Stammdaten | `freigegeben` | M9 |
 | `entgeltregeln-tps-sps-aps-inb` | Entgeltregeln (TPS, SPS, APS, INB, Anlagen-/Stationspreise) | `gesperrt` | M6.1 |
 | `baustellen-stoerungsfeeds` | reale Baustellen- und Störungsfeeds | `gesperrt` | M8.12 |
+| `strecken-info-public` | öffentliche Infrastruktur-Einschränkungen | `freigegeben` | M8.12 |
+| `tages-la-referenz-2026-08-09` | fünf private Tagesausgaben, nur aggregierte Entwicklungsreferenz | `entwicklung` | M8 |
+| `einschraenkungsliste-referenz-2026-08-11` | private Einschränkungsliste, nur Wirkungstaxonomie | `entwicklung` | M8 |
+| `bundesnetzagentur-marktuntersuchung-eisenbahnen-2025` | amtliche Marktuntersuchung, nur eigene statistische Ableitung | `entwicklung` | M8 |
+| `db-infrago-ril-420-9001` | Ril 420.9001, nur Haupt-/Feincode-Referenz | `entwicklung` | M8 |
+| `bundestag-20-6736-spnv-stoerungsquoten` | amtliche technische Störungsquoten je SPNV-Zugfahrt | `entwicklung` | M8 |
+| `bundestag-21-29-pilotregion-infrastrukturstoerungen` | amtliche Infrastrukturfallzahlen regionaler Netze | `entwicklung` | M8 |
+| `bundestag-20-3024-haltezeitueberschreitungen` | amtliche Halte- und Zusatzverspätungsmengen im SPNV | `entwicklung` | M8 |
+| `fahrdienstvorschrift-408-inb-2026` | Fahrdienstvorschrift 408, nur eigene ausführbare Regelauslegung | `entwicklung` | M8 |
 | `rinf` | RINF — Register of Infrastructure | `gesperrt` | — |
 | `pathos` | pathOS | `ausgeschlossen` | — |
 | `tpn` | TPN — Trassenportal Netz | `ausgeschlossen` | — |
@@ -113,11 +122,50 @@ und ausdrücklich als **Fahrplanwerte** gekennzeichnet. Sie sind ein Holdout,
 keine technische Mindestfahrzeit. Details stehen in
 [`referenzkorpus.md`](referenzkorpus.md).
 
-**Was blockiert bleibt.** `rinf`, `entgeltregeln-tps-sps-aps-inb` und
-`baustellen-stoerungsfeeds` warten auf eine schriftliche Entscheidung
+**Was blockiert bleibt.** `rinf`, `entgeltregeln-tps-sps-aps-inb` und der
+generische Sammelposten `baustellen-stoerungsfeeds` warten auf eine schriftliche Entscheidung
 beziehungsweise einen Vertrag. `pathos`, `tpn` und `oeffentliche-tiles-nominatim`
 sind ausgeschlossen — teils rechtlich, teils weil ein externer Dienst im heißen
 Pfad ohnehin Invariante 6 verletzt.
+
+**M8-Entwicklungsreferenzen.** Die fünf privaten Tagesausgaben vom 09.08.2026
+und die private Einschränkungsliste vom 11.08.2026 werden weder importiert
+noch ausgeliefert. Zulässig sind nur eigene aggregierte Wirkungsklassen und
+ganzzahlige Kalibriergewichte; Originalzeilen, Texte und Seitenbilder bleiben
+außerhalb des Repositories. Die Marktuntersuchung Eisenbahnen 2025 dient nur
+zur eigenen Ableitung von Primärursachen-Gewichten. Die Ril-Referenz mit Stand
+10.12.2023 wurde auf ausdrückliche Projektentscheidung zur Struktur von Haupt-
+und Beispiel-Feincodes herangezogen; Zugfolge verwendet eigene stabile IDs und
+markenneutrale Texte. Die drei Parlamentsdrucksachen liefern getrennte
+Bezugsgrößen für spontane Störungen: Netztage, Zugfahrten und Fahrgasthalte.
+Zugfolge übernimmt weder Tabellen noch Originaltexte, sondern nur eigene
+ganzzahlige Raten; nicht veröffentlichte Unterteilungen, insbesondere die
+Türquote und der Mix verlängerter Halte, bleiben ausdrücklich
+Modellannahmen. Die Fahrdienstvorschrift 408 wird weder kopiert noch als
+ML-Trainingsbestand verwendet. Sie dient der eigenen, versionierten und
+getesteten Regelauslegung für Fahrwegprüfung, Fahrstraßensicherung,
+Flankenschutz, Durchrutschweg und Zustimmung zur Abfahrt. Keine dieser Quellen
+ist ein Laufzeitfeed.
+
+**M8.12-Entscheidung, Stand 2026-08-11.** Der Projektverantwortliche hat nach
+der Kandidatenprüfung ausdrücklich bestätigt, dass die Daten der öffentlichen
+Weboberfläche `strecken.info` genutzt werden dürfen. Der eigene Eintrag
+`strecken-info-public` gibt deshalb automatisierten kommerziellen Abruf,
+Speicherung, Ableitung, Kartendarstellung, Replay und Audit frei. Die Quelle
+wird alle 30 Minuten außerhalb des heißen Pfads abgefragt; Rohsnapshot und
+markenfreie Normalisierung werden mit Revision, Abrufzeit und Hash getrennt
+archiviert. Die fremden Namen erscheinen nur in Provenienz und Attribution,
+nicht in Ursachen- oder Feincodes.
+
+Die früher zusätzlich geprüften Alternativen bleiben davon getrennt. Ein vertraglicher
+Störungsfeed sowie fahrtenbezogene `Boards`-/`Journeys`-Daten wurden als
+mögliche Bezugswege geprüft. Beide verlangen Zugangsprüfung und gesonderte
+vertragliche Nutzungsrechte; ein allgemeiner Marketplace-Zugang genügt nicht.
+Die öffentliche Timetables-API ist bahnhofs- und fahrtbezogen und ersetzt
+keine ressourcenscharfe Tages-La. Bis zur ausdrücklichen Auswahl und einer
+schriftlichen Rechteprüfung bleiben diese Alternativen im Sammelposten
+`baustellen-stoerungsfeeds` gesperrt. Sie sind nicht Teil des produktiven
+Adapters.
 
 ---
 

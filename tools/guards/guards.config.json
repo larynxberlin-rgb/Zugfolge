@@ -9,7 +9,7 @@
     },
     {
       "id": "simulation-core",
-      "title": "Simulationskern — Sperrzeiten, Zustand und Flotte (M0.3, M3–M5)",
+      "title": "Simulationskern — Sperrzeiten, Zustand, Flotte und Störungen (M0.3, M3–M5, M8)",
       "status": "active",
       "paths": [
         "crates/zugfolge-sim/**",
@@ -17,6 +17,7 @@
         "crates/zugfolge-runtime/**",
         "crates/zugfolge-conflict/**",
         "crates/zugfolge-fleet/**",
+        "crates/zugfolge-disruption/**",
         "spikes/**"
       ],
       "rules": [

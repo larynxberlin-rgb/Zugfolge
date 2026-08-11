@@ -60,7 +60,7 @@
       "goal": "Einen lizenzgeprueften, reproduzierbaren InfraRelease-Kandidaten des Pilotkorridors Leipzig-Halle liefern und seine Fahrzeiten gegen technische Referenz und GTFS-Fahrplan plausibilisieren.",
       "area": "area:infrastructure",
       "dependsOn": ["M0"],
-      "status": { "core": "verified", "integration": "verified", "operations": "blocked", "acceptance": "verified" },
+      "status": { "core": "verified", "integration": "verified", "operations": "verified", "acceptance": "verified" },
       "evidence": [
         { "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" },
         { "label": "Referenzkorpus und nachgelagerte Release-Qualifizierung", "url": "docs/referenzkorpus.md" },
@@ -207,8 +207,12 @@
       "goal": "Stoerungen und Baustellen mit geprueften Ersatzkonzepten und vertraglichen Folgen abbilden.",
       "area": "area:operations",
       "dependsOn": ["M4", "M7"],
-      "status": { "core": "not_started", "integration": "not_started", "operations": "not_started", "acceptance": "not_started" },
-      "evidence": [],
+      "status": { "core": "verified", "integration": "verified", "operations": "blocked", "acceptance": "verified" },
+      "evidence": [
+        { "label": "M8 Fachvertrag und Quellenentscheidung", "url": "docs/stoerungen.md" },
+        { "label": "Roadmap und Abnahmebeweis", "url": "docs/milestones.md" },
+        { "label": "Automatisierter M8 Abnahmefall", "url": "crates/zugfolge-disruption/tests/m8_acceptance.rs" }
+      ],
       "items": []
     },
     {

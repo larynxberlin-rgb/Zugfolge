@@ -21,6 +21,10 @@ import {
 } from "@zugfolge/commerce";
 import { OperationsRegistry } from "@zugfolge/dispatch";
 import {
+  PROVIDER_REFRESH_INTERVAL_MS,
+  PublicInfrastructureRestrictionsClient,
+} from "@zugfolge/disruption-provider";
+import {
   createEconomyPlatformAdapters,
   createEconomySchedulerHealthCheck,
   EconomySchedulerMonitor,
@@ -49,8 +53,15 @@ import {
 import { asc, eq } from "drizzle-orm";
 
 import { buildApp } from "./app.js";
+import {
+  createDisruptionProviderHealthCheck,
+  createDisruptionProviderStore,
+  DisruptionProviderMonitor,
+  runDisruptionProviderCycle,
+} from "./disruption-provider-scheduler.js";
 import { loadFleetAuthorityReleaseCatalog } from "./fleet-configuration.js";
 import { projectLivemapOperationEvent } from "./livemap-operation-projection.js";
+import { createProviderDisruptionConsumer } from "./provider-disruption-consumer.js";
 import { generateDailyOperationReports, previousBerlinServiceDay } from "./daily-reports.js";
 import {
   parsePlanningAuthorityAccountIdsJson,
@@ -132,6 +143,9 @@ const verifyToken = createKeycloakVerifier(keycloak);
 const livemap = new LivemapRegistry();
 const operations = new OperationsRegistry();
 const economyMonitor = new EconomySchedulerMonitor(Date.now());
+const disruptionProviderMonitor = new DisruptionProviderMonitor(Date.now());
+const disruptionProviderClient = new PublicInfrastructureRestrictionsClient();
+const disruptionProviderStore = createDisruptionProviderStore(db);
 const operatingRuntime = loadOperatingRuntime();
 const fleetAuthorityReleases = await loadFleetAuthorityReleaseCatalog(
   requireEnv("ZUGFOLGE_FLEET_AUTHORITY_RELEASE_PATH"),
@@ -150,7 +164,9 @@ const regionalSimulation = new RegionalSimulationWorker(
   db,
   regionalSimulationRuntime,
   livemap,
+  operations,
 );
+const consumeProviderSnapshot = createProviderDisruptionConsumer(db, regionalSimulation);
 const worldRows = await db
   .select({ worldId: worlds.id, epoch: worlds.epoch })
   .from(worlds)
@@ -254,6 +270,7 @@ const app = buildApp({
     createEventLogHealthCheck(db),
     createEconomyOutboxHealthCheck(db),
     createEconomySchedulerHealthCheck(economyMonitor),
+    createDisruptionProviderHealthCheck(disruptionProviderMonitor),
     createLivemapHealthCheck(livemap),
     createOdooBridgeHealthCheck(db),
   ],
@@ -363,6 +380,28 @@ economyInterval.unref();
 app.addHook("onClose", async () => {
   clearInterval(economyInterval);
   await economyCycle;
+});
+
+let disruptionProviderCycle: Promise<void> | undefined;
+const runDisruptionProvider = () => {
+  if (disruptionProviderCycle !== undefined) return;
+  disruptionProviderCycle = runDisruptionProviderCycle(
+    disruptionProviderClient,
+    disruptionProviderStore,
+    disruptionProviderMonitor,
+    new Date(),
+    consumeProviderSnapshot,
+  )
+    .then(() => undefined)
+    .catch((error: unknown) => app.log.error({ err: error }, "Abruf realistischer Infrastruktur-Einschraenkungen fehlgeschlagen"))
+    .finally(() => { disruptionProviderCycle = undefined; });
+};
+runDisruptionProvider();
+const disruptionProviderInterval = setInterval(runDisruptionProvider, PROVIDER_REFRESH_INTERVAL_MS);
+disruptionProviderInterval.unref();
+app.addHook("onClose", async () => {
+  clearInterval(disruptionProviderInterval);
+  await disruptionProviderCycle;
 });
 
 let dailyReportCycle: Promise<void> | undefined;

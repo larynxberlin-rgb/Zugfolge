@@ -58,7 +58,34 @@ export type RegionalSimulationCommandPayload =
       readonly trainRunId: string;
       readonly seconds: number;
     }
-  | { readonly type: "dematerialize-before"; readonly beforeS: number };
+  | { readonly type: "dematerialize-before"; readonly beforeS: number }
+  | {
+      readonly type: "register-disruption";
+      readonly disruption: {
+        readonly disruptionId: string;
+        readonly kind: "planned" | "unplanned";
+        readonly publishedAtS: number;
+        readonly startsAtS: number;
+        readonly validUntilS: number;
+        readonly positionMm: number;
+        readonly causeCode: number;
+        readonly fineCauseId: string;
+        readonly effect: "closure" | "single-track" | "speed-restriction" | "platform-change" | "traffic-hold" | "route-deviation" | "vehicle-restriction" | "platform-usable-length";
+        readonly affectedResource: string;
+        readonly affectedTrainRunIds: readonly string[];
+        readonly delaySeconds: number;
+      };
+    }
+  | {
+      readonly type: "activate-disruption";
+      readonly disruptionId: string;
+      readonly affectedTrainRunIds: readonly string[];
+      readonly delaySeconds: number;
+    }
+  | {
+      readonly type: "clear-disruption";
+      readonly disruptionId: string;
+    };
 
 export interface RegionalSimulationCommand {
   readonly schemaVersion: typeof REGIONAL_SIMULATION_COMMAND_SCHEMA;
@@ -107,6 +134,31 @@ export interface RegionalLivemapSnapshot {
   readonly producerSequence: number;
   readonly atS: number;
   readonly trains: readonly RegionalPublicTrain[];
+  readonly disruptions: readonly RegionalPublicDisruption[];
+}
+
+export interface RegionalPublicDisruption {
+  readonly schemaVersion: "zugfolge-livemap-disruption/v1";
+  readonly disruptionId: string;
+  readonly kind: "planned" | "unplanned";
+  readonly publishedAtS: number;
+  readonly startsAtS: number;
+  readonly validUntilS: number;
+  readonly positionMm: number;
+  readonly causeCode: number;
+  readonly causeLabel: string;
+  readonly fineCauseId: string;
+  readonly fineCauseLabel: string;
+  readonly effect:
+    | "closure"
+    | "single-track"
+    | "speed-restriction"
+    | "platform-change"
+    | "traffic-hold"
+    | "route-deviation"
+    | "vehicle-restriction"
+    | "platform-usable-length";
+  readonly affectedResource: string;
 }
 
 export interface RegionalLivemapDelta {
@@ -117,6 +169,8 @@ export interface RegionalLivemapDelta {
   readonly atS: number;
   readonly changed: readonly RegionalPublicTrain[];
   readonly removed: readonly string[];
+  readonly changedDisruptions: readonly RegionalPublicDisruption[];
+  readonly removedDisruptionIds: readonly string[];
 }
 
 export interface RegionalSimulationEvent {
@@ -275,7 +329,36 @@ function decodeSnapshot(
   value["trains"].forEach((train, index) =>
     decodePublicTrain(train, `${name}-Zug ${index + 1}`),
   );
+  invariant(Array.isArray(value["disruptions"]), `${name} besitzt keine Störungsprojektion.`);
+  value["disruptions"].forEach((item, index) => decodePublicDisruption(item, `${name}-Störung ${index + 1}`));
   return value as unknown as RegionalLivemapSnapshot;
+}
+
+function decodePublicDisruption(value: unknown, name: string): RegionalPublicDisruption {
+  record(value, name);
+  invariant(value["schemaVersion"] === "zugfolge-livemap-disruption/v1", `${name} hat ein unbekanntes Schema.`);
+  nonempty(value["disruptionId"], `${name}-ID`);
+  invariant(value["kind"] === "planned" || value["kind"] === "unplanned", `${name} hat keine Planungsart.`);
+  for (const field of ["publishedAtS", "startsAtS", "validUntilS", "positionMm", "causeCode"] as const) {
+    safeInteger(value[field], `${name}-${field}`);
+  }
+  for (const field of ["causeLabel", "fineCauseId", "fineCauseLabel", "effect", "affectedResource"] as const) {
+    nonempty(value[field], `${name}-${field}`);
+  }
+  invariant(
+    [
+      "closure",
+      "single-track",
+      "speed-restriction",
+      "platform-change",
+      "traffic-hold",
+      "route-deviation",
+      "vehicle-restriction",
+      "platform-usable-length",
+    ].includes(value["effect"] as string),
+    `${name} besitzt keine betriebswirksame Wirkung.`,
+  );
+  return value as unknown as RegionalPublicDisruption;
 }
 
 function decodeStateSnapshot<T extends RegionalSimulationInitialized | RegionalSimulationRestored>(
@@ -327,6 +410,12 @@ function decodeDelta(
   invariant(
     value["schemaVersion"] === REGIONAL_LIVEMAP_DELTA_SCHEMA,
     "Rust-M4-Delta hat ein unbekanntes Schema.",
+  );
+  invariant(Array.isArray(value["changedDisruptions"]), "Rust-M4-Delta besitzt keine Störungsänderungen.");
+  value["changedDisruptions"].forEach((item, index) => decodePublicDisruption(item, `Rust-M4-Delta-Störung ${index + 1}`));
+  invariant(
+    Array.isArray(value["removedDisruptionIds"]) && value["removedDisruptionIds"].every((id) => typeof id === "string" && id.length > 0),
+    "Rust-M4-Delta besitzt ungültige Störungsentfernungen.",
   );
   invariant(
     value["worldId"] === worldId && value["regionId"] === regionId,

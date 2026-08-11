@@ -1,0 +1,19 @@
+{
+  "name": "@zugfolge/disruption-provider",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Rechtegepruefter Adapter fuer realistische Infrastruktur-Einschraenkungen",
+  "license": "LicenseRef-PolyForm-Shield-1.0.0",
+  "exports": { ".": "./dist/index.js" },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

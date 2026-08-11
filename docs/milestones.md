@@ -775,23 +775,48 @@ Zustands- und Entscheidungshash.
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 8.1 | `DisruptionPolicy`-Rahmen: REALISTIC / SIMULATED / MANUAL | S | offen |
-| 8.2 | Deterministischer Störungs**generator**: Häufigkeit, Schwere, Dauer, Vorlauf, Region, Belastung. Erzeugt die Ursachen, deren Fortpflanzung M4.3 bereits beherrscht | L | offen |
-| 8.3 | Manueller Spielleitermodus mit Pflichtfeldern und Audit | M | offen |
-| 8.4 | Auswirkungsmodell: Sperrung, eingleisiger Betrieb, Langsamfahrstelle, Bahnsteigwechsel | L | offen |
-| 8.5 | **Baustellenankündigung mit Vorlauf** — Planungsfenster statt Überraschung | M | offen |
-| 8.6 | **Ersatzkonzept als eigener `PlanningRun`** gegen die Restkapazität | L | offen |
-| 8.7 | **Maßnahmenkasten** mit Prüfung gegen Streckenkenntnis, Zugsicherung, Wendemöglichkeit, Zuglänge, Fahrzeugeignung | L | offen |
-| 8.8 | **Wettlauf um Ersatzkapazität** — mehrere EVU konkurrieren um dieselben Umleitungstrassen | M | offen |
-| 8.9 | **Vertragliche Behandlung**: Minderung statt Pönale bei fristgerechtem, plausiblem Konzept | M | offen |
-| 8.10 | **Automatisches Standardkonzept** — sicher und teuer | M | offen |
-| 8.11 | Trassenrückgabe; **SEV als Verpflichtung, Kostenposten und Bewertungsfaktor** — kein Fuhrpark | M | offen |
-| 8.12 | Realistischer Modus als Adapter — nur bei geklärter Vertragslage | M | offen |
+| 8.1 | `DisruptionPolicy`-Rahmen: REALISTIC / SIMULATED / MANUAL | S | erledigt |
+| 8.2 | Deterministischer Störungs**generator**: getrennte Kanäle für geplante Arbeiten, La und spontane Infrastruktur-, Fahrzeug-, Tür- und Fahrgastwechselstörungen; Häufigkeit nach Netztagen, realen Fahrten und Halten, dazu Schwere, Dauer, Vorlauf, Region und Belastung. Erzeugt die Ursachen, deren Fortpflanzung M4.3 bereits beherrscht | L | erledigt |
+| 8.3 | Manueller Spielleitermodus mit Pflichtfeldern, Vier-Augen-Odoo-Handler und autoritativem Game-Audit | M | erledigt |
+| 8.4 | Auswirkungsmodell: Sperrung, eingleisiger Betrieb, Langsamfahrstelle, Bahnsteigwechsel | L | erledigt |
+| 8.5 | **Baustellenankündigung mit Vorlauf** — Planungsfenster statt Überraschung | M | erledigt |
+| 8.6 | **Ersatzkonzept als eigener `PlanningRun`** gegen die Restkapazität | L | erledigt |
+| 8.7 | **Maßnahmenkasten** mit Prüfung gegen Streckenkenntnis, Zugsicherung, Wendemöglichkeit, Zuglänge, Fahrzeugeignung | L | erledigt |
+| 8.8 | **Wettlauf um Ersatzkapazität** — mehrere EVU konkurrieren um dieselben Umleitungstrassen | M | erledigt |
+| 8.9 | **Vertragliche Behandlung**: Minderung statt Pönale bei fristgerechtem, plausiblem Konzept | M | erledigt |
+| 8.10 | **Automatisches Standardkonzept** — sicher und teuer | M | erledigt |
+| 8.11 | Trassenrückgabe; **SEV als Verpflichtung, Kostenposten und Bewertungsfaktor** — kein Fuhrpark | M | erledigt |
+| 8.12 | Realistischer Modus als Adapter — nur bei geklärter Vertragslage | M | erledigt |
 
 > **Beweis:** Eine angekündigte mehrwöchige Baustelle zwingt alle Spieler der
 > Pilotregion zur Umplanung. Zwei EVU beantragen dieselbe Umleitungstrasse, nur
 > eines bekommt sie — das andere weicht auf Ersatzverkehr aus und sieht genau,
 > was ihn das gekostet hat. Der Netzfahrplan bleibt konfliktfrei.
+
+**Abnahme M8.1–M8.11:** `crates/zugfolge-disruption/tests/m8_acceptance.rs`
+deckt Generator und Tagesmodell, Haupt-/Feincodes, Policy/Stichtag, manuellen
+Audit, alle Wirkungen, spontane Ereignisraten und Zuglaufbindung,
+regelwerkskalibrierte Abfahrtsrechte, virtuelle Fahrdienstleitung,
+konkurrierende Ersatzplanung, Vertrag, Standardkonzept, SEV, Ledger und
+bitgleichen Replay ab. `zugfolge-sim-runtime` beweist die vorab sichtbare
+geplante Kartenlage, automatische Wirkung zum Start im echten regionalen
+Single-Writer sowie Restore/Idempotenz. Der Game-API-Integrationstest beweist
+den atomaren Weg in Event-Log und Postfach und den anschließenden Livemap- und
+EVU-Push; Betriebszentrale und Tagesbericht projizieren denselben Event.
+
+**Abnahme M8.12:** Die am 11.08.2026 ausdrücklich freigegebene öffentliche
+Quelle wird außerhalb des Simulationskerns alle 30 Minuten mit einem
+rollierenden 360-Stunden-Filter über einen
+Revisionshandshake und drei JSON-Feeds abgeholt. Jeder unveränderliche Rohstand
+und seine markenfreie Normalisierung werden je Welt mit SHA-256 archiviert.
+Schemafehler, fehlende Rechte oder ein Providerausfall sind fail-closed; der
+letzte sichere Stand bleibt sichtbar und es erfolgt kein Moduswechsel. Die
+Tests in `packages/disruption-provider` beweisen Wirkungsgate, 2023-Codeabbildung,
+Zeitmaterialisierung und kanonischen Hash. Der Scheduler-Test in
+`apps/game-api` beweist Archivierung, Weltbindung, Ausfallzustand und Health.
+Der Consumer-Test beweist den 360-Stunden-Abgleich mit der regionalen
+Single-Writer-Simulation einschließlich Kartenregistrierung, Wirkung,
+Idempotenz sowie explizitem Entfernen geänderter oder entfallener Einträge.
 
 ---
 

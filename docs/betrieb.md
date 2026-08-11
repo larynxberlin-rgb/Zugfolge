@@ -256,6 +256,10 @@ konfigurierbaren Neubau nach mehreren Perioden ab.
 
 ## 5. Baustellen und Störungen
 
+Der ausführbare Fachvertrag für M8, einschließlich Ursachenkennungen,
+Abfahrtsrechten und virtuellen Fahrdienstleitern, steht in
+[`stoerungen.md`](stoerungen.md).
+
 Jede Welt konfiguriert Baustellen und ungeplante Störungen unabhängig:
 
 ```text
@@ -277,6 +281,12 @@ Admin-Korrekturen.
 Häufigkeit, Schwere, Dauer, Vorlauf, Region, Infrastrukturart und Belastung.
 Alle Parameter je Welt einstellbar. Gleicher Seed, gleiche Weltversion, gleiche
 Ereignisse ⇒ dasselbe Ergebnis. **Standard für Pilot- und erste Großwelt.**
+Geplante Baustellen und La-Einschränkungen sind dabei nicht der Ersatz für
+spontane Betriebsstörungen: Signal, Stellwerk, Gleisfreimeldung, Weiche,
+Fahrzeug, Bremse, Zugbeeinflussung, Tür und verlängerter Fahrgastwechsel werden
+in einem eigenen Kanal erzeugt. Dessen Raten beziehen sich auf Netztage,
+tatsächliche Zugfahrten und tatsächliche Fahrgasthalte; fahrzeug- und
+haltebezogene Ereignisse treffen genau einen Zuglauf.
 
 **Manuell** — keine automatischen Ereignisse. Autorisierte Spielleiter legen
 Beginn, Ende, Ursache, betroffene Ressourcen und Wirkung händisch an. Beginn und

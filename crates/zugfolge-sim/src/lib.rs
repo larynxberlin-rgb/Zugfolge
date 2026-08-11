@@ -360,6 +360,9 @@ pub enum Command {
         train_run_id: TrainRunId,
         seconds: u32,
     },
+    /// Von M8 validierte Störungswirkung, die ausschließlich dieser
+    /// Single-Writer auf die betroffenen Zugläufe anwendet.
+    ApplyDisruption(DisruptionApplication),
     ConfirmHandover {
         token: u64,
         target_region: RegionId,
@@ -371,6 +374,20 @@ pub enum Command {
         trigger: DispatchTrigger,
         facts: DispatchFacts,
     },
+}
+
+/// Markenfreie, bereits gegen Konflikt- und Ersatzplanung geprüfte
+/// Störungsanwendung an der regionalen Writer-Grenze.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisruptionApplication {
+    pub disruption_id: String,
+    pub affected_train_run_ids: Vec<TrainRunId>,
+    pub delay_seconds: u32,
+    pub cause_code: u8,
+    pub fine_cause_id: String,
+    pub affected_resource: String,
+    pub effect: String,
+    pub planned: bool,
 }
 
 /// Ereignisse sind die einzige Ausgabe des Kerns.
@@ -409,6 +426,16 @@ pub enum EventKind {
         decision_id: u64,
         trigger: DispatchTrigger,
         decision: DispatchDecision,
+    },
+    DisruptionApplied {
+        disruption_id: String,
+        affected_train_run_ids: Vec<TrainRunId>,
+        delay_seconds: u32,
+        cause_code: u8,
+        fine_cause_id: String,
+        affected_resource: String,
+        effect: String,
+        planned: bool,
     },
 }
 
@@ -535,6 +562,58 @@ impl<D: Dispatcher> Simulation<D> {
                     EventKind::DelayChanged {
                         train_run_id,
                         delay_seconds,
+                    },
+                ));
+            }
+            Command::ApplyDisruption(application) => {
+                if application.disruption_id.trim().is_empty()
+                    || application.affected_resource.trim().is_empty()
+                    || application.fine_cause_id.trim().is_empty()
+                    || application.effect.trim().is_empty()
+                    || application.affected_train_run_ids.is_empty()
+                {
+                    return Err(SimError::InvalidDisruption);
+                }
+                let mut train_run_ids = application.affected_train_run_ids.clone();
+                train_run_ids.sort_unstable();
+                train_run_ids.dedup();
+                if train_run_ids
+                    .iter()
+                    .any(|train_run_id| !self.trains.contains_key(train_run_id))
+                {
+                    return Err(SimError::UnknownTrain);
+                }
+                for train_run_id in &train_run_ids {
+                    let delay_seconds = {
+                        let train = self
+                            .trains
+                            .get_mut(train_run_id)
+                            .ok_or(SimError::UnknownTrain)?;
+                        train.delay_seconds = train
+                            .delay_seconds
+                            .saturating_add(i64::from(application.delay_seconds));
+                        train.delay_seconds
+                    };
+                    self.reschedule_train(*train_run_id)?;
+                    kinds.push((
+                        self.now,
+                        EventKind::DelayChanged {
+                            train_run_id: *train_run_id,
+                            delay_seconds,
+                        },
+                    ));
+                }
+                kinds.push((
+                    self.now,
+                    EventKind::DisruptionApplied {
+                        disruption_id: application.disruption_id,
+                        affected_train_run_ids: train_run_ids,
+                        delay_seconds: application.delay_seconds,
+                        cause_code: application.cause_code,
+                        fine_cause_id: application.fine_cause_id,
+                        affected_resource: application.affected_resource,
+                        effect: application.effect,
+                        planned: application.planned,
                     },
                 ));
             }
@@ -1426,6 +1505,7 @@ pub enum SimError {
     UnknownHandover,
     SequenceGap,
     ResourceOccupied,
+    InvalidDisruption,
 }
 
 impl fmt::Display for SimError {

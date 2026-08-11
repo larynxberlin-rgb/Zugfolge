@@ -154,6 +154,7 @@ assert.deepEqual(
   regionalInitialized.snapshot.trains.map((train) => train.id),
   ["native-regional-1"],
 );
+assert.deepEqual(regionalInitialized.snapshot.disruptions, []);
 assert.ok(
   regionalInitialized.events.some(
     (event) => event.eventType === "simulation.train-materialized",
@@ -170,16 +171,74 @@ const regionalCommand = (head, commandId, command) => ({
   expectedPublisherSequence: head.state.publisherSequence,
   command,
 });
+const regionalRegistered = regionalRuntime.apply(
+  regionalInitialized.state,
+  regionalCommand(regionalInitialized, "native-regional-register-disruption", {
+    type: "register-disruption",
+    disruption: {
+      disruptionId: "native-planned-closure",
+      kind: "planned",
+      publishedAtS: 0,
+      startsAtS: 100,
+      validUntilS: 3_600,
+      positionMm: 1_200_000,
+      causeCode: 25,
+      fineCauseId: "signalling.interlocking",
+      effect: "closure",
+      affectedResource: "block:A:B:1",
+      affectedTrainRunIds: [],
+      delaySeconds: 0,
+    },
+  }),
+);
+assert.equal(regionalRegistered.delta.producerSequence, 1);
+assert.equal(regionalRegistered.events.length, 0);
+assert.deepEqual(
+  regionalRegistered.delta.changedDisruptions.map((item) => [item.disruptionId, item.kind]),
+  [["native-planned-closure", "planned"]],
+);
+const regionalAtDisruptionStart = regionalRuntime.apply(
+  regionalRegistered.state,
+  regionalCommand(regionalRegistered, "native-regional-advance-to-disruption", {
+    type: "advance-to",
+    atS: 100,
+  }),
+);
+const regionalActivated = regionalRuntime.apply(
+  regionalAtDisruptionStart.state,
+  regionalCommand(regionalAtDisruptionStart, "native-regional-activate-disruption", {
+    type: "activate-disruption",
+    disruptionId: "native-planned-closure",
+    affectedTrainRunIds: ["native-regional-1"],
+    delaySeconds: 300,
+  }),
+);
+assert.equal(regionalActivated.delta.producerSequence, 3);
+assert.ok(
+  regionalActivated.events.some(
+    (event) => event.eventType === "disruption.applied"
+      && event.payload.fineCauseId === "signalling.interlocking",
+  ),
+  "die geplante Einschränkung muss erst am Startzeitpunkt im Rust-Single-Writer wirken",
+);
+assert.equal(
+  regionalActivated.delta.changed.find((train) => train.id === "native-regional-1")?.delaySeconds,
+  300,
+);
+assert.equal(
+  regionalRuntime.restore(regionalActivated.state).snapshot.disruptions[0].disruptionId,
+  "native-planned-closure",
+);
 const regionalMaterializeCommand = regionalCommand(
-  regionalInitialized,
+  regionalActivated,
   "native-regional-materialize",
   { type: "materialize", train: regionalTrain("native-regional-2") },
 );
 const regionalMaterialized = regionalRuntime.apply(
-  regionalInitialized.state,
+  regionalActivated.state,
   regionalMaterializeCommand,
 );
-assert.equal(regionalMaterialized.delta.producerSequence, 1);
+assert.equal(regionalMaterialized.delta.producerSequence, 4);
 assert.deepEqual(
   regionalMaterialized.delta.changed.map((train) => train.id),
   ["native-regional-2"],
@@ -188,11 +247,12 @@ const regionalAdvanced = regionalRuntime.apply(
   regionalMaterialized.state,
   regionalCommand(regionalMaterialized, "native-regional-advance", {
     type: "advance-to",
-    atS: 4_000,
+    atS: 5_000,
   }),
 );
-assert.equal(regionalAdvanced.delta.producerSequence, 2);
+assert.equal(regionalAdvanced.delta.producerSequence, 5);
 assert.ok(regionalAdvanced.events.length > 0);
+assert.deepEqual(regionalAdvanced.delta.removedDisruptionIds, ["native-planned-closure"]);
 const regionalRemoveCommand = regionalCommand(
   regionalAdvanced,
   "native-regional-remove",
@@ -202,15 +262,16 @@ const regionalRemoved = regionalRuntime.apply(
   regionalAdvanced.state,
   regionalRemoveCommand,
 );
-assert.equal(regionalRemoved.delta.producerSequence, 3);
+assert.equal(regionalRemoved.delta.producerSequence, 6);
 assert.deepEqual(regionalRemoved.delta.removed, [
   "native-regional-1",
   "native-regional-2",
 ]);
 const regionalRestored = regionalRuntime.restore(regionalRemoved.state);
 assert.equal(regionalRestored.stateHash, regionalRemoved.stateHash);
-assert.equal(regionalRestored.snapshot.producerSequence, 3);
+assert.equal(regionalRestored.snapshot.producerSequence, 6);
 assert.deepEqual(regionalRestored.snapshot.trains, []);
+assert.deepEqual(regionalRestored.snapshot.disruptions, []);
 const regionalRetry = regionalRuntime.apply(
   regionalRemoved.state,
   regionalRemoveCommand,

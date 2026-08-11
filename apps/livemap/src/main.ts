@@ -28,6 +28,7 @@ let renderGeneration = 0;
 
 const details = document.querySelector<HTMLElement>("#details")!;
 const trainLayer = document.querySelector<SVGGElement>("#trains")!;
+const disruptionLayer = document.querySelector<SVGGElement>("#disruptions")!;
 const sequence = document.querySelector<HTMLTimeElement>("header time")!;
 const worldLabel = document.querySelector<HTMLElement>("#world-label")!;
 
@@ -89,6 +90,15 @@ function select(id: string): void {
     `${Math.round((train.speedMmPerSecond * 36) / 10_000)} km/h`,
   );
   addDefinition(list, "Nächster Betriebspunkt", train.nextOperatingPoint);
+  if (train.disruption !== undefined) {
+    addDefinition(
+      list,
+      "Störung",
+      `${String(train.disruption.causeCode).padStart(2, "0")} · ${train.disruption.causeLabel} / ${train.disruption.fineCauseLabel}`,
+      "warn",
+    );
+    addDefinition(list, "Betroffene Ressource", train.disruption.affectedResource);
+  }
 
   details.replaceChildren(
     textElement("p", "ZUGLAUF", "eyebrow"),
@@ -115,6 +125,40 @@ function draw(now: number): void {
   const trains = [...renderTrains(renderSamples, renderAt(now, renderSamples))].sort((left, right) =>
     left.id.localeCompare(right.id),
   );
+  const at = renderSamples.current.at;
+  const disruptionNodes = [...renderSamples.current.disruptions.values()]
+    .sort((left, right) => left.disruptionId.localeCompare(right.disruptionId))
+    .map((item, index) => {
+      const group = document.createElementNS(SVG_NAMESPACE, "g");
+      group.classList.add("infrastructure-disruption", item.kind);
+      if (at < item.startsAtS) group.classList.add("upcoming");
+      group.setAttribute(
+        "transform",
+        `translate(${100 + (item.positionMm % 800_000_000) / 1_000_000} ${128 + (index % 3) * 28})`,
+      );
+      group.setAttribute(
+        "aria-label",
+        `${item.kind === "planned" ? "Geplante Einschränkung" : "Ungeplante Störung"}: ${item.fineCauseLabel}, ${item.affectedResource}`,
+      );
+      const title = document.createElementNS(SVG_NAMESPACE, "title");
+      title.textContent = `${item.kind === "planned" ? "Geplant" : "Ungeplant"} · ${item.fineCauseLabel} · ${item.affectedResource}`;
+      const shape = document.createElementNS(SVG_NAMESPACE, item.kind === "planned" ? "rect" : "path");
+      if (item.kind === "planned") {
+        shape.setAttribute("x", "-9");
+        shape.setAttribute("y", "-9");
+        shape.setAttribute("width", "18");
+        shape.setAttribute("height", "18");
+        shape.setAttribute("transform", "rotate(45)");
+      } else {
+        shape.setAttribute("d", "M0 -12 L11 9 L-11 9 Z");
+      }
+      const label = document.createElementNS(SVG_NAMESPACE, "text");
+      label.setAttribute("x", "16");
+      label.setAttribute("y", "5");
+      label.textContent = item.fineCauseLabel;
+      group.append(title, shape, label);
+      return group;
+    });
   const nodes = trains.map((item, index) => {
     const group = document.createElementNS(SVG_NAMESPACE, "g");
     group.dataset["id"] = item.id;
@@ -125,6 +169,7 @@ function draw(now: number): void {
     group.classList.add("train", item.status);
     const publicOperation = item.operationMarker !== undefined;
     if (publicOperation) group.classList.add("public-operation");
+    if (item.disruption !== undefined) group.classList.add("disrupted");
     if (selectedTrainId === item.id) group.classList.add("selected");
     group.setAttribute(
       "aria-label",
@@ -158,6 +203,7 @@ function draw(now: number): void {
     return group;
   });
   trainLayer.replaceChildren(...nodes);
+  disruptionLayer.replaceChildren(...disruptionNodes);
 }
 
 function render(state: LiveState): void {
