@@ -28,6 +28,27 @@ function randomStreamId(): string {
 }
 
 export const PUBLIC_OPERATION_MARKER_SCHEMA = "zugfolge-livemap-operation-marker/v1" as const;
+export const DISRUPTION_MARKER_SCHEMA = "zugfolge-livemap-disruption/v1" as const;
+
+export interface PublicDisruptionMarker {
+  readonly schemaVersion: typeof DISRUPTION_MARKER_SCHEMA;
+  readonly disruptionId: string;
+  readonly causeCode: number;
+  readonly causeLabel: string;
+  readonly fineCauseId: string;
+  readonly fineCauseLabel: string;
+  readonly effect: "closure" | "single-track" | "speed-restriction" | "platform-change" | "traffic-hold" | "route-deviation" | "vehicle-restriction" | "platform-usable-length";
+  readonly affectedResource: string;
+  readonly validUntilS: number;
+}
+
+/** Eigenständiger Infrastrukturmarker; nicht an einen sichtbaren Zug gebunden. */
+export interface PublicInfrastructureDisruption extends PublicDisruptionMarker {
+  readonly kind: "planned" | "unplanned";
+  readonly positionMm: number;
+  readonly publishedAtS: number;
+  readonly startsAtS: number;
+}
 
 export interface PublicOperationMarker {
   readonly schemaVersion: typeof PUBLIC_OPERATION_MARKER_SCHEMA;
@@ -50,6 +71,7 @@ export interface PublicTrain {
   readonly nextOperatingPoint: string;
   readonly status: string;
   readonly operationMarker?: PublicOperationMarker;
+  readonly disruption?: PublicDisruptionMarker;
 }
 
 export interface LiveSnapshot {
@@ -58,6 +80,7 @@ export interface LiveSnapshot {
   readonly sequence: number;
   readonly at: number;
   readonly trains: readonly PublicTrain[];
+  readonly disruptions?: readonly PublicInfrastructureDisruption[];
 }
 
 export interface LiveDelta {
@@ -67,6 +90,8 @@ export interface LiveDelta {
   readonly at: number;
   readonly changed: readonly PublicTrain[];
   readonly removed: readonly string[];
+  readonly changedDisruptions?: readonly PublicInfrastructureDisruption[];
+  readonly removedDisruptionIds?: readonly string[];
 }
 
 export type DeltaListener = (delta: LiveDelta) => void;
@@ -124,6 +149,7 @@ export class LivemapFeed {
   #at = 0;
   #lastPublishedAtMs: number | undefined;
   readonly #trains = new Map<string, PublicTrain>();
+  readonly #disruptions = new Map<string, PublicInfrastructureDisruption>();
   readonly #operationMarkerTimelines = new Map<string, OperationMarkerChange[]>();
   readonly #latestOperationMarkers = new Map<string, OperationMarkerChange>();
   readonly #listeners = new Set<DeltaListener>();
@@ -163,17 +189,22 @@ export class LivemapFeed {
       sequence: this.#sequence,
       at: this.#at,
       trains: [...this.#trains.values()].sort((a, b) => compareUtf8(a.id, b.id)),
+      disruptions: [...this.#disruptions.values()].sort((a, b) => compareUtf8(a.disruptionId, b.disruptionId)),
     };
   }
 
   #emit(input: Omit<LiveDelta, "worldId" | "streamId" | "sequence">): LiveDelta {
     input.changed.forEach((train) => this.#trains.set(train.id, train));
     input.removed.forEach((id) => this.#trains.delete(id));
+    input.changedDisruptions?.forEach((disruption) => this.#disruptions.set(disruption.disruptionId, disruption));
+    input.removedDisruptionIds?.forEach((id) => this.#disruptions.delete(id));
     this.#sequence += 1;
     this.#at = input.at;
     this.#lastPublishedAtMs = this.#now();
     const delta: LiveDelta = {
       ...input,
+      changedDisruptions: input.changedDisruptions ?? [],
+      removedDisruptionIds: input.removedDisruptionIds ?? [],
       worldId: this.#worldId,
       streamId: this.#streamId,
       sequence: this.#sequence,
@@ -570,6 +601,8 @@ export class LivemapRegistry {
       at: snapshot.at,
       changed: snapshot.trains,
       removed,
+      changedDisruptions: snapshot.disruptions ?? [],
+      removedDisruptionIds: [],
     });
     for (const trainRunId of nextIds) {
       for (const [otherRegionId, identifiers] of entry.trainIdsByRegion) {

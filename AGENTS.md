@@ -22,6 +22,7 @@ lesen, nicht raten.
 | `docs/produkt.md` | Produktdefinition, Oberflächen, Onboarding, Netzabgrenzung, Spielertypen, Anti-Monokultur | Produktfragen, UI, Zielgruppe, Was-gehört-dazu |
 | `docs/infrastruktur.md` | Konfliktressourcen, Trassenvergabe, Fahrplanperiode, Kapazitätsschutz, Simulation, Livemap | Solver, Sperrzeiten, Planner, Livemap |
 | `docs/betrieb.md` | Betriebsprogramm, Fahrzeuge, Personal, Versorgung, Zusatzfahrten, Störungen, Baustellenfahrplan | Disposition, Flotte, Umläufe, Wartung, Baustellen |
+| `docs/stoerungen.md` | M8-Fachvertrag: Policies, Ursachenkennungen, Abfahrtsrechte, virtuelle Fahrdienstleiter, Ersatzplanung | Störungen, Baustellen, Ersatzverkehr, Verspätungsursachen |
 | `docs/wirtschaft.md` | Spielkreislauf, Geschäftsfelder, Nachfrage, Ausschreibung, Eigenbetrieb, Insolvenz, Kooperation | Verträge, Märkte, Geld, Ausschreibungen |
 | `docs/daten.md` | Datenlage OSM/ORM, Quellen, Rechte, Qualitätsklassen | Import-Pipeline, InfraRelease, Lizenzfragen zu Daten |
 | `docs/architektur.md` | Systemarchitektur, Lastgrößen, irreversible Entscheidungen, Determinismus, Sicherheit | Technischer Entwurf, Skalierung, Persistenz |
@@ -123,7 +124,7 @@ Lastgrößen: `docs/architektur.md`.
 ## Stand
 
 Konzeption abgeschlossen, E1–E22 entschieden, Milestones auf Reihenfolge und
-Vollständigkeit geprüft. **M0 bis M7 sind fachlich abgenommen und
+Vollständigkeit geprüft. **M0 bis M8 sind fachlich abgenommen und
 reproduzierbar nachgewiesen.** M1.13 akzeptiert die Trassenfinder-Kalibrierung
 innerhalb der definierten Toleranz und den getrennten GTFS-Fahrplan-Holdout als
 Milestone-Beweis; die unabhängige produktive Release-Qualifizierung und echte
@@ -131,8 +132,7 @@ Signatur bleiben als M9-Betriebsreife-Folgearbeit in Issue #48 erhalten.
 
 - **Alpha-Schnitt:** M0 – M9. Alles ab M10 ist Ausbau.
 - **Kritischer Pfad bis M7:** M0.3 → M1 → M3 → M4 → M7 ist erfüllt.
-- **Nächster Schritt:** M8 — Störungen, Baustellen und Ersatzverkehr; danach M9
-  mit Betriebsreife und geschlossener Alpha.
+- **Nächster Schritt:** M9 — Betriebsreife, Onboarding und geschlossene Alpha.
 
 Repository: https://github.com/larynxberlin-rgb/Zugfolge. `LICENSE` steht unter
 PolyForm Shield 1.0.0, nennt Sebastian Barowski als Rechteinhaber und ist damit

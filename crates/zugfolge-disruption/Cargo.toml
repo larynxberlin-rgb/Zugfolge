@@ -1,6 +1,6 @@
 [package]
-name = "zugfolge-sim-runtime"
-description = "Versionierte, persistierbare Produktionsgrenze fuer den regionalen Rust-Single-Writer"
+name = "zugfolge-disruption"
+description = "Störungsursachen, Baustellen, virtuelle Fahrdienstleiter und Ersatzplanung für Zugfolge"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,9 +11,11 @@ publish.workspace = true
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
+zugfolge-conflict.workspace = true
+zugfolge-determinism.workspace = true
+zugfolge-infra.workspace = true
+zugfolge-planner.workspace = true
 zugfolge-sim.workspace = true
-zugfolge-disruption.workspace = true
 
 [lints]
 workspace = true

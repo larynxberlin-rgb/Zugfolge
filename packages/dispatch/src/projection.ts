@@ -12,6 +12,10 @@ export interface OperationsDecision {
   readonly decisionId: string;
   readonly action: string;
   readonly cause: string;
+  readonly causeCode: number | null;
+  readonly causeLabel: string;
+  readonly fineCauseId: string;
+  readonly fineCauseLabel: string;
   readonly affectedResource: string;
   readonly outcomeReason: string;
   readonly impact: Record<string, unknown>;
@@ -28,6 +32,18 @@ export interface OperationsProjection {
 
 /** Ab dieser Zahl betroffener Zugläufe wird eine Entscheidung als Großereignis hervorgehoben. */
 export const MAJOR_DISRUPTION_AFFECTED_TRAIN_RUNS = 3;
+
+const DECISION_EVENT_TYPES = new Set([
+  "dispatch.decision",
+  "dispatch.major-event",
+  "dispatch.manual-override",
+  "disruption.decision",
+  "disruption.replacement-plan",
+  "disruption.manual-intervention",
+  "disruption.construction-published",
+  "disruption.provider-failed",
+  "disruption.applied",
+]);
 
 export interface DailyDecisionFact {
   readonly eventSequence: number;
@@ -71,11 +87,20 @@ function payload(value: unknown): Record<string, unknown> | undefined {
 }
 
 function operatorMatches(value: Record<string, unknown>, operatorId: string): boolean {
-  return value.operatorId === operatorId || value.operator_id === operatorId;
+  return value.operatorId === operatorId
+    || value.operator_id === operatorId
+    || (Array.isArray(value.operatorIds) && value.operatorIds.includes(operatorId))
+    || (Array.isArray(value.operator_ids) && value.operator_ids.includes(operatorId));
 }
 
 function text(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function causeCode(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 99
+    ? value
+    : null;
 }
 
 function decision(event: LoggedEvent, value: Record<string, unknown>): OperationsDecision {
@@ -87,6 +112,10 @@ function decision(event: LoggedEvent, value: Record<string, unknown>): Operation
     decisionId: String(value.decisionId ?? value.decision_id ?? event.sequence),
     action: text(value.action ?? value.selected_action ?? value.decision),
     cause: text(value.cause ?? impact.cause),
+    causeCode: causeCode(value.causeCode ?? value.cause_code ?? impact.cause_code),
+    causeLabel: text(value.causeLabel ?? value.cause_label ?? impact.cause_label),
+    fineCauseId: text(value.fineCauseId ?? value.fine_cause_id ?? impact.fine_cause_id),
+    fineCauseLabel: text(value.fineCauseLabel ?? value.fine_cause_label ?? impact.fine_cause_label),
     affectedResource: text(value.affectedResource ?? value.affected_resource ?? impact.affected_resource),
     outcomeReason: text(value.outcomeReason ?? value.outcome_reason),
     impact,
@@ -99,7 +128,7 @@ export function projectOperations(events: readonly LoggedEvent[], operatorId: st
   for (const event of events) {
     const value = payload(event.payload);
     if (value === undefined || !operatorMatches(value, operatorId)) continue;
-    if (event.eventType === "dispatch.decision" || event.eventType === "dispatch.major-event" || event.eventType === "dispatch.manual-override") decisions.push(decision(event, value));
+    if (DECISION_EVENT_TYPES.has(event.eventType)) decisions.push(decision(event, value));
   }
   return {
     throughSequence: events.at(-1)?.sequence ?? 0,
@@ -160,7 +189,7 @@ export function buildDailyReport(events: readonly LoggedEvent[], operatorId: str
       else if (Number(value.delaySeconds ?? value.delay_seconds ?? 0) <= 300) punctual += 1;
       else delayed += 1;
     }
-    if (event.eventType === "dispatch.decision" || event.eventType === "dispatch.major-event" || event.eventType === "dispatch.manual-override") {
+    if (DECISION_EVENT_TYPES.has(event.eventType)) {
       const action = text(value.action ?? value.selected_action ?? value.decision) || "unbekannt";
       const explanation = payload(value.explanation) ?? value;
       decisionsByAction[action] = (decisionsByAction[action] ?? 0) + 1;

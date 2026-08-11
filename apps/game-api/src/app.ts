@@ -15,6 +15,8 @@ import {
   accounts,
   createDatabaseHealthCheck,
   dailyOperationReports,
+  disruptionPolicies,
+  disruptionProviderStates,
   EventSequenceError,
   operatingProgramVersions,
   simulationCommands,
@@ -143,7 +145,7 @@ import {
   type RegionalSimulationCommandPayload,
   type RegionalSimulationInitialization,
 } from "@zugfolge/runtime-native";
-import { and, asc, desc, eq, notInArray } from "drizzle-orm";
+import { and, asc, desc, eq, lte, notInArray } from "drizzle-orm";
 import Fastify, {
   type FastifyError,
   type FastifyInstance,
@@ -2143,6 +2145,253 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
   });
 
   // ---------------------------------------------------------------------
+  // M8 — weltgeheftete Störungsrichtlinie und auditierter manueller Modus
+  app.get<{ Params: { worldId: string }; Querystring: { atS?: number } }>(
+    "/worlds/:worldId/disruptions/policy",
+    {
+      preHandler: authenticate,
+      schema: {
+        params: worldIdParam,
+        querystring: {
+          type: "object",
+          additionalProperties: false,
+          properties: { atS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER, default: 0 } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        const account = await getAccount(deps.db, { worldId: request.params.worldId, keycloakSubject: identity.keycloakSubject });
+        if (account === undefined) throw new AuthorizationError("Kein aktiver Zugang zu dieser Welt.");
+        const [policy] = await deps.db.select().from(disruptionPolicies).where(and(
+          eq(disruptionPolicies.worldId, request.params.worldId),
+          lte(disruptionPolicies.validFromS, request.query.atS ?? 0),
+        )).orderBy(desc(disruptionPolicies.validFromS), desc(disruptionPolicies.version)).limit(1);
+        return policy === undefined
+          ? reply.code(404).send({ error: "Für diese Welt ist keine wirksame Störungsrichtlinie veröffentlicht." })
+          : reply.send(policy);
+      } catch (error) {
+        return sendError(reply, error);
+      }
+    },
+  );
+
+  app.post<{
+    Params: { worldId: string };
+    Body: {
+      readonly requestedAtS: number;
+      readonly effectiveAtS: number;
+      readonly plannedWorksMode: "REALISTIC" | "SIMULATED" | "MANUAL";
+      readonly operationalIncidentMode: "REALISTIC" | "SIMULATED" | "MANUAL";
+      readonly providerSetId?: string;
+      readonly simulationProfile: Record<string, unknown>;
+      readonly rulesetVersion: string;
+      readonly reason: string;
+    };
+  }>(
+    "/worlds/:worldId/disruptions/policies",
+    {
+      preHandler: authenticate,
+      schema: {
+        params: worldIdParam,
+        body: {
+          type: "object",
+          required: ["requestedAtS", "effectiveAtS", "plannedWorksMode", "operationalIncidentMode", "simulationProfile", "rulesetVersion", "reason"],
+          additionalProperties: false,
+          properties: {
+            requestedAtS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+            effectiveAtS: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
+            plannedWorksMode: { type: "string", enum: ["REALISTIC", "SIMULATED", "MANUAL"] },
+            operationalIncidentMode: { type: "string", enum: ["REALISTIC", "SIMULATED", "MANUAL"] },
+            providerSetId: { type: "string", minLength: 1, maxLength: 200 },
+            simulationProfile: { type: "object" },
+            rulesetVersion: { type: "string", minLength: 1, maxLength: 200 },
+            reason: { type: "string", minLength: 8, maxLength: 1_000 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        await requireWorldAdminAccount(deps.db, request.params.worldId, identity.keycloakSubject);
+        const account = await getAccount(deps.db, { worldId: request.params.worldId, keycloakSubject: identity.keycloakSubject });
+        if (account === undefined) throw new AuthorizationError("Kein aktiver Weltadministrator.");
+        const [world] = await deps.db.select().from(worlds).where(eq(worlds.id, request.params.worldId)).limit(1);
+        if (world === undefined) return reply.code(404).send({ error: "Welt existiert nicht." });
+        const periodSeconds = world.schedulePeriodWeeks * 7 * 86_400;
+        if (request.body.effectiveAtS <= request.body.requestedAtS || request.body.effectiveAtS % periodSeconds !== 0) {
+          return reply.code(400).send({ error: "Policywechsel muss an einem künftigen veröffentlichten Fahrplanstichtag liegen." });
+        }
+        const realistic = request.body.plannedWorksMode === "REALISTIC" || request.body.operationalIncidentMode === "REALISTIC";
+        if (realistic && request.body.providerSetId === undefined) {
+          return reply.code(400).send({ error: "REALISTIC benötigt ein benanntes, rechtegeprüftes Provider-Set." });
+        }
+        if (realistic) {
+          const [provider] = await deps.db.select({
+            rightsStatus: disruptionProviderStates.rightsStatus,
+            enabled: disruptionProviderStates.enabled,
+            rightsReference: disruptionProviderStates.rightsReference,
+          }).from(disruptionProviderStates).where(and(
+            eq(disruptionProviderStates.worldId, request.params.worldId),
+            eq(disruptionProviderStates.providerSetId, request.body.providerSetId!),
+          )).limit(1);
+          if (provider?.rightsStatus !== "approved" || provider.enabled !== "enabled" || provider.rightsReference === null) {
+            return reply.code(400).send({ error: "Provider-Set ist fuer diese Welt nicht vollstaendig rechtegeprueft und aktiviert." });
+          }
+        }
+        const [latest] = await deps.db.select({ version: disruptionPolicies.version }).from(disruptionPolicies)
+          .where(eq(disruptionPolicies.worldId, request.params.worldId))
+          .orderBy(desc(disruptionPolicies.version)).limit(1);
+        const version = (latest?.version ?? 0) + 1;
+        const [saved] = await deps.db.insert(disruptionPolicies).values({
+          worldId: request.params.worldId,
+          version,
+          status: "scheduled",
+          plannedWorksMode: request.body.plannedWorksMode,
+          operationalIncidentMode: request.body.operationalIncidentMode,
+          providerSetId: request.body.providerSetId,
+          simulationProfile: request.body.simulationProfile,
+          rulesetVersion: request.body.rulesetVersion,
+          validFromS: request.body.effectiveAtS,
+          requestedByAccountId: account.id,
+          changeReason: request.body.reason,
+          publishedAt: new Date(world.epoch.getTime() + request.body.requestedAtS * 1_000),
+        }).returning();
+        return reply.code(201).send(saved);
+      } catch (error) {
+        return sendError(reply, error);
+      }
+    },
+  );
+
+  app.post<{
+    Params: { worldId: string };
+    Body: {
+      readonly idempotencyKey: string;
+      readonly regionId: string;
+      readonly kind: "planned" | "unplanned";
+      readonly publishedAtS: number;
+      readonly startsAtS: number;
+      readonly endsAtS: number;
+      readonly positionMm: number;
+      readonly causeCode: number;
+      readonly fineCauseId: string;
+      readonly cause: string;
+      readonly affectedResources: readonly Record<string, unknown>[];
+      readonly affectedResource: string;
+      readonly affectedTrainRunIds: readonly string[];
+      readonly delaySeconds: number;
+      readonly effect: {
+        readonly kind: "closure" | "single-track" | "speed-restriction" | "platform-change" | "traffic-hold" | "route-deviation" | "vehicle-restriction" | "platform-usable-length";
+      };
+    };
+  }>(
+    "/worlds/:worldId/disruptions/manual",
+    {
+      preHandler: authenticate,
+      schema: {
+        params: worldIdParam,
+        body: {
+          type: "object",
+          required: ["idempotencyKey", "regionId", "kind", "publishedAtS", "startsAtS", "endsAtS", "positionMm", "causeCode", "fineCauseId", "cause", "affectedResources", "affectedResource", "affectedTrainRunIds", "delaySeconds", "effect"],
+          additionalProperties: false,
+          properties: {
+            idempotencyKey: { type: "string", minLength: 1, maxLength: 200 },
+            regionId: { type: "string", minLength: 1, maxLength: 200 },
+            kind: { type: "string", enum: ["planned", "unplanned"] },
+            publishedAtS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+            startsAtS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+            endsAtS: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
+            positionMm: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+            causeCode: { type: "integer", minimum: 10, maximum: 90 },
+            fineCauseId: { type: "string", minLength: 3, maxLength: 160, pattern: "^[a-z0-9]+(?:[.-][a-z0-9]+)*$" },
+            cause: { type: "string", minLength: 8, maxLength: 1_000 },
+            affectedResources: { type: "array", minItems: 1, maxItems: 1_000, items: { type: "object" } },
+            affectedResource: { type: "string", minLength: 1, maxLength: 500 },
+            affectedTrainRunIds: { type: "array", maxItems: 10_000, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 200 } },
+            delaySeconds: { type: "integer", minimum: 0, maximum: 604_800 },
+            effect: {
+              type: "object",
+              required: ["kind"],
+              additionalProperties: true,
+              properties: {
+                kind: { type: "string", enum: ["closure", "single-track", "speed-restriction", "platform-change", "traffic-hold", "route-deviation", "vehicle-restriction", "platform-usable-length"] },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        await requireWorldAdminAccount(deps.db, request.params.worldId, identity.keycloakSubject);
+        if (request.body.startsAtS >= request.body.endsAtS) return reply.code(400).send({ error: "Störungsende muss nach dem Beginn liegen." });
+        if (request.body.publishedAtS > request.body.startsAtS) return reply.code(400).send({ error: "Veröffentlichung darf nicht nach dem Beginn liegen." });
+        const account = await getAccount(deps.db, { worldId: request.params.worldId, keycloakSubject: identity.keycloakSubject });
+        if (account === undefined) throw new AuthorizationError("Kein aktiver Weltadministrator.");
+        let [command] = await deps.db.insert(simulationCommands).values({
+          worldId: request.params.worldId,
+          requestingAccountId: account.id,
+          idempotencyKey: request.body.idempotencyKey,
+          commandType: "disruption.manual",
+          payload: { worldId: request.params.worldId, ...request.body },
+          submittedAt: new Date(),
+        }).onConflictDoNothing({ target: [simulationCommands.worldId, simulationCommands.requestingAccountId, simulationCommands.idempotencyKey] }).returning();
+        if (command === undefined) {
+          [command] = await deps.db.select().from(simulationCommands).where(and(
+            eq(simulationCommands.worldId, request.params.worldId),
+            eq(simulationCommands.requestingAccountId, account.id),
+            eq(simulationCommands.idempotencyKey, request.body.idempotencyKey),
+          )).limit(1);
+        }
+        if (command === undefined) throw new Error("Audit-Kommando konnte nicht gespeichert oder geladen werden.");
+        if (deps.regionalSimulation === undefined) return reply.code(202).send(command);
+        const result = await deps.regionalSimulation.apply(
+          {
+            worldId: request.params.worldId,
+            regionId: request.body.regionId,
+            commandId: `manual-disruption:${command.id}`,
+            command: {
+              type: "register-disruption",
+              disruption: {
+                disruptionId: command.id,
+                kind: request.body.kind,
+                publishedAtS: request.body.publishedAtS,
+                startsAtS: request.body.startsAtS,
+                validUntilS: request.body.endsAtS,
+                positionMm: request.body.positionMm,
+                causeCode: request.body.causeCode,
+                fineCauseId: request.body.fineCauseId,
+                effect: request.body.effect.kind,
+                affectedResource: request.body.affectedResource,
+                affectedTrainRunIds: request.body.affectedTrainRunIds,
+                delaySeconds: request.body.delaySeconds,
+              },
+            },
+          },
+          command.submittedAt,
+        );
+        const [processed] = await deps.db.update(simulationCommands).set({
+          status: "processed",
+          processedAt: new Date(),
+          failureCode: null,
+        }).where(and(
+          eq(simulationCommands.worldId, request.params.worldId),
+          eq(simulationCommands.id, command.id),
+        )).returning();
+        return reply.send({ command: processed ?? command, result });
+      } catch (error) {
+        return sendError(reply, error);
+      }
+    },
+  );
+
   // M7 — Betriebsprogramm, Rücktest, Betriebszentrale und Tagesbericht
   // ---------------------------------------------------------------------
 

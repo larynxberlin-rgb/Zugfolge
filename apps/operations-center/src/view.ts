@@ -25,6 +25,7 @@ const labels: Readonly<Record<string, string>> = {
   shorten_train: "Zug schwächen", strengthen_train: "Zug verstärken", cancel_run: "Fahrt ausfallen lassen",
   activate_reserve_rotation: "Reserveumlauf aktivieren", provide_replacement_vehicle: "Ersatzfahrzeug stellen",
   request_reroute: "Umleitung anfragen", return_path: "Trasse zurückgeben", trigger_rail_replacement: "Ersatzverkehr auslösen",
+  apply_disruption: "Betriebswirksame Einschränkung",
   delay_seconds: "Verspätung (s)", connection_threatened: "Anschluss gefährdet", vehicle_failed: "Fahrzeug ausgefallen",
   duty_excess_seconds: "Dienstzeitüberschreitung (s)", route_closed: "Strecke gesperrt", platform_changed: "Bahnsteig geändert",
   turnaround_shortfall_seconds: "Fehlende Wendezeit (s)", ad_hoc_conflict: "Trassenkonflikt", affected_train_runs: "Betroffene Fahrten", cost_cents: "Kosten (Cent)",
@@ -82,10 +83,13 @@ function renderRule(rule: OperatingProgram["rules"][number], index: number, coun
 
 function renderDecision(entry: OperationsDecision, major: boolean, selected: boolean): string {
   const cost = entry.impact.cost_cents ?? entry.impact.costCents;
+  const cause = entry.causeCode === null
+    ? entry.cause
+    : `${String(entry.causeCode).padStart(2, "0")} · ${entry.causeLabel || entry.cause}${entry.fineCauseId ? ` / ${entry.fineCauseLabel || entry.fineCauseId}` : ""}`;
   return `<article id="event-${entry.sequence}" class="decision-card${major ? " decision-card--major" : ""}${selected ? " is-selected" : ""}" tabindex="0" data-decision-id="${escapeHtml(entry.decisionId)}">
     <header><span class="sequence">#${entry.sequence}</span>${badge(labels[entry.action] ?? entry.action, major ? "danger" : "attention", major ? "alert" : "route")}</header>
     <h4>${escapeHtml(entry.trainRunId || "Betriebsereignis")}</h4>
-    <dl><div><dt>Ursache</dt><dd>${escapeHtml(entry.cause || "—")}</dd></div><div><dt>Ressource</dt><dd>${escapeHtml(entry.affectedResource || "—")}</dd></div><div><dt>Folge</dt><dd>${escapeHtml(entry.outcomeReason || "—")}</dd></div><div><dt>Kosten</dt><dd>${cost === undefined ? "—" : `${escapeHtml(String(cost))} ct`}</dd></div></dl>
+    <dl><div><dt>Ursache</dt><dd>${escapeHtml(cause || "—")}</dd></div><div><dt>Ressource</dt><dd>${escapeHtml(entry.affectedResource || "—")}</dd></div><div><dt>Folge</dt><dd>${escapeHtml(entry.outcomeReason || "—")}</dd></div><div><dt>Kosten</dt><dd>${cost === undefined ? "—" : `${escapeHtml(String(cost))} ct`}</dd></div></dl>
     <button class="quiet-button" data-open-override="${escapeHtml(entry.decisionId)}">Einzelfall entscheiden</button>
   </article>`;
 }

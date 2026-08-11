@@ -22,8 +22,10 @@ crates/                     Rust — Simulationskern, Solver, Release-Pipeline
   zugfolge-runtime/         Autoritativer Flotten- und Betriebsübergangszustand (M5/M6.7)
   zugfolge-runtime-napi/    Schmale napi-rs-Grenze für M5/M6
   zugfolge-rules/           Betriebsprogramm, Dispositionsregeln, Erklärungen und Rücktest (M7)
+  zugfolge-disruption/      Policies, Ursachen, Wirkungen, Fahrdienstleitung und Ersatzplanung (M8)
 packages/                   TypeScript — fachliche Bibliotheken (ab M2)
   db/                       Postgres-Zugriff über Drizzle, Wurzel der Weltisolation (M2.2)
+  disruption-provider/      Rechtegeprüfter Snapshot-Adapter für REALISTIC (M8.12)
   identity/                 Konten, Rollen, Weltzugänge; Keycloak-Verifikation (M2.1)
   operators/                EVU: Gründung, Stammdaten, Zuordnung zu Welt und Konto (M2.3)
   economy/                  Ledger-Kern: Integer-Cent, unveränderlich, ausgeglichen (M2.4)
@@ -215,7 +217,7 @@ Liste ist keine vollständige Karte des Repositoriums, sondern die Zuordnung
 | Domäne | Pfade | Status | Was dort besonders gilt |
 |--------|-------|--------|-------------------------|
 | `determinism-core` | `crates/zugfolge-determinism/**` | aktiv | ganzzahlig, uhrfrei, geordnet — der Harnisch muss selbst halten, was er prüft |
-| `simulation-core` | `crates/zugfolge-sim/**`, `crates/zugfolge-sim-runtime/**`, `crates/zugfolge-runtime/**`, `crates/zugfolge-conflict/**`, `crates/zugfolge-fleet/**`, `spikes/**` | aktiv | vollständiger Kernvertrag: kein Bezahlstatus, keine Uhr, keine Datenbank |
+| `simulation-core` | `crates/zugfolge-sim/**`, `crates/zugfolge-sim-runtime/**`, `crates/zugfolge-runtime/**`, `crates/zugfolge-conflict/**`, `crates/zugfolge-fleet/**`, `crates/zugfolge-disruption/**`, `spikes/**` | aktiv | vollständiger Kernvertrag: kein Bezahlstatus, keine Uhr, keine Datenbank |
 | `path-allocation` | `crates/zugfolge-planner/**`, `crates/zugfolge-planning-runtime{,-napi}/**`, `packages/path-allocation/**`, `packages/planning-{projection,runtime-native,worker}/**` | aktiv | Reihenfolge und Bezahlstatus beeinflussen das Ergebnis nicht (E4, `infrastruktur.md` 2) |
 | `dispatch` | `crates/zugfolge-rules/**`, `packages/dispatch/**` | aktiv | das Betriebsprogramm wirkt offline und für alle gleich (E2, E13) |
 | `demand` | `packages/demand/**`, `crates/zugfolge-demand/**` | geplant | Nachfrage folgt dem Angebot, nie dem Vertrag des Spielers |

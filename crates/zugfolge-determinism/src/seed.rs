@@ -22,6 +22,8 @@ const SUBSTREAM_DOMAIN: &[u8] = b"zugfolge/substream/v1";
 pub enum Substream {
     /// Entstehung von Störungen und Baustellen (M8.2).
     Disruption,
+    /// Tagesaktuelle, modellierte Langsamfahrstellen und Sonderbedingungen.
+    DailyRestriction,
     /// Auflösung exakter Gleichstände im `PlanningRun` (M3.5).
     Tiebreak,
     /// Nachfrageschwankung im Personen- und Güterverkehr (M10, M11).
@@ -39,8 +41,9 @@ impl Substream {
     ///
     /// Dient dem Nachweis, dass jeder Strom einen eigenen Namen hat — nicht
     /// der Iteration im Betrieb.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Disruption,
+        Self::DailyRestriction,
         Self::Tiebreak,
         Self::Demand,
         Self::Failure,
@@ -57,6 +60,7 @@ impl Substream {
     pub const fn name(self) -> &'static str {
         match self {
             Self::Disruption => "disruption",
+            Self::DailyRestriction => "daily_restriction",
             Self::Tiebreak => "tiebreak",
             Self::Demand => "demand",
             Self::Failure => "failure",

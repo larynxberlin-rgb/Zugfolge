@@ -37,6 +37,7 @@ function snapshot(selectedState: RegionalSimulationState) {
     producerSequence: selectedState.publisherSequence,
     atS: selectedState.nowS,
     trains: [],
+    disruptions: [],
   };
 }
 
@@ -66,6 +67,8 @@ describe("regionale native M4-Grenze", () => {
           atS: 100,
           changed: [],
           removed: [],
+          changedDisruptions: [],
+          removedDisruptionIds: [],
         },
         appliedCommandId: "advance-1",
         idempotentReplay: false,
@@ -137,6 +140,8 @@ describe("regionale native M4-Grenze", () => {
             atS: 200,
             changed: [],
             removed: [],
+            changedDisruptions: [],
+            removedDisruptionIds: [],
           },
           appliedCommandId: "advance-1",
           idempotentReplay: false,

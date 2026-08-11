@@ -7,11 +7,31 @@ export type OperatingStatus =
   | "cancelled";
 
 export const PUBLIC_OPERATION_MARKER_SCHEMA = "zugfolge-livemap-operation-marker/v1" as const;
+export const DISRUPTION_MARKER_SCHEMA = "zugfolge-livemap-disruption/v1" as const;
 export const PUBLIC_OPERATOR_LABEL = "Eigenbetrieb des Aufgabenträgers";
 
 export interface PublicOperationMarker {
   readonly schemaVersion: typeof PUBLIC_OPERATION_MARKER_SCHEMA;
   readonly kind: "public-operator";
+}
+
+export interface PublicDisruptionMarker {
+  readonly schemaVersion: typeof DISRUPTION_MARKER_SCHEMA;
+  readonly disruptionId: string;
+  readonly causeCode: number;
+  readonly causeLabel: string;
+  readonly fineCauseId: string;
+  readonly fineCauseLabel: string;
+  readonly effect: "closure" | "single-track" | "speed-restriction" | "platform-change" | "traffic-hold" | "route-deviation" | "vehicle-restriction" | "platform-usable-length";
+  readonly affectedResource: string;
+  readonly validUntilS: number;
+}
+
+export interface PublicInfrastructureDisruption extends PublicDisruptionMarker {
+  readonly kind: "planned" | "unplanned";
+  readonly positionMm: number;
+  readonly publishedAtS: number;
+  readonly startsAtS: number;
 }
 
 export interface PublicTrain {
@@ -25,6 +45,7 @@ export interface PublicTrain {
   readonly nextOperatingPoint: string;
   readonly status: OperatingStatus;
   readonly operationMarker?: PublicOperationMarker;
+  readonly disruption?: PublicDisruptionMarker;
 }
 
 export interface Snapshot {
@@ -33,6 +54,7 @@ export interface Snapshot {
   readonly sequence: number;
   readonly at: number;
   readonly trains: readonly PublicTrain[];
+  readonly disruptions?: readonly PublicInfrastructureDisruption[];
 }
 
 export interface Delta {
@@ -42,6 +64,8 @@ export interface Delta {
   readonly at: number;
   readonly changed: readonly PublicTrain[];
   readonly removed: readonly string[];
+  readonly changedDisruptions?: readonly PublicInfrastructureDisruption[];
+  readonly removedDisruptionIds?: readonly string[];
 }
 
 export interface LiveState {
@@ -50,6 +74,7 @@ export interface LiveState {
   readonly sequence: number;
   readonly at: number;
   readonly trains: ReadonlyMap<string, PublicTrain>;
+  readonly disruptions: ReadonlyMap<string, PublicInfrastructureDisruption>;
 }
 
 export interface RenderSamples {
@@ -113,6 +138,61 @@ function parseOperationMarker(value: unknown): PublicOperationMarker | undefined
   });
 }
 
+function parseDisruptionMarker(value: unknown): PublicDisruptionMarker | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || value["schemaVersion"] !== DISRUPTION_MARKER_SCHEMA) {
+    throw new TypeError("Livemap-Störungsmarker hat ein unbekanntes Schema.");
+  }
+  const causeCode = integerField(value, "causeCode", 0);
+  const effect = stringField(value, "effect");
+  if (causeCode > 99 || !["closure", "single-track", "speed-restriction", "platform-change", "traffic-hold", "route-deviation", "vehicle-restriction", "platform-usable-length"].includes(effect)) {
+    throw new TypeError("Livemap-Störungsmarker enthält eine unbekannte Ursache oder Wirkung.");
+  }
+  return Object.freeze({
+    schemaVersion: DISRUPTION_MARKER_SCHEMA,
+    disruptionId: stringField(value, "disruptionId"),
+    causeCode,
+    causeLabel: stringField(value, "causeLabel"),
+    fineCauseId: stringField(value, "fineCauseId"),
+    fineCauseLabel: stringField(value, "fineCauseLabel"),
+    effect: effect as PublicDisruptionMarker["effect"],
+    affectedResource: stringField(value, "affectedResource"),
+    validUntilS: integerField(value, "validUntilS", 0),
+  });
+}
+
+function parseInfrastructureDisruption(value: unknown): PublicInfrastructureDisruption {
+  if (!isRecord(value)) throw new TypeError("Livemap-Infrastrukturstörung muss ein Objekt sein.");
+  const marker = parseDisruptionMarker(value);
+  if (marker === undefined) throw new TypeError("Livemap-Infrastrukturstörung fehlt.");
+  const kind = stringField(value, "kind");
+  if (kind !== "planned" && kind !== "unplanned") {
+    throw new TypeError("Livemap-Infrastrukturstörung ist weder geplant noch ungeplant.");
+  }
+  const publishedAtS = integerField(value, "publishedAtS", 0);
+  const startsAtS = integerField(value, "startsAtS", 0);
+  if (publishedAtS > startsAtS) throw new TypeError("Störung wurde nach ihrem Beginn veröffentlicht.");
+  return Object.freeze({
+    ...marker,
+    kind,
+    positionMm: integerField(value, "positionMm", 0),
+    publishedAtS,
+    startsAtS,
+  });
+}
+
+function parseDisruptions(value: unknown, field: string): readonly PublicInfrastructureDisruption[] {
+  if (value === undefined) return Object.freeze([]);
+  if (!Array.isArray(value)) throw new TypeError(`Livemap-Feld '${field}' muss eine Liste sein.`);
+  const disruptions = value.map(parseInfrastructureDisruption);
+  const identifiers = new Set<string>();
+  for (const disruption of disruptions) {
+    if (identifiers.has(disruption.disruptionId)) throw new TypeError(`Störung '${disruption.disruptionId}' ist doppelt.`);
+    identifiers.add(disruption.disruptionId);
+  }
+  return Object.freeze(disruptions);
+}
+
 function parseTrain(value: unknown): PublicTrain {
   if (!isRecord(value)) throw new TypeError("Livemap-Zugprojektion muss ein Objekt sein.");
   const status = stringField(value, "status");
@@ -120,6 +200,7 @@ function parseTrain(value: unknown): PublicTrain {
     throw new TypeError(`Unbekannter Livemap-Betriebsstatus '${status}'.`);
   }
   const operationMarker = parseOperationMarker(value["operationMarker"]);
+  const disruption = parseDisruptionMarker(value["disruption"]);
   return Object.freeze({
     id: stringField(value, "id"),
     operator: stringField(value, "operator"),
@@ -131,6 +212,7 @@ function parseTrain(value: unknown): PublicTrain {
     nextOperatingPoint: stringField(value, "nextOperatingPoint"),
     status: status as OperatingStatus,
     ...(operationMarker === undefined ? {} : { operationMarker }),
+    ...(disruption === undefined ? {} : { disruption }),
   });
 }
 
@@ -159,6 +241,7 @@ export function parseSnapshot(value: unknown): Snapshot {
     sequence: integerField(value, "sequence", 0),
     at: integerField(value, "at", 0),
     trains: parseTrains(value["trains"], "trains"),
+    disruptions: parseDisruptions(value["disruptions"], "disruptions"),
   });
 }
 
@@ -168,6 +251,10 @@ export function parseDelta(value: unknown): Delta {
   if (!Array.isArray(removed) || removed.some((id) => typeof id !== "string" || id.length === 0)) {
     throw new TypeError("Livemap-Feld 'removed' muss eine Liste nichtleerer Zugkennungen sein.");
   }
+  const removedDisruptionIds = value["removedDisruptionIds"] ?? [];
+  if (!Array.isArray(removedDisruptionIds) || removedDisruptionIds.some((id) => typeof id !== "string" || id.length === 0)) {
+    throw new TypeError("Livemap-Feld 'removedDisruptionIds' muss eine Liste nichtleerer Kennungen sein.");
+  }
   return Object.freeze({
     worldId: stringField(value, "worldId"),
     streamId: streamIdField(value),
@@ -175,6 +262,8 @@ export function parseDelta(value: unknown): Delta {
     at: integerField(value, "at", 0),
     changed: parseTrains(value["changed"], "changed"),
     removed: Object.freeze([...removed] as string[]),
+    changedDisruptions: parseDisruptions(value["changedDisruptions"], "changedDisruptions"),
+    removedDisruptionIds: Object.freeze([...removedDisruptionIds] as string[]),
   });
 }
 
@@ -184,12 +273,15 @@ export function initialState(snapshot: Snapshot): LiveState {
     if (trains.has(train.id)) throw new TypeError(`Snapshot enthält Zug '${train.id}' doppelt.`);
     trains.set(train.id, Object.freeze({ ...train }));
   }
+  const disruptions = new Map<string, PublicInfrastructureDisruption>();
+  snapshot.disruptions?.forEach((item) => disruptions.set(item.disruptionId, item));
   return Object.freeze({
     worldId: snapshot.worldId,
     streamId: snapshot.streamId,
     sequence: snapshot.sequence,
     at: snapshot.at,
     trains,
+    disruptions,
   });
 }
 
@@ -205,12 +297,16 @@ export function applyDelta(state: LiveState, delta: Delta): LiveState | undefine
   const trains = new Map(state.trains);
   delta.changed.forEach((train) => trains.set(train.id, Object.freeze({ ...train })));
   delta.removed.forEach((id) => trains.delete(id));
+  const disruptions = new Map(state.disruptions);
+  delta.changedDisruptions?.forEach((item) => disruptions.set(item.disruptionId, item));
+  delta.removedDisruptionIds?.forEach((id) => disruptions.delete(id));
   return Object.freeze({
     worldId: state.worldId,
     streamId: state.streamId,
     sequence: delta.sequence,
     at: delta.at,
     trains,
+    disruptions,
   });
 }
 

@@ -103,6 +103,73 @@ describe("M7-Plattformvertrag", () => {
     expect(projectOperations([disruption(3)], operatorId).majorEvents).toHaveLength(1);
   });
 
+  it("projiziert Verspätungsursachencode, Ersatzentscheidung und Kosten lückenlos", () => {
+    const disruption: LoggedEvent = {
+      sequence: 20,
+      eventType: "disruption.replacement-plan",
+      occurredAt: new Date("2026-08-11T10:00:00Z"),
+      payload: {
+        operatorId,
+        trainRunId: "RE-9",
+        decisionId: "replacement-9",
+        action: "trigger_rail_replacement",
+        cause: "signaltechnische Störung",
+        causeCode: 25,
+        causeLabel: "Anlagen Leit- und Sicherungstechnik",
+        affectedResource: "block:Leipzig-Wahren:2",
+        outcomeReason: "Umleitung wegen belegter Restkapazität abgelehnt; SEV gewählt",
+        rejectedAlternatives: [{ action: "request_reroute", reason: "Restkapazität vergeben" }],
+        impact: { cost_cents: "600000", contract_penalty_cents: "50000", affected_train_runs: 4 },
+      },
+    };
+    const projection = projectOperations([disruption], operatorId);
+    expect(projection.decisions[0]).toMatchObject({
+      causeCode: 25,
+      causeLabel: "Anlagen Leit- und Sicherungstechnik",
+      action: "trigger_rail_replacement",
+    });
+    const report = buildDailyReport([disruption], operatorId, "2026-08-11");
+    expect(report.trainRuns.replacementServices).toBe(1);
+    expect(report.settlements).toMatchObject({ costCents: "600000", contractPenaltyCents: "50000" });
+    expect(report.facts.eventSequences).toEqual([20]);
+  });
+
+  it("projiziert die echte Single-Writer-Störungswirkung EVU-gefiltert bis in den Tagesbericht", () => {
+    const applied: LoggedEvent = {
+      sequence: 21,
+      eventType: "disruption.applied",
+      occurredAt: new Date("2026-08-11T10:05:00Z"),
+      payload: {
+        operatorIds: [operatorId, "other-operator"],
+        affectedTrainRunIds: ["RE-9"],
+        action: "apply_disruption",
+        causeCode: 25,
+        causeLabel: "Anlagen Leit- und Sicherungstechnik",
+        fineCauseId: "signalling.interlocking",
+        fineCauseLabel: "Stellwerk gestört",
+        affectedResource: "block:Leipzig-Wahren:2",
+        effect: "closure",
+        outcomeReason: "Betriebswirksame Einschränkung im regionalen Single-Writer angewendet",
+        impact: {
+          affected_train_runs: 1,
+          affected_resource: "block:Leipzig-Wahren:2",
+          infrastructure_effect: "closure",
+        },
+      },
+    };
+    expect(projectOperations([applied], operatorId).decisions[0]).toMatchObject({
+      causeCode: 25,
+      fineCauseId: "signalling.interlocking",
+      action: "apply_disruption",
+      affectedResource: "block:Leipzig-Wahren:2",
+    });
+    expect(projectOperations([applied], "unaffected-operator").decisions).toEqual([]);
+    expect(buildDailyReport([applied], operatorId, "2026-08-11")).toMatchObject({
+      decisionsByAction: { apply_disruption: 1 },
+      infrastructureEffects: ["block:Leipzig-Wahren:2"],
+    });
+  });
+
   it("liefert Resume-Replay und erzwingt eine begrenzte Historie", () => {
     const feed = new OperationsFeed(2);
     const decision = projectOperations(events(), operatorId).decisions[0]!;

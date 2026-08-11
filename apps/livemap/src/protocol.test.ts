@@ -3,9 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   appendRenderSample,
   applyDelta,
+  DISRUPTION_MARKER_SCHEMA,
   initialState,
   LivemapConnection,
   operatorLabel,
+  parseDelta,
   parseSnapshot,
   PUBLIC_OPERATION_MARKER_SCHEMA,
   PUBLIC_OPERATOR_LABEL,
@@ -183,6 +185,57 @@ describe("Livemap-Projektion", () => {
         ],
       }),
     ).toThrow(/unbekanntes Schema/);
+  });
+
+  it("zeigt eine öffentliche Störung mit Code, Wirkung, Ressource und Gültigkeit", () => {
+    const train = parseSnapshot(snapshot(5, 110, {
+      ...baseTrain,
+      disruption: {
+        schemaVersion: DISRUPTION_MARKER_SCHEMA,
+        disruptionId: "works-1",
+        causeCode: 31,
+        causeLabel: "Bauarbeiten/Arbeiten",
+        fineCauseId: "construction.work-zone",
+        fineCauseLabel: "Fahrzeitverlust im Bauabschnitt",
+        effect: "single-track",
+        affectedResource: "block:Leipzig-Wahren:2",
+        validUntilS: 3_628_800,
+      },
+    })).trains[0]!;
+    expect(train.disruption).toMatchObject({
+      causeCode: 31,
+      effect: "single-track",
+      affectedResource: "block:Leipzig-Wahren:2",
+    });
+    expect(Object.isFrozen(train.disruption)).toBe(true);
+  });
+
+  it("führt geplante und ungeplante Infrastrukturmarker unabhängig von Zügen", () => {
+    const marker = {
+      schemaVersion: DISRUPTION_MARKER_SCHEMA,
+      disruptionId: "works-2",
+      kind: "planned",
+      causeCode: 31,
+      causeLabel: "Bauarbeiten/Arbeiten",
+      fineCauseId: "construction.work-zone",
+      fineCauseLabel: "Fahrzeitverlust im Bauabschnitt",
+      effect: "single-track",
+      affectedResource: "block:Leipzig-Wahren:2",
+      positionMm: 42_000_000,
+      publishedAtS: 100,
+      startsAtS: 1_000,
+      validUntilS: 2_000,
+    } as const;
+    const state = initialState(parseSnapshot({ ...snapshot(5, 110, baseTrain), disruptions: [marker] }));
+    expect(state.disruptions.get("works-2")).toMatchObject({ kind: "planned", startsAtS: 1_000 });
+    const updated = applyDelta(state, parseDelta({
+      ...delta(6),
+      at: 120,
+      changedDisruptions: [{ ...marker, disruptionId: "incident-1", kind: "unplanned", publishedAtS: 120, startsAtS: 120 }],
+      removedDisruptionIds: ["works-2"],
+    }));
+    expect(updated?.disruptions.has("works-2")).toBe(false);
+    expect(updated?.disruptions.get("incident-1")?.kind).toBe("unplanned");
   });
 
   it("verwirft Sequenz- und Zeitlücken", () => {

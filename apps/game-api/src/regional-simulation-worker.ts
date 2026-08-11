@@ -1,9 +1,12 @@
 import {
   domainEvents,
+  mailboxMessages,
+  operators,
   regionalSimulationStates,
   worlds,
   type RegionalSimulationStateRow,
 } from "@zugfolge/db";
+import { projectOperations, type OperationsRegistry } from "@zugfolge/dispatch";
 import type { LivemapRegistry } from "@zugfolge/livemap-stream";
 import {
   REGIONAL_SIMULATION_COMMAND_SCHEMA,
@@ -17,7 +20,7 @@ import {
   type RegionalSimulationEvent,
   type RegionalSimulationResult,
 } from "@zugfolge/runtime-native";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { compareUtf8 } from "./utf8.js";
@@ -122,8 +125,8 @@ async function appendEvents(
   worldId: string,
   epoch: Date,
   events: readonly RegionalSimulationEvent[],
-): Promise<void> {
-  if (events.length === 0) return;
+){
+  if (events.length === 0) return [];
   const [head] = await db
     .select({ sequence: domainEvents.sequence })
     .from(domainEvents)
@@ -137,21 +140,43 @@ async function appendEvents(
   ) {
     throw new RegionalSimulationSequenceError("Welt-Ereignissequenz ist erschoepft.");
   }
-  await db.insert(domainEvents).values(
+  const appended = await db.insert(domainEvents).values(
     events.map((event, index) => ({
       worldId,
       sequence: firstSequence + index,
       eventType: event.eventType,
       payload: {
+        ...event.payload,
         schemaVersion: "zugfolge-regional-simulation-event/v1",
         nativeEventId: event.eventId,
         regionId: event.regionId,
         simulationSequence: event.simulationSequence,
-        data: event.payload,
       },
       occurredAt: occurredAt(epoch, event.atS),
     })),
-  );
+  ).returning();
+  for (const event of appended.filter((item) => item.eventType === "disruption.applied")) {
+    const payload = event.payload as Readonly<Record<string, unknown>>;
+    const operatorIds = Array.isArray(payload["operatorIds"])
+      ? payload["operatorIds"].filter((value): value is string => typeof value === "string")
+      : [];
+    if (operatorIds.length === 0) continue;
+    const recipients = await db.select({ accountId: operators.foundingAccountId })
+      .from(operators)
+      .where(and(eq(operators.worldId, worldId), inArray(operators.id, operatorIds)));
+    if (recipients.length === 0) continue;
+    await db.insert(mailboxMessages).values(recipients.map(({ accountId }) => ({
+      worldId,
+      recipientAccountId: accountId,
+      idempotencyKey: `disruption:${event.sequence}`,
+      messageType: "disruption.applied",
+      payload,
+      sentAt: event.occurredAt,
+    }))).onConflictDoNothing({
+      target: [mailboxMessages.worldId, mailboxMessages.recipientAccountId, mailboxMessages.idempotencyKey],
+    });
+  }
+  return appended;
 }
 
 /**
@@ -164,16 +189,19 @@ export class RegionalSimulationWorker {
   readonly #db: AnyDatabase;
   readonly #runtime: RegionalSimulationRuntime;
   readonly #livemap: LivemapRegistry;
+  readonly #operations: OperationsRegistry | undefined;
   readonly #readyRegions = new Map<string, RegionalSimulationReadyRegion>();
 
   constructor(
     db: AnyDatabase,
     runtime: RegionalSimulationRuntime,
     livemap: LivemapRegistry,
+    operations?: OperationsRegistry,
   ) {
     this.#db = db;
     this.#runtime = runtime;
     this.#livemap = livemap;
+    this.#operations = operations;
   }
 
   isReady(worldId: string, regionId: string): boolean {
@@ -238,6 +266,7 @@ export class RegionalSimulationWorker {
         this.#livemap.initializeRegion(worldId, result.state.regionId, {
           at: result.snapshot.atS,
           trains: result.snapshot.trains,
+          disruptions: result.snapshot.disruptions,
         });
         this.#markReady(result.state);
       }
@@ -303,6 +332,7 @@ export class RegionalSimulationWorker {
       this.#livemap.initializeRegion(input.worldId, input.regionId, {
         at: initialized.snapshot.atS,
         trains: initialized.snapshot.trains,
+        disruptions: initialized.snapshot.disruptions,
       });
       this.#markReady(initialized.state);
       return initialized;
@@ -340,6 +370,7 @@ export class RegionalSimulationWorker {
       this.#livemap.initializeRegion(worldId, regionId, {
         at: restored.snapshot.atS,
         trains: restored.snapshot.trains,
+        disruptions: restored.snapshot.disruptions,
       });
       this.#markReady(restored.state);
       return restored;
@@ -414,7 +445,7 @@ export class RegionalSimulationWorker {
             "Idempotenter Rust-Replay veraenderte den persistierten Kopf.",
           );
         }
-        return { result, fanout: false };
+        return { result, fanout: false, appendedEvents: [] };
       }
       const worldRegions = await tx
         .select()
@@ -463,8 +494,8 @@ export class RegionalSimulationWorker {
           "Regionaler Simulationskopf wurde gleichzeitig veraendert.",
         );
       }
-      await appendEvents(tx, work.worldId, world.epoch, result.events);
-      return { result, fanout: true };
+      const appendedEvents = await appendEvents(tx, work.worldId, world.epoch, result.events);
+      return { result, fanout: true, appendedEvents };
     });
 
     if (!committed.fanout) {
@@ -472,10 +503,29 @@ export class RegionalSimulationWorker {
       return committed.result;
     }
     try {
+      for (const event of committed.appendedEvents) {
+        const payload = event.payload as Readonly<Record<string, unknown>>;
+        const operatorIds = Array.isArray(payload["operatorIds"])
+          ? payload["operatorIds"].filter((value): value is string => typeof value === "string")
+          : [];
+        for (const operatorId of operatorIds) {
+          const decision = projectOperations([event], operatorId).decisions[0];
+          if (decision !== undefined) {
+            this.#operations?.forOperator(work.worldId, operatorId).publish({
+              worldId: work.worldId,
+              operatorId,
+              sequence: event.sequence,
+              decision,
+            });
+          }
+        }
+      }
       const published = this.#livemap.publishRegionDelta(work.worldId, work.regionId, {
         at: committed.result.delta.atS,
         changed: committed.result.delta.changed,
         removed: committed.result.delta.removed,
+        changedDisruptions: committed.result.delta.changedDisruptions,
+        removedDisruptionIds: committed.result.delta.removedDisruptionIds,
       });
       if (published === undefined) {
         await this.#rebuildWorldFeed(work.worldId);

@@ -15,6 +15,7 @@
   "dependencies": {
     "@zugfolge/db": "workspace:*",
     "@zugfolge/commerce": "workspace:*",
+    "@zugfolge/disruption-provider": "workspace:*",
     "@zugfolge/dispatch": "workspace:*",
     "@zugfolge/economy": "workspace:*",
     "@zugfolge/health": "workspace:*",

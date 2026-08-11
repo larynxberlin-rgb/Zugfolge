@@ -17,10 +17,11 @@ use std::fmt::Write as _;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use zugfolge_disruption::{CauseType, delay_cause_code, fine_cause_code};
 use zugfolge_sim::{
     Command, ConservativeDispatcher, DeltaPublisher, DispatchDecision, DispatchTrigger,
-    DomainEvent, EventKind, LiveDelta, LiveSnapshot, MaterializationWindow, OperatingStatus,
-    PublicTrain, SimError, Simulation, TrainCategory, TrainRun, Waypoint,
+    DisruptionApplication, DomainEvent, EventKind, LiveDelta, LiveSnapshot, MaterializationWindow,
+    OperatingStatus, PublicTrain, SimError, Simulation, TrainCategory, TrainRun, Waypoint,
 };
 
 pub const INITIALIZE_SCHEMA: &str = "zugfolge-regional-simulation-initialize/v1";
@@ -161,6 +162,45 @@ enum WireCommand {
         #[serde(rename = "beforeS")]
         before_s: i64,
     },
+    RegisterDisruption {
+        disruption: WireDisruption,
+    },
+    ActivateDisruption {
+        #[serde(rename = "disruptionId")]
+        disruption_id: String,
+        #[serde(rename = "affectedTrainRunIds")]
+        affected_train_run_ids: Vec<String>,
+        #[serde(rename = "delaySeconds")]
+        delay_seconds: u32,
+    },
+    ClearDisruption {
+        #[serde(rename = "disruptionId")]
+        disruption_id: String,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum WireDisruptionKind {
+    Planned,
+    Unplanned,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct WireDisruption {
+    disruption_id: String,
+    kind: WireDisruptionKind,
+    published_at_s: i64,
+    starts_at_s: i64,
+    valid_until_s: i64,
+    position_mm: i64,
+    cause_code: u8,
+    fine_cause_id: String,
+    effect: String,
+    affected_resource: String,
+    affected_train_run_ids: Vec<String>,
+    delay_seconds: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -209,6 +249,7 @@ struct WireSnapshot {
     producer_sequence: u64,
     at_s: i64,
     trains: Vec<WirePublicTrain>,
+    disruptions: Vec<WirePublicDisruption>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -221,6 +262,26 @@ struct WireDelta {
     at_s: i64,
     changed: Vec<WirePublicTrain>,
     removed: Vec<String>,
+    changed_disruptions: Vec<WirePublicDisruption>,
+    removed_disruption_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WirePublicDisruption {
+    schema_version: &'static str,
+    disruption_id: String,
+    kind: WireDisruptionKind,
+    published_at_s: i64,
+    starts_at_s: i64,
+    valid_until_s: i64,
+    position_mm: i64,
+    cause_code: u8,
+    cause_label: String,
+    fine_cause_id: String,
+    fine_cause_label: String,
+    effect: String,
+    affected_resource: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -241,6 +302,9 @@ struct Machine {
     internal_by_external: BTreeMap<String, u64>,
     external_by_internal: BTreeMap<u64, String>,
     next_internal_id: u64,
+    disruptions: BTreeMap<String, WirePublicDisruption>,
+    activated_disruptions: BTreeSet<String>,
+    pending_disruption_effects: BTreeMap<String, (Vec<String>, u32)>,
 }
 
 struct Applied {
@@ -266,6 +330,68 @@ fn validate_identity(value: &str, name: &str) -> Result<(), RuntimeError> {
         ));
     }
     Ok(())
+}
+
+fn public_disruption(input: &WireDisruption) -> Result<WirePublicDisruption, RuntimeError> {
+    validate_identity(&input.disruption_id, "disruptionId")?;
+    validate_identity(&input.affected_resource, "affectedResource")?;
+    if input.published_at_s < 0
+        || input.starts_at_s < 0
+        || input.valid_until_s <= input.starts_at_s
+        || input.published_at_s > input.starts_at_s
+        || input.position_mm < 0
+        || !matches!(
+            input.effect.as_str(),
+            "closure"
+                | "single-track"
+                | "speed-restriction"
+                | "platform-change"
+                | "traffic-hold"
+                | "route-deviation"
+                | "vehicle-restriction"
+                | "platform-usable-length"
+        )
+    {
+        return Err(RuntimeError::new(
+            "invalid_disruption",
+            "Störungszeit, Position oder Wirkung ist ungültig",
+        ));
+    }
+    let cause = delay_cause_code(input.cause_code)
+        .filter(|entry| {
+            matches!(
+                entry.cause_type,
+                CauseType::Primary | CauseType::DangerousEvent
+            )
+        })
+        .ok_or_else(|| RuntimeError::new("invalid_cause_code", input.cause_code.to_string()))?;
+    let fine = fine_cause_code(&input.fine_cause_id, input.cause_code)
+        .ok_or_else(|| RuntimeError::new("invalid_fine_cause_code", input.fine_cause_id.clone()))?;
+    let mut train_run_ids = BTreeSet::new();
+    for train_run_id in &input.affected_train_run_ids {
+        validate_identity(train_run_id, "affectedTrainRunId")?;
+        if !train_run_ids.insert(train_run_id) {
+            return Err(RuntimeError::new(
+                "invalid_disruption",
+                "betroffener Zuglauf ist doppelt",
+            ));
+        }
+    }
+    Ok(WirePublicDisruption {
+        schema_version: "zugfolge-livemap-disruption/v1",
+        disruption_id: input.disruption_id.clone(),
+        kind: input.kind,
+        published_at_s: input.published_at_s,
+        starts_at_s: input.starts_at_s,
+        valid_until_s: input.valid_until_s,
+        position_mm: input.position_mm,
+        cause_code: cause.code,
+        cause_label: cause.label.into(),
+        fine_cause_id: fine.id.into(),
+        fine_cause_label: fine.label.into(),
+        effect: input.effect.clone(),
+        affected_resource: input.affected_resource.clone(),
+    })
 }
 
 fn validate_train(train: &TrainInput) -> Result<(), RuntimeError> {
@@ -380,6 +506,133 @@ fn external_train_id(machine: &Machine, internal_id: u64) -> Result<String, Runt
         .ok_or_else(|| RuntimeError::new("unknown_internal_train", internal_id.to_string()))
 }
 
+fn affected_operators(machine: &Machine, internal_ids: &[u64]) -> Vec<String> {
+    let selected = internal_ids.iter().copied().collect::<BTreeSet<_>>();
+    machine
+        .simulation
+        .snapshot()
+        .trains
+        .into_iter()
+        .filter(|train| selected.contains(&train.id))
+        .map(|train| train.operator)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn apply_registered_disruption(
+    machine: &mut Machine,
+    disruption_id: &str,
+    affected_train_run_ids: &[String],
+    delay_seconds: u32,
+) -> Result<Vec<DomainEvent>, RuntimeError> {
+    validate_identity(disruption_id, "disruptionId")?;
+    if affected_train_run_ids.is_empty() {
+        return Err(RuntimeError::new(
+            "invalid_disruption",
+            "mindestens ein betroffener Zuglauf ist erforderlich",
+        ));
+    }
+    if machine.activated_disruptions.contains(disruption_id) {
+        return Err(RuntimeError::new(
+            "disruption_already_activated",
+            disruption_id.to_owned(),
+        ));
+    }
+    let marker = machine
+        .disruptions
+        .get(disruption_id)
+        .cloned()
+        .ok_or_else(|| RuntimeError::new("unknown_disruption", disruption_id.to_owned()))?;
+    let now = machine.simulation.snapshot().at;
+    if now < marker.starts_at_s || now >= marker.valid_until_s {
+        return Err(RuntimeError::new(
+            "disruption_not_active",
+            "Störung liegt außerhalb ihres Wirkungszeitraums",
+        ));
+    }
+    let mut external_ids = BTreeSet::new();
+    let mut internal_ids = Vec::with_capacity(affected_train_run_ids.len());
+    for train_run_id in affected_train_run_ids {
+        validate_identity(train_run_id, "affectedTrainRunId")?;
+        if !external_ids.insert(train_run_id) {
+            return Err(RuntimeError::new(
+                "invalid_disruption",
+                "betroffener Zuglauf ist doppelt",
+            ));
+        }
+        internal_ids.push(
+            machine
+                .internal_by_external
+                .get(train_run_id)
+                .copied()
+                .ok_or_else(|| RuntimeError::new("unknown_train", train_run_id.clone()))?,
+        );
+    }
+    let events = machine
+        .simulation
+        .apply(Command::ApplyDisruption(DisruptionApplication {
+            disruption_id: marker.disruption_id.clone(),
+            affected_train_run_ids: internal_ids,
+            delay_seconds,
+            cause_code: marker.cause_code,
+            fine_cause_id: marker.fine_cause_id.clone(),
+            affected_resource: marker.affected_resource.clone(),
+            effect: marker.effect.clone(),
+            planned: matches!(marker.kind, WireDisruptionKind::Planned),
+        }))?;
+    machine
+        .activated_disruptions
+        .insert(disruption_id.to_owned());
+    machine.pending_disruption_effects.remove(disruption_id);
+    Ok(events)
+}
+
+fn advance_with_pending_disruptions(
+    machine: &mut Machine,
+    target: i64,
+) -> Result<Vec<DomainEvent>, RuntimeError> {
+    let initial_now = machine.simulation.snapshot().at;
+    if target < initial_now {
+        return Ok(machine.simulation.apply(Command::AdvanceTo(target))?);
+    }
+    let mut due = machine
+        .pending_disruption_effects
+        .keys()
+        .filter_map(|disruption_id| {
+            machine
+                .disruptions
+                .get(disruption_id)
+                .filter(|marker| marker.starts_at_s >= initial_now && marker.starts_at_s <= target)
+                .map(|marker| (marker.starts_at_s, disruption_id.clone()))
+        })
+        .collect::<Vec<_>>();
+    due.sort();
+    let mut events = Vec::new();
+    for (starts_at_s, disruption_id) in due {
+        if machine.simulation.snapshot().at < starts_at_s {
+            events.extend(machine.simulation.apply(Command::AdvanceTo(starts_at_s))?);
+        }
+        let Some((affected_train_run_ids, delay_seconds)) = machine
+            .pending_disruption_effects
+            .get(&disruption_id)
+            .cloned()
+        else {
+            continue;
+        };
+        events.extend(apply_registered_disruption(
+            machine,
+            &disruption_id,
+            &affected_train_run_ids,
+            delay_seconds,
+        )?);
+    }
+    if machine.simulation.snapshot().at < target || target == initial_now {
+        events.extend(machine.simulation.apply(Command::AdvanceTo(target))?);
+    }
+    Ok(events)
+}
+
 fn wire_train(machine: &Machine, train: PublicTrain) -> Result<WirePublicTrain, RuntimeError> {
     Ok(WirePublicTrain {
         id: external_train_id(machine, train.id)?,
@@ -419,6 +672,12 @@ fn wire_snapshot(
         producer_sequence,
         at_s: snapshot.at,
         trains,
+        disruptions: machine
+            .disruptions
+            .values()
+            .filter(|item| item.valid_until_s > snapshot.at)
+            .cloned()
+            .collect(),
     })
 }
 
@@ -426,6 +685,8 @@ fn wire_delta(
     state: &RuntimeState,
     machine: &Machine,
     delta: LiveDelta,
+    changed_disruptions: Vec<WirePublicDisruption>,
+    removed_disruption_ids: Vec<String>,
 ) -> Result<WireDelta, RuntimeError> {
     let changed = delta
         .changed
@@ -445,6 +706,8 @@ fn wire_delta(
         at_s: delta.at,
         changed,
         removed,
+        changed_disruptions,
+        removed_disruption_ids,
     })
 }
 
@@ -510,6 +773,43 @@ fn event_payload(
                 "decisionId": decision_id,
                 "trigger": dispatch_trigger_name(*trigger),
                 "decision": dispatch_decision_name(*decision),
+            }),
+        ),
+        EventKind::DisruptionApplied {
+            disruption_id,
+            affected_train_run_ids,
+            delay_seconds,
+            cause_code,
+            fine_cause_id,
+            affected_resource,
+            effect,
+            planned,
+        } => (
+            "disruption.applied",
+            json!({
+                "disruptionId": disruption_id,
+                "kind": if *planned { "planned" } else { "unplanned" },
+                "operatorIds": affected_operators(machine, affected_train_run_ids),
+                "affectedTrainRunIds": affected_train_run_ids
+                    .iter()
+                    .map(|train_run_id| external_train_id(machine, *train_run_id))
+                    .collect::<Result<Vec<_>, _>>()?,
+                "delaySeconds": delay_seconds,
+                "causeCode": cause_code,
+                "causeLabel": delay_cause_code(*cause_code).map(|cause| cause.label).unwrap_or("Unbekannte Ursache"),
+                "fineCauseId": fine_cause_id,
+                "fineCauseLabel": fine_cause_code(fine_cause_id, *cause_code).map(|cause| cause.label).unwrap_or("Unbekannte Einordnung"),
+                "affectedResource": affected_resource,
+                "effect": effect,
+                "action": "apply_disruption",
+                "outcomeReason": "Betriebswirksame Einschränkung im regionalen Single-Writer angewendet",
+                "impact": {
+                    "affected_train_runs": affected_train_run_ids.len(),
+                    "affected_resource": affected_resource,
+                    "infrastructure_effect": effect,
+                    "cause_code": cause_code,
+                    "fine_cause_id": fine_cause_id,
+                },
             }),
         ),
     };
@@ -579,6 +879,8 @@ fn apply_wire_command(
     machine: &mut Machine,
     command: &WireCommand,
 ) -> Result<Applied, RuntimeError> {
+    let previous_disruption_ids: BTreeSet<String> = machine.disruptions.keys().cloned().collect();
+    let mut changed_disruptions = Vec::new();
     let events = match command {
         WireCommand::Materialize { train } => {
             let internal_id = allocate_train(machine, train)?;
@@ -586,7 +888,7 @@ fn apply_wire_command(
                 .simulation
                 .apply(Command::Materialize(make_train(train, internal_id)))?
         }
-        WireCommand::AdvanceTo { at_s } => machine.simulation.apply(Command::AdvanceTo(*at_s))?,
+        WireCommand::AdvanceTo { at_s } => advance_with_pending_disruptions(machine, *at_s)?,
         WireCommand::AddDelay {
             train_run_id,
             seconds,
@@ -605,11 +907,81 @@ fn apply_wire_command(
             machine.simulation.dematerialize_before(*before_s);
             Vec::new()
         }
+        WireCommand::RegisterDisruption { disruption } => {
+            let marker = public_disruption(disruption)?;
+            let now = machine.simulation.snapshot().at;
+            if marker.valid_until_s <= now {
+                return Err(RuntimeError::new(
+                    "invalid_disruption",
+                    "bereits abgelaufene Störung kann nicht registriert werden",
+                ));
+            }
+            if machine
+                .disruptions
+                .insert(marker.disruption_id.clone(), marker.clone())
+                .is_some()
+            {
+                return Err(RuntimeError::new(
+                    "duplicate_disruption",
+                    marker.disruption_id,
+                ));
+            }
+            changed_disruptions.push(marker);
+            if disruption.affected_train_run_ids.is_empty() || now >= disruption.valid_until_s {
+                Vec::new()
+            } else if now < disruption.starts_at_s {
+                machine.pending_disruption_effects.insert(
+                    disruption.disruption_id.clone(),
+                    (
+                        disruption.affected_train_run_ids.clone(),
+                        disruption.delay_seconds,
+                    ),
+                );
+                Vec::new()
+            } else {
+                apply_registered_disruption(
+                    machine,
+                    &disruption.disruption_id,
+                    &disruption.affected_train_run_ids,
+                    disruption.delay_seconds,
+                )?
+            }
+        }
+        WireCommand::ActivateDisruption {
+            disruption_id,
+            affected_train_run_ids,
+            delay_seconds,
+        } => apply_registered_disruption(
+            machine,
+            disruption_id,
+            affected_train_run_ids,
+            *delay_seconds,
+        )?,
+        WireCommand::ClearDisruption { disruption_id } => {
+            machine.pending_disruption_effects.remove(disruption_id);
+            machine.disruptions.remove(disruption_id);
+            Vec::new()
+        }
     };
+    let now = machine.simulation.snapshot().at;
+    machine
+        .disruptions
+        .retain(|_, disruption| disruption.valid_until_s > now);
+    let current_disruption_ids: BTreeSet<String> = machine.disruptions.keys().cloned().collect();
+    let removed_disruption_ids = previous_disruption_ids
+        .difference(&current_disruption_ids)
+        .cloned()
+        .collect();
     let delta = machine.publisher.publish(&machine.simulation.snapshot())?;
     Ok(Applied {
         events: wire_events(state, machine, events)?,
-        delta: wire_delta(state, machine, delta)?,
+        delta: wire_delta(
+            state,
+            machine,
+            delta,
+            changed_disruptions,
+            removed_disruption_ids,
+        )?,
     })
 }
 
@@ -650,6 +1022,9 @@ fn build_machine(
         internal_by_external: BTreeMap::new(),
         external_by_internal: BTreeMap::new(),
         next_internal_id: 1,
+        disruptions: BTreeMap::new(),
+        activated_disruptions: BTreeSet::new(),
+        pending_disruption_effects: BTreeMap::new(),
     };
     let mut initial_domain_events = Vec::new();
     for train in &state.initial_trains {
@@ -1052,6 +1427,169 @@ mod tests {
             restarted["state"]["publisherSequence"]
         );
         assert_eq!(restored["snapshot"]["atS"], restarted["state"]["nowS"]);
+    }
+
+    #[test]
+    fn planned_disruption_is_visible_before_single_writer_activation_and_replays() {
+        let initialized = initialize("11111111-1111-4111-8111-111111111111");
+        let registered = apply(
+            &initialized,
+            "register-planned-disruption",
+            json!({
+                "type": "register-disruption",
+                "disruption": {
+                    "disruptionId": "planned-closure-1",
+                    "kind": "planned",
+                    "publishedAtS": 0,
+                    "startsAtS": 100,
+                    "validUntilS": 3_600,
+                    "positionMm": 1_200_000,
+                    "causeCode": 25,
+                    "fineCauseId": "signalling.interlocking",
+                    "effect": "closure",
+                    "affectedResource": "block:A:B:1",
+                    "affectedTrainRunIds": ["pattern-1:trip-1:20260811:4600"],
+                    "delaySeconds": 300
+                }
+            }),
+        );
+        assert_eq!(registered["events"].as_array().map(Vec::len), Some(0));
+        assert_eq!(
+            registered["delta"]["changedDisruptions"][0]["kind"],
+            "planned"
+        );
+        assert_eq!(
+            registered["delta"]["changedDisruptions"][0]["fineCauseId"],
+            "signalling.interlocking"
+        );
+
+        let advanced = apply(
+            &registered,
+            "advance-to-start",
+            json!({ "type": "advance-to", "atS": 100 }),
+        );
+        assert!(advanced["events"].as_array().is_some_and(|events| {
+            events.iter().any(|event| {
+                event["eventType"] == "disruption.applied"
+                    && event["payload"]["fineCauseId"] == "signalling.interlocking"
+                    && event["payload"]["kind"] == "planned"
+            })
+        }));
+        assert!(
+            advanced["delta"]["changed"]
+                .as_array()
+                .is_some_and(|trains| {
+                    trains.iter().any(|train| {
+                        train["id"] == "pattern-1:trip-1:20260811:4600"
+                            && train["delaySeconds"] == 300
+                    })
+                })
+        );
+
+        let replayed = apply(
+            &registered,
+            "advance-to-start",
+            json!({ "type": "advance-to", "atS": 100 }),
+        );
+        assert_eq!(replayed["stateHash"], advanced["stateHash"]);
+        assert_eq!(replayed["delta"], advanced["delta"]);
+
+        let restored: Value = serde_json::from_str(
+            &restore_regional_simulation(&advanced["state"].to_string()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(restored["stateHash"], advanced["stateHash"]);
+        assert_eq!(
+            restored["snapshot"]["disruptions"][0]["disruptionId"],
+            "planned-closure-1"
+        );
+        assert_eq!(restored["snapshot"]["trains"][0]["delaySeconds"], 300);
+    }
+
+    #[test]
+    fn effectless_and_mismatched_disruptions_never_enter_runtime() {
+        let initialized = initialize("11111111-1111-4111-8111-111111111111");
+        for (id, effect, fine_cause_id) in [
+            ("radio", "radio-unavailable", "signalling.interlocking"),
+            ("wrong-fine", "closure", "weather.storm"),
+        ] {
+            let envelope = command(
+                &initialized,
+                id,
+                json!({
+                    "type": "register-disruption",
+                    "disruption": {
+                        "disruptionId": id,
+                        "kind": "unplanned",
+                        "publishedAtS": 0,
+                        "startsAtS": 0,
+                        "validUntilS": 3_600,
+                        "positionMm": 1_200_000,
+                        "causeCode": 25,
+                        "fineCauseId": fine_cause_id,
+                        "effect": effect,
+                        "affectedResource": "block:A:B:1",
+                        "affectedTrainRunIds": [],
+                        "delaySeconds": 0
+                    }
+                }),
+            );
+            let error = apply_regional_simulation_command(
+                &initialized["state"].to_string(),
+                &envelope.to_string(),
+            )
+            .unwrap_err();
+            assert!(
+                error.to_string().starts_with("invalid_disruption:")
+                    || error.to_string().starts_with("invalid_fine_cause_code:")
+            );
+        }
+    }
+
+    #[test]
+    fn provider_reconciliation_can_clear_a_visible_disruption() {
+        let initialized = initialize("11111111-1111-4111-8111-111111111111");
+        let registered = apply(
+            &initialized,
+            "provider-register",
+            json!({
+                "type": "register-disruption",
+                "disruption": {
+                    "disruptionId": "provider-restriction-1",
+                    "kind": "unplanned",
+                    "publishedAtS": 0,
+                    "startsAtS": 0,
+                    "validUntilS": 3_600,
+                    "positionMm": 100,
+                    "causeCode": 26,
+                    "fineCauseId": "switch.drive",
+                    "effect": "single-track",
+                    "affectedResource": "track:LL:UEF",
+                    "affectedTrainRunIds": [],
+                    "delaySeconds": 0
+                }
+            }),
+        );
+        let cleared = apply(
+            &registered,
+            "provider-clear",
+            json!({
+                "type": "clear-disruption",
+                "disruptionId": "provider-restriction-1"
+            }),
+        );
+        assert_eq!(
+            cleared["delta"]["removedDisruptionIds"],
+            json!(["provider-restriction-1"])
+        );
+        let restored: Value = serde_json::from_str(
+            &restore_regional_simulation(&cleared["state"].to_string()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            restored["snapshot"]["disruptions"].as_array().map(Vec::len),
+            Some(0)
+        );
     }
 
     #[test]

@@ -92,6 +92,20 @@
       "when": 1786536000000,
       "tag": "0012_odoo_control_center",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786453000000,
+      "tag": "0013_disruption_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1786456200000,
+      "tag": "0014_disruption_provider_snapshots",
+      "breakpoints": true
     }
   ]
 }

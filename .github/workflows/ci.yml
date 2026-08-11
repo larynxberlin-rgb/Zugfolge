@@ -220,7 +220,10 @@ jobs:
         run: pnpm audit --audit-level=moderate
 
   guards:
-    name: W?chter (harte Invarianten)
+    # ASCII-only: GitHub branch protection compares this check name byte-for-byte.
+    # Keeping non-ASCII out prevents a required-check context such as `W?chter`
+    # from becoming permanently pending due to encoding loss.
+    name: Waechter (harte Invarianten)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -239,7 +242,7 @@ jobs:
 
       - run: pnpm --filter @zugfolge/guards run build
 
-      - name: Wächter laufen lassen
+      - name: Waechter laufen lassen
         run: pnpm --filter @zugfolge/guards run guards
 
   reference-corpus:
