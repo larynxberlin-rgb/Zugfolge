@@ -232,33 +232,23 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-      odoo:
-        image: odoo:19.0-20260723
-        env:
-          HOST: postgres
-          USER: odoo
-          PASSWORD: odoo-test
-        ports:
-          - 8069:8069
     steps:
       - uses: actions/checkout@v7
-      - name: Odoo nach dem PostgreSQL-Healthcheck neu starten
-        run: docker restart "${{ job.services.odoo.id }}"
       - name: Gepinntes OCA-queue_job beziehen
         run: |
           set -euo pipefail
           git clone --filter=blob:none --no-checkout https://github.com/OCA/queue.git "${RUNNER_TEMP}/oca-queue"
           git -C "${RUNNER_TEMP}/oca-queue" checkout d2c1759102f1e0bc8f6244629b5b38c7b7882f36 -- queue_job
-      - name: Add-on in den getrennten Odoo-Dienst kopieren
-        run: |
-          docker cp "${RUNNER_TEMP}/oca-queue/queue_job" "${{ job.services.odoo.id }}:/mnt/extra-addons/queue_job"
-          docker cp odoo/addons/zugfolge_admin "${{ job.services.odoo.id }}:/mnt/extra-addons/zugfolge_admin"
       - name: Modul installieren und Odoo-Tests ausführen
-        run: >-
-          docker exec --user odoo "${{ job.services.odoo.id }}"
-          odoo --database=zugfolge_odoo_test --db_host=postgres --db_port=5432
-          --db_user=odoo --db_password=odoo-test --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons
-          --init=queue_job,zugfolge_admin --test-enable --test-tags=/zugfolge_admin --stop-after-init --log-level=test
+        run: |
+          network="$(docker inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}' '${{ job.services.postgres.id }}')"
+          docker run --rm --network "$network" --user odoo \
+            -v "${RUNNER_TEMP}/oca-queue/queue_job:/mnt/extra-addons/queue_job:ro" \
+            -v "${GITHUB_WORKSPACE}/odoo/addons/zugfolge_admin:/mnt/extra-addons/zugfolge_admin:ro" \
+            odoo:19.0-20260723 \
+            odoo --database=zugfolge_odoo_test --db_host=postgres --db_port=5432 \
+            --db_user=odoo --db_password=odoo-test --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons \
+            --init=queue_job,zugfolge_admin --test-enable --test-tags=/zugfolge_admin --stop-after-init --log-level=test
 
   load:
     name: Lastziel M4.11
