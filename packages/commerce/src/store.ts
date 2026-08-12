@@ -161,6 +161,7 @@ export interface GameAdminCommandContext {
 export interface GameAdminCommandResult {
   readonly state?: "accepted" | "completed";
   readonly gameAuditEventId?: string;
+  readonly result?: Readonly<Record<string, unknown>>;
 }
 
 export type GameAdminCommandHandler = (context: GameAdminCommandContext) => Promise<GameAdminCommandResult> | GameAdminCommandResult;
@@ -258,7 +259,7 @@ export async function processNextOdooCommand(
         messageType: "admin.command.result",
         schemaVersion: "zugfolge-odoo/v1",
         correlationId: command.correlationId,
-        payload: { eventId: command.eventId, outcome: "accepted", state, authoritative: true, gameAuditEventId: auditEvent.id, effectAuditReference },
+        payload: { eventId: command.eventId, outcome: "accepted", state, authoritative: true, gameAuditEventId: auditEvent.id, effectAuditReference, ...gameResult.result },
         occurredAt: now,
         enqueuedAt: now,
       });

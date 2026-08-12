@@ -23,3 +23,4 @@ export {
   type KeycloakConfig,
 } from "./keycloak.js";
 export { isRole, ROLES, type Role } from "./roles.js";
+export { createKeycloakAdminClient, loadKeycloakAdminConfigFromEnv, type KeycloakAdminClient, type KeycloakAdminConfig, type KeycloakInvitation } from "./keycloak-admin.js";

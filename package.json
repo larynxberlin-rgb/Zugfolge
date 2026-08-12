@@ -17,6 +17,8 @@
     "typecheck": "pnpm -r --stream typecheck",
     "test": "pnpm -r --stream test",
     "guards": "pnpm --filter @zugfolge/guards run guards",
-    "licenses": "pnpm --filter @zugfolge/guards run licenses"
+    "licenses": "pnpm --filter @zugfolge/guards run licenses",
+    "alpha:up": "bash tools/alpha-ops/phase1-smoke.sh",
+    "alpha:down": "docker compose -f compose.alpha.yml down"
   }
 }

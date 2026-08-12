@@ -25,4 +25,4 @@ createServer((request, response) => {
   } catch {
     response.writeHead(404).end("not found");
   }
-}).listen(port, "127.0.0.1", () => process.stdout.write(`static server http://127.0.0.1:${port}\n`));
+}).listen(port, process.env["HOST"] ?? "0.0.0.0", () => process.stdout.write(`static server http://127.0.0.1:${port}\n`));

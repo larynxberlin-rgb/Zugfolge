@@ -17,6 +17,9 @@ export const COMMAND_TYPES = [
   "admin.abuse_sanction_activate",
   "admin.world_close",
   "admin.tutorial_account_reset",
+  "admin.alpha_invitation_create",
+  "admin.alpha_invitation_resend",
+  "admin.alpha_invitation_revoke",
 ] as const;
 export type OdooCommandType = (typeof COMMAND_TYPES)[number];
 
@@ -32,6 +35,9 @@ export const ADMIN_ACTION_TYPES = [
   "abuse_sanction_activate",
   "world_close",
   "tutorial_account_reset",
+  "alpha_invitation_create",
+  "alpha_invitation_resend",
+  "alpha_invitation_revoke",
 ] as const;
 export type AdminActionType = (typeof ADMIN_ACTION_TYPES)[number];
 
@@ -79,6 +85,14 @@ export interface AdminCommandPayload {
   readonly requestedPeriodStart?: string;
   readonly targetReference?: string;
   readonly requestedAtS?: number;
+  readonly invitation?: {
+    readonly requestReference: string;
+    readonly email: string;
+    readonly displayName: string;
+    readonly role: "player" | "world_admin";
+    readonly startPackage?: string;
+    readonly keycloakSubject?: string;
+  };
   /**
    * Vertrag fuer M8.3: Odoo erfasst die Pflichtdaten, die Game-Implementierung
    * prueft Ressourcen, Zeitpunkt und Wirkung erst bei ihrer spaeteren
