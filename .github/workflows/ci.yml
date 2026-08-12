@@ -245,7 +245,7 @@ jobs:
           docker build --tag zugfolge-odoo-ci - <<'EOF'
           FROM odoo:19.0-20260723
           USER root
-          RUN pip3 install --no-cache-dir openupgradelib
+          RUN pip3 install --no-cache-dir --break-system-packages openupgradelib
           USER odoo
           EOF
           docker run --rm --network "$network" --user odoo \
