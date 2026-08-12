@@ -45,9 +45,9 @@ Release-Zeitwerte.
 
 | Punkt | Implementierung | Ausgeführter Nachweis | Fehlender Abnahmebeweis | Status |
 |---|---|---|---|---|
-| M9.1 | fünf Kapitel, persistenter Fortschritt, echte Evidenzabfragen, Resetgrenze und Beschleunigung nur für Tutorial/privat/Test | Typecheck und Alpha-Paketbau | Reset-/Seed-Port und vollständige Spielerreise sind in Produktion nicht verdrahtet; kein E2E aller Kapitel | in Arbeit |
+| M9.1 | fünf Kapitel, persistenter Fortschritt, echte Evidenzabfragen, autoritativer Reset/Seed und Beschleunigung nur für Tutorial/privat/Test; vollständige dunkle Spielerreise | PGlite-E2E schließt alle fünf Kapitel über echte Economy-/Fleet-/Operating-Evidenz ab und beweist danach den Reset auf eine neue Sitzung; Routen- und Web-Tests | signierte Tutorial-Welt und Browserlauf eines externen Kontos in der Zielumgebung fehlen | in Arbeit |
 | M9.2 | deterministischer Blueprint, Release-Pins, gestaffelte Lose und vollständiger Eigenbetrieb | echter PostgreSQL/PostGIS-/Linux-NAPI-Weltstart mit 49 Losen und 1.634 Zugfahrten; Livemap, Betriebszentrale und Odoo-Outbox vollständig; Wiederanlauf idempotent | — | erledigt |
-| M9.3 | idempotentes Startpaket, Missbrauchsschutz, Heatmap, Assistentenwarnungen und appübergreifendes Glossar | Glossar 2 Tests; Build der drei Oberflächen; Alpha-Paket 5 Tests insgesamt | autoritativer Grant-Port und öffentliche Spielerreise nicht produktiv verdrahtet | in Arbeit |
+| M9.3 | idempotentes Startpaket über Economy-/Operating-Single-Writer, vorbereitete M5-Ressourcen, Heatmap, Assistentenwarnungen, Glossar und vollständige öffentliche Spielerreise | Odoo-Einladung → Keycloak-Konto → weltgebundenes Konto → Startpaket/Vertrag/Programm/Projektion als PGlite-E2E; Adapter-, Economy-, Routen- und Web-Tests | externer Browserlauf gegen neu erzeugten und signierten Weltbestand fehlt; ein Slot beweist noch nicht den M9.9-Mehrkontenbetrieb | in Arbeit |
 | M9.4 | typisierter Katalog, Begründung/Risiko/Vorschau, Vier-Augen-Trennung, signierter Webhook, Game-Queue, Reautorisierung, Ergebnisprojektion und Game-Audit; direkte Produktionseinstiege gesperrt | Commerce 24 Tests; Game API 90 Tests; Odoo/Game-Störungs-E2E im Game-Testlauf; Browser-Rendering | Odoo-19-Add-on-Testdienst und realer Webhook-/Queue-Run nicht ausgeführt | in Arbeit |
 | M9.5 | Korrelations-IDs, strukturierte Logs, Metriken, Traceparent, Healthzustände, Alerts, Dashboard, getrennte Backup-/Restore-Skripte, RPO/RTO und Runbooks | echter PostgreSQL-16.14-Restore mit identischem Zustands-Hash; unabhängiger Validierungssatz und echte InfraRelease-Signatur; Odoo-Backupmechanik mit DB-/Filestorefixture | echter Odoo-19-Restore und produktive Alert-/Dashboard-Abnahme fehlen | blockiert |
 | M9.6 | persistenter Guard nach Identität/Welt/Endpunkt/Aktion, Replay-/Massen-/Koordinationssignale, abgestufte Reaktionen, Einspruch, schwere Sanktion nur über Odoo | Game-API- und Alpha-Tests; produktiv an Gebote, Trassenfenster und Kooperationsmärkte gebunden | gemischter 50-Konten-Anti-Bot-Lastfall und operative Einspruchsabnahme fehlen | in Arbeit |
@@ -125,8 +125,8 @@ den Restore einer echten Odoo-19-Produktionsdatenbank.
 | Schritt | Ergebnis |
 |---|---|
 | 1. Variante-B-Welt startet vollständig im Eigenbetrieb | bestanden: 49 Lose, 1.634 Zugfahrten, 487 Umläufe/Fahrzeuge/Dienste und 1.634 Trassen; alle produktiven Projektionen bereit |
-| 2. Spieler absolviert das Tutorial | Fachservice vorhanden, produktiver E2E fehlt |
-| 3. Startlos und Leasingfahrzeug | Fachservice vorhanden, autoritativer Produktionsport fehlt |
+| 2. Spieler absolviert das Tutorial | Repository-E2E besteht alle fünf Kapitel und beweist Reset/Neubeginn; externer Browserlauf gegen signierte Tutorial-Welt offen |
+| 3. Startlos und Leasingfahrzeug | Repository-E2E führt Odoo-Einladung und Keycloak-Identität durch den autoritativen Economy-/Operating-Pfad bis Vertrag, Programm und Projektionen; externer Ziellauf offen |
 | 4. Zwei Spieler schließen Vertrag | API/Fachpfad vorhanden, kein vollständiger Spieler-E2E |
 | 5. Sekundärmarktübertragung | API/Rust-Transfer getestet, kein vollständiger Spieler-E2E |
 | 6. Störung und EVU-Hilfe | PR-199-Störungspfad und Hilfsvertrag vorhanden, kombinierter E2E fehlt |
@@ -167,6 +167,8 @@ Damit ist der integrierte Alpha-Abnahmefall als Ganzes **nicht bestanden**.
 | echter Linux-NAPI-Smoke | Release-Build und Smoke unter Ubuntu 24.04/Node 24.14.0 grün; Fleet-, Regional- und Betriebsruntime samt idempotentem Replay |
 | `node tools/alpha-ops/verify-alpha-recurrence.mjs` | 1.634 Materialisierungen, 909 Grenzkommandos, 1 Cleanup und 2.544 eindeutige Kommandos im ersten Wiederholungsfenster |
 | M14-Tageslauf | 909 Grenzübergänge ohne Ressourcenkonflikt; Restore-Hash `25b65c6f…da6be` bitgleich |
+| Phase-2-Paketläufe | Economy 42, Alpha 6, Game API 103 und Game Web 23 Tests grün; darunter beide PGlite-E2Es, OIDC-PKCE, Reset/Späteinladung und Projektion nach Commit |
+| Phase-2-Web-/Static-Smoke | Vite-Produktionsbuild grün; SPA-Root und injizierte Runtime-Konfiguration jeweils HTTP 200 |
 | gemischter 50-Konten-Mehrperioden-Soak | nicht ausgeführt |
 | reale geschlossene Alpha | nicht gestartet und nicht behauptet |
 
@@ -185,9 +187,10 @@ laufenden Odoo-19-Instanz:
    Periodenwechsel-Lauf müssen für den Liefercommit real grün laufen.
 2. Der gemischte 50-Konten-Mehrperioden-Soak samt Ausfällen von Odoo,
    Provider, Worker und Clientverbindungen ist noch auszuführen.
-3. Tutorial, Startpaket, Kooperationsmarkt und Weltende benötigen weiterhin
-   den vollständigen integrierten Spieler-E2E; ihre isolierten Fachpfade reichen
-   für die Gesamtalpha nicht.
+3. Tutorial und Startpaket besitzen jetzt zusammenhängende Repository-E2Es.
+   Offen bleiben der externe Browserlauf gegen neu signierte Weltbestände sowie
+   die integrierten Spieler-E2Es für Kooperationsmarkt und Weltende; diese
+   Nachweise sind für die Gesamtalpha weiterhin erforderlich.
 4. Vor einem realen Alpha-Start sind Freigabe, Teilnehmerkreis und
    Betriebsumgebung ausdrücklich festzulegen. Ein Bot- oder Lasttest ersetzt
    diesen Nachweis nicht.

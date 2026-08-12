@@ -16,6 +16,49 @@ export interface AlternativeApplicationOptions {
 
 export type WaitImplementation = (milliseconds: number, signal?: AbortSignal) => Promise<void>;
 
+export interface TutorialJourney {
+  readonly chapter: number;
+  readonly chapterState: "ready" | "in-progress" | "blocked" | "completed";
+  readonly evidence: Readonly<Record<string, { readonly completed: boolean; readonly references: readonly string[] }>>;
+  readonly explanation: string;
+  readonly explanationCode: string;
+  readonly resetCount: number;
+  readonly chapters: readonly { readonly chapter: number; readonly code: string; readonly title: string; readonly goal: string }[];
+}
+
+export interface StartPackageGrant {
+  readonly grant: {
+    readonly id: string;
+    readonly operatorId: string;
+    readonly emergencyLotId: string;
+    readonly vehicleId: string;
+    readonly pathReceiptId: string;
+    readonly personnelPoolId: string;
+    readonly operatingProgramId: string;
+    readonly expiresAtS: string | number;
+  };
+  readonly idempotentReplay: boolean;
+}
+
+export interface CapacityHeatmapCell {
+  readonly resourceId: string;
+  readonly intervalStartS: number;
+  readonly intervalEndS: number;
+  readonly usedSeconds: number;
+  readonly capacitySeconds: number;
+  readonly qualityClass: "A" | "B" | "C";
+  readonly orderable: boolean;
+  readonly utilizationBasisPoints: number;
+  readonly stateLabel: string;
+  readonly pattern: "diagonal-hatch" | "dense-dots" | "none";
+}
+
+export interface OnboardingAssistant {
+  readonly ready: boolean;
+  readonly facts: Readonly<Record<string, boolean>>;
+  readonly warnings: readonly { readonly code: string; readonly severity: "info" | "warning" | "blocking"; readonly message: string }[];
+}
+
 class GameApiError extends Error {
   constructor(message: string, readonly retryable: boolean) {
     super(message);
@@ -73,6 +116,57 @@ export class GameApiClient {
     this.#accessToken = accessToken;
     this.#fetch = fetchImplementation;
     this.#wait = waitImplementation;
+  }
+
+  async #journeyJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const response = await this.#fetch(`${this.#baseUrl}${path}`, {
+      ...init,
+      headers: {
+        authorization: `Bearer ${this.#accessToken}`,
+        ...(init.body === undefined ? {} : { "content-type": "application/json" }),
+        ...init.headers,
+      },
+    });
+    if (!response.ok) {
+      let message = `Spielerreise nicht verfügbar (HTTP ${response.status}).`;
+      try {
+        const problem = await response.json() as { error?: unknown };
+        if (typeof problem.error === "string") message = problem.error;
+      } catch { /* HTTP-Status bleibt die erklaerbare Rueckmeldung. */ }
+      throw new GameApiError(message, response.status >= 500);
+    }
+    try { return await response.json() as T; }
+    catch { throw new GameApiError("Spielerreise lieferte kein gültiges JSON.", false); }
+  }
+
+  loadTutorial(worldId: string): Promise<TutorialJourney> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/tutorial`);
+  }
+
+  resetTutorial(worldId: string): Promise<TutorialJourney> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/tutorial/reset`, { method: "POST" });
+  }
+
+  claimStartPackage(worldId: string): Promise<StartPackageGrant> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/onboarding/start-package`, { method: "POST" });
+  }
+
+  async loadStartPackage(worldId: string): Promise<StartPackageGrant | undefined> {
+    const response = await this.#fetch(`${this.#baseUrl}/worlds/${encodeURIComponent(worldId)}/onboarding/start-package`, {
+      headers: { authorization: `Bearer ${this.#accessToken}` },
+    });
+    if (response.status === 404) return undefined;
+    if (!response.ok) throw new GameApiError(`Startpaketstatus nicht verfügbar (HTTP ${response.status}).`, response.status >= 500);
+    return response.json() as Promise<StartPackageGrant>;
+  }
+
+  loadCapacityHeatmap(worldId: string, fromS?: number, untilS?: number): Promise<readonly CapacityHeatmapCell[]> {
+    const query = fromS === undefined || untilS === undefined ? "" : `?fromS=${fromS}&untilS=${untilS}`;
+    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/capacity-heatmap${query}`);
+  }
+
+  loadOnboardingAssistant(worldId: string): Promise<OnboardingAssistant> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/onboarding/assistant`);
   }
 
   async loadProjection(worldId: string, signal?: AbortSignal): Promise<PlanningProjectionV1> {

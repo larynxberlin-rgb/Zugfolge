@@ -50,6 +50,14 @@ services:
   game-web:
     image: zugfolge-game-api
     command: [node, tools/alpha-ops/static-server.mjs, apps/game-web/dist, "4173"]
+    environment:
+      GAME_API_INTERNAL_URL: http://game-api:3000
+      GAME_API_PUBLIC_URL: "${GAME_API_PUBLIC_URL:-/api}"
+      KEYCLOAK_PUBLIC_URL: "${KEYCLOAK_PUBLIC_URL}"
+      KEYCLOAK_REALM: "${KEYCLOAK_REALM:-zugfolge}"
+      ALPHA_PUBLIC_WORLD_ID: "${ALPHA_PUBLIC_WORLD_ID}"
+      ALPHA_TUTORIAL_WORLD_ID: "${ALPHA_TUTORIAL_WORLD_ID}"
+    depends_on: { game-api: { condition: service_healthy } }
     healthcheck: { <<: *health, test: [CMD, node, -e, "fetch('http://localhost:4173/').then(r=>{if(!r.ok)process.exit(1)})"] }
     ports: ["${GAME_WEB_PORT:-4173}:4173"]
   livemap:

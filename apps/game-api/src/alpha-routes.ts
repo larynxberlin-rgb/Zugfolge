@@ -116,6 +116,15 @@ export function registerAlphaRoutes(app: FastifyInstance, deps: { readonly db: I
   }
 
   if (onboarding !== undefined && startPackageSpec !== undefined) {
+  app.get<{ Params: { worldId: string } }>("/worlds/:worldId/onboarding/start-package", { preHandler: deps.authenticate, schema: { params: worldParams } }, async (request, reply) => {
+    if (request.identity === undefined) return reply.code(401).send({ error: "Keine Identitaet." });
+    try {
+      const current = await account(deps.db, request.params.worldId, request.identity.keycloakSubject);
+      const grant = await onboarding.grantForAccount(request.params.worldId, current.id);
+      return grant === undefined ? reply.code(404).send({ code: "start_package_missing", error: "Startpaket wurde noch nicht beansprucht." }) : reply.send(payload(grant));
+    } catch (error) { return sendError(reply, error); }
+  });
+
   app.post<{ Params: { worldId: string } }>("/worlds/:worldId/onboarding/start-package", { preHandler: deps.authenticate, schema: { params: worldParams } }, async (request, reply) => {
     if (request.identity === undefined) return reply.code(401).send({ error: "Keine Identitaet." });
     try {
@@ -124,13 +133,27 @@ export function registerAlphaRoutes(app: FastifyInstance, deps: { readonly db: I
     } catch (error) { return sendError(reply, error); }
   });
 
-  app.get<{ Params: { worldId: string }; Querystring: { fromS: number; untilS: number } }>("/worlds/:worldId/capacity-heatmap", {
+  app.get<{ Params: { worldId: string }; Querystring: { fromS?: number; untilS?: number } }>("/worlds/:worldId/capacity-heatmap", {
     preHandler: deps.authenticate,
-    schema: { params: worldParams, querystring: { type: "object", required: ["fromS", "untilS"], additionalProperties: false, properties: { fromS: { type: "integer", minimum: 0 }, untilS: { type: "integer", minimum: 1 } } } },
+    schema: { params: worldParams, querystring: { type: "object", additionalProperties: false, properties: { fromS: { type: "integer", minimum: 0 }, untilS: { type: "integer", minimum: 1 } } } },
   }, async (request, reply) => {
     if (request.identity === undefined) return reply.code(401).send({ error: "Keine Identitaet." });
-    try { await account(deps.db, request.params.worldId, request.identity.keycloakSubject); return reply.send(payload(await onboarding.capacityHeatmap(request.params.worldId, request.query.fromS, request.query.untilS))); }
+    try {
+      await account(deps.db, request.params.worldId, request.identity.keycloakSubject);
+      const nowS = await simulationTime(deps.db, request.params.worldId, deps.services.clock?.() ?? new Date());
+      const fromS = request.query.fromS ?? nowS;
+      const untilS = request.query.untilS ?? fromS + 86_400;
+      return reply.send(payload(await onboarding.capacityHeatmap(request.params.worldId, fromS, untilS)));
+    }
     catch (error) { return sendError(reply, error); }
+  });
+
+  app.get<{ Params: { worldId: string } }>("/worlds/:worldId/onboarding/assistant", { preHandler: deps.authenticate, schema: { params: worldParams } }, async (request, reply) => {
+    if (request.identity === undefined) return reply.code(401).send({ error: "Keine Identitaet." });
+    try {
+      const current = await account(deps.db, request.params.worldId, request.identity.keycloakSubject);
+      return reply.send(payload(await onboarding.assistantForAccount(request.params.worldId, current.id)));
+    } catch (error) { return sendError(reply, error); }
   });
   }
 
