@@ -200,9 +200,16 @@ async function appendEvent(
   });
 }
 
-function planningCommand(session: TutorialSession, template: TutorialTemplate, alternative: Record<string, unknown>, runIndex: number): PlanningCoordinateCommand {
+export function tutorialPlanningCommand(
+  session: Pick<TutorialSession, "reference" | "tutorialWorldId">,
+  template: TutorialTemplate,
+  alternative: Record<string, unknown>,
+  runIndex: number,
+): PlanningCoordinateCommand {
   const stations = template.region.stations as unknown as PlanningCoordinateCommand["stations"];
   const segments = template.region.segments as unknown as PlanningCoordinateCommand["segments"];
+  const desiredDepartureS = integer(alternative["desiredDepartureS"], "Trassenabfahrt");
+  const bufferSeconds = integer(alternative["bufferSeconds"], "Trassenpuffer");
   return {
     schemaVersion: PLANNING_COORDINATE_SCHEMA,
     worldId: session.tutorialWorldId,
@@ -215,34 +222,64 @@ function planningCommand(session: TutorialSession, template: TutorialTemplate, a
     corridorName: template.region.name,
     stations,
     segments,
-    requests: [{
-      requestNumericId: runIndex,
-      trainId: `${session.reference}:path-train-${runIndex}`,
-      trainCategory: "regional",
-      trainNumber: 7100 + runIndex,
-      originStationId: "tut-kieselgrund",
-      destinationStationId: "tut-fichtenhain",
-      desiredDepartureS: integer(alternative["desiredDepartureS"], "Trassenabfahrt"),
-      operatingDays: "daily",
-      stops: [
-        { stationId: "tut-muehlenbrueck", minimumDwellS: 30 },
-        { stationId: "tut-wiesenrode", minimumDwellS: 30 },
-      ],
-      earlierS: 0,
-      laterS: integer(alternative["bufferSeconds"], "Trassenpuffer"),
-      stepS: 15,
-      extraRunningTimeS: integer(alternative["bufferSeconds"], "Trassenpuffer"),
-      maxOperationalStops: 2,
-      train: {
-        numericId: runIndex,
-        name: `Tutorialzug ${runIndex}`,
-        massKg: 118_000,
-        lengthMm: 74_000,
-        maximumSpeedKph: 140,
-        accelerationMmPerS2: 850,
-        decelerationMmPerS2: 900,
+    requests: [
+      {
+        requestNumericId: runIndex,
+        trainId: `${session.reference}:path-train-${runIndex}`,
+        trainCategory: "regional",
+        trainNumber: 7100 + runIndex,
+        originStationId: "tut-kieselgrund",
+        destinationStationId: "tut-fichtenhain",
+        desiredDepartureS,
+        operatingDays: "daily",
+        stops: [
+          { stationId: "tut-muehlenbrueck", minimumDwellS: 30 },
+          { stationId: "tut-wiesenrode", minimumDwellS: 30 },
+        ],
+        earlierS: 0,
+        laterS: bufferSeconds,
+        stepS: 15,
+        extraRunningTimeS: bufferSeconds,
+        maxOperationalStops: 2,
+        train: {
+          numericId: runIndex,
+          name: `Tutorialzug ${runIndex}`,
+          massKg: 118_000,
+          lengthMm: 74_000,
+          maximumSpeedKph: 140,
+          accelerationMmPerS2: 850,
+          decelerationMmPerS2: 900,
+        },
       },
-    }],
+      {
+        requestNumericId: 10_000 + runIndex,
+        trainId: `${session.reference}:comparison-path-train-${runIndex}`,
+        trainCategory: "regional",
+        trainNumber: 7900 + runIndex,
+        originStationId: "tut-kieselgrund",
+        destinationStationId: "tut-fichtenhain",
+        desiredDepartureS: desiredDepartureS + 15,
+        operatingDays: "daily",
+        stops: [
+          { stationId: "tut-muehlenbrueck", minimumDwellS: 30 },
+          { stationId: "tut-wiesenrode", minimumDwellS: 30 },
+        ],
+        earlierS: 0,
+        laterS: Math.max(60, bufferSeconds),
+        stepS: 15,
+        extraRunningTimeS: Math.max(60, bufferSeconds),
+        maxOperationalStops: 2,
+        train: {
+          numericId: 10_000 + runIndex,
+          name: `Vergleichszug ${runIndex}`,
+          massKg: 132_000,
+          lengthMm: 82_000,
+          maximumSpeedKph: 140,
+          accelerationMmPerS2: 780,
+          decelerationMmPerS2: 900,
+        },
+      },
+    ],
   };
 }
 
@@ -499,7 +536,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
   async provision(session: TutorialSession, template: TutorialTemplate): Promise<Readonly<Record<string, unknown>>> {
     const actors = await this.systemActors(session);
     const accountsForJournal = await this.ledger(session, template);
-    const planningResults = template.paths.map((alternative, index) => this.planning.coordinate(planningCommand(session, template, alternative as Record<string, unknown>, index + 1)));
+    const planningResults = template.paths.map((alternative, index) => this.planning.coordinate(tutorialPlanningCommand(session, template, alternative as Record<string, unknown>, index + 1)));
     const authorityRelease = fleetRelease(session, template, actors.lessorOperatorId, planningResults.map((result) => result.stateHash));
     await initializeFleetProducer({
       db: this.db as never,

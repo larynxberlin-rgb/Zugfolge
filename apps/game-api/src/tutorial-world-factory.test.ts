@@ -1,0 +1,26 @@
+import { describe, expect, it } from "vitest";
+
+import { TUTORIAL_TEMPLATE } from "@zugfolge/alpha";
+
+import { tutorialPlanningCommand } from "./tutorial-world-factory.js";
+
+describe("TutorialWorldFactory PlanningRun-Vertrag", () => {
+  it.each(TUTORIAL_TEMPLATE.paths.map((alternative, index) => [alternative, index + 1] as const))(
+    "materialisiert jede Trassenoption mit Segmenten und einem eindeutigen Vergleichsantrag",
+    (alternative, runIndex) => {
+      const command = tutorialPlanningCommand({
+        reference: "tut_contract",
+        tutorialWorldId: "11111111-1111-4111-8111-111111111111",
+      }, TUTORIAL_TEMPLATE, alternative as Record<string, unknown>, runIndex);
+
+      expect(command.segments.length).toBeGreaterThan(0);
+      expect(command.requests).toHaveLength(2);
+      expect(new Set(command.requests.map((request) => request.requestNumericId)).size).toBe(2);
+      expect(new Set(command.requests.map((request) => request.trainId)).size).toBe(2);
+      expect(new Set(command.requests.map((request) => request.train.numericId)).size).toBe(2);
+      expect(new Set(command.requests.map((request) => `${request.trainCategory}:${request.trainNumber}`)).size).toBe(2);
+      expect("worldId" in command.requests[0]!).toBe(false);
+      expect(command.worldId).toBe("11111111-1111-4111-8111-111111111111");
+    },
+  );
+});
