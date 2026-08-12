@@ -95,6 +95,14 @@ export async function guardAlphaAction(
 
 export function registerAlphaRoutes(app: FastifyInstance, deps: { readonly db: IdentityDatabase; readonly authenticate: ReturnType<typeof createAuthenticator>; readonly services: AlphaRouteServices }): void {
   const { tutorial, onboarding, startPackageSpec, feedback, monitoring, authorizeMonitoring, worldEnd } = deps.services;
+  app.get<{ Params: { worldId: string } }>("/worlds/:worldId/simulation-time", { preHandler: deps.authenticate, schema: { params: worldParams } }, async (request, reply) => {
+    if (request.identity === undefined) return reply.code(401).send({ error: "Keine Identitaet." });
+    try {
+      await account(deps.db, request.params.worldId, request.identity.keycloakSubject);
+      const atS = await simulationTime(deps.db, request.params.worldId, deps.services.clock?.() ?? new Date());
+      return reply.send({ atS });
+    } catch (error) { return sendError(reply, error); }
+  });
   if (tutorial !== undefined) {
   app.get<{ Params: { worldId: string } }>("/worlds/:worldId/tutorial", { preHandler: deps.authenticate, schema: { params: worldParams } }, async (request, reply) => {
     if (request.identity === undefined) return reply.code(401).send({ error: "Keine Identitaet." });
