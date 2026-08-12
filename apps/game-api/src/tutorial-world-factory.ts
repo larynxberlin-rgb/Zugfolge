@@ -217,7 +217,7 @@ export function tutorialPlanningCommand(
     expectedProjectionRevision: null,
     seedWorld: template.worldSeed.toString(),
     seedPeriod: runIndex,
-    sourceId: `${template.version}:corridor`,
+    sourceId: `${template.version.replaceAll(".", "-")}-corridor`,
     corridorId: template.region.id,
     corridorName: template.region.name,
     stations,

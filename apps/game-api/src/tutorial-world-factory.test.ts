@@ -14,6 +14,8 @@ describe("TutorialWorldFactory PlanningRun-Vertrag", () => {
       }, TUTORIAL_TEMPLATE, alternative as Record<string, unknown>, runIndex);
 
       expect(command.segments.length).toBeGreaterThan(0);
+      expect(command.sourceId).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+      expect(command.sourceId).toBe("tutorial-minimal-2026-1-corridor");
       expect(command.requests).toHaveLength(2);
       expect(new Set(command.requests.map((request) => request.requestNumericId)).size).toBe(2);
       expect(new Set(command.requests.map((request) => request.trainId)).size).toBe(2);
