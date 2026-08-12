@@ -62,6 +62,123 @@ pub struct RequestedStop {
     minimum_dwell_s: i64,
 }
 
+/// Welche Seite eines regionalen Laufwegs ein festes Grenzfenster bindet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum BoundaryDirection {
+    /// Der Zug kommt aus der ExternalZone und muss am regionalen Ursprung
+    /// innerhalb des Fensters bereitstehen.
+    Entry,
+    /// Der Zug muss das Ziel rechtzeitig fuer den anschliessenden Aussenlauf
+    /// erreichen.
+    Exit,
+}
+
+/// Serverautoritatives, aus dem gepinnten Fahrplanrelease abgeleitetes Fenster.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoundaryPlanningWindow {
+    id: String,
+    portal_id: String,
+    direction: BoundaryDirection,
+    earliest: SimTime,
+    target: SimTime,
+    latest: SimTime,
+}
+
+impl BoundaryPlanningWindow {
+    /// Erzeugt ein geschlossenes Grenzfenster `[earliest, latest]`.
+    pub fn new(
+        id: impl Into<String>,
+        portal_id: impl Into<String>,
+        direction: BoundaryDirection,
+        earliest: SimTime,
+        target: SimTime,
+        latest: SimTime,
+    ) -> Result<Self, PlannerError> {
+        let id = id.into();
+        let portal_id = portal_id.into();
+        if id.trim().is_empty() || portal_id.trim().is_empty() {
+            return Err(PlannerError::InvalidBoundaryWindow(
+                "Kennung und Grenzportal duerfen nicht leer sein",
+            ));
+        }
+        if earliest > target || target > latest {
+            return Err(PlannerError::InvalidBoundaryWindow(
+                "frueheste, Ziel- und spaeteste Zeit sind nicht monoton",
+            ));
+        }
+        Ok(Self {
+            id,
+            portal_id,
+            direction,
+            earliest,
+            target,
+            latest,
+        })
+    }
+
+    /// Stabile Releasekennung.
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Benanntes Grenzportal.
+    pub fn portal_id(&self) -> &str {
+        &self.portal_id
+    }
+
+    /// Einfahrt oder Ausfahrt.
+    pub const fn direction(&self) -> BoundaryDirection {
+        self.direction
+    }
+
+    /// Frueheste zulaessige Zeit.
+    pub const fn earliest(&self) -> SimTime {
+        self.earliest
+    }
+
+    /// Im GTFS-Release vorgesehene Zielzeit.
+    pub const fn target(&self) -> SimTime {
+        self.target
+    }
+
+    /// Spaeteste zulaessige Zeit.
+    pub const fn latest(&self) -> SimTime {
+        self.latest
+    }
+
+    fn applies_to(&self, departure: SimTime, arrival: SimTime) -> SimTime {
+        match self.direction {
+            BoundaryDirection::Entry => departure,
+            BoundaryDirection::Exit => arrival,
+        }
+    }
+
+    /// Ob die regionale Fahrt den Aussenanschluss einhaelt.
+    pub fn allows(&self, departure: SimTime, arrival: SimTime) -> bool {
+        let actual = self.applies_to(departure, arrival);
+        actual >= self.earliest && actual <= self.latest
+    }
+
+    /// Spielerlesbare Begruendung fuer eine unzulaessige Zeitlage.
+    pub fn explain_violation(&self, departure: SimTime, arrival: SimTime) -> Option<String> {
+        let actual = self.applies_to(departure, arrival);
+        (!self.allows(departure, arrival)).then(|| {
+            let direction = match self.direction {
+                BoundaryDirection::Entry => "Einfahrt",
+                BoundaryDirection::Exit => "Ausfahrt",
+            };
+            format!(
+                "{direction} am Grenzportal '{}' liegt bei {} s; zulaessig sind {} bis {} s (GTFS-Ziel {} s)",
+                self.portal_id,
+                actual.seconds(),
+                self.earliest.seconds(),
+                self.latest.seconds(),
+                self.target.seconds()
+            )
+        })
+    }
+}
+
 impl RequestedStop {
     /// Ein Halt mit einer Mindesthaltezeit.
     ///
@@ -226,6 +343,7 @@ pub struct PathRequest {
     desired_departure: SimTime,
     operating_days: OperatingDays,
     tolerances: PathTolerances,
+    boundary_windows: Vec<BoundaryPlanningWindow>,
 }
 
 impl PathRequest {
@@ -276,7 +394,29 @@ impl PathRequest {
             desired_departure,
             operating_days,
             tolerances,
+            boundary_windows: Vec::new(),
         })
+    }
+
+    /// Bindet den Antrag an serverseitig aufgeloeste Grenzfenster.
+    ///
+    /// Je Richtung ist hoechstens ein Fenster erlaubt. Der Spieler uebergibt
+    /// nur dessen Kennung; diese Werte stammen aus dem gepinnten Release.
+    pub fn with_boundary_windows(
+        mut self,
+        mut windows: Vec<BoundaryPlanningWindow>,
+    ) -> Result<Self, PlannerError> {
+        windows.sort_by_key(BoundaryPlanningWindow::direction);
+        if windows
+            .windows(2)
+            .any(|pair| pair[0].direction() == pair[1].direction())
+        {
+            return Err(PlannerError::InvalidBoundaryWindow(
+                "je Ein- und Ausfahrt ist nur ein Fenster zulaessig",
+            ));
+        }
+        self.boundary_windows = windows;
+        Ok(self)
     }
 
     /// Die Kennung.
@@ -328,6 +468,18 @@ impl PathRequest {
     pub const fn tolerances(&self) -> PathTolerances {
         self.tolerances
     }
+
+    /// Verbindliche Grenzfenster des regionalen Fahrtabschnitts.
+    pub fn boundary_windows(&self) -> &[BoundaryPlanningWindow] {
+        &self.boundary_windows
+    }
+
+    /// Erste verletzte Randbedingung, falls vorhanden.
+    pub fn boundary_violation(&self, departure: SimTime, arrival: SimTime) -> Option<String> {
+        self.boundary_windows
+            .iter()
+            .find_map(|window| window.explain_violation(departure, arrival))
+    }
 }
 
 impl fmt::Display for PathRequest {
@@ -342,7 +494,10 @@ impl fmt::Display for PathRequest {
 
 #[cfg(test)]
 mod tests {
-    use super::{PathRequest, PathRequestId, PathTolerances, RequestedStop};
+    use super::{
+        BoundaryDirection, BoundaryPlanningWindow, PathRequest, PathRequestId, PathTolerances,
+        RequestedStop,
+    };
     use crate::error::PlannerError;
     use zugfolge_conflict::example::regional_train;
     use zugfolge_conflict::{OperatingDays, TrainCategory, TrainNumber};
@@ -412,5 +567,70 @@ mod tests {
             PathTolerances::EXACT,
         );
         assert!(matches!(ergebnis, Err(PlannerError::DuplicateStop(_))));
+    }
+
+    #[test]
+    fn ein_grenzfenster_macht_die_randbedingung_erklaerbar() {
+        let window = BoundaryPlanningWindow::new(
+            "bpw-1",
+            "eisenach-hbf",
+            BoundaryDirection::Exit,
+            SimTime::from_seconds(30_000),
+            SimTime::from_seconds(30_300),
+            SimTime::from_seconds(30_600),
+        )
+        .expect("gueltiges Grenzfenster");
+        assert!(window.allows(SimTime::from_seconds(28_000), SimTime::from_seconds(30_500)));
+        assert!(
+            window
+                .explain_violation(SimTime::from_seconds(28_000), SimTime::from_seconds(30_900))
+                .is_some_and(|text| text.contains("eisenach-hbf"))
+        );
+    }
+
+    #[test]
+    fn einfahrfenster_bindet_die_abfahrbereitschaft_nicht_die_spaetere_ankunft() {
+        let window = BoundaryPlanningWindow::new(
+            "bpw-entry",
+            "eisenach-hbf",
+            BoundaryDirection::Entry,
+            SimTime::from_seconds(28_300),
+            SimTime::from_seconds(28_600),
+            SimTime::from_seconds(28_900),
+        )
+        .expect("gueltiges Grenzfenster");
+        assert!(window.allows(SimTime::from_seconds(28_660), SimTime::from_seconds(30_000)));
+        assert!(!window.allows(SimTime::from_seconds(29_000), SimTime::from_seconds(28_600)));
+    }
+
+    #[test]
+    fn ein_antrag_akzeptiert_nicht_zwei_ausfahrfenster() {
+        let request = PathRequest::new(
+            PathRequestId::new(1),
+            TrainNumber::new(TrainCategory::Regional, 26_802).expect("gueltige Nummer"),
+            regional_train(),
+            OperatingPointId::new(1),
+            OperatingPointId::new(4),
+            Vec::new(),
+            SimTime::from_seconds(28_800),
+            OperatingDays::DAILY,
+            PathTolerances::EXACT,
+        )
+        .expect("gueltiger Antrag");
+        let make = |id| {
+            BoundaryPlanningWindow::new(
+                id,
+                "portal",
+                BoundaryDirection::Exit,
+                SimTime::from_seconds(29_000),
+                SimTime::from_seconds(29_100),
+                SimTime::from_seconds(29_200),
+            )
+            .expect("gueltiges Fenster")
+        };
+        assert!(matches!(
+            request.with_boundary_windows(vec![make("a"), make("b")]),
+            Err(PlannerError::InvalidBoundaryWindow(_))
+        ));
     }
 }

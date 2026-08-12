@@ -1,0 +1,64 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Game API erreichbar",
+      "id": 1,
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [{ "expr": "up{job=\"zugfolge-game-api\"}", "legendFormat": "healthy=1 down=0" }],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "#777777", "value": null }, { "color": "#ffffff", "value": 1 }] } }, "overrides": [] }
+    },
+    {
+      "type": "stat",
+      "title": "Odoo erreichbar (Spiel bleibt unabhaengig)",
+      "id": 2,
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [{ "expr": "up{job=\"zugfolge-odoo\"}", "legendFormat": "healthy=1 down=0" }],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "#777777", "value": null }, { "color": "#ffffff", "value": 1 }] } }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "API-Anfragen je Route",
+      "id": 3,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [{ "expr": "sum by (route, status_class) (rate(zugfolge_http_requests_total[5m]))", "legendFormat": "{{route}} {{status_class}}" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "API-Latenz p50/p95/p99 (ms)",
+      "id": 4,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le) (rate(zugfolge_http_request_duration_milliseconds_bucket[5m])))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(zugfolge_http_request_duration_milliseconds_bucket[5m])))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, sum by (le) (rate(zugfolge_http_request_duration_milliseconds_bucket[5m])))", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Subsystemzustand (healthy / degraded / down)",
+      "id": 5,
+      "gridPos": { "h": 9, "w": 14, "x": 0, "y": 12 },
+      "targets": [{ "expr": "zugfolge_health_check_state == 1", "format": "table", "instant": true, "legendFormat": "{{check}}: {{state}}" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Readiness-Pruefdauer (ms)",
+      "id": 6,
+      "gridPos": { "h": 9, "w": 10, "x": 14, "y": 12 },
+      "targets": [{ "expr": "zugfolge_health_check_duration_milliseconds", "legendFormat": "{{check}}" }]
+    }
+  ],
+  "schemaVersion": 41,
+  "tags": ["zugfolge", "alpha", "m9.5"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "Europe/Berlin",
+  "title": "Zugfolge Alpha - Betrieb",
+  "uid": "zugfolge-alpha-ops",
+  "version": 1
+}
+

@@ -1,0 +1,42 @@
+.map #external-runs {
+  position: absolute;
+  top: 22px;
+  right: 22px;
+  width: min(420px, 45%);
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid #34363a;
+  background: #111316e8;
+}
+
+.map #external-runs:empty {
+  display: none;
+}
+
+.map #external-runs .eyebrow {
+  margin: 0 0 5px;
+  color: #9c9fa4;
+}
+
+.external-run {
+  appearance: none;
+  display: grid;
+  gap: 3px;
+  padding: 9px 11px;
+  border: 1px dashed #555960;
+  background: #17191c;
+  color: #e8e8e6;
+  text-align: left;
+  cursor: pointer;
+}
+
+.external-run span {
+  color: #a9acb1;
+  font-size: 12px;
+}
+
+.external-run.selected {
+  outline: 2px solid #fff;
+  outline-offset: 1px;
+}

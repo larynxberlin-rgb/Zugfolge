@@ -1,0 +1,15 @@
+.zf-glossary { position: fixed; z-index: 2147483000; right: 1rem; bottom: 1rem; color: #f2f4f6; font-family: "IBM Plex Sans", system-ui, sans-serif; }
+.zf-glossary__opener, .zf-glossary button { min-height: 2.75rem; border: 1px solid #7a828b; background: #171a1e; color: #f2f4f6; padding: .55rem .85rem; font: inherit; font-weight: 700; }
+.zf-glossary button:focus-visible, .zf-glossary input:focus-visible { outline: .2rem solid #f2f4f6; outline-offset: .15rem; }
+.zf-glossary__dialog { width: min(40rem, calc(100vw - 2rem)); max-height: min(44rem, calc(100vh - 2rem)); border: 1px solid #7a828b; background: #0e1013; color: #f2f4f6; padding: 0; }
+.zf-glossary__dialog::backdrop { background: rgb(0 0 0 / 72%); }
+.zf-glossary__dialog > header { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; gap: 1rem; background: #171a1e; border-bottom: 1px solid #59616a; padding: .8rem 1rem; }
+.zf-glossary__dialog h2, .zf-glossary__dialog h3 { margin: 0; }
+.zf-glossary__dialog > label { display: grid; gap: .35rem; padding: 1rem 1rem 0; font-weight: 700; }
+.zf-glossary__dialog input { border: 1px solid #7a828b; background: #0e1013; color: #f2f4f6; padding: .65rem; font: inherit; }
+.zf-glossary__status { color: #c5cad0; padding: 0 1rem; font-variant-numeric: tabular-nums; }
+.zf-glossary__list { display: grid; gap: .65rem; padding: 0 1rem 1rem; }
+.zf-glossary__entry { border: 1px solid #59616a; background: #171a1e; padding: .8rem; }
+.zf-glossary__entry code { display: inline-block; margin-top: .25rem; color: #d4d8dc; }
+.zf-glossary__entry p { margin: .55rem 0 0; line-height: 1.45; }
+@media (prefers-reduced-motion: reduce) { .zf-glossary * { scroll-behavior: auto !important; } }

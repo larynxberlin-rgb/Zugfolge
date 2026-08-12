@@ -860,6 +860,13 @@ impl<D: Dispatcher> Simulation<D> {
                         operating_point: point,
                     },
                 ));
+                // Eine Regionsuebergabe reserviert nur die erste Konfliktressource.
+                // Nach der Abfahrt am ersten Zielhalt darf der folgende Zug sie
+                // deterministisch uebernehmen; bis dahin bleibt die Reservierung
+                // als Schutz gegen gleichzeitige Wiedereintritte bestehen.
+                if event.waypoint == 0 {
+                    self.resource_owners.retain(|_, owner| *owner != train.id);
+                }
                 if event.waypoint + 1 == train.route.len() {
                     train.status = OperatingStatus::Completed;
                     kinds.push((
@@ -1284,6 +1291,356 @@ pub struct HandoverEnvelope {
     pub resources: Vec<String>,
 }
 
+/// Gepinnter Vertrag eines nicht disponierbaren Laufwegs ausserhalb des
+/// freigegebenen Spielgebiets. Er enthaelt bewusst keine Ausseninfrastruktur.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExternalLegContract {
+    pub world_id: WorldId,
+    pub journey_chain_id: String,
+    pub external_leg_id: String,
+    pub source_region: RegionId,
+    pub target_region: Option<RegionId>,
+    pub from_portal: String,
+    pub to_portal: Option<String>,
+    pub scheduled_start: SimTime,
+    pub scheduled_end: SimTime,
+    pub reentry_earliest: Option<SimTime>,
+    pub reentry_latest: Option<SimTime>,
+    pub fixed_cost_cents: i64,
+    pub bound_vehicle_ids: Vec<String>,
+    pub bound_personnel_duty_ids: Vec<String>,
+    pub reentry_route: Vec<Waypoint>,
+    pub first_resources: Vec<String>,
+}
+
+impl ExternalLegContract {
+    fn validate(&self) -> Result<(), SimError> {
+        if self.journey_chain_id.trim().is_empty()
+            || self.external_leg_id.trim().is_empty()
+            || self.from_portal.trim().is_empty()
+            || self.scheduled_start < 0
+            || self.scheduled_end < self.scheduled_start
+            || self.fixed_cost_cents < 0
+            || self.bound_vehicle_ids.is_empty()
+            || self.bound_vehicle_ids.iter().any(|id| id.trim().is_empty())
+            || self
+                .bound_personnel_duty_ids
+                .iter()
+                .any(|id| id.trim().is_empty())
+        {
+            return Err(SimError::InvalidExternalLeg);
+        }
+        let mut vehicle_ids = self.bound_vehicle_ids.clone();
+        vehicle_ids.sort();
+        if vehicle_ids.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(SimError::InvalidExternalLeg);
+        }
+        let mut duty_ids = self.bound_personnel_duty_ids.clone();
+        duty_ids.sort();
+        if duty_ids.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(SimError::InvalidExternalLeg);
+        }
+        match self.target_region {
+            Some(_) => {
+                let (Some(to_portal), Some(earliest), Some(latest)) = (
+                    self.to_portal.as_deref(),
+                    self.reentry_earliest,
+                    self.reentry_latest,
+                ) else {
+                    return Err(SimError::InvalidExternalLeg);
+                };
+                if to_portal.trim().is_empty()
+                    || earliest > self.scheduled_end
+                    || self.scheduled_end > latest
+                    || self.reentry_route.is_empty()
+                    || self.first_resources.iter().any(|id| id.trim().is_empty())
+                {
+                    return Err(SimError::InvalidExternalLeg);
+                }
+                let probe = TrainRun {
+                    world_id: self.world_id,
+                    id: 1,
+                    region_id: self.target_region.unwrap_or_default(),
+                    operator: "probe".into(),
+                    train_number: "probe".into(),
+                    category: TrainCategory::Regional,
+                    route: self.reentry_route.clone(),
+                    next_waypoint: 0,
+                    delay_seconds: 0,
+                    position_mm: 0,
+                    speed_mm_per_second: 0,
+                    status: OperatingStatus::Planned,
+                };
+                probe.validate()?;
+            }
+            None => {
+                if self.to_portal.is_some()
+                    || self.reentry_earliest.is_some()
+                    || self.reentry_latest.is_some()
+                    || !self.reentry_route.is_empty()
+                    || !self.first_resources.is_empty()
+                {
+                    return Err(SimError::InvalidExternalLeg);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Sichtbarer Zustand einer Fahrt in der ExternalZone, ohne falsche
+/// Kartenposition auf nicht importierter Infrastruktur.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ExternalOperatingStatus {
+    Outside,
+    ReadyAtBoundary,
+    WaitingForCapacity,
+    CompletedOutside,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExternalTrain {
+    pub train: TrainRun,
+    pub contract: ExternalLegContract,
+    pub accepted_token: u64,
+    pub reentry_token: Option<u64>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PublicExternalTrain {
+    pub id: TrainRunId,
+    pub operator: String,
+    pub train_number: String,
+    pub category: TrainCategory,
+    pub journey_chain_id: String,
+    pub external_leg_id: String,
+    pub from_portal: String,
+    pub to_portal: Option<String>,
+    pub scheduled_end: SimTime,
+    pub reentry_earliest: Option<SimTime>,
+    pub reentry_latest: Option<SimTime>,
+    pub delay_seconds: i64,
+    pub fixed_cost_cents: i64,
+    pub bound_vehicle_ids: Vec<String>,
+    pub bound_personnel_duty_ids: Vec<String>,
+    pub status: ExternalOperatingStatus,
+    /// Deterministischer Fortschritt 0 bis 10_000 Basispunkte.
+    pub progress_basis_points: u16,
+}
+
+/// Deterministischer Single-Writer fuer nicht detailliert simulierte
+/// Weltabschnitte. Er besitzt keine Uhr und wird nur explizit fortgeschrieben.
+pub struct ExternalZone {
+    world_id: WorldId,
+    region_id: RegionId,
+    now: SimTime,
+    next_token: u64,
+    trains: BTreeMap<TrainRunId, ExternalTrain>,
+}
+
+impl ExternalZone {
+    #[must_use]
+    pub fn new(world_id: WorldId, region_id: RegionId, now: SimTime) -> Self {
+        Self {
+            world_id,
+            region_id,
+            now,
+            next_token: 1,
+            trains: BTreeMap::new(),
+        }
+    }
+
+    pub fn accept_handover(
+        &mut self,
+        envelope: &HandoverEnvelope,
+        contract: ExternalLegContract,
+    ) -> Result<Command, SimError> {
+        contract.validate()?;
+        if envelope.world_id != self.world_id || contract.world_id != self.world_id {
+            return Err(SimError::WrongWorld);
+        }
+        if envelope.target_region != self.region_id
+            || envelope.source_region != contract.source_region
+        {
+            return Err(SimError::WrongRegion);
+        }
+        if envelope.train.id == 0
+            || envelope
+                .train
+                .route
+                .last()
+                .map(|point| point.operating_point.as_str())
+                != Some(contract.from_portal.as_str())
+            || envelope.train.next_waypoint + 1 != envelope.train.route.len()
+            || !matches!(
+                envelope.train.status,
+                OperatingStatus::AtPlatform | OperatingStatus::Completed
+            )
+            || self.now < contract.scheduled_start
+        {
+            return Err(SimError::InvalidExternalLeg);
+        }
+        if self.trains.contains_key(&envelope.train.id) {
+            return Err(SimError::DuplicateTrain);
+        }
+        self.trains.insert(
+            envelope.train.id,
+            ExternalTrain {
+                train: envelope.train.clone(),
+                contract,
+                accepted_token: envelope.token,
+                reentry_token: None,
+            },
+        );
+        Ok(Command::ConfirmHandover {
+            token: envelope.token,
+            target_region: self.region_id,
+        })
+    }
+
+    pub fn advance_to(&mut self, target: SimTime) -> Result<(), SimError> {
+        if target < self.now {
+            return Err(SimError::TimeReversal);
+        }
+        self.now = target;
+        Ok(())
+    }
+
+    pub fn prepare_reentry(
+        &mut self,
+        train_run_id: TrainRunId,
+    ) -> Result<HandoverEnvelope, SimError> {
+        let external = self
+            .trains
+            .get_mut(&train_run_id)
+            .ok_or(SimError::UnknownTrain)?;
+        let target_region = external
+            .contract
+            .target_region
+            .ok_or(SimError::ExternalTrainNotReady)?;
+        let earliest = external
+            .contract
+            .reentry_earliest
+            .ok_or(SimError::InvalidExternalLeg)?;
+        if self.now < earliest {
+            return Err(SimError::ExternalTrainNotReady);
+        }
+        let token = self.next_token;
+        self.next_token = self.next_token.saturating_add(1);
+        external.reentry_token = Some(token);
+        let mut train = external.train.clone();
+        train.region_id = target_region;
+        train.route = external.contract.reentry_route.clone();
+        train.next_waypoint = 0;
+        train.position_mm = 0;
+        train.speed_mm_per_second = 0;
+        train.status = OperatingStatus::Planned;
+        Ok(HandoverEnvelope {
+            world_id: self.world_id,
+            source_region: self.region_id,
+            target_region,
+            token,
+            train,
+            resources: external.contract.first_resources.clone(),
+        })
+    }
+
+    pub fn confirm_reentry(
+        &mut self,
+        train_run_id: TrainRunId,
+        token: u64,
+    ) -> Result<(), SimError> {
+        let external = self
+            .trains
+            .get(&train_run_id)
+            .ok_or(SimError::UnknownTrain)?;
+        if external.reentry_token != Some(token) {
+            return Err(SimError::UnknownHandover);
+        }
+        self.trains.remove(&train_run_id);
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn snapshot(&self) -> Vec<PublicExternalTrain> {
+        self.trains
+            .values()
+            .map(|external| {
+                let contract = &external.contract;
+                let status = match contract.target_region {
+                    None if self.now >= contract.scheduled_end => {
+                        ExternalOperatingStatus::CompletedOutside
+                    }
+                    Some(_) if external.reentry_token.is_some() => {
+                        ExternalOperatingStatus::WaitingForCapacity
+                    }
+                    Some(_) if self.now >= contract.reentry_earliest.unwrap_or(i64::MAX) => {
+                        ExternalOperatingStatus::ReadyAtBoundary
+                    }
+                    _ => ExternalOperatingStatus::Outside,
+                };
+                let duration = contract
+                    .scheduled_end
+                    .saturating_sub(contract.scheduled_start)
+                    .max(1);
+                let elapsed = self
+                    .now
+                    .saturating_sub(contract.scheduled_start)
+                    .clamp(0, duration);
+                let progress = elapsed.saturating_mul(10_000) / duration;
+                PublicExternalTrain {
+                    id: external.train.id,
+                    operator: external.train.operator.clone(),
+                    train_number: external.train.train_number.clone(),
+                    category: external.train.category.clone(),
+                    journey_chain_id: contract.journey_chain_id.clone(),
+                    external_leg_id: contract.external_leg_id.clone(),
+                    from_portal: contract.from_portal.clone(),
+                    to_portal: contract.to_portal.clone(),
+                    scheduled_end: contract.scheduled_end,
+                    reentry_earliest: contract.reentry_earliest,
+                    reentry_latest: contract.reentry_latest,
+                    delay_seconds: external.train.delay_seconds,
+                    fixed_cost_cents: contract.fixed_cost_cents,
+                    bound_vehicle_ids: contract.bound_vehicle_ids.clone(),
+                    bound_personnel_duty_ids: contract.bound_personnel_duty_ids.clone(),
+                    status,
+                    progress_basis_points: u16::try_from(progress).unwrap_or(10_000),
+                }
+            })
+            .collect()
+    }
+
+    #[must_use]
+    pub fn state_hash(&self) -> StateHash {
+        let mut hasher = StateHasher::new("external-zone/v1");
+        hasher
+            .uint("world", self.world_id)
+            .uint("region", u64::from(self.region_id))
+            .int("now", self.now)
+            .uint("next-token", self.next_token);
+        for (id, external) in &self.trains {
+            hasher
+                .uint("train", *id)
+                .text("journey-chain", &external.contract.journey_chain_id)
+                .text("external-leg", &external.contract.external_leg_id)
+                .int("scheduled-start", external.contract.scheduled_start)
+                .int("scheduled-end", external.contract.scheduled_end)
+                .int("delay", external.train.delay_seconds)
+                .int("fixed-cost-cents", external.contract.fixed_cost_cents)
+                .uint("accepted-token", external.accepted_token)
+                .uint("reentry-token", external.reentry_token.unwrap_or(0));
+            for vehicle_id in &external.contract.bound_vehicle_ids {
+                hasher.text("vehicle", vehicle_id);
+            }
+            for duty_id in &external.contract.bound_personnel_duty_ids {
+                hasher.text("duty", duty_id);
+            }
+        }
+        hasher.finish()
+    }
+}
+
 impl<D: Dispatcher> Simulation<D> {
     /// Erzeugt die vollständige Übergabe, ohne den Zug in der Quelle zu löschen.
     pub fn prepare_handover(
@@ -1506,6 +1863,8 @@ pub enum SimError {
     SequenceGap,
     ResourceOccupied,
     InvalidDisruption,
+    InvalidExternalLeg,
+    ExternalTrainNotReady,
 }
 
 impl fmt::Display for SimError {
@@ -1657,6 +2016,91 @@ mod tests {
         assert_eq!(
             target.accept_handover(&envelope),
             Err(SimError::ResourceOccupied)
+        );
+
+        target.apply(Command::AdvanceTo(131)).unwrap();
+        let mut second = envelope.clone();
+        second.train.id = 2;
+        second.token = second.token.saturating_add(1);
+        assert!(target.accept_handover(&second).is_ok());
+    }
+
+    #[test]
+    fn external_zone_bewahrt_bindungen_und_verspaetung_bis_zur_bestaetigten_rueckkehr() {
+        let mut source = sim();
+        source.apply(Command::Materialize(train(42, 1))).unwrap();
+        source
+            .apply(Command::AddDelay {
+                train_run_id: 1,
+                seconds: 120,
+            })
+            .unwrap();
+        source.apply(Command::AdvanceTo(4_000)).unwrap();
+
+        let mut external = ExternalZone::new(42, u32::MAX, 0);
+        external.advance_to(4_000).unwrap();
+        let (envelope, _) = source.prepare_handover(1, u32::MAX).unwrap();
+        let confirmation = external
+            .accept_handover(
+                &envelope,
+                ExternalLegContract {
+                    world_id: 42,
+                    journey_chain_id: "jc-re1".into(),
+                    external_leg_id: "el-halle-magdeburg".into(),
+                    source_region: 7,
+                    target_region: Some(8),
+                    from_portal: "Halle Hbf".into(),
+                    to_portal: Some("Magdeburg Hbf".into()),
+                    scheduled_start: 3_730,
+                    scheduled_end: 5_000,
+                    reentry_earliest: Some(4_900),
+                    reentry_latest: Some(5_300),
+                    fixed_cost_cents: 10_500,
+                    bound_vehicle_ids: vec!["vehicle-442".into()],
+                    bound_personnel_duty_ids: vec!["duty-RE1".into()],
+                    reentry_route: vec![Waypoint {
+                        operating_point: "Magdeburg Hbf".into(),
+                        position_mm: 1_000,
+                        arrival: 5_000,
+                        minimum_dwell_seconds: 30,
+                        departure: 5_030,
+                    }],
+                    first_resources: vec!["block:MD:entry".into()],
+                },
+            )
+            .unwrap();
+        source.apply(confirmation).unwrap();
+        assert!(source.snapshot().trains.is_empty());
+        assert_eq!(external.snapshot()[0].delay_seconds, 120);
+        assert_eq!(external.snapshot()[0].bound_vehicle_ids, ["vehicle-442"]);
+
+        external.advance_to(5_120).unwrap();
+        assert_eq!(
+            external.snapshot()[0].status,
+            ExternalOperatingStatus::ReadyAtBoundary
+        );
+        let reentry = external.prepare_reentry(1).unwrap();
+        let mut target = Simulation::new(
+            42,
+            8,
+            5_120,
+            MaterializationWindow::new(48).unwrap(),
+            ConservativeDispatcher,
+        );
+        target.accept_handover(&reentry).unwrap();
+        external.confirm_reentry(1, reentry.token).unwrap();
+        assert!(external.snapshot().is_empty());
+        assert_eq!(target.snapshot().trains[0].delay_seconds, 120);
+    }
+
+    #[test]
+    fn external_zone_hash_ist_reproduzierbar_und_enthaelt_bindungen() {
+        let a = ExternalZone::new(42, u32::MAX, 100);
+        let b = ExternalZone::new(42, u32::MAX, 100);
+        assert_eq!(a.state_hash(), b.state_hash());
+        assert_ne!(
+            a.state_hash(),
+            ExternalZone::new(43, u32::MAX, 100).state_hash()
         );
     }
     #[test]

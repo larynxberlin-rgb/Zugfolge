@@ -1,0 +1,71 @@
+{
+  "type": "FeatureCollection",
+  "name": "zugfolge-mitteldeutschland-b-2026-08",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "schema": "zugfolge-region-boundary/v1",
+        "regionId": "mitteldeutschland-b",
+        "decision": "E24",
+        "decisionIssue": "https://github.com/larynxberlin-rgb/Zugfolge/issues/201",
+        "coordinateSource": "DELFI e.V. GTFS Regionalverkehr, Snapshot 2026-08-10, CC BY 4.0",
+        "rule": "Polygon through named gateway stations; connected EBO railway is filtered separately"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [10.331974, 50.976894],
+          [10.789252, 51.492924],
+          [11.626963, 52.130512],
+          [12.662285, 51.867810],
+          [13.287734, 51.309654],
+          [12.930877, 50.839695],
+          [12.474716, 50.714670],
+          [11.374546, 50.650490],
+          [10.331974, 50.976894]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "gatewayId": "eisenach-hbf", "name": "Eisenach Hbf" },
+      "geometry": { "type": "Point", "coordinates": [10.331974, 50.976894] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "gatewayId": "nordhausen", "name": "Nordhausen" },
+      "geometry": { "type": "Point", "coordinates": [10.789252, 51.492924] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "gatewayId": "magdeburg-hbf", "name": "Magdeburg Hbf" },
+      "geometry": { "type": "Point", "coordinates": [11.626963, 52.130512] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "gatewayId": "lutherstadt-wittenberg-hbf", "name": "Lutherstadt Wittenberg Hbf" },
+      "geometry": { "type": "Point", "coordinates": [12.662285, 51.867810] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "gatewayId": "riesa", "name": "Riesa" },
+      "geometry": { "type": "Point", "coordinates": [13.287734, 51.309654] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "gatewayId": "chemnitz-hbf", "name": "Chemnitz Hbf" },
+      "geometry": { "type": "Point", "coordinates": [12.930877, 50.839695] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "gatewayId": "zwickau-hbf", "name": "Zwickau(Sachs)Hbf" },
+      "geometry": { "type": "Point", "coordinates": [12.474716, 50.714670] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "gatewayId": "saalfeld-saale", "name": "Saalfeld (Saale)" },
+      "geometry": { "type": "Point", "coordinates": [11.374546, 50.650490] }
+    }
+  ]
+}

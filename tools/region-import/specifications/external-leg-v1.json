@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "zugfolge-external-leg-specification/v1",
+  "version": "external-leg/v1",
+  "boundaryWindowToleranceS": 300,
+  "fixedExternalCostCentsPerMinute": 500,
+  "vehicleBindingRequired": true,
+  "personnelBindingRequired": true,
+  "outsidePenaltyPolicy": "none",
+  "description": "Alpha-Balancingsatz fuer nicht disponierbare Aussenlaeufe. Kosten und Grenztoleranz sind Releasefakten und keine Live-Ableitung."
+}

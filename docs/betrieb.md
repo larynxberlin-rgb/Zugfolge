@@ -50,9 +50,12 @@ Die Regel-Engine hängt an der Dispositionsschnittstelle des Simulationskerns
   Lebenslauf. Ein in die Welt eingebrachtes Fahrzeug wird nicht erneut erzeugt:
   Es wechselt nur zwischen Betrieb, Abstellung, Werkstatt, Vermietern,
   Gebrauchtmarkt und endgültiger Ausmusterung.
-- Formationen werden aus Fahrzeugen gebildet, auf eine **Zugcharakteristik**
-  abgebildet (→ `infrastruktur.md`) und gegen Strecke, Bahnsteig,
-  Elektrifizierung und Zugsicherung geprüft.
+- Formationen werden aus Fahrzeugen gebildet. Für eine Zugfahrt erhalten sie
+  aus ihrer tatsächlichen Masse und Bremsstellung ein signiertes,
+  ganzzahliges **Fahrprofil**; erst damit werden sie auf eine
+  **Zugcharakteristik** abgebildet (→ `infrastruktur.md`) und gegen Strecke,
+  Bahnsteig, Elektrifizierung und Zugsicherung geprüft. Eine Lokomotive hat
+  dabei keine pauschale Beschleunigung unabhängig von ihrem Wagenpark.
 - Personal wird als regionaler Qualifikations- und Dienstkapazitätspool
   modelliert; einzelne Mitarbeiterbiografien sind nicht Teil der ersten Version.
 - Dienst-, Wartungs-, Abstell- und Fahrzeugumlaufkonflikte verhindern die
@@ -89,12 +92,46 @@ Wartung/Umbau, Schäden, Ausmusterung und die jeweils wirksamen
 Zustandsänderungen. Damit bleibt sowohl die Herkunft eines Gebrauchtfahrzeugs
 als auch seine betriebliche Geschichte nachvollziehbar.
 
-Der redaktionelle Arbeitsstand vom 8. August 2026 umfasst 48 Fahrzeugtypen und
-63 Quellen. Wikipedia dient als breiter Index; Bauzeiträume und kritische
-Technik werden, soweit verfügbar, mit Betreiber-, Aufgabenträger-, Hersteller-
-oder Fachunterlagen gegengeprüft. Die reale Katalogdatei bleibt als
-proprietäres Weltdatum außerhalb des öffentlichen Baums (E16). Öffentlich sind
-das Schema, die Prüfregeln und rein fiktive Testdaten.
+Die historische Bauzeit des Typs bleibt stets unverändert. Für einen Typ, dessen
+Bauende vor dem Weltsichtjahr liegt, wählt die Welt eine der folgenden Regeln:
+
+| Altfahrzeugregel | Wirkung |
+|------------------|---------|
+| **Nur Gebrauchtmarkt** | Nur bereits gebaute Einzelstücke dürfen über den Gebrauchtkanal beschafft werden. |
+| **Neubau fortsetzen** | Eine ausdrückliche kontrafaktische Weltannahme erlaubt Neubau über das reale Bauende hinaus. Werksoptionen entsprechen dabei dem letzten belegten Serienstand; die reale Bauzeit wird nicht umgeschrieben. |
+| **Nur Epoche** | Die dokumentierten Bau- und Marktfenster gelten unverändert. |
+| **Nicht verfügbar** | Der alte Typ ist in keinem Beschaffungskanal verfügbar. |
+
+Leasing und Gebrauchtmarkt liefern grundsätzlich ein bereits gebautes, bereits
+konfiguriertes Fahrzeug. Ein Weltenstart kann solche Fahrzeuge als
+serverseitiges Leasingangebot enthalten, ohne dass dadurch ein freier
+**Gebrauchtkaufmarkt** geöffnet ist: Die simzeitbasierte Marktöffnung sperrt
+Kaufangebote bis zum festgelegten Zeitpunkt, nicht die Herkunft oder die
+Historie eines Leasingfahrzeugs. Das `VehicleAsset` hält deshalb je
+Einzelfahrzeug Welt, Typ, Bau- und Beschaffungsjahr, Marktkanal, Eigentum oder
+Leasing, Zulassungen, Wartungsfristen und die tatsächlich eingebaute
+Zugsicherung.
+
+Ein früher dokumentierter redaktioneller Arbeitsstand vom 8. August 2026
+nannte 48 Fahrzeugtypen und 63 Quellen. Dieser Datenbestand ist im öffentlichen
+Checkout nicht reproduzierbar: PR #25 liefert das Katalogschema, individuelle
+Assets und fiktive Testtypen, aber keine reale Fahrzeug-Seeddatei. Die reale
+Katalogdatei bleibt als proprietäres Weltdatum außerhalb des öffentlichen Baums
+(E16). Öffentlich sind nur Schema, Prüfregeln und rein fiktive Testdaten. Die
+geprüfte Quellenübergabe liegt lokal im ignorierten
+`data/fahrzeugkatalog/alpha-2026-recherche.md`; ihre **Freigegebene
+Alpha-Liste** enthält ausschließlich konkrete Varianten mit vollständigen
+Engine-Werten. Der anschließende Kandidatenkorpus ist ausdrücklich nicht
+freigabefähig.
+
+Die Engine lädt dagegen ausschließlich die ignorierte,
+maschinenlesbare Datei
+`data/fahrzeugkatalog/alpha-2026-authority-assets.json`. Sie ist ein
+`zugfolge-fleet-authority-release-catalog/v1`, bindet die kanonische
+Mitteldeutschland-Alpha-Welt an konkrete Einzelassets und wird über
+`ZUGFOLGE_FLEET_AUTHORITY_RELEASE_PATH` fail-closed eingelesen. Die
+Recherchedatei ist damit Nachweis und Freigabebasis; die Authority-Datei ist
+der tatsächlich ausführbare Startbestand.
 
 ### 2.2 Funktionsentscheidung: optionale Zugsicherung
 
@@ -119,11 +156,69 @@ konkrete Ist-Ausrüstung des angebotenen Fahrzeugs übernommen. Eine spätere
 Nachrüstung ist nur zulässig, wenn der Katalog sie für diesen Typ ausdrücklich
 belegt; eine Werksoption allein begründet noch keinen Werkstattumbau.
 
+Für die Infrastrukturprüfung gilt die Ausrüstung der aktiven Zugspitze. Fehlt
+LZB auf einer Strecke, die sowohl LZB- als auch ortsfeste Signalblöcke führt,
+fällt der Zug auf die Signalblöcke zurück; ein reiner LZB-Block bleibt für ihn
+unzulässig. Auf einem reinen ETCS-Abschnitt gibt es diese PZB-/Signalblock-
+Rückfallebene nicht: Ein Fahrzeug ohne das erforderliche ETCS darf dort nicht
+fahren. ETCS-only ist deshalb eine echte Ausnahme von der sonstigen PZB-
+Grundausstattung, nicht eine abgeschwächte LZB-Konfiguration.
+
 Das offene Endjahr `9999` bedeutet nach dem frühesten belegten Einbau nur eine
 **spielerische Fortschreibung der technischen Einbaubarkeit**, keine
 Marktprognose. M5.1 entscheidet über Zulässigkeit und hält den eingebauten
 Zustand deterministisch fest. Kosten, Dauer, Werkstattkompetenz und
 Anlagenbelegung werden erst mit M5.7 und M5.14 an den Umbau gebunden.
+
+### 2.3 Wagenparks, Steuerwagen und Rangierzeiten
+
+Ein Reisezugwagen ist ein gültiges, nicht angetriebenes Fahrzeugasset. Ein
+Steuerwagen ist ebenfalls nicht angetrieben, besitzt aber mindestens einen
+Steuerstand. Beide dürfen gemeinsam einen Wagenpark bilden, der in der
+Werkstatt oder Abstellung ohne Lok bestehen bleibt. Ohne angetriebenes
+Fahrzeug darf dieser Wagenpark jedoch keine eigene Zugfahrt bilden; für eine
+Überführung in die Werkstatt oder Abstellung wird eine geeignete Lok
+angekuppelt und danach wieder abgekuppelt.
+
+Ein Wendevorgang ohne Lokumsetzen verlangt einen Führerstand am vorderen und am
+hinteren Ende der Formation. Fehlt der hintere Steuerstand, muss die Lok den
+Wagenpark im Bahnhof oder in der Betriebsstelle umfahren. Das ist eine
+Rangierbewegung mit eigener Zeit- und Infrastrukturbelegung, kein kostenloser
+Richtungswechsel. Kupplungs- und Entkupplungszeiten sowie die erforderliche
+Bremsprobe gehören bei jeder solchen Maßnahme in den Plan.
+
+Die Rechts- und Betriebsquellen legen die auslösenden Ereignisse fest, aber
+keine universelle Sekundenzahl für jede Betriebsstelle: Die EBO verlangt eine
+Wiederholung der Bremsprobe nach Führerstandswechsel sowie nach Ergänzen oder
+Trennen des Zuges, mit der Ausnahme des bloßen Abhängens am Zugschluss. Die DB
+Fahrdienstvorschrift definiert einen Zug erst nach ordnungsgemäßem Kuppeln,
+wagentechnischer Behandlung und erforderlicher Bremsprobe als vorbereitet.
+Eine veröffentlichte Studie der Breisgau-S-Bahn misst für das Aufkuppeln im
+Mittel 3:18 Minuten und für das Entkuppeln 1:56 Minuten; die angesetzten
+Fahrplanwerte liegen bei vier bzw. drei Minuten. Daraus leitet die Simulation
+folgende konservative, ganzzahlige Standardwerte ab:
+
+| Vorgang | Standardwert | Einordnung |
+|---|---:|---|
+| Kuppeln | 180 s | technischer Kuppelvorgang; örtliche Fahrweg- und Kommunikationszeit kommt hinzu |
+| Entkuppeln | 120 s | technischer Mindestwert; bei ungünstiger Zugänglichkeit muss die Betriebsstelle erhöhen |
+| vereinfachte Bremsprobe | 60 s + 30 s je Fahrzeug | nach Zusammensetzungsänderung |
+| volle Bremsprobe | 120 s + 45 s je Fahrzeug | nach Inbetriebnahme oder maßgeblichem Führerstandswechsel |
+| Lok umsetzen | 300 s | konservative Alpha-Annahme; abhängig von Fahrweg, Personal und Bahnhof |
+
+Die Werte sind in crates/zugfolge-fleet/src/operations.rs als versionierbare
+Regelkonstanten gekapselt. Die Zeitberechnung führt Kuppeln, Entkuppeln,
+Bremsprobe und Lokumsetzen getrennt aus, damit eine Betriebsstelle oder ein
+späteres Release sie anhand eigener Messwerte überschreiben kann. Ein bloßes
+Abhängen am Zugschluss löst nach der EBO-Ausnahme keine zusätzliche Bremsprobe
+aus; ein Führerstandswechsel löst dagegen eine volle Bremsprobe aus.
+
+Quellen:
+
+- [EBO, Bremsprobe und Zugtrennung](https://www.gesetze-im-internet.de/ebo/BJNR215630967.html)
+- [DB Fahrdienstvorschrift Ril 408.8321, Zug vorbereiten](https://www-ecm-pu.deutschebahn.com/resource/blob/1357408/e015a4fc6fa4181f4462b81b22fda238/rw_408-81-89-data.pdf)
+- [ZRF/Ramboll, Studie zur Breisgau-S-Bahn, Tabelle 4](https://zrf.de/wp-content/uploads/2023/11/231213_TOP7_BSB.pdf)
+- [Bayerische Eisenbahngesellschaft, Untersuchung Illertalbahn](https://beg.bahnland-bayern.de/files/media/corporate-portal/imports/planung/infrastrukturprojekte/gutachten_illertalbahn_ulm/endbericht-gutachten-illertalbahn.pdf)
 
 ## 3. Fahrzeugkonfiguration (E20)
 

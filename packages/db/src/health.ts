@@ -6,7 +6,7 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 type AnyDatabase = PgDatabase<PgQueryResultHKT, Record<string, unknown>, any>;
 
 /** Zahl der mit diesem Quellstand ausgelieferten Drizzle-Migrationen. */
-export const EXPECTED_SCHEMA_MIGRATIONS = 15;
+export const EXPECTED_SCHEMA_MIGRATIONS = 17;
 
 function firstRow(result: unknown): Record<string, unknown> | undefined {
   if (Array.isArray(result)) return result[0] as Record<string, unknown> | undefined;
@@ -77,6 +77,33 @@ export function createDatabaseHealthCheck(db: AnyDatabase): HealthCheck {
       );
       await db.execute(
         sql`select world_id, provider_set_id, region_id, disruption_id from disruption_provider_applications limit 0`,
+      );
+      await db.execute(
+        sql`select world_id, offeror_operator_id, offeree_operator_id, status from operator_contracts limit 0`,
+      );
+      await db.execute(
+        sql`select world_id, vehicle_id, owner_operator_id, holder_operator_id from vehicle_assets limit 0`,
+      );
+      await db.execute(
+        sql`select world_id, vehicle_id, status from vehicle_market_listings limit 0`,
+      );
+      await db.execute(
+        sql`select world_id, profile_kind, state from alpha_world_profiles limit 0`,
+      );
+      await db.execute(
+        sql`select world_id, account_id, chapter from tutorial_progress limit 0`,
+      );
+      await db.execute(
+        sql`select world_id, account_id, grant_hash from onboarding_grants limit 0`,
+      );
+      await db.execute(
+        sql`select world_id, identity_hash, response from abuse_observations limit 0`,
+      );
+      await db.execute(
+        sql`select world_id, identity_hash, request_count from rate_limit_buckets limit 0`,
+      );
+      await db.execute(
+        sql`select world_id, release_hash, status from infra_release_changes limit 0`,
       );
       return { status: "ok", code: "schema_current" };
     },

@@ -243,10 +243,24 @@ export async function initializeFleetProducer(
 export async function applyFleetProducerCommand(
   input: ApplyFleetProducerCommandInput,
 ): Promise<FleetCommandResult> {
+  return input.db.transaction(async (rawTx) => applyFleetProducerCommandInTransaction({
+    ...input,
+    db: rawTx as unknown as EconomyDatabase,
+  }));
+}
+
+/**
+ * Variante fuer einen bereits geoeffneten fachlichen Commit. Sie wird vom
+ * Sekundaermarkt genutzt, damit Rust-Checkpoint, Eigentumswechsel, Ledger,
+ * Eventlog und Postfach entweder gemeinsam sichtbar werden oder gemeinsam
+ * zurueckrollen. Der Welt-Lock bleibt auch hier zwingend.
+ */
+export async function applyFleetProducerCommandInTransaction(
+  input: ApplyFleetProducerCommandInput,
+): Promise<FleetCommandResult> {
   const exact = exactCommand(input.command);
   const exactCommandHash = canonicalFleetCommandHash(exact.command);
-  return input.db.transaction(async (rawTx) => {
-    const tx = rawTx as unknown as EconomyDatabase;
+  const tx = input.db;
     await lockWorld(tx, exact.command.worldId);
     const current = await latestCheckpoint(tx, exact.command.worldId);
     conflictInvariant(current !== undefined, "M5-Flottenwelt wurde noch nicht initialisiert.");
@@ -347,5 +361,4 @@ export async function applyFleetProducerCommand(
       input.ingestedAt,
     );
     return result;
-  });
 }

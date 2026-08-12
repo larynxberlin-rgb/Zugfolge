@@ -72,6 +72,9 @@ pub use candidate::{CandidateDeviation, PathCandidate};
 pub use error::PlannerError;
 pub use period::{PeriodPhase, SchedulePeriod};
 pub use planner::{PathDecision, PlannerOptions, PlannerOutcome, TrainPathPlanner};
-pub use request::{PathRequest, PathRequestId, PathTolerances, RequestedStop};
+pub use request::{
+    BoundaryDirection, BoundaryPlanningWindow, PathRequest, PathRequestId, PathTolerances,
+    RequestedStop,
+};
 pub use route::enumerate_itineraries;
 pub use run::{PlanningRun, PlanningRunOutcome, RequestOutcome, Tie};

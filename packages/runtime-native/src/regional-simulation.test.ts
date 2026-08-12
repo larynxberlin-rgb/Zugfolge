@@ -42,6 +42,50 @@ function snapshot(selectedState: RegionalSimulationState) {
 }
 
 describe("regionale native M4-Grenze", () => {
+  it("dekodiert Aussenlaeufe als eigene Projektion ohne Kartenposition", () => {
+    const externalTrain = {
+      id: "run-1",
+      operator: "operator-1",
+      trainNumber: "RE 1",
+      category: "regional",
+      journeyChainId: "chain-re1",
+      externalLegId: "chain-re1:external:1",
+      fromPortalId: "portal-eisenach",
+      toPortalId: "portal-eisenach",
+      scheduledEndS: 4_000,
+      reentryEarliestS: 3_700,
+      reentryLatestS: 4_300,
+      delaySeconds: 120,
+      fixedCostCents: "25000",
+      boundVehicleIds: ["vehicle-442-001"],
+      boundPersonnelDutyIds: ["duty-re1"],
+      status: "outside",
+      progressBasisPoints: 4_000,
+    } as const;
+    const runtime = regionalSimulationRuntimeFromAddon({
+      initializeRegionalSimulation: () => JSON.stringify({
+        schemaVersion: REGIONAL_SIMULATION_INITIALIZED_SCHEMA,
+        state: state(),
+        stateHash: "a".repeat(64),
+        snapshot: { ...snapshot(state()), externalTrains: [externalTrain] },
+        events: [],
+      }),
+      restoreRegionalSimulation: () => "{}",
+      applyRegionalSimulationCommand: () => "{}",
+    });
+
+    const initialized = runtime.initialize({
+      schemaVersion: REGIONAL_SIMULATION_INITIALIZE_SCHEMA,
+      worldId,
+      regionId,
+      materializationWindowHours: 48,
+      nowS: 0,
+      trains: [],
+    });
+    expect(initialized.snapshot.externalTrains).toEqual([externalTrain]);
+    expect(initialized.snapshot.externalTrains?.[0]).not.toHaveProperty("positionMm");
+  });
+
   it("bindet Initialize, Restore und Apply an denselben gehashten Zustand", () => {
     const applyNative = vi.fn(() =>
       JSON.stringify({

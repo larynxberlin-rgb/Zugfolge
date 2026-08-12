@@ -48,12 +48,33 @@ export interface PublicTrain {
   readonly disruption?: PublicDisruptionMarker;
 }
 
+export interface PublicExternalTrain {
+  readonly id: string;
+  readonly operator: string;
+  readonly trainNumber: string;
+  readonly category: string;
+  readonly journeyChainId: string;
+  readonly externalLegId: string;
+  readonly fromPortalId: string;
+  readonly toPortalId: string | null;
+  readonly scheduledEndS: number;
+  readonly reentryEarliestS: number | null;
+  readonly reentryLatestS: number | null;
+  readonly delaySeconds: number;
+  readonly fixedCostCents: string;
+  readonly boundVehicleIds: readonly string[];
+  readonly boundPersonnelDutyIds: readonly string[];
+  readonly status: "outside" | "ready-at-boundary" | "waiting-for-capacity" | "completed-outside";
+  readonly progressBasisPoints: number;
+}
+
 export interface Snapshot {
   readonly worldId: string;
   readonly streamId: string;
   readonly sequence: number;
   readonly at: number;
   readonly trains: readonly PublicTrain[];
+  readonly externalTrains?: readonly PublicExternalTrain[];
   readonly disruptions?: readonly PublicInfrastructureDisruption[];
 }
 
@@ -64,6 +85,8 @@ export interface Delta {
   readonly at: number;
   readonly changed: readonly PublicTrain[];
   readonly removed: readonly string[];
+  readonly changedExternalTrains?: readonly PublicExternalTrain[];
+  readonly removedExternalTrainIds?: readonly string[];
   readonly changedDisruptions?: readonly PublicInfrastructureDisruption[];
   readonly removedDisruptionIds?: readonly string[];
 }
@@ -74,6 +97,7 @@ export interface LiveState {
   readonly sequence: number;
   readonly at: number;
   readonly trains: ReadonlyMap<string, PublicTrain>;
+  readonly externalTrains: ReadonlyMap<string, PublicExternalTrain>;
   readonly disruptions: ReadonlyMap<string, PublicInfrastructureDisruption>;
 }
 
@@ -233,6 +257,60 @@ function parseTrains(value: unknown, field: string): readonly PublicTrain[] {
   return Object.freeze(trains);
 }
 
+function parseExternalTrain(value: unknown): PublicExternalTrain {
+  if (!isRecord(value)) throw new TypeError("Livemap-Aussenlauf muss ein Objekt sein.");
+  const status = stringField(value, "status");
+  if (!["outside", "ready-at-boundary", "waiting-for-capacity", "completed-outside"].includes(status)) {
+    throw new TypeError(`Unbekannter Aussenlaufstatus '${status}'.`);
+  }
+  const toPortalId = value["toPortalId"];
+  if (toPortalId !== null && (typeof toPortalId !== "string" || toPortalId.length === 0)) {
+    throw new TypeError("Aussenlauf besitzt kein gueltiges Zielportal.");
+  }
+  const nullableTime = (field: "reentryEarliestS" | "reentryLatestS") =>
+    value[field] === null ? null : integerField(value, field, 0);
+  const stringList = (field: "boundVehicleIds" | "boundPersonnelDutyIds") => {
+    const values = value[field];
+    if (!Array.isArray(values) || values.some((item) => typeof item !== "string" || item.length === 0)) {
+      throw new TypeError(`Aussenlauf-Feld '${field}' muss eine Liste nichtleerer Kennungen sein.`);
+    }
+    return Object.freeze([...values] as string[]);
+  };
+  const progressBasisPoints = integerField(value, "progressBasisPoints", 0);
+  if (progressBasisPoints > 10_000) throw new TypeError("Aussenlauffortschritt liegt ueber 10000 Basispunkten.");
+  const fixedCostCents = stringField(value, "fixedCostCents");
+  if (!/^(0|[1-9][0-9]*)$/.test(fixedCostCents)) throw new TypeError("Aussenlaufkosten sind keine Integer-Cent.");
+  return Object.freeze({
+    id: stringField(value, "id"),
+    operator: stringField(value, "operator"),
+    trainNumber: stringField(value, "trainNumber"),
+    category: stringField(value, "category"),
+    journeyChainId: stringField(value, "journeyChainId"),
+    externalLegId: stringField(value, "externalLegId"),
+    fromPortalId: stringField(value, "fromPortalId"),
+    toPortalId: toPortalId as string | null,
+    scheduledEndS: integerField(value, "scheduledEndS", 0),
+    reentryEarliestS: nullableTime("reentryEarliestS"),
+    reentryLatestS: nullableTime("reentryLatestS"),
+    delaySeconds: integerField(value, "delaySeconds"),
+    fixedCostCents,
+    boundVehicleIds: stringList("boundVehicleIds"),
+    boundPersonnelDutyIds: stringList("boundPersonnelDutyIds"),
+    status: status as PublicExternalTrain["status"],
+    progressBasisPoints,
+  });
+}
+
+function parseExternalTrains(value: unknown, field: string): readonly PublicExternalTrain[] {
+  if (value === undefined) return Object.freeze([]);
+  if (!Array.isArray(value)) throw new TypeError(`Livemap-Feld '${field}' muss eine Liste sein.`);
+  const trains = value.map(parseExternalTrain);
+  if (new Set(trains.map((train) => train.id)).size !== trains.length) {
+    throw new TypeError(`Livemap-Feld '${field}' enthaelt doppelte Aussenlaeufe.`);
+  }
+  return Object.freeze(trains);
+}
+
 export function parseSnapshot(value: unknown): Snapshot {
   if (!isRecord(value)) throw new TypeError("Livemap-Snapshot muss ein Objekt sein.");
   return Object.freeze({
@@ -241,6 +319,7 @@ export function parseSnapshot(value: unknown): Snapshot {
     sequence: integerField(value, "sequence", 0),
     at: integerField(value, "at", 0),
     trains: parseTrains(value["trains"], "trains"),
+    externalTrains: parseExternalTrains(value["externalTrains"], "externalTrains"),
     disruptions: parseDisruptions(value["disruptions"], "disruptions"),
   });
 }
@@ -255,6 +334,10 @@ export function parseDelta(value: unknown): Delta {
   if (!Array.isArray(removedDisruptionIds) || removedDisruptionIds.some((id) => typeof id !== "string" || id.length === 0)) {
     throw new TypeError("Livemap-Feld 'removedDisruptionIds' muss eine Liste nichtleerer Kennungen sein.");
   }
+  const removedExternalTrainIds = value["removedExternalTrainIds"] ?? [];
+  if (!Array.isArray(removedExternalTrainIds) || removedExternalTrainIds.some((id) => typeof id !== "string" || id.length === 0)) {
+    throw new TypeError("Livemap-Feld 'removedExternalTrainIds' muss eine Liste nichtleerer Zugkennungen sein.");
+  }
   return Object.freeze({
     worldId: stringField(value, "worldId"),
     streamId: streamIdField(value),
@@ -262,6 +345,8 @@ export function parseDelta(value: unknown): Delta {
     at: integerField(value, "at", 0),
     changed: parseTrains(value["changed"], "changed"),
     removed: Object.freeze([...removed] as string[]),
+    changedExternalTrains: parseExternalTrains(value["changedExternalTrains"], "changedExternalTrains"),
+    removedExternalTrainIds: Object.freeze([...removedExternalTrainIds] as string[]),
     changedDisruptions: parseDisruptions(value["changedDisruptions"], "changedDisruptions"),
     removedDisruptionIds: Object.freeze([...removedDisruptionIds] as string[]),
   });
@@ -275,12 +360,15 @@ export function initialState(snapshot: Snapshot): LiveState {
   }
   const disruptions = new Map<string, PublicInfrastructureDisruption>();
   snapshot.disruptions?.forEach((item) => disruptions.set(item.disruptionId, item));
+  const externalTrains = new Map<string, PublicExternalTrain>();
+  snapshot.externalTrains?.forEach((train) => externalTrains.set(train.id, train));
   return Object.freeze({
     worldId: snapshot.worldId,
     streamId: snapshot.streamId,
     sequence: snapshot.sequence,
     at: snapshot.at,
     trains,
+    externalTrains,
     disruptions,
   });
 }
@@ -300,12 +388,16 @@ export function applyDelta(state: LiveState, delta: Delta): LiveState | undefine
   const disruptions = new Map(state.disruptions);
   delta.changedDisruptions?.forEach((item) => disruptions.set(item.disruptionId, item));
   delta.removedDisruptionIds?.forEach((id) => disruptions.delete(id));
+  const externalTrains = new Map(state.externalTrains);
+  delta.changedExternalTrains?.forEach((train) => externalTrains.set(train.id, train));
+  delta.removedExternalTrainIds?.forEach((id) => externalTrains.delete(id));
   return Object.freeze({
     worldId: state.worldId,
     streamId: state.streamId,
     sequence: delta.sequence,
     at: delta.at,
     trains,
+    externalTrains,
     disruptions,
   });
 }

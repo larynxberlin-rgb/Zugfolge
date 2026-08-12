@@ -13,8 +13,8 @@ umgeschrieben — ihre Historie ist der Wert.
 
 ## Verhältnis zu den anderen Dokumenten
 
-- `CLAUDE.md` — die bindende Kurztabelle E1–E23. Wird jede Sitzung geladen.
-- `../entscheidungen.md` — E1–E23 mit einzeiliger Begründung, die maßgebliche
+- `AGENTS.md` — die bindende Kurztabelle E1–E25. Wird jede Sitzung geladen.
+- `../entscheidungen.md` — E1–E25 mit einzeiliger Begründung, die maßgebliche
   Quelle für Wortlaut und Nummerierung.
 - **`docs/adr/`** (dieser Ordner) — dieselben Entscheidungen ausführlich: mit
   Kontext, Konsequenzen und Querverweisen. Ein ADR je Entscheidung.
@@ -70,6 +70,8 @@ eigene Entscheidungen hinzu. Alle Status: **Angenommen — bindend**.
 | [0021](0021-ausschreibungen-variieren.md) | E21 | SPNV-Ausschreibungen variieren nach einem angekündigten Vergabeprofil |
 | [0022](0022-jaehrliche-infrastrukturaktualisierung.md) | E22 | Infrastruktur- und Fahrplandaten werden jährlich zum realen Fahrplanwechsel aktualisiert |
 | [0023](0023-odoo-als-administrativer-kontrollpunkt.md) | E23 | Odoo ist administrativer Kontroll- und Freigabepunkt, nie fachliche Source of Truth |
+| [0024](0024-erweiterter-alpha-schnitt.md) | E24 | Der Alpha-Schnitt wird gezielt um M12.1, M12.2 und M14.1 erweitert |
+| [0025](0025-gebietsueberschreitende-fahrtketten.md) | E25 | Gebietsüberschreitende Fahrten bleiben eine Fahrtkette mit deterministischem Außenlauf |
 
 > **Hinweis zum Umfang.** Milestone 0.1 nennt „E1 bis E16"; die Formulierung
 > stammt aus der Zeit vor E17–E20. Da diese vier heute gleichrangig bindend

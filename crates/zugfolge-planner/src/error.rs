@@ -27,6 +27,8 @@ pub enum PlannerError {
         /// Der angegebene Wert.
         value: i64,
     },
+    /// Ein Grenzfenster ist leer, ruecklaeufig oder doppelt belegt.
+    InvalidBoundaryWindow(&'static str),
     /// Zwischen den beiden Betriebsstellen führt kein Laufweg, der alle
     /// beantragten Halte bedient.
     NoRoute {
@@ -79,6 +81,9 @@ impl fmt::Display for PlannerError {
             }
             Self::InvalidTolerance { what, value } => {
                 write!(formatter, "{what} hat den unzulässigen Wert {value}")
+            }
+            Self::InvalidBoundaryWindow(detail) => {
+                write!(formatter, "Grenzfenster ist ungültig: {detail}")
             }
             Self::NoRoute {
                 origin,

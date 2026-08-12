@@ -1,4 +1,5 @@
 import type { RegionalSimulationWorker } from "./regional-simulation-worker.js";
+import type { RegionalServiceCatalog } from "./boundary-transition-scheduler.js";
 
 type RegionalSimulationAdvancer = Pick<
   RegionalSimulationWorker,
@@ -32,6 +33,7 @@ export async function advanceRegionalSimulations(
   worker: RegionalSimulationAdvancer,
   worldEpochs: ReadonlyMap<string, Date>,
   at: Date,
+  boundaryTransitions?: Pick<RegionalServiceCatalog, "due">,
 ): Promise<number> {
   let advanced = 0;
   for (const region of worker.readyRegions()) {
@@ -43,6 +45,34 @@ export async function advanceRegionalSimulations(
     }
     const atS = regionalSimulationSecond(epoch, at);
     if (atS === undefined || atS <= region.nowS) continue;
+    let cursorS = region.nowS;
+    for (const transition of boundaryTransitions?.due(region.worldId, region.regionId, region.nowS, atS) ?? []) {
+      if (transition.atS > cursorS) {
+        await worker.apply(
+          {
+            worldId: region.worldId,
+            regionId: region.regionId,
+            commandId: `advance-to:${transition.atS}`,
+            command: { type: "advance-to", atS: transition.atS },
+          },
+          at,
+        );
+        cursorS = transition.atS;
+      }
+      await worker.apply(
+        {
+          worldId: region.worldId,
+          regionId: region.regionId,
+          commandId: transition.transitionId,
+          command: transition.command,
+        },
+        at,
+      );
+    }
+    if (cursorS >= atS) {
+      advanced += 1;
+      continue;
+    }
     await worker.apply(
       {
         worldId: region.worldId,

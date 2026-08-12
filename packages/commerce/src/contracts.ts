@@ -14,6 +14,9 @@ export const COMMAND_TYPES = [
   "admin.world_access_revoke",
   "admin.infra_release_adoption",
   "admin.manual_disruption_create",
+  "admin.abuse_sanction_activate",
+  "admin.world_close",
+  "admin.tutorial_account_reset",
 ] as const;
 export type OdooCommandType = (typeof COMMAND_TYPES)[number];
 
@@ -26,6 +29,9 @@ export const ADMIN_ACTION_TYPES = [
   "world_access_revoke",
   "infra_release_adoption",
   "manual_disruption_create",
+  "abuse_sanction_activate",
+  "world_close",
+  "tutorial_account_reset",
 ] as const;
 export type AdminActionType = (typeof ADMIN_ACTION_TYPES)[number];
 
@@ -71,6 +77,8 @@ export interface AdminCommandPayload {
   readonly effectPreview: Readonly<Record<string, unknown>>;
   readonly releaseHash?: string;
   readonly requestedPeriodStart?: string;
+  readonly targetReference?: string;
+  readonly requestedAtS?: number;
   /**
    * Vertrag fuer M8.3: Odoo erfasst die Pflichtdaten, die Game-Implementierung
    * prueft Ressourcen, Zeitpunkt und Wirkung erst bei ihrer spaeteren

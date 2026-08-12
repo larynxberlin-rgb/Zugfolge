@@ -31,7 +31,7 @@ export interface FleetFormationSnapshot {
     readonly operatingCostCentsPerTrainKm: number;
     readonly homologatedLineIds: readonly string[];
     readonly maintenanceValidUntil: number;
-    readonly traction: "electric" | "diesel" | "battery" | "hydrogen";
+    readonly traction: "unpowered" | "electric" | "diesel" | "battery" | "hydrogen";
     readonly replacementPlan: boolean;
   };
 }
@@ -183,7 +183,7 @@ export function validateFleetMobilizationSnapshot(snapshot: FleetMobilizationSna
     integer(formation.characteristics.operatingCostCentsPerTrainKm, `${name}.characteristics.operatingCostCentsPerTrainKm`);
     validStringList(formation.characteristics.homologatedLineIds, `${name}.characteristics.homologatedLineIds`);
     integer(formation.characteristics.maintenanceValidUntil, `${name}.characteristics.maintenanceValidUntil`, 1);
-    invariant(["electric", "diesel", "battery", "hydrogen"].includes(formation.characteristics.traction), `${name}.traction ist unbekannt.`);
+    invariant(["unpowered", "electric", "diesel", "battery", "hydrogen"].includes(formation.characteristics.traction), `${name}.traction ist unbekannt.`);
     invariant(typeof formation.characteristics.replacementPlan === "boolean", `${name}.replacementPlan fehlt.`);
   }
   for (const [index, duty] of snapshot.personnelDuties.entries()) {
@@ -311,6 +311,7 @@ export function resolveVehicleConcept(
   invariant(coversAll(formation.serviceLineIds, input.serviceLineIds), "Formation ist für die ausgeschriebenen Linien nicht freigegeben.");
   invariant(coversAll(formation.characteristics.homologatedLineIds, input.serviceLineIds), "Formation besitzt keine Zulassung für alle ausgeschriebenen Linien.");
   invariant(formation.characteristics.maintenanceValidUntil >= input.operatingFrom, "Instandhaltungsfreigabe deckt den Betriebsstart nicht ab.");
+  invariant(formation.characteristics.traction !== "unpowered", "Ein Wagenpark ohne Traktionsfahrzeug ist kein Fahrzeugkonzept.");
   return Object.freeze({
     formationId: formation.id,
     minimumSeats: formation.characteristics.seats,
@@ -361,6 +362,7 @@ export function verifyMobilizationReference(
     invariant(coversAll(formation.serviceLineIds, input.serviceLineIds), "Mobilisierungsformation ist für das Los ungeeignet.");
     invariant(coversAll(formation.characteristics.homologatedLineIds, input.serviceLineIds), "Mobilisierungsformation ist für das Los nicht zugelassen.");
     invariant(formation.characteristics.maintenanceValidUntil >= input.operatingFrom, "Instandhaltungsfreigabe der Formation ist am Stichtag abgelaufen.");
+    invariant(formation.characteristics.traction !== "unpowered", "Mobilisierungsformation besitzt kein Traktionsfahrzeug.");
   }
 
   const duties = reference.personnelDutyIds.map((id) => snapshot.personnelDuties.find((duty) => duty.id === id));

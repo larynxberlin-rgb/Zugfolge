@@ -85,6 +85,29 @@ export type RegionalSimulationCommandPayload =
   | {
       readonly type: "clear-disruption";
       readonly disruptionId: string;
+    }
+  | {
+      readonly type: "enter-external-zone";
+      readonly trainRunId: string;
+      readonly externalLeg: {
+        readonly journeyChainId: string;
+        readonly externalLegId: string;
+        readonly fromPortalId: string;
+        readonly toPortalId: string | null;
+        readonly scheduledStartS: number;
+        readonly scheduledEndS: number;
+        readonly reentryEarliestS: number | null;
+        readonly reentryLatestS: number | null;
+        readonly fixedCostCents: string;
+        readonly boundVehicleIds: readonly string[];
+        readonly boundPersonnelDutyIds: readonly string[];
+        readonly reentryRoute: readonly RegionalWaypointInput[];
+        readonly firstResources: readonly string[];
+      };
+    }
+  | {
+      readonly type: "reenter-from-external";
+      readonly trainRunId: string;
     };
 
 export interface RegionalSimulationCommand {
@@ -134,7 +157,28 @@ export interface RegionalLivemapSnapshot {
   readonly producerSequence: number;
   readonly atS: number;
   readonly trains: readonly RegionalPublicTrain[];
+  readonly externalTrains?: readonly RegionalPublicExternalTrain[];
   readonly disruptions: readonly RegionalPublicDisruption[];
+}
+
+export interface RegionalPublicExternalTrain {
+  readonly id: string;
+  readonly operator: string;
+  readonly trainNumber: string;
+  readonly category: RegionalTrainCategory;
+  readonly journeyChainId: string;
+  readonly externalLegId: string;
+  readonly fromPortalId: string;
+  readonly toPortalId: string | null;
+  readonly scheduledEndS: number;
+  readonly reentryEarliestS: number | null;
+  readonly reentryLatestS: number | null;
+  readonly delaySeconds: number;
+  readonly fixedCostCents: string;
+  readonly boundVehicleIds: readonly string[];
+  readonly boundPersonnelDutyIds: readonly string[];
+  readonly status: "outside" | "ready-at-boundary" | "waiting-for-capacity" | "completed-outside";
+  readonly progressBasisPoints: number;
 }
 
 export interface RegionalPublicDisruption {
@@ -169,6 +213,8 @@ export interface RegionalLivemapDelta {
   readonly atS: number;
   readonly changed: readonly RegionalPublicTrain[];
   readonly removed: readonly string[];
+  readonly changedExternalTrains?: readonly RegionalPublicExternalTrain[];
+  readonly removedExternalTrainIds?: readonly string[];
   readonly changedDisruptions: readonly RegionalPublicDisruption[];
   readonly removedDisruptionIds: readonly string[];
 }
@@ -305,6 +351,33 @@ function decodePublicTrain(value: unknown, name: string): RegionalPublicTrain {
   return value as unknown as RegionalPublicTrain;
 }
 
+function decodePublicExternalTrain(value: unknown, name: string): RegionalPublicExternalTrain {
+  record(value, name);
+  for (const field of ["id", "operator", "trainNumber", "journeyChainId", "externalLegId", "fromPortalId"] as const) {
+    nonempty(value[field], `${name}-${field}`);
+  }
+  invariant(
+    ["regional", "long-distance", "freight", "empty-stock", "engineering"].includes(value["category"] as string),
+    `${name} hat eine unbekannte Zuggattung.`,
+  );
+  invariant(value["toPortalId"] === null || (typeof value["toPortalId"] === "string" && value["toPortalId"].length > 0), `${name} besitzt kein gueltiges Zielportal.`);
+  for (const field of ["scheduledEndS", "progressBasisPoints"] as const) safeInteger(value[field], `${name}-${field}`);
+  safeInteger(value["delaySeconds"], `${name}-delaySeconds`, false);
+  for (const field of ["reentryEarliestS", "reentryLatestS"] as const) {
+    invariant(value[field] === null || (Number.isSafeInteger(value[field]) && (value[field] as number) >= 0), `${name}-${field} ist ungueltig.`);
+  }
+  invariant(typeof value["fixedCostCents"] === "string" && /^(0|[1-9][0-9]*)$/.test(value["fixedCostCents"]), `${name} besitzt keine Integer-Cent-Kosten.`);
+  for (const field of ["boundVehicleIds", "boundPersonnelDutyIds"] as const) {
+    invariant(Array.isArray(value[field]) && value[field].every((id) => typeof id === "string" && id.length > 0), `${name}-${field} ist ungueltig.`);
+  }
+  invariant(
+    ["outside", "ready-at-boundary", "waiting-for-capacity", "completed-outside"].includes(value["status"] as string),
+    `${name} hat einen unbekannten Aussenstatus.`,
+  );
+  invariant((value["progressBasisPoints"] as number) <= 10_000, `${name} hat ungueltigen Fortschritt.`);
+  return value as unknown as RegionalPublicExternalTrain;
+}
+
 function decodeSnapshot(
   value: unknown,
   state: RegionalSimulationState,
@@ -329,6 +402,10 @@ function decodeSnapshot(
   value["trains"].forEach((train, index) =>
     decodePublicTrain(train, `${name}-Zug ${index + 1}`),
   );
+  if (value["externalTrains"] !== undefined) {
+    invariant(Array.isArray(value["externalTrains"]), `${name} besitzt keine Aussenlaeufe.`);
+    value["externalTrains"].forEach((train, index) => decodePublicExternalTrain(train, `${name}-Aussenlauf ${index + 1}`));
+  }
   invariant(Array.isArray(value["disruptions"]), `${name} besitzt keine Störungsprojektion.`);
   value["disruptions"].forEach((item, index) => decodePublicDisruption(item, `${name}-Störung ${index + 1}`));
   return value as unknown as RegionalLivemapSnapshot;
@@ -412,6 +489,13 @@ function decodeDelta(
     "Rust-M4-Delta hat ein unbekanntes Schema.",
   );
   invariant(Array.isArray(value["changedDisruptions"]), "Rust-M4-Delta besitzt keine Störungsänderungen.");
+  if (value["changedExternalTrains"] !== undefined) {
+    invariant(Array.isArray(value["changedExternalTrains"]), "Rust-M4-Delta besitzt keine Aussenlauf-Aenderungen.");
+    value["changedExternalTrains"].forEach((train, index) => decodePublicExternalTrain(train, `Rust-M4-Delta-Aussenlauf ${index + 1}`));
+  }
+  if (value["removedExternalTrainIds"] !== undefined) {
+    invariant(Array.isArray(value["removedExternalTrainIds"]) && value["removedExternalTrainIds"].every((id) => typeof id === "string" && id.length > 0), "Rust-M4-Delta besitzt ungueltige entfernte Aussenlaeufe.");
+  }
   value["changedDisruptions"].forEach((item, index) => decodePublicDisruption(item, `Rust-M4-Delta-Störung ${index + 1}`));
   invariant(
     Array.isArray(value["removedDisruptionIds"]) && value["removedDisruptionIds"].every((id) => typeof id === "string" && id.length > 0),

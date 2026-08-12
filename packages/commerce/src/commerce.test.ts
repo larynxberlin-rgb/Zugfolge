@@ -114,9 +114,11 @@ describe("Vier-Augen-Validierung", () => {
     })).resolves.toMatchObject({ outcome: "accepted" });
     const audit = await db.select().from(schema.gameAdminRequests);
     expect(audit).toHaveLength(1);
-    expect(audit[0]).toMatchObject({ state: "accepted", requesterReference: "requester", approverReference: "approver", gameAuditEventId: "game-audit-infra-001" });
+    expect(audit[0]).toMatchObject({ state: "accepted", requesterReference: "requester", approverReference: "approver" });
+    const [auditEvent] = await db.select().from(schema.domainEvents).where(eq(schema.domainEvents.id, audit[0]!.gameAuditEventId!));
+    expect(auditEvent).toMatchObject({ eventType: "admin.action-audited", payload: { outcome: "accepted", effectAuditReference: "game-audit-infra-001" } });
     const projections = await db.select().from(odooProjectionOutbox);
-    expect(projections[0]?.payload).toMatchObject({ outcome: "accepted", gameAuditEventId: audit[0]?.gameAuditEventId });
+    expect(projections[0]?.payload).toMatchObject({ outcome: "accepted", gameAuditEventId: audit[0]?.gameAuditEventId, effectAuditReference: "game-audit-infra-001" });
   });
 
   it("haelt eine manuelle Stoerung ohne M8-Game-Handler vorbereitet und sichtbar wirkungslos", async () => {
@@ -137,7 +139,10 @@ describe("Vier-Augen-Validierung", () => {
     }, NOW);
 
     await expect(processNextOdooCommand(db, NOW)).resolves.toMatchObject({ outcome: "rejected", code: "GameAdminCapabilityUnavailableError" });
-    expect(await db.select().from(schema.gameAdminRequests)).toHaveLength(0);
+    const [request] = await db.select().from(schema.gameAdminRequests);
+    expect(request).toMatchObject({ state: "failed", actionType: "manual_disruption_create" });
+    const [auditEvent] = await db.select().from(schema.domainEvents).where(eq(schema.domainEvents.id, request!.gameAuditEventId!));
+    expect(auditEvent).toMatchObject({ eventType: "admin.action-audited", payload: { outcome: "failed", failureCode: "GameAdminCapabilityUnavailableError" } });
     const [queue] = await db.select().from(odooCommandQueue).where(eq(odooCommandQueue.eventId, payload.eventId));
     expect(queue).toMatchObject({ status: "rejected", failureCode: "GameAdminCapabilityUnavailableError" });
     const [result] = await db.select().from(odooProjectionOutbox).where(eq(odooProjectionOutbox.correlationId, payload.correlationId));

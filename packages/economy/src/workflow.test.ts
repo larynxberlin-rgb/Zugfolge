@@ -98,6 +98,22 @@ function world() {
 }
 
 describe("zustandsbehafteter M6-Gesamtablauf", () => {
+  it("startet jedes Los mit seinem vollstaendigen Eigenbetriebs-Fahrzeugpool", () => {
+    const started = startEconomyWorld({
+      worldId: "world-public", seed: 7n, durationMonths: 6, release,
+      lots: Array.from({ length: 8 }, (_, index) => ({ id: index === 0 ? "lot-public" : `lot-${index}`, size: 10, attractiveness: 10 })),
+      authorityBudgets: [], accounts: [],
+      publicVehiclePoolByLot: { "lot-public": ["vehicle-1", "vehicle-2"] },
+    });
+    expect(started.state.publicOperations.get("lot-public")?.vehiclePool).toEqual(["vehicle-1", "vehicle-2"]);
+    expect(() => startEconomyWorld({
+      worldId: "world-public", seed: 7n, durationMonths: 6, release,
+      lots: Array.from({ length: 8 }, (_, index) => ({ id: index === 0 ? "lot-public" : `lot-${index}`, size: 10, attractiveness: 10 })),
+      authorityBudgets: [], accounts: [],
+      publicVehiclePoolByLot: { unknown: ["vehicle-1"] },
+    })).toThrow(/Fahrzeugpool/);
+  });
+
   it("führt Veröffentlichung, Gebot, Zuschlag, Mobilisierung und Periodenabrechnung aus", () => {
     let { state, effects } = world();
     expect(effects.notices).toHaveLength(2);

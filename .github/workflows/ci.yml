@@ -178,6 +178,22 @@ jobs:
     name: API-Integration (Postgres, Auth, Replay, Livemap)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16.14-trixie
+        env:
+          POSTGRES_USER: zugfolge
+          POSTGRES_PASSWORD: zugfolge-test
+          POSTGRES_DB: zugfolge_integration
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U zugfolge -d zugfolge_integration"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://zugfolge:zugfolge-test@127.0.0.1:5432/zugfolge_integration
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -189,7 +205,65 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r --stream build
+      - name: Echte PostgreSQL-Migration, Readiness und Weltisolation
+        run: pnpm --filter @zugfolge/db exec vitest run src/postgres.integration.test.ts
       - run: pnpm --filter @zugfolge/game-api test
+      - name: Game-Backup, isolierter Restore und gleicher autoritativer Hash
+        run: |
+          set -euo pipefail
+          mkdir -p test-results/backup
+          sh ops/alpha/backup-game.sh "$TEST_DATABASE_URL" test-results/backup/game.dump test-results/backup/game.manifest.json
+          sh ops/alpha/restore-game.sh 'postgres://zugfolge:zugfolge-test@127.0.0.1:5432/postgres' zugfolge_restore_ci test-results/backup/game.dump
+          node tools/alpha-ops/authoritative-state-hash.mjs "$TEST_DATABASE_URL" 'postgres://zugfolge:zugfolge-test@127.0.0.1:5432/zugfolge_restore_ci' | tee test-results/backup/state-hashes.jsonl
+
+  odoo-19:
+    name: Odoo 19 Add-on (echter getrennter Dienst)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16.14-trixie
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo-test
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U odoo -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Gepinntes OCA-queue_job beziehen
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/oca-queue.tar.gz"
+          extract="${RUNNER_TEMP}/oca-queue-extract"
+          curl --fail --location --retry 3 \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/OCA/queue/tarball/d2c1759102f1e0bc8f6244629b5b38c7b7882f36" \
+            --output "$archive"
+          mkdir -p "$extract" "${RUNNER_TEMP}/oca-queue"
+          tar -xzf "$archive" --strip-components=1 -C "$extract"
+          mv "$extract/queue_job" "${RUNNER_TEMP}/oca-queue/queue_job"
+      - name: Modul installieren und Odoo-Tests ausführen
+        run: |
+          network="$(docker inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}' '${{ job.services.postgres.id }}')"
+          docker build --tag zugfolge-odoo-ci - <<'EOF'
+          FROM odoo:19.0-20260723
+          USER root
+          RUN pip3 install --no-cache-dir --break-system-packages openupgradelib
+          USER odoo
+          EOF
+          docker run --rm --network "$network" --user odoo \
+            -e HOST=postgres -e USER=odoo -e PASSWORD=odoo-test \
+            -v "${RUNNER_TEMP}/oca-queue/queue_job:/mnt/extra-addons/queue_job:ro" \
+            -v "${GITHUB_WORKSPACE}/odoo/addons/zugfolge_admin:/mnt/extra-addons/zugfolge_admin:ro" \
+            zugfolge-odoo-ci \
+            odoo --database=zugfolge_odoo_test --db_host=postgres --db_port=5432 \
+            --db_user=odoo --db_password=odoo-test --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons \
+            --init=queue_job,zugfolge_admin --test-enable --test-tags=/zugfolge_admin --stop-after-init --log-level=test
 
   load:
     name: Lastziel M4.11

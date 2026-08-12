@@ -22,7 +22,9 @@
 //! Alle anderen Knoten liefern nur ihre Koordinate zur Geometrie ihrer Kante.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
+use std::fmt::{self, Write as _};
+
+use sha2::{Digest, Sha256};
 
 use crate::import::element::{OsmNode, OsmNodeId, OsmWay, OsmWayId};
 use crate::import::error::ImportError;
@@ -161,6 +163,72 @@ impl RawGraph {
     /// Anzahl der Kanten.
     pub fn edge_count(&self) -> usize {
         self.edges.len()
+    }
+
+    /// Kanonischer SHA-256-Fingerabdruck des vollstaendigen Rohgraphen.
+    ///
+    /// Die PBF-Blockreihenfolge und die Reihenfolge der Tags beeinflussen den
+    /// Hash nicht: Knoten, Wege und Tags liegen bereits in stabilen
+    /// Ordnungen. Der Hash bindet Quelle, Geometrie und jedes importierte Tag
+    /// und eignet sich damit als reproduzierbarer Pipeline-Nachweis.
+    pub fn checksum(&self) -> String {
+        fn field(hasher: &mut Sha256, value: &[u8]) {
+            hasher.update(u64::try_from(value.len()).unwrap_or(u64::MAX).to_be_bytes());
+            hasher.update(value);
+        }
+        fn tags(hasher: &mut Sha256, values: &BTreeMap<String, String>) {
+            hasher.update(
+                u64::try_from(values.len())
+                    .unwrap_or(u64::MAX)
+                    .to_be_bytes(),
+            );
+            for (key, value) in values {
+                field(hasher, key.as_bytes());
+                field(hasher, value.as_bytes());
+            }
+        }
+
+        let mut hasher = Sha256::new();
+        field(&mut hasher, b"zugfolge-raw-graph/v1");
+        field(&mut hasher, self.source.as_str().as_bytes());
+        hasher.update(
+            u64::try_from(self.nodes.len())
+                .unwrap_or(u64::MAX)
+                .to_be_bytes(),
+        );
+        for node in self.nodes.values() {
+            hasher.update(node.id.value().to_be_bytes());
+            hasher.update(node.coordinate.latitude_e7().to_be_bytes());
+            hasher.update(node.coordinate.longitude_e7().to_be_bytes());
+            tags(&mut hasher, &node.tags);
+        }
+        hasher.update(
+            u64::try_from(self.edges.len())
+                .unwrap_or(u64::MAX)
+                .to_be_bytes(),
+        );
+        for edge in &self.edges {
+            hasher.update(edge.id.value().to_be_bytes());
+            hasher.update(edge.way.value().to_be_bytes());
+            hasher.update(edge.from.value().to_be_bytes());
+            hasher.update(edge.to.value().to_be_bytes());
+            hasher.update(
+                u64::try_from(edge.geometry.len())
+                    .unwrap_or(u64::MAX)
+                    .to_be_bytes(),
+            );
+            for coordinate in &edge.geometry {
+                hasher.update(coordinate.latitude_e7().to_be_bytes());
+                hasher.update(coordinate.longitude_e7().to_be_bytes());
+            }
+            tags(&mut hasher, &edge.tags);
+        }
+        let digest = hasher.finalize();
+        let mut encoded = String::with_capacity(digest.len() * 2);
+        for byte in digest {
+            write!(&mut encoded, "{byte:02x}").expect("writing to a String cannot fail");
+        }
+        encoded
     }
 
     /// Baut einen neuen Rohgraphen aus einer Teilmenge der Kanten dieses
@@ -463,6 +531,8 @@ mod tests {
         assert!(teilgraph.node(OsmNodeId::new(2)).is_some());
         assert!(teilgraph.node(OsmNodeId::new(4)).is_none());
         assert_eq!(teilgraph.source(), graph.source());
+        assert_eq!(graph.checksum(), graph.clone().checksum());
+        assert_ne!(teilgraph.checksum(), graph.checksum());
     }
 
     #[test]

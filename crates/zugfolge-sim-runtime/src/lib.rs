@@ -20,8 +20,9 @@ use sha2::{Digest, Sha256};
 use zugfolge_disruption::{CauseType, delay_cause_code, fine_cause_code};
 use zugfolge_sim::{
     Command, ConservativeDispatcher, DeltaPublisher, DispatchDecision, DispatchTrigger,
-    DisruptionApplication, DomainEvent, EventKind, LiveDelta, LiveSnapshot, MaterializationWindow,
-    OperatingStatus, PublicTrain, SimError, Simulation, TrainCategory, TrainRun, Waypoint,
+    DisruptionApplication, DomainEvent, EventKind, ExternalLegContract, ExternalOperatingStatus,
+    ExternalZone, LiveDelta, LiveSnapshot, MaterializationWindow, OperatingStatus,
+    PublicExternalTrain, PublicTrain, SimError, Simulation, TrainCategory, TrainRun, Waypoint,
 };
 
 pub const INITIALIZE_SCHEMA: &str = "zugfolge-regional-simulation-initialize/v1";
@@ -35,6 +36,7 @@ pub const LIVEMAP_DELTA_SCHEMA: &str = "zugfolge-regional-livemap-delta/v1";
 
 const INTERNAL_WORLD_ID: u64 = 1;
 const INTERNAL_REGION_ID: u32 = 1;
+const EXTERNAL_ZONE_REGION_ID: u32 = u32::MAX;
 const MAX_JSON_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -177,6 +179,34 @@ enum WireCommand {
         #[serde(rename = "disruptionId")]
         disruption_id: String,
     },
+    EnterExternalZone {
+        #[serde(rename = "trainRunId")]
+        train_run_id: String,
+        #[serde(rename = "externalLeg")]
+        external_leg: WireExternalLeg,
+    },
+    ReenterFromExternal {
+        #[serde(rename = "trainRunId")]
+        train_run_id: String,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct WireExternalLeg {
+    journey_chain_id: String,
+    external_leg_id: String,
+    from_portal_id: String,
+    to_portal_id: Option<String>,
+    scheduled_start_s: i64,
+    scheduled_end_s: i64,
+    reentry_earliest_s: Option<i64>,
+    reentry_latest_s: Option<i64>,
+    fixed_cost_cents: String,
+    bound_vehicle_ids: Vec<String>,
+    bound_personnel_duty_ids: Vec<String>,
+    reentry_route: Vec<WaypointInput>,
+    first_resources: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -249,6 +279,7 @@ struct WireSnapshot {
     producer_sequence: u64,
     at_s: i64,
     trains: Vec<WirePublicTrain>,
+    external_trains: Vec<WirePublicExternalTrain>,
     disruptions: Vec<WirePublicDisruption>,
 }
 
@@ -262,8 +293,32 @@ struct WireDelta {
     at_s: i64,
     changed: Vec<WirePublicTrain>,
     removed: Vec<String>,
+    changed_external_trains: Vec<WirePublicExternalTrain>,
+    removed_external_train_ids: Vec<String>,
     changed_disruptions: Vec<WirePublicDisruption>,
     removed_disruption_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WirePublicExternalTrain {
+    id: String,
+    operator: String,
+    train_number: String,
+    category: WireTrainCategory,
+    journey_chain_id: String,
+    external_leg_id: String,
+    from_portal_id: String,
+    to_portal_id: Option<String>,
+    scheduled_end_s: i64,
+    reentry_earliest_s: Option<i64>,
+    reentry_latest_s: Option<i64>,
+    delay_seconds: i64,
+    fixed_cost_cents: String,
+    bound_vehicle_ids: Vec<String>,
+    bound_personnel_duty_ids: Vec<String>,
+    status: &'static str,
+    progress_basis_points: u16,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -305,6 +360,7 @@ struct Machine {
     disruptions: BTreeMap<String, WirePublicDisruption>,
     activated_disruptions: BTreeSet<String>,
     pending_disruption_effects: BTreeMap<String, (Vec<String>, u32)>,
+    external_zone: ExternalZone,
 }
 
 struct Applied {
@@ -414,6 +470,78 @@ fn validate_train(train: &TrainInput) -> Result<(), RuntimeError> {
         }
     }
     Ok(())
+}
+
+fn external_leg_contract(
+    machine: &Machine,
+    train_run_id: &str,
+    input: &WireExternalLeg,
+) -> Result<ExternalLegContract, RuntimeError> {
+    validate_identity(&input.journey_chain_id, "journeyChainId")?;
+    validate_identity(&input.external_leg_id, "externalLegId")?;
+    validate_identity(&input.from_portal_id, "fromPortalId")?;
+    if let Some(to_portal_id) = &input.to_portal_id {
+        validate_identity(to_portal_id, "toPortalId")?;
+    }
+    for vehicle_id in &input.bound_vehicle_ids {
+        validate_identity(vehicle_id, "boundVehicleId")?;
+    }
+    for duty_id in &input.bound_personnel_duty_ids {
+        validate_identity(duty_id, "boundPersonnelDutyId")?;
+    }
+    for resource in &input.first_resources {
+        validate_identity(resource, "firstResource")?;
+    }
+    let fixed_cost_cents = input.fixed_cost_cents.parse::<i64>().map_err(|_| {
+        RuntimeError::new(
+            "invalid_external_leg",
+            "fixedCostCents ist keine i64-Dezimalzahl",
+        )
+    })?;
+    let internal_id = machine
+        .internal_by_external
+        .get(train_run_id)
+        .copied()
+        .ok_or_else(|| RuntimeError::new("unknown_train", train_run_id.to_owned()))?;
+    let reentry_route = input
+        .reentry_route
+        .iter()
+        .map(|point| Waypoint {
+            operating_point: point.operating_point.clone(),
+            position_mm: point.position_mm,
+            arrival: point.arrival_s,
+            minimum_dwell_seconds: point.minimum_dwell_seconds,
+            departure: point.departure_s,
+        })
+        .collect::<Vec<_>>();
+    if !reentry_route.is_empty() {
+        let probe = TrainInput {
+            train_run_id: train_run_id.to_owned(),
+            operator: "external-zone".into(),
+            train_number: internal_id.to_string(),
+            category: WireTrainCategory::Regional,
+            route: input.reentry_route.clone(),
+        };
+        validate_train(&probe)?;
+    }
+    Ok(ExternalLegContract {
+        world_id: INTERNAL_WORLD_ID,
+        journey_chain_id: input.journey_chain_id.clone(),
+        external_leg_id: input.external_leg_id.clone(),
+        source_region: INTERNAL_REGION_ID,
+        target_region: (!reentry_route.is_empty()).then_some(INTERNAL_REGION_ID),
+        from_portal: input.from_portal_id.clone(),
+        to_portal: input.to_portal_id.clone(),
+        scheduled_start: input.scheduled_start_s,
+        scheduled_end: input.scheduled_end_s,
+        reentry_earliest: input.reentry_earliest_s,
+        reentry_latest: input.reentry_latest_s,
+        fixed_cost_cents,
+        bound_vehicle_ids: input.bound_vehicle_ids.clone(),
+        bound_personnel_duty_ids: input.bound_personnel_duty_ids.clone(),
+        reentry_route,
+        first_resources: input.first_resources.clone(),
+    })
 }
 
 fn canonical_hash<T: Serialize>(domain: &str, value: &T) -> Result<String, RuntimeError> {
@@ -654,6 +782,36 @@ fn wire_train(machine: &Machine, train: PublicTrain) -> Result<WirePublicTrain, 
     })
 }
 
+fn wire_external_train(
+    machine: &Machine,
+    train: PublicExternalTrain,
+) -> Result<WirePublicExternalTrain, RuntimeError> {
+    Ok(WirePublicExternalTrain {
+        id: external_train_id(machine, train.id)?,
+        operator: train.operator,
+        train_number: train.train_number,
+        category: WireTrainCategory::from(&train.category),
+        journey_chain_id: train.journey_chain_id,
+        external_leg_id: train.external_leg_id,
+        from_portal_id: train.from_portal,
+        to_portal_id: train.to_portal,
+        scheduled_end_s: train.scheduled_end,
+        reentry_earliest_s: train.reentry_earliest,
+        reentry_latest_s: train.reentry_latest,
+        delay_seconds: train.delay_seconds,
+        fixed_cost_cents: train.fixed_cost_cents.to_string(),
+        bound_vehicle_ids: train.bound_vehicle_ids,
+        bound_personnel_duty_ids: train.bound_personnel_duty_ids,
+        status: match train.status {
+            ExternalOperatingStatus::Outside => "outside",
+            ExternalOperatingStatus::ReadyAtBoundary => "ready-at-boundary",
+            ExternalOperatingStatus::WaitingForCapacity => "waiting-for-capacity",
+            ExternalOperatingStatus::CompletedOutside => "completed-outside",
+        },
+        progress_basis_points: train.progress_basis_points,
+    })
+}
+
 fn wire_snapshot(
     state: &RuntimeState,
     machine: &Machine,
@@ -672,6 +830,12 @@ fn wire_snapshot(
         producer_sequence,
         at_s: snapshot.at,
         trains,
+        external_trains: machine
+            .external_zone
+            .snapshot()
+            .into_iter()
+            .map(|train| wire_external_train(machine, train))
+            .collect::<Result<Vec<_>, _>>()?,
         disruptions: machine
             .disruptions
             .values()
@@ -687,6 +851,7 @@ fn wire_delta(
     delta: LiveDelta,
     changed_disruptions: Vec<WirePublicDisruption>,
     removed_disruption_ids: Vec<String>,
+    previous_external_trains: &[PublicExternalTrain],
 ) -> Result<WireDelta, RuntimeError> {
     let changed = delta
         .changed
@@ -698,6 +863,26 @@ fn wire_delta(
         .into_iter()
         .map(|id| external_train_id(machine, id))
         .collect::<Result<Vec<_>, _>>()?;
+    let current_external = machine.external_zone.snapshot();
+    let previous_by_id = previous_external_trains
+        .iter()
+        .map(|train| (train.id, train))
+        .collect::<BTreeMap<_, _>>();
+    let current_by_id = current_external
+        .iter()
+        .map(|train| (train.id, train))
+        .collect::<BTreeMap<_, _>>();
+    let changed_external_trains = current_external
+        .iter()
+        .filter(|train| previous_by_id.get(&train.id).copied() != Some(train))
+        .cloned()
+        .map(|train| wire_external_train(machine, train))
+        .collect::<Result<Vec<_>, _>>()?;
+    let removed_external_train_ids = previous_by_id
+        .keys()
+        .filter(|id| !current_by_id.contains_key(id))
+        .map(|id| external_train_id(machine, *id))
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(WireDelta {
         schema_version: LIVEMAP_DELTA_SCHEMA,
         world_id: state.world_id.clone(),
@@ -706,6 +891,8 @@ fn wire_delta(
         at_s: delta.at,
         changed,
         removed,
+        changed_external_trains,
+        removed_external_train_ids,
         changed_disruptions,
         removed_disruption_ids,
     })
@@ -874,13 +1061,37 @@ fn wire_events(
         .collect()
 }
 
+fn external_wire_event(
+    state: &RuntimeState,
+    machine: &Machine,
+    train_run_id: &str,
+    external_leg_id: &str,
+    event_type: &'static str,
+    payload: Value,
+) -> WireEvent {
+    WireEvent {
+        event_id: format!(
+            "external:{}:{}:{}:{}:{}",
+            state.world_id, state.region_id, train_run_id, external_leg_id, event_type
+        ),
+        world_id: state.world_id.clone(),
+        region_id: state.region_id.clone(),
+        simulation_sequence: machine.simulation.snapshot().sequence,
+        event_type,
+        at_s: machine.simulation.snapshot().at,
+        payload,
+    }
+}
+
 fn apply_wire_command(
     state: &RuntimeState,
     machine: &mut Machine,
     command: &WireCommand,
 ) -> Result<Applied, RuntimeError> {
     let previous_disruption_ids: BTreeSet<String> = machine.disruptions.keys().cloned().collect();
+    let previous_external_trains = machine.external_zone.snapshot();
     let mut changed_disruptions = Vec::new();
+    let mut additional_events = Vec::new();
     let events = match command {
         WireCommand::Materialize { train } => {
             let internal_id = allocate_train(machine, train)?;
@@ -888,7 +1099,11 @@ fn apply_wire_command(
                 .simulation
                 .apply(Command::Materialize(make_train(train, internal_id)))?
         }
-        WireCommand::AdvanceTo { at_s } => advance_with_pending_disruptions(machine, *at_s)?,
+        WireCommand::AdvanceTo { at_s } => {
+            let events = advance_with_pending_disruptions(machine, *at_s)?;
+            machine.external_zone.advance_to(*at_s)?;
+            events
+        }
         WireCommand::AddDelay {
             train_run_id,
             seconds,
@@ -962,6 +1177,78 @@ fn apply_wire_command(
             machine.disruptions.remove(disruption_id);
             Vec::new()
         }
+        WireCommand::EnterExternalZone {
+            train_run_id,
+            external_leg,
+        } => {
+            let contract = external_leg_contract(machine, train_run_id, external_leg)?;
+            let internal_id = machine
+                .internal_by_external
+                .get(train_run_id)
+                .copied()
+                .ok_or_else(|| RuntimeError::new("unknown_train", train_run_id.clone()))?;
+            let (envelope, requested) = machine
+                .simulation
+                .prepare_handover(internal_id, EXTERNAL_ZONE_REGION_ID)?;
+            let confirmation = machine.external_zone.accept_handover(&envelope, contract)?;
+            let mut domain_events = vec![requested];
+            domain_events.extend(machine.simulation.apply(confirmation)?);
+            additional_events.push(external_wire_event(
+                state,
+                machine,
+                train_run_id,
+                &external_leg.external_leg_id,
+                "simulation.external-leg-entered",
+                json!({
+                    "trainRunId": train_run_id,
+                    "journeyChainId": external_leg.journey_chain_id,
+                    "externalLegId": external_leg.external_leg_id,
+                    "fromPortalId": external_leg.from_portal_id,
+                    "toPortalId": external_leg.to_portal_id,
+                    "scheduledEndS": external_leg.scheduled_end_s,
+                    "fixedCostCents": external_leg.fixed_cost_cents,
+                    "boundVehicleIds": external_leg.bound_vehicle_ids,
+                    "boundPersonnelDutyIds": external_leg.bound_personnel_duty_ids,
+                    "outsidePenaltyApplied": false,
+                }),
+            ));
+            domain_events
+        }
+        WireCommand::ReenterFromExternal { train_run_id } => {
+            let internal_id = machine
+                .internal_by_external
+                .get(train_run_id)
+                .copied()
+                .ok_or_else(|| RuntimeError::new("unknown_train", train_run_id.clone()))?;
+            let external = machine
+                .external_zone
+                .snapshot()
+                .into_iter()
+                .find(|train| train.id == internal_id)
+                .ok_or_else(|| RuntimeError::new("unknown_external_train", train_run_id.clone()))?;
+            let envelope = machine.external_zone.prepare_reentry(internal_id)?;
+            machine.simulation.accept_handover(&envelope)?;
+            machine
+                .external_zone
+                .confirm_reentry(internal_id, envelope.token)?;
+            additional_events.push(external_wire_event(
+                state,
+                machine,
+                train_run_id,
+                &external.external_leg_id,
+                "simulation.external-leg-reentered",
+                json!({
+                    "trainRunId": train_run_id,
+                    "journeyChainId": external.journey_chain_id,
+                    "externalLegId": external.external_leg_id,
+                    "fromPortalId": external.from_portal,
+                    "toPortalId": external.to_portal,
+                    "delaySeconds": external.delay_seconds,
+                    "outsidePenaltyApplied": false,
+                }),
+            ));
+            Vec::new()
+        }
     };
     let now = machine.simulation.snapshot().at;
     machine
@@ -973,14 +1260,17 @@ fn apply_wire_command(
         .cloned()
         .collect();
     let delta = machine.publisher.publish(&machine.simulation.snapshot())?;
+    let mut events = wire_events(state, machine, events)?;
+    events.extend(additional_events);
     Ok(Applied {
-        events: wire_events(state, machine, events)?,
+        events,
         delta: wire_delta(
             state,
             machine,
             delta,
             changed_disruptions,
             removed_disruption_ids,
+            &previous_external_trains,
         )?,
     })
 }
@@ -1025,6 +1315,11 @@ fn build_machine(
         disruptions: BTreeMap::new(),
         activated_disruptions: BTreeSet::new(),
         pending_disruption_effects: BTreeMap::new(),
+        external_zone: ExternalZone::new(
+            INTERNAL_WORLD_ID,
+            EXTERNAL_ZONE_REGION_ID,
+            state.initial_now_s,
+        ),
     };
     let mut initial_domain_events = Vec::new();
     for train in &state.initial_trains {
@@ -1373,6 +1668,88 @@ mod tests {
             removed["delta"]["removed"].as_array().map(Vec::len),
             Some(2)
         );
+    }
+
+    #[test]
+    fn external_leg_is_productive_replayable_and_reenters_only_through_resources() {
+        let initialized = initialize("11111111-1111-4111-8111-111111111111");
+        let advanced = apply(
+            &initialized,
+            "advance-to-boundary",
+            json!({ "type": "advance-to", "atS": 4_000 }),
+        );
+        let entered = apply(
+            &advanced,
+            "enter-external",
+            json!({
+                "type": "enter-external-zone",
+                "trainRunId": "pattern-1:trip-1:20260811:4600",
+                "externalLeg": {
+                    "journeyChainId": "jc-re1",
+                    "externalLegId": "el-b-c",
+                    "fromPortalId": "B",
+                    "toPortalId": "C",
+                    "scheduledStartS": 3_730,
+                    "scheduledEndS": 5_000,
+                    "reentryEarliestS": 4_900,
+                    "reentryLatestS": 5_300,
+                    "fixedCostCents": "10500",
+                    "boundVehicleIds": ["vehicle-1"],
+                    "boundPersonnelDutyIds": ["duty-1"],
+                    "reentryRoute": [
+                        { "operatingPoint": "C", "positionMm": 0, "arrivalS": 5_000, "minimumDwellSeconds": 30, "departureS": 5_030 },
+                        { "operatingPoint": "D", "positionMm": 3_000_000, "arrivalS": 5_600, "minimumDwellSeconds": 30, "departureS": 5_630 }
+                    ],
+                    "firstResources": ["block:C:entry"]
+                }
+            }),
+        );
+        assert_eq!(
+            entered["delta"]["removed"],
+            json!(["pattern-1:trip-1:20260811:4600"])
+        );
+        assert_eq!(
+            entered["delta"]["changedExternalTrains"][0]["status"],
+            "outside"
+        );
+        assert!(
+            entered["events"]
+                .as_array()
+                .is_some_and(|events| events.iter().any(|event| {
+                    event["eventType"] == "simulation.external-leg-entered"
+                        && event["payload"]["outsidePenaltyApplied"] == false
+                }))
+        );
+
+        let ready = apply(
+            &entered,
+            "advance-external",
+            json!({ "type": "advance-to", "atS": 5_100 }),
+        );
+        assert_eq!(
+            ready["delta"]["changedExternalTrains"][0]["status"],
+            "ready-at-boundary"
+        );
+        let reentered = apply(
+            &ready,
+            "reenter",
+            json!({
+                "type": "reenter-from-external",
+                "trainRunId": "pattern-1:trip-1:20260811:4600"
+            }),
+        );
+        assert_eq!(
+            reentered["delta"]["removedExternalTrainIds"],
+            json!(["pattern-1:trip-1:20260811:4600"])
+        );
+        assert_eq!(reentered["delta"]["changed"][0]["nextOperatingPoint"], "C");
+        let restored: Value = serde_json::from_str(
+            &restore_regional_simulation(&reentered["state"].to_string()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(restored["stateHash"], reentered["stateHash"]);
+        assert_eq!(restored["snapshot"]["externalTrains"], json!([]));
+        assert_eq!(restored["snapshot"]["trains"][0]["nextOperatingPoint"], "C");
     }
 
     #[test]

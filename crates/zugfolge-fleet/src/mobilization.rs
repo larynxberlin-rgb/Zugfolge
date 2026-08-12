@@ -58,6 +58,7 @@ impl MobilizationProcurement {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MobilizationTraction {
+    Unpowered,
     Electric,
     Diesel,
     Battery,
@@ -67,6 +68,7 @@ pub enum MobilizationTraction {
 impl MobilizationTraction {
     const fn as_str(self) -> &'static str {
         match self {
+            Self::Unpowered => "unpowered",
             Self::Electric => "electric",
             Self::Diesel => "diesel",
             Self::Battery => "battery",

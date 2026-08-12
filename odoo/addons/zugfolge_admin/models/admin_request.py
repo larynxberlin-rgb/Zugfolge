@@ -17,7 +17,14 @@ class ZugfolgeAdminRequest(models.Model):
     name = fields.Char(compute="_compute_name", store=True)
     world_projection_id = fields.Many2one("zugfolge.world.projection", required=True, ondelete="restrict", index=True)
     action_type = fields.Selection(
-        [("world_access_revoke", "Weltzugang entziehen"), ("infra_release_adoption", "InfraRelease zur Periode uebernehmen"), ("manual_disruption_create", "Manuelle Stoerung anlegen")],
+        [
+            ("world_access_revoke", "Weltzugang entziehen"),
+            ("infra_release_adoption", "InfraRelease zur Periode uebernehmen"),
+            ("manual_disruption_create", "Manuelle Stoerung anlegen"),
+            ("abuse_sanction_activate", "Schwere Missbrauchsmassnahme aktivieren"),
+            ("world_close", "Weltabschluss einleiten"),
+            ("tutorial_account_reset", "Tutorialkonto zuruecksetzen"),
+        ],
         required=True,
         tracking=True,
     )
@@ -38,6 +45,8 @@ class ZugfolgeAdminRequest(models.Model):
     game_result = fields.Json(readonly=True, copy=False)
     release_hash = fields.Char()
     requested_period_start = fields.Datetime()
+    target_reference = fields.Char()
+    requested_at_s = fields.Integer()
     game_capability_state = fields.Selection(
         [("prepared", "Vorbereitet: Game-Milestone fehlt"), ("available", "Vom Game ausfuehrbar"), ("unavailable", "Vom Game vorlaeufig nicht verfuegbar")],
         compute="_compute_game_capability", readonly=True,
@@ -65,7 +74,7 @@ class ZugfolgeAdminRequest(models.Model):
             record.game_capability_state = capability.availability if capability else "prepared"
             record.game_capability_detail = capability.detail if capability else "Game-Implementierung und signierte Faehigkeitsprojektion stehen noch aus."
 
-    @api.constrains("reason", "risk_class", "requester_id", "approver_id", "action_type", "release_hash", "requested_period_start", "manual_disruption_start", "manual_disruption_end", "manual_disruption_cause", "manual_disruption_resource_ids", "manual_disruption_effect")
+    @api.constrains("reason", "risk_class", "requester_id", "approver_id", "action_type", "release_hash", "requested_period_start", "target_reference", "requested_at_s", "manual_disruption_start", "manual_disruption_end", "manual_disruption_cause", "manual_disruption_resource_ids", "manual_disruption_effect")
     def _check_authoritative_shape(self):
         for record in self:
             if not record.reason or not record.reason.strip():
@@ -87,6 +96,12 @@ class ZugfolgeAdminRequest(models.Model):
                     raise ValidationError(_("Manuelle Stoerungen brauchen betroffene Ressourcen mit stabilen Bezeichnern."))
                 if not isinstance(record.manual_disruption_effect, dict) or not record.manual_disruption_effect:
                     raise ValidationError(_("Manuelle Stoerungen brauchen eine deklarierte Wirkung."))
+            if record.action_type in ("abuse_sanction_activate", "world_close") and record.risk_class != "high":
+                raise ValidationError(_("Schwere Sanktionen und Weltende sind immer hochriskant."))
+            if record.action_type in ("world_access_revoke", "abuse_sanction_activate", "tutorial_account_reset") and not (record.target_reference or "").strip():
+                raise ValidationError(_("Die Verwaltungsaktion braucht eine stabile Zielreferenz."))
+            if record.action_type in ("world_close", "tutorial_account_reset") and (record.requested_at_s is None or record.requested_at_s < 0):
+                raise ValidationError(_("Die Verwaltungsaktion braucht eine gueltige Simulationszeit."))
 
     def _require_state(self, expected):
         if any(record.state != expected for record in self):
@@ -134,6 +149,8 @@ class ZugfolgeAdminRequest(models.Model):
                 "effectPreview": record.effect_preview,
                 "releaseHash": record.release_hash or None,
                 "requestedPeriodStart": record.requested_period_start.isoformat() if record.requested_period_start else None,
+                "targetReference": record.target_reference or None,
+                "requestedAtS": record.requested_at_s,
             }
             if record.action_type == "manual_disruption_create":
                 payload["manualDisruption"] = {

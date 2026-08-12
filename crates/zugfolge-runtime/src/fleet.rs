@@ -10,17 +10,18 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zugfolge_fleet::{
-    Duty, DutyRoster, FLEET_MOBILIZATION_SCHEMA, FleetSnapshot, Formation, FormationVehicle,
-    MaintenanceDeadline, MaintenanceRule, MaintenanceState, MobilizationAvailability,
-    MobilizationCharacteristics, MobilizationDutyStatus, MobilizationFormation,
-    MobilizationPathReservation, MobilizationPathStatus, MobilizationPersonnelDuty,
-    MobilizationProcurement, MobilizationSnapshot, NeedLimits, PersonnelPool, PlannedService,
-    ProcurementChannel, RotationActivity, RotationLeg, RotationPlan, VehicleApproval, VehicleAsset,
-    VehicleNeeds, VehicleReadiness, VehicleTechnicalData, validate_timetable_release,
+    ControlStandConfiguration, Duty, DutyRoster, FLEET_MOBILIZATION_SCHEMA, FleetSnapshot,
+    Formation, FormationDynamics, FormationVehicle, MaintenanceDeadline, MaintenanceRule,
+    MaintenanceState, MobilizationAvailability, MobilizationCharacteristics,
+    MobilizationDutyStatus, MobilizationFormation, MobilizationPathReservation,
+    MobilizationPathStatus, MobilizationPersonnelDuty, MobilizationProcurement,
+    MobilizationSnapshot, NeedLimits, PersonnelPool, PlannedService, ProcurementChannel,
+    RotationActivity, RotationLeg, RotationPlan, VehicleApproval, VehicleAsset, VehicleNeeds,
+    VehicleReadiness, VehicleTechnicalData, validate_timetable_release,
 };
 use zugfolge_infra::{
-    Acceleration, ElectricSystems, Electrification, FleetClass, Length, Mass, PowerSystem,
-    ProtectionSystem, Speed, TractionType, TrainCharacteristicsId, TrainProtection,
+    Acceleration, ElectricSystems, Electrification, FleetClass, Force, Length, Mass, Power,
+    PowerSystem, ProtectionSystem, Speed, TractionType, TrainCharacteristicsId, TrainProtection,
 };
 
 use super::{RuntimeError, parse_json, sha256_json, to_json};
@@ -32,6 +33,7 @@ const AUTHORITY_RELEASE_SCHEMA: &str = "zugfolge-fleet-authority-release/v1";
 const FORMATION_COMMAND_SCHEMA: &str = "zugfolge-fleet-form-vehicles-command/v2";
 const PERSONNEL_DUTY_COMMAND_SCHEMA: &str = "zugfolge-fleet-assign-duty-command/v2";
 const PATH_RESERVATION_COMMAND_SCHEMA: &str = "zugfolge-fleet-attach-path-command/v2";
+const ASSET_TRANSFER_COMMAND_SCHEMA: &str = "zugfolge-fleet-transfer-asset-command/v1";
 const FLEET_RESULT_SCHEMA: &str = "zugfolge-fleet-command-result/v2";
 const FLEET_RECEIPT_SCHEMA: &str = "zugfolge-fleet-command-receipt/v1";
 const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
@@ -99,9 +101,36 @@ impl From<AuthorityPowerSystem> for PowerSystem {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum AuthorityTraction {
+    Unpowered,
     Electric,
     Diesel,
     Battery,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum AuthorityVehicleRole {
+    #[default]
+    PoweredUnit,
+    Locomotive,
+    Coach,
+    ControlCar,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AuthorityControlStands {
+    front: bool,
+    rear: bool,
+}
+
+impl Default for AuthorityControlStands {
+    fn default() -> Self {
+        Self {
+            front: true,
+            rear: true,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -147,10 +176,25 @@ struct AuthorityTechnicalData {
     length_mm: i64,
     mass_kg: i64,
     maximum_speed_kph: u16,
+    /// Legacy-Referenzprofil. Neue Katalogdaten dürfen die Werte auslassen
+    /// und liefern die Fahrdynamik erst für die konkrete Formation.
+    #[serde(default)]
     acceleration_mm_per_s2: i64,
+    /// Legacy-Referenzprofil; siehe `acceleration_mm_per_s2`.
+    #[serde(default)]
     deceleration_mm_per_s2: i64,
+    #[serde(default)]
+    continuous_power_kw: i64,
+    #[serde(default)]
+    starting_tractive_effort_kn: i64,
+    #[serde(default)]
+    brake_weight_kg: i64,
     traction: AuthorityTraction,
     electric_systems: Vec<AuthorityPowerSystem>,
+    #[serde(default)]
+    role: AuthorityVehicleRole,
+    #[serde(default)]
+    control_stands: AuthorityControlStands,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -236,6 +280,14 @@ struct InitializeFleetWorld {
     world_id: String,
     produced_at: u64,
     authority_release: FleetAuthorityRelease,
+    /// Vollstaendiger Eigenbetriebsbestand bei Weltsimulationssekunde null.
+    /// Optional und damit rueckwaertskompatibel fuer bestehende M5-Aufrufer.
+    #[serde(default)]
+    formations: Vec<FormationIntent>,
+    #[serde(default)]
+    personnel_duties: Vec<PersonnelDutyIntent>,
+    #[serde(default)]
+    path_reservations: Vec<PathReservationIntent>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -244,6 +296,18 @@ struct FormationIntent {
     id: String,
     vehicle_ids: Vec<String>,
     path_receipt_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    dynamics: Option<AuthorityFormationDynamics>,
+}
+
+/// Das signierte, formationsbezogene Bewegungsprofil. Es gehört nicht in den
+/// Stammdatensatz einer Lokomotive, weil deren wirksame Beschleunigung und
+/// Bremsung von der gekuppelten Gesamtmasse und Bremsstellung abhängen.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AuthorityFormationDynamics {
+    acceleration_mm_per_s2: i64,
+    deceleration_mm_per_s2: i64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -264,6 +328,26 @@ struct PathReservationIntent {
     path_receipt_id: String,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum AssetTransferType {
+    Sale,
+    RentalStart,
+    RentalReturn,
+    Reversal,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AssetHolding {
+    owner_operator_id: String,
+    holder_operator_id: String,
+    lessor_operator_id: Option<String>,
+    contract_id: Option<String>,
+    valid_until_s: Option<u64>,
+    history_hash: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct FormationCommand {
@@ -276,6 +360,8 @@ struct FormationCommand {
     formation_id: String,
     vehicle_ids: Vec<String>,
     path_receipt_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    dynamics: Option<AuthorityFormationDynamics>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -308,6 +394,27 @@ struct PathReservationCommand {
     path_receipt_id: String,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AssetTransferCommand {
+    schema_version: String,
+    world_id: String,
+    command_id: String,
+    expected_state_hash: String,
+    expected_revision: u64,
+    at_s: u64,
+    vehicle_id: String,
+    transfer_type: AssetTransferType,
+    from_owner_operator_id: String,
+    to_owner_operator_id: String,
+    from_holder_operator_id: String,
+    to_holder_operator_id: String,
+    lessor_operator_id: Option<String>,
+    contract_id: Option<String>,
+    valid_until_s: Option<u64>,
+    transfer_receipt_hash: String,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CommandHeader {
@@ -320,6 +427,7 @@ enum FleetCommand {
     Formation(FormationCommand),
     PersonnelDuty(PersonnelDutyCommand),
     PathReservation(PathReservationCommand),
+    AssetTransfer(AssetTransferCommand),
 }
 
 impl FleetCommand {
@@ -328,6 +436,7 @@ impl FleetCommand {
             Self::Formation(command) => command.vehicle_ids.sort(),
             Self::PersonnelDuty(command) => command.formation_ids.sort(),
             Self::PathReservation(_) => {}
+            Self::AssetTransfer(_) => {}
         }
     }
 
@@ -336,6 +445,7 @@ impl FleetCommand {
             Self::Formation(command) => &command.world_id,
             Self::PersonnelDuty(command) => &command.world_id,
             Self::PathReservation(command) => &command.world_id,
+            Self::AssetTransfer(command) => &command.world_id,
         }
     }
 
@@ -344,6 +454,7 @@ impl FleetCommand {
             Self::Formation(command) => &command.command_id,
             Self::PersonnelDuty(command) => &command.command_id,
             Self::PathReservation(command) => &command.command_id,
+            Self::AssetTransfer(command) => &command.command_id,
         }
     }
 
@@ -352,6 +463,7 @@ impl FleetCommand {
             Self::Formation(command) => command.expected_revision,
             Self::PersonnelDuty(command) => command.expected_revision,
             Self::PathReservation(command) => command.expected_revision,
+            Self::AssetTransfer(command) => command.expected_revision,
         }
     }
 
@@ -360,6 +472,7 @@ impl FleetCommand {
             Self::Formation(command) => &command.expected_state_hash,
             Self::PersonnelDuty(command) => &command.expected_state_hash,
             Self::PathReservation(command) => &command.expected_state_hash,
+            Self::AssetTransfer(command) => &command.expected_state_hash,
         }
     }
 
@@ -368,6 +481,7 @@ impl FleetCommand {
             Self::Formation(command) => command.at_s,
             Self::PersonnelDuty(command) => command.at_s,
             Self::PathReservation(command) => command.at_s,
+            Self::AssetTransfer(command) => command.at_s,
         }
     }
 
@@ -376,6 +490,7 @@ impl FleetCommand {
             Self::Formation(_) => "formation",
             Self::PersonnelDuty(_) => "personnel-duty",
             Self::PathReservation(_) => "path-reservation",
+            Self::AssetTransfer(_) => "asset-holding",
         }
     }
 
@@ -384,6 +499,7 @@ impl FleetCommand {
             Self::Formation(command) => &command.formation_id,
             Self::PersonnelDuty(command) => &command.personnel_duty_id,
             Self::PathReservation(command) => &command.path_reservation_id,
+            Self::AssetTransfer(command) => &command.vehicle_id,
         }
     }
 }
@@ -400,6 +516,8 @@ struct FleetWorldState {
     formations: BTreeMap<String, FormationIntent>,
     personnel_duties: BTreeMap<String, PersonnelDutyIntent>,
     path_reservations: BTreeMap<String, PathReservationIntent>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    asset_holdings: BTreeMap<String, AssetHolding>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -655,11 +773,30 @@ fn validate_release(release: &FleetAuthorityRelease) -> Result<(), RuntimeError>
                 "authorityRelease.assets[].maintenanceDeadlines[].dueAt",
             )?;
         }
+        // Beschleunigung und Bremsvermögen sind bei einer Lokomotive keine
+        // festen Fahrzeugwerte: Sie hängen vom gekuppelten Wagenpark ab.
+        // Alte Releases dürfen dafür weiter ein Referenzprofil führen; neue
+        // Katalogdaten dürfen beide Werte mit null auslassen, wenn Leistung
+        // und Anfahrzugkraft als physische Grundlage vorhanden sind. Der
+        // Dienst erhält dann ein separates FormationDynamics-Profil.
+        let unpowered = matches!(asset.technical.traction, AuthorityTraction::Unpowered);
+        let has_legacy_dynamics = asset.technical.acceleration_mm_per_s2 > 0
+            && asset.technical.deceleration_mm_per_s2 > 0;
+        let missing_legacy_dynamics = asset.technical.acceleration_mm_per_s2 == 0
+            && asset.technical.deceleration_mm_per_s2 == 0;
+        let has_raw_propulsion = asset.technical.continuous_power_kw > 0
+            && asset.technical.starting_tractive_effort_kn > 0;
         if asset.technical.length_mm <= 0
             || asset.technical.mass_kg <= 0
             || asset.technical.maximum_speed_kph == 0
-            || asset.technical.acceleration_mm_per_s2 <= 0
-            || asset.technical.deceleration_mm_per_s2 <= 0
+            || (!unpowered && !has_legacy_dynamics && !missing_legacy_dynamics)
+            || (!unpowered && missing_legacy_dynamics && !has_raw_propulsion)
+            || (unpowered
+                && (asset.technical.acceleration_mm_per_s2 != 0
+                    || asset.technical.deceleration_mm_per_s2 != 0))
+            || asset.technical.continuous_power_kw < 0
+            || asset.technical.starting_tractive_effort_kn < 0
+            || asset.technical.brake_weight_kg < 0
         {
             return Err(invalid(
                 "Authority-Asset besitzt ungueltige technische Daten",
@@ -672,7 +809,70 @@ fn validate_release(release: &FleetAuthorityRelease) -> Result<(), RuntimeError>
                 "Authority-Asset besitzt inkonsistente elektrische Systeme",
             ));
         }
-        if asset.passenger.seats == 0 || asset.passenger.first_class_seats > asset.passenger.seats {
+        if !matches!(asset.technical.traction, AuthorityTraction::Electric)
+            && !asset.technical.electric_systems.is_empty()
+        {
+            return Err(invalid(
+                "Nur elektrische Assets duerfen elektrische Systeme tragen",
+            ));
+        }
+        if asset
+            .installed_protection
+            .contains(&AuthorityProtectionSystem::Lzb)
+            && !asset
+                .installed_protection
+                .contains(&AuthorityProtectionSystem::Pzb)
+        {
+            return Err(invalid(
+                "LZB darf nur zusammen mit PZB im Authority-Asset stehen",
+            ));
+        }
+        let has_baseline_protection = asset.installed_protection.iter().any(|system| {
+            matches!(
+                system,
+                AuthorityProtectionSystem::Pzb
+                    | AuthorityProtectionSystem::EtcsLevel1
+                    | AuthorityProtectionSystem::EtcsLevel2
+            )
+        });
+        if !matches!(asset.technical.role, AuthorityVehicleRole::Coach) && !has_baseline_protection
+        {
+            return Err(invalid(
+                "Fuehrendes oder angetriebenes Authority-Asset besitzt weder PZB noch ETCS",
+            ));
+        }
+        match asset.technical.role {
+            AuthorityVehicleRole::Coach => {
+                if asset.technical.traction != AuthorityTraction::Unpowered
+                    || asset.technical.control_stands.front
+                    || asset.technical.control_stands.rear
+                {
+                    return Err(invalid(
+                        "Reisezugwagen muss nicht angetrieben und ohne Fuehrerstand sein",
+                    ));
+                }
+            }
+            AuthorityVehicleRole::ControlCar => {
+                if asset.technical.traction != AuthorityTraction::Unpowered
+                    || (!asset.technical.control_stands.front
+                        && !asset.technical.control_stands.rear)
+                {
+                    return Err(invalid(
+                        "Steuerwagen braucht mindestens einen Fuehrerstand und keine Traktion",
+                    ));
+                }
+            }
+            AuthorityVehicleRole::Locomotive | AuthorityVehicleRole::PoweredUnit => {
+                if asset.technical.traction == AuthorityTraction::Unpowered {
+                    return Err(invalid(
+                        "Angetriebenes Authority-Asset besitzt keine Traktion",
+                    ));
+                }
+            }
+        }
+        if (asset.technical.role != AuthorityVehicleRole::Locomotive && asset.passenger.seats == 0)
+            || asset.passenger.first_class_seats > asset.passenger.seats
+        {
             return Err(invalid("Authority-Asset besitzt ungueltige Fahrgastdaten"));
         }
     }
@@ -796,6 +996,7 @@ fn parse_command(json: &str) -> Result<FleetCommand, RuntimeError> {
         FORMATION_COMMAND_SCHEMA => parse_json(json).map(FleetCommand::Formation),
         PERSONNEL_DUTY_COMMAND_SCHEMA => parse_json(json).map(FleetCommand::PersonnelDuty),
         PATH_RESERVATION_COMMAND_SCHEMA => parse_json(json).map(FleetCommand::PathReservation),
+        ASSET_TRANSFER_COMMAND_SCHEMA => parse_json(json).map(FleetCommand::AssetTransfer),
         schema => Err(RuntimeError::new("unsupported_schema", schema)),
     }?;
     command.normalize();
@@ -831,6 +1032,7 @@ fn confirmed_receipt<'a>(
 
 fn traction(technical: &AuthorityTechnicalData) -> Result<TractionType, RuntimeError> {
     match technical.traction {
+        AuthorityTraction::Unpowered => Ok(TractionType::Unpowered),
         AuthorityTraction::Electric => ElectricSystems::from_systems(
             technical.electric_systems.iter().copied().map(Into::into),
         )
@@ -838,6 +1040,15 @@ fn traction(technical: &AuthorityTechnicalData) -> Result<TractionType, RuntimeE
         .map_err(|error| invalid(format!("ungueltige elektrische Systeme: {error}"))),
         AuthorityTraction::Diesel => Ok(TractionType::Diesel),
         AuthorityTraction::Battery => Ok(TractionType::BatteryElectric),
+    }
+}
+
+fn vehicle_role(role: AuthorityVehicleRole) -> zugfolge_fleet::VehicleRole {
+    match role {
+        AuthorityVehicleRole::Locomotive => zugfolge_fleet::VehicleRole::Locomotive,
+        AuthorityVehicleRole::PoweredUnit => zugfolge_fleet::VehicleRole::PoweredUnit,
+        AuthorityVehicleRole::Coach => zugfolge_fleet::VehicleRole::Coach,
+        AuthorityVehicleRole::ControlCar => zugfolge_fleet::VehicleRole::ControlCar,
     }
 }
 
@@ -902,8 +1113,28 @@ fn technical_data(source: &AuthorityVehicleAsset) -> Result<VehicleTechnicalData
         deceleration: Acceleration::from_millimetres_per_second_squared(
             source.technical.deceleration_mm_per_s2,
         ),
+        continuous_power: Power::from_kilowatts(source.technical.continuous_power_kw),
+        starting_tractive_effort: Force::from_kilonewtons(
+            source.technical.starting_tractive_effort_kn,
+        ),
+        brake_weight: Mass::from_kilograms(source.technical.brake_weight_kg),
         traction: traction(&source.technical)?,
+        role: vehicle_role(source.technical.role),
+        control_stands: ControlStandConfiguration {
+            front: source.technical.control_stands.front,
+            rear: source.technical.control_stands.rear,
+        },
     })
+}
+
+fn formation_dynamics(
+    source: AuthorityFormationDynamics,
+) -> Result<FormationDynamics, RuntimeError> {
+    FormationDynamics::new(
+        Acceleration::from_millimetres_per_second_squared(source.acceleration_mm_per_s2),
+        Acceleration::from_millimetres_per_second_squared(source.deceleration_mm_per_s2),
+    )
+    .map_err(|_| invalid("Formations-Fahrprofil besitzt keine positiven Werte"))
 }
 
 fn materialize_formation(
@@ -929,10 +1160,23 @@ fn materialize_formation(
             .ok()
             .map(|index| &state.authority_release.assets[index])
             .ok_or_else(|| invalid(format!("unbekanntes Authority-Asset '{vehicle_id}'")))?;
-        if source.operator_id != receipt.operator_id {
+        let holding = state.asset_holdings.get(vehicle_id).ok_or_else(|| {
+            invalid(format!(
+                "Authority-Asset '{vehicle_id}' besitzt keinen Halterzustand"
+            ))
+        })?;
+        if holding.holder_operator_id != receipt.operator_id {
             return Err(invalid(
                 "Formation und Trassenbeleg gehoeren nicht demselben EVU",
             ));
+        }
+        if holding
+            .valid_until_s
+            .is_some_and(|valid_until| state.produced_at >= valid_until)
+        {
+            return Err(invalid(format!(
+                "Mietbindung von Authority-Asset '{vehicle_id}' ist abgelaufen"
+            )));
         }
         let available_until = source
             .maintenance_deadlines
@@ -991,28 +1235,37 @@ fn materialize_formation(
                 .map_err(|error| invalid(format!("ungueltige Trassen-Baureihe: {error}")))
         })
         .collect::<Result<BTreeSet<_>, _>>()?;
-    formation
-        .check_operating_route(
-            &platform_lengths,
-            &electrifications,
-            &required,
-            &approved_classes,
-        )
-        .map_err(|error| {
-            invalid(format!(
-                "Formation ist mit der Trasse inkompatibel: {error}"
-            ))
-        })?;
-    let train_characteristics = formation
-        .characteristics(
-            TrainCharacteristicsId::new(stable_numeric_u32(&intent.id)),
-            intent.id.clone(),
-        )
+    let train_characteristics = if formation.can_move_under_own_power() {
+        formation
+            .check_operating_route(
+                &platform_lengths,
+                &electrifications,
+                &required,
+                &approved_classes,
+            )
+            .map_err(|error| {
+                invalid(format!(
+                    "Formation ist mit der Trasse inkompatibel: {error}"
+                ))
+            })?;
+        let characteristics_id = TrainCharacteristicsId::new(stable_numeric_u32(&intent.id));
+        let characteristics = match intent.dynamics {
+            Some(dynamics) => formation.characteristics_with_dynamics(
+                characteristics_id,
+                intent.id.clone(),
+                formation_dynamics(dynamics)?,
+            ),
+            None => formation.characteristics(characteristics_id, intent.id.clone()),
+        }
         .map_err(|error| {
             invalid(format!(
                 "Zugcharakteristik konnte nicht abgeleitet werden: {error}"
             ))
         })?;
+        Some(characteristics)
+    } else {
+        None
+    };
 
     let seats = sources
         .iter()
@@ -1081,10 +1334,14 @@ fn materialize_formation(
             .collect::<BTreeSet<_>>();
         equipment.retain(|item| available.contains(item));
     }
-    let traction = match train_characteristics.traction() {
-        TractionType::Electric(_) => zugfolge_fleet::MobilizationTraction::Electric,
-        TractionType::Diesel => zugfolge_fleet::MobilizationTraction::Diesel,
-        TractionType::BatteryElectric => zugfolge_fleet::MobilizationTraction::Battery,
+    let traction = match train_characteristics
+        .as_ref()
+        .map(|characteristics| characteristics.traction())
+    {
+        None | Some(TractionType::Unpowered) => zugfolge_fleet::MobilizationTraction::Unpowered,
+        Some(TractionType::Electric(_)) => zugfolge_fleet::MobilizationTraction::Electric,
+        Some(TractionType::Diesel) => zugfolge_fleet::MobilizationTraction::Diesel,
+        Some(TractionType::BatteryElectric) => zugfolge_fleet::MobilizationTraction::Battery,
     };
     let vehicle_age_years = sources
         .iter()
@@ -1114,8 +1371,19 @@ fn materialize_formation(
                 wheelchair_places,
                 equipment: equipment.into_iter().collect(),
                 vehicle_age_years,
-                maximum_speed_kph: u16::try_from(train_characteristics.max_speed().km_h())
-                    .map_err(|_| invalid("abgeleitete Vmax passt nicht in u16"))?,
+                maximum_speed_kph: u16::try_from(
+                    train_characteristics
+                        .as_ref()
+                        .map(|characteristics| characteristics.max_speed().km_h())
+                        .unwrap_or_else(|| {
+                            sources
+                                .iter()
+                                .map(|source| i64::from(source.technical.maximum_speed_kph))
+                                .min()
+                                .unwrap_or(0)
+                        }),
+                )
+                .map_err(|_| invalid("abgeleitete Vmax passt nicht in u16"))?,
                 operating_cost_cents_per_train_km: operating_cost,
                 homologated_line_ids: receipt.service_line_ids.clone(),
                 maintenance_valid_until: available_until,
@@ -1203,6 +1471,14 @@ fn materialize_duty(
     {
         return Err(invalid(
             "Personaldienst und Formation gehoeren nicht demselben EVU",
+        ));
+    }
+    if materialized
+        .iter()
+        .any(|formation| !formation.formation.can_move_under_own_power())
+    {
+        return Err(invalid(
+            "Wagenpark ohne Lok darf abgestellt oder ueberfuehrt, aber nicht als Dienst eingeplant werden",
         ));
     }
     let first_class = materialized
@@ -1399,8 +1675,46 @@ fn initialized(mut input: InitializeFleetWorld) -> Result<FleetWorldInitialized,
     safe_integer(input.produced_at, "producedAt")?;
     normalize_release(&mut input.authority_release);
     validate_release(&input.authority_release)?;
+    for formation in &mut input.formations {
+        formation.vehicle_ids.sort();
+    }
+    input
+        .formations
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    for duty in &mut input.personnel_duties {
+        duty.formation_ids.sort();
+    }
+    input
+        .personnel_duties
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    input
+        .path_reservations
+        .sort_by(|left, right| left.id.cmp(&right.id));
     let authority_release_hash = release_hash(&input.authority_release)?;
-    let state = FleetWorldState {
+    let asset_holdings = input
+        .authority_release
+        .assets
+        .iter()
+        .map(|asset| {
+            Ok((
+                asset.id.clone(),
+                AssetHolding {
+                    owner_operator_id: asset.operator_id.clone(),
+                    holder_operator_id: asset.operator_id.clone(),
+                    lessor_operator_id: None,
+                    contract_id: None,
+                    valid_until_s: None,
+                    history_hash: canonical_hash(&(
+                        "fleet-asset-holding/v1",
+                        &input.authority_release.release_id,
+                        &asset.id,
+                        &asset.operator_id,
+                    ))?,
+                },
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>, RuntimeError>>()?;
+    let mut state = FleetWorldState {
         schema_version: FLEET_STATE_SCHEMA.to_owned(),
         world_id: input.world_id,
         revision: 0,
@@ -1410,7 +1724,39 @@ fn initialized(mut input: InitializeFleetWorld) -> Result<FleetWorldInitialized,
         formations: BTreeMap::new(),
         personnel_duties: BTreeMap::new(),
         path_reservations: BTreeMap::new(),
+        asset_holdings,
     };
+    for intent in input.formations {
+        if state.formations.contains_key(&intent.id) {
+            return Err(invalid("doppelte initiale Formation"));
+        }
+        if state.formations.values().any(|existing| {
+            existing
+                .vehicle_ids
+                .iter()
+                .any(|vehicle| intent.vehicle_ids.binary_search(vehicle).is_ok())
+        }) {
+            return Err(invalid(
+                "Authority-Asset ist mehreren initialen Formationen zugeordnet",
+            ));
+        }
+        materialize_formation(&state, &intent)?;
+        state.formations.insert(intent.id.clone(), intent);
+    }
+    for intent in input.personnel_duties {
+        if state.personnel_duties.contains_key(&intent.id) {
+            return Err(invalid("doppelter initialer Personaldienst"));
+        }
+        materialize_duty(&state, &intent)?;
+        state.personnel_duties.insert(intent.id.clone(), intent);
+    }
+    for intent in input.path_reservations {
+        if state.path_reservations.contains_key(&intent.id) {
+            return Err(invalid("doppelte initiale Trassenreservierung"));
+        }
+        materialize_path(&state, &intent)?;
+        state.path_reservations.insert(intent.id.clone(), intent);
+    }
     let snapshot = snapshot(&state)?;
     Ok(FleetWorldInitialized {
         schema_version: FLEET_INITIALIZED_SCHEMA,
@@ -1482,6 +1828,156 @@ fn validate_replay_receipt(
     Ok(())
 }
 
+fn apply_asset_transfer(
+    state: &mut FleetWorldState,
+    command: &AssetTransferCommand,
+) -> Result<(), RuntimeError> {
+    non_empty(&command.vehicle_id, "vehicleId")?;
+    non_empty(&command.from_owner_operator_id, "fromOwnerOperatorId")?;
+    non_empty(&command.to_owner_operator_id, "toOwnerOperatorId")?;
+    non_empty(&command.from_holder_operator_id, "fromHolderOperatorId")?;
+    non_empty(&command.to_holder_operator_id, "toHolderOperatorId")?;
+    sha256(&command.transfer_receipt_hash, "transferReceiptHash")?;
+    if !state
+        .authority_release
+        .assets
+        .iter()
+        .any(|asset| asset.id == command.vehicle_id)
+    {
+        return Err(invalid(format!(
+            "unbekanntes Authority-Asset '{}'",
+            command.vehicle_id
+        )));
+    }
+    if state.formations.values().any(|formation| {
+        formation
+            .vehicle_ids
+            .binary_search(&command.vehicle_id)
+            .is_ok()
+    }) {
+        return Err(invalid("Authority-Asset ist in einer Formation gebunden"));
+    }
+    let current = state
+        .asset_holdings
+        .get(&command.vehicle_id)
+        .ok_or_else(|| invalid("Authority-Asset besitzt keinen Halterzustand"))?;
+    if current.owner_operator_id != command.from_owner_operator_id
+        || current.holder_operator_id != command.from_holder_operator_id
+    {
+        return Err(RuntimeError::new(
+            "asset_holding_conflict",
+            "Eigentuemer oder Halter passt nicht zum autoritativen Zustand",
+        ));
+    }
+    match command.transfer_type {
+        AssetTransferType::Sale => {
+            if command.from_owner_operator_id == command.to_owner_operator_id
+                || command.to_owner_operator_id != command.to_holder_operator_id
+                || command.lessor_operator_id.is_some()
+                || command.contract_id.is_some()
+                || command.valid_until_s.is_some()
+                || current.lessor_operator_id.is_some()
+            {
+                return Err(invalid(
+                    "Verkauf besitzt ungueltige Halter- oder Vertragsangaben",
+                ));
+            }
+        }
+        AssetTransferType::RentalStart => {
+            if command.from_owner_operator_id != command.to_owner_operator_id
+                || command.from_holder_operator_id == command.to_holder_operator_id
+                || command.lessor_operator_id.as_deref()
+                    != Some(command.from_owner_operator_id.as_str())
+                || command.contract_id.as_deref().is_none_or(str::is_empty)
+                || command
+                    .valid_until_s
+                    .is_none_or(|until| until <= command.at_s)
+                || current.lessor_operator_id.is_some()
+            {
+                return Err(invalid(
+                    "Mietbeginn besitzt ungueltige Halter- oder Vertragsangaben",
+                ));
+            }
+        }
+        AssetTransferType::RentalReturn => {
+            if current.lessor_operator_id.as_deref() != Some(command.to_holder_operator_id.as_str())
+                || command.from_owner_operator_id != command.to_owner_operator_id
+                || command.to_holder_operator_id != command.to_owner_operator_id
+                || command.lessor_operator_id.is_some()
+                || command.contract_id.is_some()
+                || command.valid_until_s.is_some()
+            {
+                return Err(invalid("Mietende passt nicht zum laufenden Halterzustand"));
+            }
+        }
+        AssetTransferType::Reversal => {
+            if command.lessor_operator_id.is_some()
+                || command.contract_id.is_some()
+                || command.valid_until_s.is_some()
+            {
+                return Err(invalid(
+                    "Rueckabwicklung darf keine neue Mietbindung anlegen",
+                ));
+            }
+        }
+    }
+    if let Some(until) = command.valid_until_s {
+        safe_integer(until, "validUntilS")?;
+    }
+    let history_hash = canonical_hash(&(
+        "fleet-asset-holding/v1",
+        &command.vehicle_id,
+        &current.history_hash,
+        command.transfer_type,
+        &command.from_owner_operator_id,
+        &command.to_owner_operator_id,
+        &command.from_holder_operator_id,
+        &command.to_holder_operator_id,
+        &command.lessor_operator_id,
+        &command.contract_id,
+        command.valid_until_s,
+        command.at_s,
+        &command.transfer_receipt_hash,
+    ))?;
+    state.asset_holdings.insert(
+        command.vehicle_id.clone(),
+        AssetHolding {
+            owner_operator_id: command.to_owner_operator_id.clone(),
+            holder_operator_id: command.to_holder_operator_id.clone(),
+            lessor_operator_id: command.lessor_operator_id.clone(),
+            contract_id: command.contract_id.clone(),
+            valid_until_s: command.valid_until_s,
+            history_hash,
+        },
+    );
+    Ok(())
+}
+
+fn hydrate_legacy_asset_holdings(state: &mut FleetWorldState) -> Result<(), RuntimeError> {
+    if !state.asset_holdings.is_empty() {
+        return Ok(());
+    }
+    for asset in &state.authority_release.assets {
+        state.asset_holdings.insert(
+            asset.id.clone(),
+            AssetHolding {
+                owner_operator_id: asset.operator_id.clone(),
+                holder_operator_id: asset.operator_id.clone(),
+                lessor_operator_id: None,
+                contract_id: None,
+                valid_until_s: None,
+                history_hash: canonical_hash(&(
+                    "fleet-asset-holding/v1",
+                    &state.authority_release.release_id,
+                    &asset.id,
+                    &asset.operator_id,
+                ))?,
+            },
+        );
+    }
+    Ok(())
+}
+
 fn apply(
     mut state: FleetWorldState,
     command: FleetCommand,
@@ -1539,12 +2035,14 @@ fn apply(
         ));
     }
     state.produced_at = command.at_s();
+    hydrate_legacy_asset_holdings(&mut state)?;
     match &command {
         FleetCommand::Formation(command) => {
             let intent = FormationIntent {
                 id: command.formation_id.clone(),
                 vehicle_ids: command.vehicle_ids.clone(),
                 path_receipt_id: command.path_receipt_id.clone(),
+                dynamics: command.dynamics,
             };
             if state.formations.values().any(|existing| {
                 existing.id != intent.id
@@ -1580,6 +2078,7 @@ fn apply(
             materialize_path(&state, &intent)?;
             state.path_reservations.insert(intent.id.clone(), intent);
         }
+        FleetCommand::AssetTransfer(command) => apply_asset_transfer(&mut state, command)?,
     }
     state.revision = state
         .revision
@@ -1762,6 +2261,256 @@ mod tests {
     }
 
     #[test]
+    fn rohe_lokdaten_erfordern_und_akzeptieren_ein_formationsfahrprofil() {
+        let mut release = authority_release();
+        let technical = &mut release["assets"][0]["technical"];
+        technical["accelerationMmPerS2"] = json!(0);
+        technical["decelerationMmPerS2"] = json!(0);
+        technical["continuousPowerKw"] = json!(5_600);
+        technical["startingTractiveEffortKn"] = json!(300);
+        let initial: Value = serde_json::from_str(
+            &initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 10,
+                    "authorityRelease": release
+                })
+                .to_string(),
+            )
+            .expect("rohe Fahrzeugdaten sind ein gültiger Katalogeintrag"),
+        )
+        .expect("gültige initialisierte Welt");
+
+        let without_profile = formation_command(&initial, "raw:without-profile");
+        let error = apply_fleet_command(
+            &initial["state"].to_string(),
+            &without_profile.to_string(),
+            None,
+        )
+        .expect_err("eine formationsabhängige Lok braucht ein Fahrprofil");
+        assert!(error.to_string().contains("MissingFormationDynamics"));
+
+        let mut with_profile = formation_command(&initial, "raw:with-profile");
+        with_profile["dynamics"] = json!({
+            "accelerationMmPerS2": 600,
+            "decelerationMmPerS2": 700
+        });
+        let result = apply(&initial["state"], &with_profile, None);
+        assert_eq!(
+            result["snapshot"]["formations"][0]["characteristics"]["maximumSpeedKph"],
+            160
+        );
+    }
+
+    #[test]
+    fn authority_fuehrendes_fahrzeug_ohne_pzb_oder_etcs_wird_abgewiesen() {
+        let mut release = authority_release();
+        release["assets"][0]["installedProtection"] = json!([]);
+        let error = initialize_fleet_world(
+            &json!({
+                "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                "worldId": WORLD,
+                "producedAt": 10,
+                "authorityRelease": release
+            })
+            .to_string(),
+        )
+        .expect_err("Fuehrendes Fahrzeug ohne Basissicherung");
+        assert!(error.to_string().contains("weder PZB noch ETCS"));
+    }
+
+    #[test]
+    fn authority_lzb_braucht_pzb_etcs_darf_allein_stehen() {
+        let mut lzb_ohne_pzb = authority_release();
+        lzb_ohne_pzb["assets"][0]["installedProtection"] = json!(["lzb"]);
+        let error = initialize_fleet_world(
+            &json!({
+                "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                "worldId": WORLD,
+                "producedAt": 10,
+                "authorityRelease": lzb_ohne_pzb
+            })
+            .to_string(),
+        )
+        .expect_err("LZB ohne PZB darf nicht importiert werden");
+        assert!(error.to_string().contains("LZB darf nur zusammen mit PZB"));
+
+        let mut etcs_allein = authority_release();
+        etcs_allein["assets"][0]["installedProtection"] = json!(["etcs-level2"]);
+        initialize_fleet_world(
+            &json!({
+                "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                "worldId": WORLD,
+                "producedAt": 10,
+                "authorityRelease": etcs_allein
+            })
+            .to_string(),
+        )
+        .expect("ETCS darf PZB nicht voraussetzen");
+    }
+
+    #[test]
+    fn unpowered_wagenpark_bleibt_planbar_aber_nicht_dienstfaehig() {
+        let mut release = authority_release();
+        release["assets"][0]["technical"]["traction"] = json!("unpowered");
+        release["assets"][0]["technical"]["electricSystems"] = json!([]);
+        release["assets"][0]["technical"]["accelerationMmPerS2"] = json!(0);
+        release["assets"][0]["technical"]["decelerationMmPerS2"] = json!(0);
+        release["assets"][0]["technical"]["role"] = json!("coach");
+        release["assets"][0]["technical"]["controlStands"] = json!({"front": false, "rear": false});
+        release["assets"][0]["installedProtection"] = json!([]);
+        let initial: Value = serde_json::from_str(
+            &initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 10,
+                    "authorityRelease": release
+                })
+                .to_string(),
+            )
+            .expect("Wagenpark wird initialisiert"),
+        )
+        .expect("gueltiges Wagenpark-Ergebnis");
+        let formed = apply(
+            &initial["state"],
+            &formation_command(&initial, "formation:coach-park"),
+            None,
+        );
+        assert_eq!(
+            formed["snapshot"]["formations"][0]["characteristics"]["traction"],
+            "unpowered"
+        );
+        let duty = json!({
+            "schemaVersion": "zugfolge-fleet-assign-duty-command/v2",
+            "worldId": WORLD,
+            "commandId": "duty:coach-park",
+            "expectedStateHash": formed["stateHash"],
+            "expectedRevision": 1,
+            "atS": 12,
+            "personnelDutyId": "duty-coach-park",
+            "personnelPoolId": "pool-1",
+            "formationIds": ["formation-1"],
+            "pathReceiptId": "path-confirmed",
+            "validFrom": 20,
+            "validUntil": 200
+        });
+        let error = apply_fleet_command(&formed["state"].to_string(), &duty.to_string(), None)
+            .expect_err("Wagenpark ohne Lok darf keinen Dienst bilden");
+        assert!(error.to_string().contains("Wagenpark ohne Lok"));
+    }
+
+    #[test]
+    fn sekundaermarkt_uebertraegt_halter_authoritativ_und_sperrt_doppelbindung() {
+        let initial = initialize();
+        let transfer = apply(
+            &initial["state"],
+            &json!({
+                "schemaVersion": "zugfolge-fleet-transfer-asset-command/v1",
+                "worldId": WORLD,
+                "commandId": "market:transfer-1",
+                "expectedStateHash": initial["stateHash"],
+                "expectedRevision": 0,
+                "atS": 11,
+                "vehicleId": "vehicle-1",
+                "transferType": "sale",
+                "fromOwnerOperatorId": "operator-1",
+                "toOwnerOperatorId": "operator-2",
+                "fromHolderOperatorId": "operator-1",
+                "toHolderOperatorId": "operator-2",
+                "lessorOperatorId": null,
+                "contractId": null,
+                "validUntilS": null,
+                "transferReceiptHash": "9".repeat(64)
+            }),
+            None,
+        );
+        assert_eq!(
+            transfer["state"]["assetHoldings"]["vehicle-1"]["ownerOperatorId"],
+            "operator-2"
+        );
+        assert_eq!(transfer["entityKind"], "asset-holding");
+
+        let old_operator = json!({
+            "schemaVersion": "zugfolge-fleet-form-vehicles-command/v2",
+            "worldId": WORLD, "commandId": "formation:old",
+            "expectedStateHash": transfer["stateHash"], "expectedRevision": 1,
+            "atS": 12, "formationId": "formation-old", "vehicleIds": ["vehicle-1"],
+            "pathReceiptId": "path-confirmed"
+        });
+        assert!(
+            apply_fleet_command(
+                &transfer["state"].to_string(),
+                &old_operator.to_string(),
+                None
+            )
+            .expect_err("Altbetreiber darf Fahrzeug nicht mehr bilden")
+            .to_string()
+            .contains("nicht demselben EVU")
+        );
+
+        let new_operator = json!({
+            "schemaVersion": "zugfolge-fleet-form-vehicles-command/v2",
+            "worldId": WORLD, "commandId": "formation:new",
+            "expectedStateHash": transfer["stateHash"], "expectedRevision": 1,
+            "atS": 12, "formationId": "formation-new", "vehicleIds": ["vehicle-1"],
+            "pathReceiptId": "path-foreign"
+        });
+        let formed = apply(&transfer["state"], &new_operator, None);
+        assert_eq!(
+            formed["snapshot"]["formations"][0]["operatorId"],
+            "operator-2"
+        );
+
+        let bound_transfer = json!({
+            "schemaVersion": "zugfolge-fleet-transfer-asset-command/v1",
+            "worldId": WORLD, "commandId": "market:double",
+            "expectedStateHash": formed["stateHash"], "expectedRevision": 2, "atS": 13,
+            "vehicleId": "vehicle-1", "transferType": "sale",
+            "fromOwnerOperatorId": "operator-2", "toOwnerOperatorId": "operator-1",
+            "fromHolderOperatorId": "operator-2", "toHolderOperatorId": "operator-1",
+            "lessorOperatorId": null, "contractId": null, "validUntilS": null,
+            "transferReceiptHash": "8".repeat(64)
+        });
+        assert!(
+            apply_fleet_command(
+                &formed["state"].to_string(),
+                &bound_transfer.to_string(),
+                None
+            )
+            .expect_err("gebundenes Fahrzeug bleibt unverkaeuflich")
+            .to_string()
+            .contains("Formation gebunden")
+        );
+    }
+
+    #[test]
+    fn alter_v2_checkpoint_wird_beim_naechsten_kommando_rueckwaertskompatibel_erweitert() {
+        let initial = initialize();
+        let mut legacy_state = initial["state"].clone();
+        legacy_state
+            .as_object_mut()
+            .expect("Zustandsobjekt")
+            .remove("assetHoldings");
+        let parsed: FleetWorldState =
+            serde_json::from_value(legacy_state.clone()).expect("alter v2-Zustand");
+        let legacy_hash = state_hash(&parsed).expect("alter Hash bleibt berechenbar");
+        let command = json!({
+            "schemaVersion": "zugfolge-fleet-form-vehicles-command/v2",
+            "worldId": WORLD, "commandId": "legacy:formation",
+            "expectedStateHash": legacy_hash, "expectedRevision": 0, "atS": 11,
+            "formationId": "legacy-formation", "vehicleIds": ["vehicle-1"],
+            "pathReceiptId": "path-confirmed"
+        });
+        let result = apply(&legacy_state, &command, None);
+        assert_eq!(
+            result["state"]["assetHoldings"]["vehicle-1"]["holderOperatorId"],
+            "operator-1"
+        );
+    }
+
+    #[test]
     fn formation_dienst_und_trasse_bilden_einen_vollstaendigen_snapshot() {
         let initial = initialize();
         let formation = apply(
@@ -1796,6 +2545,74 @@ mod tests {
             path["snapshot"]["pathReservations"][0]["status"],
             "confirmed"
         );
+    }
+
+    #[test]
+    fn eigenbetriebs_bootstrap_ist_bei_simulationssekunde_null_vollstaendig() {
+        let initialized: Value = serde_json::from_str(
+            &initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 0,
+                    "authorityRelease": authority_release(),
+                    "formations": [{
+                        "id": "formation-public-1",
+                        "vehicleIds": ["vehicle-1"],
+                        "pathReceiptId": "path-confirmed",
+                        "dynamics": { "accelerationMmPerS2": 900, "decelerationMmPerS2": 900 }
+                    }],
+                    "personnelDuties": [{
+                        "id": "duty-public-1",
+                        "personnelPoolId": "pool-1",
+                        "formationIds": ["formation-public-1"],
+                        "pathReceiptId": "path-confirmed",
+                        "validFrom": 0,
+                        "validUntil": 200
+                    }],
+                    "pathReservations": [{
+                        "id": "reservation-public-1",
+                        "pathReceiptId": "path-confirmed"
+                    }]
+                })
+                .to_string(),
+            )
+            .expect("vollstaendiger Eigenbetrieb wird initialisiert"),
+        )
+        .expect("gueltiges Initialisierungsergebnis");
+
+        assert_eq!(initialized["state"]["revision"], 0);
+        assert_eq!(
+            initialized["snapshot"]["formations"][0]["id"],
+            "formation-public-1"
+        );
+        assert_eq!(
+            initialized["snapshot"]["personnelDuties"][0]["status"],
+            "ready"
+        );
+        assert_eq!(
+            initialized["snapshot"]["pathReservations"][0]["status"],
+            "confirmed"
+        );
+    }
+
+    #[test]
+    fn eigenbetriebs_bootstrap_verhindert_doppelte_fahrzeugbindung() {
+        let error = initialize_fleet_world(
+            &json!({
+                "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                "worldId": WORLD,
+                "producedAt": 0,
+                "authorityRelease": authority_release(),
+                "formations": [
+                    { "id": "formation-a", "vehicleIds": ["vehicle-1"], "pathReceiptId": "path-confirmed" },
+                    { "id": "formation-b", "vehicleIds": ["vehicle-1"], "pathReceiptId": "path-confirmed" }
+                ]
+            })
+            .to_string(),
+        )
+        .expect_err("ein Asset darf nicht doppelt gebunden werden");
+        assert!(error.to_string().contains("mehreren initialen Formationen"));
     }
 
     #[test]
@@ -1985,6 +2802,33 @@ mod tests {
         assert_eq!(
             canonical_hash(&command).expect("Kommando-Hash"),
             "8f85a082a134e3785918f998b90e8e34c784b163c2ecdf3005a7269aa549da82"
+        );
+
+        let transfer = parse_command(
+            &json!({
+                "schemaVersion": "zugfolge-fleet-transfer-asset-command/v1",
+                "worldId": WORLD,
+                "commandId": "market:transfer-1",
+                "expectedStateHash": "d".repeat(64),
+                "expectedRevision": 0,
+                "atS": 120,
+                "vehicleId": "vehicle-1",
+                "transferType": "sale",
+                "fromOwnerOperatorId": "operator-1",
+                "toOwnerOperatorId": "operator-2",
+                "fromHolderOperatorId": "operator-1",
+                "toHolderOperatorId": "operator-2",
+                "lessorOperatorId": null,
+                "contractId": null,
+                "validUntilS": null,
+                "transferReceiptHash": "a".repeat(64)
+            })
+            .to_string(),
+        )
+        .expect("kanonisches Marktkommando");
+        assert_eq!(
+            canonical_hash(&transfer).expect("Marktkommando-Hash"),
+            "c5c122a872b156518a2df5c0e107648d074850efcd400f196fdeb0f00bf31dcb"
         );
     }
 

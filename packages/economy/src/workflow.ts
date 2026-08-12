@@ -118,15 +118,25 @@ export function startEconomyWorld(input: {
   readonly planning?: GtfsPlanningEnvelope;
   readonly authorityBudgets: readonly AuthorityBudget[];
   readonly accounts: readonly string[];
+  readonly publicVehiclePoolByLot?: Readonly<Record<string, readonly string[]>>;
 }): { readonly state: EconomyWorldState; readonly effects: EconomyEffects } {
   if ((input.lots === undefined) === (input.planning === undefined)) throw new Error("Weltstart braucht genau eine Losquelle: GTFS-Planung oder interne Testlose.");
   const lots = input.planning === undefined ? input.lots! : lotsFromGtfsPlanning(input.planning, input.worldId);
   if (input.worldId.trim() === "" || new Set(lots.map((lot) => lot.id)).size !== lots.length) throw new Error("Welt und Lose müssen eindeutig sein.");
   const profile = deriveWorldProfile(input.durationMonths);
+  const lotIds = new Set(lots.map((lot) => lot.id));
+  for (const [lotId, vehicleIds] of Object.entries(input.publicVehiclePoolByLot ?? {})) {
+    if (!lotIds.has(lotId) || vehicleIds.length === 0 || new Set(vehicleIds).size !== vehicleIds.length) {
+      throw new Error("Eigenbetriebs-Fahrzeugpool passt nicht eindeutig zu einem Los.");
+    }
+  }
   const calendar = createTenderCalendar(profile, lots, input.seed);
   const budgets = new Map<string, AuthorityBudget>(input.authorityBudgets.map((budget) => [`${budget.authorityId}:${budget.period}`, budget]));
   const prequalifications = new Map<string, Prequalification>(input.accounts.map((accountId) => [accountId, { worldId: input.worldId, accountId, score: 5_000, creditScore: 5_000, bankruptcies: 0 }]));
-  const publicOperations = new Map<string, PublicOperation>(lots.map((lot) => [lot.id, startPublicOperation(lot.id, [])]));
+  const publicOperations = new Map<string, PublicOperation>(lots.map((lot) => [
+    lot.id,
+    startPublicOperation(lot.id, input.publicVehiclePoolByLot?.[lot.id] ?? []),
+  ]));
   const notices = input.accounts.map((recipientAccountId) => ({ id: `world-start:calendar:${recipientAccountId}`, worldId: input.worldId, recipientAccountId, type: "tender-calendar-published", at: 0, payload: { calendar } }));
   return {
     state: Object.freeze({ worldId: input.worldId, seed: input.seed, profile, releasePin: pinEconomyRelease(input.worldId, input.release), release: input.release, lots: Object.freeze([...lots]), ...(input.planning === undefined ? {} : { planning: input.planning }), calendar, tenders: new Map<string, TenderLifecycle>(), contracts: new Map<string, ServiceContract>(), mobilizations: new Map<string, Mobilization>(), tenderAutomation: new Map<string, TenderAutomation>(), publicOperations, budgets, prequalifications, insolventOperators: new Set<string>(), operatorRestrictions: new Map<string, InsolvencyDecision>(), settledPeriods: new Set<string>(), processedCommands: new Set<string>(), operatingRuntimeByLot: new Map<string, OperatingRuntimeSnapshot>(), revision: 0 }),

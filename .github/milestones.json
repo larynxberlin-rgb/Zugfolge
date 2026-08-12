@@ -218,18 +218,37 @@
     {
       "key": "M9",
       "title": "M9 — Onboarding, Betriebsreife, geschlossene Alpha",
-      "goal": "Observability, Wiederherstellung, Schutzmechanismen und eine belastbare geschlossene Alpha nachweisen.",
+      "goal": "Observability, Wiederherstellung, Schutzmechanismen und eine belastbare geschlossene Alpha einschliesslich M12.1, M12.2 und M14.1 nachweisen.",
       "area": "area:operations",
       "dependsOn": ["M0", "M4", "M6", "M7", "M8"],
-      "status": { "core": "not_started", "integration": "not_started", "operations": "blocked", "acceptance": "blocked" },
-      "evidence": [],
+      "status": { "core": "in_progress", "integration": "in_progress", "operations": "blocked", "acceptance": "blocked" },
+      "evidence": [
+        { "label": "Erweiterter Alpha-Abnahmebericht", "url": "docs/alpha-abnahme-2026-08-11.md" },
+        { "label": "Alpha-Betrieb und Wiederherstellung", "url": "docs/alpha-betrieb.md" },
+        { "label": "E24 und Alpha-Schnitt", "url": "docs/adr/0024-erweiterter-alpha-schnitt.md" },
+        { "label": "E25 Fahrtketten und Außenläufe", "url": "docs/adr/0025-gebietsueberschreitende-fahrtketten.md" }
+      ],
+      "alphaScope": {
+        "decision": "E24",
+        "regionVariant": "B — Mitteldeutsches Metropol-Korridornetz",
+        "pulledForward": [
+          { "item": "M12.1", "status": "in_progress", "dependsOn": ["M2", "M5", "M6", "M8"] },
+          { "item": "M12.2", "status": "in_progress", "dependsOn": ["M2", "M5", "M6", "M12.1"] },
+          { "item": "M14.1", "status": "verified", "dependsOn": ["M1", "M2", "M4", "M5", "M6", "M8", "M9.2"] }
+        ],
+        "excluded": ["M10", "M11", "M12.3", "M12.4", "M13", "M14.2", "M14.3", "M14.4"]
+      },
       "items": [
         { "number": 19, "kind": "pull_request", "labels": ["area:health", "type:delivery"] },
         { "number": 37, "kind": "issue", "labels": ["area:health", "type:bug", "priority:p0"] },
         { "number": 38, "kind": "issue", "labels": ["area:health", "type:security", "priority:p1"] },
         { "number": 39, "kind": "issue", "labels": ["area:health", "type:bug", "priority:p1"] },
         { "number": 48, "kind": "issue", "labels": ["area:infrastructure", "area:operations", "type:operations", "priority:p1"] },
-        { "number": 61, "kind": "pull_request", "labels": ["area:operations", "area:roadmap", "type:delivery"] }
+        { "number": 61, "kind": "pull_request", "labels": ["area:operations", "area:roadmap", "type:delivery"] },
+        { "number": 179, "kind": "issue", "labels": ["area:economy", "type:enhancement", "priority:p1"] },
+        { "number": 180, "kind": "issue", "labels": ["area:fleet", "area:economy", "type:enhancement", "priority:p1"] },
+        { "number": 192, "kind": "issue", "labels": ["area:infrastructure", "type:enhancement", "priority:p1"] },
+        { "number": 201, "kind": "issue", "labels": ["area:roadmap", "area:operations", "type:documentation", "priority:p1"] }
       ]
     },
     {
@@ -258,8 +277,10 @@
       "goal": "EVU-Kooperationen, Sekundaermarkt und oeffentliche Qualitaetswirkungen liefern.",
       "area": "area:economy",
       "dependsOn": ["M6", "M10", "M11"],
-      "status": { "core": "not_started", "integration": "not_started", "operations": "not_started", "acceptance": "not_started" },
-      "evidence": [],
+      "status": { "core": "in_progress", "integration": "in_progress", "operations": "not_started", "acceptance": "blocked" },
+      "evidence": [
+        { "label": "M12.1/M12.2 Alpha-Implementierung und Restlücken", "url": "docs/alpha-abnahme-2026-08-11.md" }
+      ],
       "items": []
     },
     {
@@ -278,8 +299,12 @@
       "goal": "Das Netz mit messbarer Datenqualitaet, Lastprofilen und sicheren Migrationsregeln erweitern.",
       "area": "area:infrastructure",
       "dependsOn": ["M9"],
-      "status": { "core": "not_started", "integration": "not_started", "operations": "not_started", "acceptance": "not_started" },
-      "evidence": [],
+      "status": { "core": "in_progress", "integration": "in_progress", "operations": "blocked", "acceptance": "blocked" },
+      "evidence": [
+        { "label": "M14.1 Variante-B-Release und Abnahme", "url": "docs/mitteldeutschland-alpha.md" },
+        { "label": "E25 Fahrtketten, Grenzfenster und ExternalZone", "url": "docs/adr/0025-gebietsueberschreitende-fahrtketten.md" },
+        { "label": "Erweiterter Alpha-Abnahmebericht", "url": "docs/alpha-abnahme-2026-08-11.md" }
+      ],
       "items": []
     }
   ]

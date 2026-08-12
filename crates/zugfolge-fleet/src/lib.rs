@@ -17,10 +17,10 @@ pub use assets::{
     AssetError, FleetSnapshot, MaintenanceDeadline, OwnershipStatus, VehicleApproval, VehicleAsset,
 };
 pub use catalog::{
-    CatalogError, CatalogSource, CatalogSourceId, MarketAvailability, MarketEvidence,
-    OPEN_ENDED_YEAR, ProcurementChannel, ProtectionEquipment, ProtectionFitment, ProtectionOption,
-    VehicleCatalogBuilder, VehicleCatalogEntry, VehicleCatalogRelease, VehicleEra, VehicleTypeId,
-    VehicleWorldSettings, YearRange,
+    CatalogError, CatalogSource, CatalogSourceId, LegacyVehiclePolicy, MarketAvailability,
+    MarketEvidence, OPEN_ENDED_YEAR, ProcurementChannel, ProtectionEquipment, ProtectionFitment,
+    ProtectionOption, VehicleCatalogBuilder, VehicleCatalogEntry, VehicleCatalogRelease,
+    VehicleEra, VehicleTypeId, VehicleWorldSettings, YearRange,
 };
 pub use market::{
     CONDITION_MAX, LeaseReturnReason, LessorProfile, PersistentVehicle, PersistentVehicleMarket,

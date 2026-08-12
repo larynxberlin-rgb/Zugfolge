@@ -266,6 +266,7 @@ export class RegionalSimulationWorker {
         this.#livemap.initializeRegion(worldId, result.state.regionId, {
           at: result.snapshot.atS,
           trains: result.snapshot.trains,
+          externalTrains: result.snapshot.externalTrains ?? [],
           disruptions: result.snapshot.disruptions,
         });
         this.#markReady(result.state);
@@ -332,6 +333,7 @@ export class RegionalSimulationWorker {
       this.#livemap.initializeRegion(input.worldId, input.regionId, {
         at: initialized.snapshot.atS,
         trains: initialized.snapshot.trains,
+        externalTrains: initialized.snapshot.externalTrains ?? [],
         disruptions: initialized.snapshot.disruptions,
       });
       this.#markReady(initialized.state);
@@ -370,6 +372,7 @@ export class RegionalSimulationWorker {
       this.#livemap.initializeRegion(worldId, regionId, {
         at: restored.snapshot.atS,
         trains: restored.snapshot.trains,
+        externalTrains: restored.snapshot.externalTrains ?? [],
         disruptions: restored.snapshot.disruptions,
       });
       this.#markReady(restored.state);
@@ -524,6 +527,8 @@ export class RegionalSimulationWorker {
         at: committed.result.delta.atS,
         changed: committed.result.delta.changed,
         removed: committed.result.delta.removed,
+        changedExternalTrains: committed.result.delta.changedExternalTrains ?? [],
+        removedExternalTrainIds: committed.result.delta.removedExternalTrainIds ?? [],
         changedDisruptions: committed.result.delta.changedDisruptions,
         removedDisruptionIds: committed.result.delta.removedDisruptionIds,
       });

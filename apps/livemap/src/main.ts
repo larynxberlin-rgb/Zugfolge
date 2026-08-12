@@ -5,9 +5,15 @@ import {
   renderTrains,
   type LiveState,
   type OperatingStatus,
+  type PublicExternalTrain,
   type RenderSamples,
 } from "./protocol.js";
+import { mountGlossaryLayer } from "@zugfolge/glossary";
+import "@zugfolge/glossary/styles.css";
 import "./style.css";
+import "./external-runs.css";
+
+mountGlossaryLayer(document.body);
 
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 const MAX_INTERPOLATION_DURATION_MS = 2_000;
@@ -31,6 +37,14 @@ const trainLayer = document.querySelector<SVGGElement>("#trains")!;
 const disruptionLayer = document.querySelector<SVGGElement>("#disruptions")!;
 const sequence = document.querySelector<HTMLTimeElement>("header time")!;
 const worldLabel = document.querySelector<HTMLElement>("#world-label")!;
+const externalRuns = document.querySelector<HTMLElement>("#external-runs")!;
+
+const EXTERNAL_STATUS_LABELS: Readonly<Record<PublicExternalTrain["status"], string>> = {
+  outside: "außerhalb des Spielgebiets",
+  "ready-at-boundary": "zur Wiedereinfahrt bereit",
+  "waiting-for-capacity": "wartet am Grenzportal auf Kapazität",
+  "completed-outside": "außerhalb beendet",
+};
 
 function textElement<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -59,6 +73,29 @@ function showEmptyDetails(message = "Eine Zugfahrt auswählen."): void {
 
 function select(id: string): void {
   const train = authoritativeState?.trains.get(id);
+  const external = authoritativeState?.externalTrains.get(id);
+  if (train === undefined && external !== undefined) {
+    selectedTrainId = id;
+    document.querySelectorAll<SVGElement | HTMLButtonElement>(".train, .external-run").forEach((node) => {
+      node.classList.toggle("selected", node instanceof HTMLButtonElement && node.dataset["id"] === id);
+    });
+    const list = document.createElement("dl");
+    addDefinition(list, "Betreiber", external.operator);
+    addDefinition(list, "Status", EXTERNAL_STATUS_LABELS[external.status]);
+    addDefinition(list, "Letztes Grenzportal", external.fromPortalId);
+    addDefinition(list, "Nächstes Grenzportal", external.toPortalId ?? "keine Wiedereinfahrt");
+    addDefinition(list, "Verspätung", delayLabel(external.delaySeconds), external.delaySeconds > 180 ? "warn" : undefined);
+    addDefinition(list, "Gebundene Fahrzeuge", external.boundVehicleIds.join(", "));
+    addDefinition(list, "Gebundene Dienste", external.boundPersonnelDutyIds.join(", ") || "keine");
+    addDefinition(list, "Außenlauf", `${Math.floor(external.progressBasisPoints / 100)} %`);
+    details.replaceChildren(
+      textElement("p", "AUSSENLAUF", "eyebrow"),
+      textElement("h1", external.trainNumber),
+      textElement("p", "Deterministischer, nicht disponierbarer Teil derselben Fahrt"),
+      list,
+    );
+    return;
+  }
   if (train === undefined) {
     selectedTrainId = undefined;
     showEmptyDetails();
@@ -215,6 +252,26 @@ function render(state: LiveState): void {
   worldLabel.textContent = `Livemap · Welt ${state.worldId}`;
   sequence.textContent = `Sequenz ${state.sequence}`;
   sequence.classList.remove("connection-error");
+  const externalNodes = [...state.externalTrains.values()]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map((train) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "external-run";
+      button.dataset["id"] = train.id;
+      button.classList.toggle("selected", train.id === selectedTrainId);
+      button.append(
+        textElement("strong", train.trainNumber),
+        textElement("span", `${EXTERNAL_STATUS_LABELS[train.status]} · ${train.fromPortalId} → ${train.toPortalId ?? "Außenziel"}`),
+      );
+      button.addEventListener("click", () => select(train.id));
+      return button;
+    });
+  externalRuns.replaceChildren(
+    ...(externalNodes.length === 0
+      ? []
+      : [textElement("p", "AUSSERHALB DES SPIELGEBIETS", "eyebrow"), ...externalNodes]),
+  );
   draw(sampleReceivedAt);
   if (selectedTrainId !== undefined) select(selectedTrainId);
 

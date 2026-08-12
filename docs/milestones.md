@@ -822,10 +822,24 @@ Idempotenz sowie explizitem Entfernen geänderter oder entfallener Einträge.
 
 ## M9 — Onboarding, Betriebsreife, geschlossene Alpha
 
+Der Alpha-Schnitt umfasst gemäß [E24/ADR-0024](adr/0024-erweiterter-alpha-schnitt.md)
+zusätzlich ausschließlich M12.1, M12.2 und M14.1. M12.3/M12.4 sowie
+M14.2–M14.4 bleiben Ausbau. M12 und M14 werden durch die Vorziehung nicht als
+Gesamtmilestones abgeschlossen. Die konkrete M14.1-Grenze wird vor dem großen
+Datenimport aus den [messbaren Mitteldeutschland-Varianten](mitteldeutschland-alpha.md)
+freigegeben.
+
+Die Auswahl ist erfolgt: M14.1 verwendet **Variante B — Mitteldeutsches
+Metropol-Korridornetz** aus `docs/mitteldeutschland-alpha.md`.
+Gebietsüberschreitende GTFS-Fahrten folgen
+[E25/ADR-0025](adr/0025-gebietsueberschreitende-fahrtketten.md): Spieler planen
+den qualifizierten Innenabschnitt gegen sichtbare Release-Grenzfenster; der
+deterministische Außenlauf bleibt dieselbe Zugfahrt.
+
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
 | 9.1 | Tutorial-Welt, beschleunigt, fünf geführte Kapitel | L | offen |
-| 9.2 | **Weltstart mit Eigenbetrieb**: das gesamte SPNV-Netz der Region fährt ab Sekunde eins | M | offen |
+| 9.2 | **Weltstart mit Eigenbetrieb**: das gesamte SPNV-Netz der Region fährt ab Sekunde eins | M | erledigt |
 | 9.2a | **Administrativer Weltstartbestand**: optionaler, versionierter und auditierter Pool konkreter Gebrauchtfahrzeuge einschließlich Zustandsprofil und Lebenslauf; Zuweisung an Eigenbetrieb, Startpakete und servereigene Vermieter ohne Fahrzeugduplikate | M | offen |
 | 9.3 | Onboarding in der öffentlichen Welt: Startpaket, Kapazitäts-Heatmap, Glossar-Layer | M | offen |
 | 9.4 | Admin- und Auditwerkzeuge, Vier-Augen-Prinzip bei Hochrisikoaktionen | M | offen |
@@ -833,14 +847,13 @@ Idempotenz sowie explizitem Entfernen geänderter oder entfallener Einträge.
 | 9.6 | Rate Limits, Anti-Bot-Prüfungen, Anomalieerkennung für Trassenfenster und Märkte | M | offen |
 | 9.7 | Telemetrie, Balancing-Dashboards, Feedbackkanal | M | offen |
 | 9.8 | **Weltende** (E18): letzte Periode ohne Ausschreibung, reguläres Vertragsende ohne Insolvenzfolge, Schlusswertung mit mehreren Ranglisten, Archiv und Replay-Export | M | offen |
-| 9.9 | Geschlossene Alpha in der Pilotregion | M | offen |
+| 9.9 | Geschlossene Alpha mit 20–50 externen Spielern in der freigegebenen Mitteldeutschland-Region, einschließlich M12.1/M12.2 | M | offen |
 | 9.10 | **Jährliche Infrastrukturaktualisierung** (E22): `InfraRelease`-Neubau aus aktualisiertem `osm-pbf-lhe` und der Trassenfinder-Infrastruktur-API zu jedem realen Fahrplanwechsel; Übernahmeverfahren für eine laufende Welt zum nächsten Periodenwechsel, ohne Invariante 1 zu verletzen | L | offen |
 
-Issue #48 gehört als produktiver Betriebsreife-Nachweis zu M9: Vor der ersten
-öffentlichen Welt müssen ein vom Kalibrierungsbestand disjunkter technischer
-Validierungssatz, die benannte Release-Verantwortung und ihre echte Signatur
-den Pilot-`InfraRelease` qualifizieren. Diese Härtung ändert nicht die fachliche
-M1-Abnahme, ist aber Voraussetzung für eine produktive Veröffentlichung.
+Issue #48 gehört als produktiver Betriebsreife-Nachweis zu M9. Der vom
+Kalibrierungsbestand disjunkte technische Validierungssatz, die benannte
+Release-Verantwortung und die echte Signatur des Pilot-`InfraRelease` sind mit
+M14.1 nachgewiesen. Die übrige Betriebsreife aus M9.5 bleibt davon unberührt.
 
 > **Beweis:** 20–50 externe Spieler betreiben die Pilotregion über mehrere
 > vollständige Fahrplanperioden ohne manuellen Eingriff, und ein realer
@@ -881,6 +894,12 @@ M1-Abnahme, ist aber Voraussetzung für eine produktive Veröffentlichung.
 
 ## M12 — Kooperation, Wirtschaftstiefe, Sekundärmarkt
 
+M12.1 und M12.2 werden gemäß E24 einzeln in den Alpha-Schnitt vorgezogen. Ihre
+Teilabhängigkeiten sind M2/M5/M6/M8 beziehungsweise M2/M5/M6/M12.1; dadurch
+entfällt für diese beiden Teile die Abhängigkeit von M10/M11. M12.3 und M12.4
+behalten die bisherigen Ausbauabhängigkeiten. Der Gesamtstatus von M12 bleibt
+offen.
+
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
 | 12.1 | EVU-zu-EVU-Verträge: Traktion, Vermietung, Anschluss, Ersatzverkehr | L | offen |
@@ -912,9 +931,15 @@ M1-Abnahme, ist aber Voraussetzung für eine produktive Veröffentlichung.
 
 ## M14 — Netzausweitung
 
+M14.1 wird gemäß E24 einzeln in den Alpha-Schnitt vorgezogen und gegen
+M1/M2/M4/M5/M6/M8 sowie den produktiven Eigenbetriebs-Weltstart M9.2
+abgenommen. M9.9 hängt umgekehrt von der spielbaren Region ab und ist deshalb
+keine Voraussetzung von M14.1. M14.2–M14.4 bleiben Ausbau; der Gesamtstatus
+von M14 bleibt offen.
+
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 14.1 | Pilotregion → Mitteldeutschland | L | offen |
+| 14.1 | Pilotregion → Mitteldeutschland; Variante-B-Grenze, qualifizierte Fahrtketten/Grenzportale und spielbarer Eigenbetrieb | L | erledigt |
 | 14.2 | Etappenweise Ausweitung auf Deutschland, je Etappe mit Qualitätsklassen-Report | **XL** | offen |
 | 14.3 | Lastprofile, horizontale Regionenverteilung, Kapazitätsplanung | L | offen |
 | 14.4 | Weltenstart-Kadenz und Migrationsregeln | M | offen |

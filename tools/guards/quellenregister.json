@@ -22,6 +22,18 @@
       "milestone": "M1.2"
     },
     {
+      "id": "osm-pbf-mitteldeutschland-b",
+      "titel": "OSM-PBF-Extract Mitteldeutschland, Alpha-Variante B",
+      "status": "freigegeben",
+      "lizenz": "ODbL-1.0",
+      "bereitstellung": "Versionierte Geofabrik-Länderextrakte Sachsen, Sachsen-Anhalt und Thüringen; die freigegebene Gateway-Grenze wird reproduzierbar mit osmium geschnitten und als getrennte ODbL-Datenebene gehalten.",
+      "attribution": "© OpenStreetMap-Mitwirkende, ODbL 1.0; Bereitstellung Geofabrik GmbH",
+      "nutzung": "Streckentopologie, Geometrie und Railway-Tags der für E24 freigegebenen Alpha-Variante B. Der Import umfasst keine Stations- oder Höhendaten aus anderen Quellen.",
+      "entscheidung": { "datum": "2026-08-11", "pruefer": "Sebastian Barowski" },
+      "hinweis": "Die ODbL-Pflichten gelten für den abgeleiteten InfraRelease als getrennte Datenebene. Quell- und Artefakthashes, Attribution und Abweichungsbericht werden je Kandidat festgehalten; eine produktive Signatur bleibt von dieser Rechtefreigabe getrennt.",
+      "milestone": "M14.1"
+    },
+    {
       "id": "openrailwaymap-doku",
       "titel": "OpenRailwayMap — Tagging- und Signaldokumentation",
       "status": "entwicklung",

@@ -1,0 +1,17 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - alerts.yml
+
+scrape_configs:
+  - job_name: zugfolge-game-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["game-api:3000"]
+  - job_name: zugfolge-odoo
+    metrics_path: /web/health
+    static_configs:
+      - targets: ["odoo:8069"]
+
