@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { TUTORIAL_TEMPLATE, TUTORIAL_TEMPLATE_HASH } from "@zugfolge/alpha";
+import { TUTORIAL_TEMPLATE } from "@zugfolge/alpha";
 import { closeTender, createTenderCalendar, deriveWorldProfile, submitBid } from "@zugfolge/economy";
 
 import {
@@ -8,6 +8,7 @@ import {
   TUTORIAL_LEASE_TIMES,
   TUTORIAL_TIMELINE,
   prepareTutorialEconomy,
+  tutorialPlayerBid,
   tutorialPlanningCommand,
 } from "./tutorial-world-factory.js";
 
@@ -43,33 +44,18 @@ describe("TutorialWorldFactory PlanningRun-Vertrag", () => {
     expect(lifecycle.tender.viabilityThresholdCentsPerTrainKm).toBeGreaterThanOrEqual(1_580n);
     expect(lifecycle.bids.map((bid) => bid.id)).toEqual(["tutorial-comparison-bid"]);
 
-    const withPlayerBid = submitBid(prepared.state, "tut_contract:player-bid", "tutorial-tender", {
-      id: "tut_contract:player-bid",
-      operatorId: "tutorial-operator",
-      orderingFeeCentsPerTrainKm: 1_450n,
-      vehicle: {
-        formationId: "tut_contract:planned-formation",
-        minimumSeats: 152,
-        maximumSpeedKph: 140,
-        operatingCostCentsPerTrainKm: 720,
-        firstClassBasisPoints: 0,
-        accessible: true,
-        bicyclePlaces: 12,
-        wheelchairPlaces: 2,
-        requiredEquipment: ["passenger-information"],
-        vehicleAgeYears: 4,
-        traction: "electric",
-        replacementPlan: true,
-        evidence: {
-          source: "zugfolge-fleet-mobilization/v1",
-          fleetRevision: 0,
-          snapshotHash: TUTORIAL_TEMPLATE_HASH,
-          formationId: "tut_contract:planned-formation",
-        },
-      },
-      promises: { extraSeats: 12, punctualityBasisPoints: 9_200, additionalStops: 0 },
-      submittedAt: TUTORIAL_TIMELINE.playerBidAtS,
-    }, { accountId: "tutorial-account", period: 0, smallLot: true, minimumScore: 0 });
+    const bid = tutorialPlayerBid(
+      { reference: "tut_contract", tutorialOperatorId: "tutorial-operator" },
+      { type: "submit-bid", orderingFeeCentsPerTrainKm: "1450", extraSeats: 12, punctualityBasisPoints: 9_200 },
+      "tutorial-vehicle-economy",
+    );
+    expect(bid.vehicle.evidence.formationId).toBe(bid.vehicle.formationId);
+    const withPlayerBid = submitBid(prepared.state, "tut_contract:player-bid", "tutorial-tender", bid, {
+      accountId: "tutorial-account",
+      period: 0,
+      smallLot: true,
+      minimumScore: 0,
+    });
     const awarded = closeTender(withPlayerBid, {
       commandId: "tut_contract:close",
       tenderId: "tutorial-tender",

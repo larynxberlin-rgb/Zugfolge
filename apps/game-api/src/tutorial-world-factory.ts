@@ -421,13 +421,18 @@ function comparisonBid(operatorId: string): Bid {
   };
 }
 
-function playerBid(session: TutorialSession, action: Extract<TutorialAction, { type: "submit-bid" }>, vehicleId: string): Bid {
+export function tutorialPlayerBid(
+  session: Pick<TutorialSession, "reference" | "tutorialOperatorId">,
+  action: Extract<TutorialAction, { type: "submit-bid" }>,
+  vehicleId: string,
+): Bid {
+  const formationId = `${session.reference}:planned-formation:${vehicleId}`;
   return {
     id: `${session.reference}:player-bid`,
     operatorId: session.tutorialOperatorId,
     orderingFeeCentsPerTrainKm: BigInt(action.orderingFeeCentsPerTrainKm),
     vehicle: {
-      formationId: `${session.reference}:planned-formation`,
+      formationId,
       minimumSeats: 140 + action.extraSeats,
       maximumSpeedKph: 140,
       operatingCostCentsPerTrainKm: 720,
@@ -439,7 +444,7 @@ function playerBid(session: TutorialSession, action: Extract<TutorialAction, { t
       vehicleAgeYears: 4,
       traction: "electric",
       replacementPlan: true,
-      evidence: { source: "zugfolge-fleet-mobilization/v1", fleetRevision: 0, snapshotHash: TUTORIAL_TEMPLATE_HASH, formationId: `${session.reference}:planned-formation:${vehicleId}` },
+      evidence: { source: "zugfolge-fleet-mobilization/v1", fleetRevision: 0, snapshotHash: TUTORIAL_TEMPLATE_HASH, formationId },
     },
     promises: { extraSeats: action.extraSeats, punctualityBasisPoints: action.punctualityBasisPoints, additionalStops: 0 },
     submittedAt: TUTORIAL_TIMELINE.playerBidAtS,
@@ -696,7 +701,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
       return scenario(session);
     }
     const firstVehicleId = textValue(template.leases[0]?.["vehicleId"], "Tutorialfahrzeug");
-    let state = submitBid(current, `${session.reference}:player-bid`, "tutorial-tender", playerBid(session, action, firstVehicleId), {
+    let state = submitBid(current, `${session.reference}:player-bid`, "tutorial-tender", tutorialPlayerBid(session, action, firstVehicleId), {
       accountId: session.tutorialAccountId,
       period: 0,
       smallLot: true,
