@@ -489,7 +489,11 @@ export function prepareTutorialEconomy(input: {
     smallLot: true,
     minimumScore: 0,
   });
-  return { state, effects: { notices: [...started.effects.notices, ...announced.effects.notices], journal: [] } };
+  return {
+    initial: started,
+    state,
+    effects: { notices: announced.effects.notices, journal: [] },
+  };
 }
 
 export class GameTutorialWorldFactory implements TutorialWorldFactory {
@@ -570,18 +574,28 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
   }
 
   private async economy(session: TutorialSession, actors: Awaited<ReturnType<GameTutorialWorldFactory["systemActors"]>>): Promise<void> {
-    if (await loadEconomyWorldState(this.db as never, session.tutorialWorldId) !== undefined) return;
-    const started = prepareTutorialEconomy({
+    const prepared = prepareTutorialEconomy({
       worldId: session.tutorialWorldId,
       tutorialAccountId: session.tutorialAccountId,
       comparisonAccountId: actors.comparisonAccountId,
       comparisonOperatorId: actors.comparisonOperatorId,
       reference: session.reference,
     });
+    let current = await loadEconomyWorldState(this.db as never, session.tutorialWorldId);
+    if (current === undefined) {
+      try {
+        await persistEconomyTransition(this.db as never, { expectedRevision: null, ...prepared.initial, committedAt: session.startedAt });
+      } catch (error) {
+        if (await loadEconomyWorldState(this.db as never, session.tutorialWorldId) === undefined) throw error;
+      }
+      current = await loadEconomyWorldState(this.db as never, session.tutorialWorldId);
+    }
+    if (current?.tenders.has("tutorial-tender")) return;
+    if (current === undefined || current.revision !== prepared.initial.state.revision) throw new AlphaConflictError("Tutorialwirtschaft kann nicht deterministisch fortgesetzt werden.", "tutorial_economy_revision_conflict");
     try {
-      await persistEconomyTransition(this.db as never, { expectedRevision: null, ...started, committedAt: session.startedAt });
+      await persistEconomyTransition(this.db as never, { expectedRevision: current.revision, state: prepared.state, effects: prepared.effects, committedAt: session.startedAt });
     } catch (error) {
-      if (await loadEconomyWorldState(this.db as never, session.tutorialWorldId) === undefined) throw error;
+      if (!(await loadEconomyWorldState(this.db as never, session.tutorialWorldId))?.tenders.has("tutorial-tender")) throw error;
     }
   }
 

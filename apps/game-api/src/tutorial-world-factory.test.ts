@@ -33,6 +33,8 @@ describe("TutorialWorldFactory PlanningRun-Vertrag", () => {
     });
     const lifecycle = prepared.state.tenders.get("tutorial-tender");
 
+    expect(prepared.initial.state.revision).toBe(0);
+    expect(prepared.state.revision).toBeGreaterThan(prepared.initial.state.revision);
     expect(lifecycle?.phase).toBe("open");
     if (lifecycle?.phase !== "open") throw new Error("Tutorialausschreibung ist nicht offen.");
     expect(lifecycle.tender.closesAt - lifecycle.tender.opensAt).toBe(86_400);
