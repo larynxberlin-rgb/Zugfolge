@@ -117,11 +117,11 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
         internal_group = self.env.ref("base.group_user")
         self.reviewer = self.env["res.users"].with_context(no_reset_password=True).create({
             "name": "Infra Reviewer", "login": "infra-reviewer@example.test",
-            "groups_id": [Command.set([internal_group.id, reviewer_group.id])],
+            "group_ids": [Command.set([internal_group.id, reviewer_group.id])],
         })
         self.outsider = self.env["res.users"].with_context(no_reset_password=True).create({
             "name": "Kein Reviewer", "login": "no-reviewer@example.test",
-            "groups_id": [Command.set([internal_group.id])],
+            "group_ids": [Command.set([internal_group.id])],
         })
         manifest, parts = _fixture()
         self.manifest_attachment = self.env["ir.attachment"].create({"name": "manifest.json", "type": "binary", "raw": manifest, "mimetype": "application/json"})
