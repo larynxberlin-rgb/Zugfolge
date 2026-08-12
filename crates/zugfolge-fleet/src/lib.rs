@@ -9,6 +9,7 @@
 
 mod assets;
 mod catalog;
+mod market;
 mod mobilization;
 mod operations;
 
@@ -20,6 +21,11 @@ pub use catalog::{
     MarketEvidence, OPEN_ENDED_YEAR, ProcurementChannel, ProtectionEquipment, ProtectionFitment,
     ProtectionOption, VehicleCatalogBuilder, VehicleCatalogEntry, VehicleCatalogRelease,
     VehicleEra, VehicleTypeId, VehicleWorldSettings, YearRange,
+};
+pub use market::{
+    CONDITION_MAX, LeaseReturnReason, LessorProfile, PersistentVehicle, PersistentVehicleMarket,
+    ServerLeaseQuote, TrafficKind, VehicleCondition, VehicleLifeEvent, VehicleLifeEventKind,
+    VehicleMarketError, VehicleMarketStatus, default_server_lessors,
 };
 pub use mobilization::*;
 pub use operations::*;

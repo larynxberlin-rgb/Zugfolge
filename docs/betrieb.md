@@ -44,9 +44,12 @@ Die Regel-Engine hängt an der Dispositionsschnittstelle des Simulationskerns
 
 ## 2. Fahrzeuge und Personal
 
-- Fahrzeuge sind individuelle Assets mit Baureihe, Antrieb, Länge, Masse,
-  Leistung, Höchstgeschwindigkeit, Zugsicherung, Zulassung, Wartungsfristen und
-  Eigentumsstatus.
+- Fahrzeuge sind individuelle, weltgebundene und persistente Assets mit
+  Baureihe, Antrieb, Länge, Masse, Leistung, Höchstgeschwindigkeit,
+  Zugsicherung, Zulassung, Wartungsfristen, Eigentumsstatus, Zustandsprofil und
+  Lebenslauf. Ein in die Welt eingebrachtes Fahrzeug wird nicht erneut erzeugt:
+  Es wechselt nur zwischen Betrieb, Abstellung, Werkstatt, Vermietern,
+  Gebrauchtmarkt und endgültiger Ausmusterung.
 - Formationen werden aus Fahrzeugen gebildet. Für eine Zugfahrt erhalten sie
   aus ihrer tatsächlichen Masse und Bremsstellung ein signiertes,
   ganzzahliges **Fahrprofil**; erst damit werden sie auf eine
@@ -75,6 +78,19 @@ Die Welteinstellung führt zwei unabhängige Epochen:
 |-------------|-------|----------|
 | **Bau-Epoche** | tatsächliches Baujahr des einzelnen Fahrzeugs | Eine Gegenwartswelt kann auch Fahrzeuge aus der Bahnreformzeit zulassen |
 | **Beschaffungs-Epoche** | Jahr, in dem das EVU das Fahrzeug übernimmt | Dasselbe ältere Fahrzeug erscheint 2026 nur noch im belegten Leasing-/Gebrauchtfenster |
+
+Beide Epochen können auch auf **alle Jahre** gestellt werden. Ein alter Typ wird
+davon nicht neu produzierbar: Der Neubau bleibt zusätzlich auf seinen
+dokumentierten Bau- und Marktzeitraum begrenzt. Leasing und Gebrauchtmarkt
+liefern ein bereits gebautes, bereits konfiguriertes Fahrzeug. Das
+`VehicleAsset` hält deshalb je Einzelfahrzeug Welt, Typ, Bau- und
+Beschaffungsjahr, Marktkanal, Eigentum oder Leasing, Zulassungen,
+Wartungsfristen, die tatsächlich eingebaute Zugsicherung, Zustandswerte und
+einen unveränderlichen Lebenslauf. Ein Lebenslauf beginnt spätestens mit dem
+Welteintritt und dokumentiert Halter- und Nutzungswechsel, Leasing,
+Wartung/Umbau, Schäden, Ausmusterung und die jeweils wirksamen
+Zustandsänderungen. Damit bleibt sowohl die Herkunft eines Gebrauchtfahrzeugs
+als auch seine betriebliche Geschichte nachvollziehbar.
 
 Die historische Bauzeit des Typs bleibt stets unverändert. Für einen Typ, dessen
 Bauende vor dem Weltsichtjahr liegt, wählt die Welt eine der folgenden Regeln:
@@ -286,6 +302,48 @@ Konfliktengine für alle Anlagenbelegungen folgt weiterhin mit M5.7.
 Dass Neubestellungen lange dauern, ist real und spielerisch wichtig: Es macht
 Leasing zum Einstiegsweg und langfristige Flottenplanung zu einer eigenen
 Disziplin. Ein Einsteiger wartet dadurch nie auf Fahrzeuge.
+
+### 3.6 Persistenter Fahrzeugmarkt und Weltstartbestand
+
+Ein Fahrzeug entsteht genau einmal: als Gebrauchtfahrzeug im administrativ vor
+Weltenstart freigegebenen Startbestand oder nach der Lieferzeit aus einer
+Neubestellung beziehungsweise einem Neufahrzeug-Leasing. Beide Wege schreiben
+ein neues, weltweit eindeutiges `VehicleAsset` in die Welt; kein Marktangebot
+ist eine austauschbare Kopie eines Typs. Wird ein Fahrzeug ausgemustert, bleibt
+sein Lebenslauf Teil des Weltarchivs, es kann aber nicht mehr disponiert oder
+gehandelt werden.
+
+Der optionale **Weltstartbestand** wird vor dem Start von der Administration
+als versionierter, auditierter und anschließend unveränderlicher Bestand
+festgelegt. Seine Fahrzeuge sind ausnahmslos gebraucht: Baujahr,
+Konfiguration, Fristen, technische und Innenraumzustände sowie Historie dürfen
+deshalb sichtbar voneinander abweichen. Ohne freigegebenen Weltstartbestand
+werden keine solchen Gebrauchtfahrzeuge künstlich erzeugt.
+
+Mehrere servereigene, fiktiv benannte Vermieter führen diesen Startbestand und
+bei Bedarf Neufahrzeug-Leasing. Jeder Vermieter besitzt ein veröffentlichtes,
+weltspezifisches Profil:
+
+| Profilteil | Wirkung |
+|-------------|---------|
+| Kalkulationsaufschlag | Vertragsrate, Kaution, Rückgabekosten und angebotener Kaufpreis folgen einer eigenen, aus dem `EconomyRelease` abgeleiteten Formel. |
+| Präferenzen | Gewichtung nach Baureihe, Verkehrstyp (SPNV, SPFV, SGV), Alter, Zustand und Vertragsdauer bestimmt, welche Fahrzeuge und Neufahrzeuge der Vermieter bevorzugt anbietet. |
+| Marktrolle | Serverseitige Angebote liegen für einen vergleichbaren Bedarf immer über dem transparenten Marktpreisband. Sie sichern den Einstieg und Engpassbedarf, sollen aber keinen vorteilhafteren Dauerweg gegenüber Handel und Vermietung zwischen EVU bilden. |
+
+Die Profile, Startbestände, Angebote und Preise sind deterministisch aus den
+an die Welt gepinnten Releases abzuleiten und für alle sichtbar. Ihre Namen,
+Präferenzen und Zuschläge sind Spielwelt-Fiktion; sie behaupten weder reale
+Unternehmen noch reale Marktpreise nachzubilden.
+
+**Rücklaufregeln.** Endet ein Leasingvertrag, gibt ein EVU den Betrieb auf oder
+wird es insolvent, geht jedes Leasingfahrzeug nach einer nötigen Rückführung
+an seinen Leasinggeber zurück. Dieser bietet es mit seinem fortgeschriebenen
+Zustand und vollständigen Lebenslauf erneut an oder stellt es ab. Eigene
+Fahrzeuge eines endenden oder insolventen EVU werden nach der
+Gläubigerverwertung als konkrete Angebote auf den Gebrauchtmarkt gegeben;
+kein Ersatzfahrzeug wird erzeugt. Gleiches gilt für einen freiwilligen Verkauf.
+Ein reguläres Ende eines Verkehrsvertrags beendet dagegen nicht automatisch
+einen noch laufenden Leasingvertrag.
 
 ## 4. Versorgung, Instandhaltung und Zusatzfahrten
 

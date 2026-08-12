@@ -840,6 +840,7 @@ deterministische Außenlauf bleibt dieselbe Zugfahrt.
 |---|---------------|-------|--------|
 | 9.1 | Tutorial-Welt, beschleunigt, fünf geführte Kapitel | L | offen |
 | 9.2 | **Weltstart mit Eigenbetrieb**: das gesamte SPNV-Netz der Region fährt ab Sekunde eins | M | erledigt |
+| 9.2a | **Administrativer Weltstartbestand**: optionaler, versionierter und auditierter Pool konkreter Gebrauchtfahrzeuge einschließlich Zustandsprofil und Lebenslauf; Zuweisung an Eigenbetrieb, Startpakete und servereigene Vermieter ohne Fahrzeugduplikate | M | offen |
 | 9.3 | Onboarding in der öffentlichen Welt: Startpaket, Kapazitäts-Heatmap, Glossar-Layer | M | offen |
 | 9.4 | Admin- und Auditwerkzeuge, Vier-Augen-Prinzip bei Hochrisikoaktionen | M | offen |
 | 9.5 | **Betriebsreife**: Observability, Backup und Restore, Incident-Runbooks. Gehört vor die erste Welt mit echten Spielern, nicht in die Monetarisierungsphase. Der Health-Check-Vertrag (`packages/health`, seit M2) liegt bereits — M9.5 baut Alarmierung, Dashboards und Backup darauf, zieht ihn nicht mehr nachträglich ein | L | offen |
@@ -902,7 +903,8 @@ offen.
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
 | 12.1 | EVU-zu-EVU-Verträge: Traktion, Vermietung, Anschluss, Ersatzverkehr | L | offen |
-| 12.2 | Fahrzeug-Sekundärmarkt mit Fristenstand und Wertverfall | M | offen |
+| 12.2 | **Persistenter Fahrzeug-Sekundärmarkt** mit Fristenstand, mehrdimensionalem Zustand, Lebenslauf, Wertverfall und Rücklauf nach Leasingende, Betriebsaufgabe oder Insolvenz; Neukäufe gehen bei Verwertung als dieselben Assets in diesen Markt | L | offen |
+| 12.2a | **Servereigene Vermieter**: mehrere fiktive, deterministisch profilierte Anbieter mit Baureihen- und Verkehrstyppräferenzen; transparente, je Anbieter verschiedene Kalkulation, jedoch stets über dem Marktpreisband vergleichbarer EVU-Angebote | M | offen |
 | 12.3 | Bietergemeinschaften, Kooperationstarife | M | offen |
 | 12.4 | Öffentliche Qualitätsrankings mit Wirkung auf Ausschreibungswertung | M | offen |
 
