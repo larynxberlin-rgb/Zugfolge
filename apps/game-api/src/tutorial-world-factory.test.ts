@@ -1,14 +1,20 @@
 import { describe, expect, it } from "vitest";
 
 import { TUTORIAL_TEMPLATE } from "@zugfolge/alpha";
+import { createTenderCalendar, deriveWorldProfile } from "@zugfolge/economy";
 
-import { TUTORIAL_LEASE_TIMES, tutorialPlanningCommand } from "./tutorial-world-factory.js";
+import { TUTORIAL_ECONOMY_LOTS, TUTORIAL_LEASE_TIMES, tutorialPlanningCommand } from "./tutorial-world-factory.js";
 
 describe("TutorialWorldFactory PlanningRun-Vertrag", () => {
   it("haelt die Antwortfrist innerhalb des Leasing-Angebotsfensters", () => {
     expect(TUTORIAL_LEASE_TIMES.offeredAtS).toBeLessThanOrEqual(TUTORIAL_LEASE_TIMES.responseDeadlineS);
     expect(TUTORIAL_LEASE_TIMES.responseDeadlineS).toBeLessThanOrEqual(TUTORIAL_LEASE_TIMES.validFromS);
     expect(TUTORIAL_LEASE_TIMES.validFromS).toBeLessThan(TUTORIAL_LEASE_TIMES.validUntilS);
+  });
+
+  it("bildet einen gueltigen Sechsmonatskalender mit genau einem sichtbaren Tutoriallos", () => {
+    expect(() => createTenderCalendar(deriveWorldProfile(6), TUTORIAL_ECONOMY_LOTS, 7_219_2026n)).not.toThrow();
+    expect(TUTORIAL_ECONOMY_LOTS.filter((lot) => lot.id === "tutorial-lot")).toHaveLength(1);
   });
 
   it.each(TUTORIAL_TEMPLATE.paths.map((alternative, index) => [alternative, index + 1] as const))(

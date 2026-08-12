@@ -151,6 +151,13 @@ export const TUTORIAL_LEASE_TIMES = Object.freeze({
   terminationNoticeS: 300,
 });
 
+export const TUTORIAL_ECONOMY_LOTS = Object.freeze([
+  Object.freeze({ id: "tutorial-lot", size: 4, attractiveness: 4 }),
+  Object.freeze({ id: "tutorial-calendar-lot-1", size: 1, attractiveness: 1 }),
+  Object.freeze({ id: "tutorial-calendar-lot-2", size: 1, attractiveness: 1 }),
+  Object.freeze({ id: "tutorial-calendar-lot-3", size: 1, attractiveness: 1 }),
+]);
+
 function object(value: unknown, name = "Wert"): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error(`${name} ist kein Objekt.`);
   return value as Record<string, unknown>;
@@ -502,7 +509,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
       seed: 7_219_2026n,
       durationMonths: 6,
       release: ECONOMY_RELEASE,
-      lots: [{ id: "tutorial-lot", size: 1, attractiveness: 1 }],
+      lots: TUTORIAL_ECONOMY_LOTS,
       authorityBudgets: [{ authorityId: "tutorial-authority", period: 0, availableCents: 50_000_000n, committedCents: 0n }],
       accounts: [session.tutorialAccountId, actors.comparisonAccountId],
       publicVehiclePoolByLot: { "tutorial-lot": ["tutorial-public-reserve"] },
