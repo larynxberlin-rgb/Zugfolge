@@ -243,6 +243,7 @@ jobs:
         run: |
           network="$(docker inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}' '${{ job.services.postgres.id }}')"
           docker run --rm --network "$network" --user odoo \
+            -e HOST=postgres -e USER=odoo -e PASSWORD=odoo-test \
             -v "${RUNNER_TEMP}/oca-queue/queue_job:/mnt/extra-addons/queue_job:ro" \
             -v "${GITHUB_WORKSPACE}/odoo/addons/zugfolge_admin:/mnt/extra-addons/zugfolge_admin:ro" \
             odoo:19.0-20260723 \
