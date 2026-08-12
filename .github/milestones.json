@@ -289,7 +289,7 @@
       "goal": "Odoo-Bridge, Entitlements und bezahlte Komfortfunktionen strikt vom Spielkern trennen.",
       "area": "area:operations",
       "dependsOn": ["M9", "M12"],
-      "status": { "core": "not_started", "integration": "not_started", "operations": "not_started", "acceptance": "not_started" },
+      "status": { "core": "in_progress", "integration": "in_progress", "operations": "not_started", "acceptance": "not_started" },
       "evidence": [],
       "items": []
     },
