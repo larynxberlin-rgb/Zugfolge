@@ -12,7 +12,7 @@ class TestZugfolgeAdminRequest(TransactionCase):
 
     def test_projection_is_not_writable_by_staff(self):
         with self.assertRaises(AccessError):
-            self.projection.write({"world_name": "Manipuliert"})
+            self.projection.with_context(zugfolge_game_projection=False).write({"world_name": "Manipuliert"})
 
     def test_high_risk_request_rejects_self_approval(self):
         request = self.env["zugfolge.admin.request"].create({
