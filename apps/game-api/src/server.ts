@@ -9,7 +9,7 @@ import {
   worldEventLog,
   worlds,
 } from "@zugfolge/db";
-import { AbuseGuard, AlphaFeedbackService, AlphaMonitoringService, InfraUpdateService, WorldEndService, alphaHash } from "@zugfolge/alpha";
+import { AbuseGuard, AlphaFeedbackService, AlphaMonitoringService, InfraUpdateService, OnboardingService, TutorialService, WorldEndService, alphaHash } from "@zugfolge/alpha";
 import {
   createHttpOdooProjectionClient,
   createHttpOdooReconciliationClient,
@@ -102,6 +102,12 @@ import {
 } from "./alpha-world-start.js";
 import type { RegionalServiceCatalog } from "./boundary-transition-scheduler.js";
 import { createAlphaInvitationAdminHandlers } from "./alpha-invitation-admin.js";
+import { AuthoritativeOnboardingPort, AuthoritativeTutorialResetPort } from "./alpha-journey-adapters.js";
+import {
+  GameAlphaJourneyCommandWriter,
+  parseAlphaJourneyAuthorityConfiguration,
+  parseStartPackageSpec,
+} from "./alpha-journey-writer.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -185,6 +191,7 @@ const alphaInvitationAdminHandlers = createAlphaInvitationAdminHandlers({
   db,
   keycloak: keycloakAdmin,
   redirectUri: requireEnv("KEYCLOAK_INVITATION_REDIRECT_URI"),
+  tutorialWorldId: requireEnv("ALPHA_TUTORIAL_WORLD_ID"),
 });
 const livemap = new LivemapRegistry();
 const operations = new OperationsRegistry();
@@ -193,6 +200,15 @@ const disruptionProviderMonitor = new DisruptionProviderMonitor(Date.now());
 const disruptionProviderClient = new PublicInfrastructureRestrictionsClient();
 const disruptionProviderStore = createDisruptionProviderStore(db);
 const operatingRuntime = loadOperatingRuntime();
+const alphaJourneyWriter = new GameAlphaJourneyCommandWriter(
+  db,
+  operatingRuntime,
+  parseAlphaJourneyAuthorityConfiguration(requireEnv("ALPHA_JOURNEY_AUTHORITY_JSON")),
+  async (events) => { events.forEach((event) => projectLivemapOperationEvent(livemap, event)); },
+);
+const tutorial = new TutorialService(db, new AuthoritativeTutorialResetPort(alphaJourneyWriter));
+const onboarding = new OnboardingService(db, new AuthoritativeOnboardingPort(alphaJourneyWriter));
+const startPackageSpec = parseStartPackageSpec(requireEnv("ALPHA_START_PACKAGE_SPEC_JSON"));
 const fleetAuthorityReleases = await loadFleetAuthorityReleaseCatalog(
   requireEnv("ZUGFOLGE_FLEET_AUTHORITY_RELEASE_PATH"),
 );
@@ -355,6 +371,9 @@ const app = buildApp({
   fleetAuthorityReleases,
   adminControl: "odoo",
   alpha: {
+    tutorial,
+    onboarding,
+    startPackageSpec,
     feedback: alphaFeedback,
     monitoring: alphaMonitoring,
     worldEnd,

@@ -850,6 +850,14 @@ deterministische Außenlauf bleibt dieselbe Zugfahrt.
 | 9.9 | Geschlossene Alpha mit 20–50 externen Spielern in der freigegebenen Mitteldeutschland-Region, einschließlich M12.1/M12.2 | M | offen |
 | 9.10 | **Jährliche Infrastrukturaktualisierung** (E22): `InfraRelease`-Neubau aus aktualisiertem `osm-pbf-lhe` und der Trassenfinder-Infrastruktur-API zu jedem realen Fahrplanwechsel; Übernahmeverfahren für eine laufende Welt zum nächsten Periodenwechsel, ohne Invariante 1 zu verletzen | L | offen |
 
+Phase 2 verdrahtet M9.1 und M9.3 im Repository: Odoo-eingeladene Konten
+erhalten Ziel- und Tutorialzugang, Tutorial-Reset sowie Startpaket laufen über
+autoritative Single-Writer-/Economy-/Operating-Pfade, und Game Web bildet die
+fünf Kapitel sowie die öffentliche Onboarding-Reise vollständig ab. Beide
+Teilabschnitte bleiben **offen**, bis ein externes Konto den Browserlauf gegen
+neu erzeugte und signierte Zielbestände absolviert hat; der lokale PGlite-E2E
+ist dafür ein reproduzierbarer Vorabbeweis, kein Produktionsnachweis.
+
 Issue #48 gehört als produktiver Betriebsreife-Nachweis zu M9. Der vom
 Kalibrierungsbestand disjunkte technische Validierungssatz, die benannte
 Release-Verantwortung und die echte Signatur des Pilot-`InfraRelease` sind mit

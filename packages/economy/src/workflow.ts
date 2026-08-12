@@ -144,6 +144,33 @@ export function startEconomyWorld(input: {
   };
 }
 
+/**
+ * Nimmt ein nach Weltstart eingeladenes Tutorialkonto in genau denselben
+ * persistenten Praequalifikationszustand auf wie ein Konto beim Weltstart.
+ */
+export function seedTutorialAccount(
+  state: EconomyWorldState,
+  input: { readonly commandId: string; readonly accountId: string },
+): EconomyWorldState {
+  if (!requireNewCommand(state, input.commandId)) return state;
+  if (input.accountId.trim() === "") throw new Error("Tutorialkonto fehlt.");
+  const prequalifications = mutableMap(state.prequalifications);
+  const current = prequalifications.get(input.accountId);
+  if (current !== undefined && (current.worldId !== state.worldId || current.accountId !== input.accountId)) {
+    throw new Error("Tutorialkonto verletzt die Weltisolation.");
+  }
+  if (current === undefined) {
+    prequalifications.set(input.accountId, Object.freeze({
+      worldId: state.worldId,
+      accountId: input.accountId,
+      score: 5_000,
+      creditScore: 5_000,
+      bankruptcies: 0,
+    }));
+  }
+  return withCommand(state, input.commandId, { prequalifications });
+}
+
 export function announceTender(state: EconomyWorldState, input: {
   readonly commandId: string;
   readonly release: EconomyRelease;
@@ -318,6 +345,116 @@ export function completeMobilization(state: EconomyWorldState, input: { readonly
     contracts.set(input.tenderId, { id: input.tenderId, worldId: state.worldId, lotId: current.tender.lotId, operatorId: transition.outcome.operatorId, startsAt: input.at, endsAt: input.at + current.tender.contractPeriods * current.tender.periodDurationSeconds, orderingFeeCentsPerTrainKm: current.winningBid.orderingFeeCentsPerTrainKm, bonusCentsPerPeriod: current.tender.rules.contractBonusCentsPerPeriod, penaltyRates: basePenalties, evidenceRequired: ["vehicles", "personnel", "paths"] });
   }
   return { state: withCommand(state, input.commandId, { mobilizations, contracts, publicOperations, prequalifications, operatingRuntimeByLot }), effects: { notices, journal, runtimeEvents: transition.events } };
+}
+
+/**
+ * Eng begrenzter M9-Einstieg in eine laufende Eigenbetriebswelt. Der Aufrufer
+ * darf weder Vertrag noch Betriebszustand erfinden: Die Uebergabe wird nur mit
+ * einem echten Rust-Uebergang und einem vollstaendigen M5-Nachweis akzeptiert.
+ */
+export function grantEmergencyStartPackage(state: EconomyWorldState, input: {
+  readonly commandId: string;
+  readonly contractId: string;
+  readonly operatorId: string;
+  readonly accountId: string;
+  readonly lotId: string;
+  readonly at: number;
+  readonly until: number;
+  readonly maximumTrainKmPerPeriod: number;
+  readonly proof: MobilizationProof;
+  readonly operatingTransition: OperatingTransitionResult;
+}): { readonly state: EconomyWorldState; readonly effects: EconomyEffects } {
+  if (!requireNewCommand(state, input.commandId)) return { state, effects: { notices: [], journal: [] } };
+  if ([input.commandId, input.contractId, input.operatorId, input.accountId, input.lotId].some((value) => value.trim() === "")) {
+    throw new Error("Startpaket besitzt unvollstaendige Kennungen.");
+  }
+  if (!Number.isSafeInteger(input.at) || !Number.isSafeInteger(input.until) || input.at < 0 || input.until <= input.at) {
+    throw new Error("Startpaket besitzt keine gueltige Simulationszeit.");
+  }
+  if (!Number.isSafeInteger(input.maximumTrainKmPerPeriod) || input.maximumTrainKmPerPeriod < 1) {
+    throw new Error("Startpaket besitzt keine positive Kilometergrenze.");
+  }
+  if (!state.lots.some((lot) => lot.id === input.lotId) || !state.publicOperations.has(input.lotId)) {
+    throw new Error("Startlos ist nicht mehr im Eigenbetrieb verfuegbar.");
+  }
+  if (state.contracts.has(input.contractId) || !isMobilizationProofComplete(input.proof)) {
+    throw new Error("Startpaketvertrag oder M5-Nachweis ist ungueltig.");
+  }
+  const transition = input.operatingTransition;
+  const previousRuntimeRevision = state.operatingRuntimeByLot.get(input.lotId)?.state.revision ?? 0;
+  if (
+    transition.schemaVersion !== "zugfolge-operating-transition-result/v1"
+    || transition.state.worldId !== state.worldId
+    || transition.state.revision !== previousRuntimeRevision + 1
+    || transition.idempotentReplay
+    || transition.outcome.lotId !== input.lotId
+    || transition.outcome.previousOperatorId !== "public"
+    || transition.outcome.operatorId !== input.operatorId
+    || transition.outcome.kind !== "operator-change"
+    || transition.outcome.penaltyRequired
+    || transition.outcome.trainRunIds.length === 0
+    || transition.outcome.livemapMarker !== null
+    || transition.events.some((event) => event.worldId !== state.worldId || event.atS !== input.at)
+    || !transition.events.some((event) => event.eventType === "operating-transition-completed")
+    || !transition.events.some((event) => event.eventType === "livemap-operation-cleared")
+    || !/^[a-f0-9]{64}$/.test(transition.stateHash)
+  ) throw new Error("Rust-Startpaketuebergang passt nicht zu Welt, Los oder Spieler-EVU.");
+
+  const contracts = mutableMap(state.contracts);
+  contracts.set(input.contractId, Object.freeze({
+    id: input.contractId,
+    worldId: state.worldId,
+    lotId: input.lotId,
+    operatorId: input.operatorId,
+    startsAt: input.at,
+    endsAt: input.until,
+    orderingFeeCentsPerTrainKm: state.release.rates.trackPerTrainKmCents
+      * BigInt(10_000 + state.release.rules.publicOperationSurchargeBasisPoints) / 10_000n,
+    bonusCentsPerPeriod: 0n,
+    penaltyRates: state.release.rules.penaltyRates,
+    evidenceRequired: Object.freeze([
+      "vehicles",
+      "personnel",
+      "paths",
+      `maximum-train-km:${input.maximumTrainKmPerPeriod}`,
+    ]),
+  }));
+  const publicOperations = mutableMap(state.publicOperations);
+  publicOperations.delete(input.lotId);
+  const prequalifications = mutableMap(state.prequalifications);
+  const existingPrequalification = prequalifications.get(input.accountId);
+  if (existingPrequalification !== undefined && existingPrequalification.worldId !== state.worldId) {
+    throw new Error("Startpaketkonto verletzt die Weltisolation.");
+  }
+  if (existingPrequalification === undefined) {
+    prequalifications.set(input.accountId, Object.freeze({
+      worldId: state.worldId,
+      accountId: input.accountId,
+      score: 5_000,
+      creditScore: 5_000,
+      bankruptcies: 0,
+    }));
+  }
+  const operatingRuntimeByLot = mutableMap(state.operatingRuntimeByLot);
+  operatingRuntimeByLot.set(input.lotId, { state: transition.state, stateHash: transition.stateHash });
+  const notice: EconomyNotice = {
+    id: `${input.commandId}:granted:${input.accountId}`,
+    worldId: state.worldId,
+    recipientAccountId: input.accountId,
+    type: "alpha-start-package-granted",
+    at: input.at,
+    payload: {
+      contractId: input.contractId,
+      lotId: input.lotId,
+      operatorId: input.operatorId,
+      maximumTrainKmPerPeriod: input.maximumTrainKmPerPeriod,
+      expiresAtS: input.until,
+    },
+  };
+  return {
+    state: withCommand(state, input.commandId, { contracts, publicOperations, prequalifications, operatingRuntimeByLot }),
+    effects: { notices: [notice], journal: [], runtimeEvents: transition.events },
+  };
 }
 
 export function settleContractPeriod(state: EconomyWorldState, input: { readonly commandId: string; readonly contractId: string; readonly period: number; readonly at: number; readonly performance: PerformanceEvidence; readonly costs: readonly ClassifiedPosting[] }): { readonly state: EconomyWorldState; readonly effects: EconomyEffects; readonly result: ProfitAndLoss } {

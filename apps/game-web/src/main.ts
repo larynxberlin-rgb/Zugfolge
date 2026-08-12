@@ -4,8 +4,10 @@ import { mountGlossaryLayer } from "@zugfolge/glossary";
 import "@zugfolge/glossary/styles.css";
 import type { PlanningProjectionV1 } from "@zugfolge/planning-projection";
 
-import { GameApiClient } from "./api.js";
+import { GameApiClient, type CapacityHeatmapCell, type OnboardingAssistant, type StartPackageGrant, type TutorialJourney } from "./api.js";
+import { ensureAccessToken, loadRuntimeConfiguration } from "./auth.js";
 import { conflictsForTrain } from "./diagram.js";
+import { renderJourney } from "./journey.js";
 import { renderLoadState, renderProjection } from "./view.js";
 import "./styles.css";
 
@@ -15,15 +17,12 @@ const app = root;
 mountGlossaryLayer(document.body);
 
 const parameters = new URLSearchParams(window.location.search);
+const runtimeConfiguration = loadRuntimeConfiguration();
 const demoMode = parameters.get("demo") === "1";
-const worldId = parameters.get("world") ?? "";
-const accessToken = sessionStorage.getItem("zugfolge.accessToken") ?? "";
-const apiBaseUrl =
-  document.querySelector<HTMLMetaElement>('meta[name="game-api-url"]')?.content ?? "";
-const api =
-  !demoMode && accessToken !== ""
-    ? new GameApiClient(apiBaseUrl, accessToken)
-    : undefined;
+const journeyMode = !demoMode && parameters.get("view") !== "diagram";
+const worldId = parameters.get("world") ?? runtimeConfiguration.publicWorldId;
+const tutorialWorldId = parameters.get("tutorialWorld") ?? runtimeConfiguration.tutorialWorldId;
+let api: GameApiClient | undefined;
 
 let density: Density = "control";
 let showBlockingTimes = true;
@@ -35,6 +34,11 @@ let message = "";
 let messageTone: "status" | "error" = "status";
 let applyingAlternativeId = "";
 let demoApply: ((current: PlanningProjectionV1, alternativeId: string) => PlanningProjectionV1) | undefined;
+let tutorialJourney: TutorialJourney | undefined;
+let startPackage: StartPackageGrant | undefined;
+let heatmap: readonly CapacityHeatmapCell[] = [];
+let onboardingAssistant: OnboardingAssistant | undefined;
+let journeyBusy = false;
 
 function explicitDemoUrl(): string {
   const demoParameters = new URLSearchParams(window.location.search);
@@ -59,6 +63,20 @@ function reconcileSelection(current: PlanningProjectionV1): void {
 
 function render(): void {
   app.dataset.density = density;
+  if (journeyMode) {
+    app.innerHTML = renderJourney({
+      tutorialWorldId,
+      publicWorldId: worldId,
+      tutorial: tutorialJourney,
+      grant: startPackage,
+      heatmap,
+      assistant: onboardingAssistant,
+      busy: journeyBusy,
+      message,
+    });
+    bindJourney();
+    return;
+  }
   if (projection === undefined) {
     app.innerHTML = renderLoadState(
       loadError === "" ? "loading" : "error",
@@ -77,6 +95,65 @@ function render(): void {
     applyingAlternativeId: applyingAlternativeId === "" ? undefined : applyingAlternativeId,
   });
   bind();
+}
+
+function bindJourney(): void {
+  app.querySelector("#tutorial-refresh")?.addEventListener("click", () => void refreshTutorial());
+  app.querySelector("#tutorial-reset")?.addEventListener("click", () => void resetTutorial());
+  app.querySelector("#claim-start-package")?.addEventListener("click", () => void claimStartPackage());
+  app.querySelector("#heatmap-refresh")?.addEventListener("click", () => void refreshOnboarding());
+}
+
+async function journeyAction(action: () => Promise<void>, success: string): Promise<void> {
+  if (journeyBusy) return;
+  journeyBusy = true;
+  message = "Autoritativer Weltzustand wird aktualisiert …";
+  render();
+  try {
+    await action();
+    message = success;
+  } catch (error) {
+    message = error instanceof Error ? error.message : "Spielerreise konnte nicht aktualisiert werden.";
+  } finally {
+    journeyBusy = false;
+    render();
+  }
+}
+
+async function refreshTutorial(): Promise<void> {
+  const client = api;
+  if (client === undefined || tutorialWorldId === "") return;
+  return journeyAction(async () => { tutorialJourney = await client.loadTutorial(tutorialWorldId); }, "Tutorialbelege sind aktuell.");
+}
+
+async function resetTutorial(): Promise<void> {
+  const client = api;
+  if (client === undefined || tutorialWorldId === "") return;
+  return journeyAction(async () => { tutorialJourney = await client.resetTutorial(tutorialWorldId); }, "Neue Tutorial-Sitzung wurde autoritativ angelegt.");
+}
+
+async function refreshOnboarding(): Promise<void> {
+  const client = api;
+  if (client === undefined || worldId === "") return;
+  return journeyAction(async () => {
+    [startPackage, heatmap, onboardingAssistant] = await Promise.all([
+      client.loadStartPackage(worldId),
+      client.loadCapacityHeatmap(worldId),
+      client.loadOnboardingAssistant(worldId),
+    ]);
+  }, "Startpaket, Kapazität und Betriebsassistent sind aktuell.");
+}
+
+async function claimStartPackage(): Promise<void> {
+  const client = api;
+  if (client === undefined || worldId === "") return;
+  return journeyAction(async () => {
+    startPackage = await client.claimStartPackage(worldId);
+    [heatmap, onboardingAssistant] = await Promise.all([
+      client.loadCapacityHeatmap(worldId),
+      client.loadOnboardingAssistant(worldId),
+    ]);
+  }, "Startpaket wurde über Fleet-, Economy- und Betriebsprogramm-Single-Writer zugeteilt.");
 }
 
 function bind(): void {
@@ -137,7 +214,7 @@ async function applyAlternative(alternativeId: string): Promise<void> {
       throw new Error("Weltkennung oder angemeldete Sitzung fehlt.");
     }
     reconcileSelection(projection);
-    message = `Serverautoritaere Planner-Projektion Revision ${projection.projectionRevision} wurde geladen.`;
+    message = `Serverautoritäre Planner-Projektion Revision ${projection.projectionRevision} wurde geladen.`;
     messageTone = "status";
   } catch (error) {
     message =
@@ -159,6 +236,44 @@ async function boot(): Promise<void> {
     projection = demo.demoProjection;
     chooseInitialSelection(projection);
     render();
+    return;
+  }
+  try {
+    const accessToken = await ensureAccessToken(runtimeConfiguration);
+    if (accessToken === "") return;
+    api = new GameApiClient(runtimeConfiguration.gameApiUrl, accessToken);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Anmeldung fehlgeschlagen.";
+    if (journeyMode) message = detail;
+    else loadError = detail;
+    render();
+    return;
+  }
+  if (journeyMode) {
+    if (api === undefined || worldId === "") {
+      message = "Öffentliche Weltkennung oder angemeldete Sitzung fehlt. Produktivdaten werden nicht durch Beispieldaten ersetzt.";
+      render();
+      return;
+    }
+    journeyBusy = true;
+    render();
+    try {
+      const [tutorial, grant, currentHeatmap, assistant] = await Promise.all([
+        tutorialWorldId === "" ? Promise.resolve(undefined) : api.loadTutorial(tutorialWorldId),
+        api.loadStartPackage(worldId),
+        api.loadCapacityHeatmap(worldId),
+        api.loadOnboardingAssistant(worldId),
+      ]);
+      tutorialJourney = tutorial;
+      startPackage = grant;
+      heatmap = currentHeatmap;
+      onboardingAssistant = assistant;
+    } catch (error) {
+      message = error instanceof Error ? error.message : "Spielerreise konnte nicht geladen werden.";
+    } finally {
+      journeyBusy = false;
+      render();
+    }
     return;
   }
   if (worldId === "" || api === undefined) {
