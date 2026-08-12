@@ -287,10 +287,11 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
 
     def test_legacy_raw_data_policy_field_is_rejected(self):
         manifest, parts = _fixture("internalStationPlanRawDataShipped")
-        manifest_attachment = self.env["ir.attachment"].create({"name": "manifest.json", "type": "binary", "raw": manifest, "mimetype": "application/json"})
-        part_attachments = self.env["ir.attachment"]
+        reviewer_attachments = self.env["ir.attachment"].with_user(self.reviewer)
+        manifest_attachment = reviewer_attachments.create({"name": "manifest.json", "type": "binary", "raw": manifest, "mimetype": "application/json"})
+        part_attachments = reviewer_attachments
         for name, content in parts:
-            part_attachments |= self.env["ir.attachment"].create({"name": name, "type": "binary", "raw": content, "mimetype": "application/octet-stream"})
+            part_attachments |= reviewer_attachments.create({"name": name, "type": "binary", "raw": content, "mimetype": "application/octet-stream"})
         record = self.env["zugfolge.infra.release.import"].with_user(self.reviewer).create({
             "manifest_attachment_ids": [Command.set(manifest_attachment.ids)],
             "part_attachment_ids": [Command.set(part_attachments.ids)],
