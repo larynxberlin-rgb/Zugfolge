@@ -124,10 +124,11 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
             "group_ids": [Command.set([internal_group.id])],
         })
         manifest, parts = _fixture()
-        self.manifest_attachment = self.env["ir.attachment"].create({"name": "manifest.json", "type": "binary", "raw": manifest, "mimetype": "application/json"})
-        self.part_attachments = self.env["ir.attachment"]
+        reviewer_attachments = self.env["ir.attachment"].with_user(self.reviewer)
+        self.manifest_attachment = reviewer_attachments.create({"name": "manifest.json", "type": "binary", "raw": manifest, "mimetype": "application/json"})
+        self.part_attachments = reviewer_attachments
         for name, content in parts:
-            self.part_attachments |= self.env["ir.attachment"].create({"name": name, "type": "binary", "raw": content, "mimetype": "application/octet-stream"})
+            self.part_attachments |= reviewer_attachments.create({"name": name, "type": "binary", "raw": content, "mimetype": "application/octet-stream"})
 
     def _create_import(self):
         return self.env["zugfolge.infra.release.import"].with_user(self.reviewer).create({
