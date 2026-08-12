@@ -114,12 +114,19 @@ Abnahmenachweis ausführbar.
 - **M9.4:** `zugfolge.admin.request` nutzt native Odoo-Gruppen, Mail-Thread
   und Aktivitäten. Hochrisikoaktionen verlangen eine andere `res.users`-
   Freigabe. Nur `action_dispatch` sendet einen typisierten HMAC-Befehl; kein
-  Button schreibt Game-Daten direkt.
+  Button schreibt Game-Daten direkt. Auch der Entzug einer Alpha-Einladung
+  erzeugt nur einen hochriskanten `world_access_revoke`-Antrag; der frühere
+  direkte Standardbefehl ist nicht mehr Bestandteil des produktiven Vertrags.
+  Erst das Game deaktiviert nach erneuter Prüfung die Keycloak-Identität und
+  entzieht den weltgebundenen Zugang.
 - **M9.7:** `zugfolge.world.projection` zeigt nur versionierte,
   frischemarkierte Projektionen. Die Oberfläche trägt Textpräfixe für Zustand
   und Datenstand sowie Tabellenziffern; Farbe ist nicht alleiniger
   Zustandskanal. `zugfolge.feedback` referenziert Welt, Zeitraum, Release,
-  Kennzahl, Ereignis oder Bericht.
+  Kennzahl, Ereignis oder Bericht. Spielerfeedback wird mit dem fachlichen
+  Game-Datensatz atomar in die Outbox gelegt, enthält in Odoo nur ein stabiles
+  Pseudonym und ist dort inhaltlich unveränderlich; bearbeitbar bleibt allein
+  der native Triagezustand.
 - **M9.10:** `infra_release_adoption` ist immer hochriskant, trägt
   Release-Hash und gewünschten Periodenwechsel und endet erst nach der
   Game-seitigen Vorabprüfung. Odoo aktiviert niemals einen Release.

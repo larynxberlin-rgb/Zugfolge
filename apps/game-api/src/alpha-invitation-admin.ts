@@ -1,9 +1,9 @@
 import type { GameAdminCommandHandler } from "@zugfolge/commerce";
 import { accountRoles, accounts, worldAccesses } from "@zugfolge/db";
 import { type IdentityDatabase, type KeycloakAdminClient } from "@zugfolge/identity";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
-export function createAlphaInvitationAdminHandlers(options: { readonly db: IdentityDatabase; readonly keycloak: KeycloakAdminClient; readonly redirectUri: string; readonly tutorialWorldId?: string }): Readonly<Record<"alpha_invitation_create" | "alpha_invitation_resend" | "alpha_invitation_revoke", GameAdminCommandHandler>> {
+export function createAlphaInvitationAdminHandlers(options: { readonly db: IdentityDatabase; readonly keycloak: KeycloakAdminClient; readonly redirectUri: string; readonly tutorialWorldId?: string }): Readonly<Record<"alpha_invitation_create" | "alpha_invitation_resend", GameAdminCommandHandler>> {
   const invitation = (context: Parameters<GameAdminCommandHandler>[0]) => {
     if (!context.payload.invitation) throw new Error("Einladungsdaten fehlen.");
     return context.payload.invitation;
@@ -29,13 +29,6 @@ export function createAlphaInvitationAdminHandlers(options: { readonly db: Ident
     async alpha_invitation_resend(context) {
       const input = invitation(context);
       await options.keycloak.resend(input.keycloakSubject!, options.redirectUri);
-      return { state: "completed", gameAuditEventId: `${input.requestReference}:${input.keycloakSubject}` };
-    },
-    async alpha_invitation_revoke(context) {
-      const input = invitation(context);
-      await options.keycloak.disable(input.keycloakSubject!);
-      const worldIds = [context.payload.worldId, ...(options.tutorialWorldId !== undefined && options.tutorialWorldId !== context.payload.worldId ? [options.tutorialWorldId] : [])];
-      await options.db.update(worldAccesses).set({ status: "revoked", revokedAt: context.now }).where(and(inArray(worldAccesses.worldId, worldIds), eq(worldAccesses.keycloakSubject, input.keycloakSubject!)));
       return { state: "completed", gameAuditEventId: `${input.requestReference}:${input.keycloakSubject}` };
     },
   };

@@ -11,7 +11,6 @@ scrape_configs:
     static_configs:
       - targets: ["game-api:3000"]
   - job_name: zugfolge-odoo
-    metrics_path: /web/health
+    metrics_path: /zugfolge/metrics
     static_configs:
       - targets: ["odoo:8069"]
-

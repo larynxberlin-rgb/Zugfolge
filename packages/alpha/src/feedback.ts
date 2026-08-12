@@ -1,4 +1,4 @@
-import { alphaFeedback, alphaWorldProfiles, domainEvents } from "@zugfolge/db";
+import { alphaFeedback, alphaWorldProfiles, domainEvents, type AlphaFeedback } from "@zugfolge/db";
 import { and, eq } from "drizzle-orm";
 
 import { AlphaValidationError } from "./errors.js";
@@ -17,12 +17,25 @@ export interface FeedbackInput {
   readonly contactAllowed: boolean;
 }
 
+/**
+ * Der Port wird innerhalb derselben Postgres-Transaktion wie das Feedback
+ * aufgerufen. Seine Nutzlast darf nur das bereits pseudonymisierte Game-Modell
+ * enthalten, nie Keycloak-Subjekte oder E-Mail-Adressen.
+ */
+export interface AlphaFeedbackProjectionPort {
+  enqueue(db: AlphaDatabase, feedback: AlphaFeedback): Promise<void>;
+}
+
 export class AlphaFeedbackService {
-  constructor(private readonly db: AlphaDatabase, private readonly pseudonymSecret: string) {
+  constructor(
+    private readonly db: AlphaDatabase,
+    private readonly pseudonymSecret: string,
+    private readonly projection?: AlphaFeedbackProjectionPort,
+  ) {
     if (pseudonymSecret.length < 32) throw new AlphaValidationError("Feedback-Pseudonymisierung braucht mindestens 32 Zeichen Geheimnis.");
   }
 
-  async submit(input: FeedbackInput) {
+  async submit(input: FeedbackInput, submittedAt = new Date()) {
     if (!Number.isSafeInteger(input.fromS) || !Number.isSafeInteger(input.untilS) || input.fromS < 0 || input.untilS < input.fromS) {
       throw new AlphaValidationError("Feedback-Zeitraum ist ungueltig.");
     }
@@ -38,19 +51,23 @@ export class AlphaFeedbackService {
       )).limit(1);
       if (event === undefined) throw new AlphaValidationError("Ereignisverweis gehoert nicht zu dieser Welt.");
     }
-    const [created] = await this.db.insert(alphaFeedback).values({
-      worldId: input.worldId,
-      participantPseudonym: pseudonym(this.pseudonymSecret, input.keycloakSubject),
-      releaseHash: profile.blueprintHash,
-      fromS: input.fromS,
-      untilS: input.untilS,
-      eventReference: input.eventReference,
-      reportReference: input.reportReference,
-      category: input.category,
-      message,
-      contactAllowed: input.contactAllowed,
-    }).returning();
-    if (created === undefined) throw new Error("Feedback konnte nicht gespeichert werden.");
-    return created;
+    return this.db.transaction(async (tx) => {
+      const [created] = await tx.insert(alphaFeedback).values({
+        worldId: input.worldId,
+        participantPseudonym: pseudonym(this.pseudonymSecret, input.keycloakSubject),
+        releaseHash: profile.blueprintHash,
+        fromS: input.fromS,
+        untilS: input.untilS,
+        eventReference: input.eventReference,
+        reportReference: input.reportReference,
+        category: input.category,
+        message,
+        contactAllowed: input.contactAllowed,
+        submittedAt,
+      }).returning();
+      if (created === undefined) throw new Error("Feedback konnte nicht gespeichert werden.");
+      await this.projection?.enqueue(tx, created);
+      return created;
+    });
   }
 }

@@ -77,11 +77,37 @@ services:
     ports: ["${STATIC_PORT:-4179}:4179"]
   odoo:
     build: { context: ., dockerfile: ops/alpha/odoo/Dockerfile }
-    command: [odoo, --database=zugfolge_odoo, --db_host=odoo-postgres, --db_user=odoo, --db_password=${ODOO_DB_PASSWORD}, --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons, --init=queue_job,zugfolge_admin]
+    command:
+      - odoo
+      - --database=zugfolge_odoo
+      - --db_host=odoo-postgres
+      - --db_user=odoo
+      - "--db_password=${ODOO_DB_PASSWORD}"
+      - --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons
+      - --load=base,web,queue_job
+      - --workers=2
+      - --max-cron-threads=1
+      - --init=queue_job,zugfolge_admin
+    environment:
+      ODOO_QUEUE_JOB_CHANNELS: root:2
     volumes: [odoo-filestore:/var/lib/odoo]
     depends_on: { odoo-postgres: { condition: service_healthy }, game-api: { condition: service_healthy } }
     healthcheck: { <<: *health, test: [CMD-SHELL, "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8069/web/health')\""] }
     ports: ["${ODOO_PORT:-8069}:8069"]
+  alpha-ops:
+    profiles: [operations]
+    build: { context: ., dockerfile: ops/alpha/odoo/Dockerfile }
+    entrypoint: [/bin/sh]
+    command: [-c, "echo alpha-ops ready"]
+    user: "0:0"
+    environment:
+      PGPASSWORD: "${ODOO_DB_PASSWORD}"
+    volumes:
+      - ./ops/alpha:/ops/alpha:ro
+      - ./tools/alpha-ops:/tools/alpha-ops:ro
+      - "${ALPHA_OPS_HOST_DIR:-./var/alpha-ops}:/work"
+      - odoo-filestore:/var/lib/odoo:ro
+    depends_on: { odoo-postgres: { condition: service_healthy } }
   prometheus:
     image: prom/prometheus:v3.5.0
     command: [--config.file=/etc/prometheus/prometheus.yml]

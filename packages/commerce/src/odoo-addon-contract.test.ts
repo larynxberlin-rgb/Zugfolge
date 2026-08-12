@@ -35,7 +35,9 @@ describe("Odoo-Administrationsmodul", () => {
     const receipt = await readFile(resolve(addon, "models/projection_receipt.py"), "utf8");
     expect(controller).toContain("hmac.compare_digest");
     expect(controller).toContain("/zugfolge/reconciliation/snapshot");
+    expect(controller).toContain("/zugfolge/metrics");
     expect(controller).toContain("admin.capability.projection");
+    expect(controller).toContain("alpha.feedback.projection");
     expect(receipt).toContain("unique(message_id)");
     expect(receipt).toContain("unveränderlich");
   });
@@ -48,8 +50,28 @@ describe("Alpha-Einladungen", () => {
     expect(model).toContain("class AlphaInvitation");
     expect(model).toContain("action_resend");
     expect(model).toContain("action_revoke");
-    expect(model).toContain("dispatch_signed_game_command");
+    expect(model).toContain('"action_type": "world_access_revoke"');
+    expect(model).toContain('"risk_class": "high"');
+    expect(model).not.toContain('record._command("revoke")');
     expect(views).toContain("Alpha-Einladungen");
+  });
+
+  it("liefert einen isolierten Restore-, Alert- und Dashboard-Drill", async () => {
+    const restore = await readFile(resolve(addon, "../../../ops/alpha/restore-odoo.sh"), "utf8");
+    const drill = await readFile(resolve(addon, "../../../tools/alpha-ops/phase3-acceptance.sh"), "utf8");
+    const dashboard = await readFile(resolve(addon, "../../../ops/alpha/grafana/zugfolge-alpha.json"), "utf8");
+    const datasource = await readFile(resolve(addon, "../../../ops/alpha/grafana/provisioning/datasources/prometheus.yml"), "utf8");
+    expect(restore).toContain("zugfolge_odoo_restore_");
+    expect(restore).toContain("authoritativeStateSha256");
+    expect(drill).toContain("--test-enable");
+    expect(drill).toContain("ZugfolgeOdooDown");
+    expect(drill).toContain("ZugfolgeSubsystemDegraded");
+    expect(drill).toContain("attachment");
+    expect(dashboard).toContain("zugfolge_alpha_odoo_projection_pending");
+    expect(dashboard).toContain("zugfolge_alpha_market_items");
+    expect(datasource).toContain("uid: zugfolge-prometheus");
+    expect(drill).toContain("/api/datasources/proxy/uid/zugfolge-prometheus");
+    expect(drill).toContain("parsed.data.result.length === 0");
   });
   it("versioniert Compose, Keycloak-Realm und secret-freie Beispielkonfiguration", async () => {
     const compose = await readFile(resolve(addon, "../../../compose.alpha.yml"), "utf8");

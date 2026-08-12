@@ -102,6 +102,7 @@ describe("PR 198/199 Odoo-Game-Produktionsgrenze", () => {
 
   it("entzieht einen Weltzugang ausschliesslich ueber signierten Odoo-Antrag und verknuepft den Game-Auditbeleg", async () => {
     await db.insert(worldAccesses).values({ worldId: WORLD, keycloakSubject: "player-to-revoke" });
+    const keycloak = { disable: vi.fn(async () => undefined) };
     const envelope: OdooWebhookEnvelope = {
       schemaVersion: "zugfolge-odoo/v1", eventId: "odoo-world-access-revoke-0001",
       eventType: "commerce.command", occurredAt: NOW.toISOString(),
@@ -109,7 +110,7 @@ describe("PR 198/199 Odoo-Game-Produktionsgrenze", () => {
       actorReference: "odoo-admin-service",
       command: {
         kind: "admin.world_access_revoke", worldId: WORLD, actionType: "world_access_revoke",
-        riskClass: "standard", requesterReference: "support-one",
+        riskClass: "high", requesterReference: "support-one", approverReference: "support-two",
         reason: "Bestaetigter Zugangsentzug nach abgeschlossenem Supportfall",
         effectPreview: { activeSessions: 1 }, targetReference: "player-to-revoke",
       },
@@ -118,11 +119,13 @@ describe("PR 198/199 Odoo-Game-Produktionsgrenze", () => {
       createOdooWebhookReceiptStore(db), signPayload(envelope, KEY, NOW),
       { tenantId: "zugfolge-production", keys: [KEY], authorizedActors: { "odoo-admin-service": ["admin.world_access_revoke"] } }, NOW,
     );
-    await expect(processNextOdooCommand(db, NOW, { adminHandlers: { world_access_revoke: createWorldAccessRevokeAdminHandler(db) } })).resolves.toMatchObject({ outcome: "accepted" });
+    await expect(processNextOdooCommand(db, NOW, { adminHandlers: { world_access_revoke: createWorldAccessRevokeAdminHandler({ db, keycloak }) } })).resolves.toMatchObject({ outcome: "accepted" });
+    expect(keycloak.disable).toHaveBeenCalledWith("player-to-revoke");
     const [access] = await db.select().from(worldAccesses).where(eq(worldAccesses.keycloakSubject, "player-to-revoke"));
     expect(access).toMatchObject({ worldId: WORLD, status: "revoked", revokedAt: NOW });
     const [request] = await db.select().from(gameAdminRequests).where(eq(gameAdminRequests.actionType, "world_access_revoke"));
     const [audit] = await db.select().from(domainEvents).where(eq(domainEvents.id, request!.gameAuditEventId!));
     expect(audit).toMatchObject({ eventType: "admin.action-audited", payload: { actionType: "world_access_revoke", outcome: "completed" } });
+    expect(request).toMatchObject({ requesterReference: "support-one", approverReference: "support-two" });
   });
 });

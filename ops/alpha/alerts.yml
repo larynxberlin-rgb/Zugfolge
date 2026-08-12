@@ -36,4 +36,18 @@ groups:
         for: 10m
         labels: { severity: warning, runbook: game-api-latency }
         annotations: { summary: "Game API p95 liegt ueber einer Sekunde" }
-
+      - alert: ZugfolgeAuthoritativeEventStale
+        expr: zugfolge_alpha_event_age_seconds > 60
+        for: 2m
+        labels: { severity: critical, runbook: simulation-stale }
+        annotations: { summary: "Autoritativer Eventstand von {{ $labels.world_id }} ist aelter als 60 Sekunden" }
+      - alert: ZugfolgeOdooProjectionBacklog
+        expr: zugfolge_alpha_odoo_projection_pending > 0
+        for: 10m
+        labels: { severity: warning, runbook: odoo-bridge-backlog }
+        annotations: { summary: "Odoo-Projektionen von {{ $labels.world_id }} warten seit mindestens zehn Minuten" }
+      - alert: ZugfolgeOdooProjectionFailure
+        expr: zugfolge_alpha_odoo_projection_failed > 0
+        for: 2m
+        labels: { severity: warning, runbook: odoo-bridge-failure }
+        annotations: { summary: "Odoo-Bridge von {{ $labels.world_id }} meldet fehlgeschlagene Projektionen" }

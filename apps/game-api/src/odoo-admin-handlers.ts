@@ -1,13 +1,13 @@
 import { worldAccesses } from "@zugfolge/db";
 import type { AbuseGuard, InfraUpdateService, WorldEndService } from "@zugfolge/alpha";
 import type { GameAdminCommandContext, GameAdminCommandHandler, GameAdminCapabilityProjection } from "@zugfolge/commerce";
-import type { IdentityDatabase } from "@zugfolge/identity";
+import type { IdentityDatabase, KeycloakAdminClient } from "@zugfolge/identity";
 import { and, eq } from "drizzle-orm";
 
 export const WORLD_ACCESS_REVOKE_CAPABILITY: GameAdminCapabilityProjection = Object.freeze({
   actionType: "world_access_revoke",
   availability: "available",
-  detail: "M9 Odoo-Pfad aktiv; Game prueft Weltbindung und entzieht nur einen bestehenden aktiven Zugang.",
+  detail: "M9 Odoo-Vier-Augen-Pfad aktiv; Game prueft Weltbindung, deaktiviert die Keycloak-Identitaet und entzieht den bestehenden Zugang idempotent.",
 });
 
 export const ABUSE_SANCTION_ACTIVATE_CAPABILITY: GameAdminCapabilityProjection = Object.freeze({
@@ -35,19 +35,37 @@ export class WorldAccessAdminError extends Error {
   }
 }
 
-export function createWorldAccessRevokeAdminHandler(db: IdentityDatabase): GameAdminCommandHandler {
+export function createWorldAccessRevokeAdminHandler(options: {
+  readonly db: IdentityDatabase;
+  readonly keycloak: Pick<KeycloakAdminClient, "disable">;
+}): GameAdminCommandHandler {
   return async (context: GameAdminCommandContext) => {
     const { payload } = context;
-    if (payload.kind !== "admin.world_access_revoke" || payload.actionType !== "world_access_revoke" || payload.targetReference === undefined || payload.targetReference.trim() === "") {
+    if (payload.kind !== "admin.world_access_revoke" || payload.actionType !== "world_access_revoke" || payload.riskClass !== "high" || payload.targetReference === undefined || payload.targetReference.trim() === "") {
       throw new WorldAccessAdminError("schema");
     }
-    const [revoked] = await db.update(worldAccesses).set({ status: "revoked", revokedAt: context.now }).where(and(
-      eq(worldAccesses.worldId, payload.worldId),
-      eq(worldAccesses.keycloakSubject, payload.targetReference),
-      eq(worldAccesses.status, "active"),
-    )).returning({ id: worldAccesses.id });
-    if (revoked === undefined) throw new WorldAccessAdminError("not_found");
-    return { state: "completed", gameAuditEventId: `world-access:${payload.worldId}:${revoked.id}:revoked` };
+    const [existing] = await options.db.select({ id: worldAccesses.id, status: worldAccesses.status }).from(worldAccesses).where(and(
+      eq(worldAccesses.worldId, payload.worldId), eq(worldAccesses.keycloakSubject, payload.targetReference),
+    )).limit(1);
+    if (existing === undefined) throw new WorldAccessAdminError("not_found");
+
+    // Die externe Deaktivierung ist idempotent. Sie erfolgt vor dem lokalen
+    // Commit, damit ein Keycloak-Fehler den Weltzugang nicht halb entzieht;
+    // nach erfolgreicher Deaktivierung kann jeder Retry den Game-Commit sicher
+    // nachholen.
+    await options.keycloak.disable(payload.targetReference);
+    if (existing.status === "active") {
+      await options.db.update(worldAccesses).set({ status: "revoked", revokedAt: context.now }).where(and(
+        eq(worldAccesses.worldId, payload.worldId),
+        eq(worldAccesses.keycloakSubject, payload.targetReference),
+        eq(worldAccesses.status, "active"),
+      ));
+    }
+    return {
+      state: "completed",
+      gameAuditEventId: `world-access:${payload.worldId}:${existing.id}:revoked`,
+      result: { keycloakSubject: payload.targetReference, revokedWorldId: payload.worldId },
+    };
   };
 }
 

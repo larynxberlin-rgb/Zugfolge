@@ -48,3 +48,9 @@ def dispatch_signed_game_command(env, correlation_id, actor_reference, command):
     }, timeout=10)
     if response.status_code not in (200, 202):
         raise UserError("Game hat den Antrag nicht angenommen (%s)." % response.status_code)
+    try:
+        result = response.json()
+    except ValueError as error:
+        raise UserError("Game hat keine pruefbare Annahme bestaetigt.") from error
+    if not isinstance(result, dict) or result.get("accepted") is not True:
+        raise UserError("Game hat den Antrag fachlich abgelehnt (%s)." % (result.get("code", "invalid_response") if isinstance(result, dict) else "invalid_response"))

@@ -19,7 +19,6 @@ export const COMMAND_TYPES = [
   "admin.tutorial_account_reset",
   "admin.alpha_invitation_create",
   "admin.alpha_invitation_resend",
-  "admin.alpha_invitation_revoke",
 ] as const;
 export type OdooCommandType = (typeof COMMAND_TYPES)[number];
 
@@ -37,7 +36,6 @@ export const ADMIN_ACTION_TYPES = [
   "tutorial_account_reset",
   "alpha_invitation_create",
   "alpha_invitation_resend",
-  "alpha_invitation_revoke",
 ] as const;
 export type AdminActionType = (typeof ADMIN_ACTION_TYPES)[number];
 
@@ -117,7 +115,7 @@ export interface OdooWebhookEnvelope {
 export interface OdooProjectionEnvelope {
   readonly schemaVersion: typeof ODOO_CONTRACT_VERSION;
   readonly messageId: string;
-  readonly messageType: "world.projection" | "admin.command.result" | "admin.capability.projection" | "reconciliation.task";
+  readonly messageType: "world.projection" | "alpha.feedback.projection" | "admin.command.result" | "admin.capability.projection" | "reconciliation.task";
   readonly worldId: string;
   readonly occurredAt: string;
   readonly correlationId: string;

@@ -16,6 +16,7 @@ import {
   createOdooBridgeHealthCheck,
   createOdooWebhookReceiptStore,
   dispatchOdooProjectionOutbox,
+  enqueueAlphaFeedbackProjection,
   enqueueGameAdminCapabilityProjection,
   enqueueWorldProjection,
   processNextOdooCommand,
@@ -103,6 +104,7 @@ import {
 import type { RegionalServiceCatalog } from "./boundary-transition-scheduler.js";
 import { createAlphaInvitationAdminHandlers } from "./alpha-invitation-admin.js";
 import { AuthoritativeOnboardingPort, AuthoritativeTutorialResetPort } from "./alpha-journey-adapters.js";
+import { AlphaOperationsMetrics } from "./observability.js";
 import {
   GameAlphaJourneyCommandWriter,
   parseAlphaJourneyAuthorityConfiguration,
@@ -244,10 +246,32 @@ const manualDisruptionAdminHandler = createManualDisruptionAdminHandler({
     return epoch;
   },
 });
-const worldAccessRevokeAdminHandler = createWorldAccessRevokeAdminHandler(db);
+const worldAccessRevokeAdminHandler = createWorldAccessRevokeAdminHandler({ db, keycloak: keycloakAdmin });
 const alphaMonitoring = new AlphaMonitoringService(db);
+const alphaOperationsMetrics = new AlphaOperationsMetrics();
 const alphaPseudonymSecret = requireEnv("ALPHA_PSEUDONYM_SECRET");
-const alphaFeedback = new AlphaFeedbackService(db, alphaPseudonymSecret);
+const alphaFeedback = new AlphaFeedbackService(db, alphaPseudonymSecret, {
+  async enqueue(tx, feedback) {
+    await enqueueAlphaFeedbackProjection(tx, {
+      worldId: feedback.worldId,
+      correlationId: `alpha-feedback:${feedback.id}`,
+      occurredAt: feedback.submittedAt,
+      payload: {
+        feedbackReference: feedback.id,
+        participantPseudonym: feedback.participantPseudonym,
+        releaseHash: feedback.releaseHash,
+        fromS: feedback.fromS,
+        untilS: feedback.untilS,
+        eventReference: feedback.eventReference,
+        reportReference: feedback.reportReference,
+        category: feedback.category,
+        message: feedback.message,
+        contactAllowed: feedback.contactAllowed,
+        submittedAt: feedback.submittedAt.toISOString(),
+      },
+    });
+  },
+});
 const abuseGuard = new AbuseGuard(db);
 const worldEnd = new WorldEndService(db);
 const trustedReleaseKeys = parseTrustedReleaseKeys(requireEnv("INFRA_RELEASE_TRUSTED_KEYS_JSON"));
@@ -399,6 +423,7 @@ const app = buildApp({
     createLivemapHealthCheck(livemap),
     createOdooBridgeHealthCheck(db),
   ],
+  extraMetricSources: [alphaOperationsMetrics],
   odooWebhookStore,
   odooWebhookOptions,
 });
@@ -429,6 +454,7 @@ const runAlphaProjection = () => {
     const profiles = await db.select({ worldId: alphaWorldProfiles.worldId }).from(alphaWorldProfiles).orderBy(asc(alphaWorldProfiles.worldId));
     for (const profile of profiles) {
       const snapshot = await alphaMonitoring.snapshot(profile.worldId, observedAt);
+      alphaOperationsMetrics.observe(snapshot);
       const epoch = worldEpochs.get(profile.worldId);
       if (epoch === undefined) throw new Error(`Weltepoche fuer Alpha-Projektion '${profile.worldId}' fehlt.`);
       const eventAge = snapshot.freshness.eventAgeSeconds;

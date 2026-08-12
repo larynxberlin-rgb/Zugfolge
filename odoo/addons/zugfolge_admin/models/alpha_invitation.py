@@ -23,7 +23,8 @@ class AlphaInvitation(models.Model):
     correlation_id = fields.Char(required=True, default=lambda self: str(uuid.uuid4()), readonly=True, copy=False, index=True)
     keycloak_subject = fields.Char(readonly=True, copy=False, index=True)
     game_account_reference = fields.Char(readonly=True, copy=False)
-    state = fields.Selection([("draft", "Entwurf"), ("sent", "Gesendet"), ("provisioned", "Bereitgestellt"), ("revoked", "Entzogen"), ("failed", "Fehlgeschlagen")], required=True, default="draft", readonly=True, tracking=True)
+    revocation_request_id = fields.Many2one("zugfolge.admin.request", readonly=True, copy=False, ondelete="restrict")
+    state = fields.Selection([("draft", "Entwurf"), ("sent", "Gesendet"), ("provisioned", "Bereitgestellt"), ("revocation_requested", "Entzug beantragt"), ("revoked", "Entzogen"), ("failed", "Fehlgeschlagen")], required=True, default="draft", readonly=True, tracking=True)
 
     def _command(self, action):
         self.ensure_one()
@@ -62,11 +63,35 @@ class AlphaInvitation(models.Model):
         for record in self:
             if not record.keycloak_subject:
                 raise UserError(_("Erneutes Senden ist erst nach autoritativer Bereitstellung moeglich."))
+            if record.state != "provisioned":
+                raise UserError(_("Erneutes Senden ist nur fuer ein bereitgestelltes, aktives Konto moeglich."))
             record._command("resend")
 
     def action_revoke(self):
-        for record in self:
-            if not record.keycloak_subject:
-                raise UserError(_("Entzug ist erst nach autoritativer Bereitstellung moeglich."))
-            record._command("revoke")
-            record.state = "revoked"
+        self.ensure_one()
+        if not self.keycloak_subject:
+            raise UserError(_("Entzug ist erst nach autoritativer Bereitstellung moeglich."))
+        if self.state != "provisioned":
+            raise UserError(_("Fuer diese Einladung laeuft bereits ein Entzug oder sie ist nicht aktiv."))
+        admin_request = self.env["zugfolge.admin.request"].create({
+            "world_projection_id": self.world_projection_id.id,
+            "action_type": "world_access_revoke",
+            "risk_class": "high",
+            "reason": _("Alpha-Konto aus dem freigegebenen Kontenlebenszyklus entziehen"),
+            "effect_preview": {
+                "requestReference": self.request_reference,
+                "keycloakSubject": self.keycloak_subject,
+                "gameAccountReference": self.game_account_reference,
+                "effect": "Keycloak-Identitaet deaktivieren und Weltzugang entziehen",
+            },
+            "target_reference": self.keycloak_subject,
+        })
+        self.write({"state": "revocation_requested", "revocation_request_id": admin_request.id})
+        return {
+            "type": "ir.actions.act_window",
+            "name": _("Vier-Augen-Entzug"),
+            "res_model": "zugfolge.admin.request",
+            "res_id": admin_request.id,
+            "view_mode": "form",
+            "target": "current",
+        }

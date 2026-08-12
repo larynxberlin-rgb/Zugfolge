@@ -28,10 +28,37 @@ Der autoritative Vergleich erfolgt mit
 `tools/alpha-ops/authoritative-state-hash.mjs` über alle öffentlichen Tabellen.
 
 Odoo wird getrennt gesichert: `backup-odoo.sh` schreibt Datenbankdump,
-Filestore-Archiv und beide Hashes. `restore-odoo.sh` prüft beide Hashes, nimmt
+Filestore-Archiv, Artefakthashes sowie kanonische Hashes des Zugfolge-
+Fachzustands und des Filestore-Baums. `restore-odoo.sh` prüft alle vier, nimmt
 nur eine isolierte `zugfolge_odoo_restore_*`-Datenbank und weigert sich, einen
 nichtleeren Ziel-Filestore zu überschreiben. Erst nach Modul-Upgrade,
 Odoo-Testlauf und Stichprobe von Anhängen darf ein Restore freigegeben werden.
+
+## Reproduzierbarer Phase-3-Drill
+
+`pnpm alpha:phase3` ist der einzige vollständige M9.4/M9.5/M9.7-Lauf. Er nutzt
+den bereits gesunden Compose-Stack und schreibt keine Protokolle vorab. Seine
+Reihenfolge ist bindend:
+
+1. ein bereitgestelltes Alpha-Konto über zwei verschiedene Odoo-Benutzer
+   entziehen; Odoo-Request, Keycloak-Subject, weltgebundener Zugang und
+   Game-Audit müssen in einem Protokoll verbunden sein;
+2. Feedback eines anderen aktiven externen Kontos bis in die pseudonymisierte
+   Odoo-Projektion verfolgen;
+3. laufendes Odoo sichern und isoliert restaurieren, Fachzustands- und
+   Filestore-Baumhash vergleichen, danach Modulupgrade, Add-on-Tests und eine
+   echte `ir.attachment`-Stichprobe ausführen;
+4. Odoo stoppen, bis `ZugfolgeOdooDown` und
+   `ZugfolgeSubsystemDegraded` feuern; nach Wiederanlauf Game API stoppen, bis
+   `ZugfolgeGameApiDown` feuert;
+5. Dashboard-UID `zugfolge-alpha-ops` und die Prometheus-Reihen für Datenalter,
+   Queues, Bridge und Markt live abfragen.
+
+Der Drill ist auf Linux im Wartungsfenster auszuführen und kann wegen der
+echten `for`-Zeiten der Alert-Regeln mehr als zehn Minuten dauern. Ein
+verkürztes Warteintervall oder ein statisch gerendertes Dashboard ersetzt den
+Nachweis nicht. Bei Abbruch stellt der Trap Odoo und Game API wieder an; danach
+ist trotzdem die normale Readiness- und Reconciliation-Prüfung Pflicht.
 
 ## Wichtigste Ausfälle
 

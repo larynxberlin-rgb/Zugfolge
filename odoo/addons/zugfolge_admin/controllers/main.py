@@ -25,19 +25,26 @@ def _valid_signature(payload, key_id, timestamp, supplied):
 
 
 class ZugfolgeProjectionController(http.Controller):
+    @http.route("/zugfolge/metrics", type="http", auth="none", methods=["GET"], csrf=False)
+    def prometheus_metrics(self, **_kwargs):
+        body = "# HELP zugfolge_odoo_ready Odoo process and database request path are ready.\n# TYPE zugfolge_odoo_ready gauge\nzugfolge_odoo_ready 1\n"
+        return request.make_response(body, headers=[("Content-Type", "text/plain; version=0.0.4; charset=utf-8"), ("Cache-Control", "no-store")])
+
     @http.route("/zugfolge/projection", type="json", auth="none", methods=["POST"], csrf=False)
     def ingest_projection(self, **_kwargs):
         payload = request.jsonrequest
         headers = request.httprequest.headers
         if not isinstance(payload, dict) or not _valid_signature(payload, headers.get("X-Zugfolge-Odoo-Key-Id"), headers.get("X-Zugfolge-Odoo-Timestamp"), headers.get("X-Zugfolge-Odoo-Signature")):
             return {"accepted": False, "code": "invalid_signature"}
-        if payload.get("schemaVersion") != "zugfolge-odoo/v1" or payload.get("messageType") not in ("world.projection", "admin.command.result", "admin.capability.projection", "reconciliation.task"):
+        if payload.get("schemaVersion") != "zugfolge-odoo/v1" or payload.get("messageType") not in ("world.projection", "alpha.feedback.projection", "admin.command.result", "admin.capability.projection", "reconciliation.task"):
             return {"accepted": False, "code": "invalid_schema"}
         model = request.env["zugfolge.world.projection"].with_context(zugfolge_game_projection=True)
         if payload["messageType"] == "world.projection":
             model.upsert_game_projection(payload)
         if payload["messageType"] == "admin.capability.projection":
             request.env["zugfolge.admin.capability"].with_context(zugfolge_game_projection=True).upsert_game_projection(payload)
+        if payload["messageType"] == "alpha.feedback.projection":
+            request.env["zugfolge.feedback"].with_context(zugfolge_game_projection=True).upsert_game_projection(payload)
         receipt = request.env["zugfolge.projection.receipt"].with_context(zugfolge_game_projection=True)
         existing = receipt.search([("message_id", "=", payload.get("messageId"))], limit=1)
         if not existing:
@@ -55,6 +62,14 @@ class ZugfolgeProjectionController(http.Controller):
                     "eventId": result.get("eventId"),
                     "failureCode": result.get("failureCode"),
                 })
+                if request_record.action_type == "world_access_revoke" and state == "completed":
+                    invitation = request.env["zugfolge.alpha.invitation"].search([
+                        ("world_projection_id", "=", request_record.world_projection_id.id),
+                        ("keycloak_subject", "=", result.get("keycloakSubject") or request_record.target_reference),
+                        ("revocation_request_id", "=", request_record.id),
+                    ], limit=1)
+                    if invitation:
+                        invitation.with_context(zugfolge_game_projection=True).write({"state": "revoked"})
             invitation = request.env["zugfolge.alpha.invitation"].search([("correlation_id", "=", payload.get("correlationId"))], limit=1)
             if invitation:
                 values = {"state": "provisioned" if result.get("outcome") == "accepted" else "failed"}

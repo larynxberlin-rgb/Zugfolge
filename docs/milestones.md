@@ -858,6 +858,18 @@ Teilabschnitte bleiben **offen**, bis ein externes Konto den Browserlauf gegen
 neu erzeugte und signierte Zielbestände absolviert hat; der lokale PGlite-E2E
 ist dafür ein reproduzierbarer Vorabbeweis, kein Produktionsnachweis.
 
+Phase 3 schließt die noch fehlende ausführbare Betriebsschicht für M9.4,
+M9.5 und M9.7: Einladungskonten werden nur noch über einen Odoo-
+Vier-Augen-Antrag entzogen, wobei das Game Keycloak und den weltgebundenen
+Zugang reautorisiert; Spielerfeedback gelangt atomar und pseudonymisiert über
+die Game-Outbox nach Odoo; Prometheus/Grafana erhalten live materialisierte
+Welt-, Queue-, Bridge- und Marktmetriken. Der versionierte
+`alpha:phase3`-Drill umfasst außerdem den isolierten Odoo-Restore mit
+Fachzustands-/Filestorehash, Modulupgrade, Odoo-Tests, Anhangsstichprobe und
+echte Alert-Ausfälle. Die drei Teilabschnitte bleiben **offen**, bis dieser
+Drill gegen den laufenden Zielstack ein Protokoll mit Status `passed` erzeugt;
+Repositorytests allein sind kein Betriebsnachweis.
+
 Issue #48 gehört als produktiver Betriebsreife-Nachweis zu M9. Der vom
 Kalibrierungsbestand disjunkte technische Validierungssatz, die benannte
 Release-Verantwortung und die echte Signatur des Pilot-`InfraRelease` sind mit
