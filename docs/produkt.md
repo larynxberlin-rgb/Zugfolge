@@ -40,6 +40,10 @@ wirtschaftlichem Realismus.
   Verträge, Ergebnisrechnung.
 - **Postfach** — Trassenangebote, Fristen, Ausschreibungen, Störungen,
   administrative Nachrichten.
+- **Schaffnermodus** — optionale begehbare Top-down-Ansicht eigener aktiver
+  SPNV-Züge mit Fahrgastkontrolle und echten Betriebsfolgen. Der Einstieg liegt
+  in der privaten Zugdetailansicht; der Fachvertrag steht in
+  [`schaffnermodus.md`](schaffnermodus.md).
 
 Desktop erhält die vollständige Leitstellenansicht. Die PWA für Smartphone und
 Tablet unterstützt Livemap, Meldungen, Freigaben und begrenzte Disposition;
@@ -298,3 +302,19 @@ das wird modelliert. Details: `wirtschaft.md` 3.6.
 Sperrzeiten, Konfliktprüfung, Fahrdynamik, Umlaufbindung und Fristen werden
 **nicht** abstrahiert. Sie sind der Grund, warum das Spiel existiert. Abstrahiert
 wird Verwaltung, nicht Betrieb.
+
+## 9. Optionale Betriebsvertiefung: Schaffnermodus (E29)
+
+Der Schaffnermodus ist eine vierte, **optionale Erlebnis- und Eingriffstiefe**,
+keine Voraussetzung für erfolgreichen Betrieb. Er verwendet denselben
+Weltzustand wie Livemap und Betriebszentrale: tatsächliche Zugfahrt,
+Auslastung, Fahrgäste, Halte, Signale und Verspätung. Wer ihn nicht spielt,
+erhält keinen Malus. Die kleine positive Kontrollprämie ist gedeckelt und kann
+Kosten sowie Pönalen eines Polizeihalts nicht neutralisieren.
+
+Der Spieler läuft durch den Zug und spricht per Sprechblasen mit Fahrgästen.
+Er fährt nicht, bedient keine Signale und verlässt den Zug nicht. Nur eine
+bewusst bestätigte Polizeianforderung kann den realen Betrieb am nächsten Halt
+verzögern. Alle weiteren Auswirkungen entscheidet das bestehende Ressourcen-
+und Dispositionssystem. Vollständiger Vertrag:
+[`schaffnermodus.md`](schaffnermodus.md).
