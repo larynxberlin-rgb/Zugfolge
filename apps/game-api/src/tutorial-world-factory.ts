@@ -86,7 +86,7 @@ const ECONOMY_RELEASE: EconomyRelease = buildEconomyRelease({
     energyPerKwhCents: 28n,
     personnelPerHourCents: 3_200n,
     administrationPerPeriodCents: 25_000n,
-    vehiclePerPeriodCents: 210_000n,
+    vehiclePerPeriodCents: 900_000n,
     overnightStablingPerPeriodCents: 18_000n,
     protectionEquipmentPerPeriodCents: 8_000n,
     lateInterestBasisPoints: 500,
@@ -143,11 +143,32 @@ const SPECIFICATION: ServiceSpecification = {
   },
 };
 
+export const TUTORIAL_TIMELINE = Object.freeze({
+  tenderAnnouncedAtS: 10,
+  tenderOpensAtS: 20,
+  comparisonBidAtS: 30,
+  playerBidAtS: 60,
+  tenderClosesAtS: 86_420,
+  leaseOfferedAtS: 86_500,
+  leaseResponseDeadlineS: 86_600,
+  leaseValidFromS: 86_700,
+  formationAtS: 87_000,
+  pathReservationAtS: 87_100,
+  personnelDutyAtS: 87_200,
+  operatingFromS: 90_000,
+  disruptionAtS: 90_220,
+  disruptionHoldUntilS: 90_400,
+  settlementAtS: 90_230,
+  disruptionValidUntilS: 91_000,
+  leaseValidUntilS: 100_000,
+  archiveAtS: 100_100,
+});
+
 export const TUTORIAL_LEASE_TIMES = Object.freeze({
-  offeredAtS: 40,
-  responseDeadlineS: 100,
-  validFromS: 130,
-  validUntilS: 2_000,
+  offeredAtS: TUTORIAL_TIMELINE.leaseOfferedAtS,
+  responseDeadlineS: TUTORIAL_TIMELINE.leaseResponseDeadlineS,
+  validFromS: TUTORIAL_TIMELINE.leaseValidFromS,
+  validUntilS: TUTORIAL_TIMELINE.leaseValidUntilS,
   terminationNoticeS: 300,
 });
 
@@ -315,7 +336,7 @@ function fleetRelease(
     acquisitionYear: 2026,
     procurementChannel: "leasing" as const,
     approvedLineIds: ["T 1"],
-    maintenanceDeadlines: [{ kind: "inspection", dueAt: 4_000 }],
+    maintenanceDeadlines: [{ kind: "inspection", dueAt: TUTORIAL_TIMELINE.leaseValidUntilS }],
     installedProtection: ["pzb" as const],
     technical: {
       lengthMm: 74_000,
@@ -339,7 +360,7 @@ function fleetRelease(
       replacementPlan: true,
     },
     deliveredAt: 0,
-    retiredAt: 4_000,
+    retiredAt: TUTORIAL_TIMELINE.leaseValidUntilS,
   }));
   const pathReceipts = template.paths.map((alternative, index) => ({
     id: textValue(alternative["receiptId"], "Trassenbeleg"),
@@ -347,8 +368,8 @@ function fleetRelease(
     operatorId: session.tutorialOperatorId,
     serviceLineIds: ["T 1"],
     decision: "confirmed" as const,
-    validFrom: 180,
-    validUntil: 4_000,
+    validFrom: TUTORIAL_TIMELINE.leaseValidFromS,
+    validUntil: TUTORIAL_TIMELINE.leaseValidUntilS,
     platformLengthsMm: [160_000, 170_000, 180_000],
     electrifications: ["overhead-ac15kv" as const],
     requiredProtection: ["pzb" as const],
@@ -396,7 +417,7 @@ function comparisonBid(operatorId: string): Bid {
       evidence: { source: "zugfolge-fleet-mobilization/v1", fleetRevision: 0, snapshotHash: TUTORIAL_TEMPLATE_HASH, formationId: "tutorial-comparison-formation" },
     },
     promises: { extraSeats: 12, punctualityBasisPoints: 8_900, additionalStops: 0 },
-    submittedAt: 30,
+    submittedAt: TUTORIAL_TIMELINE.comparisonBidAtS,
   };
 }
 
@@ -421,8 +442,54 @@ function playerBid(session: TutorialSession, action: Extract<TutorialAction, { t
       evidence: { source: "zugfolge-fleet-mobilization/v1", fleetRevision: 0, snapshotHash: TUTORIAL_TEMPLATE_HASH, formationId: `${session.reference}:planned-formation:${vehicleId}` },
     },
     promises: { extraSeats: action.extraSeats, punctualityBasisPoints: action.punctualityBasisPoints, additionalStops: 0 },
-    submittedAt: 60,
+    submittedAt: TUTORIAL_TIMELINE.playerBidAtS,
   };
+}
+
+export function prepareTutorialEconomy(input: {
+  readonly worldId: string;
+  readonly tutorialAccountId: string;
+  readonly comparisonAccountId: string;
+  readonly comparisonOperatorId: string;
+  readonly reference: string;
+}) {
+  const started = startEconomyWorld({
+    worldId: input.worldId,
+    seed: 7_219_2026n,
+    durationMonths: 6,
+    release: ECONOMY_RELEASE,
+    lots: TUTORIAL_ECONOMY_LOTS,
+    authorityBudgets: [{ authorityId: "tutorial-authority", period: 0, availableCents: 50_000_000n, committedCents: 0n }],
+    accounts: [input.tutorialAccountId, input.comparisonAccountId],
+    publicVehiclePoolByLot: { "tutorial-lot": ["tutorial-public-reserve"] },
+  });
+  const announced = announceTender(started.state, {
+    commandId: `${input.reference}:announce`,
+    release: ECONOMY_RELEASE,
+    recipients: [input.tutorialAccountId],
+    tender: {
+      id: "tutorial-tender",
+      worldId: input.worldId,
+      lotId: "tutorial-lot",
+      incumbentOperatorId: "public",
+      specification: SPECIFICATION,
+      announcedAt: TUTORIAL_TIMELINE.tenderAnnouncedAtS,
+      opensAt: TUTORIAL_TIMELINE.tenderOpensAtS,
+      closesAt: TUTORIAL_TIMELINE.tenderClosesAtS,
+      operatingFrom: TUTORIAL_TIMELINE.operatingFromS,
+      contractPeriods: 2,
+      periodDurationSeconds: 3_600,
+      smallLot: true,
+    },
+  });
+  let state = openTender(announced.state, `${input.reference}:open`, "tutorial-tender", TUTORIAL_TIMELINE.tenderOpensAtS);
+  state = submitBid(state, `${input.reference}:comparison-bid`, "tutorial-tender", comparisonBid(input.comparisonOperatorId), {
+    accountId: input.comparisonAccountId,
+    period: 0,
+    smallLot: true,
+    minimumScore: 0,
+  });
+  return { state, effects: { notices: [...started.effects.notices, ...announced.effects.notices], journal: [] } };
 }
 
 export class GameTutorialWorldFactory implements TutorialWorldFactory {
@@ -504,43 +571,13 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
 
   private async economy(session: TutorialSession, actors: Awaited<ReturnType<GameTutorialWorldFactory["systemActors"]>>): Promise<void> {
     if (await loadEconomyWorldState(this.db as never, session.tutorialWorldId) !== undefined) return;
-    let started = startEconomyWorld({
+    const started = prepareTutorialEconomy({
       worldId: session.tutorialWorldId,
-      seed: 7_219_2026n,
-      durationMonths: 6,
-      release: ECONOMY_RELEASE,
-      lots: TUTORIAL_ECONOMY_LOTS,
-      authorityBudgets: [{ authorityId: "tutorial-authority", period: 0, availableCents: 50_000_000n, committedCents: 0n }],
-      accounts: [session.tutorialAccountId, actors.comparisonAccountId],
-      publicVehiclePoolByLot: { "tutorial-lot": ["tutorial-public-reserve"] },
+      tutorialAccountId: session.tutorialAccountId,
+      comparisonAccountId: actors.comparisonAccountId,
+      comparisonOperatorId: actors.comparisonOperatorId,
+      reference: session.reference,
     });
-    const announced = announceTender(started.state, {
-      commandId: `${session.reference}:announce`,
-      release: ECONOMY_RELEASE,
-      recipients: [session.tutorialAccountId],
-      tender: {
-        id: "tutorial-tender",
-        worldId: session.tutorialWorldId,
-        lotId: "tutorial-lot",
-        incumbentOperatorId: "public",
-        specification: SPECIFICATION,
-        announcedAt: 10,
-        opensAt: 20,
-        closesAt: 120,
-        operatingFrom: 180,
-        contractPeriods: 1,
-        periodDurationSeconds: 1_800,
-        smallLot: true,
-      },
-    });
-    let state = openTender(announced.state, `${session.reference}:open`, "tutorial-tender", 20);
-    state = submitBid(state, `${session.reference}:comparison-bid`, "tutorial-tender", comparisonBid(actors.comparisonOperatorId), {
-      accountId: actors.comparisonAccountId,
-      period: 0,
-      smallLot: true,
-      minimumScore: 0,
-    });
-    started = { state, effects: { notices: [...started.effects.notices, ...announced.effects.notices], journal: [] } };
     try {
       await persistEconomyTransition(this.db as never, { expectedRevision: null, ...started, committedAt: session.startedAt });
     } catch (error) {
@@ -570,7 +607,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
         odometerMetres: 1_200_000n,
         conditionBasisPoints: integer(offer["conditionBasisPoints"], "Fahrzeugzustand"),
         damages: [],
-        maintenanceDeadlines: [{ kind: "inspection", dueAtS: 4_000 }],
+        maintenanceDeadlines: [{ kind: "inspection", dueAtS: TUTORIAL_TIMELINE.leaseValidUntilS }],
         approvals: ["T 1", "pzb", "ac15kv"],
         operatingLimits: [],
         valuationSpecId: `${template.version}:vehicle-valuation`,
@@ -587,7 +624,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
         offeredByAccountId: actors.lessorAccountId,
         contractType: "vehicle-rental",
         subject: { vehicleIds: [offer["vehicleId"]], tutorialOfferId: offer["id"] },
-        terms: { maintenanceIncluded: true, returnAtS: 2_000, templateVersion: template.version },
+        terms: { maintenanceIncluded: true, returnAtS: TUTORIAL_TIMELINE.leaseValidUntilS, templateVersion: template.version },
         priceCents: BigInt(textValue(offer["monthlyCostCents"], "Mietpreis")),
         ...TUTORIAL_LEASE_TIMES,
         idempotencyKey: `${session.reference}:${offer["id"]}`,
@@ -603,7 +640,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
         schemaVersion: REGIONAL_SIMULATION_INITIALIZE_SCHEMA,
         worldId: session.tutorialWorldId,
         regionId: template.region.id,
-        materializationWindowHours: 2,
+        materializationWindowHours: 48,
         nowS: 0,
         trains: [{
           trainRunId: "tutorial-run-1",
@@ -611,10 +648,10 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
           trainNumber: "T 7101",
           category: "regional",
           route: [
-            { operatingPoint: "TKG", positionMm: 0, arrivalS: 200, minimumDwellSeconds: 30, departureS: 230 },
-            { operatingPoint: "TMB", positionMm: 9_000_000, arrivalS: 390, minimumDwellSeconds: 30, departureS: 420 },
-            { operatingPoint: "TWR", positionMm: 18_000_000, arrivalS: 580, minimumDwellSeconds: 30, departureS: 610 },
-            { operatingPoint: "TFH", positionMm: 28_000_000, arrivalS: 790, minimumDwellSeconds: 30, departureS: 820 },
+            { operatingPoint: "TKG", positionMm: 0, arrivalS: TUTORIAL_TIMELINE.operatingFromS, minimumDwellSeconds: 30, departureS: TUTORIAL_TIMELINE.operatingFromS + 30 },
+            { operatingPoint: "TMB", positionMm: 9_000_000, arrivalS: TUTORIAL_TIMELINE.operatingFromS + 190, minimumDwellSeconds: 30, departureS: TUTORIAL_TIMELINE.disruptionAtS },
+            { operatingPoint: "TWR", positionMm: 18_000_000, arrivalS: TUTORIAL_TIMELINE.operatingFromS + 380, minimumDwellSeconds: 30, departureS: TUTORIAL_TIMELINE.operatingFromS + 410 },
+            { operatingPoint: "TFH", positionMm: 28_000_000, arrivalS: TUTORIAL_TIMELINE.operatingFromS + 590, minimumDwellSeconds: 30, departureS: TUTORIAL_TIMELINE.operatingFromS + 620 },
           ],
         }],
       }, session.startedAt);
@@ -654,7 +691,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
     const closed = closeTender(state, {
       commandId: `${session.reference}:close-tender`,
       tenderId: "tutorial-tender",
-      at: 120,
+      at: TUTORIAL_TIMELINE.tenderClosesAtS,
       authorityId: "tutorial-authority",
       budgetPeriod: 0,
       vehiclePool: ["tutorial-public-reserve"],
@@ -664,8 +701,8 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
     if (awarded?.phase !== "awarded" || awarded.winningBid.operatorId !== session.tutorialOperatorId) {
       throw new AlphaValidationError("Das Angebot gewinnt den deterministischen Vergleich noch nicht.");
     }
-    await persistEconomyTransition(this.db as never, { expectedRevision: current.revision, ...closed, committedAt: instant(session, 120) });
-    return { ...scenario(session), selectedBid: action, tenderAwardedAtS: 120 };
+    await persistEconomyTransition(this.db as never, { expectedRevision: current.revision, ...closed, committedAt: instant(session, TUTORIAL_TIMELINE.tenderClosesAtS) });
+    return { ...scenario(session), selectedBid: action, tenderAwardedAtS: TUTORIAL_TIMELINE.tenderClosesAtS };
   }
 
   private async acceptLease(session: TutorialSession, action: Extract<TutorialAction, { type: "accept-lease" }>, template: TutorialTemplate): Promise<Record<string, unknown>> {
@@ -677,7 +714,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
     const [contract] = await this.db.select().from(operatorContracts).where(and(eq(operatorContracts.worldId, session.tutorialWorldId), eq(operatorContracts.id, contractId))).limit(1);
     if (contract === undefined) throw new AlphaConflictError("Mietvertrag fehlt.", "tutorial_lease_missing");
     if (!(["accepted", "active"] as const).includes(contract.status as "accepted" | "active")) {
-      await this.#cooperation.respondToContract({ worldId: session.tutorialWorldId, contractId, actingAccountId: session.tutorialAccountId, atS: 130, response: "accept" });
+      await this.#cooperation.respondToContract({ worldId: session.tutorialWorldId, contractId, actingAccountId: session.tutorialAccountId, atS: TUTORIAL_TIMELINE.leaseResponseDeadlineS, response: "accept" });
     }
     const offer = lease(template, action.offerId);
     return { ...state, selectedLeaseOfferId: action.offerId, selectedLeaseContractId: contractId, selectedVehicleId: selected["vehicleId"], leasingCostCents: offer["monthlyCostCents"] };
@@ -691,7 +728,8 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
     const apply = async (command: (head: NonNullable<Awaited<ReturnType<typeof loadFleetProducerCheckpoint>>>) => Parameters<typeof applyFleetProducerCommand>[0]["command"]) => {
       const head = await loadFleetProducerCheckpoint(this.db as never, session.tutorialWorldId);
       if (head === undefined) throw new AlphaConflictError("Fleet-Single-Writer ist nicht bereit.", "tutorial_fleet_unavailable");
-      await applyFleetProducerCommand({ db: this.db as never, runtime: this.runtime, command: command(head), ingestedAt: instant(session, head.state.revision + 150) });
+      const next = command(head);
+      await applyFleetProducerCommand({ db: this.db as never, runtime: this.runtime, command: next, ingestedAt: instant(session, next.atS) });
     };
     await apply((head) => ({
       schemaVersion: FLEET_FORMATION_COMMAND_SCHEMA,
@@ -699,7 +737,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
       commandId: `${session.reference}:formation`,
       expectedStateHash: head.stateHash,
       expectedRevision: head.state.revision,
-      atS: 150,
+      atS: TUTORIAL_TIMELINE.formationAtS,
       formationId: "tutorial-formation",
       vehicleIds: [vehicleId],
       pathReceiptId,
@@ -711,7 +749,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
       commandId: `${session.reference}:path`,
       expectedStateHash: head.stateHash,
       expectedRevision: head.state.revision,
-      atS: 160,
+      atS: TUTORIAL_TIMELINE.pathReservationAtS,
       pathReservationId: "tutorial-path-reservation",
       pathReceiptId,
     }));
@@ -721,13 +759,13 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
       commandId: `${session.reference}:duty`,
       expectedStateHash: head.stateHash,
       expectedRevision: head.state.revision,
-      atS: 170,
+      atS: TUTORIAL_TIMELINE.personnelDutyAtS,
       personnelDutyId: "tutorial-duty",
       personnelPoolId: "tutorial-personnel-pool",
       formationIds: ["tutorial-formation"],
       pathReceiptId,
-      validFrom: 180,
-      validUntil: 2_000,
+      validFrom: TUTORIAL_TIMELINE.operatingFromS,
+      validUntil: TUTORIAL_TIMELINE.leaseValidUntilS,
     }));
     return { ...state, selectedPathAlternativeId: action.alternativeId, selectedPathReceiptId: pathReceiptId, pathCostCents: selected["costCents"] };
   }
@@ -766,7 +804,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
       const initialized = this.runtime.initialize({
         schemaVersion: OPERATING_INITIALIZE_SCHEMA,
         worldId: session.tutorialWorldId,
-        lots: [{ lotId: "tutorial-lot", incumbentOperatorId: "public", timetableBoundaryS: 180, trainRuns: [{ trainRunId: "tutorial-run-1", formationId: "tutorial-formation" }] }],
+        lots: [{ lotId: "tutorial-lot", incumbentOperatorId: "public", timetableBoundaryS: TUTORIAL_TIMELINE.operatingFromS, trainRuns: [{ trainRunId: "tutorial-run-1", formationId: "tutorial-formation" }] }],
       });
       const transition = this.runtime.applyTransition(initialized.state, {
         schemaVersion: OPERATING_TRANSITION_SCHEMA,
@@ -775,7 +813,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
         expectedStateHash: initialized.stateHash,
         expectedRevision: initialized.state.revision,
         lotId: "tutorial-lot",
-        atS: 180,
+        atS: TUTORIAL_TIMELINE.operatingFromS,
         winnerOperatorId: session.tutorialOperatorId,
         mobilizationProof: proof,
         publicVehiclePool: ["tutorial-public-reserve"],
@@ -783,14 +821,14 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
       const mobilized = completeMobilization(economy, {
         commandId: `${session.reference}:mobilize`,
         tenderId: "tutorial-tender",
-        at: 180,
+        at: TUTORIAL_TIMELINE.operatingFromS,
         proof,
         failurePenaltyCents: 100_000n,
         recipientAccountId: session.tutorialAccountId,
         publicVehiclePool: ["tutorial-public-reserve"],
         operatingTransition: transition,
       });
-      await persistEconomyTransition(this.db as never, { expectedRevision: economy.revision, ...mobilized, committedAt: instant(session, 180) });
+      await persistEconomyTransition(this.db as never, { expectedRevision: economy.revision, ...mobilized, committedAt: instant(session, TUTORIAL_TIMELINE.operatingFromS) });
       economy = mobilized.state;
     }
     await this.db.transaction(async (tx) => {
@@ -807,8 +845,8 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
         checksum: canonical.checksum,
         status: "active",
         createdByAccountId: session.tutorialAccountId,
-        createdAt: instant(session, 180),
-        activatedAt: instant(session, 180),
+        createdAt: instant(session, TUTORIAL_TIMELINE.operatingFromS),
+        activatedAt: instant(session, TUTORIAL_TIMELINE.operatingFromS),
       }).onConflictDoUpdate({
         target: [operatingProgramVersions.worldId, operatingProgramVersions.operatorId, operatingProgramVersions.version],
         set: {
@@ -817,7 +855,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
           canonicalProgram: canonical.program,
           checksum: canonical.checksum,
           status: "active",
-          activatedAt: instant(session, 180),
+          activatedAt: instant(session, TUTORIAL_TIMELINE.operatingFromS),
         },
       });
     });
@@ -840,7 +878,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
     return {
       decision_id: 1,
       train_run_id: 1,
-      event_at: 420,
+      event_at: TUTORIAL_TIMELINE.disruptionAtS,
       trigger: { type: "route_closure" },
       delay_seconds: 420,
       connection_threatened: true,
@@ -850,7 +888,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
       platform_changed: false,
       turnaround_shortfall_seconds: 0,
       adhoc_conflict: false,
-      hold_until: 600,
+      hold_until: TUTORIAL_TIMELINE.disruptionHoldUntilS,
       limits,
       impact: {
         affected_train_runs: 1,
@@ -888,8 +926,8 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
       worldId: session.tutorialWorldId,
       regionId: template.region.id,
       commandId: `${session.reference}:advance-disruption`,
-      command: { type: "advance-to", atS: 420 },
-    }, instant(session, 420));
+      command: { type: "advance-to", atS: TUTORIAL_TIMELINE.disruptionAtS },
+    }, instant(session, TUTORIAL_TIMELINE.disruptionAtS));
     await this.regional.apply({
       worldId: session.tutorialWorldId,
       regionId: template.region.id,
@@ -899,8 +937,8 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
         disruption: {
           disruptionId: textValue(template.disruption["id"], "Stoerungs-ID"),
           kind: "unplanned",
-          publishedAtS: 420,
-          startsAtS: 420,
+          publishedAtS: TUTORIAL_TIMELINE.disruptionAtS,
+          startsAtS: TUTORIAL_TIMELINE.disruptionAtS,
           validUntilS: integer(template.disruption["validUntilS"], "Stoerungsende"),
           positionMm: 12_000_000,
           causeCode: integer(template.disruption["causeCode"], "Ursachencode"),
@@ -911,7 +949,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
           delaySeconds: integer(template.disruption["delaySeconds"], "Stoerungsverspaetung"),
         },
       },
-    }, instant(session, 420));
+    }, instant(session, TUTORIAL_TIMELINE.disruptionAtS));
     const explanation = this.runtime.evaluateDecision(program.canonicalProgram as Readonly<Record<string, unknown>>, this.dispatchCase(action, selected.cost, selected.penalty, selected.cancelledStops));
     if (!explanation.manual_override || explanation.selected_action !== action.action) throw new AlphaConflictError("Rust-Dispatcher hat die gewaehlte Massnahme nicht autorisiert.", "tutorial_dispatch_rejected");
     const decisionId = `${session.reference}:decision:1`;
@@ -932,7 +970,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
       limits: explanation["limits"],
       rejectedAlternatives: explanation["rejected_alternatives"],
       impact: explanation.impact,
-    }, instant(session, 421));
+    }, instant(session, TUTORIAL_TIMELINE.disruptionAtS + 1));
     let economy = await loadEconomyWorldState(this.db as never, session.tutorialWorldId);
     if (economy === undefined) throw new AlphaConflictError("Tutorialwirtschaft fehlt.", "tutorial_economy_unavailable");
     if (!economy.settledPeriods.has("tutorial-tender:1")) {
@@ -940,7 +978,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
         commandId: `${session.reference}:settlement`,
         contractId: "tutorial-tender",
         period: 1,
-        at: 430,
+        at: TUTORIAL_TIMELINE.settlementAtS,
         performance: {
           trainKm: 840n,
           punctualityBasisPoints: selected.punctuality,
@@ -955,7 +993,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
           { amountCents: template.result.baseOperatingCostCents, costType: "personnel", costCentreId: "tutorial-lot", reference: "tutorial-period-1" },
         ],
       });
-      await persistEconomyTransition(this.db as never, { expectedRevision: economy.revision, ...settled, committedAt: instant(session, 430) });
+      await persistEconomyTransition(this.db as never, { expectedRevision: economy.revision, ...settled, committedAt: instant(session, TUTORIAL_TIMELINE.settlementAtS) });
       const journal = object(stateValue["journalAccounts"], "Tutorialkontierung") as unknown as JournalAccounts;
       await dispatchEconomyEffects(settled.effects, createEconomyPlatformAdapters({ db: this.db as never, accountsByOperator: { [session.tutorialOperatorId]: journal } }));
       economy = settled.state;
@@ -1069,7 +1107,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
     if (economy !== undefined) {
       const closed = closeEconomyWorld(economy, `${session.reference}:close-world`);
       if (closed !== economy) {
-        await persistEconomyTransition(this.db as never, { expectedRevision: economy.revision, state: closed, effects: { notices: [], journal: [] }, committedAt: instant(session, 900) });
+        await persistEconomyTransition(this.db as never, { expectedRevision: economy.revision, state: closed, effects: { notices: [], journal: [] }, committedAt: instant(session, TUTORIAL_TIMELINE.archiveAtS) });
         economyHash = alphaHash("zugfolge-economy-state/v1", encodeEconomyValue(closed));
       } else economyHash = alphaHash("zugfolge-economy-state/v1", encodeEconomyValue(economy));
     }

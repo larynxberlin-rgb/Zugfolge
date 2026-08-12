@@ -128,7 +128,7 @@ export const TUTORIAL_TEMPLATE: TutorialTemplate = Object.freeze({
       Object.freeze({ edgeNumericId: 3, trackNumericId: 13, id: "tut-segment-3", label: "Wiesenrode - Fichtenhain", fromStationId: "tut-wiesenrode", toStationId: "tut-fichtenhain", lengthMm: 10_000_000, maximumSpeedKph: 120, mainSignalPositionsMm: [3_500_000, 7_000_000], maximumVirtualBlockLengthMm: 3_500_000 }),
     ]),
   }),
-  tender: Object.freeze({ id: "tutorial-tender", lotId: "tutorial-lot", authorityId: "tutorial-authority", profileId: "balanced-quality", announcedAtS: 10, opensAtS: 20, closesAtS: 120, operatingFromS: 180, trainKmPerPeriod: "840", viabilityThresholdCentsPerTrainKm: "1300", comparisonBidCentsPerTrainKm: "1580" }),
+  tender: Object.freeze({ id: "tutorial-tender", lotId: "tutorial-lot", authorityId: "tutorial-authority", profileId: "balanced-quality", announcedAtS: 10, opensAtS: 20, closesAtS: 86_420, operatingFromS: 90_000, trainKmPerPeriod: "840", viabilityThresholdCentsPerTrainKm: "1739", comparisonBidCentsPerTrainKm: "1580" }),
   leases: Object.freeze([
     Object.freeze({ id: "lease-economy", vehicleId: "tutorial-vehicle-economy", classDesignation: "T 442", monthlyCostCents: "210000", seats: 138, conditionBasisPoints: 8600, reliabilityBasisPoints: 8900, marginEffectCents: "90000" }),
     Object.freeze({ id: "lease-reliable", vehicleId: "tutorial-vehicle-reliable", classDesignation: "T 446", monthlyCostCents: "285000", seats: 160, conditionBasisPoints: 9600, reliabilityBasisPoints: 9700, marginEffectCents: "15000" }),
@@ -141,7 +141,7 @@ export const TUTORIAL_TEMPLATE: TutorialTemplate = Object.freeze({
     Object.freeze({ id: "connections", label: "Anschluesse sichern", baseThresholdSeconds: 240 }),
     Object.freeze({ id: "punctuality", label: "Puenktlichkeit priorisieren", baseThresholdSeconds: 480 }),
   ]),
-  disruption: Object.freeze({ id: "tutorial-switch-failure", resourceId: "track:tut-segment-2", trainRunId: "tutorial-run-1", startsAtS: 420, validUntilS: 900, delaySeconds: 420, causeCode: 26, fineCauseId: "switch.drive" }),
+  disruption: Object.freeze({ id: "tutorial-switch-failure", resourceId: "track:tut-segment-2", trainRunId: "tutorial-run-1", startsAtS: 90_220, validUntilS: 91_000, delaySeconds: 420, causeCode: 26, fineCauseId: "switch.drive" }),
   result: Object.freeze({ orderingRevenueCents: 1_560_000n, baseOperatingCostCents: 690_000n, trackCostTightCents: 78_000n, trackCostRobustCents: 112_000n, disruptionRerouteCostCents: 95_000n, disruptionShortTurnCostCents: 35_000n, disruptionReplacementCostCents: 145_000n, punctualityTargetBasisPoints: 9_000 }),
 });
 
