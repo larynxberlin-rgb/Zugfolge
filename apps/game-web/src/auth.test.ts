@@ -17,7 +17,6 @@ const configuration: BrowserRuntimeConfiguration = {
   keycloakUrl: "https://identity.example",
   keycloakRealm: "zugfolge",
   publicWorldId: "public",
-  tutorialWorldId: "tutorial",
   livemapUrl: "",
 };
 

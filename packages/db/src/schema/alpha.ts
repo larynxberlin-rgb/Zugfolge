@@ -65,27 +65,107 @@ export const tutorialProgress = pgTable("tutorial_progress", {
   }),
 ]);
 
-/** Genau ein eng begrenztes Startpaket je Konto und Welt. */
-export const onboardingGrants = pgTable("onboarding_grants", {
+/**
+ * Kurzlebige, genau einem oeffentlichen Weltkonto zugeordnete Tutorialinstanz.
+ * Die interne Welt bleibt eine UUID; `reference` ist nur die erkennbare,
+ * nicht erratbare Referenz an den HTTP-Grenzen.
+ */
+export const tutorialSessions = pgTable("tutorial_sessions", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  reference: text("reference").notNull(),
+  publicWorldId: uuid("public_world_id").notNull().references(() => worlds.id),
+  publicAccountId: uuid("public_account_id").notNull(),
+  tutorialWorldId: uuid("world_id").notNull().references(() => worlds.id),
+  tutorialAccountId: uuid("tutorial_account_id").notNull(),
+  tutorialOperatorId: uuid("tutorial_operator_id").notNull(),
+  templateVersion: text("template_version").notNull(),
+  templateHash: text("template_hash").notNull(),
+  lifecycle: text("lifecycle", {
+    enum: ["provisioning", "running", "summary", "closing", "archived", "failed"],
+  }).notNull().default("provisioning"),
+  provisioningStep: text("provisioning_step").notNull().default("world-created"),
+  currentChapter: integer("current_chapter").notNull().default(1),
+  scenarioState: jsonb("scenario_state").notNull().default({}),
+  pendingAction: jsonb("pending_action"),
+  actionRevision: integer("action_revision").notNull().default(0),
+  correctionAttempts: jsonb("correction_attempts").notNull().default({}),
+  hintsUsed: jsonb("hints_used").notNull().default({}),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+  lastActivityAt: timestamp("last_activity_at", { withTimezone: true }).notNull(),
+  idleExpiresAt: timestamp("idle_expires_at", { withTimezone: true }).notNull(),
+  maximumExpiresAt: timestamp("maximum_expires_at", { withTimezone: true }).notNull(),
+  summaryAt: timestamp("summary_at", { withTimezone: true }),
+  graceExpiresAt: timestamp("grace_expires_at", { withTimezone: true }),
+  closingAt: timestamp("closing_at", { withTimezone: true }),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  closureReason: text("closure_reason"),
+  finalStateHash: text("final_state_hash"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => {
+  const worldId = table.tutorialWorldId;
+  const worldIdOfPublicAccount = table.publicWorldId;
+  return [
+    uniqueIndex("tutorial_sessions_reference_idx").on(worldId, table.reference),
+    uniqueIndex("tutorial_sessions_tutorial_world_idx").on(worldId),
+    uniqueIndex("tutorial_sessions_world_id_idx").on(worldId, table.id),
+    uniqueIndex("tutorial_sessions_one_active_per_public_account_idx")
+      .on(worldIdOfPublicAccount, table.publicAccountId)
+      .where(sql`${table.lifecycle} in ('provisioning', 'running', 'summary', 'closing')`),
+    index("tutorial_sessions_reaper_idx").on(table.lifecycle, table.idleExpiresAt, table.maximumExpiresAt, worldId),
+    foreignKey({
+      name: "tutorial_sessions_public_account_fk",
+      columns: [table.publicWorldId, table.publicAccountId],
+      foreignColumns: [accounts.worldId, accounts.id],
+    }),
+    foreignKey({
+      name: "tutorial_sessions_tutorial_account_fk",
+      columns: [table.tutorialWorldId, table.tutorialAccountId],
+      foreignColumns: [accounts.worldId, accounts.id],
+    }),
+    foreignKey({
+      name: "tutorial_sessions_tutorial_operator_fk",
+      columns: [table.tutorialWorldId, table.tutorialOperatorId],
+      foreignColumns: [operators.worldId, operators.id],
+    }),
+  ];
+});
+
+/** Reale, injizierbar datierte Tutorialtelemetrie ausserhalb des Simulationskerns. */
+export const tutorialTelemetryEvents = pgTable("tutorial_telemetry_events", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   worldId: uuid("world_id").notNull().references(() => worlds.id),
-  accountId: uuid("account_id").notNull(),
-  operatorId: uuid("operator_id").notNull(),
-  packageVersion: text("package_version").notNull(),
-  emergencyLotId: text("emergency_lot_id").notNull(),
-  vehicleId: text("vehicle_id").notNull(),
-  pathReceiptId: text("path_receipt_id").notNull(),
-  personnelPoolId: text("personnel_pool_id").notNull(),
-  operatingProgramId: text("operating_program_id").notNull(),
-  grantHash: text("grant_hash").notNull(),
-  grantedAtS: bigint("granted_at_s", { mode: "number" }).notNull(),
-  expiresAtS: bigint("expires_at_s", { mode: "number" }).notNull(),
-  revoked: boolean("revoked").notNull().default(false),
+  sessionId: uuid("session_id").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  eventType: text("event_type", {
+    enum: [
+      "tutorial_session_started",
+      "tutorial_chapter_started",
+      "tutorial_chapter_completed",
+      "tutorial_hint_opened",
+      "tutorial_dialogue_dismissed",
+      "tutorial_restarted",
+      "tutorial_abandoned",
+      "tutorial_completed",
+      "tutorial_world_closed",
+    ],
+  }).notNull(),
+  templateVersion: text("template_version").notNull(),
+  chapter: integer("chapter"),
+  elapsedMilliseconds: bigint("elapsed_milliseconds", { mode: "number" }).notNull(),
+  correctionAttempts: integer("correction_attempts").notNull().default(0),
+  hintUsed: boolean("hint_used").notNull().default(false),
+  reason: text("reason"),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
 }, (table) => [
-  uniqueIndex("onboarding_grants_world_account_idx").on(table.worldId, table.accountId),
-  uniqueIndex("onboarding_grants_world_operator_idx").on(table.worldId, table.operatorId),
-  foreignKey({ name: "onboarding_grants_world_account_fk", columns: [table.worldId, table.accountId], foreignColumns: [accounts.worldId, accounts.id] }),
-  foreignKey({ name: "onboarding_grants_world_operator_fk", columns: [table.worldId, table.operatorId], foreignColumns: [operators.worldId, operators.id] }),
+  uniqueIndex("tutorial_telemetry_world_idempotency_idx").on(table.worldId, table.idempotencyKey),
+  index("tutorial_telemetry_world_session_idx").on(table.worldId, table.sessionId, table.occurredAt),
+  index("tutorial_telemetry_aggregate_idx").on(table.templateVersion, table.chapter, table.eventType, table.worldId),
+  foreignKey({
+    name: "tutorial_telemetry_world_session_fk",
+    columns: [table.worldId, table.sessionId],
+    foreignColumns: [tutorialSessions.tutorialWorldId, tutorialSessions.id],
+  }),
 ]);
 
 /** Deterministische, erklaerbare Missbrauchsbeobachtung vor jeder Sanktion. */
@@ -226,7 +306,8 @@ export const infraReleaseChanges = pgTable("infra_release_changes", {
 
 export type AlphaWorldProfile = typeof alphaWorldProfiles.$inferSelect;
 export type TutorialProgress = typeof tutorialProgress.$inferSelect;
-export type OnboardingGrant = typeof onboardingGrants.$inferSelect;
+export type TutorialSession = typeof tutorialSessions.$inferSelect;
+export type TutorialTelemetryEvent = typeof tutorialTelemetryEvents.$inferSelect;
 export type AbuseObservation = typeof abuseObservations.$inferSelect;
 export type AlphaFeedback = typeof alphaFeedback.$inferSelect;
 export type WorldArchive = typeof worldArchives.$inferSelect;

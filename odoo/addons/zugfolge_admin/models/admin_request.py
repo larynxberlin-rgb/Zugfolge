@@ -23,7 +23,6 @@ class ZugfolgeAdminRequest(models.Model):
             ("manual_disruption_create", "Manuelle Stoerung anlegen"),
             ("abuse_sanction_activate", "Schwere Missbrauchsmassnahme aktivieren"),
             ("world_close", "Weltabschluss einleiten"),
-            ("tutorial_account_reset", "Tutorialkonto zuruecksetzen"),
         ],
         required=True,
         tracking=True,
@@ -98,9 +97,9 @@ class ZugfolgeAdminRequest(models.Model):
                     raise ValidationError(_("Manuelle Stoerungen brauchen eine deklarierte Wirkung."))
             if record.action_type in ("world_access_revoke", "abuse_sanction_activate", "world_close") and record.risk_class != "high":
                 raise ValidationError(_("Kontoentzug, schwere Sanktionen und Weltende sind immer hochriskant."))
-            if record.action_type in ("world_access_revoke", "abuse_sanction_activate", "tutorial_account_reset") and not (record.target_reference or "").strip():
+            if record.action_type in ("world_access_revoke", "abuse_sanction_activate") and not (record.target_reference or "").strip():
                 raise ValidationError(_("Die Verwaltungsaktion braucht eine stabile Zielreferenz."))
-            if record.action_type in ("world_close", "tutorial_account_reset") and (record.requested_at_s is None or record.requested_at_s < 0):
+            if record.action_type == "world_close" and (record.requested_at_s is None or record.requested_at_s < 0):
                 raise ValidationError(_("Die Verwaltungsaktion braucht eine gueltige Simulationszeit."))
 
     def _require_state(self, expected):

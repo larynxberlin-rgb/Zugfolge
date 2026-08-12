@@ -105,6 +105,23 @@ describe("GameApiClient", () => {
     ).rejects.toThrow(/zurueckgefallen/);
   });
 
+  it("startet, setzt fort und steuert die private Tutorialwelt nur ueber den Sessionvertrag", async () => {
+    const view = { reference: "tut_abc", tutorialWorldId: "tutorial-id", publicWorldId: "public-id" };
+    const fetchImplementation = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/tutorial-sessions/active")) return new Response(null, { status: 404 });
+      return new Response(JSON.stringify(view), { status: init?.method === "POST" ? 201 : 200 });
+    });
+    const client = new GameApiClient("https://api.test", "token", fetchImplementation as typeof fetch);
+    await expect(client.loadActiveTutorial("public-id")).resolves.toBeUndefined();
+    await expect(client.startTutorial("public-id")).resolves.toMatchObject(view);
+    await expect(client.tutorialAction("tutorial-id", { type: "confirm-path", alternativeId: "path-robust" })).resolves.toMatchObject(view);
+    expect(fetchImplementation).toHaveBeenNthCalledWith(2, "https://api.test/worlds/public-id/tutorial-sessions", expect.objectContaining({ method: "POST" }));
+    const action = fetchImplementation.mock.calls[2];
+    expect(String(action?.[0])).toBe("https://api.test/worlds/tutorial-id/tutorial-session/actions");
+    expect(JSON.parse(String((action?.[1] as RequestInit).body))).toEqual({ type: "confirm-path", alternativeId: "path-robust" });
+  });
+
   it("meldet einen sicheren Fehler, wenn nur die Eventsequenz und nie die Fachrevision steigt", async () => {
     let sequence = 100;
     const client = new GameApiClient(

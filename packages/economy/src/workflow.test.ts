@@ -8,7 +8,6 @@ import {
   completeMobilization,
   dispatchEconomyEffects,
   escalateOperator,
-  grantEmergencyStartPackage,
   openTender,
   settleContractPeriod,
   seedTutorialAccount,
@@ -112,56 +111,6 @@ describe("zustandsbehafteter M6-Gesamtablauf", () => {
     });
     expect(seedTutorialAccount(seeded, { commandId: "tutorial-account:1", accountId: "late-account" })).toBe(seeded);
     expect(() => seedTutorialAccount(started, { commandId: "tutorial-account:missing", accountId: "" })).toThrow(/Tutorialkonto/);
-  });
-
-  it("vergibt das Alpha-Startpaket nur ueber einen echten, idempotenten Weltuebergang", () => {
-    const { state } = world();
-    const transition = rustTransition("operator-alpha", "operator-change");
-    const granted = grantEmergencyStartPackage(state, {
-      commandId: "alpha-start:account-1",
-      contractId: "alpha-contract-1",
-      operatorId: "operator-alpha",
-      accountId: "account-1",
-      lotId: "lot-0",
-      at: 4 * 86_400,
-      until: 25 * 86_400,
-      maximumTrainKmPerPeriod: 1_200,
-      proof: completeMobilizationProof,
-      operatingTransition: transition,
-    });
-
-    expect(granted.state.contracts.get("alpha-contract-1")).toMatchObject({
-      worldId: "world-1",
-      operatorId: "operator-alpha",
-      evidenceRequired: expect.arrayContaining(["maximum-train-km:1200"]),
-    });
-    expect(granted.state.publicOperations.has("lot-0")).toBe(false);
-    expect(granted.state.prequalifications.get("account-1")?.worldId).toBe("world-1");
-    expect(granted.effects.runtimeEvents).toEqual(transition.events);
-    expect(grantEmergencyStartPackage(granted.state, {
-      commandId: "alpha-start:account-1",
-      contractId: "alpha-contract-1",
-      operatorId: "operator-alpha",
-      accountId: "account-1",
-      lotId: "lot-0",
-      at: 4 * 86_400,
-      until: 25 * 86_400,
-      maximumTrainKmPerPeriod: 1_200,
-      proof: completeMobilizationProof,
-      operatingTransition: transition,
-    }).state).toBe(granted.state);
-    expect(() => grantEmergencyStartPackage(state, {
-      commandId: "alpha-start:wrong-world",
-      contractId: "alpha-contract-2",
-      operatorId: "operator-alpha",
-      accountId: "account-1",
-      lotId: "lot-0",
-      at: 4 * 86_400,
-      until: 25 * 86_400,
-      maximumTrainKmPerPeriod: 1_200,
-      proof: completeMobilizationProof,
-      operatingTransition: { ...transition, state: { ...transition.state, worldId: "world-2" } },
-    })).toThrow(/Welt, Los oder Spieler-EVU/);
   });
 
   it("startet jedes Los mit seinem vollstaendigen Eigenbetriebs-Fahrzeugpool", () => {

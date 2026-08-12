@@ -5,7 +5,9 @@
   "type": "module",
   "description": "Game-API: Keycloak-Authentifizierung, Konten, Rollen, Weltzugänge, EVU, Ledger, Postfach, Datenschutz (M2)",
   "license": "LicenseRef-PolyForm-Shield-1.0.0",
-  "exports": { ".": "./dist/app.js" },
+  "exports": {
+    ".": "./dist/app.js"
+  },
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
@@ -14,11 +16,11 @@
   },
   "dependencies": {
     "@zugfolge/alpha": "workspace:*",
-    "@zugfolge/db": "workspace:*",
     "@zugfolge/commerce": "workspace:*",
     "@zugfolge/cooperation": "workspace:*",
-    "@zugfolge/disruption-provider": "workspace:*",
+    "@zugfolge/db": "workspace:*",
     "@zugfolge/dispatch": "workspace:*",
+    "@zugfolge/disruption-provider": "workspace:*",
     "@zugfolge/economy": "workspace:*",
     "@zugfolge/health": "workspace:*",
     "@zugfolge/identity": "workspace:*",
@@ -38,6 +40,7 @@
     "@zugfolge/gtfs": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "jose": "^6.2.8",
+    "playwright-core": "1.55.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }

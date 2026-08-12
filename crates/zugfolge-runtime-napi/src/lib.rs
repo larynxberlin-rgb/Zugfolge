@@ -64,3 +64,25 @@ pub fn apply_operating_transition(
     zugfolge_runtime::apply_operating_transition(&state_json, &command_json)
         .map_err(|error| napi::Error::from_reason(error.to_string()))
 }
+
+/// Wertet einen einzelnen M7-Dispositionsfall durch den echten RuleDispatcher aus.
+#[cfg(feature = "node-addon")]
+#[napi(js_name = "evaluateOperatingDecision")]
+pub fn evaluate_operating_decision(
+    program_json: String,
+    case_json: String,
+) -> napi::Result<String> {
+    let program = serde_json::from_str(&program_json).map_err(|error| {
+        napi::Error::from_reason(format!("Betriebsprogramm ist ungueltig: {error}"))
+    })?;
+    let case = serde_json::from_str(&case_json).map_err(|error| {
+        napi::Error::from_reason(format!("Dispositionsfall ist ungueltig: {error}"))
+    })?;
+    let result = zugfolge_rules::evaluate_dispatch_case(program, case)
+        .map_err(|error| napi::Error::from_reason(error.to_string()))?;
+    serde_json::to_string(&result).map_err(|error| {
+        napi::Error::from_reason(format!(
+            "Dispositionsentscheidung ist nicht serialisierbar: {error}"
+        ))
+    })
+}

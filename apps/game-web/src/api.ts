@@ -16,47 +16,63 @@ export interface AlternativeApplicationOptions {
 
 export type WaitImplementation = (milliseconds: number, signal?: AbortSignal) => Promise<void>;
 
-export interface TutorialJourney {
+export type TutorialLifecycle = "provisioning" | "running" | "summary" | "closing" | "archived" | "failed";
+
+export type TutorialAction =
+  | { readonly type: "submit-bid"; readonly orderingFeeCentsPerTrainKm: string; readonly punctualityBasisPoints: number; readonly extraSeats: number }
+  | { readonly type: "accept-lease"; readonly offerId: string }
+  | { readonly type: "confirm-path"; readonly alternativeId: string }
+  | { readonly type: "activate-program"; readonly templateId: string; readonly changedRule: "hold-connections" | "prioritize-punctuality" | "activate-reserve"; readonly thresholdSeconds: number }
+  | { readonly type: "dispatch"; readonly action: "short_turn" | "request_reroute" | "trigger_rail_replacement" };
+
+export interface TutorialDialogue {
+  readonly id: string;
+  readonly templateVersion: string;
   readonly chapter: number;
-  readonly chapterState: "ready" | "in-progress" | "blocked" | "completed";
-  readonly evidence: Readonly<Record<string, { readonly completed: boolean; readonly references: readonly string[] }>>;
-  readonly explanation: string;
-  readonly explanationCode: string;
-  readonly resetCount: number;
+  readonly trigger: string;
+  readonly speaker: "lutz";
+  readonly text: string;
+  readonly why?: string;
+  readonly actionLabel?: string;
+  readonly target?: string;
+  readonly canDismiss: boolean;
+}
+
+export interface TutorialResultSummary {
+  readonly startLiquidityCents: string;
+  readonly leasingCostCents: string;
+  readonly pathAndOperatingCostCents: string;
+  readonly orderingRevenueCents: string;
+  readonly disruptionCostCents: string;
+  readonly resultCents: string;
+  readonly punctualityBasisPoints: number;
+  readonly qualityTargetsMet: readonly string[];
+  readonly comparison: Readonly<Record<string, string | number>>;
+}
+
+export interface TutorialSessionView {
+  readonly reference: string;
+  readonly tutorialWorldId: string;
+  readonly publicWorldId: string;
+  readonly lifecycle: TutorialLifecycle;
+  readonly templateVersion: string;
+  readonly templateHash: string;
+  readonly currentChapter: number;
+  readonly progressLabel: string;
   readonly chapters: readonly { readonly chapter: number; readonly code: string; readonly title: string; readonly goal: string }[];
-}
-
-export interface StartPackageGrant {
-  readonly grant: {
-    readonly id: string;
-    readonly operatorId: string;
-    readonly emergencyLotId: string;
-    readonly vehicleId: string;
-    readonly pathReceiptId: string;
-    readonly personnelPoolId: string;
-    readonly operatingProgramId: string;
-    readonly expiresAtS: string | number;
+  readonly evidence: Readonly<Record<string, { readonly completed: boolean; readonly references: readonly string[] }>>;
+  readonly dialogue: TutorialDialogue;
+  readonly presentation: {
+    readonly tender?: Readonly<Record<string, unknown>>;
+    readonly leases?: readonly Readonly<Record<string, unknown>>[];
+    readonly paths?: readonly Readonly<Record<string, unknown>>[];
+    readonly programmes?: readonly Readonly<Record<string, unknown>>[];
+    readonly disruptionOptions?: readonly Readonly<Record<string, unknown>>[];
   };
-  readonly idempotentReplay: boolean;
-}
-
-export interface CapacityHeatmapCell {
-  readonly resourceId: string;
-  readonly intervalStartS: number;
-  readonly intervalEndS: number;
-  readonly usedSeconds: number;
-  readonly capacitySeconds: number;
-  readonly qualityClass: "A" | "B" | "C";
-  readonly orderable: boolean;
-  readonly utilizationBasisPoints: number;
-  readonly stateLabel: string;
-  readonly pattern: "diagonal-hatch" | "dense-dots" | "none";
-}
-
-export interface OnboardingAssistant {
-  readonly ready: boolean;
-  readonly facts: Readonly<Record<string, boolean>>;
-  readonly warnings: readonly { readonly code: string; readonly severity: "info" | "warning" | "blocking"; readonly message: string }[];
+  readonly summary?: TutorialResultSummary;
+  readonly idleExpiresAt: string;
+  readonly maximumExpiresAt: string;
+  readonly publicWorldUrl: string;
 }
 
 class GameApiError extends Error {
@@ -139,34 +155,41 @@ export class GameApiClient {
     catch { throw new GameApiError("Spielerreise lieferte kein gültiges JSON.", false); }
   }
 
-  loadTutorial(worldId: string): Promise<TutorialJourney> {
-    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/tutorial`);
+  startTutorial(publicWorldId: string): Promise<TutorialSessionView> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(publicWorldId)}/tutorial-sessions`, { method: "POST" });
   }
 
-  resetTutorial(worldId: string): Promise<TutorialJourney> {
-    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/tutorial/reset`, { method: "POST" });
-  }
-
-  claimStartPackage(worldId: string): Promise<StartPackageGrant> {
-    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/onboarding/start-package`, { method: "POST" });
-  }
-
-  async loadStartPackage(worldId: string): Promise<StartPackageGrant | undefined> {
-    const response = await this.#fetch(`${this.#baseUrl}/worlds/${encodeURIComponent(worldId)}/onboarding/start-package`, {
+  async loadActiveTutorial(publicWorldId: string): Promise<TutorialSessionView | undefined> {
+    const response = await this.#fetch(`${this.#baseUrl}/worlds/${encodeURIComponent(publicWorldId)}/tutorial-sessions/active`, {
       headers: { authorization: `Bearer ${this.#accessToken}` },
     });
     if (response.status === 404) return undefined;
-    if (!response.ok) throw new GameApiError(`Startpaketstatus nicht verfügbar (HTTP ${response.status}).`, response.status >= 500);
-    return response.json() as Promise<StartPackageGrant>;
+    if (!response.ok) throw new GameApiError(`Tutorialstatus nicht verfuegbar (HTTP ${response.status}).`, response.status >= 500);
+    return response.json() as Promise<TutorialSessionView>;
   }
 
-  loadCapacityHeatmap(worldId: string, fromS?: number, untilS?: number): Promise<readonly CapacityHeatmapCell[]> {
-    const query = fromS === undefined || untilS === undefined ? "" : `?fromS=${fromS}&untilS=${untilS}`;
-    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/capacity-heatmap${query}`);
+  loadTutorial(tutorialWorldId: string): Promise<TutorialSessionView> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(tutorialWorldId)}/tutorial-session`);
   }
 
-  loadOnboardingAssistant(worldId: string): Promise<OnboardingAssistant> {
-    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/onboarding/assistant`);
+  tutorialAction(tutorialWorldId: string, action: TutorialAction): Promise<TutorialSessionView> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(tutorialWorldId)}/tutorial-session/actions`, { method: "POST", body: JSON.stringify(action) });
+  }
+
+  restartTutorial(tutorialWorldId: string): Promise<TutorialSessionView> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(tutorialWorldId)}/tutorial-session/restart`, { method: "POST" });
+  }
+
+  openTutorialHint(tutorialWorldId: string): Promise<TutorialSessionView> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(tutorialWorldId)}/tutorial-session/hints`, { method: "POST" });
+  }
+
+  dismissTutorialDialogue(tutorialWorldId: string, dialogueId: string): Promise<TutorialSessionView> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(tutorialWorldId)}/tutorial-session/dialogues/dismiss`, { method: "POST", body: JSON.stringify({ dialogueId }) });
+  }
+
+  confirmTutorialSummary(tutorialWorldId: string): Promise<TutorialSessionView> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(tutorialWorldId)}/tutorial-session/summary/confirm`, { method: "POST" });
   }
 
   async loadProjection(worldId: string, signal?: AbortSignal): Promise<PlanningProjectionV1> {

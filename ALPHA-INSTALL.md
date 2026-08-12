@@ -1,22 +1,19 @@
-# Zugfolge — geschlossene Alpha installieren (Phase 1 und 2)
+# Zugfolge — geschlossene Alpha installieren
 
-Diese Anleitung bringt den selbst gehosteten Alpha-Stack reproduzierbar hoch.
-Odoo steuert Einladungen, Keycloak verwaltet Identitäten, und ausschließlich das
-Game hält weltgebundene Konten und Zugänge. Odoo und Keycloak liegen nie im
-heißen Simulationspfad.
+Diese Anleitung startet den selbst gehosteten Alpha-Stack reproduzierbar.
+Odoo steuert Einladungen und Freigaben, Keycloak verwaltet Identitäten, und
+ausschließlich das Game hält weltgebundene Konten, Zugänge und kurzlebige
+Tutorialinstanzen. Odoo und Keycloak liegen nie im heißen Simulationspfad.
 
 ## Voraussetzungen
 
-- Linux-Host mit Docker Engine und Compose v2, mindestens 16 GiB RAM und 40 GiB frei;
+- Linux-Host mit Docker Engine und Compose v2, mindestens 16 GiB RAM und
+  40 GiB frei;
 - Checkout dieses Repositories;
-- das separat rechtegeprüfte Alpha-Evidenzpaket unter `var/alpha-evidence/` mit
-  `alpha-world-deployment.json`, Fleet-Katalog, signiertem InfraRelease und
-  PMTiles/Static-Artefakten. Diese ODbL-/Source-Available-Daten gehören bewusst
-  nicht in Git. Für Phase 2 muss der Weltbestand mit dem aktuellen
-  `tools/region-import/build-alpha-world.mjs` neu erzeugt, qualifiziert und
-  signiert sein; ein älterer Phase-1-Bestand enthält noch kein Startpaket;
-- erreichbarer SMTP-Server, der vor dem Einladungsversand im Realm `zugfolge`
-  unter **Realm settings → Email** eingetragen wird.
+- separat rechtegeprüftes Alpha-Evidenzpaket unter `var/alpha-evidence/` mit
+  signiertem `alpha-world-deployment.json`, Fleet-Katalog, InfraRelease und
+  PMTiles/Static-Artefakten;
+- in Keycloak unter **Realm settings → Email** eingerichteter SMTP-Server.
 
 ## Konfiguration und Start
 
@@ -27,140 +24,113 @@ $EDITOR .env
 pnpm alpha:up
 ```
 
-Der Weltgenerator schreibt neben dem Deployment die Datei
-`alpha-world-deployment.json.phase2.json`. Aus ihr werden die beiden kompakten
-JSON-Werte `.authority` und `.startPackage` unverändert nach
-`ALPHA_JOURNEY_AUTHORITY_JSON` beziehungsweise
-`ALPHA_START_PACKAGE_SPEC_JSON` übernommen. `ALPHA_PUBLIC_WORLD_ID` muss mit
-dem `worldId` des Deployments und des vorbereiteten Startpaket-Slots
-übereinstimmen. Die Ressourcenkennungen werden beim Grant noch einmal gegen
-den gepinnten Fleet-Checkpoint geprüft; die Seitendatei kann deshalb keinen
-Fahrzeug-, Personal- oder Trassenzustand erfinden.
+Alle `replace-*`-Werte werden durch getrennte, zufällige Geheimnisse ersetzt.
+Öffentliche URLs zeigen auf die tatsächlichen HTTPS-Adressen. Es gibt keine
+Variable `ALPHA_TUTORIAL_WORLD_ID`, keine statische Tutorialwelt und keine
+Phase-2-Startpaketkonfiguration. Der öffentliche Weltbestand enthält keinen
+reservierten Startvertrag, kein Startfahrzeug, keine Starttrasse, kein
+Startpersonal und kein Startprogramm.
 
-`ALPHA_TUTORIAL_WORLD_ID` bezeichnet eine getrennte aktive Welt mit
-`profileKind=tutorial`, `worldKind=private`, `rankingStatus=unranked` und einem
-Beschleunigungsfaktor größer eins. Diese Welt muss vor dem Einladungsversand
-mit ihren gepinnten Releases gestartet sein. Die Game API verweigert
-Beschleunigung in öffentlichen Welten. Beim ersten Einstieg nimmt der
-Tutorial-Reset das nach Weltstart eingeladene Konto im selben Commit in die
-persistente Economy-Präqualifikation auf; ein bloßer Identity-Datensatz reicht
-für Kapitel eins ausdrücklich nicht.
+Der öffentliche Geldstart kommt ausschließlich aus der signierten
+`StartingCapitalPolicy` des Weltentwurfs. Odoo konfiguriert diesen Entwurf,
+bleibt aber nur administrativer Kontrollpunkt; Signaturprüfung, Fachstart und
+Ledger bleiben im Game.
 
-Alle `replace-*`-Werte müssen durch getrennte, zufällige Geheimnisse ersetzt
-werden. Öffentliche URLs müssen die tatsächlichen HTTPS-Adressen tragen. Der
-Befehl baut Rust-NAPI und alle Node-/Web-Artefakte, startet nach Abhängigkeiten
-und prüft sämtliche Health-Endpunkte. Die autoritative Startreihenfolge ist
-PostgreSQL/Keycloak → regionaler Single-Writer in der Game API → Game API und
-Scheduler → Livemap → Bridge → Odoo-Projektion. PostgreSQL übernimmt die
-persistente Queue; es wird ohne Messbeweis kein Broker eingeführt.
+Der Start baut Rust-NAPI und alle Node-/Web-Artefakte, startet nach
+Abhängigkeiten und prüft die Health-Endpunkte. PostgreSQL/Keycloak → regionale
+Single-Writer/Game API → Scheduler/Livemap → Bridge/Odoo-Projektion ist die
+bindende Reihenfolge. PostgreSQL übernimmt die persistente Queue; ein Broker
+wird erst nach Messbeweis eingeführt.
 
-## Keycloak und Odoo verbinden
+## Keycloak und Odoo
 
 Der Realmimport `ops/alpha/keycloak/zugfolge-realm.json` enthält die Clients
-`game-web`, `operations-center`, die Audience `game-api`, die Rollen `player`
-und `world_admin` sowie `VERIFY_EMAIL` und `UPDATE_PASSWORD`. Das vertrauliche
-Servicekonto `provisioner` benötigt in Keycloak ausschließlich
-`manage-users`, `view-users` und `query-users`. Seine geheime Zeichenfolge steht
-nur in `.env`.
+`game-web`, `operations-center`, die Audience `game-api`, Rollen sowie
+Required Actions. Das Servicekonto `provisioner` benötigt nur `manage-users`,
+`view-users` und `query-users`.
 
 In Odoo unter **Einstellungen → Technisch → Systemparameter** setzen:
 
-- `zugfolge_admin.game_webhook_url` = `http://game-api:3000/integrations/odoo/webhooks`;
+- `zugfolge_admin.game_webhook_url` =
+  `http://game-api:3000/integrations/odoo/webhooks`;
 - `zugfolge_admin.actor_reference` = `odoo-alpha-admin`;
-- `zugfolge_admin.webhook_key_id` und `zugfolge_admin.webhook_secret` passend zu
-  `ODOO_WEBHOOK_KEYS_JSON`;
-- `zugfolge_admin.projection_keys_json` passend zu `ODOO_PROJECTION_SECRET`.
+- Webhook-Key und Secret passend zu `ODOO_WEBHOOK_KEYS_JSON`;
+- Projektions-Key passend zu `ODOO_PROJECTION_SECRET`.
 
-## Alpha-Einladungen
+## Einladungen und persönlicher Tutorialstart
 
-1. **Zugfolge → Alpha-Einladungen → Neu** öffnen.
-2. E-Mail, Anzeigename, Zielwelt, Rolle und optionales Startpaket erfassen.
-3. **Einladung senden** wählen. Odoo signiert den Antrag; die Commerce-Bridge
-   persistiert und reprüft Akteur, Capability, Welt und Fachform.
-4. Der autoritative Handler legt idempotent die Keycloak-Identität und danach
-   `worldAccesses`/`accounts` samt Rolle für Ziel- und Tutorial-Welt an.
-   Keycloak versendet die Required-Actions-Mail. Die Ergebnisprojektion schreibt
-   Subject und Spielkontoreferenzen nach Odoo zurück; sie ist nur eine
-   Auditprojektion.
-5. **Erneut senden** löst die Required Actions erneut aus. **Vier-Augen-Entzug
-   beantragen** erzeugt dagegen nur einen Hochrisikoantrag. Erst eine andere
-   Odoo-Person mit Freigaberolle darf ihn genehmigen und signiert ausliefern;
-   das Game reautorisiert Welt und Capability, deaktiviert die
-   Keycloak-Identität und entzieht den weltgebundenen Zugang. Der Zustand
-   **Entzogen** kommt ausschließlich aus der Game-Ergebnisprojektion zurück.
+1. In Odoo **Zugfolge → Alpha-Einladungen → Neu** öffnen.
+2. E-Mail, Anzeigename, öffentliche Zielwelt und Rolle erfassen.
+3. **Einladung senden**. Der signierte Antrag erzeugt idempotent die
+   Keycloak-Identität und ausschließlich `worldAccesses`, `accounts` und Rolle
+   der öffentlichen Zielwelt. Es entsteht noch keine Tutorialwelt und kein
+   Tutorialkonto.
+4. Nach Anmeldung ruft Game Web
+   `POST /worlds/:publicWorldId/tutorial-sessions` auf. Das Game sperrt das
+   öffentliche Weltkonto und setzt eine vorhandene aktive Sitzung fort oder
+   erzeugt eine neue private, ungewertete Welt mit UUID und externer
+   `tut_…`-Referenz.
+5. Die `TutorialWorldFactory` provisioniert Economy, Ledger, Fleet, Planner,
+   Operating und Regional Simulation aus dem gehashten Template
+   `tutorial-minimal-2026.1`. Vorbereitet sind nur offenes Inventar und ein
+   Personalpool; Fahrzeughalterwechsel, Trassenbestätigung und aktives
+   Betriebsprogramm erfolgen erst durch die Kapitelhandlungen.
 
-Bis zu 50 Einladungen werden einzeln über diesen Kontrollpfad verteilt; es gibt
-kein produktives Provisionierungsskript und keinen direkten Odoo-DB-Zugriff.
-`world_admin` ist eine weltgebundene Spielrolle und keine Keycloak-Fachwahrheit.
+Tutorialprofile sind von Odoo-Weltlisten und Odoo-Projektionen ausgeschlossen.
+Ein Versuch erzeugt keinen Weltstartantrag, Odoo-Datensatz oder Outbox-Eintrag.
 
-## Spielerreise prüfen
+## Tutoriallebenszyklus und Reaper
 
-Nach Abschluss der Keycloak-Aktionen öffnet die Einladung die Game-Web-App. Sie
-verwendet Authorization Code mit PKCE und hält kein Client-Geheimnis im
-Browser. Die Web-App führt zunächst durch fünf Tutorial-Kapitel. **Tutorial
-zurücksetzen** erzeugt über den regionalen Single Writer eine neue
-Tutorial-Sitzung; Evidenz der alten Sitzung zählt danach nicht mehr.
-
-In der öffentlichen Welt fordert **Startpaket übernehmen** genau einmal den
-vorbereiteten Slot an. Game API und Economy-Runtime vollziehen dabei den
-Operatorwechsel, den befristeten Vertrag, Leasingfahrzeug, Personal,
-Trassenfenster und Betriebsprogramm atomar. Erst nach dem Commit werden
-Livemap-/Odoo-Projektionen benachrichtigt. Kapazitäts-Heatmap, Glossar und
-Assistentenwarnungen lesen nur autoritative Projektionen. Odoo ist weder Quelle
-dieses Zustands noch Teil des heißen Pfads.
-
-Für den Phase-2-Abnahmelauf sind mindestens zu protokollieren:
-
-1. Einladung eines externen Testkontos über Odoo und erfolgreiche
-   Keycloak-Anmeldung;
-2. Abschluss aller fünf Tutorial-Kapitel, Reset und sichtbarer Neubeginn bei
-   Kapitel eins;
-3. einmalige Startpaketübernahme in der öffentlichen Welt und idempotente
-   Wiederholung ohne zweites Fahrzeug oder zweiten Vertrag;
-4. aktives Betriebsprogramm sowie passende Fleet-, Economy- und
-   Livemap-Projektionen;
-5. verständliche Heatmapmuster und Warntexte auch ohne Farbwahrnehmung.
-
-Der Generator stellt für diesen Phase-2-Nachweis einen einzelnen konkreten
-Startpaket-Slot bereit. Die spätere reale Alpha mit 20–50 Konten und der
-gemischte Mehrperioden-Soak bleiben M9.9 und werden dadurch nicht vorweggenommen.
-
-## Betrieb
-
-```bash
-pnpm alpha:down
-docker compose -f compose.alpha.yml logs -f game-api odoo keycloak
-docker compose -f compose.alpha.yml restart game-api
+```text
+provisioning → running → summary → closing → archived
 ```
 
-Prometheus läuft auf Port 9090, Grafana auf 3001. Backup/Restore erfolgt mit den
-vorhandenen Skripten unter `ops/alpha/`; RPO/RTO und Wiederanlauf stehen in
-`docs/alpha-betrieb.md`.
+- höchstens eine aktive Sitzung pro öffentlichem Weltkonto;
+- Reload setzt dieselbe Sitzung fort;
+- Neustart archiviert die alte Welt und erzeugt eine neue UUID;
+- Idle-TTL: 30 Minuten; maximale Dauer: 60 Minuten;
+- Summary-Schonfrist ohne Bestätigung: 5 Minuten;
+- Game-API-Reaper: alle 30 Sekunden;
+- ab `closing` keine neuen Spielkommandos;
+- Archivierung schließt Economy, entzieht Zugang und persistiert finalen Hash,
+  Templateversion, Abschluss-/Abbruchgrund und Telemetrie.
 
-## Phase-3-Betriebsabnahme
+Der Reaper ist idempotent. Nach einem Prozessabbruch setzt der nächste Lauf
+`provisioning`, eine ausstehende Kapitelaktion oder `closing` anhand
+persistenter Schritte fort. Zur Diagnose dienen strukturierte Game-Logs und
+Zustandshashes; individuelle Tutorialwelt-IDs werden nicht als Prometheus-
+Label verwendet.
 
-Vor dem Lauf müssen eine weiterhin aktive externe Spielersitzung für den
-Feedbackfall sowie eine getrennte, bereits bereitgestellte Einladung für den
-Entzugsfall vorliegen. In `.env` werden deren Referenz bzw. Token und zwei
-verschiedene Odoo-Logins gesetzt (`PHASE3_*` aus `.env.example`). Der Lauf ist
-ein angekündigter Wartungsdrill: Er stoppt Odoo und Game API kontrolliert, bis
-die versionierten Alert-Regeln wirklich feuern, und startet beide wieder.
+## Abnahme
+
+Repository- und CI-Abnahme umfasst:
 
 ```bash
-pnpm alpha:phase3
+pnpm --filter @zugfolge/alpha test
+pnpm --filter @zugfolge/game-api test
+pnpm --filter @zugfolge/game-web test
+cargo test --locked -p zugfolge-rules -p zugfolge-runtime-napi
+pnpm guards
+node .github/scripts/sync-milestones.mjs check
 ```
 
-Der Befehl führt zusammenhängend aus:
+Der Linux-Job **Native Runtime ABI (Linux, echtes NAPI)** baut beide NAPI-
+Addons und durchläuft alle fünf Kapitel mit PGlite über echte Economy-, Fleet-,
+Planning-, Operating-, Disruption- und Ledgerpfade.
 
-1. Odoo-Vier-Augen-Entzug → signierter Webhook → Game-Queue → Keycloak-
-   Deaktivierung → Weltzugang → Game-Audit und Ergebnisprojektion;
-2. pseudonymisiertes Spielerfeedback bis zum laufenden Odoo;
-3. Live-Backup und isolierten `zugfolge_odoo_restore_*`-Restore mit identischem
-   Odoo-Fachzustands- und Filestore-Baumhash;
-4. Modul-Upgrade, echte Odoo-19-Add-on-Tests und Anhangsstichprobe;
-5. `degraded`-/`down`-Alertfälle und die live befragten Grafana-/Prometheus-
-   Metriken für Welt, Queue, Bridge und Markt.
+Die Produktabnahme bleibt getrennt offen: externe Testspieler müssen im echten
+Browser gegen jeweils neu erzeugte Sitzungen einen Median um zwölf Minuten,
+mindestens 90 Prozent unter 15 Minuten und die erste Entscheidung unter
+90 Sekunden belegen. M9.1 bleibt bis dahin `in Arbeit`.
 
-Nur ein Protokoll mit `"status": "passed"` unter
-`var/alpha-ops/phase3/protocols/` ist ein Betriebsnachweis. Vorher bleiben
-M9.4, M9.5 und M9.7 in der Statusmatrix offen beziehungsweise blockiert.
+## Betrieb und Wiederherstellung
+
+Öffentliche Welten und ihre Backups bleiben vollständig persistent. Die
+automatische Archivierung kurzlebiger Tutorialwelten ist eine ausdrückliche,
+ungewertete Ausnahme. Ein späterer Cleanup darf umfangreiche Laufzeitdaten
+entfernen, aber nicht Sitzungsreferenz, Templateversion, Kapitelzeiten,
+Abschlussgrund, finalen Hash und notwendige Auditmetadaten.
+
+Weitere Wiederherstellungs-, Alert- und Odoo-Drills stehen in
+[`docs/alpha-betrieb.md`](docs/alpha-betrieb.md). Eine lokale grüne Suite
+ersetzt weder GitHub CI noch den realen Odoo-19- und externen Browserlauf.

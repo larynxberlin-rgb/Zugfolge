@@ -19,6 +19,23 @@ Spielerkommandos an; nur neue menschliche Adminanträge und Projektionen warten
 in der persistenten Queue. Ein Operator darf die Odoo-Queue nicht durch einen
 direkten Game-Adminpfad umgehen.
 
+## Kurzlebige Tutorialwelten
+
+Tutorialinstanzen gehören allein dem Game und erscheinen nicht in Odoo. Der
+30-Sekunden-Reaper schließt Sitzungen nach 30 Minuten Inaktivität, spätestens
+nach 60 Minuten sowie fünf Minuten nach unbestätigter Ergebnisansicht. Bei
+einem Neustart scannt er auch `closing` und setzt die idempotente Archivierung
+fort. Erwartete Diagnosefelder sind `tut_…`-Referenz, Templateversion,
+Lebenszyklus, Provisionierungsschritt, Kapitel, Abschlussgrund und finaler
+Zustandshash.
+
+Ein wiederholt wachsender Bestand aktiver Tutorialwelten ist ein Incident:
+zuerst Reaper-Fehler und Datenbank-Unique-Constraint prüfen, dann den ältesten
+`idle_expires_at`-Wert. Aktive Welten werden nicht manuell gelöscht. Zulässig
+ist nur das erneute Ausführen des idempotenten Reapers; eine spätere
+Laufzeitdatenbereinigung braucht ein eigenes, auditiertes Retentionverfahren.
+Individuelle Referenzen/UUIDs bleiben aus Prometheus-Labels heraus.
+
 ## Backup und isolierter Restore
 
 `ops/alpha/backup-game.sh` erzeugt einen PostgreSQL-Custom-Dump samt SHA-256-

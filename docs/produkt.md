@@ -21,8 +21,10 @@ wirtschaftlichem Realismus.
   und stellen keine Signale.
 - Erste geschlossene Pilotregion ist **Leipzig–Halle–Erfurt** mit Infrastruktur-
   und Wirtschaftsstand 2026.
-- Tutorial- und private Welten dürfen beschleunigt laufen; öffentliche
-  Wettbewerbswelten bleiben bei 1:1.
+- Eine Tutorialwelt ist eine ausdrückliche Ausnahme vom No-Wipe-Vertrag: Sie
+  wird beim Spielerstart privat erzeugt, läuft beschleunigt und ungewertet und
+  wird nach Abschluss, Abbruch oder TTL automatisch archiviert. Öffentliche
+  Wettbewerbswelten bleiben dauerhaft bei 1:1 und werden nie zurückgesetzt.
 
 ## 2. Zentrale Benutzeroberflächen
 
@@ -61,14 +63,29 @@ Zugdaten. → [ADR-0026](adr/0026-karte-als-spielzentrum.md)
 Zugfolge ist komplex. Ohne bewusstes Onboarding verliert es Spieler in den
 ersten zehn Minuten.
 
-- **Tutorial-Welt**, beschleunigt, fünf geführte Kapitel: erste Ausschreibung →
-  Fahrzeug leasen → Trasse beantragen → Betriebsprogramm bauen → erste Störung
-  überstehen.
-- **Startpaket in der öffentlichen Welt:** ein kleiner, bereits notvergebener
-  Verkehrsvertrag plus Leasingfahrzeug. Ist für die Welt ein administrativer
-  Startbestand freigegeben, stammt dieses aus dessen konkreten, gebrauchten
-  Fahrzeugen und bleibt mitsamt Zustand und Geschichte persistent. Kein
-  Startkapital-Cliff.
+- **Persönliche Tutorialwelt**, etwa zwölf Minuten Sollzeit: Beim Start erzeugt
+  das Game aus einem versionierten, gehashten Minimaltemplate genau eine
+  private Welt für dieses öffentliche Weltkonto. Fünf geführte Kapitel lauten
+  erste Ausschreibung → Fahrzeug selbst leasen → Trasse selbst bestätigen →
+  Betriebsprogramm verändern und aktivieren → erste Störung disponieren. Ein
+  Reload setzt dieselbe Sitzung fort; ein Neustart archiviert die alte Welt und
+  erzeugt eine neue UUID. Die Abnahmegrenze bleibt 90 Prozent externer
+  Testspieler unter 15 Minuten.
+- **Keine öffentliche Startausstattung.** Wettbewerbswelten vergeben weder
+  Verkehrsvertrag noch Fahrzeug, Trasse, Personal oder Betriebsprogramm
+  automatisch. Ihr Geldbestand folgt ausschließlich der im signierten
+  Weltentwurf freigegebenen `StartingCapitalPolicy`; Tutorialkapital und
+  Tutorialhandlungen werden niemals übertragen.
+- Das Tutorial besitzt nur vorbereitetes, noch nicht kapitelabschließendes
+  Inventar: EVU und Präqualifikation, endliches Kapital, Personalpool, offene
+  Leasingangebote, unbestätigte Trassenalternativen, inaktive
+  Betriebsprogrammvorlagen, offene Ausschreibung und eine spätere
+  deterministische Störung.
+- **Lutz**, Mitarbeiter eines vollständig fiktiven Infrastrukturbetreibers,
+  führt mit kurzen, reproduzierbaren Dialogen durch jeweils eine Hauptaufgabe.
+  Sein Sarkasmus richtet sich gegen Bürokratie und Chaos; Sicherheits-, Geld-
+  und Handlungsinformationen bleiben eindeutig. Seine Texte werden nie zur
+  Laufzeit generiert.
 - **Glossar-Layer** über der gesamten Oberfläche: jeder Fachbegriff — Sperrzeit,
   Durchrutschweg, Wendezeit, Zugsicherung, Bremshundertstel — ist anklickbar
   erklärt. Kein Wiki-Zwang.
