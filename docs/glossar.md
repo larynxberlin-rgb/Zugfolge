@@ -185,7 +185,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Vertrauensgrad | `Confidence` | wie belastbar ein Attributwert ist — erfasst, abgeleitet oder angenommen; Grundlage der Qualitätsklassen | `daten.md` 5 |
 | Virtueller Fahrdienstleiter | `VirtualDispatcher` | regionale serverautoritative Dispositionslogik über gemeinsame Konfliktressourcen mit erklärbarer lexikographischer Reihenfolge | `stoerungen.md` 5 |
 | Vmax-Band | `SpeedLimit` | die zulässigen Geschwindigkeiten eines Gleisabschnitts — Regel, Neigetechnik, Güterzug; als Band eines Bandprofils geführt | `betriebsgraph.md` 2 |
-| Wagenpark | `Formation` | Formation ohne eigene Traktion; bleibt in Werkstatt oder Abstellung und wird für Überführungen von einer Lok bewegt | `betrieb.md` 2.3 |
+| Wagenpark | `UnpoweredFormation` | Formation ohne eigene Traktion; bleibt in Werkstatt oder Abstellung und wird für Überführungen von einer Lok bewegt | `betrieb.md` 2.3 |
 | Weiche | `Switch` | Fahrwegverzweigung; Konfliktressource, weil kreuzende Bewegungen sich ausschließen | `infrastruktur.md` 1 |
 | Weichenlage | `SwitchPosition` | Grundstellung oder abzweigende Lage einer Weiche in einer Fahrstraße | `betriebsgraph.md` 12 |
 | Welt | `World` | vollständig isolierte Instanz von Netz, Wirtschaft und Spielern; Wurzel der Mandantentrennung, jede andere Tabelle trägt ihre `world_id` (Invariante 4) | `architektur.md` 5 |

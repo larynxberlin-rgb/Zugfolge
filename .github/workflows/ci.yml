@@ -242,6 +242,8 @@ jobs:
           - 8069:8069
     steps:
       - uses: actions/checkout@v7
+      - name: Odoo nach dem PostgreSQL-Healthcheck neu starten
+        run: docker restart "${{ job.services.odoo.id }}"
       - name: Gepinntes OCA-queue_job beziehen
         run: |
           set -euo pipefail
