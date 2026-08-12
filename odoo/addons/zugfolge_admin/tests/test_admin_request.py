@@ -17,7 +17,7 @@ class TestZugfolgeAdminRequest(TransactionCase):
     def test_high_risk_request_rejects_self_approval(self):
         request = self.env["zugfolge.admin.request"].create({
             "world_projection_id": self.projection.id, "action_type": "infra_release_adoption", "risk_class": "high",
-            "reason": "Nachweis", "effect_preview": {}, "release_hash": "a" * 64,
+            "reason": "Nachweis", "effect_preview": {"kind": "infra-release", "releaseHash": "a" * 64}, "release_hash": "a" * 64,
             "requested_period_start": "2026-02-01 00:00:00",
         })
         request.action_submit()
@@ -27,14 +27,15 @@ class TestZugfolgeAdminRequest(TransactionCase):
     def test_reason_is_mandatory(self):
         with self.assertRaises(ValidationError):
             self.env["zugfolge.admin.request"].create({
-                "world_projection_id": self.projection.id, "action_type": "world_access_revoke", "reason": " ", "effect_preview": {},
+                "world_projection_id": self.projection.id, "action_type": "world_access_revoke", "reason": " ",
+                "effect_preview": {"kind": "world-access-revoke"},
             })
 
     def test_world_access_revoke_requires_stable_target(self):
         with self.assertRaises(ValidationError):
             self.env["zugfolge.admin.request"].create({
                 "world_projection_id": self.projection.id, "action_type": "world_access_revoke",
-                "reason": "Bestaetigter Supportfall", "effect_preview": {},
+                "reason": "Bestaetigter Supportfall", "effect_preview": {"kind": "world-access-revoke"},
             })
 
     def test_monitoring_projection_extracts_live_queue_market_and_release_fields(self):
