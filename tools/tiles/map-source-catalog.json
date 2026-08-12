@@ -1,0 +1,21 @@
+{
+  "schema": "zugfolge-map-source-catalog/v1",
+  "sources": [
+    {
+      "id": "protomaps-daily-basemap",
+      "rightsSourceId": "protomaps-daily-basemap",
+      "sourceLicense": "ODbL-1.0 Produced Work",
+      "acquisition": "Jährlich gepinnter Protomaps-Tagesbuild mit Build-ID, OSM-Replikationszeit, Größe und BLAKE3-Prüfsumme.",
+      "attribution": "© OpenStreetMap-Mitwirkende, ODbL 1.0; Basemap-Aufbereitung Protomaps; weitere Bearbeitung durch Zugfolge",
+      "modifications": "Weltübersicht bis Zoom 10 und Deutschlanddetail Zoom 11 bis 15 extrahiert, zusammengeführt, mit lokalem Dunkelstil, Glyphen und Sprites selbst gehostet."
+    },
+    {
+      "id": "infrarelease-deutschland",
+      "rightsSourceId": "osm-pbf-deutschland",
+      "sourceLicense": "ODbL-1.0 und Attributionen des gepinnten InfraRelease",
+      "acquisition": "Signierter deutschlandweiter InfraRelease desselben Fahrplanjahres.",
+      "attribution": "Infrastrukturquellen und Bearbeitungen gemäß öffentlichem InfraRelease-Manifest",
+      "modifications": "Zoomabhängige semantische Layer mit stabilen Objektkennungen; keine vollständigen Objektdetails in den Tiles."
+    }
+  ]
+}

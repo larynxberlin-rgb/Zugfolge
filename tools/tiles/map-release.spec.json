@@ -1,0 +1,33 @@
+{
+  "schema": "zugfolge-map-release-spec/v1",
+  "releaseId": "map-2026.1",
+  "selfHosted": true,
+  "runtimeExternalSources": [],
+  "artifacts": [
+    {
+      "kind": "basemap",
+      "id": "basemap-world-dark-2026.1",
+      "file": "basemap/world-dark-2026.1.pmtiles",
+      "serveAt": "/maps/releases/2026.1/world-dark.pmtiles",
+      "coverage": "world",
+      "minZoom": 0,
+      "maxZoom": 15,
+      "layers": ["boundaries", "buildings", "earth", "landcover", "landuse", "places", "pois", "roads", "water"],
+      "attribution": "© OpenStreetMap-Mitwirkende, ODbL 1.0; Basemap-Aufbereitung Protomaps; weitere Bearbeitung durch Zugfolge",
+      "httpRangeRequired": true
+    },
+    {
+      "kind": "infrastructure",
+      "id": "infra-deutschland-2026.1",
+      "file": "infrastructure/infra-deutschland-2026.1.pmtiles",
+      "serveAt": "/maps/releases/2026.1/infra-deutschland.pmtiles",
+      "coverage": "germany-ebo",
+      "minZoom": 4,
+      "maxZoom": 18,
+      "layers": ["rail_corridors", "operating_points", "stations", "tracks", "platforms", "switches", "signals", "blocks", "conflict_resources", "rail_context"],
+      "attribution": "Infrastrukturquellen und Bearbeitungen gemäß öffentlichem InfraRelease-Manifest",
+      "httpRangeRequired": true,
+      "stableFeatureIds": true
+    }
+  ]
+}

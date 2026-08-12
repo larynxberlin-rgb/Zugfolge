@@ -26,8 +26,9 @@ wirtschaftlichem Realismus.
 
 ## 2. Zentrale Benutzeroberflächen
 
-- **Live-Lage** — dunkle Deutschlandkarte mit allen fahrenden Zügen,
-  Verspätungen, Sperrungen und Belegungen. **Hauptseite.**
+- **Live-Lage** — selbst gehostete, dunkle Weltkarte mit vollständigem
+  Deutschland-Infrastruktur-Layer, allen fahrenden Zügen, Verspätungen,
+  Sperrungen und Belegungen. **Hauptseite und räumliches Spielzentrum.**
 - **Fahrplan und Trassen** — Laufwegsuche, Bildfahrplan, Sperrzeitentreppe,
   Konflikterklärung, Alternativangebote.
 - **Betriebszentrale** — laufende Zugfahrten, Anschlüsse, Umläufe, Störungen,
@@ -44,6 +45,16 @@ Desktop erhält die vollständige Leitstellenansicht. Die PWA für Smartphone un
 Tablet unterstützt Livemap, Meldungen, Freigaben und begrenzte Disposition;
 komplexe Fahrplanarbeit bleibt desktop-first. Oberflächensprache ist zunächst
 ausschließlich Deutsch.
+
+Die Welt bleibt überall navigierbar; der eigene Deutschland-Korpus liegt als
+semantischer Layer darüber. Aktive Infrastruktur ist hervorgehoben, während
+nur die weltgebundene `playable`-Maske Bestellung und Disposition freigibt.
+Mit steigendem Zoom erscheinen Korridore, Betriebsstellen, Einzelgleise,
+Bahnsteige, Blöcke, Weichen, Signale und Anlagen. Alle sichtbaren Fachobjekte
+sind anklickbar und besitzen releasegebundene Details. Bahnhöfe öffnen eine
+aktuelle, generische Fallblattanzeige; Züge eine öffentliche Betriebssicht und
+einen FIS-Monitor. Das eigene EVU erhält zusätzlich autorisierte interne
+Zugdaten. → [ADR-0026](adr/0026-karte-als-spielzentrum.md)
 
 ## 3. Onboarding
 

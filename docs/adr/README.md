@@ -13,8 +13,8 @@ umgeschrieben — ihre Historie ist der Wert.
 
 ## Verhältnis zu den anderen Dokumenten
 
-- `AGENTS.md` — die bindende Kurztabelle E1–E25. Wird jede Sitzung geladen.
-- `../entscheidungen.md` — E1–E25 mit einzeiliger Begründung, die maßgebliche
+- `AGENTS.md` — die bindende Kurztabelle E1–E26. Wird jede Sitzung geladen.
+- `../entscheidungen.md` — E1–E26 mit einzeiliger Begründung, die maßgebliche
   Quelle für Wortlaut und Nummerierung.
 - **`docs/adr/`** (dieser Ordner) — dieselben Entscheidungen ausführlich: mit
   Kontext, Konsequenzen und Querverweisen. Ein ADR je Entscheidung.
@@ -42,7 +42,7 @@ Statuswerte: `Angenommen` (bindend), `Vorgeschlagen`, `Abgelöst durch ADR-XXXX`
 ## Index
 
 Die folgenden ADRs wurden aus den zuvor in der Konzeptionsphase getroffenen
-Grundsatzentscheidungen schriftlich festgehalten; E21 und E22 kamen später als
+Grundsatzentscheidungen schriftlich festgehalten; E21 bis E26 kamen später als
 eigene Entscheidungen hinzu. Alle Status: **Angenommen — bindend**.
 
 | ADR | E | Titel |
@@ -72,6 +72,7 @@ eigene Entscheidungen hinzu. Alle Status: **Angenommen — bindend**.
 | [0023](0023-odoo-als-administrativer-kontrollpunkt.md) | E23 | Odoo ist administrativer Kontroll- und Freigabepunkt, nie fachliche Source of Truth |
 | [0024](0024-erweiterter-alpha-schnitt.md) | E24 | Der Alpha-Schnitt wird gezielt um M12.1, M12.2 und M14.1 erweitert |
 | [0025](0025-gebietsueberschreitende-fahrtketten.md) | E25 | Gebietsüberschreitende Fahrten bleiben eine Fahrtkette mit deterministischem Außenlauf |
+| [0026](0026-karte-als-spielzentrum.md) | E26 | Die selbst gehostete Weltkarte ist das Spielzentrum; der Deutschland-Korpus ist vollständig sichtbar |
 
 > **Hinweis zum Umfang.** Milestone 0.1 nennt „E1 bis E16"; die Formulierung
 > stammt aus der Zeit vor E17–E20. Da diese vier heute gleichrangig bindend

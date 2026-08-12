@@ -70,7 +70,10 @@ import {
 } from "./disruption-provider-scheduler.js";
 import { loadFleetAuthorityReleaseCatalog } from "./fleet-configuration.js";
 import { GameInfraActivationSafety, parseInfraActivationSafetyReports } from "./infra-activation-safety.js";
+import { InfraPackageStaging, createLocalMapPackageVerifier, type InfraUploadSigningKey } from "./infra-package-staging.js";
 import { projectLivemapOperationEvent } from "./livemap-operation-projection.js";
+import { loadLivemapReadModel } from "./livemap-read-model.js";
+import { assertTrainMapProjectionBinding, loadTrainMapProjector } from "./livemap-train-map-projection.js";
 import {
   MANUAL_DISRUPTION_ADMIN_CAPABILITY,
   createManualDisruptionAdminHandler,
@@ -150,6 +153,40 @@ function parseTrustedReleaseKeys(value: string): Readonly<Record<string, string>
   return parsed as Readonly<Record<string, string>>;
 }
 
+function parseInfraUploadKeys(value: string): readonly InfraUploadSigningKey[] {
+  const parsed: unknown = JSON.parse(value);
+  if (!Array.isArray(parsed) || parsed.length === 0) throw new Error("INFRA_UPLOAD_KEYS_JSON muss eine nichtleere Schlüsselliste sein.");
+  const keys = parsed.map((entry): InfraUploadSigningKey => {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) throw new Error("Infra-Upload-Schlüssel ist kein Objekt.");
+    const record = entry as Record<string, unknown>;
+    if (typeof record["id"] !== "string" || record["id"].trim() === "" || typeof record["secret"] !== "string" || record["secret"].length < 32 || /replace|example|change.?me/i.test(record["secret"])) {
+      throw new Error("Infra-Upload-Schlüssel ist unvollständig oder zu kurz.");
+    }
+    return { id: record["id"], secret: record["secret"] };
+  });
+  if (new Set(keys.map(({ id }) => id)).size !== keys.length) throw new Error("Infra-Upload-Schlüssel-IDs sind nicht eindeutig.");
+  return keys;
+}
+
+async function loadOptionalInfraPackageStaging(): Promise<{
+  readonly staging?: InfraPackageStaging;
+  readonly keys?: readonly InfraUploadSigningKey[];
+}> {
+  const enabled = optionalEnv("INFRA_PACKAGE_STAGING_ENABLED");
+  const root = optionalEnv("INFRA_PACKAGE_STAGING_ROOT");
+  const keysJson = optionalEnv("INFRA_UPLOAD_KEYS_JSON");
+  const verifierModule = optionalEnv("INFRA_PACKAGE_VERIFIER_MODULE");
+  if (enabled === undefined || enabled === "false") return {};
+  if (enabled !== "true") throw new Error("INFRA_PACKAGE_STAGING_ENABLED muss true oder false sein.");
+  if (root === undefined || keysJson === undefined || verifierModule === undefined) {
+    throw new Error("Infra-Paketstaging braucht explizit INFRA_PACKAGE_STAGING_ROOT, INFRA_UPLOAD_KEYS_JSON und INFRA_PACKAGE_VERIFIER_MODULE gemeinsam.");
+  }
+  const packageVerifier = await createLocalMapPackageVerifier(verifierModule);
+  const staging = new InfraPackageStaging(root, { packageVerifier });
+  await staging.initialize();
+  return { staging, keys: parseInfraUploadKeys(keysJson) };
+}
+
 function loadOptionalOdooWebhookOptions(): OdooWebhookReceiverOptions | undefined {
   const tenantId = optionalEnv("ODOO_WEBHOOK_TENANT_ID");
   if (tenantId === undefined) return undefined;
@@ -169,6 +206,7 @@ function persistedRegionalNowS(state: unknown): number {
 }
 
 const db = createDatabase(requireEnv("DATABASE_URL"));
+const infraPackageUpload = await loadOptionalInfraPackageStaging();
 const odooWebhookOptions = loadOptionalOdooWebhookOptions();
 const odooWebhookStore = odooWebhookOptions === undefined ? undefined : createOdooWebhookReceiptStore(db);
 const odooProjectionUrl = optionalEnv("ODOO_PROJECTION_URL");
@@ -195,7 +233,32 @@ const alphaInvitationAdminHandlers = createAlphaInvitationAdminHandlers({
   redirectUri: requireEnv("KEYCLOAK_INVITATION_REDIRECT_URI"),
   tutorialWorldId: requireEnv("ALPHA_TUTORIAL_WORLD_ID"),
 });
-const livemap = new LivemapRegistry();
+const livemapReadModelPath = optionalEnv("LIVEMAP_READ_MODEL_PATH");
+const livemapReadModel = livemapReadModelPath === undefined
+  ? undefined
+  : await loadLivemapReadModel(livemapReadModelPath);
+const trainMapProjectionPath = optionalEnv("LIVEMAP_TRAIN_PROJECTION_PATH");
+const trainMapProjector = trainMapProjectionPath === undefined
+  ? undefined
+  : loadTrainMapProjector(trainMapProjectionPath);
+if (trainMapProjector !== undefined) {
+  if (livemapReadModel === undefined) {
+    trainMapProjector.close();
+    throw new Error("Zugkartenprojektion erfordert den releasegebundenen Livemap-Detailkatalog.");
+  }
+  const config = await livemapReadModel.getConfig(trainMapProjector.worldId);
+  try {
+    assertTrainMapProjectionBinding(trainMapProjector, config);
+  } catch (error) {
+    trainMapProjector.close();
+    livemapReadModel.close();
+    throw error;
+  }
+}
+const livemap = new LivemapRegistry({
+  trainMapProjector,
+  objectStateProjector: trainMapProjector,
+});
 const operations = new OperationsRegistry();
 const economyMonitor = new EconomySchedulerMonitor(Date.now());
 const disruptionProviderMonitor = new DisruptionProviderMonitor(Date.now());
@@ -386,6 +449,7 @@ const app = buildApp({
   db,
   verifyToken,
   livemap,
+  livemapReadModel,
   operations,
   simulationIngestToken: requireEnv("SIMULATION_INGEST_TOKEN"),
   regionalSimulation,
@@ -426,6 +490,12 @@ const app = buildApp({
   extraMetricSources: [alphaOperationsMetrics],
   odooWebhookStore,
   odooWebhookOptions,
+  infraPackageStaging: infraPackageUpload.staging,
+  infraUploadKeys: infraPackageUpload.keys,
+});
+app.addHook("onClose", async () => {
+  trainMapProjector?.close();
+  livemapReadModel?.close();
 });
 
 if (odooProjectionClient !== undefined) {

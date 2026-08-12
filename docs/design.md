@@ -212,11 +212,36 @@ Schriftgrad, Zeilenhöhe, Lesedurchschuss und Abstand. Ein gemeinsamer
 Formfelder sind Teil der Komponentenbasis. Die Bildfahrplan-Oberfläche macht
 den Wechsel direkt prüfbar.
 
-## 9. Was nach M3 offenbleibt
+## 9. Kartenstil und Zoomvertrag (E26)
+
+Die Karte ist weltweit dunkel und bewusst informationsarm; der semantische
+Deutschland-Layer trägt den Betrieb. Die Kartenfolge ist verbindlich:
+Basiskontext → aktive Gebietsgrenze → Infrastruktur → Betriebszustände → Züge
+→ Auswahl. Aktive Infrastruktur ist neutral hell, inaktive modellierte
+Infrastruktur gedämpft und Klasse C gestrichelt mit sichtbarem Buchstaben.
+
+| Zoom | sichtbare Fachobjekte |
+|------|-----------------------|
+| 0–4 | Welt-Basiskarte |
+| 5–7 | Deutschland-Korridore, große Betriebsstellen, Spielgebietsgrenze |
+| 8–11 | Gleisgruppen, Betriebsstellen, Züge und Betriebsabweichungen |
+| 12–14 | Einzelgleise, Bahnsteige, Blöcke; Signale und Weichen selektiv |
+| 15–20 | vollständige semantische Elemente und Beschriftung |
+
+Klickflächen sind breiter als die sichtbare Geometrie. Bei Überlagerung gilt
+Zug vor Signal/Weiche vor Bahnhof/Bahnsteig vor Gleis; mehrere Treffer öffnen
+eine Auswahl. Tastaturzugang erfolgt zusätzlich über eine Objektliste. Ein
+Detailpanel ist per `focus=art:id` tief verlinkbar.
+
+Einschränkungen sind bernsteinfarben und gestrichelt, Sperrungen rot und
+unterbrochen, Bauarbeiten rot-weiß gemustert. Fallblattanzeige und FIS nutzen
+generische Domänensprache, Tabellenziffern und eine eigene Formensprache;
+keine reale Hausschrift, kein Logo und kein Markenzitat. Animation betrifft
+nur geänderte Zellen und entfällt bei reduzierter Bewegung.
+
+## 10. Was nach M14.2 offenbleibt
 
 - Layout der übrigen sechs Hauptflächen;
-- Kartenstil im Detail — Beschriftungsdichte je Zoomstufe, Darstellung der
-  ausgeschlossenen Netze als blasse Kontextlinien;
 - Lackierungseditor;
 - PWA-Layouts.
 

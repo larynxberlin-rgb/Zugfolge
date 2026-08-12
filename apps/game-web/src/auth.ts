@@ -4,6 +4,7 @@ export interface BrowserRuntimeConfiguration {
   readonly keycloakRealm: string;
   readonly publicWorldId: string;
   readonly tutorialWorldId: string;
+  readonly livemapUrl: string;
 }
 
 const TOKEN_KEY = "zugfolge.accessToken";
@@ -33,6 +34,7 @@ export function loadRuntimeConfiguration(): BrowserRuntimeConfiguration {
     keycloakRealm: configured.keycloakRealm ?? "zugfolge",
     publicWorldId: configured.publicWorldId ?? "",
     tutorialWorldId: configured.tutorialWorldId ?? "",
+    livemapUrl: configured.livemapUrl ?? "",
   };
 }
 

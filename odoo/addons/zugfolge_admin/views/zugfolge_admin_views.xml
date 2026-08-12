@@ -21,4 +21,69 @@
   <record id="view_zugfolge_alpha_invitation_tree" model="ir.ui.view"><field name="name">zugfolge.alpha.invitation.tree</field><field name="model">zugfolge.alpha.invitation</field><field name="arch" type="xml"><list><field name="email"/><field name="display_name"/><field name="world_projection_id"/><field name="role"/><field name="state"/></list></field></record>
   <record id="action_zugfolge_alpha_invitation" model="ir.actions.act_window"><field name="name">Alpha-Einladungen</field><field name="res_model">zugfolge.alpha.invitation</field><field name="view_mode">list,form</field></record>
   <menuitem id="menu_zugfolge_alpha_invitations" name="Alpha-Einladungen" parent="menu_zugfolge_root" action="action_zugfolge_alpha_invitation" sequence="18"/>
+  <record id="view_zugfolge_infra_release_import_form" model="ir.ui.view">
+    <field name="name">zugfolge.infra.release.import.form</field>
+    <field name="model">zugfolge.infra.release.import</field>
+    <field name="arch" type="xml">
+      <form create="true" edit="true" delete="false">
+        <header>
+          <button name="action_verify" type="object" string="Paket pruefen" class="btn-primary" groups="zugfolge_admin.group_zugfolge_infra_reviewer" invisible="state != 'draft'"/>
+          <button name="action_stage" type="object" string="Sicher an Game bereitstellen" class="btn-primary" groups="zugfolge_admin.group_zugfolge_infra_reviewer" invisible="state != 'verified'"/>
+          <button name="action_create_adoption_request" type="object" string="Vier-Augen-Uebernahme beantragen" groups="zugfolge_admin.group_zugfolge_infra_reviewer" invisible="state != 'staged' or not activation_eligible or signature_status != 'verified'"/>
+          <field name="state" widget="statusbar" statusbar_visible="draft,verifying,verified,staged,failed"/>
+        </header>
+        <sheet>
+          <group>
+            <group string="Import">
+              <field name="name"/>
+              <field name="import_id"/>
+              <field name="importer_id"/>
+              <field name="world_projection_id" readonly="state != 'draft'"/>
+              <field name="manifest_attachment_ids" widget="many2many_binary" readonly="state != 'draft'"/>
+              <field name="part_attachment_ids" widget="many2many_binary" readonly="state != 'draft'"/>
+            </group>
+            <group string="Unveraenderlicher Pruefbeleg">
+              <field name="package_id"/>
+              <field name="package_version"/>
+              <field name="delivery_release_id"/>
+              <field name="manifest_bytes"/>
+              <field name="manifest_sha256"/>
+              <field name="part_count"/>
+              <field name="total_part_bytes"/>
+              <field name="verification_inventory_sha256"/>
+            </group>
+          </group>
+          <notebook>
+            <page string="Qualifikation und Vier-Augen-Gate">
+              <group>
+                <field name="signature_status"/>
+                <field name="activation_eligible"/>
+                <field name="verified_by_id"/>
+                <field name="verification_started_at"/>
+                <field name="verification_completed_at"/>
+                <field name="staging_requested_at"/>
+                <field name="staged_at"/>
+                <field name="adoption_request_id"/>
+              </group>
+            </page>
+            <page string="Exaktes Paketteilinventar"><field name="part_inventory" widget="json"/></page>
+            <page string="Game-Stagingbeleg"><field name="game_stage_result" widget="json"/></page>
+            <page string="Fehler" invisible="state != 'failed'"><group><field name="failure_code"/><field name="failure_detail"/></group></page>
+          </notebook>
+        </sheet>
+        <chatter/>
+      </form>
+    </field>
+  </record>
+  <record id="view_zugfolge_infra_release_import_tree" model="ir.ui.view">
+    <field name="name">zugfolge.infra.release.import.tree</field>
+    <field name="model">zugfolge.infra.release.import</field>
+    <field name="arch" type="xml"><list create="true" edit="false" delete="false"><field name="name"/><field name="package_version"/><field name="importer_id"/><field name="signature_status"/><field name="activation_eligible"/><field name="state"/><field name="write_date"/></list></field>
+  </record>
+  <record id="action_zugfolge_infra_release_import" model="ir.actions.act_window">
+    <field name="name">InfraRelease-Jahresimporte</field>
+    <field name="res_model">zugfolge.infra.release.import</field>
+    <field name="view_mode">list,form</field>
+  </record>
+  <menuitem id="menu_zugfolge_infra_release_imports" name="InfraRelease-Jahresimporte" parent="menu_zugfolge_root" action="action_zugfolge_infra_release_import" groups="zugfolge_admin.group_zugfolge_infra_reviewer" sequence="22"/>
 </odoo>

@@ -117,6 +117,7 @@ mod protection;
 mod provenance;
 mod reference;
 mod release;
+mod semantic_export;
 mod speed;
 mod station;
 mod track;
@@ -149,7 +150,8 @@ pub use identity::{
     OperatingPointId, PlatformId, SwitchId, TrackEdgeId, TrackId, TrainCharacteristicsId,
 };
 pub use import::{
-    ImportError, OsmNodeId, OsmWayId, RawEdge, RawEdgeId, RawGraph, RawNode, import_pbf,
+    ImportError, OsmNode, OsmNodeId, OsmWay, OsmWayId, PbfDocument, RawEdge, RawEdgeId, RawGraph,
+    RawNode, import_pbf, import_pbf_document,
 };
 pub use interlocking::{
     HeadElement, HeadNode, HeadNodeKind, HeadSignal, InterlockingPlan, InterlockingRoute,
@@ -165,6 +167,7 @@ pub use protection::{ProtectionSystem, TrainProtection};
 pub use provenance::{Attributed, Confidence, Provenance, SourceId};
 pub use reference::{DeviationReport, ReferenceCorpus, ReferenceRun, RunDeviation, Tolerance};
 pub use release::{InfraRelease, InfraReleaseBuilder, ReleaseSource, ReleaseVersion};
+pub use semantic_export::{SemanticExportError, SemanticExportSummary, export_semantic_geojsonseq};
 pub use speed::{SpeedCategory, SpeedLimit};
 pub use station::{
     StationAmenities, StationAmenity, StationCategory, StationEnrichment, StationEnrichmentCatalog,

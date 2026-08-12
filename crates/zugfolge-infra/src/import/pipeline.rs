@@ -26,25 +26,64 @@ const HEADER_BLOCK_TYPE: &str = "OSMHeader";
 /// Blocktyp, der die eigentlichen Knoten und Wege trägt.
 const DATA_BLOCK_TYPE: &str = "OSMData";
 
-/// Importiert einen OSM-PBF-Extract in einen [`RawGraph`].
+/// Vollstaendig gelesene Knoten und Wege eines gepinnten OSM-PBF-Dokuments.
 ///
-/// Liest blockweise von `reader` — nie mehr als ein entpackter Block steht
-/// gleichzeitig im Speicher — und meldet als Erstes jeden Block, dessen
-/// Pflichtmerkmale oder Kodierung dieser Leser nicht versteht, statt ihn
-/// still falsch zu lesen.
+/// Der Typ bewahrt neben dem Eisenbahn-Rohgraphen auch Kartenelemente wie
+/// separate Bahnsteige und Betriebsstellenpunkte. Relationen werden vom
+/// gegenwaertigen PBF-Leser nicht ausgewertet.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PbfDocument {
+    source: SourceId,
+    nodes: BTreeMap<OsmNodeId, OsmNode>,
+    ways: BTreeMap<OsmWayId, OsmWay>,
+}
+
+impl PbfDocument {
+    /// Die fuer diesen Import deklarierte, releasegebundene Quelle.
+    pub const fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    /// Alle OSM-Knoten, auch wenn sie nicht Teil einer `railway=rail`-Kante sind.
+    pub fn nodes(&self) -> impl Iterator<Item = &OsmNode> {
+        self.nodes.values()
+    }
+
+    /// Ein OSM-Knoten ueber seine stabile Kennung.
+    pub fn node(&self, id: OsmNodeId) -> Option<&OsmNode> {
+        self.nodes.get(&id)
+    }
+
+    /// Alle OSM-Wege in aufsteigender OSM-Kennung.
+    pub fn ways(&self) -> impl Iterator<Item = &OsmWay> {
+        self.ways.values()
+    }
+
+    /// Baut den unveraenderten Eisenbahn-Rohgraphen aus diesem PBF-Dokument.
+    ///
+    /// # Errors
+    ///
+    /// Gibt einen [`ImportError`] zurueck, wenn ein Eisenbahnweg entartet ist
+    /// oder auf einen im Extract fehlenden Knoten verweist.
+    pub fn raw_graph(&self) -> Result<RawGraph, ImportError> {
+        build_raw_graph(self.source.clone(), &self.nodes, &self.ways)
+    }
+}
+
+/// Liest ein PBF-Dokument einschliesslich der Elemente, die nur fuer Karte
+/// und Kontext gebraucht werden, etwa Bahnsteige und Betriebsstellenpunkte.
 ///
-/// `source` benennt die Quelle, aus der `reader` stammt — sie geht
-/// unverändert in den zurückgegebenen [`RawGraph`] ein. Ob diese Quelle
-/// nach dem Rechte-Gate (`docs/rechte.md`) überhaupt importiert werden darf,
-/// prüft dieser Aufruf nicht: Das ist eine Prüfung gegen das
-/// Quellenregister, keine Eigenschaft der Bytes.
+/// Anders als [`import_pbf`] reduziert dieser Aufruf die Eingabe noch nicht
+/// auf den Rohgraphen. Dadurch kann ein nachgelagerter, deterministischer
+/// Semantikexport echte Geometrien nicht am Gleis liegender Objekte bewahren.
 ///
 /// # Errors
 ///
-/// Ein [`ImportError`] für jede Abweichung vom erwarteten Dateiaufbau — eine
-/// abgeschnittene Datei, ein unbekanntes Pflichtmerkmal, ein Weg, der auf
-/// einen im Extract fehlenden Knoten verweist, und Ähnliches.
-pub fn import_pbf<R: Read>(reader: &mut R, source: SourceId) -> Result<RawGraph, ImportError> {
+/// Ein [`ImportError`] fuer jede Abweichung vom erwarteten Dateiaufbau.
+pub fn import_pbf_document<R: Read>(
+    reader: &mut R,
+    source: SourceId,
+) -> Result<PbfDocument, ImportError> {
     let header = read_blob_header(reader)?.ok_or(ImportError::Truncated)?;
     if header.block_type != HEADER_BLOCK_TYPE {
         return Err(ImportError::UnexpectedBlockType {
@@ -75,5 +114,21 @@ pub fn import_pbf<R: Read>(reader: &mut R, source: SourceId) -> Result<RawGraph,
         }
     }
 
-    build_raw_graph(source, &nodes, &ways)
+    Ok(PbfDocument {
+        source,
+        nodes,
+        ways,
+    })
+}
+
+/// Importiert einen OSM-PBF-Extract in einen [`RawGraph`].
+///
+/// Liest blockweise und meldet unbekannte Pflichtmerkmale, abgeschnittene
+/// Dateien und fehlende Knotenreferenzen, statt sie still zu ignorieren.
+///
+/// # Errors
+///
+/// Ein [`ImportError`] fuer jede Abweichung vom erwarteten Dateiaufbau.
+pub fn import_pbf<R: Read>(reader: &mut R, source: SourceId) -> Result<RawGraph, ImportError> {
+    import_pbf_document(reader, source)?.raw_graph()
 }

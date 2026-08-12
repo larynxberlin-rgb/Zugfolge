@@ -14,6 +14,7 @@ export interface JourneyViewState {
   readonly assistant?: OnboardingAssistant;
   readonly busy: boolean;
   readonly message: string;
+  readonly livemapUrl?: string;
 }
 
 function escapeHtml(value: unknown): string {
@@ -70,8 +71,11 @@ function onboarding(state: JourneyViewState): string {
 }
 
 export function renderJourney(state: JourneyViewState): string {
+  const livemap = state.livemapUrl === undefined || state.livemapUrl === ""
+    ? ""
+    : `<a class="primary-map-link" href="${escapeHtml(state.livemapUrl)}">Zur Live-Lage</a>`;
   return `<main class="journey-shell" aria-busy="${state.busy}">
-    <header class="journey-top"><div><p class="wordmark">ZUGFOLGE</p><h1>Geschlossene Alpha · Spielerreise</h1></div><a href="?view=diagram&world=${encodeURIComponent(state.publicWorldId)}">Zum Bildfahrplan</a></header>
+    <header class="journey-top"><div><p class="wordmark">ZUGFOLGE</p><h1>Geschlossene Alpha · Spielerreise</h1></div><nav aria-label="Hauptnavigation">${livemap}<a href="?view=diagram&world=${encodeURIComponent(state.publicWorldId)}">Zum Bildfahrplan</a></nav></header>
     ${state.message === "" ? "" : `<p class="journey-message" role="status">${escapeHtml(state.message)}</p>`}
     <div class="journey-grid">${tutorial(state)}${onboarding(state)}</div>
   </main>`;

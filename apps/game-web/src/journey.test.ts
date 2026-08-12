@@ -9,6 +9,7 @@ describe("Phase-2-Spielerreise", () => {
       publicWorldId: "public-world",
       busy: false,
       message: "",
+      livemapUrl: "https://map.example/?world=public-world",
       tutorial: {
         chapter: 3,
         chapterState: "in-progress",
@@ -37,6 +38,7 @@ describe("Phase-2-Spielerreise", () => {
     expect(html).toContain("Aktiv");
     expect(html).toContain("Tutorial zurücksetzen");
     expect(html).toContain("Beschleunigt nur in der getrennten Tutorialwelt");
+    expect(html).toContain("Zur Live-Lage");
   });
 
   it("kombiniert Heatmapmuster, Zustandswort und blockierende Assistentenwarnung", () => {

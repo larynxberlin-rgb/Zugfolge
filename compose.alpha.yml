@@ -26,6 +26,7 @@ services:
       KC_DB_USERNAME: "${POSTGRES_USER}"
       KC_DB_PASSWORD: "${POSTGRES_PASSWORD}"
       GAME_WEB_URL: "${GAME_WEB_URL}"
+      LIVEMAP_URL: "${LIVEMAP_PUBLIC_URL:-http://localhost:4174}"
       OPERATIONS_CENTER_URL: "${OPERATIONS_CENTER_URL}"
       KEYCLOAK_ADMIN_CLIENT_SECRET: "${KEYCLOAK_ADMIN_CLIENT_SECRET}"
     volumes: [./ops/alpha/keycloak/zugfolge-realm.json:/opt/keycloak/data/import/zugfolge-realm.json:ro]
@@ -41,9 +42,18 @@ services:
       KEYCLOAK_ISSUER: "${KEYCLOAK_PUBLIC_URL}/realms/zugfolge"
       KEYCLOAK_JWKS_URI: "http://keycloak:8080/realms/zugfolge/protocol/openid-connect/certs"
       KEYCLOAK_ADMIN_URL: http://keycloak:8080
+      LIVEMAP_READ_MODEL_PATH: /map-release/read-model.sqlite
+      LIVEMAP_TRAIN_PROJECTION_PATH: /map-release/train-map-projection.sqlite
+      INFRA_PACKAGE_STAGING_ENABLED: "${INFRA_PACKAGE_STAGING_ENABLED:-false}"
+      INFRA_PACKAGE_STAGING_ROOT: /infra-package-staging
+      INFRA_PACKAGE_VERIFIER_MODULE: /app/tools/tiles/map-package.mjs
+      INFRA_UPLOAD_KEYS_JSON: '[{"id":"${INFRA_UPLOAD_KEY_ID}","secret":"${INFRA_UPLOAD_SECRET}"}]'
       ZUGFOLGE_RUNTIME_NATIVE_PATH: /app/native/zugfolge-runtime.node
       ZUGFOLGE_PLANNING_RUNTIME_NATIVE_PATH: /app/native/zugfolge-planning-runtime.node
-    volumes: [./var/alpha-evidence:/evidence:ro]
+    volumes:
+      - ./var/alpha-evidence:/evidence:ro
+      - "${MAP_RELEASE_HOST_DIR:-./var/maps/releases/infra-deutschland-2026.1}:/map-release:ro"
+      - "${INFRA_PACKAGE_STAGING_HOST_DIR:-./var/infra-package-staging}:/infra-package-staging:rw"
     depends_on: { postgres: { condition: service_healthy }, keycloak: { condition: service_healthy } }
     healthcheck: { <<: *health, test: [CMD, node, -e, "fetch('http://localhost:3000/health/ready').then(r=>{if(!r.ok)process.exit(1)})"] }
     ports: ["${GAME_API_PORT:-3000}:3000"]
@@ -57,13 +67,31 @@ services:
       KEYCLOAK_REALM: "${KEYCLOAK_REALM:-zugfolge}"
       ALPHA_PUBLIC_WORLD_ID: "${ALPHA_PUBLIC_WORLD_ID}"
       ALPHA_TUTORIAL_WORLD_ID: "${ALPHA_TUTORIAL_WORLD_ID}"
+      GAME_WEB_PUBLIC_URL: "${GAME_WEB_PUBLIC_URL:-http://localhost:4173}"
+      LIVEMAP_PUBLIC_URL: "${LIVEMAP_PUBLIC_URL:-http://localhost:4174}"
     depends_on: { game-api: { condition: service_healthy } }
     healthcheck: { <<: *health, test: [CMD, node, -e, "fetch('http://localhost:4173/').then(r=>{if(!r.ok)process.exit(1)})"] }
     ports: ["${GAME_WEB_PORT:-4173}:4173"]
   livemap:
     image: zugfolge-game-api
     command: [node, tools/alpha-ops/static-server.mjs, apps/livemap/dist, "4174"]
-    healthcheck: { <<: *health, test: [CMD, node, -e, "fetch('http://localhost:4174/').then(r=>{if(!r.ok)process.exit(1)})"] }
+    environment:
+      GAME_API_INTERNAL_URL: http://game-api:3000
+      GAME_API_PUBLIC_URL: "${GAME_API_PUBLIC_URL:-/api}"
+      KEYCLOAK_PUBLIC_URL: "${KEYCLOAK_PUBLIC_URL}"
+      KEYCLOAK_REALM: "${KEYCLOAK_REALM:-zugfolge}"
+      ALPHA_PUBLIC_WORLD_ID: "${ALPHA_PUBLIC_WORLD_ID}"
+      GAME_WEB_PUBLIC_URL: "${GAME_WEB_PUBLIC_URL:-http://localhost:4173}"
+      LIVEMAP_PUBLIC_URL: "${LIVEMAP_PUBLIC_URL:-http://localhost:4174}"
+      STATIC_ARTIFACT_ROOT: /map-artifacts
+      MAP_RELEASE_ID: "${MAP_RELEASE_ID:-infra-deutschland-2026.1}"
+      MAP_BASEMAP_STYLE_URL: "${MAP_BASEMAP_STYLE_URL:-/artifacts/maps/infra-deutschland-2026.1/style.json}"
+      MAP_GERMANY_PMTILES_URL: "${MAP_GERMANY_PMTILES_URL:-/artifacts/maps/infra-deutschland-2026.1/infra-deutschland-2026.1.pmtiles}"
+      MAP_ATTRIBUTION: "${MAP_ATTRIBUTION:-© OpenStreetMap-Mitwirkende, ODbL 1.0; Basemap-Aufbereitung Protomaps; weitere Bearbeitung durch Zugfolge}"
+    volumes:
+      - "${MAP_RELEASE_HOST_DIR:-./var/maps/releases/infra-deutschland-2026.1}:/map-artifacts/maps/${MAP_RELEASE_ID:-infra-deutschland-2026.1}:ro"
+    depends_on: { game-api: { condition: service_healthy } }
+    healthcheck: { <<: *health, test: [CMD, node, -e, "const b='http://localhost:4174';Promise.all([fetch(b),fetch(b+'/runtime-config.js'),fetch(new URL(process.env.MAP_BASEMAP_STYLE_URL,b),{headers:{range:'bytes=0-0'}}),fetch(new URL(process.env.MAP_GERMANY_PMTILES_URL,b),{headers:{range:'bytes=0-126'}})]).then(([p,c,s,i])=>{if(!p.ok||!c.ok||s.status!==206||i.status!==206)process.exit(1)})"] }
     ports: ["${LIVEMAP_PORT:-4174}:4174"]
   operations-center:
     image: zugfolge-game-api
@@ -90,6 +118,9 @@ services:
       - --init=queue_job,zugfolge_admin
     environment:
       ODOO_QUEUE_JOB_CHANNELS: root:2
+      ZUGFOLGE_INFRA_UPLOAD_BASE_URL: http://game-api:3000/integrations/odoo/infra-package-imports
+      ZUGFOLGE_INFRA_UPLOAD_KEY_ID: "${INFRA_UPLOAD_KEY_ID}"
+      ZUGFOLGE_INFRA_UPLOAD_SECRET: "${INFRA_UPLOAD_SECRET}"
     volumes: [odoo-filestore:/var/lib/odoo]
     depends_on: { odoo-postgres: { condition: service_healthy }, game-api: { condition: service_healthy } }
     healthcheck: { <<: *health, test: [CMD-SHELL, "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8069/web/health')\""] }

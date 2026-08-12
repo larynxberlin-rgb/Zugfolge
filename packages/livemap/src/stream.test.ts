@@ -6,6 +6,7 @@ import {
   LivemapFeed,
   LivemapRegistry,
   PUBLIC_OPERATION_MARKER,
+  type PublicInfrastructureDisruption,
 } from "./stream.js";
 
 const train = {
@@ -38,6 +39,39 @@ const externalTrain = {
   boundPersonnelDutyIds: ["duty-7"],
   status: "outside" as const,
   progressBasisPoints: 5_000,
+};
+
+const publicExternalTrain = {
+  id: externalTrain.id,
+  operator: externalTrain.operator,
+  trainNumber: externalTrain.trainNumber,
+  category: externalTrain.category,
+  journeyChainId: externalTrain.journeyChainId,
+  externalLegId: externalTrain.externalLegId,
+  fromPortalId: externalTrain.fromPortalId,
+  toPortalId: externalTrain.toPortalId,
+  scheduledEndS: externalTrain.scheduledEndS,
+  reentryEarliestS: externalTrain.reentryEarliestS,
+  reentryLatestS: externalTrain.reentryLatestS,
+  delaySeconds: externalTrain.delaySeconds,
+  status: externalTrain.status,
+  progressBasisPoints: externalTrain.progressBasisPoints,
+};
+
+const infrastructureDisruption = {
+  schemaVersion: "zugfolge-livemap-disruption/v1" as const,
+  disruptionId: "closure-1",
+  causeCode: 26,
+  causeLabel: "Infrastruktur",
+  fineCauseId: "track.failure",
+  fineCauseLabel: "Gleisstoerung",
+  effect: "closure" as const,
+  affectedResource: "resource-1",
+  validUntilS: 500,
+  kind: "unplanned" as const,
+  positionMm: 0,
+  publishedAtS: 1,
+  startsAtS: 1,
 };
 
 describe("LivemapFeed", () => {
@@ -75,9 +109,9 @@ describe("LivemapFeed", () => {
       changedExternalTrains: [externalTrain],
       removedExternalTrainIds: [],
     });
-    expect(entered.changedExternalTrains).toEqual([externalTrain]);
+    expect(entered.changedExternalTrains).toEqual([publicExternalTrain]);
     expect(feed.snapshot().trains).toEqual([]);
-    expect(feed.snapshot().externalTrains).toEqual([externalTrain]);
+    expect(feed.snapshot().externalTrains).toEqual([publicExternalTrain]);
 
     feed.publish({
       at: 20,
@@ -88,6 +122,66 @@ describe("LivemapFeed", () => {
     });
     expect(feed.snapshot().externalTrains).toEqual([]);
     expect(feed.snapshot().trains).toEqual([train]);
+  });
+
+  it("publiziert nur sparse Infrastrukturabweichungen und ganzzahlige Kartenpositionen", () => {
+    const feed = new LivemapFeed("welt-a");
+    feed.publish({
+      at: 10,
+      changed: [{
+        ...train,
+        mapPosition: {
+          infrastructureReleaseId: "infra-de-2026",
+          resourceId: "block-track-7",
+          trackId: "track-7",
+          offsetMm: 1,
+          latitudeE7: 515_000_000,
+          longitudeE7: 120_000_000,
+        },
+      }],
+      removed: [],
+      changedObjectStates: [{
+        id: "track:track-7",
+        objectKind: "track",
+        objectId: "track-7",
+        state: "construction",
+      }],
+      removedObjectStateIds: [],
+    });
+    expect(feed.snapshot()).toMatchObject({
+      trains: [{ mapPosition: { trackId: "track-7", offsetMm: 1 } }],
+      objectStates: [{ id: "track:track-7", state: "construction" }],
+    });
+
+    feed.publish({
+      at: 11,
+      changed: [],
+      removed: [],
+      changedObjectStates: [],
+      removedObjectStateIds: ["track:track-7"],
+    });
+    expect(feed.snapshot().objectStates).toEqual([]);
+  });
+
+  it("weist ungueltige Kartenpositionen und nicht-sparse Normalzustaende zurueck", () => {
+    const feed = new LivemapFeed("welt-a");
+    expect(() => feed.publish({
+      at: 1,
+      changed: [{ ...train, mapPosition: { infrastructureReleaseId: "infra-de-2026", resourceId: "block-track-7", trackId: "track-7", offsetMm: 1.5, latitudeE7: 0, longitudeE7: 0 } }],
+      removed: [],
+    })).toThrow(/Kartenposition/);
+    expect(() => feed.publish({
+      at: 1,
+      changed: [],
+      removed: [],
+      changedObjectStates: [{
+        id: "track:track-7",
+        objectKind: "track",
+        objectId: "track-7",
+        state: "normal",
+      } as never],
+      removedObjectStateIds: [],
+    })).toThrow(/sparsamen v1-Vertrag/);
   });
 
   it("liefert begrenztes Delta-Replay und erkennt einen zu alten Client", () => {
@@ -242,6 +336,69 @@ describe("LivemapFeed", () => {
 });
 
 describe("LivemapRegistry", () => {
+  it("leitet Gleisfarben aus Ressourcenstoerungen ab und entfernt sie wieder", () => {
+    const projectDisruption = vi.fn((_worldId: string, disruption: PublicInfrastructureDisruption) =>
+      disruption.effect === "closure"
+        ? [{
+          id: `disruption:${disruption.disruptionId}:track:track-1`,
+          objectKind: "track" as const,
+          objectId: "track-1",
+          state: "closure" as const,
+          disruptionId: disruption.disruptionId,
+          validUntilS: disruption.validUntilS,
+        }]
+        : []);
+    const registry = new LivemapRegistry({ objectStateProjector: { projectDisruption } });
+    registry.initializeRegion("a", "east", { at: 1, trains: [], disruptions: [infrastructureDisruption] });
+    expect(registry.initializedWorld("a")?.snapshot().objectStates).toEqual([
+      expect.objectContaining({ objectId: "track-1", state: "closure", disruptionId: "closure-1" }),
+    ]);
+
+    const removed = registry.publishRegionDelta("a", "east", {
+      at: 2,
+      changed: [],
+      removed: [],
+      changedDisruptions: [],
+      removedDisruptionIds: [infrastructureDisruption.disruptionId],
+    });
+    expect(removed?.removedObjectStateIds).toEqual(["disruption:closure-1:track:track-1"]);
+    expect(registry.initializedWorld("a")?.snapshot().objectStates).toEqual([]);
+  });
+
+  it("projiziert Initialsnapshot und Delta nur ueber den releasegebundenen Kartenport", () => {
+    const project = vi.fn((worldId: string, value: typeof train) => ({
+      ...value,
+      mapPosition: {
+        infrastructureReleaseId: `infra-${worldId}`,
+        resourceId: "resource-1",
+        trackId: "track-1",
+        offsetMm: value.positionMm,
+        latitudeE7: 500_000_000,
+        longitudeE7: 100_000_000,
+      },
+    }));
+    const registry = new LivemapRegistry({ trainMapProjector: { project } });
+    registry.initializeRegion("a", "east", { at: 1, trains: [train] });
+    registry.publishRegionDelta("a", "east", { at: 2, changed: [{ ...train, positionMm: 20 }], removed: [] });
+    expect(project).toHaveBeenCalledTimes(2);
+    expect(registry.initializedWorld("a")?.snapshot().trains[0]?.mapPosition).toMatchObject({
+      infrastructureReleaseId: "infra-a",
+      offsetMm: 20,
+    });
+  });
+
+  it("akzeptiert sparse Zustandsabweichungen fuer den sichtbaren Bahnkontext", () => {
+    const registry = new LivemapRegistry();
+    registry.initializeRegion("a", "east", {
+      at: 1,
+      trains: [],
+      objectStates: [{ id: "context-1", objectKind: "rail-context", objectId: "context-1", state: "closure" }],
+    });
+    expect(registry.initializedWorld("a")?.snapshot().objectStates).toEqual([
+      { id: "context-1", objectKind: "rail-context", objectId: "context-1", state: "closure" },
+    ]);
+  });
+
   it("isoliert Welten", () => {
     const registry = new LivemapRegistry();
     registry.forWorld("a").publish({ at: 1, changed: [train], removed: [] });

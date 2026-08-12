@@ -3,7 +3,7 @@
 - **Status:** Angenommen — bindend (entspricht E22)
 - **Bezug:** [../entscheidungen.md](../entscheidungen.md) · [../daten.md](../daten.md) ·
   [../rechte.md](../rechte.md) · [../milestones.md](../milestones.md)
-- **Betrifft Milestones:** M9 (Betriebsreife)
+- **Betrifft Milestones:** M9 (Betriebsreife), M14.2
 - **Verwandte ADRs:** [ADR-0010](0010-trassenfinder-nur-kalibrierwerkzeug.md) ·
   [ADR-0003](0003-fahrplanperiode-als-weltparameter.md) ·
   [ADR-0018](0018-weltlaufzeit-und-skalierende-perioden.md)
@@ -29,9 +29,12 @@ einen jährlichen statt eines laufenden Abgriffs nahe — strukturell wie
 ## Entscheidung
 
 Das Spiel hält mit dem jährlichen realen Fahrplanwechsel mit: Infrastruktur-
-und Fahrplandaten der Pilotregion werden **einmal jährlich** neu gezogen und
-zu einem neuen, versionierten `InfraRelease` verarbeitet. Zwei Quellen tragen
-das:
+und Fahrplandaten werden **einmal jährlich** neu gezogen und zu einem neuen,
+versionierten `InfraRelease` verarbeitet. E26 erweitert den ursprünglichen
+Pilotregionsschnitt auf einen vollständig sichtbaren Deutschland-Korpus und
+eine getrennte Welt-Basemap. Welche Quellen einen konkreten Jahresstand tragen,
+entscheidet daher nicht mehr eine fest verdrahtete Zweierliste, sondern der
+geprüfte, versionierte Quellkatalog. Der ursprüngliche Mindestbestand bleibt:
 
 - ein aktualisierter `osm-pbf-lhe`-Extract (wie bisher, M1.2), und
 - die `/infrastrukturen`-Ressource der Trassenfinder-Infrastruktur-API als
@@ -53,6 +56,13 @@ wirksam — demselben Zeitpunkt, zu dem ohnehin Trassenvergabe und Verträge neu
 ausgerichtet werden. Der genaue Übernahmemechanismus für eine laufende Welt
 ist Gegenstand der in M9 auszuarbeitenden Teilabschnitte, nicht dieser
 Entscheidung.
+
+Der Jahreslauf endet in einem transportneutralen Karten- und
+Infrastrukturpaket. Dieses darf vorab geprüft und über Odoo in einen getrennten
+Game-Stagingbereich übertragen werden. Ohne echte Release-Signatur bleibt
+`activationEligible=false`; weder Paketbildung noch Odoo-Upload oder Staging
+setzen eine Welt um. Damit bleibt der jährliche Neubau vom sicherheitskritischen
+Periodenwechsel getrennt.
 
 ## Begründung
 

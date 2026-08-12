@@ -172,7 +172,25 @@ jobs:
         run: pnpm -r --stream typecheck
 
       - name: Tests
-        run: pnpm -r --stream test
+        run: |
+          pnpm -r --stream test
+          node --test tools/alpha-ops/*.test.mjs
+          node --test \
+            tools/tiles/gdal-semantic-pmtiles.test.mjs \
+            tools/tiles/map-delivery-release.test.mjs \
+            tools/tiles/map-package.test.mjs \
+            tools/tiles/map-release.test.mjs \
+            tools/tiles/map-source-capture.test.mjs \
+            tools/tiles/offline-basemap-style.test.mjs \
+            tools/tiles/semantic-tiles.test.mjs \
+            tools/tiles/train-map-projection.test.mjs
+          node --test tools/region-import/germany/*.test.mjs
+          node apps/livemap/node_modules/vitest/vitest.mjs run tools/tiles/livemap-read-model.test.mjs
+          python3 tools/region-import/germany/apn_semantic_extract_test.py
+          python3 -m py_compile \
+            tools/region-import/germany/apn_semantic_extract.py \
+            tools/region-import/germany/copernicus_dem_sample.py \
+            tools/region-import/germany/copernicus_dem_sample_test.py
 
   integration-api:
     name: API-Integration (Postgres, Auth, Replay, Livemap)

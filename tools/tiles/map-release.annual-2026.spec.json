@@ -1,0 +1,54 @@
+{
+  "schema": "zugfolge-map-release-spec/v1",
+  "releaseId": "infra-deutschland-2026.1",
+  "selfHosted": true,
+  "runtimeExternalSources": [],
+  "artifacts": [
+    {
+      "kind": "basemap",
+      "id": "welt-mit-deutschland-detail-2026.1",
+      "file": "var/source-cache/annual-2026/welt-mit-deutschland-detail.pmtiles",
+      "serveAt": "/maps/releases/infra-deutschland-2026.1/basemap.pmtiles",
+      "coverage": "world",
+      "minZoom": 0,
+      "maxZoom": 15,
+      "layers": [
+        "boundaries",
+        "buildings",
+        "earth",
+        "landcover",
+        "landuse",
+        "places",
+        "pois",
+        "roads",
+        "water"
+      ],
+      "attribution": "© OpenStreetMap-Mitwirkende, ODbL 1.0; Basemap-Aufbereitung Protomaps; weitere Bearbeitung durch Zugfolge",
+      "httpRangeRequired": true
+    },
+    {
+      "kind": "infrastructure",
+      "id": "infra-deutschland-2026.1",
+      "file": "var/derived/germany-2026/map-release/infra-deutschland-2026.1.pmtiles",
+      "serveAt": "/maps/releases/infra-deutschland-2026.1/infra-deutschland-2026.1.pmtiles",
+      "coverage": "germany-ebo",
+      "minZoom": 4,
+      "maxZoom": 18,
+      "layers": [
+        "rail_corridors",
+        "operating_points",
+        "stations",
+        "tracks",
+        "platforms",
+        "switches",
+        "signals",
+        "blocks",
+        "conflict_resources",
+        "rail_context"
+      ],
+      "attribution": "Infrastrukturquellen und Bearbeitungen gemäß öffentlichem InfraRelease-Manifest",
+      "httpRangeRequired": true,
+      "stableFeatureIds": true
+    }
+  ]
+}

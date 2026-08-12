@@ -27,6 +27,16 @@ Die verbindliche Rollen- und Sicherheitsgrenze ist [E23 / ADR-0023](adr/0023-odo
 - Es entsteht keine Abhängigkeit von einer extern nicht verfügbaren
   Enterprise-/Custom-API.
 
+Zum jährlichen Fahrplanwechsel verwaltet das Add-on außerdem den Import des
+transportneutralen Deutschland-Kartenpakets. Berechtigte Reviewer hängen
+Manifest und alle Teile an, lassen Inventar, Bytezahl und SHA-256 im Hintergrund
+prüfen und übertragen den Kandidaten HMAC-gebunden in das getrennte
+Game-Staging. Odoo aktiviert dabei nichts: Ein Paket ohne echte Signatur bleibt
+`activationEligible=false`; auch ein signierter Kandidat muss im Game erneut
+qualifiziert und anschließend über den vorhandenen Vier-Augen-Antrag zum
+Periodenwechsel übernommen werden. Der genaue Betriebsvertrag steht in
+[`kartenartefakte-installation.md`](kartenartefakte-installation.md).
+
 ## 2. Monetarisierung ohne Pay-to-win
 
 **Kostenlos:** vollständiger Zugang zu SPFV, SGV und SPNV; ein EVU in einer

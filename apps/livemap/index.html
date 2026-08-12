@@ -1,27 +1,16 @@
-<div id="root">
-  <main>
-    <header>
-      <span class="wordmark">ZUGFOLGE</span>
-      <span id="world-label">Livemap · Welt wird geladen</span>
-      <time>verbinde …</time>
-    </header>
-    <section class="workspace">
-      <div class="map" aria-label="Livemap">
-        <svg viewBox="0 0 1000 520" role="img">
-          <title>Streckennetz und aktuelle Zugpositionen</title>
-          <path class="context" d="M30 430 L200 350 L370 365 L520 250 L750 180 L970 70"></path>
-          <path class="rail" d="M60 420 L260 330 L450 345 L620 220 L940 90"></path>
-          <path class="rail secondary" d="M450 345 L590 440 L820 460"></path>
-          <g id="disruptions"></g>
-          <g id="trains"></g>
-        </svg>
-        <section id="external-runs" aria-label="Zugfahrten außerhalb des Spielgebiets"></section>
-        <div class="legend">
-          <span>● Betrieb</span><span class="plannedDisruptionLegend">◇ geplante Einschränkung</span><span class="unplannedDisruptionLegend">▲ ungeplante Störung</span><span class="publicOperationLegend">◎ E Eigenbetrieb</span><span class="contextText">― Kontextnetz</span>
-        </div>
-      </div>
-      <aside id="details"><p class="eyebrow">ZUGLAUF</p><p>Eine Zugfahrt auswählen.</p></aside>
-    </section>
-  </main>
-</div>
-<script type="module" src="/src/main.ts"></script>
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#090b10">
+    <meta name="game-api-url" content="">
+    <title>Zugfolge · Live-Lage</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#map-object-list">Zur Kartenobjektliste</a>
+    <div id="root"></div>
+    <script src="/runtime-config.js"></script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -5,3 +5,4 @@ from . import projection
 from . import projection_receipt
 from . import feedback
 from . import alpha_invitation
+from . import infra_release_import

@@ -18,6 +18,7 @@ const configuration: BrowserRuntimeConfiguration = {
   keycloakRealm: "zugfolge",
   publicWorldId: "public",
   tutorialWorldId: "tutorial",
+  livemapUrl: "",
 };
 
 afterEach(() => {

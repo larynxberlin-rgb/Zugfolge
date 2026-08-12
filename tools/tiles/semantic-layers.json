@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "interactionContract": {
+    "visibleFeatureMustBeClickable": true,
+    "requiredProperties": ["feature_id", "feature_type", "quality_class", "model_state"],
+    "detailsResolvedByApi": true,
+    "tileCarriesFullObjectDetails": false,
+    "overlapSelection": "ordered-feature-picker",
+    "minimumPointerHitboxPx": 12
+  },
+  "layers": {
+    "rail_corridors": { "minZoom": 4, "maxZoom": 9, "clickable": true },
+    "operating_points": { "minZoom": 5, "maxZoom": 18, "clickable": true },
+    "stations": { "minZoom": 5, "maxZoom": 18, "clickable": true },
+    "tracks": { "minZoom": 10, "maxZoom": 18, "clickable": true },
+    "platforms": { "minZoom": 13, "maxZoom": 18, "clickable": true },
+    "switches": { "minZoom": 14, "maxZoom": 18, "clickable": true },
+    "signals": { "minZoom": 14, "maxZoom": 18, "clickable": true },
+    "blocks": { "minZoom": 12, "maxZoom": 18, "clickable": true },
+    "conflict_resources": { "minZoom": 14, "maxZoom": 18, "clickable": true },
+    "rail_context": { "minZoom": 5, "maxZoom": 18, "clickable": true, "playable": false }
+  },
+  "operationalStates": {
+    "normal": "neutral-light",
+    "restriction": "amber",
+    "closure": "red",
+    "construction": "red-white-hatch",
+    "inactive": "dimmed"
+  }
+}

@@ -3,7 +3,20 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "scripts": { "build": "tsc --noEmit && vite build", "typecheck": "tsc --noEmit", "test": "vitest run" },
-  "dependencies": { "@zugfolge/glossary": "workspace:*" },
-  "devDependencies": { "vite": "8.2.1", "typescript": "7.0.2", "vitest": "4.1.10" }
+  "scripts": {
+    "build": "tsc --noEmit && vite build && node scripts/copy-maplibre-workers.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@zugfolge/glossary": "workspace:*",
+    "@zugfolge/livemap-stream": "workspace:*",
+    "maplibre-gl": "6.3.0",
+    "pmtiles": "4.5.0"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "vite": "8.2.1",
+    "vitest": "4.1.10"
+  }
 }

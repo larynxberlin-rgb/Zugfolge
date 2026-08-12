@@ -1,3 +1,9 @@
+import type {
+  LivemapObjectKind,
+  PublicMapPosition,
+  PublicObjectState,
+} from "@zugfolge/livemap-stream";
+
 export type OperatingStatus =
   | "planned"
   | "running"
@@ -36,6 +42,7 @@ export interface PublicInfrastructureDisruption extends PublicDisruptionMarker {
 
 export interface PublicTrain {
   readonly id: string;
+  readonly operatorId?: string;
   readonly operator: string;
   readonly trainNumber: string;
   readonly category: string;
@@ -44,6 +51,7 @@ export interface PublicTrain {
   readonly delaySeconds: number;
   readonly nextOperatingPoint: string;
   readonly status: OperatingStatus;
+  readonly mapPosition?: PublicMapPosition;
   readonly operationMarker?: PublicOperationMarker;
   readonly disruption?: PublicDisruptionMarker;
 }
@@ -61,9 +69,6 @@ export interface PublicExternalTrain {
   readonly reentryEarliestS: number | null;
   readonly reentryLatestS: number | null;
   readonly delaySeconds: number;
-  readonly fixedCostCents: string;
-  readonly boundVehicleIds: readonly string[];
-  readonly boundPersonnelDutyIds: readonly string[];
   readonly status: "outside" | "ready-at-boundary" | "waiting-for-capacity" | "completed-outside";
   readonly progressBasisPoints: number;
 }
@@ -76,6 +81,7 @@ export interface Snapshot {
   readonly trains: readonly PublicTrain[];
   readonly externalTrains?: readonly PublicExternalTrain[];
   readonly disruptions?: readonly PublicInfrastructureDisruption[];
+  readonly objectStates?: readonly PublicObjectState[];
 }
 
 export interface Delta {
@@ -89,6 +95,8 @@ export interface Delta {
   readonly removedExternalTrainIds?: readonly string[];
   readonly changedDisruptions?: readonly PublicInfrastructureDisruption[];
   readonly removedDisruptionIds?: readonly string[];
+  readonly changedObjectStates?: readonly PublicObjectState[];
+  readonly removedObjectStateIds?: readonly string[];
 }
 
 export interface LiveState {
@@ -99,6 +107,7 @@ export interface LiveState {
   readonly trains: ReadonlyMap<string, PublicTrain>;
   readonly externalTrains: ReadonlyMap<string, PublicExternalTrain>;
   readonly disruptions: ReadonlyMap<string, PublicInfrastructureDisruption>;
+  readonly objectStates: ReadonlyMap<string, PublicObjectState>;
 }
 
 export interface RenderSamples {
@@ -145,6 +154,76 @@ function integerField(
     throw new TypeError(`Livemap-Feld '${field}' muss eine sichere Ganzzahl sein.`);
   }
   return value as number;
+}
+
+function optionalStringField(record: Record<string, unknown>, field: string): string | undefined {
+  const value = record[field];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.length === 0) {
+    throw new TypeError(`Livemap-Feld '${field}' muss eine nichtleere Zeichenkette sein.`);
+  }
+  return value;
+}
+
+function parseMapPosition(value: unknown): PublicMapPosition | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new TypeError("Livemap-Kartenposition muss ein Objekt sein.");
+  const latitudeE7 = integerField(value, "latitudeE7", -900_000_000);
+  const longitudeE7 = integerField(value, "longitudeE7", -1_800_000_000);
+  if (latitudeE7 > 900_000_000 || longitudeE7 > 1_800_000_000) {
+    throw new TypeError("Livemap-Kartenposition liegt ausserhalb des gueltigen Koordinatenraums.");
+  }
+  const bearingMilliDegrees = value["bearingMilliDegrees"] === undefined
+    ? undefined
+    : integerField(value, "bearingMilliDegrees", 0);
+  if (bearingMilliDegrees !== undefined && bearingMilliDegrees >= 360_000) {
+    throw new TypeError("Livemap-Kartenrichtung muss kleiner als 360 Grad sein.");
+  }
+  return Object.freeze({
+    infrastructureReleaseId: stringField(value, "infrastructureReleaseId"),
+    resourceId: stringField(value, "resourceId"),
+    trackId: stringField(value, "trackId"),
+    offsetMm: integerField(value, "offsetMm", 0),
+    latitudeE7,
+    longitudeE7,
+    ...(bearingMilliDegrees === undefined ? {} : { bearingMilliDegrees }),
+  });
+}
+
+const LIVEMAP_OBJECT_KINDS = new Set<LivemapObjectKind>([
+  "track", "station", "platform", "switch", "signal", "block", "facility", "operating-point", "rail-context",
+]);
+
+function parseObjectState(value: unknown): PublicObjectState {
+  if (!isRecord(value)) throw new TypeError("Livemap-Infrastrukturzustand muss ein Objekt sein.");
+  const objectKind = stringField(value, "objectKind");
+  const state = stringField(value, "state");
+  if (!LIVEMAP_OBJECT_KINDS.has(objectKind as LivemapObjectKind)) {
+    throw new TypeError(`Unbekannte Livemap-Objektart '${objectKind}'.`);
+  }
+  if (!(["restriction", "closure", "construction"] as const).includes(state as PublicObjectState["state"])) {
+    throw new TypeError(`Unbekannter Livemap-Infrastrukturzustand '${state}'.`);
+  }
+  const disruptionId = optionalStringField(value, "disruptionId");
+  const validUntilS = value["validUntilS"] === undefined ? undefined : integerField(value, "validUntilS", 0);
+  return Object.freeze({
+    id: stringField(value, "id"),
+    objectKind: objectKind as LivemapObjectKind,
+    objectId: stringField(value, "objectId"),
+    state: state as PublicObjectState["state"],
+    ...(disruptionId === undefined ? {} : { disruptionId }),
+    ...(validUntilS === undefined ? {} : { validUntilS }),
+  });
+}
+
+function parseObjectStates(value: unknown, field: string): readonly PublicObjectState[] {
+  if (value === undefined) return Object.freeze([]);
+  if (!Array.isArray(value)) throw new TypeError(`Livemap-Feld '${field}' muss eine Liste sein.`);
+  const states = value.map(parseObjectState);
+  if (new Set(states.map((state) => state.id)).size !== states.length) {
+    throw new TypeError(`Livemap-Feld '${field}' enthaelt doppelte Infrastrukturzustandskennungen.`);
+  }
+  return Object.freeze(states);
 }
 
 function parseOperationMarker(value: unknown): PublicOperationMarker | undefined {
@@ -225,8 +304,11 @@ function parseTrain(value: unknown): PublicTrain {
   }
   const operationMarker = parseOperationMarker(value["operationMarker"]);
   const disruption = parseDisruptionMarker(value["disruption"]);
+  const mapPosition = parseMapPosition(value["mapPosition"]);
+  const operatorId = optionalStringField(value, "operatorId");
   return Object.freeze({
     id: stringField(value, "id"),
+    ...(operatorId === undefined ? {} : { operatorId }),
     operator: stringField(value, "operator"),
     trainNumber: stringField(value, "trainNumber"),
     category: stringField(value, "category"),
@@ -235,6 +317,7 @@ function parseTrain(value: unknown): PublicTrain {
     delaySeconds: integerField(value, "delaySeconds"),
     nextOperatingPoint: stringField(value, "nextOperatingPoint"),
     status: status as OperatingStatus,
+    ...(mapPosition === undefined ? {} : { mapPosition }),
     ...(operationMarker === undefined ? {} : { operationMarker }),
     ...(disruption === undefined ? {} : { disruption }),
   });
@@ -269,17 +352,8 @@ function parseExternalTrain(value: unknown): PublicExternalTrain {
   }
   const nullableTime = (field: "reentryEarliestS" | "reentryLatestS") =>
     value[field] === null ? null : integerField(value, field, 0);
-  const stringList = (field: "boundVehicleIds" | "boundPersonnelDutyIds") => {
-    const values = value[field];
-    if (!Array.isArray(values) || values.some((item) => typeof item !== "string" || item.length === 0)) {
-      throw new TypeError(`Aussenlauf-Feld '${field}' muss eine Liste nichtleerer Kennungen sein.`);
-    }
-    return Object.freeze([...values] as string[]);
-  };
   const progressBasisPoints = integerField(value, "progressBasisPoints", 0);
   if (progressBasisPoints > 10_000) throw new TypeError("Aussenlauffortschritt liegt ueber 10000 Basispunkten.");
-  const fixedCostCents = stringField(value, "fixedCostCents");
-  if (!/^(0|[1-9][0-9]*)$/.test(fixedCostCents)) throw new TypeError("Aussenlaufkosten sind keine Integer-Cent.");
   return Object.freeze({
     id: stringField(value, "id"),
     operator: stringField(value, "operator"),
@@ -293,9 +367,6 @@ function parseExternalTrain(value: unknown): PublicExternalTrain {
     reentryEarliestS: nullableTime("reentryEarliestS"),
     reentryLatestS: nullableTime("reentryLatestS"),
     delaySeconds: integerField(value, "delaySeconds"),
-    fixedCostCents,
-    boundVehicleIds: stringList("boundVehicleIds"),
-    boundPersonnelDutyIds: stringList("boundPersonnelDutyIds"),
     status: status as PublicExternalTrain["status"],
     progressBasisPoints,
   });
@@ -321,6 +392,7 @@ export function parseSnapshot(value: unknown): Snapshot {
     trains: parseTrains(value["trains"], "trains"),
     externalTrains: parseExternalTrains(value["externalTrains"], "externalTrains"),
     disruptions: parseDisruptions(value["disruptions"], "disruptions"),
+    objectStates: parseObjectStates(value["objectStates"], "objectStates"),
   });
 }
 
@@ -338,6 +410,10 @@ export function parseDelta(value: unknown): Delta {
   if (!Array.isArray(removedExternalTrainIds) || removedExternalTrainIds.some((id) => typeof id !== "string" || id.length === 0)) {
     throw new TypeError("Livemap-Feld 'removedExternalTrainIds' muss eine Liste nichtleerer Zugkennungen sein.");
   }
+  const removedObjectStateIds = value["removedObjectStateIds"] ?? [];
+  if (!Array.isArray(removedObjectStateIds) || removedObjectStateIds.some((id) => typeof id !== "string" || id.length === 0)) {
+    throw new TypeError("Livemap-Feld 'removedObjectStateIds' muss eine Liste nichtleerer Kennungen sein.");
+  }
   return Object.freeze({
     worldId: stringField(value, "worldId"),
     streamId: streamIdField(value),
@@ -349,6 +425,8 @@ export function parseDelta(value: unknown): Delta {
     removedExternalTrainIds: Object.freeze([...removedExternalTrainIds] as string[]),
     changedDisruptions: parseDisruptions(value["changedDisruptions"], "changedDisruptions"),
     removedDisruptionIds: Object.freeze([...removedDisruptionIds] as string[]),
+    changedObjectStates: parseObjectStates(value["changedObjectStates"], "changedObjectStates"),
+    removedObjectStateIds: Object.freeze([...removedObjectStateIds] as string[]),
   });
 }
 
@@ -362,6 +440,8 @@ export function initialState(snapshot: Snapshot): LiveState {
   snapshot.disruptions?.forEach((item) => disruptions.set(item.disruptionId, item));
   const externalTrains = new Map<string, PublicExternalTrain>();
   snapshot.externalTrains?.forEach((train) => externalTrains.set(train.id, train));
+  const objectStates = new Map<string, PublicObjectState>();
+  snapshot.objectStates?.forEach((state) => objectStates.set(state.id, state));
   return Object.freeze({
     worldId: snapshot.worldId,
     streamId: snapshot.streamId,
@@ -370,6 +450,7 @@ export function initialState(snapshot: Snapshot): LiveState {
     trains,
     externalTrains,
     disruptions,
+    objectStates,
   });
 }
 
@@ -391,6 +472,9 @@ export function applyDelta(state: LiveState, delta: Delta): LiveState | undefine
   const externalTrains = new Map(state.externalTrains);
   delta.changedExternalTrains?.forEach((train) => externalTrains.set(train.id, train));
   delta.removedExternalTrainIds?.forEach((id) => externalTrains.delete(id));
+  const objectStates = new Map(state.objectStates);
+  delta.changedObjectStates?.forEach((item) => objectStates.set(item.id, item));
+  delta.removedObjectStateIds?.forEach((id) => objectStates.delete(id));
   return Object.freeze({
     worldId: state.worldId,
     streamId: state.streamId,
@@ -399,6 +483,7 @@ export function applyDelta(state: LiveState, delta: Delta): LiveState | undefine
     trains,
     externalTrains,
     disruptions,
+    objectStates,
   });
 }
 
@@ -650,7 +735,7 @@ export class LivemapConnection {
     const controller = new AbortController();
     this.#snapshotController = controller;
     try {
-      const response = await this.#fetch(this.#snapshotUrl(), {
+      const response = await this.#fetch.call(globalThis, this.#snapshotUrl(), {
         cache: "no-store",
         headers: { accept: "application/json", authorization: this.#authorization },
         signal: controller.signal,
@@ -793,7 +878,7 @@ export class LivemapConnection {
 
     let response: Response;
     try {
-      response = await this.#fetch(this.#eventsUrl(), {
+      response = await this.#fetch.call(globalThis, this.#eventsUrl(), {
         cache: "no-store",
         headers: {
           accept: "text/event-stream",

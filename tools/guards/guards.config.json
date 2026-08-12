@@ -137,6 +137,8 @@
     "**/dist/**",
     ".pnpm-store",
     ".pnpm-store/**",
+    "var",
+    "var/**",
     "pnpm-lock.yaml",
     "Cargo.lock",
     "tools/guards/guards.config.json",

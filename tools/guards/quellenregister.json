@@ -34,6 +34,66 @@
       "milestone": "M14.1"
     },
     {
+      "id": "osm-pbf-deutschland",
+      "titel": "OSM-PBF-Extract Deutschland",
+      "status": "freigegeben",
+      "lizenz": "ODbL-1.0",
+      "bereitstellung": "Versionierter Deutschland-Extract von Geofabrik; Abrufzeit, Downloadadresse und SHA-256 werden vor jedem Jahreslauf gepinnt. Der Extract wird ausschließlich offline verarbeitet und nicht über öffentliche Kacheldienste bezogen.",
+      "attribution": "© OpenStreetMap-Mitwirkende, ODbL 1.0; Bereitstellung Geofabrik GmbH",
+      "nutzung": "Gesamtdeutsche EBO-Gleisgeometrie, Topologie und Railway-Tags für den jährlichen InfraCorpus- und InfraRelease-Neubau.",
+      "entscheidung": { "datum": "2026-08-12", "pruefer": "Sebastian Barowski" },
+      "hinweis": "Rechtlich gleichartig zu den bereits freigegebenen regionalen OSM-PBF-Extracts. ODbL-Herkunft, Quellenangebot, verarbeitete Datenbank und Attribution bleiben als getrennte Datenebene nachvollziehbar; die spielbare Gebietsmaske verändert die deutschlandweite Sichtbarkeit nicht.",
+      "milestone": "M14.2"
+    },
+    {
+      "id": "osm-planet-basemap",
+      "titel": "OSM Planet PBF — selbst gehostete Welt-Basiskarte",
+      "status": "freigegeben",
+      "lizenz": "ODbL-1.0",
+      "bereitstellung": "Versionierter OSM-Planet-PBF mit gepinnter Downloadadresse und SHA-256; daraus wird offline ein eigener, hashbenannter PMTiles-Bestand samt lokalem Stil, Glyphen und Sprites erzeugt.",
+      "attribution": "© OpenStreetMap-Mitwirkende, ODbL 1.0",
+      "nutzung": "Weltweite dunkle Vektor-Basiskarte als selbst gehostetes Kartenartefakt. Keine Requests an öffentliche OSM-, OpenRailwayMap- oder Drittanbieter-Kacheldienste zur Laufzeit.",
+      "entscheidung": { "datum": "2026-08-12", "pruefer": "Sebastian Barowski" },
+      "hinweis": "Die Basiskarte bleibt technisch und lizenzseitig vom semantischen Deutschland-Infrastruktur-Layer getrennt. Der Client akzeptiert ausschließlich gleichursprüngliche Kartenadressen; Attribution bleibt dauerhaft sichtbar.",
+      "milestone": "M14.2"
+    },
+    {
+      "id": "protomaps-daily-basemap",
+      "titel": "Protomaps täglicher OSM-Basemap-Build — selbst gehosteter Ausschnitt",
+      "status": "freigegeben",
+      "lizenz": "ODbL-1.0 Produced Work",
+      "bereitstellung": "Versionierter Protomaps-Tagesbuild; Build-ID, OSM-Replikationszeit, Downloadadresse, Größe und BLAKE3-Prüfsumme werden gepinnt. Daraus werden ein weltweiter Übersichtsbestand und ein Deutschland-Detailbestand extrahiert und zu einem eigenen PMTiles-Artefakt zusammengeführt.",
+      "attribution": "© OpenStreetMap-Mitwirkende, ODbL 1.0; Basemap-Aufbereitung Protomaps; weitere Bearbeitung durch Zugfolge",
+      "nutzung": "Weltweite dunkle Vektor-Basiskarte mit Deutschland-Detailstufen als vollständig selbst gehostetes Produced Work. Keine Laufzeitabfrage an Protomaps oder öffentliche OSM-Kacheldienste.",
+      "entscheidung": { "datum": "2026-08-12", "pruefer": "Sebastian Barowski" },
+      "hinweis": "Dieser Eintrag bildet den tatsächlich verwendeten 2026er Basemap-Build ab. Er ersetzt keine Herkunftsangabe durch einen vermeintlich selbst verarbeiteten Planet-PBF; OSM- und Protomaps-Attribution bleiben im Artefakt sichtbar.",
+      "milestone": "M14.2"
+    },
+    {
+      "id": "apn-validierung",
+      "titel": "APN-Skizzen — interne Topologievalidierung",
+      "status": "entwicklung",
+      "lizenz": "Ausdrückliche Projektfreigabe zur internen Verwendung am 2026-08-12; keine allgemeine Weiterveröffentlichung abgeleitet",
+      "bereitstellung": "RL100-gebundener Entwicklungsabruf über https://trassenfinder.de/apn/{RL100}. Abruf, OCR und Vergleich laufen ausschließlich im jährlichen, protokollierten KI-Arbeitsprozess außerhalb der ausgelieferten Datenebene.",
+      "attribution": "nicht in Auslieferung oder öffentlichem InfraRelease enthalten",
+      "nutzung": "Automatisierte interne Plausibilisierung von Bahnhofsgleisen, Weichen, Signalen und Anschlüssen. Abweichungen werden als Prüfaufgabe behandelt; weder Skizzen noch OCR-Rohdaten noch Quellenfelder werden ausgeliefert.",
+      "entscheidung": { "datum": "2026-08-12", "pruefer": "Sebastian Barowski" },
+      "hinweis": "Der Projektverantwortliche hat die Verwendung ausdrücklich erlaubt und eine auslieferungsseitige Quellenangabe ausgeschlossen. Wegen fehlender allgemein dokumentierter Wiederveröffentlichungslizenz bleibt APN dennoch Entwicklungs- und Evidenzquelle: Es kann eine Ableitung zur Prüfung anstoßen, darf aber kein freigegebener Importmarker und keine alleinige A-Evidenz sein. Der öffentliche Release wird vor Ausgabe technisch von APN-Artefakten und -Provenienz bereinigt.",
+      "milestone": "M9.10/M14.2"
+    },
+    {
+      "id": "db-infrago-infrastrukturdaten-open-data",
+      "titel": "Infrastrukturdaten der DB InfraGO — offizieller Open-Data-Datensatz",
+      "status": "freigegeben",
+      "lizenz": "CC BY 4.0",
+      "bereitstellung": "GeoPackage und CSV über Mobilithek/GovData; Metadaten, Datenstand, Downloadadresse und SHA-256 werden je Jahreslauf gepinnt. Katalog: https://data.gov.de/suche/daten/infrastrukturdaten-der-db-infrago",
+      "attribution": "Datenquelle: DB InfraGO AG / Mobilithek, lizenziert unter CC BY 4.0; durch Zugfolge zusammengeführt und qualitätsbewertet.",
+      "nutzung": "Amtliche Ergänzung und Validierung des deutschlandweiten Streckennetzes, der Betriebsstellen, Bahnübergänge, Eisenbahnbrücken und Tunnel einschließlich wesentlicher Streckenattribute und Kilometrierung.",
+      "entscheidung": { "datum": "2026-08-12", "pruefer": "Sebastian Barowski" },
+      "hinweis": "GovData weist CC BY 4.0, die Deutsche Bahn AG als veröffentlichende Stelle und Mai 2026 als Datenstand aus. Die Quelle verbessert Streckenattribute und Betriebsstellen, ersetzt aber weder die OSM-Einzelgleistopologie noch eine fachlich geprüfte Fahrstraßen- und Blockableitung.",
+      "milestone": "M9.10/M14.2"
+    },
+    {
       "id": "openrailwaymap-doku",
       "titel": "OpenRailwayMap — Tagging- und Signaldokumentation",
       "status": "entwicklung",

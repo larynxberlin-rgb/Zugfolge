@@ -8,6 +8,7 @@ import { GameApiClient, type CapacityHeatmapCell, type OnboardingAssistant, type
 import { ensureAccessToken, loadRuntimeConfiguration } from "./auth.js";
 import { conflictsForTrain } from "./diagram.js";
 import { renderJourney } from "./journey.js";
+import { primaryMapDestination } from "./navigation.js";
 import { renderLoadState, renderProjection } from "./view.js";
 import "./styles.css";
 
@@ -19,9 +20,23 @@ mountGlossaryLayer(document.body);
 const parameters = new URLSearchParams(window.location.search);
 const runtimeConfiguration = loadRuntimeConfiguration();
 const demoMode = parameters.get("demo") === "1";
-const journeyMode = !demoMode && parameters.get("view") !== "diagram";
+const requestedView = parameters.get("view");
+const journeyMode = !demoMode && requestedView !== "diagram";
 const worldId = parameters.get("world") ?? runtimeConfiguration.publicWorldId;
 const tutorialWorldId = parameters.get("tutorialWorld") ?? runtimeConfiguration.tutorialWorldId;
+const livemapUrl = runtimeConfiguration.livemapUrl === "" ? "" : (() => {
+  const value = new URL(runtimeConfiguration.livemapUrl, window.location.href);
+  value.searchParams.set("world", worldId);
+  return value.href;
+})();
+const primaryDestination = primaryMapDestination({
+  requestedView,
+  demoMode,
+  livemapUrl: runtimeConfiguration.livemapUrl,
+  worldId,
+  pageUrl: window.location.href,
+});
+if (primaryDestination !== undefined) window.location.replace(primaryDestination);
 let api: GameApiClient | undefined;
 
 let density: Density = "control";
@@ -73,6 +88,7 @@ function render(): void {
       assistant: onboardingAssistant,
       busy: journeyBusy,
       message,
+      livemapUrl,
     });
     bindJourney();
     return;
@@ -294,4 +310,4 @@ async function boot(): Promise<void> {
   render();
 }
 
-void boot();
+if (primaryDestination === undefined) void boot();
