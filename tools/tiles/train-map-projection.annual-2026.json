@@ -1,0 +1,12 @@
+{
+  "schema": "zugfolge-train-map-projection-build-spec/v1",
+  "worldId": "00000000-0000-4000-8000-000000000014",
+  "infrastructureReleaseId": "infra-deutschland-2026.1",
+  "timetableYear": 2026,
+  "tracks": "../../var/derived/germany-2026/semantic-tile-inputs-final-v2/tracks.geojsonseq",
+  "corridors": "../../var/derived/germany-2026/semantic-tile-inputs-final-v2/rail-corridors.geojsonseq",
+  "operationalNetwork": "../../../Zugfolge-Alpha-Evidence/mitteldeutschland-b/2026-08/operational-network.json",
+  "deployment": "../../../Zugfolge-Alpha-Evidence/mitteldeutschland-b/2026-08/alpha-world-deployment.json",
+  "output": "../../var/derived/germany-2026/map-release/public/train-map-projection.sqlite",
+  "report": "../../var/derived/germany-2026/map-release/public/train-map-projection-report.json"
+}

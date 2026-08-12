@@ -1,0 +1,94 @@
+{
+  "schema": "zugfolge-germany-source-catalog/v1",
+  "sources": [
+    {
+      "id": "geofabrik-germany-pbf",
+      "rightsSourceId": "osm-pbf-deutschland",
+      "role": "release-input",
+      "sourceLicense": "ODbL-1.0",
+      "acquisition": "https://download.geofabrik.de/europe/germany-latest.osm.pbf",
+      "purpose": "Deutschlandweite Geometrie, einzelne Gleise, Weichen, Signale und Railway-Tags.",
+      "shipAttribution": true,
+      "attribution": "© OpenStreetMap-Mitwirkende, ODbL 1.0; Bereitstellung Geofabrik GmbH",
+      "modifications": "Auf EBO-Regelspur gefiltert, topologisch geschnitten, qualifiziert und betrieblich modelliert."
+    },
+    {
+      "id": "annual-infrastructure-master",
+      "rightsSourceId": "trassenfinder-infrastruktur-api",
+      "role": "release-input",
+      "sourceLicense": "Projektfreigabe laut Rechte-Gate",
+      "acquisition": "Jährlicher Offline-Snapshot der freigegebenen Infrastruktur-Stammdatenressource.",
+      "purpose": "Betriebsstellen, RL100/DS100, Streckensegmente und Fahrplanjahresbindung.",
+      "shipAttribution": true,
+      "attribution": "Betreiber DB InfraGO; Snapshot und Änderungen im Release-Attributionsbericht dokumentiert.",
+      "modifications": "Normalisiert und über stabile Betriebsstellenkennungen mit dem OSM-Graphen verknüpft."
+    },
+    {
+      "id": "db-infrago-infrastructure-open-data",
+      "rightsSourceId": "db-infrago-infrastrukturdaten-open-data",
+      "role": "release-input",
+      "sourceLicense": "CC-BY-4.0",
+      "acquisition": "Jährlich gepinnter GeoPackage-/CSV-Stand aus der offiziellen Mobilithek-/GovData-Veröffentlichung; konkrete Downloadadresse, Version und Hash im Capture-Manifest.",
+      "purpose": "Offizielle Streckenabschnitte, Kilometrierung, Geschwindigkeit, Elektrifizierung, Gleisanzahl, Betriebsstellen, Tunnel, Brücken und Bahnübergänge.",
+      "shipAttribution": true,
+      "attribution": "Datenquelle DB InfraGO, CC BY 4.0; durch Zugfolge zusammengeführt und betrieblich modelliert.",
+      "modifications": "Felder normalisiert, auf den Einzelgleisgraphen referenziert und Widersprüche als Reviewfälle statt als stiller Vorrang behandelt."
+    },
+    {
+      "id": "gtfs-de-regional-rail",
+      "rightsSourceId": "gtfs-de-rv",
+      "role": "release-input",
+      "sourceLicense": "CC-BY-4.0",
+      "acquisition": "https://download.gtfs.de/germany/rv_free/latest.zip",
+      "purpose": "Deutschlandweiter Fahrplan-Holdout und Betriebsstellenabgleich.",
+      "shipAttribution": true,
+      "attribution": "Datenquelle DELFI e.V. / GTFS.DE, CC BY 4.0; durch Zugfolge bearbeitet.",
+      "modifications": "Gefiltert, normalisiert und als Fahrplan-Holdout verwendet; keine technische Mindestfahrzeit."
+    },
+    {
+      "id": "copernicus-dem-germany",
+      "rightsSourceId": "dem-hoehenmodell",
+      "role": "release-input",
+      "sourceLicense": "Copernicus DEM Data Access and Use Terms",
+      "acquisition": "Copernicus DEM 2021 release als Cloud Optimized GeoTIFF aus dem öffentlichen AWS-Open-Data-Bucket copernicus-dem-30m; exakt benötigte Kachelliste, Objektpfade, ETags, Größen und SHA-256 werden jährlich gepinnt.",
+      "purpose": "Neigungskorridore entlang der Gleisgeometrie.",
+      "shipAttribution": true,
+      "attribution": "produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved",
+      "modifications": "Entlang der Gleise abgetastet und in ganzzahlige Promillebänder transformiert."
+    },
+    {
+      "id": "station-enrichment",
+      "rightsSourceId": "stada",
+      "role": "optional-release-input",
+      "sourceLicense": "CC-BY-4.0",
+      "acquisition": "Optionaler freigegebener API-Snapshot, sofern für den Jahreslauf ein gültiger API-Zugang vorliegt; andernfalls nicht Teil des Capture oder Release.",
+      "purpose": "Stations- und Ausstattungsanreicherung.",
+      "shipAttribution": true,
+      "attribution": "Stationsdatenquelle gemäß jährlichem Attributionsbericht, CC BY 4.0; durch Zugfolge bearbeitet.",
+      "modifications": "Auf stabile Betriebsstellenkennungen normalisiert."
+    },
+    {
+      "id": "openstation-enrichment",
+      "rightsSourceId": "openstation",
+      "role": "release-input",
+      "sourceLicense": "CC0-1.0",
+      "acquisition": "Jährlich gepinnter freigegebener OpenStation-Snapshot; Endpunkt, Version und Prüfsumme im Capture-Manifest.",
+      "purpose": "Unabhängige Stations- und Bahnsteiganreicherung sowie Widerspruchserkennung gegenüber den übrigen Stationsquellen.",
+      "shipAttribution": true,
+      "attribution": "OpenStation; Herkunft freiwillig zur Nachvollziehbarkeit genannt (CC0).",
+      "modifications": "Auf stabile Betriebsstellenkennungen normalisiert; Widersprüche werden nicht automatisch überschrieben."
+    },
+    {
+      "id": "internal-station-plan-evidence",
+      "rightsSourceId": "apn-validierung",
+      "role": "internal-validation",
+      "sourceLicense": "Ausdrückliche Projektfreigabe vom 2026-08-12; nicht zur Auslieferung bestimmt",
+      "acquisition": "Direktabruf über eine RL100-gebundene Entwicklungsadresse; genauer Ablauf nur im jährlichen Arbeits-Prompt.",
+      "purpose": "Interne Validierung von Bahnhofstopologie, Gleisbezeichnungen, Weichen- und Signalbeziehungen.",
+      "shipAttribution": false,
+      "classAEligible": false,
+      "forbiddenShippingTokens": ["apn", "trassenfinder.de/apn"],
+      "retention": "Rohdateien, Auswertung und Prüfhashes bleiben im internen Evidenzspeicher; der öffentliche Release enthält nur den quellenneutralen Hinweis, dass zusätzliche interne Validierung angewendet wurde."
+    }
+  ]
+}

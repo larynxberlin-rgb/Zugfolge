@@ -8,3 +8,4 @@ access_zugfolge_admin_request_approver,zugfolge.admin.request approver,model_zug
 access_zugfolge_feedback_admin,zugfolge.feedback admin,model_zugfolge_feedback,zugfolge_admin.group_zugfolge_admin,1,1,1,0
 access_zugfolge_feedback_telemetry,zugfolge.feedback telemetry,model_zugfolge_feedback,zugfolge_admin.group_zugfolge_telemetry,1,1,1,0
 access_zugfolge_alpha_invitation_admin,zugfolge.alpha.invitation admin,model_zugfolge_alpha_invitation,zugfolge_admin.group_zugfolge_admin,1,1,1,0
+access_zugfolge_infra_release_import_reviewer,zugfolge.infra.release.import reviewer,model_zugfolge_infra_release_import,zugfolge_admin.group_zugfolge_infra_reviewer,1,1,1,0

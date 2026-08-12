@@ -1,0 +1,46 @@
+{
+  "schema": "zugfolge-livemap-read-model-build-spec/v1",
+  "worldId": "00000000-0000-4000-8000-000000000014",
+  "infrastructureReleaseId": "infra-deutschland-2026.1",
+  "worldEpoch": "2026-08-12T00:00:00.000Z",
+  "inputDirectory": "../../var/derived/germany-2026/semantic-tile-inputs-final-v2",
+  "gtfs": {
+    "archive": "../../var/source-cache/annual-2026/gtfs-rv-free-latest.zip",
+    "serviceDate": "20260812",
+    "timeZone": "Europe/Berlin",
+    "trainIdentity": {
+      "regionId": "mitteldeutschland-b",
+      "releaseId": "gtfs-de-rv-20260812-{archiveSha16}"
+    }
+  },
+  "config": {
+    "schemaVersion": "zugfolge-livemap-config/v1",
+    "worldId": "00000000-0000-4000-8000-000000000014",
+    "infrastructureReleaseId": "infra-deutschland-2026.1",
+    "basemap": {
+      "styleUrl": "/artifacts/maps/infra-deutschland-2026.1/style.json",
+      "tilesUrl": "/artifacts/maps/infra-deutschland-2026.1/basemap.pmtiles",
+      "attribution": "© OpenStreetMap-Mitwirkende, ODbL 1.0; Basemap-Aufbereitung Protomaps; weitere Bearbeitung durch Zugfolge",
+      "selfHosted": true
+    },
+    "infrastructure": {
+      "pmtilesUrl": "/artifacts/maps/infra-deutschland-2026.1/infra-deutschland-2026.1.pmtiles",
+      "attribution": "Infrastrukturquellen und Bearbeitungen gemaess oeffentlichem InfraRelease-Manifest",
+      "coverage": "DE"
+    },
+    "initialView": {
+      "latitudeE7": 510500000,
+      "longitudeE7": 117500000,
+      "zoomMilli": 6000
+    },
+    "playableArea": {
+      "label": "Alpha-Gebiet Leipzig-Halle-Erfurt",
+      "boundsE7": {
+        "west": 103319740,
+        "south": 506504900,
+        "east": 132877340,
+        "north": 521305120
+      }
+    }
+  }
+}

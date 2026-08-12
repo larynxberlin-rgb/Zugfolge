@@ -1,0 +1,15 @@
+{
+  "schema": "zugfolge-semantic-tile-inputs/v1",
+  "layers": [
+    { "name": "rail_corridors", "file": "rail-corridors.geojsonseq", "stableFeatureIdProperty": "feature_id" },
+    { "name": "operating_points", "file": "operating-points.geojsonseq", "stableFeatureIdProperty": "feature_id" },
+    { "name": "stations", "file": "stations.geojsonseq", "stableFeatureIdProperty": "feature_id" },
+    { "name": "tracks", "file": "tracks.geojsonseq", "stableFeatureIdProperty": "feature_id" },
+    { "name": "platforms", "file": "platforms.geojsonseq", "stableFeatureIdProperty": "feature_id" },
+    { "name": "switches", "file": "switches.geojsonseq", "stableFeatureIdProperty": "feature_id" },
+    { "name": "signals", "file": "signals.geojsonseq", "stableFeatureIdProperty": "feature_id" },
+    { "name": "blocks", "file": "blocks.geojsonseq", "stableFeatureIdProperty": "feature_id" },
+    { "name": "conflict_resources", "file": "conflict-resources.geojsonseq", "stableFeatureIdProperty": "feature_id" },
+    { "name": "rail_context", "file": "rail-context.geojsonseq", "stableFeatureIdProperty": "feature_id" }
+  ]
+}

@@ -21,6 +21,16 @@ Das Add-on führt einen kleinen, versionskontrollierten Aktionskatalog. Für ein
 
 Odoo steuert beim jährlichen InfraRelease ausschließlich Antrag, Prüfung und Freigabe für den nächsten zulässigen Periodenwechsel. Die Game-seitige Vorabprüfung bleibt allein zuständig für Invariante 1, laufende Zugfahrten, Trassen, Umläufe und Vertragspflichten; Odoo kann keinen Release aktiv setzen. Monitoring ist lesend und kann nur bestehende Anträge vorbereiten oder verlinken. Entitlements bleiben Game-Zustand; ihre Produkte liefern keine Spielwerte, Informationsvorsprünge oder Automatisierung in öffentlichen Welten.
 
+Für den jährlichen Deutschland-Korpus führt das Add-on einen eigenen
+Importdatensatz. Ein `InfraReviewer` lädt Manifest und sämtliche Teile hoch;
+die Hintergrundprüfung verifiziert das exakte Inventar gestreamt und überträgt
+jedes Teil HMAC-gebunden in einen getrennten Game-Stagingbereich. Upload,
+Verifikation und Staging sind keine Freigabe. Ein unsignierter Kandidat bleibt
+`activationEligible=false`, und die Reviewer-Rolle verleiht weder
+Approver-Rechte noch die Fähigkeit, eine Welt umzuschalten. Erst ein signierter,
+vom Game erneut qualifizierter Kandidat darf den bestehenden hochriskanten
+Vier-Augen-Antrag für einen Periodenwechsel vorbereiten.
+
 ## Begründung
 
 Die Trennung verbindet Odoos ausgereifte, native Funktionen — Nutzer/Gruppen, Kontakte, CRM, Rechnungen, Zahlungen, Aktivitäten, Mail-Thread und Standardansichten — mit einem kleinen eigenen Add-on für die Zugfolge-spezifische Grenze. Das reduziert selbst geschriebenen kaufmännischen Code, ohne fachliche Macht in das Fremdsystem zu verlagern.

@@ -98,6 +98,79 @@ auch die Ereigniszustellung.
 **Keine Live-Abhängigkeit von externen Quellen im Spielbetrieb.** Die
 Infra-Pipeline läuft offline und erzeugt ein unveränderliches Artefakt.
 
+### 2.1 Kartenpfad und Detailprojektionen (E26, E27)
+
+Die Karte besteht aus drei bewusst getrennten Datenströmen:
+
+1. Eine weltweit sichtbare, dunkle OSM-Basiskarte wird als eigene, selbst
+   gehostete PMTiles-Artefaktgruppe ausgeliefert. Der Browser verwendet zur
+   Laufzeit keine öffentlichen Kachelserver.
+2. Der vollständige Deutschland-Korpus liegt als getrennte semantische
+   PMTiles-Ebene vor. Stabile `feature_id`-Werte machen Gleise,
+   Betriebsstellen, Bahnsteige, Weichen, Signale, Blöcke und
+   Konfliktressourcen anklickbar. Eine Weltmaske begrenzt nur die Spielbarkeit,
+   nie den geladenen Deutschlandbestand.
+3. Nur kleine Live-Deltas für Züge und abweichende Infrastrukturzustände laufen
+   über Snapshot und SSE. Eine Zugkartenposition ist im Protokoll zwingend als
+   Exact oder Estimate diskriminiert. Exact nennt den gepinnten
+   `infrastructureReleaseId`, die bestätigte Ressource, das Gleis und den
+   ganzzahligen gleisscharfen Offset. Estimate nennt denselben Release, die
+   bestätigte `resourceId`, die Projektionsmethode und eine geschätzte
+   E7-Koordinate, aber niemals `trackId` oder gleisscharfen Offset. Bei einem
+   fremden oder fehlenden Releasebezug gibt es keine Kartenposition;
+   `ExternalLeg` erhält ausdrücklich auch kein Estimate.
+
+Exact bleibt die einzige betriebliche Positionswahrheit. Estimate entsteht
+ausschließlich als deterministische, read-only und releasegebundene
+Darstellungsprojektion: zuerst auf einem eindeutig orientierten amtlichen
+Korridor, sonst auf dem im Release eindeutig zur bestätigten `resourceId`
+gebundenen Ankerhalt. Die Ankerwahl ist eine zustandslose Artefaktzuordnung,
+kein zuletzt beobachteter Serverstand. Ein mehrdeutiger Korridor fällt auf den
+releasegebundenen Anker zurück; nur ohne einen solchen Anker endet die
+Darstellung ohne Marker. Es gibt weder Nächstes-Gleis-Heuristik noch externe
+Quelle oder KI im Laufzeitpfad.
+
+Diese Abhängigkeit ist strikt einseitig vom autoritativen Simulationszustand
+zur Livemap. Fahrdienstleitung, Fahrstraßen, Konfliktressourcen, Sperrzeiten,
+Laufwegsuche, Trassenbestellung, Bestellbarkeit und Qualitätsbewertung dürfen
+Estimate weder importieren noch zurückgereicht bekommen. Die `resourceId` im
+Estimate bindet die richtige visuelle Projektion, behauptet aber keine
+Gleisbelegung. Estimate schreibt keine Domain-Events und macht weder Klasse C
+spielbar noch qualitativ besser.
+
+Große Detaildaten gehören weder in Vektorkacheln noch in den Livefeed. Die
+weltgebundene Game-API liefert sie bei Auswahl aus einem unveränderlichen
+Objekt- und Fahrplankatalog. Bahnhofstafel und FIS sind Darstellungen derselben
+serverautoritativen Projektion. Öffentliche Zugdaten werden per Allowlist
+redigiert; betriebsinterne Fahrzeug-, Personal-, Fahrweg- und Kostendaten
+erfordern eine separate, serverseitig geprüfte EVU-Eigentümerroute.
+Der deutschlandweite Katalog ist eine releasegebundene, read-only geöffnete
+SQLite-Datei mit indizierten Einzelabfragen; nur kleine Testfixtures verwenden
+weiterhin den vollständig geladenen JSON-Adapter. Schema, GTFS-Zuordnung und
+Liveprojektion beschreibt [`livemap-detailkatalog.md`](livemap-detailkatalog.md).
+
+Der reale Projektionskatalog 2026.1 belegt Exact und Estimate getrennt und
+disjunkt. Von 5.436.720.000 Ressourcenmillimetern sind 28,49 % gleisscharf
+bestätigt, 63,03 % auf eindeutig orientierten Korridoren geschätzt und 8,48 %
+an releasegebundenen Ankern gehalten. Protokoll-, Runtime- und Negativtests
+erzwingen die gegenseitige Exklusivität und die einseitige Verbrauchsgrenze.
+Die noch offene manuelle Browser- und Spielabnahme bleibt davon getrennt.
+
+Die fertigen Binärartefakte werden nicht in der Git-Historie versioniert. Git
+enthält Spezifikation, Quellkatalog, festen Jahres-Prompt und Prüfcode. Ein
+transportneutrales Paketmanifest bindet jede ausgelieferte Datei und jeden
+100-MiB-Teil an Bytezahl und SHA-256; das Paket kann im Chat, auf einem
+Datenträger oder in einem Artefaktspeicher übergeben werden. Die Installation
+setzt es gestreamt zusammen, prüft Größe und Hash und schließt erst danach
+atomar ab. Dadurch bleibt ein Serveraufbau reproduzierbar, ohne jedem
+Quellcode-Klon sämtliche früheren Jahresstände aufzubürden.
+
+Paketbildung, lokale Verifikation und Odoo-zu-Game-Staging sind von Aktivierung
+getrennt. Ein Kandidat mit `signature: null` ist transport- und stagefähig,
+aber trägt zwingend `activationEligible=false`. Odoo kann diese Grenze nicht
+übersteuern; erst Signatur, erneute Game-Qualifizierung und der bestehende
+Vier-Augen-Periodenwechsel dürfen eine Aktivierung vorbereiten.
+
 ## 3. Was einen späteren Umbau erzwingen würde
 
 Ein Plattformwechsel entsteht selten aus einer Sprachwahl — der lässt sich hinter

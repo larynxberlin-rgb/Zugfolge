@@ -30,7 +30,7 @@ mod pipeline;
 mod proto;
 mod topology;
 
-pub use element::{OsmNodeId, OsmWayId};
+pub use element::{OsmNode, OsmNodeId, OsmWay, OsmWayId};
 pub use error::ImportError;
-pub use pipeline::import_pbf;
+pub use pipeline::{PbfDocument, import_pbf, import_pbf_document};
 pub use topology::{RawEdge, RawEdgeId, RawGraph, RawNode};

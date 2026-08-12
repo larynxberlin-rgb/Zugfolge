@@ -47,9 +47,6 @@ const externalTrain: PublicExternalTrain = {
   reentryEarliestS: 3_700,
   reentryLatestS: 4_300,
   delaySeconds: 120,
-  fixedCostCents: "25000",
-  boundVehicleIds: ["vehicle-442-001"],
-  boundPersonnelDutyIds: ["duty-re1"],
   status: "outside",
   progressBasisPoints: 4_000,
 };
@@ -173,6 +170,21 @@ async function settle(turns = 8): Promise<void> {
 }
 
 describe("Livemap-Projektion", () => {
+  it("ruft browsernatives fetch mit dem globalen Empfaenger auf", async () => {
+    const channel = new SseChannel();
+    const replies: FetchReply[] = [jsonResponse(snapshot(1)), channel.response];
+    const strictFetch = function (this: unknown): Promise<Response> {
+      if (this !== globalThis) throw new TypeError("Illegal invocation");
+      const reply = replies.shift();
+      if (reply === undefined || reply instanceof Error) throw reply ?? new Error("Antwort fehlt");
+      return Promise.resolve(reply);
+    } as typeof fetch;
+    const connection = new LivemapConnection("/api", WORLD_ID, TOKEN, () => undefined, { fetch: strictFetch });
+
+    await expect(connection.connect()).resolves.toBeUndefined();
+    connection.close();
+  });
+
   it("fuehrt Aussenlaeufe ohne erfundene Kartenposition und entfernt sie bei Wiedereintritt", () => {
     const initial = initialState(parseSnapshot({
       ...snapshot(4, 100),
@@ -181,7 +193,6 @@ describe("Livemap-Projektion", () => {
     expect(initial.externalTrains.get("1")).toMatchObject({
       fromPortalId: "portal-eisenach",
       status: "outside",
-      fixedCostCents: "25000",
     });
     expect(initial.externalTrains.get("1")).not.toHaveProperty("positionMm");
 
@@ -192,6 +203,123 @@ describe("Livemap-Projektion", () => {
       removedExternalTrainIds: ["1"],
     }));
     expect(updated?.externalTrains.size).toBe(0);
+  });
+
+  it("uebernimmt georeferenzierte Positionen und sparse Infrastrukturzustaende", () => {
+    const initial = initialState(parseSnapshot({
+      ...snapshot(4, 100, {
+        ...baseTrain,
+        operatorId: "operator-1",
+        mapPosition: {
+          infrastructureReleaseId: "infra-de-2026",
+          resourceId: "block-track-1",
+          trackId: "track-1",
+          offsetMm: 1_000,
+          latitudeE7: 515_000_000,
+          longitudeE7: 120_000_000,
+          bearingMilliDegrees: 90_000,
+        },
+      }),
+      objectStates: [{
+        id: "track:track-1",
+        objectKind: "track",
+        objectId: "track-1",
+        state: "construction",
+      }],
+    }));
+    expect(initial.trains.get("1")).toMatchObject({
+      operatorId: "operator-1",
+      mapPosition: { trackId: "track-1", offsetMm: 1_000 },
+    });
+    expect(initial.objectStates.get("track:track-1")?.state).toBe("construction");
+
+    const updated = applyDelta(initial, parseDelta({
+      ...delta(5),
+      at: 110,
+      changedObjectStates: [],
+      removedObjectStateIds: ["track:track-1"],
+    }));
+    expect(updated?.objectStates.size).toBe(0);
+  });
+
+  it("uebernimmt eine releasegebundene Kartenschaetzung ohne sie zur Gleisposition umzudeuten", () => {
+    const initial = initialState(parseSnapshot({
+      ...snapshot(4, 100, {
+        ...baseTrain,
+        mapEstimate: {
+          infrastructureReleaseId: "infra-de-2026",
+          resourceId: "block-track-1",
+          method: "route-corridor",
+          displayPathId: "corridor-rv-1",
+          displayOffsetMm: 25_000,
+          latitudeE7: 515_000_000,
+          longitudeE7: 120_000_000,
+          bearingMilliDegrees: 90_000,
+          uncertaintyMm: 750_000,
+        },
+      }),
+    }));
+
+    expect(initial.trains.get("1")).toMatchObject({
+      mapEstimate: {
+        method: "route-corridor",
+        displayPathId: "corridor-rv-1",
+        uncertaintyMm: 750_000,
+      },
+    });
+    expect(initial.trains.get("1")).not.toHaveProperty("mapPosition");
+  });
+
+  it("weist Kartenpositionen ohne Release- oder Ressourcenbindung zurueck", () => {
+    const position = {
+      infrastructureReleaseId: "infra-de-2026",
+      resourceId: "block-track-1",
+      trackId: "track-1",
+      offsetMm: 1_000,
+      latitudeE7: 515_000_000,
+      longitudeE7: 120_000_000,
+    };
+    expect(() => parseSnapshot(snapshot(4, 100, {
+      ...baseTrain,
+      mapPosition: { ...position, infrastructureReleaseId: undefined },
+    } as never))).toThrow(/infrastructureReleaseId/);
+    expect(() => parseSnapshot(snapshot(4, 100, {
+      ...baseTrain,
+      mapPosition: { ...position, resourceId: "" },
+    }))).toThrow(/resourceId/);
+  });
+
+  it("weist unbekannte, unvollstaendige oder widerspruechliche Kartenschaetzungen zurueck", () => {
+    const estimate = {
+      infrastructureReleaseId: "infra-de-2026",
+      resourceId: "block-track-1",
+      method: "anchor-hold" as const,
+      displayPathId: "anchor-track-1",
+      displayOffsetMm: 1_000,
+      latitudeE7: 515_000_000,
+      longitudeE7: 120_000_000,
+      uncertaintyMm: 750_000,
+    };
+    expect(() => parseSnapshot(snapshot(4, 100, {
+      ...baseTrain,
+      mapEstimate: { ...estimate, method: "guess" },
+    } as never))).toThrow(/Schaetzmethode/);
+    expect(() => parseSnapshot(snapshot(4, 100, {
+      ...baseTrain,
+      mapEstimate: { ...estimate, displayPathId: "" },
+    }))).toThrow(/displayPathId/);
+    expect(() => parseSnapshot(snapshot(4, 100, {
+      ...baseTrain,
+      mapPosition: {
+        infrastructureReleaseId: "infra-de-2026",
+        resourceId: "block-track-1",
+        trackId: "track-1",
+        offsetMm: 1_000,
+        latitudeE7: 515_000_000,
+        longitudeE7: 120_000_000,
+      },
+      mapEstimate: estimate,
+    }))).toThrow(/nicht zugleich/);
   });
 
   it("akzeptiert nur den versionierten Eigenbetriebsmarker und beschriftet ihn eindeutig", () => {

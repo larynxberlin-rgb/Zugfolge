@@ -1,0 +1,129 @@
+{
+  "schema": "zugfolge-map-package-plan/v1",
+  "packageId": "zugfolge-map-deutschland",
+  "version": "2026.1",
+  "partBytes": 104857600,
+  "runtime": {
+    "schema": "zugfolge-map-runtime/v1",
+    "publicBasePath": "/artifacts/maps/infra-deutschland-2026.1",
+    "basemapStyleUrl": "/artifacts/maps/infra-deutschland-2026.1/style.json",
+    "infrastructurePmtilesUrl": "/artifacts/maps/infra-deutschland-2026.1/infra-deutschland-2026.1.pmtiles"
+  },
+  "artifacts": [
+    {
+      "id": "welt-basiskarte",
+      "kind": "basemap",
+      "sourceFile": "var/source-cache/annual-2026/welt-mit-deutschland-detail.pmtiles",
+      "installPath": "basemap.pmtiles",
+      "expectedBytes": 11545162669,
+      "expectedSha256": "c766073e55b99b213276328e504cbb7a69b0b65db0546adf484539c3bd319aed",
+      "expectedVectorLayers": [
+        "boundaries",
+        "buildings",
+        "earth",
+        "landcover",
+        "landuse",
+        "places",
+        "pois",
+        "roads",
+        "water"
+      ]
+    },
+    {
+      "id": "deutschland-infrastruktur",
+      "kind": "infrastructure",
+      "sourceFile": "var/derived/germany-2026/map-release/infra-deutschland-2026.1.pmtiles",
+      "installPath": "infra-deutschland-2026.1.pmtiles",
+      "expectedBytes": 1536379722,
+      "expectedSha256": "65af6dbe8c517666c83941468c0f52b37fa30d866b8e402f6977aa4a599d3de6",
+      "expectedVectorLayers": [
+        "blocks",
+        "conflict_resources",
+        "operating_points",
+        "platforms",
+        "rail_context",
+        "rail_corridors",
+        "signals",
+        "stations",
+        "switches",
+        "tracks"
+      ]
+    }
+  ],
+  "auxiliaryFiles": [
+    {
+      "id": "quality-manifest",
+      "kind": "quality-manifest",
+      "visibility": "public",
+      "sourceFile": "var/derived/germany-2026/map-release/public/quality.json",
+      "installPath": "manifests/quality.json"
+    },
+    {
+      "id": "public-read-model",
+      "kind": "read-model",
+      "visibility": "public",
+      "sourceFile": "var/derived/germany-2026/map-release/public/read-model.sqlite",
+      "installPath": "read-model.sqlite",
+      "expectedBytes": 1291001856,
+      "expectedSha256": "c7e56cecb3db9aaae7994877894312ade91c536e7c5027e10e63045d7303ad21"
+    },
+    {
+      "id": "release-manifest",
+      "kind": "release-manifest",
+      "visibility": "public",
+      "sourceFile": "var/derived/germany-2026/map-release/public/release.json",
+      "installPath": "manifests/release.json"
+    },
+    {
+      "id": "source-manifest",
+      "kind": "source-manifest",
+      "visibility": "public",
+      "sourceFile": "var/derived/germany-2026/map-release/public/sources.json",
+      "installPath": "manifests/sources.json"
+    },
+    {
+      "id": "train-map-projection",
+      "kind": "train-map-projection",
+      "visibility": "public",
+      "sourceFile": "var/derived/germany-2026/map-release/public/train-map-projection.sqlite",
+      "installPath": "train-map-projection.sqlite",
+      "expectedBytes": 29003776,
+      "expectedSha256": "61a99693dad47bf21423ed9bf9b1547a0cbdcdeeb7717dd5daabc36375d61bde"
+    },
+    {
+      "id": "style-dark",
+      "kind": "style",
+      "visibility": "public",
+      "sourceFile": "var/derived/germany-2026/map-release/style.json",
+      "installPath": "style.json"
+    }
+  ],
+  "auxiliaryTrees": [
+    {
+      "idPrefix": "glyph",
+      "kind": "glyph",
+      "visibility": "public",
+      "sourceDirectory": "var/source-cache/annual-2026/basemap-assets/fonts",
+      "installDirectory": "assets/fonts",
+      "expectedInventory": {
+        "Noto Sans Devanagari Regular v1": 256,
+        "Noto Sans Italic": 256,
+        "Noto Sans Medium": 256,
+        "Noto Sans Regular": 256
+      }
+    },
+    {
+      "idPrefix": "sprite",
+      "kind": "sprite",
+      "visibility": "public",
+      "sourceDirectory": "var/source-cache/annual-2026/basemap-assets/sprites",
+      "installDirectory": "assets/sprites",
+      "expectedInventory": {
+        "dark.json": 1,
+        "dark.png": 1,
+        "dark@2x.json": 1,
+        "dark@2x.png": 1
+      }
+    }
+  ]
+}

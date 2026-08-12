@@ -73,6 +73,11 @@ der Überblick; die Spalte `id` ist die Kennung, die auch der Importmarker nennt
 |------|--------|--------|----|
 | `osm-pbf-lhe` | OSM-PBF-Extract Leipzig–Halle–Erfurt | `freigegeben` | M1.2 |
 | `osm-pbf-mitteldeutschland-b` | OSM-PBF-Extract der freigegebenen Alpha-Variante B | `freigegeben` | M14.1 |
+| `osm-pbf-deutschland` | OSM-PBF-Extract Deutschland | `freigegeben` | M14.2 |
+| `osm-planet-basemap` | OSM Planet PBF für die selbst gehostete Welt-Basiskarte | `freigegeben` | M14.2 |
+| `protomaps-daily-basemap` | gepinnter Protomaps-OSM-Tagesbuild für die selbst gehostete Welt-Basiskarte | `freigegeben` | M14.2 |
+| `apn-validierung` | APN-Skizzen, nur interne Topologievalidierung | `entwicklung` | M9.10/M14.2 |
+| `db-infrago-infrastrukturdaten-open-data` | offizieller DB-InfraGO-Infrastrukturdatenbestand | `freigegeben` | M9.10/M14.2 |
 | `openrailwaymap-doku` | OpenRailwayMap — Tagging- und Signaldokumentation | `entwicklung` | M1.6 |
 | `openstation` | OpenStation — Stationsdaten | `freigegeben` | M1.8 |
 | `stada` | StaDa — Stationsdaten | `freigegeben` | M1.8 |
@@ -96,8 +101,10 @@ der Überblick; die Spalte `id` ist die Kennung, die auch der Importmarker nennt
 | `tpn` | TPN — Trassenportal Netz | `ausgeschlossen` | — |
 | `oeffentliche-tiles-nominatim` | öffentliche OSM-/ORM-Tiles und öffentliches Nominatim | `ausgeschlossen` | M4.7 |
 
-**Was heute trägt.** `osm-pbf-lhe` und der davon rechtlich gleichartig, aber
-artefaktseitig getrennt geführte `osm-pbf-mitteldeutschland-b` sind
+**Was heute trägt.** `osm-pbf-lhe` und die davon rechtlich gleichartigen, aber
+artefaktseitig getrennt geführten Quellen `osm-pbf-mitteldeutschland-b`,
+`osm-pbf-deutschland`, `osm-planet-basemap` und der tatsächlich für das
+2026er Kartenpaket verwendete `protomaps-daily-basemap` sind
 `freigegeben` — die ODbL erlaubt Nutzung
 mit Namensnennung und Share-alike, und mehr braucht die Pilotregion für
 Geometrie und Railway-Tags nicht. Der Mitteldeutschland-Eintrag bindet die am
@@ -117,6 +124,34 @@ ergänzende Importquelle für Betriebsstellen und Streckensegmente (E22,
 ADR-0022). Streng abgegrenzt vom bestehenden Eintrag `trassenfinder`: Die
 berechneten Fahrzeit- und Trassenpreiswerte der Routensuche bleiben davon
 unberührt auf `entwicklung`.
+
+Seit dem 2026-08-12 ist außerdem der offizielle Open-Data-Datensatz
+`db-infrago-infrastrukturdaten-open-data` freigegeben. GovData weist ihn als
+CC BY 4.0 aus; GeoPackage und CSV enthalten das Streckennetz der DB InfraGO,
+Betriebsstellen, Bahnübergänge, Brücken, Tunnel und wesentliche Attribute.
+Diese amtliche Ebene verbessert Kilometrierung und Streckenattribute, ersetzt
+aber weder OSMs Einzelgleisgeometrie noch die eigene Regelableitung von
+Blöcken, Fahrstraßen und Konfliktressourcen.
+
+Der Deutschland-Extract baut den vollständigen semantischen `InfraCorpus`; die
+Spielgebietsmaske schränkt davon nur die Bestellbarkeit, niemals Import oder
+Kartensichtbarkeit ein. Der Planet-Extract erzeugt davon getrennt die dunkle
+Welt-Basiskarte. Stil, Schriften, Sprites und PMTiles werden selbst gehostet,
+und der Browser weist Kartenadressen außerhalb des eigenen Ursprungs ab. So
+werden die Community-Kachelserver weder als Produktionsbackend noch als
+Quelle für einen Massendownload missbraucht.
+
+**APN-Entwicklungsfreigabe, Stand 2026-08-12.** Der Projektverantwortliche hat
+die freie Verwendung der APN-Skizzen für diesen Arbeitsprozess ausdrücklich
+bestätigt und zugleich entschieden, dass daraus keine Quellenangabe im
+ausgelieferten Datensatz entsteht. Das Register bildet beide Grenzen ab:
+`apn-validierung` darf automatisiert im jährlichen, internen KI-Prüflauf zur
+Plausibilisierung von Bahnhofsgleisen, Weichen und Signalen herangezogen werden;
+Skizzen, OCR-Rohdaten und APN-Provenienz werden vor dem öffentlichen Release
+technisch entfernt. Weil keine allgemeine Wiederveröffentlichungslizenz belegt
+ist, bleibt APN dennoch `entwicklung`: Es ist nie alleiniger A-Nachweis und
+trägt keinen freigegebenen Importmarker. Der reproduzierbare Jahres-Prompt und
+das interne Evidenzprotokoll nennen die Quelle; die Laufzeitdaten nicht.
 
 Für M1.13 ist außerdem `gtfs-de-rv` freigegeben. GTFS.DE veröffentlicht den aus
 DELFI-NeTEx-Daten erzeugten Feed „Schienenregionalverkehr Deutschland“

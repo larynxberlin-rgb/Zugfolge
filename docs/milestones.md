@@ -960,9 +960,18 @@ von M14 bleibt offen.
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
 | 14.1 | Pilotregion → Mitteldeutschland; Variante-B-Grenze, qualifizierte Fahrtketten/Grenzportale und spielbarer Eigenbetrieb | L | erledigt |
-| 14.2 | Etappenweise Ausweitung auf Deutschland, je Etappe mit Qualitätsklassen-Report | **XL** | offen |
+| 14.2 | **Deutschlandweiter InfraCorpus und Karte als Spielzentrum**: vollständiger Deutschland-Import unabhängig von der spielbaren Maske, dimensionsweiser Qualitätsreport, selbst gehostete Welt-Basiskarte und Deutschland-PMTiles, anklickbare Fachobjekte, Bahnhofstafel/FIS, jährlicher KI-Neubau und Odoo-Paketimport | **XL** | in Arbeit |
 | 14.3 | Lastprofile, horizontale Regionenverteilung, Kapazitätsplanung | L | offen |
 | 14.4 | Weltenstart-Kadenz und Migrationsregeln | M | offen |
+
+**Stand M14.2, Jahreskandidat 2026.1:** Der reale Voll-Lauf erzeugt 1.600.662
+Objekte (A 0/B 1.489.960/C 110.702); die getrennte interne Planprüfung ist
+vollständig. Das reale 14,4-GB-Transportpaket ist gepackt, verifiziert,
+installiert und beim zweiten Installationslauf bytegleich wiederverwendet; der
+Odoo-/Game-Vertrag ist stagefähig. Echte Signatur, namentliche Freigabe,
+erneute Game-Qualifizierung und produktiver Odoo-/Periodenlauf fehlen. Deshalb
+bleibt `activationEligible=false` und der Teilabschnitt ausdrücklich in
+Arbeit.
 
 ---
 

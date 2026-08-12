@@ -1,0 +1,17 @@
+{
+  "schema": "zugfolge-final-quality-inputs/v1",
+  "releaseId": "infra-deutschland-2026.1",
+  "timetableYear": 2026,
+  "layers": [
+    { "name": "rail_corridors", "file": "rail-corridors.geojsonseq", "featureType": "rail-corridor", "classARequiredDimensions": ["geometry", "routeIdentity", "speed", "electrification", "trackCount", "review"] },
+    { "name": "operating_points", "file": "operating-points.geojsonseq", "featureType": "operating-point", "classARequiredDimensions": ["identity", "geometry", "operatingState", "routeBinding", "review"] },
+    { "name": "stations", "file": "stations.geojsonseq", "featureType": "station", "classARequiredDimensions": ["identity", "geometry", "operatingPointBinding", "review"] },
+    { "name": "tracks", "file": "tracks.geojsonseq", "featureType": "track", "classARequiredDimensions": ["topology", "maximumSpeed", "gradient", "electrification", "trackCount", "signals", "blocks", "conflictResources", "review"] },
+    { "name": "platforms", "file": "platforms.geojsonseq", "featureType": "platform", "classARequiredDimensions": ["geometry", "trackAssignment", "identity", "review"] },
+    { "name": "switches", "file": "switches.geojsonseq", "featureType": "switch", "classARequiredDimensions": ["geometry", "trackAssignment", "topology", "review"] },
+    { "name": "signals", "file": "signals.geojsonseq", "featureType": "signal", "classARequiredDimensions": ["geometry", "trackAssignment", "direction", "function", "review"] },
+    { "name": "blocks", "file": "blocks.geojsonseq", "featureType": "block", "classARequiredDimensions": ["trackAssignment", "boundaries", "direction", "review"] },
+    { "name": "conflict_resources", "file": "conflict-resources.geojsonseq", "featureType": "conflict_resource", "classARequiredDimensions": ["trackAssignment", "compatibility", "exclusion", "review"] },
+    { "name": "rail_context", "file": "rail-context.geojsonseq", "featureType": "rail_context", "classARequiredDimensions": ["geometry", "identity", "review"] }
+  ]
+}

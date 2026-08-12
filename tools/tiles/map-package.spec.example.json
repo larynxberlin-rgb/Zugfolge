@@ -1,0 +1,107 @@
+{
+  "schema": "zugfolge-map-package-spec/v1",
+  "packageId": "zugfolge-map-deutschland",
+  "version": "2026.1",
+  "partBytes": 104857600,
+  "runtime": {
+    "schema": "zugfolge-map-runtime/v1",
+    "publicBasePath": "/artifacts/maps/infra-deutschland-2026.1",
+    "basemapStyleUrl": "/artifacts/maps/infra-deutschland-2026.1/style.json",
+    "infrastructurePmtilesUrl": "/artifacts/maps/infra-deutschland-2026.1/infra-deutschland-2026.1.pmtiles"
+  },
+  "artifacts": [
+    {
+      "id": "deutschland-infrastruktur",
+      "kind": "infrastructure",
+      "sourceFile": "artifacts/deutschland-infrastruktur.pmtiles",
+      "installPath": "infra-deutschland-2026.1.pmtiles",
+      "expectedVectorLayers": ["blocks", "conflict_resources", "operating_points", "platforms", "rail_context", "rail_corridors", "signals", "stations", "switches", "tracks"]
+    },
+    {
+      "id": "welt-basiskarte",
+      "kind": "basemap",
+      "sourceFile": "artifacts/welt-mit-deutschland-detail.pmtiles",
+      "installPath": "basemap.pmtiles",
+      "expectedVectorLayers": ["boundaries", "buildings", "earth", "landcover", "landuse", "places", "pois", "roads", "water"]
+    }
+  ],
+  "auxiliaryFiles": [
+    {
+      "id": "glyph-inter-0-255",
+      "kind": "glyph",
+      "visibility": "public",
+      "sourceFile": "assets/glyphs/Inter/0-255.pbf",
+      "installPath": "assets/fonts/Inter/0-255.pbf"
+    },
+    {
+      "id": "quality-manifest",
+      "kind": "quality-manifest",
+      "visibility": "public",
+      "sourceFile": "manifests/quality.public.json",
+      "installPath": "manifests/quality.json"
+    },
+    {
+      "id": "release-manifest",
+      "kind": "release-manifest",
+      "visibility": "public",
+      "sourceFile": "manifests/release.public.json",
+      "installPath": "manifests/release.json"
+    },
+    {
+      "id": "source-manifest",
+      "kind": "source-manifest",
+      "visibility": "public",
+      "sourceFile": "manifests/sources.public.json",
+      "installPath": "manifests/sources.json"
+    },
+    {
+      "id": "sprite-json",
+      "kind": "sprite",
+      "visibility": "public",
+      "sourceFile": "assets/sprites/zugfolge.json",
+      "installPath": "assets/sprites/dark.json"
+    },
+    {
+      "id": "sprite-png",
+      "kind": "sprite",
+      "visibility": "public",
+      "sourceFile": "assets/sprites/zugfolge.png",
+      "installPath": "assets/sprites/dark.png"
+    },
+    {
+      "id": "sprite-json-2x",
+      "kind": "sprite",
+      "visibility": "public",
+      "sourceFile": "assets/sprites/zugfolge@2x.json",
+      "installPath": "assets/sprites/dark@2x.json"
+    },
+    {
+      "id": "sprite-png-2x",
+      "kind": "sprite",
+      "visibility": "public",
+      "sourceFile": "assets/sprites/zugfolge@2x.png",
+      "installPath": "assets/sprites/dark@2x.png"
+    },
+    {
+      "id": "style-dark",
+      "kind": "style",
+      "visibility": "public",
+      "sourceFile": "assets/styles/zugfolge-dark.json",
+      "installPath": "style.json"
+    },
+    {
+      "id": "train-map-projection",
+      "kind": "train-map-projection",
+      "visibility": "public",
+      "sourceFile": "artifacts/train-map-projection.sqlite",
+      "installPath": "train-map-projection.sqlite"
+    },
+    {
+      "id": "world-read-model",
+      "kind": "read-model",
+      "visibility": "public",
+      "sourceFile": "artifacts/read-model.sqlite",
+      "installPath": "read-model.sqlite"
+    }
+  ]
+}

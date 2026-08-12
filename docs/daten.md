@@ -36,14 +36,20 @@ Rechtslage das gesamte Projekt.
 - OSM-abgeleitete und unabhängig lizenzierte Fakten bleiben getrennte
   Datenebenen, bis eine qualifizierte ODbL-Prüfung die Derivative-/Collective-
   Database- und Bereitstellungspflichten freigibt.
-- OpenStation und StaDa sind Stationsdaten-Kandidaten. Version,
-  Bereitstellungsweg, Marketplace-Bedingungen, Attribution und Feldmapping
-  müssen vor einem Import genehmigt sein.
+- OpenStation und StaDa sind als Stationsdatenquellen freigegeben. Jeder
+  Jahresrelease bindet trotzdem nur den tatsächlich verwendeten Snapshot mit
+  Version, Bereitstellungsweg, Attribution, Hash und Feldmapping. Der Kandidat
+  2026.1 verwendet OpenStation unter CC0; eine allgemeine Freigabe erzwingt
+  keine Vermischung beider Bestände.
 - RINF bleibt bis zu einer schriftlichen Wiederverwendungsentscheidung
   blockiert. pathOS und TPN sind ohne neue Berechtigung und ausdrücklichen
   Vertrag als Spiel- oder Validierungsbackend ausgeschlossen.
 - Öffentliche OSM-/OpenRailwayMap-Tiles und öffentliches Nominatim werden nicht
   produktiv genutzt. Das Spiel erzeugt und hostet eigene Dark-Vector-Tiles.
+- Der offizielle Datensatz „Infrastrukturdaten der DB InfraGO“ ergänzt OSM
+  jährlich unter CC BY 4.0 um amtliche Streckensegmente, Betriebsstellen,
+  Kilometrierung, Geschwindigkeit, Elektrifizierung, Gleisanzahl sowie Bauwerke.
+  Er ersetzt keine Einzelgleis-, Signal- oder Fahrstraßentopologie.
 - Entgeltregeln aus TPS-/SPS-/APS-/INB- und Anlagen-/Stationspreisquellen werden
   erst nach einer periodenbezogenen Rechteentscheidung als eigene, versionierte
   Regeln implementiert und mit zulässigen offiziellen Beispielen geprüft.
@@ -105,16 +111,59 @@ versionierten `EconomyRelease`.
 
 ## 5. Qualitätsklassen
 
-- **A — validiert:** Signale, Fahrstraßen und Blöcke manuell beziehungsweise
-  fachlich geprüft; vollständige Simulation.
+- **A — validiert:** Jede für den konkreten Objekttyp erforderliche Dimension
+  ist unabhängig und fachlich geprüft; vollständige Simulation.
 - **B — konservativ:** Datenlücken werden durch sichtbare virtuelle Blöcke und
-  sichere Annahmen geschlossen; vollständig spielbar.
+  versionierte sichere Annahmen geschlossen. Das Objekt kann betrieblich
+  modelliert werden, wenn zusätzlich `orderable=true` gilt.
 - **C — unzureichend:** Darstellung auf der Karte, aber keine
   Trassenbestellung.
 
 Jede Welt pinnt einen vollständigen Release-Satz aus Infrastruktur, Tarifen,
 Nachfrage, Fahrzeugkatalog und Regeln. Updates erfolgen ausschließlich zu
 angekündigten Fahrplanstichtagen.
+
+### 5.1 Dimensionsqualität statt Gesamtetikett
+
+Der Deutschland-Compiler 2026.1 bewertet Topologie, Höchstgeschwindigkeit,
+Neigung, Elektrifizierung, Gleisanzahl, Signale, Blöcke und
+Konfliktressourcen getrennt. Die öffentliche Objektklasse ist das Minimum der
+für den jeweiligen Layertyp erforderlichen Dimensionen, ergänzt um Ursache und
+betroffene Länge. A verlangt vollständige dimensionsbezogene Evidenz und
+Review; B darf eine Lücke mit einer dokumentierten, sicheren Regel schließen;
+C bleibt sichtbar, aber nicht bestellbar. Ein Tag wie
+`zugfolge:validated=yes`, eine einzelne Quelle oder ein KI-Urteil darf A nie
+pauschal setzen.
+
+APN-Skizzen werden gemäß Projektentscheidung nur im internen Jahreslauf zur
+Plausibilisierung von Bahnhofstopologien automatisiert ausgewertet. Sie helfen
+bei Gleisen, Weichen und Signalen in Betriebsstellen, lösen aber weder
+Geschwindigkeitslücken noch die freie Strecke. APN-Rohdaten und -Provenienz
+werden nicht ausgeliefert und sind allein nicht A-fähig. Vollständiger Prozess,
+Artefaktvertrag und Abnahmegrenze: [`deutschland-infracorpus.md`](deutschland-infracorpus.md)
+und der feste [`Jahres-Prompt`](prompts/infrarelease-deutschland-jahreslauf.md).
+
+### 5.2 Messstand des Jahreskandidaten 2026.1
+
+Der reale Deutschlandlauf verarbeitet 1.600.662 sichtbare Fachobjekte in zehn
+semantischen Layern. Der öffentliche Qualitätsbericht weist 0 Objekte als A,
+1.489.960 als B und 110.702 als C aus. Das ist beabsichtigt ehrlich: Keine
+Dimension wurde allein aufgrund einer Quelle, einer automatischen Ableitung
+oder einer internen Planprüfung zu A hochgestuft.
+
+Für den betrieblich wichtigsten Gleislayer ergeben sich 609.242 Abschnitte mit
+83.491.261.974 mm Gesamtlänge. Davon sind 609.237 Abschnitte beziehungsweise
+83.491.089.540 mm als konservatives B-Modell geschlossen; fünf Abschnitte mit
+zusammen 172.434 mm bleiben C. Weitere C-Objekte sind insbesondere 21.109
+Bahnsteige, 30.088 Weichen, 28.603 Signale und 30.098
+Konfliktressourcen. `classCPlayable=false` bleibt ein hart geprüftes Gate.
+
+Damit ist der Kandidat keine Behauptung hundertprozentiger Realitätsgleichheit.
+Er ist ein deutschlandweit sichtbarer Bestand, in dem bestellbare Bereiche
+über versionierte Regeln vollständig und konservativ modelliert werden. Der
+maschinenlesbare Bericht wird im Kartenpaket als `manifests/quality.json`
+ausgeliefert; Herleitung und Abnahmegrenze stehen in
+[`deutschland-infracorpus.md`](deutschland-infracorpus.md).
 
 **Lizenzhinweis:** Die ODbL kann die Projektlizenz nicht überschreiben — ist der
 `InfraRelease` eine abgeleitete Datenbank im Sinne der ODbL, greifen deren

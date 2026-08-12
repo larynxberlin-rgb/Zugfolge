@@ -99,6 +99,7 @@ import {
   livemapEventId,
   LivemapCapacityError,
   parseLivemapEventId,
+  type LivemapReadModel,
   type LivemapRegistry,
 } from "@zugfolge/livemap-stream";
 import {
@@ -167,6 +168,9 @@ import { guardAlphaAction, registerAlphaRoutes, type AlphaAbuseServices, type Al
 import { registerCooperationRoutes } from "./cooperation-routes.js";
 import { GameCooperationAuthority } from "./cooperation-authority.js";
 import { GameFleetAssetTransferWriter } from "./fleet-market-writer.js";
+import { registerInfraPackageUploadRoutes } from "./infra-package-routes.js";
+import type { InfraPackageStaging, InfraUploadSigningKey } from "./infra-package-staging.js";
+import { registerLivemapReadRoutes } from "./livemap-read-routes.js";
 import { ApiObservability, requestCorrelationId, type PrometheusMetricSource } from "./observability.js";
 import {
   RegionalSimulationConflictError,
@@ -188,6 +192,8 @@ export interface AppDependencies {
   readonly extraMetricSources?: readonly PrometheusMetricSource[];
   /** Öffentlicher, weltisolierter Livemap-Fanout (M4.6). */
   readonly livemap?: LivemapRegistry;
+  /** Gepinnte Infrastrukturdetails und serverautoritative FIS-/Tafelprojektionen. */
+  readonly livemapReadModel?: LivemapReadModel;
   /** Authentifizierter, je EVU getrennter Betriebsereignis-Fanout (M7.5/M7.6). */
   readonly operations?: OperationsRegistry;
   /** Geteiltes Geheimnis des Simulations-Eventlog-Adapters. */
@@ -209,6 +215,9 @@ export interface AppDependencies {
   /** Optionaler, vom normalen Keycloak-Pfad getrennter Odoo-Webhook-Receiver (E23). */
   readonly odooWebhookStore?: OdooWebhookReceiptStore;
   readonly odooWebhookOptions?: OdooWebhookReceiverOptions;
+  /** Getrennt signierter, lokaler und nie aktivierender Odoo-Jahresimport. */
+  readonly infraPackageStaging?: InfraPackageStaging;
+  readonly infraUploadKeys?: readonly InfraUploadSigningKey[];
   /** Serverautoritative EVU-Verträge und Sekundärmarkt; Produktion nutzt dieselbe Postgres-Verbindung. */
   readonly cooperation?: CooperationService;
   /** M9-Spieler-, Monitoring- und Alpha-Pfade; fehlen sie, werden keine Teilattrappen exponiert. */
@@ -930,6 +939,18 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
   };
   registerCooperationRoutes(app, { db: deps.db, cooperation, authenticate, guardAction: guardCooperationAction });
   if (deps.alpha !== undefined) registerAlphaRoutes(app, { db: deps.db, authenticate, services: deps.alpha });
+  registerLivemapReadRoutes(app, {
+    db: deps.db,
+    livemap: deps.livemap,
+    readModel: deps.livemapReadModel,
+    authenticate,
+  });
+  if (deps.infraPackageStaging !== undefined || deps.infraUploadKeys !== undefined) {
+    if (deps.infraPackageStaging === undefined || deps.infraUploadKeys === undefined || deps.infraUploadKeys.length === 0) {
+      throw new Error("Infra-Paketstaging braucht gemeinsam eine lokale Wurzel und mindestens einen Uploadschlüssel.");
+    }
+    registerInfraPackageUploadRoutes(app, deps.infraPackageStaging, deps.infraUploadKeys);
+  }
 
   // `/health` ist Liveness: läuft der Prozess, ohne jede Abhängigkeit zu
   // prüfen. `/health/ready` ist Readiness für Status- und Monitoringdienste:

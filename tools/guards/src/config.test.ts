@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import { parseConfig } from "./config.js";
@@ -57,5 +59,12 @@ describe("parseConfig", () => {
       },
     ];
     expect(lies({ licenseExceptions }).licenseExceptions).toHaveLength(1);
+  });
+
+  it("hält den lokalen Artefaktspeicher aus dem Wächterlauf", () => {
+    const produktiv = parseConfig(
+      readFileSync(new URL("../guards.config.json", import.meta.url), "utf8"),
+    );
+    expect(produktiv.ignore).toEqual(expect.arrayContaining(["var", "var/**"]));
   });
 });

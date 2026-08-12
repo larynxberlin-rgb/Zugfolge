@@ -139,6 +139,30 @@ Korridore, Neulinge kommen nie hinein. Alle Gegenmittel sind real begründbar:
 Verspätung, nächster Betriebspunkt und Betriebsstatus sind öffentlich.
 Vertrags- und Ladungsdetails bleiben geschützt.
 
+### 5.1 Kartenprojektion und Fahrdienstleitergrenze (E26)
+
+Die Live-Lage kombiniert drei getrennte Wahrheiten: unveränderliche Geometrie
+und Objektdetails aus dem gepinnten `InfraRelease`, sparsame Abweichungen des
+Betriebszustands aus Snapshot/SSE und private Owner-Details aus einer eigenen,
+serverseitig autorisierten Projektion. Statische Infrastruktur wird nicht in
+jede Sequenz kopiert. Der Stream trägt nur Züge sowie geänderte Sperrungs-,
+Baustellen- und Einschränkungszustände.
+
+`positionMm` allein ist keine Kartenkoordinate. Eine Fahrt erscheint erst auf
+dem Gleis, wenn der bestätigte Fahrweg sie auf `trackId`, Offset und eine aus
+der Releasegeometrie abgeleitete E7-Koordinate projiziert. Andernfalls bleibt
+sie in einer erklärten Liste sichtbar. Derselbe Grundsatz gilt für die
+virtuelle Fahrdienstleitung: Sie verwendet ausschließlich releasegebundene
+Konfliktressourcen und versionierte Regeln. Eine hundertprozentige
+Nachbildung jedes realen Stellwerks ist kein Freigabekriterium; eine solide,
+regelkonforme konservative B-Logik ist spielbar. Unbelegte Weichenlagen,
+Signalbilder und Fahrstraßen werden aber weder angezeigt noch als Möglichkeit
+erfunden.
+
+Der ausführbare Datenvertrag, die reale Abdeckung 2026.1 und die konservative
+Ableitung von Gleiszuständen aus Störungen stehen in
+[`zugkartenprojektion.md`](zugkartenprojektion.md).
+
 ---
 
 ## 6. Das Sperrzeitenmodell (M3.1)

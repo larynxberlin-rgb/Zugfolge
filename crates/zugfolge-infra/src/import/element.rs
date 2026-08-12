@@ -60,18 +60,52 @@ impl fmt::Display for OsmWayId {
 /// Ein OSM-Knoten mit seinen Tags — noch ohne Aussage darüber, ob er im
 /// Rohgraph ein eigener Knotenpunkt wird oder nur ein Geometriepunkt bleibt.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct OsmNode {
+pub struct OsmNode {
     pub(crate) id: OsmNodeId,
     pub(crate) coordinate: Coordinate,
     pub(crate) tags: BTreeMap<String, String>,
 }
 
+impl OsmNode {
+    /// Die unveraenderliche OSM-Knotenkennung.
+    pub const fn id(&self) -> OsmNodeId {
+        self.id
+    }
+
+    /// Die in der PBF-Datei gespeicherte WGS-84-Lage.
+    pub const fn coordinate(&self) -> Coordinate {
+        self.coordinate
+    }
+
+    /// Alle am OSM-Knoten gespeicherten Tags in kanonischer Schluesselordnung.
+    pub const fn tags(&self) -> &BTreeMap<String, String> {
+        &self.tags
+    }
+}
+
 /// Ein OSM-Weg mit seiner Knotenfolge und seinen Tags.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct OsmWay {
+pub struct OsmWay {
     pub(crate) id: OsmWayId,
     pub(crate) nodes: Vec<OsmNodeId>,
     pub(crate) tags: BTreeMap<String, String>,
+}
+
+impl OsmWay {
+    /// Die unveraenderliche OSM-Wegkennung.
+    pub const fn id(&self) -> OsmWayId {
+        self.id
+    }
+
+    /// Die geordnete Folge der referenzierten OSM-Knoten.
+    pub fn nodes(&self) -> &[OsmNodeId] {
+        &self.nodes
+    }
+
+    /// Alle am OSM-Weg gespeicherten Tags in kanonischer Schluesselordnung.
+    pub const fn tags(&self) -> &BTreeMap<String, String> {
+        &self.tags
+    }
 }
 
 /// Löst eine Zeichenkettentabelle auf: `s = 1`, wiederholt, unkodiert.

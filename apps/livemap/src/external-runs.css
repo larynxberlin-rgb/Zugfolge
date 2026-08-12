@@ -1,42 +1,44 @@
-.map #external-runs {
+#external-runs {
   position: absolute;
-  top: 22px;
-  right: 22px;
-  width: min(420px, 45%);
+  z-index: 5;
+  top: 74px;
+  left: 14px;
+  width: min(390px, calc(100% - 130px));
+  max-height: min(45vh, 430px);
   display: grid;
-  gap: 6px;
-  padding: 12px;
-  border: 1px solid #34363a;
-  background: #111316e8;
+  gap: 5px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #11141bee;
 }
 
-.map #external-runs:empty {
-  display: none;
+#external-runs:empty { display: none; }
+#external-runs .eyebrow { margin-bottom: 2px; }
+#external-runs .eyebrow:not(:first-child) {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
 }
-
-.map #external-runs .eyebrow {
-  margin: 0 0 5px;
-  color: #9c9fa4;
-}
+.position-note { margin: 0 0 5px; color: var(--muted); font-size: 10px; line-height: 1.35; }
 
 .external-run {
   appearance: none;
+  min-height: 46px;
   display: grid;
   gap: 3px;
-  padding: 9px 11px;
-  border: 1px dashed #555960;
-  background: #17191c;
-  color: #e8e8e6;
+  padding: 8px 10px;
+  border: 1px dashed #555e6b;
+  background: #171b22;
+  color: #e8ebef;
   text-align: left;
   cursor: pointer;
 }
+.external-run:hover { background: #202530; }
+.external-run span { color: var(--muted); font-size: 11px; }
+.external-run.selected { outline: 2px solid var(--focus); outline-offset: 1px; }
 
-.external-run span {
-  color: #a9acb1;
-  font-size: 12px;
-}
-
-.external-run.selected {
-  outline: 2px solid #fff;
-  outline-offset: 1px;
+@media (max-width: 900px) {
+  #external-runs { top: 72px; left: 8px; width: min(350px, calc(100% - 88px)); max-height: 28vh; }
 }

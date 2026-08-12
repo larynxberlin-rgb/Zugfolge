@@ -1,318 +1,549 @@
-import {
-  appendRenderSample,
-  LivemapConnection,
-  operatorLabel,
-  renderTrains,
-  type LiveState,
-  type OperatingStatus,
-  type PublicExternalTrain,
-  type RenderSamples,
-} from "./protocol.js";
 import { mountGlossaryLayer } from "@zugfolge/glossary";
 import "@zugfolge/glossary/styles.css";
+import {
+  addProtocol,
+  AttributionControl,
+  type ErrorEvent,
+  type GeoJSONSource,
+  type MapGeoJSONFeature,
+  Map as MapLibreMap,
+  type MapLayerMouseEvent,
+  type GeoJSONSourceSpecification,
+  NavigationControl,
+  removeProtocol,
+  ScaleControl,
+} from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+import { Protocol } from "pmtiles";
+import type {
+  LivemapConfigV1,
+  PublicObjectState,
+} from "@zugfolge/livemap-stream";
+
+import { LivemapApiClient } from "./api.js";
+import { ensureAccessToken, loadRuntimeConfiguration } from "./auth.js";
+import {
+  assertSelfHostedConfig,
+  emptyDarkStyle,
+  focusParameter,
+  INFRASTRUCTURE_SOURCE_ID,
+  infrastructureLayers,
+  installMissingBasemapImageResolver,
+  INTERACTION_LAYER_IDS,
+  loadSelfHostedStyle,
+  parseFocusParameter,
+  PLAYABLE_AREA_SOURCE_ID,
+  selectionFromFeature,
+  sortAndDeduplicateSelections,
+  SOURCE_LAYER_BY_KIND,
+  TRAIN_SOURCE_ID,
+  trainFeatureCollection,
+  trainLayers,
+  type MapSelection,
+} from "./map-contract.js";
+import {
+  loadingPanel,
+  messagePanel,
+  objectDetailPanel,
+  stationPanel,
+  trainPanel,
+} from "./panels.js";
+import {
+  LivemapConnection,
+  operatorLabel,
+  type LiveState,
+  type PublicExternalTrain,
+} from "./protocol.js";
 import "./style.css";
 import "./external-runs.css";
 
+const root = document.querySelector<HTMLDivElement>("#root");
+if (root === null) throw new Error("App-Wurzel fehlt.");
 mountGlossaryLayer(document.body);
 
-const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
-const MAX_INTERPOLATION_DURATION_MS = 2_000;
-const STATUS_LABELS: Readonly<Record<OperatingStatus, string>> = {
-  planned: "geplant",
-  running: "unterwegs",
-  waiting: "wartet",
-  at_platform: "am Bahnsteig",
-  completed: "beendet",
-  cancelled: "fällt aus",
-};
+root.innerHTML = `
+  <main class="app-shell">
+    <header class="topbar">
+      <a class="wordmark" href="/" aria-label="Zugfolge Live-Lage">ZUGFOLGE</a>
+      <div class="world-context">
+        <span class="eyebrow">LIVE-LAGE</span>
+        <strong id="world-label">Welt wird geladen</strong>
+      </div>
+      <nav aria-label="Hauptnavigation">
+        <a id="journey-link" href="#">Spielreise</a>
+        <a id="planner-link" href="#">Fahrplan</a>
+      </nav>
+      <time id="sequence-label">verbinde …</time>
+    </header>
+    <section class="workspace">
+      <section class="map-frame" aria-label="Interaktive Live-Lage">
+        <div id="map" role="application" aria-label="Weltkarte mit deutscher Eisenbahninfrastruktur und Live-Betrieb"></div>
+        <div id="map-state" class="map-state" role="status" aria-live="polite">Kartenstand wird geprüft …</div>
+        <div class="map-tools" aria-label="Kartenwerkzeuge">
+          <button id="fit-playable" type="button">Spielgebiet</button>
+          <button id="show-germany" type="button">Deutschland</button>
+          <button id="toggle-context" type="button" aria-pressed="true">Weltkarte</button>
+        </div>
+        <section id="selection-menu" class="selection-menu" aria-label="Überlagerte Kartenobjekte" hidden></section>
+        <section id="external-runs" aria-label="Zugfahrten ohne darstellbare Kartenlage und Außenläufe"></section>
+        <div class="legend" aria-label="Legende">
+          <span><i class="legend-line active"></i> aktive Infrastruktur</span>
+          <span><i class="legend-line context"></i> Kontext</span>
+          <span><i class="legend-line restriction"></i> Langsamfahrt/Störung</span>
+          <span><i class="legend-line closure"></i> gesperrt</span>
+          <span><i class="legend-line construction"></i> Bauarbeiten</span>
+          <span><i class="legend-line quality-c"></i> Klasse C</span>
+          <span><i class="legend-train-estimated">≈</i> Zugposition geschätzt</span>
+        </div>
+      </section>
+      <aside id="details" aria-label="Details zum ausgewählten Kartenobjekt">
+        <button id="close-details" class="close-details" type="button" aria-label="Detailansicht schließen">×</button>
+        <div id="details-content"></div>
+      </aside>
+    </section>
+    <section id="map-object-list" class="object-list" tabindex="-1" aria-labelledby="object-list-title">
+      <div>
+        <p class="eyebrow">TASTATURANSICHT</p>
+        <h2 id="object-list-title">Aktuelle Zugfahrten</h2>
+      </div>
+      <div id="object-list-content"></div>
+    </section>
+  </main>`;
 
-let authoritativeState: LiveState | undefined;
-let renderSamples: RenderSamples | undefined;
-let selectedTrainId: string | undefined;
-let sampleReceivedAt = performance.now();
-let renderGeneration = 0;
-
+const parameters = new URLSearchParams(window.location.search);
+const runtime = loadRuntimeConfiguration();
+const worldId = parameters.get("world")?.trim() || runtime.publicWorldId;
 const details = document.querySelector<HTMLElement>("#details")!;
-const trainLayer = document.querySelector<SVGGElement>("#trains")!;
-const disruptionLayer = document.querySelector<SVGGElement>("#disruptions")!;
-const sequence = document.querySelector<HTMLTimeElement>("header time")!;
+const detailsContent = document.querySelector<HTMLElement>("#details-content")!;
+const sequenceLabel = document.querySelector<HTMLTimeElement>("#sequence-label")!;
 const worldLabel = document.querySelector<HTMLElement>("#world-label")!;
+const mapState = document.querySelector<HTMLElement>("#map-state")!;
 const externalRuns = document.querySelector<HTMLElement>("#external-runs")!;
+const objectList = document.querySelector<HTMLElement>("#object-list-content")!;
+const selectionMenu = document.querySelector<HTMLElement>("#selection-menu")!;
+const contextButton = document.querySelector<HTMLButtonElement>("#toggle-context")!;
 
-const EXTERNAL_STATUS_LABELS: Readonly<Record<PublicExternalTrain["status"], string>> = {
-  outside: "außerhalb des Spielgebiets",
-  "ready-at-boundary": "zur Wiedereinfahrt bereit",
-  "waiting-for-capacity": "wartet am Grenzportal auf Kapazität",
-  "completed-outside": "außerhalb beendet",
-};
+let map: MapLibreMap | undefined;
+let api: LivemapApiClient | undefined;
+let connection: LivemapConnection | undefined;
+let mapConfig: LivemapConfigV1 | undefined;
+let liveState: LiveState | undefined;
+let selected: MapSelection | undefined;
+let previousSelected: MapSelection | undefined;
+let appliedObjectStates = new Map<string, PublicObjectState>();
+let renderQueued = false;
 
-function textElement<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  text: string,
-  className?: string,
-): HTMLElementTagNameMap[K] {
+function text<K extends keyof HTMLElementTagNameMap>(tag: K, value: string, className?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
-  node.textContent = text;
+  node.textContent = value;
   if (className !== undefined) node.className = className;
   return node;
 }
 
-function addDefinition(list: HTMLDListElement, term: string, value: string, className?: string): void {
-  list.append(textElement("dt", term), textElement("dd", value, className));
+function setPanel(content: Node): void {
+  detailsContent.replaceChildren(content);
+  details.classList.add("open");
 }
 
-function delayLabel(delaySeconds: number): string {
-  if (delaySeconds === 0) return "0 min";
-  const sign = delaySeconds > 0 ? "+" : "−";
-  return `${sign}${Math.floor(Math.abs(delaySeconds) / 60)} min`;
+function closePanel(updateUrl = true): void {
+  selected = undefined;
+  updateSelectionState();
+  details.classList.remove("open");
+  setPanel(messagePanel("Gleis, Bahnhof, Signal, Weiche oder Zug auswählen."));
+  if (updateUrl) {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("focus");
+    window.history.replaceState({}, "", url);
+  }
 }
 
-function showEmptyDetails(message = "Eine Zugfahrt auswählen."): void {
-  details.replaceChildren(textElement("p", "ZUGLAUF", "eyebrow"), textElement("p", message));
+function updateSelectionState(): void {
+  if (map === undefined) return;
+  if (previousSelected !== undefined) {
+    const previousTarget = previousSelected.kind === "train"
+      ? { source: TRAIN_SOURCE_ID, id: previousSelected.id }
+      : { source: INFRASTRUCTURE_SOURCE_ID, sourceLayer: SOURCE_LAYER_BY_KIND[previousSelected.kind], id: previousSelected.id };
+    try { map.setFeatureState(previousTarget, { selected: false }); } catch { /* noch nicht sichtbare Tile */ }
+  }
+  if (selected !== undefined) {
+    const nextTarget = selected.kind === "train"
+      ? { source: TRAIN_SOURCE_ID, id: selected.id }
+      : { source: INFRASTRUCTURE_SOURCE_ID, sourceLayer: SOURCE_LAYER_BY_KIND[selected.kind], id: selected.id };
+    try { map.setFeatureState(nextTarget, { selected: true }); } catch { /* Detail-Deep-Link darf ohne geladene Tile funktionieren. */ }
+  }
+  previousSelected = selected;
 }
 
-function select(id: string): void {
-  const train = authoritativeState?.trains.get(id);
-  const external = authoritativeState?.externalTrains.get(id);
-  if (train === undefined && external !== undefined) {
-    selectedTrainId = id;
-    document.querySelectorAll<SVGElement | HTMLButtonElement>(".train, .external-run").forEach((node) => {
-      node.classList.toggle("selected", node instanceof HTMLButtonElement && node.dataset["id"] === id);
-    });
-    const list = document.createElement("dl");
-    addDefinition(list, "Betreiber", external.operator);
-    addDefinition(list, "Status", EXTERNAL_STATUS_LABELS[external.status]);
-    addDefinition(list, "Letztes Grenzportal", external.fromPortalId);
-    addDefinition(list, "Nächstes Grenzportal", external.toPortalId ?? "keine Wiedereinfahrt");
-    addDefinition(list, "Verspätung", delayLabel(external.delaySeconds), external.delaySeconds > 180 ? "warn" : undefined);
-    addDefinition(list, "Gebundene Fahrzeuge", external.boundVehicleIds.join(", "));
-    addDefinition(list, "Gebundene Dienste", external.boundPersonnelDutyIds.join(", ") || "keine");
-    addDefinition(list, "Außenlauf", `${Math.floor(external.progressBasisPoints / 100)} %`);
-    details.replaceChildren(
-      textElement("p", "AUSSENLAUF", "eyebrow"),
-      textElement("h1", external.trainNumber),
-      textElement("p", "Deterministischer, nicht disponierbarer Teil derselben Fahrt"),
-      list,
-    );
+function updateFocusUrl(selection: MapSelection): void {
+  const url = new URL(window.location.href);
+  url.searchParams.set("focus", focusParameter(selection));
+  window.history.replaceState({}, "", url);
+}
+
+async function selectObject(selection: MapSelection): Promise<void> {
+  selected = selection;
+  updateSelectionState();
+  updateFocusUrl(selection);
+  selectionMenu.hidden = true;
+  setPanel(loadingPanel(selection.label));
+  const client = api;
+  if (client === undefined) {
+    setPanel(messagePanel("Detaildienst ist nicht verbunden.", "error"));
     return;
   }
-  if (train === undefined) {
-    selectedTrainId = undefined;
-    showEmptyDetails();
-    return;
-  }
-  selectedTrainId = id;
-  document.querySelectorAll<SVGGElement>(".train").forEach((node) => {
-    node.classList.toggle("selected", node.dataset["id"] === id);
-  });
-
-  const list = document.createElement("dl");
-  const displayedOperator = operatorLabel(train);
-  addDefinition(
-    list,
-    "Betreiber",
-    displayedOperator,
-    train.operationMarker === undefined ? undefined : "public-operation-value",
-  );
-  addDefinition(list, "Status", STATUS_LABELS[train.status]);
-  addDefinition(
-    list,
-    "Verspätung",
-    delayLabel(train.delaySeconds),
-    train.delaySeconds > 180 ? "warn" : undefined,
-  );
-  addDefinition(
-    list,
-    "Geschwindigkeit",
-    `${Math.round((train.speedMmPerSecond * 36) / 10_000)} km/h`,
-  );
-  addDefinition(list, "Nächster Betriebspunkt", train.nextOperatingPoint);
-  if (train.disruption !== undefined) {
-    addDefinition(
-      list,
-      "Störung",
-      `${String(train.disruption.causeCode).padStart(2, "0")} · ${train.disruption.causeLabel} / ${train.disruption.fineCauseLabel}`,
-      "warn",
-    );
-    addDefinition(list, "Betroffene Ressource", train.disruption.affectedResource);
-  }
-
-  details.replaceChildren(
-    textElement("p", "ZUGLAUF", "eyebrow"),
-    textElement("h1", train.trainNumber),
-    textElement(
-      "p",
-      `${displayedOperator} · ${train.category}`,
-      train.operationMarker === undefined ? undefined : "public-operation-label",
-    ),
-    list,
-  );
-}
-
-function renderAt(now: number, samples: RenderSamples): number {
-  const interval = samples.current.at - samples.previous.at;
-  if (interval <= 0) return samples.current.at;
-  const playbackDuration = Math.min(interval * 1_000, MAX_INTERPOLATION_DURATION_MS);
-  const progress = Math.max(0, Math.min(1, (now - sampleReceivedAt) / playbackDuration));
-  return samples.previous.at + interval * progress;
-}
-
-function draw(now: number): void {
-  if (renderSamples === undefined) return;
-  const trains = [...renderTrains(renderSamples, renderAt(now, renderSamples))].sort((left, right) =>
-    left.id.localeCompare(right.id),
-  );
-  const at = renderSamples.current.at;
-  const disruptionNodes = [...renderSamples.current.disruptions.values()]
-    .sort((left, right) => left.disruptionId.localeCompare(right.disruptionId))
-    .map((item, index) => {
-      const group = document.createElementNS(SVG_NAMESPACE, "g");
-      group.classList.add("infrastructure-disruption", item.kind);
-      if (at < item.startsAtS) group.classList.add("upcoming");
-      group.setAttribute(
-        "transform",
-        `translate(${100 + (item.positionMm % 800_000_000) / 1_000_000} ${128 + (index % 3) * 28})`,
-      );
-      group.setAttribute(
-        "aria-label",
-        `${item.kind === "planned" ? "Geplante Einschränkung" : "Ungeplante Störung"}: ${item.fineCauseLabel}, ${item.affectedResource}`,
-      );
-      const title = document.createElementNS(SVG_NAMESPACE, "title");
-      title.textContent = `${item.kind === "planned" ? "Geplant" : "Ungeplant"} · ${item.fineCauseLabel} · ${item.affectedResource}`;
-      const shape = document.createElementNS(SVG_NAMESPACE, item.kind === "planned" ? "rect" : "path");
-      if (item.kind === "planned") {
-        shape.setAttribute("x", "-9");
-        shape.setAttribute("y", "-9");
-        shape.setAttribute("width", "18");
-        shape.setAttribute("height", "18");
-        shape.setAttribute("transform", "rotate(45)");
-      } else {
-        shape.setAttribute("d", "M0 -12 L11 9 L-11 9 Z");
-      }
-      const label = document.createElementNS(SVG_NAMESPACE, "text");
-      label.setAttribute("x", "16");
-      label.setAttribute("y", "5");
-      label.textContent = item.fineCauseLabel;
-      group.append(title, shape, label);
-      return group;
-    });
-  const nodes = trains.map((item, index) => {
-    const group = document.createElementNS(SVG_NAMESPACE, "g");
-    group.dataset["id"] = item.id;
-    group.setAttribute(
-      "transform",
-      `translate(${100 + (item.positionMm % 800_000_000) / 1_000_000} ${160 + (index % 4) * 75})`,
-    );
-    group.classList.add("train", item.status);
-    const publicOperation = item.operationMarker !== undefined;
-    if (publicOperation) group.classList.add("public-operation");
-    if (item.disruption !== undefined) group.classList.add("disrupted");
-    if (selectedTrainId === item.id) group.classList.add("selected");
-    group.setAttribute(
-      "aria-label",
-      `${item.trainNumber}, ${operatorLabel(item)}, ${STATUS_LABELS[item.status]}`,
-    );
-
-    const circle = document.createElementNS(SVG_NAMESPACE, "circle");
-    circle.setAttribute("r", "11");
-    const label = document.createElementNS(SVG_NAMESPACE, "text");
-    label.setAttribute("x", "18");
-    label.setAttribute("y", "5");
-    label.textContent = item.trainNumber;
-    if (publicOperation) {
-      const title = document.createElementNS(SVG_NAMESPACE, "title");
-      title.textContent = `${item.trainNumber}: Eigenbetrieb des Aufgabenträgers`;
-      const ring = document.createElementNS(SVG_NAMESPACE, "circle");
-      ring.classList.add("public-operation-ring");
-      ring.setAttribute("r", "16");
-      ring.setAttribute("aria-hidden", "true");
-      const marker = document.createElementNS(SVG_NAMESPACE, "text");
-      marker.classList.add("public-operation-glyph");
-      marker.setAttribute("x", "-3");
-      marker.setAttribute("y", "-17");
-      marker.setAttribute("aria-hidden", "true");
-      marker.textContent = "E";
-      group.append(title, ring, circle, marker, label);
-    } else {
-      group.append(circle, label);
+  try {
+    if (selection.kind === "train") {
+      const publicDetail = await client.publicTrain(worldId, selection.id);
+      const operatorId = publicDetail.ownerOperatorId;
+      const ownerDetail = operatorId === undefined
+        ? undefined
+        : await client.ownerTrain(worldId, operatorId, selection.id);
+      if (selected?.id === selection.id && selected.kind === "train") setPanel(trainPanel(publicDetail, ownerDetail));
+      return;
     }
-    group.addEventListener("click", () => select(item.id));
-    return group;
-  });
-  trainLayer.replaceChildren(...nodes);
-  disruptionLayer.replaceChildren(...disruptionNodes);
+    const objectDetail = await client.object(worldId, selection.kind, selection.id);
+    if (selection.kind === "station") {
+      const board = await client.stationBoard(worldId, selection.id);
+      if (selected?.id === selection.id && selected.kind === "station") setPanel(stationPanel(objectDetail, board));
+    } else if (selected?.id === selection.id && selected.kind === selection.kind) {
+      setPanel(objectDetailPanel(objectDetail));
+    }
+  } catch (error) {
+    if (selected?.id !== selection.id) return;
+    setPanel(messagePanel(error instanceof Error ? error.message : "Detail konnte nicht geladen werden.", "error"));
+  }
 }
 
-function render(state: LiveState): void {
-  authoritativeState = state;
-  renderSamples = appendRenderSample(renderSamples, state);
-  sampleReceivedAt = performance.now();
-  renderGeneration += 1;
-  const generation = renderGeneration;
-  worldLabel.textContent = `Livemap · Welt ${state.worldId}`;
-  sequence.textContent = `Sequenz ${state.sequence}`;
-  sequence.classList.remove("connection-error");
-  const externalNodes = [...state.externalTrains.values()]
-    .sort((left, right) => left.id.localeCompare(right.id))
-    .map((train) => {
+function showSelectionMenu(selections: readonly MapSelection[], left: number, top: number): void {
+  selectionMenu.replaceChildren(text("p", "Was möchtest du öffnen?", "eyebrow"));
+  selections.forEach((selection) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.append(text("strong", selection.label), text("span", selection.kind));
+    button.addEventListener("click", () => void selectObject(selection));
+    selectionMenu.append(button);
+  });
+  selectionMenu.style.left = `${left}px`;
+  selectionMenu.style.top = `${top}px`;
+  selectionMenu.hidden = false;
+  selectionMenu.querySelector<HTMLButtonElement>("button")?.focus();
+}
+
+function selectionsAt(features: readonly MapGeoJSONFeature[]): readonly MapSelection[] {
+  return sortAndDeduplicateSelections(
+    features.flatMap((feature) => {
+      const selection = selectionFromFeature(feature);
+      return selection === undefined ? [] : [selection];
+    }),
+  );
+}
+
+function playableBounds(config: LivemapConfigV1): [[number, number], [number, number]] | undefined {
+  const bounds = config.playableArea?.boundsE7;
+  if (bounds === undefined) return undefined;
+  return [
+    [bounds.west / 10_000_000, bounds.south / 10_000_000],
+    [bounds.east / 10_000_000, bounds.north / 10_000_000],
+  ];
+}
+
+function playableGeoJson(config: LivemapConfigV1): GeoJSONSourceSpecification["data"] {
+  const bounds = config.playableArea?.boundsE7;
+  if (bounds === undefined) return { type: "FeatureCollection", features: [] };
+  const west = bounds.west / 10_000_000;
+  const south = bounds.south / 10_000_000;
+  const east = bounds.east / 10_000_000;
+  const north = bounds.north / 10_000_000;
+  return {
+    type: "FeatureCollection",
+    features: [{
+      type: "Feature",
+      properties: { label: config.playableArea?.label ?? "Spielgebiet" },
+      geometry: { type: "Polygon", coordinates: [[[west, south], [east, south], [east, north], [west, north], [west, south]]] },
+    }],
+  };
+}
+
+function absolutePmtilesUrl(value: string): string {
+  return `pmtiles://${new URL(value, window.location.href).href}`;
+}
+
+function addZugfolgeLayers(currentMap: MapLibreMap, config: LivemapConfigV1): void {
+  currentMap.addSource(INFRASTRUCTURE_SOURCE_ID, {
+    type: "vector",
+    url: absolutePmtilesUrl(config.infrastructure.pmtilesUrl),
+    promoteId: "feature_id",
+    attribution: config.infrastructure.attribution,
+  });
+  currentMap.addSource(PLAYABLE_AREA_SOURCE_ID, { type: "geojson", data: playableGeoJson(config) });
+  currentMap.addLayer({
+    id: "playable-area-fill",
+    type: "fill",
+    source: PLAYABLE_AREA_SOURCE_ID,
+    minzoom: 4,
+    paint: { "fill-color": "#9fb8e8", "fill-opacity": 0.035 },
+  });
+  currentMap.addLayer({
+    id: "playable-area-boundary",
+    type: "line",
+    source: PLAYABLE_AREA_SOURCE_ID,
+    minzoom: 4,
+    paint: { "line-color": "#9fb8e8", "line-width": 1.4, "line-dasharray": [2, 2], "line-opacity": 0.72 },
+  });
+  infrastructureLayers().forEach((layer) => currentMap.addLayer(layer));
+  currentMap.addSource(TRAIN_SOURCE_ID, {
+    type: "geojson",
+    data: trainFeatureCollection([], config.infrastructureReleaseId) as never,
+    promoteId: "objectId",
+  });
+  trainLayers.forEach((layer) => currentMap.addLayer(layer));
+}
+
+function applyLiveObjectStates(currentMap: MapLibreMap, states: ReadonlyMap<string, PublicObjectState>): void {
+  for (const [key, previous] of appliedObjectStates) {
+    if (states.has(key)) continue;
+    try {
+      currentMap.removeFeatureState({
+        source: INFRASTRUCTURE_SOURCE_ID,
+        sourceLayer: SOURCE_LAYER_BY_KIND[previous.objectKind],
+        id: previous.objectId,
+      }, "operationalState");
+    } catch { /* Tile kann zwischenzeitlich entladen sein. */ }
+  }
+  for (const [key, state] of states) {
+    if (appliedObjectStates.get(key)?.state === state.state) continue;
+    try {
+      currentMap.setFeatureState({
+        source: INFRASTRUCTURE_SOURCE_ID,
+        sourceLayer: SOURCE_LAYER_BY_KIND[state.objectKind],
+        id: state.objectId,
+      }, { operationalState: state.state });
+    } catch { /* Zustand wird beim nächsten Feed-Render erneut gesetzt. */ }
+  }
+  appliedObjectStates = new Map(states);
+}
+
+function renderExternalRuns(state: LiveState): void {
+  const positionless = [...state.trains.values()].filter((train) =>
+    train.mapPosition === undefined && train.mapEstimate === undefined
+  );
+  const external = [...state.externalTrains.values()];
+  if (positionless.length === 0 && external.length === 0) {
+    externalRuns.replaceChildren();
+    return;
+  }
+  const nodes: HTMLElement[] = [];
+  if (positionless.length > 0) {
+    nodes.push(
+      text("p", "OHNE KARTENLAGE", "eyebrow"),
+      text("p", "Hier fehlt auch eine belastbare Schätzlage. Die Fahrt bleibt anklickbar, ohne einen Kartenpunkt zu erfinden.", "position-note"),
+    );
+    positionless.sort((a, b) => a.trainNumber.localeCompare(b.trainNumber, "de")).forEach((train) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "external-run";
-      button.dataset["id"] = train.id;
-      button.classList.toggle("selected", train.id === selectedTrainId);
-      button.append(
-        textElement("strong", train.trainNumber),
-        textElement("span", `${EXTERNAL_STATUS_LABELS[train.status]} · ${train.fromPortalId} → ${train.toPortalId ?? "Außenziel"}`),
-      );
-      button.addEventListener("click", () => select(train.id));
-      return button;
+      button.append(text("strong", train.trainNumber), text("span", `${operatorLabel(train)} · ${train.nextOperatingPoint}`));
+      button.addEventListener("click", () => void selectObject({ kind: "train", id: train.id, label: train.trainNumber }));
+      nodes.push(button);
     });
-  externalRuns.replaceChildren(
-    ...(externalNodes.length === 0
-      ? []
-      : [textElement("p", "AUSSERHALB DES SPIELGEBIETS", "eyebrow"), ...externalNodes]),
-  );
-  draw(sampleReceivedAt);
-  if (selectedTrainId !== undefined) select(selectedTrainId);
-
-  const animate = (now: number) => {
-    if (generation !== renderGeneration || renderSamples === undefined) return;
-    draw(now);
-    if (renderAt(now, renderSamples) < renderSamples.current.at) requestAnimationFrame(animate);
-  };
-  requestAnimationFrame(animate);
+  }
+  if (external.length > 0) {
+    nodes.push(
+      text("p", "AUSSENLÄUFE", "eyebrow"),
+      text("p", "Diese Fahrt läuft außerhalb des modellierten Gebiets weiter und bleibt bewusst in der Liste.", "position-note"),
+    );
+    external.sort((a, b) => a.trainNumber.localeCompare(b.trainNumber, "de")).forEach((train: PublicExternalTrain) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "external-run";
+      button.append(text("strong", train.trainNumber), text("span", `${train.fromPortalId} → ${train.toPortalId ?? "Außenziel"} · ${train.status}`));
+      button.addEventListener("click", () => {
+        setPanel(messagePanel(`${train.trainNumber} fährt als derselbe Zug außerhalb des modellierten Gebiets. Es wird bewusst keine Kartenposition erzeugt.`));
+      });
+      nodes.push(button);
+    });
+  }
+  externalRuns.replaceChildren(...nodes);
 }
 
-function showConfigurationError(message: string): void {
-  worldLabel.textContent = "Livemap · nicht verbunden";
-  sequence.textContent = message;
-  sequence.classList.add("connection-error");
-  showEmptyDetails(message);
+function renderObjectList(state: LiveState): void {
+  const list = document.createElement("ul");
+  [...state.trains.values()]
+    .sort((a, b) => a.trainNumber.localeCompare(b.trainNumber, "de") || a.id.localeCompare(b.id))
+    .forEach((train) => {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      const positionLabel = train.mapPosition !== undefined
+        ? train.nextOperatingPoint
+        : train.mapEstimate?.method === "anchor-hold"
+          ? "letzte belastbare Lage"
+          : train.mapEstimate !== undefined
+            ? "Position geschätzt"
+            : "ohne Kartenlage";
+      button.append(text("strong", train.trainNumber), text("span", `${operatorLabel(train)} · ${train.status} · ${positionLabel}`));
+      button.addEventListener("click", () => void selectObject({ kind: "train", id: train.id, label: train.trainNumber }));
+      item.append(button);
+      list.append(item);
+    });
+  objectList.replaceChildren(list);
 }
 
-const parameters = new URLSearchParams(location.search);
-const worldId = parameters.get("world")?.trim() ?? "";
-const accessToken = sessionStorage.getItem("zugfolge.accessToken") ?? "";
-let connection: LivemapConnection | undefined;
-
-if (worldId === "") {
-  showConfigurationError("Weltkennung fehlt");
-} else if (accessToken === "") {
-  showConfigurationError("Anmeldung fehlt");
-} else {
-  connection = new LivemapConnection(parameters.get("api") ?? "", worldId, accessToken, render, {
-    onError: () => {
-      sequence.textContent = "Verbindung unterbrochen · neuer Versuch";
-      sequence.classList.add("connection-error");
-    },
+function scheduleLiveRender(state: LiveState): void {
+  liveState = state;
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => {
+    renderQueued = false;
+    const latest = liveState;
+    if (latest === undefined) return;
+    sequenceLabel.textContent = `Sequenz ${latest.sequence}`;
+    sequenceLabel.classList.remove("connection-error");
+    renderExternalRuns(latest);
+    renderObjectList(latest);
+    const currentMap = map;
+    const currentConfig = mapConfig;
+    if (currentMap !== undefined && currentConfig !== undefined && currentMap.isStyleLoaded()) {
+      const source = currentMap.getSource(TRAIN_SOURCE_ID) as GeoJSONSource | undefined;
+      // Derselbe Zug behaelt fuer exakt/geschaetzt dieselbe Feature-ID. Der
+      // Zielpunkt wird direkt ersetzt: keine irrefuehrende Luftlinienanimation.
+      source?.setData(trainFeatureCollection(latest.trains.values(), currentConfig.infrastructureReleaseId) as never);
+      applyLiveObjectStates(currentMap, latest.objectStates);
+      updateSelectionState();
+    }
   });
-  void connection.connect().then(
-    () => sequence.classList.remove("connection-error"),
-    () => {
-      sequence.textContent = "Verbindung unterbrochen · neuer Versuch";
-      sequence.classList.add("connection-error");
-    },
-  );
 }
 
-window.addEventListener("beforeunload", () => connection?.close());
+async function createMap(config: LivemapConfigV1): Promise<MapLibreMap> {
+  assertSelfHostedConfig(config, window.location.href);
+  let style;
+  try {
+    style = await loadSelfHostedStyle(config.basemap.styleUrl, window.location.href);
+  } catch (error) {
+    mapState.textContent = error instanceof Error ? error.message : "Selbst gehostete Basiskarte fehlt.";
+    mapState.classList.add("error");
+    style = emptyDarkStyle();
+  }
+
+  const protocol = new Protocol();
+  addProtocol("pmtiles", protocol.tile);
+  const currentMap = new MapLibreMap({
+    container: "map",
+    style,
+    center: [config.initialView.longitudeE7 / 10_000_000, config.initialView.latitudeE7 / 10_000_000],
+    zoom: config.initialView.zoomMilli / 1_000,
+    minZoom: 2,
+    maxZoom: 20,
+    attributionControl: false,
+  });
+  installMissingBasemapImageResolver(currentMap);
+  currentMap.addControl(new NavigationControl({ visualizePitch: true }), "top-left");
+  currentMap.addControl(new ScaleControl({ unit: "metric", maxWidth: 140 }), "bottom-left");
+  currentMap.addControl(new AttributionControl({ compact: true, customAttribution: [config.basemap.attribution, config.infrastructure.attribution] }), "bottom-right");
+
+  await new Promise<void>((resolve, reject) => {
+    currentMap.once("load", () => resolve());
+    currentMap.once("error", (event: ErrorEvent) => {
+      if (!currentMap.loaded()) reject(event.error);
+    });
+  });
+  addZugfolgeLayers(currentMap, config);
+  mapState.textContent = `Infrastruktur ${config.infrastructure.coverage} · Stand ${config.infrastructureReleaseId}`;
+  mapState.classList.remove("error");
+  window.setTimeout(() => mapState.classList.add("quiet"), 3_000);
+
+  currentMap.on("click", (event: MapLayerMouseEvent) => {
+    const features = currentMap.queryRenderedFeatures(event.point, { layers: [...INTERACTION_LAYER_IDS] });
+    const selections = selectionsAt(features);
+    if (selections.length === 0) {
+      selectionMenu.hidden = true;
+      return;
+    }
+    if (selections.length === 1) void selectObject(selections[0]!);
+    else showSelectionMenu(selections, event.point.x, event.point.y);
+  });
+  currentMap.on("mousemove", (event: MapLayerMouseEvent) => {
+    const found = currentMap.queryRenderedFeatures(event.point, { layers: [...INTERACTION_LAYER_IDS] }).length > 0;
+    currentMap.getCanvas().style.cursor = found ? "pointer" : "";
+  });
+  currentMap.on("move", () => { selectionMenu.hidden = true; });
+  currentMap.on("error", (event: ErrorEvent) => {
+    mapState.textContent = `Kartenartefakt konnte nicht gelesen werden: ${event.error.message}`;
+    mapState.classList.add("error");
+  });
+  return currentMap;
+}
+
+function bindShell(): void {
+  document.querySelector<HTMLButtonElement>("#close-details")?.addEventListener("click", () => closePanel());
+  document.querySelector<HTMLButtonElement>("#fit-playable")?.addEventListener("click", () => {
+    const bounds = mapConfig === undefined ? undefined : playableBounds(mapConfig);
+    if (bounds !== undefined) map?.fitBounds(bounds, { padding: 54, duration: matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 650 });
+  });
+  document.querySelector<HTMLButtonElement>("#show-germany")?.addEventListener("click", () => {
+    map?.fitBounds([[5.5, 47.0], [15.6, 55.2]], { padding: 34, duration: matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 650 });
+  });
+  contextButton.addEventListener("click", () => {
+    const current = contextButton.getAttribute("aria-pressed") === "true";
+    contextButton.setAttribute("aria-pressed", String(!current));
+    const basemapLayers = map?.getStyle().layers.filter((layer) => !layer.id.startsWith("playable-") && !infrastructureLayers().some((own) => own.id === layer.id) && !trainLayers.some((own) => own.id === layer.id)) ?? [];
+    basemapLayers.forEach((layer) => map?.setLayoutProperty(layer.id, "visibility", current ? "none" : "visible"));
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      selectionMenu.hidden = true;
+      closePanel();
+    }
+  });
+}
+
+async function boot(): Promise<void> {
+  bindShell();
+  closePanel(false);
+  if (runtime.gameWebUrl !== "") {
+    const journey = new URL(runtime.gameWebUrl, window.location.href);
+    journey.searchParams.set("view", "journey");
+    journey.searchParams.set("world", worldId);
+    document.querySelector<HTMLAnchorElement>("#journey-link")!.href = journey.href;
+    const planner = new URL(runtime.gameWebUrl, window.location.href);
+    planner.searchParams.set("view", "diagram");
+    planner.searchParams.set("world", worldId);
+    document.querySelector<HTMLAnchorElement>("#planner-link")!.href = planner.href;
+  }
+  if (worldId === "") {
+    worldLabel.textContent = "keine Welt gewählt";
+    mapState.textContent = "Weltkennung fehlt.";
+    mapState.classList.add("error");
+    return;
+  }
+  worldLabel.textContent = worldId;
+  try {
+    const accessToken = await ensureAccessToken(runtime);
+    if (accessToken === "") return;
+    api = new LivemapApiClient(runtime.gameApiUrl, accessToken);
+    mapConfig = await api.config(worldId);
+    map = await createMap(mapConfig);
+    const focus = parseFocusParameter(parameters.get("focus"));
+    if (focus !== undefined) void selectObject(focus);
+    connection = new LivemapConnection(runtime.gameApiUrl, worldId, accessToken, scheduleLiveRender, {
+      onError: () => {
+        sequenceLabel.textContent = "Verbindung unterbrochen · neuer Versuch";
+        sequenceLabel.classList.add("connection-error");
+      },
+    });
+    await connection.connect();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Live-Lage konnte nicht gestartet werden.";
+    mapState.textContent = message;
+    mapState.classList.add("error");
+    setPanel(messagePanel(message, "error"));
+  }
+}
+
+window.addEventListener("beforeunload", () => {
+  connection?.close();
+  map?.remove();
+  removeProtocol("pmtiles");
+});
+
+void boot();
