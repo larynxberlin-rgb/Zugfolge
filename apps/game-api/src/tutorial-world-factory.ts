@@ -143,6 +143,14 @@ const SPECIFICATION: ServiceSpecification = {
   },
 };
 
+export const TUTORIAL_LEASE_TIMES = Object.freeze({
+  offeredAtS: 40,
+  responseDeadlineS: 100,
+  validFromS: 130,
+  validUntilS: 2_000,
+  terminationNoticeS: 300,
+});
+
 function object(value: unknown, name = "Wert"): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error(`${name} ist kein Objekt.`);
   return value as Record<string, unknown>;
@@ -574,11 +582,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
         subject: { vehicleIds: [offer["vehicleId"]], tutorialOfferId: offer["id"] },
         terms: { maintenanceIncluded: true, returnAtS: 2_000, templateVersion: template.version },
         priceCents: BigInt(textValue(offer["monthlyCostCents"], "Mietpreis")),
-        validFromS: 130,
-        validUntilS: 2_000,
-        responseDeadlineS: 170,
-        terminationNoticeS: 300,
-        offeredAtS: 40,
+        ...TUTORIAL_LEASE_TIMES,
         idempotencyKey: `${session.reference}:${offer["id"]}`,
       });
       leaseContracts.push({ offerId: offer["id"], contractId: contract.id, vehicleId: offer["vehicleId"] });
