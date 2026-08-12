@@ -242,11 +242,17 @@ jobs:
       - name: Modul installieren und Odoo-Tests ausführen
         run: |
           network="$(docker inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}' '${{ job.services.postgres.id }}')"
+          docker build --tag zugfolge-odoo-ci - <<'EOF'
+          FROM odoo:19.0-20260723
+          USER root
+          RUN pip3 install --no-cache-dir openupgradelib
+          USER odoo
+          EOF
           docker run --rm --network "$network" --user odoo \
             -e HOST=postgres -e USER=odoo -e PASSWORD=odoo-test \
             -v "${RUNNER_TEMP}/oca-queue/queue_job:/mnt/extra-addons/queue_job:ro" \
             -v "${GITHUB_WORKSPACE}/odoo/addons/zugfolge_admin:/mnt/extra-addons/zugfolge_admin:ro" \
-            odoo:19.0-20260723 \
+            zugfolge-odoo-ci \
             odoo --database=zugfolge_odoo_test --db_host=postgres --db_port=5432 \
             --db_user=odoo --db_password=odoo-test --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons \
             --init=queue_job,zugfolge_admin --test-enable --test-tags=/zugfolge_admin --stop-after-init --log-level=test
