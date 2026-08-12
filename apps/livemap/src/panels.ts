@@ -1,6 +1,7 @@
 import type {
   LivemapObjectDetailV1,
   OwnerTrainDetailV1,
+  PublicTrain,
   PublicTrainDetailV1,
   StationBoardCall,
   StationBoardV1,
@@ -25,6 +26,56 @@ function minuteLabel(seconds: number): string {
   if (seconds === 0) return "0 min";
   const sign = seconds > 0 ? "+" : "−";
   return `${sign}${Math.floor(Math.abs(seconds) / 60)} min`;
+}
+
+const ESTIMATE_METHOD_LABEL = Object.freeze({
+  "topological-track": "Fahrtfortschritt auf einem Darstellungsgleis",
+  "route-corridor": "Fahrtfortschritt im geplanten Streckenkorridor",
+  "anchor-hold": "Letzte belastbare Kartenlage",
+});
+
+function uncertaintyLabel(uncertaintyMm: number): string {
+  const metres = Math.ceil(uncertaintyMm / 1_000);
+  if (metres < 1_000) {
+    const roundedMetres = Math.max(100, Math.ceil(metres / 100) * 100);
+    return `ungefähr ± ${roundedMetres} m`;
+  }
+  return `ungefähr ± ${Math.ceil(metres / 1_000)} km`;
+}
+
+export interface TrainMapPositionSummary {
+  readonly definitions: readonly { readonly term: string; readonly value: string }[];
+  readonly note?: string;
+}
+
+/** Spielertext ohne technische Scheingenauigkeit oder betriebliche Wirkung. */
+export function trainMapPositionSummary(train: PublicTrain): TrainMapPositionSummary {
+  if (train.mapPosition !== undefined) {
+    return Object.freeze({
+      definitions: Object.freeze([
+        Object.freeze({ term: "Kartenlage", value: "bestätigt" }),
+        Object.freeze({ term: "Infrastrukturstand", value: train.mapPosition.infrastructureReleaseId }),
+        Object.freeze({ term: "Gleis", value: train.mapPosition.trackId }),
+        Object.freeze({ term: "Position", value: `${Math.floor(train.mapPosition.offsetMm / 1_000)} m` }),
+      ]),
+    });
+  }
+  const estimate = train.mapEstimate;
+  if (estimate === undefined) return Object.freeze({ definitions: Object.freeze([]) });
+  return Object.freeze({
+    definitions: Object.freeze([
+      Object.freeze({
+        term: "Kartenlage",
+        value: estimate.method === "anchor-hold" ? "letzte Lage (?)" : "geschätzt (≈)",
+      }),
+      Object.freeze({ term: "Infrastrukturstand", value: estimate.infrastructureReleaseId }),
+      Object.freeze({ term: "Ableitung", value: ESTIMATE_METHOD_LABEL[estimate.method] }),
+      Object.freeze({ term: "Unsicherheitsbereich", value: uncertaintyLabel(estimate.uncertaintyMm) }),
+    ]),
+    note: estimate.method === "anchor-hold"
+      ? "Der Marker bleibt an der letzten belastbaren Stelle. Die Fahrt läuft im System weiter; das Fragezeichen ist kein Stillstandssignal."
+      : "Der Marker folgt dem bekannten Fahrtverlauf. Die graue Schätzung dient nur der Orientierung und hat keine Wirkung auf Fahrweg, Konflikte oder Fahrdienstleitung.",
+  });
 }
 
 function clockLabel(seconds: number): string {
@@ -153,23 +204,25 @@ export function trainPanel(detail: PublicTrainDetailV1, owner: OwnerTrainDetailV
   const fragment = document.createDocumentFragment();
   fragment.append(titleBlock("ZUGLAUF", train.trainNumber, `${train.operator} · ${train.category}`));
   const list = document.createElement("dl");
+  let estimateNote: HTMLElement | undefined;
   addDefinition(list, "Status", train.status);
   addDefinition(list, "Verspätung", minuteLabel(train.delaySeconds), train.delaySeconds > 60 ? "warn" : undefined);
   if (detail.movement === "network" && "speedMmPerSecond" in detail.train) {
     const networkTrain = detail.train;
     addDefinition(list, "Geschwindigkeit", `${Math.round((networkTrain.speedMmPerSecond * 36) / 10_000)} km/h`);
     addDefinition(list, "Nächster Betriebspunkt", networkTrain.nextOperatingPoint);
-    if (networkTrain.mapPosition !== undefined) {
-      addDefinition(list, "Gleis", networkTrain.mapPosition.trackId);
-      addDefinition(list, "Position", `${Math.floor(networkTrain.mapPosition.offsetMm / 1_000)} m`);
-    }
+    const mapSummary = trainMapPositionSummary(networkTrain);
+    mapSummary.definitions.forEach(({ term, value }) => addDefinition(list, term, value));
+    if (mapSummary.note !== undefined) estimateNote = element("p", mapSummary.note, "position-estimate-note");
   } else if ("progressBasisPoints" in detail.train) {
     const externalTrain = detail.train;
     addDefinition(list, "Außenlauf", `${Math.floor(externalTrain.progressBasisPoints / 100)} %`);
     addDefinition(list, "Letztes Grenzportal", externalTrain.fromPortalId);
     addDefinition(list, "Nächstes Grenzportal", externalTrain.toPortalId ?? "keine Wiedereinfahrt");
   }
-  fragment.append(list, fisPanel(detail));
+  fragment.append(list);
+  if (estimateNote !== undefined) fragment.append(estimateNote);
+  fragment.append(fisPanel(detail));
   if (owner !== undefined) {
     const privateSection = element("section", undefined, "owner-details");
     privateSection.append(element("h2", "Eigener Zug · interne Betriebsdaten"));

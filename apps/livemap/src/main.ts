@@ -85,7 +85,7 @@ root.innerHTML = `
           <button id="toggle-context" type="button" aria-pressed="true">Weltkarte</button>
         </div>
         <section id="selection-menu" class="selection-menu" aria-label="Überlagerte Kartenobjekte" hidden></section>
-        <section id="external-runs" aria-label="Zugfahrten ohne bestätigte Kartenposition"></section>
+        <section id="external-runs" aria-label="Zugfahrten ohne darstellbare Kartenlage und Außenläufe"></section>
         <div class="legend" aria-label="Legende">
           <span><i class="legend-line active"></i> aktive Infrastruktur</span>
           <span><i class="legend-line context"></i> Kontext</span>
@@ -93,6 +93,7 @@ root.innerHTML = `
           <span><i class="legend-line closure"></i> gesperrt</span>
           <span><i class="legend-line construction"></i> Bauarbeiten</span>
           <span><i class="legend-line quality-c"></i> Klasse C</span>
+          <span><i class="legend-train-estimated">≈</i> Zugposition geschätzt</span>
         </div>
       </section>
       <aside id="details" aria-label="Details zum ausgewählten Kartenobjekt">
@@ -323,34 +324,46 @@ function applyLiveObjectStates(currentMap: MapLibreMap, states: ReadonlyMap<stri
 }
 
 function renderExternalRuns(state: LiveState): void {
-  const positionless = [...state.trains.values()].filter((train) => train.mapPosition === undefined);
+  const positionless = [...state.trains.values()].filter((train) =>
+    train.mapPosition === undefined && train.mapEstimate === undefined
+  );
   const external = [...state.externalTrains.values()];
   if (positionless.length === 0 && external.length === 0) {
     externalRuns.replaceChildren();
     return;
   }
-  const title = text("p", "OHNE BESTÄTIGTE KARTENPOSITION", "eyebrow");
-  const explanation = text("p", "Diese Fahrten bleiben sichtbar, werden aber nicht auf eine erfundene Stelle gesetzt.", "position-note");
   const nodes: HTMLElement[] = [];
-  positionless.sort((a, b) => a.trainNumber.localeCompare(b.trainNumber, "de")).forEach((train) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "external-run";
-    button.append(text("strong", train.trainNumber), text("span", `${operatorLabel(train)} · ${train.nextOperatingPoint}`));
-    button.addEventListener("click", () => void selectObject({ kind: "train", id: train.id, label: train.trainNumber }));
-    nodes.push(button);
-  });
-  external.sort((a, b) => a.trainNumber.localeCompare(b.trainNumber, "de")).forEach((train: PublicExternalTrain) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "external-run";
-    button.append(text("strong", train.trainNumber), text("span", `${train.fromPortalId} → ${train.toPortalId ?? "Außenziel"} · ${train.status}`));
-    button.addEventListener("click", () => {
-      setPanel(messagePanel(`${train.trainNumber} fährt als derselbe Zug außerhalb des modellierten Gebiets. Es wird bewusst keine Kartenposition erzeugt.`));
+  if (positionless.length > 0) {
+    nodes.push(
+      text("p", "OHNE KARTENLAGE", "eyebrow"),
+      text("p", "Hier fehlt auch eine belastbare Schätzlage. Die Fahrt bleibt anklickbar, ohne einen Kartenpunkt zu erfinden.", "position-note"),
+    );
+    positionless.sort((a, b) => a.trainNumber.localeCompare(b.trainNumber, "de")).forEach((train) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "external-run";
+      button.append(text("strong", train.trainNumber), text("span", `${operatorLabel(train)} · ${train.nextOperatingPoint}`));
+      button.addEventListener("click", () => void selectObject({ kind: "train", id: train.id, label: train.trainNumber }));
+      nodes.push(button);
     });
-    nodes.push(button);
-  });
-  externalRuns.replaceChildren(title, explanation, ...nodes);
+  }
+  if (external.length > 0) {
+    nodes.push(
+      text("p", "AUSSENLÄUFE", "eyebrow"),
+      text("p", "Diese Fahrt läuft außerhalb des modellierten Gebiets weiter und bleibt bewusst in der Liste.", "position-note"),
+    );
+    external.sort((a, b) => a.trainNumber.localeCompare(b.trainNumber, "de")).forEach((train: PublicExternalTrain) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "external-run";
+      button.append(text("strong", train.trainNumber), text("span", `${train.fromPortalId} → ${train.toPortalId ?? "Außenziel"} · ${train.status}`));
+      button.addEventListener("click", () => {
+        setPanel(messagePanel(`${train.trainNumber} fährt als derselbe Zug außerhalb des modellierten Gebiets. Es wird bewusst keine Kartenposition erzeugt.`));
+      });
+      nodes.push(button);
+    });
+  }
+  externalRuns.replaceChildren(...nodes);
 }
 
 function renderObjectList(state: LiveState): void {
@@ -361,7 +374,14 @@ function renderObjectList(state: LiveState): void {
       const item = document.createElement("li");
       const button = document.createElement("button");
       button.type = "button";
-      button.append(text("strong", train.trainNumber), text("span", `${operatorLabel(train)} · ${train.status} · ${train.mapPosition === undefined ? "ohne Kartenposition" : train.nextOperatingPoint}`));
+      const positionLabel = train.mapPosition !== undefined
+        ? train.nextOperatingPoint
+        : train.mapEstimate?.method === "anchor-hold"
+          ? "letzte belastbare Lage"
+          : train.mapEstimate !== undefined
+            ? "Position geschätzt"
+            : "ohne Kartenlage";
+      button.append(text("strong", train.trainNumber), text("span", `${operatorLabel(train)} · ${train.status} · ${positionLabel}`));
       button.addEventListener("click", () => void selectObject({ kind: "train", id: train.id, label: train.trainNumber }));
       item.append(button);
       list.append(item);
@@ -385,6 +405,8 @@ function scheduleLiveRender(state: LiveState): void {
     const currentConfig = mapConfig;
     if (currentMap !== undefined && currentConfig !== undefined && currentMap.isStyleLoaded()) {
       const source = currentMap.getSource(TRAIN_SOURCE_ID) as GeoJSONSource | undefined;
+      // Derselbe Zug behaelt fuer exakt/geschaetzt dieselbe Feature-ID. Der
+      // Zielpunkt wird direkt ersetzt: keine irrefuehrende Luftlinienanimation.
       source?.setData(trainFeatureCollection(latest.trains.values(), currentConfig.infrastructureReleaseId) as never);
       applyLiveObjectStates(currentMap, latest.objectStates);
       updateSelectionState();

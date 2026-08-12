@@ -1,5 +1,6 @@
 import type {
   LivemapObjectKind,
+  PublicMapEstimate,
   PublicMapPosition,
   PublicObjectState,
 } from "@zugfolge/livemap-stream";
@@ -52,6 +53,7 @@ export interface PublicTrain {
   readonly nextOperatingPoint: string;
   readonly status: OperatingStatus;
   readonly mapPosition?: PublicMapPosition;
+  readonly mapEstimate?: PublicMapEstimate;
   readonly operationMarker?: PublicOperationMarker;
   readonly disruption?: PublicDisruptionMarker;
 }
@@ -190,6 +192,43 @@ function parseMapPosition(value: unknown): PublicMapPosition | undefined {
   });
 }
 
+const MAP_ESTIMATE_METHODS = new Set<PublicMapEstimate["method"]>([
+  "topological-track",
+  "route-corridor",
+  "anchor-hold",
+]);
+
+function parseMapEstimate(value: unknown): PublicMapEstimate | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new TypeError("Livemap-Kartenschaetzung muss ein Objekt sein.");
+  const method = stringField(value, "method");
+  if (!MAP_ESTIMATE_METHODS.has(method as PublicMapEstimate["method"])) {
+    throw new TypeError(`Unbekannte Livemap-Schaetzmethode '${method}'.`);
+  }
+  const latitudeE7 = integerField(value, "latitudeE7", -900_000_000);
+  const longitudeE7 = integerField(value, "longitudeE7", -1_800_000_000);
+  if (latitudeE7 > 900_000_000 || longitudeE7 > 1_800_000_000) {
+    throw new TypeError("Livemap-Kartenschaetzung liegt ausserhalb des gueltigen Koordinatenraums.");
+  }
+  const bearingMilliDegrees = value["bearingMilliDegrees"] === undefined
+    ? undefined
+    : integerField(value, "bearingMilliDegrees", 0);
+  if (bearingMilliDegrees !== undefined && bearingMilliDegrees >= 360_000) {
+    throw new TypeError("Livemap-Schaetzrichtung muss kleiner als 360 Grad sein.");
+  }
+  return Object.freeze({
+    infrastructureReleaseId: stringField(value, "infrastructureReleaseId"),
+    resourceId: stringField(value, "resourceId"),
+    method: method as PublicMapEstimate["method"],
+    displayPathId: stringField(value, "displayPathId"),
+    displayOffsetMm: integerField(value, "displayOffsetMm", 0),
+    latitudeE7,
+    longitudeE7,
+    ...(bearingMilliDegrees === undefined ? {} : { bearingMilliDegrees }),
+    uncertaintyMm: integerField(value, "uncertaintyMm", 0),
+  });
+}
+
 const LIVEMAP_OBJECT_KINDS = new Set<LivemapObjectKind>([
   "track", "station", "platform", "switch", "signal", "block", "facility", "operating-point", "rail-context",
 ]);
@@ -305,6 +344,10 @@ function parseTrain(value: unknown): PublicTrain {
   const operationMarker = parseOperationMarker(value["operationMarker"]);
   const disruption = parseDisruptionMarker(value["disruption"]);
   const mapPosition = parseMapPosition(value["mapPosition"]);
+  const mapEstimate = parseMapEstimate(value["mapEstimate"]);
+  if (mapPosition !== undefined && mapEstimate !== undefined) {
+    throw new TypeError("Ein Livemap-Zug darf nicht zugleich bestaetigte und geschaetzte Kartenlage besitzen.");
+  }
   const operatorId = optionalStringField(value, "operatorId");
   return Object.freeze({
     id: stringField(value, "id"),
@@ -318,6 +361,7 @@ function parseTrain(value: unknown): PublicTrain {
     nextOperatingPoint: stringField(value, "nextOperatingPoint"),
     status: status as OperatingStatus,
     ...(mapPosition === undefined ? {} : { mapPosition }),
+    ...(mapEstimate === undefined ? {} : { mapEstimate }),
     ...(operationMarker === undefined ? {} : { operationMarker }),
     ...(disruption === undefined ? {} : { disruption }),
   });

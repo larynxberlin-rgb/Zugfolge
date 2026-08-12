@@ -40,13 +40,21 @@ const disruption = {
   startsAtS: 1,
 } as const;
 
-function fixture({ reverse = false, applicationId = 0x5a54504a } = {}): string {
+function fixture({ reverse = false, applicationId = 0x5a54504a, exact = true, method = "route-corridor" } = {}): string {
   const path = join(mkdtempSync(join(tmpdir(), "zugfolge-map-projector-")), "projection.sqlite");
   paths.push(path);
   const database = new DatabaseSync(path);
   database.exec(`
     PRAGMA application_id = ${applicationId};
-    PRAGMA user_version = 1;
+    PRAGMA user_version = 2;
+    CREATE TABLE display_path_geometries (
+        world_id TEXT NOT NULL,
+        infrastructure_release_id TEXT NOT NULL,
+        display_path_id TEXT NOT NULL,
+        length_mm INTEGER NOT NULL CHECK (length_mm >= 0),
+        geometry_json TEXT NOT NULL,
+        PRIMARY KEY (world_id, infrastructure_release_id, display_path_id)
+      ) WITHOUT ROWID;
     CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
     CREATE TABLE track_geometries (
         world_id TEXT NOT NULL,
@@ -72,6 +80,25 @@ function fixture({ reverse = false, applicationId = 0x5a54504a } = {}): string {
       ) WITHOUT ROWID;
     CREATE INDEX resource_track_lookup ON resource_track_spans
         (world_id, infrastructure_release_id, resource_id, resource_start_mm, resource_end_mm);
+    CREATE TABLE resource_display_spans (
+        world_id TEXT NOT NULL,
+        infrastructure_release_id TEXT NOT NULL,
+        resource_id TEXT NOT NULL,
+        resource_start_mm INTEGER NOT NULL CHECK (resource_start_mm >= 0),
+        resource_end_mm INTEGER NOT NULL CHECK (resource_end_mm > resource_start_mm),
+        method TEXT NOT NULL CHECK (method IN ('topological-track', 'route-corridor', 'anchor-hold')),
+        display_path_id TEXT NOT NULL,
+        display_start_offset_mm INTEGER NOT NULL CHECK (display_start_offset_mm >= 0),
+        display_end_offset_mm INTEGER NOT NULL CHECK (display_end_offset_mm >= 0),
+        uncertainty_start_mm INTEGER NOT NULL CHECK (uncertainty_start_mm >= 0),
+        uncertainty_end_mm INTEGER NOT NULL CHECK (uncertainty_end_mm >= 0),
+        is_resource_end INTEGER NOT NULL CHECK (is_resource_end IN (0, 1)),
+        PRIMARY KEY (world_id, infrastructure_release_id, resource_id, resource_start_mm, resource_end_mm, method, display_path_id),
+        FOREIGN KEY (world_id, infrastructure_release_id, display_path_id)
+          REFERENCES display_path_geometries (world_id, infrastructure_release_id, display_path_id)
+      ) WITHOUT ROWID;
+    CREATE INDEX resource_display_lookup ON resource_display_spans
+        (world_id, infrastructure_release_id, resource_id, resource_start_mm, resource_end_mm);
     CREATE TABLE train_resource_spans (
         world_id TEXT NOT NULL,
         infrastructure_release_id TEXT NOT NULL,
@@ -86,7 +113,7 @@ function fixture({ reverse = false, applicationId = 0x5a54504a } = {}): string {
         (world_id, infrastructure_release_id, train_id, position_start_mm, position_end_mm);
   `);
   const metadata = database.prepare("INSERT INTO metadata VALUES (?, ?)");
-  metadata.run("schema", "zugfolge-train-map-projection/v1");
+  metadata.run("schema", "zugfolge-train-map-projection/v2");
   metadata.run("world_id", WORLD);
   metadata.run("infrastructure_release_id", RELEASE);
   database.prepare("INSERT INTO track_geometries VALUES (?, ?, ?, ?, ?)").run(
@@ -99,8 +126,25 @@ function fixture({ reverse = false, applicationId = 0x5a54504a } = {}): string {
       { offsetMm: 1_000_000, latitudeE7: 500_000_000, longitudeE7: 100_010_000 },
     ]),
   );
-  database.prepare("INSERT INTO resource_track_spans VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
-    WORLD, RELEASE, "resource-1", 0, 1_000_000, "track-1", reverse ? 1_000_000 : 0, reverse ? 0 : 1_000_000, 1,
+  database.prepare("INSERT INTO display_path_geometries VALUES (?, ?, ?, ?, ?)").run(
+    WORLD,
+    RELEASE,
+    "corridor-1",
+    method === "anchor-hold" ? 0 : 1_000_000,
+    JSON.stringify(method === "anchor-hold"
+      ? [{ offsetMm: 0, latitudeE7: 500_000_000, longitudeE7: 100_000_000 }]
+      : [
+        { offsetMm: 0, latitudeE7: 500_000_000, longitudeE7: 100_000_000, bearingMilliDegrees: 90_000 },
+        { offsetMm: 1_000_000, latitudeE7: 500_000_000, longitudeE7: 100_020_000 },
+      ]),
+  );
+  if (exact) {
+    database.prepare("INSERT INTO resource_track_spans VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+      WORLD, RELEASE, "resource-1", 0, 1_000_000, "track-1", reverse ? 1_000_000 : 0, reverse ? 0 : 1_000_000, 1,
+    );
+  }
+  database.prepare("INSERT INTO resource_display_spans VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+    WORLD, RELEASE, "resource-1", 0, 1_000_000, method, "corridor-1", 0, method === "anchor-hold" ? 0 : 1_000_000, 40_000, method === "anchor-hold" ? 1_040_000 : 40_000, 1,
   );
   database.prepare("INSERT INTO train_resource_spans VALUES (?, ?, ?, ?, ?, ?, ?)").run(
     WORLD, RELEASE, "train-1", 0, 1_000_000, "resource-1", 1,
@@ -143,6 +187,39 @@ describe("releasegebundene Zugkartenprojektion", () => {
     projector.close();
   });
 
+  it("liefert bei fehlender exakter Gleisspanne eine explizite Korridorschaetzung", () => {
+    const projector = new SQLiteTrainMapProjector(fixture({ exact: false }));
+    const projected = projector.project(WORLD, train);
+    expect(projected.mapPosition).toBeUndefined();
+    expect(projected.mapEstimate).toEqual({
+      infrastructureReleaseId: RELEASE,
+      resourceId: "resource-1",
+      method: "route-corridor",
+      displayPathId: "corridor-1",
+      displayOffsetMm: 250_000,
+      latitudeE7: 500_000_000,
+      longitudeE7: 100_005_000,
+      bearingMilliDegrees: 90_000,
+      uncertaintyMm: 40_000,
+    });
+    projector.close();
+  });
+
+  it("haelt ohne eindeutige Achse einen releasegebundenen Anker mit wachsender Unsicherheit", () => {
+    const projector = new SQLiteTrainMapProjector(fixture({ exact: false, method: "anchor-hold" }));
+    expect(projector.project(WORLD, train).mapEstimate).toEqual({
+      infrastructureReleaseId: RELEASE,
+      resourceId: "resource-1",
+      method: "anchor-hold",
+      displayPathId: "corridor-1",
+      displayOffsetMm: 0,
+      latitudeE7: 500_000_000,
+      longitudeE7: 100_000_000,
+      uncertaintyMm: 290_000,
+    });
+    projector.close();
+  });
+
   it("entfernt unbewiesene Eingabepositionen bei Welt- oder Positionsluecken", () => {
     const projector = new SQLiteTrainMapProjector(fixture());
     const forged = {
@@ -155,9 +232,20 @@ describe("releasegebundene Zugkartenprojektion", () => {
         latitudeE7: 0,
         longitudeE7: 0,
       },
+      mapEstimate: {
+        infrastructureReleaseId: "forged",
+        resourceId: "forged",
+        method: "anchor-hold",
+        displayPathId: "forged",
+        displayOffsetMm: 0,
+        latitudeE7: 0,
+        longitudeE7: 0,
+        uncertaintyMm: 1,
+      },
     } satisfies PublicTrain;
     expect(projector.project("other-world", forged).mapPosition).toBeUndefined();
     expect(projector.project(WORLD, { ...forged, id: "unknown" }).mapPosition).toBeUndefined();
+    expect(projector.project(WORLD, { ...forged, id: "unknown" }).mapEstimate).toBeUndefined();
     projector.close();
   });
 
@@ -220,6 +308,12 @@ describe("releasegebundene Zugkartenprojektion", () => {
     ]);
     expect(projector.projectDisruption(WORLD, { ...disruption, effect: "traffic-hold" })).toEqual([]);
     expect(projector.projectDisruption(WORLD, { ...disruption, affectedResource: "unknown" })).toEqual([]);
+    projector.close();
+  });
+
+  it("verwendet Darstellungspfade niemals fuer Stoerungsfarben", () => {
+    const projector = new SQLiteTrainMapProjector(fixture({ exact: false }));
+    expect(projector.projectDisruption(WORLD, disruption)).toEqual([]);
     projector.close();
   });
 

@@ -163,6 +163,37 @@ describe("LivemapFeed", () => {
     expect(feed.snapshot().objectStates).toEqual([]);
   });
 
+  it("publiziert eine Kartenschaetzung getrennt von der bestaetigten Gleisposition", () => {
+    const feed = new LivemapFeed("welt-a");
+    feed.publish({
+      at: 10,
+      changed: [{
+        ...train,
+        mapEstimate: {
+          infrastructureReleaseId: "infra-de-2026",
+          resourceId: "block-track-7",
+          method: "route-corridor",
+          displayPathId: "corridor-re7",
+          displayOffsetMm: 25_000,
+          latitudeE7: 515_000_000,
+          longitudeE7: 120_000_000,
+          bearingMilliDegrees: 90_000,
+          uncertaintyMm: 750_000,
+        },
+      }],
+      removed: [],
+    });
+
+    expect(feed.snapshot().trains[0]).toMatchObject({
+      mapEstimate: {
+        method: "route-corridor",
+        displayPathId: "corridor-re7",
+        uncertaintyMm: 750_000,
+      },
+    });
+    expect(feed.snapshot().trains[0]).not.toHaveProperty("mapPosition");
+  });
+
   it("weist ungueltige Kartenpositionen und nicht-sparse Normalzustaende zurueck", () => {
     const feed = new LivemapFeed("welt-a");
     expect(() => feed.publish({
@@ -182,6 +213,41 @@ describe("LivemapFeed", () => {
       } as never],
       removedObjectStateIds: [],
     })).toThrow(/sparsamen v1-Vertrag/);
+  });
+
+  it("weist widerspruechliche oder ungueltige Kartenschaetzungen zurueck", () => {
+    const feed = new LivemapFeed("welt-a");
+    const mapEstimate = {
+      infrastructureReleaseId: "infra-de-2026",
+      resourceId: "block-track-7",
+      method: "anchor-hold" as const,
+      displayPathId: "anchor-track-7",
+      displayOffsetMm: 1,
+      latitudeE7: 515_000_000,
+      longitudeE7: 120_000_000,
+      uncertaintyMm: 500_000,
+    };
+    expect(() => feed.publish({
+      at: 1,
+      changed: [{
+        ...train,
+        mapPosition: {
+          infrastructureReleaseId: "infra-de-2026",
+          resourceId: "block-track-7",
+          trackId: "track-7",
+          offsetMm: 1,
+          latitudeE7: 515_000_000,
+          longitudeE7: 120_000_000,
+        },
+        mapEstimate,
+      }],
+      removed: [],
+    })).toThrow(/nicht zugleich/);
+    expect(() => feed.publish({
+      at: 1,
+      changed: [{ ...train, mapEstimate: { ...mapEstimate, uncertaintyMm: -1 } }],
+      removed: [],
+    })).toThrow(/Kartenschaetzung/);
   });
 
   it("liefert begrenztes Delta-Replay und erkennt einen zu alten Client", () => {

@@ -39,6 +39,14 @@ function corridor() {
   };
 }
 
+function parallelCorridor() {
+  const value = corridor();
+  return {
+    ...value,
+    properties: { ...value.properties, feature_id: "rail-corridor:official-2", official_evidence_id: "official-2" },
+  };
+}
+
 function track(id, start, end) {
   return {
     type: "Feature",
@@ -123,7 +131,7 @@ function deployment() {
   };
 }
 
-async function fixture({ ambiguous = false } = {}) {
+async function fixture({ ambiguous = false, ambiguousCorridor = false } = {}) {
   const root = await mkdtemp(join(tmpdir(), "zugfolge-train-map-projection-"));
   const paths = {
     tracks: join(root, "tracks.geojsonseq"),
@@ -131,7 +139,7 @@ async function fixture({ ambiguous = false } = {}) {
     operationalNetwork: join(root, "operational-network.json"),
     deployment: join(root, "deployment.json"),
   };
-  await writeSequence(paths.corridors, [corridor()]);
+  await writeSequence(paths.corridors, [corridor(), ...(ambiguousCorridor ? [parallelCorridor()] : [])]);
   await writeSequence(paths.tracks, [
     track("track-a", 10, 10.007),
     ...(ambiguous ? [track("track-parallel", 10, 10.007)] : []),
@@ -172,25 +180,35 @@ test("kompiliert eine releasegebundene Position ohne Fliesskomma-Laufzeitvertrag
     ambiguousMm: 0,
     missingMm: 0,
     resolvedBasisPoints: 10_000,
+    confirmedMm: 1_000_000,
+    estimatedMm: 0,
+    heldMm: 0,
+    confirmedBasisPoints: 10_000,
+    estimatedBasisPoints: 0,
+    heldBasisPoints: 0,
   });
   assert.equal(firstReport.trains.provenTrainCount, 1);
   const inspection = await inspectTrainMapProjection(first.output);
   assert.equal(inspection.schemaSqlSha256, TRAIN_MAP_PROJECTION_SCHEMA_SQL_SHA256);
   assert.deepEqual(inspection, {
-    schema: "zugfolge-train-map-projection/v1",
+    schema: "zugfolge-train-map-projection/v2",
     worldId: WORLD_ID,
     infrastructureReleaseId: RELEASE_ID,
     timetableYear: 2026,
     sqliteApplicationId: 0x5a54504a,
-    sqliteUserVersion: 1,
+    sqliteUserVersion: 2,
     tables: {
+      display_path_geometries: ["world_id", "infrastructure_release_id", "display_path_id", "length_mm", "geometry_json"],
       metadata: ["key", "value"],
+      resource_display_spans: ["world_id", "infrastructure_release_id", "resource_id", "resource_start_mm", "resource_end_mm", "method", "display_path_id", "display_start_offset_mm", "display_end_offset_mm", "uncertainty_start_mm", "uncertainty_end_mm", "is_resource_end"],
       resource_track_spans: ["world_id", "infrastructure_release_id", "resource_id", "resource_start_mm", "resource_end_mm", "track_id", "track_start_offset_mm", "track_end_offset_mm", "is_resource_end"],
       track_geometries: ["world_id", "infrastructure_release_id", "track_id", "length_mm", "geometry_json"],
       train_resource_spans: ["world_id", "infrastructure_release_id", "train_id", "position_start_mm", "position_end_mm", "resource_id", "is_train_end"],
     },
     schemaSqlSha256: TRAIN_MAP_PROJECTION_SCHEMA_SQL_SHA256,
     foreignKeyCheck: "ok",
+    displayPathCount: 1,
+    resourceDisplaySpanCount: 1,
     trackCount: 2,
     resourceSpanCount: 2,
     trainSpanCount: 1,
@@ -208,7 +226,24 @@ test("laesst einen parallel mehrdeutigen Bereich ungeloest, statt ein Gleis zu r
   assert.equal(report.resources.ambiguousMm, 500_000);
   assert.equal(report.resources.resolvedMm, 500_000);
   assert.equal(report.resources.partiallyResolvedResourceCount, 1);
+  assert.equal(report.resources.confirmedMm, 500_000);
+  assert.equal(report.resources.estimatedMm, 500_000);
+  assert.equal(report.resources.heldMm, 0);
   assert.equal((await inspectTrainMapProjection(buildSpec.output)).trackCount, 1);
+});
+
+test("waehlt bei gleichrangig widerspruechlichen Korridorachsen kein stilles Evidenzobjekt", async () => {
+  const input = await fixture({ ambiguous: true, ambiguousCorridor: true });
+  const buildSpec = spec(input, "ambiguous-corridor");
+  const report = await buildTrainMapProjection(buildSpec);
+
+  assert.equal(report.resources.confirmedMm, 500_000);
+  assert.equal(report.resources.estimatedMm, 0);
+  assert.equal(report.resources.heldMm, 500_000);
+  const database = new DatabaseSync(buildSpec.output, { readOnly: true });
+  const methods = database.prepare("SELECT DISTINCT method FROM resource_display_spans ORDER BY method").all().map((row) => row.method);
+  database.close();
+  assert.deepEqual(methods, ["anchor-hold"]);
 });
 
 test("weist unerlaubte Schemaobjekte und abweichendes Schema-SQL geschlossen ab", async () => {

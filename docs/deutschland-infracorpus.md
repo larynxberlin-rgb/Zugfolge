@@ -174,7 +174,7 @@ Die zentralen Laufzeitartefakte vor Transportverpackung sind:
 | Welt-Basemap, Welt z0–10 und Deutschland z11–15 | 11.545.162.669 | `c766073e55b99b213276328e504cbb7a69b0b65db0546adf484539c3bd319aed` |
 | Deutschland-Infrastruktur, z4–18 | 1.536.379.722 | `65af6dbe8c517666c83941468c0f52b37fa30d866b8e402f6977aa4a599d3de6` |
 | anklickbares ReadModel mit Bahnhofstafel und FIS | 1.291.001.856 | `c7e56cecb3db9aaae7994877894312ade91c536e7c5027e10e63045d7303ad21` |
-| releasegebundene Zugkartenprojektion | 18.014.208 | `8c9cb99385ac0de84bfc67b1a2f80fab619f694d250d5393132f88cf969004e1` |
+| releasegebundene Exact-/Estimate-Zugkartenprojektion | 29.003.776 | `61a99693dad47bf21423ed9bf9b1547a0cbdcdeeb7717dd5daabc36375d61bde` |
 | dunkler MapLibre-Stil | 268.406 | `1f4292eab8f40faf0d1a2eff5a410a5943ab260278e84918c0a19f0fc8cc54da` |
 | öffentlicher Qualitätsbericht | 13.336 | `189758347185102a573e1ed89c618b7ef61a88d7af61d95fa71e61a2fe2f6303` |
 
@@ -187,14 +187,14 @@ Zugprojektion bestehen SQLite-Header-, Schema-, Fremdschlüssel-,
 Der daraus erzeugte öffentliche Deliveryvertrag `release.json` enthält 1.034
 inventarisierte Artefakte und acht freigegebene öffentliche Quellen. Er ist
 268.160 Byte groß und besitzt den SHA-256
-`1d65f1fc18d8a954165a71b6ac253946bb1529927c7ea971588f6d3d05382f05`.
+`a775d79bbed8f9e355e77d8da84481f260f13213c34b8a1768bb366fbd8775c1`.
 Sein Qualitäts- und Rechtegate ist bestanden; `signature` bleibt `null` und
 das Signaturgate steht mit dokumentiertem Grund auf `missing`.
 
 Das daraus gepackte Transportartefakt umfasst 1.172 Teile mit
-14.408.875.328 Byte. Sein 606.870 Byte großes `manifest.json` besitzt den
+14.419.864.896 Byte. Sein 606.870 Byte großes `manifest.json` besitzt den
 SHA-256
-`c14fbf8120b3ea033fc3428b9e2a0e306acc30c79dfd237bc13ae6d55e8ea9c2`.
+`b12f607c959992d29ea9e7dcc2e963b01717b117d8614b5938fcc437dece8e9c`.
 Packen, vollständige Verifikation, atomare Erstinstallation und ein zweiter
 idempotenter Installationslauf mit Status `reused` sind erfolgreich. Der
 produktive Odoo-Import und Periodenwechsel sind damit nicht vorweggenommen.

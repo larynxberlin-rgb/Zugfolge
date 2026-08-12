@@ -68,6 +68,28 @@ export interface PublicMapPosition {
   readonly bearingMilliDegrees?: number;
 }
 
+export type PublicMapEstimateMethod =
+  | "topological-track"
+  | "route-corridor"
+  | "anchor-hold";
+
+/**
+ * Ausschliesslich visuelle, releasegebundene Lageableitung. Sie ist keine
+ * Gleisbelegung und darf nie als Fahrweg- oder Konfliktnachweis verwendet
+ * werden.
+ */
+export interface PublicMapEstimate {
+  readonly infrastructureReleaseId: string;
+  readonly resourceId: string;
+  readonly method: PublicMapEstimateMethod;
+  readonly displayPathId: string;
+  readonly displayOffsetMm: number;
+  readonly latitudeE7: number;
+  readonly longitudeE7: number;
+  readonly bearingMilliDegrees?: number;
+  readonly uncertaintyMm: number;
+}
+
 export type LivemapObjectKind =
   | "track"
   | "rail-context"
@@ -109,13 +131,15 @@ export interface PublicTrain {
   readonly nextOperatingPoint: string;
   readonly status: string;
   readonly mapPosition?: PublicMapPosition;
+  readonly mapEstimate?: PublicMapEstimate;
   readonly operationMarker?: PublicOperationMarker;
   readonly disruption?: PublicDisruptionMarker;
 }
 
 /**
- * Reine, synchrone Releaseprojektion an der Fanout-Grenze. Sie darf nur eine
- * nachgewiesene `mapPosition` ergaenzen oder eine unbewiesene entfernen.
+ * Reine, synchrone Releaseprojektion an der Fanout-Grenze. Sie darf entweder
+ * eine nachgewiesene `mapPosition` oder eine explizite `mapEstimate`
+ * ergaenzen. Beide Darstellungen sind gegenseitig exklusiv.
  */
 export interface PublicTrainMapProjector {
   project(worldId: string, train: PublicTrain): PublicTrain;
@@ -171,11 +195,10 @@ function publicExternalTrain(train: PublicExternalTrain): PublicExternalTrain {
   });
 }
 
-function validateMapPosition(train: PublicTrain): void {
+function validateMapProjection(train: PublicTrain): void {
   const position = train.mapPosition;
-  if (position === undefined) return;
   const integer = (value: number) => Number.isSafeInteger(value);
-  if (
+  if (position !== undefined && (
     position.trackId.length === 0 ||
     position.infrastructureReleaseId.length === 0 ||
     position.resourceId.length === 0 ||
@@ -187,8 +210,31 @@ function validateMapPosition(train: PublicTrain): void {
       position.bearingMilliDegrees < 0 ||
       position.bearingMilliDegrees >= 360_000
     ))
-  ) {
+  )) {
     throw new RangeError(`Zug '${train.id}' besitzt keine gueltige ganzzahlige Kartenposition.`);
+  }
+
+  const estimate = train.mapEstimate;
+  if (position !== undefined && estimate !== undefined) {
+    throw new RangeError(`Zug '${train.id}' darf nicht zugleich bestaetigte und geschaetzte Kartenlage besitzen.`);
+  }
+  if (estimate === undefined) return;
+  if (
+    estimate.infrastructureReleaseId.length === 0 ||
+    estimate.resourceId.length === 0 ||
+    estimate.displayPathId.length === 0 ||
+    !(["topological-track", "route-corridor", "anchor-hold"] as const).includes(estimate.method) ||
+    !integer(estimate.displayOffsetMm) || estimate.displayOffsetMm < 0 ||
+    !integer(estimate.uncertaintyMm) || estimate.uncertaintyMm < 0 ||
+    !integer(estimate.latitudeE7) || estimate.latitudeE7 < -900_000_000 || estimate.latitudeE7 > 900_000_000 ||
+    !integer(estimate.longitudeE7) || estimate.longitudeE7 < -1_800_000_000 || estimate.longitudeE7 > 1_800_000_000 ||
+    (estimate.bearingMilliDegrees !== undefined && (
+      !integer(estimate.bearingMilliDegrees) ||
+      estimate.bearingMilliDegrees < 0 ||
+      estimate.bearingMilliDegrees >= 360_000
+    ))
+  ) {
+    throw new RangeError(`Zug '${train.id}' besitzt keine gueltige ganzzahlige Kartenschaetzung.`);
   }
 }
 
@@ -343,7 +389,7 @@ export class LivemapFeed {
   }
 
   #emit(input: Omit<LiveDelta, "worldId" | "streamId" | "sequence">): LiveDelta {
-    input.changed.forEach(validateMapPosition);
+    input.changed.forEach(validateMapProjection);
     const changedObjectStates = input.changedObjectStates?.map(publicObjectState) ?? [];
     const changedObjectStateIds = new Set(changedObjectStates.map((state) => state.id));
     if (changedObjectStateIds.size !== changedObjectStates.length) {

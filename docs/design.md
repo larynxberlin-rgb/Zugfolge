@@ -212,7 +212,7 @@ Schriftgrad, Zeilenhöhe, Lesedurchschuss und Abstand. Ein gemeinsamer
 Formfelder sind Teil der Komponentenbasis. Die Bildfahrplan-Oberfläche macht
 den Wechsel direkt prüfbar.
 
-## 9. Kartenstil und Zoomvertrag (E26)
+## 9. Kartenstil und Zoomvertrag (E26, E27)
 
 Die Karte ist weltweit dunkel und bewusst informationsarm; der semantische
 Deutschland-Layer trägt den Betrieb. Die Kartenfolge ist verbindlich:
@@ -232,6 +232,33 @@ Klickflächen sind breiter als die sichtbare Geometrie. Bei Überlagerung gilt
 Zug vor Signal/Weiche vor Bahnhof/Bahnsteig vor Gleis; mehrere Treffer öffnen
 eine Auswahl. Tastaturzugang erfolgt zusätzlich über eine Objektliste. Ein
 Detailpanel ist per `focus=art:id` tief verlinkbar.
+
+### Zugpositionsgenauigkeit (E27)
+
+Exact und Estimate verwenden dieselbe Markerform, Größe, Zuggattungskennung
+und Klickfläche. Damit bleibt derselbe Zug bei einem Wechsel der
+Projektionsgenauigkeit visuell derselbe Gegenstand. Die Genauigkeit wird als
+zusätzliche Ebene kommuniziert:
+
+| Kartenposition | Markerzusatz | zugänglicher Text |
+|---|---|---|
+| Exact | kein Genauigkeitsring | „Position exakt“ im Detailpanel |
+| Estimate auf orientiertem Korridor | `≈` und neutraler achromatischer Ring | „Position geschätzt: amtlicher Korridor“ |
+| Estimate am resourcegebundenen Ankerhalt | `?` und derselbe neutrale Ring | „Letzte belastbare Lage; Fahrt läuft weiter“ |
+| `ExternalLeg` oder keine eindeutige Projektion | kein Kartenmarker | Außenlauf beziehungsweise fehlende Kartenposition bleibt in Liste und Fahrtkette erklärt |
+
+Der Ring ist weder gelb/bernsteinfarben noch rot und verwendet auch nicht die
+Schraffur einer Qualitätsklasse. Diese Farben und Muster bleiben
+Einschränkung, Sperrung, Baustelle und Infrastrukturqualität vorbehalten.
+`≈` beziehungsweise `?`, Ring und Text treten gemeinsam auf; Farbe trägt die Aussage nie allein.
+Das Detailpanel nennt außerdem den gebundenen Infrastruktur-Release. Sobald
+Exact verfügbar ist, verschwinden Ring und Genauigkeitszeichen, ohne Markeridentität oder
+Auswahlzustand zu wechseln.
+
+Markeridentität, Layerreihenfolge, Genauigkeitszeichen, Detailtext und
+`prefers-reduced-motion` sind automatisiert abgedeckt. Die manuelle
+Browserabnahme für Kontrast, mehrere Zoomstufen, Tastatur und Screenreader
+bleibt vor der produktiven Freigabe erforderlich.
 
 Einschränkungen sind bernsteinfarben und gestrichelt, Sperrungen rot und
 unterbrochen, Bauarbeiten rot-weiß gemustert. Fallblattanzeige und FIS nutzen

@@ -5,14 +5,20 @@ import { basename, dirname, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { DatabaseSync } from "node:sqlite";
 
-export const TRAIN_MAP_PROJECTION_SCHEMA = "zugfolge-train-map-projection/v1";
-export const TRAIN_MAP_PROJECTION_REPORT_SCHEMA = "zugfolge-train-map-projection-report/v1";
+export const TRAIN_MAP_PROJECTION_SCHEMA = "zugfolge-train-map-projection/v2";
+export const TRAIN_MAP_PROJECTION_REPORT_SCHEMA = "zugfolge-train-map-projection-report/v2";
 export const TRAIN_MAP_PROJECTION_BUILD_SPEC_SCHEMA = "zugfolge-train-map-projection-build-spec/v1";
 export const TRAIN_MAP_PROJECTION_SQLITE_APPLICATION_ID = 0x5a54504a;
-export const TRAIN_MAP_PROJECTION_SQLITE_USER_VERSION = 1;
-export const TRAIN_MAP_PROJECTION_SCHEMA_SQL_SHA256 = "08ca2d8778bfa648b30838620c107f050be1e56fcf3efd8809a623b36519390d";
+export const TRAIN_MAP_PROJECTION_SQLITE_USER_VERSION = 2;
+export const TRAIN_MAP_PROJECTION_SCHEMA_SQL_SHA256 = "69f4b7d6fa7ce1f6ab21c2dbcd954a3324e9b6457203afab3a28f3cb8854bca0";
 export const TRAIN_MAP_PROJECTION_PUBLIC_TABLES = Object.freeze({
+  display_path_geometries: Object.freeze(["world_id", "infrastructure_release_id", "display_path_id", "length_mm", "geometry_json"]),
   metadata: Object.freeze(["key", "value"]),
+  resource_display_spans: Object.freeze([
+    "world_id", "infrastructure_release_id", "resource_id", "resource_start_mm", "resource_end_mm",
+    "method", "display_path_id", "display_start_offset_mm", "display_end_offset_mm",
+    "uncertainty_start_mm", "uncertainty_end_mm", "is_resource_end",
+  ]),
   track_geometries: Object.freeze(["world_id", "infrastructure_release_id", "track_id", "length_mm", "geometry_json"]),
   resource_track_spans: Object.freeze([
     "world_id", "infrastructure_release_id", "resource_id", "resource_start_mm", "resource_end_mm",
@@ -24,9 +30,12 @@ export const TRAIN_MAP_PROJECTION_PUBLIC_TABLES = Object.freeze({
   ]),
 });
 export const TRAIN_MAP_PROJECTION_PUBLIC_SCHEMA_OBJECTS = Object.freeze([
+  Object.freeze({ type: "index", name: "resource_display_lookup", table: "resource_display_spans" }),
   Object.freeze({ type: "index", name: "resource_track_lookup", table: "resource_track_spans" }),
   Object.freeze({ type: "index", name: "train_position_lookup", table: "train_resource_spans" }),
+  Object.freeze({ type: "table", name: "display_path_geometries", table: "display_path_geometries" }),
   Object.freeze({ type: "table", name: "metadata", table: "metadata" }),
+  Object.freeze({ type: "table", name: "resource_display_spans", table: "resource_display_spans" }),
   Object.freeze({ type: "table", name: "resource_track_spans", table: "resource_track_spans" }),
   Object.freeze({ type: "table", name: "track_geometries", table: "track_geometries" }),
   Object.freeze({ type: "table", name: "train_resource_spans", table: "train_resource_spans" }),
@@ -36,6 +45,7 @@ const EARTH_RADIUS_M = 6_378_137;
 const MAX_TRACK_TO_CORRIDOR_DISTANCE_M = 40;
 const MAX_STATION_ANCHOR_DISTANCE_M = 2_500;
 const MIN_ORIENTATION_ADVANTAGE_M = 100;
+const ROUTE_CORRIDOR_UNCERTAINTY_MM = MAX_TRACK_TO_CORRIDOR_DISTANCE_M * 1_000;
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
@@ -581,6 +591,307 @@ function buildResourceProjection(resources, trackData) {
   };
 }
 
+function displayGeometryVertices(rawCoordinates, declaredLengthMm, name) {
+  const polyline = planarPolyline(rawCoordinates, name);
+  const quantized = [];
+  for (let index = 0; index < polyline.coordinates.length; index += 1) {
+    const offsetMm = index === polyline.coordinates.length - 1
+      ? declaredLengthMm
+      : Math.round(declaredLengthMm * polyline.cumulative[index] / polyline.lengthM);
+    if (index > 0 && index < polyline.coordinates.length - 1 && offsetMm <= quantized.at(-1).offsetMm) continue;
+    const coordinate = polyline.coordinates[index];
+    if (index === polyline.coordinates.length - 1 && offsetMm === quantized.at(-1)?.offsetMm) {
+      quantized[quantized.length - 1] = { ...coordinate, offsetMm };
+    } else {
+      quantized.push({ ...coordinate, offsetMm });
+    }
+  }
+  invariant(quantized.length >= 2, `${name} kollabiert nach Ganzzahlquantisierung.`);
+  return Object.freeze(quantized.map((coordinate, index) => Object.freeze({
+    ...coordinate,
+    ...(index === quantized.length - 1 ? {} : {
+      bearingMilliDegrees: normalizedBearingMilliDegrees(coordinate, quantized[index + 1]),
+    }),
+  })));
+}
+
+function corridorDisplaySpanForResource(corridor, resource) {
+  if (
+    corridor.direction !== "route-axis"
+    && !(resource.fromMm < resource.toMm && corridor.direction === "forward-track")
+    && !(resource.fromMm > resource.toMm && corridor.direction === "reverse-track")
+  ) return null;
+  const corridorLow = Math.min(corridor.fromMm, corridor.toMm);
+  const corridorHigh = Math.max(corridor.fromMm, corridor.toMm);
+  const resourceLow = Math.min(resource.fromMm, resource.toMm);
+  const resourceHigh = Math.max(resource.fromMm, resource.toMm);
+  const low = Math.max(corridorLow, resourceLow);
+  const high = Math.min(corridorHigh, resourceHigh);
+  if (low >= high) return null;
+  const travelStartKm = resource.fromMm < resource.toMm ? low : high;
+  const travelEndKm = resource.fromMm < resource.toMm ? high : low;
+  const displayLengthMm = Math.abs(corridor.toMm - corridor.fromMm);
+  const displayAt = (kilometreMm) => interpolateInteger(
+    0,
+    displayLengthMm,
+    kilometreMm - corridor.fromMm,
+    corridor.toMm - corridor.fromMm,
+  );
+  return Object.freeze({
+    method: "route-corridor",
+    displayPathId: `corridor:${corridor.evidenceId}`,
+    direction: corridor.direction,
+    evidenceId: corridor.evidenceId,
+    resourceStartMm: resourceOffset(resource, travelStartKm),
+    resourceEndMm: resourceOffset(resource, travelEndKm),
+    displayStartOffsetMm: displayAt(travelStartKm),
+    displayEndOffsetMm: displayAt(travelEndKm),
+  });
+}
+
+function displayDirectionRank(resource, direction) {
+  if (resource.fromMm < resource.toMm && direction === "forward-track") return 0;
+  if (resource.fromMm > resource.toMm && direction === "reverse-track") return 0;
+  if (direction === "route-axis") return 1;
+  return 2;
+}
+
+function resourceKilometreAt(resource, resourceOffsetMm) {
+  return resource.fromMm < resource.toMm
+    ? resource.fromMm + resourceOffsetMm
+    : resource.fromMm - resourceOffsetMm;
+}
+
+function propagatedStationAnchors(resources, stations) {
+  const adjacency = new Map([...stations.keys()].map((stationId) => [stationId, []]));
+  for (const resource of resources) {
+    adjacency.get(resource.originStationId).push({ stationId: resource.destinationStationId, lengthMm: resource.lengthMm });
+    adjacency.get(resource.destinationStationId).push({ stationId: resource.originStationId, lengthMm: resource.lengthMm });
+  }
+  for (const edges of adjacency.values()) edges.sort((left, right) => compareText(left.stationId, right.stationId) || left.lengthMm - right.lengthMm);
+  const best = new Map();
+  const pending = [];
+  for (const station of [...stations.values()].sort((left, right) => compareText(left.stationId, right.stationId))) {
+    if (station.latitudeE7 === undefined || station.longitudeE7 === undefined) continue;
+    const value = Object.freeze({
+      stationId: station.stationId,
+      anchorId: `station:${station.stationId}`,
+      latitudeE7: station.latitudeE7,
+      longitudeE7: station.longitudeE7,
+      distanceMm: 0,
+    });
+    best.set(station.stationId, value);
+    pending.push(value);
+  }
+  const comparePending = (left, right) => left.distanceMm - right.distanceMm || compareText(left.anchorId, right.anchorId) || compareText(left.stationId, right.stationId);
+  while (pending.length > 0) {
+    pending.sort(comparePending);
+    const current = pending.shift();
+    const accepted = best.get(current.stationId);
+    if (accepted.distanceMm !== current.distanceMm || accepted.anchorId !== current.anchorId) continue;
+    for (const edge of adjacency.get(current.stationId) ?? []) {
+      const distanceMm = current.distanceMm + edge.lengthMm;
+      safeInteger(distanceMm, "fortgeschriebene Ankerentfernung");
+      const previous = best.get(edge.stationId);
+      if (previous !== undefined && (previous.distanceMm < distanceMm || (previous.distanceMm === distanceMm && compareText(previous.anchorId, current.anchorId) <= 0))) continue;
+      const next = Object.freeze({ ...current, stationId: edge.stationId, distanceMm });
+      best.set(edge.stationId, next);
+      pending.push(next);
+    }
+  }
+  return best;
+}
+
+function buildResourceDisplayProjection(resources, stations, corridorData, resourceProjection) {
+  const corridorsByRoute = new Map();
+  const geometryByDisplayPath = new Map();
+  const routeAnchors = new Map();
+  for (const corridor of [...corridorData.corridors.values()].sort((left, right) => compareText(left.evidenceId, right.evidenceId))) {
+    if (!corridorData.orientationByGroup.has(groupKey(corridor.routeNumber, corridor.direction))) continue;
+    const values = corridorsByRoute.get(corridor.routeNumber) ?? [];
+    values.push(corridor);
+    corridorsByRoute.set(corridor.routeNumber, values);
+    const displayPathId = `corridor:${corridor.evidenceId}`;
+    const lengthMm = Math.abs(corridor.toMm - corridor.fromMm);
+    geometryByDisplayPath.set(displayPathId, Object.freeze({
+      displayPathId,
+      lengthMm,
+      vertices: displayGeometryVertices(corridor.rawCoordinates, lengthMm, `${displayPathId}.geometry`),
+    }));
+    const start = coordinateE7(corridor.rawCoordinates[0], `${displayPathId}.start`);
+    const end = coordinateE7(corridor.rawCoordinates.at(-1), `${displayPathId}.end`);
+    const anchors = routeAnchors.get(corridor.routeNumber) ?? [];
+    anchors.push({ kilometreMm: corridor.fromMm, ...start, id: `${displayPathId}:start` });
+    anchors.push({ kilometreMm: corridor.toMm, ...end, id: `${displayPathId}:end` });
+    routeAnchors.set(corridor.routeNumber, anchors);
+  }
+  for (const resource of resources) {
+    const anchors = routeAnchors.get(resource.routeNumber) ?? [];
+    for (const [stationId, kilometreMm] of [[resource.originStationId, resource.fromMm], [resource.destinationStationId, resource.toMm]]) {
+      const station = stations.get(stationId);
+      if (station?.latitudeE7 !== undefined && station.longitudeE7 !== undefined) {
+        anchors.push({
+          kilometreMm,
+          latitudeE7: station.latitudeE7,
+          longitudeE7: station.longitudeE7,
+          id: `station:${stationId}`,
+        });
+      }
+    }
+    routeAnchors.set(resource.routeNumber, anchors);
+  }
+  for (const anchors of routeAnchors.values()) {
+    anchors.sort((left, right) => left.kilometreMm - right.kilometreMm || compareText(left.id, right.id));
+  }
+
+  const spans = [];
+  const resolution = [];
+  const referencedDisplayPaths = new Set();
+  const networkAnchors = propagatedStationAnchors(resources, stations);
+  const exactByResource = new Map();
+  for (const span of resourceProjection.spans) {
+    const values = exactByResource.get(span.resourceId) ?? [];
+    values.push(span);
+    exactByResource.set(span.resourceId, values);
+  }
+  for (const resource of resources) {
+    const candidates = (corridorsByRoute.get(resource.routeNumber) ?? [])
+      .map((corridor) => corridorDisplaySpanForResource(corridor, resource))
+      .filter((span) => span !== null)
+      .sort((left, right) => (
+        left.resourceStartMm - right.resourceStartMm
+        || left.resourceEndMm - right.resourceEndMm
+        || displayDirectionRank(resource, left.direction) - displayDirectionRank(resource, right.direction)
+        || compareText(left.evidenceId, right.evidenceId)
+      ));
+    const endpoints = [...new Set([0, resource.lengthMm, ...candidates.flatMap((span) => [span.resourceStartMm, span.resourceEndMm])])]
+      .sort((left, right) => left - right);
+    const selected = [];
+    const routeAnchor = (routeAnchors.get(resource.routeNumber) ?? [])
+      .map((value) => ({ ...value, distanceMm: Math.abs(value.kilometreMm - resource.fromMm) }))
+      .sort((left, right) => left.distanceMm - right.distanceMm || compareText(left.id, right.id))[0];
+    const propagated = [
+      { endpoint: "origin", value: networkAnchors.get(resource.originStationId) },
+      { endpoint: "destination", value: networkAnchors.get(resource.destinationStationId) },
+    ]
+      .filter((candidate) => candidate.value !== undefined)
+      .sort((left, right) => left.value.distanceMm - right.value.distanceMm || compareText(left.value.anchorId, right.value.anchorId) || compareText(left.endpoint, right.endpoint))[0];
+    const anchor = routeAnchor === undefined
+      ? propagated === undefined
+        ? undefined
+        : {
+          id: propagated.value.anchorId,
+          latitudeE7: propagated.value.latitudeE7,
+          longitudeE7: propagated.value.longitudeE7,
+          uncertaintyAt: (resourceOffsetMm) => propagated.value.distanceMm + (propagated.endpoint === "origin" ? resourceOffsetMm : resource.lengthMm - resourceOffsetMm),
+        }
+      : {
+        ...routeAnchor,
+        uncertaintyAt: (resourceOffsetMm) => Math.abs(resourceKilometreAt(resource, resourceOffsetMm) - routeAnchor.kilometreMm),
+      };
+    invariant(anchor !== undefined, `Ressource '${resource.resourceId}' besitzt keinen releasegebundenen Netzanker.`);
+    const anchorPathId = `anchor:${resource.resourceId}`;
+    geometryByDisplayPath.set(anchorPathId, Object.freeze({
+      displayPathId: anchorPathId,
+      lengthMm: 0,
+      vertices: Object.freeze([Object.freeze({ offsetMm: 0, latitudeE7: anchor.latitudeE7, longitudeE7: anchor.longitudeE7 })]),
+    }));
+    for (let index = 1; index < endpoints.length; index += 1) {
+      const start = endpoints[index - 1];
+      const end = endpoints[index];
+      if (end <= start) continue;
+      const covering = candidates
+        .filter((span) => span.resourceStartMm <= start && span.resourceEndMm >= end)
+        .sort((left, right) => (
+          displayDirectionRank(resource, left.direction) - displayDirectionRank(resource, right.direction)
+          || compareText(left.evidenceId, right.evidenceId)
+        ));
+      const bestDirectionRank = covering.length === 0 ? undefined : displayDirectionRank(resource, covering[0].direction);
+      const bestCovering = bestDirectionRank === undefined
+        ? []
+        : covering.filter((span) => displayDirectionRank(resource, span.direction) === bestDirectionRank);
+      const corridor = bestCovering.length === 1 ? bestCovering[0] : undefined;
+      const piece = corridor === undefined
+        ? {
+          method: "anchor-hold",
+          displayPathId: anchorPathId,
+          resourceStartMm: start,
+          resourceEndMm: end,
+          displayStartOffsetMm: 0,
+          displayEndOffsetMm: 0,
+          uncertaintyStartMm: anchor.uncertaintyAt(start),
+          uncertaintyEndMm: anchor.uncertaintyAt(end),
+        }
+        : {
+          method: corridor.method,
+          displayPathId: corridor.displayPathId,
+          resourceStartMm: start,
+          resourceEndMm: end,
+          displayStartOffsetMm: interpolateInteger(
+            corridor.displayStartOffsetMm,
+            corridor.displayEndOffsetMm,
+            start - corridor.resourceStartMm,
+            corridor.resourceEndMm - corridor.resourceStartMm,
+          ),
+          displayEndOffsetMm: interpolateInteger(
+            corridor.displayStartOffsetMm,
+            corridor.displayEndOffsetMm,
+            end - corridor.resourceStartMm,
+            corridor.resourceEndMm - corridor.resourceStartMm,
+          ),
+          uncertaintyStartMm: ROUTE_CORRIDOR_UNCERTAINTY_MM,
+          uncertaintyEndMm: ROUTE_CORRIDOR_UNCERTAINTY_MM,
+        };
+      const previous = selected.at(-1);
+      if (
+        previous !== undefined
+        && previous.method === piece.method
+        && previous.displayPathId === piece.displayPathId
+        && previous.resourceEndMm === piece.resourceStartMm
+        && previous.displayEndOffsetMm === piece.displayStartOffsetMm
+        && previous.uncertaintyEndMm === piece.uncertaintyStartMm
+      ) {
+        previous.resourceEndMm = piece.resourceEndMm;
+        previous.displayEndOffsetMm = piece.displayEndOffsetMm;
+        previous.uncertaintyEndMm = piece.uncertaintyEndMm;
+      } else {
+        selected.push(piece);
+      }
+    }
+    invariant(selected.length > 0 && selected[0].resourceStartMm === 0 && selected.at(-1).resourceEndMm === resource.lengthMm, `Ressource '${resource.resourceId}' besitzt keinen vollstaendigen Darstellungspfad.`);
+    for (const span of selected) {
+      referencedDisplayPaths.add(span.displayPathId);
+      spans.push(Object.freeze({ ...span, resourceId: resource.resourceId, isResourceEnd: span.resourceEndMm === resource.lengthMm ? 1 : 0 }));
+    }
+    const exact = exactByResource.get(resource.resourceId) ?? [];
+    const classificationEndpoints = [...new Set([
+      0,
+      resource.lengthMm,
+      ...exact.flatMap((span) => [span.resourceStartMm, span.resourceEndMm]),
+      ...selected.flatMap((span) => [span.resourceStartMm, span.resourceEndMm]),
+    ])].sort((left, right) => left - right);
+    const summary = { resourceId: resource.resourceId, lengthMm: resource.lengthMm, confirmedMm: 0, estimatedMm: 0, heldMm: 0 };
+    for (let index = 1; index < classificationEndpoints.length; index += 1) {
+      const start = classificationEndpoints[index - 1];
+      const end = classificationEndpoints[index];
+      if (exact.some((span) => span.resourceStartMm <= start && span.resourceEndMm >= end)) summary.confirmedMm += end - start;
+      else {
+        const display = selected.find((span) => span.resourceStartMm <= start && span.resourceEndMm >= end);
+        invariant(display !== undefined, `Ressource '${resource.resourceId}' besitzt eine Darstellungslaenge ohne Klasse.`);
+        summary[display.method === "anchor-hold" ? "heldMm" : "estimatedMm"] += end - start;
+      }
+    }
+    invariant(summary.confirmedMm + summary.estimatedMm + summary.heldMm === resource.lengthMm, `Ressource '${resource.resourceId}' verletzt die disjunkte Darstellungsbilanz.`);
+    resolution.push(Object.freeze(summary));
+  }
+  return Object.freeze({
+    spans: spans.sort((left, right) => compareText(left.resourceId, right.resourceId) || left.resourceStartMm - right.resourceStartMm),
+    resolution,
+    referencedDisplayPaths,
+    geometryByDisplayPath,
+  });
+}
+
 function buildTrainProjection(network, deployment, resources) {
   const resourceById = new Map(resources.map((resource) => [resource.resourceId, resource]));
   const segmentById = new Map(list(network.segmentQualifications, "network.segmentQualifications").map((raw) => {
@@ -693,7 +1004,7 @@ async function atomicJson(path, value) {
   await rename(temporary, path);
 }
 
-async function writeProjectionDatabase(path, spec, sourceHashes, resourceProjection, trainProjection, trackData) {
+async function writeProjectionDatabase(path, spec, sourceHashes, resourceProjection, displayProjection, trainProjection, trackData) {
   await mkdir(dirname(path), { recursive: true });
   const temporary = `${path}.tmp-${process.pid}`;
   await rm(temporary, { force: true });
@@ -714,6 +1025,14 @@ async function writeProjectionDatabase(path, spec, sourceHashes, resourceProject
       PRAGMA encoding = 'UTF-8';
       PRAGMA application_id = ${TRAIN_MAP_PROJECTION_SQLITE_APPLICATION_ID};
       PRAGMA user_version = ${TRAIN_MAP_PROJECTION_SQLITE_USER_VERSION};
+      CREATE TABLE display_path_geometries (
+        world_id TEXT NOT NULL,
+        infrastructure_release_id TEXT NOT NULL,
+        display_path_id TEXT NOT NULL,
+        length_mm INTEGER NOT NULL CHECK (length_mm >= 0),
+        geometry_json TEXT NOT NULL,
+        PRIMARY KEY (world_id, infrastructure_release_id, display_path_id)
+      ) WITHOUT ROWID;
       CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
       CREATE TABLE track_geometries (
         world_id TEXT NOT NULL,
@@ -738,6 +1057,25 @@ async function writeProjectionDatabase(path, spec, sourceHashes, resourceProject
           REFERENCES track_geometries (world_id, infrastructure_release_id, track_id)
       ) WITHOUT ROWID;
       CREATE INDEX resource_track_lookup ON resource_track_spans
+        (world_id, infrastructure_release_id, resource_id, resource_start_mm, resource_end_mm);
+      CREATE TABLE resource_display_spans (
+        world_id TEXT NOT NULL,
+        infrastructure_release_id TEXT NOT NULL,
+        resource_id TEXT NOT NULL,
+        resource_start_mm INTEGER NOT NULL CHECK (resource_start_mm >= 0),
+        resource_end_mm INTEGER NOT NULL CHECK (resource_end_mm > resource_start_mm),
+        method TEXT NOT NULL CHECK (method IN ('topological-track', 'route-corridor', 'anchor-hold')),
+        display_path_id TEXT NOT NULL,
+        display_start_offset_mm INTEGER NOT NULL CHECK (display_start_offset_mm >= 0),
+        display_end_offset_mm INTEGER NOT NULL CHECK (display_end_offset_mm >= 0),
+        uncertainty_start_mm INTEGER NOT NULL CHECK (uncertainty_start_mm >= 0),
+        uncertainty_end_mm INTEGER NOT NULL CHECK (uncertainty_end_mm >= 0),
+        is_resource_end INTEGER NOT NULL CHECK (is_resource_end IN (0, 1)),
+        PRIMARY KEY (world_id, infrastructure_release_id, resource_id, resource_start_mm, resource_end_mm, method, display_path_id),
+        FOREIGN KEY (world_id, infrastructure_release_id, display_path_id)
+          REFERENCES display_path_geometries (world_id, infrastructure_release_id, display_path_id)
+      ) WITHOUT ROWID;
+      CREATE INDEX resource_display_lookup ON resource_display_spans
         (world_id, infrastructure_release_id, resource_id, resource_start_mm, resource_end_mm);
       CREATE TABLE train_resource_spans (
         world_id TEXT NOT NULL,
@@ -764,6 +1102,12 @@ async function writeProjectionDatabase(path, spec, sourceHashes, resourceProject
       deployment_sha256: sourceHashes.deployment,
     };
     for (const key of Object.keys(metadata).sort(compareText)) insertMetadata.run(key, metadata[key]);
+    const insertDisplayGeometry = database.prepare("INSERT INTO display_path_geometries (world_id, infrastructure_release_id, display_path_id, length_mm, geometry_json) VALUES (?, ?, ?, ?, ?)");
+    for (const displayPathId of [...displayProjection.referencedDisplayPaths].sort(compareText)) {
+      const geometry = displayProjection.geometryByDisplayPath.get(displayPathId);
+      invariant(geometry !== undefined, `Referenzierter Darstellungspfad '${displayPathId}' besitzt keine Geometrie.`);
+      insertDisplayGeometry.run(spec.worldId, spec.infrastructureReleaseId, displayPathId, geometry.lengthMm, canonicalJson(geometry.vertices));
+    }
     const insertTrack = database.prepare("INSERT INTO track_geometries (world_id, infrastructure_release_id, track_id, length_mm, geometry_json) VALUES (?, ?, ?, ?, ?)");
     for (const trackId of [...resourceProjection.referencedTracks].sort(compareText)) {
       const geometry = trackData.geometryByTrack.get(trackId);
@@ -782,6 +1126,23 @@ async function writeProjectionDatabase(path, spec, sourceHashes, resourceProject
       span.trackId,
       span.trackStartOffsetMm,
       span.trackEndOffsetMm,
+      span.isResourceEnd,
+    );
+    const insertDisplay = database.prepare(`INSERT INTO resource_display_spans
+      (world_id, infrastructure_release_id, resource_id, resource_start_mm, resource_end_mm, method, display_path_id, display_start_offset_mm, display_end_offset_mm, uncertainty_start_mm, uncertainty_end_mm, is_resource_end)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    for (const span of displayProjection.spans) insertDisplay.run(
+      spec.worldId,
+      spec.infrastructureReleaseId,
+      span.resourceId,
+      span.resourceStartMm,
+      span.resourceEndMm,
+      span.method,
+      span.displayPathId,
+      span.displayStartOffsetMm,
+      span.displayEndOffsetMm,
+      span.uncertaintyStartMm,
+      span.uncertaintyEndMm,
       span.isResourceEnd,
     );
     const insertTrain = database.prepare(`INSERT INTO train_resource_spans
@@ -809,12 +1170,16 @@ async function writeProjectionDatabase(path, spec, sourceHashes, resourceProject
   await rename(temporary, path);
 }
 
-function resolutionSummary(resourceProjection, resources) {
+function resolutionSummary(resourceProjection, displayProjection, resources) {
   const totalMm = resources.reduce((sum, resource) => sum + resource.lengthMm, 0);
   const resolvedMm = resourceProjection.resolution.reduce((sum, value) => sum + value.resolvedMm, 0);
   const ambiguousMm = resourceProjection.resolution.reduce((sum, value) => sum + value.ambiguousMm, 0);
   const missingMm = resourceProjection.resolution.reduce((sum, value) => sum + value.missingMm, 0);
+  const confirmedMm = displayProjection.resolution.reduce((sum, value) => sum + value.confirmedMm, 0);
+  const estimatedMm = displayProjection.resolution.reduce((sum, value) => sum + value.estimatedMm, 0);
+  const heldMm = displayProjection.resolution.reduce((sum, value) => sum + value.heldMm, 0);
   invariant(resolvedMm + ambiguousMm + missingMm === totalMm, "Ressourcenaufloesung ist nicht laengenvollstaendig bilanziert.");
+  invariant(confirmedMm + estimatedMm + heldMm === totalMm && confirmedMm === resolvedMm, "Darstellungsklassen sind nicht disjunkt oder widersprechen der exakten Aufloesung.");
   return {
     resourceCount: resources.length,
     fullyResolvedResourceCount: resourceProjection.resolution.filter((value) => value.resolvedMm === value.lengthMm).length,
@@ -825,31 +1190,50 @@ function resolutionSummary(resourceProjection, resources) {
     ambiguousMm,
     missingMm,
     resolvedBasisPoints: totalMm === 0 ? 0 : Math.floor(resolvedMm * 10_000 / totalMm),
+    confirmedMm,
+    estimatedMm,
+    heldMm,
+    confirmedBasisPoints: totalMm === 0 ? 0 : Math.floor(confirmedMm * 10_000 / totalMm),
+    estimatedBasisPoints: totalMm === 0 ? 0 : Math.floor(estimatedMm * 10_000 / totalMm),
+    heldBasisPoints: totalMm === 0 ? 0 : 10_000 - Math.floor(confirmedMm * 10_000 / totalMm) - Math.floor(estimatedMm * 10_000 / totalMm),
   };
 }
 
-function trainGeometrySummary(trainProjection, resourceProjection) {
+function trainGeometrySummary(trainProjection, resourceProjection, displayProjection) {
   const resolutionByResource = new Map(resourceProjection.resolution.map((value) => [value.resourceId, value]));
+  const displayByResource = new Map(displayProjection.resolution.map((value) => [value.resourceId, value]));
   const byTrain = new Map();
   for (const span of trainProjection.spans) {
-    const summary = byTrain.get(span.trainId) ?? { totalMm: 0, resolvedMm: 0, ambiguousMm: 0, missingMm: 0 };
+    const summary = byTrain.get(span.trainId) ?? { totalMm: 0, resolvedMm: 0, ambiguousMm: 0, missingMm: 0, confirmedMm: 0, estimatedMm: 0, heldMm: 0 };
     const resource = resolutionByResource.get(span.resourceId);
+    const display = displayByResource.get(span.resourceId);
     invariant(resource !== undefined, `Zugspanne verweist auf unbekannte Ressource '${span.resourceId}'.`);
+    invariant(display !== undefined, `Zugspanne verweist auf Ressource ohne Darstellungsklasse '${span.resourceId}'.`);
     summary.totalMm += span.positionEndMm - span.positionStartMm;
     summary.resolvedMm += resource.resolvedMm;
     summary.ambiguousMm += resource.ambiguousMm;
     summary.missingMm += resource.missingMm;
+    summary.confirmedMm += display.confirmedMm;
+    summary.estimatedMm += display.estimatedMm;
+    summary.heldMm += display.heldMm;
     byTrain.set(span.trainId, summary);
   }
   let totalMm = 0;
   let resolvedMm = 0;
+  let confirmedMm = 0;
+  let estimatedMm = 0;
+  let heldMm = 0;
   let fullyGeoreferenceableTrainCount = 0;
   let partiallyGeoreferenceableTrainCount = 0;
   let ungeoreferenceableTrainCount = 0;
   for (const summary of byTrain.values()) {
     invariant(summary.resolvedMm + summary.ambiguousMm + summary.missingMm === summary.totalMm, "Zug-Geometrieabdeckung ist nicht laengenvollstaendig bilanziert.");
+    invariant(summary.confirmedMm + summary.estimatedMm + summary.heldMm === summary.totalMm, "Zug-Darstellungsklassen sind nicht disjunkt.");
     totalMm += summary.totalMm;
     resolvedMm += summary.resolvedMm;
+    confirmedMm += summary.confirmedMm;
+    estimatedMm += summary.estimatedMm;
+    heldMm += summary.heldMm;
     if (summary.resolvedMm === summary.totalMm) fullyGeoreferenceableTrainCount += 1;
     else if (summary.resolvedMm > 0) partiallyGeoreferenceableTrainCount += 1;
     else ungeoreferenceableTrainCount += 1;
@@ -861,6 +1245,9 @@ function trainGeometrySummary(trainProjection, resourceProjection) {
     totalMm,
     resolvedMm,
     resolvedBasisPoints: totalMm === 0 ? 0 : Math.floor(resolvedMm * 10_000 / totalMm),
+    confirmedMm,
+    estimatedMm,
+    heldMm,
   });
 }
 
@@ -884,13 +1271,14 @@ export async function buildTrainMapProjection(rawSpec) {
   const corridorData = await loadCorridors(spec.corridors, resources, stations);
   const trackData = await loadTrackCandidates(spec.tracks, resources, corridorData);
   const resourceProjection = buildResourceProjection(resources, trackData);
+  const displayProjection = buildResourceDisplayProjection(resources, stations, corridorData, resourceProjection);
   const trainProjection = buildTrainProjection(network, deployment, resources);
   const sourceHashes = { tracks: tracksHash, corridors: corridorsHash, operationalNetwork: networkHash, deployment: deploymentHash };
-  await writeProjectionDatabase(spec.output, spec, sourceHashes, resourceProjection, trainProjection, trackData);
+  await writeProjectionDatabase(spec.output, spec, sourceHashes, resourceProjection, displayProjection, trainProjection, trackData);
   const outputStat = await stat(spec.output);
   const outputHash = await sha256File(spec.output);
-  const coverage = resolutionSummary(resourceProjection, resources);
-  const trainGeometry = trainGeometrySummary(trainProjection, resourceProjection);
+  const coverage = resolutionSummary(resourceProjection, displayProjection, resources);
+  const trainGeometry = trainGeometrySummary(trainProjection, resourceProjection, displayProjection);
   const validation = await inspectTrainMapProjection(spec.output);
   const report = Object.freeze({
     schema: TRAIN_MAP_PROJECTION_REPORT_SCHEMA,
@@ -911,6 +1299,7 @@ export async function buildTrainMapProjection(rawSpec) {
     tracks: {
       usableCandidateCount: trackData.candidates.length,
       referencedTrackCount: resourceProjection.referencedTracks.size,
+      referencedDisplayPathCount: displayProjection.referencedDisplayPaths.size,
       rejected: trackData.rejected,
     },
     resources: coverage,
@@ -930,9 +1319,11 @@ export async function buildTrainMapProjection(rawSpec) {
       publicAndReadOnly: true,
     },
     policy: {
-      ambiguousOrMissingGeometryIsUnresolved: true,
+      ambiguousOrMissingTrackGeometryNeverBecomesExact: true,
       guessedTrackSelection: false,
       integerRuntimeProjection: true,
+      estimatedDisplayNeverSelectsTrack: true,
+      anchorHoldIsReleaseBound: true,
       externalLegsProjected: false,
     },
     validation,
@@ -975,7 +1366,7 @@ export async function inspectTrainMapProjection(path) {
     invariant(canonicalJson(tableColumns) === canonicalJson(TRAIN_MAP_PROJECTION_PUBLIC_TABLES), "Projektions-SQLite verletzt die oeffentliche Spalten-Allowlist.");
     const schemaSql = database.prepare("SELECT type, name, sql FROM sqlite_schema WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY type, name").all();
     const schemaSqlSha256 = createHash("sha256").update(canonicalJson(schemaSql)).digest("hex");
-    invariant(schemaSqlSha256 === TRAIN_MAP_PROJECTION_SCHEMA_SQL_SHA256, "Projektions-SQLite verletzt den gepinnten Schema-SQL-Hash.");
+    invariant(schemaSqlSha256 === TRAIN_MAP_PROJECTION_SCHEMA_SQL_SHA256, `Projektions-SQLite verletzt den gepinnten Schema-SQL-Hash (${schemaSqlSha256}).`);
     const foreignKeyViolations = database.prepare("PRAGMA foreign_key_check").all();
     invariant(foreignKeyViolations.length === 0, "Projektions-SQLite verletzt ihre Fremdschluessel.");
     const quickCheck = database.prepare("PRAGMA quick_check").get().quick_check;
@@ -991,6 +1382,8 @@ export async function inspectTrainMapProjection(path) {
       tables: tableColumns,
       schemaSqlSha256,
       foreignKeyCheck: "ok",
+      displayPathCount: database.prepare("SELECT count(*) AS count FROM display_path_geometries").get().count,
+      resourceDisplaySpanCount: database.prepare("SELECT count(*) AS count FROM resource_display_spans").get().count,
       trackCount: database.prepare("SELECT count(*) AS count FROM track_geometries").get().count,
       resourceSpanCount: database.prepare("SELECT count(*) AS count FROM resource_track_spans").get().count,
       trainSpanCount: database.prepare("SELECT count(*) AS count FROM train_resource_spans").get().count,

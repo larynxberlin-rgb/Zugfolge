@@ -87,8 +87,8 @@
       "visibility": "public",
       "sourceFile": "var/derived/germany-2026/map-release/public/train-map-projection.sqlite",
       "installPath": "train-map-projection.sqlite",
-      "expectedBytes": 18014208,
-      "expectedSha256": "8c9cb99385ac0de84bfc67b1a2f80fab619f694d250d5393132f88cf969004e1"
+      "expectedBytes": 29003776,
+      "expectedSha256": "61a99693dad47bf21423ed9bf9b1547a0cbdcdeeb7717dd5daabc36375d61bde"
     },
     {
       "id": "style-dark",

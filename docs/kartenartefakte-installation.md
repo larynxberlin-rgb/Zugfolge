@@ -208,7 +208,7 @@ akzeptiert.
 
 Der Jahreskandidat 2026.1 bindet 11.545.162.669 Byte Welt-Basemap,
 1.536.379.722 Byte Deutschland-Infrastruktur, 1.291.001.856 Byte ReadModel und
-18.014.208 Byte Zugkartenprojektion. Die vollständige Artefakt- und
+29.003.776 Byte Exact-/Estimate-Zugkartenprojektion. Die vollständige Artefakt- und
 Qualitätsbilanz steht in
 [`deutschland-infracorpus.md`](deutschland-infracorpus.md).
 
@@ -216,12 +216,12 @@ Der reale Transportlauf ist erfolgreich ausgeführt:
 
 | Beleg | Ergebnis |
 |---|---|
-| Paket | 1.172 Teile mit zusammen 14.408.875.328 Byte; einschließlich `manifest.json` und `manifest.sha256` 14.409.482.278 Byte |
-| Manifest | 606.870 Byte; SHA-256 `c14fbf8120b3ea033fc3428b9e2a0e306acc30c79dfd237bc13ae6d55e8ea9c2` |
-| `pack-plan` | Exit 0 in 51,2 s |
-| `verify` | Exit 0 in 18,1 s |
-| Erstinstallation | 1.037 installierte Dateien mit 14.409.482.198 Byte; Exit 0 in 28,0 s |
-| zweite Installation | unverändertes Ziel erkannt, Status `reused`; Exit 0 in 12,5 s |
+| Paket | 1.172 Teile mit zusammen 14.419.864.896 Byte; einschließlich `manifest.json` und `manifest.sha256` 14.420.471.846 Byte |
+| Manifest | 606.870 Byte; SHA-256 `b12f607c959992d29ea9e7dcc2e963b01717b117d8614b5938fcc437dece8e9c` |
+| `pack-plan` | Exit 0 in 52,3 s |
+| `verify` | Exit 0; auch nach dem atomaren Austausch am kanonischen Pfad erneut Exit 0 |
+| Erstinstallation | 1.037 installierte Dateien mit 14.420.471.766 Byte; Exit 0 in 28,8 s |
+| zweite Installation | unverändertes Ziel erkannt, Status `reused`; Exit 0 |
 
 Paket und Testinstallation liegen außerhalb der Git-Historie unter
 `var/map-package/zugfolge-map-deutschland-2026.1/` beziehungsweise

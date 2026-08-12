@@ -10,6 +10,8 @@ import test from "node:test";
 
 import { LIVEMAP_READ_MODEL_APPLICATION_ID, LIVEMAP_READ_MODEL_USER_VERSION, PUBLIC_READ_MODEL_TABLES } from "./livemap-read-model.mjs";
 import {
+  TRAIN_MAP_PROJECTION_PUBLIC_SCHEMA_OBJECTS,
+  TRAIN_MAP_PROJECTION_PUBLIC_TABLES,
   TRAIN_MAP_PROJECTION_SCHEMA,
   TRAIN_MAP_PROJECTION_SQLITE_APPLICATION_ID,
   TRAIN_MAP_PROJECTION_SQLITE_USER_VERSION,
@@ -112,6 +114,14 @@ function writeMinimalTrainMapProjection(path) {
       PRAGMA application_id = ${TRAIN_MAP_PROJECTION_SQLITE_APPLICATION_ID};
       PRAGMA user_version = ${TRAIN_MAP_PROJECTION_SQLITE_USER_VERSION};
       PRAGMA foreign_keys = ON;
+      CREATE TABLE display_path_geometries (
+        world_id TEXT NOT NULL,
+        infrastructure_release_id TEXT NOT NULL,
+        display_path_id TEXT NOT NULL,
+        length_mm INTEGER NOT NULL CHECK (length_mm >= 0),
+        geometry_json TEXT NOT NULL,
+        PRIMARY KEY (world_id, infrastructure_release_id, display_path_id)
+      ) WITHOUT ROWID;
       CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
       CREATE TABLE track_geometries (
         world_id TEXT NOT NULL,
@@ -137,6 +147,25 @@ function writeMinimalTrainMapProjection(path) {
       ) WITHOUT ROWID;
       CREATE INDEX resource_track_lookup ON resource_track_spans
         (world_id, infrastructure_release_id, resource_id, resource_start_mm, resource_end_mm);
+      CREATE TABLE resource_display_spans (
+        world_id TEXT NOT NULL,
+        infrastructure_release_id TEXT NOT NULL,
+        resource_id TEXT NOT NULL,
+        resource_start_mm INTEGER NOT NULL CHECK (resource_start_mm >= 0),
+        resource_end_mm INTEGER NOT NULL CHECK (resource_end_mm > resource_start_mm),
+        method TEXT NOT NULL CHECK (method IN ('topological-track', 'route-corridor', 'anchor-hold')),
+        display_path_id TEXT NOT NULL,
+        display_start_offset_mm INTEGER NOT NULL CHECK (display_start_offset_mm >= 0),
+        display_end_offset_mm INTEGER NOT NULL CHECK (display_end_offset_mm >= 0),
+        uncertainty_start_mm INTEGER NOT NULL CHECK (uncertainty_start_mm >= 0),
+        uncertainty_end_mm INTEGER NOT NULL CHECK (uncertainty_end_mm >= 0),
+        is_resource_end INTEGER NOT NULL CHECK (is_resource_end IN (0, 1)),
+        PRIMARY KEY (world_id, infrastructure_release_id, resource_id, resource_start_mm, resource_end_mm, method, display_path_id),
+        FOREIGN KEY (world_id, infrastructure_release_id, display_path_id)
+          REFERENCES display_path_geometries (world_id, infrastructure_release_id, display_path_id)
+      ) WITHOUT ROWID;
+      CREATE INDEX resource_display_lookup ON resource_display_spans
+        (world_id, infrastructure_release_id, resource_id, resource_start_mm, resource_end_mm);
       CREATE TABLE train_resource_spans (
         world_id TEXT NOT NULL,
         infrastructure_release_id TEXT NOT NULL,
@@ -161,6 +190,18 @@ function writeMinimalTrainMapProjection(path) {
       operational_network_sha256: "c".repeat(64),
       deployment_sha256: "d".repeat(64),
     })) insert.run(key, value);
+    const schemaObjects = database.prepare(`
+      SELECT type, name, tbl_name AS "table"
+      FROM sqlite_master
+      WHERE type IN ('table', 'index') AND name NOT LIKE 'sqlite_%'
+      ORDER BY type, name
+    `).all().map(({ type, name, table }) => ({ type, name, table }));
+    assert.deepEqual(schemaObjects, TRAIN_MAP_PROJECTION_PUBLIC_SCHEMA_OBJECTS);
+    const tableColumns = Object.fromEntries(Object.keys(TRAIN_MAP_PROJECTION_PUBLIC_TABLES).sort().map((table) => [
+      table,
+      database.prepare(`PRAGMA table_info(${table})`).all().map((column) => column.name),
+    ]));
+    assert.deepEqual(tableColumns, TRAIN_MAP_PROJECTION_PUBLIC_TABLES);
   } finally {
     database.close();
   }

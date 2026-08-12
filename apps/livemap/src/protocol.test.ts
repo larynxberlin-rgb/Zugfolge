@@ -242,6 +242,34 @@ describe("Livemap-Projektion", () => {
     expect(updated?.objectStates.size).toBe(0);
   });
 
+  it("uebernimmt eine releasegebundene Kartenschaetzung ohne sie zur Gleisposition umzudeuten", () => {
+    const initial = initialState(parseSnapshot({
+      ...snapshot(4, 100, {
+        ...baseTrain,
+        mapEstimate: {
+          infrastructureReleaseId: "infra-de-2026",
+          resourceId: "block-track-1",
+          method: "route-corridor",
+          displayPathId: "corridor-rv-1",
+          displayOffsetMm: 25_000,
+          latitudeE7: 515_000_000,
+          longitudeE7: 120_000_000,
+          bearingMilliDegrees: 90_000,
+          uncertaintyMm: 750_000,
+        },
+      }),
+    }));
+
+    expect(initial.trains.get("1")).toMatchObject({
+      mapEstimate: {
+        method: "route-corridor",
+        displayPathId: "corridor-rv-1",
+        uncertaintyMm: 750_000,
+      },
+    });
+    expect(initial.trains.get("1")).not.toHaveProperty("mapPosition");
+  });
+
   it("weist Kartenpositionen ohne Release- oder Ressourcenbindung zurueck", () => {
     const position = {
       infrastructureReleaseId: "infra-de-2026",
@@ -259,6 +287,39 @@ describe("Livemap-Projektion", () => {
       ...baseTrain,
       mapPosition: { ...position, resourceId: "" },
     }))).toThrow(/resourceId/);
+  });
+
+  it("weist unbekannte, unvollstaendige oder widerspruechliche Kartenschaetzungen zurueck", () => {
+    const estimate = {
+      infrastructureReleaseId: "infra-de-2026",
+      resourceId: "block-track-1",
+      method: "anchor-hold" as const,
+      displayPathId: "anchor-track-1",
+      displayOffsetMm: 1_000,
+      latitudeE7: 515_000_000,
+      longitudeE7: 120_000_000,
+      uncertaintyMm: 750_000,
+    };
+    expect(() => parseSnapshot(snapshot(4, 100, {
+      ...baseTrain,
+      mapEstimate: { ...estimate, method: "guess" },
+    } as never))).toThrow(/Schaetzmethode/);
+    expect(() => parseSnapshot(snapshot(4, 100, {
+      ...baseTrain,
+      mapEstimate: { ...estimate, displayPathId: "" },
+    }))).toThrow(/displayPathId/);
+    expect(() => parseSnapshot(snapshot(4, 100, {
+      ...baseTrain,
+      mapPosition: {
+        infrastructureReleaseId: "infra-de-2026",
+        resourceId: "block-track-1",
+        trackId: "track-1",
+        offsetMm: 1_000,
+        latitudeE7: 515_000_000,
+        longitudeE7: 120_000_000,
+      },
+      mapEstimate: estimate,
+    }))).toThrow(/nicht zugleich/);
   });
 
   it("akzeptiert nur den versionierten Eigenbetriebsmarker und beschriftet ihn eindeutig", () => {

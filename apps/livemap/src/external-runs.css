@@ -16,6 +16,11 @@
 
 #external-runs:empty { display: none; }
 #external-runs .eyebrow { margin-bottom: 2px; }
+#external-runs .eyebrow:not(:first-child) {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
 .position-note { margin: 0 0 5px; color: var(--muted); font-size: 10px; line-height: 1.35; }
 
 .external-run {

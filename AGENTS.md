@@ -15,8 +15,8 @@ lesen, nicht raten.
 
 | Datei | Inhalt | Lesen wenn |
 |-------|--------|------------|
-| `docs/entscheidungen.md` | E1–E26 mit voller Begründung | eine Entscheidung infrage steht oder geändert werden soll |
-| `docs/adr/` | E1–E26 je als Architecture Decision Record: Kontext, Konsequenzen, Querverweise | eine Grundsatzentscheidung ausführlich nachschlagen oder eine neue festhalten |
+| `docs/entscheidungen.md` | E1–E27 mit voller Begründung | eine Entscheidung infrage steht oder geändert werden soll |
+| `docs/adr/` | E1–E27 je als Architecture Decision Record: Kontext, Konsequenzen, Querverweise | eine Grundsatzentscheidung ausführlich nachschlagen oder eine neue festhalten |
 | `docs/monorepo.md` | Verzeichnisaufbau, Domänengrenzen, Werkzeugkette, Durchsetzung der Invarianten | Code beitragen, neues Paket oder Crate anlegen, CI verstehen |
 | `docs/glossar.md` | Domänenglossar: deutscher Fachbegriff → Bezeichner im Code → Bedeutung → Quelle | jede Benennung im Code, jeder neue Fachbegriff |
 | `docs/produkt.md` | Produktdefinition, Oberflächen, Onboarding, Netzabgrenzung, Spielertypen, Anti-Monokultur | Produktfragen, UI, Zielgruppe, Was-gehört-dazu |
@@ -86,6 +86,7 @@ Begründungen: `docs/entscheidungen.md`. Änderungen dort eintragen und begründ
 | E24 | Der Alpha-Schnitt wird gezielt um M12.1, M12.2 und M14.1 erweitert |
 | E25 | Gebietsüberschreitende Fahrten bleiben eine Fahrtkette mit deterministischem Außenlauf |
 | E26 | Die selbst gehostete Weltkarte ist das Spielzentrum; der Deutschland-Korpus ist vollständig sichtbar |
+| E27 | Exact bleibt die betriebliche Zugposition; gekennzeichnete Estimates sind nur visuelle, releasegebundene Kartenhilfen |
 
 ---
 
@@ -127,7 +128,7 @@ Lastgrößen: `docs/architektur.md`.
 
 ## Stand
 
-Konzeption abgeschlossen, E1–E26 entschieden, Milestones auf Reihenfolge und
+Konzeption abgeschlossen, E1–E27 entschieden, Milestones auf Reihenfolge und
 Vollständigkeit geprüft. **M0 bis M8 sind fachlich abgenommen und
 reproduzierbar nachgewiesen.** M1.13 akzeptiert die Trassenfinder-Kalibrierung
 innerhalb der definierten Toleranz und den getrennten GTFS-Fahrplan-Holdout als

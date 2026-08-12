@@ -1,9 +1,9 @@
 # ADR-0026: Die selbst gehostete Weltkarte ist das Spielzentrum; der Deutschland-Korpus ist vollständig sichtbar
 
-- **Status:** Angenommen — bindend (entspricht E26)
+- **Status:** Angenommen — bindend (entspricht E26); der Exact-only-Satz zur sichtbaren Zugposition ist teilweise durch [ADR-0027](0027-geschaetzte-zugkartenposition-nur-visuell.md) abgelöst
 - **Bezug:** [../entscheidungen.md](../entscheidungen.md) · [../produkt.md](../produkt.md) · [../design.md](../design.md) · [../daten.md](../daten.md) · [../deutschland-infracorpus.md](../deutschland-infracorpus.md)
 - **Betrifft Milestones:** M4.7, M4.8, M9.3, M9.10, M14.2
-- **Verwandte ADRs:** [ADR-0009](0009-vollstaendige-transparenz-livemap.md), [ADR-0014](0014-netzabgrenzung-nur-ebo.md), [ADR-0017](0017-design-domaenensprache-achromatisch-dunkel.md), [ADR-0019](0019-realismus-dient-dem-spiel.md), [ADR-0022](0022-jaehrliche-infrastrukturaktualisierung.md), [ADR-0025](0025-gebietsueberschreitende-fahrtketten.md)
+- **Verwandte ADRs:** [ADR-0009](0009-vollstaendige-transparenz-livemap.md), [ADR-0014](0014-netzabgrenzung-nur-ebo.md), [ADR-0017](0017-design-domaenensprache-achromatisch-dunkel.md), [ADR-0019](0019-realismus-dient-dem-spiel.md), [ADR-0022](0022-jaehrliche-infrastrukturaktualisierung.md), [ADR-0025](0025-gebietsueberschreitende-fahrtketten.md), [ADR-0027](0027-geschaetzte-zugkartenposition-nur-visuell.md)
 
 ## Kontext
 
@@ -59,6 +59,13 @@ Zugdetails enthalten nie Kosten-, Fahrzeug-, Personal- oder Vertragskennungen.
 Eine Zugposition erscheint nur bei bestätigter `trackId`, ganzzahligem Offset
 und aus dem gepinnten Release abgeleiteter E7-Koordinate. Fehlt diese Zuordnung,
 bleibt die Fahrt in der Liste sichtbar, aber ohne erfundenen Kartenpunkt.
+
+> **Historische Teilablösung durch E27/ADR-0027:** Dieser Absatz bleibt als
+> ursprünglicher Entscheidungsstand sichtbar. Sein Exact- und
+> Betriebssicherheitsvertrag gilt unverändert; nur die Darstellung darf bei
+> fehlendem Exact nun eine getrennte, releasegebundene und eindeutig als
+> geschätzt markierte Position verwenden. Eine solche Schätzung wird niemals
+> betriebliche Wahrheit.
 
 Betriebszustände überlagern das neutrale Netz: Einschränkung bernsteinfarben
 und gestrichelt, Sperrung rot und unterbrochen, Baustelle rot-weiß gemustert.
