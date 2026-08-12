@@ -21,6 +21,10 @@ describe("TutorialWorldFactory PlanningRun-Vertrag", () => {
       expect(new Set(command.requests.map((request) => request.trainId)).size).toBe(2);
       expect(new Set(command.requests.map((request) => request.train.numericId)).size).toBe(2);
       expect(new Set(command.requests.map((request) => `${request.trainCategory}:${request.trainNumber}`)).size).toBe(2);
+      expect(command.requests.every((request) => request.trainCategory === "regional"
+        && request.trainNumber >= 20_000
+        && request.trainNumber <= 39_999
+        && request.trainNumber % 2 === 0)).toBe(true);
       expect("worldId" in command.requests[0]!).toBe(false);
       expect(command.worldId).toBe("11111111-1111-4111-8111-111111111111");
     },
