@@ -23,7 +23,7 @@ Kalendertermine gesetzt.
 | M10 | offen | offen | offen | offen | 0 / 0 | M9 |
 | M11 | offen | offen | offen | offen | 0 / 0 | M9 |
 | M12 | offen | offen | offen | offen | 0 / 0 | M6, M10, M11 |
-| M13 | offen | offen | offen | offen | 0 / 0 | M9, M12 |
+| M13 | in Arbeit | in Arbeit | offen | offen | 0 / 0 | M9, M12 |
 | M14 | offen | offen | offen | offen | 0 / 0 | M9 |
 
 Ein GitHub-Milestone wird nur geschlossen, wenn alle drei maschinell pruefbaren
