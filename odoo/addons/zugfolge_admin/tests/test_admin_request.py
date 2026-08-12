@@ -38,6 +38,35 @@ class TestZugfolgeAdminRequest(TransactionCase):
                 "reason": "Bestaetigter Supportfall", "effect_preview": {"kind": "world-access-revoke"},
             })
 
+    def test_invitation_revoke_creates_high_risk_request_instead_of_direct_command(self):
+        invitation = self.env["zugfolge.alpha.invitation"].create({
+            "email": "alpha@example.test", "display_name": "Alpha", "world_projection_id": self.projection.id,
+            "role": "player", "keycloak_subject": "kc-alpha", "game_account_reference": "account-alpha", "state": "provisioned",
+        })
+        action = invitation.action_revoke()
+        request = self.env["zugfolge.admin.request"].browse(action["res_id"])
+        self.assertEqual(request.action_type, "world_access_revoke")
+        self.assertEqual(request.risk_class, "high")
+        self.assertEqual(request.target_reference, "kc-alpha")
+        self.assertEqual(invitation.state, "revocation_requested")
+
+    def test_pseudonymized_feedback_projection_is_immutable_but_triageable(self):
+        feedback = self.env["zugfolge.feedback"].with_context(zugfolge_game_projection=True).upsert_game_projection({
+            "messageId": "feedback-message-1", "messageType": "alpha.feedback.projection",
+            "worldId": self.projection.world_id, "occurredAt": "2026-01-01 00:05:00",
+            "payload": {
+                "feedbackReference": "feedback-1", "participantPseudonym": "a" * 64,
+                "releaseHash": "b" * 64, "fromS": 10, "untilS": 20, "category": "usability",
+                "message": "Die Warteschlange ist schwer verstaendlich.", "contactAllowed": False,
+            },
+        })
+        self.assertEqual(feedback.participant_pseudonym, "a" * 64)
+        self.assertNotIn("@", feedback.participant_pseudonym)
+        with self.assertRaises(AccessError):
+            feedback.write({"body": "Manipuliert"})
+        feedback.write({"triage_state": "triaged"})
+        self.assertEqual(feedback.triage_state, "triaged")
+
     def test_monitoring_projection_extracts_live_queue_market_and_release_fields(self):
         projected = self.env["zugfolge.world.projection"].with_context(zugfolge_game_projection=True).upsert_game_projection({
             "messageId": "projection-2", "worldId": self.projection.world_id,

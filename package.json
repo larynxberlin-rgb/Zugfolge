@@ -19,6 +19,7 @@
     "guards": "pnpm --filter @zugfolge/guards run guards",
     "licenses": "pnpm --filter @zugfolge/guards run licenses",
     "alpha:up": "bash tools/alpha-ops/phase1-smoke.sh",
+    "alpha:phase3": "bash tools/alpha-ops/phase3-acceptance.sh",
     "alpha:down": "docker compose -f compose.alpha.yml down"
   }
 }

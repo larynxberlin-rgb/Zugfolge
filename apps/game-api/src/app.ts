@@ -167,7 +167,7 @@ import { guardAlphaAction, registerAlphaRoutes, type AlphaAbuseServices, type Al
 import { registerCooperationRoutes } from "./cooperation-routes.js";
 import { GameCooperationAuthority } from "./cooperation-authority.js";
 import { GameFleetAssetTransferWriter } from "./fleet-market-writer.js";
-import { ApiObservability, requestCorrelationId } from "./observability.js";
+import { ApiObservability, requestCorrelationId, type PrometheusMetricSource } from "./observability.js";
 import {
   RegionalSimulationConflictError,
   RegionalSimulationSequenceError,
@@ -184,6 +184,8 @@ export interface AppDependencies {
    * Health Checks anmelden, statt sie später nachzuziehen.
    */
   readonly extraHealthChecks?: readonly HealthCheck[];
+  /** Bereits materialisierte Betriebsmetriken; `/metrics` fuehrt keine Fachabfragen aus. */
+  readonly extraMetricSources?: readonly PrometheusMetricSource[];
   /** Öffentlicher, weltisolierter Livemap-Fanout (M4.6). */
   readonly livemap?: LivemapRegistry;
   /** Authentifizierter, je EVU getrennter Betriebsereignis-Fanout (M7.5/M7.6). */
@@ -883,7 +885,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     // technische Ausschreibungswerte erfolgreich gesetzt zu haben.
     ajv: { customOptions: { removeAdditional: false } },
   });
-  const observability = new ApiObservability();
+  const observability = new ApiObservability(deps.extraMetricSources);
   observability.register(app);
   const authenticate = createAuthenticator(deps.verifyToken);
   const operations = deps.operations ?? new OperationsRegistry();

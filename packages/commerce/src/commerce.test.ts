@@ -6,7 +6,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { AdminWorkflowError, assertPublicWorldSlot, createOdooWebhookReceiptStore, deriveReconciliationTasks, dispatchOdooProjectionOutbox, enqueueGameAdminCapabilityProjection, entitlementFeatures, processNextOdooCommand, projectionEnvelope, receiveOdooWebhook, reconcileOdooProjectionSnapshot, signPayload, type OdooWebhookEnvelope, type SigningKey, WebhookSignatureError, WebhookValidationError } from "./index.js";
+import { AdminWorkflowError, assertPublicWorldSlot, createHttpOdooProjectionClient, createOdooWebhookReceiptStore, deriveReconciliationTasks, dispatchOdooProjectionOutbox, enqueueAlphaFeedbackProjection, enqueueGameAdminCapabilityProjection, entitlementFeatures, processNextOdooCommand, projectionEnvelope, receiveOdooWebhook, reconcileOdooProjectionSnapshot, signPayload, type OdooWebhookEnvelope, type SigningKey, WebhookSignatureError, WebhookValidationError } from "./index.js";
 
 const NOW = new Date("2026-08-11T12:00:00.000Z");
 const WORLD = "11111111-1111-1111-1111-111111111111";
@@ -89,9 +89,62 @@ describe("Bridge", () => {
     const [row] = await db.select().from(odooProjectionOutbox);
     expect(row?.deliveredAt).toBeDefined();
   });
+
+  it("markiert eine fachlich abgelehnte Odoo-Projektion nicht als zugestellt", async () => {
+    const project = createHttpOdooProjectionClient("https://odoo.test/zugfolge/projection", KEY, async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ jsonrpc: "2.0", result: { accepted: false, code: "invalid_signature" } }),
+    }));
+    await expect(project.project({
+      schemaVersion: "zugfolge-odoo/v1",
+      messageId: "11111111-1111-4111-8111-111111111111",
+      messageType: "world.projection",
+      worldId: WORLD,
+      occurredAt: NOW.toISOString(),
+      correlationId: "projection-rejected-0001",
+      payload: {},
+    })).rejects.toThrow(/invalid_signature/);
+  });
+
+  it("legt pseudonymisiertes Alpha-Feedback als weltgebundene Outbox-Projektion ab", async () => {
+    await enqueueAlphaFeedbackProjection(db, {
+      worldId: WORLD,
+      correlationId: "alpha-feedback-0001",
+      occurredAt: NOW,
+      payload: {
+        feedbackReference: "22222222-2222-4222-8222-222222222222",
+        participantPseudonym: "pseudonym-42",
+        category: "usability",
+        message: "Die Kapazitaetsanzeige ist schwer verstaendlich.",
+      },
+    });
+    const [row] = await db.select().from(odooProjectionOutbox);
+    expect(projectionEnvelope(row!)).toMatchObject({
+      messageType: "alpha.feedback.projection",
+      worldId: WORLD,
+      payload: { participantPseudonym: "pseudonym-42" },
+    });
+    expect(JSON.stringify(row?.payload)).not.toContain("keycloak");
+  });
 });
 
 describe("Vier-Augen-Validierung", () => {
+  it("behandelt jeden Weltzugangsentzug als Hochrisikoaktion", async () => {
+    const payload: OdooWebhookEnvelope = {
+      ...entitlementEnvelope("odoo-event-revoke-standard"), actorReference: "admin-service",
+      command: {
+        kind: "admin.world_access_revoke", worldId: WORLD, actionType: "world_access_revoke", riskClass: "standard",
+        requesterReference: "requester", reason: "Zugang entziehen", effectPreview: {}, targetReference: "subject-1",
+      },
+    };
+    await expect(receiveOdooWebhook(
+      createOdooWebhookReceiptStore(db), signPayload(payload, KEY, NOW),
+      { tenantId: "zugfolge-production", keys: [KEY], authorizedActors: { "admin-service": ["admin.world_access_revoke"] } }, NOW,
+    )).rejects.toBeInstanceOf(AdminWorkflowError);
+    expect(await db.select().from(odooCommandQueue).where(eq(odooCommandQueue.eventId, payload.eventId))).toHaveLength(0);
+  });
+
   it("lehnt Selbstfreigabe und fehlende Begruendung vor dem Queue-Commit ab", async () => {
     const payload: OdooWebhookEnvelope = {
       ...entitlementEnvelope("odoo-event-0003"), actorReference: "admin-service",

@@ -14,7 +14,7 @@ import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { entitlementChangeToStatus } from "./entitlements.js";
-import type { AdminActionType, AdminCommandPayload, EntitlementChangePayload, GameAdminCapabilityProjection, OdooProjectionEnvelope, OdooWebhookEnvelope } from "./contracts.js";
+import { ODOO_CONTRACT_VERSION, type AdminActionType, type AdminCommandPayload, type EntitlementChangePayload, type GameAdminCapabilityProjection, type OdooProjectionEnvelope, type OdooWebhookEnvelope } from "./contracts.js";
 import { validateAdminCommand } from "./admin-workflow.js";
 import type { OdooWebhookReceiptStore } from "./receiver.js";
 
@@ -106,6 +106,31 @@ export async function enqueueWorldProjection(
     payload: input.payload,
     occurredAt,
     enqueuedAt: occurredAt,
+  });
+}
+
+/**
+ * Schreibt ausschliesslich das bereits pseudonymisierte Spielerfeedback in die
+ * Odoo-Outbox. Der Aufrufer reicht seine laufende Fachtransaktion ein, damit
+ * Feedback und Projektion nicht auseinanderfallen koennen.
+ */
+export async function enqueueAlphaFeedbackProjection(
+  db: CommerceDatabase,
+  input: {
+    readonly worldId: string;
+    readonly correlationId: string;
+    readonly payload: Readonly<Record<string, unknown>>;
+    readonly occurredAt: Date;
+  },
+): Promise<void> {
+  await db.insert(odooProjectionOutbox).values({
+    worldId: input.worldId,
+    messageType: "alpha.feedback.projection",
+    schemaVersion: ODOO_CONTRACT_VERSION,
+    correlationId: input.correlationId,
+    payload: input.payload,
+    occurredAt: input.occurredAt,
+    enqueuedAt: input.occurredAt,
   });
 }
 

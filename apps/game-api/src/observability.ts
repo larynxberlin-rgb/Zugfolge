@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
 import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { AlphaMonitoringService } from "@zugfolge/alpha";
 import type { HealthReport } from "@zugfolge/health";
 
 const CORRELATION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -19,6 +20,12 @@ interface MetricEntry {
   durationMs: number;
   buckets: number[];
 }
+
+export interface PrometheusMetricSource {
+  renderPrometheus(): readonly string[];
+}
+
+type AlphaMonitoringSnapshot = Awaited<ReturnType<AlphaMonitoringService["snapshot"]>>;
 
 function firstHeader(value: string | readonly string[] | undefined): string | undefined {
   return typeof value === "string" ? value : value?.[0];
@@ -42,6 +49,8 @@ export class ApiObservability {
   readonly #metrics = new Map<string, MetricEntry>();
   #active = 0;
   readonly #health = new Map<string, { readonly status: "ok" | "degraded" | "down"; readonly durationMs: number }>();
+
+  constructor(private readonly metricSources: readonly PrometheusMetricSource[] = []) {}
 
   observeHealth(report: HealthReport): void {
     for (const check of report.checks) this.#health.set(check.name, { status: check.status, durationMs: check.durationMs });
@@ -124,6 +133,57 @@ export class ApiObservability {
       }
       lines.push(`zugfolge_health_check_duration_milliseconds{check="${escapeLabel(check)}"} ${outcome.durationMs}`);
     }
+    for (const source of this.metricSources) lines.push(...source.renderPrometheus());
     return `${lines.join("\n")}\n`;
+  }
+}
+
+/**
+ * Bounded-cardinality Gauges aus dem ohnehin erzeugten M9.7-Snapshot. Dadurch
+ * liest `/metrics` weder Fachzustand noch Odoo, und die Anzeige bleibt ausserhalb
+ * jedes heissen Pfads.
+ */
+export class AlphaOperationsMetrics implements PrometheusMetricSource {
+  readonly #snapshots = new Map<string, AlphaMonitoringSnapshot>();
+
+  observe(snapshot: AlphaMonitoringSnapshot): void {
+    this.#snapshots.set(snapshot.world.worldId, snapshot);
+  }
+
+  renderPrometheus(): readonly string[] {
+    const lines = [
+      "# HELP zugfolge_alpha_event_age_seconds Age of the latest authoritative event.",
+      "# TYPE zugfolge_alpha_event_age_seconds gauge",
+      "# HELP zugfolge_alpha_projection_age_seconds Age of the latest delivered Odoo projection.",
+      "# TYPE zugfolge_alpha_projection_age_seconds gauge",
+      "# HELP zugfolge_alpha_queue_depth Pending work by bounded queue kind.",
+      "# TYPE zugfolge_alpha_queue_depth gauge",
+      "# HELP zugfolge_alpha_odoo_projection_pending Pending Odoo projections.",
+      "# TYPE zugfolge_alpha_odoo_projection_pending gauge",
+      "# HELP zugfolge_alpha_odoo_projection_failed Odoo projections with a recorded failure.",
+      "# TYPE zugfolge_alpha_odoo_projection_failed gauge",
+      "# HELP zugfolge_alpha_market_items Current market items by kind and state.",
+      "# TYPE zugfolge_alpha_market_items gauge",
+    ];
+    for (const [worldId, snapshot] of [...this.#snapshots].sort(([left], [right]) => left.localeCompare(right))) {
+      const world = `world_id="${escapeLabel(worldId)}"`;
+      if (snapshot.freshness.eventAgeSeconds !== null) lines.push(`zugfolge_alpha_event_age_seconds{${world}} ${snapshot.freshness.eventAgeSeconds}`);
+      if (snapshot.freshness.projectionAgeSeconds !== null) lines.push(`zugfolge_alpha_projection_age_seconds{${world}} ${snapshot.freshness.projectionAgeSeconds}`);
+      lines.push(`zugfolge_alpha_queue_depth{${world},queue="planning"} ${snapshot.workers.planningQueueDepth}`);
+      lines.push(`zugfolge_alpha_queue_depth{${world},queue="economy_outbox"} ${snapshot.workers.economyOutboxDepth}`);
+      for (const [state, count] of Object.entries(snapshot.workers.odooCommandQueue).sort(([left], [right]) => left.localeCompare(right))) {
+        lines.push(`zugfolge_alpha_queue_depth{${world},queue="odoo_command_${escapeLabel(state)}"} ${count}`);
+      }
+      lines.push(`zugfolge_alpha_odoo_projection_pending{${world}} ${snapshot.bridges.odooProjection.pending}`);
+      lines.push(`zugfolge_alpha_odoo_projection_failed{${world}} ${snapshot.bridges.odooProjection.failed}`);
+      for (const [kind, values] of Object.entries(snapshot.market).sort(([left], [right]) => left.localeCompare(right))) {
+        const entries = Object.entries(values).sort(([left], [right]) => left.localeCompare(right));
+        if (entries.length === 0) lines.push(`zugfolge_alpha_market_items{${world},kind="${escapeLabel(kind)}",state="none"} 0`);
+        for (const [state, count] of entries) {
+          lines.push(`zugfolge_alpha_market_items{${world},kind="${escapeLabel(kind)}",state="${escapeLabel(state)}"} ${count}`);
+        }
+      }
+    }
+    return lines;
   }
 }

@@ -82,8 +82,12 @@ In Odoo unter **Einstellungen → Technisch → Systemparameter** setzen:
    Keycloak versendet die Required-Actions-Mail. Die Ergebnisprojektion schreibt
    Subject und Spielkontoreferenzen nach Odoo zurück; sie ist nur eine
    Auditprojektion.
-5. **Erneut senden** löst die Required Actions erneut aus. **Entziehen**
-   deaktiviert die Keycloak-Identität und entzieht den weltgebundenen Zugang.
+5. **Erneut senden** löst die Required Actions erneut aus. **Vier-Augen-Entzug
+   beantragen** erzeugt dagegen nur einen Hochrisikoantrag. Erst eine andere
+   Odoo-Person mit Freigaberolle darf ihn genehmigen und signiert ausliefern;
+   das Game reautorisiert Welt und Capability, deaktiviert die
+   Keycloak-Identität und entzieht den weltgebundenen Zugang. Der Zustand
+   **Entzogen** kommt ausschließlich aus der Game-Ergebnisprojektion zurück.
 
 Bis zu 50 Einladungen werden einzeln über diesen Kontrollpfad verteilt; es gibt
 kein produktives Provisionierungsskript und keinen direkten Odoo-DB-Zugriff.
@@ -131,5 +135,32 @@ docker compose -f compose.alpha.yml restart game-api
 
 Prometheus läuft auf Port 9090, Grafana auf 3001. Backup/Restore erfolgt mit den
 vorhandenen Skripten unter `ops/alpha/`; RPO/RTO und Wiederanlauf stehen in
-`docs/alpha-betrieb.md`. Phase 2 führt noch keinen Odoo-Restore- oder
-Vier-Augen-Betriebsdrill durch — diese Nachweise gehören ehrlich zu Phase 3.
+`docs/alpha-betrieb.md`.
+
+## Phase-3-Betriebsabnahme
+
+Vor dem Lauf müssen eine weiterhin aktive externe Spielersitzung für den
+Feedbackfall sowie eine getrennte, bereits bereitgestellte Einladung für den
+Entzugsfall vorliegen. In `.env` werden deren Referenz bzw. Token und zwei
+verschiedene Odoo-Logins gesetzt (`PHASE3_*` aus `.env.example`). Der Lauf ist
+ein angekündigter Wartungsdrill: Er stoppt Odoo und Game API kontrolliert, bis
+die versionierten Alert-Regeln wirklich feuern, und startet beide wieder.
+
+```bash
+pnpm alpha:phase3
+```
+
+Der Befehl führt zusammenhängend aus:
+
+1. Odoo-Vier-Augen-Entzug → signierter Webhook → Game-Queue → Keycloak-
+   Deaktivierung → Weltzugang → Game-Audit und Ergebnisprojektion;
+2. pseudonymisiertes Spielerfeedback bis zum laufenden Odoo;
+3. Live-Backup und isolierten `zugfolge_odoo_restore_*`-Restore mit identischem
+   Odoo-Fachzustands- und Filestore-Baumhash;
+4. Modul-Upgrade, echte Odoo-19-Add-on-Tests und Anhangsstichprobe;
+5. `degraded`-/`down`-Alertfälle und die live befragten Grafana-/Prometheus-
+   Metriken für Welt, Queue, Bridge und Markt.
+
+Nur ein Protokoll mit `"status": "passed"` unter
+`var/alpha-ops/phase3/protocols/` ist ein Betriebsnachweis. Vorher bleiben
+M9.4, M9.5 und M9.7 in der Statusmatrix offen beziehungsweise blockiert.

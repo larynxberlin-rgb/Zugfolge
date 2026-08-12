@@ -96,8 +96,8 @@ class ZugfolgeAdminRequest(models.Model):
                     raise ValidationError(_("Manuelle Stoerungen brauchen betroffene Ressourcen mit stabilen Bezeichnern."))
                 if not isinstance(record.manual_disruption_effect, dict) or not record.manual_disruption_effect:
                     raise ValidationError(_("Manuelle Stoerungen brauchen eine deklarierte Wirkung."))
-            if record.action_type in ("abuse_sanction_activate", "world_close") and record.risk_class != "high":
-                raise ValidationError(_("Schwere Sanktionen und Weltende sind immer hochriskant."))
+            if record.action_type in ("world_access_revoke", "abuse_sanction_activate", "world_close") and record.risk_class != "high":
+                raise ValidationError(_("Kontoentzug, schwere Sanktionen und Weltende sind immer hochriskant."))
             if record.action_type in ("world_access_revoke", "abuse_sanction_activate", "tutorial_account_reset") and not (record.target_reference or "").strip():
                 raise ValidationError(_("Die Verwaltungsaktion braucht eine stabile Zielreferenz."))
             if record.action_type in ("world_close", "tutorial_account_reset") and (record.requested_at_s is None or record.requested_at_s < 0):

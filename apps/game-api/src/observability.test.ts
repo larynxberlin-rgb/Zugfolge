@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import Fastify from "fastify";
 
-import { ApiObservability, requestCorrelationId } from "./observability.js";
+import { AlphaOperationsMetrics, ApiObservability, requestCorrelationId } from "./observability.js";
 
 describe("Game API observability", () => {
   it("propagates safe correlation ids and creates a child W3C trace span", async () => {
@@ -53,5 +53,34 @@ describe("Game API observability", () => {
     expect(metrics).toContain('zugfolge_health_check_state{check="odoo-bridge",state="degraded"} 1');
     expect(metrics).toContain('zugfolge_health_check_state{check="postgres",state="ok"} 1');
     expect(metrics).toContain('zugfolge_health_check_duration_milliseconds{check="odoo-bridge"} 17');
+  });
+
+  it("exports the live queue, bridge, freshness and market projection with bounded labels", () => {
+    const alpha = new AlphaOperationsMetrics();
+    alpha.observe({
+      world: { worldId: "world-alpha" },
+      freshness: { eventAgeSeconds: 4, projectionAgeSeconds: 7 },
+      workers: { planningQueueDepth: 2, economyOutboxDepth: 3, odooCommandQueue: { pending: 1 } },
+      bridges: { odooProjection: { pending: 5, failed: 1 } },
+      market: { listings: { open: 8 }, transfers: { sale: 2 }, contracts: { "traction:active": 3 } },
+    } as never);
+    const metrics = alpha.renderPrometheus().join("\n");
+    expect(metrics).toContain('zugfolge_alpha_queue_depth{world_id="world-alpha",queue="odoo_command_pending"} 1');
+    expect(metrics).toContain('zugfolge_alpha_odoo_projection_pending{world_id="world-alpha"} 5');
+    expect(metrics).toContain('zugfolge_alpha_market_items{world_id="world-alpha",kind="listings",state="open"} 8');
+    expect(metrics).not.toContain("participant");
+  });
+
+  it("distinguishes an empty market from missing telemetry", () => {
+    const alpha = new AlphaOperationsMetrics();
+    alpha.observe({
+      world: { worldId: "world-empty" },
+      freshness: { eventAgeSeconds: null, projectionAgeSeconds: null },
+      workers: { planningQueueDepth: 0, economyOutboxDepth: 0, odooCommandQueue: {} },
+      bridges: { odooProjection: { pending: 0, failed: 0 } },
+      market: { listings: {}, transfers: {}, contracts: {} },
+    } as never);
+    const metrics = alpha.renderPrometheus().join("\n");
+    expect(metrics).toContain('zugfolge_alpha_market_items{world_id="world-empty",kind="listings",state="none"} 0');
   });
 });

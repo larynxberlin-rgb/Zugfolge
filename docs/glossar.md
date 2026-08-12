@@ -30,6 +30,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Abweichungsreport | `DeviationReport` | stellt je Referenzlauf die aus dem Release berechnete Fahrzeit der realen gegenüber und prüft sie gegen die Toleranz | `betriebsgraph.md` 18 |
 | Ad-hoc-Trasse | `AdHocPath` | Trasse aus der Restkapazität einer laufenden Fahrplanperiode | `infrastruktur.md` 12 |
 | Administrationsantrag | `AdminCommandPayload` | typisierter, begründeter und korrelierter Antrag aus Odoo; das Game prüft und auditiert ihn erneut, bevor irgendeine Wirkung entsteht | `adr/0023-odoo-als-administrativer-kontrollpunkt.md` |
+| Alpha-Feedbackprojektion | `AlphaFeedbackProjectionPort` | atomare, bereits pseudonymisierte Outbox-Grenze vom autoritativen Game-Feedback zur bearbeitbaren Odoo-Triage; enthält kein Keycloak-Subject | `alpha-betrieb.md` |
 | Anlage | `Facility` | Werkstatt, Behandlungs- oder Waschanlage, Tankstelle, Entsorgungsanlage oder als Anlage geführtes Abstellgleis mit Kapazität, Öffnungszeit, Nutzlänge und Baureihenkompetenz | `betrieb.md` 4 |
 | Anlagenkataster | `FacilityCatalog` | geprüfte Sammlung aller Anlagen einer Welt, gegen den Betriebsgraphen validiert — welches Gleis, welche Kapazität, welche Baureihenkompetenz | `betriebsgraph.md` 14 |
 | Annäherungsabschnitt | `ApproachSection` | Abschnitt vor einem Hauptsignal — der Vorsignalabstand; seine Durchfahrzeit gehört zur Sperrzeit des folgenden Abschnitts | `infrastruktur.md` 1 |
@@ -57,6 +58,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Betriebsentscheidung | `DecisionExplanation` | vollständiger Auditdatensatz einer automatischen oder manuellen Dispositionsentscheidung mit Regel, Bedingungen, Grenzen, Alternativen, Ursache und Auswirkungen | `betriebsprogramm.md` 2 |
 | Betriebsgraph | `OperatingGraph` | das Netz als geprüftes Ganzes: Betriebsstellen, Kanten, Gleise und Bahnsteige mit ihren Attributen | `betriebsgraph.md` 2 |
 | Betriebshalt | `operational_stop` | vom Planner eingelegter Halt ohne Fahrgastwechsel, in einer kreuzungsfähigen Betriebsstelle; seine Dauer wird aus dem Prüfbericht errechnet, nicht geraten | `infrastruktur.md` 9 |
+| Betriebsmetrik | `AlphaOperationsMetrics` | begrenzt beschriftete Prometheus-Sicht auf den bereits materialisierten Alpha-Monitoringsnapshot mit Datenalter, Queue, Bridge und Markt; liest beim Scrape keinen Fachzustand | `alpha-betrieb.md` |
 | Betriebsprogramm | `OperatingProgram` | priorisierte Regelmenge eines EVU, die der Kern auch ohne den Spieler ausführt | `betrieb.md` 1 |
 | Betriebsprojektion | `OperationsProjection` | je EVU gefilterte Sicht auf Dispositionsentscheidungen, Ausfälle, manuelle Eingriffe und Großereignisse aus dem Event-Log | `betriebsprogramm.md` 4 |
 | Betriebsstelle | `OperatingPoint` | betrieblich benannter Punkt des Netzes — Bahnhof, Haltepunkt, Abzweigstelle, Überleitstelle | `infrastruktur.md` 1 |

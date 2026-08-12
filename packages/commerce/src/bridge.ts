@@ -13,7 +13,7 @@ export interface OdooProjectionClient {
 export function createHttpOdooProjectionClient(
   url: string,
   key: SigningKey,
-  fetchImplementation: (input: string, init: { readonly method: string; readonly headers: Readonly<Record<string, string>>; readonly body: string }) => Promise<{ readonly ok: boolean; readonly status: number }> = globalThis.fetch,
+  fetchImplementation: (input: string, init: { readonly method: string; readonly headers: Readonly<Record<string, string>>; readonly body: string }) => Promise<{ readonly ok: boolean; readonly status: number; json(): Promise<unknown> }> = globalThis.fetch,
 ): OdooProjectionClient {
   return {
     async project(message) {
@@ -29,6 +29,16 @@ export function createHttpOdooProjectionClient(
         body: JSON.stringify(message),
       });
       if (!response.ok) throw new Error(`Odoo-Projektion antwortete mit HTTP ${response.status}.`);
+      const parsed = await response.json();
+      const result = typeof parsed === "object" && parsed !== null && "result" in parsed
+        ? (parsed as { readonly result: unknown }).result
+        : parsed;
+      if (typeof result !== "object" || result === null || (result as Readonly<Record<string, unknown>>)["accepted"] !== true) {
+        const code = typeof result === "object" && result !== null && typeof (result as Readonly<Record<string, unknown>>)["code"] === "string"
+          ? (result as Readonly<Record<string, unknown>>)["code"]
+          : "invalid_response";
+        throw new Error(`Odoo-Projektion wurde fachlich abgelehnt: ${code}.`);
+      }
     },
   };
 }

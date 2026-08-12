@@ -29,6 +29,7 @@ import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createAlphaInvitationAdminHandlers } from "./alpha-invitation-admin.js";
+import { createWorldAccessRevokeAdminHandler } from "./odoo-admin-handlers.js";
 import { AuthoritativeOnboardingPort } from "./alpha-journey-adapters.js";
 import { GameAlphaJourneyCommandWriter } from "./alpha-journey-writer.js";
 
@@ -220,18 +221,20 @@ describe("eingeladener externer Spieler durchlaeuft das produktive Onboarding", 
       "alpha.start-package-authority-committed", "alpha.start-package-granted",
     ]));
 
-    await invitations.alpha_invitation_revoke({
+    const revoke = createWorldAccessRevokeAdminHandler({ db, keycloak });
+    await revoke({
       adminRequestId: "odoo-request-2", commandId: "odoo-command-2", eventId: "odoo-event-2", correlationId: "odoo-correlation-2",
       receivedAt: new Date(1_000), now: new Date(1_000),
       payload: {
-        kind: "admin.alpha_invitation_revoke", worldId: WORLD_ID, actionType: "alpha_invitation_revoke", riskClass: "standard",
-        requesterReference: "odoo-admin", reason: "Alpha-Zugang entziehen", effectPreview: {},
-        invitation: { requestReference: "INV-1", email: "external@example.test", displayName: "Externer Spieler", role: "player", keycloakSubject: SUBJECT },
+        kind: "admin.world_access_revoke", worldId: WORLD_ID, actionType: "world_access_revoke", riskClass: "high",
+        requesterReference: "odoo-admin-1", approverReference: "odoo-admin-2", reason: "Alpha-Zugang entziehen",
+        effectPreview: { requestReference: "INV-1" }, targetReference: SUBJECT,
       },
     });
     const accesses = await db.select().from(worldAccesses).where(eq(worldAccesses.keycloakSubject, SUBJECT));
     expect(accesses).toHaveLength(2);
-    expect(accesses.every((access) => access.status === "revoked")).toBe(true);
+    expect(accesses.find((access) => access.worldId === WORLD_ID)?.status).toBe("revoked");
+    expect(accesses.find((access) => access.worldId === TUTORIAL_WORLD_ID)?.status).toBe("active");
     expect(keycloak.disable).toHaveBeenCalledWith(SUBJECT);
   });
 });

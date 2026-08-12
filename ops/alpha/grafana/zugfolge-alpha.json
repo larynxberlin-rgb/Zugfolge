@@ -50,6 +50,41 @@
       "id": 6,
       "gridPos": { "h": 9, "w": 10, "x": 14, "y": 12 },
       "targets": [{ "expr": "zugfolge_health_check_duration_milliseconds", "legendFormat": "{{check}}" }]
+    },
+    {
+      "type": "stat",
+      "title": "Odoo-Projektionen (wartend / fehlgeschlagen)",
+      "description": "Zahlen und Zustandswoerter sind der primaere Kanal; Farbe ist nur redundant.",
+      "id": 7,
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 21 },
+      "targets": [
+        { "expr": "zugfolge_alpha_odoo_projection_pending", "legendFormat": "{{world_id}} wartend" },
+        { "expr": "zugfolge_alpha_odoo_projection_failed", "legendFormat": "{{world_id}} fehlgeschlagen" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Datenalter (Sekunden)",
+      "id": 8,
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 21 },
+      "targets": [
+        { "expr": "zugfolge_alpha_event_age_seconds", "legendFormat": "{{world_id}} autoritatives Event" },
+        { "expr": "zugfolge_alpha_projection_age_seconds", "legendFormat": "{{world_id}} Odoo-Projektion" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Queue-Tiefen nach Welt und Zustand",
+      "id": 9,
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 21 },
+      "targets": [{ "expr": "zugfolge_alpha_queue_depth", "legendFormat": "{{world_id}} {{queue}}" }]
+    },
+    {
+      "type": "table",
+      "title": "Marktprojektion live (Art / Zustand / Anzahl)",
+      "id": 10,
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 29 },
+      "targets": [{ "expr": "zugfolge_alpha_market_items", "format": "table", "instant": true, "legendFormat": "{{world_id}} {{kind}} {{state}}" }]
     }
   ],
   "schemaVersion": 41,
@@ -59,6 +94,5 @@
   "timezone": "Europe/Berlin",
   "title": "Zugfolge Alpha - Betrieb",
   "uid": "zugfolge-alpha-ops",
-  "version": 1
+  "version": 2
 }
-
