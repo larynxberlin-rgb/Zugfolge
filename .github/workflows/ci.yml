@@ -237,8 +237,16 @@ jobs:
       - name: Gepinntes OCA-queue_job beziehen
         run: |
           set -euo pipefail
-          git clone --filter=blob:none --no-checkout https://github.com/OCA/queue.git "${RUNNER_TEMP}/oca-queue"
-          git -C "${RUNNER_TEMP}/oca-queue" checkout d2c1759102f1e0bc8f6244629b5b38c7b7882f36 -- queue_job
+          archive="${RUNNER_TEMP}/oca-queue.tar.gz"
+          extract="${RUNNER_TEMP}/oca-queue-extract"
+          curl --fail --location --retry 3 \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/OCA/queue/tarball/d2c1759102f1e0bc8f6244629b5b38c7b7882f36" \
+            --output "$archive"
+          mkdir -p "$extract" "${RUNNER_TEMP}/oca-queue"
+          tar -xzf "$archive" --strip-components=1 -C "$extract"
+          mv "$extract/queue_job" "${RUNNER_TEMP}/oca-queue/queue_job"
       - name: Modul installieren und Odoo-Tests ausführen
         run: |
           network="$(docker inspect --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}' '${{ job.services.postgres.id }}')"
