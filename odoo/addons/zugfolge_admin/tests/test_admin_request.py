@@ -62,10 +62,22 @@ class TestZugfolgeAdminRequest(TransactionCase):
         })
         self.assertEqual(feedback.participant_pseudonym, "a" * 64)
         self.assertNotIn("@", feedback.participant_pseudonym)
+        self.assertFalse(feedback.env.context.get("zugfolge_game_projection"))
         with self.assertRaises(AccessError):
             feedback.write({"body": "Manipuliert"})
         feedback.write({"triage_state": "triaged"})
         self.assertEqual(feedback.triage_state, "triaged")
+        replay = self.env["zugfolge.feedback"].with_context(zugfolge_game_projection=True).upsert_game_projection({
+            "messageId": "feedback-message-1-replay", "messageType": "alpha.feedback.projection",
+            "worldId": self.projection.world_id, "occurredAt": "2026-01-01 00:05:00",
+            "payload": {
+                "feedbackReference": "feedback-1", "participantPseudonym": "a" * 64,
+                "releaseHash": "b" * 64, "fromS": 10, "untilS": 20, "category": "usability",
+                "message": "Die Warteschlange ist schwer verstaendlich.", "contactAllowed": False,
+            },
+        })
+        self.assertEqual(replay, feedback)
+        self.assertFalse(replay.env.context.get("zugfolge_game_projection"))
 
     def test_monitoring_projection_extracts_live_queue_market_and_release_fields(self):
         projected = self.env["zugfolge.world.projection"].with_context(zugfolge_game_projection=True).upsert_game_projection({

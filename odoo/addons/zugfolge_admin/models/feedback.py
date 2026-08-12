@@ -59,7 +59,7 @@ class ZugfolgeFeedback(models.Model):
         if existing:
             if existing.payload_hash != payload_hash:
                 raise ValidationError("Feedbackreferenz besitzt eine abweichende Nutzlast.")
-            return existing
+            return existing.with_context(zugfolge_game_projection=False)
         values = {
             "name": "%s: %s" % (body.get("category", "Feedback"), feedback_reference),
             "world_projection_id": projection.id,
@@ -77,7 +77,8 @@ class ZugfolgeFeedback(models.Model):
             "submitted_at": body.get("submittedAt") or envelope.get("occurredAt"),
             "payload_hash": payload_hash,
         }
-        return self.with_context(zugfolge_game_projection=True).create(values)
+        created = self.with_context(zugfolge_game_projection=True).create(values)
+        return created.with_context(zugfolge_game_projection=False)
 
     @api.model_create_multi
     def create(self, values_list):
