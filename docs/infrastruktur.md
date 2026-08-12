@@ -410,6 +410,34 @@ keinen JavaScript-Entscheider als Ersatz. Der Linux-NAPI-Job komponiert
 PlanningRun, PGlite-Worker, Projektion, Apply und Replay gegen dasselbe gebaute
 Addon.
 
+### 10.4 Gebietsüberschreitende Fahrten und logische Spielerplanung (E25)
+
+Ein GTFS-Zuglauf endet nicht künstlich am Kartenrand. Der jährliche
+Releasebau kompiliert ihn als `JourneyChain`: bestellbare `PlayableLeg`
+innerhalb des freigegebenen Betriebsgraphen wechseln an benannten
+`BoundaryPortal` mit nicht disponierbaren `ExternalLeg`. Der Außenlauf besitzt
+keine Kartenposition und keine scheinbare Außentrasse. Fahrzeug,
+Personaldienst, Verspätung und Fahrtkennung bleiben bis zur Rückkehr oder bis
+zum echten Außenende gebunden.
+
+Für den Spieler bleibt der Antrag bewusst klein und verständlich. Er wählt
+Laufweg, Halte und Zeitlage im Spielgebiet sowie höchstens die Kennung eines
+angebotenen Grenzfensters. `packages/planning-worker` löst diese opaque Kennung
+serverseitig im gepinnten InfraRelease auf. Erst danach erhält Rust die
+unveränderlichen Ein- und Ausfahrfenster. Der Bildfahrplan zeigt Portal,
+Sollzeit und zulässiges Band, kennzeichnet sie aber als feste Randbedingung.
+Kandidaten außerhalb dieses Bands werden mit einer konkreten Erklärung
+abgelehnt; der Client kann weder die Grenzzeit noch Außenkosten unterschieben.
+
+Die `ExternalZone` ist während des Außenlaufs der deterministische Writer. Die
+Quellregion entfernt den Zug erst nach bestätigter Annahme. Vor einer
+Wiedereinfahrt prüft die Zielregion die ersten realen Konfliktressourcen. Sind
+sie belegt, bleibt der Zug sichtbar am Portal außerhalb und wartet, statt eine
+Belegung zu erzwingen. Nur vollständig qualifizierte Ketten mit benannten
+Portalen sind bestellbar; ein bloß erkannter Schnitt ist Klasse C und bleibt
+sichtbar, aber nicht bestellbar. Der vollständige Vertrag und seine
+Konsequenzen stehen in [ADR-0025](adr/0025-gebietsueberschreitende-fahrtketten.md).
+
 ---
 
 ## 11. Die Fahrplanperiode als Ablauf (M3.6)

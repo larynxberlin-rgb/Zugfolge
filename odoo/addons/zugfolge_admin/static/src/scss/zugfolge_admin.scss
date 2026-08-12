@@ -1,12 +1,42 @@
 // E17: dunkle, dichte Information; Farbe ist nie der einzige Zustandskanal.
 .zugfolge-dashboard {
+  --zugfolge-canvas: #0d0f12;
   --zugfolge-panel: #15171a;
+  --zugfolge-panel-raised: #1d2024;
   --zugfolge-line: #59636e;
   --zugfolge-text: #f1f3f5;
-  background: var(--zugfolge-panel);
+  --zugfolge-muted: #c3c8ce;
+  background: var(--zugfolge-canvas);
   color: var(--zugfolge-text);
   font-variant-numeric: tabular-nums;
   border: 1px solid var(--zugfolge-line);
+}
+.zugfolge-dashboard .o_form_sheet_bg,
+.zugfolge-dashboard .o_form_sheet,
+.zugfolge-dashboard .o_group,
+.zugfolge-dashboard .o_notebook,
+.zugfolge-dashboard .nav-tabs,
+.zugfolge-dashboard .tab-content {
+  background: var(--zugfolge-panel) !important;
+  color: var(--zugfolge-text) !important;
+}
+.zugfolge-dashboard .o_group { border: 1px solid var(--zugfolge-line); padding: 0.75rem; }
+.zugfolge-dashboard .nav-link { color: var(--zugfolge-muted) !important; }
+.zugfolge-dashboard .nav-link.active {
+  background: var(--zugfolge-panel-raised) !important;
+  border-color: var(--zugfolge-line) !important;
+  color: var(--zugfolge-text) !important;
+  text-decoration: underline;
+  text-underline-offset: 0.3rem;
+}
+.zugfolge-dashboard .o_field_widget,
+.zugfolge-dashboard .o_field_widget * { font-variant-numeric: tabular-nums; }
+.zugfolge-dashboard .o_field_widget[name="runtime_status"],
+.zugfolge-dashboard .o_field_widget[name="worker_status"] {
+  border: 1px solid var(--zugfolge-line);
+  background: var(--zugfolge-panel-raised);
+  padding: 0.35rem 0.5rem;
+  font-weight: 700;
 }
 .zugfolge-dashboard .o_field_widget[name="freshness"]::before { content: "Datenstand: "; font-weight: 700; }
 .zugfolge-dashboard .o_field_widget[name="world_status"]::before { content: "Weltstatus: "; font-weight: 700; }

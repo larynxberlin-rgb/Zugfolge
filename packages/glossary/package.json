@@ -1,0 +1,11 @@
+{
+  "name": "@zugfolge/glossary",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Barrierefreier, rein erklaerender Glossar-Layer fuer alle Fachoberflaechen (M9.3)",
+  "license": "LicenseRef-PolyForm-Shield-1.0.0",
+  "exports": { ".": "./dist/index.js", "./styles.css": "./src/styles.css" },
+  "scripts": { "build": "tsc", "typecheck": "tsc --noEmit", "test": "vitest run" },
+  "devDependencies": { "typescript": "^7.0.2", "vitest": "^4.1.10" }
+}

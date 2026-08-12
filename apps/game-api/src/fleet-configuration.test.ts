@@ -122,6 +122,89 @@ describe("M5-Authority-Release-Konfiguration", () => {
     }).toThrow(TypeError);
   });
 
+  it("akzeptiert rohe Lokdaten und unpowered Wagen ohne erfundene Sitzplaetze", async () => {
+    const source = authorityRelease();
+    source.assets[0]!.classDesignation = "BR 146.2";
+    source.assets[0]!.tradeName = "TRAXX P160 AC2";
+    source.assets[0]!.technical = {
+      lengthMm: 18_900,
+      massKg: 85_000,
+      maximumSpeedKph: 160,
+      continuousPowerKw: 5_600,
+      startingTractiveEffortKn: 300,
+      brakeWeightKg: 126_000,
+      traction: "electric",
+      electricSystems: ["ac15kv"],
+      role: "locomotive",
+      controlStands: { front: true, rear: true },
+    };
+    source.assets[0]!.passenger = {
+      seats: 0,
+      firstClassSeats: 0,
+      accessible: false,
+      bicyclePlaces: 0,
+      wheelchairPlaces: 0,
+      equipment: [],
+      operatingCostCentsPerTrainKm: 0,
+      replacementPlan: false,
+    };
+    source.assets.push({
+      ...structuredClone(source.assets[0]!),
+      id: "coach-1",
+      numericId: 2,
+      vehicleTypeId: 780,
+      classDesignation: "DBpza 780.0",
+      tradeName: "Dosto 2003",
+      installedProtection: [],
+      technical: {
+        lengthMm: 26_800,
+        massKg: 49_000,
+        maximumSpeedKph: 160,
+        brakeWeightKg: 65_000,
+        traction: "unpowered",
+        electricSystems: [],
+        role: "coach",
+        controlStands: { front: false, rear: false },
+      },
+      passenger: {
+        seats: 120,
+        firstClassSeats: 0,
+        accessible: true,
+        bicyclePlaces: 8,
+        wheelchairPlaces: 1,
+        equipment: ["pis"],
+        operatingCostCentsPerTrainKm: 0,
+        replacementPlan: false,
+      },
+    });
+
+    const loaded = await loadFleetAuthorityReleaseCatalog(
+      await temporaryFile(catalog([{ worldId: WORLD_ID, authorityRelease: source }])),
+    );
+
+    expect(loaded[WORLD_ID]?.assets).toHaveLength(2);
+    expect(loaded[WORLD_ID]?.assets[0]?.technical.continuousPowerKw).toBe(5_600);
+    expect(loaded[WORLD_ID]?.assets[1]?.technical.traction).toBe("unpowered");
+  });
+
+  it("erzwingt PZB bei LZB, erlaubt aber reine ETCS-Ausstattung", async () => {
+    const lzbOhnePzb = authorityRelease();
+    lzbOhnePzb.assets[0]!.installedProtection = ["lzb"];
+    await expect(
+      loadFleetAuthorityReleaseCatalog(
+        await temporaryFile(catalog([{ worldId: WORLD_ID, authorityRelease: lzbOhnePzb }])),
+      ),
+    ).rejects.toThrow(/LZB nur zusammen mit PZB/);
+
+    const etcsOnly = authorityRelease();
+    etcsOnly.assets[0]!.installedProtection = ["etcs-level2"];
+    await expect(
+      loadFleetAuthorityReleaseCatalog(
+        await temporaryFile(catalog([{ worldId: WORLD_ID, authorityRelease: etcsOnly }])),
+      ),
+    ).resolves.toHaveProperty(WORLD_ID);
+  });
+
   it("verweigert fehlende und relative Konfigurationspfade", async () => {
     await expect(loadFleetAuthorityReleaseCatalog(undefined)).rejects.toThrow(/fehlt/);
     await expect(loadFleetAuthorityReleaseCatalog("authority.json")).rejects.toThrow(/absolut/);

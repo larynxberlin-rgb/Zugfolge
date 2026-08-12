@@ -26,8 +26,9 @@ use zugfolge_infra::{
     derive_block_sections,
 };
 use zugfolge_planner::{
-    PathDecision, PathRequest, PathRequestId, PathTolerances, PlannerOptions, PlanningRun,
-    RequestOutcome, RequestedStop, TrainPathPlanner, enumerate_itineraries,
+    BoundaryDirection, BoundaryPlanningWindow, PathDecision, PathRequest, PathRequestId,
+    PathTolerances, PlannerOptions, PlanningRun, RequestOutcome, RequestedStop, TrainPathPlanner,
+    enumerate_itineraries,
 };
 
 const COORDINATE_SCHEMA: &str = "planning-coordinate/v1";
@@ -213,6 +214,27 @@ pub struct CoordinateRequestInput {
     pub max_operational_stops: u32,
     /// Fahrdynamische Fakten.
     pub train: CoordinateTrainCharacteristicsInput,
+    /// Vom Game-Server aus dem gepinnten Release aufgeloeste Grenzfenster.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub boundary_windows: Vec<CoordinateBoundaryWindowInput>,
+}
+
+/// Ein unveraenderliches Ein- oder Ausfahrfenster eines BoundaryPortal.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CoordinateBoundaryWindowInput {
+    /// Stabile Fensterkennung aus der JourneyChain.
+    pub window_id: String,
+    /// Benanntes Grenzportal.
+    pub portal_id: String,
+    /// `entry` oder `exit`.
+    pub direction: String,
+    /// Frueheste zulaessige Weltsekunde.
+    pub earliest_s: i64,
+    /// Zielzeit des gepinnten GTFS.
+    pub target_s: i64,
+    /// Spaeteste zulaessige Weltsekunde.
+    pub latest_s: i64,
 }
 
 /// Versionierter produktiver Eingang fuer einen echten `PlanningRun`.
@@ -292,6 +314,19 @@ struct TrainProjection {
     number: String,
     direction: String,
     calls: Vec<TrainCallProjection>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    boundary_windows: Vec<BoundaryWindowProjection>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct BoundaryWindowProjection {
+    window_id: String,
+    portal_id: String,
+    direction: String,
+    earliest_s: i64,
+    target_s: i64,
+    latest_s: i64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -851,6 +886,35 @@ fn materialize(input: &PlanningCoordinateInput) -> Result<MaterializedRun, Plann
                 .map_err(map_domain)
             })
             .collect::<Result<Vec<_>, PlanningRuntimeError>>()?;
+        let boundary_windows = request
+            .boundary_windows
+            .iter()
+            .map(|window| {
+                for (name, value) in [
+                    ("boundaryWindows[].earliestS", window.earliest_s),
+                    ("boundaryWindows[].targetS", window.target_s),
+                    ("boundaryWindows[].latestS", window.latest_s),
+                ] {
+                    safe_non_negative(value, name)?;
+                }
+                non_empty(&window.window_id, "boundaryWindows[].windowId")?;
+                non_empty(&window.portal_id, "boundaryWindows[].portalId")?;
+                let direction = match window.direction.as_str() {
+                    "entry" => BoundaryDirection::Entry,
+                    "exit" => BoundaryDirection::Exit,
+                    _ => return Err(invalid("boundaryWindows[].direction ist unbekannt")),
+                };
+                BoundaryPlanningWindow::new(
+                    window.window_id.clone(),
+                    window.portal_id.clone(),
+                    direction,
+                    SimTime::from_seconds(window.earliest_s),
+                    SimTime::from_seconds(window.target_s),
+                    SimTime::from_seconds(window.latest_s),
+                )
+                .map_err(map_domain)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let path_request = PathRequest::new(
             PathRequestId::new(request.request_numeric_id),
             number,
@@ -869,6 +933,8 @@ fn materialize(input: &PlanningCoordinateInput) -> Result<MaterializedRun, Plann
             )
             .map_err(map_domain)?,
         )
+        .map_err(map_domain)?
+        .with_boundary_windows(boundary_windows)
         .map_err(map_domain)?;
         requests.push(MaterializedRequest {
             input: request,
@@ -999,6 +1065,18 @@ fn project_train(
                 time_s: arrival,
             },
         ],
+        boundary_windows: input
+            .boundary_windows
+            .iter()
+            .map(|window| BoundaryWindowProjection {
+                window_id: window.window_id.clone(),
+                portal_id: window.portal_id.clone(),
+                direction: window.direction.clone(),
+                earliest_s: window.earliest_s,
+                target_s: window.target_s,
+                latest_s: window.latest_s,
+            })
+            .collect(),
     })
 }
 

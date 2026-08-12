@@ -41,6 +41,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Auskunft (Datenschutz) | `PersonalDataExport` | vollständiges, maschinenlesbares Bündel aller Personendaten, die das Spielsystem über ein Konto in einer Welt führt | `weltgeruest.md` 10 |
 | Ausschlussmenge | `exclusion_set` | Menge der Fahrstraßen, die nicht gleichzeitig mit einer gegebenen gestellt werden dürfen, weil sie ein Fahrwegelement oder eine Weiche teilen | `infrastruktur.md` 1 |
 | Ausschreibung | `Tender` | Vergabeverfahren über ein Los, mit Leistungsbeschreibung, Frist, Wertung und Zuschlag | `wirtschaft.md` 3 |
+| Außenlauf | `ExternalLeg` | Teil einer Fahrtkette außerhalb des freigegebenen Netzes, ohne erfundene Topologie und ohne Spieler-Disposition; bindet Fahrzeuge und Dienste bis Rückkehr oder Außenende | `infrastruktur.md` 10.4 |
 | Bahnhofskategorie | `StationCategory` | Einstufung einer Betriebsstelle mit Fahrgastwechsel nach Größe und Ausstattungsniveau, Kategorie 1 bis 7; künftige Bemessungsgrundlage des Stationsentgelts | `betriebsgraph.md` 13 |
 | Bahnhofskopf | `StationHead` | der Weichenbereich einer Betriebsstelle; aus Weichenlage und Signalstandort werden hier Fahrstraßen und Durchrutschwege abgeleitet | `betriebsgraph.md` 12 |
 | Bahnsteig | `Platform` | Fahrgastanlage an einem Gleis; Nutzlänge und Höhe begrenzen die zulässige Formation | `infrastruktur.md` 1 |
@@ -63,6 +64,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Bildfahrplan | `TimeDistanceDiagram` | Weg-Zeit-Darstellung der Zugfahrten; Träger der Sperrzeitentreppe | `milestones.md` M3.10 |
 | Blockableitung | `derive_block_sections` | Verfahren, das ein Gleis aus Signalpositionen, Zugbeeinflussung und Topologie in seine Blockabschnitte zerlegt — mit virtuellen Blöcken bei Lücken und reinen LZB-/ETCS-Blöcken bei durchgehender Überwachung | `betriebsgraph.md` 11 |
 | Blockabschnitt | `BlockSection` | Streckenabschnitt, den zur selben Zeit nur ein Zug befahren darf | `infrastruktur.md` 1 |
+| Bremsprobe | `BrakeTest` | vereinfachte oder vollständige Prüfung der Zugbremse nach Bildung oder Änderung eines Zugverbandes | `betrieb.md` 3 |
 | Datenminimierung | — | Entwurfsregel, kein eigener Programmpfad: nur erheben und aufbewahren, was das Spielsystem tatsächlich braucht | `weltgeruest.md` 10 |
 | Durchrutschweg | `OverlapPath` | Weg hinter dem Zielsignal, der bei Bremsversagen frei bleiben muss | `infrastruktur.md` 1 |
 | Eigenbetrieb | `PublicOperator` | Ausfallsicherung des Aufgabenträgers; fährt die Mindestbedienung, bewusst mittelmäßig, sichtbar gekennzeichnet | `wirtschaft.md` 4 |
@@ -86,12 +88,12 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Fahrzeugepoche | `VehicleEra` | Weltfilter für zulässige Bau- oder Beschaffungsjahre; beide Epochen sind unabhängig und können alle Jahre umfassen | `betrieb.md` 2.1 |
 | Fahrzeugkatalog-Release | `VehicleCatalogRelease` | unveränderlicher, versionierter Typkatalog mit faktischer Baureihenbezeichnung, fiktivem Handelsnamen, Bauzeit, Marktfenstern, typgenauer Zugsicherung, Quellen und Prüfsumme | `betrieb.md` 2.1 |
 | Fahrzeugkonfiguration | `VehicleConfiguration` | Sitzaufteilung, Bestuhlung, Mehrzweckbereiche, Türen und Ausstattung eines Fahrzeugs | `betrieb.md` 3 |
-| Formation | `Formation` | konkrete Zusammenstellung von Fahrzeugen für eine Zugfahrt | `betrieb.md` 2 |
 | Frist | `deadlineAt` | Zeitpunkt, bis zu dem eine Reaktion auf eine Postfach-Nachricht erwartet wird; optional, nicht jede Nachricht trägt eine | `weltgeruest.md` 9 |
 | Game-Verwaltungsfähigkeit | `GameAdminCapabilityProjection` | signierte, weltbezogene Projektion, ob eine typisierte Odoo-Administration im Game tatsächlich einen fachlichen Handler besitzt; ohne sie bleibt der Antrag vorbereitet und wirkungslos | `adr/0023-odoo-als-administrativer-kontrollpunkt.md` |
 | Gegenfahrt | `OpposingMove` | Belegungskonflikt zweier Zugfahrten entgegengesetzter Richtung auf demselben eingleisigen Abschnitt | `infrastruktur.md` 1 |
 | Gleichstand | `Tie` | exakte Punktgleichheit im Planungslauf; wird über den veröffentlichten Seed aufgelöst | `infrastruktur.md` 10 |
 | Gleis | `Track` | das, worauf gefahren wird; liegt auf einer Kante oder in einer Betriebsstelle und trägt Vmax, Neigung, Elektrifizierung und Zugsicherung | `betriebsgraph.md` 2 |
+| Grenzportal | `BoundaryPortal` | benannte, versionierte Schnittstelle am Rand des spielbaren Netzes; trägt die serverseitigen Ein- oder Ausfahrfenster einer Fahrtkette | `infrastruktur.md` 10.4 |
 | Herkunft | `Provenance` | Quelle und Vertrauensgrad eines importierten Attributwertes; hängt am einzelnen Band, nicht am Gleis | `daten.md` 2 |
 | Höhenstichprobe | `ElevationSample` | Position-Höhe-Paar eines Höhenmodells entlang der Gleisgeometrie; Eingabe der Neigungsableitung | `betriebsgraph.md` 10 |
 | Infrastruktur-Release | `InfraRelease` | unveränderliches, versioniertes Netzartefakt mit Herkunft, Lizenz, Prüfsumme und Confidence je Attribut | `architektur.md` 3 |
@@ -137,6 +139,8 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Referenzlauf | `ReferenceRun` | ein Fahrweg mit Zugcharakteristik und explizit benannter Vergleichsgröße — technische Laufzeit oder Fahrplanzeit dürfen nicht vermischt werden | `betriebsgraph.md` 18 |
 | Regelgrenze | `LimitKind` | konkrete betriebliche Zulässigkeitsprüfung einer Dispositionsmaßnahme, etwa Kapazität, Streckenkenntnis, Fahrzeug, Personal, Vertrag oder Kosten | `betriebsprogramm.md` 2 |
 | Regionsübergabe | `RegionHandover` | Übergang einer Zugfahrt zwischen zwei regionalen Single-Writer-Prozessen, mit Bestätigung | `architektur.md` 3 |
+| Reise- oder Fahrtkette | `JourneyChain` | ein durchgehender Zuglauf aus bestellbaren regionalen und nicht disponierbaren äußeren Abschnitten; Identität, Fahrzeug- und Personalbindung bleiben erhalten | `adr/0025-gebietsueberschreitende-fahrtketten.md` |
+| Reisezugwagen | `VehicleRole::Coach` | nicht angetriebenes Fahrzeug für Fahrgäste; kann Teil eines Wagenparks sein, aber keine eigene Zugfahrt bilden | `betrieb.md` 2.3 |
 | Rohgraph | `RawGraph` | Topologie, Geometrie und Tags eines OSM-PBF-Extracts, roh und ungefiltert; Ergebnis der Import-Pipeline, noch kein Betriebsgraph | `betriebsgraph.md` 7 |
 | Rohkante | `RawEdge` | Wegabschnitt des Rohgraphen zwischen zwei bedeutsamen Knoten, mit voller Geometrie und den Tags seines OSM-Wegs | `betriebsgraph.md` 7 |
 | Rohknoten | `RawNode` | betrieblich bedeutsamer Punkt des Rohgraphen — Anfang, Ende oder Verzweigung eines Wegs, oder selbst `railway`-getaggt | `betriebsgraph.md` 7 |
@@ -155,6 +159,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Stationsanreicherung | `StationEnrichment` | je Betriebsstelle mit Fahrgastwechsel angereicherter Datensatz aus Bahnhofskategorie und Stationsausstattung, mit eigener Herkunft je Feld | `betriebsgraph.md` 13 |
 | Stationsausstattung | `StationAmenities` | Menge der an einer Betriebsstelle vorhandenen Ausstattungsmerkmale — Barrierefreiheit, Wetterschutz, Fahrgastinformation und mehr | `betriebsgraph.md` 13 |
 | Stellwerksbauart | `InterlockingKind` | mechanisch, elektromechanisch, Relais-, elektronisches oder digitales Stellwerk; entscheidet Fahrstraßenbilde- und Fahrstraßenauflösezeit | `infrastruktur.md` 6 |
+| Steuerwagen | `VehicleRole::ControlCar` | nicht angetriebener Reisezugwagen mit einem oder zwei Steuerständen; ermöglicht bei passender Endlage den Wendezugbetrieb | `betrieb.md` 2.3 |
 | Störung | `Disruption` | ungeplantes Ereignis mit Wirkung auf den Betrieb; Entstehung und Fortpflanzung sind getrennt modelliert | `betrieb.md` 5 |
 | Substream | `Substream` | benannter Teilstrom des Weltseeds; ein neuer Strom verändert die bestehenden nicht | `architektur.md` 4 |
 | Tagesbericht | `DailyReport` | asynchrone Rückmeldung an den Spieler: was ist passiert, welche Regel hat wann was getan | `betrieb.md` 1 |
@@ -173,6 +178,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Vertrauensgrad | `Confidence` | wie belastbar ein Attributwert ist — erfasst, abgeleitet oder angenommen; Grundlage der Qualitätsklassen | `daten.md` 5 |
 | Virtueller Fahrdienstleiter | `VirtualDispatcher` | regionale serverautoritative Dispositionslogik über gemeinsame Konfliktressourcen mit erklärbarer lexikographischer Reihenfolge | `stoerungen.md` 5 |
 | Vmax-Band | `SpeedLimit` | die zulässigen Geschwindigkeiten eines Gleisabschnitts — Regel, Neigetechnik, Güterzug; als Band eines Bandprofils geführt | `betriebsgraph.md` 2 |
+| Wagenpark | `Formation` | Formation ohne eigene Traktion; bleibt in Werkstatt oder Abstellung und wird für Überführungen von einer Lok bewegt | `betrieb.md` 2.3 |
 | Weiche | `Switch` | Fahrwegverzweigung; Konfliktressource, weil kreuzende Bewegungen sich ausschließen | `infrastruktur.md` 1 |
 | Weichenlage | `SwitchPosition` | Grundstellung oder abzweigende Lage einer Weiche in einer Fahrstraße | `betriebsgraph.md` 12 |
 | Welt | `World` | vollständig isolierte Instanz von Netz, Wirtschaft und Spielern; Wurzel der Mandantentrennung, jede andere Tabelle trägt ihre `world_id` (Invariante 4) | `architektur.md` 5 |

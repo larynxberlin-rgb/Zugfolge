@@ -1,18 +1,21 @@
 import {
   commerceEntitlements,
+  domainEvents,
   gameAdminRequests,
   odooCommandQueue,
   odooProjectionOutbox,
   odooWebhookReceipts,
+  worlds,
   type CommerceEntitlement,
   type OdooCommandQueueRow,
   type OdooProjectionOutboxRow,
 } from "@zugfolge/db";
-import { and, eq, isNull, lt } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { entitlementChangeToStatus } from "./entitlements.js";
 import type { AdminActionType, AdminCommandPayload, EntitlementChangePayload, GameAdminCapabilityProjection, OdooProjectionEnvelope, OdooWebhookEnvelope } from "./contracts.js";
+import { validateAdminCommand } from "./admin-workflow.js";
 import type { OdooWebhookReceiptStore } from "./receiver.js";
 
 /** Gemeinsamer Drizzle-Typ fuer Postgres und PGlite-Integrationstests. */
@@ -84,6 +87,28 @@ export async function enqueueGameAdminCapabilityProjection(
   });
 }
 
+/** Read-only Welt-/Simulationsprojektion fuer das Odoo-Kontrollzentrum. */
+export async function enqueueWorldProjection(
+  db: CommerceDatabase,
+  input: {
+    readonly worldId: string;
+    readonly correlationId: string;
+    readonly payload: Readonly<Record<string, unknown>>;
+    readonly occurredAt?: Date;
+  },
+): Promise<void> {
+  const occurredAt = input.occurredAt ?? new Date();
+  await db.insert(odooProjectionOutbox).values({
+    worldId: input.worldId,
+    messageType: "world.projection",
+    schemaVersion: "zugfolge-odoo/v1",
+    correlationId: input.correlationId,
+    payload: input.payload,
+    occurredAt,
+    enqueuedAt: occurredAt,
+  });
+}
+
 function asRecord(value: unknown): Readonly<Record<string, unknown>> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("Persistierter Odoo-Befehl besitzt keine Objekt-Nutzdaten.");
   return value as Readonly<Record<string, unknown>>;
@@ -120,11 +145,11 @@ export class GameAdminCapabilityUnavailableError extends Error {
 }
 
 /**
- * Erweiterungspunkt fuer einen spaeteren fachlichen Single Writer, etwa M8.3.
- * Der Odoo-Worker selbst kennt keine Simulationsdaten und kann deshalb keine
- * Aktion durch eine Umgebungsvariable einschalten.
+ * Anschluss an den jeweiligen fachlichen Single Writer. Der Odoo-Worker
+ * validiert den Antrag erneut, darf die Wirkung aber nie selbst erzeugen.
  */
 export interface GameAdminCommandContext {
+  readonly adminRequestId: string;
   readonly commandId: string;
   readonly eventId: string;
   readonly correlationId: string;
@@ -146,10 +171,9 @@ export interface OdooCommandProcessingOptions {
 }
 
 /**
- * Der Game-Worker materialisiert nur zugelassene Commerce-Zustaende und
- * Antraege. Eine Simulation, Trassen- oder Release-Aktivierung findet hier
- * bewusst nicht statt; ein spaeterer fachlicher Single Writer entscheidet
- * getrennt ueber einen angenommenen Antrag.
+ * Der Game-Worker persistiert jeden Antrag vor seiner Wirkung, laesst allein
+ * den registrierten fachlichen Handler entscheiden und verknuepft Erfolg wie
+ * Ablehnung unveraenderlich mit dem autoritativen Game-Eventlog.
  */
 export async function processNextOdooCommand(
   db: CommerceDatabase,
@@ -158,6 +182,7 @@ export async function processNextOdooCommand(
 ): Promise<ProcessedOdooCommand | undefined> {
   const [command] = await db.select().from(odooCommandQueue).where(eq(odooCommandQueue.status, "pending")).orderBy(odooCommandQueue.receivedAt).limit(1);
   if (command === undefined) return undefined;
+  let adminRequestId: string | undefined;
   try {
     if (command.commandType === "entitlement.change") {
       const payload = asEntitlementPayload(command.payload);
@@ -182,9 +207,26 @@ export async function processNextOdooCommand(
 
     const payload = asAdminPayload(command.payload);
     if (command.worldId === undefined || command.worldId !== payload.worldId) throw new Error("Administrationsbefehl besitzt keine passende Welt.");
+    validateAdminCommand(payload);
+    const [adminRequest] = await db.insert(gameAdminRequests).values({
+      worldId: command.worldId,
+      commandId: command.id,
+      actionType: payload.actionType,
+      riskClass: payload.riskClass,
+      requesterReference: payload.requesterReference,
+      approverReference: payload.approverReference,
+      reason: payload.reason,
+      effectPreview: payload.effectPreview,
+      state: "approved",
+      correlationId: command.correlationId,
+      changedAt: now,
+    }).returning({ id: gameAdminRequests.id });
+    if (adminRequest === undefined) throw new Error("Game-Administrationsantrag konnte nicht persistiert werden.");
+    adminRequestId = adminRequest.id;
     const handler = options.adminHandlers?.[payload.actionType];
     if (handler === undefined) throw new GameAdminCapabilityUnavailableError(payload.actionType);
     const gameResult = await handler({
+      adminRequestId,
       commandId: command.id,
       eventId: command.eventId,
       correlationId: command.correlationId,
@@ -193,29 +235,30 @@ export async function processNextOdooCommand(
       payload,
     });
     const state = gameResult.state ?? "accepted";
-    const gameAuditEventId = gameResult.gameAuditEventId ?? `game-admin-request:${command.id}`;
+    const effectAuditReference = gameResult.gameAuditEventId ?? null;
     await db.transaction(async (tx) => {
-      await tx.insert(gameAdminRequests).values({
+      await tx.execute(sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${command.worldId!} for update`);
+      const [head] = await tx.select({ sequence: domainEvents.sequence }).from(domainEvents).where(eq(domainEvents.worldId, command.worldId!)).orderBy(desc(domainEvents.sequence)).limit(1);
+      const [auditEvent] = await tx.insert(domainEvents).values({
         worldId: command.worldId!,
-        commandId: command.id,
-        actionType: payload.actionType,
-        riskClass: payload.riskClass,
-        requesterReference: payload.requesterReference,
-        approverReference: payload.approverReference,
-        reason: payload.reason,
-        effectPreview: payload.effectPreview,
+        sequence: (head?.sequence ?? 0) + 1,
+        eventType: "admin.action-audited",
+        payload: { adminRequestId, actionType: payload.actionType, riskClass: payload.riskClass, correlationId: command.correlationId, outcome: state, effectAuditReference },
+        occurredAt: now,
+      }).returning({ id: domainEvents.id });
+      if (auditEvent === undefined) throw new Error("Autoritativer Game-Auditbeleg fehlt.");
+      await tx.update(gameAdminRequests).set({
         state,
-        correlationId: command.correlationId,
-        gameAuditEventId,
+        gameAuditEventId: auditEvent.id,
         changedAt: now,
-      });
+      }).where(and(eq(gameAdminRequests.id, adminRequestId!), eq(gameAdminRequests.worldId, command.worldId!)));
       await tx.update(odooCommandQueue).set({ status: state === "completed" ? "completed" : "accepted", processedAt: now }).where(and(eq(odooCommandQueue.id, command.id), eq(odooCommandQueue.status, "pending")));
       await tx.insert(odooProjectionOutbox).values({
         worldId: command.worldId!,
         messageType: "admin.command.result",
         schemaVersion: "zugfolge-odoo/v1",
         correlationId: command.correlationId,
-        payload: { eventId: command.eventId, outcome: "accepted", state, authoritative: true, gameAuditEventId },
+        payload: { eventId: command.eventId, outcome: "accepted", state, authoritative: true, gameAuditEventId: auditEvent.id, effectAuditReference },
         occurredAt: now,
         enqueuedAt: now,
       });
@@ -224,6 +267,25 @@ export async function processNextOdooCommand(
   } catch (error) {
     const code = error instanceof Error ? error.name : "unknown_error";
     await db.transaction(async (tx) => {
+      if (adminRequestId !== undefined && command.worldId !== null) {
+        await tx.execute(sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${command.worldId} for update`);
+        const [head] = await tx.select({ sequence: domainEvents.sequence }).from(domainEvents).where(eq(domainEvents.worldId, command.worldId)).orderBy(desc(domainEvents.sequence)).limit(1);
+        const [auditEvent] = await tx.insert(domainEvents).values({
+          worldId: command.worldId,
+          sequence: (head?.sequence ?? 0) + 1,
+          eventType: "admin.action-audited",
+          payload: {
+            adminRequestId,
+            actionType: asAdminPayload(command.payload).actionType,
+            correlationId: command.correlationId,
+            outcome: "failed",
+            failureCode: code,
+          },
+          occurredAt: now,
+        }).returning({ id: domainEvents.id });
+        if (auditEvent === undefined) throw new Error("Autoritativer Game-Auditbeleg fuer die Ablehnung fehlt.");
+        await tx.update(gameAdminRequests).set({ state: "failed", gameAuditEventId: auditEvent.id, changedAt: now }).where(and(eq(gameAdminRequests.id, adminRequestId), eq(gameAdminRequests.worldId, command.worldId)));
+      }
       await tx.update(odooCommandQueue).set({ status: "rejected", processedAt: now, failureCode: code }).where(and(eq(odooCommandQueue.id, command.id), eq(odooCommandQueue.status, "pending")));
       if (command.commandType !== "entitlement.change" && command.worldId !== null) {
         await tx.insert(odooProjectionOutbox).values({
@@ -231,7 +293,7 @@ export async function processNextOdooCommand(
           messageType: "admin.command.result",
           schemaVersion: "zugfolge-odoo/v1",
           correlationId: command.correlationId,
-          payload: { eventId: command.eventId, outcome: "rejected", authoritative: true, failureCode: code },
+          payload: { eventId: command.eventId, outcome: "rejected", authoritative: true, failureCode: code, adminRequestId },
           occurredAt: now,
           enqueuedAt: now,
         });

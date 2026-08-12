@@ -1,0 +1,261 @@
+{
+  "schema": "zugfolge-infra-release/v1",
+  "releaseId": "infra-mitteldeutschland-b-2026.1",
+  "status": "qualified",
+  "regionId": "mitteldeutschland-b",
+  "regionVariant": "B",
+  "timetableYear": 2026,
+  "validFrom": "2025-12-14",
+  "validUntil": "2026-12-12",
+  "decisions": [
+    {
+      "id": "E22",
+      "adr": "docs/adr/0022-jaehrliche-infrastrukturaktualisierung.md"
+    },
+    {
+      "id": "E24",
+      "adr": "docs/adr/0024-erweiterter-alpha-schnitt.md",
+      "issue": "https://github.com/larynxberlin-rgb/Zugfolge/issues/201"
+    },
+    {
+      "id": "E25",
+      "adr": "docs/adr/0025-gebietsueberschreitende-fahrtketten.md"
+    }
+  ],
+  "boundary": {
+    "file": "tools/region-import/mitteldeutschland-b.geojson",
+    "bytes": 2529,
+    "sha256": "8c5d61ab589816108d6e56cc6955dc46f711819f23245f597d50eac08b57ca33",
+    "polygonFile": "tools/region-import/mitteldeutschland-b.poly",
+    "polygonSha256": "42f365699bed10bcc66ba66abeec1e2519cf8e0514922fac65e93bcff928eb02"
+  },
+  "sources": [
+    {
+      "file": "sachsen-latest.osm.pbf",
+      "bytes": 266912848,
+      "sha256": "6fc39316cfc745622fadee63654fce8c4a790bb381461e2baf2050b9b79ecd13",
+      "id": "geofabrik-sachsen-2026-08-10",
+      "rightsSourceId": "osm-pbf-mitteldeutschland-b",
+      "url": "https://download.geofabrik.de/europe/germany/sachsen-latest.osm.pbf",
+      "sourceLicense": "ODbL-1.0",
+      "attribution": "OpenStreetMap contributors; Geofabrik GmbH"
+    },
+    {
+      "file": "sachsen-anhalt-latest.osm.pbf",
+      "bytes": 173361775,
+      "sha256": "7b9a04913020acad3f709668a4c33e87b6d243a3a2e68dc70ad79935bf75f9d5",
+      "id": "geofabrik-sachsen-anhalt-2026-08-10",
+      "rightsSourceId": "osm-pbf-mitteldeutschland-b",
+      "url": "https://download.geofabrik.de/europe/germany/sachsen-anhalt-latest.osm.pbf",
+      "sourceLicense": "ODbL-1.0",
+      "attribution": "OpenStreetMap contributors; Geofabrik GmbH"
+    },
+    {
+      "file": "thueringen-latest.osm.pbf",
+      "bytes": 158982127,
+      "sha256": "638ff605c059fc9fb2469e949691d461a47dbca09a563753e8082751f0ee83d2",
+      "id": "geofabrik-thueringen-2026-08-10",
+      "rightsSourceId": "osm-pbf-mitteldeutschland-b",
+      "url": "https://download.geofabrik.de/europe/germany/thueringen-latest.osm.pbf",
+      "sourceLicense": "ODbL-1.0",
+      "attribution": "OpenStreetMap contributors; Geofabrik GmbH"
+    },
+    {
+      "file": "gtfs-rv-free-2026-08-10.zip",
+      "bytes": 11246155,
+      "sha256": "c0cba1cfdbf6179b18e529b13613644e861f1ea6159fa5788c2045de82bea738",
+      "id": "gtfs-de-rv-free-2026-08-10",
+      "rightsSourceId": "gtfs-de-rv",
+      "url": "https://download.gtfs.de/germany/rv_free/latest.zip",
+      "sourceLicense": "CC-BY-4.0",
+      "attribution": "DELFI e.V.; GTFS.DE"
+    },
+    {
+      "file": "trassenfinder-infrastruktur-2026.json",
+      "bytes": 3745893,
+      "sha256": "16353f2319d4d382283964cc40d806438f97338cbcbe672687f1669175c7e6bf",
+      "id": "trassenfinder-infrastruktur-7-2026",
+      "rightsSourceId": "trassenfinder-infrastruktur-api",
+      "url": "https://openapi.trassenfinder.de/api/v10/infrastrukturen/7",
+      "sourceLicense": "Keine veroeffentlichten Nutzungsbedingungen",
+      "attribution": "DB InfraGO"
+    }
+  ],
+  "pipeline": {
+    "scripts": [
+      {
+        "path": "tools/region-import/import-mitteldeutschland-b.sh",
+        "sha256": "6b7fed12a05b838da0fc68328d0a4e2a190892ae2dc33371858ea664d8e8258a"
+      },
+      {
+        "path": "tools/region-import/import-mitteldeutschland-b.ps1",
+        "sha256": "2f6b9e210e04c42c3f9c9bd249a945b0968408992852dbe10718010d13503b35"
+      },
+      {
+        "path": "tools/region-import/build-gtfs-region.mjs",
+        "sha256": "b1811f302230eded7cf73dc8b0d052561a80eccc77a8c308fa12f48e0496ade7"
+      },
+      {
+        "path": "tools/region-import/service-scope.mjs",
+        "sha256": "21890bdddf229474738dd9f0648a2fc01b078f65c3b9df5494ef2701ed9ac45c"
+      },
+      {
+        "path": "tools/region-import/build-operational-network.mjs",
+        "sha256": "27b378ab863436db11e60f81d981e4267f54d01303bf015338fbe074fb365994"
+      },
+      {
+        "path": "tools/region-import/operational-network.mjs",
+        "sha256": "d2fa0db4cd246e599cc32d20a6992c368415b229601c48621e3657ae290450b7"
+      },
+      {
+        "path": "tools/region-import/map-layers.mjs",
+        "sha256": "3b90ed86918d71e1842f0cd951d0f8e587fa9316c11d83b68afe90aa5d91170d"
+      },
+      {
+        "path": "tools/region-import/build-map-layers.mjs",
+        "sha256": "2b6a9d83179f298e3f817ee490e818fd933a4d9793028589ee48b08af40f10dd"
+      },
+      {
+        "path": "tools/region-import/validation-set.mjs",
+        "sha256": "89050aa5a3289442781fc4ed9ee42ef5b20edad9e90e0753b1fd52aa103bd365"
+      },
+      {
+        "path": "tools/region-import/build-validation-set.mjs",
+        "sha256": "e3c07945be9593d7b2c8ab52e65ca45f33bbd34f981f1479e138aaeb6a3641fd"
+      },
+      {
+        "path": "tools/region-import/build-infra-release.mjs",
+        "sha256": "a4f53e20831a0b1130aa156b4c07def30e8f04dc2551f629b83ac2f6ea9a5d12"
+      },
+      {
+        "path": "tools/region-import/release-crypto.mjs",
+        "sha256": "8092b10b443be1a1d30c423adc567e8a0101630968c2d0cb9a4fec7b83a0d93e"
+      },
+      {
+        "path": "tools/region-import/sign-release.mjs",
+        "sha256": "593e9fd2f713a7abfe2655337921fdb8781c27f11a853eef5ac315d6ebbec23c"
+      },
+      {
+        "path": "tools/region-import/verify-release.mjs",
+        "sha256": "83c1363cfa6e7d9e06d6972b0a0caed563d3efa5a2857005d11c875445a0ba76"
+      },
+      {
+        "path": "crates/zugfolge-infra/examples/pbf_release_report.rs",
+        "sha256": "ca06660902f14315710e61cb1e4edecb13bf762ca2af2c5895f6ffb5aa70087e"
+      }
+    ],
+    "tools": [
+      {
+        "name": "osmium-tool",
+        "version": "1.16.0"
+      },
+      {
+        "name": "tippecanoe",
+        "version": "2.79.0",
+        "commit": "68ab8dcc229f95b8b25877697d5e8d66783af503"
+      },
+      {
+        "name": "go-pmtiles",
+        "version": "1.31.2",
+        "commit": "a3e4951ea6a0477b784c27c1dcbfd9c130878c5a",
+        "linuxX8664Sha256": "3ed7dbf4ec2e6dfe5e25b6f70d1ffc932729f93c86db353bf514dd71010a312f"
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "file": "mitteldeutschland-b-ebo.osm.pbf",
+      "bytes": 25930266,
+      "sha256": "11171189e19a1413104a09e0206ae1edd321f724441b650c225d07132f92c1e1",
+      "kind": "ebo-pbf-extract"
+    },
+    {
+      "file": "gtfs-region-20260812-v2.json",
+      "bytes": 14859356,
+      "sha256": "0bf742cedaf5a1237c3879b6527a37623c3b84f070456c21f2991f7207ffbbf4",
+      "kind": "gtfs-planning-snapshot",
+      "stateHash": "21a5abe3da26e870770fecab8dc9a37b284e9038743d527b89c41091d13b55e4"
+    },
+    {
+      "file": "operational-network.json",
+      "bytes": 3925109,
+      "sha256": "2e187feda54900f3653420ffd6ddc50dd72b256dc982ae95db102c4472b8d2bd",
+      "kind": "operational-network",
+      "stateHash": "5e42519aafe89995f14c9315e540ba46a3c810028813c75d54583f672fb07a67"
+    },
+    {
+      "file": "pbf-release-report.json",
+      "bytes": 30693484,
+      "sha256": "5244339c8167659d65921b1f37c2df895a7bed4ab765d2eaf2a617a8ded24739",
+      "kind": "blocks-routes-quality",
+      "blocksHash": "20db2a7fb0f9ee1902a84e4c6c92d44b6f95e4dd36d924a2d5a6d95f7cd72586",
+      "interlockingRoutesHash": "40e1b51e3ffbdef90142ad4eacaf544a1cb49ada0b42855203bdad052c8e531a"
+    },
+    {
+      "file": "independent-validation-set.json",
+      "bytes": 1824335,
+      "sha256": "b2c491ada8ca8d77500e67df5e91a71d0b9b0482b390f1375abd93e59f76e8f7",
+      "kind": "independent-technical-validation",
+      "stateHash": "536ae6978dd2dc46eee287f2368f269e75385bb578b4fc81d71c5132d740dfcd"
+    },
+    {
+      "file": "mitteldeutschland-b.pmtiles",
+      "bytes": 4596259,
+      "sha256": "b893c7a36ea9169229ee305efeace9a93f5816b033ec6f6b6f660c82a1581965",
+      "kind": "livemap-pmtiles"
+    }
+  ],
+  "quality": {
+    "sections": {
+      "A": 0,
+      "B": 27315,
+      "C": 20299
+    },
+    "operationalSegments": {
+      "B": 2373,
+      "C": 107
+    },
+    "classCVisible": true,
+    "classCOrderable": false,
+    "orderableJourneyChains": 1634,
+    "conflictResources": 1654,
+    "blocks": 47614,
+    "interlockingRoutes": 51066
+  },
+  "rights": {
+    "registry": "tools/guards/quellenregister.json",
+    "approvedSourceIds": [
+      "gtfs-de-rv",
+      "osm-pbf-mitteldeutschland-b",
+      "trassenfinder-infrastruktur-api"
+    ],
+    "stationSource": "trassenfinder-infrastruktur-api",
+    "elevation": {
+      "included": false,
+      "rightsApproved": true,
+      "reason": "Kein versionierter Copernicus-DEM-Snapshot im Release; deshalb keine Hoehenwerte geraten oder importiert.",
+      "operationalEffect": "Abschnitte ohne unabhaengigen Neigungsnachweis bleiben hoechstens Klasse B; Klasse A wird nicht behauptet."
+    },
+    "attributionReport": "docs/mitteldeutschland-alpha.md"
+  },
+  "validation": {
+    "issue": "https://github.com/larynxberlin-rgb/Zugfolge/issues/48",
+    "independentFromCalibration": true,
+    "result": "passed",
+    "checkCount": 12505,
+    "failedCount": 0,
+    "validationHash": "536ae6978dd2dc46eee287f2368f269e75385bb578b4fc81d71c5132d740dfcd"
+  },
+  "releaseApproval": {
+    "releaseResponsible": "Sebastian Barowski",
+    "responsibilityGrantedBy": "user-approval-2026-08-12",
+    "activationAllowed": true,
+    "activationAuthority": "game-system-only"
+  },
+  "releaseHash": "9c44c17c887f0960402ea01ece7c08127cfb802efcf9c43ecd6d02c381c37e17",
+  "signature": {
+    "algorithm": "Ed25519",
+    "keyId": "zugfolge-alpha-2026",
+    "valueBase64": "bzOMWp1yH1yqKwHsp2AgpT6cBjEpq5fkaaoTixRPggN9XXSM9FquVspyHngV5MV5al6XvMwSeVlMuAFUnaabBA=="
+  }
+}

@@ -21,7 +21,7 @@ use std::collections::BTreeMap;
 
 use zugfolge_infra::{
     BlockSection, InterlockingPlan, Length, OperatingGraph, OperatingPointId, Track, TrackId,
-    TrackOwner,
+    TrackOwner, TrainCharacteristics,
 };
 
 use crate::error::ConflictError;
@@ -153,6 +153,51 @@ impl Infrastructure {
                 end: track.length(),
             }]),
         }
+    }
+
+    /// Die Konfliktressourcen eines Gleises, die dieser Zug mit seiner
+    /// Zugsicherung tatsächlich verwenden darf.
+    ///
+    /// Ein Zug ohne LZB darf auf einem LZB-Gleis nicht einfach die
+    /// LZB-Blockkennzeichen als normale Signalblöcke behandeln. Gibt es auf
+    /// demselben Streckengleis aber hinterlegte Signalblöcke, fallen solche
+    /// Züge auf diese Signalblöcke zurück. Ein reiner LZB- oder ETCS-Block
+    /// bleibt dagegen für Fahrzeuge ohne die passende durchgehende
+    /// Zugsicherung unbefahrbar.
+    pub fn spans_of_for_train(
+        &self,
+        id: TrackId,
+        train: &TrainCharacteristics,
+    ) -> Result<Vec<ResourceSpan>, ConflictError> {
+        let track = self.track(id)?;
+        if matches!(track.owner(), TrackOwner::OperatingPoint(_)) {
+            return self.spans_of(id);
+        }
+
+        let Some(sections) = self.blocks.get(&id) else {
+            return self.spans_of(id);
+        };
+        if sections.is_empty() {
+            return self.spans_of(id);
+        }
+
+        let spans: Vec<_> = sections
+            .iter()
+            .enumerate()
+            .filter(|(_, section)| section.is_usable_by_train(train.protection()))
+            .map(|(ordinal, section)| ResourceSpan {
+                resource: ConflictResource::Block {
+                    track: id,
+                    ordinal: u32::try_from(ordinal).unwrap_or(u32::MAX),
+                },
+                start: section.start(),
+                end: section.end(),
+            })
+            .collect();
+        if spans.is_empty() {
+            return Err(ConflictError::NoCompatibleBlock(id));
+        }
+        Ok(spans)
     }
 
     /// Wie viele Blockabschnitte für ein Gleis hinterlegt sind.

@@ -32,6 +32,16 @@ function projection(): PlanningProjectionV1 {
         id: "t1",
         number: "R 1",
         direction: "with-chainage",
+        boundaryWindows: [
+          {
+            windowId: "window-exit-eisenach",
+            portalId: "portal-eisenach",
+            direction: "exit",
+            earliestS: 26_100,
+            targetS: 26_400,
+            latestS: 26_700,
+          },
+        ],
         calls: [
           { stationId: "a", timeS: 25_800 },
           { stationId: "b", timeS: 26_400 },
@@ -129,5 +139,14 @@ describe("Bildfahrplan-Renderer", () => {
     expect(html).toContain("Konfliktfrei");
     expect(html).toContain("zf-badge--neutral");
     expect(html).not.toContain("zf-badge--success");
+  });
+
+  it("erklaert dem Spieler das serverseitige Grenzfenster als feste, sichtbare Randbedingung", () => {
+    const html = renderProjection(projection(), options);
+    expect(html).toContain("Durchgehende Fahrt");
+    expect(html).toContain("Ausfahrt · portal-eisenach");
+    expect(html).toContain("07:15:00–07:25:00");
+    expect(html).toContain("Aussenlauf bleibt Teil derselben Zugfahrt");
+    expect(html).not.toContain("data-boundary-window");
   });
 });

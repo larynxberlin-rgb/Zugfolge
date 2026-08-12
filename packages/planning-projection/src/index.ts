@@ -49,6 +49,17 @@ export interface PlanningTrainProjection {
   readonly number: string;
   readonly direction: TravelDirection;
   readonly calls: readonly PlanningTrainCallProjection[];
+  /** Nicht bearbeitbare Randbedingungen einer gebietsueberschreitenden Fahrt. */
+  readonly boundaryWindows?: readonly PlanningBoundaryWindowProjection[];
+}
+
+export interface PlanningBoundaryWindowProjection {
+  readonly windowId: string;
+  readonly portalId: string;
+  readonly direction: "entry" | "exit";
+  readonly earliestS: number;
+  readonly targetS: number;
+  readonly latestS: number;
 }
 
 export interface PlanningConflictResourceProjection {
@@ -224,7 +235,12 @@ function parseProjectionUnchecked(value: unknown): PlanningProjectionV1 {
 
   const trains = arrayValue(input["trains"], "$.trains").map((train, index) => {
     const path = `$.trains[${index}]`;
-    const item = record(train, path, ["id", "number", "direction", "calls"]);
+    const trainKeys = ["id", "number", "direction", "calls"];
+    const trainRecord = train as Readonly<Record<string, unknown>>;
+    if (typeof train === "object" && train !== null && !Array.isArray(train) && "boundaryWindows" in trainRecord) {
+      trainKeys.push("boundaryWindows");
+    }
+    const item = record(train, path, trainKeys);
     const calls = arrayValue(item["calls"], `${path}.calls`).map((call, callIndex) => {
       const callPath = `${path}.calls[${callIndex}]`;
       const callItem = record(call, callPath, ["stationId", "timeS"]);
@@ -236,11 +252,38 @@ function parseProjectionUnchecked(value: unknown): PlanningProjectionV1 {
       };
     });
     if (calls.length === 0) fail(`${path}.calls`, "mindestens ein Fahrplanpunkt erwartet");
+    const boundaryWindows = item["boundaryWindows"] === undefined
+      ? undefined
+      : arrayValue(item["boundaryWindows"], `${path}.boundaryWindows`).map((window, windowIndex) => {
+        const windowPath = `${path}.boundaryWindows[${windowIndex}]`;
+        const windowItem = record(window, windowPath, [
+          "windowId", "portalId", "direction", "earliestS", "targetS", "latestS",
+        ]);
+        const earliestS = integerValue(windowItem["earliestS"], `${windowPath}.earliestS`, 0);
+        const targetS = integerValue(windowItem["targetS"], `${windowPath}.targetS`, 0);
+        const latestS = integerValue(windowItem["latestS"], `${windowPath}.latestS`, 0);
+        if (earliestS > targetS || targetS > latestS) {
+          fail(windowPath, "monotones Grenzfenster erwartet");
+        }
+        return {
+          windowId: stringValue(windowItem["windowId"], `${windowPath}.windowId`, 128),
+          portalId: stringValue(windowItem["portalId"], `${windowPath}.portalId`, 128),
+          direction: enumValue(windowItem["direction"], `${windowPath}.direction`, ["entry", "exit"] as const),
+          earliestS,
+          targetS,
+          latestS,
+        };
+      });
+    if (boundaryWindows !== undefined) {
+      assertUnique(boundaryWindows.map((window) => window.windowId), `${path}.boundaryWindows[].windowId`);
+      assertUnique(boundaryWindows.map((window) => window.direction), `${path}.boundaryWindows[].direction`);
+    }
     return {
       id: stringValue(item["id"], `${path}.id`, 128),
       number: stringValue(item["number"], `${path}.number`, 64),
       direction: enumValue(item["direction"], `${path}.direction`, TRAVEL_DIRECTIONS),
       calls,
+      ...(boundaryWindows === undefined ? {} : { boundaryWindows }),
     };
   });
   assertUnique(trains.map((train) => train.id), "$.trains[].id");

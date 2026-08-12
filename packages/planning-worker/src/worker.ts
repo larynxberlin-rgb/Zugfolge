@@ -347,6 +347,7 @@ function parsePersistedCoordinate(worldId: string, payload: unknown): PlanningCo
 async function resolvePathRequests(
   db: PlanningDatabase,
   coordinate: PlanningCoordinateAuthorityCommand,
+  release: PlanningInfrastructureRelease,
   expectedStatus: "pending" | "processed",
   expectedResultEventSequence?: number,
 ): Promise<ResolvedPathRequests> {
@@ -382,8 +383,25 @@ async function resolvePathRequests(
   invariant(new Set(parsed.map(({ request }) => request.trainId)).size === 2, "planning.coordinate besitzt doppelte Zug-IDs.");
   parsed.sort((left, right) => compareUtf8(left.request.requestId, right.request.requestId));
   const requests = parsed.map(({ request }, index) => {
-    const { schemaVersion: _schemaVersion, worldId: _worldId, requestingAccountId: _accountId, requestId: _requestId, ...facts } = request;
-    return { requestNumericId: index + 1, ...facts };
+    const {
+      schemaVersion: _schemaVersion,
+      worldId: _worldId,
+      requestingAccountId: _accountId,
+      requestId: _requestId,
+      boundaryPlanningWindowId,
+      ...facts
+    } = request;
+    if (boundaryPlanningWindowId === undefined) {
+      return { requestNumericId: index + 1, ...facts };
+    }
+    const boundary = release.boundaryPlanningWindows?.find((item) => item.id === boundaryPlanningWindowId);
+    invariant(boundary !== undefined, `Grenzfenster '${boundaryPlanningWindowId}' gehoert nicht zum gepinnten Infrastrukturrelease.`);
+    invariant(boundary.orderable && boundary.qualityClass !== "C", `Grenzfenster '${boundaryPlanningWindowId}' ist sichtbar, aber nicht bestellbar.`);
+    invariant(
+      boundary.originStationId === facts.originStationId && boundary.destinationStationId === facts.destinationStationId,
+      `Grenzfenster '${boundaryPlanningWindowId}' gehoert zu einem anderen regionalen Fahrtabschnitt.`,
+    );
+    return { requestNumericId: index + 1, ...facts, boundaryWindows: boundary.windows };
   }) as [PlanningCoordinateRequest, PlanningCoordinateRequest];
   return { commandIds: commandIds as [string, string], requests };
 }
@@ -449,7 +467,8 @@ export async function processPlanningCommand(
       const committed = await committedStateForCommand(tx, command.worldId, command.resultEventSequence);
       if (command.commandType === "planning.coordinate") {
         const coordinate = parsePersistedCoordinate(command.worldId, command.payload);
-        await resolvePathRequests(tx, coordinate, "processed", command.resultEventSequence ?? undefined);
+        const release = resolveInfrastructureRelease(infrastructureReleases, coordinate);
+        await resolvePathRequests(tx, coordinate, release, "processed", command.resultEventSequence ?? undefined);
       }
       return {
         commandId: command.id,
@@ -474,7 +493,7 @@ export async function processPlanningCommand(
         await assertLatestDiagramMatchesState(tx, command.worldId, current.event);
       }
       const release = resolveInfrastructureRelease(infrastructureReleases, coordinate);
-      const resolved = await resolvePathRequests(tx, coordinate, "pending");
+      const resolved = await resolvePathRequests(tx, coordinate, release, "pending");
       consumedPathRequestIds = resolved.commandIds;
       result = runtime.coordinate(runtimeCoordinate(coordinate, release, resolved.requests));
     } else {

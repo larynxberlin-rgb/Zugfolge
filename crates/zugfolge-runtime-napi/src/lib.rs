@@ -9,6 +9,11 @@ use napi_derive::napi;
 #[cfg(feature = "node-addon")]
 mod regional_simulation;
 
+#[cfg(feature = "node-addon")]
+pub use regional_simulation::{
+    apply_regional_simulation_command, initialize_regional_simulation, restore_regional_simulation,
+};
+
 /// Initializes the authoritative, revisioned M5 fleet state.
 #[cfg(feature = "node-addon")]
 #[napi(js_name = "initializeFleetWorld")]

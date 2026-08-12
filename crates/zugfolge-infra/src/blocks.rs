@@ -266,6 +266,23 @@ impl BlockSection {
         &self.protection
     }
 
+    /// Ob ein Zug diese Blockart mit seiner eigenen Zugsicherung nutzen kann.
+    ///
+    /// Signalblöcke dürfen mit der vorhandenen streckenseitigen
+    /// Rückfallebene befahren werden. Ein führerraumsignalisierter Block darf
+    /// dagegen nur mit genau einer passenden durchgehenden Ausrüstung genutzt
+    /// werden: PZB allein macht aus einem LZB-Block keinen Signalblock, und
+    /// ETCS-only bleibt ETCS-only.
+    pub fn is_usable_by_train(&self, train: &TrainProtection) -> bool {
+        match self.kind {
+            BlockKind::CabSignalled => self
+                .protection
+                .systems()
+                .any(|system| system.is_continuous() && train.contains(system)),
+            BlockKind::Signalled | BlockKind::Virtual => self.protection.is_compatible_with(train),
+        }
+    }
+
     /// Die Qualitätsklasse des Blocks.
     pub const fn class(&self) -> QualityClass {
         self.class
@@ -692,6 +709,13 @@ mod tests {
         assert_eq!(bloecke[0].kind(), BlockKind::CabSignalled);
         assert_eq!(bloecke[0].class(), QualityClass::A);
         assert!(bloecke[0].protection().contains(ProtectionSystem::Lzb));
+        assert!(!bloecke[0].is_usable_by_train(&TrainProtection::single(ProtectionSystem::Pzb)));
+        assert!(
+            bloecke[0].is_usable_by_train(&TrainProtection::from_systems([
+                ProtectionSystem::Pzb,
+                ProtectionSystem::Lzb,
+            ]))
+        );
     }
 
     #[test]
@@ -717,6 +741,10 @@ mod tests {
                 .contains(ProtectionSystem::EtcsLevel2)
         );
         assert!(!bloecke[0].protection().contains(ProtectionSystem::Pzb));
+        assert!(!bloecke[0].is_usable_by_train(&TrainProtection::single(ProtectionSystem::Pzb)));
+        assert!(
+            bloecke[0].is_usable_by_train(&TrainProtection::single(ProtectionSystem::EtcsLevel2))
+        );
     }
 
     #[test]

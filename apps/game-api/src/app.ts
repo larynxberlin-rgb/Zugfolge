@@ -11,6 +11,8 @@
 
 import { timingSafeEqual } from "node:crypto";
 
+import { AlphaAuthorizationError, AlphaConflictError, AlphaValidationError } from "@zugfolge/alpha";
+
 import {
   accounts,
   createDatabaseHealthCheck,
@@ -38,6 +40,13 @@ import {
   type OdooWebhookEnvelope,
   type SignedPayload,
 } from "@zugfolge/commerce";
+import {
+  CooperationAuthorizationError,
+  CooperationConflictError,
+  CooperationNotFoundError,
+  CooperationService,
+  CooperationValidationError,
+} from "@zugfolge/cooperation";
 import {
   ACTIONS,
   buildDailyReport,
@@ -154,6 +163,11 @@ import Fastify, {
 } from "fastify";
 
 import { createAuthenticator, type TokenVerifier } from "./auth.js";
+import { guardAlphaAction, registerAlphaRoutes, type AlphaAbuseServices, type AlphaRouteServices } from "./alpha-routes.js";
+import { registerCooperationRoutes } from "./cooperation-routes.js";
+import { GameCooperationAuthority } from "./cooperation-authority.js";
+import { GameFleetAssetTransferWriter } from "./fleet-market-writer.js";
+import { ApiObservability, requestCorrelationId } from "./observability.js";
 import {
   RegionalSimulationConflictError,
   RegionalSimulationSequenceError,
@@ -193,6 +207,14 @@ export interface AppDependencies {
   /** Optionaler, vom normalen Keycloak-Pfad getrennter Odoo-Webhook-Receiver (E23). */
   readonly odooWebhookStore?: OdooWebhookReceiptStore;
   readonly odooWebhookOptions?: OdooWebhookReceiverOptions;
+  /** Serverautoritative EVU-Verträge und Sekundärmarkt; Produktion nutzt dieselbe Postgres-Verbindung. */
+  readonly cooperation?: CooperationService;
+  /** M9-Spieler-, Monitoring- und Alpha-Pfade; fehlen sie, werden keine Teilattrappen exponiert. */
+  readonly alpha?: AlphaRouteServices;
+  /** Persistenter Missbrauchsschutz darf auch ohne noch nicht fertig verdrahtete Alpha-Oberflaechen aktiv sein. */
+  readonly alphaAbuse?: AlphaAbuseServices;
+  /** Direkte Admin-HTTP-Pfade sind nur in Tests/Bootstrap erlaubt; Produktion setzt `odoo`. */
+  readonly adminControl?: "odoo" | "nonproduction-direct";
 }
 
 const worldIdParam = {
@@ -443,6 +465,48 @@ const regionalCommandSchema = {
         beforeS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
       },
     },
+    {
+      type: "object",
+      required: ["type", "trainRunId", "externalLeg"],
+      additionalProperties: false,
+      properties: {
+        type: { const: "enter-external-zone" },
+        trainRunId: { type: "string", minLength: 1, maxLength: 200 },
+        externalLeg: {
+          type: "object",
+          required: [
+            "journeyChainId", "externalLegId", "fromPortalId", "toPortalId",
+            "scheduledStartS", "scheduledEndS", "reentryEarliestS", "reentryLatestS",
+            "fixedCostCents", "boundVehicleIds", "boundPersonnelDutyIds", "reentryRoute", "firstResources",
+          ],
+          additionalProperties: false,
+          properties: {
+            journeyChainId: { type: "string", minLength: 1, maxLength: 200 },
+            externalLegId: { type: "string", minLength: 1, maxLength: 200 },
+            fromPortalId: { type: "string", minLength: 1, maxLength: 200 },
+            toPortalId: { anyOf: [{ type: "null" }, { type: "string", minLength: 1, maxLength: 200 }] },
+            scheduledStartS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+            scheduledEndS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+            reentryEarliestS: { anyOf: [{ type: "null" }, { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER }] },
+            reentryLatestS: { anyOf: [{ type: "null" }, { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER }] },
+            fixedCostCents: { type: "string", pattern: "^(0|[1-9][0-9]*)$", maxLength: 19 },
+            boundVehicleIds: { type: "array", minItems: 1, maxItems: 100, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 200 } },
+            boundPersonnelDutyIds: { type: "array", maxItems: 100, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 200 } },
+            reentryRoute: { type: "array", maxItems: 10_000, items: regionalWaypointSchema },
+            firstResources: { type: "array", maxItems: 10_000, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 200 } },
+          },
+        },
+      },
+    },
+    {
+      type: "object",
+      required: ["type", "trainRunId"],
+      additionalProperties: false,
+      properties: {
+        type: { const: "reenter-from-external" },
+        trainRunId: { type: "string", minLength: 1, maxLength: 200 },
+      },
+    },
   ],
 } as const;
 
@@ -479,6 +543,15 @@ async function resolveKeycloakSubject(db: IdentityDatabase, worldId: string, acc
 }
 
 function sendError(reply: FastifyReply, error: unknown): FastifyReply {
+  if (error instanceof AlphaAuthorizationError) {
+    return reply.code(403).send({ code: error.code, error: error.message });
+  }
+  if (error instanceof AlphaValidationError) {
+    return reply.code(400).send({ code: error.code, error: error.message });
+  }
+  if (error instanceof AlphaConflictError) {
+    return reply.code(409).send({ code: error.code, error: error.message });
+  }
   if (
     error instanceof AccessRevokedError ||
     error instanceof AuthorizationError ||
@@ -506,6 +579,18 @@ function sendError(reply: FastifyReply, error: unknown): FastifyReply {
   }
   if (error instanceof ProgramValidationError || error instanceof RangeError) {
     return reply.code(400).send({ error: error.message });
+  }
+  if (error instanceof CooperationAuthorizationError) {
+    return reply.code(403).send({ error: error.message });
+  }
+  if (error instanceof CooperationNotFoundError) {
+    return reply.code(404).send({ error: error.message });
+  }
+  if (error instanceof CooperationConflictError) {
+    return reply.code(409).send({ code: error.code, error: error.message });
+  }
+  if (error instanceof CooperationValidationError) {
+    return reply.code(400).send({ code: error.code, error: error.message });
   }
   throw error;
 }
@@ -792,13 +877,57 @@ function isSamePlanningApplyAlternativePayload(
 export function buildApp(deps: AppDependencies): FastifyInstance {
   const app = Fastify({
     logger: deps.logger ?? process.env["NODE_ENV"] !== "test",
+    genReqId: requestCorrelationId,
     // Unbekannte Felder nicht still entfernen: Ein manipulierter Client soll
     // eine sichtbare 400-Antwort erhalten, statt den Eindruck zu gewinnen,
     // technische Ausschreibungswerte erfolgreich gesetzt zu haben.
     ajv: { customOptions: { removeAdditional: false } },
   });
+  const observability = new ApiObservability();
+  observability.register(app);
   const authenticate = createAuthenticator(deps.verifyToken);
   const operations = deps.operations ?? new OperationsRegistry();
+  const assertDirectAdminAllowed = () => {
+    if (deps.adminControl === "nonproduction-direct" || process.env["NODE_ENV"] === "test") return;
+    throw new AuthorizationError("Produktive Verwaltungsaktionen beginnen ausschliesslich in Odoo (ADR-0023).");
+  };
+  const cooperation = deps.cooperation ?? new CooperationService(
+    deps.db,
+    new GameCooperationAuthority(deps.db, deps.fleetAuthorityReleases ?? {}),
+    deps.fleetRuntime === undefined ? undefined : new GameFleetAssetTransferWriter(deps.fleetRuntime),
+  );
+  const abuseServices = deps.alpha ?? deps.alphaAbuse;
+  const guardSensitiveAction = async (
+    request: FastifyRequest,
+    subject: string,
+    worldId: string,
+    actionClass: string,
+    target: string,
+    replayKey: string,
+  ) => {
+    if (abuseServices !== undefined) await guardAlphaAction({ db: deps.db, services: abuseServices }, request, worldId, subject, actionClass, target, replayKey);
+  };
+  const guardCooperationAction = abuseServices === undefined ? undefined : async (
+    request: FastifyRequest,
+    subject: string,
+    actionClass: string,
+    target: string,
+    replayKey: string,
+  ) => {
+    const params = request.params as Record<string, unknown>;
+    const worldId = params["worldId"];
+    if (typeof worldId !== "string") throw new CooperationValidationError("Missbrauchsschutz findet keine Weltbindung.");
+    try {
+      await guardAlphaAction({ db: deps.db, services: abuseServices }, request, worldId, subject, actionClass, target, replayKey);
+    } catch (error) {
+      if (error instanceof AlphaAuthorizationError || error instanceof AlphaValidationError || error instanceof AlphaConflictError) {
+        throw new CooperationConflictError(error.message, error.code);
+      }
+      throw error;
+    }
+  };
+  registerCooperationRoutes(app, { db: deps.db, cooperation, authenticate, guardAction: guardCooperationAction });
+  if (deps.alpha !== undefined) registerAlphaRoutes(app, { db: deps.db, authenticate, services: deps.alpha });
 
   // `/health` ist Liveness: läuft der Prozess, ohne jede Abhängigkeit zu
   // prüfen. `/health/ready` ist Readiness für Status- und Monitoringdienste:
@@ -816,6 +945,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         app.log.error({ err: error, healthCheck }, "Readiness-Prüfung fehlgeschlagen");
       },
     });
+    observability.observeHealth(report);
     return reply.code(report.status === "down" ? 503 : 200).send(report);
   });
 
@@ -921,6 +1051,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
         await requireWorldAdminAccount(deps.db, request.params.worldId, identity.keycloakSubject);
+        assertDirectAdminAllowed();
         if (await loadEconomyWorldState(deps.db, request.params.worldId)) return reply.code(409).send({ error: "Wirtschaftswelt wurde bereits gestartet." });
         const suppliedRelease = decoded<EconomyRelease>(request.body.release);
         const release = buildEconomyRelease({
@@ -1005,6 +1136,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
         await requireWorldAdminAccount(deps.db, request.params.worldId, identity.keycloakSubject);
+        assertDirectAdminAllowed();
         const state = await loadEconomyWorldState(deps.db, request.params.worldId);
         if (state === undefined) return reply.code(404).send({ error: "Wirtschaftswelt ist noch nicht gestartet." });
         requireExpectedRevision(request.params.worldId, state.revision, request.body.expectedRevision);
@@ -1076,6 +1208,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
         await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await guardSensitiveAction(request, identity.keycloakSubject, request.params.worldId, "tender-bid", request.params.tenderId, request.body.commandId);
         const state = await loadEconomyWorldState(deps.db, request.params.worldId);
         if (state === undefined) return reply.code(404).send({ error: "Wirtschaftswelt ist noch nicht gestartet." });
         requireExpectedRevision(request.params.worldId, state.revision, request.body.expectedRevision);
@@ -1157,6 +1290,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
         await requireWorldAdminAccount(deps.db, request.params.worldId, identity.keycloakSubject);
+        assertDirectAdminAllowed();
         const state = await loadEconomyWorldState(deps.db, request.params.worldId);
         if (state === undefined) return reply.code(404).send({ error: "Wirtschaftswelt ist noch nicht gestartet." });
         requireExpectedRevision(request.params.worldId, state.revision, request.body.expectedRevision);
@@ -1520,6 +1654,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         if (account === undefined) {
           throw new AuthorizationError("Kein aktiver Zugang zu dieser Welt.");
         }
+        await guardSensitiveAction(request, identity.keycloakSubject, request.params.worldId, "path-window", request.body.requestId, request.body.requestId);
         const command = await queuePlanningPathRequest(deps.db, {
           worldId: request.params.worldId,
           requestingAccountId: account.id,
@@ -2058,6 +2193,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         return reply.code(400).send({ error: `Unbekannte Rolle '${request.body.role}'.` });
       }
       try {
+        assertDirectAdminAllowed();
         const account = await grantRole(deps.db, {
           worldId: request.params.worldId,
           targetAccountId: request.params.accountId,
@@ -2218,6 +2354,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
         await requireWorldAdminAccount(deps.db, request.params.worldId, identity.keycloakSubject);
+        assertDirectAdminAllowed();
         const account = await getAccount(deps.db, { worldId: request.params.worldId, keycloakSubject: identity.keycloakSubject });
         if (account === undefined) throw new AuthorizationError("Kein aktiver Weltadministrator.");
         const [world] = await deps.db.select().from(worlds).where(eq(worlds.id, request.params.worldId)).limit(1);
@@ -2331,6 +2468,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
         await requireWorldAdminAccount(deps.db, request.params.worldId, identity.keycloakSubject);
+        assertDirectAdminAllowed();
         if (request.body.startsAtS >= request.body.endsAtS) return reply.code(400).send({ error: "Störungsende muss nach dem Beginn liegen." });
         if (request.body.publishedAtS > request.body.startsAtS) return reply.code(400).send({ error: "Veröffentlichung darf nicht nach dem Beginn liegen." });
         const account = await getAccount(deps.db, { worldId: request.params.worldId, keycloakSubject: identity.keycloakSubject });
@@ -2941,6 +3079,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       }
       try {
         await requireWorldAdminAccount(deps.db, request.params.worldId, identity.keycloakSubject);
+        assertDirectAdminAllowed();
         const message = await sendMessage(deps.db, {
           worldId: request.params.worldId,
           recipientAccountId: request.params.accountId,

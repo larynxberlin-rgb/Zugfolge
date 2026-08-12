@@ -106,6 +106,20 @@
       "when": 1786456200000,
       "tag": "0014_disruption_provider_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1786460400000,
+      "tag": "0015_cooperation_market",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1786482000000,
+      "tag": "0016_alpha_runtime",
+      "breakpoints": true
     }
   ]
 }

@@ -16,6 +16,7 @@ export const FLEET_AUTHORITY_RELEASE_SCHEMA = "zugfolge-fleet-authority-release/
 export const FLEET_FORMATION_COMMAND_SCHEMA = "zugfolge-fleet-form-vehicles-command/v2" as const;
 export const FLEET_PERSONNEL_DUTY_COMMAND_SCHEMA = "zugfolge-fleet-assign-duty-command/v2" as const;
 export const FLEET_PATH_RESERVATION_COMMAND_SCHEMA = "zugfolge-fleet-attach-path-command/v2" as const;
+export const FLEET_ASSET_TRANSFER_COMMAND_SCHEMA = "zugfolge-fleet-transfer-asset-command/v1" as const;
 export const FLEET_COMMAND_RESULT_SCHEMA = "zugfolge-fleet-command-result/v2" as const;
 export const FLEET_COMMAND_RECEIPT_SCHEMA = "zugfolge-fleet-command-receipt/v1" as const;
 
@@ -38,7 +39,7 @@ export interface NativeFleetCharacteristics {
   readonly operatingCostCentsPerTrainKm: number;
   readonly homologatedLineIds: readonly string[];
   readonly maintenanceValidUntil: number;
-  readonly traction: "electric" | "diesel" | "battery" | "hydrogen";
+  readonly traction: "unpowered" | "electric" | "diesel" | "battery" | "hydrogen";
   readonly replacementPlan: boolean;
 }
 
@@ -91,10 +92,26 @@ export interface FleetAuthorityTechnicalData {
   readonly lengthMm: number;
   readonly massKg: number;
   readonly maximumSpeedKph: number;
-  readonly accelerationMmPerS2: number;
-  readonly decelerationMmPerS2: number;
-  readonly traction: "electric" | "diesel" | "battery";
+  /**
+   * Altes Referenzprofil. Bei einer Lok ist die wirksame Beschleunigung
+   * formationsabhängig und wird deshalb heute beim Formation-Intent geführt.
+   */
+  readonly accelerationMmPerS2?: number;
+  /** Siehe `accelerationMmPerS2`. */
+  readonly decelerationMmPerS2?: number;
+  /** Rohwert für Zugkraft-/Lastgrenzen; Legacy-Releases dürfen ihn noch auslassen. */
+  readonly continuousPowerKw?: number;
+  /** Anfahrzugkraft in kN; Legacy-Releases dürfen ihn noch auslassen. */
+  readonly startingTractiveEffortKn?: number;
+  /** Bremsgewicht in kg; Legacy-Releases dürfen ihn noch auslassen. */
+  readonly brakeWeightKg?: number;
+  readonly traction: "unpowered" | "electric" | "diesel" | "battery";
   readonly electricSystems: readonly ("ac15kv" | "ac25kv" | "dc750v" | "dc1500v" | "dc3000v")[];
+  readonly role?: "locomotive" | "powered-unit" | "coach" | "control-car";
+  readonly controlStands?: {
+    readonly front: boolean;
+    readonly rear: boolean;
+  };
 }
 
 export interface FleetAuthorityPassengerData {
@@ -175,12 +192,23 @@ export interface FleetWorldInitialization {
   readonly worldId: string;
   readonly producedAt: number;
   readonly authorityRelease: FleetAuthorityRelease;
+  /** Rueckwaertskompatibler Bootstrap des vollstaendigen Eigenbetriebs bei t=0. */
+  readonly formations?: readonly NativeFleetFormationIntent[];
+  readonly personnelDuties?: readonly NativeFleetPersonnelDutyIntent[];
+  readonly pathReservations?: readonly NativeFleetPathReservationIntent[];
+}
+
+/** Signiertes, ganzzahliges Fahrprofil einer tatsächlich gebildeten Formation. */
+export interface NativeFleetFormationDynamics {
+  readonly accelerationMmPerS2: number;
+  readonly decelerationMmPerS2: number;
 }
 
 export interface NativeFleetFormationIntent {
   readonly id: string;
   readonly vehicleIds: readonly string[];
   readonly pathReceiptId: string;
+  readonly dynamics?: NativeFleetFormationDynamics;
 }
 
 export interface NativeFleetPersonnelDutyIntent {
@@ -197,6 +225,15 @@ export interface NativeFleetPathReservationIntent {
   readonly pathReceiptId: string;
 }
 
+export interface NativeFleetAssetHolding {
+  readonly ownerOperatorId: string;
+  readonly holderOperatorId: string;
+  readonly lessorOperatorId: string | null;
+  readonly contractId: string | null;
+  readonly validUntilS: number | null;
+  readonly historyHash: string;
+}
+
 export type NativeFleetWorldState = Readonly<Record<string, unknown>> & {
   readonly schemaVersion: typeof FLEET_STATE_SCHEMA;
   readonly worldId: string;
@@ -207,6 +244,7 @@ export type NativeFleetWorldState = Readonly<Record<string, unknown>> & {
   readonly formations: Readonly<Record<string, NativeFleetFormationIntent>>;
   readonly personnelDuties: Readonly<Record<string, NativeFleetPersonnelDutyIntent>>;
   readonly pathReservations: Readonly<Record<string, NativeFleetPathReservationIntent>>;
+  readonly assetHoldings?: Readonly<Record<string, NativeFleetAssetHolding>>;
 };
 
 interface FleetCommandBase {
@@ -223,6 +261,7 @@ export type NativeFleetCommand =
       readonly formationId: string;
       readonly vehicleIds: readonly string[];
       readonly pathReceiptId: string;
+      readonly dynamics?: NativeFleetFormationDynamics;
     }
   | FleetCommandBase & {
       readonly schemaVersion: typeof FLEET_PERSONNEL_DUTY_COMMAND_SCHEMA;
@@ -237,6 +276,19 @@ export type NativeFleetCommand =
       readonly schemaVersion: typeof FLEET_PATH_RESERVATION_COMMAND_SCHEMA;
       readonly pathReservationId: string;
       readonly pathReceiptId: string;
+    }
+  | FleetCommandBase & {
+      readonly schemaVersion: typeof FLEET_ASSET_TRANSFER_COMMAND_SCHEMA;
+      readonly vehicleId: string;
+      readonly transferType: "sale" | "rental-start" | "rental-return" | "reversal";
+      readonly fromOwnerOperatorId: string;
+      readonly toOwnerOperatorId: string;
+      readonly fromHolderOperatorId: string;
+      readonly toHolderOperatorId: string;
+      readonly lessorOperatorId: string | null;
+      readonly contractId: string | null;
+      readonly validUntilS: number | null;
+      readonly transferReceiptHash: string;
     };
 
 export interface FleetCommandReceipt {
@@ -246,7 +298,7 @@ export interface FleetCommandReceipt {
   readonly commandHash: string;
   readonly canonicalCommandJson: string;
   readonly resultingRevision: number;
-  readonly entityKind: "formation" | "personnel-duty" | "path-reservation";
+  readonly entityKind: "formation" | "personnel-duty" | "path-reservation" | "asset-holding";
   readonly entityId: string;
   readonly resultingStateHash: string;
   readonly resultingSnapshotHash: string;
@@ -268,7 +320,7 @@ export interface FleetCommandResult {
   readonly snapshotHash: string;
   readonly commandReceipt: FleetCommandReceipt;
   readonly appliedCommandId: string;
-  readonly entityKind: "formation" | "personnel-duty" | "path-reservation";
+  readonly entityKind: "formation" | "personnel-duty" | "path-reservation" | "asset-holding";
   readonly entityId: string;
   readonly idempotentReplay: boolean;
 }
@@ -451,14 +503,49 @@ function commonFleetCommand(command: Record<string, unknown>): void {
   safeInteger(command["atS"], "M5-Kommando-Zeit");
 }
 
+function formationDynamics(
+  value: unknown,
+  name: string,
+): NativeFleetFormationDynamics {
+  record(value, name);
+  const acceleration = value["accelerationMmPerS2"];
+  const deceleration = value["decelerationMmPerS2"];
+  safeInteger(acceleration, `${name}-Beschleunigung`);
+  safeInteger(deceleration, `${name}-Bremsvermoegen`);
+  invariant(
+    acceleration > 0 && deceleration > 0,
+    `${name} muss positive Beschleunigungs- und Bremswerte enthalten.`,
+  );
+  const keys = Object.keys(value);
+  invariant(
+    keys.length === 2
+      && keys.includes("accelerationMmPerS2")
+      && keys.includes("decelerationMmPerS2"),
+    `${name} enthaelt unbekannte oder fehlende Felder.`,
+  );
+  return {
+    accelerationMmPerS2: acceleration,
+    decelerationMmPerS2: deceleration,
+  };
+}
+
 function normalizeFleetCommand(command: NativeFleetCommand): NativeFleetCommand {
   record(command, "M5-Kommando");
   commonFleetCommand(command);
   switch (command.schemaVersion) {
     case FLEET_FORMATION_COMMAND_SCHEMA: {
-      exactFleetCommandFields(command, ["formationId", "vehicleIds", "pathReceiptId"]);
+      const hasDynamics = Object.hasOwn(command, "dynamics");
+      exactFleetCommandFields(command, [
+        "formationId",
+        "vehicleIds",
+        "pathReceiptId",
+        ...(hasDynamics ? ["dynamics"] : []),
+      ]);
       nonEmptyString(command.formationId, "M5-Formation-ID");
       nonEmptyString(command.pathReceiptId, "M5-Trassenbeleg-ID");
+      const dynamics = hasDynamics
+        ? formationDynamics(command.dynamics, "M5-Formations-Fahrprofil")
+        : undefined;
       return {
         schemaVersion: command.schemaVersion,
         worldId: command.worldId,
@@ -469,6 +556,7 @@ function normalizeFleetCommand(command: NativeFleetCommand): NativeFleetCommand 
         formationId: command.formationId,
         vehicleIds: canonicalStringSet(command.vehicleIds, "M5-Fahrzeug-IDs"),
         pathReceiptId: command.pathReceiptId,
+        ...(dynamics === undefined ? {} : { dynamics }),
       };
     }
     case FLEET_PERSONNEL_DUTY_COMMAND_SCHEMA: {
@@ -513,6 +601,47 @@ function normalizeFleetCommand(command: NativeFleetCommand): NativeFleetCommand 
         atS: command.atS,
         pathReservationId: command.pathReservationId,
         pathReceiptId: command.pathReceiptId,
+      };
+    case FLEET_ASSET_TRANSFER_COMMAND_SCHEMA:
+      exactFleetCommandFields(command, [
+        "vehicleId",
+        "transferType",
+        "fromOwnerOperatorId",
+        "toOwnerOperatorId",
+        "fromHolderOperatorId",
+        "toHolderOperatorId",
+        "lessorOperatorId",
+        "contractId",
+        "validUntilS",
+        "transferReceiptHash",
+      ]);
+      nonEmptyString(command.vehicleId, "M5-Transfer-Fahrzeug");
+      invariant(["sale", "rental-start", "rental-return", "reversal"].includes(command.transferType), "M5-Transferart ist ungueltig.");
+      nonEmptyString(command.fromOwnerOperatorId, "M5-Transfer-Alteigentuemer");
+      nonEmptyString(command.toOwnerOperatorId, "M5-Transfer-Neueigentuemer");
+      nonEmptyString(command.fromHolderOperatorId, "M5-Transfer-Althalter");
+      nonEmptyString(command.toHolderOperatorId, "M5-Transfer-Neuhalter");
+      if (command.lessorOperatorId !== null) nonEmptyString(command.lessorOperatorId, "M5-Transfer-Vermieter");
+      if (command.contractId !== null) nonEmptyString(command.contractId, "M5-Transfer-Vertrag");
+      if (command.validUntilS !== null) safeInteger(command.validUntilS, "M5-Transfer-Ende");
+      sha256(command.transferReceiptHash, "M5-Transfer-Beleghash");
+      return {
+        schemaVersion: command.schemaVersion,
+        worldId: command.worldId,
+        commandId: command.commandId,
+        expectedStateHash: command.expectedStateHash,
+        expectedRevision: command.expectedRevision,
+        atS: command.atS,
+        vehicleId: command.vehicleId,
+        transferType: command.transferType,
+        fromOwnerOperatorId: command.fromOwnerOperatorId,
+        toOwnerOperatorId: command.toOwnerOperatorId,
+        fromHolderOperatorId: command.fromHolderOperatorId,
+        toHolderOperatorId: command.toHolderOperatorId,
+        lessorOperatorId: command.lessorOperatorId,
+        contractId: command.contractId,
+        validUntilS: command.validUntilS,
+        transferReceiptHash: command.transferReceiptHash,
       };
     default:
       throw new Error("M5-Kommando hat ein unbekanntes Schema.");
@@ -583,6 +712,8 @@ export function fleetCommandEntity(command: NativeFleetCommand): {
       return { entityKind: "personnel-duty", entityId: command.personnelDutyId };
     case FLEET_PATH_RESERVATION_COMMAND_SCHEMA:
       return { entityKind: "path-reservation", entityId: command.pathReservationId };
+    case FLEET_ASSET_TRANSFER_COMMAND_SCHEMA:
+      return { entityKind: "asset-holding", entityId: command.vehicleId };
   }
 }
 
@@ -612,6 +743,9 @@ function fleetStateIntents(state: Record<string, unknown>, name: string): void {
     invariant(rawIntent["id"] === id, `${name}-Formation besitzt eine fremde ID.`);
     canonicalStringSet(rawIntent["vehicleIds"], `${name}-Formation-Fahrzeuge`);
     nonEmptyString(rawIntent["pathReceiptId"], `${name}-Formation-Trassenbeleg`);
+    if (Object.hasOwn(rawIntent, "dynamics")) {
+      formationDynamics(rawIntent["dynamics"], `${name}-Formation-Fahrprofil`);
+    }
   }
   record(state["personnelDuties"], `${name}-Personaldienste`);
   for (const [id, rawIntent] of Object.entries(state["personnelDuties"])) {
@@ -628,6 +762,19 @@ function fleetStateIntents(state: Record<string, unknown>, name: string): void {
     record(rawIntent, `${name}-Trassenreservierung '${id}'`);
     invariant(rawIntent["id"] === id, `${name}-Trassenreservierung besitzt eine fremde ID.`);
     nonEmptyString(rawIntent["pathReceiptId"], `${name}-Trassenreservierungsbeleg`);
+  }
+  if (Object.hasOwn(state, "assetHoldings")) {
+    record(state["assetHoldings"], `${name}-Asset-Halter`);
+    for (const [id, rawHolding] of Object.entries(state["assetHoldings"])) {
+      record(rawHolding, `${name}-Asset-Halter '${id}'`);
+      nonEmptyString(id, `${name}-Asset-ID`);
+      nonEmptyString(rawHolding["ownerOperatorId"], `${name}-Asset-Eigentuemer`);
+      nonEmptyString(rawHolding["holderOperatorId"], `${name}-Asset-Halter`);
+      if (rawHolding["lessorOperatorId"] !== null) nonEmptyString(rawHolding["lessorOperatorId"], `${name}-Asset-Vermieter`);
+      if (rawHolding["contractId"] !== null) nonEmptyString(rawHolding["contractId"], `${name}-Asset-Vertrag`);
+      if (rawHolding["validUntilS"] !== null) safeInteger(rawHolding["validUntilS"], `${name}-Asset-Mietende`);
+      sha256(rawHolding["historyHash"], `${name}-Asset-Historienhash`);
+    }
   }
 }
 
@@ -668,7 +815,7 @@ function fleetReceipt(value: unknown, name: string): asserts value is FleetComma
   safeInteger(value["resultingRevision"], `${name}-Revision`);
   invariant((value["resultingRevision"] as number) > 0, `${name}-Revision ist nicht positiv.`);
   invariant(
-    ["formation", "personnel-duty", "path-reservation"].includes(value["entityKind"] as string),
+    ["formation", "personnel-duty", "path-reservation", "asset-holding"].includes(value["entityKind"] as string),
     `${name} hat eine unbekannte Entitaetsart.`,
   );
   nonEmptyString(value["entityId"], `${name}-Entitaets-ID`);
@@ -721,7 +868,7 @@ function decodeFleetCommandResult(json: string): FleetCommandResult {
   fleetPayload(value, "Rust-M5-Kommandoergebnis");
   fleetReceipt(value["commandReceipt"], "Rust-M5-Command-Receipt");
   invariant(typeof value["appliedCommandId"] === "string" && value["appliedCommandId"].length > 0, "Rust-M5-Kommandoergebnis hat keine Kommando-ID.");
-  invariant(["formation", "personnel-duty", "path-reservation"].includes(value["entityKind"] as string), "Rust-M5-Kommandoergebnis hat eine unbekannte Entitaetsart.");
+  invariant(["formation", "personnel-duty", "path-reservation", "asset-holding"].includes(value["entityKind"] as string), "Rust-M5-Kommandoergebnis hat eine unbekannte Entitaetsart.");
   invariant(typeof value["entityId"] === "string" && value["entityId"].length > 0, "Rust-M5-Kommandoergebnis hat keine Entitaets-ID.");
   invariant(typeof value["idempotentReplay"] === "boolean", "Rust-M5-Kommandoergebnis hat keine Replay-Aussage.");
   return value as unknown as FleetCommandResult;

@@ -8,6 +8,7 @@
   "scripts": { "build": "vite build", "typecheck": "tsc --noEmit", "test": "vitest run", "dev": "vite --host 0.0.0.0" },
   "dependencies": {
     "@zugfolge/design-system": "workspace:*",
+    "@zugfolge/glossary": "workspace:*",
     "@zugfolge/planning-projection": "workspace:*"
   },
   "devDependencies": { "typescript": "^7.0.2", "vite": "^8.2.1", "vitest": "^4.1.10" }

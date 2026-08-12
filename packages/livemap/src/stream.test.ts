@@ -20,6 +20,26 @@ const train = {
   status: "running",
 };
 
+const externalTrain = {
+  id: "7",
+  operator: "EVU",
+  trainNumber: "RE 7",
+  category: "regional",
+  journeyChainId: "chain-re7",
+  externalLegId: "chain-re7:external:1",
+  fromPortalId: "portal-eisenach",
+  toPortalId: "portal-eisenach",
+  scheduledEndS: 100,
+  reentryEarliestS: 90,
+  reentryLatestS: 110,
+  delaySeconds: 0,
+  fixedCostCents: "5000",
+  boundVehicleIds: ["vehicle-7"],
+  boundPersonnelDutyIds: ["duty-7"],
+  status: "outside" as const,
+  progressBasisPoints: 5_000,
+};
+
 describe("LivemapFeed", () => {
   it("ordnet nicht-ASCII-Zugkennungen wie Rust nach UTF-8-Bytes", () => {
     const feed = new LivemapFeed("welt-a");
@@ -44,6 +64,30 @@ describe("LivemapFeed", () => {
     feed.publish({ at: 20, changed: [], removed: ["7"] });
     expect(feed.snapshot().trains).toEqual([]);
     expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it("publiziert den Aussenlauf getrennt von Kartenpositionen bis zur bestaetigten Wiedereinfahrt", () => {
+    const feed = new LivemapFeed("welt-a");
+    const entered = feed.publish({
+      at: 10,
+      changed: [],
+      removed: [],
+      changedExternalTrains: [externalTrain],
+      removedExternalTrainIds: [],
+    });
+    expect(entered.changedExternalTrains).toEqual([externalTrain]);
+    expect(feed.snapshot().trains).toEqual([]);
+    expect(feed.snapshot().externalTrains).toEqual([externalTrain]);
+
+    feed.publish({
+      at: 20,
+      changed: [train],
+      removed: [],
+      changedExternalTrains: [],
+      removedExternalTrainIds: ["7"],
+    });
+    expect(feed.snapshot().externalTrains).toEqual([]);
+    expect(feed.snapshot().trains).toEqual([train]);
   });
 
   it("liefert begrenztes Delta-Replay und erkennt einen zu alten Client", () => {

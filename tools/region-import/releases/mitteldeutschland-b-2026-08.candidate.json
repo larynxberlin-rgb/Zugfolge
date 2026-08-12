@@ -1,0 +1,131 @@
+{
+  "schema": "zugfolge-infra-release-candidate/v1",
+  "releaseId": "infra-mitteldeutschland-b-2026-08-candidate-1",
+  "status": "technical-candidate",
+  "regionId": "mitteldeutschland-b",
+  "regionVariant": "B",
+  "fahrplanYear": 2026,
+  "validFrom": "2026-08-10T19:30:32Z",
+  "validUntil": "2026-12-12T23:00:00Z",
+  "decision": {
+    "id": "E24",
+    "adr": "docs/adr/0024-erweiterter-alpha-schnitt.md",
+    "issue": "https://github.com/larynxberlin-rgb/Zugfolge/issues/201"
+  },
+  "boundary": {
+    "geoJson": "tools/region-import/mitteldeutschland-b.geojson",
+    "geoJsonSha256": "8c5d61ab589816108d6e56cc6955dc46f711819f23245f597d50eac08b57ca33",
+    "poly": "tools/region-import/mitteldeutschland-b.poly",
+    "polySha256": "42f365699bed10bcc66ba66abeec1e2519cf8e0514922fac65e93bcff928eb02"
+  },
+  "sources": [
+    {
+      "id": "geofabrik-sachsen-2026-08-10",
+      "rightsSourceId": "osm-pbf-mitteldeutschland-b",
+      "sourceFile": "sachsen-latest.osm.pbf",
+      "url": "https://download.geofabrik.de/europe/germany/sachsen-latest.osm.pbf",
+      "bytes": 266912848,
+      "md5": "58beffe884515cfdfd06ecc54743cecb",
+      "sha256": "6fc39316cfc745622fadee63654fce8c4a790bb381461e2baf2050b9b79ecd13",
+      "sourceLicense": "ODbL 1.0",
+      "attribution": "OpenStreetMap contributors; Geofabrik GmbH"
+    },
+    {
+      "id": "geofabrik-sachsen-anhalt-2026-08-10",
+      "rightsSourceId": "osm-pbf-mitteldeutschland-b",
+      "sourceFile": "sachsen-anhalt-latest.osm.pbf",
+      "url": "https://download.geofabrik.de/europe/germany/sachsen-anhalt-latest.osm.pbf",
+      "bytes": 173361775,
+      "md5": "fbd617536742eb9c9128265e3e2276fe",
+      "sha256": "7b9a04913020acad3f709668a4c33e87b6d243a3a2e68dc70ad79935bf75f9d5",
+      "sourceLicense": "ODbL 1.0",
+      "attribution": "OpenStreetMap contributors; Geofabrik GmbH"
+    },
+    {
+      "id": "geofabrik-thueringen-2026-08-10",
+      "rightsSourceId": "osm-pbf-mitteldeutschland-b",
+      "sourceFile": "thueringen-latest.osm.pbf",
+      "url": "https://download.geofabrik.de/europe/germany/thueringen-latest.osm.pbf",
+      "bytes": 158982127,
+      "md5": "533bc356dfa79df75ac3eb84c855cc1f",
+      "sha256": "638ff605c059fc9fb2469e949691d461a47dbca09a563753e8082751f0ee83d2",
+      "sourceLicense": "ODbL 1.0",
+      "attribution": "OpenStreetMap contributors; Geofabrik GmbH"
+    },
+    {
+      "id": "gtfs-de-rv-free-2026-08-10",
+      "rightsSourceId": "gtfs-de-rv",
+      "sourceFile": "gtfs-rv-free-2026-08-10.zip",
+      "url": "https://download.gtfs.de/germany/rv_free/latest.zip",
+      "bytes": 11246155,
+      "sha256": "c0cba1cfdbf6179b18e529b13613644e861f1ea6159fa5788c2045de82bea738",
+      "sourceLicense": "CC BY 4.0",
+      "attribution": "DELFI e.V.; GTFS.DE"
+    }
+  ],
+  "pipeline": {
+    "osmiumVersion": "1.16.0",
+    "libosmiumVersion": "2.20.0",
+    "importScript": "tools/region-import/import-mitteldeutschland-b.sh",
+    "importScriptSha256": "6b7fed12a05b838da0fc68328d0a4e2a190892ae2dc33371858ea664d8e8258a",
+    "gtfsScript": "tools/region-import/build-gtfs-region.mjs",
+    "gtfsScriptSha256": "2cc89f3e18b0c949e9ce9c7915da3f1b4a9bd9f63bcc0c3d13b19a2eaad316f8",
+    "qualityScript": "tools/region-import/classify-osm-sections.mjs",
+    "qualityScriptSha256": "452f1f4a21c802af676d9189da7e37ead5af24c2040f59a96d5635c113f5afee"
+  },
+  "artifacts": {
+    "threeStateSource": {
+      "bytes": 594252365,
+      "sha256": "b5d489d713623ce6087a2dc83cc78e872589e87264c8effb4c7f3173ad4d1d02"
+    },
+    "polygonClip": {
+      "bytes": 239248473,
+      "sha256": "b25211ac3ab0d49bfeb782e13dd340ac87203190f4ba9570658dde996ac177bf"
+    },
+    "eboExtract": {
+      "externalArtifactId": "zugfolge-alpha-evidence/mitteldeutschland-b/2026-08/mitteldeutschland-b-ebo.osm.pbf",
+      "bytes": 25930266,
+      "sha256": "11171189e19a1413104a09e0206ae1edd321f724441b650c225d07132f92c1e1",
+      "lastSourceTimestamp": "2026-08-10T19:30:32Z",
+      "objects": { "nodes": 1293631, "ways": 183409, "relations": 15749 }
+    },
+    "gtfsRegionSnapshot": {
+      "externalArtifactId": "zugfolge-alpha-evidence/mitteldeutschland-b/2026-08/gtfs-region-20260812.json",
+      "bytes": 5033557,
+      "fileSha256": "49e54a74e2a4d403a25bfcdebff9eb97b7ecb603a2271f6752516441bf2c8eb0",
+      "stateHash": "c559de1609b1619abf1426a989a51422149768fb9628acfe533f79c6a470874d",
+      "serviceDate": "20260812",
+      "metrics": {
+        "activeServices": 1819,
+        "activeTrips": 42567,
+        "touchedTrips": 2778,
+        "playableSegments": 2562,
+        "parentStations": 449,
+        "firstOutsideEntries": 778,
+        "firstOutsideExits": 810
+      }
+    },
+    "qualityReport": {
+      "externalArtifactId": "zugfolge-alpha-evidence/mitteldeutschland-b/2026-08/infrastructure-quality.json",
+      "bytes": 7804636,
+      "fileSha256": "2ac2c437f7e2af25d3bea7663f34470001d1aa88905e1862b3313ed14f0cbf6e",
+      "stateHash": "56fa23065935715c58b6ff43be4aa49d2cdc6fb1e3c0c01a989cd9bd599cd412",
+      "sections": { "A": 0, "B": 9094, "C": 9210 },
+      "classCOrderable": false
+    }
+  },
+  "rights": {
+    "coverageChecked": true,
+    "licenseChecked": true,
+    "stationAndElevationLayersIncluded": false,
+    "stationAndElevationBlockReason": "No separately versioned rights approval and source snapshot is present.",
+    "deviationReport": "docs/mitteldeutschland-alpha.md"
+  },
+  "releaseApproval": {
+    "releaseResponsible": null,
+    "validationSetIndependent": false,
+    "signature": null,
+    "blockingIssue": "https://github.com/larynxberlin-rgb/Zugfolge/issues/48",
+    "activationAllowed": false
+  }
+}

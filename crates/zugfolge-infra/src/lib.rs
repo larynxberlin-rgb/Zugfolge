@@ -172,4 +172,4 @@ pub use station::{
 };
 pub use track::{Track, TrackBuilder, TrackDirection, TrackGauge, TrackKind, TrackOwner};
 pub use train::{ElectricSystems, TractionType, TrainCharacteristics};
-pub use units::{Acceleration, Gradient, Length, Mass, Speed};
+pub use units::{Acceleration, Force, Gradient, Length, Mass, Power, Speed};

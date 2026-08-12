@@ -51,14 +51,24 @@ const ASSET_FIELDS = [
   "retiredAt",
 ] as const;
 const MAINTENANCE_FIELDS = ["kind", "dueAt"] as const;
-const TECHNICAL_FIELDS = [
+const TECHNICAL_REQUIRED_FIELDS = [
   "lengthMm",
   "massKg",
   "maximumSpeedKph",
-  "accelerationMmPerS2",
-  "decelerationMmPerS2",
   "traction",
   "electricSystems",
+] as const;
+const TECHNICAL_OPTIONAL_FIELDS = [
+  // Ein Altrelease darf noch ein Referenz-Fahrprofil je Fahrzeug enthalten.
+  // Neue Lokdaten tragen stattdessen Leistung und Zugkraft; die wirksame
+  // Dynamik wird erst für den konkreten Wagenpark signiert.
+  "accelerationMmPerS2",
+  "decelerationMmPerS2",
+  "continuousPowerKw",
+  "startingTractiveEffortKn",
+  "brakeWeightKg",
+  "role",
+  "controlStands",
 ] as const;
 const PASSENGER_FIELDS = [
   "seats",
@@ -98,8 +108,9 @@ const PATH_RECEIPT_FIELDS = [
 
 const PROCUREMENT_CHANNELS = ["new-build", "leasing", "used"] as const;
 const PROTECTION_SYSTEMS = ["pzb", "lzb", "etcs-level1", "etcs-level2"] as const;
-const TRACTIONS = ["electric", "diesel", "battery"] as const;
+const TRACTIONS = ["unpowered", "electric", "diesel", "battery"] as const;
 const POWER_SYSTEMS = ["ac15kv", "ac25kv", "dc750v", "dc1500v", "dc3000v"] as const;
+const VEHICLE_ROLES = ["locomotive", "powered-unit", "coach", "control-car"] as const;
 const PATH_DECISIONS = ["confirmed", "requested", "rejected"] as const;
 const ELECTRIFICATIONS = [
   "unelectrified",
@@ -117,16 +128,17 @@ function exactRecord(
   value: unknown,
   name: string,
   fields: readonly string[],
+  optionalFields: readonly string[] = [],
 ): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return invalid(`${name} muss ein Objekt sein.`);
   }
   const record = value as Record<string, unknown>;
   const actual = Object.keys(record);
-  const expected = new Set(fields);
+  const expected = new Set([...fields, ...optionalFields]);
   const missing = fields.filter((field) => !Object.hasOwn(record, field));
   const unknown = actual.filter((field) => !expected.has(field));
-  if (missing.length > 0 || unknown.length > 0 || actual.length !== fields.length) {
+  if (missing.length > 0 || unknown.length > 0) {
     const details = [
       missing.length > 0 ? `fehlend: ${missing.join(", ")}` : undefined,
       unknown.length > 0 ? `unbekannt: ${unknown.join(", ")}` : undefined,
@@ -224,14 +236,29 @@ function sha256(value: unknown, name: string): string {
   return value;
 }
 
-function validateTechnical(value: unknown, name: string): void {
-  const technical = exactRecord(value, name, TECHNICAL_FIELDS);
+interface TechnicalContext {
+  readonly traction: (typeof TRACTIONS)[number];
+  readonly role: (typeof VEHICLE_ROLES)[number];
+}
+
+function optionalSafeInteger(
+  record: Record<string, unknown>,
+  field: string,
+  name: string,
+): number | undefined {
+  if (!Object.hasOwn(record, field)) return undefined;
+  return safeInteger(record[field], `${name}.${field}`);
+}
+
+function validateTechnical(value: unknown, name: string): TechnicalContext {
+  const technical = exactRecord(value, name, TECHNICAL_REQUIRED_FIELDS, TECHNICAL_OPTIONAL_FIELDS);
   safeInteger(technical["lengthMm"], `${name}.lengthMm`, 1);
   safeInteger(technical["massKg"], `${name}.massKg`, 1);
   safeInteger(technical["maximumSpeedKph"], `${name}.maximumSpeedKph`, 1, MAX_U16);
-  safeInteger(technical["accelerationMmPerS2"], `${name}.accelerationMmPerS2`, 1);
-  safeInteger(technical["decelerationMmPerS2"], `${name}.decelerationMmPerS2`, 1);
   const traction = enumValue(technical["traction"], `${name}.traction`, TRACTIONS);
+  const role = Object.hasOwn(technical, "role")
+    ? enumValue(technical["role"], `${name}.role`, VEHICLE_ROLES)
+    : "powered-unit";
   const electricSystems = enumArray(
     technical["electricSystems"],
     `${name}.electricSystems`,
@@ -240,11 +267,48 @@ function validateTechnical(value: unknown, name: string): void {
   if ((traction === "electric") !== (electricSystems.length > 0)) {
     invalid(`${name} besitzt inkonsistente Traktion und elektrische Systeme.`);
   }
+  const acceleration = optionalSafeInteger(technical, "accelerationMmPerS2", name);
+  const deceleration = optionalSafeInteger(technical, "decelerationMmPerS2", name);
+  if ((acceleration === undefined) !== (deceleration === undefined)) {
+    invalid(`${name} muss Beschleunigung und Bremsvermoegen gemeinsam angeben oder auslassen.`);
+  }
+  const continuousPower = optionalSafeInteger(technical, "continuousPowerKw", name) ?? 0;
+  const startingForce = optionalSafeInteger(technical, "startingTractiveEffortKn", name) ?? 0;
+  optionalSafeInteger(technical, "brakeWeightKg", name);
+  if (traction === "unpowered") {
+    if (acceleration !== undefined || continuousPower !== 0 || startingForce !== 0) {
+      invalid(`${name} darf als nicht angetriebenes Fahrzeug keine Fahr- oder Antriebswerte tragen.`);
+    }
+  } else if (acceleration === undefined && (continuousPower <= 0 || startingForce <= 0)) {
+    invalid(`${name} ohne Alt-Fahrprofil braucht Leistung und Anfahrzugkraft.`);
+  } else if (acceleration !== undefined && (acceleration <= 0 || deceleration! <= 0)) {
+    invalid(`${name} besitzt kein positives Alt-Fahrprofil.`);
+  }
+  const controlStands = Object.hasOwn(technical, "controlStands")
+    ? exactRecord(technical["controlStands"], `${name}.controlStands`, ["front", "rear"])
+    : { front: true, rear: true };
+  const front = booleanValue(controlStands["front"], `${name}.controlStands.front`);
+  const rear = booleanValue(controlStands["rear"], `${name}.controlStands.rear`);
+  if (role === "coach" && (traction !== "unpowered" || front || rear)) {
+    invalid(`${name} ist als Reisezugwagen nur unpowered und ohne Fuehrerstand zulaessig.`);
+  }
+  if (role === "control-car" && (traction !== "unpowered" || (!front && !rear))) {
+    invalid(`${name} ist als Steuerwagen nur unpowered und mit Fuehrerstand zulaessig.`);
+  }
+  if ((role === "locomotive" || role === "powered-unit") && traction === "unpowered") {
+    invalid(`${name} braucht als angetriebenes Fahrzeug eine Traktion.`);
+  }
+  return { traction, role };
 }
 
-function validatePassenger(value: unknown, name: string): void {
+function validatePassenger(value: unknown, name: string, role: TechnicalContext["role"]): void {
   const passenger = exactRecord(value, name, PASSENGER_FIELDS);
-  const seats = safeInteger(passenger["seats"], `${name}.seats`, 1, MAX_U32);
+  const seats = safeInteger(
+    passenger["seats"],
+    `${name}.seats`,
+    role === "locomotive" ? 0 : 1,
+    MAX_U32,
+  );
   const firstClassSeats = safeInteger(
     passenger["firstClassSeats"],
     `${name}.firstClassSeats`,
@@ -300,9 +364,18 @@ function validateAsset(value: unknown, name: string): void {
     return nonEmptyString(deadline["kind"], `${name}.maintenanceDeadlines[${index}].kind`);
   });
 
-  enumArray(asset["installedProtection"], `${name}.installedProtection`, PROTECTION_SYSTEMS);
-  validateTechnical(asset["technical"], `${name}.technical`);
-  validatePassenger(asset["passenger"], `${name}.passenger`);
+  const installedProtection = enumArray(
+    asset["installedProtection"],
+    `${name}.installedProtection`,
+    PROTECTION_SYSTEMS,
+  );
+  // LZB wird stets zusammen mit PZB eingebaut. ETCS bleibt davon bewusst
+  // ausgenommen: reine ETCS-Fahrzeuge duerfen auf reinen ETCS-Strecken fahren.
+  if (installedProtection.includes("lzb") && !installedProtection.includes("pzb")) {
+    invalid(`${name}.installedProtection darf LZB nur zusammen mit PZB enthalten.`);
+  }
+  const technical = validateTechnical(asset["technical"], `${name}.technical`);
+  validatePassenger(asset["passenger"], `${name}.passenger`, technical.role);
   const deliveredAt = safeInteger(asset["deliveredAt"], `${name}.deliveredAt`);
   const retiredAt = safeInteger(asset["retiredAt"], `${name}.retiredAt`);
   if (retiredAt <= deliveredAt) invalid(`${name} besitzt kein positives Verfuegbarkeitsfenster.`);

@@ -18,15 +18,87 @@ use zugfolge_conflict::{
 };
 use zugfolge_determinism::{Rng, SimTime as DeterministicSimTime};
 use zugfolge_infra::{
-    Acceleration, Electrification, FacilityCatalog, FacilityId, FacilityKind, FleetClass, Length,
-    Mass, Speed, SpeedCategory, TractionType, TrainCharacteristics, TrainCharacteristicsId,
-    TrainProtection,
+    Acceleration, Electrification, FacilityCatalog, FacilityId, FacilityKind, FleetClass, Force,
+    Length, Mass, Power, ProtectionSystem, Speed, SpeedCategory, TractionType,
+    TrainCharacteristics, TrainCharacteristicsId, TrainProtection,
 };
 
 use crate::{
     InteriorConfiguration, ProcurementChannel, SimTime, VehicleAsset, VehicleId, VehicleTypeId,
     WorldId,
 };
+
+/// Betriebliche Rolle eines einzelnen Fahrzeugs in einer Formation.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum VehicleRole {
+    /// Angetriebenes Fahrzeug mit eigener Traktion.
+    Locomotive,
+    /// Angetriebener Triebzug oder Triebzugteil.
+    PoweredUnit,
+    /// Nicht angetriebener Reisezugwagen.
+    Coach,
+    /// Nicht angetriebener Wagen mit einem oder zwei Steuerständen.
+    ControlCar,
+}
+
+/// Steuerstände an den beiden Enden eines Fahrzeugs.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ControlStandConfiguration {
+    /// Steuerstand am ersten Ende der Formation, wenn das Fahrzeug dort liegt.
+    pub front: bool,
+    /// Steuerstand am letzten Ende der Formation, wenn das Fahrzeug dort liegt.
+    pub rear: bool,
+}
+
+impl ControlStandConfiguration {
+    /// Beidseitiger Führerstand, typisch für eine Lokomotive oder einen
+    /// vollständigen Triebzug.
+    pub const fn both_ends() -> Self {
+        Self {
+            front: true,
+            rear: true,
+        }
+    }
+
+    /// Kein Führerstand, typisch für einen Reisezugwagen.
+    pub const fn none() -> Self {
+        Self {
+            front: false,
+            rear: false,
+        }
+    }
+}
+
+/// Kalibrierte Fahrdynamik einer konkret gebildeten Formation.
+///
+/// Leistung, Anfahrzugkraft und Bremsgewicht sind feste Eigenschaften eines
+/// einzelnen Fahrzeugtyps. Eine feste Beschleunigung einer Lokomotive wäre es
+/// dagegen nicht: Sie hängt von der Masse des tatsächlich gekuppelten
+/// Wagenparks ab. Deshalb wird dieses Profil beim Bilden einer dienstfähigen
+/// Formation geführt und nicht als verpflichtender Stammdatenwert einer Lok.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FormationDynamics {
+    /// Effektives Anfahrvermögen der konkreten Formation.
+    pub acceleration: Acceleration,
+    /// Effektives Bremsvermögen der konkreten Formation.
+    pub deceleration: Acceleration,
+}
+
+impl FormationDynamics {
+    /// Baut ein vollständiges, ganzzahliges Fahrprofil.
+    pub fn new(
+        acceleration: Acceleration,
+        deceleration: Acceleration,
+    ) -> Result<Self, OperationsError> {
+        if !acceleration.is_positive() || !deceleration.is_positive() {
+            return Err(OperationsError::MissingFormationDynamics);
+        }
+        Ok(Self {
+            acceleration,
+            deceleration,
+        })
+    }
+}
 
 /// Physische Werte eines Katalogtyps; der Release kann sie versioniert neben
 /// Markt- und Quellenangaben führen, ohne sie am Einzelfahrzeug zu duplizieren.
@@ -39,6 +111,14 @@ pub struct VehicleTechnicalData {
     pub acceleration: Acceleration,
     pub deceleration: Acceleration,
     pub traction: TractionType,
+    pub role: VehicleRole,
+    pub control_stands: ControlStandConfiguration,
+    /// Kontinuierliche Leistung in kW.
+    pub continuous_power: Power,
+    /// Anfahrzugkraft in kN.
+    pub starting_tractive_effort: Force,
+    /// Bremsgewicht in kg.
+    pub brake_weight: Mass,
 }
 
 /// Die fahrtechnischen, für eine Formation addierbaren Werte eines Assets.
@@ -54,7 +134,12 @@ pub struct FormationVehicle {
     pub acceleration: Acceleration,
     pub deceleration: Acceleration,
     pub traction: TractionType,
+    pub role: VehicleRole,
+    pub control_stands: ControlStandConfiguration,
     pub protection: TrainProtection,
+    pub continuous_power: Power,
+    pub starting_tractive_effort: Force,
+    pub brake_weight: Mass,
 }
 
 impl FormationVehicle {
@@ -67,6 +152,11 @@ impl FormationVehicle {
         if asset.vehicle_type_id() != technical.vehicle_type_id {
             return Err(OperationsError::TechnicalDataMismatch);
         }
+        validate_vehicle_role(
+            technical.role,
+            &technical.traction,
+            technical.control_stands,
+        )?;
         Ok(Self {
             world_id: asset.world_id(),
             id: asset.id(),
@@ -78,7 +168,12 @@ impl FormationVehicle {
             acceleration: technical.acceleration,
             deceleration: technical.deceleration,
             traction: technical.traction.clone(),
+            role: technical.role,
+            control_stands: technical.control_stands,
             protection: asset.installed_protection().clone(),
+            continuous_power: technical.continuous_power,
+            starting_tractive_effort: technical.starting_tractive_effort,
+            brake_weight: technical.brake_weight,
         })
     }
 }
@@ -107,8 +202,20 @@ impl Formation {
         if ids.len() != vehicles.len() {
             return Err(OperationsError::DuplicateVehicle);
         }
-        let first = &vehicles[0];
-        if vehicles.iter().any(|v| v.traction != first.traction) {
+        for vehicle in &vehicles {
+            validate_vehicle_role(vehicle.role, &vehicle.traction, vehicle.control_stands)?;
+            if vehicle.role != VehicleRole::Coach && !has_baseline_protection(&vehicle.protection) {
+                return Err(OperationsError::MissingProtection);
+            }
+        }
+        let first_powered = vehicles
+            .iter()
+            .find(|vehicle| vehicle.traction != TractionType::Unpowered);
+        if first_powered.is_some_and(|first| {
+            vehicles.iter().any(|vehicle| {
+                vehicle.traction != TractionType::Unpowered && vehicle.traction != first.traction
+            })
+        }) {
             return Err(OperationsError::IncompatibleTraction);
         }
         Ok(Self {
@@ -122,14 +229,129 @@ impl Formation {
         &self.vehicles
     }
 
-    /// Verlustfrei-konservative Abbildung auf M1.9: Masse/Länge werden addiert,
-    /// Vmax und Beschleunigungsvermögen durch das schwächste Fahrzeug begrenzt.
+    /// Ob mindestens ein Fahrzeug den Wagenpark aus eigener Kraft bewegen kann.
+    pub fn can_move_under_own_power(&self) -> bool {
+        self.vehicles
+            .iter()
+            .any(|vehicle| vehicle.traction != TractionType::Unpowered)
+    }
+
+    /// Ein ausschließlich aus Wagen bestehender Park kann nur geschleppt,
+    /// abgestellt oder in eine Werkstatt gebracht werden.
+    pub fn requires_external_locomotive(&self) -> bool {
+        !self.can_move_under_own_power()
+    }
+
+    /// Ob an beiden Enden der Formation ein Führerstand vorhanden ist.
+    pub fn has_control_stands_at_both_ends(&self) -> bool {
+        self.vehicles
+            .first()
+            .is_some_and(|vehicle| vehicle.control_stands.front)
+            && self
+                .vehicles
+                .last()
+                .is_some_and(|vehicle| vehicle.control_stands.rear)
+    }
+
+    /// Ob ein Richtungswechsel ohne Umsetzen einer Lok möglich ist.
+    pub fn supports_direct_reversal(&self) -> bool {
+        self.can_move_under_own_power() && self.has_control_stands_at_both_ends()
+    }
+
+    /// Ob für einen Richtungswechsel die Lok um den Wagenpark rangieren muss.
+    pub fn requires_locomotive_runaround(&self) -> bool {
+        self.can_move_under_own_power() && !self.has_control_stands_at_both_ends()
+    }
+
+    /// Fahrzeuge, die bei der aktuellen Reihung einen Führerstand am
+    /// jeweiligen Zugende stellen. Reisezugwagen tragen keine eigene
+    /// Zugsicherung; bei einem Wendezug müssen aber Lok und Steuerwagen ihre
+    /// jeweils aktive Zugspitze ausrüsten.
+    fn driving_vehicles(&self) -> Vec<&FormationVehicle> {
+        let mut driving = Vec::new();
+        if self
+            .vehicles
+            .first()
+            .is_some_and(|vehicle| vehicle.control_stands.front)
+        {
+            driving.push(&self.vehicles[0]);
+        }
+        if self
+            .vehicles
+            .last()
+            .is_some_and(|vehicle| vehicle.control_stands.rear)
+            && self.vehicles.last().map(|vehicle| vehicle.id)
+                != self.vehicles.first().map(|vehicle| vehicle.id)
+        {
+            driving.push(self.vehicles.last().expect("Formation ist nicht leer"));
+        }
+        if driving.is_empty() {
+            if let Some(vehicle) = self
+                .vehicles
+                .iter()
+                .find(|vehicle| vehicle.traction != TractionType::Unpowered)
+            {
+                driving.push(vehicle);
+            }
+        }
+        driving
+    }
+
+    /// Abwärtskompatible Ableitung aus einem je Fahrzeug hinterlegten
+    /// Referenzprofil.
+    ///
+    /// Neue Authority-Releases sollen stattdessen
+    /// [`Self::characteristics_with_dynamics`] mit einem zur tatsächlichen
+    /// Formation passenden, signierten Fahrprofil verwenden. Das verhindert,
+    /// dass eine Lokomotive fälschlich eine vom Wagenpark unabhängige
+    /// Beschleunigung erhält.
     pub fn characteristics(
         &self,
         id: TrainCharacteristicsId,
         name: impl Into<String>,
     ) -> Result<TrainCharacteristics, OperationsError> {
-        let first = &self.vehicles[0];
+        let acceleration = self
+            .vehicles
+            .iter()
+            .filter(|vehicle| vehicle.traction != TractionType::Unpowered)
+            .map(|v| v.acceleration)
+            .min()
+            .ok_or(OperationsError::NoPropulsion)?;
+        // Unpowered coaches contribute their mode-dependent brake weights;
+        // they do not have an own M1.10 deceleration input. Their zero value
+        // must therefore not invalidate an otherwise complete formation.
+        let deceleration = self
+            .vehicles
+            .iter()
+            .filter(|vehicle| vehicle.traction != TractionType::Unpowered)
+            .map(|v| v.deceleration)
+            .min()
+            .ok_or(OperationsError::NoPropulsion)?;
+        self.characteristics_with_dynamics(
+            id,
+            name,
+            FormationDynamics::new(acceleration, deceleration)?,
+        )
+    }
+
+    /// Bildet eine Fahrzeugreihung mit einem formationsbezogenen Fahrprofil
+    /// auf die Planner-Charakteristik ab.
+    ///
+    /// Masse, Länge, Leistung, Zugkraft, Bremsgewicht und Vmax bleiben dabei
+    /// verlustfrei am Fahrzeugverband. Vmax ist stets das Minimum *aller*
+    /// gekuppelten Fahrzeuge, also ausdrücklich auch von Reise- und
+    /// Steuerwagen.
+    pub fn characteristics_with_dynamics(
+        &self,
+        id: TrainCharacteristicsId,
+        name: impl Into<String>,
+        dynamics: FormationDynamics,
+    ) -> Result<TrainCharacteristics, OperationsError> {
+        let first = self
+            .vehicles
+            .iter()
+            .find(|vehicle| vehicle.traction != TractionType::Unpowered)
+            .ok_or(OperationsError::NoPropulsion)?;
         let mass = Mass::from_kilograms(
             self.vehicles
                 .iter()
@@ -150,33 +372,47 @@ impl Formation {
             .map(|v| v.max_speed)
             .min()
             .ok_or(OperationsError::EmptyFormation)?;
-        let acceleration = self
-            .vehicles
-            .iter()
-            .map(|v| v.acceleration)
-            .min()
-            .ok_or(OperationsError::EmptyFormation)?;
-        let deceleration = self
-            .vehicles
-            .iter()
-            .map(|v| v.deceleration)
-            .min()
-            .ok_or(OperationsError::EmptyFormation)?;
-        let common = first
-            .protection
-            .systems()
-            .filter(|s| self.vehicles.iter().all(|v| v.protection.contains(*s)));
-        TrainCharacteristics::new(
+        let continuous_power = Power::from_kilowatts(
+            self.vehicles
+                .iter()
+                .map(|vehicle| vehicle.continuous_power.kilowatts())
+                .try_fold(0_i64, i64::checked_add)
+                .ok_or(OperationsError::Overflow)?,
+        );
+        let starting_tractive_effort = Force::from_kilonewtons(
+            self.vehicles
+                .iter()
+                .map(|vehicle| vehicle.starting_tractive_effort.kilonewtons())
+                .try_fold(0_i64, i64::checked_add)
+                .ok_or(OperationsError::Overflow)?,
+        );
+        let brake_weight = Mass::from_kilograms(
+            self.vehicles
+                .iter()
+                .map(|vehicle| vehicle.brake_weight.kilograms())
+                .try_fold(0_i64, i64::checked_add)
+                .ok_or(OperationsError::Overflow)?,
+        );
+        let driving = self.driving_vehicles();
+        let common = first.protection.systems().filter(|system| {
+            driving
+                .iter()
+                .all(|vehicle| vehicle.protection.contains(*system))
+        });
+        TrainCharacteristics::new_with_performance(
             id,
             name,
             mass,
             length,
             max_speed,
             SpeedCategory::Standard,
-            acceleration,
-            deceleration,
+            dynamics.acceleration,
+            dynamics.deceleration,
             first.traction.clone(),
             TrainProtection::from_systems(common),
+            continuous_power,
+            starting_tractive_effort,
+            brake_weight,
         )
         .map_err(|_| OperationsError::InvalidCharacteristics)
     }
@@ -198,10 +434,12 @@ impl Formation {
         {
             return Err(OperationsError::MissingApproval);
         }
-        if required
-            .systems()
-            .any(|s| self.vehicles.iter().any(|v| !v.protection.contains(s)))
-        {
+        let driving = self.driving_vehicles();
+        if required.systems().any(|system| {
+            driving
+                .iter()
+                .any(|vehicle| !vehicle.protection.contains(system))
+        }) {
             return Err(OperationsError::MissingProtection);
         }
         Ok(())
@@ -222,14 +460,47 @@ impl Formation {
             .ok_or(OperationsError::MissingPlatform)?;
         self.check_route(shortest_platform, required, approved_classes)?;
         if electrifications.iter().any(|electrification| {
-            self.vehicles
-                .iter()
-                .any(|vehicle| !vehicle.traction.can_use(*electrification))
+            self.vehicles.iter().any(|vehicle| {
+                vehicle.traction != TractionType::Unpowered
+                    && !vehicle.traction.can_use(*electrification)
+            })
         }) {
             return Err(OperationsError::IncompatibleElectrification);
         }
         Ok(())
     }
+}
+
+fn validate_vehicle_role(
+    role: VehicleRole,
+    traction: &TractionType,
+    control_stands: ControlStandConfiguration,
+) -> Result<(), OperationsError> {
+    let unpowered = *traction == TractionType::Unpowered;
+    match role {
+        VehicleRole::Coach => {
+            if !unpowered || control_stands != ControlStandConfiguration::none() {
+                return Err(OperationsError::InvalidVehicleRole);
+            }
+        }
+        VehicleRole::ControlCar => {
+            if !unpowered || control_stands == ControlStandConfiguration::none() {
+                return Err(OperationsError::InvalidVehicleRole);
+            }
+        }
+        VehicleRole::Locomotive | VehicleRole::PoweredUnit => {
+            if unpowered {
+                return Err(OperationsError::InvalidVehicleRole);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn has_baseline_protection(protection: &TrainProtection) -> bool {
+    protection.contains(ProtectionSystem::Pzb)
+        || protection.contains(ProtectionSystem::EtcsLevel1)
+        || protection.contains(ProtectionSystem::EtcsLevel2)
 }
 
 /// Art eines Umlaufsegments (M5.3).
@@ -723,6 +994,96 @@ pub struct ShuntingRequirement {
     pub seconds: u32,
     pub resource: ConflictResource,
 }
+
+/// Quellenbasierte Simulationswerte für manuelles Kuppeln und Entkuppeln.
+///
+/// Die 180 Sekunden für das Kuppeln liegen im Bereich der gemessenen
+/// 3:18 Minuten für einen Zugverband; 120 Sekunden für das Entkuppeln sind als
+/// technischer Mindestwert aus einer veröffentlichten Betriebsstudie
+/// übernommen. Fahrwegauflösung, Verständigung und Personalwege kommen
+/// zusätzlich aus der jeweiligen Betriebsstelle.
+pub const COUPLING_SECONDS: u32 = 180;
+pub const UNCOUPLING_SECONDS: u32 = 120;
+pub const RUNAROUND_SECONDS: u32 = 300;
+
+/// Art der nach einer Änderung erforderlichen Bremsprobe.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BrakeTestKind {
+    /// Keine Bremsprobe, etwa beim reinen Abhängen am Zugschluss.
+    None,
+    /// Vereinfachte Bremsprobe nach einer Zusammensetzungsänderung.
+    Simplified,
+    /// Volle Bremsprobe nach Inbetriebnahme oder maßgeblichem Führerstandswechsel.
+    Full,
+}
+
+impl BrakeTestKind {
+    /// Konservative, ganzzahlige Zeitannahme für die Simulation.
+    pub fn seconds(self, vehicle_count: usize) -> Result<u32, OperationsError> {
+        let vehicles = u32::try_from(vehicle_count).map_err(|_| OperationsError::Overflow)?;
+        match self {
+            Self::None => Ok(0),
+            Self::Simplified => Ok(60_u32.saturating_add(vehicles.saturating_mul(30))),
+            Self::Full => Ok(120_u32.saturating_add(vehicles.saturating_mul(45))),
+        }
+    }
+}
+
+/// Legt fest, ob eine Änderung eine Bremsprobe auslöst.
+pub const fn required_brake_test(
+    composition_changed: bool,
+    leading_control_stand_changed: bool,
+    only_rear_vehicle_detached: bool,
+) -> BrakeTestKind {
+    if only_rear_vehicle_detached && !leading_control_stand_changed {
+        BrakeTestKind::None
+    } else if leading_control_stand_changed {
+        BrakeTestKind::Full
+    } else if composition_changed {
+        BrakeTestKind::Simplified
+    } else {
+        BrakeTestKind::None
+    }
+}
+
+/// Zeitanteile eines Rangier- oder Formationsmanövers.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FormationManeuverTime {
+    pub coupling_seconds: u32,
+    pub uncoupling_seconds: u32,
+    pub brake_test_seconds: u32,
+    pub runaround_seconds: u32,
+    pub total_seconds: u32,
+}
+
+/// Berechnet alle technischen Zeitanteile einer Formationsänderung.
+pub fn calculate_formation_maneuver_time(
+    vehicle_count: usize,
+    couplings: u16,
+    uncouplings: u16,
+    brake_test: BrakeTestKind,
+    runaround: bool,
+) -> Result<FormationManeuverTime, OperationsError> {
+    if vehicle_count == 0 {
+        return Err(OperationsError::EmptyFormation);
+    }
+    let coupling_seconds = u32::from(couplings).saturating_mul(COUPLING_SECONDS);
+    let uncoupling_seconds = u32::from(uncouplings).saturating_mul(UNCOUPLING_SECONDS);
+    let brake_test_seconds = brake_test.seconds(vehicle_count)?;
+    let runaround_seconds = if runaround { RUNAROUND_SECONDS } else { 0 };
+    let total_seconds = coupling_seconds
+        .saturating_add(uncoupling_seconds)
+        .saturating_add(brake_test_seconds)
+        .saturating_add(runaround_seconds);
+    Ok(FormationManeuverTime {
+        coupling_seconds,
+        uncoupling_seconds,
+        brake_test_seconds,
+        runaround_seconds,
+        total_seconds,
+    })
+}
+
 pub fn calculate_shunting(
     vehicle_count: usize,
     coupling_changes: u16,
@@ -732,10 +1093,17 @@ pub fn calculate_shunting(
         return Err(OperationsError::EmptyFormation);
     }
     let vehicles = u32::try_from(vehicle_count).map_err(|_| OperationsError::Overflow)?;
+    let handling = calculate_formation_maneuver_time(
+        vehicle_count,
+        coupling_changes,
+        0,
+        BrakeTestKind::None,
+        false,
+    )?;
     Ok(ShuntingRequirement {
         seconds: 120_u32
             .saturating_add(vehicles.saturating_sub(1).saturating_mul(90))
-            .saturating_add(u32::from(coupling_changes).saturating_mul(180)),
+            .saturating_add(handling.total_seconds),
         resource,
     })
 }
@@ -1251,6 +1619,9 @@ pub enum OperationsError {
     IncompleteExtraRun,
     ExistingConfigurationRequired,
     TechnicalDataMismatch,
+    InvalidVehicleRole,
+    NoPropulsion,
+    MissingFormationDynamics,
     MissingPlatform,
     IncompatibleElectrification,
     MaintenanceNotDue,
@@ -1289,6 +1660,272 @@ mod tests {
         example::{nordstadt_bis_talheim, reference_infrastructure, regional_train},
     };
     use zugfolge_determinism::SimTime as RoutedTime;
+    use zugfolge_infra::{ElectricSystems, PowerSystem, ProtectionSystem};
+
+    fn formation_vehicle(
+        id: VehicleId,
+        traction: TractionType,
+        role: VehicleRole,
+        control_stands: ControlStandConfiguration,
+    ) -> FormationVehicle {
+        let powered = traction != TractionType::Unpowered;
+        FormationVehicle {
+            world_id: 1,
+            id,
+            vehicle_type_id: 1,
+            class: FleetClass::new("ET1").expect("Testbaureihe"),
+            length: Length::from_metres(25),
+            mass: Mass::from_tonnes(45),
+            max_speed: Speed::from_km_h(160),
+            acceleration: Acceleration::from_millimetres_per_second_squared(500),
+            deceleration: Acceleration::from_millimetres_per_second_squared(700),
+            traction,
+            role,
+            control_stands,
+            continuous_power: if powered {
+                Power::from_kilowatts(2_000)
+            } else {
+                Power::ZERO
+            },
+            starting_tractive_effort: if powered {
+                Force::from_kilonewtons(200)
+            } else {
+                Force::ZERO
+            },
+            brake_weight: Mass::from_tonnes(45),
+            protection: TrainProtection::single(ProtectionSystem::Pzb),
+        }
+    }
+
+    #[test]
+    fn wagenpark_ohne_lok_ist_gueltig_aber_nicht_eigenfahrfaehig() {
+        let coach = formation_vehicle(
+            1,
+            TractionType::Unpowered,
+            VehicleRole::Coach,
+            ControlStandConfiguration::none(),
+        );
+        let parking = Formation::new(1, 1, vec![coach]).expect("Wagenpark darf abgestellt werden");
+        assert!(parking.requires_external_locomotive());
+        assert!(!parking.can_move_under_own_power());
+        assert_eq!(
+            parking
+                .characteristics(TrainCharacteristicsId::new(1), "Wagenpark")
+                .expect_err("Wagenpark darf keine Zugcharakteristik bilden"),
+            OperationsError::NoPropulsion
+        );
+    }
+
+    #[test]
+    fn steuerwagen_ermoeglicht_wenden_ohne_lok_umsetzen() {
+        let locomotive = formation_vehicle(
+            1,
+            TractionType::Diesel,
+            VehicleRole::Locomotive,
+            ControlStandConfiguration {
+                front: true,
+                rear: false,
+            },
+        );
+        let mut coach = formation_vehicle(
+            2,
+            TractionType::Unpowered,
+            VehicleRole::Coach,
+            ControlStandConfiguration::none(),
+        );
+        coach.max_speed = Speed::from_km_h(120);
+        let control_car = formation_vehicle(
+            3,
+            TractionType::Unpowered,
+            VehicleRole::ControlCar,
+            ControlStandConfiguration {
+                front: false,
+                rear: true,
+            },
+        );
+        let with_control_car = Formation::new(1, 2, vec![locomotive.clone(), coach, control_car])
+            .expect("Lok-Wagen-Steuerwagen-Formation");
+        assert!(with_control_car.supports_direct_reversal());
+        assert!(!with_control_car.requires_locomotive_runaround());
+        assert_eq!(
+            with_control_car
+                .characteristics(TrainCharacteristicsId::new(2), "Wendezug")
+                .expect("Zugcharakteristik")
+                .max_speed()
+                .km_h(),
+            120
+        );
+        let characteristics = with_control_car
+            .characteristics(TrainCharacteristicsId::new(2), "Wendezug")
+            .expect("Zugcharakteristik");
+        assert_eq!(characteristics.continuous_power().kilowatts(), 2_000);
+        assert_eq!(
+            characteristics.starting_tractive_effort().kilonewtons(),
+            200
+        );
+        assert_eq!(characteristics.brake_weight().kilograms(), 135_000);
+
+        let without_control_car = Formation::new(
+            1,
+            3,
+            vec![
+                locomotive,
+                formation_vehicle(
+                    4,
+                    TractionType::Unpowered,
+                    VehicleRole::Coach,
+                    ControlStandConfiguration::none(),
+                ),
+            ],
+        )
+        .expect("Lok-Wagen-Formation");
+        assert!(!without_control_car.supports_direct_reversal());
+        assert!(without_control_car.requires_locomotive_runaround());
+    }
+
+    #[test]
+    fn reisezugwagen_benoetigen_keine_eigene_zugsicherung() {
+        let locomotive = formation_vehicle(
+            1,
+            TractionType::Diesel,
+            VehicleRole::Locomotive,
+            ControlStandConfiguration::both_ends(),
+        );
+        let mut coach = formation_vehicle(
+            2,
+            TractionType::Unpowered,
+            VehicleRole::Coach,
+            ControlStandConfiguration::none(),
+        );
+        coach.protection = TrainProtection::unprotected();
+        let formation = Formation::new(1, 4, vec![locomotive, coach]).expect("Lok-Wagen-Formation");
+        let approved = BTreeSet::from([FleetClass::new("ET1").expect("Testbaureihe")]);
+        formation
+            .check_route(
+                Length::from_metres(100),
+                &TrainProtection::single(ProtectionSystem::Pzb),
+                &approved,
+            )
+            .expect("Die Lok stellt die Zugsicherung fuer den Wagenpark");
+    }
+
+    #[test]
+    fn fuehrendes_fahrzeug_benoetigt_pzb_oder_etcs() {
+        let mut control_car = formation_vehicle(
+            1,
+            TractionType::Unpowered,
+            VehicleRole::ControlCar,
+            ControlStandConfiguration {
+                front: true,
+                rear: false,
+            },
+        );
+        control_car.protection = TrainProtection::unprotected();
+        assert_eq!(
+            Formation::new(1, 6, vec![control_car]).expect_err("Steuerwagen ohne Sicherung"),
+            OperationsError::MissingProtection
+        );
+    }
+
+    #[test]
+    fn etcs_darf_ohne_pzb_verbaut_sein() {
+        let mut locomotive = formation_vehicle(
+            1,
+            TractionType::Electric(ElectricSystems::single(PowerSystem::Ac15kV)),
+            VehicleRole::Locomotive,
+            ControlStandConfiguration::both_ends(),
+        );
+        locomotive.protection = TrainProtection::single(ProtectionSystem::EtcsLevel2);
+        Formation::new(1, 7, vec![locomotive]).expect("ETCS-only ist zulaessig");
+    }
+
+    #[test]
+    fn unpowered_coach_darf_ohne_eigenen_fahrdynamikwert_gebildet_werden() {
+        let locomotive = formation_vehicle(
+            1,
+            TractionType::Electric(ElectricSystems::single(PowerSystem::Ac15kV)),
+            VehicleRole::Locomotive,
+            ControlStandConfiguration::both_ends(),
+        );
+        let mut coach = formation_vehicle(
+            2,
+            TractionType::Unpowered,
+            VehicleRole::Coach,
+            ControlStandConfiguration::none(),
+        );
+        coach.acceleration = Acceleration::default();
+        coach.deceleration = Acceleration::default();
+        coach.protection = TrainProtection::unprotected();
+        let formation = Formation::new(1, 5, vec![locomotive, coach])
+            .expect("Steuerungs- und Rollenregeln bleiben erfüllt");
+        formation
+            .characteristics(TrainCharacteristicsId::new(5), "Lok-Wagen-Zug")
+            .expect("Der Wagen wird über Bremsgewicht und die Lok-Dynamik geführt");
+    }
+
+    #[test]
+    fn rohe_lokdaten_benoetigen_ein_formationsbezogenes_fahrprofil() {
+        let mut locomotive = formation_vehicle(
+            1,
+            TractionType::Electric(ElectricSystems::single(PowerSystem::Ac15kV)),
+            VehicleRole::Locomotive,
+            ControlStandConfiguration::both_ends(),
+        );
+        locomotive.acceleration = Acceleration::default();
+        locomotive.deceleration = Acceleration::default();
+        let coach = formation_vehicle(
+            2,
+            TractionType::Unpowered,
+            VehicleRole::Coach,
+            ControlStandConfiguration::none(),
+        );
+        let formation = Formation::new(1, 8, vec![locomotive, coach])
+            .expect("Lok-Wagen-Formation bleibt als Bestand zulässig");
+
+        assert_eq!(
+            formation
+                .characteristics(TrainCharacteristicsId::new(8), "ohne Fahrprofil")
+                .expect_err("eine Lok hat keine feste Beschleunigung"),
+            OperationsError::MissingFormationDynamics
+        );
+
+        let characteristics = formation
+            .characteristics_with_dynamics(
+                TrainCharacteristicsId::new(8),
+                "mit Fahrprofil",
+                FormationDynamics::new(
+                    Acceleration::from_millimetres_per_second_squared(600),
+                    Acceleration::from_millimetres_per_second_squared(700),
+                )
+                .expect("vollständiges Fahrprofil"),
+            )
+            .expect("formationsbezogene Fahrdynamik ist ausreichend");
+        assert_eq!(
+            characteristics.acceleration(),
+            Acceleration::from_millimetres_per_second_squared(600)
+        );
+        assert_eq!(
+            characteristics.deceleration(),
+            Acceleration::from_millimetres_per_second_squared(700)
+        );
+    }
+
+    #[test]
+    fn rangierzeit_enthaelt_kuppeln_entkuppeln_umsetzen_und_bremsprobe() {
+        let timing = calculate_formation_maneuver_time(8, 1, 1, BrakeTestKind::Simplified, true)
+            .expect("gueltige Rangierzeit");
+        assert_eq!(timing.coupling_seconds, 180);
+        assert_eq!(timing.uncoupling_seconds, 120);
+        assert_eq!(timing.brake_test_seconds, 300);
+        assert_eq!(timing.runaround_seconds, 300);
+        assert_eq!(timing.total_seconds, 900);
+        assert_eq!(
+            required_brake_test(true, false, false),
+            BrakeTestKind::Simplified
+        );
+        assert_eq!(required_brake_test(true, true, false), BrakeTestKind::Full);
+        assert_eq!(required_brake_test(true, false, true), BrakeTestKind::None);
+    }
 
     #[test]
     fn umlauf_erzwingt_zeit_und_ort() {

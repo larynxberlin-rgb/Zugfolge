@@ -1,5 +1,7 @@
 import "@zugfolge/design-system/styles.css";
 import type { ActionName, ComparisonName, Condition, FactName, OperatingProgram, TriggerName } from "@zugfolge/dispatch";
+import { mountGlossaryLayer } from "@zugfolge/glossary";
+import "@zugfolge/glossary/styles.css";
 
 import { OperationsApi, type DailyReportRow, type ProgramVersion } from "./api.js";
 import { addRule, moveRule, removeCondition, removeRule, reorderRules, updateCondition, updateRule } from "./model.js";
@@ -9,6 +11,7 @@ import "./styles.css";
 const rootElement = document.querySelector<HTMLDivElement>("#root");
 if (rootElement === null) throw new Error("App-Wurzel fehlt.");
 const root: HTMLDivElement = rootElement;
+mountGlossaryLayer(document.body);
 
 const parameters = new URLSearchParams(location.search);
 const worldId = parameters.get("world") ?? "";

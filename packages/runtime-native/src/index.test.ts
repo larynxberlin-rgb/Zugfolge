@@ -4,6 +4,7 @@ import {
   canonicalFleetCommandHash,
   canonicalFleetCommandJson,
   canonicalizeFleetCommand,
+  FLEET_ASSET_TRANSFER_COMMAND_SCHEMA,
   FLEET_AUTHORITY_RELEASE_SCHEMA,
   FLEET_COMMAND_RECEIPT_SCHEMA,
   FLEET_FORMATION_COMMAND_SCHEMA,
@@ -264,6 +265,35 @@ describe("native runtime ABI contract", () => {
     expect(canonicalFleetCommandHash(first)).toBe("8f85a082a134e3785918f998b90e8e34c784b163c2ecdf3005a7269aa549da82");
     expect(canonicalizeFleetCommand(first).vehicleIds).toEqual([privateUseId, supplementaryId]);
     expect(() => canonicalizeFleetCommand({ ...first, vehicleIds: [privateUseId, privateUseId] })).toThrow(/doppelte Kennungen/);
+  });
+
+  it("binds a secondary-market transfer to the same Rust/TypeScript command hash", () => {
+    const transfer = {
+      schemaVersion: FLEET_ASSET_TRANSFER_COMMAND_SCHEMA,
+      worldId,
+      commandId: "market:transfer-1",
+      expectedStateHash: "d".repeat(64),
+      expectedRevision: 0,
+      atS: 120,
+      vehicleId: "vehicle-1",
+      transferType: "sale",
+      fromOwnerOperatorId: "operator-1",
+      toOwnerOperatorId: "operator-2",
+      fromHolderOperatorId: "operator-1",
+      toHolderOperatorId: "operator-2",
+      lessorOperatorId: null,
+      contractId: null,
+      validUntilS: null,
+      transferReceiptHash: "a".repeat(64),
+    } satisfies NativeFleetCommand;
+    expect(canonicalFleetCommandHash(transfer)).toBe(
+      "c5c122a872b156518a2df5c0e107648d074850efcd400f196fdeb0f00bf31dcb",
+    );
+    expect(canonicalizeFleetCommand(transfer)).toEqual(transfer);
+    expect(() => canonicalizeFleetCommand({
+      ...transfer,
+      transferReceiptHash: "not-a-hash",
+    })).toThrow(/Beleghash.*SHA-256/);
   });
 
   it("rejects old materialized or forged formation fields before calling the addon", () => {

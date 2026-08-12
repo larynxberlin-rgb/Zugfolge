@@ -13,6 +13,7 @@ import {
   PUBLIC_OPERATOR_LABEL,
   renderTrains,
   type Delta,
+  type PublicExternalTrain,
   type PublicTrain,
   type Snapshot,
 } from "./protocol.js";
@@ -31,6 +32,26 @@ const baseTrain: PublicTrain = {
   delaySeconds: 0,
   nextOperatingPoint: "Halle Hbf",
   status: "running",
+};
+
+const externalTrain: PublicExternalTrain = {
+  id: "1",
+  operator: "Elbtalbahn",
+  trainNumber: "RE 1",
+  category: "Regional",
+  journeyChainId: "chain-re1",
+  externalLegId: "chain-re1:external:1",
+  fromPortalId: "portal-eisenach",
+  toPortalId: "portal-eisenach",
+  scheduledEndS: 4_000,
+  reentryEarliestS: 3_700,
+  reentryLatestS: 4_300,
+  delaySeconds: 120,
+  fixedCostCents: "25000",
+  boundVehicleIds: ["vehicle-442-001"],
+  boundPersonnelDutyIds: ["duty-re1"],
+  status: "outside",
+  progressBasisPoints: 4_000,
 };
 
 function snapshot(
@@ -152,6 +173,27 @@ async function settle(turns = 8): Promise<void> {
 }
 
 describe("Livemap-Projektion", () => {
+  it("fuehrt Aussenlaeufe ohne erfundene Kartenposition und entfernt sie bei Wiedereintritt", () => {
+    const initial = initialState(parseSnapshot({
+      ...snapshot(4, 100),
+      externalTrains: [externalTrain],
+    }));
+    expect(initial.externalTrains.get("1")).toMatchObject({
+      fromPortalId: "portal-eisenach",
+      status: "outside",
+      fixedCostCents: "25000",
+    });
+    expect(initial.externalTrains.get("1")).not.toHaveProperty("positionMm");
+
+    const updated = applyDelta(initial, parseDelta({
+      ...delta(5),
+      at: 110,
+      changedExternalTrains: [],
+      removedExternalTrainIds: ["1"],
+    }));
+    expect(updated?.externalTrains.size).toBe(0);
+  });
+
   it("akzeptiert nur den versionierten Eigenbetriebsmarker und beschriftet ihn eindeutig", () => {
     const marked = parseSnapshot(
       snapshot(4, 100, {

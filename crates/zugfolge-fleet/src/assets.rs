@@ -156,6 +156,7 @@ impl VehicleAsset {
         if trade_name.trim().is_empty() {
             return Err(AssetError::EmptyTradeName);
         }
+        validate_protection_dependency(&installed_protection)?;
 
         let mut approval_set = BTreeSet::new();
         for approval in approvals {
@@ -217,11 +218,12 @@ impl VehicleAsset {
         validate_years(entry, settings, ProcurementChannel::NewBuild, year, year)?;
         let standard: BTreeSet<_> = entry.protection().standard_systems().collect();
         let requested: BTreeSet<_> = requested_factory_options.into_iter().collect();
+        let option_year = settings.factory_option_year(entry.construction(), year);
         for system in &requested {
             if standard.contains(system) {
                 return Err(AssetError::ProtectionAlreadyStandard);
             }
-            if !entry.protection().is_factory_option(*system, year) {
+            if !entry.protection().is_factory_option(*system, option_year) {
                 return Err(AssetError::NotAFactoryOption);
             }
         }
@@ -264,6 +266,7 @@ impl VehicleAsset {
         if channel == ProcurementChannel::NewBuild {
             return Err(AssetError::NotSecondaryMarket);
         }
+        validate_protection_dependency(&installed_protection)?;
         let entry = catalog
             .vehicle(vehicle_type_id)
             .ok_or(AssetError::UnknownVehicleType)?;
@@ -319,6 +322,7 @@ impl VehicleAsset {
         approvals: impl IntoIterator<Item = VehicleApproval>,
         maintenance_deadlines: impl IntoIterator<Item = MaintenanceDeadline>,
     ) -> Result<Self, AssetError> {
+        validate_protection_dependency(&installed_protection)?;
         if id == 0 {
             return Err(AssetError::InvalidVehicleId);
         }
@@ -371,6 +375,11 @@ impl VehicleAsset {
         }
         if !entry.protection().is_retrofit(system, year) {
             return Err(AssetError::RetrofitNotAvailable);
+        }
+        if system == ProtectionSystem::Lzb
+            && !self.installed_protection.contains(ProtectionSystem::Pzb)
+        {
+            return Err(AssetError::LzbRequiresPzb);
         }
         self.installed_protection =
             TrainProtection::from_systems(self.installed_protection.systems().chain([system]));
@@ -438,6 +447,13 @@ impl VehicleAsset {
     }
 }
 
+fn validate_protection_dependency(protection: &TrainProtection) -> Result<(), AssetError> {
+    if protection.contains(ProtectionSystem::Lzb) && !protection.contains(ProtectionSystem::Pzb) {
+        return Err(AssetError::LzbRequiresPzb);
+    }
+    Ok(())
+}
+
 fn validate_years(
     entry: &VehicleCatalogEntry,
     settings: VehicleWorldSettings,
@@ -448,19 +464,26 @@ fn validate_years(
     if build_year > acquisition_year {
         return Err(AssetError::BuildAfterAcquisition);
     }
-    if !entry.construction().contains(build_year) {
+    let continued_new_build = settings.continues_new_build(entry.construction(), channel);
+    if !entry.construction().contains(build_year)
+        && (!continued_new_build || build_year != acquisition_year)
+    {
         return Err(AssetError::BuildOutsideConstructionPeriod);
     }
     if !settings.allows_construction_year(build_year) {
         return Err(AssetError::ConstructionEraExcluded);
     }
+    if !entry
+        .construction()
+        .overlaps(settings.construction_era().years())
+        && !continued_new_build
+    {
+        return Err(AssetError::ConstructionEraExcluded);
+    }
     if !settings.allows_procurement_year(acquisition_year) {
         return Err(AssetError::ProcurementEraExcluded);
     }
-    if !entry
-        .market(channel)
-        .is_some_and(|market| market.is_available(acquisition_year))
-    {
+    if !entry.is_available(settings, channel, acquisition_year) {
         return Err(AssetError::MarketUnavailable);
     }
     Ok(())
@@ -619,6 +642,7 @@ pub enum AssetError {
     ProcurementEraExcluded,
     MarketUnavailable,
     ProtectionAlreadyStandard,
+    LzbRequiresPzb,
     NotAFactoryOption,
     NotSecondaryMarket,
     MissingStandardProtection,

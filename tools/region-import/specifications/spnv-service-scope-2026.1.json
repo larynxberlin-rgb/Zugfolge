@@ -1,0 +1,22 @@
+{
+  "schema": "zugfolge-gtfs-service-scope/v1",
+  "version": "spnv-service-scope/2026.1",
+  "sourceFeed": "GTFS.DE Schienenregionalverkehr Deutschland",
+  "businessScope": "EBO-SPNV",
+  "allowedRouteTypes": ["2"],
+  "includedAgencyIds": ["12", "14", "20", "41", "45", "65", "66", "68", "69", "70", "80", "86", "93", "96", "103", "108", "130"],
+  "excludedAgencies": [
+    { "agencyId": "30", "category": "long-distance", "reason": "Internationaler Fernverkehr ist nicht Teil von M14.1." },
+    { "agencyId": "74", "category": "non-passenger", "reason": "Gueter-/Sonderverkehr ist nicht Teil des ersten Geschaeftsfelds EBO-SPNV." },
+    { "agencyId": "85", "category": "non-ebo", "reason": "Schmalspurbahn ist durch E14 vom spielbaren EBO-Netz ausgeschlossen." },
+    { "agencyId": "89", "category": "non-ebo", "reason": "Parkeisenbahn ist durch E14 vom spielbaren EBO-Netz ausgeschlossen." },
+    { "agencyId": "100", "category": "long-distance", "reason": "DB-Fernverkehr ist nicht Teil von M14.1." },
+    { "agencyId": "101", "category": "non-regional-rail", "reason": "Kommunaler Verkehr ohne freigegebene EBO-SPNV-Zuordnung wird konservativ ausgeschlossen." },
+    { "agencyId": "104", "category": "long-distance", "reason": "FlixTrain ist nicht Teil von M14.1." },
+    { "agencyId": "118", "category": "long-distance", "reason": "Fernverkehr-Codesharing ist nicht Teil von M14.1." },
+    { "agencyId": "135", "category": "long-distance", "reason": "Internationaler Nacht-/Fernverkehr ist nicht Teil von M14.1." }
+  ],
+  "hybridRoutePolicy": "GTFS-Linien mit EBO- und BOStrab-Anteilen werden nicht pauschal zugelassen: Nur auf den gefilterten EBO-Betriebsgraph abgebildete regionale Abschnitte duerfen bestellbar werden; der uebrige Lauf bleibt ExternalZone oder Klasse C.",
+  "unknownAgencyPolicy": "exclude-and-report",
+  "rationale": "Der Quellfeed enthaelt einzelne Fern-, Sonder-, Museums- und Schmalspurbahnfahrten. Explizite Zulassung verhindert, dass sie durch route_type=2 still in den Alpha-Schnitt gelangen."
+}

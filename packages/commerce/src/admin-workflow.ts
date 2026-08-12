@@ -59,6 +59,19 @@ export function validateAdminCommand(command: AdminCommandPayload): void {
       throw new AdminWorkflowError("Manuelle Stoerungen brauchen eine deklarierte Wirkung.");
     }
   }
+  if (["abuse_sanction_activate", "world_close"].includes(command.actionType) && command.riskClass !== "high") {
+    throw new AdminWorkflowError("Schwere Sanktionen und Weltende sind immer hochriskant.");
+  }
+  if (["world_access_revoke", "abuse_sanction_activate", "tutorial_account_reset"].includes(command.actionType)) {
+    if (command.targetReference === undefined || command.targetReference.trim().length === 0) {
+      throw new AdminWorkflowError("Verwaltungsaktion braucht eine stabile Zielreferenz.");
+    }
+  }
+  if (["world_close", "tutorial_account_reset"].includes(command.actionType)) {
+    if (command.requestedAtS === undefined || !Number.isSafeInteger(command.requestedAtS) || command.requestedAtS < 0) {
+      throw new AdminWorkflowError("Verwaltungsaktion braucht eine gueltige Simulationszeit.");
+    }
+  }
 }
 
 export function nextAdminRequestState(current: AdminRequestState, event: "submit" | "approve" | "reject" | "dispatch" | "accept" | "complete" | "fail"): AdminRequestState {

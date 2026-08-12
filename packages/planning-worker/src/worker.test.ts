@@ -108,6 +108,15 @@ const release = {
     { numericId: 2, id: "b", code: "LBB", name: "B", distanceMm: 1_000_000, latitudeE7: 510100000, longitudeE7: 120100000, stationTrackNumericId: 201, stationTrackLengthMm: 400_000, stationMaximumSpeedKph: 80 },
   ],
   segments: [{ edgeNumericId: 1, trackNumericId: 1001, id: "a-b", label: "A-B", fromStationId: "a", toStationId: "b", lengthMm: 1_000_000, maximumSpeedKph: 120, mainSignalPositionsMm: [], maximumVirtualBlockLengthMm: 2_000_000 }],
+  boundaryPlanningWindows: [{
+    id: "boundary-a-b",
+    playableLegId: "leg-a-b",
+    originStationId: "a",
+    destinationStationId: "b",
+    qualityClass: "B",
+    orderable: true,
+    windows: [{ windowId: "bpw-exit-b", portalId: "east", direction: "exit", earliestS: 180, targetS: 200, latestS: 240 }],
+  }],
 };
 const infrastructureReleases = planningInfrastructureReleaseCatalog([release]);
 
@@ -260,6 +269,45 @@ describe("planning worker transaction", () => {
     const coordinateReplay = await processPlanningCommand(db, runtime, infrastructureReleases, coordinate.id, new Date(7_000));
     expect(coordinateReplay).toMatchObject({ projectionRevision: 1, stateHash: "a".repeat(64), resultEventSequence: 2, idempotentReplay: true });
     expect(await db.select().from(domainEvents).where(eq(domainEvents.worldId, WORLD))).toHaveLength(4);
+  });
+
+  it("resolves only an opaque player boundary reference to server-owned time windows", async () => {
+    const first = await queuePlanningPathRequest(db, {
+      worldId: WORLD,
+      requestingAccountId: ACCOUNT_A,
+      body: {
+        ...requestBody({ requestId: "boundary-a", trainId: "train-a", trainNumber: 26_802 }),
+        boundaryPlanningWindowId: "boundary-a-b",
+      },
+      submittedAt: new Date(1_000),
+    });
+    const second = await queuePlanningPathRequest(db, {
+      worldId: WORLD,
+      requestingAccountId: ACCOUNT_B,
+      body: requestBody({ requestId: "boundary-b", trainId: "train-b", trainNumber: 26_804, reverse: true }),
+      submittedAt: new Date(1_001),
+    });
+    const coordinate = await queuePlanningCoordinate(db, {
+      worldId: WORLD,
+      authorityAccountId: AUTHORITY,
+      body: coordinateBody([first.id, second.id]),
+      submittedAt: new Date(2_000),
+    });
+
+    await processPlanningCommand(db, runtime, infrastructureReleases, coordinate.id, new Date(3_000));
+
+    expect(capturedCoordinate?.requests[0]).toMatchObject({
+      trainId: "train-a",
+      boundaryWindows: [{
+        windowId: "bpw-exit-b",
+        portalId: "east",
+        direction: "exit",
+        earliestS: 180,
+        targetS: 200,
+        latestS: 240,
+      }],
+    });
+    expect(capturedCoordinate?.requests[0]).not.toHaveProperty("boundaryPlanningWindowId");
   });
 
   it("assigns requestNumericId by stable UTF-8 bytes instead of platform locale", async () => {

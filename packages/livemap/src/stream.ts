@@ -74,12 +74,34 @@ export interface PublicTrain {
   readonly disruption?: PublicDisruptionMarker;
 }
 
+/** Sichtbarer Aussenlauf ohne erfundene Kartenposition. */
+export interface PublicExternalTrain {
+  readonly id: string;
+  readonly operator: string;
+  readonly trainNumber: string;
+  readonly category: string;
+  readonly journeyChainId: string;
+  readonly externalLegId: string;
+  readonly fromPortalId: string;
+  readonly toPortalId: string | null;
+  readonly scheduledEndS: number;
+  readonly reentryEarliestS: number | null;
+  readonly reentryLatestS: number | null;
+  readonly delaySeconds: number;
+  readonly fixedCostCents: string;
+  readonly boundVehicleIds: readonly string[];
+  readonly boundPersonnelDutyIds: readonly string[];
+  readonly status: "outside" | "ready-at-boundary" | "waiting-for-capacity" | "completed-outside";
+  readonly progressBasisPoints: number;
+}
+
 export interface LiveSnapshot {
   readonly worldId: string;
   readonly streamId: string;
   readonly sequence: number;
   readonly at: number;
   readonly trains: readonly PublicTrain[];
+  readonly externalTrains?: readonly PublicExternalTrain[];
   readonly disruptions?: readonly PublicInfrastructureDisruption[];
 }
 
@@ -90,6 +112,8 @@ export interface LiveDelta {
   readonly at: number;
   readonly changed: readonly PublicTrain[];
   readonly removed: readonly string[];
+  readonly changedExternalTrains?: readonly PublicExternalTrain[];
+  readonly removedExternalTrainIds?: readonly string[];
   readonly changedDisruptions?: readonly PublicInfrastructureDisruption[];
   readonly removedDisruptionIds?: readonly string[];
 }
@@ -149,6 +173,7 @@ export class LivemapFeed {
   #at = 0;
   #lastPublishedAtMs: number | undefined;
   readonly #trains = new Map<string, PublicTrain>();
+  readonly #externalTrains = new Map<string, PublicExternalTrain>();
   readonly #disruptions = new Map<string, PublicInfrastructureDisruption>();
   readonly #operationMarkerTimelines = new Map<string, OperationMarkerChange[]>();
   readonly #latestOperationMarkers = new Map<string, OperationMarkerChange>();
@@ -189,6 +214,7 @@ export class LivemapFeed {
       sequence: this.#sequence,
       at: this.#at,
       trains: [...this.#trains.values()].sort((a, b) => compareUtf8(a.id, b.id)),
+      externalTrains: [...this.#externalTrains.values()].sort((a, b) => compareUtf8(a.id, b.id)),
       disruptions: [...this.#disruptions.values()].sort((a, b) => compareUtf8(a.disruptionId, b.disruptionId)),
     };
   }
@@ -196,6 +222,8 @@ export class LivemapFeed {
   #emit(input: Omit<LiveDelta, "worldId" | "streamId" | "sequence">): LiveDelta {
     input.changed.forEach((train) => this.#trains.set(train.id, train));
     input.removed.forEach((id) => this.#trains.delete(id));
+    input.changedExternalTrains?.forEach((train) => this.#externalTrains.set(train.id, train));
+    input.removedExternalTrainIds?.forEach((id) => this.#externalTrains.delete(id));
     input.changedDisruptions?.forEach((disruption) => this.#disruptions.set(disruption.disruptionId, disruption));
     input.removedDisruptionIds?.forEach((id) => this.#disruptions.delete(id));
     this.#sequence += 1;
@@ -205,6 +233,8 @@ export class LivemapFeed {
       ...input,
       changedDisruptions: input.changedDisruptions ?? [],
       removedDisruptionIds: input.removedDisruptionIds ?? [],
+      changedExternalTrains: input.changedExternalTrains ?? [],
+      removedExternalTrainIds: input.removedExternalTrainIds ?? [],
       worldId: this.#worldId,
       streamId: this.#streamId,
       sequence: this.#sequence,
@@ -400,6 +430,7 @@ export class LivemapCapacityError extends Error {
 interface RegistryEntry {
   readonly feed: LivemapFeed;
   readonly trainIdsByRegion: Map<string, Set<string>>;
+  readonly externalTrainIdsByRegion: Map<string, Set<string>>;
   lastAccessMs: number;
   initialized: boolean;
 }
@@ -526,6 +557,7 @@ export class LivemapRegistry {
     const entry = {
       feed,
       trainIdsByRegion: new Map<string, Set<string>>(),
+      externalTrainIdsByRegion: new Map<string, Set<string>>(),
       lastAccessMs: now,
       initialized: false,
     };
@@ -589,6 +621,12 @@ export class LivemapRegistry {
       throw new RangeError("Ein Regionssnapshot darf keine doppelten Zuglaufkennungen besitzen.");
     }
     const previousIds = entry.trainIdsByRegion.get(regionId) ?? new Set<string>();
+    const externalTrains = snapshot.externalTrains ?? [];
+    const nextExternalIds = new Set(externalTrains.map((train) => train.id));
+    if (nextExternalIds.size !== externalTrains.length) {
+      throw new RangeError("Ein Regionssnapshot darf keine doppelten Aussenlaufkennungen besitzen.");
+    }
+    const previousExternalIds = entry.externalTrainIdsByRegion.get(regionId) ?? new Set<string>();
     const ownedElsewhere = (trainRunId: string) =>
       [...entry.trainIdsByRegion].some(
         ([otherRegionId, identifiers]) =>
@@ -597,10 +635,15 @@ export class LivemapRegistry {
     const removed = [...previousIds]
       .filter((trainRunId) => !nextIds.has(trainRunId) && !ownedElsewhere(trainRunId))
       .sort(compareUtf8);
+    const removedExternalTrainIds = [...previousExternalIds]
+      .filter((trainRunId) => !nextExternalIds.has(trainRunId))
+      .sort(compareUtf8);
     const delta = entry.feed.publish({
       at: snapshot.at,
       changed: snapshot.trains,
       removed,
+      changedExternalTrains: externalTrains,
+      removedExternalTrainIds,
       changedDisruptions: snapshot.disruptions ?? [],
       removedDisruptionIds: [],
     });
@@ -610,6 +653,7 @@ export class LivemapRegistry {
       }
     }
     entry.trainIdsByRegion.set(regionId, nextIds);
+    entry.externalTrainIdsByRegion.set(regionId, nextExternalIds);
     entry.initialized = true;
     return delta;
   }
@@ -628,6 +672,7 @@ export class LivemapRegistry {
     const entry = this.#feeds.get(worldId);
     if (entry === undefined) return undefined;
     const identifiers = entry.trainIdsByRegion.get(regionId) ?? new Set<string>();
+    const externalIdentifiers = entry.externalTrainIdsByRegion.get(regionId) ?? new Set<string>();
     const ownedElsewhere = (trainRunId: string) =>
       [...entry.trainIdsByRegion].some(
         ([otherRegionId, otherIdentifiers]) =>
@@ -642,7 +687,10 @@ export class LivemapRegistry {
       identifiers.add(train.id);
     }
     input.removed.forEach((trainRunId) => identifiers.delete(trainRunId));
+    for (const train of input.changedExternalTrains ?? []) externalIdentifiers.add(train.id);
+    for (const trainRunId of input.removedExternalTrainIds ?? []) externalIdentifiers.delete(trainRunId);
     entry.trainIdsByRegion.set(regionId, identifiers);
+    entry.externalTrainIdsByRegion.set(regionId, externalIdentifiers);
     return delta;
   }
 

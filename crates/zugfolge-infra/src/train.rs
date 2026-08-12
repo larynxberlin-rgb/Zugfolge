@@ -8,21 +8,29 @@
 //! ab (M5.2). So arbeiten reale Fahrplanrechner auch, und es entkoppelt die
 //! Trassenplanung vom Fahrzeugkatalog, der zwei Milestones später entsteht.
 //!
-//! ## Warum genau diese sechs Angaben
+//! ## Warum diese Angaben
 //!
-//! Sie sind exakt das, was eine Fahrzeitrechnung braucht und nichts darüber
-//! hinaus. **Masse** geht in keine Rechnung dieses Crates unmittelbar ein —
-//! Anfahr- und Bremsvermögen sind bereits Beschleunigungswerte, in denen die
-//! Masse aufgeht, wie es das reale Betriebsprogramm auch hält (`units.rs`).
-//! Sie wird trotzdem geführt, weil M5.6 (Bedarfsmodell) und M11.5
-//! (Bremshundertstel) sie brauchen. **Länge** und **Vmax** begrenzen
-//! zusammen mit der Infrastruktur, was ein Zug befahren darf. **Anfahr- und
-//! Bremsvermögen** sind die zwei Kennwerte, die M1.10 in Bewegung setzt.
+//! Die effektiven Werte Masse, Länge, Vmax, Anfahr- und Bremsvermögen,
+//! Antriebsart sowie Zugsicherung sind exakt die Eingabe, die die
+//! Fahrzeitrechnung und Infrastrukturprüfung brauchen. **Masse** geht in
+//! keine Rechnung dieses Crates unmittelbar ein — Anfahr- und Bremsvermögen
+//! sind bereits Beschleunigungswerte, in denen die Masse aufgeht, wie es das
+//! reale Betriebsprogramm auch hält (`units.rs`). Sie wird trotzdem geführt,
+//! weil M5.6 (Bedarfsmodell) und M11.5 (Bremshundertstel) sie brauchen.
+//! **Länge** und **Vmax** begrenzen zusammen mit der Infrastruktur, was ein
+//! Zug befahren darf. **Anfahr- und Bremsvermögen** sind die zwei Kennwerte,
+//! die M1.10 in Bewegung setzt.
 //! **Antriebsart** ([`TractionType`]) entscheidet, welche Elektrifizierung
 //! nutzbar ist — dieselbe Frage, die `electrification.rs` streckenseitig
 //! stellt. Und **Zugsicherung** ist [`TrainProtection`] — derselbe Typ wie auf
 //! der Streckenseite, denn `protection.rs` sagt es bereits: „Fahrzeugseitig
 //! gilt dasselbe."
+//!
+//! Der Fahrzeugkatalog führt zusätzlich die Rohwerte kontinuierliche
+//! Leistung, Anfahrzugkraft und Bremsgewicht. Sie werden nicht aus Masse oder
+//! einer pauschalen Formel erfunden. Das skalare Bremsgewicht ist bis zur
+//! strukturierten Bremsrechnung ein referenzierter Authority-Wert; die
+//! vollständige R/P/G/R+Mg-Aufschlüsselung bleibt als Katalogfakt erhalten.
 //!
 //! ## Was hier bewusst nicht steht
 //!
@@ -39,7 +47,7 @@ use crate::error::InfraError;
 use crate::identity::TrainCharacteristicsId;
 use crate::protection::TrainProtection;
 use crate::speed::{SpeedCategory, SpeedLimit};
-use crate::units::{Acceleration, Length, Mass, Speed};
+use crate::units::{Acceleration, Force, Length, Mass, Power, Speed};
 
 /// Die Bahnstromsysteme, unter denen ein elektrischer Antrieb fahren kann.
 ///
@@ -114,6 +122,12 @@ impl fmt::Display for ElectricSystems {
 /// keine Gleichheitsprüfung, sondern eine Frage der beherrschten Systeme.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TractionType {
+    /// Nicht angetriebenes Fahrzeug, etwa ein Reisezug- oder Steuerwagen.
+    ///
+    /// Ein solches Fahrzeug darf Bestandteil eines Wagenparks sein, erzeugt
+    /// aber keine eigene Zugfahrt. Die Formation muss für eine Fahrt mindestens
+    /// ein angetriebenes Fahrzeug enthalten.
+    Unpowered,
     /// Verbrennungsantrieb — unabhängig vom Fahrdraht, fährt auf jedem
     /// Abschnitt.
     Diesel,
@@ -129,6 +143,7 @@ impl TractionType {
     /// Stabile Kennung, etwa für Berichte in anderen Systemen.
     pub const fn tag(&self) -> &'static str {
         match self {
+            Self::Unpowered => "unpowered",
             Self::Diesel => "diesel",
             Self::BatteryElectric => "battery-electric",
             Self::Electric(_) => "electric",
@@ -138,6 +153,7 @@ impl TractionType {
     /// Deutsche Bezeichnung für Berichte und Meldungen.
     pub const fn label(&self) -> &'static str {
         match self {
+            Self::Unpowered => "nicht angetrieben",
             Self::Diesel => "Diesel",
             Self::BatteryElectric => "Akku",
             Self::Electric(_) => "elektrisch",
@@ -152,6 +168,7 @@ impl TractionType {
     /// ein gemeinsames System mit dem Abschnitt.
     pub fn can_use(&self, electrification: Electrification) -> bool {
         match self {
+            Self::Unpowered => false,
             Self::Diesel | Self::BatteryElectric => true,
             Self::Electric(systems) => electrification
                 .system()
@@ -163,6 +180,7 @@ impl TractionType {
 impl fmt::Display for TractionType {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Unpowered => formatter.write_str(self.label()),
             Self::Diesel | Self::BatteryElectric => formatter.write_str(self.label()),
             Self::Electric(systems) => write!(formatter, "elektrisch ({systems})"),
         }
@@ -170,7 +188,8 @@ impl fmt::Display for TractionType {
 }
 
 /// Eine Zugcharakteristik: Masse, Länge, Vmax, Anfahr- und Bremsvermögen,
-/// Antriebsart, Zugsicherung (`docs/infrastruktur.md` 2).
+/// Antriebsart, Zugsicherung sowie die versionierten Rohwerte Leistung,
+/// Anfahrzugkraft und Bremsgewicht (`docs/infrastruktur.md` 2).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrainCharacteristics {
     id: TrainCharacteristicsId,
@@ -183,10 +202,16 @@ pub struct TrainCharacteristics {
     deceleration: Acceleration,
     traction: TractionType,
     protection: TrainProtection,
+    continuous_power: Power,
+    starting_tractive_effort: Force,
+    brake_weight: Mass,
 }
 
 impl TrainCharacteristics {
-    /// Eine Zugcharakteristik mit allen Angaben aus `docs/infrastruktur.md` 2.
+    /// Eine Zugcharakteristik mit den effektiven Fahrzeitwerten aus
+    /// `docs/infrastruktur.md` 2. Die drei zusätzlichen technischen Rohwerte
+    /// bleiben für Alt-Aufrufer null; echte Authority-Releases sollen
+    /// [`Self::new_with_performance`] verwenden.
     ///
     /// `speed_category` legt fest, welche Vmax-Spalte des Streckenprofils
     /// (`SpeedLimit`, `speed.rs`) für diesen Zug gilt — genau die Frage, die
@@ -215,6 +240,48 @@ impl TrainCharacteristics {
         deceleration: Acceleration,
         traction: TractionType,
         protection: TrainProtection,
+    ) -> Result<Self, InfraError> {
+        Self::new_with_performance(
+            id,
+            name,
+            mass,
+            length,
+            max_speed,
+            speed_category,
+            acceleration,
+            deceleration,
+            traction,
+            protection,
+            Power::ZERO,
+            Force::ZERO,
+            Mass::default(),
+        )
+    }
+
+    /// Baut eine Zugcharakteristik mit technischen Rohwerten für
+    /// Zugkraft-, Brems- und Lastgrenzen.
+    ///
+    /// Die effektiven Beschleunigungswerte bleiben absichtlich getrennt von
+    /// den Rohwerten: M1.10 rechnet mit ihnen, während Leistung, Zugkraft und
+    /// Bremsgewicht für Last-, Brems- und Beschaffungslogik erhalten bleiben.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Fahrzeitwerte und Rohwerte sind getrennte, versionierte Fachwerte"
+    )]
+    pub fn new_with_performance(
+        id: TrainCharacteristicsId,
+        name: impl Into<String>,
+        mass: Mass,
+        length: Length,
+        max_speed: Speed,
+        speed_category: SpeedCategory,
+        acceleration: Acceleration,
+        deceleration: Acceleration,
+        traction: TractionType,
+        protection: TrainProtection,
+        continuous_power: Power,
+        starting_tractive_effort: Force,
+        brake_weight: Mass,
     ) -> Result<Self, InfraError> {
         let name = name.into();
         if name.trim().is_empty() {
@@ -263,6 +330,9 @@ impl TrainCharacteristics {
             deceleration,
             traction,
             protection,
+            continuous_power,
+            starting_tractive_effort,
+            brake_weight,
         })
     }
 
@@ -314,6 +384,21 @@ impl TrainCharacteristics {
     /// Die Zugsicherungsausrüstung.
     pub const fn protection(&self) -> &TrainProtection {
         &self.protection
+    }
+
+    /// Kontinuierliche Antriebsleistung des Zuges.
+    pub const fn continuous_power(&self) -> Power {
+        self.continuous_power
+    }
+
+    /// Anfahrzugkraft des Zuges.
+    pub const fn starting_tractive_effort(&self) -> Force {
+        self.starting_tractive_effort
+    }
+
+    /// Bremsgewicht des Zuges.
+    pub const fn brake_weight(&self) -> Mass {
+        self.brake_weight
     }
 
     /// Die für diesen Zug zulässige Geschwindigkeit eines Streckenabschnitts —
@@ -372,7 +457,7 @@ mod tests {
     }
 
     #[test]
-    fn eine_zugcharakteristik_traegt_alle_sechs_angaben() {
+    fn eine_zugcharakteristik_traegt_alle_effektiven_und_rohwerte() {
         let zug = elektrotriebwagen();
         assert_eq!(zug.mass(), Mass::from_tonnes(120));
         assert_eq!(zug.length(), Length::from_metres(80));

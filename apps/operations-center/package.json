@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "@zugfolge/design-system": "workspace:*",
-    "@zugfolge/dispatch": "workspace:*"
+    "@zugfolge/dispatch": "workspace:*",
+    "@zugfolge/glossary": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
@@ -21,4 +22,3 @@
     "vitest": "^4.1.10"
   }
 }
-

@@ -72,6 +72,7 @@ der Überblick; die Spalte `id` ist die Kennung, die auch der Importmarker nennt
 | `id` | Quelle | Status | ab |
 |------|--------|--------|----|
 | `osm-pbf-lhe` | OSM-PBF-Extract Leipzig–Halle–Erfurt | `freigegeben` | M1.2 |
+| `osm-pbf-mitteldeutschland-b` | OSM-PBF-Extract der freigegebenen Alpha-Variante B | `freigegeben` | M14.1 |
 | `openrailwaymap-doku` | OpenRailwayMap — Tagging- und Signaldokumentation | `entwicklung` | M1.6 |
 | `openstation` | OpenStation — Stationsdaten | `freigegeben` | M1.8 |
 | `stada` | StaDa — Stationsdaten | `freigegeben` | M1.8 |
@@ -95,9 +96,14 @@ der Überblick; die Spalte `id` ist die Kennung, die auch der Importmarker nennt
 | `tpn` | TPN — Trassenportal Netz | `ausgeschlossen` | — |
 | `oeffentliche-tiles-nominatim` | öffentliche OSM-/ORM-Tiles und öffentliches Nominatim | `ausgeschlossen` | M4.7 |
 
-**Was heute trägt.** `osm-pbf-lhe` ist `freigegeben` — die ODbL erlaubt Nutzung
+**Was heute trägt.** `osm-pbf-lhe` und der davon rechtlich gleichartig, aber
+artefaktseitig getrennt geführte `osm-pbf-mitteldeutschland-b` sind
+`freigegeben` — die ODbL erlaubt Nutzung
 mit Namensnennung und Share-alike, und mehr braucht die Pilotregion für
-Geometrie und Railway-Tags nicht. Das ist Absicht: `daten.md` verlangt, dass die
+Geometrie und Railway-Tags nicht. Der Mitteldeutschland-Eintrag bindet die am
+11.08.2026 ausgewählte Variante B an die drei versionierten
+Geofabrik-Länderextrakte und führt abgeleitete Daten außerhalb des
+Projektquelltextes. Das ist Absicht: `daten.md` verlangt, dass die
 Region **allein mit OSM-Extract und eigenen Regeln** spielbar ist. Ergänzend
 sind `openstation` (CC0), `stada` (CC BY 4.0) und `dem-hoehenmodell` (Copernicus
 DEM Data Access and Use Terms) seit dem 2026-08-08 `freigegeben` — die Rechte

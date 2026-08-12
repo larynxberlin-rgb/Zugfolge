@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zugfolge Odoo Alpha-Monitoring — Renderprüfung</title>
+  <style>
+    :root { color-scheme: dark; font-family: "IBM Plex Sans", system-ui, sans-serif; background:#111; color:#e6e6e6; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-width:1180px; background:#111; }
+    header { height:54px; display:flex; align-items:center; gap:28px; padding:0 24px; border-bottom:1px solid #383838; background:#171717; }
+    .brand { font-weight:650; letter-spacing:.08em; }
+    nav { display:flex; gap:18px; color:#aaa; font-size:14px; }
+    nav span[aria-current="page"] { color:#fff; border-bottom:2px solid #fff; padding:18px 0 16px; }
+    main { padding:24px 28px 40px; }
+    .eyebrow { color:#929292; font-size:12px; text-transform:uppercase; letter-spacing:.12em; }
+    h1 { margin:6px 0 4px; font-size:26px; font-weight:550; }
+    .sub { color:#aaa; font-size:14px; }
+    .state { display:inline-flex; gap:8px; align-items:center; border:1px solid #5c5c5c; border-radius:3px; padding:5px 9px; font-size:12px; color:#ddd; }
+    .state::before { content:"●"; color:#aaa; }
+    .state.warn::before { content:"△"; color:#d9d9d9; }
+    .headrow { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:22px; }
+    .cards { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; }
+    .card, section { background:#181818; border:1px solid #353535; border-radius:4px; }
+    .card { padding:13px 14px; min-height:78px; }
+    .label { color:#9d9d9d; font-size:11px; text-transform:uppercase; letter-spacing:.07em; }
+    .value { font:500 23px/1.25 "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric:tabular-nums; margin-top:8px; }
+    .unit { color:#888; font-size:12px; margin-left:4px; }
+    .tabs { display:flex; gap:22px; margin:26px 0 0; border-bottom:1px solid #3a3a3a; }
+    .tab { color:#999; padding:0 0 12px; font-size:13px; }
+    .tab.active { color:#f2f2f2; border-bottom:2px solid #f2f2f2; }
+    .grid { display:grid; grid-template-columns:1.6fr 1fr; gap:14px; margin-top:14px; }
+    section { padding:16px; }
+    h2 { margin:0 0 14px; font-size:14px; font-weight:600; }
+    table { width:100%; border-collapse:collapse; font-size:12px; }
+    th { color:#929292; font-weight:500; text-align:left; border-bottom:1px solid #3b3b3b; padding:8px 7px; }
+    td { border-bottom:1px solid #292929; padding:9px 7px; }
+    td.num, th.num { text-align:right; font-family:"IBM Plex Mono", ui-monospace, monospace; font-variant-numeric:tabular-nums; }
+    .kind { color:#aaa; }
+    a { color:#e7e7e7; text-decoration:underline; text-decoration-color:#777; }
+    .bar { width:100%; height:8px; border:1px solid #555; background:#111; margin-top:7px; }
+    .bar > i { display:block; height:100%; background:#aaa; }
+    .meta { display:grid; grid-template-columns:140px 1fr; gap:9px; font-size:12px; }
+    .meta dt { color:#909090; }
+    .meta dd { margin:0; font-family:"IBM Plex Mono", ui-monospace, monospace; overflow-wrap:anywhere; }
+    footer { color:#7f7f7f; margin-top:16px; font-size:11px; }
+  </style>
+</head>
+<body>
+  <header><div class="brand">ZUGFOLGE / ODOO</div><nav><span aria-current="page">Welten</span><span>Adminanträge</span><span>Fähigkeiten</span><span>Feedback</span><span>Commerce</span></nav></header>
+  <main>
+    <div class="headrow">
+      <div><div class="eyebrow">Verzögerte Projektion · vor 7 s</div><h1>Alpha Mitteldeutschland B</h1><div class="sub">Simulationszeit 11.08.2026 21:42:16 · Fahrplanperiode 2/6</div></div>
+      <div class="state warn" aria-label="Zustand degraded">DEGRADED · 1 Engpass, Odoo-Queue aktuell</div>
+    </div>
+    <div class="cards">
+      <div class="card"><div class="label">Laufende Züge</div><div class="value">428</div></div>
+      <div class="card"><div class="label">Verspätet</div><div class="value">31<span class="unit">Züge</span></div></div>
+      <div class="card"><div class="label">Ausfälle</div><div class="value">4</div></div>
+      <div class="card"><div class="label">Störungen</div><div class="value">3</div></div>
+      <div class="card"><div class="label">Eventrate</div><div class="value">1 984<span class="unit">/min</span></div></div>
+      <div class="card"><div class="label">Datenalter</div><div class="value">7<span class="unit">s</span></div></div>
+    </div>
+    <div class="tabs" role="tablist"><div class="tab active">Live-Zustand</div><div class="tab">Verzögerte Projektion</div><div class="tab">Historische Berichte</div><div class="tab">Abgeleitete Kennzahlen</div></div>
+    <div class="grid">
+      <section><h2>Betrieb, Störung und Ersatzkonzepte</h2><table><thead><tr><th>Bezug</th><th>Zustand</th><th class="num">Züge</th><th class="num">Δ</th><th>Audit / Ereignis</th></tr></thead><tbody>
+        <tr><td>Nordhausen–Erfurt</td><td><span class="state warn">Ersatzkonzept aktiv</span></td><td class="num">18</td><td class="num">+11:24</td><td><a href="#">Event 184 021</a></td></tr>
+        <tr><td>Leipzig–Riesa</td><td><span class="state">Regelbetrieb</span></td><td class="num">62</td><td class="num">+01:08</td><td><a href="#">Bericht 2026-08-11</a></td></tr>
+        <tr><td>Halle–Magdeburg</td><td><span class="state warn">Kapazität angespannt</span></td><td class="num">47</td><td class="num">+03:42</td><td><a href="#">Konflikt K-882</a></td></tr>
+      </tbody></table></section>
+      <section><h2>Eigenbetrieb / Spieler-EVU</h2><div class="label">Eigenbetrieb 58 % · Spieler 42 %</div><div class="bar" aria-label="Eigenbetrieb 58 Prozent"><i style="width:58%"></i></div><dl class="meta"><dt>Lose</dt><dd>Eigenbetrieb 19 / Spieler 14</dd><dt>Gepinnte Releases</dt><dd>Infra 11171189…c1e1<br>GTFS c559de16…874d<br>Economy eca12bd0…1f9c</dd></dl></section>
+      <section><h2>Queues, Worker und Bridges</h2><table><thead><tr><th>Komponente</th><th>Zustand</th><th class="num">Tiefe</th><th class="num">Alter</th></tr></thead><tbody>
+        <tr><td>Planning-Worker</td><td><span class="state">HEALTHY</span></td><td class="num">6</td><td class="num">2 s</td></tr>
+        <tr><td>Economy-Outbox</td><td><span class="state">HEALTHY</span></td><td class="num">0</td><td class="num">—</td></tr>
+        <tr><td>Odoo-Bridge</td><td><span class="state">HEALTHY</span></td><td class="num">1</td><td class="num">7 s</td></tr>
+        <tr><td>Provider</td><td><span class="state warn">DEGRADED</span></td><td class="num">—</td><td class="num">94 s</td></tr>
+      </tbody></table></section>
+      <section><h2>Markt und Wirtschaft</h2><table><thead><tr><th>Kennzahl</th><th class="num">Aktiv</th><th class="num">Auffällig</th></tr></thead><tbody>
+        <tr><td>EVU-Verträge</td><td class="num">23</td><td class="num">2</td></tr>
+        <tr><td>Fahrzeugangebote</td><td class="num">17</td><td class="num">1</td></tr>
+        <tr><td>Pönalen / Minderungen</td><td class="num">12</td><td class="num">3</td></tr>
+      </tbody></table><footer>Read-only · Ein Antrag kann vorbereitet, aber kein Simulationszustand verändert werden.</footer></section>
+    </div>
+  </main>
+</body>
+</html>

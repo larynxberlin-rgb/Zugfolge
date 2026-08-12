@@ -255,6 +255,69 @@ describe("interne regionale M4-Routen", () => {
     }
   });
 
+  it("reicht einen vollstaendigen Aussenlaufvertrag nur ueber die interne Single-Writer-Route weiter", async () => {
+    const apply = vi.fn(async (work) => result(work.worldId, work.commandId, false));
+    const app = buildApp({
+      db,
+      verifyToken: async () => {
+        throw new Error("nicht verwendet");
+      },
+      simulationIngestToken: token,
+      regionalSimulation: {
+        initialize: vi.fn(),
+        apply,
+      } as Pick<RegionalSimulationWorker, "initialize" | "apply">,
+    });
+    await app.ready();
+    const command = {
+      type: "enter-external-zone",
+      trainRunId: "run-1",
+      externalLeg: {
+        journeyChainId: "chain-re1",
+        externalLegId: "chain-re1:external:1",
+        fromPortalId: "portal-eisenach",
+        toPortalId: "portal-eisenach",
+        scheduledStartS: 1_000,
+        scheduledEndS: 4_000,
+        reentryEarliestS: 3_700,
+        reentryLatestS: 4_300,
+        fixedCostCents: "25000",
+        boundVehicleIds: ["vehicle-442-001"],
+        boundPersonnelDutyIds: ["duty-re1"],
+        reentryRoute: [
+          {
+            operatingPoint: "Eisenach Hbf",
+            positionMm: 0,
+            arrivalS: 4_000,
+            minimumDwellSeconds: 60,
+            departureS: 4_060,
+          },
+        ],
+        firstResources: ["block:eisenach:1"],
+      },
+    } as const;
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: `/internal/worlds/${worldA}/regional-simulations/${regionId}/commands/external:run-1`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: command,
+      });
+      expect(response.statusCode).toBe(200);
+      expect(apply).toHaveBeenCalledWith(
+        {
+          worldId: worldA,
+          regionId,
+          commandId: "external:run-1",
+          command,
+        },
+        expect.any(Date),
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
   it("liefert stabile Konflikt- und Verfuegbarkeitscodes", async () => {
     const apply = vi.fn(async (work) => {
       if (work.commandId === "conflict") {

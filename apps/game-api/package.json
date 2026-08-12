@@ -13,8 +13,10 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
+    "@zugfolge/alpha": "workspace:*",
     "@zugfolge/db": "workspace:*",
     "@zugfolge/commerce": "workspace:*",
+    "@zugfolge/cooperation": "workspace:*",
     "@zugfolge/disruption-provider": "workspace:*",
     "@zugfolge/dispatch": "workspace:*",
     "@zugfolge/economy": "workspace:*",

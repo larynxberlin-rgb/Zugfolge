@@ -22,6 +22,9 @@ pub enum ConflictError {
     EmptyItinerary,
     /// Ein Laufweg nennt ein Gleis, das der Betriebsgraph nicht kennt.
     UnknownTrack(TrackId),
+    /// Kein hinterlegter Blockabschnitt dieses Gleises ist mit der
+    /// Zugsicherung des Zuges befahrbar.
+    NoCompatibleBlock(TrackId),
     /// Ein Laufweg nennt eine Betriebsstelle, die der Betriebsgraph nicht
     /// kennt.
     UnknownOperatingPoint(OperatingPointId),
@@ -127,6 +130,10 @@ impl fmt::Display for ConflictError {
             Self::UnknownTrack(track) => {
                 write!(formatter, "Gleis {track} steht nicht im Betriebsgraphen")
             }
+            Self::NoCompatibleBlock(track) => write!(
+                formatter,
+                "auf Gleis {track} gibt es keinen mit der Zugsicherung des Zuges kompatiblen Block"
+            ),
             Self::UnknownOperatingPoint(point) => write!(
                 formatter,
                 "Betriebsstelle {point} steht nicht im Betriebsgraphen"

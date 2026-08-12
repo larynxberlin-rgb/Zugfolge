@@ -158,7 +158,7 @@ pub fn derive_occupation_profile(
     itinerary: &Itinerary,
     train: &TrainCharacteristics,
 ) -> Result<OccupationProfile, ConflictError> {
-    let claims = anspruechen(infrastructure, itinerary)?;
+    let claims = anspruechen(infrastructure, itinerary, train)?;
     let total = itinerary.length();
 
     let schnitte = schnittpunkte(infrastructure, train, &claims, total);
@@ -230,12 +230,13 @@ pub fn derive_occupation_profile(
 fn anspruechen(
     infrastructure: &Infrastructure,
     itinerary: &Itinerary,
+    train: &TrainCharacteristics,
 ) -> Result<Vec<Claim>, ConflictError> {
     let mut claims: Vec<Claim> = Vec::new();
     let mut offset = Length::ZERO;
 
     for leg in itinerary.legs() {
-        let spans = infrastructure.spans_of(leg.track())?;
+        let spans = infrastructure.spans_of_for_train(leg.track(), train)?;
         let laenge = leg.length();
 
         let mut eigene: Vec<Claim> = spans

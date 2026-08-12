@@ -131,6 +131,11 @@ function trainById(
   return projection.trains.find((train) => train.id === trainId);
 }
 
+function renderBoundaryWindows(train: PlanningTrainProjection): string {
+  if (train.boundaryWindows === undefined || train.boundaryWindows.length === 0) return "";
+  return `<div class="boundary-windows"><p class="eyebrow">Durchgehende Fahrt</p><h3>Feste Grenzfenster</h3><p>Du planst die Trasse innerhalb der Welt. Der gepinnte Infrastrukturrelease gibt die Uebergabe am Grenzportal vor; der Aussenlauf bleibt Teil derselben Zugfahrt und ist nicht bearbeitbar.</p><dl>${train.boundaryWindows.map((window) => `<div><dt>${window.direction === "entry" ? "Einfahrt" : "Ausfahrt"} · ${escapeHtml(window.portalId)}</dt><dd><strong>${formatTimeS(window.targetS)}</strong><br>${formatTimeS(window.earliestS)}–${formatTimeS(window.latestS)}</dd></div>`).join("")}</dl></div>`;
+}
+
 function renderInspector(
   projection: PlanningProjectionV1,
   train: PlanningTrainProjection,
@@ -139,8 +144,9 @@ function renderInspector(
   const available = conflictsForTrain(projection, train.id);
   const conflict =
     available.find((candidate) => candidate.id === options.selectedConflictId) ?? available[0];
+  const boundaryWindows = renderBoundaryWindows(train);
   if (conflict === undefined) {
-    return `<aside class="inspector zf-surface"><div class="no-conflict">${badge("Konfliktfrei", "neutral", "check")}<h2>${escapeHtml(train.number)}</h2><p>Fuer diesen Zuglauf liegen keine Belegungsueberschneidungen vor.</p></div></aside>`;
+    return `<aside class="inspector zf-surface"><div class="no-conflict">${badge("Konfliktfrei", "neutral", "check")}<h2>${escapeHtml(train.number)}</h2><p>Fuer diesen Zuglauf liegen keine Belegungsueberschneidungen vor.</p></div>${boundaryWindows}</aside>`;
   }
   const firstTrain = trainById(projection, conflict.trainIds[0])!;
   const secondTrain = trainById(projection, conflict.trainIds[1])!;
@@ -154,7 +160,7 @@ function renderInspector(
       (candidate) =>
         `<button class="zf-button ${candidate.id === conflict.id ? "pressed" : ""}" data-conflict="${escapeHtml(candidate.id)}">${escapeHtml(conflictLabels[candidate.kind])}</button>`,
     )
-    .join("")}</div><div class="cause"><p class="eyebrow">Beteiligte Zuglaeufe</p><div class="train-pair"><span>${icon("train")}<strong>${escapeHtml(firstTrain.number)}</strong><small>${escapeHtml(firstTrain.id)}</small></span><b aria-hidden="true">×</b><span>${icon("train")}<strong>${escapeHtml(secondTrain.number)}</strong><small>${escapeHtml(secondTrain.id)}</small></span></div></div><dl><div><dt>Konfliktressource</dt><dd><strong>${escapeHtml(conflict.resource.label)}</strong><br>${escapeHtml(conflict.resource.kind)}</dd></div><div><dt>Ueberlappung</dt><dd><strong>${formatDurationS(conflict.window.endS - conflict.window.startS)}</strong><br>${formatTimeS(conflict.window.startS)}–${formatTimeS(conflict.window.endS)}</dd></div><div><dt>Projektionsrevision</dt><dd><strong>${projection.projectionRevision}</strong><br>serverautoritaer</dd></div></dl><div class="explanation"><h3>Warum entsteht der Konflikt?</h3><p>${escapeHtml(conflict.explanation)}</p></div>${proposal}</aside>`;
+    .join("")}</div><div class="cause"><p class="eyebrow">Beteiligte Zuglaeufe</p><div class="train-pair"><span>${icon("train")}<strong>${escapeHtml(firstTrain.number)}</strong><small>${escapeHtml(firstTrain.id)}</small></span><b aria-hidden="true">×</b><span>${icon("train")}<strong>${escapeHtml(secondTrain.number)}</strong><small>${escapeHtml(secondTrain.id)}</small></span></div></div><dl><div><dt>Konfliktressource</dt><dd><strong>${escapeHtml(conflict.resource.label)}</strong><br>${escapeHtml(conflict.resource.kind)}</dd></div><div><dt>Ueberlappung</dt><dd><strong>${formatDurationS(conflict.window.endS - conflict.window.startS)}</strong><br>${formatTimeS(conflict.window.startS)}–${formatTimeS(conflict.window.endS)}</dd></div><div><dt>Projektionsrevision</dt><dd><strong>${projection.projectionRevision}</strong><br>serverautoritaer</dd></div></dl><div class="explanation"><h3>Warum entsteht der Konflikt?</h3><p>${escapeHtml(conflict.explanation)}</p></div>${proposal}${boundaryWindows}</aside>`;
 }
 
 function renderHeader(projection: PlanningProjectionV1): string {

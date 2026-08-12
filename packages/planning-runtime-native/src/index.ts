@@ -64,6 +64,17 @@ export interface PlanningCoordinateRequest {
     readonly accelerationMmPerS2: number;
     readonly decelerationMmPerS2: number;
   };
+  /** Ausschliesslich serverseitig aus dem gepinnten Release aufgeloest. */
+  readonly boundaryWindows?: readonly PlanningCoordinateBoundaryWindow[];
+}
+
+export interface PlanningCoordinateBoundaryWindow {
+  readonly windowId: string;
+  readonly portalId: string;
+  readonly direction: "entry" | "exit";
+  readonly earliestS: number;
+  readonly targetS: number;
+  readonly latestS: number;
 }
 
 /** Productive input for one deterministic PlanningRun over a complete window. */

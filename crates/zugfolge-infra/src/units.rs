@@ -248,6 +248,78 @@ impl Canonical for Mass {
     }
 }
 
+/// Eine Antriebsleistung in Kilowatt.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Power(i64);
+
+impl Power {
+    /// Keine Antriebsleistung, etwa bei einem Reisezugwagen.
+    pub const ZERO: Self = Self(0);
+
+    /// Leistung aus Kilowatt.
+    pub const fn from_kilowatts(kilowatts: i64) -> Self {
+        Self(kilowatts)
+    }
+
+    /// Leistung in Kilowatt.
+    pub const fn kilowatts(self) -> i64 {
+        self.0
+    }
+
+    /// Ob die Leistung positiv ist.
+    pub const fn is_positive(self) -> bool {
+        self.0 > 0
+    }
+}
+
+impl fmt::Display for Power {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{} kW", self.0)
+    }
+}
+
+impl Canonical for Power {
+    fn write_canonical(&self, name: &str, hasher: &mut StateHasher) {
+        hasher.int(name, self.0);
+    }
+}
+
+/// Eine Anfahrzugkraft in Kilonewton.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Force(i64);
+
+impl Force {
+    /// Keine Anfahrzugkraft, etwa bei einem nicht angetriebenen Wagen.
+    pub const ZERO: Self = Self(0);
+
+    /// Zugkraft aus Kilonewton.
+    pub const fn from_kilonewtons(kilonewtons: i64) -> Self {
+        Self(kilonewtons)
+    }
+
+    /// Zugkraft in Kilonewton.
+    pub const fn kilonewtons(self) -> i64 {
+        self.0
+    }
+
+    /// Ob die Zugkraft positiv ist.
+    pub const fn is_positive(self) -> bool {
+        self.0 > 0
+    }
+}
+
+impl fmt::Display for Force {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{} kN", self.0)
+    }
+}
+
+impl Canonical for Force {
+    fn write_canonical(&self, name: &str, hasher: &mut StateHasher) {
+        hasher.int(name, self.0);
+    }
+}
+
 /// Ein Beschleunigungsvermögen, in Millimetern je Sekunde zum Quadrat.
 ///
 /// Der Typ trägt keine Richtung — er beschreibt eine **Fähigkeit** (wie
@@ -289,7 +361,7 @@ impl Canonical for Acceleration {
 
 #[cfg(test)]
 mod tests {
-    use super::{Acceleration, Gradient, Length, Mass, Speed};
+    use super::{Acceleration, Force, Gradient, Length, Mass, Power, Speed};
 
     #[test]
     fn laenge_rechnet_in_millimetern() {
@@ -363,5 +435,17 @@ mod tests {
         assert!(anfahrvermoegen.is_positive());
         assert!(!Acceleration::default().is_positive());
         assert_eq!(anfahrvermoegen.to_string(), "600 mm/s²");
+    }
+
+    #[test]
+    fn leistungs_und_zugkraftwerte_bleiben_ganzzahlig() {
+        let leistung = Power::from_kilowatts(5_600);
+        let zugkraft = Force::from_kilonewtons(300);
+        assert_eq!(leistung.kilowatts(), 5_600);
+        assert_eq!(zugkraft.kilonewtons(), 300);
+        assert!(leistung.is_positive());
+        assert!(zugkraft.is_positive());
+        assert_eq!(leistung.to_string(), "5600 kW");
+        assert_eq!(zugkraft.to_string(), "300 kN");
     }
 }

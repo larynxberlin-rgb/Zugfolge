@@ -1,6 +1,7 @@
 import {
   PLANNING_APPLY_ALTERNATIVE_SCHEMA,
   type PlanningApplyAlternativePayload,
+  type PlanningCoordinateBoundaryWindow,
   type PlanningCoordinateRequest,
   type PlanningCoordinateSegment,
   type PlanningCoordinateStation,
@@ -10,9 +11,11 @@ export const PLANNING_PATH_REQUEST_SCHEMA = "planning.path-request/v1" as const;
 export const PLANNING_COORDINATE_AUTHORITY_SCHEMA = "planning.coordinate/v1" as const;
 export const PLANNING_INFRASTRUCTURE_RELEASE_SCHEMA = "planning.infrastructure-release/v1" as const;
 
-export interface PlanningPathRequestBody extends Omit<PlanningCoordinateRequest, "requestNumericId"> {
+export interface PlanningPathRequestBody extends Omit<PlanningCoordinateRequest, "requestNumericId" | "boundaryWindows"> {
   readonly schemaVersion: typeof PLANNING_PATH_REQUEST_SCHEMA;
   readonly requestId: string;
+  /** Opaque Referenz; die Zeitwerte selbst darf ein Spieler nie einreichen. */
+  readonly boundaryPlanningWindowId?: string;
 }
 
 /** Persisted form. World and account are always bound by the authenticated route. */
@@ -49,6 +52,17 @@ export interface PlanningInfrastructureRelease {
   readonly corridorName: string;
   readonly stations: readonly PlanningCoordinateStation[];
   readonly segments: readonly PlanningCoordinateSegment[];
+  readonly boundaryPlanningWindows?: readonly PlanningReleaseBoundaryWindow[];
+}
+
+export interface PlanningReleaseBoundaryWindow {
+  readonly id: string;
+  readonly playableLegId: string;
+  readonly originStationId: string;
+  readonly destinationStationId: string;
+  readonly qualityClass: "A" | "B" | "C";
+  readonly orderable: boolean;
+  readonly windows: readonly PlanningCoordinateBoundaryWindow[];
 }
 
 function invariant(condition: unknown, message: string): asserts condition {
@@ -137,9 +151,16 @@ export function bindPlanningPathRequest(
 ): BoundPlanningPathRequest {
   text(worldId, "worldId");
   text(requestingAccountId, "requestingAccountId");
-  const input = exactRecord(value, "planning.path-request", ["schemaVersion", ...REQUEST_KEYS]);
+  const withBoundaryReference = typeof value === "object" && value !== null && !Array.isArray(value)
+    && "boundaryPlanningWindowId" in value;
+  const input = exactRecord(value, "planning.path-request", [
+    "schemaVersion",
+    ...REQUEST_KEYS,
+    ...(withBoundaryReference ? ["boundaryPlanningWindowId"] : []),
+  ]);
   invariant(input["schemaVersion"] === PLANNING_PATH_REQUEST_SCHEMA, "planning.path-request hat ein unbekanntes Schema.");
   validateRequestFacts(input, "planning.path-request");
+  if (withBoundaryReference) text(input["boundaryPlanningWindowId"], "planning.path-request.boundaryPlanningWindowId");
   return { worldId, requestingAccountId, ...input } as unknown as BoundPlanningPathRequest;
 }
 
@@ -211,8 +232,11 @@ export function parsePlanningInfrastructureRelease(
   expectedWorldId?: string,
   expectedReleaseId?: string,
 ): PlanningInfrastructureRelease {
+  const withBoundaryWindows = typeof value === "object" && value !== null && !Array.isArray(value)
+    && "boundaryPlanningWindows" in value;
   const input = exactRecord(value, "planning.infrastructure-release", [
     "schemaVersion", "worldId", "releaseId", "sourceId", "corridorId", "corridorName", "stations", "segments",
+    ...(withBoundaryWindows ? ["boundaryPlanningWindows"] : []),
   ]);
   invariant(input["schemaVersion"] === PLANNING_INFRASTRUCTURE_RELEASE_SCHEMA, "Planning-Infrastrukturrelease hat ein unbekanntes Schema.");
   for (const key of ["worldId", "releaseId", "sourceId", "corridorId", "corridorName"] as const) text(input[key], `planning.infrastructure-release.${key}`);
@@ -222,6 +246,36 @@ export function parsePlanningInfrastructureRelease(
   invariant(Array.isArray(input["segments"]) && input["segments"].length >= 1, "Planning-Infrastrukturrelease braucht mindestens ein Segment.");
   input["stations"].forEach(validateStation);
   input["segments"].forEach(validateSegment);
+  if (withBoundaryWindows) {
+    invariant(Array.isArray(input["boundaryPlanningWindows"]), "Planning-Infrastrukturrelease besitzt keine Grenzfensterliste.");
+    const ids = new Set<string>();
+    for (const [index, value] of input["boundaryPlanningWindows"].entries()) {
+      const name = `planning.infrastructure-release.boundaryPlanningWindows[${index}]`;
+      const window = exactRecord(value, name, [
+        "id", "playableLegId", "originStationId", "destinationStationId", "qualityClass", "orderable", "windows",
+      ]);
+      for (const key of ["id", "playableLegId", "originStationId", "destinationStationId"] as const) text(window[key], `${name}.${key}`);
+      invariant(!ids.has(window["id"] as string), `${name}.id ist doppelt.`);
+      ids.add(window["id"] as string);
+      invariant(["A", "B", "C"].includes(window["qualityClass"] as string), `${name}.qualityClass ist unbekannt.`);
+      invariant(typeof window["orderable"] === "boolean", `${name}.orderable fehlt.`);
+      invariant(Array.isArray(window["windows"]) && window["windows"].length >= 1 && window["windows"].length <= 2, `${name}.windows braucht ein oder zwei Fenster.`);
+      const directions = new Set<string>();
+      for (const [windowIndex, fact] of window["windows"].entries()) {
+        const factName = `${name}.windows[${windowIndex}]`;
+        const parsed = exactRecord(fact, factName, ["windowId", "portalId", "direction", "earliestS", "targetS", "latestS"]);
+        text(parsed["windowId"], `${factName}.windowId`);
+        text(parsed["portalId"], `${factName}.portalId`);
+        invariant(parsed["direction"] === "entry" || parsed["direction"] === "exit", `${factName}.direction ist unbekannt.`);
+        invariant(!directions.has(parsed["direction"] as string), `${name} besitzt eine Grenzrichtung doppelt.`);
+        directions.add(parsed["direction"] as string);
+        integer(parsed["earliestS"], `${factName}.earliestS`);
+        integer(parsed["targetS"], `${factName}.targetS`);
+        integer(parsed["latestS"], `${factName}.latestS`);
+        invariant((parsed["earliestS"] as number) <= (parsed["targetS"] as number) && (parsed["targetS"] as number) <= (parsed["latestS"] as number), `${factName} ist nicht monoton.`);
+      }
+    }
+  }
   return input as unknown as PlanningInfrastructureRelease;
 }
 
@@ -244,6 +298,7 @@ const nonEmptyString = { type: "string", minLength: 1 } as const;
 const pathRequestProperties = {
   schemaVersion: { type: "string", const: PLANNING_PATH_REQUEST_SCHEMA },
   requestId: nonEmptyString,
+  boundaryPlanningWindowId: nonEmptyString,
   trainId: nonEmptyString,
   trainCategory: { enum: ["long-distance", "suburban", "regional", "freight", "supplementary"] },
   trainNumber: positiveInteger,

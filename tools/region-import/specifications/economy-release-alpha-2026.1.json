@@ -1,0 +1,58 @@
+{
+  "schema": "zugfolge-economy-release-input/v1",
+  "version": "alpha-2026.1",
+  "rates": {
+    "trackPerTrainKmCents": "250",
+    "stationPerStopCents": "80",
+    "facilityPerHourCents": "1500",
+    "energyPerKwhCents": "32",
+    "personnelPerHourCents": "4200",
+    "administrationPerPeriodCents": "250000",
+    "vehiclePerPeriodCents": "1800000",
+    "overnightStablingPerPeriodCents": "120000",
+    "protectionEquipmentPerPeriodCents": "60000",
+    "lateInterestBasisPoints": 500
+  },
+  "rules": {
+    "qualityBaselinePunctualityBasisPoints": 8500,
+    "pointsPerExtraSeat": 40,
+    "pointsPerPunctualityBasisPoint": 1,
+    "pointsPerAdditionalStop": 300,
+    "requirementFocusMaximumPoints": 1500,
+    "contractBonusCentsPerPeriod": "10000000",
+    "penaltyRates": {
+      "punctuality": "20",
+      "cancellation": "250000",
+      "seats": "500",
+      "connections": "25000"
+    },
+    "penaltyFocusMultiplierBasisPoints": 20000,
+    "publicOperationSurchargeBasisPoints": 2000,
+    "failedPackageFeeStepBasisPoints": 500,
+    "failedPackageReductionStepBasisPoints": 400
+  },
+  "tenderProfiles": [
+    {
+      "id": "balanced-capacity",
+      "weights": { "price": 5000, "quality": 5000 },
+      "requirementFocus": "capacity",
+      "penaltyFocus": "punctuality",
+      "viabilitySurchargeBasisPoints": 1000
+    },
+    {
+      "id": "quality-connections",
+      "weights": { "price": 3500, "quality": 6500 },
+      "requirementFocus": "accessibility",
+      "penaltyFocus": "connections",
+      "specialCondition": { "type": "replacement-plan" },
+      "viabilitySurchargeBasisPoints": 1500
+    },
+    {
+      "id": "price-bicycle",
+      "weights": { "price": 6500, "quality": 3500 },
+      "requirementFocus": "bicycle",
+      "penaltyFocus": "cancellation",
+      "viabilitySurchargeBasisPoints": 800
+    }
+  ]
+}

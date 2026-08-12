@@ -1,5 +1,7 @@
 import type { Density } from "@zugfolge/design-system";
 import "@zugfolge/design-system/styles.css";
+import { mountGlossaryLayer } from "@zugfolge/glossary";
+import "@zugfolge/glossary/styles.css";
 import type { PlanningProjectionV1 } from "@zugfolge/planning-projection";
 
 import { GameApiClient } from "./api.js";
@@ -10,6 +12,7 @@ import "./styles.css";
 const root = document.querySelector<HTMLDivElement>("#root");
 if (root === null) throw new Error("App-Wurzel fehlt");
 const app = root;
+mountGlossaryLayer(document.body);
 
 const parameters = new URLSearchParams(window.location.search);
 const demoMode = parameters.get("demo") === "1";

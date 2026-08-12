@@ -464,20 +464,35 @@ echte Formationen auf eine `TrainCharacteristics` ab (M5.2). So arbeiten reale
 Fahrplanrechner auch, und es entkoppelt die Trassenplanung vom Fahrzeugkatalog,
 der zwei Milestones später entsteht.
 
-**Warum genau diese sechs Angaben.** Sie sind exakt das, was eine
-Fahrzeitrechnung braucht und nichts darüber hinaus. **Masse** geht in keine
-Rechnung dieses Crates unmittelbar ein — Anfahr- und Bremsvermögen sind bereits
-Beschleunigungswerte, in denen die Masse aufgeht, wie es das reale
-Betriebsprogramm auch hält. Sie wird trotzdem geführt, weil M5.6
-(Bedarfsmodell) und M11.5 (Bremshundertstel) sie brauchen werden. **Länge** und
-**Vmax** begrenzen zusammen mit der Infrastruktur, was ein Zug befahren darf.
-**Anfahr- und Bremsvermögen** sind die zwei Kennwerte, die M1.10 in Bewegung
-setzt. **Antriebsart** (`TractionType`) entscheidet, welche Elektrifizierung
-nutzbar ist — dieselbe Schnittmengenfrage wie bei der Zugsicherung: Diesel- und
-Akkubetrieb sind vom Fahrdraht unabhängig, ein elektrischer Antrieb braucht ein
-gemeinsames Bahnstromsystem mit dem Abschnitt. Und **Zugsicherung** ist
-`TrainProtection` — derselbe Typ wie streckenseitig, denn `protection.rs` sagt
-es bereits: „Fahrzeugseitig gilt dasselbe."
+**Warum diese Angaben.** Die sieben effektiven Werte Masse, Länge, Vmax,
+Anfahr- und Bremsvermögen, Antriebsart sowie Zugsicherung sind exakt die
+Eingabe, die die bestehende Fahrzeit- und Infrastrukturprüfung braucht.
+**Masse** geht in keine Rechnung dieses Crates unmittelbar ein — Anfahr- und
+Bremsvermögen sind bereits Beschleunigungswerte, in denen die Masse aufgeht,
+wie es das reale Betriebsprogramm auch hält. Sie wird trotzdem geführt, weil
+M5.6 (Bedarfsmodell) und M11.5 (Bremshundertstel) sie brauchen.
+
+Der Fahrzeugkatalog führt zusätzlich die drei Rohwerte **kontinuierliche
+Leistung**, **Anfahrzugkraft** und **Bremsgewicht**. Sie werden nicht aus Masse,
+Leistung oder einer pauschalen Formel erfunden. Für Bremsgewichte gilt dabei
+die konkrete Bremsstellung; der derzeitige skalare Kernwert ist das
+referenzierte P-Bremsgewicht aus dem Authority-Release, die vollständige
+R/P/G/R+Mg-Aufschlüsselung ist
+für M11.5 als nächster Ausbau vorzuhalten. **Länge** und **Vmax** begrenzen
+zusammen mit der Infrastruktur, was ein Zug befahren darf. **Anfahr- und
+Bremsvermögen** sind die zwei Kennwerte, die M1.10 in Bewegung setzt.
+
+Bei Lokomotiven und Wagenparks dürfen diese beiden Kennwerte jedoch nicht als
+statische Fahrzeugwerte ausgegeben werden: Sie entstehen erst aus der
+tatsächlich gekuppelten Masse und Bremsstellung. Der Authority-Katalog enthält
+dafür die Rohwerte; das signierte `FormationDynamics`-Profil liefert die
+ganzzahligen, für M1.10 wirksamen Werte erst beim Bilden der konkreten
+Formation. Ein vorhandenes Altfeld pro Fahrzeug ist lediglich ein
+rückwärtskompatibles Referenzprofil.
+**Antriebsart** (`TractionType`) entscheidet, welche Elektrifizierung nutzbar
+ist — Diesel- und Akkubetrieb sind vom Fahrdraht unabhängig, ein elektrischer
+Antrieb braucht ein gemeinsames Bahnstromsystem. **Zugsicherung** ist
+`TrainProtection` — derselbe Typ wie streckenseitig.
 
 **Was hier bewusst nicht steht.** Kein Fahrzeugkatalog, keine Formation, kein
 Zulassungsdatum, keine Eigentumsfrage — das liefert `docs/betrieb.md` 1 erst

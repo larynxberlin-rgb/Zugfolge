@@ -16,7 +16,10 @@ use core::fmt;
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 
-use zugfolge_determinism::{DeterministicModel, SimTime, StateHash, StateHasher};
+use crate::SimTime;
+use zugfolge_determinism::{
+    DeterministicModel, SimTime as DeterministicSimTime, StateHash, StateHasher,
+};
 use zugfolge_infra::{FleetClass, ProtectionSystem};
 
 /// Stabile Kennung eines Fahrzeugtyps im Katalog.
@@ -118,6 +121,26 @@ impl VehicleEra {
     }
 }
 
+/// Marktregel für Typen, deren tatsächliche Serienfertigung vor dem
+/// Weltstichtag endete.
+///
+/// Der Stichtag und die Regel sind Weltkonfiguration. Die faktische Bauzeit im
+/// Katalog wird durch keine der Varianten verändert.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum LegacyVehiclePolicy {
+    /// Altfahrzeuge sind nur als bestehende Gebrauchtfahrzeuge beschaffbar.
+    UsedOnly,
+    /// Die Welt erlaubt den ausdrücklich konterfaktischen Neubau eines alten
+    /// Typs weiter. Werksoptionen bleiben auf den letzten belegten Bauzustand
+    /// begrenzt.
+    ContinueNewBuild,
+    /// Es gilt ausschließlich die Bau- und Beschaffungsepoche samt
+    /// dokumentierten Marktfenstern; der Typ wird nicht als alt klassifiziert.
+    EpochOnly,
+    /// Altfahrzeuge sind in dieser Welt nicht beschaffbar.
+    Unavailable,
+}
+
 /// Weltregeln für Baujahr und Beschaffungsjahr.
 ///
 /// Die beiden Epochen sind absichtlich unabhängig: Eine Gegenwartswelt kann
@@ -127,6 +150,9 @@ impl VehicleEra {
 pub struct VehicleWorldSettings {
     construction_era: VehicleEra,
     procurement_era: VehicleEra,
+    legacy_vehicle_policy: LegacyVehiclePolicy,
+    legacy_reference_year: u16,
+    used_market_opens_at: SimTime,
 }
 
 impl VehicleWorldSettings {
@@ -135,6 +161,9 @@ impl VehicleWorldSettings {
         Self {
             construction_era,
             procurement_era,
+            legacy_vehicle_policy: LegacyVehiclePolicy::EpochOnly,
+            legacy_reference_year: 1,
+            used_market_opens_at: 0,
         }
     }
 
@@ -161,6 +190,93 @@ impl VehicleWorldSettings {
     /// Ob ein konkretes Beschaffungsjahr zulässig ist.
     pub const fn allows_procurement_year(self, year: u16) -> bool {
         self.procurement_era.contains(year)
+    }
+
+    /// Legt fest, wie Typen mit abgeschlossener Serienfertigung in dieser Welt
+    /// angeboten werden. Ein Typ ist alt, wenn sein faktisches Bauende vor dem
+    /// Stichtag liegt.
+    pub const fn with_legacy_vehicle_policy(
+        mut self,
+        policy: LegacyVehiclePolicy,
+        reference_year: u16,
+    ) -> Result<Self, CatalogError> {
+        if reference_year == 0 || reference_year > OPEN_ENDED_YEAR {
+            return Err(CatalogError::InvalidLegacyReferenceYear);
+        }
+        self.legacy_vehicle_policy = policy;
+        self.legacy_reference_year = reference_year;
+        Ok(self)
+    }
+
+    /// Legt die explizite Simulationszeit fest, ab der der Gebrauchtkaufmarkt
+    /// sichtbar ist. Vorher dürfen Weltstartfahrzeuge weiterhin als
+    /// Leasingangebote existieren, aber nicht zum Gebrauchtkauf gelistet sein.
+    pub const fn with_used_market_opening(
+        mut self,
+        opens_at: SimTime,
+    ) -> Result<Self, CatalogError> {
+        if opens_at < 0 {
+            return Err(CatalogError::InvalidUsedMarketOpeningTime);
+        }
+        self.used_market_opens_at = opens_at;
+        Ok(self)
+    }
+
+    /// Aktive Altfahrzeugregel.
+    pub const fn legacy_vehicle_policy(self) -> LegacyVehiclePolicy {
+        self.legacy_vehicle_policy
+    }
+
+    /// Stichtagsjahr für die Altfahrzeugregel.
+    pub const fn legacy_reference_year(self) -> u16 {
+        self.legacy_reference_year
+    }
+
+    /// Explizite Öffnungszeit des Gebrauchtkaufmarkts.
+    pub const fn used_market_opens_at(self) -> SimTime {
+        self.used_market_opens_at
+    }
+
+    /// Ob der Gebrauchtkaufmarkt zum angegebenen Simulationszeitpunkt offen
+    /// ist. Kein Aufruf liest eine Wanduhr.
+    pub fn is_used_market_open(self, at: SimTime) -> bool {
+        at >= self.used_market_opens_at
+    }
+
+    /// Ob ein Typ nach seiner faktischen Bauzeit als Altfahrzeug gilt.
+    pub const fn is_legacy_type(self, construction: YearRange) -> bool {
+        construction.to() < self.legacy_reference_year
+    }
+
+    fn allows_legacy_channel(self, construction: YearRange, channel: ProcurementChannel) -> bool {
+        if !self.is_legacy_type(construction) {
+            return true;
+        }
+        match self.legacy_vehicle_policy {
+            LegacyVehiclePolicy::UsedOnly => channel == ProcurementChannel::Used,
+            LegacyVehiclePolicy::ContinueNewBuild | LegacyVehiclePolicy::EpochOnly => true,
+            LegacyVehiclePolicy::Unavailable => false,
+        }
+    }
+
+    pub(crate) fn continues_new_build(
+        self,
+        construction: YearRange,
+        channel: ProcurementChannel,
+    ) -> bool {
+        self.is_legacy_type(construction)
+            && self.legacy_vehicle_policy == LegacyVehiclePolicy::ContinueNewBuild
+            && channel == ProcurementChannel::NewBuild
+    }
+
+    pub(crate) fn factory_option_year(self, construction: YearRange, build_year: u16) -> u16 {
+        if self.continues_new_build(construction, ProcurementChannel::NewBuild)
+            && build_year > construction.to()
+        {
+            construction.to()
+        } else {
+            build_year
+        }
     }
 }
 
@@ -435,9 +551,16 @@ impl ProtectionEquipment {
         if standard.is_empty() || standard_source_ids.is_empty() {
             return Err(CatalogError::MissingStandardProtectionEvidence);
         }
+        if standard.contains(&ProtectionSystem::Lzb) && !standard.contains(&ProtectionSystem::Pzb) {
+            return Err(CatalogError::LzbRequiresPzb);
+        }
         options.sort_by_key(|option| (option.system, option.fitment, option.years));
         let mut keys = BTreeSet::new();
         for option in &options {
+            if option.system == ProtectionSystem::Lzb && !standard.contains(&ProtectionSystem::Pzb)
+            {
+                return Err(CatalogError::LzbRequiresPzb);
+            }
             if standard.contains(&option.system) {
                 return Err(CatalogError::OptionDuplicatesStandard);
             }
@@ -613,13 +736,35 @@ impl VehicleCatalogEntry {
         channel: ProcurementChannel,
         procurement_year: u16,
     ) -> bool {
+        let continued_new_build = settings.continues_new_build(self.construction, channel);
+        let construction_is_eligible = self
+            .construction
+            .overlaps(settings.construction_era().years())
+            || (continued_new_build && settings.allows_construction_year(procurement_year));
+
         settings.allows_procurement_year(procurement_year)
-            && self
-                .construction
-                .overlaps(settings.construction_era().years())
+            && construction_is_eligible
+            && settings.allows_legacy_channel(self.construction, channel)
             && self
                 .market(channel)
-                .is_some_and(|market| market.is_available(procurement_year))
+                .is_some_and(|market| market.is_available(procurement_year) || continued_new_build)
+    }
+
+    /// Ob dieser Typ unter den Weltregeln und zum expliziten
+    /// Simulationszeitpunkt sichtbar ist.
+    ///
+    /// Die zeitliche Prüfung betrifft nur den Gebrauchtkaufmarkt. Ein
+    /// administrativer Weltstartbestand kann bereits gebrauchte Fahrzeuge als
+    /// Leasingangebot führen, ohne dass diese Kaufansicht geöffnet ist.
+    pub fn is_available_at(
+        &self,
+        settings: VehicleWorldSettings,
+        channel: ProcurementChannel,
+        procurement_year: u16,
+        at: SimTime,
+    ) -> bool {
+        self.is_available(settings, channel, procurement_year)
+            && (channel != ProcurementChannel::Used || settings.is_used_market_open(at))
     }
 }
 
@@ -680,6 +825,20 @@ impl VehicleCatalogRelease {
             .filter(move |vehicle| vehicle.is_available(settings, channel, procurement_year))
     }
 
+    /// Unter den Weltregeln zu einem expliziten Simulationszeitpunkt sichtbare
+    /// Fahrzeugtypen.
+    pub fn available_vehicles_at(
+        &self,
+        settings: VehicleWorldSettings,
+        channel: ProcurementChannel,
+        procurement_year: u16,
+        at: SimTime,
+    ) -> impl Iterator<Item = &VehicleCatalogEntry> {
+        self.vehicles
+            .values()
+            .filter(move |vehicle| vehicle.is_available_at(settings, channel, procurement_year, at))
+    }
+
     /// Kanonische Prüfsumme, die eine Welt und jeder Flottensnapshot pinnen.
     pub fn checksum(&self) -> StateHash {
         self.state_hash()
@@ -691,7 +850,7 @@ impl DeterministicModel for VehicleCatalogRelease {
 
     const SCHEMA: &'static str = "vehicle-catalog/v2";
 
-    fn apply(&mut self, _at: SimTime, command: &Infallible) {
+    fn apply(&mut self, _at: DeterministicSimTime, command: &Infallible) {
         match *command {}
     }
 
@@ -886,6 +1045,8 @@ fn validate_source_refs(
 )]
 pub enum CatalogError {
     InvalidYearRange,
+    InvalidLegacyReferenceYear,
+    InvalidUsedMarketOpeningTime,
     InvalidSourceId,
     EmptySourceTitle,
     InvalidSourceUrl,
@@ -893,6 +1054,7 @@ pub enum CatalogError {
     MissingEvidence,
     MissingEstimateRationale,
     MissingStandardProtectionEvidence,
+    LzbRequiresPzb,
     OptionDuplicatesStandard,
     DuplicateProtectionOption,
     InvalidVehicleTypeId,

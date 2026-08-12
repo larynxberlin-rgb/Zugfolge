@@ -107,6 +107,17 @@ einem der interessantesten Kapazitätsengpässe der Region.
 Ausgeschlossene Netze dürfen als blasse Kontextlinien gezeichnet werden, damit
 Städte richtig aussehen. Nicht auswählbar, keine Kapazität, kein Betrieb.
 
+**Durchgehende Linien am Gebietsrand (E25):** Eine reale Linie wird nicht am
+Kartenrand umbenannt oder mit einer erfundenen Wende verkürzt. Im
+Bildfahrplan plant der Spieler ausschließlich den Abschnitt im freigegebenen
+Netz. Benanntes Grenzportal, Sollzeit und zulässiges Zeitband sind als feste,
+serverseitig aus dem Release geladene Randbedingung sichtbar. Der Außenlauf
+bleibt derselbe Zug, hält Fahrzeug und gegebenenfalls Personal gebunden und
+erscheint in der Livemap als eigener Status ohne erfundene Kartenposition.
+Beim Wiedereintritt wartet er nötigenfalls außerhalb auf freie Kapazität.
+Nicht qualifizierte Übergänge sind sichtbar, aber nicht bestellbar. Details:
+[ADR-0025](adr/0025-gebietsueberschreitende-fahrtketten.md).
+
 ## 5. Zwei Spielertypen, ein System
 
 Detailverliebte und Kurzzeitspieler spielen dasselbe System, ohne dass einer

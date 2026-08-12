@@ -1,0 +1,39 @@
+groups:
+  - name: zugfolge-alpha-availability
+    rules:
+      - alert: ZugfolgeGameApiDown
+        expr: up{job="zugfolge-game-api"} == 0
+        for: 1m
+        labels: { severity: critical, runbook: game-api-down }
+        annotations: { summary: "Game API ist nicht erreichbar" }
+      - alert: ZugfolgeOdooDown
+        expr: up{job="zugfolge-odoo"} == 0
+        for: 5m
+        labels: { severity: warning, runbook: odoo-down }
+        annotations: { summary: "Odoo ist ausgefallen; der Spielbetrieb muss weiterlaufen" }
+      - alert: ZugfolgeSubsystemDown
+        expr: zugfolge_health_check_state{state="down"} == 1
+        for: 2m
+        labels: { severity: critical, runbook: subsystem-down }
+        annotations: { summary: "Subsystem {{ $labels.check }} meldet down" }
+      - alert: ZugfolgeSubsystemDegraded
+        expr: zugfolge_health_check_state{state="degraded"} == 1
+        for: 10m
+        labels: { severity: warning, runbook: subsystem-degraded }
+        annotations: { summary: "Subsystem {{ $labels.check }} bleibt degraded" }
+      - alert: ZugfolgeHealthSignalMissing
+        expr: absent(zugfolge_health_check_state{check=~"postgres|simulation-event-log|economy-outbox|economy-scheduler|livemap-freshness|disruption-provider|odoo-bridge"})
+        for: 5m
+        labels: { severity: warning, runbook: telemetry-gap }
+        annotations: { summary: "Mindestens ein verpflichtendes Alpha-Healthsignal fehlt" }
+      - alert: ZugfolgeApiErrorRate
+        expr: sum(rate(zugfolge_http_requests_total{status_class="5xx"}[5m])) / clamp_min(sum(rate(zugfolge_http_requests_total[5m])), 0.001) > 0.02
+        for: 5m
+        labels: { severity: critical, runbook: game-api-errors }
+        annotations: { summary: "Game API hat mehr als zwei Prozent 5xx" }
+      - alert: ZugfolgeApiLatency
+        expr: histogram_quantile(0.95, sum by (le) (rate(zugfolge_http_request_duration_milliseconds_bucket[5m]))) > 1000
+        for: 10m
+        labels: { severity: warning, runbook: game-api-latency }
+        annotations: { summary: "Game API p95 liegt ueber einer Sekunde" }
+

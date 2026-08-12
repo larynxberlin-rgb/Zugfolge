@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zugfolge Odoo Vier-Augen-Antrag — Renderprüfung</title>
+  <style>
+    :root { color-scheme:dark; font-family:"IBM Plex Sans",system-ui,sans-serif; background:#111; color:#e8e8e8; }
+    * { box-sizing:border-box; } body { margin:0; min-width:1100px; background:#111; }
+    header { height:54px; background:#171717; border-bottom:1px solid #383838; padding:17px 24px; letter-spacing:.08em; font-weight:650; }
+    main { max-width:1180px; margin:24px auto; padding:0 24px; }
+    .crumb { color:#8e8e8e; font-size:12px; } h1 { font-size:25px; font-weight:550; margin:8px 0 18px; }
+    .sheet { border:1px solid #3a3a3a; background:#181818; border-radius:4px; }
+    .toolbar { display:flex; gap:9px; padding:13px 16px; border-bottom:1px solid #343434; }
+    button { background:#202020; color:#e8e8e8; border:1px solid #626262; border-radius:3px; padding:8px 13px; font-weight:600; }
+    button.primary { background:#e7e7e7; color:#151515; border-color:#e7e7e7; } button:disabled { color:#777; border-color:#3f3f3f; }
+    .state { margin-left:auto; padding:7px 10px; border:1px solid #626262; font-size:12px; }
+    .body { display:grid; grid-template-columns:1fr 1fr; gap:22px; padding:20px; }
+    fieldset { border:0; padding:0; margin:0; } legend { font-size:14px; font-weight:650; margin-bottom:14px; }
+    label { display:block; color:#999; font-size:11px; text-transform:uppercase; letter-spacing:.06em; margin:12px 0 6px; }
+    input, textarea, .field { width:100%; color:#e8e8e8; background:#111; border:1px solid #484848; padding:9px 10px; border-radius:2px; font:13px "IBM Plex Mono",ui-monospace,monospace; }
+    textarea { height:86px; font-family:"IBM Plex Sans",system-ui,sans-serif; line-height:1.4; }
+    .risk { display:flex; gap:9px; align-items:center; border:1px solid #5c5c5c; padding:10px; margin-top:11px; font-size:13px; }
+    .risk::before { content:"△"; font-size:19px; }
+    .preview { background:#121212; border:1px solid #3a3a3a; padding:14px; min-height:250px; }
+    .preview h2 { font-size:13px; margin:0 0 12px; }.preview dl { display:grid; grid-template-columns:170px 1fr; gap:10px; font-size:12px; }
+    dt { color:#929292; } dd { margin:0; font-family:"IBM Plex Mono",ui-monospace,monospace; font-variant-numeric:tabular-nums; }
+    .audit { grid-column:1/-1; border-top:1px solid #343434; padding-top:16px; display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+    .audit div { font-size:12px; } .audit b { display:block; color:#909090; font-size:10px; text-transform:uppercase; margin-bottom:5px; }
+  </style>
+</head>
+<body><header>ZUGFOLGE / ODOO — ADMINISTRATION</header><main>
+  <div class="crumb">Welten / Alpha Mitteldeutschland B / Adminanträge / AR-2026-0048</div><h1>InfraRelease zum Periodenwechsel übernehmen</h1>
+  <div class="sheet"><div class="toolbar"><button disabled>Entwurf speichern</button><button class="primary">Freigeben (zweite Person)</button><button>Ablehnen</button><div class="state">HOHES RISIKO · 4-AUGEN OFFEN</div></div>
+    <div class="body"><fieldset><legend>Antrag und Begründung</legend>
+      <label>Aktionstyp</label><div class="field">infra_release_adoption</div>
+      <label>Antragsteller</label><div class="field">dispatcher.one</div>
+      <label>Freigeber</label><div class="field">dispatcher.two · muss verschieden sein</div>
+      <label>Begründung</label><textarea readonly>Jährlicher E22-Release für die freigegebene Alpha-Region B. Aktivierung ausschließlich am nächsten Periodenwechsel nach erneuter Game-Prüfung.</textarea>
+      <div class="risk">Keine direkte Tabellenänderung. Odoo genehmigt und beantragt; nur das Game aktiviert.</div>
+    </fieldset>
+    <fieldset><legend>Wirkungsvorschau und Game-Vorabprüfung</legend><div class="preview"><h2>Release-Differenz</h2><dl>
+      <dt>Release-Hash</dt><dd>11171189e19a…f92c1e1</dd><dt>Gültig ab</dt><dd>Periodenwechsel 3 · 2026-09-09T00:00:00Z</dd>
+      <dt>Abschnitte A / B / C</dt><dd>0 / 9 094 / 9 210</dd><dt>Klasse C bestellbar</dt><dd>NEIN</dd>
+      <dt>Laufende Trassen verletzt</dt><dd>0</dd><dt>Umläufe / Verträge verletzt</dt><dd>0 / 0</dd>
+      <dt>Invariante 1</dt><dd>BESTÄTIGT · ffffffff…ffff</dd><dt>Rollback</dt><dd>Vorgänger bleibt bis Commit gepinnt</dd>
+    </dl></div></fieldset>
+    <div class="audit"><div><b>Antrags-ID</b>AR-2026-0048</div><div><b>Korrelations-ID</b>odoo-infra-b-0048</div><div><b>Game-Audit</b>nach Ausführung unveränderlich</div><div><b>Zustand</b>awaiting-second-approval</div></div>
+    </div></div>
+</main></body></html>

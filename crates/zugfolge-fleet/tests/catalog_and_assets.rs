@@ -2,10 +2,10 @@
 
 use zugfolge_determinism::{assert_golden, golden_path};
 use zugfolge_fleet::{
-    AssetError, CatalogError, CatalogSource, CatalogSourceId, FleetSnapshot, MaintenanceDeadline,
-    MarketAvailability, MarketEvidence, ProcurementChannel, ProtectionEquipment, ProtectionFitment,
-    ProtectionOption, VehicleApproval, VehicleAsset, VehicleCatalogEntry, VehicleCatalogRelease,
-    VehicleEra, VehicleWorldSettings, YearRange,
+    AssetError, CatalogError, CatalogSource, CatalogSourceId, FleetSnapshot, LegacyVehiclePolicy,
+    MaintenanceDeadline, MarketAvailability, MarketEvidence, ProcurementChannel,
+    ProtectionEquipment, ProtectionFitment, ProtectionOption, VehicleApproval, VehicleAsset,
+    VehicleCatalogEntry, VehicleCatalogRelease, VehicleEra, VehicleWorldSettings, YearRange,
 };
 use zugfolge_infra::{FleetClass, ProtectionSystem, TrainProtection};
 
@@ -125,6 +125,33 @@ fn new_entry() -> VehicleCatalogEntry {
     .unwrap()
 }
 
+#[test]
+fn lzb_ohne_pzb_ist_weder_katalogoption_noch_assetzustand() {
+    let evidence = source_id("fachblatt-lzb");
+    assert_eq!(
+        ProtectionEquipment::new([ProtectionSystem::Lzb], [evidence], Vec::new()),
+        Err(CatalogError::LzbRequiresPzb)
+    );
+
+    let catalog = catalog(false);
+    assert_eq!(
+        VehicleAsset::acquire_secondary(
+            &catalog,
+            VehicleWorldSettings::all_eras(),
+            7,
+            99,
+            TYPE_OLD,
+            2001,
+            2026,
+            ProcurementChannel::Used,
+            TrainProtection::single(ProtectionSystem::Lzb),
+            approvals(),
+            deadlines(),
+        ),
+        Err(AssetError::LzbRequiresPzb)
+    );
+}
+
 fn catalog(reverse: bool) -> VehicleCatalogRelease {
     let old_source = source("fachblatt-z100", "Z100");
     let new_source = source("fachblatt-z200", "Z200");
@@ -208,6 +235,117 @@ fn bau_und_beschaffungsepoche_sind_unabhaengig() {
             deadlines(),
         ),
         Err(AssetError::ConstructionEraExcluded)
+    );
+}
+
+#[test]
+fn altfahrzeugpolitik_filtert_kanal_ohne_die_faktische_bauzeit_zu_aendern() {
+    let catalog = catalog(false);
+    let used_only = VehicleWorldSettings::all_eras()
+        .with_legacy_vehicle_policy(LegacyVehiclePolicy::UsedOnly, 2010)
+        .unwrap();
+    assert!(catalog.vehicle(TYPE_OLD).unwrap().is_available(
+        used_only,
+        ProcurementChannel::Used,
+        2026
+    ));
+    assert!(!catalog.vehicle(TYPE_OLD).unwrap().is_available(
+        used_only,
+        ProcurementChannel::Leasing,
+        2026
+    ));
+    assert!(!catalog.vehicle(TYPE_OLD).unwrap().is_available(
+        used_only,
+        ProcurementChannel::NewBuild,
+        2026
+    ));
+
+    let unavailable = VehicleWorldSettings::all_eras()
+        .with_legacy_vehicle_policy(LegacyVehiclePolicy::Unavailable, 2010)
+        .unwrap();
+    assert!(!catalog.vehicle(TYPE_OLD).unwrap().is_available(
+        unavailable,
+        ProcurementChannel::Used,
+        2026
+    ));
+
+    let epoch_only = VehicleWorldSettings::all_eras()
+        .with_legacy_vehicle_policy(LegacyVehiclePolicy::EpochOnly, 2010)
+        .unwrap();
+    assert!(catalog.vehicle(TYPE_OLD).unwrap().is_available(
+        epoch_only,
+        ProcurementChannel::Leasing,
+        2026
+    ));
+}
+
+#[test]
+fn fortgesetzter_neubau_bleibt_konterfaktisch_und_nutzt_den_letzten_belegten_optionstand() {
+    let catalog = catalog(false);
+    let settings = VehicleWorldSettings::new(
+        VehicleEra::ContemporaryFrom2011,
+        VehicleEra::ContemporaryFrom2011,
+    )
+    .with_legacy_vehicle_policy(LegacyVehiclePolicy::ContinueNewBuild, 2010)
+    .unwrap();
+    let entry = catalog.vehicle(TYPE_OLD).unwrap();
+    assert!(entry.is_available(settings, ProcurementChannel::NewBuild, 2026));
+    assert_eq!(entry.construction(), YearRange::new(1998, 2004).unwrap());
+
+    let vehicle = VehicleAsset::buy_new(
+        &catalog,
+        settings,
+        7,
+        77,
+        TYPE_OLD,
+        2026,
+        [ProtectionSystem::Lzb],
+        approvals(),
+        deadlines(),
+    )
+    .unwrap();
+    assert_eq!(vehicle.build_year(), 2026);
+    assert!(
+        vehicle
+            .installed_protection()
+            .contains(ProtectionSystem::Lzb)
+    );
+}
+
+#[test]
+fn gebrauchte_sichtbarkeit_ist_bis_zur_expliziten_marktoeffnung_gesperrt() {
+    let catalog = catalog(false);
+    let settings = VehicleWorldSettings::all_eras()
+        .with_used_market_opening(600)
+        .unwrap();
+    let entry = catalog.vehicle(TYPE_OLD).unwrap();
+    assert!(!entry.is_available_at(settings, ProcurementChannel::Used, 2026, 599));
+    assert!(entry.is_available_at(settings, ProcurementChannel::Used, 2026, 600));
+    assert_eq!(
+        catalog
+            .available_vehicles_at(settings, ProcurementChannel::Used, 2026, 599)
+            .count(),
+        0
+    );
+    assert_eq!(
+        catalog
+            .available_vehicles_at(settings, ProcurementChannel::Used, 2026, 600)
+            .map(VehicleCatalogEntry::id)
+            .collect::<Vec<_>>(),
+        vec![TYPE_OLD, TYPE_NEW]
+    );
+}
+
+#[test]
+fn ungueltige_weltmarktzeit_und_stichtag_werden_abgewiesen() {
+    assert_eq!(
+        VehicleWorldSettings::all_eras()
+            .with_legacy_vehicle_policy(LegacyVehiclePolicy::UsedOnly, 0,),
+        Err(CatalogError::InvalidLegacyReferenceYear)
+    );
+    assert_eq!(
+        VehicleWorldSettings::all_eras().with_used_market_opening(-1),
+        Err(CatalogError::InvalidUsedMarketOpeningTime)
     );
 }
 

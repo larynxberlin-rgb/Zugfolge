@@ -151,6 +151,7 @@ pub struct PlannerOutcome {
     decision: PathDecision,
     candidates: Vec<PathCandidate>,
     desired_conflicts: ConflictReport,
+    desired_boundary_violation: Option<String>,
 }
 
 impl PlannerOutcome {
@@ -184,6 +185,11 @@ impl PlannerOutcome {
         &self.desired_conflicts
     }
 
+    /// Warum die Wunschlage den festgelegten Aussenanschluss verfehlt.
+    pub fn desired_boundary_violation(&self) -> Option<&str> {
+        self.desired_boundary_violation.as_deref()
+    }
+
     /// Die Begründung als deutscher Text.
     pub fn explain(&self) -> String {
         let kopf = format!("{}: {}", self.request, self.decision.label());
@@ -195,15 +201,25 @@ impl PlannerOutcome {
                 let angebot = self
                     .offer()
                     .map_or_else(String::new, PathCandidate::explain);
+                if let Some(violation) = &self.desired_boundary_violation {
+                    return format!(
+                        "{kopf}. Die Wunschlage verfehlt das verbindliche Grenzfenster: {violation}.\nAngeboten wird: {angebot}"
+                    );
+                }
                 format!(
                     "{kopf}. Die Wunschlage ist belegt:\n{}\nAngeboten wird: {angebot}",
                     self.desired_conflicts.explain()
                 )
             }
-            PathDecision::Rejected => format!(
-                "{kopf}. Innerhalb der zulässigen Abweichungen ist keine Trasse frei. \
-                 Die Wunschlage scheitert an:\n{}",
-                self.desired_conflicts.explain()
+            PathDecision::Rejected => self.desired_boundary_violation.as_ref().map_or_else(
+                || format!(
+                    "{kopf}. Innerhalb der zulässigen Abweichungen ist keine Trasse frei. \
+                     Die Wunschlage scheitert an:\n{}",
+                    self.desired_conflicts.explain()
+                ),
+                |violation| format!(
+                    "{kopf}. Keine zulässige Zeitlage erreicht den gebundenen Aussenlauf. {violation}"
+                ),
             ),
         }
     }
@@ -273,13 +289,21 @@ impl<'a> TrainPathPlanner<'a> {
                 origin: request.origin(),
                 destination: request.destination(),
             })?;
-        let wunsch_bericht = self
-            .erste_kollision(
+        let desired_arrival = request
+            .desired_departure()
+            .plus_seconds(wunsch_profil.running_time_s());
+        let desired_boundary_violation =
+            request.boundary_violation(request.desired_departure(), desired_arrival);
+        let wunsch_bericht = if desired_boundary_violation.is_some() {
+            ConflictReport::default()
+        } else {
+            self.erste_kollision(
                 ledger,
                 &self.angebot(request, wunsch_laufweg, wunsch_profil, 0)?,
                 request.desired_departure(),
             )
-            .map_or_else(ConflictReport::default, |kollision| kollision.report);
+            .map_or_else(ConflictReport::default, |kollision| kollision.report)
+        };
 
         let mut kandidaten = self.kandidaten(ledger, request, &basis, schnellste, kuerzeste)?;
         rank(&mut kandidaten);
@@ -296,6 +320,7 @@ impl<'a> TrainPathPlanner<'a> {
             decision,
             candidates: kandidaten,
             desired_conflicts: wunsch_bericht,
+            desired_boundary_violation,
         })
     }
 
@@ -362,6 +387,12 @@ impl<'a> TrainPathPlanner<'a> {
                 // Ohne Betriebshalt.
                 let angebot = self.angebot(request, laufweg, profil, shift)?;
                 let abfahrt = request.desired_departure().plus_seconds(shift);
+                if request
+                    .boundary_violation(abfahrt, abfahrt.plus_seconds(profil.running_time_s()))
+                    .is_some()
+                {
+                    continue;
+                }
                 if self.erste_kollision(ledger, &angebot, abfahrt).is_none() {
                     let erste_abfahrt = self.erste_abfahrt(&angebot, abfahrt);
                     kandidaten.push(PathCandidate::new(
@@ -397,6 +428,15 @@ impl<'a> TrainPathPlanner<'a> {
                         continue;
                     }
                     let angebot = self.angebot(request, &halt_laufweg, &halt_profil, shift)?;
+                    if request
+                        .boundary_violation(
+                            abfahrt,
+                            abfahrt.plus_seconds(halt_profil.running_time_s()),
+                        )
+                        .is_some()
+                    {
+                        continue;
+                    }
                     kandidaten.push(PathCandidate::new(
                         angebot.clone(),
                         CandidateDeviation::new(shift, mehrfahrzeit, vec![punkt], umweg),

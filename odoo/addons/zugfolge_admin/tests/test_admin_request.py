@@ -30,6 +30,39 @@ class TestZugfolgeAdminRequest(TransactionCase):
                 "world_projection_id": self.projection.id, "action_type": "world_access_revoke", "reason": " ", "effect_preview": {},
             })
 
+    def test_world_access_revoke_requires_stable_target(self):
+        with self.assertRaises(ValidationError):
+            self.env["zugfolge.admin.request"].create({
+                "world_projection_id": self.projection.id, "action_type": "world_access_revoke",
+                "reason": "Bestaetigter Supportfall", "effect_preview": {},
+            })
+
+    def test_monitoring_projection_extracts_live_queue_market_and_release_fields(self):
+        projected = self.env["zugfolge.world.projection"].with_context(zugfolge_game_projection=True).upsert_game_projection({
+            "messageId": "projection-2", "worldId": self.projection.world_id,
+            "occurredAt": "2026-01-01 00:01:00",
+            "payload": {
+                "worldName": "Testwelt", "projectionRevision": "2", "freshness": "delayed",
+                "runtimeStatus": "healthy: aktuell", "workerStatus": "healthy: bereit",
+                "infraReleaseHash": "a" * 64, "economyReleaseHash": "b" * 64,
+                "telemetry": {
+                    "world": {"releases": {"timetable": "c" * 64, "fleet": "d" * 64}},
+                    "live": {"runningTrains": 42, "delayedTrains": 3, "cancelledTrains": 1, "disruptions": 2, "replacementConcepts": 1, "eventRatePerMinute": 19},
+                    "operationShares": {"publicLots": 7, "playerLots": 4},
+                    "workers": {"planningQueueDepth": 2, "economyOutboxDepth": 3, "odooCommandQueue": {"pending": 1}},
+                    "bridges": {"odooProjection": {"pending": 1}, "provider": [{"status": "healthy"}], "reconciliation": {"open": 0}},
+                    "economy": {"conflicts": 1, "capacityBottlenecks": 2, "penaltiesAndDeductions": 3, "anomalies": 4},
+                    "market": {"listings": {"open": 5}, "contracts": {"traction:active": 1}},
+                    "freshness": {"eventAgeSeconds": 4, "projectionAgeSeconds": 7},
+                    "drillDown": {"latestAuthoritativeEvents": [{"sequence": 8}]},
+                },
+            },
+        })
+        self.assertEqual(projected.running_trains, 42)
+        self.assertEqual(projected.market_activity["listings"]["open"], 5)
+        self.assertEqual(projected.timetable_release_hash, "c" * 64)
+        self.assertEqual(projected.event_age_seconds, 4)
+
     def test_manual_disruption_is_prepared_but_cannot_dispatch_before_m8_capability(self):
         request = self.env["zugfolge.admin.request"].create({
             "world_projection_id": self.projection.id, "action_type": "manual_disruption_create", "risk_class": "high",
