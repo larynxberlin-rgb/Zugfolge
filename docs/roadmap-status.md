@@ -22,15 +22,9 @@ Kalendertermine gesetzt.
 | M9 | in Arbeit | in Arbeit | blockiert | blockiert | 8 / 2 | M0, M4, M6, M7, M8 |
 | M10 | offen | offen | offen | offen | 0 / 0 | M9 |
 | M11 | offen | offen | offen | offen | 0 / 0 | M9 |
-<<<<<<< HEAD
 | M12 | in Arbeit | in Arbeit | offen | blockiert | 0 / 0 | M6, M10, M11 |
-| M13 | offen | offen | offen | offen | 0 / 0 | M9, M12 |
-| M14 | in Arbeit | in Arbeit | blockiert | blockiert | 0 / 0 | M9 |
-=======
-| M12 | offen | offen | offen | offen | 0 / 0 | M6, M10, M11 |
 | M13 | in Arbeit | in Arbeit | offen | offen | 0 / 0 | M9, M12 |
-| M14 | offen | offen | offen | offen | 0 / 0 | M9 |
->>>>>>> origin/main
+| M14 | in Arbeit | in Arbeit | blockiert | blockiert | 0 / 0 | M9 |
 
 Ein GitHub-Milestone wird nur geschlossen, wenn alle drei maschinell pruefbaren
 Bedingungen gelten: Jeder Roadmap-Teilpunkt steht auf `erledigt`, jedes zugeordnete
