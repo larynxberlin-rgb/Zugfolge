@@ -72,6 +72,18 @@ export function validateAdminCommand(command: AdminCommandPayload): void {
       throw new AdminWorkflowError("Verwaltungsaktion braucht eine gueltige Simulationszeit.");
     }
   }
+  if (command.actionType.startsWith("alpha_invitation_")) {
+    const invitation = command.invitation;
+    if (invitation === undefined || invitation.requestReference.trim() === "" || !/^\S+@\S+\.\S+$/.test(invitation.email)) {
+      throw new AdminWorkflowError("Alpha-Einladung braucht Referenz und gueltige E-Mail-Adresse.");
+    }
+    if (!(["player", "world_admin"] as const).includes(invitation.role)) {
+      throw new AdminWorkflowError("Alpha-Einladung enthaelt eine unbekannte Kontorolle.");
+    }
+    if (command.actionType !== "alpha_invitation_create" && !invitation.keycloakSubject) {
+      throw new AdminWorkflowError("Erneutes Senden und Entzug brauchen das gebundene Keycloak-Subject.");
+    }
+  }
 }
 
 export function nextAdminRequestState(current: AdminRequestState, event: "submit" | "approve" | "reject" | "dispatch" | "accept" | "complete" | "fail"): AdminRequestState {

@@ -1,0 +1,13 @@
+{
+  "realm": "zugfolge", "enabled": true, "registrationAllowed": false, "verifyEmail": true,
+  "requiredActions": [{"alias":"VERIFY_EMAIL","name":"Verify Email","providerId":"VERIFY_EMAIL","enabled":true,"defaultAction":true},{"alias":"UPDATE_PASSWORD","name":"Update Password","providerId":"UPDATE_PASSWORD","enabled":true,"defaultAction":true}],
+  "roles": {"realm":[{"name":"player"},{"name":"world_admin"}]},
+  "groups": [{"name":"players","realmRoles":["player"]},{"name":"world-administrators","realmRoles":["world_admin"]}],
+  "clients": [
+    {"clientId":"game-api","enabled":true,"publicClient":false,"serviceAccountsEnabled":false,"protocol":"openid-connect"},
+    {"clientId":"game-web","enabled":true,"publicClient":true,"standardFlowEnabled":true,"redirectUris":["${GAME_WEB_URL}/*"],"webOrigins":["${GAME_WEB_URL}"],"protocolMappers":[{"name":"game-api-audience","protocol":"openid-connect","protocolMapper":"oidc-audience-mapper","config":{"included.client.audience":"game-api","access.token.claim":"true"}}]},
+    {"clientId":"operations-center","enabled":true,"publicClient":true,"standardFlowEnabled":true,"redirectUris":["${OPERATIONS_CENTER_URL}/*"],"webOrigins":["${OPERATIONS_CENTER_URL}"],"protocolMappers":[{"name":"game-api-audience","protocol":"openid-connect","protocolMapper":"oidc-audience-mapper","config":{"included.client.audience":"game-api","access.token.claim":"true"}}]},
+    {"clientId":"provisioner","enabled":true,"publicClient":false,"secret":"${KEYCLOAK_ADMIN_CLIENT_SECRET}","serviceAccountsEnabled":true,"standardFlowEnabled":false}
+  ],
+  "users": [{"username":"service-account-provisioner","enabled":true,"serviceAccountClientId":"provisioner","clientRoles":{"realm-management":["manage-users","view-users","query-users"]}}]
+}

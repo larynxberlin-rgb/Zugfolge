@@ -55,6 +55,12 @@ class ZugfolgeProjectionController(http.Controller):
                     "eventId": result.get("eventId"),
                     "failureCode": result.get("failureCode"),
                 })
+            invitation = request.env["zugfolge.alpha.invitation"].search([("correlation_id", "=", payload.get("correlationId"))], limit=1)
+            if invitation:
+                values = {"state": "provisioned" if result.get("outcome") == "accepted" else "failed"}
+                if result.get("keycloakSubject"):
+                    values.update({"keycloak_subject": result.get("keycloakSubject"), "game_account_reference": result.get("gameAccountReference")})
+                invitation.with_context(zugfolge_game_projection=True).write(values)
         return {"accepted": True, "messageId": payload.get("messageId")}
 
     @http.route("/zugfolge/reconciliation/snapshot", type="json", auth="none", methods=["POST"], csrf=False)

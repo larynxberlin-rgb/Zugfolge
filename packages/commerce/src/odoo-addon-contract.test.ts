@@ -40,3 +40,27 @@ describe("Odoo-Administrationsmodul", () => {
     expect(receipt).toContain("unveränderlich");
   });
 });
+
+describe("Alpha-Einladungen", () => {
+  it("stellt den Odoo-Kontrollpfad und die Bedienoberfläche bereit", async () => {
+    const model = await readFile(resolve(addon, "models/alpha_invitation.py"), "utf8");
+    const views = await readFile(resolve(addon, "views/zugfolge_admin_views.xml"), "utf8");
+    expect(model).toContain("class AlphaInvitation");
+    expect(model).toContain("action_resend");
+    expect(model).toContain("action_revoke");
+    expect(model).toContain("dispatch_signed_game_command");
+    expect(views).toContain("Alpha-Einladungen");
+  });
+  it("versioniert Compose, Keycloak-Realm und secret-freie Beispielkonfiguration", async () => {
+    const compose = await readFile(resolve(addon, "../../../compose.alpha.yml"), "utf8");
+    const realm = await readFile(resolve(addon, "../../../ops/alpha/keycloak/zugfolge-realm.json"), "utf8");
+    const env = await readFile(resolve(addon, "../../../.env.example"), "utf8");
+    const odooImage = await readFile(resolve(addon, "../../../ops/alpha/odoo/Dockerfile"), "utf8");
+    expect(odooImage).toContain("odoo:19.0-20260723");
+    expect(compose).toContain("postgres:16.14-trixie");
+    expect(realm).toContain('"clientId":"game-web"');
+    expect(realm).toContain('"included.client.audience":"game-api"');
+    expect(realm).toContain("VERIFY_EMAIL");
+    expect(env).not.toMatch(/=(password|secret)$/im);
+  });
+});

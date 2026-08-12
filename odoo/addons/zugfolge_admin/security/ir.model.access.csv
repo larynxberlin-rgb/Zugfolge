@@ -7,3 +7,4 @@ access_zugfolge_admin_request_admin,zugfolge.admin.request admin,model_zugfolge_
 access_zugfolge_admin_request_approver,zugfolge.admin.request approver,model_zugfolge_admin_request,zugfolge_admin.group_zugfolge_approver,1,1,0,0
 access_zugfolge_feedback_admin,zugfolge.feedback admin,model_zugfolge_feedback,zugfolge_admin.group_zugfolge_admin,1,1,1,0
 access_zugfolge_feedback_telemetry,zugfolge.feedback telemetry,model_zugfolge_feedback,zugfolge_admin.group_zugfolge_telemetry,1,1,1,0
+access_zugfolge_alpha_invitation_admin,zugfolge.alpha.invitation admin,model_zugfolge_alpha_invitation,zugfolge_admin.group_zugfolge_admin,1,1,1,0

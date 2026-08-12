@@ -39,9 +39,11 @@ import {
 import {
   AuthorizationError,
   createKeycloakHealthCheck,
+  createKeycloakAdminClient,
   createKeycloakVerifier,
   getAccount,
   loadKeycloakConfigFromEnv,
+  loadKeycloakAdminConfigFromEnv,
 } from "@zugfolge/identity";
 import {
   createLivemapHealthCheck,
@@ -99,6 +101,7 @@ import {
   startSignedAlphaWorld,
 } from "./alpha-world-start.js";
 import type { RegionalServiceCatalog } from "./boundary-transition-scheduler.js";
+import { createAlphaInvitationAdminHandlers } from "./alpha-invitation-admin.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -177,6 +180,12 @@ const odooReconciliationClient = odooReconciliationUrl === undefined || odooProj
   : createHttpOdooReconciliationClient(odooReconciliationUrl, odooProjectionKey);
 const keycloak = loadKeycloakConfigFromEnv();
 const verifyToken = createKeycloakVerifier(keycloak);
+const keycloakAdmin = createKeycloakAdminClient(loadKeycloakAdminConfigFromEnv());
+const alphaInvitationAdminHandlers = createAlphaInvitationAdminHandlers({
+  db,
+  keycloak: keycloakAdmin,
+  redirectUri: requireEnv("KEYCLOAK_INVITATION_REDIRECT_URI"),
+});
 const livemap = new LivemapRegistry();
 const operations = new OperationsRegistry();
 const economyMonitor = new EconomySchedulerMonitor(Date.now());
@@ -527,6 +536,7 @@ const runCommerce = () => {
         abuse_sanction_activate: abuseSanctionActivateAdminHandler,
         world_close: worldCloseAdminHandler,
         infra_release_adoption: infraReleaseAdoptionAdminHandler,
+        ...alphaInvitationAdminHandlers,
       },
     }) !== undefined) {
       // Alle bereits vorliegenden Befehle abarbeiten, ohne auf Odoo zu warten.

@@ -1,0 +1,88 @@
+name: zugfolge-alpha
+x-health: &health
+  interval: 10s
+  timeout: 5s
+  retries: 20
+  start_period: 30s
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment: { POSTGRES_USER: "${POSTGRES_USER}", POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}", POSTGRES_DB: "${POSTGRES_DB}" }
+    volumes: [game-db:/var/lib/postgresql/data]
+    healthcheck: { <<: *health, test: [CMD-SHELL, "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"] }
+  odoo-postgres:
+    image: postgres:16.14-trixie
+    environment: { POSTGRES_USER: odoo, POSTGRES_PASSWORD: "${ODOO_DB_PASSWORD}", POSTGRES_DB: postgres }
+    volumes: [odoo-db:/var/lib/postgresql/data]
+    healthcheck: { <<: *health, test: [CMD-SHELL, "pg_isready -U odoo -d postgres"] }
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3.2
+    command: [start, --import-realm, --health-enabled=true]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: "${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME}"
+      KC_BOOTSTRAP_ADMIN_PASSWORD: "${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD}"
+      KC_DB: postgres
+      KC_DB_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB}"
+      KC_DB_USERNAME: "${POSTGRES_USER}"
+      KC_DB_PASSWORD: "${POSTGRES_PASSWORD}"
+      GAME_WEB_URL: "${GAME_WEB_URL}"
+      OPERATIONS_CENTER_URL: "${OPERATIONS_CENTER_URL}"
+      KEYCLOAK_ADMIN_CLIENT_SECRET: "${KEYCLOAK_ADMIN_CLIENT_SECRET}"
+    volumes: [./ops/alpha/keycloak/zugfolge-realm.json:/opt/keycloak/data/import/zugfolge-realm.json:ro]
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health, test: [CMD-SHELL, "exec 3<>/dev/tcp/127.0.0.1/9000; echo -e 'GET /health/ready HTTP/1.1\r\nhost: localhost\r\nConnection: close\r\n\r\n' >&3; grep -q UP <&3"] }
+    ports: ["${KEYCLOAK_PORT:-8080}:8080"]
+  game-api:
+    image: zugfolge-game-api
+    build: { context: ., dockerfile: ops/alpha/container/Dockerfile }
+    env_file: [.env]
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      KEYCLOAK_ISSUER: "${KEYCLOAK_PUBLIC_URL}/realms/zugfolge"
+      KEYCLOAK_JWKS_URI: "http://keycloak:8080/realms/zugfolge/protocol/openid-connect/certs"
+      KEYCLOAK_ADMIN_URL: http://keycloak:8080
+      ZUGFOLGE_RUNTIME_NATIVE_PATH: /app/native/zugfolge-runtime.node
+      ZUGFOLGE_PLANNING_RUNTIME_NATIVE_PATH: /app/native/zugfolge-planning-runtime.node
+    volumes: [./var/alpha-evidence:/evidence:ro]
+    depends_on: { postgres: { condition: service_healthy }, keycloak: { condition: service_healthy } }
+    healthcheck: { <<: *health, test: [CMD, node, -e, "fetch('http://localhost:3000/health/ready').then(r=>{if(!r.ok)process.exit(1)})"] }
+    ports: ["${GAME_API_PORT:-3000}:3000"]
+  game-web:
+    image: zugfolge-game-api
+    command: [node, tools/alpha-ops/static-server.mjs, apps/game-web/dist, "4173"]
+    healthcheck: { <<: *health, test: [CMD, node, -e, "fetch('http://localhost:4173/').then(r=>{if(!r.ok)process.exit(1)})"] }
+    ports: ["${GAME_WEB_PORT:-4173}:4173"]
+  livemap:
+    image: zugfolge-game-api
+    command: [node, tools/alpha-ops/static-server.mjs, apps/livemap/dist, "4174"]
+    healthcheck: { <<: *health, test: [CMD, node, -e, "fetch('http://localhost:4174/').then(r=>{if(!r.ok)process.exit(1)})"] }
+    ports: ["${LIVEMAP_PORT:-4174}:4174"]
+  operations-center:
+    image: zugfolge-game-api
+    command: [node, tools/alpha-ops/static-server.mjs, apps/operations-center/dist, "4175"]
+    healthcheck: { <<: *health, test: [CMD, node, -e, "fetch('http://localhost:4175/').then(r=>{if(!r.ok)process.exit(1)})"] }
+    ports: ["${OPERATIONS_CENTER_PORT:-4175}:4175"]
+  static:
+    image: zugfolge-game-api
+    command: [node, tools/alpha-ops/static-server.mjs, /evidence/static, "4179"]
+    volumes: [./var/alpha-evidence:/evidence:ro]
+    ports: ["${STATIC_PORT:-4179}:4179"]
+  odoo:
+    build: { context: ., dockerfile: ops/alpha/odoo/Dockerfile }
+    command: [odoo, --database=zugfolge_odoo, --db_host=odoo-postgres, --db_user=odoo, --db_password=${ODOO_DB_PASSWORD}, --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons, --init=queue_job,zugfolge_admin]
+    volumes: [odoo-filestore:/var/lib/odoo]
+    depends_on: { odoo-postgres: { condition: service_healthy }, game-api: { condition: service_healthy } }
+    healthcheck: { <<: *health, test: [CMD-SHELL, "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8069/web/health')\""] }
+    ports: ["${ODOO_PORT:-8069}:8069"]
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command: [--config.file=/etc/prometheus/prometheus.yml]
+    volumes: [./ops/alpha/prometheus.yml:/etc/prometheus/prometheus.yml:ro, ./ops/alpha/alerts.yml:/etc/prometheus/alerts.yml:ro]
+    ports: ["${PROMETHEUS_PORT:-9090}:9090"]
+  grafana:
+    image: grafana/grafana:12.1.0
+    environment: { GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD}" }
+    volumes: [./ops/alpha/grafana/provisioning:/etc/grafana/provisioning:ro, ./ops/alpha/grafana/zugfolge-alpha.json:/var/lib/grafana/dashboards/zugfolge-alpha.json:ro, grafana-data:/var/lib/grafana]
+    depends_on: [prometheus]
+    ports: ["${GRAFANA_PORT:-3001}:3000"]
+volumes: { game-db: {}, odoo-db: {}, odoo-filestore: {}, grafana-data: {} }

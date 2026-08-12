@@ -112,3 +112,23 @@ describe("createKeycloakHealthCheck", () => {
     await expect(health.check()).resolves.toMatchObject({ status: "down", code: "jwks_empty" });
   });
 });
+
+describe("Keycloak-Admin-API", () => {
+  it("legt eine Identität an und löst Required Actions aus und löst Required Actions aus", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchMock: typeof fetch = async (input, init) => {
+      const url = String(input);
+      calls.push({ url, init });
+      if (url.endsWith("/protocol/openid-connect/token")) return new Response(JSON.stringify({ access_token: "admin-token" }), { status: 200 });
+      if (url.endsWith("/users") && init?.method === "POST") return new Response(null, { status: 201, headers: { location: "http://keycloak/admin/realms/zugfolge/users/subject-1" } });
+      if (url.includes("execute-actions-email")) return new Response(null, { status: 204 });
+      return new Response("not found", { status: 404 });
+    };
+    const { createKeycloakAdminClient } = await import("./keycloak-admin.js");
+    const client = createKeycloakAdminClient({ baseUrl: "http://keycloak", realm: "zugfolge", clientId: "provisioner", clientSecret: "secret" }, fetchMock);
+    const subject = await client.invite({ email: "alpha@example.test", displayName: "Alpha", redirectUri: "https://game.example/" });
+    expect(subject).toBe("subject-1");
+    expect(calls[1]?.init?.body).toContain('"requiredActions":["VERIFY_EMAIL","UPDATE_PASSWORD"]');
+    expect(calls[2]?.url).toContain("execute-actions-email");
+  });
+});
