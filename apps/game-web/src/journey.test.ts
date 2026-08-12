@@ -72,4 +72,44 @@ describe("Phase-2-Spielerreise", () => {
     expect(html).toContain("Blockierend");
     expect(html).toContain("Keine bestätigte Trasse.");
   });
+
+  it("macht Ladefehler wiederholbar und meldet sie als Alarm", () => {
+    const html = renderJourney({
+      tutorialWorldId: "tutorial-world",
+      publicWorldId: "public-world",
+      busy: false,
+      message: "Tutorial konnte nicht geladen werden.",
+      messageTone: "error",
+      tutorial: undefined,
+      grant: undefined,
+      heatmap: [],
+      assistant: undefined,
+    });
+    expect(html).toContain('role="alert"');
+    expect(html).toContain('id="tutorial-refresh"');
+    expect(html).toContain("Erneut laden");
+  });
+
+  it("deaktiviert Aktionen waehrend eines Requests und nach dem Reset-Limit", () => {
+    const html = renderJourney({
+      tutorialWorldId: "tutorial-world",
+      publicWorldId: "public-world",
+      busy: true,
+      message: "",
+      tutorial: {
+        chapter: 1,
+        chapterState: "ready",
+        evidence: {},
+        explanation: "Bereit.",
+        explanationCode: "tutorial.ready",
+        resetCount: 5,
+        chapters: [],
+      },
+      grant: undefined,
+      heatmap: [],
+      assistant: undefined,
+    });
+    expect(html).toContain("Reset-Limit erreicht");
+    expect(html.match(/ disabled/g)?.length).toBeGreaterThanOrEqual(4);
+  });
 });
