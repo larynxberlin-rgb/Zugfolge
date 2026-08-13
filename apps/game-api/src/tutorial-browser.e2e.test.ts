@@ -28,6 +28,7 @@ import { GameTutorialWorldFactory } from "./tutorial-world-factory.js";
 
 const PUBLIC_WORLD = "00000000-0000-4000-8000-000000000121";
 const PUBLIC_ACCOUNT = "00000000-0000-4000-8000-000000000122";
+const TEST_NOW = new Date("2026-08-13T10:00:00.000Z");
 const WEB_DIST = resolve(import.meta.dirname, "../../game-web/dist");
 
 function browserExecutable(): string {
@@ -70,6 +71,8 @@ function registerWeb(app: FastifyInstance): void {
   let app: FastifyInstance;
   let browser: Browser | undefined;
   let origin: string;
+  let serverRequests: string[];
+  let serverResponses: string[];
 
   beforeEach(async () => {
     if (process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"] === undefined || process.env["ZUGFOLGE_PLANNING_RUNTIME_NATIVE_PATH"] === undefined) {
@@ -79,16 +82,21 @@ function registerWeb(app: FastifyInstance): void {
     client = new PGlite();
     db = drizzle(client, { schema });
     await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
-    await db.insert(worlds).values({ id: PUBLIC_WORLD, name: "Alpha", schedulePeriodWeeks: 4, epoch: new Date(0), worldKind: "public", rankingStatus: "ranked", lifecycleStatus: "active" });
+    await db.insert(worlds).values({ id: PUBLIC_WORLD, name: "Alpha", schedulePeriodWeeks: 4, epoch: TEST_NOW, worldKind: "public", rankingStatus: "ranked", lifecycleStatus: "active" });
     await db.insert(accounts).values({ id: PUBLIC_ACCOUNT, worldId: PUBLIC_WORLD, keycloakSubject: "kc-browser-player", displayName: "Browser-Spieler" });
 
     const regional = new RegionalSimulationWorker(db, loadRegionalSimulationRuntime(), new LivemapRegistry(), new OperationsRegistry());
-    const sessions = new TutorialSessionService(db, new GameTutorialWorldFactory(db, loadOperatingRuntime(), loadPlanningRuntime(), regional));
+    const clock = () => TEST_NOW;
+    const sessions = new TutorialSessionService(db, new GameTutorialWorldFactory(db, loadOperatingRuntime(), loadPlanningRuntime(), regional), { clock });
     app = Fastify({ logger: false });
+    serverRequests = [];
+    serverResponses = [];
+    app.addHook("onRequest", async (request) => { serverRequests.push(`${request.method} ${request.url}`); });
+    app.addHook("onResponse", async (request, reply) => { serverResponses.push(`${request.method} ${request.url} -> ${reply.statusCode}`); });
     registerAlphaRoutes(app, {
       db,
       authenticate: (async (request: FastifyRequest) => { request.identity = { keycloakSubject: "kc-browser-player" }; }) as never,
-      services: { tutorialSessions: sessions, abuse: new AbuseGuard(db), pseudonymSecret: "b".repeat(32) },
+      services: { tutorialSessions: sessions, abuse: new AbuseGuard(db), pseudonymSecret: "b".repeat(32), clock },
     });
     registerWeb(app);
     origin = await app.listen({ host: "127.0.0.1", port: 0 });
@@ -105,12 +113,17 @@ function registerWeb(app: FastifyInstance): void {
     const context = await browser!.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
     const page = await context.newPage();
     const pageErrors: string[] = [];
+    const failedRequests: string[] = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
+    page.on("requestfailed", (request) => failedRequests.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText ?? "unbekannt"}`));
     await page.goto(origin, { waitUntil: "networkidle" });
     await page.locator("#tutorial-start:not([disabled])").waitFor();
-    const startResponsePromise = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith(`/worlds/${PUBLIC_WORLD}/tutorial-sessions`));
+    const startResponsePromise = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith(`/worlds/${PUBLIC_WORLD}/tutorial-sessions`), { timeout: 30_000 });
     await page.getByRole("button", { name: "Tutorial mit Lutz starten" }).click();
-    const startResponse = await startResponsePromise;
+    const startResponse = await startResponsePromise.catch(async (error: unknown) => {
+      const pageText = (await page.locator("body").innerText()).slice(0, 2_000);
+      throw new Error(`Tutorialstart erhielt keine Antwort. Serveranfragen: ${serverRequests.join(" | ") || "keine"}; Serverantworten: ${serverResponses.join(" | ") || "keine"}; fehlgeschlagene Browseranfragen: ${failedRequests.join(" | ") || "keine"}; Seitenfehler: ${pageErrors.join(" | ") || "keine"}; Seite: ${pageText}`, { cause: error });
+    });
     if (startResponse.status() !== 201) {
       throw new Error(`Tutorialstart antwortete mit HTTP ${startResponse.status()}: ${await startResponse.text()}; Seitenfehler: ${pageErrors.join(" | ") || "keine"}`);
     }
