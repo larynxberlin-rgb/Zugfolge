@@ -4,6 +4,7 @@ import secrets
 import threading
 import time
 import uuid
+from datetime import datetime
 from urllib.parse import urlsplit
 
 from odoo import _, http
@@ -36,9 +37,14 @@ def _rate_allowed(remote_address, now=None):
 
 
 def _published_offers():
-    return request.env["zugfolge.world.offer"].sudo().search([
+    offers = request.env["zugfolge.world.offer"].sudo().search([
         ("published", "=", True), ("projection_id.public_projection_version", "!=", False),
-    ], order="projection_id.public_starts_at, projection_id.world_name")
+    ])
+    return offers.sorted(key=lambda offer: (
+        offer.projection_id.public_starts_at or datetime.max,
+        (offer.projection_id.world_name or "").casefold(),
+        offer.id,
+    ))
 
 
 def _offer_payload(offer):

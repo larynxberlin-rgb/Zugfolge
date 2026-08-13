@@ -81,7 +81,10 @@ class TestPublicWorld(TransactionCase):
         })
         self.assertEqual(offer.banner_url(), "/zugfolge_admin/static/src/img/world-fallback.svg")
         with self.assertRaises(ValidationError):
-            offer.write({"banner_original": b"not-an-image", "banner_alt": "", "banner_source": "Quelle", "banner_author": "Urheber", "banner_license": "Lizenz"})
+            offer.write({
+                "banner_original": b"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+                "banner_alt": "", "banner_source": "Quelle", "banner_author": "Urheber", "banner_license": "Lizenz",
+            })
         with self.assertRaises(ValidationError):
             offer.write({"focal_x_permille": 1001})
 

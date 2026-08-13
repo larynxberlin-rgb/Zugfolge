@@ -43,7 +43,9 @@ class ZugfolgeProjectionController(http.Controller):
             return {"accepted": False, "code": "invalid_schema"}
         body = payload.get("payload", {})
         digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")).hexdigest()
-        receipt = request.env["zugfolge.projection.receipt"].with_context(zugfolge_game_projection=True)
+        # Ab hier ist der Integrationsaufruf signiert und zeitlich begrenzt.
+        # Nur dieser Pfad darf die schreibgeschuetzten Game-Projektionen pflegen.
+        receipt = request.env["zugfolge.projection.receipt"].sudo().with_context(zugfolge_game_projection=True)
         existing = receipt.search([("message_id", "=", message_id)], limit=1)
         if existing:
             if (existing.payload_hash != digest or existing.world_id != payload.get("worldId")
@@ -56,30 +58,30 @@ class ZugfolgeProjectionController(http.Controller):
             "message_id": message_id, "world_id": payload.get("worldId"),
             "correlation_id": payload.get("correlationId"), "payload_hash": digest,
         })
-        model = request.env["zugfolge.world.projection"].with_context(zugfolge_game_projection=True)
+        model = request.env["zugfolge.world.projection"].sudo().with_context(zugfolge_game_projection=True)
         if payload["messageType"] == "world.projection":
             model.upsert_game_projection(payload)
         if payload["messageType"] == "public.world.snapshot":
             model.upsert_public_snapshot(payload)
         if payload["messageType"] == "admin.capability.projection":
-            request.env["zugfolge.admin.capability"].with_context(zugfolge_game_projection=True).upsert_game_projection(payload)
+            request.env["zugfolge.admin.capability"].sudo().with_context(zugfolge_game_projection=True).upsert_game_projection(payload)
         if payload["messageType"] == "alpha.feedback.projection":
-            request.env["zugfolge.feedback"].with_context(zugfolge_game_projection=True).upsert_game_projection(payload)
+            request.env["zugfolge.feedback"].sudo().with_context(zugfolge_game_projection=True).upsert_game_projection(payload)
         if payload["messageType"] == "admin.command.result":
             result = payload.get("payload", {})
-            request_record = request.env["zugfolge.admin.request"].search([("correlation_id", "=", payload.get("correlationId"))], limit=1)
+            request_record = request.env["zugfolge.admin.request"].sudo().search([("correlation_id", "=", payload.get("correlationId"))], limit=1)
             if request_record:
                 state = result.get("state") if result.get("state") in ("accepted", "completed", "failed", "rejected") else ("accepted" if result.get("outcome") == "accepted" else "rejected")
                 request_record.with_context(zugfolge_game_projection=True).apply_game_result({**result, "state": state})
                 if request_record.action_type == "world_access_revoke" and state == "completed":
-                    invitation = request.env["zugfolge.alpha.invitation"].search([
+                    invitation = request.env["zugfolge.alpha.invitation"].sudo().search([
                         ("world_projection_id", "=", request_record.world_projection_id.id),
                         ("keycloak_subject", "=", result.get("keycloakSubject") or request_record.target_reference),
                         ("revocation_request_id", "=", request_record.id),
                     ], limit=1)
                     if invitation:
                         invitation.with_context(zugfolge_game_projection=True).write({"state": "revoked"})
-            invitation = request.env["zugfolge.alpha.invitation"].search([("correlation_id", "=", payload.get("correlationId"))], limit=1)
+            invitation = request.env["zugfolge.alpha.invitation"].sudo().search([("correlation_id", "=", payload.get("correlationId"))], limit=1)
             if invitation:
                 values = {"state": "provisioned" if result.get("outcome") == "accepted" else "failed"}
                 if result.get("keycloakSubject"):

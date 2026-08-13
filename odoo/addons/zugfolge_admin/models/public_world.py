@@ -11,6 +11,7 @@ PUBLIC_SNAPSHOT_VERSION = "zugfolge-public-world-snapshot/v1"
 MAX_I64 = 9_223_372_036_854_775_807
 MAX_SAFE_INTEGER = 9_007_199_254_740_991
 DECIMAL_CENTS = re.compile(r"^(0|[1-9][0-9]*)$")
+RFC3339_WITH_ZONE = re.compile(r"^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$")
 FORBIDDEN_PUBLIC_KEYS = {
     "keycloakSubject", "email", "partnerId", "partnerReference", "accountId", "playerId",
     "operatorId", "operatorIds", "activityHistory", "loginAt", "paymentReference", "orderReference",
@@ -38,6 +39,20 @@ def _capital(policy):
         raise ValidationError(_("Endliches Startkapital braucht kanonische nichtnegative Integer-Cent."))
     euros, cents = divmod(int(amount), 100)
     return "finite", amount, ("{:,.0f}".format(euros).replace(",", ".") + ",%02d €" % cents)
+
+
+def _rfc3339_utc(value, field_name, required=True):
+    if value is None and not required:
+        return False
+    if not isinstance(value, str) or not RFC3339_WITH_ZONE.fullmatch(value):
+        raise ValidationError(_("%(field)s braucht einen RFC3339-Zeitstempel mit Zeitzone.", field=field_name))
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValidationError(_("%(field)s braucht einen gueltigen RFC3339-Zeitstempel.", field=field_name)) from error
+    if parsed.utcoffset() is None:
+        raise ValidationError(_("%(field)s braucht eine explizite Zeitzone.", field=field_name))
+    return parsed.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 class ZugfolgeWorldProjectionPublic(models.Model):
@@ -100,17 +115,17 @@ class ZugfolgeWorldProjectionPublic(models.Model):
         if remaining is not None and (not isinstance(remaining, int) or isinstance(remaining, bool) or remaining < 0 or remaining > MAX_SAFE_INTEGER):
             raise ValidationError(_("Verbleibende Weltlaufzeit muss eine nichtnegative Ganzzahl oder null sein."))
         mode, amount, display = _capital(body.get("startingCapitalPolicy"))
-        generated_at = fields.Datetime.to_datetime(body.get("generatedAt"))
-        authoritative_as_of = fields.Datetime.to_datetime(body.get("authoritativeAsOf"))
-        if not generated_at or not authoritative_as_of:
-            raise ValidationError(_("Snapshot braucht gueltige Erzeugungs- und Weltzeit."))
+        generated_at = _rfc3339_utc(body.get("generatedAt"), "generatedAt")
+        authoritative_as_of = _rfc3339_utc(body.get("authoritativeAsOf"), "authoritativeAsOf")
+        starts_at = _rfc3339_utc(body.get("startsAt"), "startsAt")
+        ends_at = _rfc3339_utc(body.get("endsAt"), "endsAt", required=False)
         values = {
             "public_projection_version": PUBLIC_SNAPSHOT_VERSION,
             "public_description": body.get("shortDescription"),
             "public_phase": body.get("phase"),
-            "public_starts_at": body.get("startsAt"),
-            "public_ends_at": body.get("endsAt") or False,
-            "authoritative_as_of": body.get("authoritativeAsOf"),
+            "public_starts_at": starts_at,
+            "public_ends_at": ends_at,
+            "authoritative_as_of": authoritative_as_of,
             "remaining_runtime_seconds": remaining or 0,
             "unlimited_runtime": remaining is None,
             "starting_capital_mode": mode,
@@ -127,7 +142,7 @@ class ZugfolgeWorldProjectionPublic(models.Model):
             "public_rule_release": body.get("ruleRelease"),
             "public_releases": body.get("releases"),
             "public_banner_metadata": body.get("banner"),
-            "public_generated_at": body.get("generatedAt"),
+            "public_generated_at": generated_at,
             "public_payload_hash": hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()).hexdigest(),
         }
         record = self.search([("world_id", "=", world_id)], limit=1)
@@ -135,7 +150,8 @@ class ZugfolgeWorldProjectionPublic(models.Model):
             # Monitoring kann kurz nach dem ersten öffentlichen Snapshot folgen.
             values.update({
                 "world_id": world_id, "world_name": body.get("worldName", world_id),
-                "projection_revision": body.get("authoritativeAsOf"), "observed_at": envelope.get("occurredAt"),
+                "projection_revision": body.get("authoritativeAsOf"),
+                "observed_at": _rfc3339_utc(envelope.get("occurredAt"), "occurredAt"),
                 "freshness": "delayed", "payload_hash": values["public_payload_hash"],
             })
             return self.with_context(zugfolge_game_projection=True).create(values)

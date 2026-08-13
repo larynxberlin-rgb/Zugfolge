@@ -22,8 +22,12 @@
 
 .zf-world-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
   gap: 1.25rem;
+}
+
+@media (max-width: 40rem) {
+  .zf-world-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 .zf-world-card {

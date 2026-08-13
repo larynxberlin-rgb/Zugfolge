@@ -7,7 +7,7 @@ class TestWorldPaymentParticipation(AccountTestInvoicingCommon):
         super().setUpClass()
         cls.world_id = "11111111-1111-4111-8111-111111111111"
         cls.partner_a.zugfolge_keycloak_subject = "keycloak-payment-test"
-        projection = cls.env["zugfolge.world.projection"].with_context(zugfolge_game_projection=True).create({
+        projection = cls.env["zugfolge.world.projection"].sudo().with_context(zugfolge_game_projection=True).create({
             "world_id": cls.world_id,
             "world_name": "Zahlungswelt",
             "projection_revision": "payment-test-1",
