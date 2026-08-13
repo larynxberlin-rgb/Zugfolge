@@ -6,11 +6,10 @@ from datetime import datetime, timezone
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, ValidationError
 
+from .admin_request import validate_serialized_starting_capital_policy
 
 PUBLIC_SNAPSHOT_VERSION = "zugfolge-public-world-snapshot/v1"
-MAX_I64 = 9_223_372_036_854_775_807
 MAX_SAFE_INTEGER = 9_007_199_254_740_991
-DECIMAL_CENTS = re.compile(r"^(0|[1-9][0-9]*)$")
 RFC3339_WITH_ZONE = re.compile(r"^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$")
 FORBIDDEN_PUBLIC_KEYS = {
     "keycloakSubject", "email", "partnerId", "partnerReference", "accountId", "playerId",
@@ -27,18 +26,6 @@ def _assert_public_payload(value, path="snapshot"):
             if key in FORBIDDEN_PUBLIC_KEYS:
                 raise ValidationError(_("Personenbezogenes Feld %s ist in einer oeffentlichen Projektion verboten.") % (path + "." + key))
             _assert_public_payload(item, path + "." + key)
-
-
-def _capital(policy):
-    if policy == {"mode": "unlimited"}:
-        return "unlimited", False, _("Unbegrenzt (∞)")
-    if not isinstance(policy, dict) or set(policy) != {"mode", "amountCents"} or policy.get("mode") != "finite":
-        raise ValidationError(_("Startkapital-Policy ist ungueltig."))
-    amount = policy.get("amountCents")
-    if not isinstance(amount, str) or not DECIMAL_CENTS.fullmatch(amount) or int(amount) > MAX_I64:
-        raise ValidationError(_("Endliches Startkapital braucht kanonische nichtnegative Integer-Cent."))
-    euros, cents = divmod(int(amount), 100)
-    return "finite", amount, ("{:,.0f}".format(euros).replace(",", ".") + ",%02d €" % cents)
 
 
 def _rfc3339_utc(value, field_name, required=True):
@@ -114,7 +101,7 @@ class ZugfolgeWorldProjectionPublic(models.Model):
         remaining = body.get("remainingRuntimeSeconds")
         if remaining is not None and (not isinstance(remaining, int) or isinstance(remaining, bool) or remaining < 0 or remaining > MAX_SAFE_INTEGER):
             raise ValidationError(_("Verbleibende Weltlaufzeit muss eine nichtnegative Ganzzahl oder null sein."))
-        mode, amount, display = _capital(body.get("startingCapitalPolicy"))
+        mode, amount, display = validate_serialized_starting_capital_policy(body.get("startingCapitalPolicy"))
         generated_at = _rfc3339_utc(body.get("generatedAt"), "generatedAt")
         authoritative_as_of = _rfc3339_utc(body.get("authoritativeAsOf"), "authoritativeAsOf")
         starts_at = _rfc3339_utc(body.get("startsAt"), "startsAt")

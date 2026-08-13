@@ -38,7 +38,7 @@ class TestPublicWorld(TransactionCase):
         for index, (capital, expected) in enumerate([
             ({"mode": "finite", "amountCents": "0"}, "0,00 €"),
             ({"mode": "finite", "amountCents": "2500000"}, "25.000,00 €"),
-            ({"mode": "unlimited"}, "Unbegrenzt (∞)"),
+            ({"mode": "unlimited"}, "∞"),
         ]):
             world_id = "11111111-1111-4111-8111-%012d" % (111111111111 + index)
             if index == 0:
