@@ -142,7 +142,8 @@ jobs:
         run: |
           pnpm --filter @zugfolge/game-api... build
           pnpm --filter @zugfolge/game-web... build
-          pnpm --filter @zugfolge/game-api exec vitest run src/economy-native.integration.test.ts src/tutorial-world-factory.native.integration.test.ts src/tutorial-browser.e2e.test.ts
+          # Echte NAPI-Registries und PGlite-Welten nicht zwischen Vitest-Worker-Isolates parallelisieren.
+          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/economy-native.integration.test.ts src/tutorial-world-factory.native.integration.test.ts src/tutorial-browser.e2e.test.ts
 
   typescript:
     name: TypeScript
