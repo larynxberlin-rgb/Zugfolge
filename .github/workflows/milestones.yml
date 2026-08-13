@@ -60,7 +60,7 @@ jobs:
         with:
           node-version: 24
       - run: node .github/scripts/sync-milestones.mjs check
-      - name: M0-M14, Labels und Arbeitspakete anwenden
+      - name: M0-M15, Labels und Arbeitspakete anwenden
         run: node .github/scripts/sync-milestones.mjs apply
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

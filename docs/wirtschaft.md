@@ -44,6 +44,22 @@ ausgeglichenen Ledger geführt. Alle Balancewerte liegen in einem versionierten
   vertrauliche Unternehmensdaten werden nicht nachgebildet.
 - Kredite, Restrukturierung und Insolvenz gehören zur Wirtschaft.
 
+M10 ist das gemeinsame Personenverkehrsnachfragemodell für SPNV und SPFV. Es
+liefert Zugwahl, Ein- und Aussteiger, Auslastung und den objektiven
+Fahrberechtigungsstatus. Belastbare freigegebene Kontrollquoten werden als
+`observed`, ersatzweise Spielwerte ausdrücklich als `balanced` veröffentlicht.
+Der Schaffnermodus M15 projiziert diese Fahrgäste, erzeugt aber keine eigene
+Nachfrage und keinen eigenen Ticketstatus.
+
+Eine im Schaffnermodus ausgestellte EBE ist eine **offene Forderung**, kein
+sofortiger sicherer Erlös und kein Bußgeld. Zahlung, Reduzierung,
+Bearbeitungskosten und Abschreibung folgen deterministisch aus dem
+`EconomyRelease`. Die positive Kontrollprämie beträgt höchstens das Vierfache
+der positiven Netto-EBE; Netto-EBE und Prämie zusammen sind je Tag auf 0,5
+Prozent der relevanten SPNV-Vertragserlöse begrenzt. Kosten, Verspätungsfolgen
+und Pönalen werden nicht gedeckelt. Details:
+[`schaffnermodus.md`](schaffnermodus.md) 8 und 10.
+
 ## 3. Vergabezyklus und Betriebsübergang (E18)
 
 Vertragslaufzeiten skalieren mit der Weltlaufzeit — Werte und Herleitung in

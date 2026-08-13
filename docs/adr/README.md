@@ -42,8 +42,10 @@ Statuswerte: `Angenommen` (bindend), `Vorgeschlagen`, `Abgelöst durch ADR-XXXX`
 ## Index
 
 Die folgenden ADRs wurden aus den zuvor in der Konzeptionsphase getroffenen
-Grundsatzentscheidungen schriftlich festgehalten; E21 bis E27 kamen später als
-eigene Entscheidungen hinzu. Alle Status: **Angenommen — bindend**.
+Grundsatzentscheidungen schriftlich festgehalten; E21 bis E27 und E29 kamen
+später als eigene Entscheidungen hinzu. Alle vorhandenen Einträge haben den
+Status **Angenommen — bindend**. ADR-0028 wird parallel vorbereitet und muss
+vor Freigabe von ADR-0029 auf `main` veröffentlicht werden.
 
 | ADR | E | Titel |
 |-----|---|-------|
@@ -74,6 +76,7 @@ eigene Entscheidungen hinzu. Alle Status: **Angenommen — bindend**.
 | [0025](0025-gebietsueberschreitende-fahrtketten.md) | E25 | Gebietsüberschreitende Fahrten bleiben eine Fahrtkette mit deterministischem Außenlauf |
 | [0026](0026-karte-als-spielzentrum.md) | E26 | Die selbst gehostete Weltkarte ist das Spielzentrum; der Deutschland-Korpus ist vollständig sichtbar |
 | [0027](0027-geschaetzte-zugkartenposition-nur-visuell.md) | E27 | Geschätzte Zugkartenpositionen bleiben rein visuell und von der Betriebswahrheit getrennt |
+| [0029](0029-schaffnermodus-als-serverautoritative-betriebsvertiefung.md) | E29 | Der Schaffnermodus vertieft den serverautoritativen Betrieb |
 
 > **Teilablösung:** ADR-0027 ersetzt ausschließlich den Exact-only-Satz zur
 > sichtbaren Zugposition in ADR-0026. Der historische Wortlaut bleibt dort
