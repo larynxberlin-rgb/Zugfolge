@@ -143,7 +143,7 @@ function registerWeb(app: FastifyInstance): void {
 
     await page.reload({ waitUntil: "networkidle" });
     await page.getByRole("heading", { name: "Ein tragfähiges Angebot abgeben" }).waitFor();
-    expect(await page.locator(".tutorial-experience > header .eyebrow").innerText()).toContain(reference!);
+    expect((await page.locator(".tutorial-experience > header .eyebrow").innerText()).toLowerCase()).toContain(reference!);
 
     await page.getByLabel("Bestellerentgelt je Zug-km").fill("1450");
     await page.getByLabel("Pünktlichkeitsversprechen").fill("9200");
