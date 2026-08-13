@@ -42,7 +42,7 @@ class ZugfolgeProjectionController(http.Controller):
 
     @http.route("/zugfolge/projection", type="json", auth="none", methods=["POST"], csrf=False)
     def ingest_projection(self, **_kwargs):
-        payload = request.jsonrequest
+        payload = request.get_json_data()
         headers = request.httprequest.headers
         if not isinstance(payload, dict) or not _valid_signature(payload, headers.get("X-Zugfolge-Odoo-Key-Id"), headers.get("X-Zugfolge-Odoo-Timestamp"), headers.get("X-Zugfolge-Odoo-Signature")):
             return {"accepted": False, "code": "invalid_signature"}
@@ -119,7 +119,7 @@ class ZugfolgeProjectionController(http.Controller):
 
     @http.route("/zugfolge/reconciliation/snapshot", type="json", auth="none", methods=["POST"], csrf=False)
     def reconciliation_snapshot(self, **_kwargs):
-        payload = request.jsonrequest
+        payload = request.get_json_data()
         headers = request.httprequest.headers
         if not isinstance(payload, dict) or payload.get("schemaVersion") != "zugfolge-odoo/v1" or not _valid_signature(payload, headers.get("X-Zugfolge-Odoo-Key-Id"), headers.get("X-Zugfolge-Odoo-Timestamp"), headers.get("X-Zugfolge-Odoo-Signature")):
             return {"accepted": False, "code": "invalid_signature"}

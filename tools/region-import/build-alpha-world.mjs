@@ -460,7 +460,7 @@ const tenderCalendarHash = alphaHash("zugfolge-alpha-tender-calendar/v1", econom
 const planningRoute = regionalTrains
   .map((train) => train.route.filter((waypoint) => {
     const station = stationById.get(waypoint.operatingPoint);
-    return station?.latitudeE7 !== null && station?.longitudeE7 !== null;
+    return station !== undefined && station.latitudeE7 !== null && station.longitudeE7 !== null;
   }))
   .find((route) => route.length >= 2 && route.every((waypoint, index) => (
     index === 0 || route[index - 1].positionMm < waypoint.positionMm

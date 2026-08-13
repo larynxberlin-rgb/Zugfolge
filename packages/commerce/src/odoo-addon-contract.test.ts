@@ -72,7 +72,15 @@ describe("Odoo-Administrationsmodul", () => {
   it("hat eine signierte Projektions-, Replay- und Reconciliation-Grenze", async () => {
     const controller = await readFile(resolve(addon, "controllers/main.py"), "utf8");
     const receipt = await readFile(resolve(addon, "models/projection_receipt.py"), "utf8");
+    const timestamp = await readFile(resolve(addon, "models/rfc3339.py"), "utf8");
+    const timestampConsumers = await Promise.all(
+      ["projection.py", "admin_capability.py", "feedback.py", "public_world.py"].map((file) =>
+        readFile(resolve(addon, "models", file), "utf8"),
+      ),
+    );
     expect(controller).toContain("hmac.compare_digest");
+    expect(controller.match(/request\.get_json_data\(\)/g)).toHaveLength(2);
+    expect(controller).not.toContain("request.jsonrequest");
     expect(controller).toContain("/zugfolge/reconciliation/snapshot");
     expect(controller).toContain("/zugfolge/metrics");
     expect(controller).toContain("admin.capability.projection");
@@ -80,6 +88,14 @@ describe("Odoo-Administrationsmodul", () => {
     expect(controller).toContain("{**result, \"state\": state}");
     expect(receipt).toContain("unique(message_id)");
     expect(receipt).toContain("unveränderlich");
+    expect(timestamp).toContain("RFC3339_WITH_ZONE");
+    expect(timestamp).toContain("astimezone(timezone.utc).replace(tzinfo=None)");
+    for (const consumer of timestampConsumers) {
+      expect(consumer).toContain("rfc3339_utc");
+    }
+    expect(timestampConsumers.join("\n")).not.toMatch(
+      /[\"'](?:observed_at|simulation_time|submitted_at)[\"']:\s*(?:payload|body|envelope)\.get\(/,
+    );
   });
 });
 

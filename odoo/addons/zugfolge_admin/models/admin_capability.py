@@ -4,6 +4,8 @@ import json
 from odoo import api, fields, models
 from odoo.exceptions import AccessError, ValidationError
 
+from .rfc3339 import rfc3339_utc
+
 
 ADMIN_ACTIONS = [
     ("world_access_revoke", "Weltzugang entziehen"),
@@ -56,7 +58,7 @@ class ZugfolgeAdminCapability(models.Model):
             "action_type": body["actionType"],
             "availability": body["availability"],
             "detail": body.get("detail"),
-            "observed_at": payload.get("occurredAt"),
+            "observed_at": rfc3339_utc(payload.get("occurredAt"), "occurredAt"),
             "payload_hash": hashlib.sha256(body_json.encode("utf-8")).hexdigest(),
         }
         record = self.search([("world_id", "=", values["world_id"]), ("action_type", "=", values["action_type"])], limit=1)

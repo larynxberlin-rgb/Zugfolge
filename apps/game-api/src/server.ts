@@ -336,7 +336,11 @@ const worldRows = await db
   .orderBy(asc(worlds.id));
 const activeWorldRows = worldRows.filter((world) => world.lifecycleStatus === "active");
 const deploymentRuntime = new ActiveWorldDeploymentRuntime({
-  activeWorlds: activeWorldRows,
+  // Only signed deployments belong to the process-local production runtime.
+  // Dynamic tutorial worlds are reconstructed by TutorialSessionService and
+  // deliberately have neither the public fleet catalog nor a static planning
+  // authority mapping.
+  activeWorlds: [],
   fleetAuthorityReleases: configuredFleetAuthorityReleases,
   planningAuthorityAccountIds: configuredPlanningAuthorityAccountIds,
   planningInfrastructureReleases: configuredPlanningInfrastructureReleases,
@@ -411,12 +415,6 @@ for (const [worldId, authorityRelease] of Object.entries(fleetAuthorityReleases)
     authorityRelease,
   });
 }
-await verifyPlanningAuthorityAccounts(
-  db,
-  deploymentRuntime.worldIds(),
-  planningAuthorityAccountIds,
-);
-
 const economyAdapters = {
   ...createEconomyPlatformAdapters({
     db,
@@ -514,6 +512,11 @@ for (const signedDeployment of [...signedDeployments.values()].sort((left, right
   deploymentRuntime.register(signedDeployment, configuredWorld.epoch);
   await persistSignedAlphaWorldDeployment(db, signedDeployment);
 }
+await verifyPlanningAuthorityAccounts(
+  db,
+  deploymentRuntime.worldIds(),
+  planningAuthorityAccountIds,
+);
 const worldDeployAdminHandler = createWorldDeployAdminHandler({
   db,
   trustedKeys: trustedReleaseKeys,

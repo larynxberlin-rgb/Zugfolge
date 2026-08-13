@@ -10,7 +10,11 @@ export interface LivemapRuntimeConfiguration {
 }
 
 const TOKEN_KEY = "zugfolge.accessToken";
-export const LIVEMAP_OIDC_CLIENT_ID = "livemap";
+// The production Livemap lives below the same origin and redirect wildcard as
+// game-web. Reusing that public PKCE client also lets both frontends share the
+// session-scoped access token without weakening the realm's MFA-protected
+// administration boundary.
+export const LIVEMAP_OIDC_CLIENT_ID = "game-web";
 const EXPIRY_KEY = "zugfolge.accessTokenExpiresAt";
 const STATE_KEY = "zugfolge.livemap.oidc.state";
 const VERIFIER_KEY = "zugfolge.livemap.oidc.verifier";
