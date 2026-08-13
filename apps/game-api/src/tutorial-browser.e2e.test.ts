@@ -4,7 +4,6 @@ import { extname, resolve, sep } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { AbuseGuard, TutorialSessionService } from "@zugfolge/alpha";
 import {
-  accounts,
   MIGRATIONS_FOLDER,
   odooProjectionOutbox,
   tutorialSessions,
@@ -12,6 +11,7 @@ import {
 } from "@zugfolge/db";
 import * as schema from "@zugfolge/db/schema";
 import { OperationsRegistry } from "@zugfolge/dispatch";
+import { requestWorldAccess } from "@zugfolge/identity";
 import { LivemapRegistry } from "@zugfolge/livemap-stream";
 import { loadPlanningRuntime } from "@zugfolge/planning-runtime-native";
 import { loadOperatingRuntime, loadRegionalSimulationRuntime } from "@zugfolge/runtime-native";
@@ -27,7 +27,6 @@ import { RegionalSimulationWorker } from "./regional-simulation-worker.js";
 import { GameTutorialWorldFactory } from "./tutorial-world-factory.js";
 
 const PUBLIC_WORLD = "00000000-0000-4000-8000-000000000121";
-const PUBLIC_ACCOUNT = "00000000-0000-4000-8000-000000000122";
 const TEST_NOW = new Date("2026-08-13T10:00:00.000Z");
 const WEB_DIST = resolve(import.meta.dirname, "../../game-web/dist");
 
@@ -83,7 +82,7 @@ function registerWeb(app: FastifyInstance): void {
     db = drizzle(client, { schema });
     await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
     await db.insert(worlds).values({ id: PUBLIC_WORLD, name: "Alpha", schedulePeriodWeeks: 4, epoch: TEST_NOW, worldKind: "public", rankingStatus: "ranked", lifecycleStatus: "active" });
-    await db.insert(accounts).values({ id: PUBLIC_ACCOUNT, worldId: PUBLIC_WORLD, keycloakSubject: "kc-browser-player", displayName: "Browser-Spieler" });
+    await requestWorldAccess(db, { worldId: PUBLIC_WORLD, keycloakSubject: "kc-browser-player", displayName: "Browser-Spieler" });
 
     const regional = new RegionalSimulationWorker(db, loadRegionalSimulationRuntime(), new LivemapRegistry(), new OperationsRegistry());
     const clock = () => TEST_NOW;
