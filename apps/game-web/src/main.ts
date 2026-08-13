@@ -136,6 +136,7 @@ function render(): void {
       assistant: onboardingAssistant,
       busy: journeyBusy,
       message,
+      messageTone,
       livemapUrl,
       cooperation: cooperationState(),
     });
@@ -188,12 +189,15 @@ async function journeyAction(action: () => Promise<void>, success: string): Prom
   if (journeyBusy) return;
   journeyBusy = true;
   message = "Autoritativer Weltzustand wird aktualisiert …";
+  messageTone = "status";
   render();
   try {
     await action();
     message = success;
+    messageTone = "status";
   } catch (error) {
     message = error instanceof Error ? error.message : "Spielerreise konnte nicht aktualisiert werden.";
+    messageTone = "error";
   } finally {
     journeyBusy = false;
     render();
@@ -483,7 +487,10 @@ async function boot(): Promise<void> {
     api = new GameApiClient(runtimeConfiguration.gameApiUrl, accessToken);
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Anmeldung fehlgeschlagen.";
-    if (journeyMode) message = detail;
+    if (journeyMode) {
+      message = detail;
+      messageTone = "error";
+    }
     else loadError = detail;
     render();
     return;
@@ -491,31 +498,43 @@ async function boot(): Promise<void> {
   if (journeyMode) {
     if (api === undefined || worldId === "") {
       message = "Öffentliche Weltkennung oder angemeldete Sitzung fehlt. Produktivdaten werden nicht durch Beispieldaten ersetzt.";
+      messageTone = "error";
       render();
       return;
     }
     journeyBusy = true;
     render();
     try {
-      const [tutorial, grant, currentHeatmap, assistant] = await Promise.all([
+      const [tutorialResult, grantResult, heatmapResult, assistantResult] = await Promise.allSettled([
         tutorialWorldId === "" ? Promise.resolve(undefined) : api.loadTutorial(tutorialWorldId),
         api.loadStartPackage(worldId),
         api.loadCapacityHeatmap(worldId),
         api.loadOnboardingAssistant(worldId),
       ]);
-      tutorialJourney = tutorial;
-      startPackage = grant;
-      heatmap = currentHeatmap;
-      onboardingAssistant = assistant;
-      let cooperationFailure = "";
+      if (tutorialResult.status === "fulfilled") tutorialJourney = tutorialResult.value;
+      if (grantResult.status === "fulfilled") startPackage = grantResult.value;
+      if (heatmapResult.status === "fulfilled") heatmap = heatmapResult.value;
+      if (assistantResult.status === "fulfilled") onboardingAssistant = assistantResult.value;
+      const failures = [tutorialResult, grantResult, heatmapResult, assistantResult]
+        .filter((result): result is PromiseRejectedResult => result.status === "rejected");
+      let cooperationFailure: string | undefined;
       try {
         await refreshCooperation();
       } catch (error) {
         cooperationFailure = error instanceof Error ? error.message : "Kooperation und Fahrzeugmarkt konnten nicht geladen werden.";
       }
-      if (cooperationFailure !== "") message = cooperationFailure;
+      const failedAreaCount = failures.length + (cooperationFailure === undefined ? 0 : 1);
+      if (failedAreaCount > 0) {
+        const firstFailure = failures[0]?.reason;
+        const detail = firstFailure instanceof Error
+          ? firstFailure.message
+          : (cooperationFailure ?? "Unbekannter Ladefehler.");
+        message = `${failedAreaCount} Bereich${failedAreaCount === 1 ? "" : "e"} der Spielerreise konnte${failedAreaCount === 1 ? "" : "n"} nicht geladen werden: ${detail}`;
+        messageTone = "error";
+      }
     } catch (error) {
       message = error instanceof Error ? error.message : "Spielerreise konnte nicht geladen werden.";
+      messageTone = "error";
     } finally {
       journeyBusy = false;
       render();

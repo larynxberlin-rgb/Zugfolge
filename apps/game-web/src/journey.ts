@@ -15,6 +15,7 @@ export interface JourneyViewState {
   readonly assistant?: OnboardingAssistant;
   readonly busy: boolean;
   readonly message: string;
+  readonly messageTone?: "status" | "error";
   readonly livemapUrl?: string;
   readonly cooperation?: CooperationSurfaceState;
 }
@@ -23,9 +24,13 @@ function escapeHtml(value: unknown): string {
   return String(value).replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[character]!);
 }
 
+function disabled(state: JourneyViewState): string {
+  return state.busy ? " disabled" : "";
+}
+
 function tutorial(state: JourneyViewState): string {
   if (state.tutorialWorldId === "") return `<section class="journey-card"><p class="eyebrow">Tutorial</p><h2>Getrennte Tutorialwelt fehlt</h2><p class="muted">Die öffentliche Welt bleibt strikt bei 1:1. Eine beschleunigte Tutorialwelt muss explizit als <code>tutorialWorld</code> übergeben werden.</p></section>`;
-  if (state.tutorial === undefined) return `<section class="journey-card" aria-busy="true"><p class="eyebrow">Tutorial</p><h2>Fortschritt wird geladen</h2></section>`;
+  if (state.tutorial === undefined) return `<section class="journey-card"><p class="eyebrow">Tutorial</p><h2>Fortschritt nicht verfügbar</h2><p class="muted">Die Tutorialbelege konnten noch nicht geladen werden.</p><button id="tutorial-refresh" type="button"${disabled(state)}>Erneut laden</button></section>`;
   const chapters = state.tutorial.chapters.map((chapter) => {
     const evidence = state.tutorial!.evidence[String(chapter.chapter)];
     const completed = evidence?.completed === true;
@@ -41,7 +46,7 @@ function tutorial(state: JourneyViewState): string {
     <div class="journey-heading"><div><p class="eyebrow">Tutorial · ${escapeHtml(state.tutorialWorldId)}</p><h2>Fünf Kapitel, echte Belege</h2></div><span class="mode-label">Beschleunigt nur in der getrennten Tutorialwelt</span></div>
     <p class="assistant-copy">${escapeHtml(state.tutorial.explanation)}</p>
     <ol class="tutorial-list">${chapters}</ol>
-    <div class="journey-actions"><button id="tutorial-refresh" type="button">Belege neu prüfen</button><button id="tutorial-reset" class="secondary" type="button">Tutorial zurücksetzen (${state.tutorial.resetCount}/5)</button></div>
+    <div class="journey-actions"><button id="tutorial-refresh" type="button"${disabled(state)}>Belege neu prüfen</button><button id="tutorial-reset" class="secondary" type="button"${state.busy || state.tutorial.resetCount >= 5 ? " disabled" : ""}>${state.tutorial.resetCount >= 5 ? "Reset-Limit erreicht" : `Tutorial zurücksetzen (${state.tutorial.resetCount}/5)`}</button></div>
   </section>`;
 }
 
@@ -65,9 +70,9 @@ function onboarding(state: JourneyViewState): string {
   const grant = state.grant?.grant;
   return `<section class="journey-card onboarding-card">
     <div class="journey-heading"><div><p class="eyebrow">Öffentliche Welt · 1:1</p><h2>Startpaket und Betriebslage</h2></div><span class="state-word">${grant === undefined ? "Noch nicht beansprucht" : "Autoritativ zugeteilt"}</span></div>
-    ${grant === undefined ? `<p>Ein kleines Notvergabelos, ein begrenztes Leasingfahrzeug, bestätigte Trasse, Personal und eine aktive Betriebsprogrammvorlage werden in einem weltgesperrten Commit vergeben.</p><button id="claim-start-package" type="button">Startpaket verbindlich beanspruchen</button>` : `<dl class="grant-proof"><div><dt>EVU</dt><dd>${escapeHtml(grant.operatorId)}</dd></div><div><dt>Los</dt><dd>${escapeHtml(grant.emergencyLotId)}</dd></div><div><dt>Fahrzeug</dt><dd>${escapeHtml(grant.vehicleId)}</dd></div><div><dt>Trasse</dt><dd>${escapeHtml(grant.pathReceiptId)}</dd></div></dl>`}
+    ${grant === undefined ? `<p>Ein kleines Notvergabelos, ein begrenztes Leasingfahrzeug, bestätigte Trasse, Personal und eine aktive Betriebsprogrammvorlage werden in einem weltgesperrten Commit vergeben.</p><button id="claim-start-package" type="button"${disabled(state)}>Startpaket verbindlich beanspruchen</button>` : `<dl class="grant-proof"><div><dt>EVU</dt><dd>${escapeHtml(grant.operatorId)}</dd></div><div><dt>Los</dt><dd>${escapeHtml(grant.emergencyLotId)}</dd></div><div><dt>Fahrzeug</dt><dd>${escapeHtml(grant.vehicleId)}</dd></div><div><dt>Trasse</dt><dd>${escapeHtml(grant.pathReceiptId)}</dd></div></dl>`}
     <h3>Betriebsassistent</h3>${assistant(state.assistant)}
-    <div class="journey-heading"><h3>Kapazität der nächsten 24 Stunden</h3><button id="heatmap-refresh" class="secondary compact" type="button">Aktualisieren</button></div>
+    <div class="journey-heading"><h3>Kapazität der nächsten 24 Stunden</h3><button id="heatmap-refresh" class="secondary compact" type="button"${disabled(state)}>Aktualisieren</button></div>
     ${heatmap(state.heatmap)}
   </section>`;
 }
@@ -78,7 +83,7 @@ export function renderJourney(state: JourneyViewState): string {
     : `<a class="primary-map-link" href="${escapeHtml(state.livemapUrl)}">Zur Live-Lage</a>`;
   return `<main class="journey-shell" aria-busy="${state.busy}">
     <header class="journey-top"><div><p class="wordmark">ZUGFOLGE</p><h1>Geschlossene Alpha · Spielerreise</h1></div><nav aria-label="Hauptnavigation">${livemap}<a href="?view=diagram&world=${encodeURIComponent(state.publicWorldId)}">Zum Bildfahrplan</a></nav></header>
-    ${state.message === "" ? "" : `<p class="journey-message" role="status">${escapeHtml(state.message)}</p>`}
+    ${state.message === "" ? "" : `<p class="journey-message journey-message--${state.messageTone ?? "status"}" role="${state.messageTone === "error" ? "alert" : "status"}">${escapeHtml(state.message)}</p>`}
     <div class="journey-grid">${tutorial(state)}${onboarding(state)}</div>
     ${state.cooperation === undefined ? "" : renderCooperationSurface(state.cooperation)}
   </main>`;
