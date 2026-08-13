@@ -21,6 +21,7 @@ import {
   simulationCommands,
   worldEventLog,
   worlds,
+  worldParticipations,
 } from "@zugfolge/db";
 import { createOdooWebhookReceiptStore, signPayload, type OdooWebhookEnvelope, type SigningKey } from "@zugfolge/commerce";
 import {
@@ -395,6 +396,37 @@ describe("M13 Entitlement-Grenzen", () => {
     const privateWorld = await app.inject({ method: "POST", url: "/private-worlds", headers: { authorization: `Bearer ${token}` }, payload: { name: "Privat", schedulePeriodWeeks: 4, epoch: "2026-01-01T00:00:00.000Z" } });
     expect(privateWorld.statusCode).toBe(201);
     expect(privateWorld.json()).toMatchObject({ worldKind: "private", rankingStatus: "unranked" });
+  });
+
+  it("sperrt Katalogwelten fuer Self-Service und akzeptiert nur den Game-autoritativen Odoo-Teilnahmebeleg", async () => {
+    const catalogWorld = "33333333-3333-4333-8333-333333333333";
+    const subject = "kc-catalog";
+    await db.insert(worlds).values({
+      id: catalogWorld, name: "Katalogwelt", schedulePeriodWeeks: 4, epoch: new Date("2026-01-01T00:00:00Z"),
+    });
+    await db.insert(alphaWorldProfiles).values({
+      worldId: catalogWorld, profileKind: "public", regionId: "mitteldeutschland-b", regionVariant: "B", worldSeed: 1n,
+      accelerationFactor: 1, infraReleaseHash: "a".repeat(64), timetableReleaseHash: "b".repeat(64),
+      fleetReleaseHash: "c".repeat(64), economyReleaseHash: "d".repeat(64),
+      blueprint: encodeEconomyValue({ schemaVersion: ALPHA_WORLD_BLUEPRINT_SCHEMA, admission: { capacity: 10, status: "open" } }),
+      blueprintHash: "e".repeat(64), periodCount: 2, state: "running",
+    });
+    const token = await sign(subject, "Katalogspieler");
+    const denied = await app.inject({
+      method: "POST", url: `/worlds/${catalogWorld}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Katalogspieler" },
+    });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json()).toMatchObject({ code: "commercial_world_release_required" });
+    await db.insert(worldParticipations).values({
+      worldId: catalogWorld, keycloakSubject: subject, displayName: "Katalogspieler", odooPartnerReference: "partner-1",
+      odooOrderReference: "SO1", paymentReference: "INV1", state: "active", lastIdempotencyKey: "payment-1:provision",
+      correlationId: "catalog-correlation", createdAt: new Date("2026-08-13T06:00:00Z"), changedAt: new Date("2026-08-13T06:00:00Z"),
+    });
+    const accepted = await app.inject({
+      method: "POST", url: `/worlds/${catalogWorld}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Katalogspieler" },
+    });
+    expect(accepted.statusCode).toBe(201);
+    expect(accepted.json()).toMatchObject({ worldId: catalogWorld, keycloakSubject: subject });
   });
 });
 

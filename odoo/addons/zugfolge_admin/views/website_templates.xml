@@ -1,0 +1,118 @@
+<odoo>
+  <template id="world_card" name="Zugfolge Weltkarte">
+    <article class="zf-world-card" t-att-data-world-id="offer.projection_id.world_id">
+      <a t-att-href="'/welten/%s' % offer.projection_id.world_id" class="zf-world-card__banner">
+        <img t-att-src="offer.banner_url(1024)"
+             t-att-srcset="'%s 512w, %s 1024w, %s 1920w' % (offer.banner_url(512), offer.banner_url(1024), offer.banner_url(1920))"
+             sizes="(max-width: 720px) 100vw, 50vw"
+             t-att-alt="offer.banner_alt or (offer.projection_id.public_banner_metadata or {}).get('altText') or ('Banner ' + offer.projection_id.world_name)"
+             loading="lazy"
+             t-att-style="'object-position:%s%% %s%%' % (offer.focal_x_permille / 10, offer.focal_y_permille / 10)"/>
+      </a>
+      <div class="zf-world-card__body">
+        <p class="zf-world-card__phase"><t t-esc="offer.projection_id.public_phase or 'planned'"/></p>
+        <h2 class="h3"><a t-att-href="'/welten/%s' % offer.projection_id.world_id"><t t-esc="offer.projection_id.world_name"/></a></h2>
+        <p><t t-esc="offer.projection_id.public_description"/></p>
+        <dl class="zf-stat-grid">
+          <div><dt>Beginn</dt><dd><t t-esc="offer.projection_id.public_starts_at"/></dd></div>
+          <div><dt>Ende</dt><dd><t t-esc="offer.projection_id.public_ends_at or 'Unbefristet'"/></dd></div>
+          <div><dt>Verbleibend</dt><dd><t t-esc="offer.projection_id.public_runtime_display()"/></dd></div>
+          <div><dt>Startkapital</dt><dd><t t-esc="offer.projection_id.starting_capital_preview"/></dd></div>
+          <div><dt>Preis</dt><dd><t t-esc="offer.public_price_display()"/></dd></div>
+          <div><dt>EVU</dt><dd><t t-esc="offer.projection_id.total_operators"/></dd></div>
+          <div><dt>Stark aktiv</dt><dd><t t-if="offer.projection_id.activity_policy_status == 'configured'" t-esc="offer.projection_id.strongly_active_operators"/><t t-else="">Noch nicht freigegeben</t></dd></div>
+          <div><dt>Freie Plätze</dt><dd><t t-esc="offer.projection_id.public_free_places"/> / <t t-esc="offer.projection_id.public_capacity"/></dd></div>
+          <div><dt>Aufnahmestatus</dt><dd><t t-esc="dict(offer.projection_id._fields['admission_status'].selection).get(offer.projection_id.admission_status)"/></dd></div>
+        </dl>
+        <p><t t-esc="offer.participation_conditions"/></p>
+        <p class="zf-world-card__meta"><t t-esc="offer.projection_id.public_region"/> · <t t-esc="offer.projection_id.public_rule_release"/></p>
+        <dl t-if="offer.projection_id.public_releases" class="zf-world-card__releases">
+          <t t-foreach="offer.projection_id.public_releases.items()" t-as="release"><div><dt><t t-esc="release[0]"/></dt><dd><code><t t-esc="release[1]"/></code></dd></div></t>
+        </dl>
+        <p class="zf-world-card__meta">Stand: <time t-att-datetime="offer.projection_id.public_generated_at"><t t-esc="offer.projection_id.public_generated_at"/></time></p>
+        <p class="zf-world-card__meta">Autoritative Weltzeit: <time t-att-datetime="offer.projection_id.authoritative_as_of"><t t-esc="offer.projection_id.authoritative_as_of"/></time></p>
+        <p t-if="offer.projection_id.public_is_stale()" class="alert alert-warning" role="status">Daten möglicherweise veraltet. Letzte Aktualisierung: <time t-att-datetime="offer.projection_id.public_generated_at"><t t-esc="offer.projection_id.public_generated_at"/></time></p>
+        <a class="btn btn-primary" t-att-href="'/welten/%s' % offer.projection_id.world_id">Details</a>
+      </div>
+    </article>
+  </template>
+
+  <template id="public_worlds_page" name="Zugfolge Welten">
+    <t t-call="website.layout">
+      <main id="wrap" class="zf-worlds-page container py-5">
+        <h1>Öffentliche Welten</h1>
+        <p class="lead">Vergleiche Laufzeit, Startkapital, Aktivität und freie Plätze aus dem letzten autoritativen Game-Snapshot.</p>
+        <div t-if="offers" class="zf-world-grid">
+          <t t-foreach="offers" t-as="offer"><t t-call="zugfolge_admin.world_card"/></t>
+        </div>
+        <div t-else="" class="alert alert-info" role="status"><h2 class="h4">Noch keine Welt veröffentlicht</h2><p>Die Übersicht erscheint, sobald ein signierter Game-Snapshot und ein freigegebenes Odoo-Angebot vorliegen.</p></div>
+      </main>
+    </t>
+  </template>
+
+  <template id="public_world_detail_page" name="Zugfolge Weltdetail">
+    <t t-call="website.layout">
+      <main id="wrap" class="zf-world-detail">
+        <header class="zf-world-hero">
+          <img t-att-src="offer.banner_url(1920)" t-att-alt="offer.banner_alt or offer.projection_id.world_name"/>
+          <div class="container"><p><t t-esc="offer.projection_id.public_phase"/></p><h1><t t-esc="offer.projection_id.world_name"/></h1></div>
+        </header>
+        <div class="container py-5">
+          <p class="lead"><t t-esc="offer.projection_id.public_description"/></p>
+          <section aria-labelledby="world-facts"><h2 id="world-facts">Weltdaten</h2>
+            <dl class="zf-stat-grid">
+              <div><dt>Beginn</dt><dd><t t-esc="offer.projection_id.public_starts_at"/></dd></div>
+              <div><dt>Ende</dt><dd><t t-esc="offer.projection_id.public_ends_at or 'Unbefristet'"/></dd></div>
+              <div><dt>Startkapital</dt><dd><t t-esc="offer.projection_id.starting_capital_preview"/></dd></div>
+              <div><dt>Aufnahme</dt><dd><t t-esc="offer.projection_id.admission_status"/></dd></div>
+              <div><dt>EVU gesamt</dt><dd><t t-esc="offer.projection_id.total_operators"/></dd></div>
+              <div><dt>Stark aktiv</dt><dd><t t-if="offer.projection_id.activity_policy_status == 'configured'" t-esc="offer.projection_id.strongly_active_operators"/><t t-else="">Nicht ausgewiesen</t></dd></div>
+              <div><dt>Region</dt><dd><t t-esc="offer.projection_id.public_region"/></dd></div>
+              <div><dt>Regelwerk</dt><dd><t t-esc="offer.projection_id.public_rule_release"/></dd></div>
+            </dl>
+            <p><t t-esc="offer.projection_id.activity_explanation"/></p>
+          </section>
+          <section aria-labelledby="world-terms"><h2 id="world-terms">Teilnahme</h2><p><t t-esc="offer.participation_conditions"/></p>
+            <form t-if="request.env.user._is_public() == False" t-att-action="'/my/worlds/%s/join' % offer.projection_id.world_id" method="post">
+              <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/><button type="submit" class="btn btn-primary"><t t-if="offer.product_tmpl_id">Kaufen</t><t t-else="">Teilnahme anfragen</t></button>
+            </form>
+            <a t-else="" class="btn btn-primary" href="/web/login?redirect=/my/worlds">Anmelden</a>
+          </section>
+          <p class="text-muted">Stand: <time t-att-datetime="offer.projection_id.public_generated_at"><t t-esc="offer.projection_id.public_generated_at"/></time></p>
+          <p class="text-muted">Autoritative Weltzeit: <time t-att-datetime="offer.projection_id.authoritative_as_of"><t t-esc="offer.projection_id.authoritative_as_of"/></time></p>
+          <p t-if="offer.banner_source or offer.banner_author or offer.banner_license" class="small text-muted">
+            Bild: <t t-esc="offer.banner_source"/> · <t t-esc="offer.banner_author"/> · <t t-esc="offer.banner_license"/>
+            <t t-if="offer.banner_attribution"> · <t t-esc="offer.banner_attribution"/></t>
+          </p>
+        </div>
+      </main>
+    </t>
+  </template>
+
+  <template id="portal_worlds_page" name="Meine Zugfolge-Welten">
+    <t t-call="portal.portal_layout">
+      <t t-set="breadcrumbs_searchbar" t-value="True"/><t t-call="portal.portal_searchbar"><t t-set="title">Meine Welten</t></t>
+      <main class="zf-portal-worlds">
+        <h1>Meine Welten</h1>
+        <section aria-labelledby="my-participations"><h2 id="my-participations">Teilnahmen</h2>
+          <div t-if="participations" class="zf-world-grid">
+            <article t-foreach="participations" t-as="participation" class="zf-world-card"><div class="zf-world-card__body">
+              <h3><t t-esc="participation.offer_id.projection_id.world_name"/></h3><p>Status: <strong><t t-esc="dict(participation._fields['state'].selection).get(participation.state)"/></strong></p>
+              <p t-if="participation.rejection_code">Grund: <t t-esc="participation.rejection_code"/></p>
+              <a t-if="participation.state == 'active'" class="btn btn-primary" t-att-href="'/my/worlds/%s/open' % participation.world_id">Spiel öffnen</a>
+            </div></article>
+          </div><p t-else="" class="alert alert-info">Du hast noch keine Weltteilnahme.</p>
+        </section>
+        <section aria-labelledby="available-worlds"><h2 id="available-worlds">Verfügbare Welten vergleichen</h2>
+          <div class="zf-world-grid"><t t-foreach="offers" t-as="offer"><t t-call="zugfolge_admin.world_card"/></t></div>
+        </section>
+      </main>
+    </t>
+  </template>
+
+  <template id="portal_my_home_worlds" inherit_id="portal.portal_my_home" priority="30">
+    <xpath expr="//div[hasclass('o_portal_docs')]" position="inside">
+      <t t-call="portal.portal_docs_entry"><t t-set="title">Meine Welten</t><t t-set="url" t-value="'/my/worlds'"/><t t-set="placeholder_count" t-value="'zugfolge_world_count'"/></t>
+    </xpath>
+  </template>
+</odoo>

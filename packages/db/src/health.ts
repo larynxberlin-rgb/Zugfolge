@@ -70,6 +70,9 @@ export function createDatabaseHealthCheck(db: AnyDatabase): HealthCheck {
         sql`select event_id, tenant_id from odoo_webhook_receipts limit 0`,
       );
       await db.execute(
+        sql`select world_id, keycloak_subject, state from world_participations limit 0`,
+      );
+      await db.execute(
         sql`select world_id, region_id, revision, publisher_sequence from regional_simulation_states limit 0`,
       );
       await db.execute(

@@ -127,6 +127,13 @@
       "when": 1786543200000,
       "tag": "0017_world_deploy_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1786590000000,
+      "tag": "0019_odoo_public_worlds",
+      "breakpoints": true
     }
   ]
 }

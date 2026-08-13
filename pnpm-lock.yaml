@@ -189,6 +189,9 @@ importers:
       '@zugfolge/db':
         specifier: workspace:*
         version: link:../db
+      '@zugfolge/economy':
+        specifier: workspace:*
+        version: link:../economy
       '@zugfolge/health':
         specifier: workspace:*
         version: link:../health

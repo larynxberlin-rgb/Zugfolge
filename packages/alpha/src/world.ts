@@ -10,11 +10,13 @@ import {
   PUBLIC_ENTRY_FACILITY_SCHEMA,
   type PublicEntryFacilityPolicy,
   type SerializedStartingCapitalPolicy,
+  type StartingCapitalPolicy,
 } from "@zugfolge/economy";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { AlphaConflictError, AlphaValidationError } from "./errors.js";
+import { validateActivityPolicy, type ActivityPolicyV1, type WorldActivityPolicy } from "./activity-policy.js";
 import { alphaHash } from "./hash.js";
 
 export type AlphaDatabase = PgDatabase<PgQueryResultHKT, Record<string, unknown>, any>;
@@ -54,6 +56,39 @@ export interface AlphaWorldBlueprint {
   readonly lots: readonly WorldLotBlueprint[];
   readonly conflictCheckHash: string;
   readonly tenderCalendarHash: string;
+  /** `null` bedeutet: fachliche Grenzwerte noch nicht freigegeben; keine Kennzahl behaupten. */
+  readonly activityPolicy?: WorldActivityPolicy;
+  readonly admission?: {
+    readonly capacity: number;
+    readonly status: "planned" | "open" | "waitlist" | "closed";
+  };
+  readonly publicMetadata?: {
+    readonly description: string;
+    readonly phase: "planned" | "registration_open" | "active" | "ended" | "archived";
+    readonly startsAt: string;
+    readonly endsAt: string | null;
+    readonly regionLabel: string;
+    readonly ruleRelease: string;
+    readonly banner: {
+      readonly altText: string;
+      readonly source: string;
+      readonly author: string;
+      readonly license: string;
+      readonly attribution: string | null;
+      readonly focalPointXPermille: number;
+      readonly focalPointYPermille: number;
+      readonly rightsApproved: boolean;
+    };
+  };
+}
+
+export function effectiveStartingCapitalPolicy(blueprint: AlphaWorldBlueprint): StartingCapitalPolicy {
+  return parseStartingCapitalPolicy(blueprint.startingCapitalPolicy);
+}
+
+export function effectiveActivityPolicy(blueprint: AlphaWorldBlueprint): ActivityPolicyV1 | null {
+  if (blueprint.activityPolicy === undefined || blueprint.activityPolicy === null) return null;
+  return validateActivityPolicy(blueprint.activityPolicy);
 }
 
 export interface WorldStartVerification {
@@ -148,7 +183,32 @@ export function validateWorldBlueprint(blueprint: AlphaWorldBlueprint): string {
   }
   const contractEnds = new Set(blueprint.lots.map((lot) => lot.contractEndsAtPeriod));
   if (blueprint.lots.length > 1 && contractEnds.size < 2) throw new AlphaValidationError("Vertragsenden sind nicht gestaffelt.");
-  return alphaHash(ALPHA_WORLD_BLUEPRINT_SCHEMA, blueprint);
+  const hasPublicCatalogContract = blueprint.admission !== undefined || blueprint.publicMetadata !== undefined || blueprint.activityPolicy !== undefined;
+  if (hasPublicCatalogContract) {
+    if (blueprint.activityPolicy !== null) {
+      if (blueprint.activityPolicy === undefined) throw new AlphaValidationError("Oeffentlicher Weltvertrag braucht eine explizite ActivityPolicy oder null.");
+      try { validateActivityPolicy(blueprint.activityPolicy); } catch (error) {
+        throw new AlphaValidationError(error instanceof Error ? error.message : "ActivityPolicy ist ungueltig.");
+      }
+    }
+    if (blueprint.admission === undefined || !Number.isSafeInteger(blueprint.admission.capacity) || blueprint.admission.capacity < 1
+      || !["planned", "open", "waitlist", "closed"].includes(blueprint.admission.status)) {
+      throw new AlphaValidationError("Oeffentlicher Weltvertrag braucht Kapazitaet und Aufnahmestatus.");
+    }
+    const metadata = blueprint.publicMetadata;
+    if (metadata === undefined || metadata.description.trim() === "" || metadata.regionLabel.trim() === "" || metadata.ruleRelease.trim() === ""
+      || Number.isNaN(new Date(metadata.startsAt).getTime()) || (metadata.endsAt !== null && Number.isNaN(new Date(metadata.endsAt).getTime()))) {
+      throw new AlphaValidationError("Oeffentlicher Weltvertrag braucht gueltige oeffentliche Metadaten.");
+    }
+    const banner = metadata.banner;
+    if (banner.altText.trim() === "" || banner.source.trim() === "" || banner.author.trim() === "" || banner.license.trim() === ""
+      || !Number.isSafeInteger(banner.focalPointXPermille) || !Number.isSafeInteger(banner.focalPointYPermille)
+      || banner.focalPointXPermille < 0 || banner.focalPointXPermille > 1_000
+      || banner.focalPointYPermille < 0 || banner.focalPointYPermille > 1_000) {
+      throw new AlphaValidationError("Banner-Metadaten sind unvollstaendig oder der Brennpunkt ist ungueltig.");
+    }
+  }
+  return alphaHash(blueprint.schemaVersion, blueprint);
 }
 
 function exactLots(blueprint: AlphaWorldBlueprint): readonly string[] {

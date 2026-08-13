@@ -33,9 +33,10 @@ def dispatch_signed_game_command(env, correlation_id, actor_reference, command):
     key_id = _parameter(env, "zugfolge_admin.webhook_key_id")
     secret = _parameter(env, "zugfolge_admin.webhook_secret")
     timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    business_event_key = command.get("idempotencyKey") if isinstance(command, dict) else None
     payload = {
         "schemaVersion": "zugfolge-odoo/v1",
-        "eventId": "odoo-%s" % correlation_id,
+        "eventId": "odoo-%s" % (business_event_key or correlation_id),
         "eventType": "commerce.command",
         "occurredAt": timestamp,
         "correlationId": correlation_id,

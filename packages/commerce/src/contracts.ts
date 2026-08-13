@@ -11,6 +11,7 @@ export type ProductKind = (typeof PRODUCT_KINDS)[number];
 
 export const COMMAND_TYPES = [
   "entitlement.change",
+  "world.participation.change",
   "admin.world_access_revoke",
   "admin.infra_release_adoption",
   "admin.manual_disruption_create",
@@ -84,6 +85,22 @@ export interface SignedWorldDeployment {
   };
 }
 
+export const WORLD_PARTICIPATION_CONTRACT_VERSION = "zugfolge-world-participation/v1" as const;
+
+export interface WorldParticipationChangePayload {
+  readonly kind: "world.participation.change";
+  readonly schemaVersion: typeof WORLD_PARTICIPATION_CONTRACT_VERSION;
+  readonly action: "provision" | "cancel" | "refund";
+  readonly worldId: string;
+  readonly keycloakSubject: string;
+  readonly displayName: string;
+  readonly odooPartnerReference: string;
+  readonly odooOrderReference: string;
+  readonly paymentReference: string;
+  readonly idempotencyKey: string;
+  readonly requestedAt: string;
+}
+
 export interface EntitlementChangePayload {
   readonly kind: "entitlement.change";
   readonly subject: string;
@@ -105,7 +122,7 @@ export interface ManualDisruption {
 }
 
 export interface AdminCommandPayload {
-  readonly kind: Exclude<OdooCommandType, "entitlement.change">;
+  readonly kind: Exclude<OdooCommandType, "entitlement.change" | "world.participation.change">;
   readonly worldId: string;
   readonly actionType: AdminActionType;
   readonly riskClass: RiskClass;
@@ -136,7 +153,7 @@ export interface AdminCommandPayload {
   readonly manualDisruption?: ManualDisruption;
 }
 
-export type OdooCommandPayload = EntitlementChangePayload | AdminCommandPayload;
+export type OdooCommandPayload = EntitlementChangePayload | WorldParticipationChangePayload | AdminCommandPayload;
 
 export interface OdooWebhookEnvelope {
   readonly schemaVersion: typeof ODOO_CONTRACT_VERSION;
@@ -152,7 +169,7 @@ export interface OdooWebhookEnvelope {
 export interface OdooProjectionEnvelope {
   readonly schemaVersion: typeof ODOO_CONTRACT_VERSION;
   readonly messageId: string;
-  readonly messageType: "world.projection" | "alpha.feedback.projection" | "admin.command.result" | "admin.capability.projection" | "reconciliation.task";
+  readonly messageType: "world.projection" | "public.world.snapshot" | "world.participation.result" | "alpha.feedback.projection" | "admin.command.result" | "admin.capability.projection" | "reconciliation.task";
   readonly worldId: string;
   readonly occurredAt: string;
   readonly correlationId: string;
@@ -169,4 +186,36 @@ export function isOdooCommandType(value: unknown): value is OdooCommandType {
 
 export function isAdminActionType(value: unknown): value is AdminActionType {
   return typeof value === "string" && (ADMIN_ACTION_TYPES as readonly string[]).includes(value);
+}
+
+export class WorldParticipationValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WorldParticipationValidationError";
+  }
+}
+
+export function validateWorldParticipationChange(payload: WorldParticipationChangePayload): void {
+  if (payload.kind !== "world.participation.change" || payload.schemaVersion !== WORLD_PARTICIPATION_CONTRACT_VERSION) {
+    throw new WorldParticipationValidationError("Unbekannter Weltteilnahmevertrag.");
+  }
+  if (!("provision cancel refund".split(" ") as readonly string[]).includes(payload.action)) {
+    throw new WorldParticipationValidationError("Unbekannte Weltteilnahmeaktion.");
+  }
+  if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(payload.worldId)) {
+    throw new WorldParticipationValidationError("Weltteilnahme braucht eine gueltige world_id.");
+  }
+  for (const [name, value, minimum] of [
+    ["keycloakSubject", payload.keycloakSubject, 1],
+    ["displayName", payload.displayName, 1],
+    ["odooPartnerReference", payload.odooPartnerReference, 1],
+    ["odooOrderReference", payload.odooOrderReference, 1],
+    ["paymentReference", payload.paymentReference, 1],
+    ["idempotencyKey", payload.idempotencyKey, 8],
+  ] as const) {
+    if (value.trim().length < minimum || value.length > 255) throw new WorldParticipationValidationError(`${name} ist ungueltig.`);
+  }
+  if (Number.isNaN(new Date(payload.requestedAt).getTime())) {
+    throw new WorldParticipationValidationError("Weltteilnahme braucht einen gueltigen Zeitstempel.");
+  }
 }

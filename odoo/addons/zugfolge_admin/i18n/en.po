@@ -1,0 +1,126 @@
+# Translation of Zugfolge Administration to English.
+msgid ""
+msgstr ""
+"Project-Id-Version: zugfolge_admin 19.0.2.0.0\n"
+"Language: en\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Öffentliche Welten"
+msgstr "Public worlds"
+
+msgid "Meine Welten"
+msgstr "My worlds"
+
+msgid "Verfügbare Welten vergleichen"
+msgstr "Compare available worlds"
+
+msgid "Noch keine Welt veröffentlicht"
+msgstr "No world has been published yet"
+
+msgid "Weltdaten werden geladen …"
+msgstr "Loading world data…"
+
+msgid "Weltdaten sind vorübergehend nicht verfügbar. Bitte später erneut versuchen."
+msgstr "World data is temporarily unavailable. Please try again later."
+
+msgid "Keine passende veröffentlichte Welt vorhanden."
+msgstr "No matching published world is available."
+
+msgid "Daten möglicherweise veraltet"
+msgstr "Data may be stale"
+
+msgid "Daten möglicherweise veraltet · Stand %s"
+msgstr "Data may be stale · Updated %s"
+
+msgid "Startkapital"
+msgstr "Starting capital"
+
+msgid "Stark aktiv"
+msgstr "Highly active"
+
+msgid "Nicht ausgewiesen"
+msgstr "Not reported"
+
+msgid "Freie Plätze"
+msgstr "Available places"
+
+msgid "EVU gesamt"
+msgstr "Total railway undertakings"
+
+msgid "Unbefristet"
+msgstr "Unlimited duration"
+
+msgid "Phase"
+msgstr "Phase"
+
+msgid "Verbleibend"
+msgstr "Remaining"
+
+msgid "%s Tage %s Stunden"
+msgstr "%s days %s hours"
+
+msgid "%s Stunden"
+msgstr "%s hours"
+
+msgid "Beginn"
+msgstr "Starts"
+
+msgid "Ende"
+msgstr "Ends"
+
+msgid "Preis"
+msgstr "Price"
+
+msgid "Teilnahme auf Anfrage"
+msgstr "Participation on request"
+
+msgid "Aufnahmestatus"
+msgstr "Admission status"
+
+msgid "Stand: %s"
+msgstr "Updated: %s"
+
+msgid "Autoritative Weltzeit: %s"
+msgstr "Authoritative world time: %s"
+
+msgid "Region: %s · Regelwerk: %s"
+msgstr "Region: %s · ruleset: %s"
+
+msgid "Welt-ID"
+msgstr "World ID"
+
+msgid "Weltgruppe"
+msgstr "World group"
+
+msgid "Alle Welten"
+msgstr "All worlds"
+
+msgid "Aktive Welten"
+msgstr "Active worlds"
+
+msgid "Anmeldung offen"
+msgstr "Registration open"
+
+msgid "UUID aus dem Weltangebot"
+msgstr "UUID from the world offer"
+
+msgid "Kaufen"
+msgstr "Buy"
+
+msgid "Teilnahme anfragen"
+msgstr "Request participation"
+
+msgid "Anmelden"
+msgstr "Sign in"
+
+msgid "Spiel öffnen"
+msgstr "Open game"
+
+msgid "Teilnahmen"
+msgstr "Participations"
+
+msgid "Du hast noch keine Weltteilnahme."
+msgstr "You do not have a world participation yet."
+
+msgid "Welt im Snippet-Menü auswählen. Im Editor werden keine produktiven Dummywerte angezeigt."
+msgstr "Select a world in the snippet menu. No production dummy values are shown in the editor."

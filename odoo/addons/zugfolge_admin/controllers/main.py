@@ -36,21 +36,35 @@ class ZugfolgeProjectionController(http.Controller):
         headers = request.httprequest.headers
         if not isinstance(payload, dict) or not _valid_signature(payload, headers.get("X-Zugfolge-Odoo-Key-Id"), headers.get("X-Zugfolge-Odoo-Timestamp"), headers.get("X-Zugfolge-Odoo-Signature")):
             return {"accepted": False, "code": "invalid_signature"}
-        if payload.get("schemaVersion") != "zugfolge-odoo/v1" or payload.get("messageType") not in ("world.projection", "alpha.feedback.projection", "admin.command.result", "admin.capability.projection", "reconciliation.task"):
+        message_id = payload.get("messageId")
+        if (payload.get("schemaVersion") != "zugfolge-odoo/v1"
+                or payload.get("messageType") not in ("world.projection", "public.world.snapshot", "world.participation.result", "alpha.feedback.projection", "admin.command.result", "admin.capability.projection", "reconciliation.task")
+                or not isinstance(message_id, str) or not message_id):
             return {"accepted": False, "code": "invalid_schema"}
+        body = payload.get("payload", {})
+        digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")).hexdigest()
+        receipt = request.env["zugfolge.projection.receipt"].with_context(zugfolge_game_projection=True)
+        existing = receipt.search([("message_id", "=", message_id)], limit=1)
+        if existing:
+            if (existing.payload_hash != digest or existing.world_id != payload.get("worldId")
+                    or existing.correlation_id != payload.get("correlationId")):
+                return {"accepted": False, "code": "replay_conflict"}
+            return {"accepted": True, "messageId": message_id, "duplicate": True}
+        # Der Beleg wird in derselben Odoo-Transaktion wie die Wirkung angelegt.
+        # Wirft die Projektion, rollt beides zurueck; ein Replay kann nie zweimal wirken.
+        receipt.create({
+            "message_id": message_id, "world_id": payload.get("worldId"),
+            "correlation_id": payload.get("correlationId"), "payload_hash": digest,
+        })
         model = request.env["zugfolge.world.projection"].with_context(zugfolge_game_projection=True)
         if payload["messageType"] == "world.projection":
             model.upsert_game_projection(payload)
+        if payload["messageType"] == "public.world.snapshot":
+            model.upsert_public_snapshot(payload)
         if payload["messageType"] == "admin.capability.projection":
             request.env["zugfolge.admin.capability"].with_context(zugfolge_game_projection=True).upsert_game_projection(payload)
         if payload["messageType"] == "alpha.feedback.projection":
             request.env["zugfolge.feedback"].with_context(zugfolge_game_projection=True).upsert_game_projection(payload)
-        receipt = request.env["zugfolge.projection.receipt"].with_context(zugfolge_game_projection=True)
-        existing = receipt.search([("message_id", "=", payload.get("messageId"))], limit=1)
-        if not existing:
-            body = payload.get("payload", {})
-            digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")).hexdigest()
-            receipt.create({"message_id": payload.get("messageId"), "world_id": payload.get("worldId"), "correlation_id": payload.get("correlationId"), "payload_hash": digest})
         if payload["messageType"] == "admin.command.result":
             result = payload.get("payload", {})
             request_record = request.env["zugfolge.admin.request"].search([("correlation_id", "=", payload.get("correlationId"))], limit=1)
@@ -71,7 +85,15 @@ class ZugfolgeProjectionController(http.Controller):
                 if result.get("keycloakSubject"):
                     values.update({"keycloak_subject": result.get("keycloakSubject"), "game_account_reference": result.get("gameAccountReference")})
                 invitation.with_context(zugfolge_game_projection=True).write(values)
-        return {"accepted": True, "messageId": payload.get("messageId")}
+        if payload["messageType"] == "world.participation.result":
+            result = payload.get("payload", {})
+            participation = request.env["zugfolge.world.participation"].sudo().search([
+                ("correlation_id", "=", payload.get("correlationId")),
+                ("world_id", "=", payload.get("worldId")),
+            ], limit=1)
+            if participation:
+                participation.with_context(zugfolge_game_projection=True).apply_game_result(result)
+        return {"accepted": True, "messageId": message_id}
 
     @http.route("/zugfolge/reconciliation/snapshot", type="json", auth="none", methods=["POST"], csrf=False)
     def reconciliation_snapshot(self, **_kwargs):

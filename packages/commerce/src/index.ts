@@ -7,3 +7,4 @@ export * from "./reconciliation.js";
 export * from "./signing.js";
 export * from "./store.js";
 export * from "./bridge.js";
+export * from "./public-world-snapshot.js";

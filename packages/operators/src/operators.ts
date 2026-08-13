@@ -201,6 +201,8 @@ export async function listOperatorsForAccount(
       worldId: operators.worldId,
       foundingAccountId: operators.foundingAccountId,
       name: operators.name,
+      operatorKind: operators.operatorKind,
+      lifecycle: operators.lifecycle,
       foundedAt: operators.foundedAt,
     })
     .from(operators)

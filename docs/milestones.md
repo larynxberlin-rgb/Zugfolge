@@ -870,6 +870,13 @@ erzeugten und jeweils signierten Tutorial- und Wettbewerbsbestände absolviert
 hat; lokale PGlite-E2Es sind reproduzierbare Vorabbeweise, keine
 Produktionsnachweise.
 
+Der signierte Startkapitalvertrag, atomare EVU-Eröffnungsbuchung für `0`,
+positive Integer-Cent und `unlimited` sowie der Odoo-Weltkatalog sind
+repositoryseitig implementiert. Die parallele signierte Welt-Deployment-
+Arbeit bleibt der einzige Weltstartpfad; diese Änderung führt keinen zweiten
+ein. M9.3 bleibt **in Arbeit**, weil Kapazitäts-Heatmap, Glossar-Layer,
+Betriebsassistent und externe Browser-/Odoo-Abnahme noch fehlen.
+
 Phase 3 schließt die noch fehlende ausführbare Betriebsschicht für M9.4,
 M9.5 und M9.7: Einladungskonten werden nur noch über einen Odoo-
 Vier-Augen-Antrag entzogen, wobei das Game Keycloak und den weltgebundenen
@@ -957,7 +964,7 @@ M12.2 noch nicht als erledigt markiert.
 |---|---------------|-------|--------|
 | 13.1 | Odoo Community selbst gehostet, strikt getrennt, OCA-Module versionsgepinnt | M | in Arbeit |
 | 13.2 | Game-Outbox → Bridge → Odoo, signierter Webhook-Receiver, nächtlicher Reconciler | L | in Arbeit |
-| 13.3 | Entitlements, Zugfolge Plus, Kosmetik, Weltplätze, private Welten | M | in Arbeit |
+| 13.3 | Entitlements, Zugfolge Plus, Kosmetik, Weltplätze, Odoo-Weltauswahl, kommerziell freigegebene Weltteilnahmen und private Welten | M | in Arbeit |
 | 13.4 | **Planungsarbeitsplatz**: mehrere Bildfahrplanfenster, Layouts, Vergleichsansichten | M | offen |
 | 13.5 | **Sammelbearbeitung und Vorlagenverwaltung** für die Handplanung | M | offen |
 | 13.6 | **Exporte**: Bildfahrplan, Umlauf- und Dienstpläne, Geschäftsberichte, Replay-Filme | M | offen |
@@ -967,6 +974,14 @@ M12.2 noch nicht als erledigt markiert.
 
 > **Härtetest:** Odoo abschalten. Login, Simulation, Livemap und bestehende
 > Entitlements müssen unverändert weiterlaufen.
+
+Der Repository-Stand enthält `/welten`, `/my/worlds`, vier Odoo-Website-
+Builder-Snippets, Keycloak-OIDC-Portalbindung, Payment→Queue→Game-Teilnahme,
+idempotente Ergebnisprojektion und den öffentlichen Snapshotcache. M13.1–M13.3
+bleiben **in Arbeit**, bis Odoo 19 mit OCA `queue_job`, realem Payment-/Refund-
+Ereignis, Browsereditor, getrenntem Game-Dienst und Reconciliation extern
+abgenommen ist. Für „stark aktiv“ ist außerdem eine der in ADR-0030
+dokumentierten Policies fachlich freizugeben; bis dahin bleibt die Zahl leer.
 
 ---
 

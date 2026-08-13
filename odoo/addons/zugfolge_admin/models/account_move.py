@@ -34,6 +34,7 @@ class AccountMove(models.Model):
         [("none", "Nicht relevant"), ("queued", "Wird übertragen"), ("accepted", "Vom Game angenommen"), ("failed", "Übertragung fehlgeschlagen")],
         default="none", readonly=True, copy=False,
     )
+    zugfolge_participation_id = fields.Many2one("zugfolge.world.participation", readonly=True, copy=False)
 
     def _zugfolge_product_line(self):
         lines = self.invoice_line_ids.filtered(lambda line: line.product_id.product_tmpl_id.zugfolge_product_kind)
@@ -71,7 +72,57 @@ class AccountMove(models.Model):
             if move._zugfolge_command_change() is not None:
                 move.with_context(zugfolge_skip_dispatch=True).write({"zugfolge_event_state": "queued"})
                 move.with_delay(description="Zugfolge-Entitlement an Game senden")._dispatch_zugfolge_entitlement()
+            move._sync_zugfolge_world_participation()
         return result
+
+    def _zugfolge_world_offer(self):
+        self.ensure_one()
+        template_ids = self.invoice_line_ids.product_id.product_tmpl_id.ids
+        offers = self.env["zugfolge.world.offer"].search([("product_tmpl_id", "in", template_ids)])
+        if len(offers) > 1:
+            raise ValidationError(_("Eine Rechnung darf nur eine konkrete Zugfolge-Weltteilnahme enthalten."))
+        return offers[:1]
+
+    def _sync_zugfolge_world_participation(self):
+        """Native payment_state ist kommerziell; das Game-Ergebnis bleibt fachlich autoritativ."""
+        for move in self:
+            offer = move._zugfolge_world_offer()
+            if not offer:
+                continue
+            subject = move.partner_id.zugfolge_keycloak_subject
+            if not subject:
+                raise ValidationError(_("Das Portalprofil besitzt noch keine verifizierte Keycloak-sub-Referenz."))
+            payment_reference = move.name or str(move.id)
+            order_reference = move.invoice_origin or move.name or str(move.id)
+            participation = self.env["zugfolge.world.participation"].search([
+                ("partner_id", "=", move.partner_id.id), ("world_id", "=", offer.projection_id.world_id),
+            ], limit=1)
+            if move.payment_state == "paid" and move.move_type == "out_invoice":
+                deterministic_key = str(uuid.uuid5(uuid.NAMESPACE_URL, "zugfolge:%s:%s:%s" % (offer.projection_id.world_id, move.partner_id.id, payment_reference)))
+                values = {
+                    "partner_id": move.partner_id.id, "offer_id": offer.id, "keycloak_subject": subject,
+                    "odoo_order_reference": order_reference, "payment_reference": payment_reference,
+                    "idempotency_key": deterministic_key, "state": "paid",
+                }
+                if participation:
+                    if participation.payment_reference == payment_reference and participation.state in (
+                        "provisioning", "active", "rejected", "cancelled", "refunded",
+                    ):
+                        move.with_context(zugfolge_skip_dispatch=True).write({"zugfolge_participation_id": participation.id})
+                        continue
+                    if participation.state == "active":
+                        raise ValidationError(_("Fuer diese Welt besteht bereits eine aktive Teilnahme; eine zweite Zahlung wird nicht provisioniert."))
+                    values["correlation_id"] = str(uuid.uuid4())
+                    participation.with_context(zugfolge_commerce_transition=True).write(values)
+                else:
+                    participation = self.env["zugfolge.world.participation"].create(values)
+                move.with_context(zugfolge_skip_dispatch=True).write({"zugfolge_participation_id": participation.id})
+                participation.queue_provisioning()
+            elif (move.payment_state == "reversed" or move.move_type == "out_refund") and participation:
+                if participation.state == "refunded":
+                    continue
+                participation.write({"state": "refunded"})
+                participation.with_delay(description="Zugfolge-Weltteilnahme erstatten")._dispatch("refund")
 
     def _dispatch_zugfolge_entitlement(self):
         """OCA queue_job retried transport; duplicate attempts share the Game event ID."""

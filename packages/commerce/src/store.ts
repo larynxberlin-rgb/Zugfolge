@@ -16,15 +16,30 @@ import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { entitlementChangeToStatus } from "./entitlements.js";
-import { ODOO_CONTRACT_VERSION, type AdminActionType, type AdminCommandPayload, type EntitlementChangePayload, type GameAdminCapabilityProjection, type OdooProjectionEnvelope, type OdooWebhookEnvelope } from "./contracts.js";
+import {
+  ODOO_CONTRACT_VERSION,
+  validateWorldParticipationChange,
+  type AdminActionType,
+  type AdminCommandPayload,
+  type EntitlementChangePayload,
+  type GameAdminCapabilityProjection,
+  type OdooProjectionEnvelope,
+  type OdooWebhookEnvelope,
+  type WorldParticipationChangePayload,
+} from "./contracts.js";
 import { validateAdminCommand } from "./admin-workflow.js";
 import type { OdooWebhookReceiptStore } from "./receiver.js";
+import { validatePublicWorldSnapshot, type PublicWorldSnapshotV1 } from "./public-world-snapshot.js";
 
 /** Gemeinsamer Drizzle-Typ fuer Postgres und PGlite-Integrationstests. */
 export type CommerceDatabase = PgDatabase<PgQueryResultHKT, Record<string, unknown>, any>;
 
 function commandWorldId(command: OdooWebhookEnvelope["command"]): string | undefined {
   return command.kind === "entitlement.change" ? undefined : command.worldId;
+}
+
+function commandIdempotencyKey(command: OdooWebhookEnvelope["command"]): string | undefined {
+  return command.kind === "world.participation.change" ? command.idempotencyKey : undefined;
 }
 
 /**
@@ -52,17 +67,20 @@ export function createOdooWebhookReceiptStore(db: CommerceDatabase): OdooWebhook
           const [world] = await tx.select({ id: worlds.id }).from(worlds).where(eq(worlds.id, envelope.command.worldId)).limit(1);
           if (world === undefined) throw new Error(`Administrationsbefehl referenziert die unbekannte Welt '${envelope.command.worldId}'.`);
         }
-        await tx.insert(odooCommandQueue).values({
+        const queued = await tx.insert(odooCommandQueue).values({
           eventId: envelope.eventId,
           worldId,
           commandType: envelope.command.kind,
+          idempotencyKey: commandIdempotencyKey(envelope.command),
           actorReference: envelope.actorReference,
           payload: envelope.command,
           correlationId: envelope.correlationId,
           status: "pending",
           receivedAt,
-        });
-        return true;
+        }).onConflictDoNothing().returning({ id: odooCommandQueue.id });
+        // Auch ein zweites Event mit neuem eventId, aber identischem
+        // fachlichem Idempotency-Key wird als Duplikat quittiert.
+        return queued.length === 1;
       });
     },
   };
@@ -116,6 +134,28 @@ export async function enqueueWorldProjection(
   });
 }
 
+/** Aggregierter, personenfreier Website-Cache; kein Besucherzugriff trifft das Game. */
+export async function enqueuePublicWorldSnapshot(
+  db: CommerceDatabase,
+  input: {
+    readonly snapshot: PublicWorldSnapshotV1;
+    readonly correlationId: string;
+    readonly occurredAt?: Date;
+  },
+): Promise<void> {
+  validatePublicWorldSnapshot(input.snapshot);
+  const occurredAt = input.occurredAt ?? new Date(input.snapshot.generatedAt);
+  await db.insert(odooProjectionOutbox).values({
+    worldId: input.snapshot.worldId,
+    messageType: "public.world.snapshot",
+    schemaVersion: ODOO_CONTRACT_VERSION,
+    correlationId: input.correlationId,
+    payload: input.snapshot,
+    occurredAt,
+    enqueuedAt: occurredAt,
+  });
+}
+
 /**
  * Schreibt ausschliesslich das bereits pseudonymisierte Spielerfeedback in die
  * Odoo-Outbox. Der Aufrufer reicht seine laufende Fachtransaktion ein, damit
@@ -162,6 +202,12 @@ function asAdminPayload(value: unknown): AdminCommandPayload {
   return payload as unknown as AdminCommandPayload;
 }
 
+function asWorldParticipationPayload(value: unknown): WorldParticipationChangePayload {
+  const payload = asRecord(value) as unknown as WorldParticipationChangePayload;
+  validateWorldParticipationChange(payload);
+  return payload;
+}
+
 export interface ProcessedOdooCommand {
   readonly id: string;
   readonly outcome: "accepted" | "rejected";
@@ -198,9 +244,30 @@ export interface GameAdminCommandResult {
 
 export type GameAdminCommandHandler = (context: GameAdminCommandContext) => Promise<GameAdminCommandResult> | GameAdminCommandResult;
 
+export interface WorldParticipationCommandContext {
+  readonly commandId: string;
+  readonly eventId: string;
+  readonly correlationId: string;
+  readonly receivedAt: Date;
+  readonly now: Date;
+  readonly payload: WorldParticipationChangePayload;
+}
+
+export interface WorldParticipationCommandResult {
+  readonly state: "active" | "rejected" | "cancelled" | "refunded";
+  readonly participationId?: string;
+  readonly gameAccountReference?: string;
+  readonly rejectionCode?: string;
+}
+
+export type WorldParticipationCommandHandler = (
+  context: WorldParticipationCommandContext,
+) => Promise<WorldParticipationCommandResult> | WorldParticipationCommandResult;
+
 export interface OdooCommandProcessingOptions {
   /** Keine Standard-Handler: ein noch nicht implementierter Milestone bleibt vorbereitet, aber wirkungslos. */
   readonly adminHandlers?: Readonly<Partial<Record<AdminActionType, GameAdminCommandHandler>>>;
+  readonly participationHandler?: WorldParticipationCommandHandler;
 }
 
 /**
@@ -239,6 +306,51 @@ export async function processNextOdooCommand(
       }).onConflictDoNothing();
       await db.update(odooCommandQueue).set({ status: "completed", processedAt: now }).where(and(eq(odooCommandQueue.id, command.id), eq(odooCommandQueue.status, "pending")));
       return { id: command.id, outcome: "accepted" };
+    }
+
+    if (command.commandType === "world.participation.change") {
+      const payload = asWorldParticipationPayload(command.payload);
+      if (command.worldId === null || command.worldId !== payload.worldId) {
+        throw new Error("Weltteilnahmebefehl besitzt keine passende Welt.");
+      }
+      if (options.participationHandler === undefined) throw new Error("Weltteilnahme-Handler ist nicht verfuegbar.");
+      const result = await options.participationHandler({
+        commandId: command.id,
+        eventId: command.eventId,
+        correlationId: command.correlationId,
+        receivedAt: command.receivedAt,
+        now,
+        payload,
+      });
+      const outcome = result.state === "rejected" ? "rejected" : "accepted";
+      await db.transaction(async (tx) => {
+        await tx.update(odooCommandQueue).set({
+          status: result.state === "rejected" ? "rejected" : "completed",
+          processedAt: now,
+          failureCode: result.rejectionCode ?? null,
+        }).where(and(eq(odooCommandQueue.id, command.id), eq(odooCommandQueue.status, "pending")));
+        await tx.insert(odooProjectionOutbox).values({
+          worldId: payload.worldId,
+          messageType: "world.participation.result",
+          schemaVersion: ODOO_CONTRACT_VERSION,
+          correlationId: command.correlationId,
+          payload: {
+            schemaVersion: payload.schemaVersion,
+            eventId: command.eventId,
+            idempotencyKey: payload.idempotencyKey,
+            action: payload.action,
+            worldId: payload.worldId,
+            state: result.state,
+            authoritative: true,
+            participationId: result.participationId,
+            gameAccountReference: result.gameAccountReference,
+            rejectionCode: result.rejectionCode,
+          },
+          occurredAt: now,
+          enqueuedAt: now,
+        });
+      });
+      return { id: command.id, outcome, code: result.rejectionCode };
     }
 
     const payload = asAdminPayload(command.payload);
@@ -378,6 +490,23 @@ export async function processNextOdooCommand(
       }
     }
     const code = error instanceof Error ? error.name : "unknown_error";
+    if (command.commandType === "world.participation.change" && command.worldId !== null) {
+      const payload = asWorldParticipationPayload(command.payload);
+      await db.transaction(async (tx) => {
+        await tx.update(odooCommandQueue).set({ status: "rejected", processedAt: now, failureCode: code })
+          .where(and(eq(odooCommandQueue.id, command.id), eq(odooCommandQueue.status, "pending")));
+        await tx.insert(odooProjectionOutbox).values({
+          worldId: command.worldId!,
+          messageType: "world.participation.result",
+          schemaVersion: ODOO_CONTRACT_VERSION,
+          correlationId: command.correlationId,
+          payload: { schemaVersion: payload.schemaVersion, eventId: command.eventId, idempotencyKey: payload.idempotencyKey, action: payload.action, worldId: payload.worldId, state: "rejected", authoritative: true, rejectionCode: code },
+          occurredAt: now,
+          enqueuedAt: now,
+        });
+      });
+      return { id: command.id, outcome: "rejected", code };
+    }
     await db.transaction(async (tx) => {
       const existingWorld = command.worldId === null
         ? undefined

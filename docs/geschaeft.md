@@ -38,6 +38,23 @@ Die verbindliche Rollen- und Sicherheitsgrenze ist [E23 / ADR-0023](adr/0023-odo
 - Es entsteht keine Abhängigkeit von einer extern nicht verfügbaren
   Enterprise-/Custom-API.
 
+### Öffentlicher Weltkatalog und Teilnahme
+
+Odoo veröffentlicht `/welten`, Portal-Weltauswahl, native Produkte,
+Bestell-/Zahlungsstatus, Forum und Banner-Attachments. Die angezeigten
+Weltfakten stammen ausschließlich aus dem signierten, aggregierten
+`zugfolge-public-world-snapshot/v1`; ein Besucherzugriff fragt weder das Game
+noch dessen Datenbank ab. Preis und Teilnahmebedingungen sind Odoo-Fakten,
+Weltphase, autoritative Weltzeit, Kapazität, EVU-Mitgliedschaft und Aktivität
+sind Game-Fakten.
+
+Eine bestätigte Zahlung ist nur die kommerzielle Freigabe. Odoo sendet danach
+`world.participation.change`; erst die Game-seitige Phasen-/Kapazitätsprüfung
+erzeugt die Mitgliedschaft. Der vollständige Vertrag steht in
+[`api/odoo-public-worlds-v1.md`](api/odoo-public-worlds-v1.md), die
+Datensparsamkeit in
+[`datenschutz-oeffentliche-weltstatistiken.md`](datenschutz-oeffentliche-weltstatistiken.md).
+
 Zum jährlichen Fahrplanwechsel verwaltet das Add-on außerdem den Import des
 transportneutralen Deutschland-Kartenpakets. Berechtigte Reviewer hängen
 Manifest und alle Teile an, lassen Inventar, Bytezahl und SHA-256 im Hintergrund

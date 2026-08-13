@@ -75,6 +75,8 @@ eigene Entscheidungen hinzu. Alle Status: **Angenommen — bindend**.
 | [0026](0026-karte-als-spielzentrum.md) | E26 | Die selbst gehostete Weltkarte ist das Spielzentrum; der Deutschland-Korpus ist vollständig sichtbar |
 | [0027](0027-geschaetzte-zugkartenposition-nur-visuell.md) | E27 | Geschätzte Zugkartenpositionen bleiben rein visuell und von der Betriebswahrheit getrennt |
 | [0028](0028-getrennter-tutorial-und-wettbewerbsstart.md) | E28 | Tutorialstart und öffentlicher Markteintritt sind getrennte Weltverträge |
+| [0029](0029-schaffnermodus-als-serverautoritative-betriebsvertiefung.md) | E29 | Der Schaffnermodus vertieft den serverautoritativen Betrieb |
+| [0030](0030-odoo-weltkatalog-und-kommerzielle-teilnahme.md) | – | Vorgeschlagene technische Ausgestaltung: Odoo-Weltkatalog und kommerzielle Teilnahme |
 
 > **Teilablösung:** ADR-0027 ersetzt ausschließlich den Exact-only-Satz zur
 > sichtbaren Zugposition in ADR-0026. Der historische Wortlaut bleibt dort

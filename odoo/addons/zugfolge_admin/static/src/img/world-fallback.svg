@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Zugfolge Weltbanner</title>
+  <desc id="desc">Abstrakte helle Gleislinien auf dunklem Grund.</desc>
+  <rect width="1600" height="900" fill="#101214"/>
+  <path d="M-100 800 C350 620 600 660 900 420 S1390 210 1700 70" fill="none" stroke="#f4f5f6" stroke-width="18"/>
+  <path d="M-100 850 C350 670 610 710 920 465 S1400 255 1700 115" fill="none" stroke="#70777f" stroke-width="10"/>
+  <g stroke="#343a40" stroke-width="8">
+    <path d="M130 700l55 120M330 630l55 120M550 600l55 120M770 490l55 120M990 330l55 120M1220 210l55 120M1450 100l55 120"/>
+  </g>
+</svg>

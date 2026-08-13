@@ -16,7 +16,7 @@ Die Trennung ist verbindlich durch [ADR-0023](adr/0023-odoo-als-administrativer-
 | Odoo Community | Git `19.0` Commit `f8c29412e71af098b2949f485a8011b01b64b368` | LGPL-3.0 | Server und native Apps `base`, `contacts`, `crm`, `account`, `payment`, `mail` |
 | Offizielles Odoo-Image | `odoo@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a` | LGPL-3.0 (Odoo-Code) | optionaler, rootless Containerbetrieb |
 | OCA `queue` | Commit `d2c1759102f1e0bc8f6244629b5b38c7b7882f36`, Modul `queue_job` 19.0.2.0.3 | LGPL-3.0 | persistente Odoo-seitige Zustellung und Wiederholung |
-| Eigenes Add-on | `odoo/addons/zugfolge_admin`, Version `19.0.1.4.0` | PolyForm Shield 1.0.0 / Odoo-Manifesteinstellung `Other proprietary` | Zugfolge-Projektion, Freigabe, Signaturgrenze, Feedback |
+| Eigenes Add-on | `odoo/addons/zugfolge_admin`, Version `19.0.2.0.0` | PolyForm Shield 1.0.0 / Odoo-Manifesteinstellung `Other proprietary` | Zugfolge-Projektion, Weltkatalog, Portal, Freigabe, Signaturgrenze, Feedback |
 
 Odoo Community ist frei selbst hostbar; die Odoo-19-Dokumentation nennt
 Community unter LGPLv3 sowie Python ab 3.10 und PostgreSQL ab 13. Das Add-on
@@ -60,6 +60,47 @@ storniert oder rückabgewickelt wird, reiht `account.move` ein idempotentes
 höchstens eine solche Produktzeile enthalten; die Game-Event-ID bleibt über
 die Rechnungs-Korrelation stabil.
 
+Ein konkretes `zugfolge.world.offer` bindet einen signiert projizierten
+Game-Weltsnapshot an Teilnahmebedingungen, optional ein natives Odoo-Produkt
+und ein verwaltetes Banner-Attachment. Nach `account.move.payment_state=paid`
+erzeugt Odoo eine `zugfolge.world.participation` und stellt
+`world.participation.change` per `queue_job` zu. Der Portalzustand wechselt
+`pending_payment → paid → provisioning → active/rejected`; Storno und Erstattung
+werden als `cancelled` beziehungsweise `refunded` zurückprojiziert. Odoo
+erzeugt niemals selbst einen Game-Zugang.
+
+## Upgrade auf 19.0.2.0.0
+
+Das Modulupdate legt Weltangebote/-teilnahmen und Website-Views an. Historische
+OAuth-Zeilen werden bewusst **nicht** nachträglich als verifiziert behandelt,
+weil der frühere Datensatz den Claim `email_verified` nicht beweist. Bestehende
+Portalprofile erhalten ihre stabile Keycloak-`sub` beim nächsten erfolgreich
+validierten OIDC-Login. Vor dem Update sind Odoo-Datenbank und Filestore
+gemeinsam zu sichern; anschließend sind Modulupdate, Odoo-Tests und die
+Banner-Anhangsstichprobe auszuführen.
+
+## Keycloak-OIDC und Portalprovisionierung
+
+1. Das offizielle Odoo-Modul `auth_oauth` mit `auth_signup` und `portal`
+   installieren (durch das Add-on manifestiert).
+2. Einen OAuth-Provider für den Keycloak-Realm anlegen und ausschließlich bei
+   diesem Datensatz **Zugfolge Keycloak** aktivieren.
+3. Authorization-, Token-/Userinfo-Endpunkt und Client-ID auf den Keycloak-
+   Client konfigurieren. Client-Secret und Integrationsschlüssel bleiben im
+   Odoo-/Keycloak-Secret-Store.
+4. Keycloak muss `sub`, `email` und den booleschen Claim
+   `email_verified=true` liefern. Ein unverifizierter oder subject-loser Login
+   wird abgelehnt.
+
+Die Erweiterung verwendet für den verifizierten markierten Provider gezielt
+Odoos konfiguriertes Portal-Template und erzeugt den Erstnutzer auch dann
+automatisch, wenn der globale `auth_signup`-Umfang auf B2B steht. Vor der
+Kopie und danach prüft sie fail-closed, dass die Vorlage beziehungsweise der
+Benutzer nicht intern ist, und bindet das stabile `sub` einmalig an
+`res.partner`.
+Keycloak-Rollen und Gruppen werden weder als Weltmitgliedschaft noch als
+Spielberechtigung ausgewertet.
+
 ## Integrationskonfiguration
 
 Die folgenden Werte sind **Bezeichner**, keine Repository-Geheimnisse. Sie
@@ -69,7 +110,7 @@ werden im Secret Store der jeweils getrennten Betriebsumgebung hinterlegt.
 # Game API: Odoo -> Game
 ODOO_WEBHOOK_TENANT_ID=production-tenant-id
 ODOO_WEBHOOK_KEYS_JSON=[{"id":"2026-08","secret":"<secret>","activeFrom":"2026-08-01T00:00:00Z"},{"id":"2026-09","secret":"<next-secret>","activeFrom":"2026-09-01T00:00:00Z"}]
-ODOO_WEBHOOK_AUTHORIZED_ACTORS_JSON={"commerce-service":["entitlement.change"],"admin-service":["admin.world_deploy","admin.world_access_revoke","admin.infra_release_adoption","admin.manual_disruption_create"]}
+ODOO_WEBHOOK_AUTHORIZED_ACTORS_JSON={"commerce-service":["entitlement.change","world.participation.change"],"admin-service":["admin.world_deploy","admin.world_access_revoke","admin.infra_release_adoption","admin.manual_disruption_create"]}
 
 # Game API: Game -> Odoo
 ODOO_PROJECTION_URL=https://odoo.example.invalid/zugfolge/projection
@@ -165,6 +206,38 @@ dessen Capability-Projektion liefert, entsteht daraus **keine** Störung und
 keine Simulations-, Konflikt- oder Dispositionswirkung. M8.3 bleibt daher in
 `docs/milestones.md` offen.
 
+## Öffentliche Website, Snippets und Cache
+
+- `/welten` und `/welten/<world_id>` lesen ausschließlich veröffentlichte
+  `zugfolge.world.offer`-Datensätze und den Odoo-Projektionscache.
+- `/my/worlds` zeigt einem Portalnutzer durch Record Rule nur dessen eigene
+  Teilnahmen. `/open` ist nur im Zustand `active` erreichbar.
+- Vier Snippets sind im Website-Builder auswählbar: Weltenkarten, einzelnes
+  Weltbanner, Live-Weltstatistiken und EVU gesamt/stark aktiv. Welt-UUID oder
+  Gruppe (`all`, `active`, `open`) werden in den Snippet-Optionen gewählt.
+- Der Browser fragt höchstens alle 60 Sekunden `/zugfolge/public/worlds` ab.
+  Odoo antwortet mit ETag, `max-age=60`, `stale-while-revalidate=120` und
+  einem 30-Requests-pro-Minute-Bucket. SSE wurde wegen der nur
+  minutenaktuellen Aggregation und der höheren Verbindungslast verworfen.
+- Mehr als 180 Sekunden alte Daten tragen sichtbar „möglicherweise veraltet“;
+  Zeitpunkt und autoritative Bezugszeit bleiben sichtbar. Fehlende, leere,
+  Fehler- und Editorzustände zeigen keine Dummy-Zahlen.
+
+Banner werden erst mit Alt-Text, Quelle, Urheber, Lizenz und dokumentierter
+Rechtefreigabe veröffentlicht. Bis dahin wird
+`static/src/img/world-fallback.svg` ausgeliefert. Responsive Derivate 512,
+1024 und 1920 Pixel bleiben verwaltete Odoo-Attachments.
+
+## Forum und Helpdesk
+
+`website_forum` ist ein offizielles Odoo-19-Modul und deshalb manifestierte
+Voraussetzung. Helpdesk wird **nicht** stillschweigend vorausgesetzt: Odoo
+Community liefert kein gleichwertiges offizielles Helpdesk-Modul in dieser
+Installation. Eine spätere OCA-Helpdesk-Aufnahme erfordert eine eigene
+Lizenz-/Security-/Wartungsfreigabe (insbesondere AGPL-Auswirkung) und einen
+exakten 19.0-Pin. Bis dahin werden Supportbezug und Aktivitäten über CRM,
+Kontakte, Mail-Thread und dokumentierte externe Supportkanäle geführt.
+
 ## Externer Integrationsnachweis
 
 Vor M13.1-Abnahme ist gegen einen echten getrennten Odoo-19-Testdienst
@@ -187,6 +260,13 @@ Tutorial und öffentliche Welt: Odoo-Konfiguration → externer Ed25519-Signer �
 angehängtes signiertes Deployment → zweite Freigabe → HMAC-Webhook →
 Game-Neuprüfung und Start → unveränderliche Odoo-Projektion. Ein negativer Lauf
 mit abweichender Policy oder Deployment-Hash muss ohne Weltstart enden.
+
+Für die Weltteilnahme zusätzlich: verifizierter Keycloak-Erstlogin erzeugt
+automatisch ein Portalprofil → `/my/worlds` → natives Weltprodukt bezahlen →
+doppelten Payment-Webhook zustellen → exakt ein Game-Zugang → Ergebnis in Odoo
+`active` → Welt öffnen → Refund → Game-Zugang weltgebunden entzogen und Odoo
+`refunded`. Die vier Snippets sind im echten Editor per Drag-and-drop, in
+Deutsch und Englisch, mobil sowie per Tastatur/Screenreader zu prüfen.
 
 Danach sind mindestens zu dokumentieren: unabhängiger Start ohne Game-
 Datenbankzugriff, Health, Add-on-Tests, Kauf/Refund/Chargeback/Restore,

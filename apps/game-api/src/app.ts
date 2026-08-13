@@ -12,6 +12,7 @@
 import { timingSafeEqual } from "node:crypto";
 
 import {
+  ALPHA_WORLD_BLUEPRINT_SCHEMA,
   AlphaAuthorizationError,
   AlphaConflictError,
   AlphaValidationError,
@@ -32,6 +33,7 @@ import {
   worldEventLog,
   worlds,
   worldAccesses,
+  worldParticipations,
 } from "@zugfolge/db";
 import {
   assertPrivateWorldEntitlement,
@@ -2315,14 +2317,32 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         if (targetWorld.lifecycleStatus !== "active") {
           return reply.code(409).send({ code: "world_inactive", error: "Welt ist nicht aktiv." });
         }
+        let commerciallyReleased = false;
         if (targetWorld?.worldKind === "public" && targetWorld.lifecycleStatus === "active") {
+          const [profile] = await deps.db.select({ blueprint: alphaWorldProfiles.blueprint })
+            .from(alphaWorldProfiles).where(eq(alphaWorldProfiles.worldId, request.params.worldId)).limit(1);
+          const blueprint = profile === undefined ? undefined : decodeEconomyValue(profile.blueprint) as { schemaVersion?: unknown };
+          if (blueprint?.schemaVersion === ALPHA_WORLD_BLUEPRINT_SCHEMA && "admission" in blueprint) {
+            const [participation] = await deps.db.select({ id: worldParticipations.id }).from(worldParticipations).where(and(
+              eq(worldParticipations.worldId, request.params.worldId),
+              eq(worldParticipations.keycloakSubject, identity.keycloakSubject),
+              eq(worldParticipations.state, "active"),
+            )).limit(1);
+            if (participation === undefined) {
+              return reply.code(403).send({
+                code: "commercial_world_release_required",
+                error: "Oeffentliche Weltteilnahmen werden ausschliesslich nach kommerzieller Odoo-Freigabe provisioniert.",
+              });
+            }
+            commerciallyReleased = true;
+          }
           const memberships = await deps.db
             .select({ worldId: accounts.worldId })
             .from(accounts)
             .innerJoin(worlds, eq(accounts.worldId, worlds.id))
             .innerJoin(worldAccesses, and(eq(accounts.worldId, worldAccesses.worldId), eq(accounts.keycloakSubject, worldAccesses.keycloakSubject)))
             .where(and(eq(accounts.keycloakSubject, identity.keycloakSubject), eq(worlds.worldKind, "public"), eq(worlds.lifecycleStatus, "active"), eq(worldAccesses.status, "active")));
-          if (!memberships.some((membership) => membership.worldId === request.params.worldId)) {
+          if (!commerciallyReleased && !memberships.some((membership) => membership.worldId === request.params.worldId)) {
             const entitlements = await activeEntitlementsForSubject(deps.db, identity.keycloakSubject);
             assertPublicWorldSlot(entitlements.map((record) => ({ subject: record.keycloakSubject, productKind: record.productKind, status: record.status, validFrom: record.validFrom, validUntil: record.validUntil ?? undefined, quantity: Number(record.quantity) })), memberships.length);
           }

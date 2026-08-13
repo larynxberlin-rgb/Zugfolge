@@ -115,6 +115,8 @@ export const odooCommandQueue = pgTable(
     // bleiben die einzige globale Variante und tragen hier weiterhin NULL.
     worldId: uuid("world_id"),
     commandType: text("command_type").notNull(),
+    /** Fachlicher Replay-Schlüssel; für ältere globale Entitlements optional. */
+    idempotencyKey: text("idempotency_key"),
     actorReference: text("actor_reference").notNull(),
     payload: jsonb("payload").notNull(),
     correlationId: text("correlation_id").notNull(),
@@ -128,6 +130,7 @@ export const odooCommandQueue = pgTable(
     index("odoo_command_queue_world_pending_idx").on(table.worldId, table.status, table.receivedAt),
     // guards:allow world-id — Entitlement-Ereignisse sind bewusst global und haben keine Welt.
     uniqueIndex("odoo_command_queue_event_idx").on(table.eventId),
+    uniqueIndex("odoo_command_queue_world_type_idempotency_idx").on(table.worldId, table.commandType, table.idempotencyKey),
   ],
 );
 

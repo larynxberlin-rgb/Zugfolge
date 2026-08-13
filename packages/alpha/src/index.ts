@@ -1,4 +1,5 @@
 export * from "./abuse.js";
+export * from "./activity-policy.js";
 export * from "./errors.js";
 export * from "./feedback.js";
 export * from "./hash.js";

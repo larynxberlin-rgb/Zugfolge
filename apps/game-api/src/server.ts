@@ -18,6 +18,7 @@ import {
   dispatchOdooProjectionOutbox,
   enqueueAlphaFeedbackProjection,
   enqueueGameAdminCapabilityProjection,
+  enqueuePublicWorldSnapshot,
   enqueueWorldProjection,
   processNextOdooCommand,
   reconcileOdooProjectionSnapshot,
@@ -122,6 +123,8 @@ import {
   parseStartPackageSpec,
 } from "./alpha-journey-writer.js";
 import { ActiveWorldDeploymentRuntime } from "./world-deployment-runtime.js";
+import { buildPublicWorldSnapshot, PublicWorldSnapshotUnavailableError } from "./public-world-snapshot.js";
+import { createWorldParticipationHandler } from "./odoo-world-participation.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -352,6 +355,7 @@ const manualDisruptionAdminHandler = createManualDisruptionAdminHandler({
   },
 });
 const worldAccessRevokeAdminHandler = createWorldAccessRevokeAdminHandler({ db, keycloak: keycloakAdmin });
+const worldParticipationHandler = createWorldParticipationHandler(db);
 const alphaMonitoring = new AlphaMonitoringService(db);
 const alphaOperationsMetrics = new AlphaOperationsMetrics();
 const alphaPseudonymSecret = requireEnv("ALPHA_PSEUDONYM_SECRET");
@@ -652,6 +656,21 @@ const runAlphaProjection = () => {
           authoritativeEventUrl: `${optionalEnv("PUBLIC_GAME_URL") ?? ""}/worlds/${profile.worldId}/alpha-monitoring`,
         },
       });
+      try {
+        const publicSnapshot = await buildPublicWorldSnapshot(db, {
+          worldId: profile.worldId,
+          authoritativeNowS: snapshot.world.simulationTimeS,
+          generatedAt: observedAt,
+        });
+        await enqueuePublicWorldSnapshot(db, {
+          snapshot: publicSnapshot,
+          correlationId: `public-world:${profile.worldId}:${publicSnapshot.authoritativeAsOf}`,
+          occurredAt: observedAt,
+        });
+      } catch (error) {
+        if (!(error instanceof PublicWorldSnapshotUnavailableError
+          && (error.code === "legacy_blueprint" || error.code === "not_public"))) throw error;
+      }
     }
   })().catch((error: unknown) => {
     app.log.error({ err: error }, "Odoo-Alpha-Monitoringprojektion fehlgeschlagen");
@@ -744,6 +763,7 @@ const runCommerce = () => {
   if (commerceCycle !== undefined) return;
   commerceCycle = (async () => {
     while (await processNextOdooCommand(db, new Date(), {
+      participationHandler: worldParticipationHandler,
       adminHandlers: {
         manual_disruption_create: manualDisruptionAdminHandler,
         world_access_revoke: worldAccessRevokeAdminHandler,
