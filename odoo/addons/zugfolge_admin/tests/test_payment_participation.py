@@ -32,8 +32,12 @@ class TestWorldPaymentParticipation(AccountTestInvoicingCommon):
             "participation_conditions": "Bezahlte Teilnahme",
             "product_tmpl_id": cls.product_a.product_tmpl_id.id,
         })
-        cls.sale_journal = cls.company_data["default_journal_sale"]
-        cls.bank_journal = cls.company_data["default_journal_bank"]
+        cls.sale_journal = cls.company_data["default_journal_sale"] or cls.env["account.journal"].create({
+            "name": "Zugfolge Test Sales", "code": "ZFS", "type": "sale", "company_id": company.id,
+        })
+        cls.payment_journal = (
+            cls.company_data["default_journal_bank"] or cls.company_data["default_journal_cash"]
+        )
 
     def test_paid_invoice_queues_exactly_one_world_participation(self):
         invoice = self.init_invoice(
@@ -44,7 +48,7 @@ class TestWorldPaymentParticipation(AccountTestInvoicingCommon):
             taxes=[],
             journal=self.sale_journal,
         )
-        self._register_payment(invoice, journal_id=self.bank_journal.id)
+        self._register_payment(invoice, journal_id=self.payment_journal.id)
         invoice.invalidate_recordset()
         self.assertEqual(invoice.payment_state, "paid")
 
