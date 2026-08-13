@@ -28,8 +28,8 @@ lesen, nicht raten.
 | `docs/architektur.md` | Systemarchitektur, Lastgrößen, irreversible Entscheidungen, Determinismus, Sicherheit | Technischer Entwurf, Skalierung, Persistenz |
 | `docs/design.md` | Farbsystem, Barrierefreiheit, Dunkelmodus, Typografie, Dichte, Wortmarke | jede Oberflächenarbeit, jedes Diagramm, jede Zustandsdarstellung |
 | `docs/geschaeft.md` | Odoo, Monetarisierung, Monetarisierungsgrenze, Lizenz, Marken | Bezahlfunktionen, Lizenz, Namensrechte |
-| `docs/milestones.md` | M0–M14 mit Teilabschnitten und Beweisen | Planung, Reihenfolge, „was als Nächstes“ |
-| `docs/risiken.md` | R1–R17 mit Gegenmaßnahmen | Risikoabwägung, Review |
+| `docs/milestones.md` | M0–M15 mit Teilabschnitten und Beweisen | Planung, Reihenfolge, „was als Nächstes“ |
+| `docs/risiken.md` | Risikoregister mit Gegenmaßnahmen | Risikoabwägung, Review |
 
 ---
 

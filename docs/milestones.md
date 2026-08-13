@@ -896,18 +896,27 @@ M14.1 nachgewiesen. Die übrige Betriebsreife aus M9.5 bleibt davon unberührt.
 
 ---
 
-## M10 — SPFV
+## M10 — Personenverkehrsnachfrage und SPFV
+
+M10 stellt ein gemeinsames Personenverkehrsmodell für SPNV und SPFV bereit.
+SPFV-Linienplanung bleibt ein eigener Ausbau, verwendet aber dieselben Zonen,
+Reiseketten, Zugwahl- und Kapazitätsregeln. M10 ist die einzige Quelle für die
+Fahrgäste, die M15 später im Schaffnermodus 1:1 projiziert.
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 10.1 | Zonen- und Nachfragemodell; **ÖPNV-Anbindung je Station als statisches Attribut** | **XL** | offen |
-| 10.2 | Verkehrsmittel- und Zugwahl: Preis, Reisezeit, Umstiege, Takt, Zuverlässigkeit, Komfort | L | offen |
-| 10.3 | Tarif- und Vertriebsmodell, Auslastung, Reservierung, Komfortklassen | L | offen |
-| 10.4 | Linien-, Halte- und Taktplanung als Spielerwerkzeug | M | offen |
-| 10.5 | Kalibrierung gegen öffentliche Größenordnungen | M | offen |
+| 10.1 | Gemeinsames Zonen- und Reisenachfragemodell für SPNV und SPFV aus Bevölkerung, Arbeitsplätzen, POIs, Reiseanlässen, Saison und Tageszeit; **ÖPNV-Anbindung je Station als statisches Attribut** | **XL** | offen |
+| 10.2 | Verkehrsmittel-, Verbindungs- und Zugwahl für beide Personenverkehrsarten: Preis, Reisezeit, Umstiege, Takt, Zuverlässigkeit, Komfort und verfügbare Kapazität | **XL** | offen |
+| 10.3 | Tarif-, Vertriebs-, Kapazitäts- und Komfortmodell einschließlich SPNV-Fahrberechtigungen, Überbelegung, zurückbleibender Fahrgäste, Reservierungen und Komfortklassen | L | offen |
+| 10.3a | **Autoritative SPNV-Fahrgastmanifeste** je Zuglaufabschnitt mit stabilen pseudonymen Fahrgastschlüsseln, Reise-/Umstiegskette, Ein- und Ausstieg, exakter Belegung sowie deterministischem Fahrberechtigungsstatus mit Herkunft `observed` oder `balanced` | L | offen |
+| 10.4 | SPFV-spezifische Linien-, Halte- und Taktplanung als Spielerwerkzeug | M | offen |
+| 10.5 | Gemeinsame Kalibrierung von SPNV und SPFV gegen freigegebene öffentliche Größenordnungen | M | offen |
 
-> **Beweis:** Eine neue Fernverkehrslinie verschiebt nachvollziehbar die Ströme,
-> und ein Konkurrent kann darauf wirtschaftlich sinnvoll reagieren.
+> **Beweis:** Ein SPNV-Zug erhält über mehrere Halte reproduzierbare Ein- und
+> Aussteiger, Auslastung und Fahrgastmanifeste; Ausfall und Anschlussverlust
+> verteilen die Reiseketten nachvollziehbar neu. Eine neue Fernverkehrslinie
+> verschiebt dieselben Ströme, und ein Konkurrent kann darauf wirtschaftlich
+> sinnvoll reagieren.
 
 ---
 
@@ -986,6 +995,48 @@ Odoo-/Game-Vertrag ist stagefähig. Echte Signatur, namentliche Freigabe,
 erneute Game-Qualifizierung und produktiver Odoo-/Periodenlauf fehlen. Deshalb
 bleibt `activationEligible=false` und der Teilabschnitt ausdrücklich in
 Arbeit.
+
+---
+
+## M15 — Schaffnermodus
+
+Der Schaffnermodus ist gemäß E29 eine optionale, serverautoritative Vertiefung
+des regulären SPNV-Betriebs. Er baut auf M4/M5/M6/M8 und dem gemeinsamen
+Personenverkehrsmodell M10 auf. Die Stationsszenen aus M15.5 benötigen für ihre
+vollständige Releaseabdeckung zusätzlich M14.2. M15 gehört nicht zum
+Alpha-Schnitt. Vollständiger Fachvertrag:
+[`schaffnermodus.md`](schaffnermodus.md).
+
+| # | Teilabschnitt | Größe | Status |
+|---|---------------|-------|--------|
+| 15.1 | **E29, ADR und versionierter Fachvertrag** einschließlich M10-/M8-Autoritätsgrenzen, Kontrolle, Dialog, Wirtschaft, Datenschutz und Abnahme | M | offen |
+| 15.2 | **M10-Fahrgastmanifeste und deterministische 1:1-Projektion**: jeder tatsächlich reisende Fahrgast wird logisch materialisiert, stabil platziert und kontrollierbar; Rendering darf nur optisch degradieren | L | offen |
+| 15.3 | **Eigene Pixelart-Designsprache und freigegebener Asset-Korpus**: finale erzeugte Figuren-, Innenraum-, Bahnhof- und Umgebungsassets mit `ArtAtlasManifestV1`, Herkunft, Hash und Rechtegates | **XL** | offen |
+| 15.4 | **Konfigurationsgetreue begehbare Fahrzeuginnenräume**: `InteriorLayoutV1` aus Formation und Fahrzeugkonfiguration, Begehbarkeits-, Kollisions- und Kapazitätsnachweis | **XL** | offen |
+| 15.5 | **Fließende Umgebung und modulare Bahnhofsszenen**: Umland/Vorstadt/Stadt, Tageszeit, tatsächliche Geschwindigkeit, Signal-/Bahnhofshalte, kleine/mittlere/große Stationen und dynamische Namen | **XL** | offen |
+| 15.6 | **Versionierter Sprechblasen-Dialogkorpus**: mindestens 150 geprüfte Dialogbäume und 600 Fahrgastäußerungen, verdeckter Sachverhalt, mindestens zwölf Situationsfamilien, kein Laufzeit-Sprachmodell | L | offen |
+| 15.7 | **Autoritative Schaffnersitzung**: Eigentümerberechtigung, Exklusivität, Kommandorevision, Idempotenz, Reconnect, Restore und bitgleiches Replay | L | offen |
+| 15.8 | **Browserintegration**: Bewegung, Interaktion, Sprechblasen, Pixi/WebGL-Projektion, Desktop, Touch, Tastatur, Screenreader und reduzierte Bewegung | **XL** | offen |
+| 15.9 | **Kontrollhalt über Konfliktengine und virtuelle Fahrdienstleiter**: `FareControlHoldV1`, tatsächliche Ressourcenweiterbelegung, Höchstwartezeit, erneute Abfahrtsprüfung und Netzfolgen für alle Zugarten | **XL** | offen |
+| 15.10 | **Polizeireaktion, EBE-Fallabschluss und Verspätungsursache**: deterministische Verfügbarkeit, Bündelung höchstens eines Polizeihalts je Zuglauf, Feststellung, vorläufige/reguläre EBE und `authority.police.fare-control` | L | offen |
+| 15.11 | **Forderungen, Ausfälle und gedeckelte Kontrollprämie**: offene EBE, spätere Zahlung/Reduzierung/Abschreibung, Integer-Cent-Ledger, höchstens vierfache Prämie und 0,5-Prozent-Tagesdeckel | M | offen |
+| 15.12 | **Performance-, Determinismus- und Gesamtannahme**: voller SPNV-Verband, Mehrzug-Golden-Master, Property-Tests für Invariante 1, Browser-/Barrierefreiheitsabnahme und zusammenhängender Spielbeweis | L | offen |
+
+**Teilabhängigkeiten:** M15.1 ist der Einstieg. M15.2 folgt M10.3a und M15.1.
+M15.3 und M15.6 können danach parallel beginnen. M15.4 folgt M15.3 und M5;
+M15.5 folgt M15.3 und M14.2; M15.7 folgt M15.1/M15.2; M15.8 folgt
+M15.3–M15.7; M15.9 folgt M15.7/M15.8 und M8; M15.10 folgt M15.6/M15.9;
+M15.11 folgt M15.10 und M6; M15.12 schließt alle Teile zusammen.
+
+> **Beweis:** Ein eigener ausgelasteter SPNV-Zug wird mit den tatsächlichen
+> M10-Fahrgästen betreten. Der Spieler läuft durch den konfigurationsgetreuen
+> Innenraum, erlebt fließende Umgebung, Signal- und Bahnhofshalte und führt
+> verschiedene Sprechblasenkontrollen durch. Eine Identitätsverweigerung löst
+> am nächsten Bahnhof einen echten Polizeihalt aus: Das Bahnsteiggleis bleibt
+> belegt, virtuelle Fahrdienstleiter ordnen Folge-, Kreuzungs-, Güter-, Leer-
+> und Rangierfahrten konfliktfrei neu, M10 revidiert Reiseketten, und Ledger
+> sowie Pönalen zeigen die vollständige Kausalitätskette. Reload und Replay
+> ergeben denselben Zustand auf Desktop und Touchgerät.
 
 ---
 

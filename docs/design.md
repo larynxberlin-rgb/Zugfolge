@@ -291,3 +291,25 @@ nur geänderte Zellen und entfällt bei reduzierter Bewegung.
 
 Diese Dinge sind billig zu ändern, solange das System aus Abschnitt 2 bis 5
 steht. Deshalb warten sie.
+
+## 11. Schaffnermodus: Pixelart und Sprechblasen (M15)
+
+Der Schaffnermodus verwendet eine eigenständige orthogonale Pixelart mit 32
+Pixeln pro Meter, ganzzahligen Zoomstufen und Nearest-Neighbor-Skalierung. Die
+dunkle achromatische Grundsprache aus E17 bleibt erhalten; Betriebsfarben
+werden nicht zu Dekoration. Fremde Figuren, Karten, Fahrzeuge, Gebäude, Logos
+oder Marken werden weder übernommen noch in Produktionsanweisungen zitiert.
+
+Alle sichtbaren Motive werden als finale, releasegebundene Grafiken erzeugt.
+Ein `ArtAtlasManifestV1` dokumentiert Anweisung, Modellversion, erlaubte
+Referenzen, Prüfsumme, Abmessungen und Freigabe. Zur Laufzeit findet keine
+Bildgenerierung statt.
+
+Fahrgastkommunikation erfolgt über kollisionsarm positionierte Sprechblasen.
+Die Antworten sind echte Schaltflächen und erscheinen nach Auswahl kurz als
+Spielerblase. Es gibt nur ein aktives Gespräch; andere Fahrgäste erzeugen kein
+Ambient-Blasenrauschen. Touchziele erfüllen die bestehende Mindestgröße,
+Tastaturreihenfolge bleibt logisch, Screenreader erhalten eine Live-Region und
+`prefers-reduced-motion` schaltet jede Textenthüllungsanimation ab. Lange
+deutsche Texte, Umlaute und kleine Viewports sind Pflichtfälle. Details:
+[`schaffnermodus.md`](schaffnermodus.md) 5 bis 7.

@@ -209,6 +209,30 @@ aber trägt zwingend `activationEligible=false`. Odoo kann diese Grenze nicht
 übersteuern; erst Signatur, erneute Game-Qualifizierung und der bestehende
 Vier-Augen-Periodenwechsel dürfen eine Aktivierung vorbereiten.
 
+### 2.2 Schaffnermodus als autorisierte Detailprojektion (E29)
+
+M15 führt keinen zweiten Simulationskern ein. Das gemeinsame
+Personenverkehrsmodell M10 liefert ein revisioniertes `PassengerManifestV1`;
+der Schaffnermodus materialisiert daraus deterministisch eine private
+1:1-Innenraumprojektion. Sichtbare Dialogknoten und Spielerposition laufen über
+Snapshot und sequenzierte SSE-Deltas. Verdeckter Fahrberechtigungsstatus,
+Dialoggewichte, Polizeireaktion und Buchungen verbleiben serverseitig.
+
+Der Datenfluss ist strikt gerichtet: M10 liefert Nachfrage, M15 nimmt
+autorisierte Kommandos an, M8 entscheidet über Konfliktressourcen und
+Abfahrtsrecht, M4 propagiert Verspätung, M10 revidiert betroffene Reiseketten
+und M6 bucht Forderungen und Folgen. Ein `FareControlHoldV1` ist ein
+persistenter Domainzustand und überlebt Browser- oder Sitzungsende. Er schreibt
+keine Sonderbelegung, sondern verlängert die tatsächliche Ist-Belegung im
+regionalen `CapacityLedger`.
+
+Die API liegt unter
+`/worlds/{worldId}/operators/{operatorId}/trains/{trainRunId}/conductor-sessions`.
+Jedes Kommando trägt Welt, Sitzung, erwartete Revision und Idempotenzschlüssel.
+Asset- und Dialogreleases sind gepinnt; Bild- oder Textgenerierung sowie andere
+externe Dienste sind im Laufzeitpfad verboten. Vollständiger Vertrag:
+[`schaffnermodus.md`](schaffnermodus.md).
+
 ## 3. Was einen späteren Umbau erzwingen würde
 
 Ein Plattformwechsel entsteht selten aus einer Sprachwahl — der lässt sich hinter
