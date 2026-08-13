@@ -1,3 +1,4 @@
+from odoo import Command
 from odoo.addons.account.tests.common import AccountTestInvoicingCommon
 
 
@@ -6,16 +7,24 @@ class TestWorldPaymentParticipation(AccountTestInvoicingCommon):
     def setUpClass(cls):
         super().setUpClass()
         company = cls.env.company
-        if not company.account_fiscal_country_id:
-            cls._use_chart_template(company, "generic_coa")
-            cls.company_data = cls.collect_company_accounting_data(company)
-            cls.product_category.with_company(company).write({
-                "property_account_income_categ_id": cls.company_data["default_account_revenue"].id,
-                "property_account_expense_categ_id": cls.company_data["default_account_expense"].id,
-            })
-            cls.partner_a.with_company(company).property_account_receivable_id = (
-                cls.company_data["default_account_receivable"]
-            )
+        company.account_fiscal_country_id = cls.env.ref("base.us")
+        accounts = cls.env["account.account"].create([
+            {"name": "Zugfolge Receivable", "code": "11000", "account_type": "asset_receivable", "reconcile": True, "company_ids": [Command.set(company.ids)]},
+            {"name": "Zugfolge Payable", "code": "12000", "account_type": "liability_payable", "reconcile": True, "company_ids": [Command.set(company.ids)]},
+            {"name": "Zugfolge Revenue", "code": "40000", "account_type": "income", "company_ids": [Command.set(company.ids)]},
+            {"name": "Zugfolge Expense", "code": "50000", "account_type": "expense", "company_ids": [Command.set(company.ids)]},
+            {"name": "Zugfolge Bank", "code": "10000", "account_type": "asset_cash", "company_ids": [Command.set(company.ids)]},
+            {"name": "Zugfolge Outstanding Receipts", "code": "13600", "account_type": "asset_current", "reconcile": True, "company_ids": [Command.set(company.ids)]},
+        ])
+        receivable, payable, revenue, expense, liquidity, outstanding_receipts = accounts
+        cls.product_category.with_company(company).write({
+            "property_account_income_categ_id": revenue.id,
+            "property_account_expense_categ_id": expense.id,
+        })
+        cls.partner_a.with_company(company).write({
+            "property_account_receivable_id": receivable.id,
+            "property_account_payable_id": payable.id,
+        })
         cls.world_id = "11111111-1111-4111-8111-111111111111"
         cls.partner_a.zugfolge_keycloak_subject = "keycloak-payment-test"
         projection = cls.env["zugfolge.world.projection"].sudo().with_context(zugfolge_game_projection=True).create({
@@ -32,12 +41,15 @@ class TestWorldPaymentParticipation(AccountTestInvoicingCommon):
             "participation_conditions": "Bezahlte Teilnahme",
             "product_tmpl_id": cls.product_a.product_tmpl_id.id,
         })
-        cls.sale_journal = cls.company_data["default_journal_sale"] or cls.env["account.journal"].create({
-            "name": "Zugfolge Test Sales", "code": "ZFS", "type": "sale", "company_id": company.id,
+        cls.sale_journal = cls.env["account.journal"].create({
+            "name": "Zugfolge Test Sales", "code": "ZFS", "type": "sale",
+            "company_id": company.id, "default_account_id": revenue.id,
         })
-        cls.payment_journal = (
-            cls.company_data["default_journal_bank"] or cls.company_data["default_journal_cash"]
-        )
+        cls.payment_journal = cls.env["account.journal"].create({
+            "name": "Zugfolge Test Bank", "code": "ZFB", "type": "bank",
+            "company_id": company.id, "default_account_id": liquidity.id,
+        })
+        cls.payment_journal.inbound_payment_method_line_ids.payment_account_id = outstanding_receipts
 
     def test_paid_invoice_queues_exactly_one_world_participation(self):
         invoice = self.init_invoice(
