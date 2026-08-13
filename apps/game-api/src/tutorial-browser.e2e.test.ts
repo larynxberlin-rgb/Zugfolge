@@ -88,6 +88,14 @@ async function tabUntil(page: Page, selector: string, maximumTabs = 120): Promis
   throw new Error(`Tastaturfokus erreichte ${selector} nach ${maximumTabs} Tab-Schritten nicht.`);
 }
 
+async function expectFriendlyTutorialHeader(page: Page, reference: string): Promise<void> {
+  const header = page.locator(".tutorial-experience > header");
+  expect(await header.locator(".eyebrow").innerText()).toBe("Private Tutorialwelt");
+  expect(await header.locator("details code").textContent()).toBe(reference);
+  const playerFacingHeader = await header.locator(".eyebrow, h1, .tutorial-session-meta").allInnerTexts();
+  expect(playerFacingHeader.join(" ")).not.toContain(reference);
+}
+
 (process.env["ZUGFOLGE_BROWSER_E2E"] === "1" ? describe : describe.skip)("Tutorialreise im echten Browser", () => {
   let client: PGlite;
   let db: ReturnType<typeof drizzle<typeof schema>>;
@@ -155,7 +163,7 @@ async function tabUntil(page: Page, selector: string, maximumTabs = 120): Promis
     const started = await startResponse.json() as { reference?: unknown };
     const reference = typeof started.reference === "string" ? started.reference : undefined;
     expect(reference).toMatch(/^tut_[a-z2-7]{20,52}$/);
-    expect((await page.locator(".tutorial-experience > header .eyebrow").innerText()).toLowerCase()).toContain(reference!);
+    await expectFriendlyTutorialHeader(page, reference!);
     expect(await page.locator("#lutz-name").evaluate((element) => document.activeElement === element)).toBe(true);
     await page.getByRole("button", { name: "Ausschreibung öffnen" }).click();
     expect(await page.locator("#tutorial-chapter-1").evaluate((element) => document.activeElement === element)).toBe(true);
@@ -179,7 +187,7 @@ async function tabUntil(page: Page, selector: string, maximumTabs = 120): Promis
 
     await page.reload({ waitUntil: "networkidle" });
     await page.getByRole("heading", { name: "Ein tragfähiges Angebot abgeben" }).waitFor();
-    expect((await page.locator(".tutorial-experience > header .eyebrow").innerText()).toLowerCase()).toContain(reference!);
+    await expectFriendlyTutorialHeader(page, reference!);
 
     await page.getByLabel("Bestellerentgelt je Zug-km").fill("14,50");
     await page.getByLabel("Pünktlichkeitsversprechen").fill("92,00");
@@ -358,10 +366,14 @@ async function tabUntil(page: Page, selector: string, maximumTabs = 120): Promis
     expect(mutationPaths).toHaveLength(0);
     expect(await reserveTrigger.evaluate((element) => document.activeElement === element)).toBe(true);
     await reserveTrigger.click();
+    const conflictResponsePromise = page.waitForResponse((response) => response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/worlds/${SECOND_WORLD}/vehicle-market/listings/${listingId}/reserve`);
     await page.getByRole("button", { name: "Verbindlich bestätigen" }).click();
+    const conflictResponse = await conflictResponsePromise;
+    expect(conflictResponse.status()).toBe(409);
+    await expect.poll(() => mutationPaths.length).toBe(1);
     const error = page.locator(".journey-message--error");
-    await error.waitFor();
-    expect(await error.innerText()).toContain("zwischenzeitlich geändert");
+    await expect.poll(() => error.innerText()).toContain("zwischenzeitlich geändert");
     expect(await error.evaluate((element) => document.activeElement === element)).toBe(true);
     await page.getByRole("button", { name: "10 Minuten reservieren" }).click();
     await page.getByRole("button", { name: "Verbindlich bestätigen" }).click();
