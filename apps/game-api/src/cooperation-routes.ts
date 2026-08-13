@@ -373,6 +373,24 @@ export function registerCooperationRoutes(
     }
   });
 
+  app.get<{ Params: { worldId: string; operatorId: string } }>(
+    "/worlds/:worldId/operators/:operatorId/vehicles",
+    { preHandler: deps.authenticate, schema: { params: operatorParams } },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        await requireOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        return reply.send(apiPayload(await deps.cooperation.listOwnedVehicles(
+          request.params.worldId,
+          request.params.operatorId,
+        )));
+      } catch (error) {
+        return sendCooperationError(reply, error);
+      }
+    },
+  );
+
   app.get<{ Params: { worldId: string; vehicleId: string } }>(
     "/worlds/:worldId/vehicles/:vehicleId/history",
     {

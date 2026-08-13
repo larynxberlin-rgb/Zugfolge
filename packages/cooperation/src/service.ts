@@ -739,6 +739,13 @@ export class CooperationService {
     )).orderBy(desc(operatorContracts.offeredAtS));
   }
 
+  listOwnedVehicles(worldId: string, operatorId: string): Promise<readonly VehicleAsset[]> {
+    return this.db.select().from(vehicleAssets).where(and(
+      eq(vehicleAssets.worldId, worldId),
+      eq(vehicleAssets.ownerOperatorId, operatorId),
+    )).orderBy(asc(vehicleAssets.classDesignation), asc(vehicleAssets.vehicleId));
+  }
+
   async registerVehicle(input: RegisterVehicleInput): Promise<VehicleAsset> {
     nonEmpty(input.vehicleId, "Fahrzeug-ID");
     nonEmpty(input.authorityReleaseId, "Authority-Release");

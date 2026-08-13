@@ -1,4 +1,5 @@
 import type { TutorialSessionView } from "./api.js";
+import { renderCooperationSurface, type CooperationSurfaceState } from "./cooperation.js";
 
 export interface JourneyViewState {
   readonly publicWorldId: string;
@@ -9,6 +10,7 @@ export interface JourneyViewState {
   readonly whyOpen: boolean;
   readonly messageTone?: "status" | "error";
   readonly livemapUrl?: string;
+  readonly cooperation?: CooperationSurfaceState;
 }
 
 function escapeHtml(value: unknown): string {
@@ -112,6 +114,7 @@ export function renderJourney(state: JourneyViewState): string {
   const inTutorial = state.tutorial !== undefined;
   const livemap = state.livemapUrl === undefined || state.livemapUrl === "" ? "" : `<a class="primary-map-link" href="${escapeHtml(state.livemapUrl)}">Zur Live-Lage</a>`;
   const message = state.message === "" ? "" : `<p class="journey-message journey-message--${state.messageTone ?? "status"}" role="${state.messageTone === "error" ? "alert" : "status"}" aria-live="polite">${escapeHtml(state.message)}</p>`;
-  const html = `<main class="journey-shell" aria-busy="${state.busy}"><header class="journey-top"><div><p class="wordmark">ZUGFOLGE</p><h1>Geschlossene Alpha · Spielerreise</h1></div><nav aria-label="Hauptnavigation">${livemap}<a href="?view=diagram&world=${encodeURIComponent(state.publicWorldId)}">Zum Bildfahrplan</a></nav></header>${message}<div class="${inTutorial ? "tutorial-shell" : "journey-grid"}">${tutorial(state)}${inTutorial ? "" : onboarding(state)}</div></main>`;
+  const cooperation = inTutorial || state.cooperation === undefined ? "" : renderCooperationSurface(state.cooperation);
+  const html = `<main class="journey-shell" aria-busy="${state.busy}"><header class="journey-top"><div><p class="wordmark">ZUGFOLGE</p><h1>Geschlossene Alpha · Spielerreise</h1></div><nav aria-label="Hauptnavigation">${livemap}<a href="?view=diagram&world=${encodeURIComponent(state.publicWorldId)}">Zum Bildfahrplan</a></nav></header>${message}<div class="${inTutorial ? "tutorial-shell" : "journey-grid"}">${tutorial(state)}${inTutorial ? "" : onboarding(state)}</div>${cooperation}</main>`;
   return state.busy ? html.replaceAll("<button ", '<button disabled aria-disabled="true" ') : html;
 }

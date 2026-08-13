@@ -75,6 +75,96 @@ export interface TutorialSessionView {
   readonly publicWorldUrl: string;
 }
 
+export type ContractType = "traction" | "vehicle-rental" | "connection" | "disruption-assistance";
+export type ContractStatus = "offered" | "accepted" | "rejected" | "active" | "terminated" | "non-performance" | "completed" | "expired";
+
+export interface OperatorSummary {
+  readonly id: string;
+  readonly worldId: string;
+  readonly name: string;
+  readonly foundingAccountId?: string;
+}
+
+export interface OperatorContractView {
+  readonly id: string;
+  readonly worldId: string;
+  readonly offerorOperatorId: string;
+  readonly offereeOperatorId: string;
+  readonly contractType: ContractType;
+  readonly subject: Readonly<Record<string, unknown>>;
+  readonly terms: Readonly<Record<string, unknown>>;
+  readonly termsHash: string;
+  readonly priceCents: string;
+  readonly validFromS: number;
+  readonly validUntilS: number;
+  readonly responseDeadlineS: number;
+  readonly terminationNoticeS: number;
+  readonly status: ContractStatus;
+  readonly offeredAtS: number;
+  readonly revision: number;
+  readonly endReason?: string | null;
+}
+
+export interface VehicleAssetView {
+  readonly worldId: string;
+  readonly vehicleId: string;
+  readonly classDesignation: string;
+  readonly ownerOperatorId: string;
+  readonly holderOperatorId: string;
+  readonly odometerMetres: string;
+  readonly conditionBasisPoints: number;
+  readonly damages: readonly Readonly<Record<string, unknown>>[];
+  readonly maintenanceDeadlines: readonly Readonly<Record<string, unknown>>[];
+  readonly bindings: Readonly<Record<string, unknown>>;
+  readonly valueCents: string;
+  readonly revision: number;
+  readonly historyHash: string;
+}
+
+export interface VehicleMarketListingView {
+  readonly id: string;
+  readonly worldId: string;
+  readonly vehicleId: string;
+  readonly offeringOperatorId: string;
+  readonly listingType: "sale" | "rental";
+  readonly priceCents: string;
+  readonly rentalValidUntilS?: number | null;
+  readonly disclosure: Readonly<Record<string, unknown>>;
+  readonly disclosureHash: string;
+  readonly listedAtS: number;
+  readonly expiresAtS: number;
+  readonly status: "open" | "reserved" | "transferred" | "cancelled" | "expired" | "reversed";
+  readonly reservedByOperatorId?: string | null;
+  readonly reservedUntilS?: number | null;
+  readonly contractId?: string | null;
+  readonly revision: number;
+}
+
+export interface VehicleHistoryEventView {
+  readonly id: string;
+  readonly worldId: string;
+  readonly vehicleId: string;
+  readonly eventType: "registered" | "condition-updated" | "sale" | "rental-start" | "rental-return" | "reversal";
+  readonly atS: number;
+  readonly priorHistoryHash: string | null;
+  readonly resultingHistoryHash: string;
+  readonly details: Readonly<Record<string, unknown>>;
+}
+
+export interface ContractOfferPayload {
+  readonly offereeOperatorId: string;
+  readonly contractType: ContractType;
+  readonly subject: Readonly<Record<string, unknown>>;
+  readonly terms: Readonly<Record<string, unknown>>;
+  readonly priceCents: string;
+  readonly validFromS: number;
+  readonly validUntilS: number;
+  readonly responseDeadlineS: number;
+  readonly terminationNoticeS: number;
+  readonly offeredAtS: number;
+  readonly idempotencyKey: string;
+}
+
 class GameApiError extends Error {
   constructor(message: string, readonly retryable: boolean) {
     super(message);
@@ -190,6 +280,89 @@ export class GameApiClient {
 
   confirmTutorialSummary(tutorialWorldId: string): Promise<TutorialSessionView> {
     return this.#journeyJson(`/worlds/${encodeURIComponent(tutorialWorldId)}/tutorial-session/summary/confirm`, { method: "POST" });
+  }
+
+  loadOwnOperators(): Promise<readonly OperatorSummary[]> {
+    return this.#journeyJson("/me/operators");
+  }
+
+  async loadSimulationTime(worldId: string): Promise<number> {
+    const value = await this.#journeyJson<unknown>(`/worlds/${encodeURIComponent(worldId)}/simulation-time`);
+    if (typeof value !== "object" || value === null || Array.isArray(value)) throw new GameApiError("Weltzeit ist kein Objekt.", false);
+    const atS = (value as Record<string, unknown>)["atS"];
+    if (!Number.isSafeInteger(atS) || (atS as number) < 0) throw new GameApiError("Weltzeit ist keine sichere Simulationssekunde.", false);
+    return atS as number;
+  }
+
+  loadWorldOperators(worldId: string): Promise<readonly OperatorSummary[]> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/operators`);
+  }
+
+  loadContracts(worldId: string, operatorId: string): Promise<readonly OperatorContractView[]> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/operators/${encodeURIComponent(operatorId)}/contracts`);
+  }
+
+  offerContract(worldId: string, operatorId: string, payload: ContractOfferPayload): Promise<OperatorContractView> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/operators/${encodeURIComponent(operatorId)}/contracts`, {
+      method: "POST", body: JSON.stringify(payload),
+    });
+  }
+
+  respondToContract(worldId: string, operatorId: string, contractId: string, response: "accept" | "reject", atS: number): Promise<OperatorContractView> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/operators/${encodeURIComponent(operatorId)}/contracts/${encodeURIComponent(contractId)}/respond`, {
+      method: "POST", body: JSON.stringify({ response, atS }),
+    });
+  }
+
+  endContract(worldId: string, operatorId: string, contractId: string, atS: number, reason: string, nonPerformance: boolean): Promise<OperatorContractView> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/operators/${encodeURIComponent(operatorId)}/contracts/${encodeURIComponent(contractId)}/end`, {
+      method: "POST", body: JSON.stringify({ atS, reason, nonPerformance }),
+    });
+  }
+
+  loadVehicleMarket(worldId: string): Promise<readonly VehicleMarketListingView[]> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/vehicle-market/listings`);
+  }
+
+  loadOwnedVehicles(worldId: string, operatorId: string): Promise<readonly VehicleAssetView[]> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/operators/${encodeURIComponent(operatorId)}/vehicles`);
+  }
+
+  createVehicleListing(worldId: string, operatorId: string, vehicleId: string, payload: {
+    readonly listingType: "sale" | "rental"; readonly priceCents: string; readonly rentalValidUntilS?: number;
+    readonly listedAtS: number; readonly expiresAtS: number; readonly idempotencyKey: string;
+  }): Promise<VehicleMarketListingView> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/operators/${encodeURIComponent(operatorId)}/vehicles/${encodeURIComponent(vehicleId)}/listings`, {
+      method: "POST", body: JSON.stringify(payload),
+    });
+  }
+
+  reserveVehicleListing(worldId: string, listingId: string, buyerOperatorId: string, atS: number, reservedUntilS: number, expectedRevision: number): Promise<VehicleMarketListingView> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/vehicle-market/listings/${encodeURIComponent(listingId)}/reserve`, {
+      method: "POST", body: JSON.stringify({ buyerOperatorId, atS, reservedUntilS, expectedRevision }),
+    });
+  }
+
+  transferVehicleListing(worldId: string, listingId: string, buyerOperatorId: string, atS: number, expectedRevision: number, idempotencyKey: string): Promise<unknown> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/vehicle-market/listings/${encodeURIComponent(listingId)}/transfer`, {
+      method: "POST", body: JSON.stringify({ buyerOperatorId, atS, expectedRevision, idempotencyKey }),
+    });
+  }
+
+  reverseVehicleTransfer(worldId: string, listingId: string, buyerOperatorId: string, atS: number, reasonCode: string, idempotencyKey: string): Promise<unknown> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/vehicle-market/listings/${encodeURIComponent(listingId)}/reverse`, {
+      method: "POST", body: JSON.stringify({ buyerOperatorId, atS, reasonCode, idempotencyKey }),
+    });
+  }
+
+  cancelVehicleListing(worldId: string, operatorId: string, listingId: string, atS: number, expectedRevision: number): Promise<VehicleMarketListingView> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/operators/${encodeURIComponent(operatorId)}/vehicle-market/listings/${encodeURIComponent(listingId)}/cancel`, {
+      method: "POST", body: JSON.stringify({ atS, expectedRevision }),
+    });
+  }
+
+  loadVehicleHistory(worldId: string, vehicleId: string): Promise<readonly VehicleHistoryEventView[]> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/vehicles/${encodeURIComponent(vehicleId)}/history`);
   }
 
   async loadProjection(worldId: string, signal?: AbortSignal): Promise<PlanningProjectionV1> {

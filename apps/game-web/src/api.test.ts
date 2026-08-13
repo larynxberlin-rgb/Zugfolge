@@ -39,6 +39,54 @@ describe("GameApiClient", () => {
     }
   });
 
+  it("spricht den vollständigen M12-Vertrags- und Marktpfad mit weltgebundenen URLs an", async () => {
+    const fetchImplementation = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => new Response(
+      JSON.stringify(String(input).endsWith("/simulation-time") ? { atS: 123 } : []),
+      { status: 200 },
+    ));
+    const client = new GameApiClient("https://api.test", "token", fetchImplementation as typeof fetch);
+
+    await client.loadOwnOperators();
+    await expect(client.loadSimulationTime("world/1")).resolves.toBe(123);
+    await client.loadWorldOperators("world/1");
+    await client.loadContracts("world/1", "operator/1");
+    await client.loadVehicleMarket("world/1");
+    await client.loadOwnedVehicles("world/1", "operator/1");
+    await client.loadVehicleHistory("world/1", "asset/1");
+
+    expect(fetchImplementation.mock.calls.map(([input]) => String(input))).toEqual([
+      "https://api.test/me/operators",
+      "https://api.test/worlds/world%2F1/simulation-time",
+      "https://api.test/worlds/world%2F1/operators",
+      "https://api.test/worlds/world%2F1/operators/operator%2F1/contracts",
+      "https://api.test/worlds/world%2F1/vehicle-market/listings",
+      "https://api.test/worlds/world%2F1/operators/operator%2F1/vehicles",
+      "https://api.test/worlds/world%2F1/vehicles/asset%2F1/history",
+    ]);
+  });
+
+  it("sendet M12-Schreibaktionen mit kanonischen Centstrings und Fachrevisionen", async () => {
+    const fetchImplementation = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({}), { status: 200 }));
+    const client = new GameApiClient("https://api.test", "token", fetchImplementation as typeof fetch);
+    await client.offerContract("world", "seller", {
+      offereeOperatorId: "buyer", contractType: "vehicle-rental", subject: { vehicleIds: ["asset-1"] },
+      terms: { summary: "Miete" }, priceCents: "125050", validFromS: 20, validUntilS: 100,
+      responseDeadlineS: 15, terminationNoticeS: 10, offeredAtS: 10, idempotencyKey: "offer-1",
+    });
+    await client.respondToContract("world", "buyer", "contract", "accept", 12);
+    await client.endContract("world", "buyer", "contract", 50, "Ordentliche Kündigung", false);
+    await client.createVehicleListing("world", "seller", "asset-1", { listingType: "sale", priceCents: "90000000", listedAtS: 10, expiresAtS: 100, idempotencyKey: "listing-1" });
+    await client.reserveVehicleListing("world", "listing", "buyer", 20, 30, 1);
+    await client.transferVehicleListing("world", "listing", "buyer", 25, 2, "transfer-1");
+    await client.reverseVehicleTransfer("world", "listing", "buyer", 26, "undisclosed-damage", "reverse-1");
+    await client.cancelVehicleListing("world", "seller", "listing", 20, 1);
+
+    expect(fetchImplementation).toHaveBeenCalledTimes(8);
+    for (const [, init] of fetchImplementation.mock.calls) expect(init).toMatchObject({ method: "POST" });
+    expect(JSON.parse(String(fetchImplementation.mock.calls[0]![1]!.body))).toMatchObject({ priceCents: "125050", contractType: "vehicle-rental" });
+    expect(JSON.parse(String(fetchImplementation.mock.calls[5]![1]!.body))).toMatchObject({ expectedRevision: 2, idempotencyKey: "transfer-1" });
+  });
+
   it("laedt und validiert die veroeffentlichte Weltprojektion mit Bearer-Token", async () => {
     const fetchImplementation = vi.fn(async () => envelope(7, 99));
     const client = new GameApiClient(
