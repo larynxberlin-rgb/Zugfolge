@@ -5,6 +5,17 @@ class TestWorldPaymentParticipation(AccountTestInvoicingCommon):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        company = cls.env.company
+        if not company.account_fiscal_country_id:
+            cls._use_chart_template(company, "generic_coa")
+            cls.company_data = cls.collect_company_accounting_data(company)
+            cls.product_category.with_company(company).write({
+                "property_account_income_categ_id": cls.company_data["default_account_revenue"].id,
+                "property_account_expense_categ_id": cls.company_data["default_account_expense"].id,
+            })
+            cls.partner_a.with_company(company).property_account_receivable_id = (
+                cls.company_data["default_account_receivable"]
+            )
         cls.world_id = "11111111-1111-4111-8111-111111111111"
         cls.partner_a.zugfolge_keycloak_subject = "keycloak-payment-test"
         projection = cls.env["zugfolge.world.projection"].sudo().with_context(zugfolge_game_projection=True).create({
@@ -21,9 +32,8 @@ class TestWorldPaymentParticipation(AccountTestInvoicingCommon):
             "participation_conditions": "Bezahlte Teilnahme",
             "product_tmpl_id": cls.product_a.product_tmpl_id.id,
         })
-        cls.sale_journal = cls.company_data["default_journal_sale"] or cls.env["account.journal"].create({
-            "name": "Zugfolge Test Sales", "code": "ZFS", "type": "sale", "company_id": cls.env.company.id,
-        })
+        cls.sale_journal = cls.company_data["default_journal_sale"]
+        cls.bank_journal = cls.company_data["default_journal_bank"]
 
     def test_paid_invoice_queues_exactly_one_world_participation(self):
         invoice = self.init_invoice(
@@ -34,7 +44,7 @@ class TestWorldPaymentParticipation(AccountTestInvoicingCommon):
             taxes=[],
             journal=self.sale_journal,
         )
-        self._register_payment(invoice)
+        self._register_payment(invoice, journal_id=self.bank_journal.id)
         invoice.invalidate_recordset()
         self.assertEqual(invoice.payment_state, "paid")
 
