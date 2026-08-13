@@ -27,16 +27,16 @@ import {
   foundPublicOperatorWithStartingCapital,
   STARTING_CAPITAL_EQUITY_ACCOUNT_NAME,
 } from "./starting-capital.js";
-import { validateWorldBlueprint, type AlphaWorldBlueprint } from "./world.js";
+import { validateWorldBlueprint, type AlphaWorldBlueprintV1 } from "./world.js";
 import { WorldEndService } from "./world-end.js";
 
 const WORLD_A = "11111111-1111-4111-8111-111111111111";
 const WORLD_B = "22222222-2222-4222-8222-222222222222";
 
 function blueprint(
-  policy: AlphaWorldBlueprint["startingCapitalPolicy"],
+  policy: AlphaWorldBlueprintV1["startingCapitalPolicy"],
   seed = 42n,
-): AlphaWorldBlueprint {
+): AlphaWorldBlueprintV1 {
   return {
     schemaVersion: "zugfolge-alpha-world-blueprint/v1",
     regionId: "mitteldeutschland-b",
@@ -75,13 +75,13 @@ describe("oeffentliche StartingCapitalPolicy", () => {
     client = new PGlite();
     db = drizzle(client, { schema });
     await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
-  });
+  }, 30_000);
 
   afterEach(async () => client.close());
 
   async function setupWorld(
     worldId: string,
-    policy: AlphaWorldBlueprint["startingCapitalPolicy"],
+    policy: AlphaWorldBlueprintV1["startingCapitalPolicy"],
     subject: string,
     seed = 42n,
   ) {
@@ -223,22 +223,19 @@ describe("oeffentliche StartingCapitalPolicy", () => {
     ]));
   });
 
-  it("weist stillen Policywechsel, Hash-Rebinding und Blueprint-Manipulation ab", async () => {
+  it("weist Policywechsel, Hash-Rebinding und Blueprint-Manipulation ab", async () => {
     const setup = await setupWorld(WORLD_A, { kind: "finite", amountCents: "100" }, "tamper");
     const changed = blueprint({ kind: "finite", amountCents: "200" });
-    await db.update(alphaWorldProfiles).set({
+    await expect(db.update(alphaWorldProfiles).set({
       blueprint: encodeEconomyValue(changed),
       blueprintHash: validateWorldBlueprint(changed),
-    }).where(eq(alphaWorldProfiles.worldId, WORLD_A));
-    await expect(start(WORLD_A, "tamper")).rejects.toMatchObject({ code: "world_contract_confirmation_required" });
+    }).where(eq(alphaWorldProfiles.worldId, WORLD_A))).rejects.toThrow();
 
-    await db.update(alphaWorldProfiles).set({
+    await expect(db.update(alphaWorldProfiles).set({
       blueprint: encodeEconomyValue({ ...setup.contract, startingCapitalPolicy: { kind: "finite", amountCents: "300" } }),
       blueprintHash: setup.hash,
-    }).where(eq(alphaWorldProfiles.worldId, WORLD_A));
-    await expect(start(WORLD_A, "tamper")).rejects.toMatchObject({ code: "world_contract_invalid" });
+    }).where(eq(alphaWorldProfiles.worldId, WORLD_A))).rejects.toThrow();
 
-    await db.update(alphaWorldProfiles).set({ blueprint: encodeEconomyValue(setup.contract) }).where(eq(alphaWorldProfiles.worldId, WORLD_A));
     await db.update(worldAccesses).set({ acceptedStartingCapitalPolicy: { kind: "unlimited" } }).where(and(
       eq(worldAccesses.worldId, WORLD_A),
       eq(worldAccesses.keycloakSubject, "tamper"),

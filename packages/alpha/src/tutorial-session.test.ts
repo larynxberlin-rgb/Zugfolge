@@ -109,7 +109,7 @@ describe("TutorialSessionService", () => {
     ]);
     factory = new RecordingFactory();
     service = new TutorialSessionService(db, factory, { clock: () => now });
-  });
+  }, 30_000);
 
   afterEach(async () => client.close());
 

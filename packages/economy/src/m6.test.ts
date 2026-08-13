@@ -108,4 +108,24 @@ describe("M6 vollständig", () => {
     expect(interest.outstandingCents).toBe(10_500n);
     expect(repayCredit({ liquidCents: 2_000n, forecastPeriodNetCents: 0n, credits: [interest] }, 0, 1_000n)).toMatchObject({ liquidCents: 1_000n, credits: [{ outstandingCents: 9_500n }] });
   });
+
+  it("lehnt i64-Ueberlaeufe vor Settlement und Ergebnisbildung ab", () => {
+    const contract = {
+      id: "overflow-contract", worldId: "w1", lotId: "l1", operatorId: "op1", startsAt: 0, endsAt: 1,
+      orderingFeeCentsPerTrainKm: 2n, bonusCentsPerPeriod: 0n,
+      penaltyRates: { punctuality: 0n, cancellation: 0n, seats: 0n, connections: 0n }, evidenceRequired: [] as string[],
+    };
+    expect(() => settleContract(contract, {
+      trainKm: 9_223_372_036_854_775_807n,
+      punctualityBasisPoints: 9_000,
+      cancellations: 0,
+      missingSeats: 0,
+      missedConnections: 0,
+      evidence: [],
+    })).toThrow(/i64/);
+    expect(() => calculateProfitAndLoss(0n, [
+      { amountCents: 9_223_372_036_854_775_807n, costType: "vehicle", costCentreId: "l1", reference: "one" },
+      { amountCents: 1n, costType: "vehicle", costCentreId: "l1", reference: "two" },
+    ])).toThrow(/i64/);
+  });
 });

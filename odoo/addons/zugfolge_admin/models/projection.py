@@ -4,6 +4,8 @@ import json
 from odoo import api, fields, models
 from odoo.exceptions import AccessError, ValidationError
 
+from .admin_request import validate_serialized_starting_capital_policy
+
 
 class ZugfolgeWorldProjection(models.Model):
     """Read-only, versioned Game projection; never a second simulation truth."""
@@ -24,11 +26,23 @@ class ZugfolgeWorldProjection(models.Model):
     )
     simulation_time = fields.Datetime(readonly=True)
     world_status = fields.Char(readonly=True)
+    profile_kind = fields.Selection(
+        [("public", "Oeffentlich"), ("tutorial", "Tutorial"), ("private", "Privat"), ("test", "Test")],
+        readonly=True,
+    )
     schedule_period = fields.Char(readonly=True)
     infra_release_hash = fields.Char(readonly=True)
     economy_release_hash = fields.Char(readonly=True)
     timetable_release_hash = fields.Char(readonly=True)
     fleet_release_hash = fields.Char(readonly=True)
+    blueprint_hash = fields.Char(readonly=True)
+    deployment_hash = fields.Char(readonly=True)
+    starting_capital_mode = fields.Selection(
+        [("finite", "Begrenzt"), ("unlimited", "Unbegrenzt (\u221e)")],
+        readonly=True,
+    )
+    starting_capital_amount_cents = fields.Char(readonly=True)
+    starting_capital_preview = fields.Char(readonly=True)
     runtime_status = fields.Char(readonly=True)
     worker_status = fields.Char(readonly=True)
     running_trains = fields.Integer(readonly=True)
@@ -67,6 +81,12 @@ class ZugfolgeWorldProjection(models.Model):
         if not isinstance(world_id, str) or not isinstance(body, dict):
             raise ValidationError("Unvollstaendige Game-Projektion.")
         body_json = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        if "profileKind" in body and body.get("profileKind") not in ("public", "tutorial", "private", "test"):
+            raise ValidationError("Game-Weltprojektion besitzt kein gueltiges Weltprofil.")
+        for hash_name in ("blueprintHash", "deploymentHash"):
+            hash_value = body.get(hash_name)
+            if hash_name in body and (not isinstance(hash_value, str) or len(hash_value) != 64 or any(character not in "0123456789abcdef" for character in hash_value)):
+                raise ValidationError("Game-Weltprojektion besitzt keinen gueltigen SHA-256-Hash.")
         telemetry = body.get("telemetry", {}) if isinstance(body.get("telemetry", {}), dict) else {}
         live = telemetry.get("live", {}) if isinstance(telemetry.get("live", {}), dict) else {}
         shares = telemetry.get("operationShares", {}) if isinstance(telemetry.get("operationShares", {}), dict) else {}
@@ -84,11 +104,14 @@ class ZugfolgeWorldProjection(models.Model):
             "freshness": body.get("freshness", "delayed"),
             "simulation_time": body.get("simulationTime"),
             "world_status": body.get("worldStatus"),
+            "profile_kind": body.get("profileKind"),
             "schedule_period": body.get("schedulePeriod"),
             "infra_release_hash": body.get("infraReleaseHash"),
             "economy_release_hash": body.get("economyReleaseHash"),
             "timetable_release_hash": releases.get("timetable"),
             "fleet_release_hash": releases.get("fleet"),
+            "blueprint_hash": body.get("blueprintHash"),
+            "deployment_hash": body.get("deploymentHash"),
             "runtime_status": body.get("runtimeStatus"),
             "worker_status": body.get("workerStatus"),
             "running_trains": live.get("runningTrains", 0),
@@ -118,6 +141,42 @@ class ZugfolgeWorldProjection(models.Model):
             "payload_hash": hashlib.sha256(body_json.encode("utf-8")).hexdigest(),
         }
         record = self.search([("world_id", "=", world_id)], limit=1)
+        for field_name, body_name in (
+            ("profile_kind", "profileKind"),
+            ("blueprint_hash", "blueprintHash"),
+            ("deployment_hash", "deploymentHash"),
+        ):
+            if body_name not in body:
+                values.pop(field_name, None)
+        if record:
+            immutable_projection_values = (
+                ("profile_kind", "profileKind"),
+                ("blueprint_hash", "blueprintHash"),
+                ("deployment_hash", "deploymentHash"),
+            )
+            for field_name, body_name in immutable_projection_values:
+                current = record[field_name]
+                incoming = body.get(body_name)
+                if current and incoming is not None and current != incoming:
+                    raise ValidationError("Die signierte Weltprojektion darf Profil und Deployment-Hashes nicht aendern.")
+        if "startingCapitalPolicy" in body:
+            mode, amount_cents, preview = validate_serialized_starting_capital_policy(body.get("startingCapitalPolicy"))
+            if record and record.starting_capital_mode:
+                existing = {
+                    "mode": record.starting_capital_mode,
+                    **({"amountCents": record.starting_capital_amount_cents} if record.starting_capital_mode == "finite" else {}),
+                }
+                if existing != body["startingCapitalPolicy"]:
+                    raise ValidationError("Eine laufende Welt darf ihre Startkapital-Policy nicht aendern.")
+            values.update({
+                "starting_capital_mode": mode,
+                "starting_capital_amount_cents": amount_cents,
+                "starting_capital_preview": preview,
+            })
+        else:
+            values.pop("starting_capital_mode", None)
+            values.pop("starting_capital_amount_cents", None)
+            values.pop("starting_capital_preview", None)
         if record:
             record.with_context(zugfolge_game_projection=True).write(values)
             return record
@@ -132,6 +191,26 @@ class ZugfolgeWorldProjection(models.Model):
     def write(self, values):
         if not self.env.context.get("zugfolge_game_projection"):
             raise AccessError("Weltprojektionen sind nur lesbar.")
+        immutable_fields = ("profile_kind", "blueprint_hash", "deployment_hash")
+        capital_fields = {"starting_capital_mode", "starting_capital_amount_cents", "starting_capital_preview"}
+        for record in self:
+            for field_name in immutable_fields:
+                if field_name in values and record[field_name] and values[field_name] != record[field_name]:
+                    raise ValidationError("Die signierte Weltprojektion darf Profil und Deployment-Hashes nicht aendern.")
+            if capital_fields.intersection(values):
+                mode = values.get("starting_capital_mode", record.starting_capital_mode)
+                amount = values.get("starting_capital_amount_cents", record.starting_capital_amount_cents)
+                policy = {"mode": mode, **({"amountCents": amount} if mode == "finite" else {})}
+                _, _, preview = validate_serialized_starting_capital_policy(policy)
+                if "starting_capital_preview" in values and values["starting_capital_preview"] != preview:
+                    raise ValidationError("Die Startkapital-Vorschau muss exakt aus der projizierten Policy stammen.")
+                if record.starting_capital_mode:
+                    existing = {
+                        "mode": record.starting_capital_mode,
+                        **({"amountCents": record.starting_capital_amount_cents} if record.starting_capital_mode == "finite" else {}),
+                    }
+                    if existing != policy:
+                        raise ValidationError("Eine laufende Welt darf ihre Startkapital-Policy nicht aendern.")
         return super().write(values)
 
     def unlink(self):

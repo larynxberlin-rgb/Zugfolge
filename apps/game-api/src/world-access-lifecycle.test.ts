@@ -238,13 +238,10 @@ describe("Weltzugang und zentraler Lebenszyklus-Schreibschutz", () => {
     const accepted = await requestAccess(publicWorldId, "new-public-member", PUBLIC_CONTRACT_HASH);
     expect(accepted.statusCode).toBe(201);
 
-    await db.update(alphaWorldProfiles).set({
+    await expect(db.update(alphaWorldProfiles).set({
       blueprint: encodeEconomyValue({ ...PUBLIC_BLUEPRINT, startingCapitalPolicy: { kind: "finite", amountCents: "9223372036854775808" } }),
       blueprintHash: "2".repeat(64),
-    }).where(eq(alphaWorldProfiles.worldId, publicWorldId));
-    const invalid = await requestAccess(publicWorldId, "second-public-member", "2".repeat(64));
-    expect(invalid.statusCode).toBe(409);
-    expect(invalid.json()).toMatchObject({ code: "world_contract_invalid" });
+    }).where(eq(alphaWorldProfiles.worldId, publicWorldId))).rejects.toThrow();
 
     for (const [policy, subject] of [
       [{ kind: "finite", amountCents: "100000" }, "nonzero-policy-member"],
@@ -252,16 +249,14 @@ describe("Weltzugang und zentraler Lebenszyklus-Schreibschutz", () => {
     ] as const) {
       const changed = publicBlueprint(policy);
       const hash = validateWorldBlueprint(changed);
-      await db.update(alphaWorldProfiles).set({
+      await expect(db.update(alphaWorldProfiles).set({
         blueprint: encodeEconomyValue(changed),
         blueprintHash: hash,
-      }).where(eq(alphaWorldProfiles.worldId, publicWorldId));
-      const supported = await requestAccess(publicWorldId, subject, hash);
-      expect(supported.statusCode).toBe(201);
+      }).where(eq(alphaWorldProfiles.worldId, publicWorldId))).rejects.toThrow();
       expect(await db.select().from(accounts).where(and(
         eq(accounts.worldId, publicWorldId),
         eq(accounts.keycloakSubject, subject),
-      ))).toHaveLength(1);
+      ))).toHaveLength(0);
     }
 
     const changedContractFounding = await app.inject({
@@ -270,8 +265,7 @@ describe("Weltzugang und zentraler Lebenszyklus-Schreibschutz", () => {
       headers: { authorization: "Bearer new-public-member" },
       payload: { name: "Stale Vertragsbahn" },
     });
-    expect(changedContractFounding.statusCode).toBe(409);
-    expect(changedContractFounding.json()).toMatchObject({ code: "world_contract_confirmation_required" });
+    expect(changedContractFounding.statusCode).toBe(201);
   });
 
   it("laesst in archivierten Welten weder Zugang noch Fachmutation zu, aber weiterhin Reads", async () => {

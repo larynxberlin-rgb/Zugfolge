@@ -155,6 +155,20 @@
       "when": 1786582800000,
       "tag": "0022_contract_termination_authority",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1786586400000,
+      "tag": "0023_world_deploy_queue",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786590000000,
+      "tag": "0024_odoo_public_worlds",
+      "breakpoints": true
     }
   ]
 }

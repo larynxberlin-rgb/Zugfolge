@@ -1358,6 +1358,7 @@ fn materialize_formation(
             id: intent.id.clone(),
             operator_id: receipt.operator_id.clone(),
             vehicle_ids: intent.vehicle_ids.clone(),
+            path_receipt_id: Some(intent.path_receipt_id.clone()),
             service_line_ids: receipt.service_line_ids.clone(),
             availability: MobilizationAvailability::Available,
             procurement: MobilizationProcurement::Delivered,
@@ -1567,6 +1568,7 @@ fn materialize_duty(
         id: intent.id.clone(),
         operator_id: pool_source.operator_id.clone(),
         formation_ids: intent.formation_ids.clone(),
+        path_receipt_id: Some(intent.path_receipt_id.clone()),
         status: MobilizationDutyStatus::Ready,
         valid_from: intent.valid_from,
         valid_until: intent.valid_until,
@@ -1581,6 +1583,7 @@ fn materialize_path(
     Ok(MobilizationPathReservation {
         id: intent.id.clone(),
         operator_id: receipt.operator_id.clone(),
+        path_receipt_id: Some(intent.path_receipt_id.clone()),
         service_line_ids: receipt.service_line_ids.clone(),
         status: MobilizationPathStatus::Confirmed,
         valid_from: receipt.valid_from,
@@ -2540,10 +2543,22 @@ mod tests {
             None,
         );
         assert_eq!(path["snapshot"]["revision"], 3);
+        assert_eq!(
+            path["snapshot"]["formations"][0]["pathReceiptId"],
+            "path-confirmed"
+        );
         assert_eq!(path["snapshot"]["personnelDuties"][0]["status"], "ready");
+        assert_eq!(
+            path["snapshot"]["personnelDuties"][0]["pathReceiptId"],
+            "path-confirmed"
+        );
         assert_eq!(
             path["snapshot"]["pathReservations"][0]["status"],
             "confirmed"
+        );
+        assert_eq!(
+            path["snapshot"]["pathReservations"][0]["pathReceiptId"],
+            "path-confirmed"
         );
     }
 

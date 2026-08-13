@@ -9,7 +9,17 @@ import {
   worldEventLog,
   worlds,
 } from "@zugfolge/db";
-import { AbuseGuard, AlphaFeedbackService, AlphaMonitoringService, InfraUpdateService, TutorialSessionService, WorldEndService, alphaHash } from "@zugfolge/alpha";
+import {
+  AbuseGuard,
+  AlphaFeedbackService,
+  AlphaMonitoringService,
+  InfraUpdateService,
+  TutorialSessionService,
+  WorldEndService,
+  alphaHash,
+  effectiveStartingCapitalPolicy,
+  type AlphaWorldBlueprint,
+} from "@zugfolge/alpha";
 import {
   createHttpOdooProjectionClient,
   createHttpOdooReconciliationClient,
@@ -18,7 +28,9 @@ import {
   dispatchOdooProjectionOutbox,
   enqueueAlphaFeedbackProjection,
   enqueueGameAdminCapabilityProjection,
+  enqueuePublicWorldSnapshot,
   enqueueWorldProjection,
+  listPendingOdooProjectionWorldIds,
   processNextOdooCommand,
   reconcileOdooProjectionSnapshot,
   type OdooWebhookReceiverOptions,
@@ -32,9 +44,11 @@ import {
 import {
   createEconomyPlatformAdapters,
   createEconomySchedulerHealthCheck,
+  decodeEconomyValue,
   EconomySchedulerMonitor,
   listEconomyWorldIds,
   runEconomySchedulerCycle,
+  serializeStartingCapitalPolicy,
   type JournalAccounts,
 } from "@zugfolge/economy";
 import {
@@ -51,7 +65,6 @@ import {
   LivemapRegistry,
 } from "@zugfolge/livemap-stream";
 import { loadPlanningRuntime } from "@zugfolge/planning-runtime-native";
-import { planningInfrastructureReleaseCatalog } from "@zugfolge/planning-worker";
 import { purgeExpiredAccountData } from "@zugfolge/privacy";
 import {
   FLEET_INITIALIZE_SCHEMA,
@@ -59,7 +72,7 @@ import {
   loadRegionalSimulationRuntime,
   type OperatingRuntimeEvent,
 } from "@zugfolge/runtime-native";
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 import { buildApp } from "./app.js";
 import {
@@ -83,10 +96,16 @@ import {
   INFRA_RELEASE_ADOPTION_CAPABILITY,
   WORLD_ACCESS_REVOKE_CAPABILITY,
   WORLD_CLOSE_CAPABILITY,
+  WORLD_DEPLOY_CAPABILITY,
+  WORLD_DEPLOY_CAPABILITY_SCOPE_ID,
   createAbuseSanctionActivateAdminHandler,
   createInfraReleaseAdoptionAdminHandler,
+  ensureSignedPlanningAuthority,
   createWorldCloseAdminHandler,
+  createWorldDeployAdminHandler,
   createWorldAccessRevokeAdminHandler,
+  enqueueStartedWorldCapabilities,
+  worldIdsForOdooProjectionDispatch,
 } from "./odoo-admin-handlers.js";
 import { createProviderDisruptionConsumer } from "./provider-disruption-consumer.js";
 import { generateDailyOperationReports, previousBerlinServiceDay } from "./daily-reports.js";
@@ -101,13 +120,21 @@ import { RegionalSimulationWorker } from "./regional-simulation-worker.js";
 import { compareUtf8 } from "./utf8.js";
 import {
   ProductionWorldStartPort,
+  loadPersistedActiveAlphaWorldDeployments,
+  loadActiveAlphaWorldProjectionProfiles,
   loadSignedAlphaWorldDeployment,
+  persistSignedAlphaWorldDeployment,
   startSignedAlphaWorld,
 } from "./alpha-world-start.js";
-import type { RegionalServiceCatalog } from "./boundary-transition-scheduler.js";
 import { createAlphaInvitationAdminHandlers } from "./alpha-invitation-admin.js";
 import { AlphaOperationsMetrics } from "./observability.js";
+import { createWorldParticipationHandler } from "./odoo-world-participation.js";
+import {
+  PublicWorldSnapshotUnavailableError,
+  buildPublicWorldSnapshot,
+} from "./public-world-snapshot.js";
 import { GameTutorialWorldFactory } from "./tutorial-world-factory.js";
+import { ActiveWorldDeploymentRuntime } from "./world-deployment-runtime.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -120,6 +147,19 @@ function requireEnv(name: string): string {
 function optionalEnv(name: string): string | undefined {
   const value = process.env[name];
   return value === undefined || value.length === 0 ? undefined : value;
+}
+
+function alphaWorldReleasePaths(): readonly string[] {
+  const many = optionalEnv("ALPHA_WORLD_RELEASE_PATHS_JSON");
+  const legacy = optionalEnv("ALPHA_WORLD_RELEASE_PATH");
+  if (many === undefined) return legacy === undefined ? [] : [legacy];
+  const parsed: unknown = JSON.parse(many);
+  if (!Array.isArray(parsed) || parsed.length === 0 || parsed.some((path) => typeof path !== "string" || path.trim() === "")) {
+    throw new Error("ALPHA_WORLD_RELEASE_PATHS_JSON muss eine nichtleere Liste von Deploymentpfaden sein.");
+  }
+  if (legacy !== undefined) throw new Error("Einzel- und Mehrfachkonfiguration fuer Alpha-Deployments duerfen nicht kombiniert werden.");
+  if (new Set(parsed).size !== parsed.length) throw new Error("Alpha-Deploymentpfade muessen eindeutig sein.");
+  return parsed as readonly string[];
 }
 
 function parseSigningKeys(value: string): readonly SigningKey[] {
@@ -259,19 +299,18 @@ const disruptionProviderMonitor = new DisruptionProviderMonitor(Date.now());
 const disruptionProviderClient = new PublicInfrastructureRestrictionsClient();
 const disruptionProviderStore = createDisruptionProviderStore(db);
 const operatingRuntime = loadOperatingRuntime();
-const fleetAuthorityReleases = await loadFleetAuthorityReleaseCatalog(
+const configuredFleetAuthorityReleases = await loadFleetAuthorityReleaseCatalog(
   requireEnv("ZUGFOLGE_FLEET_AUTHORITY_RELEASE_PATH"),
 );
 const regionalSimulationRuntime = loadRegionalSimulationRuntime();
 const planningRuntime = loadPlanningRuntime();
-const planningInfrastructureReleases = planningInfrastructureReleaseCatalog(
-  parsePlanningInfrastructureReleasesJson(
-    requireEnv("PLANNING_INFRASTRUCTURE_RELEASES_JSON"),
-  ),
+const configuredPlanningInfrastructureReleases = parsePlanningInfrastructureReleasesJson(
+  requireEnv("PLANNING_INFRASTRUCTURE_RELEASES_JSON"),
 );
-const planningAuthorityAccountIds = parsePlanningAuthorityAccountIdsJson(
+const configuredPlanningAuthorityAccountIds = parsePlanningAuthorityAccountIdsJson(
   requireEnv("PLANNING_AUTHORITY_ACCOUNT_IDS_JSON"),
 );
+const trustedReleaseKeys = parseTrustedReleaseKeys(requireEnv("INFRA_RELEASE_TRUSTED_KEYS_JSON"));
 const regionalSimulation = new RegionalSimulationWorker(
   db,
   regionalSimulationRuntime,
@@ -284,12 +323,33 @@ const tutorialSessions = new TutorialSessionService(
 );
 const consumeProviderSnapshot = createProviderDisruptionConsumer(db, regionalSimulation);
 const worldRows = await db
-  .select({ worldId: worlds.id, epoch: worlds.epoch })
+  .select({
+    worldId: worlds.id,
+    name: worlds.name,
+    schedulePeriodWeeks: worlds.schedulePeriodWeeks,
+    epoch: worlds.epoch,
+    worldKind: worlds.worldKind,
+    rankingStatus: worlds.rankingStatus,
+    lifecycleStatus: worlds.lifecycleStatus,
+  })
   .from(worlds)
   .orderBy(asc(worlds.id));
-const worldEpochs = new Map(
-  worldRows.map((world) => [world.worldId, world.epoch] as const),
-);
+const activeWorldRows = worldRows.filter((world) => world.lifecycleStatus === "active");
+const deploymentRuntime = new ActiveWorldDeploymentRuntime({
+  activeWorlds: activeWorldRows,
+  fleetAuthorityReleases: configuredFleetAuthorityReleases,
+  planningAuthorityAccountIds: configuredPlanningAuthorityAccountIds,
+  planningInfrastructureReleases: configuredPlanningInfrastructureReleases,
+});
+const persistedActiveDeployments = await loadPersistedActiveAlphaWorldDeployments(db, trustedReleaseKeys);
+for (const persisted of persistedActiveDeployments) deploymentRuntime.register(persisted.signed, persisted.epoch);
+const {
+  boundaryTransitions,
+  fleetAuthorityReleases,
+  planningAuthorityAccountIds,
+  planningInfrastructureReleases,
+  worldEpochs,
+} = deploymentRuntime;
 const manualDisruptionAdminHandler = createManualDisruptionAdminHandler({
   worker: regionalSimulation,
   worldEpoch(worldId) {
@@ -299,6 +359,7 @@ const manualDisruptionAdminHandler = createManualDisruptionAdminHandler({
   },
 });
 const worldAccessRevokeAdminHandler = createWorldAccessRevokeAdminHandler({ db, keycloak: keycloakAdmin });
+const worldParticipationHandler = createWorldParticipationHandler(db);
 const alphaMonitoring = new AlphaMonitoringService(db);
 const alphaOperationsMetrics = new AlphaOperationsMetrics();
 const alphaPseudonymSecret = requireEnv("ALPHA_PSEUDONYM_SECRET");
@@ -326,7 +387,6 @@ const alphaFeedback = new AlphaFeedbackService(db, alphaPseudonymSecret, {
 });
 const abuseGuard = new AbuseGuard(db);
 const worldEnd = new WorldEndService(db);
-const trustedReleaseKeys = parseTrustedReleaseKeys(requireEnv("INFRA_RELEASE_TRUSTED_KEYS_JSON"));
 const infraUpdate = new InfraUpdateService(
   db,
   trustedReleaseKeys,
@@ -335,7 +395,8 @@ const infraUpdate = new InfraUpdateService(
 const abuseSanctionActivateAdminHandler = createAbuseSanctionActivateAdminHandler(abuseGuard);
 const worldCloseAdminHandler = createWorldCloseAdminHandler(worldEnd);
 const infraReleaseAdoptionAdminHandler = createInfraReleaseAdoptionAdminHandler(infraUpdate);
-const configuredWorldIds = new Set(worldRows.map((world) => world.worldId));
+const configuredWorldIds = new Set(activeWorldRows.map((world) => world.worldId));
+const configuredWorlds = new Map(activeWorldRows.map((world) => [world.worldId, world] as const));
 for (const [worldId, authorityRelease] of Object.entries(fleetAuthorityReleases)) {
   if (!configuredWorldIds.has(worldId)) {
     throw new Error(`M5-Authority-Release ist an die unbekannte Welt '${worldId}' gebunden.`);
@@ -352,14 +413,14 @@ for (const [worldId, authorityRelease] of Object.entries(fleetAuthorityReleases)
 }
 await verifyPlanningAuthorityAccounts(
   db,
-  worldRows.map((world) => world.worldId),
+  deploymentRuntime.worldIds(),
   planningAuthorityAccountIds,
 );
 
 const economyAdapters = {
   ...createEconomyPlatformAdapters({
     db,
-    accountsByOperator: JSON.parse(requireEnv("ECONOMY_LEDGER_ACCOUNTS_JSON")) as Readonly<Record<string, JournalAccounts>>,
+    accountsByOperator: JSON.parse(optionalEnv("ECONOMY_LEDGER_ACCOUNTS_JSON") ?? "{}") as Readonly<Record<string, JournalAccounts>>,
   }),
   operatingRuntime,
   async publishRuntimeEvents(events: readonly OperatingRuntimeEvent[]) {
@@ -391,7 +452,7 @@ for (const worldId of await listEconomyWorldIds(db)) {
 // Alle persistierten regionalen Rust-Zustaende werden vor dem ersten
 // Listener restauriert. Welten ohne Zustand bleiben bewusst uninitialisiert
 // und ihre Livemap-Routen damit auf 503.
-for (const world of worldRows) {
+for (const world of activeWorldRows) {
   const persistedRegions = await db
     .select({
       regionId: regionalSimulationStates.regionId,
@@ -415,13 +476,31 @@ for (const world of worldRows) {
   }
 }
 
-let boundaryTransitions: RegionalServiceCatalog | undefined;
-const alphaWorldReleasePath = optionalEnv("ALPHA_WORLD_RELEASE_PATH");
-if (alphaWorldReleasePath !== undefined) {
+const signedDeployments = new Map(
+  persistedActiveDeployments.map((persisted) => [persisted.signed.deployment.worldId, persisted.signed] as const),
+);
+for (const alphaWorldReleasePath of alphaWorldReleasePaths()) {
   const signedDeployment = await loadSignedAlphaWorldDeployment(alphaWorldReleasePath, trustedReleaseKeys);
-  if (!configuredWorldIds.has(signedDeployment.deployment.worldId)) {
+  const persisted = signedDeployments.get(signedDeployment.deployment.worldId);
+  if (persisted !== undefined && persisted.deploymentHash !== signedDeployment.deploymentHash) {
+    throw new Error(`Deploymentpfad fuer '${signedDeployment.deployment.worldId}' widerspricht dem autoritativ persistierten Deployment.`);
+  }
+  signedDeployments.set(signedDeployment.deployment.worldId, signedDeployment);
+}
+for (const signedDeployment of [...signedDeployments.values()].sort((left, right) => compareUtf8(left.deployment.worldId, right.deployment.worldId))) {
+  const configuredWorld = configuredWorlds.get(signedDeployment.deployment.worldId);
+  if (configuredWorld === undefined) {
     throw new Error(`Signiertes Alpha-Deployment ist an die unbekannte Welt '${signedDeployment.deployment.worldId}' gebunden.`);
   }
+  const definition = signedDeployment.deployment.worldDefinition;
+  if (
+    configuredWorld.name !== definition.name
+    || configuredWorld.schedulePeriodWeeks !== definition.schedulePeriodWeeks
+    || configuredWorld.epoch.getTime() !== new Date(definition.epoch).getTime()
+    || configuredWorld.worldKind !== (definition.kind === "public" ? "public" : "private")
+    || configuredWorld.rankingStatus !== definition.rankingStatus
+    || configuredWorld.lifecycleStatus !== "active"
+  ) throw new Error(`Signiertes Alpha-Deployment weicht von der konfigurierten Welt '${configuredWorld.worldId}' ab.`);
   const worldStartPort = new ProductionWorldStartPort(
     db,
     signedDeployment,
@@ -430,9 +509,36 @@ if (alphaWorldReleasePath !== undefined) {
     livemap,
     operations,
   );
+  await ensureSignedPlanningAuthority(db, signedDeployment);
   await startSignedAlphaWorld(db, signedDeployment, worldStartPort);
-  boundaryTransitions = worldStartPort.boundaryTransitions;
+  deploymentRuntime.register(signedDeployment, configuredWorld.epoch);
+  await persistSignedAlphaWorldDeployment(db, signedDeployment);
 }
+const worldDeployAdminHandler = createWorldDeployAdminHandler({
+  db,
+  trustedKeys: trustedReleaseKeys,
+  fleetRuntime: operatingRuntime,
+  regionalSimulation,
+  livemap,
+  operations,
+  async registerStartedWorld(started) {
+    deploymentRuntime.register(started.signed, started.epoch);
+    if (odooProjectionClient !== undefined) {
+      await enqueueStartedWorldCapabilities(db, {
+        worldId: started.signed.deployment.worldId,
+        deploymentHash: started.signed.deploymentHash,
+        occurredAt: started.occurredAt,
+        capabilities: [
+          MANUAL_DISRUPTION_ADMIN_CAPABILITY,
+          WORLD_ACCESS_REVOKE_CAPABILITY,
+          ABUSE_SANCTION_ACTIVATE_CAPABILITY,
+          WORLD_CLOSE_CAPABILITY,
+          INFRA_RELEASE_ADOPTION_CAPABILITY,
+        ],
+      });
+    }
+  },
+});
 
 const app = buildApp({
   db,
@@ -486,7 +592,12 @@ app.addHook("onClose", async () => {
 });
 
 if (odooProjectionClient !== undefined) {
-  for (const world of worldRows) {
+  await enqueueGameAdminCapabilityProjection(db, {
+    worldId: WORLD_DEPLOY_CAPABILITY_SCOPE_ID,
+    correlationId: `startup:global:${WORLD_DEPLOY_CAPABILITY.actionType}`,
+    capability: WORLD_DEPLOY_CAPABILITY,
+  });
+  for (const world of activeWorldRows) {
     for (const capability of [
       MANUAL_DISRUPTION_ADMIN_CAPABILITY,
       WORLD_ACCESS_REVOKE_CAPABILITY,
@@ -509,9 +620,8 @@ const runAlphaProjection = () => {
   const observedAt = new Date();
   alphaProjectionCycle = (async () => {
     // guards:allow world-id — Der Betriebszyklus enumeriert Welt-IDs; jede Folgeverarbeitung ist wieder weltgebunden.
-    const profiles = await db.select({ worldId: alphaWorldProfiles.worldId }).from(alphaWorldProfiles)
-      .where(ne(alphaWorldProfiles.profileKind, "tutorial"))
-      .orderBy(asc(alphaWorldProfiles.worldId));
+    const profiles = (await loadActiveAlphaWorldProjectionProfiles(db))
+      .filter((profile) => profile.profileKind !== "tutorial");
     for (const profile of profiles) {
       const snapshot = await alphaMonitoring.snapshot(profile.worldId, observedAt);
       alphaOperationsMetrics.observe(snapshot);
@@ -524,6 +634,8 @@ const runAlphaProjection = () => {
       const workerStatus = failedProjections > 0 ? `degraded: ${failedProjections} fehlgeschlagene Odoo-Projektionen`
         : "healthy: keine fehlgeschlagene Odoo-Projektion";
       const projectionRevision = alphaHash("zugfolge-odoo-world-projection/v1", snapshot);
+      const blueprint = decodeEconomyValue(profile.blueprint) as AlphaWorldBlueprint;
+      const startingCapitalPolicy = serializeStartingCapitalPolicy(effectiveStartingCapitalPolicy(blueprint));
       await enqueueWorldProjection(db, {
         worldId: profile.worldId,
         correlationId: `alpha-monitoring:${profile.worldId}:${observedAt.toISOString()}`,
@@ -531,6 +643,10 @@ const runAlphaProjection = () => {
         payload: {
           worldName: snapshot.world.name,
           projectionRevision,
+          profileKind: profile.profileKind,
+          blueprintHash: profile.blueprintHash,
+          ...(profile.deploymentHash === null ? {} : { deploymentHash: profile.deploymentHash }),
+          startingCapitalPolicy,
           freshness: "delayed",
           simulationTime: new Date(epoch.getTime() + snapshot.world.simulationTimeS * 1_000).toISOString(),
           worldStatus: `${snapshot.world.status} / ${snapshot.world.lifecycleStatus}`,
@@ -543,6 +659,21 @@ const runAlphaProjection = () => {
           authoritativeEventUrl: `${optionalEnv("PUBLIC_GAME_URL") ?? ""}/worlds/${profile.worldId}/alpha-monitoring`,
         },
       });
+      try {
+        const publicSnapshot = await buildPublicWorldSnapshot(db, {
+          worldId: profile.worldId,
+          authoritativeNowS: snapshot.world.simulationTimeS,
+          generatedAt: observedAt,
+        });
+        await enqueuePublicWorldSnapshot(db, {
+          snapshot: publicSnapshot,
+          correlationId: `public-world:${profile.worldId}:${publicSnapshot.authoritativeAsOf}`,
+          occurredAt: observedAt,
+        });
+      } catch (error) {
+        if (!(error instanceof PublicWorldSnapshotUnavailableError
+          && (error.code === "legacy_blueprint" || error.code === "not_public"))) throw error;
+      }
     }
   })().catch((error: unknown) => {
     app.log.error({ err: error }, "Odoo-Alpha-Monitoringprojektion fehlgeschlagen");
@@ -653,19 +784,25 @@ const runCommerce = () => {
   if (commerceCycle !== undefined) return;
   commerceCycle = (async () => {
     while (await processNextOdooCommand(db, new Date(), {
+      participationHandler: worldParticipationHandler,
       adminHandlers: {
         manual_disruption_create: manualDisruptionAdminHandler,
         world_access_revoke: worldAccessRevokeAdminHandler,
         abuse_sanction_activate: abuseSanctionActivateAdminHandler,
         world_close: worldCloseAdminHandler,
         infra_release_adoption: infraReleaseAdoptionAdminHandler,
+        world_deploy: worldDeployAdminHandler,
         ...alphaInvitationAdminHandlers,
       },
     }) !== undefined) {
       // Alle bereits vorliegenden Befehle abarbeiten, ohne auf Odoo zu warten.
     }
     if (odooProjectionClient !== undefined) {
-      for (const worldId of configuredWorldIds) {
+      const pendingOutboxWorldIds = await listPendingOdooProjectionWorldIds(db);
+      for (const worldId of worldIdsForOdooProjectionDispatch(
+        deploymentRuntime.worldIds(),
+        pendingOutboxWorldIds,
+      )) {
         await dispatchOdooProjectionOutbox(db, worldId, odooProjectionClient, new Date());
       }
     }
@@ -704,7 +841,7 @@ const planningScheduler = createPlanningScheduler(
   db,
   planningRuntime,
   planningInfrastructureReleases,
-  worldRows.map((world) => world.worldId),
+  () => deploymentRuntime.worldIds(),
   {
     onError: (error) => {
       app.log.error({ err: error }, "Planning-Consumer-Lauf fehlgeschlagen");

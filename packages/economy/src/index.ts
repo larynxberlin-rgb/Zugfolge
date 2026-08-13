@@ -1,16 +1,26 @@
 export { isBalanced, sumEntries } from "./balance.js";
+export * from "./money.js";
+export * from "./starting-capital.js";
 export {
   DuplicateLedgerAccountNameError,
+  ensureLedgerAccount,
   ForeignLedgerAccountError,
+  IdempotentLedgerContentConflictError,
   IncompleteTransactionError,
+  initializeOperatorStartingCapital,
   ledgerAccountBalance,
   listLedgerAccounts,
   listLedgerTransactions,
   openLedgerAccount,
   postLedgerTransaction,
+  STARTING_CAPITAL_CASH_ACCOUNT_NAME,
+  STARTING_CAPITAL_EQUITY_ACCOUNT_NAME,
+  STARTING_CAPITAL_IDEMPOTENCY_KEY,
+  STARTING_CAPITAL_TRANSACTION_DESCRIPTION,
   UnbalancedTransactionError,
   type EconomyDatabase,
   type LedgerTransactionEntryInput,
+  type OperatorStartingCapitalInitialization,
 } from "./ledger.js";
 export * from "./release.js";
 export * from "./world.js";

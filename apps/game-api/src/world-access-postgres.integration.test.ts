@@ -13,7 +13,7 @@ import {
   type AlphaWorldBlueprint,
 } from "@zugfolge/alpha";
 import { encodeEconomyValue } from "@zugfolge/economy";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -62,11 +62,17 @@ describe.skipIf(databaseUrl === undefined)("oeffentlicher Weltplatz auf echtem P
   let app: FastifyInstance;
 
   async function cleanFixture(): Promise<void> {
-    await db.delete(accountRoles).where(inArray(accountRoles.worldId, [WORLD_A, WORLD_B]));
-    await db.delete(accounts).where(inArray(accounts.worldId, [WORLD_A, WORLD_B]));
-    await db.delete(worldAccesses).where(inArray(worldAccesses.worldId, [WORLD_A, WORLD_B]));
-    await db.delete(alphaWorldProfiles).where(inArray(alphaWorldProfiles.worldId, [WORLD_A, WORLD_B]));
-    await db.delete(worlds).where(inArray(worlds.id, [WORLD_A, WORLD_B]));
+    await db.transaction(async (tx) => {
+      // Der No-Wipe-Guard muss produktiv auch DELETE auf gestarteten Profilen
+      // verhindern. Nur diese abgeschlossene Testtransaktion darf ihre
+      // fest benannten Fixtures deshalb ohne Triggerwirkung entfernen.
+      await tx.execute(sql`set local session_replication_role = replica`);
+      await tx.delete(accountRoles).where(inArray(accountRoles.worldId, [WORLD_A, WORLD_B]));
+      await tx.delete(accounts).where(inArray(accounts.worldId, [WORLD_A, WORLD_B]));
+      await tx.delete(worldAccesses).where(inArray(worldAccesses.worldId, [WORLD_A, WORLD_B]));
+      await tx.delete(alphaWorldProfiles).where(inArray(alphaWorldProfiles.worldId, [WORLD_A, WORLD_B]));
+      await tx.delete(worlds).where(inArray(worlds.id, [WORLD_A, WORLD_B]));
+    });
   }
 
   beforeAll(async () => {

@@ -335,6 +335,16 @@ an die Welt gepinnten Releases abzuleiten und für alle sichtbar. Ihre Namen,
 Präferenzen und Zuschläge sind Spielwelt-Fiktion; sie behaupten weder reale
 Unternehmen noch reale Marktpreise nachzubilden.
 
+Nach E28 ist dieser sichtbare Markt in einer öffentlichen Welt der normale
+Einstiegsweg, **kein Startpaket**. Ein neues EVU erhält kein Fahrzeug
+zugewiesen; es wählt ein konkretes Angebot und finanziert Kaution und Rate über
+sein weltgebundenes Startkapital oder einen regulären Kredit. Derselbe Preis-
+und Verfügbarkeitsvertrag gilt für bestehende EVU. Nur das getrennte
+Tutorial-Deployment darf ein vorbereitetes Leasingfahrzeug didaktisch
+zuteilen. Der öffentliche Weltentwurf ist bei endlichem Startkapital von null
+nur freigabefähig, wenn mindestens eine erreichbare Ausschreibungs-, Kredit-
+und Leasingkombination den Einstieg tatsächlich ermöglicht.
+
 **Rücklaufregeln.** Endet ein Leasingvertrag, gibt ein EVU den Betrieb auf oder
 wird es insolvent, geht jedes Leasingfahrzeug nach einer nötigen Rückführung
 an seinen Leasinggeber zurück. Dieser bietet es mit seinem fortgeschriebenen

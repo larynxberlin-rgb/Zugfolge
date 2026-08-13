@@ -132,6 +132,10 @@ export interface MailboxMessageView {
   readonly overdue: boolean;
 }
 
+export type StartingCapitalPolicy =
+  | { readonly mode: "finite"; readonly amountCents: string }
+  | { readonly mode: "unlimited" };
+
 export type ContractType = "traction" | "vehicle-rental" | "connection" | "disruption-assistance";
 export type ContractStatus = "offered" | "accepted" | "termination-pending" | "rejected" | "active" | "terminated" | "non-performance" | "completed" | "expired";
 
@@ -332,6 +336,27 @@ function nonNegativeInteger(value: number | undefined, fallback: number, name: s
 }
 
 const JOURNEY_TIMEOUT_MS = 15_000;
+const MAX_I64_CENTS = 9_223_372_036_854_775_807n;
+
+function parseStartingCapitalPolicy(value: unknown): StartingCapitalPolicy {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Startkapital-Policy ist kein Objekt.");
+  }
+  const policy = value as Record<string, unknown>;
+  if (policy["mode"] === "unlimited" && Object.keys(policy).length === 1) {
+    return { mode: "unlimited" };
+  }
+  if (
+    policy["mode"] === "finite"
+    && Object.keys(policy).length === 2
+    && typeof policy["amountCents"] === "string"
+    && /^(0|[1-9][0-9]*)$/.test(policy["amountCents"])
+    && BigInt(policy["amountCents"]) <= MAX_I64_CENTS
+  ) {
+    return { mode: "finite", amountCents: policy["amountCents"] };
+  }
+  throw new Error("Erwartet wird finite mit kanonischem i64-Centstring oder unlimited ohne Betrag.");
+}
 
 function asRecord(value: unknown, name: string): Readonly<Record<string, unknown>> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw new GameApiError(`${name} hat ein ungültiges Format.`, false);
@@ -1020,6 +1045,18 @@ export class GameApiClient {
 
   confirmTutorialSummary(tutorialWorldId: string): Promise<TutorialSessionView> {
     return this.#journeyJson<unknown>(`/worlds/${encodeURIComponent(tutorialWorldId)}/tutorial-session/summary/confirm`, { method: "POST" }).then(parseTutorialSessionV1);
+  }
+
+  async loadStartingCapitalPolicy(worldId: string): Promise<StartingCapitalPolicy> {
+    const value = await this.#journeyJson<unknown>(
+      `/worlds/${encodeURIComponent(worldId)}/starting-capital-policy`,
+    );
+    try {
+      return parseStartingCapitalPolicy(value);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "unbekannter Vertragsfehler";
+      throw new GameApiError(`Startkapital-Policy hat ein ungültiges Format: ${detail}`, false);
+    }
   }
 
   loadOwnOperators(): Promise<readonly OperatorSummary[]> {

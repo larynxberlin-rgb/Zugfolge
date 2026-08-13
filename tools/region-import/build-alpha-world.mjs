@@ -4,18 +4,70 @@ import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { alphaHash } from "../../packages/alpha/dist/index.js";
-import { buildEconomyRelease, encodeEconomyValue, startEconomyWorld } from "../../packages/economy/dist/index.js";
+import { buildEconomyRelease, encodeEconomyValue, parseStartingCapitalPolicy, serializeStartingCapitalPolicy, startEconomyWorld } from "../../packages/economy/dist/index.js";
+import { assertEmbeddedWorldIds, assertNoStarterIdentifiers } from "./alpha-world-variants.mjs";
 
-const [gtfsPath, networkPath, fleetCatalogPath, infraReleasePath, economySpecPath, outputPath] = process.argv.slice(2);
+const [gtfsPath, networkPath, fleetCatalogPath, infraReleasePath, economySpecPath, outputPath, publicConfigurationPath] = process.argv.slice(2);
 if (!gtfsPath || !networkPath || !fleetCatalogPath || !infraReleasePath || !economySpecPath || !outputPath) {
-  throw new Error("Aufruf: node build-alpha-world.mjs GTFS.json NETWORK.json FLEET-CATALOG.json INFRA-RELEASE.json ECONOMY.json OUTPUT.json");
+  throw new Error("Aufruf: node build-alpha-world.mjs GTFS.json NETWORK.json FLEET-CATALOG.json INFRA-RELEASE.json ECONOMY.json OUTPUT.json [PUBLIC-ODOO-CONFIG.json]");
 }
 
 const WORLD_ID = "00000000-0000-4000-8000-000000000014";
 const REGION_ID = "mitteldeutschland-b";
 const OPERATOR_ID = "public";
+const PUBLIC_WORLD_SEED = 14_2026n;
+const PUBLIC_PLANNING_AUTHORITY_ACCOUNT_ID = "00000000-0000-4000-8000-000000000214";
+const WORLD_EPOCH = "2026-12-13T00:00:00.000Z";
 const WORLD_DURATION_S = 365 * 86_400;
 const RELEASE_VALID_UNTIL_S = WORLD_DURATION_S + 86_400;
+
+function defaultDeployConfiguration(worldId, kind) {
+  const publicWorld = kind === "public";
+  return {
+    schemaVersion: "zugfolge-alpha-world-deploy-configuration/v1",
+    worldId,
+    worldDefinition: {
+      name: publicWorld ? "Mitteldeutschland Alpha 2026" : "Mitteldeutschland Tutorial 2026",
+      kind,
+      rankingStatus: publicWorld ? "ranked" : "unranked",
+      schedulePeriodWeeks: publicWorld ? 4 : 3,
+      epoch: WORLD_EPOCH,
+    },
+    startingCapitalPolicy: { mode: "finite", amountCents: "0" },
+  };
+}
+
+async function loadDeployConfiguration(path, expectedWorldId, expectedKind) {
+  const configuration = path === undefined
+    ? defaultDeployConfiguration(expectedWorldId, expectedKind)
+    : JSON.parse(await readFile(path, "utf8"));
+  const definition = configuration?.worldDefinition;
+  if (
+    configuration?.schemaVersion !== "zugfolge-alpha-world-deploy-configuration/v1"
+    || Object.keys(configuration).length !== 4
+    || configuration.worldId !== expectedWorldId
+    || typeof definition !== "object"
+    || definition === null
+    || Array.isArray(definition)
+    || Object.keys(definition).length !== 5
+    || typeof definition.name !== "string"
+    || definition.name.trim() === ""
+    || definition.kind !== expectedKind
+    || definition.rankingStatus !== (expectedKind === "public" ? "ranked" : "unranked")
+    || !Number.isSafeInteger(definition.schedulePeriodWeeks)
+    || definition.schedulePeriodWeeks < 3
+    || definition.schedulePeriodWeeks > 8
+    || typeof definition.epoch !== "string"
+    || Number.isNaN(new Date(definition.epoch).getTime())
+  ) throw new Error(`Odoo-Signierkonfiguration fuer '${expectedWorldId}' ist ungueltig.`);
+  return {
+    ...configuration,
+    worldDefinition: { ...definition },
+    startingCapitalPolicy: serializeStartingCapitalPolicy(parseStartingCapitalPolicy(configuration.startingCapitalPolicy)),
+  };
+}
+
+const publicDeployConfiguration = await loadDeployConfiguration(publicConfigurationPath, WORLD_ID, "public");
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -396,7 +448,7 @@ const economyLots = lotRecords.map((lot) => ({
 }));
 const economyStarted = startEconomyWorld({
   worldId: WORLD_ID,
-  seed: 14_2026n,
+  seed: PUBLIC_WORLD_SEED,
   durationMonths: 12,
   release: economyRelease,
   lots: economyLots,
@@ -405,19 +457,77 @@ const economyStarted = startEconomyWorld({
   publicVehiclePoolByLot,
 });
 const tenderCalendarHash = alphaHash("zugfolge-alpha-tender-calendar/v1", economyStarted.state.calendar);
+const planningRoute = regionalTrains
+  .map((train) => train.route.filter((waypoint) => {
+    const station = stationById.get(waypoint.operatingPoint);
+    return station?.latitudeE7 !== null && station?.longitudeE7 !== null;
+  }))
+  .find((route) => route.length >= 2 && route.every((waypoint, index) => (
+    index === 0 || route[index - 1].positionMm < waypoint.positionMm
+  )));
+if (planningRoute === undefined) throw new Error("Signiertes Planning-Release braucht einen linearen Alpha-Korridor mit Koordinaten.");
+const planningInfrastructureRelease = {
+  schemaVersion: "planning.infrastructure-release/v1",
+  worldId: WORLD_ID,
+  releaseId: infraRelease.releaseId,
+  sourceId: infraRelease.releaseHash,
+  corridorId: `${REGION_ID}-alpha-corridor`,
+  corridorName: "Mitteldeutschland Alpha-Korridor",
+  stations: planningRoute.map((waypoint, index) => {
+    const station = stationById.get(waypoint.operatingPoint);
+    if (station?.latitudeE7 === null || station?.latitudeE7 === undefined || station.longitudeE7 === null) {
+      throw new Error(`Planning-Betriebsstelle '${waypoint.operatingPoint}' besitzt keine Koordinaten.`);
+    }
+    return {
+      numericId: index + 1,
+      id: station.stationId,
+      code: station.stationId,
+      name: station.name,
+      distanceMm: waypoint.positionMm,
+      latitudeE7: station.latitudeE7,
+      longitudeE7: station.longitudeE7,
+      stationTrackNumericId: 1_000_000 + index,
+      stationTrackLengthMm: 400_000,
+      stationMaximumSpeedKph: 80,
+    };
+  }),
+  segments: planningRoute.slice(1).map((waypoint, index) => {
+    const previous = planningRoute[index];
+    const lengthMm = waypoint.positionMm - previous.positionMm;
+    return {
+      edgeNumericId: 2_000_000 + index,
+      trackNumericId: 3_000_000 + index,
+      id: `planning-${previous.operatingPoint}-${waypoint.operatingPoint}-${index + 1}`,
+      label: `${previous.operatingPoint}–${waypoint.operatingPoint}`,
+      fromStationId: previous.operatingPoint,
+      toStationId: waypoint.operatingPoint,
+      lengthMm,
+      maximumSpeedKph: 160,
+      mainSignalPositionsMm: [],
+      maximumVirtualBlockLengthMm: Math.min(lengthMm, 10_000_000),
+    };
+  }),
+};
 const deployment = {
   schema: "zugfolge-alpha-world-deployment/v1",
   worldId: WORLD_ID,
+  worldDefinition: publicDeployConfiguration.worldDefinition,
   infraReleaseHash: infraRelease.releaseHash,
   blueprint: {
-    schemaVersion: "zugfolge-alpha-world-blueprint/v1",
+    schemaVersion: "zugfolge-alpha-world-blueprint/v2",
     regionId: REGION_ID,
     regionVariant: "B",
-    seed: 14_2026n,
+    seed: PUBLIC_WORLD_SEED,
     profileKind: "public",
     accelerationFactor: 1,
     periodCount: 10,
-    startingCapitalPolicy: { kind: "finite", amountCents: "0" },
+    startingCapitalPolicy: publicDeployConfiguration.startingCapitalPolicy,
+    entryFacilityPolicy: {
+      schemaVersion: "zugfolge-public-entry-facility/v1",
+      mode: "award-contingent-wet-lease",
+      providerOperatorId: OPERATOR_ID,
+      costBasis: "formation-operating-cost",
+    },
     releases: { infra: infraRelease.releaseHash, timetable: gtfsEnvelope.snapshotHash, fleet: fleetEvidence.authorityReleaseHash, economy: economyRelease.checksum },
     lots: blueprintLots,
     conflictCheckHash: networkEnvelope.networkHash,
@@ -442,6 +552,14 @@ const deployment = {
   },
   repeatEveryS: 86_400,
   boundaryTransitions: boundaryTransitions.sort((left, right) => left.atS - right.atS || left.transitionId.localeCompare(right.transitionId)),
+  planning: {
+    authority: {
+      accountId: PUBLIC_PLANNING_AUTHORITY_ACCOUNT_ID,
+      keycloakSubject: `system:planning-authority:${WORLD_ID}`,
+      displayName: "Aufgabentraeger Mitteldeutschland Alpha 2026",
+    },
+    infrastructureRelease: planningInfrastructureRelease,
+  },
   provenance: {
     infraReleaseId: infraRelease.releaseId,
     operationalNetworkHash: networkEnvelope.networkHash,
@@ -450,15 +568,18 @@ const deployment = {
     generationScriptSha256: sha256(generatorBytes),
   },
 };
+assertEmbeddedWorldIds(deployment, WORLD_ID);
+assertNoStarterIdentifiers(deployment);
+
 await writeFile(outputPath, `${JSON.stringify({ deployment: encodeEconomyValue(deployment) }, null, 2)}\n`);
 console.log(JSON.stringify({
   worldId: WORLD_ID,
   lotCount: blueprintLots.length,
   trainRunCount: regionalTrains.length,
   circulationCount: circulationsCount(blueprintLots),
-  vehicleCount: assets.length,
-  personnelDutyCount: personnelDuties.length,
-  pathReservationCount: pathReservations.length,
+  vehicleCount: fleet.authorityRelease.assets.length,
+  personnelDutyCount: fleet.personnelDuties.length,
+  pathReservationCount: fleet.pathReservations.length,
   boundaryTransitionCount: boundaryTransitions.length,
   fleetReleaseHash: fleetEvidence.authorityReleaseHash,
   economyReleaseHash: economyRelease.checksum,

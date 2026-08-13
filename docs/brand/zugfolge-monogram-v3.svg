@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Zugfolge Monogramm V3</title>
+  <desc id="desc">Kantige Kurzform ZF mit einer abstrahierten Netzlinie.</desc>
+  <path fill="none" stroke="#7186FF" stroke-width="5" stroke-linecap="square" stroke-linejoin="miter" d="M16 22H72L86 8H232" />
+  <rect x="10" y="16" width="12" height="12" fill="#090B10" stroke="#7186FF" stroke-width="4" />
+  <rect x="226" y="2" width="12" height="12" fill="#090B10" stroke="#7186FF" stroke-width="4" />
+  <path fill="#E8EDF7" d="M20 38H124V72L68 184H124V218H20V184L76 72H20Z" />
+  <path fill="#7186FF" d="M144 38H238V72H180V110H228V144H180V218H144Z" />
+</svg>

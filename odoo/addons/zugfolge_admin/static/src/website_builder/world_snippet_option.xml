@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+  <t t-name="zugfolge_admin.WorldSnippetOption">
+    <BuilderRow label.translate="Welt-ID">
+      <BuilderTextInput dataAttributeAction="'worldId'" placeholder.translate="UUID aus dem Weltangebot"/>
+    </BuilderRow>
+    <BuilderRow label.translate="Weltgruppe">
+      <BuilderSelect dataAttributeAction="'worldSelector'">
+        <BuilderSelectItem dataAttributeActionValue="'all'">Alle Welten</BuilderSelectItem>
+        <BuilderSelectItem dataAttributeActionValue="'active'">Aktive Welten</BuilderSelectItem>
+        <BuilderSelectItem dataAttributeActionValue="'open'">Anmeldung offen</BuilderSelectItem>
+      </BuilderSelect>
+    </BuilderRow>
+  </t>
+</templates>

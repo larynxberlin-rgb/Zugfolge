@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Zugfolge Favicon V3</title>
+  <desc id="desc">Kantiges ZF-Monogramm mit einer abgeschlossenen Netzlinie.</desc>
+  <rect width="256" height="256" fill="#090B10" />
+  <path fill="none" stroke="#7186FF" stroke-width="7" stroke-linecap="square" stroke-linejoin="miter" d="M18 30H82L98 14H232" />
+  <rect x="12" y="24" width="12" height="12" fill="#AFC7FF" />
+  <rect x="226" y="8" width="12" height="12" fill="#7186FF" />
+  <path fill="#E8EDF7" d="M20 50H124V82L68 184H124V218H20V184L76 82H20Z" />
+  <path fill="#7186FF" d="M144 50H238V84H180V120H228V154H180V218H144Z" />
+</svg>

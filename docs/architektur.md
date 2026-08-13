@@ -251,6 +251,7 @@ Liste ist die eigentliche Antwort auf „kein späterer Umbau“.**
 | Append-only Event-Log als Wahrheit des Betriebsverlaufs | trägt Replay, Audit, Backtesting und Tagesbericht gleichzeitig |
 | Kern ohne direkten Datenbankzugriff | Bedingung dafür, dass der Kern austauschbar bleibt |
 | `InfraRelease` und `EconomyRelease` versioniert und je Welt gepinnt | ohne Pinning keine reproduzierbare Welt, kein durchsetzbarer Stichtag |
+| Weltprofil und `StartingCapitalPolicy` im signierten Blueprint | eine nachträgliche Änderung würde Eröffnungsbilanzen, Ranking und Replay derselben Welt unvereinbar machen |
 
 **Reversibel — darf später wechseln, ohne Datenmigration:** Web-Framework,
 Query-Builder, Transportweg zwischen den Diensten, Cache-Schicht, und die

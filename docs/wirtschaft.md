@@ -31,6 +31,32 @@ Geld wird ausschließlich als **Integer-Cent** in einem unveränderlichen,
 ausgeglichenen Ledger geführt. Alle Balancewerte liegen in einem versionierten
 `EconomyRelease` und sind nicht im Programmcode verdrahtet.
 
+### 1.1 Eröffnungsbilanz und öffentlicher Markteintritt (E28)
+
+Jeder signierte Weltentwurf enthält genau eine unveränderliche
+`StartingCapitalPolicy`. `finite` trägt den nichtnegativen Centbetrag als
+kanonischen Dezimalstring über die JSON-Grenze und wird fachlich als `bigint`
+geführt; neue öffentliche Wettbewerbswelten verwenden
+standardmäßig `amountCents: "0"`. Die EVU-Gründung legt Kasse und
+Eröffnungskapital weltisoliert an und bucht auch null Cent genau einmal
+ausgeglichen. `unlimited` ist demgegenüber eine ausdrückliche Weltregel ohne
+Betrag: Sie erzeugt weder eine `Infinity`-Zahl noch eine künstlich maximale
+Ledgerbuchung und erscheint nur in der Oberfläche als `∞`.
+
+Die öffentliche EVU-Gründung teilt keine Betriebsmittel zu. Vertrag, Fahrzeug,
+Personal, Trasse und Betriebsprogramm entstehen ausschließlich über die
+normalen Fachpfade. Ein EVU mit null Cent kann in einer angekündigten
+Ausschreibung das weltgebundene Eigenbetriebs-Konzept unter aufschiebender
+Zuschlagsbedingung kalkulieren. Erst ein regulärer Zuschlag aktiviert diesen
+für alle EVU gleichen `award-contingent-wet-lease`-Vertrag; Formation, Personal
+und Trasse werden dann erneut gegen den M5-Snapshot geprüft, und die Kostenbasis
+bleibt `formation-operating-cost`. Vorher entstehen weder Asset noch
+Nutzungsrecht oder Buchung. Spätere Kredit-, Leasing- und Sekundärmarktwege
+bleiben regulär. Der Weltentwurf muss diesen ersten Vergabeweg mit echten
+Los- und Fahrzeugdaten nachweisen; sonst ist die Welt nicht startfähig.
+Das didaktische Startpaket gehört ausschließlich in das getrennte signierte
+Tutorial-Deployment. → [ADR-0028](adr/0028-getrennter-tutorial-und-wettbewerbsstart.md)
+
 ## 2. Nachfrage und Wettbewerb
 
 - Personenverkehr verwendet ein zonenbasiertes Nachfragemodell aus Bevölkerung,

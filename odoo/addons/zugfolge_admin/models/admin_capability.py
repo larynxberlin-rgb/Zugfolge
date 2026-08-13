@@ -11,12 +11,14 @@ ADMIN_ACTIONS = [
     ("manual_disruption_create", "Manuelle Stoerung anlegen"),
     ("abuse_sanction_activate", "Schwere Missbrauchsmassnahme aktivieren"),
     ("world_close", "Weltabschluss einleiten"),
+    ("world_deploy", "Signierte Welt bereitstellen"),
 ]
 CAPABILITY_STATES = [
     ("prepared", "Vorbereitet: Game-Milestone fehlt"),
     ("available", "Vom Game ausfuehrbar"),
     ("unavailable", "Vom Game vorlaeufig nicht verfuegbar"),
 ]
+GLOBAL_WORLD_DEPLOY_CAPABILITY_SCOPE_ID = "00000000-0000-0000-0000-000000000000"
 
 
 class ZugfolgeAdminCapability(models.Model):
@@ -26,9 +28,10 @@ class ZugfolgeAdminCapability(models.Model):
     _description = "Zugfolge Game-Verwaltungsfaehigkeit"
     _rec_name = "action_type"
     _order = "world_id, action_type"
-    _sql_constraints = [
-        ("zugfolge_admin_capability_world_action", "unique(world_id, action_type)", "Eine Verwaltungsfaehigkeit je Welt und Aktion."),
-    ]
+    _world_action_unique = models.Constraint(
+        "unique(world_id, action_type)",
+        "Eine Verwaltungsfaehigkeit je Welt und Aktion.",
+    )
 
     world_id = fields.Char(required=True, readonly=True, index=True)
     action_type = fields.Selection(ADMIN_ACTIONS, required=True, readonly=True, index=True)

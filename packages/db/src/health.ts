@@ -6,7 +6,7 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 type AnyDatabase = PgDatabase<PgQueryResultHKT, Record<string, unknown>, any>;
 
 /** Zahl der mit diesem Quellstand ausgelieferten Drizzle-Migrationen. */
-export const EXPECTED_SCHEMA_MIGRATIONS = 22;
+export const EXPECTED_SCHEMA_MIGRATIONS = 24;
 
 function firstRow(result: unknown): Record<string, unknown> | undefined {
   if (Array.isArray(result)) return result[0] as Record<string, unknown> | undefined;
@@ -69,6 +69,9 @@ export function createDatabaseHealthCheck(db: AnyDatabase): HealthCheck {
       );
       await db.execute(
         sql`select event_id, tenant_id from odoo_webhook_receipts limit 0`,
+      );
+      await db.execute(
+        sql`select world_id, keycloak_subject, state from world_participations limit 0`,
       );
       await db.execute(
         sql`select world_id, region_id, revision, publisher_sequence from regional_simulation_states limit 0`,

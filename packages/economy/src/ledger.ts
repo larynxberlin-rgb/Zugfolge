@@ -22,6 +22,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { isBalanced, sumEntries } from "./balance.js";
+import { serializeStartingCapitalPolicy, type StartingCapitalPolicy } from "./starting-capital.js";
 
 /** Verbindungstyp, unabhängig vom Treiber — derselbe Schnitt wie in `packages/identity`. */
 export type EconomyDatabase = PgDatabase<PgQueryResultHKT, Record<string, unknown>, any>;
@@ -57,6 +58,19 @@ export class ForeignLedgerAccountError extends Error {
     this.name = "ForeignLedgerAccountError";
   }
 }
+
+/** Derselbe Idempotenzschluessel wurde mit einem anderen fachlichen Inhalt wiederverwendet. */
+export class IdempotentLedgerContentConflictError extends Error {
+  constructor(worldId: string, operatorId: string, idempotencyKey: string) {
+    super(`Ledger-Idempotenzschluessel '${idempotencyKey}' wurde in Welt '${worldId}' fuer EVU '${operatorId}' bereits anders verwendet.`);
+    this.name = "IdempotentLedgerContentConflictError";
+  }
+}
+
+export const STARTING_CAPITAL_CASH_ACCOUNT_NAME = "Kasse";
+export const STARTING_CAPITAL_EQUITY_ACCOUNT_NAME = "Eigenkapital:Eröffnung";
+export const STARTING_CAPITAL_TRANSACTION_DESCRIPTION = "Eröffnungskapital";
+export const STARTING_CAPITAL_IDEMPOTENCY_KEY = "operator-opening-capital/v1";
 
 /**
  * Eröffnet ein Ledger-Konto in den Büchern eines EVU. Prüft, dass das EVU in
@@ -94,6 +108,41 @@ export async function openLedgerAccount(
   return created;
 }
 
+/**
+ * Liefert ein Ledger-Konto oder legt es atomar an. Anders als
+ * `openLedgerAccount` ist diese Operation fuer fachliche Initialisierer
+ * wiederholbar und konkurrierende Aufrufe konvergieren auf dasselbe Konto.
+ */
+export async function ensureLedgerAccount(
+  db: EconomyDatabase,
+  input: { readonly worldId: string; readonly operatorId: string; readonly name: string },
+): Promise<LedgerAccount> {
+  await getOperator(db, { worldId: input.worldId, operatorId: input.operatorId });
+
+  const [created] = await db
+    .insert(ledgerAccounts)
+    .values({ worldId: input.worldId, operatorId: input.operatorId, name: input.name })
+    .onConflictDoNothing({
+      target: [ledgerAccounts.worldId, ledgerAccounts.operatorId, ledgerAccounts.name],
+    })
+    .returning();
+  if (created !== undefined) return created;
+
+  const [existing] = await db
+    .select()
+    .from(ledgerAccounts)
+    .where(
+      and(
+        eq(ledgerAccounts.worldId, input.worldId),
+        eq(ledgerAccounts.operatorId, input.operatorId),
+        eq(ledgerAccounts.name, input.name),
+      ),
+    )
+    .limit(1);
+  if (existing === undefined) throw new Error("Idempotentes Ledger-Konto konnte nicht gelesen werden.");
+  return existing;
+}
+
 /** Alle Ledger-Konten eines EVU in einer Welt. */
 export async function listLedgerAccounts(
   db: EconomyDatabase,
@@ -112,6 +161,49 @@ export interface LedgerTransactionEntryInput {
   /** M6.2: Beide Felder werden gemeinsam gesetzt oder gemeinsam weggelassen. */
   readonly costType?: string;
   readonly costCentreId?: string;
+}
+
+function entrySignature(entry: LedgerTransactionEntryInput): string {
+  return [
+    entry.ledgerAccountId,
+    entry.amountCents.toString(),
+    entry.costType ?? "",
+    entry.costCentreId ?? "",
+  ].join("\u0000");
+}
+
+async function assertIdempotentReplayMatches(
+  db: EconomyDatabase,
+  existing: LedgerTransaction,
+  input: {
+    readonly worldId: string;
+    readonly operatorId: string;
+    readonly idempotencyKey: string;
+    readonly description: string;
+    readonly postedAt: Date;
+    readonly entries: readonly LedgerTransactionEntryInput[];
+  },
+): Promise<void> {
+  const storedEntries = await db
+    .select({
+      ledgerAccountId: ledgerEntries.ledgerAccountId,
+      amountCents: ledgerEntries.amountCents,
+      costType: ledgerEntries.costType,
+      costCentreId: ledgerEntries.costCentreId,
+    })
+    .from(ledgerEntries)
+    .where(and(eq(ledgerEntries.worldId, input.worldId), eq(ledgerEntries.transactionId, existing.id)));
+  const expected = input.entries.map(entrySignature).sort();
+  const actual = storedEntries.map((entry) => entrySignature({
+    ledgerAccountId: entry.ledgerAccountId,
+    amountCents: entry.amountCents,
+    costType: entry.costType ?? undefined,
+    costCentreId: entry.costCentreId ?? undefined,
+  })).sort();
+  const sameEntries = actual.length === expected.length && actual.every((signature, index) => signature === expected[index]);
+  if (existing.description !== input.description || existing.postedAt.getTime() !== input.postedAt.getTime() || !sameEntries) {
+    throw new IdempotentLedgerContentConflictError(input.worldId, input.operatorId, input.idempotencyKey);
+  }
 }
 
 /**
@@ -196,6 +288,10 @@ export async function postLedgerTransaction(
           )
           .limit(1);
         if (existing === undefined) throw new Error("Idempotente Ledger-Transaktion konnte nicht gelesen werden.");
+        await assertIdempotentReplayMatches(tx, existing, {
+          ...input,
+          idempotencyKey: input.idempotencyKey,
+        });
         return existing;
       }
     }
@@ -215,6 +311,55 @@ export async function postLedgerTransaction(
     );
 
     return transaction;
+  });
+}
+
+export interface OperatorStartingCapitalInitialization {
+  readonly cashAccount: LedgerAccount;
+  readonly openingEquityAccount: LedgerAccount;
+  readonly openingTransaction: LedgerTransaction | null;
+}
+
+/**
+ * Initialisiert die Buecher eines EVU aus der unveraenderlichen Weltpolicy.
+ * Endliche Betraege einschliesslich null werden doppelt gebucht. Unbegrenztes
+ * Kapital bleibt ausschliesslich Policy und erzeugt keinen Zahlenersatz im Ledger.
+ */
+export async function initializeOperatorStartingCapital(
+  db: EconomyDatabase,
+  input: {
+    readonly worldId: string;
+    readonly operatorId: string;
+    readonly policy: StartingCapitalPolicy;
+    readonly postedAt: Date;
+  },
+): Promise<OperatorStartingCapitalInitialization> {
+  serializeStartingCapitalPolicy(input.policy);
+  return db.transaction(async (tx) => {
+    const cashAccount = await ensureLedgerAccount(tx, {
+      worldId: input.worldId,
+      operatorId: input.operatorId,
+      name: STARTING_CAPITAL_CASH_ACCOUNT_NAME,
+    });
+    const openingEquityAccount = await ensureLedgerAccount(tx, {
+      worldId: input.worldId,
+      operatorId: input.operatorId,
+      name: STARTING_CAPITAL_EQUITY_ACCOUNT_NAME,
+    });
+    const openingTransaction = input.policy.mode === "finite"
+      ? await postLedgerTransaction(tx, {
+        worldId: input.worldId,
+        operatorId: input.operatorId,
+        description: STARTING_CAPITAL_TRANSACTION_DESCRIPTION,
+        postedAt: input.postedAt,
+        idempotencyKey: STARTING_CAPITAL_IDEMPOTENCY_KEY,
+        entries: [
+          { ledgerAccountId: cashAccount.id, amountCents: input.policy.amountCents },
+          { ledgerAccountId: openingEquityAccount.id, amountCents: -input.policy.amountCents },
+        ],
+      })
+      : null;
+    return Object.freeze({ cashAccount, openingEquityAccount, openingTransaction });
   });
 }
 

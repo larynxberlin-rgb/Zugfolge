@@ -615,7 +615,26 @@ export class TutorialSessionService {
     if (current === undefined || current.lifecycle === "archived") return;
     const finalStateHash = await this.factory.close(current, current.closureReason ?? reason, this.#template);
     await this.db.transaction(async (tx) => {
-      await tx.update(alphaWorldProfiles).set({ state: "archived", archivedAtS: 900, finalStateHash }).where(eq(alphaWorldProfiles.worldId, session.tutorialWorldId));
+      const [profile] = await tx.select({ state: alphaWorldProfiles.state }).from(alphaWorldProfiles).where(
+        eq(alphaWorldProfiles.worldId, session.tutorialWorldId),
+      ).limit(1);
+      if (profile === undefined) throw new AlphaConflictError("Tutorial-Weltprofil fehlt beim Abschluss.");
+      if (profile.state === "running") {
+        const [closingProfile] = await tx.update(alphaWorldProfiles).set({ state: "closing", closingAtS: 900 }).where(and(
+          eq(alphaWorldProfiles.worldId, session.tutorialWorldId),
+          eq(alphaWorldProfiles.state, "running"),
+        )).returning({ worldId: alphaWorldProfiles.worldId });
+        if (closingProfile === undefined) throw new AlphaConflictError("Tutorial-Weltabschluss verlor ein Parallelrennen.");
+      } else if (profile.state !== "closing" && profile.state !== "archived") {
+        throw new AlphaConflictError("Tutorial-Weltprofil besitzt keinen abschliessbaren Zustand.");
+      }
+      if (profile.state !== "archived") {
+        const [archivedProfile] = await tx.update(alphaWorldProfiles).set({ state: "archived", archivedAtS: 900, finalStateHash }).where(and(
+          eq(alphaWorldProfiles.worldId, session.tutorialWorldId),
+          eq(alphaWorldProfiles.state, "closing"),
+        )).returning({ worldId: alphaWorldProfiles.worldId });
+        if (archivedProfile === undefined) throw new AlphaConflictError("Tutorial-Weltprofil konnte nicht archiviert werden.");
+      }
       await tx.update(worlds).set({ lifecycleStatus: "archived" }).where(eq(worlds.id, session.tutorialWorldId));
       await tx.update(worldAccesses).set({ status: "revoked", revokedAt: now }).where(and(
         eq(worldAccesses.worldId, session.tutorialWorldId), eq(worldAccesses.keycloakSubject, (await tx.select({ subject: accounts.keycloakSubject }).from(accounts).where(and(eq(accounts.worldId, session.tutorialWorldId), eq(accounts.id, session.tutorialAccountId))).limit(1))[0]?.subject ?? ""),

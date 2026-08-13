@@ -12,11 +12,15 @@
 import { timingSafeEqual } from "node:crypto";
 
 import {
+  ALPHA_WORLD_BLUEPRINT_SCHEMA,
   AlphaAuthorizationError,
   AlphaConflictError,
   AlphaValidationError,
+  effectiveStartingCapitalPolicy,
   foundPublicOperatorWithStartingCapital,
   validateStoredPublicWorldContract,
+  validateWorldBlueprint,
+  type AlphaWorldBlueprint,
   type StartingCapitalPolicy,
 } from "@zugfolge/alpha";
 
@@ -35,6 +39,7 @@ import {
   worldEventLog,
   worlds,
   worldAccesses,
+  worldParticipations,
 } from "@zugfolge/db";
 import {
   assertPrivateWorldEntitlement,
@@ -93,12 +98,16 @@ import {
   postLedgerTransaction,
   persistEconomyTransition,
   resolveVehicleConcept,
+  resolvePublicEntryFacilityVehicleConcept,
+  serializeStartingCapitalPolicy,
   settleContractPeriod,
   startEconomyWorld,
   submitBid,
   submitMobilizationReference,
   UnbalancedTransactionError,
+  verifyPublicEntryFacilityMobilizationReference,
   verifyMobilizationReference,
+  PUBLIC_ENTRY_FACILITY_SCHEMA,
   type AuthorityBudget,
   type EconomyRelease,
   type EconomyDatabase,
@@ -561,6 +570,78 @@ async function requireWorldAdminAccount(db: IdentityDatabase, worldId: string, k
   }
 }
 
+async function startingCapitalPolicyForWorld(db: IdentityDatabase, worldId: string) {
+  const [profile] = await db
+    .select({
+      blueprint: alphaWorldProfiles.blueprint,
+      blueprintHash: alphaWorldProfiles.blueprintHash,
+      deploymentHash: alphaWorldProfiles.deploymentHash,
+      state: alphaWorldProfiles.state,
+    })
+    .from(alphaWorldProfiles)
+    .where(eq(alphaWorldProfiles.worldId, worldId))
+    .limit(1);
+  if (profile === undefined || profile.state !== "running") {
+    throw new AlphaConflictError(
+      "Startkapital ist erst fuer eine signiert gestartete Welt verfuegbar.",
+      "starting_capital_world_not_running",
+    );
+  }
+  try {
+    if (profile.deploymentHash === null || !/^[a-f0-9]{64}$/.test(profile.deploymentHash)) {
+      throw new Error("Deployment-Hash fehlt.");
+    }
+    const blueprint = decodeEconomyValue(profile.blueprint) as AlphaWorldBlueprint;
+    if (validateWorldBlueprint(blueprint) !== profile.blueprintHash) {
+      throw new Error("Blueprint-Hash weicht ab.");
+    }
+    return effectiveStartingCapitalPolicy(blueprint);
+  } catch {
+    throw new AlphaConflictError(
+      "Startkapital ist nicht unveraendert an das signierte Welt-Deployment gebunden.",
+      "starting_capital_unsigned",
+    );
+  }
+}
+
+async function publicEntryFacilityForWorld(db: IdentityDatabase, worldId: string, lotId: string) {
+  const [profile] = await db
+    .select({
+      blueprint: alphaWorldProfiles.blueprint,
+      blueprintHash: alphaWorldProfiles.blueprintHash,
+      deploymentHash: alphaWorldProfiles.deploymentHash,
+      state: alphaWorldProfiles.state,
+    })
+    .from(alphaWorldProfiles)
+    .where(eq(alphaWorldProfiles.worldId, worldId))
+    .limit(1);
+  let blueprint: AlphaWorldBlueprint;
+  try {
+    blueprint = decodeEconomyValue(profile?.blueprint) as AlphaWorldBlueprint;
+    if (validateWorldBlueprint(blueprint) !== profile?.blueprintHash) throw new Error("Blueprint-Hash weicht ab.");
+  } catch {
+    throw new AlphaConflictError("Diese Welt besitzt keinen unveraendert signierten Anschubvertrag.", "public_entry_facility_unsigned");
+  }
+  const policy = blueprint?.entryFacilityPolicy;
+  const lot = blueprint.lots.find((candidate) => candidate.lotId === lotId);
+  if (
+    profile?.state !== "running"
+    || profile.deploymentHash === null
+    || !/^[a-f0-9]{64}$/.test(profile.deploymentHash)
+    || policy?.schemaVersion !== PUBLIC_ENTRY_FACILITY_SCHEMA
+    || policy.mode !== "award-contingent-wet-lease"
+    || policy.providerOperatorId !== "public"
+    || policy.costBasis !== "formation-operating-cost"
+    || lot === undefined
+  ) throw new AlphaConflictError("Diese Welt besitzt keinen signierten Anschubvertrag.", "public_entry_facility_disabled");
+  return {
+    providerOperatorId: policy.providerOperatorId,
+    signedLotVehicleIds: Object.freeze([...lot.vehicleIds]),
+    signedLotPersonnelDutyIds: Object.freeze([...lot.personnelDutyIds]),
+    signedLotPathReceiptIds: Object.freeze([...lot.pathReceiptIds]),
+  };
+}
+
 async function resolveKeycloakSubject(db: IdentityDatabase, worldId: string, accountId: string): Promise<string> {
   const [row] = await db
     .select({ keycloakSubject: accounts.keycloakSubject })
@@ -574,6 +655,9 @@ async function resolveKeycloakSubject(db: IdentityDatabase, worldId: string, acc
 }
 
 function sendError(reply: FastifyReply, error: unknown): FastifyReply {
+  if (error instanceof CommercialWorldReleaseRequiredError) {
+    return reply.code(403).send({ code: error.code, error: error.message });
+  }
   if (error instanceof AlphaAuthorizationError) {
     return reply.code(403).send({ code: error.code, error: error.message });
   }
@@ -624,6 +708,10 @@ function sendError(reply: FastifyReply, error: unknown): FastifyReply {
     return reply.code(400).send({ code: error.code, error: error.message });
   }
   throw error;
+}
+
+class CommercialWorldReleaseRequiredError extends Error {
+  readonly code = "commercial_world_release_required";
 }
 
 function sendRegionalSimulationError(
@@ -825,11 +913,18 @@ async function requestPublicWorldAccessAtomically(
       );
     }
 
-    const startingCapitalPolicy = targetWorld.profile === null
+    const contract = targetWorld.profile === null
       ? null
-      : decodeStartingCapitalPolicy(targetWorld.profile);
+      : (() => {
+          try {
+            return validateStoredPublicWorldContract(targetWorld.profile);
+          } catch {
+            return null;
+          }
+        })();
+    const startingCapitalPolicy = contract?.startingCapitalPolicy ?? null;
     if (targetWorld.profile === null || targetWorld.profile.state !== "running"
-      || !supportedPublicEntryPolicy(startingCapitalPolicy)) {
+      || contract === null || !supportedPublicEntryPolicy(startingCapitalPolicy)) {
       throw new AlphaConflictError(
         "Der serverseitige Weltvertrag ist unvollstaendig und erlaubt keinen Markteintritt.",
         "world_contract_invalid",
@@ -842,6 +937,25 @@ async function requestPublicWorldAccessAtomically(
       );
     }
 
+    let commerciallyReleased = false;
+    if (contract.blueprint.schemaVersion === ALPHA_WORLD_BLUEPRINT_SCHEMA
+      && contract.blueprint.admission !== undefined) {
+      const [participation] = await tx.select({ id: worldParticipations.id })
+        .from(worldParticipations)
+        .where(and(
+          eq(worldParticipations.worldId, input.worldId),
+          eq(worldParticipations.keycloakSubject, input.keycloakSubject),
+          eq(worldParticipations.state, "active"),
+        ))
+        .limit(1);
+      if (participation === undefined) {
+        throw new CommercialWorldReleaseRequiredError(
+          "Oeffentliche Weltteilnahmen werden erst nach kommerzieller Odoo-Freigabe provisioniert.",
+        );
+      }
+      commerciallyReleased = true;
+    }
+
     const memberships = await tx
       .select({ worldId: worldAccesses.worldId })
       .from(worldAccesses)
@@ -852,7 +966,7 @@ async function requestPublicWorldAccessAtomically(
         eq(worlds.worldKind, "public"),
         eq(worlds.lifecycleStatus, "active"),
       ));
-    if (!memberships.some((membership) => membership.worldId === input.worldId)) {
+    if (!commerciallyReleased && !memberships.some((membership) => membership.worldId === input.worldId)) {
       const entitlements = await activeEntitlementsForSubject(tx, input.keycloakSubject);
       assertPublicWorldSlot(
         entitlements.map((record) => ({
@@ -872,8 +986,8 @@ async function requestPublicWorldAccessAtomically(
       keycloakSubject: input.keycloakSubject,
       displayName: input.displayName,
       acceptedWorldContract: {
-        hash: targetWorld.profile.blueprintHash,
-        startingCapitalPolicy: validateStoredPublicWorldContract(targetWorld.profile).startingCapitalPolicy,
+        hash: contract.blueprintHash,
+        startingCapitalPolicy: contract.startingCapitalPolicy,
       },
     });
   });
@@ -1381,12 +1495,22 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       readonly commandId: string;
       readonly bidId: string;
       readonly orderingFeeCentsPerTrainKm: string;
-      readonly vehicleReference: { readonly fleetRevision: number; readonly snapshotHash: string; readonly formationId: string };
+      readonly vehicleReference: {
+        readonly fleetRevision: number;
+        readonly snapshotHash: string;
+        readonly formationId: string;
+        readonly personnelDutyIds?: readonly string[];
+        readonly pathReservationIds?: readonly string[];
+        readonly entryFacility?: {
+          readonly schemaVersion: typeof PUBLIC_ENTRY_FACILITY_SCHEMA;
+          readonly providerOperatorId: "public";
+        };
+      };
       readonly promises: { readonly extraSeats: number; readonly punctualityBasisPoints: number; readonly additionalStops: number };
     };
   }>(
     "/worlds/:worldId/economy/tenders/:tenderId/operators/:operatorId/bids",
-    { preHandler: authenticate, schema: { params: { type: "object", required: ["worldId", "tenderId", "operatorId"], properties: { worldId: { type: "string", format: "uuid" }, tenderId: { type: "string", minLength: 1 }, operatorId: { type: "string", format: "uuid" } } }, body: { type: "object", required: ["expectedRevision", "commandId", "bidId", "orderingFeeCentsPerTrainKm", "vehicleReference", "promises"], additionalProperties: false, properties: { expectedRevision: { type: "integer", minimum: 0 }, commandId: { type: "string", minLength: 1 }, bidId: { type: "string", minLength: 1 }, orderingFeeCentsPerTrainKm: { type: "string", pattern: "^[0-9]+$" }, vehicleReference: { type: "object", required: ["fleetRevision", "snapshotHash", "formationId"], additionalProperties: false, properties: { fleetRevision: { type: "integer", minimum: 0 }, snapshotHash: { type: "string", pattern: "^[a-f0-9]{64}$" }, formationId: { type: "string", minLength: 1 } } }, promises: { type: "object", required: ["extraSeats", "punctualityBasisPoints", "additionalStops"], additionalProperties: false, properties: { extraSeats: { type: "integer", minimum: 0 }, punctualityBasisPoints: { type: "integer", minimum: 0, maximum: 10000 }, additionalStops: { type: "integer", minimum: 0 } } } } } } },
+    { preHandler: authenticate, schema: { params: { type: "object", required: ["worldId", "tenderId", "operatorId"], properties: { worldId: { type: "string", format: "uuid" }, tenderId: { type: "string", minLength: 1 }, operatorId: { type: "string", format: "uuid" } } }, body: { type: "object", required: ["expectedRevision", "commandId", "bidId", "orderingFeeCentsPerTrainKm", "vehicleReference", "promises"], additionalProperties: false, properties: { expectedRevision: { type: "integer", minimum: 0 }, commandId: { type: "string", minLength: 1 }, bidId: { type: "string", minLength: 1 }, orderingFeeCentsPerTrainKm: { type: "string", pattern: "^[0-9]+$" }, vehicleReference: { type: "object", required: ["fleetRevision", "snapshotHash", "formationId"], additionalProperties: false, properties: { fleetRevision: { type: "integer", minimum: 0 }, snapshotHash: { type: "string", pattern: "^[a-f0-9]{64}$" }, formationId: { type: "string", minLength: 1 }, personnelDutyIds: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", minLength: 1 } }, pathReservationIds: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", minLength: 1 } }, entryFacility: { type: "object", required: ["schemaVersion", "providerOperatorId"], additionalProperties: false, properties: { schemaVersion: { const: PUBLIC_ENTRY_FACILITY_SCHEMA }, providerOperatorId: { const: "public" } } } } }, promises: { type: "object", required: ["extraSeats", "punctualityBasisPoints", "additionalStops"], additionalProperties: false, properties: { extraSeats: { type: "integer", minimum: 0 }, punctualityBasisPoints: { type: "integer", minimum: 0, maximum: 10000 }, additionalStops: { type: "integer", minimum: 0 } } } } } } },
     async (request, reply) => {
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
@@ -1399,7 +1523,30 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         const lifecycle = state.tenders.get(request.params.tenderId);
         if (lifecycle === undefined) return reply.code(404).send({ error: "Ausschreibung existiert nicht." });
         const snapshot = await loadFleetMobilizationSnapshot(deps.db, request.params.worldId, request.body.vehicleReference);
-        const vehicle = resolveVehicleConcept(snapshot, request.body.vehicleReference, { operatorId: request.params.operatorId, serviceLineIds: lifecycle.tender.specification.lines, operatingFrom: lifecycle.tender.operatingFrom });
+        let vehicle: ReturnType<typeof resolveVehicleConcept>;
+        if (request.body.vehicleReference.entryFacility === undefined) {
+          vehicle = resolveVehicleConcept(snapshot, request.body.vehicleReference, { operatorId: request.params.operatorId, serviceLineIds: lifecycle.tender.specification.lines, operatingFrom: lifecycle.tender.operatingFrom });
+        } else {
+          const reference = request.body.vehicleReference;
+          const entryFacility = reference.entryFacility;
+          if (entryFacility === undefined || reference.personnelDutyIds === undefined || reference.pathReservationIds === undefined) {
+            throw new FleetSnapshotValidationError("Facility-Gebot braucht Personaldienste und Trassenreservierungen.");
+          }
+          const facility = await publicEntryFacilityForWorld(deps.db, request.params.worldId, lifecycle.tender.lotId);
+          vehicle = resolvePublicEntryFacilityVehicleConcept(snapshot, {
+            ...reference,
+            personnelDutyIds: reference.personnelDutyIds,
+            pathReservationIds: reference.pathReservationIds,
+            entryFacility,
+          }, {
+            providerOperatorId: facility.providerOperatorId,
+            signedLotVehicleIds: facility.signedLotVehicleIds,
+            signedLotPersonnelDutyIds: facility.signedLotPersonnelDutyIds,
+            signedLotPathReceiptIds: facility.signedLotPathReceiptIds,
+            serviceLineIds: lifecycle.tender.specification.lines,
+            operatingFrom: lifecycle.tender.operatingFrom,
+          });
+        }
         const account = await getAccount(deps.db, { worldId: request.params.worldId, keycloakSubject: identity.keycloakSubject });
         if (account === undefined) throw new AuthorizationError("Kein aktiver Weltzugang.");
         const submittedAt = await cooperationSimulationSecond(request.params.worldId);
@@ -1418,7 +1565,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     Body: { readonly expectedRevision: number; readonly commandId: string; readonly reference: FleetMobilizationReference };
   }>(
     "/worlds/:worldId/economy/tenders/:tenderId/operators/:operatorId/mobilization",
-    { preHandler: authenticate, schema: { params: { type: "object", required: ["worldId", "tenderId", "operatorId"], properties: { worldId: { type: "string", format: "uuid" }, tenderId: { type: "string", minLength: 1 }, operatorId: { type: "string", format: "uuid" } } }, body: { type: "object", required: ["expectedRevision", "commandId", "reference"], additionalProperties: false, properties: { expectedRevision: { type: "integer", minimum: 0 }, commandId: { type: "string", minLength: 1 }, reference: { type: "object", required: ["fleetRevision", "snapshotHash", "formationIds", "personnelDutyIds", "pathReservationIds"], additionalProperties: false, properties: { fleetRevision: { type: "integer", minimum: 0 }, snapshotHash: { type: "string", pattern: "^[a-f0-9]{64}$" }, formationIds: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } }, personnelDutyIds: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } }, pathReservationIds: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } } } } } } } },
+    { preHandler: authenticate, schema: { params: { type: "object", required: ["worldId", "tenderId", "operatorId"], properties: { worldId: { type: "string", format: "uuid" }, tenderId: { type: "string", minLength: 1 }, operatorId: { type: "string", format: "uuid" } } }, body: { type: "object", required: ["expectedRevision", "commandId", "reference"], additionalProperties: false, properties: { expectedRevision: { type: "integer", minimum: 0 }, commandId: { type: "string", minLength: 1 }, reference: { type: "object", required: ["fleetRevision", "snapshotHash", "formationIds", "personnelDutyIds", "pathReservationIds"], additionalProperties: false, properties: { fleetRevision: { type: "integer", minimum: 0 }, snapshotHash: { type: "string", pattern: "^[a-f0-9]{64}$" }, formationIds: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } }, personnelDutyIds: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } }, pathReservationIds: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } }, entryFacility: { type: "object", required: ["schemaVersion", "providerOperatorId"], additionalProperties: false, properties: { schemaVersion: { const: PUBLIC_ENTRY_FACILITY_SCHEMA }, providerOperatorId: { const: "public" } } } } } } } } },
     async (request, reply) => {
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
@@ -1430,7 +1577,25 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         const lifecycle = state.tenders.get(request.params.tenderId);
         if (lifecycle?.phase !== "awarded") throw new Error("Ausschreibung wurde diesem EVU nicht zugeschlagen.");
         const snapshot = await loadFleetMobilizationSnapshot(deps.db, request.params.worldId, request.body.reference);
-        verifyMobilizationReference(snapshot, request.body.reference, { operatorId: request.params.operatorId, winningFormationId: lifecycle.winningBid.vehicle.formationId, serviceLineIds: lifecycle.tender.specification.lines, operatingFrom: lifecycle.tender.operatingFrom });
+        if (request.body.reference.entryFacility === undefined) {
+          verifyMobilizationReference(snapshot, request.body.reference, {
+            operatorId: request.params.operatorId,
+            winningFormationId: lifecycle.winningBid.vehicle.formationId,
+            serviceLineIds: lifecycle.tender.specification.lines,
+            operatingFrom: lifecycle.tender.operatingFrom,
+          });
+        } else {
+          const facility = await publicEntryFacilityForWorld(deps.db, request.params.worldId, lifecycle.tender.lotId);
+          verifyPublicEntryFacilityMobilizationReference(snapshot, request.body.reference, {
+            providerOperatorId: facility.providerOperatorId,
+            signedLotVehicleIds: facility.signedLotVehicleIds,
+            signedLotPersonnelDutyIds: facility.signedLotPersonnelDutyIds,
+            signedLotPathReceiptIds: facility.signedLotPathReceiptIds,
+            winningFormationId: lifecycle.winningBid.vehicle.formationId,
+            serviceLineIds: lifecycle.tender.specification.lines,
+            operatingFrom: lifecycle.tender.operatingFrom,
+          });
+        }
         const submittedAt = await cooperationSimulationSecond(request.params.worldId);
         const next = submitMobilizationReference(state, { commandId: request.body.commandId, tenderId: request.params.tenderId, operatorId: request.params.operatorId, at: submittedAt, reference: request.body.reference });
         await persistEconomyTransition(deps.db, { expectedRevision: state.revision, state: next, effects: { notices: [], journal: [] }, committedAt: new Date(submittedAt * 1_000) });
@@ -2610,6 +2775,27 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
   // ---------------------------------------------------------------------
   // M2.3 — EVU: Gründung, Liste
   // ---------------------------------------------------------------------
+
+  app.get<{ Params: { worldId: string } }>(
+    "/worlds/:worldId/starting-capital-policy",
+    { preHandler: authenticate, schema: { params: worldIdParam } },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identitaet." });
+      try {
+        const account = await getAccount(deps.db, {
+          worldId: request.params.worldId,
+          keycloakSubject: identity.keycloakSubject,
+        });
+        if (account === undefined) throw new NoAccountInWorldError(request.params.worldId);
+        return reply.send(serializeStartingCapitalPolicy(
+          await startingCapitalPolicyForWorld(deps.db, request.params.worldId),
+        ));
+      } catch (error) {
+        return sendError(reply, error);
+      }
+    },
+  );
 
   app.post<{ Params: { worldId: string }; Body: { name: string } }>(
     "/worlds/:worldId/operators",

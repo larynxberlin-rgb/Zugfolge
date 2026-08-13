@@ -316,6 +316,33 @@ describe("GameApiClient", () => {
     });
   });
 
+  it("ruft ausschliesslich die oeffentliche Startkapital-Policy ab", async () => {
+    const fetchImplementation = vi.fn(async (_input: RequestInfo | URL) => new Response(JSON.stringify({ mode: "finite", amountCents: "0" })));
+    const client = new GameApiClient("https://api.test", "token", fetchImplementation as typeof fetch);
+
+    await expect(client.loadStartingCapitalPolicy("public/world")).resolves.toEqual({ mode: "finite", amountCents: "0" });
+
+    expect(fetchImplementation.mock.calls.map(([input]) => String(input))).toEqual([
+      "https://api.test/worlds/public%2Fworld/starting-capital-policy",
+    ]);
+  });
+
+  it("verwirft numerisches oder überlaufendes Startkapital an der Web-Vertragsgrenze", async () => {
+    const numeric = new GameApiClient(
+      "",
+      "token",
+      async () => new Response(JSON.stringify({ mode: "finite", amountCents: 0 })),
+    );
+    await expect(numeric.loadStartingCapitalPolicy("world-1")).rejects.toThrow(/ungültiges Format/);
+
+    const overflowing = new GameApiClient(
+      "",
+      "token",
+      async () => new Response(JSON.stringify({ mode: "finite", amountCents: "9223372036854775808" })),
+    );
+    await expect(overflowing.loadStartingCapitalPolicy("world-1")).rejects.toThrow(/ungültiges Format/);
+  });
+
   it("laedt und validiert die veroeffentlichte Weltprojektion mit Bearer-Token", async () => {
     const fetchImplementation = vi.fn(async () => envelope(7, 99));
     const client = new GameApiClient(

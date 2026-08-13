@@ -1,0 +1,35 @@
+<odoo>
+  <template id="s_zugfolge_worlds" name="Weltenübersicht">
+    <section class="s_zugfolge_worlds zf-snippet py-5" data-zugfolge-worlds="cards" data-world-selector="all" aria-labelledby="zf-worlds-heading">
+      <div class="container"><h2 id="zf-worlds-heading">Zugfolge-Welten</h2><div class="zf-snippet__status" role="status">Weltdaten werden geladen …</div><div class="zf-snippet__content zf-world-grid"/></div>
+    </section>
+  </template>
+  <template id="s_zugfolge_world_banner" name="Einzelne Welt mit Banner">
+    <section class="s_zugfolge_world_banner zf-snippet py-5" data-zugfolge-worlds="banner" data-world-id="" aria-labelledby="zf-world-banner-heading">
+      <div class="container"><h2 id="zf-world-banner-heading">Ausgewählte Welt</h2><div class="zf-snippet__editor-preview">Welt im Snippet-Menü auswählen. Im Editor werden keine produktiven Dummywerte angezeigt.</div><div class="zf-snippet__status" role="status"/><div class="zf-snippet__content"/></div>
+    </section>
+  </template>
+  <template id="s_zugfolge_live_stats" name="Live-Weltstatistiken">
+    <section class="s_zugfolge_live_stats zf-snippet py-5" data-zugfolge-worlds="stats" data-world-id="" aria-labelledby="zf-live-heading">
+      <div class="container"><h2 id="zf-live-heading">Live-Weltstatistiken</h2><div class="zf-snippet__editor-preview">Sichere Editor-Vorschau ohne Zahlenwerte.</div><div class="zf-snippet__status" role="status"/><div class="zf-snippet__content"/></div>
+    </section>
+  </template>
+  <template id="s_zugfolge_evu_stats" name="EVU gesamt / stark aktiv">
+    <section class="s_zugfolge_evu_stats zf-snippet py-5" data-zugfolge-worlds="evu" data-world-id="" aria-labelledby="zf-evu-heading">
+      <div class="container"><h2 id="zf-evu-heading">EVU-Aktivität</h2><div class="zf-snippet__editor-preview">EVU gesamt / stark aktiv – Werte erscheinen nur aus einem aktuellen Game-Snapshot.</div><div class="zf-snippet__status" role="status"/><div class="zf-snippet__content"/></div>
+    </section>
+  </template>
+
+  <template id="zugfolge_snippets" inherit_id="website.snippets" name="Zugfolge Snippets">
+    <xpath expr="//snippets[@id='snippet_groups']/*[1]" position="before">
+      <t snippet-group="zugfolge" t-snippet="website.s_snippet_group" string="Zugfolge"
+         t-thumbnail="/zugfolge_admin/static/src/img/world-fallback.svg"/>
+    </xpath>
+    <xpath expr="//snippets[@id='snippet_structure']/*[1]" position="before">
+      <t t-snippet="zugfolge_admin.s_zugfolge_worlds" string="Zugfolge Welten" group="zugfolge"/>
+      <t t-snippet="zugfolge_admin.s_zugfolge_world_banner" string="Zugfolge Weltbanner" group="zugfolge"/>
+      <t t-snippet="zugfolge_admin.s_zugfolge_live_stats" string="Zugfolge Live-Statistiken" group="zugfolge"/>
+      <t t-snippet="zugfolge_admin.s_zugfolge_evu_stats" string="Zugfolge EVU-Statistik" group="zugfolge"/>
+    </xpath>
+  </template>
+</odoo>

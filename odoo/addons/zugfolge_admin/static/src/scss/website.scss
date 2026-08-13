@@ -1,0 +1,86 @@
+:root {
+  color-scheme: dark;
+  --zf-bg: #090b10;
+  --zf-surface: #11141b;
+  --zf-surface-raised: #181c25;
+  --zf-surface-hover: #202530;
+  --zf-border: #3e4655;
+  --zf-border-strong: #697487;
+  --zf-text: #f1f3f7;
+  --zf-muted: #b5bdca;
+  --zf-attention: #f0b75a;
+  --zf-attention-soft: #342a1b;
+  --zf-focus: #b7ccf5;
+}
+
+.zf-worlds-page, .zf-world-detail, .zf-portal-worlds, .zf-snippet {
+  color: var(--zf-text);
+  background: var(--zf-bg);
+  font-family: Inter, "IBM Plex Sans", system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.zf-world-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 1.25rem;
+}
+
+@media (max-width: 40rem) {
+  .zf-world-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.zf-world-card {
+  overflow: hidden;
+  border: 1px solid var(--zf-border);
+  border-radius: 3px;
+  background: var(--zf-surface);
+}
+
+.zf-world-card img, .zf-world-hero img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
+
+.zf-world-card__body { padding: 1.25rem; }
+.zf-snippet__editor-preview { display: none; }
+.editor_enable .zf-snippet__editor-preview { display: block; }
+.zf-world-card__meta, .zf-world-card__phase { color: var(--zf-muted); }
+.zf-world-card__releases { overflow-wrap: anywhere; }
+.zf-world-card__releases div { display: grid; grid-template-columns: minmax(5rem, auto) 1fr; gap: .75rem; }
+.zf-world-card__releases dt { color: var(--zf-muted); }
+
+.zf-worlds-page .btn-primary, .zf-world-detail .btn-primary, .zf-portal-worlds .btn-primary, .zf-snippet .btn-primary {
+  color: var(--zf-text);
+  background: var(--zf-surface-raised);
+  border-color: var(--zf-border-strong);
+  border-radius: 3px;
+}
+.zf-worlds-page .btn-primary:hover, .zf-world-detail .btn-primary:hover, .zf-portal-worlds .btn-primary:hover, .zf-snippet .btn-primary:hover {
+  background: var(--zf-surface-hover);
+}
+.zf-worlds-page .alert-warning, .zf-world-detail .alert-warning, .zf-portal-worlds .alert-warning, .zf-snippet .alert-warning {
+  color: var(--zf-attention);
+  background: var(--zf-attention-soft);
+  border-color: var(--zf-attention);
+}
+
+.zf-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: .75rem;
+}
+.zf-stat-grid > div { border-left: .2rem solid var(--zf-border); padding-left: .75rem; }
+.zf-stat-grid dt { color: var(--zf-muted); font-size: .875rem; }
+.zf-stat-grid dd { font-size: 1.1rem; font-weight: 600; margin: 0; }
+
+.zf-world-card a:focus-visible, .zf-snippet a:focus-visible, .zf-snippet button:focus-visible {
+  outline: .2rem solid var(--zf-focus);
+  outline-offset: .2rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zf-world-card, .zf-snippet { scroll-behavior: auto; transition: none; }
+}

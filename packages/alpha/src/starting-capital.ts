@@ -24,7 +24,10 @@ import {
   type AlphaWorldBlueprint,
 } from "./world.js";
 
-export type StartingCapitalPolicy = AlphaWorldBlueprint["startingCapitalPolicy"];
+/** Interne, bereits validierte Zugangs-/Ledgerdarstellung. */
+export type StartingCapitalPolicy =
+  | { readonly kind: "finite"; readonly amountCents: string }
+  | { readonly kind: "unlimited" };
 
 export const STARTING_CAPITAL_EQUITY_ACCOUNT_NAME = "Economy:Eigenkapital";
 export const STARTING_CAPITAL_TRANSACTION_KEY_PREFIX = "starting-capital";
@@ -94,9 +97,13 @@ export function validateStoredPublicWorldContract(
   return Object.freeze({
     blueprint,
     blueprintHash: profile.blueprintHash,
-    startingCapitalPolicy: blueprint.startingCapitalPolicy.kind === "unlimited"
-      ? Object.freeze({ kind: "unlimited" as const })
-      : Object.freeze({ kind: "finite" as const, amountCents: blueprint.startingCapitalPolicy.amountCents }),
+    startingCapitalPolicy: blueprint.schemaVersion === "zugfolge-alpha-world-blueprint/v1"
+      ? blueprint.startingCapitalPolicy.kind === "unlimited"
+        ? Object.freeze({ kind: "unlimited" as const })
+        : Object.freeze({ kind: "finite" as const, amountCents: blueprint.startingCapitalPolicy.amountCents })
+      : blueprint.startingCapitalPolicy.mode === "unlimited"
+        ? Object.freeze({ kind: "unlimited" as const })
+        : Object.freeze({ kind: "finite" as const, amountCents: blueprint.startingCapitalPolicy.amountCents }),
   });
 }
 

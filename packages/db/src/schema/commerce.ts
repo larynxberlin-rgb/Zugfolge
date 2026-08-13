@@ -65,7 +65,10 @@ export const odooProjectionOutbox = pgTable(
   "odoo_projection_outbox",
   {
     id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-    worldId: uuid("world_id").notNull().references(() => worlds.id),
+    // Ein abgelehntes world_deploy muss an Odoo zurueckgemeldet werden koennen,
+    // bevor die Zielwelt existiert. Die UUID bleibt fachlich verpflichtend;
+    // erst autoritative Game-Projektionen setzen eine bestehende Welt voraus.
+    worldId: uuid("world_id").notNull(),
     messageType: text("message_type").notNull(),
     schemaVersion: text("schema_version").notNull(),
     correlationId: text("correlation_id").notNull(),
@@ -108,8 +111,12 @@ export const odooCommandQueue = pgTable(
   {
     id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
     eventId: text("event_id").notNull(),
-    worldId: uuid("world_id").references(() => worlds.id),
+    // world_deploy adressiert eine noch nicht existierende Welt. Entitlements
+    // bleiben die einzige globale Variante und tragen hier weiterhin NULL.
+    worldId: uuid("world_id"),
     commandType: text("command_type").notNull(),
+    /** Fachlicher Replay-Schlüssel; für ältere globale Entitlements optional. */
+    idempotencyKey: text("idempotency_key"),
     actorReference: text("actor_reference").notNull(),
     payload: jsonb("payload").notNull(),
     correlationId: text("correlation_id").notNull(),
@@ -126,6 +133,7 @@ export const odooCommandQueue = pgTable(
     index("odoo_command_queue_world_claim_idx").on(table.worldId, table.status, table.claimExpiresAt, table.receivedAt),
     // guards:allow world-id — Entitlement-Ereignisse sind bewusst global und haben keine Welt.
     uniqueIndex("odoo_command_queue_event_idx").on(table.eventId),
+    uniqueIndex("odoo_command_queue_world_type_idempotency_idx").on(table.worldId, table.commandType, table.idempotencyKey),
   ],
 );
 
@@ -153,6 +161,33 @@ export const gameAdminRequests = pgTable(
   (table) => [
     uniqueIndex("game_admin_requests_world_command_idx").on(table.worldId, table.commandId),
     index("game_admin_requests_world_state_idx").on(table.worldId, table.state, table.changedAt),
+  ],
+);
+
+/**
+ * Weltunabhaengige, append-only Game-Auditspur fuer pre-world Deploy-
+ * Ablehnungen. Sie enthaelt keine Wirkung und keine Simulationsfakten; ihre
+ * Zielwelt ist die vom signierten Transport adressierte UUID, die zu diesem
+ * Zeitpunkt absichtlich noch nicht in `worlds` existieren kann.
+ */
+// guards:allow world-id — pre-world Audit besitzt noch keine referenzierbare Weltzeile.
+export const globalAdminAuditEvents = pgTable(
+  "global_admin_audit_events",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    targetWorldId: uuid("target_world_id").notNull(),
+    commandId: uuid("command_id").notNull().references(() => odooCommandQueue.id),
+    correlationId: text("correlation_id").notNull(),
+    actionType: text("action_type").notNull(),
+    outcome: text("outcome", { enum: ["rejected"] }).notNull(),
+    failureCode: text("failure_code").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    // guards:allow world-id — Kommando-ID ist der globale Replay-Schluessel eines pre-world Deploy-Audits.
+    uniqueIndex("global_admin_audit_events_command_idx").on(table.commandId),
+    // guards:allow world-id — target_world_id ist die noch nicht erzeugte Zielwelt und daher bewusst kein world_id-FK.
+    index("global_admin_audit_events_target_world_idx").on(table.targetWorldId, table.occurredAt),
   ],
 );
 

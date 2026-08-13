@@ -1,4 +1,4 @@
-import { isAdminActionType, type AdminCommandPayload } from "./contracts.js";
+import { isAdminActionType, type AdminCommandPayload, type SerializedStartingCapitalPolicy, type SignedWorldDeployment, type WorldDefinition } from "./contracts.js";
 
 export const ADMIN_REQUEST_STATES = [
   "draft", "submitted", "approved", "rejected", "dispatched", "accepted", "completed", "failed",
@@ -9,6 +9,116 @@ export class AdminWorkflowError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "AdminWorkflowError";
+  }
+}
+
+const MAX_MONEY_CENTS = 9_223_372_036_854_775_807n;
+const CANONICAL_CENTS = /^(0|[1-9][0-9]*)$/;
+const SHA256 = /^[a-f0-9]{64}$/;
+const WORLD_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
+
+function record(value: unknown): Readonly<Record<string, unknown>> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Readonly<Record<string, unknown>>
+    : undefined;
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (Array.isArray(left) || Array.isArray(right)) return false;
+  const leftRecord = record(left);
+  const rightRecord = record(right);
+  if (leftRecord === undefined || rightRecord === undefined) return false;
+  const leftKeys = Object.keys(leftRecord).sort();
+  const rightKeys = Object.keys(rightRecord).sort();
+  return leftKeys.length === rightKeys.length
+    && leftKeys.every((key, index) => key === rightKeys[index] && sameJson(leftRecord[key], rightRecord[key]));
+}
+
+function sameWorldDefinition(value: unknown, expected: WorldDefinition): boolean {
+  const definition = record(value);
+  return definition !== undefined
+    && Object.keys(definition).length === 5
+    && definition["name"] === expected.name
+    && definition["kind"] === expected.kind
+    && definition["rankingStatus"] === expected.rankingStatus
+    && definition["schedulePeriodWeeks"] === expected.schedulePeriodWeeks
+    && typeof definition["epoch"] === "string"
+    && new Date(definition["epoch"]).getTime() === new Date(expected.epoch).getTime();
+}
+
+export function validateStartingCapitalPolicy(value: unknown): asserts value is SerializedStartingCapitalPolicy {
+  const policy = record(value);
+  if (policy === undefined || (policy["mode"] !== "finite" && policy["mode"] !== "unlimited")) {
+    throw new AdminWorkflowError("Startkapital braucht den Modus 'finite' oder 'unlimited'.");
+  }
+  if (policy["mode"] === "unlimited") {
+    if (Object.keys(policy).length !== 1 || !Object.hasOwn(policy, "mode")) {
+      throw new AdminWorkflowError("Unbegrenztes Startkapital ist ein Modus und besitzt keinen Geldbetrag.");
+    }
+    return;
+  }
+  const amount = policy["amountCents"];
+  if (Object.keys(policy).length !== 2 || !Object.hasOwn(policy, "mode") || !Object.hasOwn(policy, "amountCents")
+    || typeof amount !== "string" || !CANONICAL_CENTS.test(amount)) {
+    throw new AdminWorkflowError("Begrenztes Startkapital braucht nichtnegative Integer-Cent als kanonischen Dezimalstring.");
+  }
+  if (BigInt(amount) > MAX_MONEY_CENTS) {
+    throw new AdminWorkflowError("Startkapital liegt ausserhalb des vorzeichenbehafteten 64-Bit-Centbereichs.");
+  }
+}
+
+function validateWorldDefinition(value: unknown): asserts value is WorldDefinition {
+  const definition = record(value);
+  if (definition === undefined
+    || Object.keys(definition).length !== 5
+    || !["name", "kind", "rankingStatus", "schedulePeriodWeeks", "epoch"].every((key) => Object.hasOwn(definition, key))
+    || typeof definition["name"] !== "string"
+    || definition["name"].trim() === ""
+    || !(["public", "tutorial", "private", "test"] as const).includes(definition["kind"] as never)
+    || !(["ranked", "unranked"] as const).includes(definition["rankingStatus"] as never)
+    || !Number.isSafeInteger(definition["schedulePeriodWeeks"])
+    || (definition["schedulePeriodWeeks"] as number) < 3
+    || (definition["schedulePeriodWeeks"] as number) > 8
+    || typeof definition["epoch"] !== "string"
+    || Number.isNaN(new Date(definition["epoch"]).getTime())) {
+    throw new AdminWorkflowError("Welt-Deployment braucht Name, Profil, Wertung, Periodenlaenge und Epoche.");
+  }
+  if ((definition["kind"] === "public") !== (definition["rankingStatus"] === "ranked")) {
+    throw new AdminWorkflowError("Nur oeffentliche Welten sind gewertet; alle anderen Weltprofile sind ungewertet.");
+  }
+}
+
+function validateSignedDeployment(
+  value: unknown,
+  worldId: string,
+  deploymentHash: unknown,
+  policy: SerializedStartingCapitalPolicy,
+  definition: WorldDefinition,
+): asserts value is SignedWorldDeployment {
+  const signed = record(value);
+  const signature = record(signed?.["signature"]);
+  const deployment = record(signed?.["deployment"]);
+  const blueprint = record(deployment?.["blueprint"]);
+  if (signed === undefined || deployment === undefined || signature === undefined
+    || Object.keys(signed).length !== 3
+    || !["deployment", "deploymentHash", "signature"].every((key) => Object.hasOwn(signed, key))
+    || Object.keys(signature).length !== 3
+    || !["algorithm", "keyId", "valueBase64"].every((key) => Object.hasOwn(signature, key))
+    || typeof deploymentHash !== "string" || !SHA256.test(deploymentHash)
+    || signed["deploymentHash"] !== deploymentHash
+    || signature["algorithm"] !== "Ed25519"
+    || typeof signature["keyId"] !== "string" || signature["keyId"].trim() === ""
+    || typeof signature["valueBase64"] !== "string" || !/^[A-Za-z0-9+/]{86}==$/.test(signature["valueBase64"])
+    || deployment["worldId"] !== worldId
+    || blueprint === undefined
+    || blueprint["profileKind"] !== definition.kind
+    || !sameWorldDefinition(deployment["worldDefinition"], definition)) {
+    throw new AdminWorkflowError("Welt-Deployment braucht passenden SHA-256, Weltbindung, Profilbindung und vollstaendige Ed25519-Signatur.");
+  }
+  validateStartingCapitalPolicy(blueprint["startingCapitalPolicy"]);
+  if (!sameJson(blueprint["startingCapitalPolicy"], policy)) {
+    throw new AdminWorkflowError("Odoo-Startkapital und signierter Weltentwurf weichen voneinander ab.");
   }
 }
 
@@ -62,6 +172,13 @@ export function validateAdminCommand(command: AdminCommandPayload): void {
   if (["world_access_revoke", "abuse_sanction_activate", "world_close"].includes(command.actionType) && command.riskClass !== "high") {
     throw new AdminWorkflowError("Kontoentzug, schwere Sanktionen und Weltende sind immer hochriskant.");
   }
+  if (command.actionType === "world_deploy") {
+    if (command.riskClass !== "high") throw new AdminWorkflowError("Ein Welt-Deployment ist immer hochriskant.");
+    if (!WORLD_ID.test(command.worldId)) throw new AdminWorkflowError("Welt-Deployment braucht eine gueltige Welt-ID.");
+    validateStartingCapitalPolicy(command.startingCapitalPolicy);
+    validateWorldDefinition(command.worldDefinition);
+    validateSignedDeployment(command.signedDeployment, command.worldId, command.deploymentHash, command.startingCapitalPolicy, command.worldDefinition);
+  }
   if (["world_access_revoke", "abuse_sanction_activate"].includes(command.actionType)) {
     if (command.targetReference === undefined || command.targetReference.trim().length === 0) {
       throw new AdminWorkflowError("Verwaltungsaktion braucht eine stabile Zielreferenz.");
@@ -76,6 +193,10 @@ export function validateAdminCommand(command: AdminCommandPayload): void {
     const invitation = command.invitation;
     if (invitation === undefined || invitation.requestReference.trim() === "" || !/^\S+@\S+\.\S+$/.test(invitation.email)) {
       throw new AdminWorkflowError("Alpha-Einladung braucht Referenz und gueltige E-Mail-Adresse.");
+    }
+    const allowedInvitationKeys = new Set(["requestReference", "email", "displayName", "role", "keycloakSubject"]);
+    if (Object.keys(invitation).some((key) => !allowedInvitationKeys.has(key))) {
+      throw new AdminWorkflowError("Alpha-Einladung enthaelt unbekannte oder fachfremde Felder.");
     }
     if (!(["player", "world_admin"] as const).includes(invitation.role)) {
       throw new AdminWorkflowError("Alpha-Einladung enthaelt eine unbekannte Kontorolle.");

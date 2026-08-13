@@ -352,6 +352,10 @@ export async function listEconomyWorldIds(db: EconomyDatabase): Promise<readonly
   const rows = await db
     .select({ worldId: economyWorldStates.worldId })
     .from(economyWorldStates)
+    .innerJoin(worlds, and(
+      eq(worlds.id, economyWorldStates.worldId),
+      eq(worlds.lifecycleStatus, "active"),
+    ))
     .orderBy(asc(economyWorldStates.worldId));
   return rows.map((row) => row.worldId);
 }

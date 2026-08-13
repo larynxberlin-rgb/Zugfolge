@@ -168,7 +168,7 @@ Damit ist der integrierte Alpha-Abnahmefall als Ganzes **nicht bestanden**.
 | `node tools/alpha-ops/verify-alpha-recurrence.mjs` | 1.634 Materialisierungen, 909 Grenzkommandos, 1 Cleanup und 2.544 eindeutige Kommandos im ersten Wiederholungsfenster |
 | M14-Tageslauf | 909 Grenzübergänge ohne Ressourcenkonflikt; Restore-Hash `25b65c6f…da6be` bitgleich |
 | Phase-2-Paketläufe | Economy 42, Alpha 6, Game API 103 und Game Web 23 Tests grün; darunter beide PGlite-E2Es, OIDC-PKCE, Reset/Späteinladung und Projektion nach Commit |
-| Phase-4-Paketläufe | Game Web 35 Tests grün; Kooperation 7 Tests grün; Game-API-M12-E2E 4 Tests grün, darunter Zwei-Spieler-Ledger/Postfach/Audit und 20 parallele Fahrzeugübertragungen |
+| Phase-4-Paketläufe | Game Web 40 Tests grün; Kooperation 7 Tests grün; Game-API-M12-E2E 4 Tests grün, darunter Zwei-Spieler-Ledger/Postfach/Audit und 20 parallele Fahrzeugübertragungen |
 | Phase-2-Web-/Static-Smoke | Vite-Produktionsbuild grün; SPA-Root und injizierte Runtime-Konfiguration jeweils HTTP 200 |
 | gemischter 50-Konten-Mehrperioden-Soak | nicht ausgeführt |
 | reale geschlossene Alpha | nicht gestartet und nicht behauptet |

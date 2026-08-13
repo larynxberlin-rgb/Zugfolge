@@ -6,6 +6,38 @@ import { describe, expect, it } from "vitest";
 const addon = resolve(import.meta.dirname, "../../../odoo/addons/zugfolge_admin");
 
 describe("Odoo-Administrationsmodul", () => {
+  it("installiert Eindeutigkeit mit der Odoo-19-Constraint-API", async () => {
+    const modelFiles = [
+      "admin_request.py",
+      "admin_capability.py",
+      "feedback.py",
+      "infra_release_import.py",
+      "participation.py",
+      "projection_receipt.py",
+      "public_world.py",
+      "res_users.py",
+    ];
+    const models = await Promise.all(
+      modelFiles.map((file) => readFile(resolve(addon, "models", file), "utf8")),
+    );
+    const source = models.join("\n");
+    expect(source).not.toContain("_sql_constraints");
+    expect(source.match(/models\.Constraint\(/g)).toHaveLength(9);
+    for (const uniqueDefinition of [
+      "unique(correlation_id)",
+      "unique(world_id, action_type)",
+      "unique(feedback_reference)",
+      "unique(import_id)",
+      "unique(partner_id, world_id)",
+      "unique(idempotency_key)",
+      "unique(message_id)",
+      "unique(projection_id)",
+      "unique(zugfolge_keycloak_subject)",
+    ]) {
+      expect(source).toContain(uniqueDefinition);
+    }
+  });
+
   it("verwendet native Odoo-Grundbausteine und kapselt nur die Zugfolge-Grenze", async () => {
     const manifest = await readFile(resolve(addon, "__manifest__.py"), "utf8");
     expect(manifest).toContain('"contacts"');
@@ -22,9 +54,16 @@ describe("Odoo-Administrationsmodul", () => {
     const request = await readFile(resolve(addon, "models/admin_request.py"), "utf8");
     expect(request).toContain("with_delay");
     expect(request).toContain("manual_disruption_create");
+    expect(request).toContain("world_deploy");
+    expect(request).toContain("parse_german_currency_to_cents");
+    expect(request).toContain("starting_capital_amount_cents");
+    expect(request).toContain("signed_world_deployment");
+    expect(request).toContain("signing_configuration");
+    expect(request).toContain("zugfolge-alpha-world-deploy-configuration/v1");
     expect(request).toContain("game_capability_state");
     const capability = await readFile(resolve(addon, "models/admin_capability.py"), "utf8");
     expect(capability).toContain("zugfolge_game_projection");
+    expect(capability).toContain("GLOBAL_WORLD_DEPLOY_CAPABILITY_SCOPE_ID");
     const invoice = await readFile(resolve(addon, "models/account_move.py"), "utf8");
     expect(invoice).toContain('_inherit = "account.move"');
     expect(invoice).toContain('"entitlement.change"');
@@ -38,6 +77,7 @@ describe("Odoo-Administrationsmodul", () => {
     expect(controller).toContain("/zugfolge/metrics");
     expect(controller).toContain("admin.capability.projection");
     expect(controller).toContain("alpha.feedback.projection");
+    expect(controller).toContain("{**result, \"state\": state}");
     expect(receipt).toContain("unique(message_id)");
     expect(receipt).toContain("unveränderlich");
   });
@@ -57,6 +97,10 @@ describe("Alpha-Einladungen", () => {
     expect(model).not.toContain("startPackage");
     expect(views).not.toContain("tutorial_account_reset");
     expect(views).toContain("Alpha-Einladungen");
+    expect(model).toContain("world_profile_kind");
+    expect(model).not.toContain("start_package");
+    expect(views).not.toContain('name="start_package"');
+    expect(model).toContain("die oeffentliche Zielwelt");
   });
 
   it("liefert einen isolierten Restore-, Alert- und Dashboard-Drill", async () => {

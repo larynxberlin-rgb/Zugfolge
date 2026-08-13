@@ -18,6 +18,9 @@ export const operators = pgTable(
       .references(() => worlds.id),
     foundingAccountId: uuid("founding_account_id").notNull(),
     name: text("name").notNull(),
+    /** Öffentliche Aktivitätsstatistiken dürfen nur aktive Spieler-EVU werten. */
+    operatorKind: text("operator_kind", { enum: ["player", "system", "bot"] }).notNull().default("player"),
+    lifecycle: text("lifecycle", { enum: ["active", "exited", "deleted"] }).notNull().default("active"),
     foundedAt: timestamp("founded_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

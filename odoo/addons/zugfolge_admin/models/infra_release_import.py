@@ -264,7 +264,10 @@ class ZugfolgeInfraReleaseImport(models.Model):
     failure_detail = fields.Text(readonly=True, copy=False)
     adoption_request_id = fields.Many2one("zugfolge.admin.request", readonly=True, copy=False, ondelete="restrict")
 
-    _sql_constraints = [("zugfolge_infra_release_import_id", "unique(import_id)", "Die Import-ID muss eindeutig sein.")]
+    _import_id_unique = models.Constraint(
+        "unique(import_id)",
+        "Die Import-ID muss eindeutig sein.",
+    )
 
     _DRAFT_FIELDS = frozenset({"manifest_attachment_ids", "part_attachment_ids", "world_projection_id"})
     _INTERNAL_FIELDS = frozenset({

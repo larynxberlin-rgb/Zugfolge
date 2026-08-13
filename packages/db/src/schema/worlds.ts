@@ -17,7 +17,7 @@ export const worlds = pgTable("worlds", {
   /** Private Welten sind stets ungewertet; die DB-Constraint steht in Migration 0012. */
   worldKind: text("world_kind", { enum: ["public", "private"] }).notNull().default("public"),
   rankingStatus: text("ranking_status", { enum: ["ranked", "unranked"] }).notNull().default("ranked"),
-  lifecycleStatus: text("lifecycle_status", { enum: ["active", "archived"] }).notNull().default("active"),
+  lifecycleStatus: text("lifecycle_status", { enum: ["provisioning", "active", "archived"] }).notNull().default("active"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
