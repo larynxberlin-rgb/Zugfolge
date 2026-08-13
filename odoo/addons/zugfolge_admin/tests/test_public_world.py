@@ -35,13 +35,24 @@ class TestPublicWorld(TransactionCase):
         }
 
     def test_snapshot_zero_positive_and_unlimited_capital(self):
-        for capital, expected in [
+        for index, (capital, expected) in enumerate([
             ({"mode": "finite", "amountCents": "0"}, "0,00 €"),
             ({"mode": "finite", "amountCents": "2500000"}, "25.000,00 €"),
             ({"mode": "unlimited"}, "Unbegrenzt (∞)"),
-        ]:
-            self.env["zugfolge.world.projection"].with_context(zugfolge_game_projection=True).upsert_public_snapshot(self.snapshot(capital=capital))
-            self.assertEqual(self.projection.starting_capital_preview, expected)
+        ]):
+            world_id = "11111111-1111-4111-8111-%012d" % (111111111111 + index)
+            if index == 0:
+                projection = self.projection
+            else:
+                projection = self.env["zugfolge.world.projection"].with_context(zugfolge_game_projection=True).create({
+                    "world_id": world_id, "world_name": "Kapitalwelt %s" % index, "projection_revision": "1",
+                    "observed_at": "2026-01-01 00:00:00", "freshness": "delayed", "payload_hash": str(index) * 64,
+                })
+            snapshot = self.snapshot(capital=capital)
+            snapshot["worldId"] = world_id
+            snapshot["payload"]["worldId"] = world_id
+            self.env["zugfolge.world.projection"].with_context(zugfolge_game_projection=True).upsert_public_snapshot(snapshot)
+            self.assertEqual(projection.starting_capital_preview, expected)
 
     def test_unconfigured_activity_never_publishes_a_number(self):
         with self.assertRaises(ValidationError):

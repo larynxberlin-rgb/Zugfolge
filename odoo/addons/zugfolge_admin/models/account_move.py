@@ -78,7 +78,10 @@ class AccountMove(models.Model):
     def _zugfolge_world_offer(self):
         self.ensure_one()
         template_ids = self.invoice_line_ids.product_id.product_tmpl_id.ids
-        offers = self.env["zugfolge.world.offer"].search([("product_tmpl_id", "in", template_ids)])
+        # Der Payment-Status ist bereits durch Odoos Accounting-Rechte geschuetzt.
+        # Die daraus abgeleitete Integration darf keine Zugfolge-Adminrolle des
+        # buchenden Benutzers voraussetzen.
+        offers = self.env["zugfolge.world.offer"].sudo().search([("product_tmpl_id", "in", template_ids)])
         if len(offers) > 1:
             raise ValidationError(_("Eine Rechnung darf nur eine konkrete Zugfolge-Weltteilnahme enthalten."))
         return offers[:1]
@@ -94,7 +97,8 @@ class AccountMove(models.Model):
                 raise ValidationError(_("Das Portalprofil besitzt noch keine verifizierte Keycloak-sub-Referenz."))
             payment_reference = move.name or str(move.id)
             order_reference = move.invoice_origin or move.name or str(move.id)
-            participation = self.env["zugfolge.world.participation"].search([
+            participation_model = self.env["zugfolge.world.participation"].sudo()
+            participation = participation_model.search([
                 ("partner_id", "=", move.partner_id.id), ("world_id", "=", offer.projection_id.world_id),
             ], limit=1)
             if move.payment_state == "paid" and move.move_type == "out_invoice":
@@ -115,7 +119,7 @@ class AccountMove(models.Model):
                     values["correlation_id"] = str(uuid.uuid4())
                     participation.with_context(zugfolge_commerce_transition=True).write(values)
                 else:
-                    participation = self.env["zugfolge.world.participation"].create(values)
+                    participation = participation_model.create(values)
                 move.with_context(zugfolge_skip_dispatch=True).write({"zugfolge_participation_id": participation.id})
                 participation.queue_provisioning()
             elif (move.payment_state == "reversed" or move.move_type == "out_refund") and participation:

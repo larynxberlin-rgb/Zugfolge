@@ -233,6 +233,12 @@ class ZugfolgeWorldOffer(models.Model):
         field_name = {512: "banner_512", 1024: "banner_1024", 1920: "banner_1920"}.get(size, "banner_1024")
         return "/web/image/zugfolge.world.offer/%s/%s" % (self.id, field_name)
 
+    def banner_object_position(self):
+        self.ensure_one()
+        x_whole, x_decimal = divmod(self.focal_x_permille, 10)
+        y_whole, y_decimal = divmod(self.focal_y_permille, 10)
+        return f"object-position:{x_whole}.{x_decimal}% {y_whole}.{y_decimal}%"
+
     def public_price_display(self):
         self.ensure_one()
         if not self.product_tmpl_id:

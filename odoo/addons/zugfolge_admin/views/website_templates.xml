@@ -7,7 +7,7 @@
              sizes="(max-width: 720px) 100vw, 50vw"
              t-att-alt="offer.banner_alt or (offer.projection_id.public_banner_metadata or {}).get('altText') or ('Banner ' + offer.projection_id.world_name)"
              loading="lazy"
-             t-att-style="'object-position:%s%% %s%%' % (offer.focal_x_permille / 10, offer.focal_y_permille / 10)"/>
+             t-att-style="offer.banner_object_position()"/>
       </a>
       <div class="zf-world-card__body">
         <p class="zf-world-card__phase"><t t-esc="offer.projection_id.public_phase or 'planned'"/></p>

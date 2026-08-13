@@ -13,7 +13,7 @@ class TestZugfolgeWebsite(HttpCase):
             "zugfolge_admin.s_zugfolge_worlds", "zugfolge_admin.s_zugfolge_world_banner",
             "zugfolge_admin.s_zugfolge_live_stats", "zugfolge_admin.s_zugfolge_evu_stats",
         ):
-            self.assertTrue(self.env["ir.ui.view"]._get(key))
+            self.assertTrue(self.env.ref(key, raise_if_not_found=False))
             rendered = self.env["ir.ui.view"]._render_template(key)
             if isinstance(rendered, bytes):
                 rendered = rendered.decode()

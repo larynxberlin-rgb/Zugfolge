@@ -16,7 +16,7 @@ class TestWorldPaymentParticipation(AccountTestInvoicingCommon):
             "payload_hash": "a" * 64,
         })
         cls.product_a.product_tmpl_id.zugfolge_product_kind = "public_world_slot"
-        cls.offer = cls.env["zugfolge.world.offer"].create({
+        cls.offer = cls.env["zugfolge.world.offer"].sudo().create({
             "projection_id": projection.id,
             "participation_conditions": "Bezahlte Teilnahme",
             "product_tmpl_id": cls.product_a.product_tmpl_id.id,
