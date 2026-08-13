@@ -1,8 +1,46 @@
 <odoo>
-    <record id="group_zugfolge_admin" model="res.groups"><field name="name">Zugfolge Administration</field></record>
-  <record id="group_zugfolge_approver" model="res.groups"><field name="name">Zugfolge Freigabe</field><field name="implied_ids" eval="[(4, ref('zugfolge_admin.group_zugfolge_admin'))]"/></record>
-  <record id="group_zugfolge_telemetry" model="res.groups"><field name="name">Zugfolge Telemetrie</field><field name="implied_ids" eval="[(4, ref('zugfolge_admin.group_zugfolge_admin'))]"/></record>
-  <record id="group_zugfolge_infra_reviewer" model="res.groups"><field name="name">Zugfolge InfraRelease-Pruefung</field><field name="implied_ids" eval="[(4, ref('zugfolge_admin.group_zugfolge_admin'))]"/></record>
+  <record id="privilege_zugfolge_admin" model="res.groups.privilege">
+    <field name="name">Zugfolge Administration</field>
+    <field name="category_id" ref="base.module_category_administration"/>
+    <field name="sequence">40</field>
+  </record>
+  <record id="privilege_zugfolge_approver" model="res.groups.privilege">
+    <field name="name">Zugfolge Freigabe</field>
+    <field name="category_id" ref="base.module_category_administration"/>
+    <field name="sequence">41</field>
+  </record>
+  <record id="privilege_zugfolge_telemetry" model="res.groups.privilege">
+    <field name="name">Zugfolge Telemetrie</field>
+    <field name="category_id" ref="base.module_category_administration"/>
+    <field name="sequence">42</field>
+  </record>
+  <record id="privilege_zugfolge_infra_reviewer" model="res.groups.privilege">
+    <field name="name">Zugfolge InfraRelease-Pruefung</field>
+    <field name="category_id" ref="base.module_category_administration"/>
+    <field name="sequence">43</field>
+  </record>
+
+  <record id="group_zugfolge_admin" model="res.groups">
+    <field name="name">Zugfolge Administration</field>
+    <field name="privilege_id" ref="zugfolge_admin.privilege_zugfolge_admin"/>
+    <field name="implied_ids" eval="[Command.link(ref('base.group_user'))]"/>
+    <field name="implied_by_ids" eval="[Command.link(ref('base.group_system'))]"/>
+  </record>
+  <record id="group_zugfolge_approver" model="res.groups">
+    <field name="name">Zugfolge Freigabe</field>
+    <field name="privilege_id" ref="zugfolge_admin.privilege_zugfolge_approver"/>
+    <field name="implied_ids" eval="[Command.link(ref('zugfolge_admin.group_zugfolge_admin'))]"/>
+  </record>
+  <record id="group_zugfolge_telemetry" model="res.groups">
+    <field name="name">Zugfolge Telemetrie</field>
+    <field name="privilege_id" ref="zugfolge_admin.privilege_zugfolge_telemetry"/>
+    <field name="implied_ids" eval="[Command.link(ref('zugfolge_admin.group_zugfolge_admin'))]"/>
+  </record>
+  <record id="group_zugfolge_infra_reviewer" model="res.groups">
+    <field name="name">Zugfolge InfraRelease-Pruefung</field>
+    <field name="privilege_id" ref="zugfolge_admin.privilege_zugfolge_infra_reviewer"/>
+    <field name="implied_ids" eval="[Command.link(ref('zugfolge_admin.group_zugfolge_admin'))]"/>
+  </record>
   <record id="rule_zugfolge_participation_portal_own" model="ir.rule">
     <field name="name">Portal sieht nur eigene Zugfolge-Weltteilnahmen</field>
     <field name="model_id" ref="model_zugfolge_world_participation"/>

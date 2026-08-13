@@ -44,7 +44,7 @@
   <record id="action_zugfolge_admin_capability" model="ir.actions.act_window"><field name="name">Game-Verwaltungsfaehigkeiten</field><field name="res_model">zugfolge.admin.capability</field><field name="view_mode">list,form</field></record>
   <record id="action_zugfolge_admin_request" model="ir.actions.act_window"><field name="name">Freigaben</field><field name="res_model">zugfolge.admin.request</field><field name="view_mode">list,form</field></record>
   <record id="action_zugfolge_feedback" model="ir.actions.act_window"><field name="name">Feedback</field><field name="res_model">zugfolge.feedback</field><field name="view_mode">list,form</field></record>
-  <menuitem id="menu_zugfolge_root" name="Zugfolge" groups="zugfolge_admin.group_zugfolge_admin" sequence="10"/>
+  <menuitem id="menu_zugfolge_root" name="Zugfolge" action="action_zugfolge_world_projection" groups="zugfolge_admin.group_zugfolge_admin" sequence="10"/>
   <menuitem id="menu_zugfolge_monitoring" name="Weltmonitoring" parent="menu_zugfolge_root" action="action_zugfolge_world_projection" sequence="10"/>
   <menuitem id="menu_zugfolge_capabilities" name="Game-Verwaltungsfaehigkeiten" parent="menu_zugfolge_root" action="action_zugfolge_admin_capability" sequence="15"/>
   <menuitem id="menu_zugfolge_requests" name="Freigaben" parent="menu_zugfolge_root" action="action_zugfolge_admin_request" sequence="20"/>
