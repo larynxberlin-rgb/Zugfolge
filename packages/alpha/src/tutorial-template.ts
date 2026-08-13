@@ -130,8 +130,8 @@ export const TUTORIAL_TEMPLATE: TutorialTemplate = Object.freeze({
   }),
   tender: Object.freeze({ id: "tutorial-tender", lotId: "tutorial-lot", authorityId: "tutorial-authority", profileId: "balanced-quality", announcedAtS: 10, opensAtS: 20, closesAtS: 86_420, operatingFromS: 90_000, trainKmPerPeriod: "840", viabilityThresholdCentsPerTrainKm: "1739", comparisonBidCentsPerTrainKm: "1580" }),
   leases: Object.freeze([
-    Object.freeze({ id: "lease-economy", vehicleId: "tutorial-vehicle-economy", classDesignation: "T 442", monthlyCostCents: "210000", seats: 138, conditionBasisPoints: 8600, reliabilityBasisPoints: 8900, marginEffectCents: "90000" }),
-    Object.freeze({ id: "lease-reliable", vehicleId: "tutorial-vehicle-reliable", classDesignation: "T 446", monthlyCostCents: "285000", seats: 160, conditionBasisPoints: 9600, reliabilityBasisPoints: 9700, marginEffectCents: "15000" }),
+    Object.freeze({ id: "lease-economy", vehicleId: "tutorial-vehicle-economy", classDesignation: "T442", monthlyCostCents: "210000", seats: 138, conditionBasisPoints: 8600, reliabilityBasisPoints: 8900, marginEffectCents: "90000" }),
+    Object.freeze({ id: "lease-reliable", vehicleId: "tutorial-vehicle-reliable", classDesignation: "T446", monthlyCostCents: "285000", seats: 160, conditionBasisPoints: 9600, reliabilityBasisPoints: 9700, marginEffectCents: "15000" }),
   ]),
   paths: Object.freeze([
     Object.freeze({ id: "path-tight", receiptId: "tutorial-path-tight", label: "Knapp und guenstig", desiredDepartureS: 240, bufferSeconds: 45, costCents: "78000" }),
@@ -153,6 +153,7 @@ export function validateTutorialTemplate(template: TutorialTemplate): void {
   if (template.tutorialCapitalCents <= 0n) throw new Error("Tutorialkapital muss endlich und positiv sein.");
   if (template.region.stations.length < 3 || template.region.stations.length > 4 || template.region.segments.length < 2) throw new Error("Tutorialkorridor besitzt keinen minimalen, zusammenhaengenden Inhalt.");
   if (template.leases.length !== 2 || template.paths.length !== 2 || template.programmes.length !== 2) throw new Error("Tutorialtemplate braucht jeweils genau zwei Entscheidungsalternativen.");
+  if (template.leases.some((offer) => typeof offer["classDesignation"] !== "string" || !/^[A-Za-z0-9.-]{1,10}$/.test(offer["classDesignation"]))) throw new Error("Tutorialfahrzeuge brauchen eine gueltige autoritative Baureihenbezeichnung.");
   const ids = new Set(TUTORIAL_DIALOGUES.map((entry) => entry.id));
   if (ids.size !== TUTORIAL_DIALOGUES.length || TUTORIAL_DIALOGUES.some((entry) => entry.templateVersion !== template.version || !TUTORIAL_DIALOGUE_TRIGGERS.includes(entry.trigger))) throw new Error("Lutz-Dialogkatalog ist unvollstaendig oder nicht reproduzierbar gebunden.");
 }
