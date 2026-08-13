@@ -581,12 +581,18 @@ importers:
       '@electric-sql/pglite':
         specifier: ^0.5.4
         version: 0.5.4
+      '@zugfolge/alpha':
+        specifier: workspace:*
+        version: link:../../packages/alpha
       '@zugfolge/db':
         specifier: workspace:*
         version: link:../../packages/db
       '@zugfolge/dispatch':
         specifier: workspace:*
         version: link:../../packages/dispatch
+      '@zugfolge/economy':
+        specifier: workspace:*
+        version: link:../../packages/economy
       '@zugfolge/game-api':
         specifier: workspace:*
         version: link:../../apps/game-api

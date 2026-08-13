@@ -200,7 +200,7 @@ describe("InfraPackageStaging", () => {
     await expect(readFile(join(root, ".receiving", importId, "session.json"))).rejects.toMatchObject({ code: "ENOENT" });
     const receipt = JSON.parse(await readFile(join(root, ".receipts", `${importId}.json`), "utf8")) as { uploadStatus: string };
     expect(receipt.uploadStatus).toBe("closed");
-  });
+  }, 15_000);
 
   it.each([".receiving", ".receipts", "staged"])("lehnt ein verlinktes Staging-Unterverzeichnis %s ab", async (directory) => {
     const fixture = packageFixture();

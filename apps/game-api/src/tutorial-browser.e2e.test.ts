@@ -54,9 +54,23 @@ function mime(path: string): string {
 function registerWeb(app: FastifyInstance): void {
   const index = readFileSync(resolve(WEB_DIST, "index.html"), "utf8").replace(
     '<script src="/runtime-config.js"></script>',
-    `<script>globalThis.__ZUGFOLGE_RUNTIME_CONFIG__=${JSON.stringify({ gameApiUrl: "", keycloakUrl: "http://unused.invalid", keycloakRealm: "zugfolge", publicWorldId: PUBLIC_WORLD, livemapUrl: "" })};sessionStorage.setItem("zugfolge.accessToken","browser-e2e");sessionStorage.setItem("zugfolge.accessTokenExpiresAt",String(Date.now()+3600000));</script>`,
+    `<script>globalThis.__ZUGFOLGE_RUNTIME_CONFIG__=${JSON.stringify({ gameApiUrl: ".", keycloakUrl: "http://unused.invalid", keycloakRealm: "zugfolge", publicWorldId: PUBLIC_WORLD, livemapUrl: "" })};sessionStorage.setItem("zugfolge.accessToken","browser-e2e");sessionStorage.setItem("zugfolge.accessTokenExpiresAt",String(Date.now()+3600000));</script>`,
   );
   app.get("/", async (_request, reply) => reply.type("text/html").send(index));
+  app.get("/public-world-contracts", async (_request, reply) => reply.send([{
+    schemaVersion: "zugfolge-public-world-contract/v1",
+    contractHash: "a".repeat(64),
+    worldId: PUBLIC_WORLD,
+    name: "Alpha",
+    region: { id: "mitteldeutschland-b", name: "Leipzig–Halle–Erfurt", variant: "B" },
+    noWipe: true,
+    schedulePeriodWeeks: 4,
+    duration: { kind: "periods", periodCount: 10 },
+    timeBasis: { mode: "realtime", accelerationFactor: 1, epoch: TEST_NOW.toISOString(), timeZone: "Europe/Berlin" },
+    entry: { status: "open", requiresContractConfirmation: true, opensAt: TEST_NOW.toISOString(), closesAt: "2027-06-01T00:00:00.000Z" },
+    startingCapitalPolicy: { kind: "finite", amountCents: "0" },
+    releases: { infra: "b".repeat(64), timetable: "c".repeat(64), fleet: "d".repeat(64), economy: "e".repeat(64) },
+  }]));
   app.get<{ Params: { "*": string } }>("/assets/*", async (request, reply) => {
     const file = resolve(WEB_DIST, "assets", request.params["*"]);
     const assetRoot = `${resolve(WEB_DIST, "assets")}${sep}`;

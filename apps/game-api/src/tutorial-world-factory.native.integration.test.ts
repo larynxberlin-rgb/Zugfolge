@@ -3,6 +3,7 @@ import { TutorialSessionService, TUTORIAL_TEMPLATE } from "@zugfolge/alpha";
 import {
   accounts,
   domainEvents,
+  ledgerAccounts,
   ledgerEntries,
   ledgerTransactions,
   MIGRATIONS_FOLDER,
@@ -19,7 +20,7 @@ import { OperationsRegistry } from "@zugfolge/dispatch";
 import { LivemapRegistry } from "@zugfolge/livemap-stream";
 import { loadPlanningRuntime } from "@zugfolge/planning-runtime-native";
 import { loadOperatingRuntime, loadRegionalSimulationRuntime } from "@zugfolge/runtime-native";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -57,6 +58,13 @@ const nativeAvailable = process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"] !== undefine
     let view = await service.start({ publicWorldId: PUBLIC_WORLD, publicAccountId: PUBLIC_ACCOUNT, keycloakSubject: "kc-player", displayName: "Spieler" });
     const [stored] = await db.select().from(tutorialSessions);
     expect(stored).toBeDefined();
+    const lessorOperatorId = (stored!.scenarioState as Record<string, unknown>)["lessorOperatorId"];
+    expect(typeof lessorOperatorId).toBe("string");
+    expect(await db.select().from(ledgerAccounts).where(and(
+      eq(ledgerAccounts.worldId, view.tutorialWorldId),
+      eq(ledgerAccounts.operatorId, lessorOperatorId as string),
+      eq(ledgerAccounts.name, "Bank"),
+    ))).toHaveLength(1);
     expect(Object.values(view.evidence).every((entry) => !entry.completed)).toBe(true);
     expect((await db.select().from(operatorContracts).where(eq(operatorContracts.worldId, view.tutorialWorldId))).every((contract) => contract.status === "offered")).toBe(true);
     expect(await db.select().from(operatingProgramVersions).where(eq(operatingProgramVersions.worldId, view.tutorialWorldId))).toHaveLength(0);

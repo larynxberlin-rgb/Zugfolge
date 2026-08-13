@@ -3,11 +3,12 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 
 import { PGlite } from "@electric-sql/pglite";
-import { MIGRATIONS_FOLDER, operators, worlds } from "@zugfolge/db";
+import { validateWorldBlueprint, type AlphaWorldBlueprint } from "@zugfolge/alpha";
+import { alphaWorldProfiles, MIGRATIONS_FOLDER, worlds } from "@zugfolge/db";
 import * as schema from "@zugfolge/db/schema";
 import { operatingProgramTemplates, type OperatingProgram } from "@zugfolge/dispatch";
+import { encodeEconomyValue } from "@zugfolge/economy";
 import { buildApp } from "@zugfolge/game-api";
-import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 
@@ -22,14 +23,59 @@ interface RustAcceptance {
 }
 
 const worldId = "11111111-1111-1111-1111-111111111111";
-const operatorId = "22222222-2222-2222-2222-222222222222";
 const simulationToken = "m7-e2e-simulation-token";
 const accessToken = "m7-e2e-owner-token";
 const subject = "m7-e2e-owner";
+const worldContract: AlphaWorldBlueprint = {
+  schemaVersion: "zugfolge-alpha-world-blueprint/v1",
+  regionId: "mitteldeutschland-b",
+  regionVariant: "B",
+  seed: 7n,
+  profileKind: "public",
+  accelerationFactor: 1,
+  periodCount: null,
+  startingCapitalPolicy: { kind: "finite", amountCents: "0" },
+  releases: {
+    infra: "a".repeat(64),
+    timetable: "b".repeat(64),
+    fleet: "c".repeat(64),
+    economy: "d".repeat(64),
+  },
+  lots: [{
+    lotId: "m7-reference-lot",
+    contractEndsAtPeriod: 2,
+    trainRunIds: ["m7-reference-train"],
+    pathReceiptIds: ["m7-reference-path"],
+    vehicleIds: ["m7-reference-vehicle"],
+    personnelDutyIds: ["m7-reference-duty"],
+    circulationIds: ["m7-reference-circulation"],
+    operatingProgramIds: ["m7-reference-program"],
+  }],
+  conflictCheckHash: "e".repeat(64),
+  tenderCalendarHash: "f".repeat(64),
+};
+const worldContractHash = validateWorldBlueprint(worldContract);
 const client = new PGlite();
 const db = drizzle(client, { schema });
 await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
 await db.insert(worlds).values({ id: worldId, name: "M7-Abnahmewelt", schedulePeriodWeeks: 4, epoch: new Date("2026-08-11T00:00:00Z") });
+await db.insert(alphaWorldProfiles).values({
+  worldId,
+  profileKind: worldContract.profileKind,
+  regionId: worldContract.regionId,
+  regionVariant: worldContract.regionVariant,
+  worldSeed: worldContract.seed,
+  accelerationFactor: worldContract.accelerationFactor,
+  infraReleaseHash: worldContract.releases.infra,
+  timetableReleaseHash: worldContract.releases.timetable,
+  fleetReleaseHash: worldContract.releases.fleet,
+  economyReleaseHash: worldContract.releases.economy,
+  blueprint: encodeEconomyValue(worldContract),
+  blueprintHash: worldContractHash,
+  periodCount: worldContract.periodCount,
+  state: "running",
+  startedAtS: 0,
+});
 const app = buildApp({
   db,
   verifyToken: async (token) => {
@@ -43,12 +89,16 @@ await app.ready();
 
 try {
   const auth = { authorization: `Bearer ${accessToken}` };
-  const access = await app.inject({ method: "POST", url: `/worlds/${worldId}/access`, headers: auth, payload: { displayName: "M7 E2E" } });
+  const access = await app.inject({
+    method: "POST",
+    url: `/worlds/${worldId}/access`,
+    headers: auth,
+    payload: { displayName: "M7 E2E", acceptedWorldContractHash: worldContractHash },
+  });
   assert.equal(access.statusCode, 201);
   const founded = await app.inject({ method: "POST", url: `/worlds/${worldId}/operators`, headers: auth, payload: { name: "M7-Bahn" } });
   assert.equal(founded.statusCode, 201);
-  const generatedOperatorId = founded.json<{ id: string }>().id;
-  await db.update(operators).set({ id: operatorId }).where(eq(operators.id, generatedOperatorId));
+  const operatorId = founded.json<{ id: string }>().id;
   const base = `/worlds/${worldId}/operators/${operatorId}`;
 
   const program = operatingProgramTemplates(worldId, operatorId, 1)[0]!;

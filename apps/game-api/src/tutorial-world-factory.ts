@@ -659,6 +659,21 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
   async provision(session: TutorialSession, template: TutorialTemplate): Promise<Readonly<Record<string, unknown>>> {
     const actors = await this.systemActors(session);
     const accountsForJournal = await this.ledger(session, template);
+    // Entgeltliche Mietannahmen buchen beide EVU-Seiten. Das fiktive
+    // Fahrzeugpool-EVU erhält deshalb bereits bei der Tutorialprovisionierung
+    // sein explizites Cash-Konto; der Kooperationswriter erzeugt es bewusst
+    // niemals während einer Spieleraktion.
+    const lessorLedgerAccounts = await listLedgerAccounts(this.db as never, {
+      worldId: session.tutorialWorldId,
+      operatorId: actors.lessorOperatorId,
+    });
+    if (!lessorLedgerAccounts.some((account) => account.name === TUTORIAL_ECONOMY_LEDGER_ACCOUNT_PLAN.cashAccountName)) {
+      await openLedgerAccount(this.db as never, {
+        worldId: session.tutorialWorldId,
+        operatorId: actors.lessorOperatorId,
+        name: TUTORIAL_ECONOMY_LEDGER_ACCOUNT_PLAN.cashAccountName,
+      });
+    }
     const planningResults = template.paths.map((alternative, index) => this.planning.coordinate(tutorialPlanningCommand(session, template, alternative as Record<string, unknown>, index + 1)));
     const authorityRelease = fleetRelease(session, template, actors.lessorOperatorId, planningResults.map((result) => result.stateHash));
     await initializeFleetProducer({
