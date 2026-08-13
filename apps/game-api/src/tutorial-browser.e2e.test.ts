@@ -90,7 +90,7 @@ async function tabUntil(page: Page, selector: string, maximumTabs = 120): Promis
 
 async function expectFriendlyTutorialHeader(page: Page, reference: string): Promise<void> {
   const header = page.locator(".tutorial-experience > header");
-  expect(await header.locator(".eyebrow").innerText()).toBe("Private Tutorialwelt");
+  expect(await header.locator(".eyebrow").textContent()).toBe("Private Tutorialwelt");
   expect(await header.locator("details code").textContent()).toBe(reference);
   const playerFacingHeader = await header.locator(".eyebrow, h1, .tutorial-session-meta").allInnerTexts();
   expect(playerFacingHeader.join(" ")).not.toContain(reference);
@@ -179,7 +179,7 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
       for (const text of ["Erste Ausschreibung", "Fahrzeug leasen", "Trasse beantragen", "Betriebsprogramm aktivieren", "Erste Störung", "Aktiv", "Offen"]) {
         expect(progressSnapshot).toContain(text);
       }
-      expect(await page.locator('.tutorial-progress [aria-current="step"] b').innerText()).toBe("Aktiv");
+      expect(await page.locator('.tutorial-progress [aria-current="step"] b').textContent()).toBe("Aktiv");
       expect(await page.locator(".tutorial-progress b").evaluateAll((elements) => elements.every((element) => getComputedStyle(element).display !== "none"))).toBe(true);
       expect(await page.locator("body").evaluate((body) => body.scrollWidth <= window.innerWidth)).toBe(true);
     }
@@ -364,7 +364,7 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
     expect(await page.locator("#journey-confirmation").evaluate((dialog) => dialog.contains(document.activeElement))).toBe(true);
     await page.keyboard.press("Escape");
     expect(mutationPaths).toHaveLength(0);
-    expect(await reserveTrigger.evaluate((element) => document.activeElement === element)).toBe(true);
+    await expect.poll(() => reserveTrigger.evaluate((element) => document.activeElement === element)).toBe(true);
     await reserveTrigger.click();
     const conflictResponsePromise = page.waitForResponse((response) => response.request().method() === "POST"
       && new URL(response.url()).pathname === `/worlds/${SECOND_WORLD}/vehicle-market/listings/${listingId}/reserve`);
@@ -374,7 +374,7 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
     await expect.poll(() => mutationPaths.length).toBe(1);
     const error = page.locator(".journey-message--error");
     await expect.poll(() => error.innerText()).toContain("zwischenzeitlich geändert");
-    expect(await error.evaluate((element) => document.activeElement === element)).toBe(true);
+    await expect.poll(() => error.evaluate((element) => document.activeElement === element)).toBe(true);
     await page.getByRole("button", { name: "10 Minuten reservieren" }).click();
     await page.getByRole("button", { name: "Verbindlich bestätigen" }).click();
     await expect.poll(() => mutationPaths.length).toBe(2);
@@ -385,9 +385,8 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
     authenticationExpired = true;
     await page.getByRole("button", { name: "Kooperation und Markt aktualisieren" }).click();
     const authenticationError = page.locator(".journey-message--error");
-    await authenticationError.waitFor();
-    expect(await authenticationError.innerText()).toContain("Anmeldung erforderlich");
-    expect(await authenticationError.evaluate((element) => document.activeElement === element)).toBe(true);
+    await expect.poll(() => authenticationError.innerText()).toContain("Anmeldung erforderlich");
+    await expect.poll(() => authenticationError.evaluate((element) => document.activeElement === element)).toBe(true);
     await page.getByRole("button", { name: "Anmeldung neu beginnen" }).click();
     await expect.poll(() => authenticationUrls.length).toBe(1);
     const authorization = new URL(authenticationUrls[0]!);
