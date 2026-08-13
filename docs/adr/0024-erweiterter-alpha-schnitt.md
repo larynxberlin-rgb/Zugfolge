@@ -5,6 +5,10 @@
 - **Betrifft Milestones:** M9.1–M9.10, vorgezogen M12.1, M12.2 und M14.1
 - **Verwandte ADRs:** [ADR-0005](0005-rust-kern-typescript-plattform.md), [ADR-0007](0007-eigenbetrieb-bei-gescheiterter-ausschreibung.md), [ADR-0009](0009-vollstaendige-transparenz-livemap.md), [ADR-0018](0018-weltlaufzeit-und-skalierende-perioden.md), [ADR-0022](0022-jaehrliche-infrastrukturaktualisierung.md), [ADR-0023](0023-odoo-als-administrativer-kontrollpunkt.md)
 
+<!-- zugfolge-alpha-scope:start
+{"decision":"E24","regionVariant":"B — Mitteldeutsches Metropol-Korridornetz","pulledForward":[{"item":"M12.1","dependsOn":["M2","M5","M6","M8"]},{"item":"M12.2","dependsOn":["M2","M5","M6","M12.1"]},{"item":"M14.1","dependsOn":["M1","M2","M4","M5","M6","M8","M9.2"]}],"acceptanceDependsOn":[{"item":"M9.9","dependsOn":["M14.1"]}],"excluded":["M10","M11","M12.3","M12.4","M13","M14.2","M14.3","M14.4"]}
+zugfolge-alpha-scope:end -->
+
 ## Kontext
 
 Der bisherige Alpha-Schnitt endete mit M9 und sollte 20–50 externe Spieler in
@@ -43,8 +47,14 @@ Abhängigkeiten der vorgezogenen Teilabschnitte werden deshalb einzeln geführt:
 
 - M12.1 hängt von M2, M5, M6 und für Ersatzverkehrshilfe von M8 ab;
 - M12.2 hängt von M2, M5, M6 und den Vertragsbindungen aus M12.1 ab;
-- M14.1 hängt von M1, M2, M4, M6 und M8 sowie von Weltstart,
-  Betriebsreife und Alpha-Abnahme aus M9 ab.
+- M14.1 hängt von M1, M2, M4, M5, M6 und M8 sowie von der
+  releasegebundenen Weltstart- und Runtime-Validierung aus M9.2 ab.
+
+M14.1 ist damit eine Eingabe in die nachfolgenden integrierten M9-Beweise,
+nicht deren Ergebnis. Insbesondere M9.5, M9.7 und M9.9 dürfen weiterhin erst
+gegen den vorgezogenen M14.1-Release abgenommen werden. Diese gerichtete Kante
+verhindert den früher missverständlichen Zyklus „M14.1 hängt von M9 ab, M9
+hängt für seine Abnahme von M14.1 ab“.
 
 M9.2, M9.5, M9.7 und M9.9 werden gegen die ausgewählte größere Region und
 beide neuen Marktpfade abgenommen. Der integrierte Alpha-Fall umfasst

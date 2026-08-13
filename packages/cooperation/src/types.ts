@@ -25,8 +25,17 @@ export interface ContractAuthorityDecision {
   readonly explanation: string;
 }
 
+export interface ContractPaymentAuthorityInput {
+  readonly worldId: string;
+  readonly contractId: string;
+  readonly payerOperatorId: string;
+  readonly priceCents: bigint;
+  readonly atS: number;
+}
+
 export interface CooperationAuthority {
   verifyContract(input: ContractOfferInput): Promise<ContractAuthorityDecision>;
+  verifyContractPayment(input: ContractPaymentAuthorityInput): Promise<ContractAuthorityDecision>;
   verifyVehicleListing(input: {
     readonly worldId: string;
     readonly vehicle: VehicleAsset;
@@ -44,6 +53,9 @@ export interface CooperationAuthority {
     readonly worldId: string;
     readonly vehicle: VehicleAsset;
     readonly listing: VehicleMarketListing;
+    readonly originalTransferId: string;
+    readonly originalTransferredAtS: number;
+    readonly assetBeforeHash: string;
     readonly reasonCode: string;
     readonly atS: number;
   }): Promise<ContractAuthorityDecision>;
@@ -67,21 +79,6 @@ export interface RegisterVehicleInput {
   readonly acquiredAtS: number;
 }
 
-export interface UpdateVehicleConditionInput {
-  readonly worldId: string;
-  readonly vehicleId: string;
-  readonly actingOperatorId: string;
-  readonly actingAccountId: string;
-  readonly atS: number;
-  readonly expectedRevision: number;
-  readonly odometerMetres: bigint;
-  readonly conditionBasisPoints: number;
-  readonly damages: readonly Readonly<Record<string, unknown>>[];
-  readonly maintenanceDeadlines: readonly Readonly<Record<string, unknown>>[];
-  readonly bindings: Readonly<Record<string, unknown>>;
-  readonly idempotencyKey: string;
-}
-
 export interface CreateListingInput {
   readonly worldId: string;
   readonly vehicleId: string;
@@ -97,8 +94,10 @@ export interface CreateListingInput {
 export interface ContractActionInput {
   readonly worldId: string;
   readonly contractId: string;
+  readonly actingOperatorId: string;
   readonly actingAccountId: string;
   readonly atS: number;
+  readonly idempotencyKey?: string;
   readonly reason?: string;
 }
 

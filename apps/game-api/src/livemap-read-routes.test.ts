@@ -116,6 +116,7 @@ describe("Livemap-Lesevertrag", () => {
         return worldId !== WORLD_ID ? undefined : {
           schemaVersion: LIVEMAP_CONFIG_SCHEMA,
           worldId,
+          worldName: "Mitteldeutschland",
           infrastructureReleaseId: RELEASE_ID,
           basemap: {
             styleUrl: "/tiles/base/style.json",
@@ -205,6 +206,7 @@ describe("Livemap-Lesevertrag", () => {
     expect(config.statusCode).toBe(200);
     expect(config.json()).toMatchObject({
       worldId: WORLD_ID,
+      worldName: "Mitteldeutschland",
       basemap: { styleUrl: "/tiles/base/style.json", selfHosted: true },
       infrastructure: { coverage: "DE" },
     });

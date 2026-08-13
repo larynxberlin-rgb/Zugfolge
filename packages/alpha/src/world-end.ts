@@ -10,6 +10,7 @@ import {
   worldFinalRankings,
   worlds,
 } from "@zugfolge/db";
+import { ECONOMY_COST_TYPES, STANDARD_ECONOMY_LEDGER_ACCOUNT_PLAN } from "@zugfolge/economy";
 import { and, asc, eq, sql } from "drizzle-orm";
 
 import { AlphaAuthorizationError, AlphaConflictError, AlphaValidationError } from "./errors.js";
@@ -17,6 +18,20 @@ import { alphaHash } from "./hash.js";
 import type { AlphaDatabase } from "./world.js";
 
 type RankingType = "reliability" | "passenger-service" | "economy" | "resilience" | "cooperation";
+
+/**
+ * Fachvertrag der Wirtschaftsrangliste: kumulierter Betriebserfolg aus den
+ * typisierten GuV-Konten. Kasse, Eigenkapital und Kredite sind bewusst keine
+ * Ertraege und koennen den Schlussrang daher nicht durch Finanzierung heben.
+ */
+export const WORLD_END_ECONOMY_RANKING_SPECIFICATION = Object.freeze({
+  schema: "world-end-economy-ranking/v1" as const,
+  version: "cumulative-operating-result-2026-1",
+  accountPlanVersion: STANDARD_ECONOMY_LEDGER_ACCOUNT_PLAN.version,
+  measure: "revenue-minus-classified-costs" as const,
+  revenueAccountName: STANDARD_ECONOMY_LEDGER_ACCOUNT_PLAN.revenueAccountName,
+  costAccountNames: Object.freeze(ECONOMY_COST_TYPES.map((type) => STANDARD_ECONOMY_LEDGER_ACCOUNT_PLAN.costAccountNames[type])),
+});
 
 function payloadRecord(value: unknown): Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Readonly<Record<string, unknown>> : {};
@@ -41,9 +56,16 @@ function integerField(payload: unknown, keys: readonly string[]): bigint {
 }
 
 function rankingRows(scores: ReadonlyMap<string, bigint>, type: RankingType, evidenceHash: string) {
-  return [...scores].sort(([leftId, left], [rightId, right]) => left === right
+  const sorted = [...scores].sort(([leftId, left], [rightId, right]) => left === right
     ? Buffer.from(leftId).compare(Buffer.from(rightId))
-    : left > right ? -1 : 1).map(([operatorId, score], index) => ({ rankingType: type, operatorId, rank: index + 1, score, evidenceHash }));
+    : left > right ? -1 : 1);
+  let lastScore: bigint | undefined;
+  let lastRank = 0;
+  return sorted.map(([operatorId, score], index) => {
+    if (lastScore === undefined || score !== lastScore) lastRank = index + 1;
+    lastScore = score;
+    return { rankingType: type, operatorId, rank: lastRank, score, evidenceHash };
+  });
 }
 
 export class WorldEndService {
@@ -77,7 +99,7 @@ export class WorldEndService {
     if (operatorRows.length === 0) throw new AlphaConflictError("Welt besitzt keine EVU fuer Schlussranglisten.");
     const events = await this.db.select().from(domainEvents).where(eq(domainEvents.worldId, worldId)).orderBy(asc(domainEvents.sequence));
     const contracts = await this.db.select().from(operatorContracts).where(eq(operatorContracts.worldId, worldId)).orderBy(asc(operatorContracts.id));
-    const balances = await this.db.select({ operatorId: ledgerAccounts.operatorId, amount: ledgerEntries.amountCents })
+    const balances = await this.db.select({ operatorId: ledgerAccounts.operatorId, accountName: ledgerAccounts.name, amount: ledgerEntries.amountCents })
       .from(ledgerEntries).innerJoin(ledgerAccounts, and(
         eq(ledgerEntries.worldId, ledgerAccounts.worldId), eq(ledgerEntries.ledgerAccountId, ledgerAccounts.id),
       )).where(eq(ledgerEntries.worldId, worldId));
@@ -96,7 +118,16 @@ export class WorldEndService {
       if (event.eventType.includes("passenger") || event.eventType.includes("service")) passenger.set(operatorId, passenger.get(operatorId)! + integerField(event.payload, ["passengerCount", "passengers", "served"]));
       if (event.eventType.startsWith("dispatch.") || event.eventType.includes("replacement")) resilience.set(operatorId, resilience.get(operatorId)! + 1_000n);
     }
-    for (const row of balances) if (economy.has(row.operatorId)) economy.set(row.operatorId, economy.get(row.operatorId)! + row.amount);
+    // Jede doppelte Buchung summiert ueber alle Konten zwangslaeufig auf null.
+    // Die versionierte Kennzahl wertet deshalb nur typisierte GuV-Rollen aus:
+    // Erloese sind Habenbuchungen (negativ), Kosten Sollbuchungen (positiv).
+    const economyCostAccounts = new Set(WORLD_END_ECONOMY_RANKING_SPECIFICATION.costAccountNames);
+    for (const row of balances) {
+      if (!economy.has(row.operatorId)) continue;
+      if (row.accountName === WORLD_END_ECONOMY_RANKING_SPECIFICATION.revenueAccountName || economyCostAccounts.has(row.accountName)) {
+        economy.set(row.operatorId, economy.get(row.operatorId)! - row.amount);
+      }
+    }
     for (const contract of contracts) {
       if (!["completed", "active"].includes(contract.status)) continue;
       cooperation.set(contract.offerorOperatorId, cooperation.get(contract.offerorOperatorId)! + 1_000n);
@@ -107,6 +138,7 @@ export class WorldEndService {
       contractHashes: contracts.map((contract) => alphaHash("contract/v1", contract)), releasePins: {
         infra: profile.infraReleaseHash, timetable: profile.timetableReleaseHash, fleet: profile.fleetReleaseHash, economy: profile.economyReleaseHash,
       },
+      economyRankingSpecification: WORLD_END_ECONOMY_RANKING_SPECIFICATION,
     });
     const rankings = [
       ...rankingRows(reliability, "reliability", evidenceHash),

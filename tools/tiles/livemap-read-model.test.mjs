@@ -99,8 +99,9 @@ function spec(inputs) {
       trainIdentity: { regionId: "mitteldeutschland-b", releaseId: "gtfs-test-{archiveSha16}" },
     },
     config: {
-      schemaVersion: "zugfolge-livemap-config/v1",
+      schemaVersion: "zugfolge-livemap-config/v2",
       worldId: WORLD_ID,
+      worldName: "Mitteldeutschland",
       infrastructureReleaseId: RELEASE_ID,
       basemap: { styleUrl: "/maps/style.json", attribution: "Test", selfHosted: true },
       infrastructure: { pmtilesUrl: "/maps/infra.pmtiles", attribution: "Test", coverage: "DE" },

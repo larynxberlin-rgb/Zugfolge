@@ -7,11 +7,11 @@ export function classifyPosting(posting: ClassifiedPosting, centre: CostCentre, 
 }
 
 export interface ProfitAndLoss { readonly revenueCents: bigint; readonly costsByType: Readonly<Record<CostType, bigint>>; readonly resultCents: bigint; readonly explanation: readonly string[] }
-const TYPES: readonly CostType[] = ["track", "station", "facility", "energy", "personnel", "administration", "vehicle", "penalty", "interest"];
+export const ECONOMY_COST_TYPES: readonly CostType[] = Object.freeze(["track", "station", "facility", "energy", "personnel", "administration", "vehicle", "penalty", "interest"]);
 export function calculateProfitAndLoss(revenueCents: bigint, postings: readonly ClassifiedPosting[]): ProfitAndLoss {
-  const costs = Object.fromEntries(TYPES.map((type) => [type, postings.filter((p) => p.costType === type).reduce((sum, p) => sum + p.amountCents, 0n)])) as unknown as Record<CostType, bigint>;
+  const costs = Object.fromEntries(ECONOMY_COST_TYPES.map((type) => [type, postings.filter((p) => p.costType === type).reduce((sum, p) => sum + p.amountCents, 0n)])) as unknown as Record<CostType, bigint>;
   const total = Object.values(costs).reduce((sum, amount) => sum + amount, 0n);
-  return Object.freeze({ revenueCents, costsByType: Object.freeze(costs), resultCents: revenueCents - total, explanation: Object.freeze([`Erlöse ${revenueCents}`, ...TYPES.map((type) => `${type} ${costs[type]}`), `Ergebnis ${revenueCents - total}`]) });
+  return Object.freeze({ revenueCents, costsByType: Object.freeze(costs), resultCents: revenueCents - total, explanation: Object.freeze([`Erlöse ${revenueCents}`, ...ECONOMY_COST_TYPES.map((type) => `${type} ${costs[type]}`), `Ergebnis ${revenueCents - total}`]) });
 }
 
 export interface Credit { readonly principalCents: bigint; readonly outstandingCents: bigint; readonly interestBasisPoints: number; readonly duePeriod: number }

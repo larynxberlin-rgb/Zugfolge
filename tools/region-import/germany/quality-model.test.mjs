@@ -47,6 +47,16 @@ test("richtungsbezogene Geschwindigkeit wird konservativ gelesen und kein Freite
   assert.equal(result.corpus.sections[1].dimensions.gradient.state, "assumed");
 });
 
+test("OSM-Neigungen mit echtem Promillezeichen werden als Promille und nicht als unbekannt gelesen", () => {
+  const result = buildGermanyInfraCorpus({
+    pbfReport: report([block(7, 42)]),
+    wayFeatures: [feature(42, { incline: "12‰" })],
+    policy,
+  });
+  assert.deepEqual(result.corpus.sections[0].dimensions.gradient.value, { absolutePermille: 12 });
+  assert.equal(result.corpus.sections[0].dimensions.gradient.state, "observed");
+});
+
 test("ein ungelöster Topologiefehler bleibt sichtbar, aber Klasse C und nicht spielbar", () => {
   const result = buildGermanyInfraCorpus({ pbfReport: report([block(7, 42, 200, 9, 9)]), wayFeatures: [feature(42)], policy });
   const section = result.corpus.sections[0];

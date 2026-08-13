@@ -283,8 +283,9 @@ describe("releasegebundene Zugkartenprojektion", () => {
     const projector = new SQLiteTrainMapProjector(fixture());
     expect(() => assertTrainMapProjectionBinding(projector, undefined)).toThrow(/Welt- oder Releasebindung/);
     expect(() => assertTrainMapProjectionBinding(projector, {
-      schemaVersion: "zugfolge-livemap-config/v1",
+      schemaVersion: "zugfolge-livemap-config/v2",
       worldId: WORLD,
+      worldName: "Mitteldeutschland",
       infrastructureReleaseId: "other-release",
       basemap: { styleUrl: "/style.json", attribution: "test", selfHosted: true },
       infrastructure: { pmtilesUrl: "/infra.pmtiles", attribution: "test", coverage: "DE" },

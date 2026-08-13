@@ -37,6 +37,7 @@ export const operatorContracts = pgTable(
       enum: [
         "offered",
         "accepted",
+        "termination-pending",
         "rejected",
         "active",
         "terminated",
@@ -49,7 +50,12 @@ export const operatorContracts = pgTable(
     respondedByAccountId: uuid("responded_by_account_id"),
     offeredAtS: bigint("offered_at_s", { mode: "number" }).notNull(),
     respondedAtS: bigint("responded_at_s", { mode: "number" }),
+    terminationRequestedByOperatorId: uuid("termination_requested_by_operator_id"),
+    terminationRequestedAtS: bigint("termination_requested_at_s", { mode: "number" }),
     terminatedAtS: bigint("terminated_at_s", { mode: "number" }),
+    terminationEffectiveAtS: bigint("termination_effective_at_s", { mode: "number" }),
+    terminationEvidenceReference: text("termination_evidence_reference"),
+    terminationRuleVersion: text("termination_rule_version"),
     endedAtS: bigint("ended_at_s", { mode: "number" }),
     endReason: text("end_reason"),
     revision: integer("revision").notNull().default(1),
@@ -91,6 +97,11 @@ export const operatorContracts = pgTable(
       name: "operator_contracts_world_responded_by_fk",
       columns: [table.worldId, table.respondedByAccountId],
       foreignColumns: [accounts.worldId, accounts.id],
+    }),
+    foreignKey({
+      name: "operator_contracts_world_termination_requester_fk",
+      columns: [table.worldId, table.terminationRequestedByOperatorId],
+      foreignColumns: [operators.worldId, operators.id],
     }),
   ],
 );

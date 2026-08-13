@@ -44,16 +44,18 @@ export function createHttpOdooProjectionClient(
 }
 
 /** Retryfaehiger Fanout; jeder Fehler bleibt in der Outbox und blockiert nie das Game. */
-export async function dispatchOdooProjectionOutbox(db: CommerceDatabase, client: OdooProjectionClient, now = new Date()): Promise<{ readonly delivered: number; readonly failed: number }> {
+export async function dispatchOdooProjectionOutbox(db: CommerceDatabase, worldId: string, client: OdooProjectionClient, now = new Date()): Promise<{ readonly delivered: number; readonly failed: number }> {
   let delivered = 0;
   let failed = 0;
-  for (const row of await listPendingOdooProjections(db)) {
+  for (const row of await listPendingOdooProjections(db, worldId)) {
     try {
       await client.project(projectionEnvelope(row));
-      await markOdooProjectionDelivered(db, row.id, now);
+      if (!await markOdooProjectionDelivered(db, worldId, row.id, now)) {
+        throw new Error("Odoo-Projektion wurde waehrend der Zustellung in eine andere Welt verschoben.");
+      }
       delivered += 1;
     } catch (error) {
-      await recordOdooProjectionFailure(db, row.id, error instanceof Error ? error.name : "bridge_error");
+      await recordOdooProjectionFailure(db, worldId, row.id, error instanceof Error ? error.name : "bridge_error");
       failed += 1;
     }
   }
@@ -65,6 +67,7 @@ export function createOdooBridgeHealthCheck(db: CommerceDatabase, maximumAgeMs =
   return {
     name: "odoo-bridge",
     async check() {
+      // guards:allow world-id — Der Betriebs-Healthcheck aggregiert ausschließlich globale Queue-Metadaten ohne Payload.
       const result = await db.execute(sql`
         select count(*)::int as pending_count,
                extract(epoch from min(enqueued_at)) * 1000 as oldest_ms,

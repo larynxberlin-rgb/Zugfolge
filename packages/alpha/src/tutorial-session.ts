@@ -29,12 +29,35 @@ import type { AlphaDatabase } from "./world.js";
 export type TutorialLifecycle = TutorialSession["lifecycle"];
 export type TutorialTelemetryEventType = typeof tutorialTelemetryEvents.$inferInsert["eventType"];
 
+export const TUTORIAL_SESSION_SCHEMA = "zugfolge-tutorial-session/v1" as const;
+export const TUTORIAL_PRESENTATION_SCHEMA = "zugfolge-tutorial-presentation/v1" as const;
+
+export const TUTORIAL_BID_LIMITS = Object.freeze({
+  minimumOrderingFeeCentsPerTrainKm: "100",
+  maximumOrderingFeeCentsPerTrainKm: "1520",
+  defaultOrderingFeeCentsPerTrainKm: "1450",
+  minimumPunctualityBasisPoints: 8_800,
+  maximumPunctualityBasisPoints: 9_800,
+  defaultPunctualityBasisPoints: 9_200,
+  minimumExtraSeats: 0,
+  maximumExtraSeats: 40,
+  defaultExtraSeats: 12,
+} as const);
+
 export type TutorialAction =
   | { readonly type: "submit-bid"; readonly orderingFeeCentsPerTrainKm: string; readonly punctualityBasisPoints: number; readonly extraSeats: number }
   | { readonly type: "accept-lease"; readonly offerId: string }
   | { readonly type: "confirm-path"; readonly alternativeId: string }
   | { readonly type: "activate-program"; readonly templateId: string; readonly changedRule: "hold-connections" | "prioritize-punctuality" | "activate-reserve"; readonly thresholdSeconds: number }
   | { readonly type: "dispatch"; readonly action: "short_turn" | "request_reroute" | "trigger_rail_replacement" };
+
+export type TutorialProgrammeRule = Extract<TutorialAction, { readonly type: "activate-program" }>["changedRule"];
+
+export interface TutorialProgrammeEffect {
+  readonly costCents: string;
+  readonly qualityBasisPoints: number;
+  readonly penaltyRiskBasisPoints: number;
+}
 
 export interface TutorialChapterEvidence {
   readonly completed: boolean;
@@ -63,12 +86,69 @@ export interface TutorialResultSummary {
   readonly comparison: Readonly<Record<string, string | number>>;
 }
 
+export interface TutorialTenderPresentation {
+  readonly id: string;
+  readonly priceWeightBasisPoints: number;
+  readonly qualityWeightBasisPoints: number;
+  readonly penaltyFocus: string;
+  readonly viabilityThresholdCentsPerTrainKm: string;
+  readonly limits: typeof TUTORIAL_BID_LIMITS;
+}
+
+export interface TutorialLeasePresentation {
+  readonly id: string;
+  readonly vehicleId: string;
+  readonly classDesignation: string;
+  readonly monthlyCostCents: string;
+  readonly seats: number;
+  readonly conditionBasisPoints: number;
+  readonly reliabilityBasisPoints: number;
+  readonly marginEffectCents: string;
+  readonly contractId?: string;
+  readonly status: string;
+}
+
+export interface TutorialPathPresentation {
+  readonly id: string;
+  readonly receiptId: string;
+  readonly label: string;
+  readonly desiredDepartureS: number;
+  readonly bufferSeconds: number;
+  readonly costCents: string;
+  readonly selected: boolean;
+  readonly planning?: { readonly stateHash: string; readonly projectionRevision: number };
+}
+
+export interface TutorialProgrammePresentation {
+  readonly id: string;
+  readonly label: string;
+  readonly baseThresholdSeconds: number;
+  readonly selected: boolean;
+  readonly effect?: TutorialProgrammeEffect;
+}
+
+export interface TutorialProgrammeRuleEffect {
+  readonly rule: TutorialProgrammeRule;
+  readonly label: string;
+  readonly effect: TutorialProgrammeEffect;
+}
+
+export interface TutorialDisruptionPresentation {
+  readonly action: "short_turn" | "request_reroute" | "trigger_rail_replacement";
+  readonly label: string;
+  readonly costCents: string;
+  readonly punctualityBasisPoints: number;
+  readonly cancellations: number;
+}
+
 export interface TutorialScenarioPresentation {
-  readonly tender?: Readonly<Record<string, unknown>>;
-  readonly leases?: readonly Readonly<Record<string, unknown>>[];
-  readonly paths?: readonly Readonly<Record<string, unknown>>[];
-  readonly programmes?: readonly Readonly<Record<string, unknown>>[];
-  readonly disruptionOptions?: readonly Readonly<Record<string, unknown>>[];
+  readonly schemaVersion: typeof TUTORIAL_PRESENTATION_SCHEMA;
+  readonly tender: TutorialTenderPresentation;
+  readonly leases: readonly TutorialLeasePresentation[];
+  readonly paths: readonly TutorialPathPresentation[];
+  readonly programmes: readonly TutorialProgrammePresentation[];
+  readonly programmeRuleEffects: readonly TutorialProgrammeRuleEffect[];
+  readonly disruptionOptions: readonly TutorialDisruptionPresentation[];
 }
 
 export interface TutorialWorldFactory {
@@ -81,6 +161,7 @@ export interface TutorialWorldFactory {
 }
 
 export interface TutorialSessionView {
+  readonly schemaVersion: typeof TUTORIAL_SESSION_SCHEMA;
   readonly reference: string;
   readonly tutorialWorldId: string;
   readonly publicWorldId: string;
@@ -551,6 +632,7 @@ export class TutorialSessionService {
   }
 
   async reap(at = this.#clock()): Promise<readonly string[]> {
+    // guards:allow world-id — Der globale Ablauf-Sweeper ermittelt Welt-IDs und schliesst jede Sitzung danach weltgebunden.
     const expired = await this.db.select().from(tutorialSessions).where(and(
       inArray(tutorialSessions.lifecycle, ["provisioning", "running", "summary", "closing", "failed"]),
       or(
@@ -576,6 +658,7 @@ export class TutorialSessionService {
     const presentation = await this.factory.presentation(session, this.#template);
     const includeSummary = session.lifecycle === "summary" || session.lifecycle === "closing" || session.lifecycle === "archived";
     return Object.freeze({
+      schemaVersion: TUTORIAL_SESSION_SCHEMA,
       reference: session.reference,
       tutorialWorldId: session.tutorialWorldId,
       publicWorldId: session.publicWorldId,

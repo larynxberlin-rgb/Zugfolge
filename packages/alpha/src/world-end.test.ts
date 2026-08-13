@@ -4,6 +4,9 @@ import {
   accounts,
   alphaWorldProfiles,
   gameAdminRequests,
+  ledgerAccounts,
+  ledgerEntries,
+  ledgerTransactions,
   odooCommandQueue,
   operators,
   worldArchives,
@@ -56,16 +59,48 @@ async function closeRequest(worldId: string) {
 }
 
 describe("M9.8 Weltende", () => {
-  it("archiviert ein kurzes Profil mit getrennten Ranglisten, Rollenbindung und unveraenderlichem Replay", async () => {
+  it("archiviert ein kurzes Profil mit fachlichem Wirtschaftsrang, echten Gleichstaenden und unveraenderlichem Replay", async () => {
     const id = "11111111-1111-4111-8111-111111111111";
-    await world(id, 1, 0);
+    const { operator, account } = await world(id, 1, 0);
+    const [secondAccount, thirdAccount] = await db.insert(accounts).values([
+      { worldId: id, keycloakSubject: "subject-second", displayName: "Beta" },
+      { worldId: id, keycloakSubject: "subject-third", displayName: "Gamma" },
+    ]).returning();
+    const [second, third] = await db.insert(operators).values([
+      { worldId: id, foundingAccountId: secondAccount!.id, name: "EVU Beta" },
+      { worldId: id, foundingAccountId: thirdAccount!.id, name: "EVU Gamma" },
+    ]).returning();
+    const postResult = async (operatorId: string, revenueCents: bigint, costCents: bigint, financingCents = 0n) => {
+      const [cash, revenue, costs, financing] = await db.insert(ledgerAccounts).values([
+        { worldId: id, operatorId, name: "Economy:Kasse" },
+        { worldId: id, operatorId, name: "Economy:Bestellerentgelt" },
+        { worldId: id, operatorId, name: "Economy:energy" },
+        { worldId: id, operatorId, name: "Finanzierung:Kredit" },
+      ]).returning();
+      const [transaction] = await db.insert(ledgerTransactions).values({ worldId: id, operatorId, description: "Ergebnis", postedAt: EPOCH }).returning();
+      await db.insert(ledgerEntries).values([
+        { worldId: id, transactionId: transaction!.id, ledgerAccountId: cash!.id, amountCents: revenueCents - costCents + financingCents },
+        { worldId: id, transactionId: transaction!.id, ledgerAccountId: revenue!.id, amountCents: -revenueCents },
+        { worldId: id, transactionId: transaction!.id, ledgerAccountId: costs!.id, amountCents: costCents },
+        { worldId: id, transactionId: transaction!.id, ledgerAccountId: financing!.id, amountCents: -financingCents },
+      ]);
+    };
+    await postResult(operator.id, 20_000n, 7_655n);
+    await postResult(second!.id, 8_000n, 3_000n, 1_000_000n);
+    await postResult(third!.id, 12_000n, 7_000n);
     const service = new WorldEndService(db);
     await expect(service.beginClosure(id, 10)).resolves.toMatchObject({ state: "closing", closingAtS: 10 });
     const closed = await service.finalize(id, 20);
     expect(closed.finalStateHash).toMatch(/^[a-f0-9]{64}$/);
     expect(new Set(closed.rankings.map((entry) => entry.rankingType))).toEqual(new Set(["reliability", "passenger-service", "economy", "resilience", "cooperation"]));
-    expect(await db.select().from(worldFinalRankings).where(eq(worldFinalRankings.worldId, id))).toHaveLength(5);
+    expect(closed.rankings.filter((entry) => entry.rankingType === "economy")).toEqual([
+      expect.objectContaining({ operatorId: operator.id, rank: 1, score: 12_345n }),
+      expect.objectContaining({ operatorId: expect.any(String), rank: 2, score: 5_000n }),
+      expect.objectContaining({ operatorId: expect.any(String), rank: 2, score: 5_000n }),
+    ]);
+    expect(await db.select().from(worldFinalRankings).where(eq(worldFinalRankings.worldId, id))).toHaveLength(15);
     expect(await db.select().from(worldArchives).where(eq(worldArchives.worldId, id))).toHaveLength(3);
+    expect(account.worldId).toBe(id);
     await expect(service.exportReplay(id, "world-participant")).resolves.toMatchObject({ worldId: id, stateHash: closed.finalStateHash, replayHash: closed.replayHash });
     await expect(service.exportReplay(id, "anonymous")).rejects.toThrow(/Rolle/);
   });

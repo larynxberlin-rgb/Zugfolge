@@ -9,7 +9,21 @@
 
 import { accounts, mailboxMessages, type MailboxMessage } from "@zugfolge/db";
 import { AuthorizationError, getAccount, type IdentityDatabase } from "@zugfolge/identity";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
+
+export type MailboxPriority = "overdue" | "due-soon" | "action-required" | "information" | "acknowledged";
+export type InboxMessage = MailboxMessage & { readonly priority: MailboxPriority; readonly overdue: boolean };
+
+/** Innerhalb dieses Fensters wird eine offene Frist in der Aufmerksamkeitsschiene hochgestuft. */
+export const MAILBOX_DUE_SOON_MILLISECONDS = 48 * 60 * 60 * 1_000;
+
+const PRIORITY_RANK: Readonly<Record<MailboxPriority, number>> = Object.freeze({
+  overdue: 0,
+  "due-soon": 1,
+  "action-required": 2,
+  information: 3,
+  acknowledged: 4,
+});
 
 /** Der Empfänger einer Nachricht hat kein Konto in dieser Welt. */
 export class RecipientNotFoundError extends Error {
@@ -89,8 +103,8 @@ export async function sendMessage(
 /** Das eigene Postfach: alle Nachrichten des anfragenden Kontos, neueste zuerst. */
 export async function listInbox(
   db: IdentityDatabase,
-  input: { readonly worldId: string; readonly requestingKeycloakSubject: string },
-): Promise<readonly MailboxMessage[]> {
+  input: { readonly worldId: string; readonly requestingKeycloakSubject: string; readonly asOf: Date },
+): Promise<readonly InboxMessage[]> {
   const account = await getAccount(db, {
     worldId: input.worldId,
     keycloakSubject: input.requestingKeycloakSubject,
@@ -98,11 +112,37 @@ export async function listInbox(
   if (account === undefined) {
     throw new AuthorizationError(`Kein Konto in Welt '${input.worldId}' — kein Postfach.`);
   }
-  return db
+  const messages = await db
     .select()
     .from(mailboxMessages)
     .where(and(eq(mailboxMessages.worldId, input.worldId), eq(mailboxMessages.recipientAccountId, account.id)))
     .orderBy(desc(mailboxMessages.sentAt));
+  return messages
+    .map((message) => projectInboxMessage(message, input.asOf))
+    .sort((left, right) => {
+      const rank = PRIORITY_RANK[left.priority] - PRIORITY_RANK[right.priority];
+      if (rank !== 0) return rank;
+      const deadline = (left.deadlineAt?.getTime() ?? Number.MAX_SAFE_INTEGER) - (right.deadlineAt?.getTime() ?? Number.MAX_SAFE_INTEGER);
+      if (deadline !== 0) return deadline;
+      const sent = right.sentAt.getTime() - left.sentAt.getTime();
+      return sent !== 0 ? sent : left.id.localeCompare(right.id);
+    });
+}
+
+/** Erzeugt die serverautoritative, zeitpunktgebundene Postfachprojektion. */
+export function projectInboxMessage(message: MailboxMessage, asOf: Date): InboxMessage {
+  if (!Number.isFinite(asOf.getTime())) throw new Error("Postfachzeitpunkt ist ungueltig.");
+  const overdue = isOverdue(message, asOf);
+  const dueSoon = message.deadlineAt !== null
+    && message.acknowledgedAt === null
+    && message.deadlineAt.getTime() >= asOf.getTime()
+    && message.deadlineAt.getTime() <= asOf.getTime() + MAILBOX_DUE_SOON_MILLISECONDS;
+  const priority: MailboxPriority = message.acknowledgedAt !== null ? "acknowledged"
+    : overdue ? "overdue"
+      : dueSoon ? "due-soon"
+        : message.messageType.startsWith("system.") ? "information"
+          : "action-required";
+  return Object.freeze({ ...message, priority, overdue });
 }
 
 /**
@@ -143,9 +183,27 @@ export async function acknowledgeMessage(
   const [updated] = await db
     .update(mailboxMessages)
     .set({ acknowledgedAt: input.acknowledgedAt })
-    .where(eq(mailboxMessages.id, message.id))
+    .where(and(
+      eq(mailboxMessages.worldId, input.worldId),
+      eq(mailboxMessages.id, message.id),
+      eq(mailboxMessages.recipientAccountId, account.id),
+      isNull(mailboxMessages.acknowledgedAt),
+    ))
     .returning();
   if (updated === undefined) {
+    // Ein paralleler, gleichberechtigter Request darf den ersten Zeitpunkt
+    // nicht ueberschreiben. Auch der Wiederholungs-Lesezugriff bleibt dabei
+    // vollstaendig an Welt und Empfaenger gebunden.
+    const [acknowledged] = await db
+      .select()
+      .from(mailboxMessages)
+      .where(and(
+        eq(mailboxMessages.worldId, input.worldId),
+        eq(mailboxMessages.id, message.id),
+        eq(mailboxMessages.recipientAccountId, account.id),
+      ))
+      .limit(1);
+    if (acknowledged?.acknowledgedAt !== null && acknowledged?.acknowledgedAt !== undefined) return acknowledged;
     throw new Error("Quittierung konnte nicht gespeichert werden.");
   }
   return updated;

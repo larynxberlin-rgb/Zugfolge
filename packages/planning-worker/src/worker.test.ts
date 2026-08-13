@@ -3,6 +3,7 @@ import {
   MIGRATIONS_FOLDER,
   accounts,
   domainEvents,
+  operators,
   simulationCommands,
   worlds,
 } from "@zugfolge/db";
@@ -12,7 +13,7 @@ import {
   type PlanningRuntimeResult,
   type PlanningRuntimeState,
 } from "@zugfolge/planning-runtime-native";
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -37,6 +38,9 @@ const WORLD = "11111111-1111-4111-8111-111111111111";
 const ACCOUNT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ACCOUNT_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const AUTHORITY = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const OPERATOR_A = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+const OPERATOR_B = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+const OPERATOR_B_SECOND = "ffffffff-ffff-4fff-8fff-ffffffffffff";
 
 function projection(revision: number, withConflict: boolean) {
   return {
@@ -124,6 +128,11 @@ function requestBody(input: { readonly requestId: string; readonly trainId: stri
   return {
     schemaVersion: PLANNING_PATH_REQUEST_SCHEMA,
     requestId: input.requestId,
+    formationId: input.reverse ? "formation-b" : "formation-a",
+    operatorId: input.reverse ? OPERATOR_B : OPERATOR_A,
+    fleetRevision: 7,
+    fleetStateHash: "f".repeat(64),
+    fleetAuthorityReleaseId: "fleet-release-2026",
     trainId: input.trainId,
     trainCategory: "regional" as const,
     trainNumber: input.trainNumber,
@@ -176,6 +185,11 @@ beforeEach(async () => {
     { id: ACCOUNT_B, worldId: WORLD, keycloakSubject: "planner-b", displayName: "Planner B" },
     { id: AUTHORITY, worldId: WORLD, keycloakSubject: "planning-authority", displayName: "Planning Authority" },
   ]);
+  await database.insert(operators).values([
+    { id: OPERATOR_A, worldId: WORLD, foundingAccountId: ACCOUNT_A, name: "EVU A" },
+    { id: OPERATOR_B, worldId: WORLD, foundingAccountId: ACCOUNT_B, name: "EVU B" },
+    { id: OPERATOR_B_SECOND, worldId: WORLD, foundingAccountId: ACCOUNT_B, name: "EVU B Zweig" },
+  ]);
 });
 
 afterEach(async () => {
@@ -209,8 +223,8 @@ describe("planning worker transaction", () => {
     });
     expect(retry.id).toBe(first.id);
     expect(first.idempotencyKey).toBe("planning-path-request:request-a");
-    expect(first.payload).toMatchObject({ worldId: WORLD, requestingAccountId: ACCOUNT_A, requestId: "request-a", trainId: "train-a" });
-    expect(second.payload).toMatchObject({ worldId: WORLD, requestingAccountId: ACCOUNT_B, requestId: "request-b", trainId: "train-b" });
+    expect(first.payload).toMatchObject({ worldId: WORLD, requestingAccountId: ACCOUNT_A, operatorId: OPERATOR_A, requestId: "request-a", trainId: "train-a" });
+    expect(second.payload).toMatchObject({ worldId: WORLD, requestingAccountId: ACCOUNT_B, operatorId: OPERATOR_B, requestId: "request-b", trainId: "train-b" });
     await expect(queuePlanningPathRequest(db, {
       worldId: WORLD,
       requestingAccountId: ACCOUNT_A,
@@ -231,7 +245,7 @@ describe("planning worker transaction", () => {
     expect(coordinate.payload).not.toHaveProperty("stations");
     expect(coordinate.payload).not.toHaveProperty("requests");
 
-    const coordinated = await processPlanningCommand(db, runtime, infrastructureReleases, coordinate.id, new Date(3_000));
+    const coordinated = await processPlanningCommand(db, runtime, infrastructureReleases, WORLD, coordinate.id, new Date(3_000));
     expect(coordinated).toMatchObject({ projectionRevision: 1, resultEventSequence: 2, idempotentReplay: false });
     expect(capturedCoordinate).toMatchObject({
       schemaVersion: "planning-coordinate/v1",
@@ -254,21 +268,67 @@ describe("planning worker transaction", () => {
     const initialEvents = await db.select().from(domainEvents).where(eq(domainEvents.worldId, WORLD)).orderBy(asc(domainEvents.sequence));
     expect(initialEvents.map((event) => [event.sequence, event.eventType])).toEqual([[1, "planning.runtime-state"], [2, "planning.diagram"]]);
 
-    const [applyCommand] = await db.insert(simulationCommands).values({
+    const [foreignApply] = await db.insert(simulationCommands).values({
       worldId: WORLD,
       requestingAccountId: ACCOUNT_A,
+      idempotencyKey: "alternative:1:alt-1:foreign",
+      commandType: "planning.apply-alternative",
+      payload: { schemaVersion: "planning-apply-alternative/v1", projectionRevision: 1, alternativeId: "alt-1", conflictId: "conflict-1", trainId: "train-b", departureShiftS: 200 },
+      submittedAt: new Date(3_500),
+    }).returning();
+    await expect(processPlanningCommand(db, runtime, infrastructureReleases, WORLD, foreignApply!.id, new Date(3_600))).rejects.toThrow(/nicht fuer den betroffenen Zug autorisiert/);
+    expect(await db.select().from(domainEvents).where(eq(domainEvents.worldId, WORLD))).toHaveLength(2);
+
+    const [tamperedAlternative] = await db.insert(simulationCommands).values({
+      worldId: WORLD,
+      requestingAccountId: ACCOUNT_B,
+      idempotencyKey: "alternative:1:foreign-id",
+      commandType: "planning.apply-alternative",
+      payload: { schemaVersion: "planning-apply-alternative/v1", projectionRevision: 1, alternativeId: "foreign-alt", conflictId: "conflict-1", trainId: "train-b", departureShiftS: 200 },
+      submittedAt: new Date(3_700),
+    }).returning();
+    await expect(processPlanningCommand(db, runtime, infrastructureReleases, WORLD, tamperedAlternative!.id, new Date(3_800))).rejects.toThrow(/nicht fuer den betroffenen Zug autorisiert/);
+    expect(await db.select().from(domainEvents).where(eq(domainEvents.worldId, WORLD))).toHaveLength(2);
+
+    const [applyCommand] = await db.insert(simulationCommands).values({
+      worldId: WORLD,
+      requestingAccountId: ACCOUNT_B,
       idempotencyKey: "alternative:1:alt-1",
       commandType: "planning.apply-alternative",
       payload: { schemaVersion: "planning-apply-alternative/v1", projectionRevision: 1, alternativeId: "alt-1", conflictId: "conflict-1", trainId: "train-b", departureShiftS: 200 },
       submittedAt: new Date(4_000),
     }).returning();
-    const applied = await processPlanningCommand(db, runtime, infrastructureReleases, applyCommand!.id, new Date(5_000));
+    const applied = await processPlanningCommand(db, runtime, infrastructureReleases, WORLD, applyCommand!.id, new Date(5_000));
     expect(applied).toMatchObject({ projectionRevision: 2, stateHash: "b".repeat(64), resultEventSequence: 4, idempotentReplay: false });
-    const applyReplay = await processPlanningCommand(db, runtime, infrastructureReleases, applyCommand!.id, new Date(6_000));
+    const applyReplay = await processPlanningCommand(db, runtime, infrastructureReleases, WORLD, applyCommand!.id, new Date(6_000));
     expect(applyReplay).toMatchObject({ projectionRevision: 2, stateHash: "b".repeat(64), resultEventSequence: 4, idempotentReplay: true });
-    const coordinateReplay = await processPlanningCommand(db, runtime, infrastructureReleases, coordinate.id, new Date(7_000));
+    const coordinateReplay = await processPlanningCommand(db, runtime, infrastructureReleases, WORLD, coordinate.id, new Date(7_000));
     expect(coordinateReplay).toMatchObject({ projectionRevision: 1, stateHash: "a".repeat(64), resultEventSequence: 2, idempotentReplay: true });
     expect(await db.select().from(domainEvents).where(eq(domainEvents.worldId, WORLD))).toHaveLength(4);
+  });
+
+  it("findet ein Kommando nur mit der explizit gebundenen Welt", async () => {
+    const [first, second] = await queueTwoPathRequests();
+    const coordinate = await queuePlanningCoordinate(db, {
+      worldId: WORLD,
+      authorityAccountId: AUTHORITY,
+      body: coordinateBody([first.id, second.id]),
+      submittedAt: new Date(2_000),
+    });
+
+    await expect(processPlanningCommand(
+      db,
+      runtime,
+      infrastructureReleases,
+      "22222222-2222-4222-8222-222222222222",
+      coordinate.id,
+      new Date(3_000),
+    )).rejects.toThrow(/in Welt .* unbekannt/);
+    const [persisted] = await db.select().from(simulationCommands).where(and(
+      eq(simulationCommands.worldId, WORLD),
+      eq(simulationCommands.id, coordinate.id),
+    ));
+    expect(persisted?.status).toBe("pending");
   });
 
   it("resolves only an opaque player boundary reference to server-owned time windows", async () => {
@@ -294,7 +354,7 @@ describe("planning worker transaction", () => {
       submittedAt: new Date(2_000),
     });
 
-    await processPlanningCommand(db, runtime, infrastructureReleases, coordinate.id, new Date(3_000));
+    await processPlanningCommand(db, runtime, infrastructureReleases, WORLD, coordinate.id, new Date(3_000));
 
     expect(capturedCoordinate?.requests[0]).toMatchObject({
       trainId: "train-a",
@@ -330,7 +390,7 @@ describe("planning worker transaction", () => {
       submittedAt: new Date(2_000),
     });
 
-    await processPlanningCommand(db, runtime, infrastructureReleases, coordinate.id, new Date(3_000));
+    await processPlanningCommand(db, runtime, infrastructureReleases, WORLD, coordinate.id, new Date(3_000));
 
     expect(capturedCoordinate?.requests.map((request) => [request.requestNumericId, request.trainId])).toEqual([
       [1, "train-ascii"],
@@ -421,7 +481,7 @@ describe("planning worker transaction", () => {
       body: coordinateBody([first.id, second.id]),
       submittedAt: new Date(2_000),
     });
-    await expect(processPlanningCommand(db, runtime, infrastructureReleases, coordinate.id, new Date(3_000))).rejects.toThrow(/verschiedener Konten/);
+    await expect(processPlanningCommand(db, runtime, infrastructureReleases, WORLD, coordinate.id, new Date(3_000))).rejects.toThrow(/verschiedener Konten/);
     expect(await db.select().from(domainEvents)).toEqual([]);
   });
 

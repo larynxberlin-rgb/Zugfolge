@@ -7,7 +7,7 @@ import {
   LIVEMAP_OBJECT_DETAIL_SCHEMA,
   OWNER_TRAIN_DETAIL_SCHEMA,
   STATION_BOARD_SCHEMA,
-  type LivemapConfigV1,
+  type LivemapConfigV2,
   type LivemapObjectDetailV1,
   type LivemapObjectKind,
   type LivemapProjectionCursor,
@@ -31,7 +31,7 @@ const publicSqliteTables = Object.freeze({
 } as const);
 
 interface WorldCatalog {
-  readonly config: LivemapConfigV1;
+  readonly config: LivemapConfigV2;
   readonly objects: readonly LivemapObjectDetailV1[];
   readonly stationBoards: readonly StationBoardV1[];
   readonly passengerInformation: readonly PassengerInformationPlan[];
@@ -85,11 +85,12 @@ function stringList(value: unknown, name: string): readonly string[] {
   return values as readonly string[];
 }
 
-function validateConfig(config: LivemapConfigV1): void {
+function validateConfig(config: LivemapConfigV2): void {
   if (config.schemaVersion !== LIVEMAP_CONFIG_SCHEMA || config.basemap.selfHosted !== true) {
     throw new TypeError("Livemap-Katalog besitzt keine selbst gehostete v1-Konfiguration.");
   }
   nonEmptyString(config.worldId, "config.worldId");
+  nonEmptyString(config.worldName, "config.worldName");
   nonEmptyString(config.infrastructureReleaseId, "config.infrastructureReleaseId");
   sameOriginPath(config.basemap.styleUrl, "basemap.styleUrl");
   if (config.basemap.tilesUrl !== undefined) sameOriginPath(config.basemap.tilesUrl, "basemap.tilesUrl");
@@ -177,7 +178,7 @@ function objectKey(kind: LivemapObjectKind, identifier: string): string {
 
 /** Begrenzter JSON-Adapter; er fuehrt keinerlei Laufzeit- oder Fachlogik aus. */
 export class PinnedLivemapReadModel implements LivemapReadModel {
-  readonly #configs = new Map<string, LivemapConfigV1>();
+  readonly #configs = new Map<string, LivemapConfigV2>();
   readonly #objects = new Map<string, LivemapObjectDetailV1>();
   readonly #boards = new Map<string, StationBoardV1>();
   readonly #passengerInformation = new Map<string, PassengerInformationPlan>();
@@ -234,7 +235,7 @@ export class PinnedLivemapReadModel implements LivemapReadModel {
     }
   }
 
-  async getConfig(worldId: string): Promise<LivemapConfigV1 | undefined> {
+  async getConfig(worldId: string): Promise<LivemapConfigV2 | undefined> {
     return this.#configs.get(worldId);
   }
 
@@ -392,11 +393,11 @@ export class SQLiteLivemapReadModel implements LivemapReadModel {
     if (this.#closed) throw new Error("Livemap-SQLite ist bereits geschlossen.");
   }
 
-  async getConfig(worldId: string): Promise<LivemapConfigV1 | undefined> {
+  async getConfig(worldId: string): Promise<LivemapConfigV2 | undefined> {
     this.#assertOpen();
     const row = sqliteRow(this.#config.get(worldId), "Livemap-Konfiguration");
     if (row === undefined) return undefined;
-    const config = record(parseSqliteJson(row["config_json"], "world_config.config_json"), "Livemap-Konfiguration") as unknown as LivemapConfigV1;
+    const config = record(parseSqliteJson(row["config_json"], "world_config.config_json"), "Livemap-Konfiguration") as unknown as LivemapConfigV2;
     validateConfig(config);
     if (config.worldId !== worldId || config.infrastructureReleaseId !== row["infrastructure_release_id"]) {
       throw new TypeError("Livemap-SQLite verletzt die Welt- oder Releasebindung der Konfiguration.");
@@ -496,7 +497,7 @@ export function parseLivemapReadModelCatalog(value: unknown): PinnedLivemapReadM
   }
   const worlds = list(root["worlds"], "Livemap-Katalog.worlds").map((value, index) => {
     const world = record(value, `Livemap-Welt ${index + 1}`);
-    const config = record(world["config"], `Livemap-Welt ${index + 1}.config`) as unknown as LivemapConfigV1;
+    const config = record(world["config"], `Livemap-Welt ${index + 1}.config`) as unknown as LivemapConfigV2;
     nonEmptyString(config.worldId, `Livemap-Welt ${index + 1}.worldId`);
     return {
       config,

@@ -2,19 +2,43 @@ import {
   DatabaseCooperationAuthority,
   type ContractAuthorityDecision,
   type ContractOfferInput,
+  type ContractPaymentAuthorityInput,
   type CooperationAuthority,
 } from "@zugfolge/cooperation";
 import {
   domainEvents,
   fleetWorldCheckpoints,
+  operators,
   regionalSimulationStates,
   vehicleAssets,
   type VehicleAsset,
   type VehicleMarketListing,
 } from "@zugfolge/db";
+import { assertOperatorActionAllowed, loadEconomyWorldState } from "@zugfolge/economy";
 import type { IdentityDatabase } from "@zugfolge/identity";
 import type { FleetAuthorityRelease } from "@zugfolge/runtime-native";
 import { and, desc, eq } from "drizzle-orm";
+
+export interface CooperationResourceOption {
+  readonly id: string;
+  readonly label: string;
+  readonly detail: string;
+}
+
+export interface CooperationResourceCatalog {
+  readonly schemaVersion: "zugfolge-cooperation-resource-catalog/v1";
+  readonly worldId: string;
+  readonly operatorId: string;
+  readonly fleetRevision: number | null;
+  readonly trainRuns: readonly CooperationResourceOption[];
+  readonly connectionTrainRuns: readonly CooperationResourceOption[];
+  readonly formations: readonly CooperationResourceOption[];
+  readonly personnelDuties: readonly CooperationResourceOption[];
+  readonly pathReceipts: readonly CooperationResourceOption[];
+  readonly disruptions: readonly CooperationResourceOption[];
+  readonly rentableVehicles: readonly CooperationResourceOption[];
+  readonly assistanceVehicles: readonly CooperationResourceOption[];
+}
 
 const VERIFIED: ContractAuthorityDecision = {
   permitted: true,
@@ -45,6 +69,24 @@ function containsIdentifier(value: unknown, names: readonly string[], expected: 
   );
 }
 
+function hasBindings(value: unknown): boolean {
+  const bindings = record(value);
+  if (bindings === undefined) return true;
+  return Object.values(bindings).some((entry) => Array.isArray(entry) ? entry.length > 0 : entry !== null);
+}
+
+function text(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : fallback;
+}
+
+function option(id: string, label: string, detail: string): CooperationResourceOption {
+  return Object.freeze({ id, label, detail });
+}
+
+function sortOptions(values: readonly CooperationResourceOption[]): readonly CooperationResourceOption[] {
+  return [...values].sort((left, right) => left.label.localeCompare(right.label, "de") || left.id.localeCompare(right.id));
+}
+
 export class GameCooperationAuthority implements CooperationAuthority {
   private readonly base = new DatabaseCooperationAuthority();
 
@@ -60,21 +102,138 @@ export class GameCooperationAuthority implements CooperationAuthority {
     return record(checkpoint?.state);
   }
 
-  private async trainIdentifiers(worldId: string): Promise<ReadonlySet<string>> {
+  private async trainOperators(worldId: string): Promise<ReadonlyMap<string, string>> {
     const rows = await this.db.select({ state: regionalSimulationStates.state }).from(regionalSimulationStates).where(
       eq(regionalSimulationStates.worldId, worldId),
     );
-    const result = new Set<string>();
+    const result = new Map<string, string>();
     for (const row of rows) {
       const trains = record(row.state)?.["trains"];
       if (!Array.isArray(trains)) continue;
       for (const train of trains) {
         const value = record(train);
         const id = value?.["id"] ?? value?.["trainRunId"];
-        if (typeof id === "string") result.add(id);
+        const operatorId = value?.["operator"] ?? value?.["operatorId"];
+        if (typeof id !== "string" || typeof operatorId !== "string") continue;
+        const existing = result.get(id);
+        result.set(id, existing === undefined || existing === operatorId ? operatorId : "");
       }
     }
     return result;
+  }
+
+  /**
+   * Spielerlesemodell für Vertragsgegenstände. Interne Kennungen bleiben
+   * Werte der Auswahl, während die sichtbaren Texte ausschließlich aus den
+   * autoritativen, weltgebundenen M4-/M5-/Release-/Eventquellen stammen.
+   */
+  async resourceCatalog(worldId: string, operatorId: string): Promise<CooperationResourceCatalog> {
+    const [checkpoint, regionalRows, disruptionRows, vehicles, operatorRows] = await Promise.all([
+      this.db.select({ revision: fleetWorldCheckpoints.revision, state: fleetWorldCheckpoints.state })
+        .from(fleetWorldCheckpoints).where(eq(fleetWorldCheckpoints.worldId, worldId))
+        .orderBy(desc(fleetWorldCheckpoints.revision)).limit(1),
+      this.db.select({ state: regionalSimulationStates.state }).from(regionalSimulationStates)
+        .where(eq(regionalSimulationStates.worldId, worldId)),
+      this.db.select({ payload: domainEvents.payload }).from(domainEvents).where(and(
+        eq(domainEvents.worldId, worldId), eq(domainEvents.eventType, "disruption.applied"),
+      )),
+      this.db.select().from(vehicleAssets).where(and(
+        eq(vehicleAssets.worldId, worldId), eq(vehicleAssets.holderOperatorId, operatorId),
+      )),
+      this.db.select({ id: operators.id, name: operators.name }).from(operators).where(eq(operators.worldId, worldId)),
+    ]);
+    const release = this.fleetReleases[worldId];
+    const state = record(checkpoint[0]?.state);
+    const formationState = record(state?.["formations"]) ?? {};
+    const dutyState = record(state?.["personnelDuties"]) ?? {};
+    const receipts = release?.pathReceipts.filter((entry) => entry.operatorId === operatorId && entry.decision === "confirmed") ?? [];
+    const receiptIds = new Set(receipts.map((entry) => entry.id));
+    const poolIds = new Set((release?.personnelPools ?? []).filter((entry) => entry.operatorId === operatorId).map((entry) => entry.id));
+    const operatorNames = new Map(operatorRows.map((entry) => [entry.id, entry.name]));
+
+    const allTrains: CooperationResourceOption[] = [];
+    const ownTrains: CooperationResourceOption[] = [];
+    for (const row of regionalRows) {
+      const trains = record(row.state)?.["trains"];
+      if (!Array.isArray(trains)) continue;
+      for (const rawTrain of trains) {
+        const train = record(rawTrain);
+        const id = train?.["id"] ?? train?.["trainRunId"];
+        if (typeof id !== "string") continue;
+        const trainNumber = text(train?.["trainNumber"], "Zugfahrt");
+        const operator = text(train?.["operator"], "EVU unbekannt");
+        const nextStop = text(train?.["nextOperatingPoint"], "ohne nächsten Betriebspunkt");
+        const entry = option(id, `${trainNumber} nach ${nextStop}`, `${text(train?.["category"], "Zug")} · ${text(train?.["status"], "Status unbekannt")} · ${operatorNames.get(operator) ?? "EVU unbekannt"}`);
+        allTrains.push(entry);
+        if (operator === operatorId) ownTrains.push(entry);
+      }
+    }
+
+    const formations = Object.entries(formationState).flatMap(([id, raw]) => {
+      const formation = record(raw);
+      if (formation === undefined) return [];
+      const pathReceiptId = formation?.["pathReceiptId"];
+      if (typeof pathReceiptId !== "string" || !receiptIds.has(pathReceiptId)) return [];
+      const receipt = receipts.find((entry) => entry.id === pathReceiptId)!;
+      const vehicleCount = strings(formation["vehicleIds"]).length;
+      const lines = receipt.serviceLineIds.join(" / ") || "ohne Linienbindung";
+      return [option(id, `Formation für ${lines}`, `${vehicleCount} Fahrzeug${vehicleCount === 1 ? "" : "e"} · Trasse bestätigt`)];
+    });
+    const readableWindow = (validFrom: unknown, validUntil: unknown): string => {
+      const from = typeof validFrom === "number" && Number.isSafeInteger(validFrom) ? validFrom : undefined;
+      const until = typeof validUntil === "number" && Number.isSafeInteger(validUntil) ? validUntil : undefined;
+      if (from === undefined || until === undefined || until <= from) return "Gültigkeitszeitraum nicht verfügbar";
+      const days = Math.ceil((until - from) / 86_400);
+      return `für ${days} Betriebstag${days === 1 ? "" : "e"} gültig`;
+    };
+    const personnelDuties = Object.entries(dutyState).flatMap(([id, raw]) => {
+      const duty = record(raw);
+      if (duty === undefined) return [];
+      const poolId = duty?.["personnelPoolId"];
+      const pathReceiptId = duty?.["pathReceiptId"];
+      if (typeof poolId !== "string" || !poolIds.has(poolId) || typeof pathReceiptId !== "string" || !receiptIds.has(pathReceiptId)) return [];
+      return [option(id, `Personaldienst für ${strings(duty["formationIds"]).length} Formation(en)`, readableWindow(duty["validFrom"], duty["validUntil"]))];
+    });
+    const pathReceipts = receipts.map((receipt) => option(
+      receipt.id,
+      `Trasse ${receipt.serviceLineIds.join(" / ") || "ohne Linienkennung"}`,
+      `bestätigt · ${readableWindow(receipt.validFrom, receipt.validUntil)}`,
+    ));
+    const disruptions = disruptionRows.flatMap(({ payload }) => {
+      const value = record(payload);
+      const id = value?.["disruptionId"] ?? value?.["disruption_id"] ?? value?.["id"];
+      const operatorIds = strings(value?.["operatorIds"]);
+      if (typeof id !== "string" || (operatorIds.length > 0 && !operatorIds.includes(operatorId))) return [];
+      return [option(
+        id,
+        text(value?.["fineCauseLabel"] ?? value?.["fineCauseId"] ?? value?.["cause"], "Betriebsstörung"),
+        `${text(value?.["effect"], "betriebliche Einschränkung")} · ${text(value?.["affectedResource"], "Ressource unbekannt")}`,
+      )];
+    });
+    const vehicleOption = (vehicle: VehicleAsset) => option(
+      vehicle.vehicleId,
+      `Baureihe ${vehicle.classDesignation}`,
+      `${(vehicle.conditionBasisPoints / 100).toLocaleString("de-DE")} % Zustand · im Besitz des handelnden EVU`,
+    );
+    const rentableVehicles = vehicles
+      .filter((vehicle) => vehicle.ownerOperatorId === operatorId && !hasBindings(vehicle.bindings))
+      .map(vehicleOption);
+    const assistanceVehicles = vehicles.map(vehicleOption);
+
+    return Object.freeze({
+      schemaVersion: "zugfolge-cooperation-resource-catalog/v1",
+      worldId,
+      operatorId,
+      fleetRevision: checkpoint[0]?.revision ?? null,
+      trainRuns: sortOptions(ownTrains),
+      connectionTrainRuns: sortOptions(allTrains),
+      formations: sortOptions(formations),
+      personnelDuties: sortOptions(personnelDuties),
+      pathReceipts: sortOptions(pathReceipts),
+      disruptions: sortOptions(disruptions),
+      rentableVehicles: sortOptions(rentableVehicles),
+      assistanceVehicles: sortOptions(assistanceVehicles),
+    });
   }
 
   async verifyContract(input: ContractOfferInput): Promise<ContractAuthorityDecision> {
@@ -93,7 +252,7 @@ export class GameCooperationAuthority implements CooperationAuthority {
       return VERIFIED;
     }
 
-    const trains = await this.trainIdentifiers(input.worldId);
+    const trains = await this.trainOperators(input.worldId);
     if (input.contractType === "connection") {
       const connections = subject["connections"];
       if (!Array.isArray(connections)) return denied("connection_invalid", "Anschlussliste fehlt.");
@@ -103,6 +262,9 @@ export class GameCooperationAuthority implements CooperationAuthority {
         const onward = value?.["onwardTrainRunId"];
         if (typeof arrival !== "string" || typeof onward !== "string" || !trains.has(arrival) || !trains.has(onward)) {
           return denied("train_run_missing", "Mindestens eine Anschlusszugfahrt existiert nicht im autoritativen regionalen Zustand.");
+        }
+        if (trains.get(arrival) !== input.offereeOperatorId || trains.get(onward) !== input.offerorOperatorId) {
+          return denied("train_run_ownership", "Ankommende Zugfahrt muss dem empfangenden und weiterführende Zugfahrt dem anbietenden EVU gehören.");
         }
       }
       return VERIFIED;
@@ -119,6 +281,9 @@ export class GameCooperationAuthority implements CooperationAuthority {
       }
       if (strings(subject["trainRunIds"]).some((trainId) => !trains.has(trainId))) {
         return denied("train_run_missing", "Mindestens eine Ersatzzugfahrt existiert nicht im regionalen Zustand.");
+      }
+      if (strings(subject["trainRunIds"]).some((trainId) => trains.get(trainId) !== input.offerorOperatorId)) {
+        return denied("train_run_ownership", "Ersatzzugfahrten müssen dem anbietenden EVU gehören.");
       }
       return this.verifyOwnedVehicles(input, strings(subject["vehicleIds"]));
     }
@@ -157,6 +322,28 @@ export class GameCooperationAuthority implements CooperationAuthority {
     if (strings(subject["trainRunIds"]).some((trainId) => !trains.has(trainId))) {
       return denied("train_run_missing", "Mindestens eine Traktionszugfahrt existiert nicht im autoritativen regionalen Zustand.");
     }
+    if (strings(subject["trainRunIds"]).some((trainId) => trains.get(trainId) !== input.offerorOperatorId)) {
+      return denied("train_run_ownership", "Traktionszugfahrten müssen dem anbietenden EVU gehören.");
+    }
+    return VERIFIED;
+  }
+
+  async verifyContractPayment(input: ContractPaymentAuthorityInput): Promise<ContractAuthorityDecision> {
+    const economy = await loadEconomyWorldState(this.db as never, input.worldId);
+    if (economy === undefined) {
+      return denied(
+        "economy_state_missing",
+        "Autoritativer Economy-Zustand der Welt fehlt; Vertragszahlung wird nicht ausgeführt.",
+      );
+    }
+    try {
+      // Entgeltliche EVU-Verträge begründen wie Fahrzeugkäufe eine neue
+      // Zahlungsverpflichtung. Bis ein eigener contract-payment-Aktionstyp
+      // existiert, ist daher die strengere bestehende Kaufsperre maßgeblich.
+      assertOperatorActionAllowed(economy, input.payerOperatorId, "purchase");
+    } catch {
+      return denied("contract_payment_blocked", "Economy-Zustand sperrt neue Vertragszahlungen dieses EVU.");
+    }
     return VERIFIED;
   }
 
@@ -176,22 +363,72 @@ export class GameCooperationAuthority implements CooperationAuthority {
     const base = await this.base.verifyVehicleListing(input);
     if (!base.permitted) return base;
     const state = await this.fleetState(input.worldId);
-    const formations = record(state?.["formations"]);
-    if (formations !== undefined && Object.values(formations).some((formation) => strings(record(formation)?.["vehicleIds"]).includes(input.vehicle.vehicleId))) {
+    if (state === undefined) return denied("fleet_state_missing", "Autoritativer Flottenzustand ist noch nicht initialisiert.");
+    const formations = record(state["formations"]);
+    if (formations === undefined) return denied("fleet_state_invalid", "Flottenzustand enthaelt keine autoritativen Formationen.");
+    if (Object.values(formations).some((formation) => strings(record(formation)?.["vehicleIds"]).includes(input.vehicle.vehicleId))) {
       return denied("vehicle_formation_bound", "Fahrzeug ist in einer autoritativen Formation gebunden.");
     }
     return VERIFIED;
   }
 
   async verifyVehicleTransfer(input: { readonly worldId: string; readonly vehicle: VehicleAsset; readonly listing: VehicleMarketListing; readonly buyerOperatorId: string; readonly atS: number }): Promise<ContractAuthorityDecision> {
+    const economy = await loadEconomyWorldState(this.db as never, input.worldId);
+    if (economy === undefined) return denied("economy_state_missing", "Autoritativer Economy-Zustand der Welt fehlt; Kauf wird nicht ausgeführt.");
+    try {
+      assertOperatorActionAllowed(economy, input.buyerOperatorId, "purchase");
+    } catch {
+      return denied("purchase_blocked", "Economy-Zustand sperrt Käufe dieses EVU.");
+    }
     const base = await this.base.verifyVehicleTransfer(input);
     if (!base.permitted) return base;
     return this.verifyVehicleListing({ worldId: input.worldId, vehicle: input.vehicle, listingType: input.listing.listingType, atS: input.atS });
   }
 
-  async verifyVehicleReversal(input: { readonly worldId: string; readonly vehicle: VehicleAsset; readonly listing: VehicleMarketListing; readonly reasonCode: string; readonly atS: number }): Promise<ContractAuthorityDecision> {
-    const base = await this.base.verifyVehicleReversal(input);
-    if (!base.permitted) return base;
-    return this.verifyVehicleListing({ worldId: input.worldId, vehicle: input.vehicle, listingType: input.listing.listingType, atS: input.atS });
+  async verifyVehicleReversal(input: {
+    readonly worldId: string;
+    readonly vehicle: VehicleAsset;
+    readonly listing: VehicleMarketListing;
+    readonly originalTransferId: string;
+    readonly originalTransferredAtS: number;
+    readonly assetBeforeHash: string;
+    readonly reasonCode: string;
+    readonly atS: number;
+  }): Promise<ContractAuthorityDecision> {
+    const evidence = await this.db.select({ payload: domainEvents.payload }).from(domainEvents).where(and(
+      eq(domainEvents.worldId, input.worldId),
+      eq(domainEvents.eventType, "vehicle.defect-confirmed"),
+    ));
+    const confirmed = evidence.some(({ payload }) => {
+      const value = record(payload);
+      const observedAtS = value?.["observedAtS"];
+      const confirmedAtS = value?.["confirmedAtS"];
+      return value?.["vehicleId"] === input.vehicle.vehicleId
+        && value["listingId"] === input.listing.id
+        && value["transferId"] === input.originalTransferId
+        && value["disclosureHash"] === input.listing.disclosureHash
+        && value["assetBeforeHash"] === input.assetBeforeHash
+        && value["reasonCode"] === input.reasonCode
+        && value["disclosed"] === false
+        && Number.isSafeInteger(observedAtS)
+        && Number.isSafeInteger(confirmedAtS)
+        && (observedAtS as number) <= input.originalTransferredAtS
+        && (confirmedAtS as number) >= (observedAtS as number)
+        && (confirmedAtS as number) <= input.atS;
+    });
+    if (!confirmed) {
+      return denied("reversal_evidence_missing", "Kein serverautoritativ bestätigter Mangel passt zu Fahrzeug, Angebot, Offenlegungsbeleg und Grund.");
+    }
+    if (hasBindings(input.vehicle.bindings)) {
+      return denied("vehicle_bound", "Fahrzeug besitzt neue Bindungen und kann nicht automatisch rückabgewickelt werden.");
+    }
+    const state = await this.fleetState(input.worldId);
+    if (state === undefined) return denied("fleet_state_missing", "Autoritativer Flottenzustand ist noch nicht initialisiert.");
+    const formations = record(state["formations"]);
+    if (formations === undefined) return denied("fleet_state_invalid", "Flottenzustand enthaelt keine autoritativen Formationen.");
+    if (Object.values(formations).some((formation) => strings(record(formation)?.["vehicleIds"]).includes(input.vehicle.vehicleId))) {
+      return denied("vehicle_formation_bound", "Fahrzeug ist in einer autoritativen Formation gebunden.");
+    }
+    return VERIFIED;
   }
 }

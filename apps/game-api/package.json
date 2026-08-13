@@ -41,6 +41,7 @@
     "drizzle-orm": "^0.45.2",
     "jose": "^6.2.8",
     "playwright-core": "1.55.0",
+    "postgres": "^3.4.9",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }

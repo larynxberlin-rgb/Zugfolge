@@ -78,8 +78,12 @@ ersten zehn Minuten.
 - **Keine öffentliche Startausstattung.** Wettbewerbswelten vergeben weder
   Verkehrsvertrag noch Fahrzeug, Trasse, Personal oder Betriebsprogramm
   automatisch. Ihr Geldbestand folgt ausschließlich der im signierten
-  Weltentwurf freigegebenen `StartingCapitalPolicy`; Tutorialkapital und
-  Tutorialhandlungen werden niemals übertragen.
+  Weltentwurf freigegebenen `StartingCapitalPolicy`. Vertragshash und Policy
+  werden bei der Zugangsbestätigung gebunden; die erste EVU-Gründung wendet sie
+  atomar genau einmal an. Endliches Kapital wird ausgeglichen gegen
+  Eigenkapital gebucht, `unlimited` bleibt ein nichtnumerischer Modus ohne
+  Startbuchung. Beides ist rangneutral. Tutorialkapital und Tutorialhandlungen
+  werden niemals übertragen.
 - Das Tutorial besitzt nur vorbereitetes, noch nicht kapitelabschließendes
   Inventar: EVU und Präqualifikation, endliches Kapital, Personalpool, offene
   Leasingangebote, unbestätigte Trassenalternativen, inaktive
@@ -251,7 +255,10 @@ Weltentwurf, keine Hoffnung.
   laufen regulär aus. Ein Vertragsende durch Weltende ist **keine** Insolvenz.
 - Es gibt eine **Schlusswertung**, aber bewusst keinen einzigen Sieger (E11):
   mehrere Ranglisten für Betriebsleistung, Pünktlichkeit, Ergebnis und
-  Marktanteil.
+  Marktanteil. Der Ergebnisrang ist als versionierter kumulierter
+  Betriebserfolg definiert: serverautoritatives Bestellerentgelt abzüglich
+  klassifizierter Kosten. Kasse, Anfangskapital und Kredite zählen nicht als
+  Ertrag und können den Rang daher nicht durch Finanzierung erhöhen.
 - Die Betriebshistorie bleibt als Archiv einsehbar; ein Replay-Export der
   eigenen Welt ist möglich.
 - **Die Präqualifikation stirbt mit der Welt.** Jede neue Welt startet für alle

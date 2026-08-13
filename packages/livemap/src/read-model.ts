@@ -4,7 +4,7 @@ import type {
   PublicTrain,
 } from "./stream.js";
 
-export const LIVEMAP_CONFIG_SCHEMA = "zugfolge-livemap-config/v1" as const;
+export const LIVEMAP_CONFIG_SCHEMA = "zugfolge-livemap-config/v2" as const;
 export const LIVEMAP_OBJECT_DETAIL_SCHEMA = "zugfolge-livemap-object-detail/v1" as const;
 export const STATION_BOARD_SCHEMA = "zugfolge-station-board/v1" as const;
 export const PASSENGER_INFORMATION_DISPLAY_SCHEMA = "zugfolge-passenger-information-display/v1" as const;
@@ -19,9 +19,10 @@ export interface BoundsE7 {
 }
 
 /** Weltgebundene, produktiv ausschliesslich selbst gehostete Kartenquellen. */
-export interface LivemapConfigV1 {
+export interface LivemapConfigV2 {
   readonly schemaVersion: typeof LIVEMAP_CONFIG_SCHEMA;
   readonly worldId: string;
+  readonly worldName: string;
   readonly infrastructureReleaseId: string;
   readonly basemap: {
     readonly styleUrl: string;
@@ -156,7 +157,7 @@ export interface LivemapProjectionCursor {
  * und serverautoritative Projektionen; Browserwerte sind niemals Eingabe.
  */
 export interface LivemapReadModel {
-  getConfig(worldId: string): Promise<LivemapConfigV1 | undefined>;
+  getConfig(worldId: string): Promise<LivemapConfigV2 | undefined>;
   getObjectDetail(
     worldId: string,
     kind: LivemapObjectKind,

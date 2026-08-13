@@ -1,11 +1,13 @@
 import type {
-  LivemapConfigV1,
+  LivemapConfigV2,
   LivemapObjectDetailV1,
   LivemapObjectKind,
   OwnerTrainDetailV1,
   PublicTrainDetailV1,
   StationBoardV1,
 } from "@zugfolge/livemap-stream";
+
+import { decodeAttentionMessages, type MailboxAttentionMessage } from "./attention.js";
 
 export class LivemapApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -40,8 +42,20 @@ export class LivemapApiClient {
     return response.json() as Promise<T>;
   }
 
-  config(worldId: string): Promise<LivemapConfigV1> {
-    return this.#json(`/worlds/${encodeURIComponent(worldId)}/livemap/config`);
+  config(worldId: string): Promise<LivemapConfigV2> {
+    return this.#json<unknown>(`/worlds/${encodeURIComponent(worldId)}/livemap/config`).then((value) => {
+      if (typeof value !== "object" || value === null || Array.isArray(value)) throw new LivemapApiError("Livemap-Konfiguration ist kein Objekt.", 502);
+      const config = value as Readonly<Record<string, unknown>>;
+      if (config["schemaVersion"] !== "zugfolge-livemap-config/v2") throw new LivemapApiError("Livemap-Konfiguration besitzt kein unterstütztes Schema.", 502);
+      if (config["worldId"] !== worldId) throw new LivemapApiError("Livemap-Konfiguration gehört zu einer anderen Welt.", 502);
+      if (typeof config["worldName"] !== "string" || config["worldName"].trim() === "") throw new LivemapApiError("Livemap-Konfiguration enthält keinen Weltanzeigenamen.", 502);
+      return config as unknown as LivemapConfigV2;
+    });
+  }
+
+  mailbox(worldId: string): Promise<readonly MailboxAttentionMessage[]> {
+    return this.#json<unknown>(`/worlds/${encodeURIComponent(worldId)}/mailbox`)
+      .then((value) => decodeAttentionMessages(value, worldId));
   }
 
   object(worldId: string, kind: LivemapObjectKind, objectId: string): Promise<LivemapObjectDetailV1> {

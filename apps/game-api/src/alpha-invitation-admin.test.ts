@@ -27,7 +27,7 @@ describe("Odoo-Alpha-Einladung ohne statische Tutorialwelt", () => {
     const keycloak: KeycloakAdminClient = { invite: vi.fn(async () => "kc-external"), resend: vi.fn(async () => undefined), disable: vi.fn(async () => undefined) };
     const handlers = createAlphaInvitationAdminHandlers({ db, keycloak, redirectUri: "https://game.test/" });
     const result = await handlers.alpha_invitation_create({
-      adminRequestId: "request-1", commandId: "command-1", eventId: "event-1", correlationId: "correlation-1",
+      adminRequestId: "request-1", effectIdempotencyKey: "request-1", commandId: "command-1", eventId: "event-1", correlationId: "correlation-1",
       receivedAt: new Date(0), now: new Date(0),
       payload: {
         kind: "admin.alpha_invitation_create", worldId: WORLD_ID, actionType: "alpha_invitation_create", riskClass: "standard",

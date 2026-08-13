@@ -6,7 +6,6 @@ import {
   MODEL_RESULTS_SCHEMA,
   buildReferenceCorpus,
   canonicalJson,
-  compareWithModel,
   createNormalizedObservations,
   sha256,
 } from "../reference-corpus.mjs";
@@ -16,8 +15,8 @@ import {
   QUALIFICATION_EVIDENCE_SCHEMA,
   TECHNICAL_DATASET_SCHEMA,
   createArtifactChainManifest,
-  createQualifiedReleaseManifest,
-  verifyQualificationEvidenceFiles,
+  qualifiedReleaseFromRust,
+  referenceReportFromRust,
 } from "../artifact-chain.mjs";
 
 const FROZEN_AT = "2026-08-10T00:00:00.000Z";
@@ -275,13 +274,18 @@ export async function materializeSyntheticValidationFixture(rootDirectory) {
     }),
   };
   const modelResults = await writeJson(root, "model/model-results.json", modelResultsValue);
-  const qualification = await verifyQualificationEvidenceFiles(evidenceValue, root);
-  const reportValue = compareWithModel(corpusValue, modelResultsValue, captureConfigValue.tolerance, {
-    corpusArtifactSha256: corpus.sha256,
-    modelResultsArtifactSha256: modelResults.sha256,
-    qualificationEvidenceSha256: evidence.sha256,
-    qualification,
-  });
+  const compilerArtifact = (artifact) => ({ record: { path: artifact.path, sha256: artifact.sha256 }, bytes: artifact.bytes });
+  const reportValue = referenceReportFromRust({ artifacts: {
+    captureConfig: compilerArtifact(captureConfig),
+    referenceCorpus: compilerArtifact(corpus),
+    qualificationEvidence: compilerArtifact(evidence),
+    calibrationDataset: compilerArtifact(calibrationDataset),
+    calibrationConfig: compilerArtifact(calibrationConfig),
+    validationDataset: compilerArtifact(validationDataset),
+    validationConfig: compilerArtifact(validationConfig),
+    modelConfig: compilerArtifact(modelConfig),
+    modelResults: compilerArtifact(modelResults),
+  } });
   const report = await writeJson(root, "deviation-report.json", reportValue);
   const releaseCandidateValue = {
     schema: "zugfolge-infra-release-manifest/v1",
@@ -290,16 +294,21 @@ export async function materializeSyntheticValidationFixture(rootDirectory) {
     confidence: "derived",
   };
   const releaseCandidate = await writeJson(root, "release/release-candidate.json", releaseCandidateValue);
-  const releaseManifestValue = createQualifiedReleaseManifest({
-    candidateManifest: releaseCandidateValue,
-    candidateManifestArtifact: { path: releaseCandidate.path, sha256: releaseCandidate.sha256 },
-    referenceCorpusArtifact: { path: corpus.path, sha256: corpus.sha256 },
-    qualificationEvidenceArtifact: { path: evidence.path, sha256: evidence.sha256 },
-    modelResultsArtifact: { path: modelResults.path, sha256: modelResults.sha256 },
-    report: reportValue,
-    reportBytes: report.bytes,
-    reportArtifact: { path: report.path, sha256: report.sha256 },
+  const releaseManifestValue = qualifiedReleaseFromRust({
     createdAt: FROZEN_AT,
+    artifacts: {
+      captureConfig: { record: { path: captureConfig.path, sha256: captureConfig.sha256 }, bytes: captureConfig.bytes },
+      referenceCorpus: { record: { path: corpus.path, sha256: corpus.sha256 }, bytes: corpus.bytes },
+      qualificationEvidence: { record: { path: evidence.path, sha256: evidence.sha256 }, bytes: evidence.bytes },
+      calibrationDataset: { record: { path: calibrationDataset.path, sha256: calibrationDataset.sha256 }, bytes: calibrationDataset.bytes },
+      calibrationConfig: { record: { path: calibrationConfig.path, sha256: calibrationConfig.sha256 }, bytes: calibrationConfig.bytes },
+      validationDataset: { record: { path: validationDataset.path, sha256: validationDataset.sha256 }, bytes: validationDataset.bytes },
+      validationConfig: { record: { path: validationConfig.path, sha256: validationConfig.sha256 }, bytes: validationConfig.bytes },
+      modelConfig: { record: { path: modelConfig.path, sha256: modelConfig.sha256 }, bytes: modelConfig.bytes },
+      modelResults: { record: { path: modelResults.path, sha256: modelResults.sha256 }, bytes: modelResults.bytes },
+      report: { record: { path: report.path, sha256: report.sha256 }, bytes: report.bytes },
+      candidateManifest: { record: { path: releaseCandidate.path, sha256: releaseCandidate.sha256 }, bytes: releaseCandidate.bytes },
+    },
   });
   const releaseManifest = await writeJson(root, "release/qualified-release-manifest.json", releaseManifestValue);
   const artifactPaths = {

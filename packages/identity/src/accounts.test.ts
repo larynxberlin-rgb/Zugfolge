@@ -1,5 +1,6 @@
 import { PGlite } from "@electric-sql/pglite";
-import { MIGRATIONS_FOLDER, schema, worlds } from "@zugfolge/db";
+import { MIGRATIONS_FOLDER, schema, worldAccesses, worlds } from "@zugfolge/db";
+import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -14,6 +15,7 @@ import {
   listAccountsInWorld,
   requestWorldAccess,
   revokeWorldAccess,
+  WorldContractAcceptanceConflictError,
 } from "./accounts.js";
 import type { IdentityDatabase } from "./accounts.js";
 
@@ -68,6 +70,42 @@ describe("requestWorldAccess", () => {
     expect(second.roles).toEqual(["player"]);
     // Der beim ersten Zugang gewählte Anzeigename bleibt erhalten.
     expect(second.displayName).toBe("Anna");
+  });
+
+  it("bindet Hash und StartingCapitalPolicy beim ersten bestaetigten Zugang unveraenderlich", async () => {
+    const acceptedWorldContract = {
+      hash: "a".repeat(64),
+      startingCapitalPolicy: { kind: "finite" as const, amountCents: "500000" },
+    };
+    await requestWorldAccess(db, {
+      worldId: WORLD_LHE,
+      keycloakSubject: "kc-contract",
+      displayName: "Vertrag",
+      acceptedWorldContract,
+    });
+    await expect(requestWorldAccess(db, {
+      worldId: WORLD_LHE,
+      keycloakSubject: "kc-contract",
+      displayName: "Vertrag",
+      acceptedWorldContract,
+    })).resolves.toMatchObject({ worldId: WORLD_LHE });
+    await expect(requestWorldAccess(db, {
+      worldId: WORLD_LHE,
+      keycloakSubject: "kc-contract",
+      displayName: "Vertrag",
+      acceptedWorldContract: {
+        hash: "b".repeat(64),
+        startingCapitalPolicy: { kind: "unlimited" },
+      },
+    })).rejects.toBeInstanceOf(WorldContractAcceptanceConflictError);
+    const [access] = await (db as ReturnType<typeof drizzle<typeof schema>>).select().from(worldAccesses).where(and(
+      eq(worldAccesses.worldId, WORLD_LHE),
+      eq(worldAccesses.keycloakSubject, "kc-contract"),
+    ));
+    expect(access).toMatchObject({
+      acceptedWorldContractHash: acceptedWorldContract.hash,
+      acceptedStartingCapitalPolicy: acceptedWorldContract.startingCapitalPolicy,
+    });
   });
 
   it("lehnt einen erneuten Zugang nach Entzug ab", async () => {

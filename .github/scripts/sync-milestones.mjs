@@ -40,7 +40,7 @@ export function parseRoadmap(markdown) {
           .split("|")
           .slice(1, -1)
           .map(stripMarkdown);
-        return { key: cells[0], status: cells.at(-1) };
+        return { key: cells[0], title: cells[1], status: cells.at(-1) };
       });
 
     milestones.set(match[1], {
@@ -57,7 +57,51 @@ function effectiveLabels(milestone, item) {
   return item.labels ?? [milestone.area, "type:delivery"];
 }
 
-export function validateManifest(manifest, roadmap) {
+function parseManagedJson(markdown, name) {
+  const pattern = new RegExp(`<!-- zugfolge-${name}:start\\s*([\\s\\S]*?)\\s*zugfolge-${name}:end -->`);
+  const match = pattern.exec(markdown ?? "");
+  invariant(match, `${name}: maschinenlesbarer Vertrag fehlt`);
+  try {
+    return JSON.parse(match[1]);
+  } catch (error) {
+    throw new Error(`${name}: maschinenlesbarer Vertrag ist kein gueltiges JSON: ${String(error)}`);
+  }
+}
+
+function alphaScopeContract(scope) {
+  return {
+    decision: scope.decision,
+    regionVariant: scope.regionVariant,
+    pulledForward: scope.pulledForward.map(({ item, dependsOn }) => ({ item, dependsOn })),
+    acceptanceDependsOn: scope.acceptanceDependsOn,
+    excluded: scope.excluded,
+  };
+}
+
+function alphaDependencyGraph(scope) {
+  return Object.fromEntries([
+    ...scope.pulledForward.map(({ item, dependsOn }) => [item, dependsOn]),
+    ...scope.acceptanceDependsOn.map(({ item, dependsOn }) => [item, dependsOn]),
+  ]);
+}
+
+function assertAcyclic(graph) {
+  const active = new Set();
+  const done = new Set();
+  const visit = (node, path = []) => {
+    if (active.has(node)) {
+      throw new Error(`Abhaengigkeitszyklus: ${[...path, node].join(" -> ")}`);
+    }
+    if (done.has(node)) return;
+    active.add(node);
+    for (const dependency of graph.get(node) ?? []) visit(dependency, [...path, node]);
+    active.delete(node);
+    done.add(node);
+  };
+  for (const node of graph.keys()) visit(node);
+}
+
+export function validateManifest(manifest, roadmap, adrMarkdown = "", roadmapMarkdown = "") {
   invariant(manifest.version === 1, "milestones.json: version muss 1 sein");
   invariant(
     typeof manifest.repository === "string" && manifest.repository.includes("/"),
@@ -80,6 +124,7 @@ export function validateManifest(manifest, roadmap) {
 
   const knownKeys = new Set(actualKeys);
   const assignedItems = new Map();
+  const dependencyGraph = new Map();
   for (const milestone of manifest.milestones) {
     const roadmapMilestone = roadmap.get(milestone.key);
     invariant(roadmapMilestone, `${milestone.key} fehlt in ${manifest.roadmap}`);
@@ -93,6 +138,7 @@ export function validateManifest(manifest, roadmap) {
       invariant(knownKeys.has(dependency), `${milestone.key}: unbekannte Abhaengigkeit ${dependency}`);
       invariant(dependency !== milestone.key, `${milestone.key}: darf nicht von sich selbst abhaengen`);
     }
+    dependencyGraph.set(milestone.key, milestone.dependsOn);
 
     for (const dimension of ["core", "integration", "operations", "acceptance"]) {
       invariant(
@@ -123,6 +169,41 @@ export function validateManifest(manifest, roadmap) {
         );
       }
     }
+  }
+
+  assertAcyclic(dependencyGraph);
+
+  const alphaMilestone = manifest.milestones.find((milestone) => milestone.alphaScope !== undefined);
+  if (alphaMilestone !== undefined) {
+    const scope = alphaMilestone.alphaScope;
+    invariant(typeof scope.adr === "string" && scope.adr.length > 0, `${alphaMilestone.key}: alphaScope.adr fehlt`);
+    invariant(Array.isArray(scope.acceptanceDependsOn), `${alphaMilestone.key}: alphaScope.acceptanceDependsOn fehlt`);
+    const adrContract = parseManagedJson(adrMarkdown, "alpha-scope");
+    invariant(
+      JSON.stringify(adrContract) === JSON.stringify(alphaScopeContract(scope)),
+      `${alphaMilestone.key}: ADR-Schnitt und Manifest-alphaScope weichen voneinander ab`,
+    );
+    const roadmapGraph = parseManagedJson(roadmapMarkdown, "alpha-dag");
+    invariant(
+      JSON.stringify(roadmapGraph) === JSON.stringify(alphaDependencyGraph(scope)),
+      `${alphaMilestone.key}: Roadmap-DAG und Manifest-alphaScope weichen voneinander ab`,
+    );
+
+    const roadmapNodes = new Set(
+      [...roadmap.values()].flatMap((entry) => entry.rows.map((row) => `M${row.key}`)),
+    );
+    const alphaGraph = new Map(dependencyGraph);
+    for (const [item, dependencies] of Object.entries(roadmapGraph)) {
+      invariant(roadmapNodes.has(item), `${alphaMilestone.key}: Alpha-Knoten ${item} fehlt in der Roadmap`);
+      for (const dependency of dependencies) {
+        invariant(
+          knownKeys.has(dependency) || roadmapNodes.has(dependency),
+          `${alphaMilestone.key}: Alpha-Abhaengigkeit ${dependency} fehlt in der Roadmap`,
+        );
+      }
+      alphaGraph.set(item, dependencies);
+    }
+    assertAcyclic(alphaGraph);
   }
 
   return assignedItems;
@@ -156,13 +237,15 @@ export function renderMilestoneDescription(manifest, milestone) {
     "",
     `[Kanonische Roadmap](${repositoryUrl(manifest.repository, manifest.roadmap)})`,
     "",
-    "Der Synchronisierer schliesst diesen Milestone nur, wenn alle Roadmap-Teilpunkte erledigt, alle zugeordneten Issues/PRs geschlossen und Nachweise hinterlegt sind.",
+    "Der Synchronisierer schliesst diesen Milestone nur, wenn alle vier Reifegrade nachgewiesen oder nicht relevant, alle Roadmap-Teilpunkte erledigt, alle zugeordneten Issues/PRs geschlossen und Nachweise hinterlegt sind.",
   ].join("\n");
 }
 
-export function renderStatusDocument(manifest) {
+export function renderStatusDocument(manifest, roadmap = new Map()) {
   const rows = manifest.milestones.map((milestone) => {
-    const issueCount = milestone.items.filter((item) => item.kind === "issue").length;
+    const explicitIssueCount = milestone.items.filter((item) => item.kind === "issue").length;
+    const automaticIssueCount = roadmap.get(milestone.key)?.rows.length ?? 0;
+    const issueCount = explicitIssueCount + automaticIssueCount;
     const prCount = milestone.items.filter((item) => item.kind === "pull_request").length;
     const dependencies = milestone.dependsOn.length ? milestone.dependsOn.join(", ") : "—";
     return `| ${milestone.key} | ${STATUS_LABELS[milestone.status.core]} | ${STATUS_LABELS[milestone.status.integration]} | ${STATUS_LABELS[milestone.status.operations]} | ${STATUS_LABELS[milestone.status.acceptance]} | ${issueCount} / ${prCount} | ${dependencies} |`;
@@ -179,15 +262,16 @@ export function renderStatusDocument(manifest) {
     "Die Roadmap ist absichtlich abhaengigkeitsbasiert; deshalb werden keine kuenstlichen",
     "Kalendertermine gesetzt.",
     "",
-    "| Milestone | Kern | Integration | Betrieb | Abnahme | Issues / PRs | Abhaengigkeiten |",
+    "| Milestone | Kern | Integration | Betrieb | Abnahme | Issues gesamt / PRs | Abhaengigkeiten |",
     "|---|---|---|---|---|---:|---|",
     ...rows,
     "",
-    "Ein GitHub-Milestone wird nur geschlossen, wenn alle drei maschinell pruefbaren",
-    "Bedingungen gelten: Jeder Roadmap-Teilpunkt steht auf `erledigt`, jedes zugeordnete",
-    "Issue beziehungsweise jeder PR ist geschlossen, und mindestens ein reproduzierbarer",
-    "Nachweis ist in `.github/milestones.json` hinterlegt. Leere Zukunfts-Milestones",
-    "bleiben offen.",
+    "Die Issue-Zahl kombiniert explizite Manifestzuordnungen mit den automatisch anhand",
+    "ihres `[Roadmap x.y]`-Vertrags erkannten Roadmap-Issues. PRs werden separat gezählt.",
+    "Ein GitHub-Milestone wird nur geschlossen, wenn alle vier Reifegrade `nachgewiesen`",
+    "oder `nicht relevant` sind, jeder Roadmap-Teilpunkt `erledigt`, jedes explizit oder",
+    "automatisch zugeordnete Issue beziehungsweise jeder PR geschlossen und mindestens ein",
+    "reproduzierbarer Nachweis hinterlegt ist. Leere Zukunfts-Milestones bleiben offen.",
     "",
     `GitHub-Ansicht: https://github.com/${manifest.repository}/milestones`,
     "",
@@ -210,7 +294,12 @@ export function desiredMilestoneState(milestone, roadmapMilestone, items) {
       return Boolean(remote.merged_at ?? remote.pull_request?.merged_at);
     });
   const hasEvidence = milestone.evidence.length > 0;
-  return roadmapIsComplete(roadmapMilestone) && itemsComplete && hasEvidence ? "closed" : "open";
+  const maturityComplete = ["core", "integration", "operations", "acceptance"].every(
+    (dimension) => ["verified", "not_applicable"].includes(milestone.status[dimension]),
+  );
+  return roadmapIsComplete(roadmapMilestone) && itemsComplete && hasEvidence && maturityComplete
+    ? "closed"
+    : "open";
 }
 
 class GitHubClient {
@@ -287,9 +376,59 @@ async function loadRemoteItems(client, manifest) {
   return new Map(records.map((item) => [item.number, item]));
 }
 
-export function roadmapIssueKey(title) {
+export function roadmapIssueKey(title, body = "") {
   const match = /^\[Roadmap M?(\d+\.\d+[a-z]?)\]/.exec(title ?? "");
-  return match ? `M${match[1]}` : null;
+  if (match) return `M${match[1]}`;
+  const managed = /<!-- zugfolge-roadmap-sync:start -->[\s\S]*?- Teilpunkt: `M(\d+\.\d+[a-z]?)`/.exec(
+    body ?? "",
+  );
+  return managed ? `M${managed[1]}` : null;
+}
+
+const ROADMAP_BLOCK_START = "<!-- zugfolge-roadmap-sync:start -->";
+const ROADMAP_BLOCK_END = "<!-- zugfolge-roadmap-sync:end -->";
+
+export function canonicalRoadmapIssueTitle(key, row) {
+  return `[Roadmap ${key.slice(1)}] ${row.title}`;
+}
+
+export function renderRoadmapIssueBlock(manifest, milestone, key, row) {
+  return [
+    ROADMAP_BLOCK_START,
+    "## Synchronisierter Roadmap-Vertrag",
+    "",
+    `- Teilpunkt: \`${key}\` — ${row.title}`,
+    `- Roadmap-Status: \`${row.status}\``,
+    `- GitHub-Milestone: \`${milestone.key}\``,
+    `- Kanonische Quelle: ${repositoryUrl(manifest.repository, manifest.roadmap)}`,
+    "",
+    "Nur dieser markierte Block wird automatisch gepflegt; übrige Beschreibung und Diskussion bleiben erhalten.",
+    ROADMAP_BLOCK_END,
+  ].join("\n");
+}
+
+export function upsertRoadmapIssueBlock(body, managedBlock) {
+  const current = (body ?? "").trimEnd();
+  const start = current.indexOf(ROADMAP_BLOCK_START);
+  const end = current.indexOf(ROADMAP_BLOCK_END);
+  if (start >= 0 && end >= start) {
+    const after = end + ROADMAP_BLOCK_END.length;
+    return `${current.slice(0, start)}${managedBlock}${current.slice(after)}`.trimEnd();
+  }
+  return current.length === 0 ? managedBlock : `${current}\n\n${managedBlock}`;
+}
+
+export function roadmapIssueContentPatch(manifest, milestone, key, row, item) {
+  if (item.pull_request) return {};
+  const expectedTitle = canonicalRoadmapIssueTitle(key, row);
+  const expectedBody = upsertRoadmapIssueBlock(
+    item.body,
+    renderRoadmapIssueBlock(manifest, milestone, key, row),
+  );
+  return {
+    ...(item.title === expectedTitle ? {} : { title: expectedTitle }),
+    ...(item.body === expectedBody ? {} : { body: expectedBody }),
+  };
 }
 
 export function recordRoadmapIssueUpdate(discovered, remote) {
@@ -298,7 +437,7 @@ export function recordRoadmapIssueUpdate(discovered, remote) {
 
 export function shouldDiscoverRoadmapIssue(item, roadmap, explicitlyAssignedNumbers = new Set()) {
   if (explicitlyAssignedNumbers.has(item.number)) return false;
-  const key = roadmapIssueKey(item.title);
+  const key = roadmapIssueKey(item.title, item.body);
   return Boolean(key && roadmap.get(key.split(".")[0])?.rows.some((row) => row.key === key.slice(1)));
 }
 
@@ -307,7 +446,7 @@ async function loadRoadmapIssues(client, roadmap, explicitlyAssignedNumbers) {
   const result = [];
   for (const item of remote) {
     if (!shouldDiscoverRoadmapIssue(item, roadmap, explicitlyAssignedNumbers)) continue;
-    const key = roadmapIssueKey(item.title);
+    const key = roadmapIssueKey(item.title, item.body);
     result.push({ number: item.number, kind: item.pull_request ? "pull_request" : "issue", key, remote: item });
   }
   return result;
@@ -402,24 +541,36 @@ async function synchronizeRemote(manifest, roadmap, apply) {
   );
   const roadmapIssues = await loadRoadmapIssues(client, roadmap, explicitlyAssignedNumbers);
   for (const discovered of roadmapIssues) {
-    const row = roadmap.get(discovered.key.split(".")[0]).rows.find((candidate) => candidate.key === discovered.key.slice(1));
-    const remoteMilestone = milestoneResult.byKey.get(discovered.key.split(".")[0]);
+    const milestoneKey = discovered.key.split(".")[0];
+    const milestone = manifest.milestones.find((candidate) => candidate.key === milestoneKey);
+    const row = roadmap.get(milestoneKey).rows.find((candidate) => candidate.key === discovered.key.slice(1));
+    const remoteMilestone = milestoneResult.byKey.get(milestoneKey);
     const item = discovered.remote;
+    invariant(milestone && row && remoteMilestone, `${discovered.key}: Roadmap-Zuordnung unvollständig`);
+    const contentPatch = roadmapIssueContentPatch(manifest, milestone, discovered.key, row, item);
+    const patch = { ...contentPatch };
     if (item.milestone?.number !== remoteMilestone.number) {
       if (!apply) errors.push(`#${item.number}: Roadmap-Teilpunkt ${discovered.key} ist nicht dem passenden Milestone zugeordnet`);
-      else await client.request(`${client.basePath}/issues/${item.number}`, { method: "PATCH", body: { milestone: remoteMilestone.number } });
+      else patch.milestone = remoteMilestone.number;
+    }
+    if (contentPatch.title !== undefined) {
+      if (!apply) errors.push(`#${item.number}: Titel weicht vom Roadmap-Teilpunkt ${discovered.key} ab`);
+    }
+    if (contentPatch.body !== undefined) {
+      if (!apply) errors.push(`#${item.number}: synchronisierter Roadmap-Block fehlt oder ist veraltet`);
     }
     if (row.status === "erledigt" && item.state !== "closed") {
       if (!apply) errors.push(`#${item.number}: Roadmap-Teilpunkt ${discovered.key} muss geschlossen werden`);
-      else {
-        recordRoadmapIssueUpdate(
-          discovered,
-          await client.request(`${client.basePath}/issues/${item.number}`, {
-            method: "PATCH",
-            body: { state: "closed", state_reason: "completed" },
-          }),
-        );
-      }
+      else Object.assign(patch, { state: "closed", state_reason: "completed" });
+    }
+    if (apply && Object.keys(patch).length > 0) {
+      recordRoadmapIssueUpdate(
+        discovered,
+        await client.request(`${client.basePath}/issues/${item.number}`, {
+          method: "PATCH",
+          body: patch,
+        }),
+      );
     }
   }
   for (const milestone of manifest.milestones) {
@@ -472,7 +623,11 @@ async function loadLocal() {
   const roadmapPath = path.join(ROOT, manifest.roadmap);
   const roadmapText = await readFile(roadmapPath, "utf8");
   const roadmap = parseRoadmap(roadmapText);
-  validateManifest(manifest, roadmap);
+  const alphaScope = manifest.milestones.find((milestone) => milestone.alphaScope)?.alphaScope;
+  const adrText = alphaScope === undefined
+    ? ""
+    : await readFile(path.join(ROOT, alphaScope.adr), "utf8");
+  validateManifest(manifest, roadmap, adrText, roadmapText);
   return { manifest, roadmap };
 }
 
@@ -480,7 +635,7 @@ async function main() {
   const mode = process.argv[2] ?? "check";
   const { manifest, roadmap } = await loadLocal();
   const statusPath = path.join(ROOT, manifest.generatedStatus);
-  const generated = renderStatusDocument(manifest);
+  const generated = renderStatusDocument(manifest, roadmap);
 
   if (mode === "render" || mode === "update") {
     await writeFile(statusPath, generated, "utf8");

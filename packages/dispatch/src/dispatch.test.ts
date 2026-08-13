@@ -20,7 +20,7 @@ function events(): LoggedEvent[] {
       sequence: 10,
       eventType: "operations.train-outcome",
       occurredAt: new Date("2026-08-11T04:00:00Z"),
-      payload: { operatorId, status: "completed", delaySeconds: 120 },
+      payload: { operatorId, contractId: "contract-1", status: "completed", delaySeconds: 120, trainKm: "42", missingSeats: 3, missedConnections: 1 },
     },
     {
       sequence: 11,
@@ -28,6 +28,7 @@ function events(): LoggedEvent[] {
       occurredAt: new Date("2026-08-11T04:01:00Z"),
       payload: {
         operatorId,
+        contractId: "contract-1",
         trainRunId: "RE-1",
         decisionId: "d-1",
         action: "trigger_rail_replacement",
@@ -36,7 +37,8 @@ function events(): LoggedEvent[] {
         cause: "Streckensperrung",
         affectedResource: "Abzweig Gröbers",
         outcomeReason: "Ersatzverkehr ausgelöst",
-        impact: { affected_train_runs: 4, cost_cents: 1_000, contract_penalty_cents: 200, personnel_effect: "Bereitschaft", vehicle_effect: "Busreserve" },
+        impact: { affected_train_runs: 4, cost_cents: 1_000, contract_penalty_cents: 200, personnel_effect: "Bereitschaft", vehicle_effect: "Busreserve", internalToken: "never-expose-impact" },
+        commandPayload: { secret: "never-expose-raw" },
         explanation: { program_version: 3, selected_rule_id: "closure-short-turn", conditions: [{ path: "root", matched: true }], limits: [{ kind: "capacity", accepted: true }], rejected_alternatives: [{ action: "request_reroute", reason: "Kapazität" }] },
       },
     },
@@ -44,7 +46,7 @@ function events(): LoggedEvent[] {
       sequence: 12,
       eventType: "economy.settlement",
       occurredAt: new Date("2026-08-11T23:59:00Z"),
-      payload: { operatorId, revenueCents: "5000", costCents: "250", contractPenaltyCents: "50" },
+      payload: { operatorId, contractId: "contract-1", revenueCents: "5000", costCents: "250", contractPenaltyCents: "50" },
     },
     {
       sequence: 13,
@@ -75,9 +77,16 @@ describe("M7-Plattformvertrag", () => {
     const projection = projectOperations(events(), operatorId);
     expect(projection.decisions.map((entry) => entry.decisionId)).toEqual(["d-1", "d-2"]);
     expect(projection.majorEvents).toHaveLength(1);
+    expect(projection.manualInterventions).toHaveLength(1);
+    expect(projection.decisions[0]).not.toHaveProperty("raw");
+    expect(JSON.stringify(projection)).not.toContain("never-expose");
     const report = buildDailyReport(events(), operatorId, "2026-08-11");
-    expect(report.trainRuns).toEqual({ total: 1, punctual: 1, delayed: 0, cancelled: 0, replacementServices: 1 });
+    expect(report.trainRuns).toEqual({ total: 1, punctual: 1, delayed: 0, cancelled: 0, replacementServices: 1, trainKm: "42", missingSeats: 3, missedConnections: 1 });
     expect(report.settlements).toEqual({ revenueCents: "5000", costCents: "1250", contractPenaltyCents: "250" });
+    expect(report.contracts["contract-1"]).toEqual({
+      trainRuns: { total: 1, punctual: 1, cancelled: 0, trainKm: "42", missingSeats: 3, missedConnections: 1 },
+      settlements: { costCents: "1250", contractPenaltyCents: "250" },
+    });
     expect(report.infrastructureEffects).toEqual(["Abzweig Gröbers"]);
     expect(report.facts.eventSequences).toEqual([10, 11, 12, 14]);
     expect(report.facts.decisions).toMatchObject([

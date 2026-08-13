@@ -6,7 +6,7 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 type AnyDatabase = PgDatabase<PgQueryResultHKT, Record<string, unknown>, any>;
 
 /** Zahl der mit diesem Quellstand ausgelieferten Drizzle-Migrationen. */
-export const EXPECTED_SCHEMA_MIGRATIONS = 17;
+export const EXPECTED_SCHEMA_MIGRATIONS = 22;
 
 function firstRow(result: unknown): Record<string, unknown> | undefined {
   if (Array.isArray(result)) return result[0] as Record<string, unknown> | undefined;
@@ -25,6 +25,7 @@ export function createDatabaseHealthCheck(db: AnyDatabase): HealthCheck {
   return {
     name: "postgres",
     async check() {
+      // guards:allow world-id — Die Migrationshistorie ist globale Schema-Metadaten und besitzt fachlich keine Welt.
       const result = await db.execute(
         sql`select count(*)::int as migration_count from drizzle.__drizzle_migrations`,
       );
@@ -43,7 +44,7 @@ export function createDatabaseHealthCheck(db: AnyDatabase): HealthCheck {
         sql`select world_id, sequence from domain_events limit 0`,
       );
       await db.execute(
-        sql`select world_id, status from world_accesses limit 0`,
+        sql`select world_id, status, accepted_world_contract_hash, accepted_starting_capital_policy from world_accesses limit 0`,
       );
       await db.execute(
         sql`select world_id, effect_id from economy_effects limit 0`,
@@ -79,7 +80,7 @@ export function createDatabaseHealthCheck(db: AnyDatabase): HealthCheck {
         sql`select world_id, provider_set_id, region_id, disruption_id from disruption_provider_applications limit 0`,
       );
       await db.execute(
-        sql`select world_id, offeror_operator_id, offeree_operator_id, status from operator_contracts limit 0`,
+        sql`select world_id, offeror_operator_id, offeree_operator_id, status, termination_requested_at_s, termination_effective_at_s, termination_evidence_reference from operator_contracts limit 0`,
       );
       await db.execute(
         sql`select world_id, vehicle_id, owner_operator_id, holder_operator_id from vehicle_assets limit 0`,
@@ -89,6 +90,9 @@ export function createDatabaseHealthCheck(db: AnyDatabase): HealthCheck {
       );
       await db.execute(
         sql`select world_id, profile_kind, state from alpha_world_profiles limit 0`,
+      );
+      await db.execute(
+        sql`select world_id, account_id, operator_id, policy_kind from operator_starting_capital limit 0`,
       );
       await db.execute(
         sql`select world_id, account_id, chapter from tutorial_progress limit 0`,
@@ -116,6 +120,7 @@ export function createEventLogHealthCheck(
   return {
     name: "simulation-event-log",
     async check() {
+      // guards:allow world-id — Der Betriebs-Healthcheck aggregiert nur den global jüngsten Event-Zeitpunkt ohne Payload.
       const result = await db.execute(
         sql`select extract(epoch from max(occurred_at)) * 1000 as latest_ms from domain_events`,
       );
@@ -139,6 +144,7 @@ export function createEconomyOutboxHealthCheck(
   return {
     name: "economy-outbox",
     async check() {
+      // guards:allow world-id — Der Betriebs-Healthcheck aggregiert ausschließlich globale Queue-Metadaten ohne Payload.
       const result = await db.execute(sql`
         select count(*)::int as pending_count,
                extract(epoch from min(enqueued_at)) * 1000 as oldest_ms,

@@ -33,6 +33,12 @@ export interface AlphaWorldBlueprint {
   readonly profileKind: AlphaWorldKind;
   readonly accelerationFactor: number;
   readonly periodCount: number | null;
+  readonly startingCapitalPolicy: {
+    readonly kind: "finite";
+    readonly amountCents: string;
+  } | {
+    readonly kind: "unlimited";
+  };
   readonly releases: {
     readonly infra: string;
     readonly timetable: string;
@@ -89,6 +95,14 @@ export function validateWorldBlueprint(blueprint: AlphaWorldBlueprint): string {
   }
   if (blueprint.periodCount !== null && (!Number.isSafeInteger(blueprint.periodCount) || blueprint.periodCount < 1)) {
     throw new AlphaValidationError("Befristete Welt braucht mindestens eine Fahrplanperiode.");
+  }
+  if (blueprint.startingCapitalPolicy.kind === "finite") {
+    if (!/^[0-9]+$/.test(blueprint.startingCapitalPolicy.amountCents)
+      || BigInt(blueprint.startingCapitalPolicy.amountCents) > 9_223_372_036_854_775_807n) {
+      throw new AlphaValidationError("StartingCapitalPolicy besitzt keinen endlichen Integer-Centbetrag.");
+    }
+  } else if (blueprint.startingCapitalPolicy.kind !== "unlimited") {
+    throw new AlphaValidationError("StartingCapitalPolicy ist unbekannt.");
   }
   for (const [name, value] of Object.entries(blueprint.releases)) sha(value, `${name}-Release`);
   sha(blueprint.conflictCheckHash, "Konfliktpruefung");

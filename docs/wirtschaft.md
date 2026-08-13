@@ -198,6 +198,19 @@ Verträge, Fahrzeuge oder Trassen. Der wirtschaftliche Einstieg beginnt mit der
 im signierten Weltentwurf festgelegten `StartingCapitalPolicy`; nur die private
 Tutorialwelt besitzt ihr eigenes, stets endliches Übungskapital.
 
+Beim Bestätigen des öffentlichen Weltvertrags speichert das Game dessen
+Blueprint-Hash und `StartingCapitalPolicy` am Weltzugang. Eine spätere
+EVU-Gründung akzeptiert nur exakt diesen weiterhin gültigen Vertrag. Endliche
+nichtnegative Beträge — einschließlich `0` — werden dabei atomar genau einmal
+als ausgeglichene Buchung `Kasse an Eigenkapital` in das welt- und
+EVU-gebundene Ledger übernommen. Der explizite Modus `unlimited` ist kein sehr
+großer oder maximaler Integerwert: Er erzeugt keine Startbuchung, sondern hebt
+für dieses EVU nur die Liquiditätsprüfung autoritativer Zahlungsvorgänge auf;
+die Zahlung selbst bleibt als Integer-Cent-Buchung vollständig ausgeglichen.
+Weder Startfinanzierung noch der Modus `unlimited` fließen in die
+Wirtschaftsrangliste ein. Kein Modus erzeugt Fahrzeuge, Verträge, Personal,
+Trassen oder Betriebsprogramme.
+
 ### 3.5a Tutorialwirtschaft ist echte, isolierte Wirtschaft
 
 Das Tutorialtemplate pinnt `2.000.000` Integer-Cent als endliches Kapital. Die
@@ -407,6 +420,16 @@ mit Laufzeit, Entgelt und Pönale:
 - Wagenübergang im SGV;
 - Ersatzverkehrshilfe bei Störungen;
 - Bietergemeinschaften für SPNV-Ausschreibungen.
+
+Eine ordentliche Kündigung ist zunächst nur eine weltzeitgebundene
+Kündigungsvormerkung. Leistungspflichten und eine überlassene Fahrzeughaltung
+bleiben bis `SimTime + terminationNoticeS` unverändert wirksam; erst der
+serverseitige Vertragsfortschritt vollzieht das Ende. Eine sofortige Beendigung
+wegen Nichterfüllung folgt der versionierten Regel
+`zugfolge-contract-non-performance-rule/v1`: Ein Tagesbericht allein reicht
+nicht, sondern muss auf ein unveränderliches, exakt an Welt, Vertrag,
+Gegenpartei und Leistungszeit gebundenes Betriebsereignis zurückführen. Ein
+Spielertext dokumentiert nur die Begründung und besitzt keine Fachautorität.
 
 Daraus entsteht Politik zwischen Spielern, ohne ein zusätzliches Sozialsystem
 bauen zu müssen.

@@ -73,6 +73,14 @@ const nativeAvailable = process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"] !== undefine
     expect(view.lifecycle).toBe("summary");
     expect(view.summary).toMatchObject({ punctualityBasisPoints: 9180 });
     expect(view.summary?.resultCents).toMatch(/^-?[0-9]+$/);
+    expect(view.summary?.comparison).toMatchObject({
+      bidOrderingFeeCentsPerTrainKm: "1450",
+      leaseLabel: "T442",
+      pathLabel: "Robust mit Puffer",
+      programmeRuleLabel: "Anschlüsse abwarten",
+      disruptionLabel: "Umleitung anfordern",
+    });
+    expect(view.summary?.qualityTargetsMet).toContain("Pünktlichkeit");
 
     const [contracts, assets, programs, events, transactions, entries] = await Promise.all([
       db.select().from(operatorContracts).where(eq(operatorContracts.worldId, view.tutorialWorldId)),

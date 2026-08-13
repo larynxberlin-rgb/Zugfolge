@@ -59,9 +59,19 @@ export interface LicenseException {
   readonly reason: string;
 }
 
+/** Eng begruendete Ausnahme von der aktiven Ein-Domaenen-Zuordnung. */
+export interface DomainCoverageException {
+  /** Einzelpfad oder enges Glob-Muster relativ zur Repositoriumswurzel. */
+  readonly path: string;
+  /** Warum diese produktive Source-Datei fachlich keiner aktiven Domaene gehoert. */
+  readonly reason: string;
+}
+
 /** Inhalt von `guards.config.json`. */
 export interface GuardConfig {
   readonly domains: readonly Domain[];
+  /** Sichtbare, begruendete Ausnahmen von exakt einer aktiven Domaene. */
+  readonly coverageExceptions: readonly DomainCoverageException[];
   /**
    * SHA-256-Hashes kleingeschriebener Wörter, die nicht im Repositorium
    * vorkommen dürfen — siehe Regel `no-brand-citation`.

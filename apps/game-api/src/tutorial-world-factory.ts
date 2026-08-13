@@ -1,10 +1,14 @@
 import {
   AlphaConflictError,
   AlphaValidationError,
+  TUTORIAL_BID_LIMITS,
+  TUTORIAL_PRESENTATION_SCHEMA,
   TUTORIAL_TEMPLATE_HASH,
   alphaHash,
   type AlphaDatabase,
   type TutorialAction,
+  type TutorialProgrammeEffect,
+  type TutorialProgrammeRule,
   type TutorialResultSummary,
   type TutorialScenarioEvidence,
   type TutorialScenarioPresentation,
@@ -48,6 +52,7 @@ import {
   submitBid,
   type Bid,
   type CostType,
+  type EconomyLedgerAccountPlan,
   type EconomyRelease,
   type JournalAccounts,
   type ServiceSpecification,
@@ -76,6 +81,16 @@ import { GameFleetAssetTransferWriter } from "./fleet-market-writer.js";
 import { RegionalSimulationWorker } from "./regional-simulation-worker.js";
 
 const COST_TYPES: readonly CostType[] = ["track", "station", "facility", "energy", "personnel", "administration", "vehicle", "penalty", "interest"];
+
+export const TUTORIAL_ECONOMY_LEDGER_ACCOUNT_PLAN: EconomyLedgerAccountPlan = Object.freeze({
+  schema: "economy-ledger-account-plan/v1",
+  version: "tutorial-template-2026.1",
+  cashAccountName: "Bank",
+  revenueAccountName: "Bestellererloese",
+  costAccountNames: Object.freeze(Object.fromEntries(
+    COST_TYPES.map((type) => [type, `Kosten:${type}`]),
+  ) as Record<CostType, string>),
+});
 
 const ECONOMY_RELEASE: EconomyRelease = buildEconomyRelease({
   version: "tutorial-economy-2026.1",
@@ -143,6 +158,9 @@ const SPECIFICATION: ServiceSpecification = {
   },
 };
 
+export const TUTORIAL_CONTRACT_PERIOD_SECONDS = 3_600;
+export const TUTORIAL_SETTLEMENT_PERIOD = 0;
+
 export const TUTORIAL_TIMELINE = Object.freeze({
   tenderAnnouncedAtS: 10,
   tenderOpensAtS: 20,
@@ -158,7 +176,7 @@ export const TUTORIAL_TIMELINE = Object.freeze({
   operatingFromS: 90_000,
   disruptionAtS: 90_220,
   disruptionHoldUntilS: 90_400,
-  settlementAtS: 90_230,
+  settlementAtS: 93_600,
   disruptionValidUntilS: 91_000,
   leaseValidUntilS: 100_000,
   archiveAtS: 100_100,
@@ -196,6 +214,11 @@ function integer(value: unknown, name: string): number {
   return value as number;
 }
 
+function signedInteger(value: unknown, name: string): number {
+  if (!Number.isSafeInteger(value)) throw new Error(`${name} ist keine sichere Ganzzahl.`);
+  return value as number;
+}
+
 function scenario(session: TutorialSession): Record<string, unknown> {
   return object(session.scenarioState, "Tutorialszenario");
 }
@@ -210,6 +233,30 @@ function path(template: TutorialTemplate, id: string): Record<string, unknown> {
   const found = template.paths.find((entry) => entry["id"] === id);
   if (found === undefined) throw new AlphaValidationError("Unbekannte Trassenalternative.");
   return found as Record<string, unknown>;
+}
+
+function programme(template: TutorialTemplate, id: string): Record<string, unknown> {
+  const found = template.programmes.find((entry) => entry["id"] === id);
+  if (found === undefined) throw new AlphaValidationError("Unbekannte Betriebsprogrammvorlage.");
+  return found as Record<string, unknown>;
+}
+
+const PROGRAMME_RULE_LABELS: Readonly<Record<TutorialProgrammeRule, string>> = Object.freeze({
+  "hold-connections": "Anschlüsse abwarten",
+  "prioritize-punctuality": "Pünktlichkeit priorisieren",
+  "activate-reserve": "Reserve aktivieren",
+});
+
+const DISRUPTION_ACTION_LABELS: Readonly<Record<Extract<TutorialAction, { readonly type: "dispatch" }>["action"], string>> = Object.freeze({
+  short_turn: "Vorzeitig wenden",
+  request_reroute: "Umleitung anfordern",
+  trigger_rail_replacement: "Ersatzverkehr auslösen",
+});
+
+function programmeEffect(rule: TutorialProgrammeRule): TutorialProgrammeEffect {
+  return rule === "prioritize-punctuality"
+    ? { costCents: "25000", qualityBasisPoints: 250, penaltyRiskBasisPoints: -300 }
+    : { costCents: "55000", qualityBasisPoints: 400, penaltyRiskBasisPoints: -450 };
 }
 
 function instant(session: TutorialSession, atS: number): Date {
@@ -485,7 +532,7 @@ export function prepareTutorialEconomy(input: {
       closesAt: TUTORIAL_TIMELINE.tenderClosesAtS,
       operatingFrom: TUTORIAL_TIMELINE.operatingFromS,
       contractPeriods: 2,
-      periodDurationSeconds: 3_600,
+      periodDurationSeconds: TUTORIAL_CONTRACT_PERIOD_SECONDS,
       smallLot: true,
     },
   });
@@ -562,10 +609,13 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
       existing.set(name, created.id);
       return created.id;
     };
-    const cashAccountId = await ensure("Bank");
+    const cashAccountId = await ensure(TUTORIAL_ECONOMY_LEDGER_ACCOUNT_PLAN.cashAccountName);
     const equityAccountId = await ensure("Tutorialkapital");
-    const revenueAccountId = await ensure("Bestellererloese");
-    const costAccountIds = Object.fromEntries(await Promise.all(COST_TYPES.map(async (type) => [type, await ensure(`Kosten:${type}`)] as const))) as Record<CostType, string>;
+    const revenueAccountId = await ensure(TUTORIAL_ECONOMY_LEDGER_ACCOUNT_PLAN.revenueAccountName);
+    const costAccountIds = Object.fromEntries(await Promise.all(COST_TYPES.map(async (type) => [
+      type,
+      await ensure(TUTORIAL_ECONOMY_LEDGER_ACCOUNT_PLAN.costAccountNames[type]),
+    ] as const))) as Record<CostType, string>;
     await postLedgerTransaction(this.db as never, {
       worldId: session.tutorialWorldId,
       operatorId: session.tutorialOperatorId,
@@ -692,7 +742,13 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
   }
 
   private async submitTender(session: TutorialSession, action: Extract<TutorialAction, { type: "submit-bid" }>, template: TutorialTemplate): Promise<Record<string, unknown>> {
-    if (!/^[1-9][0-9]{2,3}$/.test(action.orderingFeeCentsPerTrainKm) || BigInt(action.orderingFeeCentsPerTrainKm) > 1_520n || action.punctualityBasisPoints < 8_800 || action.punctualityBasisPoints > 9_800 || action.extraSeats < 0 || action.extraSeats > 40) {
+    if (!/^[1-9][0-9]{2,3}$/.test(action.orderingFeeCentsPerTrainKm)
+      || BigInt(action.orderingFeeCentsPerTrainKm) < BigInt(TUTORIAL_BID_LIMITS.minimumOrderingFeeCentsPerTrainKm)
+      || BigInt(action.orderingFeeCentsPerTrainKm) > BigInt(TUTORIAL_BID_LIMITS.maximumOrderingFeeCentsPerTrainKm)
+      || action.punctualityBasisPoints < TUTORIAL_BID_LIMITS.minimumPunctualityBasisPoints
+      || action.punctualityBasisPoints > TUTORIAL_BID_LIMITS.maximumPunctualityBasisPoints
+      || action.extraSeats < TUTORIAL_BID_LIMITS.minimumExtraSeats
+      || action.extraSeats > TUTORIAL_BID_LIMITS.maximumExtraSeats) {
       throw new AlphaValidationError("Angebot liegt ausserhalb des gefuehrten, auskoemmlichen Loesungsraums.");
     }
     const current = await loadEconomyWorldState(this.db as never, session.tutorialWorldId);
@@ -735,7 +791,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
     const [contract] = await this.db.select().from(operatorContracts).where(and(eq(operatorContracts.worldId, session.tutorialWorldId), eq(operatorContracts.id, contractId))).limit(1);
     if (contract === undefined) throw new AlphaConflictError("Mietvertrag fehlt.", "tutorial_lease_missing");
     if (!(["accepted", "active"] as const).includes(contract.status as "accepted" | "active")) {
-      await this.#cooperation.respondToContract({ worldId: session.tutorialWorldId, contractId, actingAccountId: session.tutorialAccountId, atS: TUTORIAL_TIMELINE.leaseResponseDeadlineS, response: "accept" });
+      await this.#cooperation.respondToContract({ worldId: session.tutorialWorldId, contractId, actingOperatorId: session.tutorialOperatorId, actingAccountId: session.tutorialAccountId, atS: TUTORIAL_TIMELINE.leaseResponseDeadlineS, response: "accept" });
     }
     const offer = lease(template, action.offerId);
     return { ...state, selectedLeaseOfferId: action.offerId, selectedLeaseContractId: contractId, selectedVehicleId: selected["vehicleId"], leasingCostCents: offer["monthlyCostCents"] };
@@ -886,9 +942,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
       changedRule: action.changedRule,
       changedThresholdSeconds: action.thresholdSeconds,
       operatingProgramChecksum: canonical.checksum,
-      programmeEffect: action.changedRule === "prioritize-punctuality"
-        ? { costCents: "25000", qualityBasisPoints: 250, penaltyRiskBasisPoints: -300 }
-        : { costCents: "55000", qualityBasisPoints: 400, penaltyRiskBasisPoints: -450 },
+      programmeEffect: programmeEffect(action.changedRule),
     };
   }
 
@@ -994,11 +1048,11 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
     }, instant(session, TUTORIAL_TIMELINE.disruptionAtS + 1));
     let economy = await loadEconomyWorldState(this.db as never, session.tutorialWorldId);
     if (economy === undefined) throw new AlphaConflictError("Tutorialwirtschaft fehlt.", "tutorial_economy_unavailable");
-    if (!economy.settledPeriods.has("tutorial-tender:1")) {
+    if (!economy.settledPeriods.has(`tutorial-tender:${TUTORIAL_SETTLEMENT_PERIOD}`)) {
       const settled = settleContractPeriod(economy, {
         commandId: `${session.reference}:settlement`,
         contractId: "tutorial-tender",
-        period: 1,
+        period: TUTORIAL_SETTLEMENT_PERIOD,
         at: TUTORIAL_TIMELINE.settlementAtS,
         performance: {
           trainKm: 840n,
@@ -1011,12 +1065,16 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
         costs: [
           { amountCents: BigInt(textValue(stateValue["pathCostCents"], "Trassenkosten")), costType: "track", costCentreId: "tutorial-lot", reference: textValue(stateValue["selectedPathReceiptId"], "Trassenbeleg") },
           { amountCents: BigInt(selected.cost), costType: "energy", costCentreId: "tutorial-lot", reference: decisionId },
-          { amountCents: template.result.baseOperatingCostCents, costType: "personnel", costCentreId: "tutorial-lot", reference: "tutorial-period-1" },
+          { amountCents: template.result.baseOperatingCostCents, costType: "personnel", costCentreId: "tutorial-lot", reference: `tutorial-period-${TUTORIAL_SETTLEMENT_PERIOD}` },
         ],
       });
       await persistEconomyTransition(this.db as never, { expectedRevision: economy.revision, ...settled, committedAt: instant(session, TUTORIAL_TIMELINE.settlementAtS) });
       const journal = object(stateValue["journalAccounts"], "Tutorialkontierung") as unknown as JournalAccounts;
-      await dispatchEconomyEffects(settled.effects, createEconomyPlatformAdapters({ db: this.db as never, accountsByOperator: { [session.tutorialOperatorId]: journal } }));
+      await dispatchEconomyEffects(settled.effects, createEconomyPlatformAdapters({
+        db: this.db as never,
+        accountsByOperator: { [session.tutorialOperatorId]: journal },
+        accountPlan: TUTORIAL_ECONOMY_LEDGER_ACCOUNT_PLAN,
+      }));
       economy = settled.state;
       return {
         ...stateValue,
@@ -1077,31 +1135,91 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
     const tender = economy?.tenders.get("tutorial-tender");
     const contracts = Array.isArray(state["leaseContracts"]) ? state["leaseContracts"].map((entry) => object(entry)) : [];
     const statuses = new Map((await this.db.select({ id: operatorContracts.id, status: operatorContracts.status }).from(operatorContracts).where(eq(operatorContracts.worldId, session.tutorialWorldId))).map((entry) => [entry.id, entry.status]));
+    if (tender === undefined) throw new AlphaConflictError("Tutorialausschreibung ist nicht bereit.", "tutorial_tender_unavailable");
     return {
+      schemaVersion: TUTORIAL_PRESENTATION_SCHEMA,
       tender: {
-        ...template.tender,
-        phase: tender?.phase ?? "open",
-        profile: tender?.tender.profile,
-        viabilityThresholdCentsPerTrainKm: tender?.tender.viabilityThresholdCentsPerTrainKm.toString() ?? template.tender["viabilityThresholdCentsPerTrainKm"],
-        expectedMarginCents: "180000",
-        ownScoreBasisPoints: state["selectedBid"] === undefined ? 0 : 7_800,
+        id: tender.tender.id,
+        priceWeightBasisPoints: tender.tender.profile.weights.price,
+        qualityWeightBasisPoints: tender.tender.profile.weights.quality,
+        penaltyFocus: tender.tender.profile.penaltyFocus,
+        viabilityThresholdCentsPerTrainKm: tender.tender.viabilityThresholdCentsPerTrainKm.toString(),
+        limits: TUTORIAL_BID_LIMITS,
       },
       leases: template.leases.map((offer) => {
         const contract = contracts.find((entry) => entry["offerId"] === offer["id"]);
-        return { ...offer, contractId: contract?.["contractId"], status: typeof contract?.["contractId"] === "string" ? statuses.get(contract["contractId"] as string) : "offered" };
+        const contractId = typeof contract?.["contractId"] === "string" ? contract["contractId"] : undefined;
+        return {
+          id: textValue(offer["id"], "Leasingangebots-ID"),
+          vehicleId: textValue(offer["vehicleId"], "Tutorialfahrzeug-ID"),
+          classDesignation: textValue(offer["classDesignation"], "Baureihe"),
+          monthlyCostCents: textValue(offer["monthlyCostCents"], "Leasingkosten"),
+          seats: integer(offer["seats"], "Sitzplaetze"),
+          conditionBasisPoints: integer(offer["conditionBasisPoints"], "Fahrzeugzustand"),
+          reliabilityBasisPoints: integer(offer["reliabilityBasisPoints"], "Zuverlaessigkeit"),
+          marginEffectCents: textValue(offer["marginEffectCents"], "Margenwirkung"),
+          ...(contractId === undefined ? {} : { contractId }),
+          status: contractId === undefined ? "offered" : statuses.get(contractId) ?? "offered",
+        };
       }),
-      paths: template.paths.map((alternative) => ({ ...alternative, planning: Array.isArray(state["planning"]) ? state["planning"].find((entry) => object(entry)["alternativeId"] === alternative["id"]) : undefined, selected: state["selectedPathAlternativeId"] === alternative["id"] })),
-      programmes: template.programmes.map((programme) => ({ ...programme, selected: state["selectedProgramTemplateId"] === programme["id"], effect: state["programmeEffect"] })),
+      paths: template.paths.map((alternative) => {
+        const rawPlanning = Array.isArray(state["planning"])
+          ? state["planning"].find((entry) => object(entry)["alternativeId"] === alternative["id"])
+          : undefined;
+        const planning = rawPlanning === undefined ? undefined : object(rawPlanning, "Plannergebnis");
+        return {
+          id: textValue(alternative["id"], "Trassenalternative"),
+          receiptId: textValue(alternative["receiptId"], "Trassenbeleg"),
+          label: textValue(alternative["label"], "Trassenbezeichnung"),
+          desiredDepartureS: integer(alternative["desiredDepartureS"], "Abfahrtssekunde"),
+          bufferSeconds: integer(alternative["bufferSeconds"], "Trassenpuffer"),
+          costCents: textValue(alternative["costCents"], "Trassenkosten"),
+          selected: state["selectedPathAlternativeId"] === alternative["id"],
+          ...(planning === undefined ? {} : { planning: {
+            stateHash: textValue(planning["stateHash"], "Planner-State-Hash"),
+            projectionRevision: integer(planning["projectionRevision"], "Plannerrevision"),
+          } }),
+        };
+      }),
+      programmes: template.programmes.map((programme) => {
+        const selected = state["selectedProgramTemplateId"] === programme["id"];
+        const rawEffect = selected && state["programmeEffect"] !== undefined ? object(state["programmeEffect"], "Programmwirkung") : undefined;
+        return {
+          id: textValue(programme["id"], "Programmid"),
+          label: textValue(programme["label"], "Programmbezeichnung"),
+          baseThresholdSeconds: integer(programme["baseThresholdSeconds"], "Programmschwelle"),
+          selected,
+          ...(rawEffect === undefined ? {} : { effect: {
+            costCents: textValue(rawEffect["costCents"], "Programmkosten"),
+            qualityBasisPoints: integer(rawEffect["qualityBasisPoints"], "Qualitaetswirkung"),
+            penaltyRiskBasisPoints: Number(rawEffect["penaltyRiskBasisPoints"]),
+          } }),
+        };
+      }),
+      programmeRuleEffects: (Object.keys(PROGRAMME_RULE_LABELS) as TutorialProgrammeRule[]).map((rule) => ({
+        rule,
+        label: PROGRAMME_RULE_LABELS[rule],
+        effect: programmeEffect(rule),
+      })),
       disruptionOptions: [
-        { action: "short_turn", label: "Vorzeitig wenden", costCents: template.result.disruptionShortTurnCostCents.toString(), punctualityBasisPoints: 8_850, cancellations: 1 },
-        { action: "request_reroute", label: "Umleitung anfordern", costCents: template.result.disruptionRerouteCostCents.toString(), punctualityBasisPoints: 9_180, cancellations: 0 },
-        { action: "trigger_rail_replacement", label: "Ersatzverkehr ausloesen", costCents: template.result.disruptionReplacementCostCents.toString(), punctualityBasisPoints: 9_000, cancellations: 1 },
+        { action: "short_turn", label: DISRUPTION_ACTION_LABELS.short_turn, costCents: template.result.disruptionShortTurnCostCents.toString(), punctualityBasisPoints: 8_850, cancellations: 1 },
+        { action: "request_reroute", label: DISRUPTION_ACTION_LABELS.request_reroute, costCents: template.result.disruptionRerouteCostCents.toString(), punctualityBasisPoints: 9_180, cancellations: 0 },
+        { action: "trigger_rail_replacement", label: DISRUPTION_ACTION_LABELS.trigger_rail_replacement, costCents: template.result.disruptionReplacementCostCents.toString(), punctualityBasisPoints: 9_000, cancellations: 1 },
       ],
     };
   }
 
   async summary(session: TutorialSession, template: TutorialTemplate): Promise<TutorialResultSummary> {
     const state = scenario(session);
+    const bid = object(state["selectedBid"], "Gewähltes Tutorialangebot");
+    const selectedLease = lease(template, textValue(state["selectedLeaseOfferId"], "Gewähltes Leasingangebot"));
+    const selectedPath = path(template, textValue(state["selectedPathAlternativeId"], "Gewählte Trasse"));
+    const selectedProgramme = programme(template, textValue(state["selectedProgramTemplateId"], "Gewähltes Betriebsprogramm"));
+    const selectedRule = textValue(state["changedRule"], "Gewählte Betriebsregel") as TutorialProgrammeRule;
+    if (!(selectedRule in PROGRAMME_RULE_LABELS)) throw new AlphaConflictError("Gewählte Betriebsregel ist unbekannt.", "tutorial_programme_rule_unknown");
+    const selectedProgrammeEffect = object(state["programmeEffect"], "Berechnete Betriebsprogrammwirkung");
+    const selectedDispatchAction = textValue(state["selectedDispatchAction"], "Gewählte Störungsreaktion") as Extract<TutorialAction, { readonly type: "dispatch" }>["action"];
+    if (!(selectedDispatchAction in DISRUPTION_ACTION_LABELS)) throw new AlphaConflictError("Gewählte Störungsreaktion ist unbekannt.", "tutorial_dispatch_action_unknown");
     const leasingCost = BigInt(typeof state["leasingCostCents"] === "string" ? state["leasingCostCents"] : "0");
     const pathCost = BigInt(typeof state["pathCostCents"] === "string" ? state["pathCostCents"] : "0");
     const disruptionCost = BigInt(typeof state["disruptionCostCents"] === "string" ? state["disruptionCostCents"] : "0");
@@ -1117,8 +1235,29 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
       disruptionCostCents: disruptionCost.toString(),
       resultCents: result.toString(),
       punctualityBasisPoints: punctuality,
-      qualityTargetsMet: punctuality >= template.result.punctualityTargetBasisPoints ? ["Puenktlichkeit", "Kapazitaet", "Barrierefreiheit"] : ["Kapazitaet", "Barrierefreiheit"],
-      comparison: { selectedAction: typeof state["selectedDispatchAction"] === "string" ? state["selectedDispatchAction"] : "offen", robustAlternativePunctualityBasisPoints: 9_180, shortTurnAlternativeCostCents: template.result.disruptionShortTurnCostCents.toString() },
+      qualityTargetsMet: punctuality >= template.result.punctualityTargetBasisPoints ? ["Pünktlichkeit", "Kapazität", "Barrierefreiheit"] : ["Kapazität", "Barrierefreiheit"],
+      comparison: {
+        bidOrderingFeeCentsPerTrainKm: textValue(bid["orderingFeeCentsPerTrainKm"], "Bestellerentgelt"),
+        bidPunctualityBasisPoints: integer(bid["punctualityBasisPoints"], "Pünktlichkeitsversprechen"),
+        bidExtraSeats: integer(bid["extraSeats"], "Zusätzliche Sitzplätze"),
+        leaseLabel: textValue(selectedLease["classDesignation"], "Gewählte Baureihe"),
+        leaseCostCents: textValue(selectedLease["monthlyCostCents"], "Leasingkosten"),
+        leaseSeats: integer(selectedLease["seats"], "Sitzplätze"),
+        leaseReliabilityBasisPoints: integer(selectedLease["reliabilityBasisPoints"], "Zuverlässigkeit"),
+        pathLabel: textValue(selectedPath["label"], "Gewählte Trasse"),
+        pathCostCents: textValue(selectedPath["costCents"], "Trassenkosten"),
+        pathBufferSeconds: integer(selectedPath["bufferSeconds"], "Trassenpuffer"),
+        programmeLabel: textValue(selectedProgramme["label"], "Gewähltes Betriebsprogramm"),
+        programmeRuleLabel: PROGRAMME_RULE_LABELS[selectedRule]!,
+        programmeThresholdSeconds: integer(state["changedThresholdSeconds"], "Regelschwelle"),
+        programmeCostCents: textValue(selectedProgrammeEffect["costCents"], "Programmkosten"),
+        programmeQualityBasisPoints: integer(selectedProgrammeEffect["qualityBasisPoints"], "Qualitätswirkung"),
+        programmePenaltyRiskBasisPoints: signedInteger(selectedProgrammeEffect["penaltyRiskBasisPoints"], "Pönalerisikowirkung"),
+        disruptionLabel: DISRUPTION_ACTION_LABELS[selectedDispatchAction]!,
+        disruptionCostCents: disruptionCost.toString(),
+        disruptionPunctualityBasisPoints: punctuality,
+        disruptionCancellations: integer(state["cancellations"], "Ausfälle"),
+      },
     };
   }
 

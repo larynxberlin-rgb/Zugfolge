@@ -2,7 +2,7 @@
 
 import { readFileSync } from "node:fs";
 
-import type { Domain, GuardConfig, LicenseException } from "./types.js";
+import type { Domain, DomainCoverageException, GuardConfig, LicenseException } from "./types.js";
 
 function istObjekt(wert: unknown): wert is Record<string, unknown> {
   return typeof wert === "object" && wert !== null && !Array.isArray(wert);
@@ -66,6 +66,26 @@ function leseLizenzausnahme(roh: unknown, index: number): LicenseException {
   return ausnahme;
 }
 
+function leseCoverageAusnahme(roh: unknown, index: number): DomainCoverageException {
+  if (!istObjekt(roh)) {
+    throw new Error(`guards.config.json: coverageExceptions[${index}] ist kein Objekt`);
+  }
+  const wo = `coverageExceptions[${index}]`;
+  const ausnahme = {
+    path: feldText(roh, "path", wo),
+    reason: feldText(roh, "reason", wo),
+  };
+  if (ausnahme.reason.length < 30) {
+    throw new Error(
+      `guards.config.json: Die Coverage-Ausnahme fuer '${ausnahme.path}' braucht eine tragfaehige Begruendung.`,
+    );
+  }
+  if (["crates/**", "packages/**", "apps/**", "odoo/**"].includes(ausnahme.path)) {
+    throw new Error(`guards.config.json: Coverage-Ausnahme '${ausnahme.path}' ist zu breit.`);
+  }
+  return ausnahme;
+}
+
 /** Liest eine Konfiguration aus JSON-Text. */
 export function parseConfig(text: string): GuardConfig {
   let roh: unknown;
@@ -96,9 +116,14 @@ export function parseConfig(text: string): GuardConfig {
   if (!Array.isArray(ausnahmenRoh)) {
     throw new Error("guards.config.json: 'licenseExceptions' muss eine Liste sein");
   }
+  const coverageAusnahmenRoh = roh["coverageExceptions"];
+  if (!Array.isArray(coverageAusnahmenRoh)) {
+    throw new Error("guards.config.json: 'coverageExceptions' muss eine Liste sein");
+  }
 
   return {
     domains,
+    coverageExceptions: coverageAusnahmenRoh.map(leseCoverageAusnahme),
     brandTokenHashes: feldTexte(roh, "brandTokenHashes"),
     allowedLicenses: feldTexte(roh, "allowedLicenses"),
     deniedLicenses: feldTexte(roh, "deniedLicenses"),

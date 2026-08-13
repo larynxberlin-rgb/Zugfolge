@@ -88,7 +88,7 @@ export const demoProjection: PlanningProjectionV1 = {
       window: { startS: 27_080, endS: 27_170 },
       trainIds: ["demo-t1", "demo-t2"],
       explanation:
-        "Die beiden Fahrstrassen teilen eine Weiche und koennen nicht gleichzeitig gestellt werden.",
+        "Die beiden Fahrstraßen teilen eine Weiche und können nicht gleichzeitig gestellt werden.",
       alternative: null,
     },
   ],

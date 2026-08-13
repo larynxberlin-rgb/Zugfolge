@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import {
   commerceEntitlements,
   domainEvents,
@@ -10,7 +12,7 @@ import {
   type OdooCommandQueueRow,
   type OdooProjectionOutboxRow,
 } from "@zugfolge/db";
-import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, lte, or, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { entitlementChangeToStatus } from "./entitlements.js";
@@ -169,12 +171,34 @@ export class GameAdminCapabilityUnavailableError extends Error {
   }
 }
 
+/** Der Worker darf nach Ablauf oder Uebernahme seines Claims nichts mehr quittieren. */
+export class OdooCommandClaimLostError extends Error {
+  constructor(readonly commandId: string) {
+    super(`Der Odoo-Worker-Claim fuer Kommando '${commandId}' ist nicht mehr gueltig.`);
+    this.name = "OdooCommandClaimLostError";
+  }
+}
+
+/**
+ * Geplanter oder simulierter Prozessabbruch nach moeglicher Fachwirkung. Der
+ * Claim bleibt absichtlich `processing`; erst Lease-Ablauf erlaubt einen Retry
+ * mit demselben stabilen Wirkungs-Idempotenzschluessel.
+ */
+export class OdooCommandWorkerInterruptedError extends Error {
+  constructor(readonly commandId: string) {
+    super(`Odoo-Worker wurde waehrend Kommando '${commandId}' unterbrochen.`);
+    this.name = "OdooCommandWorkerInterruptedError";
+  }
+}
+
 /**
  * Anschluss an den jeweiligen fachlichen Single Writer. Der Odoo-Worker
  * validiert den Antrag erneut, darf die Wirkung aber nie selbst erzeugen.
  */
 export interface GameAdminCommandContext {
   readonly adminRequestId: string;
+  /** Stabil ueber Claim-Uebernahme und Prozessneustart; jeder fachliche Writer muss ihn als Wirkungsschluessel verwenden. */
+  readonly effectIdempotencyKey: string;
   readonly commandId: string;
   readonly eventId: string;
   readonly correlationId: string;
@@ -194,6 +218,89 @@ export type GameAdminCommandHandler = (context: GameAdminCommandContext) => Prom
 export interface OdooCommandProcessingOptions {
   /** Keine Standard-Handler: ein noch nicht implementierter Milestone bleibt vorbereitet, aber wirkungslos. */
   readonly adminHandlers?: Readonly<Partial<Record<AdminActionType, GameAdminCommandHandler>>>;
+  /** Begrenzte Wiederanlaufzeit nach einem Prozessabbruch. */
+  readonly claimLeaseMs?: number;
+  /** Erneuerungsintervall waehrend eines externen Game-Handlers; muss kuerzer als der Lease sein. */
+  readonly claimHeartbeatMs?: number;
+  /** Injizierbare Betriebsuhr fuer reproduzierbare Claim-/Heartbeat-Tests. */
+  readonly claimClock?: () => Date;
+}
+
+const DEFAULT_COMMAND_CLAIM_LEASE_MS = 5 * 60_000;
+
+function claimScope(command: Pick<OdooCommandQueueRow, "id" | "worldId">, claimToken: string) {
+  return and(
+    eq(odooCommandQueue.id, command.id),
+    command.worldId === null ? isNull(odooCommandQueue.worldId) : eq(odooCommandQueue.worldId, command.worldId),
+    eq(odooCommandQueue.status, "processing"),
+    eq(odooCommandQueue.claimToken, claimToken),
+  );
+}
+
+async function runWithClaimHeartbeat<T>(
+  db: CommerceDatabase,
+  command: Pick<OdooCommandQueueRow, "id" | "worldId">,
+  claimToken: string,
+  claimLeaseMs: number,
+  claimHeartbeatMs: number,
+  claimClock: () => Date,
+  operation: () => Promise<T> | T,
+): Promise<T> {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let renewal: Promise<void> = Promise.resolve();
+  let heartbeatError: OdooCommandClaimLostError | undefined;
+
+  const renew = async (): Promise<void> => {
+    let heartbeatAt: Date;
+    try {
+      heartbeatAt = claimClock();
+      if (!(heartbeatAt instanceof Date) || !Number.isFinite(heartbeatAt.getTime())) {
+        throw new TypeError("Claim-Uhr lieferte keinen gueltigen Zeitpunkt.");
+      }
+      const renewed = await db.update(odooCommandQueue).set({
+        claimExpiresAt: new Date(heartbeatAt.getTime() + claimLeaseMs),
+      }).where(claimScope(command, claimToken)).returning({ id: odooCommandQueue.id });
+      if (renewed.length !== 1) throw new OdooCommandClaimLostError(command.id);
+    } catch (error) {
+      heartbeatError = error instanceof OdooCommandClaimLostError
+        ? error
+        : new OdooCommandClaimLostError(command.id);
+    }
+  };
+
+  const schedule = (): void => {
+    if (stopped || heartbeatError !== undefined) return;
+    timer = setTimeout(() => {
+      renewal = renew().then(schedule);
+    }, claimHeartbeatMs);
+  };
+
+  // Direkt vor der externen Wirkung verlaengern: selbst lange Vorpruefungen
+  // verkleinern dadurch nicht das Zeitfenster des fachlichen Handlers.
+  await renew();
+  if (heartbeatError !== undefined) throw heartbeatError;
+  schedule();
+
+  let result: T | undefined;
+  let operationError: unknown;
+  try {
+    result = await operation();
+  } catch (error) {
+    operationError = error;
+  } finally {
+    stopped = true;
+    if (timer !== undefined) clearTimeout(timer);
+    await renewal;
+    // Der Handler ist fertig, seine Quittierung aber noch nicht. Ein letzter
+    // voller Lease verhindert eine Uebernahme zwischen externer Wirkung und
+    // der unmittelbar folgenden atomaren Finalisierung.
+    if (heartbeatError === undefined) await renew();
+  }
+
+  if (heartbeatError !== undefined) throw heartbeatError;
+  if (operationError !== undefined) throw operationError;
+  return result as T;
 }
 
 /**
@@ -206,36 +313,90 @@ export async function processNextOdooCommand(
   now = new Date(),
   options: OdooCommandProcessingOptions = {},
 ): Promise<ProcessedOdooCommand | undefined> {
-  const [command] = await db.select().from(odooCommandQueue).where(eq(odooCommandQueue.status, "pending")).orderBy(odooCommandQueue.receivedAt).limit(1);
+  const claimLeaseMs = options.claimLeaseMs ?? DEFAULT_COMMAND_CLAIM_LEASE_MS;
+  if (!Number.isSafeInteger(claimLeaseMs) || claimLeaseMs < 1_000 || claimLeaseMs > 60 * 60_000) {
+    throw new RangeError("Odoo-Worker-Claim-Dauer ist ungueltig.");
+  }
+  const claimHeartbeatMs = options.claimHeartbeatMs ?? Math.max(250, Math.floor(claimLeaseMs / 3));
+  if (!Number.isSafeInteger(claimHeartbeatMs) || claimHeartbeatMs < 10 || claimHeartbeatMs >= claimLeaseMs) {
+    throw new RangeError("Odoo-Worker-Heartbeat-Intervall ist ungueltig.");
+  }
+  const claimClock = options.claimClock ?? (() => new Date());
+  const claimToken = randomUUID();
+  const claimExpiresAt = new Date(now.getTime() + claimLeaseMs);
+  const command = await db.transaction(async (tx) => {
+    const eligible = or(
+      eq(odooCommandQueue.status, "pending"),
+      and(
+        eq(odooCommandQueue.status, "processing"),
+        or(isNull(odooCommandQueue.claimExpiresAt), lte(odooCommandQueue.claimExpiresAt, now)),
+      ),
+    );
+    // guards:allow world-id — Der globale Queue-Worker claimt genau einen Beleg und bindet dessen Welt in Claim und Wirkung.
+    const [candidate] = await tx
+      .select({ id: odooCommandQueue.id, worldId: odooCommandQueue.worldId })
+      .from(odooCommandQueue)
+      .where(eligible)
+      .orderBy(odooCommandQueue.receivedAt, odooCommandQueue.id)
+      .limit(1)
+      .for("update", { skipLocked: true });
+    if (candidate === undefined) return undefined;
+    const [claimed] = await tx
+      .update(odooCommandQueue)
+      .set({
+        status: "processing",
+        processedAt: now,
+        claimToken,
+        claimExpiresAt,
+        failureCode: null,
+      })
+      .where(and(
+        eq(odooCommandQueue.id, candidate.id),
+        candidate.worldId === null ? isNull(odooCommandQueue.worldId) : eq(odooCommandQueue.worldId, candidate.worldId),
+        eligible,
+      ))
+      .returning();
+    return claimed;
+  });
   if (command === undefined) return undefined;
   let adminRequestId: string | undefined;
+  let adminPayload: AdminCommandPayload | undefined;
   try {
     if (command.commandType === "entitlement.change") {
       const payload = asEntitlementPayload(command.payload);
       const status = entitlementChangeToStatus(payload.change);
       const validUntil = payload.validUntil === undefined ? undefined : new Date(payload.validUntil);
-      await db.insert(commerceEntitlements).values({
-        externalEventId: command.eventId,
-        keycloakSubject: payload.subject,
-        productKind: payload.productKind,
-        status,
-        validFrom: new Date(payload.validFrom),
-        validUntil,
-        quantity: String(payload.quantity),
-        correlationId: command.correlationId,
-        sourceReference: payload.sourceReference,
-        metadata: {},
-        changedAt: now,
-      }).onConflictDoNothing();
-      await db.update(odooCommandQueue).set({ status: "completed", processedAt: now }).where(and(eq(odooCommandQueue.id, command.id), eq(odooCommandQueue.status, "pending")));
+      await db.transaction(async (tx) => {
+        const [owned] = await tx.select({ id: odooCommandQueue.id }).from(odooCommandQueue).where(claimScope(command, claimToken)).limit(1).for("update");
+        if (owned === undefined) throw new OdooCommandClaimLostError(command.id);
+        await tx.insert(commerceEntitlements).values({
+          externalEventId: command.eventId,
+          keycloakSubject: payload.subject,
+          productKind: payload.productKind,
+          status,
+          validFrom: new Date(payload.validFrom),
+          validUntil,
+          quantity: String(payload.quantity),
+          correlationId: command.correlationId,
+          sourceReference: payload.sourceReference,
+          metadata: {},
+          changedAt: now,
+        }).onConflictDoNothing();
+        const completed = await tx.update(odooCommandQueue).set({
+          status: "completed", processedAt: now, claimToken: null, claimExpiresAt: null, failureCode: null,
+        }).where(claimScope(command, claimToken)).returning({ id: odooCommandQueue.id });
+        if (completed.length !== 1) throw new OdooCommandClaimLostError(command.id);
+      });
       return { id: command.id, outcome: "accepted" };
     }
 
     const payload = asAdminPayload(command.payload);
-    if (command.worldId === undefined || command.worldId !== payload.worldId) throw new Error("Administrationsbefehl besitzt keine passende Welt.");
+    adminPayload = payload;
+    const worldId = command.worldId;
+    if (worldId === null || worldId !== payload.worldId) throw new Error("Administrationsbefehl besitzt keine passende Welt.");
     validateAdminCommand(payload);
-    const [adminRequest] = await db.insert(gameAdminRequests).values({
-      worldId: command.worldId,
+    const [createdAdminRequest] = await db.insert(gameAdminRequests).values({
+      worldId,
       commandId: command.id,
       actionType: payload.actionType,
       riskClass: payload.riskClass,
@@ -246,30 +407,52 @@ export async function processNextOdooCommand(
       state: "approved",
       correlationId: command.correlationId,
       changedAt: now,
-    }).returning({ id: gameAdminRequests.id });
+    }).onConflictDoNothing({ target: [gameAdminRequests.worldId, gameAdminRequests.commandId] }).returning({ id: gameAdminRequests.id });
+    const [adminRequest] = createdAdminRequest === undefined
+      ? await db.select({ id: gameAdminRequests.id }).from(gameAdminRequests).where(and(
+          eq(gameAdminRequests.worldId, worldId),
+          eq(gameAdminRequests.commandId, command.id),
+        )).limit(1)
+      : [createdAdminRequest];
     if (adminRequest === undefined) throw new Error("Game-Administrationsantrag konnte nicht persistiert werden.");
-    adminRequestId = adminRequest.id;
+    const requestId = adminRequest.id;
+    adminRequestId = requestId;
+    await db.update(gameAdminRequests).set({ state: "dispatched", changedAt: now }).where(and(
+      eq(gameAdminRequests.worldId, worldId),
+      eq(gameAdminRequests.id, requestId),
+    ));
     const handler = options.adminHandlers?.[payload.actionType];
     if (handler === undefined) throw new GameAdminCapabilityUnavailableError(payload.actionType);
-    const gameResult = await handler({
-      adminRequestId,
-      commandId: command.id,
-      eventId: command.eventId,
-      correlationId: command.correlationId,
-      receivedAt: command.receivedAt,
-      now,
-      payload,
-    });
+    const gameResult = await runWithClaimHeartbeat(
+      db,
+      command,
+      claimToken,
+      claimLeaseMs,
+      claimHeartbeatMs,
+      claimClock,
+      () => handler({
+        adminRequestId: requestId,
+        effectIdempotencyKey: requestId,
+        commandId: command.id,
+        eventId: command.eventId,
+        correlationId: command.correlationId,
+        receivedAt: command.receivedAt,
+        now,
+        payload,
+      }),
+    );
     const state = gameResult.state ?? "accepted";
     const effectAuditReference = gameResult.gameAuditEventId ?? null;
     await db.transaction(async (tx) => {
-      await tx.execute(sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${command.worldId!} for update`);
-      const [head] = await tx.select({ sequence: domainEvents.sequence }).from(domainEvents).where(eq(domainEvents.worldId, command.worldId!)).orderBy(desc(domainEvents.sequence)).limit(1);
+      const [owned] = await tx.select({ id: odooCommandQueue.id }).from(odooCommandQueue).where(claimScope(command, claimToken)).limit(1).for("update");
+      if (owned === undefined) throw new OdooCommandClaimLostError(command.id);
+      await tx.execute(sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${worldId} for update`);
+      const [head] = await tx.select({ sequence: domainEvents.sequence }).from(domainEvents).where(eq(domainEvents.worldId, worldId)).orderBy(desc(domainEvents.sequence)).limit(1);
       const [auditEvent] = await tx.insert(domainEvents).values({
-        worldId: command.worldId!,
+        worldId,
         sequence: (head?.sequence ?? 0) + 1,
         eventType: "admin.action-audited",
-        payload: { adminRequestId, actionType: payload.actionType, riskClass: payload.riskClass, correlationId: command.correlationId, outcome: state, effectAuditReference },
+        payload: { adminRequestId: requestId, actionType: payload.actionType, riskClass: payload.riskClass, correlationId: command.correlationId, outcome: state, effectAuditReference },
         occurredAt: now,
       }).returning({ id: domainEvents.id });
       if (auditEvent === undefined) throw new Error("Autoritativer Game-Auditbeleg fehlt.");
@@ -277,10 +460,17 @@ export async function processNextOdooCommand(
         state,
         gameAuditEventId: auditEvent.id,
         changedAt: now,
-      }).where(and(eq(gameAdminRequests.id, adminRequestId!), eq(gameAdminRequests.worldId, command.worldId!)));
-      await tx.update(odooCommandQueue).set({ status: state === "completed" ? "completed" : "accepted", processedAt: now }).where(and(eq(odooCommandQueue.id, command.id), eq(odooCommandQueue.status, "pending")));
+      }).where(and(eq(gameAdminRequests.id, requestId), eq(gameAdminRequests.worldId, worldId)));
+      const finalized = await tx.update(odooCommandQueue).set({
+        status: state === "completed" ? "completed" : "accepted",
+        processedAt: now,
+        claimToken: null,
+        claimExpiresAt: null,
+        failureCode: null,
+      }).where(claimScope(command, claimToken)).returning({ id: odooCommandQueue.id });
+      if (finalized.length !== 1) throw new OdooCommandClaimLostError(command.id);
       await tx.insert(odooProjectionOutbox).values({
-        worldId: command.worldId!,
+        worldId,
         messageType: "admin.command.result",
         schemaVersion: "zugfolge-odoo/v1",
         correlationId: command.correlationId,
@@ -291,9 +481,12 @@ export async function processNextOdooCommand(
     });
     return { id: command.id, outcome: "accepted" };
   } catch (error) {
+    if (error instanceof OdooCommandClaimLostError || error instanceof OdooCommandWorkerInterruptedError) throw error;
     const code = error instanceof Error ? error.name : "unknown_error";
     await db.transaction(async (tx) => {
-      if (adminRequestId !== undefined && command.worldId !== null) {
+      const [owned] = await tx.select({ id: odooCommandQueue.id }).from(odooCommandQueue).where(claimScope(command, claimToken)).limit(1).for("update");
+      if (owned === undefined) throw new OdooCommandClaimLostError(command.id);
+      if (adminRequestId !== undefined && adminPayload !== undefined && command.worldId !== null) {
         await tx.execute(sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${command.worldId} for update`);
         const [head] = await tx.select({ sequence: domainEvents.sequence }).from(domainEvents).where(eq(domainEvents.worldId, command.worldId)).orderBy(desc(domainEvents.sequence)).limit(1);
         const [auditEvent] = await tx.insert(domainEvents).values({
@@ -302,7 +495,7 @@ export async function processNextOdooCommand(
           eventType: "admin.action-audited",
           payload: {
             adminRequestId,
-            actionType: asAdminPayload(command.payload).actionType,
+            actionType: adminPayload.actionType,
             correlationId: command.correlationId,
             outcome: "failed",
             failureCode: code,
@@ -312,7 +505,10 @@ export async function processNextOdooCommand(
         if (auditEvent === undefined) throw new Error("Autoritativer Game-Auditbeleg fuer die Ablehnung fehlt.");
         await tx.update(gameAdminRequests).set({ state: "failed", gameAuditEventId: auditEvent.id, changedAt: now }).where(and(eq(gameAdminRequests.id, adminRequestId), eq(gameAdminRequests.worldId, command.worldId)));
       }
-      await tx.update(odooCommandQueue).set({ status: "rejected", processedAt: now, failureCode: code }).where(and(eq(odooCommandQueue.id, command.id), eq(odooCommandQueue.status, "pending")));
+      const rejected = await tx.update(odooCommandQueue).set({
+        status: "rejected", processedAt: now, claimToken: null, claimExpiresAt: null, failureCode: code,
+      }).where(claimScope(command, claimToken)).returning({ id: odooCommandQueue.id });
+      if (rejected.length !== 1) throw new OdooCommandClaimLostError(command.id);
       if (command.commandType !== "entitlement.change" && command.worldId !== null) {
         await tx.insert(odooProjectionOutbox).values({
           worldId: command.worldId,
@@ -330,21 +526,37 @@ export async function processNextOdooCommand(
 }
 
 export async function activeEntitlementsForSubject(db: CommerceDatabase, subject: string, at = new Date()): Promise<readonly CommerceEntitlement[]> {
+  // guards:allow world-id — Entitlements sind globale kaufmaennische Subject-Vertraege; Weltbezug entsteht erst im separaten Claim.
   return db.select().from(commerceEntitlements).where(and(eq(commerceEntitlements.keycloakSubject, subject), eq(commerceEntitlements.status, "active"), lt(commerceEntitlements.validFrom, at)));
 }
 
-export async function listPendingOdooProjections(db: CommerceDatabase, limit = 50): Promise<readonly OdooProjectionOutboxRow[]> {
-  return db.select().from(odooProjectionOutbox).where(isNull(odooProjectionOutbox.deliveredAt)).orderBy(odooProjectionOutbox.enqueuedAt).limit(limit);
+export async function listPendingOdooProjections(db: CommerceDatabase, worldId: string, limit = 50): Promise<readonly OdooProjectionOutboxRow[]> {
+  return db.select().from(odooProjectionOutbox).where(and(
+    eq(odooProjectionOutbox.worldId, worldId),
+    isNull(odooProjectionOutbox.deliveredAt),
+  )).orderBy(odooProjectionOutbox.enqueuedAt).limit(limit);
 }
 
-export async function markOdooProjectionDelivered(db: CommerceDatabase, id: string, deliveredAt: Date): Promise<void> {
-  await db.update(odooProjectionOutbox).set({ deliveredAt, lastErrorCode: null }).where(and(eq(odooProjectionOutbox.id, id), isNull(odooProjectionOutbox.deliveredAt)));
+export async function markOdooProjectionDelivered(db: CommerceDatabase, worldId: string, id: string, deliveredAt: Date): Promise<boolean> {
+  const delivered = await db.update(odooProjectionOutbox).set({ deliveredAt, lastErrorCode: null }).where(and(
+    eq(odooProjectionOutbox.worldId, worldId),
+    eq(odooProjectionOutbox.id, id),
+    isNull(odooProjectionOutbox.deliveredAt),
+  )).returning({ id: odooProjectionOutbox.id });
+  return delivered.length === 1;
 }
 
-export async function recordOdooProjectionFailure(db: CommerceDatabase, id: string, code: string): Promise<void> {
-  const [row] = await db.select({ attempts: odooProjectionOutbox.attempts }).from(odooProjectionOutbox).where(eq(odooProjectionOutbox.id, id)).limit(1);
+export async function recordOdooProjectionFailure(db: CommerceDatabase, worldId: string, id: string, code: string): Promise<void> {
+  const [row] = await db.select({ attempts: odooProjectionOutbox.attempts }).from(odooProjectionOutbox).where(and(
+    eq(odooProjectionOutbox.worldId, worldId),
+    eq(odooProjectionOutbox.id, id),
+  )).limit(1);
   if (row === undefined) return;
-  await db.update(odooProjectionOutbox).set({ attempts: String(Number(row.attempts) + 1), lastErrorCode: code }).where(and(eq(odooProjectionOutbox.id, id), isNull(odooProjectionOutbox.deliveredAt)));
+  await db.update(odooProjectionOutbox).set({ attempts: String(Number(row.attempts) + 1), lastErrorCode: code }).where(and(
+    eq(odooProjectionOutbox.worldId, worldId),
+    eq(odooProjectionOutbox.id, id),
+    isNull(odooProjectionOutbox.deliveredAt),
+  ));
 }
 
 export function projectionEnvelope(row: OdooProjectionOutboxRow): OdooProjectionEnvelope {

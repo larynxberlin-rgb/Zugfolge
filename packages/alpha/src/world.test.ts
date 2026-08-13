@@ -23,6 +23,7 @@ function blueprint(): AlphaWorldBlueprint {
     profileKind: "public",
     accelerationFactor: 1,
     periodCount: 6,
+    startingCapitalPolicy: { kind: "finite", amountCents: "0" },
     releases: {
       infra: "a".repeat(64),
       timetable: "b".repeat(64),

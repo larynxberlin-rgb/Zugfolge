@@ -132,6 +132,17 @@ Fortschrittswörter, Tastaturfokus, „Warum?“, Ausblenden und manuelles
 Wiederöffnen sind Pflicht. `prefers-reduced-motion: reduce` unterbindet
 Animation und weiches Scrollen.
 
+### 2.9 Anrede und sichtbare Fachsprache
+
+Spieler werden in allen Oberflächen einheitlich mit **„Sie“** und **„Ihr“**
+angesprochen. Neutrale Handlungsbeschriftungen dürfen ohne Pronomen formuliert
+sein, wechseln aber nie zum „Du“. Sichtbare Texte verwenden korrektes
+UTF-8-Deutsch; ASCII-Umschriften wie `Fuer`, `Ueberlappung` oder `Aussenlauf`
+sind ausschließlich in unvermeidbaren technischen Bezeichnern zulässig.
+Milestone-Codes, UUIDs, Revisionen und Hashes gehören nicht in die normale
+Spielerführung. Wenn sie für Support oder Nachweis nötig sind, stehen sie in
+einem standardmäßig geschlossenen Bereich „Technische Details“.
+
 ## 3. Dunkelmodus — durchgehend
 
 Eine einzige Palette für alle Flächen. Lange Lesetexte — Verträge,

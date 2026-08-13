@@ -15,9 +15,11 @@
         "crates/zugfolge-sim/**",
         "crates/zugfolge-sim-runtime/**",
         "crates/zugfolge-runtime/**",
+        "crates/zugfolge-runtime-napi/**",
         "crates/zugfolge-conflict/**",
         "crates/zugfolge-fleet/**",
         "crates/zugfolge-disruption/**",
+        "packages/runtime-native/**",
         "spikes/**"
       ],
       "rules": [
@@ -72,9 +74,9 @@
     },
     {
       "id": "economy",
-      "title": "Wirtschaft, Ledger, Verträge, Ausschreibungen (M2.4, M6)",
+      "title": "Wirtschaft, Ledger, Verträge, Ausschreibungen und Kooperation (M2.4, M6, M12)",
       "status": "active",
-      "paths": ["packages/economy/**", "packages/tender/**", "apps/economy-service/**"],
+      "paths": ["packages/economy/**", "packages/cooperation/**", "packages/tender/**", "apps/economy-service/**"],
       "rules": ["no-payment-tier", "no-wallclock", "no-random"]
     },
     {
@@ -90,8 +92,58 @@
       "status": "active",
       "paths": ["packages/db/**"],
       "rules": ["world-id"]
+    },
+    {
+      "id": "release-tools",
+      "title": "Release-, Referenzkorpus-, Import- und Kartenwerkzeuge",
+      "status": "active",
+      "paths": [
+        "tools/reference-corpus/**",
+        "tools/reference-model/**",
+        "tools/region-import/**",
+        "tools/tiles/**"
+      ],
+      "rules": []
+    },
+    {
+      "id": "operations-tools",
+      "title": "Betriebs-, Abnahme-, Last- und Governance-Werkzeuge",
+      "status": "active",
+      "paths": [
+        "tools/alpha-ops/**",
+        "tools/guards/**",
+        "tools/load/**",
+        "tools/m7-acceptance/**",
+        "tools/m7-e2e/**"
+      ],
+      "rules": []
+    },
+    {
+      "id": "platform-services",
+      "title": "Explizit zugeordnete Plattformdienste und Oberflächen",
+      "status": "active",
+      "paths": [
+        "packages/alpha/**",
+        "packages/commerce/**",
+        "packages/design-system/**",
+        "packages/disruption-provider/**",
+        "packages/glossary/**",
+        "packages/gtfs/**",
+        "packages/health/**",
+        "packages/identity/**",
+        "packages/livemap/**",
+        "packages/mailbox/**",
+        "packages/operators/**",
+        "packages/privacy/**",
+        "apps/game-api/**",
+        "apps/game-web/**",
+        "apps/livemap/**",
+        "apps/operations-center/**"
+      ],
+      "rules": []
     }
   ],
+  "coverageExceptions": [],
   "brandTokenHashes": [],
   "allowedLicenses": [
     "0BSD",

@@ -1,17 +1,21 @@
 export {
   bindPlanningCoordinateAuthorityCommand,
+  bindPlanningPlayerPathRequest,
   bindPlanningPathRequest,
   parsePlanningApplyAlternativePayload,
   parsePlanningInfrastructureRelease,
   PLANNING_COORDINATE_AUTHORITY_BODY_SCHEMA,
   PLANNING_COORDINATE_AUTHORITY_SCHEMA,
   PLANNING_INFRASTRUCTURE_RELEASE_SCHEMA,
+  PLANNING_PLAYER_PATH_REQUEST_BODY_SCHEMA,
+  PLANNING_PLAYER_PATH_REQUEST_SCHEMA,
   PLANNING_PATH_REQUEST_BODY_SCHEMA,
   PLANNING_PATH_REQUEST_SCHEMA,
   type BoundPlanningPathRequest,
   type PlanningCoordinateAuthorityBody,
   type PlanningCoordinateAuthorityCommand,
   type PlanningInfrastructureRelease,
+  type PlanningPlayerPathRequestBody,
   type PlanningPathRequestBody,
 } from "./contract.js";
 export {

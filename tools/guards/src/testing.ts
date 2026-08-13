@@ -22,6 +22,7 @@ export function testDomain(teile: Partial<Domain> & Pick<Domain, "id">): Domain 
 export function testConfig(teile: Partial<GuardConfig> = {}): GuardConfig {
   return {
     domains: [testDomain({ id: "beispiel" })],
+    coverageExceptions: [],
     brandTokenHashes: [],
     allowedLicenses: ["MIT"],
     deniedLicenses: ["AGPL-3.0-only"],

@@ -9,7 +9,7 @@
  */
 
 import { accountRoles, accounts, worldAccesses } from "@zugfolge/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import type { Role } from "./roles.js";
@@ -30,6 +30,40 @@ export interface AccountRecord {
   /** Zeitpunkt einer Datenschutzlöschung (M2.6); `null` heißt unangetastet. */
   readonly erasedAt: Date | null;
   readonly roles: readonly Role[];
+}
+
+export type AcceptedStartingCapitalPolicy =
+  | { readonly kind: "finite"; readonly amountCents: string }
+  | { readonly kind: "unlimited" };
+
+export interface AcceptedWorldContract {
+  readonly hash: string;
+  readonly startingCapitalPolicy: AcceptedStartingCapitalPolicy;
+}
+
+/** Ein bereits bestaetigter Weltvertrag darf nicht still ersetzt werden. */
+export class WorldContractAcceptanceConflictError extends Error {
+  constructor(worldId: string) {
+    super(`Der bestaetigte Weltvertrag von '${worldId}' stimmt nicht mit dem aktuellen Vertrag ueberein.`);
+    this.name = "WorldContractAcceptanceConflictError";
+  }
+}
+
+function validateAcceptedWorldContract(contract: AcceptedWorldContract): void {
+  if (!/^[a-f0-9]{64}$/.test(contract.hash)) throw new Error("Bestaetigter Weltvertrag besitzt keinen SHA-256-Hash.");
+  if (contract.startingCapitalPolicy.kind === "unlimited") return;
+  const amount = contract.startingCapitalPolicy.amountCents;
+  if (!/^[0-9]+$/.test(amount) || BigInt(amount) > 9_223_372_036_854_775_807n) {
+    throw new Error("Bestaetigte StartingCapitalPolicy besitzt keinen nichtnegativen i64-Centbetrag.");
+  }
+}
+
+function sameStartingCapitalPolicy(left: unknown, right: AcceptedStartingCapitalPolicy): boolean {
+  if (typeof left !== "object" || left === null || Array.isArray(left)) return false;
+  const record = left as Readonly<Record<string, unknown>>;
+  return right.kind === "unlimited"
+    ? record["kind"] === "unlimited" && Object.keys(record).length === 1
+    : record["kind"] === "finite" && record["amountCents"] === right.amountCents && Object.keys(record).length === 2;
 }
 
 /** Öffentliches Konto-DTO ohne den externen, korrelierbaren Keycloak-Identifier. */
@@ -130,11 +164,17 @@ export async function getAccountIncludingRevoked(
  */
 export async function requestWorldAccess(
   db: IdentityDatabase,
-  input: { readonly worldId: string; readonly keycloakSubject: string; readonly displayName: string },
+  input: {
+    readonly worldId: string;
+    readonly keycloakSubject: string;
+    readonly displayName: string;
+    readonly acceptedWorldContract?: AcceptedWorldContract;
+  },
 ): Promise<AccountRecord> {
   const { worldId, keycloakSubject, displayName } = input;
+  if (input.acceptedWorldContract !== undefined) validateAcceptedWorldContract(input.acceptedWorldContract);
 
-  const [existingAccess] = await db
+  let [existingAccess] = await db
     .select()
     .from(worldAccesses)
     .where(and(eq(worldAccesses.worldId, worldId), eq(worldAccesses.keycloakSubject, keycloakSubject)))
@@ -145,7 +185,36 @@ export async function requestWorldAccess(
   }
 
   if (existingAccess === undefined) {
-    await db.insert(worldAccesses).values({ worldId, keycloakSubject }).onConflictDoNothing();
+    await db.insert(worldAccesses).values({
+      worldId,
+      keycloakSubject,
+      ...(input.acceptedWorldContract === undefined ? {} : {
+        acceptedWorldContractHash: input.acceptedWorldContract.hash,
+        acceptedStartingCapitalPolicy: input.acceptedWorldContract.startingCapitalPolicy,
+        worldContractAcceptedAt: new Date(),
+      }),
+    }).onConflictDoNothing();
+  } else if (input.acceptedWorldContract !== undefined && existingAccess.acceptedWorldContractHash === null) {
+    await db.update(worldAccesses).set({
+      acceptedWorldContractHash: input.acceptedWorldContract.hash,
+      acceptedStartingCapitalPolicy: input.acceptedWorldContract.startingCapitalPolicy,
+      worldContractAcceptedAt: new Date(),
+    }).where(and(
+      eq(worldAccesses.worldId, worldId),
+      eq(worldAccesses.keycloakSubject, keycloakSubject),
+      isNull(worldAccesses.acceptedWorldContractHash),
+    ));
+  }
+
+  if (input.acceptedWorldContract !== undefined) {
+    [existingAccess] = await db.select().from(worldAccesses).where(and(
+      eq(worldAccesses.worldId, worldId),
+      eq(worldAccesses.keycloakSubject, keycloakSubject),
+    )).limit(1);
+    if (existingAccess?.acceptedWorldContractHash !== input.acceptedWorldContract.hash
+      || !sameStartingCapitalPolicy(existingAccess.acceptedStartingCapitalPolicy, input.acceptedWorldContract.startingCapitalPolicy)) {
+      throw new WorldContractAcceptanceConflictError(worldId);
+    }
   }
 
   await db.insert(accounts).values({ worldId, keycloakSubject, displayName }).onConflictDoNothing();

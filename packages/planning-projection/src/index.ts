@@ -115,11 +115,20 @@ export interface PlanningProjectionV1 {
   readonly trains: readonly PlanningTrainProjection[];
   readonly occupations: readonly PlanningOccupationProjection[];
   readonly conflicts: readonly PlanningConflictProjection[];
+  /** Reiner Anzeigevertrag; wird vom API-Envelope serverseitig ergänzt. */
+  readonly timeBasis?: PlanningTimeBasisProjection;
+}
+
+export interface PlanningTimeBasisProjection {
+  readonly epoch: string;
+  readonly timeZone: "Europe/Berlin";
+  readonly operatingDayBoundaryS: 0;
 }
 
 export interface PlanningProjectionEnvelopeV1 {
   /** Transportsequenz des Eventlogs; nicht fuer fachliche Aktualitaet verwenden. */
   readonly sequence: number;
+  readonly timeBasis: PlanningTimeBasisProjection;
   readonly data: PlanningProjectionV1;
 }
 
@@ -447,9 +456,15 @@ export function isPlanningProjection(value: unknown): value is PlanningProjectio
 }
 
 export function parsePlanningProjectionEnvelope(value: unknown): PlanningProjectionEnvelopeV1 {
-  const input = record(value, "$envelope", ["sequence", "data"]);
+  const input = record(value, "$envelope", ["sequence", "timeBasis", "data"]);
+  const timeBasis = record(input["timeBasis"], "$envelope.timeBasis", ["epoch", "timeZone", "operatingDayBoundaryS"]);
+  const epoch = stringValue(timeBasis["epoch"], "$envelope.timeBasis.epoch");
+  if (!Number.isFinite(Date.parse(epoch))) fail("$envelope.timeBasis.epoch", "ISO-Zeitpunkt erwartet");
+  if (timeBasis["timeZone"] !== "Europe/Berlin") fail("$envelope.timeBasis.timeZone", "Europe/Berlin erwartet");
+  if (timeBasis["operatingDayBoundaryS"] !== 0) fail("$envelope.timeBasis.operatingDayBoundaryS", "0 erwartet");
   return {
     sequence: integerValue(input["sequence"], "$envelope.sequence", 0),
+    timeBasis: { epoch, timeZone: "Europe/Berlin", operatingDayBoundaryS: 0 },
     data: parsePlanningProjection(input["data"]),
   };
 }

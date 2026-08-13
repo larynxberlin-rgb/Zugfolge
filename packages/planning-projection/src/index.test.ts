@@ -81,7 +81,11 @@ describe("PlanningProjection v1", () => {
     const parsed = parsePlanningProjection(projection());
     expect(parsed.occupations.map((occupation) => occupation.phase)).toEqual(BLOCKING_PHASES);
     expect(parsed.conflicts.map((conflict) => conflict.kind)).toEqual(CONFLICT_KINDS);
-    expect(parsePlanningProjectionEnvelope({ sequence: 99, data: parsed }).data).toEqual(parsed);
+    expect(parsePlanningProjectionEnvelope({
+      sequence: 99,
+      timeBasis: { epoch: "2026-01-01T00:00:00.000Z", timeZone: "Europe/Berlin", operatingDayBoundaryS: 0 },
+      data: parsed,
+    }).data).toEqual(parsed);
   });
 
   it("akzeptiert eine echte leere Projektion ohne implizite Beispieldaten", () => {

@@ -3,22 +3,23 @@ import type {
   ConflictKind,
   PlanningConflictProjection,
   PlanningProjectionV1,
+  PlanningTimeBasisProjection,
   PlanningTrainProjection,
 } from "@zugfolge/planning-projection";
 
 export const phaseLabels: Readonly<Record<BlockingPhase, string>> = {
-  "route-setting": "Fahrstrassenbildezeit",
+  "route-setting": "Fahrstraßenbildezeit",
   "signal-sighting": "Signalsichtzeit",
-  approach: "Annaeherungsfahrzeit",
+  approach: "Annäherungsfahrzeit",
   running: "Fahrzeit",
-  clearing: "Raeumfahrzeit",
-  "route-release": "Fahrstrassenaufloesezeit",
+  clearing: "Räumfahrzeit",
+  "route-release": "Fahrstraßenauflösezeit",
 };
 
 export const conflictLabels: Readonly<Record<ConflictKind, string>> = {
   headway: "Zugfolge",
   "opposing-move": "Gegenfahrt",
-  "route-exclusion": "Fahrstrassenausschluss",
+  "route-exclusion": "Fahrstraßenausschluss",
   "facility-contention": "Anlagenbelegung",
 };
 
@@ -26,13 +27,27 @@ function floorMod(value: number, modulus: number): number {
   return ((value % modulus) + modulus) % modulus;
 }
 
-/** Darstellung einer ganzzahligen Weltsekunde; der Fachwert bleibt unveraendert. */
-export function formatTimeS(timeS: number): string {
+/** Darstellung einer ganzzahligen Weltsekunde; der Fachwert bleibt unverändert. */
+export function formatTimeS(timeS: number, timeBasis?: PlanningTimeBasisProjection): string {
+  const operatingDay = Math.floor(timeS / 86_400);
   const secondOfDay = floorMod(timeS, 86_400);
   const hours = Math.floor(secondOfDay / 3_600);
   const minutes = Math.floor((secondOfDay % 3_600) / 60);
   const seconds = secondOfDay % 60;
-  return [hours, minutes, seconds].map((part) => String(part).padStart(2, "0")).join(":");
+  const clock = [hours, minutes, seconds]
+    .map((part) => String(part).padStart(2, "0"))
+    .join(":");
+  if (timeBasis !== undefined) {
+    const instant = new Date(Date.parse(timeBasis.epoch) + timeS * 1_000);
+    const parts = Object.fromEntries(new Intl.DateTimeFormat("de-DE", {
+      timeZone: timeBasis.timeZone,
+      day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+    }).formatToParts(instant).map((part) => [part.type, part.value]));
+    return `D${operatingDay >= 0 ? "+" : ""}${operatingDay} · ${parts["day"]}.${parts["month"]}.${parts["year"]} ${parts["hour"]}:${parts["minute"]}:${parts["second"]}`;
+  }
+  if (operatingDay === 0) return clock;
+  return `D${operatingDay > 0 ? "+" : ""}${operatingDay} ${clock}`;
 }
 
 export function formatDurationS(durationS: number): string {

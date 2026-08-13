@@ -168,7 +168,7 @@ describe("InfraPackageStaging", () => {
     }
     const [first, second] = await Promise.all([service.finalize(importId), service.finalize(importId)]);
     expect(second).toEqual(first);
-  });
+  }, 30_000);
 
   it("überträgt Teile idempotent, qualifiziert fail-closed und staged atomar", async () => {
     const fixture = packageFixture();

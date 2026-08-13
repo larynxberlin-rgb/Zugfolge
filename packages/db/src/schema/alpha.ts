@@ -257,7 +257,7 @@ export const worldFinalRankings = pgTable("world_final_rankings", {
   evidenceHash: text("evidence_hash").notNull(),
 }, (table) => [
   uniqueIndex("world_final_rankings_world_type_operator_idx").on(table.worldId, table.rankingType, table.operatorId),
-  uniqueIndex("world_final_rankings_world_type_rank_idx").on(table.worldId, table.rankingType, table.rank),
+  index("world_final_rankings_world_type_rank_idx").on(table.worldId, table.rankingType, table.rank),
   foreignKey({ name: "world_final_rankings_world_operator_fk", columns: [table.worldId, table.operatorId], foreignColumns: [operators.worldId, operators.id] }),
 ]);
 

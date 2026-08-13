@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { LivemapConfigV1, PublicTrain } from "@zugfolge/livemap-stream";
+import type { LivemapConfigV2, PublicTrain } from "@zugfolge/livemap-stream";
 
 import {
   assertSelfHostedConfig,
@@ -13,9 +13,10 @@ import {
   trainLayers,
 } from "./map-contract.js";
 
-const config: LivemapConfigV1 = {
-  schemaVersion: "zugfolge-livemap-config/v1",
+const config: LivemapConfigV2 = {
+  schemaVersion: "zugfolge-livemap-config/v2",
   worldId: "world-1",
+  worldName: "Mitteldeutschland",
   infrastructureReleaseId: "infra-2026-de",
   basemap: {
     styleUrl: "/artifacts/world-basemap/style.json",
