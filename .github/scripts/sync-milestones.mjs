@@ -64,11 +64,11 @@ export function validateManifest(manifest, roadmap) {
     "milestones.json: repository muss owner/name sein",
   );
 
-  const expectedKeys = Array.from({ length: 15 }, (_, index) => `M${index}`);
+  const expectedKeys = Array.from({ length: 16 }, (_, index) => `M${index}`);
   const actualKeys = manifest.milestones.map((milestone) => milestone.key);
   invariant(
     JSON.stringify(actualKeys) === JSON.stringify(expectedKeys),
-    `Milestones muessen exakt M0-M14 und sortiert sein; gefunden: ${actualKeys.join(", ")}`,
+    `Milestones muessen exakt M0-M15 und sortiert sein; gefunden: ${actualKeys.join(", ")}`,
   );
 
   const labelNames = new Set();
@@ -296,12 +296,18 @@ export function recordRoadmapIssueUpdate(discovered, remote) {
   discovered.remote = remote;
 }
 
-async function loadRoadmapIssues(client, roadmap) {
+export function shouldDiscoverRoadmapIssue(item, roadmap, explicitlyAssignedNumbers = new Set()) {
+  if (explicitlyAssignedNumbers.has(item.number)) return false;
+  const key = roadmapIssueKey(item.title);
+  return Boolean(key && roadmap.get(key.split(".")[0])?.rows.some((row) => row.key === key.slice(1)));
+}
+
+async function loadRoadmapIssues(client, roadmap, explicitlyAssignedNumbers) {
   const remote = await client.list(`${client.basePath}/issues?state=all`);
   const result = [];
   for (const item of remote) {
+    if (!shouldDiscoverRoadmapIssue(item, roadmap, explicitlyAssignedNumbers)) continue;
     const key = roadmapIssueKey(item.title);
-    if (!key || !roadmap.get(key.split(".")[0])?.rows.some((row) => row.key === key.slice(1))) continue;
     result.push({ number: item.number, kind: item.pull_request ? "pull_request" : "issue", key, remote: item });
   }
   return result;
@@ -391,7 +397,10 @@ async function synchronizeRemote(manifest, roadmap, apply) {
   }
 
   const items = await loadRemoteItems(client, manifest);
-  const roadmapIssues = await loadRoadmapIssues(client, roadmap);
+  const explicitlyAssignedNumbers = new Set(
+    manifest.milestones.flatMap((milestone) => milestone.items.map((item) => item.number)),
+  );
+  const roadmapIssues = await loadRoadmapIssues(client, roadmap, explicitlyAssignedNumbers);
   for (const discovered of roadmapIssues) {
     const row = roadmap.get(discovered.key.split(".")[0]).rows.find((candidate) => candidate.key === discovered.key.slice(1));
     const remoteMilestone = milestoneResult.byKey.get(discovered.key.split(".")[0]);
@@ -473,7 +482,7 @@ async function main() {
   const statusPath = path.join(ROOT, manifest.generatedStatus);
   const generated = renderStatusDocument(manifest);
 
-  if (mode === "render") {
+  if (mode === "render" || mode === "update") {
     await writeFile(statusPath, generated, "utf8");
     console.log(`Aktualisiert: ${manifest.generatedStatus}`);
     return;
@@ -481,7 +490,7 @@ async function main() {
   if (mode === "check") {
     const current = await readFile(statusPath, "utf8");
     invariant(current === generated, `${manifest.generatedStatus} ist nicht aus .github/milestones.json aktualisiert`);
-    console.log(`M0-M14, ${manifest.milestones.flatMap((entry) => entry.items).length} Arbeitspakete und Statusmatrix sind konsistent.`);
+    console.log(`M0-M15, ${manifest.milestones.flatMap((entry) => entry.items).length} Arbeitspakete und Statusmatrix sind konsistent.`);
     return;
   }
   if (mode === "apply") {
