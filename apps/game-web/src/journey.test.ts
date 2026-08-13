@@ -70,6 +70,13 @@ describe("spielergebundene Tutorialreise", () => {
     expect(html).not.toContain("tutorialWorld");
   });
 
+  it("gibt den Start erst nach abgeschlossener Sitzungspruefung frei", () => {
+    const loading = renderJourney({ publicWorldId: "public-world", busy: true, message: "", tutorial: undefined, coachDismissed: false, whyOpen: false });
+    const ready = renderJourney({ publicWorldId: "public-world", busy: false, message: "", tutorial: undefined, coachDismissed: false, whyOpen: false });
+    expect(loading).toContain('id="tutorial-start" class="primary-action" type="button" disabled aria-disabled="true"');
+    expect(ready).toContain('id="tutorial-start" class="primary-action" type="button">');
+  });
+
   it("deaktiviert hektische Bewegung und ordnet das Coach-Panel mobil unter die Aufgabe", () => {
     const css = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
     expect(css).toMatch(/prefers-reduced-motion:reduce/);

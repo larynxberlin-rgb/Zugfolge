@@ -51,7 +51,7 @@ let messageTone: "status" | "error" = "status";
 let applyingAlternativeId = "";
 let demoApply: ((current: PlanningProjectionV1, alternativeId: string) => PlanningProjectionV1) | undefined;
 let tutorialSession: TutorialSessionView | undefined;
-let journeyBusy = false;
+let journeyBusy = journeyMode && !demoMode;
 let coachDismissed = false;
 let whyOpen = false;
 let tutorialPoll: ReturnType<typeof setTimeout> | undefined;
@@ -337,13 +337,17 @@ async function boot(): Promise<void> {
     api = new GameApiClient(runtimeConfiguration.gameApiUrl, accessToken);
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Anmeldung fehlgeschlagen.";
-    if (journeyMode) message = detail;
+    if (journeyMode) {
+      journeyBusy = false;
+      message = detail;
+    }
     else loadError = detail;
     render();
     return;
   }
   if (journeyMode) {
     if (api === undefined || publicWorldId === "") {
+      journeyBusy = false;
       message = "Öffentliche Weltkennung oder angemeldete Sitzung fehlt. Produktivdaten werden nicht durch Beispieldaten ersetzt.";
       render();
       return;

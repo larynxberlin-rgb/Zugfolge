@@ -104,8 +104,16 @@ function registerWeb(app: FastifyInstance): void {
   it("meldet an, durchlaeuft alle echten APIs, zeigt die Rechnung und archiviert vor der Rueckkehr", async () => {
     const context = await browser!.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
     const page = await context.newPage();
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
     await page.goto(origin, { waitUntil: "networkidle" });
+    await page.locator("#tutorial-start:not([disabled])").waitFor();
+    const startResponsePromise = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith(`/worlds/${PUBLIC_WORLD}/tutorial-sessions`));
     await page.getByRole("button", { name: "Tutorial mit Lutz starten" }).click();
+    const startResponse = await startResponsePromise;
+    if (startResponse.status() !== 201) {
+      throw new Error(`Tutorialstart antwortete mit HTTP ${startResponse.status()}: ${await startResponse.text()}; Seitenfehler: ${pageErrors.join(" | ") || "keine"}`);
+    }
     await page.getByRole("heading", { name: "Ein tragfähiges Angebot abgeben" }).waitFor();
 
     const reference = (await page.locator(".tutorial-experience > header .eyebrow").innerText()).match(/tut_[a-z2-7]+/)?.[0];
