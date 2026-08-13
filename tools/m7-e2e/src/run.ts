@@ -29,7 +29,15 @@ const subject = "m7-e2e-owner";
 const client = new PGlite();
 const db = drizzle(client, { schema });
 await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
-await db.insert(worlds).values({ id: worldId, name: "M7-Abnahmewelt", schedulePeriodWeeks: 4, epoch: new Date("2026-08-11T00:00:00Z") });
+await db.insert(worlds).values({
+  id: worldId,
+  name: "M7-Abnahmewelt",
+  worldKind: "private",
+  rankingStatus: "unranked",
+  schedulePeriodWeeks: 4,
+  epoch: new Date("2026-08-11T00:00:00Z"),
+  lifecycleStatus: "active",
+});
 const app = buildApp({
   db,
   verifyToken: async (token) => {

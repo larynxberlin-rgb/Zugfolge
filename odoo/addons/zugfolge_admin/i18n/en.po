@@ -5,122 +5,162 @@ msgstr ""
 "Language: en\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 
+#. module: zugfolge_admin
 msgid "Öffentliche Welten"
 msgstr "Public worlds"
 
+#. module: zugfolge_admin
 msgid "Meine Welten"
 msgstr "My worlds"
 
+#. module: zugfolge_admin
 msgid "Verfügbare Welten vergleichen"
 msgstr "Compare available worlds"
 
+#. module: zugfolge_admin
 msgid "Noch keine Welt veröffentlicht"
 msgstr "No world has been published yet"
 
+#. module: zugfolge_admin
 msgid "Weltdaten werden geladen …"
 msgstr "Loading world data…"
 
+#. module: zugfolge_admin
 msgid "Weltdaten sind vorübergehend nicht verfügbar. Bitte später erneut versuchen."
 msgstr "World data is temporarily unavailable. Please try again later."
 
+#. module: zugfolge_admin
 msgid "Keine passende veröffentlichte Welt vorhanden."
 msgstr "No matching published world is available."
 
+#. module: zugfolge_admin
 msgid "Daten möglicherweise veraltet"
 msgstr "Data may be stale"
 
+#. module: zugfolge_admin
 msgid "Daten möglicherweise veraltet · Stand %s"
 msgstr "Data may be stale · Updated %s"
 
+#. module: zugfolge_admin
 msgid "Startkapital"
 msgstr "Starting capital"
 
+#. module: zugfolge_admin
 msgid "Stark aktiv"
 msgstr "Highly active"
 
+#. module: zugfolge_admin
 msgid "Nicht ausgewiesen"
 msgstr "Not reported"
 
+#. module: zugfolge_admin
 msgid "Freie Plätze"
 msgstr "Available places"
 
+#. module: zugfolge_admin
 msgid "EVU gesamt"
 msgstr "Total railway undertakings"
 
+#. module: zugfolge_admin
 msgid "Unbefristet"
 msgstr "Unlimited duration"
 
+#. module: zugfolge_admin
 msgid "Phase"
 msgstr "Phase"
 
+#. module: zugfolge_admin
 msgid "Verbleibend"
 msgstr "Remaining"
 
+#. module: zugfolge_admin
 msgid "%s Tage %s Stunden"
 msgstr "%s days %s hours"
 
+#. module: zugfolge_admin
 msgid "%s Stunden"
 msgstr "%s hours"
 
+#. module: zugfolge_admin
 msgid "Beginn"
 msgstr "Starts"
 
+#. module: zugfolge_admin
 msgid "Ende"
 msgstr "Ends"
 
+#. module: zugfolge_admin
 msgid "Preis"
 msgstr "Price"
 
+#. module: zugfolge_admin
 msgid "Teilnahme auf Anfrage"
 msgstr "Participation on request"
 
+#. module: zugfolge_admin
 msgid "Aufnahmestatus"
 msgstr "Admission status"
 
+#. module: zugfolge_admin
 msgid "Stand: %s"
 msgstr "Updated: %s"
 
+#. module: zugfolge_admin
 msgid "Autoritative Weltzeit: %s"
 msgstr "Authoritative world time: %s"
 
+#. module: zugfolge_admin
 msgid "Region: %s · Regelwerk: %s"
 msgstr "Region: %s · ruleset: %s"
 
+#. module: zugfolge_admin
 msgid "Welt-ID"
 msgstr "World ID"
 
+#. module: zugfolge_admin
 msgid "Weltgruppe"
 msgstr "World group"
 
+#. module: zugfolge_admin
 msgid "Alle Welten"
 msgstr "All worlds"
 
+#. module: zugfolge_admin
 msgid "Aktive Welten"
 msgstr "Active worlds"
 
+#. module: zugfolge_admin
 msgid "Anmeldung offen"
 msgstr "Registration open"
 
+#. module: zugfolge_admin
 msgid "UUID aus dem Weltangebot"
 msgstr "UUID from the world offer"
 
+#. module: zugfolge_admin
 msgid "Kaufen"
 msgstr "Buy"
 
+#. module: zugfolge_admin
 msgid "Teilnahme anfragen"
 msgstr "Request participation"
 
+#. module: zugfolge_admin
 msgid "Anmelden"
 msgstr "Sign in"
 
+#. module: zugfolge_admin
 msgid "Spiel öffnen"
 msgstr "Open game"
 
+#. module: zugfolge_admin
 msgid "Teilnahmen"
 msgstr "Participations"
 
+#. module: zugfolge_admin
 msgid "Du hast noch keine Weltteilnahme."
 msgstr "You do not have a world participation yet."
 
+#. module: zugfolge_admin
 msgid "Welt im Snippet-Menü auswählen. Im Editor werden keine produktiven Dummywerte angezeigt."
 msgstr "Select a world in the snippet menu. No production dummy values are shown in the editor."
