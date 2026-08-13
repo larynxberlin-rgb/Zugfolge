@@ -7,6 +7,7 @@ export interface JourneyViewState {
   readonly message: string;
   readonly coachDismissed: boolean;
   readonly whyOpen: boolean;
+  readonly messageTone?: "status" | "error";
   readonly livemapUrl?: string;
 }
 
@@ -98,7 +99,7 @@ function coach(session: TutorialSessionView, dismissed: boolean, whyOpen: boolea
 
 function tutorial(state: JourneyViewState): string {
   const session = state.tutorial;
-  if (session === undefined) return `<section class="tutorial-start journey-card"><p class="eyebrow">Persönliche Tutorialwelt</p><h2>In etwa zwölf Minuten zum ersten Betrieb</h2><p>Eine private, ungewertete und beschleunigte Welt wird erst beim Start für Sie erzeugt. Nichts davon gelangt in die öffentliche Welt oder nach Odoo.</p><ol><li>Ausschreibung gewinnen</li><li>Fahrzeug leasen</li><li>Trasse bestätigen</li><li>Betriebsprogramm aktivieren</li><li>Störung disponieren</li></ol><button id="tutorial-start" class="primary-action" type="button"${state.busy ? " disabled aria-disabled=\"true\"" : ""}>Tutorial mit Lutz starten</button></section>`;
+  if (session === undefined) return `<section class="tutorial-start journey-card"><p class="eyebrow">Persönliche Tutorialwelt</p><h2>In etwa zwölf Minuten zum ersten Betrieb</h2><p>Eine private, ungewertete und beschleunigte Welt wird erst beim Start für Sie erzeugt. Nichts davon gelangt in die öffentliche Welt oder nach Odoo.</p><ol><li>Ausschreibung gewinnen</li><li>Fahrzeug leasen</li><li>Trasse bestätigen</li><li>Betriebsprogramm aktivieren</li><li>Störung disponieren</li></ol><button id="tutorial-start" class="primary-action" type="button">Tutorial mit Lutz starten</button></section>`;
   return `<section class="tutorial-experience" data-dialogue-target="${escapeHtml(session.dialogue.target ?? "")}"><header><div><p class="eyebrow">Private Tutorialwelt · ${escapeHtml(session.reference)}</p><h1>Kieselgrund–Fichtenhain</h1></div><div class="tutorial-session-meta"><span>ungewertet</span><span>240× beschleunigt</span><button id="tutorial-restart" class="secondary" type="button">Neu starten</button></div></header>${progress(session)}<div class="tutorial-workspace">${activeTask(session)}${coach(session, state.coachDismissed, state.whyOpen)}</div></section>`;
 }
 
@@ -110,5 +111,7 @@ function onboarding(state: JourneyViewState): string {
 export function renderJourney(state: JourneyViewState): string {
   const inTutorial = state.tutorial !== undefined;
   const livemap = state.livemapUrl === undefined || state.livemapUrl === "" ? "" : `<a class="primary-map-link" href="${escapeHtml(state.livemapUrl)}">Zur Live-Lage</a>`;
-  return `<main class="journey-shell" aria-busy="${state.busy}"><header class="journey-top"><div><p class="wordmark">ZUGFOLGE</p><h1>Geschlossene Alpha · Spielerreise</h1></div><nav aria-label="Hauptnavigation">${livemap}<a href="?view=diagram&world=${encodeURIComponent(state.publicWorldId)}">Zum Bildfahrplan</a></nav></header>${state.message === "" ? "" : `<p class="journey-message" role="status" aria-live="polite">${escapeHtml(state.message)}</p>`}<div class="${inTutorial ? "tutorial-shell" : "journey-grid"}">${tutorial(state)}${inTutorial ? "" : onboarding(state)}</div></main>`;
+  const message = state.message === "" ? "" : `<p class="journey-message journey-message--${state.messageTone ?? "status"}" role="${state.messageTone === "error" ? "alert" : "status"}" aria-live="polite">${escapeHtml(state.message)}</p>`;
+  const html = `<main class="journey-shell" aria-busy="${state.busy}"><header class="journey-top"><div><p class="wordmark">ZUGFOLGE</p><h1>Geschlossene Alpha · Spielerreise</h1></div><nav aria-label="Hauptnavigation">${livemap}<a href="?view=diagram&world=${encodeURIComponent(state.publicWorldId)}">Zum Bildfahrplan</a></nav></header>${message}<div class="${inTutorial ? "tutorial-shell" : "journey-grid"}">${tutorial(state)}${inTutorial ? "" : onboarding(state)}</div></main>`;
+  return state.busy ? html.replaceAll("<button ", '<button disabled aria-disabled="true" ') : html;
 }

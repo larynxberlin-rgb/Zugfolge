@@ -73,7 +73,7 @@ describe("spielergebundene Tutorialreise", () => {
   it("gibt den Start erst nach abgeschlossener Sitzungspruefung frei", () => {
     const loading = renderJourney({ publicWorldId: "public-world", busy: true, message: "", tutorial: undefined, coachDismissed: false, whyOpen: false });
     const ready = renderJourney({ publicWorldId: "public-world", busy: false, message: "", tutorial: undefined, coachDismissed: false, whyOpen: false });
-    expect(loading).toContain('id="tutorial-start" class="primary-action" type="button" disabled aria-disabled="true"');
+    expect(loading).toContain('<button disabled aria-disabled="true" id="tutorial-start" class="primary-action" type="button">');
     expect(ready).toContain('id="tutorial-start" class="primary-action" type="button">');
   });
 
@@ -103,5 +103,34 @@ describe("spielergebundene Tutorialreise", () => {
     expect(decoded[0]).toBe(0);
     expect(decoded[4]).toBe(0);
     expect(decoded[width * 4]).toBe(0);
+  });
+
+  it("macht Ladefehler wiederholbar und meldet sie als Alarm", () => {
+    const html = renderJourney({
+      publicWorldId: "public-world",
+      busy: false,
+      message: "Tutorial konnte nicht geladen werden.",
+      messageTone: "error",
+      tutorial: undefined,
+      coachDismissed: false,
+      whyOpen: false,
+    });
+    expect(html).toContain('role="alert"');
+    expect(html).toContain('id="tutorial-start"');
+    expect(html).toContain("Tutorial mit Lutz starten");
+  });
+
+  it("deaktiviert alle Aktionen waehrend eines autoritativen Requests", () => {
+    const html = renderJourney({
+      publicWorldId: "public-world",
+      busy: true,
+      message: "",
+      tutorial: session(),
+      coachDismissed: false,
+      whyOpen: false,
+    });
+    const buttons = html.match(/<button[^>]*>/g) ?? [];
+    expect(buttons.length).toBeGreaterThanOrEqual(4);
+    expect(buttons.every((button) => button.includes('disabled aria-disabled="true"'))).toBe(true);
   });
 });

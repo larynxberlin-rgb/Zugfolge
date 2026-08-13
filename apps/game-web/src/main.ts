@@ -87,6 +87,7 @@ function render(): void {
       message,
       coachDismissed,
       whyOpen,
+      messageTone,
       livemapUrl,
     });
     bindJourney();
@@ -188,12 +189,15 @@ async function journeyAction(action: () => Promise<void>, success: string): Prom
   if (journeyBusy) return;
   journeyBusy = true;
   message = "Autoritativer Weltzustand wird aktualisiert …";
+  messageTone = "status";
   render();
   try {
     await action();
     message = success;
+    messageTone = "status";
   } catch (error) {
     message = error instanceof Error ? error.message : "Spielerreise konnte nicht aktualisiert werden.";
+    messageTone = "error";
   } finally {
     journeyBusy = false;
     render();
@@ -238,6 +242,7 @@ async function dismissTutorialDialogue(): Promise<void> {
     render();
   } catch (error) {
     message = error instanceof Error ? error.message : "Hinweis konnte nicht ausgeblendet werden.";
+    messageTone = "error";
     render();
   }
 }
@@ -340,6 +345,7 @@ async function boot(): Promise<void> {
     if (journeyMode) {
       journeyBusy = false;
       message = detail;
+      messageTone = "error";
     }
     else loadError = detail;
     render();
@@ -349,6 +355,7 @@ async function boot(): Promise<void> {
     if (api === undefined || publicWorldId === "") {
       journeyBusy = false;
       message = "Öffentliche Weltkennung oder angemeldete Sitzung fehlt. Produktivdaten werden nicht durch Beispieldaten ersetzt.";
+      messageTone = "error";
       render();
       return;
     }
@@ -360,6 +367,7 @@ async function boot(): Promise<void> {
       if (tutorial !== undefined) setTutorialSession(tutorial);
     } catch (error) {
       message = error instanceof Error ? error.message : "Spielerreise konnte nicht geladen werden.";
+      messageTone = "error";
     } finally {
       journeyBusy = false;
       render();
