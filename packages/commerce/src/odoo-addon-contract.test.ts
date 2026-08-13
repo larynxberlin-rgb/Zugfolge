@@ -79,11 +79,12 @@ describe("Odoo-Administrationsmodul", () => {
     expect(security.match(/<field name="privilege_id"/g)).toHaveLength(4);
     expect(security).toContain("Command.link(ref('base.group_user'))");
     expect(security).toContain("Command.link(ref('base.group_system'))");
+    expect(security).toContain("Command.unlink(ref('zugfolge_admin.group_zugfolge_admin'))");
     expect(security).not.toContain('name="user_ids"');
     expect(security).not.toContain("ref('base.user_admin')");
     expect(security).not.toContain("ref('base.user_root')");
     expect(views).toMatch(
-      /<menuitem id="menu_zugfolge_root"[^>]*action="action_zugfolge_world_projection"[^>]*groups="zugfolge_admin\.group_zugfolge_admin"/,
+      /<menuitem id="menu_zugfolge_root"[^>]*action="action_zugfolge_world_projection"[^>]*groups="zugfolge_admin\.group_zugfolge_admin,zugfolge_admin\.group_zugfolge_telemetry"/,
     );
   });
 
@@ -97,8 +98,11 @@ describe("Odoo-Administrationsmodul", () => {
       ),
     );
     expect(controller).toContain("hmac.compare_digest");
+    expect(controller).toContain("RFC3339_WITH_ZONE.fullmatch(timestamp)");
     expect(controller.match(/request\.get_json_data\(\)/g)).toHaveLength(2);
     expect(controller).not.toContain("request.jsonrequest");
+    expect(controller.match(/type="jsonrpc"/g)).toHaveLength(2);
+    expect(controller).not.toContain('type="json"');
     expect(controller).toContain("/zugfolge/reconciliation/snapshot");
     expect(controller).toContain("/zugfolge/metrics");
     expect(controller).toContain("admin.capability.projection");

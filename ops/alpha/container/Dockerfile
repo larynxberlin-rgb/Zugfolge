@@ -11,6 +11,9 @@ RUN cargo build --release --locked -p zugfolge-runtime-napi --features node-addo
 FROM node:24.13.0-bookworm-slim AS nodebuild
 RUN corepack enable
 WORKDIR /app
+ARG LIVEMAP_BASE_PATH=/
+ARG OPERATIONS_CENTER_BASE_PATH=/
+ARG OPERATIONS_CENTER_GAME_API_URL=
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps apps
 COPY packages packages
@@ -18,12 +21,11 @@ COPY tools tools
 COPY docs/glossar.md docs/glossar.md
 RUN pnpm install --frozen-lockfile && pnpm build
 RUN cd apps/livemap \
-  && pnpm exec vite build --base=/live/ \
-  && node scripts/copy-maplibre-workers.mjs \
-  && node -e 'const fs=require("node:fs");const path="dist/index.html";const source=fs.readFileSync(path,"utf8");const output=source.replace("src=\"/runtime-config.js\"","src=\"/live/runtime-config.js\"");if(output===source)throw new Error("Livemap Runtime-Konfiguration fehlt");fs.writeFileSync(path,output);'
+  && pnpm exec vite build --base="${LIVEMAP_BASE_PATH}" \
+  && node scripts/copy-maplibre-workers.mjs
 RUN cd apps/operations-center \
-  && pnpm exec vite build --base=/ops/ \
-  && node -e 'const fs=require("node:fs");const path="dist/index.html";const source=fs.readFileSync(path,"utf8");const output=source.replace("<meta name=\"game-api-url\" content=\"\">","<meta name=\"game-api-url\" content=\"/api\">");if(output===source)throw new Error("Operations-Center API-Meta fehlt");fs.writeFileSync(path,output);'
+  && pnpm exec vite build --base="${OPERATIONS_CENTER_BASE_PATH}" \
+  && GAME_API_URL="${OPERATIONS_CENTER_GAME_API_URL}" node -e 'const fs=require("node:fs");const path="dist/index.html";const source=fs.readFileSync(path,"utf8");const marker="<meta name=\"game-api-url\" content=\"\">";if(!source.includes(marker))throw new Error("Operations-Center API-Meta fehlt");fs.writeFileSync(path,source.replace(marker,`<meta name="game-api-url" content="${process.env.GAME_API_URL}">`));'
 
 FROM node:24.13.0-bookworm-slim
 ARG ZUGFOLGE_SOURCE_SHA

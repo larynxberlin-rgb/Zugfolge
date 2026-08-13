@@ -42,10 +42,35 @@ Single-Writer/Game API → Scheduler/Livemap → Bridge/Odoo-Projektion ist die
 bindende Reihenfolge. PostgreSQL übernimmt die persistente Queue; ein Broker
 wird erst nach Messbeweis eingeführt.
 
+Vor der Game API laufen zwei einmalige, idempotente Gates: `game-migrate`
+wendet den vollständigen Drizzle-Migrationsstand an; `game-bootstrap` prüft
+genau das signierte öffentliche Weltdeployment und legt dessen Welt- und
+Planning-Authority-Bindung an. Statische Tutorialdeployments sind verboten.
+
+Für einen gemeinsamen HTTPS-Ursprung mit Pfadpräfixen werden beim Imagebau
+`LIVEMAP_BASE_PATH=/live/` und `OPERATIONS_CENTER_BASE_PATH=/ops/` gesetzt.
+Wenn `/live/` vom bestehenden `game-web`-Redirect-Wildcard abgedeckt wird,
+kann die Livemap zur Laufzeit mit `LIVEMAP_OIDC_CLIENT_ID=game-web` denselben
+öffentlichen PKCE-Client verwenden. Der eigenständige Compose-Betrieb behält
+standardmäßig den engeren Client `livemap`.
+
+Der externe Reverse Proxy routet dabei ohne Geheimnisse im Repository:
+
+| Öffentlicher Pfad | Internes Ziel | Prefix |
+|---|---|---|
+| `/api/*` | API-Proxy des Game Web | beibehalten; der Static-Server entfernt `/api` |
+| `/api/*` | alternativ direkte Game API | vor dem Upstream entfernen |
+| `/live/*` | Livemap | vor dem Upstream entfernen |
+| `/ops/*` | Operations Center | vor dem Upstream entfernen |
+| alle übrigen Pfade | Game Web | beibehalten |
+
+Die Buildpfade müssen zu den öffentlichen Präfixen passen. Der eigenständige
+Compose-Betrieb nutzt für beide Frontends `/`.
+
 ## Keycloak und Odoo
 
 Der Realmimport `ops/alpha/keycloak/zugfolge-realm.json` enthält die Clients
-`game-web`, `operations-center`, die Audience `game-api`, Rollen sowie
+`game-web`, `livemap`, `operations-center`, die Audience `game-api`, Rollen sowie
 Required Actions. Das Servicekonto `provisioner` benötigt nur `manage-users`,
 `view-users` und `query-users`.
 
@@ -56,6 +81,13 @@ In Odoo unter **Einstellungen → Technisch → Systemparameter** setzen:
 - `zugfolge_admin.actor_reference` = `odoo-alpha-admin`;
 - Webhook-Key und Secret passend zu `ODOO_WEBHOOK_KEYS_JSON`;
 - Projektions-Key passend zu `ODOO_PROJECTION_SECRET`.
+
+Bei einer bereits installierten Odoo-Datenbank vor dem Neustart Datenbank und
+Filestore gemeinsam sichern und das Add-on einmalig im Odoo-Container mit
+denselben DB-, Add-on- und `queue_job`-Parametern wie im Normalbetrieb sowie
+`-u zugfolge_admin --stop-after-init` aktualisieren. Der vollständige Befehl
+steht in [`docs/odoo-betrieb.md`](docs/odoo-betrieb.md). `--init` im
+Compose-Start ersetzt dieses kontrollierte Upgrade nicht.
 
 ## Einladungen und persönlicher Tutorialstart
 

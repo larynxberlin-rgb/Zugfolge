@@ -5,7 +5,12 @@ from odoo import _
 from odoo.exceptions import ValidationError
 
 
-RFC3339_WITH_ZONE = re.compile(r"^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$")
+# Canonical RFC 3339 profile used on the integration boundary. Leap seconds
+# are deliberately rejected because Python's datetime and Odoo cannot preserve
+# second 60 without inventing a normalization rule.
+RFC3339_WITH_ZONE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$"
+)
 
 
 def rfc3339_utc(value, field_name, required=True):

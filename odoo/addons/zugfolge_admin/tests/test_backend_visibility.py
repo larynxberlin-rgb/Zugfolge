@@ -1,4 +1,5 @@
 from odoo import Command
+from odoo.exceptions import AccessError
 from odoo.tests.common import TransactionCase
 
 
@@ -45,3 +46,40 @@ class TestZugfolgeBackendVisibility(TransactionCase):
             self.assertEqual(privilege.category_id, self.env.ref("base.module_category_administration"))
             privileges |= privilege
         self.assertEqual(len(privileges), 4)
+
+    def test_telemetry_role_cannot_escalate_to_administration(self):
+        telemetry = self.env["res.users"].with_context(no_reset_password=True).create({
+            "name": "Zugfolge Telemetry",
+            "login": "zugfolge-telemetry@example.test",
+            "group_ids": [Command.set([self.env.ref("zugfolge_admin.group_zugfolge_telemetry").id])],
+        })
+        self.assertTrue(telemetry.has_group("zugfolge_admin.group_zugfolge_telemetry"))
+        self.assertFalse(telemetry.has_group("zugfolge_admin.group_zugfolge_admin"))
+
+        visible_menus = self.env["ir.ui.menu"].with_user(telemetry)._visible_menu_ids()
+        self.assertIn(self.env.ref("zugfolge_admin.menu_zugfolge_root").id, visible_menus)
+        self.assertIn(self.env.ref("zugfolge_admin.menu_zugfolge_monitoring").id, visible_menus)
+        self.assertIn(self.env.ref("zugfolge_admin.menu_zugfolge_feedback").id, visible_menus)
+        for restricted_menu in (
+            "menu_zugfolge_capabilities",
+            "menu_zugfolge_requests",
+            "menu_zugfolge_alpha_invitations",
+            "menu_zugfolge_world_offers",
+            "menu_zugfolge_world_participations",
+            "menu_zugfolge_infra_release_imports",
+        ):
+            self.assertNotIn(self.env.ref(f"zugfolge_admin.{restricted_menu}").id, visible_menus)
+
+        with self.assertRaises(AccessError):
+            self.env["zugfolge.admin.request"].with_user(telemetry).create({
+                "action_type": "world_close",
+                "risk_class": "high",
+                "reason": "Nicht erlaubt",
+            })
+        for restricted_model in (
+            "zugfolge.alpha.invitation",
+            "zugfolge.world.offer",
+            "zugfolge.world.participation",
+        ):
+            with self.assertRaises(AccessError):
+                self.env[restricted_model].with_user(telemetry).check_access("create")

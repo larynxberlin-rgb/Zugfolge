@@ -21,10 +21,11 @@ function parseEnvironmentExample(source) {
 }
 
 test("Paketplan, Alpha-Compose und Runtime-Konfiguration verwenden dieselbe Releasewurzel", async () => {
-  const [planSource, compose, environmentSource] = await Promise.all([
+  const [planSource, compose, environmentSource, dockerfile] = await Promise.all([
     readFile(new URL("../tiles/map-package.annual-2026.plan.json", import.meta.url), "utf8"),
     readFile(new URL("../../compose.alpha.yml", import.meta.url), "utf8"),
     readFile(new URL("../../.env.example", import.meta.url), "utf8"),
+    readFile(new URL("../../ops/alpha/container/Dockerfile", import.meta.url), "utf8"),
   ]);
   const plan = JSON.parse(planSource);
   const environment = parseEnvironmentExample(environmentSource);
@@ -38,6 +39,8 @@ test("Paketplan, Alpha-Compose und Runtime-Konfiguration verwenden dieselbe Rele
   assert.equal(readModel?.installPath, "read-model.sqlite");
 
   const defaults = runtimeConfiguration({});
+  assert.equal(defaults.livemapOidcClientId, "livemap");
+  assert.equal(runtimeConfiguration({ LIVEMAP_OIDC_CLIENT_ID: "game-web" }).livemapOidcClientId, "game-web");
   assert.equal(defaults.mapBasemapStyleUrl, plan.runtime.basemapStyleUrl);
   assert.equal(defaults.mapGermanyPmtilesUrl, plan.runtime.infrastructurePmtilesUrl);
   assert.throws(
@@ -58,6 +61,27 @@ test("Paketplan, Alpha-Compose und Runtime-Konfiguration verwenden dieselbe Rele
   assert.ok(compose.includes(`MAP_RELEASE_ID: "\${MAP_RELEASE_ID:-${releaseId}}"`));
   assert.ok(compose.includes(`MAP_BASEMAP_STYLE_URL: "\${MAP_BASEMAP_STYLE_URL:-${plan.runtime.basemapStyleUrl}}"`));
   assert.ok(compose.includes(`MAP_GERMANY_PMTILES_URL: "\${MAP_GERMANY_PMTILES_URL:-${plan.runtime.infrastructurePmtilesUrl}}"`));
+  assert.match(compose, /game-migrate:[\s\S]*packages\/db\/dist\/migrate\.js/u);
+  assert.match(compose, /game-bootstrap:[\s\S]*production-db-bootstrap\.mjs/u);
+  assert.match(compose, /game-bootstrap: \{ condition: service_completed_successfully \}/u);
+  assert.deepEqual(JSON.parse(environment.ALPHA_WORLD_RELEASE_PATHS_JSON), [
+    "/evidence/alpha-world-deployment.json.signed.json",
+  ]);
+  assert.equal(environment.LIVEMAP_OIDC_CLIENT_ID, "livemap");
+  assert.equal(environment.LIVEMAP_BASE_PATH, "/");
+  assert.equal(environment.OPERATIONS_CENTER_BASE_PATH, "/");
+  for (const buildArgument of [
+    "LIVEMAP_BASE_PATH",
+    "OPERATIONS_CENTER_BASE_PATH",
+    "OPERATIONS_CENTER_GAME_API_URL",
+  ]) {
+    assert.ok(dockerfile.includes(`ARG ${buildArgument}=`));
+    assert.ok(compose.includes(`${buildArgument}: "\${${buildArgument}:-`));
+  }
+  assert.match(
+    compose,
+    /operations-center:[\s\S]*GAME_API_INTERNAL_URL: http:\/\/game-api:3000/u,
+  );
 });
 
 test("statischer Server liefert das versionierte Kartenpaket mit Byte-Ranges aus", async () => {

@@ -2,6 +2,7 @@ interface ZugfolgeRuntimeConfiguration {
   readonly gameApiUrl?: string;
   readonly keycloakUrl?: string;
   readonly keycloakRealm?: string;
+  readonly livemapOidcClientId?: string;
   readonly publicWorldId?: string;
   readonly gameWebUrl?: string;
   readonly livemapUrl?: string;

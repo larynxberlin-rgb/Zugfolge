@@ -2,6 +2,7 @@ export interface LivemapRuntimeConfiguration {
   readonly gameApiUrl: string;
   readonly keycloakUrl: string;
   readonly keycloakRealm: string;
+  readonly oidcClientId: string;
   readonly publicWorldId: string;
   readonly gameWebUrl: string;
   readonly basemapStyleUrl: string;
@@ -10,11 +11,6 @@ export interface LivemapRuntimeConfiguration {
 }
 
 const TOKEN_KEY = "zugfolge.accessToken";
-// The production Livemap lives below the same origin and redirect wildcard as
-// game-web. Reusing that public PKCE client also lets both frontends share the
-// session-scoped access token without weakening the realm's MFA-protected
-// administration boundary.
-export const LIVEMAP_OIDC_CLIENT_ID = "game-web";
 const EXPIRY_KEY = "zugfolge.accessTokenExpiresAt";
 const STATE_KEY = "zugfolge.livemap.oidc.state";
 const VERIFIER_KEY = "zugfolge.livemap.oidc.verifier";
@@ -39,6 +35,7 @@ export function loadRuntimeConfiguration(): LivemapRuntimeConfiguration {
     gameApiUrl: configured.gameApiUrl ?? metaApi,
     keycloakUrl: (configured.keycloakUrl ?? "").replace(/\/$/, ""),
     keycloakRealm: configured.keycloakRealm ?? "zugfolge",
+    oidcClientId: configured.livemapOidcClientId ?? "livemap",
     publicWorldId: configured.publicWorldId ?? "",
     gameWebUrl: configured.gameWebUrl ?? "",
     basemapStyleUrl: configured.mapBasemapStyleUrl ?? "/artifacts/world-basemap/style.json",
@@ -78,7 +75,7 @@ export async function ensureAccessToken(configuration: LivemapRuntimeConfigurati
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         grant_type: "authorization_code",
-        client_id: LIVEMAP_OIDC_CLIENT_ID,
+        client_id: configuration.oidcClientId,
         code,
         redirect_uri: redirectUri,
         code_verifier: verifier,
@@ -106,7 +103,7 @@ export async function ensureAccessToken(configuration: LivemapRuntimeConfigurati
   sessionStorage.setItem(REDIRECT_KEY, redirectUri);
   const authorization = new URL(`${issuer}/protocol/openid-connect/auth`);
   authorization.search = new URLSearchParams({
-    client_id: LIVEMAP_OIDC_CLIENT_ID,
+    client_id: configuration.oidcClientId,
     response_type: "code",
     scope: "openid",
     redirect_uri: redirectUri,
