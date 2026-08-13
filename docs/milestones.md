@@ -931,11 +931,20 @@ offen.
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 12.1 | EVU-zu-EVU-Verträge: Traktion, Vermietung, Anschluss, Ersatzverkehr | L | offen |
-| 12.2 | **Persistenter Fahrzeug-Sekundärmarkt** mit Fristenstand, mehrdimensionalem Zustand, Lebenslauf, Wertverfall und Rücklauf nach Leasingende, Betriebsaufgabe oder Insolvenz; Neukäufe gehen bei Verwertung als dieselben Assets in diesen Markt | L | offen |
+| 12.1 | EVU-zu-EVU-Verträge: Traktion, Vermietung, Anschluss, Ersatzverkehr | L | in Arbeit |
+| 12.2 | **Persistenter Fahrzeug-Sekundärmarkt** mit Fristenstand, mehrdimensionalem Zustand, Lebenslauf, Wertverfall und Rücklauf nach Leasingende, Betriebsaufgabe oder Insolvenz; Neukäufe gehen bei Verwertung als dieselben Assets in diesen Markt | L | in Arbeit |
 | 12.2a | **Servereigene Vermieter**: mehrere fiktive, deterministisch profilierte Anbieter mit Baureihen- und Verkehrstyppräferenzen; transparente, je Anbieter verschiedene Kalkulation, jedoch stets über dem Marktpreisband vergleichbarer EVU-Angebote | M | offen |
 | 12.3 | Bietergemeinschaften, Kooperationstarife | M | offen |
 | 12.4 | Öffentliche Qualitätsrankings mit Wirkung auf Ausschreibungswertung | M | offen |
+
+Der Stufe-4-Implementierungsnachweis verbindet die dunkle, zustandsredundante
+Spieleroberfläche in `apps/game-web` mit den produktiven Game-API-Routen. Zwei
+getrennt authentifizierte EVU durchlaufen Angebot und Annahme mit Cent-Ledger,
+Postfach und Audit. Ein paralleler Lauf handelt 20 konkrete Fahrzeugassets über
+Angebot, Reservierung und Rust-Flotten-Single-Writer-Übergabe; Identität,
+Historienkette und Doppelbindungs-Schutz bleiben erhalten. Offen bleibt der
+externe Zwei-Browser-Lauf gegen die Alpha-Zielumgebung; deshalb sind M12.1 und
+M12.2 noch nicht als erledigt markiert.
 
 ---
 

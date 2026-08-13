@@ -4,8 +4,26 @@ import { mountGlossaryLayer } from "@zugfolge/glossary";
 import "@zugfolge/glossary/styles.css";
 import type { PlanningProjectionV1 } from "@zugfolge/planning-projection";
 
-import { GameApiClient, type CapacityHeatmapCell, type OnboardingAssistant, type StartPackageGrant, type TutorialJourney } from "./api.js";
+import {
+  GameApiClient,
+  type CapacityHeatmapCell,
+  type ContractType,
+  type OnboardingAssistant,
+  type OperatorContractView,
+  type OperatorSummary,
+  type StartPackageGrant,
+  type TutorialJourney,
+  type VehicleAssetView,
+  type VehicleHistoryEventView,
+  type VehicleMarketListingView,
+} from "./api.js";
 import { ensureAccessToken, loadRuntimeConfiguration } from "./auth.js";
+import {
+  bindCooperationSurface,
+  parseContractOfferFields,
+  parseEuroCents,
+  type CooperationSurfaceState,
+} from "./cooperation.js";
 import { conflictsForTrain } from "./diagram.js";
 import { renderJourney } from "./journey.js";
 import { primaryMapDestination } from "./navigation.js";
@@ -54,6 +72,17 @@ let startPackage: StartPackageGrant | undefined;
 let heatmap: readonly CapacityHeatmapCell[] = [];
 let onboardingAssistant: OnboardingAssistant | undefined;
 let journeyBusy = false;
+let worldOperators: readonly OperatorSummary[] = [];
+let ownOperatorIds: readonly string[] = [];
+let activeOperatorId = "";
+let operatorContracts: readonly OperatorContractView[] = [];
+let marketListings: readonly VehicleMarketListingView[] = [];
+let ownedVehicles: readonly VehicleAssetView[] = [];
+let selectedVehicleHistory: readonly VehicleHistoryEventView[] | undefined;
+let selectedHistoryVehicleId = "";
+let contractType: ContractType = "traction";
+let marketQuery = "";
+let cooperationAtS = 0;
 
 function explicitDemoUrl(): string {
   const demoParameters = new URLSearchParams(window.location.search);
@@ -76,6 +105,25 @@ function reconcileSelection(current: PlanningProjectionV1): void {
   }
 }
 
+function cooperationState(): CooperationSurfaceState | undefined {
+  if (worldId === "") return undefined;
+  return {
+    worldId,
+    activeOperatorId,
+    operators: worldOperators,
+    ownOperatorIds,
+    contracts: operatorContracts,
+    listings: marketListings,
+    ownedVehicles,
+    selectedVehicleHistory,
+    selectedHistoryVehicleId,
+    contractType,
+    marketQuery,
+    atS: cooperationAtS,
+    busy: journeyBusy,
+  };
+}
+
 function render(): void {
   app.dataset.density = density;
   if (journeyMode) {
@@ -90,6 +138,7 @@ function render(): void {
       message,
       messageTone,
       livemapUrl,
+      cooperation: cooperationState(),
     });
     bindJourney();
     return;
@@ -119,6 +168,21 @@ function bindJourney(): void {
   app.querySelector("#tutorial-reset")?.addEventListener("click", () => void resetTutorial());
   app.querySelector("#claim-start-package")?.addEventListener("click", () => void claimStartPackage());
   app.querySelector("#heatmap-refresh")?.addEventListener("click", () => void refreshOnboarding());
+  bindCooperationSurface(app, {
+    changeOperator: (operatorId) => cooperationAction(async () => refreshCooperation(operatorId), "Handelndes EVU wurde gewechselt."),
+    changeContractType: (value) => { contractType = value; render(); },
+    changeMarketQuery: (value) => { marketQuery = value; render(); },
+    refresh: () => cooperationAction(async () => refreshCooperation(activeOperatorId), "Kooperation und Fahrzeugmarkt sind aktuell."),
+    offerContract: offerCooperationContract,
+    respondToContract,
+    endContract,
+    createListing: createVehicleListing,
+    reserveListing,
+    transferListing,
+    reverseListing,
+    cancelListing,
+    loadHistory: loadVehicleHistory,
+  });
 }
 
 async function journeyAction(action: () => Promise<void>, success: string): Promise<void> {
@@ -138,6 +202,165 @@ async function journeyAction(action: () => Promise<void>, success: string): Prom
     journeyBusy = false;
     render();
   }
+}
+
+function commandKey(prefix: string): string {
+  return `${prefix}:${crypto.randomUUID()}`;
+}
+
+function formSecond(fields: Readonly<Record<string, string>>, name: string): number {
+  const value = fields[name] ?? "";
+  if (!/^(0|[1-9][0-9]*)$/.test(value)) throw new Error(`${name} muss eine nichtnegative ganze Simulationssekunde sein.`);
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) throw new Error(`${name} liegt außerhalb des sicheren Bereichs.`);
+  return parsed;
+}
+
+function addSeconds(atS: number, seconds: number): number {
+  const result = atS + seconds;
+  if (!Number.isSafeInteger(result)) throw new Error("Simulationszeit liegt außerhalb des sicheren Bereichs.");
+  return result;
+}
+
+async function refreshCooperation(preferredOperatorId = activeOperatorId): Promise<void> {
+  const client = api;
+  if (client === undefined || worldId === "") return;
+  const [own, atS, roster, listings] = await Promise.all([
+    client.loadOwnOperators(),
+    client.loadSimulationTime(worldId),
+    client.loadWorldOperators(worldId),
+    client.loadVehicleMarket(worldId),
+  ]);
+  cooperationAtS = atS;
+  worldOperators = roster;
+  ownOperatorIds = own.filter((operator) => operator.worldId === worldId).map((operator) => operator.id);
+  activeOperatorId = ownOperatorIds.includes(preferredOperatorId) ? preferredOperatorId : (ownOperatorIds[0] ?? "");
+  marketListings = listings;
+  selectedVehicleHistory = undefined;
+  selectedHistoryVehicleId = "";
+  if (activeOperatorId === "") {
+    operatorContracts = [];
+    ownedVehicles = [];
+    return;
+  }
+  [operatorContracts, ownedVehicles] = await Promise.all([
+    client.loadContracts(worldId, activeOperatorId),
+    client.loadOwnedVehicles(worldId, activeOperatorId),
+  ]);
+}
+
+function cooperationAction(action: () => Promise<void>, success: string): Promise<void> {
+  return journeyAction(async () => {
+    if (api !== undefined && worldId !== "") cooperationAtS = await api.loadSimulationTime(worldId);
+    await action();
+  }, success);
+}
+
+function offerCooperationContract(fields: Readonly<Record<string, string>>): Promise<void> {
+  return cooperationAction(async () => {
+    const client = api;
+    if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
+    const parsed = parseContractOfferFields(contractType, fields, cooperationAtS);
+    await client.offerContract(worldId, activeOperatorId, {
+      ...parsed,
+      contractType,
+      offeredAtS: cooperationAtS,
+      idempotencyKey: commandKey("contract-offer"),
+    });
+    await refreshCooperation(activeOperatorId);
+  }, "Vertragsangebot wurde autoritativ gespeichert und ins Postfach zugestellt.");
+}
+
+function respondToContract(contractId: string, response: "accept" | "reject"): Promise<void> {
+  return cooperationAction(async () => {
+    const client = api;
+    if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
+    await client.respondToContract(worldId, activeOperatorId, contractId, response, cooperationAtS);
+    await refreshCooperation(activeOperatorId);
+  }, response === "accept" ? "Vertrag wurde angenommen; Ledger, Postfach und Audit sind aktualisiert." : "Vertrag wurde abgelehnt und beiden Parteien zugestellt.");
+}
+
+function endContract(contractId: string, nonPerformance: boolean): Promise<void> {
+  return cooperationAction(async () => {
+    const client = api;
+    if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
+    await client.endContract(
+      worldId,
+      activeOperatorId,
+      contractId,
+      cooperationAtS,
+      nonPerformance ? "Nichterfüllung über Spieleroberfläche gemeldet." : "Ordentliche Kündigung über Spieleroberfläche.",
+      nonPerformance,
+    );
+    await refreshCooperation(activeOperatorId);
+  }, nonPerformance ? "Nichterfüllung wurde auditiert und beiden Parteien zugestellt." : "Vertrag wurde mit Fristprüfung beendet.");
+}
+
+function createVehicleListing(fields: Readonly<Record<string, string>>): Promise<void> {
+  return cooperationAction(async () => {
+    const client = api;
+    if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
+    const listingType = fields["listingType"];
+    if (listingType !== "sale" && listingType !== "rental") throw new Error("Angebotsart ist ungültig.");
+    const vehicleId = (fields["vehicleId"] ?? "").trim();
+    if (vehicleId === "") throw new Error("Fahrzeug fehlt.");
+    const expiresAtS = formSecond(fields, "expiresAtS");
+    const rentalValidUntilS = listingType === "rental" ? formSecond(fields, "rentalValidUntilS") : undefined;
+    await client.createVehicleListing(worldId, activeOperatorId, vehicleId, {
+      listingType,
+      priceCents: parseEuroCents(fields["priceEuros"] ?? ""),
+      ...(rentalValidUntilS === undefined ? {} : { rentalValidUntilS }),
+      listedAtS: cooperationAtS,
+      expiresAtS,
+      idempotencyKey: commandKey("vehicle-listing"),
+    });
+    await refreshCooperation(activeOperatorId);
+  }, "Fahrzeugangebot wurde mit Zustands- und Historienoffenlegung veröffentlicht.");
+}
+
+function reserveListing(listingId: string, expectedRevision: number): Promise<void> {
+  return cooperationAction(async () => {
+    const client = api;
+    if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
+    await client.reserveVehicleListing(worldId, listingId, activeOperatorId, cooperationAtS, addSeconds(cooperationAtS, 600), expectedRevision);
+    await refreshCooperation(activeOperatorId);
+  }, "Fahrzeug ist für zehn Simulationsminuten reserviert.");
+}
+
+function transferListing(listingId: string, expectedRevision: number): Promise<void> {
+  return cooperationAction(async () => {
+    const client = api;
+    if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
+    await client.transferVehicleListing(worldId, listingId, activeOperatorId, cooperationAtS, expectedRevision, commandKey("vehicle-transfer"));
+    await refreshCooperation(activeOperatorId);
+  }, "Übergabe, Ledgerbuchung, Flotten-Single-Writer und Lebenslauf wurden atomar bestätigt.");
+}
+
+function reverseListing(listingId: string): Promise<void> {
+  return cooperationAction(async () => {
+    const client = api;
+    if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
+    await client.reverseVehicleTransfer(worldId, listingId, activeOperatorId, cooperationAtS, "undisclosed-player-reported", commandKey("vehicle-reversal"));
+    await refreshCooperation(activeOperatorId);
+  }, "Rückabwicklung und Gegenbuchung wurden autoritativ ausgeführt.");
+}
+
+function cancelListing(listingId: string, expectedRevision: number): Promise<void> {
+  return cooperationAction(async () => {
+    const client = api;
+    if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
+    await client.cancelVehicleListing(worldId, activeOperatorId, listingId, cooperationAtS, expectedRevision);
+    await refreshCooperation(activeOperatorId);
+  }, "Fahrzeugangebot wurde zurückgezogen.");
+}
+
+function loadVehicleHistory(vehicleId: string): Promise<void> {
+  return cooperationAction(async () => {
+    const client = api;
+    if (client === undefined) throw new Error("Game-API fehlt.");
+    selectedVehicleHistory = await client.loadVehicleHistory(worldId, vehicleId);
+    selectedHistoryVehicleId = vehicleId;
+  }, "Unveränderlicher Fahrzeuglebenslauf wurde geladen.");
 }
 
 async function refreshTutorial(): Promise<void> {
@@ -294,10 +517,19 @@ async function boot(): Promise<void> {
       if (assistantResult.status === "fulfilled") onboardingAssistant = assistantResult.value;
       const failures = [tutorialResult, grantResult, heatmapResult, assistantResult]
         .filter((result): result is PromiseRejectedResult => result.status === "rejected");
-      if (failures.length > 0) {
-        const first = failures[0]!.reason;
-        const detail = first instanceof Error ? first.message : "Unbekannter Ladefehler.";
-        message = `${failures.length} Bereich${failures.length === 1 ? "" : "e"} der Spielerreise konnte${failures.length === 1 ? "" : "n"} nicht geladen werden: ${detail}`;
+      let cooperationFailure: string | undefined;
+      try {
+        await refreshCooperation();
+      } catch (error) {
+        cooperationFailure = error instanceof Error ? error.message : "Kooperation und Fahrzeugmarkt konnten nicht geladen werden.";
+      }
+      const failedAreaCount = failures.length + (cooperationFailure === undefined ? 0 : 1);
+      if (failedAreaCount > 0) {
+        const firstFailure = failures[0]?.reason;
+        const detail = firstFailure instanceof Error
+          ? firstFailure.message
+          : (cooperationFailure ?? "Unbekannter Ladefehler.");
+        message = `${failedAreaCount} Bereich${failedAreaCount === 1 ? "" : "e"} der Spielerreise konnte${failedAreaCount === 1 ? "" : "n"} nicht geladen werden: ${detail}`;
         messageTone = "error";
       }
     } catch (error) {

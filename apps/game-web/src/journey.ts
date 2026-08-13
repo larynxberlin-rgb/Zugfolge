@@ -4,6 +4,7 @@ import type {
   StartPackageGrant,
   TutorialJourney,
 } from "./api.js";
+import { renderCooperationSurface, type CooperationSurfaceState } from "./cooperation.js";
 
 export interface JourneyViewState {
   readonly tutorialWorldId: string;
@@ -16,6 +17,7 @@ export interface JourneyViewState {
   readonly message: string;
   readonly messageTone?: "status" | "error";
   readonly livemapUrl?: string;
+  readonly cooperation?: CooperationSurfaceState;
 }
 
 function escapeHtml(value: unknown): string {
@@ -83,5 +85,6 @@ export function renderJourney(state: JourneyViewState): string {
     <header class="journey-top"><div><p class="wordmark">ZUGFOLGE</p><h1>Geschlossene Alpha · Spielerreise</h1></div><nav aria-label="Hauptnavigation">${livemap}<a href="?view=diagram&world=${encodeURIComponent(state.publicWorldId)}">Zum Bildfahrplan</a></nav></header>
     ${state.message === "" ? "" : `<p class="journey-message journey-message--${state.messageTone ?? "status"}" role="${state.messageTone === "error" ? "alert" : "status"}">${escapeHtml(state.message)}</p>`}
     <div class="journey-grid">${tutorial(state)}${onboarding(state)}</div>
+    ${state.cooperation === undefined ? "" : renderCooperationSurface(state.cooperation)}
   </main>`;
 }
