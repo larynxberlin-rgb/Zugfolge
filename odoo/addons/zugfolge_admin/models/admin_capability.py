@@ -28,9 +28,10 @@ class ZugfolgeAdminCapability(models.Model):
     _description = "Zugfolge Game-Verwaltungsfaehigkeit"
     _rec_name = "action_type"
     _order = "world_id, action_type"
-    _sql_constraints = [
-        ("zugfolge_admin_capability_world_action", "unique(world_id, action_type)", "Eine Verwaltungsfaehigkeit je Welt und Aktion."),
-    ]
+    _world_action_unique = models.Constraint(
+        "unique(world_id, action_type)",
+        "Eine Verwaltungsfaehigkeit je Welt und Aktion.",
+    )
 
     world_id = fields.Char(required=True, readonly=True, index=True)
     action_type = fields.Selection(ADMIN_ACTIONS, required=True, readonly=True, index=True)

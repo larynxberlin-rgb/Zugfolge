@@ -194,7 +194,10 @@ class ZugfolgeWorldOffer(models.Model):
     focal_y_permille = fields.Integer(default=500)
     fallback_url = fields.Char(default="/zugfolge_admin/static/src/img/world-fallback.svg", readonly=True)
 
-    _sql_constraints = [("zugfolge_world_offer_projection", "unique(projection_id)", "Je Game-Welt darf nur ein Weltangebot existieren.")]
+    _projection_unique = models.Constraint(
+        "unique(projection_id)",
+        "Je Game-Welt darf nur ein Weltangebot existieren.",
+    )
 
     def write(self, values):
         if {"projection_id", "product_tmpl_id"}.intersection(values):

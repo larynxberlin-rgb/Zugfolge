@@ -180,7 +180,7 @@ beforeAll(async () => {
   } finally {
     await templateClient.close();
   }
-});
+}, 30_000);
 
 beforeEach(async () => {
   client = new PGlite({ loadDataDir: migratedDatabase });

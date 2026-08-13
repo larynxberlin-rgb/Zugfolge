@@ -67,13 +67,12 @@ class ZugfolgeAdminRequest(models.Model):
     _inherit = ["mail.thread", "mail.activity.mixin"]
     _order = "write_date desc"
 
-    _sql_constraints = [
-        (
-            "zugfolge_admin_request_correlation",
-            "unique(correlation_id)",
-            "Die Administrationsantrag-Korrelation muss eindeutig sein.",
-        ),
-    ]
+    # Keep the database, rather than an ORM-only lookup, as the final
+    # authority for correlation idempotence through Odoo 19's descriptor API.
+    _correlation_id_unique = models.Constraint(
+        "unique(correlation_id)",
+        "Die Administrationsantrag-Korrelation muss eindeutig sein.",
+    )
 
     name = fields.Char(compute="_compute_name", store=True)
     world_projection_id = fields.Many2one("zugfolge.world.projection", ondelete="restrict", index=True)

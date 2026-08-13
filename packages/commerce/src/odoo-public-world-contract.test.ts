@@ -53,6 +53,12 @@ describe("Odoo-Website-, Portal- und Payment-Vertrag", () => {
     expect(`${participation}\n${invoice}\n${service}`).not.toMatch(/psycopg|GAME_DATABASE|DATABASE_URL/);
   });
 
+  it("gibt die private Commerce-Schreibfaehigkeit nie an einen Recordset-Aufrufer weiter", async () => {
+    const participation = await readFile(resolve(addon, "models/participation.py"), "utf8");
+    expect(participation).toContain("return participation.with_env(self.env)");
+    expect(participation).toContain("is _COMMERCE_WRITE_TOKEN");
+  });
+
   it("unterdrueckt doppelte Zahlungswirkungen und Projektion-Replays vor der Wirkung", async () => {
     const invoice = await readFile(resolve(addon, "models/account_move.py"), "utf8");
     const controller = await readFile(resolve(addon, "controllers/main.py"), "utf8");

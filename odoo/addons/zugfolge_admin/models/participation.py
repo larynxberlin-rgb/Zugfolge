@@ -34,10 +34,14 @@ class ZugfolgeWorldParticipation(models.Model):
     game_participation_reference = fields.Char(readonly=True)
     game_account_reference = fields.Char(readonly=True)
 
-    _sql_constraints = [
-        ("zugfolge_participation_partner_world", "unique(partner_id, world_id)", "Ein Portalprofil besitzt je Welt nur eine Teilnahme."),
-        ("zugfolge_participation_idempotency", "unique(idempotency_key)", "Der Teilnahme-Idempotency-Key muss eindeutig sein."),
-    ]
+    _partner_world_unique = models.Constraint(
+        "unique(partner_id, world_id)",
+        "Ein Portalprofil besitzt je Welt nur eine Teilnahme.",
+    )
+    _idempotency_key_unique = models.Constraint(
+        "unique(idempotency_key)",
+        "Der Teilnahme-Idempotency-Key muss eindeutig sein.",
+    )
 
     @api.model_create_multi
     def create(self, values_list):
@@ -51,7 +55,13 @@ class ZugfolgeWorldParticipation(models.Model):
 
     @api.model
     def _create_from_commerce(self, values):
-        return self.with_context(zugfolge_commerce_write_token=_COMMERCE_WRITE_TOKEN).create(values)
+        participation = self.with_context(
+            zugfolge_commerce_write_token=_COMMERCE_WRITE_TOKEN,
+        ).create(values)
+        # Never return a recordset carrying the private capability.  Odoo
+        # recordsets retain their environment, so leaking this context would
+        # let an ordinary caller perform a later identity/state write.
+        return participation.with_env(self.env)
 
     def _write_from_commerce(self, values):
         return self.with_context(zugfolge_commerce_write_token=_COMMERCE_WRITE_TOKEN).write(values)

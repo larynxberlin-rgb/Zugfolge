@@ -31,7 +31,10 @@ class ZugfolgeFeedback(models.Model):
     payload_hash = fields.Char(readonly=True, copy=False)
     triage_state = fields.Selection([("new", "Neu"), ("triaged", "Triage"), ("resolved", "Geloest"), ("rejected", "Verworfen")], required=True, default="new", tracking=True)
 
-    _sql_constraints = [("zugfolge_feedback_reference", "unique(feedback_reference)", "Eine Game-Feedbackreferenz darf nur einmal angenommen werden.")]
+    _feedback_reference_unique = models.Constraint(
+        "unique(feedback_reference)",
+        "Eine Game-Feedbackreferenz darf nur einmal angenommen werden.",
+    )
     _projected_fields = {
         "source", "feedback_reference", "participant_pseudonym", "world_projection_id", "period_reference",
         "release_hash", "metric_key", "report_reference", "body", "from_s", "until_s", "contact_allowed",

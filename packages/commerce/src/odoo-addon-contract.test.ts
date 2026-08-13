@@ -6,6 +6,38 @@ import { describe, expect, it } from "vitest";
 const addon = resolve(import.meta.dirname, "../../../odoo/addons/zugfolge_admin");
 
 describe("Odoo-Administrationsmodul", () => {
+  it("installiert Eindeutigkeit mit der Odoo-19-Constraint-API", async () => {
+    const modelFiles = [
+      "admin_request.py",
+      "admin_capability.py",
+      "feedback.py",
+      "infra_release_import.py",
+      "participation.py",
+      "projection_receipt.py",
+      "public_world.py",
+      "res_users.py",
+    ];
+    const models = await Promise.all(
+      modelFiles.map((file) => readFile(resolve(addon, "models", file), "utf8")),
+    );
+    const source = models.join("\n");
+    expect(source).not.toContain("_sql_constraints");
+    expect(source.match(/models\.Constraint\(/g)).toHaveLength(9);
+    for (const uniqueDefinition of [
+      "unique(correlation_id)",
+      "unique(world_id, action_type)",
+      "unique(feedback_reference)",
+      "unique(import_id)",
+      "unique(partner_id, world_id)",
+      "unique(idempotency_key)",
+      "unique(message_id)",
+      "unique(projection_id)",
+      "unique(zugfolge_keycloak_subject)",
+    ]) {
+      expect(source).toContain(uniqueDefinition);
+    }
+  });
+
   it("verwendet native Odoo-Grundbausteine und kapselt nur die Zugfolge-Grenze", async () => {
     const manifest = await readFile(resolve(addon, "__manifest__.py"), "utf8");
     expect(manifest).toContain('"contacts"');

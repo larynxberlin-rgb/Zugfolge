@@ -29,7 +29,10 @@ class ResPartner(models.Model):
 
     zugfolge_keycloak_subject = fields.Char(index=True, copy=False)
 
-    _sql_constraints = [("zugfolge_keycloak_subject", "unique(zugfolge_keycloak_subject)", "Ein Keycloak-sub darf nur einem Odoo-Portalprofil zugeordnet sein.")]
+    _zugfolge_keycloak_subject_unique = models.Constraint(
+        "unique(zugfolge_keycloak_subject)",
+        "Ein Keycloak-sub darf nur einem Odoo-Portalprofil zugeordnet sein.",
+    )
 
     @api.model_create_multi
     def create(self, values_list):

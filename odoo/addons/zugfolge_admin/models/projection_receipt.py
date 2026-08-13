@@ -15,7 +15,10 @@ class ZugfolgeProjectionReceipt(models.Model):
     payload_hash = fields.Char(required=True, readonly=True)
     received_at = fields.Datetime(required=True, readonly=True, default=fields.Datetime.now)
 
-    _sql_constraints = [("zugfolge_projection_receipt_message", "unique(message_id)", "Eine Projektion darf nur einmal angenommen werden.")]
+    _message_id_unique = models.Constraint(
+        "unique(message_id)",
+        "Eine Projektion darf nur einmal angenommen werden.",
+    )
 
     @api.model_create_multi
     def create(self, values_list):
