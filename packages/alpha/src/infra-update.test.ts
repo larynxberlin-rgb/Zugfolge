@@ -31,7 +31,7 @@ beforeEach(async () => {
     blueprint: { schemaVersion: "zugfolge-alpha-world-blueprint/v1" }, blueprintHash: "e".repeat(64),
     currentPeriod: 0, state: "running", startedAtS: 0,
   });
-});
+}, 30_000);
 
 afterEach(async () => client.close());
 

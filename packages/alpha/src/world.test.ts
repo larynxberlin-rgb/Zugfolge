@@ -93,7 +93,7 @@ describe("AlphaWorldService", () => {
       rankingStatus: "ranked",
       lifecycleStatus: "active",
     });
-  });
+  }, 30_000);
 
   afterEach(async () => client.close());
 

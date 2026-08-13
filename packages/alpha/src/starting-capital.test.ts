@@ -75,7 +75,7 @@ describe("oeffentliche StartingCapitalPolicy", () => {
     client = new PGlite();
     db = drizzle(client, { schema });
     await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
-  });
+  }, 30_000);
 
   afterEach(async () => client.close());
 

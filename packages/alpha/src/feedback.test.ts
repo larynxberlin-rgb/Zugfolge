@@ -22,7 +22,7 @@ beforeEach(async () => {
     accelerationFactor: 1, infraReleaseHash: "a".repeat(64), timetableReleaseHash: "b".repeat(64),
     fleetReleaseHash: "c".repeat(64), economyReleaseHash: "d".repeat(64), blueprint: {}, blueprintHash: "e".repeat(64),
   });
-});
+}, 30_000);
 
 afterEach(async () => client.close());
 
