@@ -39,7 +39,7 @@ beforeEach(async () => {
   db = drizzle(client, { schema });
   await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
   await db.insert(worlds).values({ id: WORLD, name: "LHE", schedulePeriodWeeks: 4, epoch: NOW });
-});
+}, 30_000);
 afterEach(async () => client.close());
 
 describe("Weltteilnahmevertrag", () => {

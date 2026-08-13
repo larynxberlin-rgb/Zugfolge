@@ -73,7 +73,7 @@ beforeEach(async () => {
     { id: WORLD, name: "Testwelt", schedulePeriodWeeks: 4, epoch: NOW },
     { id: OTHER_WORLD, name: "Andere Welt", schedulePeriodWeeks: 4, epoch: NOW },
   ]);
-});
+}, 30_000);
 afterEach(async () => client.close());
 
 describe("signierter Odoo-Receiver", () => {
