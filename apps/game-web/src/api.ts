@@ -125,12 +125,12 @@ export class GameApiClient {
   constructor(
     baseUrl: string,
     accessToken: string,
-    fetchImplementation: typeof fetch = fetch,
+    fetchImplementation: typeof fetch | undefined = undefined,
     waitImplementation: WaitImplementation = wait,
   ) {
     this.#baseUrl = baseUrl.replace(/\/$/, "");
     this.#accessToken = accessToken;
-    this.#fetch = fetchImplementation;
+    this.#fetch = fetchImplementation ?? ((input, init) => globalThis.fetch(input, init));
     this.#wait = waitImplementation;
   }
 

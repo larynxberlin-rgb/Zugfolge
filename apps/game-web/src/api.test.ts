@@ -25,6 +25,20 @@ function envelope(revision: number, sequence = revision): Response {
 }
 
 describe("GameApiClient", () => {
+  it("ruft den nativen Browser-Fetch mit seinem globalen Kontext auf", async () => {
+    const boundFetch = vi.fn(function (this: typeof globalThis): Promise<Response> {
+      expect(this).toBe(globalThis);
+      return Promise.resolve(envelope(1));
+    });
+    vi.stubGlobal("fetch", boundFetch);
+    try {
+      const client = new GameApiClient("https://api.test", "token");
+      await expect(client.loadProjection("world-1")).resolves.toEqual(projection(1));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("laedt und validiert die veroeffentlichte Weltprojektion mit Bearer-Token", async () => {
     const fetchImplementation = vi.fn(async () => envelope(7, 99));
     const client = new GameApiClient(
