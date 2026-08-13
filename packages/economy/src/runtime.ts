@@ -1,4 +1,5 @@
 import type { HealthCheck } from "@zugfolge/health";
+import { alphaWorldProfiles } from "@zugfolge/db";
 import {
   OPERATING_INITIALIZE_SCHEMA,
   OPERATING_TRANSITION_SCHEMA,
@@ -8,10 +9,17 @@ import {
 
 import type { EconomyDatabase } from "./ledger.js";
 import type { MobilizationProof } from "./contracts.js";
-import { loadFleetMobilizationSnapshot, verifyMobilizationReference } from "./fleet-snapshot.js";
+import {
+  loadFleetMobilizationSnapshot,
+  PUBLIC_ENTRY_FACILITY_SCHEMA,
+  verifyMobilizationReference,
+  verifyPublicEntryFacilityMobilizationReference,
+} from "./fleet-snapshot.js";
+import { eq } from "drizzle-orm";
 import { compareUtf8 } from "./utf8.js";
 import {
   dispatchEconomyOutbox,
+  decodeEconomyValue,
   EconomyStateConflictError,
   listEconomyWorldIds,
   loadEconomyWorldEpoch,
@@ -28,6 +36,55 @@ import {
   type TenderLifecycle,
   type EconomyWorldState,
 } from "./workflow.js";
+
+function record(value: unknown): Readonly<Record<string, unknown>> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Readonly<Record<string, unknown>>
+    : undefined;
+}
+
+async function assertSignedEntryFacilityReference(
+  db: EconomyDatabase,
+  worldId: string,
+  lotId: string,
+): Promise<{
+  readonly providerOperatorId: "public";
+  readonly signedLotVehicleIds: readonly string[];
+  readonly signedLotPersonnelDutyIds: readonly string[];
+  readonly signedLotPathReceiptIds: readonly string[];
+}> {
+  const [profile] = await db.select({
+    blueprint: alphaWorldProfiles.blueprint,
+    blueprintHash: alphaWorldProfiles.blueprintHash,
+    deploymentHash: alphaWorldProfiles.deploymentHash,
+    state: alphaWorldProfiles.state,
+  }).from(alphaWorldProfiles).where(eq(alphaWorldProfiles.worldId, worldId)).limit(1);
+  const blueprint = record(decodeEconomyValue(profile?.blueprint));
+  const policy = record(blueprint?.["entryFacilityPolicy"]);
+  if (
+    profile?.state !== "running"
+    || !/^[a-f0-9]{64}$/.test(profile.blueprintHash)
+    || profile.deploymentHash === null
+    || !/^[a-f0-9]{64}$/.test(profile.deploymentHash)
+    || policy?.["schemaVersion"] !== PUBLIC_ENTRY_FACILITY_SCHEMA
+    || policy["mode"] !== "award-contingent-wet-lease"
+    || policy["providerOperatorId"] !== "public"
+    || policy["costBasis"] !== "formation-operating-cost"
+  ) throw new Error("Persistierte Welt besitzt keinen signierten Anschubvertrag.");
+  const lots = blueprint?.["lots"];
+  const lot = Array.isArray(lots)
+    ? lots.map((item) => record(item)).find((item) => item?.["lotId"] === lotId)
+    : undefined;
+  if (lot === undefined) throw new Error("Anschubvertrag verweist nicht auf ein signiertes Los.");
+  const signedValues = (key: "vehicleIds" | "personnelDutyIds" | "pathReceiptIds") =>
+    Array.isArray(lot[key]) ? lot[key].map((value) => typeof value === "string" ? value : "") : [];
+  return {
+    providerOperatorId: "public",
+    signedLotVehicleIds: signedValues("vehicleIds"),
+    signedLotPersonnelDutyIds: signedValues("personnelDutyIds"),
+    signedLotPathReceiptIds: signedValues("pathReceiptIds"),
+  };
+}
 
 export interface EconomyEffectAdapters {
   readonly postJournal: (entry: EconomyJournalEntry) => Promise<void>;
@@ -228,12 +285,29 @@ async function advanceWorld(
           ) {
             throw new Error("Rust-verifizierter M5-Snapshot stimmt nicht mit der persistierten Mobilisierungsreferenz ueberein.");
           }
-          proof = verifyMobilizationReference(snapshot, mobilization.reference, {
-            operatorId: current.winningBid.operatorId,
-            winningFormationId: current.winningBid.vehicle.formationId,
-            serviceLineIds: current.tender.specification.lines,
-            operatingFrom: current.tender.operatingFrom,
-          });
+          if (mobilization.reference.entryFacility === undefined) {
+            proof = verifyMobilizationReference(snapshot, mobilization.reference, {
+              operatorId: current.winningBid.operatorId,
+              winningFormationId: current.winningBid.vehicle.formationId,
+              serviceLineIds: current.tender.specification.lines,
+              operatingFrom: current.tender.operatingFrom,
+            });
+          } else {
+            const facility = await assertSignedEntryFacilityReference(
+              db,
+              state.worldId,
+              current.tender.lotId,
+            );
+            proof = verifyPublicEntryFacilityMobilizationReference(snapshot, mobilization.reference, {
+              providerOperatorId: facility.providerOperatorId,
+              signedLotVehicleIds: facility.signedLotVehicleIds,
+              signedLotPersonnelDutyIds: facility.signedLotPersonnelDutyIds,
+              signedLotPathReceiptIds: facility.signedLotPathReceiptIds,
+              winningFormationId: current.winningBid.vehicle.formationId,
+              serviceLineIds: current.tender.specification.lines,
+              operatingFrom: current.tender.operatingFrom,
+            });
+          }
         } catch {
           // Ein fehlender oder inzwischen nicht verifizierbarer Beleg führt
           // deterministisch in den bereits modellierten Eigenbetrieb/Pönale-Pfad.

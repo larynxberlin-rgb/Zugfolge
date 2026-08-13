@@ -1,5 +1,5 @@
 import { PGlite } from "@electric-sql/pglite";
-import { OnboardingService } from "@zugfolge/alpha";
+import { OnboardingService, TutorialService } from "@zugfolge/alpha";
 import {
   alphaWorldProfiles,
   domainEvents,
@@ -30,7 +30,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createAlphaInvitationAdminHandlers } from "./alpha-invitation-admin.js";
 import { createWorldAccessRevokeAdminHandler } from "./odoo-admin-handlers.js";
-import { AuthoritativeOnboardingPort } from "./alpha-journey-adapters.js";
+import { AuthoritativeOnboardingPort, AuthoritativeTutorialResetPort } from "./alpha-journey-adapters.js";
 import { GameAlphaJourneyCommandWriter } from "./alpha-journey-writer.js";
 
 const WORLD_ID = "00000000-0000-4000-8000-000000000081";
@@ -76,7 +76,7 @@ function economyRelease() {
 
 function fleetSnapshot(): FleetMobilizationSnapshot {
   return {
-    schema: "zugfolge-fleet-mobilization/v1", worldId: WORLD_ID, revision: 0, producedAt: 0,
+    schema: "zugfolge-fleet-mobilization/v1", worldId: TUTORIAL_WORLD_ID, revision: 0, producedAt: 0,
     formations: [{
       id: "starter-formation-1", operatorId: OPERATOR_ID, vehicleIds: ["starter-vehicle-1"], serviceLineIds: ["S1"],
       availability: "available", procurement: "delivered", availableFrom: 0, availableUntil: 1_000_000,
@@ -94,17 +94,17 @@ function fleetSnapshot(): FleetMobilizationSnapshot {
 
 function runtime(): OperatingRuntime {
   return {
-    verifyFleetMobilizationSnapshot: () => ({ schemaVersion: "zugfolge-fleet-mobilization-verification/v1", worldId: WORLD_ID, fleetRevision: 0, snapshotHash: "f".repeat(64) }),
-    initialize: () => ({ schemaVersion: "zugfolge-operating-world-initialized/v1", state: { schemaVersion: "zugfolge-operating-world-state/v1", worldId: WORLD_ID, revision: 0 }, stateHash: "1".repeat(64) }),
+    verifyFleetMobilizationSnapshot: () => ({ schemaVersion: "zugfolge-fleet-mobilization-verification/v1", worldId: TUTORIAL_WORLD_ID, fleetRevision: 0, snapshotHash: "f".repeat(64) }),
+    initialize: () => ({ schemaVersion: "zugfolge-operating-world-initialized/v1", state: { schemaVersion: "zugfolge-operating-world-state/v1", worldId: TUTORIAL_WORLD_ID, revision: 0 }, stateHash: "1".repeat(64) }),
     applyTransition: (_state, command) => ({
       schemaVersion: "zugfolge-operating-transition-result/v1",
-      state: { schemaVersion: "zugfolge-operating-world-state/v1", worldId: WORLD_ID, revision: 1 },
+      state: { schemaVersion: "zugfolge-operating-world-state/v1", worldId: TUTORIAL_WORLD_ID, revision: 1 },
       stateHash: "2".repeat(64), idempotentReplay: false,
       outcome: { lotId: SPEC.emergencyLotId, previousOperatorId: "public", operatorId: OPERATOR_ID, kind: "operator-change", seamless: false, penaltyRequired: false, trainRunIds: ["starter-run-1"], livemapMarker: null },
       events: [
-        { eventId: `${command.commandId}:completed`, worldId: WORLD_ID, eventType: "operating-transition-completed", atS: command.atS, payload: { operatorId: OPERATOR_ID, lotId: SPEC.emergencyLotId } },
-        { eventId: `${command.commandId}:assigned`, worldId: WORLD_ID, eventType: "train-operation-assigned", atS: command.atS, payload: { operatorId: OPERATOR_ID, trainRunId: "starter-run-1" } },
-        { eventId: `${command.commandId}:clear`, worldId: WORLD_ID, eventType: "livemap-operation-cleared", atS: command.atS, payload: { operatorId: OPERATOR_ID, lotId: SPEC.emergencyLotId } },
+        { eventId: `${command.commandId}:completed`, worldId: TUTORIAL_WORLD_ID, eventType: "operating-transition-completed", atS: command.atS, payload: { operatorId: OPERATOR_ID, lotId: SPEC.emergencyLotId } },
+        { eventId: `${command.commandId}:assigned`, worldId: TUTORIAL_WORLD_ID, eventType: "train-operation-assigned", atS: command.atS, payload: { operatorId: OPERATOR_ID, trainRunId: "starter-run-1" } },
+        { eventId: `${command.commandId}:clear`, worldId: TUTORIAL_WORLD_ID, eventType: "livemap-operation-cleared", atS: command.atS, payload: { operatorId: OPERATOR_ID, lotId: SPEC.emergencyLotId } },
       ],
     }),
   };
@@ -131,17 +131,17 @@ describe("eingeladener externer Spieler durchlaeuft das produktive Onboarding", 
       economyReleaseHash: "d".repeat(64), blueprint: {}, blueprintHash: "f".repeat(64), state: "running",
     });
     const started = startEconomyWorld({
-      worldId: WORLD_ID, seed: 9n, durationMonths: 6, release: economyRelease(),
+      worldId: TUTORIAL_WORLD_ID, seed: 10n, durationMonths: 6, release: economyRelease(),
       lots: Array.from({ length: 8 }, (_, index) => ({ id: index === 0 ? SPEC.emergencyLotId : `public-lot-${index}`, size: 10 - index, attractiveness: index })), authorityBudgets: [], accounts: [],
       publicVehiclePoolByLot: { [SPEC.emergencyLotId]: ["public-reserve-1"] },
     });
     await persistEconomyTransition(db, { expectedRevision: null, ...started, committedAt: new Date(0) });
     const envelope = createFleetMobilizationEnvelope(fleetSnapshot());
-    await persistFleetMobilizationSnapshot(db, WORLD_ID, envelope, new Date(0));
+    await persistFleetMobilizationSnapshot(db, TUTORIAL_WORLD_ID, envelope, new Date(0));
     await db.insert(fleetWorldCheckpoints).values({
-      worldId: WORLD_ID, revision: 0, stateSchema: "zugfolge-fleet-world-state/v2",
+      worldId: TUTORIAL_WORLD_ID, revision: 0, stateSchema: "zugfolge-fleet-world-state/v2",
       state: {
-        schemaVersion: "zugfolge-fleet-world-state/v2", worldId: WORLD_ID, revision: 0, producedAt: 0,
+        schemaVersion: "zugfolge-fleet-world-state/v2", worldId: TUTORIAL_WORLD_ID, revision: 0, producedAt: 0,
         authorityReleaseHash: "c".repeat(64),
         authorityRelease: {
           schemaVersion: "zugfolge-fleet-authority-release/v1", releaseId: "fleet-alpha", referenceYear: 2026,
@@ -178,12 +178,14 @@ describe("eingeladener externer Spieler durchlaeuft das produktive Onboarding", 
       payload: {
         kind: "admin.alpha_invitation_create", worldId: WORLD_ID, actionType: "alpha_invitation_create", riskClass: "standard",
         requesterReference: "odoo-admin", reason: "Geschlossene Alpha", effectPreview: {},
-        invitation: { requestReference: "INV-1", email: "external@example.test", displayName: "Externer Spieler", role: "player", startPackage: SPEC.version },
+        invitation: { requestReference: "INV-1", email: "external@example.test", displayName: "Externer Spieler", role: "player" },
       },
     });
-    const accountId = invited.result?.["gameAccountReference"];
-    expect(typeof accountId).toBe("string");
-    expect(typeof invited.result?.["tutorialAccountReference"]).toBe("string");
+    const publicAccountId = invited.result?.["gameAccountReference"];
+    const tutorialAccountId = invited.result?.["tutorialAccountReference"];
+    expect(typeof publicAccountId).toBe("string");
+    expect(typeof tutorialAccountId).toBe("string");
+    if (typeof publicAccountId !== "string" || typeof tutorialAccountId !== "string") throw new Error("Einladung hat nicht beide Weltkonten angelegt.");
 
     const publishRuntimeEvents = vi.fn(async (runtimeEvents: readonly OperatingRuntimeEvent[]) => {
       expect(await db.select().from(onboardingGrants)).toHaveLength(1);
@@ -194,32 +196,51 @@ describe("eingeladener externer Spieler durchlaeuft das produktive Onboarding", 
     const writer = new GameAlphaJourneyCommandWriter(db, runtime(), {
       tutorialOperatorNamePrefix: "Tutorialbahn",
       startPackageSlots: [{
-        worldId: WORLD_ID, operatorId: OPERATOR_ID, operatorName: "Alpha Startbahn 1", vehicleId: "starter-vehicle-1",
+        worldId: TUTORIAL_WORLD_ID, operatorId: OPERATOR_ID, operatorName: "Alpha Startbahn 1", vehicleId: "starter-vehicle-1",
         formationId: "starter-formation-1", personnelDutyId: "starter-duty-1", pathReservationId: "starter-path-1",
         vehicleLeaseReceiptId: "starter-lease-1", trainRunIds: ["starter-run-1"],
       }],
     }, publishRuntimeEvents);
     const onboarding = new OnboardingService(db, new AuthoritativeOnboardingPort(writer));
-    const first = await onboarding.claim(WORLD_ID, SUBJECT, 100, SPEC);
-    const replay = await onboarding.claim(WORLD_ID, SUBJECT, 100, SPEC);
+    await expect(onboarding.grantForAccount(WORLD_ID, publicAccountId)).rejects.toMatchObject({ code: "start_package_tutorial_only" });
+    await expect(onboarding.claim(WORLD_ID, SUBJECT, 100, SPEC)).rejects.toMatchObject({ code: "start_package_tutorial_only" });
+    expect(await db.select().from(operators).where(eq(operators.worldId, WORLD_ID))).toHaveLength(0);
+    expect(await db.select().from(onboardingGrants).where(eq(onboardingGrants.worldId, WORLD_ID))).toHaveLength(0);
+    expect(await db.select().from(domainEvents).where(eq(domainEvents.worldId, WORLD_ID))).toHaveLength(0);
+    expect(await loadEconomyWorldState(db, WORLD_ID)).toBeUndefined();
+
+    const tutorial = new TutorialService(db, new AuthoritativeTutorialResetPort(writer));
+    expect(await tutorial.resume(TUTORIAL_WORLD_ID, tutorialAccountId, 0)).toMatchObject({ chapter: 1, chapterState: "in-progress" });
+    const first = await onboarding.claim(TUTORIAL_WORLD_ID, SUBJECT, 100, SPEC);
+    const replay = await onboarding.claim(TUTORIAL_WORLD_ID, SUBJECT, 100, SPEC);
+    const reset = await tutorial.reset(TUTORIAL_WORLD_ID, tutorialAccountId, 200);
+    const replayAfterReset = await onboarding.claim(TUTORIAL_WORLD_ID, SUBJECT, 200, SPEC);
 
     expect(first.idempotentReplay).toBe(false);
     expect(replay.idempotentReplay).toBe(true);
-    expect(publishRuntimeEvents).toHaveBeenCalledTimes(2);
-    expect(first.grant).toMatchObject({ accountId, operatorId: OPERATOR_ID, emergencyLotId: SPEC.emergencyLotId, vehicleId: "starter-vehicle-1" });
+    expect(replayAfterReset).toMatchObject({ idempotentReplay: true, grant: { id: first.grant.id, operatorId: OPERATOR_ID } });
+    expect(reset).toMatchObject({ chapter: 1, chapterState: "in-progress", resetCount: 1 });
+    expect(publishRuntimeEvents).toHaveBeenCalledTimes(3);
+    expect(first.grant).toMatchObject({ accountId: tutorialAccountId, operatorId: OPERATOR_ID, emergencyLotId: SPEC.emergencyLotId, vehicleId: "starter-vehicle-1" });
     const [economy, storedOperators, grants, programs, events] = await Promise.all([
-      loadEconomyWorldState(db, WORLD_ID), db.select().from(operators), db.select().from(onboardingGrants),
+      loadEconomyWorldState(db, TUTORIAL_WORLD_ID), db.select().from(operators), db.select().from(onboardingGrants),
       db.select().from(operatingProgramVersions), db.select().from(domainEvents),
     ]);
-    expect(economy?.contracts.get(`start-package:${WORLD_ID}:${accountId}:${SPEC.version}:contract`)).toMatchObject({ operatorId: OPERATOR_ID, lotId: SPEC.emergencyLotId });
+    expect(economy?.contracts.get(`start-package:${TUTORIAL_WORLD_ID}:${tutorialAccountId}:${SPEC.version}:contract`)).toMatchObject({ operatorId: OPERATOR_ID, lotId: SPEC.emergencyLotId });
     expect(economy?.publicOperations.has(SPEC.emergencyLotId)).toBe(false);
-    expect(storedOperators).toEqual([expect.objectContaining({ id: OPERATOR_ID, foundingAccountId: accountId })]);
+    expect(storedOperators).toEqual([expect.objectContaining({ id: OPERATOR_ID, foundingAccountId: tutorialAccountId })]);
     expect(grants).toHaveLength(1);
     expect(programs).toEqual([expect.objectContaining({ operatorId: OPERATOR_ID, status: "active" })]);
     expect(events.map((event) => event.eventType)).toEqual(expect.arrayContaining([
       "operating-transition-completed", "train-operation-assigned", "livemap-operation-cleared",
-      "alpha.start-package-authority-committed", "alpha.start-package-granted",
+      "alpha.start-package-authority-committed", "alpha.start-package-granted", "alpha.tutorial-session-seeded",
     ]));
+    const tutorialSessions = events.filter((event) => event.eventType === "alpha.tutorial-session-seeded");
+    expect(tutorialSessions).toHaveLength(2);
+    expect(tutorialSessions.map((event) => event.payload)).toEqual([
+      expect.objectContaining({ accountId: tutorialAccountId, operatorId: OPERATOR_ID, resetNumber: 0 }),
+      expect.objectContaining({ accountId: tutorialAccountId, operatorId: OPERATOR_ID, resetNumber: 1 }),
+    ]);
 
     const revoke = createWorldAccessRevokeAdminHandler({ db, keycloak });
     await revoke({

@@ -55,14 +55,16 @@ export function createPlanningScheduler(
   db: PlanningDatabase,
   runtime: PlanningRuntime,
   infrastructureReleases: PlanningInfrastructureReleaseCatalog,
-  worldIds: readonly string[],
+  worldIds: readonly string[] | (() => readonly string[]),
   options: PlanningSchedulerOptions = {},
 ): PlanningScheduler {
   const intervalMs = options.intervalMs ?? 1_000;
   if (!Number.isSafeInteger(intervalMs) || intervalMs < 1) {
     throw new RangeError("Planning-Scheduler-Intervall ist ungueltig.");
   }
-  const configuredWorldIds = Object.freeze([...worldIds]);
+  const configuredWorldIds = typeof worldIds === "function"
+    ? worldIds
+    : () => worldIds;
   const now = options.now ?? (() => new Date());
   const onError = options.onError ?? (() => undefined);
   let cycle: Promise<void> | undefined;
@@ -76,7 +78,7 @@ export function createPlanningScheduler(
         db,
         runtime,
         infrastructureReleases,
-        configuredWorldIds,
+        configuredWorldIds(),
         now(),
       ))
       .then(() => undefined)

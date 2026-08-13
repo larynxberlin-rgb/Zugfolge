@@ -14,6 +14,7 @@ import {
   seedTutorialAccount,
   startEconomyWorld,
   submitBid,
+  submitMobilizationReference,
   type Bid,
   type EconomyRelease,
   type ServiceSpecification,
@@ -63,7 +64,7 @@ const completeMobilizationProof = {
   pathReservationIds: ["path-1"],
 };
 
-function rustTransition(operatorId: string, kind: "operator-change" | "public-operation") {
+function rustTransition(operatorId: string, kind: "operator-change" | "public-operation", atS = 4 * 86_400) {
   const publicOperation = kind === "public-operation";
   return {
     schemaVersion: "zugfolge-operating-transition-result/v1" as const,
@@ -80,11 +81,11 @@ function rustTransition(operatorId: string, kind: "operator-change" | "public-op
       livemapMarker: publicOperation ? "public-operator" as const : null,
     },
     events: [
-      { eventId: "transition:0", worldId: "world-1", eventType: "operating-duty-ended", atS: 4 * 86_400, payload: { worldId: "world-1", lotId: "lot-0" } },
-      { eventId: "transition:1", worldId: "world-1", eventType: "operating-transition-completed", atS: 4 * 86_400, payload: { worldId: "world-1", lotId: "lot-0" } },
-      { eventId: "transition:2", worldId: "world-1", eventType: "train-operation-assigned", atS: 4 * 86_400, payload: { worldId: "world-1", trainRunId: "train-1" } },
-      { eventId: "transition:3", worldId: "world-1", eventType: "train-operation-assigned", atS: 4 * 86_400, payload: { worldId: "world-1", trainRunId: "train-2" } },
-      { eventId: "transition:4", worldId: "world-1", eventType: publicOperation ? "livemap-operation-marked" : "livemap-operation-cleared", atS: 4 * 86_400, payload: { worldId: "world-1", trainRunIds: ["train-1", "train-2"], marker: publicOperation ? "public-operator" : null } },
+      { eventId: "transition:0", worldId: "world-1", eventType: "operating-duty-ended", atS, payload: { worldId: "world-1", lotId: "lot-0" } },
+      { eventId: "transition:1", worldId: "world-1", eventType: "operating-transition-completed", atS, payload: { worldId: "world-1", lotId: "lot-0" } },
+      { eventId: "transition:2", worldId: "world-1", eventType: "train-operation-assigned", atS, payload: { worldId: "world-1", trainRunId: "train-1" } },
+      { eventId: "transition:3", worldId: "world-1", eventType: "train-operation-assigned", atS, payload: { worldId: "world-1", trainRunId: "train-2" } },
+      { eventId: "transition:4", worldId: "world-1", eventType: publicOperation ? "livemap-operation-marked" : "livemap-operation-cleared", atS, payload: { worldId: "world-1", trainRunIds: ["train-1", "train-2"], marker: publicOperation ? "public-operator" : null } },
     ],
     idempotentReplay: false,
   };
@@ -162,6 +163,88 @@ describe("zustandsbehafteter M6-Gesamtablauf", () => {
       proof: completeMobilizationProof,
       operatingTransition: { ...transition, state: { ...transition.state, worldId: "world-2" } },
     })).toThrow(/Welt, Los oder Spieler-EVU/);
+  });
+
+  it("bucht die zuschlagsgebundene Wet-Lease-Kostenbasis unabdingbar und lehnt negative Kosten ab", () => {
+    const started = world().state;
+    const announced = announceTender(started, {
+      commandId: "facility:announce",
+      release,
+      tender: {
+        id: "facility-tender",
+        worldId: "world-1",
+        lotId: "lot-0",
+        incumbentOperatorId: "public",
+        specification,
+        announcedAt: 0,
+        opensAt: 100,
+        closesAt: 100 + 3 * 86_400,
+        operatingFrom: 100 + 3 * 86_400 + 10,
+        contractPeriods: 2,
+        periodDurationSeconds: 21 * 86_400,
+        smallLot: false,
+      },
+      recipients: [],
+    }).state;
+    const opened = openTender(announced, "facility:open", "facility-tender", 100);
+    const offered = submitBid(opened, "facility:bid", "facility-tender", bid, { accountId: "account-1", period: 0, smallLot: false, minimumScore: 0 });
+    const awarded = closeTender(offered, {
+      commandId: "facility:award",
+      tenderId: "facility-tender",
+      at: 100 + 3 * 86_400,
+      authorityId: "authority-1",
+      budgetPeriod: 0,
+      vehiclePool: ["vehicle-1"],
+      recipientByOperator: { "operator-1": "account-1" },
+    }).state;
+    const referenced = submitMobilizationReference(awarded, {
+      commandId: "facility:proof",
+      tenderId: "facility-tender",
+      operatorId: "operator-1",
+      at: 100 + 3 * 86_400,
+      reference: {
+        fleetRevision: 7,
+        snapshotHash: "a".repeat(64),
+        formationIds: ["formation-1"],
+        personnelDutyIds: ["duty-1"],
+        pathReservationIds: ["path-1"],
+        entryFacility: { schemaVersion: "zugfolge-public-entry-facility/v1", providerOperatorId: "public" },
+      },
+    });
+    const running = completeMobilization(referenced, {
+      commandId: "facility:mobilize",
+      tenderId: "facility-tender",
+      at: 100 + 3 * 86_400 + 10,
+      proof: completeMobilizationProof,
+      failurePenaltyCents: 1_000n,
+      recipientAccountId: "account-1",
+      publicVehiclePool: ["vehicle-1"],
+      operatingTransition: rustTransition("operator-1", "operator-change", 100 + 3 * 86_400 + 10),
+    }).state;
+    const at = 100 + 3 * 86_400 + 11;
+    const settled = settleContractPeriod(running, {
+      commandId: "facility:settle",
+      contractId: "facility-tender",
+      period: 0,
+      at,
+      performance: { trainKm: 100n, punctualityBasisPoints: 9_000, cancellations: 0, missingSeats: 0, missedConnections: 0, evidence: ["vehicles", "personnel", "paths"] },
+      costs: [],
+    });
+
+    expect(settled.result.costsByType.vehicle).toBe(70_000n);
+    expect(settled.effects.journal[0]?.postings).toContainEqual(expect.objectContaining({
+      amountCents: 70_000n,
+      costType: "vehicle",
+      costCentreId: "lot-0",
+    }));
+    expect(() => settleContractPeriod(running, {
+      commandId: "facility:negative",
+      contractId: "facility-tender",
+      period: 0,
+      at,
+      performance: { trainKm: 100n, punctualityBasisPoints: 9_000, cancellations: 0, missingSeats: 0, missedConnections: 0, evidence: ["vehicles", "personnel", "paths"] },
+      costs: [{ amountCents: -1n, costType: "energy", costCentreId: "lot-0", reference: "negative" }],
+    })).toThrow(/Kostenbuchung/);
   });
 
   it("startet jedes Los mit seinem vollstaendigen Eigenbetriebs-Fahrzeugpool", () => {

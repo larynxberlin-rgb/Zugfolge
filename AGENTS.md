@@ -15,8 +15,8 @@ lesen, nicht raten.
 
 | Datei | Inhalt | Lesen wenn |
 |-------|--------|------------|
-| `docs/entscheidungen.md` | E1–E27 mit voller Begründung | eine Entscheidung infrage steht oder geändert werden soll |
-| `docs/adr/` | E1–E27 je als Architecture Decision Record: Kontext, Konsequenzen, Querverweise | eine Grundsatzentscheidung ausführlich nachschlagen oder eine neue festhalten |
+| `docs/entscheidungen.md` | E1–E28 mit voller Begründung | eine Entscheidung infrage steht oder geändert werden soll |
+| `docs/adr/` | E1–E28 je als Architecture Decision Record: Kontext, Konsequenzen, Querverweise | eine Grundsatzentscheidung ausführlich nachschlagen oder eine neue festhalten |
 | `docs/monorepo.md` | Verzeichnisaufbau, Domänengrenzen, Werkzeugkette, Durchsetzung der Invarianten | Code beitragen, neues Paket oder Crate anlegen, CI verstehen |
 | `docs/glossar.md` | Domänenglossar: deutscher Fachbegriff → Bezeichner im Code → Bedeutung → Quelle | jede Benennung im Code, jeder neue Fachbegriff |
 | `docs/produkt.md` | Produktdefinition, Oberflächen, Onboarding, Netzabgrenzung, Spielertypen, Anti-Monokultur | Produktfragen, UI, Zielgruppe, Was-gehört-dazu |
@@ -29,7 +29,7 @@ lesen, nicht raten.
 | `docs/design.md` | Farbsystem, Barrierefreiheit, Dunkelmodus, Typografie, Dichte, Wortmarke | jede Oberflächenarbeit, jedes Diagramm, jede Zustandsdarstellung |
 | `docs/geschaeft.md` | Odoo, Monetarisierung, Monetarisierungsgrenze, Lizenz, Marken | Bezahlfunktionen, Lizenz, Namensrechte |
 | `docs/milestones.md` | M0–M14 mit Teilabschnitten und Beweisen | Planung, Reihenfolge, „was als Nächstes“ |
-| `docs/risiken.md` | R1–R17 mit Gegenmaßnahmen | Risikoabwägung, Review |
+| `docs/risiken.md` | R1–R26 mit Gegenmaßnahmen | Risikoabwägung, Review |
 
 ---
 
@@ -87,6 +87,7 @@ Begründungen: `docs/entscheidungen.md`. Änderungen dort eintragen und begründ
 | E25 | Gebietsüberschreitende Fahrten bleiben eine Fahrtkette mit deterministischem Außenlauf |
 | E26 | Die selbst gehostete Weltkarte ist das Spielzentrum; der Deutschland-Korpus ist vollständig sichtbar |
 | E27 | Exact bleibt die betriebliche Zugposition; gekennzeichnete Estimates sind nur visuelle, releasegebundene Kartenhilfen |
+| E28 | Tutorialstart und öffentlicher Markteintritt sind getrennte Weltverträge |
 
 ---
 
@@ -128,7 +129,7 @@ Lastgrößen: `docs/architektur.md`.
 
 ## Stand
 
-Konzeption abgeschlossen, E1–E27 entschieden, Milestones auf Reihenfolge und
+Konzeption abgeschlossen, E1–E28 entschieden, Milestones auf Reihenfolge und
 Vollständigkeit geprüft. **M0 bis M8 sind fachlich abgenommen und
 reproduzierbar nachgewiesen.** M1.13 akzeptiert die Trassenfinder-Kalibrierung
 innerhalb der definierten Toleranz und den getrennten GTFS-Fahrplan-Holdout als

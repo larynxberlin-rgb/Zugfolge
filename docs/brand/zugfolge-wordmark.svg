@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 250" role="img" aria-labelledby="title desc">
+  <title id="title">Zugfolge Wortmarke</title>
+  <desc id="desc">Achromatische, geometrisch gezeichnete Wortmarke Zugfolge.</desc>
+  <g fill="none" stroke="#F1F3F7" stroke-width="26" stroke-linecap="square" stroke-linejoin="round">
+    <path d="M30 45H150L30 180H150" />
+    <path d="M190 84V144C190 166 206 180 230 180S270 166 270 144V84" />
+    <circle cx="340" cy="130" r="48" />
+    <path d="M388 82V176C388 204 370 220 340 220H316" />
+  </g>
+  <g fill="none" stroke="#A5ADBA" stroke-width="26" stroke-linecap="square" stroke-linejoin="round">
+    <path d="M452 180V78C452 56 466 42 488 42H506" />
+    <path d="M428 92H498" />
+    <circle cx="562" cy="130" r="48" />
+    <path d="M648 42V158C648 172 656 180 670 180H684" />
+    <circle cx="754" cy="130" r="48" />
+    <path d="M802 82V176C802 204 784 220 754 220H730" />
+    <path d="M928 158A48 48 0 1 1 928 104" />
+    <path d="M840 130H922" />
+  </g>
+</svg>

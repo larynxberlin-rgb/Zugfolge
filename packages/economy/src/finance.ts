@@ -1,17 +1,24 @@
+import { addI64, assertI64, assertNonnegativeI64, subtractI64 } from "./money.js";
+
 export type CostType = "track" | "station" | "facility" | "energy" | "personnel" | "administration" | "vehicle" | "penalty" | "interest";
+export const COST_TYPES: readonly CostType[] = Object.freeze(["track", "station", "facility", "energy", "personnel", "administration", "vehicle", "penalty", "interest"]);
 export interface CostCentre { readonly id: string; readonly worldId: string; readonly operatorId: string; readonly name: string }
 export interface ClassifiedPosting { readonly amountCents: bigint; readonly costType: CostType; readonly costCentreId: string; readonly reference: string }
 export function classifyPosting(posting: ClassifiedPosting, centre: CostCentre, worldId: string, operatorId: string): ClassifiedPosting {
   if (centre.worldId !== worldId || centre.operatorId !== operatorId || posting.costCentreId !== centre.id || posting.amountCents < 0n) throw new Error("Kostenbuchung verletzt Welt-, EVU- oder Betragsgrenze.");
+  assertNonnegativeI64(posting.amountCents, "Kostenbuchung");
   return Object.freeze(posting);
 }
 
 export interface ProfitAndLoss { readonly revenueCents: bigint; readonly costsByType: Readonly<Record<CostType, bigint>>; readonly resultCents: bigint; readonly explanation: readonly string[] }
-const TYPES: readonly CostType[] = ["track", "station", "facility", "energy", "personnel", "administration", "vehicle", "penalty", "interest"];
 export function calculateProfitAndLoss(revenueCents: bigint, postings: readonly ClassifiedPosting[]): ProfitAndLoss {
-  const costs = Object.fromEntries(TYPES.map((type) => [type, postings.filter((p) => p.costType === type).reduce((sum, p) => sum + p.amountCents, 0n)])) as unknown as Record<CostType, bigint>;
-  const total = Object.values(costs).reduce((sum, amount) => sum + amount, 0n);
-  return Object.freeze({ revenueCents, costsByType: Object.freeze(costs), resultCents: revenueCents - total, explanation: Object.freeze([`Erlöse ${revenueCents}`, ...TYPES.map((type) => `${type} ${costs[type]}`), `Ergebnis ${revenueCents - total}`]) });
+  assertI64(revenueCents, "Erloes");
+  const costs = Object.fromEntries(COST_TYPES.map((type) => [type, postings
+    .filter((posting) => posting.costType === type)
+    .reduce((sum, posting) => addI64(sum, assertNonnegativeI64(posting.amountCents, "Kostenbuchung"), `${type}-Kosten`), 0n)])) as unknown as Record<CostType, bigint>;
+  const total = Object.values(costs).reduce((sum, amount) => addI64(sum, amount, "Gesamtkosten"), 0n);
+  const result = subtractI64(revenueCents, total, "Periodenergebnis");
+  return Object.freeze({ revenueCents, costsByType: Object.freeze(costs), resultCents: result, explanation: Object.freeze([`Erlöse ${revenueCents}`, ...COST_TYPES.map((type) => `${type} ${costs[type]}`), `Ergebnis ${result}`]) });
 }
 
 export interface Credit { readonly principalCents: bigint; readonly outstandingCents: bigint; readonly interestBasisPoints: number; readonly duePeriod: number }

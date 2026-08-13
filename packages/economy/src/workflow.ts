@@ -2,6 +2,7 @@ import type { AuthorityBudget, MobilizationProof, PerformanceEvidence, PublicOpe
 import { commitAuthorityBudget, isMobilizationProofComplete, settleContract, startPublicOperation } from "./contracts.js";
 import type { ClassifiedPosting, InsolvencyDecision, InsolvencySignals, Prequalification, ProfitAndLoss } from "./finance.js";
 import { assertPrequalified, calculateProfitAndLoss, evaluateInsolvency, updatePrequalification } from "./finance.js";
+import { assertNonnegativeI64, multiplyNonnegativeI64 } from "./money.js";
 import type { EconomyRelease, WorldEconomyPin } from "./release.js";
 import { assertPinnedRelease, pinEconomyRelease } from "./release.js";
 import type { Bid, Tender } from "./tender.js";
@@ -148,16 +149,16 @@ export function startEconomyWorld(input: {
  * Nimmt ein nach Weltstart eingeladenes Tutorialkonto in genau denselben
  * persistenten Praequalifikationszustand auf wie ein Konto beim Weltstart.
  */
-export function seedTutorialAccount(
+export function seedEconomyAccount(
   state: EconomyWorldState,
   input: { readonly commandId: string; readonly accountId: string },
 ): EconomyWorldState {
   if (!requireNewCommand(state, input.commandId)) return state;
-  if (input.accountId.trim() === "") throw new Error("Tutorialkonto fehlt.");
+  if (input.accountId.trim() === "") throw new Error("Weltkonto fehlt.");
   const prequalifications = mutableMap(state.prequalifications);
   const current = prequalifications.get(input.accountId);
   if (current !== undefined && (current.worldId !== state.worldId || current.accountId !== input.accountId)) {
-    throw new Error("Tutorialkonto verletzt die Weltisolation.");
+    throw new Error("Weltkonto verletzt die Weltisolation.");
   }
   if (current === undefined) {
     prequalifications.set(input.accountId, Object.freeze({
@@ -169,6 +170,15 @@ export function seedTutorialAccount(
     }));
   }
   return withCommand(state, input.commandId, { prequalifications });
+}
+
+/** Kompatibler, enger Tutorial-Name fuer den bestehenden Reset-/Seed-Pfad. */
+export function seedTutorialAccount(
+  state: EconomyWorldState,
+  input: { readonly commandId: string; readonly accountId: string },
+): EconomyWorldState {
+  if (input.accountId.trim() === "") throw new Error("Tutorialkonto fehlt.");
+  return seedEconomyAccount(state, input);
 }
 
 export function announceTender(state: EconomyWorldState, input: {
@@ -342,7 +352,8 @@ export function completeMobilization(state: EconomyWorldState, input: { readonly
     publicOperations.delete(current.tender.lotId);
     const basePenalties = { ...current.tender.rules.penaltyRates };
     basePenalties[current.tender.profile.penaltyFocus] = basePenalties[current.tender.profile.penaltyFocus] * BigInt(current.tender.rules.penaltyFocusMultiplierBasisPoints) / 10_000n;
-    contracts.set(input.tenderId, { id: input.tenderId, worldId: state.worldId, lotId: current.tender.lotId, operatorId: transition.outcome.operatorId, startsAt: input.at, endsAt: input.at + current.tender.contractPeriods * current.tender.periodDurationSeconds, orderingFeeCentsPerTrainKm: current.winningBid.orderingFeeCentsPerTrainKm, bonusCentsPerPeriod: current.tender.rules.contractBonusCentsPerPeriod, penaltyRates: basePenalties, evidenceRequired: ["vehicles", "personnel", "paths"] });
+    const entryFacility = mobilization.reference?.entryFacility;
+    contracts.set(input.tenderId, { id: input.tenderId, worldId: state.worldId, lotId: current.tender.lotId, operatorId: transition.outcome.operatorId, startsAt: input.at, endsAt: input.at + current.tender.contractPeriods * current.tender.periodDurationSeconds, orderingFeeCentsPerTrainKm: current.winningBid.orderingFeeCentsPerTrainKm, bonusCentsPerPeriod: current.tender.rules.contractBonusCentsPerPeriod, penaltyRates: basePenalties, evidenceRequired: ["vehicles", "personnel", "paths"], ...(entryFacility === undefined ? {} : { mandatoryVehicleCostCentsPerTrainKm: BigInt(current.winningBid.vehicle.operatingCostCentsPerTrainKm) }) });
   }
   return { state: withCommand(state, input.commandId, { mobilizations, contracts, publicOperations, prequalifications, operatingRuntimeByLot }), effects: { notices, journal, runtimeEvents: transition.events } };
 }
@@ -464,9 +475,27 @@ export function settleContractPeriod(state: EconomyWorldState, input: { readonly
   if (state.settledPeriods.has(settlementKey)) throw new Error("Vertragsperiode wurde bereits abgerechnet.");
   const contract = state.contracts.get(input.contractId);
   if (contract === undefined || contract.worldId !== state.worldId || input.at < contract.startsAt || input.at > contract.endsAt) throw new Error("Vertrag ist in dieser Welt und Periode nicht abrechenbar.");
+  const validatedCosts = input.costs.map((posting) => {
+    if (posting.amountCents < 0n || posting.costCentreId !== contract.lotId || posting.reference.trim() === "") {
+      throw new Error("Kostenbuchung verletzt Betrag, Vertragslos oder Belegpflicht.");
+    }
+    assertNonnegativeI64(posting.amountCents, "Kostenbuchung");
+    return posting;
+  });
+  const mandatoryVehicleCost = multiplyNonnegativeI64(
+    contract.mandatoryVehicleCostCentsPerTrainKm ?? 0n,
+    input.performance.trainKm,
+    "Verbindliche Fahrzeugkosten",
+  );
+  const costs = mandatoryVehicleCost === 0n ? validatedCosts : [...validatedCosts, {
+    amountCents: mandatoryVehicleCost,
+    costType: "vehicle" as const,
+    costCentreId: contract.lotId,
+    reference: `${contract.id}:award-contingent-wet-lease:${input.period}`,
+  }];
   const settlement = settleContract(contract, input.performance);
-  const result = calculateProfitAndLoss(settlement.netCents, input.costs);
-  const journal: EconomyJournalEntry = { worldId: state.worldId, operatorId: contract.operatorId, idempotencyKey: `${input.commandId}:settlement`, at: input.at, description: `Vertragsabrechnung Periode ${input.period}`, postings: input.costs, revenueCents: settlement.netCents };
+  const result = calculateProfitAndLoss(settlement.netCents, costs);
+  const journal: EconomyJournalEntry = { worldId: state.worldId, operatorId: contract.operatorId, idempotencyKey: `${input.commandId}:settlement`, at: input.at, description: `Vertragsabrechnung Periode ${input.period}`, postings: costs, revenueCents: settlement.netCents };
   const settledPeriods = new Set(state.settledPeriods);
   settledPeriods.add(settlementKey);
   return { state: withCommand(state, input.commandId, { settledPeriods }), effects: { notices: [], journal: [journal] }, result };

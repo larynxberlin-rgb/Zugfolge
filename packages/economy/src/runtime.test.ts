@@ -1,5 +1,5 @@
 import { PGlite } from "@electric-sql/pglite";
-import { MIGRATIONS_FOLDER, schema, worldEventLog, worlds } from "@zugfolge/db";
+import { alphaWorldProfiles, MIGRATIONS_FOLDER, schema, worldEventLog, worlds } from "@zugfolge/db";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +11,8 @@ import {
   createFleetMobilizationEnvelope,
   fleetSnapshotHash,
   persistFleetMobilizationSnapshot,
+  PUBLIC_ENTRY_FACILITY_SCHEMA,
+  resolvePublicEntryFacilityVehicleConcept,
   resolveVehicleConcept,
   verifyMobilizationReference,
   type FleetMobilizationSnapshot,
@@ -98,12 +100,22 @@ function fleet(): FleetMobilizationSnapshot {
     revision: 4,
     producedAt: 50,
     formations: [{
-      id: "formation-1", operatorId: "operator-1", vehicleIds: ["vehicle-1"], serviceLineIds: ["S1"],
+      id: "formation-1", operatorId: "operator-1", vehicleIds: ["vehicle-1"], pathReceiptId: "path-receipt-1", serviceLineIds: ["S1"],
       availability: "available", procurement: "delivered", availableFrom: 0, availableUntil: OPERATING + 10_000,
       characteristics: { seats: 120, firstClassBasisPoints: 0, accessible: true, bicyclePlaces: 4, wheelchairPlaces: 1, equipment: ["pis"], vehicleAgeYears: 2, maximumSpeedKph: 160, operatingCostCentsPerTrainKm: 700, homologatedLineIds: ["S1"], maintenanceValidUntil: OPERATING + 10_000, traction: "electric", replacementPlan: true },
     }],
-    personnelDuties: [{ id: "duty-1", operatorId: "operator-1", formationIds: ["formation-1"], status: "ready", validFrom: 0, validUntil: OPERATING + 10_000 }],
-    pathReservations: [{ id: "path-1", operatorId: "operator-1", serviceLineIds: ["S1"], status: "confirmed", validFrom: 0, validUntil: OPERATING + 10_000 }],
+    personnelDuties: [{ id: "duty-1", operatorId: "operator-1", formationIds: ["formation-1"], pathReceiptId: "path-receipt-1", status: "ready", validFrom: 0, validUntil: OPERATING + 10_000 }],
+    pathReservations: [{ id: "path-1", operatorId: "operator-1", pathReceiptId: "path-receipt-1", serviceLineIds: ["S1"], status: "confirmed", validFrom: 0, validUntil: OPERATING + 10_000 }],
+  };
+}
+
+function publicFleet(): FleetMobilizationSnapshot {
+  const source = fleet();
+  return {
+    ...source,
+    formations: source.formations.map((formation) => ({ ...formation, operatorId: "public" })),
+    personnelDuties: source.personnelDuties.map((duty) => ({ ...duty, operatorId: "public" })),
+    pathReservations: source.pathReservations.map((path) => ({ ...path, operatorId: "public" })),
   };
 }
 
@@ -176,5 +188,230 @@ describe("restart-sicherer Economy-Scheduler", () => {
     expect(sendNotice).toHaveBeenCalled();
     expect(postJournal).not.toHaveBeenCalled();
     expect(await createEconomySchedulerHealthCheck(restartedMonitor, 30_000, () => worldInstant(OPERATING + 20).getTime()).check()).toMatchObject({ status: "ok", code: "scheduler_current" });
+  });
+
+  it("macht den Nullstart erst nach Zuschlag ueber die signierte Public-Facility mobilisierbar", async () => {
+    const fleetState = publicFleet();
+    const started = startEconomyWorld({
+      worldId: WORLD, seed: 1n, durationMonths: 6, release,
+      lots: Array.from({ length: 8 }, (_, index) => ({ id: `lot-${index}`, size: 100 - index, attractiveness: index })),
+      authorityBudgets: [{ authorityId: "authority", period: 0, availableCents: 10_000_000n, committedCents: 0n }],
+      accounts: ["account-1"],
+      publicVehiclePoolByLot: { "lot-0": ["vehicle-1"] },
+    });
+    await persistEconomyTransition(db, { expectedRevision: null, ...started, committedAt: worldInstant(0) });
+    await db.insert(alphaWorldProfiles).values({
+      worldId: WORLD, profileKind: "public", regionId: "mitteldeutschland-b", regionVariant: "B", worldSeed: 1n,
+      accelerationFactor: 1, infraReleaseHash: "a".repeat(64), timetableReleaseHash: "b".repeat(64),
+      fleetReleaseHash: "c".repeat(64), economyReleaseHash: "d".repeat(64),
+      blueprint: {
+        entryFacilityPolicy: {
+          schemaVersion: PUBLIC_ENTRY_FACILITY_SCHEMA,
+          mode: "award-contingent-wet-lease",
+          providerOperatorId: "public",
+          costBasis: "formation-operating-cost",
+        },
+        lots: [{
+          lotId: "lot-0",
+          vehicleIds: ["vehicle-1"],
+          personnelDutyIds: ["duty-1"],
+          pathReceiptIds: ["path-receipt-1"],
+        }],
+      },
+      blueprintHash: "e".repeat(64), deploymentHash: "f".repeat(64), state: "running",
+    });
+    let state = announceTender(started.state, {
+      commandId: "facility:announce", release, recipients: ["account-1"],
+      automation: { authorityId: "authority", budgetPeriod: 0, vehiclePool: ["vehicle-1"], recipientByOperator: { "operator-1": "account-1" }, failurePenaltyCents: 1_000n },
+      tender: { id: "tender-facility", worldId: WORLD, lotId: "lot-0", incumbentOperatorId: "public", specification, announcedAt: 0, opensAt: OPEN, closesAt: CLOSE, operatingFrom: OPERATING, contractPeriods: 2, periodDurationSeconds: 21 * 86_400, smallLot: false },
+    }).state;
+    await persistEconomyTransition(db, { expectedRevision: 0, state, effects: { notices: [], journal: [] }, committedAt: worldInstant(1) });
+    const adapters = { sendNotice: vi.fn(async () => undefined), postJournal: vi.fn(async () => undefined), operatingRuntime: testOperatingRuntime, publishRuntimeEvents: vi.fn(async () => undefined) };
+    const monitor = new EconomySchedulerMonitor(WORLD_EPOCH_MS);
+    await runEconomySchedulerCycle(db, worldInstant(OPEN), adapters, monitor);
+    state = (await loadEconomyWorldState(db, WORLD))!;
+    const envelope = createFleetMobilizationEnvelope(fleetState);
+    await persistFleetMobilizationSnapshot(db, WORLD, envelope, worldInstant(OPEN));
+    const vehicle = resolvePublicEntryFacilityVehicleConcept(envelope.snapshot, {
+      fleetRevision: 4,
+      snapshotHash: envelope.snapshotHash,
+      formationId: "formation-1",
+      personnelDutyIds: ["duty-1"],
+      pathReservationIds: ["path-1"],
+      entryFacility: { schemaVersion: PUBLIC_ENTRY_FACILITY_SCHEMA, providerOperatorId: "public" },
+    }, {
+      providerOperatorId: "public",
+      signedLotVehicleIds: ["vehicle-1"],
+      signedLotPersonnelDutyIds: ["duty-1"],
+      signedLotPathReceiptIds: ["path-receipt-1"],
+      serviceLineIds: ["S1"],
+      operatingFrom: OPERATING,
+    });
+    state = submitBid(state, "facility:bid", "tender-facility", {
+      id: "facility-bid", operatorId: "operator-1", orderingFeeCentsPerTrainKm: 1n, vehicle,
+      promises: { extraSeats: 0, punctualityBasisPoints: 9_000, additionalStops: 0 }, submittedAt: OPEN,
+    }, { accountId: "account-1", period: 0, smallLot: false, minimumScore: 0 });
+    await persistEconomyTransition(db, { expectedRevision: state.revision - 1, state, effects: { notices: [], journal: [] }, committedAt: worldInstant(OPEN) });
+    await runEconomySchedulerCycle(db, worldInstant(CLOSE), adapters, monitor);
+    state = (await loadEconomyWorldState(db, WORLD))!;
+    const reference = {
+      fleetRevision: 4, snapshotHash: envelope.snapshotHash,
+      formationIds: ["formation-1"], personnelDutyIds: ["duty-1"], pathReservationIds: ["path-1"],
+      entryFacility: { schemaVersion: PUBLIC_ENTRY_FACILITY_SCHEMA, providerOperatorId: "public" },
+    } as const;
+    state = submitMobilizationReference(state, { commandId: "facility:mobilization", tenderId: "tender-facility", operatorId: "operator-1", at: CLOSE, reference });
+    await persistEconomyTransition(db, { expectedRevision: state.revision - 1, state, effects: { notices: [], journal: [] }, committedAt: worldInstant(CLOSE) });
+
+    await runEconomySchedulerCycle(db, worldInstant(OPERATING), adapters, monitor);
+    const completed = (await loadEconomyWorldState(db, WORLD))!;
+    expect(completed.contracts.get("tender-facility")?.operatorId).toBe("operator-1");
+    expect(completed.mobilizations.get("tender-facility")?.proof).toMatchObject({
+      formationIds: ["formation-1"], personnelDutyIds: ["duty-1"], pathReservationIds: ["path-1"],
+    });
+  });
+
+  it("verwirft eine erst nach dem Zuschlag eingeschleuste Fremdlos-Trasse nochmals im Scheduler", async () => {
+    const sourceFleet = publicFleet();
+    const fleetState: FleetMobilizationSnapshot = {
+      ...sourceFleet,
+      pathReservations: [
+        sourceFleet.pathReservations[0]!,
+        {
+          ...sourceFleet.pathReservations[0]!,
+          id: "path-foreign-lot",
+          pathReceiptId: "path-receipt-foreign-lot",
+        },
+      ],
+    };
+    const started = startEconomyWorld({
+      worldId: WORLD,
+      seed: 1n,
+      durationMonths: 6,
+      release,
+      lots: Array.from({ length: 8 }, (_, index) => ({ id: `lot-${index}`, size: 100 - index, attractiveness: index })),
+      authorityBudgets: [{ authorityId: "authority", period: 0, availableCents: 10_000_000n, committedCents: 0n }],
+      accounts: ["account-1"],
+      publicVehiclePoolByLot: { "lot-0": ["vehicle-1"] },
+    });
+    await persistEconomyTransition(db, { expectedRevision: null, ...started, committedAt: worldInstant(0) });
+    await db.insert(alphaWorldProfiles).values({
+      worldId: WORLD,
+      profileKind: "public",
+      regionId: "mitteldeutschland-b",
+      regionVariant: "B",
+      worldSeed: 1n,
+      accelerationFactor: 1,
+      infraReleaseHash: "a".repeat(64),
+      timetableReleaseHash: "b".repeat(64),
+      fleetReleaseHash: "c".repeat(64),
+      economyReleaseHash: "d".repeat(64),
+      blueprint: {
+        entryFacilityPolicy: {
+          schemaVersion: PUBLIC_ENTRY_FACILITY_SCHEMA,
+          mode: "award-contingent-wet-lease",
+          providerOperatorId: "public",
+          costBasis: "formation-operating-cost",
+        },
+        lots: [{
+          lotId: "lot-0",
+          vehicleIds: ["vehicle-1"],
+          personnelDutyIds: ["duty-1"],
+          pathReceiptIds: ["path-receipt-1"],
+        }],
+      },
+      blueprintHash: "e".repeat(64),
+      deploymentHash: "f".repeat(64),
+      state: "running",
+    });
+    const announced = announceTender(started.state, {
+      commandId: "facility:defense:announce",
+      release,
+      recipients: ["account-1"],
+      automation: {
+        authorityId: "authority",
+        budgetPeriod: 0,
+        vehiclePool: ["vehicle-1"],
+        recipientByOperator: { "operator-1": "account-1" },
+        failurePenaltyCents: 1_000n,
+      },
+      tender: {
+        id: "tender-facility-defense",
+        worldId: WORLD,
+        lotId: "lot-0",
+        incumbentOperatorId: "public",
+        specification,
+        announcedAt: 0,
+        opensAt: OPEN,
+        closesAt: CLOSE,
+        operatingFrom: OPERATING,
+        contractPeriods: 2,
+        periodDurationSeconds: 21 * 86_400,
+        smallLot: false,
+      },
+    });
+    await persistEconomyTransition(db, { expectedRevision: 0, ...announced, committedAt: worldInstant(1) });
+    const adapters = {
+      sendNotice: vi.fn(async () => undefined),
+      postJournal: vi.fn(async () => undefined),
+      operatingRuntime: testOperatingRuntime,
+      publishRuntimeEvents: vi.fn(async () => undefined),
+    };
+    const monitor = new EconomySchedulerMonitor(WORLD_EPOCH_MS);
+    await runEconomySchedulerCycle(db, worldInstant(OPEN), adapters, monitor);
+    let state = (await loadEconomyWorldState(db, WORLD))!;
+    const envelope = createFleetMobilizationEnvelope(fleetState);
+    await persistFleetMobilizationSnapshot(db, WORLD, envelope, worldInstant(OPEN));
+    const entryFacility = { schemaVersion: PUBLIC_ENTRY_FACILITY_SCHEMA, providerOperatorId: "public" } as const;
+    const vehicle = resolvePublicEntryFacilityVehicleConcept(envelope.snapshot, {
+      fleetRevision: 4,
+      snapshotHash: envelope.snapshotHash,
+      formationId: "formation-1",
+      personnelDutyIds: ["duty-1"],
+      pathReservationIds: ["path-1"],
+      entryFacility,
+    }, {
+      providerOperatorId: "public",
+      signedLotVehicleIds: ["vehicle-1"],
+      signedLotPersonnelDutyIds: ["duty-1"],
+      signedLotPathReceiptIds: ["path-receipt-1"],
+      serviceLineIds: ["S1"],
+      operatingFrom: OPERATING,
+    });
+    state = submitBid(state, "facility:defense:bid", "tender-facility-defense", {
+      id: "facility-defense-bid",
+      operatorId: "operator-1",
+      orderingFeeCentsPerTrainKm: 1n,
+      vehicle,
+      promises: { extraSeats: 0, punctualityBasisPoints: 9_000, additionalStops: 0 },
+      submittedAt: OPEN,
+    }, { accountId: "account-1", period: 0, smallLot: false, minimumScore: 0 });
+    await persistEconomyTransition(db, { expectedRevision: state.revision - 1, state, effects: { notices: [], journal: [] }, committedAt: worldInstant(OPEN) });
+    await runEconomySchedulerCycle(db, worldInstant(CLOSE), adapters, monitor);
+    state = (await loadEconomyWorldState(db, WORLD))!;
+    state = submitMobilizationReference(state, {
+      commandId: "facility:defense:mobilization",
+      tenderId: "tender-facility-defense",
+      operatorId: "operator-1",
+      at: CLOSE,
+      reference: {
+        fleetRevision: 4,
+        snapshotHash: envelope.snapshotHash,
+        formationIds: ["formation-1"],
+        personnelDutyIds: ["duty-1"],
+        pathReservationIds: ["path-foreign-lot"],
+        entryFacility,
+      },
+    });
+    await persistEconomyTransition(db, { expectedRevision: state.revision - 1, state, effects: { notices: [], journal: [] }, committedAt: worldInstant(CLOSE) });
+
+    await runEconomySchedulerCycle(db, worldInstant(OPERATING), adapters, monitor);
+    const completed = (await loadEconomyWorldState(db, WORLD))!;
+    expect(completed.contracts.has("tender-facility-defense")).toBe(false);
+    expect(completed.publicOperations.has("lot-0")).toBe(true);
+    expect(completed.mobilizations.get("tender-facility-defense")).toMatchObject({ completed: true });
+    expect(completed.mobilizations.get("tender-facility-defense")?.proof).toBeUndefined();
+    expect(adapters.postJournal).toHaveBeenCalledWith(expect.objectContaining({
+      postings: [expect.objectContaining({ costType: "penalty", amountCents: 1_000n })],
+    }));
   });
 });

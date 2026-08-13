@@ -59,6 +59,10 @@ export interface OnboardingAssistant {
   readonly warnings: readonly { readonly code: string; readonly severity: "info" | "warning" | "blocking"; readonly message: string }[];
 }
 
+export type StartingCapitalPolicy =
+  | { readonly mode: "finite"; readonly amountCents: string }
+  | { readonly mode: "unlimited" };
+
 export type ContractType = "traction" | "vehicle-rental" | "connection" | "disruption-assistance";
 export type ContractStatus = "offered" | "accepted" | "rejected" | "active" | "terminated" | "non-performance" | "completed" | "expired";
 
@@ -147,6 +151,30 @@ export interface ContractOfferPayload {
   readonly terminationNoticeS: number;
   readonly offeredAtS: number;
   readonly idempotencyKey: string;
+}
+
+const MAX_I64_CENTS = 9_223_372_036_854_775_807n;
+
+function parseStartingCapitalPolicy(value: unknown): StartingCapitalPolicy {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Startkapital-Policy ist kein Objekt.");
+  }
+  const policy = value as Record<string, unknown>;
+  if (policy.mode === "unlimited" && Object.keys(policy).length === 1) {
+    return { mode: "unlimited" };
+  }
+  if (
+    policy.mode === "finite"
+    && Object.keys(policy).length === 2
+    && typeof policy.amountCents === "string"
+    && /^(0|[1-9][0-9]*)$/.test(policy.amountCents)
+  ) {
+    const amountCents = BigInt(policy.amountCents);
+    if (amountCents <= MAX_I64_CENTS) {
+      return { mode: "finite", amountCents: policy.amountCents };
+    }
+  }
+  throw new Error("Erwartet wird finite mit kanonischem i64-Centstring oder unlimited ohne Betrag.");
 }
 
 class GameApiError extends Error {
@@ -257,6 +285,18 @@ export class GameApiClient {
 
   loadOnboardingAssistant(worldId: string): Promise<OnboardingAssistant> {
     return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/onboarding/assistant`);
+  }
+
+  async loadStartingCapitalPolicy(worldId: string): Promise<StartingCapitalPolicy> {
+    const value = await this.#journeyJson<unknown>(
+      `/worlds/${encodeURIComponent(worldId)}/starting-capital-policy`,
+    );
+    try {
+      return parseStartingCapitalPolicy(value);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "unbekannter Vertragsfehler";
+      throw new GameApiError(`Startkapital-Policy hat ein ungültiges Format: ${detail}`, false);
+    }
   }
 
   loadOwnOperators(): Promise<readonly OperatorSummary[]> {

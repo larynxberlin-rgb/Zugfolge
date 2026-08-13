@@ -140,7 +140,9 @@ export function registerAlphaRoutes(app: FastifyInstance, deps: { readonly db: I
       return reply.code(201).send(payload(await onboarding.claim(request.params.worldId, request.identity.keycloakSubject, atS, startPackageSpec)));
     } catch (error) { return sendError(reply, error); }
   });
+  }
 
+  if (onboarding !== undefined) {
   app.get<{ Params: { worldId: string }; Querystring: { fromS?: number; untilS?: number } }>("/worlds/:worldId/capacity-heatmap", {
     preHandler: deps.authenticate,
     schema: { params: worldParams, querystring: { type: "object", additionalProperties: false, properties: { fromS: { type: "integer", minimum: 0 }, untilS: { type: "integer", minimum: 1 } } } },

@@ -73,6 +73,65 @@ describe("GameApiClient", () => {
     expect(JSON.parse(String(fetchImplementation.mock.calls[5]![1]!.body))).toMatchObject({ expectedRevision: 2, idempotencyKey: "transfer-1" });
   });
 
+  it("ruft Tutorialpaket und -assistent getrennt von der öffentlichen Startkapital-Policy ab", async () => {
+    const grant = {
+      idempotentReplay: false,
+      grant: {
+        id: "grant-1",
+        operatorId: "operator-1",
+        emergencyLotId: "lot-1",
+        vehicleId: "vehicle-1",
+        pathReceiptId: "path-1",
+        personnelPoolId: "personnel-1",
+        operatingProgramId: "program-1",
+        expiresAtS: "1000",
+      },
+    };
+    const fetchImplementation = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/starting-capital-policy")) {
+        return new Response(JSON.stringify({ mode: "finite", amountCents: "0" }));
+      }
+      if (url.endsWith("/onboarding/assistant")) {
+        return new Response(JSON.stringify({ ready: true, facts: {}, warnings: [] }));
+      }
+      if (url.endsWith("/onboarding/start-package") && (init?.method ?? "GET") === "POST") {
+        return new Response(JSON.stringify(grant));
+      }
+      return new Response(JSON.stringify(grant));
+    });
+    const client = new GameApiClient("https://api.test", "token", fetchImplementation as typeof fetch);
+
+    await expect(client.loadStartPackage("tutorial/world")).resolves.toEqual(grant);
+    await expect(client.claimStartPackage("tutorial/world")).resolves.toEqual(grant);
+    await expect(client.loadOnboardingAssistant("tutorial/world")).resolves.toMatchObject({ ready: true });
+    await expect(client.loadStartingCapitalPolicy("public/world")).resolves.toEqual({ mode: "finite", amountCents: "0" });
+
+    expect(fetchImplementation.mock.calls.map(([input]) => String(input))).toEqual([
+      "https://api.test/worlds/tutorial%2Fworld/onboarding/start-package",
+      "https://api.test/worlds/tutorial%2Fworld/onboarding/start-package",
+      "https://api.test/worlds/tutorial%2Fworld/onboarding/assistant",
+      "https://api.test/worlds/public%2Fworld/starting-capital-policy",
+    ]);
+    expect(fetchImplementation.mock.calls[1]![1]).toMatchObject({ method: "POST" });
+  });
+
+  it("verwirft numerisches oder überlaufendes Startkapital an der Web-Vertragsgrenze", async () => {
+    const numeric = new GameApiClient(
+      "",
+      "token",
+      async () => new Response(JSON.stringify({ mode: "finite", amountCents: 0 })),
+    );
+    await expect(numeric.loadStartingCapitalPolicy("world-1")).rejects.toThrow(/ungültiges Format/);
+
+    const overflowing = new GameApiClient(
+      "",
+      "token",
+      async () => new Response(JSON.stringify({ mode: "finite", amountCents: "9223372036854775808" })),
+    );
+    await expect(overflowing.loadStartingCapitalPolicy("world-1")).rejects.toThrow(/ungültiges Format/);
+  });
+
   it("laedt und validiert die veroeffentlichte Weltprojektion mit Bearer-Token", async () => {
     const fetchImplementation = vi.fn(async () => envelope(7, 99));
     const client = new GameApiClient(

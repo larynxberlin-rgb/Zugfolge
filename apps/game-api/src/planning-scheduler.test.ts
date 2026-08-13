@@ -78,4 +78,27 @@ describe("Planning-Consumer-Scheduler", () => {
       vi.useRealTimers();
     }
   });
+
+  it("liest aktive Welten fuer jeden Lauf neu ein", async () => {
+    vi.useFakeTimers();
+    const worlds = ["world-a"];
+    const scheduler = createPlanningScheduler(
+      {} as never,
+      {} as never,
+      {} as never,
+      () => worlds,
+      { intervalMs: 10, now: () => new Date(1_000) },
+    );
+    try {
+      scheduler.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(consumePendingPlanningCommands.mock.calls.map((call) => call[3])).toContain("world-a");
+      worlds.push("world-b");
+      await vi.advanceTimersByTimeAsync(10);
+      expect(consumePendingPlanningCommands.mock.calls.map((call) => call[3])).toContain("world-b");
+    } finally {
+      await scheduler.close();
+      vi.useRealTimers();
+    }
+  });
 });

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 370" role="img" aria-labelledby="title desc">
+  <title id="title">Zugfolge Wortmarke V3</title>
+  <desc id="desc">Kantige Zugfolge-Wortmarke mit abstrahierten Netzlinien und Knoten.</desc>
+
+  <g fill="none" stroke-linecap="square" stroke-linejoin="miter">
+    <path stroke="#7186FF" stroke-width="5" d="M32 52H272L300 24H480" />
+    <path stroke="#7186FF" stroke-width="5" d="M500 300L528 328H1180L1208 300H1288" />
+    <path stroke="#AFC7FF" stroke-width="4" d="M800 328L822 350H970" />
+  </g>
+  <g fill="#090B10" stroke="#7186FF" stroke-width="5">
+    <rect x="24" y="44" width="16" height="16" />
+    <rect x="472" y="16" width="16" height="16" />
+    <rect x="492" y="292" width="16" height="16" />
+    <rect x="1280" y="292" width="16" height="16" />
+  </g>
+  <rect x="794" y="322" width="12" height="12" fill="#7186FF" />
+  <rect x="962" y="342" width="16" height="16" fill="#090B10" stroke="#AFC7FF" stroke-width="4" />
+
+  <g transform="translate(0 65)">
+    <g fill="#E8EDF7">
+      <path d="M20 30H160V62L70 178H160V210H20V178L110 62H20Z" />
+      <path d="M180 30H216V170L228 182H272L284 170V30H320V184L294 210H206L180 184Z" />
+      <path d="M364 30H466L490 54V82H454V66H376V174H454V142H418V110H490V186L466 210H364L340 186V54Z" />
+    </g>
+    <g fill="#7186FF">
+      <path d="M520 30H660V66H558V106H642V142H558V210H520Z" />
+      <path fill-rule="evenodd" d="M704 30H806L830 54V186L806 210H704L680 186V54ZM716 66V174H794V66Z" />
+      <path d="M850 30H888V174H970V210H850Z" />
+      <path d="M1014 30H1116L1140 54V82H1104V66H1026V174H1104V142H1068V110H1140V186L1116 210H1014L990 186V54Z" />
+      <path d="M1170 30H1310V66H1208V104H1292V140H1208V174H1310V210H1170Z" />
+    </g>
+  </g>
+</svg>

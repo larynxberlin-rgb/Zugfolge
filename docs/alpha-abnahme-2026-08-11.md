@@ -45,9 +45,9 @@ Release-Zeitwerte.
 
 | Punkt | Implementierung | Ausgeführter Nachweis | Fehlender Abnahmebeweis | Status |
 |---|---|---|---|---|
-| M9.1 | fünf Kapitel, persistenter Fortschritt, echte Evidenzabfragen, autoritativer Reset/Seed und Beschleunigung nur für Tutorial/privat/Test; vollständige dunkle Spielerreise | PGlite-E2E schließt alle fünf Kapitel über echte Economy-/Fleet-/Operating-Evidenz ab und beweist danach den Reset auf eine neue Sitzung; Routen- und Web-Tests | signierte Tutorial-Welt und Browserlauf eines externen Kontos in der Zielumgebung fehlen | in Arbeit |
+| M9.1 | fünf Kapitel, persistenter Fortschritt, echte Evidenzabfragen, autoritativer Reset/Seed und didaktisches Startpaket ausschließlich im getrennten Tutorial-Deployment; Beschleunigung nur für Tutorial/privat/Test; vollständige dunkle Spielerreise | PGlite-E2E schließt alle fünf Kapitel über echte Economy-/Fleet-/Operating-Evidenz ab und beweist danach den Reset auf eine neue Sitzung; Routen- und Web-Tests | neu erzeugtes und Ed25519-signiertes Tutorial-Deployment sowie Browserlauf eines externen Kontos in der Zielumgebung fehlen | in Arbeit |
 | M9.2 | deterministischer Blueprint, Release-Pins, gestaffelte Lose und vollständiger Eigenbetrieb | echter PostgreSQL/PostGIS-/Linux-NAPI-Weltstart mit 49 Losen und 1.634 Zugfahrten; Livemap, Betriebszentrale und Odoo-Outbox vollständig; Wiederanlauf idempotent | — | erledigt |
-| M9.3 | idempotentes Startpaket über Economy-/Operating-Single-Writer, vorbereitete M5-Ressourcen, Heatmap, Assistentenwarnungen, Glossar und vollständige öffentliche Spielerreise | Odoo-Einladung → Keycloak-Konto → weltgebundenes Konto → Startpaket/Vertrag/Programm/Projektion als PGlite-E2E; Adapter-, Economy-, Routen- und Web-Tests | externer Browserlauf gegen neu erzeugten und signierten Weltbestand fehlt; ein Slot beweist noch nicht den M9.9-Mehrkontenbetrieb | in Arbeit |
+| M9.3 | öffentlicher Einstieg ohne Startpaket: idempotente EVU-Gründung und Eröffnungsledger aus der signierten `StartingCapitalPolicy`, reguläre Ausschreibung mit weltgebundener `award-contingent-wet-lease`-Mobilisierung, Heatmap und Glossar; Tutorialpaket fail-closed getrennt | Repositorytests für Policy-/Hashbindung, Ledger, Public-Negativfall, Web-Vertrag und die Kette Gebot → Zuschlag → Mobilisierung ohne Ressource beim Beitritt; der frühere öffentliche Startpaket-E2E ist nach E28 kein gültiger Zielbeweis mehr | neu erzeugtes und Ed25519-signiertes öffentliches Deployment, Nullstart gegen den realen Weltbestand und externer Browserlauf fehlen | in Arbeit |
 | M9.4 | typisierter Katalog, Begründung/Risiko/Vorschau, Vier-Augen-Trennung, signierter Webhook, Game-Queue, Reautorisierung, Ergebnisprojektion und Game-Audit; Kontenentzug deaktiviert Keycloak und entzieht den Weltzugang ausschließlich über den Hochrisikopfad; direkte Produktionseinstiege gesperrt | Commerce-/Game-API-Tests einschließlich Hochrisikoablehnung und Odoo/Game-E2E; Browser-Rendering | Odoo-19-Add-on-Testdienst und realer Webhook-/Queue-/Vier-Augen-Run des neuen `alpha:phase3`-Drills nicht ausgeführt | in Arbeit |
 | M9.5 | Korrelations-IDs, strukturierte Logs, Metriken, Traceparent, Healthzustände, Alerts, Live-Dashboard, getrennte Backup-/Restore-Skripte mit Fachzustands- und Filestore-Baumhash sowie reproduzierbarer Restore-/Alert-Drill | echter PostgreSQL-16.14-Restore mit identischem Zustands-Hash; unabhängiger Validierungssatz und echte InfraRelease-Signatur; Odoo-Backupmechanik mit DB-/Filestorefixture; Repository-Vertragstests des Phase-3-Drills | echter Odoo-19-Restore mit Modulupgrade/Test/Anhangsstichprobe und produktive Alert-/Dashboard-Abnahme fehlen | blockiert |
 | M9.6 | persistenter Guard nach Identität/Welt/Endpunkt/Aktion, Replay-/Massen-/Koordinationssignale, abgestufte Reaktionen, Einspruch, schwere Sanktion nur über Odoo | Game-API- und Alpha-Tests; produktiv an Gebote, Trassenfenster und Kooperationsmärkte gebunden | gemischter 50-Konten-Anti-Bot-Lastfall und operative Einspruchsabnahme fehlen | in Arbeit |
@@ -125,8 +125,8 @@ den Restore einer echten Odoo-19-Produktionsdatenbank.
 | Schritt | Ergebnis |
 |---|---|
 | 1. Variante-B-Welt startet vollständig im Eigenbetrieb | bestanden: 49 Lose, 1.634 Zugfahrten, 487 Umläufe/Fahrzeuge/Dienste und 1.634 Trassen; alle produktiven Projektionen bereit |
-| 2. Spieler absolviert das Tutorial | Repository-E2E besteht alle fünf Kapitel und beweist Reset/Neubeginn; externer Browserlauf gegen signierte Tutorial-Welt offen |
-| 3. Startlos und Leasingfahrzeug | Repository-E2E führt Odoo-Einladung und Keycloak-Identität durch den autoritativen Economy-/Operating-Pfad bis Vertrag, Programm und Projektionen; externer Ziellauf offen |
+| 2. Spieler absolviert das Tutorial | Repository-E2E besteht alle fünf Kapitel und beweist Reset/Neubeginn mit Tutorial-Startpaket; externer Browserlauf gegen neu signiertes Tutorial-Deployment offen |
+| 3. Öffentliches EVU mit Nullstart | Repositorytests belegen die idempotente Eröffnungsbilanz, weisen öffentliche Startpaketaufrufe ab und durchlaufen Gebot, Zuschlag und `award-contingent-wet-lease`-Mobilisierung; der externe Spieler-E2E gegen den neu signierten öffentlichen Bestand ist offen |
 | 4. Zwei Spieler schließen Vertrag | Repository-E2E mit zwei getrennten Tokens besteht Angebot und Annahme einschließlich Ledger, Postfach und Audit; Klickoberfläche und Clientvertrag getestet; externer Zwei-Browser-Lauf offen |
 | 5. Sekundärmarktübertragung | Repository-E2E handelt 20 Fahrzeuge parallel über Angebot, Reservierung und Rust-Single-Writer-Übergabe; Historie und Doppelbindungs-Schutz grün; externer Browser-/Marktlastlauf offen |
 | 6. Störung und EVU-Hilfe | PR-199-Störungspfad und Hilfsvertrag vorhanden, kombinierter E2E fehlt |
@@ -168,7 +168,7 @@ Damit ist der integrierte Alpha-Abnahmefall als Ganzes **nicht bestanden**.
 | `node tools/alpha-ops/verify-alpha-recurrence.mjs` | 1.634 Materialisierungen, 909 Grenzkommandos, 1 Cleanup und 2.544 eindeutige Kommandos im ersten Wiederholungsfenster |
 | M14-Tageslauf | 909 Grenzübergänge ohne Ressourcenkonflikt; Restore-Hash `25b65c6f…da6be` bitgleich |
 | Phase-2-Paketläufe | Economy 42, Alpha 6, Game API 103 und Game Web 23 Tests grün; darunter beide PGlite-E2Es, OIDC-PKCE, Reset/Späteinladung und Projektion nach Commit |
-| Phase-4-Paketläufe | Game Web 35 Tests grün; Kooperation 7 Tests grün; Game-API-M12-E2E 4 Tests grün, darunter Zwei-Spieler-Ledger/Postfach/Audit und 20 parallele Fahrzeugübertragungen |
+| Phase-4-Paketläufe | Game Web 40 Tests grün; Kooperation 7 Tests grün; Game-API-M12-E2E 4 Tests grün, darunter Zwei-Spieler-Ledger/Postfach/Audit und 20 parallele Fahrzeugübertragungen |
 | Phase-2-Web-/Static-Smoke | Vite-Produktionsbuild grün; SPA-Root und injizierte Runtime-Konfiguration jeweils HTTP 200 |
 | gemischter 50-Konten-Mehrperioden-Soak | nicht ausgeführt |
 | reale geschlossene Alpha | nicht gestartet und nicht behauptet |
@@ -188,10 +188,17 @@ laufenden Odoo-19-Instanz:
    Periodenwechsel-Lauf müssen für den Liefercommit real grün laufen.
 2. Der gemischte 50-Konten-Mehrperioden-Soak samt Ausfällen von Odoo,
    Provider, Worker und Clientverbindungen ist noch auszuführen.
-3. Tutorial und Startpaket besitzen jetzt zusammenhängende Repository-E2Es.
-   Offen bleiben der externe Browserlauf gegen neu signierte Weltbestände sowie
-   die integrierten Spieler-E2Es für Kooperationsmarkt und Weltende; diese
-   Nachweise sind für die Gesamtalpha weiterhin erforderlich.
+3. Der vorhandene Tutorial-/Startpaket-Repository-E2E gilt nach E28 nur für das
+   getrennte Tutorial-Deployment. Für die öffentliche Welt sind Policy-,
+   Ledger- und Negativtests Vorabbeweise; offen bleiben der zusammenhängende
+   Nullstart-E2E gegen den realen signierten Losbestand über Ausschreibung,
+   Zuschlag und `award-contingent-wet-lease`, die externen Browserläufe
+   gegen beide neu signierten Weltbestände sowie die integrierten Spieler-E2Es
+   für Weltende. Für den Kooperationsmarkt stehen nun Klickvertrag,
+   Clientpfad und Zwei-Spieler-/20-Fahrzeuge-Repository-E2E; weiterhin offen
+   bleibt deren externer Zwei-Browser- und Marktlastlauf gegen die
+   Alpha-Zielumgebung. Diese Nachweise sind für die Gesamtalpha weiterhin
+   erforderlich.
 4. Vor einem realen Alpha-Start sind Freigabe, Teilnehmerkreis und
    Betriebsumgebung ausdrücklich festzulegen. Ein Bot- oder Lasttest ersetzt
    diesen Nachweis nicht.

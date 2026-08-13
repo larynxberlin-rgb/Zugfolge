@@ -22,9 +22,16 @@ describe("Odoo-Administrationsmodul", () => {
     const request = await readFile(resolve(addon, "models/admin_request.py"), "utf8");
     expect(request).toContain("with_delay");
     expect(request).toContain("manual_disruption_create");
+    expect(request).toContain("world_deploy");
+    expect(request).toContain("parse_german_currency_to_cents");
+    expect(request).toContain("starting_capital_amount_cents");
+    expect(request).toContain("signed_world_deployment");
+    expect(request).toContain("signing_configuration");
+    expect(request).toContain("zugfolge-alpha-world-deploy-configuration/v1");
     expect(request).toContain("game_capability_state");
     const capability = await readFile(resolve(addon, "models/admin_capability.py"), "utf8");
     expect(capability).toContain("zugfolge_game_projection");
+    expect(capability).toContain("GLOBAL_WORLD_DEPLOY_CAPABILITY_SCOPE_ID");
     const invoice = await readFile(resolve(addon, "models/account_move.py"), "utf8");
     expect(invoice).toContain('_inherit = "account.move"');
     expect(invoice).toContain('"entitlement.change"');
@@ -38,6 +45,7 @@ describe("Odoo-Administrationsmodul", () => {
     expect(controller).toContain("/zugfolge/metrics");
     expect(controller).toContain("admin.capability.projection");
     expect(controller).toContain("alpha.feedback.projection");
+    expect(controller).toContain("{**result, \"state\": state}");
     expect(receipt).toContain("unique(message_id)");
     expect(receipt).toContain("unveränderlich");
   });
@@ -54,6 +62,10 @@ describe("Alpha-Einladungen", () => {
     expect(model).toContain('"risk_class": "high"');
     expect(model).not.toContain('record._command("revoke")');
     expect(views).toContain("Alpha-Einladungen");
+    expect(model).toContain("world_profile_kind");
+    expect(model).not.toContain("start_package");
+    expect(views).not.toContain('name="start_package"');
+    expect(model).toContain("die oeffentliche Zielwelt");
   });
 
   it("liefert einen isolierten Restore-, Alert- und Dashboard-Drill", async () => {

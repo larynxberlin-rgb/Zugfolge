@@ -13,8 +13,8 @@ umgeschrieben — ihre Historie ist der Wert.
 
 ## Verhältnis zu den anderen Dokumenten
 
-- `AGENTS.md` — die bindende Kurztabelle E1–E27. Wird jede Sitzung geladen.
-- `../entscheidungen.md` — E1–E27 mit einzeiliger Begründung, die maßgebliche
+- `AGENTS.md` — die bindende Kurztabelle E1–E28. Wird jede Sitzung geladen.
+- `../entscheidungen.md` — E1–E28 mit einzeiliger Begründung, die maßgebliche
   Quelle für Wortlaut und Nummerierung.
 - **`docs/adr/`** (dieser Ordner) — dieselben Entscheidungen ausführlich: mit
   Kontext, Konsequenzen und Querverweisen. Ein ADR je Entscheidung.
@@ -42,7 +42,7 @@ Statuswerte: `Angenommen` (bindend), `Vorgeschlagen`, `Abgelöst durch ADR-XXXX`
 ## Index
 
 Die folgenden ADRs wurden aus den zuvor in der Konzeptionsphase getroffenen
-Grundsatzentscheidungen schriftlich festgehalten; E21 bis E27 kamen später als
+Grundsatzentscheidungen schriftlich festgehalten; E21 bis E28 kamen später als
 eigene Entscheidungen hinzu. Alle Status: **Angenommen — bindend**.
 
 | ADR | E | Titel |
@@ -74,6 +74,7 @@ eigene Entscheidungen hinzu. Alle Status: **Angenommen — bindend**.
 | [0025](0025-gebietsueberschreitende-fahrtketten.md) | E25 | Gebietsüberschreitende Fahrten bleiben eine Fahrtkette mit deterministischem Außenlauf |
 | [0026](0026-karte-als-spielzentrum.md) | E26 | Die selbst gehostete Weltkarte ist das Spielzentrum; der Deutschland-Korpus ist vollständig sichtbar |
 | [0027](0027-geschaetzte-zugkartenposition-nur-visuell.md) | E27 | Geschätzte Zugkartenpositionen bleiben rein visuell und von der Betriebswahrheit getrennt |
+| [0028](0028-getrennter-tutorial-und-wettbewerbsstart.md) | E28 | Tutorialstart und öffentlicher Markteintritt sind getrennte Weltverträge |
 
 > **Teilablösung:** ADR-0027 ersetzt ausschließlich den Exact-only-Satz zur
 > sichtbaren Zugposition in ADR-0026. Der historische Wortlaut bleibt dort

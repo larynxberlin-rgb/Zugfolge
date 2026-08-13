@@ -1,5 +1,11 @@
 import type { PenaltyFocus } from "./release.js";
 import type { EconomyRules } from "./release.js";
+import {
+  addI64,
+  assertNonnegativeI64,
+  multiplyNonnegativeI64,
+  subtractI64,
+} from "./money.js";
 
 /**
  * Referenzen auf den von M5.13 freigegebenen, revisionierten Ressourcenstand.
@@ -35,7 +41,7 @@ export function performOperatingTransition(input: { readonly incumbentOperatorId
   return Object.freeze({ operatorId: input.winnerOperatorId, seamless: false, penaltyCents: 0n, prequalificationDamage: 0 });
 }
 
-export interface ServiceContract { readonly id: string; readonly worldId: string; readonly lotId: string; readonly operatorId: string; readonly startsAt: number; readonly endsAt: number; readonly orderingFeeCentsPerTrainKm: bigint; readonly bonusCentsPerPeriod: bigint; readonly penaltyRates: Readonly<Record<PenaltyFocus, bigint>>; readonly evidenceRequired: readonly string[] }
+export interface ServiceContract { readonly id: string; readonly worldId: string; readonly lotId: string; readonly operatorId: string; readonly startsAt: number; readonly endsAt: number; readonly orderingFeeCentsPerTrainKm: bigint; readonly bonusCentsPerPeriod: bigint; readonly penaltyRates: Readonly<Record<PenaltyFocus, bigint>>; readonly evidenceRequired: readonly string[]; readonly mandatoryVehicleCostCentsPerTrainKm?: bigint }
 export interface PerformanceEvidence { readonly trainKm: bigint; readonly punctualityBasisPoints: number; readonly cancellations: number; readonly missingSeats: number; readonly missedConnections: number; readonly evidence: readonly string[] }
 export interface ContractSettlement { readonly orderingFeeCents: bigint; readonly bonusCents: bigint; readonly penaltyCents: bigint; readonly netCents: bigint; readonly explanation: readonly string[] }
 export function settleContract(contract: ServiceContract, performance: PerformanceEvidence): ContractSettlement {
@@ -53,6 +59,7 @@ export function settleContract(contract: ServiceContract, performance: Performan
   ) {
     throw new RangeError("Leistungsnachweis enthält ungültige oder negative Werte.");
   }
+  assertNonnegativeI64(performance.trainKm, "Zugkilometer");
   if (
     contract.orderingFeeCentsPerTrainKm < 0n
     || contract.bonusCentsPerPeriod < 0n
@@ -60,11 +67,21 @@ export function settleContract(contract: ServiceContract, performance: Performan
   ) {
     throw new RangeError("Vertrag enthält negative Entgelt-, Bonus- oder Pönalesätze.");
   }
+  assertNonnegativeI64(contract.orderingFeeCentsPerTrainKm, "Bestellerentgelt je Zugkilometer");
+  assertNonnegativeI64(contract.bonusCentsPerPeriod, "Vertragsbonus");
+  for (const rate of Object.values(contract.penaltyRates)) assertNonnegativeI64(rate, "Poenalesatz");
   for (const required of contract.evidenceRequired) if (!performance.evidence.includes(required)) throw new Error(`Vertragsnachweis fehlt: ${required}`);
-  const orderingFee = performance.trainKm * contract.orderingFeeCentsPerTrainKm;
+  const orderingFee = multiplyNonnegativeI64(performance.trainKm, contract.orderingFeeCentsPerTrainKm, "Bestellerentgelt");
   const bonus = performance.punctualityBasisPoints >= 9_500 && performance.cancellations === 0 ? contract.bonusCentsPerPeriod : 0n;
-  const penalties = BigInt(Math.max(0, 9_000 - performance.punctualityBasisPoints)) * contract.penaltyRates.punctuality + BigInt(performance.cancellations) * contract.penaltyRates.cancellation + BigInt(performance.missingSeats) * contract.penaltyRates.seats + BigInt(performance.missedConnections) * contract.penaltyRates.connections;
-  return Object.freeze({ orderingFeeCents: orderingFee, bonusCents: bonus, penaltyCents: penalties, netCents: orderingFee + bonus - penalties, explanation: Object.freeze([`Bestellerentgelt ${orderingFee}`, `Bonus ${bonus}`, `Pönale ${penalties}`]) });
+  const penaltyParts = [
+    multiplyNonnegativeI64(BigInt(Math.max(0, 9_000 - performance.punctualityBasisPoints)), contract.penaltyRates.punctuality, "Puenktlichkeitspoenale"),
+    multiplyNonnegativeI64(BigInt(performance.cancellations), contract.penaltyRates.cancellation, "Ausfallpoenale"),
+    multiplyNonnegativeI64(BigInt(performance.missingSeats), contract.penaltyRates.seats, "Sitzplatzpoenale"),
+    multiplyNonnegativeI64(BigInt(performance.missedConnections), contract.penaltyRates.connections, "Anschlusspoenale"),
+  ];
+  const penalties = penaltyParts.reduce((sum, amount) => addI64(sum, amount, "Gesamtpoenale"), 0n);
+  const net = subtractI64(addI64(orderingFee, bonus, "Vertragserloes"), penalties, "Vertragsnetto");
+  return Object.freeze({ orderingFeeCents: orderingFee, bonusCents: bonus, penaltyCents: penalties, netCents: net, explanation: Object.freeze([`Bestellerentgelt ${orderingFee}`, `Bonus ${bonus}`, `Pönale ${penalties}`]) });
 }
 
 export interface PublicOperation { readonly lotId: string; readonly periodsRemaining: number; readonly minimumServiceOnly: true; readonly qualityBonusEligible: false; readonly livemapMarker: "public-operator"; readonly pathsPriority: "subordinate"; readonly dispatchPolicy: "conservative-no-optimization"; readonly vehiclePool: readonly string[] }

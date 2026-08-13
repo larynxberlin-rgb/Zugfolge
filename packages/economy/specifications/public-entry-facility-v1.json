@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "zugfolge-public-entry-facility/v1",
+  "title": "Zuschlagsgebundener Betriebsbereitstellungsvertrag",
+  "scope": "public-world",
+  "trigger": "tender-award",
+  "providerOperatorId": "public",
+  "upfrontPaymentCents": "0",
+  "costBasis": "formation-operating-cost",
+  "rules": [
+    "Der Weltbeitritt vergibt weder Vertrag noch Fahrzeug, Trasse, Personal oder Betriebsprogramm.",
+    "Ein Gebot darf ein signiert weltgebundenes Eigenbetriebs-Fahrzeugkonzept unter aufschiebender Zuschlagsbedingung verwenden.",
+    "Die Mobilisierung muss dieselben M5-Formation-, Personal- und Trassenbelege erneut nachweisen.",
+    "Ohne Zuschlag entsteht weder ein Nutzungsrecht noch eine Buchung.",
+    "Alle Betriebskosten bleiben endliche Integer-Cent-Werte des M5-Fahrzeugkonzepts."
+  ]
+}

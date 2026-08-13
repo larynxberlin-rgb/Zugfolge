@@ -4,8 +4,14 @@ import {
   worlds,
   type AlphaWorldProfile,
 } from "@zugfolge/db";
-import { encodeEconomyValue } from "@zugfolge/economy";
-import { and, desc, eq, sql } from "drizzle-orm";
+import {
+  encodeEconomyValue,
+  parseStartingCapitalPolicy,
+  PUBLIC_ENTRY_FACILITY_SCHEMA,
+  type PublicEntryFacilityPolicy,
+  type SerializedStartingCapitalPolicy,
+} from "@zugfolge/economy";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { AlphaConflictError, AlphaValidationError } from "./errors.js";
@@ -13,6 +19,8 @@ import { alphaHash } from "./hash.js";
 
 export type AlphaDatabase = PgDatabase<PgQueryResultHKT, Record<string, unknown>, any>;
 export type AlphaWorldKind = "public" | "tutorial" | "private" | "test";
+export const ALPHA_WORLD_BLUEPRINT_SCHEMA = "zugfolge-alpha-world-blueprint/v2" as const;
+export { PUBLIC_ENTRY_FACILITY_SCHEMA, type PublicEntryFacilityPolicy } from "@zugfolge/economy";
 
 export interface WorldLotBlueprint {
   readonly lotId: string;
@@ -26,13 +34,17 @@ export interface WorldLotBlueprint {
 }
 
 export interface AlphaWorldBlueprint {
-  readonly schemaVersion: "zugfolge-alpha-world-blueprint/v1";
+  readonly schemaVersion: typeof ALPHA_WORLD_BLUEPRINT_SCHEMA;
   readonly regionId: string;
   readonly regionVariant: "B";
   readonly seed: bigint;
   readonly profileKind: AlphaWorldKind;
   readonly accelerationFactor: number;
   readonly periodCount: number | null;
+  /** Signierte JSON-Darstellung; der endliche Betrag bleibt ein Dezimalstring. */
+  readonly startingCapitalPolicy: SerializedStartingCapitalPolicy;
+  /** Signierte Anschubregel; sie vergibt beim Beitritt keinerlei Ressource. */
+  readonly entryFacilityPolicy: PublicEntryFacilityPolicy;
   readonly releases: {
     readonly infra: string;
     readonly timetable: string;
@@ -56,6 +68,12 @@ export interface WorldStartVerification {
 }
 
 export interface WorldStartPort {
+  /**
+   * Restart-Preflight fuer bereits laufende, deployment-gebundene Welten.
+   * Dauerhafte Teilprojektionen muessen vorhanden sein, bevor die Port-
+   * Initialisierung ausschliesslich prozesslokale Projektionen rekonstruiert.
+   */
+  verifyDurable?(worldId: string, blueprint: AlphaWorldBlueprint): Promise<void>;
   initializeEconomy(worldId: string, blueprint: AlphaWorldBlueprint): Promise<void>;
   initializeFleet(worldId: string, blueprint: AlphaWorldBlueprint): Promise<void>;
   initializeRegionalSimulation(worldId: string, blueprint: AlphaWorldBlueprint): Promise<void>;
@@ -74,12 +92,15 @@ function identifiers(values: readonly string[], name: string): void {
 }
 
 export function validateWorldBlueprint(blueprint: AlphaWorldBlueprint): string {
-  if (blueprint.schemaVersion !== "zugfolge-alpha-world-blueprint/v1") throw new AlphaValidationError("Unbekanntes Weltentwurf-Schema.");
+  if (blueprint.schemaVersion !== ALPHA_WORLD_BLUEPRINT_SCHEMA) throw new AlphaValidationError("Unbekanntes Weltentwurf-Schema.");
   if (blueprint.regionId !== "mitteldeutschland-b" || blueprint.regionVariant !== "B") {
     throw new AlphaValidationError("Alpha-Welt liegt nicht in der freigegebenen Variante B.");
   }
   if (blueprint.profileKind === "public" && blueprint.accelerationFactor !== 1) {
     throw new AlphaValidationError("Beschleunigte Zeit ist in oeffentlichen Welten verboten.");
+  }
+  if (blueprint.profileKind === "tutorial" && blueprint.accelerationFactor <= 1) {
+    throw new AlphaValidationError("Tutorial-Welten muessen gegenueber Echtzeit beschleunigt sein.");
   }
   if (!["tutorial", "private", "test"].includes(blueprint.profileKind) && blueprint.accelerationFactor !== 1) {
     throw new AlphaValidationError("Beschleunigung ist nur in Tutorial-, privaten oder markierten Testwelten erlaubt.");
@@ -89,6 +110,25 @@ export function validateWorldBlueprint(blueprint: AlphaWorldBlueprint): string {
   }
   if (blueprint.periodCount !== null && (!Number.isSafeInteger(blueprint.periodCount) || blueprint.periodCount < 1)) {
     throw new AlphaValidationError("Befristete Welt braucht mindestens eine Fahrplanperiode.");
+  }
+  try {
+    parseStartingCapitalPolicy(blueprint.startingCapitalPolicy);
+  } catch {
+    throw new AlphaValidationError("Startkapital-Policy ist ungueltig.");
+  }
+  if (blueprint.entryFacilityPolicy.schemaVersion !== PUBLIC_ENTRY_FACILITY_SCHEMA) {
+    throw new AlphaValidationError("Unbekannte Anschubregel.");
+  }
+  if (blueprint.profileKind === "public") {
+    if (
+      blueprint.entryFacilityPolicy.mode !== "award-contingent-wet-lease"
+      || blueprint.entryFacilityPolicy.providerOperatorId !== "public"
+      || blueprint.entryFacilityPolicy.costBasis !== "formation-operating-cost"
+    ) {
+      throw new AlphaValidationError("Oeffentliche Welt braucht den transparenten zuschlagsgebundenen Nullstartpfad.");
+    }
+  } else if (blueprint.entryFacilityPolicy.mode !== "disabled") {
+    throw new AlphaValidationError("Die oeffentliche Anschubregel ist ausserhalb oeffentlicher Welten deaktiviert.");
   }
   for (const [name, value] of Object.entries(blueprint.releases)) sha(value, `${name}-Release`);
   sha(blueprint.conflictCheckHash, "Konfliktpruefung");
@@ -108,7 +148,7 @@ export function validateWorldBlueprint(blueprint: AlphaWorldBlueprint): string {
   }
   const contractEnds = new Set(blueprint.lots.map((lot) => lot.contractEndsAtPeriod));
   if (blueprint.lots.length > 1 && contractEnds.size < 2) throw new AlphaValidationError("Vertragsenden sind nicht gestaffelt.");
-  return alphaHash("zugfolge-alpha-world-blueprint/v1", blueprint);
+  return alphaHash(ALPHA_WORLD_BLUEPRINT_SCHEMA, blueprint);
 }
 
 function exactLots(blueprint: AlphaWorldBlueprint): readonly string[] {
@@ -133,18 +173,24 @@ async function appendWorldEvent(db: AlphaDatabase, worldId: string, eventType: s
 export class AlphaWorldService {
   constructor(private readonly db: AlphaDatabase, private readonly port: WorldStartPort) {}
 
-  async start(worldId: string, blueprint: AlphaWorldBlueprint, atS: number): Promise<AlphaWorldProfile> {
+  async start(worldId: string, blueprint: AlphaWorldBlueprint, atS: number, deploymentHash?: string): Promise<AlphaWorldProfile> {
     if (!Number.isSafeInteger(atS) || atS < 0) throw new AlphaValidationError("Weltstartzeit ist ungueltig.");
+    if (deploymentHash !== undefined) sha(deploymentHash, "Deployment");
     const blueprintHash = validateWorldBlueprint(blueprint);
     const [world] = await this.db.select().from(worlds).where(eq(worlds.id, worldId)).limit(1);
     if (world === undefined) throw new AlphaValidationError("Welt existiert nicht.");
     if (blueprint.profileKind === "public" && (world.worldKind !== "public" || world.rankingStatus !== "ranked")) {
       throw new AlphaValidationError("Oeffentlicher Alpha-Weltentwurf passt nicht zum Weltprofil.");
     }
+    if (blueprint.profileKind === "tutorial" && (world.worldKind !== "private" || world.rankingStatus !== "unranked")) {
+      throw new AlphaValidationError("Tutorial-Weltentwurf braucht eine private, ungewertete Welt.");
+    }
     if (blueprint.profileKind !== "public" && world.worldKind === "public") {
       throw new AlphaValidationError("Tutorial-, Privat- und Testprofil darf keine oeffentliche Welt markieren.");
     }
 
+    let verifyRunningDeploymentBinding = false;
+    let rehydrateRunningDeployment = false;
     let [profile] = await this.db.insert(alphaWorldProfiles).values({
       worldId,
       profileKind: blueprint.profileKind,
@@ -158,6 +204,7 @@ export class AlphaWorldService {
       economyReleaseHash: blueprint.releases.economy,
       blueprint: encodeEconomyValue(blueprint),
       blueprintHash,
+      deploymentHash,
       periodCount: blueprint.periodCount,
       state: "draft",
     }).onConflictDoNothing().returning();
@@ -165,10 +212,34 @@ export class AlphaWorldService {
       [profile] = await this.db.select().from(alphaWorldProfiles).where(eq(alphaWorldProfiles.worldId, worldId)).limit(1);
       if (profile === undefined) throw new Error("Weltprofil konnte nicht gelesen werden.");
       if (profile.blueprintHash !== blueprintHash) throw new AlphaConflictError("Welt wurde bereits mit einem anderen Entwurf gebunden.", "world_blueprint_conflict");
-      if (profile.state === "running") return profile;
-      if (profile.state !== "draft") throw new AlphaConflictError("Welt kann in diesem Zustand nicht gestartet werden.");
+      if (deploymentHash !== undefined && profile.deploymentHash !== null && profile.deploymentHash !== deploymentHash) {
+        throw new AlphaConflictError("Welt wurde bereits mit einem anderen signierten Deployment gebunden.", "world_deployment_conflict");
+      }
+      if (profile.state === "running") {
+        if (deploymentHash === undefined) return profile;
+        if (profile.deploymentHash === deploymentHash) rehydrateRunningDeployment = true;
+        // Laufende Altprofile ohne Deployment-Hash duerfen erst nach einer
+        // vollstaendigen, erfolgreichen Re-Verifikation an das signierte
+        // Deployment gebunden werden. So wird kein ungepruefter Hash durch
+        // einen blossen Retry dauerhaft autoritativ.
+        else verifyRunningDeploymentBinding = true;
+      } else if (deploymentHash !== undefined && profile.deploymentHash === null) {
+        const [bound] = await this.db.update(alphaWorldProfiles).set({ deploymentHash }).where(and(
+          eq(alphaWorldProfiles.worldId, worldId),
+          isNull(alphaWorldProfiles.deploymentHash),
+        )).returning();
+        if (bound !== undefined) profile = bound;
+        else {
+          [profile] = await this.db.select().from(alphaWorldProfiles).where(eq(alphaWorldProfiles.worldId, worldId)).limit(1);
+          if (profile?.deploymentHash !== deploymentHash) {
+            throw new AlphaConflictError("Welt verlor die Deployment-Bindung an einen parallelen Start.", "world_deployment_conflict");
+          }
+        }
+      }
+      if (!verifyRunningDeploymentBinding && !rehydrateRunningDeployment && profile.state !== "draft") throw new AlphaConflictError("Welt kann in diesem Zustand nicht gestartet werden.");
     }
 
+    if (rehydrateRunningDeployment) await this.port.verifyDurable?.(worldId, blueprint);
     await this.port.initializeEconomy(worldId, blueprint);
     await this.port.initializeFleet(worldId, blueprint);
     await this.port.initializeRegionalSimulation(worldId, blueprint);
@@ -179,16 +250,42 @@ export class AlphaWorldService {
     if (!sameSet(verified.lotIds, exactLots(blueprint)) || !sameSet(verified.runningTrainRunIds, exactTrainRuns(blueprint))) {
       throw new AlphaConflictError("Eigenbetrieb deckt Lose oder Zugfahrten nicht vollstaendig ab.", "public_operation_incomplete");
     }
+    if (rehydrateRunningDeployment) return profile;
     const occurredAt = new Date(world.epoch.getTime() + atS * 1_000);
+    if (verifyRunningDeploymentBinding) {
+      return this.db.transaction(async (tx) => {
+        const [bound] = await tx.update(alphaWorldProfiles).set({ deploymentHash: deploymentHash! }).where(and(
+          eq(alphaWorldProfiles.worldId, worldId),
+          eq(alphaWorldProfiles.state, "running"),
+          isNull(alphaWorldProfiles.deploymentHash),
+        )).returning();
+        if (bound === undefined) {
+          const [concurrent] = await tx.select().from(alphaWorldProfiles).where(eq(alphaWorldProfiles.worldId, worldId)).limit(1);
+          if (concurrent === undefined || concurrent.deploymentHash !== deploymentHash) {
+            throw new AlphaConflictError("Welt verlor die Deployment-Bindung an einen parallelen Start.", "world_deployment_conflict");
+          }
+          return concurrent;
+        }
+        await appendWorldEvent(tx, worldId, "alpha.world-deployment-bound", {
+          blueprintHash,
+          deploymentHash,
+          startingCapitalPolicy: blueprint.startingCapitalPolicy,
+          releasePins: blueprint.releases,
+        }, occurredAt);
+        return bound;
+      });
+    }
     return this.db.transaction(async (tx) => {
       const [updated] = await tx.update(alphaWorldProfiles).set({ state: "running", startedAtS: atS })
         .where(and(eq(alphaWorldProfiles.worldId, worldId), eq(alphaWorldProfiles.state, "draft"))).returning();
       if (updated === undefined) throw new AlphaConflictError("Weltstart verlor ein Parallelrennen.", "world_start_race");
       await appendWorldEvent(tx, worldId, "alpha.world-started-with-public-operation", {
         blueprintHash,
+        deploymentHash,
         regionId: blueprint.regionId,
         lotCount: blueprint.lots.length,
         trainRunCount: exactTrainRuns(blueprint).length,
+        startingCapitalPolicy: blueprint.startingCapitalPolicy,
         releasePins: blueprint.releases,
       }, occurredAt);
       return updated;

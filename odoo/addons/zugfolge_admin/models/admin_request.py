@@ -1,9 +1,61 @@
+import re
 import uuid
+from datetime import datetime, timezone
 
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
 
 from ..services import dispatch_signed_game_command
+from .admin_capability import GLOBAL_WORLD_DEPLOY_CAPABILITY_SCOPE_ID
+
+
+MAX_MONEY_CENTS = 9_223_372_036_854_775_807
+CANONICAL_CENTS_RE = re.compile(r"^(0|[1-9][0-9]*)$")
+GERMAN_CURRENCY_RE = re.compile(
+    r"^(?P<euros>(?:0|[1-9][0-9]*|[1-9][0-9]{0,2}(?:\.[0-9]{3})+))(?:,(?P<cents>[0-9]{1,2}))?\s*(?:\u20ac)?$"
+)
+SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
+ED25519_SIGNATURE_BASE64_RE = re.compile(r"^[A-Za-z0-9+/]{86}==$")
+WORLD_ID_RE = re.compile(r"^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$", re.IGNORECASE)
+
+
+def parse_german_currency_to_cents(value):
+    """Parse a German currency string exactly, without Float/Monetary values."""
+    if not isinstance(value, str):
+        raise ValidationError(_("Der begrenzte Startkapitalbetrag muss als deutscher Waehrungstext eingegeben werden."))
+    match = GERMAN_CURRENCY_RE.fullmatch(value.strip())
+    if not match:
+        raise ValidationError(_("Startkapital muss im deutschen Format stehen, zum Beispiel 10.000,00. Negative Werte, Exponenten und mehr als zwei Nachkommastellen sind unzulaessig."))
+    euros = match.group("euros").replace(".", "")
+    cents = (match.group("cents") or "").ljust(2, "0")
+    amount = int(euros) * 100 + int(cents or "0")
+    if amount > MAX_MONEY_CENTS:
+        raise ValidationError(_("Startkapital liegt ausserhalb des vorzeichenbehafteten 64-Bit-Centbereichs."))
+    return str(amount)
+
+
+def format_cents_german(amount_cents):
+    if not isinstance(amount_cents, str) or not CANONICAL_CENTS_RE.fullmatch(amount_cents):
+        raise ValidationError(_("Startkapital-Cent ist kein kanonischer Dezimalstring."))
+    amount = int(amount_cents)
+    if amount > MAX_MONEY_CENTS:
+        raise ValidationError(_("Startkapital liegt ausserhalb des vorzeichenbehafteten 64-Bit-Centbereichs."))
+    euros, cents = divmod(amount, 100)
+    grouped = format(euros, ",d").replace(",", ".")
+    return "%s,%02d \u20ac" % (grouped, cents)
+
+
+def validate_serialized_starting_capital_policy(policy):
+    if not isinstance(policy, dict) or policy.get("mode") not in ("finite", "unlimited"):
+        raise ValidationError(_("Startkapital braucht den Modus Begrenzt oder Unbegrenzt."))
+    if policy["mode"] == "unlimited":
+        if set(policy) != {"mode"}:
+            raise ValidationError(_("Unbegrenztes Startkapital ist ein Modus und besitzt keinen Geldbetrag."))
+        return "unlimited", False, "\u221e"
+    amount = policy.get("amountCents")
+    if set(policy) != {"mode", "amountCents"} or not isinstance(amount, str) or not CANONICAL_CENTS_RE.fullmatch(amount):
+        raise ValidationError(_("Begrenztes Startkapital braucht Integer-Cent als kanonischen Dezimalstring."))
+    return "finite", amount, format_cents_german(amount)
 
 
 class ZugfolgeAdminRequest(models.Model):
@@ -15,7 +67,17 @@ class ZugfolgeAdminRequest(models.Model):
     _order = "write_date desc"
 
     name = fields.Char(compute="_compute_name", store=True)
-    world_projection_id = fields.Many2one("zugfolge.world.projection", required=True, ondelete="restrict", index=True)
+    world_projection_id = fields.Many2one("zugfolge.world.projection", ondelete="restrict", index=True)
+    world_id = fields.Char(index=True, tracking=True)
+    world_name = fields.Char(tracking=True)
+    world_kind = fields.Selection(
+        [("public", "Oeffentlich"), ("tutorial", "Tutorial"), ("private", "Privat"), ("test", "Test")],
+        default="public",
+        tracking=True,
+    )
+    ranking_status = fields.Selection([("ranked", "Gewertet"), ("unranked", "Ungewertet")], default="ranked", tracking=True)
+    schedule_period_weeks = fields.Integer(default=4, tracking=True)
+    world_epoch = fields.Datetime(tracking=True)
     action_type = fields.Selection(
         [
             ("world_access_revoke", "Weltzugang entziehen"),
@@ -23,6 +85,7 @@ class ZugfolgeAdminRequest(models.Model):
             ("manual_disruption_create", "Manuelle Stoerung anlegen"),
             ("abuse_sanction_activate", "Schwere Missbrauchsmassnahme aktivieren"),
             ("world_close", "Weltabschluss einleiten"),
+            ("world_deploy", "Signierte Welt bereitstellen"),
             ("tutorial_account_reset", "Tutorialkonto zuruecksetzen"),
         ],
         required=True,
@@ -57,24 +120,157 @@ class ZugfolgeAdminRequest(models.Model):
     manual_disruption_cause = fields.Text()
     manual_disruption_resource_ids = fields.Json(default=list)
     manual_disruption_effect = fields.Json(default=dict)
+    starting_capital_mode = fields.Selection(
+        [("finite", "Begrenzt"), ("unlimited", "Unbegrenzt (\u221e)")],
+        default="finite",
+        tracking=True,
+    )
+    starting_capital_input = fields.Char(default="0,00", tracking=True)
+    starting_capital_amount_cents = fields.Char(default="0", readonly=True, copy=False)
+    starting_capital_preview = fields.Char(compute="_compute_starting_capital_preview", readonly=True)
+    signing_configuration = fields.Json(compute="_compute_signing_configuration", readonly=True)
+    signed_world_deployment = fields.Json(copy=False)
+    deployment_hash = fields.Char(copy=False, tracking=True)
 
-    @api.depends("action_type", "world_projection_id")
+    @api.depends("action_type", "world_projection_id", "world_name", "world_id")
     def _compute_name(self):
         for record in self:
-            record.name = "%s: %s" % (record.world_projection_id.world_name or "Welt", dict(record._fields["action_type"].selection).get(record.action_type, "Antrag"))
+            world_name = record.world_projection_id.world_name or record.world_name or record.world_id or "Welt"
+            record.name = "%s: %s" % (world_name, dict(record._fields["action_type"].selection).get(record.action_type, "Antrag"))
 
-    @api.depends("action_type", "world_projection_id")
+    @api.depends("action_type", "world_projection_id", "world_id")
     def _compute_game_capability(self):
         capability_model = self.env["zugfolge.admin.capability"].sudo()
         for record in self:
+            world_id = (
+                GLOBAL_WORLD_DEPLOY_CAPABILITY_SCOPE_ID
+                if record.action_type == "world_deploy"
+                else record.world_projection_id.world_id or record.world_id
+            )
             capability = capability_model.search([
-                ("world_id", "=", record.world_projection_id.world_id),
+                ("world_id", "=", world_id),
                 ("action_type", "=", record.action_type),
-            ], limit=1) if record.world_projection_id and record.action_type else capability_model.browse()
+            ], limit=1) if world_id and record.action_type else capability_model.browse()
             record.game_capability_state = capability.availability if capability else "prepared"
             record.game_capability_detail = capability.detail if capability else "Game-Implementierung und signierte Faehigkeitsprojektion stehen noch aus."
 
-    @api.constrains("reason", "risk_class", "requester_id", "approver_id", "action_type", "release_hash", "requested_period_start", "target_reference", "requested_at_s", "manual_disruption_start", "manual_disruption_end", "manual_disruption_cause", "manual_disruption_resource_ids", "manual_disruption_effect")
+    @api.depends("starting_capital_mode", "starting_capital_amount_cents")
+    def _compute_starting_capital_preview(self):
+        for record in self:
+            if record.starting_capital_mode == "unlimited":
+                record.starting_capital_preview = "\u221e"
+            else:
+                record.starting_capital_preview = format_cents_german(record.starting_capital_amount_cents or "0")
+
+    @api.depends(
+        "action_type", "world_id", "world_name", "world_kind", "ranking_status",
+        "schedule_period_weeks", "world_epoch", "starting_capital_mode",
+        "starting_capital_amount_cents",
+    )
+    def _compute_signing_configuration(self):
+        for record in self:
+            if record.action_type != "world_deploy" or not record.world_epoch:
+                record.signing_configuration = False
+                continue
+            epoch = fields.Datetime.to_datetime(record.world_epoch).replace(tzinfo=timezone.utc)
+            record.signing_configuration = {
+                "schemaVersion": "zugfolge-alpha-world-deploy-configuration/v1",
+                "worldId": record.world_id,
+                "worldDefinition": {
+                    "name": record.world_name,
+                    "kind": record.world_kind,
+                    "rankingStatus": record.ranking_status,
+                    "schedulePeriodWeeks": record.schedule_period_weeks,
+                    "epoch": epoch.isoformat().replace("+00:00", "Z"),
+                },
+                "startingCapitalPolicy": record._starting_capital_policy(),
+            }
+
+    @api.onchange("starting_capital_mode", "starting_capital_input")
+    def _onchange_starting_capital(self):
+        for record in self:
+            if record.starting_capital_mode == "unlimited":
+                record.starting_capital_amount_cents = False
+                continue
+            if not record.starting_capital_input:
+                record.starting_capital_input = "0,00"
+            record.starting_capital_amount_cents = parse_german_currency_to_cents(record.starting_capital_input)
+
+    @api.onchange("action_type", "world_kind")
+    def _onchange_world_deploy_defaults(self):
+        for record in self:
+            if record.action_type == "world_deploy":
+                record.risk_class = "high"
+                record.ranking_status = "ranked" if record.world_kind == "public" else "unranked"
+
+    @staticmethod
+    def _policy_from_values(mode, amount_cents):
+        if mode == "unlimited":
+            return {"mode": "unlimited"}
+        amount = amount_cents or "0"
+        validate_serialized_starting_capital_policy({"mode": "finite", "amountCents": amount})
+        return {"mode": "finite", "amountCents": amount}
+
+    @staticmethod
+    def _normalize_starting_capital_values(values, current=None):
+        normalized = dict(values)
+        mode = normalized.get("starting_capital_mode", current.starting_capital_mode if current else "finite")
+        if mode == "unlimited":
+            normalized["starting_capital_amount_cents"] = False
+        else:
+            input_value = normalized.get("starting_capital_input", current.starting_capital_input if current else "0,00") or "0,00"
+            normalized["starting_capital_input"] = input_value
+            normalized["starting_capital_amount_cents"] = parse_german_currency_to_cents(input_value)
+        if normalized.get("action_type", current.action_type if current else None) == "world_deploy":
+            normalized["risk_class"] = "high"
+            policy = ZugfolgeAdminRequest._policy_from_values(mode, normalized.get("starting_capital_amount_cents"))
+            normalized["effect_preview"] = {
+                "kind": "world-deploy",
+                "startingCapitalPolicy": policy,
+                "startingCapitalPreview": "\u221e" if mode == "unlimited" else format_cents_german(policy["amountCents"]),
+                "deploymentHash": normalized.get("deployment_hash", current.deployment_hash if current else None),
+            }
+        return normalized
+
+    @api.model_create_multi
+    def create(self, values_list):
+        normalized_values = []
+        projection_model = self.env["zugfolge.world.projection"]
+        for values in values_list:
+            normalized = dict(values)
+            projection_id = normalized.get("world_projection_id")
+            if projection_id:
+                projection = projection_model.browse(projection_id).exists()
+                if projection:
+                    normalized.setdefault("world_id", projection.world_id)
+                    normalized.setdefault("world_name", projection.world_name)
+                    normalized.setdefault("world_kind", projection.profile_kind)
+            normalized_values.append(self._normalize_starting_capital_values(normalized))
+        return super().create(normalized_values)
+
+    def write(self, values):
+        immutable = {
+            "world_projection_id", "world_id", "world_name", "world_kind", "ranking_status",
+            "schedule_period_weeks", "world_epoch", "starting_capital_mode", "starting_capital_input",
+            "starting_capital_amount_cents", "signed_world_deployment", "deployment_hash",
+        }
+        if immutable.intersection(values) and not self.env.context.get("zugfolge_game_projection"):
+            if any(record.state != "draft" for record in self):
+                raise UserError(_("Weltdefinition, Startkapital und signiertes Deployment sind nach dem Einreichen unveraenderlich."))
+        result = True
+        for record in self:
+            normalized = self._normalize_starting_capital_values(values, record)
+            result = super(ZugfolgeAdminRequest, record).write(normalized) and result
+        return result
+
+    @api.constrains(
+        "reason", "risk_class", "requester_id", "approver_id", "action_type", "release_hash",
+        "requested_period_start", "target_reference", "requested_at_s", "manual_disruption_start",
+        "manual_disruption_end", "manual_disruption_cause", "manual_disruption_resource_ids",
+        "manual_disruption_effect", "world_projection_id", "world_id", "world_name", "world_kind",
+        "ranking_status", "schedule_period_weeks", "world_epoch", "starting_capital_mode",
+        "starting_capital_input", "starting_capital_amount_cents", "signed_world_deployment", "deployment_hash", "state",
+    )
     def _check_authoritative_shape(self):
         for record in self:
             if not record.reason or not record.reason.strip():
@@ -102,6 +298,74 @@ class ZugfolgeAdminRequest(models.Model):
                 raise ValidationError(_("Die Verwaltungsaktion braucht eine stabile Zielreferenz."))
             if record.action_type in ("world_close", "tutorial_account_reset") and (record.requested_at_s is None or record.requested_at_s < 0):
                 raise ValidationError(_("Die Verwaltungsaktion braucht eine gueltige Simulationszeit."))
+            if record.world_projection_id and record.world_id != record.world_projection_id.world_id:
+                raise ValidationError(_("Antrag und Game-Weltprojektion besitzen unterschiedliche Weltbindungen."))
+            if record.action_type != "world_deploy" and not record.world_projection_id:
+                raise ValidationError(_("Bestehende Verwaltungsaktionen brauchen eine Game-Weltprojektion."))
+            if not (record.world_id or "").strip():
+                raise ValidationError(_("Jeder Administrationsantrag braucht eine stabile Welt-ID."))
+            if record.action_type == "world_deploy":
+                if record.risk_class != "high":
+                    raise ValidationError(_("Ein Welt-Deployment ist immer hochriskant."))
+                if not WORLD_ID_RE.fullmatch(record.world_id or ""):
+                    raise ValidationError(_("Welt-Deployment braucht eine gueltige Welt-ID."))
+                if not (record.world_name or "").strip() or record.world_kind not in ("public", "tutorial", "private", "test"):
+                    raise ValidationError(_("Welt-Deployment braucht Name und Weltprofil."))
+                if record.ranking_status not in ("ranked", "unranked") or ((record.world_kind == "public") != (record.ranking_status == "ranked")):
+                    raise ValidationError(_("Nur oeffentliche Welten sind gewertet; alle anderen Weltprofile sind ungewertet."))
+                if not isinstance(record.schedule_period_weeks, int) or record.schedule_period_weeks < 3 or record.schedule_period_weeks > 8:
+                    raise ValidationError(_("Die Fahrplanperiode muss zwischen drei und acht Wochen liegen."))
+                if not record.world_epoch:
+                    raise ValidationError(_("Welt-Deployment braucht eine Weltepoche."))
+                policy = record._starting_capital_policy()
+                signed = record.signed_world_deployment
+                if record.state == "draft" and not signed and not record.deployment_hash:
+                    continue
+                if not SHA256_RE.fullmatch(record.deployment_hash or ""):
+                    raise ValidationError(_("Welt-Deployment braucht einen SHA-256-Hash."))
+                if not isinstance(signed, dict) or signed.get("deploymentHash") != record.deployment_hash:
+                    raise ValidationError(_("Signiertes Welt-Deployment und Deployment-Hash stimmen nicht ueberein."))
+                signature = signed.get("signature")
+                deployment = signed.get("deployment")
+                blueprint = deployment.get("blueprint") if isinstance(deployment, dict) else None
+                signed_definition = deployment.get("worldDefinition") if isinstance(deployment, dict) else None
+                if (
+                    not isinstance(signature, dict)
+                    or signature.get("algorithm") != "Ed25519"
+                    or not isinstance(signature.get("keyId"), str)
+                    or not signature.get("keyId").strip()
+                    or not isinstance(signature.get("valueBase64"), str)
+                    or not ED25519_SIGNATURE_BASE64_RE.fullmatch(signature.get("valueBase64"))
+                    or not isinstance(deployment, dict)
+                    or deployment.get("worldId") != record.world_id
+                    or not isinstance(blueprint, dict)
+                    or blueprint.get("profileKind") != record.world_kind
+                ):
+                    raise ValidationError(_("Signiertes Welt-Deployment ist unvollstaendig oder an eine andere Welt beziehungsweise ein anderes Profil gebunden."))
+                try:
+                    signed_epoch = datetime.fromisoformat(signed_definition.get("epoch", "").replace("Z", "+00:00"))
+                    signed_epoch = signed_epoch.astimezone(timezone.utc)
+                    configured_epoch = fields.Datetime.to_datetime(record.world_epoch).replace(tzinfo=timezone.utc)
+                except (AttributeError, TypeError, ValueError):
+                    raise ValidationError(_("Signiertes Welt-Deployment besitzt keine gueltige Weltdefinition."))
+                if (
+                    not isinstance(signed_definition, dict)
+                    or set(signed_definition) != {"name", "kind", "rankingStatus", "schedulePeriodWeeks", "epoch"}
+                    or signed_definition.get("name") != record.world_name
+                    or signed_definition.get("kind") != record.world_kind
+                    or signed_definition.get("rankingStatus") != record.ranking_status
+                    or signed_definition.get("schedulePeriodWeeks") != record.schedule_period_weeks
+                    or signed_epoch != configured_epoch
+                ):
+                    raise ValidationError(_("Odoo-Weltdefinition und signiertes Deployment weichen voneinander ab."))
+                embedded_policy = blueprint.get("startingCapitalPolicy")
+                validate_serialized_starting_capital_policy(embedded_policy)
+                if embedded_policy != policy:
+                    raise ValidationError(_("Odoo-Startkapital und signierter Weltentwurf weichen voneinander ab."))
+
+    def _starting_capital_policy(self):
+        self.ensure_one()
+        return self._policy_from_values(self.starting_capital_mode, self.starting_capital_amount_cents)
 
     def _require_state(self, expected):
         if any(record.state != expected for record in self):
@@ -111,6 +375,8 @@ class ZugfolgeAdminRequest(models.Model):
         self._require_state("draft")
         if any(not request.reason.strip() for request in self):
             raise ValidationError(_("Eine Begruendung ist Pflicht."))
+        if any(request.action_type == "world_deploy" and (not request.signed_world_deployment or not request.deployment_hash) for request in self):
+            raise ValidationError(_("Vor dem Einreichen muss das extern Ed25519-signierte Welt-Deployment importiert sein."))
         self.write({"state": "submitted"})
 
     def action_approve(self):
@@ -138,32 +404,51 @@ class ZugfolgeAdminRequest(models.Model):
         """OCA queue_job retried this transport; the Game remains authoritative."""
         self._require_state("dispatched")
         for record in self:
-            payload = {
-                "kind": "admin.%s" % record.action_type,
-                "worldId": record.world_projection_id.world_id,
-                "actionType": record.action_type,
-                "riskClass": record.risk_class,
-                "requesterReference": str(record.requester_id.id),
-                "approverReference": str(record.approver_id.id),
-                "reason": record.reason,
-                "effectPreview": record.effect_preview,
-                "releaseHash": record.release_hash or None,
-                "requestedPeriodStart": record.requested_period_start.isoformat() if record.requested_period_start else None,
-                "targetReference": record.target_reference or None,
-                "requestedAtS": record.requested_at_s,
-            }
-            if record.action_type == "manual_disruption_create":
-                payload["manualDisruption"] = {
-                    "startsAt": record.manual_disruption_start.isoformat(),
-                    "endsAt": record.manual_disruption_end.isoformat(),
-                    "cause": record.manual_disruption_cause,
-                    "affectedResourceIds": record.manual_disruption_resource_ids,
-                    "declaredEffect": record.manual_disruption_effect,
-                }
+            payload = record._game_command_payload()
             actor_reference = self.env["ir.config_parameter"].sudo().get_param("zugfolge_admin.actor_reference")
             if not actor_reference:
                 raise UserError(_("Der Zugfolge-Integrationsakteur ist nicht konfiguriert."))
             dispatch_signed_game_command(self.env, record.correlation_id, actor_reference, payload)
+
+    def _game_command_payload(self):
+        self.ensure_one()
+        payload = {
+            "kind": "admin.%s" % self.action_type,
+            "worldId": self.world_id,
+            "actionType": self.action_type,
+            "riskClass": self.risk_class,
+            "requesterReference": str(self.requester_id.id),
+            "approverReference": str(self.approver_id.id) if self.approver_id else None,
+            "reason": self.reason,
+            "effectPreview": self.effect_preview,
+            "releaseHash": self.release_hash or None,
+            "requestedPeriodStart": self.requested_period_start.isoformat() if self.requested_period_start else None,
+            "targetReference": self.target_reference or None,
+            "requestedAtS": self.requested_at_s,
+        }
+        if self.action_type == "manual_disruption_create":
+            payload["manualDisruption"] = {
+                "startsAt": self.manual_disruption_start.isoformat(),
+                "endsAt": self.manual_disruption_end.isoformat(),
+                "cause": self.manual_disruption_cause,
+                "affectedResourceIds": self.manual_disruption_resource_ids,
+                "declaredEffect": self.manual_disruption_effect,
+            }
+        if self.action_type == "world_deploy":
+            epoch = fields.Datetime.to_datetime(self.world_epoch).replace(tzinfo=timezone.utc)
+            payload.update({
+                "startingCapitalPolicy": self._starting_capital_policy(),
+                "worldDefinition": {
+                    "name": self.world_name,
+                    "kind": self.world_kind,
+                    "rankingStatus": self.ranking_status,
+                    "schedulePeriodWeeks": self.schedule_period_weeks,
+                    "epoch": epoch.isoformat().replace("+00:00", "Z"),
+                },
+                "signedDeployment": self.signed_world_deployment,
+                "deploymentHash": self.deployment_hash,
+            })
+        return payload
 
     def apply_game_result(self, result):
         """Controller-only projection of the resulting authoritative Game audit event."""

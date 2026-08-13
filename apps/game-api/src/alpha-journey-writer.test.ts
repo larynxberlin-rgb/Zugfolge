@@ -15,6 +15,8 @@ import {
 const WORLD_ID = "00000000-0000-4000-8000-000000000071";
 const ACCOUNT_ID = "00000000-0000-4000-8000-000000000072";
 const SLOT_ID = "00000000-0000-4000-8000-000000000073";
+const PUBLIC_WORLD_ID = "00000000-0000-4000-8000-000000000074";
+const PUBLIC_ACCOUNT_ID = "00000000-0000-4000-8000-000000000075";
 
 const configuration = {
   tutorialOperatorNamePrefix: "Tutorialbahn",
@@ -30,6 +32,19 @@ const configuration = {
     trainRunIds: ["run-1"],
   }],
 } as const;
+
+const startPackageSpec = {
+  schemaVersion: "zugfolge-start-package/v1" as const,
+  version: "tutorial-v1",
+  emergencyLotId: "lot-0",
+  maximumTrainKmPerPeriod: 1_000,
+  vehicleClass: "Mireo",
+  maximumVehicleValueCents: 900_000_000n,
+  durationS: 86_400,
+  pathWindowId: "path-1",
+  personnelPoolId: "pool-1",
+  operatingProgramTemplateId: "balanced",
+};
 
 const economyRelease = buildEconomyRelease({
   version: "tutorial-test",
@@ -64,13 +79,24 @@ describe("GameAlphaJourneyCommandWriter", () => {
       id: WORLD_ID, name: "Tutorial", schedulePeriodWeeks: 3, epoch: new Date(0),
       worldKind: "private", rankingStatus: "unranked", lifecycleStatus: "active",
     });
+    await db.insert(worlds).values({
+      id: PUBLIC_WORLD_ID, name: "Oeffentliche Alpha", schedulePeriodWeeks: 3, epoch: new Date(0),
+      worldKind: "public", rankingStatus: "ranked", lifecycleStatus: "active",
+    });
     await db.insert(alphaWorldProfiles).values({
       worldId: WORLD_ID, profileKind: "tutorial", regionId: "lhe", regionVariant: "B", worldSeed: 7n,
       accelerationFactor: 60, infraReleaseHash: "a".repeat(64), timetableReleaseHash: "b".repeat(64),
       fleetReleaseHash: "c".repeat(64), economyReleaseHash: "d".repeat(64), blueprint: {},
       blueprintHash: "e".repeat(64), state: "running",
     });
+    await db.insert(alphaWorldProfiles).values({
+      worldId: PUBLIC_WORLD_ID, profileKind: "public", regionId: "lhe", regionVariant: "B", worldSeed: 8n,
+      accelerationFactor: 1, infraReleaseHash: "a".repeat(64), timetableReleaseHash: "b".repeat(64),
+      fleetReleaseHash: "c".repeat(64), economyReleaseHash: "d".repeat(64), blueprint: {},
+      blueprintHash: "f".repeat(64), state: "running",
+    });
     await db.insert(accounts).values({ id: ACCOUNT_ID, worldId: WORLD_ID, keycloakSubject: "kc-external", displayName: "Extern" });
+    await db.insert(accounts).values({ id: PUBLIC_ACCOUNT_ID, worldId: PUBLIC_WORLD_ID, keycloakSubject: "kc-public", displayName: "Oeffentlich" });
     await persistEconomyTransition(db, {
       expectedRevision: null,
       ...startEconomyWorld({
@@ -84,7 +110,7 @@ describe("GameAlphaJourneyCommandWriter", () => {
 
   afterEach(async () => client.close());
 
-  it("serialisiert und dedupliziert den Reset als weltgesperrtes Fachkommando", async () => {
+  it("ordnet Resume und Reset demselben vorbereiteten Tutorial-Slot zu", async () => {
     const writer = new GameAlphaJourneyCommandWriter(db, {} as never, configuration);
     const command = {
       schemaVersion: "zugfolge-alpha-tutorial-reset-command/v1" as const,
@@ -92,22 +118,64 @@ describe("GameAlphaJourneyCommandWriter", () => {
       worldId: WORLD_ID,
       accountId: ACCOUNT_ID,
       resetNumber: 1,
+      atS: 10,
     };
     await writer.resetTutorial(command);
     await writer.resetTutorial(command);
+    await writer.resetTutorial({
+      ...command,
+      commandId: `tutorial-reset:${WORLD_ID}:${ACCOUNT_ID}:2`,
+      resetNumber: 2,
+      atS: 20,
+    });
 
     const [created, events] = await Promise.all([
       db.select().from(operators),
       db.select().from(domainEvents),
     ]);
     expect(created).toHaveLength(1);
-    expect(created[0]).toMatchObject({ worldId: WORLD_ID, foundingAccountId: ACCOUNT_ID, name: expect.stringContaining("R1") });
-    expect(events).toHaveLength(1);
+    expect(created[0]).toMatchObject({ id: SLOT_ID, worldId: WORLD_ID, foundingAccountId: ACCOUNT_ID, name: configuration.startPackageSlots[0].operatorName });
+    expect(events).toHaveLength(2);
     expect(events[0]).toMatchObject({ worldId: WORLD_ID, eventType: "alpha.tutorial-session-seeded" });
-    expect(events[0]?.payload).toMatchObject({ commandId: command.commandId, operatorId: created[0]?.id, resetNumber: 1 });
+    expect(events.map((event) => event.payload)).toEqual([
+      expect.objectContaining({ commandId: command.commandId, operatorId: SLOT_ID, resetNumber: 1, startedAtS: 10 }),
+      expect.objectContaining({ commandId: `tutorial-reset:${WORLD_ID}:${ACCOUNT_ID}:2`, operatorId: SLOT_ID, resetNumber: 2, startedAtS: 20 }),
+    ]);
     expect((await loadEconomyWorldState(db, WORLD_ID))?.prequalifications.get(ACCOUNT_ID)).toMatchObject({
       worldId: WORLD_ID, accountId: ACCOUNT_ID, score: 5_000,
     });
+  });
+
+  it("weist Tutorial-Reset und Startpaket fuer eine oeffentliche Welt vor jeder Writer-Mutation ab", async () => {
+    const publicConfiguration = {
+      ...configuration,
+      startPackageSlots: [{ ...configuration.startPackageSlots[0], worldId: PUBLIC_WORLD_ID }],
+    } as const;
+    const writer = new GameAlphaJourneyCommandWriter(db, {} as never, publicConfiguration);
+
+    await expect(writer.resetTutorial({
+      schemaVersion: "zugfolge-alpha-tutorial-reset-command/v1",
+      commandId: `tutorial-reset:${PUBLIC_WORLD_ID}:${PUBLIC_ACCOUNT_ID}:0`,
+      worldId: PUBLIC_WORLD_ID,
+      accountId: PUBLIC_ACCOUNT_ID,
+      resetNumber: 0,
+      atS: 0,
+    })).rejects.toMatchObject({ code: "not_tutorial_world" });
+
+    await expect(db.transaction((tx) => writer.grantStartPackage({
+      schemaVersion: "zugfolge-alpha-start-package-command/v1",
+      commandId: `start-package:${PUBLIC_WORLD_ID}:${PUBLIC_ACCOUNT_ID}:tutorial-v1`,
+      tx: tx as never,
+      worldId: PUBLIC_WORLD_ID,
+      accountId: PUBLIC_ACCOUNT_ID,
+      keycloakSubject: "kc-public",
+      atS: 100,
+      spec: startPackageSpec,
+    }))).rejects.toMatchObject({ code: "start_package_tutorial_only" });
+
+    expect(await db.select().from(operators)).toHaveLength(0);
+    expect(await db.select().from(domainEvents)).toHaveLength(0);
+    expect(await loadEconomyWorldState(db, PUBLIC_WORLD_ID)).toBeUndefined();
   });
 
   it("parst Centwerte als bigint und lehnt unvollstaendige Slot-Konfiguration ab", () => {

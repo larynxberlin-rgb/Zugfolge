@@ -171,6 +171,50 @@ aber trägt zwingend `activationEligible=false`. Odoo kann diese Grenze nicht
 übersteuern; erst Signatur, erneute Game-Qualifizierung und der bestehende
 Vier-Augen-Periodenwechsel dürfen eine Aktivierung vorbereiten.
 
+### 2.2 Weltkonfiguration und signierter Start (E23, E28)
+
+Tutorial und öffentliche Wettbewerbswelt sind keine zwei Modi desselben
+laufenden Zustands, sondern getrennte signierte Deployments. Der Tutorial-
+Blueprint ist privat, ungewertet und beschleunigt und darf ein didaktisches
+Startpaket binden. Der öffentliche Blueprint läuft 1:1 und bindet ausdrücklich
+kein Startpaket. Beide enthalten ihre eigenen Weltkennungen, Profile,
+Release-Pins und Hashes.
+
+Die `StartingCapitalPolicy` der Wettbewerbswelt ist Teil des kanonischen
+Blueprints. `finite` serialisiert nichtnegative Integer-Cent im i64-Bereich als
+Dezimalstring; `unlimited` ist ein eigener Modus ohne Zahlenwert. Die Policy
+fließt in Blueprint- und Deployment-Hash, Weltstart-Event und Game-zu-Odoo-
+Projektion ein. Nach `running` ist sie unveränderlich. So können weder ein
+Adminformular noch ein späterer Prozess die Eröffnungsbedingungen einer
+rangierten Welt verschieben.
+
+Der Vertrauenspfad besitzt zwei verschiedene Signaturen:
+
+```text
+Odoo-Konfiguration
+  → kanonischer Blueprint-Kandidat + Hash
+  → externer Ed25519-Signer
+  → signiertes Welt-Deployment
+  → HMAC-geschützter, typisierter Odoo-Befehl
+  → Game: Ed25519-, Hash-, Welt-, Release- und Policy-Prüfung
+  → autoritativer Weltstart + read-only Odoo-Projektion
+```
+
+Der HMAC-Schlüssel authentifiziert Transport, Mandant und Akteur; er darf den
+außerhalb von Odoo verwahrten Ed25519-Release-Schlüssel nicht ersetzen. Odoo
+konfiguriert und auditiert, startet aber keine Welt selbst. Das Game lehnt jede
+Abweichung zwischen Odoo-Feldern, signiertem Deployment und bereits
+persistierter Projektion ab. Ein unsignierter Kandidat darf gespeichert oder
+geprüft, aber nicht als Welt gestartet werden.
+
+Bei der öffentlichen EVU-Gründung liest die Game-API die Policy ausschließlich
+aus dem bereits laufenden, signierten Blueprint. Stammdaten, Ledgerkonten und
+eine endliche Eröffnungsbuchung entstehen atomar und idempotent in derselben
+Welt. Der Nullstartpfad ist als `award-contingent-wet-lease` ebenfalls im
+Blueprint gebunden: vor Zuschlag nur Kalkulation, danach erneute M5-Prüfung von
+Formation, Personal und Trasse. Das Onboarding besitzt keinen zweiten Writer
+für kostenlose Betriebsmittel. → [ADR-0028](adr/0028-getrennter-tutorial-und-wettbewerbsstart.md)
+
 ## 3. Was einen späteren Umbau erzwingen würde
 
 Ein Plattformwechsel entsteht selten aus einer Sprachwahl — der lässt sich hinter
@@ -189,6 +233,7 @@ Liste ist die eigentliche Antwort auf „kein späterer Umbau“.**
 | Append-only Event-Log als Wahrheit des Betriebsverlaufs | trägt Replay, Audit, Backtesting und Tagesbericht gleichzeitig |
 | Kern ohne direkten Datenbankzugriff | Bedingung dafür, dass der Kern austauschbar bleibt |
 | `InfraRelease` und `EconomyRelease` versioniert und je Welt gepinnt | ohne Pinning keine reproduzierbare Welt, kein durchsetzbarer Stichtag |
+| Weltprofil und `StartingCapitalPolicy` im signierten Blueprint | eine nachträgliche Änderung würde Eröffnungsbilanzen, Ranking und Replay derselben Welt unvereinbar machen |
 
 **Reversibel — darf später wechseln, ohne Datenmigration:** Web-Framework,
 Query-Builder, Transportweg zwischen den Diensten, Cache-Schicht, und die

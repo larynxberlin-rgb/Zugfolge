@@ -4,16 +4,18 @@ import { requestWorldAccess, type IdentityDatabase } from "@zugfolge/identity";
 import { drizzle } from "drizzle-orm/pglite";
 import { eq } from "drizzle-orm";
 import { migrate } from "drizzle-orm/pglite/migrator";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   DuplicateOperatorNameError,
   foundOperator,
+  foundOperatorWithInitialization,
   getOperator,
   listOperatorsForAccount,
   listOperatorsInWorld,
   NoAccountInWorldError,
   OperatorNotFoundError,
+  OperatorFoundationWorldInactiveError,
   PublicWorldOperatorLimitError,
 } from "./operators.js";
 
@@ -94,6 +96,41 @@ describe("foundOperator", () => {
     const eigene = await listOperatorsForAccount(db, "kc-anna");
     expect(eigene.map((operator) => operator.name).sort()).toEqual(["Elbtalbahn"]);
   });
+
+  it("wiederholt dieselbe öffentliche EVU-Gründung idempotent samt Initialisierer", async () => {
+    await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-anna", displayName: "Anna" });
+    const calls: boolean[] = [];
+    const input = { worldId: WORLD_LHE, foundingKeycloakSubject: "kc-anna", name: "Elbtalbahn" } as const;
+    const first = await foundOperatorWithInitialization(db, input, async (_tx, context) => {
+      calls.push(context.idempotentReplay);
+    });
+    const replay = await foundOperatorWithInitialization(db, input, async (_tx, context) => {
+      calls.push(context.idempotentReplay);
+    });
+
+    expect(replay.operator.id).toBe(first.operator.id);
+    expect([first.idempotentReplay, replay.idempotentReplay]).toEqual([false, true]);
+    expect(calls).toEqual([false, true]);
+    expect(await listOperatorsForAccount(db, "kc-anna")).toHaveLength(1);
+  });
+
+  it.each(["provisioning", "archived"] as const)(
+    "gruendet in einer Welt mit Lifecycle %s weder EVU noch Initialbestand",
+    async (lifecycleStatus) => {
+      await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-anna", displayName: "Anna" });
+      await db.update(worlds).set({ lifecycleStatus }).where(eq(worlds.id, WORLD_LHE));
+      const initialize = vi.fn(async () => undefined);
+
+      await expect(foundOperatorWithInitialization(db, {
+        worldId: WORLD_LHE,
+        foundingKeycloakSubject: "kc-anna",
+        name: "Elbtalbahn",
+      }, initialize)).rejects.toBeInstanceOf(OperatorFoundationWorldInactiveError);
+
+      expect(initialize).not.toHaveBeenCalled();
+      expect(await listOperatorsForAccount(db, "kc-anna")).toHaveLength(0);
+    },
+  );
 
   it("erlaubt mehrere EVU nur in einer privaten ungewerteten Welt", async () => {
     await db.update(worlds).set({ worldKind: "private", rankingStatus: "unranked" }).where(eq(worlds.id, WORLD_LHE));

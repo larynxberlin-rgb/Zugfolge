@@ -16,7 +16,7 @@ Die Trennung ist verbindlich durch [ADR-0023](adr/0023-odoo-als-administrativer-
 | Odoo Community | Git `19.0` Commit `f8c29412e71af098b2949f485a8011b01b64b368` | LGPL-3.0 | Server und native Apps `base`, `contacts`, `crm`, `account`, `payment`, `mail` |
 | Offizielles Odoo-Image | `odoo@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a` | LGPL-3.0 (Odoo-Code) | optionaler, rootless Containerbetrieb |
 | OCA `queue` | Commit `d2c1759102f1e0bc8f6244629b5b38c7b7882f36`, Modul `queue_job` 19.0.2.0.3 | LGPL-3.0 | persistente Odoo-seitige Zustellung und Wiederholung |
-| Eigenes Add-on | `odoo/addons/zugfolge_admin`, Version `19.0.1.1.0` | PolyForm Shield 1.0.0 / Odoo-Manifesteinstellung `Other proprietary` | Zugfolge-Projektion, Freigabe, Signaturgrenze, Feedback |
+| Eigenes Add-on | `odoo/addons/zugfolge_admin`, Version `19.0.1.4.0` | PolyForm Shield 1.0.0 / Odoo-Manifesteinstellung `Other proprietary` | Zugfolge-Projektion, Freigabe, Signaturgrenze, Feedback |
 
 Odoo Community ist frei selbst hostbar; die Odoo-19-Dokumentation nennt
 Community unter LGPLv3 sowie Python ab 3.10 und PostgreSQL ab 13. Das Add-on
@@ -69,7 +69,7 @@ werden im Secret Store der jeweils getrennten Betriebsumgebung hinterlegt.
 # Game API: Odoo -> Game
 ODOO_WEBHOOK_TENANT_ID=production-tenant-id
 ODOO_WEBHOOK_KEYS_JSON=[{"id":"2026-08","secret":"<secret>","activeFrom":"2026-08-01T00:00:00Z"},{"id":"2026-09","secret":"<next-secret>","activeFrom":"2026-09-01T00:00:00Z"}]
-ODOO_WEBHOOK_AUTHORIZED_ACTORS_JSON={"commerce-service":["entitlement.change"],"admin-service":["admin.world_access_revoke","admin.infra_release_adoption","admin.manual_disruption_create"]}
+ODOO_WEBHOOK_AUTHORIZED_ACTORS_JSON={"commerce-service":["entitlement.change"],"admin-service":["admin.world_deploy","admin.world_access_revoke","admin.infra_release_adoption","admin.manual_disruption_create"]}
 
 # Game API: Game -> Odoo
 ODOO_PROJECTION_URL=https://odoo.example.invalid/zugfolge/projection
@@ -111,6 +111,19 @@ Abnahmenachweis ausführbar.
 
 ## M9-Steuerung im Add-on
 
+- **M9.2/M9.3:** `world_deploy` ist ein Hochrisikoantrag, der ohne vorhandene
+  Weltprojektion angelegt werden darf. Odoo erfasst Weltdefinition und
+  `StartingCapitalPolicy`, standardmäßig endliche null Cent, als erste Phase.
+  Das schreibgeschützte Feld `signing_configuration` liefert Weltdefinition und
+  Policy als exaktes JSON für den externen Generator. Erst dessen vollständiger
+  Kandidat wird außerhalb Odoos Ed25519-signiert und danach samt
+  Deployment-Hash angehängt. Die HMAC-Signatur des Webhooks schützt nur den
+  Transport. Das Game prüft Ed25519, alle Hashes, Weltbindung, Release-Pins und
+  identische Policy erneut und startet allein autoritativ. Nach Einreichen sind
+  Definition, Policy und Deployment in Odoo unveränderlich; die anschließende
+  Game-Projektion von Profil, Policy und Hashes ist read-only. Tutorial und
+  öffentliche Welt verwenden getrennte Deployments, und ein Startpaket darf
+  nur einer Tutorial-Einladung zugeordnet werden. → [ADR-0028](adr/0028-getrennter-tutorial-und-wettbewerbsstart.md)
 - **M9.4:** `zugfolge.admin.request` nutzt native Odoo-Gruppen, Mail-Thread
   und Aktivitäten. Hochrisikoaktionen verlangen eine andere `res.users`-
   Freigabe. Nur `action_dispatch` sendet einen typisierten HMAC-Befehl; kein
@@ -168,6 +181,12 @@ Webhook → Game-Receiver persistiert Receipt und Queue → Game materialisiert
 das Entitlement → Odoo erhält den autoritativen Auditverweis über die Outbox.
 Ein Hochrisikoantrag folgt analog: Entwurf → zweite Odoo-Freigabe →
 `queue_job`/signierter Befehl → Game-Vorabprüfung → Auditprojektion.
+
+Für `world_deploy` umfasst dieser Beleg zusätzlich zwei getrennte Anträge für
+Tutorial und öffentliche Welt: Odoo-Konfiguration → externer Ed25519-Signer →
+angehängtes signiertes Deployment → zweite Freigabe → HMAC-Webhook →
+Game-Neuprüfung und Start → unveränderliche Odoo-Projektion. Ein negativer Lauf
+mit abweichender Policy oder Deployment-Hash muss ohne Weltstart enden.
 
 Danach sind mindestens zu dokumentieren: unabhängiger Start ohne Game-
 Datenbankzugriff, Health, Add-on-Tests, Kauf/Refund/Chargeback/Restore,

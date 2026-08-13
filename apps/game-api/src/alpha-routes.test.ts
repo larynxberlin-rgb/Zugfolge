@@ -57,4 +57,25 @@ describe("produktive Alpha-Teilpfade", () => {
 
     await app.close();
   });
+
+  it("koppelt Heatmap und Tutorial-Assistent nicht an die Startpaket-Spezifikation", async () => {
+    const app = Fastify({ logger: false });
+    registerAlphaRoutes(app, {
+      db: {} as never,
+      authenticate: (async () => undefined) as never,
+      services: {
+        onboarding: {} as never,
+        abuse: {} as never,
+        pseudonymSecret: "a".repeat(32),
+      },
+    });
+    await app.ready();
+
+    expect(app.hasRoute({ method: "GET", url: "/worlds/:worldId/onboarding/start-package" })).toBe(false);
+    expect(app.hasRoute({ method: "POST", url: "/worlds/:worldId/onboarding/start-package" })).toBe(false);
+    expect(app.hasRoute({ method: "GET", url: "/worlds/:worldId/capacity-heatmap" })).toBe(true);
+    expect(app.hasRoute({ method: "GET", url: "/worlds/:worldId/onboarding/assistant" })).toBe(true);
+
+    await app.close();
+  });
 });

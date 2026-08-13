@@ -31,6 +31,8 @@ export const alphaWorldProfiles = pgTable("alpha_world_profiles", {
   economyReleaseHash: text("economy_release_hash").notNull(),
   blueprint: jsonb("blueprint").notNull(),
   blueprintHash: text("blueprint_hash").notNull(),
+  /** Ed25519-gepruefter Deployment-Hash; bei Altwelten bis zur ersten Bindung NULL. */
+  deploymentHash: text("deployment_hash"),
   periodCount: integer("period_count"),
   currentPeriod: integer("current_period").notNull().default(0),
   state: text("state", { enum: ["draft", "running", "closing", "archived"] }).notNull().default("draft"),
@@ -41,6 +43,29 @@ export const alphaWorldProfiles = pgTable("alpha_world_profiles", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("alpha_world_profiles_world_state_idx").on(table.worldId, table.state),
+]);
+
+/**
+ * Vollstaendige Ed25519-gepruefte Deployment-Huelle einer Alpha-Welt.
+ *
+ * Der Game-Prozess rekonstruiert daraus nach einem Neustart ausschliesslich
+ * fuer bereits aktive Welten seine unveraenderlichen Fleet-/Planning-
+ * Authorities und den regionalen Servicekatalog. Ein provisioning-Datensatz
+ * bleibt dagegen bewusst inert, bis derselbe autorisierte Befehl den
+ * Weltstart erfolgreich abschliesst.
+ */
+export const alphaWorldDeployments = pgTable("alpha_world_deployments", {
+  worldId: uuid("world_id").primaryKey().references(() => worlds.id),
+  deploymentHash: text("deployment_hash").notNull().unique(),
+  signedDeployment: jsonb("signed_deployment").notNull(),
+  planningAuthorityAccountId: uuid("planning_authority_account_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  foreignKey({
+    name: "alpha_world_deployments_planning_authority_fk",
+    columns: [table.worldId, table.planningAuthorityAccountId],
+    foreignColumns: [accounts.worldId, accounts.id],
+  }),
 ]);
 
 /** Unterbrechbarer Fortschritt; Erfuellung wird nur aus autoritativen Belegen abgeleitet. */
@@ -225,6 +250,7 @@ export const infraReleaseChanges = pgTable("infra_release_changes", {
 ]);
 
 export type AlphaWorldProfile = typeof alphaWorldProfiles.$inferSelect;
+export type AlphaWorldDeployment = typeof alphaWorldDeployments.$inferSelect;
 export type TutorialProgress = typeof tutorialProgress.$inferSelect;
 export type OnboardingGrant = typeof onboardingGrants.$inferSelect;
 export type AbuseObservation = typeof abuseObservations.$inferSelect;

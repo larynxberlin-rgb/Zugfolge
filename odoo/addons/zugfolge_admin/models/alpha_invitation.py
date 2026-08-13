@@ -16,9 +16,15 @@ class AlphaInvitation(models.Model):
 
     email = fields.Char(required=True, tracking=True, index=True)
     display_name = fields.Char(required=True, tracking=True)
-    world_projection_id = fields.Many2one("zugfolge.world.projection", required=True, ondelete="restrict", index=True)
+    world_projection_id = fields.Many2one(
+        "zugfolge.world.projection",
+        required=True,
+        ondelete="restrict",
+        index=True,
+        domain=[("profile_kind", "=", "public")],
+    )
+    world_profile_kind = fields.Selection(related="world_projection_id.profile_kind", readonly=True)
     role = fields.Selection([("player", "Spieler"), ("world_admin", "Weltverwaltung")], required=True, default="player", tracking=True)
-    start_package = fields.Char(tracking=True)
     request_reference = fields.Char(required=True, default=lambda self: str(uuid.uuid4()), readonly=True, copy=False, index=True)
     correlation_id = fields.Char(required=True, default=lambda self: str(uuid.uuid4()), readonly=True, copy=False, index=True)
     keycloak_subject = fields.Char(readonly=True, copy=False, index=True)
@@ -31,6 +37,13 @@ class AlphaInvitation(models.Model):
         actor = self.env["ir.config_parameter"].sudo().get_param("zugfolge_admin.actor_reference")
         if not actor:
             raise UserError(_("Der Zugfolge-Integrationsakteur ist nicht konfiguriert."))
+        invitation = {
+            "requestReference": self.request_reference,
+            "email": self.email,
+            "displayName": self.display_name,
+            "role": self.role,
+            "keycloakSubject": self.keycloak_subject or None,
+        }
         payload = {
             "kind": "admin.alpha_invitation_%s" % action,
             "worldId": self.world_projection_id.world_id,
@@ -39,14 +52,7 @@ class AlphaInvitation(models.Model):
             "requesterReference": str(self.env.user.id),
             "reason": "Alpha-Kontenlebenszyklus aus Odoo",
             "effectPreview": {"requestReference": self.request_reference, "role": self.role},
-            "invitation": {
-                "requestReference": self.request_reference,
-                "email": self.email,
-                "displayName": self.display_name,
-                "role": self.role,
-                "startPackage": self.start_package or None,
-                "keycloakSubject": self.keycloak_subject or None,
-            },
+            "invitation": invitation,
         }
         dispatch_signed_game_command(self.env, self.correlation_id, actor, payload)
 
@@ -56,6 +62,8 @@ class AlphaInvitation(models.Model):
                 raise UserError(_("Nur Entwuerfe koennen erstmals versendet werden."))
             if "@" not in record.email:
                 raise ValidationError(_("Eine gueltige E-Mail-Adresse ist Pflicht."))
+            if record.world_projection_id.profile_kind != "public":
+                raise ValidationError(_("Alpha-Einladungen waehlen die oeffentliche Zielwelt; die getrennte Tutorialwelt wird autoritativ durch Game bereitgestellt."))
             record._command("create")
             record.state = "sent"
 

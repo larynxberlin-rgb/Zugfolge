@@ -1,7 +1,17 @@
 import { PGlite } from "@electric-sql/pglite";
 import {
+  ALPHA_WORLD_BLUEPRINT_SCHEMA,
+  alphaHash,
+  validateWorldBlueprint,
+  type AlphaWorldBlueprint,
+} from "@zugfolge/alpha";
+import {
+  accounts,
   accountRoles,
+  alphaWorldProfiles,
   disruptionProviderStates,
+  ledgerAccounts,
+  ledgerEntries,
   ledgerTransactions,
   mailboxMessages,
   MIGRATIONS_FOLDER,
@@ -15,15 +25,23 @@ import {
 import { createOdooWebhookReceiptStore, signPayload, type OdooWebhookEnvelope, type SigningKey } from "@zugfolge/commerce";
 import {
   buildEconomyRelease,
+  COST_TYPES,
   createEconomyPlatformAdapters,
   createFleetMobilizationEnvelope,
   EconomySchedulerMonitor,
+  ECONOMY_JOURNAL_COST_ACCOUNT_NAMES,
+  ECONOMY_JOURNAL_REVENUE_ACCOUNT_NAME,
   encodeEconomyValue,
   fleetSnapshotHash,
   loadEconomyWorldState,
   openLedgerAccount,
+  persistEconomyTransition,
   persistFleetMobilizationSnapshot,
+  PUBLIC_ENTRY_FACILITY_SCHEMA,
   runEconomySchedulerCycle,
+  startEconomyWorld,
+  STARTING_CAPITAL_CASH_ACCOUNT_NAME,
+  STARTING_CAPITAL_EQUITY_ACCOUNT_NAME,
   type CostType,
   type EconomyDatabase,
   type FleetMobilizationSnapshot,
@@ -44,7 +62,7 @@ import {
   type OperatingRuntime,
   type RegionalSimulationResult,
 } from "@zugfolge/runtime-native";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
@@ -57,9 +75,52 @@ const ISSUER = "https://auth.zugfolge.test/realms/lhe";
 const AUDIENCE = "game-api";
 const WORLD_LHE = "11111111-1111-1111-1111-111111111111";
 const WORLD_MIDDLE_GERMANY = "22222222-2222-2222-2222-222222222222";
+const WORLD_FINITE_CAPITAL = "33333333-3333-4333-8333-333333333331";
+const WORLD_UNLIMITED_CAPITAL = "33333333-3333-4333-8333-333333333332";
+const WORLD_UNSIGNED_CAPITAL = "33333333-3333-4333-8333-333333333333";
 const SIMULATION_INGEST_TOKEN = "test-only-simulation-ingest-token";
 const FLEET_INGEST_TOKEN = "test-only-fleet-ingest-token";
 const ODOO_KEY: SigningKey = { id: "test-2026", secret: "odoo-test-secret", activeFrom: new Date("2026-01-01T00:00:00Z") };
+
+function testAlphaBlueprint(
+  seed: bigint,
+  startingCapitalPolicy: AlphaWorldBlueprint["startingCapitalPolicy"] = { mode: "finite", amountCents: "0" },
+): AlphaWorldBlueprint {
+  return {
+    schemaVersion: ALPHA_WORLD_BLUEPRINT_SCHEMA,
+    regionId: "mitteldeutschland-b",
+    regionVariant: "B",
+    seed,
+    profileKind: "public",
+    accelerationFactor: 1,
+    periodCount: 6,
+    startingCapitalPolicy,
+    entryFacilityPolicy: {
+      schemaVersion: PUBLIC_ENTRY_FACILITY_SCHEMA,
+      mode: "award-contingent-wet-lease",
+      providerOperatorId: "public",
+      costBasis: "formation-operating-cost",
+    },
+    releases: {
+      infra: "a".repeat(64),
+      timetable: "b".repeat(64),
+      fleet: "c".repeat(64),
+      economy: "d".repeat(64),
+    },
+    lots: [{
+      lotId: "lot-test",
+      contractEndsAtPeriod: 2,
+      trainRunIds: ["train-test"],
+      pathReceiptIds: ["path-test"],
+      vehicleIds: ["vehicle-test"],
+      personnelDutyIds: ["duty-test"],
+      circulationIds: ["circulation-test"],
+      operatingProgramIds: ["program-test"],
+    }],
+    conflictCheckHash: "e".repeat(64),
+    tenderCalendarHash: "f".repeat(64),
+  };
+}
 
 function planningProjection(
   worldId = WORLD_LHE,
@@ -152,6 +213,43 @@ let sign: (subject: string, displayName: string) => Promise<string>;
 let livemap: LivemapRegistry;
 let verifyTokenForTest: Parameters<typeof buildApp>[0]["verifyToken"];
 
+async function insertStartedPublicWorld(
+  worldId: string,
+  seed: bigint,
+  startingCapitalPolicy: AlphaWorldBlueprint["startingCapitalPolicy"],
+  deploymentHash: string | null,
+): Promise<AlphaWorldBlueprint> {
+  const blueprint = testAlphaBlueprint(seed, startingCapitalPolicy);
+  await db.insert(worlds).values({
+    id: worldId,
+    name: `Startkapital-Testwelt ${worldId.slice(-4)}`,
+    schedulePeriodWeeks: 4,
+    epoch: new Date("2026-01-01T00:00:00Z"),
+    worldKind: "public",
+    rankingStatus: "ranked",
+    lifecycleStatus: "active",
+  });
+  await db.insert(alphaWorldProfiles).values({
+    worldId,
+    profileKind: "public",
+    regionId: blueprint.regionId,
+    regionVariant: blueprint.regionVariant,
+    worldSeed: seed,
+    accelerationFactor: blueprint.accelerationFactor,
+    infraReleaseHash: blueprint.releases.infra,
+    timetableReleaseHash: blueprint.releases.timetable,
+    fleetReleaseHash: blueprint.releases.fleet,
+    economyReleaseHash: blueprint.releases.economy,
+    blueprint: encodeEconomyValue(blueprint),
+    blueprintHash: validateWorldBlueprint(blueprint),
+    deploymentHash,
+    periodCount: blueprint.periodCount,
+    state: "running",
+    startedAtS: 0,
+  });
+  return blueprint;
+}
+
 beforeEach(async () => {
   client = new PGlite();
   const pgliteDb = drizzle(client, { schema });
@@ -165,6 +263,42 @@ beforeEach(async () => {
       name: "Mitteldeutschland",
       schedulePeriodWeeks: 4,
       epoch: new Date("2026-01-01T00:00:00Z"),
+    },
+  ]);
+  const lheBlueprint = testAlphaBlueprint(1n);
+  const middleGermanyBlueprint = testAlphaBlueprint(2n);
+  await pgliteDb.insert(alphaWorldProfiles).values([
+    {
+      worldId: WORLD_LHE,
+      profileKind: "public",
+      regionId: "mitteldeutschland-b",
+      regionVariant: "B",
+      worldSeed: 1n,
+      accelerationFactor: 1,
+      infraReleaseHash: "a".repeat(64),
+      timetableReleaseHash: "b".repeat(64),
+      fleetReleaseHash: "c".repeat(64),
+      economyReleaseHash: "d".repeat(64),
+      blueprint: encodeEconomyValue(lheBlueprint),
+      blueprintHash: validateWorldBlueprint(lheBlueprint),
+      deploymentHash: "1".repeat(64),
+      state: "running",
+    },
+    {
+      worldId: WORLD_MIDDLE_GERMANY,
+      profileKind: "public",
+      regionId: "mitteldeutschland-b",
+      regionVariant: "B",
+      worldSeed: 2n,
+      accelerationFactor: 1,
+      infraReleaseHash: "a".repeat(64),
+      timetableReleaseHash: "b".repeat(64),
+      fleetReleaseHash: "c".repeat(64),
+      economyReleaseHash: "d".repeat(64),
+      blueprint: encodeEconomyValue(middleGermanyBlueprint),
+      blueprintHash: validateWorldBlueprint(middleGermanyBlueprint),
+      deploymentHash: "2".repeat(64),
+      state: "running",
     },
   ]);
 
@@ -518,6 +652,10 @@ describe("öffentlicher, persistenter M6-Gesamtablauf", () => {
     const OPERATING = CLOSE + 10_000;
     const worldInstant = (seconds: number) =>
       new Date(Date.parse("2026-01-01T00:00:00.000Z") + seconds * 1_000);
+    // Reiner Fixture-Austausch: Jede Testmethode erhält eine frische PGlite-DB.
+    // Der produktive Guard wird nur bis zum Einsetzen des endgültigen, aus
+    // Economy- und Planning-Hashes gebauten Profils ausgesetzt.
+    await db.execute(sql`alter table alpha_world_profiles disable trigger alpha_world_profiles_started_immutable`);
     const adminToken = await sign("kc-economy-admin", "Economy Admin");
     const adminAccess = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${adminToken}` }, payload: { displayName: "Economy Admin" } });
     expect(adminAccess.statusCode).toBe(201);
@@ -612,11 +750,73 @@ describe("öffentlicher, persistenter M6-Gesamtablauf", () => {
     });
     expect(start.statusCode).toBe(201);
 
+    const startedEconomy = await loadEconomyWorldState(db, WORLD_LHE);
+    expect(startedEconomy).toBeDefined();
+    const signedBlueprint: AlphaWorldBlueprint = {
+      schemaVersion: ALPHA_WORLD_BLUEPRINT_SCHEMA,
+      regionId: "mitteldeutschland-b",
+      regionVariant: "B",
+      seed: 1n,
+      profileKind: "public",
+      accelerationFactor: 1,
+      periodCount: 6,
+      startingCapitalPolicy: { mode: "finite", amountCents: "0" },
+      entryFacilityPolicy: {
+        schemaVersion: PUBLIC_ENTRY_FACILITY_SCHEMA,
+        mode: "award-contingent-wet-lease",
+        providerOperatorId: "public",
+        costBasis: "formation-operating-cost",
+      },
+      releases: {
+        infra: "a".repeat(64),
+        timetable: planningEnvelope.snapshotHash,
+        fleet: "c".repeat(64),
+        economy: release.checksum,
+      },
+      lots: planningSnapshot.lots.map((lot, index) => ({
+        lotId: lot.id,
+        contractEndsAtPeriod: 2 + index % 2,
+        trainRunIds: [`train-run-${index + 1}`],
+        pathReceiptIds: [`path-receipt-${index + 1}`],
+        vehicleIds: [`public-vehicle-lot-${index + 1}`],
+        personnelDutyIds: index === 1
+          ? ["duty-public-lot-s2", "duty-public-lot-s2-for-s1"]
+          : [`duty-public-lot-s${index + 1}`],
+        circulationIds: [`circulation-${index + 1}`],
+        operatingProgramIds: [`program-${index + 1}`],
+      })),
+      conflictCheckHash: "d".repeat(64),
+      tenderCalendarHash: alphaHash("zugfolge-alpha-tender-calendar/v1", startedEconomy!.calendar),
+    };
+    await db.update(alphaWorldProfiles).set({
+      blueprint: encodeEconomyValue(signedBlueprint),
+      blueprintHash: validateWorldBlueprint(signedBlueprint),
+      deploymentHash: "9".repeat(64),
+      worldSeed: signedBlueprint.seed,
+      infraReleaseHash: signedBlueprint.releases.infra,
+      timetableReleaseHash: signedBlueprint.releases.timetable,
+      fleetReleaseHash: signedBlueprint.releases.fleet,
+      economyReleaseHash: signedBlueprint.releases.economy,
+      periodCount: signedBlueprint.periodCount,
+      state: "running",
+    }).where(eq(alphaWorldProfiles.worldId, WORLD_LHE));
+    await db.execute(sql`alter table alpha_world_profiles enable trigger alpha_world_profiles_started_immutable`);
+
     const fleetSnapshot: FleetMobilizationSnapshot = {
       schema: "zugfolge-fleet-mobilization/v1", worldId: WORLD_LHE, revision: 1, producedAt: 50,
-      formations: [{ id: "formation-1", operatorId, vehicleIds: ["vehicle-1"], serviceLineIds: ["S1"], availability: "available", procurement: "delivered", availableFrom: 0, availableUntil: OPERATING + 100, characteristics: { seats: 120, firstClassBasisPoints: 0, accessible: true, bicyclePlaces: 4, wheelchairPlaces: 1, equipment: ["pis"], vehicleAgeYears: 2, maximumSpeedKph: 160, operatingCostCentsPerTrainKm: 700, homologatedLineIds: ["S1"], maintenanceValidUntil: OPERATING + 100, traction: "electric", replacementPlan: true } }],
-      personnelDuties: [{ id: "duty-1", operatorId, formationIds: ["formation-1"], status: "ready", validFrom: 0, validUntil: OPERATING + 100 }],
-      pathReservations: [{ id: "path-1", operatorId, serviceLineIds: ["S1"], status: "confirmed", validFrom: 0, validUntil: OPERATING + 100 }],
+      formations: [
+        { id: "formation-public-lot-s1", operatorId: "public", vehicleIds: ["public-vehicle-lot-1"], pathReceiptId: "path-receipt-1", serviceLineIds: ["S1"], availability: "available", procurement: "delivered", availableFrom: 0, availableUntil: OPERATING + 100, characteristics: { seats: 120, firstClassBasisPoints: 0, accessible: true, bicyclePlaces: 4, wheelchairPlaces: 1, equipment: ["pis"], vehicleAgeYears: 2, maximumSpeedKph: 160, operatingCostCentsPerTrainKm: 700, homologatedLineIds: ["S1"], maintenanceValidUntil: OPERATING + 100, traction: "electric", replacementPlan: true } },
+        { id: "formation-public-lot-s2", operatorId: "public", vehicleIds: ["public-vehicle-lot-2"], pathReceiptId: "path-receipt-2", serviceLineIds: ["S1"], availability: "available", procurement: "delivered", availableFrom: 0, availableUntil: OPERATING + 100, characteristics: { seats: 120, firstClassBasisPoints: 0, accessible: true, bicyclePlaces: 4, wheelchairPlaces: 1, equipment: ["pis"], vehicleAgeYears: 2, maximumSpeedKph: 160, operatingCostCentsPerTrainKm: 700, homologatedLineIds: ["S1"], maintenanceValidUntil: OPERATING + 100, traction: "electric", replacementPlan: true } },
+      ],
+      personnelDuties: [
+        { id: "duty-public-lot-s1", operatorId: "public", formationIds: ["formation-public-lot-s1"], pathReceiptId: "path-receipt-1", status: "ready", validFrom: 0, validUntil: OPERATING + 100 },
+        { id: "duty-public-lot-s2", operatorId: "public", formationIds: ["formation-public-lot-s2"], pathReceiptId: "path-receipt-2", status: "ready", validFrom: 0, validUntil: OPERATING + 100 },
+        { id: "duty-public-lot-s2-for-s1", operatorId: "public", formationIds: ["formation-public-lot-s1"], pathReceiptId: "path-receipt-2", status: "ready", validFrom: 0, validUntil: OPERATING + 100 },
+      ],
+      pathReservations: [
+        { id: "path-public-lot-s1", operatorId: "public", pathReceiptId: "path-receipt-1", serviceLineIds: ["S1"], status: "confirmed", validFrom: 0, validUntil: OPERATING + 100 },
+        { id: "path-public-lot-s2", operatorId: "public", pathReceiptId: "path-receipt-2", serviceLineIds: ["S1"], status: "confirmed", validFrom: 0, validUntil: OPERATING + 100 },
+      ],
     };
     const fleetEnvelope = createFleetMobilizationEnvelope(fleetSnapshot);
     await expect(persistFleetMobilizationSnapshot(
@@ -641,16 +841,120 @@ describe("öffentlicher, persistenter M6-Gesamtablauf", () => {
 
     const foreignToken = await sign("kc-economy-foreign", "Fremd");
     await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${foreignToken}` }, payload: { displayName: "Fremd" } });
-    const bidPayload = { expectedRevision: 2, commandId: "api:bid", bidId: "bid-1", orderingFeeCentsPerTrainKm: "1", submittedAt: OPEN, vehicleReference: { fleetRevision: 1, snapshotHash: fleetEnvelope.snapshotHash, formationId: "formation-1" }, promises: { extraSeats: 0, punctualityBasisPoints: 9_000, additionalStops: 0 } };
+    const entryFacility = { schemaVersion: PUBLIC_ENTRY_FACILITY_SCHEMA, providerOperatorId: "public" } as const;
+    const bidPayload = {
+      expectedRevision: 2,
+      commandId: "api:bid",
+      bidId: "bid-1",
+      orderingFeeCentsPerTrainKm: "1",
+      submittedAt: OPEN,
+      vehicleReference: {
+        fleetRevision: 1,
+        snapshotHash: fleetEnvelope.snapshotHash,
+        formationId: "formation-public-lot-s1",
+        personnelDutyIds: ["duty-public-lot-s1"],
+        pathReservationIds: ["path-public-lot-s1"],
+        entryFacility,
+      },
+      promises: { extraSeats: 0, punctualityBasisPoints: 9_000, additionalStops: 0 },
+    };
     const deniedBid = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/economy/tenders/tender-1/operators/${operatorId}/bids`, headers: { authorization: `Bearer ${foreignToken}` }, payload: bidPayload });
     expect(deniedBid.statusCode).toBe(403);
+    const foreignBidCases = [
+      {
+        name: "formation",
+        reference: {
+          ...bidPayload.vehicleReference,
+          formationId: "formation-public-lot-s2",
+          personnelDutyIds: ["duty-public-lot-s2"],
+          pathReservationIds: ["path-public-lot-s2"],
+        },
+        error: /Anschubformation/,
+      },
+      {
+        name: "duty",
+        reference: {
+          ...bidPayload.vehicleReference,
+          personnelDutyIds: ["duty-public-lot-s2-for-s1"],
+        },
+        error: /Anschubpersonal/,
+      },
+      {
+        name: "path",
+        reference: {
+          ...bidPayload.vehicleReference,
+          pathReservationIds: ["path-public-lot-s2"],
+        },
+        error: /Anschubtrasse/,
+      },
+    ] as const;
+    for (const testCase of foreignBidCases) {
+      const rejected = await app.inject({
+        method: "POST",
+        url: `/worlds/${WORLD_LHE}/economy/tenders/tender-1/operators/${operatorId}/bids`,
+        headers: { authorization: `Bearer ${adminToken}` },
+        payload: {
+          ...bidPayload,
+          commandId: `api:bid:foreign-${testCase.name}`,
+          bidId: `bid-foreign-${testCase.name}`,
+          vehicleReference: testCase.reference,
+        },
+      });
+      expect(rejected.statusCode, `${testCase.name} muss beim Gebot fail-closed sein`).toBe(400);
+      expect(rejected.json<{ error: string }>().error).toMatch(testCase.error);
+    }
     const bid = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/economy/tenders/tender-1/operators/${operatorId}/bids`, headers: { authorization: `Bearer ${adminToken}` }, payload: bidPayload });
     expect(bid.statusCode).toBe(201);
 
     expect((await runEconomySchedulerCycle(db, worldInstant(CLOSE), adapters, monitor)).transitions).toBe(1);
+    const foreignMobilizationCases = [
+      {
+        name: "formation",
+        formationIds: ["formation-public-lot-s1", "formation-public-lot-s2"],
+        personnelDutyIds: ["duty-public-lot-s1", "duty-public-lot-s2"],
+        pathReservationIds: ["path-public-lot-s1", "path-public-lot-s2"],
+        error: /Anschubformation/,
+      },
+      {
+        name: "duty",
+        formationIds: ["formation-public-lot-s1"],
+        personnelDutyIds: ["duty-public-lot-s2-for-s1"],
+        pathReservationIds: ["path-public-lot-s1"],
+        error: /Anschubpersonal/,
+      },
+      {
+        name: "path",
+        formationIds: ["formation-public-lot-s1"],
+        personnelDutyIds: ["duty-public-lot-s1"],
+        pathReservationIds: ["path-public-lot-s2"],
+        error: /Anschubtrasse/,
+      },
+    ] as const;
+    for (const testCase of foreignMobilizationCases) {
+      const rejected = await app.inject({
+        method: "PUT",
+        url: `/worlds/${WORLD_LHE}/economy/tenders/tender-1/operators/${operatorId}/mobilization`,
+        headers: { authorization: `Bearer ${adminToken}` },
+        payload: {
+          expectedRevision: 4,
+          commandId: `api:mobilization:foreign-${testCase.name}`,
+          at: CLOSE,
+          reference: {
+            fleetRevision: 1,
+            snapshotHash: fleetEnvelope.snapshotHash,
+            formationIds: testCase.formationIds,
+            personnelDutyIds: testCase.personnelDutyIds,
+            pathReservationIds: testCase.pathReservationIds,
+            entryFacility,
+          },
+        },
+      });
+      expect(rejected.statusCode, `${testCase.name} muss bei der Mobilisierung fail-closed sein`).toBe(400);
+      expect(rejected.json<{ error: string }>().error).toMatch(testCase.error);
+    }
     const mobilization = await app.inject({
       method: "PUT", url: `/worlds/${WORLD_LHE}/economy/tenders/tender-1/operators/${operatorId}/mobilization`, headers: { authorization: `Bearer ${adminToken}` },
-      payload: { expectedRevision: 4, commandId: "api:mobilization", at: CLOSE, reference: { fleetRevision: 1, snapshotHash: fleetEnvelope.snapshotHash, formationIds: ["formation-1"], personnelDutyIds: ["duty-1"], pathReservationIds: ["path-1"] } },
+      payload: { expectedRevision: 4, commandId: "api:mobilization", at: CLOSE, reference: { fleetRevision: 1, snapshotHash: fleetEnvelope.snapshotHash, formationIds: ["formation-public-lot-s1"], personnelDutyIds: ["duty-public-lot-s1"], pathReservationIds: ["path-public-lot-s1"], entryFacility } },
     });
     expect(mobilization.statusCode).toBe(200);
     expect((await runEconomySchedulerCycle(db, worldInstant(OPERATING), adapters, monitor)).transitions).toBe(1);
@@ -662,7 +966,7 @@ describe("öffentlicher, persistenter M6-Gesamtablauf", () => {
     });
     expect(settlement.statusCode).toBe(201);
     await runEconomySchedulerCycle(db, worldInstant(OPERATING + 2), adapters, monitor);
-    expect(await db.select().from(ledgerTransactions)).toHaveLength(1);
+    expect(await db.select().from(ledgerTransactions)).toHaveLength(2);
     expect((await db.select().from(mailboxMessages)).filter((message) => message.recipientAccountId === accountId).length).toBeGreaterThan(0);
 
     const restarted = buildApp({ db, verifyToken: verifyTokenForTest });
@@ -1290,6 +1594,23 @@ describe("Weltzugang und Kontoliste", () => {
 
     expect(response.statusCode).toBe(403);
   });
+
+  it.each([
+    ["provisioning", "world_provisioning"],
+    ["archived", "world_inactive"],
+  ] as const)("legt bei Lifecycle %s keinen Weltzugang an", async (lifecycleStatus, code) => {
+    await db.update(worlds).set({ lifecycleStatus }).where(eq(worlds.id, WORLD_LHE));
+    const token = await sign(`kc-${lifecycleStatus}`, lifecycleStatus);
+    const response = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/access`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: lifecycleStatus },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ code });
+    expect(await db.select().from(accounts).where(eq(accounts.keycloakSubject, `kc-${lifecycleStatus}`))).toHaveLength(0);
+  });
 });
 
 describe("Rollenvergabe", () => {
@@ -1396,6 +1717,209 @@ describe("EVU (M2.3)", () => {
     });
     expect(response.statusCode).toBe(403);
   });
+
+  it("praequalifiziert ein nach Economy-Start gegruendetes EVU atomar fuer die erste Ausschreibung", async () => {
+    const release = buildEconomyRelease({
+      version: "foundation-after-start",
+      rates: { trackPerTrainKmCents: 1n, stationPerStopCents: 1n, facilityPerHourCents: 1n, energyPerKwhCents: 1n, personnelPerHourCents: 1n, administrationPerPeriodCents: 1n, vehiclePerPeriodCents: 1n, overnightStablingPerPeriodCents: 1n, protectionEquipmentPerPeriodCents: 1n, lateInterestBasisPoints: 1 },
+      rules: { qualityBaselinePunctualityBasisPoints: 8_500, pointsPerExtraSeat: 1, pointsPerPunctualityBasisPoint: 1, pointsPerAdditionalStop: 1, requirementFocusMaximumPoints: 1_000, contractBonusCentsPerPeriod: 1n, penaltyRates: { punctuality: 1n, cancellation: 1n, seats: 1n, connections: 1n }, penaltyFocusMultiplierBasisPoints: 10_000, publicOperationSurchargeBasisPoints: 0, failedPackageFeeStepBasisPoints: 0, failedPackageReductionStepBasisPoints: 0 },
+      tenderProfiles: [
+        { id: "price", weights: { price: 6_000, quality: 4_000 }, requirementFocus: "capacity", penaltyFocus: "punctuality", viabilitySurchargeBasisPoints: 0 },
+        { id: "quality", weights: { price: 4_000, quality: 6_000 }, requirementFocus: "accessibility", penaltyFocus: "connections", viabilitySurchargeBasisPoints: 0 },
+      ],
+    });
+    const started = startEconomyWorld({
+      worldId: WORLD_LHE,
+      seed: 7n,
+      durationMonths: 6,
+      release,
+      lots: Array.from({ length: 8 }, (_, index) => ({ id: `late-lot-${index}`, size: 100 - index, attractiveness: index })),
+      authorityBudgets: [],
+      accounts: [],
+    });
+    await persistEconomyTransition(db, { expectedRevision: null, ...started, committedAt: new Date("2026-01-01T00:00:00Z") });
+    const token = await sign("kc-late-founder", "Spaetgruender");
+    const access = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/access`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Spaetgruender" },
+    });
+    const accountId = access.json<{ id: string }>().id;
+
+    const founded = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/operators`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: "Spaetstartbahn" },
+    });
+    expect(founded.statusCode).toBe(201);
+    const economy = await loadEconomyWorldState(db, WORLD_LHE);
+    expect(economy?.prequalifications.get(accountId)).toMatchObject({
+      worldId: WORLD_LHE,
+      accountId,
+      score: 5_000,
+      creditScore: 5_000,
+    });
+  });
+
+  it("bindet 10.000,00 Euro Startkapital atomar und wiederholt die EVU-Gründung idempotent", async () => {
+    await insertStartedPublicWorld(
+      WORLD_FINITE_CAPITAL,
+      10n,
+      { mode: "finite", amountCents: "1000000" },
+      "3".repeat(64),
+    );
+    const token = await sign("kc-startkapital", "Startkapital");
+    await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_FINITE_CAPITAL}/access`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Startkapital" },
+    });
+
+    const policy = await app.inject({
+      method: "GET",
+      url: `/worlds/${WORLD_FINITE_CAPITAL}/starting-capital-policy`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(policy.statusCode).toBe(200);
+    expect(policy.json()).toEqual({ mode: "finite", amountCents: "1000000" });
+
+    const first = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_FINITE_CAPITAL}/operators`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: "Startkapitalbahn" },
+    });
+    const replay = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_FINITE_CAPITAL}/operators`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: "Startkapitalbahn" },
+    });
+    const operatorId = first.json<{ id: string }>().id;
+    expect(first.statusCode).toBe(201);
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toMatchObject({ id: operatorId, idempotentReplay: true });
+
+    const [ledgerAccountRows, transactions] = await Promise.all([
+      db.select().from(ledgerAccounts).where(and(
+        eq(ledgerAccounts.worldId, WORLD_FINITE_CAPITAL),
+        eq(ledgerAccounts.operatorId, operatorId),
+      )),
+      db.select().from(ledgerTransactions).where(and(
+        eq(ledgerTransactions.worldId, WORLD_FINITE_CAPITAL),
+        eq(ledgerTransactions.operatorId, operatorId),
+      )),
+    ]);
+    expect(ledgerAccountRows.map((account) => account.name).sort()).toEqual([
+      STARTING_CAPITAL_CASH_ACCOUNT_NAME,
+      STARTING_CAPITAL_EQUITY_ACCOUNT_NAME,
+      ECONOMY_JOURNAL_REVENUE_ACCOUNT_NAME,
+      ...COST_TYPES.map((costType) => ECONOMY_JOURNAL_COST_ACCOUNT_NAMES[costType]),
+    ].sort());
+    expect(transactions).toHaveLength(1);
+    const entries = await db.select().from(ledgerEntries).where(and(
+      eq(ledgerEntries.worldId, WORLD_FINITE_CAPITAL),
+      eq(ledgerEntries.transactionId, transactions[0]!.id),
+    ));
+    expect(entries.map((entry) => entry.amountCents).sort((a, b) => a < b ? -1 : 1)).toEqual([-1_000_000n, 1_000_000n]);
+    expect(entries.reduce((sum, entry) => sum + entry.amountCents, 0n)).toBe(0n);
+  });
+
+  it("liefert unbegrenztes Startkapital als Policy und bucht keine unendliche Zahl", async () => {
+    await insertStartedPublicWorld(
+      WORLD_UNLIMITED_CAPITAL,
+      11n,
+      { mode: "unlimited" },
+      "4".repeat(64),
+    );
+    const token = await sign("kc-unlimited", "Unbegrenzt");
+    await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_UNLIMITED_CAPITAL}/access`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Unbegrenzt" },
+    });
+
+    const policy = await app.inject({
+      method: "GET",
+      url: `/worlds/${WORLD_UNLIMITED_CAPITAL}/starting-capital-policy`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const founded = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_UNLIMITED_CAPITAL}/operators`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: "Unendlichbahn" },
+    });
+    const operatorId = founded.json<{ id: string }>().id;
+
+    expect(policy.json()).toEqual({ mode: "unlimited" });
+    expect(JSON.stringify(policy.json())).not.toContain("Infinity");
+    expect(await db.select().from(ledgerAccounts).where(and(
+      eq(ledgerAccounts.worldId, WORLD_UNLIMITED_CAPITAL),
+      eq(ledgerAccounts.operatorId, operatorId),
+    ))).toHaveLength(12);
+    expect(await db.select().from(ledgerTransactions).where(and(
+      eq(ledgerTransactions.worldId, WORLD_UNLIMITED_CAPITAL),
+      eq(ledgerTransactions.operatorId, operatorId),
+    ))).toHaveLength(0);
+  });
+
+  it("blockiert Policy-Manipulationen und lehnt ein ungebundenes Profil vor jeder Gründungsmutation ab", async () => {
+    const original = await insertStartedPublicWorld(
+      WORLD_UNSIGNED_CAPITAL,
+      12n,
+      { mode: "finite", amountCents: "0" },
+      null,
+    );
+    const token = await sign("kc-policy-tamper", "Policy-Tamper");
+    await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_UNSIGNED_CAPITAL}/access`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Policy-Tamper" },
+    });
+    const tampered = { ...original, startingCapitalPolicy: { mode: "finite", amountCents: "999999999" } } as const;
+    await expect(db.update(alphaWorldProfiles).set({
+      blueprint: encodeEconomyValue(tampered),
+      blueprintHash: validateWorldBlueprint(tampered),
+    }).where(eq(alphaWorldProfiles.worldId, WORLD_UNSIGNED_CAPITAL))).rejects.toThrow();
+
+    const tamperedPolicy = await app.inject({
+      method: "GET",
+      url: `/worlds/${WORLD_UNSIGNED_CAPITAL}/starting-capital-policy`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const tamperedFoundation = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_UNSIGNED_CAPITAL}/operators`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: "Manipulierte Bahn" },
+    });
+    expect(tamperedPolicy.statusCode).toBe(409);
+    expect(tamperedPolicy.json()).toMatchObject({ code: "starting_capital_unsigned" });
+    expect(tamperedFoundation.statusCode).toBe(409);
+
+    const unsignedFoundation = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_UNSIGNED_CAPITAL}/operators`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: "Unsignierte Bahn" },
+    });
+    expect(unsignedFoundation.statusCode).toBe(409);
+    expect(unsignedFoundation.json()).toMatchObject({ code: "starting_capital_unsigned" });
+
+    const roster = await app.inject({
+      method: "GET",
+      url: `/worlds/${WORLD_UNSIGNED_CAPITAL}/operators`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(roster.json()).toEqual([]);
+    expect(await db.select().from(ledgerAccounts).where(eq(ledgerAccounts.worldId, WORLD_UNSIGNED_CAPITAL))).toHaveLength(0);
+  });
 });
 
 describe("Ledger-Kern (M2.4)", () => {
@@ -1419,19 +1943,18 @@ describe("Ledger-Kern (M2.4)", () => {
   it("eröffnet Ledger-Konten, bucht eine ausgeglichene Transaktion und zeigt die Salden", async () => {
     const { token, operatorId } = await gruendeElbtalbahn();
 
-    const kasse = await app.inject({
-      method: "POST",
-      url: `/worlds/${WORLD_LHE}/operators/${operatorId}/ledger/accounts`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { name: "Kasse" },
-    });
+    const [kasse] = await db.select().from(ledgerAccounts).where(and(
+      eq(ledgerAccounts.worldId, WORLD_LHE),
+      eq(ledgerAccounts.operatorId, operatorId),
+      eq(ledgerAccounts.name, "Kasse"),
+    )).limit(1);
     const entgelt = await app.inject({
       method: "POST",
       url: `/worlds/${WORLD_LHE}/operators/${operatorId}/ledger/accounts`,
       headers: { authorization: `Bearer ${token}` },
       payload: { name: "Trassenentgelt" },
     });
-    const kasseId = kasse.json<{ id: string }>().id;
+    const kasseId = kasse!.id;
     const entgeltId = entgelt.json<{ id: string }>().id;
 
     const transactionResponse = await app.inject({
@@ -1460,12 +1983,11 @@ describe("Ledger-Kern (M2.4)", () => {
 
   it("lehnt eine unausgeglichene Transaktion ab", async () => {
     const { token, operatorId } = await gruendeElbtalbahn();
-    const kasse = await app.inject({
-      method: "POST",
-      url: `/worlds/${WORLD_LHE}/operators/${operatorId}/ledger/accounts`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { name: "Kasse" },
-    });
+    const [kasse] = await db.select().from(ledgerAccounts).where(and(
+      eq(ledgerAccounts.worldId, WORLD_LHE),
+      eq(ledgerAccounts.operatorId, operatorId),
+      eq(ledgerAccounts.name, "Kasse"),
+    )).limit(1);
     const entgelt = await app.inject({
       method: "POST",
       url: `/worlds/${WORLD_LHE}/operators/${operatorId}/ledger/accounts`,
@@ -1480,7 +2002,7 @@ describe("Ledger-Kern (M2.4)", () => {
       payload: {
         description: "Unausgeglichen",
         entries: [
-          { ledgerAccountId: kasse.json<{ id: string }>().id, amountCents: "-100" },
+          { ledgerAccountId: kasse!.id, amountCents: "-100" },
           { ledgerAccountId: entgelt.json<{ id: string }>().id, amountCents: "50" },
         ],
       },

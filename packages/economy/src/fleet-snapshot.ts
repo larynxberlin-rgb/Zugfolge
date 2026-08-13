@@ -9,11 +9,26 @@ import type { EconomyDatabase } from "./ledger.js";
 import type { VehicleConcept } from "./tender.js";
 
 export const FLEET_MOBILIZATION_SCHEMA = "zugfolge-fleet-mobilization/v1" as const;
+export const PUBLIC_ENTRY_FACILITY_SCHEMA = "zugfolge-public-entry-facility/v1" as const;
+
+export type PublicEntryFacilityPolicy =
+  | {
+      readonly schemaVersion: typeof PUBLIC_ENTRY_FACILITY_SCHEMA;
+      readonly mode: "award-contingent-wet-lease";
+      readonly providerOperatorId: "public";
+      readonly costBasis: "formation-operating-cost";
+    }
+  | {
+      readonly schemaVersion: typeof PUBLIC_ENTRY_FACILITY_SCHEMA;
+      readonly mode: "disabled";
+    };
 
 export interface FleetFormationSnapshot {
   readonly id: string;
   readonly operatorId: string;
   readonly vehicleIds: readonly string[];
+  /** Vom M5-Writer explizit aus dem Formation-Intent uebernommener Beleg. */
+  readonly pathReceiptId?: string;
   readonly serviceLineIds: readonly string[];
   readonly availability: "available" | "committed" | "maintenance" | "retired";
   readonly procurement: "delivered" | "ordered" | "cancelled";
@@ -40,6 +55,8 @@ export interface FleetPersonnelDutySnapshot {
   readonly id: string;
   readonly operatorId: string;
   readonly formationIds: readonly string[];
+  /** Vom M5-Writer explizit aus dem Duty-Intent uebernommener Beleg. */
+  readonly pathReceiptId?: string;
   readonly status: "ready" | "planned" | "uncovered";
   readonly validFrom: number;
   readonly validUntil: number;
@@ -48,6 +65,8 @@ export interface FleetPersonnelDutySnapshot {
 export interface FleetPathReservationSnapshot {
   readonly id: string;
   readonly operatorId: string;
+  /** Autoritativer Beleg hinter der lokalen Reservierungs-ID. */
+  readonly pathReceiptId?: string;
   readonly serviceLineIds: readonly string[];
   readonly status: "confirmed" | "requested" | "rejected";
   readonly validFrom: number;
@@ -78,10 +97,23 @@ export interface FleetVehicleReference extends FleetSnapshotReference {
   readonly formationId: string;
 }
 
+export interface FleetEntryFacilityVehicleReference extends FleetVehicleReference {
+  readonly personnelDutyIds: readonly string[];
+  readonly pathReservationIds: readonly string[];
+  readonly entryFacility: {
+    readonly schemaVersion: typeof PUBLIC_ENTRY_FACILITY_SCHEMA;
+    readonly providerOperatorId: "public";
+  };
+}
+
 export interface FleetMobilizationReference extends FleetSnapshotReference {
   readonly formationIds: readonly string[];
   readonly personnelDutyIds: readonly string[];
   readonly pathReservationIds: readonly string[];
+  readonly entryFacility?: {
+    readonly schemaVersion: typeof PUBLIC_ENTRY_FACILITY_SCHEMA;
+    readonly providerOperatorId: "public";
+  };
 }
 
 export class FleetSnapshotValidationError extends Error {
@@ -167,6 +199,7 @@ export function validateFleetMobilizationSnapshot(snapshot: FleetMobilizationSna
     const name = `formations[${index}]`;
     nonEmpty(formation.operatorId, `${name}.operatorId`);
     validStringList(formation.vehicleIds, `${name}.vehicleIds`);
+    if (formation.pathReceiptId !== undefined) nonEmpty(formation.pathReceiptId, `${name}.pathReceiptId`);
     validStringList(formation.serviceLineIds, `${name}.serviceLineIds`);
     invariant(["available", "committed", "maintenance", "retired"].includes(formation.availability), `${name}.availability ist unbekannt.`);
     invariant(["delivered", "ordered", "cancelled"].includes(formation.procurement), `${name}.procurement ist unbekannt.`);
@@ -190,12 +223,14 @@ export function validateFleetMobilizationSnapshot(snapshot: FleetMobilizationSna
     const name = `personnelDuties[${index}]`;
     nonEmpty(duty.operatorId, `${name}.operatorId`);
     validStringList(duty.formationIds, `${name}.formationIds`);
+    if (duty.pathReceiptId !== undefined) nonEmpty(duty.pathReceiptId, `${name}.pathReceiptId`);
     invariant(["ready", "planned", "uncovered"].includes(duty.status), `${name}.status ist unbekannt.`);
     validWindow(duty.validFrom, duty.validUntil, `${name}.validity`);
   }
   for (const [index, reservation] of snapshot.pathReservations.entries()) {
     const name = `pathReservations[${index}]`;
     nonEmpty(reservation.operatorId, `${name}.operatorId`);
+    if (reservation.pathReceiptId !== undefined) nonEmpty(reservation.pathReceiptId, `${name}.pathReceiptId`);
     validStringList(reservation.serviceLineIds, `${name}.serviceLineIds`);
     invariant(["confirmed", "requested", "rejected"].includes(reservation.status), `${name}.status ist unbekannt.`);
     validWindow(reservation.validFrom, reservation.validUntil, `${name}.validity`);
@@ -334,6 +369,104 @@ export function resolveVehicleConcept(
   });
 }
 
+/**
+ * Transparenter Nullstart: Das EVU darf vor einem Zuschlag ein vorhandenes
+ * Eigenbetriebs-Konzept kalkulieren, erhaelt dadurch aber noch kein Asset.
+ */
+export function resolvePublicEntryFacilityVehicleConcept(
+  snapshot: FleetMobilizationSnapshot,
+  reference: FleetEntryFacilityVehicleReference,
+  input: {
+    readonly providerOperatorId: "public";
+    readonly signedLotVehicleIds: readonly string[];
+    readonly signedLotPersonnelDutyIds: readonly string[];
+    readonly signedLotPathReceiptIds: readonly string[];
+    readonly serviceLineIds: readonly string[];
+    readonly operatingFrom: number;
+  },
+): VehicleConcept {
+  if (
+    reference.entryFacility.schemaVersion !== PUBLIC_ENTRY_FACILITY_SCHEMA
+    || reference.entryFacility.providerOperatorId !== input.providerOperatorId
+  ) throw new FleetSnapshotValidationError("Gebotsreferenz besitzt keinen gebundenen Anschubvertrag.");
+  const vehicle = resolveVehicleConcept(snapshot, reference, {
+    operatorId: input.providerOperatorId,
+    serviceLineIds: input.serviceLineIds,
+    operatingFrom: input.operatingFrom,
+  });
+  verifyMobilizationReference(snapshot, {
+    fleetRevision: reference.fleetRevision,
+    snapshotHash: reference.snapshotHash,
+    formationIds: [reference.formationId],
+    personnelDutyIds: reference.personnelDutyIds,
+    pathReservationIds: reference.pathReservationIds,
+  }, {
+    operatorId: input.providerOperatorId,
+    winningFormationId: reference.formationId,
+    serviceLineIds: input.serviceLineIds,
+    operatingFrom: input.operatingFrom,
+  });
+  assertSignedLotResourceBinding(snapshot, {
+    formationIds: [reference.formationId],
+    personnelDutyIds: reference.personnelDutyIds,
+    pathReservationIds: reference.pathReservationIds,
+  }, input);
+  return vehicle;
+}
+
+interface SignedLotResourceBinding {
+  readonly signedLotVehicleIds: readonly string[];
+  readonly signedLotPersonnelDutyIds: readonly string[];
+  readonly signedLotPathReceiptIds: readonly string[];
+}
+
+function exactSignedSet(values: readonly string[], name: string): ReadonlySet<string> {
+  invariant(
+    values.length > 0
+      && values.every((value) => typeof value === "string" && value.trim() !== "")
+      && new Set(values).size === values.length,
+    `${name} ist leer oder ungueltig.`,
+  );
+  return new Set(values);
+}
+
+function assertSignedLotResourceBinding(
+  snapshot: FleetMobilizationSnapshot,
+  reference: Pick<FleetMobilizationReference, "formationIds" | "personnelDutyIds" | "pathReservationIds">,
+  signed: SignedLotResourceBinding,
+): void {
+  const vehicles = exactSignedSet(signed.signedLotVehicleIds, "Signierte Losfahrzeugmenge");
+  const duties = exactSignedSet(signed.signedLotPersonnelDutyIds, "Signierte Lospersonaldienstmenge");
+  const receipts = exactSignedSet(signed.signedLotPathReceiptIds, "Signierte Lostrassenbelegmenge");
+  const formations = reference.formationIds.map((id) => snapshot.formations.find((formation) => formation.id === id));
+  invariant(
+    formations.every((formation) =>
+      formation !== undefined
+      && formation.vehicleIds.length > 0
+      && formation.vehicleIds.every((vehicleId) => vehicles.has(vehicleId))
+      && formation.pathReceiptId !== undefined
+      && receipts.has(formation.pathReceiptId)),
+    "Anschubformation verwendet Ressourcen ausserhalb des signierten Blueprint-Loses.",
+  );
+  const selectedDuties = reference.personnelDutyIds.map((id) => snapshot.personnelDuties.find((duty) => duty.id === id));
+  invariant(
+    selectedDuties.every((duty) =>
+      duty !== undefined
+      && duties.has(duty.id)
+      && duty.pathReceiptId !== undefined
+      && receipts.has(duty.pathReceiptId)),
+    "Anschubpersonal verwendet Ressourcen ausserhalb des signierten Blueprint-Loses.",
+  );
+  const reservations = reference.pathReservationIds.map((id) => snapshot.pathReservations.find((path) => path.id === id));
+  invariant(
+    reservations.every((path) =>
+      path !== undefined
+      && path.pathReceiptId !== undefined
+      && receipts.has(path.pathReceiptId)),
+    "Anschubtrasse verwendet einen Beleg ausserhalb des signierten Blueprint-Loses.",
+  );
+}
+
 /** Prüft beim Stichtag Formation, Personal und Trasse gegen dieselbe, stabile Revision. */
 export function verifyMobilizationReference(
   snapshot: FleetMobilizationSnapshot,
@@ -398,4 +531,34 @@ export function verifyMobilizationReference(
     personnelDutyIds: Object.freeze([...reference.personnelDutyIds]),
     pathReservationIds: Object.freeze([...reference.pathReservationIds]),
   });
+}
+
+/** Erneute M5-Pruefung des zuschlagsgebundenen Betriebsbereitstellungsvertrags. */
+export function verifyPublicEntryFacilityMobilizationReference(
+  snapshot: FleetMobilizationSnapshot,
+  reference: FleetMobilizationReference,
+  input: {
+    readonly providerOperatorId: "public";
+    readonly signedLotVehicleIds: readonly string[];
+    readonly signedLotPersonnelDutyIds: readonly string[];
+    readonly signedLotPathReceiptIds: readonly string[];
+    readonly winningFormationId: string;
+    readonly serviceLineIds: readonly string[];
+    readonly operatingFrom: number;
+  },
+): MobilizationProof {
+  if (
+    reference.entryFacility?.schemaVersion !== PUBLIC_ENTRY_FACILITY_SCHEMA
+    || reference.entryFacility.providerOperatorId !== input.providerOperatorId
+  ) {
+    throw new FleetSnapshotValidationError("Mobilisierungsreferenz besitzt keinen gebundenen Anschubvertrag.");
+  }
+  const proof = verifyMobilizationReference(snapshot, reference, {
+    operatorId: input.providerOperatorId,
+    winningFormationId: input.winningFormationId,
+    serviceLineIds: input.serviceLineIds,
+    operatingFrom: input.operatingFrom,
+  });
+  assertSignedLotResourceBinding(snapshot, reference, input);
+  return proof;
 }

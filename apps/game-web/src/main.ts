@@ -11,6 +11,7 @@ import {
   type OnboardingAssistant,
   type OperatorContractView,
   type OperatorSummary,
+  type StartingCapitalPolicy,
   type StartPackageGrant,
   type TutorialJourney,
   type VehicleAssetView,
@@ -25,7 +26,7 @@ import {
   type CooperationSurfaceState,
 } from "./cooperation.js";
 import { conflictsForTrain } from "./diagram.js";
-import { renderJourney } from "./journey.js";
+import { loadJourneySurfaces, renderJourney } from "./journey.js";
 import { primaryMapDestination } from "./navigation.js";
 import { renderLoadState, renderProjection } from "./view.js";
 import "./styles.css";
@@ -68,9 +69,10 @@ let messageTone: "status" | "error" = "status";
 let applyingAlternativeId = "";
 let demoApply: ((current: PlanningProjectionV1, alternativeId: string) => PlanningProjectionV1) | undefined;
 let tutorialJourney: TutorialJourney | undefined;
-let startPackage: StartPackageGrant | undefined;
+let tutorialStartPackage: StartPackageGrant | undefined;
 let heatmap: readonly CapacityHeatmapCell[] = [];
-let onboardingAssistant: OnboardingAssistant | undefined;
+let tutorialOnboardingAssistant: OnboardingAssistant | undefined;
+let publicStartingCapital: StartingCapitalPolicy | undefined;
 let journeyBusy = false;
 let worldOperators: readonly OperatorSummary[] = [];
 let ownOperatorIds: readonly string[] = [];
@@ -131,9 +133,10 @@ function render(): void {
       tutorialWorldId,
       publicWorldId: worldId,
       tutorial: tutorialJourney,
-      grant: startPackage,
+      tutorialGrant: tutorialStartPackage,
       heatmap,
-      assistant: onboardingAssistant,
+      tutorialAssistant: tutorialOnboardingAssistant,
+      publicStartingCapital,
       busy: journeyBusy,
       message,
       livemapUrl,
@@ -166,7 +169,7 @@ function bindJourney(): void {
   app.querySelector("#tutorial-refresh")?.addEventListener("click", () => void refreshTutorial());
   app.querySelector("#tutorial-reset")?.addEventListener("click", () => void resetTutorial());
   app.querySelector("#claim-start-package")?.addEventListener("click", () => void claimStartPackage());
-  app.querySelector("#heatmap-refresh")?.addEventListener("click", () => void refreshOnboarding());
+  app.querySelector("#heatmap-refresh")?.addEventListener("click", () => void refreshPublicWorld());
   bindCooperationSurface(app, {
     changeOperator: (operatorId) => cooperationAction(async () => refreshCooperation(operatorId), "Handelndes EVU wurde gewechselt."),
     changeContractType: (value) => { contractType = value; render(); },
@@ -362,37 +365,45 @@ function loadVehicleHistory(vehicleId: string): Promise<void> {
 async function refreshTutorial(): Promise<void> {
   const client = api;
   if (client === undefined || tutorialWorldId === "") return;
-  return journeyAction(async () => { tutorialJourney = await client.loadTutorial(tutorialWorldId); }, "Tutorialbelege sind aktuell.");
+  return journeyAction(async () => {
+    [tutorialJourney, tutorialStartPackage, tutorialOnboardingAssistant] = await Promise.all([
+      client.loadTutorial(tutorialWorldId),
+      client.loadStartPackage(tutorialWorldId),
+      client.loadOnboardingAssistant(tutorialWorldId),
+    ]);
+  }, "Tutorialbelege, Startpaket und Betriebsassistent sind aktuell.");
 }
 
 async function resetTutorial(): Promise<void> {
   const client = api;
   if (client === undefined || tutorialWorldId === "") return;
-  return journeyAction(async () => { tutorialJourney = await client.resetTutorial(tutorialWorldId); }, "Neue Tutorial-Sitzung wurde autoritativ angelegt.");
+  return journeyAction(async () => {
+    tutorialJourney = await client.resetTutorial(tutorialWorldId);
+    [tutorialStartPackage, tutorialOnboardingAssistant] = await Promise.all([
+      client.loadStartPackage(tutorialWorldId),
+      client.loadOnboardingAssistant(tutorialWorldId),
+    ]);
+  }, "Neue Tutorial-Sitzung wurde autoritativ angelegt.");
 }
 
-async function refreshOnboarding(): Promise<void> {
+async function refreshPublicWorld(): Promise<void> {
   const client = api;
   if (client === undefined || worldId === "") return;
   return journeyAction(async () => {
-    [startPackage, heatmap, onboardingAssistant] = await Promise.all([
-      client.loadStartPackage(worldId),
+    [heatmap, publicStartingCapital] = await Promise.all([
       client.loadCapacityHeatmap(worldId),
-      client.loadOnboardingAssistant(worldId),
+      client.loadStartingCapitalPolicy(worldId),
     ]);
-  }, "Startpaket, Kapazität und Betriebsassistent sind aktuell.");
+  }, "Kapazität und Startkapital-Policy der öffentlichen Welt sind aktuell.");
 }
 
 async function claimStartPackage(): Promise<void> {
   const client = api;
-  if (client === undefined || worldId === "") return;
+  if (client === undefined || tutorialWorldId === "") return;
   return journeyAction(async () => {
-    startPackage = await client.claimStartPackage(worldId);
-    [heatmap, onboardingAssistant] = await Promise.all([
-      client.loadCapacityHeatmap(worldId),
-      client.loadOnboardingAssistant(worldId),
-    ]);
-  }, "Startpaket wurde über Fleet-, Economy- und Betriebsprogramm-Single-Writer zugeteilt.");
+    tutorialStartPackage = await client.claimStartPackage(tutorialWorldId);
+    tutorialOnboardingAssistant = await client.loadOnboardingAssistant(tutorialWorldId);
+  }, "Tutorial-Startpaket wurde über Fleet-, Economy- und Betriebsprogramm-Single-Writer zugeteilt.");
 }
 
 function bind(): void {
@@ -497,23 +508,41 @@ async function boot(): Promise<void> {
     journeyBusy = true;
     render();
     try {
-      const [tutorial, grant, currentHeatmap, assistant] = await Promise.all([
-        tutorialWorldId === "" ? Promise.resolve(undefined) : api.loadTutorial(tutorialWorldId),
-        api.loadStartPackage(worldId),
-        api.loadCapacityHeatmap(worldId),
-        api.loadOnboardingAssistant(worldId),
-      ]);
-      tutorialJourney = tutorial;
-      startPackage = grant;
-      heatmap = currentHeatmap;
-      onboardingAssistant = assistant;
+      const loaded = await loadJourneySurfaces(
+        async () => {
+          const [currentHeatmap, startingCapital] = await Promise.all([
+            api!.loadCapacityHeatmap(worldId),
+            api!.loadStartingCapitalPolicy(worldId),
+          ]);
+          return { heatmap: currentHeatmap, startingCapital };
+        },
+        async () => {
+          if (tutorialWorldId === "") return {};
+          const [tutorial, grant, assistant] = await Promise.all([
+            api!.loadTutorial(tutorialWorldId),
+            api!.loadStartPackage(tutorialWorldId),
+            api!.loadOnboardingAssistant(tutorialWorldId),
+          ]);
+          return { tutorial, grant, assistant };
+        },
+      );
+      if (loaded.publicSurface !== undefined) {
+        heatmap = loaded.publicSurface.heatmap;
+        publicStartingCapital = loaded.publicSurface.startingCapital;
+      }
+      if (loaded.tutorialSurface !== undefined) {
+        tutorialJourney = loaded.tutorialSurface.tutorial;
+        tutorialStartPackage = loaded.tutorialSurface.grant;
+        tutorialOnboardingAssistant = loaded.tutorialSurface.assistant;
+      }
       let cooperationFailure = "";
       try {
         await refreshCooperation();
       } catch (error) {
         cooperationFailure = error instanceof Error ? error.message : "Kooperation und Fahrzeugmarkt konnten nicht geladen werden.";
       }
-      if (cooperationFailure !== "") message = cooperationFailure;
+      const failures = [...loaded.failures, cooperationFailure].filter(Boolean);
+      if (failures.length > 0) message = failures.join(" ");
     } catch (error) {
       message = error instanceof Error ? error.message : "Spielerreise konnte nicht geladen werden.";
     } finally {

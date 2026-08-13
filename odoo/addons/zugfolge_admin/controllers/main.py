@@ -56,12 +56,7 @@ class ZugfolgeProjectionController(http.Controller):
             request_record = request.env["zugfolge.admin.request"].search([("correlation_id", "=", payload.get("correlationId"))], limit=1)
             if request_record:
                 state = result.get("state") if result.get("state") in ("accepted", "completed", "failed", "rejected") else ("accepted" if result.get("outcome") == "accepted" else "rejected")
-                request_record.with_context(zugfolge_game_projection=True).apply_game_result({
-                    "state": state,
-                    "gameAuditEventId": result.get("gameAuditEventId"),
-                    "eventId": result.get("eventId"),
-                    "failureCode": result.get("failureCode"),
-                })
+                request_record.with_context(zugfolge_game_projection=True).apply_game_result({**result, "state": state})
                 if request_record.action_type == "world_access_revoke" and state == "completed":
                     invitation = request.env["zugfolge.alpha.invitation"].search([
                         ("world_projection_id", "=", request_record.world_projection_id.id),

@@ -1,5 +1,9 @@
 import type { RegionalSimulationWorker } from "./regional-simulation-worker.js";
-import type { RegionalServiceCatalog } from "./boundary-transition-scheduler.js";
+import type { RegionalScheduledCommand } from "./boundary-transition-scheduler.js";
+
+export interface RegionalScheduledCommandCatalog {
+  due(worldId: string, regionId: string, afterS: number, throughS: number): readonly RegionalScheduledCommand[];
+}
 
 type RegionalSimulationAdvancer = Pick<
   RegionalSimulationWorker,
@@ -33,7 +37,7 @@ export async function advanceRegionalSimulations(
   worker: RegionalSimulationAdvancer,
   worldEpochs: ReadonlyMap<string, Date>,
   at: Date,
-  boundaryTransitions?: Pick<RegionalServiceCatalog, "due">,
+  boundaryTransitions?: RegionalScheduledCommandCatalog,
 ): Promise<number> {
   let advanced = 0;
   for (const region of worker.readyRegions()) {

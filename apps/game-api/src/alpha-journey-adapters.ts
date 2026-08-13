@@ -13,9 +13,12 @@ export const ALPHA_START_PACKAGE_COMMAND_SCHEMA = "zugfolge-alpha-start-package-
 export interface TutorialResetCommand {
   readonly schemaVersion: typeof ALPHA_TUTORIAL_RESET_COMMAND_SCHEMA;
   readonly commandId: string;
+  /** Vom TutorialService geöffnete Transaktion; bindet Writer und Fortschritt atomar. */
+  readonly tx?: AlphaDatabase;
   readonly worldId: string;
   readonly accountId: string;
   readonly resetNumber: number;
+  readonly atS: number;
 }
 
 export interface StartPackageCommand {
@@ -44,13 +47,15 @@ export interface AlphaJourneyCommandWriter {
 export class AuthoritativeTutorialResetPort implements TutorialResetPort {
   constructor(private readonly writer: AlphaJourneyCommandWriter) {}
 
-  async resetAndSeedAccount(worldId: string, accountId: string, resetNumber: number): Promise<void> {
+  async resetAndSeedAccount(tx: AlphaDatabase, worldId: string, accountId: string, resetNumber: number, atS: number): Promise<void> {
     return this.writer.resetTutorial({
       schemaVersion: ALPHA_TUTORIAL_RESET_COMMAND_SCHEMA,
       commandId: `tutorial-reset:${worldId}:${accountId}:${resetNumber}`,
+      tx,
       worldId,
       accountId,
       resetNumber,
+      atS,
     });
   }
 }

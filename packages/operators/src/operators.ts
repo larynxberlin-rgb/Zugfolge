@@ -13,7 +13,7 @@
 
 import { accounts, operators, worlds, type Operator } from "@zugfolge/db";
 import { AuthorizationError, getAccount, type IdentityDatabase } from "@zugfolge/identity";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 /** Die handelnde Identität hat kein Konto in dieser Welt und kann dort kein EVU gründen. */
 export class NoAccountInWorldError extends Error {
@@ -39,6 +39,14 @@ export class PublicWorldOperatorLimitError extends Error {
   }
 }
 
+/** In einer noch nicht gestarteten oder bereits archivierten Welt darf kein EVU entstehen. */
+export class OperatorFoundationWorldInactiveError extends AuthorizationError {
+  constructor(worldId: string) {
+    super(`Welt '${worldId}' ist nicht aktiv - EVU-Gruendung nicht moeglich.`);
+    this.name = "OperatorFoundationWorldInactiveError";
+  }
+}
+
 /** Das angesprochene EVU existiert nicht — oder nicht in dieser Welt. */
 export class OperatorNotFoundError extends Error {
   constructor(operatorId: string, worldId: string) {
@@ -53,46 +61,91 @@ export class OperatorNotFoundError extends Error {
  * zwischen EVU (`wirtschaft.md` 6) setzt getrennte Rechtsträger voraus, keine
  * Beschränkung auf eines je Konto.
  */
+export interface OperatorFoundationResult {
+  readonly operator: Operator;
+  /** Nur identische Wiederholungen der öffentlichen Ein-EVU-Gründung sind Replays. */
+  readonly idempotentReplay: boolean;
+}
+
+export interface OperatorFoundationContext extends OperatorFoundationResult {
+  readonly worldId: string;
+  readonly worldKind: "public" | "private";
+  readonly worldEpoch: Date;
+}
+
+/**
+ * Atomare Gründungsgrenze für fachliche Initialisierer wie die Eröffnungsbilanz.
+ * Die Weltzeile serialisiert konkurrierende Gründungen. In öffentlichen Welten
+ * konvergiert derselbe Konto-/Namensaufruf auf das bereits gegründete EVU;
+ * ein anderer Name bleibt wegen der Ein-EVU-Regel ein Konflikt.
+ */
+export async function foundOperatorWithInitialization(
+  db: IdentityDatabase,
+  input: { readonly worldId: string; readonly foundingKeycloakSubject: string; readonly name: string },
+  initialize: (db: IdentityDatabase, context: OperatorFoundationContext) => Promise<void>,
+): Promise<OperatorFoundationResult> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${input.worldId} for update`);
+    const account = await getAccount(tx, { worldId: input.worldId, keycloakSubject: input.foundingKeycloakSubject });
+    if (account === undefined) throw new NoAccountInWorldError(input.worldId);
+
+    const [world] = await tx
+      .select({ worldKind: worlds.worldKind, epoch: worlds.epoch, lifecycleStatus: worlds.lifecycleStatus })
+      .from(worlds)
+      .where(eq(worlds.id, input.worldId))
+      .limit(1);
+    if (world === undefined) throw new Error(`Welt '${input.worldId}' existiert nicht.`);
+    if (world.lifecycleStatus !== "active") throw new OperatorFoundationWorldInactiveError(input.worldId);
+
+    if (world.worldKind === "public") {
+      const [owned] = await tx
+        .select()
+        .from(operators)
+        .where(and(eq(operators.worldId, input.worldId), eq(operators.foundingAccountId, account.id)))
+        .limit(1);
+      if (owned !== undefined) {
+        if (owned.name !== input.name) throw new PublicWorldOperatorLimitError(input.worldId);
+        const context = {
+          operator: owned,
+          idempotentReplay: true,
+          worldId: input.worldId,
+          worldKind: world.worldKind,
+          worldEpoch: world.epoch,
+        } as const;
+        await initialize(tx, context);
+        return context;
+      }
+    }
+
+    const [existing] = await tx
+      .select({ id: operators.id })
+      .from(operators)
+      .where(and(eq(operators.worldId, input.worldId), eq(operators.name, input.name)))
+      .limit(1);
+    if (existing !== undefined) throw new DuplicateOperatorNameError(input.worldId, input.name);
+
+    const [created] = await tx
+      .insert(operators)
+      .values({ worldId: input.worldId, foundingAccountId: account.id, name: input.name })
+      .returning();
+    if (created === undefined) throw new Error("EVU konnte nicht angelegt werden.");
+    const context = {
+      operator: created,
+      idempotentReplay: false,
+      worldId: input.worldId,
+      worldKind: world.worldKind,
+      worldEpoch: world.epoch,
+    } as const;
+    await initialize(tx, context);
+    return context;
+  });
+}
+
 export async function foundOperator(
   db: IdentityDatabase,
   input: { readonly worldId: string; readonly foundingKeycloakSubject: string; readonly name: string },
 ): Promise<Operator> {
-  const account = await getAccount(db, { worldId: input.worldId, keycloakSubject: input.foundingKeycloakSubject });
-  if (account === undefined) {
-    throw new NoAccountInWorldError(input.worldId);
-  }
-
-  const [world] = await db
-    .select({ worldKind: worlds.worldKind })
-    .from(worlds)
-    .where(eq(worlds.id, input.worldId))
-    .limit(1);
-  if (world?.worldKind === "public") {
-    const [owned] = await db
-      .select({ id: operators.id })
-      .from(operators)
-      .where(and(eq(operators.worldId, input.worldId), eq(operators.foundingAccountId, account.id)))
-      .limit(1);
-    if (owned !== undefined) throw new PublicWorldOperatorLimitError(input.worldId);
-  }
-
-  const [existing] = await db
-    .select({ id: operators.id })
-    .from(operators)
-    .where(and(eq(operators.worldId, input.worldId), eq(operators.name, input.name)))
-    .limit(1);
-  if (existing !== undefined) {
-    throw new DuplicateOperatorNameError(input.worldId, input.name);
-  }
-
-  const [created] = await db
-    .insert(operators)
-    .values({ worldId: input.worldId, foundingAccountId: account.id, name: input.name })
-    .returning();
-  if (created === undefined) {
-    throw new Error("EVU konnte nicht angelegt werden.");
-  }
-  return created;
+  return (await foundOperatorWithInitialization(db, input, async () => {})).operator;
 }
 
 /**

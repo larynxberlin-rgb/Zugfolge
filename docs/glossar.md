@@ -170,7 +170,8 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Sperrzeitentreppe | `BlockingTimeStaircase` | die treppenförmige Darstellung aufeinanderfolgender Sperrzeiten im Bildfahrplan | `milestones.md` M0.3 |
 | Sperrzeitparameter | `SignallingParameters` | Signalsichtzeit, Vorsignalabstand, Durchrutschweg und Stellwerksbauart einer Betriebsstelle — die Werte, aus denen die sechs Anteile der Sperrzeit entstehen | `infrastruktur.md` 6 |
 | Spurweite | `TrackGauge` | Abstand der Schienen in Millimetern; das Spielnetz führt ausschließlich Regelspur (E14), der Netzfilter braucht die Angabe zum Aussortieren | `betriebsgraph.md` 2 |
-| Startpaket | `StarterPackage` | Anfangsausstattung eines neuen EVU in der öffentlichen Welt | `produkt.md` 3 |
+| Startkapital-Policy | `StartingCapitalPolicy` | unveränderliche, im signierten Weltentwurf gehashte Regel für die EVU-Eröffnungsbilanz: endliche Integer-Cent fachlich als `bigint` und über JSON als kanonischer Dezimalstring oder `unlimited` ohne Zahlenwert | `wirtschaft.md` 1.1, `adr/0028-getrennter-tutorial-und-wettbewerbsstart.md` |
+| Startpaket | `StarterPackage` | didaktische Anfangsausstattung ausschließlich im getrennten Tutorial-Deployment; in öffentlichen Wettbewerbswelten unzulässig | `produkt.md` 3, `adr/0028-getrennter-tutorial-und-wettbewerbsstart.md` |
 | Stationsanreicherung | `StationEnrichment` | je Betriebsstelle mit Fahrgastwechsel angereicherter Datensatz aus Bahnhofskategorie und Stationsausstattung, mit eigener Herkunft je Feld | `betriebsgraph.md` 13 |
 | Stationsausstattung | `StationAmenities` | Menge der an einer Betriebsstelle vorhandenen Ausstattungsmerkmale — Barrierefreiheit, Wetterschutz, Fahrgastinformation und mehr | `betriebsgraph.md` 13 |
 | Stellwerksbauart | `InterlockingKind` | mechanisch, elektromechanisch, Relais-, elektronisches oder digitales Stellwerk; entscheidet Fahrstraßenbilde- und Fahrstraßenauflösezeit | `infrastruktur.md` 6 |

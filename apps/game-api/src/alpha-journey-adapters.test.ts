@@ -57,17 +57,20 @@ describe("autoritative Alpha-Journey-Adapter", () => {
   it("sendet Tutorial-Resets mit stabiler weltgebundener Kommando-ID an genau einen Writer", async () => {
     const authority = writer();
     const port = new AuthoritativeTutorialResetPort(authority);
+    const tx = { transactionBoundary: true } as never;
 
-    await port.resetAndSeedAccount(WORLD_ID, ACCOUNT_ID, 2);
-    await port.resetAndSeedAccount(WORLD_ID, ACCOUNT_ID, 2);
+    await port.resetAndSeedAccount(tx, WORLD_ID, ACCOUNT_ID, 2, 123);
+    await port.resetAndSeedAccount(tx, WORLD_ID, ACCOUNT_ID, 2, 123);
 
     expect(authority.resetTutorial).toHaveBeenCalledTimes(2);
     expect(authority.resetTutorial).toHaveBeenNthCalledWith(1, {
       schemaVersion: "zugfolge-alpha-tutorial-reset-command/v1",
       commandId: `tutorial-reset:${WORLD_ID}:${ACCOUNT_ID}:2`,
+      tx,
       worldId: WORLD_ID,
       accountId: ACCOUNT_ID,
       resetNumber: 2,
+      atS: 123,
     });
     expect(authority.resetTutorial).toHaveBeenNthCalledWith(2, expect.objectContaining({
       commandId: `tutorial-reset:${WORLD_ID}:${ACCOUNT_ID}:2`,

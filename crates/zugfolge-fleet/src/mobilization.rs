@@ -137,6 +137,8 @@ pub struct MobilizationFormation {
     pub id: String,
     pub operator_id: String,
     pub vehicle_ids: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_receipt_id: Option<String>,
     pub service_line_ids: Vec<String>,
     pub availability: MobilizationAvailability,
     pub procurement: MobilizationProcurement,
@@ -151,6 +153,8 @@ pub struct MobilizationPersonnelDuty {
     pub id: String,
     pub operator_id: String,
     pub formation_ids: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_receipt_id: Option<String>,
     pub status: MobilizationDutyStatus,
     pub valid_from: u64,
     pub valid_until: u64,
@@ -161,6 +165,8 @@ pub struct MobilizationPersonnelDuty {
 pub struct MobilizationPathReservation {
     pub id: String,
     pub operator_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_receipt_id: Option<String>,
     pub service_line_ids: Vec<String>,
     pub status: MobilizationPathStatus,
     pub valid_from: u64,
@@ -213,6 +219,9 @@ impl MobilizationSnapshot {
         for formation in &self.formations {
             non_empty(&formation.operator_id, "formations[].operatorId")?;
             string_list(&formation.vehicle_ids, "formations[].vehicleIds")?;
+            if let Some(receipt_id) = &formation.path_receipt_id {
+                non_empty(receipt_id, "formations[].pathReceiptId")?;
+            }
             string_list(&formation.service_line_ids, "formations[].serviceLineIds")?;
             valid_window(
                 formation.available_from,
@@ -242,6 +251,9 @@ impl MobilizationSnapshot {
         for duty in &self.personnel_duties {
             non_empty(&duty.operator_id, "personnelDuties[].operatorId")?;
             string_list(&duty.formation_ids, "personnelDuties[].formationIds")?;
+            if let Some(receipt_id) = &duty.path_receipt_id {
+                non_empty(receipt_id, "personnelDuties[].pathReceiptId")?;
+            }
             valid_window(
                 duty.valid_from,
                 duty.valid_until,
@@ -250,6 +262,9 @@ impl MobilizationSnapshot {
         }
         for path in &self.path_reservations {
             non_empty(&path.operator_id, "pathReservations[].operatorId")?;
+            if let Some(receipt_id) = &path.path_receipt_id {
+                non_empty(receipt_id, "pathReservations[].pathReceiptId")?;
+            }
             string_list(&path.service_line_ids, "pathReservations[].serviceLineIds")?;
             valid_window(
                 path.valid_from,
@@ -444,6 +459,10 @@ fn write_formation(output: &mut String, formation: &MobilizationFormation) {
     write_json_string(output, &formation.id);
     output.push_str(",\"operatorId\":");
     write_json_string(output, &formation.operator_id);
+    if let Some(receipt_id) = &formation.path_receipt_id {
+        output.push_str(",\"pathReceiptId\":");
+        write_json_string(output, receipt_id);
+    }
     output.push_str(",\"procurement\":");
     write_json_string(output, formation.procurement.as_str());
     output.push_str(",\"serviceLineIds\":");
@@ -460,6 +479,10 @@ fn write_duty(output: &mut String, duty: &MobilizationPersonnelDuty) {
     write_json_string(output, &duty.id);
     output.push_str(",\"operatorId\":");
     write_json_string(output, &duty.operator_id);
+    if let Some(receipt_id) = &duty.path_receipt_id {
+        output.push_str(",\"pathReceiptId\":");
+        write_json_string(output, receipt_id);
+    }
     output.push_str(",\"status\":");
     write_json_string(output, duty.status.as_str());
     write!(
@@ -475,6 +498,10 @@ fn write_path(output: &mut String, path: &MobilizationPathReservation) {
     write_json_string(output, &path.id);
     output.push_str(",\"operatorId\":");
     write_json_string(output, &path.operator_id);
+    if let Some(receipt_id) = &path.path_receipt_id {
+        output.push_str(",\"pathReceiptId\":");
+        write_json_string(output, receipt_id);
+    }
     output.push_str(",\"serviceLineIds\":");
     write_string_array(output, &path.service_line_ids);
     output.push_str(",\"status\":");
@@ -501,6 +528,7 @@ mod tests {
                 id: "formation-1".into(),
                 operator_id: "operator-1".into(),
                 vehicle_ids: vec!["vehicle-2".into(), "vehicle-1".into()],
+                path_receipt_id: Some("receipt-1".into()),
                 service_line_ids: vec!["S1".into()],
                 availability: MobilizationAvailability::Available,
                 procurement: MobilizationProcurement::Delivered,
@@ -526,6 +554,7 @@ mod tests {
                 id: "duty-1".into(),
                 operator_id: "operator-1".into(),
                 formation_ids: vec!["formation-1".into()],
+                path_receipt_id: Some("receipt-1".into()),
                 status: MobilizationDutyStatus::Ready,
                 valid_from: 1_786_233_000,
                 valid_until: 1_788_825_600,
@@ -533,6 +562,7 @@ mod tests {
             path_reservations: vec![MobilizationPathReservation {
                 id: "path-1".into(),
                 operator_id: "operator-1".into(),
+                path_receipt_id: Some("receipt-1".into()),
                 service_line_ids: vec!["S1".into()],
                 status: MobilizationPathStatus::Confirmed,
                 valid_from: 1_786_233_000,

@@ -2,6 +2,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { MIGRATIONS_FOLDER, schema, worlds } from "@zugfolge/db";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
+import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EconomyDatabase } from "./ledger.js";
@@ -9,6 +10,7 @@ import { buildEconomyRelease } from "./release.js";
 import {
   dispatchEconomyOutbox,
   EconomyStateConflictError,
+  listEconomyWorldIds,
   listPendingEconomyEffects,
   loadEconomyWorldState,
   persistEconomyTransition,
@@ -117,5 +119,23 @@ describe("persistenter M6-Weltzustand und Outbox", () => {
       committedAt: new Date(1_000),
     })).rejects.toThrow(/Weltisolation/);
     expect((await loadEconomyWorldState(db, WORLD_ID))?.revision).toBe(0);
+  });
+
+  it("haelt einen persistierten Economy-Zustand waehrend World-Provisioning scheduler-inert", async () => {
+    const started = startEconomyWorld({
+      worldId: WORLD_ID,
+      seed: 17n,
+      durationMonths: 6,
+      release,
+      lots: Array.from({ length: 8 }, (_, index) => ({ id: `provisioning-${index}`, size: 100 - index, attractiveness: index })),
+      authorityBudgets: [],
+      accounts: [],
+    });
+    await persistEconomyTransition(db, { expectedRevision: null, ...started, committedAt: new Date(0) });
+    await db.update(worlds).set({ lifecycleStatus: "provisioning" }).where(eq(worlds.id, WORLD_ID));
+    expect(await listEconomyWorldIds(db)).toEqual([]);
+
+    await db.update(worlds).set({ lifecycleStatus: "active" }).where(eq(worlds.id, WORLD_ID));
+    expect(await listEconomyWorldIds(db)).toEqual([WORLD_ID]);
   });
 });

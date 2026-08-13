@@ -61,14 +61,22 @@ Zugdaten. → [ADR-0026](adr/0026-karte-als-spielzentrum.md)
 Zugfolge ist komplex. Ohne bewusstes Onboarding verliert es Spieler in den
 ersten zehn Minuten.
 
-- **Tutorial-Welt**, beschleunigt, fünf geführte Kapitel: erste Ausschreibung →
-  Fahrzeug leasen → Trasse beantragen → Betriebsprogramm bauen → erste Störung
-  überstehen.
-- **Startpaket in der öffentlichen Welt:** ein kleiner, bereits notvergebener
-  Verkehrsvertrag plus Leasingfahrzeug. Ist für die Welt ein administrativer
-  Startbestand freigegeben, stammt dieses aus dessen konkreten, gebrauchten
-  Fahrzeugen und bleibt mitsamt Zustand und Geschichte persistent. Kein
-  Startkapital-Cliff.
+- **Tutorial-Welt**, als eigenes signiertes, privates und ungewertetes
+  Deployment beschleunigt: fünf geführte Kapitel von der ersten Ausschreibung
+  bis zur ersten Störung. Nur hier gibt es ein didaktisches Startpaket mit
+  vorbereitetem Vertrag, Leasingfahrzeug, Personal, Trasse und
+  Betriebsprogramm.
+- **Öffentliche Wettbewerbswelt ohne Startpaket:** Das neue EVU erhält weder
+  Vertrag noch Fahrzeug, Trasse, Personal oder Betriebsprogramm. Seine
+  idempotent angelegten Bücher beginnen mit der unveränderlichen,
+  weltgebundenen `StartingCapitalPolicy`; Standard ist `finite` mit null Cent,
+  `unlimited` ist eine ausdrückliche Weltregel und kein Geldwert. Der erste Weg
+  in den Betrieb führt über den veröffentlichten Vergabekalender. Für das erste
+  Gebot darf das EVU ein signiert weltgebundenes Eigenbetriebs-Konzept nur unter
+  aufschiebender Zuschlagsbedingung kalkulieren; Formation, Personal und Trasse
+  werden erst nach einem regulären Zuschlag bereitgestellt und erneut geprüft.
+  Danach gelten normale Kredit-, Leasing- und Sekundärmarktwege. Ein verborgenes
+  Ersatzpaket ist ausgeschlossen. → [ADR-0028](adr/0028-getrennter-tutorial-und-wettbewerbsstart.md)
 - **Glossar-Layer** über der gesamten Oberfläche: jeder Fachbegriff — Sperrzeit,
   Durchrutschweg, Wendezeit, Zugsicherung, Bremshundertstel — ist anklickbar
   erklärt. Kein Wiki-Zwang.

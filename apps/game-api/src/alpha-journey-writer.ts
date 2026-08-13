@@ -10,8 +10,11 @@ import {
   accounts,
   alphaWorldProfiles,
   domainEvents,
+  onboardingGrants,
   operatingProgramVersions,
+  operatorContracts,
   operators,
+  vehicleAssets,
   worlds,
 } from "@zugfolge/db";
 import { canonicalizeProgram, operatingProgramTemplates } from "@zugfolge/dispatch";
@@ -33,7 +36,7 @@ import {
   type OperatingRuntime,
   type OperatingRuntimeEvent,
 } from "@zugfolge/runtime-native";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 
 import {
   ALPHA_START_PACKAGE_COMMAND_SCHEMA,
@@ -206,17 +209,82 @@ export class GameAlphaJourneyCommandWriter implements AlphaJourneyCommandWriter 
     private readonly publishRuntimeEvents?: (events: readonly OperatingRuntimeEvent[]) => Promise<void> | void,
   ) {}
 
+  private async startPackageSlotForAccount(
+    db: AlphaDatabase,
+    worldId: string,
+    accountId: string,
+  ): Promise<{ readonly slot: StartPackageAuthoritySlot; readonly operatorExists: boolean }> {
+    const slots = this.configuration.startPackageSlots.filter((candidate) => candidate.worldId === worldId);
+    if (slots.length === 0) {
+      throw new AlphaConflictError("Kein autoritativ vorbereitetes Startpaket ist fuer diese Welt konfiguriert.", "start_package_capacity_exhausted");
+    }
+    const [grant, accountOperators] = await Promise.all([
+      db.select({ operatorId: onboardingGrants.operatorId }).from(onboardingGrants).where(and(
+        eq(onboardingGrants.worldId, worldId),
+        eq(onboardingGrants.accountId, accountId),
+        eq(onboardingGrants.revoked, false),
+      )).limit(1),
+      db.select({ id: operators.id }).from(operators).where(and(
+        eq(operators.worldId, worldId),
+        eq(operators.foundingAccountId, accountId),
+      )),
+    ]);
+    const accountOperatorIds = new Set(accountOperators.map((operator) => operator.id));
+    if (grant[0] !== undefined) {
+      const grantedSlot = slots.find((candidate) => candidate.operatorId === grant[0]!.operatorId);
+      if (grantedSlot === undefined || !accountOperatorIds.has(grantedSlot.operatorId)) {
+        throw new AlphaConflictError("Persistiertes Tutorial-Startpaket stimmt nicht mit den vorbereiteten Slots ueberein.", "start_package_release_mismatch");
+      }
+      return { slot: grantedSlot, operatorExists: true };
+    }
+    const assignedSlot = slots.find((candidate) => accountOperatorIds.has(candidate.operatorId));
+    if (assignedSlot !== undefined) return { slot: assignedSlot, operatorExists: true };
+
+    const usedOperatorIds = new Set((await db.select({ id: operators.id }).from(operators)
+      .where(eq(operators.worldId, worldId))).map((operator) => operator.id));
+    const freeSlot = slots.find((candidate) => !usedOperatorIds.has(candidate.operatorId));
+    if (freeSlot === undefined) {
+      throw new AlphaConflictError("Kein autoritativ vorbereitetes Startpaket ist mehr frei.", "start_package_capacity_exhausted");
+    }
+    return { slot: freeSlot, operatorExists: false };
+  }
+
   async resetTutorial(command: TutorialResetCommand): Promise<void> {
-    if (command.schemaVersion !== ALPHA_TUTORIAL_RESET_COMMAND_SCHEMA || !Number.isSafeInteger(command.resetNumber) || command.resetNumber < 0) {
+    if (
+      command.schemaVersion !== ALPHA_TUTORIAL_RESET_COMMAND_SCHEMA
+      || !Number.isSafeInteger(command.resetNumber)
+      || command.resetNumber < 0
+      || !Number.isSafeInteger(command.atS)
+      || command.atS < 0
+    ) {
       throw new Error("Tutorialreset-Kommando ist ungueltig.");
     }
-    await this.db.transaction(async (tx) => {
+    const write = async (tx: AlphaDatabase): Promise<void> => {
       await tx.execute(sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${command.worldId} for update`);
       const [profile, account] = await Promise.all([
-        tx.select().from(alphaWorldProfiles).where(eq(alphaWorldProfiles.worldId, command.worldId)).limit(1),
+        tx.select({
+          profileKind: alphaWorldProfiles.profileKind,
+          profileState: alphaWorldProfiles.state,
+          accelerationFactor: alphaWorldProfiles.accelerationFactor,
+          worldKind: worlds.worldKind,
+          rankingStatus: worlds.rankingStatus,
+          lifecycleStatus: worlds.lifecycleStatus,
+        }).from(alphaWorldProfiles)
+          .innerJoin(worlds, eq(worlds.id, alphaWorldProfiles.worldId))
+          .where(eq(alphaWorldProfiles.worldId, command.worldId))
+          .limit(1),
         tx.select().from(accounts).where(and(eq(accounts.worldId, command.worldId), eq(accounts.id, command.accountId))).limit(1),
       ]);
-      if (profile[0]?.profileKind !== "tutorial" || profile[0].accelerationFactor <= 1 || account[0]?.erasedAt !== null) {
+      if (
+        profile[0]?.profileKind !== "tutorial"
+        || profile[0].profileState !== "running"
+        || profile[0].accelerationFactor <= 1
+        || profile[0].worldKind !== "private"
+        || profile[0].rankingStatus !== "unranked"
+        || profile[0].lifecycleStatus !== "active"
+        || account[0] === undefined
+        || account[0].erasedAt !== null
+      ) {
         throw new AlphaConflictError("Tutorialreset ist nur fuer ein aktives Konto in einer beschleunigten Tutorial-Welt erlaubt.", "not_tutorial_world");
       }
       const priorEvents = await tx.select({ payload: domainEvents.payload }).from(domainEvents).where(and(
@@ -224,19 +292,49 @@ export class GameAlphaJourneyCommandWriter implements AlphaJourneyCommandWriter 
         eq(domainEvents.eventType, "alpha.tutorial-session-seeded"),
       ));
       if (priorEvents.some((event) => payloadCommandId(event.payload) === command.commandId)) return;
-      const operatorName = `${this.configuration.tutorialOperatorNamePrefix} ${command.accountId.slice(0, 8)} R${command.resetNumber}`;
-      const [operator] = await tx.insert(operators).values({
-        worldId: command.worldId,
-        foundingAccountId: command.accountId,
-        name: operatorName,
-      }).returning({ id: operators.id });
-      if (operator === undefined) throw new Error("Neue Tutorial-Sitzung konnte kein EVU anlegen.");
+      const assignment = await this.startPackageSlotForAccount(tx as unknown as AlphaDatabase, command.worldId, command.accountId);
+      if (!assignment.operatorExists) {
+        await tx.insert(operators).values({
+          id: assignment.slot.operatorId,
+          worldId: command.worldId,
+          foundingAccountId: command.accountId,
+          name: assignment.slot.operatorName,
+        });
+      }
       const [head] = await tx.select({ sequence: domainEvents.sequence }).from(domainEvents)
         .where(eq(domainEvents.worldId, command.worldId)).orderBy(desc(domainEvents.sequence)).limit(1);
       const [world] = await tx.select({ epoch: worlds.epoch }).from(worlds).where(eq(worlds.id, command.worldId)).limit(1);
       if (world === undefined) throw new Error("Tutorial-Welt fehlt.");
       const economy = await loadEconomyWorldState(tx as unknown as EconomyDatabase, command.worldId);
       if (economy === undefined) throw new AlphaConflictError("Tutorial-Wirtschaftswelt ist nicht gestartet.", "tutorial_economy_unavailable");
+      const [rentalContracts, heldVehicles, activePrograms, fleetCheckpoint] = await Promise.all([
+        tx.select({ id: operatorContracts.id }).from(operatorContracts).where(and(
+          eq(operatorContracts.worldId, command.worldId),
+          eq(operatorContracts.contractType, "vehicle-rental"),
+          or(eq(operatorContracts.offerorOperatorId, assignment.slot.operatorId), eq(operatorContracts.offereeOperatorId, assignment.slot.operatorId)),
+          inArray(operatorContracts.status, ["accepted", "active", "completed"]),
+        )),
+        tx.select({ id: vehicleAssets.vehicleId }).from(vehicleAssets).where(and(
+          eq(vehicleAssets.worldId, command.worldId), eq(vehicleAssets.holderOperatorId, assignment.slot.operatorId),
+        )),
+        tx.select({ id: operatingProgramVersions.id }).from(operatingProgramVersions).where(and(
+          eq(operatingProgramVersions.worldId, command.worldId),
+          eq(operatingProgramVersions.operatorId, assignment.slot.operatorId),
+          eq(operatingProgramVersions.status, "active"),
+        )),
+        loadFleetProducerCheckpoint(tx as unknown as EconomyDatabase, command.worldId),
+      ]);
+      const evidenceBoundary = Object.freeze({
+        schemaVersion: "zugfolge-tutorial-evidence-boundary/v1" as const,
+        bidIds: Object.freeze([...economy.tenders.values()].flatMap((entry) => entry.bids)
+          .filter((bid) => bid.operatorId === assignment.slot.operatorId).map((bid) => bid.id).sort()),
+        rentalContractIds: Object.freeze(rentalContracts.map(({ id }) => id).sort()),
+        heldVehicleIds: Object.freeze(heldVehicles.map(({ id }) => id).sort()),
+        confirmedPathIds: Object.freeze((fleetCheckpoint?.snapshot.pathReservations ?? [])
+          .filter((path) => path.operatorId === assignment.slot.operatorId && path.status === "confirmed")
+          .map((path) => path.id).sort()),
+        activeProgramIds: Object.freeze(activePrograms.map(({ id }) => id).sort()),
+      });
       const seeded = seedTutorialAccount(economy, { commandId: command.commandId, accountId: command.accountId });
       await persistEconomyTransition(tx as unknown as EconomyDatabase, {
         expectedRevision: economy.revision,
@@ -248,16 +346,45 @@ export class GameAlphaJourneyCommandWriter implements AlphaJourneyCommandWriter 
         worldId: command.worldId,
         sequence: (head?.sequence ?? 0) + 1,
         eventType: "alpha.tutorial-session-seeded",
-        payload: { commandId: command.commandId, accountId: command.accountId, operatorId: operator.id, resetNumber: command.resetNumber },
-        occurredAt: world.epoch,
+        payload: { commandId: command.commandId, accountId: command.accountId, operatorId: assignment.slot.operatorId, resetNumber: command.resetNumber, startedAtS: command.atS, evidenceBoundary },
+        occurredAt: new Date(world.epoch.getTime() + command.atS * 1_000),
       });
-    });
+    };
+    if (command.tx !== undefined) {
+      await write(command.tx);
+    } else {
+      await this.db.transaction((tx) => write(tx as unknown as AlphaDatabase));
+    }
   }
 
   async grantStartPackage(command: StartPackageCommand): Promise<StartPackageProof> {
     if (command.schemaVersion !== ALPHA_START_PACKAGE_COMMAND_SCHEMA) throw new Error("Startpaket-Kommando ist ungueltig.");
     const tx = command.tx;
     await tx.execute(sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${command.worldId} for update`);
+    const [startPackageWorld] = await tx.select({
+      profileKind: alphaWorldProfiles.profileKind,
+      profileState: alphaWorldProfiles.state,
+      accelerationFactor: alphaWorldProfiles.accelerationFactor,
+      worldKind: worlds.worldKind,
+      rankingStatus: worlds.rankingStatus,
+      lifecycleStatus: worlds.lifecycleStatus,
+    }).from(alphaWorldProfiles)
+      .innerJoin(worlds, eq(worlds.id, alphaWorldProfiles.worldId))
+      .where(eq(alphaWorldProfiles.worldId, command.worldId))
+      .limit(1);
+    if (
+      startPackageWorld?.profileKind !== "tutorial"
+      || startPackageWorld.profileState !== "running"
+      || startPackageWorld.accelerationFactor <= 1
+      || startPackageWorld.worldKind !== "private"
+      || startPackageWorld.rankingStatus !== "unranked"
+      || startPackageWorld.lifecycleStatus !== "active"
+    ) {
+      throw new AlphaConflictError(
+        "Startpaket ist ausschliesslich in einer laufenden, beschleunigten Tutorial-Welt verfuegbar.",
+        "start_package_tutorial_only",
+      );
+    }
     const priorEvents = await tx.select({ payload: domainEvents.payload }).from(domainEvents).where(and(
       eq(domainEvents.worldId, command.worldId),
       eq(domainEvents.eventType, "alpha.start-package-authority-committed"),
@@ -266,22 +393,15 @@ export class GameAlphaJourneyCommandWriter implements AlphaJourneyCommandWriter 
     const replayProof = replay === undefined ? undefined : payloadProof(replay.payload);
     if (replayProof !== undefined) return replayProof;
 
-    const occupied = await tx.select({ operatorId: operators.id }).from(operators).where(and(
-      eq(operators.worldId, command.worldId),
-      eq(operators.foundingAccountId, command.accountId),
-    )).limit(1);
-    const usedOperatorIds = new Set((await tx.select({ id: operators.id }).from(operators).where(eq(operators.worldId, command.worldId))).map((row) => row.id));
-    let slot = occupied[0] === undefined
-      ? this.configuration.startPackageSlots.find((candidate) => candidate.worldId === command.worldId && !usedOperatorIds.has(candidate.operatorId))
-      : this.configuration.startPackageSlots.find((candidate) => candidate.worldId === command.worldId && candidate.operatorId === occupied[0]!.operatorId);
-    if (slot === undefined) throw new AlphaConflictError("Kein autoritativ vorbereitetes Startpaket ist mehr frei.", "start_package_capacity_exhausted");
+    const assignment = await this.startPackageSlotForAccount(tx, command.worldId, command.accountId);
+    const slot = assignment.slot;
     const [account] = await tx.select().from(accounts).where(and(
       eq(accounts.worldId, command.worldId),
       eq(accounts.id, command.accountId),
       eq(accounts.keycloakSubject, command.keycloakSubject),
     )).limit(1);
     if (account === undefined || account.erasedAt !== null) throw new Error("Startpaketkonto stimmt nicht mit der Keycloak-Identitaet ueberein.");
-    if (occupied[0] === undefined) {
+    if (!assignment.operatorExists) {
       await tx.insert(operators).values({ id: slot.operatorId, worldId: command.worldId, foundingAccountId: command.accountId, name: slot.operatorName });
     }
 

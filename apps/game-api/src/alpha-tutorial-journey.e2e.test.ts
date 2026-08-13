@@ -1,5 +1,5 @@
 import { PGlite } from "@electric-sql/pglite";
-import { TutorialService } from "@zugfolge/alpha";
+import { TutorialService, type TutorialResetPort } from "@zugfolge/alpha";
 import {
   accounts,
   alphaWorldProfiles,
@@ -8,6 +8,7 @@ import {
   operatingProgramVersions,
   operatorContracts,
   operators,
+  tutorialProgress,
   vehicleAssets,
   worlds,
 } from "@zugfolge/db";
@@ -29,6 +30,7 @@ import { GameAlphaJourneyCommandWriter } from "./alpha-journey-writer.js";
 
 const WORLD_ID = "00000000-0000-4000-8000-000000000061";
 const ACCOUNT_ID = "00000000-0000-4000-8000-000000000062";
+const SLOT_OPERATOR_ID = "00000000-0000-4000-8000-000000000063";
 
 function release() {
   return buildEconomyRelease({
@@ -46,6 +48,7 @@ describe("Tutorial-E2E ueber alle fuenf Kapitel und Reset", () => {
   let client: PGlite;
   let db: ReturnType<typeof drizzle<typeof schema>>;
   let tutorial: TutorialService;
+  let resetPort: AuthoritativeTutorialResetPort;
 
   beforeEach(async () => {
     client = new PGlite();
@@ -63,8 +66,22 @@ describe("Tutorial-E2E ueber alle fuenf Kapitel und Reset", () => {
       lots: Array.from({ length: 8 }, (_, index) => ({ id: `lot-${index}`, size: 10, attractiveness: index })), authorityBudgets: [], accounts: [ACCOUNT_ID],
     });
     await persistEconomyTransition(db, { expectedRevision: null, ...started, committedAt: new Date(0) });
-    const writer = new GameAlphaJourneyCommandWriter(db, {} as never, { startPackageSlots: [], tutorialOperatorNamePrefix: "Tutorialbahn" });
-    tutorial = new TutorialService(db, new AuthoritativeTutorialResetPort(writer));
+    const writer = new GameAlphaJourneyCommandWriter(db, {} as never, {
+      tutorialOperatorNamePrefix: "Tutorialbahn",
+      startPackageSlots: [{
+        worldId: WORLD_ID,
+        operatorId: SLOT_OPERATOR_ID,
+        operatorName: "Tutorialbahn vorbereiteter Slot",
+        vehicleId: "tutorial-slot-vehicle",
+        formationId: "tutorial-slot-formation",
+        personnelDutyId: "tutorial-slot-duty",
+        pathReservationId: "tutorial-slot-path",
+        vehicleLeaseReceiptId: "tutorial-slot-lease",
+        trainRunIds: ["tutorial-slot-run"],
+      }],
+    });
+    resetPort = new AuthoritativeTutorialResetPort(writer);
+    tutorial = new TutorialService(db, resetPort);
   });
 
   afterEach(async () => client.close());
@@ -72,7 +89,7 @@ describe("Tutorial-E2E ueber alle fuenf Kapitel und Reset", () => {
   it("belegt jedes Kapitel erst durch den jeweiligen autoritativen Zustand und isoliert den Reset", async () => {
     expect(await tutorial.resume(WORLD_ID, ACCOUNT_ID, 0)).toMatchObject({ chapter: 1, chapterState: "in-progress" });
     const [operator] = await db.select().from(operators);
-    expect(operator).toBeDefined();
+    expect(operator).toMatchObject({ id: SLOT_OPERATOR_ID, foundingAccountId: ACCOUNT_ID });
 
     const economy = await loadEconomyWorldState(db, WORLD_ID);
     expect(economy).toBeDefined();
@@ -80,7 +97,7 @@ describe("Tutorial-E2E ueber alle fuenf Kapitel und Reset", () => {
     tenders.set("tutorial-tender", {
       phase: "open",
       tender: { id: "tutorial-tender", lotId: "lot-0" },
-      bids: [{ id: "tutorial-bid", operatorId: operator!.id }],
+      bids: [{ id: "tutorial-bid", operatorId: operator!.id, submittedAt: 1 }],
     } as never);
     await persistEconomyTransition(db, {
       expectedRevision: economy!.revision,
@@ -128,8 +145,73 @@ describe("Tutorial-E2E ueber alle fuenf Kapitel und Reset", () => {
     ]);
     expect(await tutorial.resume(WORLD_ID, ACCOUNT_ID, 6)).toMatchObject({ chapter: 5, chapterState: "completed" });
 
+    const beforeReset = await loadEconomyWorldState(db, WORLD_ID);
+    const tendersAtResetSecond = new Map(beforeReset!.tenders);
+    const tenderAtResetSecond = tendersAtResetSecond.get("tutorial-tender")!;
+    tendersAtResetSecond.set("tutorial-tender", {
+      ...tenderAtResetSecond,
+      bids: [...tenderAtResetSecond.bids, { id: "old-bid-at-reset-second", operatorId: operator!.id, submittedAt: 7 }],
+    } as never);
+    await persistEconomyTransition(db, {
+      expectedRevision: beforeReset!.revision,
+      state: Object.freeze({ ...beforeReset!, tenders: tendersAtResetSecond, revision: beforeReset!.revision + 1, processedCommands: new Set([...beforeReset!.processedCommands, "old-bid-at-reset-second"]) }),
+      effects: { notices: [], journal: [] }, committedAt: new Date(7_000),
+    });
+
     const reset = await tutorial.reset(WORLD_ID, ACCOUNT_ID, 7);
     expect(reset).toMatchObject({ chapter: 1, chapterState: "in-progress", resetCount: 1 });
-    expect((await db.select().from(operators)).filter((candidate) => candidate.name.startsWith("Tutorialbahn"))).toHaveLength(2);
+    expect((await db.select().from(operators)).filter((candidate) => candidate.id === SLOT_OPERATOR_ID)).toHaveLength(1);
+    expect((await db.select().from(domainEvents)).filter((event) => event.eventType === "alpha.tutorial-session-seeded").map((event) => event.payload)).toEqual([
+      expect.objectContaining({ operatorId: SLOT_OPERATOR_ID, resetNumber: 0, startedAtS: 0 }),
+      expect.objectContaining({
+        operatorId: SLOT_OPERATOR_ID,
+        resetNumber: 1,
+        startedAtS: 7,
+        evidenceBoundary: expect.objectContaining({ bidIds: expect.arrayContaining(["old-bid-at-reset-second"]) }),
+      }),
+    ]);
+  });
+
+  it("rollt Writer und Fortschritt gemeinsam zurück, wenn der Reset nach der Writer-Mutation fehlschlägt", async () => {
+    await tutorial.resume(WORLD_ID, ACCOUNT_ID, 0);
+    const economyBefore = await loadEconomyWorldState(db, WORLD_ID);
+    const failingPort: TutorialResetPort = {
+      resetAndSeedAccount: async (tx, worldId, accountId, resetNumber, atS) => {
+        await resetPort.resetAndSeedAccount(tx, worldId, accountId, resetNumber, atS);
+        throw new Error("failure-injection-after-writer");
+      },
+    };
+
+    await expect(new TutorialService(db, failingPort).reset(WORLD_ID, ACCOUNT_ID, 10)).rejects.toThrow("failure-injection-after-writer");
+
+    expect(await db.select().from(tutorialProgress)).toEqual([
+      expect.objectContaining({ worldId: WORLD_ID, accountId: ACCOUNT_ID, chapter: 1, resetCount: 0 }),
+    ]);
+    expect((await db.select().from(domainEvents)).filter((event) => event.eventType === "alpha.tutorial-session-seeded")).toHaveLength(1);
+    expect((await loadEconomyWorldState(db, WORLD_ID))?.revision).toBe(economyBefore?.revision);
+  });
+
+  it("serialisiert parallele Resets ohne verlorenen Zähler und setzt das Fünferlimit atomar durch", async () => {
+    await tutorial.resume(WORLD_ID, ACCOUNT_ID, 0);
+
+    await Promise.all([
+      tutorial.reset(WORLD_ID, ACCOUNT_ID, 10),
+      tutorial.reset(WORLD_ID, ACCOUNT_ID, 10),
+    ]);
+    expect((await db.select().from(tutorialProgress))[0]).toMatchObject({ resetCount: 2, chapter: 1 });
+
+    await tutorial.reset(WORLD_ID, ACCOUNT_ID, 11);
+    await tutorial.reset(WORLD_ID, ACCOUNT_ID, 12);
+    const limitRace = await Promise.allSettled([
+      tutorial.reset(WORLD_ID, ACCOUNT_ID, 13),
+      tutorial.reset(WORLD_ID, ACCOUNT_ID, 13),
+    ]);
+    expect(limitRace.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(limitRace.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(limitRace.find((result) => result.status === "rejected")).toMatchObject({
+      reason: expect.objectContaining({ code: "tutorial_reset_limit" }),
+    });
+    expect((await db.select().from(tutorialProgress))[0]).toMatchObject({ resetCount: 5, chapter: 1 });
+    expect((await db.select().from(domainEvents)).filter((event) => event.eventType === "alpha.tutorial-session-seeded")).toHaveLength(6);
   });
 });

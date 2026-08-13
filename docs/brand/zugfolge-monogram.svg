@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Zugfolge Monogramm</title>
+  <desc id="desc">Achromatische geometrische Kurzform ZF.</desc>
+  <g fill="none" stroke-width="22" stroke-linecap="square" stroke-linejoin="round">
+    <path stroke="#F1F3F7" d="M34 48H132L34 180H132" />
+    <path stroke="#A5ADBA" d="M170 180V48H226M170 108H216" />
+  </g>
+</svg>

@@ -47,6 +47,8 @@ export interface NativeFleetFormation {
   readonly id: string;
   readonly operatorId: string;
   readonly vehicleIds: readonly string[];
+  /** Explizite Herkunft aus dem autoritativen Trassenbeleg; alte Snapshots duerfen das Feld noch auslassen. */
+  readonly pathReceiptId?: string;
   readonly serviceLineIds: readonly string[];
   readonly availability: "available" | "committed" | "maintenance" | "retired";
   readonly procurement: "delivered" | "ordered" | "cancelled";
@@ -59,6 +61,7 @@ export interface NativeFleetPersonnelDuty {
   readonly id: string;
   readonly operatorId: string;
   readonly formationIds: readonly string[];
+  readonly pathReceiptId?: string;
   readonly status: "ready" | "planned" | "uncovered";
   readonly validFrom: number;
   readonly validUntil: number;
@@ -67,6 +70,7 @@ export interface NativeFleetPersonnelDuty {
 export interface NativeFleetPathReservation {
   readonly id: string;
   readonly operatorId: string;
+  readonly pathReceiptId?: string;
   readonly serviceLineIds: readonly string[];
   readonly status: "confirmed" | "requested" | "rejected";
   readonly validFrom: number;

@@ -16,6 +16,7 @@ export const COMMAND_TYPES = [
   "admin.manual_disruption_create",
   "admin.abuse_sanction_activate",
   "admin.world_close",
+  "admin.world_deploy",
   "admin.tutorial_account_reset",
   "admin.alpha_invitation_create",
   "admin.alpha_invitation_resend",
@@ -33,6 +34,7 @@ export const ADMIN_ACTION_TYPES = [
   "manual_disruption_create",
   "abuse_sanction_activate",
   "world_close",
+  "world_deploy",
   "tutorial_account_reset",
   "alpha_invitation_create",
   "alpha_invitation_resend",
@@ -49,6 +51,38 @@ export interface GameAdminCapabilityProjection {
 }
 
 export type RiskClass = "standard" | "high";
+
+/**
+ * JSON-Vertrag der Startkapital-Policy. Geldbetraege verlassen die
+ * Integer-Cent-Domaene ausschliesslich als kanonischer Dezimalstring.
+ */
+export type SerializedStartingCapitalPolicy =
+  | {
+      readonly mode: "finite";
+      readonly amountCents: string;
+    }
+  | {
+      readonly mode: "unlimited";
+    };
+
+export interface WorldDefinition {
+  readonly name: string;
+  readonly kind: "public" | "tutorial" | "private" | "test";
+  readonly rankingStatus: "ranked" | "unranked";
+  readonly schedulePeriodWeeks: number;
+  readonly epoch: string;
+}
+
+/** Vollstaendiges, ausserhalb Odoos signiertes Deployment-Artefakt. */
+export interface SignedWorldDeployment {
+  readonly deployment: Readonly<Record<string, unknown>>;
+  readonly deploymentHash: string;
+  readonly signature: {
+    readonly algorithm: "Ed25519";
+    readonly keyId: string;
+    readonly valueBase64: string;
+  };
+}
 
 export interface EntitlementChangePayload {
   readonly kind: "entitlement.change";
@@ -83,12 +117,15 @@ export interface AdminCommandPayload {
   readonly requestedPeriodStart?: string;
   readonly targetReference?: string;
   readonly requestedAtS?: number;
+  readonly startingCapitalPolicy?: SerializedStartingCapitalPolicy;
+  readonly worldDefinition?: WorldDefinition;
+  readonly signedDeployment?: SignedWorldDeployment;
+  readonly deploymentHash?: string;
   readonly invitation?: {
     readonly requestReference: string;
     readonly email: string;
     readonly displayName: string;
     readonly role: "player" | "world_admin";
-    readonly startPackage?: string;
     readonly keycloakSubject?: string;
   };
   /**

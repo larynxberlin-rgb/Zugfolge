@@ -836,13 +836,20 @@ Gebietsüberschreitende GTFS-Fahrten folgen
 den qualifizierten Innenabschnitt gegen sichtbare Release-Grenzfenster; der
 deterministische Außenlauf bleibt dieselbe Zugfahrt.
 
+Nach [E28/ADR-0028](adr/0028-getrennter-tutorial-und-wettbewerbsstart.md)
+werden für die Alpha zwei getrennte Weltverträge qualifiziert: ein signiertes,
+beschleunigtes Tutorial-Deployment mit didaktischem Startpaket und ein
+signiertes öffentliches Deployment ohne Startpaket. Die öffentliche
+`StartingCapitalPolicy` ist Blueprint- und Hashbestandteil, wird bei jeder
+EVU-Gründung idempotent angewandt und nach Weltstart nicht geändert.
+
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 9.1 | Tutorial-Welt, beschleunigt, fünf geführte Kapitel | L | offen |
+| 9.1 | Eigenes signiertes Tutorial-Deployment, beschleunigt und ungewertet, mit didaktischem Startpaket und fünf geführten Kapiteln | L | offen |
 | 9.2 | **Weltstart mit Eigenbetrieb**: das gesamte SPNV-Netz der Region fährt ab Sekunde eins | M | erledigt |
-| 9.2a | **Administrativer Weltstartbestand**: optionaler, versionierter und auditierter Pool konkreter Gebrauchtfahrzeuge einschließlich Zustandsprofil und Lebenslauf; Zuweisung an Eigenbetrieb, Startpakete und servereigene Vermieter ohne Fahrzeugduplikate | M | offen |
-| 9.3 | Onboarding in der öffentlichen Welt: Startpaket, Kapazitäts-Heatmap, Glossar-Layer | M | offen |
-| 9.4 | Admin- und Auditwerkzeuge, Vier-Augen-Prinzip bei Hochrisikoaktionen | M | offen |
+| 9.2a | **Administrativer Weltstartbestand**: optionaler, versionierter und auditierter Pool konkreter Gebrauchtfahrzeuge einschließlich Zustandsprofil und Lebenslauf; im öffentlichen Deployment Zuweisung nur an Eigenbetrieb und servereigene Vermieter, im getrennten Tutorial-Deployment zusätzlich an das didaktische Startpaket, stets ohne Fahrzeugduplikate | M | offen |
+| 9.3 | Öffentlicher Einstieg ohne Startpaket: weltgebundene Eröffnungsbilanz aus der signierten `StartingCapitalPolicy`, nachgewiesener Nullstart über reguläre Ausschreibung mit weltgebundener `award-contingent-wet-lease`-Mobilisierung sowie Kapazitäts-Heatmap und Glossar-Layer | M | offen |
+| 9.4 | Admin- und Auditwerkzeuge, einschließlich zweiphasiger Odoo-Weltkonfiguration, externer Ed25519-Signatur, Game-seitiger Neuprüfung und Vier-Augen-Prinzip bei Hochrisikoaktionen | M | offen |
 | 9.5 | **Betriebsreife**: Observability, Backup und Restore, Incident-Runbooks. Gehört vor die erste Welt mit echten Spielern, nicht in die Monetarisierungsphase. Der Health-Check-Vertrag (`packages/health`, seit M2) liegt bereits — M9.5 baut Alarmierung, Dashboards und Backup darauf, zieht ihn nicht mehr nachträglich ein | L | offen |
 | 9.6 | Rate Limits, Anti-Bot-Prüfungen, Anomalieerkennung für Trassenfenster und Märkte | M | offen |
 | 9.7 | Telemetrie, Balancing-Dashboards, Feedbackkanal | M | offen |
@@ -851,12 +858,17 @@ deterministische Außenlauf bleibt dieselbe Zugfahrt.
 | 9.10 | **Jährliche Infrastrukturaktualisierung** (E22): `InfraRelease`-Neubau aus aktualisiertem `osm-pbf-lhe` und der Trassenfinder-Infrastruktur-API zu jedem realen Fahrplanwechsel; Übernahmeverfahren für eine laufende Welt zum nächsten Periodenwechsel, ohne Invariante 1 zu verletzen | L | offen |
 
 Phase 2 verdrahtet M9.1 und M9.3 im Repository: Odoo-eingeladene Konten
-erhalten Ziel- und Tutorialzugang, Tutorial-Reset sowie Startpaket laufen über
-autoritative Single-Writer-/Economy-/Operating-Pfade, und Game Web bildet die
-fünf Kapitel sowie die öffentliche Onboarding-Reise vollständig ab. Beide
-Teilabschnitte bleiben **offen**, bis ein externes Konto den Browserlauf gegen
-neu erzeugte und signierte Zielbestände absolviert hat; der lokale PGlite-E2E
-ist dafür ein reproduzierbarer Vorabbeweis, kein Produktionsnachweis.
+erhalten Ziel- und Tutorialzugang; Tutorial-Reset und Tutorial-Startpaket laufen
+über autoritative Single-Writer-/Economy-/Operating-Pfade. Die öffentliche
+Reise gründet dagegen ein EVU mit der gehashten Eröffnungs-Policy und verwendet
+für den ersten Zuschlag die im Weltentwurf veröffentlichte
+`award-contingent-wet-lease`-Mobilisierung; danach gelten regulärer Kredit und
+Leasing-/Sekundärmarkt.
+Game Web macht diese Trennung und die Policy sichtbar. Beide Teilabschnitte
+bleiben **offen**, bis ein externes Konto den Browserlauf gegen die neu
+erzeugten und jeweils signierten Tutorial- und Wettbewerbsbestände absolviert
+hat; lokale PGlite-E2Es sind reproduzierbare Vorabbeweise, keine
+Produktionsnachweise.
 
 Phase 3 schließt die noch fehlende ausführbare Betriebsschicht für M9.4,
 M9.5 und M9.7: Einladungskonten werden nur noch über einen Odoo-

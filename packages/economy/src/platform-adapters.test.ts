@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { CostType } from "./finance.js";
 import { ledgerAccountBalance, listLedgerTransactions, openLedgerAccount, type EconomyDatabase } from "./ledger.js";
-import { createEconomyPlatformAdapters } from "./platform-adapters.js";
+import { createEconomyPlatformAdapters, ensureOperatorJournalAccounts } from "./platform-adapters.js";
 
 const WORLD_ID = "11111111-1111-1111-1111-111111111111";
 const COST_TYPES: readonly CostType[] = ["track", "station", "facility", "energy", "personnel", "administration", "vehicle", "penalty", "interest"];
@@ -58,5 +58,26 @@ describe("M6-Plattformadapter", () => {
     expect(await listLedgerTransactions(db, { worldId: WORLD_ID, operatorId: operator.id })).toHaveLength(1);
     expect(await db.select().from(mailboxMessages)).toHaveLength(2);
     expect(await db.select().from(economyEffects)).toHaveLength(3);
+  });
+
+  it("loest die bei EVU-Gruendung angelegte Kontierung nach Prozessneustart aus der DB auf", async () => {
+    await requestWorldAccess(identityDb, { worldId: WORLD_ID, keycloakSubject: "kc-dynamisch", displayName: "Dynamisch" });
+    const operator = await foundOperator(identityDb, { worldId: WORLD_ID, foundingKeycloakSubject: "kc-dynamisch", name: "Dynamische Bahn" });
+    const accounts = await ensureOperatorJournalAccounts(db, { worldId: WORLD_ID, operatorId: operator.id });
+    const restarted = createEconomyPlatformAdapters({ db });
+
+    await restarted.postJournal({
+      worldId: WORLD_ID,
+      operatorId: operator.id,
+      idempotencyKey: "dynamic:settlement:1",
+      at: 1_800_000_000,
+      description: "Dynamische Periodenabrechnung",
+      revenueCents: 10_000n,
+      postings: [{ amountCents: 2_000n, costType: "energy", costCentreId: "lot-1", reference: "period-1" }],
+    });
+
+    expect(await ledgerAccountBalance(db, { worldId: WORLD_ID, ledgerAccountId: accounts.cashAccountId })).toBe(8_000n);
+    expect(await ledgerAccountBalance(db, { worldId: WORLD_ID, ledgerAccountId: accounts.revenueAccountId })).toBe(-10_000n);
+    expect(await ledgerAccountBalance(db, { worldId: WORLD_ID, ledgerAccountId: accounts.costAccountIds.energy })).toBe(2_000n);
   });
 });

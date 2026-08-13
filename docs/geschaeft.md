@@ -17,6 +17,17 @@ Credits und Entitlements; operative Historie und Auditlog.
 Receiver → Queue → Game-Command/Entitlement-API; ein nächtlicher Reconciler
 erkennt verlorene oder doppelte Nachrichten.
 
+Die Anlage einer Welt folgt derselben Autoritätsgrenze in zwei Phasen: Odoo
+konfiguriert und prüft Weltdefinition einschließlich `StartingCapitalPolicy`
+und stellt die exakte JSON-Signierkonfiguration bereit; der externe Generator
+bindet sie in den vollständigen Kandidaten ein, der außerhalb Odoos
+Ed25519-signiert wird. Odoo liefert
+das vollständige Deployment anschließend HMAC-authentifiziert an das Game, das
+Signatur, Hashes, Releases und Policy erneut prüft und allein den Weltstart
+persistiert. Die Odoo-HMAC-Signatur ist Transportnachweis, kein Ersatz für die
+Ed25519-Releasefreigabe. Tutorial und öffentliche Wettbewerbswelt sind getrennte
+Deployments; nur das Tutorial darf ein Startpaket enthalten (E28).
+
 Die verbindliche Rollen- und Sicherheitsgrenze ist [E23 / ADR-0023](adr/0023-odoo-als-administrativer-kontrollpunkt.md); die getrennte Installation, exakten Pins, Lizenzinventar, Schlüsselrotation und Wiederherstellung stehen in [odoo-betrieb.md](odoo-betrieb.md). Das Repository enthält nur das eigene Odoo-Administrationsmodul, nie eine Odoo-Instanz oder OCA-Quellkopien. Native Odoo-Funktionen für Benutzer/Gruppen, Kontakte, CRM, Rechnungen, Zahlungen, Erstattungen, Aktivitäten und Standardansichten werden vor Eigenentwicklungen verwendet.
 
 - Odoo schreibt **niemals** direkt in Game-Tabellen.

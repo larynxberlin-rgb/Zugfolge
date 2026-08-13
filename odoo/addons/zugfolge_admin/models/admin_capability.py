@@ -11,6 +11,7 @@ ADMIN_ACTIONS = [
     ("manual_disruption_create", "Manuelle Stoerung anlegen"),
     ("abuse_sanction_activate", "Schwere Missbrauchsmassnahme aktivieren"),
     ("world_close", "Weltabschluss einleiten"),
+    ("world_deploy", "Signierte Welt bereitstellen"),
     ("tutorial_account_reset", "Tutorialkonto zuruecksetzen"),
 ]
 CAPABILITY_STATES = [
@@ -18,6 +19,7 @@ CAPABILITY_STATES = [
     ("available", "Vom Game ausfuehrbar"),
     ("unavailable", "Vom Game vorlaeufig nicht verfuegbar"),
 ]
+GLOBAL_WORLD_DEPLOY_CAPABILITY_SCOPE_ID = "00000000-0000-0000-0000-000000000000"
 
 
 class ZugfolgeAdminCapability(models.Model):

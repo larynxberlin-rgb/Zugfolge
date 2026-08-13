@@ -13,9 +13,12 @@ import {
   fleetSnapshotHash,
   loadFleetMobilizationSnapshot,
   persistFleetMobilizationSnapshot,
+  PUBLIC_ENTRY_FACILITY_SCHEMA,
+  resolvePublicEntryFacilityVehicleConcept,
   resolveVehicleConcept,
   validateFleetMobilizationSnapshot,
   verifyMobilizationReference,
+  verifyPublicEntryFacilityMobilizationReference,
   type FleetMobilizationSnapshot,
 } from "./fleet-snapshot.js";
 
@@ -33,6 +36,7 @@ function snapshot(overrides: Partial<FleetMobilizationSnapshot> = {}): FleetMobi
       id: "formation-1",
       operatorId: "operator-1",
       vehicleIds: ["vehicle-1", "vehicle-2"],
+      pathReceiptId: "receipt-1",
       serviceLineIds: ["S1"],
       availability: "available",
       procurement: "delivered",
@@ -58,6 +62,7 @@ function snapshot(overrides: Partial<FleetMobilizationSnapshot> = {}): FleetMobi
       id: "duty-1",
       operatorId: "operator-1",
       formationIds: ["formation-1"],
+      pathReceiptId: "receipt-1",
       status: "ready",
       validFrom: 9_500,
       validUntil: 20_000,
@@ -65,6 +70,7 @@ function snapshot(overrides: Partial<FleetMobilizationSnapshot> = {}): FleetMobi
     pathReservations: [{
       id: "path-1",
       operatorId: "operator-1",
+      pathReceiptId: "receipt-1",
       serviceLineIds: ["S1"],
       status: "confirmed",
       validFrom: 9_500,
@@ -134,6 +140,168 @@ describe("persistente M5→M6-Snapshot-Grenze", () => {
     });
     expect(() => verifyMobilizationReference(current, { ...reference, personnelDutyIds: ["unknown"] }, { operatorId: "operator-1", winningFormationId: "formation-1", serviceLineIds: ["S1"], operatingFrom: AT })).toThrow(/unbekannten Personaldienst/);
     expect(() => verifyMobilizationReference(current, { ...reference, snapshotHash: "0".repeat(64) }, { operatorId: "operator-1", winningFormationId: "formation-1", serviceLineIds: ["S1"], operatingFrom: AT })).toThrow(/Hash/);
+  });
+
+  it("belegt den Nullstart ausschliesslich mit den vorhandenen Public-Ressourcen und einer expliziten Facility-Referenz", () => {
+    const base = snapshot();
+    const current = snapshot({
+      formations: base.formations.map((formation) => ({ ...formation, operatorId: "public" })),
+      personnelDuties: base.personnelDuties.map((duty) => ({ ...duty, operatorId: "public" })),
+      pathReservations: base.pathReservations.map((path) => ({ ...path, operatorId: "public" })),
+    });
+    const snapshotHash = fleetSnapshotHash(current);
+    expect(resolvePublicEntryFacilityVehicleConcept(
+      current,
+      {
+        fleetRevision: 8,
+        snapshotHash,
+        formationId: "formation-1",
+        personnelDutyIds: ["duty-1"],
+        pathReservationIds: ["path-1"],
+        entryFacility: { schemaVersion: PUBLIC_ENTRY_FACILITY_SCHEMA, providerOperatorId: "public" },
+      },
+      {
+        providerOperatorId: "public",
+        signedLotVehicleIds: ["vehicle-1", "vehicle-2"],
+        signedLotPersonnelDutyIds: ["duty-1"],
+        signedLotPathReceiptIds: ["receipt-1"],
+        serviceLineIds: ["S1"],
+        operatingFrom: AT,
+      },
+    )).toMatchObject({ formationId: "formation-1", operatingCostCentsPerTrainKm: 780 });
+    const reference = {
+      fleetRevision: 8,
+      snapshotHash,
+      formationIds: ["formation-1"],
+      personnelDutyIds: ["duty-1"],
+      pathReservationIds: ["path-1"],
+      entryFacility: { schemaVersion: PUBLIC_ENTRY_FACILITY_SCHEMA, providerOperatorId: "public" },
+    } as const;
+    expect(verifyPublicEntryFacilityMobilizationReference(current, reference, {
+      providerOperatorId: "public",
+      signedLotVehicleIds: ["vehicle-1", "vehicle-2"],
+      signedLotPersonnelDutyIds: ["duty-1"],
+      signedLotPathReceiptIds: ["receipt-1"],
+      winningFormationId: "formation-1",
+      serviceLineIds: ["S1"],
+      operatingFrom: AT,
+    })).toMatchObject({ formationIds: ["formation-1"], personnelDutyIds: ["duty-1"], pathReservationIds: ["path-1"] });
+    expect(() => verifyPublicEntryFacilityMobilizationReference(current, {
+      ...reference,
+      entryFacility: undefined,
+    }, {
+      providerOperatorId: "public",
+      signedLotVehicleIds: ["vehicle-1", "vehicle-2"],
+      signedLotPersonnelDutyIds: ["duty-1"],
+      signedLotPathReceiptIds: ["receipt-1"],
+      winningFormationId: "formation-1",
+      serviceLineIds: ["S1"],
+      operatingFrom: AT,
+    })).toThrow(/Anschubvertrag/);
+  });
+
+  it("bindet Formation, Personaldienst und Trassenbeleg bei Gebot und Mobilisierung an exakt dasselbe signierte Los", () => {
+    const base = snapshot();
+    const foreignFormation = {
+      ...base.formations[0]!,
+      id: "formation-foreign-lot",
+      operatorId: "public",
+      vehicleIds: ["vehicle-foreign-lot"],
+      pathReceiptId: "receipt-foreign-lot",
+    };
+    const current = snapshot({
+      formations: [
+        { ...base.formations[0]!, operatorId: "public" },
+        foreignFormation,
+      ],
+      personnelDuties: [
+        { ...base.personnelDuties[0]!, operatorId: "public" },
+        {
+          ...base.personnelDuties[0]!,
+          id: "duty-foreign-formation",
+          operatorId: "public",
+          formationIds: [foreignFormation.id],
+          pathReceiptId: "receipt-foreign-lot",
+        },
+        {
+          ...base.personnelDuties[0]!,
+          id: "duty-foreign-lot",
+          operatorId: "public",
+          formationIds: ["formation-1"],
+        },
+      ],
+      pathReservations: [
+        { ...base.pathReservations[0]!, operatorId: "public" },
+        {
+          ...base.pathReservations[0]!,
+          id: "path-foreign-lot",
+          operatorId: "public",
+          pathReceiptId: "receipt-foreign-lot",
+        },
+      ],
+    });
+    const snapshotHash = fleetSnapshotHash(current);
+    const signed = {
+      providerOperatorId: "public",
+      signedLotVehicleIds: ["vehicle-1", "vehicle-2"],
+      signedLotPersonnelDutyIds: ["duty-1"],
+      signedLotPathReceiptIds: ["receipt-1"],
+      serviceLineIds: ["S1"],
+      operatingFrom: AT,
+    } as const;
+    const entryFacility = { schemaVersion: PUBLIC_ENTRY_FACILITY_SCHEMA, providerOperatorId: "public" } as const;
+    const cases = [
+      {
+        name: "Formation",
+        formationId: foreignFormation.id,
+        personnelDutyIds: ["duty-foreign-formation"],
+        pathReservationIds: ["path-foreign-lot"],
+        error: /Anschubformation/,
+      },
+      {
+        name: "Personaldienst",
+        formationId: "formation-1",
+        personnelDutyIds: ["duty-foreign-lot"],
+        pathReservationIds: ["path-1"],
+        error: /Anschubpersonal/,
+      },
+      {
+        name: "Trassenbeleg",
+        formationId: "formation-1",
+        personnelDutyIds: ["duty-1"],
+        pathReservationIds: ["path-foreign-lot"],
+        error: /Anschubtrasse/,
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      expect(
+        () => resolvePublicEntryFacilityVehicleConcept(current, {
+          fleetRevision: 8,
+          snapshotHash,
+          formationId: testCase.formationId,
+          personnelDutyIds: testCase.personnelDutyIds,
+          pathReservationIds: testCase.pathReservationIds,
+          entryFacility,
+        }, signed),
+        `${testCase.name} muss schon beim Gebot abgelehnt werden`,
+      ).toThrow(testCase.error);
+
+      expect(
+        () => verifyPublicEntryFacilityMobilizationReference(current, {
+          fleetRevision: 8,
+          snapshotHash,
+          formationIds: [testCase.formationId],
+          personnelDutyIds: testCase.personnelDutyIds,
+          pathReservationIds: testCase.pathReservationIds,
+          entryFacility,
+        }, {
+          ...signed,
+          winningFormationId: testCase.formationId,
+        }),
+        `${testCase.name} muss auch bei der Mobilisierung abgelehnt werden`,
+      ).toThrow(testCase.error);
+    }
   });
 
   it("liest den vom Rust-Single-Writer erzeugten Golden-Snapshot bytegleich", async () => {

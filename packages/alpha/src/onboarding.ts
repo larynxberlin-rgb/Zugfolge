@@ -55,6 +55,33 @@ export interface OnboardingPort {
   afterGrantCommitted?(worldId: string, idempotencyKey: string): Promise<void>;
 }
 
+async function assertTutorialStartPackageWorld(db: AlphaDatabase, worldId: string): Promise<void> {
+  const [world] = await db.select({
+    profileKind: alphaWorldProfiles.profileKind,
+    profileState: alphaWorldProfiles.state,
+    accelerationFactor: alphaWorldProfiles.accelerationFactor,
+    worldKind: worlds.worldKind,
+    rankingStatus: worlds.rankingStatus,
+    lifecycleStatus: worlds.lifecycleStatus,
+  }).from(alphaWorldProfiles)
+    .innerJoin(worlds, eq(worlds.id, alphaWorldProfiles.worldId))
+    .where(eq(alphaWorldProfiles.worldId, worldId))
+    .limit(1);
+  if (
+    world?.profileKind !== "tutorial"
+    || world.profileState !== "running"
+    || world.accelerationFactor <= 1
+    || world.worldKind !== "private"
+    || world.rankingStatus !== "unranked"
+    || world.lifecycleStatus !== "active"
+  ) {
+    throw new AlphaConflictError(
+      "Startpaket ist ausschliesslich in einer laufenden, beschleunigten Tutorial-Welt verfuegbar.",
+      "start_package_tutorial_only",
+    );
+  }
+}
+
 function validateSpec(spec: StartPackageSpec): void {
   if (spec.schemaVersion !== "zugfolge-start-package/v1" || spec.version.trim() === "") throw new AlphaValidationError("Startpaket-Spezifikation ist ungültig.");
   if (!Number.isSafeInteger(spec.maximumTrainKmPerPeriod) || spec.maximumTrainKmPerPeriod < 1 || spec.maximumTrainKmPerPeriod > 25_000) throw new AlphaValidationError("Startlos ist nicht klein genug begrenzt.");
@@ -66,6 +93,7 @@ export class OnboardingService {
   constructor(private readonly db: AlphaDatabase, private readonly port: OnboardingPort) {}
 
   async grantForAccount(worldId: string, accountId: string) {
+    await assertTutorialStartPackageWorld(this.db, worldId);
     const [grant] = await this.db.select().from(onboardingGrants).where(and(
       eq(onboardingGrants.worldId, worldId), eq(onboardingGrants.accountId, accountId), eq(onboardingGrants.revoked, false),
     )).limit(1);
@@ -73,9 +101,8 @@ export class OnboardingService {
   }
 
   async claim(worldId: string, keycloakSubject: string, atS: number, spec: StartPackageSpec) {
+    await assertTutorialStartPackageWorld(this.db, worldId);
     validateSpec(spec);
-    const [profile] = await this.db.select().from(alphaWorldProfiles).where(eq(alphaWorldProfiles.worldId, worldId)).limit(1);
-    if (profile?.profileKind !== "public" || profile.state !== "running") throw new AlphaConflictError("Startpaket ist nur in einer laufenden öffentlichen Welt verfügbar.");
     const [account] = await this.db.select().from(accounts).where(and(eq(accounts.worldId, worldId), eq(accounts.keycloakSubject, keycloakSubject))).limit(1);
     if (account === undefined || account.erasedAt !== null) throw new AlphaAuthorizationError("Aktives Weltkonto fehlt.");
     const result = await this.db.transaction(async (tx) => {
@@ -127,6 +154,7 @@ export class OnboardingService {
   }
 
   async assistantForAccount(worldId: string, accountId: string) {
+    await assertTutorialStartPackageWorld(this.db, worldId);
     const [grant] = await this.db.select().from(onboardingGrants).where(and(
       eq(onboardingGrants.worldId, worldId), eq(onboardingGrants.accountId, accountId), eq(onboardingGrants.revoked, false),
     )).limit(1);

@@ -10,11 +10,13 @@ heißen Simulationspfad.
 - Linux-Host mit Docker Engine und Compose v2, mindestens 16 GiB RAM und 40 GiB frei;
 - Checkout dieses Repositories;
 - das separat rechtegeprüfte Alpha-Evidenzpaket unter `var/alpha-evidence/` mit
-  `alpha-world-deployment.json`, Fleet-Katalog, signiertem InfraRelease und
-  PMTiles/Static-Artefakten. Diese ODbL-/Source-Available-Daten gehören bewusst
-  nicht in Git. Für Phase 2 muss der Weltbestand mit dem aktuellen
-  `tools/region-import/build-alpha-world.mjs` neu erzeugt, qualifiziert und
-  signiert sein; ein älterer Phase-1-Bestand enthält noch kein Startpaket;
+  **zwei getrennten signierten Welt-Deployments** — öffentlich und Tutorial —,
+  Fleet-Katalog, signiertem InfraRelease und PMTiles/Static-Artefakten. Diese
+  ODbL-/Source-Available-Daten gehören bewusst nicht in Git. Für Phase 2 müssen
+  beide Weltbestände mit dem aktuellen `tools/region-import/build-alpha-world.mjs`
+  neu erzeugt, qualifiziert und jeweils extern Ed25519-signiert sein. Ein
+  älterer Bestand mit einem öffentlichen Startpaket ist nach E28 nicht
+  startfähig;
 - erreichbarer SMTP-Server, der vor dem Einladungsversand im Realm `zugfolge`
   unter **Realm settings → Email** eingetragen wird.
 
@@ -27,15 +29,51 @@ $EDITOR .env
 pnpm alpha:up
 ```
 
-Der Weltgenerator schreibt neben dem Deployment die Datei
-`alpha-world-deployment.json.phase2.json`. Aus ihr werden die beiden kompakten
-JSON-Werte `.authority` und `.startPackage` unverändert nach
+Der Weltgenerator erhält einen öffentlichen Zielpfad `PUBLIC_OUTPUT`. Er
+schreibt den öffentlichen Kandidaten dorthin, den getrennten
+Tutorial-Kandidaten nach `${PUBLIC_OUTPUT}.tutorial.json` und dessen Sidecar
+nach `${PUBLIC_OUTPUT}.tutorial.config.json`. Aus der Sidecar werden die beiden
+kompakten JSON-Werte `.authority` und `.startPackage` unverändert nach
 `ALPHA_JOURNEY_AUTHORITY_JSON` beziehungsweise
-`ALPHA_START_PACKAGE_SPEC_JSON` übernommen. `ALPHA_PUBLIC_WORLD_ID` muss mit
-dem `worldId` des Deployments und des vorbereiteten Startpaket-Slots
-übereinstimmen. Die Ressourcenkennungen werden beim Grant noch einmal gegen
-den gepinnten Fleet-Checkpoint geprüft; die Seitendatei kann deshalb keinen
-Fahrzeug-, Personal- oder Trassenzustand erfinden.
+`ALPHA_START_PACKAGE_SPEC_JSON` übernommen. Der `worldId` jedes vorbereiteten
+Startpaket-Slots muss mit `ALPHA_TUTORIAL_WORLD_ID` und dem signierten
+Tutorial-Deployment übereinstimmen. Die Ressourcenkennungen werden beim Grant
+noch einmal gegen dessen gepinnten Fleet-Checkpoint geprüft; die Seitendatei
+kann deshalb keinen Fahrzeug-, Personal- oder Trassenzustand erfinden.
+
+Vor dem Generieren werden in zwei Odoo-`world_deploy`-Entwürfen Public- und
+Tutorial-Welt einschließlich Startkapital festgelegt. Das dort angezeigte
+`signing_configuration`-JSON wird als `PUBLIC-ODOO-CONFIG.json` beziehungsweise
+`TUTORIAL-ODOO-CONFIG.json` gespeichert und dem Generator als siebtes und
+achtes optionales Argument übergeben. Der Generator übernimmt diese Werte
+unverändert in `worldDefinition` und `startingCapitalPolicy`; ohne Dateien
+gelten die dokumentierten Pilotwerte einschließlich Public-Standard null Cent.
+
+Beide Kandidaten werden **separat** signiert; der private Schlüssel bleibt
+außerhalb des Repositorys und Odoos:
+
+```bash
+node tools/alpha-ops/sign-alpha-deployment.mjs \
+  "$PUBLIC_OUTPUT" "$ALPHA_PRIVATE_KEY" "$ALPHA_KEY_ID" \
+  "${PUBLIC_OUTPUT}.signed.json"
+node tools/alpha-ops/sign-alpha-deployment.mjs \
+  "${PUBLIC_OUTPUT}.tutorial.json" "$ALPHA_PRIVATE_KEY" "$ALPHA_KEY_ID" \
+  "${PUBLIC_OUTPUT}.tutorial.signed.json"
+```
+
+`ALPHA_WORLD_RELEASE_PATHS_JSON` enthält anschließend ein JSON-Array der
+absoluten Pfade beider signierter Dateien, zum Beispiel
+`["/evidence/alpha-world-deployment.json.signed.json","/evidence/alpha-world-deployment.json.tutorial.signed.json"]`.
+Der ältere Einzelwert `ALPHA_WORLD_RELEASE_PATH` bleibt nur als kompatibler
+Fallback für genau ein Deployment; er erfüllt den E28-Doppelweltnachweis nicht.
+
+Das getrennte öffentliche Deployment muss `ALPHA_PUBLIC_WORLD_ID`,
+`profileKind=public`, Beschleunigungsfaktor eins und eine explizite
+`startingCapitalPolicy` tragen. Der Standard ist
+`{"mode":"finite","amountCents":"0"}`. Es enthält keinen Startpaket-Slot und
+keine für einen neuen Spieler vorbereiteten Verträge oder Betriebsmittel. Die
+Game-API startet keinen Bestand, wenn Weltkennung, Profil, Deployment-Hash,
+Signatur oder Policy voneinander abweichen.
 
 `ALPHA_TUTORIAL_WORLD_ID` bezeichnet eine getrennte aktive Welt mit
 `profileKind=tutorial`, `worldKind=private`, `rankingStatus=unranked` und einem
@@ -45,6 +83,34 @@ Beschleunigung in öffentlichen Welten. Beim ersten Einstieg nimmt der
 Tutorial-Reset das nach Weltstart eingeladene Konto im selben Commit in die
 persistente Economy-Präqualifikation auf; ein bloßer Identity-Datensatz reicht
 für Kapitel eins ausdrücklich nicht.
+
+## Welten in Odoo vorbereiten und signieren
+
+Öffentliche und Tutorial-Welt werden als zwei getrennte `world_deploy`-Anträge
+angelegt. In **Zugfolge → Administrationsanträge → Neu** zunächst Weltkennung,
+Name, Art, Rankingstatus, Fahrplanperiodenlänge, Weltepoche und
+Startkapitalmodus erfassen. `finite` beginnt im deutschen Eingabefeld bei
+`0,00`; Odoo serialisiert den Wert als exakten Cent-Dezimalstring. `unlimited`
+besitzt keinen Betrag und wird nur als `∞` dargestellt.
+
+Das Formular ist Phase eins, nicht die Signatur: Aus der geprüften Definition
+entsteht ein kanonischer Blueprint-Kandidat samt Hash. Dieser exakte Kandidat
+wird außerhalb von Odoo mit dem getrennt verwahrten Ed25519-Schlüssel signiert.
+Erst danach werden vollständiges signiertes Deployment und Deployment-Hash an
+denselben Antrag angehängt. Nach **Einreichen** sind Weltdefinition, Policy und
+Deployment unveränderlich; eine andere Odoo-Person gibt den Hochrisikoantrag
+frei. **Signiert an Game senden** verwendet anschließend den HMAC-geschützten
+Odoo-Webhook. Dieser HMAC authentifiziert nur das Kommando und ersetzt niemals
+die Ed25519-Signatur des Deployments.
+
+Das Game prüft Signatur, Hashes, die ebenfalls signierte Weltdefinition,
+Weltbindung, Release-Pins und Policy erneut und
+ist allein für Persistenz und Start zuständig. Odoo erhält Profil, Policy,
+Blueprint- und Deployment-Hash anschließend nur als read-only Projektion.
+Fehlt die vom Game signierte `world_deploy`-Fähigkeitsprojektion, bleibt der
+Antrag vorbereitet und darf nicht ausgeliefert werden. Ein realer Odoo-19-
+Vier-Augen-Lauf ist weiterhin ein externer Abnahmenachweis und wird durch die
+Repositorytests nicht ersetzt.
 
 Alle `replace-*`-Werte müssen durch getrennte, zufällige Geheimnisse ersetzt
 werden. Öffentliche URLs müssen die tatsächlichen HTTPS-Adressen tragen. Der
@@ -74,7 +140,9 @@ In Odoo unter **Einstellungen → Technisch → Systemparameter** setzen:
 ## Alpha-Einladungen
 
 1. **Zugfolge → Alpha-Einladungen → Neu** öffnen.
-2. E-Mail, Anzeigename, Zielwelt, Rolle und optionales Startpaket erfassen.
+2. E-Mail, Anzeigename, Zielwelt und Rolle erfassen. Ein Startpaket darf nur
+   für die getrennte Tutorial-Welt ausgewählt werden; bei einer öffentlichen
+   Zielwelt weist Odoo die Einladung ab.
 3. **Einladung senden** wählen. Odoo signiert den Antrag; die Commerce-Bridge
    persistiert und reprüft Akteur, Capability, Welt und Fachform.
 4. Der autoritative Handler legt idempotent die Keycloak-Identität und danach
@@ -101,13 +169,24 @@ Browser. Die Web-App führt zunächst durch fünf Tutorial-Kapitel. **Tutorial
 zurücksetzen** erzeugt über den regionalen Single Writer eine neue
 Tutorial-Sitzung; Evidenz der alten Sitzung zählt danach nicht mehr.
 
-In der öffentlichen Welt fordert **Startpaket übernehmen** genau einmal den
-vorbereiteten Slot an. Game API und Economy-Runtime vollziehen dabei den
+Nur in der Tutorial-Welt fordert **Tutorial-Startpaket übernehmen** genau einmal
+den vorbereiteten Slot an. Game API und Economy-Runtime vollziehen dort den
 Operatorwechsel, den befristeten Vertrag, Leasingfahrzeug, Personal,
 Trassenfenster und Betriebsprogramm atomar. Erst nach dem Commit werden
-Livemap-/Odoo-Projektionen benachrichtigt. Kapazitäts-Heatmap, Glossar und
-Assistentenwarnungen lesen nur autoritative Projektionen. Odoo ist weder Quelle
-dieses Zustands noch Teil des heißen Pfads.
+Livemap-/Odoo-Projektionen benachrichtigt.
+
+In der öffentlichen Welt gründet der Spieler dagegen sein EVU regulär. Im
+selben Commit werden dessen Ledgerkonten und — bei `finite` einschließlich null
+Cent — die ausgeglichene Eröffnungsbuchung aus dem signierten Blueprint
+angelegt. Die Oberfläche zeigt die Policy und den veröffentlichten
+Vergabekalender. Ein erstes Gebot darf das signierte Eigenbetriebs-Konzept nur
+unter Zuschlagsbedingung kalkulieren; vor Zuschlag entstehen weder Asset,
+Nutzungsrecht noch Buchung. Am Mobilisierungsstichtag werden Formation, Personal
+und Trasse erneut belegt. Die Oberfläche verspricht beim Beitritt weder Vertrag
+noch Fahrzeug, Trasse, Personal oder
+Betriebsprogramm. Kapazitäts-Heatmap, Glossar und Assistentenwarnungen lesen nur
+autoritative Projektionen. Odoo ist weder Quelle dieses Zustands noch Teil des
+heißen Pfads.
 
 Für den Phase-2-Abnahmelauf sind mindestens zu protokollieren:
 
@@ -115,15 +194,22 @@ Für den Phase-2-Abnahmelauf sind mindestens zu protokollieren:
    Keycloak-Anmeldung;
 2. Abschluss aller fünf Tutorial-Kapitel, Reset und sichtbarer Neubeginn bei
    Kapitel eins;
-3. einmalige Startpaketübernahme in der öffentlichen Welt und idempotente
-   Wiederholung ohne zweites Fahrzeug oder zweiten Vertrag;
-4. aktives Betriebsprogramm sowie passende Fleet-, Economy- und
+3. einmalige Startpaketübernahme **in der Tutorial-Welt** und idempotente
+   Wiederholung ohne zweites Fahrzeug oder zweiten Vertrag; öffentliche
+   Startpaketabfragen müssen vor jeder Writer-Mutation abgewiesen werden;
+4. öffentliche EVU-Gründung mit exakt einmal angelegten Ledgerkonten und der
+   gehashten Eröffnungs-Policy sowie ein nachvollziehbarer erster Weg über
+   Ausschreibung, zuschlagsgebundene Betriebsbereitstellung und erneute
+   M5-Mobilisierungsprüfung;
+5. aktives Tutorial-Betriebsprogramm sowie passende Fleet-, Economy- und
    Livemap-Projektionen;
-5. verständliche Heatmapmuster und Warntexte auch ohne Farbwahrnehmung.
+6. verständliche Heatmapmuster und Warntexte auch ohne Farbwahrnehmung.
 
 Der Generator stellt für diesen Phase-2-Nachweis einen einzelnen konkreten
-Startpaket-Slot bereit. Die spätere reale Alpha mit 20–50 Konten und der
-gemischte Mehrperioden-Soak bleiben M9.9 und werden dadurch nicht vorweggenommen.
+Startpaket-Slot ausschließlich im Tutorial-Deployment bereit. Das öffentliche
+Deployment weist stattdessen seine Eröffnungs-Policy und den normalen
+Nullstartpfad nach. Die spätere reale Alpha mit 20–50 Konten und der gemischte
+Mehrperioden-Soak bleiben M9.9 und werden dadurch nicht vorweggenommen.
 
 ## Betrieb
 

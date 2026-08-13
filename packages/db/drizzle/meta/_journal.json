@@ -120,6 +120,13 @@
       "when": 1786482000000,
       "tag": "0016_alpha_runtime",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1786543200000,
+      "tag": "0017_world_deploy_queue",
+      "breakpoints": true
     }
   ]
 }
