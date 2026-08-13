@@ -94,9 +94,6 @@ export function createDatabaseHealthCheck(db: AnyDatabase): HealthCheck {
         sql`select world_id, account_id, chapter from tutorial_progress limit 0`,
       );
       await db.execute(
-        sql`select world_id, account_id, grant_hash from onboarding_grants limit 0`,
-      );
-      await db.execute(
         sql`select world_id, identity_hash, response from abuse_observations limit 0`,
       );
       await db.execute(

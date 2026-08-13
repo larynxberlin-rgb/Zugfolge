@@ -402,6 +402,58 @@ export interface OperatingTransitionResult {
   readonly idempotentReplay: boolean;
 }
 
+export interface OperatingDispatchCase {
+  readonly decision_id: number;
+  readonly train_run_id: number;
+  readonly event_at: number;
+  readonly trigger: Readonly<Record<string, unknown>>;
+  readonly delay_seconds: number;
+  readonly connection_threatened: boolean;
+  readonly vehicle_failed: boolean;
+  readonly duty_excess_seconds: number;
+  readonly route_closed: boolean;
+  readonly platform_changed: boolean;
+  readonly turnaround_shortfall_seconds: number;
+  readonly adhoc_conflict: boolean;
+  readonly hold_until: number;
+  readonly limits: Readonly<Record<
+    | "capacity_available" | "train_characteristics_compatible" | "route_knowledge_available"
+    | "train_protection_compatible" | "electrification_compatible" | "train_length_allowed"
+    | "vehicle_available" | "maintenance_valid" | "personnel_qualified" | "rest_time_compliant"
+    | "rotation_feasible" | "contract_allows" | "cost_within_limit",
+    boolean
+  >>;
+  readonly impact: {
+    readonly affected_train_runs: number;
+    readonly affected_connections: number;
+    readonly affected_rotations: number;
+    readonly affected_personnel_pools: number;
+    readonly affected_vehicles: number;
+    readonly cost_cents: number;
+    readonly contract_penalty_cents: number;
+    readonly cancelled_stops: number;
+    readonly cause: string;
+    readonly affected_resource: string;
+    readonly contract_effect: string;
+  };
+  readonly manual_action: "short_turn" | "request_reroute" | "trigger_rail_replacement";
+  readonly manual_reason: string;
+}
+
+export interface OperatingDecisionExplanation extends Readonly<Record<string, unknown>> {
+  readonly decision_id: number;
+  readonly world_id: string;
+  readonly operator_id: string;
+  readonly train_run_id: number;
+  readonly program_version: number;
+  readonly program_checksum: string;
+  readonly selected_rule_id: string | null;
+  readonly selected_action: string | null;
+  readonly manual_override: boolean;
+  readonly outcome_reason: string;
+  readonly impact: Readonly<Record<string, unknown>>;
+}
+
 export interface FleetRuntime {
   readonly initializeFleet: (input: FleetWorldInitialization) => FleetWorldInitialized;
   readonly applyFleetCommand: (
@@ -419,6 +471,10 @@ export interface OperatingRuntime {
     state: OperatingWorldInitialized["state"],
     command: OperatingTransitionCommand,
   ) => OperatingTransitionResult;
+  readonly evaluateDecision: (
+    program: Readonly<Record<string, unknown>>,
+    dispatchCase: OperatingDispatchCase,
+  ) => OperatingDecisionExplanation;
 }
 
 export type NativeRuntime = FleetRuntime & OperatingRuntime;
@@ -429,6 +485,7 @@ interface NativeAddon {
   readonly verifyFleetMobilizationSnapshot: (inputJson: string) => string;
   readonly initializeOperatingWorld: (inputJson: string) => string;
   readonly applyOperatingTransition: (stateJson: string, commandJson: string) => string;
+  readonly evaluateOperatingDecision?: (programJson: string, caseJson: string) => string;
 }
 
 function invariant(condition: unknown, message: string): asserts condition {
@@ -913,6 +970,18 @@ function decodeTransition(json: string): OperatingTransitionResult {
   return value as unknown as OperatingTransitionResult;
 }
 
+function decodeOperatingDecision(json: string): OperatingDecisionExplanation {
+  const value = parseNativeJson(json, "Rust-Dispositionsentscheidung");
+  record(value, "Rust-Dispositionsentscheidung");
+  for (const field of ["decision_id", "train_run_id", "program_version"] as const) safeInteger(value[field], `Rust-Dispositionsentscheidung.${field}`);
+  for (const field of ["world_id", "operator_id", "program_checksum", "outcome_reason"] as const) nonEmptyString(value[field], `Rust-Dispositionsentscheidung.${field}`);
+  sha256(value["program_checksum"], "Rust-Dispositionsentscheidung.program_checksum");
+  invariant(value["selected_action"] === null || typeof value["selected_action"] === "string", "Rust-Dispositionsentscheidung besitzt keine gueltige Massnahme.");
+  invariant(typeof value["manual_override"] === "boolean", "Rust-Dispositionsentscheidung besitzt keinen Override-Nachweis.");
+  record(value["impact"], "Rust-Dispositionsentscheidung.impact");
+  return value as OperatingDecisionExplanation;
+}
+
 /** Wraps the native ABI. Exported for contract tests; production uses {@link loadOperatingRuntime}. */
 export function operatingRuntimeFromAddon(addon: NativeAddon): NativeRuntime {
   return Object.freeze({
@@ -1004,6 +1073,13 @@ export function operatingRuntimeFromAddon(addon: NativeAddon): NativeRuntime {
       invariant(result.events.every((event) => event.worldId === command.worldId), "Rust-Ereignis verletzte die Weltisolation.");
       return result;
     },
+    evaluateDecision(program: Readonly<Record<string, unknown>>, dispatchCase: OperatingDispatchCase) {
+      invariant(addon.evaluateOperatingDecision !== undefined, "napi-rs-Addon exportiert evaluateOperatingDecision nicht.");
+      const result = decodeOperatingDecision(addon.evaluateOperatingDecision(JSON.stringify(program), JSON.stringify(dispatchCase)));
+      invariant(result.world_id === program["world_id"] && result.operator_id === program["operator_id"], "Rust-Dispositionsentscheidung verletzt die Welt- oder EVU-Isolation.");
+      invariant(result.decision_id === dispatchCase.decision_id && result.train_run_id === dispatchCase.train_run_id, "Rust-Dispositionsentscheidung gehoert zu einem anderen Fall.");
+      return result;
+    },
   });
 }
 
@@ -1021,5 +1097,6 @@ export function loadOperatingRuntime(addonPath = process.env["ZUGFOLGE_RUNTIME_N
   invariant(typeof required["verifyFleetMobilizationSnapshot"] === "function", "napi-rs-Addon exportiert verifyFleetMobilizationSnapshot nicht.");
   invariant(typeof required["initializeOperatingWorld"] === "function", "napi-rs-Addon exportiert initializeOperatingWorld nicht.");
   invariant(typeof required["applyOperatingTransition"] === "function", "napi-rs-Addon exportiert applyOperatingTransition nicht.");
+  invariant(typeof required["evaluateOperatingDecision"] === "function", "napi-rs-Addon exportiert evaluateOperatingDecision nicht.");
   return operatingRuntimeFromAddon(required as unknown as NativeAddon);
 }

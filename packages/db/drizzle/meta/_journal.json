@@ -120,6 +120,13 @@
       "when": 1786482000000,
       "tag": "0016_alpha_runtime",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1786528800000,
+      "tag": "0018_tutorial_sessions",
+      "breakpoints": true
     }
   ]
 }

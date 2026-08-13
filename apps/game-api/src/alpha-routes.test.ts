@@ -29,31 +29,28 @@ describe("produktive Alpha-Teilpfade", () => {
     await app.close();
   });
 
-  it("exponiert die vollstaendige Phase-2-Reise mit Tutorial, Status, Claim, Heatmap und Assistent", async () => {
+  it("exponiert den vollstaendigen spielergebundenen Tutorial-Sessionvertrag", async () => {
     const app = Fastify({ logger: false });
     registerAlphaRoutes(app, {
       db: {} as never,
       authenticate: (async () => undefined) as never,
       services: {
-        tutorial: {} as never,
-        onboarding: {} as never,
-        startPackageSpec: {
-          schemaVersion: "zugfolge-start-package/v1", version: "v1", emergencyLotId: "lot-1",
-          maximumTrainKmPerPeriod: 1_000, vehicleClass: "Mireo", maximumVehicleValueCents: 1n,
-          durationS: 86_400, pathWindowId: "path-1", personnelPoolId: "pool-1", operatingProgramTemplateId: "balanced",
-        },
+        tutorialSessions: {} as never,
         abuse: {} as never,
         pseudonymSecret: "a".repeat(32),
       },
     });
     await app.ready();
 
-    expect(app.hasRoute({ method: "GET", url: "/worlds/:worldId/tutorial" })).toBe(true);
-    expect(app.hasRoute({ method: "POST", url: "/worlds/:worldId/tutorial/reset" })).toBe(true);
-    expect(app.hasRoute({ method: "GET", url: "/worlds/:worldId/onboarding/start-package" })).toBe(true);
-    expect(app.hasRoute({ method: "POST", url: "/worlds/:worldId/onboarding/start-package" })).toBe(true);
-    expect(app.hasRoute({ method: "GET", url: "/worlds/:worldId/capacity-heatmap" })).toBe(true);
-    expect(app.hasRoute({ method: "GET", url: "/worlds/:worldId/onboarding/assistant" })).toBe(true);
+    expect(app.hasRoute({ method: "POST", url: "/worlds/:worldId/tutorial-sessions" })).toBe(true);
+    expect(app.hasRoute({ method: "GET", url: "/worlds/:worldId/tutorial-sessions/active" })).toBe(true);
+    expect(app.hasRoute({ method: "GET", url: "/worlds/:worldId/tutorial-session" })).toBe(true);
+    expect(app.hasRoute({ method: "POST", url: "/worlds/:worldId/tutorial-session/actions" })).toBe(true);
+    expect(app.hasRoute({ method: "POST", url: "/worlds/:worldId/tutorial-session/restart" })).toBe(true);
+    expect(app.hasRoute({ method: "POST", url: "/worlds/:worldId/tutorial-session/summary/confirm" })).toBe(true);
+    expect(app.hasRoute({ method: "POST", url: "/worlds/:worldId/tutorial/reset" })).toBe(false);
+    expect(app.hasRoute({ method: "GET", url: "/worlds/:worldId/onboarding/start-package" })).toBe(false);
+    expect(app.hasRoute({ method: "POST", url: "/worlds/:worldId/onboarding/start-package" })).toBe(false);
 
     await app.close();
   });

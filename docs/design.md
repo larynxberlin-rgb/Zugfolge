@@ -115,6 +115,23 @@ Die Palette ist am dichten Bildfahrplan aus M3.10 geprüft und als CSS-Tokens in
 Die Zustandsfarben stehen nie allein: Konflikte tragen Schraffur und Warnsymbol,
 Alternativen Text und Richtungspfeil, ausgewählte Zugläufe zusätzliche Linienstärke.
 
+### 2.8 Lutz-Coach im Tutorial
+
+Das Coach-Panel liegt auf `#11141B`, reserviert die Avatargröße mit expliziten
+`width`/`height`-Attributen und zeigt
+`/assets/tutorial/lutz-avatar-comic-v2.png` bei 96–160 Pixeln. Lutz ist eine
+fiktive Figur ohne Unternehmensbezug, Logo oder Bildtext. Der Dialogkatalog
+lebt versioniert beim Tutorialtemplate, nicht verstreut in Komponenten.
+
+Normale Hinweise sind nichtmodal und stehen neben der einzigen Hauptaufgabe;
+auf kleinen Bildschirmen folgen sie als kompakte untere Karte nach der Aufgabe.
+Einleitung und Ergebnis dürfen hervorgehoben sein. Zielbereiche erhalten Fokus
+und eine zusätzliche Kontur, ohne dass das Panel die Hauptaktion überdeckt.
+Neue Texte werden mit `aria-live="polite"` angekündigt. Avatar-Alttext,
+Fortschrittswörter, Tastaturfokus, „Warum?“, Ausblenden und manuelles
+Wiederöffnen sind Pflicht. `prefers-reduced-motion: reduce` unterbindet
+Animation und weiches Scrollen.
+
 ## 3. Dunkelmodus — durchgehend
 
 Eine einzige Palette für alle Flächen. Lange Lesetexte — Verträge,

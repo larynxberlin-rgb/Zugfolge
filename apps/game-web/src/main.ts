@@ -6,13 +6,11 @@ import type { PlanningProjectionV1 } from "@zugfolge/planning-projection";
 
 import {
   GameApiClient,
-  type CapacityHeatmapCell,
   type ContractType,
-  type OnboardingAssistant,
   type OperatorContractView,
   type OperatorSummary,
-  type StartPackageGrant,
-  type TutorialJourney,
+  type TutorialAction,
+  type TutorialSessionView,
   type VehicleAssetView,
   type VehicleHistoryEventView,
   type VehicleMarketListingView,
@@ -41,7 +39,8 @@ const demoMode = parameters.get("demo") === "1";
 const requestedView = parameters.get("view");
 const journeyMode = !demoMode && requestedView !== "diagram";
 const worldId = parameters.get("world") ?? runtimeConfiguration.publicWorldId;
-const tutorialWorldId = parameters.get("tutorialWorld") ?? runtimeConfiguration.tutorialWorldId;
+const publicWorldId = parameters.get("publicWorld") ?? runtimeConfiguration.publicWorldId;
+const tutorialReference = parameters.get("tutorial");
 const livemapUrl = runtimeConfiguration.livemapUrl === "" ? "" : (() => {
   const value = new URL(runtimeConfiguration.livemapUrl, window.location.href);
   value.searchParams.set("world", worldId);
@@ -67,11 +66,11 @@ let message = "";
 let messageTone: "status" | "error" = "status";
 let applyingAlternativeId = "";
 let demoApply: ((current: PlanningProjectionV1, alternativeId: string) => PlanningProjectionV1) | undefined;
-let tutorialJourney: TutorialJourney | undefined;
-let startPackage: StartPackageGrant | undefined;
-let heatmap: readonly CapacityHeatmapCell[] = [];
-let onboardingAssistant: OnboardingAssistant | undefined;
-let journeyBusy = false;
+let tutorialSession: TutorialSessionView | undefined;
+let journeyBusy = journeyMode && !demoMode;
+let coachDismissed = false;
+let whyOpen = false;
+let tutorialPoll: ReturnType<typeof setTimeout> | undefined;
 let worldOperators: readonly OperatorSummary[] = [];
 let ownOperatorIds: readonly string[] = [];
 let activeOperatorId = "";
@@ -106,9 +105,9 @@ function reconcileSelection(current: PlanningProjectionV1): void {
 }
 
 function cooperationState(): CooperationSurfaceState | undefined {
-  if (worldId === "") return undefined;
+  if (publicWorldId === "") return undefined;
   return {
-    worldId,
+    worldId: publicWorldId,
     activeOperatorId,
     operators: worldOperators,
     ownOperatorIds,
@@ -128,14 +127,12 @@ function render(): void {
   app.dataset.density = density;
   if (journeyMode) {
     app.innerHTML = renderJourney({
-      tutorialWorldId,
-      publicWorldId: worldId,
-      tutorial: tutorialJourney,
-      grant: startPackage,
-      heatmap,
-      assistant: onboardingAssistant,
+      publicWorldId,
+      tutorial: tutorialSession,
       busy: journeyBusy,
       message,
+      coachDismissed,
+      whyOpen,
       messageTone,
       livemapUrl,
       cooperation: cooperationState(),
@@ -164,10 +161,28 @@ function render(): void {
 }
 
 function bindJourney(): void {
-  app.querySelector("#tutorial-refresh")?.addEventListener("click", () => void refreshTutorial());
-  app.querySelector("#tutorial-reset")?.addEventListener("click", () => void resetTutorial());
-  app.querySelector("#claim-start-package")?.addEventListener("click", () => void claimStartPackage());
-  app.querySelector("#heatmap-refresh")?.addEventListener("click", () => void refreshOnboarding());
+  app.querySelector("#tutorial-start")?.addEventListener("click", () => void startTutorial());
+  app.querySelector("#tutorial-restart")?.addEventListener("click", () => void restartTutorial());
+  app.querySelector("#tutorial-summary-confirm")?.addEventListener("click", () => void confirmTutorialSummary());
+  app.querySelector("#tutorial-hint")?.addEventListener("click", () => void openTutorialHint());
+  app.querySelector("#tutorial-dismiss")?.addEventListener("click", () => void dismissTutorialDialogue());
+  app.querySelector("#tutorial-coach-reopen")?.addEventListener("click", () => { coachDismissed = false; render(); focusCoach(); });
+  app.querySelector("#tutorial-why")?.addEventListener("click", () => { whyOpen = !whyOpen; render(); app.querySelector<HTMLButtonElement>("#tutorial-why")?.focus(); });
+  const focusButton = app.querySelector<HTMLButtonElement>("#tutorial-focus-target");
+  focusButton?.addEventListener("click", () => focusTarget(focusButton.dataset.target));
+  app.querySelector<HTMLFormElement>("#tutorial-tender-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget as HTMLFormElement);
+    void applyTutorialAction({ type: "submit-bid", orderingFeeCentsPerTrainKm: String(data.get("orderingFeeCentsPerTrainKm") ?? ""), punctualityBasisPoints: Number(data.get("punctualityBasisPoints")), extraSeats: Number(data.get("extraSeats")) });
+  });
+  app.querySelector<HTMLFormElement>("#tutorial-program-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget as HTMLFormElement);
+    void applyTutorialAction({ type: "activate-program", templateId: String(data.get("templateId")) as "connections" | "punctuality", changedRule: String(data.get("changedRule")) as "hold-connections" | "prioritize-punctuality" | "activate-reserve", thresholdSeconds: Number(data.get("thresholdSeconds")) });
+  });
+  app.querySelectorAll<HTMLButtonElement>("[data-tutorial-offer]").forEach((button) => button.addEventListener("click", () => void applyTutorialAction({ type: "accept-lease", offerId: button.dataset.tutorialOffer ?? "" })));
+  app.querySelectorAll<HTMLButtonElement>("[data-tutorial-path]").forEach((button) => button.addEventListener("click", () => void applyTutorialAction({ type: "confirm-path", alternativeId: button.dataset.tutorialPath ?? "" })));
+  app.querySelectorAll<HTMLButtonElement>("[data-tutorial-dispatch]").forEach((button) => button.addEventListener("click", () => void applyTutorialAction({ type: "dispatch", action: button.dataset.tutorialDispatch as "short_turn" | "request_reroute" | "trigger_rail_replacement" })));
   bindCooperationSurface(app, {
     changeOperator: (operatorId) => cooperationAction(async () => refreshCooperation(operatorId), "Handelndes EVU wurde gewechselt."),
     changeContractType: (value) => { contractType = value; render(); },
@@ -183,6 +198,53 @@ function bindJourney(): void {
     cancelListing,
     loadHistory: loadVehicleHistory,
   });
+}
+
+function focusTarget(target: string | undefined): void {
+  if (target === undefined || target === "") return;
+  const element = app.querySelector<HTMLElement>(`#${CSS.escape(target)}`);
+  element?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
+  element?.focus({ preventScroll: true });
+}
+
+function focusCoach(): void {
+  app.querySelector<HTMLElement>("#lutz-name")?.focus({ preventScroll: true });
+}
+
+function setTutorialSession(next: TutorialSessionView, updateUrl = true): void {
+  const previousDialogue = tutorialSession?.dialogue.id;
+  tutorialSession = next;
+  if (previousDialogue !== next.dialogue.id) {
+    coachDismissed = false;
+    whyOpen = false;
+  }
+  if (updateUrl) {
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set("world", next.tutorialWorldId);
+    nextUrl.searchParams.set("publicWorld", next.publicWorldId);
+    nextUrl.searchParams.set("tutorial", next.reference);
+    history.replaceState({ tutorial: next.reference }, "", nextUrl);
+  }
+  scheduleTutorialPoll();
+}
+
+function scheduleTutorialPoll(): void {
+  if (tutorialPoll !== undefined) clearTimeout(tutorialPoll);
+  if (tutorialSession?.lifecycle !== "running" && tutorialSession?.lifecycle !== "summary") return;
+  tutorialPoll = setTimeout(() => void silentRefreshTutorial(), 2_000);
+}
+
+async function silentRefreshTutorial(): Promise<void> {
+  const client = api;
+  const session = tutorialSession;
+  if (client === undefined || session === undefined || journeyBusy) { scheduleTutorialPoll(); return; }
+  try {
+    const next = await client.loadTutorial(session.tutorialWorldId);
+    const changed = next.currentChapter !== session.currentChapter || next.lifecycle !== session.lifecycle || next.dialogue.id !== session.dialogue.id;
+    setTutorialSession(next);
+    if (changed) { render(); focusCoach(); }
+  } catch { /* Die sichtbare Aktion liefert weiterhin erklaerbare Fehler; Polling bleibt still. */ }
+  scheduleTutorialPoll();
 }
 
 async function journeyAction(action: () => Promise<void>, success: string): Promise<void> {
@@ -201,6 +263,7 @@ async function journeyAction(action: () => Promise<void>, success: string): Prom
   } finally {
     journeyBusy = false;
     render();
+    if (tutorialSession !== undefined) focusCoach();
   }
 }
 
@@ -224,16 +287,16 @@ function addSeconds(atS: number, seconds: number): number {
 
 async function refreshCooperation(preferredOperatorId = activeOperatorId): Promise<void> {
   const client = api;
-  if (client === undefined || worldId === "") return;
+  if (client === undefined || publicWorldId === "") return;
   const [own, atS, roster, listings] = await Promise.all([
     client.loadOwnOperators(),
-    client.loadSimulationTime(worldId),
-    client.loadWorldOperators(worldId),
-    client.loadVehicleMarket(worldId),
+    client.loadSimulationTime(publicWorldId),
+    client.loadWorldOperators(publicWorldId),
+    client.loadVehicleMarket(publicWorldId),
   ]);
   cooperationAtS = atS;
   worldOperators = roster;
-  ownOperatorIds = own.filter((operator) => operator.worldId === worldId).map((operator) => operator.id);
+  ownOperatorIds = own.filter((operator) => operator.worldId === publicWorldId).map((operator) => operator.id);
   activeOperatorId = ownOperatorIds.includes(preferredOperatorId) ? preferredOperatorId : (ownOperatorIds[0] ?? "");
   marketListings = listings;
   selectedVehicleHistory = undefined;
@@ -244,14 +307,14 @@ async function refreshCooperation(preferredOperatorId = activeOperatorId): Promi
     return;
   }
   [operatorContracts, ownedVehicles] = await Promise.all([
-    client.loadContracts(worldId, activeOperatorId),
-    client.loadOwnedVehicles(worldId, activeOperatorId),
+    client.loadContracts(publicWorldId, activeOperatorId),
+    client.loadOwnedVehicles(publicWorldId, activeOperatorId),
   ]);
 }
 
 function cooperationAction(action: () => Promise<void>, success: string): Promise<void> {
   return journeyAction(async () => {
-    if (api !== undefined && worldId !== "") cooperationAtS = await api.loadSimulationTime(worldId);
+    if (api !== undefined && publicWorldId !== "") cooperationAtS = await api.loadSimulationTime(publicWorldId);
     await action();
   }, success);
 }
@@ -261,7 +324,7 @@ function offerCooperationContract(fields: Readonly<Record<string, string>>): Pro
     const client = api;
     if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
     const parsed = parseContractOfferFields(contractType, fields, cooperationAtS);
-    await client.offerContract(worldId, activeOperatorId, {
+    await client.offerContract(publicWorldId, activeOperatorId, {
       ...parsed,
       contractType,
       offeredAtS: cooperationAtS,
@@ -275,7 +338,7 @@ function respondToContract(contractId: string, response: "accept" | "reject"): P
   return cooperationAction(async () => {
     const client = api;
     if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
-    await client.respondToContract(worldId, activeOperatorId, contractId, response, cooperationAtS);
+    await client.respondToContract(publicWorldId, activeOperatorId, contractId, response, cooperationAtS);
     await refreshCooperation(activeOperatorId);
   }, response === "accept" ? "Vertrag wurde angenommen; Ledger, Postfach und Audit sind aktualisiert." : "Vertrag wurde abgelehnt und beiden Parteien zugestellt.");
 }
@@ -285,7 +348,7 @@ function endContract(contractId: string, nonPerformance: boolean): Promise<void>
     const client = api;
     if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
     await client.endContract(
-      worldId,
+      publicWorldId,
       activeOperatorId,
       contractId,
       cooperationAtS,
@@ -306,7 +369,7 @@ function createVehicleListing(fields: Readonly<Record<string, string>>): Promise
     if (vehicleId === "") throw new Error("Fahrzeug fehlt.");
     const expiresAtS = formSecond(fields, "expiresAtS");
     const rentalValidUntilS = listingType === "rental" ? formSecond(fields, "rentalValidUntilS") : undefined;
-    await client.createVehicleListing(worldId, activeOperatorId, vehicleId, {
+    await client.createVehicleListing(publicWorldId, activeOperatorId, vehicleId, {
       listingType,
       priceCents: parseEuroCents(fields["priceEuros"] ?? ""),
       ...(rentalValidUntilS === undefined ? {} : { rentalValidUntilS }),
@@ -322,7 +385,7 @@ function reserveListing(listingId: string, expectedRevision: number): Promise<vo
   return cooperationAction(async () => {
     const client = api;
     if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
-    await client.reserveVehicleListing(worldId, listingId, activeOperatorId, cooperationAtS, addSeconds(cooperationAtS, 600), expectedRevision);
+    await client.reserveVehicleListing(publicWorldId, listingId, activeOperatorId, cooperationAtS, addSeconds(cooperationAtS, 600), expectedRevision);
     await refreshCooperation(activeOperatorId);
   }, "Fahrzeug ist für zehn Simulationsminuten reserviert.");
 }
@@ -331,7 +394,7 @@ function transferListing(listingId: string, expectedRevision: number): Promise<v
   return cooperationAction(async () => {
     const client = api;
     if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
-    await client.transferVehicleListing(worldId, listingId, activeOperatorId, cooperationAtS, expectedRevision, commandKey("vehicle-transfer"));
+    await client.transferVehicleListing(publicWorldId, listingId, activeOperatorId, cooperationAtS, expectedRevision, commandKey("vehicle-transfer"));
     await refreshCooperation(activeOperatorId);
   }, "Übergabe, Ledgerbuchung, Flotten-Single-Writer und Lebenslauf wurden atomar bestätigt.");
 }
@@ -340,7 +403,7 @@ function reverseListing(listingId: string): Promise<void> {
   return cooperationAction(async () => {
     const client = api;
     if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
-    await client.reverseVehicleTransfer(worldId, listingId, activeOperatorId, cooperationAtS, "undisclosed-player-reported", commandKey("vehicle-reversal"));
+    await client.reverseVehicleTransfer(publicWorldId, listingId, activeOperatorId, cooperationAtS, "undisclosed-player-reported", commandKey("vehicle-reversal"));
     await refreshCooperation(activeOperatorId);
   }, "Rückabwicklung und Gegenbuchung wurden autoritativ ausgeführt.");
 }
@@ -349,7 +412,7 @@ function cancelListing(listingId: string, expectedRevision: number): Promise<voi
   return cooperationAction(async () => {
     const client = api;
     if (client === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
-    await client.cancelVehicleListing(worldId, activeOperatorId, listingId, cooperationAtS, expectedRevision);
+    await client.cancelVehicleListing(publicWorldId, activeOperatorId, listingId, cooperationAtS, expectedRevision);
     await refreshCooperation(activeOperatorId);
   }, "Fahrzeugangebot wurde zurückgezogen.");
 }
@@ -358,45 +421,58 @@ function loadVehicleHistory(vehicleId: string): Promise<void> {
   return cooperationAction(async () => {
     const client = api;
     if (client === undefined) throw new Error("Game-API fehlt.");
-    selectedVehicleHistory = await client.loadVehicleHistory(worldId, vehicleId);
+    selectedVehicleHistory = await client.loadVehicleHistory(publicWorldId, vehicleId);
     selectedHistoryVehicleId = vehicleId;
   }, "Unveränderlicher Fahrzeuglebenslauf wurde geladen.");
 }
 
-async function refreshTutorial(): Promise<void> {
+async function startTutorial(): Promise<void> {
   const client = api;
-  if (client === undefined || tutorialWorldId === "") return;
-  return journeyAction(async () => { tutorialJourney = await client.loadTutorial(tutorialWorldId); }, "Tutorialbelege sind aktuell.");
+  if (client === undefined || publicWorldId === "") return;
+  return journeyAction(async () => setTutorialSession(await client.startTutorial(publicWorldId)), "Ihre private Tutorialwelt ist bereit.");
 }
 
-async function resetTutorial(): Promise<void> {
+async function restartTutorial(): Promise<void> {
   const client = api;
-  if (client === undefined || tutorialWorldId === "") return;
-  return journeyAction(async () => { tutorialJourney = await client.resetTutorial(tutorialWorldId); }, "Neue Tutorial-Sitzung wurde autoritativ angelegt.");
+  const session = tutorialSession;
+  if (client === undefined || session === undefined) return;
+  return journeyAction(async () => setTutorialSession(await client.restartTutorial(session.tutorialWorldId)), "Die alte Welt wurde archiviert; eine neue Tutorialwelt ist bereit.");
 }
 
-async function refreshOnboarding(): Promise<void> {
+async function applyTutorialAction(action: TutorialAction): Promise<void> {
   const client = api;
-  if (client === undefined || worldId === "") return;
-  return journeyAction(async () => {
-    [startPackage, heatmap, onboardingAssistant] = await Promise.all([
-      client.loadStartPackage(worldId),
-      client.loadCapacityHeatmap(worldId),
-      client.loadOnboardingAssistant(worldId),
-    ]);
-  }, "Startpaket, Kapazität und Betriebsassistent sind aktuell.");
+  const session = tutorialSession;
+  if (client === undefined || session === undefined) return;
+  return journeyAction(async () => setTutorialSession(await client.tutorialAction(session.tutorialWorldId, action)), "Autoritativer Nachweis erbracht. Das nächste Kapitel ist bereit.");
 }
 
-async function claimStartPackage(): Promise<void> {
+async function openTutorialHint(): Promise<void> {
   const client = api;
-  if (client === undefined || worldId === "") return;
-  return journeyAction(async () => {
-    startPackage = await client.claimStartPackage(worldId);
-    [heatmap, onboardingAssistant] = await Promise.all([
-      client.loadCapacityHeatmap(worldId),
-      client.loadOnboardingAssistant(worldId),
-    ]);
-  }, "Startpaket wurde über Fleet-, Economy- und Betriebsprogramm-Single-Writer zugeteilt.");
+  const session = tutorialSession;
+  if (client === undefined || session === undefined) return;
+  return journeyAction(async () => setTutorialSession(await client.openTutorialHint(session.tutorialWorldId)), "Lutz hat einen zusätzlichen Hinweis eingeblendet.");
+}
+
+async function dismissTutorialDialogue(): Promise<void> {
+  const client = api;
+  const session = tutorialSession;
+  if (client === undefined || session === undefined) return;
+  try {
+    setTutorialSession(await client.dismissTutorialDialogue(session.tutorialWorldId, session.dialogue.id));
+    coachDismissed = true;
+    render();
+  } catch (error) {
+    message = error instanceof Error ? error.message : "Hinweis konnte nicht ausgeblendet werden.";
+    messageTone = "error";
+    render();
+  }
+}
+
+async function confirmTutorialSummary(): Promise<void> {
+  const client = api;
+  const session = tutorialSession;
+  if (client === undefined || session === undefined) return;
+  return journeyAction(async () => setTutorialSession(await client.confirmTutorialSummary(session.tutorialWorldId)), "Die Tutorialwelt wurde geschlossen. Ihre öffentliche Welt blieb unverändert.");
 }
 
 function bind(): void {
@@ -488,6 +564,7 @@ async function boot(): Promise<void> {
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Anmeldung fehlgeschlagen.";
     if (journeyMode) {
+      journeyBusy = false;
       message = detail;
       messageTone = "error";
     }
@@ -496,7 +573,8 @@ async function boot(): Promise<void> {
     return;
   }
   if (journeyMode) {
-    if (api === undefined || worldId === "") {
+    if (api === undefined || publicWorldId === "") {
+      journeyBusy = false;
       message = "Öffentliche Weltkennung oder angemeldete Sitzung fehlt. Produktivdaten werden nicht durch Beispieldaten ersetzt.";
       messageTone = "error";
       render();
@@ -505,32 +583,17 @@ async function boot(): Promise<void> {
     journeyBusy = true;
     render();
     try {
-      const [tutorialResult, grantResult, heatmapResult, assistantResult] = await Promise.allSettled([
-        tutorialWorldId === "" ? Promise.resolve(undefined) : api.loadTutorial(tutorialWorldId),
-        api.loadStartPackage(worldId),
-        api.loadCapacityHeatmap(worldId),
-        api.loadOnboardingAssistant(worldId),
-      ]);
-      if (tutorialResult.status === "fulfilled") tutorialJourney = tutorialResult.value;
-      if (grantResult.status === "fulfilled") startPackage = grantResult.value;
-      if (heatmapResult.status === "fulfilled") heatmap = heatmapResult.value;
-      if (assistantResult.status === "fulfilled") onboardingAssistant = assistantResult.value;
-      const failures = [tutorialResult, grantResult, heatmapResult, assistantResult]
-        .filter((result): result is PromiseRejectedResult => result.status === "rejected");
-      let cooperationFailure: string | undefined;
-      try {
-        await refreshCooperation();
-      } catch (error) {
-        cooperationFailure = error instanceof Error ? error.message : "Kooperation und Fahrzeugmarkt konnten nicht geladen werden.";
-      }
-      const failedAreaCount = failures.length + (cooperationFailure === undefined ? 0 : 1);
-      if (failedAreaCount > 0) {
-        const firstFailure = failures[0]?.reason;
-        const detail = firstFailure instanceof Error
-          ? firstFailure.message
-          : (cooperationFailure ?? "Unbekannter Ladefehler.");
-        message = `${failedAreaCount} Bereich${failedAreaCount === 1 ? "" : "e"} der Spielerreise konnte${failedAreaCount === 1 ? "" : "n"} nicht geladen werden: ${detail}`;
-        messageTone = "error";
+      const requestedTutorialWorld = tutorialReference === null ? undefined : worldId;
+      const tutorial = await (requestedTutorialWorld === undefined ? api.loadActiveTutorial(publicWorldId) : api.loadTutorial(requestedTutorialWorld));
+      if (tutorial !== undefined) {
+        setTutorialSession(tutorial);
+      } else {
+        try {
+          await refreshCooperation();
+        } catch (error) {
+          message = error instanceof Error ? error.message : "Kooperation und Fahrzeugmarkt konnten nicht geladen werden.";
+          messageTone = "error";
+        }
       }
     } catch (error) {
       message = error instanceof Error ? error.message : "Spielerreise konnte nicht geladen werden.";

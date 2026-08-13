@@ -16,7 +16,6 @@ export const COMMAND_TYPES = [
   "admin.manual_disruption_create",
   "admin.abuse_sanction_activate",
   "admin.world_close",
-  "admin.tutorial_account_reset",
   "admin.alpha_invitation_create",
   "admin.alpha_invitation_resend",
 ] as const;
@@ -33,7 +32,6 @@ export const ADMIN_ACTION_TYPES = [
   "manual_disruption_create",
   "abuse_sanction_activate",
   "world_close",
-  "tutorial_account_reset",
   "alpha_invitation_create",
   "alpha_invitation_resend",
 ] as const;
@@ -88,7 +86,6 @@ export interface AdminCommandPayload {
     readonly email: string;
     readonly displayName: string;
     readonly role: "player" | "world_admin";
-    readonly startPackage?: string;
     readonly keycloakSubject?: string;
   };
   /**

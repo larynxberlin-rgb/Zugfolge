@@ -3,7 +3,6 @@ export interface BrowserRuntimeConfiguration {
   readonly keycloakUrl: string;
   readonly keycloakRealm: string;
   readonly publicWorldId: string;
-  readonly tutorialWorldId: string;
   readonly livemapUrl: string;
 }
 
@@ -33,7 +32,6 @@ export function loadRuntimeConfiguration(): BrowserRuntimeConfiguration {
     keycloakUrl: (configured.keycloakUrl ?? "").replace(/\/$/, ""),
     keycloakRealm: configured.keycloakRealm ?? "zugfolge",
     publicWorldId: configured.publicWorldId ?? "",
-    tutorialWorldId: configured.tutorialWorldId ?? "",
     livemapUrl: configured.livemapUrl ?? "",
   };
 }

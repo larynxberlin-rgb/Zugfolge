@@ -53,6 +53,44 @@ Infra-Release-Pipeline (Batch, offline) — Rust
         OSM-PBF + Höhenmodell + Stationsdaten → versionierter InfraRelease
 ```
 
+### 2.0a Kurzlebige Tutorialwelten
+
+Der öffentliche Weltstart und der Tutorialstart sind getrennte Orchestratoren:
+
+```text
+POST /worlds/:publicWorldId/tutorial-sessions
+        │ weltgebundenes Konto sperren; aktive Sitzung wiederverwenden
+TutorialSessionService
+        │ tut_<base32> ↔ interne Tutorial-Welt-UUID
+TutorialWorldFactory
+        ├─ private/unranked Welt + profileKind=tutorial
+        ├─ echtes Ledger, Economy, Fleet und Planning
+        ├─ echtes Betriebsprogramm und Rust-Dispatcher
+        └─ regionale Störung + finale Zustands-Hashes
+```
+
+Pro öffentlichem Weltkonto existiert höchstens eine aktive Sitzung. Die
+partielle Datenbank-Unique-Constraint und eine Kontosperre serialisieren
+Parallelstarts. Provisionierung und Kapitelaktionen tragen persistente
+Schritt-/Kommando-IDs; ein Prozessneustart setzt sie fort. Alle Fachdaten,
+Indizes und Events behalten die interne `world_id`-UUID. Nur die externe,
+kryptographisch zufällige Referenz beginnt mit `tut_`.
+
+Der Lebenszyklus lautet `provisioning → running → summary → closing →
+archived`, ergänzt um `failed`. Idle-TTL, maximale Dauer und die fünfminütige
+Summary-Schonfrist werden mit einer injizierbaren realen Uhr außerhalb des
+Simulationskerns geprüft. Der Reaper schließt Economy und Welt idempotent,
+entzieht den Zugang und persistiert Abschlussgrund und finalen Hash. Nach
+`closing` werden Kommandos abgelehnt. Diese eng begrenzte, ungewertete
+Weltklasse ist die dokumentierte Ausnahme vom No-Wipe-Vertrag öffentlicher
+Welten.
+
+Tutorialprofile werden aus administrativen Odoo-Weltlisten und Projektionen
+ausgeschlossen. Einladung, Weltstartantrag, Vier-Augen-Verfahren und Odoo-
+Outbox kennen keine einzelne Tutorialinstanz. Betriebstelemetrie nutzt nur
+niedrigkardinale Dimensionen wie Templateversion, Kapitel und Ereignistyp;
+individuelle Welt-UUIDs sind keine Prometheus-Labels.
+
 **Warum der Kern in Rust liegt.** Nicht wegen der laufenden Simulation — die
 liefe auch in TypeScript. Sondern weil im Kern drei Anforderungen
 zusammentreffen, die sonst nirgends zusammenfallen: nationale Rechenlast im

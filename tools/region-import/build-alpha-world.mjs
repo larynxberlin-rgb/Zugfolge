@@ -361,80 +361,6 @@ function scheduleReentries(transitions) {
 
 scheduleReentries(boundaryTransitions);
 
-// Phase 2: genau ein vorbereitetes, bis zur Beanspruchung inaktives Paket fuer
-// den externen Abnahmefall. Es wird Teil desselben gehashten M5-Releases; der
-// Game-Writer akzeptiert spaeter weder andere IDs noch clientseitige Fakten.
-const STARTER_OPERATOR_ID = "00000000-0000-4000-8000-000000000101";
-const starterLot = blueprintLots[0];
-if (!starterLot || starterLot.circulationIds.length === 0) throw new Error("Vorbereitetes Phase-2-Startlos fehlt.");
-const starterSourceFormation = formations.find((formation) => formation.id === `formation-${starterLot.circulationIds[0].slice("circulation-".length)}`);
-const starterSourceAsset = assets.find((asset) => starterSourceFormation?.vehicleIds.includes(asset.id));
-const starterSourceReceipt = pathReceipts.find((receipt) => receipt.id === starterSourceFormation?.pathReceiptId);
-if (!starterSourceFormation || !starterSourceAsset || !starterSourceReceipt) throw new Error("Vorbereiteter Phase-2-Startpaket-Slot kann nicht aus dem Weltbestand abgeleitet werden.");
-numericAssetId += 1;
-numericPersonnelId += 1;
-numericRouteId += 1;
-const starterVehicleId = "starter-vehicle-001";
-const starterFormationId = "starter-formation-001";
-const starterDutyId = "starter-duty-001";
-const starterPoolId = "starter-pool-001";
-const starterReceiptId = "starter-receipt-001";
-const starterReservationId = "starter-path-001";
-assets.push({
-  ...starterSourceAsset,
-  id: starterVehicleId,
-  numericId: numericAssetId,
-  operatorId: STARTER_OPERATOR_ID,
-  procurementChannel: "leasing",
-});
-pathReceipts.push({
-  ...starterSourceReceipt,
-  id: starterReceiptId,
-  numericRouteId,
-  operatorId: STARTER_OPERATOR_ID,
-});
-personnelPools.push({
-  id: starterPoolId,
-  numericId: numericPersonnelId,
-  operatorId: STARTER_OPERATOR_ID,
-  capacitySeconds: WORLD_DURATION_S,
-  minimumRestSeconds: 39_600,
-  classDesignations: [starterSourceAsset.classDesignation],
-  pathReceiptIds: [starterReceiptId],
-  qualificationHash: sha256(`${starterSourceAsset.classDesignation}\u0000${starterReceiptId}\u0000${networkEnvelope.networkHash}`),
-});
-formations.push({ id: starterFormationId, vehicleIds: [starterVehicleId], pathReceiptId: starterReceiptId, dynamics: { accelerationMmPerS2: 900, decelerationMmPerS2: 900 } });
-personnelDuties.push({ id: starterDutyId, personnelPoolId: starterPoolId, formationIds: [starterFormationId], pathReceiptId: starterReceiptId, validFrom: 0, validUntil: WORLD_DURATION_S });
-pathReservations.push({ id: starterReservationId, pathReceiptId: starterReceiptId });
-const phase2Configuration = {
-  authority: {
-    tutorialOperatorNamePrefix: "Tutorialbahn",
-    startPackageSlots: [{
-      worldId: WORLD_ID,
-      operatorId: STARTER_OPERATOR_ID,
-      operatorName: "Alpha Startbahn 1",
-      vehicleId: starterVehicleId,
-      formationId: starterFormationId,
-      personnelDutyId: starterDutyId,
-      pathReservationId: starterReservationId,
-      vehicleLeaseReceiptId: "starter-lease-001",
-      trainRunIds: starterLot.trainRunIds,
-    }],
-  },
-  startPackage: {
-    schemaVersion: "zugfolge-start-package/v1",
-    version: "alpha-2026-08",
-    emergencyLotId: starterLot.lotId,
-    maximumTrainKmPerPeriod: 1_000,
-    vehicleClass: starterSourceAsset.classDesignation,
-    maximumVehicleValueCents: "900000000",
-    durationS: 21 * 86_400,
-    pathWindowId: starterReservationId,
-    personnelPoolId: starterPoolId,
-    operatingProgramTemplateId: "balanced",
-  },
-};
-
 const fleet = {
   schemaVersion: "zugfolge-fleet-world-initialize/v2",
   worldId: WORLD_ID,
@@ -524,7 +450,6 @@ const deployment = {
   },
 };
 await writeFile(outputPath, `${JSON.stringify({ deployment: encodeEconomyValue(deployment) }, null, 2)}\n`);
-await writeFile(`${resolve(outputPath)}.phase2.json`, `${JSON.stringify(phase2Configuration, null, 2)}\n`);
 console.log(JSON.stringify({
   worldId: WORLD_ID,
   lotCount: blueprintLots.length,
@@ -538,7 +463,6 @@ console.log(JSON.stringify({
   economyReleaseHash: economyRelease.checksum,
   timetableReleaseHash: gtfsEnvelope.snapshotHash,
   tenderCalendarHash,
-  phase2ConfigurationPath: `${resolve(outputPath)}.phase2.json`,
 }));
 
 function circulationsCount(lots) {

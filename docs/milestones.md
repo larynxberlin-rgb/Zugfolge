@@ -838,10 +838,10 @@ deterministische Außenlauf bleibt dieselbe Zugfahrt.
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 9.1 | Tutorial-Welt, beschleunigt, fünf geführte Kapitel | L | offen |
+| 9.1 | Spielergebundene, kurzlebige Tutorialwelt aus Minimaltemplate; fünf geführte Kapitel, Lutz und reale Dauertelemetrie | L | in Arbeit |
 | 9.2 | **Weltstart mit Eigenbetrieb**: das gesamte SPNV-Netz der Region fährt ab Sekunde eins | M | erledigt |
-| 9.2a | **Administrativer Weltstartbestand**: optionaler, versionierter und auditierter Pool konkreter Gebrauchtfahrzeuge einschließlich Zustandsprofil und Lebenslauf; Zuweisung an Eigenbetrieb, Startpakete und servereigene Vermieter ohne Fahrzeugduplikate | M | offen |
-| 9.3 | Onboarding in der öffentlichen Welt: Startpaket, Kapazitäts-Heatmap, Glossar-Layer | M | offen |
+| 9.2a | **Administrativer Weltstartbestand**: optionaler, versionierter und auditierter Pool konkreter Gebrauchtfahrzeuge einschließlich Zustandsprofil und Lebenslauf; Zuweisung an Eigenbetrieb und servereigene Vermieter ohne Fahrzeugduplikate | M | offen |
+| 9.3 | Onboarding in der öffentlichen Welt: tatsächliche `StartingCapitalPolicy`, Kapazitäts-Heatmap, Glossar-Layer und Betriebsassistent; keine automatische Startausstattung | M | offen |
 | 9.4 | Admin- und Auditwerkzeuge, Vier-Augen-Prinzip bei Hochrisikoaktionen | M | offen |
 | 9.5 | **Betriebsreife**: Observability, Backup und Restore, Incident-Runbooks. Gehört vor die erste Welt mit echten Spielern, nicht in die Monetarisierungsphase. Der Health-Check-Vertrag (`packages/health`, seit M2) liegt bereits — M9.5 baut Alarmierung, Dashboards und Backup darauf, zieht ihn nicht mehr nachträglich ein | L | offen |
 | 9.6 | Rate Limits, Anti-Bot-Prüfungen, Anomalieerkennung für Trassenfenster und Märkte | M | offen |
@@ -850,13 +850,27 @@ deterministische Außenlauf bleibt dieselbe Zugfahrt.
 | 9.9 | Geschlossene Alpha mit 20–50 externen Spielern in der freigegebenen Mitteldeutschland-Region, einschließlich M12.1/M12.2 | M | offen |
 | 9.10 | **Jährliche Infrastrukturaktualisierung** (E22): `InfraRelease`-Neubau aus aktualisiertem `osm-pbf-lhe` und der Trassenfinder-Infrastruktur-API zu jedem realen Fahrplanwechsel; Übernahmeverfahren für eine laufende Welt zum nächsten Periodenwechsel, ohne Invariante 1 zu verletzen | L | offen |
 
-Phase 2 verdrahtet M9.1 und M9.3 im Repository: Odoo-eingeladene Konten
-erhalten Ziel- und Tutorialzugang, Tutorial-Reset sowie Startpaket laufen über
-autoritative Single-Writer-/Economy-/Operating-Pfade, und Game Web bildet die
-fünf Kapitel sowie die öffentliche Onboarding-Reise vollständig ab. Beide
-Teilabschnitte bleiben **offen**, bis ein externes Konto den Browserlauf gegen
-neu erzeugte und signierte Zielbestände absolviert hat; der lokale PGlite-E2E
-ist dafür ein reproduzierbarer Vorabbeweis, kein Produktionsnachweis.
+M9.1 ist repositoryseitig als persönliche, beim Spielerstart erzeugte Welt
+implementiert: versioniertes Minimaltemplate, echte Economy-/Fleet-/Planning-/
+Operating-/Disruption-Pfade, persistenter Lebenszyklus, Reaper, reale
+Tutorialtelemetrie und der versionierte Lutz-Dialogkatalog. Odoo-Einladungen
+erzeugen ausschließlich Zugang und Konto der öffentlichen Zielwelt; einzelne
+Tutorialinstanzen werden niemals nach Odoo projiziert. M9.1 bleibt **in
+Arbeit**, bis externe Testspieler den realen Browserlauf gegen frisch erzeugte
+Sitzungen absolvieren und der Nachweis Median ≈ 12 Minuten, mindestens 90
+Prozent unter 15 Minuten sowie erste Entscheidung unter 90 Sekunden erfüllt
+ist. Automatisierte PGlite-/Native-/Web-Tests sind Vorabbeweise, keine externe
+Produktabnahme. Der automatisierte Vorabbeweis
+`apps/game-api/src/tutorial-browser.e2e.test.ts` fährt den Game-Web-
+Produktionsbuild in Chrome/Chromium über die echten Session-HTTP-APIs und die
+Linux-NAPI-Pfade durch alle fünf Kapitel bis zur Archivierung; auch dieser Lauf
+ersetzt weder externe Teilnehmer noch die Zeitmessung.
+
+M9.3 vergibt keine öffentliche Startausstattung mehr. Sein Geldpfad hängt an
+der parallel eingeführten, signierten `StartingCapitalPolicy`; null, endliche
+Integer-Cent und der explizite Modus `unlimited` bleiben dort getrennte
+Verträge. Heatmap, Glossar und Assistent bleiben M9.3-Folgearbeit und werden
+nicht durch das Tutorial als abgeschlossen ausgegeben.
 
 Phase 3 schließt die noch fehlende ausführbare Betriebsschicht für M9.4,
 M9.5 und M9.7: Einladungskonten werden nur noch über einen Odoo-

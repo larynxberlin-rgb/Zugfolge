@@ -18,7 +18,6 @@ class AlphaInvitation(models.Model):
     display_name = fields.Char(required=True, tracking=True)
     world_projection_id = fields.Many2one("zugfolge.world.projection", required=True, ondelete="restrict", index=True)
     role = fields.Selection([("player", "Spieler"), ("world_admin", "Weltverwaltung")], required=True, default="player", tracking=True)
-    start_package = fields.Char(tracking=True)
     request_reference = fields.Char(required=True, default=lambda self: str(uuid.uuid4()), readonly=True, copy=False, index=True)
     correlation_id = fields.Char(required=True, default=lambda self: str(uuid.uuid4()), readonly=True, copy=False, index=True)
     keycloak_subject = fields.Char(readonly=True, copy=False, index=True)
@@ -44,7 +43,6 @@ class AlphaInvitation(models.Model):
                 "email": self.email,
                 "displayName": self.display_name,
                 "role": self.role,
-                "startPackage": self.start_package or None,
                 "keycloakSubject": self.keycloak_subject or None,
             },
         }

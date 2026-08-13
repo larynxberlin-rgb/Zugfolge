@@ -1,115 +1,136 @@
+import { readFileSync } from "node:fs";
+import { inflateSync } from "node:zlib";
+
 import { describe, expect, it } from "vitest";
 
+import type { TutorialSessionView } from "./api.js";
 import { renderJourney } from "./journey.js";
 
-describe("Phase-2-Spielerreise", () => {
-  it("zeigt alle fünf Tutorialkapitel, Belegstatus und Reset redundant als Text", () => {
-    const html = renderJourney({
-      tutorialWorldId: "tutorial-world",
-      publicWorldId: "public-world",
-      busy: false,
-      message: "",
-      livemapUrl: "https://map.example/?world=public-world",
-      tutorial: {
-        chapter: 3,
-        chapterState: "in-progress",
-        evidence: {
-          "1": { completed: true, references: ["tender-1"] },
-          "2": { completed: true, references: ["lease-1"] },
-          "3": { completed: false, references: [] },
-        },
-        explanation: "Trassenbeleg fehlt.",
-        explanationCode: "tutorial.path.missing",
-        resetCount: 1,
-        chapters: [
-          { chapter: 1, code: "first-tender", title: "Erste Ausschreibung", goal: "Gebot" },
-          { chapter: 2, code: "lease-vehicle", title: "Fahrzeug leasen", goal: "Miete" },
-          { chapter: 3, code: "request-path", title: "Trasse beantragen", goal: "Trasse" },
-          { chapter: 4, code: "operating-program", title: "Betriebsprogramm erstellen", goal: "Programm" },
-          { chapter: 5, code: "handle-disruption", title: "Erste Störung bewältigen", goal: "Dispo" },
-        ],
-      },
-      heatmap: [],
-      assistant: undefined,
-      grant: undefined,
-    });
-    expect(html.match(/data-tutorial-chapter=/g)).toHaveLength(5);
+const chapters = [
+  { chapter: 1, code: "first-tender", title: "Erste Ausschreibung", goal: "Gebot" },
+  { chapter: 2, code: "lease-vehicle", title: "Fahrzeug leasen", goal: "Miete" },
+  { chapter: 3, code: "request-path", title: "Trasse beantragen", goal: "Trasse" },
+  { chapter: 4, code: "operating-program", title: "Betriebsprogramm aktivieren", goal: "Programm" },
+  { chapter: 5, code: "handle-disruption", title: "Erste Störung", goal: "Dispo" },
+] as const;
+
+function session(chapter = 3): TutorialSessionView {
+  return {
+    reference: "tut_abcdefghijklmnopqrstuvwxyz",
+    tutorialWorldId: "7a8d576f-144e-4592-8464-85f7701469c7",
+    publicWorldId: "3a25998b-43e3-42bc-8100-5afc9f8f0960",
+    lifecycle: "running",
+    templateVersion: "tutorial-minimal-2026.1",
+    templateHash: "abc",
+    currentChapter: chapter,
+    progressLabel: `Kapitel ${chapter} von 5`,
+    evidence: Object.fromEntries(chapters.map((entry) => [String(entry.chapter), { completed: entry.chapter < chapter, references: entry.chapter < chapter ? [`proof-${entry.chapter}`] : [] }])),
+    chapters,
+    dialogue: { id: "lutz-path", templateVersion: "tutorial-minimal-2026.1", chapter, trigger: `chapter.${chapter}.started`, speaker: "lutz", text: "Die Gleise sind leider nicht exklusiv reserviert. Bestätigen Sie eine Alternative.", why: "Puffer reduziert Konfliktrisiko.", actionLabel: "Alternativen vergleichen", target: "tutorial-path-options", canDismiss: true },
+    presentation: {
+      paths: [
+        { id: "path-tight", label: "Knapp und günstig", bufferSeconds: 45, costCents: "78000" },
+        { id: "path-robust", label: "Robust mit Puffer", bufferSeconds: 180, costCents: "112000" },
+      ],
+    },
+    idleExpiresAt: "2026-08-13T12:30:00.000Z",
+    maximumExpiresAt: "2026-08-13T13:00:00.000Z",
+    publicWorldUrl: "?world=3a25998b-43e3-42bc-8100-5afc9f8f0960",
+  };
+}
+
+describe("spielergebundene Tutorialreise", () => {
+  it("zeigt genau eine Hauptaufgabe, fünf textliche Fortschrittszustände und Lutz zugänglich", () => {
+    const html = renderJourney({ publicWorldId: session().publicWorldId, busy: false, message: "", tutorial: session(), coachDismissed: false, whyOpen: false });
+    expect(html.match(/class="tutorial-task/g)).toHaveLength(1);
+    expect(html.match(/<li aria-current=/g)).toHaveLength(5);
     expect(html).toContain("Erledigt");
     expect(html).toContain("Aktiv");
-    expect(html).toContain("Tutorial zurücksetzen");
-    expect(html).toContain("Beschleunigt nur in der getrennten Tutorialwelt");
-    expect(html).toContain("Zur Live-Lage");
+    expect(html).toContain('alt="Lutz, fiktiver und sichtbar genervter Tutorialbegleiter"');
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain('id="lutz-name" tabindex="-1"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain("Später erneut anzeigen");
+    expect(html).not.toContain("Belege neu prüfen");
+    expect(html).not.toContain("tutorial-chapter-1\"");
   });
 
-  it("kombiniert Heatmapmuster, Zustandswort und blockierende Assistentenwarnung", () => {
-    const html = renderJourney({
-      tutorialWorldId: "",
-      publicWorldId: "public-world",
-      busy: false,
-      message: "",
-      tutorial: undefined,
-      grant: undefined,
-      heatmap: [{
-        resourceId: "block-a",
-        intervalStartS: 0,
-        intervalEndS: 100,
-        usedSeconds: 95,
-        capacitySeconds: 100,
-        qualityClass: "A",
-        orderable: true,
-        utilizationBasisPoints: 9_500,
-        stateLabel: "nahezu belegt",
-        pattern: "dense-dots",
-      }],
-      assistant: {
-        ready: false,
-        facts: { pathConfirmed: false },
-        warnings: [{ code: "path-missing", severity: "blocking", message: "Keine bestätigte Trasse." }],
-      },
-    });
-    expect(html).toContain("dense-dots");
-    expect(html).toContain("nahezu belegt");
-    expect(html).toContain("Blockierend");
-    expect(html).toContain("Keine bestätigte Trasse.");
+  it("hält das Coach-Panel wiederöffnbar, ohne die fachliche Hauptaktion zu entfernen", () => {
+    const html = renderJourney({ publicWorldId: session().publicWorldId, busy: false, message: "", tutorial: session(), coachDismissed: true, whyOpen: false });
+    expect(html).toContain("Lutz wieder anzeigen");
+    expect(html).toContain("Trasse verbindlich bestätigen");
+    expect(html).not.toContain('class="tutorial-coach');
+  });
+
+  it("startet ohne statische Tutorialwelt und beschreibt die strikte öffentliche Grenze", () => {
+    const html = renderJourney({ publicWorldId: "public-world", busy: false, message: "", tutorial: undefined, coachDismissed: false, whyOpen: false });
+    expect(html).toContain("Tutorial mit Lutz starten");
+    expect(html).toContain("Nichts davon gelangt in die öffentliche Welt oder nach Odoo");
+    expect(html).toContain("Keine Startausstattung");
+    expect(html).not.toContain("tutorialWorld");
+  });
+
+  it("gibt den Start erst nach abgeschlossener Sitzungspruefung frei", () => {
+    const loading = renderJourney({ publicWorldId: "public-world", busy: true, message: "", tutorial: undefined, coachDismissed: false, whyOpen: false });
+    const ready = renderJourney({ publicWorldId: "public-world", busy: false, message: "", tutorial: undefined, coachDismissed: false, whyOpen: false });
+    expect(loading).toContain('<button disabled aria-disabled="true" id="tutorial-start" class="primary-action" type="button">');
+    expect(ready).toContain('id="tutorial-start" class="primary-action" type="button">');
+  });
+
+  it("deaktiviert hektische Bewegung und ordnet das Coach-Panel mobil unter die Aufgabe", () => {
+    const css = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+    expect(css).toMatch(/prefers-reduced-motion:reduce/);
+    expect(css).toMatch(/\.tutorial-task\{order:1/);
+    expect(css).toMatch(/\.tutorial-coach,.coach-reopen\{[^}]*order:2/);
+  });
+
+  it("liefert genau den ausgewaehlten RGBA-PNG-Avatar mit transparenten oberen Ecken", () => {
+    const png = readFileSync(new URL("../public/assets/tutorial/lutz-avatar-comic-v2.png", import.meta.url));
+    expect(png.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
+    const width = png.readUInt32BE(16);
+    const height = png.readUInt32BE(20);
+    const bitDepth = png[24];
+    const colourType = png[25];
+    expect({ width, height, bitDepth, colourType }).toEqual({ width: 1254, height: 1254, bitDepth: 8, colourType: 6 });
+    const chunks: Buffer[] = [];
+    for (let offset = 8; offset < png.length;) {
+      const length = png.readUInt32BE(offset);
+      const kind = png.subarray(offset + 4, offset + 8).toString("ascii");
+      if (kind === "IDAT") chunks.push(png.subarray(offset + 8, offset + 8 + length));
+      offset += 12 + length;
+    }
+    const decoded = inflateSync(Buffer.concat(chunks));
+    expect(decoded[0]).toBe(0);
+    expect(decoded[4]).toBe(0);
+    expect(decoded[width * 4]).toBe(0);
   });
 
   it("macht Ladefehler wiederholbar und meldet sie als Alarm", () => {
     const html = renderJourney({
-      tutorialWorldId: "tutorial-world",
       publicWorldId: "public-world",
       busy: false,
       message: "Tutorial konnte nicht geladen werden.",
       messageTone: "error",
       tutorial: undefined,
-      grant: undefined,
-      heatmap: [],
-      assistant: undefined,
+      coachDismissed: false,
+      whyOpen: false,
     });
     expect(html).toContain('role="alert"');
-    expect(html).toContain('id="tutorial-refresh"');
-    expect(html).toContain("Erneut laden");
+    expect(html).toContain('id="tutorial-start"');
+    expect(html).toContain("Tutorial mit Lutz starten");
   });
 
-  it("deaktiviert Aktionen waehrend eines Requests und nach dem Reset-Limit", () => {
+  it("deaktiviert alle Aktionen waehrend eines autoritativen Requests", () => {
     const html = renderJourney({
-      tutorialWorldId: "tutorial-world",
       publicWorldId: "public-world",
       busy: true,
       message: "",
-      tutorial: {
-        chapter: 1,
-        chapterState: "ready",
-        evidence: {},
-        explanation: "Bereit.",
-        explanationCode: "tutorial.ready",
-        resetCount: 5,
-        chapters: [],
-      },
-      grant: undefined,
-      heatmap: [],
-      assistant: undefined,
+      tutorial: session(),
+      coachDismissed: false,
+      whyOpen: false,
     });
-    expect(html).toContain("Reset-Limit erreicht");
-    expect(html.match(/ disabled/g)?.length).toBeGreaterThanOrEqual(4);
+    const buttons = html.match(/<button[^>]*>/g) ?? [];
+    expect(buttons.length).toBeGreaterThanOrEqual(4);
+    expect(buttons.every((button) => button.includes('disabled aria-disabled="true"'))).toBe(true);
   });
 });

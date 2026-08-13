@@ -66,7 +66,6 @@ services:
       KEYCLOAK_PUBLIC_URL: "${KEYCLOAK_PUBLIC_URL}"
       KEYCLOAK_REALM: "${KEYCLOAK_REALM:-zugfolge}"
       ALPHA_PUBLIC_WORLD_ID: "${ALPHA_PUBLIC_WORLD_ID}"
-      ALPHA_TUTORIAL_WORLD_ID: "${ALPHA_TUTORIAL_WORLD_ID}"
       GAME_WEB_PUBLIC_URL: "${GAME_WEB_PUBLIC_URL:-http://localhost:4173}"
       LIVEMAP_PUBLIC_URL: "${LIVEMAP_PUBLIC_URL:-http://localhost:4174}"
     depends_on: { game-api: { condition: service_healthy } }

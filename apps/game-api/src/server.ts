@@ -9,7 +9,7 @@ import {
   worldEventLog,
   worlds,
 } from "@zugfolge/db";
-import { AbuseGuard, AlphaFeedbackService, AlphaMonitoringService, InfraUpdateService, OnboardingService, TutorialService, WorldEndService, alphaHash } from "@zugfolge/alpha";
+import { AbuseGuard, AlphaFeedbackService, AlphaMonitoringService, InfraUpdateService, TutorialSessionService, WorldEndService, alphaHash } from "@zugfolge/alpha";
 import {
   createHttpOdooProjectionClient,
   createHttpOdooReconciliationClient,
@@ -59,7 +59,7 @@ import {
   loadRegionalSimulationRuntime,
   type OperatingRuntimeEvent,
 } from "@zugfolge/runtime-native";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 
 import { buildApp } from "./app.js";
 import {
@@ -106,13 +106,8 @@ import {
 } from "./alpha-world-start.js";
 import type { RegionalServiceCatalog } from "./boundary-transition-scheduler.js";
 import { createAlphaInvitationAdminHandlers } from "./alpha-invitation-admin.js";
-import { AuthoritativeOnboardingPort, AuthoritativeTutorialResetPort } from "./alpha-journey-adapters.js";
 import { AlphaOperationsMetrics } from "./observability.js";
-import {
-  GameAlphaJourneyCommandWriter,
-  parseAlphaJourneyAuthorityConfiguration,
-  parseStartPackageSpec,
-} from "./alpha-journey-writer.js";
+import { GameTutorialWorldFactory } from "./tutorial-world-factory.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -231,7 +226,6 @@ const alphaInvitationAdminHandlers = createAlphaInvitationAdminHandlers({
   db,
   keycloak: keycloakAdmin,
   redirectUri: requireEnv("KEYCLOAK_INVITATION_REDIRECT_URI"),
-  tutorialWorldId: requireEnv("ALPHA_TUTORIAL_WORLD_ID"),
 });
 const livemapReadModelPath = optionalEnv("LIVEMAP_READ_MODEL_PATH");
 const livemapReadModel = livemapReadModelPath === undefined
@@ -265,15 +259,6 @@ const disruptionProviderMonitor = new DisruptionProviderMonitor(Date.now());
 const disruptionProviderClient = new PublicInfrastructureRestrictionsClient();
 const disruptionProviderStore = createDisruptionProviderStore(db);
 const operatingRuntime = loadOperatingRuntime();
-const alphaJourneyWriter = new GameAlphaJourneyCommandWriter(
-  db,
-  operatingRuntime,
-  parseAlphaJourneyAuthorityConfiguration(requireEnv("ALPHA_JOURNEY_AUTHORITY_JSON")),
-  async (events) => { events.forEach((event) => projectLivemapOperationEvent(livemap, event)); },
-);
-const tutorial = new TutorialService(db, new AuthoritativeTutorialResetPort(alphaJourneyWriter));
-const onboarding = new OnboardingService(db, new AuthoritativeOnboardingPort(alphaJourneyWriter));
-const startPackageSpec = parseStartPackageSpec(requireEnv("ALPHA_START_PACKAGE_SPEC_JSON"));
 const fleetAuthorityReleases = await loadFleetAuthorityReleaseCatalog(
   requireEnv("ZUGFOLGE_FLEET_AUTHORITY_RELEASE_PATH"),
 );
@@ -292,6 +277,10 @@ const regionalSimulation = new RegionalSimulationWorker(
   regionalSimulationRuntime,
   livemap,
   operations,
+);
+const tutorialSessions = new TutorialSessionService(
+  db,
+  new GameTutorialWorldFactory(db, operatingRuntime, planningRuntime, regionalSimulation),
 );
 const consumeProviderSnapshot = createProviderDisruptionConsumer(db, regionalSimulation);
 const worldRows = await db
@@ -459,9 +448,7 @@ const app = buildApp({
   fleetAuthorityReleases,
   adminControl: "odoo",
   alpha: {
-    tutorial,
-    onboarding,
-    startPackageSpec,
+    tutorialSessions,
     feedback: alphaFeedback,
     monitoring: alphaMonitoring,
     worldEnd,
@@ -521,7 +508,9 @@ const runAlphaProjection = () => {
   if (alphaProjectionCycle !== undefined || odooProjectionClient === undefined) return;
   const observedAt = new Date();
   alphaProjectionCycle = (async () => {
-    const profiles = await db.select({ worldId: alphaWorldProfiles.worldId }).from(alphaWorldProfiles).orderBy(asc(alphaWorldProfiles.worldId));
+    const profiles = await db.select({ worldId: alphaWorldProfiles.worldId }).from(alphaWorldProfiles)
+      .where(ne(alphaWorldProfiles.profileKind, "tutorial"))
+      .orderBy(asc(alphaWorldProfiles.worldId));
     for (const profile of profiles) {
       const snapshot = await alphaMonitoring.snapshot(profile.worldId, observedAt);
       alphaOperationsMetrics.observe(snapshot);
@@ -564,6 +553,24 @@ alphaProjectionInterval.unref();
 app.addHook("onClose", async () => {
   clearInterval(alphaProjectionInterval);
   await alphaProjectionCycle;
+});
+
+let tutorialReaperCycle: Promise<void> | undefined;
+const runTutorialReaper = () => {
+  if (tutorialReaperCycle !== undefined) return;
+  tutorialReaperCycle = tutorialSessions.reap(new Date())
+    .then((references) => {
+      if (references.length > 0) app.log.info({ tutorialSessionCount: references.length }, "Abgelaufene Tutorialwelten geschlossen");
+    })
+    .catch((error: unknown) => app.log.error({ err: error }, "Tutorial-Reaper fehlgeschlagen"))
+    .finally(() => { tutorialReaperCycle = undefined; });
+};
+runTutorialReaper();
+const tutorialReaperInterval = setInterval(runTutorialReaper, 30_000);
+tutorialReaperInterval.unref();
+app.addHook("onClose", async () => {
+  clearInterval(tutorialReaperInterval);
+  await tutorialReaperCycle;
 });
 
 let alphaPeriodCycle: Promise<void> | undefined;

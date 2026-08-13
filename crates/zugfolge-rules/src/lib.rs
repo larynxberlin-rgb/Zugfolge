@@ -126,6 +126,19 @@ pub enum RuleTrigger {
 }
 
 impl RuleTrigger {
+    fn dispatch_trigger(self) -> DispatchTrigger {
+        match self {
+            Self::DelayThreshold { .. } => DispatchTrigger::DelayThreshold,
+            Self::ConnectionRisk => DispatchTrigger::ConnectionRisk,
+            Self::VehicleFailure => DispatchTrigger::VehicleFailure,
+            Self::PersonnelDutyExceeded => DispatchTrigger::PersonnelDutyExceeded,
+            Self::RouteClosure => DispatchTrigger::RouteClosure,
+            Self::PlatformChange => DispatchTrigger::PlatformChange,
+            Self::TurnaroundShortfall => DispatchTrigger::TurnaroundShortfall,
+            Self::AdHocPathConflict => DispatchTrigger::AdHocPathConflict,
+        }
+    }
+
     fn validate(self) -> Result<(), RuleError> {
         if matches!(self, Self::DelayThreshold { at_least_seconds } if at_least_seconds <= 0) {
             Err(RuleError::InvalidTrigger)
@@ -662,7 +675,7 @@ impl RuleDispatcher {
 
     fn evaluate(
         &self,
-        train: &TrainRun,
+        train_run_id: u64,
         event_at: SimTime,
         trigger: DispatchTrigger,
         facts: &DispatchFacts,
@@ -756,7 +769,7 @@ impl RuleDispatcher {
                 decision_id: facts.decision_id,
                 world_id: self.program.world_id.clone(),
                 operator_id: self.program.operator_id.clone(),
-                train_run_id: train.id,
+                train_run_id,
                 event_at,
                 program_version: self.program.version,
                 program_checksum: self.checksum.clone(),
@@ -783,12 +796,140 @@ impl Dispatcher for RuleDispatcher {
         trigger: DispatchTrigger,
         facts: &DispatchFacts,
     ) -> DispatchDecision {
-        let (decision, explanation) = self.evaluate(train, event_at, trigger, facts);
+        let (decision, explanation) = self.evaluate(train.id, event_at, trigger, facts);
         if facts.decision_id != 0 {
             self.decisions.push(explanation);
         }
         decision
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DispatchLimitsInput {
+    pub capacity_available: bool,
+    pub train_characteristics_compatible: bool,
+    pub route_knowledge_available: bool,
+    pub train_protection_compatible: bool,
+    pub electrification_compatible: bool,
+    pub train_length_allowed: bool,
+    pub vehicle_available: bool,
+    pub maintenance_valid: bool,
+    pub personnel_qualified: bool,
+    pub rest_time_compliant: bool,
+    pub rotation_feasible: bool,
+    pub contract_allows: bool,
+    pub cost_within_limit: bool,
+}
+
+impl From<DispatchLimitsInput> for DispatchLimits {
+    fn from(value: DispatchLimitsInput) -> Self {
+        Self {
+            capacity_available: value.capacity_available,
+            train_characteristics_compatible: value.train_characteristics_compatible,
+            route_knowledge_available: value.route_knowledge_available,
+            train_protection_compatible: value.train_protection_compatible,
+            electrification_compatible: value.electrification_compatible,
+            train_length_allowed: value.train_length_allowed,
+            vehicle_available: value.vehicle_available,
+            maintenance_valid: value.maintenance_valid,
+            personnel_qualified: value.personnel_qualified,
+            rest_time_compliant: value.rest_time_compliant,
+            rotation_feasible: value.rotation_feasible,
+            contract_allows: value.contract_allows,
+            cost_within_limit: value.cost_within_limit,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DispatchImpactInput {
+    pub affected_train_runs: u32,
+    pub affected_connections: u32,
+    pub affected_rotations: u32,
+    pub affected_personnel_pools: u32,
+    pub affected_vehicles: u32,
+    pub cost_cents: i64,
+    pub contract_penalty_cents: i64,
+    pub cancelled_stops: u32,
+    pub cause: String,
+    pub affected_resource: String,
+    pub contract_effect: String,
+}
+
+impl From<DispatchImpactInput> for DispatchImpact {
+    fn from(value: DispatchImpactInput) -> Self {
+        Self {
+            affected_train_runs: value.affected_train_runs,
+            affected_connections: value.affected_connections,
+            affected_rotations: value.affected_rotations,
+            affected_personnel_pools: value.affected_personnel_pools,
+            affected_vehicles: value.affected_vehicles,
+            cost_cents: value.cost_cents,
+            contract_penalty_cents: value.contract_penalty_cents,
+            cancelled_stops: value.cancelled_stops,
+            cause: value.cause,
+            affected_resource: value.affected_resource,
+            contract_effect: value.contract_effect,
+        }
+    }
+}
+
+/** Serde-stabile, DB- und uhrfreie Grenze fuer genau einen Dispositionsfall. */
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DispatchCaseInput {
+    pub decision_id: u64,
+    pub train_run_id: u64,
+    pub event_at: SimTime,
+    pub trigger: RuleTrigger,
+    pub delay_seconds: i64,
+    pub connection_threatened: bool,
+    pub vehicle_failed: bool,
+    pub duty_excess_seconds: u32,
+    pub route_closed: bool,
+    pub platform_changed: bool,
+    pub turnaround_shortfall_seconds: u32,
+    pub adhoc_conflict: bool,
+    pub hold_until: SimTime,
+    pub limits: DispatchLimitsInput,
+    pub impact: DispatchImpactInput,
+    pub manual_action: Option<Action>,
+    pub manual_reason: Option<String>,
+}
+
+/**
+ * Wertet einen einzelnen, bereits autorisierten Fall durch denselben
+ * RuleDispatcher wie der dauerhafte Betrieb aus und liefert die vollstaendige
+ * erklaerbare Entscheidung.
+ */
+pub fn evaluate_dispatch_case(
+    program: OperatingProgram,
+    input: DispatchCaseInput,
+) -> Result<DecisionExplanation, RuleError> {
+    let dispatcher = RuleDispatcher::new(program)?;
+    let trigger = input.trigger.dispatch_trigger();
+    let mut manual_facts = DispatchFacts::neutral(0, input.hold_until);
+    manual_facts.hold_until = input.hold_until;
+    let manual_override = input
+        .manual_action
+        .map(|action| action.dispatch(&manual_facts));
+    let facts = DispatchFacts {
+        decision_id: input.decision_id,
+        delay_seconds: input.delay_seconds,
+        connection_threatened: input.connection_threatened,
+        vehicle_failed: input.vehicle_failed,
+        duty_excess_seconds: input.duty_excess_seconds,
+        route_closed: input.route_closed,
+        platform_changed: input.platform_changed,
+        turnaround_shortfall_seconds: input.turnaround_shortfall_seconds,
+        adhoc_conflict: input.adhoc_conflict,
+        hold_until: input.hold_until,
+        limits: input.limits.into(),
+        impact: input.impact.into(),
+        manual_override,
+        manual_reason: input.manual_reason,
+    };
+    let (_, explanation) = dispatcher.evaluate(input.train_run_id, input.event_at, trigger, &facts);
+    Ok(explanation)
 }
 
 fn evaluate_limits(action: Action, limits: &DispatchLimits) -> Vec<LimitCheck> {

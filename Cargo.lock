@@ -529,6 +529,8 @@ dependencies = [
  "napi",
  "napi-build",
  "napi-derive",
+ "serde_json",
+ "zugfolge-rules",
  "zugfolge-runtime",
  "zugfolge-sim-runtime",
 ]
