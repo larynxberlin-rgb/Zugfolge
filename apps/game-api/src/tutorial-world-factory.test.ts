@@ -5,6 +5,7 @@ import { closeTender, createTenderCalendar, deriveWorldProfile, submitBid } from
 
 import {
   TUTORIAL_ECONOMY_LOTS,
+  TUTORIAL_CONTRACT_EVIDENCE,
   TUTORIAL_LEASE_TIMES,
   TUTORIAL_TIMELINE,
   prepareTutorialEconomy,
@@ -22,6 +23,10 @@ describe("TutorialWorldFactory PlanningRun-Vertrag", () => {
   it("bildet einen gueltigen Sechsmonatskalender mit genau einem sichtbaren Tutoriallos", () => {
     expect(() => createTenderCalendar(deriveWorldProfile(6), TUTORIAL_ECONOMY_LOTS, 7_219_2026n)).not.toThrow();
     expect(TUTORIAL_ECONOMY_LOTS.filter((lot) => lot.id === "tutorial-lot")).toHaveLength(1);
+  });
+
+  it("liefert alle vom Servicevertrag verlangten Abrechnungsklassen", () => {
+    expect(TUTORIAL_CONTRACT_EVIDENCE).toEqual(["vehicles", "personnel", "paths"]);
   });
 
   it("oeffnet die echte Ausschreibung mit gueltigen Fristen und Vergleichsangebot", () => {

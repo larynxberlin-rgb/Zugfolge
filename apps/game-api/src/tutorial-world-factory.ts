@@ -179,6 +179,8 @@ export const TUTORIAL_ECONOMY_LOTS = Object.freeze([
   Object.freeze({ id: "tutorial-calendar-lot-3", size: 1, attractiveness: 1 }),
 ]);
 
+export const TUTORIAL_CONTRACT_EVIDENCE = Object.freeze(["vehicles", "personnel", "paths"] as const);
+
 function object(value: unknown, name = "Wert"): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error(`${name} ist kein Objekt.`);
   return value as Record<string, unknown>;
@@ -1004,7 +1006,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
           cancellations: selected.cancelledStops > 0 ? 1 : 0,
           missingSeats: 0,
           missedConnections: action.action === "short_turn" ? 1 : 0,
-          evidence: ["tutorial-run-1", decisionId, String(decisionSequence)],
+          evidence: [...TUTORIAL_CONTRACT_EVIDENCE, "tutorial-run-1", decisionId, String(decisionSequence)],
         },
         costs: [
           { amountCents: BigInt(textValue(stateValue["pathCostCents"], "Trassenkosten")), costType: "track", costCentreId: "tutorial-lot", reference: textValue(stateValue["selectedPathReceiptId"], "Trassenbeleg") },
