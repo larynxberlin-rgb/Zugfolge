@@ -18,7 +18,6 @@ class TestProjectionIngress(HttpCase):
             "zugfolge_admin.projection_keys_json",
             json.dumps({cls.KEY_ID: cls.SECRET}),
         )
-        cls.env.cr.commit()
 
     def _post_projection(self, payload):
         timestamp = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
