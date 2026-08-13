@@ -1,35 +1,33 @@
+import { GENERATED_GLOSSARY_ENTRIES } from "./generated.js";
+
 export interface GlossaryEntry {
   readonly term: string;
   readonly code: string;
   readonly definition: string;
 }
 
-export const GLOSSARY_ENTRIES: readonly GlossaryEntry[] = Object.freeze([
-  { term: "Aufgabentraeger", code: "authority", definition: "Oeffentliche Stelle, die SPNV-Leistungen bestellt, ausschreibt und finanziert." },
-  { term: "Betriebsprogramm", code: "operating_program", definition: "Serverautoritaeres Regelwerk eines EVU fuer wiederkehrende Dispositionsentscheidungen." },
-  { term: "Eigenbetrieb", code: "public_operation", definition: "Neutraler Betrieb des Aufgabentraegers, bis ein Spieler-EVU ein Los nahtlos uebernimmt." },
-  { term: "EVU", code: "operator", definition: "Eisenbahnverkehrsunternehmen innerhalb genau einer Welt." },
-  { term: "Fahrplanperiode", code: "schedule_period", definition: "Weltgebundener Planungs- und Vertragsabschnitt von drei bis acht Wochen." },
-  { term: "Fahrstrasse", code: "route_lock", definition: "Gesicherter Weg durch konfliktbehaftete Gleis- und Weichenressourcen." },
-  { term: "InfraRelease", code: "infra_release", definition: "Versionierter, gepruefter und signierter Infrastrukturstand einer Welt." },
-  { term: "Konfliktressource", code: "conflict_resource", definition: "Gleis-, Weichen-, Bahnsteig- oder Fahrstrassenressource, die inkompatible gleichzeitige Belegungen ausschliesst." },
-  { term: "Los", code: "lot", definition: "Zusammengefasste SPNV-Leistung, die als Einheit vergeben und betrieben wird." },
-  { term: "Notvergabe", code: "emergency_award", definition: "Eng begrenzte direkte Vergabe zur Sicherung eines Mindestangebots, nicht als Wettbewerbsvorteil." },
-  { term: "Qualitaetsklasse C", code: "quality_c", definition: "Sichtbarer Abschnitt mit unzureichender Datenqualitaet; er ist nicht bestellbar." },
-  { term: "Trasse", code: "path", definition: "Zeitlich und raeumlich konfliktgeprueftes Nutzungsrecht fuer eine Zugfahrt." },
-  { term: "Umlauf", code: "circulation", definition: "Zeitliche Folge von Fahrzeugleistungen einschliesslich Wenden, Abstellung und Werkstattbindung." },
-  { term: "Vier-Augen-Prinzip", code: "four_eyes", definition: "Hochrisikoaktion braucht getrennte Personen fuer Antrag und Freigabe; das Game prueft dies erneut." },
-  { term: "Weltzeit", code: "simulation_time", definition: "Explizite Simulationssekunde seit Weltepoche; sie kommt nie aus der Uhr des Simulationskerns." },
-]);
+export const GLOSSARY_ENTRIES: readonly GlossaryEntry[] = GENERATED_GLOSSARY_ENTRIES;
 
 function normalize(value: string): string {
-  return value.normalize("NFKD").replaceAll(/\p{Diacritic}/gu, "").toLocaleLowerCase("de-DE").trim();
+  return value
+    .toLocaleLowerCase("de-DE")
+    .replaceAll("ß", "ss")
+    .replaceAll("ae", "a")
+    .replaceAll("oe", "o")
+    .replaceAll("ue", "u")
+    .normalize("NFKD")
+    .replaceAll(/\p{Diacritic}/gu, "")
+    .trim();
 }
 
 export function filterGlossary(query: string, entries: readonly GlossaryEntry[] = GLOSSARY_ENTRIES): readonly GlossaryEntry[] {
   const needle = normalize(query);
   if (needle === "") return entries;
   return entries.filter((entry) => normalize(`${entry.term} ${entry.code} ${entry.definition}`).includes(needle));
+}
+
+export function glossaryEntryByCode(code: string): GlossaryEntry | undefined {
+  return GLOSSARY_ENTRIES.find((entry) => entry.code === code);
 }
 
 function entryNode(entry: GlossaryEntry): HTMLElement {
@@ -64,7 +62,7 @@ export function mountGlossaryLayer(root: HTMLElement = document.body): () => voi
   title.textContent = "Fachbegriffe";
   const close = document.createElement("button");
   close.type = "button";
-  close.textContent = "Schliessen";
+  close.textContent = "Schließen";
   header.append(title, close);
   const label = document.createElement("label");
   label.textContent = "Begriff suchen";
@@ -77,18 +75,42 @@ export function mountGlossaryLayer(root: HTMLElement = document.body): () => voi
   status.setAttribute("aria-live", "polite");
   const list = document.createElement("div");
   list.className = "zf-glossary__list";
+  let returnFocus: HTMLElement = opener;
   const render = () => {
     const matches = filterGlossary(search.value);
     list.replaceChildren(...matches.map(entryNode));
     status.textContent = `${matches.length} Begriffe`;
   };
+  const openContextEntry = (event: Event): void => {
+    if (!(event.target instanceof Element)) return;
+    const trigger = event.target.closest<HTMLElement>("[data-glossary-code]");
+    if (trigger === null || !root.contains(trigger)) return;
+    const codeValue = trigger.dataset.glossaryCode ?? "";
+    const entry = glossaryEntryByCode(codeValue);
+    if (entry === undefined) return;
+    returnFocus = trigger;
+    search.value = entry.code;
+    render();
+    dialog.showModal();
+    search.focus();
+  };
   search.addEventListener("input", render);
-  opener.addEventListener("click", () => { dialog.showModal(); search.focus(); });
+  opener.addEventListener("click", () => {
+    returnFocus = opener;
+    dialog.showModal();
+    search.focus();
+  });
   close.addEventListener("click", () => dialog.close());
-  dialog.addEventListener("close", () => opener.focus());
+  dialog.addEventListener("close", () => {
+    (returnFocus.isConnected ? returnFocus : opener).focus();
+  });
   dialog.append(header, label, status, list);
   host.append(opener, dialog);
   root.append(host);
+  root.addEventListener("click", openContextEntry);
   render();
-  return () => host.remove();
+  return () => {
+    root.removeEventListener("click", openContextEntry);
+    host.remove();
+  };
 }

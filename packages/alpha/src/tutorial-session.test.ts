@@ -16,6 +16,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { AlphaConflictError } from "./errors.js";
 import {
+  TUTORIAL_BID_LIMITS,
+  TUTORIAL_PRESENTATION_SCHEMA,
   TutorialSessionService,
   type TutorialAction,
   type TutorialScenarioEvidence,
@@ -58,7 +60,20 @@ class RecordingFactory implements TutorialWorldFactory {
     return { chapters: [evidence(1), evidence(2), evidence(3), evidence(4), evidence(5)] };
   }
 
-  async presentation() { return { leases: [], paths: [], programmes: [], disruptionOptions: [] }; }
+  async presentation() {
+    return {
+      schemaVersion: TUTORIAL_PRESENTATION_SCHEMA,
+      tender: {
+        id: "tutorial-tender",
+        priceWeightBasisPoints: 5_000,
+        qualityWeightBasisPoints: 5_000,
+        penaltyFocus: "punctuality",
+        viabilityThresholdCentsPerTrainKm: "1739",
+        limits: TUTORIAL_BID_LIMITS,
+      },
+      leases: [], paths: [], programmes: [], programmeRuleEffects: [], disruptionOptions: [],
+    };
+  }
   async summary() { return { startLiquidityCents: "2000000", leasingCostCents: "210000", pathAndOperatingCostCents: "768000", orderingRevenueCents: "1560000", disruptionCostCents: "95000", resultCents: "487000", punctualityBasisPoints: 9180, qualityTargetsMet: ["Puenktlichkeit"], comparison: { selectedAction: "request_reroute" } }; }
   async close(session: TutorialSession) {
     this.closeCalls += 1;

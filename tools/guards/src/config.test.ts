@@ -6,6 +6,7 @@ import { parseConfig } from "./config.js";
 
 const GRUNDGERUEST = {
   domains: [{ id: "kern", title: "Kern", status: "active", paths: ["kern/**"], rules: [] }],
+  coverageExceptions: [],
   brandTokenHashes: [],
   allowedLicenses: ["MIT"],
   deniedLicenses: [],
@@ -59,6 +60,21 @@ describe("parseConfig", () => {
       },
     ];
     expect(lies({ licenseExceptions }).licenseExceptions).toHaveLength(1);
+  });
+
+  it("verlangt fuer eine Coverage-Ausnahme einen engen Pfad und eine Begruendung", () => {
+    expect(() => lies({ coverageExceptions: [{
+      path: "packages/**",
+      reason: "Lang genug, aber viel zu breit fuer eine sichere Ausnahme.",
+    }] })).toThrow(/zu breit/);
+    expect(() => lies({ coverageExceptions: [{
+      path: "packages/legacy/src/generated.ts",
+      reason: "zu kurz",
+    }] })).toThrow(/Begruendung/);
+    expect(lies({ coverageExceptions: [{
+      path: "packages/legacy/src/generated.ts",
+      reason: "Generierter Kompatibilitaetsadapter ohne eigene fachliche Autoritaet.",
+    }] }).coverageExceptions).toHaveLength(1);
   });
 
   it("hält den lokalen Artefaktspeicher aus dem Wächterlauf", () => {

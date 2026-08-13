@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 
 import type {
-  LivemapConfigV1,
+  LivemapConfigV2,
   PublicInfrastructureDisruption,
   PublicMapEstimate,
   PublicMapPosition,
@@ -434,7 +434,7 @@ export function loadTrainMapProjector(path: string): SQLiteTrainMapProjector {
 
 export function assertTrainMapProjectionBinding(
   projector: SQLiteTrainMapProjector,
-  config: LivemapConfigV1 | undefined,
+  config: LivemapConfigV2 | undefined,
 ): void {
   if (
     config === undefined

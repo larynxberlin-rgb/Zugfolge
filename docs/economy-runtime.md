@@ -83,6 +83,22 @@ verschieben. Ein nicht vorhandener oder nicht mehr gültiger M5-Nachweis führt
 zum vorgesehenen Eigenbetriebs-/Pönalepfad und nicht zu einer stillen
 Mobilisierung.
 
+### Serialisierte Cash-Verfügbarkeit
+
+Economy-Übergang, Journalprojektion und entgeltliche EVU-Kooperation teilen
+pro Welt und EVU dieselbe Datenbanksperre. Ein Journal-Debit reserviert Cash
+bereits mit dem atomaren Economy-/Outbox-Commit; ein Kauf oder entgeltlicher
+Vertrag darf deshalb nur den gebuchten Cash-Saldo abzüglich aller noch nicht
+ins Ledger projizierten Netto-Debits verwenden. Noch ungebuchte Journal-Credits
+erhöhen die verfügbare Liquidität nicht.
+
+Liegt nach einem Workerabbruch die idempotente Ledger-Transaktion bereits vor,
+während die Outboxzeile noch nicht quittiert ist, wird ihr Debit nicht ein
+zweites Mal reserviert. Parallele Dispatcher dürfen denselben Effekt bis zum
+idempotenten Zieladapter lesen; genau eine welt- und EVU-gebundene
+Ledger-Transaktion entsteht, und eine bereits durch einen Konkurrenten
+quittierte Outboxzeile gilt für den Verlierer als erfolgreicher Replay.
+
 Die Scheduler-Wanduhr wird nur im Adapter gelesen. Vor der fachlichen
 Auswertung lädt der Worker die Weltepoche aus der Datenbank und bildet daraus
 eine ganzzahlige Weltsekunde. Fristen und der Rust-Kern erhalten niemals Unix-
@@ -91,7 +107,10 @@ Sekunden oder `now()` als Simulationszustand.
 Für die Produktion sind neben Datenbank und Keycloak die getrennten
 Ingest-Geheimnisse sowie `ECONOMY_LEDGER_ACCOUNTS_JSON` erforderlich. Letzteres
 ordnet jeder EVU-ID das Geld-, Erlös- und die benötigten Kostenkonten zu; eine
-fehlende Zuordnung lässt den Outbox-Lauf sichtbar fehlschlagen.
+fehlende Zuordnung lässt den Outbox-Lauf sichtbar fehlschlagen. Vor jeder
+Buchung werden Welt, EVU und Kontonamen gegen den versionierten Kontenplan
+`economy-ledger-account-plan/v1` geprüft; opaque IDs allein autorisieren keine
+Kontenrolle.
 Zusätzlich ist `ZUGFOLGE_RUNTIME_NATIVE_PATH` verpflichtend und muss auf das
 für die Produktionsplattform gebaute `.node`-Addon zeigen.
 

@@ -5,8 +5,11 @@ import { closeTender, createTenderCalendar, deriveWorldProfile, submitBid } from
 
 import {
   TUTORIAL_ECONOMY_LOTS,
+  TUTORIAL_ECONOMY_LEDGER_ACCOUNT_PLAN,
+  TUTORIAL_CONTRACT_PERIOD_SECONDS,
   TUTORIAL_CONTRACT_EVIDENCE,
   TUTORIAL_LEASE_TIMES,
+  TUTORIAL_SETTLEMENT_PERIOD,
   TUTORIAL_TIMELINE,
   prepareTutorialEconomy,
   tutorialPlayerBid,
@@ -27,6 +30,28 @@ describe("TutorialWorldFactory PlanningRun-Vertrag", () => {
 
   it("liefert alle vom Servicevertrag verlangten Abrechnungsklassen", () => {
     expect(TUTORIAL_CONTRACT_EVIDENCE).toEqual(["vehicles", "personnel", "paths"]);
+  });
+
+  it("rechnet Periode null erst an ihrem serverseitigen Periodenende ab", () => {
+    expect(TUTORIAL_SETTLEMENT_PERIOD).toBe(0);
+    expect(TUTORIAL_TIMELINE.settlementAtS).toBe(
+      TUTORIAL_TIMELINE.operatingFromS + TUTORIAL_CONTRACT_PERIOD_SECONDS,
+    );
+    expect(TUTORIAL_TIMELINE.settlementAtS).toBeGreaterThan(TUTORIAL_TIMELINE.operatingFromS + 620);
+  });
+
+  it("bindet das Tutorialjournal an seinen explizit versionierten Kontenplan", () => {
+    expect(TUTORIAL_ECONOMY_LEDGER_ACCOUNT_PLAN).toMatchObject({
+      schema: "economy-ledger-account-plan/v1",
+      version: "tutorial-template-2026.1",
+      cashAccountName: "Bank",
+      revenueAccountName: "Bestellererloese",
+      costAccountNames: {
+        track: "Kosten:track",
+        energy: "Kosten:energy",
+        personnel: "Kosten:personnel",
+      },
+    });
   });
 
   it("oeffnet die echte Ausschreibung mit gueltigen Fristen und Vergleichsangebot", () => {

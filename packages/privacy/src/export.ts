@@ -51,6 +51,7 @@ export async function exportAccountData(
   const mailboxMessages = await listInbox(db, {
     worldId: input.worldId,
     requestingKeycloakSubject: input.keycloakSubject,
+    asOf: input.exportedAt,
   });
 
   return {

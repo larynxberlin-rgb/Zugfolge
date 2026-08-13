@@ -508,6 +508,7 @@ const runAlphaProjection = () => {
   if (alphaProjectionCycle !== undefined || odooProjectionClient === undefined) return;
   const observedAt = new Date();
   alphaProjectionCycle = (async () => {
+    // guards:allow world-id — Der Betriebszyklus enumeriert Welt-IDs; jede Folgeverarbeitung ist wieder weltgebunden.
     const profiles = await db.select({ worldId: alphaWorldProfiles.worldId }).from(alphaWorldProfiles)
       .where(ne(alphaWorldProfiles.profileKind, "tutorial"))
       .orderBy(asc(alphaWorldProfiles.worldId));
@@ -663,7 +664,11 @@ const runCommerce = () => {
     }) !== undefined) {
       // Alle bereits vorliegenden Befehle abarbeiten, ohne auf Odoo zu warten.
     }
-    if (odooProjectionClient !== undefined) await dispatchOdooProjectionOutbox(db, odooProjectionClient, new Date());
+    if (odooProjectionClient !== undefined) {
+      for (const worldId of configuredWorldIds) {
+        await dispatchOdooProjectionOutbox(db, worldId, odooProjectionClient, new Date());
+      }
+    }
   })().catch((error: unknown) => {
     app.log.error({ err: error }, "Odoo-Bridge-Lauf fehlgeschlagen");
   }).finally(() => { commerceCycle = undefined; });

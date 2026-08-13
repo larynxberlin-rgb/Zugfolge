@@ -15,8 +15,8 @@ lesen, nicht raten.
 
 | Datei | Inhalt | Lesen wenn |
 |-------|--------|------------|
-| `docs/entscheidungen.md` | E1–E28 mit voller Begründung | eine Entscheidung infrage steht oder geändert werden soll |
-| `docs/adr/` | E1–E28 je als Architecture Decision Record: Kontext, Konsequenzen, Querverweise | eine Grundsatzentscheidung ausführlich nachschlagen oder eine neue festhalten |
+| `docs/entscheidungen.md` | E1–E29 mit voller Begründung | eine Entscheidung infrage steht oder geändert werden soll |
+| `docs/adr/` | E1–E29 je als Architecture Decision Record: Kontext, Konsequenzen, Querverweise | eine Grundsatzentscheidung ausführlich nachschlagen oder eine neue festhalten |
 | `docs/monorepo.md` | Verzeichnisaufbau, Domänengrenzen, Werkzeugkette, Durchsetzung der Invarianten | Code beitragen, neues Paket oder Crate anlegen, CI verstehen |
 | `docs/glossar.md` | Domänenglossar: deutscher Fachbegriff → Bezeichner im Code → Bedeutung → Quelle | jede Benennung im Code, jeder neue Fachbegriff |
 | `docs/produkt.md` | Produktdefinition, Oberflächen, Onboarding, Netzabgrenzung, Spielertypen, Anti-Monokultur | Produktfragen, UI, Zielgruppe, Was-gehört-dazu |
@@ -88,6 +88,7 @@ Begründungen: `docs/entscheidungen.md`. Änderungen dort eintragen und begründ
 | E26 | Die selbst gehostete Weltkarte ist das Spielzentrum; der Deutschland-Korpus ist vollständig sichtbar |
 | E27 | Exact bleibt die betriebliche Zugposition; gekennzeichnete Estimates sind nur visuelle, releasegebundene Kartenhilfen |
 | E28 | Tutorialstart und öffentlicher Markteintritt sind getrennte Weltverträge |
+| E29 | Der Schaffnermodus vertieft den serverautoritativen Betrieb |
 
 ---
 
@@ -116,7 +117,9 @@ Lastgrößen: `docs/architektur.md`.
 - **Determinismus-Test in CI:** gleicher Seed ⇒ gleicher Zustands-Hash.
 - **ADR für jede Grundsatzentscheidung.**
 - Kein generierter Code ohne einen Test, der ohne ihn fehlschlägt.
-- Monorepo mit harten Domänengrenzen, je Domäne eine eigene Agenten-Anleitung.
+- Monorepo mit harten Domänengrenzen. `AGENTS.md` ist die kanonische
+  Agenten-Anleitung; Domänengrenzen und Fachverträge stehen in `docs/`, damit
+  keine abweichenden Kopien je Paket verrotten.
 - Milestones sind nach **Abhängigkeiten** geschnitten, nicht nach Zeit. Aufwand
   relativ als S / M / L / XL. Keine Kalenderdaten.
 
@@ -129,12 +132,13 @@ Lastgrößen: `docs/architektur.md`.
 
 ## Stand
 
-Konzeption abgeschlossen, E1–E28 entschieden, Milestones auf Reihenfolge und
+Konzeption abgeschlossen, E1–E29 entschieden, Milestones auf Reihenfolge und
 Vollständigkeit geprüft. **M0 bis M8 sind fachlich abgenommen und
 reproduzierbar nachgewiesen.** M1.13 akzeptiert die Trassenfinder-Kalibrierung
 innerhalb der definierten Toleranz und den getrennten GTFS-Fahrplan-Holdout als
-Milestone-Beweis; die unabhängige produktive Release-Qualifizierung und echte
-Signatur bleiben als M9-Betriebsreife-Folgearbeit in Issue #48 erhalten.
+Milestone-Beweis. Release-Qualifizierung und Signatur sind nachgewiesen; ihr
+produktiver Einsatz und die Betriebsdrills im laufenden Zielstack bleiben Teil
+der offenen M9-Betriebsreife.
 
 - **Alpha-Schnitt:** M0–M9 plus ausschließlich die vorgezogenen M12.1, M12.2
   und M14.1 (E24). M12 und M14 bleiben als Gesamtmilestones Ausbau.

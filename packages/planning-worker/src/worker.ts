@@ -1,5 +1,6 @@
 import {
   domainEvents,
+  operators,
   simulationCommands,
   worldEventLog,
   worlds,
@@ -388,6 +389,11 @@ async function resolvePathRequests(
       worldId: _worldId,
       requestingAccountId: _accountId,
       requestId: _requestId,
+      formationId: _formationId,
+      operatorId: _operatorId,
+      fleetRevision: _fleetRevision,
+      fleetStateHash: _fleetStateHash,
+      fleetAuthorityReleaseId: _fleetAuthorityReleaseId,
       boundaryPlanningWindowId,
       ...facts
     } = request;
@@ -436,28 +442,84 @@ function runtimeCoordinate(
   };
 }
 
+const ALTERNATIVE_AUTHORIZATION_ERROR = "Planungsaktion ist nicht fuer den betroffenen Zug autorisiert.";
+
+/**
+ * Defense in depth directly before the Rust Single-Writer: the affected train
+ * must originate from a processed request of this exact world/account, and
+ * that request's server-derived EVU must still belong to the same account.
+ */
+async function assertAlternativeOwnership(
+  db: PlanningDatabase,
+  command: { readonly worldId: string; readonly requestingAccountId: string },
+  payload: ReturnType<typeof parsePlanningApplyAlternativePayload>,
+  current: PlanningRuntimeStateEvent,
+  diagramSequence: number,
+): Promise<void> {
+  const projection = parsePlanningProjection(current.state.projection);
+  const offered = projection.conflicts
+    .filter((conflict) => conflict.id === payload.conflictId)
+    .map((conflict) => conflict.alternative)
+    .find((alternative) => alternative !== null);
+  invariant(
+    projection.worldId === command.worldId
+      && projection.projectionRevision === payload.projectionRevision
+      && offered?.alternativeId === payload.alternativeId
+      && offered.trainId === payload.trainId
+      && offered.departureShiftS === payload.departureShiftS,
+    ALTERNATIVE_AUTHORIZATION_ERROR,
+  );
+  const requests = await db
+    .select({
+      worldId: simulationCommands.worldId,
+      requestingAccountId: simulationCommands.requestingAccountId,
+      payload: simulationCommands.payload,
+    })
+    .from(simulationCommands)
+    .where(and(
+      eq(simulationCommands.worldId, command.worldId),
+      eq(simulationCommands.requestingAccountId, command.requestingAccountId),
+      eq(simulationCommands.commandType, PATH_REQUEST_COMMAND_TYPE),
+      eq(simulationCommands.status, "processed"),
+      eq(simulationCommands.resultEventSequence, diagramSequence),
+    ));
+  const boundRequest = requests.map((request) => {
+    try {
+      return parsePersistedPathRequest(request);
+    } catch {
+      return undefined;
+    }
+  }).find((request) => request?.trainId === payload.trainId);
+  invariant(boundRequest !== undefined, ALTERNATIVE_AUTHORIZATION_ERROR);
+  const [ownedOperator] = await db
+    .select({ id: operators.id })
+    .from(operators)
+    .where(and(
+      eq(operators.worldId, command.worldId),
+      eq(operators.id, boundRequest.operatorId),
+      eq(operators.foundingAccountId, command.requestingAccountId),
+    ))
+    .limit(1);
+  invariant(ownedOperator !== undefined, ALTERNATIVE_AUTHORIZATION_ERROR);
+}
+
 /** Processes one persisted planning command in one world-locked transaction. */
 export async function processPlanningCommand(
   db: PlanningDatabase,
   runtime: PlanningRuntime,
   infrastructureReleases: PlanningInfrastructureReleaseCatalog,
+  worldId: string,
   commandId: string,
   committedAt: Date,
 ): Promise<PlanningCommandResult> {
   return db.transaction(async (tx) => {
-    const [candidate] = await tx
-      .select({ worldId: simulationCommands.worldId })
-      .from(simulationCommands)
-      .where(eq(simulationCommands.id, commandId))
-      .limit(1);
-    systemInvariant(candidate !== undefined, `Planning-Kommando '${commandId}' ist unbekannt.`);
-    await tx.execute(sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${candidate.worldId} for update`);
+    await tx.execute(sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${worldId} for update`);
     const [command] = await tx
       .select()
       .from(simulationCommands)
-      .where(and(eq(simulationCommands.id, commandId), eq(simulationCommands.worldId, candidate.worldId)))
+      .where(and(eq(simulationCommands.worldId, worldId), eq(simulationCommands.id, commandId)))
       .limit(1);
-    systemInvariant(command !== undefined, `Planning-Kommando '${commandId}' ist verschwunden.`);
+    systemInvariant(command !== undefined, `Planning-Kommando '${commandId}' ist in Welt '${worldId}' unbekannt.`);
     systemInvariant(
       PROCESSABLE_COMMAND_TYPES.includes(command.commandType as (typeof PROCESSABLE_COMMAND_TYPES)[number]),
       `Kommando '${commandId}' ist kein verarbeitbares Planning-Kommando.`,
@@ -507,6 +569,7 @@ export async function processPlanningCommand(
         throw error;
       }
       invariant(payload.projectionRevision === current.event.projectionRevision, "Alternativkommando erwartet eine veraltete Fachrevision.");
+      await assertAlternativeOwnership(tx, command, payload, current.event, current.sequence + 1);
       result = runtime.applyAlternative(current.event.state, command.id, payload);
       systemInvariant(!result.idempotentReplay, "Ausstehendes Kommando war im Rust-Zustand bereits verarbeitet.");
     }
@@ -612,7 +675,7 @@ export async function consumePendingPlanningCommands(
   for (const command of commands) {
     const committedAt = input.committedAt();
     try {
-      results.push(await processPlanningCommand(db, runtime, infrastructureReleases, command.id, committedAt));
+      results.push(await processPlanningCommand(db, runtime, infrastructureReleases, worldId, command.id, committedAt));
     } catch (error) {
       if (error instanceof PlanningWorkerConflictError) {
         await markPlanningCommandFailed(db, {

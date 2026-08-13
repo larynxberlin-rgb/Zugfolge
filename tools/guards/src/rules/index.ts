@@ -2,10 +2,12 @@
 
 import { brandRule } from "./brand.js";
 import { createCoverageRule } from "./coverage.js";
+import { decisionConsistencyRule } from "./decision-consistency.js";
 import { glossaryRule } from "./glossary.js";
 import { layerSeparationRule } from "./layer-separation.js";
 import { PATTERN_RULES } from "./pattern-rules.js";
 import { rightsGateRule } from "./rights-gate.js";
+import { rustReleasePipelineRule } from "./rust-release-pipeline.js";
 import { worldIdRule } from "./world-id.js";
 import type { Rule } from "../types.js";
 
@@ -16,6 +18,8 @@ const BASISREGELN: readonly Rule[] = [
   brandRule,
   rightsGateRule,
   layerSeparationRule,
+  decisionConsistencyRule,
+  rustReleasePipelineRule,
 ];
 
 /**

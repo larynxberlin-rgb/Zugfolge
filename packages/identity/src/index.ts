@@ -1,5 +1,6 @@
 export {
   AccessRevokedError,
+  WorldContractAcceptanceConflictError,
   AccountNotFoundError,
   AuthorizationError,
   getAccount,
@@ -10,6 +11,8 @@ export {
   requestWorldAccess,
   revokeWorldAccess,
   type AccountRecord,
+  type AcceptedStartingCapitalPolicy,
+  type AcceptedWorldContract,
   type IdentityDatabase,
   type PublicAccountRecord,
 } from "./accounts.js";

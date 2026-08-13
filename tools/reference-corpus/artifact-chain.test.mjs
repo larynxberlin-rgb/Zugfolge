@@ -6,13 +6,10 @@ import path from "node:path";
 import test from "node:test";
 
 import {
-  createQualifiedReleaseManifest,
   createUnsignedBundleFromFiles,
   signBundle,
-  validateQualificationEvidence,
   verifyArtifactChainFiles,
   verifyBundleFiles,
-  verifyQualificationEvidenceFiles,
   verifySignedBundle,
 } from "./artifact-chain.mjs";
 import { canonicalJson, compareWithModel, sha256 } from "./reference-corpus.mjs";
@@ -56,52 +53,15 @@ test("synthetischer Validierungsholdout qualifiziert und verifiziert die vollst�
   assert.deepEqual(await verifyBundleFiles(signed, publicKey, root), signed.bundle);
 });
 
-test("qualification-Feld, Überlappung und zu kleine Holdouts können die Freigabe nicht behaupten", async (t) => {
-  const root = await temporaryDirectory(t, "evidence-");
-  const fixture = await materializeSyntheticValidationFixture(root);
-  const overlap = JSON.parse(canonicalJson(fixture.values.evidence));
-  overlap.validation.sampleIds[0] = overlap.calibration.sampleIds[0];
-  overlap.validation.sampleIds.sort();
-  overlap.validation.sampleIdsSha256 = sha256(canonicalJson(overlap.validation.sampleIds));
-  assert.throws(() => validateQualificationEvidence(overlap), /überlappen/);
-
-  const insufficient = JSON.parse(canonicalJson(fixture.values.evidence));
-  insufficient.policy.minimumValidationSamples = 3;
-  assert.throws(() => validateQualificationEvidence(insufficient), /zu wenige/);
-
-  const claimed = JSON.parse(canonicalJson(fixture.values.modelResults));
-  claimed.qualification = "validation";
-  const qualification = await verifyQualificationEvidenceFiles(fixture.values.evidence, root);
-  assert.throws(
-    () => compareWithModel(fixture.values.corpus, claimed, fixture.values.report.tolerance, {
-      corpusArtifactSha256: fixture.artifacts.corpus.sha256,
-      modelResultsArtifactSha256: sha256(jsonBytes(claimed)),
-      qualificationEvidenceSha256: fixture.artifacts.evidence.sha256,
-      qualification,
-    }),
-    /qualification darf nicht/,
-  );
-});
-
 test("fehlgeschlagene unabhängige Validierung bleibt vor Release-Manifest und Signatur gesperrt", async (t) => {
   const root = await temporaryDirectory(t, "failed-");
   const fixture = await materializeSyntheticValidationFixture(root);
   const failedModel = JSON.parse(canonicalJson(fixture.values.modelResults));
   failedModel.results[0].runningSeconds += 1_000;
   failedModel.results[0].modeledTimetableSeconds += 1_000;
-  const failedBytes = jsonBytes(failedModel);
-  const qualification = await verifyQualificationEvidenceFiles(fixture.values.evidence, root);
-  const failedReport = compareWithModel(fixture.values.corpus, failedModel, fixture.values.report.tolerance, {
-    corpusArtifactSha256: fixture.artifacts.corpus.sha256,
-    modelResultsArtifactSha256: sha256(failedBytes),
-    qualificationEvidenceSha256: fixture.artifacts.evidence.sha256,
-    qualification,
-  });
-  assert.equal(failedReport.passed, false);
-  assert.equal(failedReport.releaseQualified, false);
   assert.throws(
-    () => createQualifiedReleaseManifest({ report: failedReport }),
-    /bestandener unabhängiger Validierungsreport/,
+    () => compareWithModel(fixture.values.corpus, failedModel, fixture.values.report.tolerance),
+    /Rust-Releasecompiler/,
   );
 });
 
@@ -128,6 +88,27 @@ test("jede nach der Signatur veränderte Artefaktdatei wird abgewiesen", async (
   const originalChain = await readFile(chainFile);
   await writeFile(chainFile, Buffer.concat([originalChain, Buffer.from("tampered")]));
   await assert.rejects(() => verifyBundleFiles(signed, publicKey, root), /Artefakthash/);
+});
+
+test("Rust bindet Quellarchiv und jede Capture-Tabelle an das Capture-Manifest", async (t) => {
+  for (const [index, target] of ["sourceArchive", "sourceTable"].entries()) {
+    const root = await temporaryDirectory(t, `raw-binding-${index}-`);
+    const fixture = await materializeSyntheticValidationFixture(root);
+    const chain = JSON.parse(await readFile(path.join(root, fixture.artifacts.chain.path), "utf8"));
+    const record = target === "sourceArchive" ? chain.artifacts.sourceArchive : chain.artifacts.sourceTables[0];
+    const changed = Buffer.from(`manipulierte Rohbytes ${target}\n`);
+    await writeFile(path.join(root, record.path), changed);
+    record.sha256 = sha256(changed);
+    await writeFile(path.join(root, fixture.artifacts.chain.path), jsonBytes(chain));
+    await assert.rejects(
+      () => createUnsignedBundleFromFiles({
+        chainPath: fixture.artifacts.chain.path,
+        rootDirectory: root,
+        createdAt: fixture.frozenAt,
+      }),
+      /Quellarchiv|Capture-Tabelle/,
+    );
+  }
 });
 
 async function tamperJsonAndRebindChain(root, targetPath, mutate, chainArtifactName) {

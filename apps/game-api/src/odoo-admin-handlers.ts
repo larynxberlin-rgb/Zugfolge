@@ -75,7 +75,7 @@ export function createAbuseSanctionActivateAdminHandler(abuse: AbuseGuard): Game
     if (payload.kind !== "admin.abuse_sanction_activate" || payload.actionType !== "abuse_sanction_activate" || payload.riskClass !== "high" || payload.targetReference === undefined) {
       throw new WorldAccessAdminError("schema");
     }
-    const sanction = await abuse.activateSevere(payload.worldId, payload.targetReference, context.adminRequestId);
+    const sanction = await abuse.activateSevere(payload.worldId, payload.targetReference, context.effectIdempotencyKey);
     return { state: "completed", gameAuditEventId: `abuse-sanction:${payload.worldId}:${sanction.id}:active` };
   };
 }
@@ -86,7 +86,7 @@ export function createWorldCloseAdminHandler(worldEnd: WorldEndService): GameAdm
     if (payload.kind !== "admin.world_close" || payload.actionType !== "world_close" || payload.riskClass !== "high" || payload.requestedAtS === undefined) {
       throw new WorldAccessAdminError("schema");
     }
-    const profile = await worldEnd.beginClosure(payload.worldId, payload.requestedAtS, context.adminRequestId);
+    const profile = await worldEnd.beginClosure(payload.worldId, payload.requestedAtS, context.effectIdempotencyKey);
     return { state: "completed", gameAuditEventId: `world-close:${payload.worldId}:${profile.closingAtS}` };
   };
 }
@@ -97,7 +97,7 @@ export function createInfraReleaseAdoptionAdminHandler(infra: InfraUpdateService
     if (payload.kind !== "admin.infra_release_adoption" || payload.actionType !== "infra_release_adoption" || payload.riskClass !== "high" || payload.releaseHash === undefined || payload.requestedPeriodStart === undefined) {
       throw new WorldAccessAdminError("schema");
     }
-    const scheduled = await infra.approveStagedAt(payload.worldId, payload.releaseHash, context.adminRequestId, new Date(payload.requestedPeriodStart));
+    const scheduled = await infra.approveStagedAt(payload.worldId, payload.releaseHash, context.effectIdempotencyKey, new Date(payload.requestedPeriodStart));
     return { state: "completed", gameAuditEventId: `infra-release:${payload.worldId}:${scheduled.id}:scheduled` };
   };
 }

@@ -36,10 +36,10 @@ export function renderLoadState(
   demoUrl?: string,
 ): string {
   const role = state === "error" ? "alert" : "status";
-  const heading = state === "error" ? "Planner-Projektion nicht verfuegbar" : "Bildfahrplan";
+  const heading = state === "error" ? "Planungsdaten nicht verfügbar" : "Bildfahrplan";
   const demoLink =
     state === "error" && demoUrl !== undefined
-      ? `<p><a href="${escapeHtml(demoUrl)}">Expliziten Demo-Datensatz oeffnen</a></p>`
+      ? `<p><a href="${escapeHtml(demoUrl)}">Beispieldaten öffnen</a></p>`
       : "";
   return `<main class="shell state-shell"><section class="zf-surface state-card" role="${role}" aria-live="polite"><h1>${heading}</h1><p>${escapeHtml(message)}</p>${demoLink}</section></main>`;
 }
@@ -64,7 +64,7 @@ function renderConflictZone(
   const x = timeX(projection, conflict.window.startS);
   const width = Math.max(3, timeX(projection, conflict.window.endS) - x);
   const y = positionY(projection, conflictDistanceMm(projection, conflict)) - 10;
-  const label = `${conflictLabels[conflict.kind]} auf ${conflict.resource.label}, ${formatTimeS(conflict.window.startS)} bis ${formatTimeS(conflict.window.endS)}`;
+  const label = `${conflictLabels[conflict.kind]} auf ${conflict.resource.label}, ${formatTimeS(conflict.window.startS, projection.timeBasis)} bis ${formatTimeS(conflict.window.endS, projection.timeBasis)}`;
   return `<g role="img" aria-label="${escapeHtml(label)}"><rect class="conflict-zone ${active ? "active" : ""}" x="${x}" y="${y}" width="${width}" height="20"/><text class="conflict-marker" x="${x + 4}" y="${y + 14}">!</text></g>`;
 }
 
@@ -84,7 +84,7 @@ function renderBlockingTimes(
       const secondY = positionY(projection, occupation.endDistanceMm);
       const y = Math.min(firstY, secondY) - 4;
       const height = Math.max(8, Math.abs(secondY - firstY) + 8);
-      const label = `${phaseLabels[occupation.phase]} ${formatTimeS(occupation.startS)} bis ${formatTimeS(occupation.endS)}`;
+      const label = `${phaseLabels[occupation.phase]} ${formatTimeS(occupation.startS, projection.timeBasis)} bis ${formatTimeS(occupation.endS, projection.timeBasis)}`;
       return `<rect class="phase-${occupation.phase}" x="${x}" y="${y}" width="${width}" height="${height}"><title>${escapeHtml(label)}</title></rect>`;
     })
     .join("")}</g>`;
@@ -97,11 +97,11 @@ function renderDiagram(
   const activeConflict = projection.conflicts.find(
     (conflict) => conflict.id === options.selectedConflictId,
   );
-  return `<svg class="diagram" viewBox="0 0 980 460" role="img" aria-labelledby="diagram-title diagram-description"><title id="diagram-title">Bildfahrplan ${escapeHtml(projection.corridor.name)}</title><desc id="diagram-description">Weg-Zeit-Diagramm mit ${projection.trains.length} Zuglaeufen und ${projection.conflicts.length} Konflikten.</desc><defs><pattern id="conflict-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6"/></pattern></defs>
+  return `<svg class="diagram" viewBox="0 0 980 460" role="img" aria-labelledby="diagram-title diagram-description"><title id="diagram-title">Bildfahrplan ${escapeHtml(projection.corridor.name)}</title><desc id="diagram-description">Weg-Zeit-Diagramm mit ${projection.trains.length} Zugläufen und ${projection.conflicts.length} Konflikten.</desc><defs><pattern id="conflict-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6"/></pattern></defs>
 ${ticks(projection)
   .map(
     (timeS) =>
-      `<g class="time-grid"><line x1="${timeX(projection, timeS)}" y1="38" x2="${timeX(projection, timeS)}" y2="426"/><text x="${timeX(projection, timeS)}" y="25">${formatTimeS(timeS)}</text></g>`,
+      `<g class="time-grid"><line x1="${timeX(projection, timeS)}" y1="38" x2="${timeX(projection, timeS)}" y2="426"/><text x="${timeX(projection, timeS)}" y="25">${formatTimeS(timeS, projection.timeBasis)}</text></g>`,
   )
   .join("")}
 ${projection.stations
@@ -118,10 +118,10 @@ ${projection.trains
   .map((train) => {
     const selected = train.id === options.selectedTrainId;
     const firstCall = train.calls[0]!;
-    return `<g class="train ${selected ? "train--selected" : ""}" tabindex="0" role="button" aria-label="Zuglauf ${escapeHtml(train.number)} auswaehlen" data-train="${escapeHtml(train.id)}"><polyline points="${pathPoints(projection, train)}"/><text x="${timeX(projection, firstCall.timeS) + 5}" y="${stationY(projection, firstCall.stationId) - 6}">${escapeHtml(train.number)} ${train.direction === "with-chainage" ? "→" : "←"}</text></g>`;
+    return `<g class="train ${selected ? "train--selected" : ""}" tabindex="0" role="button" aria-pressed="${selected}" aria-label="Zuglauf ${escapeHtml(train.number)} auswählen" data-train="${escapeHtml(train.id)}"><polyline points="${pathPoints(projection, train)}"/><text x="${timeX(projection, firstCall.timeS) + 5}" y="${stationY(projection, firstCall.stationId) - 6}">${escapeHtml(train.number)} ${train.direction === "with-chainage" ? "→" : "←"}</text></g>`;
   })
   .join("")}
-${activeConflict === undefined ? "" : `<text class="conflict-marker active-label" x="${timeX(projection, activeConflict.window.startS)}" y="448">! ${escapeHtml(conflictLabels[activeConflict.kind])} ${formatTimeS(activeConflict.window.startS)}</text>`}</svg>`;
+${activeConflict === undefined ? "" : `<text class="conflict-marker active-label" x="${timeX(projection, activeConflict.window.startS)}" y="448">! ${escapeHtml(conflictLabels[activeConflict.kind])} ${formatTimeS(activeConflict.window.startS, projection.timeBasis)}</text>`}</svg>`;
 }
 
 function trainById(
@@ -131,9 +131,9 @@ function trainById(
   return projection.trains.find((train) => train.id === trainId);
 }
 
-function renderBoundaryWindows(train: PlanningTrainProjection): string {
+function renderBoundaryWindows(train: PlanningTrainProjection, projection: PlanningProjectionV1): string {
   if (train.boundaryWindows === undefined || train.boundaryWindows.length === 0) return "";
-  return `<div class="boundary-windows"><p class="eyebrow">Durchgehende Fahrt</p><h3>Feste Grenzfenster</h3><p>Du planst die Trasse innerhalb der Welt. Der gepinnte Infrastrukturrelease gibt die Uebergabe am Grenzportal vor; der Aussenlauf bleibt Teil derselben Zugfahrt und ist nicht bearbeitbar.</p><dl>${train.boundaryWindows.map((window) => `<div><dt>${window.direction === "entry" ? "Einfahrt" : "Ausfahrt"} · ${escapeHtml(window.portalId)}</dt><dd><strong>${formatTimeS(window.targetS)}</strong><br>${formatTimeS(window.earliestS)}–${formatTimeS(window.latestS)}</dd></div>`).join("")}</dl></div>`;
+  return `<div class="boundary-windows"><p class="eyebrow">Durchgehende Fahrt</p><h3>Feste Grenzfenster</h3><p>Sie planen die Trasse innerhalb der Welt. Der gepinnte Infrastrukturrelease gibt die Übergabe am Grenzportal vor; der Außenlauf bleibt Teil derselben Zugfahrt und ist nicht bearbeitbar.</p><dl>${train.boundaryWindows.map((window) => `<div><dt>${window.direction === "entry" ? "Einfahrt an der Netzgrenze" : "Ausfahrt an der Netzgrenze"}<details><summary>Technische Details</summary><code>${escapeHtml(window.portalId)}</code></details></dt><dd><strong>${formatTimeS(window.targetS, projection.timeBasis)}</strong><br>${formatTimeS(window.earliestS, projection.timeBasis)}–${formatTimeS(window.latestS, projection.timeBasis)}</dd></div>`).join("")}</dl></div>`;
 }
 
 function renderInspector(
@@ -144,27 +144,28 @@ function renderInspector(
   const available = conflictsForTrain(projection, train.id);
   const conflict =
     available.find((candidate) => candidate.id === options.selectedConflictId) ?? available[0];
-  const boundaryWindows = renderBoundaryWindows(train);
+  const boundaryWindows = renderBoundaryWindows(train, projection);
   if (conflict === undefined) {
-    return `<aside class="inspector zf-surface"><div class="no-conflict">${badge("Konfliktfrei", "neutral", "check")}<h2>${escapeHtml(train.number)}</h2><p>Fuer diesen Zuglauf liegen keine Belegungsueberschneidungen vor.</p></div>${boundaryWindows}</aside>`;
+    return `<aside class="inspector zf-surface"><div class="no-conflict">${badge("Konfliktfrei", "neutral", "check")}<h2>${escapeHtml(train.number)}</h2><p>Für diesen Zuglauf liegen keine Belegungsüberschneidungen vor.</p></div>${boundaryWindows}</aside>`;
   }
   const firstTrain = trainById(projection, conflict.trainIds[0])!;
   const secondTrain = trainById(projection, conflict.trainIds[1])!;
   const alternative = conflict.alternative;
   const proposal =
     alternative === null
-      ? `<div class="proposal proposal--unavailable"><p class="eyebrow">Alternativangebot</p><h3>Keine zulaessige Alternative</h3><p>Der Planner hat fuer diesen Befund innerhalb der beantragten Grenzen keine konfliktfreie Lage gefunden.</p></div>`
-      : `<div class="proposal"><p class="eyebrow">Zulaessige Alternative</p><h3>Zeitlage ${formatSignedShiftS(alternative.departureShiftS)}</h3><p>${escapeHtml(alternative.explanation)}</p><button class="zf-button primary" data-apply-alternative="${escapeHtml(alternative.alternativeId)}"${options.applyingAlternativeId === alternative.alternativeId ? " disabled" : ""}>${options.applyingAlternativeId === alternative.alternativeId ? "Planner verarbeitet …" : "Alternative anwenden"} ${icon("chevron")}</button></div>`;
-  return `<aside class="inspector zf-surface"><div class="inspector-head"><div>${badge(conflictLabels[conflict.kind], "danger", "alert")}<span class="counter">${available.indexOf(conflict) + 1} von ${available.length}</span></div><h2>${escapeHtml(conflict.resource.label)}</h2><p>${formatTimeS(conflict.window.startS)}–${formatTimeS(conflict.window.endS)}</p></div><div class="conflict-nav">${available
+      ? `<div class="proposal proposal--unavailable"><p class="eyebrow">Alternativangebot</p><h3>Keine zulässige Alternative</h3><p>Die Planung hat für diesen Befund innerhalb der beantragten Grenzen keine konfliktfreie Lage gefunden.</p></div>`
+      : `<div class="proposal"><p class="eyebrow">Zulässige Alternative</p><h3>Zeitlage ${formatSignedShiftS(alternative.departureShiftS)}</h3><p>${escapeHtml(alternative.explanation)}</p><button class="zf-button primary" data-apply-alternative="${escapeHtml(alternative.alternativeId)}"${options.applyingAlternativeId === alternative.alternativeId ? " disabled" : ""}>${options.applyingAlternativeId === alternative.alternativeId ? "Planung wird geprüft …" : "Alternative anwenden"} ${icon("chevron")}</button></div>`;
+  return `<aside class="inspector zf-surface"><div class="inspector-head"><div>${badge(conflictLabels[conflict.kind], "danger", "alert")}<span class="counter">${available.indexOf(conflict) + 1} von ${available.length}</span></div><h2>${escapeHtml(conflict.resource.label)}</h2><p>${formatTimeS(conflict.window.startS, projection.timeBasis)}–${formatTimeS(conflict.window.endS, projection.timeBasis)}</p></div><div class="conflict-nav">${available
     .map(
       (candidate) =>
-        `<button class="zf-button ${candidate.id === conflict.id ? "pressed" : ""}" data-conflict="${escapeHtml(candidate.id)}">${escapeHtml(conflictLabels[candidate.kind])}</button>`,
+        `<button class="zf-button ${candidate.id === conflict.id ? "pressed" : ""}" aria-pressed="${candidate.id === conflict.id}" data-conflict="${escapeHtml(candidate.id)}">${escapeHtml(conflictLabels[candidate.kind])}</button>`,
     )
-    .join("")}</div><div class="cause"><p class="eyebrow">Beteiligte Zuglaeufe</p><div class="train-pair"><span>${icon("train")}<strong>${escapeHtml(firstTrain.number)}</strong><small>${escapeHtml(firstTrain.id)}</small></span><b aria-hidden="true">×</b><span>${icon("train")}<strong>${escapeHtml(secondTrain.number)}</strong><small>${escapeHtml(secondTrain.id)}</small></span></div></div><dl><div><dt>Konfliktressource</dt><dd><strong>${escapeHtml(conflict.resource.label)}</strong><br>${escapeHtml(conflict.resource.kind)}</dd></div><div><dt>Ueberlappung</dt><dd><strong>${formatDurationS(conflict.window.endS - conflict.window.startS)}</strong><br>${formatTimeS(conflict.window.startS)}–${formatTimeS(conflict.window.endS)}</dd></div><div><dt>Projektionsrevision</dt><dd><strong>${projection.projectionRevision}</strong><br>serverautoritaer</dd></div></dl><div class="explanation"><h3>Warum entsteht der Konflikt?</h3><p>${escapeHtml(conflict.explanation)}</p></div>${proposal}${boundaryWindows}</aside>`;
+    .join("")}</div><div class="cause"><p class="eyebrow">Beteiligte Zugläufe</p><div class="train-pair"><span>${icon("train")}<strong>${escapeHtml(firstTrain.number)}</strong></span><b aria-hidden="true">×</b><span>${icon("train")}<strong>${escapeHtml(secondTrain.number)}</strong></span></div></div><dl><div><dt>Konfliktressource</dt><dd><strong>${escapeHtml(conflict.resource.label)}</strong></dd></div><div><dt>Überlappung</dt><dd><strong>${formatDurationS(conflict.window.endS - conflict.window.startS)}</strong><br>${formatTimeS(conflict.window.startS, projection.timeBasis)}–${formatTimeS(conflict.window.endS, projection.timeBasis)}</dd></div><div><dt>Planungsstand</dt><dd><strong>Vom Server bestätigt</strong><br><details><summary>Technische Details</summary><code>Welt ${escapeHtml(projection.worldId)} · Revision ${projection.projectionRevision} · Züge ${escapeHtml(firstTrain.id)}, ${escapeHtml(secondTrain.id)} · Ressourcentyp ${escapeHtml(conflict.resource.kind)}</code></details></dd></div></dl><div class="explanation"><h3>Warum entsteht der Konflikt?</h3><p>${escapeHtml(conflict.explanation)}</p></div>${proposal}${boundaryWindows}</aside>`;
 }
 
 function renderHeader(projection: PlanningProjectionV1): string {
-  return `<header class="topbar"><a class="wordmark" href="#">Zugfolge</a><nav aria-label="Hauptnavigation"><a href="#">Welt</a><a class="active" href="#">Trassen</a><a href="#">Betrieb</a><a href="#">Postfach</a></nav><div class="world">${escapeHtml(projection.worldId)} ${badge(`Revision ${projection.projectionRevision}`, "neutral")}</div></header>`;
+  const world = encodeURIComponent(projection.worldId);
+  return `<header class="topbar"><a class="wordmark" href="?view=journey&amp;world=${world}">Zugfolge</a><nav aria-label="Hauptnavigation"><a href="?view=journey&amp;world=${world}">Welt</a><a class="active" aria-current="page" href="?view=diagram&amp;world=${world}">Trassen</a><a href="?view=journey&amp;world=${world}#betrieb">Betrieb</a><a href="?view=journey&amp;world=${world}#postfach">Postfach</a></nav><div class="world">${escapeHtml(projection.corridor.name)}<details><summary>Technische Details</summary><code>Welt ${escapeHtml(projection.worldId)} · Revision ${projection.projectionRevision}</code></details></div></header>`;
 }
 
 export function renderProjection(
@@ -175,10 +176,10 @@ export function renderProjection(
     options.message === undefined || options.message === ""
       ? ""
       : `<p class="notice notice--${options.messageTone ?? "status"}" role="${options.messageTone === "error" ? "alert" : "status"}">${options.messageTone === "error" ? icon("alert") : icon("check")} ${escapeHtml(options.message)}</p>`;
-  const context = `<section class="context"><div><p class="eyebrow">Planner-Projektion · Revision ${projection.projectionRevision}</p><h1>Bildfahrplan <span>${escapeHtml(projection.corridor.name)}</span></h1></div><div class="toolbar"><button class="zf-button" id="density">${icon("layers")} ${options.density === "control" ? "Leitstelle" : "Dokument"}</button><button class="zf-button ${options.showBlockingTimes ? "pressed" : ""}" id="steps" aria-pressed="${options.showBlockingTimes}">Sperrzeiten</button>${projection.trains.length === 0 ? "" : `<span class="period">${formatTimeS(timeExtentS(projection)[0])}–${formatTimeS(timeExtentS(projection)[1])}</span>`}</div></section>`;
+  const context = `<section class="context"><div><p class="eyebrow">Bestätigter Planungsstand</p><h1>Bildfahrplan <span>${escapeHtml(projection.corridor.name)}</span></h1></div><div class="toolbar"><button class="zf-button" id="density">${icon("layers")} ${options.density === "control" ? "Leitstelle" : "Dokument"}</button><button class="zf-button ${options.showBlockingTimes ? "pressed" : ""}" id="steps" aria-pressed="${options.showBlockingTimes}">Sperrzeiten</button>${projection.trains.length === 0 ? "" : `<span class="period">${formatTimeS(timeExtentS(projection)[0], projection.timeBasis)}–${formatTimeS(timeExtentS(projection)[1], projection.timeBasis)}${projection.timeBasis === undefined ? "" : ` · Weltzeit ${escapeHtml(projection.timeBasis.timeZone)}`}</span>`}</div></section>`;
   if (projection.stations.length === 0 || projection.trains.length === 0) {
-    return `<a class="skip" href="#planner-empty">Zum Inhalt</a><div class="shell">${renderHeader(projection)}<main>${context}${message}<section id="planner-empty" class="zf-surface empty-card">${emptyState("Keine Planner-Daten", "Fuer diesen Korridor ist noch kein Zuglauf projiziert. Es werden keine Beispieldaten eingesetzt.")}</section></main></div>`;
+    return `<a class="skip" href="#planner-empty">Zum Inhalt</a><div class="shell">${renderHeader(projection)}<main>${context}${message}<section id="planner-empty" class="zf-surface empty-card" tabindex="-1">${emptyState("Keine Planner-Daten", "Für diesen Korridor ist noch kein Zuglauf projiziert. Es werden keine Beispieldaten eingesetzt.")}</section></main></div>`;
   }
   const selectedTrain = trainById(projection, options.selectedTrainId) ?? projection.trains[0]!;
-  return `<a class="skip" href="#diagram-card">Zum Bildfahrplan</a><div class="shell">${renderHeader(projection)}<main>${context}${message}<section class="workspace"><article id="diagram-card" class="diagram-card zf-surface"><div class="legend"><span><i class="line selected"></i> ausgewaehlt</span><span><i class="line"></i> Zuglauf</span><span><i class="hatch"></i> Konflikt !</span></div>${renderDiagram(projection, { ...options, selectedTrainId: selectedTrain.id })}</article>${renderInspector(projection, selectedTrain, options)}</section></main></div>`;
+  return `<a class="skip" href="#diagram-card">Zum Bildfahrplan</a><div class="shell">${renderHeader(projection)}<main>${context}${message}<section class="workspace"><article id="diagram-card" class="diagram-card zf-surface" role="region" aria-labelledby="diagram-title" tabindex="-1"><div class="legend"><span><i class="line selected"></i> ausgewählt</span><span><i class="line"></i> Zuglauf</span><span><i class="hatch"></i> Konflikt !</span></div>${renderDiagram(projection, { ...options, selectedTrainId: selectedTrain.id })}</article>${renderInspector(projection, selectedTrain, options)}</section></main></div>`;
 }

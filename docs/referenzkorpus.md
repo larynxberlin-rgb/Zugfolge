@@ -280,17 +280,23 @@ Kettenkonfigurationen sind relativ zum angegebenen Artefaktordner.
 
 5. Report aus allen gebundenen Dateien reproduzieren. Die Datensatz- und
    Konfigurationsdateien aus dem Qualifikationsnachweis werden unter
-   `artifacts/` erneut gehasht:
+   `artifacts/` erneut gehasht. Der gehärtete `compare`-Einstieg liest nur die
+   Dateien und übergibt ihre Bytes an den Rust-Releasecompiler; eine
+   JavaScript-Reportentscheidung existiert nur noch für ausdrücklich als
+   nichtautoritative Vorschau gestartete Legacy-v2-Artefakte:
 
    ```bash
-   node tools/reference-corpus/cli.mjs compare artifacts/capture-config.json artifacts/reference-corpus.json artifacts/model/model-results.json artifacts/qualification-evidence.json artifacts artifacts/deviation-report.json
+   node tools/reference-corpus/cli.mjs compare artifacts/capture-config.json artifacts/reference-corpus.json artifacts/model/model-config.json artifacts/model/model-results.json artifacts/qualification-evidence.json artifacts artifacts/deviation-report.json
    ```
 
 6. Ein `finalize-config.json` mit `createdAt` und den relativen Pfaden
-   `candidateManifest`, `referenceCorpus`, `qualificationEvidence`,
-   `modelResults` und `report` erzeugt das exakte qualifizierte
-   Release-Manifest. Dieser Schritt scheitert bei negativem oder
-   unzureichendem Report:
+   `captureConfig`, `candidateManifest`, `referenceCorpus`,
+   `qualificationEvidence`, `calibrationDataset`, `calibrationConfig`,
+   `validationDataset`, `validationConfig`, `modelConfig`, `modelResults` und
+   `report` erzeugt das exakte qualifizierte Release-Manifest. Der Rust-Compiler
+   erhält über die JavaScript-I/O-Schicht die Bytes jedes dieser Artefakte,
+   verifiziert ihre Hashes und Pfade und rekonstruiert Vergleich und Report.
+   Dieser Schritt scheitert bei negativem oder unzureichendem Report:
 
    ```bash
    node tools/reference-corpus/cli.mjs finalize-release artifacts/finalize-config.json artifacts artifacts/release/qualified-release-manifest.json
@@ -298,7 +304,9 @@ Kettenkonfigurationen sind relativ zum angegebenen Artefaktordner.
 
 7. Ein `artifact-paths.json` nennt die relativen Pfade aller Stufen und den
    Rohdatentabellenordner. Daraus wird die vollständige Kette erzeugt und noch
-   vor dem Schreiben einmal vollständig geprüft:
+   vor dem Schreiben einmal vollständig durch denselben Rust-Verifier geprüft.
+   Das umfasst Capture-Manifest, Quellarchiv, alle Quelltabellen,
+   Normalisierung, Korpus, Nachweise, Modelle, Report und Release-Manifest:
 
    ```bash
    node tools/reference-corpus/cli.mjs chain artifacts/artifact-paths.json artifacts artifacts/release-chain.json

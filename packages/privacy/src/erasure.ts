@@ -100,6 +100,7 @@ export async function purgeExpiredAccountData(
   asOf: Date,
 ): Promise<RetentionPurgeResult> {
   const cutoff = new Date(asOf.getTime() - ACCOUNT_RETENTION_MILLISECONDS);
+  // guards:allow world-id — Der globale Aufbewahrungs-Sweeper enumeriert Kandidaten und loescht anschliessend je Welt und Konto.
   const candidates = await db
     .select({
       id: accounts.id,

@@ -1,0 +1,48 @@
+{
+  "config": {
+    "schema": "zugfolge-germany-release-config/v1",
+    "release": { "releaseId": "infra-deutschland-2027.1", "timetableYear": 2027 },
+    "pipeline": {
+      "version": "test/1",
+      "officialAdapters": {
+        "dbInfraGoGeoPackage": { "sourceId": "db-infrago-infrastructure-open-data", "entrypoint": "infrago.mjs", "outputs": ["tracks", "places", "report"] },
+        "openStationNetex": { "sourceId": "openstation-enrichment", "entrypoint": "openstation.mjs", "outputs": ["stations", "places", "platforms", "report"] },
+        "copernicusDemGlo30": {
+          "sourceId": "copernicus-dem-germany", "rightsSourceId": "dem-hoehenmodell", "entrypoint": "dem.mjs",
+          "samplingPolicy": { "intervalMm": 30000, "minimumBaselineMm": 200000, "analysisWindowMm": 400000, "maximumAbsoluteGradientPermille": 70, "maximumUncertaintyPermille": 50, "classAEligible": false },
+          "outputs": ["gradient", "quality", "evidence"]
+        }
+      },
+      "postProcessors": { "mergeTrackGradient": { "entrypoint": "merge.mjs", "joinKey": "properties.feature_id", "geometryMustMatch": true, "existingPropertiesPreserved": true, "output": "final/tracks.geojsonseq", "report": "tracks.report.json" } }
+    }
+  },
+  "catalog": {
+    "schema": "zugfolge-germany-source-catalog/v1",
+    "sources": [
+      { "id": "osm-de", "rightsSourceId": "osm", "role": "release-input", "sourceLicense": "ODbL-1.0", "shipAttribution": true, "attribution": "OSM", "modifications": "EBO" },
+      { "id": "db-infrago-infrastructure-open-data", "rightsSourceId": "infrago", "role": "release-input", "sourceLicense": "CC-BY-4.0", "shipAttribution": true, "attribution": "InfraGO", "modifications": "normalisiert" },
+      { "id": "copernicus-dem-germany", "rightsSourceId": "dem-hoehenmodell", "role": "release-input", "sourceLicense": "Copernicus", "shipAttribution": true, "attribution": "Copernicus", "modifications": "abgetastet" },
+      { "id": "openstation-enrichment", "rightsSourceId": "openstation", "role": "release-input", "sourceLicense": "CC0-1.0", "shipAttribution": true, "attribution": "OpenStation", "modifications": "normalisiert" },
+      { "id": "internal-evidence", "rightsSourceId": "internal", "role": "internal-validation", "sourceLicense": "intern", "shipAttribution": false, "classAEligible": false, "forbiddenShippingTokens": ["secret-station-plan"] }
+    ]
+  },
+  "rights": { "version": 1, "quellen": [
+    { "id": "osm", "status": "freigegeben", "entscheidung": { "datum": "2026-08-12", "pruefer": "Test" } },
+    { "id": "infrago", "status": "freigegeben", "entscheidung": { "datum": "2026-08-12", "pruefer": "Test" } },
+    { "id": "dem-hoehenmodell", "status": "freigegeben", "entscheidung": { "datum": "2026-08-12", "pruefer": "Test" } },
+    { "id": "openstation", "status": "freigegeben", "entscheidung": { "datum": "2026-08-12", "pruefer": "Test" } },
+    { "id": "internal", "status": "entwicklung", "entscheidung": { "datum": "2026-08-12", "pruefer": "Test" } }
+  ] },
+  "capture": {
+    "schema": "zugfolge-source-capture/v1", "capturedAt": "2026-12-01T10:00:00Z", "internalEvidenceLedgerSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "sources": [
+      { "id": "osm-de", "version": "1", "file": "osm.pbf", "bytes": 1, "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+      { "id": "db-infrago-infrastructure-open-data", "version": "1", "file": "infrago.gpkg", "bytes": 2, "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+      { "id": "copernicus-dem-germany", "version": "1", "file": "dem.tif", "bytes": 3, "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" },
+      { "id": "openstation-enrichment", "version": "1", "file": "stations.xml", "bytes": 4, "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" },
+      { "id": "internal-evidence", "version": "1", "file": "internal.zip", "bytes": 5, "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" }
+    ]
+  },
+  "artifacts": [{ "id": "infracorpus", "file": "de.jsonseq", "bytes": 123, "sha256": "9999999999999999999999999999999999999999999999999999999999999999", "kind": "infrastructure" }],
+  "quality": { "schema": "zugfolge-infrastructure-quality-report/v2", "totalLengthMm": 999, "byClassLengthMm": { "A": 100, "B": 899, "C": 0 } }
+}

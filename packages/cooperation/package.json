@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@zugfolge/db": "workspace:*",
+    "@zugfolge/economy": "workspace:*",
     "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {

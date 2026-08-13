@@ -1,0 +1,45 @@
+{
+  "release": {
+    "annualBuild": {
+      "configSha256": "cad83ac2f2a0ebb1ba1e42850af9a860c5e482b15957c80d92a904bc5731c2da",
+      "pipelineVersion": "test/1",
+      "publicCaptureSha256": "2f4bdb532dac3e56c451fc66c2c61e84b87c80121e3f6bd8c6e68e64133fc514"
+    },
+    "artifacts": [
+      {
+        "bytes": 123,
+        "file": "de.jsonseq",
+        "id": "infracorpus",
+        "kind": "infrastructure",
+        "sha256": "9999999999999999999999999999999999999999999999999999999999999999"
+      }
+    ],
+    "corpus": {
+      "id": "deutschland-ebo",
+      "loadedOnServer": "complete",
+      "modelledScope": "quality-a-and-b",
+      "playableScope": "separate-world-mask",
+      "visibleScope": "complete-germany"
+    },
+    "quality": {
+      "byClassLengthMm": { "A": 100, "B": 899, "C": 0 },
+      "classCPlayable": false,
+      "reportSha256": "fdbfb97cdcf72edbc7b574018be67484afb50a36f965b83fdbceb9374fa92737",
+      "totalLengthMm": 999
+    },
+    "releaseId": "infra-deutschland-2027.1",
+    "schema": "zugfolge-infra-release/v2",
+    "sources": [
+      { "attribution": "Copernicus", "id": "copernicus-dem-germany", "modifications": "abgetastet", "rightsSourceId": "dem-hoehenmodell", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "sourceLicense": "Copernicus", "version": "1" },
+      { "attribution": "InfraGO", "id": "db-infrago-infrastructure-open-data", "modifications": "normalisiert", "rightsSourceId": "infrago", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "sourceLicense": "CC-BY-4.0", "version": "1" },
+      { "attribution": "OpenStation", "id": "openstation-enrichment", "modifications": "normalisiert", "rightsSourceId": "openstation", "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "sourceLicense": "CC0-1.0", "version": "1" },
+      { "attribution": "OSM", "id": "osm-de", "modifications": "EBO", "rightsSourceId": "osm", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "sourceLicense": "ODbL-1.0", "version": "1" }
+    ],
+    "timetableYear": 2027,
+    "validation": {
+      "additionalInternalValidationApplied": true,
+      "rawValidationMaterialShipped": false
+    }
+  },
+  "releaseHash": "d115056d36330978ba615843957b348166a1afda31fa4f35485baba6618dcedc"
+}

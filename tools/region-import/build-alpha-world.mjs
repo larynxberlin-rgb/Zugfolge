@@ -417,6 +417,7 @@ const deployment = {
     profileKind: "public",
     accelerationFactor: 1,
     periodCount: 10,
+    startingCapitalPolicy: { kind: "finite", amountCents: "0" },
     releases: { infra: infraRelease.releaseHash, timetable: gtfsEnvelope.snapshotHash, fleet: fleetEvidence.authorityReleaseHash, economy: economyRelease.checksum },
     lots: blueprintLots,
     conflictCheckHash: networkEnvelope.networkHash,

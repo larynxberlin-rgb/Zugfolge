@@ -3,9 +3,10 @@ import { createReadStream } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { createInterface } from "node:readline";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import { buildGermanyInfraCorpus } from "./quality-model.mjs";
-import { buildAnnualPlan, buildPublicInfraRelease } from "./release-manifest.mjs";
 
 async function json(path) {
   return JSON.parse(await readFile(resolve(path), "utf8"));
@@ -31,8 +32,27 @@ async function sequence(path, values) {
   await writeFile(resolve(path), values.map((value) => `\x1e${JSON.stringify(value)}\n`).join(""), "utf8");
 }
 
+async function rustReleaseCompiler(args) {
+  const cargo = process.env.CARGO ?? "cargo";
+  await new Promise((accept, reject) => {
+    const child = spawn(cargo, ["run", "--quiet", "--locked", "-p", "zugfolge-infra", "--bin", "zugfolge-infra-release", "--", ...args], {
+      cwd: resolve(dirname(fileURLToPath(import.meta.url)), "../../.."),
+      stdio: "inherit",
+      shell: false,
+    });
+    child.on("error", reject);
+    child.on("exit", (code) => code === 0 ? accept() : reject(new Error(`Rust-Releasecompiler endete mit Status ${code}.`)));
+  });
+}
+
 const [command, ...args] = process.argv.slice(2);
 if (command === "compile") {
+  // Übergangspfad: Die Korpusbildung bleibt bis zur vollständigen Rust-Portierung
+  // ausdrücklich nicht releasefähig. Nur `manifest` und `plan` treffen die
+  // autoritative Freigabeentscheidung.
+  if (process.env.ZUGFOLGE_NON_AUTHORITATIVE_CORPUS_BUILD !== "1") {
+    throw new Error("Die JavaScript-Korpusbildung ist nicht autoritativ. Für einen Entwicklungs-Zwischenstand ausdrücklich ZUGFOLGE_NON_AUTHORITATIVE_CORPUS_BUILD=1 setzen; ein InfraRelease darf daraus erst der Rust-Compiler bilden.");
+  }
   const [configPath, pbfReportPath, wayFeaturesPath, validationPath, corpusPath, qualityPath, internalEvidencePath] = args;
   if (!internalEvidencePath) throw new Error("Aufruf: build-germany-release.mjs compile CONFIG PBF_REPORT WAYS.geojsonseq VALIDATION.jsonseq|- CORPUS.jsonseq QUALITY.json INTERNAL_EVIDENCE.json");
   const [config, pbfReport, wayFeatures, validationReceipts] = await Promise.all([
@@ -48,23 +68,12 @@ if (command === "compile") {
 } else if (command === "manifest") {
   const [configPath, catalogPath, rightsPath, capturePath, artifactsPath, qualityPath, outputPath] = args;
   if (!outputPath) throw new Error("Aufruf: build-germany-release.mjs manifest CONFIG CATALOG RIGHTS CAPTURE ARTIFACTS QUALITY OUTPUT");
-  const [config, catalog, rightsRegistry, capture, artifacts, qualityEnvelope] = await Promise.all([
-    json(configPath), json(catalogPath), json(rightsPath), json(capturePath), json(artifactsPath), json(qualityPath),
-  ]);
-  const result = buildPublicInfraRelease({
-    config,
-    catalog,
-    rightsRegistry,
-    capture,
-    artifacts: artifacts.artifacts,
-    qualityReport: qualityEnvelope.report ?? qualityEnvelope,
-  });
-  await output(outputPath, result);
-  process.stdout.write(`${JSON.stringify({ releaseId: result.release.releaseId, releaseHash: result.releaseHash })}\n`);
+  const paths = [configPath, catalogPath, rightsPath, capturePath, artifactsPath, qualityPath, outputPath];
+  await rustReleaseCompiler(["manifest", ...paths.map((path) => resolve(path))]);
 } else if (command === "plan") {
   const [configPath, catalogPath, rightsPath] = args;
   if (!rightsPath) throw new Error("Aufruf: build-germany-release.mjs plan CONFIG CATALOG RIGHTS");
-  process.stdout.write(`${JSON.stringify(buildAnnualPlan(await json(configPath), await json(catalogPath), await json(rightsPath)), null, 2)}\n`);
+  await rustReleaseCompiler(["plan", ...[configPath, catalogPath, rightsPath].map((path) => resolve(path))]);
 } else {
   throw new Error("Befehl fehlt: compile, manifest oder plan.");
 }

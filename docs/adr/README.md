@@ -2,7 +2,7 @@
 
 Dieser Ordner hält die **Grundsatzentscheidungen** des Projekts als einzeln
 versionierte Architecture Decision Records (ADR) fest. Grundlage ist das
-Arbeitsprinzip aus `CLAUDE.md`: *ADR für jede Grundsatzentscheidung.*
+Arbeitsprinzip aus `AGENTS.md`: *ADR für jede Grundsatzentscheidung.*
 
 Ein ADR dokumentiert eine **bereits getroffene** Entscheidung mitsamt ihrem
 Kontext und ihren Konsequenzen. Es ist kein Ort, an dem neu verhandelt wird.
@@ -13,8 +13,8 @@ umgeschrieben — ihre Historie ist der Wert.
 
 ## Verhältnis zu den anderen Dokumenten
 
-- `AGENTS.md` — die bindende Kurztabelle E1–E28. Wird jede Sitzung geladen.
-- `../entscheidungen.md` — E1–E28 mit einzeiliger Begründung, die maßgebliche
+- `AGENTS.md` — die bindende Kurztabelle E1–E29. Wird jede Sitzung geladen.
+- `../entscheidungen.md` — E1–E29 mit einzeiliger Begründung, die maßgebliche
   Quelle für Wortlaut und Nummerierung.
 - **`docs/adr/`** (dieser Ordner) — dieselben Entscheidungen ausführlich: mit
   Kontext, Konsequenzen und Querverweisen. Ein ADR je Entscheidung.

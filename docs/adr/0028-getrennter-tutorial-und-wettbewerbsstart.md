@@ -51,8 +51,16 @@ Startkapitalkonfigurationen oder Tutorialereignisse in der Odoo-Outbox. Das
 Game ist allein autoritativ. Öffentliche Welten erhalten kein Startpaket. Ihr
 Geldstart folgt ausschließlich der signierten `StartingCapitalPolicy` mit
 endlichen nichtnegativen Integer-Cent, `0` oder dem expliziten nichtnumerischen
-Modus `unlimited` (`∞`). Diese Policy wird separat implementiert und nicht im
-Tutorialpfad nachgebaut.
+Modus `unlimited` (`∞`). Bei der Zugangsbestätigung bindet das Game Hash und
+Policy des vollständigen, gespeicherten Weltentwurfs unveränderlich an den
+Weltzugang. Die erste EVU-Gründung beansprucht diese Bindung atomar genau
+einmal. Endliche Beträge einschließlich `0` werden als ausgeglichene,
+welt- und EVU-gebundene Ledgertransaktion gegen Eigenkapital gebucht;
+`unlimited` bleibt ein eigener Modus ohne erfundenen Zahlenbetrag oder
+Startbuchung. Er hebt ausschließlich die Liquiditätsgrenze autoritativer
+Zahlungspfade auf, nicht die doppelte Buchführung. Startfinanzierung ist kein
+Bestandteil der Wirtschaftsrangliste. Dieser Pfad wird nicht im Tutorial
+nachgebaut.
 
 Der feste, versionierte Dialogkatalog führt den fiktiven Infrastrukturmitarbeiter
 Lutz als Tutorialbegleiter. Es gibt keine generative Laufzeit-KI und keinen
@@ -85,12 +93,16 @@ und Betriebsbeobachtung.
   werden.
 - **Invarianten:** Jede persistierte Zeile und jedes Event bleibt UUID-
   weltgebunden; Geld bleibt Integer-Cent; Simulation erhält explizite Zeit und
-  keinen Datenbankzugriff. Kein externer Dienst liegt im heißen Pfad.
+  keinen Datenbankzugriff. Kein externer Dienst liegt im heißen Pfad. Die
+  Startkapital-Beanspruchung ist je Welt und Zugang eindeutig und atomar; ein
+  Retry oder paralleler Gründungsversuch erzeugt weder ein zweites EVU noch
+  eine zweite Gutschrift.
 - **Odoo:** keine Tutorialwelt, kein Versuch, kein Event und keine
   Startkapital-Policy einer Tutorialinstanz werden projiziert.
 - **Milestones:** M9.1 liefert den geführten Ablauf, bleibt aber bis zum externen
-  Browser- und Zeitnachweis `in Arbeit`; M9.3 integriert später ausschließlich
-  die tatsächliche öffentliche `StartingCapitalPolicy`.
+  Browser- und Zeitnachweis `in Arbeit`; M9.3 enthält die tatsächliche
+  öffentliche `StartingCapitalPolicy`, bleibt wegen Heatmap, Glossar-Layer und
+  Betriebsassistent insgesamt `in Arbeit`.
 
 ## Verworfene Alternativen
 

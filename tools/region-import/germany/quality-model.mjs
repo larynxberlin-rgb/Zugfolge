@@ -43,7 +43,7 @@ function speedNumber(value) {
 function absolutePermille(value) {
   const normalized = text(value);
   if (normalized === null) return null;
-  const match = /^([+-]?\d+(?:[.,]\d+)?)\s*(%|â€°)?$/u.exec(normalized);
+  const match = /^([+-]?\d+(?:[.,]\d+)?)\s*(%|‰)?$/u.exec(normalized);
   if (match === null) return null;
   const numeric = Number.parseFloat(match[1].replace(",", "."));
   if (!Number.isFinite(numeric)) return null;

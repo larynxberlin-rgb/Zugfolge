@@ -54,7 +54,7 @@ Manifest übernommen.
 Der MapLibre-Runtime-Style bleibt absichtlich ein reiner Basemap-Style. Er darf
 genau eine selbst gehostete Vektorquelle mit der ID `basemap` besitzen und
 keinen der zehn semantischen Infrastruktur-Layer duplizieren. Der Client lädt
-das Infrastruktur-PMTiles separat aus `LivemapConfigV1` und registriert darauf
+das Infrastruktur-PMTiles separat aus `LivemapConfigV2` und registriert darauf
 Interaktions- und Zustandslayer. Der Paketvertrag bindet deshalb
 `basemapStyleUrl` und `infrastructurePmtilesUrl` an dieselbe versionierte
 `publicBasePath`. Er prüft zugleich, dass Style, Basemap, Infrastruktur,

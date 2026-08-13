@@ -6,7 +6,7 @@ import type {
   Map as MapLibreMap,
 } from "maplibre-gl";
 import type {
-  LivemapConfigV1,
+  LivemapConfigV2,
   LivemapObjectKind,
   PublicObjectState,
   PublicTrain,
@@ -99,7 +99,7 @@ function sameOriginAsset(value: string, pageUrl: string): URL {
   return resolved;
 }
 
-export function assertSelfHostedConfig(config: LivemapConfigV1, pageUrl: string): void {
+export function assertSelfHostedConfig(config: LivemapConfigV2, pageUrl: string): void {
   if (config.basemap.selfHosted !== true) {
     throw new Error("Die Basiskarte ist nicht als selbst gehostet ausgewiesen.");
   }

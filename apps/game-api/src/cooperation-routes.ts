@@ -4,13 +4,16 @@ import {
   CooperationNotFoundError,
   CooperationService,
   CooperationValidationError,
+  type CooperationPage,
+  type VehicleTransferResult,
 } from "@zugfolge/cooperation";
-import { operators } from "@zugfolge/db";
+import { operators, type OperatorContract, type VehicleMarketListing } from "@zugfolge/db";
 import { AuthorizationError, getAccount, type IdentityDatabase } from "@zugfolge/identity";
 import { and, eq } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import type { createAuthenticator } from "./auth.js";
+import type { CooperationResourceCatalog } from "./cooperation-authority.js";
 
 const worldParams = {
   type: "object",
@@ -28,6 +31,29 @@ const operatorParams = {
     operatorId: { type: "string", format: "uuid" },
   },
 } as const;
+
+const pageQuery = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
+    cursor: { type: "string", minLength: 1, maxLength: 96 },
+    view: { type: "string", enum: ["actionable", "archive", "all"], default: "actionable" },
+    deadlineBeforeS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+  },
+} as const;
+
+type PageQuery = {
+  readonly limit?: number;
+  readonly cursor?: string;
+  readonly view?: "actionable" | "archive" | "all";
+  readonly deadlineBeforeS?: number;
+};
+
+const CONTRACT_SCHEMA_VERSION = "zugfolge-operator-contract/v1" as const;
+const LISTING_SCHEMA_VERSION = "zugfolge-vehicle-market-listing/v1" as const;
+const PAGE_SCHEMA_VERSION = "zugfolge-cooperation-page/v1" as const;
+const TRANSFER_SCHEMA_VERSION = "zugfolge-vehicle-transfer-result/v1" as const;
 
 function sendCooperationError(reply: FastifyReply, error: unknown): FastifyReply {
   if (error instanceof CooperationAuthorizationError || error instanceof AuthorizationError) {
@@ -47,6 +73,38 @@ function apiPayload(value: unknown): unknown {
     return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, apiPayload(entry)]));
   }
   return value;
+}
+
+function recordPayload(value: object): Readonly<Record<string, unknown>> {
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, apiPayload(entry)]));
+}
+
+function contractPayload(value: OperatorContract): Readonly<Record<string, unknown>> {
+  return { schemaVersion: CONTRACT_SCHEMA_VERSION, ...recordPayload(value) };
+}
+
+function listingPayload(value: VehicleMarketListing): Readonly<Record<string, unknown>> {
+  return { schemaVersion: LISTING_SCHEMA_VERSION, ...recordPayload(value) };
+}
+
+function pagePayload<T extends OperatorContract | VehicleMarketListing>(
+  value: CooperationPage<T>,
+  serializeItem: (item: T) => Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  return {
+    schemaVersion: PAGE_SCHEMA_VERSION,
+    items: value.items.map(serializeItem),
+    nextCursor: value.nextCursor,
+  };
+}
+
+function transferPayload(value: VehicleTransferResult): Readonly<Record<string, unknown>> {
+  return {
+    schemaVersion: TRANSFER_SCHEMA_VERSION,
+    ...recordPayload(value),
+    listing: listingPayload(value.listing),
+    ...(value.contract === undefined ? {} : { contract: contractPayload(value.contract) }),
+  };
 }
 
 async function actingAccount(db: IdentityDatabase, worldId: string, subject: string) {
@@ -71,9 +129,26 @@ export function registerCooperationRoutes(
     readonly db: IdentityDatabase;
     readonly cooperation: CooperationService;
     readonly authenticate: ReturnType<typeof createAuthenticator>;
+    readonly simulationSecond: (worldId: string) => Promise<number>;
+    readonly resourceCatalog: (worldId: string, operatorId: string) => Promise<CooperationResourceCatalog>;
     readonly guardAction?: (request: FastifyRequest, subject: string, actionClass: string, target: string, replayKey: string) => Promise<void>;
   },
 ): void {
+  app.get<{ Params: { worldId: string; operatorId: string } }>(
+    "/worlds/:worldId/operators/:operatorId/cooperation-resources",
+    { preHandler: deps.authenticate, schema: { params: operatorParams } },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        await requireOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        return reply.send(apiPayload(await deps.resourceCatalog(request.params.worldId, request.params.operatorId)));
+      } catch (error) {
+        return sendCooperationError(reply, error);
+      }
+    },
+  );
+
   app.post<{
     Params: { worldId: string; operatorId: string };
     Body: {
@@ -86,7 +161,6 @@ export function registerCooperationRoutes(
       validUntilS: number;
       responseDeadlineS: number;
       terminationNoticeS: number;
-      offeredAtS: number;
       idempotencyKey: string;
     };
   }>("/worlds/:worldId/operators/:operatorId/contracts", {
@@ -96,7 +170,7 @@ export function registerCooperationRoutes(
       body: {
         type: "object",
         additionalProperties: false,
-        required: ["offereeOperatorId", "contractType", "subject", "terms", "priceCents", "validFromS", "validUntilS", "responseDeadlineS", "terminationNoticeS", "offeredAtS", "idempotencyKey"],
+        required: ["offereeOperatorId", "contractType", "subject", "terms", "priceCents", "validFromS", "validUntilS", "responseDeadlineS", "terminationNoticeS", "idempotencyKey"],
         properties: {
           offereeOperatorId: { type: "string", format: "uuid" },
           contractType: { type: "string", enum: ["traction", "vehicle-rental", "connection", "disruption-assistance"] },
@@ -107,7 +181,6 @@ export function registerCooperationRoutes(
           validUntilS: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
           responseDeadlineS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
           terminationNoticeS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
-          offeredAtS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
           idempotencyKey: { type: "string", minLength: 1, maxLength: 200 },
         },
       },
@@ -118,7 +191,8 @@ export function registerCooperationRoutes(
     try {
       await deps.guardAction?.(request, identity.keycloakSubject, "operator-contract", request.body.offereeOperatorId, request.body.idempotencyKey);
       const account = await requireOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
-      return reply.code(201).send(apiPayload(await deps.cooperation.offerContract({
+      const offeredAtS = await deps.simulationSecond(request.params.worldId);
+      return reply.code(201).send(contractPayload(await deps.cooperation.offerContract({
         worldId: request.params.worldId,
         offerorOperatorId: request.params.operatorId,
         offereeOperatorId: request.body.offereeOperatorId,
@@ -131,7 +205,7 @@ export function registerCooperationRoutes(
         validUntilS: request.body.validUntilS,
         responseDeadlineS: request.body.responseDeadlineS,
         terminationNoticeS: request.body.terminationNoticeS,
-        offeredAtS: request.body.offeredAtS,
+        offeredAtS,
         idempotencyKey: request.body.idempotencyKey,
       })));
     } catch (error) {
@@ -139,15 +213,18 @@ export function registerCooperationRoutes(
     }
   });
 
-  app.get<{ Params: { worldId: string; operatorId: string } }>(
+  app.get<{ Params: { worldId: string; operatorId: string }; Querystring: PageQuery }>(
     "/worlds/:worldId/operators/:operatorId/contracts",
-    { preHandler: deps.authenticate, schema: { params: operatorParams } },
+    { preHandler: deps.authenticate, schema: { params: operatorParams, querystring: pageQuery } },
     async (request, reply) => {
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
         await requireOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
-        return reply.send(apiPayload(await deps.cooperation.listContracts(request.params.worldId, request.params.operatorId)));
+        return reply.send(pagePayload(
+          await deps.cooperation.pageContracts(request.params.worldId, request.params.operatorId, request.query),
+          contractPayload,
+        ));
       } catch (error) {
         return sendCooperationError(reply, error);
       }
@@ -156,28 +233,30 @@ export function registerCooperationRoutes(
 
   app.post<{
     Params: { worldId: string; operatorId: string; contractId: string };
-    Body: { response: "accept" | "reject"; atS: number };
+    Body: { response: "accept" | "reject"; idempotencyKey: string };
   }>("/worlds/:worldId/operators/:operatorId/contracts/:contractId/respond", {
     preHandler: deps.authenticate,
     schema: {
       params: { type: "object", required: ["worldId", "operatorId", "contractId"], additionalProperties: false, properties: { worldId: { type: "string", format: "uuid" }, operatorId: { type: "string", format: "uuid" }, contractId: { type: "string", format: "uuid" } } },
-      body: { type: "object", required: ["response", "atS"], additionalProperties: false, properties: { response: { type: "string", enum: ["accept", "reject"] }, atS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER } } },
+      body: { type: "object", required: ["response", "idempotencyKey"], additionalProperties: false, properties: { response: { type: "string", enum: ["accept", "reject"] }, idempotencyKey: { type: "string", minLength: 1, maxLength: 200 } } },
     },
   }, async (request, reply) => {
     const identity = request.identity;
     if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
     try {
-      await deps.guardAction?.(request, identity.keycloakSubject, "operator-contract", request.params.contractId, `${request.params.contractId}:${request.body.response}`);
+      await deps.guardAction?.(request, identity.keycloakSubject, "operator-contract", request.params.contractId, request.body.idempotencyKey);
       const account = await requireOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+      const atS = await deps.simulationSecond(request.params.worldId);
       const contract = await deps.cooperation.respondToContract({
         worldId: request.params.worldId,
         contractId: request.params.contractId,
+        actingOperatorId: request.params.operatorId,
         actingAccountId: account.id,
-        atS: request.body.atS,
+        atS,
         response: request.body.response,
+        idempotencyKey: request.body.idempotencyKey,
       });
-      if (contract.offereeOperatorId !== request.params.operatorId) throw new CooperationAuthorizationError("Antwortendes EVU ist nicht die empfangende Partei.");
-      return reply.send(apiPayload(contract));
+      return reply.send(contractPayload(contract));
     } catch (error) {
       return sendCooperationError(reply, error);
     }
@@ -185,41 +264,77 @@ export function registerCooperationRoutes(
 
   app.post<{
     Params: { worldId: string; operatorId: string; contractId: string };
-    Body: { atS: number; reason: string; nonPerformance?: boolean };
+    Body: { reason: string; idempotencyKey: string };
   }>("/worlds/:worldId/operators/:operatorId/contracts/:contractId/end", {
     preHandler: deps.authenticate,
     schema: {
       params: { type: "object", required: ["worldId", "operatorId", "contractId"], additionalProperties: false, properties: { worldId: { type: "string", format: "uuid" }, operatorId: { type: "string", format: "uuid" }, contractId: { type: "string", format: "uuid" } } },
-      body: { type: "object", required: ["atS", "reason"], additionalProperties: false, properties: { atS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER }, reason: { type: "string", minLength: 8, maxLength: 500 }, nonPerformance: { type: "boolean", default: false } } },
+      body: { type: "object", required: ["reason", "idempotencyKey"], additionalProperties: false, properties: { reason: { type: "string", minLength: 8, maxLength: 500 }, idempotencyKey: { type: "string", minLength: 1, maxLength: 200 } } },
     },
   }, async (request, reply) => {
     const identity = request.identity;
     if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
     try {
-      await deps.guardAction?.(request, identity.keycloakSubject, "operator-contract", request.params.contractId, `${request.params.contractId}:end:${request.body.reason}`);
+      await deps.guardAction?.(request, identity.keycloakSubject, "operator-contract", request.params.contractId, request.body.idempotencyKey);
       const account = await requireOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
-      return reply.send(apiPayload(await deps.cooperation.terminateContract({
+      const atS = await deps.simulationSecond(request.params.worldId);
+      return reply.send(contractPayload(await deps.cooperation.terminateContract({
         worldId: request.params.worldId,
         contractId: request.params.contractId,
+        actingOperatorId: request.params.operatorId,
         actingAccountId: account.id,
-        atS: request.body.atS,
+        atS,
         reason: request.body.reason,
-        nonPerformance: request.body.nonPerformance,
+        idempotencyKey: request.body.idempotencyKey,
       })));
     } catch (error) {
       return sendCooperationError(reply, error);
     }
   });
 
-  app.get<{ Params: { worldId: string } }>(
+  app.post<{
+    Params: { worldId: string; operatorId: string; contractId: string };
+    Body: { reason: string; evidenceReference: string; idempotencyKey: string };
+  }>("/worlds/:worldId/operators/:operatorId/contracts/:contractId/non-performance", {
+    preHandler: deps.authenticate,
+    schema: {
+      params: { type: "object", required: ["worldId", "operatorId", "contractId"], additionalProperties: false, properties: { worldId: { type: "string", format: "uuid" }, operatorId: { type: "string", format: "uuid" }, contractId: { type: "string", format: "uuid" } } },
+      body: { type: "object", required: ["reason", "evidenceReference", "idempotencyKey"], additionalProperties: false, properties: { reason: { type: "string", minLength: 8, maxLength: 500 }, evidenceReference: { type: "string", pattern: "^daily-operation-report/v1:[0-9]{4}-[0-9]{2}-[0-9]{2}$", maxLength: 64 }, idempotencyKey: { type: "string", minLength: 1, maxLength: 200 } } },
+    },
+  }, async (request, reply) => {
+    const identity = request.identity;
+    if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+    try {
+      await deps.guardAction?.(request, identity.keycloakSubject, "operator-contract", request.params.contractId, request.body.idempotencyKey);
+      const account = await requireOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+      const atS = await deps.simulationSecond(request.params.worldId);
+      return reply.send(contractPayload(await deps.cooperation.terminateContract({
+        worldId: request.params.worldId,
+        contractId: request.params.contractId,
+        actingOperatorId: request.params.operatorId,
+        actingAccountId: account.id,
+        atS,
+        reason: request.body.reason,
+        evidenceReference: request.body.evidenceReference,
+        idempotencyKey: request.body.idempotencyKey,
+      })));
+    } catch (error) {
+      return sendCooperationError(reply, error);
+    }
+  });
+
+  app.get<{ Params: { worldId: string }; Querystring: PageQuery }>(
     "/worlds/:worldId/vehicle-market/listings",
-    { preHandler: deps.authenticate, schema: { params: worldParams } },
+    { preHandler: deps.authenticate, schema: { params: worldParams, querystring: pageQuery } },
     async (request, reply) => {
       const identity = request.identity;
       if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
       try {
         await actingAccount(deps.db, request.params.worldId, identity.keycloakSubject);
-        return reply.send(apiPayload(await deps.cooperation.listListings(request.params.worldId)));
+        return reply.send(pagePayload(
+          await deps.cooperation.pageListings(request.params.worldId, request.query),
+          listingPayload,
+        ));
       } catch (error) {
         return sendCooperationError(reply, error);
       }
@@ -228,12 +343,12 @@ export function registerCooperationRoutes(
 
   app.post<{
     Params: { worldId: string; operatorId: string; vehicleId: string };
-    Body: { listingType: "sale" | "rental"; priceCents: string; rentalValidUntilS?: number; listedAtS: number; expiresAtS: number; idempotencyKey: string };
+    Body: { listingType: "sale" | "rental"; priceCents: string; rentalValidUntilS?: number; expiresAtS: number; idempotencyKey: string };
   }>("/worlds/:worldId/operators/:operatorId/vehicles/:vehicleId/listings", {
     preHandler: deps.authenticate,
     schema: {
       params: { type: "object", required: ["worldId", "operatorId", "vehicleId"], additionalProperties: false, properties: { worldId: { type: "string", format: "uuid" }, operatorId: { type: "string", format: "uuid" }, vehicleId: { type: "string", minLength: 1, maxLength: 200 } } },
-      body: { type: "object", required: ["listingType", "priceCents", "listedAtS", "expiresAtS", "idempotencyKey"], additionalProperties: false, properties: { listingType: { type: "string", enum: ["sale", "rental"] }, priceCents: { type: "string", pattern: "^[1-9][0-9]*$" }, rentalValidUntilS: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER }, listedAtS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER }, expiresAtS: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER }, idempotencyKey: { type: "string", minLength: 1, maxLength: 200 } } },
+      body: { type: "object", required: ["listingType", "priceCents", "expiresAtS", "idempotencyKey"], additionalProperties: false, properties: { listingType: { type: "string", enum: ["sale", "rental"] }, priceCents: { type: "string", pattern: "^[1-9][0-9]*$" }, rentalValidUntilS: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER }, expiresAtS: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER }, idempotencyKey: { type: "string", minLength: 1, maxLength: 200 } } },
     },
   }, async (request, reply) => {
     const identity = request.identity;
@@ -241,7 +356,8 @@ export function registerCooperationRoutes(
     try {
       await deps.guardAction?.(request, identity.keycloakSubject, "vehicle-market", request.params.vehicleId, request.body.idempotencyKey);
       const account = await requireOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
-      return reply.code(201).send(apiPayload(await deps.cooperation.createListing({
+      const listedAtS = await deps.simulationSecond(request.params.worldId);
+      return reply.code(201).send(listingPayload(await deps.cooperation.createListing({
         worldId: request.params.worldId,
         vehicleId: request.params.vehicleId,
         offeringOperatorId: request.params.operatorId,
@@ -249,7 +365,7 @@ export function registerCooperationRoutes(
         listingType: request.body.listingType,
         priceCents: BigInt(request.body.priceCents),
         rentalValidUntilS: request.body.rentalValidUntilS,
-        listedAtS: request.body.listedAtS,
+        listedAtS,
         expiresAtS: request.body.expiresAtS,
         idempotencyKey: request.body.idempotencyKey,
       })));
@@ -260,41 +376,12 @@ export function registerCooperationRoutes(
 
   app.post<{
     Params: { worldId: string; listingId: string };
-    Body: { buyerOperatorId: string; atS: number; reservedUntilS: number; expectedRevision: number };
+    Body: { buyerOperatorId: string; expectedRevision: number; idempotencyKey: string };
   }>("/worlds/:worldId/vehicle-market/listings/:listingId/reserve", {
     preHandler: deps.authenticate,
     schema: {
       params: { type: "object", required: ["worldId", "listingId"], additionalProperties: false, properties: { worldId: { type: "string", format: "uuid" }, listingId: { type: "string", format: "uuid" } } },
-      body: { type: "object", required: ["buyerOperatorId", "atS", "reservedUntilS", "expectedRevision"], additionalProperties: false, properties: { buyerOperatorId: { type: "string", format: "uuid" }, atS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER }, reservedUntilS: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER }, expectedRevision: { type: "integer", minimum: 1 } } },
-    },
-  }, async (request, reply) => {
-    const identity = request.identity;
-    if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
-    try {
-      await deps.guardAction?.(request, identity.keycloakSubject, "vehicle-market", request.params.listingId, `${request.params.listingId}:reserve:${request.body.expectedRevision}`);
-      const account = await requireOwner(deps.db, request.params.worldId, request.body.buyerOperatorId, identity.keycloakSubject);
-      return reply.send(apiPayload(await deps.cooperation.reserveListing({
-        worldId: request.params.worldId,
-        listingId: request.params.listingId,
-        buyerOperatorId: request.body.buyerOperatorId,
-        actingAccountId: account.id,
-        atS: request.body.atS,
-        reservedUntilS: request.body.reservedUntilS,
-        expectedRevision: request.body.expectedRevision,
-      })));
-    } catch (error) {
-      return sendCooperationError(reply, error);
-    }
-  });
-
-  app.post<{
-    Params: { worldId: string; listingId: string };
-    Body: { buyerOperatorId: string; atS: number; expectedRevision: number; idempotencyKey: string };
-  }>("/worlds/:worldId/vehicle-market/listings/:listingId/transfer", {
-    preHandler: deps.authenticate,
-    schema: {
-      params: { type: "object", required: ["worldId", "listingId"], additionalProperties: false, properties: { worldId: { type: "string", format: "uuid" }, listingId: { type: "string", format: "uuid" } } },
-      body: { type: "object", required: ["buyerOperatorId", "atS", "expectedRevision", "idempotencyKey"], additionalProperties: false, properties: { buyerOperatorId: { type: "string", format: "uuid" }, atS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER }, expectedRevision: { type: "integer", minimum: 1 }, idempotencyKey: { type: "string", minLength: 1, maxLength: 200 } } },
+      body: { type: "object", required: ["buyerOperatorId", "expectedRevision", "idempotencyKey"], additionalProperties: false, properties: { buyerOperatorId: { type: "string", format: "uuid" }, expectedRevision: { type: "integer", minimum: 1 }, idempotencyKey: { type: "string", minLength: 1, maxLength: 200 } } },
     },
   }, async (request, reply) => {
     const identity = request.identity;
@@ -302,12 +389,13 @@ export function registerCooperationRoutes(
     try {
       await deps.guardAction?.(request, identity.keycloakSubject, "vehicle-market", request.params.listingId, request.body.idempotencyKey);
       const account = await requireOwner(deps.db, request.params.worldId, request.body.buyerOperatorId, identity.keycloakSubject);
-      return reply.send(apiPayload(await deps.cooperation.transferListing({
+      const atS = await deps.simulationSecond(request.params.worldId);
+      return reply.send(listingPayload(await deps.cooperation.reserveListing({
         worldId: request.params.worldId,
         listingId: request.params.listingId,
         buyerOperatorId: request.body.buyerOperatorId,
         actingAccountId: account.id,
-        atS: request.body.atS,
+        atS,
         expectedRevision: request.body.expectedRevision,
         idempotencyKey: request.body.idempotencyKey,
       })));
@@ -318,12 +406,12 @@ export function registerCooperationRoutes(
 
   app.post<{
     Params: { worldId: string; listingId: string };
-    Body: { buyerOperatorId: string; atS: number; reasonCode: string; idempotencyKey: string };
-  }>("/worlds/:worldId/vehicle-market/listings/:listingId/reverse", {
+    Body: { buyerOperatorId: string; expectedRevision: number; idempotencyKey: string };
+  }>("/worlds/:worldId/vehicle-market/listings/:listingId/transfer", {
     preHandler: deps.authenticate,
     schema: {
       params: { type: "object", required: ["worldId", "listingId"], additionalProperties: false, properties: { worldId: { type: "string", format: "uuid" }, listingId: { type: "string", format: "uuid" } } },
-      body: { type: "object", required: ["buyerOperatorId", "atS", "reasonCode", "idempotencyKey"], additionalProperties: false, properties: { buyerOperatorId: { type: "string", format: "uuid" }, atS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER }, reasonCode: { type: "string", minLength: 1, maxLength: 200 }, idempotencyKey: { type: "string", minLength: 1, maxLength: 200 } } },
+      body: { type: "object", required: ["buyerOperatorId", "expectedRevision", "idempotencyKey"], additionalProperties: false, properties: { buyerOperatorId: { type: "string", format: "uuid" }, expectedRevision: { type: "integer", minimum: 1 }, idempotencyKey: { type: "string", minLength: 1, maxLength: 200 } } },
     },
   }, async (request, reply) => {
     const identity = request.identity;
@@ -331,12 +419,43 @@ export function registerCooperationRoutes(
     try {
       await deps.guardAction?.(request, identity.keycloakSubject, "vehicle-market", request.params.listingId, request.body.idempotencyKey);
       const account = await requireOwner(deps.db, request.params.worldId, request.body.buyerOperatorId, identity.keycloakSubject);
-      return reply.send(apiPayload(await deps.cooperation.reverseTransfer({
+      const atS = await deps.simulationSecond(request.params.worldId);
+      return reply.send(transferPayload(await deps.cooperation.transferListing({
         worldId: request.params.worldId,
         listingId: request.params.listingId,
         buyerOperatorId: request.body.buyerOperatorId,
         actingAccountId: account.id,
-        atS: request.body.atS,
+        atS,
+        expectedRevision: request.body.expectedRevision,
+        idempotencyKey: request.body.idempotencyKey,
+      })));
+    } catch (error) {
+      return sendCooperationError(reply, error);
+    }
+  });
+
+  app.post<{
+    Params: { worldId: string; listingId: string };
+    Body: { buyerOperatorId: string; reasonCode: string; idempotencyKey: string };
+  }>("/worlds/:worldId/vehicle-market/listings/:listingId/reverse", {
+    preHandler: deps.authenticate,
+    schema: {
+      params: { type: "object", required: ["worldId", "listingId"], additionalProperties: false, properties: { worldId: { type: "string", format: "uuid" }, listingId: { type: "string", format: "uuid" } } },
+      body: { type: "object", required: ["buyerOperatorId", "reasonCode", "idempotencyKey"], additionalProperties: false, properties: { buyerOperatorId: { type: "string", format: "uuid" }, reasonCode: { type: "string", minLength: 1, maxLength: 200 }, idempotencyKey: { type: "string", minLength: 1, maxLength: 200 } } },
+    },
+  }, async (request, reply) => {
+    const identity = request.identity;
+    if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+    try {
+      await deps.guardAction?.(request, identity.keycloakSubject, "vehicle-market", request.params.listingId, request.body.idempotencyKey);
+      const account = await requireOwner(deps.db, request.params.worldId, request.body.buyerOperatorId, identity.keycloakSubject);
+      const atS = await deps.simulationSecond(request.params.worldId);
+      return reply.send(transferPayload(await deps.cooperation.reverseTransfer({
+        worldId: request.params.worldId,
+        listingId: request.params.listingId,
+        buyerOperatorId: request.body.buyerOperatorId,
+        actingAccountId: account.id,
+        atS,
         reasonCode: request.body.reasonCode,
         idempotencyKey: request.body.idempotencyKey,
       })));
@@ -347,26 +466,28 @@ export function registerCooperationRoutes(
 
   app.post<{
     Params: { worldId: string; operatorId: string; listingId: string };
-    Body: { atS: number; expectedRevision: number };
+    Body: { expectedRevision: number; idempotencyKey: string };
   }>("/worlds/:worldId/operators/:operatorId/vehicle-market/listings/:listingId/cancel", {
     preHandler: deps.authenticate,
     schema: {
       params: { type: "object", required: ["worldId", "operatorId", "listingId"], additionalProperties: false, properties: { worldId: { type: "string", format: "uuid" }, operatorId: { type: "string", format: "uuid" }, listingId: { type: "string", format: "uuid" } } },
-      body: { type: "object", required: ["atS", "expectedRevision"], additionalProperties: false, properties: { atS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER }, expectedRevision: { type: "integer", minimum: 1 } } },
+      body: { type: "object", required: ["expectedRevision", "idempotencyKey"], additionalProperties: false, properties: { expectedRevision: { type: "integer", minimum: 1 }, idempotencyKey: { type: "string", minLength: 1, maxLength: 200 } } },
     },
   }, async (request, reply) => {
     const identity = request.identity;
     if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
     try {
-      await deps.guardAction?.(request, identity.keycloakSubject, "vehicle-market", request.params.listingId, `${request.params.listingId}:cancel:${request.body.expectedRevision}`);
+      await deps.guardAction?.(request, identity.keycloakSubject, "vehicle-market", request.params.listingId, request.body.idempotencyKey);
       const account = await requireOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
-      return reply.send(apiPayload(await deps.cooperation.cancelListing({
+      const atS = await deps.simulationSecond(request.params.worldId);
+      return reply.send(listingPayload(await deps.cooperation.cancelListing({
         worldId: request.params.worldId,
         listingId: request.params.listingId,
         offeringOperatorId: request.params.operatorId,
         actingAccountId: account.id,
-        atS: request.body.atS,
+        atS,
         expectedRevision: request.body.expectedRevision,
+        idempotencyKey: request.body.idempotencyKey,
       })));
     } catch (error) {
       return sendCooperationError(reply, error);
@@ -409,49 +530,4 @@ export function registerCooperationRoutes(
     },
   );
 
-  app.post<{
-    Params: { worldId: string; operatorId: string; vehicleId: string };
-    Body: {
-      atS: number;
-      expectedRevision: number;
-      odometerMetres: string;
-      conditionBasisPoints: number;
-      damages: readonly Readonly<Record<string, unknown>>[];
-      maintenanceDeadlines: readonly Readonly<Record<string, unknown>>[];
-      bindings: Readonly<Record<string, unknown>>;
-      idempotencyKey: string;
-    };
-  }>("/worlds/:worldId/operators/:operatorId/vehicles/:vehicleId/condition", {
-    preHandler: deps.authenticate,
-    schema: {
-      params: { type: "object", required: ["worldId", "operatorId", "vehicleId"], additionalProperties: false, properties: { worldId: { type: "string", format: "uuid" }, operatorId: { type: "string", format: "uuid" }, vehicleId: { type: "string", minLength: 1, maxLength: 200 } } },
-      body: { type: "object", required: ["atS", "expectedRevision", "odometerMetres", "conditionBasisPoints", "damages", "maintenanceDeadlines", "bindings", "idempotencyKey"], additionalProperties: false, properties: {
-        atS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
-        expectedRevision: { type: "integer", minimum: 1 },
-        odometerMetres: { type: "string", pattern: "^[0-9]+$" },
-        conditionBasisPoints: { type: "integer", minimum: 0, maximum: 10_000 },
-        damages: { type: "array", maxItems: 1_000, items: { type: "object" } },
-        maintenanceDeadlines: { type: "array", maxItems: 1_000, items: { type: "object" } },
-        bindings: { type: "object" },
-        idempotencyKey: { type: "string", minLength: 1, maxLength: 200 },
-      } },
-    },
-  }, async (request, reply) => {
-    const identity = request.identity;
-    if (identity === undefined) return reply.code(401).send({ error: "Keine Identitaet." });
-    try {
-      await deps.guardAction?.(request, identity.keycloakSubject, "vehicle-condition", request.params.vehicleId, request.body.idempotencyKey);
-      const account = await requireOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
-      return reply.send(apiPayload(await deps.cooperation.updateVehicleCondition({
-        worldId: request.params.worldId, vehicleId: request.params.vehicleId,
-        actingOperatorId: request.params.operatorId, actingAccountId: account.id,
-        atS: request.body.atS, expectedRevision: request.body.expectedRevision,
-        odometerMetres: BigInt(request.body.odometerMetres), conditionBasisPoints: request.body.conditionBasisPoints,
-        damages: request.body.damages, maintenanceDeadlines: request.body.maintenanceDeadlines,
-        bindings: request.body.bindings, idempotencyKey: request.body.idempotencyKey,
-      })));
-    } catch (error) {
-      return sendCooperationError(reply, error);
-    }
-  });
 }

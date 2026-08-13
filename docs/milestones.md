@@ -829,6 +829,10 @@ Gesamtmilestones abgeschlossen. Die konkrete M14.1-Grenze wird vor dem großen
 Datenimport aus den [messbaren Mitteldeutschland-Varianten](mitteldeutschland-alpha.md)
 freigegeben.
 
+<!-- zugfolge-alpha-dag:start
+{"M12.1":["M2","M5","M6","M8"],"M12.2":["M2","M5","M6","M12.1"],"M14.1":["M1","M2","M4","M5","M6","M8","M9.2"],"M9.9":["M14.1"]}
+zugfolge-alpha-dag:end -->
+
 Die Auswahl ist erfolgt: M14.1 verwendet **Variante B — Mitteldeutsches
 Metropol-Korridornetz** aus `docs/mitteldeutschland-alpha.md`.
 Gebietsüberschreitende GTFS-Fahrten folgen
@@ -841,14 +845,14 @@ deterministische Außenlauf bleibt dieselbe Zugfahrt.
 | 9.1 | Spielergebundene, kurzlebige Tutorialwelt aus Minimaltemplate; fünf geführte Kapitel, Lutz und reale Dauertelemetrie | L | in Arbeit |
 | 9.2 | **Weltstart mit Eigenbetrieb**: das gesamte SPNV-Netz der Region fährt ab Sekunde eins | M | erledigt |
 | 9.2a | **Administrativer Weltstartbestand**: optionaler, versionierter und auditierter Pool konkreter Gebrauchtfahrzeuge einschließlich Zustandsprofil und Lebenslauf; Zuweisung an Eigenbetrieb und servereigene Vermieter ohne Fahrzeugduplikate | M | offen |
-| 9.3 | Onboarding in der öffentlichen Welt: tatsächliche `StartingCapitalPolicy`, Kapazitäts-Heatmap, Glossar-Layer und Betriebsassistent; keine automatische Startausstattung | M | offen |
-| 9.4 | Admin- und Auditwerkzeuge, Vier-Augen-Prinzip bei Hochrisikoaktionen | M | offen |
-| 9.5 | **Betriebsreife**: Observability, Backup und Restore, Incident-Runbooks. Gehört vor die erste Welt mit echten Spielern, nicht in die Monetarisierungsphase. Der Health-Check-Vertrag (`packages/health`, seit M2) liegt bereits — M9.5 baut Alarmierung, Dashboards und Backup darauf, zieht ihn nicht mehr nachträglich ein | L | offen |
-| 9.6 | Rate Limits, Anti-Bot-Prüfungen, Anomalieerkennung für Trassenfenster und Märkte | M | offen |
-| 9.7 | Telemetrie, Balancing-Dashboards, Feedbackkanal | M | offen |
-| 9.8 | **Weltende** (E18): letzte Periode ohne Ausschreibung, reguläres Vertragsende ohne Insolvenzfolge, Schlusswertung mit mehreren Ranglisten, Archiv und Replay-Export | M | offen |
+| 9.3 | Onboarding in der öffentlichen Welt: tatsächliche `StartingCapitalPolicy`, Kapazitäts-Heatmap, Glossar-Layer und Betriebsassistent; keine automatische Startausstattung | M | in Arbeit |
+| 9.4 | Admin- und Auditwerkzeuge, Vier-Augen-Prinzip bei Hochrisikoaktionen | M | in Arbeit |
+| 9.5 | **Betriebsreife**: Observability, Backup und Restore, Incident-Runbooks. Gehört vor die erste Welt mit echten Spielern, nicht in die Monetarisierungsphase. Der Health-Check-Vertrag (`packages/health`, seit M2) liegt bereits — M9.5 baut Alarmierung, Dashboards und Backup darauf, zieht ihn nicht mehr nachträglich ein | L | in Arbeit |
+| 9.6 | Rate Limits, Anti-Bot-Prüfungen, Anomalieerkennung für Trassenfenster und Märkte | M | in Arbeit |
+| 9.7 | Telemetrie, Balancing-Dashboards, Feedbackkanal | M | in Arbeit |
+| 9.8 | **Weltende** (E18): letzte Periode ohne Ausschreibung, reguläres Vertragsende ohne Insolvenzfolge, Schlusswertung mit mehreren Ranglisten, Archiv und Replay-Export | M | in Arbeit |
 | 9.9 | Geschlossene Alpha mit 20–50 externen Spielern in der freigegebenen Mitteldeutschland-Region, einschließlich M12.1/M12.2 | M | offen |
-| 9.10 | **Jährliche Infrastrukturaktualisierung** (E22): `InfraRelease`-Neubau aus aktualisiertem `osm-pbf-lhe` und der Trassenfinder-Infrastruktur-API zu jedem realen Fahrplanwechsel; Übernahmeverfahren für eine laufende Welt zum nächsten Periodenwechsel, ohne Invariante 1 zu verletzen | L | offen |
+| 9.10 | **Jährliche Infrastrukturaktualisierung** (E22): `InfraRelease`-Neubau aus aktualisiertem `osm-pbf-lhe` und der Trassenfinder-Infrastruktur-API zu jedem realen Fahrplanwechsel; Übernahmeverfahren für eine laufende Welt zum nächsten Periodenwechsel, ohne Invariante 1 zu verletzen | L | in Arbeit |
 
 M9.1 ist repositoryseitig als persönliche, beim Spielerstart erzeugte Welt
 implementiert: versioniertes Minimaltemplate, echte Economy-/Fleet-/Planning-/
@@ -866,11 +870,14 @@ Produktionsbuild in Chrome/Chromium über die echten Session-HTTP-APIs und die
 Linux-NAPI-Pfade durch alle fünf Kapitel bis zur Archivierung; auch dieser Lauf
 ersetzt weder externe Teilnehmer noch die Zeitmessung.
 
-M9.3 vergibt keine öffentliche Startausstattung mehr. Sein Geldpfad hängt an
-der parallel eingeführten, signierten `StartingCapitalPolicy`; null, endliche
-Integer-Cent und der explizite Modus `unlimited` bleiben dort getrennte
-Verträge. Heatmap, Glossar und Assistent bleiben M9.3-Folgearbeit und werden
-nicht durch das Tutorial als abgeschlossen ausgegeben.
+M9.3 vergibt keine öffentliche Startausstattung. Sein Geldpfad verwendet die
+signierte und bei der Zugangsbestätigung unveränderlich gebundene
+`StartingCapitalPolicy`: null und endliche Integer-Cent werden bei der ersten
+EVU-Gründung atomar genau einmal ausgeglichen gebucht; der explizite Modus
+`unlimited` bleibt nichtnumerisch und erzeugt keine Startbuchung. Beide Modi
+sind rangneutral. Heatmap, Glossar und Assistent bleiben M9.3-Folgearbeit und
+werden nicht durch die fertige Kapitalintegration oder das Tutorial als
+abgeschlossen ausgegeben.
 
 Phase 3 schließt die noch fehlende ausführbare Betriebsschicht für M9.4,
 M9.5 und M9.7: Einladungskonten werden nur noch über einen Odoo-
@@ -1018,7 +1025,7 @@ Alpha-Schnitt. Vollständiger Fachvertrag:
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 15.1 | **E29, ADR und versionierter Fachvertrag** einschließlich M10-/M8-Autoritätsgrenzen, Kontrolle, Dialog, Wirtschaft, Datenschutz und Abnahme | M | offen |
+| 15.1 | **E29, ADR und versionierter Fachvertrag** einschließlich M10-/M8-Autoritätsgrenzen, Kontrolle, Dialog, Wirtschaft, Datenschutz und Abnahme | M | in Arbeit |
 | 15.2 | **M10-Fahrgastmanifeste und deterministische 1:1-Projektion**: jeder tatsächlich reisende Fahrgast wird logisch materialisiert, stabil platziert und kontrollierbar; Rendering darf nur optisch degradieren | L | offen |
 | 15.3 | **Eigene Pixelart-Designsprache und freigegebener Asset-Korpus**: finale erzeugte Figuren-, Innenraum-, Bahnhof- und Umgebungsassets mit `ArtAtlasManifestV1`, Herkunft, Hash und Rechtegates | **XL** | offen |
 | 15.4 | **Konfigurationsgetreue begehbare Fahrzeuginnenräume**: `InteriorLayoutV1` aus Formation und Fahrzeugkonfiguration, Begehbarkeits-, Kollisions- und Kapazitätsnachweis | **XL** | offen |
