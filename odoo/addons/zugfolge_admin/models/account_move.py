@@ -75,6 +75,13 @@ class AccountMove(models.Model):
             move._sync_zugfolge_world_participation()
         return result
 
+    def _invoice_paid_hook(self):
+        """Odoo 19 calls this after reconciliation changed an invoice to paid."""
+        result = super()._invoice_paid_hook()
+        if not self.env.context.get("zugfolge_skip_dispatch"):
+            self._sync_zugfolge_world_participation()
+        return result
+
     def _zugfolge_world_offer(self):
         self.ensure_one()
         template_ids = self.invoice_line_ids.product_id.product_tmpl_id.ids
