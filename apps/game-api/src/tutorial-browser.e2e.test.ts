@@ -128,8 +128,10 @@ function registerWeb(app: FastifyInstance): void {
     }
     await page.getByRole("heading", { name: "Ein tragfähiges Angebot abgeben" }).waitFor();
 
-    const reference = (await page.locator(".tutorial-experience > header .eyebrow").innerText()).match(/tut_[a-z2-7]+/)?.[0];
+    const started = await startResponse.json() as { reference?: unknown };
+    const reference = typeof started.reference === "string" ? started.reference : undefined;
     expect(reference).toMatch(/^tut_[a-z2-7]{20,52}$/);
+    expect(await page.locator(".tutorial-experience > header .eyebrow").innerText()).toContain(reference!);
     expect(await page.locator("#lutz-name").evaluate((element) => document.activeElement === element)).toBe(true);
     await page.getByRole("button", { name: "Ausschreibung öffnen" }).click();
     expect(await page.locator("#tutorial-chapter-1").evaluate((element) => document.activeElement === element)).toBe(true);
