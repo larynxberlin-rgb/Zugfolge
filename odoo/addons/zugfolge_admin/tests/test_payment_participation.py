@@ -64,7 +64,7 @@ class TestWorldPaymentParticipation(AccountTestInvoicingCommon):
         invoice.invalidate_recordset()
         self.assertEqual(invoice.payment_state, "paid")
 
-        participations = self.env["zugfolge.world.participation"].search([
+        participations = self.env["zugfolge.world.participation"].sudo().search([
             ("partner_id", "=", self.partner_a.id),
             ("world_id", "=", self.world_id),
         ])
@@ -76,7 +76,7 @@ class TestWorldPaymentParticipation(AccountTestInvoicingCommon):
         # Teilnahme und keinen neuen fachlichen Payment-Key erzeugen.
         invoice._sync_zugfolge_world_participation()
         invoice._sync_zugfolge_world_participation()
-        replay = self.env["zugfolge.world.participation"].search([
+        replay = self.env["zugfolge.world.participation"].sudo().search([
             ("partner_id", "=", self.partner_a.id),
             ("world_id", "=", self.world_id),
         ])
