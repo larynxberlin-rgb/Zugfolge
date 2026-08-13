@@ -90,6 +90,7 @@ export async function reconcileOdooProjectionSnapshot(
   observed: readonly OdooReconciliationObservation[],
   now = new Date(),
 ): Promise<readonly ReconciliationTaskInput[]> {
+  // guards:allow world-id — Der globale Abgleich enumeriert gelieferte Belege; erzeugte Aufgaben tragen deren Welt-ID.
   const expected = await db
     .select({ id: odooProjectionOutbox.id, worldId: odooProjectionOutbox.worldId, correlationId: odooProjectionOutbox.correlationId, payload: odooProjectionOutbox.payload })
     .from(odooProjectionOutbox)

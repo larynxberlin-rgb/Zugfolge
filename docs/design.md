@@ -115,6 +115,34 @@ Die Palette ist am dichten Bildfahrplan aus M3.10 geprüft und als CSS-Tokens in
 Die Zustandsfarben stehen nie allein: Konflikte tragen Schraffur und Warnsymbol,
 Alternativen Text und Richtungspfeil, ausgewählte Zugläufe zusätzliche Linienstärke.
 
+### 2.8 Lutz-Coach im Tutorial
+
+Das Coach-Panel liegt auf `#11141B`, reserviert die Avatargröße mit expliziten
+`width`/`height`-Attributen und zeigt
+`/assets/tutorial/lutz-avatar-comic-v2.png` bei 96–160 Pixeln. Lutz ist eine
+fiktive Figur ohne Unternehmensbezug, Logo oder Bildtext. Der Dialogkatalog
+lebt versioniert beim Tutorialtemplate, nicht verstreut in Komponenten.
+
+Normale Hinweise sind nichtmodal und stehen neben der einzigen Hauptaufgabe;
+auf kleinen Bildschirmen folgen sie als kompakte untere Karte nach der Aufgabe.
+Einleitung und Ergebnis dürfen hervorgehoben sein. Zielbereiche erhalten Fokus
+und eine zusätzliche Kontur, ohne dass das Panel die Hauptaktion überdeckt.
+Neue Texte werden mit `aria-live="polite"` angekündigt. Avatar-Alttext,
+Fortschrittswörter, Tastaturfokus, „Warum?“, Ausblenden und manuelles
+Wiederöffnen sind Pflicht. `prefers-reduced-motion: reduce` unterbindet
+Animation und weiches Scrollen.
+
+### 2.9 Anrede und sichtbare Fachsprache
+
+Spieler werden in allen Oberflächen einheitlich mit **„Sie“** und **„Ihr“**
+angesprochen. Neutrale Handlungsbeschriftungen dürfen ohne Pronomen formuliert
+sein, wechseln aber nie zum „Du“. Sichtbare Texte verwenden korrektes
+UTF-8-Deutsch; ASCII-Umschriften wie `Fuer`, `Ueberlappung` oder `Aussenlauf`
+sind ausschließlich in unvermeidbaren technischen Bezeichnern zulässig.
+Milestone-Codes, UUIDs, Revisionen und Hashes gehören nicht in die normale
+Spielerführung. Wenn sie für Support oder Nachweis nötig sind, stehen sie in
+einem standardmäßig geschlossenen Bereich „Technische Details“.
+
 ## 3. Dunkelmodus — durchgehend
 
 Eine einzige Palette für alle Flächen. Lange Lesetexte — Verträge,
@@ -274,3 +302,25 @@ nur geänderte Zellen und entfällt bei reduzierter Bewegung.
 
 Diese Dinge sind billig zu ändern, solange das System aus Abschnitt 2 bis 5
 steht. Deshalb warten sie.
+
+## 11. Schaffnermodus: Pixelart und Sprechblasen (M15)
+
+Der Schaffnermodus verwendet eine eigenständige orthogonale Pixelart mit 32
+Pixeln pro Meter, ganzzahligen Zoomstufen und Nearest-Neighbor-Skalierung. Die
+dunkle achromatische Grundsprache aus E17 bleibt erhalten; Betriebsfarben
+werden nicht zu Dekoration. Fremde Figuren, Karten, Fahrzeuge, Gebäude, Logos
+oder Marken werden weder übernommen noch in Produktionsanweisungen zitiert.
+
+Alle sichtbaren Motive werden als finale, releasegebundene Grafiken erzeugt.
+Ein `ArtAtlasManifestV1` dokumentiert Anweisung, Modellversion, erlaubte
+Referenzen, Prüfsumme, Abmessungen und Freigabe. Zur Laufzeit findet keine
+Bildgenerierung statt.
+
+Fahrgastkommunikation erfolgt über kollisionsarm positionierte Sprechblasen.
+Die Antworten sind echte Schaltflächen und erscheinen nach Auswahl kurz als
+Spielerblase. Es gibt nur ein aktives Gespräch; andere Fahrgäste erzeugen kein
+Ambient-Blasenrauschen. Touchziele erfüllen die bestehende Mindestgröße,
+Tastaturreihenfolge bleibt logisch, Screenreader erhalten eine Live-Region und
+`prefers-reduced-motion` schaltet jede Textenthüllungsanimation ab. Lange
+deutsche Texte, Umlaute und kleine Viewports sind Pflichtfälle. Details:
+[`schaffnermodus.md`](schaffnermodus.md) 5 bis 7.

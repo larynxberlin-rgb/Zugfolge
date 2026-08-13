@@ -16,11 +16,12 @@ import {
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Protocol } from "pmtiles";
 import type {
-  LivemapConfigV1,
+  LivemapConfigV2,
   PublicObjectState,
 } from "@zugfolge/livemap-stream";
 
 import { LivemapApiClient } from "./api.js";
+import { renderAttentionRail, renderAttentionUnavailable } from "./attention.js";
 import { ensureAccessToken, loadRuntimeConfiguration } from "./auth.js";
 import {
   assertSelfHostedConfig,
@@ -54,14 +55,15 @@ import {
   type LiveState,
   type PublicExternalTrain,
 } from "./protocol.js";
+import { livemapNavigationDestinations, mailboxDecisionDestination } from "./navigation.js";
 import "./style.css";
 import "./external-runs.css";
 
 const root = document.querySelector<HTMLDivElement>("#root");
 if (root === null) throw new Error("App-Wurzel fehlt.");
-mountGlossaryLayer(document.body);
 
 root.innerHTML = `
+  <a class="skip-link" href="#map-object-list">Zur zugänglichen Objektliste</a>
   <main class="app-shell">
     <header class="topbar">
       <a class="wordmark" href="/" aria-label="Zugfolge Live-Lage">ZUGFOLGE</a>
@@ -70,13 +72,20 @@ root.innerHTML = `
         <strong id="world-label">Welt wird geladen</strong>
       </div>
       <nav aria-label="Hauptnavigation">
-        <a id="journey-link" href="#">Spielreise</a>
-        <a id="planner-link" href="#">Fahrplan</a>
+        <a id="live-link" aria-current="page" href="/">Live-Lage</a>
+        <a id="journey-link" href="/">Welt</a>
+        <a id="market-link" href="/#maerkte">Märkte</a>
+        <a id="planner-link" href="/">Fahrplan</a>
+        <a id="operations-link" href="/#betrieb">Betrieb</a>
+        <a id="mailbox-link" href="/#postfach">Postfach</a>
+        <span id="glossary-slot"></span>
       </nav>
       <time id="sequence-label">verbinde …</time>
     </header>
+    <section id="attention-rail" class="attention-rail" aria-labelledby="attention-title" aria-live="polite" hidden></section>
     <section class="workspace">
-      <section class="map-frame" aria-label="Interaktive Live-Lage">
+      <section class="map-frame" aria-labelledby="live-map-title">
+        <h1 id="live-map-title" class="sr-only">Interaktive Live-Lage</h1>
         <div id="map" role="application" aria-label="Weltkarte mit deutscher Eisenbahninfrastruktur und Live-Betrieb"></div>
         <div id="map-state" class="map-state" role="status" aria-live="polite">Kartenstand wird geprüft …</div>
         <div class="map-tools" aria-label="Kartenwerkzeuge">
@@ -93,7 +102,7 @@ root.innerHTML = `
           <span><i class="legend-line closure"></i> gesperrt</span>
           <span><i class="legend-line construction"></i> Bauarbeiten</span>
           <span><i class="legend-line quality-c"></i> Klasse C</span>
-          <span><i class="legend-train-estimated">≈</i> Zugposition geschätzt</span>
+          <span><i class="legend-train-estimated">≈</i> <button type="button" class="zf-glossary-term" data-glossary-code="PublicMapEstimate">Zugposition geschätzt</button></span>
         </div>
       </section>
       <aside id="details" aria-label="Details zum ausgewählten Kartenobjekt">
@@ -113,7 +122,18 @@ root.innerHTML = `
 const parameters = new URLSearchParams(window.location.search);
 const runtime = loadRuntimeConfiguration();
 const worldId = parameters.get("world")?.trim() || runtime.publicWorldId;
+const navigation = livemapNavigationDestinations(runtime.gameWebUrl, window.location.href, worldId);
+document.querySelector<HTMLAnchorElement>("#live-link")!.href = navigation.live;
+document.querySelector<HTMLAnchorElement>("#journey-link")!.href = navigation.journey;
+document.querySelector<HTMLAnchorElement>("#market-link")!.href = navigation.markets;
+document.querySelector<HTMLAnchorElement>("#planner-link")!.href = navigation.planner;
+document.querySelector<HTMLAnchorElement>("#operations-link")!.href = navigation.operations;
+document.querySelector<HTMLAnchorElement>("#mailbox-link")!.href = navigation.mailbox;
+mountGlossaryLayer(document.body);
+document.querySelector<HTMLElement>("#glossary-slot")!
+  .append(document.querySelector<HTMLElement>("[data-zugfolge-glossary]")!);
 const details = document.querySelector<HTMLElement>("#details")!;
+const attentionRail = document.querySelector<HTMLElement>("#attention-rail")!;
 const detailsContent = document.querySelector<HTMLElement>("#details-content")!;
 const sequenceLabel = document.querySelector<HTMLTimeElement>("#sequence-label")!;
 const worldLabel = document.querySelector<HTMLElement>("#world-label")!;
@@ -126,7 +146,7 @@ const contextButton = document.querySelector<HTMLButtonElement>("#toggle-context
 let map: MapLibreMap | undefined;
 let api: LivemapApiClient | undefined;
 let connection: LivemapConnection | undefined;
-let mapConfig: LivemapConfigV1 | undefined;
+let mapConfig: LivemapConfigV2 | undefined;
 let liveState: LiveState | undefined;
 let selected: MapSelection | undefined;
 let previousSelected: MapSelection | undefined;
@@ -215,7 +235,7 @@ async function selectObject(selection: MapSelection): Promise<void> {
 }
 
 function showSelectionMenu(selections: readonly MapSelection[], left: number, top: number): void {
-  selectionMenu.replaceChildren(text("p", "Was möchtest du öffnen?", "eyebrow"));
+  selectionMenu.replaceChildren(text("p", "Welches Objekt möchten Sie öffnen?", "eyebrow"));
   selections.forEach((selection) => {
     const button = document.createElement("button");
     button.type = "button";
@@ -238,7 +258,7 @@ function selectionsAt(features: readonly MapGeoJSONFeature[]): readonly MapSelec
   );
 }
 
-function playableBounds(config: LivemapConfigV1): [[number, number], [number, number]] | undefined {
+function playableBounds(config: LivemapConfigV2): [[number, number], [number, number]] | undefined {
   const bounds = config.playableArea?.boundsE7;
   if (bounds === undefined) return undefined;
   return [
@@ -247,7 +267,7 @@ function playableBounds(config: LivemapConfigV1): [[number, number], [number, nu
   ];
 }
 
-function playableGeoJson(config: LivemapConfigV1): GeoJSONSourceSpecification["data"] {
+function playableGeoJson(config: LivemapConfigV2): GeoJSONSourceSpecification["data"] {
   const bounds = config.playableArea?.boundsE7;
   if (bounds === undefined) return { type: "FeatureCollection", features: [] };
   const west = bounds.west / 10_000_000;
@@ -268,7 +288,7 @@ function absolutePmtilesUrl(value: string): string {
   return `pmtiles://${new URL(value, window.location.href).href}`;
 }
 
-function addZugfolgeLayers(currentMap: MapLibreMap, config: LivemapConfigV1): void {
+function addZugfolgeLayers(currentMap: MapLibreMap, config: LivemapConfigV2): void {
   currentMap.addSource(INFRASTRUCTURE_SOURCE_ID, {
     type: "vector",
     url: absolutePmtilesUrl(config.infrastructure.pmtilesUrl),
@@ -414,7 +434,7 @@ function scheduleLiveRender(state: LiveState): void {
   });
 }
 
-async function createMap(config: LivemapConfigV1): Promise<MapLibreMap> {
+async function createMap(config: LivemapConfigV2): Promise<MapLibreMap> {
   assertSelfHostedConfig(config, window.location.href);
   let style;
   try {
@@ -500,28 +520,26 @@ function bindShell(): void {
 async function boot(): Promise<void> {
   bindShell();
   closePanel(false);
-  if (runtime.gameWebUrl !== "") {
-    const journey = new URL(runtime.gameWebUrl, window.location.href);
-    journey.searchParams.set("view", "journey");
-    journey.searchParams.set("world", worldId);
-    document.querySelector<HTMLAnchorElement>("#journey-link")!.href = journey.href;
-    const planner = new URL(runtime.gameWebUrl, window.location.href);
-    planner.searchParams.set("view", "diagram");
-    planner.searchParams.set("world", worldId);
-    document.querySelector<HTMLAnchorElement>("#planner-link")!.href = planner.href;
-  }
   if (worldId === "") {
     worldLabel.textContent = "keine Welt gewählt";
     mapState.textContent = "Weltkennung fehlt.";
     mapState.classList.add("error");
     return;
   }
-  worldLabel.textContent = worldId;
+  worldLabel.textContent = "Welt wird geladen";
   try {
     const accessToken = await ensureAccessToken(runtime);
     if (accessToken === "") return;
     api = new LivemapApiClient(runtime.gameApiUrl, accessToken);
+    void api.mailbox(worldId)
+      .then((messages) => renderAttentionRail(
+        attentionRail,
+        messages,
+        (message) => mailboxDecisionDestination(runtime.gameWebUrl, window.location.href, worldId, message),
+      ))
+      .catch(() => renderAttentionUnavailable(attentionRail));
     mapConfig = await api.config(worldId);
+    worldLabel.textContent = mapConfig.worldName;
     map = await createMap(mapConfig);
     const focus = parseFocusParameter(parameters.get("focus"));
     if (focus !== undefined) void selectObject(focus);

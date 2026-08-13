@@ -23,6 +23,7 @@ import {
   persistEconomyTransition,
   resolveVehicleConcept,
   runEconomySchedulerCycle,
+  STANDARD_ECONOMY_LEDGER_ACCOUNT_PLAN,
   startEconomyWorld,
   submitBid,
   submitMobilizationReference,
@@ -356,11 +357,11 @@ describe("M6 mit echtem Rust-NAPI-Laufzeitkern", () => {
         foundingKeycloakSubject: "native-m6-player",
         name: "Native M6 Bahn",
       });
-      const cash = await openLedgerAccount(db, { worldId: WORLD, operatorId: operator.id, name: "Kasse" });
-      const revenue = await openLedgerAccount(db, { worldId: WORLD, operatorId: operator.id, name: "Bestellerentgelt" });
+      const cash = await openLedgerAccount(db, { worldId: WORLD, operatorId: operator.id, name: STANDARD_ECONOMY_LEDGER_ACCOUNT_PLAN.cashAccountName });
+      const revenue = await openLedgerAccount(db, { worldId: WORLD, operatorId: operator.id, name: STANDARD_ECONOMY_LEDGER_ACCOUNT_PLAN.revenueAccountName });
       const costAccountIds = Object.fromEntries(await Promise.all(COST_TYPES.map(async (costType) => [
         costType,
-        (await openLedgerAccount(db, { worldId: WORLD, operatorId: operator.id, name: `Kosten:${costType}` })).id,
+        (await openLedgerAccount(db, { worldId: WORLD, operatorId: operator.id, name: STANDARD_ECONOMY_LEDGER_ACCOUNT_PLAN.costAccountNames[costType] })).id,
       ]))) as Record<CostType, string>;
 
       const planningEnvelope = planning();

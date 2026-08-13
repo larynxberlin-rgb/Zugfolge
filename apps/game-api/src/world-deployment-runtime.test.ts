@@ -2,6 +2,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { alphaWorldProfiles, MIGRATIONS_FOLDER, schema, worlds } from "@zugfolge/db";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -132,6 +133,18 @@ describe("aktive World-Deployment-Runtime", () => {
 
       expect(await loadActiveAlphaWorldProjectionProfiles(db)).toEqual([
         expect.objectContaining({ worldId: WORLD_ID, profileKind: "public" }),
+      ]);
+
+      await db.update(worlds).set({ lifecycleStatus: "active" })
+        .where(eq(worlds.id, provisioningWorldId));
+      await db.update(alphaWorldProfiles).set({
+        state: "running",
+        deploymentHash: "f".repeat(64),
+      }).where(eq(alphaWorldProfiles.worldId, provisioningWorldId));
+
+      expect(await loadActiveAlphaWorldProjectionProfiles(db)).toEqual([
+        expect.objectContaining({ worldId: WORLD_ID, profileKind: "public" }),
+        expect.objectContaining({ worldId: provisioningWorldId, profileKind: "public" }),
       ]);
     } finally {
       await client.close();

@@ -22,6 +22,12 @@ class ProductTemplate(models.Model):
 
     zugfolge_product_kind = fields.Selection(PRODUCT_KINDS, string="Zugfolge-Entitlement")
 
+    @api.constrains("zugfolge_product_kind")
+    def _check_world_offer_product_kind(self):
+        for product in self:
+            if self.env["zugfolge.world.offer"].sudo().search_count([("product_tmpl_id", "=", product.id)]) and product.zugfolge_product_kind != "public_world_slot":
+                raise ValidationError(_("Ein konkretes Weltangebot muss das Produkt als oeffentlichen Weltplatz kennzeichnen."))
+
 
 class AccountMove(models.Model):
     """Use native invoices/payments; emit only a signed, idempotent commerce event."""
@@ -46,6 +52,15 @@ class AccountMove(models.Model):
         self.ensure_one()
         line = self._zugfolge_product_line()
         if not line or not self.zugfolge_subject_reference:
+            return None
+        product_template = line.product_id.product_tmpl_id
+        if (
+            product_template.zugfolge_product_kind == "public_world_slot"
+            and self.env["zugfolge.world.offer"].sudo().search_count([("product_tmpl_id", "=", product_template.id)])
+        ):
+            # Der bezahlte konkrete Weltplatz wird ausschliesslich ueber den
+            # weltgebundenen Participation-Command autorisiert. Ein zusaetzlicher
+            # generischer Slot-Grant waere eine zweite kommerzielle Wirkung.
             return None
         if self.payment_state == "paid" and self.move_type == "out_invoice":
             change = "grant"
@@ -116,23 +131,24 @@ class AccountMove(models.Model):
                     "idempotency_key": deterministic_key, "state": "paid",
                 }
                 if participation:
-                    if participation.payment_reference == payment_reference and participation.state in (
-                        "provisioning", "active", "rejected", "cancelled", "refunded",
+                    if participation.payment_reference == payment_reference and (
+                        participation.state in ("provisioning", "active", "rejected", "cancelled", "refunded")
+                        or participation.state == "refund_pending"
                     ):
                         move.with_context(zugfolge_skip_dispatch=True).write({"zugfolge_participation_id": participation.id})
                         continue
                     if participation.state == "active":
                         raise ValidationError(_("Fuer diese Welt besteht bereits eine aktive Teilnahme; eine zweite Zahlung wird nicht provisioniert."))
                     values["correlation_id"] = str(uuid.uuid4())
-                    participation.with_context(zugfolge_commerce_transition=True).write(values)
+                    participation._write_from_commerce(values)
                 else:
-                    participation = participation_model.create(values)
+                    participation = participation_model._create_from_commerce(values)
                 move.with_context(zugfolge_skip_dispatch=True).write({"zugfolge_participation_id": participation.id})
                 participation.queue_provisioning()
             elif (move.payment_state == "reversed" or move.move_type == "out_refund") and participation:
-                if participation.state == "refunded":
+                if participation.state in ("refund_pending", "refunded"):
                     continue
-                participation.write({"state": "refunded"})
+                participation._write_from_commerce({"state": "refund_pending"})
                 participation.with_delay(description="Zugfolge-Weltteilnahme erstatten")._dispatch("refund")
 
     def _dispatch_zugfolge_entitlement(self):

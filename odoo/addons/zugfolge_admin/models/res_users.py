@@ -1,7 +1,10 @@
 from ast import literal_eval
 
-from odoo import _, fields, models
-from odoo.exceptions import AccessDenied
+from odoo import _, api, fields, models
+from odoo.exceptions import AccessDenied, AccessError
+
+
+_KEYCLOAK_BIND_TOKEN = object()
 
 
 def validate_keycloak_identity(validation):
@@ -27,6 +30,32 @@ class ResPartner(models.Model):
     zugfolge_keycloak_subject = fields.Char(index=True, copy=False)
 
     _sql_constraints = [("zugfolge_keycloak_subject", "unique(zugfolge_keycloak_subject)", "Ein Keycloak-sub darf nur einem Odoo-Portalprofil zugeordnet sein.")]
+
+    @api.model_create_multi
+    def create(self, values_list):
+        if self.env.context.get("zugfolge_keycloak_bind_token") is not _KEYCLOAK_BIND_TOKEN:
+            if any(values.get("zugfolge_keycloak_subject") for values in values_list):
+                raise AccessError(_("Keycloak-sub darf nur durch einen verifizierten OIDC-Login gebunden werden."))
+        return super().create(values_list)
+
+    def write(self, values):
+        if "zugfolge_keycloak_subject" in values:
+            if self.env.context.get("zugfolge_keycloak_bind_token") is not _KEYCLOAK_BIND_TOKEN:
+                raise AccessError(_("Keycloak-sub darf nur durch einen verifizierten OIDC-Login gebunden werden."))
+            subject = values.get("zugfolge_keycloak_subject")
+            if not isinstance(subject, str) or not subject.strip():
+                raise AccessDenied(_("Keycloak liefert keine stabile Portalidentitaet."))
+            if any(record.zugfolge_keycloak_subject and record.zugfolge_keycloak_subject != subject for record in self):
+                raise AccessDenied(_("Eine bestehende Portalidentitaet darf nicht auf ein anderes Keycloak-sub umgebunden werden."))
+        return super().write(values)
+
+    def _bind_zugfolge_keycloak_subject(self, subject):
+        self.ensure_one()
+        if not isinstance(subject, str) or not subject.strip():
+            raise AccessDenied(_("Keycloak liefert keine stabile Portalidentitaet."))
+        return self.sudo().with_context(zugfolge_keycloak_bind_token=_KEYCLOAK_BIND_TOKEN).write({
+            "zugfolge_keycloak_subject": subject,
+        })
 
 
 class ResUsers(models.Model):
@@ -60,5 +89,5 @@ class ResUsers(models.Model):
             user.write({"oauth_access_token": params["access_token"]})
         if user._is_internal():
             raise AccessDenied(_("Keycloak-Login darf nur ein Odoo-Portalprofil erzeugen."))
-        user.partner_id.sudo().write({"zugfolge_keycloak_subject": subject})
+        user.partner_id._bind_zugfolge_keycloak_subject(subject)
         return user.login

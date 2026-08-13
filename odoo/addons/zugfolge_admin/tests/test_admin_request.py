@@ -1,6 +1,8 @@
+from odoo import Command
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tests.common import TransactionCase
 
+from ..controllers.main import _find_admin_request_for_game_result
 from ..models.admin_request import format_cents_german, parse_german_currency_to_cents
 from ..models.admin_capability import GLOBAL_WORLD_DEPLOY_CAPABILITY_SCOPE_ID
 from ..upgrade import backfill_legacy_admin_request_worlds
@@ -135,7 +137,8 @@ class TestZugfolgeAdminRequest(TransactionCase):
 
     def test_world_deploy_keeps_full_authoritative_game_result(self):
         request = self.env["zugfolge.admin.request"].create(self._world_deploy_values())
-        request.with_context(zugfolge_game_projection=True).apply_game_result({
+        request._write_controlled({"state": "dispatched"})
+        request.sudo().with_context(zugfolge_game_projection=True).apply_game_result({
             "state": "completed",
             "gameAuditEventId": "world-deploy-audit-1",
             "deploymentHash": "d" * 64,
@@ -146,7 +149,7 @@ class TestZugfolgeAdminRequest(TransactionCase):
         self.assertEqual(request.game_result["startingCapitalPolicy"]["amountCents"], "1000000")
 
     def test_upgrade_backfills_legacy_world_binding_idempotently_without_touching_deploy_draft(self):
-        tutorial_projection = self.env["zugfolge.world.projection"].with_context(zugfolge_game_projection=True).create({
+        legacy_projection = self.env["zugfolge.world.projection"].with_context(zugfolge_game_projection=True).create({
             "world_id": "33333333-3333-4333-8333-333333333333",
             "world_name": "Legacy-Tutorial",
             "projection_revision": "legacy-1",
@@ -158,11 +161,11 @@ class TestZugfolgeAdminRequest(TransactionCase):
             "telemetry": {"world": {"schedulePeriodWeeks": 6, "simulationTimeS": 100}},
         })
         legacy_request = self.env["zugfolge.admin.request"].create({
-            "world_projection_id": tutorial_projection.id,
-            "action_type": "tutorial_account_reset",
-            "risk_class": "standard",
-            "reason": "Vor 19.0.1.4.0 angelegter Tutorial-Reset",
-            "effect_preview": {"kind": "tutorial-reset"},
+            "world_projection_id": legacy_projection.id,
+            "action_type": "world_access_revoke",
+            "risk_class": "high",
+            "reason": "Vor 19.0.1.4.0 angelegter Zugriffsentzug",
+            "effect_preview": {"kind": "world-access-revoke"},
             "target_reference": "legacy-account",
             "requested_at_s": 100,
         })
@@ -194,8 +197,8 @@ class TestZugfolgeAdminRequest(TransactionCase):
         self.env.invalidate_all()
         legacy_request = self.env["zugfolge.admin.request"].browse(legacy_request.id)
         deploy_request = self.env["zugfolge.admin.request"].browse(deploy_request.id)
-        self.assertEqual(legacy_request.world_id, tutorial_projection.world_id)
-        self.assertEqual(legacy_request.world_name, tutorial_projection.world_name)
+        self.assertEqual(legacy_request.world_id, legacy_projection.world_id)
+        self.assertEqual(legacy_request.world_name, legacy_projection.world_name)
         self.assertEqual(legacy_request.world_kind, "tutorial")
         self.assertEqual(legacy_request.ranking_status, "unranked")
         self.assertEqual(legacy_request.schedule_period_weeks, 6)
@@ -229,6 +232,109 @@ class TestZugfolgeAdminRequest(TransactionCase):
         with self.assertRaises(AccessError):
             request.action_approve()
 
+    def test_request_state_and_submitted_decision_fields_cannot_be_changed_over_rpc(self):
+        with self.assertRaises(AccessError):
+            self.env["zugfolge.admin.request"].create({
+                "world_projection_id": self.projection.id,
+                "action_type": "world_access_revoke",
+                "risk_class": "high",
+                "reason": "Manipulierter Direktzustand",
+                "effect_preview": {"kind": "world-access-revoke"},
+                "target_reference": "stable-subject",
+                "state": "approved",
+            })
+        request = self.env["zugfolge.admin.request"].create({
+            "world_projection_id": self.projection.id,
+            "action_type": "world_access_revoke",
+            "risk_class": "high",
+            "reason": "Nachgewiesener Entzug",
+            "effect_preview": {"kind": "world-access-revoke"},
+            "target_reference": "stable-subject",
+        })
+        with self.assertRaises(AccessError):
+            request.with_context(zugfolge_admin_request_write_token=True).write({"state": "approved"})
+        request.action_submit()
+        for values in (
+            {"action_type": "world_close"},
+            {"risk_class": "standard"},
+            {"reason": "Nachtraeglich veraendert"},
+            {"target_reference": "anderes-subject"},
+        ):
+            with self.assertRaises(UserError):
+                request.write(values)
+
+    def test_request_correlation_is_server_generated_unique_and_world_bound(self):
+        forged = "shared-attacker-controlled-correlation"
+        first = self.env["zugfolge.admin.request"].create({
+            "world_projection_id": self.projection.id,
+            "action_type": "world_access_revoke",
+            "risk_class": "high",
+            "reason": "Erster nachgewiesener Entzug",
+            "effect_preview": {"kind": "world-access-revoke"},
+            "target_reference": "first-subject",
+            "correlation_id": forged,
+        })
+        second = self.env["zugfolge.admin.request"].create({
+            "world_projection_id": self.projection.id,
+            "action_type": "world_access_revoke",
+            "risk_class": "high",
+            "reason": "Zweiter nachgewiesener Entzug",
+            "effect_preview": {"kind": "world-access-revoke"},
+            "target_reference": "second-subject",
+            "correlation_id": forged,
+        })
+
+        self.assertNotEqual(first.correlation_id, forged)
+        self.assertNotEqual(second.correlation_id, forged)
+        self.assertNotEqual(first.correlation_id, second.correlation_id)
+        with self.assertRaises(AccessError):
+            first.write({"correlation_id": second.correlation_id})
+        self.env.cr.execute(
+            """
+                SELECT COUNT(*)
+                  FROM pg_constraint
+                 WHERE conrelid = 'zugfolge_admin_request'::regclass
+                   AND contype = 'u'
+                   AND pg_get_constraintdef(oid) = 'UNIQUE (correlation_id)'
+            """
+        )
+        self.assertEqual(self.env.cr.fetchone()[0], 1)
+        self.assertEqual(
+            _find_admin_request_for_game_result(
+                self.env,
+                first.correlation_id,
+                self.projection.world_id,
+            ),
+            first,
+        )
+        self.assertFalse(_find_admin_request_for_game_result(
+            self.env,
+            first.correlation_id,
+            "99999999-9999-4999-8999-999999999999",
+        ))
+
+    def test_reject_requires_the_approver_group_server_side(self):
+        request = self.env["zugfolge.admin.request"].create({
+            "world_projection_id": self.projection.id,
+            "action_type": "world_access_revoke",
+            "risk_class": "high",
+            "reason": "Nachgewiesener Entzug",
+            "effect_preview": {"kind": "world-access-revoke"},
+            "target_reference": "stable-subject",
+        })
+        request.action_submit()
+        staff = self.env["res.users"].create({
+            "name": "Zugfolge Sachbearbeitung",
+            "login": "zugfolge-staff-no-approval",
+            "email": "staff-no-approval@example.test",
+            "group_ids": [Command.set([
+                self.env.ref("base.group_user").id,
+                self.env.ref("zugfolge_admin.group_zugfolge_admin").id,
+            ])],
+        })
+        with self.assertRaises(AccessError):
+            request.with_user(staff).action_reject()
+
     def test_reason_is_mandatory(self):
         with self.assertRaises(ValidationError):
             self.env["zugfolge.admin.request"].create({
@@ -246,14 +352,144 @@ class TestZugfolgeAdminRequest(TransactionCase):
     def test_invitation_revoke_creates_high_risk_request_instead_of_direct_command(self):
         invitation = self.env["zugfolge.alpha.invitation"].create({
             "email": "alpha@example.test", "display_name": "Alpha", "world_projection_id": self.projection.id,
-            "role": "player", "keycloak_subject": "kc-alpha", "game_account_reference": "account-alpha", "state": "provisioned",
+            "role": "player",
         })
+        invitation._write_controlled({"state": "sent"})
+        invitation.sudo().with_context(zugfolge_game_projection=True)._apply_game_result({
+            "outcome": "accepted",
+            "requestReference": invitation.request_reference,
+            "keycloakSubject": "kc-alpha",
+            "gameAccountReference": "account-alpha",
+        }, self.projection.world_id)
         action = invitation.action_revoke()
         request = self.env["zugfolge.admin.request"].browse(action["res_id"])
         self.assertEqual(request.action_type, "world_access_revoke")
         self.assertEqual(request.risk_class, "high")
         self.assertEqual(request.target_reference, "kc-alpha")
         self.assertEqual(invitation.state, "revocation_requested")
+        with self.assertRaises(AccessError):
+            invitation._apply_game_revocation_result(request.id, self.projection.world_id)
+        request._write_controlled({"state": "dispatched"})
+        request.sudo().with_context(zugfolge_game_projection=True).apply_game_result({
+            "state": "completed",
+            "gameAuditEventId": "revocation-audit-1",
+            "keycloakSubject": "kc-alpha",
+        })
+        with self.assertRaises(ValidationError):
+            invitation.sudo().with_context(zugfolge_game_projection=True)._apply_game_revocation_result(
+                request.id + 1,
+                self.projection.world_id,
+            )
+        invitation.sudo().with_context(zugfolge_game_projection=True)._apply_game_revocation_result(
+            request.id,
+            self.projection.world_id,
+        )
+        self.assertEqual(invitation.state, "revoked")
+
+    def test_invitation_state_and_game_identity_reject_rpc_forgery(self):
+        with self.assertRaises(AccessError):
+            self.env["zugfolge.alpha.invitation"].create({
+                "email": "forged@example.test",
+                "display_name": "Manipuliert",
+                "world_projection_id": self.projection.id,
+                "role": "player",
+                "state": "provisioned",
+                "keycloak_subject": "forged-subject",
+                "game_account_reference": "forged-account",
+            })
+        invitation = self.env["zugfolge.alpha.invitation"].create({
+            "email": "alpha@example.test",
+            "display_name": "Alpha",
+            "world_projection_id": self.projection.id,
+            "role": "player",
+            "state": "draft",
+            "request_reference": "forged-request-reference",
+            "correlation_id": "forged-correlation",
+        })
+        self.assertNotEqual(invitation.request_reference, "forged-request-reference")
+        self.assertNotEqual(invitation.correlation_id, "forged-correlation")
+        for values in (
+            {"state": "provisioned"},
+            {"keycloak_subject": "forged-subject"},
+            {"game_account_reference": "forged-account"},
+            {"correlation_id": "forged-correlation"},
+        ):
+            with self.assertRaises(AccessError):
+                invitation.with_context(zugfolge_alpha_invitation_write_token=True).write(values)
+
+    def test_invitation_accepts_only_world_bound_signed_game_result(self):
+        invitation = self.env["zugfolge.alpha.invitation"].create({
+            "email": "alpha@example.test",
+            "display_name": "Alpha",
+            "world_projection_id": self.projection.id,
+            "role": "player",
+        })
+        invitation._write_controlled({"state": "sent"})
+        result = {
+            "outcome": "accepted",
+            "requestReference": invitation.request_reference,
+            "keycloakSubject": "kc-alpha",
+            "gameAccountReference": "account-alpha",
+        }
+        with self.assertRaises(AccessError):
+            invitation._apply_game_result(result, self.projection.world_id)
+        with self.assertRaises(ValidationError):
+            invitation.sudo().with_context(zugfolge_game_projection=True)._apply_game_result(
+                result,
+                "99999999-9999-4999-8999-999999999999",
+            )
+        with self.assertRaises(ValidationError):
+            invitation.sudo().with_context(zugfolge_game_projection=True)._apply_game_result(
+                {**result, "requestReference": "wrong-request"},
+                self.projection.world_id,
+            )
+        invitation.sudo().with_context(zugfolge_game_projection=True)._apply_game_result(
+            result,
+            self.projection.world_id,
+        )
+        self.assertEqual(invitation.state, "provisioned")
+        self.assertEqual(invitation.keycloak_subject, "kc-alpha")
+        self.assertEqual(invitation.game_account_reference, "account-alpha")
+        with self.assertRaises(UserError):
+            invitation.write({"email": "changed@example.test"})
+
+    def test_invitation_resend_projection_preserves_authoritative_identity(self):
+        invitation = self.env["zugfolge.alpha.invitation"].create({
+            "email": "alpha@example.test",
+            "display_name": "Alpha",
+            "world_projection_id": self.projection.id,
+            "role": "player",
+        })
+        invitation._write_controlled({
+            "state": "provisioned",
+            "keycloak_subject": "kc-alpha",
+            "game_account_reference": "account-alpha",
+        })
+        invitation.sudo().with_context(zugfolge_game_projection=True)._apply_game_result(
+            {"outcome": "accepted"},
+            self.projection.world_id,
+        )
+        self.assertEqual(invitation.state, "provisioned")
+        self.assertEqual(invitation.keycloak_subject, "kc-alpha")
+        with self.assertRaises(ValidationError):
+            invitation.sudo().with_context(zugfolge_game_projection=True)._apply_game_result(
+                {"outcome": "accepted", "keycloakSubject": "other-subject"},
+                self.projection.world_id,
+            )
+
+    def test_invitation_rejected_signed_create_result_transitions_to_failed(self):
+        invitation = self.env["zugfolge.alpha.invitation"].create({
+            "email": "alpha@example.test",
+            "display_name": "Alpha",
+            "world_projection_id": self.projection.id,
+            "role": "player",
+        })
+        invitation._write_controlled({"state": "sent"})
+        invitation.sudo().with_context(zugfolge_game_projection=True)._apply_game_result(
+            {"outcome": "rejected", "failureCode": "keycloak_unavailable"},
+            self.projection.world_id,
+        )
+        self.assertEqual(invitation.state, "failed")
 
     def test_pseudonymized_feedback_projection_is_immutable_but_triageable(self):
         feedback = self.env["zugfolge.feedback"].with_context(zugfolge_game_projection=True).upsert_game_projection({
@@ -344,7 +580,9 @@ class TestZugfolgeAdminRequest(TransactionCase):
             "manual_disruption_effect": {"kind": "closure"},
         })
         self.assertEqual(request.game_capability_state, "prepared")
-        request.with_context(zugfolge_game_projection=True).write({"state": "approved"})
+        with self.assertRaises(AccessError):
+            request.with_context(zugfolge_game_projection=True).write({"state": "approved"})
+        request._write_controlled({"state": "approved"})
         with self.assertRaises(UserError):
             request.action_dispatch()
 

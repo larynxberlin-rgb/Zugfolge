@@ -106,17 +106,18 @@ describe("Bildfahrplan-Renderer", () => {
 
   it("zeigt sechs echte Sperrzeitanteile, vier Konfliktarten und den nichtfarblichen Warnkanal", () => {
     const html = renderProjection(projection(), options);
+    expect(html).toContain('id="diagram-card" class="diagram-card zf-surface" role="region" aria-labelledby="diagram-title" tabindex="-1"');
     for (const label of [
-      "Fahrstrassenbildezeit",
+      "Fahrstraßenbildezeit",
       "Signalsichtzeit",
-      "Annaeherungsfahrzeit",
+      "Annäherungsfahrzeit",
       "Fahrzeit",
-      "Raeumfahrzeit",
-      "Fahrstrassenaufloesezeit",
+      "Räumfahrzeit",
+      "Fahrstraßenauflösezeit",
     ]) {
       expect(html).toContain(label);
     }
-    for (const label of ["Zugfolge", "Gegenfahrt", "Fahrstrassenausschluss", "Anlagenbelegung"]) {
+    for (const label of ["Zugfolge", "Gegenfahrt", "Fahrstraßenausschluss", "Anlagenbelegung"]) {
       expect(html).toContain(label);
     }
     expect(html).toContain("Konflikt !");
@@ -144,9 +145,29 @@ describe("Bildfahrplan-Renderer", () => {
   it("erklaert dem Spieler das serverseitige Grenzfenster als feste, sichtbare Randbedingung", () => {
     const html = renderProjection(projection(), options);
     expect(html).toContain("Durchgehende Fahrt");
-    expect(html).toContain("Ausfahrt · portal-eisenach");
+    expect(html).toContain("Ausfahrt an der Netzgrenze");
+    expect(html).toContain("<summary>Technische Details</summary><code>portal-eisenach</code>");
     expect(html).toContain("07:15:00–07:25:00");
-    expect(html).toContain("Aussenlauf bleibt Teil derselben Zugfahrt");
+    expect(html).toContain("Außenlauf bleibt Teil derselben Zugfahrt");
     expect(html).not.toContain("data-boundary-window");
+  });
+
+  it("verwendet in sichtbaren Grundtexten korrektes Deutsch statt Entwicklungsbegriffe", () => {
+    const html = renderProjection(projection(), options);
+    for (const forbidden of ["Fuer", "Ueberlappung", "Aussenlauf", "ausgewaehlt", "serverautoritaer", "Planner-Projektion", "M12 ·"]) {
+      expect(html).not.toContain(forbidden);
+    }
+    expect(html).toContain("Planungsstand");
+    expect(html).toContain("Überlappung");
+  });
+
+  it("nennt Betriebstag, Datum und feste Weltzeitzone in Ticks und ARIA-Texten", () => {
+    const withWorldTime = {
+      ...projection(),
+      timeBasis: { epoch: "2026-01-01T00:00:00.000Z", timeZone: "Europe/Berlin" as const, operatingDayBoundaryS: 0 as const },
+    };
+    const html = renderProjection(withWorldTime, options);
+    expect(html).toContain("D+0 · 01.01.2026");
+    expect(html).toContain("Weltzeit Europe/Berlin");
   });
 });

@@ -965,7 +965,8 @@ function validateSpec(spec) {
   nonEmptyString(spec.gtfs.timeZone, "gtfs.timeZone");
   nonEmptyString(spec.gtfs.trainIdentity?.regionId, "gtfs.trainIdentity.regionId");
   nonEmptyString(spec.gtfs.trainIdentity?.releaseId, "gtfs.trainIdentity.releaseId");
-  invariant(spec.config?.schemaVersion === "zugfolge-livemap-config/v1", "config besitzt kein v1-Schema.");
+  invariant(spec.config?.schemaVersion === "zugfolge-livemap-config/v2", "config besitzt kein v2-Schema.");
+  nonEmptyString(spec.config.worldName, "config.worldName");
   invariant(spec.config.worldId === spec.worldId && spec.config.infrastructureReleaseId === spec.infrastructureReleaseId, "config verletzt Welt- oder Releasebindung.");
   invariant(spec.config.basemap?.selfHosted === true, "Basiskarte muss selbst gehostet sein.");
 }

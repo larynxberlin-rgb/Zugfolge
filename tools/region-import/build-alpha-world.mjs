@@ -1,25 +1,22 @@
 import { createHash } from "node:crypto";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { alphaHash } from "../../packages/alpha/dist/index.js";
 import { buildEconomyRelease, encodeEconomyValue, parseStartingCapitalPolicy, serializeStartingCapitalPolicy, startEconomyWorld } from "../../packages/economy/dist/index.js";
-import { assertEmbeddedWorldIds, assertNoStarterIdentifiers, rebindWorldIds } from "./alpha-world-variants.mjs";
+import { assertEmbeddedWorldIds, assertNoStarterIdentifiers } from "./alpha-world-variants.mjs";
 
-const [gtfsPath, networkPath, fleetCatalogPath, infraReleasePath, economySpecPath, outputPath, publicConfigurationPath, tutorialConfigurationPath] = process.argv.slice(2);
+const [gtfsPath, networkPath, fleetCatalogPath, infraReleasePath, economySpecPath, outputPath, publicConfigurationPath] = process.argv.slice(2);
 if (!gtfsPath || !networkPath || !fleetCatalogPath || !infraReleasePath || !economySpecPath || !outputPath) {
-  throw new Error("Aufruf: node build-alpha-world.mjs GTFS.json NETWORK.json FLEET-CATALOG.json INFRA-RELEASE.json ECONOMY.json OUTPUT.json [PUBLIC-ODOO-CONFIG.json] [TUTORIAL-ODOO-CONFIG.json]");
+  throw new Error("Aufruf: node build-alpha-world.mjs GTFS.json NETWORK.json FLEET-CATALOG.json INFRA-RELEASE.json ECONOMY.json OUTPUT.json [PUBLIC-ODOO-CONFIG.json]");
 }
 
 const WORLD_ID = "00000000-0000-4000-8000-000000000014";
-const TUTORIAL_WORLD_ID = "00000000-0000-4000-8000-000000000083";
 const REGION_ID = "mitteldeutschland-b";
 const OPERATOR_ID = "public";
 const PUBLIC_WORLD_SEED = 14_2026n;
-const TUTORIAL_WORLD_SEED = 83_2026n;
 const PUBLIC_PLANNING_AUTHORITY_ACCOUNT_ID = "00000000-0000-4000-8000-000000000214";
-const TUTORIAL_PLANNING_AUTHORITY_ACCOUNT_ID = "00000000-0000-4000-8000-000000000283";
 const WORLD_EPOCH = "2026-12-13T00:00:00.000Z";
 const WORLD_DURATION_S = 365 * 86_400;
 const RELEASE_VALID_UNTIL_S = WORLD_DURATION_S + 86_400;
@@ -71,7 +68,6 @@ async function loadDeployConfiguration(path, expectedWorldId, expectedKind) {
 }
 
 const publicDeployConfiguration = await loadDeployConfiguration(publicConfigurationPath, WORLD_ID, "public");
-const tutorialDeployConfiguration = await loadDeployConfiguration(tutorialConfigurationPath, TUTORIAL_WORLD_ID, "tutorial");
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -439,97 +435,6 @@ const fleetProbe = spawnSync("cargo", ["run", "-q", "-p", "zugfolge-runtime", "-
 if (fleetProbe.status !== 0) throw new Error(`Rust-Fleet-Validierung fehlgeschlagen:\n${fleetProbe.stderr}\n${fleetProbe.stdout}`);
 const fleetEvidence = JSON.parse(fleetProbe.stdout.trim().split(/\r?\n/).at(-1));
 
-// Das vorbereitete Paket ist ausschliesslich Bestandteil der getrennten,
-// beschleunigten Tutorialwelt. Der oeffentliche FleetRelease bleibt frei von
-// Starterressourcen und enthaelt weiterhin nur den Eigenbetrieb.
-const STARTER_OPERATOR_ID = "00000000-0000-4000-8000-000000000101";
-const starterLot = blueprintLots[0];
-if (!starterLot || starterLot.circulationIds.length === 0) throw new Error("Vorbereitetes Tutorial-Startlos fehlt.");
-const starterSourceFormation = fleet.formations.find((formation) => formation.id === `formation-${starterLot.circulationIds[0].slice("circulation-".length)}`);
-const starterSourceAsset = fleet.authorityRelease.assets.find((asset) => starterSourceFormation?.vehicleIds.includes(asset.id));
-const starterSourceReceipt = fleet.authorityRelease.pathReceipts.find((receipt) => receipt.id === starterSourceFormation?.pathReceiptId);
-if (!starterSourceFormation || !starterSourceAsset || !starterSourceReceipt) throw new Error("Tutorial-Startpaket kann nicht aus dem Eigenbetriebsbestand abgeleitet werden.");
-numericAssetId += 1;
-numericPersonnelId += 1;
-numericRouteId += 1;
-const starterVehicleId = "starter-vehicle-001";
-const starterFormationId = "starter-formation-001";
-const starterDutyId = "starter-duty-001";
-const starterPoolId = "starter-pool-001";
-const starterReceiptId = "starter-receipt-001";
-const starterReservationId = "starter-path-001";
-const tutorialFleet = rebindWorldIds(fleet, WORLD_ID, TUTORIAL_WORLD_ID, "tutorialFleet");
-tutorialFleet.authorityRelease.releaseId = `${fleet.authorityRelease.releaseId}-tutorial`;
-tutorialFleet.authorityRelease.assets.push({
-  ...structuredClone(starterSourceAsset),
-  id: starterVehicleId,
-  numericId: numericAssetId,
-  operatorId: STARTER_OPERATOR_ID,
-  procurementChannel: "leasing",
-});
-tutorialFleet.authorityRelease.pathReceipts.push({
-  ...structuredClone(starterSourceReceipt),
-  id: starterReceiptId,
-  numericRouteId,
-  operatorId: STARTER_OPERATOR_ID,
-});
-tutorialFleet.authorityRelease.personnelPools.push({
-  id: starterPoolId,
-  numericId: numericPersonnelId,
-  operatorId: STARTER_OPERATOR_ID,
-  capacitySeconds: WORLD_DURATION_S,
-  minimumRestSeconds: 39_600,
-  classDesignations: [starterSourceAsset.classDesignation],
-  pathReceiptIds: [starterReceiptId],
-  qualificationHash: sha256(`${starterSourceAsset.classDesignation}\u0000${starterReceiptId}\u0000${networkEnvelope.networkHash}`),
-});
-tutorialFleet.formations.push({ id: starterFormationId, vehicleIds: [starterVehicleId], pathReceiptId: starterReceiptId, dynamics: { accelerationMmPerS2: 900, decelerationMmPerS2: 900 } });
-tutorialFleet.personnelDuties.push({ id: starterDutyId, personnelPoolId: starterPoolId, formationIds: [starterFormationId], pathReceiptId: starterReceiptId, validFrom: 0, validUntil: WORLD_DURATION_S });
-tutorialFleet.pathReservations.push({ id: starterReservationId, pathReceiptId: starterReceiptId });
-tutorialFleet.authorityRelease.assets.sort((left, right) => left.id.localeCompare(right.id));
-tutorialFleet.authorityRelease.pathReceipts.sort((left, right) => left.id.localeCompare(right.id));
-tutorialFleet.authorityRelease.personnelPools.sort((left, right) => left.id.localeCompare(right.id));
-tutorialFleet.formations.sort((left, right) => left.id.localeCompare(right.id));
-tutorialFleet.personnelDuties.sort((left, right) => left.id.localeCompare(right.id));
-tutorialFleet.pathReservations.sort((left, right) => left.id.localeCompare(right.id));
-assertEmbeddedWorldIds(tutorialFleet, TUTORIAL_WORLD_ID, "tutorialFleet");
-
-const tutorialFleetPath = `${resolve(outputPath)}.tutorial.fleet.json`;
-await writeFile(tutorialFleetPath, `${JSON.stringify(tutorialFleet, null, 2)}\n`);
-const tutorialFleetProbe = spawnSync("cargo", ["run", "-q", "-p", "zugfolge-runtime", "--example", "fleet_release_hash", "--", tutorialFleetPath], { encoding: "utf8" });
-if (tutorialFleetProbe.status !== 0) throw new Error(`Rust-Tutorial-Fleet-Validierung fehlgeschlagen:\n${tutorialFleetProbe.stderr}\n${tutorialFleetProbe.stdout}`);
-const tutorialFleetEvidence = JSON.parse(tutorialFleetProbe.stdout.trim().split(/\r?\n/).at(-1));
-
-const tutorialConfiguration = {
-  authority: {
-    tutorialOperatorNamePrefix: "Tutorialbahn",
-    startPackageSlots: [{
-      worldId: TUTORIAL_WORLD_ID,
-      operatorId: STARTER_OPERATOR_ID,
-      operatorName: "Alpha Startbahn 1",
-      vehicleId: starterVehicleId,
-      formationId: starterFormationId,
-      personnelDutyId: starterDutyId,
-      pathReservationId: starterReservationId,
-      vehicleLeaseReceiptId: "starter-lease-001",
-      trainRunIds: starterLot.trainRunIds,
-    }],
-  },
-  startPackage: {
-    schemaVersion: "zugfolge-start-package/v1",
-    version: "alpha-2026-08",
-    emergencyLotId: starterLot.lotId,
-    maximumTrainKmPerPeriod: 1_000,
-    vehicleClass: starterSourceAsset.classDesignation,
-    maximumVehicleValueCents: "900000000",
-    durationS: 21 * 86_400,
-    pathWindowId: starterReservationId,
-    personnelPoolId: starterPoolId,
-    operatingProgramTemplateId: "balanced",
-  },
-};
-assertEmbeddedWorldIds(tutorialConfiguration, TUTORIAL_WORLD_ID, "tutorialConfiguration");
-
 const economyRelease = buildEconomyRelease({
   version: economySpecification.version,
   rates: economySpecification.rates,
@@ -552,17 +457,6 @@ const economyStarted = startEconomyWorld({
   publicVehiclePoolByLot,
 });
 const tenderCalendarHash = alphaHash("zugfolge-alpha-tender-calendar/v1", economyStarted.state.calendar);
-const tutorialEconomyStarted = startEconomyWorld({
-  worldId: TUTORIAL_WORLD_ID,
-  seed: TUTORIAL_WORLD_SEED,
-  durationMonths: 12,
-  release: economyRelease,
-  lots: economyLots,
-  authorityBudgets: [],
-  accounts: [],
-  publicVehiclePoolByLot,
-});
-const tutorialTenderCalendarHash = alphaHash("zugfolge-alpha-tender-calendar/v1", tutorialEconomyStarted.state.calendar);
 const planningRoute = regionalTrains
   .map((train) => train.route.filter((waypoint) => {
     const station = stationById.get(waypoint.operatingPoint);
@@ -677,43 +571,9 @@ const deployment = {
 assertEmbeddedWorldIds(deployment, WORLD_ID);
 assertNoStarterIdentifiers(deployment);
 
-const tutorialDeployment = rebindWorldIds(deployment, WORLD_ID, TUTORIAL_WORLD_ID, "tutorialDeployment");
-tutorialDeployment.worldDefinition = {
-  ...tutorialDeployConfiguration.worldDefinition,
-};
-tutorialDeployment.blueprint = {
-  ...tutorialDeployment.blueprint,
-  seed: TUTORIAL_WORLD_SEED,
-  profileKind: "tutorial",
-  accelerationFactor: 60,
-  startingCapitalPolicy: tutorialDeployConfiguration.startingCapitalPolicy,
-  entryFacilityPolicy: {
-    schemaVersion: "zugfolge-public-entry-facility/v1",
-    mode: "disabled",
-  },
-  releases: {
-    ...tutorialDeployment.blueprint.releases,
-    fleet: tutorialFleetEvidence.authorityReleaseHash,
-  },
-  tenderCalendarHash: tutorialTenderCalendarHash,
-};
-tutorialDeployment.fleet = tutorialFleet;
-tutorialDeployment.planning.authority = {
-  accountId: TUTORIAL_PLANNING_AUTHORITY_ACCOUNT_ID,
-  keycloakSubject: `system:planning-authority:${TUTORIAL_WORLD_ID}`,
-  displayName: "Aufgabentraeger Mitteldeutschland Tutorial 2026",
-};
-assertEmbeddedWorldIds(tutorialDeployment, TUTORIAL_WORLD_ID, "tutorialDeployment");
-
-const tutorialDeploymentPath = `${resolve(outputPath)}.tutorial.json`;
-const tutorialConfigurationPath = `${resolve(outputPath)}.tutorial.config.json`;
 await writeFile(outputPath, `${JSON.stringify({ deployment: encodeEconomyValue(deployment) }, null, 2)}\n`);
-await writeFile(tutorialDeploymentPath, `${JSON.stringify({ deployment: encodeEconomyValue(tutorialDeployment) }, null, 2)}\n`);
-await writeFile(tutorialConfigurationPath, `${JSON.stringify(tutorialConfiguration, null, 2)}\n`);
-await rm(`${resolve(outputPath)}.phase2.json`, { force: true });
 console.log(JSON.stringify({
   worldId: WORLD_ID,
-  tutorialWorldId: TUTORIAL_WORLD_ID,
   lotCount: blueprintLots.length,
   trainRunCount: regionalTrains.length,
   circulationCount: circulationsCount(blueprintLots),
@@ -725,10 +585,6 @@ console.log(JSON.stringify({
   economyReleaseHash: economyRelease.checksum,
   timetableReleaseHash: gtfsEnvelope.snapshotHash,
   tenderCalendarHash,
-  tutorialFleetReleaseHash: tutorialFleetEvidence.authorityReleaseHash,
-  tutorialTenderCalendarHash,
-  tutorialDeploymentPath,
-  tutorialConfigurationPath,
 }));
 
 function circulationsCount(lots) {

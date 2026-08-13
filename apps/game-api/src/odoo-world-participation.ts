@@ -1,4 +1,4 @@
-import type { AlphaWorldBlueprint } from "@zugfolge/alpha";
+import { validateStoredPublicWorldContract } from "@zugfolge/alpha";
 import type { WorldParticipationCommandHandler, WorldParticipationCommandResult } from "@zugfolge/commerce";
 import {
   alphaWorldProfiles,
@@ -6,7 +6,6 @@ import {
   worldParticipations,
   worlds,
 } from "@zugfolge/db";
-import { decodeEconomyValue } from "@zugfolge/economy";
 import { requestWorldAccess, type IdentityDatabase } from "@zugfolge/identity";
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 
@@ -22,17 +21,15 @@ function rejected(code: string): WorldParticipationCommandResult {
 export function createWorldParticipationHandler(db: IdentityDatabase): WorldParticipationCommandHandler {
   return async (context) => db.transaction(async (tx) => {
     const payload = context.payload;
+    await tx.execute(sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${payload.worldId} for update`);
     const [world] = await tx.select({ lifecycle: worlds.lifecycleStatus }).from(worlds)
       .where(eq(worlds.id, payload.worldId)).limit(1);
     if (world === undefined) return rejected("world_not_found");
-    await tx.execute(sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${payload.worldId} for update`);
-    const [profile] = await tx.select({
-      state: alphaWorldProfiles.state,
-      profileKind: alphaWorldProfiles.profileKind,
-      blueprint: alphaWorldProfiles.blueprint,
-    }).from(alphaWorldProfiles).where(eq(alphaWorldProfiles.worldId, payload.worldId)).limit(1);
+    const [profile] = await tx.select().from(alphaWorldProfiles)
+      .where(eq(alphaWorldProfiles.worldId, payload.worldId)).limit(1);
     if (profile === undefined || profile.profileKind !== "public") return rejected("world_not_public");
-    const blueprint = decodeEconomyValue(profile.blueprint) as AlphaWorldBlueprint;
+    const contract = validateStoredPublicWorldContract(profile);
+    const blueprint = contract.blueprint;
     if (blueprint.schemaVersion !== "zugfolge-alpha-world-blueprint/v2" || blueprint.admission === undefined || blueprint.publicMetadata === undefined) {
       return rejected("world_contract_unavailable");
     }
@@ -126,6 +123,10 @@ export function createWorldParticipationHandler(db: IdentityDatabase): WorldPart
       worldId: payload.worldId,
       keycloakSubject: payload.keycloakSubject,
       displayName: payload.displayName,
+      acceptedWorldContract: {
+        hash: contract.blueprintHash,
+        startingCapitalPolicy: contract.startingCapitalPolicy,
+      },
     });
     await tx.update(worldParticipations).set({ state: "active", rejectionCode: null, changedAt: context.now }).where(and(
       eq(worldParticipations.worldId, payload.worldId), eq(worldParticipations.id, participationId),

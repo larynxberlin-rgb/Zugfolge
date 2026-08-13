@@ -117,6 +117,7 @@ mod protection;
 mod provenance;
 mod reference;
 mod release;
+mod release_manifest;
 mod semantic_export;
 mod speed;
 mod station;
@@ -167,6 +168,11 @@ pub use protection::{ProtectionSystem, TrainProtection};
 pub use provenance::{Attributed, Confidence, Provenance, SourceId};
 pub use reference::{DeviationReport, ReferenceCorpus, ReferenceRun, RunDeviation, Tolerance};
 pub use release::{InfraRelease, InfraReleaseBuilder, ReleaseSource, ReleaseVersion};
+pub use release_manifest::{
+    ReleaseManifestError, build_annual_infra_plan, build_mitteldeutschland_infra_release,
+    build_public_infra_release, build_qualified_reference_release, build_reference_report,
+    verify_reference_artifact_chain,
+};
 pub use semantic_export::{SemanticExportError, SemanticExportSummary, export_semantic_geojsonseq};
 pub use speed::{SpeedCategory, SpeedLimit};
 pub use station::{

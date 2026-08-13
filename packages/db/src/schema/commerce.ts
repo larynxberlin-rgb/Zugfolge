@@ -120,14 +120,17 @@ export const odooCommandQueue = pgTable(
     actorReference: text("actor_reference").notNull(),
     payload: jsonb("payload").notNull(),
     correlationId: text("correlation_id").notNull(),
-    status: text("status", { enum: ["pending", "accepted", "rejected", "completed", "failed"] }).notNull().default("pending"),
+    status: text("status", { enum: ["pending", "processing", "accepted", "rejected", "completed", "failed"] }).notNull().default("pending"),
     receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
     processedAt: timestamp("processed_at", { withTimezone: true }),
+    claimToken: text("claim_token"),
+    claimExpiresAt: timestamp("claim_expires_at", { withTimezone: true }),
     failureCode: text("failure_code"),
   },
   (table) => [
     uniqueIndex("odoo_command_queue_world_event_idx").on(table.worldId, table.eventId),
     index("odoo_command_queue_world_pending_idx").on(table.worldId, table.status, table.receivedAt),
+    index("odoo_command_queue_world_claim_idx").on(table.worldId, table.status, table.claimExpiresAt, table.receivedAt),
     // guards:allow world-id — Entitlement-Ereignisse sind bewusst global und haben keine Welt.
     uniqueIndex("odoo_command_queue_event_idx").on(table.eventId),
     uniqueIndex("odoo_command_queue_world_type_idempotency_idx").on(table.worldId, table.commandType, table.idempotencyKey),

@@ -19,7 +19,7 @@ beforeEach(async () => {
 });
 afterEach(async () => client.close());
 
-describe("Migration 0019 Odoo-Weltauswahl", () => {
+describe("Migration 0024 Odoo-Weltauswahl", () => {
   it("backfillt bestehende EVU sicher als aktive Spieler-EVU", async () => {
     const [account] = await db.insert(schema.accounts).values({ worldId: WORLD, keycloakSubject: "kc", displayName: "Spieler" }).returning();
     const [operator] = await db.insert(schema.operators).values({ worldId: WORLD, foundingAccountId: account!.id, name: "EVU" }).returning();

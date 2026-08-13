@@ -9,6 +9,7 @@ import {
   acknowledgeMessage,
   isOverdue,
   listInbox,
+  MAILBOX_DUE_SOON_MILLISECONDS,
   MessageNotFoundError,
   RecipientNotFoundError,
   sendMessage,
@@ -16,6 +17,7 @@ import {
 
 const WORLD_LHE = "11111111-1111-1111-1111-111111111111";
 const WORLD_MIDDLE_GERMANY = "22222222-2222-2222-2222-222222222222";
+const AS_OF = new Date("2026-01-02T00:00:00Z");
 
 let client: PGlite;
 let db: IdentityDatabase;
@@ -53,8 +55,8 @@ describe("sendMessage / listInbox", () => {
       payload: { text: "Willkommen in Leipzig–Halle–Erfurt" },
     });
 
-    const annaInbox = await listInbox(db, { worldId: WORLD_LHE, requestingKeycloakSubject: "kc-anna" });
-    const benInbox = await listInbox(db, { worldId: WORLD_LHE, requestingKeycloakSubject: "kc-ben" });
+    const annaInbox = await listInbox(db, { worldId: WORLD_LHE, requestingKeycloakSubject: "kc-anna", asOf: AS_OF });
+    const benInbox = await listInbox(db, { worldId: WORLD_LHE, requestingKeycloakSubject: "kc-ben", asOf: AS_OF });
 
     expect(annaInbox).toHaveLength(1);
     expect(annaInbox[0]?.messageType).toBe("system.willkommen");
@@ -83,9 +85,78 @@ describe("sendMessage / listInbox", () => {
     await sendMessage(db, { worldId: WORLD_LHE, recipientAccountId: anna.id, messageType: "erste", payload: {} });
     await sendMessage(db, { worldId: WORLD_LHE, recipientAccountId: anna.id, messageType: "zweite", payload: {} });
 
-    const inbox = await listInbox(db, { worldId: WORLD_LHE, requestingKeycloakSubject: "kc-anna" });
+    const inbox = await listInbox(db, { worldId: WORLD_LHE, requestingKeycloakSubject: "kc-anna", asOf: AS_OF });
 
     expect(inbox.map((message) => message.messageType)).toEqual(["zweite", "erste"]);
+  });
+
+  it("priorisiert serverseitig ueberfaellige und binnen 48 Stunden faellige Entscheidungen", async () => {
+    const anna = await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-anna", displayName: "Anna" });
+    await sendMessage(db, { worldId: WORLD_LHE, recipientAccountId: anna.id, messageType: "system.info", payload: {}, sentAt: new Date("2026-01-02T00:00:00Z") });
+    await sendMessage(db, { worldId: WORLD_LHE, recipientAccountId: anna.id, messageType: "cooperation.answer", payload: {}, sentAt: new Date("2026-01-01T20:00:00Z"), deadlineAt: new Date(AS_OF.getTime() + MAILBOX_DUE_SOON_MILLISECONDS) });
+    await sendMessage(db, { worldId: WORLD_LHE, recipientAccountId: anna.id, messageType: "cooperation.expired", payload: {}, sentAt: new Date("2026-01-01T10:00:00Z"), deadlineAt: new Date("2026-01-01T23:59:59Z") });
+
+    const inbox = await listInbox(db, { worldId: WORLD_LHE, requestingKeycloakSubject: "kc-anna", asOf: AS_OF });
+
+    expect(inbox.map(({ messageType, priority, overdue }) => ({ messageType, priority, overdue }))).toEqual([
+      { messageType: "cooperation.expired", priority: "overdue", overdue: true },
+      { messageType: "cooperation.answer", priority: "due-soon", overdue: false },
+      { messageType: "system.info", priority: "information", overdue: false },
+    ]);
+  });
+
+  it("mischt weder fremde Konten noch andere Welten in die Prioritaetsprojektion", async () => {
+    const anna = await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-anna", displayName: "Anna" });
+    const ben = await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-ben", displayName: "Ben" });
+    const clara = await requestWorldAccess(db, { worldId: WORLD_MIDDLE_GERMANY, keycloakSubject: "kc-clara", displayName: "Clara" });
+    await sendMessage(db, { worldId: WORLD_LHE, recipientAccountId: anna.id, messageType: "anna", payload: {}, deadlineAt: new Date("2026-01-01T00:00:00Z") });
+    await sendMessage(db, { worldId: WORLD_LHE, recipientAccountId: ben.id, messageType: "ben", payload: {}, deadlineAt: new Date("2026-01-01T00:00:00Z") });
+    await sendMessage(db, { worldId: WORLD_MIDDLE_GERMANY, recipientAccountId: clara.id, messageType: "clara", payload: {}, deadlineAt: new Date("2026-01-01T00:00:00Z") });
+
+    const inbox = await listInbox(db, { worldId: WORLD_LHE, requestingKeycloakSubject: "kc-anna", asOf: AS_OF });
+    expect(inbox.map((message) => message.messageType)).toEqual(["anna"]);
+  });
+
+  it("ordnet eine vollständige 48h-Offline-Rückkehr serverseitig und weltisoliert", async () => {
+    const anna = await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-anna", displayName: "Anna" });
+    const ben = await requestWorldAccess(db, { worldId: WORLD_LHE, keycloakSubject: "kc-ben", displayName: "Ben" });
+    const departure = new Date("2026-01-01T08:00:00Z");
+    const returnAfter48Hours = new Date(departure.getTime() + MAILBOX_DUE_SOON_MILLISECONDS);
+    const overdue = await sendMessage(db, {
+      worldId: WORLD_LHE, recipientAccountId: anna.id, messageType: "cooperation.contract-offer",
+      payload: { contractId: "contract-due" }, sentAt: departure,
+      deadlineAt: new Date(returnAfter48Hours.getTime() - 1),
+    });
+    const upcoming = await sendMessage(db, {
+      worldId: WORLD_LHE, recipientAccountId: anna.id, messageType: "planning.path-offer",
+      payload: { trainId: "train-7" }, sentAt: new Date(departure.getTime() + 1_000),
+      deadlineAt: new Date(returnAfter48Hours.getTime() + MAILBOX_DUE_SOON_MILLISECONDS),
+    });
+    await sendMessage(db, {
+      worldId: WORLD_LHE, recipientAccountId: ben.id, messageType: "cooperation.foreign",
+      payload: { contractId: "secret" }, sentAt: departure,
+      deadlineAt: new Date(returnAfter48Hours.getTime() - 1),
+    });
+
+    const returned = await listInbox(db, {
+      worldId: WORLD_LHE, requestingKeycloakSubject: "kc-anna", asOf: returnAfter48Hours,
+    });
+    expect(returned.map(({ id, priority, overdue: isMessageOverdue }) => ({ id, priority, overdue: isMessageOverdue }))).toEqual([
+      { id: overdue.id, priority: "overdue", overdue: true },
+      { id: upcoming.id, priority: "due-soon", overdue: false },
+    ]);
+
+    await acknowledgeMessage(db, {
+      worldId: WORLD_LHE, messageId: overdue.id, actingKeycloakSubject: "kc-anna",
+      acknowledgedAt: returnAfter48Hours,
+    });
+    const afterAcknowledgement = await listInbox(db, {
+      worldId: WORLD_LHE, requestingKeycloakSubject: "kc-anna", asOf: returnAfter48Hours,
+    });
+    expect(afterAcknowledgement.map(({ id, priority }) => ({ id, priority }))).toEqual([
+      { id: upcoming.id, priority: "due-soon" },
+      { id: overdue.id, priority: "acknowledged" },
+    ]);
   });
 });
 

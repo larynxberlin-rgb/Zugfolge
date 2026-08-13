@@ -17,6 +17,7 @@ GERMAN_CURRENCY_RE = re.compile(
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 ED25519_SIGNATURE_BASE64_RE = re.compile(r"^[A-Za-z0-9+/]{86}==$")
 WORLD_ID_RE = re.compile(r"^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$", re.IGNORECASE)
+_ADMIN_REQUEST_WRITE_TOKEN = object()
 
 
 def parse_german_currency_to_cents(value):
@@ -66,6 +67,14 @@ class ZugfolgeAdminRequest(models.Model):
     _inherit = ["mail.thread", "mail.activity.mixin"]
     _order = "write_date desc"
 
+    _sql_constraints = [
+        (
+            "zugfolge_admin_request_correlation",
+            "unique(correlation_id)",
+            "Die Administrationsantrag-Korrelation muss eindeutig sein.",
+        ),
+    ]
+
     name = fields.Char(compute="_compute_name", store=True)
     world_projection_id = fields.Many2one("zugfolge.world.projection", ondelete="restrict", index=True)
     world_id = fields.Char(index=True, tracking=True)
@@ -86,7 +95,6 @@ class ZugfolgeAdminRequest(models.Model):
             ("abuse_sanction_activate", "Schwere Missbrauchsmassnahme aktivieren"),
             ("world_close", "Weltabschluss einleiten"),
             ("world_deploy", "Signierte Welt bereitstellen"),
-            ("tutorial_account_reset", "Tutorialkonto zuruecksetzen"),
         ],
         required=True,
         tracking=True,
@@ -238,6 +246,17 @@ class ZugfolgeAdminRequest(models.Model):
         projection_model = self.env["zugfolge.world.projection"]
         for values in values_list:
             normalized = dict(values)
+            if normalized.get("state", "draft") != "draft" or normalized.get("approver_id") or normalized.get("game_result") or normalized.get("game_audit_event_id"):
+                raise AccessError(_("Neue Administrationsantraege beginnen immer als eigener Entwurf ohne Game-Ergebnis."))
+            if normalized.get("requester_id", self.env.user.id) != self.env.user.id:
+                raise AccessError(_("Der Antragsteller wird serverseitig aus der angemeldeten Odoo-Identitaet gebunden."))
+            # `readonly=True` ist nur eine Oberflaecheneigenschaft. Ein RPC-Client
+            # koennte den Wert beim ORM-create weiterhin mitsenden und dadurch
+            # ein fremdes Game-Ergebnis auf diesen Antrag umlenken. Die
+            # Korrelation entsteht deshalb ausschliesslich aus dem Feld-Default.
+            normalized.pop("correlation_id", None)
+            normalized["requester_id"] = self.env.user.id
+            normalized["state"] = "draft"
             projection_id = normalized.get("world_projection_id")
             if projection_id:
                 projection = projection_model.browse(projection_id).exists()
@@ -248,15 +267,24 @@ class ZugfolgeAdminRequest(models.Model):
             normalized_values.append(self._normalize_starting_capital_values(normalized))
         return super().create(normalized_values)
 
+    def _write_controlled(self, values):
+        """Private transition path; its object token cannot be forged over RPC."""
+        return self.with_context(zugfolge_admin_request_write_token=_ADMIN_REQUEST_WRITE_TOKEN).write(values)
+
     def write(self, values):
-        immutable = {
+        controlled = {"correlation_id", "state", "approver_id", "game_audit_event_id", "game_result"}
+        if controlled.intersection(values) and self.env.context.get("zugfolge_admin_request_write_token") is not _ADMIN_REQUEST_WRITE_TOKEN:
+            raise AccessError(_("Antragsstatus, Freigabe und Game-Ergebnis duerfen nur ueber den geprueften Workflow geaendert werden."))
+        decision_fields = {
             "world_projection_id", "world_id", "world_name", "world_kind", "ranking_status",
-            "schedule_period_weeks", "world_epoch", "starting_capital_mode", "starting_capital_input",
+            "schedule_period_weeks", "world_epoch", "action_type", "risk_class", "requester_id", "reason",
+            "effect_preview", "release_hash", "requested_period_start", "target_reference", "requested_at_s",
+            "manual_disruption_start", "manual_disruption_end", "manual_disruption_cause",
+            "manual_disruption_resource_ids", "manual_disruption_effect", "starting_capital_mode", "starting_capital_input",
             "starting_capital_amount_cents", "signed_world_deployment", "deployment_hash",
         }
-        if immutable.intersection(values) and not self.env.context.get("zugfolge_game_projection"):
-            if any(record.state != "draft" for record in self):
-                raise UserError(_("Weltdefinition, Startkapital und signiertes Deployment sind nach dem Einreichen unveraenderlich."))
+        if decision_fields.intersection(values) and any(record.state != "draft" for record in self):
+            raise UserError(_("Antragsinhalt und Autoritaetsbindungen sind nach dem Einreichen unveraenderlich."))
         result = True
         for record in self:
             normalized = self._normalize_starting_capital_values(values, record)
@@ -294,9 +322,9 @@ class ZugfolgeAdminRequest(models.Model):
                     raise ValidationError(_("Manuelle Stoerungen brauchen eine deklarierte Wirkung."))
             if record.action_type in ("world_access_revoke", "abuse_sanction_activate", "world_close") and record.risk_class != "high":
                 raise ValidationError(_("Kontoentzug, schwere Sanktionen und Weltende sind immer hochriskant."))
-            if record.action_type in ("world_access_revoke", "abuse_sanction_activate", "tutorial_account_reset") and not (record.target_reference or "").strip():
+            if record.action_type in ("world_access_revoke", "abuse_sanction_activate") and not (record.target_reference or "").strip():
                 raise ValidationError(_("Die Verwaltungsaktion braucht eine stabile Zielreferenz."))
-            if record.action_type in ("world_close", "tutorial_account_reset") and (record.requested_at_s is None or record.requested_at_s < 0):
+            if record.action_type == "world_close" and (record.requested_at_s is None or record.requested_at_s < 0):
                 raise ValidationError(_("Die Verwaltungsaktion braucht eine gueltige Simulationszeit."))
             if record.world_projection_id and record.world_id != record.world_projection_id.world_id:
                 raise ValidationError(_("Antrag und Game-Weltprojektion besitzen unterschiedliche Weltbindungen."))
@@ -377,7 +405,7 @@ class ZugfolgeAdminRequest(models.Model):
             raise ValidationError(_("Eine Begruendung ist Pflicht."))
         if any(request.action_type == "world_deploy" and (not request.signed_world_deployment or not request.deployment_hash) for request in self):
             raise ValidationError(_("Vor dem Einreichen muss das extern Ed25519-signierte Welt-Deployment importiert sein."))
-        self.write({"state": "submitted"})
+        self._write_controlled({"state": "submitted"})
 
     def action_approve(self):
         self._require_state("submitted")
@@ -386,17 +414,19 @@ class ZugfolgeAdminRequest(models.Model):
         for record in self:
             if record.risk_class == "high" and record.requester_id == self.env.user:
                 raise AccessError(_("Hochrisikoantraege duerfen nicht selbst freigegeben werden."))
-        self.write({"state": "approved", "approver_id": self.env.user.id})
+        self._write_controlled({"state": "approved", "approver_id": self.env.user.id})
 
     def action_reject(self):
         self._require_state("submitted")
-        self.write({"state": "rejected", "approver_id": self.env.user.id})
+        if not self.env.user.has_group("zugfolge_admin.group_zugfolge_approver"):
+            raise AccessError(_("Nur Freigeber duerfen Antraege ablehnen."))
+        self._write_controlled({"state": "rejected", "approver_id": self.env.user.id})
 
     def action_dispatch(self):
         self._require_state("approved")
         if any(request.game_capability_state != "available" for request in self):
             raise UserError(_("Das Game hat diese Verwaltungsfaehigkeit noch nicht als ausfuehrbar projektiert. Der Antrag bleibt freigegeben und wirkungslos."))
-        self.write({"state": "dispatched"})
+        self._write_controlled({"state": "dispatched"})
         for record in self:
             record.with_delay(description="Zugfolge-Administrationsantrag an Game senden")._dispatch_signed_game_command()
 
@@ -452,12 +482,14 @@ class ZugfolgeAdminRequest(models.Model):
 
     def apply_game_result(self, result):
         """Controller-only projection of the resulting authoritative Game audit event."""
-        if not self.env.context.get("zugfolge_game_projection"):
+        if not self.env.context.get("zugfolge_game_projection") or not self.env.su:
             raise AccessError(_("Nur das Game darf Game-Ergebnisse projizieren."))
         state = result.get("state")
         if state not in ("accepted", "completed", "failed", "rejected"):
             raise ValidationError(_("Unbekannter Game-Ergebniszustand."))
-        self.with_context(zugfolge_game_projection=True).write({
+        if any(record.state not in ("dispatched", "accepted") for record in self):
+            raise ValidationError(_("Ein Game-Ergebnis braucht einen zuvor signiert versendeten Antrag."))
+        self._write_controlled({
             "state": state,
             "game_audit_event_id": result.get("gameAuditEventId"),
             "game_result": result,

@@ -26,7 +26,7 @@ class TestWorldPaymentParticipation(AccountTestInvoicingCommon):
             "property_account_payable_id": payable.id,
         })
         cls.world_id = "11111111-1111-4111-8111-111111111111"
-        cls.partner_a.zugfolge_keycloak_subject = "keycloak-payment-test"
+        cls.partner_a._bind_zugfolge_keycloak_subject("keycloak-payment-test")
         projection = cls.env["zugfolge.world.projection"].sudo().with_context(zugfolge_game_projection=True).create({
             "world_id": cls.world_id,
             "world_name": "Zahlungswelt",
@@ -60,9 +60,12 @@ class TestWorldPaymentParticipation(AccountTestInvoicingCommon):
             taxes=[],
             journal=self.sale_journal,
         )
+        invoice.zugfolge_subject_reference = self.partner_a.zugfolge_keycloak_subject
         self._register_payment(invoice, journal_id=self.payment_journal.id)
         invoice.invalidate_recordset()
         self.assertEqual(invoice.payment_state, "paid")
+        self.assertEqual(invoice.zugfolge_event_state, "none")
+        self.assertFalse(invoice._zugfolge_command_change())
 
         participations = self.env["zugfolge.world.participation"].sudo().search([
             ("partner_id", "=", self.partner_a.id),

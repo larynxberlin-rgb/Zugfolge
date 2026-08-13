@@ -3,6 +3,7 @@ import {
   MIGRATIONS_FOLDER,
   accounts,
   domainEvents,
+  operators,
   simulationCommands,
   worlds,
 } from "@zugfolge/db";
@@ -32,6 +33,8 @@ const WORLD = "11111111-1111-4111-8111-111111111111";
 const ACCOUNT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ACCOUNT_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const AUTHORITY = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const OPERATOR_A = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+const OPERATOR_B = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 
 const release = {
   schemaVersion: PLANNING_INFRASTRUCTURE_RELEASE_SCHEMA,
@@ -57,6 +60,11 @@ function requestBody(input: {
   return {
     schemaVersion: PLANNING_PATH_REQUEST_SCHEMA,
     requestId: input.requestId,
+    formationId: input.reverse ? "formation-west" : "formation-east",
+    operatorId: input.reverse ? OPERATOR_B : OPERATOR_A,
+    fleetRevision: 7,
+    fleetStateHash: "f".repeat(64),
+    fleetAuthorityReleaseId: "fleet-release-2026",
     trainId: input.trainId,
     trainCategory: "regional" as const,
     trainNumber: input.trainNumber,
@@ -93,6 +101,10 @@ async function runInitialPlanning(runtime: ReturnType<typeof loadPlanningRuntime
     { id: ACCOUNT_B, worldId: WORLD, keycloakSubject: "native-b", displayName: "Native B" },
     { id: AUTHORITY, worldId: WORLD, keycloakSubject: "native-authority", displayName: "Native Authority" },
   ]);
+  await database.insert(operators).values([
+    { id: OPERATOR_A, worldId: WORLD, foundingAccountId: ACCOUNT_A, name: "Native EVU A" },
+    { id: OPERATOR_B, worldId: WORLD, foundingAccountId: ACCOUNT_B, name: "Native EVU B" },
+  ]);
   const first = await queuePlanningPathRequest(db, {
     worldId: WORLD,
     requestingAccountId: ACCOUNT_A,
@@ -119,7 +131,7 @@ async function runInitialPlanning(runtime: ReturnType<typeof loadPlanningRuntime
     },
     submittedAt: new Date(2_000),
   });
-  const result = await processPlanningCommand(db, runtime, infrastructureReleases, coordinate.id, new Date(3_000));
+  const result = await processPlanningCommand(db, runtime, infrastructureReleases, WORLD, coordinate.id, new Date(3_000));
   const events = await db.select().from(domainEvents).where(eq(domainEvents.worldId, WORLD)).orderBy(asc(domainEvents.sequence));
   expect(events.map((event) => event.eventType)).toEqual(["planning.runtime-state", "planning.diagram"]);
   const projection = parsePlanningProjection(events[1]!.payload);
@@ -128,7 +140,7 @@ async function runInitialPlanning(runtime: ReturnType<typeof loadPlanningRuntime
     "route-setting", "signal-sighting", "approach", "running", "clearing", "route-release",
   ]));
   expect(projection.conflicts.some((conflict) => conflict.kind === "opposing-move" && conflict.alternative !== null)).toBe(true);
-  const replay = await processPlanningCommand(db, runtime, infrastructureReleases, coordinate.id, new Date(4_000));
+  const replay = await processPlanningCommand(db, runtime, infrastructureReleases, WORLD, coordinate.id, new Date(4_000));
   expect(replay).toEqual({ ...result, idempotentReplay: true });
   expect(await db.select().from(domainEvents).where(eq(domainEvents.worldId, WORLD))).toHaveLength(2);
   return { client, db, result, projection };
@@ -164,9 +176,9 @@ describeNative("real PlanningRun worker composition", () => {
         },
         submittedAt: new Date(5_000),
       }).returning();
-      const applied = await processPlanningCommand(first.db, runtime, infrastructureReleases, applyCommand!.id, new Date(6_000));
+      const applied = await processPlanningCommand(first.db, runtime, infrastructureReleases, WORLD, applyCommand!.id, new Date(6_000));
       expect(applied).toMatchObject({ projectionRevision: 2, resultEventSequence: 4, idempotentReplay: false });
-      const replay = await processPlanningCommand(first.db, runtime, infrastructureReleases, applyCommand!.id, new Date(7_000));
+      const replay = await processPlanningCommand(first.db, runtime, infrastructureReleases, WORLD, applyCommand!.id, new Date(7_000));
       expect(replay).toEqual({ ...applied, idempotentReplay: true });
       const events = await first.db.select().from(domainEvents).where(eq(domainEvents.worldId, WORLD)).orderBy(asc(domainEvents.sequence));
       expect(parsePlanningProjection(events[3]!.payload).conflicts).toEqual([]);

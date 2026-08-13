@@ -10,7 +10,10 @@ import {
   ALPHA_WORLD_BLUEPRINT_SCHEMA,
   PUBLIC_ENTRY_FACILITY_SCHEMA,
   AlphaWorldService,
+  effectiveStartingCapitalPolicy,
   type AlphaWorldBlueprint,
+  type AlphaWorldBlueprintV1,
+  type AlphaWorldBlueprintV2,
   type WorldStartPort,
   validateWorldBlueprint,
 } from "./world.js";
@@ -18,7 +21,7 @@ import { AlphaConflictError, AlphaValidationError } from "./errors.js";
 
 const WORLD_ID = "00000000-0000-4000-8000-000000000014";
 
-function blueprint(): AlphaWorldBlueprint {
+function blueprint(): AlphaWorldBlueprintV2 {
   return {
     schemaVersion: ALPHA_WORLD_BLUEPRINT_SCHEMA,
     regionId: "mitteldeutschland-b",
@@ -162,6 +165,28 @@ describe("AlphaWorldService", () => {
     expect(validateWorldBlueprint(unlimited)).not.toBe(validateWorldBlueprint(zero));
   });
 
+  it("haelt persistierte v1-Vertraege und neue v2-Vertraege in getrennten Hash-Namensraeumen", () => {
+    const current = blueprint();
+    const legacy: AlphaWorldBlueprintV1 = {
+      schemaVersion: "zugfolge-alpha-world-blueprint/v1",
+      regionId: current.regionId,
+      regionVariant: current.regionVariant,
+      seed: current.seed,
+      profileKind: current.profileKind,
+      accelerationFactor: current.accelerationFactor,
+      periodCount: current.periodCount,
+      startingCapitalPolicy: { kind: "finite", amountCents: "0" },
+      releases: current.releases,
+      lots: current.lots,
+      conflictCheckHash: current.conflictCheckHash,
+      tenderCalendarHash: current.tenderCalendarHash,
+    };
+
+    expect(validateWorldBlueprint(legacy)).not.toBe(validateWorldBlueprint(current));
+    expect(effectiveStartingCapitalPolicy(legacy)).toEqual({ mode: "finite", amountCents: 0n });
+    expect(effectiveStartingCapitalPolicy(current)).toEqual({ mode: "finite", amountCents: 0n });
+  });
+
   it("weist nichtkanonisches Startkapital im signierten Weltentwurf zurueck", () => {
     const invalid = {
       ...blueprint(),
@@ -195,7 +220,7 @@ describe("AlphaWorldService", () => {
 
     await expect(service.start(WORLD_ID, {
       ...blueprint(),
-      startingCapitalPolicy: { mode: "unlimited" },
+      startingCapitalPolicy: { mode: "unlimited" } as const,
     }, 0)).rejects.toBeInstanceOf(AlphaConflictError);
   });
 

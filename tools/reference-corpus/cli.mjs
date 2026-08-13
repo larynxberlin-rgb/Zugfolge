@@ -9,7 +9,6 @@ import { buildGtfsPlanningSnapshot, createGtfsPlanningEnvelope } from "@zugfolge
 import {
   buildReferenceCorpus,
   canonicalJson,
-  compareWithModel,
   createNormalizedObservations,
   NORMALIZED_OBSERVATIONS_SCHEMA,
   sha256,
@@ -17,15 +16,16 @@ import {
 } from "./reference-corpus.mjs";
 import {
   createArtifactChainManifest,
-  createQualifiedReleaseManifest,
+  referenceReportFromRust,
+  qualifiedReleaseFromRust,
   createUnsignedBundleFromFiles,
   signBundle,
   verifyArtifactChainFiles,
   verifyBundleFiles,
-  verifyQualificationEvidenceFiles,
   verifySignedBundle,
 } from "./artifact-chain.mjs";
 import { captureGtfsFeed, loadCapturedGtfsTables, normalizeCapturedGtfs } from "./gtfs.mjs";
+import { buildLegacyPreviewReport } from "./legacy-preview.mjs";
 
 async function readJson(file) {
   return JSON.parse(await readFile(file, "utf8"));
@@ -49,6 +49,15 @@ function resolveWithinRoot(rootDirectory, relativePath, name) {
     throw new Error(`${name} darf den Artefaktordner nicht verlassen.`);
   }
   return resolved;
+}
+
+async function compilerArtifact(rootDirectory, file, name) {
+  const root = path.resolve(rootDirectory);
+  const resolved = path.resolve(file);
+  const relative = path.relative(root, resolved).split(path.sep).join("/");
+  resolveWithinRoot(root, relative, name);
+  const loaded = await readJsonArtifact(resolved);
+  return { ...loaded, record: { path: relative, sha256: loaded.sha256 } };
 }
 
 async function main() {
@@ -121,12 +130,15 @@ async function main() {
   if (mode === "build") {
     const [configFile, observationsFile, modelFile, corpusFile, reportFile] = args;
     if (!reportFile) throw new Error("Aufruf: build CONFIG OBSERVATIONS MODEL CORPUS REPORT");
+    if (process.env.ZUGFOLGE_NON_AUTHORITATIVE_CORPUS_BUILD !== "1") {
+      throw new Error("Legacy-build ist nur mit ZUGFOLGE_NON_AUTHORITATIVE_CORPUS_BUILD=1 als nichtautoritative Vorschau erlaubt.");
+    }
     const config = await readJson(configFile);
     const observations = await readJson(observationsFile);
     const registry = await readJson(path.resolve("tools/guards/quellenregister.json"));
     verifyRegisteredSource(registry, config.source);
     const corpus = buildReferenceCorpus({ ...config, observations });
-    const report = compareWithModel(corpus, await readJson(modelFile), config.tolerance);
+    const report = buildLegacyPreviewReport(corpus, await readJson(modelFile), config.tolerance);
     await writeJson(corpusFile, corpus);
     await writeJson(reportFile, report);
     if (!report.passed) throw new Error("Fahrzeitvergleich liegt außerhalb der dokumentierten Toleranz.");
@@ -156,33 +168,49 @@ async function main() {
     return;
   }
   if (mode === "compare") {
-    const [configFile, corpusFile, modelFile, fourth, fifth, sixth] = args;
-    if (!fourth) throw new Error("Aufruf: compare CONFIG CORPUS MODEL [QUALIFICATION_EVIDENCE ARTIFACT_ROOT] REPORT");
+    const [configFile, corpusFile, third, fourth, fifth, sixth, seventh] = args;
+    if (!fourth) throw new Error("Aufruf: compare CONFIG CORPUS MODEL_CONFIG MODEL QUALIFICATION_EVIDENCE ARTIFACT_ROOT REPORT");
     const config = await readJson(configFile);
+    const corpusArtifact = await readJsonArtifact(corpusFile);
+    const hardened = corpusArtifact.value.schema === "zugfolge-reference-corpus/v3";
+    if (hardened) {
+      const [modelConfigFile, modelFile, evidenceFile, rootDirectory, reportFile] = [third, fourth, fifth, sixth, seventh];
+      if (!reportFile) throw new Error("Gehärteter Vergleich: compare CONFIG CORPUS MODEL_CONFIG MODEL QUALIFICATION_EVIDENCE ARTIFACT_ROOT REPORT");
+      const root = path.resolve(rootDirectory);
+      const evidenceArtifact = await compilerArtifact(root, evidenceFile, "qualificationEvidence");
+      const evidence = evidenceArtifact.value;
+      const [captureConfig, referenceCorpus, modelConfig, modelResults, calibrationDataset, calibrationConfig, validationDataset, validationConfig] = await Promise.all([
+        compilerArtifact(root, configFile, "captureConfig"),
+        compilerArtifact(root, corpusFile, "referenceCorpus"),
+        compilerArtifact(root, modelConfigFile, "modelConfig"),
+        compilerArtifact(root, modelFile, "modelResults"),
+        compilerArtifact(root, resolveWithinRoot(root, evidence.calibration?.dataset?.path, "calibration.dataset.path"), "calibrationDataset"),
+        compilerArtifact(root, resolveWithinRoot(root, evidence.calibration?.config?.path, "calibration.config.path"), "calibrationConfig"),
+        compilerArtifact(root, resolveWithinRoot(root, evidence.validation?.dataset?.path, "validation.dataset.path"), "validationDataset"),
+        compilerArtifact(root, resolveWithinRoot(root, evidence.validation?.config?.path, "validation.config.path"), "validationConfig"),
+      ]);
+      const report = referenceReportFromRust({ artifacts: {
+        captureConfig, referenceCorpus, qualificationEvidence: evidenceArtifact,
+        calibrationDataset, calibrationConfig, validationDataset, validationConfig,
+        modelConfig, modelResults,
+      } });
+      await writeJson(reportFile, report);
+      if (!report.passed) throw new Error("Fahrzeitvergleich liegt außerhalb der dokumentierten Toleranz.");
+      console.log(`${corpusArtifact.value.groups.length} Referenzgruppen, technischer Vergleich bestanden; Release-Freigabe: ja.`);
+      return;
+    }
+    if (process.env.ZUGFOLGE_NON_AUTHORITATIVE_CORPUS_BUILD !== "1") {
+      throw new Error("Legacy-compare ist nur mit ZUGFOLGE_NON_AUTHORITATIVE_CORPUS_BUILD=1 als nichtautoritative Vorschau erlaubt.");
+    }
     const registry = await readJson(path.resolve("tools/guards/quellenregister.json"));
     verifyRegisteredSource(registry, config.source);
-    const [corpusArtifact, modelArtifact] = await Promise.all([
-      readJsonArtifact(corpusFile),
-      readJsonArtifact(modelFile),
-    ]);
-    const hardened = corpusArtifact.value.schema === "zugfolge-reference-corpus/v3";
-    const reportFile = hardened ? sixth : fourth;
-    if (!reportFile) throw new Error("Gehärteter Vergleich: compare CONFIG CORPUS MODEL QUALIFICATION_EVIDENCE ARTIFACT_ROOT REPORT");
-    let context;
-    if (hardened) {
-      const evidenceArtifact = await readJsonArtifact(fourth);
-      context = {
-        corpusArtifactSha256: corpusArtifact.sha256,
-        modelResultsArtifactSha256: modelArtifact.sha256,
-        qualificationEvidenceSha256: evidenceArtifact.sha256,
-        qualification: await verifyQualificationEvidenceFiles(evidenceArtifact.value, path.resolve(fifth)),
-      };
-    }
-    const report = compareWithModel(corpusArtifact.value, modelArtifact.value, config.tolerance, context);
+    const modelArtifact = await readJsonArtifact(third);
+    const reportFile = fourth;
+    const report = buildLegacyPreviewReport(corpusArtifact.value, modelArtifact.value, config.tolerance);
     await writeJson(reportFile, report);
     if (!report.passed) throw new Error("Fahrzeitvergleich liegt außerhalb der dokumentierten Toleranz.");
     console.log(
-      `${corpus.groups.length} Referenzgruppen, technischer Vergleich bestanden; ` +
+      `${corpusArtifact.value.groups.length} Referenzgruppen, technischer Vergleich bestanden; ` +
         `Release-Freigabe: ${report.releaseQualified ? "ja" : "nein"}.`,
     );
     return;
@@ -196,23 +224,34 @@ async function main() {
       const loaded = await readJsonArtifact(resolveWithinRoot(root, relativePath, "Artefaktpfad"));
       return { ...loaded, record: { path: relativePath, sha256: loaded.sha256 } };
     };
-    const [candidate, corpus, evidence, model, report] = await Promise.all([
+    const [captureConfig, candidate, corpus, evidence, calibrationDataset, calibrationConfig, validationDataset, validationConfig, modelConfig, model, report] = await Promise.all([
+      artifact(finalizeConfig.captureConfig),
       artifact(finalizeConfig.candidateManifest),
       artifact(finalizeConfig.referenceCorpus),
       artifact(finalizeConfig.qualificationEvidence),
+      artifact(finalizeConfig.calibrationDataset),
+      artifact(finalizeConfig.calibrationConfig),
+      artifact(finalizeConfig.validationDataset),
+      artifact(finalizeConfig.validationConfig),
+      artifact(finalizeConfig.modelConfig),
       artifact(finalizeConfig.modelResults),
       artifact(finalizeConfig.report),
     ]);
-    const releaseManifest = createQualifiedReleaseManifest({
-      candidateManifest: candidate.value,
-      candidateManifestArtifact: candidate.record,
-      referenceCorpusArtifact: corpus.record,
-      qualificationEvidenceArtifact: evidence.record,
-      modelResultsArtifact: model.record,
-      report: report.value,
-      reportBytes: report.bytes,
-      reportArtifact: report.record,
+    const releaseManifest = qualifiedReleaseFromRust({
       createdAt: finalizeConfig.createdAt,
+      artifacts: {
+        captureConfig,
+        referenceCorpus: corpus,
+        qualificationEvidence: evidence,
+        calibrationDataset,
+        calibrationConfig,
+        validationDataset,
+        validationConfig,
+        modelConfig,
+        modelResults: model,
+        report,
+        candidateManifest: candidate,
+      },
     });
     await writeJson(outputFile, releaseManifest);
     console.log(`Qualifiziertes Release-Manifest geschrieben: ${outputFile}`);

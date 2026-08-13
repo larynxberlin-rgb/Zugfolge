@@ -355,6 +355,20 @@ kein Ersatzfahrzeug wird erzeugt. Gleiches gilt für einen freiwilligen Verkauf.
 Ein reguläres Ende eines Verkehrsvertrags beendet dagegen nicht automatisch
 einen noch laufenden Leasingvertrag.
 
+### 3.7 Begehbare Innenraumprojektion (M15)
+
+Der Schaffnermodus leitet ein `InteriorLayoutV1` aus der tatsächlichen
+Formation sowie `StructuralConfiguration` und `InteriorConfiguration` ab.
+Wagenlänge, Übergänge, Türen, Sitz- und Stehplätze, Mehrzweckflächen, WC,
+Fahrrad- und Barrierefreiheitsbereiche bestimmen Geometrie, Begehbarkeit und
+Kapazitätsnachweis. Die Darstellung ist generisch-konfigurationsgetreu und
+behauptet keine exakte reale Baureihenarchitektur.
+
+Ein Fahrzeug ohne vollständige Konfiguration ist nicht betretbar; der fehlende
+Nachweis wird sichtbar ausgewiesen. Die Innenraumprojektion ändert weder die
+Formation noch die betriebliche Kapazität. Vollständiger Vertrag:
+[`schaffnermodus.md`](schaffnermodus.md) 4 und 5.
+
 ## 4. Versorgung, Instandhaltung und Zusatzfahrten
 
 Ein Fahrzeug ist nicht verfügbar, wenn es fahrbereit ist, sondern wenn es

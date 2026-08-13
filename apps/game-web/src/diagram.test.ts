@@ -72,6 +72,14 @@ describe("Bildfahrplan-Projektionsadapter", () => {
 
   it("formatiert Anzeigezeiten, ohne den Fachwert in Minuten umzuschreiben", () => {
     expect(formatTimeS(25_800)).toBe("07:10:00");
+    expect(formatTimeS(86_400 + 600)).toBe("D+1 00:10:00");
+    expect(formatTimeS(-600)).toBe("D-1 23:50:00");
+    expect(formatTimeS(86_400 + 600, {
+      epoch: "2026-01-01T00:00:00.000Z", timeZone: "Europe/Berlin", operatingDayBoundaryS: 0,
+    })).toBe("D+1 · 02.01.2026 01:10:00");
+    expect(formatTimeS(172_800 + 600, {
+      epoch: "2026-01-01T00:00:00.000Z", timeZone: "Europe/Berlin", operatingDayBoundaryS: 0,
+    })).toBe("D+2 · 03.01.2026 01:10:00");
     expect(formatDurationS(125)).toBe("2:05 min");
     expect(() => stationY(projection(), "nirgendwo")).toThrow("Unbekannte Betriebsstelle");
   });

@@ -14,8 +14,9 @@ function catalog(styleUrl = "/tiles/base/style.json", objectRelease = "infra-de-
     schemaVersion: "zugfolge-livemap-read-model-catalog/v1",
     worlds: [{
       config: {
-        schemaVersion: "zugfolge-livemap-config/v1",
+        schemaVersion: "zugfolge-livemap-config/v2",
         worldId: WORLD_ID,
+        worldName: "Mitteldeutschland",
         infrastructureReleaseId: "infra-de-2026",
         basemap: { styleUrl, attribution: "OpenStreetMap contributors", selfHosted: true },
         infrastructure: { pmtilesUrl: "/tiles/infra/de.pmtiles", attribution: "Zugfolge", coverage: "DE" },

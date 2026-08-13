@@ -3,7 +3,6 @@ export interface BrowserRuntimeConfiguration {
   readonly keycloakUrl: string;
   readonly keycloakRealm: string;
   readonly publicWorldId: string;
-  readonly tutorialWorldId: string;
   readonly livemapUrl: string;
 }
 
@@ -12,6 +11,13 @@ const EXPIRY_KEY = "zugfolge.accessTokenExpiresAt";
 const STATE_KEY = "zugfolge.oidc.state";
 const VERIFIER_KEY = "zugfolge.oidc.verifier";
 const REDIRECT_KEY = "zugfolge.oidc.redirectUri";
+
+export class RuntimeConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RuntimeConfigurationError";
+  }
+}
 
 function base64url(bytes: Uint8Array): string {
   let binary = "";
@@ -33,9 +39,26 @@ export function loadRuntimeConfiguration(): BrowserRuntimeConfiguration {
     keycloakUrl: (configured.keycloakUrl ?? "").replace(/\/$/, ""),
     keycloakRealm: configured.keycloakRealm ?? "zugfolge",
     publicWorldId: configured.publicWorldId ?? "",
-    tutorialWorldId: configured.tutorialWorldId ?? "",
     livemapUrl: configured.livemapUrl ?? "",
   };
+}
+
+export function validateRuntimeConfiguration(configuration: BrowserRuntimeConfiguration): void {
+  const missing = [
+    configuration.gameApiUrl === "" ? "Game-API" : undefined,
+    configuration.keycloakUrl === "" ? "Keycloak" : undefined,
+  ].filter((entry): entry is string => entry !== undefined);
+  if (missing.length > 0) {
+    throw new RuntimeConfigurationError(`Laufzeitkonfiguration unvollständig: ${missing.join(" und ")}.`);
+  }
+}
+
+/** Verwirft einen beschädigten Anmeldeversuch, damit der nächste Start einen neuen PKCE-Fluss beginnt. */
+export function resetAuthenticationAttempt(): void {
+  [TOKEN_KEY, EXPIRY_KEY, STATE_KEY, VERIFIER_KEY, REDIRECT_KEY].forEach((key) => sessionStorage.removeItem(key));
+  const clean = new URL(window.location.href);
+  ["code", "state", "session_state", "iss"].forEach((name) => clean.searchParams.delete(name));
+  window.history.replaceState({}, "", clean);
 }
 
 function cleanRedirectUri(): string {
@@ -50,7 +73,7 @@ export async function ensureAccessToken(configuration: BrowserRuntimeConfigurati
   if (current !== null && current !== "" && (!Number.isFinite(expiresAt) || expiresAt === 0 || expiresAt > Date.now())) return current;
   sessionStorage.removeItem(TOKEN_KEY);
   sessionStorage.removeItem(EXPIRY_KEY);
-  if (configuration.keycloakUrl === "") throw new Error("Keycloak-Laufzeitkonfiguration fehlt.");
+  if (configuration.keycloakUrl === "") throw new RuntimeConfigurationError("Keycloak-Laufzeitkonfiguration fehlt.");
   const issuer = `${configuration.keycloakUrl}/realms/${encodeURIComponent(configuration.keycloakRealm)}`;
   const parameters = new URLSearchParams(window.location.search);
   const code = parameters.get("code");

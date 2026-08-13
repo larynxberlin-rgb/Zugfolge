@@ -18,8 +18,9 @@ export interface OperationsDecision {
   readonly fineCauseLabel: string;
   readonly affectedResource: string;
   readonly outcomeReason: string;
-  readonly impact: Record<string, unknown>;
-  readonly raw: Record<string, unknown>;
+  readonly impact: Readonly<Record<string, string | number | boolean | null>>;
+  readonly manualOverride: boolean;
+  readonly major: boolean;
 }
 
 export interface OperationsProjection {
@@ -67,8 +68,23 @@ export interface DailyOperationsReport {
   readonly serviceDay: string;
   readonly sourceFromSequence: number;
   readonly sourceThroughSequence: number;
-  readonly trainRuns: { readonly total: number; readonly punctual: number; readonly delayed: number; readonly cancelled: number; readonly replacementServices: number };
+  readonly trainRuns: {
+    readonly total: number;
+    readonly punctual: number;
+    readonly delayed: number;
+    readonly cancelled: number;
+    readonly replacementServices: number;
+    /** Autoritativ vom Runtime-Ereignis gemeldete, ganzzahlige Zugkilometer. */
+    readonly trainKm: string;
+    readonly missingSeats: number;
+    readonly missedConnections: number;
+  };
   readonly settlements: { readonly revenueCents: string; readonly costCents: string; readonly contractPenaltyCents: string };
+  /** Vertrag-/Los-spezifische Teilmenge; verhindert Abrechnung fremder Leistungen. */
+  readonly contracts: Readonly<Record<string, {
+    readonly trainRuns: { readonly total: number; readonly punctual: number; readonly cancelled: number; readonly trainKm: string; readonly missingSeats: number; readonly missedConnections: number };
+    readonly settlements: { readonly costCents: string; readonly contractPenaltyCents: string };
+  }>>;
   readonly decisionsByAction: Readonly<Record<string, number>>;
   readonly infrastructureEffects: readonly string[];
   readonly personnelEffects: readonly string[];
@@ -103,8 +119,49 @@ function causeCode(value: unknown): number | null {
     : null;
 }
 
+const OPERATION_IMPACT_FIELDS = new Set([
+  "affectedConnections",
+  "affectedPersonnelPools",
+  "affectedResource",
+  "affectedRotations",
+  "affectedTrainRuns",
+  "affectedVehicles",
+  "affected_connections",
+  "affected_personnel_pools",
+  "affected_resource",
+  "affected_rotations",
+  "affected_train_runs",
+  "affected_vehicles",
+  "cancelledStops",
+  "cancelled_stops",
+  "cause",
+  "contractEffect",
+  "contractPenaltyCents",
+  "contract_effect",
+  "contract_penalty_cents",
+  "costCents",
+  "cost_cents",
+  "personnelEffect",
+  "personnel_effect",
+  "vehicleEffect",
+  "vehicle_effect",
+]);
+
+function projectedImpact(value: unknown): Readonly<Record<string, string | number | boolean | null>> {
+  const source = payload(value);
+  if (source === undefined) return {};
+  return Object.fromEntries(Object.entries(source).flatMap(([key, item]) =>
+    OPERATION_IMPACT_FIELDS.has(key)
+    && (item === null || typeof item === "string" || typeof item === "boolean" || Number.isSafeInteger(item))
+      ? [[key, item as string | number | boolean | null]]
+      : [],
+  ));
+}
+
 function decision(event: LoggedEvent, value: Record<string, unknown>): OperationsDecision {
-  const impact = payload(value.impact) ?? {};
+  const impact = projectedImpact(value.impact);
+  const manualOverride = value.manualOverride === true || value.manual_override === true || value.manual === true;
+  const affectedTrainRuns = Number(impact["affected_train_runs"] ?? impact["affectedTrainRuns"] ?? 0);
   return {
     sequence: event.sequence,
     occurredAt: event.occurredAt.toISOString(),
@@ -119,7 +176,8 @@ function decision(event: LoggedEvent, value: Record<string, unknown>): Operation
     affectedResource: text(value.affectedResource ?? value.affected_resource ?? impact.affected_resource),
     outcomeReason: text(value.outcomeReason ?? value.outcome_reason),
     impact,
-    raw: value,
+    manualOverride,
+    major: value.major === true || affectedTrainRuns >= MAJOR_DISRUPTION_AFFECTED_TRAIN_RUNS,
   };
 }
 
@@ -134,11 +192,8 @@ export function projectOperations(events: readonly LoggedEvent[], operatorId: st
     throughSequence: events.at(-1)?.sequence ?? 0,
     decisions,
     cancellations: decisions.filter((entry) => ["cancel_run", "cancel", "trigger_rail_replacement"].includes(entry.action)),
-    manualInterventions: decisions.filter((entry) => entry.raw.manualOverride === true || entry.raw.manual_override === true || entry.raw.manual === true),
-    majorEvents: decisions.filter((entry) =>
-      entry.raw.major === true ||
-      Number(entry.impact.affected_train_runs ?? 0) >= MAJOR_DISRUPTION_AFFECTED_TRAIN_RUNS
-    ),
+    manualInterventions: decisions.filter((entry) => entry.manualOverride),
+    majorEvents: decisions.filter((entry) => entry.major),
   };
 }
 
@@ -171,9 +226,26 @@ export function buildDailyReport(events: readonly LoggedEvent[], operatorId: str
   let delayed = 0;
   let cancelled = 0;
   let replacementServices = 0;
+  let trainKm = 0n;
+  let missingSeats = 0;
+  let missedConnections = 0;
   let revenueCents = 0n;
   let costCents = 0n;
   let contractPenaltyCents = 0n;
+  const contractEvidence = new Map<string, {
+    total: number; punctual: number; cancelled: number; trainKm: bigint; missingSeats: number; missedConnections: number;
+    costCents: bigint; contractPenaltyCents: bigint;
+  }>();
+  const evidenceFor = (value: Readonly<Record<string, unknown>>) => {
+    const reference = text(value.contractId ?? value.contract_id ?? value.lotId ?? value.lot_id);
+    if (reference === "") return undefined;
+    let evidence = contractEvidence.get(reference);
+    if (evidence === undefined) {
+      evidence = { total: 0, punctual: 0, cancelled: 0, trainKm: 0n, missingSeats: 0, missedConnections: 0, costCents: 0n, contractPenaltyCents: 0n };
+      contractEvidence.set(reference, evidence);
+    }
+    return evidence;
+  };
   const decisionsByAction: Record<string, number> = {};
   const infrastructureEffects: string[] = [];
   const personnelEffects: string[] = [];
@@ -183,13 +255,28 @@ export function buildDailyReport(events: readonly LoggedEvent[], operatorId: str
     const value = payload(event.payload)!;
     const impact = payload(value.impact) ?? {};
     if (event.eventType === "operations.train-outcome") {
+      const contract = evidenceFor(value);
       total += 1;
+      trainKm = addBigInt(trainKm, value.trainKm ?? value.train_km);
+      const outcomeMissingSeats = Number(value.missingSeats ?? value.missing_seats ?? 0);
+      const outcomeMissedConnections = Number(value.missedConnections ?? value.missed_connections ?? 0);
+      if (Number.isSafeInteger(outcomeMissingSeats) && outcomeMissingSeats >= 0) missingSeats += outcomeMissingSeats;
+      if (Number.isSafeInteger(outcomeMissedConnections) && outcomeMissedConnections >= 0) missedConnections += outcomeMissedConnections;
       const status = text(value.status);
+      if (contract !== undefined) {
+        contract.total += 1;
+        contract.trainKm = addBigInt(contract.trainKm, value.trainKm ?? value.train_km);
+        if (Number.isSafeInteger(outcomeMissingSeats) && outcomeMissingSeats >= 0) contract.missingSeats += outcomeMissingSeats;
+        if (Number.isSafeInteger(outcomeMissedConnections) && outcomeMissedConnections >= 0) contract.missedConnections += outcomeMissedConnections;
+        if (status === "cancelled") contract.cancelled += 1;
+        else if (Number(value.delaySeconds ?? value.delay_seconds ?? 0) <= 300) contract.punctual += 1;
+      }
       if (status === "cancelled") cancelled += 1;
       else if (Number(value.delaySeconds ?? value.delay_seconds ?? 0) <= 300) punctual += 1;
       else delayed += 1;
     }
     if (DECISION_EVENT_TYPES.has(event.eventType)) {
+      const contract = evidenceFor(value);
       const action = text(value.action ?? value.selected_action ?? value.decision) || "unbekannt";
       const explanation = payload(value.explanation) ?? value;
       decisionsByAction[action] = (decisionsByAction[action] ?? 0) + 1;
@@ -199,6 +286,10 @@ export function buildDailyReport(events: readonly LoggedEvent[], operatorId: str
       vehicleEffects.push(text(value.vehicleEffect ?? value.vehicle_effect ?? impact.vehicle_effect));
       costCents = addBigInt(costCents, impact.cost_cents ?? impact.costCents);
       contractPenaltyCents = addBigInt(contractPenaltyCents, impact.contract_penalty_cents ?? impact.contractPenaltyCents);
+      if (contract !== undefined) {
+        contract.costCents = addBigInt(contract.costCents, impact.cost_cents ?? impact.costCents);
+        contract.contractPenaltyCents = addBigInt(contract.contractPenaltyCents, impact.contract_penalty_cents ?? impact.contractPenaltyCents);
+      }
       decisionFacts.push({
         eventSequence: event.sequence,
         occurredAt: event.occurredAt.toISOString(),
@@ -217,9 +308,14 @@ export function buildDailyReport(events: readonly LoggedEvent[], operatorId: str
       });
     }
     if (event.eventType === "economy.settlement") {
+      const contract = evidenceFor(value);
       revenueCents = addBigInt(revenueCents, value.revenueCents ?? value.revenue_cents);
       costCents = addBigInt(costCents, value.costCents ?? value.cost_cents);
       contractPenaltyCents = addBigInt(contractPenaltyCents, value.contractPenaltyCents ?? value.contract_penalty_cents);
+      if (contract !== undefined) {
+        contract.costCents = addBigInt(contract.costCents, value.costCents ?? value.cost_cents);
+        contract.contractPenaltyCents = addBigInt(contract.contractPenaltyCents, value.contractPenaltyCents ?? value.contract_penalty_cents);
+      }
     }
   }
   const nextLevers: string[] = [];
@@ -234,8 +330,12 @@ export function buildDailyReport(events: readonly LoggedEvent[], operatorId: str
     serviceDay,
     sourceFromSequence: selected[0]?.sequence ?? 0,
     sourceThroughSequence: selected.at(-1)?.sequence ?? 0,
-    trainRuns: { total, punctual, delayed, cancelled, replacementServices },
+    trainRuns: { total, punctual, delayed, cancelled, replacementServices, trainKm: trainKm.toString(), missingSeats, missedConnections },
     settlements: { revenueCents: revenueCents.toString(), costCents: costCents.toString(), contractPenaltyCents: contractPenaltyCents.toString() },
+    contracts: Object.fromEntries([...contractEvidence].sort(([left], [right]) => left.localeCompare(right)).map(([reference, evidence]) => [reference, {
+      trainRuns: { total: evidence.total, punctual: evidence.punctual, cancelled: evidence.cancelled, trainKm: evidence.trainKm.toString(), missingSeats: evidence.missingSeats, missedConnections: evidence.missedConnections },
+      settlements: { costCents: evidence.costCents.toString(), contractPenaltyCents: evidence.contractPenaltyCents.toString() },
+    }])),
     decisionsByAction: Object.fromEntries(Object.entries(decisionsByAction).sort(([left], [right]) => left.localeCompare(right))),
     infrastructureEffects: unique(infrastructureEffects),
     personnelEffects: unique(personnelEffects),

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { ACTIVITY_POLICY_SCHEMA } from "./activity-policy.js";
-import { effectiveActivityPolicy, effectiveStartingCapitalPolicy, validateWorldBlueprint, type AlphaWorldBlueprint } from "./world.js";
+import { effectiveActivityPolicy, effectiveStartingCapitalPolicy, validateWorldBlueprint, type AlphaWorldBlueprintV2 } from "./world.js";
 
 const HASH = "a".repeat(64);
 
-function blueprint(overrides: Partial<AlphaWorldBlueprint> = {}): AlphaWorldBlueprint {
+function blueprint(overrides: Partial<AlphaWorldBlueprintV2> = {}): AlphaWorldBlueprintV2 {
   return {
     schemaVersion: "zugfolge-alpha-world-blueprint/v2",
     regionId: "mitteldeutschland-b",
@@ -70,5 +70,16 @@ describe("erweiterte signierte Weltregeln v2", () => {
 
   it("verlangt im öffentlichen Katalogvertrag die explizite Startkapital-Policy", () => {
     expect(() => validateWorldBlueprint(blueprint({ startingCapitalPolicy: undefined }))).toThrow(/Startkapital/);
+  });
+
+  it("veroeffentlicht nur Banner mit explizit freigegebenen Rechten", () => {
+    const value = blueprint();
+    expect(() => validateWorldBlueprint({
+      ...value,
+      publicMetadata: {
+        ...value.publicMetadata!,
+        banner: { ...value.publicMetadata!.banner, rightsApproved: false },
+      },
+    })).toThrow(/Banner-Metadaten/);
   });
 });

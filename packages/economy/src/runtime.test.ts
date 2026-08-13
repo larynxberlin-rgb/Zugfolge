@@ -1,5 +1,5 @@
 import { PGlite } from "@electric-sql/pglite";
-import { alphaWorldProfiles, MIGRATIONS_FOLDER, schema, worldEventLog, worlds } from "@zugfolge/db";
+import { accounts, alphaWorldProfiles, MIGRATIONS_FOLDER, operators, schema, worldEventLog, worlds } from "@zugfolge/db";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,6 +22,8 @@ import { loadEconomyWorldState, persistEconomyTransition } from "./state-store.j
 import { announceTender, startEconomyWorld, submitBid, submitMobilizationReference } from "./workflow.js";
 
 const WORLD = "55555555-5555-4555-8555-555555555555";
+const CASH_WRITER_ACCOUNT = "66666666-6666-4666-8666-666666666666";
+const CASH_WRITER_OPERATOR = "77777777-7777-4777-8777-777777777777";
 const OPEN = 100;
 const CLOSE = OPEN + 3 * 86_400;
 const OPERATING = CLOSE + 10_000;
@@ -271,6 +273,18 @@ describe("restart-sicherer Economy-Scheduler", () => {
   });
 
   it("verwirft eine erst nach dem Zuschlag eingeschleuste Fremdlos-Trasse nochmals im Scheduler", async () => {
+    await db.insert(accounts).values({
+      id: CASH_WRITER_ACCOUNT,
+      worldId: WORLD,
+      keycloakSubject: "cash-writer-test",
+      displayName: "Cash Writer Test",
+    });
+    await db.insert(operators).values({
+      id: CASH_WRITER_OPERATOR,
+      worldId: WORLD,
+      foundingAccountId: CASH_WRITER_ACCOUNT,
+      name: "Cash Writer Test EVU",
+    });
     const sourceFleet = publicFleet();
     const fleetState: FleetMobilizationSnapshot = {
       ...sourceFleet,
@@ -331,7 +345,7 @@ describe("restart-sicherer Economy-Scheduler", () => {
         authorityId: "authority",
         budgetPeriod: 0,
         vehiclePool: ["vehicle-1"],
-        recipientByOperator: { "operator-1": "account-1" },
+        recipientByOperator: { [CASH_WRITER_OPERATOR]: "account-1" },
         failurePenaltyCents: 1_000n,
       },
       tender: {
@@ -379,7 +393,7 @@ describe("restart-sicherer Economy-Scheduler", () => {
     });
     state = submitBid(state, "facility:defense:bid", "tender-facility-defense", {
       id: "facility-defense-bid",
-      operatorId: "operator-1",
+      operatorId: CASH_WRITER_OPERATOR,
       orderingFeeCentsPerTrainKm: 1n,
       vehicle,
       promises: { extraSeats: 0, punctualityBasisPoints: 9_000, additionalStops: 0 },
@@ -391,7 +405,7 @@ describe("restart-sicherer Economy-Scheduler", () => {
     state = submitMobilizationReference(state, {
       commandId: "facility:defense:mobilization",
       tenderId: "tender-facility-defense",
-      operatorId: "operator-1",
+      operatorId: CASH_WRITER_OPERATOR,
       at: CLOSE,
       reference: {
         fleetRevision: 4,

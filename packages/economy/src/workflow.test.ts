@@ -211,17 +211,18 @@ describe("zustandsbehafteter M6-Gesamtablauf", () => {
         entryFacility: { schemaVersion: "zugfolge-public-entry-facility/v1", providerOperatorId: "public" },
       },
     });
+    const operatingFrom = 100 + 3 * 86_400 + 10;
     const running = completeMobilization(referenced, {
       commandId: "facility:mobilize",
       tenderId: "facility-tender",
-      at: 100 + 3 * 86_400 + 10,
+      at: operatingFrom,
       proof: completeMobilizationProof,
       failurePenaltyCents: 1_000n,
       recipientAccountId: "account-1",
       publicVehiclePool: ["vehicle-1"],
-      operatingTransition: rustTransition("operator-1", "operator-change", 100 + 3 * 86_400 + 10),
+      operatingTransition: rustTransition("operator-1", "operator-change", operatingFrom),
     }).state;
-    const at = 100 + 3 * 86_400 + 11;
+    const at = operatingFrom + 21 * 86_400;
     const settled = settleContractPeriod(running, {
       commandId: "facility:settle",
       contractId: "facility-tender",
@@ -286,10 +287,14 @@ describe("zustandsbehafteter M6-Gesamtablauf", () => {
     expect(state.publicOperations.has("lot-0")).toBe(false);
     expect(state.contracts.get("tender-1")?.operatorId).toBe("operator-1");
 
-    const settled = settleContractPeriod(state, { commandId: "settle-1", contractId: "tender-1", period: 1, at: 4 * 86_400 + 1, performance: { trainKm: 100n, punctualityBasisPoints: 9_600, cancellations: 0, missingSeats: 0, missedConnections: 0, evidence: ["vehicles", "personnel", "paths"] }, costs: [{ amountCents: 1_000n, costType: "energy", costCentreId: "lot-0", reference: "period-1" }] });
+    const periodOneEnd = 4 * 86_400 + 2 * 21 * 86_400;
+    const settled = settleContractPeriod(state, { commandId: "settle-1", contractId: "tender-1", period: 1, at: periodOneEnd, performance: { trainKm: 100n, punctualityBasisPoints: 9_600, cancellations: 0, missingSeats: 0, missedConnections: 0, evidence: ["vehicles", "personnel", "paths"] }, costs: [{ amountCents: 1_000n, costType: "energy", costCentreId: "lot-0", reference: "period-1" }] });
     expect(settled.result.resultCents).toBeGreaterThan(0n);
     expect(settled.effects.journal[0]).toMatchObject({ worldId: "world-1", operatorId: "operator-1" });
-    expect(() => settleContractPeriod(settled.state, { commandId: "settle-retry-with-new-id", contractId: "tender-1", period: 1, at: 4 * 86_400 + 2, performance: { trainKm: 100n, punctualityBasisPoints: 9_600, cancellations: 0, missingSeats: 0, missedConnections: 0, evidence: ["vehicles", "personnel", "paths"] }, costs: [] })).toThrow(/bereits abgerechnet/);
+    expect(() => settleContractPeriod(settled.state, { commandId: "settle-retry-with-new-id", contractId: "tender-1", period: 1, at: periodOneEnd + 1, performance: { trainKm: 100n, punctualityBasisPoints: 9_600, cancellations: 0, missingSeats: 0, missedConnections: 0, evidence: ["vehicles", "personnel", "paths"] }, costs: [] })).toThrow(/bereits abgerechnet/);
+    expect(() => settleContractPeriod(state, { commandId: "settle-early", contractId: "tender-1", period: 0, at: 4 * 86_400 + 1, performance: { trainKm: 100n, punctualityBasisPoints: 9_600, cancellations: 0, missingSeats: 0, missedConnections: 0, evidence: ["vehicles", "personnel", "paths"] }, costs: [] })).toThrow(/Periodenende/);
+    expect(() => settleContractPeriod(state, { commandId: "settle-minted-km", contractId: "tender-1", period: 0, at: 4 * 86_400 + 21 * 86_400, performance: { trainKm: 101n, punctualityBasisPoints: 9_600, cancellations: 0, missingSeats: 0, missedConnections: 0, evidence: ["vehicles", "personnel", "paths"] }, costs: [] })).toThrow(/Periodenleistung/);
+    expect(() => settleContractPeriod(state, { commandId: "settle-foreign-cost", contractId: "tender-1", period: 0, at: 4 * 86_400 + 21 * 86_400, performance: { trainKm: 100n, punctualityBasisPoints: 9_600, cancellations: 0, missingSeats: 0, missedConnections: 0, evidence: ["vehicles", "personnel", "paths"] }, costs: [{ amountCents: 1n, costType: "energy", costCentreId: "foreign-lot", reference: "forged" }] })).toThrow(/Los-/);
   });
 
   it("lässt eine fehlgeschlagene Mobilisierung atomar auf Eigenbetrieb und Pönale fallen", () => {

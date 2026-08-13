@@ -336,101 +336,15 @@ function compareLegacyModel(corpus, modelResults, tolerance) {
   });
 }
 
-function nonEmptyStringList(value, name) {
-  invariant(Array.isArray(value) && value.length > 0, `${name} muss mindestens einen Eintrag enthalten.`);
-  for (const [index, item] of value.entries()) nonEmpty(item, `${name}[${index}]`);
-  return Object.freeze([...value]);
-}
-
 export function compareWithModel(
   corpus,
   modelResults,
   tolerance = { absoluteSeconds: 30, relativeBasisPoints: 500 },
-  context,
 ) {
   if (corpus?.schema === LEGACY_CORPUS_SCHEMA || modelResults?.schema === LEGACY_MODEL_RESULTS_SCHEMA) {
     return compareLegacyModel(corpus, modelResults, tolerance);
   }
-  invariant(corpus?.schema === CORPUS_SCHEMA, "Unbekanntes Korpus-Schema.");
-  invariant(modelResults?.schema === MODEL_RESULTS_SCHEMA, "Unbekanntes Modellergebnis-Schema.");
-  invariant(context?.qualification?.qualified === true, "Ein maschinengeprüfter Qualifikationsnachweis fehlt.");
-  sha256Hex(context.corpusArtifactSha256, "corpusArtifactSha256");
-  sha256Hex(context.modelResultsArtifactSha256, "modelResultsArtifactSha256");
-  sha256Hex(context.qualificationEvidenceSha256, "qualificationEvidenceSha256");
-  sha256Hex(modelResults.releaseChecksum, "modelResults.releaseChecksum");
-  sha256Hex(modelResults.modelInputSha256, "modelResults.modelInputSha256");
-  invariant(modelResults.qualification === undefined, "qualification darf nicht als vertrauenswürdiges Modellergebnisfeld gesetzt werden.");
-  const expectedBindings = {
-    ...corpus.artifactBinding,
-    referenceCorpusSha256: context.corpusArtifactSha256,
-    qualificationEvidenceSha256: context.qualificationEvidenceSha256,
-    calibrationDatasetSha256: context.qualification.calibration.dataset.sha256,
-    calibrationConfigSha256: context.qualification.calibration.config.sha256,
-    validationDatasetSha256: context.qualification.validation.dataset.sha256,
-    validationConfigSha256: context.qualification.validation.config.sha256,
-  };
-  invariant(
-    canonicalJson(modelResults.artifactBinding) === canonicalJson(expectedBindings),
-    "Modellergebnis ist nicht exakt an Korpus und Qualifikationsartefakte gebunden.",
-  );
-  const infrastructureAssumptions = nonEmptyStringList(modelResults.assumptions?.infrastructure, "assumptions.infrastructure");
-  const vehicleAssumptions = nonEmptyStringList(modelResults.assumptions?.vehicle, "assumptions.vehicle");
-  const validationIds = new Set(context.qualification.validation.sampleIds);
-  const usedValidationIds = new Set();
-  const comparisons = compareResults(corpus, modelResults, tolerance, (result, group) => {
-    nonEmpty(result.validationSampleId, `${group.id}.validationSampleId`);
-    invariant(validationIds.has(result.validationSampleId), `${group.id}: Validierungsstichprobe ist nicht im eingefrorenen Holdout enthalten.`);
-    invariant(!usedValidationIds.has(result.validationSampleId), `${group.id}: Validierungsstichprobe wird mehrfach ausgewertet.`);
-    usedValidationIds.add(result.validationSampleId);
-    invariant(!context.qualification.calibration.sampleIds.includes(result.validationSampleId), `${group.id}: Kalibrierungswert wird als Validierungswert wiederverwendet.`);
-    const sample = context.qualification.validationSamplesById.get(result.validationSampleId);
-    invariant(sample, `${group.id}: gebundene Validierungsstichprobe fehlt im Datensatz.`);
-    invariant(sample.groupId === group.id, `${group.id}: Validierungsstichprobe gehört zu einer anderen Referenzgruppe.`);
-    invariant(sample.characteristicsId === group.characteristicsId, `${group.id}: Validierungsstichprobe hat eine andere Zugcharakteristik.`);
-    return { sampleId: sample.id, sourceId: sample.sourceId, runningSeconds: sample.technicalRunningSeconds };
-  });
-  invariant(
-    canonicalJson([...usedValidationIds].sort()) === canonicalJson(context.qualification.validation.sampleIds),
-    "Modellergebnis wertet nicht exakt alle eingefrorenen Validierungsstichproben aus.",
-  );
-  const passed = comparisons.length > 0 && comparisons.every((comparison) => comparison.technicalWithinTolerance);
-  const reportBinding = Object.freeze({
-    ...expectedBindings,
-    modelInputSha256: modelResults.modelInputSha256,
-    modelResultsSha256: context.modelResultsArtifactSha256,
-  });
-  return Object.freeze({
-    schema: REPORT_SCHEMA,
-    artifactBinding: reportBinding,
-    releaseChecksum: modelResults.releaseChecksum,
-    modelInputSha256: modelResults.modelInputSha256,
-    sources: Object.freeze({
-      timetableHoldout: corpus.source,
-      technicalValidation: Object.freeze({
-        datasetId: context.qualification.validation.datasetId,
-        datasetSha256: context.qualification.validation.dataset.sha256,
-        sampleIdsSha256: context.qualification.validation.sampleIdsSha256,
-        source: context.qualification.validationDataset.source,
-      }),
-    }),
-    assumptions: Object.freeze({
-      infrastructure: infrastructureAssumptions,
-      vehicle: vehicleAssumptions,
-    }),
-    qualification: Object.freeze({
-      basis: "verified-disjoint-frozen-artifacts",
-      frozenAt: context.qualification.evidence.frozenAt,
-      calibrationDatasetId: context.qualification.calibration.datasetId,
-      validationDatasetId: context.qualification.validation.datasetId,
-      calibrationSampleCount: context.qualification.calibration.sampleIds.length,
-      validationSampleCount: context.qualification.validation.sampleIds.length,
-      disjoint: true,
-    }),
-    tolerance,
-    passed,
-    releaseQualified: passed,
-    comparisons,
-  });
+  throw new Error("Gehärtete v3-Referenzreports werden ausschließlich vom Rust-Releasecompiler gebildet.");
 }
 
 export function verifyRegisteredSource(registry, source) {

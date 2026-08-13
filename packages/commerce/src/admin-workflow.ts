@@ -179,12 +179,12 @@ export function validateAdminCommand(command: AdminCommandPayload): void {
     validateWorldDefinition(command.worldDefinition);
     validateSignedDeployment(command.signedDeployment, command.worldId, command.deploymentHash, command.startingCapitalPolicy, command.worldDefinition);
   }
-  if (["world_access_revoke", "abuse_sanction_activate", "tutorial_account_reset"].includes(command.actionType)) {
+  if (["world_access_revoke", "abuse_sanction_activate"].includes(command.actionType)) {
     if (command.targetReference === undefined || command.targetReference.trim().length === 0) {
       throw new AdminWorkflowError("Verwaltungsaktion braucht eine stabile Zielreferenz.");
     }
   }
-  if (["world_close", "tutorial_account_reset"].includes(command.actionType)) {
+  if (command.actionType === "world_close") {
     if (command.requestedAtS === undefined || !Number.isSafeInteger(command.requestedAtS) || command.requestedAtS < 0) {
       throw new AdminWorkflowError("Verwaltungsaktion braucht eine gueltige Simulationszeit.");
     }

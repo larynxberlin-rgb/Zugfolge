@@ -70,6 +70,22 @@ Tutorial-Deployment. → [ADR-0028](adr/0028-getrennter-tutorial-und-wettbewerbs
   vertrauliche Unternehmensdaten werden nicht nachgebildet.
 - Kredite, Restrukturierung und Insolvenz gehören zur Wirtschaft.
 
+M10 ist das gemeinsame Personenverkehrsnachfragemodell für SPNV und SPFV. Es
+liefert Zugwahl, Ein- und Aussteiger, Auslastung und den objektiven
+Fahrberechtigungsstatus. Belastbare freigegebene Kontrollquoten werden als
+`observed`, ersatzweise Spielwerte ausdrücklich als `balanced` veröffentlicht.
+Der Schaffnermodus M15 projiziert diese Fahrgäste, erzeugt aber keine eigene
+Nachfrage und keinen eigenen Ticketstatus.
+
+Eine im Schaffnermodus ausgestellte EBE ist eine **offene Forderung**, kein
+sofortiger sicherer Erlös und kein Bußgeld. Zahlung, Reduzierung,
+Bearbeitungskosten und Abschreibung folgen deterministisch aus dem
+`EconomyRelease`. Die positive Kontrollprämie beträgt höchstens das Vierfache
+der positiven Netto-EBE; Netto-EBE und Prämie zusammen sind je Tag auf 0,5
+Prozent der relevanten SPNV-Vertragserlöse begrenzt. Kosten, Verspätungsfolgen
+und Pönalen werden nicht gedeckelt. Details:
+[`schaffnermodus.md`](schaffnermodus.md) 8 und 10.
+
 ## 3. Vergabezyklus und Betriebsübergang (E18)
 
 Vertragslaufzeiten skalieren mit der Weltlaufzeit — Werte und Herleitung in
@@ -202,12 +218,35 @@ Betriebsaufnahme   Fahrplanstichtag
 ```
 
 Die **Schnellvergabe kleiner Lose** ist Absicht: Ein neuer Spieler soll seine
-erste eigene Ausschreibung in Tagen gewinnen können, nicht in Wochen. Bis zum
-Zuschlag sind Marktbeobachtung, Angebotsplanung, Kreditentscheidung sowie
-Fahrzeug- und Personalbeschaffung bereits echte Spielhandlungen. Die öffentliche
-Welt erfindet dafür weder einen Vertrag noch einen fahrenden Zug; nur das
-getrennte Tutorial darf den Ablauf mit einem didaktischen Startpaket verdichten
-(E28).
+erste eigene Ausschreibung in Tagen gewinnen können, nicht in Wochen. Eine
+öffentliche Welt überbrückt diese Zeit nicht durch heimlich zugeteilte
+Verträge, Fahrzeuge oder Trassen. Der wirtschaftliche Einstieg beginnt mit der
+im signierten Weltentwurf festgelegten `StartingCapitalPolicy`; nur die private
+Tutorialwelt besitzt ihr eigenes, stets endliches Übungskapital.
+
+Beim Bestätigen des öffentlichen Weltvertrags speichert das Game dessen
+Blueprint-Hash und `StartingCapitalPolicy` am Weltzugang. Eine spätere
+EVU-Gründung akzeptiert nur exakt diesen weiterhin gültigen Vertrag. Endliche
+nichtnegative Beträge — einschließlich `0` — werden dabei atomar genau einmal
+als ausgeglichene Buchung `Kasse an Eigenkapital` in das welt- und
+EVU-gebundene Ledger übernommen. Der explizite Modus `unlimited` ist kein sehr
+großer oder maximaler Integerwert: Er erzeugt keine Startbuchung, sondern hebt
+für dieses EVU nur die Liquiditätsprüfung autoritativer Zahlungsvorgänge auf;
+die Zahlung selbst bleibt als Integer-Cent-Buchung vollständig ausgeglichen.
+Weder Startfinanzierung noch der Modus `unlimited` fließen in die
+Wirtschaftsrangliste ein. Kein Modus erzeugt Fahrzeuge, Verträge, Personal,
+Trassen oder Betriebsprogramme.
+
+### 3.5a Tutorialwirtschaft ist echte, isolierte Wirtschaft
+
+Das Tutorialtemplate pinnt `2.000.000` Integer-Cent als endliches Kapital. Die
+Tutorial-World-Factory eröffnet echte Ledgerkonten und bucht es ausgeglichen
+gegen Tutorialeigenkapital. Angebote, Vertrag, Halterwechsel, Trassenbeleg,
+Betriebsprogramm, Störung, Dispositionsentscheidung und Periodenabrechnung
+laufen über dieselben fachlichen Writer wie im Spiel. Vorbereitetes Inventar
+erfüllt kein Kapitel: Erst die Spielerhandlung und ihr autoritativer Beleg
+schalten weiter. Weder Kapital noch Fachzustand gelangen in die öffentliche
+Welt; `unlimited` ist im Tutorialtemplate unzulässig.
 
 **Die Leistungsbeschreibung ist eine Karte, kein Aktenordner** — in einer halben
 Minute lesbar: Linien, Zugkm je Periode, Takt, Betriebszeiten, Mindest-
@@ -407,6 +446,16 @@ mit Laufzeit, Entgelt und Pönale:
 - Wagenübergang im SGV;
 - Ersatzverkehrshilfe bei Störungen;
 - Bietergemeinschaften für SPNV-Ausschreibungen.
+
+Eine ordentliche Kündigung ist zunächst nur eine weltzeitgebundene
+Kündigungsvormerkung. Leistungspflichten und eine überlassene Fahrzeughaltung
+bleiben bis `SimTime + terminationNoticeS` unverändert wirksam; erst der
+serverseitige Vertragsfortschritt vollzieht das Ende. Eine sofortige Beendigung
+wegen Nichterfüllung folgt der versionierten Regel
+`zugfolge-contract-non-performance-rule/v1`: Ein Tagesbericht allein reicht
+nicht, sondern muss auf ein unveränderliches, exakt an Welt, Vertrag,
+Gegenpartei und Leistungszeit gebundenes Betriebsereignis zurückführen. Ein
+Spielertext dokumentiert nur die Begründung und besitzt keine Fachautorität.
 
 Daraus entsteht Politik zwischen Spielern, ohne ein zusätzliches Sozialsystem
 bauen zu müssen.

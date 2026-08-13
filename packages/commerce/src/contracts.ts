@@ -18,7 +18,6 @@ export const COMMAND_TYPES = [
   "admin.abuse_sanction_activate",
   "admin.world_close",
   "admin.world_deploy",
-  "admin.tutorial_account_reset",
   "admin.alpha_invitation_create",
   "admin.alpha_invitation_resend",
 ] as const;
@@ -36,7 +35,6 @@ export const ADMIN_ACTION_TYPES = [
   "abuse_sanction_activate",
   "world_close",
   "world_deploy",
-  "tutorial_account_reset",
   "alpha_invitation_create",
   "alpha_invitation_resend",
 ] as const;

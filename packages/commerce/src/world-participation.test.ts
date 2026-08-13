@@ -68,7 +68,10 @@ describe("Weltteilnahmevertrag", () => {
     await receiveOdooWebhook(createOdooWebhookReceiptStore(db), signPayload(envelope("odoo-participation-c"), KEY, NOW), options, NOW);
     const handler = vi.fn(async () => ({ state: "active" as const, participationId: "game-participation", gameAccountReference: "game-account" }));
     await expect(processNextOdooCommand(db, NOW, { participationHandler: handler })).resolves.toMatchObject({ outcome: "accepted" });
+    await expect(processNextOdooCommand(db, NOW, { participationHandler: handler })).resolves.toBeUndefined();
     expect(handler).toHaveBeenCalledTimes(1);
+    const [queue] = await db.select().from(odooCommandQueue);
+    expect(queue).toMatchObject({ status: "completed", claimToken: null, claimExpiresAt: null, failureCode: null });
     const [projection] = await db.select().from(odooProjectionOutbox);
     expect(projection).toMatchObject({ worldId: WORLD, messageType: "world.participation.result" });
     expect(projection?.payload).toMatchObject({ state: "active", idempotencyKey: "payment-42:provision", authoritative: true });
@@ -78,6 +81,8 @@ describe("Weltteilnahmevertrag", () => {
     const options = { tenantId: "zugfolge", keys: [KEY], authorizedActors: { "commerce-service": ["world.participation.change"] } } as const;
     await receiveOdooWebhook(createOdooWebhookReceiptStore(db), signPayload(envelope("odoo-participation-d"), KEY, NOW), options, NOW);
     await expect(processNextOdooCommand(db, NOW)).resolves.toMatchObject({ outcome: "rejected" });
+    const [queue] = await db.select().from(odooCommandQueue);
+    expect(queue).toMatchObject({ status: "rejected", claimToken: null, claimExpiresAt: null });
     const [projection] = await db.select().from(odooProjectionOutbox);
     expect(projection?.payload).toMatchObject({
       action: "provision", idempotencyKey: "payment-42:provision", state: "rejected", authoritative: true,

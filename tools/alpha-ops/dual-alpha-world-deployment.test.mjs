@@ -120,16 +120,16 @@ test("Weltbindung und reservierte Tutorialkennungen werden fail-closed geprueft"
   );
 });
 
-test("Generatorvertrag trennt Public-Artefakt, Tutorial-Deployment und Tutorial-Konfiguration", async () => {
+test("Generatorvertrag erzeugt nur das signierbare Public-Artefakt; Tutorialwelten entstehen in gebundenen Sessions", async () => {
   const source = await readFile(new URL("../region-import/build-alpha-world.mjs", import.meta.url), "utf8");
   assert.match(source, /schemaVersion: "zugfolge-alpha-world-blueprint\/v2"/);
-  assert.match(source, /startingCapitalPolicy: \{ mode: "finite", amountCents: "0" \}/);
+  assert.match(source, /startingCapitalPolicy: publicDeployConfiguration\.startingCapitalPolicy/);
   assert.match(source, /mode: "award-contingent-wet-lease"/);
   assert.match(source, /costBasis: "formation-operating-cost"/);
-  assert.match(source, /mode: "disabled"/);
-  assert.match(source, /tutorialDeploymentPath = `\$\{resolve\(outputPath\)\}\.tutorial\.json`/);
-  assert.match(source, /tutorialConfigurationPath = `\$\{resolve\(outputPath\)\}\.tutorial\.config\.json`/);
-  assert.match(source, /tutorialFleet\.authorityRelease\.assets\.push/);
+  assert.doesNotMatch(source, /tutorialDeploymentPath/);
+  assert.doesNotMatch(source, /tutorialConfigurationPath/);
+  assert.doesNotMatch(source, /tutorialFleet\.authorityRelease\.assets\.push/);
+  assert.doesNotMatch(source, /startPackageSlots/);
   assert.doesNotMatch(source, /const phase2Configuration\s*=/);
   assert.doesNotMatch(source, /writeFile\([^\n]*\.phase2\.json/);
 });

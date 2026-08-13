@@ -19,6 +19,7 @@ export * from "./operators.js";
 export * from "./operating-program-versions.js";
 export * from "./regional-simulation-states.js";
 export * from "./simulation-commands.js";
+export * from "./starting-capital.js";
 export * from "./world-accesses.js";
 export * from "./worlds.js";
 export * from "./public-worlds.js";

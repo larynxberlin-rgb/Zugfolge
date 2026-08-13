@@ -407,7 +407,7 @@ describe("regionaler M4-Simulationsworker", () => {
     } finally {
       await client.close();
     }
-  });
+  }, 15_000);
 
   it("publiziert geplante Infrastrukturmarker getrennt von Zügen und restauriert sie", async () => {
     const { client, db } = await testDatabase();

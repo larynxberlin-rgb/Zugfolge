@@ -124,15 +124,50 @@
     {
       "idx": 17,
       "version": "7",
-      "when": 1786543200000,
-      "tag": "0017_world_deploy_queue",
+      "when": 1786528800000,
+      "tag": "0018_tutorial_sessions",
       "breakpoints": true
     },
     {
       "idx": 18,
       "version": "7",
+      "when": 1786572000000,
+      "tag": "0019_odoo_command_claim",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1786575600000,
+      "tag": "0020_world_ranking_ties",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1786579200000,
+      "tag": "0021_starting_capital_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1786582800000,
+      "tag": "0022_contract_termination_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1786586400000,
+      "tag": "0023_world_deploy_queue",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
       "when": 1786590000000,
-      "tag": "0019_odoo_public_worlds",
+      "tag": "0024_odoo_public_worlds",
       "breakpoints": true
     }
   ]

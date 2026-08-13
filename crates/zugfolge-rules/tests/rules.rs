@@ -1,9 +1,10 @@
 //! Vertragstests für Trigger, Maßnahmen, Grenzen, Vorlagen und Rücktests.
 
 use zugfolge_rules::{
-    Action, Comparison, Condition, FactKey, FactValue, HistoricalDispatchCase, LimitKind,
-    OPERATING_PROGRAM_SCHEMA, OperatingProgram, OperatingRule, RuleDispatcher, RuleTrigger,
-    backtest, connection_oriented, conservative_punctual, rotation_protecting,
+    Action, Comparison, Condition, DispatchCaseInput, DispatchImpactInput, DispatchLimitsInput,
+    FactKey, FactValue, HistoricalDispatchCase, LimitKind, OPERATING_PROGRAM_SCHEMA,
+    OperatingProgram, OperatingRule, RuleDispatcher, RuleTrigger, backtest, connection_oriented,
+    conservative_punctual, evaluate_dispatch_case, rotation_protecting,
 };
 use zugfolge_sim::{
     DispatchDecision, DispatchFacts, DispatchImpact, DispatchLimits, DispatchTrigger, Dispatcher,
@@ -84,6 +85,64 @@ fn program(trigger: RuleTrigger, action: Action) -> OperatingProgram {
             action,
         }],
     }
+}
+
+#[test]
+fn single_case_boundary_uses_real_rules_and_keeps_manual_decision_explainable() {
+    let explanation = evaluate_dispatch_case(
+        program(RuleTrigger::RouteClosure, Action::ShortTurn),
+        DispatchCaseInput {
+            decision_id: 91,
+            train_run_id: 31,
+            event_at: 420,
+            trigger: RuleTrigger::RouteClosure,
+            delay_seconds: 420,
+            connection_threatened: true,
+            vehicle_failed: false,
+            duty_excess_seconds: 0,
+            route_closed: true,
+            platform_changed: false,
+            turnaround_shortfall_seconds: 0,
+            adhoc_conflict: false,
+            hold_until: 600,
+            limits: DispatchLimitsInput {
+                capacity_available: true,
+                train_characteristics_compatible: true,
+                route_knowledge_available: true,
+                train_protection_compatible: true,
+                electrification_compatible: true,
+                train_length_allowed: true,
+                vehicle_available: true,
+                maintenance_valid: true,
+                personnel_qualified: true,
+                rest_time_compliant: true,
+                rotation_feasible: true,
+                contract_allows: true,
+                cost_within_limit: true,
+            },
+            impact: DispatchImpactInput {
+                affected_train_runs: 1,
+                affected_connections: 1,
+                affected_rotations: 1,
+                affected_personnel_pools: 1,
+                affected_vehicles: 1,
+                cost_cents: 95_000,
+                contract_penalty_cents: 0,
+                cancelled_stops: 0,
+                cause: "Weichenstoerung".into(),
+                affected_resource: "track:tut-segment-2".into(),
+                contract_effect: "Qualitaetsziel gehalten".into(),
+            },
+            manual_action: Some(Action::RequestReroute),
+            manual_reason: Some("Gefuehrte Tutorialentscheidung".into()),
+        },
+    )
+    .unwrap();
+    assert_eq!(explanation.decision_id, 91);
+    assert_eq!(explanation.train_run_id, 31);
+    assert_eq!(explanation.selected_action, Some(Action::RequestReroute));
+    assert!(explanation.manual_override);
+    assert_eq!(explanation.impact.cost_cents, 95_000);
 }
 
 #[test]

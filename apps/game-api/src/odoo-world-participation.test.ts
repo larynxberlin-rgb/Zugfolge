@@ -1,4 +1,10 @@
 import { PGlite } from "@electric-sql/pglite";
+import {
+  ALPHA_WORLD_BLUEPRINT_SCHEMA,
+  PUBLIC_ENTRY_FACILITY_SCHEMA,
+  validateWorldBlueprint,
+  type AlphaWorldBlueprint,
+} from "@zugfolge/alpha";
 import { MIGRATIONS_FOLDER, accounts, alphaWorldProfiles, worldAccesses, worldParticipations, worlds } from "@zugfolge/db";
 import * as schema from "@zugfolge/db/schema";
 import { encodeEconomyValue } from "@zugfolge/economy";
@@ -16,12 +22,56 @@ const HASH = "a".repeat(64);
 let client: PGlite;
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
-function blueprint(capacity = 1) {
-  return encodeEconomyValue({
-    schemaVersion: "zugfolge-alpha-world-blueprint/v2",
+function blueprint(capacity = 1): AlphaWorldBlueprint {
+  return {
+    schemaVersion: ALPHA_WORLD_BLUEPRINT_SCHEMA,
+    regionId: "mitteldeutschland-b",
+    regionVariant: "B",
+    seed: 1n,
+    profileKind: "public",
+    accelerationFactor: 1,
+    periodCount: 2,
+    startingCapitalPolicy: { mode: "finite", amountCents: "0" },
+    entryFacilityPolicy: {
+      schemaVersion: PUBLIC_ENTRY_FACILITY_SCHEMA,
+      mode: "award-contingent-wet-lease",
+      providerOperatorId: "public",
+      costBasis: "formation-operating-cost",
+    },
+    releases: { infra: HASH, timetable: HASH, fleet: HASH, economy: HASH },
+    lots: [{
+      lotId: "lot-1",
+      contractEndsAtPeriod: 1,
+      trainRunIds: ["train-1"],
+      pathReceiptIds: ["path-1"],
+      vehicleIds: ["vehicle-1"],
+      personnelDutyIds: ["duty-1"],
+      circulationIds: ["circulation-1"],
+      operatingProgramIds: ["program-1"],
+    }],
+    conflictCheckHash: HASH,
+    tenderCalendarHash: HASH,
+    activityPolicy: null,
     admission: { capacity, status: "open" },
-    publicMetadata: { phase: "active" },
-  });
+    publicMetadata: {
+      description: "Odoo-Teilnahmetest",
+      phase: "active",
+      startsAt: NOW.toISOString(),
+      endsAt: null,
+      regionLabel: "Leipzig-Halle-Erfurt",
+      ruleRelease: "test-v1",
+      banner: {
+        altText: "Teststrecke",
+        source: "Zugfolge-Test",
+        author: "Zugfolge-Test",
+        license: "Eigenes Werk",
+        attribution: null,
+        focalPointXPermille: 500,
+        focalPointYPermille: 500,
+        rightsApproved: true,
+      },
+    },
+  };
 }
 
 function context(subject: string, idempotencyKey: string, action: "provision" | "cancel" | "refund" = "provision") {
@@ -45,10 +95,15 @@ beforeEach(async () => {
     { id: WORLD, name: "LHE", schedulePeriodWeeks: 4, epoch: NOW },
     { id: OTHER_WORLD, name: "Andere Welt", schedulePeriodWeeks: 4, epoch: NOW },
   ]);
+  const worldBlueprint = blueprint();
   await db.insert(alphaWorldProfiles).values({
     worldId: WORLD, profileKind: "public", regionId: "mitteldeutschland-b", regionVariant: "B", worldSeed: 1n,
     accelerationFactor: 1, infraReleaseHash: HASH, timetableReleaseHash: HASH, fleetReleaseHash: HASH,
-    economyReleaseHash: HASH, blueprint: blueprint(), blueprintHash: HASH, periodCount: 2, state: "running",
+    economyReleaseHash: HASH,
+    blueprint: encodeEconomyValue(worldBlueprint),
+    blueprintHash: validateWorldBlueprint(worldBlueprint),
+    periodCount: worldBlueprint.periodCount,
+    state: "running",
   });
 });
 afterEach(async () => client.close());

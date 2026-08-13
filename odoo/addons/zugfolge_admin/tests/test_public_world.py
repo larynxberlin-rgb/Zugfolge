@@ -99,10 +99,39 @@ class TestPublicWorld(TransactionCase):
         with self.assertRaises(ValidationError):
             offer.write({"focal_x_permille": 1001})
 
+    def test_paid_world_offer_requires_exact_world_slot_product_kind(self):
+        wrong_product = self.env["product.template"].create({
+            "name": "Falsches Weltprodukt",
+            "zugfolge_product_kind": "cosmetic",
+        })
+        with self.assertRaises(ValidationError):
+            self.env["zugfolge.world.offer"].create({
+                "projection_id": self.projection.id,
+                "participation_conditions": "Bezahlte Teilnahme",
+                "product_tmpl_id": wrong_product.id,
+            })
+        world_product = self.env["product.template"].create({
+            "name": "Konkreter Weltplatz",
+            "zugfolge_product_kind": "public_world_slot",
+        })
+        self.env["zugfolge.world.offer"].create({
+            "projection_id": self.projection.id,
+            "participation_conditions": "Bezahlte Teilnahme",
+            "product_tmpl_id": world_product.id,
+        })
+        with self.assertRaises(ValidationError):
+            world_product.write({"zugfolge_product_kind": "cosmetic"})
+
     def test_participation_is_world_bound_and_command_has_all_references(self):
-        partner = self.env["res.partner"].create({"name": "Portal", "zugfolge_keycloak_subject": "kc-sub"})
+        partner = self.env["res.partner"].create({"name": "Portal"})
+        partner._bind_zugfolge_keycloak_subject("kc-sub")
         offer = self.env["zugfolge.world.offer"].create({"projection_id": self.projection.id, "participation_conditions": "Bezahlung"})
-        participation = self.env["zugfolge.world.participation"].create({
+        with self.assertRaises(AccessError):
+            self.env["zugfolge.world.participation"].create({
+                "partner_id": partner.id, "offer_id": offer.id, "keycloak_subject": "kc-sub",
+                "odoo_order_reference": "SO-FORGED", "payment_reference": "PAY-FORGED", "state": "active",
+            })
+        participation = self.env["zugfolge.world.participation"]._create_from_commerce({
             "partner_id": partner.id, "offer_id": offer.id, "keycloak_subject": "kc-sub",
             "odoo_order_reference": "SO001", "payment_reference": "PAY001", "state": "paid",
         })
@@ -114,11 +143,11 @@ class TestPublicWorld(TransactionCase):
         self.assertEqual(command["paymentReference"], "PAY001")
         self.assertTrue(command["idempotencyKey"].endswith(":provision"))
         with self.assertRaises(ValidationError):
-            participation.with_context(zugfolge_game_projection=True).apply_game_result({
+            participation.sudo().with_context(zugfolge_game_projection=True).apply_game_result({
                 "worldId": "wrong", "action": "provision", "idempotencyKey": command["idempotencyKey"], "state": "active",
             })
         with self.assertRaises(ValidationError):
-            participation.with_context(zugfolge_game_projection=True).apply_game_result({
+            participation.sudo().with_context(zugfolge_game_projection=True).apply_game_result({
                 "worldId": self.world_id, "action": "refund", "idempotencyKey": command["idempotencyKey"], "state": "refunded",
             })
         with self.assertRaises(AccessError):
@@ -127,6 +156,30 @@ class TestPublicWorld(TransactionCase):
             })
         with self.assertRaises(AccessError):
             participation.write({"keycloak_subject": "manipulated-sub"})
+        with self.assertRaises(AccessError):
+            participation.with_context(zugfolge_game_projection=True, zugfolge_commerce_transition=True).write({"state": "active"})
+        participation._write_from_commerce({"state": "provisioning"})
+        with self.assertRaises(ValidationError):
+            participation.sudo().with_context(zugfolge_game_projection=True).apply_game_result({
+                "worldId": self.world_id, "action": "provision", "idempotencyKey": command["idempotencyKey"], "state": "refunded",
+            })
+        participation.sudo().with_context(zugfolge_game_projection=True).apply_game_result({
+            "worldId": self.world_id, "action": "provision", "idempotencyKey": command["idempotencyKey"], "state": "active",
+            "participationId": "game-participation-1", "gameAccountReference": "game-account-1",
+        })
+        self.assertEqual(participation.state, "active")
+        self.assertEqual(participation.game_participation_reference, "game-participation-1")
+
+    def test_keycloak_subject_can_only_be_bound_by_verified_oidc_path(self):
+        with self.assertRaises(AccessError):
+            self.env["res.partner"].create({"name": "Manipuliert", "zugfolge_keycloak_subject": "forged-sub"})
+        partner = self.env["res.partner"].create({"name": "OIDC Portal"})
+        with self.assertRaises(AccessError):
+            partner.write({"zugfolge_keycloak_subject": "forged-sub"})
+        partner._bind_zugfolge_keycloak_subject("verified-sub")
+        self.assertEqual(partner.zugfolge_keycloak_subject, "verified-sub")
+        with self.assertRaises(AccessDenied):
+            partner._bind_zugfolge_keycloak_subject("different-sub")
 
     def test_keycloak_requires_verified_email_and_stable_subject(self):
         with self.assertRaises(AccessDenied):

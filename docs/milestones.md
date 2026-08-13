@@ -829,6 +829,10 @@ Gesamtmilestones abgeschlossen. Die konkrete M14.1-Grenze wird vor dem großen
 Datenimport aus den [messbaren Mitteldeutschland-Varianten](mitteldeutschland-alpha.md)
 freigegeben.
 
+<!-- zugfolge-alpha-dag:start
+{"M12.1":["M2","M5","M6","M8"],"M12.2":["M2","M5","M6","M12.1"],"M14.1":["M1","M2","M4","M5","M6","M8","M9.2"],"M9.9":["M14.1"]}
+zugfolge-alpha-dag:end -->
+
 Die Auswahl ist erfolgt: M14.1 verwendet **Variante B — Mitteldeutsches
 Metropol-Korridornetz** aus `docs/mitteldeutschland-alpha.md`.
 Gebietsüberschreitende GTFS-Fahrten folgen
@@ -845,37 +849,42 @@ EVU-Gründung idempotent angewandt und nach Weltstart nicht geändert.
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 9.1 | Eigenes signiertes Tutorial-Deployment, beschleunigt und ungewertet, mit didaktischem Startpaket und fünf geführten Kapiteln | L | offen |
+| 9.1 | Spielergebundene, kurzlebige Tutorialwelt aus Minimaltemplate; fünf geführte Kapitel, Lutz und reale Dauertelemetrie | L | in Arbeit |
 | 9.2 | **Weltstart mit Eigenbetrieb**: das gesamte SPNV-Netz der Region fährt ab Sekunde eins | M | erledigt |
-| 9.2a | **Administrativer Weltstartbestand**: optionaler, versionierter und auditierter Pool konkreter Gebrauchtfahrzeuge einschließlich Zustandsprofil und Lebenslauf; im öffentlichen Deployment Zuweisung nur an Eigenbetrieb und servereigene Vermieter, im getrennten Tutorial-Deployment zusätzlich an das didaktische Startpaket, stets ohne Fahrzeugduplikate | M | offen |
-| 9.3 | Öffentlicher Einstieg ohne Startpaket: weltgebundene Eröffnungsbilanz aus der signierten `StartingCapitalPolicy`, nachgewiesener Nullstart über reguläre Ausschreibung mit weltgebundener `award-contingent-wet-lease`-Mobilisierung sowie Kapazitäts-Heatmap und Glossar-Layer | M | offen |
-| 9.4 | Admin- und Auditwerkzeuge, einschließlich zweiphasiger Odoo-Weltkonfiguration, externer Ed25519-Signatur, Game-seitiger Neuprüfung und Vier-Augen-Prinzip bei Hochrisikoaktionen | M | offen |
-| 9.5 | **Betriebsreife**: Observability, Backup und Restore, Incident-Runbooks. Gehört vor die erste Welt mit echten Spielern, nicht in die Monetarisierungsphase. Der Health-Check-Vertrag (`packages/health`, seit M2) liegt bereits — M9.5 baut Alarmierung, Dashboards und Backup darauf, zieht ihn nicht mehr nachträglich ein | L | offen |
-| 9.6 | Rate Limits, Anti-Bot-Prüfungen, Anomalieerkennung für Trassenfenster und Märkte | M | offen |
-| 9.7 | Telemetrie, Balancing-Dashboards, Feedbackkanal | M | offen |
-| 9.8 | **Weltende** (E18): letzte Periode ohne Ausschreibung, reguläres Vertragsende ohne Insolvenzfolge, Schlusswertung mit mehreren Ranglisten, Archiv und Replay-Export | M | offen |
+| 9.2a | **Administrativer Weltstartbestand**: optionaler, versionierter und auditierter Pool konkreter Gebrauchtfahrzeuge einschließlich Zustandsprofil und Lebenslauf; Zuweisung an Eigenbetrieb und servereigene Vermieter ohne Fahrzeugduplikate | M | offen |
+| 9.3 | Onboarding in der öffentlichen Welt: tatsächliche `StartingCapitalPolicy`, Kapazitäts-Heatmap, Glossar-Layer und Betriebsassistent; keine automatische Startausstattung | M | in Arbeit |
+| 9.4 | Admin- und Auditwerkzeuge, Vier-Augen-Prinzip bei Hochrisikoaktionen | M | in Arbeit |
+| 9.5 | **Betriebsreife**: Observability, Backup und Restore, Incident-Runbooks. Gehört vor die erste Welt mit echten Spielern, nicht in die Monetarisierungsphase. Der Health-Check-Vertrag (`packages/health`, seit M2) liegt bereits — M9.5 baut Alarmierung, Dashboards und Backup darauf, zieht ihn nicht mehr nachträglich ein | L | in Arbeit |
+| 9.6 | Rate Limits, Anti-Bot-Prüfungen, Anomalieerkennung für Trassenfenster und Märkte | M | in Arbeit |
+| 9.7 | Telemetrie, Balancing-Dashboards, Feedbackkanal | M | in Arbeit |
+| 9.8 | **Weltende** (E18): letzte Periode ohne Ausschreibung, reguläres Vertragsende ohne Insolvenzfolge, Schlusswertung mit mehreren Ranglisten, Archiv und Replay-Export | M | in Arbeit |
 | 9.9 | Geschlossene Alpha mit 20–50 externen Spielern in der freigegebenen Mitteldeutschland-Region, einschließlich M12.1/M12.2 | M | offen |
-| 9.10 | **Jährliche Infrastrukturaktualisierung** (E22): `InfraRelease`-Neubau aus aktualisiertem `osm-pbf-lhe` und der Trassenfinder-Infrastruktur-API zu jedem realen Fahrplanwechsel; Übernahmeverfahren für eine laufende Welt zum nächsten Periodenwechsel, ohne Invariante 1 zu verletzen | L | offen |
+| 9.10 | **Jährliche Infrastrukturaktualisierung** (E22): `InfraRelease`-Neubau aus aktualisiertem `osm-pbf-lhe` und der Trassenfinder-Infrastruktur-API zu jedem realen Fahrplanwechsel; Übernahmeverfahren für eine laufende Welt zum nächsten Periodenwechsel, ohne Invariante 1 zu verletzen | L | in Arbeit |
 
-Phase 2 verdrahtet M9.1 und M9.3 im Repository: Odoo-eingeladene Konten
-erhalten Ziel- und Tutorialzugang; Tutorial-Reset und Tutorial-Startpaket laufen
-über autoritative Single-Writer-/Economy-/Operating-Pfade. Die öffentliche
-Reise gründet dagegen ein EVU mit der gehashten Eröffnungs-Policy und verwendet
-für den ersten Zuschlag die im Weltentwurf veröffentlichte
-`award-contingent-wet-lease`-Mobilisierung; danach gelten regulärer Kredit und
-Leasing-/Sekundärmarkt.
-Game Web macht diese Trennung und die Policy sichtbar. Beide Teilabschnitte
-bleiben **offen**, bis ein externes Konto den Browserlauf gegen die neu
-erzeugten und jeweils signierten Tutorial- und Wettbewerbsbestände absolviert
-hat; lokale PGlite-E2Es sind reproduzierbare Vorabbeweise, keine
-Produktionsnachweise.
+M9.1 ist repositoryseitig als persönliche, beim Spielerstart erzeugte Welt
+implementiert: versioniertes Minimaltemplate, echte Economy-/Fleet-/Planning-/
+Operating-/Disruption-Pfade, persistenter Lebenszyklus, Reaper, reale
+Tutorialtelemetrie und der versionierte Lutz-Dialogkatalog. Odoo-Einladungen
+erzeugen ausschließlich Zugang und Konto der öffentlichen Zielwelt; einzelne
+Tutorialinstanzen werden niemals nach Odoo projiziert. M9.1 bleibt **in
+Arbeit**, bis externe Testspieler den realen Browserlauf gegen frisch erzeugte
+Sitzungen absolvieren und der Nachweis Median ≈ 12 Minuten, mindestens 90
+Prozent unter 15 Minuten sowie erste Entscheidung unter 90 Sekunden erfüllt
+ist. Automatisierte PGlite-/Native-/Web-Tests sind Vorabbeweise, keine externe
+Produktabnahme. Der automatisierte Vorabbeweis
+`apps/game-api/src/tutorial-browser.e2e.test.ts` fährt den Game-Web-
+Produktionsbuild in Chrome/Chromium über die echten Session-HTTP-APIs und die
+Linux-NAPI-Pfade durch alle fünf Kapitel bis zur Archivierung; auch dieser Lauf
+ersetzt weder externe Teilnehmer noch die Zeitmessung.
 
-Der signierte Startkapitalvertrag, atomare EVU-Eröffnungsbuchung für `0`,
-positive Integer-Cent und `unlimited` sowie der Odoo-Weltkatalog sind
-repositoryseitig implementiert. Die parallele signierte Welt-Deployment-
-Arbeit bleibt der einzige Weltstartpfad; diese Änderung führt keinen zweiten
-ein. M9.3 bleibt **in Arbeit**, weil Kapazitäts-Heatmap, Glossar-Layer,
-Betriebsassistent und externe Browser-/Odoo-Abnahme noch fehlen.
+M9.3 vergibt keine öffentliche Startausstattung. Sein Geldpfad verwendet die
+signierte und bei der Zugangsbestätigung unveränderlich gebundene
+`StartingCapitalPolicy`: null und endliche Integer-Cent werden bei der ersten
+EVU-Gründung atomar genau einmal ausgeglichen gebucht; der explizite Modus
+`unlimited` bleibt nichtnumerisch und erzeugt keine Startbuchung. Beide Modi
+sind rangneutral. Heatmap, Glossar und Assistent bleiben M9.3-Folgearbeit und
+werden nicht durch die fertige Kapitalintegration oder das Tutorial als
+abgeschlossen ausgegeben.
 
 Phase 3 schließt die noch fehlende ausführbare Betriebsschicht für M9.4,
 M9.5 und M9.7: Einladungskonten werden nur noch über einen Odoo-
@@ -901,18 +910,27 @@ M14.1 nachgewiesen. Die übrige Betriebsreife aus M9.5 bleibt davon unberührt.
 
 ---
 
-## M10 — SPFV
+## M10 — Personenverkehrsnachfrage und SPFV
+
+M10 stellt ein gemeinsames Personenverkehrsmodell für SPNV und SPFV bereit.
+SPFV-Linienplanung bleibt ein eigener Ausbau, verwendet aber dieselben Zonen,
+Reiseketten, Zugwahl- und Kapazitätsregeln. M10 ist die einzige Quelle für die
+Fahrgäste, die M15 später im Schaffnermodus 1:1 projiziert.
 
 | # | Teilabschnitt | Größe | Status |
 |---|---------------|-------|--------|
-| 10.1 | Zonen- und Nachfragemodell; **ÖPNV-Anbindung je Station als statisches Attribut** | **XL** | offen |
-| 10.2 | Verkehrsmittel- und Zugwahl: Preis, Reisezeit, Umstiege, Takt, Zuverlässigkeit, Komfort | L | offen |
-| 10.3 | Tarif- und Vertriebsmodell, Auslastung, Reservierung, Komfortklassen | L | offen |
-| 10.4 | Linien-, Halte- und Taktplanung als Spielerwerkzeug | M | offen |
-| 10.5 | Kalibrierung gegen öffentliche Größenordnungen | M | offen |
+| 10.1 | Gemeinsames Zonen- und Reisenachfragemodell für SPNV und SPFV aus Bevölkerung, Arbeitsplätzen, POIs, Reiseanlässen, Saison und Tageszeit; **ÖPNV-Anbindung je Station als statisches Attribut** | **XL** | offen |
+| 10.2 | Verkehrsmittel-, Verbindungs- und Zugwahl für beide Personenverkehrsarten: Preis, Reisezeit, Umstiege, Takt, Zuverlässigkeit, Komfort und verfügbare Kapazität | **XL** | offen |
+| 10.3 | Tarif-, Vertriebs-, Kapazitäts- und Komfortmodell einschließlich SPNV-Fahrberechtigungen, Überbelegung, zurückbleibender Fahrgäste, Reservierungen und Komfortklassen | L | offen |
+| 10.3a | **Autoritative SPNV-Fahrgastmanifeste** je Zuglaufabschnitt mit stabilen pseudonymen Fahrgastschlüsseln, Reise-/Umstiegskette, Ein- und Ausstieg, exakter Belegung sowie deterministischem Fahrberechtigungsstatus mit Herkunft `observed` oder `balanced` | L | offen |
+| 10.4 | SPFV-spezifische Linien-, Halte- und Taktplanung als Spielerwerkzeug | M | offen |
+| 10.5 | Gemeinsame Kalibrierung von SPNV und SPFV gegen freigegebene öffentliche Größenordnungen | M | offen |
 
-> **Beweis:** Eine neue Fernverkehrslinie verschiebt nachvollziehbar die Ströme,
-> und ein Konkurrent kann darauf wirtschaftlich sinnvoll reagieren.
+> **Beweis:** Ein SPNV-Zug erhält über mehrere Halte reproduzierbare Ein- und
+> Aussteiger, Auslastung und Fahrgastmanifeste; Ausfall und Anschlussverlust
+> verteilen die Reiseketten nachvollziehbar neu. Eine neue Fernverkehrslinie
+> verschiebt dieselben Ströme, und ein Konkurrent kann darauf wirtschaftlich
+> sinnvoll reagieren.
 
 ---
 
@@ -1008,6 +1026,48 @@ Odoo-/Game-Vertrag ist stagefähig. Echte Signatur, namentliche Freigabe,
 erneute Game-Qualifizierung und produktiver Odoo-/Periodenlauf fehlen. Deshalb
 bleibt `activationEligible=false` und der Teilabschnitt ausdrücklich in
 Arbeit.
+
+---
+
+## M15 — Schaffnermodus
+
+Der Schaffnermodus ist gemäß E29 eine optionale, serverautoritative Vertiefung
+des regulären SPNV-Betriebs. Er baut auf M4/M5/M6/M8 und dem gemeinsamen
+Personenverkehrsmodell M10 auf. Die Stationsszenen aus M15.5 benötigen für ihre
+vollständige Releaseabdeckung zusätzlich M14.2. M15 gehört nicht zum
+Alpha-Schnitt. Vollständiger Fachvertrag:
+[`schaffnermodus.md`](schaffnermodus.md).
+
+| # | Teilabschnitt | Größe | Status |
+|---|---------------|-------|--------|
+| 15.1 | **E29, ADR und versionierter Fachvertrag** einschließlich M10-/M8-Autoritätsgrenzen, Kontrolle, Dialog, Wirtschaft, Datenschutz und Abnahme | M | in Arbeit |
+| 15.2 | **M10-Fahrgastmanifeste und deterministische 1:1-Projektion**: jeder tatsächlich reisende Fahrgast wird logisch materialisiert, stabil platziert und kontrollierbar; Rendering darf nur optisch degradieren | L | offen |
+| 15.3 | **Eigene Pixelart-Designsprache und freigegebener Asset-Korpus**: finale erzeugte Figuren-, Innenraum-, Bahnhof- und Umgebungsassets mit `ArtAtlasManifestV1`, Herkunft, Hash und Rechtegates | **XL** | offen |
+| 15.4 | **Konfigurationsgetreue begehbare Fahrzeuginnenräume**: `InteriorLayoutV1` aus Formation und Fahrzeugkonfiguration, Begehbarkeits-, Kollisions- und Kapazitätsnachweis | **XL** | offen |
+| 15.5 | **Fließende Umgebung und modulare Bahnhofsszenen**: Umland/Vorstadt/Stadt, Tageszeit, tatsächliche Geschwindigkeit, Signal-/Bahnhofshalte, kleine/mittlere/große Stationen und dynamische Namen | **XL** | offen |
+| 15.6 | **Versionierter Sprechblasen-Dialogkorpus**: mindestens 150 geprüfte Dialogbäume und 600 Fahrgastäußerungen, verdeckter Sachverhalt, mindestens zwölf Situationsfamilien, kein Laufzeit-Sprachmodell | L | offen |
+| 15.7 | **Autoritative Schaffnersitzung**: Eigentümerberechtigung, Exklusivität, Kommandorevision, Idempotenz, Reconnect, Restore und bitgleiches Replay | L | offen |
+| 15.8 | **Browserintegration**: Bewegung, Interaktion, Sprechblasen, Pixi/WebGL-Projektion, Desktop, Touch, Tastatur, Screenreader und reduzierte Bewegung | **XL** | offen |
+| 15.9 | **Kontrollhalt über Konfliktengine und virtuelle Fahrdienstleiter**: `FareControlHoldV1`, tatsächliche Ressourcenweiterbelegung, Höchstwartezeit, erneute Abfahrtsprüfung und Netzfolgen für alle Zugarten | **XL** | offen |
+| 15.10 | **Polizeireaktion, EBE-Fallabschluss und Verspätungsursache**: deterministische Verfügbarkeit, Bündelung höchstens eines Polizeihalts je Zuglauf, Feststellung, vorläufige/reguläre EBE und `authority.police.fare-control` | L | offen |
+| 15.11 | **Forderungen, Ausfälle und gedeckelte Kontrollprämie**: offene EBE, spätere Zahlung/Reduzierung/Abschreibung, Integer-Cent-Ledger, höchstens vierfache Prämie und 0,5-Prozent-Tagesdeckel | M | offen |
+| 15.12 | **Performance-, Determinismus- und Gesamtannahme**: voller SPNV-Verband, Mehrzug-Golden-Master, Property-Tests für Invariante 1, Browser-/Barrierefreiheitsabnahme und zusammenhängender Spielbeweis | L | offen |
+
+**Teilabhängigkeiten:** M15.1 ist der Einstieg. M15.2 folgt M10.3a und M15.1.
+M15.3 und M15.6 können danach parallel beginnen. M15.4 folgt M15.3 und M5;
+M15.5 folgt M15.3 und M14.2; M15.7 folgt M15.1/M15.2; M15.8 folgt
+M15.3–M15.7; M15.9 folgt M15.7/M15.8 und M8; M15.10 folgt M15.6/M15.9;
+M15.11 folgt M15.10 und M6; M15.12 schließt alle Teile zusammen.
+
+> **Beweis:** Ein eigener ausgelasteter SPNV-Zug wird mit den tatsächlichen
+> M10-Fahrgästen betreten. Der Spieler läuft durch den konfigurationsgetreuen
+> Innenraum, erlebt fließende Umgebung, Signal- und Bahnhofshalte und führt
+> verschiedene Sprechblasenkontrollen durch. Eine Identitätsverweigerung löst
+> am nächsten Bahnhof einen echten Polizeihalt aus: Das Bahnsteiggleis bleibt
+> belegt, virtuelle Fahrdienstleiter ordnen Folge-, Kreuzungs-, Güter-, Leer-
+> und Rangierfahrten konfliktfrei neu, M10 revidiert Reiseketten, und Ledger
+> sowie Pönalen zeigen die vollständige Kausalitätskette. Reload und Replay
+> ergeben denselben Zustand auf Desktop und Touchgerät.
 
 ---
 

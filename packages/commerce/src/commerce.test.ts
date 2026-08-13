@@ -6,11 +6,12 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { AdminWorkflowError, assertPublicWorldSlot, createHttpOdooProjectionClient, createOdooWebhookReceiptStore, deriveReconciliationTasks, dispatchOdooProjectionOutbox, enqueueAlphaFeedbackProjection, enqueueGameAdminCapabilityProjection, entitlementFeatures, processNextOdooCommand, projectionEnvelope, receiveOdooWebhook, reconcileOdooProjectionSnapshot, signPayload, type AdminCommandPayload, type OdooWebhookEnvelope, type SigningKey, validateAdminCommand, WebhookSignatureError, WebhookValidationError } from "./index.js";
+import { ADMIN_ACTION_TYPES, AdminWorkflowError, assertPublicWorldSlot, COMMAND_TYPES, createHttpOdooProjectionClient, createOdooWebhookReceiptStore, deriveReconciliationTasks, dispatchOdooProjectionOutbox, enqueueAlphaFeedbackProjection, enqueueGameAdminCapabilityProjection, entitlementFeatures, listPendingOdooProjectionWorldIds, OdooCommandWorkerInterruptedError, processNextOdooCommand, projectionEnvelope, receiveOdooWebhook, reconcileOdooProjectionSnapshot, signPayload, type AdminCommandPayload, type OdooProjectionEnvelope, type OdooWebhookEnvelope, type SigningKey, validateAdminCommand, WebhookSignatureError, WebhookValidationError } from "./index.js";
 
 const NOW = new Date("2026-08-11T12:00:00.000Z");
 const WORLD = "11111111-1111-4111-8111-111111111111";
-const NEW_WORLD = "22222222-2222-4222-8222-222222222222";
+const OTHER_WORLD = "22222222-2222-4222-8222-222222222222";
+const NEW_WORLD = "33333333-3333-4333-8333-333333333333";
 const KEY: SigningKey = { id: "2026-08", secret: "test-webhook-secret", activeFrom: new Date("2026-01-01T00:00:00Z") };
 
 let client: PGlite;
@@ -68,7 +69,10 @@ beforeEach(async () => {
   client = new PGlite();
   db = drizzle(client, { schema });
   await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
-  await db.insert(worlds).values({ id: WORLD, name: "Testwelt", schedulePeriodWeeks: 4, epoch: NOW });
+  await db.insert(worlds).values([
+    { id: WORLD, name: "Testwelt", schedulePeriodWeeks: 4, epoch: NOW },
+    { id: OTHER_WORLD, name: "Andere Welt", schedulePeriodWeeks: 4, epoch: NOW },
+  ]);
 });
 afterEach(async () => client.close());
 
@@ -123,9 +127,9 @@ describe("Entitlement-Schutzgrenze", () => {
 describe("Bridge", () => {
   it("retryt eine fehlgeschlagene Projektion ohne den Queue-Fortschritt des Games zu blockieren", async () => {
     await db.insert(odooProjectionOutbox).values({ worldId: WORLD, messageType: "world.projection", schemaVersion: "zugfolge-odoo/v1", correlationId: "correlation-bridge", payload: { freshness: "delayed" }, occurredAt: NOW, enqueuedAt: NOW });
-    const failed = await dispatchOdooProjectionOutbox(db, { project: async () => { throw new Error("offline"); } }, NOW);
+    const failed = await dispatchOdooProjectionOutbox(db, WORLD, { project: async () => { throw new Error("offline"); } }, NOW);
     expect(failed).toEqual({ delivered: 0, failed: 1 });
-    const delivered = await dispatchOdooProjectionOutbox(db, { project: async () => undefined }, new Date(NOW.getTime() + 1_000));
+    const delivered = await dispatchOdooProjectionOutbox(db, WORLD, { project: async () => undefined }, new Date(NOW.getTime() + 1_000));
     expect(delivered).toEqual({ delivered: 1, failed: 0 });
     const [row] = await db.select().from(odooProjectionOutbox);
     expect(row?.deliveredAt).toBeDefined();
@@ -146,6 +150,21 @@ describe("Bridge", () => {
       correlationId: "projection-rejected-0001",
       payload: {},
     })).rejects.toThrow(/invalid_signature/);
+  });
+
+  it("liefert nur Projektionen der explizit gebundenen Welt aus", async () => {
+    await db.insert(odooProjectionOutbox).values([
+      { worldId: WORLD, messageType: "world.projection", schemaVersion: "zugfolge-odoo/v1", correlationId: "correlation-local", payload: {}, occurredAt: NOW, enqueuedAt: NOW },
+      { worldId: OTHER_WORLD, messageType: "world.projection", schemaVersion: "zugfolge-odoo/v1", correlationId: "correlation-foreign", payload: {}, occurredAt: NOW, enqueuedAt: NOW },
+    ]);
+    const projectedWorlds: string[] = [];
+    await expect(dispatchOdooProjectionOutbox(db, WORLD, {
+      async project(message) { projectedWorlds.push(message.worldId); },
+    }, NOW)).resolves.toEqual({ delivered: 1, failed: 0 });
+
+    expect(projectedWorlds).toEqual([WORLD]);
+    const [foreign] = await db.select().from(odooProjectionOutbox).where(eq(odooProjectionOutbox.worldId, OTHER_WORLD));
+    expect(foreign?.deliveredAt).toBeNull();
   });
 
   it("legt pseudonymisiertes Alpha-Feedback als weltgebundene Outbox-Projektion ab", async () => {
@@ -171,6 +190,13 @@ describe("Bridge", () => {
 });
 
 describe("Vier-Augen-Validierung", () => {
+  it("haelt nur den signierten Weltstart im Admin-Katalog und keinen direkten Tutorial-Reset", () => {
+    expect(COMMAND_TYPES).toContain("admin.world_deploy");
+    expect(ADMIN_ACTION_TYPES).toContain("world_deploy");
+    expect(COMMAND_TYPES).not.toContain("admin.tutorial_account_reset" as never);
+    expect(ADMIN_ACTION_TYPES).not.toContain("tutorial_account_reset" as never);
+  });
+
   it("akzeptiert endliches und unbegrenztes Startkapital nur als signierte, weltgebundene Policy", () => {
     expect(() => validateAdminCommand(worldDeployCommand())).not.toThrow();
     expect(() => validateAdminCommand(worldDeployCommand({ mode: "unlimited" }))).not.toThrow();
@@ -335,6 +361,29 @@ describe("Vier-Augen-Validierung", () => {
       auditScope: "global",
       gameAuditEventId: `global-admin-audit:${audit?.id}`,
     });
+    expect(await listPendingOdooProjectionWorldIds(db)).toContain(NEW_WORLD);
+    const projected: OdooProjectionEnvelope[] = [];
+    await expect(dispatchOdooProjectionOutbox(db, NEW_WORLD, {
+      project: (message) => {
+        projected.push(message);
+        return Promise.resolve();
+      },
+    }, NOW)).resolves.toEqual({ delivered: 1, failed: 0 });
+    expect(projected).toEqual([
+      expect.objectContaining({
+        worldId: NEW_WORLD,
+        messageType: "admin.command.result",
+        correlationId: "correlation-pre-world-reject",
+      }),
+    ]);
+    expect(await listPendingOdooProjectionWorldIds(db)).not.toContain(NEW_WORLD);
+    const [rejected] = await db.select().from(odooCommandQueue).where(eq(odooCommandQueue.eventId, payload.eventId));
+    expect(rejected).toMatchObject({
+      status: "rejected",
+      claimToken: null,
+      claimExpiresAt: null,
+      failureCode: "GameAdminCapabilityUnavailableError",
+    });
   });
 
   it("queue't und auditiert ein signiertes Deployment, obwohl die Zielwelt erst im Game-Handler entsteht", async () => {
@@ -420,8 +469,9 @@ describe("Vier-Augen-Validierung", () => {
     await expect(processNextOdooCommand(db, NOW, processing)).rejects.toThrow(/Fleet-Startfehler/);
     const [pending] = await db.select().from(odooCommandQueue).where(eq(odooCommandQueue.eventId, payload.eventId));
     const [approved] = await db.select().from(schema.gameAdminRequests).where(eq(schema.gameAdminRequests.worldId, NEW_WORLD));
-    expect(pending).toMatchObject({ status: "pending", processedAt: null, failureCode: null });
+    expect(pending).toMatchObject({ status: "pending", processedAt: null, claimToken: null, claimExpiresAt: null, failureCode: null });
     expect(approved).toMatchObject({ state: "approved", commandId: pending!.id, gameAuditEventId: null });
+    expect(approved?.id).toBe(pending?.id);
     expect(await db.select().from(odooProjectionOutbox).where(eq(odooProjectionOutbox.worldId, NEW_WORLD))).toHaveLength(0);
 
     await expect(processNextOdooCommand(db, new Date(NOW.getTime() + 1_000), processing)).resolves.toMatchObject({ outcome: "accepted" });
@@ -429,6 +479,59 @@ describe("Vier-Augen-Validierung", () => {
     expect(await db.select().from(schema.gameAdminRequests).where(eq(schema.gameAdminRequests.worldId, NEW_WORLD))).toEqual([
       expect.objectContaining({ id: approved!.id, state: "completed", gameAuditEventId: expect.any(String) }),
     ]);
+  });
+
+  it("haelt einen Callbackfehler nach bereits aktivierter Welt retrybar und meldet ihn nie als abgelehnt", async () => {
+    const payload: OdooWebhookEnvelope = {
+      ...entitlementEnvelope("odoo-event-world-deploy-callback-retry"),
+      correlationId: "correlation-world-deploy-callback-retry",
+      actorReference: "admin-service",
+      command: worldDeployCommand({ mode: "finite", amountCents: "0" }, NEW_WORLD),
+    };
+    await receiveOdooWebhook(
+      createOdooWebhookReceiptStore(db),
+      signPayload(payload, KEY, NOW),
+      { tenantId: "zugfolge-production", keys: [KEY], authorizedActors: { "admin-service": ["admin.world_deploy"] } },
+      NOW,
+    );
+    let attempts = 0;
+    const processing = {
+      adminHandlers: {
+        world_deploy: async (context: {
+          readonly markEffectApplied?: () => void;
+        }) => {
+          attempts += 1;
+          if (attempts === 1) {
+            await db.insert(worlds).values({
+              id: NEW_WORLD,
+              name: "Oeffentliche Testwelt",
+              schedulePeriodWeeks: 4,
+              epoch: new Date("2026-12-13T00:00:00.000Z"),
+              lifecycleStatus: "active",
+            });
+          }
+          context.markEffectApplied?.();
+          if (attempts === 1) throw new Error("transienter Runtime-Callbackfehler");
+          return { state: "completed" as const, gameAuditEventId: `world-deploy:${NEW_WORLD}` };
+        },
+      },
+    };
+
+    await expect(processNextOdooCommand(db, NOW, processing)).rejects.toThrow(/Runtime-Callbackfehler/);
+    const [pending] = await db.select().from(odooCommandQueue).where(eq(odooCommandQueue.eventId, payload.eventId));
+    expect(pending).toMatchObject({
+      status: "pending",
+      processedAt: null,
+      claimToken: null,
+      claimExpiresAt: null,
+      failureCode: null,
+    });
+    expect(await db.select().from(odooProjectionOutbox).where(eq(odooProjectionOutbox.correlationId, payload.correlationId))).toHaveLength(0);
+    expect(await db.select().from(schema.globalAdminAuditEvents).where(eq(schema.globalAdminAuditEvents.commandId, pending!.id))).toHaveLength(0);
+
+    await expect(processNextOdooCommand(db, new Date(NOW.getTime() + 1), processing))
+      .resolves.toMatchObject({ outcome: "accepted" });
+    expect(attempts).toBe(2);
   });
 
   it("behandelt jeden Weltzugangsentzug als Hochrisikoaktion", async () => {
@@ -475,63 +578,200 @@ describe("Vier-Augen-Validierung", () => {
     expect(projections[0]?.payload).toMatchObject({ outcome: "accepted", gameAuditEventId: audit[0]?.gameAuditEventId, effectAuditReference: "game-audit-infra-001" });
   });
 
-  it("verwendet den bestehenden Antrag beim Pending-Retry nach einem fehlgeschlagenen Outbox-Commit wieder", async () => {
+  it("claimt einen Administrationsbefehl atomar und fuehrt ihn bei parallelen Workern nur einmal aus", async () => {
     const payload: OdooWebhookEnvelope = {
-      ...entitlementEnvelope("odoo-event-admin-retry"),
-      correlationId: "correlation-admin-retry",
-      actorReference: "admin-service",
-      command: {
-        kind: "admin.infra_release_adoption",
-        worldId: WORLD,
-        actionType: "infra_release_adoption",
-        riskClass: "high",
-        requesterReference: "requester",
-        approverReference: "approver",
-        reason: "Retry nach nachgelagertem Outboxfehler",
-        effectPreview: { releaseHash: "a".repeat(64) },
-        releaseHash: "a".repeat(64),
-        requestedPeriodStart: "2026-12-13T00:00:00.000Z",
-      },
+      ...entitlementEnvelope("odoo-event-race"), actorReference: "admin-service", correlationId: "correlation-race",
+      command: { kind: "admin.infra_release_adoption", worldId: WORLD, actionType: "infra_release_adoption", riskClass: "high", requesterReference: "requester", approverReference: "approver", reason: "Parallele Worker pruefen", effectPreview: { releaseHash: "c".repeat(64) }, releaseHash: "c".repeat(64), requestedPeriodStart: "2026-12-13T00:00:00.000Z" },
     };
     await receiveOdooWebhook(createOdooWebhookReceiptStore(db), signPayload(payload, KEY, NOW), {
-      tenantId: "zugfolge-production",
-      keys: [KEY],
-      authorizedActors: { "admin-service": ["admin.infra_release_adoption"] },
+      tenantId: "zugfolge-production", keys: [KEY], authorizedActors: { "admin-service": ["admin.infra_release_adoption"] },
     }, NOW);
-    const handlerRequestIds: string[] = [];
+
     let handlerCalls = 0;
-    const circularResult: Record<string, unknown> = {};
-    circularResult["self"] = circularResult;
+    let announceStarted!: () => void;
+    let releaseHandler!: () => void;
+    const started = new Promise<void>((resolve) => { announceStarted = resolve; });
+    const blocked = new Promise<void>((resolve) => { releaseHandler = resolve; });
     const options = {
       adminHandlers: {
-        infra_release_adoption: ({ adminRequestId }: { readonly adminRequestId: string }) => {
+        infra_release_adoption: async () => {
           handlerCalls += 1;
-          handlerRequestIds.push(adminRequestId);
-          return handlerCalls === 1
-            ? { gameAuditEventId: "game-audit-retry", result: circularResult }
-            : { gameAuditEventId: "game-audit-retry", result: { releaseHash: "a".repeat(64) } };
+          announceStarted();
+          await blocked;
+          return { state: "completed" as const, gameAuditEventId: "game-audit-race" };
+        },
+      },
+    };
+    const firstWorker = processNextOdooCommand(db, NOW, options);
+    await started;
+    let secondResult;
+    try {
+      secondResult = await processNextOdooCommand(db, new Date(NOW.getTime() + 1_000), options);
+    } finally {
+      releaseHandler();
+    }
+
+    await expect(firstWorker).resolves.toMatchObject({ outcome: "accepted" });
+    expect(secondResult).toBeUndefined();
+    expect(handlerCalls).toBe(1);
+    const [queue] = await db.select().from(odooCommandQueue).where(eq(odooCommandQueue.eventId, payload.eventId));
+    expect(queue).toMatchObject({ status: "completed", claimToken: null, claimExpiresAt: null, failureCode: null });
+    expect(await db.select().from(schema.gameAdminRequests).where(eq(schema.gameAdminRequests.worldId, WORLD))).toHaveLength(1);
+  });
+
+  it("erneuert den Claim waehrend eines ueberlangen Handlers und verhindert die zweite Geschaeftswirkung", async () => {
+    const payload: OdooWebhookEnvelope = {
+      ...entitlementEnvelope("odoo-event-heartbeat"), actorReference: "admin-service", correlationId: "correlation-heartbeat",
+      command: { kind: "admin.infra_release_adoption", worldId: WORLD, actionType: "infra_release_adoption", riskClass: "high", requesterReference: "requester", approverReference: "approver", reason: "Lease-Ablauf mit zwei Workern pruefen", effectPreview: { releaseHash: "e".repeat(64) }, releaseHash: "e".repeat(64), requestedPeriodStart: "2026-12-13T00:00:00.000Z" },
+    };
+    await receiveOdooWebhook(createOdooWebhookReceiptStore(db), signPayload(payload, KEY, NOW), {
+      tenantId: "zugfolge-production", keys: [KEY], authorizedActors: { "admin-service": ["admin.infra_release_adoption"] },
+    }, NOW);
+
+    let logicalNow = NOW;
+    let handlerCalls = 0;
+    let announceStarted!: () => void;
+    let releaseHandler!: () => void;
+    const started = new Promise<void>((resolve) => { announceStarted = resolve; });
+    const blocked = new Promise<void>((resolve) => { releaseHandler = resolve; });
+    const options = {
+      claimLeaseMs: 1_000,
+      claimHeartbeatMs: 25,
+      claimClock: () => logicalNow,
+      adminHandlers: {
+        infra_release_adoption: async () => {
+          handlerCalls += 1;
+          announceStarted();
+          await blocked;
+          return { state: "completed" as const, gameAuditEventId: "game-audit-heartbeat" };
         },
       },
     };
 
-    await expect(processNextOdooCommand(db, NOW, options)).rejects.toThrow();
-    const [pending] = await db.select().from(odooCommandQueue).where(eq(odooCommandQueue.eventId, payload.eventId));
-    const [persistedRequest] = await db.select().from(schema.gameAdminRequests);
-    expect(handlerCalls).toBe(1);
-    expect(pending).toMatchObject({ status: "pending", processedAt: null });
-    expect(persistedRequest).toMatchObject({ commandId: pending!.id, state: "approved", gameAuditEventId: null });
-    expect(handlerRequestIds).toEqual([persistedRequest!.id]);
-    expect(await db.select().from(schema.domainEvents)).toHaveLength(0);
-    expect(await db.select().from(odooProjectionOutbox)).toHaveLength(0);
+    const firstWorker = processNextOdooCommand(db, NOW, options);
+    await started;
+    logicalNow = new Date(NOW.getTime() + 1_500);
 
-    await expect(processNextOdooCommand(db, new Date(NOW.getTime() + 1_000), options)).resolves.toMatchObject({ outcome: "accepted" });
-    expect(handlerCalls).toBe(2);
-    expect(handlerRequestIds).toEqual([persistedRequest!.id, persistedRequest!.id]);
-    expect(await db.select().from(schema.gameAdminRequests)).toEqual([
-      expect.objectContaining({ id: persistedRequest!.id, state: "accepted", gameAuditEventId: expect.any(String) }),
-    ]);
-    expect(await db.select().from(schema.domainEvents)).toHaveLength(1);
-    expect(await db.select().from(odooProjectionOutbox)).toHaveLength(1);
+    let renewed = false;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const [queue] = await db.select({ claimExpiresAt: odooCommandQueue.claimExpiresAt })
+        .from(odooCommandQueue)
+        .where(eq(odooCommandQueue.eventId, payload.eventId));
+      if ((queue?.claimExpiresAt?.getTime() ?? 0) > logicalNow.getTime()) {
+        renewed = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(renewed).toBe(true);
+
+    let secondResult;
+    try {
+      secondResult = await processNextOdooCommand(db, logicalNow, options);
+    } finally {
+      releaseHandler();
+    }
+    await expect(firstWorker).resolves.toMatchObject({ outcome: "accepted" });
+    expect(secondResult).toBeUndefined();
+    expect(handlerCalls).toBe(1);
+  });
+
+  it("uebernimmt einen abgelaufenen Worker-Claim nach einem Prozessabbruch", async () => {
+    const payload: OdooWebhookEnvelope = {
+      ...entitlementEnvelope("odoo-event-stale-claim"), actorReference: "admin-service", correlationId: "correlation-stale-claim",
+      command: { kind: "admin.infra_release_adoption", worldId: WORLD, actionType: "infra_release_adoption", riskClass: "high", requesterReference: "requester", approverReference: "approver", reason: "Abgebrochenen Worker fortsetzen", effectPreview: { releaseHash: "d".repeat(64) }, releaseHash: "d".repeat(64), requestedPeriodStart: "2026-12-13T00:00:00.000Z" },
+    };
+    await receiveOdooWebhook(createOdooWebhookReceiptStore(db), signPayload(payload, KEY, NOW), {
+      tenantId: "zugfolge-production", keys: [KEY], authorizedActors: { "admin-service": ["admin.infra_release_adoption"] },
+    }, NOW);
+    await db.update(odooCommandQueue).set({
+      status: "processing",
+      claimToken: "abandoned-worker",
+      claimExpiresAt: new Date(NOW.getTime() - 1),
+      processedAt: new Date(NOW.getTime() - 60_000),
+    }).where(eq(odooCommandQueue.eventId, payload.eventId));
+
+    await expect(processNextOdooCommand(db, NOW, {
+      adminHandlers: { infra_release_adoption: () => ({ state: "completed", gameAuditEventId: "game-audit-recovered" }) },
+    })).resolves.toMatchObject({ outcome: "accepted" });
+    const [queue] = await db.select().from(odooCommandQueue).where(eq(odooCommandQueue.eventId, payload.eventId));
+    expect(queue).toMatchObject({ status: "completed", claimToken: null, claimExpiresAt: null });
+  });
+
+  it("wiederholt nach Abbruch zwischen Wirkung und Finalisierung nur denselben idempotenten Facheffekt", async () => {
+    const payload: OdooWebhookEnvelope = {
+      ...entitlementEnvelope("odoo-event-effect-crash"), actorReference: "admin-service", correlationId: "correlation-effect-crash",
+      command: { kind: "admin.infra_release_adoption", worldId: WORLD, actionType: "infra_release_adoption", riskClass: "high", requesterReference: "requester", approverReference: "approver", reason: "Abbruch nach Wirkung reproduzieren", effectPreview: { releaseHash: "f".repeat(64) }, releaseHash: "f".repeat(64), requestedPeriodStart: "2026-12-13T00:00:00.000Z" },
+    };
+    await receiveOdooWebhook(createOdooWebhookReceiptStore(db), signPayload(payload, KEY, NOW), {
+      tenantId: "zugfolge-production", keys: [KEY], authorizedActors: { "admin-service": ["admin.infra_release_adoption"] },
+    }, NOW);
+
+    let calls = 0;
+    const appliedEffects = new Set<string>();
+    const handler = (context: { readonly commandId: string; readonly effectIdempotencyKey: string }) => {
+      calls += 1;
+      appliedEffects.add(context.effectIdempotencyKey);
+      if (calls === 1) throw new OdooCommandWorkerInterruptedError(context.commandId);
+      return { state: "completed" as const, gameAuditEventId: `game-audit:${context.effectIdempotencyKey}` };
+    };
+    const options = {
+      claimLeaseMs: 1_000,
+      claimHeartbeatMs: 100,
+      claimClock: () => NOW,
+      adminHandlers: { infra_release_adoption: handler },
+    };
+
+    await expect(processNextOdooCommand(db, NOW, options)).rejects.toBeInstanceOf(OdooCommandWorkerInterruptedError);
+    const [interrupted] = await db.select().from(odooCommandQueue).where(eq(odooCommandQueue.eventId, payload.eventId));
+    expect(interrupted).toMatchObject({ status: "processing", failureCode: null });
+
+    await expect(processNextOdooCommand(db, new Date(NOW.getTime() + 1_001), options))
+      .resolves.toMatchObject({ outcome: "accepted" });
+    expect(calls).toBe(2);
+    expect(appliedEffects.size).toBe(1);
+    const [completed] = await db.select().from(odooCommandQueue).where(eq(odooCommandQueue.eventId, payload.eventId));
+    expect(completed).toMatchObject({ status: "completed", claimToken: null, claimExpiresAt: null, failureCode: null });
+  });
+
+  it("meldet einen erfolgreichen Handler bei nachgelagertem Outboxfehler niemals als abgelehnt", async () => {
+    const payload: OdooWebhookEnvelope = {
+      ...entitlementEnvelope("odoo-event-finalization-retry"), actorReference: "admin-service", correlationId: "correlation-finalization-retry",
+      command: { kind: "admin.infra_release_adoption", worldId: WORLD, actionType: "infra_release_adoption", riskClass: "high", requesterReference: "requester", approverReference: "approver", reason: "Finalisierung nach sicherer Wirkung wiederholen", effectPreview: { releaseHash: "9".repeat(64) }, releaseHash: "9".repeat(64), requestedPeriodStart: "2026-12-13T00:00:00.000Z" },
+    };
+    await receiveOdooWebhook(createOdooWebhookReceiptStore(db), signPayload(payload, KEY, NOW), {
+      tenantId: "zugfolge-production", keys: [KEY], authorizedActors: { "admin-service": ["admin.infra_release_adoption"] },
+    }, NOW);
+
+    let calls = 0;
+    const effectKeys = new Set<string>();
+    const handler = (context: { readonly effectIdempotencyKey: string }) => {
+      calls += 1;
+      effectKeys.add(context.effectIdempotencyKey);
+      return calls === 1
+        ? { state: "completed" as const, gameAuditEventId: "game-audit-finalization", result: { unsupportedJson: 1n } }
+        : { state: "completed" as const, gameAuditEventId: "game-audit-finalization" };
+    };
+
+    await expect(processNextOdooCommand(db, NOW, {
+      adminHandlers: { infra_release_adoption: handler },
+    })).rejects.toThrow();
+    const [retryable] = await db.select().from(odooCommandQueue).where(eq(odooCommandQueue.eventId, payload.eventId));
+    expect(retryable).toMatchObject({
+      status: "pending",
+      processedAt: null,
+      claimToken: null,
+      claimExpiresAt: null,
+      failureCode: null,
+    });
+    expect(await db.select().from(schema.domainEvents).where(eq(schema.domainEvents.worldId, WORLD))).toHaveLength(0);
+    expect(await db.select().from(odooProjectionOutbox).where(eq(odooProjectionOutbox.correlationId, payload.correlationId))).toHaveLength(0);
+
+    await expect(processNextOdooCommand(db, new Date(NOW.getTime() + 1), {
+      adminHandlers: { infra_release_adoption: handler },
+    })).resolves.toMatchObject({ outcome: "accepted" });
+    expect(calls).toBe(2);
+    expect(effectKeys.size).toBe(1);
   });
 
   it("haelt eine manuelle Stoerung ohne M8-Game-Handler vorbereitet und sichtbar wirkungslos", async () => {

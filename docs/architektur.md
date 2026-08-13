@@ -53,6 +53,44 @@ Infra-Release-Pipeline (Batch, offline) — Rust
         OSM-PBF + Höhenmodell + Stationsdaten → versionierter InfraRelease
 ```
 
+### 2.0a Kurzlebige Tutorialwelten
+
+Der öffentliche Weltstart und der Tutorialstart sind getrennte Orchestratoren:
+
+```text
+POST /worlds/:publicWorldId/tutorial-sessions
+        │ weltgebundenes Konto sperren; aktive Sitzung wiederverwenden
+TutorialSessionService
+        │ tut_<base32> ↔ interne Tutorial-Welt-UUID
+TutorialWorldFactory
+        ├─ private/unranked Welt + profileKind=tutorial
+        ├─ echtes Ledger, Economy, Fleet und Planning
+        ├─ echtes Betriebsprogramm und Rust-Dispatcher
+        └─ regionale Störung + finale Zustands-Hashes
+```
+
+Pro öffentlichem Weltkonto existiert höchstens eine aktive Sitzung. Die
+partielle Datenbank-Unique-Constraint und eine Kontosperre serialisieren
+Parallelstarts. Provisionierung und Kapitelaktionen tragen persistente
+Schritt-/Kommando-IDs; ein Prozessneustart setzt sie fort. Alle Fachdaten,
+Indizes und Events behalten die interne `world_id`-UUID. Nur die externe,
+kryptographisch zufällige Referenz beginnt mit `tut_`.
+
+Der Lebenszyklus lautet `provisioning → running → summary → closing →
+archived`, ergänzt um `failed`. Idle-TTL, maximale Dauer und die fünfminütige
+Summary-Schonfrist werden mit einer injizierbaren realen Uhr außerhalb des
+Simulationskerns geprüft. Der Reaper schließt Economy und Welt idempotent,
+entzieht den Zugang und persistiert Abschlussgrund und finalen Hash. Nach
+`closing` werden Kommandos abgelehnt. Diese eng begrenzte, ungewertete
+Weltklasse ist die dokumentierte Ausnahme vom No-Wipe-Vertrag öffentlicher
+Welten.
+
+Tutorialprofile werden aus administrativen Odoo-Weltlisten und Projektionen
+ausgeschlossen. Einladung, Weltstartantrag, Vier-Augen-Verfahren und Odoo-
+Outbox kennen keine einzelne Tutorialinstanz. Betriebstelemetrie nutzt nur
+niedrigkardinale Dimensionen wie Templateversion, Kapitel und Ereignistyp;
+individuelle Welt-UUIDs sind keine Prometheus-Labels.
+
 **Warum der Kern in Rust liegt.** Nicht wegen der laufenden Simulation — die
 liefe auch in TypeScript. Sondern weil im Kern drei Anforderungen
 zusammentreffen, die sonst nirgends zusammenfallen: nationale Rechenlast im
@@ -171,49 +209,29 @@ aber trägt zwingend `activationEligible=false`. Odoo kann diese Grenze nicht
 übersteuern; erst Signatur, erneute Game-Qualifizierung und der bestehende
 Vier-Augen-Periodenwechsel dürfen eine Aktivierung vorbereiten.
 
-### 2.2 Weltkonfiguration und signierter Start (E23, E28)
+### 2.2 Schaffnermodus als autorisierte Detailprojektion (E29)
 
-Tutorial und öffentliche Wettbewerbswelt sind keine zwei Modi desselben
-laufenden Zustands, sondern getrennte signierte Deployments. Der Tutorial-
-Blueprint ist privat, ungewertet und beschleunigt und darf ein didaktisches
-Startpaket binden. Der öffentliche Blueprint läuft 1:1 und bindet ausdrücklich
-kein Startpaket. Beide enthalten ihre eigenen Weltkennungen, Profile,
-Release-Pins und Hashes.
+M15 führt keinen zweiten Simulationskern ein. Das gemeinsame
+Personenverkehrsmodell M10 liefert ein revisioniertes `PassengerManifestV1`;
+der Schaffnermodus materialisiert daraus deterministisch eine private
+1:1-Innenraumprojektion. Sichtbare Dialogknoten und Spielerposition laufen über
+Snapshot und sequenzierte SSE-Deltas. Verdeckter Fahrberechtigungsstatus,
+Dialoggewichte, Polizeireaktion und Buchungen verbleiben serverseitig.
 
-Die `StartingCapitalPolicy` der Wettbewerbswelt ist Teil des kanonischen
-Blueprints. `finite` serialisiert nichtnegative Integer-Cent im i64-Bereich als
-Dezimalstring; `unlimited` ist ein eigener Modus ohne Zahlenwert. Die Policy
-fließt in Blueprint- und Deployment-Hash, Weltstart-Event und Game-zu-Odoo-
-Projektion ein. Nach `running` ist sie unveränderlich. So können weder ein
-Adminformular noch ein späterer Prozess die Eröffnungsbedingungen einer
-rangierten Welt verschieben.
+Der Datenfluss ist strikt gerichtet: M10 liefert Nachfrage, M15 nimmt
+autorisierte Kommandos an, M8 entscheidet über Konfliktressourcen und
+Abfahrtsrecht, M4 propagiert Verspätung, M10 revidiert betroffene Reiseketten
+und M6 bucht Forderungen und Folgen. Ein `FareControlHoldV1` ist ein
+persistenter Domainzustand und überlebt Browser- oder Sitzungsende. Er schreibt
+keine Sonderbelegung, sondern verlängert die tatsächliche Ist-Belegung im
+regionalen `CapacityLedger`.
 
-Der Vertrauenspfad besitzt zwei verschiedene Signaturen:
-
-```text
-Odoo-Konfiguration
-  → kanonischer Blueprint-Kandidat + Hash
-  → externer Ed25519-Signer
-  → signiertes Welt-Deployment
-  → HMAC-geschützter, typisierter Odoo-Befehl
-  → Game: Ed25519-, Hash-, Welt-, Release- und Policy-Prüfung
-  → autoritativer Weltstart + read-only Odoo-Projektion
-```
-
-Der HMAC-Schlüssel authentifiziert Transport, Mandant und Akteur; er darf den
-außerhalb von Odoo verwahrten Ed25519-Release-Schlüssel nicht ersetzen. Odoo
-konfiguriert und auditiert, startet aber keine Welt selbst. Das Game lehnt jede
-Abweichung zwischen Odoo-Feldern, signiertem Deployment und bereits
-persistierter Projektion ab. Ein unsignierter Kandidat darf gespeichert oder
-geprüft, aber nicht als Welt gestartet werden.
-
-Bei der öffentlichen EVU-Gründung liest die Game-API die Policy ausschließlich
-aus dem bereits laufenden, signierten Blueprint. Stammdaten, Ledgerkonten und
-eine endliche Eröffnungsbuchung entstehen atomar und idempotent in derselben
-Welt. Der Nullstartpfad ist als `award-contingent-wet-lease` ebenfalls im
-Blueprint gebunden: vor Zuschlag nur Kalkulation, danach erneute M5-Prüfung von
-Formation, Personal und Trasse. Das Onboarding besitzt keinen zweiten Writer
-für kostenlose Betriebsmittel. → [ADR-0028](adr/0028-getrennter-tutorial-und-wettbewerbsstart.md)
+Die API liegt unter
+`/worlds/{worldId}/operators/{operatorId}/trains/{trainRunId}/conductor-sessions`.
+Jedes Kommando trägt Welt, Sitzung, erwartete Revision und Idempotenzschlüssel.
+Asset- und Dialogreleases sind gepinnt; Bild- oder Textgenerierung sowie andere
+externe Dienste sind im Laufzeitpfad verboten. Vollständiger Vertrag:
+[`schaffnermodus.md`](schaffnermodus.md).
 
 ## 3. Was einen späteren Umbau erzwingen würde
 

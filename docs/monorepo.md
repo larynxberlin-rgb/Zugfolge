@@ -39,6 +39,7 @@ packages/                   TypeScript — fachliche Bibliotheken (ab M2)
   livemap/                  Weltisolierter Snapshot-/Delta-Fanout (M4.6)
   runtime-native/           Fail-closed Loader für Flotten-, Betriebs- und Regional-Runtimes
   dispatch/                 Kanonischer M7-Plattformvertrag, EVU-Projektionen und Operations-Stream
+  cooperation/              EVU-Verträge, Fahrzeug-Sekundärmarkt und Störungshilfe (M12.1/M12.2)
   commerce/                 Entitlements, signierte Odoo-Grenze, idempotente Queue und Bridge (M13)
 odoo/addons/zugfolge_admin/ Eigenes Odoo-Administrationsmodul; keine Odoo-Instanz oder OCA-Quellkopie
 apps/                       TypeScript — Dienste und Frontend (ab M2 / M4)
@@ -217,13 +218,16 @@ Liste ist keine vollständige Karte des Repositoriums, sondern die Zuordnung
 | Domäne | Pfade | Status | Was dort besonders gilt |
 |--------|-------|--------|-------------------------|
 | `determinism-core` | `crates/zugfolge-determinism/**` | aktiv | ganzzahlig, uhrfrei, geordnet — der Harnisch muss selbst halten, was er prüft |
-| `simulation-core` | `crates/zugfolge-sim/**`, `crates/zugfolge-sim-runtime/**`, `crates/zugfolge-runtime/**`, `crates/zugfolge-conflict/**`, `crates/zugfolge-fleet/**`, `crates/zugfolge-disruption/**`, `spikes/**` | aktiv | vollständiger Kernvertrag: kein Bezahlstatus, keine Uhr, keine Datenbank |
+| `simulation-core` | `crates/zugfolge-sim/**`, `crates/zugfolge-sim-runtime/**`, `crates/zugfolge-runtime{,-napi}/**`, `crates/zugfolge-conflict/**`, `crates/zugfolge-fleet/**`, `crates/zugfolge-disruption/**`, `packages/runtime-native/**`, `spikes/**` | aktiv | vollständiger Kernvertrag: kein Bezahlstatus, keine Uhr, keine Datenbank |
 | `path-allocation` | `crates/zugfolge-planner/**`, `crates/zugfolge-planning-runtime{,-napi}/**`, `packages/path-allocation/**`, `packages/planning-{projection,runtime-native,worker}/**` | aktiv | Reihenfolge und Bezahlstatus beeinflussen das Ergebnis nicht (E4, `infrastruktur.md` 2) |
 | `dispatch` | `crates/zugfolge-rules/**`, `packages/dispatch/**` | aktiv | das Betriebsprogramm wirkt offline und für alle gleich (E2, E13) |
 | `demand` | `packages/demand/**`, `crates/zugfolge-demand/**` | geplant | Nachfrage folgt dem Angebot, nie dem Vertrag des Spielers |
-| `economy` | `packages/economy/**`, `packages/tender/**`, `apps/economy-service/**` | aktiv | Ledger in Integer-Cent (M2.4); Wertung deterministisch aus dem `EconomyRelease` (M6) |
+| `economy` | `packages/economy/**`, `packages/cooperation/**`, `packages/tender/**`, `apps/economy-service/**` | aktiv | Ledger und Kooperation in Integer-Cent; Wertung deterministisch aus dem `EconomyRelease` (M6/M12) |
 | `infra-pipeline` | `crates/zugfolge-infra/**` | aktiv | **der einzige Ort mit Gleitkommarechnung** — sie endet in ganzzahligen Fahrzeittabellen |
 | `world-isolation` | `packages/db/**` | aktiv | Postgres-Zugriff der Game-Services; Wurzel der Weltisolation — `worlds`, das Event-Log und das weltgebundene Repository (M2.2) |
+| `release-tools` | `tools/reference-corpus/**`, `tools/reference-model/**`, `tools/region-import/**`, `tools/tiles/**` | aktiv | nicht autoritative Datei-I/O-, Import- und Kartenadapter; Freigabeentscheidungen bleiben in Rust |
+| `operations-tools` | `tools/alpha-ops/**`, `tools/guards/**`, `tools/load/**`, `tools/m7-acceptance/**`, `tools/m7-e2e/**` | aktiv | Betriebs-, Abnahme-, Last- und Governance-Werkzeuge ohne fachliche Laufzeitautorität |
+| `platform-services` | explizit aufgezählte übrige `packages/*` und `apps/*` | aktiv | vollständige Zuordnung aller Produktionspakete; neue Pakete erzwingen vor dem ersten Commit eine bewusste Wächterentscheidung |
 
 **Status ist kein Kommentar, sondern eine Prüfung.** Eine `aktive` Domäne muss
 Dateien treffen, eine `geplante` darf keine treffen. Legt jemand
@@ -239,6 +243,41 @@ Trassenkandidat entstanden war. Genauso
 `infra-pipeline` in M1.1, mit dem ersten Domänenmodell des Betriebsgraphen —
 und `economy` in M2.4, mit dem ersten Code des Ledger-Kerns in
 `packages/economy`.
+
+Die öffentliche InfraRelease-, Jahresplan- und technische
+Referenzkorpus-Qualifikationsbildung liegt mit `zugfolge-infra-release`
+vollständig in `crates/zugfolge-infra`. Die
+JavaScript-Einstiege unter `tools/region-import/` dürfen nur Dateipfade und den
+Rust-Prozess orchestrieren. Das gilt ebenso für den synchronen Aufruf aus
+`tools/reference-corpus/artifact-chain.mjs`: Capture-Konfiguration, Korpus,
+Qualifikationsnachweis, getrennte Kalibrierungs- und Validierungsdatensätze samt
+Konfigurationen, Modellkonfiguration, Modellergebnis, Report und Kandidat werden
+jeweils als Record plus exakte Bytes an Rust übergeben. Rust hasht und parst sie
+selbst, rekonstruiert den disjunkten Holdout-Vergleich und entscheidet anhand der
+eingefrorenen Toleranz. Bei Ketten-, Bundle- und Signaturprüfung erhält derselbe
+Rust-Verifier außerdem Capture-Manifest, Quellarchiv, jede Quelltabelle,
+normalisierte Beobachtungen und das gespeicherte Release-Manifest. JavaScript
+transportiert nur sichere relative Pfade, Dateien, Prozessaufruf und Ergebnis.
+Der Repository-Wächter `rust-release-pipeline`
+verhindert eine zweite autoritative Schema-, Rechte-, Qualifikations- oder
+Freigabeentscheidung in JavaScript oder TypeScript (E5/M1.12).
+
+Die ältere JavaScript-Korpusbildung ist nur noch ein mit
+`ZUGFOLGE_NON_AUTHORITATIVE_CORPUS_BUILD=1` ausdrücklich zu aktivierender,
+nicht autoritativer Build-Zwischenschritt. Sie kann weder
+Manifest noch Jahresplan erzeugen und damit keinen Release freigeben. Der
+produktive Jahreslauf endet zwingend im Rust-Compiler; eine spätere Portierung
+weiterer Importadapter ändert diese Autoritätsgrenze nicht.
+
+Zusätzlich muss jedes Manifest unmittelbar unter `crates/*`, `packages/*`,
+`apps/*` und `tools/*` mindestens einen ausdrücklich genannten aktiven
+Domänenpfad treffen.
+Jede produktive Source-Datei gehört exakt einer aktiven Domäne. Eine echte
+Querlagenausnahme muss als enger Pfad mit tragfähiger Begründung in
+`coverageExceptions` stehen; Überlappungen dürfen nie ausgenommen werden. Ein
+Catch-all wie `packages/**` ist absichtlich nicht eingetragen: Ein neu
+angelegtes Produktionspaket stoppt damit den Wächterlauf, bis seine Regeln und
+Autoritätsgrenzen bewusst festgelegt sind.
 
 **`infra-pipeline` ist die einzige Domäne ohne `no-floats`** — und das ist der
 Grund, warum sie überhaupt eine eigene ist. Die Fahrdynamik rechnet dort

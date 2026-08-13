@@ -4,11 +4,14 @@ import {
   alphaHash,
   validateWorldBlueprint,
   type AlphaWorldBlueprint,
+  type AlphaWorldBlueprintV1,
+  type AlphaWorldBlueprintV2,
 } from "@zugfolge/alpha";
 import {
   accounts,
   accountRoles,
   alphaWorldProfiles,
+  dailyOperationReports,
   disruptionProviderStates,
   ledgerAccounts,
   ledgerEntries,
@@ -17,12 +20,14 @@ import {
   MIGRATIONS_FOLDER,
   commerceEntitlements,
   odooCommandQueue,
-  schema,
+  operators,
   simulationCommands,
   worldEventLog,
+  worldAccesses,
   worlds,
   worldParticipations,
 } from "@zugfolge/db";
+import * as schema from "@zugfolge/db/schema";
 import { createOdooWebhookReceiptStore, signPayload, type OdooWebhookEnvelope, type SigningKey } from "@zugfolge/commerce";
 import {
   buildEconomyRelease,
@@ -35,6 +40,7 @@ import {
   encodeEconomyValue,
   fleetSnapshotHash,
   loadEconomyWorldState,
+  listLedgerAccounts,
   openLedgerAccount,
   persistEconomyTransition,
   persistFleetMobilizationSnapshot,
@@ -76,17 +82,46 @@ const ISSUER = "https://auth.zugfolge.test/realms/lhe";
 const AUDIENCE = "game-api";
 const WORLD_LHE = "11111111-1111-1111-1111-111111111111";
 const WORLD_MIDDLE_GERMANY = "22222222-2222-2222-2222-222222222222";
-const WORLD_FINITE_CAPITAL = "33333333-3333-4333-8333-333333333331";
-const WORLD_UNLIMITED_CAPITAL = "33333333-3333-4333-8333-333333333332";
-const WORLD_UNSIGNED_CAPITAL = "33333333-3333-4333-8333-333333333333";
+const PRIVATE_WORLD = "33333333-3333-3333-3333-333333333333";
+const TUTORIAL_WORLD = "44444444-4444-4444-4444-444444444444";
+function publicBlueprint(
+  startingCapitalPolicy: AlphaWorldBlueprintV1["startingCapitalPolicy"] = { kind: "finite", amountCents: "0" },
+): AlphaWorldBlueprintV1 {
+  return {
+    schemaVersion: "zugfolge-alpha-world-blueprint/v1",
+    regionId: "mitteldeutschland-b",
+    regionVariant: "B",
+    seed: 42n,
+    profileKind: "public",
+    accelerationFactor: 1,
+    periodCount: 10,
+    startingCapitalPolicy,
+    releases: { infra: "a".repeat(64), timetable: "b".repeat(64), fleet: "c".repeat(64), economy: "d".repeat(64) },
+    lots: [{
+      lotId: "test-lot",
+      contractEndsAtPeriod: 2,
+      trainRunIds: ["test-train"],
+      pathReceiptIds: ["test-path"],
+      vehicleIds: ["test-vehicle"],
+      personnelDutyIds: ["test-duty"],
+      circulationIds: ["test-circulation"],
+      operatingProgramIds: ["test-program"],
+    }],
+    conflictCheckHash: "e".repeat(64),
+    tenderCalendarHash: "f".repeat(64),
+  };
+}
+
+const TEST_ALPHA_BLUEPRINT = publicBlueprint();
+const TEST_WORLD_CONTRACT_HASH = validateWorldBlueprint(TEST_ALPHA_BLUEPRINT);
 const SIMULATION_INGEST_TOKEN = "test-only-simulation-ingest-token";
 const FLEET_INGEST_TOKEN = "test-only-fleet-ingest-token";
 const ODOO_KEY: SigningKey = { id: "test-2026", secret: "odoo-test-secret", activeFrom: new Date("2026-01-01T00:00:00Z") };
 
 function testAlphaBlueprint(
   seed: bigint,
-  startingCapitalPolicy: AlphaWorldBlueprint["startingCapitalPolicy"] = { mode: "finite", amountCents: "0" },
-): AlphaWorldBlueprint {
+  startingCapitalPolicy: AlphaWorldBlueprintV2["startingCapitalPolicy"] = { mode: "finite", amountCents: "0" },
+): AlphaWorldBlueprintV2 {
   return {
     schemaVersion: ALPHA_WORLD_BLUEPRINT_SCHEMA,
     regionId: "mitteldeutschland-b",
@@ -217,9 +252,9 @@ let verifyTokenForTest: Parameters<typeof buildApp>[0]["verifyToken"];
 async function insertStartedPublicWorld(
   worldId: string,
   seed: bigint,
-  startingCapitalPolicy: AlphaWorldBlueprint["startingCapitalPolicy"],
+  startingCapitalPolicy: AlphaWorldBlueprintV2["startingCapitalPolicy"],
   deploymentHash: string | null,
-): Promise<AlphaWorldBlueprint> {
+): Promise<AlphaWorldBlueprintV2> {
   const blueprint = testAlphaBlueprint(seed, startingCapitalPolicy);
   await db.insert(worlds).values({
     id: worldId,
@@ -266,40 +301,40 @@ beforeEach(async () => {
       epoch: new Date("2026-01-01T00:00:00Z"),
     },
   ]);
-  const lheBlueprint = testAlphaBlueprint(1n);
-  const middleGermanyBlueprint = testAlphaBlueprint(2n);
   await pgliteDb.insert(alphaWorldProfiles).values([
     {
       worldId: WORLD_LHE,
       profileKind: "public",
       regionId: "mitteldeutschland-b",
       regionVariant: "B",
-      worldSeed: 1n,
+      worldSeed: 42n,
       accelerationFactor: 1,
       infraReleaseHash: "a".repeat(64),
       timetableReleaseHash: "b".repeat(64),
       fleetReleaseHash: "c".repeat(64),
       economyReleaseHash: "d".repeat(64),
-      blueprint: encodeEconomyValue(lheBlueprint),
-      blueprintHash: validateWorldBlueprint(lheBlueprint),
-      deploymentHash: "1".repeat(64),
+      blueprint: encodeEconomyValue(TEST_ALPHA_BLUEPRINT),
+      blueprintHash: TEST_WORLD_CONTRACT_HASH,
+      periodCount: 10,
       state: "running",
+      startedAtS: 0,
     },
     {
       worldId: WORLD_MIDDLE_GERMANY,
       profileKind: "public",
       regionId: "mitteldeutschland-b",
       regionVariant: "B",
-      worldSeed: 2n,
+      worldSeed: 42n,
       accelerationFactor: 1,
       infraReleaseHash: "a".repeat(64),
       timetableReleaseHash: "b".repeat(64),
       fleetReleaseHash: "c".repeat(64),
       economyReleaseHash: "d".repeat(64),
-      blueprint: encodeEconomyValue(middleGermanyBlueprint),
-      blueprintHash: validateWorldBlueprint(middleGermanyBlueprint),
-      deploymentHash: "2".repeat(64),
+      blueprint: encodeEconomyValue(TEST_ALPHA_BLUEPRINT),
+      blueprintHash: TEST_WORLD_CONTRACT_HASH,
+      periodCount: 10,
       state: "running",
+      startedAtS: 0,
     },
   ]);
 
@@ -324,6 +359,7 @@ beforeEach(async () => {
     livemap,
     simulationIngestToken: SIMULATION_INGEST_TOKEN,
     fleetIngestToken: FLEET_INGEST_TOKEN,
+    cooperationSimulationSecond: async () => 100,
     odooWebhookStore: createOdooWebhookReceiptStore(db),
     odooWebhookOptions: {
       tenantId: "zugfolge-test",
@@ -383,14 +419,120 @@ describe("M13 signierter Odoo-Receiver", () => {
 });
 
 describe("M13 Entitlement-Grenzen", () => {
+  it("vergibt bei parallelem Eintritt in zwei Welten mit Limit 1 genau einen oeffentlichen Weltplatz", async () => {
+    const token = await sign("kc-parallel-slot", "Parallel Slot");
+    const request = (worldId: string) => app.inject({
+      method: "POST",
+      url: `/worlds/${worldId}/access`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Parallel Slot", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
+    });
+
+    const [first, second] = await Promise.all([
+      request(WORLD_LHE),
+      request(WORLD_MIDDLE_GERMANY),
+    ]);
+
+    expect([first.statusCode, second.statusCode].sort()).toEqual([201, 403]);
+    const accesses = await db
+      .select({ worldId: worldAccesses.worldId })
+      .from(worldAccesses)
+      .where(and(
+        eq(worldAccesses.keycloakSubject, "kc-parallel-slot"),
+        eq(worldAccesses.status, "active"),
+      ));
+    expect(accesses).toHaveLength(1);
+    expect([WORLD_LHE, WORLD_MIDDLE_GERMANY]).toContain(accesses[0]?.worldId);
+  });
+
+  it("behandelt parallele Wiederholungen derselben Welt idempotent", async () => {
+    const token = await sign("kc-parallel-replay", "Parallel Replay");
+    const request = () => app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/access`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Parallel Replay", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
+    });
+
+    const [first, second] = await Promise.all([request(), request()]);
+
+    expect([first.statusCode, second.statusCode]).toEqual([201, 201]);
+    expect(first.json<{ id: string }>().id).toBe(second.json<{ id: string }>().id);
+    const accesses = await db
+      .select({ worldId: worldAccesses.worldId })
+      .from(worldAccesses)
+      .where(and(
+        eq(worldAccesses.keycloakSubject, "kc-parallel-replay"),
+        eq(worldAccesses.status, "active"),
+      ));
+    expect(accesses).toEqual([{ worldId: WORLD_LHE }]);
+  });
+
+  it("laesst private und Tutorialwelten nicht ueber den oeffentlichen Slotpfad betreten", async () => {
+    await db.insert(worlds).values([
+      {
+        id: PRIVATE_WORLD,
+        name: "Private Testwelt",
+        schedulePeriodWeeks: 4,
+        epoch: new Date("2026-01-01T00:00:00Z"),
+        worldKind: "private",
+        rankingStatus: "unranked",
+      },
+      {
+        id: TUTORIAL_WORLD,
+        name: "Tutorial-Testwelt",
+        schedulePeriodWeeks: 4,
+        epoch: new Date("2026-01-01T00:00:00Z"),
+        worldKind: "private",
+        rankingStatus: "unranked",
+      },
+    ]);
+    await db.insert(alphaWorldProfiles).values({
+      worldId: TUTORIAL_WORLD,
+      profileKind: "tutorial",
+      regionId: "tutorial-test",
+      regionVariant: "T",
+      worldSeed: 1n,
+      accelerationFactor: 60,
+      infraReleaseHash: "a".repeat(64),
+      timetableReleaseHash: "b".repeat(64),
+      fleetReleaseHash: "c".repeat(64),
+      economyReleaseHash: "d".repeat(64),
+      blueprint: {},
+      blueprintHash: "e".repeat(64),
+      state: "running",
+      startedAtS: 0,
+    });
+    const token = await sign("kc-private-oracle", "Privat Test");
+    const enter = (worldId: string) => app.inject({
+      method: "POST",
+      url: `/worlds/${worldId}/access`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Privat Test", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
+    });
+
+    const privateResponse = await enter(PRIVATE_WORLD);
+    const tutorialResponse = await enter(TUTORIAL_WORLD);
+
+    expect(privateResponse.statusCode).toBe(403);
+    expect(privateResponse.json()).toMatchObject({ code: "private_world_access_managed" });
+    expect(tutorialResponse.statusCode).toBe(403);
+    expect(tutorialResponse.json()).toMatchObject({ code: "tutorial_session_required" });
+    await expect(db
+      .select({ worldId: worldAccesses.worldId })
+      .from(worldAccesses)
+      .where(eq(worldAccesses.keycloakSubject, "kc-private-oracle")))
+      .resolves.toEqual([]);
+  });
+
   it("begrenzt öffentliche Weltplätze im Game und erzeugt private Welten nur ungewertet", async () => {
     const token = await sign("kc-entitlement", "Entitlement Test");
-    expect((await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Entitlement Test" } })).statusCode).toBe(201);
-    expect((await app.inject({ method: "POST", url: `/worlds/${WORLD_MIDDLE_GERMANY}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Entitlement Test" } })).statusCode).toBe(403);
+    expect((await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Entitlement Test", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH } })).statusCode).toBe(201);
+    expect((await app.inject({ method: "POST", url: `/worlds/${WORLD_MIDDLE_GERMANY}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Entitlement Test", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH } })).statusCode).toBe(403);
     expect((await app.inject({ method: "POST", url: "/private-worlds", headers: { authorization: `Bearer ${token}` }, payload: { name: "Privat", schedulePeriodWeeks: 4, epoch: "2026-01-01T00:00:00.000Z" } })).statusCode).toBe(403);
 
     await db.insert(commerceEntitlements).values({ externalEventId: "direct-test-plus", keycloakSubject: "kc-entitlement", productKind: "zugfolge_plus", status: "active", validFrom: new Date("2026-01-01T00:00:00.000Z"), quantity: "1", correlationId: "entitlement-test", sourceReference: "test" });
-    expect((await app.inject({ method: "POST", url: `/worlds/${WORLD_MIDDLE_GERMANY}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Entitlement Test" } })).statusCode).toBe(201);
+    expect((await app.inject({ method: "POST", url: `/worlds/${WORLD_MIDDLE_GERMANY}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Entitlement Test", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH } })).statusCode).toBe(201);
 
     await db.insert(commerceEntitlements).values({ externalEventId: "direct-test-private", keycloakSubject: "kc-entitlement", productKind: "private_unranked_world", status: "active", validFrom: new Date("2026-01-01T00:00:00.000Z"), quantity: "1", correlationId: "private-test", sourceReference: "test" });
     const privateWorld = await app.inject({ method: "POST", url: "/private-worlds", headers: { authorization: `Bearer ${token}` }, payload: { name: "Privat", schedulePeriodWeeks: 4, epoch: "2026-01-01T00:00:00.000Z" } });
@@ -401,19 +543,43 @@ describe("M13 Entitlement-Grenzen", () => {
   it("sperrt Katalogwelten fuer Self-Service und akzeptiert nur den Game-autoritativen Odoo-Teilnahmebeleg", async () => {
     const catalogWorld = "33333333-3333-4333-8333-333333333333";
     const subject = "kc-catalog";
+    const catalogBlueprint: AlphaWorldBlueprint = {
+      ...testAlphaBlueprint(101n),
+      activityPolicy: null,
+      admission: { capacity: 10, status: "open" },
+      publicMetadata: {
+        description: "Katalogwelt fuer den Teilnahmevertrag",
+        phase: "registration_open",
+        startsAt: "2026-01-01T00:00:00.000Z",
+        endsAt: null,
+        regionLabel: "Leipzig-Halle-Erfurt",
+        ruleRelease: "catalog-test-v1",
+        banner: {
+          altText: "Teststrecke",
+          source: "Zugfolge-Test",
+          author: "Zugfolge-Test",
+          license: "Eigenes Werk",
+          attribution: null,
+          focalPointXPermille: 500,
+          focalPointYPermille: 500,
+          rightsApproved: true,
+        },
+      },
+    };
+    const catalogHash = validateWorldBlueprint(catalogBlueprint);
     await db.insert(worlds).values({
       id: catalogWorld, name: "Katalogwelt", schedulePeriodWeeks: 4, epoch: new Date("2026-01-01T00:00:00Z"),
     });
     await db.insert(alphaWorldProfiles).values({
-      worldId: catalogWorld, profileKind: "public", regionId: "mitteldeutschland-b", regionVariant: "B", worldSeed: 1n,
+      worldId: catalogWorld, profileKind: "public", regionId: catalogBlueprint.regionId, regionVariant: catalogBlueprint.regionVariant, worldSeed: catalogBlueprint.seed,
       accelerationFactor: 1, infraReleaseHash: "a".repeat(64), timetableReleaseHash: "b".repeat(64),
       fleetReleaseHash: "c".repeat(64), economyReleaseHash: "d".repeat(64),
-      blueprint: encodeEconomyValue({ schemaVersion: ALPHA_WORLD_BLUEPRINT_SCHEMA, admission: { capacity: 10, status: "open" } }),
-      blueprintHash: "e".repeat(64), periodCount: 2, state: "running",
+      blueprint: encodeEconomyValue(catalogBlueprint),
+      blueprintHash: catalogHash, periodCount: catalogBlueprint.periodCount, state: "running",
     });
     const token = await sign(subject, "Katalogspieler");
     const denied = await app.inject({
-      method: "POST", url: `/worlds/${catalogWorld}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Katalogspieler" },
+      method: "POST", url: `/worlds/${catalogWorld}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Katalogspieler", acceptedWorldContractHash: catalogHash },
     });
     expect(denied.statusCode).toBe(403);
     expect(denied.json()).toMatchObject({ code: "commercial_world_release_required" });
@@ -423,7 +589,7 @@ describe("M13 Entitlement-Grenzen", () => {
       correlationId: "catalog-correlation", createdAt: new Date("2026-08-13T06:00:00Z"), changedAt: new Date("2026-08-13T06:00:00Z"),
     });
     const accepted = await app.inject({
-      method: "POST", url: `/worlds/${catalogWorld}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Katalogspieler" },
+      method: "POST", url: `/worlds/${catalogWorld}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Katalogspieler", acceptedWorldContractHash: catalogHash },
     });
     expect(accepted.statusCode).toBe(201);
     expect(accepted.json()).toMatchObject({ worldId: catalogWorld, keycloakSubject: subject });
@@ -434,8 +600,8 @@ describe("M7 Betriebsprogramm und Betriebszentrale", () => {
   it("persistiert und aktiviert kanonisch, isoliert EVU, protokolliert Overrides und erzeugt Tagesberichte", async () => {
     const ownerToken = await sign("kc-m7-owner", "M7 Leitung");
     const foreignToken = await sign("kc-m7-foreign", "Fremd-EVU");
-    await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${ownerToken}` }, payload: { displayName: "M7 Leitung" } });
-    await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${foreignToken}` }, payload: { displayName: "Fremd-EVU" } });
+    await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${ownerToken}` }, payload: { displayName: "M7 Leitung", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH } });
+    await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${foreignToken}` }, payload: { displayName: "Fremd-EVU", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH } });
     const founded = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/operators`, headers: { authorization: `Bearer ${ownerToken}` }, payload: { name: "M7-Bahn" } });
     const operatorId = founded.json<{ id: string }>().id;
     const base = `/worlds/${WORLD_LHE}/operators/${operatorId}`;
@@ -468,10 +634,12 @@ describe("M7 Betriebsprogramm und Betriebszentrale", () => {
     expect(operations.statusCode).toBe(200);
     expect(operations.json()).toMatchObject({ throughSequence: 3, majorEvents: [{ decisionId: "decision-1", causeCode: 25, causeLabel: "Anlagen Leit- und Sicherungstechnik" }] });
 
-    const override = await app.inject({ method: "POST", url: `${base}/operations/decisions/decision-1/override`, headers: { authorization: `Bearer ${ownerToken}` }, payload: { idempotencyKey: "override-1", action: "request_reroute", reason: "Leitstellenentscheidung wegen verfügbarer Umleitung", at: 1_786_435_260 } });
+    const backdatedOverride = await app.inject({ method: "POST", url: `${base}/operations/decisions/decision-1/override`, headers: { authorization: `Bearer ${ownerToken}` }, payload: { idempotencyKey: "override-backdated", action: "request_reroute", reason: "Leitstellenentscheidung wegen verfügbarer Umleitung", at: 1 } });
+    expect(backdatedOverride.statusCode).toBe(400);
+    const override = await app.inject({ method: "POST", url: `${base}/operations/decisions/decision-1/override`, headers: { authorization: `Bearer ${ownerToken}` }, payload: { idempotencyKey: "override-1", action: "request_reroute", reason: "Leitstellenentscheidung wegen verfügbarer Umleitung" } });
     expect(override.statusCode).toBe(202);
-    expect(override.json()).toMatchObject({ commandType: "dispatch.manual-override", payload: { decisionId: "decision-1" } });
-    const overrideRetry = await app.inject({ method: "POST", url: `${base}/operations/decisions/decision-1/override`, headers: { authorization: `Bearer ${ownerToken}` }, payload: { idempotencyKey: "override-1", action: "request_reroute", reason: "Leitstellenentscheidung wegen verfügbarer Umleitung", at: 1_786_435_260 } });
+    expect(override.json()).toMatchObject({ commandType: "dispatch.manual-override", payload: { decisionId: "decision-1", at: 100 } });
+    const overrideRetry = await app.inject({ method: "POST", url: `${base}/operations/decisions/decision-1/override`, headers: { authorization: `Bearer ${ownerToken}` }, payload: { idempotencyKey: "override-1", action: "request_reroute", reason: "Leitstellenentscheidung wegen verfügbarer Umleitung" } });
     expect(overrideRetry.json<{ id: string }>().id).toBe(override.json<{ id: string }>().id);
 
     const backtest = await app.inject({ method: "POST", url: `${base}/operating-programs/backtests`, headers: { authorization: `Bearer ${ownerToken}` }, payload: { idempotencyKey: "backtest-1", programVersion: 1, sourceAfter: 0, sourceThrough: 3 } });
@@ -493,8 +661,8 @@ describe("M8 Störungsrichtlinie und manueller Spielleitermodus", () => {
   it("plant den Policywechsel nur am Stichtag und schreibt manuelle Eingriffe weltisoliert in die Kommandoqueue", async () => {
     const adminToken = await sign("kc-m8-admin", "M8 Spielleitung");
     const playerToken = await sign("kc-m8-player", "M8 Spieler");
-    const adminAccess = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${adminToken}` }, payload: { displayName: "M8 Spielleitung" } });
-    await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${playerToken}` }, payload: { displayName: "M8 Spieler" } });
+    const adminAccess = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${adminToken}` }, payload: { displayName: "M8 Spielleitung", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH } });
+    await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${playerToken}` }, payload: { displayName: "M8 Spieler", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH } });
     await db.insert(accountRoles).values({
       worldId: WORLD_LHE,
       accountId: adminAccess.json<{ id: string }>().id,
@@ -689,7 +857,7 @@ describe("öffentlicher, persistenter M6-Gesamtablauf", () => {
     // Economy- und Planning-Hashes gebauten Profils ausgesetzt.
     await db.execute(sql`alter table alpha_world_profiles disable trigger alpha_world_profiles_started_immutable`);
     const adminToken = await sign("kc-economy-admin", "Economy Admin");
-    const adminAccess = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${adminToken}` }, payload: { displayName: "Economy Admin" } });
+    const adminAccess = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${adminToken}` }, payload: { displayName: "Economy Admin", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH } });
     expect(adminAccess.statusCode).toBe(201);
     const accountId = adminAccess.json<{ id: string }>().id;
     const adminRole = await app.inject({
@@ -702,13 +870,19 @@ describe("öffentlicher, persistenter M6-Gesamtablauf", () => {
     const operatorResponse = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/operators`, headers: { authorization: `Bearer ${adminToken}` }, payload: { name: "M6-Bahn" } });
     expect(operatorResponse.statusCode).toBe(201);
     const operatorId = operatorResponse.json<{ id: string }>().id;
+    const foreignToken = await sign("kc-economy-foreign", "Fremd");
+    await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${foreignToken}` }, payload: { displayName: "Fremd", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH } });
+    const foreignOperatorResponse = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/operators`, headers: { authorization: `Bearer ${foreignToken}` }, payload: { name: "M6-Konkurrenz" } });
+    const foreignOperatorId = foreignOperatorResponse.json<{ id: string }>().id;
 
-    const cash = await openLedgerAccount(db, { worldId: WORLD_LHE, operatorId, name: "Economy:Kasse" });
+    const cash = (await listLedgerAccounts(db, { worldId: WORLD_LHE, operatorId }))
+      .find((account) => account.name === "Economy:Kasse");
+    expect(cash).toBeDefined();
     const revenue = await openLedgerAccount(db, { worldId: WORLD_LHE, operatorId, name: "Economy:Bestellerentgelt" });
     const costTypes: readonly CostType[] = ["track", "station", "facility", "energy", "personnel", "administration", "vehicle", "penalty", "interest"];
     const costAccountIds = Object.fromEntries(await Promise.all(costTypes.map(async (type) => [type, (await openLedgerAccount(db, { worldId: WORLD_LHE, operatorId, name: `Economy:${type}` })).id]))) as Record<CostType, string>;
     const adapters = {
-      ...createEconomyPlatformAdapters({ db, accountsByOperator: { [operatorId]: { cashAccountId: cash.id, revenueAccountId: revenue.id, costAccountIds } } }),
+      ...createEconomyPlatformAdapters({ db, accountsByOperator: { [operatorId]: { cashAccountId: cash!.id, revenueAccountId: revenue.id, costAccountIds } } }),
       operatingRuntime: testOperatingRuntime,
       publishRuntimeEvents: async () => undefined,
     };
@@ -837,15 +1011,21 @@ describe("öffentlicher, persistenter M6-Gesamtablauf", () => {
     const fleetSnapshot: FleetMobilizationSnapshot = {
       schema: "zugfolge-fleet-mobilization/v1", worldId: WORLD_LHE, revision: 1, producedAt: 50,
       formations: [
+        { id: "formation-1", operatorId, vehicleIds: ["vehicle-1"], serviceLineIds: ["S1"], availability: "available", procurement: "delivered", availableFrom: 0, availableUntil: OPERATING + 100, characteristics: { seats: 120, firstClassBasisPoints: 0, accessible: true, bicyclePlaces: 4, wheelchairPlaces: 1, equipment: ["pis"], vehicleAgeYears: 2, maximumSpeedKph: 160, operatingCostCentsPerTrainKm: 700, homologatedLineIds: ["S1"], maintenanceValidUntil: OPERATING + 100, traction: "electric", replacementPlan: true } },
+        { id: "formation-foreign", operatorId: foreignOperatorId, vehicleIds: ["vehicle-foreign"], serviceLineIds: ["S1"], availability: "available", procurement: "delivered", availableFrom: 0, availableUntil: OPERATING + 100, characteristics: { seats: 120, firstClassBasisPoints: 0, accessible: true, bicyclePlaces: 4, wheelchairPlaces: 1, equipment: ["pis"], vehicleAgeYears: 2, maximumSpeedKph: 160, operatingCostCentsPerTrainKm: 700, homologatedLineIds: ["S1"], maintenanceValidUntil: OPERATING + 100, traction: "electric", replacementPlan: true } },
         { id: "formation-public-lot-s1", operatorId: "public", vehicleIds: ["public-vehicle-lot-1"], pathReceiptId: "path-receipt-1", serviceLineIds: ["S1"], availability: "available", procurement: "delivered", availableFrom: 0, availableUntil: OPERATING + 100, characteristics: { seats: 120, firstClassBasisPoints: 0, accessible: true, bicyclePlaces: 4, wheelchairPlaces: 1, equipment: ["pis"], vehicleAgeYears: 2, maximumSpeedKph: 160, operatingCostCentsPerTrainKm: 700, homologatedLineIds: ["S1"], maintenanceValidUntil: OPERATING + 100, traction: "electric", replacementPlan: true } },
         { id: "formation-public-lot-s2", operatorId: "public", vehicleIds: ["public-vehicle-lot-2"], pathReceiptId: "path-receipt-2", serviceLineIds: ["S1"], availability: "available", procurement: "delivered", availableFrom: 0, availableUntil: OPERATING + 100, characteristics: { seats: 120, firstClassBasisPoints: 0, accessible: true, bicyclePlaces: 4, wheelchairPlaces: 1, equipment: ["pis"], vehicleAgeYears: 2, maximumSpeedKph: 160, operatingCostCentsPerTrainKm: 700, homologatedLineIds: ["S1"], maintenanceValidUntil: OPERATING + 100, traction: "electric", replacementPlan: true } },
       ],
       personnelDuties: [
+        { id: "duty-1", operatorId, formationIds: ["formation-1"], status: "ready", validFrom: 0, validUntil: OPERATING + 100 },
+        { id: "duty-foreign", operatorId: foreignOperatorId, formationIds: ["formation-foreign"], status: "ready", validFrom: 0, validUntil: OPERATING + 100 },
         { id: "duty-public-lot-s1", operatorId: "public", formationIds: ["formation-public-lot-s1"], pathReceiptId: "path-receipt-1", status: "ready", validFrom: 0, validUntil: OPERATING + 100 },
         { id: "duty-public-lot-s2", operatorId: "public", formationIds: ["formation-public-lot-s2"], pathReceiptId: "path-receipt-2", status: "ready", validFrom: 0, validUntil: OPERATING + 100 },
         { id: "duty-public-lot-s2-for-s1", operatorId: "public", formationIds: ["formation-public-lot-s1"], pathReceiptId: "path-receipt-2", status: "ready", validFrom: 0, validUntil: OPERATING + 100 },
       ],
       pathReservations: [
+        { id: "path-1", operatorId, serviceLineIds: ["S1"], status: "confirmed", validFrom: 0, validUntil: OPERATING + 100 },
+        { id: "path-foreign", operatorId: foreignOperatorId, serviceLineIds: ["S1"], status: "confirmed", validFrom: 0, validUntil: OPERATING + 100 },
         { id: "path-public-lot-s1", operatorId: "public", pathReceiptId: "path-receipt-1", serviceLineIds: ["S1"], status: "confirmed", validFrom: 0, validUntil: OPERATING + 100 },
         { id: "path-public-lot-s2", operatorId: "public", pathReceiptId: "path-receipt-2", serviceLineIds: ["S1"], status: "confirmed", validFrom: 0, validUntil: OPERATING + 100 },
       ],
@@ -871,15 +1051,15 @@ describe("öffentlicher, persistenter M6-Gesamtablauf", () => {
     expect(announced.statusCode).toBe(201);
     expect((await runEconomySchedulerCycle(db, worldInstant(OPEN), adapters, monitor)).transitions).toBe(1);
 
-    const foreignToken = await sign("kc-economy-foreign", "Fremd");
-    await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${foreignToken}` }, payload: { displayName: "Fremd" } });
-    const entryFacility = { schemaVersion: PUBLIC_ENTRY_FACILITY_SCHEMA, providerOperatorId: "public" } as const;
+    const entryFacility = {
+      schemaVersion: PUBLIC_ENTRY_FACILITY_SCHEMA,
+      providerOperatorId: "public",
+    } as const;
     const bidPayload = {
-      expectedRevision: 2,
+      expectedRevision: 3,
       commandId: "api:bid",
       bidId: "bid-1",
       orderingFeeCentsPerTrainKm: "1",
-      submittedAt: OPEN,
       vehicleReference: {
         fleetRevision: 1,
         snapshotHash: fleetEnvelope.snapshotHash,
@@ -890,12 +1070,22 @@ describe("öffentlicher, persistenter M6-Gesamtablauf", () => {
       },
       promises: { extraSeats: 0, punctualityBasisPoints: 9_000, additionalStops: 0 },
     };
+    const backdatedBid = await app.inject({
+      method: "POST", url: `/worlds/${WORLD_LHE}/economy/tenders/tender-1/operators/${operatorId}/bids`, headers: { authorization: `Bearer ${adminToken}` },
+      payload: { ...bidPayload, submittedAt: 0 },
+    });
+    expect(backdatedBid.statusCode).toBe(400);
     const deniedBid = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/economy/tenders/tender-1/operators/${operatorId}/bids`, headers: { authorization: `Bearer ${foreignToken}` }, payload: bidPayload });
     expect(deniedBid.statusCode).toBe(403);
+    const foreignBid = await app.inject({
+      method: "POST", url: `/worlds/${WORLD_LHE}/economy/tenders/tender-1/operators/${foreignOperatorId}/bids`, headers: { authorization: `Bearer ${foreignToken}` },
+      payload: { expectedRevision: 2, commandId: "api:bid-foreign", bidId: "bid-foreign", orderingFeeCentsPerTrainKm: "2", vehicleReference: { fleetRevision: 1, snapshotHash: fleetEnvelope.snapshotHash, formationId: "formation-foreign" }, promises: { extraSeats: 20, punctualityBasisPoints: 9_500, additionalStops: 0 } },
+    });
+    expect(foreignBid.statusCode).toBe(201);
     const foreignBidCases = [
       {
         name: "formation",
-        reference: {
+        vehicleReference: {
           ...bidPayload.vehicleReference,
           formationId: "formation-public-lot-s2",
           personnelDutyIds: ["duty-public-lot-s2"],
@@ -905,7 +1095,7 @@ describe("öffentlicher, persistenter M6-Gesamtablauf", () => {
       },
       {
         name: "duty",
-        reference: {
+        vehicleReference: {
           ...bidPayload.vehicleReference,
           personnelDutyIds: ["duty-public-lot-s2-for-s1"],
         },
@@ -913,7 +1103,7 @@ describe("öffentlicher, persistenter M6-Gesamtablauf", () => {
       },
       {
         name: "path",
-        reference: {
+        vehicleReference: {
           ...bidPayload.vehicleReference,
           pathReservationIds: ["path-public-lot-s2"],
         },
@@ -929,7 +1119,7 @@ describe("öffentlicher, persistenter M6-Gesamtablauf", () => {
           ...bidPayload,
           commandId: `api:bid:foreign-${testCase.name}`,
           bidId: `bid-foreign-${testCase.name}`,
-          vehicleReference: testCase.reference,
+          vehicleReference: testCase.vehicleReference,
         },
       });
       expect(rejected.statusCode, `${testCase.name} muss beim Gebot fail-closed sein`).toBe(400);
@@ -937,6 +1127,14 @@ describe("öffentlicher, persistenter M6-Gesamtablauf", () => {
     }
     const bid = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/economy/tenders/tender-1/operators/${operatorId}/bids`, headers: { authorization: `Bearer ${adminToken}` }, payload: bidPayload });
     expect(bid.statusCode).toBe(201);
+    expect(bid.body).toContain("bid-1");
+    expect(bid.body).not.toContain("bid-foreign");
+    const ownerProjection = await app.inject({ method: "GET", url: `/worlds/${WORLD_LHE}/economy/state`, headers: { authorization: `Bearer ${adminToken}` } });
+    const foreignProjection = await app.inject({ method: "GET", url: `/worlds/${WORLD_LHE}/economy/state`, headers: { authorization: `Bearer ${foreignToken}` } });
+    expect(ownerProjection.body).toContain("bid-1");
+    expect(ownerProjection.body).not.toContain("bid-foreign");
+    expect(foreignProjection.body).toContain("bid-foreign");
+    expect(foreignProjection.body).not.toContain("bid-1");
 
     expect((await runEconomySchedulerCycle(db, worldInstant(CLOSE), adapters, monitor)).transitions).toBe(1);
     const foreignMobilizationCases = [
@@ -968,9 +1166,8 @@ describe("öffentlicher, persistenter M6-Gesamtablauf", () => {
         url: `/worlds/${WORLD_LHE}/economy/tenders/tender-1/operators/${operatorId}/mobilization`,
         headers: { authorization: `Bearer ${adminToken}` },
         payload: {
-          expectedRevision: 4,
+          expectedRevision: 5,
           commandId: `api:mobilization:foreign-${testCase.name}`,
-          at: CLOSE,
           reference: {
             fleetRevision: 1,
             snapshotHash: fleetEnvelope.snapshotHash,
@@ -986,19 +1183,64 @@ describe("öffentlicher, persistenter M6-Gesamtablauf", () => {
     }
     const mobilization = await app.inject({
       method: "PUT", url: `/worlds/${WORLD_LHE}/economy/tenders/tender-1/operators/${operatorId}/mobilization`, headers: { authorization: `Bearer ${adminToken}` },
-      payload: { expectedRevision: 4, commandId: "api:mobilization", at: CLOSE, reference: { fleetRevision: 1, snapshotHash: fleetEnvelope.snapshotHash, formationIds: ["formation-public-lot-s1"], personnelDutyIds: ["duty-public-lot-s1"], pathReservationIds: ["path-public-lot-s1"], entryFacility } },
+      payload: { expectedRevision: 5, commandId: "api:mobilization", reference: { fleetRevision: 1, snapshotHash: fleetEnvelope.snapshotHash, formationIds: ["formation-public-lot-s1"], personnelDutyIds: ["duty-public-lot-s1"], pathReservationIds: ["path-public-lot-s1"], entryFacility } },
     });
     expect(mobilization.statusCode).toBe(200);
     expect((await runEconomySchedulerCycle(db, worldInstant(OPERATING), adapters, monitor)).transitions).toBe(1);
     expect((await loadEconomyWorldState(db, WORLD_LHE))?.contracts.get("tender-1")?.operatorId).toBe(operatorId);
 
-    const settlement = await app.inject({
+    const forgedSettlement = await app.inject({
       method: "POST", url: `/worlds/${WORLD_LHE}/economy/operators/${operatorId}/contracts/tender-1/settlements`, headers: { authorization: `Bearer ${adminToken}` },
-      payload: { expectedRevision: 6, commandId: "api:settlement", period: 0, at: OPERATING + 1, performance: { trainKm: "100", punctualityBasisPoints: 9_600, cancellations: 0, missingSeats: 0, missedConnections: 0, evidence: ["vehicles", "personnel", "paths"] }, costs: [{ amountCents: "100", costType: "energy", costCentreId: "lot-s1-test", reference: "period-0" }] },
+      payload: { expectedRevision: 7, commandId: "api:forged-settlement", period: 0, at: OPERATING + 1, performance: { trainKm: "999999999999", punctualityBasisPoints: 10_000, cancellations: 0, missingSeats: 0, missedConnections: 0, evidence: ["foreign"] }, costs: [] },
+    });
+    expect(forgedSettlement.statusCode).toBe(400);
+    const contract = (await loadEconomyWorldState(db, WORLD_LHE))!.contracts.get("tender-1")!;
+    const periodEnd = contract.startsAt + 21 * 86_400;
+    const futureSettlementApp = buildApp({ db, verifyToken: verifyTokenForTest, cooperationSimulationSecond: async () => periodEnd - 1 });
+    await futureSettlementApp.ready();
+    const futureSettlement = await futureSettlementApp.inject({
+      method: "POST", url: `/worlds/${WORLD_LHE}/economy/operators/${operatorId}/contracts/tender-1/settlements`, headers: { authorization: `Bearer ${adminToken}` },
+      payload: { expectedRevision: 7, commandId: "api:future-settlement" },
+    });
+    expect(futureSettlement.statusCode).toBe(409);
+    await futureSettlementApp.close();
+    const periodStartDay = worldInstant(contract.startsAt).toISOString().slice(0, 10);
+    for (let day = 0; day <= 21; day += 1) {
+      const serviceDay = worldInstant(contract.startsAt + day * 86_400).toISOString().slice(0, 10);
+      await db.insert(dailyOperationReports).values({
+        worldId: WORLD_LHE,
+        operatorId,
+        serviceDay,
+        sourceFromSequence: day + 1,
+        sourceThroughSequence: day + 1,
+        projection: {
+          schema: "daily-operations-report/v1", serviceDay, sourceFromSequence: day + 1, sourceThroughSequence: day + 1,
+          trainRuns: { total: 1, punctual: 1, delayed: 0, cancelled: 0, replacementServices: 0, trainKm: "10", missingSeats: 0, missedConnections: 0 },
+          settlements: { revenueCents: "0", costCents: day === 0 ? "100" : "0", contractPenaltyCents: "0" },
+          contracts: { "tender-1": { trainRuns: { total: 1, punctual: 1, cancelled: 0, trainKm: "10", missingSeats: 0, missedConnections: 0 }, settlements: { costCents: day === 0 ? "100" : "0", contractPenaltyCents: "0" } } },
+          decisionsByAction: {}, infrastructureEffects: [], personnelEffects: [], vehicleEffects: [], facts: { eventSequences: [day + 1], decisions: [] }, assessment: { nextLevers: [] },
+        },
+        generatedAt: worldInstant(periodEnd),
+      });
+    }
+    expect(periodStartDay).toMatch(/^2026-/);
+    const settlementApp = buildApp({ db, verifyToken: verifyTokenForTest, cooperationSimulationSecond: async () => periodEnd });
+    await settlementApp.ready();
+    const settlement = await settlementApp.inject({
+      method: "POST", url: `/worlds/${WORLD_LHE}/economy/operators/${operatorId}/contracts/tender-1/settlements`, headers: { authorization: `Bearer ${adminToken}` },
+      payload: { expectedRevision: 7, commandId: "api:settlement" },
     });
     expect(settlement.statusCode).toBe(201);
-    await runEconomySchedulerCycle(db, worldInstant(OPERATING + 2), adapters, monitor);
-    expect(await db.select().from(ledgerTransactions)).toHaveLength(2);
+    const replay = await settlementApp.inject({
+      method: "POST", url: `/worlds/${WORLD_LHE}/economy/operators/${operatorId}/contracts/tender-1/settlements`, headers: { authorization: `Bearer ${adminToken}` },
+      payload: { expectedRevision: 8, commandId: "api:settlement-replay" },
+    });
+    expect(replay.statusCode).toBe(409);
+    await settlementApp.close();
+    await runEconomySchedulerCycle(db, worldInstant(periodEnd + 1), adapters, monitor);
+    expect((await db.select().from(ledgerTransactions)).filter(
+      (transaction) => transaction.idempotencyKey === "api:settlement:settlement",
+    )).toHaveLength(1);
     expect((await db.select().from(mailboxMessages)).filter((message) => message.recipientAccountId === accountId).length).toBeGreaterThan(0);
 
     const restarted = buildApp({ db, verifyToken: verifyTokenForTest });
@@ -1010,7 +1252,7 @@ describe("öffentlicher, persistenter M6-Gesamtablauf", () => {
     });
     expect(restartedState.statusCode).toBe(200);
     const persisted = await loadEconomyWorldState(db, WORLD_LHE);
-    expect(persisted?.revision).toBe(7);
+    expect(persisted?.revision).toBe(8);
     expect(persisted?.settledPeriods.has("tender-1:0")).toBe(true);
     await restarted.close();
   });
@@ -1024,6 +1266,57 @@ describe("GET /health", () => {
   });
 });
 
+describe("öffentliche Weltverträge", () => {
+  it("projiziert No-Wipe, Release-Pins und StartingCapitalPolicy vor dem bestätigten Eintritt", async () => {
+    const blueprint = publicBlueprint();
+    await (db as ReturnType<typeof drizzle<typeof schema>>).update(alphaWorldProfiles).set({
+      profileKind: "public", regionId: "mitteldeutschland-b", regionVariant: "B", worldSeed: 42n,
+      accelerationFactor: 1, infraReleaseHash: "a".repeat(64), timetableReleaseHash: "b".repeat(64), fleetReleaseHash: "c".repeat(64), economyReleaseHash: "d".repeat(64),
+      blueprint: encodeEconomyValue(blueprint), blueprintHash: TEST_WORLD_CONTRACT_HASH, periodCount: 10, state: "running", startedAtS: 0,
+    }).where(eq(alphaWorldProfiles.worldId, WORLD_LHE));
+    const token = await sign("world-contract-player", "Weltvertrag Spieler");
+    const contracts = await app.inject({ method: "GET", url: "/public-world-contracts", headers: { authorization: `Bearer ${token}` } });
+    expect(contracts.statusCode).toBe(200);
+    expect(contracts.json()).toEqual(expect.arrayContaining([expect.objectContaining({
+      schemaVersion: "zugfolge-public-world-contract/v1", worldId: WORLD_LHE, noWipe: true, contractHash: TEST_WORLD_CONTRACT_HASH,
+      region: { id: "mitteldeutschland-b", name: "Leipzig–Halle–Erfurt", variant: "B" },
+      duration: expect.objectContaining({ kind: "periods", periodCount: 10 }),
+      timeBasis: expect.objectContaining({ mode: "realtime", accelerationFactor: 1 }),
+      startingCapitalPolicy: expect.objectContaining({ kind: "finite", amountCents: "0" }),
+      entry: expect.objectContaining({ status: "open", requiresContractConfirmation: true }),
+    })]));
+    const unconfirmed = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Weltvertrag Spieler" } });
+    expect(unconfirmed.statusCode).toBe(409);
+    const confirmed = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Weltvertrag Spieler", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH } });
+    expect(confirmed.statusCode).toBe(201);
+
+    await expect((db as ReturnType<typeof drizzle<typeof schema>>).update(alphaWorldProfiles).set({
+      blueprint: encodeEconomyValue({ ...blueprint, startingCapitalPolicy: { kind: "finite", amountCents: "9223372036854775808" } }),
+    }).where(eq(alphaWorldProfiles.worldId, WORLD_LHE))).rejects.toThrow();
+    const invalidContracts = await app.inject({ method: "GET", url: "/public-world-contracts", headers: { authorization: `Bearer ${token}` } });
+    expect(invalidContracts.json()).toEqual(expect.arrayContaining([expect.objectContaining({
+      worldId: WORLD_LHE,
+      startingCapitalPolicy: expect.objectContaining({ kind: "finite", amountCents: "0" }),
+      entry: expect.objectContaining({ status: "open" }),
+    })]));
+    const invalidToken = await sign("invalid-world-contract-player", "Ungültiger Weltvertrag");
+    const invalidAccess = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${invalidToken}` }, payload: { displayName: "Ungültiger Weltvertrag", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH } });
+    expect(invalidAccess.statusCode).toBe(201);
+
+    const finiteBlueprint = publicBlueprint({ kind: "finite", amountCents: "100000" });
+    await expect((db as ReturnType<typeof drizzle<typeof schema>>).update(alphaWorldProfiles).set({
+      blueprint: encodeEconomyValue(finiteBlueprint),
+      blueprintHash: validateWorldBlueprint(finiteBlueprint),
+    }).where(eq(alphaWorldProfiles.worldId, WORLD_LHE))).rejects.toThrow();
+    const supportedContracts = await app.inject({ method: "GET", url: "/public-world-contracts", headers: { authorization: `Bearer ${token}` } });
+    expect(supportedContracts.json()).toEqual(expect.arrayContaining([expect.objectContaining({
+      worldId: WORLD_LHE,
+      startingCapitalPolicy: expect.objectContaining({ kind: "finite", amountCents: "0" }),
+      entry: expect.objectContaining({ status: "open" }),
+    })]));
+  });
+});
+
 describe("Livemap (M4.6)", () => {
   async function grantWorldAccess(worldId: string, subject: string): Promise<string> {
     const token = await sign(subject, subject);
@@ -1031,9 +1324,16 @@ describe("Livemap (M4.6)", () => {
       method: "POST",
       url: `/worlds/${worldId}/access`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: subject },
+      payload: { displayName: subject, acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
     });
     expect(access.statusCode).toBe(201);
+    const founded = await app.inject({
+      method: "POST",
+      url: `/worlds/${worldId}/operators`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: `EVU ${subject}` },
+    });
+    expect(founded.statusCode).toBe(201);
     return token;
   }
 
@@ -1337,15 +1637,40 @@ describe("persistentes Simulations-Eventlog", () => {
     expect(gap.statusCode).toBe(409);
 
     const token = await sign("event-reader", "Replay");
-    const access = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Replay" } });
+    const access = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Replay", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH } });
     expect(access.statusCode).toBe(201);
+    const ownOperator = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/operators`, headers: { authorization: `Bearer ${token}` }, payload: { name: "Replay EVU" } });
+    expect(ownOperator.statusCode).toBe(201);
+    const foreignToken = await sign("event-foreign", "Konkurrenz");
+    expect((await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${foreignToken}` }, payload: { displayName: "Konkurrenz", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH } })).statusCode).toBe(201);
+    const foreignOperator = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/operators`, headers: { authorization: `Bearer ${foreignToken}` }, payload: { name: "Konkurrenz EVU" } });
+    expect(foreignOperator.statusCode).toBe(201);
+    await worldEventLog(db, WORLD_LHE).appendBatch([
+      { sequence: 3, eventType: "economy.settlement", payload: { operatorId: ownOperator.json<{ id: string }>().id, costCents: "1200" }, occurredAt: new Date("2026-01-01T00:00:02.000Z") },
+      { sequence: 4, eventType: "economy.settlement", payload: { operatorId: foreignOperator.json<{ id: string }>().id, costCents: "987654", strategy: "foreign-secret" }, occurredAt: new Date("2026-01-01T00:00:03.000Z") },
+      { sequence: 5, eventType: "planning.runtime-state", payload: { processedCommands: { private: true } }, occurredAt: new Date("2026-01-01T00:00:04.000Z") },
+      { sequence: 6, eventType: "admin.action-audited", payload: { actorReference: "root", commandPayload: { private: true } }, occurredAt: new Date("2026-01-01T00:00:05.000Z") },
+    ]);
     const replay = await app.inject({
       method: "GET",
       url: `/worlds/${WORLD_LHE}/simulation/events?after=1&limit=10`,
       headers: { authorization: `Bearer ${token}` },
     });
     expect(replay.statusCode).toBe(200);
-    expect(replay.json()).toEqual([expect.objectContaining({ sequence: 2, eventType: "train.materialized" })]);
+    expect(replay.json()).toMatchObject({
+      schemaVersion: "zugfolge-simulation-event-projection/v1",
+      after: 1,
+      nextAfter: 6,
+      events: [
+        { sequence: 2, eventType: "train.materialized", visibility: "public", payload: { id: "1" } },
+        { sequence: 3, eventType: "economy.settlement", visibility: "operator", payload: { costCents: "1200" } },
+      ],
+    });
+    const serialized = replay.body;
+    expect(serialized).not.toContain("987654");
+    expect(serialized).not.toContain("foreign-secret");
+    expect(serialized).not.toContain("processedCommands");
+    expect(serialized).not.toContain("actorReference");
 
   });
 });
@@ -1357,7 +1682,7 @@ describe("M3.10 Planner-Projektion und Alternativkommando", () => {
       method: "POST",
       url: `/worlds/${worldId}/access`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: subject },
+      payload: { displayName: subject, acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
     });
     expect(access.statusCode).toBe(201);
     return token;
@@ -1385,7 +1710,11 @@ describe("M3.10 Planner-Projektion und Alternativkommando", () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ sequence: 1, data: projection });
+    expect(response.json()).toEqual({
+      sequence: 1,
+      timeBasis: { epoch: expect.any(String), timeZone: "Europe/Berlin", operatingDayBoundaryS: 0 },
+      data: projection,
+    });
 
     const foreignToken = await grantPlanningAccess("planning-foreign", WORLD_MIDDLE_GERMANY);
     const denied = await app.inject({
@@ -1458,11 +1787,48 @@ describe("M3.10 Planner-Projektion und Alternativkommando", () => {
       headers,
       payload: createPlanningAlternativeCommand(7, "unknown-alternative"),
     });
-    expect(unknown.statusCode).toBe(404);
+    expect(unknown.statusCode).toBe(403);
+    expect(unknown.json()).toMatchObject({ error: "Planungsaktion ist nicht fuer den betroffenen Zug autorisiert." });
   });
 
   it("leitet das Queue-Kommando nur aus dem Serverangebot ab und behandelt Retries idempotent", async () => {
     const token = await grantPlanningAccess("planning-queue");
+    const attackerToken = await grantPlanningAccess("planning-attacker");
+    const [planningAccount] = await db.select().from(accounts).where(and(
+      eq(accounts.worldId, WORLD_LHE),
+      eq(accounts.keycloakSubject, "planning-queue"),
+    )).limit(1);
+    const [attackerAccount] = await db.select().from(accounts).where(and(
+      eq(accounts.worldId, WORLD_LHE),
+      eq(accounts.keycloakSubject, "planning-attacker"),
+    )).limit(1);
+    const planningOperatorId = "10000000-0000-4000-8000-000000000071";
+    await db.insert(operators).values([
+      { id: planningOperatorId, worldId: WORLD_LHE, foundingAccountId: planningAccount!.id, name: "Planning Queue EVU" },
+      { id: "10000000-0000-4000-8000-000000000072", worldId: WORLD_LHE, foundingAccountId: planningAccount!.id, name: "Planning Queue Zweig" },
+      { id: "10000000-0000-4000-8000-000000000073", worldId: WORLD_LHE, foundingAccountId: attackerAccount!.id, name: "Planning Attacker EVU" },
+    ]);
+    await db.insert(simulationCommands).values({
+      worldId: WORLD_LHE,
+      requestingAccountId: planningAccount!.id,
+      idempotencyKey: "planning-path-request:train-b-owner",
+      commandType: "planning.path-request",
+      payload: { worldId: WORLD_LHE, requestingAccountId: planningAccount!.id, operatorId: planningOperatorId, trainId: "train-b" },
+      status: "processed",
+      submittedAt: new Date(0),
+      processedAt: new Date(1_000),
+      resultEventSequence: 1,
+    });
+    expect(await db.select({ id: operators.id }).from(operators).where(and(
+      eq(operators.worldId, WORLD_LHE), eq(operators.foundingAccountId, planningAccount!.id),
+    ))).toHaveLength(2);
+    expect(await db.select({ id: simulationCommands.id }).from(simulationCommands).where(and(
+      eq(simulationCommands.worldId, WORLD_LHE),
+      eq(simulationCommands.requestingAccountId, planningAccount!.id),
+      eq(simulationCommands.commandType, "planning.path-request"),
+      eq(simulationCommands.status, "processed"),
+      sql`${simulationCommands.payload}->>'trainId' = ${"train-b"}`,
+    ))).toHaveLength(1);
     await ingestPlanning(planningProjection());
     const request = {
       method: "POST" as const,
@@ -1470,6 +1836,9 @@ describe("M3.10 Planner-Projektion und Alternativkommando", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: createPlanningAlternativeCommand(7, "alternative-7"),
     };
+    const foreignTrain = await app.inject({ ...request, headers: { authorization: `Bearer ${attackerToken}` } });
+    expect(foreignTrain.statusCode).toBe(403);
+    expect(foreignTrain.json()).toMatchObject({ error: "Planungsaktion ist nicht fuer den betroffenen Zug autorisiert." });
     const first = await app.inject(request);
     const retry = await app.inject(request);
     expect(first.statusCode).toBe(202);
@@ -1598,7 +1967,7 @@ describe("Weltzugang und Kontoliste", () => {
         method: "POST",
         url: `/worlds/${worldId}/access`,
         headers: { authorization: `Bearer ${token}` },
-        payload: { displayName },
+        payload: { displayName, acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
       });
       expect(response.statusCode).toBe(201);
     }
@@ -1628,8 +1997,8 @@ describe("Weltzugang und Kontoliste", () => {
   });
 
   it.each([
-    ["provisioning", "world_provisioning"],
-    ["archived", "world_inactive"],
+    ["provisioning", "world_not_active"],
+    ["archived", "world_not_active"],
   ] as const)("legt bei Lifecycle %s keinen Weltzugang an", async (lifecycleStatus, code) => {
     await db.update(worlds).set({ lifecycleStatus }).where(eq(worlds.id, WORLD_LHE));
     const token = await sign(`kc-${lifecycleStatus}`, lifecycleStatus);
@@ -1654,7 +2023,7 @@ describe("Rollenvergabe", () => {
       method: "POST",
       url: `/worlds/${WORLD_LHE}/access`,
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: { displayName: "Admin" },
+      payload: { displayName: "Admin", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
     });
     const adminId = adminAccess.json<{ id: string }>().id;
 
@@ -1669,7 +2038,7 @@ describe("Rollenvergabe", () => {
       method: "POST",
       url: `/worlds/${WORLD_LHE}/access`,
       headers: { authorization: `Bearer ${playerToken}` },
-      payload: { displayName: "Spieler" },
+      payload: { displayName: "Spieler", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
     });
     const playerId = playerAccessResponse.json<{ id: string }>().id;
 
@@ -1690,7 +2059,7 @@ describe("Rollenvergabe", () => {
       method: "POST",
       url: `/worlds/${WORLD_LHE}/access`,
       headers: { authorization: `Bearer ${playerToken}` },
-      payload: { displayName: "Spieler" },
+      payload: { displayName: "Spieler", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
     });
     const playerId = accessResponse.json<{ id: string }>().id;
 
@@ -1699,7 +2068,7 @@ describe("Rollenvergabe", () => {
       method: "POST",
       url: `/worlds/${WORLD_LHE}/access`,
       headers: { authorization: `Bearer ${otherToken}` },
-      payload: { displayName: "Anders" },
+      payload: { displayName: "Anders", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
     });
 
     const response = await app.inject({
@@ -1720,7 +2089,7 @@ describe("EVU (M2.3)", () => {
       method: "POST",
       url: `/worlds/${WORLD_LHE}/access`,
       headers: { authorization: `Bearer ${annaToken}` },
-      payload: { displayName: "Anna" },
+      payload: { displayName: "Anna", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
     });
 
     const foundResponse = await app.inject({
@@ -1750,207 +2119,31 @@ describe("EVU (M2.3)", () => {
     expect(response.statusCode).toBe(403);
   });
 
-  it("praequalifiziert ein nach Economy-Start gegruendetes EVU atomar fuer die erste Ausschreibung", async () => {
-    const release = buildEconomyRelease({
-      version: "foundation-after-start",
-      rates: { trackPerTrainKmCents: 1n, stationPerStopCents: 1n, facilityPerHourCents: 1n, energyPerKwhCents: 1n, personnelPerHourCents: 1n, administrationPerPeriodCents: 1n, vehiclePerPeriodCents: 1n, overnightStablingPerPeriodCents: 1n, protectionEquipmentPerPeriodCents: 1n, lateInterestBasisPoints: 1 },
-      rules: { qualityBaselinePunctualityBasisPoints: 8_500, pointsPerExtraSeat: 1, pointsPerPunctualityBasisPoint: 1, pointsPerAdditionalStop: 1, requirementFocusMaximumPoints: 1_000, contractBonusCentsPerPeriod: 1n, penaltyRates: { punctuality: 1n, cancellation: 1n, seats: 1n, connections: 1n }, penaltyFocusMultiplierBasisPoints: 10_000, publicOperationSurchargeBasisPoints: 0, failedPackageFeeStepBasisPoints: 0, failedPackageReductionStepBasisPoints: 0 },
-      tenderProfiles: [
-        { id: "price", weights: { price: 6_000, quality: 4_000 }, requirementFocus: "capacity", penaltyFocus: "punctuality", viabilitySurchargeBasisPoints: 0 },
-        { id: "quality", weights: { price: 4_000, quality: 6_000 }, requirementFocus: "accessibility", penaltyFocus: "connections", viabilitySurchargeBasisPoints: 0 },
-      ],
-    });
-    const started = startEconomyWorld({
-      worldId: WORLD_LHE,
-      seed: 7n,
-      durationMonths: 6,
-      release,
-      lots: Array.from({ length: 8 }, (_, index) => ({ id: `late-lot-${index}`, size: 100 - index, attractiveness: index })),
-      authorityBudgets: [],
-      accounts: [],
-    });
-    await persistEconomyTransition(db, { expectedRevision: null, ...started, committedAt: new Date("2026-01-01T00:00:00Z") });
-    const token = await sign("kc-late-founder", "Spaetgruender");
-    const access = await app.inject({
-      method: "POST",
-      url: `/worlds/${WORLD_LHE}/access`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Spaetgruender" },
-    });
-    const accountId = access.json<{ id: string }>().id;
-
-    const founded = await app.inject({
-      method: "POST",
-      url: `/worlds/${WORLD_LHE}/operators`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { name: "Spaetstartbahn" },
-    });
-    expect(founded.statusCode).toBe(201);
-    const economy = await loadEconomyWorldState(db, WORLD_LHE);
-    expect(economy?.prequalifications.get(accountId)).toMatchObject({
-      worldId: WORLD_LHE,
-      accountId,
-      score: 5_000,
-      creditScore: 5_000,
-    });
-  });
-
-  it("bindet 10.000,00 Euro Startkapital atomar und wiederholt die EVU-Gründung idempotent", async () => {
-    await insertStartedPublicWorld(
-      WORLD_FINITE_CAPITAL,
-      10n,
-      { mode: "finite", amountCents: "1000000" },
-      "3".repeat(64),
-    );
-    const token = await sign("kc-startkapital", "Startkapital");
-    await app.inject({
-      method: "POST",
-      url: `/worlds/${WORLD_FINITE_CAPITAL}/access`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Startkapital" },
-    });
-
-    const policy = await app.inject({
-      method: "GET",
-      url: `/worlds/${WORLD_FINITE_CAPITAL}/starting-capital-policy`,
-      headers: { authorization: `Bearer ${token}` },
-    });
-    expect(policy.statusCode).toBe(200);
-    expect(policy.json()).toEqual({ mode: "finite", amountCents: "1000000" });
-
-    const first = await app.inject({
-      method: "POST",
-      url: `/worlds/${WORLD_FINITE_CAPITAL}/operators`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { name: "Startkapitalbahn" },
-    });
-    const replay = await app.inject({
-      method: "POST",
-      url: `/worlds/${WORLD_FINITE_CAPITAL}/operators`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { name: "Startkapitalbahn" },
-    });
-    const operatorId = first.json<{ id: string }>().id;
-    expect(first.statusCode).toBe(201);
-    expect(replay.statusCode).toBe(200);
-    expect(replay.json()).toMatchObject({ id: operatorId, idempotentReplay: true });
-
-    const [ledgerAccountRows, transactions] = await Promise.all([
-      db.select().from(ledgerAccounts).where(and(
-        eq(ledgerAccounts.worldId, WORLD_FINITE_CAPITAL),
-        eq(ledgerAccounts.operatorId, operatorId),
-      )),
-      db.select().from(ledgerTransactions).where(and(
-        eq(ledgerTransactions.worldId, WORLD_FINITE_CAPITAL),
-        eq(ledgerTransactions.operatorId, operatorId),
-      )),
-    ]);
-    expect(ledgerAccountRows.map((account) => account.name).sort()).toEqual([
-      STARTING_CAPITAL_CASH_ACCOUNT_NAME,
-      STARTING_CAPITAL_EQUITY_ACCOUNT_NAME,
-      ECONOMY_JOURNAL_REVENUE_ACCOUNT_NAME,
-      ...COST_TYPES.map((costType) => ECONOMY_JOURNAL_COST_ACCOUNT_NAMES[costType]),
-    ].sort());
-    expect(transactions).toHaveLength(1);
-    const entries = await db.select().from(ledgerEntries).where(and(
-      eq(ledgerEntries.worldId, WORLD_FINITE_CAPITAL),
-      eq(ledgerEntries.transactionId, transactions[0]!.id),
-    ));
-    expect(entries.map((entry) => entry.amountCents).sort((a, b) => a < b ? -1 : 1)).toEqual([-1_000_000n, 1_000_000n]);
-    expect(entries.reduce((sum, entry) => sum + entry.amountCents, 0n)).toBe(0n);
-  });
-
-  it("liefert unbegrenztes Startkapital als Policy und bucht keine unendliche Zahl", async () => {
-    await insertStartedPublicWorld(
-      WORLD_UNLIMITED_CAPITAL,
-      11n,
-      { mode: "unlimited" },
-      "4".repeat(64),
-    );
-    const token = await sign("kc-unlimited", "Unbegrenzt");
-    await app.inject({
-      method: "POST",
-      url: `/worlds/${WORLD_UNLIMITED_CAPITAL}/access`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Unbegrenzt" },
-    });
-
-    const policy = await app.inject({
-      method: "GET",
-      url: `/worlds/${WORLD_UNLIMITED_CAPITAL}/starting-capital-policy`,
-      headers: { authorization: `Bearer ${token}` },
-    });
-    const founded = await app.inject({
-      method: "POST",
-      url: `/worlds/${WORLD_UNLIMITED_CAPITAL}/operators`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { name: "Unendlichbahn" },
-    });
+  it("laesst einen normalen EVU-Eigentuemer weder Rohkonten noch Geldpraegungsbuchungen erzeugen", async () => {
+    const token = await sign("kc-ledger-player", "Ledger-Spieler");
+    await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${token}` }, payload: { displayName: "Ledger-Spieler", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH } });
+    const founded = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/operators`, headers: { authorization: `Bearer ${token}` }, payload: { name: "Spieler-Bahn" } });
     const operatorId = founded.json<{ id: string }>().id;
-
-    expect(policy.json()).toEqual({ mode: "unlimited" });
-    expect(JSON.stringify(policy.json())).not.toContain("Infinity");
-    expect(await db.select().from(ledgerAccounts).where(and(
-      eq(ledgerAccounts.worldId, WORLD_UNLIMITED_CAPITAL),
-      eq(ledgerAccounts.operatorId, operatorId),
-    ))).toHaveLength(12);
-    expect(await db.select().from(ledgerTransactions).where(and(
-      eq(ledgerTransactions.worldId, WORLD_UNLIMITED_CAPITAL),
+    const directAccount = await app.inject({
+      method: "POST", url: `/worlds/${WORLD_LHE}/operators/${operatorId}/ledger/accounts`, headers: { authorization: `Bearer ${token}` }, payload: { name: "Fantasie-Gegenkonto" },
+    });
+    expect(directAccount.statusCode).toBe(403);
+    const cash = (await listLedgerAccounts(db, { worldId: WORLD_LHE, operatorId }))
+      .find((account) => account.name === "Economy:Kasse");
+    expect(cash).toBeDefined();
+    const fantasy = await openLedgerAccount(db, { worldId: WORLD_LHE, operatorId, name: "Economy:Test-Gegenkonto" });
+    const mint = await app.inject({
+      method: "POST", url: `/worlds/${WORLD_LHE}/operators/${operatorId}/ledger/transactions`, headers: { authorization: `Bearer ${token}` },
+      payload: { description: "Geldpraegung", entries: [{ ledgerAccountId: cash!.id, amountCents: "100000000" }, { ledgerAccountId: fantasy.id, amountCents: "-100000000" }] },
+    });
+    expect(mint.statusCode).toBe(403);
+    const operatorTransactions = await db.select().from(ledgerTransactions).where(and(
+      eq(ledgerTransactions.worldId, WORLD_LHE),
       eq(ledgerTransactions.operatorId, operatorId),
-    ))).toHaveLength(0);
-  });
-
-  it("blockiert Policy-Manipulationen und lehnt ein ungebundenes Profil vor jeder Gründungsmutation ab", async () => {
-    const original = await insertStartedPublicWorld(
-      WORLD_UNSIGNED_CAPITAL,
-      12n,
-      { mode: "finite", amountCents: "0" },
-      null,
-    );
-    const token = await sign("kc-policy-tamper", "Policy-Tamper");
-    await app.inject({
-      method: "POST",
-      url: `/worlds/${WORLD_UNSIGNED_CAPITAL}/access`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Policy-Tamper" },
-    });
-    const tampered = { ...original, startingCapitalPolicy: { mode: "finite", amountCents: "999999999" } } as const;
-    await expect(db.update(alphaWorldProfiles).set({
-      blueprint: encodeEconomyValue(tampered),
-      blueprintHash: validateWorldBlueprint(tampered),
-    }).where(eq(alphaWorldProfiles.worldId, WORLD_UNSIGNED_CAPITAL))).rejects.toThrow();
-
-    const tamperedPolicy = await app.inject({
-      method: "GET",
-      url: `/worlds/${WORLD_UNSIGNED_CAPITAL}/starting-capital-policy`,
-      headers: { authorization: `Bearer ${token}` },
-    });
-    const tamperedFoundation = await app.inject({
-      method: "POST",
-      url: `/worlds/${WORLD_UNSIGNED_CAPITAL}/operators`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { name: "Manipulierte Bahn" },
-    });
-    expect(tamperedPolicy.statusCode).toBe(409);
-    expect(tamperedPolicy.json()).toMatchObject({ code: "starting_capital_unsigned" });
-    expect(tamperedFoundation.statusCode).toBe(409);
-
-    const unsignedFoundation = await app.inject({
-      method: "POST",
-      url: `/worlds/${WORLD_UNSIGNED_CAPITAL}/operators`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { name: "Unsignierte Bahn" },
-    });
-    expect(unsignedFoundation.statusCode).toBe(409);
-    expect(unsignedFoundation.json()).toMatchObject({ code: "starting_capital_unsigned" });
-
-    const roster = await app.inject({
-      method: "GET",
-      url: `/worlds/${WORLD_UNSIGNED_CAPITAL}/operators`,
-      headers: { authorization: `Bearer ${token}` },
-    });
-    expect(roster.json()).toEqual([]);
-    expect(await db.select().from(ledgerAccounts).where(eq(ledgerAccounts.worldId, WORLD_UNSIGNED_CAPITAL))).toHaveLength(0);
+    ));
+    expect(operatorTransactions).toHaveLength(1);
+    expect(operatorTransactions[0]?.description).toBe(`Startkapital aus Weltvertrag ${TEST_WORLD_CONTRACT_HASH}`);
+    expect(operatorTransactions.some((transaction) => transaction.description === "Geldpraegung")).toBe(false);
   });
 });
 
@@ -1961,7 +2154,7 @@ describe("Ledger-Kern (M2.4)", () => {
       method: "POST",
       url: `/worlds/${WORLD_LHE}/access`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Ledger-Anna" },
+      payload: { displayName: "Ledger-Anna", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
     });
     const founded = await app.inject({
       method: "POST",
@@ -1969,6 +2162,11 @@ describe("Ledger-Kern (M2.4)", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { name: "Ledger-Bahn" },
     });
+    const [account] = await db.select().from(accounts).where(and(
+      eq(accounts.worldId, WORLD_LHE),
+      eq(accounts.keycloakSubject, "kc-ledger"),
+    )).limit(1);
+    await db.insert(accountRoles).values({ worldId: WORLD_LHE, accountId: account!.id, role: "world_admin" });
     return { token, operatorId: founded.json<{ id: string }>().id };
   }
 
@@ -1978,7 +2176,7 @@ describe("Ledger-Kern (M2.4)", () => {
     const [kasse] = await db.select().from(ledgerAccounts).where(and(
       eq(ledgerAccounts.worldId, WORLD_LHE),
       eq(ledgerAccounts.operatorId, operatorId),
-      eq(ledgerAccounts.name, "Kasse"),
+      eq(ledgerAccounts.name, "Economy:Kasse"),
     )).limit(1);
     const entgelt = await app.inject({
       method: "POST",
@@ -2018,7 +2216,7 @@ describe("Ledger-Kern (M2.4)", () => {
     const [kasse] = await db.select().from(ledgerAccounts).where(and(
       eq(ledgerAccounts.worldId, WORLD_LHE),
       eq(ledgerAccounts.operatorId, operatorId),
-      eq(ledgerAccounts.name, "Kasse"),
+      eq(ledgerAccounts.name, "Economy:Kasse"),
     )).limit(1);
     const entgelt = await app.inject({
       method: "POST",
@@ -2049,7 +2247,7 @@ describe("Ledger-Kern (M2.4)", () => {
       method: "POST",
       url: `/worlds/${WORLD_LHE}/access`,
       headers: { authorization: `Bearer ${fremdToken}` },
-      payload: { displayName: "Fremd" },
+      payload: { displayName: "Fremd", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
     });
 
     const response = await app.inject({
@@ -2069,7 +2267,7 @@ describe("Postfach (M2.5)", () => {
       method: "POST",
       url: `/worlds/${WORLD_LHE}/access`,
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: { displayName: "Postadmin" },
+      payload: { displayName: "Postadmin", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
     });
     const adminId = adminAccess.json<{ id: string }>().id;
     await app.inject({
@@ -2084,7 +2282,7 @@ describe("Postfach (M2.5)", () => {
       method: "POST",
       url: `/worlds/${WORLD_LHE}/access`,
       headers: { authorization: `Bearer ${spielerToken}` },
-      payload: { displayName: "Postspieler" },
+      payload: { displayName: "Postspieler", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
     });
     const spielerId = spielerAccess.json<{ id: string }>().id;
 
@@ -2101,9 +2299,10 @@ describe("Postfach (M2.5)", () => {
       url: `/worlds/${WORLD_LHE}/mailbox`,
       headers: { authorization: `Bearer ${spielerToken}` },
     });
-    const messages = inbox.json<{ id: string; acknowledgedAt: string | null }[]>();
+    const messages = inbox.json<{ id: string; acknowledgedAt: string | null; priority: string; overdue: boolean }[]>();
     expect(messages).toHaveLength(1);
     expect(messages[0]?.acknowledgedAt).toBeNull();
+    expect(messages[0]).toMatchObject({ priority: "information", overdue: false });
 
     const ackResponse = await app.inject({
       method: "POST",
@@ -2111,6 +2310,7 @@ describe("Postfach (M2.5)", () => {
       headers: { authorization: `Bearer ${spielerToken}` },
     });
     expect(ackResponse.statusCode).toBe(200);
+    expect(ackResponse.json<{ acknowledgedAt: string | null; priority: string }>() ).toMatchObject({ priority: "acknowledged" });
     expect(ackResponse.json<{ acknowledgedAt: string | null }>().acknowledgedAt).not.toBeNull();
   });
 
@@ -2120,7 +2320,7 @@ describe("Postfach (M2.5)", () => {
       method: "POST",
       url: `/worlds/${WORLD_LHE}/access`,
       headers: { authorization: `Bearer ${spielerToken}` },
-      payload: { displayName: "Postspieler2" },
+      payload: { displayName: "Postspieler2", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
     });
     const spielerId = spielerAccess.json<{ id: string }>().id;
 
@@ -2141,7 +2341,7 @@ describe("Datenschutz (M2.6)", () => {
       method: "POST",
       url: `/worlds/${WORLD_LHE}/access`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Privacy-Anna" },
+      payload: { displayName: "Privacy-Anna", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
     });
 
     const exportResponse = await app.inject({
@@ -2164,7 +2364,7 @@ describe("Datenschutz (M2.6)", () => {
       method: "POST",
       url: `/worlds/${WORLD_LHE}/access`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { displayName: "Privacy-Anna" },
+      payload: { displayName: "Privacy-Anna", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
     });
     expect(reaccessResponse.statusCode).toBe(403);
 

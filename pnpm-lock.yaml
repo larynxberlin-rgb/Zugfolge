@@ -83,6 +83,12 @@ importers:
       jose:
         specifier: ^6.2.8
         version: 6.2.8
+      playwright-core:
+        specifier: 1.55.0
+        version: 1.55.0
+      postgres:
+        specifier: ^3.4.9
+        version: 3.4.9
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -217,6 +223,9 @@ importers:
       '@zugfolge/db':
         specifier: workspace:*
         version: link:../db
+      '@zugfolge/economy':
+        specifier: workspace:*
+        version: link:../economy
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@electric-sql/pglite@0.5.4)(@types/pg@8.20.4)(pg@8.22.0)(postgres@3.4.9)
@@ -575,12 +584,18 @@ importers:
       '@electric-sql/pglite':
         specifier: ^0.5.4
         version: 0.5.4
+      '@zugfolge/alpha':
+        specifier: workspace:*
+        version: link:../../packages/alpha
       '@zugfolge/db':
         specifier: workspace:*
         version: link:../../packages/db
       '@zugfolge/dispatch':
         specifier: workspace:*
         version: link:../../packages/dispatch
+      '@zugfolge/economy':
+        specifier: workspace:*
+        version: link:../../packages/economy
       '@zugfolge/game-api':
         specifier: workspace:*
         version: link:../../apps/game-api
@@ -1649,6 +1664,11 @@ packages:
     resolution: {integrity: sha512-r34yH/GlQpKZbU1BvFFqOjhISRo1MNx1tWYsYvmj6KIRHSPMT2+yHOEb1SG6NMvRoHRF0a07kCOox/9yakl1vg==}
     hasBin: true
 
+  playwright-core@1.55.0:
+    resolution: {integrity: sha512-GvZs4vU3U5ro2nZpeiwyb0zuFaqb9sUiAJuyrWpcGouD8y9/HLgGbNRjIph7zU9D3hnPaisMl9zG9CgFi/biIg==}
+    engines: {node: '>=18'}
+    hasBin: true
+
   pmtiles@4.5.0:
     resolution: {integrity: sha512-CBeD4SoUluFziGdy/8k7FOjQxQy486n+929W/tWophauvMICpkZ26vGBWhDt/6b1FZQWNaf4jFdT/5+q0Wii5w==}
 
@@ -2673,6 +2693,8 @@ snapshots:
       safe-stable-stringify: 2.5.0
       sonic-boom: 4.2.1
       thread-stream: 4.2.0
+
+  playwright-core@1.55.0: {}
 
   pmtiles@4.5.0:
     dependencies:

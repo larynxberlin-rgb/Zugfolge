@@ -7,13 +7,33 @@ import {
   type PlanningCoordinateStation,
 } from "@zugfolge/planning-runtime-native";
 
-export const PLANNING_PATH_REQUEST_SCHEMA = "planning.path-request/v1" as const;
+export const PLANNING_PLAYER_PATH_REQUEST_SCHEMA = "planning.player-path-request/v1" as const;
+export const PLANNING_PATH_REQUEST_SCHEMA = "planning.path-request/v3" as const;
 export const PLANNING_COORDINATE_AUTHORITY_SCHEMA = "planning.coordinate/v1" as const;
 export const PLANNING_INFRASTRUCTURE_RELEASE_SCHEMA = "planning.infrastructure-release/v1" as const;
 
+export interface PlanningPlayerPathRequestBody extends Omit<PlanningCoordinateRequest, "requestNumericId" | "boundaryWindows" | "train"> {
+  readonly schemaVersion: typeof PLANNING_PLAYER_PATH_REQUEST_SCHEMA;
+  readonly requestId: string;
+  readonly formationId: string;
+  /** Opaque Referenz; die Zeitwerte selbst darf ein Spieler nie einreichen. */
+  readonly boundaryPlanningWindowId?: string;
+}
+
+/**
+ * Internes, serverautoritativ vervollstaendigtes Planungskommando. Die
+ * Flottenreferenz bindet die abgeleitete Physik an genau den geprüften
+ * Single-Writer-Zustand; kein Feld davon stammt aus dem Spielerrequest.
+ */
 export interface PlanningPathRequestBody extends Omit<PlanningCoordinateRequest, "requestNumericId" | "boundaryWindows"> {
   readonly schemaVersion: typeof PLANNING_PATH_REQUEST_SCHEMA;
   readonly requestId: string;
+  readonly formationId: string;
+  /** Serverseitig aus dem Flotten-/Trassenbeleg abgeleitete EVU-Bindung. */
+  readonly operatorId: string;
+  readonly fleetRevision: number;
+  readonly fleetStateHash: string;
+  readonly fleetAuthorityReleaseId: string;
   /** Opaque Referenz; die Zeitwerte selbst darf ein Spieler nie einreichen. */
   readonly boundaryPlanningWindowId?: string;
 }
@@ -87,8 +107,9 @@ function integer(value: unknown, name: string, minimum = 0): asserts value is nu
   invariant(Number.isSafeInteger(value) && (value as number) >= minimum, `${name} ist keine sichere Ganzzahl ab ${minimum}.`);
 }
 
-const REQUEST_KEYS = [
+const PLAYER_REQUEST_KEYS = [
   "requestId",
+  "formationId",
   "trainId",
   "trainCategory",
   "trainNumber",
@@ -102,11 +123,19 @@ const REQUEST_KEYS = [
   "stepS",
   "extraRunningTimeS",
   "maxOperationalStops",
+] as const;
+
+const REQUEST_KEYS = [
+  ...PLAYER_REQUEST_KEYS,
+  "operatorId",
+  "fleetRevision",
+  "fleetStateHash",
+  "fleetAuthorityReleaseId",
   "train",
 ] as const;
 
-function validateRequestFacts(input: Record<string, unknown>, name: string): void {
-  for (const key of ["requestId", "trainId", "originStationId", "destinationStationId"] as const) {
+function validatePlayerRequestFacts(input: Record<string, unknown>, name: string): void {
+  for (const key of ["requestId", "formationId", "trainId", "originStationId", "destinationStationId"] as const) {
     text(input[key], `${name}.${key}`);
   }
   invariant(
@@ -127,6 +156,15 @@ function validateRequestFacts(input: Record<string, unknown>, name: string): voi
     text(stop["stationId"], `${name}.stops[${index}].stationId`);
     integer(stop["minimumDwellS"], `${name}.stops[${index}].minimumDwellS`);
   }
+}
+
+function validateRequestFacts(input: Record<string, unknown>, name: string): void {
+  validatePlayerRequestFacts(input, name);
+  text(input["operatorId"], `${name}.operatorId`);
+  integer(input["fleetRevision"], `${name}.fleetRevision`);
+  text(input["fleetStateHash"], `${name}.fleetStateHash`);
+  invariant(/^[a-f0-9]{64}$/.test(input["fleetStateHash"] as string), `${name}.fleetStateHash ist kein SHA-256.`);
+  text(input["fleetAuthorityReleaseId"], `${name}.fleetAuthorityReleaseId`);
   const train = exactRecord(input["train"], `${name}.train`, [
     "numericId",
     "name",
@@ -141,6 +179,26 @@ function validateRequestFacts(input: Record<string, unknown>, name: string): voi
   for (const key of ["massKg", "lengthMm", "maximumSpeedKph", "accelerationMmPerS2", "decelerationMmPerS2"] as const) {
     integer(train[key], `${name}.train.${key}`, 1);
   }
+}
+
+/** Validiert den schmalen, nichtautoritativen Spielerrequest fail-closed. */
+export function bindPlanningPlayerPathRequest(value: unknown): PlanningPlayerPathRequestBody {
+  const withBoundaryReference = typeof value === "object" && value !== null && !Array.isArray(value)
+    && "boundaryPlanningWindowId" in value;
+  const input = exactRecord(value, "planning.player-path-request", [
+    "schemaVersion",
+    ...PLAYER_REQUEST_KEYS,
+    ...(withBoundaryReference ? ["boundaryPlanningWindowId"] : []),
+  ]);
+  invariant(
+    input["schemaVersion"] === PLANNING_PLAYER_PATH_REQUEST_SCHEMA,
+    "planning.player-path-request hat ein unbekanntes Schema.",
+  );
+  validatePlayerRequestFacts(input, "planning.player-path-request");
+  if (withBoundaryReference) {
+    text(input["boundaryPlanningWindowId"], "planning.player-path-request.boundaryPlanningWindowId");
+  }
+  return input as unknown as PlanningPlayerPathRequestBody;
 }
 
 /** Binds one player's path request to the authenticated world and account. */
@@ -298,6 +356,11 @@ const nonEmptyString = { type: "string", minLength: 1 } as const;
 const pathRequestProperties = {
   schemaVersion: { type: "string", const: PLANNING_PATH_REQUEST_SCHEMA },
   requestId: nonEmptyString,
+  formationId: nonEmptyString,
+  operatorId: nonEmptyString,
+  fleetRevision: nonNegativeInteger,
+  fleetStateHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+  fleetAuthorityReleaseId: nonEmptyString,
   boundaryPlanningWindowId: nonEmptyString,
   trainId: nonEmptyString,
   trainCategory: { enum: ["long-distance", "suburban", "regional", "freight", "supplementary"] },
@@ -326,6 +389,25 @@ const pathRequestProperties = {
       maximumSpeedKph: positiveInteger, accelerationMmPerS2: positiveInteger, decelerationMmPerS2: positiveInteger,
     },
   },
+} as const;
+
+const playerPathRequestProperties = {
+  ...pathRequestProperties,
+  schemaVersion: { type: "string", const: PLANNING_PLAYER_PATH_REQUEST_SCHEMA },
+  train: undefined,
+  fleetRevision: undefined,
+  fleetStateHash: undefined,
+  fleetAuthorityReleaseId: undefined,
+} as const;
+
+/** Fastify-kompatibler exakter Body fuer den nichtautoritativen Spielerpfad. */
+export const PLANNING_PLAYER_PATH_REQUEST_BODY_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["schemaVersion", ...PLAYER_REQUEST_KEYS],
+  properties: Object.fromEntries(
+    Object.entries(playerPathRequestProperties).filter(([, value]) => value !== undefined),
+  ),
 } as const;
 
 /** Fastify-compatible exact body for one authenticated player's request. */

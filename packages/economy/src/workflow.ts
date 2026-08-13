@@ -470,14 +470,23 @@ export function grantEmergencyStartPackage(state: EconomyWorldState, input: {
 
 export function settleContractPeriod(state: EconomyWorldState, input: { readonly commandId: string; readonly contractId: string; readonly period: number; readonly at: number; readonly performance: PerformanceEvidence; readonly costs: readonly ClassifiedPosting[] }): { readonly state: EconomyWorldState; readonly effects: EconomyEffects; readonly result: ProfitAndLoss } {
   if (!requireNewCommand(state, input.commandId)) throw new Error("Abrechnungsbefehl wurde bereits verarbeitet.");
-  if (!Number.isSafeInteger(input.period) || input.period < 0) throw new Error("Vertragsperiode ist ungültig.");
+  if (!Number.isSafeInteger(input.period) || input.period < 0 || !Number.isSafeInteger(input.at) || input.at < 0) throw new Error("Vertragsperiode oder Abrechnungszeit ist ungültig.");
   const settlementKey = `${input.contractId}:${input.period}`;
   if (state.settledPeriods.has(settlementKey)) throw new Error("Vertragsperiode wurde bereits abgerechnet.");
   const contract = state.contracts.get(input.contractId);
-  if (contract === undefined || contract.worldId !== state.worldId || input.at < contract.startsAt || input.at > contract.endsAt) throw new Error("Vertrag ist in dieser Welt und Periode nicht abrechenbar.");
+  if (contract === undefined || contract.worldId !== state.worldId) throw new Error("Vertrag ist in dieser Welt nicht abrechenbar.");
+  const tender = state.tenders.get(input.contractId)?.tender;
+  if (tender === undefined || tender.lotId !== contract.lotId || !Number.isSafeInteger(tender.periodDurationSeconds) || tender.periodDurationSeconds <= 0) {
+    throw new Error("Vertrag besitzt keine passende, serverseitige Periodendefinition.");
+  }
+  const periodStart = contract.startsAt + input.period * tender.periodDurationSeconds;
+  const periodEnd = Math.min(contract.endsAt, periodStart + tender.periodDurationSeconds);
+  if (!Number.isSafeInteger(periodStart) || !Number.isSafeInteger(periodEnd) || periodStart >= contract.endsAt) throw new Error("Vertragsperiode liegt ausserhalb der Vertragslaufzeit.");
+  if (input.at < periodEnd) throw new Error("Vertragsperiode kann erst nach ihrem serverseitigen Periodenende abgerechnet werden.");
+  if (input.performance.trainKm > tender.specification.trainKmPerPeriod) throw new Error("Abgerechnete Zugkilometer ueberschreiten die bestellte Periodenleistung.");
   const validatedCosts = input.costs.map((posting) => {
     if (posting.amountCents < 0n || posting.costCentreId !== contract.lotId || posting.reference.trim() === "") {
-      throw new Error("Kostenbuchung verletzt Betrag, Vertragslos oder Belegpflicht.");
+      throw new Error("Kostenbuchung verletzt Betrag, Los-Grenze oder Belegpflicht.");
     }
     assertNonnegativeI64(posting.amountCents, "Kostenbuchung");
     return posting;
@@ -535,6 +544,9 @@ export function assertOperatorActionAllowed(
   operatorId: string,
   action: RestrictedOperatorAction,
 ): void {
+  if (state.insolventOperators.has(operatorId)) {
+    throw new Error(`EVU '${operatorId}' ist insolvent und fuer Aktion '${action}' gesperrt.`);
+  }
   const restriction = state.operatorRestrictions.get(operatorId);
   const blocked = action === "path"
     ? restriction?.pathsBlocked

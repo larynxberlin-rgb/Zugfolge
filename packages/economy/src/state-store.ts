@@ -1,4 +1,13 @@
-import { domainEvents, economyOutbox, economyWorldStates, worlds } from "@zugfolge/db";
+import {
+  domainEvents,
+  economyOutbox,
+  economyWorldStates,
+  ledgerAccounts,
+  ledgerEntries,
+  ledgerTransactions,
+  operators,
+  worlds,
+} from "@zugfolge/db";
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 
 import type { EconomyDatabase } from "./ledger.js";
@@ -46,6 +55,154 @@ export class EconomyStateConflictError extends Error {
   }
 }
 
+export class EconomyEffectWorldConflictError extends Error {
+  constructor(effectId: string, worldId: string) {
+    super(`M6-Outbox-Effekt '${effectId}' gehoert beim Quittieren nicht mehr zu Welt '${worldId}'.`);
+    this.name = "EconomyEffectWorldConflictError";
+  }
+}
+
+export class EconomyCashWriterBindingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "EconomyCashWriterBindingError";
+  }
+}
+
+/**
+ * Gemeinsamer Serialisierungspunkt fuer jeden autoritativen Cash-Writer eines
+ * EVU. Economy-Outbox, Ledgerprojektion und interaktive Kooperation muessen
+ * diese weltgebundene EVU-Zeile sperren, bevor sie Cash-Wirkungen erzeugen,
+ * projizieren oder als verfuegbar beurteilen.
+ */
+export async function lockEconomyCashWriter(
+  db: EconomyDatabase,
+  input: { readonly worldId: string; readonly operatorId: string },
+): Promise<void> {
+  const [operator] = await db
+    .select({ id: operators.id })
+    .from(operators)
+    .where(and(eq(operators.worldId, input.worldId), eq(operators.id, input.operatorId)))
+    .limit(1)
+    .for("update");
+  if (operator === undefined) {
+    throw new EconomyCashWriterBindingError(
+      `Cash-Writer findet EVU '${input.operatorId}' in Welt '${input.worldId}' nicht.`,
+    );
+  }
+}
+
+export interface EconomyCashAvailability {
+  readonly ledgerBalanceCents: bigint;
+  readonly pendingDebitCents: bigint;
+  readonly availableCents: bigint;
+}
+
+function pendingJournalCashDelta(value: unknown, row: { readonly worldId: string; readonly effectId: string }): {
+  readonly operatorId: string;
+  readonly idempotencyKey: string;
+  readonly cashDeltaCents: bigint;
+} {
+  const decoded = decodeEconomyValue(value);
+  if (typeof decoded !== "object" || decoded === null || Array.isArray(decoded)) {
+    throw new EconomyCashWriterBindingError("Ausstehendes Economy-Journal besitzt kein gueltiges Objektformat.");
+  }
+  const entry = decoded as Readonly<Record<string, unknown>>;
+  if (
+    entry["worldId"] !== row.worldId
+    || typeof entry["operatorId"] !== "string"
+    || entry["operatorId"].trim() === ""
+    || typeof entry["idempotencyKey"] !== "string"
+    || entry["idempotencyKey"] !== row.effectId
+    || typeof entry["revenueCents"] !== "bigint"
+    || !Array.isArray(entry["postings"])
+  ) {
+    throw new EconomyCashWriterBindingError("Ausstehendes Economy-Journal verletzt Welt-, EVU- oder Effektreferenz.");
+  }
+  let costsCents = 0n;
+  for (const posting of entry["postings"]) {
+    if (
+      typeof posting !== "object"
+      || posting === null
+      || Array.isArray(posting)
+      || typeof (posting as Readonly<Record<string, unknown>>)["amountCents"] !== "bigint"
+      || ((posting as Readonly<Record<string, unknown>>)["amountCents"] as bigint) < 0n
+    ) {
+      throw new EconomyCashWriterBindingError("Ausstehendes Economy-Journal besitzt eine ungueltige Kostenbuchung.");
+    }
+    costsCents += (posting as Readonly<Record<string, unknown>>)["amountCents"] as bigint;
+  }
+  return {
+    operatorId: entry["operatorId"],
+    idempotencyKey: entry["idempotencyKey"],
+    cashDeltaCents: entry["revenueCents"] - costsCents,
+  };
+}
+
+/**
+ * Verfuegbares Cash unter dem gemeinsamen Writer-Lock. Noch nicht ins Ledger
+ * projizierte Journal-Debits werden reserviert. Journal-Credits werden bis zur
+ * echten Buchung nie vorweg als Kaufkraft angerechnet. Ist ein Effekt bereits
+ * idempotent im Ledger angekommen, aber noch nicht in der Outbox quittiert,
+ * verhindert der Join eine Doppelbelastung.
+ */
+export async function loadEconomyCashAvailabilityForUpdate(
+  db: EconomyDatabase,
+  input: { readonly worldId: string; readonly operatorId: string; readonly cashAccountId: string },
+): Promise<EconomyCashAvailability> {
+  await lockEconomyCashWriter(db, input);
+  const [cashAccount] = await db
+    .select({ id: ledgerAccounts.id })
+    .from(ledgerAccounts)
+    .where(and(
+      eq(ledgerAccounts.worldId, input.worldId),
+      eq(ledgerAccounts.operatorId, input.operatorId),
+      eq(ledgerAccounts.id, input.cashAccountId),
+    ))
+    .limit(1);
+  if (cashAccount === undefined) {
+    throw new EconomyCashWriterBindingError("Cash-Konto ist nicht an Welt und EVU des Cash-Writers gebunden.");
+  }
+
+  const [entries, pendingRows] = await Promise.all([
+    db.select({ amountCents: ledgerEntries.amountCents }).from(ledgerEntries).where(and(
+      eq(ledgerEntries.worldId, input.worldId),
+      eq(ledgerEntries.ledgerAccountId, input.cashAccountId),
+    )),
+    db
+      .select({
+        worldId: economyOutbox.worldId,
+        effectId: economyOutbox.effectId,
+        payload: economyOutbox.payload,
+        bookedTransactionId: ledgerTransactions.id,
+      })
+      .from(economyOutbox)
+      .leftJoin(ledgerTransactions, and(
+        eq(ledgerTransactions.worldId, economyOutbox.worldId),
+        eq(ledgerTransactions.operatorId, input.operatorId),
+        eq(ledgerTransactions.idempotencyKey, economyOutbox.effectId),
+      ))
+      .where(and(
+        eq(economyOutbox.worldId, input.worldId),
+        eq(economyOutbox.effectType, "journal"),
+        isNull(economyOutbox.processedAt),
+      )),
+  ]);
+
+  const ledgerBalanceCents = entries.reduce((sum, entry) => sum + entry.amountCents, 0n);
+  let pendingDebitCents = 0n;
+  for (const row of pendingRows) {
+    const journal = pendingJournalCashDelta(row.payload, row);
+    if (journal.operatorId !== input.operatorId || row.bookedTransactionId !== null) continue;
+    if (journal.cashDeltaCents < 0n) pendingDebitCents += -journal.cashDeltaCents;
+  }
+  return Object.freeze({
+    ledgerBalanceCents,
+    pendingDebitCents,
+    availableCents: ledgerBalanceCents - pendingDebitCents,
+  });
+}
+
 /**
  * Speichert Zustand und ausstehende Effekte in genau einer Transaktion.
  * `expectedRevision=null` legt die Welt erstmalig an; Folgekommandos geben
@@ -65,6 +222,11 @@ export async function persistEconomyTransition(
   }
   if (input.expectedRevision === null && input.state.revision !== 0) {
     throw new EconomyStateConflictError(input.state.worldId, null);
+  }
+  for (const entry of input.effects.journal) {
+    if (entry.worldId !== input.state.worldId || entry.operatorId.trim() === "" || entry.idempotencyKey.trim() === "") {
+      throw new EconomyCashWriterBindingError("Economy-Journal verletzt Welt-, EVU- oder Effektreferenz.");
+    }
   }
 
   await db.transaction(async (tx) => {
@@ -90,6 +252,13 @@ export async function persistEconomyTransition(
           .where(and(eq(economyWorldStates.worldId, input.state.worldId), eq(economyWorldStates.revision, input.expectedRevision)))
           .returning({ worldId: economyWorldStates.worldId });
     if (written.length !== 1) throw new EconomyStateConflictError(input.state.worldId, input.expectedRevision);
+
+    // Lock-Reihenfolge bleibt fuer alle Zahlungswriter gleich: zuerst die
+    // Economy-Weltrevision, danach die sortierten EVU-Cash-Writer.
+    const journalOperatorIds = [...new Set(input.effects.journal.map((entry) => entry.operatorId))].sort();
+    for (const operatorId of journalOperatorIds) {
+      await lockEconomyCashWriter(tx, { worldId: input.state.worldId, operatorId });
+    }
 
     const rows = [
       ...input.effects.journal.map((entry) => ({
@@ -145,7 +314,11 @@ export async function loadEconomyWorldState(
     .where(eq(economyWorldStates.worldId, worldId))
     .limit(1);
   if (row === undefined) return undefined;
-  const state = decodeEconomyValue(row.state) as EconomyWorldState;
+  return decodeStoredEconomyWorldState(row.state);
+}
+
+function decodeStoredEconomyWorldState(value: unknown): EconomyWorldState {
+  const state = decodeEconomyValue(value) as EconomyWorldState;
   // Vor der Scheduler-Anbindung persistierte M6-Zustände besitzen dieses
   // Feld noch nicht. Ein leerer Index ist die semantisch korrekte Migration:
   // bestehende Ausschreibungen werden nicht nachträglich automatisiert.
@@ -156,7 +329,26 @@ export async function loadEconomyWorldState(
       : state;
 }
 
+/**
+ * Liest und sperrt genau die autoritative Economy-Revision einer Welt in der
+ * bereits laufenden Fachtransaktion. Zahlungswriter koennen dadurch Sperrstatus,
+ * Cash-Pruefung und Wirkung auf einen gemeinsamen Serialisierungspunkt binden.
+ */
+export async function loadEconomyWorldStateForUpdate(
+  db: EconomyDatabase,
+  worldId: string,
+): Promise<EconomyWorldState | undefined> {
+  const [row] = await db
+    .select({ state: economyWorldStates.state })
+    .from(economyWorldStates)
+    .where(eq(economyWorldStates.worldId, worldId))
+    .limit(1)
+    .for("update");
+  return row === undefined ? undefined : decodeStoredEconomyWorldState(row.state);
+}
+
 export async function listEconomyWorldIds(db: EconomyDatabase): Promise<readonly string[]> {
+  // guards:allow world-id — Der Scheduler enumeriert Welt-IDs; jeder anschliessende Zustandszugriff ist weltgebunden.
   const rows = await db
     .select({ worldId: economyWorldStates.worldId })
     .from(economyWorldStates)
@@ -231,11 +423,30 @@ export async function dispatchEconomyOutbox(
     try {
       if (effect.effectType === "journal") await adapters.postJournal(effect.payload as EconomyJournalEntry);
       else await adapters.sendNotice(effect.payload as EconomyNotice);
-      await db
+      const marked = await db
         .update(economyOutbox)
         .set({ processedAt, lastErrorCode: null })
-        .where(and(eq(economyOutbox.id, effect.id), isNull(economyOutbox.processedAt)));
-      processed += 1;
+        .where(and(
+          eq(economyOutbox.worldId, worldId),
+          eq(economyOutbox.id, effect.id),
+          isNull(economyOutbox.processedAt),
+        ))
+        .returning({ id: economyOutbox.id });
+      if (marked.length === 1) {
+        processed += 1;
+      } else {
+        // Ein paralleler Dispatcher darf denselben idempotenten Zieladapter
+        // erreichen. Hat der Gewinner die exakt weltgebundene Zeile bereits
+        // quittiert, ist dies ein erfolgreicher Replay und kein Fehler.
+        const [alreadyProcessed] = await db
+          .select({ processedAt: economyOutbox.processedAt })
+          .from(economyOutbox)
+          .where(and(eq(economyOutbox.worldId, worldId), eq(economyOutbox.id, effect.id)))
+          .limit(1);
+        if (alreadyProcessed?.processedAt === null || alreadyProcessed === undefined) {
+          throw new EconomyEffectWorldConflictError(effect.id, worldId);
+        }
+      }
     } catch (error) {
       await db
         .update(economyOutbox)
@@ -243,7 +454,11 @@ export async function dispatchEconomyOutbox(
           attempts: sql`${economyOutbox.attempts} + 1`,
           lastErrorCode: error instanceof Error && error.name !== "Error" ? error.name : "dispatch_failed",
         })
-        .where(eq(economyOutbox.id, effect.id));
+        .where(and(
+          eq(economyOutbox.worldId, worldId),
+          eq(economyOutbox.id, effect.id),
+          isNull(economyOutbox.processedAt),
+        ));
       throw error;
     }
   }

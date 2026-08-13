@@ -1,8 +1,8 @@
 import { PGlite } from "@electric-sql/pglite";
-import { MIGRATIONS_FOLDER, schema, worlds } from "@zugfolge/db";
+import { economyOutbox, MIGRATIONS_FOLDER, schema, worlds } from "@zugfolge/db";
+import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
-import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EconomyDatabase } from "./ledger.js";
@@ -18,6 +18,7 @@ import {
 import { closeEconomyWorld, startEconomyWorld } from "./workflow.js";
 
 const WORLD_ID = "33333333-3333-3333-3333-333333333333";
+const OTHER_WORLD_ID = "44444444-4444-4444-8444-444444444444";
 const release = buildEconomyRelease({
   version: "state-store-1",
   rates: {
@@ -54,7 +55,10 @@ describe("persistenter M6-Weltzustand und Outbox", () => {
     client = new PGlite();
     const database = drizzle(client, { schema });
     await migrate(database, { migrationsFolder: MIGRATIONS_FOLDER });
-    await database.insert(worlds).values({ id: WORLD_ID, name: "M6", schedulePeriodWeeks: 3, epoch: new Date(0) });
+    await database.insert(worlds).values([
+      { id: WORLD_ID, name: "M6", schedulePeriodWeeks: 3, epoch: new Date(0) },
+      { id: OTHER_WORLD_ID, name: "M6-fremd", schedulePeriodWeeks: 3, epoch: new Date(0) },
+    ]);
     db = database;
   });
 
@@ -110,7 +114,7 @@ describe("persistenter M6-Weltzustand und Outbox", () => {
         journal: [],
         runtimeEvents: [{
           eventId: "foreign:1",
-          worldId: "44444444-4444-4444-8444-444444444444",
+          worldId: OTHER_WORLD_ID,
           eventType: "operating-transition-completed",
           atS: 1,
           payload: {},
@@ -121,21 +125,32 @@ describe("persistenter M6-Weltzustand und Outbox", () => {
     expect((await loadEconomyWorldState(db, WORLD_ID))?.revision).toBe(0);
   });
 
-  it("haelt einen persistierten Economy-Zustand waehrend World-Provisioning scheduler-inert", async () => {
-    const started = startEconomyWorld({
+  it("quittiert keinen Outbox-Effekt, dessen Welt waehrend der Zustellung wechselt", async () => {
+    await db.insert(economyOutbox).values({
       worldId: WORLD_ID,
-      seed: 17n,
-      durationMonths: 6,
-      release,
-      lots: Array.from({ length: 8 }, (_, index) => ({ id: `provisioning-${index}`, size: 100 - index, attractiveness: index })),
-      authorityBudgets: [],
-      accounts: [],
+      effectId: "isolation-notice",
+      effectType: "notice",
+      payload: { id: "isolation-notice", worldId: WORLD_ID, recipientAccountId: "account-1", type: "test", at: 0, payload: {} },
+      occurredAt: new Date(0),
+      enqueuedAt: new Date(0),
     });
-    await persistEconomyTransition(db, { expectedRevision: null, ...started, committedAt: new Date(0) });
-    await db.update(worlds).set({ lifecycleStatus: "provisioning" }).where(eq(worlds.id, WORLD_ID));
-    expect(await listEconomyWorldIds(db)).toEqual([]);
+    const [effect] = await listPendingEconomyEffects(db, WORLD_ID);
+    expect(effect).toBeDefined();
 
-    await db.update(worlds).set({ lifecycleStatus: "active" }).where(eq(worlds.id, WORLD_ID));
-    expect(await listEconomyWorldIds(db)).toEqual([WORLD_ID]);
+    await expect(dispatchEconomyOutbox(db, WORLD_ID, {
+      async sendNotice() {
+        await db.update(economyOutbox).set({ worldId: OTHER_WORLD_ID }).where(and(
+          eq(economyOutbox.worldId, WORLD_ID),
+          eq(economyOutbox.id, effect!.id),
+        ));
+      },
+      postJournal: async () => undefined,
+    }, new Date(2_000))).rejects.toThrow(/gehoert beim Quittieren nicht mehr/);
+
+    const [moved] = await db.select().from(economyOutbox).where(and(
+      eq(economyOutbox.worldId, OTHER_WORLD_ID),
+      eq(economyOutbox.id, effect!.id),
+    ));
+    expect(moved?.processedAt).toBeNull();
   });
 });

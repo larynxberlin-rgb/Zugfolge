@@ -35,18 +35,13 @@ export interface WorldLotBlueprint {
   readonly operatingProgramIds: readonly string[];
 }
 
-export interface AlphaWorldBlueprint {
-  readonly schemaVersion: typeof ALPHA_WORLD_BLUEPRINT_SCHEMA;
+interface AlphaWorldBlueprintBase {
   readonly regionId: string;
   readonly regionVariant: "B";
   readonly seed: bigint;
   readonly profileKind: AlphaWorldKind;
   readonly accelerationFactor: number;
   readonly periodCount: number | null;
-  /** Signierte JSON-Darstellung; der endliche Betrag bleibt ein Dezimalstring. */
-  readonly startingCapitalPolicy: SerializedStartingCapitalPolicy;
-  /** Signierte Anschubregel; sie vergibt beim Beitritt keinerlei Ressource. */
-  readonly entryFacilityPolicy: PublicEntryFacilityPolicy;
   readonly releases: {
     readonly infra: string;
     readonly timetable: string;
@@ -56,6 +51,33 @@ export interface AlphaWorldBlueprint {
   readonly lots: readonly WorldLotBlueprint[];
   readonly conflictCheckHash: string;
   readonly tenderCalendarHash: string;
+}
+
+/**
+ * Bereits persistierte v1-Welten bleiben unter ihrem urspruenglichen
+ * Schema-Namespace lesbar. Ihr Hash wird niemals als v2 neu interpretiert.
+ */
+export interface AlphaWorldBlueprintV1 extends AlphaWorldBlueprintBase {
+  readonly schemaVersion: "zugfolge-alpha-world-blueprint/v1";
+  readonly startingCapitalPolicy: {
+    readonly kind: "finite";
+    readonly amountCents: string;
+  } | {
+    readonly kind: "unlimited";
+  };
+  readonly entryFacilityPolicy?: never;
+  readonly activityPolicy?: never;
+  readonly admission?: never;
+  readonly publicMetadata?: never;
+}
+
+/** Neue, extern signierte Weltvertraege verwenden ausschliesslich v2. */
+export interface AlphaWorldBlueprintV2 extends AlphaWorldBlueprintBase {
+  readonly schemaVersion: typeof ALPHA_WORLD_BLUEPRINT_SCHEMA;
+  /** Signierte JSON-Darstellung; der endliche Betrag bleibt ein Dezimalstring. */
+  readonly startingCapitalPolicy: SerializedStartingCapitalPolicy;
+  /** Signierte Anschubregel; sie vergibt beim Beitritt keinerlei Ressource. */
+  readonly entryFacilityPolicy: PublicEntryFacilityPolicy;
   /** `null` bedeutet: fachliche Grenzwerte noch nicht freigegeben; keine Kennzahl behaupten. */
   readonly activityPolicy?: WorldActivityPolicy;
   readonly admission?: {
@@ -82,7 +104,18 @@ export interface AlphaWorldBlueprint {
   };
 }
 
+export type AlphaWorldBlueprint = AlphaWorldBlueprintV1 | AlphaWorldBlueprintV2;
+
 export function effectiveStartingCapitalPolicy(blueprint: AlphaWorldBlueprint): StartingCapitalPolicy {
+  if (blueprint.schemaVersion === "zugfolge-alpha-world-blueprint/v1") {
+    if (blueprint.entryFacilityPolicy !== undefined || blueprint.activityPolicy !== undefined
+      || blueprint.admission !== undefined || blueprint.publicMetadata !== undefined) {
+      throw new AlphaValidationError("v1-Weltentwurf darf keine v2-Vertragsfelder enthalten.");
+    }
+    return blueprint.startingCapitalPolicy.kind === "unlimited"
+      ? { mode: "unlimited" }
+      : { mode: "finite", amountCents: BigInt(blueprint.startingCapitalPolicy.amountCents) };
+  }
   return parseStartingCapitalPolicy(blueprint.startingCapitalPolicy);
 }
 
@@ -127,7 +160,10 @@ function identifiers(values: readonly string[], name: string): void {
 }
 
 export function validateWorldBlueprint(blueprint: AlphaWorldBlueprint): string {
-  if (blueprint.schemaVersion !== ALPHA_WORLD_BLUEPRINT_SCHEMA) throw new AlphaValidationError("Unbekanntes Weltentwurf-Schema.");
+  if (blueprint.schemaVersion !== "zugfolge-alpha-world-blueprint/v1"
+    && blueprint.schemaVersion !== ALPHA_WORLD_BLUEPRINT_SCHEMA) {
+    throw new AlphaValidationError("Unbekanntes Weltentwurf-Schema.");
+  }
   if (blueprint.regionId !== "mitteldeutschland-b" || blueprint.regionVariant !== "B") {
     throw new AlphaValidationError("Alpha-Welt liegt nicht in der freigegebenen Variante B.");
   }
@@ -146,24 +182,36 @@ export function validateWorldBlueprint(blueprint: AlphaWorldBlueprint): string {
   if (blueprint.periodCount !== null && (!Number.isSafeInteger(blueprint.periodCount) || blueprint.periodCount < 1)) {
     throw new AlphaValidationError("Befristete Welt braucht mindestens eine Fahrplanperiode.");
   }
-  try {
-    parseStartingCapitalPolicy(blueprint.startingCapitalPolicy);
-  } catch {
-    throw new AlphaValidationError("Startkapital-Policy ist ungueltig.");
-  }
-  if (blueprint.entryFacilityPolicy.schemaVersion !== PUBLIC_ENTRY_FACILITY_SCHEMA) {
-    throw new AlphaValidationError("Unbekannte Anschubregel.");
-  }
-  if (blueprint.profileKind === "public") {
-    if (
-      blueprint.entryFacilityPolicy.mode !== "award-contingent-wet-lease"
-      || blueprint.entryFacilityPolicy.providerOperatorId !== "public"
-      || blueprint.entryFacilityPolicy.costBasis !== "formation-operating-cost"
-    ) {
-      throw new AlphaValidationError("Oeffentliche Welt braucht den transparenten zuschlagsgebundenen Nullstartpfad.");
+  if (blueprint.schemaVersion === "zugfolge-alpha-world-blueprint/v1") {
+    if (blueprint.startingCapitalPolicy.kind === "finite") {
+      if (!/^[0-9]+$/.test(blueprint.startingCapitalPolicy.amountCents)
+        || BigInt(blueprint.startingCapitalPolicy.amountCents) > 9_223_372_036_854_775_807n) {
+        throw new AlphaValidationError("StartingCapitalPolicy besitzt keinen endlichen Integer-Centbetrag.");
+      }
+    } else if (blueprint.startingCapitalPolicy.kind !== "unlimited") {
+      throw new AlphaValidationError("StartingCapitalPolicy ist unbekannt.");
     }
-  } else if (blueprint.entryFacilityPolicy.mode !== "disabled") {
-    throw new AlphaValidationError("Die oeffentliche Anschubregel ist ausserhalb oeffentlicher Welten deaktiviert.");
+  } else {
+    try {
+      parseStartingCapitalPolicy(blueprint.startingCapitalPolicy);
+    } catch {
+      throw new AlphaValidationError("Startkapital-Policy ist ungueltig.");
+    }
+    if (blueprint.entryFacilityPolicy === undefined
+      || blueprint.entryFacilityPolicy.schemaVersion !== PUBLIC_ENTRY_FACILITY_SCHEMA) {
+      throw new AlphaValidationError("Unbekannte Anschubregel.");
+    }
+    if (blueprint.profileKind === "public") {
+      if (
+        blueprint.entryFacilityPolicy.mode !== "award-contingent-wet-lease"
+        || blueprint.entryFacilityPolicy.providerOperatorId !== "public"
+        || blueprint.entryFacilityPolicy.costBasis !== "formation-operating-cost"
+      ) {
+        throw new AlphaValidationError("Oeffentliche Welt braucht den transparenten zuschlagsgebundenen Nullstartpfad.");
+      }
+    } else if (blueprint.entryFacilityPolicy.mode !== "disabled") {
+      throw new AlphaValidationError("Die oeffentliche Anschubregel ist ausserhalb oeffentlicher Welten deaktiviert.");
+    }
   }
   for (const [name, value] of Object.entries(blueprint.releases)) sha(value, `${name}-Release`);
   sha(blueprint.conflictCheckHash, "Konfliktpruefung");
@@ -183,7 +231,8 @@ export function validateWorldBlueprint(blueprint: AlphaWorldBlueprint): string {
   }
   const contractEnds = new Set(blueprint.lots.map((lot) => lot.contractEndsAtPeriod));
   if (blueprint.lots.length > 1 && contractEnds.size < 2) throw new AlphaValidationError("Vertragsenden sind nicht gestaffelt.");
-  const hasPublicCatalogContract = blueprint.admission !== undefined || blueprint.publicMetadata !== undefined || blueprint.activityPolicy !== undefined;
+  const hasPublicCatalogContract = blueprint.schemaVersion === ALPHA_WORLD_BLUEPRINT_SCHEMA
+    && (blueprint.admission !== undefined || blueprint.publicMetadata !== undefined || blueprint.activityPolicy !== undefined);
   if (hasPublicCatalogContract) {
     if (blueprint.activityPolicy !== null) {
       if (blueprint.activityPolicy === undefined) throw new AlphaValidationError("Oeffentlicher Weltvertrag braucht eine explizite ActivityPolicy oder null.");
@@ -204,7 +253,8 @@ export function validateWorldBlueprint(blueprint: AlphaWorldBlueprint): string {
     if (banner.altText.trim() === "" || banner.source.trim() === "" || banner.author.trim() === "" || banner.license.trim() === ""
       || !Number.isSafeInteger(banner.focalPointXPermille) || !Number.isSafeInteger(banner.focalPointYPermille)
       || banner.focalPointXPermille < 0 || banner.focalPointXPermille > 1_000
-      || banner.focalPointYPermille < 0 || banner.focalPointYPermille > 1_000) {
+      || banner.focalPointYPermille < 0 || banner.focalPointYPermille > 1_000
+      || banner.rightsApproved !== true) {
       throw new AlphaValidationError("Banner-Metadaten sind unvollstaendig oder der Brennpunkt ist ungueltig.");
     }
   }

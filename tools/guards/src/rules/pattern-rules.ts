@@ -1,5 +1,5 @@
 /**
- * Die Musterregeln — je eine harte Invariante aus `CLAUDE.md`.
+ * Die Musterregeln — je eine harte Invariante aus `AGENTS.md`.
  *
  * Diese Datei liest kein Wächter: Sie enthält die verbotenen Muster selbst und
  * würde jede Prüfung sofort auslösen. Sie steht deshalb in `ignore`

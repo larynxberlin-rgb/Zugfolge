@@ -83,15 +83,18 @@ Deterministischer Build und Prüfung:
 2. Erzeuge stabile IDs, Graph, einzelne Gleise, Betriebsstellen, Weichen,
    Signale, Blöcke, Fahrstraßen- und Konfliktmodelle. Sortiere alle Eingaben vor
    dem Hashen stabil; Zeiten und Längen bleiben ganzzahlig.
-3. Führe `build-germany-release.mjs compile` aus. Erzeuge den Qualitätsbericht
-   je Dimension, Ursache und Länge. Prüfe ausdrücklich, dass konservativ
-   geschlossene Lücken B und ungelöste Lücken C ergeben.
+3. Kennzeichne diesen reinen Build-Zwischenschritt mit
+   `ZUGFOLGE_NON_AUTHORITATIVE_CORPUS_BUILD=1` und führe
+   `build-germany-release.mjs compile` aus. Erzeuge den Qualitätsbericht je
+   Dimension, Ursache und Länge. Prüfe ausdrücklich, dass konservativ
+   geschlossene Lücken B und ungelöste Lücken C ergeben. Dieser Schritt darf
+   selbst keinen Release freigeben.
 4. Erzeuge getrennte, selbst gehostete PMTiles für weltweite Dark-Basemap und
    semantische Deutschland-Infrastruktur. Prüfe stabile Feature-IDs, Zoomvertrag,
    Attribution, Dateihash und HTTP-Range-Auslieferung.
-5. Baue das öffentliche Manifest mit `build-germany-release.mjs manifest` und
-   suche rekursiv nach verbotenen internen Evidenzkennungen. Jeder Treffer
-   blockiert den Release.
+5. Baue das öffentliche Manifest mit `build-germany-release.mjs manifest` im
+   autoritativen Rust-Compiler und suche rekursiv nach verbotenen internen
+   Evidenzkennungen. Jeder Treffer blockiert den Release.
 6. Führe Unit-, Golden-Master-, Determinismus-, Rechte-, Lizenz-,
    Konfliktinvarianten-, Karten- und unabhängige Holdout-Tests aus. Vergleiche
    Qualitätslängen und Laufzeit/RAM/PMTiles-Größe mit dem Vorjahresrelease und

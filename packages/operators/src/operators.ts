@@ -195,6 +195,7 @@ export async function listOperatorsForAccount(
   db: IdentityDatabase,
   keycloakSubject: string,
 ): Promise<readonly Operator[]> {
+  // guards:allow world-id — Die Identitaetsansicht listet nur eigene Betreiber des authentifizierten Subjects weltuebergreifend.
   return db
     .select({
       id: operators.id,

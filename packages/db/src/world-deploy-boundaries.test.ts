@@ -42,7 +42,7 @@ function outbox(worldId: string, messageType: string, correlationId: string, pay
   };
 }
 
-describe("pre-world Odoo-DB-Grenzen", () => {
+describe("Migration 0023 pre-world Odoo-DB-Grenzen", () => {
   let client: PGlite;
   let db: ReturnType<typeof drizzle<typeof schema>>;
 

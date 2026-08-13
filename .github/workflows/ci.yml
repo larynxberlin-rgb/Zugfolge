@@ -136,10 +136,14 @@ jobs:
       - name: M3-Planning-Worker mit echtem NAPI und PGlite komponieren
         run: pnpm --filter @zugfolge/planning-worker test:native
 
-      - name: M6-End-to-End mit PGlite, Plattformeffekten und Livemap
+      - name: M6- und Tutorial-End-to-End mit PGlite, echtem Browser und Plattformeffekten
+        env:
+          ZUGFOLGE_BROWSER_E2E: "1"
         run: |
           pnpm --filter @zugfolge/game-api... build
-          pnpm --filter @zugfolge/game-api exec vitest run src/economy-native.integration.test.ts
+          pnpm --filter @zugfolge/game-web... build
+          # Echte NAPI-Registries und PGlite-Welten nicht zwischen Vitest-Worker-Isolates parallelisieren.
+          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/economy-native.integration.test.ts src/tutorial-world-factory.native.integration.test.ts src/tutorial-browser.e2e.test.ts
 
   typescript:
     name: TypeScript
@@ -147,6 +151,18 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+
+      # Der Referenzkorpus delegiert seine Release-Qualifikation an den
+      # gepinnten Rust-Compiler. Vor dem parallelen Node-Testlauf muss diese
+      # Toolchain genau einmal vollstaendig installiert sein.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.94.1
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          shared-key: typescript-reference-corpus
 
       - uses: pnpm/action-setup@v6
         with:
@@ -343,6 +359,13 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.94.1
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          shared-key: reference-corpus
       - uses: pnpm/action-setup@v6
         with:
           version: 11

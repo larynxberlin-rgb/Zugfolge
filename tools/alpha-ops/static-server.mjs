@@ -37,7 +37,6 @@ export function runtimeConfiguration(environment = process.env) {
     keycloakUrl: environment["KEYCLOAK_PUBLIC_URL"] ?? "",
     keycloakRealm: environment["KEYCLOAK_REALM"] ?? "zugfolge",
     publicWorldId: environment["ALPHA_PUBLIC_WORLD_ID"] ?? "",
-    tutorialWorldId: environment["ALPHA_TUTORIAL_WORLD_ID"] ?? "",
     gameWebUrl: environment["GAME_WEB_PUBLIC_URL"] ?? "",
     livemapUrl: environment["LIVEMAP_PUBLIC_URL"] ?? "",
     mapBasemapStyleUrl,

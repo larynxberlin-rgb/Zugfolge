@@ -24,6 +24,16 @@ def _valid_signature(payload, key_id, timestamp, supplied):
     return hmac.compare_digest(expected, supplied)
 
 
+def _find_admin_request_for_game_result(env, correlation_id, world_id):
+    """Bind a signed result to both stable correlation and authoritative world."""
+    if not isinstance(correlation_id, str) or not correlation_id or not isinstance(world_id, str) or not world_id:
+        return env["zugfolge.admin.request"].browse()
+    return env["zugfolge.admin.request"].sudo().search([
+        ("correlation_id", "=", correlation_id),
+        ("world_id", "=", world_id),
+    ], limit=1)
+
+
 class ZugfolgeProjectionController(http.Controller):
     @http.route("/zugfolge/metrics", type="http", auth="none", methods=["GET"], csrf=False)
     def prometheus_metrics(self, **_kwargs):
@@ -69,7 +79,11 @@ class ZugfolgeProjectionController(http.Controller):
             request.env["zugfolge.feedback"].sudo().with_context(zugfolge_game_projection=True).upsert_game_projection(payload)
         if payload["messageType"] == "admin.command.result":
             result = payload.get("payload", {})
-            request_record = request.env["zugfolge.admin.request"].sudo().search([("correlation_id", "=", payload.get("correlationId"))], limit=1)
+            request_record = _find_admin_request_for_game_result(
+                request.env,
+                payload.get("correlationId"),
+                payload.get("worldId"),
+            )
             if request_record:
                 state = result.get("state") if result.get("state") in ("accepted", "completed", "failed", "rejected") else ("accepted" if result.get("outcome") == "accepted" else "rejected")
                 request_record.with_context(zugfolge_game_projection=True).apply_game_result({**result, "state": state})
@@ -80,13 +94,19 @@ class ZugfolgeProjectionController(http.Controller):
                         ("revocation_request_id", "=", request_record.id),
                     ], limit=1)
                     if invitation:
-                        invitation.with_context(zugfolge_game_projection=True).write({"state": "revoked"})
-            invitation = request.env["zugfolge.alpha.invitation"].sudo().search([("correlation_id", "=", payload.get("correlationId"))], limit=1)
+                        invitation.with_context(zugfolge_game_projection=True)._apply_game_revocation_result(
+                            request_record.id,
+                            payload.get("worldId"),
+                        )
+            invitation = request.env["zugfolge.alpha.invitation"].sudo().search([
+                ("correlation_id", "=", payload.get("correlationId")),
+                ("world_projection_id.world_id", "=", payload.get("worldId")),
+            ], limit=1)
             if invitation:
-                values = {"state": "provisioned" if result.get("outcome") == "accepted" else "failed"}
-                if result.get("keycloakSubject"):
-                    values.update({"keycloak_subject": result.get("keycloakSubject"), "game_account_reference": result.get("gameAccountReference")})
-                invitation.with_context(zugfolge_game_projection=True).write(values)
+                invitation.with_context(zugfolge_game_projection=True)._apply_game_result(
+                    result,
+                    payload.get("worldId"),
+                )
         if payload["messageType"] == "world.participation.result":
             result = payload.get("payload", {})
             participation = request.env["zugfolge.world.participation"].sudo().search([

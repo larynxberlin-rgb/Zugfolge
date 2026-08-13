@@ -6,13 +6,14 @@ on:
     paths:
       - ".github/milestones.json"
       - ".github/scripts/sync-milestones.mjs"
+      - ".github/scripts/sync-milestones.test.mjs"
       - ".github/workflows/milestones.yml"
       - "docs/milestones.md"
       - "docs/roadmap-status.md"
   pull_request:
     types: [opened, synchronize, reopened, closed]
   issues:
-    types: [closed, reopened]
+    types: [opened, closed, reopened]
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
@@ -60,7 +61,7 @@ jobs:
         with:
           node-version: 24
       - run: node .github/scripts/sync-milestones.mjs check
-      - name: M0-M14, Labels und Arbeitspakete anwenden
+      - name: M0-M15, Labels und Arbeitspakete anwenden
         run: node .github/scripts/sync-milestones.mjs apply
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

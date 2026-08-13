@@ -61,6 +61,9 @@ describe("Alpha-Einladungen", () => {
     expect(model).toContain('"action_type": "world_access_revoke"');
     expect(model).toContain('"risk_class": "high"');
     expect(model).not.toContain('record._command("revoke")');
+    expect(model).not.toContain("start_package");
+    expect(model).not.toContain("startPackage");
+    expect(views).not.toContain("tutorial_account_reset");
     expect(views).toContain("Alpha-Einladungen");
     expect(model).toContain("world_profile_kind");
     expect(model).not.toContain("start_package");

@@ -1,155 +1,116 @@
 # ADR-0028: Tutorialstart und öffentlicher Markteintritt sind getrennte Weltverträge
 
 - **Status:** Angenommen — bindend (entspricht E28)
-- **Bezug:** [../entscheidungen.md](../entscheidungen.md) · [../produkt.md](../produkt.md) · [../wirtschaft.md](../wirtschaft.md) · [../odoo-betrieb.md](../odoo-betrieb.md)
-- **Betrifft Milestones:** M9.1, M9.2, M9.3, M9.4, M9.9, M12.2
-- **Verwandte ADRs:** [ADR-0007](0007-eigenbetrieb-bei-gescheiterter-ausschreibung.md), [ADR-0018](0018-weltlaufzeit-und-skalierende-perioden.md), [ADR-0019](0019-realismus-dient-dem-spiel.md), [ADR-0023](0023-odoo-als-administrativer-kontrollpunkt.md), [ADR-0024](0024-erweiterter-alpha-schnitt.md)
+- **Bezug:** [../entscheidungen.md](../entscheidungen.md) · [../produkt.md](../produkt.md) · [../wirtschaft.md](../wirtschaft.md) · [../architektur.md](../architektur.md)
+- **Betrifft Milestones:** M9.1, M9.3
+- **Verwandte ADRs:** [ADR-0002](0002-betriebsprogramm-als-kern-loop.md), [ADR-0005](0005-rust-kern-typescript-plattform.md), [ADR-0019](0019-realismus-dient-dem-spiel.md), [ADR-0023](0023-odoo-als-administrativer-kontrollpunkt.md)
 
 ## Kontext
 
-Ein Tutorial muss komplexe Abläufe schnell und reproduzierbar vorführen. Dafür
-sind ein vorbereiteter Verkehrsvertrag, ein konkretes Leasingfahrzeug, Personal,
-eine Trasse und ein Betriebsprogramm sinnvoll. In einer öffentlichen
-Wettbewerbswelt wären dieselben Zuteilungen jedoch keine didaktische Probe,
-sondern echte Kapazität, Vermögen und Vertragsposition. Ein Startpaket pro neuem
-EVU würde den veröffentlichten Vergabekalender, den persistenten Fahrzeugmarkt
-und die Gleichbehandlung der Teilnehmer umgehen.
+Der geführte Einstieg muss Ausschreibung, Fahrzeugleasing, Trassenwahl,
+Betriebsprogramm und Disposition in wenigen Minuten erfahrbar machen. Eine
+öffentliche persistente Welt kann dafür weder beschleunigt noch zurückgesetzt
+werden. Eine gemeinsam genutzte statische Tutorialwelt würde Spielerzustände
+vermischen; ein vorab vollzogenes Startpaket würde genau die Lernhandlungen
+vorwegnehmen, die das Tutorial nachweisen soll.
 
-Gleichzeitig braucht jede öffentliche Welt eine ausdrückliche Antwort auf die
-Frage, mit welchem Kapital ein neues EVU seine Bücher eröffnet. Ein im Code
-verdrahteter Betrag wäre weder weltgebunden noch im Replay nachweisbar. Ein als
-Zahl gespeichertes „unendlich“ würde außerdem die Integer-Cent-Invariante
-verletzen und könnte weder korrekt gebucht noch plattformunabhängig gehasht
-werden. Ein Start mit null Cent darf andererseits nicht in eine Sackgasse führen,
-die nur durch ein verborgenes Geschenk aufgelöst wird.
-
-Die Weltanlage beginnt gemäß E23 in Odoo, während der private
-Release-Signaturschlüssel bewusst außerhalb von Odoo und Repository verwahrt
-wird. Die HMAC-Signatur des Odoo-Webhooks schützt den Transport eines
-Administrationskommandos, ist aber keine Ed25519-Freigabe eines Weltbestands.
-Ohne ausdrückliche Trennung bestünde die Gefahr, beide Vertrauensgrenzen
-gleichzusetzen oder Odoo zur fachlichen Weltwahrheit zu machen.
+Der öffentliche Markteintritt hat ein anderes Ziel: Er beginnt im Wettbewerb
+ohne automatisch zugeteilten Vertrag, Fahrzeug, Trasse, Personal oder aktives
+Betriebsprogramm. Sein Startkapital ist eine Eigenschaft des signierten
+Weltentwurfs und keine Tutorialausstattung. Odoo bleibt für diese öffentliche
+Freigabe der administrative Kontrollpunkt, darf aber keine kurzlebigen
+Tutorialversuche verwalten oder projiziert bekommen.
 
 ## Entscheidung
 
-**Tutorialstart und öffentlicher Markteintritt sind zwei getrennte,
-weltgebundene Verträge.** Ein `StarterPackage` darf ausschließlich in einer
-laufenden Tutorial-Welt vergeben werden. Diese Welt besitzt ein eigenes
-signiertes Deployment, `profileKind=tutorial`, ist privat und ungewertet und
-darf beschleunigt laufen. Ihr Paket kann einen vorbereiteten Vertrag,
-Leasingfahrzeug, Personal, Trasse und Betriebsprogramm enthalten, weil diese
-Ressourcen nur den didaktischen Ablauf dieser Tutorial-Welt betreffen.
+**Jeder Tutorialstart erzeugt aus einem unveränderlichen, versionierten und
+gehashten Minimaltemplate eine eigene, genau einem Spieler gehörende,
+beschleunigte, ungewertete und kurzlebige Welt; öffentlicher Markteintritt und
+Tutorialstart bleiben vollständig getrennte Weltverträge.**
 
-Eine öffentliche Wettbewerbswelt vergibt bei der EVU-Gründung **kein**
-Startpaket: keinen Vertrag, kein Fahrzeug, keine Trasse, kein Personal und kein
-Betriebsprogramm. Die Gründung legt stattdessen idempotent die EVU-Bücher an und
-wendet genau die `StartingCapitalPolicy` des signierten Weltentwurfs an:
+Die Tutorialwelt besitzt ausschließlich vorbereitetes Szenario-Inventar: ein
+neues EVU, Präqualifikation, endliches Integer-Cent-Kapital, einen kleinen
+Personalpool sowie offene Ausschreibung, Leasingangebote, Trassenalternativen,
+Betriebsprogrammvorlagen und eine deterministische spätere Störung. Fahrzeug,
+Trasse und Betriebsprogramm werden erst durch die autoritativ belegten
+Spielerhandlungen wirksam. Die Domänen verwenden ihre regulären Writer,
+Ledger, Events und Zustandsübergänge; es gibt keine Tutorial-Sonderwirtschaft.
 
-- `{ "mode": "finite", "amountCents": "…" }` enthält einen nichtnegativen,
-  kanonischen Dezimalstring im vorzeichenbehafteten 64-Bit-Centbereich. Der
-  Fachpfad parst ihn ohne `Number` als `bigint`. Der Standard für eine neue
-  Wettbewerbswelt ist `amountCents: "0"`. Auch null wird als ausgeglichene
-  Eröffnungsbuchung festgehalten.
-- `{ "mode": "unlimited" }` ist eine Weltregel ohne Zahlenwert und ohne
-  `amountCents`. Sie erzeugt keinen Ersatzbetrag und keine
-  Pseudo-`Infinity`-Buchung. Nur die Darstellung darf dafür `∞` zeigen.
+Ein Browser-Reload setzt dieselbe aktive Sitzung fort. Ein Neustart archiviert
+die bisherige Welt und erzeugt eine neue UUID samt nicht vorhersagbarer
+`tut_`-Sitzungsreferenz. Abschluss, Schonfrist, maximale Dauer oder Idle-TTL
+führen über einen expliziten Lifecycle zur automatischen Schließung. Nach
+`closing` werden Kommandos abgelehnt. Erhalten bleiben die minimalen
+Auditmetadaten, Telemetrie und der finale Zustandshash. Die Keine-Wipes-Regel
+gilt weiterhin uneingeschränkt für öffentliche persistente Welten; diese
+kurzlebigen, privaten Tutorialwelten sind die ausdrücklich abgegrenzte
+Ausnahme.
 
-Die Policy ist Bestandteil des kanonischen Blueprints, des Blueprint-Hashes,
-des signierten Deployments, der Weltstartprojektion und des Replays. Sie gilt
-für jedes in dieser Welt gegründete EVU gleich und ist nach erfolgreichem
-Weltstart unveränderlich. Eine andere Policy verlangt eine neue Welt; weder
-Odoo noch ein Game-Adminbefehl darf die laufende Welt umschreiben.
+Tutorialwelten erzeugen weder Odoo-Weltprojektionen noch Weltstartanträge,
+Startkapitalkonfigurationen oder Tutorialereignisse in der Odoo-Outbox. Das
+Game ist allein autoritativ. Öffentliche Welten erhalten kein Startpaket. Ihr
+Geldstart folgt ausschließlich der signierten `StartingCapitalPolicy` mit
+endlichen nichtnegativen Integer-Cent, `0` oder dem expliziten nichtnumerischen
+Modus `unlimited` (`∞`). Bei der Zugangsbestätigung bindet das Game Hash und
+Policy des vollständigen, gespeicherten Weltentwurfs unveränderlich an den
+Weltzugang. Die erste EVU-Gründung beansprucht diese Bindung atomar genau
+einmal. Endliche Beträge einschließlich `0` werden als ausgeglichene,
+welt- und EVU-gebundene Ledgertransaktion gegen Eigenkapital gebucht;
+`unlimited` bleibt ein eigener Modus ohne erfundenen Zahlenbetrag oder
+Startbuchung. Er hebt ausschließlich die Liquiditätsgrenze autoritativer
+Zahlungspfade auf, nicht die doppelte Buchführung. Startfinanzierung ist kein
+Bestandteil der Wirtschaftsrangliste. Dieser Pfad wird nicht im Tutorial
+nachgebaut.
 
-Der öffentliche Nullstart nutzt einen veröffentlichten, weltgebundenen
-`award-contingent-wet-lease`-Vertrag. Vor dem Zuschlag darf ein EVU damit ein im
-signierten Losbestand vorhandenes Eigenbetriebs-Fahrzeugkonzept kalkulieren;
-es erhält dabei weder Asset, Nutzungsrecht noch Buchung. Erst der reguläre
-Zuschlag aktiviert die Betriebsbereitstellung. Formation, Personal und Trasse
-werden am Mobilisierungsstichtag erneut gegen denselben M5-Snapshot geprüft,
-und die Kostenbasis bleibt der endliche `formation-operating-cost`-Wert. Die
-Regel gilt für alle EVU der Welt gleich, ist im Blueprint sichtbar und ersetzt
-weder Vergabewettbewerb noch spätere Kredit-, Leasing- und Sekundärmarktwege.
-Fehlt ein so belegter erster Vergabeweg, ist der Weltentwurf nicht
-freigabefähig. Kostenlose Assets, Beitrittsverträge oder nur für Neueinsteiger
-sichtbare Guthaben sind ausgeschlossen.
-
-Die administrative Weltanlage ist zweiphasig:
-
-1. Odoo erfasst und prüft Weltdefinition und `StartingCapitalPolicy` und stellt
-   diese erste Phase als exakte JSON-Signierkonfiguration bereit. Ein externer
-   Generator übernimmt sie unverändert in den vollständigen Blueprint- und
-   Deployment-Kandidaten. Das ist Konfiguration und Staging, noch kein Weltstart.
-2. Ein externer Prozess signiert den exakt gehashten vollständigen Kandidaten mit dem außerhalb
-   von Odoo verwahrten Ed25519-Schlüssel. Das signierte Deployment wird dem
-   Odoo-Antrag beigefügt und über den typisierten, HMAC-geschützten
-   `world_deploy`-Befehl zugestellt. Das Game prüft Ed25519-Signatur,
-   Deployment- und Blueprint-Hash, Weltbindung, Release-Pins und identische
-   Policy erneut. Nur das Game persistiert und startet die Welt.
-
-Odoo zeigt die Game-Projektion von Profil, Policy und Hashes lesend an. Eine
-Abweichung zwischen Odoo-Konfiguration, signiertem Deployment und
-Game-Projektion ist ein harter Konflikt und wird nicht automatisch angeglichen.
+Der feste, versionierte Dialogkatalog führt den fiktiven Infrastrukturmitarbeiter
+Lutz als Tutorialbegleiter. Es gibt keine generative Laufzeit-KI und keinen
+Bezug zu realen Unternehmen. M9.1 bleibt offen, bis ein externer Browserlauf
+gegen eine neu erzeugte Instanz und die reale 90-Prozent-unter-15-Minuten-
+Messung vorliegen.
 
 ## Begründung
 
-Die Trennung erhält den didaktischen Wert eines sofort spielbaren Tutorials,
-ohne in einer dauerhaften Wettbewerbswelt knappe Ressourcen außerhalb ihrer
-Märkte zu verteilen. Neue und bestehende EVU unterliegen denselben
-Ausschreibungs-, Kredit- und Fahrzeugregeln; der Zeitpunkt der Einladung erzeugt
-kein zusätzliches Vermögen.
+Die isolierte Welt macht Beschleunigung, deterministische Ereignisse, Neustart
+und automatische Bereinigung möglich, ohne öffentliche Wettbewerbszustände zu
+verändern. Das unveränderliche Template hält Lernpfad und Beweis reproduzierbar;
+die regulären Domänenpfade verhindern eine zweite fachliche Wahrheit. Eine
+weltgebundene Zuordnung zum öffentlichen Konto und genau eine aktive Sitzung
+begrenzen Missbrauch und verhindern globale Identitätssuchen.
 
-Eine explizite, gehashte Policy macht verschiedene Weltkonzepte möglich, ohne
-Geldarithmetik zu verbiegen. Endliches Kapital bleibt echtes Integer-Cent im
-Ledger. `unlimited` bleibt eine benannte Regel und kann deshalb weder überlaufen
-noch versehentlich als sehr großer, aber doch endlicher Betrag behandelt werden.
-Die Unveränderlichkeit schützt Replay, Ranking und wirtschaftliche
-Vergleichbarkeit.
-
-Die zweiphasige Anlage bewahrt die Grenzen aus E23: Odoo bietet den
-administrativen Dialog und Vier-Augen-Nachweis, hält aber weder den privaten
-Release-Schlüssel noch fachliche Weltmacht. Die externe Ed25519-Signatur bindet
-den freigegebenen Bestand; die Odoo-HMAC-Signatur authentifiziert lediglich das
-Kommando. Die erneute Game-Prüfung verhindert, dass ein korrekt transportierter,
-aber fachlich abweichender Antrag eine Welt startet.
+Die Odoo-Ausnahme ist keine Aufweichung von E23: Ein persönlicher Tutoriallauf
+ist weder menschliche Game-Administration noch eine freizugebende öffentliche
+Welt. Seine Projektion würde hochkardinale, kurzlebige Betriebsdaten ohne
+kaufmännischen Zweck erzeugen. Aggregierte Game-Telemetrie genügt für Produkt-
+und Betriebsbeobachtung.
 
 ## Konsequenzen
 
-- **Erleichtert:** klare Spielerkommunikation, reproduzierbare
-  Eröffnungsbilanzen, mehrere bewusst verschiedene Weltkonzepte und ein
-  Tutorial, das ohne Wettbewerbsvorteil sofort handlungsfähig ist.
-- **Kostet / schränkt ein:** Tutorial und öffentliche Welt benötigen getrennte
-  signierte Deployments. Jeder öffentliche Weltentwurf braucht vor Freigabe
-  einen dokumentierten Nullstart-Nachweis gegen echte Ausschreibungs-, Fleet-
-  und Mobilisierungsdaten.
-- **Betrieb:** Weltdefinition und signiertes Deployment müssen als zwei
-  unterschiedliche Artefakte auditiert werden. Der externe Ed25519-Schritt ist
-  ein bewusstes Freigabe-Gate und darf nicht durch den Odoo-HMAC-Schlüssel
-  ersetzt werden.
-- **Wirtschaft:** `finite` wird genau einmal ausgeglichen im EVU-Ledger gebucht;
-  `unlimited` bleibt Policy. Der zuschlagsgebundene Betriebsbereitstellungsvertrag
-  darf vor Zuschlag kein Asset zuteilen; alle späteren Kosten bleiben endlich.
-- **Invarianten:** Geld bleibt `i64` Cent, jede Buchung und Policy ist
-  weltgebunden, Odoo bleibt außerhalb des heißen Pfads, und derselbe signierte
-  Blueprint erzeugt denselben Hash und Startzustand.
-- **Abnahme:** Repositorytests für Parser, Hashbindung, Ledger-Idempotenz,
-  Tutorial-Guard, öffentlichen Negativfall und Odoo-Vertrag sind nötig. Sie
-  ersetzen weder einen realen Ed25519-signierten Doppelweltstart noch den echten
-  Odoo-19-/Browserlauf mit einem externen Konto.
+- **Erleichtert:** reproduzierbares Lernen, echte fachliche Nachweise,
+  Spielerisolation, Reload/Restart und ehrliche Echtzeit-Telemetrie.
+- **Kostet / schränkt ein:** Factory, Sitzungs-Lifecycle, Rate Limit, Reaper,
+  finale Hashbildung und Bereinigungsbetrieb müssen eigenständig zuverlässig
+  bleiben; externe Zeitabnahme kann nicht durch automatisierte Tests ersetzt
+  werden.
+- **Invarianten:** Jede persistierte Zeile und jedes Event bleibt UUID-
+  weltgebunden; Geld bleibt Integer-Cent; Simulation erhält explizite Zeit und
+  keinen Datenbankzugriff. Kein externer Dienst liegt im heißen Pfad. Die
+  Startkapital-Beanspruchung ist je Welt und Zugang eindeutig und atomar; ein
+  Retry oder paralleler Gründungsversuch erzeugt weder ein zweites EVU noch
+  eine zweite Gutschrift.
+- **Odoo:** keine Tutorialwelt, kein Versuch, kein Event und keine
+  Startkapital-Policy einer Tutorialinstanz werden projiziert.
+- **Milestones:** M9.1 liefert den geführten Ablauf, bleibt aber bis zum externen
+  Browser- und Zeitnachweis `in Arbeit`; M9.3 enthält die tatsächliche
+  öffentliche `StartingCapitalPolicy`, bleibt wegen Heatmap, Glossar-Layer und
+  Betriebsassistent insgesamt `in Arbeit`.
 
 ## Verworfene Alternativen
 
-1. **Dasselbe Startpaket in Tutorial und öffentlicher Welt:** verworfen, weil
-   ein Lehrmittel im Wettbewerb zu Vermögen, Kapazität und Vertragsvorsprung
-   wird.
-2. **Ein globaler Startkapitalbetrag im Anwendungscode:** verworfen, weil er
-   weder Weltkonzept noch signiertes Replay bindet und nur durch Deployment des
-   Codes geändert werden könnte.
-3. **„Unbegrenzt“ als maximaler Integer oder Gleitkomma-`Infinity`:** verworfen,
-   weil beides fachlich falsch ist; der erste Wert ist endlich, der zweite
-   verletzt die Zustandsinvariante und ist nicht ledgerfähig.
-4. **Odoo signiert und startet die Welt allein:** verworfen, weil Transport-HMAC
-   und Release-Signatur verschiedene Aufgaben haben und Odoo keine fachliche
-   Source of Truth ist.
-5. **Nullstart durch ein unsichtbares Guthaben oder Gratis-Leasing retten:**
-   verworfen, weil dies das Startpaket nur umbenennt. Spielbarkeit muss aus
-   veröffentlichten, für alle geltenden Markt- und Finanzierungsregeln folgen.
+1. **Statische gemeinsame Tutorialwelt:** verworfen wegen fehlender Isolation,
+   Reset-Rennen und wachsender Altzustände.
+2. **Vollständig vollzogenes Startpaket:** verworfen, weil es Fahrzeug-,
+   Trassen- und Betriebsprogrammkapitel vorab erfüllt.
+3. **Tutorial-Sonderbuchhaltung oder Mock-Domänen:** verworfen, weil daraus kein
+   belastbarer Nachweis für den späteren Spielbetrieb entsteht.
+4. **Odoo-Projektion pro Versuch:** verworfen, weil sie keinen administrativen
+   Zweck erfüllt und kurzlebige hochkardinale Daten erzeugt.

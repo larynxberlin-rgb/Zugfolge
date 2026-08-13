@@ -1,18 +1,25 @@
-import { accounts, alphaWorldProfiles, worldAccesses, worlds } from "@zugfolge/db";
+import { accounts, alphaWorldProfiles, odooProjectionOutbox, worldAccesses, worlds } from "@zugfolge/db";
 import { decodeEconomyValue, parseStartingCapitalPolicy, serializeStartingCapitalPolicy } from "@zugfolge/economy";
 import {
   validateWorldBlueprint,
+  effectiveStartingCapitalPolicy,
   type AbuseGuard,
   type AlphaWorldBlueprint,
   type InfraUpdateService,
   type WorldEndService,
 } from "@zugfolge/alpha";
-import type { GameAdminCommandContext, GameAdminCommandHandler, GameAdminCapabilityProjection } from "@zugfolge/commerce";
+import {
+  canonicalJson,
+  enqueueGameAdminCapabilityProjection,
+  type GameAdminCommandContext,
+  type GameAdminCommandHandler,
+  type GameAdminCapabilityProjection,
+} from "@zugfolge/commerce";
 import type { IdentityDatabase, KeycloakAdminClient } from "@zugfolge/identity";
 import type { FleetRuntime } from "@zugfolge/runtime-native";
 import type { LivemapRegistry } from "@zugfolge/livemap-stream";
 import type { OperationsRegistry } from "@zugfolge/dispatch";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import {
   ProductionWorldStartPort,
@@ -56,11 +63,72 @@ export const WORLD_DEPLOY_CAPABILITY: GameAdminCapabilityProjection = Object.fre
 /** Weltunabhaengige, signierte Capability-Projektion fuer die Anlage neuer Welten. */
 export const WORLD_DEPLOY_CAPABILITY_SCOPE_ID = "00000000-0000-0000-0000-000000000000";
 
+/**
+ * Der globale Weltstartvertrag und alle aktuell registrierten Welten muessen
+ * in jedem Bridge-Zyklus erneut aus der Live-Registry abgeleitet werden. Ein
+ * beim Prozessstart eingefrorener Satz wuerde spaeter aktivierte Welten bis
+ * zum Neustart von Odoo abschneiden.
+ */
+export function worldIdsForOdooProjectionDispatch(
+  activeWorldIds: readonly string[],
+  pendingOutboxWorldIds: readonly string[] = [],
+): readonly string[] {
+  return [...new Set([
+    WORLD_DEPLOY_CAPABILITY_SCOPE_ID,
+    ...activeWorldIds,
+    ...pendingOutboxWorldIds,
+  ])].sort();
+}
+
 export class WorldDeploymentAdminError extends Error {
   constructor(readonly code: "schema" | "world_conflict" | "projection_conflict") {
     super(`Welt-Deployment wurde abgelehnt: ${code}.`);
     this.name = "WorldDeploymentAdminError";
   }
+}
+
+/**
+ * Legt die weltgebundenen Capabilities eines frisch gestarteten Deployments
+ * atomar und idempotent in die Outbox. Ein Fehler rollt den gesamten Satz
+ * zurueck; ein Command-Retry ergaenzt deshalb weder Duplikate noch Teilsicht.
+ */
+export async function enqueueStartedWorldCapabilities(
+  db: IdentityDatabase,
+  input: {
+    readonly worldId: string;
+    readonly deploymentHash: string;
+    readonly capabilities: readonly GameAdminCapabilityProjection[];
+    readonly occurredAt: Date;
+  },
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${input.worldId} for update`);
+    for (const capability of input.capabilities) {
+      const correlationId = `world-deploy:${input.deploymentHash}:${capability.actionType}`;
+      const [existing] = await tx.select({
+        payload: odooProjectionOutbox.payload,
+      }).from(odooProjectionOutbox).where(and(
+        eq(odooProjectionOutbox.worldId, input.worldId),
+        eq(odooProjectionOutbox.messageType, "admin.capability.projection"),
+        eq(odooProjectionOutbox.correlationId, correlationId),
+      )).limit(1);
+      if (existing !== undefined) {
+        // PostgreSQL jsonb normalisiert die Schluesselreihenfolge. Der
+        // idempotente Retry muss deshalb den JSON-Inhalt vergleichen und darf
+        // nicht von der urspruenglichen Objekt-Reihenfolge abhaengen.
+        if (canonicalJson(existing.payload) !== canonicalJson(capability)) {
+          throw new WorldDeploymentAdminError("projection_conflict");
+        }
+        continue;
+      }
+      await enqueueGameAdminCapabilityProjection(tx, {
+        worldId: input.worldId,
+        correlationId,
+        capability,
+        occurredAt: input.occurredAt,
+      });
+    }
+  });
 }
 
 export async function ensureSignedPlanningAuthority(
@@ -111,6 +179,7 @@ export function createWorldDeployAdminHandler(options: {
   readonly registerStartedWorld?: (world: {
     readonly signed: SignedAlphaWorldDeployment;
     readonly epoch: Date;
+    readonly occurredAt: Date;
   }) => void | Promise<void>;
 }): GameAdminCommandHandler {
   return async (context) => {
@@ -127,7 +196,7 @@ export function createWorldDeployAdminHandler(options: {
     const signed = parseSignedAlphaWorldDeployment(payload.signedDeployment, options.trustedKeys);
     const blueprint = signed.deployment.blueprint;
     const policy = serializeStartingCapitalPolicy(parseStartingCapitalPolicy(payload.startingCapitalPolicy));
-    const blueprintPolicy = serializeStartingCapitalPolicy(parseStartingCapitalPolicy(blueprint.startingCapitalPolicy));
+    const blueprintPolicy = serializeStartingCapitalPolicy(effectiveStartingCapitalPolicy(blueprint));
     const signedDefinition = signed.deployment.worldDefinition;
     if (
       signed.deployment.worldId !== payload.worldId
@@ -174,7 +243,7 @@ export function createWorldDeployAdminHandler(options: {
       if (
         existingProfile.blueprintHash !== validateWorldBlueprint(blueprint)
         || existingProfile.deploymentHash !== null && existingProfile.deploymentHash !== signed.deploymentHash
-        || JSON.stringify(serializeStartingCapitalPolicy(parseStartingCapitalPolicy(existing.startingCapitalPolicy))) !== JSON.stringify(policy)
+        || JSON.stringify(serializeStartingCapitalPolicy(effectiveStartingCapitalPolicy(existing))) !== JSON.stringify(policy)
       ) throw new WorldDeploymentAdminError("projection_conflict");
     }
     await ensureSignedPlanningAuthority(options.db, signed);
@@ -198,7 +267,12 @@ export function createWorldDeployAdminHandler(options: {
         if (concurrent?.lifecycleStatus !== "active") throw new WorldDeploymentAdminError("world_conflict");
       }
     }
-    await options.registerStartedWorld?.({ signed, epoch: expectedWorld.epoch });
+    // Ab hier ist die signierte Weltwirkung dauerhaft aktiv. Scheitert nur
+    // noch die prozesslokale Registry oder eine Odoo-Folgeprojektion, muss der
+    // Queue-Worker denselben Wirkungs-Key retrybar nachholen und darf niemals
+    // eine fachliche Ablehnung projizieren.
+    context.markEffectApplied?.();
+    await options.registerStartedWorld?.({ signed, epoch: expectedWorld.epoch, occurredAt: context.now });
     return {
       state: "completed",
       gameAuditEventId: `world-deploy:${payload.worldId}:${signed.deploymentHash}`,
@@ -259,7 +333,7 @@ export function createAbuseSanctionActivateAdminHandler(abuse: AbuseGuard): Game
     if (payload.kind !== "admin.abuse_sanction_activate" || payload.actionType !== "abuse_sanction_activate" || payload.riskClass !== "high" || payload.targetReference === undefined) {
       throw new WorldAccessAdminError("schema");
     }
-    const sanction = await abuse.activateSevere(payload.worldId, payload.targetReference, context.adminRequestId);
+    const sanction = await abuse.activateSevere(payload.worldId, payload.targetReference, context.effectIdempotencyKey);
     return { state: "completed", gameAuditEventId: `abuse-sanction:${payload.worldId}:${sanction.id}:active` };
   };
 }
@@ -270,7 +344,7 @@ export function createWorldCloseAdminHandler(worldEnd: WorldEndService): GameAdm
     if (payload.kind !== "admin.world_close" || payload.actionType !== "world_close" || payload.riskClass !== "high" || payload.requestedAtS === undefined) {
       throw new WorldAccessAdminError("schema");
     }
-    const profile = await worldEnd.beginClosure(payload.worldId, payload.requestedAtS, context.adminRequestId);
+    const profile = await worldEnd.beginClosure(payload.worldId, payload.requestedAtS, context.effectIdempotencyKey);
     return { state: "completed", gameAuditEventId: `world-close:${payload.worldId}:${profile.closingAtS}` };
   };
 }
@@ -281,7 +355,7 @@ export function createInfraReleaseAdoptionAdminHandler(infra: InfraUpdateService
     if (payload.kind !== "admin.infra_release_adoption" || payload.actionType !== "infra_release_adoption" || payload.riskClass !== "high" || payload.releaseHash === undefined || payload.requestedPeriodStart === undefined) {
       throw new WorldAccessAdminError("schema");
     }
-    const scheduled = await infra.approveStagedAt(payload.worldId, payload.releaseHash, context.adminRequestId, new Date(payload.requestedPeriodStart));
+    const scheduled = await infra.approveStagedAt(payload.worldId, payload.releaseHash, context.effectIdempotencyKey, new Date(payload.requestedPeriodStart));
     return { state: "completed", gameAuditEventId: `infra-release:${payload.worldId}:${scheduled.id}:scheduled` };
   };
 }

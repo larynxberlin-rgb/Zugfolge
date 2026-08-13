@@ -12,7 +12,6 @@ ADMIN_ACTIONS = [
     ("abuse_sanction_activate", "Schwere Missbrauchsmassnahme aktivieren"),
     ("world_close", "Weltabschluss einleiten"),
     ("world_deploy", "Signierte Welt bereitstellen"),
-    ("tutorial_account_reset", "Tutorialkonto zuruecksetzen"),
 ]
 CAPABILITY_STATES = [
     ("prepared", "Vorbereitet: Game-Milestone fehlt"),

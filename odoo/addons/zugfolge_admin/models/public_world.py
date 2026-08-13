@@ -203,6 +203,12 @@ class ZugfolgeWorldOffer(models.Model):
                     raise ValidationError(_("Welt- und Produktbindung eines bereits verwendeten Angebots sind unveraenderlich."))
         return super().write(values)
 
+    @api.constrains("product_tmpl_id")
+    def _check_product_kind(self):
+        for record in self:
+            if record.product_tmpl_id and record.product_tmpl_id.zugfolge_product_kind != "public_world_slot":
+                raise ValidationError(_("Ein bezahltes Weltangebot braucht genau das Produktmerkmal Oeffentlicher Weltplatz."))
+
     @api.constrains("published", "banner_original", "banner_alt", "banner_source", "banner_author", "banner_license", "banner_rights_approved", "focal_x_permille", "focal_y_permille")
     def _check_banner_rights(self):
         for record in self:

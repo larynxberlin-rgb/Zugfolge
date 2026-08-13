@@ -5,24 +5,20 @@ import {
   sign as cryptoSign,
   verify as cryptoVerify,
 } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-import {
-  MODEL_RESULTS_SCHEMA,
-  REPORT_SCHEMA,
-  canonicalJson,
-  compareWithModel,
-  sha256,
-} from "./reference-corpus.mjs";
+import { canonicalJson, sha256 } from "./reference-corpus.mjs";
 
 export const TECHNICAL_DATASET_SCHEMA = "zugfolge-technical-reference-dataset/v1";
 export const EVALUATION_CONFIG_SCHEMA = "zugfolge-technical-evaluation-config/v1";
 export const QUALIFICATION_EVIDENCE_SCHEMA = "zugfolge-qualification-evidence/v1";
-export const QUALIFIED_RELEASE_SCHEMA = "zugfolge-qualified-infra-release-manifest/v1";
 export const ARTIFACT_CHAIN_SCHEMA = "zugfolge-release-artifact-chain/v1";
 export const BUNDLE_SCHEMA = "zugfolge-pilot-release-bundle/v3";
 const verifiedBundles = new WeakSet();
+const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
@@ -32,10 +28,6 @@ function nonEmpty(value, name) {
   invariant(typeof value === "string" && value.trim() !== "", `${name} fehlt.`);
 }
 
-function integer(value, name, minimum = 0) {
-  invariant(Number.isSafeInteger(value) && value >= minimum, `${name} muss eine ganze Zahl >= ${minimum} sein.`);
-}
-
 function sha256Hex(value, name) {
   invariant(typeof value === "string" && /^[0-9a-f]{64}$/u.test(value), `${name} muss ein SHA-256-Hash sein.`);
 }
@@ -43,14 +35,6 @@ function sha256Hex(value, name) {
 function timestamp(value, name) {
   nonEmpty(value, name);
   invariant(Number.isFinite(Date.parse(value)), `${name} muss ein ISO-8601-Zeitpunkt sein.`);
-}
-
-function sortedUniqueStrings(values, name, minimum = 1) {
-  invariant(Array.isArray(values) && values.length >= minimum, `${name} enthält zu wenige Einträge.`);
-  for (const [index, value] of values.entries()) nonEmpty(value, `${name}[${index}]`);
-  const sorted = [...values].sort();
-  invariant(new Set(sorted).size === sorted.length, `${name} enthält doppelte Identitäten.`);
-  return sorted;
 }
 
 function assertSafeRelativePath(value, name) {
@@ -120,154 +104,74 @@ function sameArtifactRecord(actual, expected, name) {
   invariant(actual.path === expected.path && actual.sha256 === expected.sha256, `${name} ist nicht exakt an die Artefaktkette gebunden.`);
 }
 
-function validatePartition(partition, role, policyMinimum) {
-  invariant(partition?.purpose === role, `${role}.purpose muss '${role}' sein.`);
-  nonEmpty(partition.datasetId, `${role}.datasetId`);
-  nonEmpty(partition.configId, `${role}.configId`);
-  timestamp(partition.frozenAt, `${role}.frozenAt`);
-  validateArtifactRecord(partition.dataset, `${role}.dataset`);
-  validateArtifactRecord(partition.config, `${role}.config`);
-  const sampleIds = sortedUniqueStrings(partition.sampleIds, `${role}.sampleIds`, policyMinimum);
-  sha256Hex(partition.sampleIdsSha256, `${role}.sampleIdsSha256`);
-  invariant(
-    partition.sampleIdsSha256 === sha256(canonicalJson(sampleIds)),
-    `${role}.sampleIdsSha256 stimmt nicht mit den eingefrorenen Stichprobenidentitäten überein.`,
-  );
-  return { ...partition, sampleIds };
+function rustArtifactInput(input) {
+  invariant(input?.artifacts && typeof input.artifacts === "object", "artifacts fehlt.");
+  const compilerArtifacts = Object.fromEntries(Object.entries(input.artifacts).map(([name, artifact]) => {
+    if (Array.isArray(artifact)) {
+      return [name, artifact.map((entry, index) => {
+        validateArtifactRecord(entry?.record, `artifacts.${name}[${index}].record`);
+        assertSafeRelativePath(entry?.sourcePath, `artifacts.${name}[${index}].sourcePath`);
+        invariant(entry.bytes !== undefined, `artifacts.${name}[${index}].bytes fehlt.`);
+        return { record: entry.record, sourcePath: entry.sourcePath, bytesHex: Buffer.from(entry.bytes).toString("hex") };
+      })];
+    }
+    validateArtifactRecord(artifact?.record, `artifacts.${name}.record`);
+    invariant(artifact.bytes !== undefined, `artifacts.${name}.bytes fehlt.`);
+    return [name, {
+      record: artifact.record,
+      bytesHex: Buffer.from(artifact.bytes).toString("hex"),
+    }];
+  }));
+  return { createdAt: input.createdAt, artifacts: compilerArtifacts };
 }
 
-export function validateQualificationEvidence(evidence) {
-  invariant(evidence?.schema === QUALIFICATION_EVIDENCE_SCHEMA, "Unbekanntes Qualifikationsnachweis-Schema.");
-  timestamp(evidence.frozenAt, "qualificationEvidence.frozenAt");
-  integer(evidence.policy?.minimumCalibrationSamples, "minimumCalibrationSamples", 1);
-  integer(evidence.policy?.minimumValidationSamples, "minimumValidationSamples", 1);
-  const calibration = validatePartition(
-    evidence.calibration,
-    "calibration",
-    evidence.policy.minimumCalibrationSamples,
+function runReferenceCompiler(command, input) {
+  const compiler = spawnSync(
+    process.env.CARGO ?? "cargo",
+    [
+      "run", "--quiet", "--locked",
+      "-p", "zugfolge-infra",
+      "--bin", "zugfolge-infra-release",
+      "--", command,
+    ],
+    {
+      cwd: REPOSITORY_ROOT,
+      input: JSON.stringify({
+        input: rustArtifactInput(input),
+      }),
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+      shell: false,
+      windowsHide: true,
+    },
   );
-  const validation = validatePartition(
-    evidence.validation,
-    "validation",
-    evidence.policy.minimumValidationSamples,
-  );
-  invariant(calibration.datasetId !== validation.datasetId, "Kalibrierungs- und Validierungsdatensatz haben dieselbe Identität.");
-  invariant(calibration.dataset.sha256 !== validation.dataset.sha256, "Kalibrierungs- und Validierungsdatensatz haben denselben Artefakthash.");
-  invariant(calibration.configId !== validation.configId, "Kalibrierungs- und Validierungskonfiguration haben dieselbe Identität.");
-  invariant(calibration.config.sha256 !== validation.config.sha256, "Kalibrierungs- und Validierungskonfiguration haben denselben Artefakthash.");
-  const calibrationIds = new Set(calibration.sampleIds);
-  invariant(
-    validation.sampleIds.every((sampleId) => !calibrationIds.has(sampleId)),
-    "Kalibrierungs- und Validierungsstichproben überlappen.",
-  );
-  return Object.freeze({ evidence, calibration, validation, qualified: true });
-}
-
-function validateTechnicalDataset(dataset, partition, role) {
-  invariant(dataset?.schema === TECHNICAL_DATASET_SCHEMA, `${role}: unbekanntes technisches Datensatz-Schema.`);
-  invariant(dataset.purpose === role, `${role}: Datensatz hat den falschen Zweck.`);
-  invariant(dataset.datasetId === partition.datasetId, `${role}: datasetId stimmt nicht mit dem Nachweis überein.`);
-  invariant(dataset.frozenAt === partition.frozenAt, `${role}: eingefrorener Zeitpunkt des Datensatzes stimmt nicht überein.`);
-  nonEmpty(dataset.source?.id, `${role}.source.id`);
-  nonEmpty(dataset.source?.sourceLicense, `${role}.source.sourceLicense`);
-  nonEmpty(dataset.source?.attribution, `${role}.source.attribution`);
-  timestamp(dataset.source?.retrievedAt, `${role}.source.retrievedAt`);
-  nonEmpty(dataset.source?.method, `${role}.source.method`);
-  invariant(Array.isArray(dataset.samples), `${role}: samples muss eine Liste sein.`);
-  const ids = [];
-  const byId = new Map();
-  for (const [index, sample] of dataset.samples.entries()) {
-    const prefix = `${role}.samples[${index}]`;
-    nonEmpty(sample.id, `${prefix}.id`);
-    nonEmpty(sample.groupId, `${prefix}.groupId`);
-    nonEmpty(sample.characteristicsId, `${prefix}.characteristicsId`);
-    nonEmpty(sample.sourceId, `${prefix}.sourceId`);
-    invariant(sample.sourceId === dataset.source.id, `${prefix}.sourceId stimmt nicht mit der Datensatzquelle überein.`);
-    integer(sample.technicalRunningSeconds, `${prefix}.technicalRunningSeconds`, 1);
-    invariant(!byId.has(sample.id), `${role}: Stichprobenidentität '${sample.id}' ist doppelt.`);
-    ids.push(sample.id);
-    byId.set(sample.id, sample);
+  if (compiler.error) throw compiler.error;
+  if (compiler.status !== 0) {
+    throw new Error(compiler.stderr.trim() || `Rust-Releasecompiler endete mit Status ${compiler.status}.`);
   }
-  invariant(
-    canonicalJson([...ids].sort()) === canonicalJson(partition.sampleIds),
-    `${role}: Datensatz enthält nicht exakt die eingefrorenen Stichprobenidentitäten.`,
-  );
-  return byId;
+  return JSON.parse(compiler.stdout);
 }
 
-function validateEvaluationConfig(config, partition, role) {
-  invariant(config?.schema === EVALUATION_CONFIG_SCHEMA, `${role}: unbekanntes Auswertungskonfigurations-Schema.`);
-  invariant(config.purpose === role, `${role}: Konfiguration hat den falschen Zweck.`);
-  invariant(config.configId === partition.configId, `${role}: configId stimmt nicht mit dem Nachweis überein.`);
-  invariant(config.frozenAt === partition.frozenAt, `${role}: eingefrorener Zeitpunkt der Konfiguration stimmt nicht überein.`);
-  invariant(config.datasetSha256 === partition.dataset.sha256, `${role}: Konfiguration ist nicht an den exakten Datensatz gebunden.`);
-  nonEmpty(config.method, `${role}.config.method`);
+export function referenceReportFromRust(input) {
+  return Object.freeze(runReferenceCompiler("reference-report", input));
 }
 
-export async function verifyQualificationEvidenceFiles(evidence, rootDirectory) {
-  const qualification = validateQualificationEvidence(evidence);
-  const [calibrationDatasetArtifact, calibrationConfigArtifact, validationDatasetArtifact, validationConfigArtifact] = await Promise.all([
-    readJsonArtifact(rootDirectory, qualification.calibration.dataset, "calibration.dataset"),
-    readJsonArtifact(rootDirectory, qualification.calibration.config, "calibration.config"),
-    readJsonArtifact(rootDirectory, qualification.validation.dataset, "validation.dataset"),
-    readJsonArtifact(rootDirectory, qualification.validation.config, "validation.config"),
-  ]);
-  const calibrationSamplesById = validateTechnicalDataset(
-    calibrationDatasetArtifact.value,
-    qualification.calibration,
-    "calibration",
-  );
-  const validationSamplesById = validateTechnicalDataset(
-    validationDatasetArtifact.value,
-    qualification.validation,
-    "validation",
-  );
-  validateEvaluationConfig(calibrationConfigArtifact.value, qualification.calibration, "calibration");
-  validateEvaluationConfig(validationConfigArtifact.value, qualification.validation, "validation");
+export function referenceChainFromRust(input) {
+  const verified = runReferenceCompiler("verify-reference-chain", input);
   return Object.freeze({
-    ...qualification,
-    calibrationSamplesById,
-    validationSamplesById,
-    calibrationDataset: calibrationDatasetArtifact.value,
-    validationDataset: validationDatasetArtifact.value,
+    ...verified,
+    report: Object.freeze({ ...verified.report }),
+    releaseManifest: Object.freeze({ ...verified.releaseManifest }),
   });
 }
 
-function exactBindings(actual, expected, name) {
-  invariant(actual && typeof actual === "object", `${name} fehlt.`);
-  invariant(canonicalJson(actual) === canonicalJson(expected), `${name} stimmt nicht exakt mit der Artefaktkette überein.`);
-}
-
-export function createQualifiedReleaseManifest(input) {
-  invariant(input.report?.schema === REPORT_SCHEMA, "Nur ein gehärteter Abweichungsreport kann einen Release qualifizieren.");
-  invariant(input.report.passed && input.report.releaseQualified, "Nur ein bestandener unabhängiger Validierungsreport kann einen Release qualifizieren.");
-  invariant(input.candidateManifest?.releaseChecksum === input.report.releaseChecksum, "Release-Kandidat und Report haben verschiedene Release-Checksummen.");
-  invariant(input.candidateManifest?.modelInputSha256 === input.report.modelInputSha256, "Release-Kandidat und Report haben verschiedene Modelleingaben.");
-  for (const [name, record] of Object.entries({
-    candidateManifest: input.candidateManifestArtifact,
-    referenceCorpus: input.referenceCorpusArtifact,
-    qualificationEvidence: input.qualificationEvidenceArtifact,
-    modelResults: input.modelResultsArtifact,
-    report: input.reportArtifact,
-  })) validateArtifactRecord(record, name);
-  timestamp(input.createdAt, "createdAt");
-  const bindings = input.report.artifactBinding;
-  invariant(bindings.referenceCorpusSha256 === input.referenceCorpusArtifact.sha256, "Report und Referenzkorpus-Artefakt stimmen nicht überein.");
-  invariant(bindings.qualificationEvidenceSha256 === input.qualificationEvidenceArtifact.sha256, "Report und Qualifikationsnachweis stimmen nicht überein.");
-  invariant(bindings.modelResultsSha256 === input.modelResultsArtifact.sha256, "Report und Modellergebnis-Artefakt stimmen nicht überein.");
-  invariant(input.reportArtifact.sha256 === sha256(input.reportBytes), "Report-Artefakthash stimmt nicht mit den Reportbytes überein.");
+export function qualifiedReleaseFromRust(input) {
+  timestamp(input?.createdAt, "createdAt");
+  const manifest = runReferenceCompiler("qualified-reference-manifest", input);
   return Object.freeze({
-    schema: QUALIFIED_RELEASE_SCHEMA,
-    releaseChecksum: input.report.releaseChecksum,
-    modelInputSha256: input.report.modelInputSha256,
-    createdAt: input.createdAt,
-    candidateManifest: Object.freeze({ ...input.candidateManifestArtifact }),
-    qualification: Object.freeze({
-      referenceCorpusSha256: input.referenceCorpusArtifact.sha256,
-      qualificationEvidenceSha256: input.qualificationEvidenceArtifact.sha256,
-      modelResultsSha256: input.modelResultsArtifact.sha256,
-      reportSha256: input.reportArtifact.sha256,
-    }),
+    ...manifest,
+    candidateManifest: Object.freeze({ ...manifest.candidateManifest }),
+    qualification: Object.freeze({ ...manifest.qualification }),
   });
 }
 
@@ -360,23 +264,6 @@ export async function createArtifactChainManifest(paths, rootDirectory) {
   return chain;
 }
 
-function expectedModelBindings(artifacts, corpus, evidence) {
-  return Object.freeze({
-    captureConfigSha256: artifacts.captureConfig.sha256,
-    captureManifestSha256: artifacts.captureManifest.sha256,
-    sourceArchiveSha256: artifacts.sourceArchive.sha256,
-    sourceTablesSha256: corpus.artifactBinding.sourceTablesSha256,
-    normalizedObservationsSha256: artifacts.normalizedObservations.sha256,
-    referenceCorpusSha256: artifacts.referenceCorpus.sha256,
-    qualificationEvidenceSha256: artifacts.qualificationEvidence.sha256,
-    calibrationDatasetSha256: evidence.calibration.dataset.sha256,
-    calibrationConfigSha256: evidence.calibration.config.sha256,
-    validationDatasetSha256: evidence.validation.dataset.sha256,
-    validationConfigSha256: evidence.validation.config.sha256,
-    observationsSha256: corpus.artifactBinding.observationsSha256,
-  });
-}
-
 export async function verifyArtifactChainFiles(chain, rootDirectory) {
   validateArtifactChainShape(chain);
   const artifacts = chain.artifacts;
@@ -384,94 +271,22 @@ export async function verifyArtifactChainFiles(chain, rootDirectory) {
     artifactEntries(artifacts).map(async ([name, record]) => [name, await readArtifact(rootDirectory, record, `artifacts.${name}`)]),
   );
   const loaded = new Map(loadedEntries);
-  const json = (name) => JSON.parse(loaded.get(name).toString("utf8"));
-  const captureConfig = json("captureConfig");
-  const captureManifest = json("captureManifest");
-  invariant(captureConfig.schema === "zugfolge-gtfs-capture/v2", "Nur Capture-Konfigurationen mit gehärtetem Schema sind releasefähig.");
-  invariant(captureManifest.schema === "zugfolge-gtfs-capture/v2", "Nur Capture-Manifeste mit exakter Artefaktbindung sind releasefähig.");
-  invariant(captureManifest.configArtifactSha256 === artifacts.captureConfig.sha256, "Capture-Manifest ist nicht an die exakten Konfigurationsbytes gebunden.");
-  invariant(captureManifest.configSha256 === sha256(canonicalJson(captureConfig)), "Capture-Manifest ist nicht an den kanonischen Konfigurationsinhalt gebunden.");
-  invariant(captureManifest.feedUrl === captureConfig.feedUrl, "Capture-Manifest und Feed-URL der Konfiguration stimmen nicht überein.");
-  invariant(canonicalJson(captureManifest.source) === canonicalJson(captureConfig.source), "Capture-Manifest und registrierte Quelle der Konfiguration stimmen nicht überein.");
-  invariant(captureManifest.archiveSha256 === artifacts.sourceArchive.sha256, "Capture-Manifest und Quellarchiv stimmen nicht überein.");
-  invariant(captureManifest.archiveBytes === loaded.get("sourceArchive").length, "Capture-Manifest und Quellarchivgröße stimmen nicht überein.");
-  invariant(captureManifest.files.length === artifacts.sourceTables.length, "Artefaktkette enthält nicht exakt alle Capture-Tabellen.");
-  for (const [index, table] of artifacts.sourceTables.entries()) {
-    const manifestTable = captureManifest.files[index];
-    invariant(manifestTable.path === (table.sourcePath ?? table.path) && manifestTable.sha256 === table.sha256, `Capture-Tabelle ${index} stimmt nicht mit dem Manifest überein.`);
-    invariant(manifestTable.bytes === loaded.get(`sourceTables[${index}]`).length, `Capture-Tabelle ${manifestTable.path} hat eine andere Größe.`);
-  }
-
-  const normalized = json("normalizedObservations");
-  invariant(normalized.schema === "zugfolge-normalized-observations/v1", "Unbekanntes Schema der normalisierten Beobachtungen.");
-  invariant(normalized.capture.manifestSha256 === artifacts.captureManifest.sha256, "Normalisierte Beobachtungen sind nicht an das Capture-Manifest gebunden.");
-  invariant(normalized.capture.configSha256 === artifacts.captureConfig.sha256, "Normalisierte Beobachtungen sind nicht an die Capture-Konfiguration gebunden.");
-  invariant(normalized.capture.archiveSha256 === artifacts.sourceArchive.sha256, "Normalisierte Beobachtungen sind nicht an das Quellarchiv gebunden.");
-  invariant(normalized.capture.sourceTablesSha256 === sha256(canonicalJson(captureManifest.files)), "Normalisierte Beobachtungen sind nicht an alle Quelltabellen gebunden.");
-  invariant(normalized.observationsSha256 === sha256(canonicalJson(normalized.observations)), "Hash der normalisierten Beobachtungen stimmt nicht.");
-
-  const corpus = json("referenceCorpus");
-  invariant(corpus.schema === "zugfolge-reference-corpus/v3", "Nur ein gehärteter Referenzkorpus ist releasefähig.");
-  invariant(canonicalJson(corpus.source) === canonicalJson(captureConfig.source), "Referenzkorpus und Capture-Quelle stimmen nicht überein.");
-  const expectedCorpusBinding = {
-    captureConfigSha256: artifacts.captureConfig.sha256,
-    captureManifestSha256: artifacts.captureManifest.sha256,
-    sourceArchiveSha256: artifacts.sourceArchive.sha256,
-    sourceTablesSha256: sha256(canonicalJson(captureManifest.files)),
-    normalizedObservationsSha256: artifacts.normalizedObservations.sha256,
-    observationsSha256: normalized.observationsSha256,
-  };
-  exactBindings(corpus.artifactBinding, expectedCorpusBinding, "Referenzkorpus.artifactBinding");
-
-  const evidence = json("qualificationEvidence");
-  invariant(canonicalJson(evidence.policy) === canonicalJson(captureConfig.qualificationPolicy), "Qualifikationsmindestmengen stimmen nicht mit der eingefrorenen Capture-Konfiguration überein.");
-  sameArtifactRecord(evidence.calibration?.dataset, artifacts.calibrationDataset, "calibration.dataset");
-  sameArtifactRecord(evidence.calibration?.config, artifacts.calibrationConfig, "calibration.config");
-  sameArtifactRecord(evidence.validation?.dataset, artifacts.validationDataset, "validation.dataset");
-  sameArtifactRecord(evidence.validation?.config, artifacts.validationConfig, "validation.config");
-  const qualification = await verifyQualificationEvidenceFiles(evidence, rootDirectory);
-
-  const modelConfig = json("modelConfig");
-  const expectedBindings = expectedModelBindings(artifacts, corpus, evidence);
-  exactBindings(modelConfig.artifactBinding, expectedBindings, "modelConfig.artifactBinding");
-  const modelResults = json("modelResults");
-  invariant(modelResults.schema === MODEL_RESULTS_SCHEMA, "Nur gehärtete Modellergebnisse sind releasefähig.");
-  invariant(modelResults.modelInputSha256 === artifacts.modelConfig.sha256, "Modellergebnis ist nicht an die exakten Modellkonfigurationsbytes gebunden.");
-  exactBindings(modelResults.artifactBinding, expectedBindings, "modelResults.artifactBinding");
-  invariant(canonicalJson(modelResults.assumptions) === canonicalJson(modelConfig.assumptions), "Modellergebnis und eingefrorene Infrastruktur-/Fahrzeugannahmen stimmen nicht überein.");
-
-  const report = json("report");
-  invariant(canonicalJson(report.tolerance) === canonicalJson(captureConfig.tolerance), "Reporttoleranz stimmt nicht mit der eingefrorenen Capture-Konfiguration überein.");
-  const expectedReport = compareWithModel(corpus, modelResults, captureConfig.tolerance, {
-    corpusArtifactSha256: artifacts.referenceCorpus.sha256,
-    modelResultsArtifactSha256: artifacts.modelResults.sha256,
-    qualificationEvidenceSha256: artifacts.qualificationEvidence.sha256,
-    qualification,
-  });
-  invariant(canonicalJson(report) === canonicalJson(expectedReport), "Abweichungsreport ist nicht exakt aus den gebundenen Artefakten reproduzierbar.");
-  invariant(report.schema === REPORT_SCHEMA && report.passed && report.releaseQualified, "Abweichungsreport qualifiziert den Release nicht.");
-
-  const candidateManifest = json("releaseCandidate");
-  invariant(candidateManifest.releaseChecksum === report.releaseChecksum, "Release-Kandidat und Report haben verschiedene Checksummen.");
-  invariant(candidateManifest.modelInputSha256 === report.modelInputSha256, "Release-Kandidat und Report haben verschiedene Modelleingaben.");
-  if (candidateManifest.modelConfig !== undefined) {
-    invariant(canonicalJson(candidateManifest.modelConfig) === canonicalJson(modelConfig), "Eingebettete Modellkonfiguration des Release-Kandidaten stimmt nicht mit dem gebundenen Artefakt überein.");
-  }
-  const releaseManifest = json("releaseManifest");
-  invariant(releaseManifest.schema === QUALIFIED_RELEASE_SCHEMA, "Unbekanntes qualifiziertes Release-Manifest.");
-  const expectedReleaseManifest = createQualifiedReleaseManifest({
-    candidateManifest,
-    candidateManifestArtifact: artifacts.releaseCandidate,
-    referenceCorpusArtifact: artifacts.referenceCorpus,
-    qualificationEvidenceArtifact: artifacts.qualificationEvidence,
-    modelResultsArtifact: artifacts.modelResults,
-    report,
-    reportBytes: loaded.get("report"),
-    reportArtifact: artifacts.report,
+  const releaseManifest = JSON.parse(loaded.get("releaseManifest").toString("utf8"));
+  const compilerArtifacts = Object.fromEntries(
+    artifactEntries(artifacts)
+      .filter(([name]) => name !== "sourceTables[0]" && !name.startsWith("sourceTables["))
+      .map(([name, record]) => [name === "releaseCandidate" ? "candidateManifest" : name, { record, bytes: loaded.get(name) }]),
+  );
+  compilerArtifacts.sourceTables = artifacts.sourceTables.map((record, index) => ({
+    record,
+    sourcePath: record.sourcePath,
+    bytes: loaded.get(`sourceTables[${index}]`),
+  }));
+  const verified = referenceChainFromRust({
     createdAt: releaseManifest.createdAt,
+    artifacts: compilerArtifacts,
   });
-  invariant(canonicalJson(releaseManifest) === canonicalJson(expectedReleaseManifest), "Qualifiziertes Release-Manifest ist nicht exakt aus Report und Kandidat reproduzierbar.");
-  return Object.freeze({ chain, report, releaseManifest, qualification });
+  return Object.freeze({ chain, report: verified.report, releaseManifest: verified.releaseManifest });
 }
 
 export async function createUnsignedBundleFromFiles(input) {

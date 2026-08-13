@@ -435,6 +435,7 @@ name = "zugfolge-infra"
 version = "0.0.0"
 dependencies = [
  "flate2",
+ "serde",
  "serde_json",
  "sha2",
  "zugfolge-determinism",
@@ -529,6 +530,8 @@ dependencies = [
  "napi",
  "napi-build",
  "napi-derive",
+ "serde_json",
+ "zugfolge-rules",
  "zugfolge-runtime",
  "zugfolge-sim-runtime",
 ]

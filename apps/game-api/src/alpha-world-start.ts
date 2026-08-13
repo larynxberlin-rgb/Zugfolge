@@ -369,7 +369,8 @@ function publicStartDecision(sequence: number, worldId: string, occurredAt: Date
     affectedResource: "regional-network",
     outcomeReason: "Vollstaendiges SPNV-Angebot ab Simulationssekunde null.",
     impact: { trainRunCount },
-    raw: { worldId, operatorIds: ["public"], trainRunCount },
+    manualOverride: false,
+    major: false,
   };
 }
 

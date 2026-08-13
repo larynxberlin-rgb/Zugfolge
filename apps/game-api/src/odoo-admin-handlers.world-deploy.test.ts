@@ -56,6 +56,8 @@ import type { RegionalSimulationWorker } from "./regional-simulation-worker.js";
 import {
   WorldDeploymentAdminError,
   createWorldDeployAdminHandler,
+  enqueueStartedWorldCapabilities,
+  worldIdsForOdooProjectionDispatch,
 } from "./odoo-admin-handlers.js";
 
 const WORLD_ID = "70000000-0000-4000-8000-000000000001";
@@ -415,15 +417,20 @@ function commandFor(
   };
 }
 
-function context(payload: AdminCommandPayload): GameAdminCommandContext {
+function context(
+  payload: AdminCommandPayload,
+  markEffectApplied?: () => void,
+): GameAdminCommandContext {
   return {
     adminRequestId: "71000000-0000-4000-8000-000000000001",
+    effectIdempotencyKey: "71000000-0000-4000-8000-000000000001",
     commandId: "72000000-0000-4000-8000-000000000001",
     eventId: "odoo-world-deploy-test-1",
     correlationId: "odoo-world-deploy-correlation-1",
     receivedAt: new Date("2026-08-12T09:00:00.000Z"),
     now: new Date("2026-08-12T09:00:01.000Z"),
     payload,
+    ...(markEffectApplied === undefined ? {} : { markEffectApplied }),
   };
 }
 
@@ -551,9 +558,8 @@ describe("Game world_deploy: signierte Weltanlage", () => {
 
   afterEach(async () => client.close());
 
-  function handler() {
+  function handler(registerStartedWorld = vi.fn()) {
     const fleet = fleetRuntime();
-    const registerStartedWorld = vi.fn();
     return {
       run: createWorldDeployAdminHandler({
         db: db as IdentityDatabase,
@@ -568,6 +574,74 @@ describe("Game world_deploy: signierte Weltanlage", () => {
       registerStartedWorld,
     };
   }
+
+  it("nimmt eine live gestartete Welt und den globalen Scope sofort in den Odoo-Dispatch auf", () => {
+    expect(worldIdsForOdooProjectionDispatch([])).toEqual([
+      "00000000-0000-0000-0000-000000000000",
+    ]);
+    expect(worldIdsForOdooProjectionDispatch([WORLD_ID, WORLD_ID])).toEqual([
+      "00000000-0000-0000-0000-000000000000",
+      WORLD_ID,
+    ]);
+    const rejectedPreWorldTarget = "70000000-0000-4000-8000-000000000002";
+    expect(worldIdsForOdooProjectionDispatch([WORLD_ID], [rejectedPreWorldTarget])).toEqual([
+      "00000000-0000-0000-0000-000000000000",
+      WORLD_ID,
+      rejectedPreWorldTarget,
+    ]);
+  });
+
+  it("markiert die persistierte Weltwirkung vor dem nachgelagerten Runtime-Callback", async () => {
+    const markEffectApplied = vi.fn();
+    const registerStartedWorld = vi.fn(async () => {
+      expect(markEffectApplied).toHaveBeenCalledTimes(1);
+      throw new Error("simulierter Runtime-Callbackfehler");
+    });
+    const { run } = handler(registerStartedWorld);
+
+    await expect(run(context(
+      commandFor(signedDeployment(deployment())),
+      markEffectApplied,
+    ))).rejects.toThrow(/Runtime-Callbackfehler/);
+
+    expect(markEffectApplied).toHaveBeenCalledTimes(1);
+    expect(markEffectApplied.mock.invocationCallOrder[0])
+      .toBeLessThan(registerStartedWorld.mock.invocationCallOrder[0]!);
+    expect(await db.select({ lifecycleStatus: worlds.lifecycleStatus }).from(worlds))
+      .toEqual([{ lifecycleStatus: "active" }]);
+    expect(await db.select({ state: alphaWorldProfiles.state }).from(alphaWorldProfiles))
+      .toEqual([{ state: "running" }]);
+  });
+
+  it("legt Live-Capabilities als atomaren idempotenten Outbox-Satz an", async () => {
+    await db.insert(worlds).values({
+      id: WORLD_ID,
+      name: "Capability-Testwelt",
+      schedulePeriodWeeks: 4,
+      epoch: new Date(WORLD_EPOCH),
+      worldKind: "public",
+      rankingStatus: "ranked",
+      lifecycleStatus: "active",
+    });
+    const capabilities = [
+      { actionType: "world_close" as const, availability: "available" as const, detail: "Weltabschluss ist aktiv." },
+      { actionType: "world_access_revoke" as const, availability: "available" as const, detail: "Weltzugang kann entzogen werden." },
+    ];
+    const input = {
+      worldId: WORLD_ID,
+      deploymentHash: "9".repeat(64),
+      capabilities,
+      occurredAt: new Date("2026-08-12T09:00:01.000Z"),
+    };
+
+    await enqueueStartedWorldCapabilities(db, input);
+    await enqueueStartedWorldCapabilities(db, input);
+
+    expect(await db.select().from(odooProjectionOutbox).where(eq(odooProjectionOutbox.worldId, WORLD_ID))).toEqual([
+      expect.objectContaining({ messageType: "admin.capability.projection", payload: capabilities[0] }),
+      expect.objectContaining({ messageType: "admin.capability.projection", payload: capabilities[1] }),
+    ]);
+  });
 
   it.each([
     {
