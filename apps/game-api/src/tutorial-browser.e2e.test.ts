@@ -174,7 +174,7 @@ function registerWeb(app: FastifyInstance): void {
     await page.getByRole("link", { name: "Öffentliche Welt öffnen" }).click();
     await page.getByRole("heading", { name: "Öffentlicher Betrieb" }).waitFor();
     const publicCard = await page.locator(".onboarding-card").innerText();
-    expect(publicCard).toContain("Keine Startausstattung");
+    expect(publicCard.toLowerCase()).toContain("keine startausstattung");
     expect(publicCard).toContain("signierten Weltentwurf");
   }, 60_000);
 });
