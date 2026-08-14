@@ -1,0 +1,444 @@
+{
+  "schema": "zugfolge-map-release-build-evidence-spec/v1",
+  "releaseId": "infra-deutschland-2026.2",
+  "previousReleaseId": "infra-deutschland-2026.1",
+  "commits": {
+    "semanticExport": "0dbb9ebb7db7a13ad3f60ffa9467104814c766a1",
+    "mapBuild": "0dbb9ebb7db7a13ad3f60ffa9467104814c766a1"
+  },
+  "inputs": [
+    {
+      "id": "germany-osm-pbf",
+      "kind": "source-archive",
+      "version": "germany-260811",
+      "file": "var/source-cache/annual-2026-pinned/germany-260811-5f7bfb9800c74b236b28405453b2e45337ae225c88be2078a7bdc49bd3e945b0.osm.pbf",
+      "cacheFile": "sources/osm/germany-260811-5f7bfb9800c74b236b28405453b2e45337ae225c88be2078a7bdc49bd3e945b0.osm.pbf",
+      "expectedBytes": 4816726656,
+      "expectedSha256": "5f7bfb9800c74b236b28405453b2e45337ae225c88be2078a7bdc49bd3e945b0"
+    },
+    {
+      "id": "db-infrago-geopackage",
+      "kind": "source-archive",
+      "version": "2026-05",
+      "file": "var/source-cache/annual-2026-pinned/Infrastrukturdaten-2026-05-79f8227e889769d87dcc77301f58adbc93a31839febb0cd1bdb16679e25453fe.gpkg",
+      "cacheFile": "sources/db-infrago/Infrastrukturdaten-2026-05-79f8227e889769d87dcc77301f58adbc93a31839febb0cd1bdb16679e25453fe.gpkg",
+      "expectedBytes": 54587392,
+      "expectedSha256": "79f8227e889769d87dcc77301f58adbc93a31839febb0cd1bdb16679e25453fe"
+    },
+    {
+      "id": "openstation-netex",
+      "kind": "source-archive",
+      "version": "1.2.4-2026-08-12",
+      "file": "var/source-cache/annual-2026-pinned/openstation-netex-1.2.4-2026-08-12-04f489a1cb7bb9513e10c90d5d613e0f21265c8ed6b8f3f342f85f7fab7623b3.xml",
+      "cacheFile": "sources/openstation/openstation-netex-1.2.4-2026-08-12-04f489a1cb7bb9513e10c90d5d613e0f21265c8ed6b8f3f342f85f7fab7623b3.xml",
+      "expectedBytes": 303425534,
+      "expectedSha256": "04f489a1cb7bb9513e10c90d5d613e0f21265c8ed6b8f3f342f85f7fab7623b3"
+    },
+    {
+      "id": "trassenfinder-infrastructure",
+      "kind": "source-archive",
+      "version": "7-2026",
+      "file": "var/source-cache/annual-2026-pinned/trassenfinder-infrastruktur-7-2026-16353f2319d4d382283964cc40d806438f97338cbcbe672687f1669175c7e6bf.json",
+      "cacheFile": "sources/trassenfinder-infrastruktur/trassenfinder-infrastruktur-7-2026-16353f2319d4d382283964cc40d806438f97338cbcbe672687f1669175c7e6bf.json",
+      "expectedBytes": 3745893,
+      "expectedSha256": "16353f2319d4d382283964cc40d806438f97338cbcbe672687f1669175c7e6bf"
+    },
+    {
+      "id": "regional-rail-gtfs",
+      "kind": "source-archive",
+      "version": "2026-08-10",
+      "file": "var/source-cache/annual-2026-pinned/gtfs-rv-free-2026-08-10-c0cba1cfdbf6179b18e529b13613644e861f1ea6159fa5788c2045de82bea738.zip",
+      "cacheFile": "sources/gtfs/gtfs-rv-free-2026-08-10-c0cba1cfdbf6179b18e529b13613644e861f1ea6159fa5788c2045de82bea738.zip",
+      "expectedBytes": 11246155,
+      "expectedSha256": "c0cba1cfdbf6179b18e529b13613644e861f1ea6159fa5788c2045de82bea738"
+    },
+    {
+      "id": "basemap-pmtiles-input",
+      "kind": "source-archive",
+      "version": "2026-08-12",
+      "file": "var/source-cache/annual-2026-pinned/welt-mit-deutschland-detail-2026-08-12-c766073e55b99b213276328e504cbb7a69b0b65db0546adf484539c3bd319aed.pmtiles",
+      "cacheFile": "sources/basemap/welt-mit-deutschland-detail-2026-08-12-c766073e55b99b213276328e504cbb7a69b0b65db0546adf484539c3bd319aed.pmtiles",
+      "expectedBytes": 11545162669,
+      "expectedSha256": "c766073e55b99b213276328e504cbb7a69b0b65db0546adf484539c3bd319aed"
+    },
+    {
+      "id": "germany-source-capture",
+      "kind": "capture-manifest",
+      "version": "infra-deutschland-2026.2",
+      "file": "var/derived/germany-2026.2/source-capture.final.json",
+      "cacheFile": "captures/germany-source-capture-final-2026.2.json",
+      "expectedBytes": 1885,
+      "expectedSha256": "c6d8099a933278d6d29a799e5c88906e4355f511314f8e9520a7b43c01a23902"
+    },
+    {
+      "id": "copernicus-dem-capture",
+      "kind": "capture-manifest",
+      "version": "COP-DEM-GLO-30-DGED-2021",
+      "file": "var/source-cache/annual-2026-pinned/copernicus-dem-glo30-2021-2026.2-capture.json",
+      "cacheFile": "captures/copernicus-dem-glo30-2021-2026.2-capture.json",
+      "expectedBytes": 29535,
+      "expectedSha256": "6142097c32b5e30443da7b7b9b5dec5287d8c72b4dfa43030a1ba48767f60aa3"
+    },
+    {
+      "id": "map-source-capture",
+      "kind": "capture-manifest",
+      "version": "infra-deutschland-2026.2",
+      "file": "var/derived/germany-2026.2/map-release/public/map-source-capture.json",
+      "cacheFile": "captures/map-source-capture-infra-deutschland-2026.2.json",
+      "expectedBytes": 534,
+      "expectedSha256": "a7934f9ebdb5a34e4060ebb2fd64e2ed6cd7413f3fc6c9bd0f567f8fe520f829"
+    },
+    {
+      "id": "germany-release-spec",
+      "kind": "specification",
+      "version": "infra-deutschland-2026.2",
+      "file": "tools/region-import/germany/release.annual-2026.2.config.json",
+      "expectedBytes": 3753,
+      "expectedSha256": "7296f76cf86655ded4a727362ebccb0fafa77021c4b60f279abed43f44c93828"
+    },
+    {
+      "id": "semantic-tile-assembly-spec",
+      "kind": "specification",
+      "version": "infra-deutschland-2026.2",
+      "file": "tools/region-import/germany/semantic-tile-inputs.annual-2026.2.json",
+      "expectedBytes": 1128,
+      "expectedSha256": "c7bd19f166087ebc4a600cb099bfbb04521dc72280b6e8195cf450d5fdfc0a26"
+    },
+    {
+      "id": "final-map-layer-spec",
+      "kind": "specification",
+      "version": "infra-deutschland-2026.2",
+      "file": "tools/region-import/germany/final-map-layers.annual-2026.2.json",
+      "expectedBytes": 657,
+      "expectedSha256": "0e99e4d585d33bcfd4eee8ecfa0d736c20dd7508e07fd86748a6d43eef99b6e5"
+    },
+    {
+      "id": "final-quality-spec",
+      "kind": "specification",
+      "version": "infra-deutschland-2026.2",
+      "file": "tools/region-import/germany/final-quality-inputs.annual-2026.2.json",
+      "expectedBytes": 2013,
+      "expectedSha256": "afa7585074a67c46c1fe3862b4a1c833308f045d4292bf607c9610b1318eeb92"
+    },
+    {
+      "id": "read-model-build-spec",
+      "kind": "specification",
+      "version": "infra-deutschland-2026.2",
+      "file": "tools/tiles/livemap-read-model.annual-2026.2.json",
+      "expectedBytes": 1861,
+      "expectedSha256": "d92c2c61cccee111d6e06a8b74bb32f921b4eb2aacc35132e3ade71f0ef56130"
+    },
+    {
+      "id": "train-map-projection-build-spec",
+      "kind": "specification",
+      "version": "infra-deutschland-2026.2",
+      "file": "tools/tiles/train-map-projection.annual-2026.2.json",
+      "expectedBytes": 786,
+      "expectedSha256": "d34ba5eb25b12c2763bce5b51e17d1fd2c22c6d2dfb9584d8f70d705f490a551"
+    },
+    {
+      "id": "map-package-plan",
+      "kind": "specification",
+      "version": "infra-deutschland-2026.2",
+      "file": "tools/tiles/map-package.annual-2026.2.plan.json",
+      "expectedBytes": 4702,
+      "expectedSha256": "fe98f60ea9d73e2fd43c7735e6583fe8d217ff4be7632764156acda52e440a06"
+    },
+    {
+      "id": "map-release-spec",
+      "kind": "specification",
+      "version": "infra-deutschland-2026.2",
+      "file": "tools/tiles/map-release.annual-2026.2.spec.json",
+      "expectedBytes": 1513,
+      "expectedSha256": "ec332c02d15db15eca0b895235362b7c3d6c443fe9535841525e7049c073ae28"
+    },
+    {
+      "id": "operational-network",
+      "kind": "derived-input",
+      "version": "mitteldeutschland-b-2026.2",
+      "file": "var/releases/mitteldeutschland-b-2026.2/operational-network.json",
+      "cacheFile": "derived/mitteldeutschland-b-2026.2/operational-network.json",
+      "expectedBytes": 3911745,
+      "expectedSha256": "1394a0ff1dba6d25b703cb829155f5c1ba83af8579028b63674678890f1a9124"
+    },
+    {
+      "id": "signed-world-deployment",
+      "kind": "derived-input",
+      "version": "mitteldeutschland-b-2026.2",
+      "file": "var/releases/mitteldeutschland-b-2026.2/alpha-world-deployment.json",
+      "cacheFile": "derived/mitteldeutschland-b-2026.2/alpha-world-deployment.json",
+      "expectedBytes": 9117737,
+      "expectedSha256": "90b6c88ade2797a9e0c562ba7768db5d6e0e9fb39d307361556ade15f83bd137"
+    },
+    {
+      "id": "read-model-build-report",
+      "kind": "derived-input",
+      "version": "infra-deutschland-2026.2",
+      "file": "var/derived/germany-2026.2/map-release/public/read-model.sqlite.report.json",
+      "cacheFile": "derived/infra-deutschland-2026.2/read-model.sqlite.report.json",
+      "expectedBytes": 1980,
+      "expectedSha256": "2ec3f9a968f4887713f2dbd3232549a0f8bbacaeba589fee2d0bc0811ad299e1"
+    },
+    {
+      "id": "train-map-projection-report",
+      "kind": "derived-input",
+      "version": "infra-deutschland-2026.2",
+      "file": "var/derived/germany-2026.2/map-release/public/train-map-projection-report.json",
+      "cacheFile": "derived/infra-deutschland-2026.2/train-map-projection-report.json",
+      "expectedBytes": 5108,
+      "expectedSha256": "aebe9e23b6ff1a5cd63ba68a696cf911a2e9f2b1fa76216aa9f44e951ae52485"
+    },
+    {
+      "id": "build-cache-inventory",
+      "kind": "build-cache-inventory",
+      "version": "infra-deutschland-2026.2",
+      "file": "var/build-cache/infra-deutschland-2026.2/inventory.json",
+      "expectedBytes": 224659,
+      "expectedSha256": "c0b4cf08e776b6a84a18974d97598e3277a22beb778bd6350e9562c03c10a19c"
+    },
+    {
+      "id": "semantic-rail-corridors",
+      "kind": "derived-input",
+      "version": "infra-deutschland-2026.2",
+      "file": "var/derived/germany-2026.2/semantic-tile-inputs-final-v2/rail-corridors.geojsonseq",
+      "cacheFile": "derived/infra-deutschland-2026.2/semantic/rail_corridors.geojsonseq",
+      "expectedBytes": 47557163,
+      "expectedSha256": "7193b6c5f8a8366daf7b6aaf8e6b82762324446d98d580ee20a42699320083bf"
+    },
+    {
+      "id": "semantic-operating-points",
+      "kind": "derived-input",
+      "version": "infra-deutschland-2026.2",
+      "file": "var/derived/germany-2026.2/semantic-tile-inputs-final-v2/operating-points.geojsonseq",
+      "cacheFile": "derived/infra-deutschland-2026.2/semantic/operating_points.geojsonseq",
+      "expectedBytes": 6832659,
+      "expectedSha256": "c991935413d6c793b41048197962649835d550a55f5c04e8b64625036cff9b1b"
+    },
+    {
+      "id": "semantic-stations",
+      "kind": "derived-input",
+      "version": "infra-deutschland-2026.2",
+      "file": "var/derived/germany-2026.2/semantic-tile-inputs-final-v2/stations.geojsonseq",
+      "cacheFile": "derived/infra-deutschland-2026.2/semantic/stations.geojsonseq",
+      "expectedBytes": 749074,
+      "expectedSha256": "d691bde9ea8ce6ff8745dca0f23d9b0a89ebabd649c9e5c84ac84a72bf1dfe42"
+    },
+    {
+      "id": "semantic-tracks",
+      "kind": "derived-input",
+      "version": "infra-deutschland-2026.2",
+      "file": "var/derived/germany-2026.2/semantic-tile-inputs-final-v2/tracks.geojsonseq",
+      "cacheFile": "derived/infra-deutschland-2026.2/semantic/tracks.geojsonseq",
+      "expectedBytes": 1160381774,
+      "expectedSha256": "347ab958ebdb0293d2527fa4fb202394efd13c776db852d60c344571ac539cc5"
+    },
+    {
+      "id": "semantic-platforms",
+      "kind": "derived-input",
+      "version": "infra-deutschland-2026.2",
+      "file": "var/derived/germany-2026.2/semantic-tile-inputs-final-v2/platforms.geojsonseq",
+      "cacheFile": "derived/infra-deutschland-2026.2/semantic/platforms.geojsonseq",
+      "expectedBytes": 19920744,
+      "expectedSha256": "6d0587422035d44a368eb232a2a60d7d3ee08829d9f216d56e6cd4ad33234084"
+    },
+    {
+      "id": "semantic-switches",
+      "kind": "derived-input",
+      "version": "infra-deutschland-2026.2",
+      "file": "var/derived/germany-2026.2/semantic-tile-inputs-final-v2/switches.geojsonseq",
+      "cacheFile": "derived/infra-deutschland-2026.2/semantic/switches.geojsonseq",
+      "expectedBytes": 64430536,
+      "expectedSha256": "fc2aec83149f3ced3d4e6ea4f335e72e81da4a14052d40b73a5fb360af5187e5"
+    },
+    {
+      "id": "semantic-signals",
+      "kind": "derived-input",
+      "version": "infra-deutschland-2026.2",
+      "file": "var/derived/germany-2026.2/semantic-tile-inputs-final-v2/signals.geojsonseq",
+      "cacheFile": "derived/infra-deutschland-2026.2/semantic/signals.geojsonseq",
+      "expectedBytes": 167764005,
+      "expectedSha256": "fab99ce80ed2053598d5d31992229edddba30dfa910be18067500f82b1d0c220"
+    },
+    {
+      "id": "semantic-blocks",
+      "kind": "derived-input",
+      "version": "infra-deutschland-2026.2",
+      "file": "var/derived/germany-2026.2/semantic-tile-inputs-final-v2/blocks.geojsonseq",
+      "cacheFile": "derived/infra-deutschland-2026.2/semantic/blocks.geojsonseq",
+      "expectedBytes": 110277174,
+      "expectedSha256": "aab4d9f2a164d2b7f33d739e55aa4c8e6e1deb4bfaffcce6b1b96573d160112b"
+    },
+    {
+      "id": "semantic-conflict-resources",
+      "kind": "derived-input",
+      "version": "infra-deutschland-2026.2",
+      "file": "var/derived/germany-2026.2/semantic-tile-inputs-final-v2/conflict-resources.geojsonseq",
+      "cacheFile": "derived/infra-deutschland-2026.2/semantic/conflict_resources.geojsonseq",
+      "expectedBytes": 345656264,
+      "expectedSha256": "50c8e97fae25bca65a8129400227b3e8d020f58affa8a49d3a995d422db36db3"
+    },
+    {
+      "id": "semantic-rail-context",
+      "kind": "derived-input",
+      "version": "infra-deutschland-2026.2",
+      "file": "var/derived/germany-2026.2/semantic-tile-inputs-final-v2/rail-context.geojsonseq",
+      "cacheFile": "derived/infra-deutschland-2026.2/semantic/rail_context.geojsonseq",
+      "expectedBytes": 82556187,
+      "expectedSha256": "d91b684b2aa258c00d9d73c9b36b9ae5d5db46e7cf7990c795f3e66583f7294e"
+    }
+  ],
+  "tools": [
+    {
+      "id": "osmium-tool",
+      "kind": "binary",
+      "version": "1.19.1",
+      "file": "var/tooling-pinned/osmium-tool-1.19.1/osmium.exe",
+      "cacheFile": "tools/osmium-tool-1.19.1/osmium.exe",
+      "expectedBytes": 1387008,
+      "expectedSha256": "455925087048db47c32ef1c9f20533f343dfc60f2aa7db8a0bfeca4851eb42e3"
+    },
+    {
+      "id": "gdal-pmtiles",
+      "kind": "binary",
+      "version": "3.13.2",
+      "file": "var/tooling-pinned/gdal-3.13.2/ogr2ogr.exe",
+      "cacheFile": "tools/gdal-3.13.2/ogr2ogr.exe",
+      "expectedBytes": 219136,
+      "expectedSha256": "ee27b7a6a8be8e768381aba520506a75f45549905ac1d3965797aa789a44f8c3"
+    },
+    {
+      "id": "go-pmtiles",
+      "kind": "binary",
+      "version": "1.31.2-a3e4951ea6a0477b784c27c1dcbfd9c130878c5a",
+      "file": "var/tooling-pinned/go-pmtiles-1.31.2/pmtiles.exe",
+      "cacheFile": "tools/go-pmtiles-1.31.2/pmtiles.exe",
+      "expectedBytes": 58970112,
+      "expectedSha256": "5d6fe5b31e5626fe894c150456558100faa0ff6b6346af7a3158d503741d13db"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "basemap",
+      "kind": "basemap-pmtiles",
+      "file": "var/source-cache/annual-2026-pinned/welt-mit-deutschland-detail-2026-08-12-c766073e55b99b213276328e504cbb7a69b0b65db0546adf484539c3bd319aed.pmtiles",
+      "installFile": "basemap.pmtiles",
+      "expectedBytes": 11545162669,
+      "expectedSha256": "c766073e55b99b213276328e504cbb7a69b0b65db0546adf484539c3bd319aed"
+    },
+    {
+      "id": "semantic-pmtiles",
+      "kind": "semantic-pmtiles",
+      "file": "var/derived/germany-2026.2/map-release/infra-deutschland-2026.2.pmtiles",
+      "installFile": "infra-deutschland-2026.2.pmtiles",
+      "expectedBytes": 1504741527,
+      "expectedSha256": "682c5660347550015baca58b67b59e42e9b05bdbee62015f0f12f5b57800fa41"
+    },
+    {
+      "id": "read-model",
+      "kind": "read-model",
+      "file": "var/derived/germany-2026.2/map-release/public/read-model.sqlite",
+      "installFile": "read-model.sqlite",
+      "expectedBytes": 1225248768,
+      "expectedSha256": "70cb2af039ec78bd34e08b89b7d70ed44a8ffd0b8ecf3d5c62b5048fe251729b"
+    },
+    {
+      "id": "train-map-projection",
+      "kind": "train-map-projection",
+      "file": "var/derived/germany-2026.2/map-release/public/train-map-projection.sqlite",
+      "installFile": "train-map-projection.sqlite",
+      "expectedBytes": 28921856,
+      "expectedSha256": "6ada115da82d2ba07add3c15c592701f897366aed602a0dc76015a4b761962d3"
+    },
+    {
+      "id": "style",
+      "kind": "style",
+      "file": "var/derived/germany-2026.2/map-release/style.json",
+      "installFile": "style.json",
+      "expectedBytes": 268406,
+      "expectedSha256": "dc0a83a684a1d801f2f43c6065b55498cc8247a88d18bc15dbab9fbc6c7db522"
+    },
+    {
+      "id": "delivery",
+      "kind": "delivery-manifest",
+      "file": "var/derived/germany-2026.2/map-release/public/release.json",
+      "installFile": "manifests/release.json",
+      "expectedBytes": 268383,
+      "expectedSha256": "6191e6140e09c25aadc2224d87c4befccdaab783283a4757d2aec9d1a3596a3b"
+    },
+    {
+      "id": "quality",
+      "kind": "quality-report",
+      "file": "var/derived/germany-2026.2/map-release/public/quality.json",
+      "installFile": "manifests/quality.json",
+      "expectedBytes": 13325,
+      "expectedSha256": "27243c3398f95c48a846516bb8b10330a0714936c516954d50862d2125f10b5d"
+    }
+  ],
+  "regressions": {
+    "semanticLayers": [
+      {
+        "layer": "rail_corridors",
+        "file": "var/derived/germany-2026.2/semantic-tile-inputs-final-v2/rail-corridors.geojsonseq"
+      },
+      {
+        "layer": "operating_points",
+        "file": "var/derived/germany-2026.2/semantic-tile-inputs-final-v2/operating-points.geojsonseq"
+      },
+      {
+        "layer": "stations",
+        "file": "var/derived/germany-2026.2/semantic-tile-inputs-final-v2/stations.geojsonseq"
+      },
+      {
+        "layer": "tracks",
+        "file": "var/derived/germany-2026.2/semantic-tile-inputs-final-v2/tracks.geojsonseq"
+      },
+      {
+        "layer": "platforms",
+        "file": "var/derived/germany-2026.2/semantic-tile-inputs-final-v2/platforms.geojsonseq"
+      },
+      {
+        "layer": "switches",
+        "file": "var/derived/germany-2026.2/semantic-tile-inputs-final-v2/switches.geojsonseq"
+      },
+      {
+        "layer": "signals",
+        "file": "var/derived/germany-2026.2/semantic-tile-inputs-final-v2/signals.geojsonseq"
+      },
+      {
+        "layer": "blocks",
+        "file": "var/derived/germany-2026.2/semantic-tile-inputs-final-v2/blocks.geojsonseq"
+      },
+      {
+        "layer": "conflict_resources",
+        "file": "var/derived/germany-2026.2/semantic-tile-inputs-final-v2/conflict-resources.geojsonseq"
+      },
+      {
+        "layer": "rail_context",
+        "file": "var/derived/germany-2026.2/semantic-tile-inputs-final-v2/rail-context.geojsonseq"
+      }
+    ],
+    "forbiddenPublicTokens": [
+      "12472736971",
+      "signal:osm-node-12472736971"
+    ],
+    "requiredEboSignalFeatureIds": [
+      "signal:osm-node-10000030259"
+    ]
+  },
+  "buildCache": {
+    "inventoryInputId": "build-cache-inventory",
+    "objectKey": "map-build-cache/infra-deutschland-2026.2/cache-restic-snapshot",
+    "backupRequired": true,
+    "encrypted": true,
+    "encryptionScheme": "restic-repository-v2",
+    "restoreVerification": "empty-path-full-inventory"
+  },
+  "deployment": {
+    "candidateInstallPath": "releases/infra-deutschland-2026.2",
+    "previousInstallPath": "releases/infra-deutschland-2026.1",
+    "activationPointer": "active/map-release.env",
+    "rollbackAttestationPath": "attestations/infra-deutschland-2026.1.rollback.json",
+    "activationMode": "atomic-config-swap",
+    "retainPreviousForRollback": true
+  }
+}
