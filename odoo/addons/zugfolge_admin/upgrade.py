@@ -63,7 +63,7 @@ LEGACY_DEPLOYMENT_AUDIT_BACKFILL_SQL = """
         correlation_id,
         occurred_at,
         payload_hash,
-        authorization
+        "authorization"
     )
     SELECT projection.id,
            projection.world_id,
