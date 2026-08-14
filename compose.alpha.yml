@@ -40,7 +40,7 @@ services:
     depends_on: { odoo-postgres: { condition: service_healthy } }
     restart: "no"
   keycloak:
-    image: quay.io/keycloak/keycloak:26.3.2
+    image: quay.io/keycloak/keycloak:26.7.0
     command: [start, --import-realm, --health-enabled=true, --http-enabled=true]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: "${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME}"
