@@ -2,12 +2,12 @@ export interface LivemapRuntimeConfiguration {
   readonly gameApiUrl: string;
   readonly keycloakUrl: string;
   readonly keycloakRealm: string;
+  readonly oidcClientId: string;
   readonly publicWorldId: string;
   readonly gameWebUrl: string;
   readonly basemapStyleUrl: string;
   readonly germanyPmtilesUrl: string;
   readonly attribution: string;
-  readonly oidcClientId: string;
 }
 
 const TOKEN_KEY = "zugfolge.accessToken";

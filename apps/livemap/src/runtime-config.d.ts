@@ -2,13 +2,13 @@ interface ZugfolgeRuntimeConfiguration {
   readonly gameApiUrl?: string;
   readonly keycloakUrl?: string;
   readonly keycloakRealm?: string;
+  readonly livemapOidcClientId?: string;
   readonly publicWorldId?: string;
   readonly gameWebUrl?: string;
   readonly livemapUrl?: string;
   readonly mapBasemapStyleUrl?: string;
   readonly mapGermanyPmtilesUrl?: string;
   readonly mapAttribution?: string;
-  readonly livemapOidcClientId?: string;
 }
 
 var __ZUGFOLGE_RUNTIME_CONFIG__: ZugfolgeRuntimeConfiguration | undefined;

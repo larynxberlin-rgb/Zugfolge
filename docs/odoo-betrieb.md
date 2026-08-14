@@ -16,7 +16,7 @@ Die Trennung ist verbindlich durch [ADR-0023](adr/0023-odoo-als-administrativer-
 | Odoo Community | Git `19.0` Commit `f8c29412e71af098b2949f485a8011b01b64b368` | LGPL-3.0 | Server und native Apps `base`, `contacts`, `crm`, `account`, `payment`, `mail` |
 | Offizielles Odoo-Image | `odoo@sha256:e415f9924395e7521245813135112f264b9222bcde3b1d3c2ee9ff073081540a` | LGPL-3.0 (Odoo-Code) | optionaler, rootless Containerbetrieb |
 | OCA `queue` | Commit `d2c1759102f1e0bc8f6244629b5b38c7b7882f36`, Modul `queue_job` 19.0.2.0.3 | LGPL-3.0 | persistente Odoo-seitige Zustellung und Wiederholung |
-| Eigenes Add-on | `odoo/addons/zugfolge_admin`, Version `19.0.2.0.0` | PolyForm Shield 1.0.0 / Odoo-Manifesteinstellung `Other proprietary` | Zugfolge-Projektion, Weltkatalog, Portal, Freigabe, Signaturgrenze, Feedback |
+| Eigenes Add-on | `odoo/addons/zugfolge_admin`, Version `19.0.2.0.3` | PolyForm Shield 1.0.0 / Odoo-Manifesteinstellung `Other proprietary` | Zugfolge-Projektion, Weltkatalog, Portal, Freigabe, Signaturgrenze, Feedback |
 
 Odoo Community ist frei selbst hostbar; die Odoo-19-Dokumentation nennt
 Community unter LGPLv3 sowie Python ab 3.10 und PostgreSQL ab 13. Das Add-on
@@ -39,7 +39,9 @@ Primärquellen: [Odoo Community/Lizenz](https://www.odoo.com/documentation/19.0/
    `addons_path` aufnehmen. Das lokale Add-on aus diesem Repository zusätzlich
    als schreibgeschütztes Volume/Mount einhängen.
 3. Erstinstallation und Upgrades ausschließlich mit Odoo-Modulupdate
-   ausführen: `odoo -d zugfolge_odoo -u zugfolge_admin --stop-after-init`.
+   im Odoo-Container mit denselben Datenbank-, Add-on- und `queue_job`-
+   Parametern wie im Normalbetrieb ausführen, zum Beispiel:
+   `odoo -d zugfolge_odoo --db_host=odoo-postgres --db_user=odoo --db_password="$ODOO_DB_PASSWORD" --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons --load=base,web,queue_job -u zugfolge_admin --stop-after-init`.
    Ein Upgrade erfolgt in Staging mit Kopie der Odoo-Datenbank, dann Backup,
    Wartungsfenster, Modulupdate und Health-/Smoke-Test. Game-Migrationen und
    Odoo-Migrationen bleiben getrennte Vorgänge.
@@ -69,7 +71,7 @@ erzeugt Odoo eine `zugfolge.world.participation` und stellt
 werden als `cancelled` beziehungsweise `refunded` zurückprojiziert. Odoo
 erzeugt niemals selbst einen Game-Zugang.
 
-## Upgrade auf 19.0.2.0.0
+## Upgrade auf 19.0.2.0.3
 
 Das Modulupdate legt Weltangebote/-teilnahmen und Website-Views an. Historische
 OAuth-Zeilen werden bewusst **nicht** nachträglich als verifiziert behandelt,
@@ -78,6 +80,24 @@ Portalprofile erhalten ihre stabile Keycloak-`sub` beim nächsten erfolgreich
 validierten OIDC-Login. Vor dem Update sind Odoo-Datenbank und Filestore
 gemeinsam zu sichern; anschließend sind Modulupdate, Odoo-Tests und die
 Banner-Anhangsstichprobe auszuführen.
+
+Die Patchversion `19.0.2.0.3` ergänzt Odoo-19-Privileges und eine startbare
+App-Aktion. Dadurch erhalten Systemadministratoren die Basisrolle
+`Zugfolge Administration`; Freigabe-, Telemetrie- und Infra-Prüfrechte bleiben
+getrennt und müssen weiterhin ausdrücklich vergeben werden. Ein bloßer
+Containerneustart oder `--init` aktualisiert eine bereits installierte
+Datenbank nicht verlässlich. Nach gemeinsamem Backup von Datenbank und
+Filestore deshalb vor dem normalen Start einmalig ausführen:
+
+```bash
+odoo -d zugfolge_odoo \
+  --db_host=odoo-postgres --db_user=odoo --db_password="$ODOO_DB_PASSWORD" \
+  --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons \
+  --load=base,web,queue_job -u zugfolge_admin --stop-after-init
+```
+
+Danach neu anmelden und die App **Zugfolge** mit Startaktion
+**Weltmonitoring** prüfen.
 
 ## Keycloak-OIDC und Portalprovisionierung
 

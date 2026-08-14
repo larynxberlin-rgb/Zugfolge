@@ -280,6 +280,13 @@ In Odoo unter **Einstellungen → Technisch → Systemparameter** setzen:
 - Webhook-Key und Secret passend zu `ODOO_WEBHOOK_KEYS_JSON`;
 - Projektions-Key passend zu `ODOO_PROJECTION_SECRET`.
 
+Bei einer bereits installierten Odoo-Datenbank vor dem Neustart Datenbank und
+Filestore gemeinsam sichern und das Add-on einmalig im Odoo-Container mit
+denselben DB-, Add-on- und `queue_job`-Parametern wie im Normalbetrieb sowie
+`-u zugfolge_admin --stop-after-init` aktualisieren. Der vollständige Befehl
+steht in [`docs/odoo-betrieb.md`](docs/odoo-betrieb.md). `--init` im
+Compose-Start ersetzt dieses kontrollierte Upgrade nicht.
+
 ## Einladungen und persönlicher Tutorialstart
 
 1. In Odoo **Zugfolge → Alpha-Einladungen → Neu** öffnen.

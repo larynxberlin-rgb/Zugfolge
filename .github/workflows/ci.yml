@@ -187,6 +187,12 @@ jobs:
       - name: Typprüfung
         run: pnpm -r --stream typecheck
 
+      - name: Alpha-Compose auflösen
+        run: |
+          cp .env.example .env
+          trap 'rm -f .env' EXIT
+          docker compose -f compose.alpha.yml config --quiet
+
       - name: Tests
         run: |
           pnpm -r --stream test
@@ -239,6 +245,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r --stream build
+      - name: Produktiver Migrations-CLI ist wiederholbar
+        run: |
+          DATABASE_URL="$TEST_DATABASE_URL" node packages/db/dist/migrate.js
+          DATABASE_URL="$TEST_DATABASE_URL" node packages/db/dist/migrate.js
       - name: Echte PostgreSQL-Migration, Readiness und Weltisolation
         run: pnpm --filter @zugfolge/db exec vitest run src/postgres.integration.test.ts
       - run: pnpm --filter @zugfolge/game-api test
