@@ -54,6 +54,11 @@ test("Alpha-Compose erzwingt Map-Gate, Migration, signierten Bootstrap und einen
   assert.match(compose, /^name: zugfolge$/mu);
   assert.match(compose, /odoo-upgrade:[\s\S]*image: zugfolge-odoo:alpha/u);
   assert.match(compose, /\n  odoo:\n    image: zugfolge-odoo:alpha/u);
+  assert.match(compose, /keycloak:[\s\S]*proxy: \{ aliases: \[zugfolge-keycloak\] \}[\s\S]*mail: \{\}/u);
+  assert.match(compose, /game-web:[\s\S]*proxy: \{ aliases: \[zugfolge-world-web\] \}/u);
+  assert.match(compose, /livemap:[\s\S]*proxy: \{ aliases: \[zugfolge-world-livemap\] \}/u);
+  assert.match(compose, /\n  odoo:[\s\S]*proxy: \{ aliases: \[zugfolge-odoo\] \}[\s\S]*mail: \{\}/u);
+  assert.match(compose, /networks:[\s\S]*proxy: \{ external: true, name: zugfolge-proxy \}[\s\S]*mail: \{ external: true, name: zugfolge-mail \}/u);
   assert.match(mapPreflight, /expectedReleaseForMapPreflight\(evidence, mode, configuredReleaseId\)/u);
   assert.match(mapPreflight, /expectedActiveReleaseId/u);
   assert.doesNotMatch(mapPreflight, /fallback/u);

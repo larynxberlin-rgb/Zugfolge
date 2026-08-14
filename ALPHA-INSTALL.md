@@ -5,6 +5,14 @@ Odoo steuert Einladungen und Freigaben, Keycloak verwaltet Identitäten, und
 ausschließlich das Game hält weltgebundene Konten, Zugänge und kurzlebige
 Tutorialinstanzen. Odoo und Keycloak liegen nie im heißen Simulationspfad.
 
+Die öffentlichen Dienste verwenden die bereits vom Host bereitgestellten
+externen Netze `zugfolge-proxy` und `zugfolge-mail`. Compose verbindet
+Game-Web als `zugfolge-world-web`, die Livemap als
+`zugfolge-world-livemap`, Keycloak als `zugfolge-keycloak` und Odoo als
+`zugfolge-odoo` mit dem Proxy. Keycloak und Odoo bleiben zugleich am
+Mailnetz. Fehlt eines dieser beiden Netze, bricht Compose vor dem Start ab;
+es gibt keinen unbemerkten, nur lokal erreichbaren Ersatzpfad.
+
 ## Voraussetzungen
 
 - Linux-Host mit Docker Engine und Compose v2, mindestens 16 GiB RAM und
