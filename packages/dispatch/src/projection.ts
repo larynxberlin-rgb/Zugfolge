@@ -34,7 +34,7 @@ export interface OperationsProjection {
 /** Ab dieser Zahl betroffener Zugläufe wird eine Entscheidung als Großereignis hervorgehoben. */
 export const MAJOR_DISRUPTION_AFFECTED_TRAIN_RUNS = 3;
 
-const DECISION_EVENT_TYPES = new Set([
+export const OPERATIONS_DECISION_EVENT_TYPES = [
   "dispatch.decision",
   "dispatch.major-event",
   "dispatch.manual-override",
@@ -44,7 +44,9 @@ const DECISION_EVENT_TYPES = new Set([
   "disruption.construction-published",
   "disruption.provider-failed",
   "disruption.applied",
-]);
+] as const;
+
+const DECISION_EVENT_TYPES = new Set<string>(OPERATIONS_DECISION_EVENT_TYPES);
 
 export interface DailyDecisionFact {
   readonly eventSequence: number;
@@ -107,6 +109,25 @@ function operatorMatches(value: Record<string, unknown>, operatorId: string): bo
     || value.operator_id === operatorId
     || (Array.isArray(value.operatorIds) && value.operatorIds.includes(operatorId))
     || (Array.isArray(value.operator_ids) && value.operator_ids.includes(operatorId));
+}
+
+/**
+ * Liefert genau die explizit an ein Ereignis gebundenen EVUs. Der Replaypfad
+ * darf niemals alle bekannten EVUs einer Welt ausprobieren oder Ereignisse
+ * ueber Weltgrenzen hinweg projizieren.
+ */
+export function operationsEventOperatorIds(event: Pick<LoggedEvent, "payload">): readonly string[] {
+  const value = payload(event.payload);
+  if (value === undefined) return [];
+  const candidates = [
+    value.operatorId,
+    value.operator_id,
+    ...(Array.isArray(value.operatorIds) ? value.operatorIds : []),
+    ...(Array.isArray(value.operator_ids) ? value.operator_ids : []),
+  ];
+  return [...new Set(candidates.filter(
+    (candidate): candidate is string => typeof candidate === "string" && candidate.length > 0,
+  ))].sort();
 }
 
 function text(value: unknown): string {

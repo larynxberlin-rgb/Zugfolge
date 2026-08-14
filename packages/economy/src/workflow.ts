@@ -75,6 +75,8 @@ export interface TenderAutomation {
 
 export interface EconomyWorldState {
   readonly worldId: string;
+  /** Persistierte fachliche Endmarke; fehlend bedeutet fuer Altzustaende weiterhin aktiv. */
+  readonly closed?: true;
   readonly seed: bigint;
   readonly profile: WorldProfile;
   readonly releasePin: WorldEconomyPin;
@@ -103,7 +105,11 @@ function withCommand(state: EconomyWorldState, commandId: string, changes: Parti
   processedCommands.add(commandId);
   return Object.freeze({ ...state, ...changes, processedCommands, revision: state.revision + 1 });
 }
-function requireNewCommand(state: EconomyWorldState, commandId: string): boolean { return !state.processedCommands.has(commandId); }
+function requireNewCommand(state: EconomyWorldState, commandId: string): boolean {
+  if (state.processedCommands.has(commandId)) return false;
+  if (state.closed === true) throw new Error(`Economy-Welt '${state.worldId}' ist fachlich geschlossen.`);
+  return true;
+}
 function lifecycle(state: EconomyWorldState, tenderId: string): TenderLifecycle {
   const found = state.tenders.get(tenderId);
   if (found === undefined) throw new Error(`Ausschreibung '${tenderId}' existiert in Welt '${state.worldId}' nicht.`);
@@ -565,5 +571,5 @@ export async function dispatchEconomyEffects(effects: EconomyEffects, adapters: 
 /** Reguläres Weltende: Verträge und Welt-Präqualifikation enden ohne Insolvenzfolge. */
 export function closeEconomyWorld(state: EconomyWorldState, commandId: string): EconomyWorldState {
   if (!requireNewCommand(state, commandId)) return state;
-  return withCommand(state, commandId, { contracts: new Map(), mobilizations: new Map(), tenderAutomation: new Map(), prequalifications: new Map(), publicOperations: new Map(), operatorRestrictions: new Map(), settledPeriods: new Set(), operatingRuntimeByLot: new Map() });
+  return withCommand(state, commandId, { closed: true, contracts: new Map(), mobilizations: new Map(), tenderAutomation: new Map(), prequalifications: new Map(), publicOperations: new Map(), operatorRestrictions: new Map(), settledPeriods: new Set(), operatingRuntimeByLot: new Map() });
 }

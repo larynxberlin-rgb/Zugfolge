@@ -1,4 +1,10 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  createPublicKey,
+  timingSafeEqual,
+  verify as verifyEd25519,
+} from "node:crypto";
 import { createReadStream } from "node:fs";
 import {
   lstat,
@@ -357,10 +363,15 @@ export class InfraPackageStaging {
     );
     const expectedStageName = `${receipt.packageId}-${receipt.version}-${receipt.manifestSha256.slice(0, 16)}`;
     invariant(receipt.stageName === expectedStageName, "Finalisierungsbeleg besitzt ein abweichendes Stagingziel.");
+    const signatureQualificationIsConsistent =
+      receipt.qualification.signatureStatus === "missing"
+        ? receipt.qualification.activationEligible === false
+        : receipt.qualification.signatureStatus === "verified"
+          && receipt.qualification.activationEligible === true;
     invariant(
       receipt.qualification.packageId === receipt.packageId && receipt.qualification.version === receipt.version &&
       receipt.qualification.manifestSha256 === receipt.manifestSha256 &&
-      receipt.qualification.signatureStatus === "missing" && receipt.qualification.activationEligible === false,
+      signatureQualificationIsConsistent,
       "Finalisierungsbeleg besitzt eine unzulässige Qualifikation.",
     );
     return receipt;
@@ -702,7 +713,7 @@ async function readPackagedJson(packageRoot: string, file: PackageFile): Promise
 async function qualifyDeliveryPackage(
   packageRoot: string,
   parsed: ParsedPackageManifest,
-  _trustedKeys: Readonly<Record<string, string>>,
+  trustedKeys: Readonly<Record<string, string>>,
   manifestSha256: string,
 ): Promise<InfraPackageQualification> {
   const deliveryFile = parsed.files.find(({ kind }) => kind === "release-manifest");
@@ -752,14 +763,64 @@ async function qualifyDeliveryPackage(
   const gates = record(delivery.value["approvalGates"], "Delivery approvalGates");
   invariant(record(gates["rights"], "Rechte-Gate")["status"] === "passed" && record(gates["quality"], "Qualitäts-Gate")["status"] === "passed", "Rechte- oder Qualitätsgate ist nicht bestanden.");
   const signatureGate = record(gates["signature"], "Signatur-Gate");
-  invariant(signatureGate["status"] === "missing" && delivery.value["signature"] === null, "Ohne implementierte Signaturprüfung darf der Release nicht als signiert gelten.");
+  if (signatureGate["status"] === "missing") {
+    invariant(
+      delivery.value["signature"] === null && delivery.value["releaseHash"] === undefined,
+      "Unsignierter Delivery-Release darf keine Signatur oder Hashfreigabe behaupten.",
+    );
+    return {
+      packageId: parsed.packageId,
+      version: parsed.version,
+      manifestSha256,
+      deliveryReleaseId: releaseId,
+      signatureStatus: "missing",
+      activationEligible: false,
+    };
+  }
+  invariant(signatureGate["status"] === "passed", "Delivery-Signaturgate ist weder bestanden noch explizit fehlend.");
+  const signature = record(delivery.value["signature"], "Delivery-Signatur");
+  const keyId = safeId(signature["keyId"], "Delivery-Signaturschlüssel");
+  invariant(
+    signature["algorithm"] === "Ed25519"
+      && signatureGate["algorithm"] === "Ed25519"
+      && signatureGate["keyId"] === keyId,
+    "Delivery-Signatur und Freigabegate besitzen keine gemeinsame Ed25519-Bindung.",
+  );
+  invariant(
+    Object.keys(signature).sort().join(",") === "algorithm,keyId,valueBase64"
+      && Object.keys(signatureGate).sort().join(",") === "algorithm,keyId,status",
+    "Delivery-Signaturvertrag besitzt unerwartete Felder.",
+  );
+  const releaseHash = String(delivery.value["releaseHash"] ?? "");
+  invariant(SHA256.test(releaseHash), "Delivery-Release besitzt keinen gültigen Releasehash.");
+  const signingPayload = { ...delivery.value };
+  delete signingPayload["releaseHash"];
+  delete signingPayload["signature"];
+  invariant(releaseHash === sha256(canonicalManifest(signingPayload)), "Delivery-Releasehash bindet nicht den kanonischen Inhalt.");
+  const signatureBase64 = String(signature["valueBase64"] ?? "");
+  invariant(/^[A-Za-z0-9+/]{86}==$/.test(signatureBase64), "Delivery-Signatur besitzt keine kanonische Ed25519-Kodierung.");
+  const signatureBytes = Buffer.from(signatureBase64, "base64");
+  const trustedKeyPem = trustedKeys[keyId];
+  invariant(typeof trustedKeyPem === "string" && trustedKeyPem.trim() !== "", `Delivery-Signaturschlüssel '${keyId}' ist nicht vertrauenswürdig.`);
+  let publicKey;
+  try {
+    publicKey = createPublicKey(trustedKeyPem);
+  } catch {
+    throw new InfraPackageStagingError(`Delivery-Signaturschlüssel '${keyId}' ist ungültig.`);
+  }
+  invariant(
+    publicKey.asymmetricKeyType === "ed25519"
+      && signatureBytes.length === 64
+      && verifyEd25519(null, Buffer.from(releaseHash, "hex"), publicKey, signatureBytes),
+    "Delivery-Release besitzt keine gültige vertrauenswürdige Ed25519-Signatur.",
+  );
   return {
     packageId: parsed.packageId,
     version: parsed.version,
     manifestSha256,
     deliveryReleaseId: releaseId,
-    signatureStatus: "missing",
-    activationEligible: false,
+    signatureStatus: "verified",
+    activationEligible: true,
   };
 }
 

@@ -1,4 +1,10 @@
-import { createHash } from "node:crypto";
+import {
+  createHash,
+  createPrivateKey,
+  createPublicKey,
+  sign as signEd25519,
+  verify as verifyEd25519,
+} from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, mkdir, open, readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
@@ -31,6 +37,55 @@ export function serializeDeliveryJson(value) {
 
 function sha256Bytes(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+export function deliveryReleaseHash(release) {
+  invariant(release?.schema === DELIVERY_SCHEMA, "Delivery-Signatur besitzt kein bekanntes Release-Schema.");
+  const { releaseHash: ignoredHash, signature: ignoredSignature, ...payload } = release;
+  void ignoredHash;
+  void ignoredSignature;
+  return sha256Bytes(serializeDeliveryJson(payload));
+}
+
+export function signMapDeliveryRelease(release, privateKeyPem, keyId) {
+  invariant(typeof keyId === "string" && /^[a-z0-9][a-z0-9._-]*$/.test(keyId), "Delivery-Signaturschluessel besitzt keine stabile ID.");
+  invariant(release?.approvalGates?.rights?.status === "passed" && release?.approvalGates?.quality?.status === "passed", "Delivery-Release darf ohne Rechte- und Qualitaetsfreigabe nicht signiert werden.");
+  invariant(release?.approvalGates?.signature?.status === "missing" && release?.signature === null, "Nur ein explizit unsignierter Delivery-Release darf signiert werden.");
+  const privateKey = createPrivateKey(privateKeyPem);
+  invariant(privateKey.asymmetricKeyType === "ed25519", "Delivery-Release verlangt einen Ed25519-Schluessel.");
+  const candidate = {
+    ...release,
+    approvalGates: {
+      ...release.approvalGates,
+      signature: { status: "passed", algorithm: "Ed25519", keyId },
+    },
+    signature: null,
+  };
+  const releaseHash = deliveryReleaseHash(candidate);
+  const signature = signEd25519(null, Buffer.from(releaseHash, "hex"), privateKey);
+  return {
+    ...candidate,
+    releaseHash,
+    signature: { algorithm: "Ed25519", keyId, valueBase64: signature.toString("base64") },
+  };
+}
+
+export function verifyMapDeliveryReleaseSignature(release, publicKeyPem) {
+  try {
+    const publicKey = createPublicKey(publicKeyPem);
+    const signature = Buffer.from(release?.signature?.valueBase64 ?? "", "base64");
+    return publicKey.asymmetricKeyType === "ed25519"
+      && release?.approvalGates?.signature?.status === "passed"
+      && release.approvalGates.signature.algorithm === "Ed25519"
+      && release.approvalGates.signature.keyId === release?.signature?.keyId
+      && release?.signature?.algorithm === "Ed25519"
+      && typeof release?.releaseHash === "string"
+      && release.releaseHash === deliveryReleaseHash(release)
+      && signature.length === 64
+      && verifyEd25519(null, Buffer.from(release.releaseHash, "hex"), publicKey, signature);
+  } catch {
+    return false;
+  }
 }
 
 async function sha256File(path) {
@@ -254,6 +309,19 @@ async function writeReproducible(path, bytes) {
     await handle.close();
   }
   return "written";
+}
+
+export async function writeSignedMapDeliveryRelease(release, outputPath) {
+  const signature = Buffer.from(release?.signature?.valueBase64 ?? "", "base64");
+  invariant(
+    release?.approvalGates?.signature?.status === "passed"
+      && release?.signature?.algorithm === "Ed25519"
+      && release?.signature?.keyId === release?.approvalGates?.signature?.keyId
+      && release?.releaseHash === deliveryReleaseHash(release)
+      && signature.length === 64,
+    "Signierter Delivery-Release besitzt keinen konsistenten Hash-/Signaturvertrag.",
+  );
+  return writeReproducible(resolve(outputPath), serializeDeliveryJson(release));
 }
 
 export async function writeMapDeliveryRelease(result, outputDirectory) {

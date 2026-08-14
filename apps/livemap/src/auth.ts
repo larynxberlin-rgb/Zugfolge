@@ -7,10 +7,11 @@ export interface LivemapRuntimeConfiguration {
   readonly basemapStyleUrl: string;
   readonly germanyPmtilesUrl: string;
   readonly attribution: string;
+  readonly oidcClientId: string;
 }
 
 const TOKEN_KEY = "zugfolge.accessToken";
-export const LIVEMAP_OIDC_CLIENT_ID = "livemap";
+export const DEFAULT_LIVEMAP_OIDC_CLIENT_ID = "livemap";
 const EXPIRY_KEY = "zugfolge.accessTokenExpiresAt";
 const STATE_KEY = "zugfolge.livemap.oidc.state";
 const VERIFIER_KEY = "zugfolge.livemap.oidc.verifier";
@@ -40,6 +41,7 @@ export function loadRuntimeConfiguration(): LivemapRuntimeConfiguration {
     basemapStyleUrl: configured.mapBasemapStyleUrl ?? "/artifacts/world-basemap/style.json",
     germanyPmtilesUrl: configured.mapGermanyPmtilesUrl ?? "/artifacts/germany-infrastructure/germany.pmtiles",
     attribution: configured.mapAttribution ?? "© OpenStreetMap-Mitwirkende · ODbL",
+    oidcClientId: configured.livemapOidcClientId?.trim() || DEFAULT_LIVEMAP_OIDC_CLIENT_ID,
   });
 }
 
@@ -74,7 +76,7 @@ export async function ensureAccessToken(configuration: LivemapRuntimeConfigurati
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         grant_type: "authorization_code",
-        client_id: LIVEMAP_OIDC_CLIENT_ID,
+        client_id: configuration.oidcClientId,
         code,
         redirect_uri: redirectUri,
         code_verifier: verifier,
@@ -102,7 +104,7 @@ export async function ensureAccessToken(configuration: LivemapRuntimeConfigurati
   sessionStorage.setItem(REDIRECT_KEY, redirectUri);
   const authorization = new URL(`${issuer}/protocol/openid-connect/auth`);
   authorization.search = new URLSearchParams({
-    client_id: LIVEMAP_OIDC_CLIENT_ID,
+    client_id: configuration.oidcClientId,
     response_type: "code",
     scope: "openid",
     redirect_uri: redirectUri,

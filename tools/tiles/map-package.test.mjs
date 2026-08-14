@@ -214,6 +214,17 @@ function writeMinimalPublicReadModel(path) {
     for (const [table, columns] of Object.entries(PUBLIC_READ_MODEL_TABLES)) {
       database.exec(`CREATE TABLE ${table} (${columns.map((column) => `${column} TEXT NOT NULL`).join(", ")});`);
     }
+    const metadata = database.prepare("INSERT INTO metadata (key, value) VALUES (?, ?)");
+    for (const [key, value] of Object.entries({
+      schema: "zugfolge-livemap-read-model-sqlite/v2",
+      world_id: "world-test",
+      infrastructure_release_id: "infra-test",
+      gtfs_service_date: "20260101",
+      world_epoch: "2026-01-01T00:00:00.000Z",
+      time_zone: "Europe/Berlin",
+      service_start_offset_s: "0",
+      repeat_every_s: "86400",
+    })) metadata.run(key, value);
     database.prepare("INSERT INTO world_config (world_id, infrastructure_release_id, config_json) VALUES (?, ?, ?)")
       .run("world-test", "infra-test", "{}");
   } finally {

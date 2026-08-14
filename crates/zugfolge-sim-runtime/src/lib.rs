@@ -27,10 +27,12 @@ use zugfolge_sim::{
 
 pub const INITIALIZE_SCHEMA: &str = "zugfolge-regional-simulation-initialize/v1";
 pub const COMMAND_SCHEMA: &str = "zugfolge-regional-simulation-command/v1";
+pub const COMMAND_BATCH_SCHEMA: &str = "zugfolge-regional-simulation-command-batch/v1";
 pub const STATE_SCHEMA: &str = "zugfolge-regional-simulation-state/v1";
 pub const INITIALIZED_SCHEMA: &str = "zugfolge-regional-simulation-initialized/v1";
 pub const RESTORED_SCHEMA: &str = "zugfolge-regional-simulation-restored/v1";
 pub const RESULT_SCHEMA: &str = "zugfolge-regional-simulation-result/v1";
+pub const BATCH_RESULT_SCHEMA: &str = "zugfolge-regional-simulation-batch-result/v1";
 pub const LIVEMAP_SNAPSHOT_SCHEMA: &str = "zugfolge-regional-livemap-snapshot/v1";
 pub const LIVEMAP_DELTA_SCHEMA: &str = "zugfolge-regional-livemap-delta/v1";
 
@@ -38,6 +40,8 @@ const INTERNAL_WORLD_ID: u64 = 1;
 const INTERNAL_REGION_ID: u32 = 1;
 const EXTERNAL_ZONE_REGION_ID: u32 = u32::MAX;
 const MAX_JSON_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+const MAX_BATCH_COMMANDS: usize = 4_096;
+const DAY_INSTANCE_SEPARATOR: &str = ":day-";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeError {
@@ -83,6 +87,8 @@ struct Initialization {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TrainInput {
     train_run_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    base_train_run_id: Option<String>,
     operator: String,
     train_number: String,
     category: WireTrainCategory,
@@ -147,6 +153,32 @@ struct CommandEnvelope {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct BatchCommand {
+    command_id: String,
+    command: WireCommand,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CommandBatchEnvelope {
+    schema_version: String,
+    world_id: String,
+    region_id: String,
+    expected_state_hash: String,
+    expected_revision: u64,
+    expected_publisher_sequence: u64,
+    commands: Vec<BatchCommand>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchCommandResult {
+    command_id: String,
+    idempotent_replay: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 enum WireCommand {
     Materialize {
@@ -157,6 +189,7 @@ enum WireCommand {
         at_s: i64,
     },
     AddDelay {
+        #[serde(rename = "trainRunId")]
         train_run_id: String,
         seconds: u32,
     },
@@ -260,6 +293,8 @@ struct RuntimeState {
 #[serde(rename_all = "camelCase")]
 struct WirePublicTrain {
     id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    base_train_run_id: Option<String>,
     operator: String,
     train_number: String,
     category: WireTrainCategory,
@@ -356,6 +391,7 @@ struct Machine {
     publisher: DeltaPublisher,
     internal_by_external: BTreeMap<String, u64>,
     external_by_internal: BTreeMap<u64, String>,
+    base_external_by_internal: BTreeMap<u64, String>,
     next_internal_id: u64,
     disruptions: BTreeMap<String, WirePublicDisruption>,
     activated_disruptions: BTreeSet<String>,
@@ -452,6 +488,9 @@ fn public_disruption(input: &WireDisruption) -> Result<WirePublicDisruption, Run
 
 fn validate_train(train: &TrainInput) -> Result<(), RuntimeError> {
     validate_identity(&train.train_run_id, "trainRunId")?;
+    if let Some(base_train_run_id) = &train.base_train_run_id {
+        validate_identity(base_train_run_id, "baseTrainRunId")?;
+    }
     validate_identity(&train.operator, "operator")?;
     validate_identity(&train.train_number, "trainNumber")?;
     if train.route.is_empty() {
@@ -466,6 +505,128 @@ fn validate_train(train: &TrainInput) -> Result<(), RuntimeError> {
             return Err(RuntimeError::new(
                 "invalid_train",
                 "Positionen und Fahrplanzeiten duerfen nicht negativ sein",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_initial_train(train: &TrainInput) -> Result<(), RuntimeError> {
+    validate_train(train)?;
+    if train.base_train_run_id.is_some() {
+        return Err(RuntimeError::new(
+            "invalid_initial_train",
+            format!(
+                "Initialzug '{}' darf keine baseTrainRunId besitzen",
+                train.train_run_id
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_day_instance_id(
+    train_run_id: &str,
+    base_train_run_id: &str,
+) -> Result<(), RuntimeError> {
+    if base_train_run_id.contains(DAY_INSTANCE_SEPARATOR) {
+        return Err(RuntimeError::new(
+            "invalid_base_train_binding",
+            "baseTrainRunId darf selbst keine Tagesinstanz sein",
+        ));
+    }
+    let prefix = format!("{base_train_run_id}{DAY_INSTANCE_SEPARATOR}");
+    let Some(day) = train_run_id.strip_prefix(&prefix) else {
+        return Err(RuntimeError::new(
+            "invalid_base_train_binding",
+            format!(
+                "Zuglauf '{train_run_id}' ist keine Tagesinstanz der Basisfahrt '{base_train_run_id}'"
+            ),
+        ));
+    };
+    if day.is_empty()
+        || day.starts_with('0')
+        || !day.bytes().all(|byte| byte.is_ascii_digit())
+        || day.parse::<u64>().is_err()
+    {
+        return Err(RuntimeError::new(
+            "invalid_base_train_binding",
+            format!("Zuglauf '{train_run_id}' besitzt keine kanonische positive Tagesnummer"),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_materialized_train(
+    state: &RuntimeState,
+    train: &TrainInput,
+) -> Result<(), RuntimeError> {
+    validate_train(train)?;
+    let Some(base_train_run_id) = &train.base_train_run_id else {
+        if train.train_run_id.contains(DAY_INSTANCE_SEPARATOR) {
+            return Err(RuntimeError::new(
+                "invalid_base_train_binding",
+                format!(
+                    "Tagesinstanz '{}' benoetigt eine autoritative baseTrainRunId",
+                    train.train_run_id
+                ),
+            ));
+        }
+        return Ok(());
+    };
+    validate_day_instance_id(&train.train_run_id, base_train_run_id)?;
+
+    let base = state
+        .initial_trains
+        .iter()
+        .find(|candidate| candidate.train_run_id == *base_train_run_id)
+        .ok_or_else(|| {
+            RuntimeError::new(
+                "unknown_base_train",
+                format!("Basisfahrt '{base_train_run_id}' ist kein Initialzug"),
+            )
+        })?;
+    if train.operator != base.operator
+        || train.train_number != base.train_number
+        || train.category != base.category
+        || train.route.len() != base.route.len()
+    {
+        return Err(RuntimeError::new(
+            "invalid_base_train_binding",
+            format!(
+                "Tagesinstanz '{}' weicht in ihren statischen Zugdaten von '{}' ab",
+                train.train_run_id, base_train_run_id
+            ),
+        ));
+    }
+
+    let time_offset = train.route[0]
+        .arrival_s
+        .checked_sub(base.route[0].arrival_s)
+        .filter(|offset| *offset > 0)
+        .ok_or_else(|| {
+            RuntimeError::new(
+                "invalid_base_train_binding",
+                format!(
+                    "Tagesinstanz '{}' besitzt keinen positiven Tagesoffset",
+                    train.train_run_id
+                ),
+            )
+        })?;
+    for (point, base_point) in train.route.iter().zip(&base.route) {
+        let same_static_route = point.operating_point == base_point.operating_point
+            && point.position_mm == base_point.position_mm
+            && point.minimum_dwell_seconds == base_point.minimum_dwell_seconds;
+        let same_time_offset = point.arrival_s.checked_sub(base_point.arrival_s)
+            == Some(time_offset)
+            && point.departure_s.checked_sub(base_point.departure_s) == Some(time_offset);
+        if !same_static_route || !same_time_offset {
+            return Err(RuntimeError::new(
+                "invalid_base_train_binding",
+                format!(
+                    "Tagesinstanz '{}' entspricht der Route von '{}' nicht mit einem konstanten Tagesoffset",
+                    train.train_run_id, base_train_run_id
+                ),
             ));
         }
     }
@@ -517,6 +678,7 @@ fn external_leg_contract(
     if !reentry_route.is_empty() {
         let probe = TrainInput {
             train_run_id: train_run_id.to_owned(),
+            base_train_run_id: None,
             operator: "external-zone".into(),
             train_number: internal_id.to_string(),
             category: WireTrainCategory::Regional,
@@ -563,15 +725,37 @@ fn state_hash(state: &RuntimeState) -> Result<String, RuntimeError> {
     canonical_hash("zugfolge/regional-simulation-state/v1", state)
 }
 
-fn command_hash(envelope: &CommandEnvelope) -> Result<String, RuntimeError> {
+fn command_payload_hash(
+    world_id: &str,
+    region_id: &str,
+    command: &WireCommand,
+) -> Result<String, RuntimeError> {
     canonical_hash(
         "zugfolge/regional-simulation-command/v1",
         &json!({
-            "worldId": envelope.world_id,
-            "regionId": envelope.region_id,
-            "command": envelope.command,
+            "worldId": world_id,
+            "regionId": region_id,
+            "command": command,
         }),
     )
+}
+
+fn command_hash(envelope: &CommandEnvelope) -> Result<String, RuntimeError> {
+    command_payload_hash(&envelope.world_id, &envelope.region_id, &envelope.command)
+}
+
+fn validate_command_time(command: &WireCommand) -> Result<(), RuntimeError> {
+    match command {
+        WireCommand::AdvanceTo { at_s } if *at_s < 0 => Err(RuntimeError::new(
+            "invalid_time",
+            "Simulationszeit darf nicht negativ sein",
+        )),
+        WireCommand::DematerializeBefore { before_s } if *before_s < 0 => Err(RuntimeError::new(
+            "invalid_time",
+            "Dematerialisierungsgrenze darf nicht negativ sein",
+        )),
+        _ => Ok(()),
+    }
 }
 
 fn make_train(input: &TrainInput, internal_id: u64) -> TrainRun {
@@ -623,6 +807,11 @@ fn allocate_train(machine: &mut Machine, train: &TrainInput) -> Result<u64, Runt
     machine
         .external_by_internal
         .insert(internal_id, train.train_run_id.clone());
+    if let Some(base_train_run_id) = &train.base_train_run_id {
+        machine
+            .base_external_by_internal
+            .insert(internal_id, base_train_run_id.clone());
+    }
     Ok(internal_id)
 }
 
@@ -764,6 +953,7 @@ fn advance_with_pending_disruptions(
 fn wire_train(machine: &Machine, train: PublicTrain) -> Result<WirePublicTrain, RuntimeError> {
     Ok(WirePublicTrain {
         id: external_train_id(machine, train.id)?,
+        base_train_run_id: machine.base_external_by_internal.get(&train.id).cloned(),
         operator: train.operator,
         train_number: train.train_number,
         category: WireTrainCategory::from(&train.category),
@@ -1094,6 +1284,7 @@ fn apply_wire_command(
     let mut additional_events = Vec::new();
     let events = match command {
         WireCommand::Materialize { train } => {
+            validate_materialized_train(state, train)?;
             let internal_id = allocate_train(machine, train)?;
             machine
                 .simulation
@@ -1311,6 +1502,7 @@ fn build_machine(
         publisher: DeltaPublisher::new(&placeholder_snapshot),
         internal_by_external: BTreeMap::new(),
         external_by_internal: BTreeMap::new(),
+        base_external_by_internal: BTreeMap::new(),
         next_internal_id: 1,
         disruptions: BTreeMap::new(),
         activated_disruptions: BTreeSet::new(),
@@ -1323,6 +1515,7 @@ fn build_machine(
     };
     let mut initial_domain_events = Vec::new();
     for train in &state.initial_trains {
+        validate_initial_train(train)?;
         let internal_id = allocate_train(&mut machine, train)?;
         initial_domain_events.extend(
             machine
@@ -1388,7 +1581,7 @@ pub fn initialize_regional_simulation(input_json: &str) -> Result<String, Runtim
     MaterializationWindow::new(input.materialization_window_hours)?;
     let mut ids = BTreeSet::new();
     for train in &input.trains {
-        validate_train(train)?;
+        validate_initial_train(train)?;
         if !ids.insert(train.train_run_id.clone()) {
             return Err(RuntimeError::new(
                 "duplicate_train",
@@ -1523,21 +1716,7 @@ pub fn apply_regional_simulation_command(
             "JSON-sichere Revisionssequenz ist erschoepft",
         ));
     }
-    match &envelope.command {
-        WireCommand::AdvanceTo { at_s } if *at_s < 0 => {
-            return Err(RuntimeError::new(
-                "invalid_time",
-                "Simulationszeit darf nicht negativ sein",
-            ));
-        }
-        WireCommand::DematerializeBefore { before_s } if *before_s < 0 => {
-            return Err(RuntimeError::new(
-                "invalid_time",
-                "Dematerialisierungsgrenze darf nicht negativ sein",
-            ));
-        }
-        _ => {}
-    }
+    validate_command_time(&envelope.command)?;
     let applied = apply_wire_command(&state, &mut machine, &envelope.command)?;
     if applied.delta.producer_sequence != state.publisher_sequence.saturating_add(1) {
         return Err(RuntimeError::new(
@@ -1571,6 +1750,197 @@ pub fn apply_regional_simulation_command(
     )
 }
 
+/// Wendet eine geordnete Gruppe idempotenter Kommandos nach genau einem
+/// Zustandsreplay an. Bereits persistierte Kommandos sind nur als identischer,
+/// zusammenhaengender Suffix des aktuellen Logs am Anfang der Gruppe erlaubt.
+/// Damit kann ein Scheduler nach einem Commit-Crash dieselbe Grenze sicher
+/// wiederholen, ohne spaetere Historie zu ueberspringen.
+pub fn apply_regional_simulation_command_batch(
+    state_json: &str,
+    batch_json: &str,
+) -> Result<String, RuntimeError> {
+    let mut state: RuntimeState = decode(state_json, "Regionalzustand")?;
+    let envelope: CommandBatchEnvelope = decode(batch_json, "Regionalkommandogruppe")?;
+    if envelope.schema_version != COMMAND_BATCH_SCHEMA {
+        return Err(RuntimeError::new(
+            "wrong_schema",
+            "unbekanntes Kommandogruppenschema",
+        ));
+    }
+    if envelope.world_id != state.world_id || envelope.region_id != state.region_id {
+        return Err(RuntimeError::new(
+            "wrong_scope",
+            "Kommandogruppe und Regionalzustand gehoeren nicht zusammen",
+        ));
+    }
+    if envelope.commands.is_empty() {
+        return Err(RuntimeError::new(
+            "empty_batch",
+            "Kommandogruppe darf nicht leer sein",
+        ));
+    }
+    if envelope.commands.len() > MAX_BATCH_COMMANDS {
+        return Err(RuntimeError::new(
+            "batch_too_large",
+            format!("Kommandogruppe darf hoechstens {MAX_BATCH_COMMANDS} Kommandos enthalten"),
+        ));
+    }
+
+    let current_hash = state_hash(&state)?;
+    if envelope.expected_state_hash != current_hash {
+        return Err(RuntimeError::new(
+            "state_hash_conflict",
+            "Zustandshash ist veraltet",
+        ));
+    }
+    if envelope.expected_revision != state.revision {
+        return Err(RuntimeError::new(
+            "revision_conflict",
+            "Zustandsrevision ist veraltet",
+        ));
+    }
+    if envelope.expected_publisher_sequence != state.publisher_sequence {
+        return Err(RuntimeError::new(
+            "publisher_sequence_gap",
+            "Publisher-Sequenz ist nicht lueckenlos",
+        ));
+    }
+
+    let stored_by_id = state
+        .commands
+        .iter()
+        .enumerate()
+        .map(|(index, stored)| {
+            (
+                stored.command_id.as_str(),
+                (index, stored.command_hash.as_str()),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut incoming_ids = BTreeSet::new();
+    let mut incoming_hashes = Vec::with_capacity(envelope.commands.len());
+    let mut replay_indexes = Vec::new();
+    let mut saw_new_command = false;
+    for command in &envelope.commands {
+        validate_identity(&command.command_id, "commandId")?;
+        if !incoming_ids.insert(command.command_id.as_str()) {
+            return Err(RuntimeError::new(
+                "duplicate_batch_command",
+                "Kommandogruppe besitzt doppelte commandIds",
+            ));
+        }
+        let incoming_hash =
+            command_payload_hash(&envelope.world_id, &envelope.region_id, &command.command)?;
+        if let Some((index, stored_hash)) = stored_by_id.get(command.command_id.as_str()) {
+            if *stored_hash != incoming_hash {
+                return Err(RuntimeError::new(
+                    "idempotency_conflict",
+                    "commandId wurde mit anderem Inhalt wiederholt",
+                ));
+            }
+            if saw_new_command {
+                return Err(RuntimeError::new(
+                    "batch_replay_order_conflict",
+                    "bereits persistierte Kommandos duerfen nur den Replay-Praefix bilden",
+                ));
+            }
+            replay_indexes.push(*index);
+        } else {
+            saw_new_command = true;
+        }
+        incoming_hashes.push(incoming_hash);
+    }
+    if let Some(first_replay_index) = replay_indexes.first().copied() {
+        let is_contiguous_suffix = replay_indexes
+            .iter()
+            .enumerate()
+            .all(|(offset, index)| *index == first_replay_index + offset)
+            && first_replay_index + replay_indexes.len() == state.commands.len();
+        if !is_contiguous_suffix {
+            return Err(RuntimeError::new(
+                "batch_replay_order_conflict",
+                "Replay-Praefix ist nicht der aktuelle Kommandolog-Suffix",
+            ));
+        }
+    }
+    let replay_count = replay_indexes.len();
+    let applied_count = envelope.commands.len() - replay_count;
+    let applied_count_u64 = u64::try_from(applied_count)
+        .map_err(|_| RuntimeError::new("sequence_exhausted", "Kommandogruppe ist zu gross"))?;
+    let final_revision = state
+        .revision
+        .checked_add(applied_count_u64)
+        .ok_or_else(|| RuntimeError::new("revision_exhausted", "Revision ist erschoepft"))?;
+    if final_revision > MAX_JSON_SAFE_INTEGER {
+        return Err(RuntimeError::new(
+            "sequence_exhausted",
+            "JSON-sichere Revisionssequenz ist erschoepft",
+        ));
+    }
+
+    let (mut machine, _, _) = build_machine(&state)?;
+    let mut events = Vec::new();
+    let mut command_results = Vec::with_capacity(envelope.commands.len());
+    for (index, (command, incoming_hash)) in envelope
+        .commands
+        .into_iter()
+        .zip(incoming_hashes)
+        .enumerate()
+    {
+        if index < replay_count {
+            command_results.push(BatchCommandResult {
+                command_id: command.command_id,
+                idempotent_replay: true,
+            });
+            continue;
+        }
+
+        validate_command_time(&command.command)?;
+        let applied = apply_wire_command(&state, &mut machine, &command.command)?;
+        if applied.delta.producer_sequence != state.publisher_sequence.saturating_add(1) {
+            return Err(RuntimeError::new(
+                "publisher_sequence_gap",
+                "Rust-Delta besitzt eine unerwartete Sequenz",
+            ));
+        }
+        let command_id = command.command_id;
+        state.commands.push(StoredCommand {
+            command_id: command_id.clone(),
+            command_hash: incoming_hash,
+            command: command.command,
+        });
+        state.revision = state
+            .revision
+            .checked_add(1)
+            .ok_or_else(|| RuntimeError::new("revision_exhausted", "Revision ist erschoepft"))?;
+        state.publisher_sequence = applied.delta.producer_sequence;
+        state.now_s = applied.delta.at_s;
+        events.extend(applied.events);
+        command_results.push(BatchCommandResult {
+            command_id,
+            idempotent_replay: false,
+        });
+    }
+
+    let snapshot = wire_snapshot(
+        &state,
+        &machine,
+        machine.simulation.snapshot(),
+        state.publisher_sequence,
+    )?;
+    encode(
+        &json!({
+            "schemaVersion": BATCH_RESULT_SCHEMA,
+            "state": state,
+            "stateHash": state_hash(&state)?,
+            "events": events,
+            "snapshot": snapshot,
+            "commandResults": command_results,
+        }),
+        "Kommandogruppenergebnis",
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1586,6 +1956,16 @@ mod tests {
                 { "operatingPoint": "B", "positionMm": 3_600_000, "arrivalS": 3_700, "minimumDwellSeconds": 30, "departureS": 3_730 }
             ]
         })
+    }
+
+    fn bound_day_train(id: &str, base_train_run_id: &str, time_offset_s: i64) -> Value {
+        let mut repeated = train(id);
+        repeated["baseTrainRunId"] = json!(base_train_run_id);
+        for point in repeated["route"].as_array_mut().unwrap() {
+            point["arrivalS"] = json!(point["arrivalS"].as_i64().unwrap() + time_offset_s);
+            point["departureS"] = json!(point["departureS"].as_i64().unwrap() + time_offset_s);
+        }
+        repeated
     }
 
     fn initialize(world_id: &str) -> Value {
@@ -1624,6 +2004,38 @@ mod tests {
         )
         .unwrap();
         serde_json::from_str(&result).unwrap()
+    }
+
+    fn batch(state: &Value, commands: Vec<(&str, Value)>) -> Value {
+        let result = apply_regional_simulation_command_batch(
+            &state["state"].to_string(),
+            &json!({
+                "schemaVersion": COMMAND_BATCH_SCHEMA,
+                "worldId": state["state"]["worldId"],
+                "regionId": state["state"]["regionId"],
+                "expectedStateHash": state["stateHash"],
+                "expectedRevision": state["state"]["revision"],
+                "expectedPublisherSequence": state["state"]["publisherSequence"],
+                "commands": commands
+                    .into_iter()
+                    .map(|(command_id, command)| json!({
+                        "commandId": command_id,
+                        "command": command,
+                    }))
+                    .collect::<Vec<_>>(),
+            })
+            .to_string(),
+        )
+        .unwrap();
+        serde_json::from_str(&result).unwrap()
+    }
+
+    fn materialize_error(state: &Value, id: &str, train: Value) -> RuntimeError {
+        apply_regional_simulation_command(
+            &state["state"].to_string(),
+            &command(state, id, json!({ "type": "materialize", "train": train })).to_string(),
+        )
+        .unwrap_err()
     }
 
     #[test]
@@ -1668,6 +2080,279 @@ mod tests {
             removed["delta"]["removed"].as_array().map(Vec::len),
             Some(2)
         );
+    }
+
+    #[test]
+    fn command_batch_is_bit_identical_to_the_single_command_path_and_replays_suffix() {
+        let initialized = initialize("11111111-1111-4111-8111-111111111111");
+        let bodies = [
+            json!({ "type": "advance-to", "atS": 1_000 }),
+            json!({
+                "type": "add-delay",
+                "trainRunId": "pattern-1:trip-1:20260811:4600",
+                "seconds": 90
+            }),
+            json!({ "type": "advance-to", "atS": 2_000 }),
+        ];
+
+        let first = apply(&initialized, "advance-1", bodies[0].clone());
+        let second = apply(&first, "delay", bodies[1].clone());
+        let third = apply(&second, "advance-2", bodies[2].clone());
+        let expected_events = [
+            first["events"].as_array().unwrap().as_slice(),
+            second["events"].as_array().unwrap().as_slice(),
+            third["events"].as_array().unwrap().as_slice(),
+        ]
+        .concat();
+
+        let grouped = batch(
+            &initialized,
+            vec![
+                ("advance-1", bodies[0].clone()),
+                ("delay", bodies[1].clone()),
+                ("advance-2", bodies[2].clone()),
+            ],
+        );
+        assert_eq!(grouped["state"], third["state"]);
+        assert_eq!(grouped["stateHash"], third["stateHash"]);
+        let restored: Value = serde_json::from_str(
+            &restore_regional_simulation(&third["state"].to_string()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(grouped["snapshot"], restored["snapshot"]);
+        assert_eq!(grouped["events"], json!(expected_events));
+        assert!(
+            grouped["commandResults"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|result| result["idempotentReplay"] == false)
+        );
+
+        let replayed = batch(
+            &grouped,
+            vec![
+                ("delay", bodies[1].clone()),
+                ("advance-2", bodies[2].clone()),
+            ],
+        );
+        assert_eq!(replayed["stateHash"], grouped["stateHash"]);
+        assert_eq!(replayed["events"], json!([]));
+        assert!(
+            replayed["commandResults"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|result| result["idempotentReplay"] == true)
+        );
+    }
+
+    #[test]
+    fn command_batch_rejects_conflicts_and_oversize_before_mutation() {
+        let initialized = initialize("11111111-1111-4111-8111-111111111111");
+        let grouped = batch(
+            &initialized,
+            vec![
+                ("advance-1", json!({ "type": "advance-to", "atS": 1_000 })),
+                ("advance-2", json!({ "type": "advance-to", "atS": 2_000 })),
+            ],
+        );
+
+        let envelope = |state: &Value, commands: Value| {
+            json!({
+                "schemaVersion": COMMAND_BATCH_SCHEMA,
+                "worldId": state["state"]["worldId"],
+                "regionId": state["state"]["regionId"],
+                "expectedStateHash": state["stateHash"],
+                "expectedRevision": state["state"]["revision"],
+                "expectedPublisherSequence": state["state"]["publisherSequence"],
+                "commands": commands,
+            })
+        };
+        let error_for = |state: &Value, value: Value| {
+            apply_regional_simulation_command_batch(&state["state"].to_string(), &value.to_string())
+                .unwrap_err()
+        };
+
+        let duplicate = json!([
+            { "commandId": "new", "command": { "type": "advance-to", "atS": 3_000 } },
+            { "commandId": "new", "command": { "type": "advance-to", "atS": 3_000 } }
+        ]);
+        assert_eq!(
+            error_for(&grouped, envelope(&grouped, duplicate)).code,
+            "duplicate_batch_command"
+        );
+
+        let changed_replay = json!([
+            { "commandId": "advance-2", "command": { "type": "advance-to", "atS": 2_001 } }
+        ]);
+        assert_eq!(
+            error_for(&grouped, envelope(&grouped, changed_replay)).code,
+            "idempotency_conflict"
+        );
+
+        let non_suffix = json!([
+            { "commandId": "advance-1", "command": { "type": "advance-to", "atS": 1_000 } }
+        ]);
+        assert_eq!(
+            error_for(&grouped, envelope(&grouped, non_suffix)).code,
+            "batch_replay_order_conflict"
+        );
+
+        let mut stale = envelope(
+            &grouped,
+            json!([{ "commandId": "new", "command": { "type": "advance-to", "atS": 3_000 } }]),
+        );
+        stale["expectedStateHash"] = json!("0".repeat(64));
+        assert_eq!(error_for(&grouped, stale).code, "state_hash_conflict");
+
+        let oversized = (0..=MAX_BATCH_COMMANDS)
+            .map(|index| {
+                json!({
+                    "commandId": format!("oversized-{index}"),
+                    "command": { "type": "advance-to", "atS": 3_000 }
+                })
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            error_for(&grouped, envelope(&grouped, json!(oversized))).code,
+            "batch_too_large"
+        );
+    }
+
+    #[test]
+    fn repeated_runtime_train_keeps_explicit_base_identity_across_restore() {
+        let initialized = initialize("11111111-1111-4111-8111-111111111111");
+        let repeated = bound_day_train(
+            "pattern-1:trip-1:20260811:4600:day-1",
+            "pattern-1:trip-1:20260811:4600",
+            86_400,
+        );
+        let materialized = apply(
+            &initialized,
+            "materialize-day-1",
+            json!({ "type": "materialize", "train": repeated }),
+        );
+        let projected = materialized["delta"]["changed"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|train| train["id"] == "pattern-1:trip-1:20260811:4600:day-1")
+            .unwrap();
+        assert_eq!(
+            projected["baseTrainRunId"],
+            "pattern-1:trip-1:20260811:4600"
+        );
+
+        let restored: Value = serde_json::from_str(
+            &restore_regional_simulation(&materialized["state"].to_string()).unwrap(),
+        )
+        .unwrap();
+        let restored_train = restored["snapshot"]["trains"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|train| train["id"] == "pattern-1:trip-1:20260811:4600:day-1")
+            .unwrap();
+        assert_eq!(
+            restored_train["baseTrainRunId"],
+            "pattern-1:trip-1:20260811:4600"
+        );
+    }
+
+    #[test]
+    fn initial_trains_reject_base_identity_during_initialize_and_restore() {
+        let mut invalid_initial = train("pattern-1:trip-1:20260811:4600");
+        invalid_initial["baseTrainRunId"] = json!("pattern-1:trip-1:20260811:4600");
+        let error = initialize_regional_simulation(
+            &json!({
+                "schemaVersion": INITIALIZE_SCHEMA,
+                "worldId": "11111111-1111-4111-8111-111111111111",
+                "regionId": "region-leipzig",
+                "materializationWindowHours": 48,
+                "nowS": 0,
+                "trains": [invalid_initial]
+            })
+            .to_string(),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "invalid_initial_train");
+
+        let initialized = initialize("11111111-1111-4111-8111-111111111111");
+        let mut state = initialized["state"].clone();
+        state["initialTrains"][0]["baseTrainRunId"] = json!("pattern-1:trip-1:20260811:4600");
+        let error = restore_regional_simulation(&state.to_string()).unwrap_err();
+        assert_eq!(error.code, "invalid_initial_train");
+    }
+
+    #[test]
+    fn repeated_runtime_train_rejects_unknown_forged_and_noncanonical_bindings() {
+        let initialized = initialize("11111111-1111-4111-8111-111111111111");
+        let base = "pattern-1:trip-1:20260811:4600";
+        let cases = [
+            (
+                "unknown-base",
+                bound_day_train("unknown:day-1", "unknown", 86_400),
+                "unknown_base_train",
+            ),
+            (
+                "missing-base",
+                train(&format!("{base}:day-1")),
+                "invalid_base_train_binding",
+            ),
+            (
+                "forged-id",
+                bound_day_train("forged", base, 86_400),
+                "invalid_base_train_binding",
+            ),
+            (
+                "day-zero",
+                bound_day_train(&format!("{base}:day-0"), base, 86_400),
+                "invalid_base_train_binding",
+            ),
+            (
+                "leading-zero",
+                bound_day_train(&format!("{base}:day-01"), base, 86_400),
+                "invalid_base_train_binding",
+            ),
+            (
+                "nested-base",
+                bound_day_train(
+                    &format!("{base}:day-1:day-2"),
+                    &format!("{base}:day-1"),
+                    172_800,
+                ),
+                "invalid_base_train_binding",
+            ),
+        ];
+        for (id, train, expected_code) in cases {
+            let error = materialize_error(&initialized, id, train);
+            assert_eq!(error.code, expected_code, "Fall {id}");
+        }
+    }
+
+    #[test]
+    fn repeated_runtime_train_must_match_base_static_data_and_one_time_offset() {
+        let initialized = initialize("11111111-1111-4111-8111-111111111111");
+        let base = "pattern-1:trip-1:20260811:4600";
+
+        let mut wrong_operator = bound_day_train(&format!("{base}:day-1"), base, 86_400);
+        wrong_operator["operator"] = json!("forged-operator");
+        let mut wrong_route = bound_day_train(&format!("{base}:day-2"), base, 172_800);
+        wrong_route["route"][1]["positionMm"] = json!(3_600_001);
+        let mut inconsistent_offset = bound_day_train(&format!("{base}:day-3"), base, 259_200);
+        inconsistent_offset["route"][1]["departureS"] = json!(262_931);
+        let no_positive_offset = bound_day_train(&format!("{base}:day-4"), base, 0);
+
+        for (id, train) in [
+            ("wrong-operator", wrong_operator),
+            ("wrong-route", wrong_route),
+            ("inconsistent-offset", inconsistent_offset),
+            ("no-positive-offset", no_positive_offset),
+        ] {
+            let error = materialize_error(&initialized, id, train);
+            assert_eq!(error.code, "invalid_base_train_binding", "Fall {id}");
+        }
     }
 
     #[test]

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-compose=${COMPOSE_COMMAND:-"docker compose"}
-$compose -f compose.alpha.yml up --build --wait --wait-timeout 600
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+bash "$script_dir/compose-with-map-release-env.sh" -f compose.alpha.yml up --no-build --wait --wait-timeout 600
 for url in \
   "http://localhost:${GAME_API_PORT:-3000}/health" \
   "http://localhost:${GAME_API_PORT:-3000}/health/ready" \

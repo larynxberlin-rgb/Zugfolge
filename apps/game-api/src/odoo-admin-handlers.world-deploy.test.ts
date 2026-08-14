@@ -48,6 +48,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   ALPHA_WORLD_DEPLOYMENT_SCHEMA,
+  assertActivePublicWorldDeploymentCoverage,
   loadPersistedActiveAlphaWorldDeployments,
   loadSignedRunningWorldDeployment,
   type AlphaWorldDeployment,
@@ -62,7 +63,7 @@ import {
 
 const WORLD_ID = "70000000-0000-4000-8000-000000000001";
 const REGION_ID = "mitteldeutschland-b";
-const WORLD_EPOCH = "2026-12-13T00:00:00.000Z";
+const WORLD_EPOCH = "2026-12-14T00:00:00.000Z";
 const KEY_ID = "world-deploy-test-2026";
 const FLEET_RELEASE_HASH = "c".repeat(64);
 const PLANNING_AUTHORITY_ACCOUNT_ID = "70000000-0000-4000-8000-000000000099";
@@ -276,6 +277,7 @@ function deployment(
   return {
     schema: ALPHA_WORLD_DEPLOYMENT_SCHEMA,
     worldId: WORLD_ID,
+    deploymentRevision: 1,
     worldDefinition: {
       name: "Signierte Testwelt",
       kind: "public",
@@ -413,6 +415,7 @@ function commandFor(
     worldDefinition: parsed.worldDefinition,
     signedDeployment: signed,
     deploymentHash: signed.deploymentHash,
+    deploymentRevision: parsed.deploymentRevision ?? 1,
     ...overrides,
   };
 }
@@ -789,6 +792,66 @@ describe("Game world_deploy: signierte Weltanlage", () => {
         signed: expect.objectContaining({ deploymentHash: signed.deploymentHash }),
       }),
     ]);
+    await expect(assertActivePublicWorldDeploymentCoverage(db, { [KEY_ID]: PUBLIC_KEY_PEM }))
+      .resolves.toEqual([WORLD_ID]);
+
+    const tutorialWorldId = "70000000-0000-4000-8000-000000000003";
+    const tutorialBlueprint = {
+      ...(decodeEconomyValue(profile!.blueprint) as AlphaWorldBlueprint),
+      profileKind: "tutorial" as const,
+      accelerationFactor: 60,
+      entryFacilityPolicy: {
+        schemaVersion: PUBLIC_ENTRY_FACILITY_SCHEMA,
+        mode: "disabled" as const,
+      },
+    };
+    await db.insert(worlds).values({
+      id: tutorialWorldId,
+      name: "Kurzlebige Tutorialwelt",
+      schedulePeriodWeeks: 4,
+      epoch: new Date(WORLD_EPOCH),
+      worldKind: "private",
+      rankingStatus: "unranked",
+      lifecycleStatus: "active",
+    });
+    await db.insert(alphaWorldProfiles).values({
+      ...profile!,
+      worldId: tutorialWorldId,
+      profileKind: "tutorial",
+      worldSeed: 19n,
+      accelerationFactor: 60,
+      blueprint: encodeEconomyValue(tutorialBlueprint),
+      blueprintHash: validateWorldBlueprint(tutorialBlueprint),
+      deploymentHash: null,
+    });
+    await expect(assertActivePublicWorldDeploymentCoverage(db, { [KEY_ID]: PUBLIC_KEY_PEM }))
+      .resolves.toEqual([WORLD_ID]);
+  });
+
+  it("stoppt den Neustart bei einer zusaetzlichen aktiven Public-Welt ohne verifiziertes Deployment", async () => {
+    const signed = signedDeployment(deployment());
+    const { run } = handler();
+    await run(context(commandFor(signed)));
+    const [profile] = await db.select().from(alphaWorldProfiles).where(eq(alphaWorldProfiles.worldId, WORLD_ID));
+    const orphanWorldId = "70000000-0000-4000-8000-000000000002";
+    await db.insert(worlds).values({
+      id: orphanWorldId,
+      name: "Verwaiste Public-Welt",
+      schedulePeriodWeeks: 4,
+      epoch: new Date(WORLD_EPOCH),
+      worldKind: "public",
+      rankingStatus: "ranked",
+      lifecycleStatus: "active",
+    });
+    await db.insert(alphaWorldProfiles).values({
+      ...profile!,
+      worldId: orphanWorldId,
+      worldSeed: 18n,
+      deploymentHash: "8".repeat(64),
+    });
+
+    await expect(assertActivePublicWorldDeploymentCoverage(db, { [KEY_ID]: PUBLIC_KEY_PEM }))
+      .rejects.toThrow(new RegExp(`ohne Deployment: ${orphanWorldId}`));
   });
 
   it("haelt eine fehlgeschlagene Welt bis zum erfolgreichen Retry unsichtbar in Provisionierung", async () => {

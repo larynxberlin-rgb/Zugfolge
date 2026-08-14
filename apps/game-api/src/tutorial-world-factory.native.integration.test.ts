@@ -3,6 +3,7 @@ import { TutorialSessionService, TUTORIAL_TEMPLATE } from "@zugfolge/alpha";
 import {
   accounts,
   domainEvents,
+  economyOutbox,
   ledgerAccounts,
   ledgerEntries,
   ledgerTransactions,
@@ -50,14 +51,20 @@ const nativeAvailable = process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"] !== undefine
   it("durchlaeuft alle fuenf Kapitel ohne vorerfuelltes Inventar und archiviert mit finalem Hash", async () => {
     const operating = loadOperatingRuntime();
     const planning = loadPlanningRuntime();
-    const regional = new RegionalSimulationWorker(db, loadRegionalSimulationRuntime(), new LivemapRegistry(), new OperationsRegistry());
-    const service = new TutorialSessionService(db, new GameTutorialWorldFactory(db, operating, planning, regional), { clock: (() => {
-      let current = new Date("2026-08-13T10:00:00.000Z");
-      return () => { current = new Date(current.getTime() + 30_000); return current; };
-    })() });
+    const livemap = new LivemapRegistry();
+    const regional = new RegionalSimulationWorker(db, loadRegionalSimulationRuntime(), livemap, new OperationsRegistry());
+    let current = new Date("2026-08-13T10:00:00.000Z");
+    const clock = () => { current = new Date(current.getTime() + 30_000); return current; };
+    const service = new TutorialSessionService(
+      db,
+      new GameTutorialWorldFactory(db, operating, planning, regional, { clock }),
+      { clock },
+    );
     let view = await service.start({ publicWorldId: PUBLIC_WORLD, publicAccountId: PUBLIC_ACCOUNT, keycloakSubject: "kc-player", displayName: "Spieler" });
     const [stored] = await db.select().from(tutorialSessions);
     expect(stored).toBeDefined();
+    expect(regional.isReady(view.tutorialWorldId, TUTORIAL_TEMPLATE.region.id)).toBe(true);
+    expect(livemap.initializedWorld(view.tutorialWorldId)).toBeDefined();
     const lessorOperatorId = (stored!.scenarioState as Record<string, unknown>)["lessorOperatorId"];
     expect(typeof lessorOperatorId).toBe("string");
     expect(await db.select().from(ledgerAccounts).where(and(
@@ -79,6 +86,12 @@ const nativeAvailable = process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"] !== undefine
     expect(view.currentChapter).toBe(5);
     view = await service.act(view.tutorialWorldId, stored!.tutorialAccountId, { type: "dispatch", action: "request_reroute" });
     expect(view.lifecycle).toBe("summary");
+    const outbox = await db.select().from(economyOutbox).where(eq(economyOutbox.worldId, view.tutorialWorldId));
+    expect(outbox.every((effect) => effect.processedAt !== null)).toBe(true);
+    const settlementEffect = outbox.find((effect) => effect.effectId === `${view.reference}:settlement:settlement`);
+    expect(settlementEffect?.enqueuedAt.getTime()).toBeLessThan(
+      stored!.startedAt.getTime() + 93_600_000,
+    );
     expect(view.summary).toMatchObject({ punctualityBasisPoints: 9180 });
     expect(view.summary?.resultCents).toMatch(/^-?[0-9]+$/);
     expect(view.summary?.comparison).toMatchObject({
@@ -111,8 +124,12 @@ const nativeAvailable = process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"] !== undefine
 
     view = await service.confirmSummary(view.tutorialWorldId, stored!.tutorialAccountId);
     expect(view.lifecycle).toBe("archived");
+    expect(regional.isReady(view.tutorialWorldId, TUTORIAL_TEMPLATE.region.id)).toBe(false);
+    expect(livemap.peekWorld(view.tutorialWorldId)).toBeUndefined();
+    await expect(service.reap(new Date("2026-08-14T10:00:00.000Z"))).resolves.toEqual([]);
     expect((await db.select().from(tutorialSessions))[0]?.finalStateHash).toMatch(/^[a-f0-9]{64}$/);
     expect((await db.select().from(tutorialTelemetryEvents)).every((event) => event.worldId === view.tutorialWorldId && event.templateVersion === TUTORIAL_TEMPLATE.version)).toBe(true);
     expect(await db.select().from(odooProjectionOutbox).where(eq(odooProjectionOutbox.worldId, view.tutorialWorldId))).toHaveLength(0);
+    expect((await db.select().from(economyOutbox).where(eq(economyOutbox.worldId, view.tutorialWorldId))).every((effect) => effect.processedAt !== null)).toBe(true);
   }, 30_000);
 });

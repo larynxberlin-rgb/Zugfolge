@@ -191,6 +191,34 @@ alle Quellen und Artefakte erneut bytegenau gelesen:
   Kalibrierungsbestand; Hash
   `536ae6978dd2dc46eee287f2368f269e75385bb578b4fc81d71c5132d740dfcd`
 
+### Versionierter Neuaufbau 2026.2
+
+Der signierte Release 2026.1 bleibt unverändert und wird nicht als
+Build-Ausgabe wiederverwendet. Der neue Buildvertrag
+`tools/region-import/releases/mitteldeutschland-b-2026.2.build.json` bindet
+explizit `infra-mitteldeutschland-b-2026.2`, den Verkehrstag `20260810` und
+`gtfs-region-20260810-v2.json` sowie die nur für die Evaluation erteilte
+Freigabe vom 13.08.2026. Unbekannte Konfigurationsfelder, ein
+abweichendes Jahr, Datum oder GTFS-Dateiname brechen den Rust-Compiler ab.
+Auch eine bereits vorhandene Ausgabedatei wird nicht ersetzt.
+
+Nach dem Erzeugen der kleinen Pipeline-Artefakte sind InfraRelease und
+öffentliche Welt mit getrennten 2026.2-Ausgaben zu bauen (die Platzhalter in
+Großbuchstaben sind absolute, bereits gepinnte Eingabepfade):
+
+```sh
+pnpm build
+node tools/region-import/build-infra-release.mjs tools/region-import/releases/mitteldeutschland-b-2026.2.build.json SOURCE_ROOT ARTIFACT_ROOT ARTIFACT_ROOT/infra-mitteldeutschland-b-2026.2.unsigned.json
+node tools/region-import/sign-release.mjs ARTIFACT_ROOT/infra-mitteldeutschland-b-2026.2.unsigned.json PRIVATE_KEY zugfolge-alpha-2026 ARTIFACT_ROOT/infra-mitteldeutschland-b-2026.2.release.json
+node tools/region-import/build-alpha-world.mjs ARTIFACT_ROOT/gtfs-region-20260810-v2.json ARTIFACT_ROOT/operational-network.json FLEET_CATALOG ARTIFACT_ROOT/infra-mitteldeutschland-b-2026.2.release.json tools/region-import/specifications/economy-release-alpha-2026.1.json ARTIFACT_ROOT/alpha-world-deployment.2026.2.json PUBLIC_ODOO_CONFIG
+```
+
+`PUBLIC_ODOO_CONFIG` muss als Weltepoche exakt
+`2026-08-10T00:00:00.000Z` enthalten. Der Weltgenerator prüft zusätzlich
+den Dateihash und Zustandshash des GTFS-Artefakts gegen den signierten
+InfraRelease und leitet die Fleet-ID
+`fleet-alpha-mitteldeutschland-b-2026.2` aus dessen Releaseversion ab.
+
 Der EBO-Filter enthält 45.440 Knoten und 47.614 konservative Blöcke. Aus
 51.066 Fahrstraßen und 1.654 Konfliktressourcen entstehen 2.373 betriebliche
 Klasse-B- und 107 sichtbare, nicht bestellbare Klasse-C-Segmente. Die rohe

@@ -6,9 +6,9 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
-if (args.length !== 3) {
+if (args.length !== 4) {
   throw new Error(
-    "Aufruf: node build-infra-release.mjs SOURCE_ROOT ARTIFACT_ROOT OUTPUT.json",
+    "Aufruf: node build-infra-release.mjs BUILD-CONFIG.json SOURCE_ROOT ARTIFACT_ROOT OUTPUT.json",
   );
 }
 
@@ -26,7 +26,7 @@ const child = spawn(
     "--bin",
     "zugfolge-infra-release",
     "--",
-    "legacy-manifest",
+    "regional-manifest",
     ...resolvedArgs,
   ],
   { cwd: root, stdio: "inherit", shell: false },

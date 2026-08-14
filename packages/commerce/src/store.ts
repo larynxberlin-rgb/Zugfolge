@@ -18,6 +18,7 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { entitlementChangeToStatus } from "./entitlements.js";
 import {
+  AUTHORITATIVE_WORLD_START_PROJECTION,
   ODOO_CONTRACT_VERSION,
   validateWorldParticipationChange,
   type AdminActionType,
@@ -123,6 +124,9 @@ export async function enqueueWorldProjection(
     readonly occurredAt?: Date;
   },
 ): Promise<void> {
+  if (input.payload["projectionKind"] === AUTHORITATIVE_WORLD_START_PROJECTION) {
+    throw new Error("Autoritative Weltstartprojektionen brauchen den signierten, typisierten Enqueue-Pfad.");
+  }
   const occurredAt = input.occurredAt ?? new Date();
   await db.insert(odooProjectionOutbox).values({
     worldId: input.worldId,
@@ -130,6 +134,78 @@ export async function enqueueWorldProjection(
     schemaVersion: "zugfolge-odoo/v1",
     correlationId: input.correlationId,
     payload: input.payload,
+    occurredAt,
+    enqueuedAt: occurredAt,
+  });
+}
+
+/**
+ * Einziger Game->Odoo-Pfad, der einen Deployment-Hash ersetzen darf. Der
+ * Aufrufer reicht die bereits Ed25519-verifizierte Huelle ein; die Odoo-HMAC-
+ * Grenze signiert anschliessend genau diesen welt- und revisionsgebundenen
+ * Projektionsbeleg.
+ */
+export async function enqueueAuthoritativeWorldStartProjection(
+  db: CommerceDatabase,
+  input: {
+    readonly worldId: string;
+    readonly correlationId: string;
+    readonly signedDeployment: {
+      readonly deployment: {
+        readonly worldId?: unknown;
+        readonly deploymentRevision?: unknown;
+      };
+      readonly deploymentHash: string;
+      readonly signature: {
+        readonly algorithm: "Ed25519";
+        readonly keyId: string;
+        readonly valueBase64: string;
+      };
+    };
+    readonly deploymentRevision: number;
+    readonly payload: Readonly<Record<string, unknown>>;
+    readonly occurredAt?: Date;
+  },
+): Promise<void> {
+  const signed = input.signedDeployment;
+  const deploymentRevision = signed.deployment["deploymentRevision"] ?? 1;
+  if (
+    signed.deployment["worldId"] !== input.worldId
+    || signed.deploymentHash.trim() === ""
+    || signed.signature.algorithm !== "Ed25519"
+    || signed.signature.keyId.trim() === ""
+    || !Number.isSafeInteger(input.deploymentRevision)
+    || input.deploymentRevision < 1
+    || deploymentRevision !== input.deploymentRevision
+  ) {
+    throw new Error("Autoritative Weltstartprojektion verletzt Welt-, Signatur- oder Revisionsbindung.");
+  }
+  for (const reserved of ["projectionKind", "deploymentHash", "deploymentRevision", "deploymentAuthorization"] as const) {
+    if (Object.hasOwn(input.payload, reserved)) {
+      throw new Error(`Autoritative Weltstartprojektion darf das reservierte Feld '${reserved}' nicht ueberschreiben.`);
+    }
+  }
+  const occurredAt = input.occurredAt ?? new Date();
+  await db.insert(odooProjectionOutbox).values({
+    worldId: input.worldId,
+    messageType: "world.projection",
+    schemaVersion: ODOO_CONTRACT_VERSION,
+    correlationId: input.correlationId,
+    payload: {
+      ...input.payload,
+      projectionKind: AUTHORITATIVE_WORLD_START_PROJECTION,
+      authoritative: true,
+      deploymentHash: signed.deploymentHash,
+      deploymentRevision: input.deploymentRevision,
+      deploymentAuthorization: {
+        schemaVersion: AUTHORITATIVE_WORLD_START_PROJECTION,
+        deploymentHash: signed.deploymentHash,
+        deploymentRevision: input.deploymentRevision,
+        algorithm: signed.signature.algorithm,
+        keyId: signed.signature.keyId,
+        valueBase64: signed.signature.valueBase64,
+      },
+    },
     occurredAt,
     enqueuedAt: occurredAt,
   });

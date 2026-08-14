@@ -538,6 +538,7 @@ describe("M6 mit echtem Rust-NAPI-Laufzeitkern", () => {
         expectedRevision: null,
         ...transition,
         committedAt: new Date(0),
+        enqueuedAt: new Date(0),
       });
       let state = transition.state;
 
@@ -578,6 +579,7 @@ describe("M6 mit echtem Rust-NAPI-Laufzeitkern", () => {
           expectedRevision,
           ...transition,
           committedAt: new Date(tender.id === "tender-rewin" ? 1_000 : 2_000),
+          enqueuedAt: new Date(tender.id === "tender-rewin" ? 1_000 : 2_000),
         });
         state = transition.state;
       }
@@ -643,6 +645,7 @@ describe("M6 mit echtem Rust-NAPI-Laufzeitkern", () => {
           state: next,
           effects: { notices: [], journal: [] },
           committedAt: new Date(OPEN * 1_000),
+          enqueuedAt: new Date(OPEN * 1_000),
         });
         state = next;
       }
@@ -668,6 +671,7 @@ describe("M6 mit echtem Rust-NAPI-Laufzeitkern", () => {
         state: referenced,
         effects: { notices: [], journal: [] },
         committedAt: new Date(CLOSE * 1_000),
+        enqueuedAt: new Date(CLOSE * 1_000),
       });
       expect(await runEconomySchedulerCycle(db, new Date((OPERATING - 1) * 1_000), adapters, monitor)).toMatchObject({ transitions: 0 });
       const beforeBoundary = (await loadEconomyWorldState(db, WORLD))!;

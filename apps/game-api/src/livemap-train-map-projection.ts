@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 
+import { verifiedBaseTrainRunId } from "@zugfolge/livemap-stream";
+
 import type {
   LivemapConfigV2,
   PublicInfrastructureDisruption,
@@ -16,6 +18,7 @@ const TRAIN_MAP_PROJECTION_SCHEMA = "zugfolge-train-map-projection/v2";
 const TRAIN_MAP_PROJECTION_SQLITE_APPLICATION_ID = 0x5a54504a;
 const TRAIN_MAP_PROJECTION_SQLITE_USER_VERSION = 2;
 const TRAIN_MAP_PROJECTION_SCHEMA_SQL_SHA256 = "69f4b7d6fa7ce1f6ab21c2dbcd954a3324e9b6457203afab3a28f3cb8854bca0";
+const SHA256 = /^[a-f0-9]{64}$/u;
 
 const publicTables = Object.freeze({
   display_path_geometries: ["world_id", "infrastructure_release_id", "display_path_id", "length_mm", "geometry_json"],
@@ -212,6 +215,11 @@ function withoutUnprovenPosition(train: PublicTrain): PublicTrain {
   return Object.freeze(plain);
 }
 
+function projectionTrainId(train: PublicTrain): string | undefined {
+  if (train.baseTrainRunId === undefined) return train.id;
+  return verifiedBaseTrainRunId(train);
+}
+
 /** Read-only-Projektor; jeder Lookup bleibt an Welt und InfraRelease gebunden. */
 export class SQLiteTrainMapProjector implements PublicTrainMapProjector, PublicObjectStateProjector {
   readonly #database: DatabaseSync;
@@ -225,6 +233,7 @@ export class SQLiteTrainMapProjector implements PublicTrainMapProjector, PublicO
   readonly #displayGeometryCache = new Map<string, CachedGeometry>();
   readonly worldId: string;
   readonly infrastructureReleaseId: string;
+  readonly deploymentHash: string;
   #closed = false;
 
   constructor(path: string) {
@@ -246,6 +255,10 @@ export class SQLiteTrainMapProjector implements PublicTrainMapProjector, PublicO
       if (metadata["schema"] !== TRAIN_MAP_PROJECTION_SCHEMA) throw new TypeError("Zugkartenprojektion besitzt ein unbekanntes Schema.");
       this.worldId = text(metadata["world_id"], "metadata.world_id");
       this.infrastructureReleaseId = text(metadata["infrastructure_release_id"], "metadata.infrastructure_release_id");
+      this.deploymentHash = text(metadata["deployment_sha256"], "metadata.deployment_sha256");
+      if (!SHA256.test(this.deploymentHash)) {
+        throw new TypeError("Zugkartenprojektion besitzt keinen gueltigen Deploymenthash.");
+      }
       this.#trainSpan = this.#database.prepare(`SELECT position_start_mm, position_end_mm, resource_id, is_train_end
         FROM train_resource_spans
         WHERE world_id = ? AND infrastructure_release_id = ? AND train_id = ?
@@ -278,8 +291,12 @@ export class SQLiteTrainMapProjector implements PublicTrainMapProjector, PublicO
     }
   }
 
-  get binding(): Readonly<{ worldId: string; infrastructureReleaseId: string }> {
-    return Object.freeze({ worldId: this.worldId, infrastructureReleaseId: this.infrastructureReleaseId });
+  get binding(): Readonly<{ worldId: string; infrastructureReleaseId: string; deploymentHash: string }> {
+    return Object.freeze({
+      worldId: this.worldId,
+      infrastructureReleaseId: this.infrastructureReleaseId,
+      deploymentHash: this.deploymentHash,
+    });
   }
 
   #assertOpen(): void {
@@ -314,7 +331,9 @@ export class SQLiteTrainMapProjector implements PublicTrainMapProjector, PublicO
     this.#assertOpen();
     const plain = withoutUnprovenPosition(train);
     if (worldId !== this.worldId || !Number.isSafeInteger(train.positionMm) || train.positionMm < 0) return plain;
-    const trainRows = sqliteRows(this.#trainSpan, worldId, this.infrastructureReleaseId, train.id, train.positionMm, train.positionMm, train.positionMm);
+    const trustedTrainId = projectionTrainId(train);
+    if (trustedTrainId === undefined) return plain;
+    const trainRows = sqliteRows(this.#trainSpan, worldId, this.infrastructureReleaseId, trustedTrainId, train.positionMm, train.positionMm, train.positionMm);
     if (trainRows.length === 0) return plain;
     if (trainRows.length !== 1) throw new TypeError(`Zug '${train.id}' besitzt mehrdeutige kumulative Positionsspannen.`);
     const trainSpan = trainRows[0]!;
@@ -435,12 +454,16 @@ export function loadTrainMapProjector(path: string): SQLiteTrainMapProjector {
 export function assertTrainMapProjectionBinding(
   projector: SQLiteTrainMapProjector,
   config: LivemapConfigV2 | undefined,
+  activeSignedDeploymentHash: string | undefined,
 ): void {
   if (
     config === undefined
     || config.worldId !== projector.worldId
     || config.infrastructureReleaseId !== projector.infrastructureReleaseId
+    || activeSignedDeploymentHash === undefined
+    || !SHA256.test(activeSignedDeploymentHash)
+    || activeSignedDeploymentHash !== projector.deploymentHash
   ) {
-    throw new TypeError("Zugkartenprojektion und Livemap-Detailkatalog verletzen ihre Welt- oder Releasebindung.");
+    throw new TypeError("Zugkartenprojektion, Livemap-Detailkatalog und aktives signiertes Deployment verletzen ihre Welt-, Release- oder Deploymentbindung.");
   }
 }

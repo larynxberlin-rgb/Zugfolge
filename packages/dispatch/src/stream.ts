@@ -48,6 +48,10 @@ export class OperationsRegistry {
     this.#historyLimit = historyLimit;
   }
 
+  get size(): number {
+    return this.#feeds.size;
+  }
+
   forOperator(worldId: string, operatorId: string): OperationsFeed {
     const key = `${worldId}:${operatorId}`;
     const existing = this.#feeds.get(key);
@@ -57,5 +61,12 @@ export class OperationsRegistry {
     this.#feeds.set(key, feed);
     return feed;
   }
-}
 
+  /** Entfernt ausschliesslich die prozesslokalen Streams einer beendeten Welt. */
+  releaseWorld(worldId: string): void {
+    const prefix = `${worldId}:`;
+    for (const key of this.#feeds.keys()) {
+      if (key.startsWith(prefix)) this.#feeds.delete(key);
+    }
+  }
+}

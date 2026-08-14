@@ -26,7 +26,10 @@ function count(value: unknown, name: string): asserts value is number {
 
 export function parseInfraActivationSafetyReports(value: string): readonly SafetyReport[] {
   const raw: unknown = JSON.parse(value);
-  if (!Array.isArray(raw) || raw.length === 0) throw new Error("INFRA_ACTIVATION_SAFETY_REPORTS_JSON braucht mindestens einen Bericht.");
+  // An empty, explicitly configured catalog is the fail-closed state for an
+  // installation that has not approved any future infrastructure activation.
+  // GameInfraActivationSafety then rejects every adoption as missing evidence.
+  if (!Array.isArray(raw)) throw new Error("INFRA_ACTIVATION_SAFETY_REPORTS_JSON muss eine Liste sein.");
   const reports = raw.map((entry, index): SafetyReport => {
     if (typeof entry !== "object" || entry === null || Array.isArray(entry)) throw new Error(`Sicherheitsbericht ${index + 1} ist kein Objekt.`);
     const item = entry as Record<string, unknown>;

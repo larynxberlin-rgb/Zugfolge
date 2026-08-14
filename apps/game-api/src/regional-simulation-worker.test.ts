@@ -1,4 +1,5 @@
 import { PGlite } from "@electric-sql/pglite";
+import { isDeepStrictEqual } from "node:util";
 import {
   accounts,
   domainEvents,
@@ -9,13 +10,15 @@ import {
   worlds,
 } from "@zugfolge/db";
 import * as schema from "@zugfolge/db/schema";
-import { OperationsRegistry } from "@zugfolge/dispatch";
+import { OperationsRegistry, operationsEventOperatorIds } from "@zugfolge/dispatch";
 import {
   LivemapRegistry,
 } from "@zugfolge/livemap-stream";
 import {
   REGIONAL_LIVEMAP_DELTA_SCHEMA,
   REGIONAL_LIVEMAP_SNAPSHOT_SCHEMA,
+  REGIONAL_SIMULATION_BATCH_RESULT_SCHEMA,
+  REGIONAL_SIMULATION_COMMAND_SCHEMA,
   REGIONAL_SIMULATION_INITIALIZED_SCHEMA,
   REGIONAL_SIMULATION_INITIALIZE_SCHEMA,
   REGIONAL_SIMULATION_RESTORED_SCHEMA,
@@ -66,7 +69,7 @@ function hash(revision: number): string {
 function publicTrain(
   train: RegionalSimulationInitialization["trains"][number],
 ): RegionalPublicTrain {
-  return {
+  const runtime: RegionalSimulationRuntime = {
     id: train.trainRunId,
     operator: train.operator,
     trainNumber: train.trainNumber,
@@ -77,6 +80,7 @@ function publicTrain(
     nextOperatingPoint: train.route[0]?.operatingPoint ?? "unbekannt",
     status: "planned",
   };
+  return runtime;
 }
 
 function fakeRuntime(gap = false): RegionalSimulationRuntime {
@@ -92,7 +96,7 @@ function fakeRuntime(gap = false): RegionalSimulationRuntime {
     } as const;
   }
 
-  return {
+  const runtime: RegionalSimulationRuntime = {
     initialize(input) {
       const trains = input.trains.map(publicTrain);
       const state: FakeState = {
@@ -130,7 +134,7 @@ function fakeRuntime(gap = false): RegionalSimulationRuntime {
       const state = inputState as FakeState;
       const replay = state.commands.find((item) => item.id === envelope.commandId);
       if (replay !== undefined) {
-        if (JSON.stringify(replay.command) !== JSON.stringify(envelope.command)) {
+        if (!isDeepStrictEqual(replay.command, envelope.command)) {
           throw new Error("idempotency_conflict");
         }
         return {
@@ -268,7 +272,39 @@ function fakeRuntime(gap = false): RegionalSimulationRuntime {
         idempotentReplay: false,
       };
     },
+    applyBatch(inputState, batch) {
+      let state = inputState as FakeState;
+      const events: RegionalSimulationEvent[] = [];
+      const commandResults: Array<{ commandId: string; idempotentReplay: boolean }> = [];
+      for (const command of batch.commands) {
+        const result = runtime.apply(state, {
+          schemaVersion: REGIONAL_SIMULATION_COMMAND_SCHEMA,
+          worldId: batch.worldId,
+          regionId: batch.regionId,
+          commandId: command.commandId,
+          expectedStateHash: hash(state.revision),
+          expectedRevision: state.revision,
+          expectedPublisherSequence: state.publisherSequence,
+          command: command.command,
+        });
+        commandResults.push({
+          commandId: command.commandId,
+          idempotentReplay: result.idempotentReplay,
+        });
+        if (!result.idempotentReplay) events.push(...result.events);
+        state = result.state as FakeState;
+      }
+      return {
+        schemaVersion: REGIONAL_SIMULATION_BATCH_RESULT_SCHEMA,
+        state,
+        stateHash: hash(state.revision),
+        events,
+        snapshot: snapshot(state),
+        commandResults,
+      };
+    },
   };
+  return runtime;
 }
 
 function initialization(worldId: string): RegionalSimulationInitialization {
@@ -404,6 +440,173 @@ describe("regionaler M4-Simulationsworker", () => {
 
       expect(await db.select().from(mailboxMessages).where(eq(mailboxMessages.worldId, worldId))).toHaveLength(1);
       expect(pushed).toHaveLength(1);
+    } finally {
+      await client.close();
+    }
+  }, 15_000);
+
+  it("holt nach Commit vor Operations-Publish den weltgebundenen Fanout ohne Livemap-Duplikat nach", async () => {
+    const { client, db } = await testDatabase();
+    const worldId = "89898989-8989-4989-8989-898989898989";
+    const foreignWorldId = "90909090-9090-4090-8090-909090909090";
+    const livemap = new LivemapRegistry();
+    const operations = new OperationsRegistry();
+    let failNextOperationsPublish = false;
+    const crashableOperations = {
+      forOperator(scopedWorldId: string, operatorId: string) {
+        if (failNextOperationsPublish) {
+          failNextOperationsPublish = false;
+          throw new Error("Crash nach Commit vor Operations-Publish");
+        }
+        return operations.forOperator(scopedWorldId, operatorId);
+      },
+      releaseWorld(scopedWorldId: string) {
+        operations.releaseWorld(scopedWorldId);
+      },
+    } as unknown as OperationsRegistry;
+    const worker = new RegionalSimulationWorker(db, fakeRuntime(), livemap, crashableOperations);
+    try {
+      await db.insert(worlds).values([
+        {
+          id: worldId,
+          name: "Operations-Recovery-Welt",
+          schedulePeriodWeeks: 4,
+          epoch: new Date(0),
+        },
+        {
+          id: foreignWorldId,
+          name: "Fremde Operations-Welt",
+          schedulePeriodWeeks: 4,
+          epoch: new Date(0),
+        },
+      ]);
+      const [account] = await db.insert(accounts).values({
+        worldId,
+        keycloakSubject: "recovery-operator-owner",
+        displayName: "Recovery-Leitstelle",
+      }).returning();
+      const [operator] = await db.insert(operators).values({
+        worldId,
+        foundingAccountId: account!.id,
+        name: "Recovery-Verkehr",
+      }).returning();
+      await worker.initialize(initialization(worldId), new Date(0));
+      await worker.apply({
+        worldId,
+        regionId,
+        commandId: "materialize-recovery-run",
+        command: { type: "materialize", train: { ...train("recovery-run"), operator: operator!.id } },
+      }, new Date(1_000));
+      await worker.apply({
+        worldId,
+        regionId,
+        commandId: "register-recovery-disruption",
+        command: {
+          type: "register-disruption",
+          disruption: {
+            disruptionId: "recovery-disruption",
+            kind: "unplanned",
+            publishedAtS: 0,
+            startsAtS: 0,
+            validUntilS: 3_600,
+            positionMm: 1_200_000,
+            causeCode: 25,
+            fineCauseId: "signalling.interlocking",
+            effect: "closure",
+            affectedResource: "block:A:B:1",
+            affectedTrainRunIds: [],
+            delaySeconds: 0,
+          },
+        },
+      }, new Date(2_000));
+
+      const pushed: unknown[] = [];
+      operations.forOperator(worldId, operator!.id).subscribe((event) => pushed.push(event));
+      const activationWork = {
+        worldId,
+        regionId,
+        commandId: "activate-recovery-disruption",
+        command: {
+          type: "activate-disruption" as const,
+          disruptionId: "recovery-disruption",
+          affectedTrainRunIds: ["recovery-run"],
+          delaySeconds: 300,
+        },
+      };
+      failNextOperationsPublish = true;
+      await expect(worker.apply(activationWork, new Date(3_000)))
+        .rejects.toThrow("Crash nach Commit vor Operations-Publish");
+
+      expect(pushed).toEqual([]);
+      expect(worker.isReady(worldId, regionId)).toBe(false);
+      expect(livemap.isInitialized(worldId)).toBe(false);
+      const [committedEvent] = await db.select().from(domainEvents).where(and(
+        eq(domainEvents.worldId, worldId),
+        eq(domainEvents.eventType, "disruption.applied"),
+      ));
+      expect(committedEvent).toBeDefined();
+      expect(committedEvent!.payload).toMatchObject({ operatorIds: [operator!.id] });
+      expect(operationsEventOperatorIds(committedEvent!)).toEqual([operator!.id]);
+      await db.insert(domainEvents).values({
+        worldId: foreignWorldId,
+        sequence: 1,
+        eventType: "disruption.applied",
+        payload: {
+          operatorIds: [operator!.id],
+          action: "foreign_action_must_not_leak",
+          impact: {},
+        },
+        occurredAt: new Date(3_000),
+      });
+
+      await expect(worker.recover(worldId, regionId)).resolves.toMatchObject({ nowS: 0 });
+      expect(operations.forOperator(worldId, operator!.id).eventsAfter(committedEvent!.sequence - 1)).toEqual([
+        expect.objectContaining({
+          worldId,
+          operatorId: operator!.id,
+          sequence: committedEvent!.sequence,
+          decision: expect.objectContaining({ action: "apply_disruption" }),
+        }),
+      ]);
+      expect(pushed).toEqual([
+        expect.objectContaining({
+          worldId,
+          operatorId: operator!.id,
+          sequence: committedEvent!.sequence,
+          decision: expect.objectContaining({ action: "apply_disruption" }),
+        }),
+      ]);
+      const recoveredSnapshot = livemap.forWorld(worldId).snapshot();
+      await expect(worker.recover(worldId, regionId)).resolves.toMatchObject({ nowS: 0 });
+      expect(pushed).toHaveLength(1);
+      expect(livemap.forWorld(worldId).snapshot()).toMatchObject({
+        at: recoveredSnapshot.at,
+        trains: recoveredSnapshot.trains,
+        externalTrains: recoveredSnapshot.externalTrains,
+        disruptions: recoveredSnapshot.disruptions,
+      });
+
+      const restartedOperations = new OperationsRegistry();
+      const restartedPushes: unknown[] = [];
+      restartedOperations.forOperator(worldId, operator!.id)
+        .subscribe((event) => restartedPushes.push(event));
+      const restarted = new RegionalSimulationWorker(
+        db,
+        fakeRuntime(),
+        new LivemapRegistry(),
+        restartedOperations,
+      );
+      await expect(restarted.restore(worldId, regionId)).resolves.toMatchObject({
+        state: expect.objectContaining({ worldId, regionId }),
+      });
+      expect(restartedPushes).toEqual([
+        expect.objectContaining({
+          worldId,
+          operatorId: operator!.id,
+          sequence: committedEvent!.sequence,
+          decision: expect.objectContaining({ action: "apply_disruption" }),
+        }),
+      ]);
     } finally {
       await client.close();
     }
@@ -550,7 +753,11 @@ describe("regionaler M4-Simulationsworker", () => {
       const restartedLivemap = new LivemapRegistry();
       const restarted = new RegionalSimulationWorker(db, fakeRuntime(), restartedLivemap);
       expect(restartedLivemap.isInitialized(worldId)).toBe(false);
-      await restarted.restore(worldId, regionId);
+      await expect(restarted.recover(worldId, regionId)).resolves.toMatchObject({
+        worldId,
+        regionId,
+        nowS: 100,
+      });
       expect(restartedLivemap.isInitialized(worldId)).toBe(true);
       expect(restartedLivemap.forWorld(worldId).snapshot()).toMatchObject({
         sequence: 1,
@@ -572,6 +779,71 @@ describe("regionaler M4-Simulationsworker", () => {
       await client.close();
     }
   });
+
+  it("committet einen Scheduler-Batch atomar und erholt sich nach verlorenem Snapshot-Fanout", async () => {
+    const { client, db } = await testDatabase();
+    const worldId = "12121212-1212-4121-8121-121212121212";
+    const livemap = new LivemapRegistry();
+    let failNextInitialize = false;
+    const crashableLivemap = new Proxy(livemap, {
+      get(target, property) {
+        if (property === "initializeRegion") {
+          return (...args: Parameters<LivemapRegistry["initializeRegion"]>) => {
+            if (failNextInitialize) {
+              failNextInitialize = false;
+              throw new Error("Crash nach Batch-Commit vor Snapshot-Fanout");
+            }
+            return target.initializeRegion(...args);
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    }) as LivemapRegistry;
+    const worker = new RegionalSimulationWorker(db, fakeRuntime(), crashableLivemap);
+    const work = {
+      worldId,
+      regionId,
+      commands: [
+        { commandId: "materialize-batch", command: { type: "materialize" as const, train: train("batch-run") } },
+        { commandId: "advance-batch", command: { type: "advance-to" as const, atS: 100 } },
+        { commandId: "remove-batch", command: { type: "dematerialize-before" as const, beforeS: 101 } },
+      ],
+    };
+    try {
+      await db.insert(worlds).values({
+        id: worldId,
+        name: "Atomare Batchwelt",
+        schedulePeriodWeeks: 4,
+        epoch: new Date("2026-08-11T00:00:00Z"),
+      });
+      await worker.initialize(initialization(worldId), new Date("2026-08-11T00:00:00Z"));
+
+      failNextInitialize = true;
+      await expect(
+        worker.applyBatch(work, new Date("2026-08-11T00:00:01Z")),
+      ).rejects.toThrow("Crash nach Batch-Commit vor Snapshot-Fanout");
+      expect(worker.readyRegions()).toEqual([]);
+      const [committed] = await db.select().from(regionalSimulationStates).where(and(
+        eq(regionalSimulationStates.worldId, worldId),
+        eq(regionalSimulationStates.regionId, regionId),
+      ));
+      expect(committed).toMatchObject({ revision: 3, publisherSequence: 3 });
+      expect(await db.select().from(domainEvents).where(eq(domainEvents.worldId, worldId))).toHaveLength(3);
+
+      await expect(worker.recover(worldId, regionId)).resolves.toMatchObject({ nowS: 100 });
+      expect(livemap.forWorld(worldId).snapshot()).toMatchObject({ at: 100, trains: [] });
+      const replay = await worker.applyBatch(work, new Date("2026-08-11T00:00:02Z"));
+      expect(replay.commandResults).toEqual([
+        { commandId: "materialize-batch", idempotentReplay: true },
+        { commandId: "advance-batch", idempotentReplay: true },
+        { commandId: "remove-batch", idempotentReplay: true },
+      ]);
+      expect(await db.select().from(domainEvents).where(eq(domainEvents.worldId, worldId))).toHaveLength(3);
+    } finally {
+      await client.close();
+    }
+  }, 15_000);
 
   it("rollt eine native Publisher-Luecke ohne DB- oder Fanout-Aenderung zurueck", async () => {
     const { client, db } = await testDatabase();
@@ -782,6 +1054,54 @@ describe("regionaler M4-Simulationsworker", () => {
           new Date(2_000),
         ),
       ).rejects.toBeInstanceOf(RegionalSimulationUnavailableError);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("released eine archivierte Welt idempotent und verhindert Restore sowie weitere Deltas", async () => {
+    const { client, db } = await testDatabase();
+    const worldId = "55555555-5555-4555-8555-555555555555";
+    const livemap = new LivemapRegistry();
+    const operations = new OperationsRegistry();
+    const publicOperations = operations.forOperator("public-world", "public-operator");
+    operations.forOperator(worldId, "tutorial-operator");
+    const worker = new RegionalSimulationWorker(db, fakeRuntime(), livemap, operations);
+    try {
+      await db.insert(worlds).values({
+        id: worldId,
+        name: "Archiviertes Tutorial",
+        schedulePeriodWeeks: 4,
+        epoch: new Date(0),
+      });
+      await worker.initialize(initialization(worldId), new Date(0));
+      expect(worker.isReady(worldId, regionId)).toBe(true);
+      expect(livemap.initializedWorld(worldId)).toBeDefined();
+
+      worker.releaseWorld(worldId);
+      worker.releaseWorld(worldId);
+
+      expect(worker.isReady(worldId, regionId)).toBe(false);
+      expect(worker.readyRegions()).not.toContainEqual(expect.objectContaining({ worldId }));
+      expect(livemap.size).toBe(0);
+      expect(livemap.peekWorld(worldId)).toBeUndefined();
+      expect(operations.size).toBe(1);
+      expect(operations.forOperator("public-world", "public-operator")).toBe(publicOperations);
+      expect(operations.forOperator(worldId, "tutorial-operator")).not.toBe(publicOperations);
+      await expect(worker.apply(
+        {
+          worldId,
+          regionId,
+          commandId: "post-archive",
+          command: { type: "advance-to", atS: 2 },
+        },
+        new Date(2_000),
+      )).rejects.toBeInstanceOf(RegionalSimulationUnavailableError);
+      await expect(worker.restore(worldId, regionId))
+        .rejects.toBeInstanceOf(RegionalSimulationUnavailableError);
+      expect(await db.select().from(regionalSimulationStates).where(
+        eq(regionalSimulationStates.worldId, worldId),
+      )).toHaveLength(1);
     } finally {
       await client.close();
     }

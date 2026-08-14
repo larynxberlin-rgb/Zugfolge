@@ -8,6 +8,7 @@ interface ZugfolgeRuntimeConfiguration {
   readonly mapBasemapStyleUrl?: string;
   readonly mapGermanyPmtilesUrl?: string;
   readonly mapAttribution?: string;
+  readonly livemapOidcClientId?: string;
 }
 
 var __ZUGFOLGE_RUNTIME_CONFIG__: ZugfolgeRuntimeConfiguration | undefined;

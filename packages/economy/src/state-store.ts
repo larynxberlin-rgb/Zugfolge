@@ -215,6 +215,8 @@ export async function persistEconomyTransition(
     readonly state: EconomyWorldState;
     readonly effects: EconomyEffects;
     readonly committedAt: Date;
+    /** Reale Plattformzeit des Queue-Commits; Fach-/Simulationszeit bleibt in `occurredAt`. */
+    readonly enqueuedAt: Date;
   },
 ): Promise<void> {
   if (input.expectedRevision !== null && input.state.revision <= input.expectedRevision) {
@@ -228,6 +230,9 @@ export async function persistEconomyTransition(
       throw new EconomyCashWriterBindingError("Economy-Journal verletzt Welt-, EVU- oder Effektreferenz.");
     }
   }
+
+  const enqueuedAt = input.enqueuedAt;
+  if (Number.isNaN(enqueuedAt.getTime())) throw new RangeError("Economy-Outbox-Zeit ist ungueltig.");
 
   await db.transaction(async (tx) => {
     const runtimeEvents = input.effects.runtimeEvents ?? [];
@@ -267,7 +272,7 @@ export async function persistEconomyTransition(
         effectType: "journal" as const,
         payload: encodeEconomyValue(entry),
         occurredAt: new Date(entry.at * 1_000),
-        enqueuedAt: input.committedAt,
+        enqueuedAt,
       })),
       ...input.effects.notices.map((notice) => ({
         worldId: input.state.worldId,
@@ -275,7 +280,7 @@ export async function persistEconomyTransition(
         effectType: "notice" as const,
         payload: encodeEconomyValue(notice),
         occurredAt: new Date(notice.at * 1_000),
-        enqueuedAt: input.committedAt,
+        enqueuedAt,
       })),
     ];
     if (rows.length > 0) {
@@ -357,6 +362,21 @@ export async function listEconomyWorldIds(db: EconomyDatabase): Promise<readonly
       eq(worlds.lifecycleStatus, "active"),
     ))
     .orderBy(asc(economyWorldStates.worldId));
+  return rows.map((row) => row.worldId);
+}
+
+/**
+ * Enumeriert Outbox-Arbeit unabhaengig vom Welt-Lifecycle. Archivierung darf
+ * den crash-sicheren Ack-Pfad nicht abschneiden; die Nutzdaten bleiben danach
+ * weiterhin nur ueber die jeweilige Welt-ID erreichbar.
+ */
+export async function listPendingEconomyOutboxWorldIds(db: EconomyDatabase): Promise<readonly string[]> {
+  // guards:allow world-id — Globaler Worker ermittelt ausschliesslich Welt-IDs offener Queuezeilen.
+  const rows = await db
+    .selectDistinct({ worldId: economyOutbox.worldId })
+    .from(economyOutbox)
+    .where(isNull(economyOutbox.processedAt))
+    .orderBy(asc(economyOutbox.worldId));
   return rows.map((row) => row.worldId);
 }
 
@@ -463,4 +483,40 @@ export async function dispatchEconomyOutbox(
     }
   }
   return processed;
+}
+
+export class EconomyOutboxDrainLimitError extends Error {
+  readonly code = "economy_outbox_drain_limit";
+
+  constructor(readonly worldId: string, readonly maximumBatches: number) {
+    super(`Economy-Outbox fuer Welt '${worldId}' blieb nach ${maximumBatches} Batches offen.`);
+    this.name = "EconomyOutboxDrainLimitError";
+  }
+}
+
+/**
+ * Begrenzt drainender Abschluss-/Recovery-Pfad. Zieladapter bleiben
+ * idempotent; eine Restzeile wird niemals geloescht oder als verarbeitet
+ * markiert, bevor der Adapter erfolgreich zurueckgekehrt ist.
+ */
+export async function drainEconomyOutbox(
+  db: EconomyDatabase,
+  worldId: string,
+  adapters: {
+    readonly postJournal: (entry: EconomyJournalEntry) => Promise<void>;
+    readonly sendNotice: (notice: EconomyNotice) => Promise<void>;
+  },
+  processedAt: Date,
+  maximumBatches = 10,
+): Promise<number> {
+  if (!Number.isSafeInteger(maximumBatches) || maximumBatches < 1 || maximumBatches > 100) {
+    throw new RangeError("Economy-Outbox-Drain-Limit ist ungueltig.");
+  }
+  let processed = 0;
+  for (let batch = 0; batch < maximumBatches; batch += 1) {
+    if ((await listPendingEconomyEffects(db, worldId, 1)).length === 0) return processed;
+    processed += await dispatchEconomyOutbox(db, worldId, adapters, processedAt);
+  }
+  if ((await listPendingEconomyEffects(db, worldId, 1)).length === 0) return processed;
+  throw new EconomyOutboxDrainLimitError(worldId, maximumBatches);
 }

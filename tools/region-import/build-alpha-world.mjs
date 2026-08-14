@@ -6,10 +6,16 @@ import { spawnSync } from "node:child_process";
 import { alphaHash } from "../../packages/alpha/dist/index.js";
 import { buildEconomyRelease, encodeEconomyValue, parseStartingCapitalPolicy, serializeStartingCapitalPolicy, startEconomyWorld } from "../../packages/economy/dist/index.js";
 import { assertEmbeddedWorldIds, assertNoStarterIdentifiers } from "./alpha-world-variants.mjs";
+import {
+  assertNormalizedScheduleTimeContract,
+  assertRegionalAlphaReleaseContract,
+  NORMALIZED_SCHEDULE_REPEAT_EVERY_S,
+  NORMALIZED_SCHEDULE_TIME_ZONE,
+} from "./regional-release-contract.mjs";
 
 const [gtfsPath, networkPath, fleetCatalogPath, infraReleasePath, economySpecPath, outputPath, publicConfigurationPath] = process.argv.slice(2);
-if (!gtfsPath || !networkPath || !fleetCatalogPath || !infraReleasePath || !economySpecPath || !outputPath) {
-  throw new Error("Aufruf: node build-alpha-world.mjs GTFS.json NETWORK.json FLEET-CATALOG.json INFRA-RELEASE.json ECONOMY.json OUTPUT.json [PUBLIC-ODOO-CONFIG.json]");
+if (!gtfsPath || !networkPath || !fleetCatalogPath || !infraReleasePath || !economySpecPath || !outputPath || !publicConfigurationPath) {
+  throw new Error("Aufruf: node build-alpha-world.mjs GTFS.json NETWORK.json FLEET-CATALOG.json INFRA-RELEASE.json ECONOMY.json OUTPUT.json PUBLIC-ODOO-CONFIG.json");
 }
 
 const WORLD_ID = "00000000-0000-4000-8000-000000000014";
@@ -17,35 +23,20 @@ const REGION_ID = "mitteldeutschland-b";
 const OPERATOR_ID = "public";
 const PUBLIC_WORLD_SEED = 14_2026n;
 const PUBLIC_PLANNING_AUTHORITY_ACCOUNT_ID = "00000000-0000-4000-8000-000000000214";
-const WORLD_EPOCH = "2026-12-13T00:00:00.000Z";
 const WORLD_DURATION_S = 365 * 86_400;
 const RELEASE_VALID_UNTIL_S = WORLD_DURATION_S + 86_400;
 
-function defaultDeployConfiguration(worldId, kind) {
-  const publicWorld = kind === "public";
-  return {
-    schemaVersion: "zugfolge-alpha-world-deploy-configuration/v1",
-    worldId,
-    worldDefinition: {
-      name: publicWorld ? "Mitteldeutschland Alpha 2026" : "Mitteldeutschland Tutorial 2026",
-      kind,
-      rankingStatus: publicWorld ? "ranked" : "unranked",
-      schedulePeriodWeeks: publicWorld ? 4 : 3,
-      epoch: WORLD_EPOCH,
-    },
-    startingCapitalPolicy: { mode: "finite", amountCents: "0" },
-  };
-}
-
 async function loadDeployConfiguration(path, expectedWorldId, expectedKind) {
-  const configuration = path === undefined
-    ? defaultDeployConfiguration(expectedWorldId, expectedKind)
-    : JSON.parse(await readFile(path, "utf8"));
+  if (path === undefined) throw new Error("Produktiver Weltbuild braucht eine explizite Odoo-Signierkonfiguration mit Weltepoche.");
+  const configuration = JSON.parse(await readFile(path, "utf8"));
   const definition = configuration?.worldDefinition;
+  const epoch = new Date(definition?.epoch);
   if (
     configuration?.schemaVersion !== "zugfolge-alpha-world-deploy-configuration/v1"
-    || Object.keys(configuration).length !== 4
+    || Object.keys(configuration).length !== 5
     || configuration.worldId !== expectedWorldId
+    || !Number.isSafeInteger(configuration.deploymentRevision)
+    || configuration.deploymentRevision < 1
     || typeof definition !== "object"
     || definition === null
     || Array.isArray(definition)
@@ -58,11 +49,16 @@ async function loadDeployConfiguration(path, expectedWorldId, expectedKind) {
     || definition.schedulePeriodWeeks < 3
     || definition.schedulePeriodWeeks > 8
     || typeof definition.epoch !== "string"
-    || Number.isNaN(new Date(definition.epoch).getTime())
+    || Number.isNaN(epoch.getTime())
+    || epoch.getUTCDay() !== 1
+    || epoch.getUTCHours() !== 0
+    || epoch.getUTCMinutes() !== 0
+    || epoch.getUTCSeconds() !== 0
+    || epoch.getUTCMilliseconds() !== 0
   ) throw new Error(`Odoo-Signierkonfiguration fuer '${expectedWorldId}' ist ungueltig.`);
   return {
     ...configuration,
-    worldDefinition: { ...definition },
+    worldDefinition: { ...definition, epoch: epoch.toISOString() },
     startingCapitalPolicy: serializeStartingCapitalPolicy(parseStartingCapitalPolicy(configuration.startingCapitalPolicy)),
   };
 }
@@ -153,8 +149,20 @@ const economySpecification = parseEconomySpec(JSON.parse(economyBytes));
 const gtfs = gtfsEnvelope.snapshot;
 const network = networkEnvelope.network;
 
-if (infraRelease.schema !== "zugfolge-infra-release/v1" || !/^[a-f0-9]{64}$/.test(infraRelease.releaseHash)) throw new Error("Signierter InfraRelease fehlt.");
-if (infraRelease.regionId !== REGION_ID || network.regionId !== REGION_ID || gtfs.regionId !== REGION_ID) throw new Error("Releaseartefakte verletzen die Regionsbindung.");
+const regionalReleaseContract = assertRegionalAlphaReleaseContract({
+  gtfsEnvelope,
+  gtfsBytesSha256: sha256(gtfsBytes),
+  infraRelease,
+  worldEpoch: publicDeployConfiguration.worldDefinition.epoch,
+});
+const scheduleTimeContract = assertNormalizedScheduleTimeContract({
+  worldEpoch: publicDeployConfiguration.worldDefinition.epoch,
+  serviceDate: regionalReleaseContract.serviceDate,
+  timeZone: NORMALIZED_SCHEDULE_TIME_ZONE,
+  serviceStartOffsetS: 0,
+  repeatEveryS: NORMALIZED_SCHEDULE_REPEAT_EVERY_S,
+});
+if (network.regionId !== REGION_ID) throw new Error("Betriebsnetz verletzt die Regionsbindung.");
 if (gtfs.journeyChains.some((chain) => chain.worldId !== WORLD_ID)) throw new Error("GTFS-Fahrtketten verletzen die UUID-Weltbindung.");
 if (networkEnvelope.networkHash !== infraRelease.artifacts.find((artifact) => artifact.kind === "operational-network")?.stateHash) throw new Error("Operational-Network ist nicht im InfraRelease gebunden.");
 
@@ -419,8 +427,8 @@ const fleet = {
   producedAt: 0,
   authorityRelease: {
     schemaVersion: "zugfolge-fleet-authority-release/v1",
-    releaseId: "fleet-alpha-mitteldeutschland-b-2026.1",
-    referenceYear: 2026,
+    releaseId: regionalReleaseContract.fleetReleaseId,
+    referenceYear: regionalReleaseContract.timetableYear,
     assets: assets.sort((left, right) => left.id.localeCompare(right.id)),
     personnelPools: personnelPools.sort((left, right) => left.id.localeCompare(right.id)),
     pathReceipts: pathReceipts.sort((left, right) => left.id.localeCompare(right.id)),
@@ -460,7 +468,10 @@ const tenderCalendarHash = alphaHash("zugfolge-alpha-tender-calendar/v1", econom
 const planningRoute = regionalTrains
   .map((train) => train.route.filter((waypoint) => {
     const station = stationById.get(waypoint.operatingPoint);
-    return station?.latitudeE7 !== null && station?.longitudeE7 !== null;
+    return station?.latitudeE7 !== null
+      && station?.latitudeE7 !== undefined
+      && station.longitudeE7 !== null
+      && station.longitudeE7 !== undefined;
   }))
   .find((route) => route.length >= 2 && route.every((waypoint, index) => (
     index === 0 || route[index - 1].positionMm < waypoint.positionMm
@@ -475,7 +486,12 @@ const planningInfrastructureRelease = {
   corridorName: "Mitteldeutschland Alpha-Korridor",
   stations: planningRoute.map((waypoint, index) => {
     const station = stationById.get(waypoint.operatingPoint);
-    if (station?.latitudeE7 === null || station?.latitudeE7 === undefined || station.longitudeE7 === null) {
+    if (
+      station?.latitudeE7 === null
+      || station?.latitudeE7 === undefined
+      || station.longitudeE7 === null
+      || station.longitudeE7 === undefined
+    ) {
       throw new Error(`Planning-Betriebsstelle '${waypoint.operatingPoint}' besitzt keine Koordinaten.`);
     }
     return {
@@ -511,6 +527,7 @@ const planningInfrastructureRelease = {
 const deployment = {
   schema: "zugfolge-alpha-world-deployment/v1",
   worldId: WORLD_ID,
+  deploymentRevision: publicDeployConfiguration.deploymentRevision,
   worldDefinition: publicDeployConfiguration.worldDefinition,
   infraReleaseHash: infraRelease.releaseHash,
   blueprint: {
@@ -550,7 +567,7 @@ const deployment = {
     nowS: 0,
     trains: regionalTrains.sort((left, right) => left.trainRunId.localeCompare(right.trainRunId)),
   },
-  repeatEveryS: 86_400,
+  repeatEveryS: scheduleTimeContract.repeatEveryS,
   boundaryTransitions: boundaryTransitions.sort((left, right) => left.atS - right.atS || left.transitionId.localeCompare(right.transitionId)),
   planning: {
     authority: {

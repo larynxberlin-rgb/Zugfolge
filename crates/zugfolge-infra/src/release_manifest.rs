@@ -326,7 +326,102 @@ struct Artifact {
     extra: Map<String, Value>,
 }
 
-const LEGACY_PIPELINE_FILES: [&str; 15] = [
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RegionalInfraReleaseBuildConfig {
+    schema: String,
+    release_id: String,
+    region_id: String,
+    region_variant: String,
+    timetable_year: i64,
+    service_date: String,
+    gtfs_artifact: String,
+    release_approval: RegionalReleaseApproval,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RegionalReleaseApproval {
+    release_responsible: String,
+    responsibility_granted_by: String,
+    activation_allowed: bool,
+    activation_authority: String,
+}
+
+fn is_calendar_date(value: &str) -> bool {
+    if value.len() != 8 || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return false;
+    }
+    let number = |start: usize, end: usize| {
+        value
+            .get(start..end)
+            .and_then(|part| part.parse::<u32>().ok())
+    };
+    let (Some(year), Some(month), Some(day)) = (number(0, 4), number(4, 6), number(6, 8)) else {
+        return false;
+    };
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => return false,
+    };
+    day != 0 && day <= days
+}
+
+fn regional_build_config(input: &Value) -> Result<RegionalInfraReleaseBuildConfig> {
+    let config: RegionalInfraReleaseBuildConfig =
+        serde_json::from_value(input.clone()).map_err(|error| {
+            ReleaseManifestError::new(format!("Regionaler Buildvertrag ist ungueltig: {error}"))
+        })?;
+    require(
+        config.schema == "zugfolge-regional-infra-release-build/v1",
+        "Regionaler Buildvertrag hat ein unbekanntes Schema.",
+    )?;
+    require(
+        config.region_id == "mitteldeutschland-b" && config.region_variant == "B",
+        "Regionaler Buildvertrag verletzt die freigegebene Regionsbindung.",
+    )?;
+    require(
+        is_calendar_date(&config.service_date),
+        "serviceDate muss ein gueltiges Kalenderdatum im Format YYYYMMDD sein.",
+    )?;
+    require(
+        config
+            .service_date
+            .get(0..4)
+            .and_then(|year| year.parse::<i64>().ok())
+            == Some(config.timetable_year),
+        "serviceDate und timetableYear laufen auseinander.",
+    )?;
+    let release_prefix = format!("infra-mitteldeutschland-b-{}.", config.timetable_year);
+    let release_revision = config.release_id.strip_prefix(&release_prefix);
+    require(
+        release_revision.is_some_and(|revision| {
+            !revision.is_empty()
+                && !revision.starts_with('0')
+                && revision.bytes().all(|byte| byte.is_ascii_digit())
+        }),
+        "releaseId muss eine positive versionierte Mitteldeutschland-Freigabe desselben Fahrplanjahres sein.",
+    )?;
+    let expected_gtfs = format!("gtfs-region-{}-v2.json", config.service_date);
+    require(
+        config.gtfs_artifact == expected_gtfs && safe_relative_path(&config.gtfs_artifact),
+        format!("gtfsArtifact muss exakt {expected_gtfs} sein."),
+    )?;
+    require(
+        non_empty(&config.release_approval.release_responsible)
+            && non_empty(&config.release_approval.responsibility_granted_by)
+            && config.release_approval.activation_allowed
+            && config.release_approval.activation_authority == "game-system-only",
+        "Releasefreigabe fehlt oder erlaubt keine Aktivierung durch das Spielsystem.",
+    )?;
+    Ok(config)
+}
+
+const LEGACY_PIPELINE_FILES: [&str; 16] = [
     "tools/region-import/import-mitteldeutschland-b.sh",
     "tools/region-import/import-mitteldeutschland-b.ps1",
     "tools/region-import/build-gtfs-region.mjs",
@@ -338,24 +433,28 @@ const LEGACY_PIPELINE_FILES: [&str; 15] = [
     "tools/region-import/validation-set.mjs",
     "tools/region-import/build-validation-set.mjs",
     "tools/region-import/build-infra-release.mjs",
+    "tools/region-import/regional-release-contract.mjs",
     "tools/region-import/release-crypto.mjs",
     "tools/region-import/sign-release.mjs",
     "tools/region-import/verify-release.mjs",
     "crates/zugfolge-infra/examples/pbf_release_report.rs",
 ];
 
-/// Baut den weiterhin von der Alpha-Laufzeit konsumierten v1-Release.
+/// Baut den von der Alpha-Laufzeit konsumierten regionalen v1-Release.
 ///
-/// Die Pfade sind reine Eingaben des Orchestrators. Dateiinventar, fachliche
-/// Qualifikation, Manifest und Freigabeentscheidung entstehen vollständig in
-/// Rust, damit auch dieser historische Einstieg ADR-0005 einhält.
+/// Releasekennung, Verkehrstag, GTFS-Artefakt und Freigabe kommen aus einem
+/// expliziten, strikt dekodierten Buildvertrag. Die Pfade sind reine Eingaben
+/// des Orchestrators. Dateiinventar, fachliche Qualifikation und Manifest
+/// entstehen vollständig in Rust, damit der Einstieg ADR-0005 einhält.
 pub fn build_mitteldeutschland_infra_release(
+    build_config: &Value,
     workspace_root: &Path,
     source_root: &Path,
     artifact_root: &Path,
 ) -> Result<Value> {
+    let config = regional_build_config(build_config)?;
     let gtfs = read_json(
-        &artifact_root.join("gtfs-region-20260812-v2.json"),
+        &artifact_root.join(&config.gtfs_artifact),
         "GTFS-Planungssnapshot",
     )?;
     let operational = read_json(
@@ -369,6 +468,37 @@ pub fn build_mitteldeutschland_infra_release(
     let validation = read_json(
         &artifact_root.join("independent-validation-set.json"),
         "unabhaengiger Validierungssatz",
+    )?;
+
+    require(
+        pointer_string(&gtfs, "/snapshot/regionId", "GTFS-Region")? == config.region_id
+            && pointer_string(&gtfs, "/snapshot/regionVariant", "GTFS-Regionsvariante")?
+                == config.region_variant
+            && pointer_string(&gtfs, "/snapshot/serviceDate", "GTFS-Verkehrstag")?
+                == config.service_date,
+        "GTFS-Planungssnapshot und regionaler Buildvertrag laufen auseinander.",
+    )?;
+    require(
+        pointer_string(&operational, "/network/regionId", "Betriebsnetz-Region")?
+            == config.region_id
+            && pointer_i64(
+                &operational,
+                "/network/timetableYear",
+                "Betriebsnetz-Fahrplanjahr",
+            )? == config.timetable_year,
+        "Betriebsnetz und regionaler Buildvertrag laufen auseinander.",
+    )?;
+    let service_date_iso = format!(
+        "{}-{}-{}",
+        &config.service_date[0..4],
+        &config.service_date[4..6],
+        &config.service_date[6..8]
+    );
+    let valid_from = pointer_string(&operational, "/network/validFrom", "Gueltigkeitsbeginn")?;
+    let valid_until = pointer_string(&operational, "/network/validUntil", "Gueltigkeitsende")?;
+    require(
+        valid_from <= service_date_iso.as_str() && service_date_iso.as_str() <= valid_until,
+        "serviceDate liegt ausserhalb der Betriebsnetzgueltigkeit.",
     )?;
 
     require(
@@ -467,9 +597,10 @@ pub fn build_mitteldeutschland_infra_release(
             json!({ "kind": "ebo-pbf-extract" }),
         ),
         (
-            "gtfs-region-20260812-v2.json",
+            config.gtfs_artifact.as_str(),
             json!({
                 "kind": "gtfs-planning-snapshot",
+                "serviceDate": config.service_date,
                 "stateHash": pointer_string(&gtfs, "/snapshotHash", "GTFS-Zustandshash")?,
             }),
         ),
@@ -535,11 +666,17 @@ pub fn build_mitteldeutschland_infra_release(
         .ok_or_else(|| ReleaseManifestError::new("Fahrstrassen sind ungueltig."))?;
     let release = json!({
         "schema": "zugfolge-infra-release/v1",
-        "releaseId": "infra-mitteldeutschland-b-2026.1",
+        "releaseId": config.release_id,
         "status": "qualified",
-        "regionId": "mitteldeutschland-b",
-        "regionVariant": "B",
-        "timetableYear": 2026,
+        "regionId": config.region_id,
+        "regionVariant": config.region_variant,
+        "timetableYear": config.timetable_year,
+        "buildContract": {
+            "schema": config.schema,
+            "sha256": sha256(build_config),
+            "serviceDate": config.service_date,
+            "gtfsArtifact": config.gtfs_artifact,
+        },
         "validFrom": pointer_string(&operational, "/network/validFrom", "Gueltigkeitsbeginn")?,
         "validUntil": pointer_string(&operational, "/network/validUntil", "Gueltigkeitsende")?,
         "decisions": [
@@ -592,10 +729,10 @@ pub fn build_mitteldeutschland_infra_release(
             "validationHash": pointer_string(&validation, "/validationHash", "Validierungshash")?,
         },
         "releaseApproval": {
-            "releaseResponsible": "Sebastian Barowski",
-            "responsibilityGrantedBy": "user-approval-2026-08-12",
-            "activationAllowed": true,
-            "activationAuthority": "game-system-only",
+            "releaseResponsible": config.release_approval.release_responsible,
+            "responsibilityGrantedBy": config.release_approval.responsibility_granted_by,
+            "activationAllowed": config.release_approval.activation_allowed,
+            "activationAuthority": config.release_approval.activation_authority,
         },
     });
     Ok(release)

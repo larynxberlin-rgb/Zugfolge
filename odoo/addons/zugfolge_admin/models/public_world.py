@@ -1,16 +1,15 @@
 import hashlib
 import json
-import re
 from datetime import datetime, timezone
 
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, ValidationError
 
 from .admin_request import validate_serialized_starting_capital_policy
+from .rfc3339 import rfc3339_utc
 
 PUBLIC_SNAPSHOT_VERSION = "zugfolge-public-world-snapshot/v1"
 MAX_SAFE_INTEGER = 9_007_199_254_740_991
-RFC3339_WITH_ZONE = re.compile(r"^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$")
 FORBIDDEN_PUBLIC_KEYS = {
     "keycloakSubject", "email", "partnerId", "partnerReference", "accountId", "playerId",
     "operatorId", "operatorIds", "activityHistory", "loginAt", "paymentReference", "orderReference",
@@ -26,20 +25,6 @@ def _assert_public_payload(value, path="snapshot"):
             if key in FORBIDDEN_PUBLIC_KEYS:
                 raise ValidationError(_("Personenbezogenes Feld %s ist in einer oeffentlichen Projektion verboten.") % (path + "." + key))
             _assert_public_payload(item, path + "." + key)
-
-
-def _rfc3339_utc(value, field_name, required=True):
-    if value is None and not required:
-        return False
-    if not isinstance(value, str) or not RFC3339_WITH_ZONE.fullmatch(value):
-        raise ValidationError(_("%(field)s braucht einen RFC3339-Zeitstempel mit Zeitzone.", field=field_name))
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as error:
-        raise ValidationError(_("%(field)s braucht einen gueltigen RFC3339-Zeitstempel.", field=field_name)) from error
-    if parsed.utcoffset() is None:
-        raise ValidationError(_("%(field)s braucht eine explizite Zeitzone.", field=field_name))
-    return parsed.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 class ZugfolgeWorldProjectionPublic(models.Model):
@@ -81,6 +66,7 @@ class ZugfolgeWorldProjectionPublic(models.Model):
         world_id = envelope.get("worldId")
         if not isinstance(body, dict) or body.get("projectionVersion") != PUBLIC_SNAPSHOT_VERSION or body.get("worldId") != world_id:
             raise ValidationError(_("Oeffentlicher Weltsnapshot verletzt Version oder Weltbindung."))
+        occurred_at = rfc3339_utc(envelope.get("occurredAt"), "occurredAt")
         _assert_public_payload(body)
         for field_name in ("totalOperators", "capacity", "freePlaces"):
             if (not isinstance(body.get(field_name), int) or isinstance(body.get(field_name), bool)
@@ -102,10 +88,10 @@ class ZugfolgeWorldProjectionPublic(models.Model):
         if remaining is not None and (not isinstance(remaining, int) or isinstance(remaining, bool) or remaining < 0 or remaining > MAX_SAFE_INTEGER):
             raise ValidationError(_("Verbleibende Weltlaufzeit muss eine nichtnegative Ganzzahl oder null sein."))
         mode, amount, display = validate_serialized_starting_capital_policy(body.get("startingCapitalPolicy"))
-        generated_at = _rfc3339_utc(body.get("generatedAt"), "generatedAt")
-        authoritative_as_of = _rfc3339_utc(body.get("authoritativeAsOf"), "authoritativeAsOf")
-        starts_at = _rfc3339_utc(body.get("startsAt"), "startsAt")
-        ends_at = _rfc3339_utc(body.get("endsAt"), "endsAt", required=False)
+        generated_at = rfc3339_utc(body.get("generatedAt"), "generatedAt")
+        authoritative_as_of = rfc3339_utc(body.get("authoritativeAsOf"), "authoritativeAsOf")
+        starts_at = rfc3339_utc(body.get("startsAt"), "startsAt")
+        ends_at = rfc3339_utc(body.get("endsAt"), "endsAt", required=False)
         values = {
             "public_projection_version": PUBLIC_SNAPSHOT_VERSION,
             "public_description": body.get("shortDescription"),
@@ -138,7 +124,7 @@ class ZugfolgeWorldProjectionPublic(models.Model):
             values.update({
                 "world_id": world_id, "world_name": body.get("worldName", world_id),
                 "projection_revision": body.get("authoritativeAsOf"),
-                "observed_at": _rfc3339_utc(envelope.get("occurredAt"), "occurredAt"),
+                "observed_at": occurred_at,
                 "freshness": "delayed", "payload_hash": values["public_payload_hash"],
             })
             return self.with_context(zugfolge_game_projection=True).create(values)

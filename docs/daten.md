@@ -24,6 +24,23 @@ entscheidet datenbasiert, welcher Abschnitt Qualitätsklasse A erreichen kann un
 welcher konservativ als B geführt wird. Die Qualitätsklassen sind damit kein
 Notbehelf, sondern das Ergebnis einer Messung.
 
+### 1.1 EBO-Grenze für Punktobjekte
+
+Signale, Weichen, punktförmige Konfliktressourcen und `rail_context` werden
+nur exportiert, wenn ihre Knotenkennung zu mindestens einem nach dem
+Netzfilter erhaltenen EBO-Weg gehört. Isolierte Punktobjekte bleiben ebenso
+draußen wie Knoten mit eindeutigen BOStrab-/Nicht-EBO-Tags. Gehört derselbe
+Knoten zugleich zu einem erhaltenen EBO-Weg und einem ausgeschlossenen
+Bahnweg, gilt er fail-closed als nicht freigegeben. Qualitätsklasse C
+beschreibt nur unzureichende Daten **innerhalb** dieses EBO-Ausschnitts und
+erweitert den Produktscope nicht.
+
+Der vorgelagerte PBF-Ausschnitt bewahrt deshalb ausgeschlossene Tram-,
+Stadtbahn-, U-Bahn-, Schmalspur-, Standseil- und Einschienenbahnwege als reine
+Scope-Evidenz. Ihre Kanten bestehen den Netzfilter weiterhin nicht und können
+nie zu Tracks werden; ihre Knotenzugehörigkeit verhindert lediglich, dass ein
+gemischt genutztes Punktobjekt nach dem Wegfilter fälschlich als EBO gilt.
+
 ## 2. Quellen und Rechte
 
 **Grundregel: Ohne dokumentierte Freigabe kein Import.** Die Pilotregion muss

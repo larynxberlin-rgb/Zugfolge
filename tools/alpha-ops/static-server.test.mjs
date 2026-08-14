@@ -5,8 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { createStaticServer, runtimeConfiguration } from "./static-server.mjs";
+import { LIVEMAP_READ_MODEL_USER_VERSION } from "../tiles/livemap-read-model.mjs";
 
-const releaseId = "infra-deutschland-2026.1";
+const releaseId = "infra-deutschland-2026.2";
 const publicBasePath = `/artifacts/maps/${releaseId}`;
 
 function parseEnvironmentExample(source) {
@@ -20,24 +21,33 @@ function parseEnvironmentExample(source) {
     }));
 }
 
-test("Paketplan, Alpha-Compose und Runtime-Konfiguration verwenden dieselbe Releasewurzel", async () => {
-  const [planSource, compose, environmentSource] = await Promise.all([
-    readFile(new URL("../tiles/map-package.annual-2026.plan.json", import.meta.url), "utf8"),
+test("Paketplan, ReadModel v3, Alpha-Compose und Runtime-Konfiguration verwenden dieselbe Releasewurzel", async () => {
+  const [planSource, readModelSpecSource, compose, environmentSource] = await Promise.all([
+    readFile(new URL("../tiles/map-package.annual-2026.2.plan.json", import.meta.url), "utf8"),
+    readFile(new URL("../tiles/livemap-read-model.annual-2026.2.json", import.meta.url), "utf8"),
     readFile(new URL("../../compose.alpha.yml", import.meta.url), "utf8"),
     readFile(new URL("../../.env.example", import.meta.url), "utf8"),
   ]);
   const plan = JSON.parse(planSource);
+  const readModelSpec = JSON.parse(readModelSpecSource);
   const environment = parseEnvironmentExample(environmentSource);
   const readModel = plan.auxiliaryFiles.find((file) => file.kind === "read-model");
 
+  assert.equal(plan.version, "2026.2");
   assert.equal(plan.runtime.publicBasePath, publicBasePath);
-  assert.equal(environment.MAP_RELEASE_ID, releaseId);
-  assert.equal(environment.MAP_RELEASE_HOST_DIR, `./var/maps/releases/${releaseId}`);
-  assert.equal(environment.MAP_BASEMAP_STYLE_URL, plan.runtime.basemapStyleUrl);
-  assert.equal(environment.MAP_GERMANY_PMTILES_URL, plan.runtime.infrastructurePmtilesUrl);
+  assert.equal(readModelSpec.infrastructureReleaseId, releaseId);
+  assert.equal(readModelSpec.config.infrastructureReleaseId, releaseId);
+  assert.equal(LIVEMAP_READ_MODEL_USER_VERSION, 3);
+  assert.equal(environment.MAP_RELEASE_ID, undefined);
+  assert.equal(environment.MAP_RELEASE_DEPLOYMENT_HOST_ROOT, "./var/maps");
+  assert.equal(environment.MAP_RELEASE_HOST_DIR, undefined);
+  assert.equal(environment.MAP_BASEMAP_STYLE_URL, undefined);
+  assert.equal(environment.MAP_GERMANY_PMTILES_URL, undefined);
   assert.equal(readModel?.installPath, "read-model.sqlite");
 
   const defaults = runtimeConfiguration({});
+  assert.equal(defaults.livemapOidcClientId, "livemap");
+  assert.equal(runtimeConfiguration({ LIVEMAP_OIDC_CLIENT_ID: "game-web" }).livemapOidcClientId, "game-web");
   assert.equal(defaults.mapBasemapStyleUrl, plan.runtime.basemapStyleUrl);
   assert.equal(defaults.mapGermanyPmtilesUrl, plan.runtime.infrastructurePmtilesUrl);
   assert.throws(
@@ -46,18 +56,24 @@ test("Paketplan, Alpha-Compose und Runtime-Konfiguration verwenden dieselbe Rele
   );
 
   assert.match(compose, /LIVEMAP_READ_MODEL_PATH: \/map-release\/read-model\.sqlite/u);
+  const livemapService = compose.slice(compose.indexOf("  livemap:"), compose.indexOf("  operations-center:"));
+  const gameWebService = compose.slice(compose.indexOf("  game-web:"), compose.indexOf("  livemap:"));
+  assert.match(livemapService, /LIVEMAP_OIDC_CLIENT_ID: "\$\{LIVEMAP_OIDC_CLIENT_ID:-livemap\}"/u);
+  assert.doesNotMatch(gameWebService, /LIVEMAP_OIDC_CLIENT_ID/u);
   assert.match(
     compose,
-    /\$\{MAP_RELEASE_HOST_DIR:-\.\/var\/maps\/releases\/infra-deutschland-2026\.1\}:\/map-release:ro/u,
+    /\$\{MAP_RELEASE_DEPLOYMENT_HOST_ROOT:\?[^}]+\}\/\$\{MAP_RELEASE_HOST_DIR:\?[^}]+\}:\/map-release:ro/u,
   );
   assert.match(
     compose,
-    /\$\{MAP_RELEASE_HOST_DIR:-\.\/var\/maps\/releases\/infra-deutschland-2026\.1\}:\/map-artifacts\/maps\/\$\{MAP_RELEASE_ID:-infra-deutschland-2026\.1\}:ro/u,
+    /\$\{MAP_RELEASE_DEPLOYMENT_HOST_ROOT:\?[^}]+\}\/\$\{MAP_RELEASE_HOST_DIR:\?[^}]+\}:\/map-artifacts\/maps\/\$\{MAP_RELEASE_ID:\?[^}]+\}:ro/u,
   );
   assert.match(compose, /STATIC_ARTIFACT_ROOT: \/map-artifacts/u);
-  assert.ok(compose.includes(`MAP_RELEASE_ID: "\${MAP_RELEASE_ID:-${releaseId}}"`));
-  assert.ok(compose.includes(`MAP_BASEMAP_STYLE_URL: "\${MAP_BASEMAP_STYLE_URL:-${plan.runtime.basemapStyleUrl}}"`));
-  assert.ok(compose.includes(`MAP_GERMANY_PMTILES_URL: "\${MAP_GERMANY_PMTILES_URL:-${plan.runtime.infrastructurePmtilesUrl}}"`));
+  assert.match(compose, /MAP_RELEASE_ID: "\$\{MAP_RELEASE_ID:\?[^}]+\}"/u);
+  assert.match(compose, /MAP_BASEMAP_STYLE_URL: "\$\{MAP_BASEMAP_STYLE_URL:\?[^}]+\}"/u);
+  assert.match(compose, /MAP_GERMANY_PMTILES_URL: "\$\{MAP_GERMANY_PMTILES_URL:\?[^}]+\}"/u);
+  assert.doesNotMatch(compose, /infra-deutschland-2026\.1/u);
+  assert.doesNotMatch(environmentSource, /infra-deutschland-2026\.1/u);
 });
 
 test("statischer Server liefert das versionierte Kartenpaket mit Byte-Ranges aus", async () => {
@@ -79,6 +95,7 @@ test("statischer Server liefert das versionierte Kartenpaket mit Byte-Ranges aus
     artifactRootDirectory: artifactRoot,
     environment: {
       GAME_API_INTERNAL_URL: "http://game-api:3000",
+      LIVEMAP_OIDC_CLIENT_ID: "game-web",
       MAP_RELEASE_ID: releaseId,
       MAP_BASEMAP_STYLE_URL: `${publicBasePath}/style.json`,
       MAP_GERMANY_PMTILES_URL: `${publicBasePath}/${releaseId}.pmtiles`,
@@ -102,6 +119,7 @@ test("statischer Server liefert das versionierte Kartenpaket mit Byte-Ranges aus
       .replace(/;\s*$/u, ""));
     assert.equal(config.mapBasemapStyleUrl, `${publicBasePath}/style.json`);
     assert.equal(config.mapGermanyPmtilesUrl, `${publicBasePath}/${releaseId}.pmtiles`);
+    assert.equal(config.livemapOidcClientId, "game-web");
 
     const rangeResponse = await fetch(`${origin}${publicBasePath}/${releaseId}.pmtiles`, {
       headers: { range: "bytes=1-3" },

@@ -5,7 +5,7 @@ from odoo.tests.common import TransactionCase
 from ..controllers.main import _find_admin_request_for_game_result
 from ..models.admin_request import format_cents_german, parse_german_currency_to_cents
 from ..models.admin_capability import GLOBAL_WORLD_DEPLOY_CAPABILITY_SCOPE_ID
-from ..upgrade import backfill_legacy_admin_request_worlds
+from ..upgrade import backfill_legacy_admin_request_worlds, backfill_legacy_deployment_audit
 
 
 class TestZugfolgeAdminRequest(TransactionCase):
@@ -16,6 +16,37 @@ class TestZugfolgeAdminRequest(TransactionCase):
             "observed_at": "2026-01-01 00:00:00", "freshness": "delayed", "payload_hash": "a" * 64,
             "profile_kind": "public",
         })
+
+    def _authoritative_world_start_projection(self, world_id, deployment_hash, revision, message_id, blueprint_hash=None):
+        blueprint_hash = blueprint_hash or ("b" * 64)
+        return {
+            "schemaVersion": "zugfolge-odoo/v1",
+            "messageId": message_id,
+            "messageType": "world.projection",
+            "worldId": world_id,
+            "correlationId": "world-start:%s:%s" % (world_id, revision),
+            "occurredAt": "2026-01-01T00:%02d:00Z" % revision,
+            "payload": {
+                "worldName": "Testwelt",
+                "projectionRevision": deployment_hash,
+                "projectionKind": "zugfolge-authoritative-world-start-projection/v1",
+                "authoritative": True,
+                "freshness": "live",
+                "profileKind": "public",
+                "blueprintHash": blueprint_hash,
+                "deploymentHash": deployment_hash,
+                "deploymentRevision": revision,
+                "startingCapitalPolicy": {"mode": "finite", "amountCents": "1000000"},
+                "deploymentAuthorization": {
+                    "schemaVersion": "zugfolge-authoritative-world-start-projection/v1",
+                    "deploymentHash": deployment_hash,
+                    "deploymentRevision": revision,
+                    "algorithm": "Ed25519",
+                    "keyId": "alpha-release-2026",
+                    "valueBase64": "A" * 86 + "==",
+                },
+            },
+        }
 
     def _world_deploy_values(self, policy=None, amount_input="10.000,00"):
         policy = policy or {"mode": "finite", "amountCents": "1000000"}
@@ -29,20 +60,22 @@ class TestZugfolgeAdminRequest(TransactionCase):
             "world_kind": "public",
             "ranking_status": "ranked",
             "schedule_period_weeks": 4,
-            "world_epoch": "2026-12-13 00:00:00",
+            "world_epoch": "2026-12-14 00:00:00",
             "starting_capital_mode": policy["mode"],
             "starting_capital_input": amount_input,
             "deployment_hash": deployment_hash,
+            "deployment_revision": 1,
             "signed_world_deployment": {
                 "deploymentHash": deployment_hash,
                 "deployment": {
                     "worldId": "22222222-2222-4222-8222-222222222222",
+                    "deploymentRevision": 1,
                     "worldDefinition": {
                         "name": "Oeffentliche Alpha-Welt",
                         "kind": "public",
                         "rankingStatus": "ranked",
                         "schedulePeriodWeeks": 4,
-                        "epoch": "2026-12-13T00:00:00.000Z",
+                        "epoch": "2026-12-14T00:00:00.000Z",
                     },
                     "blueprint": {"profileKind": "public", "startingCapitalPolicy": policy},
                 },
@@ -80,6 +113,7 @@ class TestZugfolgeAdminRequest(TransactionCase):
         self.assertEqual(payload["startingCapitalPolicy"], {"mode": "finite", "amountCents": "1000000"})
         self.assertEqual(payload["worldDefinition"]["kind"], "public")
         self.assertEqual(payload["signedDeployment"]["deploymentHash"], "d" * 64)
+        self.assertEqual(payload["deploymentRevision"], 1)
 
     def test_world_deploy_draft_exports_configuration_before_external_signature(self):
         values = self._world_deploy_values()
@@ -87,9 +121,17 @@ class TestZugfolgeAdminRequest(TransactionCase):
         values.pop("deployment_hash")
         request = self.env["zugfolge.admin.request"].create(values)
         self.assertEqual(request.signing_configuration["startingCapitalPolicy"], {"mode": "finite", "amountCents": "1000000"})
-        self.assertEqual(request.signing_configuration["worldDefinition"]["epoch"], "2026-12-13T00:00:00Z")
+        self.assertEqual(request.signing_configuration["deploymentRevision"], 1)
+        self.assertEqual(request.signing_configuration["worldDefinition"]["epoch"], "2026-12-14T00:00:00Z")
         with self.assertRaises(ValidationError):
             request.action_submit()
+
+    def test_world_deploy_rejects_epoch_outside_monday_midnight_utc(self):
+        for invalid_epoch in ("2026-12-13 00:00:00", "2026-12-14 00:00:01"):
+            values = self._world_deploy_values()
+            values["world_epoch"] = invalid_epoch
+            with self.assertRaisesRegex(ValidationError, "Montag um 00:00:00 UTC"):
+                self.env["zugfolge.admin.request"].create(values)
 
     def test_public_world_deploy_draft_defaults_to_zero_starting_capital(self):
         values = self._world_deploy_values()
@@ -494,7 +536,7 @@ class TestZugfolgeAdminRequest(TransactionCase):
     def test_pseudonymized_feedback_projection_is_immutable_but_triageable(self):
         feedback = self.env["zugfolge.feedback"].with_context(zugfolge_game_projection=True).upsert_game_projection({
             "messageId": "feedback-message-1", "messageType": "alpha.feedback.projection",
-            "worldId": self.projection.world_id, "occurredAt": "2026-01-01 00:05:00",
+            "worldId": self.projection.world_id, "occurredAt": "2026-01-01T00:05:00Z",
             "payload": {
                 "feedbackReference": "feedback-1", "participantPseudonym": "a" * 64,
                 "releaseHash": "b" * 64, "fromS": 10, "untilS": 20, "category": "usability",
@@ -503,6 +545,7 @@ class TestZugfolgeAdminRequest(TransactionCase):
         })
         self.assertEqual(feedback.participant_pseudonym, "a" * 64)
         self.assertNotIn("@", feedback.participant_pseudonym)
+        self.assertEqual(str(feedback.submitted_at), "2026-01-01 00:05:00")
         self.assertFalse(feedback.env.context.get("zugfolge_game_projection"))
         with self.assertRaises(AccessError):
             feedback.write({"body": "Manipuliert"})
@@ -510,7 +553,7 @@ class TestZugfolgeAdminRequest(TransactionCase):
         self.assertEqual(feedback.triage_state, "triaged")
         replay = self.env["zugfolge.feedback"].with_context(zugfolge_game_projection=True).upsert_game_projection({
             "messageId": "feedback-message-1-replay", "messageType": "alpha.feedback.projection",
-            "worldId": self.projection.world_id, "occurredAt": "2026-01-01 00:05:00",
+            "worldId": self.projection.world_id, "occurredAt": "2026-01-01T00:05:00Z",
             "payload": {
                 "feedbackReference": "feedback-1", "participantPseudonym": "a" * 64,
                 "releaseHash": "b" * 64, "fromS": 10, "untilS": 20, "category": "usability",
@@ -520,12 +563,24 @@ class TestZugfolgeAdminRequest(TransactionCase):
         self.assertEqual(replay, feedback)
         self.assertFalse(replay.env.context.get("zugfolge_game_projection"))
 
+        with self.assertRaises(ValidationError):
+            self.env["zugfolge.feedback"].with_context(zugfolge_game_projection=True).upsert_game_projection({
+                "messageId": "feedback-message-invalid-time", "messageType": "alpha.feedback.projection",
+                "worldId": self.projection.world_id, "occurredAt": "2026-01-01T00:06:00Z",
+                "payload": {
+                    "feedbackReference": "feedback-invalid-time", "participantPseudonym": "c" * 64,
+                    "message": "Zeitstempel muss abgewiesen werden.", "submittedAt": "",
+                },
+            })
+        self.assertFalse(self.env["zugfolge.feedback"].search([("feedback_reference", "=", "feedback-invalid-time")]))
+
     def test_monitoring_projection_extracts_live_queue_market_and_release_fields(self):
         projected = self.env["zugfolge.world.projection"].with_context(zugfolge_game_projection=True).upsert_game_projection({
             "messageId": "projection-2", "worldId": self.projection.world_id,
-            "occurredAt": "2026-01-01 00:01:00",
+            "occurredAt": "2026-01-01T00:01:00Z",
             "payload": {
                 "worldName": "Testwelt", "projectionRevision": "2", "freshness": "delayed",
+                "simulationTime": "2026-01-01T02:01:00+02:00",
                 "runtimeStatus": "healthy: aktuell", "workerStatus": "healthy: bereit",
                 "infraReleaseHash": "a" * 64, "economyReleaseHash": "b" * 64,
                 "telemetry": {
@@ -545,31 +600,134 @@ class TestZugfolgeAdminRequest(TransactionCase):
         self.assertEqual(projected.market_activity["listings"]["open"], 5)
         self.assertEqual(projected.timetable_release_hash, "c" * 64)
         self.assertEqual(projected.event_age_seconds, 4)
+        self.assertEqual(str(projected.observed_at), "2026-01-01 00:01:00")
+        self.assertEqual(str(projected.simulation_time), "2026-01-01 00:01:00")
 
-    def test_projected_starting_capital_and_deployment_hash_are_readonly_and_immutable(self):
-        projected = self.env["zugfolge.world.projection"].with_context(zugfolge_game_projection=True).upsert_game_projection({
-            "messageId": "projection-capital-1", "worldId": self.projection.world_id,
-            "occurredAt": "2026-01-01 00:01:00",
-            "payload": {
-                "worldName": "Testwelt", "projectionRevision": "capital-1", "freshness": "delayed",
-                "profileKind": "public", "blueprintHash": "b" * 64, "deploymentHash": "d" * 64,
-                "startingCapitalPolicy": {"mode": "finite", "amountCents": "1000000"},
-            },
+    def test_projection_rejects_naive_integration_timestamp_without_mutating_record(self):
+        with self.assertRaises(ValidationError):
+            self.env["zugfolge.world.projection"].with_context(zugfolge_game_projection=True).upsert_game_projection({
+                "messageId": "projection-invalid-time", "worldId": self.projection.world_id,
+                "occurredAt": "2026-01-01 00:01:00",
+                "payload": {"worldName": "Manipuliert", "projectionRevision": "invalid"},
+            })
+        self.projection.invalidate_recordset()
+        self.assertEqual(self.projection.world_name, "Testwelt")
+
+    def test_capability_projection_normalizes_offset_and_rejects_missing_time(self):
+        capability = self.env["zugfolge.admin.capability"].with_context(zugfolge_game_projection=True).upsert_game_projection({
+            "messageId": "capability-time-1", "worldId": self.projection.world_id,
+            "occurredAt": "2026-01-01T02:00:00+02:00",
+            "payload": {"actionType": "world_close", "availability": "available"},
         })
+        self.assertEqual(str(capability.observed_at), "2026-01-01 00:00:00")
+        with self.assertRaises(ValidationError):
+            self.env["zugfolge.admin.capability"].with_context(zugfolge_game_projection=True).upsert_game_projection({
+                "messageId": "capability-time-2", "worldId": self.projection.world_id,
+                "payload": {"actionType": "world_close", "availability": "unavailable"},
+            })
+        capability.invalidate_recordset()
+        self.assertEqual(capability.availability, "available")
+
+    def test_projected_deployment_upgrade_is_monotone_audited_and_idempotent(self):
+        first = self._authoritative_world_start_projection(
+            self.projection.world_id, "d" * 64, 1, "projection-capital-1",
+        )
+        projected = self.env["zugfolge.world.projection"].with_context(
+            zugfolge_game_projection=True,
+        ).upsert_game_projection(first)
         self.assertEqual(projected.starting_capital_preview, "10.000,00 \u20ac")
         self.assertEqual(projected.deployment_hash, "d" * 64)
+        self.assertEqual(projected.deployment_revision, 1)
+        self.assertEqual(projected.deployment_audit_ids.mapped("deployment_hash"), ["d" * 64])
         with self.assertRaises(ValidationError):
             projected.with_context(zugfolge_game_projection=True).write({"deployment_hash": "e" * 64})
+
+        forged = self._authoritative_world_start_projection(
+            self.projection.world_id, "e" * 64, 2, "projection-forged-normal",
+        )
+        forged["payload"].pop("projectionKind")
+        forged["payload"].pop("deploymentAuthorization")
+        forged["payload"].pop("deploymentRevision")
         with self.assertRaises(ValidationError):
             self.env["zugfolge.world.projection"].with_context(zugfolge_game_projection=True).upsert_game_projection({
                 "messageId": "projection-capital-2", "worldId": self.projection.world_id,
-                "occurredAt": "2026-01-01 00:02:00",
+                "occurredAt": "2026-01-01T00:02:00Z",
                 "payload": {
                     "worldName": "Testwelt", "projectionRevision": "capital-2", "freshness": "delayed",
                     "profileKind": "public", "blueprintHash": "b" * 64, "deploymentHash": "d" * 64,
                     "startingCapitalPolicy": {"mode": "finite", "amountCents": "0"},
                 },
             })
+        with self.assertRaises(ValidationError):
+            self.env["zugfolge.world.projection"].with_context(
+                zugfolge_game_projection=True,
+            ).upsert_game_projection(forged)
+
+        second = self._authoritative_world_start_projection(
+            self.projection.world_id, "e" * 64, 2, "projection-capital-2-authoritative", "c" * 64,
+        )
+        projected = self.env["zugfolge.world.projection"].with_context(
+            zugfolge_game_projection=True,
+        ).upsert_game_projection(second)
+        self.assertEqual(projected.deployment_hash, "e" * 64)
+        self.assertEqual(projected.deployment_revision, 2)
+        self.assertEqual(projected.blueprint_hash, "c" * 64)
+        self.assertEqual(projected.deployment_audit_ids.mapped("deployment_hash"), ["d" * 64, "e" * 64])
+        self.assertEqual(projected.deployment_audit_ids[-1].previous_deployment_hash, "d" * 64)
+
+        # A delivery replay with a new transport receipt is a projection no-op.
+        replay = {**second, "messageId": "projection-capital-2-replay"}
+        self.env["zugfolge.world.projection"].with_context(
+            zugfolge_game_projection=True,
+        ).upsert_game_projection(replay)
+        self.assertEqual(len(projected.deployment_audit_ids), 2)
+
+        stale = self._authoritative_world_start_projection(
+            self.projection.world_id, "f" * 64, 2, "projection-stale-revision", "a" * 64,
+        )
+        with self.assertRaisesRegex(ValidationError, "exakt naechste"):
+            self.env["zugfolge.world.projection"].with_context(
+                zugfolge_game_projection=True,
+            ).upsert_game_projection(stale)
+
+        foreign_world_id = "33333333-3333-4333-8333-333333333333"
+        foreign = self._authoritative_world_start_projection(
+            foreign_world_id, "9" * 64, 1, "projection-foreign-world", "8" * 64,
+        )
+        self.env["zugfolge.world.projection"].with_context(
+            zugfolge_game_projection=True,
+        ).upsert_game_projection(foreign)
+        projected.invalidate_recordset()
+        self.assertEqual(projected.deployment_hash, "e" * 64)
+        self.assertEqual(projected.deployment_revision, 2)
+        self.assertEqual(
+            self.env["zugfolge.world.projection"].search([("world_id", "=", foreign_world_id)]).deployment_hash,
+            "9" * 64,
+        )
+
+    def test_legacy_deployment_upgrade_backfills_generation_one_without_deleting_the_mirror(self):
+        self.env.cr.execute(
+            "UPDATE zugfolge_world_projection SET deployment_hash = %s, blueprint_hash = %s WHERE id = %s",
+            ["7" * 64, "6" * 64, self.projection.id],
+        )
+        self.projection.invalidate_recordset()
+
+        self.assertEqual(backfill_legacy_deployment_audit(self.env.cr), 2)
+        self.projection.invalidate_recordset()
+        self.assertTrue(self.projection.exists())
+        self.assertEqual(self.projection.deployment_revision, 1)
+        self.assertEqual(self.projection.deployment_audit_ids.deployment_hash, "7" * 64)
+        self.assertEqual(backfill_legacy_deployment_audit(self.env.cr), 0)
+
+        upgraded = self._authoritative_world_start_projection(
+            self.projection.world_id, "8" * 64, 2, "projection-after-addon-upgrade", "5" * 64,
+        )
+        self.env["zugfolge.world.projection"].with_context(
+            zugfolge_game_projection=True,
+        ).upsert_game_projection(upgraded)
+        self.projection.invalidate_recordset()
+        self.assertEqual(self.projection.deployment_revision, 2)
+        self.assertEqual(self.projection.deployment_audit_ids.mapped("deployment_hash"), ["7" * 64, "8" * 64])
 
     def test_manual_disruption_is_prepared_but_cannot_dispatch_before_m8_capability(self):
         request = self.env["zugfolge.admin.request"].create({

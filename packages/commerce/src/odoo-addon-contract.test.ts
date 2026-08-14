@@ -14,6 +14,7 @@ describe("Odoo-Administrationsmodul", () => {
       "infra_release_import.py",
       "participation.py",
       "projection_receipt.py",
+      "projection.py",
       "public_world.py",
       "res_users.py",
     ];
@@ -22,7 +23,7 @@ describe("Odoo-Administrationsmodul", () => {
     );
     const source = models.join("\n");
     expect(source).not.toContain("_sql_constraints");
-    expect(source.match(/models\.Constraint\(/g)).toHaveLength(9);
+    expect(source.match(/models\.Constraint\(/g)).toHaveLength(12);
     for (const uniqueDefinition of [
       "unique(correlation_id)",
       "unique(world_id, action_type)",
@@ -31,11 +32,33 @@ describe("Odoo-Administrationsmodul", () => {
       "unique(partner_id, world_id)",
       "unique(idempotency_key)",
       "unique(message_id)",
+      "unique(world_id, deployment_revision)",
+      "unique(world_id, deployment_hash)",
       "unique(projection_id)",
       "unique(zugfolge_keycloak_subject)",
     ]) {
       expect(source).toContain(uniqueDefinition);
     }
+  });
+
+  it("macht die Zugfolge-App fuer den Odoo-Administrator sichtbar und verwaltbar", async () => {
+    const manifest = await readFile(resolve(addon, "__manifest__.py"), "utf8");
+    const security = await readFile(resolve(addon, "security/zugfolge_admin_security.xml"), "utf8");
+    const views = await readFile(resolve(addon, "views/zugfolge_admin_views.xml"), "utf8");
+
+    expect(manifest).toContain('"version": "19.0.2.0.3"');
+    expect(manifest).toContain('"application": True');
+    expect(security.match(/model="res\.groups\.privilege"/g)).toHaveLength(4);
+    expect(security.match(/<field name="privilege_id"/g)).toHaveLength(4);
+    expect(security).toContain("Command.link(ref('base.group_user'))");
+    expect(security).toContain("Command.link(ref('base.group_system'))");
+    expect(security).toContain("Command.unlink(ref('zugfolge_admin.group_zugfolge_admin'))");
+    expect(security).not.toContain('name="user_ids"');
+    expect(security).not.toContain("ref('base.user_admin')");
+    expect(security).not.toContain("ref('base.user_root')");
+    expect(views).toMatch(
+      /<menuitem id="menu_zugfolge_root"[^>]*action="action_zugfolge_world_projection"[^>]*groups="zugfolge_admin\.group_zugfolge_admin,zugfolge_admin\.group_zugfolge_telemetry"/,
+    );
   });
 
   it("verwendet native Odoo-Grundbausteine und kapselt nur die Zugfolge-Grenze", async () => {
@@ -72,7 +95,18 @@ describe("Odoo-Administrationsmodul", () => {
   it("hat eine signierte Projektions-, Replay- und Reconciliation-Grenze", async () => {
     const controller = await readFile(resolve(addon, "controllers/main.py"), "utf8");
     const receipt = await readFile(resolve(addon, "models/projection_receipt.py"), "utf8");
+    const timestamp = await readFile(resolve(addon, "models/rfc3339.py"), "utf8");
+    const timestampConsumers = await Promise.all(
+      ["projection.py", "admin_capability.py", "feedback.py", "public_world.py"].map((file) =>
+        readFile(resolve(addon, "models", file), "utf8"),
+      ),
+    );
     expect(controller).toContain("hmac.compare_digest");
+    expect(controller).toContain("RFC3339_WITH_ZONE.fullmatch(timestamp)");
+    expect(controller.match(/request\.get_json_data\(\)/g)).toHaveLength(2);
+    expect(controller).not.toContain("request.jsonrequest");
+    expect(controller.match(/type="jsonrpc"/g)).toHaveLength(2);
+    expect(controller).not.toContain('type="json"');
     expect(controller).toContain("/zugfolge/reconciliation/snapshot");
     expect(controller).toContain("/zugfolge/metrics");
     expect(controller).toContain("admin.capability.projection");
@@ -80,6 +114,18 @@ describe("Odoo-Administrationsmodul", () => {
     expect(controller).toContain("{**result, \"state\": state}");
     expect(receipt).toContain("unique(message_id)");
     expect(receipt).toContain("unveränderlich");
+    expect(timestamp).toContain("RFC3339_WITH_ZONE");
+    expect(timestamp).toContain("astimezone(timezone.utc).replace(tzinfo=None)");
+    for (const consumer of timestampConsumers) {
+      expect(consumer).toContain("rfc3339_utc");
+    }
+    expect(timestampConsumers.join("\n")).not.toMatch(
+      /["'](?:observed_at|simulation_time|submitted_at)["']:\s*(?:payload|body|envelope)\.get\(/,
+    );
+    const projection = timestampConsumers[0]!;
+    expect(projection).toContain("AUTHORITATIVE_WORLD_START_PROJECTION");
+    expect(projection).toContain("record.deployment_revision + 1");
+    expect(projection).toContain('self.env["zugfolge.world.deployment.audit"]');
   });
 });
 

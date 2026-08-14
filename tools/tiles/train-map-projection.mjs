@@ -5,6 +5,9 @@ import { basename, dirname, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { DatabaseSync } from "node:sqlite";
 
+import { alphaHash } from "../../packages/alpha/dist/index.js";
+import { decodeEconomyValue } from "../../packages/economy/dist/index.js";
+
 export const TRAIN_MAP_PROJECTION_SCHEMA = "zugfolge-train-map-projection/v2";
 export const TRAIN_MAP_PROJECTION_REPORT_SCHEMA = "zugfolge-train-map-projection-report/v2";
 export const TRAIN_MAP_PROJECTION_BUILD_SPEC_SCHEMA = "zugfolge-train-map-projection-build-spec/v1";
@@ -341,9 +344,17 @@ function unwrapNetwork(value) {
 
 function unwrapDeployment(value) {
   const root = record(value, "Alpha-Deployment-Datei");
-  const deployment = record(root.deployment, "alpha-world-deployment.deployment");
+  const deployment = record(
+    decodeEconomyValue(root.deployment),
+    "alpha-world-deployment.deployment",
+  );
   invariant(deployment.schema === "zugfolge-alpha-world-deployment/v1", "Alpha-Deployment besitzt nicht das v1-Schema.");
-  return deployment;
+  const deploymentHash = alphaHash(deployment.schema, deployment);
+  invariant(
+    root.deploymentHash === undefined || root.deploymentHash === deploymentHash,
+    "Alpha-Deployment-Huelle besitzt einen abweichenden Deploymenthash.",
+  );
+  return { deployment, deploymentHash };
 }
 
 function validateSpec(spec) {
@@ -1254,7 +1265,7 @@ function trainGeometrySummary(trainProjection, resourceProjection, displayProjec
 export async function buildTrainMapProjection(rawSpec) {
   const spec = { ...rawSpec };
   validateSpec(spec);
-  const [networkHash, deploymentHash, tracksHash, corridorsHash, networkValue, deploymentValue] = await Promise.all([
+  const [networkHash, deploymentFileHash, tracksHash, corridorsHash, networkValue, deploymentValue] = await Promise.all([
     sha256File(spec.operationalNetwork),
     sha256File(spec.deployment),
     sha256File(spec.tracks),
@@ -1263,7 +1274,7 @@ export async function buildTrainMapProjection(rawSpec) {
     readJson(spec.deployment, "Alpha-Deployment"),
   ]);
   const network = unwrapNetwork(networkValue);
-  const deployment = unwrapDeployment(deploymentValue);
+  const { deployment, deploymentHash } = unwrapDeployment(deploymentValue);
   invariant(deployment.worldId === spec.worldId, "Alpha-Deployment verletzt die Weltbindung der Projektion.");
   invariant(deployment.regionalSimulation?.worldId === spec.worldId, "Regionale Simulation verletzt die Weltbindung der Projektion.");
   invariant(network.timetableYear === spec.timetableYear, "Operational Network verletzt das Fahrplanjahr der Projektion.");
@@ -1288,12 +1299,13 @@ export async function buildTrainMapProjection(rawSpec) {
       timetableYear: spec.timetableYear,
       operationalRegionId: network.regionId,
       deploymentInfrastructureHash: deployment.infraReleaseHash,
+      deploymentHash,
     },
     inputs: {
       tracks: { file: basename(spec.tracks), sha256: tracksHash },
       corridors: { file: basename(spec.corridors), sha256: corridorsHash },
       operationalNetwork: { file: basename(spec.operationalNetwork), sha256: networkHash },
-      deployment: { file: basename(spec.deployment), sha256: deploymentHash },
+      deployment: { file: basename(spec.deployment), sha256: deploymentFileHash },
     },
     corridorOrientation: { ...corridorData.orientationCounts, rejected: corridorData.rejected },
     tracks: {
@@ -1356,6 +1368,7 @@ export async function inspectTrainMapProjection(path) {
     invariant(applicationId === TRAIN_MAP_PROJECTION_SQLITE_APPLICATION_ID && userVersion === TRAIN_MAP_PROJECTION_SQLITE_USER_VERSION, "Projektions-SQLite besitzt keinen gueltigen Headervertrag.");
     const metadata = Object.fromEntries(database.prepare("SELECT key, value FROM metadata ORDER BY key").all().map((row) => [row.key, row.value]));
     invariant(metadata.schema === TRAIN_MAP_PROJECTION_SCHEMA, "Projektions-SQLite besitzt ein unbekanntes Schema.");
+    invariant(/^[a-f0-9]{64}$/u.test(metadata.deployment_sha256), "Projektions-SQLite besitzt keinen gueltigen Deploymenthash.");
     const schemaObjects = database.prepare("SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name").all();
     const actualSchemaObjects = schemaObjects.map((row) => ({ type: row.type, name: row.name, table: row.tbl_name }));
     invariant(canonicalJson(actualSchemaObjects) === canonicalJson(TRAIN_MAP_PROJECTION_PUBLIC_SCHEMA_OBJECTS), "Projektions-SQLite verletzt die exakte Schemaobjekt-Allowlist.");
@@ -1376,6 +1389,7 @@ export async function inspectTrainMapProjection(path) {
       schema: TRAIN_MAP_PROJECTION_SCHEMA,
       worldId: metadata.world_id,
       infrastructureReleaseId: metadata.infrastructure_release_id,
+      deploymentHash: metadata.deployment_sha256,
       timetableYear: Number(metadata.timetable_year),
       sqliteApplicationId: applicationId,
       sqliteUserVersion: userVersion,

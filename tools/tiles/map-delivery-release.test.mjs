@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,7 +10,10 @@ import {
   buildMapDeliveryRelease,
   buildMapDeliverySources,
   serializeDeliveryJson,
+  signMapDeliveryRelease,
+  verifyMapDeliveryReleaseSignature,
   writeMapDeliveryRelease,
+  writeSignedMapDeliveryRelease,
 } from "./map-delivery-release.mjs";
 
 const HASH_A = "a".repeat(64);
@@ -147,6 +151,40 @@ test("kombinierter Deliveryvertrag bindet das vollständige öffentliche Paket o
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("externer Ed25519-Signer bindet Deliverybytes und wird bei Mutation ungültig", async () => {
+  const root = await fixture();
+  try {
+    const result = await buildMapDeliveryRelease({
+      releaseId: "infra-deutschland-2026.1",
+      timetableYear: 2026,
+      packageSpec: packageSpec(),
+      sourceRoot: root,
+      infraRelease: infraRelease(),
+      mapRelease: mapRelease(),
+      auxiliaryArtifactProofs: [
+        { id: "readmodel", bytes: 16, sha256: HASH_C },
+        { id: "train-projection", bytes: 16, sha256: HASH_D },
+      ],
+    });
+    const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+    const signed = signMapDeliveryRelease(
+      result.release,
+      privateKey.export({ type: "pkcs8", format: "pem" }),
+      "delivery-2026",
+    );
+    const publicKeyPem = publicKey.export({ type: "spki", format: "pem" });
+    assert.equal(signed.approvalGates.signature.status, "passed");
+    assert.equal(verifyMapDeliveryReleaseSignature(signed, publicKeyPem), true);
+    assert.equal(verifyMapDeliveryReleaseSignature({ ...signed, timetableYear: 2027 }, publicKeyPem), false);
+    const output = join(root, "public-output", "release.signed.json");
+    assert.equal(await writeSignedMapDeliveryRelease(signed, output), "written");
+    assert.equal(await writeSignedMapDeliveryRelease(signed, output), "reused");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("öffentlicher Quellenvertrag verwirft interne Validierungsnamen", () => {
   const unsafe = infraRelease();
   unsafe.sources[0].attribution = "interne APN Validierung";

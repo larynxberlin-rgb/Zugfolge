@@ -1,0 +1,20 @@
+{
+  "schema": "zugfolge-semantic-tile-assembly/v1",
+  "allowedSourceRoots": [
+    "var/derived/germany-2026.2",
+    "var/derived/openstation-2026"
+  ],
+  "railCorridors": "var/derived/germany-2026.2/official-enriched-v2/rail-corridors.geojsonseq",
+  "operatingPoints": "var/derived/germany-2026.2/operating-points-v2/operating-points.geojsonseq",
+  "stations": "var/derived/openstation-2026/stations.geojsonseq",
+  "finalMapLayers": {
+    "tracks": "var/derived/germany-2026.2/final-map-layers-v2/tracks.geojsonseq",
+    "platforms": "var/derived/germany-2026.2/final-map-layers-v2/platforms.geojsonseq",
+    "switches": "var/derived/germany-2026.2/final-map-layers-v2/switches.geojsonseq",
+    "signals": "var/derived/germany-2026.2/final-map-layers-v2/signals.geojsonseq",
+    "blocks": "var/derived/germany-2026.2/final-map-layers-v2/blocks.geojsonseq",
+    "conflictResources": "var/derived/germany-2026.2/final-map-layers-v2/conflict-resources.geojsonseq"
+  },
+  "railContext": "var/derived/germany-2026.2/semantic/rail-context.geojsonseq",
+  "outputDirectory": "var/derived/germany-2026.2/semantic-tile-inputs-final-v2"
+}

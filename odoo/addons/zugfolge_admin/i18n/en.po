@@ -1,7 +1,7 @@
 # Translation of Zugfolge Administration to English.
 msgid ""
 msgstr ""
-"Project-Id-Version: zugfolge_admin 19.0.2.0.0\n"
+"Project-Id-Version: zugfolge_admin 19.0.2.0.3\n"
 "Language: en\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 

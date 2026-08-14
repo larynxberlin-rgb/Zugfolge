@@ -1267,6 +1267,65 @@ describe("GET /health", () => {
 });
 
 describe("öffentliche Weltverträge", () => {
+  it("kennzeichnet eine künftige Weltepoche als geplant und öffnet exakt an der Epoche", async () => {
+    const epoch = new Date("2026-08-17T00:00:00.000Z");
+    await (db as ReturnType<typeof drizzle<typeof schema>>).update(worlds)
+      .set({ epoch })
+      .where(eq(worlds.id, WORLD_MIDDLE_GERMANY));
+    let now = new Date(epoch.getTime() - 1);
+    const scheduledApp = buildApp({
+      db,
+      verifyToken: verifyTokenForTest,
+      publicWorldClock: () => now,
+    });
+    await scheduledApp.ready();
+    try {
+      const token = await sign("scheduled-world-player", "Geplanter Eintritt");
+      const contracts = await scheduledApp.inject({
+        method: "GET",
+        url: "/public-world-contracts",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(contracts.statusCode).toBe(200);
+      expect(contracts.json()).toEqual(expect.arrayContaining([expect.objectContaining({
+        worldId: WORLD_MIDDLE_GERMANY,
+        entry: expect.objectContaining({ status: "scheduled", opensAt: epoch.toISOString() }),
+      })]));
+
+      const early = await scheduledApp.inject({
+        method: "POST",
+        url: `/worlds/${WORLD_MIDDLE_GERMANY}/access`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { displayName: "Geplanter Eintritt", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
+      });
+      expect(early.statusCode).toBe(409);
+      expect(early.json()).toEqual(expect.objectContaining({
+        code: "world_not_open",
+        opensAt: epoch.toISOString(),
+      }));
+
+      now = epoch;
+      const openContracts = await scheduledApp.inject({
+        method: "GET",
+        url: "/public-world-contracts",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(openContracts.json()).toEqual(expect.arrayContaining([expect.objectContaining({
+        worldId: WORLD_MIDDLE_GERMANY,
+        entry: expect.objectContaining({ status: "open" }),
+      })]));
+      const open = await scheduledApp.inject({
+        method: "POST",
+        url: `/worlds/${WORLD_MIDDLE_GERMANY}/access`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { displayName: "Geplanter Eintritt", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
+      });
+      expect(open.statusCode).toBe(201);
+    } finally {
+      await scheduledApp.close();
+    }
+  });
+
   it("projiziert No-Wipe, Release-Pins und StartingCapitalPolicy vor dem bestätigten Eintritt", async () => {
     const blueprint = publicBlueprint();
     await (db as ReturnType<typeof drizzle<typeof schema>>).update(alphaWorldProfiles).set({

@@ -234,6 +234,12 @@ describe("GameApiClient", () => {
     expect(JSON.parse(String(fetchImplementation.mock.calls[1]![1]!.body))).toEqual({ displayName: "Anna", acceptedWorldContractHash: "a".repeat(64) });
   });
 
+  it("akzeptiert den geplanten Eintrittsstatus als getrennten Weltvertrag", async () => {
+    const response = { ...worldContractResponse(), entry: { ...(worldContractResponse()["entry"] as Record<string, unknown>), status: "scheduled" } };
+    const client = new GameApiClient("https://api.test", "token", async () => new Response(JSON.stringify([response])));
+    await expect(client.loadPublicWorldContracts()).resolves.toMatchObject([{ entry: { status: "scheduled" } }]);
+  });
+
   it("verwirft fehlerhafte Tutorial- und Vertragsantworten kontrolliert", async () => {
     const invalidContract = new GameApiClient("", "token", async () => new Response(JSON.stringify({ schemaVersion: "zugfolge-cooperation-page/v1", items: [{ schemaVersion: "zugfolge-operator-contract/v1", id: "nur-eine-id" }], nextCursor: null })));
     await expect(invalidContract.loadContracts("world", "operator")).rejects.toThrow(/Vertragsseite\.items\[0\]/);

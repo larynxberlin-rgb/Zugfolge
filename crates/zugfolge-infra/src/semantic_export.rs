@@ -16,7 +16,10 @@ use std::str::FromStr as _;
 use serde_json::{Map, Number, Value, json};
 use sha2::{Digest, Sha256};
 
-use crate::{Coordinate, ImportError, OsmNodeId, PbfDocument, RawEdge, RawGraph, filter_network};
+use crate::{
+    Coordinate, EXCLUDED_RAILWAY_VALUES, ExclusionReason, ImportError, OsmNodeId, PbfDocument,
+    RawEdge, RawGraph, classify, filter_network,
+};
 
 const LAYERS: [(&str, &str); 7] = [
     ("tracks", "tracks.geojsonseq"),
@@ -431,6 +434,83 @@ fn rail_context_kind(tags: &BTreeMap<String, String>) -> Option<&str> {
     }
 }
 
+fn has_explicit_non_ebo_tags(tags: &BTreeMap<String, String>) -> bool {
+    let excluded_mode = tags
+        .get("railway")
+        .is_some_and(|value| EXCLUDED_RAILWAY_VALUES.contains(&value.as_str()))
+        || ["tram", "light_rail", "subway", "funicular", "monorail"]
+            .iter()
+            .any(|key| tags.get(*key).map(String::as_str) == Some("yes"))
+        || tags
+            .get("station")
+            .is_some_and(|value| matches!(value.as_str(), "light_rail" | "subway"));
+    let bostrab_signal = tags
+        .values()
+        .any(|value| value.to_ascii_lowercase().contains("bostrab"));
+    let non_standard_gauge = tags.get("gauge").is_some_and(|value| {
+        value
+            .split(';')
+            .next()
+            .map(str::trim)
+            .and_then(|gauge| gauge.parse::<i64>().ok())
+            != Some(1_435)
+    });
+    let third_rail = tags.get("electrified").map(String::as_str) == Some("rail");
+
+    excluded_mode || bostrab_signal || non_standard_gauge || third_rail
+}
+
+fn is_explicit_non_ebo_railway_way(tags: &BTreeMap<String, String>) -> bool {
+    if has_explicit_non_ebo_tags(tags) {
+        return true;
+    }
+    match classify(tags) {
+        Ok(()) | Err(ExclusionReason::MissingRailwayTag) => false,
+        Err(ExclusionReason::NotRail(value)) => {
+            !matches!(value.as_str(), "platform" | "station" | "halt")
+        }
+        Err(ExclusionReason::Gauge(_) | ExclusionReason::ThirdRail) => true,
+    }
+}
+
+#[derive(Debug)]
+struct EboPointScope {
+    retained_nodes: BTreeSet<i64>,
+    excluded_nodes: BTreeSet<i64>,
+}
+
+impl EboPointScope {
+    fn from_retained_graph(document: &PbfDocument, graph: &RawGraph) -> Self {
+        let retained_way_ids: BTreeSet<i64> = graph
+            .edges()
+            .iter()
+            .map(|edge| edge.way().value())
+            .collect();
+        let mut retained_nodes = BTreeSet::new();
+        let mut excluded_nodes = BTreeSet::new();
+
+        for way in document.ways() {
+            if retained_way_ids.contains(&way.id().value()) {
+                retained_nodes.extend(way.nodes().iter().map(|node| node.value()));
+            }
+            if is_explicit_non_ebo_railway_way(way.tags()) {
+                excluded_nodes.extend(way.nodes().iter().map(|node| node.value()));
+            }
+        }
+
+        Self {
+            retained_nodes,
+            excluded_nodes,
+        }
+    }
+
+    fn contains(&self, node_id: i64, tags: &BTreeMap<String, String>) -> bool {
+        self.retained_nodes.contains(&node_id)
+            && !self.excluded_nodes.contains(&node_id)
+            && !has_explicit_non_ebo_tags(tags)
+    }
+}
+
 fn stable_set_hash(namespace: &str, values: &[String]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(namespace.as_bytes());
@@ -517,15 +597,20 @@ fn add_point_objects(
     graph: &RawGraph,
     track_ids: &[String],
     source_id: &str,
-) -> Result<BTreeSet<i64>, SemanticExportError> {
+) -> Result<(BTreeSet<i64>, BTreeSet<i64>), SemanticExportError> {
     let mut incident = BTreeMap::<i64, Vec<usize>>::new();
     for (index, edge) in graph.edges().iter().enumerate() {
         incident.entry(edge.from().value()).or_default().push(index);
         incident.entry(edge.to().value()).or_default().push(index);
     }
+    let scope = EboPointScope::from_retained_graph(document, graph);
     let mut boundary_nodes = BTreeSet::new();
+    let mut switch_nodes = BTreeSet::new();
     for node in document.nodes() {
         let node_id = node.id().value();
+        if !scope.contains(node_id, node.tags()) {
+            continue;
+        }
         let incident_edges = incident.get(&node_id).cloned().unwrap_or_default();
         let attached = !incident_edges.is_empty();
         let incident_track_ids: Vec<&str> = incident_edges
@@ -533,6 +618,7 @@ fn add_point_objects(
             .map(|index| track_ids[*index].as_str())
             .collect();
         if is_switch(node.tags()) {
+            switch_nodes.insert(node_id);
             let quality = if incident_edges.len() >= 3 { "B" } else { "C" };
             let feature_id = format!("switch:osm-node-{node_id}");
             let mut properties = common_properties(
@@ -645,7 +731,7 @@ fn add_point_objects(
             )?;
         }
     }
-    Ok(boundary_nodes)
+    Ok((boundary_nodes, switch_nodes))
 }
 
 fn add_platforms(
@@ -947,12 +1033,8 @@ fn build_semantic_geojsonseq(
         .collect();
 
     let track_ids = add_tracks(&mut layers, ebo, source_id)?;
-    let boundary_nodes = add_point_objects(&mut layers, document, ebo, &track_ids, source_id)?;
-    let switch_nodes: BTreeSet<i64> = ebo
-        .nodes()
-        .filter(|node| is_switch(node.tags()))
-        .map(|node| node.id().value())
-        .collect();
+    let (boundary_nodes, switch_nodes) =
+        add_point_objects(&mut layers, document, ebo, &track_ids, source_id)?;
     add_platforms(&mut layers, document, source_id)?;
     add_blocks(&mut layers, ebo, &track_ids, &boundary_nodes, source_id)?;
     add_bidirectional_track_sections(&mut layers, ebo, &track_ids, &switch_nodes, source_id)?;
@@ -1062,6 +1144,8 @@ mod tests {
 
     use super::*;
     use crate::{SourceId, import_pbf_document};
+
+    const KNOWN_BOSTRAB_SIGNAL_NODE_ID: i64 = 12_472_736_971;
 
     fn write_varint(buffer: &mut Vec<u8>, mut value: u64) {
         loop {
@@ -1246,6 +1330,17 @@ mod tests {
         block
     }
 
+    fn pbf_fixture(nodes: &[FixtureNode], ways_fixture: &[FixtureWay]) -> Vec<u8> {
+        let mut header = Vec::new();
+        write_string(&mut header, 4, "OsmSchema-V0.6");
+        write_string(&mut header, 4, "DenseNodes");
+        let mut pbf = Vec::new();
+        append_block(&mut pbf, "OSMHeader", &header);
+        append_block(&mut pbf, "OSMData", &dense_nodes(nodes));
+        append_block(&mut pbf, "OSMData", &ways(ways_fixture));
+        pbf
+    }
+
     fn semantic_fixture() -> Vec<u8> {
         let nodes = [
             FixtureNode {
@@ -1329,14 +1424,170 @@ mod tests {
                 tags: vec![("railway", "platform"), ("ref", "1")],
             },
         ];
-        let mut header = Vec::new();
-        write_string(&mut header, 4, "OsmSchema-V0.6");
-        write_string(&mut header, 4, "DenseNodes");
-        let mut pbf = Vec::new();
-        append_block(&mut pbf, "OSMHeader", &header);
-        append_block(&mut pbf, "OSMData", &dense_nodes(&nodes));
-        append_block(&mut pbf, "OSMData", &ways(&ways_fixture));
-        pbf
+        pbf_fixture(&nodes, &ways_fixture)
+    }
+
+    fn ebo_point_scope_fixture() -> Vec<u8> {
+        let nodes = [
+            FixtureNode {
+                id: 1,
+                latitude_e7: 520_000_000,
+                longitude_e7: 130_000_000,
+                tags: vec![("railway", "station"), ("name", "EBO-Test")],
+            },
+            FixtureNode {
+                id: 2,
+                latitude_e7: 520_000_000,
+                longitude_e7: 130_010_000,
+                tags: vec![("railway", "signal"), ("railway:signal:main", "DE-ESO:ks")],
+            },
+            FixtureNode {
+                id: 3,
+                latitude_e7: 520_000_000,
+                longitude_e7: 130_030_000,
+                tags: vec![("railway", "switch")],
+            },
+            FixtureNode {
+                id: 4,
+                latitude_e7: 520_000_000,
+                longitude_e7: 130_040_000,
+                tags: vec![("railway", "buffer_stop")],
+            },
+            FixtureNode {
+                id: 5,
+                latitude_e7: 520_010_000,
+                longitude_e7: 130_040_000,
+                tags: vec![("railway", "buffer_stop")],
+            },
+            FixtureNode {
+                id: 6,
+                latitude_e7: 520_000_000,
+                longitude_e7: 130_020_000,
+                tags: vec![("public_transport", "stop_position"), ("train", "yes")],
+            },
+            FixtureNode {
+                id: 20,
+                latitude_e7: 521_000_000,
+                longitude_e7: 131_000_000,
+                tags: vec![],
+            },
+            FixtureNode {
+                id: 21,
+                latitude_e7: 521_000_000,
+                longitude_e7: 131_020_000,
+                tags: vec![("railway", "switch")],
+            },
+            FixtureNode {
+                id: 22,
+                latitude_e7: 521_000_000,
+                longitude_e7: 131_030_000,
+                tags: vec![("railway", "level_crossing")],
+            },
+            FixtureNode {
+                id: 23,
+                latitude_e7: 521_000_000,
+                longitude_e7: 131_040_000,
+                tags: vec![],
+            },
+            FixtureNode {
+                id: 30,
+                latitude_e7: 522_000_000,
+                longitude_e7: 132_000_000,
+                tags: vec![("railway", "signal"), ("railway:signal:main", "DE-ESO:ks")],
+            },
+            FixtureNode {
+                id: 40,
+                latitude_e7: 523_000_000,
+                longitude_e7: 133_010_000,
+                tags: vec![("railway", "switch")],
+            },
+            FixtureNode {
+                id: 41,
+                latitude_e7: 523_000_000,
+                longitude_e7: 133_000_000,
+                tags: vec![],
+            },
+            FixtureNode {
+                id: 42,
+                latitude_e7: 523_000_000,
+                longitude_e7: 133_020_000,
+                tags: vec![],
+            },
+            FixtureNode {
+                id: 43,
+                latitude_e7: 523_010_000,
+                longitude_e7: 133_010_000,
+                tags: vec![],
+            },
+            FixtureNode {
+                id: 50,
+                latitude_e7: 524_000_000,
+                longitude_e7: 134_010_000,
+                tags: vec![
+                    ("railway", "signal"),
+                    ("railway:signal:main", "DE-BOStrab:h1"),
+                ],
+            },
+            FixtureNode {
+                id: 51,
+                latitude_e7: 524_000_000,
+                longitude_e7: 134_000_000,
+                tags: vec![],
+            },
+            FixtureNode {
+                id: 52,
+                latitude_e7: 524_000_000,
+                longitude_e7: 134_020_000,
+                tags: vec![],
+            },
+            FixtureNode {
+                id: KNOWN_BOSTRAB_SIGNAL_NODE_ID,
+                latitude_e7: 521_000_000,
+                longitude_e7: 131_010_000,
+                tags: vec![
+                    ("railway", "signal"),
+                    ("railway:signal:speed_limit", "DE-BOStrab:g3"),
+                ],
+            },
+        ];
+        let ways_fixture = [
+            FixtureWay {
+                id: 100,
+                nodes: vec![1, 2, 6, 3, 4],
+                tags: vec![("railway", "rail"), ("gauge", "1435")],
+            },
+            FixtureWay {
+                id: 101,
+                nodes: vec![3, 5],
+                tags: vec![("railway", "rail"), ("gauge", "1435")],
+            },
+            FixtureWay {
+                id: 300,
+                nodes: vec![41, 40, 42],
+                tags: vec![("railway", "rail"), ("gauge", "1435")],
+            },
+            FixtureWay {
+                id: 301,
+                nodes: vec![40, 43],
+                tags: vec![("railway", "tram"), ("tram", "yes")],
+            },
+            FixtureWay {
+                id: 400,
+                nodes: vec![51, 50, 52],
+                tags: vec![("railway", "rail"), ("gauge", "1435")],
+            },
+            FixtureWay {
+                id: 106_059_932,
+                nodes: vec![20, KNOWN_BOSTRAB_SIGNAL_NODE_ID],
+                tags: vec![("railway", "tram"), ("tram", "yes"), ("operator", "BVG")],
+            },
+            FixtureWay {
+                id: 1_348_391_986,
+                nodes: vec![KNOWN_BOSTRAB_SIGNAL_NODE_ID, 21, 22, 23],
+                tags: vec![("railway", "tram"), ("tram", "yes"), ("operator", "BVG")],
+            },
+        ];
+        pbf_fixture(&nodes, &ways_fixture)
     }
 
     fn read_features(root: &Path, file: &str) -> Vec<Value> {
@@ -1499,6 +1750,117 @@ mod tests {
             fs::read(third_staging.join("owner")).expect("fremder Marker bleibt erhalten"),
             b"anderer lauf"
         );
+        fs::remove_dir_all(base).expect("Testordner entfernbar");
+    }
+
+    #[test]
+    fn punktobjekte_bleiben_fail_closed_im_ebo_scope() {
+        let mut reader = Cursor::new(ebo_point_scope_fixture());
+        let document = import_pbf_document(
+            &mut reader,
+            SourceId::new("osm-pbf-deutschland").expect("Quellenkennung"),
+        )
+        .expect("Fixture-PBF");
+        let base = std::env::temp_dir().join(format!(
+            "zugfolge-semantic-ebo-point-scope-{}",
+            std::process::id()
+        ));
+        if base.exists() {
+            fs::remove_dir_all(&base).expect("alter Testordner entfernbar");
+        }
+
+        let summary = export_semantic_geojsonseq(&document, &base).expect("Semantikexport");
+        assert_eq!(summary.layer_counts()["signals"], 1);
+        assert_eq!(summary.layer_counts()["switches"], 1);
+
+        let signals = read_features(&base, "signals.geojsonseq");
+        let signal_ids: BTreeSet<&str> = signals
+            .iter()
+            .map(|feature| {
+                feature["properties"]["feature_id"]
+                    .as_str()
+                    .expect("Signal-ID")
+            })
+            .collect();
+        assert_eq!(signal_ids, BTreeSet::from(["signal:osm-node-2"]));
+        for excluded_id in [
+            format!("signal:osm-node-{KNOWN_BOSTRAB_SIGNAL_NODE_ID}"),
+            "signal:osm-node-30".to_owned(),
+            "signal:osm-node-50".to_owned(),
+        ] {
+            assert!(!signal_ids.contains(excluded_id.as_str()));
+        }
+
+        let switches = read_features(&base, "switches.geojsonseq");
+        let switch_ids: BTreeSet<&str> = switches
+            .iter()
+            .map(|feature| {
+                feature["properties"]["feature_id"]
+                    .as_str()
+                    .expect("Weichen-ID")
+            })
+            .collect();
+        assert_eq!(switch_ids, BTreeSet::from(["switch:osm-node-3"]));
+        assert!(!switch_ids.contains("switch:osm-node-21"));
+        assert!(!switch_ids.contains("switch:osm-node-40"));
+
+        let contexts = read_features(&base, "rail-context.geojsonseq");
+        let context_ids: BTreeSet<&str> = contexts
+            .iter()
+            .map(|feature| {
+                feature["properties"]["feature_id"]
+                    .as_str()
+                    .expect("Kontext-ID")
+            })
+            .collect();
+        assert!(context_ids.contains("rail_context:osm-node-1"));
+        assert!(
+            context_ids.contains("rail_context:osm-node-6"),
+            "ein innenliegender, per EBO-Weg belegter Stop bleibt erhalten"
+        );
+        assert!(!context_ids.contains("rail_context:osm-node-22"));
+
+        let blocks = read_features(&base, "blocks.geojsonseq");
+        let boundary_signal_ids: BTreeSet<String> = blocks
+            .iter()
+            .flat_map(|feature| {
+                serde_json::from_str::<BTreeSet<String>>(
+                    feature["properties"]["boundary_signal_ids_json"]
+                        .as_str()
+                        .expect("Blockgrenzen"),
+                )
+                .expect("Signal-IDs als JSON")
+            })
+            .collect();
+        assert!(boundary_signal_ids.contains("signal:osm-node-2"));
+        assert!(
+            !boundary_signal_ids
+                .contains(&format!("signal:osm-node-{KNOWN_BOSTRAB_SIGNAL_NODE_ID}"))
+        );
+        assert!(!boundary_signal_ids.contains("signal:osm-node-50"));
+
+        let resources = read_features(&base, "conflict-resources.geojsonseq");
+        let resource_ids: BTreeSet<&str> = resources
+            .iter()
+            .map(|feature| {
+                feature["properties"]["feature_id"]
+                    .as_str()
+                    .expect("Ressourcen-ID")
+            })
+            .collect();
+        assert!(resource_ids.contains("conflict_resource:switch-osm-node-3"));
+        assert!(!resource_ids.contains("conflict_resource:switch-osm-node-21"));
+        assert!(!resource_ids.contains("conflict_resource:switch-osm-node-40"));
+
+        let known_node_id = KNOWN_BOSTRAB_SIGNAL_NODE_ID.to_string();
+        for (_layer, file) in LAYERS {
+            let bytes = fs::read_to_string(base.join(file)).expect("Semantiklayer lesbar");
+            assert!(
+                !bytes.contains(&known_node_id),
+                "bekannter BOStrab-Knoten darf nicht in {file} erscheinen"
+            );
+        }
+
         fs::remove_dir_all(base).expect("Testordner entfernbar");
     }
 }

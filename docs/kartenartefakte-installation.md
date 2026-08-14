@@ -233,26 +233,37 @@ Wiederverwendung. Er ist weder Signatur noch produktiver Odoo-Import.
 
 Die Alpha-Laufzeit erhält **nicht** mehrere frei kombinierbare
 Kartenverzeichnisse. Alle Dateien eines Jahresstands stammen aus genau dem eben
-installierten, unveränderlichen Releaseverzeichnis. Für 2026.1 enthält `.env`
+installierten, unveränderlichen Releaseverzeichnis. Für 2026.2 enthält `.env`
 deshalb gemeinsam:
 
+Die statische `.env` enthält nur die gemeinsame Hostwurzel:
+
 ```dotenv
-MAP_RELEASE_ID=infra-deutschland-2026.1
-MAP_RELEASE_HOST_DIR=./var/maps/releases/infra-deutschland-2026.1
-MAP_BASEMAP_STYLE_URL=/artifacts/maps/infra-deutschland-2026.1/style.json
-MAP_GERMANY_PMTILES_URL=/artifacts/maps/infra-deutschland-2026.1/infra-deutschland-2026.1.pmtiles
+MAP_RELEASE_DEPLOYMENT_HOST_ROOT=./var/maps
 ```
 
-`compose.alpha.yml` bindet dieses eine Hostverzeichnis an zwei klar getrennte
-Verbraucher, jeweils nur lesbar:
+Die übrigen vier Werte stehen ausschließlich im zuletzt geladenen,
+Evidence-geprüften `var/maps/active/map-release.env`:
+
+```dotenv
+MAP_RELEASE_ID=infra-deutschland-2026.2
+MAP_RELEASE_HOST_DIR=releases/infra-deutschland-2026.2
+MAP_BASEMAP_STYLE_URL=/artifacts/maps/infra-deutschland-2026.2/style.json
+MAP_GERMANY_PMTILES_URL=/artifacts/maps/infra-deutschland-2026.2/infra-deutschland-2026.2.pmtiles
+```
+
+`compose.alpha.yml` leitet ohne verschachtelte Variablenexpansion aus der
+gemeinsamen Hostwurzel und `MAP_RELEASE_ID` exakt
+`./var/maps/releases/infra-deutschland-2026.2` ab. Dieses eine Verzeichnis wird
+an zwei klar getrennte Verbraucher gebunden, jeweils nur lesbar:
 
 - Die Livemap sieht es unter
-  `/map-artifacts/maps/infra-deutschland-2026.1`. Ihr statischer Server liefert
+  `/map-artifacts/maps/infra-deutschland-2026.2`. Ihr statischer Server liefert
   damit mindestens `style.json`, `basemap.pmtiles`,
-  `infra-deutschland-2026.1.pmtiles`, `read-model.sqlite` und
+  `infra-deutschland-2026.2.pmtiles`, `read-model.sqlite` und
   `train-map-projection.sqlite` unter der
   gemeinsamen öffentlichen Wurzel
-  `/artifacts/maps/infra-deutschland-2026.1/` aus. Alle statischen Dateien
+  `/artifacts/maps/infra-deutschland-2026.2/` aus. Alle statischen Dateien
   unterstützen Einzelbereichsanfragen; erfolgreiche PMTiles-Anfragen mit
   `Range` antworten mit HTTP 206.
 - Die Game-API sieht dasselbe Hostverzeichnis als `/map-release` und öffnet
@@ -377,13 +388,353 @@ unbereit. Die Game-API lädt den Detailkatalog vor dem Start und scheitert bei
 fehlendem oder ungültigem SQLite-Artefakt geschlossen.
 
 Ein Jahreswechsel wird zuerst vollständig in ein neues Releaseverzeichnis
-installiert und geprüft. Erst danach werden `MAP_RELEASE_ID`,
-`MAP_RELEASE_HOST_DIR`, `MAP_BASEMAP_STYLE_URL` und
-`MAP_GERMANY_PMTILES_URL` gemeinsam umgestellt und Game-API sowie Livemap neu
-erzeugt. Für den Rollback werden dieselben vier Werte wieder auf das zuvor
-installierte Verzeichnis gesetzt; dessen Bytes bleiben unangetastet. Der
+installiert und geprüft. Die gemeinsame `MAP_RELEASE_DEPLOYMENT_HOST_ROOT`
+bleibt unverändert; erst danach werden `MAP_RELEASE_ID`, `MAP_RELEASE_HOST_DIR`,
+`MAP_BASEMAP_STYLE_URL` und `MAP_GERMANY_PMTILES_URL` gemeinsam durch atomaren
+Austausch genau dieser Pointerdatei umgestellt und Game-API sowie Livemap neu
+erzeugt. Für den
+Rollback werden ID, URLs und Zeiger wieder auf das zuvor installierte
+Verzeichnis gesetzt; dessen Bytes bleiben unangetastet. Der
 Katalogvertrag ist in [`livemap-detailkatalog.md`](livemap-detailkatalog.md)
 beschrieben.
+
+## Reproduzierbarer Buildbeleg und Patchrelease-Preflight
+
+Das installierte Laufzeitpaket ist kein Buildcache. Jeder neue Deutschland-
+Patchrelease benötigt deshalb zusätzlich ein internes, unveränderliches
+`zugfolge-map-release-build-evidence/v1`. Dieser Beleg wird nicht öffentlich
+ausgeliefert. Er bindet bytegenau:
+
+- den vollständigen Git-Commit des Semantikexports und den vollständigen
+  Git-Commit des Kartenbuilds,
+- mindestens ein externes Quellarchiv, das Source-Capture, alle verwendeten
+  Spezifikationsdateien und das vollständige Buildcache-Inventar,
+- jedes lokale Werkzeug mit Version, Bytezahl und SHA-256 oder jedes
+  Containerwerkzeug mit einer Referenz der Form
+  `registry/repository@sha256:<64 hex>`,
+- Welt-Basemap-PMTiles, Semantik-PMTiles, ReadModel, Zugkartenprojektion,
+  MapLibre-Style, Deliverymanifest und öffentlichen Qualitätsbericht,
+- alle zehn Semantik-Zwischenlayer als Regressionsbeleg.
+
+`latest`, `main`, `master`, `HEAD`, `unversioned`, verkürzte Git-Commits,
+fehlende Dateien und jede Byte- oder Digestabweichung brechen den Lauf ab. Ein
+neuer Stand überschreibt niemals eine bestehende Jahreskonfiguration. Auf
+`infra-deutschland-2026.1` folgt beispielsweise ein eigener
+`infra-deutschland-2026.2`-Spezifikationssatz, ein eigener Buildcache und ein
+eigenes Installationsverzeichnis. Release-ID, Paketversion, Welt-/GTFS-
+ServiceDate und alle davon abgeleiteten Spezifikationen müssen innerhalb des
+Patchsatzes übereinstimmen. Für den August-2026-Patch ist der Montag
+`20260810` maßgeblich; die unveränderlichen `.1`-Dateien bleiben unangetastet.
+
+Die interne Build-Evidence-Spezifikation hat das Schema
+`zugfolge-map-release-build-evidence-spec/v1` und liegt selbst versioniert
+unter `tools/tiles/` im belegten Kartenbuild-Commit. Eingaben besitzen stets
+`expectedBytes` und `expectedSha256`. Externe Archive, Capture-Manifeste und
+optionale Derived-Eingaben nennen zusätzlich ihren `cacheFile` im
+verschlüsselten Buildcache.
+
+Das Inventar wird nicht von Hand geschrieben. Ein releasegebundener Plan mit
+dem Schema `zugfolge-map-build-cache-inventory-plan/v1` ordnet jede reguläre
+Datei unter einer gemeinsamen `ARTIFACT_ROOT` explizit ihrem unveränderlichen
+Cachepfad zu:
+
+```json
+{
+  "schema": "zugfolge-map-build-cache-inventory-plan/v1",
+  "releaseId": "infra-deutschland-2026.2",
+  "files": [
+    {
+      "sourceFile": "var/source-cache/annual-2026/deutschland-2026-08-12.osm.pbf",
+      "cacheFile": "sources/deutschland-2026-08-12.osm.pbf"
+    }
+  ]
+}
+```
+
+Für den realen `.2`-Build wird der vollständige Plan vor dem Lauf unter
+`var/build-cache/infra-deutschland-2026.2.plan.json` angelegt und dort
+unverändert aufbewahrt. Von der Repositorywurzel aus lautet der exakte
+Builder-Aufruf:
+
+```powershell
+node tools/tiles/map-build-cache-inventory-cli.mjs build `
+  infra-deutschland-2026.2 `
+  . `
+  var/build-cache/infra-deutschland-2026.2.plan.json `
+  var/build-cache/infra-deutschland-2026.2.inventory.json
+```
+
+Die Ausgabe wird create-new und atomar angelegt; ein vorhandenes Inventar wird
+niemals ersetzt. Der Builder lehnt absolute oder nicht normalisierte Pfade,
+Pfadausbruch, symbolische Links in jeder Quellpfadkomponente, leere oder nicht
+reguläre Dateien sowie doppelte Quell- und Cachepfade ab. Dateiinhalt und
+SHA-256 werden gestreamt, damit auch die großen `.2`-Quellarchive nicht in den
+Arbeitsspeicher geladen werden.
+
+Das kanonische Inventar hat diese Form:
+
+```json
+{
+  "schema": "zugfolge-map-build-cache-inventory/v1",
+  "releaseId": "infra-deutschland-2026.2",
+  "files": [
+    {
+      "path": "sources/deutschland-2026-08-12.osm.pbf",
+      "bytes": 123,
+      "sha256": "<64 hex>"
+    }
+  ]
+}
+```
+
+Die Dateiliste ist nach `path` sortiert und vollständig. Symbolische Links,
+zusätzliche Dateien, unsichere relative Pfade oder nicht releasegebundene
+Objektschlüssel sind unzulässig. Der Evidence-Vertrag verlangt
+`backupRequired: true`, `encrypted: true` und
+`restoreVerification: "empty-path-full-inventory"`. Zugangsdaten und
+Schlüssel stehen weder im Inventar noch im Evidence-Manifest. `objectKey`
+bezeichnet nur das unveränderliche, zugriffsgeschützte Backupobjekt; dessen
+Verschlüsselungsschlüssel verbleibt im Secret-Management.
+
+Nachdem alle Ausgaben mit den gepinnten Werkzeugen gebaut wurden, entsteht der
+Beleg aus den tatsächlichen Bytes. `BUILD_ROOT` ist dabei die gemeinsame
+Wurzel der in der Spezifikation genannten relativen Pfade. Dieser Builder-Lauf
+und das anschließende `verify` sind der vollständige Reproduzierbarkeitsnachweis;
+sie laufen vor dem Transfer auf den Deploymenthost:
+
+```powershell
+node tools/tiles/map-release-build-evidence-cli.mjs build `
+  tools/tiles/map-release-build-evidence.annual-2026.2.spec.json `
+  . `
+  var/build-evidence/infra-deutschland-2026.2.json
+
+node tools/tiles/map-release-build-evidence-cli.mjs verify `
+  var/build-evidence/infra-deutschland-2026.2.json `
+  .
+```
+
+Der Build prüft zugleich die fachliche Regression aus #272. Die Spezifikation
+nennt alle zehn finalen GeoJSONSeq-Semantiklayer, mindestens eine bekannte
+positive EBO-Signal-ID und die verbotenen öffentlichen Tokens einschließlich
+`12472736971`. Der Beleg scheitert, wenn dieses BOStrab-Objekt in irgendeinem
+Layer oder im öffentlichen ReadModel vorkommt oder wenn das positive
+EBO-Signal fehlt. Die sieben aktivierungsrelevanten Ausgaben werden zusätzlich
+auf ihren Grundtyp und ihre Releasebindung geprüft; die Basemap ist dabei eine
+zwingende eigene Ausgabe. Das Evidence-Manifest übernimmt darüber hinaus das
+vollständige Artefaktinventar des bytegenau gebundenen Deliverymanifests. Jede
+Kernausgabe außer dem zirkulär ausgeschlossenen Deliverymanifest muss darin
+mit identischem Installationspfad, Artefakttyp, Bytezahl und SHA-256 vorkommen.
+Das Deliverymanifest muss bereits eine bestandene Ed25519-Freigabe mit
+kanonischem `releaseHash`, stabiler Schlüssel-ID und 64 Signaturbytes besitzen.
+Ein unsigned Vertrag mit `approvalGates.signature.status: "missing"` kann kein
+Build-Evidence erzeugen.
+Große PMTiles- und SQLite-Dateien werden gestreamt gehasht und nicht in den
+Arbeitsspeicher geladen. Der Evidence-Lauf akzeptiert die SQLite-Dateien nicht
+aufgrund ihres Headers allein: Das ReadModel muss seine Zugfolge-`application_id`,
+`user_version=3`, die vollständige Schedule-Metadatenmenge und die exakte
+öffentliche Tabellen-/Spalten-Allowlist bestehen. Die Zugkartenprojektion muss
+ihren eigenen Header-, Schema-SQL- und Metadatenvertrag erfüllen und exakt an
+den Infrastrukturrelease des Builds gebunden sein.
+
+Das Evidence-Manifest wird über eine vollständig synchronisierte eindeutige
+Nachbardatei und einen atomaren create-new-Link publiziert. Ein bereits
+vorhandenes Ziel wird auch bei identischen Bytes niemals wiederverwendet oder
+überschrieben; konkurrierende Erzeuger können deshalb höchstens genau einen
+vollständigen Sieger erzeugen.
+
+### Verschlüsselten Buildcache auf leerem Pfad wiederherstellen
+
+Vor jeder Aktivierung wird das verschlüsselte Backup unabhängig auf einem
+frischen Pfad wiederhergestellt. Das Vorbereitungskommando verweigert ein
+bereits vorhandenes Ziel und legt einen eindeutigen Leerpfadmarker an:
+
+```powershell
+node tools/tiles/map-release-build-evidence-cli.mjs prepare-restore `
+  var/restore-check/infra-deutschland-2026.2
+```
+
+Danach stellt das freigegebene Backupwerkzeug genau den im Evidence-Manifest
+genannten `objectKey` in dieses Verzeichnis wieder her. Der Marker darf dabei
+nicht entfernt werden. Die anschließende Prüfung akzeptiert ausschließlich das
+vollständige Inventar mit identischen Bytezahlen und SHA-256; zusätzliche
+Dateien und symbolische Links führen zum Abbruch:
+
+```powershell
+node tools/tiles/map-release-build-evidence-cli.mjs prove-restore `
+  var/build-evidence/infra-deutschland-2026.2.json `
+  var/restore-check/infra-deutschland-2026.2 `
+  var/build-evidence/infra-deutschland-2026.2.restore-proof.json
+```
+
+Der kanonisch serialisierte Restore-Beleg bindet Evidence-SHA,
+verschlüsselten Objektschlüssel, Verschlüsselungsverfahren, Byte-SHA des
+Leerpfadmarkers, einen SHA des realen Restorepfads und das vollständig geprüfte
+Cacheinventar zu einem gemeinsamen Artefakt-SHA. Er wird zusammen mit
+Evidence-Manifest und Buildprotokoll aufbewahrt. Der Aktivierungs-Preflight
+vertraut nicht einem daraus geparsten beliebigen JSON-Objekt: Er liest die
+unveränderten Proof-Bytes und prüft den angegebenen tatsächlichen Restorepfad,
+den Marker sowie jede Inventardatei erneut. Die vollständige erneute
+Builder-Wurzelprüfung bleibt davon getrennt: Der Deployment-Gate benötigt nur
+das kanonische Evidence-Artefakt, den Restore-Beleg samt realem Restorepfad,
+die installierten Pakete und den separat administrierten öffentlichen
+Delivery-Keyring. Damit kann ein frischer Builder
+nach Checkout der beiden belegten Commits ausschließlich aus Repository,
+Evidence und wiederhergestelltem Cache denselben Kandidaten bauen und gegen die
+festgehaltenen Ergebnis-Hashes prüfen.
+
+### Parallele Installation, Aktivierung und Rückweg
+
+Kandidat und Vorgänger bleiben als getrennte, unveränderliche Verzeichnisse
+installiert. Für `.2` müssen also vor der Umschaltung sowohl
+`releases/infra-deutschland-2026.2` als auch
+`releases/infra-deutschland-2026.1` vorhanden sein. Beide Verzeichnisse müssen
+ein kanonisches `.zugfolge-map-package.json` besitzen; dessen vollständiges
+Dateiinventar wird bytegenau geprüft. Leere Rollbackverzeichnisse,
+Zusatzdateien, manipulierte Vorgänger oder ein fehlender Quellenbeleg sperren
+die Aktivierung. Das unveränderliche `.1`-Paket bleibt dabei bewusst
+byteidentisch zu seiner bereits installierten, intern noch unsignierten
+Ausgabe; es wird niemals unter derselben Versionskennung neu gepackt. Stattdessen
+bindet eine externe Ed25519-signierte Bestandsattestation im v1-Schema mindestens
+an `previousReleaseId`, Bytezahl und SHA-256 der kanonischen
+`.zugfolge-map-package.json` sowie Installationspfad, Bytezahl und SHA-256 des
+enthaltenen Deliverymanifests. Ihr externer Pfad steht als
+`deployment.rollbackAttestationPath` im Evidence-Vertrag und muss außerhalb
+beider unveränderlicher Releaseverzeichnisse liegen. Ein lediglich
+selbstkonsistenter, nachträglich veränderter oder fremd attestierter Vorgänger
+ist kein sicheres Rollbackziel. Insbesondere belegt v1 nur Kartenbytes und wird
+deshalb immer als `rollbackEligible: false` mit
+`runtime-tuple-unbound-v1` ausgewiesen. Es reicht nicht, eine aktuelle Runtime
+mit altem ReadModel oder alter Zugprojektion zu starten. Der `.2`-Kandidat
+benötigt weiterhin zwingend sein intern signiertes Deliverymanifest. Die in Evidence genannten
+`installFile`-Pfade des Kandidaten müssen den gebauten Ausgaben bytegenau
+entsprechen. Zusätzlich prüft der Betriebs-Preflight jede Datei des
+Delivery-Manifestinventars am installierten Kandidaten. Das schließt Basemap,
+Semantik-PMTiles, Style, SQLite-Modelle, Qualitätsbericht, Glyphen, Sprites und
+alle weiteren inventarisierten Dateien ein. Eine fehlende oder manipulierte
+Basemap sowie jede Abweichung eines anderen Delivery-Artefakts verhindert
+`activationEligible: true`.
+
+Der in Evidence gebundene `activationPointer` ist eine kanonische LF-env-Datei
+mit genau vier Werten. Der Aufrufer nennt bei jedem Preflight explizit das
+erwartete aktive Release. Vor der `.2`-Aktivierung muss der Pointer damit
+vollständig auf `.1` zeigen; nach der atomaren Umschaltung und bei jedem
+wiederholten Start muss derselbe Gate im Zustand `active-candidate`
+vollständig die vier `.2`-Werte sehen. Ein stilles Akzeptieren beider Zustände
+ist unzulässig. `MAP_RELEASE_HOST_DIR` ist dabei der zum Deploymentroot
+relative, Evidence-gebundene Installationspfad:
+
+```dotenv
+MAP_RELEASE_ID=infra-deutschland-2026.1
+MAP_RELEASE_HOST_DIR=releases/infra-deutschland-2026.1
+MAP_BASEMAP_STYLE_URL=/artifacts/maps/infra-deutschland-2026.1/style.json
+MAP_GERMANY_PMTILES_URL=/artifacts/maps/infra-deutschland-2026.1/infra-deutschland-2026.1.pmtiles
+```
+
+Der öffentliche Keyring ist ein JSON-Objekt von stabiler `keyId` auf einen
+Ed25519-SPKI-Public-Key im PEM-Format. Private Schlüssel gehören niemals auf
+den Deploymenthost. Die Rollback-Attestation wird deshalb auf einem getrennten
+Signierhost gegen ein byteidentisches Abbild des installierten `.1`-Pakets
+erzeugt und danach an den Evidence-gebundenen externen Pfad übertragen:
+
+```powershell
+node tools/tiles/map-release-build-evidence-cli.mjs attest-rollback `
+  var/maps `
+  releases/infra-deutschland-2026.1 `
+  infra-deutschland-2026.1 `
+  var/signing/map-rollback-private.pem `
+  map-rollback-2026 `
+  var/maps/attestations/infra-deutschland-2026.1.rollback.json
+```
+
+Ein tatsächlich ausführbares Rollback braucht dagegen zwingend das v2-Schema.
+Die Signatur bindet zusätzlich ein einziges kompatibles Runtime-Tuple aus
+40-stelligem Source-Commit, OCI-Image-Digest, signiertem Weltdeployment samt
+Byte-SHA, Welt-ID, Epoch und Wiederholungsperiode, ReadModel-v2 samt
+`application_id`, `user_version` und normalisiertem Zeitvertrag sowie
+Zugprojektion-v2 samt Schema-SQL-Hash und Deployment-Hash. ReadModel,
+Zugprojektion und Weltdeployment müssen dieselbe Welt nennen; Projektions- und
+Weltdeployment-Hash sowie Epoch und Wiederholungsperiode müssen exakt
+übereinstimmen. Die Erstellung verweigert daher auch ein unter `.1` abgelegtes
+ReadModel oder eine Projektion, die tatsächlich noch an `.2` gebunden ist:
+
+Der attestierte Image-Digest muss zugleich als unveränderliche
+`image: registry/repository@sha256:…`-Referenz des Rollback-Compose-Vertrags
+verwendet werden. Eine frei gesetzte Umgebungsvariable oder ein lokaler Tag ist
+kein Image-Nachweis und darf nicht zur v2-Freigabe führen.
+
+```powershell
+node tools/tiles/map-release-build-evidence-cli.mjs attest-runtime-rollback `
+  var/maps `
+  releases/infra-deutschland-2026.1 `
+  infra-deutschland-2026.1 `
+  0123456789abcdef0123456789abcdef01234567 `
+  sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef `
+  var/legacy-runtime/alpha-world-deployment.json `
+  var/signing/map-rollback-private.pem `
+  map-rollback-2026 `
+  var/maps/attestations/infra-deutschland-2026.1.rollback.json
+```
+
+Der Preflight liest den Pointer selbst, verifiziert das intern signierte
+`.2`-Deliverymanifest und die externe `.1`-Rollback-Attestation gegen den
+unabhängigen, rotierbaren Keyring und prüft anschließend beide installierten
+Pakete und den Cache-Restore. Das sechste Argument legt den erwarteten
+Pointerzustand explizit fest; die drei folgenden Werte belegen beim
+Rollback-Check die tatsächlich zu startende Runtime-Identität:
+
+```powershell
+node tools/tiles/map-release-build-evidence-cli.mjs preflight `
+  var/build-evidence/infra-deutschland-2026.2.json `
+  var/maps `
+  var/build-evidence/infra-deutschland-2026.2.restore-proof.json `
+  var/restore-check/infra-deutschland-2026.2 `
+  var/trust/map-delivery-public-keys.json `
+  infra-deutschland-2026.1 `
+  0123456789abcdef0123456789abcdef01234567 `
+  sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef `
+  var/legacy-runtime/alpha-world-deployment.json
+```
+
+Nur `activationEligible: true` erlaubt die Umschaltung. Anschließend werden
+die vier Kartenwerte in einer vollständig geschriebenen Nachbardatei geändert
+und diese Konfiguration atomar an die Stelle des in Evidence gebundenen
+`activationPointer` gesetzt. Niemals wird ein Releaseverzeichnis umbenannt,
+überschrieben oder teilweise aktualisiert. Nach Neustart müssen Readiness,
+Range-Requests, Release-ID, die Abwesenheit von `12472736971` und mindestens
+ein positives EBO-Signal erneut live geprüft werden.
+
+Unmittelbar nach der Umschaltung wird derselbe Preflight mit
+`infra-deutschland-2026.2` als letztem Argument wiederholt. Er meldet nur dann
+`activationState: "active-candidate"`, wenn alle vier Pointerwerte bereits
+exakt auf `.2` stehen. Ein intaktes v1-`.1`-Paket wird weiterhin geprüft, aber
+ehrlich nur als nicht ausführbarer forensischer Bestand gemeldet; es blockiert
+die `.2`-Evaluation nicht.
+
+Der Rückweg verwendet denselben atomaren Konfigurationswechsel auf die vier
+unveränderten `.1`-Werte. `rollbackEligible: true` bestätigt vorab nicht nur
+Kartenbytes, sondern das vollständig signierte und aktuell gestartete
+Source-/Image-/Welt-/Map-Tuple. Eine v1-Attestation oder fehlende
+`MAP_RELEASE_PREFLIGHT_RUNTIME_*`-Identität sperrt `pre-activation`
+geschlossen.
+Der normale Startmodus bleibt auch nach Reboot strikt `active-candidate` und
+darf `.1` nicht still akzeptieren. Der explizite Betriebsrückweg erfolgt
+ausschließlich über die konfliktierende systemd-Unit
+`ops/alpha/zugfolge-alpha-rollback.service`: Sie ruft den Compose-Wrapper mit
+`--attested-rollback` auf, bindet One-shot, Game API und Livemap an
+`pre-activation` und erzeugt alle Laufzeitcontainer mit `--force-recreate` neu.
+Damit bleibt der manuell gewählte Rückweg auch nach Host-Reboot eindeutig; ein
+geerbter Envwert oder ein Container-`restart` kann ihn nicht einschalten.
+
+Solange für das reale `.1` nur v1 vorliegt, ist kein laufender `.1`-Rückweg
+freigegeben. Altes DB-Volume, alte Images und Artefakte werden stattdessen
+forensisch und vom neuen Evaluationsvolume getrennt aufbewahrt. Der Rückweg gilt
+erst als getestet, wenn die gleichen Readiness- und
+Range-Prüfungen wieder die Vorgänger-ID melden. Die aktiven signierten
+Weltprofile müssen dabei weiterhin zum zurückgesetzten Infrastrukturrelease
+passen; andernfalls sperrt der Serverstart geschlossen. Evidence-, Restore-
+und Umschaltprotokolle gehören in die
+verschlüsselte Betriebssicherung; eine erfolgreiche Laufzeitprüfung ersetzt
+keinen reproduzierbaren Buildcache-Restore.
 
 ## Warum nicht in der Git-Historie?
 
