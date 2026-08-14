@@ -6,7 +6,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { ADMIN_ACTION_TYPES, AdminWorkflowError, assertPublicWorldSlot, COMMAND_TYPES, createHttpOdooProjectionClient, createOdooWebhookReceiptStore, deriveReconciliationTasks, dispatchOdooProjectionOutbox, enqueueAlphaFeedbackProjection, enqueueGameAdminCapabilityProjection, entitlementFeatures, listPendingOdooProjectionWorldIds, OdooCommandWorkerInterruptedError, processNextOdooCommand, projectionEnvelope, receiveOdooWebhook, reconcileOdooProjectionSnapshot, signPayload, type AdminCommandPayload, type OdooProjectionEnvelope, type OdooWebhookEnvelope, type SigningKey, validateAdminCommand, WebhookSignatureError, WebhookValidationError } from "./index.js";
+import { ADMIN_ACTION_TYPES, AdminWorkflowError, assertPublicWorldSlot, COMMAND_TYPES, createHttpOdooProjectionClient, createOdooWebhookReceiptStore, deriveReconciliationTasks, dispatchOdooProjectionOutbox, enqueueAlphaFeedbackProjection, enqueueAuthoritativeWorldStartProjection, enqueueGameAdminCapabilityProjection, enqueueWorldProjection, entitlementFeatures, listPendingOdooProjectionWorldIds, OdooCommandWorkerInterruptedError, processNextOdooCommand, projectionEnvelope, receiveOdooWebhook, reconcileOdooProjectionSnapshot, signPayload, type AdminCommandPayload, type OdooProjectionEnvelope, type OdooWebhookEnvelope, type SigningKey, validateAdminCommand, WebhookSignatureError, WebhookValidationError } from "./index.js";
 
 const NOW = new Date("2026-08-11T12:00:00.000Z");
 const WORLD = "11111111-1111-4111-8111-111111111111";
@@ -44,19 +44,21 @@ function worldDeployCommand(
       kind: "public",
       rankingStatus: "ranked",
       schedulePeriodWeeks: 4,
-      epoch: "2026-12-13T00:00:00.000Z",
+      epoch: "2026-08-10T00:00:00.000Z",
     },
     deploymentHash: "d".repeat(64),
+    deploymentRevision: 1,
     signedDeployment: {
       deploymentHash: "d".repeat(64),
       deployment: {
         worldId,
+        deploymentRevision: 1,
         worldDefinition: {
           name: "Oeffentliche Testwelt",
           kind: "public",
           rankingStatus: "ranked",
           schedulePeriodWeeks: 4,
-          epoch: "2026-12-13T00:00:00.000Z",
+          epoch: "2026-08-10T00:00:00.000Z",
         },
         blueprint: { profileKind: "public", startingCapitalPolicy: policy },
       },
@@ -167,6 +169,54 @@ describe("Bridge", () => {
     expect(foreign?.deliveredAt).toBeNull();
   });
 
+  it("erzeugt Hashwechsel nur aus dem typisierten signierten Weltstart und haelt die Weltbindung", async () => {
+    const command = worldDeployCommand();
+    await enqueueAuthoritativeWorldStartProjection(db, {
+      worldId: WORLD,
+      correlationId: "authoritative-world-start-0001",
+      signedDeployment: command.signedDeployment!,
+      deploymentRevision: command.deploymentRevision!,
+      occurredAt: NOW,
+      payload: {
+        worldName: "Oeffentliche Testwelt",
+        projectionRevision: command.deploymentHash,
+        profileKind: "public",
+        blueprintHash: "b".repeat(64),
+        freshness: "live",
+      },
+    });
+
+    const [row] = await db.select().from(odooProjectionOutbox);
+    expect(row).toMatchObject({
+      worldId: WORLD,
+      messageType: "world.projection",
+      payload: {
+        projectionKind: "zugfolge-authoritative-world-start-projection/v1",
+        authoritative: true,
+        deploymentHash: command.deploymentHash,
+        deploymentRevision: 1,
+        deploymentAuthorization: {
+          algorithm: "Ed25519",
+          keyId: "alpha-release-2026",
+        },
+      },
+    });
+
+    await expect(enqueueWorldProjection(db, {
+      worldId: WORLD,
+      correlationId: "forged-world-start-0001",
+      payload: { projectionKind: "zugfolge-authoritative-world-start-projection/v1" },
+    })).rejects.toThrow(/typisierten Enqueue-Pfad/);
+    await expect(enqueueAuthoritativeWorldStartProjection(db, {
+      worldId: OTHER_WORLD,
+      correlationId: "foreign-world-start-0001",
+      signedDeployment: command.signedDeployment!,
+      deploymentRevision: 1,
+      payload: {},
+    })).rejects.toThrow(/Welt-/);
+    expect(await db.select().from(odooProjectionOutbox).where(eq(odooProjectionOutbox.worldId, OTHER_WORLD))).toHaveLength(0);
+  });
+
   it("legt pseudonymisiertes Alpha-Feedback als weltgebundene Outbox-Projektion ab", async () => {
     await enqueueAlphaFeedbackProjection(db, {
       worldId: WORLD,
@@ -200,6 +250,20 @@ describe("Vier-Augen-Validierung", () => {
   it("akzeptiert endliches und unbegrenztes Startkapital nur als signierte, weltgebundene Policy", () => {
     expect(() => validateAdminCommand(worldDeployCommand())).not.toThrow();
     expect(() => validateAdminCommand(worldDeployCommand({ mode: "unlimited" }))).not.toThrow();
+  });
+
+  it.each([
+    "2026-08-09T00:00:00.000Z",
+    "2026-08-10T00:00:01.000Z",
+  ])("lehnt eine Weltstart-Epoche ausserhalb Montag 00:00 UTC ab: %s", (epoch) => {
+    const command = worldDeployCommand() as AdminCommandPayload & {
+      signedDeployment: NonNullable<AdminCommandPayload["signedDeployment"]>;
+      worldDefinition: NonNullable<AdminCommandPayload["worldDefinition"]>;
+    };
+    expect(() => validateAdminCommand({
+      ...command,
+      worldDefinition: { ...command.worldDefinition, epoch },
+    })).toThrow(AdminWorkflowError);
   });
 
   it("lehnt unbekannte Felder in Policy, Weltdefinition und Signaturhülle ab", () => {

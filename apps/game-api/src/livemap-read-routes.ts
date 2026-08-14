@@ -5,6 +5,7 @@ import {
   PASSENGER_INFORMATION_DISPLAY_SCHEMA,
   PUBLIC_TRAIN_DETAIL_SCHEMA,
   STATION_BOARD_SCHEMA,
+  verifiedBaseTrainRunId,
   type LivemapObjectKind,
   type LivemapReadModel,
   type LivemapRegistry,
@@ -127,13 +128,23 @@ function stationCallStatus(
   return "scheduled";
 }
 
+function verifiedLiveTrainForScheduleCall(
+  callTrainId: string,
+  train: PublicTrain | PublicExternalTrain | undefined,
+): PublicTrain | PublicExternalTrain | undefined {
+  if (train === undefined) return undefined;
+  if (!("positionMm" in train)) return callTrainId.includes(":day-") ? undefined : train;
+  if (train.baseTrainRunId === undefined) return callTrainId.includes(":day-") ? undefined : train;
+  return verifiedBaseTrainRunId(train) === undefined ? undefined : train;
+}
+
 function projectStationCalls(
   calls: readonly StationBoardCall[],
   callType: "arrival" | "departure",
   trains: ReadonlyMap<string, PublicTrain | PublicExternalTrain>,
 ): readonly StationBoardCall[] {
   return Object.freeze(calls.map((call) => {
-    const train = trains.get(call.trainId);
+    const train = verifiedLiveTrainForScheduleCall(call.trainId, trains.get(call.trainId));
     const delay = train?.delaySeconds ?? 0;
     return Object.freeze({
       ...call,
@@ -301,11 +312,15 @@ export function registerLivemapReadRoutes(
       if (snapshot === undefined) return;
       const found = findTrain(snapshot.trains, snapshot.externalTrains ?? [], request.params.trainId);
       if (found === undefined) return reply.code(404).send({ error: "Zug ist in dieser Welt nicht sichtbar." });
+      const networkTrain = found.movement === "network" ? found.train as PublicTrain : undefined;
+      const scheduleTrainId = networkTrain === undefined
+        ? request.params.trainId
+        : verifiedBaseTrainRunId(networkTrain) ?? request.params.trainId;
       const plan = await deps.readModel?.getPassengerInformation(
         request.params.worldId,
-        request.params.trainId,
+        scheduleTrainId,
       );
-      if (plan !== undefined && plan.trainId !== request.params.trainId) {
+      if (plan !== undefined && plan.trainId !== scheduleTrainId) {
         return reply.code(503).send({ error: "Fahrgastinformation gehoert nicht zum angefragten Zug." });
       }
       const identity = request.identity;
@@ -330,7 +345,6 @@ export function registerLivemapReadRoutes(
       ) || ownerDetails.length > 1) {
         return reply.code(503).send({ error: "Eigentuemerprojektion verletzt die Welt- oder EVU-Bindung." });
       }
-      const networkTrain = found.movement === "network" ? found.train as PublicTrain : undefined;
       const passengerMessages = [...new Set([
         ...(plan?.messages ?? []),
         ...livePassengerMessages(found.train.delaySeconds, found.train.status),

@@ -8,9 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EconomyDatabase } from "./ledger.js";
 import { buildEconomyRelease } from "./release.js";
 import {
+  drainEconomyOutbox,
   dispatchEconomyOutbox,
   EconomyStateConflictError,
   listEconomyWorldIds,
+  listPendingEconomyOutboxWorldIds,
   listPendingEconomyEffects,
   loadEconomyWorldState,
   persistEconomyTransition,
@@ -74,7 +76,7 @@ describe("persistenter M6-Weltzustand und Outbox", () => {
       authorityBudgets: [{ authorityId: "a", period: 0, availableCents: 10n, committedCents: 0n }],
       accounts: ["account-1", "account-2"],
     });
-    await persistEconomyTransition(db, { expectedRevision: null, ...started, committedAt: new Date(1_000) });
+    await persistEconomyTransition(db, { expectedRevision: null, ...started, committedAt: new Date(1_000), enqueuedAt: new Date(1_000) });
 
     const loaded = await loadEconomyWorldState(db, WORLD_ID);
     expect(loaded?.seed).toBe(42n);
@@ -88,9 +90,9 @@ describe("persistenter M6-Weltzustand und Outbox", () => {
     expect(await dispatchEconomyOutbox(db, WORLD_ID, { sendNotice, postJournal: vi.fn() }, new Date(3_000))).toBe(0);
 
     const closed = closeEconomyWorld(loaded!, "close");
-    await persistEconomyTransition(db, { expectedRevision: 0, state: closed, effects: { notices: [], journal: [] }, committedAt: new Date(4_000) });
+    await persistEconomyTransition(db, { expectedRevision: 0, state: closed, effects: { notices: [], journal: [] }, committedAt: new Date(4_000), enqueuedAt: new Date(4_000) });
     await expect(
-      persistEconomyTransition(db, { expectedRevision: 0, state: closed, effects: { notices: [], journal: [] }, committedAt: new Date(5_000) }),
+      persistEconomyTransition(db, { expectedRevision: 0, state: closed, effects: { notices: [], journal: [] }, committedAt: new Date(5_000), enqueuedAt: new Date(5_000) }),
     ).rejects.toBeInstanceOf(EconomyStateConflictError);
   });
 
@@ -104,7 +106,7 @@ describe("persistenter M6-Weltzustand und Outbox", () => {
       authorityBudgets: [],
       accounts: [],
     });
-    await persistEconomyTransition(db, { expectedRevision: null, ...started, committedAt: new Date(0) });
+    await persistEconomyTransition(db, { expectedRevision: null, ...started, committedAt: new Date(0), enqueuedAt: new Date(0) });
     const closed = closeEconomyWorld(started.state, "close-with-foreign-event");
     await expect(persistEconomyTransition(db, {
       expectedRevision: 0,
@@ -121,8 +123,77 @@ describe("persistenter M6-Weltzustand und Outbox", () => {
         }],
       },
       committedAt: new Date(1_000),
+      enqueuedAt: new Date(1_000),
     })).rejects.toThrow(/Weltisolation/);
     expect((await loadEconomyWorldState(db, WORLD_ID))?.revision).toBe(0);
+  });
+
+  it("trennt beschleunigte Fachzeit von realer Queuezeit und drainiert archivierte Restzeilen", async () => {
+    const started = startEconomyWorld({
+      worldId: WORLD_ID,
+      seed: 9n,
+      durationMonths: 6,
+      release,
+      lots: Array.from({ length: 8 }, (_, index) => ({ id: `future-${index}`, size: 100 - index, attractiveness: index })),
+      authorityBudgets: [],
+      accounts: ["account-future"],
+    });
+    const queueTime = new Date("2026-08-13T16:05:00.000Z");
+    const acceleratedSimulationCommit = new Date("2026-08-14T17:43:00.000Z");
+    await persistEconomyTransition(db, {
+      expectedRevision: null,
+      ...started,
+      committedAt: acceleratedSimulationCommit,
+      enqueuedAt: queueTime,
+    });
+    await db.update(worlds).set({ lifecycleStatus: "archived" }).where(eq(worlds.id, WORLD_ID));
+
+    const [queued] = await db.select().from(economyOutbox).where(eq(economyOutbox.worldId, WORLD_ID));
+    expect(queued).toMatchObject({
+      occurredAt: new Date(0),
+      enqueuedAt: queueTime,
+      processedAt: null,
+      attempts: 0,
+    });
+    expect(queued!.enqueuedAt.getTime()).toBeLessThan(acceleratedSimulationCommit.getTime());
+    expect(await listEconomyWorldIds(db)).not.toContain(WORLD_ID);
+    expect(await listPendingEconomyOutboxWorldIds(db)).toContain(WORLD_ID);
+
+    const sendNotice = vi.fn(async () => undefined);
+    await expect(drainEconomyOutbox(db, WORLD_ID, { sendNotice, postJournal: vi.fn() }, queueTime)).resolves.toBe(1);
+    expect(sendNotice).toHaveBeenCalledOnce();
+    expect(await listPendingEconomyEffects(db, WORLD_ID)).toHaveLength(0);
+  });
+
+  it("laesst einen fehlgeschlagenen Drain auditierbar offen und quittiert ihn beim Retry", async () => {
+    await db.insert(economyOutbox).values({
+      worldId: WORLD_ID,
+      effectId: "retry-notice",
+      effectType: "notice",
+      payload: { id: "retry-notice", worldId: WORLD_ID, recipientAccountId: "account-1", type: "test", at: 1, payload: {} },
+      occurredAt: new Date(1_000),
+      enqueuedAt: new Date(2_000),
+    });
+    await db.update(worlds).set({ lifecycleStatus: "archived" }).where(eq(worlds.id, WORLD_ID));
+
+    await expect(drainEconomyOutbox(db, WORLD_ID, {
+      sendNotice: async () => { throw new Error("adapter unavailable"); },
+      postJournal: async () => undefined,
+    }, new Date(3_000))).rejects.toThrow("adapter unavailable");
+    expect((await db.select().from(economyOutbox))[0]).toMatchObject({
+      processedAt: null,
+      attempts: 1,
+      lastErrorCode: "dispatch_failed",
+    });
+
+    const sendNotice = vi.fn(async () => undefined);
+    await expect(drainEconomyOutbox(db, WORLD_ID, { sendNotice, postJournal: vi.fn() }, new Date(4_000))).resolves.toBe(1);
+    expect(sendNotice).toHaveBeenCalledOnce();
+    expect((await db.select().from(economyOutbox))[0]).toMatchObject({
+      processedAt: new Date(4_000),
+      attempts: 1,
+      lastErrorCode: null,
+    });
   });
 
   it("quittiert keinen Outbox-Effekt, dessen Welt waehrend der Zustellung wechselt", async () => {

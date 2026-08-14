@@ -1,5 +1,10 @@
-import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, symlink } from "node:fs/promises";
+import {
+  createHash,
+  generateKeyPairSync,
+  sign as signEd25519,
+  type KeyObject,
+} from "node:crypto";
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -43,6 +48,7 @@ interface FixturePart {
 
 function packageFixture(
   rawDataPolicyField: "nonPublicSourceRawDataShipped" | "internalStationPlanRawDataShipped" = "nonPublicSourceRawDataShipped",
+  signing?: { readonly keyId: string; readonly privateKey: KeyObject },
 ): { readonly manifest: Buffer; readonly parts: readonly FixturePart[] } {
   const quality = compact({
     schema: "zugfolge-final-infrastructure-quality-report/v1",
@@ -74,7 +80,7 @@ function packageFixture(
     { id: "style", kind: "style", installPath: "style.json", bytes: Buffer.from("{}") },
     { id: "train-projection", kind: "train-map-projection", installPath: "train-map-projection.sqlite", bytes: Buffer.from("train-projection") },
   ];
-  const release = compact({
+  const unsignedRelease = {
     schema: "zugfolge-map-delivery-release/v1",
     releaseId: "infra-deutschland-2026.1",
     packageId: "zugfolge-map-deutschland",
@@ -90,8 +96,32 @@ function packageFixture(
       quality: { status: "passed" },
       signature: { status: "missing" },
     },
-    signature: null,
-  });
+    signature: null as null | { readonly algorithm: "Ed25519"; readonly keyId: string; readonly valueBase64: string },
+  };
+  const releaseValue = signing === undefined
+    ? unsignedRelease
+    : (() => {
+        const candidate = {
+          ...unsignedRelease,
+          approvalGates: {
+            ...unsignedRelease.approvalGates,
+            signature: { status: "passed", algorithm: "Ed25519", keyId: signing.keyId },
+          },
+        };
+        const { signature: ignoredSignature, ...payload } = candidate;
+        void ignoredSignature;
+        const releaseHash = sha256(canonical(payload));
+        return {
+          ...candidate,
+          releaseHash,
+          signature: {
+            algorithm: "Ed25519" as const,
+            keyId: signing.keyId,
+            valueBase64: signEd25519(null, Buffer.from(releaseHash, "hex"), signing.privateKey).toString("base64"),
+          },
+        };
+      })();
+  const release = compact(releaseValue);
   const allFiles = [
     ...baseFiles,
     { id: "release", kind: "release-manifest", installPath: "manifests/release.json", bytes: release },
@@ -125,7 +155,10 @@ async function* chunks(bytes: Buffer): AsyncIterable<Buffer> {
 
 const roots: string[] = [];
 
-async function staging(verifier?: InfraPackageVerifier): Promise<InfraPackageStaging> {
+async function staging(
+  verifier?: InfraPackageVerifier,
+  trustedReleaseKeys: Readonly<Record<string, string>> = {},
+): Promise<InfraPackageStaging> {
   const root = await mkdtemp(join(tmpdir(), "zugfolge-game-package-"));
   roots.push(root);
   return new InfraPackageStaging(root, {
@@ -134,6 +167,7 @@ async function staging(verifier?: InfraPackageVerifier): Promise<InfraPackageSta
       const value = JSON.parse(manifest.toString("utf8")) as { packageId: string; version: string };
       return { packageId: value.packageId, version: value.version, manifestSha256: sha256(manifest) };
     }),
+    trustedReleaseKeys,
   });
 }
 
@@ -201,6 +235,82 @@ describe("InfraPackageStaging", () => {
     const receipt = JSON.parse(await readFile(join(root, ".receipts", `${importId}.json`), "utf8")) as { uploadStatus: string };
     expect(receipt.uploadStatus).toBe("closed");
   }, 15_000);
+
+  it("qualifiziert nur eine vertrauenswürdige Ed25519-signierte Delivery als aktivierbar", async () => {
+    const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+    const keyId = "delivery-2026";
+    const fixture = packageFixture("nonPublicSourceRawDataShipped", { keyId, privateKey });
+    const trustedReleaseKeys = {
+      [keyId]: publicKey.export({ type: "spki", format: "pem" }).toString(),
+    };
+    const service = await staging(undefined, trustedReleaseKeys);
+    const importId = "annual-2026-signed";
+    const manifestProof = { bytes: fixture.manifest.length, sha256: sha256(fixture.manifest) };
+    await service.begin(importId, manifestProof);
+    const accepted = await service.uploadManifest(importId, manifestProof, chunks(fixture.manifest));
+    for (const part of fixture.parts) {
+      const partId = accepted.parts.find(({ packagePath }) => packagePath === part.path)?.partId;
+      expect(partId).toBeDefined();
+      await service.uploadPart(
+        importId,
+        partId!,
+        { bytes: part.bytes.length, sha256: sha256(part.bytes) },
+        chunks(part.bytes),
+      );
+    }
+    const first = await service.finalize(importId);
+    expect(first).toMatchObject({
+      deliveryReleaseId: "infra-deutschland-2026.1",
+      signatureStatus: "verified",
+      activationEligible: true,
+    });
+    await expect(service.finalize(importId)).resolves.toEqual(first);
+
+    const root = roots.at(-1)!;
+    const packageVerifier: InfraPackageVerifier = async (packageRoot) => {
+      const manifest = await readFile(join(packageRoot, "manifest.json"));
+      const value = JSON.parse(manifest.toString("utf8")) as { packageId: string; version: string };
+      return { packageId: value.packageId, version: value.version, manifestSha256: sha256(manifest) };
+    };
+    const restarted = new InfraPackageStaging(root, { packageVerifier, trustedReleaseKeys });
+    await expect(restarted.finalize(importId)).resolves.toEqual(first);
+
+    const receiptPath = join(root, ".receipts", `${importId}.json`);
+    const receipt = JSON.parse(await readFile(receiptPath, "utf8")) as Record<string, unknown> & {
+      qualification: Record<string, unknown>;
+    };
+    for (const invalidPair of [
+      { signatureStatus: "missing", activationEligible: true },
+      { signatureStatus: "verified", activationEligible: false },
+    ] as const) {
+      await writeFile(receiptPath, `${JSON.stringify({
+        ...receipt,
+        qualification: { ...receipt.qualification, ...invalidPair },
+      })}\n`, "utf8");
+      const invalidRestart = new InfraPackageStaging(root, { packageVerifier, trustedReleaseKeys });
+      await expect(invalidRestart.finalize(importId))
+        .rejects.toThrow("Finalisierungsbeleg besitzt eine unzulässige Qualifikation.");
+    }
+    await writeFile(receiptPath, `${JSON.stringify(receipt)}\n`, "utf8");
+
+    const otherKey = generateKeyPairSync("ed25519").publicKey;
+    const rejected = await staging(undefined, {
+      [keyId]: otherKey.export({ type: "spki", format: "pem" }).toString(),
+    });
+    const rejectedId = "annual-2026-wrong-key";
+    await rejected.begin(rejectedId, manifestProof);
+    const rejectedParts = await rejected.uploadManifest(rejectedId, manifestProof, chunks(fixture.manifest));
+    for (const part of fixture.parts) {
+      const partId = rejectedParts.parts.find(({ packagePath }) => packagePath === part.path)?.partId;
+      await rejected.uploadPart(
+        rejectedId,
+        partId!,
+        { bytes: part.bytes.length, sha256: sha256(part.bytes) },
+        chunks(part.bytes),
+      );
+    }
+    await expect(rejected.finalize(rejectedId)).rejects.toThrow("keine gültige vertrauenswürdige Ed25519-Signatur");
+  }, 30_000);
 
   it.each([".receiving", ".receipts", "staged"])("lehnt ein verlinktes Staging-Unterverzeichnis %s ab", async (directory) => {
     const fixture = packageFixture();

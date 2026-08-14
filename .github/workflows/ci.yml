@@ -188,6 +188,12 @@ jobs:
         run: pnpm -r --stream typecheck
 
       - name: Alpha-Compose auflösen
+        env:
+          MAP_RELEASE_START_PREFLIGHT_MODE: active-candidate
+          MAP_RELEASE_ID: infra-deutschland-2026.2
+          MAP_RELEASE_HOST_DIR: releases/infra-deutschland-2026.2
+          MAP_BASEMAP_STYLE_URL: /artifacts/maps/infra-deutschland-2026.2/style.json
+          MAP_GERMANY_PMTILES_URL: /artifacts/maps/infra-deutschland-2026.2/infra-deutschland-2026.2.pmtiles
         run: |
           cp .env.example .env
           trap 'rm -f .env' EXIT

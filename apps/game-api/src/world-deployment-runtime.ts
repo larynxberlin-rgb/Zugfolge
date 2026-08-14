@@ -7,9 +7,19 @@ import {
 import type { FleetAuthorityRelease } from "@zugfolge/runtime-native";
 
 import type { SignedAlphaWorldDeployment } from "./alpha-world-start.js";
-import { RegionalServiceCatalog } from "./boundary-transition-scheduler.js";
-import type { RegionalScheduledCommandCatalog } from "./regional-simulation-scheduler.js";
+import {
+  compareRegionalScheduledCommands,
+  RegionalServiceCatalog,
+} from "./boundary-transition-scheduler.js";
+import type {
+  RegionalRealtimeRegistration,
+  RegionalScheduledCommandCatalog,
+} from "./regional-simulation-scheduler.js";
 import { compareUtf8 } from "./utf8.js";
+
+function realtimeRegionKey(worldId: string, regionId: string): string {
+  return `${worldId}\u0000${regionId}`;
+}
 
 class PlanningInfrastructureReleaseRegistry implements PlanningInfrastructureReleaseCatalog {
   readonly #releases = new Map<string, PlanningInfrastructureRelease>();
@@ -59,7 +69,9 @@ export class ActiveWorldDeploymentRuntime {
   readonly boundaryTransitions: RegionalScheduledCommandCatalog;
 
   readonly #activeWorldIds = new Set<string>();
+  readonly #realtimeWorldIds = new Set<string>();
   readonly #deploymentHashes = new Map<string, string>();
+  readonly #realtimeRegions = new Map<string, RegionalRealtimeRegistration>();
   readonly #serviceCatalogs = new Map<string, RegionalScheduledCommandCatalog>();
   readonly #planningRegistry: PlanningInfrastructureReleaseRegistry;
 
@@ -74,9 +86,12 @@ export class ActiveWorldDeploymentRuntime {
       this.worldEpochs.set(world.worldId, new Date(world.epoch));
     }
     this.boundaryTransitions = {
+      at: (worldId, regionId, atS) => [...this.#serviceCatalogs.values()]
+        .flatMap((catalog) => catalog.at(worldId, regionId, atS))
+        .sort(compareRegionalScheduledCommands),
       due: (worldId, regionId, afterS, throughS) => [...this.#serviceCatalogs.values()]
         .flatMap((catalog) => catalog.due(worldId, regionId, afterS, throughS))
-        .sort((left, right) => left.atS - right.atS || Buffer.from(left.transitionId).compare(Buffer.from(right.transitionId))),
+        .sort(compareRegionalScheduledCommands),
     };
   }
 
@@ -105,6 +120,15 @@ export class ActiveWorldDeploymentRuntime {
     this.fleetAuthorityReleases[deployment.worldId] = deployment.fleet.authorityRelease;
     this.planningAuthorityAccountIds[deployment.worldId] = authorityId;
     this.worldEpochs.set(deployment.worldId, new Date(epoch));
+    const region = Object.freeze({
+      worldId: deployment.worldId,
+      regionId: deployment.regionalSimulation.regionId,
+    });
+    this.#realtimeRegions.set(
+      realtimeRegionKey(region.worldId, region.regionId),
+      region,
+    );
+    this.#realtimeWorldIds.add(deployment.worldId);
     this.#serviceCatalogs.set(deployment.worldId, new RegionalServiceCatalog(
       deployment.worldId,
       deployment.regionalSimulation.regionId,
@@ -118,5 +142,32 @@ export class ActiveWorldDeploymentRuntime {
 
   worldIds(): readonly string[] {
     return [...this.#activeWorldIds].sort(compareUtf8);
+  }
+
+  /** Nur signierte 1:1-Deployments, niemals bloss restaurierte Laufzeitregionen. */
+  realtimeRegions(): readonly RegionalRealtimeRegistration[] {
+    return [...this.#realtimeRegions.values()].sort(
+      (left, right) =>
+        compareUtf8(left.worldId, right.worldId) ||
+        compareUtf8(left.regionId, right.regionId),
+    );
+  }
+
+  /** Weltkennungen mit einem verifizierten, explizit registrierten 1:1-Takt. */
+  realtimeWorldIds(): readonly string[] {
+    return [...this.#realtimeWorldIds].sort(compareUtf8);
+  }
+
+  isRealtimeWorld(worldId: string): boolean {
+    return this.#realtimeWorldIds.has(worldId);
+  }
+
+  /** Global freshness gilt erst ab der signierten Epoche einer Echtzeitwelt. */
+  expectsLivemapFreshness(worldId: string, nowMs: number): boolean {
+    if (!Number.isFinite(nowMs)) throw new RangeError("Livemap-Pruefzeit ist ungueltig.");
+    const epoch = this.worldEpochs.get(worldId);
+    return this.#realtimeWorldIds.has(worldId)
+      && epoch !== undefined
+      && epoch.getTime() <= nowMs;
   }
 }

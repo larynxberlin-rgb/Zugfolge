@@ -3,11 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import {
   REGIONAL_LIVEMAP_DELTA_SCHEMA,
   REGIONAL_LIVEMAP_SNAPSHOT_SCHEMA,
+  REGIONAL_SIMULATION_BATCH_RESULT_SCHEMA,
+  REGIONAL_SIMULATION_COMMAND_BATCH_SCHEMA,
   REGIONAL_SIMULATION_COMMAND_SCHEMA,
   REGIONAL_SIMULATION_INITIALIZED_SCHEMA,
   REGIONAL_SIMULATION_INITIALIZE_SCHEMA,
   REGIONAL_SIMULATION_RESTORED_SCHEMA,
   REGIONAL_SIMULATION_RESULT_SCHEMA,
+  REGIONAL_SIMULATION_MAX_BATCH_COMMANDS,
   REGIONAL_SIMULATION_STATE_SCHEMA,
   regionalSimulationRuntimeFromAddon,
   type RegionalSimulationState,
@@ -72,6 +75,7 @@ describe("regionale native M4-Grenze", () => {
       }),
       restoreRegionalSimulation: () => "{}",
       applyRegionalSimulationCommand: () => "{}",
+      applyRegionalSimulationCommandBatch: () => "{}",
     });
 
     const initialized = runtime.initialize({
@@ -135,6 +139,7 @@ describe("regionale native M4-Grenze", () => {
           snapshot: snapshot(state()),
         }),
       applyRegionalSimulationCommand: applyNative,
+      applyRegionalSimulationCommandBatch: () => "{}",
     });
 
     const initialized = runtime.initialize({
@@ -166,6 +171,61 @@ describe("regionale native M4-Grenze", () => {
     expect(applyNative).toHaveBeenCalledOnce();
   });
 
+  it("bindet einen begrenzten Batch an denselben Kopf und dekodiert das Gesamtergebnis", () => {
+    const applyBatchNative = vi.fn(() => JSON.stringify({
+      schemaVersion: REGIONAL_SIMULATION_BATCH_RESULT_SCHEMA,
+      state: state(2),
+      stateHash: "c".repeat(64),
+      events: [],
+      snapshot: snapshot(state(2)),
+      commandResults: [
+        { commandId: "advance-1", idempotentReplay: false },
+        { commandId: "advance-2", idempotentReplay: false },
+      ],
+    }));
+    const runtime = regionalSimulationRuntimeFromAddon({
+      initializeRegionalSimulation: () => "{}",
+      restoreRegionalSimulation: () => "{}",
+      applyRegionalSimulationCommand: () => "{}",
+      applyRegionalSimulationCommandBatch: applyBatchNative,
+    });
+    const batch = {
+      schemaVersion: REGIONAL_SIMULATION_COMMAND_BATCH_SCHEMA,
+      worldId,
+      regionId,
+      expectedStateHash: "a".repeat(64),
+      expectedRevision: 0,
+      expectedPublisherSequence: 0,
+      commands: [
+        { commandId: "advance-1", command: { type: "advance-to" as const, atS: 100 } },
+        { commandId: "advance-2", command: { type: "advance-to" as const, atS: 200 } },
+      ],
+    } as const;
+
+    expect(runtime.applyBatch(state(), batch)).toMatchObject({
+      state: { revision: 2, publisherSequence: 2 },
+      snapshot: { producerSequence: 2, atS: 200 },
+      commandResults: [
+        { commandId: "advance-1", idempotentReplay: false },
+        { commandId: "advance-2", idempotentReplay: false },
+      ],
+    });
+    expect(applyBatchNative).toHaveBeenCalledOnce();
+
+    const oversized = {
+      ...batch,
+      commands: Array.from(
+        { length: REGIONAL_SIMULATION_MAX_BATCH_COMMANDS + 1 },
+        (_, index) => ({
+          commandId: `oversized-${index}`,
+          command: { type: "advance-to" as const, atS: 200 },
+        }),
+      ),
+    };
+    expect(() => runtime.applyBatch(state(), oversized)).toThrow(/hoechstens/);
+    expect(applyBatchNative).toHaveBeenCalledOnce();
+  });
+
   it("verwirft eine Sequenzluecke aus dem nativen Addon", () => {
     const runtime = regionalSimulationRuntimeFromAddon({
       initializeRegionalSimulation: () => "{}",
@@ -190,6 +250,7 @@ describe("regionale native M4-Grenze", () => {
           appliedCommandId: "advance-1",
           idempotentReplay: false,
         }),
+      applyRegionalSimulationCommandBatch: () => "{}",
     });
     expect(() =>
       runtime.apply(state(), {
@@ -217,7 +278,56 @@ describe("regionale native M4-Grenze", () => {
           snapshot: snapshot(otherState),
         }),
       applyRegionalSimulationCommand: () => "{}",
+      applyRegionalSimulationCommandBatch: () => "{}",
     });
     expect(() => runtime.restore(state())).toThrow(/Welt- oder Regionsisolation/);
+  });
+
+  it("verwirft eine nichtkanonische Basisfahrtbindung aus dem nativen Addon", () => {
+    const runtime = regionalSimulationRuntimeFromAddon({
+      initializeRegionalSimulation: () => "{}",
+      restoreRegionalSimulation: () => "{}",
+      applyRegionalSimulationCommand: () => JSON.stringify({
+        schemaVersion: REGIONAL_SIMULATION_RESULT_SCHEMA,
+        state: state(1),
+        stateHash: "b".repeat(64),
+        events: [],
+        delta: {
+          schemaVersion: REGIONAL_LIVEMAP_DELTA_SCHEMA,
+          worldId,
+          regionId,
+          producerSequence: 1,
+          atS: 100,
+          changed: [{
+            id: "forged",
+            baseTrainRunId: "run-1",
+            operator: "operator-1",
+            trainNumber: "RE 1",
+            category: "regional",
+            positionMm: 0,
+            speedMmPerSecond: 0,
+            delaySeconds: 0,
+            nextOperatingPoint: "Leipzig Hbf",
+            status: "planned",
+          }],
+          removed: [],
+          changedDisruptions: [],
+          removedDisruptionIds: [],
+        },
+        appliedCommandId: "advance-1",
+        idempotentReplay: false,
+      }),
+      applyRegionalSimulationCommandBatch: () => "{}",
+    });
+    expect(() => runtime.apply(state(), {
+      schemaVersion: REGIONAL_SIMULATION_COMMAND_SCHEMA,
+      worldId,
+      regionId,
+      commandId: "advance-1",
+      expectedStateHash: "a".repeat(64),
+      expectedRevision: 0,
+      expectedPublisherSequence: 0,
+      command: { type: "advance-to", atS: 100 },
+    })).toThrow(/kanonische Basisfahrtbindung/);
   });
 });

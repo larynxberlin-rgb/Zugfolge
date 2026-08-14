@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::{Value, json};
@@ -388,7 +389,7 @@ fn write(path: &Path, bytes: &[u8]) {
 }
 
 #[test]
-fn alter_v1_einstieg_wird_ebenfalls_in_rust_gebildet() {
+fn regionaler_v1_release_wird_aus_explizitem_versioniertem_buildvertrag_gebildet() {
     static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
     let suffix = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
     let root = std::env::temp_dir().join(format!(
@@ -413,16 +414,25 @@ fn alter_v1_einstieg_wird_ebenfalls_in_rust_gebildet() {
         write(&artifact_root.join(artifact), bytes);
     }
     write(
-        &artifact_root.join("gtfs-region-20260812-v2.json"),
-        serde_json::to_string(&serde_json::json!({ "snapshotHash": "a".repeat(64) }))
-            .expect("JSON")
-            .as_bytes(),
+        &artifact_root.join("gtfs-region-20260810-v2.json"),
+        serde_json::to_string(&serde_json::json!({
+            "snapshotHash": "a".repeat(64),
+            "snapshot": {
+                "regionId": "mitteldeutschland-b",
+                "regionVariant": "B",
+                "serviceDate": "20260810",
+            },
+        }))
+        .expect("JSON")
+        .as_bytes(),
     );
     write(
         &artifact_root.join("operational-network.json"),
         serde_json::to_string(&serde_json::json!({
             "networkHash": "b".repeat(64),
             "network": {
+                "regionId": "mitteldeutschland-b",
+                "timetableYear": 2026,
                 "validFrom": "2025-12-14",
                 "validUntil": "2026-12-12",
                 "metrics": {
@@ -484,6 +494,7 @@ fn alter_v1_einstieg_wird_ebenfalls_in_rust_gebildet() {
         "tools/region-import/validation-set.mjs",
         "tools/region-import/build-validation-set.mjs",
         "tools/region-import/build-infra-release.mjs",
+        "tools/region-import/regional-release-contract.mjs",
         "tools/region-import/release-crypto.mjs",
         "tools/region-import/sign-release.mjs",
         "tools/region-import/verify-release.mjs",
@@ -492,9 +503,35 @@ fn alter_v1_einstieg_wird_ebenfalls_in_rust_gebildet() {
         write(&root.join(path), path.as_bytes());
     }
 
-    let release = build_mitteldeutschland_infra_release(&root, &source_root, &artifact_root)
-        .expect("qualifizierter v1-Release");
+    let build_config = json!({
+        "schema": "zugfolge-regional-infra-release-build/v1",
+        "releaseId": "infra-mitteldeutschland-b-2026.2",
+        "regionId": "mitteldeutschland-b",
+        "regionVariant": "B",
+        "timetableYear": 2026,
+        "serviceDate": "20260810",
+        "gtfsArtifact": "gtfs-region-20260810-v2.json",
+        "releaseApproval": {
+            "releaseResponsible": "Sebastian Barowski",
+            "responsibilityGrantedBy": "user-approval-2026-08-13-evaluation",
+            "activationAllowed": true,
+            "activationAuthority": "game-system-only",
+        },
+    });
+    let release =
+        build_mitteldeutschland_infra_release(&build_config, &root, &source_root, &artifact_root)
+            .expect("qualifizierter v1-Release");
     assert_eq!(release["schema"], "zugfolge-infra-release/v1");
+    assert_eq!(release["releaseId"], "infra-mitteldeutschland-b-2026.2");
+    assert_eq!(release["buildContract"]["serviceDate"], "20260810");
+    assert_eq!(
+        release["releaseApproval"]["responsibilityGrantedBy"],
+        "user-approval-2026-08-13-evaluation"
+    );
+    assert_eq!(
+        release["artifacts"][1]["file"],
+        "gtfs-region-20260810-v2.json"
+    );
     assert_eq!(release["status"], "qualified");
     assert_eq!(release["sources"].as_array().expect("Quellen").len(), 5);
     assert_eq!(
@@ -502,7 +539,46 @@ fn alter_v1_einstieg_wird_ebenfalls_in_rust_gebildet() {
             .as_array()
             .expect("Pipelineskripte")
             .len(),
-        15,
+        16,
     );
+
+    let config_path = root.join("regional-build.json");
+    write(
+        &config_path,
+        serde_json::to_string(&build_config)
+            .expect("Buildvertrag")
+            .as_bytes(),
+    );
+    let output_path = root.join("infra-mitteldeutschland-b-2026.2.unsigned.json");
+    let invoke = || {
+        Command::new(env!("CARGO_BIN_EXE_zugfolge-infra-release"))
+            .current_dir(&root)
+            .arg("regional-manifest")
+            .arg(&config_path)
+            .arg(&source_root)
+            .arg(&artifact_root)
+            .arg(&output_path)
+            .status()
+            .expect("Releasecompiler starten")
+    };
+    assert!(invoke().success(), "erste Ausgabe muss entstehen");
+    assert!(
+        !invoke().success(),
+        "bestehende versionierte Ausgabe darf nicht ersetzt werden"
+    );
+
+    let mut unknown_field = build_config.clone();
+    unknown_field["output"] = json!("existing-2026.1.json");
+    let error =
+        build_mitteldeutschland_infra_release(&unknown_field, &root, &source_root, &artifact_root)
+            .expect_err("unbekanntes Konfigurationsfeld muss scheitern");
+    assert!(error.to_string().contains("unknown field"));
+
+    let mut wrong_date = build_config;
+    wrong_date["serviceDate"] = json!("20260812");
+    let error =
+        build_mitteldeutschland_infra_release(&wrong_date, &root, &source_root, &artifact_root)
+            .expect_err("abweichender Artefaktname muss scheitern");
+    assert!(error.to_string().contains("gtfsArtifact muss exakt"));
     fs::remove_dir_all(root).expect("Testverzeichnis aufraeumen");
 }

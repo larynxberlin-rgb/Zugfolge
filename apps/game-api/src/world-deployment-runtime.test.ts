@@ -76,6 +76,13 @@ describe("aktive World-Deployment-Runtime", () => {
 
     expect(runtime.worldIds()).toEqual([WORLD_ID]);
     expect(runtime.worldEpochs.get(WORLD_ID)).toEqual(EPOCH);
+    expect(runtime.realtimeRegions()).toEqual([
+      { worldId: WORLD_ID, regionId: "mitteldeutschland-b" },
+    ]);
+    expect(runtime.realtimeWorldIds()).toEqual([WORLD_ID]);
+    expect(runtime.isRealtimeWorld(WORLD_ID)).toBe(true);
+    expect(runtime.expectsLivemapFreshness(WORLD_ID, EPOCH.getTime() - 1)).toBe(false);
+    expect(runtime.expectsLivemapFreshness(WORLD_ID, EPOCH.getTime())).toBe(true);
     expect(runtime.fleetAuthorityReleases[WORLD_ID]).toMatchObject({ releaseId: "fleet-test" });
     expect(runtime.planningAuthorityAccountIds[WORLD_ID]).toBe(AUTHORITY_ID);
     expect(runtime.planningInfrastructureReleases.get(WORLD_ID, "infra-test-v1")).toMatchObject({
@@ -84,20 +91,82 @@ describe("aktive World-Deployment-Runtime", () => {
     });
   });
 
+  it("bewahrt beim aggregierten Tageswechsel Materialisierung vor Grenzbefehlen", () => {
+    const base = signed();
+    const deployment = {
+      ...base,
+      deployment: {
+        ...base.deployment,
+        boundaryTransitions: [{
+          transitionId: "enter-at-service-start",
+          worldId: WORLD_ID,
+          regionId: "mitteldeutschland-b",
+          atS: 0,
+          command: {
+            type: "enter-external-zone",
+            trainRunId: "run-1",
+            externalLeg: {
+              journeyChainId: "chain",
+              externalLegId: "external",
+              fromPortalId: "portal-a",
+              toPortalId: "portal-b",
+              scheduledStartS: 0,
+              scheduledEndS: 100,
+              reentryEarliestS: 100,
+              reentryLatestS: 200,
+              fixedCostCents: "0",
+              boundVehicleIds: ["vehicle"],
+              boundPersonnelDutyIds: ["duty"],
+              reentryRoute: [],
+              firstResources: [],
+            },
+          },
+        }],
+      },
+    } as SignedAlphaWorldDeployment;
+    const runtime = new ActiveWorldDeploymentRuntime({ activeWorlds: [] });
+    runtime.register(deployment, EPOCH);
+
+    expect(runtime.boundaryTransitions.at(
+      WORLD_ID,
+      "mitteldeutschland-b",
+      86_400,
+    ).map((command) => command.transitionId)).toEqual([
+      "dematerialize-before:day-1",
+      "materialize:run-1:day-1",
+      "enter-at-service-start:day-1",
+    ]);
+  });
+
   it("rekonstruiert nach Neustart exakt dieselben Capabilities und laesst nicht registrierte Provisionierung inert", () => {
     const first = new ActiveWorldDeploymentRuntime({ activeWorlds: [] });
     first.register(signed(), EPOCH);
-    const restarted = new ActiveWorldDeploymentRuntime({ activeWorlds: [] });
+    const restarted = new ActiveWorldDeploymentRuntime({
+      activeWorlds: [{
+        worldId: "70000000-0000-4000-8000-000000000002",
+        epoch: EPOCH,
+      }],
+    });
 
     restarted.register(signed(), EPOCH);
     restarted.register(signed(), EPOCH);
 
-    expect(restarted.worldIds()).toEqual(first.worldIds());
+    expect(restarted.realtimeRegions()).toEqual(first.realtimeRegions());
     expect(restarted.planningAuthorityAccountIds).toEqual(first.planningAuthorityAccountIds);
     expect(restarted.fleetAuthorityReleases).toEqual(first.fleetAuthorityReleases);
     expect(restarted.boundaryTransitions.due(WORLD_ID, "mitteldeutschland-b", 0, 86_400))
       .toEqual(first.boundaryTransitions.due(WORLD_ID, "mitteldeutschland-b", 0, 86_400));
-    expect(restarted.worldIds()).not.toContain("70000000-0000-4000-8000-000000000002");
+    expect(restarted.worldIds()).toContain("70000000-0000-4000-8000-000000000002");
+    expect(restarted.realtimeWorldIds()).toEqual([WORLD_ID]);
+    expect(restarted.realtimeRegions()).not.toContainEqual({
+      worldId: "70000000-0000-4000-8000-000000000002",
+      regionId: "mitteldeutschland-b",
+    });
+    expect(restarted.isRealtimeWorld("70000000-0000-4000-8000-000000000002")).toBe(false);
+    expect(restarted.expectsLivemapFreshness(
+      "70000000-0000-4000-8000-000000000002",
+      EPOCH.getTime(),
+    )).toBe(false);
   });
 
   it("laesst ein retrybares Provisioning-Profil nicht in den Odoo-Projektionszyklus", async () => {

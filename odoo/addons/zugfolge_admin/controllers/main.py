@@ -7,6 +7,7 @@ from odoo import http
 from odoo.http import request
 
 from ..models.rfc3339 import RFC3339_WITH_ZONE
+from ..models.projection import AUTHORITATIVE_WORLD_START_PROJECTION
 
 
 def _valid_signature(payload, key_id, timestamp, supplied):
@@ -58,6 +59,12 @@ class ZugfolgeProjectionController(http.Controller):
                 or not isinstance(message_id, str) or not message_id):
             return {"accepted": False, "code": "invalid_schema"}
         body = payload.get("payload", {})
+        if (
+            isinstance(body, dict)
+            and body.get("projectionKind") == AUTHORITATIVE_WORLD_START_PROJECTION
+            and payload.get("messageType") != "world.projection"
+        ):
+            return {"accepted": False, "code": "invalid_projection_type"}
         digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")).hexdigest()
         # Ab hier ist der Integrationsaufruf signiert und zeitlich begrenzt.
         # Nur dieser Pfad darf die schreibgeschuetzten Game-Projektionen pflegen.

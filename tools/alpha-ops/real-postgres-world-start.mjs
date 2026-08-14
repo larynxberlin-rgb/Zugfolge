@@ -55,18 +55,20 @@ try {
     "zugfolge-alpha-2026": publicKey,
   });
   const worldId = signed.deployment.worldId;
+  const definition = signed.deployment.worldDefinition;
+  const epoch = new Date(definition.epoch);
 
   await db
     .insert(schema.worlds)
     .values({
       id: worldId,
-      name: "Alpha Mitteldeutschland B 2026",
-      schedulePeriodWeeks: 4,
-      epoch: new Date("2026-08-12T00:00:00.000Z"),
+      name: definition.name,
+      schedulePeriodWeeks: definition.schedulePeriodWeeks,
+      epoch,
       worldKind: "public",
       rankingStatus: "ranked",
       lifecycleStatus: "active",
-      createdAt: new Date("2026-08-12T00:00:00.000Z"),
+      createdAt: epoch,
     })
     .onConflictDoNothing();
 

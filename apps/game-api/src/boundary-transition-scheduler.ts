@@ -55,6 +55,25 @@ function shiftedTrainId(trainRunId: string, serviceDay: number): string {
   return serviceDay === 0 ? trainRunId : `${trainRunId}:day-${serviceDay}`;
 }
 
+function scheduledCommandPriority(command: RegionalSimulationCommandPayload): number {
+  switch (command.type) {
+    case "dematerialize-before": return 0;
+    case "materialize": return 1;
+    case "enter-external-zone": return 2;
+    case "reenter-from-external": return 3;
+    default: return 4;
+  }
+}
+
+export function compareRegionalScheduledCommands(
+  left: RegionalScheduledCommand,
+  right: RegionalScheduledCommand,
+): number {
+  return left.atS - right.atS
+    || scheduledCommandPriority(left.command) - scheduledCommandPriority(right.command)
+    || Buffer.from(left.transitionId).compare(Buffer.from(right.transitionId));
+}
+
 function shiftTransition(transition: RegionalBoundaryTransition, serviceDay: number, shiftS: number): RegionalBoundaryTransition {
   const command = transition.command.type === "reenter-from-external"
     ? { ...transition.command, trainRunId: shiftedTrainId(transition.command.trainRunId, serviceDay) }
@@ -94,12 +113,16 @@ export class RegionalServiceCatalog {
   ) {
     if (!Number.isSafeInteger(repeatEveryS) || repeatEveryS < 3_600) throw new Error("Wiederholungsperiode des Betriebsprogramms ist ungueltig.");
     if (trains.length === 0 || new Set(trains.map((train) => train.trainRunId)).size !== trains.length) throw new Error("Betriebsprogramm besitzt keine eindeutigen Zuglaeufe.");
+    if (trains.some((train) => train.baseTrainRunId !== undefined || train.trainRunId.includes(":day-"))) {
+      throw new Error("Signiertes Basisbetriebsprogramm darf keine abgeleiteten Tageskennungen enthalten.");
+    }
     this.#baseTransitions = new BoundaryTransitionCatalog(transitions).due(worldId, regionId, -1, Number.MAX_SAFE_INTEGER);
   }
 
-  at(worldId: string, regionId: string, atS: number): readonly RegionalBoundaryTransition[] {
+  at(worldId: string, regionId: string, atS: number): readonly RegionalScheduledCommand[] {
     if (worldId !== this.worldId || regionId !== this.regionId) return [];
-    return this.#baseTransitions.filter((transition) => transition.atS === atS);
+    if (!Number.isSafeInteger(atS) || atS < 0) throw new RangeError("Betriebsprogrammzeit ist ungueltig.");
+    return this.due(worldId, regionId, atS - 1, atS);
   }
 
   due(worldId: string, regionId: string, afterS: number, throughS: number): readonly RegionalScheduledCommand[] {
@@ -127,6 +150,7 @@ export class RegionalServiceCatalog {
           train: {
             ...train,
             trainRunId: shiftedTrainId(train.trainRunId, serviceDay),
+            baseTrainRunId: train.trainRunId,
             route: train.route.map((point) => ({
               ...point,
               arrivalS: point.arrivalS + shiftS,
@@ -143,6 +167,10 @@ export class RegionalServiceCatalog {
         commands.push(shiftTransition(transition, serviceDay, serviceDay * this.repeatEveryS));
       }
     }
-    return commands.sort((left, right) => left.atS - right.atS || Buffer.from(left.transitionId).compare(Buffer.from(right.transitionId)));
+    // Eine Tagesinstanz muss existieren, bevor ein Grenzbefehl derselben
+    // Sekunde auf sie zugreift. Reine Kennungssortierung wuerde z. B.
+    // `enter:*:day-N` vor `materialize:*:day-N` ausfuehren und die Region an
+    // der Grenze dauerhaft in unknown_train-Replays festhalten.
+    return commands.sort(compareRegionalScheduledCommands);
   }
 }

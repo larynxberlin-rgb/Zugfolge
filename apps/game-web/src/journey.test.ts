@@ -129,6 +129,25 @@ describe("spielergebundene Tutorialreise", () => {
     expect(html).toContain('aria-label="Mitteldeutschland beitreten"');
   });
 
+  it("deaktiviert den Eintritt in eine geplante Welt und nennt ihren Startzeitpunkt", () => {
+    const html = renderJourney({
+      publicWorldId: "public-world",
+      busy: false,
+      message: "",
+      coachDismissed: false,
+      whyOpen: false,
+      worldContracts: [{
+        schemaVersion: "zugfolge-public-world-contract/v1", contractHash: "a".repeat(64), worldId: "public-world", name: "Geplante Welt",
+        region: { id: "mitteldeutschland-b", name: "Leipzig–Halle–Erfurt", variant: "B" }, noWipe: true, schedulePeriodWeeks: 4,
+        duration: { kind: "periods", periodCount: 10 }, timeBasis: { mode: "realtime", accelerationFactor: 1, epoch: "2026-08-17T00:00:00Z", timeZone: "Europe/Berlin" },
+        entry: { status: "scheduled", requiresContractConfirmation: true, opensAt: "2026-08-17T00:00:00Z", closesAt: null }, startingCapitalPolicy: { kind: "finite", amountCents: "0" },
+        releases: { infra: "b".repeat(64), timetable: "c".repeat(64), fleet: "d".repeat(64), economy: "e".repeat(64) },
+      }],
+    });
+    expect(html).toContain("öffnet am");
+    expect(html).toContain('type="submit" disabled');
+  });
+
   it("ordnet offene Postfachmeldungen als weltgebundene Aufmerksamkeitsschiene an", () => {
     const html = renderJourney({
       publicWorldId: "public-world",

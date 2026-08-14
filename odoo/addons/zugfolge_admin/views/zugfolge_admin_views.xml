@@ -26,6 +26,7 @@
         <field name="starting_capital_preview" invisible="action_type != 'world_deploy'"/>
         <field name="signing_configuration" widget="json" invisible="action_type != 'world_deploy'"/>
         <field name="deployment_hash" invisible="action_type != 'world_deploy'" readonly="state != 'draft'"/>
+        <field name="deployment_revision" invisible="action_type != 'world_deploy'" readonly="state != 'draft'"/>
         <field name="signed_world_deployment" widget="json" invisible="action_type != 'world_deploy'" readonly="state != 'draft'"/>
       </xpath>
       <xpath expr="//field[@name='action_type']" position="attributes">

@@ -11,6 +11,7 @@ export interface LivemapRuntimeConfiguration {
 }
 
 const TOKEN_KEY = "zugfolge.accessToken";
+export const DEFAULT_LIVEMAP_OIDC_CLIENT_ID = "livemap";
 const EXPIRY_KEY = "zugfolge.accessTokenExpiresAt";
 const STATE_KEY = "zugfolge.livemap.oidc.state";
 const VERIFIER_KEY = "zugfolge.livemap.oidc.verifier";
@@ -35,12 +36,12 @@ export function loadRuntimeConfiguration(): LivemapRuntimeConfiguration {
     gameApiUrl: configured.gameApiUrl ?? metaApi,
     keycloakUrl: (configured.keycloakUrl ?? "").replace(/\/$/, ""),
     keycloakRealm: configured.keycloakRealm ?? "zugfolge",
-    oidcClientId: configured.livemapOidcClientId ?? "livemap",
     publicWorldId: configured.publicWorldId ?? "",
     gameWebUrl: configured.gameWebUrl ?? "",
     basemapStyleUrl: configured.mapBasemapStyleUrl ?? "/artifacts/world-basemap/style.json",
     germanyPmtilesUrl: configured.mapGermanyPmtilesUrl ?? "/artifacts/germany-infrastructure/germany.pmtiles",
     attribution: configured.mapAttribution ?? "© OpenStreetMap-Mitwirkende · ODbL",
+    oidcClientId: configured.livemapOidcClientId?.trim() || DEFAULT_LIVEMAP_OIDC_CLIENT_ID,
   });
 }
 

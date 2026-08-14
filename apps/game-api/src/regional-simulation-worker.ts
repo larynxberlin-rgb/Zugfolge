@@ -3,14 +3,22 @@ import {
   mailboxMessages,
   operators,
   regionalSimulationStates,
+  worldEventLog,
   worlds,
   type RegionalSimulationStateRow,
 } from "@zugfolge/db";
-import { projectOperations, type OperationsRegistry } from "@zugfolge/dispatch";
+import {
+  OPERATIONS_DECISION_EVENT_TYPES,
+  operationsEventOperatorIds,
+  projectOperations,
+  type OperationsRegistry,
+} from "@zugfolge/dispatch";
 import type { LivemapRegistry } from "@zugfolge/livemap-stream";
 import {
+  REGIONAL_SIMULATION_COMMAND_BATCH_SCHEMA,
   REGIONAL_SIMULATION_COMMAND_SCHEMA,
   REGIONAL_SIMULATION_STATE_SCHEMA,
+  type RegionalSimulationBatchResult,
   type RegionalSimulationCommandPayload,
   type RegionalSimulationInitialization,
   type RegionalSimulationInitialized,
@@ -32,6 +40,12 @@ export interface RegionalSimulationWorkCommand {
   readonly regionId: string;
   readonly commandId: string;
   readonly command: RegionalSimulationCommandPayload;
+}
+
+export interface RegionalSimulationWorkBatch {
+  readonly worldId: string;
+  readonly regionId: string;
+  readonly commands: readonly Pick<RegionalSimulationWorkCommand, "commandId" | "command">[];
 }
 
 export interface RegionalSimulationReadyRegion {
@@ -140,21 +154,26 @@ async function appendEvents(
   ) {
     throw new RegionalSimulationSequenceError("Welt-Ereignissequenz ist erschoepft.");
   }
-  const appended = await db.insert(domainEvents).values(
-    events.map((event, index) => ({
-      worldId,
-      sequence: firstSequence + index,
-      eventType: event.eventType,
-      payload: {
-        ...event.payload,
-        schemaVersion: "zugfolge-regional-simulation-event/v1",
-        nativeEventId: event.eventId,
-        regionId: event.regionId,
-        simulationSequence: event.simulationSequence,
-      },
-      occurredAt: occurredAt(epoch, event.atS),
-    })),
-  ).returning();
+  const rows = events.map((event, index) => ({
+    worldId,
+    sequence: firstSequence + index,
+    eventType: event.eventType,
+    payload: {
+      ...event.payload,
+      schemaVersion: "zugfolge-regional-simulation-event/v1",
+      nativeEventId: event.eventId,
+      regionId: event.regionId,
+      simulationSequence: event.simulationSequence,
+    },
+    occurredAt: occurredAt(epoch, event.atS),
+  }));
+  const appended: Array<typeof domainEvents.$inferSelect> = [];
+  for (let offset = 0; offset < rows.length; offset += 500) {
+    appended.push(
+      ...await db.insert(domainEvents).values(rows.slice(offset, offset + 500)).returning(),
+    );
+  }
+  appended.sort((left, right) => left.sequence - right.sequence);
   for (const event of appended.filter((item) => item.eventType === "disruption.applied")) {
     const payload = event.payload as Readonly<Record<string, unknown>>;
     const operatorIds = Array.isArray(payload["operatorIds"])
@@ -191,6 +210,7 @@ export class RegionalSimulationWorker {
   readonly #livemap: LivemapRegistry;
   readonly #operations: OperationsRegistry | undefined;
   readonly #readyRegions = new Map<string, RegionalSimulationReadyRegion>();
+  readonly #releasedWorldIds = new Set<string>();
 
   constructor(
     db: AnyDatabase,
@@ -216,7 +236,30 @@ export class RegionalSimulationWorker {
     );
   }
 
+  /**
+   * Entfernt eine abgeschlossene Welt aus allen prozesslokalen Projektionen.
+   * Der Tombstone verhindert, dass ein paralleler Restore sie erneut aktiviert.
+   */
+  releaseWorld(worldId: string): void {
+    this.#releasedWorldIds.add(worldId);
+    this.#clearWorldReady(worldId);
+    this.#livemap.releaseWorld(worldId);
+    this.#operations?.releaseWorld(worldId);
+  }
+
+  #assertNotReleased(worldId: string, regionId: string): void {
+    if (this.#releasedWorldIds.has(worldId)) {
+      throw new RegionalSimulationUnavailableError(worldId, regionId);
+    }
+  }
+
+  #markLivemapUnavailable(worldId: string): void {
+    if (this.#releasedWorldIds.has(worldId)) this.#livemap.releaseWorld(worldId);
+    else this.#livemap.markUnavailable(worldId);
+  }
+
   #markReady(state: RegionalSimulationState): void {
+    this.#assertNotReleased(state.worldId, state.regionId);
     this.#readyRegions.set(
       readyKey(state.worldId, state.regionId),
       Object.freeze({
@@ -233,7 +276,33 @@ export class RegionalSimulationWorker {
     }
   }
 
+  /**
+   * Rekonstruiert ausschliesslich die fluechtige Operations-Projektion aus dem
+   * autoritativen, weltgebundenen Eventlog. OperationsFeed verwirft bereits
+   * veroeffentlichte Weltsequenzen; ein Retry nach Teil-Fanout bleibt daher
+   * idempotent und erzeugt insbesondere keinen erneuten Livemap-Delta.
+   */
+  async #replayOperations(worldId: string): Promise<void> {
+    if (this.#operations === undefined) return;
+    const events = await worldEventLog(this.#db, worldId).listOfTypes(
+      OPERATIONS_DECISION_EVENT_TYPES,
+    );
+    for (const event of events) {
+      for (const operatorId of operationsEventOperatorIds(event)) {
+        const decision = projectOperations([event], operatorId).decisions[0];
+        if (decision === undefined) continue;
+        this.#operations.forOperator(worldId, operatorId).publish({
+          worldId,
+          operatorId,
+          sequence: event.sequence,
+          decision,
+        });
+      }
+    }
+  }
+
   async #rebuildWorldFeed(worldId: string): Promise<void> {
+    this.#assertNotReleased(worldId, "*");
     const rows = await this.#db
       .select()
       .from(regionalSimulationStates)
@@ -269,11 +338,12 @@ export class RegionalSimulationWorker {
           externalTrains: result.snapshot.externalTrains ?? [],
           disruptions: result.snapshot.disruptions,
         });
-        this.#markReady(result.state);
       }
+      await this.#replayOperations(worldId);
+      for (const result of restored) this.#markReady(result.state);
     } catch (error) {
       this.#clearWorldReady(worldId);
-      this.#livemap.markUnavailable(worldId);
+      this.#markLivemapUnavailable(worldId);
       throw error;
     }
   }
@@ -283,6 +353,7 @@ export class RegionalSimulationWorker {
     persistedAt: Date,
   ): Promise<RegionalSimulationInitialized> {
     validDate(persistedAt, "Persistenzzeit");
+    this.#assertNotReleased(input.worldId, input.regionId);
     const initialized = this.#runtime.initialize(input);
     await this.#db.transaction(async (tx) => {
       await tx.execute(
@@ -330,6 +401,7 @@ export class RegionalSimulationWorker {
     });
 
     try {
+      this.#assertNotReleased(input.worldId, input.regionId);
       this.#livemap.initializeRegion(input.worldId, input.regionId, {
         at: initialized.snapshot.atS,
         trains: initialized.snapshot.trains,
@@ -340,12 +412,13 @@ export class RegionalSimulationWorker {
       return initialized;
     } catch (error) {
       this.#readyRegions.delete(readyKey(input.worldId, input.regionId));
-      this.#livemap.markUnavailable(input.worldId);
+      this.#markLivemapUnavailable(input.worldId);
       throw error;
     }
   }
 
   async restore(worldId: string, regionId: string): Promise<RegionalSimulationRestored> {
+    this.#assertNotReleased(worldId, regionId);
     const [row] = await this.#db
       .select()
       .from(regionalSimulationStates)
@@ -369,19 +442,37 @@ export class RegionalSimulationWorker {
       );
     }
     try {
+      this.#assertNotReleased(worldId, regionId);
       this.#livemap.initializeRegion(worldId, regionId, {
         at: restored.snapshot.atS,
         trains: restored.snapshot.trains,
         externalTrains: restored.snapshot.externalTrains ?? [],
         disruptions: restored.snapshot.disruptions,
       });
+      await this.#replayOperations(worldId);
       this.#markReady(restored.state);
       return restored;
     } catch (error) {
       this.#readyRegions.delete(readyKey(worldId, regionId));
-      this.#livemap.markUnavailable(worldId);
+      this.#markLivemapUnavailable(worldId);
       throw error;
     }
+  }
+
+  /**
+   * Baut nach einem fehlgeschlagenen In-Process-Fanout die gesamte Weltprojektion
+   * aus den persistierten Regionskoepfen neu auf. Erst ein vollstaendiger
+   * Weltrestore macht die angeforderte Echtzeitregion wieder schedulerbereit.
+   */
+  async recover(worldId: string, regionId: string): Promise<RegionalSimulationReadyRegion> {
+    await this.#rebuildWorldFeed(worldId);
+    const recovered = this.#readyRegions.get(readyKey(worldId, regionId));
+    if (recovered === undefined) {
+      this.#clearWorldReady(worldId);
+      this.#markLivemapUnavailable(worldId);
+      throw new RegionalSimulationUnavailableError(worldId, regionId);
+    }
+    return recovered;
   }
 
   async apply(
@@ -501,6 +592,7 @@ export class RegionalSimulationWorker {
       return { result, fanout: true, appendedEvents };
     });
 
+    this.#assertNotReleased(work.worldId, work.regionId);
     if (!committed.fanout) {
       this.#markReady(committed.result.state);
       return committed.result;
@@ -540,7 +632,177 @@ export class RegionalSimulationWorker {
       return committed.result;
     } catch (error) {
       this.#readyRegions.delete(key);
-      this.#livemap.markUnavailable(work.worldId);
+      this.#markLivemapUnavailable(work.worldId);
+      throw error;
+    }
+  }
+
+  /**
+   * Persistiert einen geordneten Scheduler-Chunk unter genau einer Welt- und
+   * Regionssperre. Zustand, Revisionskopf, Domain-Events und Postfachfolgen
+   * committen gemeinsam; der fluechtige Fanout folgt erst danach aus dem
+   * finalen Rust-Snapshot.
+   */
+  async applyBatch(
+    work: RegionalSimulationWorkBatch,
+    persistedAt: Date,
+  ): Promise<RegionalSimulationBatchResult> {
+    validDate(persistedAt, "Persistenzzeit");
+    if (work.commands.length === 0) {
+      throw new RangeError("Regionale Simulationsgruppe darf nicht leer sein.");
+    }
+    const key = readyKey(work.worldId, work.regionId);
+    if (!this.#readyRegions.has(key)) {
+      throw new RegionalSimulationUnavailableError(work.worldId, work.regionId);
+    }
+
+    const committed = await this.#db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${work.worldId} for update`,
+      );
+      const [world] = await tx
+        .select({ epoch: worlds.epoch })
+        .from(worlds)
+        .where(eq(worlds.id, work.worldId))
+        .limit(1);
+      if (world === undefined) {
+        throw new RegionalSimulationUnavailableError(work.worldId, work.regionId);
+      }
+      await tx.execute(sql`
+        select ${regionalSimulationStates.worldId}
+        from ${regionalSimulationStates}
+        where ${regionalSimulationStates.worldId} = ${work.worldId}
+          and ${regionalSimulationStates.regionId} = ${work.regionId}
+        for update
+      `);
+      const [row] = await tx
+        .select()
+        .from(regionalSimulationStates)
+        .where(
+          and(
+            eq(regionalSimulationStates.worldId, work.worldId),
+            eq(regionalSimulationStates.regionId, work.regionId),
+          ),
+        )
+        .limit(1);
+      if (row === undefined) {
+        throw new RegionalSimulationUnavailableError(work.worldId, work.regionId);
+      }
+      const state = persistedState(row);
+      const result = this.#runtime.applyBatch(state, {
+        schemaVersion: REGIONAL_SIMULATION_COMMAND_BATCH_SCHEMA,
+        worldId: work.worldId,
+        regionId: work.regionId,
+        expectedStateHash: row.stateHash,
+        expectedRevision: row.revision,
+        expectedPublisherSequence: row.publisherSequence,
+        commands: work.commands,
+      });
+      const appliedCount = result.commandResults.filter(
+        (commandResult) => !commandResult.idempotentReplay,
+      ).length;
+
+      if (appliedCount === 0) {
+        if (
+          result.stateHash !== row.stateHash
+          || result.state.revision !== row.revision
+          || result.state.publisherSequence !== row.publisherSequence
+          || result.events.length !== 0
+        ) {
+          throw new RegionalSimulationSequenceError(
+            "Idempotenter Rust-Gruppenreplay veraenderte den persistierten Kopf.",
+          );
+        }
+        return { result, fanout: false, appendedEvents: [] };
+      }
+
+      const worldRegions = await tx
+        .select()
+        .from(regionalSimulationStates)
+        .where(eq(regionalSimulationStates.worldId, work.worldId));
+      const latestWorldAtS = worldRegions.reduce(
+        (latest, regionalRow) => Math.max(latest, persistedState(regionalRow).nowS),
+        0,
+      );
+      if (result.snapshot.atS < latestWorldAtS) {
+        throw new RegionalSimulationConflictError(
+          `Regionssnapshot bei ${result.snapshot.atS} liegt vor der Livemap-Weltzeit ${latestWorldAtS}.`,
+        );
+      }
+      if (
+        result.state.revision !== row.revision + appliedCount
+        || result.state.publisherSequence !== row.publisherSequence + appliedCount
+        || result.snapshot.producerSequence !== result.state.publisherSequence
+      ) {
+        throw new RegionalSimulationSequenceError(
+          "Rust-Kommandogruppe erzeugte eine Revisions- oder Publisher-Luecke.",
+        );
+      }
+      const updated = await tx
+        .update(regionalSimulationStates)
+        .set({
+          stateSchema: REGIONAL_SIMULATION_STATE_SCHEMA,
+          state: result.state,
+          stateHash: result.stateHash,
+          revision: result.state.revision,
+          publisherSequence: result.state.publisherSequence,
+          updatedAt: persistedAt,
+        })
+        .where(
+          and(
+            eq(regionalSimulationStates.worldId, work.worldId),
+            eq(regionalSimulationStates.regionId, work.regionId),
+            eq(regionalSimulationStates.stateHash, row.stateHash),
+            eq(regionalSimulationStates.revision, row.revision),
+            eq(regionalSimulationStates.publisherSequence, row.publisherSequence),
+          ),
+        )
+        .returning({ stateHash: regionalSimulationStates.stateHash });
+      if (updated.length !== 1) {
+        throw new RegionalSimulationConflictError(
+          "Regionaler Simulationskopf wurde gleichzeitig veraendert.",
+        );
+      }
+      const appendedEvents = await appendEvents(tx, work.worldId, world.epoch, result.events);
+      return { result, fanout: true, appendedEvents };
+    });
+
+    this.#assertNotReleased(work.worldId, work.regionId);
+    if (!committed.fanout) {
+      this.#markReady(committed.result.state);
+      return committed.result;
+    }
+    try {
+      for (const event of committed.appendedEvents) {
+        const payload = event.payload as Readonly<Record<string, unknown>>;
+        const operatorIds = Array.isArray(payload["operatorIds"])
+          ? payload["operatorIds"].filter(
+            (value): value is string => typeof value === "string",
+          )
+          : [];
+        for (const operatorId of operatorIds) {
+          const decision = projectOperations([event], operatorId).decisions[0];
+          if (decision !== undefined) {
+            this.#operations?.forOperator(work.worldId, operatorId).publish({
+              worldId: work.worldId,
+              operatorId,
+              sequence: event.sequence,
+              decision,
+            });
+          }
+        }
+      }
+      this.#livemap.initializeRegion(work.worldId, work.regionId, {
+        at: committed.result.snapshot.atS,
+        trains: committed.result.snapshot.trains,
+        externalTrains: committed.result.snapshot.externalTrains ?? [],
+        disruptions: committed.result.snapshot.disruptions,
+      });
+      this.#markReady(committed.result.state);
+      return committed.result;
+    } catch (error) {
+      this.#readyRegions.delete(key);
+      this.#markLivemapUnavailable(work.worldId);
       throw error;
     }
   }

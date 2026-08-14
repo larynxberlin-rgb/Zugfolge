@@ -138,6 +138,7 @@ class ZugfolgeAdminRequest(models.Model):
     signing_configuration = fields.Json(compute="_compute_signing_configuration", readonly=True)
     signed_world_deployment = fields.Json(copy=False)
     deployment_hash = fields.Char(copy=False, tracking=True)
+    deployment_revision = fields.Integer(default=1, copy=False, tracking=True)
 
     @api.depends("action_type", "world_projection_id", "world_name", "world_id")
     def _compute_name(self):
@@ -172,7 +173,7 @@ class ZugfolgeAdminRequest(models.Model):
     @api.depends(
         "action_type", "world_id", "world_name", "world_kind", "ranking_status",
         "schedule_period_weeks", "world_epoch", "starting_capital_mode",
-        "starting_capital_amount_cents",
+        "starting_capital_amount_cents", "deployment_revision",
     )
     def _compute_signing_configuration(self):
         for record in self:
@@ -183,6 +184,7 @@ class ZugfolgeAdminRequest(models.Model):
             record.signing_configuration = {
                 "schemaVersion": "zugfolge-alpha-world-deploy-configuration/v1",
                 "worldId": record.world_id,
+                "deploymentRevision": record.deployment_revision,
                 "worldDefinition": {
                     "name": record.world_name,
                     "kind": record.world_kind,
@@ -236,6 +238,7 @@ class ZugfolgeAdminRequest(models.Model):
                 "startingCapitalPolicy": policy,
                 "startingCapitalPreview": "\u221e" if mode == "unlimited" else format_cents_german(policy["amountCents"]),
                 "deploymentHash": normalized.get("deployment_hash", current.deployment_hash if current else None),
+                "deploymentRevision": normalized.get("deployment_revision", current.deployment_revision if current else 1),
             }
         return normalized
 
@@ -280,7 +283,7 @@ class ZugfolgeAdminRequest(models.Model):
             "effect_preview", "release_hash", "requested_period_start", "target_reference", "requested_at_s",
             "manual_disruption_start", "manual_disruption_end", "manual_disruption_cause",
             "manual_disruption_resource_ids", "manual_disruption_effect", "starting_capital_mode", "starting_capital_input",
-            "starting_capital_amount_cents", "signed_world_deployment", "deployment_hash",
+            "starting_capital_amount_cents", "signed_world_deployment", "deployment_hash", "deployment_revision",
         }
         if decision_fields.intersection(values) and any(record.state != "draft" for record in self):
             raise UserError(_("Antragsinhalt und Autoritaetsbindungen sind nach dem Einreichen unveraenderlich."))
@@ -296,7 +299,7 @@ class ZugfolgeAdminRequest(models.Model):
         "manual_disruption_end", "manual_disruption_cause", "manual_disruption_resource_ids",
         "manual_disruption_effect", "world_projection_id", "world_id", "world_name", "world_kind",
         "ranking_status", "schedule_period_weeks", "world_epoch", "starting_capital_mode",
-        "starting_capital_input", "starting_capital_amount_cents", "signed_world_deployment", "deployment_hash", "state",
+        "starting_capital_input", "starting_capital_amount_cents", "signed_world_deployment", "deployment_hash", "deployment_revision", "state",
     )
     def _check_authoritative_shape(self):
         for record in self:
@@ -344,12 +347,41 @@ class ZugfolgeAdminRequest(models.Model):
                     raise ValidationError(_("Die Fahrplanperiode muss zwischen drei und acht Wochen liegen."))
                 if not record.world_epoch:
                     raise ValidationError(_("Welt-Deployment braucht eine Weltepoche."))
+                configured_epoch = fields.Datetime.to_datetime(record.world_epoch).replace(tzinfo=timezone.utc)
+                if (
+                    configured_epoch.weekday() != 0
+                    or configured_epoch.hour != 0
+                    or configured_epoch.minute != 0
+                    or configured_epoch.second != 0
+                    or configured_epoch.microsecond != 0
+                ):
+                    raise ValidationError(_("Die Weltepoche muss Montag um 00:00:00 UTC beginnen."))
+                existing_projection = self.env["zugfolge.world.projection"].sudo().search([
+                    ("world_id", "=", record.world_id),
+                ], limit=1)
+                expected_revision = 1
+                if existing_projection and existing_projection.deployment_hash:
+                    if existing_projection.deployment_revision < 1:
+                        raise ValidationError(_("Der bestehende Weltspiegel braucht vor einem neuen Deployment das Add-on-Upgrade."))
+                    expected_revision = (
+                        existing_projection.deployment_revision
+                        if record.deployment_hash == existing_projection.deployment_hash
+                        else existing_projection.deployment_revision + 1
+                    )
+                if record.deployment_revision != expected_revision:
+                    raise ValidationError(_(
+                        "Deployment-Revision %(actual)s ist nicht die erwartete weltgebundene Revision %(expected)s.",
+                        actual=record.deployment_revision,
+                        expected=expected_revision,
+                    ))
                 policy = record._starting_capital_policy()
                 signed = record.signed_world_deployment
                 if record.state == "draft" and not signed and not record.deployment_hash:
                     continue
                 if not SHA256_RE.fullmatch(record.deployment_hash or ""):
                     raise ValidationError(_("Welt-Deployment braucht einen SHA-256-Hash."))
+                if not isinstance(record.deployment_revision, int) or isinstance(record.deployment_revision, bool) or record.deployment_revision < 1:
+                    raise ValidationError(_("Welt-Deployment braucht eine positive monotone Deployment-Revision."))
                 if not isinstance(signed, dict) or signed.get("deploymentHash") != record.deployment_hash:
                     raise ValidationError(_("Signiertes Welt-Deployment und Deployment-Hash stimmen nicht ueberein."))
                 signature = signed.get("signature")
@@ -365,6 +397,7 @@ class ZugfolgeAdminRequest(models.Model):
                     or not ED25519_SIGNATURE_BASE64_RE.fullmatch(signature.get("valueBase64"))
                     or not isinstance(deployment, dict)
                     or deployment.get("worldId") != record.world_id
+                    or deployment.get("deploymentRevision") != record.deployment_revision
                     or not isinstance(blueprint, dict)
                     or blueprint.get("profileKind") != record.world_kind
                 ):
@@ -372,7 +405,6 @@ class ZugfolgeAdminRequest(models.Model):
                 try:
                     signed_epoch = datetime.fromisoformat(signed_definition.get("epoch", "").replace("Z", "+00:00"))
                     signed_epoch = signed_epoch.astimezone(timezone.utc)
-                    configured_epoch = fields.Datetime.to_datetime(record.world_epoch).replace(tzinfo=timezone.utc)
                 except (AttributeError, TypeError, ValueError):
                     raise ValidationError(_("Signiertes Welt-Deployment besitzt keine gueltige Weltdefinition."))
                 if (
@@ -476,6 +508,7 @@ class ZugfolgeAdminRequest(models.Model):
                 },
                 "signedDeployment": self.signed_world_deployment,
                 "deploymentHash": self.deployment_hash,
+                "deploymentRevision": self.deployment_revision,
             })
         return payload
 

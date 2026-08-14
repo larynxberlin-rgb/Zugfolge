@@ -18,8 +18,9 @@
     "test": "pnpm -r --stream test",
     "guards": "pnpm --filter @zugfolge/guards run guards",
     "licenses": "pnpm --filter @zugfolge/guards run licenses",
+    "alpha:build": "bash tools/alpha-ops/build-alpha-images.sh",
     "alpha:up": "bash tools/alpha-ops/phase1-smoke.sh",
     "alpha:phase3": "bash tools/alpha-ops/phase3-acceptance.sh",
-    "alpha:down": "docker compose -f compose.alpha.yml down"
+    "alpha:down": "bash tools/alpha-ops/compose-with-map-release-env.sh -f compose.alpha.yml down"
   }
 }

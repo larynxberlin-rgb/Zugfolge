@@ -6,6 +6,9 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
+import { alphaHash } from "../../packages/alpha/dist/index.js";
+import { decodeEconomyValue } from "../../packages/economy/dist/index.js";
+
 import {
   TRAIN_MAP_PROJECTION_BUILD_SPEC_SCHEMA,
   TRAIN_MAP_PROJECTION_SCHEMA_SQL_SHA256,
@@ -188,12 +191,19 @@ test("kompiliert eine releasegebundene Position ohne Fliesskomma-Laufzeitvertrag
     heldBasisPoints: 0,
   });
   assert.equal(firstReport.trains.provenTrainCount, 1);
+  const deploymentValue = deployment().deployment;
+  const expectedDeploymentHash = alphaHash(
+    "zugfolge-alpha-world-deployment/v1",
+    decodeEconomyValue(deploymentValue),
+  );
+  assert.equal(firstReport.binding.deploymentHash, expectedDeploymentHash);
   const inspection = await inspectTrainMapProjection(first.output);
   assert.equal(inspection.schemaSqlSha256, TRAIN_MAP_PROJECTION_SCHEMA_SQL_SHA256);
   assert.deepEqual(inspection, {
     schema: "zugfolge-train-map-projection/v2",
     worldId: WORLD_ID,
     infrastructureReleaseId: RELEASE_ID,
+    deploymentHash: expectedDeploymentHash,
     timetableYear: 2026,
     sqliteApplicationId: 0x5a54504a,
     sqliteUserVersion: 2,

@@ -27,6 +27,7 @@ import {
   persistSignedAlphaWorldDeployment,
   startSignedAlphaWorld,
   type SignedAlphaWorldDeployment,
+  signedDeploymentRevision,
 } from "./alpha-world-start.js";
 import type { RegionalSimulationWorker } from "./regional-simulation-worker.js";
 
@@ -176,6 +177,7 @@ export function createWorldDeployAdminHandler(options: {
   readonly regionalSimulation: RegionalSimulationWorker;
   readonly livemap: LivemapRegistry;
   readonly operations: OperationsRegistry;
+  readonly validateSignedDeployment?: (signed: SignedAlphaWorldDeployment) => void | Promise<void>;
   readonly registerStartedWorld?: (world: {
     readonly signed: SignedAlphaWorldDeployment;
     readonly epoch: Date;
@@ -192,6 +194,7 @@ export function createWorldDeployAdminHandler(options: {
       || payload.worldDefinition === undefined
       || payload.startingCapitalPolicy === undefined
       || payload.deploymentHash === undefined
+      || payload.deploymentRevision === undefined
     ) throw new WorldDeploymentAdminError("schema");
     const signed = parseSignedAlphaWorldDeployment(payload.signedDeployment, options.trustedKeys);
     const blueprint = signed.deployment.blueprint;
@@ -201,6 +204,7 @@ export function createWorldDeployAdminHandler(options: {
     if (
       signed.deployment.worldId !== payload.worldId
       || signed.deploymentHash !== payload.deploymentHash
+      || signedDeploymentRevision(signed.deployment) !== payload.deploymentRevision
       || blueprint.profileKind !== payload.worldDefinition.kind
       || JSON.stringify(blueprintPolicy) !== JSON.stringify(policy)
       || signedDefinition.name !== payload.worldDefinition.name
@@ -209,6 +213,7 @@ export function createWorldDeployAdminHandler(options: {
       || signedDefinition.schedulePeriodWeeks !== payload.worldDefinition.schedulePeriodWeeks
       || new Date(signedDefinition.epoch).getTime() !== new Date(payload.worldDefinition.epoch).getTime()
     ) throw new WorldDeploymentAdminError("schema");
+    await options.validateSignedDeployment?.(signed);
     const expectedWorld = {
       name: signedDefinition.name,
       schedulePeriodWeeks: signedDefinition.schedulePeriodWeeks,
@@ -280,6 +285,7 @@ export function createWorldDeployAdminHandler(options: {
         profileKind: profile.profileKind,
         blueprintHash: profile.blueprintHash,
         deploymentHash: signed.deploymentHash,
+        deploymentRevision: signedDeploymentRevision(signed.deployment),
         startingCapitalPolicy: policy,
       },
     };

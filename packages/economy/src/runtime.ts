@@ -22,6 +22,7 @@ import {
   decodeEconomyValue,
   EconomyStateConflictError,
   listEconomyWorldIds,
+  listPendingEconomyOutboxWorldIds,
   loadEconomyWorldEpoch,
   loadEconomyWorldState,
   persistEconomyTransition,
@@ -239,6 +240,9 @@ async function advanceWorld(
   nowSeconds: number,
   operatingRuntime: OperatingRuntime,
 ): Promise<{ readonly state: EconomyWorldState; readonly effects: EconomyEffects; readonly transitions: number }> {
+  if (initial.closed === true) {
+    return { state: initial, effects: { notices: [], journal: [], runtimeEvents: [] }, transitions: 0 };
+  }
   let state = initial;
   let transitions = 0;
   const effects = { notices: [] as EconomyNotice[], journal: [] as EconomyJournalEntry[], runtimeEvents: [] as NonNullable<EconomyEffects["runtimeEvents"]>[number][] };
@@ -369,6 +373,7 @@ export async function runEconomySchedulerCycle(
             state: advanced.state,
             effects: advanced.effects,
             committedAt: now,
+            enqueuedAt: now,
           });
           // The database event log is authoritative. Projection fanout happens
           // only after the state and Rust events committed atomically.
@@ -380,8 +385,23 @@ export async function runEconomySchedulerCycle(
           if (!(error instanceof EconomyStateConflictError) || attempt === 2) throw error;
         }
       }
-      effects += await dispatchEconomyOutbox(db, worldId, adapters, now);
     }
+    // Outbox-Recovery ist vom Simulations-Lifecycle getrennt: Auch eine bereits
+    // archivierte Welt darf einen vor dem Archivieren committeten Effekt noch
+    // idempotent zustellen und quittieren.
+    const pendingOutboxWorldIds = await listPendingEconomyOutboxWorldIds(db);
+    const dispatchErrors: unknown[] = [];
+    for (const worldId of pendingOutboxWorldIds) {
+      try {
+        effects += await dispatchEconomyOutbox(db, worldId, adapters, now);
+      } catch (error) {
+        // Eine defekte Altzeile einer Welt darf die weltisolierte Zustellung
+        // anderer Welten nicht verhungern lassen. Der Gesamtzyklus bleibt
+        // dennoch fehlgeschlagen und der Monitor meldet ihn sichtbar.
+        dispatchErrors.push(error);
+      }
+    }
+    if (dispatchErrors.length > 0) throw dispatchErrors[0];
     monitor.completed(now.getTime(), transitions);
     return { worlds: worldIds.length, transitions, effects };
   } catch (error) {

@@ -1,5 +1,6 @@
 import { PGlite } from "@electric-sql/pglite";
-import { accounts, alphaWorldProfiles, MIGRATIONS_FOLDER, operators, schema, worldEventLog, worlds } from "@zugfolge/db";
+import { accounts, alphaWorldProfiles, economyOutbox, MIGRATIONS_FOLDER, operators, schema, worldEventLog, worlds } from "@zugfolge/db";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,6 +23,7 @@ import { loadEconomyWorldState, persistEconomyTransition } from "./state-store.j
 import { announceTender, startEconomyWorld, submitBid, submitMobilizationReference } from "./workflow.js";
 
 const WORLD = "55555555-5555-4555-8555-555555555555";
+const ARCHIVED_WORLD = "11111111-1111-4111-8111-111111111111";
 const CASH_WRITER_ACCOUNT = "66666666-6666-4666-8666-666666666666";
 const CASH_WRITER_OPERATOR = "77777777-7777-4777-8777-777777777777";
 const OPEN = 100;
@@ -142,13 +144,13 @@ describe("restart-sicherer Economy-Scheduler", () => {
       authorityBudgets: [{ authorityId: "authority", period: 0, availableCents: 10_000_000n, committedCents: 0n }],
       accounts: ["account-1"],
     });
-    await persistEconomyTransition(db, { expectedRevision: null, ...started, committedAt: worldInstant(0) });
+    await persistEconomyTransition(db, { expectedRevision: null, ...started, committedAt: worldInstant(0), enqueuedAt: worldInstant(0) });
     const announced = announceTender(started.state, {
       commandId: "api:announce", release, recipients: ["account-1"],
       automation: { authorityId: "authority", budgetPeriod: 0, vehiclePool: [], recipientByOperator: { "operator-1": "account-1" }, failurePenaltyCents: 1_000n },
       tender: { id: "tender-1", worldId: WORLD, lotId: "lot-0", incumbentOperatorId: "public", specification, announcedAt: 0, opensAt: OPEN, closesAt: CLOSE, operatingFrom: OPERATING, contractPeriods: 2, periodDurationSeconds: 21 * 86_400, smallLot: false },
     });
-    await persistEconomyTransition(db, { expectedRevision: 0, ...announced, committedAt: worldInstant(1) });
+    await persistEconomyTransition(db, { expectedRevision: 0, ...announced, committedAt: worldInstant(1), enqueuedAt: worldInstant(1) });
 
     const sendNotice = vi.fn(async () => undefined);
     const postJournal = vi.fn(async () => undefined);
@@ -162,7 +164,7 @@ describe("restart-sicherer Economy-Scheduler", () => {
     await persistFleetMobilizationSnapshot(db, WORLD, fleetEnvelope, worldInstant(OPEN));
     const vehicle = resolveVehicleConcept(fleetEnvelope.snapshot, { fleetRevision: 4, snapshotHash: fleetEnvelope.snapshotHash, formationId: "formation-1" }, { operatorId: "operator-1", serviceLineIds: ["S1"], operatingFrom: OPERATING });
     const bidState = submitBid(state, "api:bid", "tender-1", { id: "bid-1", operatorId: "operator-1", orderingFeeCentsPerTrainKm: 1n, vehicle, promises: { extraSeats: 0, punctualityBasisPoints: 9_000, additionalStops: 0 }, submittedAt: OPEN }, { accountId: "account-1", period: 0, smallLot: false, minimumScore: 0 });
-    await persistEconomyTransition(db, { expectedRevision: state.revision, state: bidState, effects: { notices: [], journal: [] }, committedAt: worldInstant(OPEN) });
+    await persistEconomyTransition(db, { expectedRevision: state.revision, state: bidState, effects: { notices: [], journal: [] }, committedAt: worldInstant(OPEN), enqueuedAt: worldInstant(OPEN) });
 
     // Neuer Monitor simuliert einen Prozessneustart vor dem Zuschlag.
     const restartedMonitor = new EconomySchedulerMonitor(worldInstant(CLOSE).getTime() - 1);
@@ -173,7 +175,7 @@ describe("restart-sicherer Economy-Scheduler", () => {
     const reference = { fleetRevision: 4, snapshotHash: fleetEnvelope.snapshotHash, formationIds: ["formation-1"], personnelDutyIds: ["duty-1"], pathReservationIds: ["path-1"] };
     verifyMobilizationReference(fleetEnvelope.snapshot, reference, { operatorId: "operator-1", winningFormationId: "formation-1", serviceLineIds: ["S1"], operatingFrom: OPERATING });
     const referenced = submitMobilizationReference(state, { commandId: "api:mobilization", tenderId: "tender-1", operatorId: "operator-1", at: CLOSE + 5, reference });
-    await persistEconomyTransition(db, { expectedRevision: state.revision, state: referenced, effects: { notices: [], journal: [] }, committedAt: worldInstant(CLOSE + 5) });
+    await persistEconomyTransition(db, { expectedRevision: state.revision, state: referenced, effects: { notices: [], journal: [] }, committedAt: worldInstant(CLOSE + 5), enqueuedAt: worldInstant(CLOSE + 5) });
 
     expect(await runEconomySchedulerCycle(db, worldInstant(OPERATING + 10), adapters, restartedMonitor)).toMatchObject({ transitions: 1 });
     const completed = (await loadEconomyWorldState(db, WORLD))!;
@@ -192,6 +194,72 @@ describe("restart-sicherer Economy-Scheduler", () => {
     expect(await createEconomySchedulerHealthCheck(restartedMonitor, 30_000, () => worldInstant(OPERATING + 20).getTime()).check()).toMatchObject({ status: "ok", code: "scheduler_current" });
   });
 
+  it("holt archivierte Outbox-Altlasten nach und isoliert ihren Fehler von aktiven Welten", async () => {
+    await db.insert(worlds).values({
+      id: ARCHIVED_WORLD,
+      name: "Archivierte Tutorialwelt",
+      schedulePeriodWeeks: 3,
+      epoch: worldInstant(0),
+      lifecycleStatus: "archived",
+      worldKind: "private",
+      rankingStatus: "unranked",
+    });
+    const notice = (worldId: string) => ({
+      id: `notice:${worldId}`,
+      worldId,
+      recipientAccountId: `account:${worldId}`,
+      type: "recovery-test",
+      at: 1,
+      payload: {},
+    });
+    await db.insert(economyOutbox).values([
+      {
+        worldId: ARCHIVED_WORLD,
+        effectId: "archived-notice",
+        effectType: "notice",
+        payload: notice(ARCHIVED_WORLD),
+        occurredAt: worldInstant(1),
+        enqueuedAt: worldInstant(2),
+      },
+      {
+        worldId: WORLD,
+        effectId: "active-notice",
+        effectType: "notice",
+        payload: notice(WORLD),
+        occurredAt: worldInstant(1),
+        enqueuedAt: worldInstant(2),
+      },
+    ]);
+    const delivered: string[] = [];
+    const failingAdapters = {
+      async sendNotice(value: ReturnType<typeof notice>) {
+        if (value.worldId === ARCHIVED_WORLD) throw new Error("archived adapter failure");
+        delivered.push(value.worldId);
+      },
+      postJournal: vi.fn(async () => undefined),
+      operatingRuntime: testOperatingRuntime,
+      publishRuntimeEvents: vi.fn(async () => undefined),
+    };
+    const monitor = new EconomySchedulerMonitor(WORLD_EPOCH_MS);
+
+    await expect(runEconomySchedulerCycle(db, worldInstant(3), failingAdapters, monitor)).rejects.toThrow("archived adapter failure");
+    expect(delivered).toEqual([WORLD]);
+    expect((await db.select().from(economyOutbox).where(eq(economyOutbox.worldId, ARCHIVED_WORLD)))[0]).toMatchObject({ processedAt: null, attempts: 1 });
+    expect((await db.select().from(economyOutbox).where(eq(economyOutbox.worldId, WORLD)))[0]?.processedAt).toEqual(worldInstant(3));
+
+    const recoverySend = vi.fn(async () => undefined);
+    await expect(runEconomySchedulerCycle(db, worldInstant(4), {
+      ...failingAdapters,
+      sendNotice: recoverySend,
+    }, monitor)).resolves.toMatchObject({ worlds: 0, transitions: 0, effects: 1 });
+    expect(recoverySend).toHaveBeenCalledWith(expect.objectContaining({ worldId: ARCHIVED_WORLD }));
+    expect((await db.select().from(economyOutbox).where(eq(economyOutbox.worldId, ARCHIVED_WORLD)))[0]).toMatchObject({
+      processedAt: worldInstant(4),
+      attempts: 1,
+      lastErrorCode: null,
+    });
+  });
+
   it("macht den Nullstart erst nach Zuschlag ueber die signierte Public-Facility mobilisierbar", async () => {
     const fleetState = publicFleet();
     const started = startEconomyWorld({
@@ -201,7 +269,7 @@ describe("restart-sicherer Economy-Scheduler", () => {
       accounts: ["account-1"],
       publicVehiclePoolByLot: { "lot-0": ["vehicle-1"] },
     });
-    await persistEconomyTransition(db, { expectedRevision: null, ...started, committedAt: worldInstant(0) });
+    await persistEconomyTransition(db, { expectedRevision: null, ...started, committedAt: worldInstant(0), enqueuedAt: worldInstant(0) });
     await db.insert(alphaWorldProfiles).values({
       worldId: WORLD, profileKind: "public", regionId: "mitteldeutschland-b", regionVariant: "B", worldSeed: 1n,
       accelerationFactor: 1, infraReleaseHash: "a".repeat(64), timetableReleaseHash: "b".repeat(64),
@@ -227,7 +295,7 @@ describe("restart-sicherer Economy-Scheduler", () => {
       automation: { authorityId: "authority", budgetPeriod: 0, vehiclePool: ["vehicle-1"], recipientByOperator: { "operator-1": "account-1" }, failurePenaltyCents: 1_000n },
       tender: { id: "tender-facility", worldId: WORLD, lotId: "lot-0", incumbentOperatorId: "public", specification, announcedAt: 0, opensAt: OPEN, closesAt: CLOSE, operatingFrom: OPERATING, contractPeriods: 2, periodDurationSeconds: 21 * 86_400, smallLot: false },
     }).state;
-    await persistEconomyTransition(db, { expectedRevision: 0, state, effects: { notices: [], journal: [] }, committedAt: worldInstant(1) });
+    await persistEconomyTransition(db, { expectedRevision: 0, state, effects: { notices: [], journal: [] }, committedAt: worldInstant(1), enqueuedAt: worldInstant(1) });
     const adapters = { sendNotice: vi.fn(async () => undefined), postJournal: vi.fn(async () => undefined), operatingRuntime: testOperatingRuntime, publishRuntimeEvents: vi.fn(async () => undefined) };
     const monitor = new EconomySchedulerMonitor(WORLD_EPOCH_MS);
     await runEconomySchedulerCycle(db, worldInstant(OPEN), adapters, monitor);
@@ -253,7 +321,7 @@ describe("restart-sicherer Economy-Scheduler", () => {
       id: "facility-bid", operatorId: "operator-1", orderingFeeCentsPerTrainKm: 1n, vehicle,
       promises: { extraSeats: 0, punctualityBasisPoints: 9_000, additionalStops: 0 }, submittedAt: OPEN,
     }, { accountId: "account-1", period: 0, smallLot: false, minimumScore: 0 });
-    await persistEconomyTransition(db, { expectedRevision: state.revision - 1, state, effects: { notices: [], journal: [] }, committedAt: worldInstant(OPEN) });
+    await persistEconomyTransition(db, { expectedRevision: state.revision - 1, state, effects: { notices: [], journal: [] }, committedAt: worldInstant(OPEN), enqueuedAt: worldInstant(OPEN) });
     await runEconomySchedulerCycle(db, worldInstant(CLOSE), adapters, monitor);
     state = (await loadEconomyWorldState(db, WORLD))!;
     const reference = {
@@ -262,7 +330,7 @@ describe("restart-sicherer Economy-Scheduler", () => {
       entryFacility: { schemaVersion: PUBLIC_ENTRY_FACILITY_SCHEMA, providerOperatorId: "public" },
     } as const;
     state = submitMobilizationReference(state, { commandId: "facility:mobilization", tenderId: "tender-facility", operatorId: "operator-1", at: CLOSE, reference });
-    await persistEconomyTransition(db, { expectedRevision: state.revision - 1, state, effects: { notices: [], journal: [] }, committedAt: worldInstant(CLOSE) });
+    await persistEconomyTransition(db, { expectedRevision: state.revision - 1, state, effects: { notices: [], journal: [] }, committedAt: worldInstant(CLOSE), enqueuedAt: worldInstant(CLOSE) });
 
     await runEconomySchedulerCycle(db, worldInstant(OPERATING), adapters, monitor);
     const completed = (await loadEconomyWorldState(db, WORLD))!;
@@ -307,7 +375,7 @@ describe("restart-sicherer Economy-Scheduler", () => {
       accounts: ["account-1"],
       publicVehiclePoolByLot: { "lot-0": ["vehicle-1"] },
     });
-    await persistEconomyTransition(db, { expectedRevision: null, ...started, committedAt: worldInstant(0) });
+    await persistEconomyTransition(db, { expectedRevision: null, ...started, committedAt: worldInstant(0), enqueuedAt: worldInstant(0) });
     await db.insert(alphaWorldProfiles).values({
       worldId: WORLD,
       profileKind: "public",
@@ -363,7 +431,7 @@ describe("restart-sicherer Economy-Scheduler", () => {
         smallLot: false,
       },
     });
-    await persistEconomyTransition(db, { expectedRevision: 0, ...announced, committedAt: worldInstant(1) });
+    await persistEconomyTransition(db, { expectedRevision: 0, ...announced, committedAt: worldInstant(1), enqueuedAt: worldInstant(1) });
     const adapters = {
       sendNotice: vi.fn(async () => undefined),
       postJournal: vi.fn(async () => undefined),
@@ -399,7 +467,7 @@ describe("restart-sicherer Economy-Scheduler", () => {
       promises: { extraSeats: 0, punctualityBasisPoints: 9_000, additionalStops: 0 },
       submittedAt: OPEN,
     }, { accountId: "account-1", period: 0, smallLot: false, minimumScore: 0 });
-    await persistEconomyTransition(db, { expectedRevision: state.revision - 1, state, effects: { notices: [], journal: [] }, committedAt: worldInstant(OPEN) });
+    await persistEconomyTransition(db, { expectedRevision: state.revision - 1, state, effects: { notices: [], journal: [] }, committedAt: worldInstant(OPEN), enqueuedAt: worldInstant(OPEN) });
     await runEconomySchedulerCycle(db, worldInstant(CLOSE), adapters, monitor);
     state = (await loadEconomyWorldState(db, WORLD))!;
     state = submitMobilizationReference(state, {
@@ -416,7 +484,7 @@ describe("restart-sicherer Economy-Scheduler", () => {
         entryFacility,
       },
     });
-    await persistEconomyTransition(db, { expectedRevision: state.revision - 1, state, effects: { notices: [], journal: [] }, committedAt: worldInstant(CLOSE) });
+    await persistEconomyTransition(db, { expectedRevision: state.revision - 1, state, effects: { notices: [], journal: [] }, committedAt: worldInstant(CLOSE), enqueuedAt: worldInstant(CLOSE) });
 
     await runEconomySchedulerCycle(db, worldInstant(OPERATING), adapters, monitor);
     const completed = (await loadEconomyWorldState(db, WORLD))!;

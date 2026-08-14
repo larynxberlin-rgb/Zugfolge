@@ -25,3 +25,13 @@ pub fn apply_regional_simulation_command(
     zugfolge_sim_runtime::apply_regional_simulation_command(&state_json, &command_json)
         .map_err(|error| napi::Error::from_reason(error.to_string()))
 }
+
+/// Wendet eine geordnete, atomar persistierbare Gruppe idempotenter Kommandos an.
+#[napi(js_name = "applyRegionalSimulationCommandBatch")]
+pub fn apply_regional_simulation_command_batch(
+    state_json: String,
+    batch_json: String,
+) -> napi::Result<String> {
+    zugfolge_sim_runtime::apply_regional_simulation_command_batch(&state_json, &batch_json)
+        .map_err(|error| napi::Error::from_reason(error.to_string()))
+}

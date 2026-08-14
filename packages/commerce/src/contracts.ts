@@ -1,5 +1,6 @@
 /** Versionierter, minimaler Vertrag an der Odoo-Grenze (E23). */
 export const ODOO_CONTRACT_VERSION = "zugfolge-odoo/v1";
+export const AUTHORITATIVE_WORLD_START_PROJECTION = "zugfolge-authoritative-world-start-projection/v1" as const;
 
 export const PRODUCT_KINDS = [
   "zugfolge_plus",
@@ -136,6 +137,7 @@ export interface AdminCommandPayload {
   readonly worldDefinition?: WorldDefinition;
   readonly signedDeployment?: SignedWorldDeployment;
   readonly deploymentHash?: string;
+  readonly deploymentRevision?: number;
   readonly invitation?: {
     readonly requestReference: string;
     readonly email: string;
@@ -172,6 +174,15 @@ export interface OdooProjectionEnvelope {
   readonly occurredAt: string;
   readonly correlationId: string;
   readonly payload: Readonly<Record<string, unknown>>;
+}
+
+export interface AuthoritativeWorldStartAuthorization {
+  readonly schemaVersion: typeof AUTHORITATIVE_WORLD_START_PROJECTION;
+  readonly deploymentHash: string;
+  readonly deploymentRevision: number;
+  readonly algorithm: "Ed25519";
+  readonly keyId: string;
+  readonly valueBase64: string;
 }
 
 export function isProductKind(value: unknown): value is ProductKind {

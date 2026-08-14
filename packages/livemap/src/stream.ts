@@ -121,6 +121,8 @@ export const PUBLIC_OPERATION_MARKER: PublicOperationMarker = Object.freeze({
 
 export interface PublicTrain {
   readonly id: string;
+  /** Vom autoritativen Runtimevertrag gelieferte Basisfahrt für Tagesinstanzen. */
+  readonly baseTrainRunId?: string;
   readonly operatorId?: string;
   readonly operator: string;
   readonly trainNumber: string;
@@ -143,6 +145,15 @@ export interface PublicTrain {
  */
 export interface PublicTrainMapProjector {
   project(worldId: string, train: PublicTrain): PublicTrain;
+}
+
+/** Liefert eine Basisfahrt ausschliesslich fuer die kanonische `base:day-N`-Bindung. */
+export function verifiedBaseTrainRunId(train: PublicTrain): string | undefined {
+  const base = train.baseTrainRunId;
+  if (base === undefined || base.includes(":day-")) return undefined;
+  const prefix = `${base}:day-`;
+  if (!train.id.startsWith(prefix)) return undefined;
+  return /^[1-9][0-9]*$/u.test(train.id.slice(prefix.length)) ? base : undefined;
 }
 
 /** Leitet nur nachgewiesene Gleisabweichungen aus einer Ressourcenstoerung ab. */
@@ -444,6 +455,16 @@ export class LivemapFeed {
     return effective;
   }
 
+  #operationMarkerForTrain(train: PublicTrain, at: number): OperationMarkerChange | undefined {
+    const exact = this.#operationMarkerAt(train.id, at);
+    const baseTrainRunId = verifiedBaseTrainRunId(train);
+    if (baseTrainRunId === undefined) return exact;
+    const base = this.#operationMarkerAt(baseTrainRunId, at);
+    if (exact === undefined) return base;
+    if (base === undefined) return exact;
+    return exact.effectiveAt >= base.effectiveAt ? exact : base;
+  }
+
   #recordOperationMarker(
     trainRunId: string,
     operationMarker: PublicOperationMarker | null,
@@ -494,7 +515,7 @@ export class LivemapFeed {
       ) {
         throw new TypeError("Livemap-Betriebsmarker hat ein unbekanntes Schema.");
       }
-      const effective = this.#operationMarkerAt(train.id, input.at);
+      const effective = this.#operationMarkerForTrain(train, input.at);
       return effective === undefined
         ? train
         : this.#projectOperationMarker(train, effective.operationMarker);
@@ -534,17 +555,21 @@ export class LivemapFeed {
       throw new RangeError("Zuglaufkennungen für Markeraktualisierungen dürfen nicht leer sein.");
     }
 
-    const changed: PublicTrain[] = [];
+    const changed = new Map<string, PublicTrain>();
     for (const id of identifiers) {
       const normalizedMarker = operationMarker === null ? null : PUBLIC_OPERATION_MARKER;
       const changesCurrentProjection = this.#recordOperationMarker(id, normalizedMarker, at);
-      const train = this.#trains.get(id);
-      if (train === undefined || !changesCurrentProjection || at > this.#at) continue;
-      const projected = this.#projectOperationMarker(train, normalizedMarker);
-      if (projected !== train) changed.push(projected);
+      if (!changesCurrentProjection || at > this.#at) continue;
+      for (const train of this.#trains.values()) {
+        if (train.id !== id && verifiedBaseTrainRunId(train) !== id) continue;
+        const effective = this.#operationMarkerForTrain(train, this.#at);
+        if (effective === undefined) continue;
+        const projected = this.#projectOperationMarker(train, effective.operationMarker);
+        if (projected !== train) changed.set(projected.id, projected);
+      }
     }
-    if (changed.length === 0) return undefined;
-    return this.#emit({ at: this.#at, changed, removed: [] });
+    if (changed.size === 0) return undefined;
+    return this.#emit({ at: this.#at, changed: [...changed.values()].sort((left, right) => compareUtf8(left.id, right.id)), removed: [] });
   }
 
   markPublicOperation(trainRunIds: readonly string[], at: number): LiveDelta | undefined {
@@ -1006,6 +1031,15 @@ export class LivemapRegistry {
     if (entry !== undefined) entry.initialized = false;
   }
 
+  /**
+   * Entfernt eine abgeschlossene Welt samt prozesslokaler Markertimeline.
+   * Wiederholte Reaper-/Archivaufrufe bleiben absichtlich wirkungslos.
+   */
+  releaseWorld(worldId: string): void {
+    this.#feeds.delete(worldId);
+    this.#operationMarkerTimelines.delete(worldId);
+  }
+
   peekWorld(worldId: string): LivemapFeed | undefined {
     const entry = this.#feeds.get(worldId);
     if (entry !== undefined) entry.lastAccessMs = this.#now();
@@ -1041,14 +1075,18 @@ export class LivemapRegistry {
   freshness(
     maximumAgeMs: number,
     now = this.#now(),
+    isExpectedFresh: (worldId: string) => boolean = () => true,
   ): { readonly feedCount: number; readonly staleFeeds: number } {
+    let feedCount = 0;
     let staleFeeds = 0;
-    for (const { feed } of this.#feeds.values()) {
+    for (const [worldId, { feed }] of this.#feeds) {
+      if (!isExpectedFresh(worldId)) continue;
+      feedCount += 1;
       if (feed.lastPublishedAtMs === undefined || now - feed.lastPublishedAtMs > maximumAgeMs) {
         staleFeeds += 1;
       }
     }
-    return { feedCount: this.#feeds.size, staleFeeds };
+    return { feedCount, staleFeeds };
   }
 }
 
@@ -1056,11 +1094,17 @@ export function createLivemapHealthCheck(
   registry: LivemapRegistry,
   maximumAgeMs = 60_000,
   now: () => number = Date.now,
+  isExpectedFresh: (worldId: string, nowMs: number) => boolean = () => true,
 ): HealthCheck {
   return {
     name: "livemap-freshness",
     async check() {
-      const snapshots = registry.freshness(maximumAgeMs, now());
+      const nowMs = now();
+      const snapshots = registry.freshness(
+        maximumAgeMs,
+        nowMs,
+        (worldId) => isExpectedFresh(worldId, nowMs),
+      );
       if (snapshots.staleFeeds > 0) {
         return {
           status: "degraded",

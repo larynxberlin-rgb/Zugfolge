@@ -20,7 +20,7 @@ für Tests und kleine lokale Fixtures erhalten. Die Dateiendung in
 ## Öffentliches Schema
 
 Das Artefakt besitzt die SQLite-`application_id` `0x5a554746` und
-`user_version=2`. Zulässig sind genau diese Tabellen:
+`user_version=3`. Zulässig sind genau diese Tabellen:
 
 | Tabelle | Inhalt |
 |---|---|
@@ -37,6 +37,13 @@ autorisierte serverseitige Projektion. Der Paketprüfer prüft SQLite-Header,
 `application_id`, `user_version`, die exakte Tabellen- und Spalten-Allowlist,
 Fremdschlüssel und Stationsbezüge. Eine Textsuche nach vermeintlich privaten
 Schlüsselwörtern ist kein Sicherheitsvertrag.
+
+Die Metadaten enthalten genau den normalisierten Zeitvertrag
+`world_epoch`, `time_zone`, `service_start_offset_s` und `repeat_every_s`
+zusammen mit Welt, InfraRelease und GTFS-Verkehrstag. Für die öffentliche
+Alpha-Welt gilt `Europe/Berlin`, Weltsekunde `0` als Servicebeginn und eine
+tägliche Wiederholung von `86400` Sekunden. Fehlende, zusätzliche oder vom
+signierten Runtime-Deployment abweichende Werte blockieren den Start.
 
 ## Interaktive Objekte
 
@@ -66,11 +73,15 @@ Regionalverkehrs-GTFS. Eine Fahrplanhaltestelle wird nur zugeordnet, wenn
 
 Nicht belegbare oder mehrdeutige Zuordnungen bleiben draußen. Es gibt keinen
 Namens-Fuzzy-Match und keine erfundene RL100-Zuordnung. Der aktuelle
-Jahreslauf bindet den Verkehrstag `20260812` und dieselbe Fahrtkettenkennung,
+Jahreslauf bindet den Verkehrstag `20260810` und dieselbe Fahrtkettenkennung,
 die der Alpha-Weltcompiler aus Welt, Region, GTFS-Release und Quellfahrt bildet.
 
-Die SQLite-Datei speichert nur statische Planwerte. Beim API-Aufruf wählt sie
-die Ankünfte und Abfahrten im Zeitfenster des aktuellen Livemap-Cursors aus.
+Die SQLite-Datei speichert nur die Planwerte des Basistags. Beim API-Aufruf
+projiziert sie diese deterministisch auf den aktuellen Servicetag und liefert
+ab Tag 1 die konkrete Runtime-ID `basis:day-N`. Die API übernimmt Livezustand
+und FIS-Basisplan nur, wenn `baseTrainRunId` diese Bindung kanonisch bestätigt;
+die sichtbare FIS-ID bleibt stets die konkrete Runtime-ID. Anschließend wählt
+sie die Ankünfte und Abfahrten im Zeitfenster des aktuellen Livemap-Cursors aus.
 Die API legt anschließend den vorhandenen serverautoritativen Zugzustand
 darüber: `expectedTimeS = scheduledTimeS + delaySeconds`; explizite Zustände
 wie `cancelled`, `completed` und `at_platform` werden in Ausfall, angekommen,
@@ -100,12 +111,12 @@ serverautoritativen Cursor und denselben gepinnten Infrastrukturrelease.
 ## Reproduzierbarer Jahreslauf
 
 Die gepinnte Spezifikation liegt in
-`tools/tiles/livemap-read-model.annual-2026.json`. Der reale Lauf lautet:
+`tools/tiles/livemap-read-model.annual-2026.2.json`. Der reale Lauf lautet:
 
 ```bash
 node tools/tiles/build-livemap-read-model.mjs \
-  tools/tiles/livemap-read-model.annual-2026.json \
-  var/derived/germany-2026/map-release/public/read-model.sqlite
+  tools/tiles/livemap-read-model.annual-2026.2.json \
+  var/derived/germany-2026.2/map-release/public/read-model.sqlite
 ```
 
 Der Builder verarbeitet GeoJSON-Sequenzen und `stop_times.txt` streamend,
@@ -115,7 +126,7 @@ GTFS-Arbeitstabelle vor `VACUUM` und erzeugt daneben
 
 ```bash
 node tools/tiles/inspect-livemap-read-model.mjs \
-  var/derived/germany-2026/map-release/public/read-model.sqlite
+  var/derived/germany-2026.2/map-release/public/read-model.sqlite
 ```
 
 Der reale Deutschlandlauf 2026 umfasst 1.600.662 Objektdetails, 189.097

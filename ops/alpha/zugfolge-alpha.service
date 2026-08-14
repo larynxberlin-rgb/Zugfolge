@@ -1,0 +1,18 @@
+[Unit]
+Description=Zugfolge Alpha (verified active map-release pointer)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+Conflicts=zugfolge-alpha-rollback.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/zugfolge
+ExecStart=/usr/bin/env bash /opt/zugfolge/tools/alpha-ops/compose-with-map-release-env.sh -f /opt/zugfolge/compose.yml up --no-build --wait --wait-timeout 600
+ExecStop=/usr/bin/env bash /opt/zugfolge/tools/alpha-ops/compose-with-map-release-env.sh --fixed-stop -f /opt/zugfolge/compose.yml down
+TimeoutStartSec=900
+TimeoutStopSec=300
+
+[Install]
+WantedBy=multi-user.target

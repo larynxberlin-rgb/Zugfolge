@@ -22,10 +22,10 @@ groups:
         labels: { severity: warning, runbook: subsystem-degraded }
         annotations: { summary: "Subsystem {{ $labels.check }} bleibt degraded" }
       - alert: ZugfolgeHealthSignalMissing
-        expr: absent(zugfolge_health_check_state{check=~"postgres|simulation-event-log|economy-outbox|economy-scheduler|livemap-freshness|disruption-provider|odoo-bridge"})
+        expr: (label_replace(vector(1), "check", "postgres", "", "") or label_replace(vector(1), "check", "simulation-event-log", "", "") or label_replace(vector(1), "check", "economy-outbox", "", "") or label_replace(vector(1), "check", "economy-scheduler", "", "") or label_replace(vector(1), "check", "regional-simulation-scheduler", "", "") or label_replace(vector(1), "check", "livemap-freshness", "", "") or label_replace(vector(1), "check", "disruption-provider", "", "") or label_replace(vector(1), "check", "odoo-bridge", "", "")) unless on (check) count by (check) (zugfolge_health_check_state{check=~"postgres|simulation-event-log|economy-outbox|economy-scheduler|regional-simulation-scheduler|livemap-freshness|disruption-provider|odoo-bridge"})
         for: 5m
         labels: { severity: warning, runbook: telemetry-gap }
-        annotations: { summary: "Mindestens ein verpflichtendes Alpha-Healthsignal fehlt" }
+        annotations: { summary: "Verpflichtendes Alpha-Healthsignal {{ $labels.check }} fehlt" }
       - alert: ZugfolgeApiErrorRate
         expr: sum(rate(zugfolge_http_requests_total{status_class="5xx"}[5m])) / clamp_min(sum(rate(zugfolge_http_requests_total[5m])), 0.001) > 0.02
         for: 5m

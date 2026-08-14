@@ -46,7 +46,6 @@ import {
   createEconomySchedulerHealthCheck,
   decodeEconomyValue,
   EconomySchedulerMonitor,
-  listEconomyWorldIds,
   runEconomySchedulerCycle,
   serializeStartingCapitalPolicy,
   type JournalAccounts,
@@ -85,7 +84,10 @@ import { loadFleetAuthorityReleaseCatalog } from "./fleet-configuration.js";
 import { GameInfraActivationSafety, parseInfraActivationSafetyReports } from "./infra-activation-safety.js";
 import { InfraPackageStaging, createLocalMapPackageVerifier, type InfraUploadSigningKey } from "./infra-package-staging.js";
 import { projectLivemapOperationEvent } from "./livemap-operation-projection.js";
-import { loadLivemapReadModel } from "./livemap-read-model.js";
+import {
+  assertLivemapReadModelRuntimeScheduleBinding,
+  loadLivemapReadModel,
+} from "./livemap-read-model.js";
 import { assertTrainMapProjectionBinding, loadTrainMapProjector } from "./livemap-train-map-projection.js";
 import {
   MANUAL_DISRUPTION_ADMIN_CAPABILITY,
@@ -116,12 +118,18 @@ import {
 } from "./planning-configuration.js";
 import { createPlanningScheduler } from "./planning-scheduler.js";
 import { advanceRegionalSimulations } from "./regional-simulation-scheduler.js";
+import {
+  createRegionalSimulationSchedulerHealthCheck,
+  RegionalSimulationSchedulerMonitor,
+  runMonitoredRegionalSimulationCycle,
+} from "./regional-simulation-monitor.js";
 import { RegionalSimulationWorker } from "./regional-simulation-worker.js";
 import { compareUtf8 } from "./utf8.js";
 import {
   ProductionWorldStartPort,
-  loadPersistedActiveAlphaWorldDeployments,
+  assertActivePublicWorldDeploymentCoverage,
   loadActiveAlphaWorldProjectionProfiles,
+  loadPersistedActiveAlphaWorldDeployments,
   loadSignedAlphaWorldDeployment,
   persistSignedAlphaWorldDeployment,
   startSignedAlphaWorld,
@@ -133,7 +141,7 @@ import {
   PublicWorldSnapshotUnavailableError,
   buildPublicWorldSnapshot,
 } from "./public-world-snapshot.js";
-import { GameTutorialWorldFactory } from "./tutorial-world-factory.js";
+import { GameTutorialWorldFactory, loadTutorialEconomyPlatformAdapters } from "./tutorial-world-factory.js";
 import { ActiveWorldDeploymentRuntime } from "./world-deployment-runtime.js";
 
 function requireEnv(name: string): string {
@@ -203,7 +211,9 @@ function parseInfraUploadKeys(value: string): readonly InfraUploadSigningKey[] {
   return keys;
 }
 
-async function loadOptionalInfraPackageStaging(): Promise<{
+async function loadOptionalInfraPackageStaging(
+  trustedReleaseKeys: Readonly<Record<string, string>>,
+): Promise<{
   readonly staging?: InfraPackageStaging;
   readonly keys?: readonly InfraUploadSigningKey[];
 }> {
@@ -217,7 +227,7 @@ async function loadOptionalInfraPackageStaging(): Promise<{
     throw new Error("Infra-Paketstaging braucht explizit INFRA_PACKAGE_STAGING_ROOT, INFRA_UPLOAD_KEYS_JSON und INFRA_PACKAGE_VERIFIER_MODULE gemeinsam.");
   }
   const packageVerifier = await createLocalMapPackageVerifier(verifierModule);
-  const staging = new InfraPackageStaging(root, { packageVerifier });
+  const staging = new InfraPackageStaging(root, { packageVerifier, trustedReleaseKeys });
   await staging.initialize();
   return { staging, keys: parseInfraUploadKeys(keysJson) };
 }
@@ -229,19 +239,9 @@ function loadOptionalOdooWebhookOptions(): OdooWebhookReceiverOptions | undefine
   return { tenantId, keys: parseSigningKeys(requireEnv("ODOO_WEBHOOK_KEYS_JSON")), authorizedActors };
 }
 
-function persistedRegionalNowS(state: unknown): number {
-  if (typeof state !== "object" || state === null || Array.isArray(state)) {
-    throw new Error("Persistierter regionaler Simulationszustand ist kein Objekt.");
-  }
-  const nowS = (state as Readonly<Record<string, unknown>>)["nowS"];
-  if (!Number.isSafeInteger(nowS) || (nowS as number) < 0) {
-    throw new Error("Persistierter regionaler Simulationszustand hat keine sichere Weltsekunde.");
-  }
-  return nowS as number;
-}
-
 const db = createDatabase(requireEnv("DATABASE_URL"));
-const infraPackageUpload = await loadOptionalInfraPackageStaging();
+const trustedReleaseKeys = parseTrustedReleaseKeys(requireEnv("INFRA_RELEASE_TRUSTED_KEYS_JSON"));
+const infraPackageUpload = await loadOptionalInfraPackageStaging(trustedReleaseKeys);
 const odooWebhookOptions = loadOptionalOdooWebhookOptions();
 const odooWebhookStore = odooWebhookOptions === undefined ? undefined : createOdooWebhookReceiptStore(db);
 const odooProjectionUrl = optionalEnv("ODOO_PROJECTION_URL");
@@ -280,14 +280,6 @@ if (trainMapProjector !== undefined) {
     trainMapProjector.close();
     throw new Error("Zugkartenprojektion erfordert den releasegebundenen Livemap-Detailkatalog.");
   }
-  const config = await livemapReadModel.getConfig(trainMapProjector.worldId);
-  try {
-    assertTrainMapProjectionBinding(trainMapProjector, config);
-  } catch (error) {
-    trainMapProjector.close();
-    livemapReadModel.close();
-    throw error;
-  }
 }
 const livemap = new LivemapRegistry({
   trainMapProjector,
@@ -295,6 +287,7 @@ const livemap = new LivemapRegistry({
 });
 const operations = new OperationsRegistry();
 const economyMonitor = new EconomySchedulerMonitor(Date.now());
+const regionalSimulationMonitor = new RegionalSimulationSchedulerMonitor(Date.now());
 const disruptionProviderMonitor = new DisruptionProviderMonitor(Date.now());
 const disruptionProviderClient = new PublicInfrastructureRestrictionsClient();
 const disruptionProviderStore = createDisruptionProviderStore(db);
@@ -310,7 +303,6 @@ const configuredPlanningInfrastructureReleases = parsePlanningInfrastructureRele
 const configuredPlanningAuthorityAccountIds = parsePlanningAuthorityAccountIdsJson(
   requireEnv("PLANNING_AUTHORITY_ACCOUNT_IDS_JSON"),
 );
-const trustedReleaseKeys = parseTrustedReleaseKeys(requireEnv("INFRA_RELEASE_TRUSTED_KEYS_JSON"));
 const regionalSimulation = new RegionalSimulationWorker(
   db,
   regionalSimulationRuntime,
@@ -336,10 +328,9 @@ const worldRows = await db
   .orderBy(asc(worlds.id));
 const activeWorldRows = worldRows.filter((world) => world.lifecycleStatus === "active");
 const deploymentRuntime = new ActiveWorldDeploymentRuntime({
-  // Only signed deployments belong to the process-local production runtime.
-  // Dynamic tutorial worlds are reconstructed by TutorialSessionService and
-  // deliberately have neither the public fleet catalog nor a static planning
-  // authority mapping.
+  // Nur verifizierte signierte Deployments gehoeren in die prozesslokale
+  // Produktionsruntime. Dynamische Tutorialwelten besitzen bewusst weder
+  // statische Planning-Authority noch einen globalen Echtzeittakt.
   activeWorlds: [],
   fleetAuthorityReleases: configuredFleetAuthorityReleases,
   planningAuthorityAccountIds: configuredPlanningAuthorityAccountIds,
@@ -347,6 +338,31 @@ const deploymentRuntime = new ActiveWorldDeploymentRuntime({
 });
 const persistedActiveDeployments = await loadPersistedActiveAlphaWorldDeployments(db, trustedReleaseKeys);
 for (const persisted of persistedActiveDeployments) deploymentRuntime.register(persisted.signed, persisted.epoch);
+const signedDeployments = new Map(
+  persistedActiveDeployments.map((persisted) => [persisted.signed.deployment.worldId, persisted.signed] as const),
+);
+for (const alphaWorldReleasePath of alphaWorldReleasePaths()) {
+  const signedDeployment = await loadSignedAlphaWorldDeployment(alphaWorldReleasePath, trustedReleaseKeys);
+  const persisted = signedDeployments.get(signedDeployment.deployment.worldId);
+  if (persisted !== undefined && persisted.deploymentHash !== signedDeployment.deploymentHash) {
+    throw new Error(`Deploymentpfad fuer '${signedDeployment.deployment.worldId}' widerspricht dem autoritativ persistierten Deployment.`);
+  }
+  signedDeployments.set(signedDeployment.deployment.worldId, signedDeployment);
+}
+if (trainMapProjector !== undefined) {
+  try {
+    const config = await livemapReadModel!.getConfig(trainMapProjector.worldId);
+    assertTrainMapProjectionBinding(
+      trainMapProjector,
+      config,
+      signedDeployments.get(trainMapProjector.worldId)?.deploymentHash,
+    );
+  } catch (error) {
+    trainMapProjector.close();
+    livemapReadModel!.close();
+    throw error;
+  }
+}
 const {
   boundaryTransitions,
   fleetAuthorityReleases,
@@ -415,11 +431,20 @@ for (const [worldId, authorityRelease] of Object.entries(fleetAuthorityReleases)
     authorityRelease,
   });
 }
+const configuredEconomyAdapters = createEconomyPlatformAdapters({
+  db,
+  accountsByOperator: JSON.parse(optionalEnv("ECONOMY_LEDGER_ACCOUNTS_JSON") ?? "{}") as Readonly<Record<string, JournalAccounts>>,
+});
 const economyAdapters = {
-  ...createEconomyPlatformAdapters({
-    db,
-    accountsByOperator: JSON.parse(optionalEnv("ECONOMY_LEDGER_ACCOUNTS_JSON") ?? "{}") as Readonly<Record<string, JournalAccounts>>,
-  }),
+  sendNotice: configuredEconomyAdapters.sendNotice,
+  async postJournal(entry: Parameters<typeof configuredEconomyAdapters.postJournal>[0]) {
+    // Kurzlebige Tutorial-EVUs stehen bewusst nicht in der statischen
+    // Produktionskonfiguration. Ihr versionierter Kontenplan wird fuer den
+    // weltgebundenen Retry aus dem Ledger rekonstruiert; so kann auch eine
+    // archivierte Altzeile nach einem Deploy noch sicher quittiert werden.
+    const tutorialAdapters = await loadTutorialEconomyPlatformAdapters(db, entry.worldId, entry.operatorId);
+    await (tutorialAdapters ?? configuredEconomyAdapters).postJournal(entry);
+  },
   operatingRuntime,
   async publishRuntimeEvents(events: readonly OperatingRuntimeEvent[]) {
     events.forEach((event) => projectLivemapOperationEvent(livemap, event));
@@ -428,12 +453,15 @@ const economyAdapters = {
 
 // The database event log remains authoritative across process restarts. Replay
 // all durable marker changes before snapshots or live scheduler work are served.
-for (const worldId of await listEconomyWorldIds(db)) {
+for (const worldId of deploymentRuntime.realtimeWorldIds()) {
   for (const event of await worldEventLog(db, worldId).listOfTypes([
+    "alpha.public-operation-visible",
     "livemap-operation-marked",
     "livemap-operation-cleared",
   ])) {
-    const atS = event.occurredAt.getTime() / 1_000;
+    const atS = event.eventType === "alpha.public-operation-visible"
+      ? 0
+      : event.occurredAt.getTime() / 1_000;
     if (!Number.isSafeInteger(atS)) throw new Error("Persistiertes Livemap-Betriebsereignis liegt nicht auf einer Weltsekunde.");
     if (typeof event.payload !== "object" || event.payload === null || Array.isArray(event.payload)) {
       throw new Error("Persistiertes Livemap-Betriebsereignis besitzt keine Nutzdaten.");
@@ -447,45 +475,29 @@ for (const worldId of await listEconomyWorldIds(db)) {
   }
 }
 
-// Alle persistierten regionalen Rust-Zustaende werden vor dem ersten
-// Listener restauriert. Welten ohne Zustand bleiben bewusst uninitialisiert
-// und ihre Livemap-Routen damit auf 503.
-for (const world of activeWorldRows) {
-  const persistedRegions = await db
-    .select({
-      regionId: regionalSimulationStates.regionId,
-      state: regionalSimulationStates.state,
-    })
+// Nur explizit signierte 1:1-Regionen werden beim Prozessstart restauriert.
+// Aktive Tutorialwelten werden bei ihrer naechsten Sitzung gezielt restauriert
+// und koennen dadurch weder Scheduler noch oeffentliche Livemap vergiften.
+for (const region of deploymentRuntime.realtimeRegions()) {
+  const [persistedRegion] = await db
+    .select({ regionId: regionalSimulationStates.regionId })
     .from(regionalSimulationStates)
-    .where(eq(regionalSimulationStates.worldId, world.worldId));
-  persistedRegions.sort(
-    (left, right) => {
-      const leftNowS = persistedRegionalNowS(left.state);
-      const rightNowS = persistedRegionalNowS(right.state);
-      return leftNowS === rightNowS
-        ? compareUtf8(left.regionId, right.regionId)
-        : leftNowS < rightNowS
-          ? -1
-          : 1;
-    },
-  );
-  for (const region of persistedRegions) {
-    await regionalSimulation.restore(world.worldId, region.regionId);
+    .where(and(
+      eq(regionalSimulationStates.worldId, region.worldId),
+      eq(regionalSimulationStates.regionId, region.regionId),
+    ))
+    .limit(1);
+  if (persistedRegion !== undefined) {
+    await regionalSimulation.restore(region.worldId, region.regionId);
   }
 }
 
-const signedDeployments = new Map(
-  persistedActiveDeployments.map((persisted) => [persisted.signed.deployment.worldId, persisted.signed] as const),
-);
-for (const alphaWorldReleasePath of alphaWorldReleasePaths()) {
-  const signedDeployment = await loadSignedAlphaWorldDeployment(alphaWorldReleasePath, trustedReleaseKeys);
-  const persisted = signedDeployments.get(signedDeployment.deployment.worldId);
-  if (persisted !== undefined && persisted.deploymentHash !== signedDeployment.deploymentHash) {
-    throw new Error(`Deploymentpfad fuer '${signedDeployment.deployment.worldId}' widerspricht dem autoritativ persistierten Deployment.`);
-  }
-  signedDeployments.set(signedDeployment.deployment.worldId, signedDeployment);
-}
 for (const signedDeployment of [...signedDeployments.values()].sort((left, right) => compareUtf8(left.deployment.worldId, right.deployment.worldId))) {
+  assertLivemapReadModelRuntimeScheduleBinding(livemapReadModel, {
+    worldId: signedDeployment.deployment.worldId,
+    worldEpoch: signedDeployment.deployment.worldDefinition.epoch,
+    repeatEveryS: signedDeployment.deployment.repeatEveryS,
+  });
   const configuredWorld = configuredWorlds.get(signedDeployment.deployment.worldId);
   if (configuredWorld === undefined) {
     throw new Error(`Signiertes Alpha-Deployment ist an die unbekannte Welt '${signedDeployment.deployment.worldId}' gebunden.`);
@@ -512,6 +524,7 @@ for (const signedDeployment of [...signedDeployments.values()].sort((left, right
   deploymentRuntime.register(signedDeployment, configuredWorld.epoch);
   await persistSignedAlphaWorldDeployment(db, signedDeployment);
 }
+await assertActivePublicWorldDeploymentCoverage(db, trustedReleaseKeys);
 await verifyPlanningAuthorityAccounts(
   db,
   deploymentRuntime.worldIds(),
@@ -524,6 +537,20 @@ const worldDeployAdminHandler = createWorldDeployAdminHandler({
   regionalSimulation,
   livemap,
   operations,
+  async validateSignedDeployment(signed) {
+    assertLivemapReadModelRuntimeScheduleBinding(livemapReadModel, {
+      worldId: signed.deployment.worldId,
+      worldEpoch: signed.deployment.worldDefinition.epoch,
+      repeatEveryS: signed.deployment.repeatEveryS,
+    });
+    if (trainMapProjector !== undefined && signed.deployment.worldId === trainMapProjector.worldId) {
+      assertTrainMapProjectionBinding(
+        trainMapProjector,
+        await livemapReadModel!.getConfig(signed.deployment.worldId),
+        signed.deploymentHash,
+      );
+    }
+  },
   async registerStartedWorld(started) {
     deploymentRuntime.register(started.signed, started.epoch);
     if (odooProjectionClient !== undefined) {
@@ -579,11 +606,17 @@ const app = buildApp({
     createEventLogHealthCheck(db),
     createEconomyOutboxHealthCheck(db),
     createEconomySchedulerHealthCheck(economyMonitor),
+    createRegionalSimulationSchedulerHealthCheck(regionalSimulationMonitor),
     createDisruptionProviderHealthCheck(disruptionProviderMonitor),
-    createLivemapHealthCheck(livemap),
+    createLivemapHealthCheck(
+      livemap,
+      60_000,
+      Date.now,
+      (worldId, nowMs) => deploymentRuntime.expectsLivemapFreshness(worldId, nowMs),
+    ),
     createOdooBridgeHealthCheck(db),
   ],
-  extraMetricSources: [alphaOperationsMetrics],
+  extraMetricSources: [alphaOperationsMetrics, regionalSimulationMonitor],
   odooWebhookStore,
   odooWebhookOptions,
   infraPackageStaging: infraPackageUpload.staging,
@@ -749,15 +782,32 @@ app.addHook("onClose", async () => {
 
 // Erster expliziter 1:1-Takt noch vor dem Listener: Ein restaurierter Zustand
 // wird nicht fuer einen kurzen Zeitraum mit alter Weltzeit ausgeliefert.
-await advanceRegionalSimulations(regionalSimulation, worldEpochs, new Date(), boundaryTransitions);
+const firstRegionalAdvanceAt = new Date();
+await runMonitoredRegionalSimulationCycle(
+  regionalSimulationMonitor,
+  firstRegionalAdvanceAt,
+  () => advanceRegionalSimulations(
+    regionalSimulation,
+    deploymentRuntime.realtimeRegions(),
+    worldEpochs,
+    firstRegionalAdvanceAt,
+    boundaryTransitions,
+  ),
+);
 let regionalAdvanceCycle: Promise<void> | undefined;
 const runRegionalAdvance = () => {
   if (regionalAdvanceCycle !== undefined) return;
-  regionalAdvanceCycle = advanceRegionalSimulations(
-    regionalSimulation,
-    worldEpochs,
-    new Date(),
-    boundaryTransitions,
+  const at = new Date();
+  regionalAdvanceCycle = runMonitoredRegionalSimulationCycle(
+    regionalSimulationMonitor,
+    at,
+    () => advanceRegionalSimulations(
+      regionalSimulation,
+      deploymentRuntime.realtimeRegions(),
+      worldEpochs,
+      at,
+      boundaryTransitions,
+    ),
   )
     .then(() => undefined)
     .catch((error: unknown) => {

@@ -5,6 +5,8 @@ export const REGIONAL_SIMULATION_INITIALIZE_SCHEMA =
   "zugfolge-regional-simulation-initialize/v1" as const;
 export const REGIONAL_SIMULATION_COMMAND_SCHEMA =
   "zugfolge-regional-simulation-command/v1" as const;
+export const REGIONAL_SIMULATION_COMMAND_BATCH_SCHEMA =
+  "zugfolge-regional-simulation-command-batch/v1" as const;
 export const REGIONAL_SIMULATION_STATE_SCHEMA =
   "zugfolge-regional-simulation-state/v1" as const;
 export const REGIONAL_SIMULATION_INITIALIZED_SCHEMA =
@@ -13,6 +15,9 @@ export const REGIONAL_SIMULATION_RESTORED_SCHEMA =
   "zugfolge-regional-simulation-restored/v1" as const;
 export const REGIONAL_SIMULATION_RESULT_SCHEMA =
   "zugfolge-regional-simulation-result/v1" as const;
+export const REGIONAL_SIMULATION_BATCH_RESULT_SCHEMA =
+  "zugfolge-regional-simulation-batch-result/v1" as const;
+export const REGIONAL_SIMULATION_MAX_BATCH_COMMANDS = 4_096;
 export const REGIONAL_LIVEMAP_SNAPSHOT_SCHEMA =
   "zugfolge-regional-livemap-snapshot/v1" as const;
 export const REGIONAL_LIVEMAP_DELTA_SCHEMA =
@@ -35,6 +40,8 @@ export interface RegionalWaypointInput {
 
 export interface RegionalTrainInput {
   readonly trainRunId: string;
+  /** Unveränderliche Basisfahrt für wiederholte Runtime-Instanzen. */
+  readonly baseTrainRunId?: string;
   readonly operator: string;
   readonly trainNumber: string;
   readonly category: RegionalTrainCategory;
@@ -121,6 +128,21 @@ export interface RegionalSimulationCommand {
   readonly command: RegionalSimulationCommandPayload;
 }
 
+export interface RegionalSimulationBatchCommand {
+  readonly commandId: string;
+  readonly command: RegionalSimulationCommandPayload;
+}
+
+export interface RegionalSimulationCommandBatch {
+  readonly schemaVersion: typeof REGIONAL_SIMULATION_COMMAND_BATCH_SCHEMA;
+  readonly worldId: string;
+  readonly regionId: string;
+  readonly expectedStateHash: string;
+  readonly expectedRevision: number;
+  readonly expectedPublisherSequence: number;
+  readonly commands: readonly RegionalSimulationBatchCommand[];
+}
+
 export type RegionalSimulationState = Readonly<Record<string, unknown>> & {
   readonly schemaVersion: typeof REGIONAL_SIMULATION_STATE_SCHEMA;
   readonly worldId: string;
@@ -134,6 +156,7 @@ export type RegionalSimulationState = Readonly<Record<string, unknown>> & {
 
 export interface RegionalPublicTrain {
   readonly id: string;
+  readonly baseTrainRunId?: string;
   readonly operator: string;
   readonly trainNumber: string;
   readonly category: RegionalTrainCategory;
@@ -254,6 +277,20 @@ export interface RegionalSimulationResult {
   readonly idempotentReplay: boolean;
 }
 
+export interface RegionalSimulationBatchCommandResult {
+  readonly commandId: string;
+  readonly idempotentReplay: boolean;
+}
+
+export interface RegionalSimulationBatchResult {
+  readonly schemaVersion: typeof REGIONAL_SIMULATION_BATCH_RESULT_SCHEMA;
+  readonly state: RegionalSimulationState;
+  readonly stateHash: string;
+  readonly events: readonly RegionalSimulationEvent[];
+  readonly snapshot: RegionalLivemapSnapshot;
+  readonly commandResults: readonly RegionalSimulationBatchCommandResult[];
+}
+
 export interface RegionalSimulationRuntime {
   readonly initialize: (
     input: RegionalSimulationInitialization,
@@ -263,6 +300,10 @@ export interface RegionalSimulationRuntime {
     state: RegionalSimulationState,
     command: RegionalSimulationCommand,
   ) => RegionalSimulationResult;
+  readonly applyBatch: (
+    state: RegionalSimulationState,
+    batch: RegionalSimulationCommandBatch,
+  ) => RegionalSimulationBatchResult;
 }
 
 export interface RegionalSimulationNativeAddon {
@@ -271,6 +312,10 @@ export interface RegionalSimulationNativeAddon {
   readonly applyRegionalSimulationCommand: (
     stateJson: string,
     commandJson: string,
+  ) => string;
+  readonly applyRegionalSimulationCommandBatch: (
+    stateJson: string,
+    batchJson: string,
   ) => string;
 }
 
@@ -330,6 +375,17 @@ function decodeState(value: unknown, name: string): RegionalSimulationState {
 function decodePublicTrain(value: unknown, name: string): RegionalPublicTrain {
   record(value, name);
   nonempty(value["id"], `${name}-ID`);
+  if (value["baseTrainRunId"] !== undefined) {
+    nonempty(value["baseTrainRunId"], `${name}-Basisfahrt`);
+    const baseTrainRunId = value["baseTrainRunId"];
+    const prefix = `${baseTrainRunId}:day-`;
+    invariant(
+      !baseTrainRunId.includes(":day-")
+      && value["id"].startsWith(prefix)
+      && /^[1-9][0-9]*$/u.test(value["id"].slice(prefix.length)),
+      `${name} besitzt keine kanonische Basisfahrtbindung.`,
+    );
+  }
   nonempty(value["operator"], `${name}-Betreiber`);
   nonempty(value["trainNumber"], `${name}-Zugnummer`);
   invariant(
@@ -538,6 +594,40 @@ function decodeResult(json: string): RegionalSimulationResult {
   return { ...(value as unknown as RegionalSimulationResult), state, delta };
 }
 
+function decodeBatchResult(json: string): RegionalSimulationBatchResult {
+  const value: unknown = JSON.parse(json);
+  record(value, "Rust-M4-Kommandogruppenergebnis");
+  invariant(
+    value["schemaVersion"] === REGIONAL_SIMULATION_BATCH_RESULT_SCHEMA,
+    "Rust-M4-Kommandogruppenergebnis hat ein unbekanntes Schema.",
+  );
+  const state = decodeState(value["state"], "Rust-M4-Gruppenzustand");
+  sha256(value["stateHash"], "Rust-M4-Gruppenzustandshash");
+  const snapshot = decodeSnapshot(
+    value["snapshot"],
+    state,
+    "Rust-M4-Gruppensnapshot",
+  );
+  decodeEvents(value["events"], state, "Rust-M4-Gruppenereignisse");
+  invariant(
+    Array.isArray(value["commandResults"]),
+    "Rust-M4-Kommandogruppenergebnis besitzt keine Kommandoquittungen.",
+  );
+  for (const [index, result] of value["commandResults"].entries()) {
+    record(result, `Rust-M4-Gruppenquittung ${index + 1}`);
+    nonempty(result["commandId"], `Rust-M4-Gruppenquittung ${index + 1}-ID`);
+    invariant(
+      typeof result["idempotentReplay"] === "boolean",
+      `Rust-M4-Gruppenquittung ${index + 1} besitzt keine Replay-Aussage.`,
+    );
+  }
+  return {
+    ...(value as unknown as RegionalSimulationBatchResult),
+    state,
+    snapshot,
+  };
+}
+
 /** Umschliesst die native ABI; exportiert fuer fokussierte Vertragstests. */
 export function regionalSimulationRuntimeFromAddon(
   addon: RegionalSimulationNativeAddon,
@@ -607,6 +697,78 @@ export function regionalSimulationRuntimeFromAddon(
       }
       return result;
     },
+    applyBatch(state: RegionalSimulationState, batch: RegionalSimulationCommandBatch) {
+      invariant(
+        state.worldId === batch.worldId && state.regionId === batch.regionId,
+        "M4-Kommandogruppe verletzt die Welt- oder Regionsisolation.",
+      );
+      invariant(batch.commands.length > 0, "M4-Kommandogruppe darf nicht leer sein.");
+      invariant(
+        batch.commands.length <= REGIONAL_SIMULATION_MAX_BATCH_COMMANDS,
+        `M4-Kommandogruppe darf hoechstens ${REGIONAL_SIMULATION_MAX_BATCH_COMMANDS} Kommandos enthalten.`,
+      );
+      sha256(batch.expectedStateHash, "M4-Kommandogruppe-Zustandshash");
+      safeInteger(batch.expectedRevision, "M4-Kommandogruppe-Revision");
+      safeInteger(
+        batch.expectedPublisherSequence,
+        "M4-Kommandogruppe-Publisher-Sequenz",
+      );
+      const commandIds = new Set<string>();
+      for (const command of batch.commands) {
+        nonempty(command.commandId, "M4-Kommandogruppe-Kommando-ID");
+        invariant(
+          !commandIds.has(command.commandId),
+          "M4-Kommandogruppe besitzt doppelte Kommando-IDs.",
+        );
+        commandIds.add(command.commandId);
+      }
+      const result = decodeBatchResult(
+        addon.applyRegionalSimulationCommandBatch(
+          JSON.stringify(state),
+          JSON.stringify(batch),
+        ),
+      );
+      invariant(
+        result.state.worldId === batch.worldId && result.state.regionId === batch.regionId,
+        "Rust-M4-Kommandogruppe verletzte die Welt- oder Regionsisolation.",
+      );
+      invariant(
+        result.commandResults.length === batch.commands.length,
+        "Rust-M4-Kommandogruppe quittierte nicht alle Kommandos.",
+      );
+      let sawAppliedCommand = false;
+      for (const [index, commandResult] of result.commandResults.entries()) {
+        invariant(
+          commandResult.commandId === batch.commands[index]?.commandId,
+          "Rust-M4-Kommandogruppe quittierte eine fremde Kommando-ID.",
+        );
+        if (commandResult.idempotentReplay) {
+          invariant(
+            !sawAppliedCommand,
+            "Rust-M4-Kommandogruppe besitzt einen Replay nach einem neuen Kommando.",
+          );
+        } else {
+          sawAppliedCommand = true;
+        }
+      }
+      const appliedCount = result.commandResults.filter(
+        (commandResult) => !commandResult.idempotentReplay,
+      ).length;
+      invariant(
+        result.state.revision === batch.expectedRevision + appliedCount
+          && result.state.publisherSequence
+            === batch.expectedPublisherSequence + appliedCount
+          && result.snapshot.producerSequence === result.state.publisherSequence,
+        "Rust-M4-Kommandogruppe erzeugte eine Sequenzluecke.",
+      );
+      if (appliedCount === 0) {
+        invariant(
+          result.stateHash === batch.expectedStateHash && result.events.length === 0,
+          "Idempotenter Rust-M4-Gruppenreplay veraenderte den Zustand.",
+        );
+      }
+      return result;
+    },
   });
 }
 
@@ -632,6 +794,10 @@ export function loadRegionalSimulationRuntime(
   invariant(
     typeof required["applyRegionalSimulationCommand"] === "function",
     "napi-rs-Addon exportiert applyRegionalSimulationCommand nicht.",
+  );
+  invariant(
+    typeof required["applyRegionalSimulationCommandBatch"] === "function",
+    "napi-rs-Addon exportiert applyRegionalSimulationCommandBatch nicht.",
   );
   return regionalSimulationRuntimeFromAddon(required as unknown as RegionalSimulationNativeAddon);
 }

@@ -32,6 +32,11 @@ export function buildGermanyImportPlan({ osmium, cargo, workspace, sourcePbf, ou
         args: [
           "tags-filter", "--overwrite", "-o", eboPbf, resolve(sourcePbf),
           "w/railway=rail",
+          // Die Nicht-EBO-Wege bleiben ausschliesslich als Scope-Evidenz im
+          // Roh-PBF. `filter_network` verwirft ihre Kanten weiterhin hart;
+          // der Semantikexport kann dadurch aber gemeinsam genutzte Knoten
+          // (etwa EBO/Tram-Weichen) fail-closed aus den Punktlayern halten.
+          "w/railway=tram,light_rail,subway,narrow_gauge,funicular,monorail",
           "w/railway=platform",
           "w/public_transport=platform",
           "n/railway=station,halt,stop,signal,switch,buffer_stop,railway_crossing,level_crossing,crossing,milestone,platform",

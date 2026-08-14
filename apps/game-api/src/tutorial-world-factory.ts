@@ -19,6 +19,7 @@ import { CooperationService } from "@zugfolge/cooperation";
 import {
   accounts,
   domainEvents,
+  economyOutbox,
   ledgerTransactions,
   operatingProgramVersions,
   operatorContracts,
@@ -37,10 +38,13 @@ import {
   closeTender,
   completeMobilization,
   createEconomyPlatformAdapters,
-  dispatchEconomyEffects,
+  decodeEconomyValue,
+  drainEconomyOutbox,
+  EconomyStateConflictError,
   encodeEconomyValue,
   initializeFleetProducer,
   listLedgerAccounts,
+  listPendingEconomyEffects,
   loadEconomyWorldState,
   loadFleetProducerCheckpoint,
   openLedgerAccount,
@@ -53,7 +57,9 @@ import {
   type Bid,
   type CostType,
   type EconomyLedgerAccountPlan,
+  type EconomyJournalEntry,
   type EconomyRelease,
+  type EconomyWorldState,
   type JournalAccounts,
   type ServiceSpecification,
 } from "@zugfolge/economy";
@@ -91,6 +97,45 @@ export const TUTORIAL_ECONOMY_LEDGER_ACCOUNT_PLAN: EconomyLedgerAccountPlan = Ob
     COST_TYPES.map((type) => [type, `Kosten:${type}`]),
   ) as Record<CostType, string>),
 });
+
+type TutorialEconomyPlatformAdapters = ReturnType<typeof createEconomyPlatformAdapters>;
+
+/**
+ * Rekonstruiert die welt- und EVU-gebundene Tutorialkontierung aus dem Ledger.
+ * Dadurch kann derselbe persistierte Outboxpfad auch nach Prozessneustart oder
+ * fuer eine bereits archivierte Altzeile sicher weiterlaufen.
+ */
+export async function loadTutorialEconomyPlatformAdapters(
+  db: AlphaDatabase,
+  worldId: string,
+  operatorId: string,
+): Promise<TutorialEconomyPlatformAdapters | undefined> {
+  const [session] = await db.select({ id: tutorialSessions.id }).from(tutorialSessions).where(and(
+    eq(tutorialSessions.tutorialWorldId, worldId),
+    eq(tutorialSessions.tutorialOperatorId, operatorId),
+  )).limit(1);
+  if (session === undefined) return undefined;
+
+  const accountsByName = new Map((await listLedgerAccounts(db as never, { worldId, operatorId })).map((entry) => [entry.name, entry.id]));
+  const required = (name: string): string => {
+    const accountId = accountsByName.get(name);
+    if (accountId === undefined) throw new Error(`Tutorialkontierung '${name}' fehlt fuer den Economy-Outbox-Retry.`);
+    return accountId;
+  };
+  const accounts: JournalAccounts = {
+    cashAccountId: required(TUTORIAL_ECONOMY_LEDGER_ACCOUNT_PLAN.cashAccountName),
+    revenueAccountId: required(TUTORIAL_ECONOMY_LEDGER_ACCOUNT_PLAN.revenueAccountName),
+    costAccountIds: Object.fromEntries(COST_TYPES.map((type) => [
+      type,
+      required(TUTORIAL_ECONOMY_LEDGER_ACCOUNT_PLAN.costAccountNames[type]),
+    ])) as Record<CostType, string>,
+  };
+  return createEconomyPlatformAdapters({
+    db: db as never,
+    accountsByOperator: { [operatorId]: accounts },
+    accountPlan: TUTORIAL_ECONOMY_LEDGER_ACCOUNT_PLAN,
+  });
+}
 
 const ECONOMY_RELEASE: EconomyRelease = buildEconomyRelease({
   version: "tutorial-economy-2026.1",
@@ -272,17 +317,61 @@ async function appendEvent(
 ): Promise<number> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`select ${tutorialSessions.id} from ${tutorialSessions} where ${tutorialSessions.tutorialWorldId} = ${worldId} for update`);
-    const [existing] = await tx.select({ sequence: domainEvents.sequence }).from(domainEvents).where(and(
+    const [existing] = await tx.select({ sequence: domainEvents.sequence, payload: domainEvents.payload }).from(domainEvents).where(and(
       eq(domainEvents.worldId, worldId),
       eq(domainEvents.eventType, eventType),
       sql`${domainEvents.payload} ->> 'decisionId' = ${String(payload["decisionId"] ?? "")}`,
     )).limit(1);
-    if (existing !== undefined) return existing.sequence;
+    if (existing !== undefined) {
+      if (alphaHash("zugfolge-tutorial-domain-event-payload/v1", existing.payload)
+        !== alphaHash("zugfolge-tutorial-domain-event-payload/v1", payload)) {
+        throw new AlphaConflictError(
+          "Tutorialaktion widerspricht dem bereits persistierten Entscheidungsbeleg.",
+          "tutorial_action_replay_conflict",
+        );
+      }
+      return existing.sequence;
+    }
     const [head] = await tx.select({ sequence: domainEvents.sequence }).from(domainEvents).where(eq(domainEvents.worldId, worldId)).orderBy(desc(domainEvents.sequence)).limit(1);
     const sequence = (head?.sequence ?? 0) + 1;
     await tx.insert(domainEvents).values({ worldId, sequence, eventType, payload, occurredAt });
     return sequence;
   });
+}
+
+type TutorialDispatchAction = Extract<TutorialAction, { readonly type: "dispatch" }>;
+
+interface PersistedTutorialDispatchDecision {
+  readonly sequence: number;
+  readonly action: TutorialDispatchAction["action"];
+}
+
+async function loadPersistedTutorialDispatchDecision(
+  db: AlphaDatabase,
+  session: Pick<TutorialSession, "reference" | "tutorialWorldId" | "tutorialOperatorId">,
+): Promise<PersistedTutorialDispatchDecision | undefined> {
+  const decisionId = `${session.reference}:decision:1`;
+  const [row] = await db.select({ sequence: domainEvents.sequence, payload: domainEvents.payload }).from(domainEvents).where(and(
+    eq(domainEvents.worldId, session.tutorialWorldId),
+    eq(domainEvents.eventType, "dispatch.decision-applied"),
+    sql`${domainEvents.payload} ->> 'decisionId' = ${decisionId}`,
+  )).limit(1);
+  if (row === undefined) return undefined;
+  const payload = object(row.payload, "Persistierter Tutorial-Entscheidungsbeleg");
+  const action = payload["action"];
+  if (
+    payload["decisionId"] !== decisionId
+    || payload["operatorId"] !== session.tutorialOperatorId
+    || payload["trainRunId"] !== "tutorial-run-1"
+    || typeof action !== "string"
+    || !Object.hasOwn(DISRUPTION_ACTION_LABELS, action)
+  ) {
+    throw new AlphaConflictError(
+      "Persistierter Tutorial-Entscheidungsbeleg ist nicht welt- und EVU-konsistent.",
+      "tutorial_action_replay_conflict",
+    );
+  }
+  return { sequence: row.sequence, action: action as TutorialDispatchAction["action"] };
 }
 
 export function tutorialPlanningCommand(
@@ -500,6 +589,43 @@ export function tutorialPlayerBid(
   };
 }
 
+type TutorialSubmitBidAction = Extract<TutorialAction, { readonly type: "submit-bid" }>;
+
+function persistedTutorialBidAction(
+  session: Pick<TutorialSession, "reference" | "tutorialOperatorId">,
+  bid: Bid,
+  vehicleId: string,
+): TutorialSubmitBidAction {
+  const action: TutorialSubmitBidAction = {
+    type: "submit-bid",
+    orderingFeeCentsPerTrainKm: bid.orderingFeeCentsPerTrainKm.toString(),
+    extraSeats: bid.promises.extraSeats,
+    punctualityBasisPoints: bid.promises.punctualityBasisPoints,
+  };
+  const expectedBid = tutorialPlayerBid(session, action, vehicleId);
+  if (alphaHash("zugfolge-tutorial-player-bid/v1", expectedBid)
+    !== alphaHash("zugfolge-tutorial-player-bid/v1", bid)) {
+    throw new AlphaConflictError(
+      "Persistierter Tutorial-Zuschlag widerspricht dem gebundenen Spielerangebot.",
+      "tutorial_action_replay_conflict",
+    );
+  }
+  return action;
+}
+
+function requireSameTutorialAction(
+  requested: TutorialSubmitBidAction | TutorialDispatchAction,
+  persisted: TutorialSubmitBidAction | TutorialDispatchAction,
+): void {
+  if (alphaHash("zugfolge-tutorial-action/v1", requested)
+    !== alphaHash("zugfolge-tutorial-action/v1", persisted)) {
+    throw new AlphaConflictError(
+      "Tutorial-Retry verwendet andere Nutzdaten als der persistierte Entscheidungsbeleg.",
+      "tutorial_action_replay_conflict",
+    );
+  }
+}
+
 export function prepareTutorialEconomy(input: {
   readonly worldId: string;
   readonly tutorialAccountId: string;
@@ -552,14 +678,71 @@ export function prepareTutorialEconomy(input: {
 
 export class GameTutorialWorldFactory implements TutorialWorldFactory {
   readonly #cooperation: CooperationService;
+  readonly #clock: () => Date;
 
   constructor(
     private readonly db: AlphaDatabase,
     private readonly runtime: NativeRuntime,
     private readonly planning: PlanningRuntime,
     private readonly regional: RegionalSimulationWorker,
+    options: { readonly clock?: () => Date } = {},
   ) {
     this.#cooperation = new CooperationService(db as never, undefined, new GameFleetAssetTransferWriter(runtime));
+    this.#clock = options.clock ?? (() => new Date());
+  }
+
+  private wallClock(): Date {
+    const at = this.#clock();
+    if (Number.isNaN(at.getTime())) throw new RangeError("Tutorial-Outbox-Zeit ist ungueltig.");
+    return at;
+  }
+
+  private async drainEconomy(session: TutorialSession): Promise<number> {
+    if ((await listPendingEconomyEffects(this.db as never, session.tutorialWorldId, 1)).length === 0) return 0;
+    const adapters = await loadTutorialEconomyPlatformAdapters(this.db, session.tutorialWorldId, session.tutorialOperatorId);
+    if (adapters === undefined) throw new AlphaConflictError("Tutorialkontierung ist nicht wiederherstellbar.", "tutorial_economy_accounts_unavailable");
+    return drainEconomyOutbox(this.db as never, session.tutorialWorldId, adapters, this.wallClock());
+  }
+
+  private async settlementJournal(session: TutorialSession): Promise<EconomyJournalEntry> {
+    const effectId = `${session.reference}:settlement:settlement`;
+    const [row] = await this.db.select({ payload: economyOutbox.payload }).from(economyOutbox).where(and(
+      eq(economyOutbox.worldId, session.tutorialWorldId),
+      eq(economyOutbox.effectType, "journal"),
+      eq(economyOutbox.effectId, effectId),
+    )).limit(1);
+    const entry = row === undefined ? undefined : decodeEconomyValue(row.payload) as EconomyJournalEntry;
+    if (entry === undefined
+      || entry.worldId !== session.tutorialWorldId
+      || entry.operatorId !== session.tutorialOperatorId
+      || entry.idempotencyKey !== effectId
+      || !Array.isArray(entry.postings)
+      || typeof entry.revenueCents !== "bigint") {
+      throw new AlphaConflictError("Persistierter Tutorial-Abrechnungsbeleg fehlt.", "tutorial_settlement_effect_unavailable");
+    }
+    return entry;
+  }
+
+  private async closeEconomyState(session: TutorialSession): Promise<EconomyWorldState | undefined> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const economy = await loadEconomyWorldState(this.db as never, session.tutorialWorldId);
+      if (economy === undefined) return undefined;
+      const closed = closeEconomyWorld(economy, `${session.reference}:close-world`);
+      if (closed === economy) return economy;
+      try {
+        await persistEconomyTransition(this.db as never, {
+          expectedRevision: economy.revision,
+          state: closed,
+          effects: { notices: [], journal: [] },
+          committedAt: instant(session, TUTORIAL_TIMELINE.archiveAtS),
+          enqueuedAt: this.wallClock(),
+        });
+        return closed;
+      } catch (error) {
+        if (!(error instanceof EconomyStateConflictError) || attempt === 2) throw error;
+      }
+    }
+    throw new Error("Tutorialwirtschaft konnte nicht schedulerfest geschlossen werden.");
   }
 
   private async systemActors(session: TutorialSession): Promise<{
@@ -641,19 +824,23 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
     let current = await loadEconomyWorldState(this.db as never, session.tutorialWorldId);
     if (current === undefined) {
       try {
-        await persistEconomyTransition(this.db as never, { expectedRevision: null, ...prepared.initial, committedAt: session.startedAt });
+        await persistEconomyTransition(this.db as never, { expectedRevision: null, ...prepared.initial, committedAt: session.startedAt, enqueuedAt: this.wallClock() });
       } catch (error) {
         if (await loadEconomyWorldState(this.db as never, session.tutorialWorldId) === undefined) throw error;
       }
       current = await loadEconomyWorldState(this.db as never, session.tutorialWorldId);
     }
-    if (current?.tenders.has("tutorial-tender")) return;
+    if (current?.tenders.has("tutorial-tender")) {
+      await this.drainEconomy(session);
+      return;
+    }
     if (current === undefined || current.revision !== prepared.initial.state.revision) throw new AlphaConflictError("Tutorialwirtschaft kann nicht deterministisch fortgesetzt werden.", "tutorial_economy_revision_conflict");
     try {
-      await persistEconomyTransition(this.db as never, { expectedRevision: current.revision, state: prepared.state, effects: prepared.effects, committedAt: session.startedAt });
+      await persistEconomyTransition(this.db as never, { expectedRevision: current.revision, state: prepared.state, effects: prepared.effects, committedAt: session.startedAt, enqueuedAt: this.wallClock() });
     } catch (error) {
       if (!(await loadEconomyWorldState(this.db as never, session.tutorialWorldId))?.tenders.has("tutorial-tender")) throw error;
     }
+    await this.drainEconomy(session);
   }
 
   async provision(session: TutorialSession, template: TutorialTemplate): Promise<Readonly<Record<string, unknown>>> {
@@ -769,11 +956,14 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
     const current = await loadEconomyWorldState(this.db as never, session.tutorialWorldId);
     if (current === undefined) throw new AlphaConflictError("Tutorialwirtschaft ist nicht bereit.", "tutorial_economy_unavailable");
     const lifecycle = current.tenders.get("tutorial-tender");
+    const firstVehicleId = textValue(template.leases[0]?.["vehicleId"], "Tutorialfahrzeug");
     if (lifecycle?.phase === "awarded") {
       if (lifecycle.winningBid.operatorId !== session.tutorialOperatorId) throw new AlphaConflictError("Vergabe wurde nicht an das Tutorial-EVU erteilt.", "tutorial_bid_lost");
-      return scenario(session);
+      const persistedAction = persistedTutorialBidAction(session, lifecycle.winningBid, firstVehicleId);
+      requireSameTutorialAction(action, persistedAction);
+      await this.drainEconomy(session);
+      return { ...scenario(session), selectedBid: persistedAction, tenderAwardedAtS: TUTORIAL_TIMELINE.tenderClosesAtS };
     }
-    const firstVehicleId = textValue(template.leases[0]?.["vehicleId"], "Tutorialfahrzeug");
     let state = submitBid(current, `${session.reference}:player-bid`, "tutorial-tender", tutorialPlayerBid(session, action, firstVehicleId), {
       accountId: session.tutorialAccountId,
       period: 0,
@@ -793,7 +983,8 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
     if (awarded?.phase !== "awarded" || awarded.winningBid.operatorId !== session.tutorialOperatorId) {
       throw new AlphaValidationError("Das Angebot gewinnt den deterministischen Vergleich noch nicht.");
     }
-    await persistEconomyTransition(this.db as never, { expectedRevision: current.revision, ...closed, committedAt: instant(session, TUTORIAL_TIMELINE.tenderClosesAtS) });
+    await persistEconomyTransition(this.db as never, { expectedRevision: current.revision, ...closed, committedAt: instant(session, TUTORIAL_TIMELINE.tenderClosesAtS), enqueuedAt: this.wallClock() });
+    await this.drainEconomy(session);
     return { ...scenario(session), selectedBid: action, tenderAwardedAtS: TUTORIAL_TIMELINE.tenderClosesAtS };
   }
 
@@ -920,7 +1111,8 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
         publicVehiclePool: ["tutorial-public-reserve"],
         operatingTransition: transition,
       });
-      await persistEconomyTransition(this.db as never, { expectedRevision: economy.revision, ...mobilized, committedAt: instant(session, TUTORIAL_TIMELINE.operatingFromS) });
+      await persistEconomyTransition(this.db as never, { expectedRevision: economy.revision, ...mobilized, committedAt: instant(session, TUTORIAL_TIMELINE.operatingFromS), enqueuedAt: this.wallClock() });
+      await this.drainEconomy(session);
       economy = mobilized.state;
     }
     await this.db.transaction(async (tx) => {
@@ -1005,64 +1197,78 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
       request_reroute: { cost: Number(template.result.disruptionRerouteCostCents), penalty: 0, cancelledStops: 0, punctuality: 9_180 },
       trigger_rail_replacement: { cost: Number(template.result.disruptionReplacementCostCents), penalty: 20_000, cancelledStops: 1, punctuality: 9_000 },
     } as const;
-    const selected = options[action.action];
-    const [program] = await this.db.select().from(operatingProgramVersions).where(and(
-      eq(operatingProgramVersions.worldId, session.tutorialWorldId),
-      eq(operatingProgramVersions.operatorId, session.tutorialOperatorId),
-      eq(operatingProgramVersions.status, "active"),
-    )).limit(1);
-    if (program === undefined) throw new AlphaConflictError("Aktives Betriebsprogramm fehlt.", "tutorial_program_missing");
-    await this.regional.apply({
-      worldId: session.tutorialWorldId,
-      regionId: template.region.id,
-      commandId: `${session.reference}:advance-disruption`,
-      command: { type: "advance-to", atS: TUTORIAL_TIMELINE.disruptionAtS },
-    }, instant(session, TUTORIAL_TIMELINE.disruptionAtS));
-    await this.regional.apply({
-      worldId: session.tutorialWorldId,
-      regionId: template.region.id,
-      commandId: `${session.reference}:disruption`,
-      command: {
-        type: "register-disruption",
-        disruption: {
-          disruptionId: textValue(template.disruption["id"], "Stoerungs-ID"),
-          kind: "unplanned",
-          publishedAtS: TUTORIAL_TIMELINE.disruptionAtS,
-          startsAtS: TUTORIAL_TIMELINE.disruptionAtS,
-          validUntilS: integer(template.disruption["validUntilS"], "Stoerungsende"),
-          positionMm: 12_000_000,
-          causeCode: integer(template.disruption["causeCode"], "Ursachencode"),
-          fineCauseId: textValue(template.disruption["fineCauseId"], "Feinursache"),
-          effect: "closure",
-          affectedResource: textValue(template.disruption["resourceId"], "Konfliktressource"),
-          affectedTrainRunIds: [textValue(template.disruption["trainRunId"], "Zuglauf")],
-          delaySeconds: integer(template.disruption["delaySeconds"], "Stoerungsverspaetung"),
-        },
-      },
-    }, instant(session, TUTORIAL_TIMELINE.disruptionAtS));
-    const explanation = this.runtime.evaluateDecision(program.canonicalProgram as Readonly<Record<string, unknown>>, this.dispatchCase(action, selected.cost, selected.penalty, selected.cancelledStops));
-    if (!explanation.manual_override || explanation.selected_action !== action.action) throw new AlphaConflictError("Rust-Dispatcher hat die gewaehlte Massnahme nicht autorisiert.", "tutorial_dispatch_rejected");
     const decisionId = `${session.reference}:decision:1`;
-    const decisionSequence = await appendEvent(this.db, session.tutorialWorldId, "dispatch.decision-applied", {
-      decisionId,
-      operatorId: session.tutorialOperatorId,
-      trainRunId: "tutorial-run-1",
-      action: explanation.selected_action,
-      cause: "Weichenstoerung",
-      causeCode: template.disruption["causeCode"],
-      fineCauseId: template.disruption["fineCauseId"],
-      affectedResource: template.disruption["resourceId"],
-      programVersion: explanation.program_version,
-      programChecksum: explanation.program_checksum,
-      manualOverride: explanation.manual_override,
-      outcomeReason: explanation.outcome_reason,
-      conditions: explanation["conditions"],
-      limits: explanation["limits"],
-      rejectedAlternatives: explanation["rejected_alternatives"],
-      impact: explanation.impact,
-    }, instant(session, TUTORIAL_TIMELINE.disruptionAtS + 1));
+    const persistedDecision = await loadPersistedTutorialDispatchDecision(this.db, session);
+    if (persistedDecision !== undefined) {
+      requireSameTutorialAction(action, { type: "dispatch", action: persistedDecision.action });
+    }
+    const authoritativeAction = persistedDecision?.action ?? action.action;
+    const authoritativeRequest: TutorialDispatchAction = { type: "dispatch", action: authoritativeAction };
+    const selected = options[authoritativeAction];
+    let decisionSequence: number;
+    if (persistedDecision !== undefined) {
+      decisionSequence = persistedDecision.sequence;
+    } else {
+      const [program] = await this.db.select().from(operatingProgramVersions).where(and(
+        eq(operatingProgramVersions.worldId, session.tutorialWorldId),
+        eq(operatingProgramVersions.operatorId, session.tutorialOperatorId),
+        eq(operatingProgramVersions.status, "active"),
+      )).limit(1);
+      if (program === undefined) throw new AlphaConflictError("Aktives Betriebsprogramm fehlt.", "tutorial_program_missing");
+      await this.regional.apply({
+        worldId: session.tutorialWorldId,
+        regionId: template.region.id,
+        commandId: `${session.reference}:advance-disruption`,
+        command: { type: "advance-to", atS: TUTORIAL_TIMELINE.disruptionAtS },
+      }, instant(session, TUTORIAL_TIMELINE.disruptionAtS));
+      await this.regional.apply({
+        worldId: session.tutorialWorldId,
+        regionId: template.region.id,
+        commandId: `${session.reference}:disruption`,
+        command: {
+          type: "register-disruption",
+          disruption: {
+            disruptionId: textValue(template.disruption["id"], "Stoerungs-ID"),
+            kind: "unplanned",
+            publishedAtS: TUTORIAL_TIMELINE.disruptionAtS,
+            startsAtS: TUTORIAL_TIMELINE.disruptionAtS,
+            validUntilS: integer(template.disruption["validUntilS"], "Stoerungsende"),
+            positionMm: 12_000_000,
+            causeCode: integer(template.disruption["causeCode"], "Ursachencode"),
+            fineCauseId: textValue(template.disruption["fineCauseId"], "Feinursache"),
+            effect: "closure",
+            affectedResource: textValue(template.disruption["resourceId"], "Konfliktressource"),
+            affectedTrainRunIds: [textValue(template.disruption["trainRunId"], "Zuglauf")],
+            delaySeconds: integer(template.disruption["delaySeconds"], "Stoerungsverspaetung"),
+          },
+        },
+      }, instant(session, TUTORIAL_TIMELINE.disruptionAtS));
+      const explanation = this.runtime.evaluateDecision(program.canonicalProgram as Readonly<Record<string, unknown>>, this.dispatchCase(authoritativeRequest, selected.cost, selected.penalty, selected.cancelledStops));
+      if (!explanation.manual_override || explanation.selected_action !== authoritativeAction) throw new AlphaConflictError("Rust-Dispatcher hat die gewaehlte Massnahme nicht autorisiert.", "tutorial_dispatch_rejected");
+      decisionSequence = await appendEvent(this.db, session.tutorialWorldId, "dispatch.decision-applied", {
+        decisionId,
+        operatorId: session.tutorialOperatorId,
+        trainRunId: "tutorial-run-1",
+        action: explanation.selected_action,
+        cause: "Weichenstoerung",
+        causeCode: template.disruption["causeCode"],
+        fineCauseId: template.disruption["fineCauseId"],
+        affectedResource: template.disruption["resourceId"],
+        programVersion: explanation.program_version,
+        programChecksum: explanation.program_checksum,
+        manualOverride: explanation.manual_override,
+        outcomeReason: explanation.outcome_reason,
+        conditions: explanation["conditions"],
+        limits: explanation["limits"],
+        rejectedAlternatives: explanation["rejected_alternatives"],
+        impact: explanation.impact,
+      }, instant(session, TUTORIAL_TIMELINE.disruptionAtS + 1));
+    }
     let economy = await loadEconomyWorldState(this.db as never, session.tutorialWorldId);
     if (economy === undefined) throw new AlphaConflictError("Tutorialwirtschaft fehlt.", "tutorial_economy_unavailable");
+    let orderingRevenueCents: bigint | undefined;
+    let operatingCostCents: bigint | undefined;
+    let periodResultCents: bigint | undefined;
     if (!economy.settledPeriods.has(`tutorial-tender:${TUTORIAL_SETTLEMENT_PERIOD}`)) {
       const settled = settleContractPeriod(economy, {
         commandId: `${session.reference}:settlement`,
@@ -1074,7 +1280,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
           punctualityBasisPoints: selected.punctuality,
           cancellations: selected.cancelledStops > 0 ? 1 : 0,
           missingSeats: 0,
-          missedConnections: action.action === "short_turn" ? 1 : 0,
+          missedConnections: authoritativeAction === "short_turn" ? 1 : 0,
           evidence: [...TUTORIAL_CONTRACT_EVIDENCE, "tutorial-run-1", decisionId, String(decisionSequence)],
         },
         costs: [
@@ -1083,30 +1289,33 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
           { amountCents: template.result.baseOperatingCostCents, costType: "personnel", costCentreId: "tutorial-lot", reference: `tutorial-period-${TUTORIAL_SETTLEMENT_PERIOD}` },
         ],
       });
-      await persistEconomyTransition(this.db as never, { expectedRevision: economy.revision, ...settled, committedAt: instant(session, TUTORIAL_TIMELINE.settlementAtS) });
-      const journal = object(stateValue["journalAccounts"], "Tutorialkontierung") as unknown as JournalAccounts;
-      await dispatchEconomyEffects(settled.effects, createEconomyPlatformAdapters({
-        db: this.db as never,
-        accountsByOperator: { [session.tutorialOperatorId]: journal },
-        accountPlan: TUTORIAL_ECONOMY_LEDGER_ACCOUNT_PLAN,
-      }));
+      await persistEconomyTransition(this.db as never, { expectedRevision: economy.revision, ...settled, committedAt: instant(session, TUTORIAL_TIMELINE.settlementAtS), enqueuedAt: this.wallClock() });
       economy = settled.state;
-      return {
-        ...stateValue,
-        selectedDispatchAction: action.action,
-        disruptionEventReference: `${session.reference}:disruption`,
-        decisionEventSequence: decisionSequence,
-        disruptionCostCents: String(selected.cost),
-        disruptionPenaltyCents: String(selected.penalty),
-        punctualityBasisPoints: selected.punctuality,
-        cancellations: selected.cancelledStops > 0 ? 1 : 0,
-        orderingRevenueCents: settled.result.revenueCents.toString(),
-        operatingCostCents: Object.values(settled.result.costsByType).reduce((total, amount) => total + amount, 0n).toString(),
-        periodResultCents: settled.result.resultCents.toString(),
-        economyRevision: economy.revision,
-      };
+      orderingRevenueCents = settled.result.revenueCents;
+      operatingCostCents = Object.values(settled.result.costsByType).reduce((total, amount) => total + amount, 0n);
+      periodResultCents = settled.result.resultCents;
     }
-    return stateValue;
+    await this.drainEconomy(session);
+    if (orderingRevenueCents === undefined || operatingCostCents === undefined || periodResultCents === undefined) {
+      const journal = await this.settlementJournal(session);
+      orderingRevenueCents = journal.revenueCents;
+      operatingCostCents = journal.postings.reduce((total, posting) => total + posting.amountCents, 0n);
+      periodResultCents = orderingRevenueCents - operatingCostCents;
+    }
+    return {
+      ...stateValue,
+      selectedDispatchAction: authoritativeAction,
+      disruptionEventReference: `${session.reference}:disruption`,
+      decisionEventSequence: decisionSequence,
+      disruptionCostCents: String(selected.cost),
+      disruptionPenaltyCents: String(selected.penalty),
+      punctualityBasisPoints: selected.punctuality,
+      cancellations: selected.cancelledStops > 0 ? 1 : 0,
+      orderingRevenueCents: orderingRevenueCents.toString(),
+      operatingCostCents: operatingCostCents.toString(),
+      periodResultCents: periodResultCents.toString(),
+      economyRevision: economy.revision,
+    };
   }
 
   async applyAction(session: TutorialSession, action: TutorialAction, template: TutorialTemplate): Promise<Readonly<Record<string, unknown>>> {
@@ -1277,21 +1486,22 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
   }
 
   async close(session: TutorialSession, reason: string): Promise<string> {
-    const economy = await loadEconomyWorldState(this.db as never, session.tutorialWorldId);
-    let economyHash = "";
-    if (economy !== undefined) {
-      const closed = closeEconomyWorld(economy, `${session.reference}:close-world`);
-      if (closed !== economy) {
-        await persistEconomyTransition(this.db as never, { expectedRevision: economy.revision, state: closed, effects: { notices: [], journal: [] }, committedAt: instant(session, TUTORIAL_TIMELINE.archiveAtS) });
-        economyHash = alphaHash("zugfolge-economy-state/v1", encodeEconomyValue(closed));
-      } else economyHash = alphaHash("zugfolge-economy-state/v1", encodeEconomyValue(economy));
-    }
+    // `TutorialSessionService` hat die Sitzung bereits dauerhaft auf `closing`
+    // gesetzt. Zuerst sperrt ein optimistisch wiederholter Economy-Commit alle
+    // weiteren Scheduler-Uebergaenge fachlich ab; erst danach wird die dadurch
+    // endgueltige Outbox vollstaendig quittiert. So kann zwischen Drain und
+    // Archivierung kein spaeter Scheduler-Commit mehr Effekte hinterlassen.
+    const economy = await this.closeEconomyState(session);
+    await this.drainEconomy(session);
+    const economyHash = economy === undefined
+      ? ""
+      : alphaHash("zugfolge-economy-state/v1", encodeEconomyValue(economy));
     const [fleet, regional, programme] = await Promise.all([
       loadFleetProducerCheckpoint(this.db as never, session.tutorialWorldId),
       this.db.select({ stateHash: regionalSimulationStates.stateHash }).from(regionalSimulationStates).where(eq(regionalSimulationStates.worldId, session.tutorialWorldId)).orderBy(asc(regionalSimulationStates.regionId)),
       this.db.select({ checksum: operatingProgramVersions.checksum }).from(operatingProgramVersions).where(and(eq(operatingProgramVersions.worldId, session.tutorialWorldId), eq(operatingProgramVersions.operatorId, session.tutorialOperatorId))).orderBy(desc(operatingProgramVersions.version)).limit(1),
     ]);
-    return alphaHash("zugfolge-tutorial-final-state/v1", {
+    const finalStateHash = alphaHash("zugfolge-tutorial-final-state/v1", {
       worldId: session.tutorialWorldId,
       reference: session.reference,
       templateHash: session.templateHash,
@@ -1303,5 +1513,7 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
       programmeChecksum: programme[0]?.checksum ?? null,
       scenarioState: session.scenarioState,
     });
+    this.regional.releaseWorld(session.tutorialWorldId);
+    return finalStateHash;
   }
 }

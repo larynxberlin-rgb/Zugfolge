@@ -9,6 +9,7 @@ test("Deutschlandimport filtert vollständig und baut Topologie- sowie Semantikn
   });
   assert.deepEqual(plan.commands.map(({ id }) => id), ["ebo-filter", "geojson-sequence", "topology-report", "semantic-export"]);
   assert.ok(plan.commands[0].args.includes("w/railway=rail"));
+  assert.ok(plan.commands[0].args.includes("w/railway=tram,light_rail,subway,narrow_gauge,funicular,monorail"));
   assert.ok(plan.commands[0].args.includes("w/railway=platform"));
   assert.ok(plan.commands[0].args.includes("n/public_transport=platform"));
   assert.deepEqual(plan.commands[2].args.slice(-3), [plan.outputs.eboPbf, "osm-pbf-deutschland", plan.outputs.pbfReport]);

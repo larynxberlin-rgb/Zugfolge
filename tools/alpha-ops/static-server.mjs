@@ -21,7 +21,7 @@ const types = {
 };
 
 export function runtimeConfiguration(environment = process.env) {
-  const releaseId = environment["MAP_RELEASE_ID"] ?? "infra-deutschland-2026.1";
+  const releaseId = environment["MAP_RELEASE_ID"] ?? "infra-deutschland-2026.2";
   if (!/^infra-deutschland-[0-9]{4}\.[0-9]+$/u.test(releaseId)) {
     throw new Error("MAP_RELEASE_ID verletzt den versionierten Deutschland-Kartenvertrag.");
   }
@@ -36,10 +36,10 @@ export function runtimeConfiguration(environment = process.env) {
     gameApiUrl: environment["GAME_API_PUBLIC_URL"] ?? (environment["GAME_API_INTERNAL_URL"] ? "/api" : ""),
     keycloakUrl: environment["KEYCLOAK_PUBLIC_URL"] ?? "",
     keycloakRealm: environment["KEYCLOAK_REALM"] ?? "zugfolge",
-    livemapOidcClientId: environment["LIVEMAP_OIDC_CLIENT_ID"] ?? "livemap",
     publicWorldId: environment["ALPHA_PUBLIC_WORLD_ID"] ?? "",
     gameWebUrl: environment["GAME_WEB_PUBLIC_URL"] ?? "",
     livemapUrl: environment["LIVEMAP_PUBLIC_URL"] ?? "",
+    livemapOidcClientId: environment["LIVEMAP_OIDC_CLIENT_ID"] ?? "livemap",
     mapBasemapStyleUrl,
     mapGermanyPmtilesUrl,
     mapAttribution: environment["MAP_ATTRIBUTION"]

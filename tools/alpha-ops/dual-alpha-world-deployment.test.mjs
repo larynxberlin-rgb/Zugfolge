@@ -22,6 +22,7 @@ function minimalPublicDeployment() {
   return {
     schema: "zugfolge-alpha-world-deployment/v1",
     worldId: PUBLIC_WORLD_ID,
+    deploymentRevision: 2,
     worldDefinition: {
       name: "Oeffentliche Alpha-Welt",
       kind: "public",
@@ -123,7 +124,14 @@ test("Weltbindung und reservierte Tutorialkennungen werden fail-closed geprueft"
 test("Generatorvertrag erzeugt nur das signierbare Public-Artefakt; Tutorialwelten entstehen in gebundenen Sessions", async () => {
   const source = await readFile(new URL("../region-import/build-alpha-world.mjs", import.meta.url), "utf8");
   assert.match(source, /schemaVersion: "zugfolge-alpha-world-blueprint\/v2"/);
+  assert.match(source, /Produktiver Weltbuild braucht eine explizite Odoo-Signierkonfiguration/);
+  assert.match(source, /epoch\.getUTCDay\(\) !== 1/);
+  assert.match(source, /worldDefinition: \{ \.\.\.definition, epoch: epoch\.toISOString\(\) \}/);
+  assert.doesNotMatch(source, /epoch\.toISOString\(\) !== definition\.epoch/);
+  assert.doesNotMatch(source, /const WORLD_EPOCH/);
+  assert.doesNotMatch(source, /defaultDeployConfiguration/);
   assert.match(source, /startingCapitalPolicy: publicDeployConfiguration\.startingCapitalPolicy/);
+  assert.match(source, /deploymentRevision: publicDeployConfiguration\.deploymentRevision/);
   assert.match(source, /mode: "award-contingent-wet-lease"/);
   assert.match(source, /costBasis: "formation-operating-cost"/);
   assert.doesNotMatch(source, /tutorialDeploymentPath/);

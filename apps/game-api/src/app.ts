@@ -249,6 +249,10 @@ export interface AppDependencies {
   readonly cooperationSimulationSecond?: (worldId: string) => Promise<number>;
   /** Einmal je Postfachrequest gelesene Serverzeit fuer Prioritaet und Fristen. */
   readonly mailboxClock?: () => Date;
+  /** Einmal je Weltvertragsrequest gelesene Wandzeit; nie Teil des Simulationskerns. */
+  readonly publicWorldClock?: () => Date;
+  /** Reale Queuezeit fuer Economy-Outbox-Commits, getrennt von der beschleunigten Fachzeit. */
+  readonly economyQueueClock?: () => Date;
   /** M9-Spieler-, Monitoring- und Alpha-Pfade; fehlen sie, werden keine Teilattrappen exponiert. */
   readonly alpha?: AlphaRouteServices;
   /** Persistenter Missbrauchsschutz darf auch ohne noch nicht fertig verdrahtete Alpha-Oberflaechen aktiv sein. */
@@ -1161,6 +1165,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     deps.fleetRuntime === undefined ? undefined : new GameFleetAssetTransferWriter(deps.fleetRuntime),
   );
   const abuseServices = deps.alpha ?? deps.alphaAbuse;
+  const economyQueueClock = deps.economyQueueClock ?? (() => new Date());
   const cooperationSimulationSecond = deps.cooperationSimulationSecond ?? (async (worldId: string) => {
     const [row] = await deps.db.select({ epoch: worlds.epoch, factor: alphaWorldProfiles.accelerationFactor }).from(worlds)
       .leftJoin(alphaWorldProfiles, eq(alphaWorldProfiles.worldId, worlds.id))
@@ -1370,7 +1375,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           authorityBudgets: decoded<readonly AuthorityBudget[]>(request.body.authorityBudgets),
           accounts: accountsInWorld.map((account) => account.id),
         });
-        await persistEconomyTransition(deps.db, { expectedRevision: null, ...started, committedAt: new Date(request.body.at * 1_000) });
+        await persistEconomyTransition(deps.db, { expectedRevision: null, ...started, committedAt: new Date(request.body.at * 1_000), enqueuedAt: economyQueueClock() });
         return reply.code(201).send(encodeEconomyValue(started.state));
       } catch (error) {
         return sendEconomyError(reply, error);
@@ -1480,7 +1485,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
             failurePenaltyCents: BigInt(request.body.failurePenaltyCents),
           },
         });
-        await persistEconomyTransition(deps.db, { expectedRevision: state.revision, ...announced, committedAt: new Date(request.body.announcedAt * 1_000) });
+        await persistEconomyTransition(deps.db, { expectedRevision: state.revision, ...announced, committedAt: new Date(request.body.announcedAt * 1_000), enqueuedAt: economyQueueClock() });
         return reply.code(201).send(encodeEconomyValue(announced.state));
       } catch (error) {
         return sendEconomyError(reply, error);
@@ -1552,7 +1557,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         const submittedAt = await cooperationSimulationSecond(request.params.worldId);
         const smallLot = lifecycle.tender.closesAt - lifecycle.tender.opensAt <= 2 * 86_400;
         const next = submitBid(state, request.body.commandId, request.params.tenderId, { id: request.body.bidId, operatorId: request.params.operatorId, orderingFeeCentsPerTrainKm: BigInt(request.body.orderingFeeCentsPerTrainKm), vehicle, promises: request.body.promises, submittedAt }, { accountId: account.id, period: Math.floor(submittedAt / (state.profile.periodWeeks * 7 * 86_400)), smallLot, minimumScore: 4_000 });
-        await persistEconomyTransition(deps.db, { expectedRevision: state.revision, state: next, effects: { notices: [], journal: [] }, committedAt: new Date(submittedAt * 1_000) });
+        await persistEconomyTransition(deps.db, { expectedRevision: state.revision, state: next, effects: { notices: [], journal: [] }, committedAt: new Date(submittedAt * 1_000), enqueuedAt: economyQueueClock() });
         return reply.code(201).send(encodeEconomyValue(economyStateForPlayer(next, new Set([request.params.operatorId]))));
       } catch (error) {
         return sendEconomyError(reply, error);
@@ -1598,7 +1603,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         }
         const submittedAt = await cooperationSimulationSecond(request.params.worldId);
         const next = submitMobilizationReference(state, { commandId: request.body.commandId, tenderId: request.params.tenderId, operatorId: request.params.operatorId, at: submittedAt, reference: request.body.reference });
-        await persistEconomyTransition(deps.db, { expectedRevision: state.revision, state: next, effects: { notices: [], journal: [] }, committedAt: new Date(submittedAt * 1_000) });
+        await persistEconomyTransition(deps.db, { expectedRevision: state.revision, state: next, effects: { notices: [], journal: [] }, committedAt: new Date(submittedAt * 1_000), enqueuedAt: economyQueueClock() });
         return reply.send(encodeEconomyValue(economyStateForPlayer(next, new Set([request.params.operatorId]))));
       } catch (error) {
         return sendEconomyError(reply, error);
@@ -1704,7 +1709,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           ...(contractPenaltyCents === 0n ? [] : [{ amountCents: contractPenaltyCents, costType: "penalty" as const, costCentreId: contract.lotId, reference }]),
         ];
         const settled = settleContractPeriod(state, { commandId: request.body.commandId, contractId: request.params.contractId, period, at: periodEndS, performance: { trainKm, punctualityBasisPoints, cancellations, missingSeats, missedConnections, evidence: ["vehicles", "personnel", "paths", ...evidence] }, costs });
-        await persistEconomyTransition(deps.db, { expectedRevision: state.revision, state: settled.state, effects: settled.effects, committedAt: new Date(epoch.getTime() + periodEndS * 1_000) });
+        await persistEconomyTransition(deps.db, { expectedRevision: state.revision, state: settled.state, effects: settled.effects, committedAt: new Date(epoch.getTime() + periodEndS * 1_000), enqueuedAt: economyQueueClock() });
         return reply.code(201).send(encodeEconomyValue(settled.result));
       } catch (error) {
         return sendEconomyError(reply, error);
@@ -1728,7 +1733,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         if (state === undefined) return reply.code(404).send({ error: "Wirtschaftswelt ist noch nicht gestartet." });
         requireExpectedRevision(request.params.worldId, state.revision, request.body.expectedRevision);
         const escalated = escalateOperator(state, { commandId: request.body.commandId, operatorId: request.params.operatorId, accountId: request.body.accountId, period: request.body.period, at: request.body.at, signals: { ...request.body.signals, liquidCents: BigInt(request.body.signals.liquidCents), twoPeriodNeedCents: BigInt(request.body.signals.twoPeriodNeedCents), overdueCents: BigInt(request.body.signals.overdueCents) } });
-        await persistEconomyTransition(deps.db, { expectedRevision: state.revision, state: escalated.state, effects: escalated.effects, committedAt: new Date(request.body.at * 1_000) });
+        await persistEconomyTransition(deps.db, { expectedRevision: state.revision, state: escalated.state, effects: escalated.effects, committedAt: new Date(request.body.at * 1_000), enqueuedAt: economyQueueClock() });
         return reply.send(encodeEconomyValue(escalated.decision));
       } catch (error) {
         return sendEconomyError(reply, error);
@@ -2560,6 +2565,8 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       .innerJoin(alphaWorldProfiles, eq(alphaWorldProfiles.worldId, worlds.id))
       .where(and(eq(worlds.worldKind, "public"), eq(worlds.lifecycleStatus, "active"), eq(alphaWorldProfiles.state, "running")))
       .orderBy(asc(worlds.name), asc(worlds.id));
+    const now = deps.publicWorldClock?.() ?? new Date();
+    if (Number.isNaN(now.getTime())) throw new RangeError("Weltvertragszeit ist ungueltig.");
     const contracts = rows.map(({ world, profile }) => {
       const startingCapitalPolicy = decodeStartingCapitalPolicy(profile);
       const closesAt = profile.periodCount === null ? null : new Date(
@@ -2576,7 +2583,9 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         duration: profile.periodCount === null ? { kind: "unlimited" as const } : { kind: "periods" as const, periodCount: profile.periodCount },
         timeBasis: { mode: "realtime" as const, accelerationFactor: profile.accelerationFactor, epoch: world.epoch.toISOString(), timeZone: "Europe/Berlin" as const },
         entry: {
-          status: supportedPublicEntryPolicy(startingCapitalPolicy) ? "open" as const : "configuration-incomplete" as const,
+          status: !supportedPublicEntryPolicy(startingCapitalPolicy)
+            ? "configuration-incomplete" as const
+            : now.getTime() < world.epoch.getTime() ? "scheduled" as const : "open" as const,
           requiresContractConfirmation: true,
           opensAt: world.epoch.toISOString(),
           closesAt,
@@ -2613,6 +2622,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       try {
         const [targetWorld] = await deps.db
           .select({
+            epoch: worlds.epoch,
             worldKind: worlds.worldKind,
             lifecycleStatus: worlds.lifecycleStatus,
             profile: alphaWorldProfiles,
@@ -2642,6 +2652,15 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           });
         }
         if (targetWorld.worldKind === "public") {
+          const accessAt = deps.publicWorldClock?.() ?? new Date();
+          if (Number.isNaN(accessAt.getTime())) throw new RangeError("Weltzugangszeit ist ungueltig.");
+          if (accessAt.getTime() < targetWorld.epoch.getTime()) {
+            return reply.code(409).send({
+              code: "world_not_open",
+              error: "Die Welt ist noch nicht geoeffnet.",
+              opensAt: targetWorld.epoch.toISOString(),
+            });
+          }
           const startingCapitalPolicy = targetWorld.profile === null ? null : decodeStartingCapitalPolicy(targetWorld.profile);
           if (targetWorld.profile === null || targetWorld.profile.state !== "running"
             || !supportedPublicEntryPolicy(startingCapitalPolicy)) {

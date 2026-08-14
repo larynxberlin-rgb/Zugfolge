@@ -1,0 +1,15 @@
+{
+  "schema": "zugfolge-regional-infra-release-build/v1",
+  "releaseId": "infra-mitteldeutschland-b-2026.2",
+  "regionId": "mitteldeutschland-b",
+  "regionVariant": "B",
+  "timetableYear": 2026,
+  "serviceDate": "20260810",
+  "gtfsArtifact": "gtfs-region-20260810-v2.json",
+  "releaseApproval": {
+    "releaseResponsible": "Sebastian Barowski",
+    "responsibilityGrantedBy": "user-approval-2026-08-13-evaluation",
+    "activationAllowed": true,
+    "activationAuthority": "game-system-only"
+  }
+}

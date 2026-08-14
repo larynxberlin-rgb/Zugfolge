@@ -1,0 +1,78 @@
+{
+  "schema": "zugfolge-germany-release-config/v1",
+  "release": {
+    "releaseId": "infra-deutschland-2026.2",
+    "timetableYear": 2026,
+    "corpusScope": "deutschland-ebo",
+    "serverLoad": "complete",
+    "visibilityMask": "complete-germany",
+    "playabilityMask": "world-release-specific"
+  },
+  "pipeline": {
+    "version": "germany-infracorpus/1",
+    "inputOrdering": "stable-id-ascending",
+    "officialAdapters": {
+      "dbInfraGoGeoPackage": {
+        "sourceId": "db-infrago-infrastructure-open-data",
+        "entrypoint": "tools/region-import/germany/run-infrago-gpkg-adapter.mjs",
+        "inputFormat": "GeoPackage",
+        "geometryPolicy": "omit-blob-use-osm-single-track-geometry",
+        "outputs": ["db-infrago-track-segments.jsonseq", "db-infrago-operating-places.jsonseq", "db-infrago-adapter-report.json"]
+      },
+      "openStationNetex": {
+        "sourceId": "openstation-enrichment",
+        "entrypoint": "tools/region-import/germany/run-openstation-netex-adapter.mjs",
+        "inputFormat": "NeTEx XML",
+        "coordinatePolicy": "Direkter Stationspunkt oder exakter repraesentativer Punkt eines raeumlich belegten Kindobjekts; sonst unbekannt.",
+        "outputs": ["openstation-stations.jsonseq", "stations.geojsonseq", "openstation-platform-points.geojsonseq", "openstation-adapter-report.json"]
+      },
+      "copernicusDemGlo30": {
+        "sourceId": "copernicus-dem-germany",
+        "rightsSourceId": "dem-hoehenmodell",
+        "entrypoint": "tools/region-import/germany/run-copernicus-dem.mjs",
+        "inputFormat": "COP-DEM-GLO-30-DGED Cloud Optimized GeoTIFF, release 2021",
+        "samplingPolicy": {
+          "intervalMm": 30000,
+          "minimumBaselineMm": 200000,
+          "analysisWindowMm": 400000,
+          "verticalAccuracyAssumptionMm": 4000,
+          "maximumAbsoluteGradientPermille": 70,
+          "maximumUncertaintyPermille": 50,
+          "classAEligible": false
+        },
+        "outputs": ["copernicus-dem-track-enrichment.geojsonseq", "copernicus-dem-quality-report.json", "copernicus-dem-evidence-report.json"]
+      }
+    },
+    "postProcessors": {
+      "mergeTrackGradient": {
+        "entrypoint": "tools/region-import/germany/run-merge-track-enrichment.mjs",
+        "baseLayer": "official-enriched-v2/tracks.geojsonseq",
+        "enrichmentLayer": "copernicus-dem-track-enrichment.geojsonseq",
+        "joinKey": "properties.feature_id",
+        "geometryMustMatch": true,
+        "existingPropertiesPreserved": true,
+        "output": "official-enriched-dem/tracks.geojsonseq",
+        "report": "official-enriched-dem/tracks.geojsonseq.report.json"
+      }
+    },
+    "integerUnits": { "distance": "millimetres", "speed": "kilometres-per-hour", "gradient": "permille" },
+    "requiredExternalTools": [
+      { "name": "osmium-tool", "version": "1.19.1" },
+      { "name": "GDAL PMTiles writer", "version": "3.13.2" },
+      { "name": "go-pmtiles", "version": "1.31.2" }
+    ]
+  },
+  "quality": {
+    "requiredDimensions": ["geometry", "topology", "speed", "electrification", "gradient", "trainProtection", "signalling", "conflictModel"],
+    "safeAssumptions": { "unknownMainlineSpeedKmh": 20, "unknownServiceSpeedKmh": 10, "unknownGradientAbsPermille": 40 },
+    "classA": "all-required-dimensions-validated",
+    "classB": "complete-conservative-operational-model",
+    "classC": "at-least-one-unresolved-required-dimension",
+    "classCPlayable": false
+  },
+  "separation": {
+    "visible": "Every EBO feature in the complete Germany corpus is visible.",
+    "modelled": "Only quality A and B features have a complete operational model.",
+    "playable": "A world-specific immutable mask selects from modelled features; it never truncates the corpus."
+  }
+}

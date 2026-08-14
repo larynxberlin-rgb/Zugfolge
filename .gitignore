@@ -28,6 +28,7 @@
 *.osm
 *.osm.bz2
 *.poly
+!tools/region-import/mitteldeutschland-b.poly
 *.mbtiles
 *.pmtiles
 *.tif
@@ -44,6 +45,7 @@
 .env.*
 !.env.example
 *.pem
+!ops/keys/zugfolge-alpha-2026-ed25519-public.pem
 *.key
 *.p12
 *.pfx

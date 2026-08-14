@@ -8,8 +8,10 @@ import { pipeline } from "node:stream/promises";
 import { InflateRaw } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 
+import { assertNormalizedScheduleTimeContract } from "../region-import/regional-release-contract.mjs";
+
 export const LIVEMAP_READ_MODEL_APPLICATION_ID = 0x5a554746;
-export const LIVEMAP_READ_MODEL_USER_VERSION = 2;
+export const LIVEMAP_READ_MODEL_USER_VERSION = 3;
 export const LIVEMAP_READ_MODEL_REPORT_SCHEMA = "zugfolge-livemap-read-model-build-report/v1";
 
 const REQUIRED_LAYERS = Object.freeze([
@@ -544,21 +546,6 @@ function parseServiceTime(value) {
   return hours * 3_600 + minutes * 60 + seconds;
 }
 
-function localMidnightEpochSeconds(serviceDate, timeZone) {
-  const desired = Date.UTC(Number(serviceDate.slice(0, 4)), Number(serviceDate.slice(4, 6)) - 1, Number(serviceDate.slice(6, 8)));
-  const formatter = new Intl.DateTimeFormat("en-GB", {
-    timeZone,
-    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
-  });
-  let candidate = desired;
-  for (let iteration = 0; iteration < 2; iteration += 1) {
-    const parts = Object.fromEntries(formatter.formatToParts(new Date(candidate)).map((part) => [part.type, part.value]));
-    const represented = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute), Number(parts.second));
-    candidate += desired - represented;
-  }
-  return Math.floor(candidate / 1_000);
-}
-
 function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value !== null && typeof value === "object") {
@@ -768,7 +755,7 @@ async function ingestObjects(database, inputDirectory, worldId, infrastructureRe
   return { counts, countsByKind };
 }
 
-async function buildGtfsFoundation(database, directory, spec, stations) {
+async function buildGtfsFoundation(database, directory, spec, stations, scheduleTime) {
   const calendarRows = [];
   const exceptionRows = [];
   for await (const row of csvRows(join(directory, "calendar.txt"))) calendarRows.push(row);
@@ -849,9 +836,7 @@ async function buildGtfsFoundation(database, directory, spec, stations) {
     throw error;
   }
 
-  const worldEpochUnixS = Math.floor(Date.parse(spec.worldEpoch) / 1_000);
-  invariant(Number.isSafeInteger(worldEpochUnixS), "worldEpoch ist kein gueltiger Zeitpunkt.");
-  const serviceStartS = localMidnightEpochSeconds(spec.gtfs.serviceDate, spec.gtfs.timeZone) - worldEpochUnixS;
+  const serviceStartS = scheduleTime.serviceStartOffsetS;
   const insertCall = database.prepare("INSERT INTO gtfs_calls (trip_id, stop_sequence, stop_id, station_id, stop_name, platform, arrival_s, departure_s) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
   let gtfsCallCount = 0;
   database.exec("BEGIN IMMEDIATE");
@@ -969,6 +954,40 @@ function validateSpec(spec) {
   nonEmptyString(spec.config.worldName, "config.worldName");
   invariant(spec.config.worldId === spec.worldId && spec.config.infrastructureReleaseId === spec.infrastructureReleaseId, "config verletzt Welt- oder Releasebindung.");
   invariant(spec.config.basemap?.selfHosted === true, "Basiskarte muss selbst gehostet sein.");
+  return assertNormalizedScheduleTimeContract({
+    worldEpoch: spec.worldEpoch,
+    serviceDate: spec.gtfs.serviceDate,
+    timeZone: spec.gtfs.timeZone,
+    serviceStartOffsetS: spec.serviceStartOffsetS,
+    repeatEveryS: spec.repeatEveryS,
+  });
+}
+
+function readScheduleTimeMetadata(database, world) {
+  const rows = database.prepare("SELECT key, value FROM metadata ORDER BY key").all();
+  const expectedKeys = [
+    "gtfs_service_date",
+    "infrastructure_release_id",
+    "repeat_every_s",
+    "schema",
+    "service_start_offset_s",
+    "time_zone",
+    "world_epoch",
+    "world_id",
+  ];
+  invariant(JSON.stringify(rows.map((row) => row.key)) === JSON.stringify(expectedKeys), "ReadModel besitzt keinen vollstaendigen normalisierten Schedule-Zeitvertrag.");
+  const metadata = Object.fromEntries(rows.map((row) => [row.key, row.value]));
+  invariant(metadata.schema === "zugfolge-livemap-read-model-sqlite/v2", "ReadModel besitzt ein unbekanntes Metadaten-Schema.");
+  invariant(metadata.world_id === world.world_id && metadata.infrastructure_release_id === world.infrastructure_release_id, "ReadModel-Metadaten verletzen die Welt- oder Releasebindung.");
+  invariant(/^(0|[1-9][0-9]*)$/.test(metadata.service_start_offset_s), "ReadModel-Servicebeginn ist nicht kanonisch.");
+  invariant(/^(0|[1-9][0-9]*)$/.test(metadata.repeat_every_s), "ReadModel-Wiederholungsperiode ist nicht kanonisch.");
+  return assertNormalizedScheduleTimeContract({
+    worldEpoch: metadata.world_epoch,
+    serviceDate: metadata.gtfs_service_date,
+    timeZone: metadata.time_zone,
+    serviceStartOffsetS: Number(metadata.service_start_offset_s),
+    repeatEveryS: Number(metadata.repeat_every_s),
+  });
 }
 
 export async function inspectPublicReadModel(path) {
@@ -1015,6 +1034,7 @@ export async function inspectPublicReadModel(path) {
     invariant(identifierOrphans === 0 && scheduleOrphans === 0, "ReadModel enthaelt Stationsbezuege ohne sichtbares Stationsobjekt.");
     const world = database.prepare("SELECT world_id, infrastructure_release_id FROM world_config").get();
     invariant(world !== undefined, "ReadModel besitzt keine Weltkonfiguration.");
+    const scheduleTime = readScheduleTimeMetadata(database, world);
     const objectCount = database.prepare("SELECT count(*) AS count FROM object_details").get().count;
     const scheduleCallCount = database.prepare("SELECT count(*) AS count FROM station_schedule_calls").get().count;
     const passengerPlanCount = database.prepare("SELECT count(*) AS count FROM passenger_information").get().count;
@@ -1022,6 +1042,7 @@ export async function inspectPublicReadModel(path) {
     return Object.freeze({
       worldId: world.world_id,
       infrastructureReleaseId: world.infrastructure_release_id,
+      scheduleTime,
       objectCount,
       scheduleCallCount,
       passengerPlanCount,
@@ -1036,23 +1057,27 @@ export async function inspectPublicReadModel(path) {
 }
 
 export async function buildLivemapReadModel(spec, outputPath) {
-  validateSpec(spec);
+  const scheduleTime = validateSpec(spec);
   const resolvedOutput = resolve(outputPath);
   await rm(resolvedOutput, { force: true });
   const database = createDatabase(resolvedOutput);
   let build;
   try {
     const metadata = database.prepare("INSERT INTO metadata (key, value) VALUES (?, ?)");
-    metadata.run("schema", "zugfolge-livemap-read-model-sqlite/v1");
+    metadata.run("schema", "zugfolge-livemap-read-model-sqlite/v2");
     metadata.run("world_id", spec.worldId);
     metadata.run("infrastructure_release_id", spec.infrastructureReleaseId);
     metadata.run("gtfs_service_date", spec.gtfs.serviceDate);
+    metadata.run("world_epoch", scheduleTime.worldEpoch);
+    metadata.run("time_zone", scheduleTime.timeZone);
+    metadata.run("service_start_offset_s", String(scheduleTime.serviceStartOffsetS));
+    metadata.run("repeat_every_s", String(scheduleTime.repeatEveryS));
     database.prepare("INSERT INTO world_config (world_id, infrastructure_release_id, config_json) VALUES (?, ?, ?)")
       .run(spec.worldId, spec.infrastructureReleaseId, JSON.stringify(spec.config));
 
     const stations = await readStationsForMatching(spec.inputDirectory);
     const objects = await ingestObjects(database, spec.inputDirectory, spec.worldId, spec.infrastructureReleaseId);
-    const timetable = await withGtfsDirectory(spec.gtfs.archive, (directory) => buildGtfsFoundation(database, directory, spec, stations));
+    const timetable = await withGtfsDirectory(spec.gtfs.archive, (directory) => buildGtfsFoundation(database, directory, spec, stations, scheduleTime));
     database.exec("DROP TABLE gtfs_calls; VACUUM;");
     build = { objects, timetable };
   } finally {

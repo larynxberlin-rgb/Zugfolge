@@ -10,6 +10,7 @@ import { SQLiteTrainMapProjector, assertTrainMapProjectionBinding } from "./live
 
 const WORLD = "00000000-0000-4000-8000-000000000014";
 const RELEASE = "infra-deutschland-test";
+const DEPLOYMENT_HASH = "d".repeat(64);
 const paths: string[] = [];
 
 const train: PublicTrain = {
@@ -40,7 +41,13 @@ const disruption = {
   startsAtS: 1,
 } as const;
 
-function fixture({ reverse = false, applicationId = 0x5a54504a, exact = true, method = "route-corridor" } = {}): string {
+function fixture({
+  reverse = false,
+  applicationId = 0x5a54504a,
+  exact = true,
+  method = "route-corridor",
+  deploymentHash = DEPLOYMENT_HASH,
+} = {}): string {
   const path = join(mkdtempSync(join(tmpdir(), "zugfolge-map-projector-")), "projection.sqlite");
   paths.push(path);
   const database = new DatabaseSync(path);
@@ -116,6 +123,7 @@ function fixture({ reverse = false, applicationId = 0x5a54504a, exact = true, me
   metadata.run("schema", "zugfolge-train-map-projection/v2");
   metadata.run("world_id", WORLD);
   metadata.run("infrastructure_release_id", RELEASE);
+  metadata.run("deployment_sha256", deploymentHash);
   database.prepare("INSERT INTO track_geometries VALUES (?, ?, ?, ?, ?)").run(
     WORLD,
     RELEASE,
@@ -160,7 +168,11 @@ afterEach(() => {
 describe("releasegebundene Zugkartenprojektion", () => {
   it("interpoliert ausschliesslich ganzzahlig auf der nachgewiesenen Gleisgeometrie", () => {
     const projector = new SQLiteTrainMapProjector(fixture());
-    expect(projector.binding).toEqual({ worldId: WORLD, infrastructureReleaseId: RELEASE });
+    expect(projector.binding).toEqual({
+      worldId: WORLD,
+      infrastructureReleaseId: RELEASE,
+      deploymentHash: DEPLOYMENT_HASH,
+    });
     expect(projector.project(WORLD, train)).toMatchObject({
       id: "train-1",
       positionMm: 250_000,
@@ -174,6 +186,26 @@ describe("releasegebundene Zugkartenprojektion", () => {
         bearingMilliDegrees: 90_000,
       },
     });
+    projector.close();
+  });
+
+  it("projiziert eine Tagesinstanz nur über ihre autoritativ gelieferte Basisfahrt", () => {
+    const projector = new SQLiteTrainMapProjector(fixture());
+    const repeated = projector.project(WORLD, {
+      ...train,
+      id: "train-1:day-2",
+      baseTrainRunId: "train-1",
+    });
+    expect(repeated).toMatchObject({
+      id: "train-1:day-2",
+      baseTrainRunId: "train-1",
+      mapPosition: { trackId: "track-1", offsetMm: 250_000 },
+    });
+    expect(projector.project(WORLD, { ...train, id: "train-1:day-2" }).mapPosition).toBeUndefined();
+    expect(projector.project(WORLD, { ...train, id: "forged", baseTrainRunId: "unknown" }).mapPosition).toBeUndefined();
+    expect(projector.project(WORLD, { ...train, id: "forged", baseTrainRunId: "train-1" }).mapPosition).toBeUndefined();
+    expect(projector.project(WORLD, { ...train, id: "train-1:day-0", baseTrainRunId: "train-1" }).mapPosition).toBeUndefined();
+    expect(projector.project(WORLD, { ...train, id: "train-1:day-2", baseTrainRunId: "train-1:day-1" }).mapPosition).toBeUndefined();
     projector.close();
   });
 
@@ -253,6 +285,16 @@ describe("releasegebundene Zugkartenprojektion", () => {
     expect(() => new SQLiteTrainMapProjector(fixture({ applicationId: 1 }))).toThrow(/Headervertrag/);
   });
 
+  it("weist einen fehlenden oder ungueltigen Deploymenthash geschlossen ab", () => {
+    expect(() => new SQLiteTrainMapProjector(fixture({ deploymentHash: "ungueltig" })))
+      .toThrow(/Deploymenthash/);
+    const missingPath = fixture();
+    const missing = new DatabaseSync(missingPath);
+    missing.prepare("DELETE FROM metadata WHERE key = 'deployment_sha256'").run();
+    missing.close();
+    expect(() => new SQLiteTrainMapProjector(missingPath)).toThrow(/deployment_sha256/);
+  });
+
   it("weist zusaetzliche Schemaobjekte und abweichendes Index-SQL ab", () => {
     const extraTablePath = fixture();
     const extraTable = new DatabaseSync(extraTablePath);
@@ -279,9 +321,9 @@ describe("releasegebundene Zugkartenprojektion", () => {
     expect(() => new SQLiteTrainMapProjector(path)).toThrow(/Fremdschluessel/);
   });
 
-  it("schlaegt bei fehlender Welt- oder InfraRelease-Bindung geschlossen fehl", () => {
+  it("bindet dieselbe Welt und InfraRelease zusaetzlich an das aktive signierte Deployment", () => {
     const projector = new SQLiteTrainMapProjector(fixture());
-    expect(() => assertTrainMapProjectionBinding(projector, undefined)).toThrow(/Welt- oder Releasebindung/);
+    expect(() => assertTrainMapProjectionBinding(projector, undefined, DEPLOYMENT_HASH)).toThrow(/Welt-, Release- oder Deploymentbindung/);
     expect(() => assertTrainMapProjectionBinding(projector, {
       schemaVersion: "zugfolge-livemap-config/v2",
       worldId: WORLD,
@@ -290,7 +332,19 @@ describe("releasegebundene Zugkartenprojektion", () => {
       basemap: { styleUrl: "/style.json", attribution: "test", selfHosted: true },
       infrastructure: { pmtilesUrl: "/infra.pmtiles", attribution: "test", coverage: "DE" },
       initialView: { latitudeE7: 0, longitudeE7: 0, zoomMilli: 1_000 },
-    })).toThrow(/Welt- oder Releasebindung/);
+    }, DEPLOYMENT_HASH)).toThrow(/Welt-, Release- oder Deploymentbindung/);
+    const matchingConfig = {
+      schemaVersion: "zugfolge-livemap-config/v2" as const,
+      worldId: WORLD,
+      worldName: "Mitteldeutschland",
+      infrastructureReleaseId: RELEASE,
+      basemap: { styleUrl: "/style.json", attribution: "test", selfHosted: true },
+      infrastructure: { pmtilesUrl: "/infra.pmtiles", attribution: "test", coverage: "DE" },
+      initialView: { latitudeE7: 0, longitudeE7: 0, zoomMilli: 1_000 },
+    };
+    expect(() => assertTrainMapProjectionBinding(projector, matchingConfig, DEPLOYMENT_HASH)).not.toThrow();
+    expect(() => assertTrainMapProjectionBinding(projector, matchingConfig, "e".repeat(64)))
+      .toThrow(/Deploymentbindung/);
     projector.close();
   });
 

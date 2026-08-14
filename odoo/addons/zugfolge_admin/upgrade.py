@@ -48,3 +48,59 @@ def backfill_legacy_admin_request_worlds(cr):
     """
     cr.execute(LEGACY_ADMIN_REQUEST_WORLD_BACKFILL_SQL)
     return cr.rowcount
+
+
+LEGACY_DEPLOYMENT_AUDIT_BACKFILL_SQL = """
+    INSERT INTO zugfolge_world_deployment_audit (
+        world_projection_id,
+        world_id,
+        deployment_revision,
+        previous_deployment_hash,
+        deployment_hash,
+        previous_blueprint_hash,
+        blueprint_hash,
+        message_id,
+        correlation_id,
+        occurred_at,
+        payload_hash,
+        "authorization"
+    )
+    SELECT projection.id,
+           projection.world_id,
+           projection.deployment_revision,
+           NULL,
+           projection.deployment_hash,
+           NULL,
+           projection.blueprint_hash,
+           'legacy-deployment-baseline:' || projection.id::text,
+           'legacy-deployment-baseline:' || projection.world_id,
+           COALESCE(projection.observed_at, NOW() AT TIME ZONE 'UTC'),
+           projection.payload_hash,
+           jsonb_build_object(
+               'schemaVersion', 'zugfolge-legacy-deployment-baseline/v1',
+               'migration', '19.0.2.0.3'
+           )
+      FROM zugfolge_world_projection AS projection
+     WHERE projection.deployment_hash IS NOT NULL
+       AND BTRIM(projection.deployment_hash) <> ''
+    ON CONFLICT DO NOTHING
+"""
+
+
+def backfill_legacy_deployment_audit(cr):
+    """Promote an existing immutable Odoo mirror to signed generation 1.
+
+    No projection is deleted or rewritten except for the new generation marker;
+    the exact legacy deployment and blueprint hashes become the first immutable
+    audit row. Re-running the migration is a no-op.
+    """
+    cr.execute("""
+        UPDATE zugfolge_world_projection
+           SET deployment_revision = 1
+         WHERE deployment_hash IS NOT NULL
+           AND BTRIM(deployment_hash) <> ''
+           AND COALESCE(deployment_revision, 0) < 1
+    """)
+    updated = cr.rowcount
+    cr.execute(LEGACY_DEPLOYMENT_AUDIT_BACKFILL_SQL)
+    return updated + cr.rowcount

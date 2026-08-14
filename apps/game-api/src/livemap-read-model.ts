@@ -19,7 +19,20 @@ import {
 
 const LIVEMAP_READ_MODEL_CATALOG_SCHEMA = "zugfolge-livemap-read-model-catalog/v1" as const;
 const LIVEMAP_SQLITE_APPLICATION_ID = 0x5a554746;
-const LIVEMAP_SQLITE_USER_VERSION = 2;
+const LIVEMAP_SQLITE_USER_VERSION = 3;
+const LIVEMAP_SQLITE_SCHEMA = "zugfolge-livemap-read-model-sqlite/v2";
+const NORMALIZED_SCHEDULE_TIME_ZONE = "Europe/Berlin";
+const NORMALIZED_SCHEDULE_REPEAT_EVERY_S = 86_400;
+const requiredMetadataKeys = Object.freeze([
+  "gtfs_service_date",
+  "infrastructure_release_id",
+  "repeat_every_s",
+  "schema",
+  "service_start_offset_s",
+  "time_zone",
+  "world_epoch",
+  "world_id",
+]);
 
 const publicSqliteTables = Object.freeze({
   metadata: ["key", "value"],
@@ -315,6 +328,78 @@ function sqliteInteger(value: unknown, name: string): number {
   return safeInteger(value, name, 0, Number.MAX_SAFE_INTEGER);
 }
 
+function metadataInteger(value: string, name: string): number {
+  if (!/^(0|[1-9][0-9]*)$/u.test(value)) throw new TypeError(`${name} ist keine kanonische nichtnegative Ganzzahl.`);
+  return safeInteger(Number(value), name, 0, Number.MAX_SAFE_INTEGER);
+}
+
+export interface SQLiteScheduleTimeContract {
+  readonly worldId: string;
+  readonly infrastructureReleaseId: string;
+  readonly worldEpoch: string;
+  readonly serviceDate: string;
+  readonly timeZone: typeof NORMALIZED_SCHEDULE_TIME_ZONE;
+  readonly serviceStartOffsetS: 0;
+  readonly repeatEveryS: typeof NORMALIZED_SCHEDULE_REPEAT_EVERY_S;
+}
+
+function loadSqliteScheduleTimeContract(database: DatabaseSync): SQLiteScheduleTimeContract {
+  const metadata = new Map(database.prepare("SELECT key, value FROM metadata ORDER BY key").all().map((value) => {
+    const row = record(value, "Livemap-SQLite-Metadatum");
+    return [sqliteText(row["key"], "metadata.key"), sqliteText(row["value"], "metadata.value")] as const;
+  }));
+  if (JSON.stringify([...metadata.keys()]) !== JSON.stringify(requiredMetadataKeys)) {
+    throw new TypeError("Livemap-SQLite besitzt keinen vollstaendigen normalisierten Schedule-Zeitvertrag.");
+  }
+  if (metadata.get("schema") !== LIVEMAP_SQLITE_SCHEMA) {
+    throw new TypeError("Livemap-SQLite besitzt ein unbekanntes Metadaten-Schema.");
+  }
+  const worldId = nonEmptyString(metadata.get("world_id"), "metadata.world_id");
+  const infrastructureReleaseId = nonEmptyString(metadata.get("infrastructure_release_id"), "metadata.infrastructure_release_id");
+  const worldEpoch = nonEmptyString(metadata.get("world_epoch"), "metadata.world_epoch");
+  const serviceDate = nonEmptyString(metadata.get("gtfs_service_date"), "metadata.gtfs_service_date");
+  const timeZone = nonEmptyString(metadata.get("time_zone"), "metadata.time_zone");
+  const serviceStartOffsetS = metadataInteger(nonEmptyString(metadata.get("service_start_offset_s"), "metadata.service_start_offset_s"), "metadata.service_start_offset_s");
+  const repeatEveryS = metadataInteger(nonEmptyString(metadata.get("repeat_every_s"), "metadata.repeat_every_s"), "metadata.repeat_every_s");
+  const epoch = new Date(worldEpoch);
+  if (
+    Number.isNaN(epoch.getTime())
+    || epoch.toISOString() !== worldEpoch
+    || !/^20[0-9]{6}$/u.test(serviceDate)
+    || epoch.toISOString().slice(0, 10).replaceAll("-", "") !== serviceDate
+    || timeZone !== NORMALIZED_SCHEDULE_TIME_ZONE
+    || serviceStartOffsetS !== 0
+    || repeatEveryS !== NORMALIZED_SCHEDULE_REPEAT_EVERY_S
+  ) {
+    throw new TypeError("Livemap-SQLite verletzt den normalisierten Schedule-Zeitvertrag.");
+  }
+  const worlds = database.prepare("SELECT world_id, infrastructure_release_id FROM world_config ORDER BY world_id").all()
+    .map((value) => record(value, "Livemap-SQLite-Weltbindung"));
+  if (
+    worlds.length !== 1
+    || worlds[0]?.["world_id"] !== worldId
+    || worlds[0]?.["infrastructure_release_id"] !== infrastructureReleaseId
+  ) {
+    throw new TypeError("Livemap-SQLite-Metadaten verletzen die Welt- oder Releasebindung.");
+  }
+  return Object.freeze({
+    worldId,
+    infrastructureReleaseId,
+    worldEpoch,
+    serviceDate,
+    timeZone: NORMALIZED_SCHEDULE_TIME_ZONE,
+    serviceStartOffsetS: 0,
+    repeatEveryS: NORMALIZED_SCHEDULE_REPEAT_EVERY_S,
+  });
+}
+
+function concreteScheduleTrainId(baseTrainId: string, serviceDay: number): string {
+  if (baseTrainId.includes(":day-") || !Number.isSafeInteger(serviceDay) || serviceDay < 0) {
+    throw new TypeError("Livemap-SQLite besitzt keine kanonische Basisfahrtbindung.");
+  }
+  return serviceDay === 0 ? baseTrainId : `${baseTrainId}:day-${serviceDay}`;
+}
+
 function validateSqliteSchema(database: DatabaseSync): void {
   const applicationId = sqliteRow(database.prepare("PRAGMA application_id").get(), "SQLite application_id");
   const userVersion = sqliteRow(database.prepare("PRAGMA user_version").get(), "SQLite user_version");
@@ -353,12 +438,18 @@ function statementRows(statement: StatementSync, ...values: readonly (string | n
  */
 export class SQLiteLivemapReadModel implements LivemapReadModel {
   readonly #database: DatabaseSync;
+  readonly #scheduleTime: SQLiteScheduleTimeContract;
   readonly #config: StatementSync;
   readonly #object: StatementSync;
   readonly #station: StatementSync;
+  readonly #callBounds: StatementSync;
   readonly #calls: StatementSync;
   readonly #passengerInformation: StatementSync;
   #closed = false;
+
+  get scheduleTimeContract(): SQLiteScheduleTimeContract {
+    return this.#scheduleTime;
+  }
 
   constructor(path: string) {
     this.#database = new DatabaseSync(path, {
@@ -372,11 +463,14 @@ export class SQLiteLivemapReadModel implements LivemapReadModel {
     try {
       this.#database.exec("PRAGMA query_only = ON; PRAGMA trusted_schema = OFF;");
       validateSqliteSchema(this.#database);
+      this.#scheduleTime = loadSqliteScheduleTimeContract(this.#database);
       this.#config = this.#database.prepare("SELECT infrastructure_release_id, config_json FROM world_config WHERE world_id = ?");
       this.#object = this.#database.prepare(`SELECT infrastructure_release_id, name, quality_class, facts_json
         FROM object_details WHERE world_id = ? AND kind = ? AND object_id = ?`);
       this.#station = this.#database.prepare(`SELECT name FROM object_details
         WHERE world_id = ? AND kind = 'station' AND object_id = ?`);
+      this.#callBounds = this.#database.prepare(`SELECT MIN(scheduled_time_s) AS minimum_s, MAX(scheduled_time_s) AS maximum_s
+        FROM station_schedule_calls WHERE world_id = ? AND station_id = ?`);
       this.#calls = this.#database.prepare(`SELECT call_type, train_id, scheduled_time_s, train_number, category, platform, origin, destination
         FROM station_schedule_calls
         WHERE world_id = ? AND station_id = ? AND scheduled_time_s BETWEEN ? AND ?
@@ -426,22 +520,50 @@ export class SQLiteLivemapReadModel implements LivemapReadModel {
 
   async getStationBoard(worldId: string, stationId: string, cursor: LivemapProjectionCursor): Promise<StationBoardV1 | undefined> {
     this.#assertOpen();
+    if (worldId !== this.#scheduleTime.worldId) return undefined;
     const station = sqliteRow(this.#station.get(worldId, stationId), "Livemap-Station");
     if (station === undefined) return undefined;
     const start = Math.max(0, cursor.atS - 3_600);
     const end = Math.min(Number.MAX_SAFE_INTEGER, cursor.atS + 10_800);
-    const calls = statementRows(this.#calls, worldId, stationId, start, end).map((row) => Object.freeze({
-      trainId: sqliteText(row["train_id"], "station_schedule_calls.train_id"),
-      trainNumber: sqliteText(row["train_number"], "station_schedule_calls.train_number"),
-      category: sqliteText(row["category"], "station_schedule_calls.category"),
-      scheduledTimeS: sqliteInteger(row["scheduled_time_s"], "station_schedule_calls.scheduled_time_s"),
-      expectedTimeS: sqliteInteger(row["scheduled_time_s"], "station_schedule_calls.scheduled_time_s"),
-      ...(optionalSqliteText(row["platform"], "station_schedule_calls.platform") === undefined ? {} : { platform: String(row["platform"]) }),
-      ...(optionalSqliteText(row["origin"], "station_schedule_calls.origin") === undefined ? {} : { origin: String(row["origin"]) }),
-      ...(optionalSqliteText(row["destination"], "station_schedule_calls.destination") === undefined ? {} : { destination: String(row["destination"]) }),
-      status: "scheduled" as const,
-      callType: sqliteText(row["call_type"], "station_schedule_calls.call_type"),
-    }));
+    const bounds = sqliteRow(this.#callBounds.get(worldId, stationId), "Livemap-Fahrplanzeitgrenzen");
+    const minimumS = bounds?.["minimum_s"] === null || bounds?.["minimum_s"] === undefined
+      ? undefined
+      : sqliteInteger(bounds["minimum_s"], "station_schedule_calls.minimum_s");
+    const maximumS = bounds?.["maximum_s"] === null || bounds?.["maximum_s"] === undefined
+      ? undefined
+      : sqliteInteger(bounds["maximum_s"], "station_schedule_calls.maximum_s");
+    const calls: Array<StationBoardV1["departures"][number] & { readonly callType: string }> = [];
+    if (minimumS !== undefined && maximumS !== undefined) {
+      const repeatEveryS = this.#scheduleTime.repeatEveryS;
+      const firstServiceDay = Math.max(0, Math.ceil((start - maximumS) / repeatEveryS));
+      const lastServiceDay = Math.floor((end - minimumS) / repeatEveryS);
+      for (let serviceDay = firstServiceDay; serviceDay <= lastServiceDay; serviceDay += 1) {
+        const shiftS = serviceDay * repeatEveryS;
+        if (!Number.isSafeInteger(shiftS)) throw new TypeError("Livemap-Schedule-Tagesverschiebung ist nicht darstellbar.");
+        const baseStart = Math.max(0, start - shiftS);
+        const baseEnd = end - shiftS;
+        if (baseEnd < baseStart) continue;
+        for (const row of statementRows(this.#calls, worldId, stationId, baseStart, baseEnd)) {
+          const baseScheduledTimeS = sqliteInteger(row["scheduled_time_s"], "station_schedule_calls.scheduled_time_s");
+          const scheduledTimeS = baseScheduledTimeS + shiftS;
+          if (!Number.isSafeInteger(scheduledTimeS)) throw new TypeError("Livemap-Schedule-Zeit ist nicht darstellbar.");
+          calls.push(Object.freeze({
+            trainId: concreteScheduleTrainId(sqliteText(row["train_id"], "station_schedule_calls.train_id"), serviceDay),
+            trainNumber: sqliteText(row["train_number"], "station_schedule_calls.train_number"),
+            category: sqliteText(row["category"], "station_schedule_calls.category"),
+            scheduledTimeS,
+            expectedTimeS: scheduledTimeS,
+            ...(optionalSqliteText(row["platform"], "station_schedule_calls.platform") === undefined ? {} : { platform: String(row["platform"]) }),
+            ...(optionalSqliteText(row["origin"], "station_schedule_calls.origin") === undefined ? {} : { origin: String(row["origin"]) }),
+            ...(optionalSqliteText(row["destination"], "station_schedule_calls.destination") === undefined ? {} : { destination: String(row["destination"]) }),
+            status: "scheduled" as const,
+            callType: sqliteText(row["call_type"], "station_schedule_calls.call_type"),
+          }));
+        }
+      }
+      calls.sort((left, right) => left.scheduledTimeS - right.scheduledTimeS || left.trainId.localeCompare(right.trainId) || left.callType.localeCompare(right.callType));
+      calls.splice(160);
+    }
     const withoutType = (call: typeof calls[number]): StationBoardV1["departures"][number] => {
       const { callType: _callType, ...value } = call;
       return Object.freeze(value);
@@ -461,6 +583,7 @@ export class SQLiteLivemapReadModel implements LivemapReadModel {
 
   async getPassengerInformation(worldId: string, trainId: string): Promise<PassengerInformationPlan | undefined> {
     this.#assertOpen();
+    if (worldId !== this.#scheduleTime.worldId || trainId.includes(":day-")) return undefined;
     const row = sqliteRow(this.#passengerInformation.get(worldId, trainId), "FIS-Plan");
     if (row === undefined) return undefined;
     const plan: PassengerInformationPlan = Object.freeze({
@@ -513,7 +636,27 @@ export function parseLivemapReadModelCatalog(value: unknown): PinnedLivemapReadM
   });
 }
 
-export type CloseableLivemapReadModel = LivemapReadModel & { close(): void };
+export type CloseableLivemapReadModel = LivemapReadModel & {
+  close(): void;
+  readonly scheduleTimeContract?: SQLiteScheduleTimeContract;
+};
+
+export function assertLivemapReadModelRuntimeScheduleBinding(
+  readModel: CloseableLivemapReadModel | undefined,
+  runtime: { readonly worldId: string; readonly worldEpoch: string; readonly repeatEveryS: number },
+): void {
+  const schedule = readModel?.scheduleTimeContract;
+  if (schedule === undefined) return;
+  if (schedule.worldId !== runtime.worldId) {
+    throw new TypeError(`Livemap-ReadModel und Runtime besitzen fuer '${runtime.worldId}' verschiedene Weltbindungen.`);
+  }
+  if (
+    schedule.worldEpoch !== runtime.worldEpoch
+    || schedule.repeatEveryS !== runtime.repeatEveryS
+  ) {
+    throw new TypeError(`Livemap-ReadModel und Runtime besitzen fuer '${runtime.worldId}' verschiedene Schedule-Zeitachsen.`);
+  }
+}
 
 export async function loadLivemapReadModel(path: string): Promise<CloseableLivemapReadModel> {
   const extension = extname(path).toLowerCase();

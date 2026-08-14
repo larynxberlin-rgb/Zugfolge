@@ -330,6 +330,48 @@ describe("LivemapFeed", () => {
     expect(feed.publish({ at: 30, changed: [train], removed: [] }).changed[0]).toEqual(train);
   });
 
+  it("überträgt den Eigenbetriebsmarker von der Basisfahrt auf Tagesinstanzen", () => {
+    const feed = new LivemapFeed("welt-a");
+    feed.markPublicOperation(["7"], 20);
+    const repeated = { ...train, id: "7:day-1", baseTrainRunId: "7" };
+    expect(feed.publish({ at: 20, changed: [repeated], removed: [] }).changed[0]).toEqual({
+      ...repeated,
+      operationMarker: PUBLIC_OPERATION_MARKER,
+    });
+    expect(feed.clearOperationMarker(["7"], 20)?.changed).toEqual([repeated]);
+    expect(feed.markPublicOperation(["7"], 20)?.changed).toEqual([{
+      ...repeated,
+      operationMarker: PUBLIC_OPERATION_MARKER,
+    }]);
+    const unrelated = { ...train, id: "7:day-2", baseTrainRunId: "unknown" };
+    expect(feed.publish({ at: 21, changed: [unrelated], removed: [] }).changed[0]).toEqual(unrelated);
+  });
+
+  it("bewahrt gezielte Marker einer Tagesinstanz auch bei späteren Samples", () => {
+    const feed = new LivemapFeed("welt-a");
+    const repeated = { ...train, id: "7:day-1", baseTrainRunId: "7" };
+    feed.publish({ at: 20, changed: [repeated], removed: [] });
+
+    expect(feed.markPublicOperation(["7:day-1"], 20)?.changed[0]).toEqual({
+      ...repeated,
+      operationMarker: PUBLIC_OPERATION_MARKER,
+    });
+    expect(feed.publish({ at: 21, changed: [repeated], removed: [] }).changed[0]).toEqual({
+      ...repeated,
+      operationMarker: PUBLIC_OPERATION_MARKER,
+    });
+    feed.clearOperationMarker(["7:day-1"], 22);
+    expect(feed.publish({ at: 22, changed: [repeated], removed: [] }).changed[0]).toEqual(repeated);
+  });
+
+  it("verwirft eine frei erfundene Basisbindung fuer Eigenbetriebsmarker", () => {
+    const feed = new LivemapFeed("welt-a");
+    feed.markPublicOperation(["7"], 20);
+    const forged = { ...train, id: "forged", baseTrainRunId: "7" };
+    expect(feed.publish({ at: 20, changed: [forged], removed: [] }).changed[0]).toEqual(forged);
+    expect(feed.markPublicOperation(["7"], 20)).toBeUndefined();
+  });
+
   it("publiziert für bekannte Züge genau ein idempotentes Marker-Delta", () => {
     const feed = new LivemapFeed("welt-a");
     const listener = vi.fn();
@@ -488,6 +530,24 @@ describe("LivemapRegistry", () => {
     expect(registry.isInitialized("a")).toBe(false);
   });
 
+  it("entfernt eine archivierte Welt samt Betriebsmarkern idempotent", () => {
+    const registry = new LivemapRegistry();
+    registry.markPublicOperation("a", ["7"], 1);
+    registry.initializeWorld("a", { at: 2, trains: [train] });
+    expect(registry.initializedWorld("a")?.snapshot().trains[0]?.operationMarker)
+      .toEqual(PUBLIC_OPERATION_MARKER);
+
+    registry.releaseWorld("a");
+    registry.releaseWorld("a");
+
+    expect(registry.size).toBe(0);
+    expect(registry.isInitialized("a")).toBe(false);
+    expect(registry.peekWorld("a")).toBeUndefined();
+    registry.initializeWorld("a", { at: 3, trains: [train] });
+    expect(registry.initializedWorld("a")?.snapshot().trains[0]?.operationMarker)
+      .toBeUndefined();
+  });
+
   it("liefert nach TTL-Ablauf niemals einen neu erzeugten leeren Initialfeed", () => {
     let now = 0;
     const registry = new LivemapRegistry({ idleTtlMs: 100, now: () => now });
@@ -627,5 +687,42 @@ describe("LivemapRegistry", () => {
       status: "degraded",
       code: "livemap_stale",
     });
+  });
+
+  it("wertet nur registrierte, bereits gestartete Echtzeitwelten als freshness-pflichtig", async () => {
+    let now = 1_000;
+    const registry = new LivemapRegistry({ now: () => now });
+    registry.markPublicOperation("tutorial", ["tutorial-run"], 0);
+    registry.forWorld("epoch-less");
+    registry.forWorld("future");
+    registry.forWorld("running").publish({ at: 1, changed: [train], removed: [] });
+    const realtimeWorlds = new Set(["future", "running"]);
+    const epochs = new Map([
+      ["future", 120_000],
+      ["running", 0],
+    ]);
+    const isExpectedFresh = (worldId: string, nowMs: number) =>
+      realtimeWorlds.has(worldId) && (epochs.get(worldId) ?? Number.POSITIVE_INFINITY) <= nowMs;
+    now = 62_000;
+
+    await expect(createLivemapHealthCheck(
+      registry,
+      60_000,
+      () => now,
+      isExpectedFresh,
+    ).check()).resolves.toMatchObject({
+      status: "degraded",
+      code: "livemap_stale",
+      detail: expect.stringContaining("1/1"),
+    });
+
+    now = 62_001;
+    registry.forWorld("running").publish({ at: 2, changed: [train], removed: [] });
+    await expect(createLivemapHealthCheck(
+      registry,
+      60_000,
+      () => now,
+      isExpectedFresh,
+    ).check()).resolves.toMatchObject({ status: "ok", code: "livemap_fresh" });
   });
 });

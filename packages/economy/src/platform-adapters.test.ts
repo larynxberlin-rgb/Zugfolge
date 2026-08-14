@@ -114,6 +114,49 @@ describe("M6-Plattformadapter", () => {
     expect(await db.select().from(ledgerEntries)).toHaveLength(2);
   });
 
+  it("quittiert nach einem Crash zwischen Ziel-Commit und Ack ohne doppelte Buchung", async () => {
+    await requestWorldAccess(identityDb, { worldId: WORLD_ID, keycloakSubject: "kc-crash", displayName: "Crash" });
+    const operator = await foundOperator(identityDb, { worldId: WORLD_ID, foundingKeycloakSubject: "kc-crash", name: "Crash-Bahn" });
+    const cash = await openLedgerAccount(db, { worldId: WORLD_ID, operatorId: operator.id, name: STANDARD_ECONOMY_LEDGER_ACCOUNT_PLAN.cashAccountName });
+    const revenue = await openLedgerAccount(db, { worldId: WORLD_ID, operatorId: operator.id, name: STANDARD_ECONOMY_LEDGER_ACCOUNT_PLAN.revenueAccountName });
+    const costAccounts = Object.fromEntries(await Promise.all(COST_TYPES.map(async (type) => [type, (await openLedgerAccount(db, { worldId: WORLD_ID, operatorId: operator.id, name: STANDARD_ECONOMY_LEDGER_ACCOUNT_PLAN.costAccountNames[type] })).id]))) as Record<CostType, string>;
+    const adapters = createEconomyPlatformAdapters({ db, accountsByOperator: { [operator.id]: { cashAccountId: cash.id, revenueAccountId: revenue.id, costAccountIds: costAccounts } } });
+    const journal = {
+      worldId: WORLD_ID,
+      operatorId: operator.id,
+      idempotencyKey: "commit-before-ack:1",
+      at: 1_800_000_000,
+      description: "Commit vor Outbox-Ack",
+      revenueCents: 1_000n,
+      postings: [{ amountCents: 250n, costType: "energy" as const, costCentreId: "lot-1", reference: "period-1" }],
+    };
+    await db.insert(economyOutbox).values({
+      worldId: WORLD_ID,
+      effectId: journal.idempotencyKey,
+      effectType: "journal",
+      payload: encodeEconomyValue(journal),
+      occurredAt: new Date(journal.at * 1_000),
+      enqueuedAt: new Date("2026-08-13T16:05:00.000Z"),
+    });
+
+    // Simulierter Prozessabbruch: Das idempotente Ziel committed, bevor der
+    // Dispatcher die Outboxzeile quittieren kann.
+    await adapters.postJournal(journal);
+    expect(await listLedgerTransactions(db, { worldId: WORLD_ID, operatorId: operator.id })).toHaveLength(1);
+    expect((await db.select().from(economyOutbox))[0]?.processedAt).toBeNull();
+
+    const restartedAdapters = createEconomyPlatformAdapters({ db, accountsByOperator: { [operator.id]: { cashAccountId: cash.id, revenueAccountId: revenue.id, costAccountIds: costAccounts } } });
+    await expect(dispatchEconomyOutbox(db, WORLD_ID, restartedAdapters, new Date("2026-08-13T16:06:00.000Z"))).resolves.toBe(1);
+    expect(await listLedgerTransactions(db, { worldId: WORLD_ID, operatorId: operator.id })).toHaveLength(1);
+    expect(await ledgerAccountBalance(db, { worldId: WORLD_ID, ledgerAccountId: cash.id })).toBe(750n);
+    expect(await db.select().from(ledgerEntries)).toHaveLength(3);
+    expect((await db.select().from(economyOutbox))[0]).toMatchObject({
+      processedAt: new Date("2026-08-13T16:06:00.000Z"),
+      attempts: 0,
+      lastErrorCode: null,
+    });
+  });
+
   it("weist eine formal ausgeglichene Buchung ueber ein Fantasiekonto vor dem Ledger-Writer ab", async () => {
     await requestWorldAccess(identityDb, { worldId: WORLD_ID, keycloakSubject: "kc-chart", displayName: "Kontenplan" });
     const operator = await foundOperator(identityDb, { worldId: WORLD_ID, foundingKeycloakSubject: "kc-chart", name: "Kontenplan-Bahn" });

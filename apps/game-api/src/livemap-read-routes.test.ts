@@ -144,6 +144,9 @@ describe("Livemap-Lesevertrag", () => {
         } : undefined;
       },
       async getStationBoard(worldId, stationId, cursor) {
+        const serviceDay = Math.floor(cursor.atS / 86_400);
+        const trainId = serviceDay === 0 ? "train-1" : `train-1:day-${serviceDay}`;
+        const scheduledTimeS = 40 + serviceDay * 86_400;
         return worldId === WORLD_ID && stationId === "station-halle" ? {
           schemaVersion: STATION_BOARD_SCHEMA,
           worldId,
@@ -151,11 +154,11 @@ describe("Livemap-Lesevertrag", () => {
           stationName: "Halle (Saale) Hbf",
           ...cursor,
           departures: [{
-            trainId: "train-1",
+            trainId,
             trainNumber: "RE 1",
             category: "regional",
-            scheduledTimeS: 40,
-            expectedTimeS: 100,
+            scheduledTimeS,
+            expectedTimeS: scheduledTimeS,
             destination: "Erfurt Hbf",
             platform: "8",
             status: "scheduled",
@@ -252,6 +255,68 @@ describe("Livemap-Lesevertrag", () => {
     });
     expect(train.json()).not.toHaveProperty("ownerOperatorId");
     expect(JSON.stringify(train.json())).not.toContain("vehicle-secret");
+  });
+
+  it("bindet Tafeln und FIS an konkrete Tagesfahrten fuer Tag 1 und 2", async () => {
+    const headers = { authorization: "Bearer foreign" };
+    const feed = livemap.initializedWorld(WORLD_ID)!;
+    for (const serviceDay of [1, 2]) {
+      const previous = feed.snapshot().trains[0]!;
+      const trainId = `train-1:day-${serviceDay}`;
+      feed.publish({
+        at: serviceDay * 86_400 + 42,
+        changed: [{ ...previous, id: trainId, baseTrainRunId: "train-1" }],
+        removed: [previous.id],
+      });
+
+      const board = await app.inject({ method: "GET", url: `/worlds/${WORLD_ID}/livemap/stations/station-halle/board`, headers });
+      expect(board.statusCode).toBe(200);
+      expect(board.json()).toMatchObject({
+        atS: serviceDay * 86_400 + 42,
+        departures: [{
+          trainId,
+          scheduledTimeS: serviceDay * 86_400 + 40,
+          expectedTimeS: serviceDay * 86_400 + 100,
+        }],
+      });
+
+      const detail = await app.inject({ method: "GET", url: `/worlds/${WORLD_ID}/livemap/trains/${trainId}`, headers });
+      expect(detail.statusCode).toBe(200);
+      expect(detail.json()).toMatchObject({
+        train: { id: trainId, baseTrainRunId: "train-1" },
+        fis: { trainId, destination: "Erfurt Hbf", delaySeconds: 60 },
+      });
+    }
+  });
+
+  it("verweigert FIS-Basisdaten fuer eine manipulierte Tagesfahrtbindung", async () => {
+    const feed = livemap.initializedWorld(WORLD_ID)!;
+    const base = feed.snapshot().trains[0]!;
+    feed.publish({
+      at: 86_442,
+      changed: [{ ...base, id: "train-1:day-1", baseTrainRunId: "other-train" }],
+      removed: [base.id],
+    });
+    const board = await app.inject({
+      method: "GET",
+      url: `/worlds/${WORLD_ID}/livemap/stations/station-halle/board`,
+      headers: { authorization: "Bearer foreign" },
+    });
+    expect(board.json()).toMatchObject({
+      departures: [{ trainId: "train-1:day-1", scheduledTimeS: 86_440, expectedTimeS: 86_440, status: "scheduled" }],
+    });
+    const detail = await app.inject({
+      method: "GET",
+      url: `/worlds/${WORLD_ID}/livemap/trains/train-1:day-1`,
+      headers: { authorization: "Bearer foreign" },
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json()).toMatchObject({
+      train: { id: "train-1:day-1", baseTrainRunId: "other-train" },
+      fis: { trainId: "train-1:day-1", followingStops: [] },
+    });
+    expect(detail.json().fis).not.toHaveProperty("destination");
+    expect(JSON.stringify(detail.json().fis)).not.toContain("Heute etwa");
   });
 
   it("autorisiert die EVU-Zusatzsicht serverseitig", async () => {

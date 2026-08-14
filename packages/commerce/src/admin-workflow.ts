@@ -70,6 +70,9 @@ export function validateStartingCapitalPolicy(value: unknown): asserts value is 
 
 function validateWorldDefinition(value: unknown): asserts value is WorldDefinition {
   const definition = record(value);
+  const epoch = typeof definition?.["epoch"] === "string"
+    ? new Date(definition["epoch"])
+    : undefined;
   if (definition === undefined
     || Object.keys(definition).length !== 5
     || !["name", "kind", "rankingStatus", "schedulePeriodWeeks", "epoch"].every((key) => Object.hasOwn(definition, key))
@@ -80,8 +83,13 @@ function validateWorldDefinition(value: unknown): asserts value is WorldDefiniti
     || !Number.isSafeInteger(definition["schedulePeriodWeeks"])
     || (definition["schedulePeriodWeeks"] as number) < 3
     || (definition["schedulePeriodWeeks"] as number) > 8
-    || typeof definition["epoch"] !== "string"
-    || Number.isNaN(new Date(definition["epoch"]).getTime())) {
+    || epoch === undefined
+    || Number.isNaN(epoch.getTime())
+    || epoch.getUTCDay() !== 1
+    || epoch.getUTCHours() !== 0
+    || epoch.getUTCMinutes() !== 0
+    || epoch.getUTCSeconds() !== 0
+    || epoch.getUTCMilliseconds() !== 0) {
     throw new AdminWorkflowError("Welt-Deployment braucht Name, Profil, Wertung, Periodenlaenge und Epoche.");
   }
   if ((definition["kind"] === "public") !== (definition["rankingStatus"] === "ranked")) {
@@ -93,6 +101,7 @@ function validateSignedDeployment(
   value: unknown,
   worldId: string,
   deploymentHash: unknown,
+  deploymentRevision: unknown,
   policy: SerializedStartingCapitalPolicy,
   definition: WorldDefinition,
 ): asserts value is SignedWorldDeployment {
@@ -106,11 +115,13 @@ function validateSignedDeployment(
     || Object.keys(signature).length !== 3
     || !["algorithm", "keyId", "valueBase64"].every((key) => Object.hasOwn(signature, key))
     || typeof deploymentHash !== "string" || !SHA256.test(deploymentHash)
+    || !Number.isSafeInteger(deploymentRevision) || (deploymentRevision as number) < 1
     || signed["deploymentHash"] !== deploymentHash
     || signature["algorithm"] !== "Ed25519"
     || typeof signature["keyId"] !== "string" || signature["keyId"].trim() === ""
     || typeof signature["valueBase64"] !== "string" || !/^[A-Za-z0-9+/]{86}==$/.test(signature["valueBase64"])
     || deployment["worldId"] !== worldId
+    || deployment["deploymentRevision"] !== deploymentRevision
     || blueprint === undefined
     || blueprint["profileKind"] !== definition.kind
     || !sameWorldDefinition(deployment["worldDefinition"], definition)) {
@@ -177,7 +188,7 @@ export function validateAdminCommand(command: AdminCommandPayload): void {
     if (!WORLD_ID.test(command.worldId)) throw new AdminWorkflowError("Welt-Deployment braucht eine gueltige Welt-ID.");
     validateStartingCapitalPolicy(command.startingCapitalPolicy);
     validateWorldDefinition(command.worldDefinition);
-    validateSignedDeployment(command.signedDeployment, command.worldId, command.deploymentHash, command.startingCapitalPolicy, command.worldDefinition);
+    validateSignedDeployment(command.signedDeployment, command.worldId, command.deploymentHash, command.deploymentRevision, command.startingCapitalPolicy, command.worldDefinition);
   }
   if (["world_access_revoke", "abuse_sanction_activate"].includes(command.actionType)) {
     if (command.targetReference === undefined || command.targetReference.trim().length === 0) {

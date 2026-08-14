@@ -26,7 +26,7 @@ command -v docker >/dev/null
 command -v curl >/dev/null
 command -v node >/dev/null
 
-COMPOSE=(docker compose -f compose.alpha.yml)
+COMPOSE=(bash "$ROOT/tools/alpha-ops/compose-with-map-release-env.sh" -f compose.alpha.yml)
 WORK_REL=${ALPHA_PHASE3_WORKDIR:-var/alpha-ops/phase3}
 case "$WORK_REL" in /*|*..*) echo "ALPHA_PHASE3_WORKDIR muss relativ innerhalb des Repositories liegen." >&2; exit 65;; esac
 WORK_ABS="$ROOT/$WORK_REL"

@@ -33,6 +33,8 @@ ARG ZUGFOLGE_DEPLOY_PATCH_SHA
 LABEL org.opencontainers.image.source="https://github.com/larynxberlin-rgb/Zugfolge" \
   org.opencontainers.image.revision="${ZUGFOLGE_SOURCE_SHA}" \
   de.zugfolge.deploy-patch="${ZUGFOLGE_DEPLOY_PATCH_SHA}"
+RUN printf '%s\n' "${ZUGFOLGE_SOURCE_SHA}" | grep -Eq '^[0-9a-f]{40}$' \
+  && test "${ZUGFOLGE_DEPLOY_PATCH_SHA}" = "none"
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=nodebuild /app /app

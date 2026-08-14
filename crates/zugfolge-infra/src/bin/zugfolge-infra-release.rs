@@ -2,7 +2,8 @@
 
 use std::env;
 use std::error::Error;
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::io::{self, Read};
 
 use serde_json::Value;
@@ -19,6 +20,14 @@ fn write_json(path: &str, value: &Value) -> Result<(), Box<dyn Error>> {
     let mut serialized = serde_json::to_string_pretty(value)?;
     serialized.push('\n');
     fs::write(path, serialized)?;
+    Ok(())
+}
+
+fn write_json_new(path: &str, value: &Value) -> Result<(), Box<dyn Error>> {
+    let mut serialized = serde_json::to_string_pretty(value)?;
+    serialized.push('\n');
+    let mut output = OpenOptions::new().write(true).create_new(true).open(path)?;
+    output.write_all(serialized.as_bytes())?;
     Ok(())
 }
 
@@ -49,14 +58,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             let verified = verify_reference_artifact_chain(input)?;
             println!("{}", serde_json::to_string(&verified)?);
         }
-        [command, source_root, artifact_root, output] if command == "legacy-manifest" => {
+        [command, config, source_root, artifact_root, output] if command == "regional-manifest" => {
             let workspace_root = env::current_dir()?;
             let release = build_mitteldeutschland_infra_release(
+                &read_json(config)?,
                 &workspace_root,
                 source_root.as_ref(),
                 artifact_root.as_ref(),
             )?;
-            write_json(output, &release)?;
+            write_json_new(output, &release)?;
             println!(
                 "{}",
                 serde_json::to_string(&serde_json::json!({
@@ -108,7 +118,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         _ => {
             return Err(
-                "Aufruf: zugfolge-infra-release reference-report|qualified-reference-manifest|verify-reference-chain < INPUT | legacy-manifest SOURCE_ROOT ARTIFACT_ROOT OUTPUT | plan CONFIG CATALOG RIGHTS | manifest CONFIG CATALOG RIGHTS CAPTURE ARTIFACTS QUALITY OUTPUT"
+                "Aufruf: zugfolge-infra-release reference-report|qualified-reference-manifest|verify-reference-chain < INPUT | regional-manifest CONFIG SOURCE_ROOT ARTIFACT_ROOT OUTPUT | plan CONFIG CATALOG RIGHTS | manifest CONFIG CATALOG RIGHTS CAPTURE ARTIFACTS QUALITY OUTPUT"
                     .into(),
             );
         }

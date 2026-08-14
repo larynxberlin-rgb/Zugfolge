@@ -17,6 +17,34 @@ const TRAIN = {
 };
 
 describe("Rust-Betriebsereignisse in der Livemap", () => {
+  it("projiziert den dauerhaften Alpha-Start ab Weltsekunde null auf Basis- und Tagesfahrten", () => {
+    const registry = new LivemapRegistry();
+    projectLivemapOperationEvent(registry, {
+      worldId: WORLD,
+      eventType: "alpha.public-operation-visible",
+      atS: 0,
+      payload: {
+        schemaVersion: "zugfolge-public-operation-visible/v1",
+        operatorIds: ["public"],
+        lotIds: ["lot-1"],
+        trainRunIds: [TRAIN.id],
+        deploymentHash: "sha256:test",
+      },
+    });
+    registry.forWorld(WORLD).publish({ at: 0, changed: [TRAIN], removed: [] });
+    registry.forWorld(WORLD).publish({
+      at: 86_400,
+      changed: [{ ...TRAIN, id: `${TRAIN.id}:day-1`, baseTrainRunId: TRAIN.id }],
+      removed: [TRAIN.id],
+    });
+    expect(registry.forWorld(WORLD).snapshot().trains).toEqual([
+      expect.objectContaining({
+        id: `${TRAIN.id}:day-1`,
+        operationMarker: expect.objectContaining({ kind: "public-operator" }),
+      }),
+    ]);
+  });
+
   it("markiert und entfernt Eigenbetrieb ohne Positionen zu erfinden", () => {
     const registry = new LivemapRegistry();
     registry.forWorld(WORLD).publish({ at: 10, changed: [TRAIN], removed: [] });
@@ -67,5 +95,17 @@ describe("Rust-Betriebsereignisse in der Livemap", () => {
       atS: 10,
       payload: { worldId: WORLD, trainRunIds: [TRAIN.id], marker: "public-operator" },
     })).toThrow(/Markertyp/);
+    expect(() => projectLivemapOperationEvent(registry, {
+      worldId: WORLD,
+      eventType: "alpha.public-operation-visible",
+      atS: 1,
+      payload: {
+        schemaVersion: "zugfolge-public-operation-visible/v1",
+        operatorIds: ["public"],
+        lotIds: ["lot-1"],
+        trainRunIds: [TRAIN.id],
+        deploymentHash: "sha256:test",
+      },
+    })).toThrow(/Startvertrag/);
   });
 });

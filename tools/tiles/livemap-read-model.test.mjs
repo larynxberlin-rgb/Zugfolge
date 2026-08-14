@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -91,6 +92,8 @@ function spec(inputs) {
     worldId: WORLD_ID,
     infrastructureReleaseId: RELEASE_ID,
     worldEpoch: "2026-08-12T00:00:00.000Z",
+    serviceStartOffsetS: 0,
+    repeatEveryS: 86_400,
     inputDirectory: inputs.layers,
     gtfs: {
       archive: inputs.gtfs,
@@ -165,6 +168,34 @@ describe("oeffentlicher SQLite-Livemap-Katalog", () => {
     expect(firstReport.timetable).toMatchObject({ activeRailTripCount: 1, matchedStopCount: 2, passengerPlanCount: 1 });
     expect(firstReport.inspection).toMatchObject({ objectCount: 10, passengerPlanCount: 1 });
     expect(await inspectPublicReadModel(first)).toMatchObject({ worldId: WORLD_ID, infrastructureReleaseId: RELEASE_ID });
+    const database = new DatabaseSync(first, { readOnly: true });
+    try {
+      expect(Object.fromEntries(database.prepare("SELECT key, value FROM metadata ORDER BY key").all().map((row) => [row.key, row.value]))).toMatchObject({
+        world_epoch: "2026-08-12T00:00:00.000Z",
+        time_zone: "Europe/Berlin",
+        service_start_offset_s: "0",
+        repeat_every_s: "86400",
+      });
+      expect(database.prepare("SELECT train_id, scheduled_time_s FROM station_schedule_calls WHERE call_type = 'departure'").get()).toEqual({
+        train_id: expect.any(String),
+        scheduled_time_s: 7_560,
+      });
+    } finally {
+      database.close();
+    }
     expect(sha256(await readFile(first))).toBe(sha256(await readFile(second)));
+  });
+
+  it("verweigert Zeitvertraege mit erneutem UTC-Offset oder abweichender Wiederholung", async () => {
+    const root = await temporaryDirectory();
+    const inputs = await writeFixture(root);
+    for (const [index, patch] of [
+      { serviceStartOffsetS: -7_200 },
+      { repeatEveryS: 172_800 },
+      { gtfs: { ...spec(inputs).gtfs, timeZone: "UTC" } },
+    ].entries()) {
+      await expect(buildLivemapReadModel({ ...spec(inputs), ...patch }, join(root, `invalid-${index}.sqlite`)))
+        .rejects.toThrow(/Schedule-/);
+    }
   });
 });

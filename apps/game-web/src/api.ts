@@ -273,7 +273,7 @@ export interface PublicWorldContractView {
   readonly duration: { readonly kind: "unlimited" } | { readonly kind: "periods"; readonly periodCount: number };
   readonly timeBasis: { readonly mode: "realtime"; readonly accelerationFactor: number; readonly epoch: string; readonly timeZone: "Europe/Berlin" };
   readonly entry: {
-    readonly status: "open" | "configuration-incomplete";
+    readonly status: "open" | "scheduled" | "configuration-incomplete";
     readonly requiresContractConfirmation: true;
     readonly opensAt: string;
     readonly closesAt: string | null;
@@ -673,7 +673,7 @@ function parsePublicWorldContracts(value: unknown): readonly PublicWorldContract
         timeZone: enumValue(timeBasis, "timeZone", `${name}.timeBasis`, ["Europe/Berlin"]),
       },
       entry: {
-        status: enumValue(entryView, "status", `${name}.entry`, ["open", "configuration-incomplete"]),
+        status: enumValue(entryView, "status", `${name}.entry`, ["open", "scheduled", "configuration-incomplete"]),
         requiresContractConfirmation: true,
         opensAt,
         closesAt,
