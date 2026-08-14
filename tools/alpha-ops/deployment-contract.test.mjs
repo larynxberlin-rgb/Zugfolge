@@ -50,10 +50,13 @@ test("Alpha-Compose erzwingt Map-Gate, Migration, signierten Bootstrap und einen
   assert.match(compose, /game-bootstrap:[\s\S]*production-db-bootstrap\.mjs/);
   assert.match(compose, /depends_on: \{ game-bootstrap: \{ condition: service_completed_successfully \}, keycloak:/);
   assert.match(compose, /odoo-upgrade:[\s\S]*--update=zugfolge_admin[\s\S]*--stop-after-init[\s\S]*restart: "no"/u);
+  assert.match(compose, /odoo-upgrade:[\s\S]*HOST: odoo-postgres[\s\S]*USER: odoo[\s\S]*PASSWORD: "\$\{ODOO_DB_PASSWORD\}"/u);
   assert.match(compose, /odoo:[\s\S]*depends_on: \{ odoo-upgrade: \{ condition: service_completed_successfully \}, game-api:/u);
   assert.match(compose, /^name: zugfolge$/mu);
   assert.match(compose, /odoo-upgrade:[\s\S]*image: zugfolge-odoo:alpha/u);
   assert.match(compose, /\n  odoo:\n    image: zugfolge-odoo:alpha/u);
+  assert.match(compose, /\n  odoo:[\s\S]*HOST: odoo-postgres[\s\S]*USER: odoo[\s\S]*PASSWORD: "\$\{ODOO_DB_PASSWORD\}"/u);
+  assert.match(compose, /\n  keycloak:[\s\S]*command: \[start, --import-realm, --health-enabled=true, --http-enabled=true\]/u);
   assert.match(compose, /keycloak:[\s\S]*proxy: \{ aliases: \[zugfolge-keycloak\] \}[\s\S]*mail: \{\}/u);
   assert.match(compose, /game-web:[\s\S]*proxy: \{ aliases: \[zugfolge-world-web\] \}/u);
   assert.match(compose, /livemap:[\s\S]*proxy: \{ aliases: \[zugfolge-world-livemap\] \}/u);

@@ -32,12 +32,16 @@ services:
       - --init=queue_job,zugfolge_admin
       - --update=zugfolge_admin
       - --stop-after-init
+    environment:
+      HOST: odoo-postgres
+      USER: odoo
+      PASSWORD: "${ODOO_DB_PASSWORD}"
     volumes: [odoo-filestore:/var/lib/odoo]
     depends_on: { odoo-postgres: { condition: service_healthy } }
     restart: "no"
   keycloak:
     image: quay.io/keycloak/keycloak:26.3.2
-    command: [start, --import-realm, --health-enabled=true]
+    command: [start, --import-realm, --health-enabled=true, --http-enabled=true]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: "${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME}"
       KC_BOOTSTRAP_ADMIN_PASSWORD: "${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD}"
@@ -212,6 +216,9 @@ services:
       - --workers=2
       - --max-cron-threads=1
     environment:
+      HOST: odoo-postgres
+      USER: odoo
+      PASSWORD: "${ODOO_DB_PASSWORD}"
       ODOO_QUEUE_JOB_CHANNELS: root:2
       ZUGFOLGE_INFRA_UPLOAD_BASE_URL: http://game-api:3000/integrations/odoo/infra-package-imports
       ZUGFOLGE_INFRA_UPLOAD_KEY_ID: "${INFRA_UPLOAD_KEY_ID}"
