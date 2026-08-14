@@ -33,9 +33,32 @@ services:
     depends_on: { postgres: { condition: service_healthy } }
     healthcheck: { <<: *health, test: [CMD-SHELL, "exec 3<>/dev/tcp/127.0.0.1/9000; echo -e 'GET /health/ready HTTP/1.1\r\nhost: localhost\r\nConnection: close\r\n\r\n' >&3; grep -q UP <&3"] }
     ports: ["${KEYCLOAK_PORT:-8080}:8080"]
+  game-migrate:
+    image: zugfolge-game-api
+    command: [node, packages/db/dist/migrate.js]
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: "no"
+  game-bootstrap:
+    image: zugfolge-game-api
+    command: [node, tools/alpha-ops/production-db-bootstrap.mjs]
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      ALPHA_WORLD_RELEASE_PATHS_JSON: "${ALPHA_WORLD_RELEASE_PATHS_JSON}"
+      INFRA_RELEASE_TRUSTED_KEYS_JSON: "${INFRA_RELEASE_TRUSTED_KEYS_JSON}"
+    volumes: [./var/alpha-evidence:/evidence:ro]
+    depends_on: { game-migrate: { condition: service_completed_successfully } }
+    restart: "no"
   game-api:
     image: zugfolge-game-api
-    build: { context: ., dockerfile: ops/alpha/container/Dockerfile }
+    build:
+      context: .
+      dockerfile: ops/alpha/container/Dockerfile
+      args:
+        LIVEMAP_BASE_PATH: "${LIVEMAP_BASE_PATH:-/}"
+        OPERATIONS_CENTER_BASE_PATH: "${OPERATIONS_CENTER_BASE_PATH:-/}"
+        OPERATIONS_CENTER_GAME_API_URL: "${OPERATIONS_CENTER_GAME_API_URL:-/api}"
     env_file: [.env]
     environment:
       DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
@@ -54,7 +77,7 @@ services:
       - ./var/alpha-evidence:/evidence:ro
       - "${MAP_RELEASE_HOST_DIR:-./var/maps/releases/infra-deutschland-2026.1}:/map-release:ro"
       - "${INFRA_PACKAGE_STAGING_HOST_DIR:-./var/infra-package-staging}:/infra-package-staging:rw"
-    depends_on: { postgres: { condition: service_healthy }, keycloak: { condition: service_healthy } }
+    depends_on: { game-bootstrap: { condition: service_completed_successfully }, keycloak: { condition: service_healthy } }
     healthcheck: { <<: *health, test: [CMD, node, -e, "fetch('http://localhost:3000/health/ready').then(r=>{if(!r.ok)process.exit(1)})"] }
     ports: ["${GAME_API_PORT:-3000}:3000"]
   game-web:
@@ -79,6 +102,7 @@ services:
       GAME_API_PUBLIC_URL: "${GAME_API_PUBLIC_URL:-/api}"
       KEYCLOAK_PUBLIC_URL: "${KEYCLOAK_PUBLIC_URL}"
       KEYCLOAK_REALM: "${KEYCLOAK_REALM:-zugfolge}"
+      LIVEMAP_OIDC_CLIENT_ID: "${LIVEMAP_OIDC_CLIENT_ID:-livemap}"
       ALPHA_PUBLIC_WORLD_ID: "${ALPHA_PUBLIC_WORLD_ID}"
       GAME_WEB_PUBLIC_URL: "${GAME_WEB_PUBLIC_URL:-http://localhost:4173}"
       LIVEMAP_PUBLIC_URL: "${LIVEMAP_PUBLIC_URL:-http://localhost:4174}"
@@ -95,6 +119,10 @@ services:
   operations-center:
     image: zugfolge-game-api
     command: [node, tools/alpha-ops/static-server.mjs, apps/operations-center/dist, "4175"]
+    environment:
+      GAME_API_INTERNAL_URL: http://game-api:3000
+      GAME_API_PUBLIC_URL: "${GAME_API_PUBLIC_URL:-/api}"
+    depends_on: { game-api: { condition: service_healthy } }
     healthcheck: { <<: *health, test: [CMD, node, -e, "fetch('http://localhost:4175/').then(r=>{if(!r.ok)process.exit(1)})"] }
     ports: ["${OPERATIONS_CENTER_PORT:-4175}:4175"]
   static:

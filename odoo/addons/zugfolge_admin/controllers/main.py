@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from odoo import http
 from odoo.http import request
 
+from ..models.rfc3339 import RFC3339_WITH_ZONE
+
 
 def _valid_signature(payload, key_id, timestamp, supplied):
     keys_json = request.env["ir.config_parameter"].sudo().get_param("zugfolge_admin.projection_keys_json")
@@ -14,8 +16,12 @@ def _valid_signature(payload, key_id, timestamp, supplied):
     try:
         keys = json.loads(keys_json)
         secret = keys[key_id]
+        if not isinstance(timestamp, str) or not RFC3339_WITH_ZONE.fullmatch(timestamp):
+            return False
         issued_at = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return False
+    if issued_at.utcoffset() is None:
         return False
     if abs((datetime.now(timezone.utc) - issued_at).total_seconds()) > 300:
         return False
@@ -40,9 +46,9 @@ class ZugfolgeProjectionController(http.Controller):
         body = "# HELP zugfolge_odoo_ready Odoo process and database request path are ready.\n# TYPE zugfolge_odoo_ready gauge\nzugfolge_odoo_ready 1\n"
         return request.make_response(body, headers=[("Content-Type", "text/plain; version=0.0.4; charset=utf-8"), ("Cache-Control", "no-store")])
 
-    @http.route("/zugfolge/projection", type="json", auth="none", methods=["POST"], csrf=False)
+    @http.route("/zugfolge/projection", type="jsonrpc", auth="none", methods=["POST"], csrf=False)
     def ingest_projection(self, **_kwargs):
-        payload = request.jsonrequest
+        payload = request.get_json_data()
         headers = request.httprequest.headers
         if not isinstance(payload, dict) or not _valid_signature(payload, headers.get("X-Zugfolge-Odoo-Key-Id"), headers.get("X-Zugfolge-Odoo-Timestamp"), headers.get("X-Zugfolge-Odoo-Signature")):
             return {"accepted": False, "code": "invalid_signature"}
@@ -117,9 +123,9 @@ class ZugfolgeProjectionController(http.Controller):
                 participation.with_context(zugfolge_game_projection=True).apply_game_result(result)
         return {"accepted": True, "messageId": message_id}
 
-    @http.route("/zugfolge/reconciliation/snapshot", type="json", auth="none", methods=["POST"], csrf=False)
+    @http.route("/zugfolge/reconciliation/snapshot", type="jsonrpc", auth="none", methods=["POST"], csrf=False)
     def reconciliation_snapshot(self, **_kwargs):
-        payload = request.jsonrequest
+        payload = request.get_json_data()
         headers = request.httprequest.headers
         if not isinstance(payload, dict) or payload.get("schemaVersion") != "zugfolge-odoo/v1" or not _valid_signature(payload, headers.get("X-Zugfolge-Odoo-Key-Id"), headers.get("X-Zugfolge-Odoo-Timestamp"), headers.get("X-Zugfolge-Odoo-Signature")):
             return {"accepted": False, "code": "invalid_signature"}

@@ -4,6 +4,8 @@ import json
 from odoo import api, fields, models
 from odoo.exceptions import AccessError, ValidationError
 
+from .rfc3339 import rfc3339_utc
+
 
 class ZugfolgeFeedback(models.Model):
     """Native Odoo activity-backed feedback, always linked to a defined projection."""
@@ -54,6 +56,11 @@ class ZugfolgeFeedback(models.Model):
         message = body.get("message")
         if not all(isinstance(value, str) and value.strip() for value in (feedback_reference, participant_pseudonym, message)):
             raise ValidationError("Feedbackprojektion braucht Referenz, Pseudonym und Nachricht.")
+        submitted_at_value = body["submittedAt"] if "submittedAt" in body else envelope.get("occurredAt")
+        submitted_at = rfc3339_utc(
+            submitted_at_value,
+            "submittedAt" if "submittedAt" in body else "occurredAt",
+        )
         projection = self.env["zugfolge.world.projection"].search([("world_id", "=", world_id)], limit=1)
         if not projection:
             raise ValidationError("Feedbackprojektion verweist auf keine bekannte Weltprojektion.")
@@ -77,7 +84,7 @@ class ZugfolgeFeedback(models.Model):
             "from_s": body.get("fromS"),
             "until_s": body.get("untilS"),
             "contact_allowed": body.get("contactAllowed", False),
-            "submitted_at": body.get("submittedAt") or envelope.get("occurredAt"),
+            "submitted_at": submitted_at,
             "payload_hash": payload_hash,
         }
         created = self.with_context(zugfolge_game_projection=True).create(values)

@@ -5,6 +5,7 @@ from odoo import api, fields, models
 from odoo.exceptions import AccessError, ValidationError
 
 from .admin_request import validate_serialized_starting_capital_policy
+from .rfc3339 import rfc3339_utc
 
 
 class ZugfolgeWorldProjection(models.Model):
@@ -100,9 +101,9 @@ class ZugfolgeWorldProjection(models.Model):
             "world_id": world_id,
             "world_name": body.get("worldName", world_id),
             "projection_revision": str(body.get("projectionRevision", payload.get("messageId"))),
-            "observed_at": payload.get("occurredAt"),
+            "observed_at": rfc3339_utc(payload.get("occurredAt"), "occurredAt"),
             "freshness": body.get("freshness", "delayed"),
-            "simulation_time": body.get("simulationTime"),
+            "simulation_time": rfc3339_utc(body.get("simulationTime"), "simulationTime", required=False),
             "world_status": body.get("worldStatus"),
             "profile_kind": body.get("profileKind"),
             "schedule_period": body.get("schedulePeriod"),

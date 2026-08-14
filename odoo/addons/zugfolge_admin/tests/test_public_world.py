@@ -4,6 +4,7 @@ from odoo.exceptions import AccessDenied, AccessError, ValidationError
 from odoo.tests.common import TransactionCase
 
 from ..controllers.website import _rate_allowed, _BUCKETS
+from ..models.rfc3339 import rfc3339_utc
 from ..models.res_users import validate_keycloak_identity
 
 
@@ -33,6 +34,27 @@ class TestPublicWorld(TransactionCase):
                 "generatedAt": generated_at,
             },
         }
+
+    def test_integration_timestamps_are_normalized_to_naive_utc(self):
+        self.assertEqual(
+            rfc3339_utc("2026-01-01T01:00:00.000+01:00", "occurredAt"),
+            datetime(2026, 1, 1, 0, 0, 0),
+        )
+        self.assertFalse(rfc3339_utc(None, "simulationTime", required=False))
+        for invalid in (
+            None,
+            "2026-01-01 00:00:00",
+            "2026-01-01T00:00:00",
+            "2026-02-30T00:00:00Z",
+            "2026-01-01T00+00:00",
+            "2026-01-01T0000+00:00",
+            "2026-01-01T00:00+00:00",
+            "2026-01-01T00:00:00,123+00:00",
+            "2026-01-01T00:00:00 Z",
+            "2026-01-01T00:00:60Z",
+        ):
+            with self.assertRaises(ValidationError):
+                rfc3339_utc(invalid, "occurredAt")
 
     def test_snapshot_zero_positive_and_unlimited_capital(self):
         for index, (capital, expected) in enumerate([
