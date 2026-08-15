@@ -241,6 +241,7 @@ function render(): void {
       cooperation: cooperationState(),
       mailbox: mailboxMessages,
       worldContracts: publicWorldContracts,
+      hasActiveOperator: activeOperatorId !== "",
       confirmation: pendingConfirmation === undefined ? undefined : { title: pendingConfirmation.title, detail: pendingConfirmation.detail },
       bootRecovery,
       tutorialStartAvailable: api !== undefined && publicWorldId !== "",

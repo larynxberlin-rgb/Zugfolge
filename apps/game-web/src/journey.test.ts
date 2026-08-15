@@ -129,6 +129,29 @@ describe("spielergebundene Tutorialreise", () => {
     expect(html).toContain('aria-label="Mitteldeutschland beitreten"');
   });
 
+  it("zeigt fuer ein bestehendes EVU den bestaetigten Weltvertrag ohne erneuten Beitritt", () => {
+    const html = renderJourney({
+      publicWorldId: "public-world",
+      busy: false,
+      message: "",
+      coachDismissed: false,
+      whyOpen: false,
+      hasActiveOperator: true,
+      worldContracts: [{
+        schemaVersion: "zugfolge-public-world-contract/v1", contractHash: "a".repeat(64), worldId: "public-world", name: "Mitteldeutschland",
+        region: { id: "mitteldeutschland-b", name: "Leipzig–Halle–Erfurt", variant: "B" }, noWipe: true, schedulePeriodWeeks: 4,
+        duration: { kind: "periods", periodCount: 10 }, timeBasis: { mode: "realtime", accelerationFactor: 1, epoch: "2026-01-01T00:00:00Z", timeZone: "Europe/Berlin" },
+        entry: { status: "open", requiresContractConfirmation: true, opensAt: "2026-01-01T00:00:00Z", closesAt: "2026-11-05T00:00:00Z" }, startingCapitalPolicy: { kind: "finite", amountCents: "0" },
+        releases: { infra: "b".repeat(64), timetable: "c".repeat(64), fleet: "d".repeat(64), economy: "e".repeat(64) },
+      }],
+    });
+    expect(html).toContain("Weltvertrag bestätigt");
+    expect(html).toContain("Ihr EVU ist in dieser Welt aktiv");
+    expect(html).not.toContain("data-world-contract-form");
+    expect(html).not.toContain('name="displayName"');
+    expect(html).not.toContain('name="confirmed"');
+  });
+
   it("deaktiviert den Eintritt in eine geplante Welt und nennt ihren Startzeitpunkt", () => {
     const html = renderJourney({
       publicWorldId: "public-world",
