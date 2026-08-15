@@ -40,7 +40,7 @@ services:
     depends_on: { odoo-postgres: { condition: service_healthy } }
     restart: "no"
   keycloak:
-    image: quay.io/keycloak/keycloak:26.3.2
+    image: quay.io/keycloak/keycloak:26.7.0
     command: [start, --import-realm, --health-enabled=true, --http-enabled=true]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: "${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME}"
@@ -49,6 +49,8 @@ services:
       KC_DB_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB}"
       KC_DB_USERNAME: "${POSTGRES_USER}"
       KC_DB_PASSWORD: "${POSTGRES_PASSWORD}"
+      KC_HOSTNAME: "${KEYCLOAK_PUBLIC_URL}"
+      KC_PROXY_HEADERS: xforwarded
       GAME_WEB_URL: "${GAME_WEB_URL}"
       LIVEMAP_URL: "${LIVEMAP_PUBLIC_URL:-http://localhost:4174}"
       OPERATIONS_CENTER_URL: "${OPERATIONS_CENTER_URL}"
