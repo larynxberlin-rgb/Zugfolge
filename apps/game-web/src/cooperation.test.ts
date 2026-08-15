@@ -33,6 +33,7 @@ function state(overrides: Partial<CooperationSurfaceState> = {}): CooperationSur
       worldId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       operatorId: SELLER,
       fleetRevision: 7,
+      fleetSnapshotHash: "f".repeat(64),
       trainRuns: [{ id: "run-internal", label: "RE 12 nach Halle Hbf", detail: "Regionalzug · geplant · Saale-Bahn" }],
       connectionTrainRuns: [{ id: "connection-internal", label: "S 5 nach Leipzig Hbf", detail: "Regionalzug · fährt · Elster-Verkehr" }],
       formations: [{ id: "formation-internal", label: "Formation für RE 12", detail: "2 Fahrzeuge · Trasse bestätigt" }],
@@ -240,6 +241,19 @@ describe("M12-Spieleroberfläche", () => {
     expect(html).toContain("noch kein Einsatzvertrag gebunden");
     expect(html).toContain("Reserve nicht separat ausgewiesen");
     expect(html).not.toContain("beste Alternative");
+  });
+
+  it("zeigt Ausschreibung, Fahrplan, Leerfahrt und Werkstatt als echte Formulare", () => {
+    const html = renderCooperationSurface(state({
+      tenders: [{ id: "tender-1", lotId: "S5", phase: "open", bidCount: 0, ownBidCount: 0, closesAt: 1_000 }],
+      stationOptions: [{ id: "LL", label: "Leipzig Hbf" }, { id: "LH", label: "Halle (Saale) Hbf" }],
+    }));
+    expect(html).toContain("tender-bid-form");
+    expect(html).toContain('data-path-request="schedule"');
+    expect(html).toContain('data-path-request="empty-run"');
+    expect(html).toContain('id="maintenance-form"');
+    expect(html).toContain("Leipzig Hbf");
+    expect(html).not.toContain("Bald verfügbar");
   });
 
   it("baut typisierte Leistungsgegenstände statt freiem JSON", () => {

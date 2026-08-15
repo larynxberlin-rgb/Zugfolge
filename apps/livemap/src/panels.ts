@@ -6,6 +6,8 @@ import type {
   StationBoardCall,
   StationBoardV1,
 } from "@zugfolge/livemap-stream";
+import { externalStatusLabel, operatingStatusLabel, railwayPlaceLabel } from "./presentation.js";
+import type { OperatingStatus, PublicExternalTrain } from "./protocol.js";
 
 function element<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -205,7 +207,9 @@ export function trainPanel(detail: PublicTrainDetailV1, owner: OwnerTrainDetailV
   fragment.append(titleBlock("ZUGLAUF", train.trainNumber, `${train.operator} · ${train.category}`));
   const list = document.createElement("dl");
   let estimateNote: HTMLElement | undefined;
-  addDefinition(list, "Status", train.status);
+  addDefinition(list, "Status", "progressBasisPoints" in train
+    ? externalStatusLabel(train.status as PublicExternalTrain["status"])
+    : operatingStatusLabel(train.status as OperatingStatus));
   addDefinition(list, "Verspätung", minuteLabel(train.delaySeconds), train.delaySeconds > 60 ? "warn" : undefined);
   if (detail.movement === "network" && "speedMmPerSecond" in detail.train) {
     const networkTrain = detail.train;
@@ -217,7 +221,7 @@ export function trainPanel(detail: PublicTrainDetailV1, owner: OwnerTrainDetailV
   } else if ("progressBasisPoints" in detail.train) {
     const externalTrain = detail.train;
     addDefinition(list, "Außenlauf", `${Math.floor(externalTrain.progressBasisPoints / 100)} %`);
-    addDefinition(list, "Letztes Grenzportal", externalTrain.fromPortalId);
+    addDefinition(list, "Letztes Grenzportal", railwayPlaceLabel(externalTrain.fromPortalId));
     addDefinition(list, "Nächstes Grenzportal", externalTrain.toPortalId ?? "keine Wiedereinfahrt");
   }
   fragment.append(list);

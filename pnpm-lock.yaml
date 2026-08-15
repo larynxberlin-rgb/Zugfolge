@@ -98,6 +98,9 @@ importers:
 
   apps/game-web:
     dependencies:
+      '@zugfolge/browser-identity':
+        specifier: workspace:*
+        version: link:../../packages/browser-identity
       '@zugfolge/design-system':
         specifier: workspace:*
         version: link:../../packages/design-system
@@ -120,6 +123,12 @@ importers:
 
   apps/livemap:
     dependencies:
+      '@zugfolge/browser-identity':
+        specifier: workspace:*
+        version: link:../../packages/browser-identity
+      '@zugfolge/design-system':
+        specifier: workspace:*
+        version: link:../../packages/design-system
       '@zugfolge/glossary':
         specifier: workspace:*
         version: link:../../packages/glossary
@@ -145,6 +154,9 @@ importers:
 
   apps/operations-center:
     dependencies:
+      '@zugfolge/browser-identity':
+        specifier: workspace:*
+        version: link:../../packages/browser-identity
       '@zugfolge/design-system':
         specifier: workspace:*
         version: link:../../packages/design-system
@@ -183,6 +195,15 @@ importers:
       '@types/node':
         specifier: 24.13.3
         version: 24.13.3
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.9))
+
+  packages/browser-identity:
+    devDependencies:
       typescript:
         specifier: ^7.0.2
         version: 7.0.2

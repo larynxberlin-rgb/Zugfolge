@@ -252,6 +252,7 @@ export interface CooperationResourceCatalog {
   readonly worldId: string;
   readonly operatorId: string;
   readonly fleetRevision: number | null;
+  readonly fleetSnapshotHash: string | null;
   readonly trainRuns: readonly CooperationResourceOption[];
   readonly connectionTrainRuns: readonly CooperationResourceOption[];
   readonly formations: readonly CooperationResourceOption[];
@@ -260,6 +261,20 @@ export interface CooperationResourceCatalog {
   readonly disruptions: readonly CooperationResourceOption[];
   readonly rentableVehicles: readonly CooperationResourceOption[];
   readonly assistanceVehicles: readonly CooperationResourceOption[];
+}
+
+export interface PublicTenderView {
+  readonly id: string;
+  readonly phase: "announced" | "open" | "awarded" | "failed";
+  readonly lotId: string;
+  readonly closesAt: number;
+  readonly bidCount: number;
+  readonly ownBidCount: number;
+}
+
+export interface EconomyPlayerStateView {
+  readonly revision: number;
+  readonly tenders: readonly PublicTenderView[];
 }
 
 export interface PublicWorldContractView {
@@ -598,6 +613,7 @@ export function parseCooperationResourceCatalog(value: unknown): CooperationReso
     worldId: stringValue(record, "worldId", name)!,
     operatorId: stringValue(record, "operatorId", name)!,
     fleetRevision: fleetRevision as number | null,
+    fleetSnapshotHash: record["fleetSnapshotHash"] === null || record["fleetSnapshotHash"] === undefined ? null : stringValue(record, "fleetSnapshotHash", name)!,
     trainRuns: options("trainRuns"),
     connectionTrainRuns: options("connectionTrainRuns"),
     formations: options("formations"),
@@ -607,6 +623,29 @@ export function parseCooperationResourceCatalog(value: unknown): CooperationReso
     rentableVehicles: options("rentableVehicles"),
     assistanceVehicles: options("assistanceVehicles"),
   };
+}
+
+function parseEconomyPlayerState(value: unknown): EconomyPlayerStateView {
+  const state = asRecord(value, "Wirtschaftszustand");
+  const revision = integerValue(state, "revision", "Wirtschaftszustand", 0);
+  const encoded = asRecord(state["tenders"], "Wirtschaftszustand.tenders");
+  if (encoded["$zugfolgeType"] !== "map" || !Array.isArray(encoded["entries"])) throw new GameApiError("Ausschreibungen besitzen kein unterstütztes Format.", false);
+  const tenders = encoded["entries"].map((entry, index): PublicTenderView => {
+    if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== "string") throw new GameApiError(`Ausschreibungen[${index}] ist ungültig.`, false);
+    const lifecycle = asRecord(entry[1], `Ausschreibungen[${index}]`);
+    const tender = asRecord(lifecycle["tender"], `Ausschreibungen[${index}].tender`);
+    const phase = lifecycle["phase"];
+    if (!["announced", "open", "awarded", "failed"].includes(String(phase))) throw new GameApiError(`Ausschreibungen[${index}].phase ist unbekannt.`, false);
+    return {
+      id: entry[0],
+      phase: phase as PublicTenderView["phase"],
+      lotId: stringValue(tender, "lotId", `Ausschreibungen[${index}].tender`)!,
+      closesAt: integerValue(tender, "closesAt", `Ausschreibungen[${index}].tender`, 0),
+      bidCount: integerValue(lifecycle, "bidCount", `Ausschreibungen[${index}]`, 0),
+      ownBidCount: Array.isArray(lifecycle["ownBids"]) ? lifecycle["ownBids"].length : 0,
+    };
+  });
+  return { revision, tenders };
 }
 
 function pageQuery(view: CooperationPageView, cursor: string | undefined, limit: number, deadlineBeforeS?: number): string {
@@ -948,13 +987,13 @@ function parseTutorialSessionV1(value: unknown): TutorialSessionView {
 /** Authentifizierter Client fuer die serverautoritaere Planner-Projektion. */
 export class GameApiClient {
   readonly #baseUrl: string;
-  readonly #accessToken: string;
+  readonly #accessToken: string | ((forceRefresh?: boolean) => Promise<string>);
   readonly #fetch: typeof fetch;
   readonly #wait: WaitImplementation;
 
   constructor(
     baseUrl: string,
-    accessToken: string,
+    accessToken: string | ((forceRefresh?: boolean) => Promise<string>),
     fetchImplementation: typeof fetch | undefined = undefined,
     waitImplementation: WaitImplementation = wait,
   ) {
@@ -964,22 +1003,29 @@ export class GameApiClient {
     this.#wait = waitImplementation;
   }
 
+  #token(forceRefresh = false): Promise<string> {
+    return typeof this.#accessToken === "string" ? Promise.resolve(this.#accessToken) : this.#accessToken(forceRefresh);
+  }
+
   async #journeyJson<T>(path: string, init: RequestInit = {}): Promise<T> {
     const controller = init.signal === undefined ? new AbortController() : undefined;
     const timer = controller === undefined ? undefined : setTimeout(() => controller.abort(), JOURNEY_TIMEOUT_MS);
     let response: Response;
     try {
-      response = await this.#fetch(`${this.#baseUrl}${path}`, {
+      const request = async (forceRefresh = false): Promise<Response> => this.#fetch(`${this.#baseUrl}${path}`, {
         ...init,
         signal: init.signal ?? controller?.signal,
         headers: {
-          authorization: `Bearer ${this.#accessToken}`,
+          authorization: `Bearer ${await this.#token(forceRefresh)}`,
           ...(init.body === undefined ? {} : { "content-type": "application/json" }),
           ...init.headers,
         },
       });
+      response = await request();
+      if ((response.status === 401 || response.status === 403) && typeof this.#accessToken !== "string") response = await request(true);
     } catch (error) {
       if (controller?.signal.aborted === true) throw new GameApiError("Spielerreise antwortet nicht. Bitte erneut versuchen.", true);
+      if (error instanceof TypeError) throw new GameApiError("Verbindung zur Spielerreise wurde unterbrochen. Bitte erneut versuchen.", true);
       throw error;
     } finally {
       if (timer !== undefined) clearTimeout(timer);
@@ -1006,7 +1052,7 @@ export class GameApiClient {
     let response: Response;
     try {
       response = await this.#fetch(`${this.#baseUrl}/worlds/${encodeURIComponent(publicWorldId)}/tutorial-sessions/active`, {
-        headers: { authorization: `Bearer ${this.#accessToken}` }, signal: controller.signal,
+        headers: { authorization: `Bearer ${await this.#token()}` }, signal: controller.signal,
       });
     } catch (error) {
       if (controller.signal.aborted) throw new GameApiError("Tutorialstatus antwortet nicht. Bitte erneut versuchen.", true);
@@ -1063,14 +1109,31 @@ export class GameApiClient {
     return this.#journeyJson<unknown>("/me/operators").then(parseOperatorSummaries);
   }
 
+  createOperator(worldId: string, name: string): Promise<OperatorSummary> {
+    return this.#journeyJson<unknown>(`/worlds/${encodeURIComponent(worldId)}/operators`, {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }).then((value) => parseOperatorSummaries([value])[0]!);
+  }
+
   loadPublicWorldContracts(): Promise<readonly PublicWorldContractView[]> {
     return this.#journeyJson<unknown>("/public-world-contracts").then(parsePublicWorldContracts);
   }
 
-  enterPublicWorld(worldId: string, displayName: string, acceptedWorldContractHash: string): Promise<unknown> {
-    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/access`, {
-      method: "POST", body: JSON.stringify({ displayName, acceptedWorldContractHash }),
-    });
+  async enterPublicWorld(worldId: string, displayName: string, acceptedWorldContractHash: string): Promise<unknown> {
+    try {
+      return await this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/access`, {
+        method: "POST", body: JSON.stringify({ displayName, acceptedWorldContractHash }),
+      });
+    } catch (error) {
+      if (!(error instanceof GameApiError) || !error.retryable) throw error;
+      try {
+        return await this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/access`);
+      } catch (statusError) {
+        if (statusError instanceof GameApiError && statusError.status === 404) throw error;
+        throw statusError;
+      }
+    }
   }
 
   async loadSimulationTime(worldId: string): Promise<number> {
@@ -1079,6 +1142,19 @@ export class GameApiClient {
     const atS = (value as Record<string, unknown>)["atS"];
     if (!Number.isSafeInteger(atS) || (atS as number) < 0) throw new GameApiError("Weltzeit ist keine sichere Simulationssekunde.", false);
     return atS as number;
+  }
+
+  loadEconomyState(worldId: string): Promise<EconomyPlayerStateView> {
+    return this.#journeyJson<unknown>(`/worlds/${encodeURIComponent(worldId)}/economy/state`).then(parseEconomyPlayerState);
+  }
+
+  submitTenderBid(worldId: string, tenderId: string, operatorId: string, payload: {
+    readonly expectedRevision: number; readonly commandId: string; readonly bidId: string;
+    readonly orderingFeeCentsPerTrainKm: string;
+    readonly vehicleReference: { readonly fleetRevision: number; readonly snapshotHash: string; readonly formationId: string; readonly personnelDutyIds?: readonly string[]; readonly pathReservationIds?: readonly string[]; readonly entryFacility?: { readonly schemaVersion: "zugfolge-public-entry-facility/v1"; readonly providerOperatorId: "public" } };
+    readonly promises: { readonly extraSeats: number; readonly punctualityBasisPoints: number; readonly additionalStops: number };
+  }): Promise<unknown> {
+    return this.#journeyJson(`/worlds/${encodeURIComponent(worldId)}/economy/tenders/${encodeURIComponent(tenderId)}/operators/${encodeURIComponent(operatorId)}/bids`, { method: "POST", body: JSON.stringify(payload) });
   }
 
   loadWorldOperators(worldId: string): Promise<readonly OperatorSummary[]> {
@@ -1179,11 +1255,46 @@ export class GameApiClient {
     return this.#journeyJson<unknown>(`/worlds/${encodeURIComponent(worldId)}/vehicles/${encodeURIComponent(vehicleId)}/history`).then(parseHistory);
   }
 
+  scheduleMaintenance(worldId: string, operatorId: string, payload: {
+    readonly formationId: string;
+    readonly durationHours: number;
+    readonly idempotencyKey: string;
+  }): Promise<void> {
+    return this.#journeyJson<unknown>(`/worlds/${encodeURIComponent(worldId)}/operators/${encodeURIComponent(operatorId)}/fleet/maintenance`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then(() => undefined);
+  }
+
+  submitPlanningPathRequest(worldId: string, payload: {
+    readonly schemaVersion: "planning.player-path-request/v1";
+    readonly requestId: string;
+    readonly formationId: string;
+    readonly trainId: string;
+    readonly trainCategory: "long-distance" | "suburban" | "regional" | "freight" | "supplementary";
+    readonly trainNumber: number;
+    readonly originStationId: string;
+    readonly destinationStationId: string;
+    readonly desiredDepartureS: number;
+    readonly operatingDays: "daily" | "workdays" | "weekend";
+    readonly stops: readonly { readonly stationId: string; readonly minimumDwellS: number }[];
+    readonly earlierS: number;
+    readonly laterS: number;
+    readonly stepS: number;
+    readonly extraRunningTimeS: number;
+    readonly maxOperationalStops: number;
+  }): Promise<void> {
+    return this.#journeyJson<unknown>(`/worlds/${encodeURIComponent(worldId)}/planning/path-requests`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then(() => undefined);
+  }
+
   async loadProjection(worldId: string, signal?: AbortSignal): Promise<PlanningProjectionV1> {
     const response = await this.#fetch(
       `${this.#baseUrl}/worlds/${encodeURIComponent(worldId)}/planning/diagram`,
       {
-        headers: { authorization: `Bearer ${this.#accessToken}` },
+        headers: { authorization: `Bearer ${await this.#token()}` },
         signal,
       },
     );
@@ -1234,7 +1345,7 @@ export class GameApiClient {
           {
             method: "POST",
             headers: {
-              authorization: `Bearer ${this.#accessToken}`,
+              authorization: `Bearer ${await this.#token()}`,
               "content-type": "application/json",
             },
             body,

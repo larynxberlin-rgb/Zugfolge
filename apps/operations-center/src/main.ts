@@ -4,6 +4,7 @@ import { mountGlossaryLayer } from "@zugfolge/glossary";
 import "@zugfolge/glossary/styles.css";
 
 import { OperationsApi, type DailyReportRow, type ProgramVersion } from "./api.js";
+import { loadOperationsRuntimeConfiguration, operationsAccessToken } from "./auth.js";
 import { addRule, moveRule, removeCondition, removeRule, reorderRules, updateCondition, updateRule } from "./model.js";
 import { renderApp, type ViewState } from "./view.js";
 import "./styles.css";
@@ -16,9 +17,8 @@ mountGlossaryLayer(document.body);
 const parameters = new URLSearchParams(location.search);
 const worldId = parameters.get("world") ?? "";
 const operatorId = parameters.get("operator") ?? "";
-const accessToken = sessionStorage.getItem("zugfolge.accessToken") ?? "";
-const apiBase = document.querySelector<HTMLMetaElement>('meta[name="game-api-url"]')?.content ?? "";
-const api = worldId !== "" && operatorId !== "" && accessToken !== "" ? new OperationsApi(apiBase, accessToken, worldId, operatorId) : undefined;
+const runtime = loadOperationsRuntimeConfiguration();
+let api: OperationsApi | undefined;
 
 let state: ViewState = { templates: [], versions: [], reports: [], loading: true, saving: false, message: "", messageTone: "status", selectedDecisionId: "" };
 let dragRuleId = "";
@@ -171,11 +171,14 @@ function startStream(): void {
 
 async function boot(): Promise<void> {
   render();
-  if (api === undefined) {
-    setState({ loading: false, message: "Weltkennung, EVU-Kennung oder angemeldete Sitzung fehlt. Im Produktivpfad werden keine Beispieldaten verwendet.", messageTone: "error" });
+  if (worldId === "" || operatorId === "") {
+    setState({ loading: false, message: "Weltkennung oder EVU-Kennung fehlt. Öffnen Sie die Betriebszentrale aus Ihrer Welt.", messageTone: "error" });
     return;
   }
   try {
+    const accessToken = await operationsAccessToken(runtime);
+    if (accessToken === "") return;
+    api = new OperationsApi(runtime.gameApiUrl, (forceRefresh) => operationsAccessToken(runtime, forceRefresh), worldId, operatorId);
     const [templates, versions, operations, reports] = await Promise.all([api.templates(), api.versions(), api.operations(), api.reports()]);
     const source: OperatingProgram | undefined = versions.find((version) => version.status === "active")?.canonicalProgram ?? versions[0]?.canonicalProgram ?? templates[0]?.program;
     if (source === undefined) throw new Error("Server lieferte weder Betriebsprogramm noch Vorlage.");

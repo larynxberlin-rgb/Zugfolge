@@ -1,0 +1,11 @@
+{
+  "name": "@zugfolge/browser-identity",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Gemeinsamer OIDC-PKCE-Client fuer die Zugfolge-Browseroberflaechen",
+  "license": "LicenseRef-PolyForm-Shield-1.0.0",
+  "exports": { ".": "./dist/index.js" },
+  "scripts": { "build": "tsc", "typecheck": "tsc --noEmit", "test": "vitest run" },
+  "devDependencies": { "typescript": "^7.0.2", "vitest": "^4.1.10" }
+}

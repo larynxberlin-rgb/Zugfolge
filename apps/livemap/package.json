@@ -9,6 +9,8 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@zugfolge/browser-identity": "workspace:*",
+    "@zugfolge/design-system": "workspace:*",
     "@zugfolge/glossary": "workspace:*",
     "@zugfolge/livemap-stream": "workspace:*",
     "maplibre-gl": "6.3.0",

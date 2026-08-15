@@ -13,6 +13,7 @@ import {
   type OperatorContractView,
   type OperatorSummary,
   type PublicWorldContractView,
+  type PublicTenderView,
   type TutorialAction,
   type TutorialSessionView,
   type VehicleAssetView,
@@ -109,6 +110,8 @@ let selectedHistoryVehicleId = "";
 let contractType: ContractType = "traction";
 let marketQuery = "";
 let cooperationAtS = 0;
+let economyRevision = 0;
+let publicTenders: readonly PublicTenderView[] = [];
 let mailboxMessages: readonly MailboxMessageView[] = [];
 let publicWorldContracts: readonly PublicWorldContractView[] = [];
 let contractPageView: CooperationPageView = initialCooperationPageViews.contractPageView;
@@ -189,6 +192,7 @@ function cooperationState(): CooperationSurfaceState | undefined {
     compatibility: conflict.alternative.explanation,
     provenance: "Serverbestätigter Planungsstand",
   }]);
+  const stationOptions = currentProjection?.stations.map((station) => ({ id: station.id, label: station.name }));
   return {
     worldId: publicWorldId,
     worldName,
@@ -210,6 +214,9 @@ function cooperationState(): CooperationSurfaceState | undefined {
     atS: cooperationAtS,
     busy: journeyBusyScopes.has("cooperation"),
     ...(pathAlternatives === undefined ? {} : { pathAlternatives }),
+    ...(stationOptions === undefined ? {} : { stationOptions }),
+    economyRevision,
+    tenders: publicTenders,
   };
 }
 
@@ -255,6 +262,10 @@ function render(): void {
       loadError === "" ? "Planner-Ergebnis wird geladen …" : loadError,
       loadError === "" ? undefined : explicitDemoUrl(),
     );
+    app.querySelector<HTMLButtonElement>("#planner-retry")?.addEventListener("click", () => {
+      loadError = "";
+      void boot();
+    });
     return;
   }
   app.innerHTML = renderProjection(projection, {
@@ -265,6 +276,7 @@ function render(): void {
     message,
     messageTone,
     applyingAlternativeId: applyingAlternativeId === "" ? undefined : applyingAlternativeId,
+    demoMode,
   });
   bind();
 }
@@ -328,6 +340,10 @@ function bindJourney(): void {
     finishConfirmation(dialog.returnValue === "confirm");
   });
   bindCooperationSurface(app, {
+    createOperator: foundOperator,
+    submitTenderBid,
+    submitPathRequest,
+    scheduleMaintenance,
     changeOperator: (operatorId) => cooperationAction(async () => refreshCooperation(operatorId), "Handelndes EVU wurde gewechselt."),
     changeContractType: (value) => {
       captureJourneyDrafts();
@@ -352,6 +368,144 @@ function bindJourney(): void {
     cancelListing,
     loadHistory: loadVehicleHistory,
   });
+}
+
+function foundOperator(name: string): Promise<void> {
+  if (name.trim() === "") return reportFormError(new Error("Bitte wählen Sie einen Namen für Ihr EVU."));
+  return requestConfirmation(
+    "EVU verbindlich gründen?",
+    confirmationDetail({ parties: `Ihr Konto und ${name.trim()}`, object: "Gründung eines Eisenbahnverkehrsunternehmens", amount: "Startkapital gemäß Weltvertrag", deadline: "sofort", consequence: "Name, Gründerkonto und Startkapital werden serverseitig dauerhaft angelegt." }),
+    () => cooperationAction(async () => {
+      if (api === undefined || publicWorldId === "") throw new Error("Welt oder Sitzung fehlt.");
+      const operator = await api.createOperator(publicWorldId, name.trim());
+      clearedJourneyDrafts.add("operator-foundation-form");
+      await refreshCooperation(operator.id);
+    }, `EVU „${name.trim()}“ wurde gegründet.`),
+    "#operator-foundation-form input",
+  );
+}
+
+function submitTenderBid(fields: Readonly<Record<string, string>>): Promise<void> {
+  const tenderId = (fields["tenderId"] ?? "").trim();
+  const formationId = (fields["formationId"] ?? "").trim();
+  const resources = cooperationResources;
+  if (tenderId === "" || formationId === "" || resources?.fleetRevision === null || resources?.fleetRevision === undefined || resources.fleetSnapshotHash === null) {
+    return reportFormError(new Error("Für das Angebot fehlen eine offene Ausschreibung oder eine serverbestätigte Formation."));
+  }
+  const fleetRevision = resources.fleetRevision;
+  const fleetSnapshotHash = resources.fleetSnapshotHash;
+  const orderingFeeCentsPerTrainKm = parseEuroCents(fields["orderingFeeEuros"] ?? "");
+  const punctuality = Number((fields["punctualityPercent"] ?? "").replace(",", "."));
+  const extraSeats = Number(fields["extraSeats"] ?? "0");
+  if (!Number.isFinite(punctuality) || punctuality < 0 || punctuality > 100 || !Number.isSafeInteger(extraSeats) || extraSeats < 0) return reportFormError(new Error("Pünktlichkeit oder Sitzplatzzusage ist ungültig."));
+  return requestConfirmation(
+    "Angebot verbindlich abgeben?",
+    confirmationDetail({ parties: operatorDisplayName(activeOperatorId), object: `Ausschreibung ${tenderId}`, amount: `${formatCents(orderingFeeCentsPerTrainKm)} je Zug-km`, deadline: simulationDeadline(publicTenders.find((tender) => tender.id === tenderId)?.closesAt), consequence: "Das versiegelte Angebot wird serverseitig gegen Flottenstand, Frist und Weltrevision geprüft." }),
+    () => cooperationAction(async () => {
+      if (api === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
+      const commandId = commandKey("tender-bid", `${tenderId}:${formationId}:${orderingFeeCentsPerTrainKm}:${punctuality}:${extraSeats}`);
+      await api.submitTenderBid(publicWorldId, tenderId, activeOperatorId, {
+        expectedRevision: economyRevision,
+        commandId,
+        bidId: commandId,
+        orderingFeeCentsPerTrainKm,
+        vehicleReference: {
+          fleetRevision,
+          snapshotHash: fleetSnapshotHash,
+          formationId,
+          ...(resources.personnelDuties.length === 0 ? {} : { personnelDutyIds: resources.personnelDuties.map((entry) => entry.id) }),
+          entryFacility: {
+            schemaVersion: "zugfolge-public-entry-facility/v1" as const,
+            providerOperatorId: "public" as const,
+          },
+        },
+        promises: { extraSeats, punctualityBasisPoints: Math.round(punctuality * 100), additionalStops: 0 },
+      });
+      completeCommand("tender-bid", `${tenderId}:${formationId}:${orderingFeeCentsPerTrainKm}:${punctuality}:${extraSeats}`);
+      clearedJourneyDrafts.add("tender-bid-form");
+      await refreshCooperation(activeOperatorId);
+    }, "Angebot wurde versiegelt eingereicht."),
+    "#tender-bid-form button",
+  );
+}
+
+function positiveIntegerField(value: string | undefined, label: string): number {
+  if (value === undefined || !/^[1-9][0-9]*$/.test(value)) throw new Error(`${label} muss eine positive ganze Zahl sein.`);
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) throw new Error(`${label} liegt ausserhalb des sicheren Zahlenbereichs.`);
+  return parsed;
+}
+
+function submitPathRequest(kind: "schedule" | "empty-run", fields: Readonly<Record<string, string>>): Promise<void> {
+  try {
+    const formationId = (fields["formationId"] ?? "").trim();
+    const originStationId = (fields["originStationId"] ?? "").trim();
+    const destinationStationId = (fields["destinationStationId"] ?? "").trim();
+    const trainNumber = positiveIntegerField(fields["trainNumber"], "Zugnummer");
+    const departureInMinutes = positiveIntegerField(fields["departureInMinutes"], "Abfahrtsvorlauf");
+    if (formationId === "" || originStationId === "" || destinationStationId === "") throw new Error("Formation, Start und Ziel muessen ausgewaehlt werden.");
+    if (originStationId === destinationStationId) throw new Error("Start und Ziel muessen verschieden sein.");
+    const fingerprint = `${kind}:${formationId}:${trainNumber}:${originStationId}:${destinationStationId}:${departureInMinutes}`;
+    const requestId = commandKey("planning-path", fingerprint);
+    const desiredDepartureS = cooperationAtS + departureInMinutes * 60;
+    if (!Number.isSafeInteger(desiredDepartureS)) throw new Error("Abfahrtszeit liegt ausserhalb des sicheren Zeitbereichs.");
+    const label = kind === "schedule" ? "Fahrplan" : "spontane Leerfahrt";
+    return requestConfirmation(
+      `${label === "Fahrplan" ? "Fahrplan" : "Leerfahrt"} verbindlich anmelden?`,
+      confirmationDetail({ parties: operatorDisplayName(activeOperatorId), object: `${label} ${trainNumber} von ${originStationId} nach ${destinationStationId}`, amount: "Trassen- und Betriebskosten laut Weltvertrag", deadline: `Abfahrt in ${departureInMinutes} Minuten`, consequence: "Der Planner prueft Formation, Eigentum, Fahrweg und Konflikte serverseitig; unzulaessige Anmeldungen werden abgelehnt." }),
+      () => cooperationAction(async () => {
+        if (api === undefined || activeOperatorId === "") throw new Error("Welt, Sitzung oder EVU fehlt.");
+        await api.submitPlanningPathRequest(publicWorldId, {
+          schemaVersion: "planning.player-path-request/v1",
+          requestId,
+          formationId,
+          trainId: `${kind}-${trainNumber}-${requestId.slice(-12)}`,
+          trainCategory: kind === "schedule" ? "regional" : "supplementary",
+          trainNumber,
+          originStationId,
+          destinationStationId,
+          desiredDepartureS,
+          operatingDays: "daily",
+          stops: [],
+          earlierS: kind === "schedule" ? 600 : 120,
+          laterS: kind === "schedule" ? 600 : 300,
+          stepS: 60,
+          extraRunningTimeS: kind === "schedule" ? 120 : 60,
+          maxOperationalStops: 4,
+        });
+        completeCommand("planning-path", fingerprint);
+        clearedJourneyDrafts.add(kind === "schedule" ? "schedule-request-form" : "empty-run-request-form");
+      }, `${label} wurde zur konfliktgeprueften Planung eingereicht.`),
+      `[data-path-request="${kind}"] button`,
+    );
+  } catch (error) {
+    return reportFormError(error);
+  }
+}
+
+function scheduleMaintenance(fields: Readonly<Record<string, string>>): Promise<void> {
+  try {
+    const formationId = (fields["formationId"] ?? "").trim();
+    const durationHours = positiveIntegerField(fields["durationHours"], "Werkstattdauer");
+    if (formationId === "") throw new Error("Formation fehlt.");
+    if (durationHours > 72) throw new Error("Ein Werkstattauftrag darf hoechstens 72 Stunden dauern.");
+    const fingerprint = `${formationId}:${durationHours}`;
+    const idempotencyKey = commandKey("fleet-maintenance", fingerprint);
+    return requestConfirmation(
+      "Formation in die Werkstatt schicken?",
+      confirmationDetail({ parties: operatorDisplayName(activeOperatorId), object: `Formation ${formationId}`, amount: "Werkstattkosten laut Weltvertrag", deadline: `${durationHours} Stunden Belegung`, consequence: "Die Formation steht waehrend der serverseitig reservierten Werkstattzeit nicht fuer Betrieb oder Ausschreibungsnachweise bereit." }),
+      () => cooperationAction(async () => {
+        if (api === undefined || activeOperatorId === "") throw new Error("Welt, Sitzung oder EVU fehlt.");
+        await api.scheduleMaintenance(publicWorldId, activeOperatorId, { formationId, durationHours, idempotencyKey });
+        completeCommand("fleet-maintenance", fingerprint);
+        clearedJourneyDrafts.add("maintenance-form");
+        await refreshCooperation(activeOperatorId);
+      }, "Werkstattauftrag wurde im autoritativen Flottenzustand gebucht."),
+      "#maintenance-form button",
+    );
+  } catch (error) {
+    return reportFormError(error);
+  }
 }
 
 function requestConfirmation(
@@ -532,13 +686,16 @@ function addWorldSeconds(atS: number, durationS: number, name: string): number {
 async function refreshCooperation(preferredOperatorId = activeOperatorId): Promise<void> {
   const client = api;
   if (client === undefined || publicWorldId === "") return;
-  const [own, atS, roster, listingPage, inbox] = await Promise.all([
+  const [own, atS, roster, listingPage, inbox, economy] = await Promise.all([
     client.loadOwnOperators(),
     client.loadSimulationTime(publicWorldId),
     client.loadWorldOperators(publicWorldId),
     client.loadVehicleMarket(publicWorldId, listingPageView, undefined, 50, cooperationDeadlineBeforeS),
     client.loadMailbox(publicWorldId),
+    client.loadEconomyState(publicWorldId).catch(() => ({ revision: 0, tenders: [] as readonly PublicTenderView[] })),
   ]);
+  economyRevision = economy.revision;
+  publicTenders = economy.tenders;
   cooperationAtS = atS;
   try { projection = await client.loadProjection(publicWorldId); }
   catch { projection = undefined; }
@@ -959,7 +1116,7 @@ async function boot(): Promise<void> {
     validateRuntimeConfiguration(runtimeConfiguration);
     const accessToken = await ensureAccessToken(runtimeConfiguration);
     if (accessToken === "") return;
-    api = new GameApiClient(runtimeConfiguration.gameApiUrl, accessToken);
+    api = new GameApiClient(runtimeConfiguration.gameApiUrl, (forceRefresh) => ensureAccessToken(runtimeConfiguration, forceRefresh));
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Anmeldung fehlgeschlagen.";
     if (journeyMode) {

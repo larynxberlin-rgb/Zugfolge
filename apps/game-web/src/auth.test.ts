@@ -58,8 +58,8 @@ describe("Browser-Anmeldung und Laufzeitkonfiguration", () => {
       "https://identity.example/realms/zugfolge/protocol/openid-connect/token",
       expect.objectContaining({ method: "POST", body: expect.any(URLSearchParams) }),
     );
-    expect(storage.getItem("zugfolge.oidc.state")).toBeNull();
-    expect(storage.getItem("zugfolge.accessToken")).toBe("token-1");
+    expect(storage.getItem("zugfolge.oidc.game-web.state")).toBeNull();
+    expect(storage.getItem("zugfolge.oidc.game-web.accessToken")).toBe("token-1");
     expect(replaceState).toHaveBeenCalledWith({}, "", "https://game.example/");
   });
 
@@ -119,8 +119,8 @@ describe("Browser-Anmeldung und Laufzeitkonfiguration", () => {
     await expect(ensureAccessToken(configuration)).resolves.toBe("");
 
     expect(storage.getItem("zugfolge.accessToken")).toBeNull();
-    expect(storage.getItem("zugfolge.oidc.state")).not.toBe("alter-state");
-    expect(storage.getItem("zugfolge.oidc.verifier")).not.toBe("alter-verifier");
+    expect(storage.getItem("zugfolge.oidc.game-web.state")).not.toBe("alter-state");
+    expect(storage.getItem("zugfolge.oidc.game-web.verifier")).not.toBe("alter-verifier");
     expect(assign).toHaveBeenCalledOnce();
     const authorization = assign.mock.calls[0]?.[0] as URL;
     expect(authorization.pathname).toContain("/protocol/openid-connect/auth");

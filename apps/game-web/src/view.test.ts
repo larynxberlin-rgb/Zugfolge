@@ -94,6 +94,16 @@ describe("Bildfahrplan-Renderer", () => {
     expect(error).toContain('role="alert"');
     expect(error).toContain("&lt;kaputt&gt;");
     expect(error).toContain("?demo=1&amp;world=w");
+    expect(error).toContain('id="planner-retry"');
+    expect(error).toContain("Zur Welt");
+  });
+
+  it("kennzeichnet Beispieldaten dauerhaft und erhaelt den Demo-Parameter in der Navigation", () => {
+    const html = renderProjection(projection(), { ...options, demoMode: true });
+    expect(html).toContain("Demo · Beispieldaten");
+    expect(html).toContain("nicht serverbestätigt");
+    expect(html).toContain("&amp;demo=1");
+    expect(html).not.toContain("Vom Server bestätigt");
   });
 
   it("rendert eine gueltige leere Projektion ohne Beispieldaten oder Zugriff auf Zug 0", () => {

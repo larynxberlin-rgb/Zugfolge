@@ -1,5 +1,5 @@
 {
-  "realm": "zugfolge", "enabled": true, "registrationAllowed": false, "verifyEmail": true,
+  "realm": "zugfolge", "enabled": true, "registrationAllowed": false, "verifyEmail": true, "loginTheme": "zugfolge", "accessTokenLifespan": 900, "ssoSessionIdleTimeout": 28800, "offlineSessionIdleTimeout": 2592000,
   "requiredActions": [{"alias":"VERIFY_EMAIL","name":"Verify Email","providerId":"VERIFY_EMAIL","enabled":true,"defaultAction":true},{"alias":"UPDATE_PASSWORD","name":"Update Password","providerId":"UPDATE_PASSWORD","enabled":true,"defaultAction":true}],
   "roles": {"realm":[{"name":"player"},{"name":"world_admin"}]},
   "groups": [{"name":"players","realmRoles":["player"]},{"name":"world-administrators","realmRoles":["world_admin"]}],

@@ -468,6 +468,20 @@ describe("M13 Entitlement-Grenzen", () => {
     expect(accesses).toEqual([{ worldId: WORLD_LHE }]);
   });
 
+  it("liefert den bereits gebuchten Weltzugang fuer die Browser-Wiederaufnahme", async () => {
+    const token = await sign("kc-access-status", "Access Status");
+    const created = await app.inject({
+      method: "POST",
+      url: `/worlds/${WORLD_LHE}/access`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: "Access Status", acceptedWorldContractHash: TEST_WORLD_CONTRACT_HASH },
+    });
+    expect(created.statusCode).toBe(201);
+    const status = await app.inject({ method: "GET", url: `/worlds/${WORLD_LHE}/access`, headers: { authorization: `Bearer ${token}` } });
+    expect(status.statusCode).toBe(200);
+    expect(status.json<{ id: string }>().id).toBe(created.json<{ id: string }>().id);
+  });
+
   it("laesst private und Tutorialwelten nicht ueber den oeffentlichen Slotpfad betreten", async () => {
     await db.insert(worlds).values([
       {
@@ -1757,6 +1771,20 @@ describe("M3.10 Planner-Projektion und Alternativkommando", () => {
       ),
     }]);
   }
+
+  it("liefert vor dem ersten Planner-Lauf eine gueltige leere Projektion statt 404", async () => {
+    const token = await grantPlanningAccess("planning-empty");
+    const response = await app.inject({
+      method: "GET",
+      url: `/worlds/${WORLD_LHE}/planning/diagram`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      sequence: 0,
+      data: { schemaVersion: "planning-projection/v1", worldId: WORLD_LHE, projectionRevision: 0, stations: [], trains: [], conflicts: [] },
+    });
+  });
 
   it("liefert nur eine strikt validierte und an die URL-Welt gebundene Projektion", async () => {
     const token = await grantPlanningAccess("planning-reader");

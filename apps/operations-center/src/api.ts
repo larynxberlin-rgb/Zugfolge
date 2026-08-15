@@ -68,11 +68,11 @@ interface Template { readonly id: string; readonly name: string; readonly progra
 
 export class OperationsApi {
   readonly #base: string;
-  readonly #token: string;
+  readonly #token: string | ((forceRefresh?: boolean) => Promise<string>);
   readonly #worldId: string;
   readonly #operatorId: string;
 
-  constructor(base: string, token: string, worldId: string, operatorId: string) {
+  constructor(base: string, token: string | ((forceRefresh?: boolean) => Promise<string>), worldId: string, operatorId: string) {
     this.#base = base.replace(/\/$/, "");
     this.#token = token;
     this.#worldId = worldId;
@@ -81,8 +81,14 @@ export class OperationsApi {
 
   get path(): string { return `${this.#base}/worlds/${encodeURIComponent(this.#worldId)}/operators/${encodeURIComponent(this.#operatorId)}`; }
 
+  #accessToken(forceRefresh = false): Promise<string> {
+    return typeof this.#token === "string" ? Promise.resolve(this.#token) : this.#token(forceRefresh);
+  }
+
   async #request<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(`${this.path}${path}`, { ...init, headers: { authorization: `Bearer ${this.#token}`, "content-type": "application/json", ...init?.headers } });
+    const request = async (forceRefresh = false): Promise<Response> => fetch(`${this.path}${path}`, { ...init, headers: { authorization: `Bearer ${await this.#accessToken(forceRefresh)}`, "content-type": "application/json", ...init?.headers } });
+    let response = await request();
+    if ((response.status === 401 || response.status === 403) && typeof this.#token !== "string") response = await request(true);
     if (!response.ok) {
       const body = await response.json().catch(() => ({ error: `HTTP ${response.status}` })) as { error?: string };
       throw new Error(body.error ?? `HTTP ${response.status}`);
@@ -101,7 +107,7 @@ export class OperationsApi {
   generateReport(serviceDay: string): Promise<DailyReportRow> { return this.#request(`/operations/reports/${serviceDay}/generate`, { method: "POST", body: "{}" }); }
 
   async stream(signal: AbortSignal, after: number, onDecision: (decision: OperationsDecision) => void): Promise<void> {
-    const response = await fetch(`${this.path}/operations/events`, { headers: { authorization: `Bearer ${this.#token}`, accept: "text/event-stream", "last-event-id": String(after) }, signal });
+    const response = await fetch(`${this.path}/operations/events`, { headers: { authorization: `Bearer ${await this.#accessToken()}`, accept: "text/event-stream", "last-event-id": String(after) }, signal });
     if (!response.ok || response.body === null) throw new Error(`Live-Betrieb nicht verfügbar (HTTP ${response.status}).`);
     const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
     let buffer = "";

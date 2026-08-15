@@ -104,6 +104,7 @@ function cooperationResourcesResponse(worldId = "world/1", operatorId = "operato
     worldId,
     operatorId,
     fleetRevision: 7,
+    fleetSnapshotHash: "f".repeat(64),
     trainRuns: [option], connectionTrainRuns: [option], formations: [option], personnelDuties: [option],
     pathReceipts: [option], disruptions: [option], rentableVehicles: [option], assistanceVehicles: [option],
   };
@@ -232,6 +233,19 @@ describe("GameApiClient", () => {
     await expect(client.loadPublicWorldContracts()).resolves.toMatchObject([{ noWipe: true, entry: { opensAt: "2026-01-01T00:00:00Z", closesAt: "2026-11-05T00:00:00Z" }, startingCapitalPolicy: { amountCents: "0" } }]);
     await client.enterPublicWorld("world", "Anna", "a".repeat(64));
     expect(JSON.parse(String(fetchImplementation.mock.calls[1]![1]!.body))).toEqual({ displayName: "Anna", acceptedWorldContractHash: "a".repeat(64) });
+  });
+
+  it("loest einen abgebrochenen Welteintritt ueber den idempotenten Zugangsstatus auf", async () => {
+    const account = { id: "account-1", worldId: "world", displayName: "Anna" };
+    const fetchImplementation = vi.fn()
+      .mockRejectedValueOnce(new TypeError("connection closed after commit"))
+      .mockResolvedValueOnce(new Response(JSON.stringify(account), { status: 200 }));
+    const client = new GameApiClient("https://api.test", "token", fetchImplementation as typeof fetch);
+    await expect(client.enterPublicWorld("world", "Anna", "a".repeat(64))).resolves.toEqual(account);
+    expect(fetchImplementation.mock.calls.map(([input, init]) => [String(input), init?.method ?? "GET"])).toEqual([
+      ["https://api.test/worlds/world/access", "POST"],
+      ["https://api.test/worlds/world/access", "GET"],
+    ]);
   });
 
   it("akzeptiert den geplanten Eintrittsstatus als getrennten Weltvertrag", async () => {

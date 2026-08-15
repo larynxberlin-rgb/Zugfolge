@@ -55,7 +55,9 @@ services:
       LIVEMAP_URL: "${LIVEMAP_PUBLIC_URL:-http://localhost:4174}"
       OPERATIONS_CENTER_URL: "${OPERATIONS_CENTER_URL}"
       KEYCLOAK_ADMIN_CLIENT_SECRET: "${KEYCLOAK_ADMIN_CLIENT_SECRET}"
-    volumes: [./ops/alpha/keycloak/zugfolge-realm.json:/opt/keycloak/data/import/zugfolge-realm.json:ro]
+    volumes:
+      - ./ops/alpha/keycloak/zugfolge-realm.json:/opt/keycloak/data/import/zugfolge-realm.json:ro
+      - ./ops/alpha/keycloak/themes/zugfolge:/opt/keycloak/themes/zugfolge:ro
     networks:
       default: {}
       proxy: { aliases: [zugfolge-keycloak] }
@@ -63,6 +65,19 @@ services:
     depends_on: { postgres: { condition: service_healthy } }
     healthcheck: { <<: *health, test: [CMD-SHELL, "exec 3<>/dev/tcp/127.0.0.1/9000; echo -e 'GET /health/ready HTTP/1.1\r\nhost: localhost\r\nConnection: close\r\n\r\n' >&3; grep -q UP <&3"] }
     ports: ["${KEYCLOAK_PORT:-8080}:8080"]
+  keycloak-reconcile:
+    image: zugfolge-game-api
+    command: [node, tools/alpha-ops/reconcile-keycloak-clients.mjs]
+    env_file: [.env]
+    environment:
+      KEYCLOAK_ADMIN_URL: http://keycloak:8080
+      KEYCLOAK_REALM: "${KEYCLOAK_REALM:-zugfolge}"
+      KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME: "${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME}"
+      KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD: "${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD}"
+      GAME_WEB_URL: "${GAME_WEB_URL}"
+      LIVEMAP_URL: "${LIVEMAP_PUBLIC_URL:-http://localhost:4174}"
+      OPERATIONS_CENTER_URL: "${OPERATIONS_CENTER_URL:-http://localhost:4175}"
+    depends_on: { keycloak: { condition: service_healthy } }
   map-release-preflight:
     image: zugfolge-game-api
     command: [node, tools/alpha-ops/map-release-deployment-preflight.mjs, "${MAP_RELEASE_START_PREFLIGHT_MODE:?MAP_RELEASE_START_PREFLIGHT_MODE fehlt}"]
@@ -135,7 +150,7 @@ services:
       - "${MAP_RELEASE_PREFLIGHT_HOST_DIR:?MAP_RELEASE_PREFLIGHT_HOST_DIR fehlt}:/map-preflight:ro"
       - "${MAP_RELEASE_RESTORE_HOST_DIR:?MAP_RELEASE_RESTORE_HOST_DIR fehlt}:/map-restore:ro"
       - "${INFRA_PACKAGE_STAGING_HOST_DIR:-./var/infra-package-staging}:/infra-package-staging:rw"
-    depends_on: { game-bootstrap: { condition: service_completed_successfully }, keycloak: { condition: service_healthy } }
+    depends_on: { game-bootstrap: { condition: service_completed_successfully }, keycloak-reconcile: { condition: service_completed_successfully } }
     healthcheck: { <<: *health, start_period: 15m, test: [CMD, node, -e, "fetch('http://localhost:3000/health/ready').then(async r=>{const body=await r.json();if(!r.ok||body.status==='down')process.exit(1)})"] }
     ports: ["${GAME_API_PORT:-3000}:3000"]
   game-web:
@@ -153,7 +168,7 @@ services:
     networks:
       default: {}
       proxy: { aliases: [zugfolge-world-web] }
-    healthcheck: { <<: *health, test: [CMD, node, -e, "fetch('http://localhost:4173/').then(r=>{if(!r.ok)process.exit(1)})"] }
+    healthcheck: { <<: *health, test: [CMD, node, -e, "fetch('http://localhost:4173/').then(async r=>{if(!r.ok||!(await r.text()).includes('content=\"game-web\"'))process.exit(1)})"] }
     ports: ["${GAME_WEB_PORT:-4173}:4173"]
   livemap:
     image: zugfolge-game-api
@@ -188,7 +203,7 @@ services:
     networks:
       default: {}
       proxy: { aliases: [zugfolge-world-livemap] }
-    healthcheck: { <<: *health, test: [CMD, node, -e, "const b='http://localhost:4174';Promise.all([fetch(b),fetch(b+'/runtime-config.js'),fetch(new URL(process.env.MAP_BASEMAP_STYLE_URL,b),{headers:{range:'bytes=0-0'}}),fetch(new URL(process.env.MAP_GERMANY_PMTILES_URL,b),{headers:{range:'bytes=0-126'}})]).then(([p,c,s,i])=>{if(!p.ok||!c.ok||s.status!==206||i.status!==206)process.exit(1)})"] }
+    healthcheck: { <<: *health, test: [CMD, node, -e, "const b='http://localhost:4174';Promise.all([fetch(b),fetch(b+'/runtime-config.js'),fetch(new URL(process.env.MAP_BASEMAP_STYLE_URL,b),{headers:{range:'bytes=0-0'}}),fetch(new URL(process.env.MAP_GERMANY_PMTILES_URL,b),{headers:{range:'bytes=0-126'}})]).then(async([p,c,s,i])=>{if(!p.ok||!(await p.text()).includes('content=\"livemap\"')||!c.ok||s.status!==206||i.status!==206)process.exit(1)})"] }
     ports: ["${LIVEMAP_PORT:-4174}:4174"]
   operations-center:
     image: zugfolge-game-api
@@ -196,8 +211,16 @@ services:
     environment:
       GAME_API_INTERNAL_URL: http://game-api:3000
       GAME_API_PUBLIC_URL: "${GAME_API_PUBLIC_URL:-/api}"
+      KEYCLOAK_PUBLIC_URL: "${KEYCLOAK_PUBLIC_URL}"
+      KEYCLOAK_REALM: "${KEYCLOAK_REALM:-zugfolge}"
+      OPERATIONS_CENTER_OIDC_CLIENT_ID: "${OPERATIONS_CENTER_OIDC_CLIENT_ID:-operations-center}"
+      GAME_WEB_PUBLIC_URL: "${GAME_WEB_PUBLIC_URL:-http://localhost:4173}"
+      OPERATIONS_CENTER_URL: "${OPERATIONS_CENTER_URL:-http://localhost:4175}"
     depends_on: { game-api: { condition: service_healthy } }
-    healthcheck: { <<: *health, test: [CMD, node, -e, "fetch('http://localhost:4175/').then(r=>{if(!r.ok)process.exit(1)})"] }
+    networks:
+      default: {}
+      proxy: { aliases: [zugfolge-world-operations-center] }
+    healthcheck: { <<: *health, test: [CMD, node, -e, "fetch('http://localhost:4175/').then(async r=>{if(!r.ok||!(await r.text()).includes('content=\"operations-center\"'))process.exit(1)})"] }
     ports: ["${OPERATIONS_CENTER_PORT:-4175}:4175"]
   static:
     image: zugfolge-game-api

@@ -1,0 +1,19 @@
+world.zugfolge.de {
+	encode zstd gzip
+
+	handle_path /operations/* {
+		reverse_proxy zugfolge-world-operations-center:4175
+	}
+
+	handle_path /livemap/* {
+		reverse_proxy zugfolge-world-livemap:4174
+	}
+
+	handle_path /api/* {
+		reverse_proxy zugfolge-game-api:3000
+	}
+
+	handle {
+		reverse_proxy zugfolge-world-web:4173
+	}
+}
