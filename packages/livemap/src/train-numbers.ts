@@ -1,4 +1,4 @@
-export const PUBLIC_REGIONAL_TRAIN_NUMBER_MINIMUM = 39_000;
+export const PUBLIC_REGIONAL_TRAIN_NUMBER_MINIMUM = 35_000;
 export const PUBLIC_REGIONAL_TRAIN_NUMBER_MAXIMUM = 39_999;
 
 function compareUtf8(left: string, right: string): number {
@@ -8,7 +8,7 @@ function compareUtf8(left: string, right: string): number {
 /**
  * Deterministische, weltweite Reservierung fuer die importierten oeffentlichen
  * Regionalfahrten. Der Bereich bleibt getrennt von den Spielerfahrten
- * (20.000 bis 38.999), damit auch spaetere Planungen keine Nummer duplizieren.
+ * (20.000 bis 34.999), damit auch spaetere Planungen keine Nummer duplizieren.
  */
 export function allocatePublicRegionalTrainNumbers(
   trainRunIds: Iterable<string>,
