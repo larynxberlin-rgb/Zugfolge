@@ -9,5 +9,6 @@ test("der produktive Start gleicht alle drei Browser-Clients idempotent ab", asy
   assert.match(compose, /reconcile-keycloak-clients\.mjs/);
   assert.match(script, /\["operations-center", process\.env\.OPERATIONS_CENTER_URL\]/);
   assert.match(script, /method: "PUT"/);
-  assert.match(script, /accessTokenLifespan: 900/);
+  assert.match(script, /accessTokenLifespan: 86_400/);
+  assert.match(script, /ssoSessionIdleTimeout: 2_592_000/);
 });

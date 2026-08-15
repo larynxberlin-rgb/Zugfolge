@@ -24,7 +24,7 @@ const realmRepresentation = await realmResponse.json();
 await checked(await fetch(`${baseUrl}/admin/realms/${encodeURIComponent(realm)}`, {
   method: "PUT",
   headers,
-  body: JSON.stringify({ ...realmRepresentation, loginTheme: "zugfolge", accessTokenLifespan: 900, ssoSessionIdleTimeout: 28_800, offlineSessionIdleTimeout: 2_592_000 }),
+  body: JSON.stringify({ ...realmRepresentation, loginTheme: "zugfolge", accessTokenLifespan: 86_400, ssoSessionIdleTimeout: 2_592_000, offlineSessionIdleTimeout: 2_592_000 }),
 }), "Sitzungslaufzeiten abgleichen");
 
 const clients = [

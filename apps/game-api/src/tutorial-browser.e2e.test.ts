@@ -387,7 +387,7 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
     const authenticationError = page.locator(".journey-message--error");
     await expect.poll(() => authenticationError.innerText()).toContain("Anmeldung erforderlich");
     await expect.poll(() => authenticationError.evaluate((element) => document.activeElement === element)).toBe(true);
-    await page.getByRole("button", { name: "Anmeldung neu beginnen" }).click();
+    await page.getByRole("button", { name: "Erneut versuchen" }).click();
     await expect.poll(() => authenticationUrls.length).toBe(1);
     const authorization = new URL(authenticationUrls[0]!);
     expect(authorization.pathname).toContain("/protocol/openid-connect/auth");

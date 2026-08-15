@@ -26,5 +26,6 @@ test("alle Browseroberflaechen besitzen getrennte, eng begrenzte OIDC-Clients", 
   assert.deepEqual(operationsCenter.redirectUris, ["${OPERATIONS_CENTER_URL}/*"]);
   assert.deepEqual(operationsCenter.webOrigins, ["${OPERATIONS_CENTER_URL}"]);
   assert.equal(operationsCenter.publicClient, true);
-  assert.equal(realm.accessTokenLifespan, 900);
+  assert.equal(realm.accessTokenLifespan, 86_400);
+  assert.equal(realm.ssoSessionIdleTimeout, 2_592_000);
 });
