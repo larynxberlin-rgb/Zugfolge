@@ -130,7 +130,7 @@ function fakeRuntime(gap = false): RegionalSimulationRuntime {
         snapshot: snapshot(state),
       };
     },
-    apply(inputState, envelope) {
+    async apply(inputState, envelope) {
       const state = inputState as FakeState;
       const replay = state.commands.find((item) => item.id === envelope.commandId);
       if (replay !== undefined) {
@@ -272,12 +272,12 @@ function fakeRuntime(gap = false): RegionalSimulationRuntime {
         idempotentReplay: false,
       };
     },
-    applyBatch(inputState, batch) {
+    async applyBatch(inputState, batch) {
       let state = inputState as FakeState;
       const events: RegionalSimulationEvent[] = [];
       const commandResults: Array<{ commandId: string; idempotentReplay: boolean }> = [];
       for (const command of batch.commands) {
-        const result = runtime.apply(state, {
+        const result = await runtime.apply(state, {
           schemaVersion: REGIONAL_SIMULATION_COMMAND_SCHEMA,
           worldId: batch.worldId,
           regionId: batch.regionId,

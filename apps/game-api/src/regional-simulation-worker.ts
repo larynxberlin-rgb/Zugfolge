@@ -518,7 +518,7 @@ export class RegionalSimulationWorker {
         throw new RegionalSimulationUnavailableError(work.worldId, work.regionId);
       }
       const state = persistedState(row);
-      const result = this.#runtime.apply(state, {
+      const result = await this.#runtime.apply(state, {
         schemaVersion: REGIONAL_SIMULATION_COMMAND_SCHEMA,
         worldId: work.worldId,
         regionId: work.regionId,
@@ -689,7 +689,7 @@ export class RegionalSimulationWorker {
         throw new RegionalSimulationUnavailableError(work.worldId, work.regionId);
       }
       const state = persistedState(row);
-      const result = this.#runtime.applyBatch(state, {
+      const result = await this.#runtime.applyBatch(state, {
         schemaVersion: REGIONAL_SIMULATION_COMMAND_BATCH_SCHEMA,
         worldId: work.worldId,
         regionId: work.regionId,
