@@ -1,23 +1,48 @@
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+
 const baseUrl = (process.env.KEYCLOAK_ADMIN_URL ?? "http://keycloak:8080").replace(/\/$/, "");
 const realm = process.env.KEYCLOAK_REALM ?? "zugfolge";
 const username = process.env.KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME ?? "";
 const password = process.env.KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD ?? "";
-
-if (username === "" || password === "") throw new Error("Keycloak-Administrator fuer den Client-Abgleich fehlt.");
+const clientId = process.env.KEYCLOAK_ADMIN_CLIENT_ID ?? "";
+const clientSecret = process.env.KEYCLOAK_ADMIN_CLIENT_SECRET ?? "";
 
 async function checked(response, action) {
   if (!response.ok) throw new Error(`${action} ist fehlgeschlagen (HTTP ${response.status}).`);
   return response;
 }
 
-const tokenResponse = await checked(await fetch(`${baseUrl}/realms/master/protocol/openid-connect/token`, {
-  method: "POST",
-  headers: { "content-type": "application/x-www-form-urlencoded" },
-  body: new URLSearchParams({ grant_type: "password", client_id: "admin-cli", username, password }),
-}), "Keycloak-Administratoranmeldung");
-const token = (await tokenResponse.json()).access_token;
-if (typeof token !== "string" || token === "") throw new Error("Keycloak lieferte kein Administratortoken.");
-const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+export async function requestKeycloakAdminToken(configuration, fetchImplementation = fetch) {
+  const serviceAccountConfigured = configuration.clientId !== "" || configuration.clientSecret !== "";
+  let tokenResponse;
+  if (serviceAccountConfigured) {
+    if (configuration.clientId === "" || configuration.clientSecret === "") {
+      throw new Error("Keycloak-Servicekonto fuer den Client-Abgleich ist unvollstaendig.");
+    }
+    tokenResponse = await checked(await fetchImplementation(`${configuration.baseUrl}/realms/${encodeURIComponent(configuration.realm)}/protocol/openid-connect/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "client_credentials", client_id: configuration.clientId, client_secret: configuration.clientSecret }),
+    }), "Keycloak-Servicekontoanmeldung");
+  } else {
+    if (configuration.username === "" || configuration.password === "") {
+      throw new Error("Keycloak-Administrator fuer den Client-Abgleich fehlt.");
+    }
+    tokenResponse = await checked(await fetchImplementation(`${configuration.baseUrl}/realms/master/protocol/openid-connect/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "password", client_id: "admin-cli", username: configuration.username, password: configuration.password }),
+    }), "Keycloak-Administratoranmeldung");
+  }
+  const token = (await tokenResponse.json()).access_token;
+  if (typeof token !== "string" || token === "") throw new Error("Keycloak lieferte kein Administratortoken.");
+  return token;
+}
+
+async function reconcileKeycloakClients() {
+  const token = await requestKeycloakAdminToken({ baseUrl, realm, clientId, clientSecret, username, password });
+  const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
 
 const realmResponse = await checked(await fetch(`${baseUrl}/admin/realms/${encodeURIComponent(realm)}`, { headers }), "Realm lesen");
 const realmRepresentation = await realmResponse.json();
@@ -55,4 +80,10 @@ for (const [clientId, publicUrl] of clients) {
   }
 }
 
-console.log(`Keycloak-Realm ${realm}: Browser-Clients und Sitzungslaufzeiten abgeglichen.`);
+  console.log(`Keycloak-Realm ${realm}: Browser-Clients und Sitzungslaufzeiten abgeglichen.`);
+}
+
+const invokedPath = process.argv[1] === undefined ? undefined : pathToFileURL(resolve(process.argv[1])).href;
+if (invokedPath === import.meta.url) {
+  await reconcileKeycloakClients();
+}
