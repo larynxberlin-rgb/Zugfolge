@@ -13,6 +13,13 @@ export interface MailboxDecisionReference {
   readonly payload: Readonly<Record<string, unknown>>;
 }
 
+const OIDC_CALLBACK_PARAMETERS = ["code", "state", "session_state", "iss", "error", "error_description"] as const;
+
+function withoutOidcCallback(url: URL): URL {
+  for (const parameter of OIDC_CALLBACK_PARAMETERS) url.searchParams.delete(parameter);
+  return url;
+}
+
 function gameDestination(
   gameWebUrl: string,
   pageUrl: string,
@@ -21,7 +28,7 @@ function gameDestination(
   hash = "",
   context: Readonly<Record<string, string>> = {},
 ): string {
-  const destination = new URL(gameWebUrl.trim() === "" ? "/" : gameWebUrl, pageUrl);
+  const destination = withoutOidcCallback(new URL(gameWebUrl.trim() === "" ? "/" : gameWebUrl, pageUrl));
   destination.searchParams.set("view", view);
   if (worldId !== "") destination.searchParams.set("world", worldId);
   for (const [key, value] of Object.entries(context)) destination.searchParams.set(key, value);
@@ -35,7 +42,7 @@ export function livemapNavigationDestinations(
   pageUrl: string,
   worldId: string,
 ): LivemapNavigationDestinations {
-  const live = new URL(pageUrl);
+  const live = withoutOidcCallback(new URL(pageUrl));
   live.searchParams.delete("focus");
   if (worldId !== "") live.searchParams.set("world", worldId);
   return Object.freeze({
@@ -77,7 +84,7 @@ export function mailboxDecisionDestination(
   const listingId = payloadIdentifier(message.payload, "listingId");
   const trainId = payloadIdentifier(message.payload, "trainId");
   if (message.messageType.includes("path") || message.messageType.includes("planning")) {
-    const destination = new URL(gameWebUrl.trim() === "" ? "/" : gameWebUrl, pageUrl);
+    const destination = withoutOidcCallback(new URL(gameWebUrl.trim() === "" ? "/" : gameWebUrl, pageUrl));
     destination.searchParams.set("view", "diagram");
     destination.searchParams.set("world", worldId);
     if (trainId !== undefined) destination.searchParams.set("train", trainId);

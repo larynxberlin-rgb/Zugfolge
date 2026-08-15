@@ -296,6 +296,7 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
         schemaVersion: "zugfolge-cooperation-resource-catalog/v1", worldId: SECOND_WORLD, operatorId: ownB, fleetRevision: null,
         trainRuns: [{ id: "run-browser", label: "RE 12", detail: "Regionalzug" }], connectionTrainRuns: [],
         formations: [{ id: "formation-browser", label: "Formation RE 12", detail: "einsatzbereit" }],
+        publicEntryFacilities: [],
         personnelDuties: [{ id: "duty-browser", label: "Personaldienst RE 12", detail: "gueltig" }],
         pathReceipts: [{ id: "path-browser", label: "Trasse RE 12", detail: "bestaetigt" }],
         disruptions: [], rentableVehicles: [], assistanceVehicles: [],

@@ -9,6 +9,8 @@ function external(overrides: Partial<PublicExternalTrain> = {}): PublicExternalT
 describe("Livemap-Praesentation", () => {
   it("zeigt technische Kennungen und Status als verständliches Deutsch", () => {
     expect(railwayPlaceLabel("lutherstadt-wittenberg-hbf")).toBe("Lutherstadt Wittenberg Hbf");
+    expect(railwayPlaceLabel("External Origin:el C2909f16ec8123d82ddc188f")).toBe("Außenherkunft");
+    expect(railwayPlaceLabel("external destination:el 0123456789abcdef")).toBe("Außenziel");
     expect(operatingStatusLabel("at_platform")).toBe("am Bahnsteig");
     expect(externalStatusLabel("waiting-for-capacity")).toBe("wartet auf freie Kapazität");
   });

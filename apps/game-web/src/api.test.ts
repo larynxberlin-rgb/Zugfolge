@@ -106,6 +106,7 @@ function cooperationResourcesResponse(worldId = "world/1", operatorId = "operato
     fleetRevision: 7,
     fleetSnapshotHash: "f".repeat(64),
     trainRuns: [option], connectionTrainRuns: [option], formations: [option], personnelDuties: [option],
+    publicEntryFacilities: [{ ...option, id: "lot-1:formation-1", lotId: "lot-1", formationId: "formation-1", personnelDutyIds: ["duty-1"], pathReservationIds: ["reservation-1"] }],
     pathReceipts: [option], disruptions: [option], rentableVehicles: [option], assistanceVehicles: [option],
   };
 }
@@ -221,6 +222,10 @@ describe("GameApiClient", () => {
     await expect(foreign.loadCooperationResources("world", "operator")).rejects.toThrow(/anderen Welt/);
     const incomplete = new GameApiClient("", "token", async () => new Response(JSON.stringify({ ...cooperationResourcesResponse("world", "operator"), rentableVehicles: [{ id: "raw" }] })));
     await expect(incomplete.loadCooperationResources("world", "operator")).rejects.toThrow(/Kooperationsressourcen\.rentableVehicles\[0\]/);
+    const incompleteFacility = cooperationResourcesResponse("world", "operator");
+    (incompleteFacility["publicEntryFacilities"] as Record<string, unknown>[])[0]!["pathReservationIds"] = [];
+    await expect(new GameApiClient("", "token", async () => new Response(JSON.stringify(incompleteFacility))).loadCooperationResources("world", "operator"))
+      .rejects.toThrow(/pathReservationIds ist leer/);
   });
 
   it("beendet eine nicht antwortende Spielerreise und meldet einen wiederholbaren Fehler", async () => {

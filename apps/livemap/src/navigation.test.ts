@@ -26,6 +26,18 @@ describe("weltbewusste Hauptnavigation der Live-Lage", () => {
     expect(links.every((link) => link !== "#" && new URL(link).searchParams.get("world") === "welt-a")).toBe(true);
   });
 
+  it("entfernt kurzlebige OIDC-Rückgabeparameter aus allen internen Links", () => {
+    const callback = "https://spiel.example/live/?world=welt-a&code=once&state=s&session_state=k&iss=https%3A%2F%2Fid.example&focus=train%3A7";
+    const destinations = livemapNavigationDestinations("/game/", callback, "welt-a");
+    for (const destination of Object.values(destinations)) {
+      const url = new URL(destination);
+      for (const parameter of ["code", "state", "session_state", "iss"]) expect(url.searchParams.has(parameter)).toBe(false);
+    }
+    expect(mailboxDecisionDestination("/game/", callback, "welt-a", {
+      worldId: "welt-a", messageType: "planning.path-offered", payload: { trainId: "zug-1" },
+    })).toBe("https://spiel.example/game/?view=diagram&world=welt-a&train=zug-1#diagram-card");
+  });
+
   it("verweist nur auf im Spieler-Markup vorhandene Hauptziele", () => {
     const destinations = livemapNavigationDestinations("/", "https://spiel.example/live/", "welt-a");
     const source = `${journeySource}\n${cooperationSource}`;

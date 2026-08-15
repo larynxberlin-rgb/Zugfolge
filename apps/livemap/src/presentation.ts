@@ -4,6 +4,9 @@ const WORDS: Readonly<Record<string, string>> = { hbf: "Hbf", bf: "Bf", ost: "Os
 
 export function railwayPlaceLabel(identifier: string | null): string {
   if (identifier === null || identifier.trim() === "") return "Außenziel";
+  const external = /^external\s+(origin|destination):/i.exec(identifier.trim());
+  if (external?.[1]?.toLowerCase() === "origin") return "Außenherkunft";
+  if (external?.[1]?.toLowerCase() === "destination") return "Außenziel";
   return identifier.split(/[-_]+/).filter(Boolean).map((part) => WORDS[part.toLowerCase()] ?? `${part[0]?.toLocaleUpperCase("de") ?? ""}${part.slice(1)}`).join(" ");
 }
 

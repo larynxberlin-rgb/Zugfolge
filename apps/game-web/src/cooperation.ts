@@ -423,7 +423,12 @@ export function renderCooperationSurface(state: CooperationSurfaceState): string
   }
   const own = state.operators.filter((operator) => state.ownOperatorIds.includes(operator.id));
   const openTenders = (state.tenders ?? []).filter((tender) => tender.phase === "open");
-  const tenderSurface = `<section class="journey-card m12-card" id="ausschreibungen"><div class="journey-heading"><div><p class="eyebrow">VERKEHRSVERTRÄGE</p><h2>An Ausschreibung teilnehmen</h2></div><span class="state-word">${openTenders.length} offen</span></div>${openTenders.length === 0 ? '<p class="m12-empty">Derzeit ist keine Ausschreibung zur Angebotsabgabe geöffnet.</p>' : `<form id="tender-bid-form" class="m12-form" data-preserve-draft><label class="m12-field"><span>Ausschreibung</span><select name="tenderId">${openTenders.map((tender) => `<option value="${escapeHtml(tender.id)}">Los ${escapeHtml(tender.lotId)} · ${tender.bidCount} Angebot(e)</option>`).join("")}</select></label><label class="m12-field"><span>Formation</span><select name="formationId">${(state.resources?.formations ?? []).map((formation) => `<option value="${escapeHtml(formation.id)}">${escapeHtml(formation.label)}</option>`).join("")}</select></label>${field("orderingFeeEuros", "Bestellentgelt · Euro je Zug-km", { value: "10,00" })}${field("punctualityPercent", "Pünktlichkeitszusage · Prozent", { type: "number", min: 0, value: "95" })}${field("extraSeats", "Zusätzliche Sitzplätze", { type: "number", min: 0, value: "0" })}<button type="submit"${state.resources?.fleetRevision === null || state.resources?.fleetSnapshotHash === null || (state.resources?.formations.length ?? 0) === 0 ? " disabled" : ""}>Angebot verbindlich abgeben</button></form>`}</section>`;
+  const ownFormationOptions = (state.resources?.formations ?? []).map((formation) => `<option value="own:${escapeHtml(formation.id)}" data-lot-id="">Eigene Formation · ${escapeHtml(formation.label)}</option>`).join("");
+  const facilityOptions = (state.resources?.publicEntryFacilities ?? []).map((facility) => `<option value="public:${escapeHtml(facility.id)}" data-lot-id="${escapeHtml(facility.lotId)}">${escapeHtml(facility.label)}</option>`).join("");
+  const resourcesReady = !state.busy && state.resources?.fleetRevision !== null && state.resources?.fleetRevision !== undefined && state.resources.fleetSnapshotHash !== null;
+  const initialLotId = openTenders[0]?.lotId ?? "";
+  const hasInitialTenderFormation = ownFormationOptions !== "" || (state.resources?.publicEntryFacilities ?? []).some((facility) => facility.lotId === initialLotId);
+  const tenderSurface = `<section class="journey-card m12-card" id="ausschreibungen"><div class="journey-heading"><div><p class="eyebrow">VERKEHRSVERTRÄGE</p><h2>An Ausschreibung teilnehmen</h2></div><span class="state-word">${openTenders.length} offen</span></div>${openTenders.length === 0 ? '<p class="m12-empty">Derzeit ist keine Ausschreibung zur Angebotsabgabe geöffnet.</p>' : `<form id="tender-bid-form" class="m12-form" data-preserve-draft><label class="m12-field"><span>Ausschreibung</span><select id="tender-bid-tender" name="tenderId">${openTenders.map((tender) => `<option value="${escapeHtml(tender.id)}" data-lot-id="${escapeHtml(tender.lotId)}">Los ${escapeHtml(tender.lotId)} · ${tender.bidCount} Angebot(e)</option>`).join("")}</select></label><label class="m12-field"><span>Betriebsbereitstellung</span><select id="tender-bid-formation" name="formationId">${ownFormationOptions}${facilityOptions}</select></label>${facilityOptions === "" ? "" : '<p class="resource-note">Der öffentliche Anschubvertrag ist ein zuschlagsgebundener Wet-Lease. Erst bei Zuschlag werden Formation, Personal und Trasse bereitgestellt; die Betriebskosten trägt Ihr EVU.</p>'}${field("orderingFeeEuros", "Bestellentgelt · Euro je Zug-km", { value: "10,00" })}${field("punctualityPercent", "Pünktlichkeitszusage · Prozent", { type: "number", min: 0, value: "95" })}${field("extraSeats", "Zusätzliche Sitzplätze", { type: "number", min: 0, value: "0" })}<button id="tender-bid-submit" type="submit" data-resources-ready="${resourcesReady}"${!resourcesReady || !hasInitialTenderFormation ? " disabled" : ""}>Angebot verbindlich abgeben</button></form>`}</section>`;
   const html = `<section class="m12-surface" aria-busy="${state.busy}">
     <div class="m12-toolbar"><label><span>Handelndes EVU in ${escapeHtml(state.worldName)}</span><select id="m12-operator">${own.map((operator) => `<option value="${escapeHtml(operator.id)}"${operator.id === state.activeOperatorId ? " selected" : ""}>${escapeHtml(operator.name)}</option>`).join("")}</select></label><div class="m12-clock"><span>Synchronisierte Weltzeit</span><output id="m12-time">Betriebstag ${Math.floor(state.atS / 86_400) + 1}</output></div><button id="m12-refresh" class="secondary" type="button">Kooperation und Markt aktualisieren</button></div>
     <div class="m12-grid">${tenderSurface}${operationsSurface(state)}${contractSurface(state)}${marketSurface(state)}</div>
@@ -442,6 +447,24 @@ function invoke(action: (() => void | Promise<void>) | undefined): void {
 }
 
 export function bindCooperationSurface(root: ParentNode, actions: CooperationSurfaceActions): void {
+  const tender = root.querySelector<HTMLSelectElement>("#tender-bid-tender");
+  const formation = root.querySelector<HTMLSelectElement>("#tender-bid-formation");
+  const submit = root.querySelector<HTMLButtonElement>("#tender-bid-submit");
+  const syncTenderFacilities = (): void => {
+    if (tender === null || formation === null) return;
+    const lotId = tender.selectedOptions[0]?.dataset["lotId"] ?? "";
+    let firstEnabled: HTMLOptionElement | undefined;
+    for (const option of formation.options) {
+      const enabled = option.dataset["lotId"] === "" || option.dataset["lotId"] === lotId;
+      option.disabled = !enabled;
+      option.hidden = !enabled;
+      if (enabled && firstEnabled === undefined) firstEnabled = option;
+    }
+    if (formation.selectedOptions[0]?.disabled === true && firstEnabled !== undefined) formation.value = firstEnabled.value;
+    if (submit !== null) submit.disabled = submit.dataset["resourcesReady"] !== "true" || firstEnabled === undefined;
+  };
+  tender?.addEventListener("change", syncTenderFacilities);
+  syncTenderFacilities();
   root.querySelector<HTMLFormElement>("#operator-foundation-form")?.addEventListener("submit", (event) => {
     event.preventDefault();
     invoke(() => actions.createOperator?.(String(new FormData(event.currentTarget as HTMLFormElement).get("name") ?? "").trim()));
