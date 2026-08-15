@@ -45,7 +45,7 @@ async function currentMainMigrationsFolder(): Promise<string> {
   return folder;
 }
 
-it("migriert ein aktuelles 0022-Schema vorwaerts auf 0023 und 0024", async () => {
+it("migriert ein aktuelles 0022-Schema vorwaerts bis 0025", async () => {
   const previousMigrationsFolder = await currentMainMigrationsFolder();
   const client = new PGlite();
   const db = drizzle(client);
@@ -66,6 +66,9 @@ it("migriert ein aktuelles 0022-Schema vorwaerts auf 0023 und 0024", async () =>
       .resolves.toBeDefined();
     await expect(client.query("select world_id, keycloak_subject, state from world_participations limit 0"))
       .resolves.toBeDefined();
+    await expect(client.query<{ constraint_count: number }>(
+      "select count(*)::int as constraint_count from pg_constraint where conname = 'odoo_reconciliation_tasks_world_fk'",
+    )).resolves.toMatchObject({ rows: [{ constraint_count: 0 }] });
   } finally {
     await client.close();
     await rm(previousMigrationsFolder, { recursive: true, force: true });

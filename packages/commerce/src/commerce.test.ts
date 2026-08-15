@@ -898,6 +898,27 @@ describe("Vier-Augen-Validierung", () => {
 });
 
 describe("nächtliche Reconciliation", () => {
+  it("persistiert einen fehlenden globalen world_deploy-Beleg ohne erfundene Welt", async () => {
+    const globalScope = "00000000-0000-0000-0000-000000000000";
+    const [row] = await db.insert(odooProjectionOutbox).values({
+      worldId: globalScope,
+      messageType: "admin.capability.projection",
+      schemaVersion: "zugfolge-odoo/v1",
+      correlationId: "startup:global:world_deploy",
+      payload: { actionType: "world_deploy", availability: "available" },
+      occurredAt: NOW,
+      enqueuedAt: NOW,
+      deliveredAt: NOW,
+    }).returning();
+
+    await expect(reconcileOdooProjectionSnapshot(db, [], NOW)).resolves.toMatchObject([
+      { messageId: row!.id, worldId: globalScope, issueKind: "missing" },
+    ]);
+    await expect(db.select().from(odooReconciliationTasks)).resolves.toContainEqual(
+      expect.objectContaining({ messageId: row!.id, worldId: globalScope, issueKind: "missing", status: "open" }),
+    );
+  });
+
   it("erstellt fehlende, doppelte und divergente Befunde statt Daten zu überschreiben", async () => {
     const [row] = await db.insert(odooProjectionOutbox).values({ worldId: WORLD, messageType: "world.projection", schemaVersion: "zugfolge-odoo/v1", correlationId: "correlation-reconcile", payload: { version: 1 }, occurredAt: NOW, enqueuedAt: NOW, deliveredAt: NOW }).returning();
     const expected = [{ id: row!.id, worldId: WORLD, correlationId: "correlation-reconcile", payload: { version: 1 } }];

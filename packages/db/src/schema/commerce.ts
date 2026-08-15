@@ -196,7 +196,9 @@ export const odooReconciliationTasks = pgTable(
   "odoo_reconciliation_tasks",
   {
     id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-    worldId: uuid("world_id").notNull().references(() => worlds.id),
+    // Derselbe Projektionsscope wie in der Outbox: normalerweise eine Welt-ID,
+    // fuer pre-world Verwaltungsbelege aber auch die reservierte globale UUID.
+    worldId: uuid("world_id").notNull(),
     messageId: uuid("message_id").notNull().references(() => odooProjectionOutbox.id),
     issueKind: text("issue_kind", { enum: ["missing", "duplicate", "divergent"] }).notNull(),
     correlationId: text("correlation_id").notNull(),
