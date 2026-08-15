@@ -4,10 +4,14 @@ const WORDS: Readonly<Record<string, string>> = { hbf: "Hbf", bf: "Bf", ost: "Os
 
 export function railwayPlaceLabel(identifier: string | null): string {
   if (identifier === null || identifier.trim() === "") return "Außenziel";
-  const external = /^external\s+(origin|destination):/i.exec(identifier.trim());
-  if (external?.[1]?.toLowerCase() === "origin") return "Außenherkunft";
-  if (external?.[1]?.toLowerCase() === "destination") return "Außenziel";
-  return identifier.split(/[-_]+/).filter(Boolean).map((part) => WORDS[part.toLowerCase()] ?? `${part[0]?.toLocaleUpperCase("de") ?? ""}${part.slice(1)}`).join(" ");
+  const normalized = identifier.trim();
+  const colon = normalized.indexOf(":");
+  const externalKind = colon < 0
+    ? ""
+    : normalized.slice(0, colon).replace(/[\s_-]+/gu, "").toLocaleLowerCase("de");
+  if (externalKind === "externalorigin") return "Außenherkunft";
+  if (externalKind === "externaldestination") return "Außenziel";
+  return normalized.split(/[-_]+/).filter(Boolean).map((part) => WORDS[part.toLowerCase()] ?? `${part[0]?.toLocaleUpperCase("de") ?? ""}${part.slice(1)}`).join(" ");
 }
 
 export function operatingStatusLabel(status: OperatingStatus): string {

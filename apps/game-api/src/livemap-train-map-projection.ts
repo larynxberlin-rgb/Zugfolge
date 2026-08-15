@@ -10,6 +10,7 @@ import {
 import type {
   LivemapConfigV2,
   PublicInfrastructureDisruption,
+  PublicExternalTrain,
   PublicMapEstimate,
   PublicMapPosition,
   PublicObjectState,
@@ -224,19 +225,32 @@ function projectionTrainId(train: PublicTrain): string | undefined {
   return verifiedBaseTrainRunId(train);
 }
 
-function withCompatiblePublicTrainNumber(
-  train: PublicTrain,
+function withCompatiblePublicTrainNumber<T extends Readonly<{
+  operator: string;
+  trainNumber: string;
+}>>(
+  train: T,
   trustedTrainId: string,
   allocated: ReadonlyMap<string, number>,
-): PublicTrain {
+): T {
   if (train.operator !== "public") return train;
-  const legacy = /^(.*\D)(\d{6,})$/u.exec(train.trainNumber);
+  const legacy = /^(.*?)(\d+)$/u.exec(train.trainNumber.trim());
   if (legacy === null || !allocated.has(trustedTrainId)) return train;
   const prefix = legacy[1]!.replace(/[-\s]+$/u, "");
   return Object.freeze({
     ...train,
     trainNumber: publicRegionalTrainNumber(prefix, trustedTrainId, allocated),
   });
+}
+
+function projectionExternalTrainId(train: PublicExternalTrain): string | undefined {
+  const base = train.journeyChainId;
+  if (base.includes(":day-")) return undefined;
+  if (train.id === base) return base;
+  const prefix = `${base}:day-`;
+  return train.id.startsWith(prefix) && /^[1-9][0-9]*$/u.test(train.id.slice(prefix.length))
+    ? base
+    : undefined;
 }
 
 /** Read-only-Projektor; jeder Lookup bleibt an Welt und InfraRelease gebunden. */
@@ -433,6 +447,14 @@ export class SQLiteTrainMapProjector implements PublicTrainMapProjector, PublicO
         uncertaintyMm,
       }),
     });
+  }
+
+  projectExternal(worldId: string, train: PublicExternalTrain): PublicExternalTrain {
+    this.#assertOpen();
+    if (worldId !== this.worldId) return train;
+    const trustedTrainId = projectionExternalTrainId(train);
+    if (trustedTrainId === undefined) return train;
+    return withCompatiblePublicTrainNumber(train, trustedTrainId, this.#publicTrainNumbers);
   }
 
   projectDisruption(

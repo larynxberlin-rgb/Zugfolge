@@ -495,6 +495,32 @@ describe("LivemapRegistry", () => {
     });
   });
 
+  it("projiziert Aussenlaufnummern im Initialsnapshot und Delta ueber denselben releasegebundenen Port", () => {
+    const projectExternal = vi.fn((worldId: string, value: typeof publicExternalTrain) => ({
+      ...value,
+      trainNumber: `${worldId}-35000`,
+    }));
+    const registry = new LivemapRegistry({
+      trainMapProjector: { project: (_worldId, value) => value, projectExternal },
+    });
+    registry.initializeRegion("a", "east", {
+      at: 1,
+      trains: [],
+      externalTrains: [publicExternalTrain],
+    });
+    registry.publishRegionDelta("a", "east", {
+      at: 2,
+      changed: [],
+      removed: [],
+      changedExternalTrains: [{ ...publicExternalTrain, progressBasisPoints: 6_000 }],
+      removedExternalTrainIds: [],
+    });
+    expect(projectExternal).toHaveBeenCalledTimes(2);
+    expect(registry.initializedWorld("a")?.snapshot().externalTrains).toEqual([
+      expect.objectContaining({ trainNumber: "a-35000", progressBasisPoints: 6_000 }),
+    ]);
+  });
+
   it("akzeptiert sparse Zustandsabweichungen fuer den sichtbaren Bahnkontext", () => {
     const registry = new LivemapRegistry();
     registry.initializeRegion("a", "east", {
