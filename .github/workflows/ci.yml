@@ -263,7 +263,7 @@ jobs:
           set -euo pipefail
           mkdir -p test-results/backup
           sh ops/alpha/backup-game.sh "$TEST_DATABASE_URL" test-results/backup/game.dump test-results/backup/game.manifest.json
-          sh ops/alpha/restore-game.sh 'postgres://zugfolge:zugfolge-test@127.0.0.1:5432/postgres' zugfolge_restore_ci test-results/backup/game.dump
+          sh ops/alpha/restore-game.sh 'postgres://zugfolge:zugfolge-test@127.0.0.1:5432/postgres' zugfolge_restore_ci test-results/backup/game.dump test-results/backup/game.manifest.json
           node tools/alpha-ops/authoritative-state-hash.mjs "$TEST_DATABASE_URL" 'postgres://zugfolge:zugfolge-test@127.0.0.1:5432/zugfolge_restore_ci' | tee test-results/backup/state-hashes.jsonl
 
   odoo-19:
