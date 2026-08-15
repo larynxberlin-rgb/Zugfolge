@@ -171,7 +171,7 @@ const regionalCommand = (head, commandId, command) => ({
   expectedPublisherSequence: head.state.publisherSequence,
   command,
 });
-const regionalRegistered = regionalRuntime.apply(
+const regionalRegistered = await regionalRuntime.apply(
   regionalInitialized.state,
   regionalCommand(regionalInitialized, "native-regional-register-disruption", {
     type: "register-disruption",
@@ -197,14 +197,14 @@ assert.deepEqual(
   regionalRegistered.delta.changedDisruptions.map((item) => [item.disruptionId, item.kind]),
   [["native-planned-closure", "planned"]],
 );
-const regionalAtDisruptionStart = regionalRuntime.apply(
+const regionalAtDisruptionStart = await regionalRuntime.apply(
   regionalRegistered.state,
   regionalCommand(regionalRegistered, "native-regional-advance-to-disruption", {
     type: "advance-to",
     atS: 100,
   }),
 );
-const regionalActivated = regionalRuntime.apply(
+const regionalActivated = await regionalRuntime.apply(
   regionalAtDisruptionStart.state,
   regionalCommand(regionalAtDisruptionStart, "native-regional-activate-disruption", {
     type: "activate-disruption",
@@ -234,7 +234,7 @@ const regionalMaterializeCommand = regionalCommand(
   "native-regional-materialize",
   { type: "materialize", train: regionalTrain("native-regional-2") },
 );
-const regionalMaterialized = regionalRuntime.apply(
+const regionalMaterialized = await regionalRuntime.apply(
   regionalActivated.state,
   regionalMaterializeCommand,
 );
@@ -243,7 +243,7 @@ assert.deepEqual(
   regionalMaterialized.delta.changed.map((train) => train.id),
   ["native-regional-2"],
 );
-const regionalAdvanced = regionalRuntime.apply(
+const regionalAdvanced = await regionalRuntime.apply(
   regionalMaterialized.state,
   regionalCommand(regionalMaterialized, "native-regional-advance", {
     type: "advance-to",
@@ -258,7 +258,7 @@ const regionalRemoveCommand = regionalCommand(
   "native-regional-remove",
   { type: "dematerialize-before", beforeS: 5_000 },
 );
-const regionalRemoved = regionalRuntime.apply(
+const regionalRemoved = await regionalRuntime.apply(
   regionalAdvanced.state,
   regionalRemoveCommand,
 );
@@ -272,7 +272,7 @@ assert.equal(regionalRestored.stateHash, regionalRemoved.stateHash);
 assert.equal(regionalRestored.snapshot.producerSequence, 6);
 assert.deepEqual(regionalRestored.snapshot.trains, []);
 assert.deepEqual(regionalRestored.snapshot.disruptions, []);
-const regionalRetry = regionalRuntime.apply(
+const regionalRetry = await regionalRuntime.apply(
   regionalRemoved.state,
   regionalRemoveCommand,
 );
