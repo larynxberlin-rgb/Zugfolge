@@ -102,6 +102,8 @@ describe("Bildfahrplan-Renderer", () => {
     const html = renderProjection(projection(), { ...options, demoMode: true });
     expect(html).toContain("Demo · Beispieldaten");
     expect(html).toContain("nicht serverbestätigt");
+    expect(html).toContain('class="demo-banner"');
+    expect(html).not.toContain('class="notice notice--demo"');
     expect(html).toContain("&amp;demo=1");
     expect(html).not.toContain("Vom Server bestätigt");
   });
