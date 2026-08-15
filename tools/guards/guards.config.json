@@ -124,6 +124,7 @@
       "status": "active",
       "paths": [
         "packages/alpha/**",
+        "packages/browser-identity/**",
         "packages/commerce/**",
         "packages/design-system/**",
         "packages/disruption-provider/**",
