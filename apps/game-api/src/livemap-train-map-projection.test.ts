@@ -209,14 +209,26 @@ describe("releasegebundene Zugkartenprojektion", () => {
     projector.close();
   });
 
-  it("ersetzt ueberlange Legacy-Nummern weltgebunden durch die reservierte fuenfstellige Nummer", () => {
+  it("ersetzt alle numerischen Legacy-Endungen weltgebunden durch die reservierte fuenfstellige Nummer", () => {
     const projector = new SQLiteTrainMapProjector(fixture());
-    const projected = projector.project(WORLD, {
+    const overlong = projector.project(WORLD, {
       ...train,
       operator: "public",
       trainNumber: "S4-1667972",
     });
-    expect(projected.trainNumber).toBe("S4-35000");
+    const colliding = projector.project(WORLD, {
+      ...train,
+      operator: "public",
+      trainNumber: "RB22-29999",
+    });
+    const numberOnly = projector.project(WORLD, {
+      ...train,
+      operator: "public",
+      trainNumber: "5157",
+    });
+    expect(overlong.trainNumber).toBe("S4-35000");
+    expect(colliding.trainNumber).toBe("RB22-35000");
+    expect(numberOnly.trainNumber).toBe("SPNV-35000");
     expect(projector.project("other-world", {
       ...train,
       operator: "public",

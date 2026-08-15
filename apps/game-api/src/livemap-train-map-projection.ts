@@ -234,7 +234,7 @@ function withCompatiblePublicTrainNumber<T extends Readonly<{
   allocated: ReadonlyMap<string, number>,
 ): T {
   if (train.operator !== "public") return train;
-  const legacy = /^(.*\D)(\d{6,})$/u.exec(train.trainNumber);
+  const legacy = /^(.*?)(\d+)$/u.exec(train.trainNumber.trim());
   if (legacy === null || !allocated.has(trustedTrainId)) return train;
   const prefix = legacy[1]!.replace(/[-\s]+$/u, "");
   return Object.freeze({
