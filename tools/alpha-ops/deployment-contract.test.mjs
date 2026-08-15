@@ -30,9 +30,10 @@ async function cleanRepositoryFixture() {
 }
 
 test("Alpha-Compose erzwingt Map-Gate, Migration, signierten Bootstrap und einen Build ohne impliziten Neubau", async () => {
-  const [compose, dockerfile, start, build, mapPreflight] = await Promise.all([
+  const [compose, dockerfile, odooDockerfile, start, build, mapPreflight] = await Promise.all([
     read("compose.alpha.yml"),
     read("ops/alpha/container/Dockerfile"),
+    read("ops/alpha/odoo/Dockerfile"),
     read("tools/alpha-ops/phase1-smoke.sh"),
     read("tools/alpha-ops/build-alpha-images.sh"),
     read("tools/alpha-ops/map-release-deployment-preflight.mjs"),
@@ -56,6 +57,13 @@ test("Alpha-Compose erzwingt Map-Gate, Migration, signierten Bootstrap und einen
   assert.match(compose, /odoo-upgrade:[\s\S]*image: zugfolge-odoo:alpha/u);
   assert.match(compose, /\n  odoo:\n    image: zugfolge-odoo:alpha/u);
   assert.match(compose, /\n  odoo:[\s\S]*HOST: odoo-postgres[\s\S]*USER: odoo[\s\S]*PASSWORD: "\$\{ODOO_DB_PASSWORD\}"/u);
+  const odooAddonPaths = [...compose.matchAll(/--addons-path=([^\s\]]+)/gu)];
+  assert.equal(odooAddonPaths.length, 2);
+  assert.equal(odooAddonPaths.every((match) => match[1]?.includes("/opt/zugfolge-addons")), true);
+  assert.doesNotMatch(compose, /--addons-path=[^\s\]]*\/mnt\/extra-addons/u);
+  assert.match(odooDockerfile, /\/opt\/zugfolge-addons\/queue_job/u);
+  assert.match(odooDockerfile, /\/opt\/zugfolge-addons\/zugfolge_admin/u);
+  assert.doesNotMatch(odooDockerfile, /\/mnt\/extra-addons/u);
   assert.match(compose, /\n  keycloak:[\s\S]*command: \[start, --import-realm, --health-enabled=true, --http-enabled=true\]/u);
   assert.match(compose, /\n  keycloak:\n    image: quay\.io\/keycloak\/keycloak:26\.7\.0/u);
   assert.match(compose, /\n  keycloak:[\s\S]*KC_HOSTNAME: "\$\{KEYCLOAK_PUBLIC_URL\}"[\s\S]*KC_PROXY_HEADERS: xforwarded/u);

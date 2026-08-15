@@ -24,7 +24,7 @@ services:
       - --db_host=odoo-postgres
       - --db_user=odoo
       - "--db_password=${ODOO_DB_PASSWORD}"
-      - --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons
+      - --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/opt/zugfolge-addons
       - --load=base,web,queue_job
       - --workers=0
       - --max-cron-threads=0
@@ -213,7 +213,7 @@ services:
       - --db_host=odoo-postgres
       - --db_user=odoo
       - "--db_password=${ODOO_DB_PASSWORD}"
-      - --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/mnt/extra-addons
+      - --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/opt/zugfolge-addons
       - --load=base,web,queue_job
       - --workers=2
       - --max-cron-threads=1
