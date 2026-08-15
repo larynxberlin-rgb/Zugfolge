@@ -692,7 +692,7 @@ export class LivemapConnection {
   readonly #retryDelayMs: number;
   readonly #maximumPendingDeltas: number;
   readonly #onError: (error: unknown) => void;
-  readonly #authorization: string;
+  readonly #accessToken: string | ((forceRefresh?: boolean) => Promise<string>);
   readonly #baseUrl: string;
   #state: LiveState | undefined;
   #synchronization: Promise<void> | undefined;
@@ -712,14 +712,14 @@ export class LivemapConnection {
   constructor(
     baseUrl: string,
     private readonly worldId: string,
-    accessToken: string,
+    accessToken: string | ((forceRefresh?: boolean) => Promise<string>),
     private readonly changed: (state: LiveState) => void,
     dependencies: LivemapConnectionDependencies = {},
   ) {
     if (worldId.length === 0) throw new RangeError("Livemap-Weltkennung darf nicht leer sein.");
-    if (accessToken.trim().length === 0) throw new RangeError("Livemap-Zugriffstoken darf nicht leer sein.");
+    if (typeof accessToken === "string" && accessToken.trim().length === 0) throw new RangeError("Livemap-Zugriffstoken darf nicht leer sein.");
     this.#baseUrl = baseUrl.replace(/\/$/, "");
-    this.#authorization = `Bearer ${accessToken}`;
+    this.#accessToken = accessToken;
     this.#fetch = dependencies.fetch ?? fetch;
     this.#retryDelayMs = dependencies.retryDelayMs ?? 1_000;
     this.#maximumPendingDeltas = dependencies.maximumPendingDeltas ?? 256;
@@ -730,6 +730,24 @@ export class LivemapConnection {
     if (!Number.isSafeInteger(this.#maximumPendingDeltas) || this.#maximumPendingDeltas <= 0) {
       throw new RangeError("maximumPendingDeltas muss eine positive Ganzzahl sein.");
     }
+  }
+
+  async #authorization(forceRefresh = false): Promise<string> {
+    const token = typeof this.#accessToken === "string" ? this.#accessToken : await this.#accessToken(forceRefresh);
+    return `Bearer ${token}`;
+  }
+
+  async #authorizedFetch(url: string, init: RequestInit): Promise<Response> {
+    if (typeof this.#accessToken === "string") {
+      return this.#fetch.call(globalThis, url, { ...init, headers: { ...init.headers, authorization: `Bearer ${this.#accessToken}` } });
+    }
+    const request = async (forceRefresh = false): Promise<Response> => this.#fetch.call(globalThis, url, {
+      ...init,
+      headers: { ...init.headers, authorization: await this.#authorization(forceRefresh) },
+    });
+    let response = await request();
+    if ((response.status === 401 || response.status === 403) && typeof this.#accessToken !== "string") response = await request(true);
+    return response;
   }
 
   async connect(): Promise<void> {
@@ -779,9 +797,9 @@ export class LivemapConnection {
     const controller = new AbortController();
     this.#snapshotController = controller;
     try {
-      const response = await this.#fetch.call(globalThis, this.#snapshotUrl(), {
+      const response = await this.#authorizedFetch(this.#snapshotUrl(), {
         cache: "no-store",
-        headers: { accept: "application/json", authorization: this.#authorization },
+        headers: { accept: "application/json" },
         signal: controller.signal,
       });
       if (!response.ok) throw new Error(`Livemap-Snapshot: HTTP ${response.status}`);
@@ -922,11 +940,10 @@ export class LivemapConnection {
 
     let response: Response;
     try {
-      response = await this.#fetch.call(globalThis, this.#eventsUrl(), {
+      response = await this.#authorizedFetch(this.#eventsUrl(), {
         cache: "no-store",
         headers: {
           accept: "text/event-stream",
-          authorization: this.#authorization,
           "last-event-id": `${streamId}:${sequence}`,
         },
         signal: controller.signal,

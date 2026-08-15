@@ -1,3 +1,4 @@
+import "@zugfolge/design-system/styles.css";
 import { mountGlossaryLayer } from "@zugfolge/glossary";
 import "@zugfolge/glossary/styles.css";
 import {
@@ -56,6 +57,7 @@ import {
   type PublicExternalTrain,
 } from "./protocol.js";
 import { livemapNavigationDestinations, mailboxDecisionDestination } from "./navigation.js";
+import { externalStatusLabel, localizeMapControls, operatingStatusLabel, railwayPlaceLabel, setMapViewButtons, visibleExternalTrains, type MapView } from "./presentation.js";
 import "./style.css";
 import "./external-runs.css";
 
@@ -89,9 +91,9 @@ root.innerHTML = `
         <div id="map" role="application" aria-label="Weltkarte mit deutscher Eisenbahninfrastruktur und Live-Betrieb"></div>
         <div id="map-state" class="map-state" role="status" aria-live="polite">Kartenstand wird geprüft …</div>
         <div class="map-tools" aria-label="Kartenwerkzeuge">
-          <button id="fit-playable" type="button">Spielgebiet</button>
-          <button id="show-germany" type="button">Deutschland</button>
-          <button id="toggle-context" type="button" aria-pressed="true">Weltkarte</button>
+          <button id="fit-playable" data-map-view="playable" type="button" aria-pressed="true">Spielgebiet</button>
+          <button id="show-germany" data-map-view="germany" type="button" aria-pressed="false">Deutschland</button>
+          <button id="show-world" data-map-view="world" type="button" aria-pressed="false">Weltkarte</button>
         </div>
         <section id="selection-menu" class="selection-menu" aria-label="Überlagerte Kartenobjekte" hidden></section>
         <section id="external-runs" aria-label="Zugfahrten ohne darstellbare Kartenlage und Außenläufe"></section>
@@ -141,7 +143,7 @@ const mapState = document.querySelector<HTMLElement>("#map-state")!;
 const externalRuns = document.querySelector<HTMLElement>("#external-runs")!;
 const objectList = document.querySelector<HTMLElement>("#object-list-content")!;
 const selectionMenu = document.querySelector<HTMLElement>("#selection-menu")!;
-const contextButton = document.querySelector<HTMLButtonElement>("#toggle-context")!;
+const mapViewButtons = [...document.querySelectorAll<HTMLButtonElement>("[data-map-view]")];
 
 let map: MapLibreMap | undefined;
 let api: LivemapApiClient | undefined;
@@ -347,7 +349,7 @@ function renderExternalRuns(state: LiveState): void {
   const positionless = [...state.trains.values()].filter((train) =>
     train.mapPosition === undefined && train.mapEstimate === undefined
   );
-  const external = [...state.externalTrains.values()];
+  const external = [...visibleExternalTrains(state.externalTrains.values())];
   if (positionless.length === 0 && external.length === 0) {
     externalRuns.replaceChildren();
     return;
@@ -372,11 +374,11 @@ function renderExternalRuns(state: LiveState): void {
       text("p", "AUSSENLÄUFE", "eyebrow"),
       text("p", "Diese Fahrt läuft außerhalb des modellierten Gebiets weiter und bleibt bewusst in der Liste.", "position-note"),
     );
-    external.sort((a, b) => a.trainNumber.localeCompare(b.trainNumber, "de")).forEach((train: PublicExternalTrain) => {
+    external.forEach((train: PublicExternalTrain) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "external-run";
-      button.append(text("strong", train.trainNumber), text("span", `${train.fromPortalId} → ${train.toPortalId ?? "Außenziel"} · ${train.status}`));
+      button.append(text("strong", train.trainNumber), text("span", `${railwayPlaceLabel(train.fromPortalId)} → ${railwayPlaceLabel(train.toPortalId)} · ${externalStatusLabel(train.status)}`));
       button.addEventListener("click", () => {
         setPanel(messagePanel(`${train.trainNumber} fährt als derselbe Zug außerhalb des modellierten Gebiets. Es wird bewusst keine Kartenposition erzeugt.`));
       });
@@ -401,7 +403,7 @@ function renderObjectList(state: LiveState): void {
           : train.mapEstimate !== undefined
             ? "Position geschätzt"
             : "ohne Kartenlage";
-      button.append(text("strong", train.trainNumber), text("span", `${operatorLabel(train)} · ${train.status} · ${positionLabel}`));
+      button.append(text("strong", train.trainNumber), text("span", `${operatorLabel(train)} · ${operatingStatusLabel(train.status)} · ${positionLabel}`));
       button.addEventListener("click", () => void selectObject({ kind: "train", id: train.id, label: train.trainNumber }));
       item.append(button);
       list.append(item);
@@ -460,6 +462,7 @@ async function createMap(config: LivemapConfigV2): Promise<MapLibreMap> {
   currentMap.addControl(new NavigationControl({ visualizePitch: true }), "top-left");
   currentMap.addControl(new ScaleControl({ unit: "metric", maxWidth: 140 }), "bottom-left");
   currentMap.addControl(new AttributionControl({ compact: true, customAttribution: [config.basemap.attribution, config.infrastructure.attribution] }), "bottom-right");
+  localizeMapControls(document.querySelector("#map")!);
 
   await new Promise<void>((resolve, reject) => {
     currentMap.once("load", () => resolve());
@@ -495,19 +498,20 @@ async function createMap(config: LivemapConfigV2): Promise<MapLibreMap> {
 }
 
 function bindShell(): void {
+  const selectView = (view: MapView, action: () => void): void => {
+    setMapViewButtons(mapViewButtons, view);
+    action();
+  };
   document.querySelector<HTMLButtonElement>("#close-details")?.addEventListener("click", () => closePanel());
   document.querySelector<HTMLButtonElement>("#fit-playable")?.addEventListener("click", () => {
     const bounds = mapConfig === undefined ? undefined : playableBounds(mapConfig);
-    if (bounds !== undefined) map?.fitBounds(bounds, { padding: 54, duration: matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 650 });
+    if (bounds !== undefined) selectView("playable", () => map?.fitBounds(bounds, { padding: 54, duration: matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 650 }));
   });
   document.querySelector<HTMLButtonElement>("#show-germany")?.addEventListener("click", () => {
-    map?.fitBounds([[5.5, 47.0], [15.6, 55.2]], { padding: 34, duration: matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 650 });
+    selectView("germany", () => map?.fitBounds([[5.5, 47.0], [15.6, 55.2]], { padding: 34, duration: matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 650 }));
   });
-  contextButton.addEventListener("click", () => {
-    const current = contextButton.getAttribute("aria-pressed") === "true";
-    contextButton.setAttribute("aria-pressed", String(!current));
-    const basemapLayers = map?.getStyle().layers.filter((layer) => !layer.id.startsWith("playable-") && !infrastructureLayers().some((own) => own.id === layer.id) && !trainLayers.some((own) => own.id === layer.id)) ?? [];
-    basemapLayers.forEach((layer) => map?.setLayoutProperty(layer.id, "visibility", current ? "none" : "visible"));
+  document.querySelector<HTMLButtonElement>("#show-world")?.addEventListener("click", () => {
+    selectView("world", () => map?.fitBounds([[-179, -70], [179, 75]], { padding: 20, duration: matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 650 }));
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
@@ -530,7 +534,8 @@ async function boot(): Promise<void> {
   try {
     const accessToken = await ensureAccessToken(runtime);
     if (accessToken === "") return;
-    api = new LivemapApiClient(runtime.gameApiUrl, accessToken);
+    const tokenProvider = (forceRefresh?: boolean) => ensureAccessToken(runtime, forceRefresh);
+    api = new LivemapApiClient(runtime.gameApiUrl, tokenProvider);
     void api.mailbox(worldId)
       .then((messages) => renderAttentionRail(
         attentionRail,
@@ -543,7 +548,7 @@ async function boot(): Promise<void> {
     map = await createMap(mapConfig);
     const focus = parseFocusParameter(parameters.get("focus"));
     if (focus !== undefined) void selectObject(focus);
-    connection = new LivemapConnection(runtime.gameApiUrl, worldId, accessToken, scheduleLiveRender, {
+    connection = new LivemapConnection(runtime.gameApiUrl, worldId, tokenProvider, scheduleLiveRender, {
       onError: () => {
         sequenceLabel.textContent = "Verbindung unterbrochen · neuer Versuch";
         sequenceLabel.classList.add("connection-error");

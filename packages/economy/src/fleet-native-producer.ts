@@ -168,6 +168,22 @@ export function loadFleetProducerCheckpoint(
   return latestCheckpoint(db, worldId);
 }
 
+/** Loads the exact canonical command for an authenticated idempotent retry. */
+export async function loadFleetProducerCommand(
+  db: EconomyDatabase,
+  worldId: string,
+  commandId: string,
+): Promise<NativeFleetCommand | undefined> {
+  const [row] = await db.select({ commandJson: fleetWorldCheckpoints.commandJson })
+    .from(fleetWorldCheckpoints)
+    .where(and(eq(fleetWorldCheckpoints.worldId, worldId), eq(fleetWorldCheckpoints.commandId, commandId)))
+    .limit(1);
+  if (row?.commandJson === null || row?.commandJson === undefined) return undefined;
+  const parsed = canonicalizeFleetCommand(JSON.parse(row.commandJson) as NativeFleetCommand);
+  invariant(parsed.worldId === worldId && parsed.commandId === commandId, "Persistiertes M5-Kommando verletzt Welt- oder Idempotenzbindung.");
+  return parsed;
+}
+
 function exactCommand(command: NativeFleetCommand): {
   readonly command: NativeFleetCommand;
   readonly json: string;

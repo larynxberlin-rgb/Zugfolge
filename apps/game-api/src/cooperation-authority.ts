@@ -30,6 +30,7 @@ export interface CooperationResourceCatalog {
   readonly worldId: string;
   readonly operatorId: string;
   readonly fleetRevision: number | null;
+  readonly fleetSnapshotHash: string | null;
   readonly trainRuns: readonly CooperationResourceOption[];
   readonly connectionTrainRuns: readonly CooperationResourceOption[];
   readonly formations: readonly CooperationResourceOption[];
@@ -129,7 +130,7 @@ export class GameCooperationAuthority implements CooperationAuthority {
    */
   async resourceCatalog(worldId: string, operatorId: string): Promise<CooperationResourceCatalog> {
     const [checkpoint, regionalRows, disruptionRows, vehicles, operatorRows] = await Promise.all([
-      this.db.select({ revision: fleetWorldCheckpoints.revision, state: fleetWorldCheckpoints.state })
+      this.db.select({ revision: fleetWorldCheckpoints.revision, state: fleetWorldCheckpoints.state, snapshotHash: fleetWorldCheckpoints.snapshotHash })
         .from(fleetWorldCheckpoints).where(eq(fleetWorldCheckpoints.worldId, worldId))
         .orderBy(desc(fleetWorldCheckpoints.revision)).limit(1),
       this.db.select({ state: regionalSimulationStates.state }).from(regionalSimulationStates)
@@ -225,6 +226,7 @@ export class GameCooperationAuthority implements CooperationAuthority {
       worldId,
       operatorId,
       fleetRevision: checkpoint[0]?.revision ?? null,
+      fleetSnapshotHash: checkpoint[0]?.snapshotHash ?? null,
       trainRuns: sortOptions(ownTrains),
       connectionTrainRuns: sortOptions(allTrains),
       formations: sortOptions(formations),

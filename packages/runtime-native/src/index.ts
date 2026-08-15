@@ -17,6 +17,7 @@ export const FLEET_FORMATION_COMMAND_SCHEMA = "zugfolge-fleet-form-vehicles-comm
 export const FLEET_PERSONNEL_DUTY_COMMAND_SCHEMA = "zugfolge-fleet-assign-duty-command/v2" as const;
 export const FLEET_PATH_RESERVATION_COMMAND_SCHEMA = "zugfolge-fleet-attach-path-command/v2" as const;
 export const FLEET_ASSET_TRANSFER_COMMAND_SCHEMA = "zugfolge-fleet-transfer-asset-command/v1" as const;
+export const FLEET_MAINTENANCE_COMMAND_SCHEMA = "zugfolge-fleet-schedule-maintenance-command/v1" as const;
 export const FLEET_COMMAND_RESULT_SCHEMA = "zugfolge-fleet-command-result/v2" as const;
 export const FLEET_COMMAND_RECEIPT_SCHEMA = "zugfolge-fleet-command-receipt/v1" as const;
 
@@ -238,6 +239,13 @@ export interface NativeFleetAssetHolding {
   readonly historyHash: string;
 }
 
+export interface NativeFleetMaintenanceAssignment {
+  readonly formationId: string;
+  readonly facilityId: string;
+  readonly startsAtS: number;
+  readonly endsAtS: number;
+}
+
 export type NativeFleetWorldState = Readonly<Record<string, unknown>> & {
   readonly schemaVersion: typeof FLEET_STATE_SCHEMA;
   readonly worldId: string;
@@ -249,6 +257,7 @@ export type NativeFleetWorldState = Readonly<Record<string, unknown>> & {
   readonly personnelDuties: Readonly<Record<string, NativeFleetPersonnelDutyIntent>>;
   readonly pathReservations: Readonly<Record<string, NativeFleetPathReservationIntent>>;
   readonly assetHoldings?: Readonly<Record<string, NativeFleetAssetHolding>>;
+  readonly maintenanceAssignments?: Readonly<Record<string, NativeFleetMaintenanceAssignment>>;
 };
 
 interface FleetCommandBase {
@@ -293,6 +302,13 @@ export type NativeFleetCommand =
       readonly contractId: string | null;
       readonly validUntilS: number | null;
       readonly transferReceiptHash: string;
+    }
+  | FleetCommandBase & {
+      readonly schemaVersion: typeof FLEET_MAINTENANCE_COMMAND_SCHEMA;
+      readonly formationId: string;
+      readonly facilityId: string;
+      readonly startsAtS: number;
+      readonly endsAtS: number;
     };
 
 export interface FleetCommandReceipt {
@@ -302,7 +318,7 @@ export interface FleetCommandReceipt {
   readonly commandHash: string;
   readonly canonicalCommandJson: string;
   readonly resultingRevision: number;
-  readonly entityKind: "formation" | "personnel-duty" | "path-reservation" | "asset-holding";
+  readonly entityKind: "formation" | "personnel-duty" | "path-reservation" | "asset-holding" | "maintenance-assignment";
   readonly entityId: string;
   readonly resultingStateHash: string;
   readonly resultingSnapshotHash: string;
@@ -324,7 +340,7 @@ export interface FleetCommandResult {
   readonly snapshotHash: string;
   readonly commandReceipt: FleetCommandReceipt;
   readonly appliedCommandId: string;
-  readonly entityKind: "formation" | "personnel-duty" | "path-reservation" | "asset-holding";
+  readonly entityKind: "formation" | "personnel-duty" | "path-reservation" | "asset-holding" | "maintenance-assignment";
   readonly entityId: string;
   readonly idempotentReplay: boolean;
 }
@@ -704,6 +720,25 @@ function normalizeFleetCommand(command: NativeFleetCommand): NativeFleetCommand 
         validUntilS: command.validUntilS,
         transferReceiptHash: command.transferReceiptHash,
       };
+    case FLEET_MAINTENANCE_COMMAND_SCHEMA:
+      exactFleetCommandFields(command, ["formationId", "facilityId", "startsAtS", "endsAtS"]);
+      nonEmptyString(command.formationId, "M5-Werkstatt-Formation");
+      nonEmptyString(command.facilityId, "M5-Werkstatt-Anlage");
+      safeInteger(command.startsAtS, "M5-Werkstatt-Beginn");
+      safeInteger(command.endsAtS, "M5-Werkstatt-Ende");
+      invariant(command.startsAtS >= command.atS && command.endsAtS > command.startsAtS, "M5-Werkstattfenster ist ungueltig.");
+      return {
+        schemaVersion: command.schemaVersion,
+        worldId: command.worldId,
+        commandId: command.commandId,
+        expectedStateHash: command.expectedStateHash,
+        expectedRevision: command.expectedRevision,
+        atS: command.atS,
+        formationId: command.formationId,
+        facilityId: command.facilityId,
+        startsAtS: command.startsAtS,
+        endsAtS: command.endsAtS,
+      };
     default:
       throw new Error("M5-Kommando hat ein unbekanntes Schema.");
   }
@@ -775,6 +810,8 @@ export function fleetCommandEntity(command: NativeFleetCommand): {
       return { entityKind: "path-reservation", entityId: command.pathReservationId };
     case FLEET_ASSET_TRANSFER_COMMAND_SCHEMA:
       return { entityKind: "asset-holding", entityId: command.vehicleId };
+    case FLEET_MAINTENANCE_COMMAND_SCHEMA:
+      return { entityKind: "maintenance-assignment", entityId: command.formationId };
   }
 }
 

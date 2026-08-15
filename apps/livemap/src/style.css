@@ -4,16 +4,16 @@
   color: #f1f3f7;
   background: #090b10;
   font-synthesis: none;
-  --map: #090b10;
-  --surface: #11141b;
-  --raised: #181c25;
-  --raised-hover: #202530;
-  --border: #303642;
-  --muted: #a5adba;
-  --amber: #f0b75a;
-  --red: #ff715f;
-  --cyan: #69d5c1;
-  --focus: #9fb8e8;
+  --map: var(--zf-canvas);
+  --surface: var(--zf-surface-1);
+  --raised: var(--zf-surface-2);
+  --raised-hover: var(--zf-surface-3);
+  --border: var(--zf-line);
+  --muted: var(--zf-text-muted);
+  --amber: var(--zf-attention);
+  --red: var(--zf-danger);
+  --cyan: var(--zf-success);
+  --focus: var(--zf-focus);
 }
 
 * { box-sizing: border-box; }

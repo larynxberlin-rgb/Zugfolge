@@ -18,18 +18,24 @@ export class LivemapApiError extends Error {
 
 export class LivemapApiClient {
   readonly #baseUrl: string;
-  readonly #authorization: string;
+  readonly #accessToken: string | ((forceRefresh?: boolean) => Promise<string>);
 
-  constructor(baseUrl: string, accessToken: string, private readonly fetchImplementation: typeof fetch = fetch) {
+  constructor(baseUrl: string, accessToken: string | ((forceRefresh?: boolean) => Promise<string>), private readonly fetchImplementation: typeof fetch = fetch) {
     this.#baseUrl = baseUrl.replace(/\/$/, "");
-    this.#authorization = `Bearer ${accessToken}`;
+    this.#accessToken = accessToken;
+  }
+
+  #token(forceRefresh = false): Promise<string> {
+    return typeof this.#accessToken === "string" ? Promise.resolve(this.#accessToken) : this.#accessToken(forceRefresh);
   }
 
   async #json<T>(path: string): Promise<T> {
-    const response = await this.fetchImplementation.call(globalThis, `${this.#baseUrl}${path}`, {
+    const request = async (forceRefresh = false): Promise<Response> => this.fetchImplementation.call(globalThis, `${this.#baseUrl}${path}`, {
       cache: "no-store",
-      headers: { accept: "application/json", authorization: this.#authorization },
+      headers: { accept: "application/json", authorization: `Bearer ${await this.#token(forceRefresh)}` },
     });
+    let response = await request();
+    if ((response.status === 401 || response.status === 403) && typeof this.#accessToken !== "string") response = await request(true);
     if (!response.ok) {
       let detail = "";
       try {

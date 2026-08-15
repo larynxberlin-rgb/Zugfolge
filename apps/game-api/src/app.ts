@@ -92,6 +92,8 @@ import {
   listLedgerAccounts,
   listLedgerTransactions,
   loadFleetMobilizationSnapshot,
+  loadFleetProducerCheckpoint,
+  loadFleetProducerCommand,
   loadEconomyWorldEpoch,
   loadEconomyWorldState,
   openLedgerAccount,
@@ -166,6 +168,7 @@ import { eraseAccountData, exportAccountData, PersonalDataNotFoundError } from "
 import {
   FLEET_FORMATION_COMMAND_SCHEMA,
   FLEET_INITIALIZE_SCHEMA,
+  FLEET_MAINTENANCE_COMMAND_SCHEMA,
   FLEET_PATH_RESERVATION_COMMAND_SCHEMA,
   FLEET_PERSONNEL_DUTY_COMMAND_SCHEMA,
   REGIONAL_SIMULATION_INITIALIZE_SCHEMA,
@@ -375,6 +378,19 @@ const fleetCommandBody = {
         ...fleetCommandHeaderProperties,
         pathReservationId: fleetIdentifier,
         pathReceiptId: fleetIdentifier,
+      },
+    },
+    {
+      type: "object",
+      required: ["schemaVersion", "commandId", "expectedStateHash", "expectedRevision", "atS", "formationId", "facilityId", "startsAtS", "endsAtS"],
+      additionalProperties: false,
+      properties: {
+        schemaVersion: { type: "string", const: FLEET_MAINTENANCE_COMMAND_SCHEMA },
+        ...fleetCommandHeaderProperties,
+        formationId: fleetIdentifier,
+        facilityId: fleetIdentifier,
+        startsAtS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+        endsAtS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
       },
     },
   ],
@@ -1741,6 +1757,77 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     },
   );
 
+  app.post<{
+    Params: { worldId: string; operatorId: string };
+    Body: { readonly formationId: string; readonly durationHours: number; readonly idempotencyKey: string };
+  }>(
+    "/worlds/:worldId/operators/:operatorId/fleet/maintenance",
+    {
+      preHandler: authenticate,
+      schema: {
+        params: operatorIdParam,
+        body: {
+          type: "object",
+          required: ["formationId", "durationHours", "idempotencyKey"],
+          additionalProperties: false,
+          properties: {
+            formationId: fleetIdentifier,
+            durationHours: { type: "integer", minimum: 1, maximum: 72 },
+            idempotencyKey: { type: "string", minLength: 1, maxLength: 200 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identitaet." });
+      try {
+        await requireOperatorOwner(deps.db, request.params.worldId, request.params.operatorId, identity.keycloakSubject);
+        await guardSensitiveAction(request, identity.keycloakSubject, request.params.worldId, "fleet-maintenance", request.body.formationId, request.body.idempotencyKey);
+        if (deps.fleetRuntime === undefined) {
+          return reply.code(503).send({ code: "fleet_unavailable", error: "Autoritativer M5-Flottenzustand ist nicht konfiguriert." });
+        }
+        const checkpoint = await loadFleetProducerCheckpoint(deps.db as EconomyDatabase, request.params.worldId);
+        if (checkpoint === undefined) {
+          return reply.code(503).send({ code: "fleet_unavailable", error: "Autoritativer M5-Flottenzustand ist fuer diese Welt nicht verfuegbar." });
+        }
+        const resources = await cooperationAuthority.resourceCatalog(request.params.worldId, request.params.operatorId);
+        if (!resources.formations.some((formation) => formation.id === request.body.formationId)) {
+          throw new AuthorizationError("Formation gehoert nicht zum handelnden EVU.");
+        }
+        const priorCommand = await loadFleetProducerCommand(deps.db as EconomyDatabase, request.params.worldId, request.body.idempotencyKey);
+        if (priorCommand !== undefined && (priorCommand.schemaVersion !== FLEET_MAINTENANCE_COMMAND_SCHEMA || priorCommand.formationId !== request.body.formationId || priorCommand.endsAtS - priorCommand.startsAtS !== request.body.durationHours * 3_600)) {
+          throw new FleetProducerConflictError("Idempotenzkennung ist bereits mit einem anderen Werkstattauftrag belegt.");
+        }
+        const simulationSecond = await cooperationSimulationSecond(request.params.worldId);
+        const startsAtS = Math.max(simulationSecond, checkpoint.state.producedAt);
+        const endsAtS = startsAtS + request.body.durationHours * 3_600;
+        if (!Number.isSafeInteger(endsAtS)) throw new CooperationValidationError("Werkstattende liegt ausserhalb sicherer Ganzzahlen.");
+        const command: NativeFleetCommand = priorCommand ?? {
+          schemaVersion: FLEET_MAINTENANCE_COMMAND_SCHEMA,
+          worldId: request.params.worldId,
+          commandId: request.body.idempotencyKey,
+          expectedStateHash: checkpoint.stateHash,
+          expectedRevision: checkpoint.state.revision,
+          atS: startsAtS,
+          formationId: request.body.formationId,
+          facilityId: "public-workshop",
+          startsAtS,
+          endsAtS,
+        };
+        const result = await applyFleetProducerCommand({
+          db: deps.db as EconomyDatabase,
+          runtime: deps.fleetRuntime,
+          command,
+          ingestedAt: new Date(),
+        });
+        return reply.code(201).send(fleetResultView(result));
+      } catch (error) {
+        return error instanceof AuthorizationError ? sendError(reply, error) : sendFleetProducerError(reply, error);
+      }
+    },
+  );
+
   if (deps.fleetIngestToken !== undefined) {
     app.post<{
       Params: { worldId: string };
@@ -2191,11 +2278,21 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       try {
         const account = await getAccount(deps.db, { worldId: request.params.worldId, keycloakSubject: identity.keycloakSubject });
         if (account === undefined) throw new AuthorizationError("Kein aktiver Zugang zu dieser Welt.");
-        const [planningWorld] = await deps.db.select({ epoch: worlds.epoch }).from(worlds)
+        const [planningWorld] = await deps.db.select({ epoch: worlds.epoch, name: worlds.name }).from(worlds)
           .where(eq(worlds.id, request.params.worldId)).limit(1);
         if (planningWorld === undefined) return reply.code(404).send({ error: "Welt fehlt." });
         const event = await worldEventLog(deps.db, request.params.worldId).latestOfType("planning.diagram");
-        if (event === undefined) return reply.code(404).send({ error: "Noch kein Planner-Ergebnis veröffentlicht." });
+        if (event === undefined) return reply.send({
+          sequence: 0,
+          timeBasis: { epoch: planningWorld.epoch.toISOString(), timeZone: "Europe/Berlin", operatingDayBoundaryS: 0 },
+          data: {
+            schemaVersion: "planning-projection/v1",
+            projectionRevision: 0,
+            worldId: request.params.worldId,
+            corridor: { id: `world-${request.params.worldId}`, name: planningWorld.name },
+            stations: [], trains: [], occupations: [], conflicts: [],
+          },
+        });
         const parsed = planningProjectionForWorld(event.payload, request.params.worldId);
         if (parsed.projection === undefined) return reply.code(503).send({ error: parsed.error });
         return reply.send({
@@ -2690,6 +2787,25 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           displayName: request.body.displayName,
         });
         return reply.code(201).send(account);
+      } catch (error) {
+        return sendError(reply, error);
+      }
+    },
+  );
+
+  app.get<{ Params: { worldId: string } }>(
+    "/worlds/:worldId/access",
+    { preHandler: authenticate, schema: { params: worldIdParam } },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identität." });
+      try {
+        const account = await getAccount(deps.db, {
+          worldId: request.params.worldId,
+          keycloakSubject: identity.keycloakSubject,
+        });
+        if (account === undefined) return reply.code(404).send({ code: "world_access_not_found", error: "Für diese Welt besteht noch kein Zugang." });
+        return reply.send(account);
       } catch (error) {
         return sendError(reply, error);
       }

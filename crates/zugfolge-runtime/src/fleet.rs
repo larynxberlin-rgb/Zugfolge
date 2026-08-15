@@ -34,6 +34,7 @@ const FORMATION_COMMAND_SCHEMA: &str = "zugfolge-fleet-form-vehicles-command/v2"
 const PERSONNEL_DUTY_COMMAND_SCHEMA: &str = "zugfolge-fleet-assign-duty-command/v2";
 const PATH_RESERVATION_COMMAND_SCHEMA: &str = "zugfolge-fleet-attach-path-command/v2";
 const ASSET_TRANSFER_COMMAND_SCHEMA: &str = "zugfolge-fleet-transfer-asset-command/v1";
+const MAINTENANCE_COMMAND_SCHEMA: &str = "zugfolge-fleet-schedule-maintenance-command/v1";
 const FLEET_RESULT_SCHEMA: &str = "zugfolge-fleet-command-result/v2";
 const FLEET_RECEIPT_SCHEMA: &str = "zugfolge-fleet-command-receipt/v1";
 const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
@@ -348,6 +349,15 @@ struct AssetHolding {
     history_hash: String,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MaintenanceAssignment {
+    formation_id: String,
+    facility_id: String,
+    starts_at_s: u64,
+    ends_at_s: u64,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct FormationCommand {
@@ -415,6 +425,21 @@ struct AssetTransferCommand {
     transfer_receipt_hash: String,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MaintenanceCommand {
+    schema_version: String,
+    world_id: String,
+    command_id: String,
+    expected_state_hash: String,
+    expected_revision: u64,
+    at_s: u64,
+    formation_id: String,
+    facility_id: String,
+    starts_at_s: u64,
+    ends_at_s: u64,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CommandHeader {
@@ -428,6 +453,7 @@ enum FleetCommand {
     PersonnelDuty(PersonnelDutyCommand),
     PathReservation(PathReservationCommand),
     AssetTransfer(AssetTransferCommand),
+    Maintenance(MaintenanceCommand),
 }
 
 impl FleetCommand {
@@ -437,6 +463,7 @@ impl FleetCommand {
             Self::PersonnelDuty(command) => command.formation_ids.sort(),
             Self::PathReservation(_) => {}
             Self::AssetTransfer(_) => {}
+            Self::Maintenance(_) => {}
         }
     }
 
@@ -446,6 +473,7 @@ impl FleetCommand {
             Self::PersonnelDuty(command) => &command.world_id,
             Self::PathReservation(command) => &command.world_id,
             Self::AssetTransfer(command) => &command.world_id,
+            Self::Maintenance(command) => &command.world_id,
         }
     }
 
@@ -455,6 +483,7 @@ impl FleetCommand {
             Self::PersonnelDuty(command) => &command.command_id,
             Self::PathReservation(command) => &command.command_id,
             Self::AssetTransfer(command) => &command.command_id,
+            Self::Maintenance(command) => &command.command_id,
         }
     }
 
@@ -464,6 +493,7 @@ impl FleetCommand {
             Self::PersonnelDuty(command) => command.expected_revision,
             Self::PathReservation(command) => command.expected_revision,
             Self::AssetTransfer(command) => command.expected_revision,
+            Self::Maintenance(command) => command.expected_revision,
         }
     }
 
@@ -473,6 +503,7 @@ impl FleetCommand {
             Self::PersonnelDuty(command) => &command.expected_state_hash,
             Self::PathReservation(command) => &command.expected_state_hash,
             Self::AssetTransfer(command) => &command.expected_state_hash,
+            Self::Maintenance(command) => &command.expected_state_hash,
         }
     }
 
@@ -482,6 +513,7 @@ impl FleetCommand {
             Self::PersonnelDuty(command) => command.at_s,
             Self::PathReservation(command) => command.at_s,
             Self::AssetTransfer(command) => command.at_s,
+            Self::Maintenance(command) => command.at_s,
         }
     }
 
@@ -491,6 +523,7 @@ impl FleetCommand {
             Self::PersonnelDuty(_) => "personnel-duty",
             Self::PathReservation(_) => "path-reservation",
             Self::AssetTransfer(_) => "asset-holding",
+            Self::Maintenance(_) => "maintenance-assignment",
         }
     }
 
@@ -500,6 +533,7 @@ impl FleetCommand {
             Self::PersonnelDuty(command) => &command.personnel_duty_id,
             Self::PathReservation(command) => &command.path_reservation_id,
             Self::AssetTransfer(command) => &command.vehicle_id,
+            Self::Maintenance(command) => &command.formation_id,
         }
     }
 }
@@ -518,6 +552,8 @@ struct FleetWorldState {
     path_reservations: BTreeMap<String, PathReservationIntent>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     asset_holdings: BTreeMap<String, AssetHolding>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    maintenance_assignments: BTreeMap<String, MaintenanceAssignment>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -997,6 +1033,7 @@ fn parse_command(json: &str) -> Result<FleetCommand, RuntimeError> {
         PERSONNEL_DUTY_COMMAND_SCHEMA => parse_json(json).map(FleetCommand::PersonnelDuty),
         PATH_RESERVATION_COMMAND_SCHEMA => parse_json(json).map(FleetCommand::PathReservation),
         ASSET_TRANSFER_COMMAND_SCHEMA => parse_json(json).map(FleetCommand::AssetTransfer),
+        MAINTENANCE_COMMAND_SCHEMA => parse_json(json).map(FleetCommand::Maintenance),
         schema => Err(RuntimeError::new("unsupported_schema", schema)),
     }?;
     command.normalize();
@@ -1610,7 +1647,7 @@ fn snapshot(state: &FleetWorldState) -> Result<MobilizationSnapshot, RuntimeErro
             "Authority-Release oder Release-Hash im Zustand wurde manipuliert",
         ));
     }
-    let formations = state
+    let mut formations = state
         .formations
         .iter()
         .map(|(id, intent)| {
@@ -1622,6 +1659,15 @@ fn snapshot(state: &FleetWorldState) -> Result<MobilizationSnapshot, RuntimeErro
             materialize_formation(state, intent).map(|materialized| materialized.snapshot)
         })
         .collect::<Result<Vec<_>, _>>()?;
+    for formation in &mut formations {
+        if state.maintenance_assignments.values().any(|assignment| {
+            assignment.formation_id == formation.id
+                && assignment.starts_at_s <= state.produced_at
+                && state.produced_at < assignment.ends_at_s
+        }) {
+            formation.availability = MobilizationAvailability::Maintenance;
+        }
+    }
     let personnel_duties = state
         .personnel_duties
         .iter()
@@ -1728,6 +1774,7 @@ fn initialized(mut input: InitializeFleetWorld) -> Result<FleetWorldInitialized,
         personnel_duties: BTreeMap::new(),
         path_reservations: BTreeMap::new(),
         asset_holdings,
+        maintenance_assignments: BTreeMap::new(),
     };
     for intent in input.formations {
         if state.formations.contains_key(&intent.id) {
@@ -1956,6 +2003,59 @@ fn apply_asset_transfer(
     Ok(())
 }
 
+fn apply_maintenance(
+    state: &mut FleetWorldState,
+    command: &MaintenanceCommand,
+) -> Result<(), RuntimeError> {
+    non_empty(&command.formation_id, "formationId")?;
+    non_empty(&command.facility_id, "facilityId")?;
+    safe_integer(command.starts_at_s, "startsAtS")?;
+    safe_integer(command.ends_at_s, "endsAtS")?;
+    if command.starts_at_s < command.at_s || command.ends_at_s <= command.starts_at_s {
+        return Err(invalid(
+            "Werkstattauftrag besitzt kein gueltiges Zeitfenster",
+        ));
+    }
+    if !state.formations.contains_key(&command.formation_id) {
+        return Err(invalid(
+            "Formation ist im autoritativen Flottenzustand unbekannt",
+        ));
+    }
+    if state.maintenance_assignments.values().any(|assignment| {
+        assignment.formation_id != command.formation_id
+            && assignment.facility_id == command.facility_id
+            && command.starts_at_s < assignment.ends_at_s
+            && assignment.starts_at_s < command.ends_at_s
+    }) {
+        return Err(RuntimeError::new(
+            "facility_contention",
+            "Werkstatt ist im angefragten Zeitraum bereits belegt",
+        ));
+    }
+    if state
+        .maintenance_assignments
+        .get(&command.formation_id)
+        .is_some_and(|assignment| {
+            command.starts_at_s < assignment.ends_at_s && assignment.starts_at_s < command.ends_at_s
+        })
+    {
+        return Err(RuntimeError::new(
+            "maintenance_conflict",
+            "Formation besitzt bereits einen ueberlappenden Werkstattauftrag",
+        ));
+    }
+    state.maintenance_assignments.insert(
+        command.formation_id.clone(),
+        MaintenanceAssignment {
+            formation_id: command.formation_id.clone(),
+            facility_id: command.facility_id.clone(),
+            starts_at_s: command.starts_at_s,
+            ends_at_s: command.ends_at_s,
+        },
+    );
+    Ok(())
+}
+
 fn hydrate_legacy_asset_holdings(state: &mut FleetWorldState) -> Result<(), RuntimeError> {
     if !state.asset_holdings.is_empty() {
         return Ok(());
@@ -2082,6 +2182,7 @@ fn apply(
             state.path_reservations.insert(intent.id.clone(), intent);
         }
         FleetCommand::AssetTransfer(command) => apply_asset_transfer(&mut state, command)?,
+        FleetCommand::Maintenance(command) => apply_maintenance(&mut state, command)?,
     }
     state.revision = state
         .revision
@@ -2871,5 +2972,54 @@ mod tests {
         let error = apply_fleet_command(&initial["state"].to_string(), &foreign.to_string(), None)
             .expect_err("fremde Welt wird abgewiesen");
         assert!(error.to_string().starts_with("world_mismatch:"));
+    }
+
+    #[test]
+    fn werkstattauftrag_markiert_formation_und_ist_idempotent() {
+        let initial = initialize();
+        let formed = apply(
+            &initial["state"],
+            &formation_command(&initial, "formation:maintenance"),
+            None,
+        );
+        let command = json!({
+            "schemaVersion": "zugfolge-fleet-schedule-maintenance-command/v1",
+            "worldId": WORLD,
+            "commandId": "maintenance:formation-1",
+            "expectedStateHash": formed["stateHash"],
+            "expectedRevision": formed["state"]["revision"],
+            "atS": 12,
+            "formationId": "formation-1",
+            "facilityId": "public-workshop",
+            "startsAtS": 12,
+            "endsAtS": 120
+        });
+        let maintained = apply(&formed["state"], &command, None);
+        assert_eq!(
+            maintained["snapshot"]["formations"][0]["availability"],
+            "maintenance"
+        );
+        assert_eq!(
+            maintained["commandReceipt"]["entityKind"],
+            "maintenance-assignment"
+        );
+
+        let replay = apply(
+            &maintained["state"],
+            &command,
+            Some(&maintained["commandReceipt"]),
+        );
+        assert_eq!(replay["idempotentReplay"], true);
+        assert_eq!(replay["stateHash"], maintained["stateHash"]);
+
+        let mut unknown = command;
+        unknown["commandId"] = json!("maintenance:unknown");
+        unknown["formationId"] = json!("formation-unknown");
+        unknown["expectedStateHash"] = maintained["stateHash"].clone();
+        unknown["expectedRevision"] = maintained["state"]["revision"].clone();
+        let error =
+            apply_fleet_command(&maintained["state"].to_string(), &unknown.to_string(), None)
+                .expect_err("unbekannte Formation darf nicht in die Werkstatt");
+        assert!(error.to_string().contains("unbekannt"));
     }
 }

@@ -5,6 +5,7 @@ import type {
   CooperationResourceOption,
   OperatorContractView,
   OperatorSummary,
+  PublicTenderView,
   VehicleAssetView,
   VehicleHistoryEventView,
   VehicleMarketListingView,
@@ -38,9 +39,16 @@ export interface CooperationSurfaceState {
     readonly compatibility: string;
     readonly provenance: string;
   }[];
+  readonly economyRevision?: number;
+  readonly tenders?: readonly PublicTenderView[];
+  readonly stationOptions?: readonly { readonly id: string; readonly label: string }[];
 }
 
 export interface CooperationSurfaceActions {
+  readonly createOperator?: (name: string) => void | Promise<void>;
+  readonly submitTenderBid?: (fields: Readonly<Record<string, string>>) => void | Promise<void>;
+  readonly submitPathRequest?: (kind: "schedule" | "empty-run", fields: Readonly<Record<string, string>>) => void | Promise<void>;
+  readonly scheduleMaintenance?: (fields: Readonly<Record<string, string>>) => void | Promise<void>;
   readonly changeOperator?: (operatorId: string) => void | Promise<void>;
   readonly changeContractType?: (contractType: ContractType) => void;
   readonly changeMarketQuery?: (query: string) => void;
@@ -400,14 +408,25 @@ function marketSurface(state: CooperationSurfaceState): string {
   </section>`;
 }
 
+function operationsSurface(state: CooperationSurfaceState): string {
+  const formations = state.resources?.formations ?? [];
+  const formationOptions = formations.map((formation) => `<option value="${escapeHtml(formation.id)}">${escapeHtml(formation.label)}</option>`).join("");
+  const stationOptions = (state.stationOptions ?? []).map((station) => `<option value="${escapeHtml(station.id)}">${escapeHtml(station.label)}</option>`).join("");
+  const stationInput = (name: string, label: string) => `<label class="m12-field"><span>${label}</span><input name="${name}" list="planning-stations" required maxlength="200" autocomplete="off" placeholder="Betriebsstellenkennung"></label>`;
+  const pathForm = (kind: "schedule" | "empty-run", title: string, leadMinutes: number) => `<form id="${kind === "schedule" ? "schedule-request-form" : "empty-run-request-form"}" class="m12-form compact-form" data-path-request="${kind}" data-preserve-draft><h3>${title}</h3><label class="m12-field"><span>Formation</span><select name="formationId" required>${formationOptions}</select></label>${field("trainNumber", "Zugnummer", { type: "number", min: 1, value: kind === "schedule" ? "7001" : "9001" })}${stationInput("originStationId", "Start")}${stationInput("destinationStationId", "Ziel")}${field("departureInMinutes", "Abfahrt in Minuten", { type: "number", min: 1, value: String(leadMinutes) })}<button type="submit"${formations.length === 0 ? " disabled" : ""}>${kind === "schedule" ? "Fahrplan verbindlich anmelden" : "Leerfahrt konfliktgeprüft anfordern"}</button></form>`;
+  return `<section class="journey-card m12-card" id="betriebsplanung"><div class="journey-heading"><div><p class="eyebrow">BETRIEB</p><h2>Fahrten und Werkstatt</h2></div><span class="state-word">servergeprüft</span></div><datalist id="planning-stations">${stationOptions}</datalist><div class="m12-operating-grid">${pathForm("schedule", "Fahrplan planen", 30)}${pathForm("empty-run", "Spontane Leerfahrt", 5)}<form id="maintenance-form" class="m12-form compact-form" data-preserve-draft><h3>Formation in die Werkstatt</h3><label class="m12-field"><span>Formation</span><select name="formationId" required>${formationOptions}</select></label>${field("durationHours", "Werkstattdauer · Stunden", { type: "number", min: 1, value: "4" })}<p class="resource-note">Die öffentliche Werkstatt wird gegen den autoritativen Flottenzustand und bestehende Belegungen geprüft.</p><button type="submit"${formations.length === 0 ? " disabled" : ""}>Werkstattauftrag verbindlich erteilen</button></form></div></section>`;
+}
+
 export function renderCooperationSurface(state: CooperationSurfaceState): string {
   if (state.activeOperatorId === "") {
-    return `<section class="journey-card m12-card" id="vehicle-market" tabindex="-1"><p class="eyebrow">Kooperation</p><h2>Kein eigenes EVU in dieser Welt</h2><p class="m12-empty">Kooperationsverträge und Fahrzeugmarkt werden freigeschaltet, sobald das angemeldete Konto ein EVU führt.</p></section>`;
+    return `<section class="journey-card m12-card" id="evu-gruenden" tabindex="-1"><p class="eyebrow">IHR UNTERNEHMEN</p><h2>EVU gründen</h2><p>Wählen Sie den sichtbaren Namen Ihres Eisenbahnverkehrsunternehmens. Die Gründung und das Startkapital werden serverseitig gemeinsam gebucht.</p><form id="operator-foundation-form" data-preserve-draft><label class="m12-field"><span>Name des EVU</span><input name="name" minlength="1" maxlength="64" required autocomplete="organization" placeholder="z. B. Elbe-Saale-Bahn"></label><button type="submit"${state.busy ? " disabled" : ""}>EVU verbindlich gründen</button></form></section>`;
   }
   const own = state.operators.filter((operator) => state.ownOperatorIds.includes(operator.id));
+  const openTenders = (state.tenders ?? []).filter((tender) => tender.phase === "open");
+  const tenderSurface = `<section class="journey-card m12-card" id="ausschreibungen"><div class="journey-heading"><div><p class="eyebrow">VERKEHRSVERTRÄGE</p><h2>An Ausschreibung teilnehmen</h2></div><span class="state-word">${openTenders.length} offen</span></div>${openTenders.length === 0 ? '<p class="m12-empty">Derzeit ist keine Ausschreibung zur Angebotsabgabe geöffnet.</p>' : `<form id="tender-bid-form" class="m12-form" data-preserve-draft><label class="m12-field"><span>Ausschreibung</span><select name="tenderId">${openTenders.map((tender) => `<option value="${escapeHtml(tender.id)}">Los ${escapeHtml(tender.lotId)} · ${tender.bidCount} Angebot(e)</option>`).join("")}</select></label><label class="m12-field"><span>Formation</span><select name="formationId">${(state.resources?.formations ?? []).map((formation) => `<option value="${escapeHtml(formation.id)}">${escapeHtml(formation.label)}</option>`).join("")}</select></label>${field("orderingFeeEuros", "Bestellentgelt · Euro je Zug-km", { value: "10,00" })}${field("punctualityPercent", "Pünktlichkeitszusage · Prozent", { type: "number", min: 0, value: "95" })}${field("extraSeats", "Zusätzliche Sitzplätze", { type: "number", min: 0, value: "0" })}<button type="submit"${state.resources?.fleetRevision === null || state.resources?.fleetSnapshotHash === null || (state.resources?.formations.length ?? 0) === 0 ? " disabled" : ""}>Angebot verbindlich abgeben</button></form>`}</section>`;
   const html = `<section class="m12-surface" aria-busy="${state.busy}">
     <div class="m12-toolbar"><label><span>Handelndes EVU in ${escapeHtml(state.worldName)}</span><select id="m12-operator">${own.map((operator) => `<option value="${escapeHtml(operator.id)}"${operator.id === state.activeOperatorId ? " selected" : ""}>${escapeHtml(operator.name)}</option>`).join("")}</select></label><div class="m12-clock"><span>Synchronisierte Weltzeit</span><output id="m12-time">Betriebstag ${Math.floor(state.atS / 86_400) + 1}</output></div><button id="m12-refresh" class="secondary" type="button">Kooperation und Markt aktualisieren</button></div>
-    <div class="m12-grid">${contractSurface(state)}${marketSurface(state)}</div>
+    <div class="m12-grid">${tenderSurface}${operationsSurface(state)}${contractSurface(state)}${marketSurface(state)}</div>
   </section>`;
   return state.busy ? html.replace(/<button(?![^>]*\bdisabled\b)/g, '<button disabled aria-disabled="true"') : html;
 }
@@ -423,6 +442,16 @@ function invoke(action: (() => void | Promise<void>) | undefined): void {
 }
 
 export function bindCooperationSurface(root: ParentNode, actions: CooperationSurfaceActions): void {
+  root.querySelector<HTMLFormElement>("#operator-foundation-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    invoke(() => actions.createOperator?.(String(new FormData(event.currentTarget as HTMLFormElement).get("name") ?? "").trim()));
+  });
+  root.querySelector<HTMLFormElement>("#tender-bid-form")?.addEventListener("submit", (event) => { event.preventDefault(); invoke(() => actions.submitTenderBid?.(formFields(event.currentTarget as HTMLFormElement))); });
+  root.querySelectorAll<HTMLFormElement>("[data-path-request]").forEach((form) => form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    invoke(() => actions.submitPathRequest?.(form.dataset["pathRequest"] as "schedule" | "empty-run", formFields(form)));
+  }));
+  root.querySelector<HTMLFormElement>("#maintenance-form")?.addEventListener("submit", (event) => { event.preventDefault(); invoke(() => actions.scheduleMaintenance?.(formFields(event.currentTarget as HTMLFormElement))); });
   root.querySelector<HTMLSelectElement>("#m12-operator")?.addEventListener("change", (event) => invoke(() => actions.changeOperator?.((event.currentTarget as HTMLSelectElement).value)));
   root.querySelector<HTMLSelectElement>("#m12-contract-type")?.addEventListener("change", (event) => actions.changeContractType?.((event.currentTarget as HTMLSelectElement).value as ContractType));
   root.querySelector<HTMLInputElement>("#m12-market-query")?.addEventListener("change", (event) => actions.changeMarketQuery?.((event.currentTarget as HTMLInputElement).value));

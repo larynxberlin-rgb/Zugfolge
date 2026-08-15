@@ -1,0 +1,10 @@
+:root { --zf-bg: #090b10; --zf-panel: #11151d; --zf-line: #2a303b; --zf-text: #f3f5f7; --zf-muted: #a6afbd; --zf-accent: #e5b94d; }
+body, .login-pf body { background: radial-gradient(circle at 25% 0%, #19202a 0, var(--zf-bg) 48%); color: var(--zf-text); }
+.pf-v5-c-login__main, .card-pf { background: rgba(17, 21, 29, .96); border: 1px solid var(--zf-line); border-radius: 2px; box-shadow: 0 24px 80px rgba(0, 0, 0, .45); }
+.zf-eyebrow { color: var(--zf-accent); font-size: .75rem; font-weight: 700; letter-spacing: .14em; }
+.zf-auth-error h1 { color: var(--zf-text); font-size: 1.6rem; line-height: 1.2; }
+.zf-auth-error p, .zf-auth-error summary { color: var(--zf-muted); }
+.zf-auth-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1.5rem 0; }
+.zf-auth-actions .pf-v5-c-button { text-decoration: none; }
+.zf-auth-actions .pf-m-primary { background: var(--zf-accent); color: #101216; }
+.zf-auth-error details { border-top: 1px solid var(--zf-line); padding-top: 1rem; }

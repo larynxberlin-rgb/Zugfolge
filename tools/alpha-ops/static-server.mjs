@@ -40,6 +40,8 @@ export function runtimeConfiguration(environment = process.env) {
     gameWebUrl: environment["GAME_WEB_PUBLIC_URL"] ?? "",
     livemapUrl: environment["LIVEMAP_PUBLIC_URL"] ?? "",
     livemapOidcClientId: environment["LIVEMAP_OIDC_CLIENT_ID"] ?? "livemap",
+    operationsCenterOidcClientId: environment["OPERATIONS_CENTER_OIDC_CLIENT_ID"] ?? "operations-center",
+    operationsCenterUrl: environment["OPERATIONS_CENTER_URL"] ?? "",
     mapBasemapStyleUrl,
     mapGermanyPmtilesUrl,
     mapAttribution: environment["MAP_ATTRIBUTION"]
