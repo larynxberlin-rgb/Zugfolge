@@ -2,6 +2,9 @@ import type { HealthCheck } from "@zugfolge/health";
 
 import type { PrometheusMetricSource } from "./observability.js";
 
+export const REGIONAL_SIMULATION_SCHEDULER_INTERVAL_MS = 60_000;
+export const LIVEMAP_FRESHNESS_MAXIMUM_AGE_MS = REGIONAL_SIMULATION_SCHEDULER_INTERVAL_MS * 2;
+
 export interface RegionalSimulationSchedulerSnapshot {
   readonly startedAtMs: number;
   readonly running: boolean;
@@ -90,7 +93,7 @@ export class RegionalSimulationSchedulerMonitor implements PrometheusMetricSourc
 
 export function createRegionalSimulationSchedulerHealthCheck(
   monitor: RegionalSimulationSchedulerMonitor,
-  intervalMs = 60_000,
+  intervalMs = REGIONAL_SIMULATION_SCHEDULER_INTERVAL_MS,
   now: () => number = Date.now,
 ): HealthCheck {
   if (!Number.isFinite(intervalMs) || intervalMs <= 0) throw new RangeError("Scheduler-Intervall ist ungueltig.");
