@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 
-import { verifiedBaseTrainRunId } from "@zugfolge/livemap-stream";
+import {
+  allocatePublicRegionalTrainNumbers,
+  publicRegionalTrainNumber,
+  verifiedBaseTrainRunId,
+} from "@zugfolge/livemap-stream";
 
 import type {
   LivemapConfigV2,
@@ -220,6 +224,21 @@ function projectionTrainId(train: PublicTrain): string | undefined {
   return verifiedBaseTrainRunId(train);
 }
 
+function withCompatiblePublicTrainNumber(
+  train: PublicTrain,
+  trustedTrainId: string,
+  allocated: ReadonlyMap<string, number>,
+): PublicTrain {
+  if (train.operator !== "public") return train;
+  const legacy = /^(.*\D)(\d{6,})$/u.exec(train.trainNumber);
+  if (legacy === null || !allocated.has(trustedTrainId)) return train;
+  const prefix = legacy[1]!.replace(/[-\s]+$/u, "");
+  return Object.freeze({
+    ...train,
+    trainNumber: publicRegionalTrainNumber(prefix, trustedTrainId, allocated),
+  });
+}
+
 /** Read-only-Projektor; jeder Lookup bleibt an Welt und InfraRelease gebunden. */
 export class SQLiteTrainMapProjector implements PublicTrainMapProjector, PublicObjectStateProjector {
   readonly #database: DatabaseSync;
@@ -229,6 +248,7 @@ export class SQLiteTrainMapProjector implements PublicTrainMapProjector, PublicO
   readonly #geometry: StatementSync;
   readonly #displayGeometry: StatementSync;
   readonly #resourceTracks: StatementSync;
+  readonly #publicTrainNumbers: ReadonlyMap<string, number>;
   readonly #geometryCache = new Map<string, CachedGeometry>();
   readonly #displayGeometryCache = new Map<string, CachedGeometry>();
   readonly worldId: string;
@@ -259,6 +279,12 @@ export class SQLiteTrainMapProjector implements PublicTrainMapProjector, PublicO
       if (!SHA256.test(this.deploymentHash)) {
         throw new TypeError("Zugkartenprojektion besitzt keinen gueltigen Deploymenthash.");
       }
+      const trainIds = this.#database.prepare(`SELECT DISTINCT train_id
+        FROM train_resource_spans
+        WHERE world_id = ? AND infrastructure_release_id = ?
+        ORDER BY train_id`).all(this.worldId, this.infrastructureReleaseId)
+        .map((value) => text(record(value, "Zugnummernreservierung")["train_id"], "train_resource_spans.train_id"));
+      this.#publicTrainNumbers = allocatePublicRegionalTrainNumbers(trainIds);
       this.#trainSpan = this.#database.prepare(`SELECT position_start_mm, position_end_mm, resource_id, is_train_end
         FROM train_resource_spans
         WHERE world_id = ? AND infrastructure_release_id = ? AND train_id = ?
@@ -329,10 +355,12 @@ export class SQLiteTrainMapProjector implements PublicTrainMapProjector, PublicO
 
   project(worldId: string, train: PublicTrain): PublicTrain {
     this.#assertOpen();
-    const plain = withoutUnprovenPosition(train);
-    if (worldId !== this.worldId || !Number.isSafeInteger(train.positionMm) || train.positionMm < 0) return plain;
+    const unpositioned = withoutUnprovenPosition(train);
+    if (worldId !== this.worldId) return unpositioned;
     const trustedTrainId = projectionTrainId(train);
-    if (trustedTrainId === undefined) return plain;
+    if (trustedTrainId === undefined) return unpositioned;
+    const plain = withCompatiblePublicTrainNumber(unpositioned, trustedTrainId, this.#publicTrainNumbers);
+    if (!Number.isSafeInteger(train.positionMm) || train.positionMm < 0) return plain;
     const trainRows = sqliteRows(this.#trainSpan, worldId, this.infrastructureReleaseId, trustedTrainId, train.positionMm, train.positionMm, train.positionMm);
     if (trainRows.length === 0) return plain;
     if (trainRows.length !== 1) throw new TypeError(`Zug '${train.id}' besitzt mehrdeutige kumulative Positionsspannen.`);

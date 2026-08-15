@@ -569,6 +569,54 @@ export function interpolatedPosition(
   return Math.round(previous.positionMm + ((current.positionMm - previous.positionMm) * elapsed) / duration);
 }
 
+function interpolateInteger(previous: number, current: number, elapsed: number, duration: number): number {
+  return Math.round(previous + ((current - previous) * elapsed) / duration);
+}
+
+function interpolateBearing(previous: number | undefined, current: number | undefined, elapsed: number, duration: number): number | undefined {
+  if (previous === undefined || current === undefined) return current;
+  const delta = ((current - previous + 540_000) % 360_000) - 180_000;
+  return (interpolateInteger(previous, previous + delta, elapsed, duration) + 360_000) % 360_000;
+}
+
+function interpolatedMapPosition(
+  previous: PublicTrain,
+  current: PublicTrain,
+  previousAt: number,
+  currentAt: number,
+  renderAt: number,
+): PublicMapPosition | undefined {
+  const from = previous.mapPosition;
+  const to = current.mapPosition;
+  if (
+    previous.status !== "running"
+    || current.status !== "running"
+    || from === undefined
+    || to === undefined
+    || from.infrastructureReleaseId !== to.infrastructureReleaseId
+    || from.resourceId !== to.resourceId
+    || from.trackId !== to.trackId
+    || currentAt <= previousAt
+  ) return to;
+  if (renderAt <= previousAt) return from;
+  if (renderAt >= currentAt) return to;
+  const elapsed = renderAt - previousAt;
+  const duration = currentAt - previousAt;
+  const bearingMilliDegrees = interpolateBearing(
+    from.bearingMilliDegrees,
+    to.bearingMilliDegrees,
+    elapsed,
+    duration,
+  );
+  return Object.freeze({
+    ...to,
+    offsetMm: interpolateInteger(from.offsetMm, to.offsetMm, elapsed, duration),
+    latitudeE7: interpolateInteger(from.latitudeE7, to.latitudeE7, elapsed, duration),
+    longitudeE7: interpolateInteger(from.longitudeE7, to.longitudeE7, elapsed, duration),
+    ...(bearingMilliDegrees === undefined ? {} : { bearingMilliDegrees }),
+  });
+}
+
 export function renderTrains(samples: RenderSamples, renderAt: number): readonly PublicTrain[] {
   return [...samples.current.trains.values()].map((current) => {
     const previous = samples.previous.trains.get(current.id);
@@ -580,7 +628,19 @@ export function renderTrains(samples: RenderSamples, renderAt: number): readonly
       samples.current.at,
       renderAt,
     );
-    return positionMm === current.positionMm ? current : Object.freeze({ ...current, positionMm });
+    const mapPosition = interpolatedMapPosition(
+      previous,
+      current,
+      samples.previous.at,
+      samples.current.at,
+      renderAt,
+    );
+    if (positionMm === current.positionMm && mapPosition === current.mapPosition) return current;
+    return Object.freeze({
+      ...current,
+      positionMm,
+      ...(mapPosition === undefined ? {} : { mapPosition }),
+    });
   });
 }
 

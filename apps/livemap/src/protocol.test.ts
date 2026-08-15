@@ -416,15 +416,61 @@ describe("Livemap-Projektion", () => {
   });
 
   it("interpoliert nur zwischen zwei autoritativen Samples und mutiert sie nicht", () => {
-    const first = initialState(snapshot(4, 100, { ...baseTrain, positionMm: 1_000 }));
-    const second = initialState(snapshot(5, 110, { ...baseTrain, positionMm: 1_200 }));
+    const first = initialState(snapshot(4, 100, {
+      ...baseTrain,
+      positionMm: 1_000,
+      mapPosition: {
+        infrastructureReleaseId: "infra",
+        resourceId: "resource",
+        trackId: "track",
+        offsetMm: 1_000,
+        latitudeE7: 500_000_000,
+        longitudeE7: 100_000_000,
+        bearingMilliDegrees: 350_000,
+      },
+    }));
+    const second = initialState(snapshot(5, 110, {
+      ...baseTrain,
+      positionMm: 1_200,
+      mapPosition: {
+        infrastructureReleaseId: "infra",
+        resourceId: "resource",
+        trackId: "track",
+        offsetMm: 1_200,
+        latitudeE7: 500_000_200,
+        longitudeE7: 100_000_400,
+        bearingMilliDegrees: 10_000,
+      },
+    }));
     const samples = appendRenderSample(appendRenderSample(undefined, first), second);
 
-    expect(renderTrains(samples, 105)[0]?.positionMm).toBe(1_100);
+    expect(renderTrains(samples, 105)[0]).toMatchObject({
+      positionMm: 1_100,
+      mapPosition: {
+        offsetMm: 1_100,
+        latitudeE7: 500_000_100,
+        longitudeE7: 100_000_200,
+        bearingMilliDegrees: 0,
+      },
+    });
     expect(renderTrains(samples, 90)[0]?.positionMm).toBe(1_000);
     expect(renderTrains(samples, 120)[0]?.positionMm).toBe(1_200);
     expect(first.trains.get("1")?.positionMm).toBe(1_000);
     expect(second.trains.get("1")?.positionMm).toBe(1_200);
+  });
+
+  it("springt bei einem Gleiswechsel auf den neuen bestaetigten Kartenpunkt", () => {
+    const previous = initialState(snapshot(4, 100, {
+      ...baseTrain,
+      mapPosition: { infrastructureReleaseId: "infra", resourceId: "a", trackId: "track-a", offsetMm: 1, latitudeE7: 1, longitudeE7: 1 },
+    }));
+    const current = initialState(snapshot(5, 110, {
+      ...baseTrain,
+      positionMm: 2_000,
+      mapPosition: { infrastructureReleaseId: "infra", resourceId: "b", trackId: "track-b", offsetMm: 2, latitudeE7: 2, longitudeE7: 2 },
+    }));
+    const samples = appendRenderSample(appendRenderSample(undefined, previous), current);
+    expect(renderTrains(samples, 105)[0]?.mapPosition).toEqual(current.trains.get("1")?.mapPosition);
   });
 });
 

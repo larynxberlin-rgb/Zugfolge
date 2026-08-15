@@ -51,10 +51,13 @@ import {
   trainPanel,
 } from "./panels.js";
 import {
+  appendRenderSample,
   LivemapConnection,
   operatorLabel,
+  renderTrains,
   type LiveState,
   type PublicExternalTrain,
+  type RenderSamples,
 } from "./protocol.js";
 import { livemapNavigationDestinations, mailboxDecisionDestination } from "./navigation.js";
 import { externalStatusLabel, localizeMapControls, operatingStatusLabel, railwayPlaceLabel, setMapViewButtons, visibleExternalTrains, type MapView } from "./presentation.js";
@@ -149,11 +152,12 @@ let map: MapLibreMap | undefined;
 let api: LivemapApiClient | undefined;
 let connection: LivemapConnection | undefined;
 let mapConfig: LivemapConfigV2 | undefined;
-let liveState: LiveState | undefined;
+let renderSamples: RenderSamples | undefined;
+let renderSampleStartedAtMs = 0;
 let selected: MapSelection | undefined;
 let previousSelected: MapSelection | undefined;
 let appliedObjectStates = new Map<string, PublicObjectState>();
-let renderQueued = false;
+let renderFrame: number | undefined;
 
 function text<K extends keyof HTMLElementTagNameMap>(tag: K, value: string, className?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -412,28 +416,39 @@ function renderObjectList(state: LiveState): void {
 }
 
 function scheduleLiveRender(state: LiveState): void {
-  liveState = state;
-  if (renderQueued) return;
-  renderQueued = true;
-  requestAnimationFrame(() => {
-    renderQueued = false;
-    const latest = liveState;
-    if (latest === undefined) return;
-    sequenceLabel.textContent = `Sequenz ${latest.sequence}`;
-    sequenceLabel.classList.remove("connection-error");
-    renderExternalRuns(latest);
-    renderObjectList(latest);
-    const currentMap = map;
-    const currentConfig = mapConfig;
-    if (currentMap !== undefined && currentConfig !== undefined && currentMap.isStyleLoaded()) {
-      const source = currentMap.getSource(TRAIN_SOURCE_ID) as GeoJSONSource | undefined;
-      // Derselbe Zug behaelt fuer exakt/geschaetzt dieselbe Feature-ID. Der
-      // Zielpunkt wird direkt ersetzt: keine irrefuehrende Luftlinienanimation.
-      source?.setData(trainFeatureCollection(latest.trains.values(), currentConfig.infrastructureReleaseId) as never);
-      applyLiveObjectStates(currentMap, latest.objectStates);
-      updateSelectionState();
-    }
-  });
+  renderSamples = appendRenderSample(renderSamples, state);
+  renderSampleStartedAtMs = performance.now();
+  sequenceLabel.textContent = `Sequenz ${state.sequence}`;
+  sequenceLabel.classList.remove("connection-error");
+  renderExternalRuns(state);
+  renderObjectList(state);
+  const currentMap = map;
+  if (currentMap !== undefined && currentMap.isStyleLoaded()) {
+    applyLiveObjectStates(currentMap, state.objectStates);
+    updateSelectionState();
+  }
+  if (renderFrame === undefined) renderFrame = requestAnimationFrame(renderLiveMapFrame);
+}
+
+function renderLiveMapFrame(nowMs: number): void {
+  renderFrame = undefined;
+  const samples = renderSamples;
+  const currentMap = map;
+  const currentConfig = mapConfig;
+  if (samples === undefined || currentMap === undefined || currentConfig === undefined || !currentMap.isStyleLoaded()) return;
+  const elapsedS = Math.max(0, (nowMs - renderSampleStartedAtMs) / 1_000);
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const renderAt = reduceMotion
+    ? samples.current.at
+    : Math.min(samples.current.at, samples.previous.at + elapsedS);
+  const source = currentMap.getSource(TRAIN_SOURCE_ID) as GeoJSONSource | undefined;
+  source?.setData(trainFeatureCollection(
+    renderTrains(samples, renderAt),
+    currentConfig.infrastructureReleaseId,
+  ) as never);
+  if (!reduceMotion && renderAt < samples.current.at) {
+    renderFrame = requestAnimationFrame(renderLiveMapFrame);
+  }
 }
 
 async function createMap(config: LivemapConfigV2): Promise<MapLibreMap> {
@@ -564,6 +579,7 @@ async function boot(): Promise<void> {
 }
 
 window.addEventListener("beforeunload", () => {
+  if (renderFrame !== undefined) cancelAnimationFrame(renderFrame);
   connection?.close();
   map?.remove();
   removeProtocol("pmtiles");
