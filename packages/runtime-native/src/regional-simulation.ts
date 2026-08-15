@@ -299,11 +299,11 @@ export interface RegionalSimulationRuntime {
   readonly apply: (
     state: RegionalSimulationState,
     command: RegionalSimulationCommand,
-  ) => RegionalSimulationResult;
+  ) => Promise<RegionalSimulationResult>;
   readonly applyBatch: (
     state: RegionalSimulationState,
     batch: RegionalSimulationCommandBatch,
-  ) => RegionalSimulationBatchResult;
+  ) => Promise<RegionalSimulationBatchResult>;
 }
 
 export interface RegionalSimulationNativeAddon {
@@ -313,10 +313,18 @@ export interface RegionalSimulationNativeAddon {
     stateJson: string,
     commandJson: string,
   ) => string;
+  readonly applyRegionalSimulationCommandAsync?: (
+    stateJson: string,
+    commandJson: string,
+  ) => Promise<string>;
   readonly applyRegionalSimulationCommandBatch: (
     stateJson: string,
     batchJson: string,
   ) => string;
+  readonly applyRegionalSimulationCommandBatchAsync?: (
+    stateJson: string,
+    batchJson: string,
+  ) => Promise<string>;
 }
 
 function invariant(condition: unknown, message: string): asserts condition {
@@ -667,7 +675,7 @@ export function regionalSimulationRuntimeFromAddon(
       );
       return restored;
     },
-    apply(state: RegionalSimulationState, command: RegionalSimulationCommand) {
+    async apply(state: RegionalSimulationState, command: RegionalSimulationCommand) {
       invariant(
         state.worldId === command.worldId && state.regionId === command.regionId,
         "M4-Kommando verletzt die Welt- oder Regionsisolation.",
@@ -675,8 +683,12 @@ export function regionalSimulationRuntimeFromAddon(
       sha256(command.expectedStateHash, "M4-Kommando-Zustandshash");
       safeInteger(command.expectedRevision, "M4-Kommando-Revision");
       safeInteger(command.expectedPublisherSequence, "M4-Kommando-Publisher-Sequenz");
+      const stateJson = JSON.stringify(state);
+      const commandJson = JSON.stringify(command);
       const result = decodeResult(
-        addon.applyRegionalSimulationCommand(JSON.stringify(state), JSON.stringify(command)),
+        addon.applyRegionalSimulationCommandAsync === undefined
+          ? addon.applyRegionalSimulationCommand(stateJson, commandJson)
+          : await addon.applyRegionalSimulationCommandAsync(stateJson, commandJson),
       );
       invariant(
         result.state.worldId === command.worldId &&
@@ -697,7 +709,7 @@ export function regionalSimulationRuntimeFromAddon(
       }
       return result;
     },
-    applyBatch(state: RegionalSimulationState, batch: RegionalSimulationCommandBatch) {
+    async applyBatch(state: RegionalSimulationState, batch: RegionalSimulationCommandBatch) {
       invariant(
         state.worldId === batch.worldId && state.regionId === batch.regionId,
         "M4-Kommandogruppe verletzt die Welt- oder Regionsisolation.",
@@ -722,11 +734,12 @@ export function regionalSimulationRuntimeFromAddon(
         );
         commandIds.add(command.commandId);
       }
+      const stateJson = JSON.stringify(state);
+      const batchJson = JSON.stringify(batch);
       const result = decodeBatchResult(
-        addon.applyRegionalSimulationCommandBatch(
-          JSON.stringify(state),
-          JSON.stringify(batch),
-        ),
+        addon.applyRegionalSimulationCommandBatchAsync === undefined
+          ? addon.applyRegionalSimulationCommandBatch(stateJson, batchJson)
+          : await addon.applyRegionalSimulationCommandBatchAsync(stateJson, batchJson),
       );
       invariant(
         result.state.worldId === batch.worldId && result.state.regionId === batch.regionId,
@@ -798,6 +811,14 @@ export function loadRegionalSimulationRuntime(
   invariant(
     typeof required["applyRegionalSimulationCommandBatch"] === "function",
     "napi-rs-Addon exportiert applyRegionalSimulationCommandBatch nicht.",
+  );
+  invariant(
+    typeof required["applyRegionalSimulationCommandAsync"] === "function",
+    "napi-rs-Addon exportiert applyRegionalSimulationCommandAsync nicht.",
+  );
+  invariant(
+    typeof required["applyRegionalSimulationCommandBatchAsync"] === "function",
+    "napi-rs-Addon exportiert applyRegionalSimulationCommandBatchAsync nicht.",
   );
   return regionalSimulationRuntimeFromAddon(required as unknown as RegionalSimulationNativeAddon);
 }

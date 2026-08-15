@@ -50,6 +50,7 @@ test("Alpha-Compose erzwingt Map-Gate, Migration, signierten Bootstrap und einen
   assert.match(compose, /game-migrate:[\s\S]*map-release-preflight: \{ condition: service_completed_successfully \}/u);
   assert.match(compose, /game-bootstrap:[\s\S]*production-db-bootstrap\.mjs/);
   assert.match(compose, /depends_on: \{ game-bootstrap: \{ condition: service_completed_successfully \}, keycloak:/);
+  assert.match(compose, /game-api:[\s\S]*healthcheck: \{ <<: \*health, start_period: 15m,[^\n]+\/health\/ready/u);
   assert.match(compose, /odoo-upgrade:[\s\S]*--update=zugfolge_admin[\s\S]*--stop-after-init[\s\S]*restart: "no"/u);
   assert.match(compose, /odoo-upgrade:[\s\S]*HOST: odoo-postgres[\s\S]*USER: odoo[\s\S]*PASSWORD: "\$\{ODOO_DB_PASSWORD\}"/u);
   assert.match(compose, /odoo:[\s\S]*depends_on: \{ odoo-upgrade: \{ condition: service_completed_successfully \}, game-api:/u);
