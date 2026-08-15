@@ -1,12 +1,32 @@
 import { describe, expect, it, vi } from "vitest";
+import { createLivemapHealthCheck, LivemapRegistry } from "@zugfolge/livemap-stream";
 
 import {
   createRegionalSimulationSchedulerHealthCheck,
+  LIVEMAP_FRESHNESS_MAXIMUM_AGE_MS,
+  REGIONAL_SIMULATION_SCHEDULER_INTERVAL_MS,
   RegionalSimulationSchedulerMonitor,
   runMonitoredRegionalSimulationCycle,
 } from "./regional-simulation-monitor.js";
 
 describe("RegionalSimulationSchedulerMonitor", () => {
+  it("toleriert beim Livemap-Feed einen vollstaendigen 1:1-Takt samt Laufzeitjitter", async () => {
+    let now = 1_000;
+    const livemap = new LivemapRegistry({ now: () => now });
+    livemap.forWorld("public").publish({ at: 0, changed: [], removed: [] });
+    const health = createLivemapHealthCheck(
+      livemap,
+      LIVEMAP_FRESHNESS_MAXIMUM_AGE_MS,
+      () => now,
+    );
+
+    now += REGIONAL_SIMULATION_SCHEDULER_INTERVAL_MS + 1;
+    await expect(health.check()).resolves.toMatchObject({ status: "ok", code: "livemap_fresh" });
+
+    now += REGIONAL_SIMULATION_SCHEDULER_INTERVAL_MS;
+    await expect(health.check()).resolves.toMatchObject({ status: "degraded", code: "livemap_stale" });
+  });
+
   it("wertet auch einen leeren erfolgreichen Lauf als aktuellen Takt", async () => {
     let now = 1_000;
     const monitor = new RegionalSimulationSchedulerMonitor(now, () => now);

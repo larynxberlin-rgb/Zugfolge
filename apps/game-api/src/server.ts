@@ -120,6 +120,8 @@ import { createPlanningScheduler } from "./planning-scheduler.js";
 import { advanceRegionalSimulations } from "./regional-simulation-scheduler.js";
 import {
   createRegionalSimulationSchedulerHealthCheck,
+  LIVEMAP_FRESHNESS_MAXIMUM_AGE_MS,
+  REGIONAL_SIMULATION_SCHEDULER_INTERVAL_MS,
   RegionalSimulationSchedulerMonitor,
   runMonitoredRegionalSimulationCycle,
 } from "./regional-simulation-monitor.js";
@@ -610,7 +612,7 @@ const app = buildApp({
     createDisruptionProviderHealthCheck(disruptionProviderMonitor),
     createLivemapHealthCheck(
       livemap,
-      60_000,
+      LIVEMAP_FRESHNESS_MAXIMUM_AGE_MS,
       Date.now,
       (worldId, nowMs) => deploymentRuntime.expectsLivemapFreshness(worldId, nowMs),
     ),
@@ -822,7 +824,10 @@ const runRegionalAdvance = () => {
 // Client interpoliert ausschliesslich zwischen diesen echten Samples.
 // Fachkommandos (Grenze, Stoerung, Disposition) bleiben davon unberuehrt und
 // tragen weiterhin ihre exakte Simulationssekunde.
-const regionalAdvanceInterval = setInterval(runRegionalAdvance, 60_000);
+const regionalAdvanceInterval = setInterval(
+  runRegionalAdvance,
+  REGIONAL_SIMULATION_SCHEDULER_INTERVAL_MS,
+);
 regionalAdvanceInterval.unref();
 app.addHook("onClose", async () => {
   clearInterval(regionalAdvanceInterval);
