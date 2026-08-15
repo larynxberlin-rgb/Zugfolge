@@ -31,14 +31,12 @@ const internalToken = "planning-route-internal-token";
 const operatorA = "aaaaaaaa-0000-4000-8000-000000000001";
 const operatorB = "bbbbbbbb-0000-4000-8000-000000000002";
 
-function pathRequest(requestId: string, trainId: string, trainNumber: number, formationId = "formation-a") {
+function pathRequest(requestId: string, _trainId: string, _trainNumber: number, formationId = "formation-a") {
   return {
     schemaVersion: PLANNING_PLAYER_PATH_REQUEST_SCHEMA,
     requestId,
     formationId,
-    trainId,
     trainCategory: "regional" as const,
-    trainNumber,
     originStationId: "leipzig",
     destinationStationId: "halle",
     desiredDepartureS: 25_800,
@@ -327,6 +325,8 @@ describe("produktive M3-Planning-Routen", () => {
           fleetRevision: 0,
           fleetStateHash: "e".repeat(64),
           fleetAuthorityReleaseId: "fleet-lhe-2026",
+          trainId: expect.stringMatching(/^player-/),
+          trainNumber: expect.any(Number),
           train: {
             numericId: expect.any(Number),
             name: "formation-a",
@@ -339,6 +339,9 @@ describe("produktive M3-Planning-Routen", () => {
         }),
       }),
     ]));
+    const assignedNumbers = commands.map((command) => (command.payload as { trainNumber: number }).trainNumber);
+    expect(new Set(assignedNumbers).size).toBe(2);
+    expect(assignedNumbers.every((number) => number >= 20_000 && number <= 39_999)).toBe(true);
   });
 
   it("verwirft manipulierte Clientphysik und fremde Formationen vor dem Queue-Write", async () => {
@@ -409,12 +412,44 @@ describe("produktive M3-Planning-Routen", () => {
     const body = pathRequest("same-request", "train-a", 26801);
     const first = await submitPath("account-a", body);
     const retry = await submitPath("account-a", body);
-    const collision = await submitPath("account-a", { ...body, trainNumber: 26899 });
+    const collision = await submitPath("account-a", { ...body, trainCategory: "supplementary" as const });
 
     expect(first.statusCode).toBe(202);
     expect(retry.json<{ id: string }>().id).toBe(first.json<{ id: string }>().id);
     expect(collision.statusCode).toBe(409);
-    expect(collision.json()).toMatchObject({ code: "planning_worker_conflict" });
+    expect(collision.json()).toMatchObject({ code: "planning_train_identity_conflict" });
+  });
+
+  it("weist Spieler-Zugnummern ab und vergibt bei parallelen Anträgen atomar eindeutige Nummern", async () => {
+    await db.insert(simulationCommands).values({
+      worldId: worldA,
+      requestingAccountId: accountA.id,
+      idempotencyKey: "legacy-path",
+      commandType: "planning.path-request",
+      payload: { trainNumber: 20_005 },
+      submittedAt: new Date(0),
+    });
+    const manipulated = await app.inject({
+      method: "POST",
+      url: `/worlds/${worldA}/planning/path-requests`,
+      headers: { authorization: "Bearer account-a" },
+      payload: { ...pathRequest("client-number", "ignored", 1), trainNumber: 1 },
+    });
+    expect(manipulated.statusCode).toBe(400);
+
+    const [first, second] = await Promise.all([
+      submitPath("account-a", pathRequest("parallel-a", "ignored-a", 1)),
+      submitPath("account-b", pathRequest("parallel-b", "ignored-b", 1, "formation-b")),
+    ]);
+    expect(first.statusCode).toBe(202);
+    expect(second.statusCode).toBe(202);
+    const firstNumber = first.json<{ payload: { trainNumber: number } }>().payload.trainNumber;
+    const secondNumber = second.json<{ payload: { trainNumber: number } }>().payload.trainNumber;
+    expect(firstNumber).not.toBe(secondNumber);
+    expect(firstNumber).toBeGreaterThan(20_005);
+    expect(secondNumber).toBeGreaterThan(20_005);
+    const retry = await submitPath("account-a", pathRequest("parallel-a", "changed-client-id", 99_999));
+    expect(retry.json<{ payload: { trainNumber: number } }>().payload.trainNumber).toBe(firstNumber);
   });
 
   it("koordiniert nur intern ueber den konfigurierten Authority-Principal", async () => {

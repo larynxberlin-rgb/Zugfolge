@@ -109,7 +109,7 @@ function reportMarkup(report: DailyReportRow): string {
 
 export function renderApp(state: ViewState): string {
   if (state.loading) return `<main class="load-state"><span class="spinner" aria-hidden="true"></span><h1>Betriebszentrale wird geladen</h1><p>Serverautoritative Programme und Ereignisprojektionen werden abgerufen.</p></main>`;
-  if (state.program === undefined) return `<main class="load-state"><h1>Betriebszentrale nicht verfügbar</h1><p>${escapeHtml(state.message)}</p></main>`;
+  if (state.program === undefined) return `<main class="load-state"><p class="eyebrow">ZUGFOLGE · BETRIEBSZENTRALE</p><h1>Betriebszentrale nicht verfügbar</h1><p>${escapeHtml(state.message)}</p><div class="load-state__actions"><button id="refresh" class="quiet-button">Erneut versuchen</button><a class="quiet-button" href="../">Zur Spielwelt</a></div></main>`;
   const active = state.versions.find((version) => version.status === "active");
   const operations = state.operations ?? { throughSequence: 0, decisions: [], cancellations: [], manualInterventions: [], majorEvents: [] };
   const important = [...operations.majorEvents, ...operations.decisions.filter((entry) => !operations.majorEvents.some((major) => major.decisionId === entry.decisionId))];

@@ -251,6 +251,8 @@ describe("M12-Spieleroberfläche", () => {
     expect(html).toContain("tender-bid-form");
     expect(html).toContain('data-path-request="schedule"');
     expect(html).toContain('data-path-request="empty-run"');
+    expect(html).toContain("Zugnummer wird bei der Planung automatisch und eindeutig vergeben");
+    expect(html).not.toContain('name="trainNumber"');
     expect(html).toContain('id="maintenance-form"');
     expect(html).toContain("Leipzig Hbf");
     expect(html).not.toContain("Bald verfügbar");

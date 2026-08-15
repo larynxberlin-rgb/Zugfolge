@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { operators } from "@zugfolge/db";
+import { operators, planningTrainNumbers, simulationCommands, worlds } from "@zugfolge/db";
 import {
   loadFleetProducerCheckpoint,
   type EconomyDatabase,
@@ -17,7 +17,7 @@ import type {
   FleetAuthorityVehicleAsset,
   NativeFleetFormationIntent,
 } from "@zugfolge/runtime-native";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 
 export class PlanningAuthorityError extends Error {
   override readonly name = "PlanningAuthorityError";
@@ -60,6 +60,101 @@ function addExact(values: readonly number[], name: string): number {
 function stableNumericId(value: string): number {
   const numeric = createHash("sha256").update(value, "utf8").digest().readUInt32BE(0);
   return Math.max(1, numeric);
+}
+
+type TrainCategory = PlanningPlayerPathRequestBody["trainCategory"];
+
+const TRAIN_NUMBER_RANGES: Readonly<Record<TrainCategory, readonly [number, number]>> = {
+  "long-distance": [1, 9_999],
+  suburban: [10_000, 19_999],
+  regional: [20_000, 39_999],
+  freight: [40_000, 79_999],
+  supplementary: [80_000, 99_999],
+};
+
+interface PlanningTrainIdentity {
+  readonly trainId: string;
+  readonly trainNumber: number;
+}
+
+async function reservePlanningTrainIdentity(
+  db: EconomyDatabase,
+  input: {
+    readonly worldId: string;
+    readonly accountId: string;
+    readonly requestId: string;
+    readonly trainCategory: TrainCategory;
+  },
+): Promise<PlanningTrainIdentity> {
+  return db.transaction(async (tx) => {
+    // Eine Weltzeile ist der schmale Serialisierungspunkt. Dadurch können zwei
+    // parallele Browser niemals dieselbe nächste Nummer beobachten.
+    await tx.execute(sql`select ${worlds.id} from ${worlds} where ${worlds.id} = ${input.worldId} for update`);
+    const [existing] = await tx
+      .select()
+      .from(planningTrainNumbers)
+      .where(and(
+        eq(planningTrainNumbers.worldId, input.worldId),
+        eq(planningTrainNumbers.accountId, input.accountId),
+        eq(planningTrainNumbers.requestId, input.requestId),
+      ))
+      .limit(1);
+    if (existing !== undefined) {
+      if (existing.trainCategory !== input.trainCategory) {
+        throw new PlanningAuthorityError(
+          "planning_train_identity_conflict",
+          409,
+          "Planungsantrag ist bereits mit einer anderen Zuggattung verbunden.",
+        );
+      }
+      return { trainId: existing.trainId, trainNumber: existing.trainNumber };
+    }
+
+    const [minimum, maximum] = TRAIN_NUMBER_RANGES[input.trainCategory];
+    const [latest] = await tx
+      .select({ trainNumber: planningTrainNumbers.trainNumber })
+      .from(planningTrainNumbers)
+      .where(and(
+        eq(planningTrainNumbers.worldId, input.worldId),
+        eq(planningTrainNumbers.trainCategory, input.trainCategory),
+      ))
+      .orderBy(desc(planningTrainNumbers.trainNumber))
+      .limit(1);
+    // Vor dem v2-Spielervertrag konnten Nummern bereits in unveränderlichen
+    // v3-Kommandos stehen. Sie bleiben gültig und werden beim nächsten Wert
+    // mitberücksichtigt, ohne historische Payloads umzuschreiben.
+    const legacyNumber = sql<number>`cast(${simulationCommands.payload}->>'trainNumber' as integer)`;
+    const [latestLegacy] = await tx
+      .select({ trainNumber: legacyNumber })
+      .from(simulationCommands)
+      .where(and(
+        eq(simulationCommands.worldId, input.worldId),
+        eq(simulationCommands.commandType, "planning.path-request"),
+        sql`${simulationCommands.payload}->>'trainNumber' ~ '^[0-9]+$'`,
+        sql`${legacyNumber} between ${minimum} and ${maximum}`,
+      ))
+      .orderBy(desc(legacyNumber))
+      .limit(1);
+    const latestTrainNumber = Math.max(minimum - 1, latest?.trainNumber ?? 0, latestLegacy?.trainNumber ?? 0);
+    const trainNumber = latestTrainNumber + 1;
+    if (trainNumber > maximum) {
+      throw new PlanningAuthorityError(
+        "planning_train_number_range_exhausted",
+        409,
+        "Der Zugnummernbereich dieser Zuggattung ist ausgeschöpft.",
+      );
+    }
+    const trainId = `player-${createHash("sha256").update(`${input.worldId}:${input.accountId}:${input.requestId}`, "utf8").digest("hex").slice(0, 24)}`;
+    await tx.insert(planningTrainNumbers).values({
+      worldId: input.worldId,
+      accountId: input.accountId,
+      requestId: input.requestId,
+      trainCategory: input.trainCategory,
+      trainNumber,
+      trainId,
+    });
+    return { trainId, trainNumber };
+  });
 }
 
 function drivingAssets(
@@ -177,6 +272,7 @@ function resolveFromCheckpoint(
   checkpoint: FleetProducerCheckpoint,
   body: PlanningPlayerPathRequestBody,
   ownedOperatorId: string,
+  trainIdentity: PlanningTrainIdentity,
 ): PlanningPathRequestBody {
   const formation = checkpoint.state.formations[body.formationId];
   if (formation === undefined) {
@@ -242,6 +338,7 @@ function resolveFromCheckpoint(
   return {
     schemaVersion: PLANNING_PATH_REQUEST_SCHEMA,
     ...playerFacts,
+    ...trainIdentity,
     operatorId: ownedOperatorId,
     fleetRevision: checkpoint.state.revision,
     fleetStateHash: checkpoint.stateHash,
@@ -294,5 +391,18 @@ export async function resolveAuthoritativePlanningPathRequest(
       "Formation ist fuer dieses Konto nicht verfuegbar.",
     );
   }
-  return resolveFromCheckpoint(checkpoint, body, ownedOperator.id);
+  // Erst nach sämtlichen Eigentums- und Kompatibilitätsprüfungen wird eine
+  // Nummer verbraucht. Ein Retry desselben Antrags erhält dieselbe Reservierung.
+  const validationIdentity: PlanningTrainIdentity = {
+    trainId: `validation-${body.requestId}`,
+    trainNumber: TRAIN_NUMBER_RANGES[body.trainCategory][0],
+  };
+  resolveFromCheckpoint(checkpoint, body, ownedOperator.id, validationIdentity);
+  const trainIdentity = await reservePlanningTrainIdentity(db, {
+    worldId: input.worldId,
+    accountId: input.accountId,
+    requestId: body.requestId,
+    trainCategory: body.trainCategory,
+  });
+  return resolveFromCheckpoint(checkpoint, body, ownedOperator.id, trainIdentity);
 }

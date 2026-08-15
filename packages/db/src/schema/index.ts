@@ -17,6 +17,7 @@ export * from "./ledger-transactions.js";
 export * from "./mailbox-messages.js";
 export * from "./operators.js";
 export * from "./operating-program-versions.js";
+export * from "./planning-train-numbers.js";
 export * from "./regional-simulation-states.js";
 export * from "./simulation-commands.js";
 export * from "./starting-capital.js";

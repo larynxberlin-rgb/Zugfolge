@@ -441,27 +441,25 @@ function submitPathRequest(kind: "schedule" | "empty-run", fields: Readonly<Reco
     const formationId = (fields["formationId"] ?? "").trim();
     const originStationId = (fields["originStationId"] ?? "").trim();
     const destinationStationId = (fields["destinationStationId"] ?? "").trim();
-    const trainNumber = positiveIntegerField(fields["trainNumber"], "Zugnummer");
     const departureInMinutes = positiveIntegerField(fields["departureInMinutes"], "Abfahrtsvorlauf");
     if (formationId === "" || originStationId === "" || destinationStationId === "") throw new Error("Formation, Start und Ziel muessen ausgewaehlt werden.");
     if (originStationId === destinationStationId) throw new Error("Start und Ziel muessen verschieden sein.");
-    const fingerprint = `${kind}:${formationId}:${trainNumber}:${originStationId}:${destinationStationId}:${departureInMinutes}`;
+    const fingerprint = `${kind}:${formationId}:${originStationId}:${destinationStationId}:${departureInMinutes}`;
     const requestId = commandKey("planning-path", fingerprint);
     const desiredDepartureS = cooperationAtS + departureInMinutes * 60;
     if (!Number.isSafeInteger(desiredDepartureS)) throw new Error("Abfahrtszeit liegt ausserhalb des sicheren Zeitbereichs.");
     const label = kind === "schedule" ? "Fahrplan" : "spontane Leerfahrt";
+    let assignedTrainNumber: number | undefined;
     return requestConfirmation(
       `${label === "Fahrplan" ? "Fahrplan" : "Leerfahrt"} verbindlich anmelden?`,
-      confirmationDetail({ parties: operatorDisplayName(activeOperatorId), object: `${label} ${trainNumber} von ${originStationId} nach ${destinationStationId}`, amount: "Trassen- und Betriebskosten laut Weltvertrag", deadline: `Abfahrt in ${departureInMinutes} Minuten`, consequence: "Der Planner prueft Formation, Eigentum, Fahrweg und Konflikte serverseitig; unzulaessige Anmeldungen werden abgelehnt." }),
+      confirmationDetail({ parties: operatorDisplayName(activeOperatorId), object: `${label} von ${originStationId} nach ${destinationStationId}; Zugnummer wird automatisch vergeben`, amount: "Trassen- und Betriebskosten laut Weltvertrag", deadline: `Abfahrt in ${departureInMinutes} Minuten`, consequence: "Der Planner prueft Formation, Eigentum, Fahrweg und Konflikte serverseitig; unzulaessige Anmeldungen werden abgelehnt." }),
       () => cooperationAction(async () => {
         if (api === undefined || activeOperatorId === "") throw new Error("Welt, Sitzung oder EVU fehlt.");
-        await api.submitPlanningPathRequest(publicWorldId, {
-          schemaVersion: "planning.player-path-request/v1",
+        const submission = await api.submitPlanningPathRequest(publicWorldId, {
+          schemaVersion: "planning.player-path-request/v2",
           requestId,
           formationId,
-          trainId: `${kind}-${trainNumber}-${requestId.slice(-12)}`,
           trainCategory: kind === "schedule" ? "regional" : "supplementary",
-          trainNumber,
           originStationId,
           destinationStationId,
           desiredDepartureS,
@@ -473,9 +471,10 @@ function submitPathRequest(kind: "schedule" | "empty-run", fields: Readonly<Reco
           extraRunningTimeS: kind === "schedule" ? 120 : 60,
           maxOperationalStops: 4,
         });
+        assignedTrainNumber = submission.trainNumber;
         completeCommand("planning-path", fingerprint);
         clearedJourneyDrafts.add(kind === "schedule" ? "schedule-request-form" : "empty-run-request-form");
-      }, `${label} wurde zur konfliktgeprueften Planung eingereicht.`),
+      }, () => `${label} wurde als Zug ${assignedTrainNumber ?? "–"} zur konfliktgeprüften Planung eingereicht.`),
       `[data-path-request="${kind}"] button`,
     );
   } catch (error) {
@@ -595,7 +594,7 @@ async function silentRefreshTutorial(): Promise<void> {
   scheduleTutorialPoll();
 }
 
-async function journeyAction(action: () => Promise<void>, success: string, scope: JourneyBusyScope = "tutorial"): Promise<void> {
+async function journeyAction(action: () => Promise<void>, success: string | (() => string), scope: JourneyBusyScope = "tutorial"): Promise<void> {
   if (journeyBusyScopes.has(scope) || journeyBusyScopes.has("initial")) return;
   journeyBusyScopes.add(scope);
   message = "Der bestätigte Weltzustand wird aktualisiert …";
@@ -603,7 +602,7 @@ async function journeyAction(action: () => Promise<void>, success: string, scope
   render();
   try {
     await action();
-    message = success;
+    message = typeof success === "function" ? success() : success;
     messageTone = "status";
   } catch (error) {
     const failure = classifyJourneyFailure(error, "Spielerreise konnte nicht aktualisiert werden.");
@@ -800,7 +799,7 @@ function enterPublicWorld(worldId: string, displayName: string, contractHash: st
   }, "Weltvertrag bestätigt. Der öffentliche Betrieb ist geöffnet.", "initial");
 }
 
-function cooperationAction(action: () => Promise<void>, success: string): Promise<void> {
+function cooperationAction(action: () => Promise<void>, success: string | (() => string)): Promise<void> {
   return journeyAction(async () => {
     if (api !== undefined && publicWorldId !== "") cooperationAtS = await api.loadSimulationTime(publicWorldId);
     await action();

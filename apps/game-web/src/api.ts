@@ -1267,12 +1267,10 @@ export class GameApiClient {
   }
 
   submitPlanningPathRequest(worldId: string, payload: {
-    readonly schemaVersion: "planning.player-path-request/v1";
+    readonly schemaVersion: "planning.player-path-request/v2";
     readonly requestId: string;
     readonly formationId: string;
-    readonly trainId: string;
     readonly trainCategory: "long-distance" | "suburban" | "regional" | "freight" | "supplementary";
-    readonly trainNumber: number;
     readonly originStationId: string;
     readonly destinationStationId: string;
     readonly desiredDepartureS: number;
@@ -1283,11 +1281,18 @@ export class GameApiClient {
     readonly stepS: number;
     readonly extraRunningTimeS: number;
     readonly maxOperationalStops: number;
-  }): Promise<void> {
+  }): Promise<{ readonly trainNumber: number }> {
     return this.#journeyJson<unknown>(`/worlds/${encodeURIComponent(worldId)}/planning/path-requests`, {
       method: "POST",
       body: JSON.stringify(payload),
-    }).then(() => undefined);
+    }).then((value) => {
+      if (typeof value !== "object" || value === null || !("payload" in value)) throw new Error("Planungsantwort enthält keine Zugnummer.");
+      const commandPayload = (value as { payload?: unknown }).payload;
+      if (typeof commandPayload !== "object" || commandPayload === null || !("trainNumber" in commandPayload)) throw new Error("Planungsantwort enthält keine Zugnummer.");
+      const trainNumber = (commandPayload as { trainNumber?: unknown }).trainNumber;
+      if (!Number.isSafeInteger(trainNumber) || (trainNumber as number) < 1) throw new Error("Planungsantwort enthält eine ungültige Zugnummer.");
+      return { trainNumber: trainNumber as number };
+    });
   }
 
   async loadProjection(worldId: string, signal?: AbortSignal): Promise<PlanningProjectionV1> {

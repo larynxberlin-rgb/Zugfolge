@@ -12,6 +12,8 @@ test("der produktive Start gleicht alle drei Browser-Clients idempotent ab", asy
   assert.match(script, /method: "PUT"/);
   assert.match(script, /accessTokenLifespan: 86_400/);
   assert.match(script, /ssoSessionIdleTimeout: 2_592_000/);
+  assert.match(script, /new URL\(normalizedPublicUrl\)\.origin/);
+  assert.match(script, /baseUrl: normalizedPublicUrl/);
 });
 
 test("der produktive Abgleich verwendet bevorzugt das Realm-Servicekonto", async () => {
