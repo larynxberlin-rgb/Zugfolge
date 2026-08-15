@@ -1,3 +1,4 @@
+import { validateWorldBlueprint, type AlphaWorldBlueprint } from "@zugfolge/alpha";
 import {
   DatabaseCooperationAuthority,
   type ContractAuthorityDecision,
@@ -6,6 +7,7 @@ import {
   type CooperationAuthority,
 } from "@zugfolge/cooperation";
 import {
+  alphaWorldProfiles,
   domainEvents,
   fleetWorldCheckpoints,
   operators,
@@ -14,7 +16,14 @@ import {
   type VehicleAsset,
   type VehicleMarketListing,
 } from "@zugfolge/db";
-import { assertOperatorActionAllowed, loadEconomyWorldState } from "@zugfolge/economy";
+import {
+  PUBLIC_ENTRY_FACILITY_SCHEMA,
+  assertOperatorActionAllowed,
+  decodeEconomyValue,
+  loadEconomyWorldState,
+  loadFleetProducerCheckpoint,
+  type FleetMobilizationSnapshot,
+} from "@zugfolge/economy";
 import type { IdentityDatabase } from "@zugfolge/identity";
 import type { FleetAuthorityRelease } from "@zugfolge/runtime-native";
 import { and, desc, eq } from "drizzle-orm";
@@ -23,6 +32,13 @@ export interface CooperationResourceOption {
   readonly id: string;
   readonly label: string;
   readonly detail: string;
+}
+
+export interface PublicEntryFacilityOption extends CooperationResourceOption {
+  readonly lotId: string;
+  readonly formationId: string;
+  readonly personnelDutyIds: readonly string[];
+  readonly pathReservationIds: readonly string[];
 }
 
 export interface CooperationResourceCatalog {
@@ -34,6 +50,7 @@ export interface CooperationResourceCatalog {
   readonly trainRuns: readonly CooperationResourceOption[];
   readonly connectionTrainRuns: readonly CooperationResourceOption[];
   readonly formations: readonly CooperationResourceOption[];
+  readonly publicEntryFacilities: readonly PublicEntryFacilityOption[];
   readonly personnelDuties: readonly CooperationResourceOption[];
   readonly pathReceipts: readonly CooperationResourceOption[];
   readonly disruptions: readonly CooperationResourceOption[];
@@ -88,6 +105,65 @@ function sortOptions(values: readonly CooperationResourceOption[]): readonly Coo
   return [...values].sort((left, right) => left.label.localeCompare(right.label, "de") || left.id.localeCompare(right.id));
 }
 
+/**
+ * Erzeugt nur vollständige, vom signierten Weltlos und vom autoritativen
+ * Flottensnapshot gemeinsam gedeckte Anschubpakete. Die Gebotsroute prüft das
+ * gewählte Paket zusätzlich gegen Linie und Betriebsbeginn der Ausschreibung.
+ */
+export function publicEntryFacilityOptions(
+  blueprint: AlphaWorldBlueprint,
+  snapshot: FleetMobilizationSnapshot,
+): readonly PublicEntryFacilityOption[] {
+  const policy = blueprint.entryFacilityPolicy;
+  if (
+    policy?.schemaVersion !== PUBLIC_ENTRY_FACILITY_SCHEMA
+    || policy.mode !== "award-contingent-wet-lease"
+    || policy.providerOperatorId !== "public"
+    || policy.costBasis !== "formation-operating-cost"
+  ) return [];
+  const result: PublicEntryFacilityOption[] = [];
+  for (const lot of blueprint.lots) {
+    const vehicleIds = new Set(lot.vehicleIds);
+    const dutyIds = new Set(lot.personnelDutyIds);
+    const receiptIds = new Set(lot.pathReceiptIds);
+    const reservations = snapshot.pathReservations.filter((entry) =>
+      entry.operatorId === "public"
+      && entry.status === "confirmed"
+      && entry.pathReceiptId !== undefined
+      && receiptIds.has(entry.pathReceiptId));
+    for (const formation of snapshot.formations) {
+      if (
+        formation.operatorId !== "public"
+        || formation.procurement !== "delivered"
+        || !["available", "committed"].includes(formation.availability)
+        || formation.vehicleIds.length === 0
+        || !formation.vehicleIds.every((vehicleId) => vehicleIds.has(vehicleId))
+        || formation.pathReceiptId === undefined
+        || !receiptIds.has(formation.pathReceiptId)
+      ) continue;
+      const duties = snapshot.personnelDuties.filter((entry) =>
+        entry.operatorId === "public"
+        && entry.status === "ready"
+        && dutyIds.has(entry.id)
+        && entry.formationIds.includes(formation.id)
+        && entry.pathReceiptId !== undefined
+        && receiptIds.has(entry.pathReceiptId));
+      if (duties.length === 0 || reservations.length === 0) continue;
+      const lines = formation.serviceLineIds.join(" / ") || lot.lotId;
+      result.push(Object.freeze({
+        id: `${lot.lotId}:${formation.id}`,
+        lotId: lot.lotId,
+        formationId: formation.id,
+        label: `Öffentlicher Anschubvertrag · ${lines}`,
+        detail: `${formation.characteristics.seats.toLocaleString("de-DE")} Sitzplätze · Wet-Lease nur bei Zuschlag · Betriebskosten werden dem EVU zugerechnet`,
+        personnelDutyIds: Object.freeze(duties.map((entry) => entry.id)),
+        pathReservationIds: Object.freeze(reservations.map((entry) => entry.id)),
+      }));
+    }
+  }
+  return Object.freeze(result.sort((left, right) => left.lotId.localeCompare(right.lotId, "de") || left.label.localeCompare(right.label, "de") || left.formationId.localeCompare(right.formationId)));
+}
+
 export class GameCooperationAuthority implements CooperationAuthority {
   private readonly base = new DatabaseCooperationAuthority();
 
@@ -123,13 +199,31 @@ export class GameCooperationAuthority implements CooperationAuthority {
     return result;
   }
 
+  private async publicEntryFacilities(worldId: string): Promise<readonly PublicEntryFacilityOption[]> {
+    const [profile] = await this.db.select({
+      blueprint: alphaWorldProfiles.blueprint,
+      blueprintHash: alphaWorldProfiles.blueprintHash,
+      deploymentHash: alphaWorldProfiles.deploymentHash,
+      state: alphaWorldProfiles.state,
+    }).from(alphaWorldProfiles).where(eq(alphaWorldProfiles.worldId, worldId)).limit(1);
+    if (profile?.state !== "running" || profile.deploymentHash === null || !/^[a-f0-9]{64}$/.test(profile.deploymentHash)) return [];
+    try {
+      const blueprint = decodeEconomyValue(profile.blueprint) as AlphaWorldBlueprint;
+      if (validateWorldBlueprint(blueprint) !== profile.blueprintHash) return [];
+      const checkpoint = await loadFleetProducerCheckpoint(this.db as never, worldId);
+      return checkpoint === undefined ? [] : publicEntryFacilityOptions(blueprint, checkpoint.snapshot);
+    } catch {
+      return [];
+    }
+  }
+
   /**
    * Spielerlesemodell für Vertragsgegenstände. Interne Kennungen bleiben
    * Werte der Auswahl, während die sichtbaren Texte ausschließlich aus den
    * autoritativen, weltgebundenen M4-/M5-/Release-/Eventquellen stammen.
    */
   async resourceCatalog(worldId: string, operatorId: string): Promise<CooperationResourceCatalog> {
-    const [checkpoint, regionalRows, disruptionRows, vehicles, operatorRows] = await Promise.all([
+    const [checkpoint, regionalRows, disruptionRows, vehicles, operatorRows, publicEntryFacilities] = await Promise.all([
       this.db.select({ revision: fleetWorldCheckpoints.revision, state: fleetWorldCheckpoints.state, snapshotHash: fleetWorldCheckpoints.snapshotHash })
         .from(fleetWorldCheckpoints).where(eq(fleetWorldCheckpoints.worldId, worldId))
         .orderBy(desc(fleetWorldCheckpoints.revision)).limit(1),
@@ -142,6 +236,7 @@ export class GameCooperationAuthority implements CooperationAuthority {
         eq(vehicleAssets.worldId, worldId), eq(vehicleAssets.holderOperatorId, operatorId),
       )),
       this.db.select({ id: operators.id, name: operators.name }).from(operators).where(eq(operators.worldId, worldId)),
+      this.publicEntryFacilities(worldId),
     ]);
     const release = this.fleetReleases[worldId];
     const state = record(checkpoint[0]?.state);
@@ -230,6 +325,7 @@ export class GameCooperationAuthority implements CooperationAuthority {
       trainRuns: sortOptions(ownTrains),
       connectionTrainRuns: sortOptions(allTrains),
       formations: sortOptions(formations),
+      publicEntryFacilities,
       personnelDuties: sortOptions(personnelDuties),
       pathReceipts: sortOptions(pathReceipts),
       disruptions: sortOptions(disruptions),

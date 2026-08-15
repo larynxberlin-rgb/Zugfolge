@@ -209,6 +209,22 @@ describe("releasegebundene Zugkartenprojektion", () => {
     projector.close();
   });
 
+  it("ersetzt ueberlange Legacy-Nummern weltgebunden durch die reservierte fuenfstellige Nummer", () => {
+    const projector = new SQLiteTrainMapProjector(fixture());
+    const projected = projector.project(WORLD, {
+      ...train,
+      operator: "public",
+      trainNumber: "S4-1667972",
+    });
+    expect(projected.trainNumber).toBe("S4-39000");
+    expect(projector.project("other-world", {
+      ...train,
+      operator: "public",
+      trainNumber: "S4-1667972",
+    }).trainNumber).toBe("S4-1667972");
+    projector.close();
+  });
+
   it("kehrt Offset und Richtung bei einer Fahrt gegen die Gleisgeometrie um", () => {
     const projector = new SQLiteTrainMapProjector(fixture({ reverse: true }));
     expect(projector.project(WORLD, train).mapPosition).toMatchObject({

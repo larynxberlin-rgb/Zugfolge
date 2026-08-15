@@ -37,6 +37,7 @@ function state(overrides: Partial<CooperationSurfaceState> = {}): CooperationSur
       trainRuns: [{ id: "run-internal", label: "RE 12 nach Halle Hbf", detail: "Regionalzug · geplant · Saale-Bahn" }],
       connectionTrainRuns: [{ id: "connection-internal", label: "S 5 nach Leipzig Hbf", detail: "Regionalzug · fährt · Elster-Verkehr" }],
       formations: [{ id: "formation-internal", label: "Formation für RE 12", detail: "2 Fahrzeuge · Trasse bestätigt" }],
+      publicEntryFacilities: [],
       personnelDuties: [{ id: "duty-internal", label: "Personaldienst für 1 Formation", detail: "für 1 Betriebstag gültig" }],
       pathReceipts: [{ id: "path-internal", label: "Trasse RE 12", detail: "bestätigt · für 1 Betriebstag gültig" }],
       disruptions: [{ id: "disruption-internal", label: "Weichenstörung", detail: "Sperrung · Leipzig Hbf" }],
@@ -256,6 +257,26 @@ describe("M12-Spieleroberfläche", () => {
     expect(html).toContain('id="maintenance-form"');
     expect(html).toContain("Leipzig Hbf");
     expect(html).not.toContain("Bald verfügbar");
+  });
+
+  it("bietet Nullstart-EVU den signierten öffentlichen Anschubvertrag losgebunden an", () => {
+    const base = state();
+    const html = renderCooperationSurface(state({
+      tenders: [{ id: "tender-1", lotId: "S5", phase: "open", bidCount: 0, ownBidCount: 0, closesAt: 1_000 }],
+      resources: {
+        ...base.resources!,
+        formations: [],
+        publicEntryFacilities: [{
+          id: "S5:formation-public", lotId: "S5", formationId: "formation-public",
+          label: "Öffentlicher Anschubvertrag · S5", detail: "Wet-Lease",
+          personnelDutyIds: ["duty-public"], pathReservationIds: ["path-public"],
+        }],
+      },
+    }));
+    expect(html).toContain('value="public:S5:formation-public"');
+    expect(html).toContain('data-lot-id="S5"');
+    expect(html).toContain("zuschlagsgebundener Wet-Lease");
+    expect(html).toContain('data-resources-ready="true">Angebot verbindlich abgeben</button>');
   });
 
   it("baut typisierte Leistungsgegenstände statt freiem JSON", () => {

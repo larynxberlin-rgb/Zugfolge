@@ -183,6 +183,13 @@
       "when": 1786795200000,
       "tag": "0026_planning_train_numbers",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1786803600000,
+      "tag": "0027_public_train_number_reservation",
+      "breakpoints": true
     }
   ]
 }

@@ -247,6 +247,13 @@ export interface CooperationResourceOption {
   readonly detail: string;
 }
 
+export interface PublicEntryFacilityOption extends CooperationResourceOption {
+  readonly lotId: string;
+  readonly formationId: string;
+  readonly personnelDutyIds: readonly string[];
+  readonly pathReservationIds: readonly string[];
+}
+
 export interface CooperationResourceCatalog {
   readonly schemaVersion: "zugfolge-cooperation-resource-catalog/v1";
   readonly worldId: string;
@@ -256,6 +263,7 @@ export interface CooperationResourceCatalog {
   readonly trainRuns: readonly CooperationResourceOption[];
   readonly connectionTrainRuns: readonly CooperationResourceOption[];
   readonly formations: readonly CooperationResourceOption[];
+  readonly publicEntryFacilities: readonly PublicEntryFacilityOption[];
   readonly personnelDuties: readonly CooperationResourceOption[];
   readonly pathReceipts: readonly CooperationResourceOption[];
   readonly disruptions: readonly CooperationResourceOption[];
@@ -608,6 +616,25 @@ export function parseCooperationResourceCatalog(value: unknown): CooperationReso
     label: stringValue(entry, "label", `${name}.${key}[${index}]` )!,
     detail: stringValue(entry, "detail", `${name}.${key}[${index}]` )!,
   }));
+  const publicEntryFacilities = recordList(record["publicEntryFacilities"], `${name}.publicEntryFacilities`).map((entry, index) => {
+    const entryName = `${name}.publicEntryFacilities[${index}]`;
+    const identifiers = (key: "personnelDutyIds" | "pathReservationIds"): readonly string[] => {
+      const values = stringList(entry[key], `${entryName}.${key}`);
+      if (values.length === 0 || values.some((value) => value.trim() === "") || new Set(values).size !== values.length) {
+        throw new GameApiError(`${entryName}.${key} ist leer oder enthält ungültige Kennungen.`, false);
+      }
+      return values;
+    };
+    return {
+      id: stringValue(entry, "id", entryName)!,
+      label: stringValue(entry, "label", entryName)!,
+      detail: stringValue(entry, "detail", entryName)!,
+      lotId: stringValue(entry, "lotId", entryName)!,
+      formationId: stringValue(entry, "formationId", entryName)!,
+      personnelDutyIds: identifiers("personnelDutyIds"),
+      pathReservationIds: identifiers("pathReservationIds"),
+    };
+  });
   return {
     schemaVersion: "zugfolge-cooperation-resource-catalog/v1",
     worldId: stringValue(record, "worldId", name)!,
@@ -617,6 +644,7 @@ export function parseCooperationResourceCatalog(value: unknown): CooperationReso
     trainRuns: options("trainRuns"),
     connectionTrainRuns: options("connectionTrainRuns"),
     formations: options("formations"),
+    publicEntryFacilities,
     personnelDuties: options("personnelDuties"),
     pathReceipts: options("pathReceipts"),
     disruptions: options("disruptions"),

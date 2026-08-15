@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 
 import { alphaHash } from "../../packages/alpha/dist/index.js";
 import { buildEconomyRelease, encodeEconomyValue, parseStartingCapitalPolicy, serializeStartingCapitalPolicy, startEconomyWorld } from "../../packages/economy/dist/index.js";
+import { allocatePublicRegionalTrainNumbers, publicRegionalTrainNumber } from "../../packages/livemap/dist/index.js";
 import { assertEmbeddedWorldIds, assertNoStarterIdentifiers } from "./alpha-world-variants.mjs";
 import {
   assertNormalizedScheduleTimeContract,
@@ -172,6 +173,7 @@ const stationMapping = new Map(network.gtfsStationMappings.map((mapping) => [map
 const stationById = new Map(network.stations.map((station) => [station.stationId, station]));
 const resourceById = new Map(network.resources.map((resource) => [resource.resourceId, resource]));
 const chains = gtfs.journeyChains.filter((chain) => qualificationByChain.get(chain.journeyChainId)?.orderable === true);
+const publicTrainNumbers = allocatePublicRegionalTrainNumbers(chains.map((chain) => chain.journeyChainId));
 if (chains.length !== network.metrics.orderableJourneyChainCount || chains.length === 0) throw new Error("Bestellbarer Fahrplan und Netzqualifikation laufen auseinander.");
 
 const lotsByRoute = new Map();
@@ -333,7 +335,7 @@ for (const [lotIndex, lot] of lotRecords.entries()) {
     regionalTrains.push({
       trainRunId: chain.journeyChainId,
       operator: OPERATOR_ID,
-      trainNumber: `${chain.routeShortName || "SPNV"}-${chain.sourceTripId}`,
+      trainNumber: publicRegionalTrainNumber(chain.routeShortName, chain.journeyChainId, publicTrainNumbers),
       category: "regional",
       route: initialRoute,
     });

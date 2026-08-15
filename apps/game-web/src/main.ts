@@ -387,11 +387,16 @@ function foundOperator(name: string): Promise<void> {
 
 function submitTenderBid(fields: Readonly<Record<string, string>>): Promise<void> {
   const tenderId = (fields["tenderId"] ?? "").trim();
-  const formationId = (fields["formationId"] ?? "").trim();
+  const formationChoice = (fields["formationId"] ?? "").trim();
   const resources = cooperationResources;
+  const ownFormation = resources?.formations.find((entry) => formationChoice === `own:${entry.id}`);
+  const publicFacility = resources?.publicEntryFacilities.find((entry) => formationChoice === `public:${entry.id}`);
+  const tender = publicTenders.find((entry) => entry.id === tenderId);
+  const formationId = ownFormation?.id ?? publicFacility?.formationId ?? "";
   if (tenderId === "" || formationId === "" || resources?.fleetRevision === null || resources?.fleetRevision === undefined || resources.fleetSnapshotHash === null) {
     return reportFormError(new Error("Für das Angebot fehlen eine offene Ausschreibung oder eine serverbestätigte Formation."));
   }
+  if (publicFacility !== undefined && publicFacility.lotId !== tender?.lotId) return reportFormError(new Error("Der öffentliche Anschubvertrag gehört nicht zum gewählten Ausschreibungslos."));
   const fleetRevision = resources.fleetRevision;
   const fleetSnapshotHash = resources.fleetSnapshotHash;
   const orderingFeeCentsPerTrainKm = parseEuroCents(fields["orderingFeeEuros"] ?? "");
@@ -403,7 +408,7 @@ function submitTenderBid(fields: Readonly<Record<string, string>>): Promise<void
     confirmationDetail({ parties: operatorDisplayName(activeOperatorId), object: `Ausschreibung ${tenderId}`, amount: `${formatCents(orderingFeeCentsPerTrainKm)} je Zug-km`, deadline: simulationDeadline(publicTenders.find((tender) => tender.id === tenderId)?.closesAt), consequence: "Das versiegelte Angebot wird serverseitig gegen Flottenstand, Frist und Weltrevision geprüft." }),
     () => cooperationAction(async () => {
       if (api === undefined || activeOperatorId === "") throw new Error("Handelndes EVU fehlt.");
-      const commandId = commandKey("tender-bid", `${tenderId}:${formationId}:${orderingFeeCentsPerTrainKm}:${punctuality}:${extraSeats}`);
+      const commandId = commandKey("tender-bid", `${tenderId}:${formationChoice}:${orderingFeeCentsPerTrainKm}:${punctuality}:${extraSeats}`);
       await api.submitTenderBid(publicWorldId, tenderId, activeOperatorId, {
         expectedRevision: economyRevision,
         commandId,
@@ -413,15 +418,18 @@ function submitTenderBid(fields: Readonly<Record<string, string>>): Promise<void
           fleetRevision,
           snapshotHash: fleetSnapshotHash,
           formationId,
-          ...(resources.personnelDuties.length === 0 ? {} : { personnelDutyIds: resources.personnelDuties.map((entry) => entry.id) }),
-          entryFacility: {
+          ...(publicFacility === undefined ? {} : {
+            personnelDutyIds: publicFacility.personnelDutyIds,
+            pathReservationIds: publicFacility.pathReservationIds,
+            entryFacility: {
             schemaVersion: "zugfolge-public-entry-facility/v1" as const,
             providerOperatorId: "public" as const,
-          },
+            },
+          }),
         },
         promises: { extraSeats, punctualityBasisPoints: Math.round(punctuality * 100), additionalStops: 0 },
       });
-      completeCommand("tender-bid", `${tenderId}:${formationId}:${orderingFeeCentsPerTrainKm}:${punctuality}:${extraSeats}`);
+      completeCommand("tender-bid", `${tenderId}:${formationChoice}:${orderingFeeCentsPerTrainKm}:${punctuality}:${extraSeats}`);
       clearedJourneyDrafts.add("tender-bid-form");
       await refreshCooperation(activeOperatorId);
     }, "Angebot wurde versiegelt eingereicht."),
