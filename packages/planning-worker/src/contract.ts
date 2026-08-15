@@ -7,12 +7,12 @@ import {
   type PlanningCoordinateStation,
 } from "@zugfolge/planning-runtime-native";
 
-export const PLANNING_PLAYER_PATH_REQUEST_SCHEMA = "planning.player-path-request/v1" as const;
+export const PLANNING_PLAYER_PATH_REQUEST_SCHEMA = "planning.player-path-request/v2" as const;
 export const PLANNING_PATH_REQUEST_SCHEMA = "planning.path-request/v3" as const;
 export const PLANNING_COORDINATE_AUTHORITY_SCHEMA = "planning.coordinate/v1" as const;
 export const PLANNING_INFRASTRUCTURE_RELEASE_SCHEMA = "planning.infrastructure-release/v1" as const;
 
-export interface PlanningPlayerPathRequestBody extends Omit<PlanningCoordinateRequest, "requestNumericId" | "boundaryWindows" | "train"> {
+export interface PlanningPlayerPathRequestBody extends Omit<PlanningCoordinateRequest, "requestNumericId" | "boundaryWindows" | "train" | "trainId" | "trainNumber"> {
   readonly schemaVersion: typeof PLANNING_PLAYER_PATH_REQUEST_SCHEMA;
   readonly requestId: string;
   readonly formationId: string;
@@ -110,9 +110,7 @@ function integer(value: unknown, name: string, minimum = 0): asserts value is nu
 const PLAYER_REQUEST_KEYS = [
   "requestId",
   "formationId",
-  "trainId",
   "trainCategory",
-  "trainNumber",
   "originStationId",
   "destinationStationId",
   "desiredDepartureS",
@@ -127,6 +125,8 @@ const PLAYER_REQUEST_KEYS = [
 
 const REQUEST_KEYS = [
   ...PLAYER_REQUEST_KEYS,
+  "trainId",
+  "trainNumber",
   "operatorId",
   "fleetRevision",
   "fleetStateHash",
@@ -135,7 +135,7 @@ const REQUEST_KEYS = [
 ] as const;
 
 function validatePlayerRequestFacts(input: Record<string, unknown>, name: string): void {
-  for (const key of ["requestId", "formationId", "trainId", "originStationId", "destinationStationId"] as const) {
+  for (const key of ["requestId", "formationId", "originStationId", "destinationStationId"] as const) {
     text(input[key], `${name}.${key}`);
   }
   invariant(
@@ -143,7 +143,6 @@ function validatePlayerRequestFacts(input: Record<string, unknown>, name: string
     `${name}.trainCategory ist unbekannt.`,
   );
   invariant(["daily", "workdays", "weekend"].includes(input["operatingDays"] as string), `${name}.operatingDays ist unbekannt.`);
-  integer(input["trainNumber"], `${name}.trainNumber`, 1);
   integer(input["desiredDepartureS"], `${name}.desiredDepartureS`);
   integer(input["earlierS"], `${name}.earlierS`);
   integer(input["laterS"], `${name}.laterS`);
@@ -160,6 +159,8 @@ function validatePlayerRequestFacts(input: Record<string, unknown>, name: string
 
 function validateRequestFacts(input: Record<string, unknown>, name: string): void {
   validatePlayerRequestFacts(input, name);
+  text(input["trainId"], `${name}.trainId`);
+  integer(input["trainNumber"], `${name}.trainNumber`, 1);
   text(input["operatorId"], `${name}.operatorId`);
   integer(input["fleetRevision"], `${name}.fleetRevision`);
   text(input["fleetStateHash"], `${name}.fleetStateHash`);
@@ -394,6 +395,8 @@ const pathRequestProperties = {
 const playerPathRequestProperties = {
   ...pathRequestProperties,
   schemaVersion: { type: "string", const: PLANNING_PLAYER_PATH_REQUEST_SCHEMA },
+  trainId: undefined,
+  trainNumber: undefined,
   train: undefined,
   fleetRevision: undefined,
   fleetStateHash: undefined,

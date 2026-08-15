@@ -75,6 +75,8 @@ const clients = [
 ];
 for (const [clientId, publicUrl] of clients) {
   if (typeof publicUrl !== "string" || publicUrl === "") throw new Error(`Oeffentliche URL fuer ${clientId} fehlt.`);
+  const normalizedPublicUrl = publicUrl.replace(/\/$/, "");
+  const publicOrigin = new URL(normalizedPublicUrl).origin;
   const existingResponse = await fetchKeycloak(`${baseUrl}/admin/realms/${encodeURIComponent(realm)}/clients?clientId=${encodeURIComponent(clientId)}`, { headers }, `${clientId} suchen`);
   const existing = await existingResponse.json();
   const representation = {
@@ -83,8 +85,10 @@ for (const [clientId, publicUrl] of clients) {
     publicClient: true,
     standardFlowEnabled: true,
     directAccessGrantsEnabled: false,
-    redirectUris: [`${publicUrl.replace(/\/$/, "")}/*`],
-    webOrigins: [publicUrl.replace(/\/$/, "")],
+    rootUrl: normalizedPublicUrl,
+    baseUrl: normalizedPublicUrl,
+    redirectUris: [`${normalizedPublicUrl}/*`],
+    webOrigins: [publicOrigin],
     protocol: "openid-connect",
     attributes: { "pkce.code.challenge.method": "S256" },
     protocolMappers: [{ name: "game-api-audience", protocol: "openid-connect", protocolMapper: "oidc-audience-mapper", config: { "included.client.audience": "game-api", "access.token.claim": "true", "id.token.claim": "false" } }],

@@ -22,6 +22,12 @@ const program: OperatingProgram = {
 };
 
 describe("zugängliche Editor-Operationen", () => {
+  it("bietet im Fehlerzustand Wiederholung und einen Rückweg zur Spielwelt", () => {
+    const html = renderApp({ templates: [], versions: [], reports: [], loading: false, saving: false, message: "Failed to fetch", messageTone: "error", selectedDecisionId: "" });
+    expect(html).toContain('id="refresh"');
+    expect(html).toContain('href="../"');
+    expect(html).toContain("Zur Spielwelt");
+  });
   it("liefert für Drag, Touch und Tastatur dieselbe stabile Sortierung", () => {
     const dragged = reorderRules(program, "c", "a");
     const keyboard = moveRule(moveRule(program, "c", -1), "c", -1);

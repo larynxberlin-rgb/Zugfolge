@@ -176,6 +176,13 @@
       "when": 1786757400000,
       "tag": "0025_odoo_global_reconciliation_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1786795200000,
+      "tag": "0026_planning_train_numbers",
+      "breakpoints": true
     }
   ]
 }
