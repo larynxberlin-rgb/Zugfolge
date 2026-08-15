@@ -216,7 +216,7 @@ describe("releasegebundene Zugkartenprojektion", () => {
       operator: "public",
       trainNumber: "S4-1667972",
     });
-    expect(projected.trainNumber).toBe("S4-39000");
+    expect(projected.trainNumber).toBe("S4-35000");
     expect(projector.project("other-world", {
       ...train,
       operator: "public",

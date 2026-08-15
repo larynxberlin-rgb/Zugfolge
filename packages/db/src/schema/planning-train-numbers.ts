@@ -29,7 +29,7 @@ export const planningTrainNumbers = pgTable("planning_train_numbers", {
   check("planning_train_numbers_category_range_check", sql`(
     (${table.trainCategory} = 'long-distance' and ${table.trainNumber} between 1 and 9999)
     or (${table.trainCategory} = 'suburban' and ${table.trainNumber} between 10000 and 19999)
-    or (${table.trainCategory} = 'regional' and ${table.trainNumber} between 20000 and 38999)
+    or (${table.trainCategory} = 'regional' and ${table.trainNumber} between 20000 and 34999)
     or (${table.trainCategory} = 'freight' and ${table.trainNumber} between 40000 and 79999)
     or (${table.trainCategory} = 'supplementary' and ${table.trainNumber} between 80000 and 99999)
   )`),

@@ -39,8 +39,12 @@ Individuelle Referenzen/UUIDs bleiben aus Prometheus-Labels heraus.
 ## Backup und isolierter Restore
 
 `ops/alpha/backup-game.sh` erzeugt einen PostgreSQL-Custom-Dump samt SHA-256-
-Manifest. `restore-game.sh` akzeptiert ausschließlich Datenbanken mit Präfix
-`zugfolge_restore_`, legt sie neu an und bricht beim ersten Restorefehler ab.
+Manifest, Dateigröße und der tatsächlich gesicherten Drizzle-Migrationszahl.
+`restore-game.sh` akzeptiert Dump und Manifest ausschließlich für Datenbanken
+mit Präfix `zugfolge_restore_`, prüft die Artefaktbindung, legt das Ziel neu an
+und verlangt nach dem Restore exakt die im Manifest gebundene Migrationszahl.
+Damit benötigt der Restore-Drill nach einer legitimen neuen Migration keine
+hart codierte Sollwertänderung und bleibt bei Abweichungen fail-closed.
 Der autoritative Vergleich erfolgt mit
 `tools/alpha-ops/authoritative-state-hash.mjs` über alle öffentlichen Tabellen.
 

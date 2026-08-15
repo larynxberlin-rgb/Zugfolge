@@ -67,9 +67,9 @@ type TrainCategory = PlanningPlayerPathRequestBody["trainCategory"];
 const TRAIN_NUMBER_RANGES: Readonly<Record<TrainCategory, readonly [number, number]>> = {
   "long-distance": [1, 9_999],
   suburban: [10_000, 19_999],
-  // 39.000 bis 39.999 sind fuer importierte oeffentliche Regionalfahrten
+    // 35.000 bis 39.999 sind fuer importierte oeffentliche Regionalfahrten
   // reserviert und koennen deshalb nie mit einer Spielerfahrt kollidieren.
-  regional: [20_000, 38_999],
+    regional: [20_000, 34_999],
   freight: [40_000, 79_999],
   supplementary: [80_000, 99_999],
 };
