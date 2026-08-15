@@ -35,4 +35,16 @@ describe("Browser-OIDC", () => {
     await expect(ensureBrowserAccessToken(configuration)).resolves.toBe("kurz");
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  it("startet ohne Refresh-Token aus einem Hintergrundabruf keine Navigation", async () => {
+    values.set("zugfolge.oidc.game-web.accessToken", "abgelehnt");
+    values.set("zugfolge.oidc.game-web.accessTokenExpiresAt", String(Date.now() + 60_000));
+    const assign = vi.fn();
+    vi.stubGlobal("window", { location: { href: "https://game.example/", search: "", assign } });
+    vi.stubGlobal("fetch", vi.fn());
+
+    await expect(ensureBrowserAccessToken(configuration, true)).resolves.toBe("abgelehnt");
+    expect(assign).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });

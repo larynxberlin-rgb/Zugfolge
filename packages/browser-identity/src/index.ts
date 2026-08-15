@@ -106,6 +106,15 @@ async function authenticate(configuration: BrowserOidcConfiguration, forceRefres
   const refreshed = await refresh(configuration);
   if (refreshed !== undefined) return refreshed;
 
+  // Ein Hintergrundabruf darf die laufende Spieleraktion nicht unvermittelt
+  // durch eine Navigation ersetzen. Ohne erneuerbare Sitzung liefert der
+  // Aufrufer seinen ursprünglichen 401/403-Status an die Oberfläche zurück;
+  // erst die dort angebotene bewusste Neuanmeldung startet den PKCE-Fluss.
+  if (forceRefresh) {
+    if (accessToken !== null && accessToken !== "") return accessToken;
+    throw new Error("Die Sitzung kann nicht im Hintergrund erneuert werden. Bitte melden Sie sich erneut an.");
+  }
+
   const parameters = new URLSearchParams(window.location.search);
   const error = parameters.get("error");
   if (error !== null) throw new Error(`Die Anmeldung wurde abgebrochen (${error}). Bitte erneut versuchen.`);

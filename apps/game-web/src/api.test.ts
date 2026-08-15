@@ -205,6 +205,17 @@ describe("GameApiClient", () => {
     await expect(client.loadOwnOperators()).rejects.toMatchObject({ status, retryable: false, message: "Sitzung ungueltig" });
   });
 
+  it("bewahrt den Authentifizierungsstatus nach einem stillen Erneuerungsversuch", async () => {
+    const accessToken = vi.fn(async () => "token");
+    const fetchImplementation = vi.fn(async () => new Response(JSON.stringify({ error: "Sitzung ungueltig" }), { status: 401 }));
+    const client = new GameApiClient("", accessToken, fetchImplementation);
+
+    await expect(client.loadOwnOperators()).rejects.toMatchObject({ status: 401, retryable: false, message: "Sitzung ungueltig" });
+    expect(accessToken).toHaveBeenNthCalledWith(1, false);
+    expect(accessToken).toHaveBeenNthCalledWith(2, true);
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+  });
+
   it("verwirft fremd gebundene oder strukturell unvollständige Ressourcenkataloge", async () => {
     const foreign = new GameApiClient("", "token", async () => new Response(JSON.stringify(cooperationResourcesResponse("other-world", "operator"))));
     await expect(foreign.loadCooperationResources("world", "operator")).rejects.toThrow(/anderen Welt/);
