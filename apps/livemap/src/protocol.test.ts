@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { PublicMapEstimate } from "@zugfolge/livemap-stream";
 
 import {
   appendRenderSample,
@@ -471,6 +472,98 @@ describe("Livemap-Projektion", () => {
     }));
     const samples = appendRenderSample(appendRenderSample(undefined, previous), current);
     expect(renderTrains(samples, 105)[0]?.mapPosition).toEqual(current.trains.get("1")?.mapPosition);
+  });
+
+  it("interpoliert kompatible visuelle Schätzlagen zwischen autoritativen Samples", () => {
+    const estimate = (overrides: Partial<PublicMapEstimate> = {}): PublicMapEstimate => ({
+      infrastructureReleaseId: "infra",
+      resourceId: "resource",
+      method: "route-corridor",
+      displayPathId: "corridor",
+      displayOffsetMm: 1_000,
+      latitudeE7: 500_000_000,
+      longitudeE7: 100_000_000,
+      bearingMilliDegrees: 350_000,
+      uncertaintyMm: 100_000,
+      ...overrides,
+    });
+    const previous = initialState(snapshot(4, 100, {
+      ...baseTrain,
+      positionMm: 1_000,
+      mapEstimate: estimate(),
+    }));
+    const current = initialState(snapshot(5, 110, {
+      ...baseTrain,
+      positionMm: 1_200,
+      mapEstimate: estimate({
+        displayOffsetMm: 1_200,
+        latitudeE7: 500_000_200,
+        longitudeE7: 100_000_400,
+        bearingMilliDegrees: 10_000,
+        uncertaintyMm: 120_000,
+      }),
+    }));
+    const samples = appendRenderSample(appendRenderSample(undefined, previous), current);
+
+    expect(renderTrains(samples, 105)[0]).toMatchObject({
+      positionMm: 1_100,
+      mapEstimate: {
+        displayOffsetMm: 1_100,
+        latitudeE7: 500_000_100,
+        longitudeE7: 100_000_200,
+        bearingMilliDegrees: 0,
+        uncertaintyMm: 110_000,
+      },
+    });
+    expect(previous.trains.get("1")?.mapEstimate?.displayOffsetMm).toBe(1_000);
+    expect(current.trains.get("1")?.mapEstimate?.displayOffsetMm).toBe(1_200);
+  });
+
+  it.each([
+    ["Ankerlage", { method: "anchor-hold" as const }],
+    ["Methodenwechsel", { method: "topological-track" as const }],
+    ["Pfadwechsel", { displayPathId: "anderer-korridor" }],
+    ["Ressourcenwechsel", { resourceId: "andere-resource" }],
+    ["Releasewechsel", { infrastructureReleaseId: "andere-infra" }],
+  ])("springt bei %s fail-closed auf die aktuelle Schätzlage", (_case, override) => {
+    const estimate: PublicMapEstimate = {
+      infrastructureReleaseId: "infra",
+      resourceId: "resource",
+      method: "route-corridor",
+      displayPathId: "corridor",
+      displayOffsetMm: 1_000,
+      latitudeE7: 500_000_000,
+      longitudeE7: 100_000_000,
+      uncertaintyMm: 100_000,
+    };
+    const previous = initialState(snapshot(4, 100, { ...baseTrain, mapEstimate: estimate }));
+    const current = initialState(snapshot(5, 110, {
+      ...baseTrain,
+      mapEstimate: { ...estimate, displayOffsetMm: 2_000, longitudeE7: 100_001_000, ...override },
+    }));
+    const samples = appendRenderSample(appendRenderSample(undefined, previous), current);
+    expect(renderTrains(samples, 105)[0]?.mapEstimate).toEqual(current.trains.get("1")?.mapEstimate);
+  });
+
+  it("springt bei einem Statuswechsel fail-closed auf die aktuelle Schätzlage", () => {
+    const estimate: PublicMapEstimate = {
+      infrastructureReleaseId: "infra",
+      resourceId: "resource",
+      method: "route-corridor",
+      displayPathId: "corridor",
+      displayOffsetMm: 1_000,
+      latitudeE7: 500_000_000,
+      longitudeE7: 100_000_000,
+      uncertaintyMm: 100_000,
+    };
+    const previous = initialState(snapshot(4, 100, { ...baseTrain, mapEstimate: estimate }));
+    const current = initialState(snapshot(5, 110, {
+      ...baseTrain,
+      status: "waiting",
+      mapEstimate: { ...estimate, displayOffsetMm: 2_000, longitudeE7: 100_001_000 },
+    }));
+    const samples = appendRenderSample(appendRenderSample(undefined, previous), current);
+    expect(renderTrains(samples, 105)[0]?.mapEstimate).toEqual(current.trains.get("1")?.mapEstimate);
   });
 });
 

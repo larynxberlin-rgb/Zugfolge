@@ -617,6 +617,48 @@ function interpolatedMapPosition(
   });
 }
 
+function interpolatedMapEstimate(
+  previous: PublicTrain,
+  current: PublicTrain,
+  previousAt: number,
+  currentAt: number,
+  renderAt: number,
+): PublicMapEstimate | undefined {
+  const from = previous.mapEstimate;
+  const to = current.mapEstimate;
+  if (
+    previous.status !== "running"
+    || current.status !== "running"
+    || from === undefined
+    || to === undefined
+    || from.method === "anchor-hold"
+    || to.method === "anchor-hold"
+    || from.infrastructureReleaseId !== to.infrastructureReleaseId
+    || from.resourceId !== to.resourceId
+    || from.method !== to.method
+    || from.displayPathId !== to.displayPathId
+    || currentAt <= previousAt
+  ) return to;
+  if (renderAt <= previousAt) return from;
+  if (renderAt >= currentAt) return to;
+  const elapsed = renderAt - previousAt;
+  const duration = currentAt - previousAt;
+  const bearingMilliDegrees = interpolateBearing(
+    from.bearingMilliDegrees,
+    to.bearingMilliDegrees,
+    elapsed,
+    duration,
+  );
+  return Object.freeze({
+    ...to,
+    displayOffsetMm: interpolateInteger(from.displayOffsetMm, to.displayOffsetMm, elapsed, duration),
+    latitudeE7: interpolateInteger(from.latitudeE7, to.latitudeE7, elapsed, duration),
+    longitudeE7: interpolateInteger(from.longitudeE7, to.longitudeE7, elapsed, duration),
+    uncertaintyMm: interpolateInteger(from.uncertaintyMm, to.uncertaintyMm, elapsed, duration),
+    ...(bearingMilliDegrees === undefined ? {} : { bearingMilliDegrees }),
+  });
+}
+
 export function renderTrains(samples: RenderSamples, renderAt: number): readonly PublicTrain[] {
   return [...samples.current.trains.values()].map((current) => {
     const previous = samples.previous.trains.get(current.id);
@@ -635,11 +677,23 @@ export function renderTrains(samples: RenderSamples, renderAt: number): readonly
       samples.current.at,
       renderAt,
     );
-    if (positionMm === current.positionMm && mapPosition === current.mapPosition) return current;
+    const mapEstimate = interpolatedMapEstimate(
+      previous,
+      current,
+      samples.previous.at,
+      samples.current.at,
+      renderAt,
+    );
+    if (
+      positionMm === current.positionMm
+      && mapPosition === current.mapPosition
+      && mapEstimate === current.mapEstimate
+    ) return current;
     return Object.freeze({
       ...current,
       positionMm,
       ...(mapPosition === undefined ? {} : { mapPosition }),
+      ...(mapEstimate === undefined ? {} : { mapEstimate }),
     });
   });
 }
