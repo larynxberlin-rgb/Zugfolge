@@ -114,7 +114,7 @@ export function createDatabaseHealthCheck(db: AnyDatabase): HealthCheck {
   };
 }
 
-/** Fortschritt des persistierten Simulationslogs; leere Installationen sind bewusst gesund/idle. */
+/** Lesbarkeit des persistierten Simulationslogs; fachlich ruhige Welten sind bewusst gesund/idle. */
 export function createEventLogHealthCheck(
   db: AnyDatabase,
   maximumAgeMs = 5 * 60_000,
@@ -131,8 +131,13 @@ export function createEventLogHealthCheck(
       if (raw === null || raw === undefined) return { status: "ok", code: "event_log_idle" };
       const latestMs = Number(raw);
       const ageMs = Math.max(0, now() - latestMs);
+      // `domain_events` ist ein fachliches Journal, kein Heartbeat. Auch eine
+      // laufende Simulation darf länger als dieses Beobachtungsfenster kein
+      // neues Domänenereignis erzeugen. Scheduler-Liveness besitzt einen
+      // eigenen Healthcheck; hier beweist bereits die erfolgreiche Abfrage die
+      // technische Verfügbarkeit des Eventlogs.
       return ageMs > maximumAgeMs
-        ? { status: "degraded", code: "event_log_stale", detail: `Letztes Ereignis vor ${Math.round(ageMs / 1_000)} s` }
+        ? { status: "ok", code: "event_log_idle" }
         : { status: "ok", code: "event_log_current" };
     },
   };

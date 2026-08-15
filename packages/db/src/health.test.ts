@@ -53,6 +53,8 @@ describe("createDatabaseHealthCheck", () => {
     await db.insert(worlds).values({ id: WORLD_ID, name: "Health", schedulePeriodWeeks: 3, epoch: new Date(0) });
     await db.insert(domainEvents).values({ worldId: WORLD_ID, sequence: 1, eventType: "tick", payload: {}, occurredAt: new Date(9_500) });
     expect(await createEventLogHealthCheck(db, 1_000, () => 10_000).check()).toMatchObject({ status: "ok", code: "event_log_current" });
+    await db.update(domainEvents).set({ occurredAt: new Date(8_000) }).where(eq(domainEvents.worldId, WORLD_ID));
+    expect(await createEventLogHealthCheck(db, 1_000, () => 10_000).check()).toEqual({ status: "ok", code: "event_log_idle" });
     await db.insert(economyOutbox).values({ worldId: WORLD_ID, effectId: "x", effectType: "notice", payload: {}, occurredAt: new Date(0), enqueuedAt: new Date(1_000) });
     expect(await createEconomyOutboxHealthCheck(db, 1_000, () => 10_000).check()).toMatchObject({ status: "degraded", code: "outbox_stalled" });
     await db.update(economyOutbox).set({ attempts: 3, lastErrorCode: "adapter_failed" }).where(eq(economyOutbox.worldId, WORLD_ID));
