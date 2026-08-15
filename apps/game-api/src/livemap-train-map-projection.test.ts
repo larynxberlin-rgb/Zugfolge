@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { PublicTrain } from "@zugfolge/livemap-stream";
+import type { PublicExternalTrain, PublicTrain } from "@zugfolge/livemap-stream";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { SQLiteTrainMapProjector, assertTrainMapProjectionBinding } from "./livemap-train-map-projection.js";
@@ -222,6 +222,30 @@ describe("releasegebundene Zugkartenprojektion", () => {
       operator: "public",
       trainNumber: "S4-1667972",
     }).trainNumber).toBe("S4-1667972");
+    projector.close();
+  });
+
+  it("vergibt dieselbe fuenfstellige Nummer auch fuer einen kanonischen Aussenlauf", () => {
+    const projector = new SQLiteTrainMapProjector(fixture());
+    const external: PublicExternalTrain = {
+      id: "train-1:day-2",
+      operator: "public",
+      trainNumber: "S4-1667972",
+      category: "regional",
+      journeyChainId: "train-1",
+      externalLegId: "external-1",
+      fromPortalId: "External Origin:external-1",
+      toPortalId: "LTC",
+      scheduledEndS: 100,
+      reentryEarliestS: null,
+      reentryLatestS: null,
+      delaySeconds: 0,
+      status: "outside",
+      progressBasisPoints: 5_000,
+    };
+    expect(projector.projectExternal(WORLD, external).trainNumber).toBe("S4-35000");
+    expect(projector.projectExternal("other-world", external).trainNumber).toBe("S4-1667972");
+    expect(projector.projectExternal(WORLD, { ...external, id: "forged" }).trainNumber).toBe("S4-1667972");
     projector.close();
   });
 

@@ -145,6 +145,7 @@ export interface PublicTrain {
  */
 export interface PublicTrainMapProjector {
   project(worldId: string, train: PublicTrain): PublicTrain;
+  projectExternal?(worldId: string, train: PublicExternalTrain): PublicExternalTrain;
 }
 
 /** Liefert eine Basisfahrt ausschliesslich fuer die kanonische `base:day-N`-Bindung. */
@@ -691,6 +692,25 @@ export class LivemapRegistry {
     });
   }
 
+  #projectExternalTrains(
+    worldId: string,
+    trains: readonly PublicExternalTrain[],
+  ): readonly PublicExternalTrain[] {
+    const project = this.#trainMapProjector?.projectExternal;
+    if (project === undefined) return trains;
+    return trains.map((train) => {
+      const projected = project.call(this.#trainMapProjector, worldId, train);
+      if (
+        projected.id !== train.id
+        || projected.journeyChainId !== train.journeyChainId
+        || projected.externalLegId !== train.externalLegId
+      ) {
+        throw new TypeError("Livemap-Kartenprojektor darf Aussenlaufidentitaeten nicht veraendern.");
+      }
+      return projected;
+    });
+  }
+
   #projectDisruptionStates(
     worldId: string,
     disruption: PublicInfrastructureDisruption,
@@ -876,7 +896,7 @@ export class LivemapRegistry {
       throw new RangeError("Ein Regionssnapshot darf keine doppelten Zuglaufkennungen besitzen.");
     }
     const previousIds = entry.trainIdsByRegion.get(regionId) ?? new Set<string>();
-    const externalTrains = snapshot.externalTrains ?? [];
+    const externalTrains = this.#projectExternalTrains(worldId, snapshot.externalTrains ?? []);
     const nextExternalIds = new Set(externalTrains.map((train) => train.id));
     if (nextExternalIds.size !== externalTrains.length) {
       throw new RangeError("Ein Regionssnapshot darf keine doppelten Aussenlaufkennungen besitzen.");
@@ -974,6 +994,10 @@ export class LivemapRegistry {
           otherRegionId !== regionId && otherIdentifiers.has(identifier),
       );
     const projectedChanged = this.#projectTrains(worldId, input.changed);
+    const projectedExternalChanged = this.#projectExternalTrains(
+      worldId,
+      input.changedExternalTrains ?? [],
+    );
     const changedDisruptionIds = new Set<string>();
     const projectedObjectStates = (input.changedDisruptions ?? []).flatMap((disruption) => {
       if (changedDisruptionIds.has(disruption.disruptionId)) {
@@ -1001,7 +1025,14 @@ export class LivemapRegistry {
     const removed = input.removed.filter((trainRunId) => !ownedElsewhere(trainRunId));
     const removedObjectStateIds = requestedRemovedObjectStateIds
       .filter((identifier) => !objectStateOwnedElsewhere(identifier));
-    const delta = feed.publish({ ...input, changed: projectedChanged, changedObjectStates, removed, removedObjectStateIds });
+    const delta = feed.publish({
+      ...input,
+      changed: projectedChanged,
+      changedExternalTrains: projectedExternalChanged,
+      changedObjectStates,
+      removed,
+      removedObjectStateIds,
+    });
     for (const train of projectedChanged) {
       for (const [otherRegionId, otherIdentifiers] of entry.trainIdsByRegion) {
         if (otherRegionId !== regionId) otherIdentifiers.delete(train.id);
@@ -1009,7 +1040,7 @@ export class LivemapRegistry {
       identifiers.add(train.id);
     }
     input.removed.forEach((trainRunId) => identifiers.delete(trainRunId));
-    for (const train of input.changedExternalTrains ?? []) externalIdentifiers.add(train.id);
+    for (const train of projectedExternalChanged) externalIdentifiers.add(train.id);
     for (const trainRunId of input.removedExternalTrainIds ?? []) externalIdentifiers.delete(trainRunId);
     for (const state of changedObjectStates) objectStateIdentifiers.add(state.id);
     for (const state of changedObjectStates) {
