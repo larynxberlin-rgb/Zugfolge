@@ -147,6 +147,12 @@ describe("spielergebundene Tutorialreise", () => {
     });
     expect(html).toContain("Weltvertrag bestätigt");
     expect(html).toContain("Ihr EVU ist in dieser Welt aktiv");
+    expect(html).toContain("Weltstatus");
+    expect(html).toContain('id="world-contract-title">Aktive Welt');
+    expect(html).toContain("1 Weltvertrag");
+    expect(html).not.toContain("1 Weltverträge");
+    expect(html).not.toContain("Vor dem Eintritt");
+    expect(html).not.toContain("Öffentliche Welten vergleichen");
     expect(html).not.toContain("data-world-contract-form");
     expect(html).not.toContain('name="displayName"');
     expect(html).not.toContain('name="confirmed"');
