@@ -10,5 +10,5 @@
     {"clientId":"operations-center","enabled":true,"publicClient":true,"standardFlowEnabled":true,"redirectUris":["${OPERATIONS_CENTER_URL}/*"],"webOrigins":["${OPERATIONS_CENTER_URL}"],"protocolMappers":[{"name":"game-api-audience","protocol":"openid-connect","protocolMapper":"oidc-audience-mapper","config":{"included.client.audience":"game-api","access.token.claim":"true"}}]},
     {"clientId":"provisioner","enabled":true,"publicClient":false,"secret":"${KEYCLOAK_ADMIN_CLIENT_SECRET}","serviceAccountsEnabled":true,"standardFlowEnabled":false}
   ],
-  "users": [{"username":"service-account-provisioner","enabled":true,"serviceAccountClientId":"provisioner","clientRoles":{"realm-management":["manage-users","view-users","query-users"]}}]
+  "users": [{"username":"service-account-provisioner","enabled":true,"serviceAccountClientId":"provisioner","clientRoles":{"realm-management":["manage-users","view-users","query-users","manage-realm","manage-clients"]}}]
 }

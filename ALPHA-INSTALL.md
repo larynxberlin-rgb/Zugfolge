@@ -277,8 +277,13 @@ Standardwert ist `livemap`; diese Werte enthalten keine Geheimnisse.
 
 Der Realmimport `ops/alpha/keycloak/zugfolge-realm.json` enthält die Clients
 `game-web`, `livemap`, `operations-center`, die Audience `game-api`, Rollen sowie
-Required Actions. Das Servicekonto `provisioner` benötigt nur `manage-users`,
-`view-users` und `query-users`.
+Required Actions. Das Servicekonto `provisioner` benötigt `manage-users`,
+`view-users`, `query-users`, `manage-realm` und `manage-clients`. Die beiden
+Verwaltungsrollen sind für den idempotenten Abgleich der Sitzungslaufzeiten und
+Browser-Clients erforderlich; sie ersetzen keinen allgemeinen Bootstrap-Admin.
+Bei einer bestehenden Installation müssen diese beiden Rollen dem vorhandenen
+Servicekonto vor dem ersten Start von `keycloak-reconcile` einmalig zugewiesen
+und mit einem frischen Client-Credentials-Token geprüft werden.
 
 In Odoo unter **Einstellungen → Technisch → Systemparameter** setzen:
 
