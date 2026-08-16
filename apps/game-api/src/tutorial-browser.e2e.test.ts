@@ -344,6 +344,11 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
     await shellOperator.locator("summary").click();
     const worldSnapshot = await page.locator(".world-contracts").ariaSnapshot();
     for (const text of ["Welt A", "Welt B", "Dauerhaft, keine Wipes", "Fahrplanperiode", "Startkapital", "Eintrittsfenster"]) expect(worldSnapshot).toContain(text);
+    const term = page.getByRole("button", { name: "Trasse", exact: true }).first();
+    await term.click();
+    expect(await page.locator(".zf-glossary__dialog").ariaSnapshot()).toContain("Trasse");
+    await page.getByRole("button", { name: "Schließen" }).click();
+    expect(await term.evaluate((element) => document.activeElement === element)).toBe(true);
     await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Märkte", exact: true }).click();
     await page.waitForURL((url) => url.searchParams.get("section") === "markets");
     expect(new URL(page.url()).searchParams.get("world")).toBe(SECOND_WORLD);
@@ -355,11 +360,6 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
     expect(await comparison.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
     await page.keyboard.press("ArrowRight");
     await expect.poll(() => comparison.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
-    const term = page.getByRole("button", { name: "Trasse", exact: true }).first();
-    await term.click();
-    expect(await page.locator(".zf-glossary__dialog").ariaSnapshot()).toContain("Trasse");
-    await page.getByRole("button", { name: "Schließen" }).click();
-    expect(await term.evaluate((element) => document.activeElement === element)).toBe(true);
     for (const width of [320, 390, 768, 1280]) {
       await page.setViewportSize({ width, height: 900 });
       expect(await page.locator("body").evaluate((body) => body.scrollWidth <= window.innerWidth)).toBe(true);
