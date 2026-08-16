@@ -135,6 +135,7 @@
         "packages/livemap/**",
         "packages/mailbox/**",
         "packages/operators/**",
+        "packages/player-context/**",
         "packages/privacy/**",
         "apps/game-api/**",
         "apps/game-web/**",

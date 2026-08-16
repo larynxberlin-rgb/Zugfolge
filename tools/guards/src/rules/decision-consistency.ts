@@ -11,9 +11,14 @@ function entscheidungen(text: string): number[] {
   return [...text.matchAll(/^\| E(\d+) \|/gm)].map((match) => Number(match[1]));
 }
 
-function adrIndex(text: string): number[] {
-  return [...text.matchAll(/^\| \[(\d{4})\]\([^)]+\) \| E(\d+) \|/gm)].map(
-    (match) => Number(match[2]),
+interface AdrIndexEntry {
+  readonly decision: number;
+  readonly path: string;
+}
+
+function adrIndex(text: string): AdrIndexEntry[] {
+  return [...text.matchAll(/^\| \[\d{4}\]\(([^)]+\.md)\) \| E(\d+) \|/gm)].map(
+    (match) => ({ decision: Number(match[2]), path: `docs/adr/${match[1]}` }),
   );
 }
 
@@ -69,7 +74,8 @@ export const decisionConsistencyRule: Rule = {
     if (index === undefined) {
       report(ADR_INDEX, "Der ADR-Index fehlt.");
     } else {
-      if (!gleich(adrIndex(index.text), canonical)) {
+      const indexedDecisions = adrIndex(index.text).map((entry) => entry.decision);
+      if (!gleich(indexedDecisions, canonical)) {
         report(ADR_INDEX, `Der ADR-Index muss genau E1–E${highest} enthalten.`);
       }
       if (!index.text.includes(`E1–E${highest}`)) {
@@ -77,17 +83,20 @@ export const decisionConsistencyRule: Rule = {
       }
     }
 
+    const indexedAdrs = index === undefined ? [] : adrIndex(index.text);
     for (const number of canonical) {
-      const prefix = `docs/adr/${String(number).padStart(4, "0")}-`;
-      const records = files.filter(
-        (file) => file.path.startsWith(prefix) && file.path.endsWith(".md"),
-      );
+      const records = indexedAdrs.filter((entry) => entry.decision === number);
       if (records.length !== 1) {
-        report(ADR_INDEX, `E${number} braucht genau ein ADR mit Präfix ${prefix}.`);
+        report(ADR_INDEX, `E${number} braucht genau ein im ADR-Index zugeordnetes ADR.`);
         continue;
       }
-      if (!records[0]?.text.includes(`entspricht E${number}`)) {
-        report(records[0]?.path ?? ADR_INDEX, `ADR-${String(number).padStart(4, "0")} muss sich als E${number} ausweisen.`);
+      const record = finde(files, records[0]!.path);
+      if (record === undefined) {
+        report(ADR_INDEX, `Das E${number} im ADR-Index zugeordnete ADR '${records[0]!.path}' fehlt.`);
+        continue;
+      }
+      if (!record.text.includes(`entspricht E${number}`)) {
+        report(record.path, `Das E${number} zugeordnete ADR muss sich als E${number} ausweisen.`);
       }
     }
 

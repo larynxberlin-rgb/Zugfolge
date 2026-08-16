@@ -278,6 +278,20 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
       if (url.pathname === "/me/operators") return json([
         { id: ownA, worldId: PUBLIC_WORLD, name: "EVU A" }, { id: ownB, worldId: SECOND_WORLD, name: "EVU B" },
       ]);
+      if (url.pathname === `/worlds/${SECOND_WORLD}/me/operator-context`) return json({
+        schemaVersion: "zugfolge-operator-context/v1",
+        worldId: SECOND_WORLD,
+        operators: [{
+          id: ownB,
+          name: "EVU B",
+          finance: {
+            mode: "finite",
+            ledgerBalanceCents: "1250000",
+            pendingDebitCents: "50000",
+            availableCents: "1200000",
+          },
+        }],
+      });
       if (url.pathname === `/worlds/${SECOND_WORLD}/simulation-time`) return json({ atS: 100 });
       if (url.pathname === `/worlds/${SECOND_WORLD}/operators`) return json([
         { id: ownB, worldId: SECOND_WORLD, name: "EVU B" }, { id: sellerB, worldId: SECOND_WORLD, name: "Verkäufer B" },
@@ -315,6 +329,20 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
 
     await page.goto(`${origin}/?view=journey&world=${SECOND_WORLD}`, { waitUntil: "networkidle" });
     await page.getByText("Handelndes EVU in Welt B").waitFor();
+    const shellOperator = page.locator(".shell-operator");
+    const shellOperatorName = shellOperator.locator("summary > span:first-child > strong");
+    await shellOperatorName.waitFor();
+    expect(await shellOperatorName.textContent()).toBe("EVU B");
+    expect(await shellOperator.locator(".shell-balance").innerText()).toContain("12.000,00");
+    await shellOperator.locator("summary").click();
+    const financeSummary = await shellOperator.locator(".shell-operator__popover").innerText();
+    expect(financeSummary).toContain("Kontostand");
+    expect(financeSummary).toContain("12.500,00");
+    expect(financeSummary).toContain("Vorgemerkt");
+    expect(financeSummary).toContain("500,00");
+    expect(financeSummary).toContain("Verfügbar");
+    expect(financeSummary).toContain("12.000,00");
+    await shellOperator.locator("summary").click();
     expect(await page.locator(".m12-toolbar").innerText()).toContain("EVU B");
     const worldSnapshot = await page.locator(".world-contracts").ariaSnapshot();
     for (const text of ["Welt A", "Welt B", "Dauerhaft, keine Wipes", "Fahrplanperiode", "Startkapital", "Eintrittsfenster"]) expect(worldSnapshot).toContain(text);

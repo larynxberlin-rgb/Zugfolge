@@ -423,7 +423,31 @@ describe("decision-consistency", () => {
   it("meldet ein fehlendes ADR", () => {
     const missing = files.filter((file) => file.path !== "docs/adr/0002-zwei.md");
     expect(decisionConsistencyRule.check(missing, testConfig()).map((finding) => finding.message))
-      .toEqual(expect.arrayContaining([expect.stringContaining("genau ein ADR")]));
+      .toEqual(expect.arrayContaining([expect.stringContaining("fehlt")]));
+  });
+
+  it("folgt der E-Zuordnung im Index, wenn ein vorgeschlagenes ADR keine E-Nummer traegt", () => {
+    const decisions = Array.from({ length: 30 }, (_, index) => index + 1);
+    const canonical = decisions.map((number) => `| E${number} | Entscheidung ${number} | Grund |`).join("\n");
+    const agentRows = decisions.map((number) => `| E${number} | Entscheidung ${number} |`).join("\n");
+    const indexRows = decisions.map((number) => {
+      const adr = number === 30 ? 31 : number;
+      return `| [${String(adr).padStart(4, "0")}](adr-${adr}.md) | E${number} | Entscheidung ${number} |`;
+    });
+    indexRows.splice(29, 0, "| [0030](adr-30.md) | – | Vorschlag ohne Grundsatzentscheidung |");
+    const records = decisions.map((number) => {
+      const adr = number === 30 ? 31 : number;
+      return sourceFile(`docs/adr/adr-${adr}.md`, `- **Status:** Angenommen (entspricht E${number})`);
+    });
+    records.splice(29, 0, sourceFile("docs/adr/adr-30.md", "- **Status:** Vorgeschlagen"));
+
+    expect(decisionConsistencyRule.check([
+      sourceFile("docs/entscheidungen.md", `${canonical}\n`),
+      sourceFile("AGENTS.md", `E1–E30\n${agentRows}\n`),
+      sourceFile("docs/adr/README.md", `E1–E30\n${indexRows.join("\n")}\n`),
+      ...records,
+      sourceFile("CLAUDE.md", "Bindende Grundlage: AGENTS.md"),
+    ], testConfig())).toEqual([]);
   });
 });
 
