@@ -366,13 +366,23 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
       expect(await page.getByRole("navigation", { name: "Hauptnavigation" }).isVisible()).toBe(true);
     }
     await page.setViewportSize({ width: 390, height: 844 });
+    const reserveTrigger = page.getByRole("button", { name: "10 Minuten reservieren" });
+    await reserveTrigger.scrollIntoViewIfNeeded();
     const [actionBox, glossaryBox] = await Promise.all([
-      page.getByRole("button", { name: "10 Minuten reservieren" }).boundingBox(),
+      reserveTrigger.boundingBox(),
       page.locator(".zf-glossary__opener").boundingBox(),
     ]);
     expect(actionBox).not.toBeNull();
     expect(glossaryBox).not.toBeNull();
-    expect(glossaryBox!.y).toBeGreaterThanOrEqual(actionBox!.y + actionBox!.height);
+    expect(glossaryBox!.y).toBeGreaterThanOrEqual(0);
+    expect(glossaryBox!.y + glossaryBox!.height).toBeLessThanOrEqual(844);
+    expect(actionBox!.y).toBeGreaterThanOrEqual(0);
+    expect(actionBox!.y + actionBox!.height).toBeLessThanOrEqual(844);
+    const boxesOverlap = actionBox!.x < glossaryBox!.x + glossaryBox!.width
+      && actionBox!.x + actionBox!.width > glossaryBox!.x
+      && actionBox!.y < glossaryBox!.y + glossaryBox!.height
+      && actionBox!.y + actionBox!.height > glossaryBox!.y;
+    expect(boxesOverlap).toBe(false);
     await page.locator('input[name="trainRunIds"]').check();
     await page.locator('input[name="formationIds"]').check();
     await page.locator('input[name="personnelDutyIds"]').check();
@@ -387,7 +397,6 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
       expect(await page.locator('input[name="termsSummary"]').inputValue()).toBe("Browserentwurf bleibt erhalten");
     }
     expect(new Set(contractMutationKeys).size).toBe(1);
-    const reserveTrigger = page.getByRole("button", { name: "10 Minuten reservieren" });
     await reserveTrigger.click();
     const detail = await page.locator("#confirmation-detail").innerText();
     for (const label of ["Welt:", "Parteien:", "Objekt:", "Betrag:", "Frist:", "Folgen:"]) expect(detail).toContain(label);

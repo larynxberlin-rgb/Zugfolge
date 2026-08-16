@@ -455,9 +455,9 @@ a { color: inherit; }
   .topbar nav { grid-column: 1 / -1; width: 100%; display: flex; margin-left: 0; padding-bottom: 2px; }
   .topbar nav a, .topbar .zf-glossary__opener { min-height: 44px; white-space: nowrap; }
   .topbar time { min-width: 0; margin-left: 0; }
-  .operator-context summary { min-height: 40px; padding: 4px 8px; }
-  .operator-context__company { display: none; }
-  .operator-context__finance { padding-left: 0; border-left: 0; }
+  .operator-context summary { min-height: 40px; gap: 8px; padding: 4px 8px; }
+  .operator-context__company strong { max-width: 105px; }
+  .operator-context__finance { padding-left: 8px; }
   .attention-rail { grid-template-columns: 1fr; gap: 5px; padding: 7px 9px; }
   .attention-heading h2 { font-size: 12px; }
   .attention-card { min-height: 76px; }
@@ -482,8 +482,11 @@ a { color: inherit; }
 }
 
 @media (max-width: 560px) {
-  .world-context .eyebrow { display: none; }
-  .world-context strong { max-width: 110px; font-size: 11px; }
+  .topbar { grid-template-columns: minmax(0, 1fr) auto; }
+  .wordmark, .world-context { display: none; }
+  .operator-context { justify-self: stretch; }
+  .operator-context summary { justify-content: space-between; }
+  .operator-context__company strong { max-width: 92px; font-size: 10px; }
   .topbar time { max-width: 92px; font-size: 10px; }
   .operator-context summary::after { display: none; }
   .operator-context__finance .eyebrow { font-size: 8px; letter-spacing: .08em; }

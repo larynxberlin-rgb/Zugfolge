@@ -54,7 +54,19 @@ import "./player-shell.css";
 const root = document.querySelector<HTMLDivElement>("#root");
 if (root === null) throw new Error("App-Wurzel fehlt");
 const app = root;
-mountGlossaryLayer(document.body);
+let unmountGlossaryLayer: (() => void) | undefined;
+
+function mountGlossaryForCurrentView(): void {
+  const shell = app.querySelector<HTMLElement>(".player-shell");
+  if (shell === null) {
+    unmountGlossaryLayer = mountGlossaryLayer(document.body);
+    return;
+  }
+  unmountGlossaryLayer = mountGlossaryLayer(shell);
+  const host = shell.querySelector<HTMLElement>("[data-zugfolge-glossary]");
+  const topbar = shell.querySelector<HTMLElement>(".player-topbar");
+  if (host !== null && topbar !== null) topbar.append(host);
+}
 
 const parameters = new URLSearchParams(window.location.search);
 const requestedDeadlineBeforeS = parameters.get("deadlineBeforeS");
@@ -231,6 +243,8 @@ function cooperationState(): CooperationSurfaceState | undefined {
 }
 
 function render(): void {
+  unmountGlossaryLayer?.();
+  unmountGlossaryLayer = undefined;
   app.dataset.density = density;
   if (journeyMode) {
     captureJourneyDrafts();
@@ -262,6 +276,7 @@ function render(): void {
     });
     bindJourney();
     restoreJourneyDrafts();
+    mountGlossaryForCurrentView();
     if (pendingCooperationDeepLink && focusCooperationDeepLink(
       app,
       window.location.hash,
@@ -281,6 +296,7 @@ function render(): void {
       loadError = "";
       void boot();
     });
+    mountGlossaryForCurrentView();
     return;
   }
   app.innerHTML = renderProjection(projection, {
@@ -294,6 +310,7 @@ function render(): void {
     demoMode,
   });
   bind();
+  mountGlossaryForCurrentView();
 }
 
 function bindJourney(): void {
