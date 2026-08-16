@@ -424,7 +424,9 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
     expect(mutationPaths.some((path) => path.includes(PUBLIC_WORLD))).toBe(false);
     expect(await page.locator("body").evaluate((body) => body.scrollWidth <= window.innerWidth)).toBe(true);
     authenticationExpired = true;
-    await page.getByRole("button", { name: "Kooperation und Markt aktualisieren" }).click();
+    const refreshWorkspace = page.locator("#m12-refresh");
+    expect(await refreshWorkspace.innerText()).toBe("Arbeitsraum aktualisieren");
+    await refreshWorkspace.click();
     const authenticationError = page.locator(".journey-message--error");
     await expect.poll(() => authenticationError.innerText()).toContain("Anmeldung erforderlich");
     await expect.poll(() => authenticationError.evaluate((element) => document.activeElement === element)).toBe(true);
