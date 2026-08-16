@@ -106,23 +106,77 @@ export function messagePanel(message: string, tone: "quiet" | "error" = "quiet")
   return fragment;
 }
 
+export interface PlayerObjectSummary {
+  readonly eyebrow: string;
+  readonly title: string;
+  readonly definitions: readonly { readonly term: string; readonly value: string }[];
+}
+
+function objectFact(detail: LivemapObjectDetailV1, ...labels: readonly string[]): string | undefined {
+  const fact = detail.facts.find((entry) => labels.includes(entry.label));
+  return fact === undefined ? undefined : `${fact.value}${fact.unit === undefined ? "" : ` ${fact.unit}`}`;
+}
+
+/** Verdichtet den technischen Releasekatalog in das mentale Modell des Spielers. */
+export function playerObjectSummary(detail: LivemapObjectDetailV1): PlayerObjectSummary {
+  const definitions: { term: string; value: string }[] = [];
+  const add = (term: string, value: string | undefined): void => {
+    if (value !== undefined && value.trim() !== "") definitions.push({ term, value });
+  };
+  if (detail.kind === "track") {
+    const kbs = objectFact(detail, "KBS-Bezeichnung", "Kursbuchstrecke");
+    const officialName = objectFact(detail, "Streckenbezeichnung");
+    add("KBS", kbs);
+    add("VzG-Streckennummer", objectFact(detail, "Streckennummer"));
+    const maximum = objectFact(detail, "Zulaessige Geschwindigkeit", "Zulässige Geschwindigkeit");
+    const forward = objectFact(detail, "Geschwindigkeit in Geometrierichtung");
+    const backward = objectFact(detail, "Geschwindigkeit gegen Geometrierichtung");
+    add("Vzul", maximum ?? (forward === backward ? forward : [forward, backward].filter((value): value is string => value !== undefined).join(" / ") || undefined));
+    add("Elektrifizierung", objectFact(detail, "Elektrifizierung"));
+    add("Gleise", objectFact(detail, "Gleiszahl", "Gleiszahl im Streckenabschnitt"));
+    return Object.freeze({ eyebrow: "STRECKE", title: kbs ?? officialName ?? detail.name, definitions: Object.freeze(definitions) });
+  }
+  if (detail.kind === "station" || detail.kind === "operating-point") {
+    add("RIL 100", objectFact(detail, "RIL-100-Kürzel", "RL100-Kuerzel"));
+    add("EVA / UIC", objectFact(detail, "EVA-/UIC-Nummer"));
+    add("Betriebsstellenart", objectFact(detail, "Betriebsstellenart"));
+    return Object.freeze({ eyebrow: detail.kind === "station" ? "BAHNHOF" : "BETRIEBSSTELLE", title: detail.name, definitions: Object.freeze(definitions) });
+  }
+  if (detail.kind === "signal") {
+    add("Bezeichnung", objectFact(detail, "Signalbezeichnung"));
+    add("Wirkrichtung", objectFact(detail, "Wirkrichtung"));
+    add("Blockgrenze", objectFact(detail, "Blockgrenze"));
+    return Object.freeze({ eyebrow: "SIGNAL", title: detail.name, definitions: Object.freeze(definitions) });
+  }
+  for (const fact of detail.facts) {
+    if (["Datenqualitaet", "Betriebsmodell", "Fuer Fahrwege nutzbar"].includes(fact.label)) continue;
+    add(fact.label, `${fact.value}${fact.unit === undefined ? "" : ` ${fact.unit}`}`);
+    if (definitions.length === 4) break;
+  }
+  return Object.freeze({ eyebrow: "KARTENOBJEKT", title: detail.name, definitions: Object.freeze(definitions) });
+}
+
 export function objectDetailPanel(detail: LivemapObjectDetailV1): DocumentFragment {
   const fragment = document.createDocumentFragment();
-  fragment.append(titleBlock(detail.kind.toLocaleUpperCase("de"), detail.name));
-  const quality = element("p", `Klasse ${detail.qualityClass}`, `quality quality-${detail.qualityClass.toLowerCase()}`);
-  quality.setAttribute("aria-label", `Datenqualität Klasse ${detail.qualityClass}`);
-  fragment.append(quality);
+  const summary = playerObjectSummary(detail);
+  fragment.append(titleBlock(summary.eyebrow, summary.title));
 
   const list = document.createElement("dl");
-  addDefinition(list, "Objektkennung", detail.id);
-  addDefinition(list, "Infrastrukturstand", detail.infrastructureReleaseId);
-  for (const fact of detail.facts) {
-    addDefinition(list, fact.label, `${fact.value}${fact.unit === undefined ? "" : ` ${fact.unit}`}`);
-  }
+  for (const definition of summary.definitions) addDefinition(list, definition.term, definition.value);
   fragment.append(list);
-  if (detail.qualityClass === "C") {
-    fragment.append(element("p", "Nur Kartenkontext: Dieses Objekt ist nicht für Trassenbestellung oder Fahrdienstleitung freigegeben.", "quality-note"));
-  }
+
+  const technical = document.createElement("details");
+  technical.className = "technical-object-details";
+  technical.append(element("summary", "Technische Details"));
+  const quality = element("p", `Datenqualität Klasse ${detail.qualityClass}`, `quality quality-${detail.qualityClass.toLowerCase()}`);
+  quality.setAttribute("aria-label", `Datenqualität Klasse ${detail.qualityClass}`);
+  const technicalList = document.createElement("dl");
+  addDefinition(technicalList, "Objektkennung", detail.id);
+  addDefinition(technicalList, "Infrastrukturstand", detail.infrastructureReleaseId);
+  for (const fact of detail.facts) addDefinition(technicalList, fact.label, `${fact.value}${fact.unit === undefined ? "" : ` ${fact.unit}`}`);
+  technical.append(quality, technicalList);
+  if (detail.qualityClass === "C") technical.append(element("p", "Nur Datenbestand: Dieses Objekt ist nicht für Bestellung oder Fahrdienstleitung freigegeben.", "quality-note"));
+  fragment.append(technical);
   return fragment;
 }
 
@@ -133,6 +187,39 @@ const BOARD_STATUS_LABEL: Readonly<Record<StationBoardCall["status"], string>> =
   departed: "abgefahren",
   cancelled: "fällt aus",
 });
+
+export interface StationBoardSummary {
+  readonly definitions: readonly { readonly term: string; readonly value: string }[];
+}
+
+/** Statistik des sichtbaren Fahrplanfensters; bewusst keine vorgetäuschte Langzeitstatistik. */
+export function stationBoardSummary(board: StationBoardV1): StationBoardSummary {
+  const trains = new Map<string, { delaySeconds: number; cancelled: boolean }>();
+  const platforms = new Set<string>();
+  const categories = new Set<string>();
+  for (const call of [...board.departures, ...board.arrivals]) {
+    const previous = trains.get(call.trainId);
+    const delaySeconds = Math.max(0, call.expectedTimeS - call.scheduledTimeS);
+    trains.set(call.trainId, {
+      delaySeconds: Math.max(previous?.delaySeconds ?? 0, delaySeconds),
+      cancelled: (previous?.cancelled ?? false) || call.status === "cancelled",
+    });
+    if (call.platform !== undefined && call.platform.trim() !== "") platforms.add(call.platform.trim());
+    if (call.category.trim() !== "") categories.add(call.category.trim());
+  }
+  const running = [...trains.values()].filter((train) => !train.cancelled);
+  const onTime = running.filter((train) => train.delaySeconds <= 300).length;
+  const punctuality = running.length === 0 ? "–" : `${Math.round((onTime / running.length) * 100)} %`;
+  return Object.freeze({
+    definitions: Object.freeze([
+      Object.freeze({ term: "Fahrten im aktuellen Fenster", value: String(trains.size) }),
+      Object.freeze({ term: "Pünktlich bis 5 min", value: punctuality }),
+      Object.freeze({ term: "Ausfälle", value: String([...trains.values()].filter((train) => train.cancelled).length) }),
+      Object.freeze({ term: "Gleise mit Verkehr", value: String(platforms.size) }),
+      Object.freeze({ term: "Zuggattungen", value: [...categories].sort((left, right) => left.localeCompare(right, "de")).join(", ") || "–" }),
+    ]),
+  });
+}
 
 function boardTable(calls: readonly StationBoardCall[], movement: "Ankunft" | "Abfahrt"): HTMLElement {
   const wrapper = element("section", undefined, "board-section");
@@ -175,9 +262,18 @@ function boardTable(calls: readonly StationBoardCall[], movement: "Ankunft" | "A
 export function stationPanel(detail: LivemapObjectDetailV1, board: StationBoardV1): DocumentFragment {
   const fragment = objectDetailPanel(detail);
   fragment.append(element("hr", undefined, "panel-divider"));
+  const snapshot = element("section", undefined, "station-snapshot");
+  snapshot.append(element("h2", "Aktuelles Stationsbild"));
+  const statistics = element("dl", undefined, "station-statistics");
+  for (const definition of stationBoardSummary(board).definitions) {
+    const statistic = element("div");
+    statistic.append(element("dt", definition.term), element("dd", definition.value));
+    statistics.append(statistic);
+  }
+  snapshot.append(statistics);
   const boardHeader = element("div", undefined, "board-brand");
   boardHeader.append(element("span", board.stationName), element("time", `Stand ${clockLabel(board.atS)}`));
-  fragment.append(boardHeader, boardTable(board.departures, "Abfahrt"), boardTable(board.arrivals, "Ankunft"));
+  fragment.append(snapshot, boardHeader, boardTable(board.departures, "Abfahrt"), boardTable(board.arrivals, "Ankunft"));
   return fragment;
 }
 

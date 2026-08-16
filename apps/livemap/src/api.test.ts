@@ -54,6 +54,21 @@ describe("LivemapApiClient", () => {
       .resolves.toMatchObject([{ id: "meldung-1", worldId: "welt-1", priority: "information" }]);
   });
 
+  it("lädt den weltgebundenen EVU- und Finanzkontext für die Shell", async () => {
+    const fetchImplementation = ((_input: RequestInfo | URL) => Promise.resolve(new Response(JSON.stringify({
+      schemaVersion: "zugfolge-operator-context/v1",
+      worldId: "welt-1",
+      operators: [{
+        id: "evu-1",
+        name: "Saale-Sprinter",
+        finance: { mode: "finite", ledgerBalanceCents: "9000", pendingDebitCents: "1000", availableCents: "8000" },
+      }],
+    })))) as typeof fetch;
+
+    await expect(new LivemapApiClient("/api", "token", fetchImplementation).playerContext("welt-1"))
+      .resolves.toMatchObject({ operators: [{ finance: { availableCents: "8000" } }] });
+  });
+
   it("bricht bei einer fremden Welt fail-closed ab", async () => {
     const fetchImplementation = (() => Promise.resolve(new Response(JSON.stringify([{
       id: "meldung-1",

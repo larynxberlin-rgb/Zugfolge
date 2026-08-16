@@ -91,9 +91,12 @@ lesbar.
 
 ### 2.6 Qualitätsklassen
 
-A, B und C tragen immer ihren Buchstaben. Farbe ist hier nur Unterstützung, nie
-Träger. Klasse C ist zusätzlich gestrichelt dargestellt — sichtbar, aber
-erkennbar nicht bestellbar.
+A, B und C tragen in Qualitätsreport, Planung und technischem Diagnoseprofil
+immer ihren Buchstaben. Farbe ist hier nur Unterstützung, nie Träger. Klasse C
+ist dort zusätzlich gestrichelt dargestellt und als nicht bestellbar
+bezeichnet. Im normalen Spielerprofil der Live-Karte wird Klasse C nach E30
+gar nicht gezeichnet; das ist eine Präsentationsregel und ändert weder Korpus
+noch Qualitätsklasse.
 
 ### 2.7 Konkrete Werte (M3.9)
 
@@ -240,26 +243,64 @@ Schriftgrad, Zeilenhöhe, Lesedurchschuss und Abstand. Ein gemeinsamer
 Formfelder sind Teil der Komponentenbasis. Die Bildfahrplan-Oberfläche macht
 den Wechsel direkt prüfbar.
 
-## 9. Kartenstil und Zoomvertrag (E26, E27)
+## 9. Kartenstil und Zoomvertrag (E26, E27, E30)
 
 Die Karte ist weltweit dunkel und bewusst informationsarm; der semantische
-Deutschland-Layer trägt den Betrieb. Die Kartenfolge ist verbindlich:
-Basiskontext → aktive Gebietsgrenze → Infrastruktur → Betriebszustände → Züge
-→ Auswahl. Aktive Infrastruktur ist neutral hell, inaktive modellierte
-Infrastruktur gedämpft und Klasse C gestrichelt mit sichtbarem Buchstaben.
+Deutschland-Layer trägt den Betrieb. Sie ist die Hauptfläche, weil die
+gemeinsame Welt dort durch Bewegung, Weltzeit, andere EVU, Bahnhofstafeln, FIS
+und Störungen erfahrbar wird — nicht, weil Spieler Infrastruktur bearbeiten.
+Die OSM-Basiskarte bleibt dunkler atmosphärischer Kontext, ist weder fachliche
+Wahrheit noch Interaktionsquelle und darf progressiv aus einem statischen,
+stark gecachten PMTiles-Artefakt erscheinen. Autoritativer Spielzustand bleibt
+in den darüberliegenden, getrennten Projektionen.
 
-| Zoom | sichtbare Fachobjekte |
+Die Kartenfolge ist verbindlich: Basiskontext → aktive Gebietsgrenze →
+A-/B-Infrastruktur → Betriebszustände → Züge → Auswahl. Aktive Infrastruktur
+ist neutral hell, inaktive modellierte A-/B-Infrastruktur gedämpft. Klasse C
+bleibt im normalen Spielerprofil vollständig verborgen.
+
+| Zoom | sichtbare Fachobjekte im Spielerprofil |
 |------|-----------------------|
 | 0–4 | Welt-Basiskarte |
-| 5–7 | Deutschland-Korridore, große Betriebsstellen, Spielgebietsgrenze |
-| 8–11 | Gleisgruppen, Betriebsstellen, Züge und Betriebsabweichungen |
-| 12–14 | Einzelgleise, Bahnsteige, Blöcke; Signale und Weichen selektiv |
-| 15–20 | vollständige semantische Elemente und Beschriftung |
+| 5–7 | A-/B-Korridore, gruppierte große Bahnhöfe, belegte Werkstätten, Spielgebietsgrenze |
+| 8–11 | A-/B-Gleisgruppen, gruppierte Bahnhöfe, belegte Werkstätten, Züge und Betriebsabweichungen |
+| 12–14 | A-/B-Einzelgleise und neutrale Signalicons |
+| 15–20 | dieselben Spielerobjekte mit mehr belegten Bezeichnungen, ohne technische Punktlayer |
+
+Das Spielerprofil rendert genau ein markantes Bahnhofssymbol je
+releasegebundener Stationsgruppe und beschriftet es mit Name und RIL 100. Das
+Symbol bleibt eindeutig von Werkstatt, Signal und Zug unterscheidbar. Einzelne
+Bahnsteige, Weichen, `operating_points`, Blöcke, Konfliktressourcen, Anlagen und
+`rail_context` sind keine Kartenpunkte. Signalicons sind achromatisch und
+behaupten ohne autoritative Liveinformation weder Fahrt- noch Haltstellung.
+Ein belegter Werkstattdatensatz erhält dagegen ein eigenes, von Bahnhof und
+Signal unterscheidbares Werkstattsymbol. Generische Konfliktressourcen dürfen
+nicht als Werkstatt gestaltet werden; ohne Name, Lage, Leistungs- und
+Zugangsvertrag wird kein Marker erzeugt.
 
 Klickflächen sind breiter als die sichtbare Geometrie. Bei Überlagerung gilt
-Zug vor Signal/Weiche vor Bahnhof/Bahnsteig vor Gleis; mehrere Treffer öffnen
-eine Auswahl. Tastaturzugang erfolgt zusätzlich über eine Objektliste. Ein
-Detailpanel ist per `focus=art:id` tief verlinkbar.
+`Zug → Bahnhof/Werkstatt → Strecke`; nur diese Spielerobjekte kommen in den
+Trefferwähler. Mehrere Treffer tragen verständliche Zug-, Stations-,
+Werkstatt- oder Streckenbezeichnungen statt Layernamen und technischer IDs.
+Tastaturzugang erfolgt zusätzlich über eine Objektliste. Ein Detailpanel ist
+per `focus=art:id` tief verlinkbar.
+
+Die Streckenauskunft zeigt in der ersten Ebene höchstens VzG-Streckennummer,
+amtliche Streckenkurzbezeichnung, Vzul, Elektrifizierung und Gleiszahl.
+Qualitätsklasse, Modellzustand, Release und technische ID liegen geschlossen
+unter „Technische Details“. Eine KBS-Bezeichnung darf nur erscheinen, wenn der
+Release sie aus einer versionierten autoritativen Quelle eindeutig zuordnet;
+der aktuelle VzG-/Streckendatensatz erfüllt diesen Vertrag nicht.
+
+Das Bahnhofsdetail beginnt mit Name, RIL 100, EVA/UIC, Betriebsstellenart und
+aktuellem Tafelzeitfenster. Zeitgebundene Kennzahlen wie
+Fahrgastaufkommen, Zugzahl, Pünktlichkeit und EVU-Anteile bilden einen zweiten,
+kompakten Block, sobald das versionierte Bahnhofssummary sie belegt. Eine
+leere Statistikfläche oder hochgerechnete Fantasiewerte werden nicht gezeigt.
+
+Bahnanmutung entsteht aus der UX: verlässliche Weltzeit, bewegte Züge,
+Soll-/Ist-Zustände, RIL 100, Bahnhofstafel, FIS und konsistente
+Störungsauswirkungen. Eisenbahndekor ohne Zustandsbedeutung wird nicht ergänzt.
 
 ### Zugpositionsgenauigkeit (E27)
 

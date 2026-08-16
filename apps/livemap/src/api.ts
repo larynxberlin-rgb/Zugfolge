@@ -6,6 +6,10 @@ import type {
   PublicTrainDetailV1,
   StationBoardV1,
 } from "@zugfolge/livemap-stream";
+import {
+  parsePlayerOperatorContext,
+  type PlayerOperatorContextV1,
+} from "@zugfolge/player-context";
 
 import { decodeAttentionMessages, type MailboxAttentionMessage } from "./attention.js";
 
@@ -62,6 +66,11 @@ export class LivemapApiClient {
   mailbox(worldId: string): Promise<readonly MailboxAttentionMessage[]> {
     return this.#json<unknown>(`/worlds/${encodeURIComponent(worldId)}/mailbox`)
       .then((value) => decodeAttentionMessages(value, worldId));
+  }
+
+  playerContext(worldId: string): Promise<PlayerOperatorContextV1> {
+    return this.#json<unknown>(`/worlds/${encodeURIComponent(worldId)}/me/operator-context`)
+      .then((value) => parsePlayerOperatorContext(value, worldId));
   }
 
   object(worldId: string, kind: LivemapObjectKind, objectId: string): Promise<LivemapObjectDetailV1> {

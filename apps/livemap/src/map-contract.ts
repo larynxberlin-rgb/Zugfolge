@@ -31,16 +31,11 @@ export const SOURCE_LAYER_BY_KIND: Readonly<Record<LivemapObjectKind, string>> =
 export const INTERACTION_LAYER_IDS = Object.freeze([
   "train-hit",
   "rail-corridors-hit",
-  "signals-hit",
-  "switches-hit",
-  "stations-hit",
-  "operating_points-hit",
-  "platforms-hit",
-  "tracks-hit",
-  "blocks-hit",
-  "conflict_resources-hit",
-  "rail_context-hit",
+  "stations",
 ]);
+
+export const PLAYER_SIGNAL_ICON_ID = "zugfolge-player-signal";
+export const PLAYER_STATION_ICON_ID = "zugfolge-player-station";
 
 const INTERACTION_PRIORITY: Readonly<Record<string, number>> = Object.freeze({
   train: 0,
@@ -56,6 +51,7 @@ const INTERACTION_PRIORITY: Readonly<Record<string, number>> = Object.freeze({
 });
 
 const KIND_BY_SOURCE_LAYER: Readonly<Record<string, MapSelection["kind"]>> = Object.freeze({
+  "rail-corridors": "track",
   rail_corridors: "track",
   tracks: "track",
   stations: "station",
@@ -72,6 +68,10 @@ export interface MapSelection {
   readonly kind: LivemapObjectKind | "train";
   readonly id: string;
   readonly label: string;
+  /** Nur fuer Karten-Feature-State; gehoert bewusst nicht in URL oder Detail-API. */
+  readonly sourceLayer?: string;
+  /** Fasst am selben Klickpunkt fachlich identische Stations-/Streckentreffer zusammen. */
+  readonly groupKey?: string;
 }
 
 export interface GeoJsonFeatureCollection {
@@ -191,7 +191,59 @@ export function installMissingBasemapImageResolver(currentMap: MissingImageMap, 
 
 const qualityNotCFilter: FilterSpecification = ["!=", ["coalesce", ["get", "qualityClass"], ["get", "quality_class"]], "C"];
 const stateExpression = ["feature-state", "operationalState"] as ExpressionSpecification;
-const activeExpression = ["!=", ["coalesce", ["get", "qualityClass"], ["get", "quality_class"]], "C"] as ExpressionSpecification;
+
+type PlayerIconMap = Pick<MapLibreMap, "addImage" | "hasImage">;
+
+/** Selbst gehostete, achromatische Spielerpiktogramme statt technischer Rohpunkte. */
+export function installPlayerMapIcons(currentMap: PlayerIconMap): void {
+  if (!currentMap.hasImage(PLAYER_SIGNAL_ICON_ID)) {
+    const width = 12;
+    const height = 18;
+    const data = new Uint8Array(width * height * 4);
+    const pixel = (x: number, y: number, red: number, green: number, blue: number, alpha = 255): void => {
+      const offset = (y * width + x) * 4;
+      data[offset] = red;
+      data[offset + 1] = green;
+      data[offset + 2] = blue;
+      data[offset + 3] = alpha;
+    };
+    for (let x = 2; x <= 9; x += 1) {
+      pixel(x, 0, 241, 243, 247);
+      pixel(x, 9, 241, 243, 247);
+    }
+    for (let y = 1; y <= 8; y += 1) {
+      pixel(2, y, 241, 243, 247);
+      pixel(9, y, 241, 243, 247);
+    }
+    for (const [x, y] of [[5, 3], [6, 3], [5, 6], [6, 6]] as const) pixel(x, y, 113, 121, 135);
+    for (let y = 10; y <= 17; y += 1) {
+      pixel(5, y, 241, 243, 247);
+      pixel(6, y, 241, 243, 247);
+    }
+    currentMap.addImage(PLAYER_SIGNAL_ICON_ID, { width, height, data }, { pixelRatio: 1 });
+  }
+  if (!currentMap.hasImage(PLAYER_STATION_ICON_ID)) {
+    const width = 18;
+    const height = 18;
+    const data = new Uint8Array(width * height * 4);
+    const pixel = (x: number, y: number, shade = 241): void => {
+      const offset = (y * width + x) * 4;
+      data[offset] = shade;
+      data[offset + 1] = shade + (shade === 241 ? 2 : 0);
+      data[offset + 2] = shade + (shade === 241 ? 6 : 0);
+      data[offset + 3] = 255;
+    };
+    for (let step = 0; step <= 7; step += 1) {
+      pixel(8 - step, 1 + step);
+      pixel(9 + step, 1 + step);
+    }
+    for (let x = 2; x <= 15; x += 1) pixel(x, 8);
+    for (const x of [3, 7, 10, 14]) for (let y = 9; y <= 14; y += 1) pixel(x, y);
+    for (let x = 1; x <= 16; x += 1) pixel(x, 15);
+    for (let x = 3; x <= 14; x += 1) pixel(x, 17, 113);
+    currentMap.addImage(PLAYER_STATION_ICON_ID, { width, height, data }, { pixelRatio: 1 });
+  }
+}
 
 function lineLayers(): LayerSpecification[] {
   return [
@@ -201,11 +253,12 @@ function lineLayers(): LayerSpecification[] {
       source: INFRASTRUCTURE_SOURCE_ID,
       "source-layer": "rail_corridors",
       minzoom: 5,
-      maxzoom: 11,
+      maxzoom: 8,
+      filter: qualityNotCFilter,
       paint: {
-        "line-color": ["case", activeExpression, "#717987", "#3a3f49"],
+        "line-color": "#717987",
         "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.7, 10, 2.2],
-        "line-opacity": ["case", activeExpression, 0.88, 0.45],
+        "line-opacity": 0.88,
       },
     },
     {
@@ -222,24 +275,10 @@ function lineLayers(): LayerSpecification[] {
           "restriction", "#f0b75a",
           "closure", "#ff715f",
           "construction", "#f1f3f7",
-          ["case", activeExpression, "#c3cad4", "#515762"],
+          "#c3cad4",
         ],
         "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1, 14, 2.8, 18, 4.5],
-        "line-opacity": ["case", activeExpression, 0.94, 0.44],
-      },
-    },
-    {
-      id: "tracks-quality-c",
-      type: "line",
-      source: INFRASTRUCTURE_SOURCE_ID,
-      "source-layer": "tracks",
-      minzoom: 8,
-      filter: ["==", ["coalesce", ["get", "qualityClass"], ["get", "quality_class"]], "C"],
-      paint: {
-        "line-color": "#737b88",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1, 18, 3],
-        "line-dasharray": [1.4, 1.6],
-        "line-opacity": 0.58,
+        "line-opacity": 0.94,
       },
     },
     {
@@ -248,6 +287,7 @@ function lineLayers(): LayerSpecification[] {
       source: INFRASTRUCTURE_SOURCE_ID,
       "source-layer": "tracks",
       minzoom: 8,
+      filter: qualityNotCFilter,
       paint: { "line-color": "#f0b75a", "line-width": 4.5, "line-dasharray": [2, 1.4], "line-opacity": ["case", ["==", stateExpression, "restriction"], 1, 0] },
     },
     {
@@ -256,6 +296,7 @@ function lineLayers(): LayerSpecification[] {
       source: INFRASTRUCTURE_SOURCE_ID,
       "source-layer": "tracks",
       minzoom: 8,
+      filter: qualityNotCFilter,
       paint: { "line-color": "#ff715f", "line-width": 5.5, "line-dasharray": [0.5, 0.7], "line-opacity": ["case", ["==", stateExpression, "closure"], 1, 0] },
     },
     {
@@ -264,6 +305,7 @@ function lineLayers(): LayerSpecification[] {
       source: INFRASTRUCTURE_SOURCE_ID,
       "source-layer": "tracks",
       minzoom: 8,
+      filter: qualityNotCFilter,
       paint: { "line-color": "#f1f3f7", "line-width": 6.5, "line-opacity": ["case", ["==", stateExpression, "construction"], 1, 0] },
     },
     {
@@ -272,6 +314,7 @@ function lineLayers(): LayerSpecification[] {
       source: INFRASTRUCTURE_SOURCE_ID,
       "source-layer": "tracks",
       minzoom: 8,
+      filter: qualityNotCFilter,
       paint: { "line-color": "#ff715f", "line-width": 6.5, "line-dasharray": [1.4, 1.4], "line-opacity": ["case", ["==", stateExpression, "construction"], 1, 0] },
     },
   ];
@@ -280,120 +323,58 @@ function lineLayers(): LayerSpecification[] {
 function semanticLayers(): LayerSpecification[] {
   return [
     {
-      id: "blocks",
-      type: "line",
-      source: INFRASTRUCTURE_SOURCE_ID,
-      "source-layer": "blocks",
-      minzoom: 12,
-      paint: { "line-color": "#69d5c1", "line-width": 7, "line-opacity": 0.13 },
-    },
-    {
-      id: "platforms",
-      type: "circle",
-      source: INFRASTRUCTURE_SOURCE_ID,
-      "source-layer": "platforms",
-      minzoom: 11,
-      paint: {
-        "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 2, 18, 6],
-        "circle-color": "#959ca7",
-        "circle-opacity": 0.72,
-        "circle-stroke-color": "#c5cbd4",
-        "circle-stroke-width": 1,
-      },
-    },
-    {
-      id: "facilities",
-      type: "line",
-      source: INFRASTRUCTURE_SOURCE_ID,
-      "source-layer": "conflict_resources",
-      minzoom: 13,
-      paint: { "line-color": "#8e98a7", "line-opacity": 0.28, "line-width": 8 },
-    },
-    {
-      id: "switches",
-      type: "circle",
-      source: INFRASTRUCTURE_SOURCE_ID,
-      "source-layer": "switches",
-      minzoom: 13,
-      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 2, 18, 5], "circle-color": "#d8dde4", "circle-stroke-color": "#090b10", "circle-stroke-width": 1 },
-    },
-    {
       id: "signals",
-      type: "circle",
+      type: "symbol",
       source: INFRASTRUCTURE_SOURCE_ID,
       "source-layer": "signals",
-      minzoom: 13,
-      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 13, 2.5, 18, 5.5], "circle-color": "#090b10", "circle-stroke-color": "#f1f3f7", "circle-stroke-width": 1.5 },
+      minzoom: 14,
+      filter: qualityNotCFilter,
+      layout: {
+        "icon-image": PLAYER_SIGNAL_ICON_ID,
+        "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 1.05, 18, 1.35],
+        "icon-allow-overlap": false,
+        "icon-ignore-placement": false,
+      },
     },
     {
       id: "stations",
-      type: "circle",
-      source: INFRASTRUCTURE_SOURCE_ID,
-      "source-layer": "stations",
-      minzoom: 5,
-      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 2, 12, 5], "circle-color": "#f1f3f7", "circle-stroke-color": "#11141b", "circle-stroke-width": 2 },
-    },
-    {
-      id: "operating-points",
-      type: "circle",
-      source: INFRASTRUCTURE_SOURCE_ID,
-      "source-layer": "operating_points",
-      minzoom: 9,
-      paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 9, 1.5, 15, 4], "circle-color": "#aeb7c4", "circle-stroke-color": "#090b10", "circle-stroke-width": 1 },
-    },
-    {
-      id: "rail-context",
-      type: "circle",
-      source: INFRASTRUCTURE_SOURCE_ID,
-      "source-layer": "rail_context",
-      minzoom: 12,
-      paint: {
-        "circle-radius": ["interpolate", ["linear"], ["zoom"], 12, 1.5, 18, 4],
-        "circle-color": "#68707c",
-        "circle-opacity": 0.55,
-        "circle-stroke-color": "#090b10",
-        "circle-stroke-width": 1,
-      },
-    },
-    {
-      id: "station-labels",
       type: "symbol",
       source: INFRASTRUCTURE_SOURCE_ID,
       "source-layer": "stations",
-      minzoom: 7,
-      layout: { "text-field": ["coalesce", ["get", "label"], ["get", "name"], ""], "text-font": ["Noto Sans Regular"], "text-size": ["interpolate", ["linear"], ["zoom"], 7, 10, 14, 13], "text-offset": [0, 1.1], "text-anchor": "top", "text-optional": true },
+      minzoom: 5,
+      layout: {
+        "icon-image": PLAYER_STATION_ICON_ID,
+        "icon-size": ["interpolate", ["linear"], ["zoom"], 5, 0.82, 14, 1.08],
+        "icon-allow-overlap": false,
+        "icon-ignore-placement": false,
+        "text-field": [
+          "case",
+          ["!=", ["coalesce", ["get", "rl100"], ""], ""],
+          ["concat", ["coalesce", ["get", "name"], "Bahnhof"], " · ", ["get", "rl100"]],
+          ["coalesce", ["get", "name"], "Bahnhof"],
+        ],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 5, 9, 14, 13],
+        "text-offset": [0, 1.35],
+        "text-anchor": "top",
+        "text-optional": false,
+      },
       paint: { "text-color": "#d8dde4", "text-halo-color": "#090b10", "text-halo-width": 1.5 },
     },
   ];
 }
 
 function hitLayers(): LayerSpecification[] {
-  const line = (kind: LivemapObjectKind, minzoom: number): LayerSpecification => ({
-    id: `${SOURCE_LAYER_BY_KIND[kind]}-hit`,
-    type: "line",
-    source: INFRASTRUCTURE_SOURCE_ID,
-    "source-layer": SOURCE_LAYER_BY_KIND[kind],
-    minzoom,
-    paint: { "line-color": "#000000", "line-width": 18, "line-opacity": 0 },
-  });
-  const circle = (kind: LivemapObjectKind, minzoom: number): LayerSpecification => ({
-    id: `${SOURCE_LAYER_BY_KIND[kind]}-hit`,
-    type: "circle",
-    source: INFRASTRUCTURE_SOURCE_ID,
-    "source-layer": SOURCE_LAYER_BY_KIND[kind],
-    minzoom,
-    paint: { "circle-radius": 18, "circle-opacity": 0 },
-  });
   const corridor: LayerSpecification = {
     id: "rail-corridors-hit",
     type: "line",
     source: INFRASTRUCTURE_SOURCE_ID,
     "source-layer": "rail_corridors",
     minzoom: 5,
-    maxzoom: 11,
+    filter: qualityNotCFilter,
     paint: { "line-color": "#000000", "line-width": 18, "line-opacity": 0 },
   };
-  return [corridor, line("track", 8), line("block", 12), line("facility", 13), circle("station", 5), circle("operating-point", 9), circle("platform", 11), circle("switch", 13), circle("signal", 13), circle("rail-context", 12)];
+  return [corridor];
 }
 
 export function infrastructureLayers(): readonly LayerSpecification[] {
@@ -542,18 +523,51 @@ export function selectionFromFeature(feature: { readonly properties: Readonly<Re
   const idValue = properties["objectId"] ?? properties["feature_id"];
   const id = typeof idValue === "string" ? idValue : undefined;
   if (id === undefined || kind === undefined || !(kind in INTERACTION_PRIORITY)) return undefined;
-  const labelValue = properties["label"] ?? properties["display_name"] ?? properties["name"] ?? properties["trainNumber"] ?? id;
-  return Object.freeze({ kind: kind as MapSelection["kind"], id, label: String(labelValue) });
+  const qualityClass = properties["qualityClass"] ?? properties["quality_class"];
+  if (qualityClass === "C" && (kind === "track" || kind === "signal")) return undefined;
+  const text = (key: string): string | undefined => {
+    const value = properties[key];
+    return typeof value === "string" && value.trim() !== "" ? value.trim()
+      : typeof value === "number" && Number.isFinite(value) ? String(value) : undefined;
+  };
+  const routeNumber = text("route_number") ?? text("official_route_number");
+  const routeName = text("route_name");
+  const ril100 = text("rl100");
+  const genericLabel = text("label") ?? text("display_name") ?? text("name") ?? text("trainNumber");
+  const label = kind === "track"
+    ? [routeNumber === undefined ? undefined : `Strecke ${routeNumber}`, routeName].filter((value): value is string => value !== undefined).join(" · ") || "Strecke"
+    : kind === "station" || kind === "operating-point"
+      ? [genericLabel ?? (kind === "station" ? "Bahnhof" : "Betriebsstelle"), ril100 === undefined ? undefined : `RIL 100 ${ril100}`].filter((value): value is string => value !== undefined).join(" · ")
+      : genericLabel ?? (kind === "train" ? "Zug" : kind === "signal" ? "Signal" : "Kartenobjekt");
+  const sourceLayer = feature.layer.id === "train-hit" ? undefined
+    : feature.layer.id === "rail-corridors-hit" ? "rail_corridors"
+      : feature.layer.id === "stations" ? "stations"
+        : fallbackLayer.replaceAll("-", "_");
+  const groupKey = kind === "track" && (routeNumber !== undefined || routeName !== undefined)
+    ? `track:${routeNumber ?? ""}:${routeName ?? ""}`
+    : (kind === "station" || kind === "operating-point") && ril100 !== undefined
+      ? `station:${ril100}` : undefined;
+  return Object.freeze({
+    kind: kind as MapSelection["kind"],
+    id,
+    label,
+    ...(sourceLayer === undefined ? {} : { sourceLayer }),
+    ...(groupKey === undefined ? {} : { groupKey }),
+  });
 }
 
 export function sortAndDeduplicateSelections(selections: readonly MapSelection[]): readonly MapSelection[] {
-  const unique = new Map<string, MapSelection>();
-  selections.forEach((selection) => unique.set(`${selection.kind}:${selection.id}`, selection));
-  return Object.freeze([...unique.values()].sort((left, right) =>
+  const sorted = [...selections].sort((left, right) =>
     (INTERACTION_PRIORITY[left.kind] ?? 99) - (INTERACTION_PRIORITY[right.kind] ?? 99)
     || left.label.localeCompare(right.label, "de")
     || left.id.localeCompare(right.id),
-  ));
+  );
+  const unique = new Map<string, MapSelection>();
+  sorted.forEach((selection) => {
+    const key = selection.groupKey ?? `${selection.kind}:${selection.id}`;
+    if (!unique.has(key)) unique.set(key, selection);
+  });
+  return Object.freeze([...unique.values()]);
 }
 
 export function focusParameter(selection: Pick<MapSelection, "kind" | "id">): string {

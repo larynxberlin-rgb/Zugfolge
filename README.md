@@ -13,8 +13,10 @@ Pilotregion: **Leipzig–Halle–Erfurt**.
 > `releaseQualified: false`; seine unabhängige produktive Qualifizierung und
 > echte Signatur werden als Betriebsreife-Folgearbeit in Issue #48 geführt und
 > blockieren M1 nicht. M3.10, M4.6 und M6.7 sind über die echten Rust-,
-> Persistenz-, API- und Clientpfade abgeschlossen. M8 bis M14 sind offen; M9
-> bleibt bis zu seinen Abhängigkeiten und Betriebsnachweisen blockiert. Der
+> Persistenz-, API- und Clientpfade abgeschlossen. M8 ist fachlich vollständig
+> abgenommen, bleibt aber wegen seines Betriebs-Gates formal offen. M9 bleibt
+> bis zu seinen Abhängigkeiten und Betriebsnachweisen blockiert; M10 bis M15
+> bilden den weiteren Produktausbau. Der
 > detaillierte Status steht in
 > [`docs/milestones.md`](docs/milestones.md); „erledigt“ bedeutet dort wieder
 > einen reproduzierbaren Beweis und nicht nur vorhandenen Quellcode.
@@ -28,6 +30,7 @@ Pilotregion: **Leipzig–Halle–Erfurt**.
 | Code beitragen | [`docs/monorepo.md`](docs/monorepo.md) und [`CLAUDE.md`](CLAUDE.md) |
 | Begriffe nachschlagen | [`docs/glossar.md`](docs/glossar.md) |
 | die Reihenfolge kennen | [`docs/milestones.md`](docs/milestones.md) |
+| das UX-Zielbild und die künftigen Arbeitsräume verstehen | [`docs/ux-spieler-shell.md`](docs/ux-spieler-shell.md) |
 | den GTFS-Fahrplan-Referenzkorpus erzeugen | [`docs/referenzkorpus.md`](docs/referenzkorpus.md) |
 | verstehen, wie GTFS zu Linien und Ausschreibungen wird | [`docs/gtfs-angebotsplanung.md`](docs/gtfs-angebotsplanung.md) |
 

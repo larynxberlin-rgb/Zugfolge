@@ -41,18 +41,41 @@ export function livemapNavigationDestinations(
   gameWebUrl: string,
   pageUrl: string,
   worldId: string,
+  operationsCenterUrl = "",
 ): LivemapNavigationDestinations {
   const live = withoutOidcCallback(new URL(pageUrl));
   live.searchParams.delete("focus");
   if (worldId !== "") live.searchParams.set("world", worldId);
+  const operatorId = live.searchParams.get("operator") ?? "";
+  const operatorContext: Readonly<Record<string, string>> = operatorId === "" ? {} : { operator: operatorId };
   return Object.freeze({
     live: live.href,
-    journey: gameDestination(gameWebUrl, pageUrl, worldId, "journey", "world-contract-title"),
-    markets: gameDestination(gameWebUrl, pageUrl, worldId, "journey", "vehicle-market"),
-    planner: gameDestination(gameWebUrl, pageUrl, worldId, "diagram"),
-    operations: gameDestination(gameWebUrl, pageUrl, worldId, "journey", "betrieb"),
-    mailbox: gameDestination(gameWebUrl, pageUrl, worldId, "journey", "postfach"),
+    journey: gameDestination(gameWebUrl, pageUrl, worldId, "journey", "", { ...operatorContext, section: "world" }),
+    markets: gameDestination(gameWebUrl, pageUrl, worldId, "journey", "", { ...operatorContext, section: "markets" }),
+    planner: gameDestination(gameWebUrl, pageUrl, worldId, "diagram", "", operatorContext),
+    operations: operationsCenterDestination(operationsCenterUrl, gameWebUrl, pageUrl, worldId, operatorId),
+    mailbox: gameDestination(gameWebUrl, pageUrl, worldId, "journey", "", { ...operatorContext, section: "mailbox" }),
   });
+}
+
+/** Die eigenständige M7-Betriebszentrale gewinnt; ohne EVU-Kontext bleibt der sichere interne Arbeitsraum. */
+export function operationsCenterDestination(
+  operationsCenterUrl: string,
+  gameWebUrl: string,
+  pageUrl: string,
+  worldId: string,
+  operatorId: string,
+): string {
+  if (operationsCenterUrl.trim() === "" || operatorId === "") {
+    const context: Readonly<Record<string, string>> = operatorId === "" ? { section: "operations" } : { operator: operatorId, section: "operations" };
+    return gameDestination(gameWebUrl, pageUrl, worldId, "journey", "", context);
+  }
+  const destination = withoutOidcCallback(new URL(operationsCenterUrl, pageUrl));
+  destination.searchParams.set("world", worldId);
+  destination.searchParams.set("operator", operatorId);
+  destination.searchParams.set("panel", "operations");
+  destination.hash = "";
+  return destination.href;
 }
 
 function payloadIdentifier(payload: Readonly<Record<string, unknown>>, key: string): string | undefined {
@@ -80,6 +103,8 @@ export function mailboxDecisionDestination(
   message: MailboxDecisionReference,
 ): string {
   if (message.worldId !== worldId) throw new RangeError("Postfachziel gehört nicht zur gewählten Welt.");
+  const activeOperatorId = withoutOidcCallback(new URL(pageUrl)).searchParams.get("operator") ?? "";
+  const operatorContext: Readonly<Record<string, string>> = activeOperatorId === "" ? {} : { operator: activeOperatorId };
   const contractId = payloadIdentifier(message.payload, "contractId");
   const listingId = payloadIdentifier(message.payload, "listingId");
   const trainId = payloadIdentifier(message.payload, "trainId");
@@ -87,6 +112,7 @@ export function mailboxDecisionDestination(
     const destination = withoutOidcCallback(new URL(gameWebUrl.trim() === "" ? "/" : gameWebUrl, pageUrl));
     destination.searchParams.set("view", "diagram");
     destination.searchParams.set("world", worldId);
+    if (activeOperatorId !== "") destination.searchParams.set("operator", activeOperatorId);
     if (trainId !== undefined) destination.searchParams.set("train", trainId);
     destination.hash = "diagram-card";
     return destination.href;
@@ -98,7 +124,7 @@ export function mailboxDecisionDestination(
       worldId,
       "journey",
       contractId === undefined ? "cooperation-contracts" : `contract-${encodeURIComponent(contractId)}`,
-      { contractView: ARCHIVED_CONTRACT_MESSAGES.has(message.messageType) ? "archive" : "actionable" },
+      { ...operatorContext, section: "markets", contractView: ARCHIVED_CONTRACT_MESSAGES.has(message.messageType) ? "archive" : "actionable" },
     );
   }
   if (message.messageType.includes("vehicle") || message.messageType.includes("market")) {
@@ -108,8 +134,8 @@ export function mailboxDecisionDestination(
       worldId,
       "journey",
       listingId === undefined ? "vehicle-market" : `listing-${encodeURIComponent(listingId)}`,
-      { listingView: ARCHIVED_LISTING_MESSAGES.has(message.messageType) ? "archive" : "actionable" },
+      { ...operatorContext, section: "markets", listingView: ARCHIVED_LISTING_MESSAGES.has(message.messageType) ? "archive" : "actionable" },
     );
   }
-  return gameDestination(gameWebUrl, pageUrl, worldId, "journey", "postfach");
+  return gameDestination(gameWebUrl, pageUrl, worldId, "journey", "", { ...operatorContext, section: "mailbox" });
 }

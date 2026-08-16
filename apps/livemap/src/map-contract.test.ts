@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { LivemapConfigV2, PublicTrain } from "@zugfolge/livemap-stream";
 
 import {
@@ -6,8 +6,13 @@ import {
   assertSelfHostedStyle,
   infrastructureLayers,
   installMissingBasemapImageResolver,
+  installPlayerMapIcons,
+  INTERACTION_LAYER_IDS,
   loadSelfHostedStyle,
   parseFocusParameter,
+  PLAYER_SIGNAL_ICON_ID,
+  PLAYER_STATION_ICON_ID,
+  selectionFromFeature,
   sortAndDeduplicateSelections,
   trainFeatureCollection,
   trainLayers,
@@ -100,38 +105,65 @@ describe("selbst gehosteter Kartenvertrag", () => {
 
     expect(images.has("townhall")).toBe(true);
   });
+
+  it("registriert das neutrale Signalpiktogramm genau einmal lokal", () => {
+    const images = new Map<string, unknown>();
+    const addImage = vi.fn((id: string, image: unknown) => { images.set(id, image); });
+    const currentMap = { hasImage: (id: string) => images.has(id), addImage };
+    installPlayerMapIcons(currentMap as never);
+    installPlayerMapIcons(currentMap as never);
+    expect(addImage).toHaveBeenCalledTimes(2);
+    expect(addImage.mock.calls[0]?.[0]).toBe(PLAYER_SIGNAL_ICON_ID);
+    expect(addImage.mock.calls[1]?.[0]).toBe(PLAYER_STATION_ICON_ID);
+    expect(JSON.stringify(addImage.mock.calls[0]?.[1])).not.toContain("241,183,90");
+  });
 });
 
 describe("semantische Deutschland-Layer", () => {
-  it("zeigt Korridore früh und Signale/Weichen erst im Detailzoom", () => {
+  it("zeigt im Spielerprofil nur lebendige und verständliche Kartenobjekte", () => {
     const layers = new Map(infrastructureLayers().map((layer) => [layer.id, layer]));
     expect(layers.get("rail-corridors")?.minzoom).toBe(5);
     expect(layers.get("tracks")?.minzoom).toBe(8);
-    expect(layers.get("platforms")?.minzoom).toBe(11);
-    expect(layers.get("signals")?.minzoom).toBe(13);
-    expect(layers.get("switches")?.minzoom).toBe(13);
-    expect(layers.get("rail-context")?.minzoom).toBe(12);
+    const signals = layers.get("signals");
+    expect(signals?.type).toBe("symbol");
+    expect(signals?.minzoom).toBe(14);
+    if (signals?.type !== "symbol") throw new Error("Signale muessen als Symbol gerendert werden.");
+    expect(signals.layout?.["icon-image"]).toBe(PLAYER_SIGNAL_ICON_ID);
+    const stations = layers.get("stations");
+    expect(stations?.type).toBe("symbol");
+    if (stations?.type !== "symbol") throw new Error("Bahnhoefe muessen als Symbol gerendert werden.");
+    expect(stations.layout?.["icon-image"]).toBe(PLAYER_STATION_ICON_ID);
+    expect(JSON.stringify(stations.layout?.["text-field"])).toContain("rl100");
+    for (const hidden of ["platforms", "switches", "operating-points", "rail-context", "blocks", "facilities"]) {
+      expect(layers.has(hidden), hidden).toBe(false);
+    }
     expect(layers.get("rail-corridors-hit")?.type).toBe("line");
-    expect(layers.get("tracks-hit")?.type).toBe("line");
-    expect(layers.get("rail_context-hit")?.type).toBe("circle");
+    expect(INTERACTION_LAYER_IDS).toEqual(["train-hit", "rail-corridors-hit", "stations"]);
   });
 
-  it("kodiert Störung, Sperrung, Bauarbeiten und Klasse C zusätzlich über Muster", () => {
+  it("blendet Klasse C aus, ohne betriebliche Störungsmuster zu verlieren", () => {
     const layers = new Map(infrastructureLayers().map((layer) => [layer.id, layer]));
-    for (const id of ["tracks-restriction", "tracks-closure", "tracks-construction-white", "tracks-construction-red"]) {
+    for (const id of ["rail-corridors", "tracks", "tracks-restriction", "tracks-closure", "tracks-construction-white", "tracks-construction-red", "signals", "rail-corridors-hit"]) {
       const layer = layers.get(id);
       expect(layer).toBeDefined();
       const filter = layer !== undefined && "filter" in layer ? layer.filter : null;
-      expect(JSON.stringify(filter)).not.toContain("feature-state");
-      expect(JSON.stringify(layer?.paint)).toContain("feature-state");
+      expect(JSON.stringify(filter)).toContain("quality_class");
+      expect(JSON.stringify(filter)).toContain("C");
     }
-    expect(layers.get("tracks-quality-c")).toBeDefined();
+    for (const id of ["tracks-restriction", "tracks-closure", "tracks-construction-white", "tracks-construction-red"]) {
+      expect(JSON.stringify(layers.get(id)?.paint)).toContain("feature-state");
+    }
+    expect(layers.has("tracks-quality-c")).toBe(false);
   });
 
   it("bindet jeden eigenen Beschriftungslayer an den paketierten Offline-Fontstack", () => {
-    const symbols = [...infrastructureLayers(), ...trainLayers].filter((layer) => layer.type === "symbol");
-    expect(symbols.length).toBeGreaterThan(0);
-    for (const layer of symbols) expect(layer.layout?.["text-font"]).toEqual(["Noto Sans Regular"]);
+    let symbols = 0;
+    for (const layer of [...infrastructureLayers(), ...trainLayers]) {
+      if (layer.type !== "symbol" || layer.layout?.["text-field"] === undefined) continue;
+      symbols += 1;
+      expect(layer.layout["text-font"]).toEqual(["Noto Sans Regular"]);
+    }
+    expect(symbols).toBeGreaterThan(0);
   });
 });
 
@@ -248,5 +280,45 @@ describe("Live-Objekte", () => {
     ]);
     expect(parseFocusParameter("signal:sig-22")).toEqual({ kind: "signal", id: "sig-22", label: "sig-22" });
     expect(parseFocusParameter("unknown:x")).toBeUndefined();
+  });
+
+  it("übersetzt einen Streckenklick in eine verständliche amtliche Korridorwahl", () => {
+    expect(selectionFromFeature({
+      layer: { id: "rail-corridors-hit" },
+      properties: {
+        feature_id: "rail-corridor:6340:1",
+        feature_type: "rail-corridor",
+        quality_class: "B",
+        route_number: 6340,
+        route_name: "Leipzig–Halle",
+      },
+    })).toEqual({
+      kind: "track",
+      id: "rail-corridor:6340:1",
+      label: "Strecke 6340 · Leipzig–Halle",
+      sourceLayer: "rail_corridors",
+      groupKey: "track:6340:Leipzig–Halle",
+    });
+    expect(selectionFromFeature({
+      layer: { id: "rail-corridors-hit" },
+      properties: { feature_id: "rail-corridor:9999", feature_type: "rail-corridor", quality_class: "C", route_number: 9999 },
+    })).toBeUndefined();
+    expect(sortAndDeduplicateSelections([
+      { kind: "track", id: "direction-b", label: "Strecke 6340 · Leipzig–Halle", groupKey: "track:6340:Leipzig–Halle" },
+      { kind: "track", id: "direction-a", label: "Strecke 6340 · Leipzig–Halle", groupKey: "track:6340:Leipzig–Halle" },
+    ])).toEqual([{ kind: "track", id: "direction-a", label: "Strecke 6340 · Leipzig–Halle", groupKey: "track:6340:Leipzig–Halle" }]);
+  });
+
+  it("öffnet einen markierten Bahnhof mit RIL-100-Bezeichnung und korrektem Source-Layer", () => {
+    expect(selectionFromFeature({
+      layer: { id: "stations" },
+      properties: { feature_id: "station:8010205", feature_type: "station", name: "Leipzig Hbf", rl100: "LL" },
+    })).toEqual({
+      kind: "station",
+      id: "station:8010205",
+      label: "Leipzig Hbf · RIL 100 LL",
+      sourceLayer: "stations",
+      groupKey: "station:LL",
+    });
   });
 });

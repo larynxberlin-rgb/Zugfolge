@@ -1,10 +1,18 @@
 import { badge, escapeHtml, icon } from "@zugfolge/design-system";
 import type { Condition, OperatingProgram } from "@zugfolge/dispatch";
+import { formatAvailableFinance, type PlayerOperatorContextV1 } from "@zugfolge/player-context";
 
 import type { DailyReportRow, OperationsDecision, OperationsProjection, ProgramVersion } from "./api.js";
 import { ACTIONS, COMPARISONS, FACTS, TRIGGERS } from "./constants.js";
 
 export interface ViewState {
+  readonly worldId: string;
+  readonly operatorId: string;
+  readonly activePanel: "operations" | "program" | "reports";
+  readonly pageUrl: string;
+  readonly gameWebUrl: string;
+  readonly livemapUrl: string;
+  readonly operatorContext?: PlayerOperatorContextV1;
   readonly program?: OperatingProgram;
   readonly templates: readonly { readonly id: string; readonly name: string; readonly program: OperatingProgram }[];
   readonly versions: readonly ProgramVersion[];
@@ -113,18 +121,36 @@ export function renderApp(state: ViewState): string {
   const active = state.versions.find((version) => version.status === "active");
   const operations = state.operations ?? { throughSequence: 0, decisions: [], cancellations: [], manualInterventions: [], majorEvents: [] };
   const important = [...operations.majorEvents, ...operations.decisions.filter((entry) => !operations.majorEvents.some((major) => major.decisionId === entry.decisionId))];
+  const panelUrl = (panel: ViewState["activePanel"]): string => `?${new URLSearchParams({ world: state.worldId, operator: state.operatorId, panel }).toString()}`;
+  const playerDestination = (view: "journey" | "diagram", section?: "markets" | "company"): string => {
+    const destination = new URL(state.gameWebUrl.trim() === "" ? "/" : state.gameWebUrl, state.pageUrl);
+    destination.searchParams.set("view", view);
+    destination.searchParams.set("world", state.worldId);
+    destination.searchParams.set("operator", state.operatorId);
+    if (section !== undefined) destination.searchParams.set("section", section);
+    destination.hash = "";
+    return destination.href;
+  };
+  const liveDestination = (): string => {
+    const destination = new URL(state.livemapUrl.trim() === "" ? "/" : state.livemapUrl, state.pageUrl);
+    destination.searchParams.set("world", state.worldId);
+    destination.searchParams.set("operator", state.operatorId);
+    destination.hash = "";
+    return destination.href;
+  };
+  const operator = state.operatorContext?.operators.find((entry) => entry.id === state.operatorId);
+  const panelTitle = state.activePanel === "operations" ? "Live-Betrieb" : state.activePanel === "program" ? "Regelwerk" : "Tagesberichte";
+  const metrics = `<section class="metrics-strip" aria-label="Aktuelle Betriebskennzahlen"><div><span>Entscheidungen</span><strong>${operations.decisions.length}</strong></div><div><span>Großereignisse</span><strong>${operations.majorEvents.length}</strong></div><div><span>Ausfälle</span><strong>${operations.cancellations.length}</strong></div><div><span>Manuell</span><strong>${operations.manualInterventions.length}</strong></div></section>`;
+  const operationsPanel = `<section id="operations" class="panel"><header class="section-header"><div><p class="eyebrow">LIVE-BETRIEB</p><h2>Abweichungen und Entscheidungen</h2></div>${badge("EVU-gefiltert", "neutral", "lock")}</header><div class="decision-grid">${important.length === 0 ? `<div class="empty"><strong>Keine Abweichungen</strong><span>Neue Kernereignisse erscheinen hier sofort.</span></div>` : important.map((entry) => renderDecision(entry, operations.majorEvents.some((major) => major.decisionId === entry.decisionId), entry.decisionId === state.selectedDecisionId)).join("")}</div></section>`;
+  const programPanel = `<section id="program" class="panel"><header class="section-header"><div><p class="eyebrow">BETRIEBSPROGRAMM v${state.program.version}</p><h2>Regelwerk</h2><p>Höhere Regeln gewinnen. Gleiche Priorität wird stabil nach Regel-ID aufgelöst.</p></div><label class="switch program-switch"><input id="program-enabled" type="checkbox"${state.program.enabled ? " checked" : ""}><span>Programm aktiv</span></label></header><div class="editor-toolbar"><label>Vorlage<select id="template"><option value="">Vorlage wählen …</option>${state.templates.map((template) => `<option value="${escapeHtml(template.id)}">${escapeHtml(template.name)}</option>`).join("")}</select></label><button id="add-rule" class="quiet-button">+ Regel</button><button id="run-backtest" class="quiet-button">Rücktest</button><button id="save-program" class="primary-button"${state.saving ? " disabled" : ""}>${state.saving ? "Speichert …" : "Neue Version speichern"}</button><button id="activate-program" class="danger-button">Version aktivieren</button></div><div class="rule-list" aria-label="Sortierbare Regeln">${state.program.rules.map((rule, index) => renderRule(rule, index, state.program!.rules.length)).join("")}</div></section>`;
+  const reportsPanel = `<section id="reports" class="panel"><header class="section-header"><div><p class="eyebrow">EREIGNISPROJEKTION</p><h2>Tagesberichte</h2></div><div class="report-action"><input id="report-day" type="date" aria-label="Betriebstag"><button id="generate-report" class="quiet-button">Bericht erzeugen</button></div></header><div class="reports">${state.reports.length === 0 ? `<div class="empty"><strong>Noch kein Tagesbericht</strong><span>Berichte werden ausschließlich aus dem Event-Log aufgebaut.</span></div>` : state.reports.map(reportMarkup).join("")}</div></section>`;
+  const activeContent = state.activePanel === "operations" ? `${metrics}${operationsPanel}` : state.activePanel === "program" ? programPanel : reportsPanel;
   return `<div class="shell">
-    <aside class="sidebar" aria-label="Bereichsnavigation"><div class="wordmark">ZUGFOLGE</div><nav><a class="active" href="#operations">${icon("alert")}<span>Betrieb</span></a><a href="#program">${icon("layers")}<span>Regelwerk</span></a><a href="#reports">${icon("clock")}<span>Tagesberichte</span></a></nav><p class="sidebar-note">Serverautoritative Welt<br><span>Live · Sequenz ${operations.throughSequence}</span></p></aside>
+    <aside class="sidebar" aria-label="Hauptnavigation"><div class="wordmark">ZUGFOLGE</div><nav><a href="${escapeHtml(liveDestination())}">${icon("route")}<span>Lage</span></a><a href="${escapeHtml(playerDestination("diagram"))}">${icon("clock")}<span>Planung</span></a><a class="active" aria-current="page" href="${escapeHtml(panelUrl("operations"))}">${icon("alert")}<span>Betrieb</span></a><a href="${escapeHtml(playerDestination("journey", "markets"))}">${icon("layers")}<span>Märkte</span></a><a href="${escapeHtml(playerDestination("journey", "company"))}">${icon("train")}<span>EVU</span></a></nav><p class="sidebar-note">Serverautoritative Welt<br><span>Live · Sequenz ${operations.throughSequence}</span></p></aside>
     <main id="main">
-      <header class="topbar"><div><p class="eyebrow">EVU-BETRIEBSZENTRALE</p><h1>Betrieb steuern, bevor er entgleist.</h1></div><div class="topbar-actions">${active === undefined ? badge("Kein aktives Programm", "danger", "warning") : badge(`Programm v${active.version} aktiv`, "success", "check")}<button id="refresh" class="quiet-button">Aktualisieren</button></div></header>
-      ${state.message === "" ? "" : `<div class="message message--${state.messageTone}" role="${state.messageTone === "error" ? "alert" : "status"}">${escapeHtml(state.message)}</div>`}
-      <section class="metrics-strip" aria-label="Aktuelle Betriebskennzahlen"><div><span>Entscheidungen</span><strong>${operations.decisions.length}</strong></div><div><span>Großereignisse</span><strong>${operations.majorEvents.length}</strong></div><div><span>Ausfälle</span><strong>${operations.cancellations.length}</strong></div><div><span>Manuell</span><strong>${operations.manualInterventions.length}</strong></div></section>
-      <section id="operations" class="panel"><header class="section-header"><div><p class="eyebrow">LIVE-BETRIEB</p><h2>Abweichungen und Entscheidungen</h2></div>${badge("EVU-gefiltert", "neutral", "lock")}</header><div class="decision-grid">${important.length === 0 ? `<div class="empty"><strong>Keine Abweichungen</strong><span>Neue Kernereignisse erscheinen hier sofort.</span></div>` : important.map((entry) => renderDecision(entry, operations.majorEvents.some((major) => major.decisionId === entry.decisionId), entry.decisionId === state.selectedDecisionId)).join("")}</div></section>
-      <section id="program" class="panel"><header class="section-header"><div><p class="eyebrow">BETRIEBSPROGRAMM v${state.program.version}</p><h2>Regelwerk</h2><p>Höhere Regeln gewinnen. Gleiche Priorität wird stabil nach Regel-ID aufgelöst.</p></div><label class="switch program-switch"><input id="program-enabled" type="checkbox"${state.program.enabled ? " checked" : ""}><span>Programm aktiv</span></label></header>
-        <div class="editor-toolbar"><label>Vorlage<select id="template"><option value="">Vorlage wählen …</option>${state.templates.map((template) => `<option value="${escapeHtml(template.id)}">${escapeHtml(template.name)}</option>`).join("")}</select></label><button id="add-rule" class="quiet-button">+ Regel</button><button id="run-backtest" class="quiet-button">Rücktest</button><button id="save-program" class="primary-button"${state.saving ? " disabled" : ""}>${state.saving ? "Speichert …" : "Neue Version speichern"}</button><button id="activate-program" class="danger-button">Version aktivieren</button></div>
-        <div class="rule-list" aria-label="Sortierbare Regeln">${state.program.rules.map((rule, index) => renderRule(rule, index, state.program!.rules.length)).join("")}</div>
-      </section>
-      <section id="reports" class="panel"><header class="section-header"><div><p class="eyebrow">EREIGNISPROJEKTION</p><h2>Tagesberichte</h2></div><div class="report-action"><input id="report-day" type="date" aria-label="Betriebstag"><button id="generate-report" class="quiet-button">Bericht erzeugen</button></div></header><div class="reports">${state.reports.length === 0 ? `<div class="empty"><strong>Noch kein Tagesbericht</strong><span>Berichte werden ausschließlich aus dem Event-Log aufgebaut.</span></div>` : state.reports.map(reportMarkup).join("")}</div></section>
+      <header class="topbar"><div><p class="eyebrow">EVU-BETRIEBSZENTRALE</p><h1>${panelTitle}</h1></div><div class="topbar-actions"><div class="operations-context"><span><small>WELT</small><strong>${escapeHtml(state.worldId)}</strong></span><span><small>EVU</small><strong>${escapeHtml(operator?.name ?? "nicht verfügbar")}</strong></span><span><small>VERFÜGBAR</small><strong>${escapeHtml(operator === undefined ? "—" : formatAvailableFinance(operator.finance))}</strong></span></div>${active === undefined ? badge("Kein aktives Programm", "danger", "warning") : badge(`Programm v${active.version} aktiv`, "success", "check")}<button id="refresh" class="quiet-button">Aktualisieren</button></div></header>
+      <nav class="operations-tabs" aria-label="Betriebszentrale"><a${state.activePanel === "operations" ? ' aria-current="page"' : ""} href="${escapeHtml(panelUrl("operations"))}">Live-Betrieb</a><a${state.activePanel === "program" ? ' aria-current="page"' : ""} href="${escapeHtml(panelUrl("program"))}">Regelwerk</a><a${state.activePanel === "reports" ? ' aria-current="page"' : ""} href="${escapeHtml(panelUrl("reports"))}">Tagesberichte</a></nav>
+      <div class="operations-workspace" data-scroll-region>${state.message === "" ? "" : `<div class="message message--${state.messageTone}" role="${state.messageTone === "error" ? "alert" : "status"}">${escapeHtml(state.message)}</div>`}${activeContent}</div>
     </main>
     <dialog id="override-dialog"><form method="dialog"><header><div><p class="eyebrow">EINZELFALL</p><h2>Entscheidung übersteuern</h2></div><button value="cancel" class="icon-button" aria-label="Dialog schließen">${icon("close")}</button></header><p>Der Override gilt nur für die gewählte Entscheidung und durchläuft dieselben Kapazitäts-, Fahrzeug-, Personal-, Vertrags- und Kostengrenzen.</p><input id="override-decision" type="hidden" value="${escapeHtml(state.selectedDecisionId)}"><label>Maßnahme<select id="override-action">${ACTIONS.map((value) => option(value, "request_reroute")).join("")}</select></label><label>Begründung<textarea id="override-reason" minlength="8" maxlength="500" required></textarea></label><footer><button value="cancel" class="quiet-button">Abbrechen</button><button id="submit-override" value="default" class="danger-button">Einzelfall senden</button></footer></form></dialog>
   </div>`;

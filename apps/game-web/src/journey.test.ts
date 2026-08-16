@@ -67,6 +67,56 @@ function session(chapter = 3): TutorialSessionView {
 }
 
 describe("spielergebundene Tutorialreise", () => {
+  it("rendert nach dem Einstieg eine viewportfüllende Shell mit EVU und verfügbarer Liquidität", () => {
+    const html = renderJourney({
+      publicWorldId: "public-world",
+      busy: false,
+      message: "",
+      coachDismissed: false,
+      whyOpen: false,
+      activeSection: "company",
+      activeOperatorId: "operator-1",
+      livemapUrl: "https://spiel.example/live/?world=public-world",
+      operationsCenterUrl: "https://spiel.example/operations/",
+      operatorContext: {
+        schemaVersion: "zugfolge-operator-context/v1",
+        worldId: "public-world",
+        operators: [{
+          id: "operator-1",
+          name: "Saale-Sprinter",
+          finance: { mode: "finite", ledgerBalanceCents: "10000", pendingDebitCents: "2500", availableCents: "7500" },
+        }],
+      },
+    });
+    expect(html).toContain('class="journey-shell player-shell"');
+    expect(html).toContain('class="workspace-scroll" data-scroll-region');
+    expect(html).toContain("Saale-Sprinter");
+    expect(html).toContain("75,00 €");
+    expect(html).toContain("Vorgemerkte Belastungen");
+    expect(html).toContain("https://spiel.example/live/?world=public-world&amp;operator=operator-1");
+    expect(html).toContain("https://spiel.example/operations/?world=public-world&amp;operator=operator-1&amp;panel=operations");
+    expect(html).not.toContain("Geschlossene Alpha · Spielerreise");
+  });
+
+  it("zeigt unbegrenzte Liquidität ausdrücklich und nie als Nullsaldo", () => {
+    const html = renderJourney({
+      publicWorldId: "public-world",
+      busy: false,
+      message: "",
+      coachDismissed: false,
+      whyOpen: false,
+      activeSection: "company",
+      activeOperatorId: "operator-1",
+      operatorContext: {
+        schemaVersion: "zugfolge-operator-context/v1",
+        worldId: "public-world",
+        operators: [{ id: "operator-1", name: "Testbahn", finance: { mode: "unlimited" } }],
+      },
+    });
+    expect(html.match(/Unbegrenzt/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(html).not.toContain("0,00");
+  });
+
   it("zeigt genau eine Hauptaufgabe, fünf textliche Fortschrittszustände und Lutz zugänglich", () => {
     const html = renderJourney({ publicWorldId: session().publicWorldId, busy: false, message: "", tutorial: session(), coachDismissed: false, whyOpen: false });
     expect(html.match(/class="tutorial-task/g)).toHaveLength(1);

@@ -3,6 +3,7 @@ import "@zugfolge/design-system/styles.css";
 import { mountGlossaryLayer } from "@zugfolge/glossary";
 import "@zugfolge/glossary/styles.css";
 import type { PlanningProjectionV1 } from "@zugfolge/planning-projection";
+import type { PlayerOperatorContextV1 } from "@zugfolge/player-context";
 
 import {
   GameApiClient,
@@ -41,12 +42,14 @@ import {
   cooperationPageViews,
   focusCooperationDeepLink,
   primaryMapDestination,
+  resolveJourneySection,
   resolveWorldContext,
 } from "./navigation.js";
 import { classifyJourneyFailure } from "./recovery.js";
 import { renderLoadState, renderProjection } from "./view.js";
 import { parseTutorialBidInput } from "./tutorial-input.js";
 import "./styles.css";
+import "./player-shell.css";
 
 const root = document.querySelector<HTMLDivElement>("#root");
 if (root === null) throw new Error("App-Wurzel fehlt");
@@ -64,6 +67,7 @@ const demoMode = parameters.get("demo") === "1";
 const requestedView = parameters.get("view");
 const journeyMode = !demoMode && requestedView !== "diagram";
 const initialCooperationPageViews = cooperationPageViews(parameters);
+const activeJourneySection = resolveJourneySection(parameters, window.location.hash);
 let { worldId, publicWorldId } = resolveWorldContext(parameters, runtimeConfiguration.publicWorldId);
 const tutorialReference = parameters.get("tutorial");
 let livemapUrl = runtimeConfiguration.livemapUrl === "" ? "" : (() => {
@@ -71,6 +75,9 @@ let livemapUrl = runtimeConfiguration.livemapUrl === "" ? "" : (() => {
   value.searchParams.set("world", worldId);
   return value.href;
 })();
+let operationsCenterUrl = runtimeConfiguration.operationsCenterUrl === ""
+  ? ""
+  : new URL(runtimeConfiguration.operationsCenterUrl, window.location.href).href;
 const primaryDestination = primaryMapDestination({
   requestedView,
   demoMode,
@@ -99,6 +106,7 @@ let coachDismissed = false;
 let whyOpen = false;
 let tutorialPoll: ReturnType<typeof setTimeout> | undefined;
 let worldOperators: readonly OperatorSummary[] = [];
+let playerOperatorContext: PlayerOperatorContextV1 | undefined;
 let ownOperatorIds: readonly string[] = [];
 let activeOperatorId = "";
 let operatorContracts: readonly OperatorContractView[] = [];
@@ -217,6 +225,8 @@ function cooperationState(): CooperationSurfaceState | undefined {
     ...(stationOptions === undefined ? {} : { stationOptions }),
     economyRevision,
     tenders: publicTenders,
+    section: activeJourneySection === "markets" ? "markets"
+      : activeJourneySection === "operations" ? "operations" : "all",
   };
 }
 
@@ -238,10 +248,14 @@ function render(): void {
       whyOpen,
       messageTone,
       livemapUrl,
+      operationsCenterUrl,
       cooperation: cooperationState(),
       mailbox: mailboxMessages,
       worldContracts: publicWorldContracts,
       hasActiveOperator: activeOperatorId !== "",
+      activeOperatorId,
+      operatorContext: playerOperatorContext,
+      activeSection: activeJourneySection,
       confirmation: pendingConfirmation === undefined ? undefined : { title: pendingConfirmation.title, detail: pendingConfirmation.detail },
       bootRecovery,
       tutorialStartAvailable: api !== undefined && publicWorldId !== "",
@@ -335,6 +349,10 @@ function bindJourney(): void {
       const fields = Object.fromEntries(new FormData(form).entries());
       void enterPublicWorld(String(fields["worldId"] ?? ""), String(fields["displayName"] ?? ""), String(fields["contractHash"] ?? ""));
     });
+  });
+  app.querySelector<HTMLSelectElement>("#journey-operator")?.addEventListener("change", (event) => {
+    const operatorId = (event.currentTarget as HTMLSelectElement).value;
+    if (operatorId !== "") void cooperationAction(async () => refreshCooperation(operatorId), "Handelndes EVU wurde gewechselt.");
   });
   app.querySelector<HTMLDialogElement>("#journey-confirmation")?.addEventListener("close", (event) => {
     const dialog = event.currentTarget as HTMLDialogElement;
@@ -694,8 +712,8 @@ function addWorldSeconds(atS: number, durationS: number, name: string): number {
 async function refreshCooperation(preferredOperatorId = activeOperatorId): Promise<void> {
   const client = api;
   if (client === undefined || publicWorldId === "") return;
-  const [own, atS, roster, listingPage, inbox, economy] = await Promise.all([
-    client.loadOwnOperators(),
+  const [operatorContext, atS, roster, listingPage, inbox, economy] = await Promise.all([
+    client.loadPlayerOperatorContext(publicWorldId),
     client.loadSimulationTime(publicWorldId),
     client.loadWorldOperators(publicWorldId),
     client.loadVehicleMarket(publicWorldId, listingPageView, undefined, 50, cooperationDeadlineBeforeS),
@@ -708,8 +726,11 @@ async function refreshCooperation(preferredOperatorId = activeOperatorId): Promi
   try { projection = await client.loadProjection(publicWorldId); }
   catch { projection = undefined; }
   worldOperators = roster;
-  ownOperatorIds = own.filter((operator) => operator.worldId === publicWorldId).map((operator) => operator.id);
-  activeOperatorId = ownOperatorIds.includes(preferredOperatorId) ? preferredOperatorId : (ownOperatorIds[0] ?? "");
+  playerOperatorContext = operatorContext;
+  ownOperatorIds = operatorContext.operators.map((operator) => operator.id);
+  const routeOperatorId = parameters.get("operator") ?? "";
+  const requestedOperatorId = preferredOperatorId === "" ? routeOperatorId : preferredOperatorId;
+  activeOperatorId = ownOperatorIds.includes(requestedOperatorId) ? requestedOperatorId : (ownOperatorIds[0] ?? "");
   marketListings = listingPage.items;
   listingNextCursor = listingPage.nextCursor;
   mailboxMessages = inbox;
@@ -1111,6 +1132,9 @@ async function boot(): Promise<void> {
     value.searchParams.set("world", worldId);
     return value.href;
   })();
+  operationsCenterUrl = runtimeConfiguration.operationsCenterUrl === ""
+    ? ""
+    : new URL(runtimeConfiguration.operationsCenterUrl, window.location.href).href;
   render();
   if (demoMode) {
     const demo = await import("./demo.js");

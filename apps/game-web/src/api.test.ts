@@ -158,6 +158,25 @@ describe("GameApiClient", () => {
     ]);
   });
 
+  it("laedt den gemeinsamen EVU-Kontext mit verfuegbarer Liquiditaet weltgebunden", async () => {
+    const fetchImplementation = vi.fn(async (_input: RequestInfo | URL) => new Response(JSON.stringify({
+      schemaVersion: "zugfolge-operator-context/v1",
+      worldId: "world/1",
+      operators: [{
+        id: "operator-1",
+        name: "Saale-Sprinter",
+        finance: { mode: "finite", ledgerBalanceCents: "10000", pendingDebitCents: "2500", availableCents: "7500" },
+      }],
+    })));
+    const client = new GameApiClient("https://api.test", "token", fetchImplementation as typeof fetch);
+
+    await expect(client.loadPlayerOperatorContext("world/1")).resolves.toMatchObject({
+      worldId: "world/1",
+      operators: [{ finance: { availableCents: "7500" } }],
+    });
+    expect(String(fetchImplementation.mock.calls[0]![0])).toBe("https://api.test/worlds/world%2F1/me/operator-context");
+  });
+
   it("reicht denselben absoluten Fristfilter durch Vertrags- und Marktseiten", async () => {
     const fetchImplementation = vi.fn(async (_input: RequestInfo | URL) => new Response(JSON.stringify({
       schemaVersion: "zugfolge-cooperation-page/v1", items: [], nextCursor: null,

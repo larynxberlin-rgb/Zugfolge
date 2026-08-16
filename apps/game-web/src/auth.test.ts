@@ -25,6 +25,7 @@ const configuration: BrowserRuntimeConfiguration = {
   keycloakRealm: "zugfolge",
   publicWorldId: "public",
   livemapUrl: "",
+  operationsCenterUrl: "",
 };
 
 afterEach(() => {

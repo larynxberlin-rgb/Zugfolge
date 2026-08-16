@@ -2,6 +2,8 @@ import { ensureBrowserAccessToken } from "@zugfolge/browser-identity";
 
 export interface OperationsRuntimeConfiguration {
   readonly gameApiUrl: string;
+  readonly gameWebUrl: string;
+  readonly livemapUrl: string;
   readonly keycloakUrl: string;
   readonly keycloakRealm: string;
   readonly oidcClientId: string;
@@ -11,6 +13,8 @@ export function loadOperationsRuntimeConfiguration(): OperationsRuntimeConfigura
   const configured = globalThis.__ZUGFOLGE_RUNTIME_CONFIG__ ?? {};
   return {
     gameApiUrl: configured.gameApiUrl ?? document.querySelector<HTMLMetaElement>('meta[name="game-api-url"]')?.content ?? "",
+    gameWebUrl: configured.gameWebUrl ?? "",
+    livemapUrl: configured.livemapUrl ?? "",
     keycloakUrl: (configured.keycloakUrl ?? "").replace(/\/$/, ""),
     keycloakRealm: configured.keycloakRealm ?? "zugfolge",
     oidcClientId: configured.operationsCenterOidcClientId?.trim() || "operations-center",

@@ -5,6 +5,10 @@ import {
   type PlanningAlternativeCommandV1,
   type PlanningProjectionV1,
 } from "@zugfolge/planning-projection";
+import {
+  parsePlayerOperatorContext,
+  type PlayerOperatorContextV1,
+} from "@zugfolge/player-context";
 
 export interface AlternativeApplicationOptions {
   readonly queueAttempts?: number;
@@ -1135,6 +1139,11 @@ export class GameApiClient {
 
   loadOwnOperators(): Promise<readonly OperatorSummary[]> {
     return this.#journeyJson<unknown>("/me/operators").then(parseOperatorSummaries);
+  }
+
+  loadPlayerOperatorContext(worldId: string): Promise<PlayerOperatorContextV1> {
+    return this.#journeyJson<unknown>(`/worlds/${encodeURIComponent(worldId)}/me/operator-context`)
+      .then((value) => parsePlayerOperatorContext(value, worldId));
   }
 
   createOperator(worldId: string, name: string): Promise<OperatorSummary> {

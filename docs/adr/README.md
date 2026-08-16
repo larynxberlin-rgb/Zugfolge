@@ -13,8 +13,8 @@ umgeschrieben — ihre Historie ist der Wert.
 
 ## Verhältnis zu den anderen Dokumenten
 
-- `AGENTS.md` — die bindende Kurztabelle E1–E29. Wird jede Sitzung geladen.
-- `../entscheidungen.md` — E1–E29 mit einzeiliger Begründung, die maßgebliche
+- `AGENTS.md` — die bindende Kurztabelle E1–E30. Wird jede Sitzung geladen.
+- `../entscheidungen.md` — E1–E30 mit einzeiliger Begründung, die maßgebliche
   Quelle für Wortlaut und Nummerierung.
 - **`docs/adr/`** (dieser Ordner) — dieselben Entscheidungen ausführlich: mit
   Kontext, Konsequenzen und Querverweisen. Ein ADR je Entscheidung.
@@ -42,8 +42,10 @@ Statuswerte: `Angenommen` (bindend), `Vorgeschlagen`, `Abgelöst durch ADR-XXXX`
 ## Index
 
 Die folgenden ADRs wurden aus den zuvor in der Konzeptionsphase getroffenen
-Grundsatzentscheidungen schriftlich festgehalten; E21 bis E29 kamen später als
-eigene Entscheidungen hinzu. Alle Status: **Angenommen — bindend**.
+Grundsatzentscheidungen schriftlich festgehalten; E21 bis E30 kamen später als
+eigene Entscheidungen hinzu. Alle einer E-Nummer zugeordneten ADRs sind
+**angenommen und bindend**; der zusätzliche ADR-0030 ist ausdrücklich erst
+vorgeschlagen.
 
 | ADR | E | Titel |
 |-----|---|-------|
@@ -77,10 +79,21 @@ eigene Entscheidungen hinzu. Alle Status: **Angenommen — bindend**.
 | [0028](0028-getrennter-tutorial-und-wettbewerbsstart.md) | E28 | Tutorialstart und öffentlicher Markteintritt sind getrennte Weltverträge |
 | [0029](0029-schaffnermodus-als-serverautoritative-betriebsvertiefung.md) | E29 | Der Schaffnermodus vertieft den serverautoritativen Betrieb |
 | [0030](0030-odoo-weltkatalog-und-kommerzielle-teilnahme.md) | – | Odoo-Weltkatalog und kommerzielle Teilnahme an Game-autoritativen Welten (vorgeschlagen) |
+| [0031](0031-spielerkarte-als-lebendige-welt.md) | E30 | Die Spielerkarte zeigt die lebendige gemeinsame Welt, nicht den Infrastruktur-Editor |
 
 > **Teilablösung:** ADR-0027 ersetzt ausschließlich den Exact-only-Satz zur
 > sichtbaren Zugposition in ADR-0026. Der historische Wortlaut bleibt dort
 > erhalten; E26 und alle übrigen Teile von ADR-0026 bleiben bindend.
+
+> **Weitere Teilablösung:** ADR-0031 ersetzt für das normale Spielerprofil die
+> Vorgaben aus ADR-0026, Klasse C zu zeigen und jedes sichtbare Fachobjekt
+> anklickbar zu machen. Der vollständige, selbst gehostete Deutschland-Korpus
+> und alle übrigen E26-Verträge bleiben erhalten.
+
+> **Nummerierung:** ADR-0030 dokumentiert eine vorgeschlagene Ausgestaltung
+> ohne eigene E-Nummer und behält seine historische Nummer. Deshalb entspricht
+> die nächste bindende Grundsatzentscheidung E30 dem nächsten freien
+> Datensatz ADR-0031.
 
 > **Hinweis zum Umfang.** Milestone 0.1 nennt „E1 bis E16"; die Formulierung
 > stammt aus der Zeit vor E17–E20. Da diese vier heute gleichrangig bindend

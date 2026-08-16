@@ -1,6 +1,12 @@
 import type { MailboxMessageView, PublicWorldContractView, TutorialSessionView } from "./api.js";
+import {
+  formatAvailableFinance,
+  formatEuroCents,
+  type PlayerOperatorContextV1,
+} from "@zugfolge/player-context";
 import { renderComparisonWorkbench } from "./comparison.js";
 import { renderCooperationSurface, type CooperationSurfaceState } from "./cooperation.js";
+import type { JourneySection } from "./navigation.js";
 
 export interface JourneyViewState {
   readonly publicWorldId: string;
@@ -12,6 +18,7 @@ export interface JourneyViewState {
   readonly whyOpen: boolean;
   readonly messageTone?: "status" | "error";
   readonly livemapUrl?: string;
+  readonly operationsCenterUrl?: string;
   readonly cooperation?: CooperationSurfaceState;
   readonly tutorialStartAvailable?: boolean;
   readonly mailbox?: readonly MailboxMessageView[];
@@ -20,6 +27,9 @@ export interface JourneyViewState {
   readonly hasActiveOperator?: boolean;
   readonly confirmation?: { readonly title: string; readonly detail: string };
   readonly bootRecovery?: "authenticate" | "configure" | "retry";
+  readonly activeSection?: JourneySection;
+  readonly activeOperatorId?: string;
+  readonly operatorContext?: PlayerOperatorContextV1;
 }
 
 function escapeHtml(value: unknown): string {
@@ -276,6 +286,87 @@ function attentionRail(messages: readonly MailboxMessageView[] | undefined): str
   return `<section id="postfach" class="attention-rail journey-card" aria-labelledby="attention-title"><div class="journey-heading"><div><p class="eyebrow">Aufmerksamkeit</p><h2 id="attention-title">Fristen, Meldungen und Antworten</h2></div><span class="state-word">${open.length} offen</span></div>${items === "" ? `<p class="m12-empty">Keine offenen Nachrichten. Neue Fristen und Entscheidungen erscheinen hier direkt an der Live-Lage.</p>` : `<ol>${items}</ol>`}</section>`;
 }
 
+function journeyUrl(state: JourneyViewState, section: JourneySection): string {
+  const query = new URLSearchParams({ view: "journey", world: state.publicWorldId, section });
+  if (state.activeOperatorId !== undefined && state.activeOperatorId !== "") query.set("operator", state.activeOperatorId);
+  return `?${query.toString()}`;
+}
+
+function plannerUrl(state: JourneyViewState): string {
+  const query = new URLSearchParams({ view: "diagram", world: state.publicWorldId });
+  if (state.activeOperatorId !== undefined && state.activeOperatorId !== "") query.set("operator", state.activeOperatorId);
+  return `?${query.toString()}`;
+}
+
+function livemapDestination(state: JourneyViewState): string {
+  if (state.livemapUrl === undefined || state.livemapUrl === "") return journeyUrl(state, "world");
+  const destination = new URL(state.livemapUrl);
+  destination.searchParams.set("world", state.publicWorldId);
+  if (state.activeOperatorId !== undefined && state.activeOperatorId !== "") {
+    destination.searchParams.set("operator", state.activeOperatorId);
+  }
+  return destination.href;
+}
+
+function operationsDestination(state: JourneyViewState): string {
+  if (state.operationsCenterUrl === undefined || state.operationsCenterUrl === "" || state.activeOperatorId === undefined || state.activeOperatorId === "") {
+    return journeyUrl(state, "operations");
+  }
+  const destination = new URL(state.operationsCenterUrl);
+  destination.searchParams.set("world", state.publicWorldId);
+  destination.searchParams.set("operator", state.activeOperatorId);
+  destination.searchParams.set("panel", "operations");
+  return destination.href;
+}
+
+function shellOperator(state: JourneyViewState) {
+  return state.operatorContext?.operators.find((operator) => operator.id === state.activeOperatorId)
+    ?? state.operatorContext?.operators[0];
+}
+
+function companySurface(state: JourneyViewState): string {
+  const operator = shellOperator(state);
+  if (state.operatorContext === undefined) {
+    return `<section class="journey-card company-overview" id="unternehmen" aria-busy="true"><p class="eyebrow">EVU</p><h2>Unternehmensdaten werden geladen</h2><p>Es wird kein Nullsaldo angenommen, solange die autoritative Finanzprojektion fehlt.</p></section>`;
+  }
+  if (operator === undefined) {
+    return `<section class="journey-card company-overview" id="unternehmen"><p class="eyebrow">EVU</p><h2>Noch kein Unternehmen</h2><p>Nach der EVU-Gründung erscheinen hier Liquidität, Bestand und Verträge.</p><a class="button-link" href="${escapeHtml(journeyUrl(state, "world"))}#evu-gruenden">EVU gründen</a></section>`;
+  }
+  const finance = operator.finance;
+  const financeRows = finance.mode === "unlimited"
+    ? `<div><dt>Finanzierungsmodus</dt><dd>Unbegrenzt</dd></div><div><dt>Verfügbar</dt><dd>Unbegrenzt</dd></div>`
+    : `<div><dt>Kontostand</dt><dd>${escapeHtml(formatEuroCents(finance.ledgerBalanceCents))}</dd></div><div><dt>Vorgemerkte Belastungen</dt><dd>${finance.pendingDebitCents === "0" ? "Keine" : `− ${escapeHtml(formatEuroCents(finance.pendingDebitCents))}`}</dd></div><div class="company-balance-total"><dt>Verfügbar</dt><dd>${escapeHtml(formatEuroCents(finance.availableCents))}</dd></div>`;
+  const contracts = state.cooperation?.contracts.length ?? 0;
+  const vehicles = state.cooperation?.ownedVehicles.length ?? 0;
+  return `<section class="journey-card company-overview" id="unternehmen" aria-labelledby="company-title"><div class="journey-heading"><div><p class="eyebrow">UNTERNEHMEN</p><h2 id="company-title">${escapeHtml(operator.name)}</h2></div><span class="state-word">aktive Welt</span></div><div class="company-grid"><article class="company-finance"><p class="eyebrow">LIQUIDITÄT</p><strong class="company-balance">${escapeHtml(formatAvailableFinance(finance))}</strong><dl>${financeRows}</dl><p>„Verfügbar“ berücksichtigt bereits vorgemerkte, noch nicht im Kontostand verbuchte Belastungen.</p></article><article><p class="eyebrow">BESTAND</p><dl><div><dt>Eigene Fahrzeuge</dt><dd>${vehicles}</dd></div><div><dt>Laufende und offene Verträge</dt><dd>${contracts}</dd></div></dl><p>Flotte, Personal, Kredite, Ergebnis und Archiv werden hier als Unterbereiche ausgebaut, ohne neue Hauptnavigation.</p></article></div></section>`;
+}
+
+function workspaceHeading(section: JourneySection): { readonly eyebrow: string; readonly title: string; readonly description: string } {
+  switch (section) {
+    case "world": return { eyebrow: "WELTKONTEXT", title: "Welt und Einstieg", description: "Weltvertrag, Tutorial und EVU-Gründung – im täglichen Betrieb bleibt dieser Bereich im Hintergrund." };
+    case "operations": return { eyebrow: "BETRIEB", title: "Fahrten und Ressourcen", description: "Operative Aufträge in einer kompakten Arbeitsfläche; Störungen, Regeln und Berichte werden hier zusammengeführt." };
+    case "markets": return { eyebrow: "MÄRKTE", title: "Ausschreibungen, Verträge und Fahrzeuge", description: "Vergleichen, auswählen und erst im Detail verbindlich handeln." };
+    case "company": return { eyebrow: "EVU", title: "Unternehmen und Finanzen", description: "Liquidität, Bestand und Unternehmensentwicklung ohne Vermischung mit dem Benutzerkonto." };
+    case "mailbox": return { eyebrow: "AUFMERKSAMKEIT", title: "Aufgaben und Postfach", description: "Fristen und Entscheidungen nach Dringlichkeit, jeweils direkt mit ihrem Fachobjekt verknüpft." };
+  }
+}
+
+function playerShell(state: JourneyViewState, content: string, message: string, recovery: string, confirmation: string): string {
+  const section = state.activeSection ?? "world";
+  const heading = workspaceHeading(section);
+  const operator = shellOperator(state);
+  const worldName = state.worldContracts?.find((contract) => contract.worldId === state.publicWorldId)?.name ?? "Ausgewählte Welt";
+  const openMessages = (state.mailbox ?? []).filter((entry) => entry.acknowledgedAt === null).length;
+  const finance = operator === undefined ? "—" : formatAvailableFinance(operator.finance);
+  const operatorOptions = state.operatorContext?.operators.map((entry) => `<option value="${escapeHtml(entry.id)}"${entry.id === operator?.id ? " selected" : ""}>${escapeHtml(entry.name)}</option>`).join("") ?? "";
+  const active = (target: JourneySection): string => section === target ? ' aria-current="page"' : "";
+  const livemap = state.livemapUrl === undefined || state.livemapUrl === "" ? "" : `<a class="shell-nav__item" href="${escapeHtml(livemapDestination(state))}"><span aria-hidden="true">◎</span><span>Lage</span></a>`;
+  const operatorDetail = operator === undefined
+    ? `<p>In dieser Welt ist noch kein eigenes EVU aktiv.</p><a href="${escapeHtml(journeyUrl(state, "world"))}#evu-gruenden">EVU gründen</a>`
+    : `<label${(state.operatorContext?.operators.length ?? 0) < 2 ? ' class="single-operator"' : ""}><span>Handelndes EVU</span><select id="journey-operator"${(state.operatorContext?.operators.length ?? 0) < 2 ? " disabled" : ""}>${operatorOptions}</select></label>${operator.finance.mode === "unlimited" ? '<p>Liquidität ist laut Weltvertrag unbegrenzt.</p>' : `<dl><div><dt>Kontostand</dt><dd>${escapeHtml(formatEuroCents(operator.finance.ledgerBalanceCents))}</dd></div><div><dt>Vorgemerkt</dt><dd>${operator.finance.pendingDebitCents === "0" ? "Keine" : `− ${escapeHtml(formatEuroCents(operator.finance.pendingDebitCents))}`}</dd></div><div><dt>Verfügbar</dt><dd>${escapeHtml(formatEuroCents(operator.finance.availableCents))}</dd></div></dl>`}<a href="${escapeHtml(journeyUrl(state, "company"))}">Finanzen öffnen</a>`;
+  return `<main class="journey-shell player-shell" aria-busy="${state.busy}"><header class="player-topbar"><a class="wordmark" href="${escapeHtml(livemapDestination(state))}">ZUGFOLGE</a><a class="shell-world" href="${escapeHtml(journeyUrl(state, "world"))}"><span class="eyebrow">WELT</span><strong>${escapeHtml(worldName)}</strong></a><details class="shell-operator"><summary><span><span class="eyebrow">EVU</span><strong>${escapeHtml(operator?.name ?? (state.operatorContext === undefined ? "wird geladen" : "Kein EVU"))}</strong></span><span class="shell-balance"><span class="eyebrow">VERFÜGBAR</span><strong>${escapeHtml(finance)}</strong></span></summary><div class="shell-operator__popover">${operatorDetail}</div></details><a class="shell-mailbox" href="${escapeHtml(journeyUrl(state, "mailbox"))}"${active("mailbox")}><span>Aufgaben</span><strong>${openMessages}</strong></a></header><div class="player-layout"><nav class="shell-nav" aria-label="Hauptnavigation">${livemap}<a class="shell-nav__item" href="${escapeHtml(plannerUrl(state))}"><span aria-hidden="true">⌁</span><span>Planung</span></a><a class="shell-nav__item" href="${escapeHtml(operationsDestination(state))}"${active("operations")}><span aria-hidden="true">↯</span><span>Betrieb</span></a><a class="shell-nav__item" href="${escapeHtml(journeyUrl(state, "markets"))}"${active("markets")}><span aria-hidden="true">⇄</span><span>Märkte</span></a><a class="shell-nav__item" href="${escapeHtml(journeyUrl(state, "company"))}"${active("company")}><span aria-hidden="true">▦</span><span>EVU</span></a></nav><section class="player-workspace" aria-labelledby="workspace-title"><header class="workspace-heading"><div><p class="eyebrow">${heading.eyebrow}</p><h1 id="workspace-title">${heading.title}</h1><p>${heading.description}</p></div><span class="alpha-badge">ALPHA</span></header>${message}${recovery}<div class="workspace-scroll" data-scroll-region>${content}</div></section></div>${confirmation}</main>`;
+}
+
 export function renderJourney(state: JourneyViewState): string {
   const inTutorial = state.tutorial !== undefined;
   const busyScope = state.busy ? (state.busyScope ?? "initial") : undefined;
@@ -289,6 +380,15 @@ export function renderJourney(state: JourneyViewState): string {
   const recoveryLabel = state.bootRecovery === "configure" ? "Konfiguration erneut prüfen" : "Erneut versuchen";
   const recovery = state.bootRecovery === undefined ? "" : `<p class="journey-recovery"><button id="journey-retry" type="button">${recoveryLabel}</button></p>`;
   const world = encodeURIComponent(state.publicWorldId);
+  if (!inTutorial && state.activeSection !== undefined) {
+    const sectionContent = state.activeSection === "world"
+      ? `${worldContracts(state)}<div class="journey-grid">${tutorialContent}${onboarding(state)}</div>${state.cooperation?.activeOperatorId === "" ? cooperation : ""}`
+      : state.activeSection === "mailbox" ? mailboxContent
+        : state.activeSection === "company" ? companySurface(state)
+          : cooperation;
+    const shell = playerShell(state, sectionContent, message, recovery, confirmation);
+    return busyScope === "initial" ? disableButtons(shell) : shell;
+  }
   const html = `<main class="journey-shell" aria-busy="${state.busy}"><header class="journey-top"><div><p class="wordmark">ZUGFOLGE</p><h1>Geschlossene Alpha · Spielerreise</h1></div><nav aria-label="Hauptnavigation">${livemap}<a href="#world-contract-title">Welt und Einstieg</a><a href="#vehicle-market">Märkte</a><a href="?view=diagram&world=${world}#diagram-card">Betrieb</a><a href="#postfach">Postfach</a></nav></header>${message}${recovery}${inTutorial ? "" : worldContracts(state)}${mailboxContent}<div class="${inTutorial ? "tutorial-shell" : "journey-grid"}">${tutorialContent}${inTutorial ? "" : onboarding(state)}</div>${cooperation}${confirmation}</main>`;
   return busyScope === "initial" ? disableButtons(html) : html;
 }

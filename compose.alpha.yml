@@ -164,6 +164,7 @@ services:
       ALPHA_PUBLIC_WORLD_ID: "${ALPHA_PUBLIC_WORLD_ID}"
       GAME_WEB_PUBLIC_URL: "${GAME_WEB_PUBLIC_URL:-http://localhost:4173}"
       LIVEMAP_PUBLIC_URL: "${LIVEMAP_PUBLIC_URL:-http://localhost:4174}"
+      OPERATIONS_CENTER_URL: "${OPERATIONS_CENTER_URL:-http://localhost:4175}"
     depends_on: { game-api: { condition: service_healthy } }
     networks:
       default: {}
@@ -182,6 +183,7 @@ services:
       ALPHA_PUBLIC_WORLD_ID: "${ALPHA_PUBLIC_WORLD_ID}"
       GAME_WEB_PUBLIC_URL: "${GAME_WEB_PUBLIC_URL:-http://localhost:4173}"
       LIVEMAP_PUBLIC_URL: "${LIVEMAP_PUBLIC_URL:-http://localhost:4174}"
+      OPERATIONS_CENTER_URL: "${OPERATIONS_CENTER_URL:-http://localhost:4175}"
       STATIC_ARTIFACT_ROOT: /map-artifacts
       MAP_RELEASE_ID: "${MAP_RELEASE_ID:?MAP_RELEASE_ID muss aus active/map-release.env kommen}"
       MAP_BASEMAP_STYLE_URL: "${MAP_BASEMAP_STYLE_URL:?MAP_BASEMAP_STYLE_URL muss aus active/map-release.env kommen}"
@@ -215,6 +217,7 @@ services:
       KEYCLOAK_REALM: "${KEYCLOAK_REALM:-zugfolge}"
       OPERATIONS_CENTER_OIDC_CLIENT_ID: "${OPERATIONS_CENTER_OIDC_CLIENT_ID:-operations-center}"
       GAME_WEB_PUBLIC_URL: "${GAME_WEB_PUBLIC_URL:-http://localhost:4173}"
+      LIVEMAP_PUBLIC_URL: "${LIVEMAP_PUBLIC_URL:-http://localhost:4174}"
       OPERATIONS_CENTER_URL: "${OPERATIONS_CENTER_URL:-http://localhost:4175}"
     depends_on: { game-api: { condition: service_healthy } }
     networks:

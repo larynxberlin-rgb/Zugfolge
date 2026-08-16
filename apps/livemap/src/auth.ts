@@ -7,6 +7,7 @@ export interface LivemapRuntimeConfiguration {
   readonly oidcClientId: string;
   readonly publicWorldId: string;
   readonly gameWebUrl: string;
+  readonly operationsCenterUrl: string;
   readonly basemapStyleUrl: string;
   readonly germanyPmtilesUrl: string;
   readonly attribution: string;
@@ -23,6 +24,7 @@ export function loadRuntimeConfiguration(): LivemapRuntimeConfiguration {
     keycloakRealm: configured.keycloakRealm ?? "zugfolge",
     publicWorldId: configured.publicWorldId ?? "",
     gameWebUrl: configured.gameWebUrl ?? "",
+    operationsCenterUrl: configured.operationsCenterUrl ?? "",
     basemapStyleUrl: configured.mapBasemapStyleUrl ?? "/artifacts/world-basemap/style.json",
     germanyPmtilesUrl: configured.mapGermanyPmtilesUrl ?? "/artifacts/germany-infrastructure/germany.pmtiles",
     attribution: configured.mapAttribution ?? "© OpenStreetMap-Mitwirkende · ODbL",

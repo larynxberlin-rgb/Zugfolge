@@ -15,7 +15,8 @@
     "@zugfolge/browser-identity": "workspace:*",
     "@zugfolge/design-system": "workspace:*",
     "@zugfolge/dispatch": "workspace:*",
-    "@zugfolge/glossary": "workspace:*"
+    "@zugfolge/glossary": "workspace:*",
+    "@zugfolge/player-context": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

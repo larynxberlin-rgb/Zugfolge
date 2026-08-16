@@ -42,6 +42,8 @@ export interface CooperationSurfaceState {
   readonly economyRevision?: number;
   readonly tenders?: readonly PublicTenderView[];
   readonly stationOptions?: readonly { readonly id: string; readonly label: string }[];
+  /** Begrenzt die alte Sammelflaeche auf den aktiven Shell-Arbeitsraum. */
+  readonly section?: "all" | "markets" | "operations";
 }
 
 export interface CooperationSurfaceActions {
@@ -429,9 +431,18 @@ export function renderCooperationSurface(state: CooperationSurfaceState): string
   const initialLotId = openTenders[0]?.lotId ?? "";
   const hasInitialTenderFormation = ownFormationOptions !== "" || (state.resources?.publicEntryFacilities ?? []).some((facility) => facility.lotId === initialLotId);
   const tenderSurface = `<section class="journey-card m12-card" id="ausschreibungen"><div class="journey-heading"><div><p class="eyebrow">VERKEHRSVERTRÄGE</p><h2>An Ausschreibung teilnehmen</h2></div><span class="state-word">${openTenders.length} offen</span></div>${openTenders.length === 0 ? '<p class="m12-empty">Derzeit ist keine Ausschreibung zur Angebotsabgabe geöffnet.</p>' : `<form id="tender-bid-form" class="m12-form" data-preserve-draft><label class="m12-field"><span>Ausschreibung</span><select id="tender-bid-tender" name="tenderId">${openTenders.map((tender) => `<option value="${escapeHtml(tender.id)}" data-lot-id="${escapeHtml(tender.lotId)}">Los ${escapeHtml(tender.lotId)} · ${tender.bidCount} Angebot(e)</option>`).join("")}</select></label><label class="m12-field"><span>Betriebsbereitstellung</span><select id="tender-bid-formation" name="formationId">${ownFormationOptions}${facilityOptions}</select></label>${facilityOptions === "" ? "" : '<p class="resource-note">Der öffentliche Anschubvertrag ist ein zuschlagsgebundener Wet-Lease. Erst bei Zuschlag werden Formation, Personal und Trasse bereitgestellt; die Betriebskosten trägt Ihr EVU.</p>'}${field("orderingFeeEuros", "Bestellentgelt · Euro je Zug-km", { value: "10,00" })}${field("punctualityPercent", "Pünktlichkeitszusage · Prozent", { type: "number", min: 0, value: "95" })}${field("extraSeats", "Zusätzliche Sitzplätze", { type: "number", min: 0, value: "0" })}<button id="tender-bid-submit" type="submit" data-resources-ready="${resourcesReady}"${!resourcesReady || !hasInitialTenderFormation ? " disabled" : ""}>Angebot verbindlich abgeben</button></form>`}</section>`;
-  const html = `<section class="m12-surface" aria-busy="${state.busy}">
-    <div class="m12-toolbar"><label><span>Handelndes EVU in ${escapeHtml(state.worldName)}</span><select id="m12-operator">${own.map((operator) => `<option value="${escapeHtml(operator.id)}"${operator.id === state.activeOperatorId ? " selected" : ""}>${escapeHtml(operator.name)}</option>`).join("")}</select></label><div class="m12-clock"><span>Synchronisierte Weltzeit</span><output id="m12-time">Betriebstag ${Math.floor(state.atS / 86_400) + 1}</output></div><button id="m12-refresh" class="secondary" type="button">Kooperation und Markt aktualisieren</button></div>
-    <div class="m12-grid">${tenderSurface}${operationsSurface(state)}${contractSurface(state)}${marketSurface(state)}</div>
+  const section = state.section ?? "all";
+  const panels = section === "markets"
+    ? `${tenderSurface}${contractSurface(state)}${marketSurface(state)}`
+    : section === "operations"
+      ? operationsSurface(state)
+      : `${tenderSurface}${operationsSurface(state)}${contractSurface(state)}${marketSurface(state)}`;
+  const operatorPicker = section === "all"
+    ? `<label><span>Handelndes EVU in ${escapeHtml(state.worldName)}</span><select id="m12-operator">${own.map((operator) => `<option value="${escapeHtml(operator.id)}"${operator.id === state.activeOperatorId ? " selected" : ""}>${escapeHtml(operator.name)}</option>`).join("")}</select></label>`
+    : "";
+  const html = `<section class="m12-surface m12-surface--${section}" aria-busy="${state.busy}">
+    <div class="m12-toolbar">${operatorPicker}<div class="m12-clock"><span>Synchronisierte Weltzeit</span><output id="m12-time">Betriebstag ${Math.floor(state.atS / 86_400) + 1}</output></div><button id="m12-refresh" class="secondary" type="button">Arbeitsraum aktualisieren</button></div>
+    <div class="m12-grid">${panels}</div>
   </section>`;
   return state.busy ? html.replace(/<button(?![^>]*\bdisabled\b)/g, '<button disabled aria-disabled="true"') : html;
 }

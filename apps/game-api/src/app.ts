@@ -91,6 +91,7 @@ import {
   ledgerAccountBalance,
   listLedgerAccounts,
   listLedgerTransactions,
+  loadEconomyCashAvailabilityForUpdate,
   loadFleetMobilizationSnapshot,
   loadFleetProducerCheckpoint,
   loadFleetProducerCommand,
@@ -103,6 +104,7 @@ import {
   resolvePublicEntryFacilityVehicleConcept,
   serializeStartingCapitalPolicy,
   settleContractPeriod,
+  STANDARD_ECONOMY_LEDGER_ACCOUNT_PLAN,
   startEconomyWorld,
   submitBid,
   submitMobilizationReference,
@@ -138,6 +140,10 @@ import {
   WorldContractAcceptanceConflictError,
   type IdentityDatabase,
 } from "@zugfolge/identity";
+import {
+  PLAYER_OPERATOR_CONTEXT_SCHEMA,
+  type PlayerOperatorSummaryV1,
+} from "@zugfolge/player-context";
 import { acknowledgeMessage, listInbox, MessageNotFoundError, projectInboxMessage, RecipientNotFoundError, sendMessage } from "@zugfolge/mailbox";
 import {
   DuplicateOperatorNameError,
@@ -2926,6 +2932,80 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         return reply.send(serializeStartingCapitalPolicy(
           await startingCapitalPolicyForWorld(deps.db, request.params.worldId),
         ));
+      } catch (error) {
+        return sendError(reply, error);
+      }
+    },
+  );
+
+  /**
+   * Kompakter, weltgebundener Spieler-Kontext fuer die gemeinsame App-Shell.
+   *
+   * Die verfuegbare Liquiditaet wird autoritativ aus Ledger und noch nicht
+   * projizierten Journal-Debits gelesen. Bei Welten mit unbegrenztem Kapital
+   * wird bewusst kein numerischer Nullsaldo geliefert:
+   * Clients muessen den fachlichen Zustand als „Unbegrenzt“ darstellen.
+   */
+  app.get<{ Params: { worldId: string } }>(
+    "/worlds/:worldId/me/operator-context",
+    { preHandler: authenticate, schema: { params: worldIdParam } },
+    async (request, reply) => {
+      const identity = request.identity;
+      if (identity === undefined) return reply.code(401).send({ error: "Keine Identitaet." });
+      try {
+        const account = await getAccount(deps.db, {
+          worldId: request.params.worldId,
+          keycloakSubject: identity.keycloakSubject,
+        });
+        if (account === undefined) throw new NoAccountInWorldError(request.params.worldId);
+
+        const policy = await startingCapitalPolicyForWorld(deps.db, request.params.worldId);
+        const ownOperators = (await listOperatorsForAccount(deps.db, identity.keycloakSubject))
+          .filter((operator) => operator.worldId === request.params.worldId)
+          .sort((left, right) => left.id.localeCompare(right.id));
+        const projectedOperators = policy.mode === "unlimited"
+          ? ownOperators.map((operator) => ({
+              id: operator.id,
+              name: operator.name,
+              finance: { mode: "unlimited" as const },
+            }))
+          : await deps.db.transaction(async (tx) => {
+              const projections: PlayerOperatorSummaryV1[] = [];
+              // `ownOperators` ist stabil sortiert: keine wechselnde Sperrreihenfolge.
+              for (const operator of ownOperators) {
+                const cashAccount = (await listLedgerAccounts(tx, {
+                  worldId: request.params.worldId,
+                  operatorId: operator.id,
+                })).find((ledgerAccount) => ledgerAccount.name === STANDARD_ECONOMY_LEDGER_ACCOUNT_PLAN.cashAccountName);
+                if (cashAccount === undefined) {
+                  throw new AlphaConflictError(
+                    `Das Liquiditaetskonto von EVU '${operator.id}' fehlt.`,
+                    "operator_cash_account_missing",
+                  );
+                }
+                const availability = await loadEconomyCashAvailabilityForUpdate(tx, {
+                  worldId: request.params.worldId,
+                  operatorId: operator.id,
+                  cashAccountId: cashAccount.id,
+                });
+                projections.push({
+                  id: operator.id,
+                  name: operator.name,
+                  finance: {
+                    mode: "finite" as const,
+                    ledgerBalanceCents: availability.ledgerBalanceCents.toString(),
+                    pendingDebitCents: availability.pendingDebitCents.toString(),
+                    availableCents: availability.availableCents.toString(),
+                  },
+                });
+              }
+              return projections;
+            });
+        return reply.send({
+          schemaVersion: PLAYER_OPERATOR_CONTEXT_SCHEMA,
+          worldId: request.params.worldId,
+          operators: projectedOperators,
+        });
       } catch (error) {
         return sendError(reply, error);
       }

@@ -27,7 +27,7 @@ Das Artefakt besitzt die SQLite-`application_id` `0x5a554746` und
 | `metadata` | Schema-, Welt-, Release- und Verkehrstagskennung |
 | `world_config` | selbst gehostete Karten-URLs und getrennte Spielbarkeitsmaske |
 | `object_details` | deutsche Fachbezeichnung, Qualitätsklasse und freigegebene Fakten |
-| `station_identifiers` | eindeutige EVA-, RL100- und Fahrplanhalt-Zuordnungen |
+| `station_identifiers` | eindeutige EVA-, RIL-100- und Fahrplanhalt-Zuordnungen |
 | `station_schedule_calls` | statische Ankunfts- und Abfahrtsplanwerte |
 | `passenger_information` | Ziel und Folgehalte eines öffentlichen Zuglaufs |
 
@@ -45,21 +45,52 @@ Alpha-Welt gilt `Europe/Berlin`, Weltsekunde `0` als Servicebeginn und eine
 tägliche Wiederholung von `86400` Sekunden. Fehlende, zusätzliche oder vom
 signierten Runtime-Deployment abweichende Werte blockieren den Start.
 
-## Interaktive Objekte
+## Vollständiges Artefakt und Spielerprofil
 
-Der Builder liest alle sichtbaren interaktiven Ebenen des Deutschlandkorpus.
+Der Builder liest weiterhin alle zehn semantischen Ebenen des
+Deutschlandkorpus in das vollständige Artefakt.
 `rail_corridors` und `tracks` werden beide als `track` aufgelöst; ihre stabilen
 Feature-IDs überschneiden sich nicht. `conflict_resources` erscheinen als
 `facility`. Auch `rail_context` besitzt als `rail-context` ein anklickbares,
-ausdrücklich nicht bestellbares Kurzdetail. Damit ist jede der zehn sichtbaren
-Semantikebenen erreichbar, ohne Kartenkontext zur Betriebswahrheit zu machen.
+ausdrücklich nicht bestellbares Kurzdetail. Damit bleibt jede Semantikebene für
+Diagnose und releasegebundene Detailauflösung erreichbar, ohne Kartenkontext
+zur Betriebswahrheit zu machen.
+
+Das normale Spielerprofil ist eine davon getrennte Projektion. Es zeichnet nur
+A-/B-Korridore beziehungsweise -Gleise, gruppierte Bahnhöfe, achromatische
+Signalicons, betriebliche Overlays und Züge. Interaktiv sind Zug, gruppierter
+Bahnhof und Strecke. Klasse C sowie `operating_points`, einzelne Bahnsteige,
+Weichen, Blöcke, `conflict_resources`, Anlagen und `rail_context` werden dort
+nicht abgefragt und nicht gezeichnet. Der vollständige Objektkatalog wird
+dadurch weder gekürzt noch in ein zweites Artefakt aufgeteilt.
+
+Ein sichtbarer Bahnhof steht für eine releasegebundene Stationsgruppe, nicht
+für einen Bahnsteig. Der Compiler liefert eine stabile Gruppenkennung und
+einen Kartenanker; belegte RIL-100-, EVA/UIC- oder Quell-Gruppenreferenzen
+begründen die Zusammenfassung. Der Client verwendet keine Namens- oder
+Entfernungsheuristik. Bahnsteige werden erst innerhalb der Bahnhofstafel als
+Fahrtinformation gezeigt.
+
+Werkstätten sind ebenfalls markante Spielerorte, sobald ein eigener
+autoritativ benannter Kartenvertrag vorliegt. Das aktuelle
+`conflict_resources`-Tile enthält jedoch nur generische Ressourcentypen wie
+Block, Weiche und Gleisabschnitt; es belegt weder einen Werkstatt-Subtyp noch
+Namen oder Spielerrelevanz. Der Client darf diese Ressourcen deshalb nicht als
+Werkstatt ausgeben. Ein künftiger `workshops`-Layer beziehungsweise ein
+gleichwertiges Map-Readmodel muss mindestens stabile ID, Name, Koordinate,
+Leistungsarten, Betreiber-/Zugangsstatus und Releasebindung tragen. Erst dann
+erscheint eine Werkstatt als eigenes, markantes Symbol und öffnet ihre
+Leistungs- und Verfügbarkeitsauskunft.
 
 Die Fachfakten werden über eine feste Allowlist aus den Importfeldern
-abgeleitet. Ausgeliefert werden beispielsweise Streckennummer, Länge,
-Geschwindigkeit, Elektrifizierung, Neigung, Blockgrenzen, Weichen- oder
-Signalbezeichnung und betriebliche Nutzbarkeit. OSM-Roh-Tags, interne
-Evidenzkennungen, APN-Namen und Evidenzhashes gelangen weder in Fakten noch in
-die API.
+abgeleitet. Ausgeliefert werden beispielsweise VzG-Streckennummer,
+Streckenkurzbezeichnung, Länge, Geschwindigkeit, Elektrifizierung, Neigung,
+Blockgrenzen, Weichen- oder Signalbezeichnung und betriebliche Nutzbarkeit.
+OSM-Roh-Tags, interne Evidenzkennungen, APN-Namen und Evidenzhashes gelangen
+weder in Fakten noch in die API. Der gegenwärtige Release liefert keine
+belastbare KBS-Bezeichnung. VzG-Nummer und Streckenkurzname werden nicht als
+KBS umbenannt; eine spätere KBS-Angabe braucht Quelle, Gültigkeitszeitraum und
+eine versionierte Segmentzuordnung.
 
 ## Bahnhofstafel und FIS
 
@@ -72,7 +103,7 @@ Regionalverkehrs-GTFS. Eine Fahrplanhaltestelle wird nur zugeordnet, wenn
    existiert.
 
 Nicht belegbare oder mehrdeutige Zuordnungen bleiben draußen. Es gibt keinen
-Namens-Fuzzy-Match und keine erfundene RL100-Zuordnung. Der aktuelle
+Namens-Fuzzy-Match und keine erfundene RIL-100-Zuordnung. Der aktuelle
 Jahreslauf bindet den Verkehrstag `20260810` und dieselbe Fahrtkettenkennung,
 die der Alpha-Weltcompiler aus Welt, Region, GTFS-Release und Quellfahrt bildet.
 
@@ -93,15 +124,24 @@ Ausfallmeldung. Browserwerte beeinflussen keine dieser Projektionen.
 ## Clientdarstellung
 
 Die Livemap bindet die selbst gehostete Basemap und das semantische
-Deutschland-PMTiles über MapLibre/PMTiles. Alle zehn sichtbaren Fachlayer
-besitzen anklickbare Trefferflächen und releasegebundene Deep Links; bei
-Überlagerung entscheidet die in `design.md` festgelegte Fachpriorität. Das
-Detailpanel erklärt Bezeichnung, Qualitätsklasse, Modellzustand und die für den
-Objekttyp freigegebenen Fakten.
+Deutschland-PMTiles über MapLibre/PMTiles. Das normale Spielerprofil erzeugt
+nur für Zug, gruppierten Bahnhof und Strecke anklickbare Trefferflächen; bei
+Überlagerung entscheidet die in `design.md` festgelegte Fachpriorität. Die
+erste Detailebene verwendet Domänensprache und höchstens wenige
+handlungsrelevante Fakten. Qualitätsklasse, Modellzustand, Releasekennung,
+technische ID und übrige freigegebene Fakten liegen standardmäßig geschlossen
+unter „Technische Details“. Das technische Diagnoseprofil darf weiterhin alle
+zehn Artefaktlayer per releasegebundenem Deep Link auflösen.
 
 Ein Bahnhof öffnet zusätzlich eine generische Fallblattanzeige mit aktuellen
-Ankünften und Abfahrten. Ein Zug öffnet die öffentliche Betriebssicht und den
-aus Fahrgastsicht aufgebauten FIS-Monitor; nur beim eigenen Zug ergänzt eine
+Ankünften und Abfahrten sowie eine kompakte Grundauskunft aus Name, RIL 100,
+EVA/UIC und Betriebsstellenart. Ein versioniertes
+`StationSummaryReadModel` ergänzt später belastbare Kennzahlen wie
+Fahrgastaufkommen, Zugfahrten, Pünktlichkeit und EVU-Anteile für einen
+ausgewählten Zeitraum. Bis dieses Readmodel aus serverautoritativen Ereignissen
+gebildet wird, zeigt die Oberfläche keine hochgerechneten
+Langzeitstatistiken. Ein Zug öffnet die öffentliche Betriebssicht und den aus
+Fahrgastsicht aufgebauten FIS-Monitor; nur beim eigenen Zug ergänzt eine
 separate autorisierte Route interne EVU-Daten. Einschränkungen, Sperrungen und
 explizit klassifizierte Baustellen werden als zustandsabhängige, auch ohne
 Farbe unterscheidbare Gleisüberlagerungen gezeichnet. Keine dieser

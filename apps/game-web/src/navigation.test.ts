@@ -4,6 +4,7 @@ import {
   cooperationPageViews,
   focusCooperationDeepLink,
   primaryMapDestination,
+  resolveJourneySection,
   resolveWorldContext,
 } from "./navigation.js";
 
@@ -44,6 +45,16 @@ describe("kanonischer Weltkontext", () => {
   it("fällt ohne URL-Welt ausschließlich auf den Runtime-Vertrag zurück", () => {
     expect(resolveWorldContext(new URLSearchParams("view=journey"), "world-a"))
       .toEqual({ worldId: "world-a", publicWorldId: "world-a" });
+  });
+});
+
+describe("viewportfüllende Spieler-Arbeitsräume", () => {
+  it("übersetzt neue Routen und alte Deep-Link-Hashes in stabile Fachbereiche", () => {
+    expect(resolveJourneySection(new URLSearchParams("section=company"), "#vehicle-market")).toBe("company");
+    expect(resolveJourneySection(new URLSearchParams(), "#contract-vertrag-7")).toBe("markets");
+    expect(resolveJourneySection(new URLSearchParams(), "#postfach")).toBe("mailbox");
+    expect(resolveJourneySection(new URLSearchParams(), "#betriebsplanung")).toBe("operations");
+    expect(resolveJourneySection(new URLSearchParams(), "")).toBe("world");
   });
 });
 
