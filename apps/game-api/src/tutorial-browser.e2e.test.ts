@@ -327,8 +327,7 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
       return json({ error: `Unerwarteter E2E-Pfad ${request.method()} ${url.pathname}` }, 500);
     });
 
-    await page.goto(`${origin}/?view=journey&world=${SECOND_WORLD}`, { waitUntil: "networkidle" });
-    await page.getByText("Handelndes EVU in Welt B").waitFor();
+    await page.goto(`${origin}/?view=journey&world=${SECOND_WORLD}&section=world`, { waitUntil: "networkidle" });
     const shellOperator = page.locator(".shell-operator");
     const shellOperatorName = shellOperator.locator("summary > span:first-child > strong");
     await shellOperatorName.waitFor();
@@ -343,9 +342,13 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
     expect(financeSummary).toContain("Verfügbar");
     expect(financeSummary).toContain("12.000,00");
     await shellOperator.locator("summary").click();
-    expect(await page.locator(".m12-toolbar").innerText()).toContain("EVU B");
     const worldSnapshot = await page.locator(".world-contracts").ariaSnapshot();
     for (const text of ["Welt A", "Welt B", "Dauerhaft, keine Wipes", "Fahrplanperiode", "Startkapital", "Eintrittsfenster"]) expect(worldSnapshot).toContain(text);
+    await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Märkte", exact: true }).click();
+    await page.waitForURL((url) => url.searchParams.get("section") === "markets");
+    expect(new URL(page.url()).searchParams.get("world")).toBe(SECOND_WORLD);
+    expect(new URL(page.url()).searchParams.get("operator")).toBe(ownB);
+    await page.locator(".comparison-scroll").waitFor();
     const comparison = page.locator(".comparison-scroll");
     await tabUntil(page, ".comparison-scroll");
     expect(await comparison.evaluate((element) => document.activeElement === element)).toBe(true);
