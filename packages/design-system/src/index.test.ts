@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { badge, emptyState, escapeHtml, field, icon } from "./index.js";
+import { badge, emptyState, escapeHtml, field, icon, type IconName } from "./index.js";
 const luminance = (hex: string): number => {
   const channel = (value: string): number => {
     const x = Number.parseInt(value, 16) / 255;
@@ -19,7 +19,40 @@ const contrast = (a: string, b: string): number => {
 describe("Gestaltungssystem", () => {
   it("liefert Icons ohne alleinige Farbbedeutung", () => {
     expect(icon("alert", "Konflikt")).toContain('aria-label="Konflikt"');
+    expect(icon("alert", "Konflikt")).toContain("<title>Konflikt</title>");
     expect(icon("train")).toContain('aria-hidden="true"');
+    expect(icon("train")).not.toContain("<title>");
+  });
+
+  it("stellt das gemeinsame achromatische RailIcon-Set vollstaendig bereit", () => {
+    const railIcons = [
+      "station",
+      "platform",
+      "workshop",
+      "train-suburban",
+      "train-regional",
+      "train-long-distance",
+      "connection",
+      "accessible",
+      "bicycle",
+      "dining",
+      "information",
+      "disruption",
+    ] satisfies readonly IconName[];
+
+    for (const name of railIcons) {
+      const markup = icon(name);
+      expect(markup).toContain("<svg");
+      expect(markup).toContain('stroke');
+      expect(markup).not.toMatch(/#[0-9a-f]{3,8}|rgb\(|fill="(?!none)/i);
+    }
+  });
+
+  it("escaped den zugaenglichen Titel eines RailIcons", () => {
+    const markup = icon("information", 'Info <Gleis 7> & "mehr"');
+    expect(markup).toContain('role="img"');
+    expect(markup).toContain('aria-label="Info &lt;Gleis 7&gt; &amp; &quot;mehr&quot;"');
+    expect(markup).toContain("<title>Info &lt;Gleis 7&gt; &amp; &quot;mehr&quot;</title>");
   });
   it("maskiert dynamische Beschriftungen", () => {
     expect(badge("<Gegenzug>", "danger", "alert")).toContain(

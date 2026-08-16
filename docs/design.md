@@ -333,7 +333,9 @@ Einschränkungen sind bernsteinfarben und gestrichelt, Sperrungen rot und
 unterbrochen, Bauarbeiten rot-weiß gemustert. Fallblattanzeige und FIS nutzen
 generische Domänensprache, Tabellenziffern und eine eigene Formensprache;
 keine reale Hausschrift, kein Logo und kein Markenzitat. Animation betrifft
-nur geänderte Zellen und entfällt bei reduzierter Bewegung.
+nur geänderte Zellen und entfällt bei reduzierter Bewegung. Der konkrete
+Darstellungs-, Bewegungs- und Abnahmevertrag steht in
+[`ui-bahn-anzeigen.md`](ui-bahn-anzeigen.md).
 
 ## 10. Was nach M14.2 offenbleibt
 
