@@ -20,6 +20,11 @@ import type {
   LivemapConfigV2,
   PublicObjectState,
 } from "@zugfolge/livemap-stream";
+import {
+  formatAvailableFinance,
+  formatEuroCents,
+  type PlayerOperatorContextV1,
+} from "@zugfolge/player-context";
 
 import { LivemapApiClient } from "./api.js";
 import { renderAttentionRail, renderAttentionUnavailable } from "./attention.js";
@@ -31,6 +36,7 @@ import {
   INFRASTRUCTURE_SOURCE_ID,
   infrastructureLayers,
   installMissingBasemapImageResolver,
+  installPlayerMapIcons,
   INTERACTION_LAYER_IDS,
   loadSelfHostedStyle,
   parseFocusParameter,
@@ -59,7 +65,7 @@ import {
   type PublicExternalTrain,
   type RenderSamples,
 } from "./protocol.js";
-import { livemapNavigationDestinations, mailboxDecisionDestination } from "./navigation.js";
+import { livemapNavigationDestinations, mailboxDecisionDestination, operationsCenterDestination } from "./navigation.js";
 import { externalStatusLabel, localizeMapControls, operatingStatusLabel, railwayPlaceLabel, setMapViewButtons, visibleExternalTrains, type MapView } from "./presentation.js";
 import "./style.css";
 import "./external-runs.css";
@@ -76,6 +82,22 @@ root.innerHTML = `
         <span class="eyebrow">LIVE-LAGE</span>
         <strong id="world-label">Welt wird geladen</strong>
       </div>
+      <details id="operator-context" class="operator-context">
+        <summary aria-label="EVU- und Finanzkontext öffnen">
+          <span class="operator-context__company"><span class="eyebrow">EVU</span><strong id="operator-label">wird geladen</strong></span>
+          <span class="operator-context__finance"><span class="eyebrow">VERFÜGBAR</span><strong id="finance-label">—</strong></span>
+        </summary>
+        <div class="operator-context__popover">
+          <label id="operator-selector-field" hidden><span>Handelndes EVU</span><select id="operator-selector"></select></label>
+          <p id="operator-context-note" class="operator-context__note" hidden></p>
+          <dl id="finance-breakdown">
+            <div><dt>Kontostand</dt><dd id="ledger-balance">—</dd></div>
+            <div><dt>Vorgemerkt</dt><dd id="pending-debits">—</dd></div>
+            <div class="operator-context__available"><dt>Verfügbar</dt><dd id="available-balance">—</dd></div>
+          </dl>
+          <a id="finance-link" href="/">Finanzen öffnen</a>
+        </div>
+      </details>
       <nav aria-label="Hauptnavigation">
         <a id="live-link" aria-current="page" href="/">Live-Lage</a>
         <a id="journey-link" href="/">Welt</a>
@@ -106,7 +128,6 @@ root.innerHTML = `
           <span><i class="legend-line restriction"></i> Langsamfahrt/Störung</span>
           <span><i class="legend-line closure"></i> gesperrt</span>
           <span><i class="legend-line construction"></i> Bauarbeiten</span>
-          <span><i class="legend-line quality-c"></i> Klasse C</span>
           <span><i class="legend-train-estimated">≈</i> <button type="button" class="zf-glossary-term" data-glossary-code="PublicMapEstimate">Zugposition geschätzt</button></span>
         </div>
       </section>
@@ -127,7 +148,7 @@ root.innerHTML = `
 const parameters = new URLSearchParams(window.location.search);
 const runtime = loadRuntimeConfiguration();
 const worldId = parameters.get("world")?.trim() || runtime.publicWorldId;
-const navigation = livemapNavigationDestinations(runtime.gameWebUrl, window.location.href, worldId);
+const navigation = livemapNavigationDestinations(runtime.gameWebUrl, window.location.href, worldId, runtime.operationsCenterUrl);
 document.querySelector<HTMLAnchorElement>("#live-link")!.href = navigation.live;
 document.querySelector<HTMLAnchorElement>("#journey-link")!.href = navigation.journey;
 document.querySelector<HTMLAnchorElement>("#market-link")!.href = navigation.markets;
@@ -143,6 +164,17 @@ const detailsContent = document.querySelector<HTMLElement>("#details-content")!;
 const sequenceLabel = document.querySelector<HTMLTimeElement>("#sequence-label")!;
 const worldLabel = document.querySelector<HTMLElement>("#world-label")!;
 const mapState = document.querySelector<HTMLElement>("#map-state")!;
+const operatorContextElement = document.querySelector<HTMLDetailsElement>("#operator-context")!;
+const operatorNameLabel = document.querySelector<HTMLElement>("#operator-label")!;
+const financeLabel = document.querySelector<HTMLElement>("#finance-label")!;
+const operatorSelectorField = document.querySelector<HTMLElement>("#operator-selector-field")!;
+const operatorSelector = document.querySelector<HTMLSelectElement>("#operator-selector")!;
+const operatorContextNote = document.querySelector<HTMLElement>("#operator-context-note")!;
+const financeBreakdown = document.querySelector<HTMLElement>("#finance-breakdown")!;
+const ledgerBalance = document.querySelector<HTMLElement>("#ledger-balance")!;
+const pendingDebits = document.querySelector<HTMLElement>("#pending-debits")!;
+const availableBalance = document.querySelector<HTMLElement>("#available-balance")!;
+const financeLink = document.querySelector<HTMLAnchorElement>("#finance-link")!;
 const externalRuns = document.querySelector<HTMLElement>("#external-runs")!;
 const objectList = document.querySelector<HTMLElement>("#object-list-content")!;
 const selectionMenu = document.querySelector<HTMLElement>("#selection-menu")!;
@@ -158,6 +190,73 @@ let selected: MapSelection | undefined;
 let previousSelected: MapSelection | undefined;
 let appliedObjectStates = new Map<string, PublicObjectState>();
 let renderFrame: number | undefined;
+
+function gameWebDestination(section: "world" | "company", operatorId?: string): string {
+  const destination = new URL(runtime.gameWebUrl.trim() === "" ? "/" : runtime.gameWebUrl, window.location.href);
+  destination.searchParams.set("view", "journey");
+  destination.searchParams.set("world", worldId);
+  destination.searchParams.set("section", section);
+  if (operatorId !== undefined) destination.searchParams.set("operator", operatorId);
+  return destination.href;
+}
+
+function renderPlayerContext(context: PlayerOperatorContextV1): void {
+  const requestedOperatorId = parameters.get("operator");
+  const selected = context.operators.find((operator) => operator.id === requestedOperatorId) ?? context.operators[0];
+  operatorSelector.replaceChildren(...context.operators.map((operator) => {
+    const option = document.createElement("option");
+    option.value = operator.id;
+    option.textContent = operator.name;
+    option.selected = operator.id === selected?.id;
+    return option;
+  }));
+  operatorSelectorField.hidden = context.operators.length < 2;
+  operatorContextNote.hidden = true;
+  financeBreakdown.hidden = false;
+  if (selected === undefined) {
+    operatorNameLabel.textContent = "Kein EVU";
+    financeLabel.textContent = "—";
+    financeBreakdown.hidden = true;
+    operatorContextNote.textContent = "Gründen Sie zuerst ein EVU in dieser Welt.";
+    operatorContextNote.hidden = false;
+    financeLink.textContent = "EVU gründen";
+    financeLink.href = gameWebDestination("world");
+    return;
+  }
+  operatorNameLabel.textContent = selected.name;
+  financeLabel.textContent = formatAvailableFinance(selected.finance);
+  financeLink.textContent = "Finanzen öffnen";
+  financeLink.href = gameWebDestination("company", selected.id);
+  document.querySelector<HTMLAnchorElement>("#operations-link")!.href = operationsCenterDestination(
+    runtime.operationsCenterUrl,
+    runtime.gameWebUrl,
+    window.location.href,
+    worldId,
+    selected.id,
+  );
+  if (selected.finance.mode === "unlimited") {
+    ledgerBalance.textContent = "Unbegrenzt";
+    pendingDebits.textContent = "Nicht anwendbar";
+    availableBalance.textContent = "Unbegrenzt";
+  } else {
+    ledgerBalance.textContent = formatEuroCents(selected.finance.ledgerBalanceCents);
+    pendingDebits.textContent = selected.finance.pendingDebitCents === "0"
+      ? "Keine"
+      : `− ${formatEuroCents(selected.finance.pendingDebitCents)}`;
+    availableBalance.textContent = formatEuroCents(selected.finance.availableCents);
+  }
+}
+
+function renderPlayerContextUnavailable(): void {
+  operatorNameLabel.textContent = "Nicht verfügbar";
+  financeLabel.textContent = "—";
+  operatorSelectorField.hidden = true;
+  financeBreakdown.hidden = true;
+  operatorContextNote.textContent = "EVU- und Finanzdaten konnten nicht geladen werden. Es wird kein Nullsaldo angenommen.";
+  operatorContextNote.hidden = false;
+  financeLink.textContent = "In der Spielwelt erneut versuchen";
+  financeLink.href = gameWebDestination("company");
+}
 
 function text<K extends keyof HTMLElementTagNameMap>(tag: K, value: string, className?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -188,13 +287,13 @@ function updateSelectionState(): void {
   if (previousSelected !== undefined) {
     const previousTarget = previousSelected.kind === "train"
       ? { source: TRAIN_SOURCE_ID, id: previousSelected.id }
-      : { source: INFRASTRUCTURE_SOURCE_ID, sourceLayer: SOURCE_LAYER_BY_KIND[previousSelected.kind], id: previousSelected.id };
+      : { source: INFRASTRUCTURE_SOURCE_ID, sourceLayer: previousSelected.sourceLayer ?? SOURCE_LAYER_BY_KIND[previousSelected.kind], id: previousSelected.id };
     try { map.setFeatureState(previousTarget, { selected: false }); } catch { /* noch nicht sichtbare Tile */ }
   }
   if (selected !== undefined) {
     const nextTarget = selected.kind === "train"
       ? { source: TRAIN_SOURCE_ID, id: selected.id }
-      : { source: INFRASTRUCTURE_SOURCE_ID, sourceLayer: SOURCE_LAYER_BY_KIND[selected.kind], id: selected.id };
+      : { source: INFRASTRUCTURE_SOURCE_ID, sourceLayer: selected.sourceLayer ?? SOURCE_LAYER_BY_KIND[selected.kind], id: selected.id };
     try { map.setFeatureState(nextTarget, { selected: true }); } catch { /* Detail-Deep-Link darf ohne geladene Tile funktionieren. */ }
   }
   previousSelected = selected;
@@ -241,11 +340,23 @@ async function selectObject(selection: MapSelection): Promise<void> {
 }
 
 function showSelectionMenu(selections: readonly MapSelection[], left: number, top: number): void {
-  selectionMenu.replaceChildren(text("p", "Welches Objekt möchten Sie öffnen?", "eyebrow"));
+  const kindLabel: Readonly<Record<MapSelection["kind"], string>> = {
+    train: "Zug",
+    track: "Strecke",
+    station: "Bahnhof",
+    signal: "Signal",
+    platform: "Bahnsteig",
+    switch: "Weiche",
+    block: "Blockabschnitt",
+    facility: "Betriebsanlage",
+    "operating-point": "Betriebsstelle",
+    "rail-context": "Kartenkontext",
+  };
+  selectionMenu.replaceChildren(text("p", "Was liegt an dieser Stelle?", "eyebrow"));
   selections.forEach((selection) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.append(text("strong", selection.label), text("span", selection.kind));
+    button.append(text("strong", selection.label), text("span", kindLabel[selection.kind]));
     button.addEventListener("click", () => void selectObject(selection));
     selectionMenu.append(button);
   });
@@ -485,6 +596,7 @@ async function createMap(config: LivemapConfigV2): Promise<MapLibreMap> {
       if (!currentMap.loaded()) reject(event.error);
     });
   });
+  installPlayerMapIcons(currentMap);
   addZugfolgeLayers(currentMap, config);
   mapState.textContent = `Infrastruktur ${config.infrastructure.coverage} · Stand ${config.infrastructureReleaseId}`;
   mapState.classList.remove("error");
@@ -528,6 +640,14 @@ function bindShell(): void {
   document.querySelector<HTMLButtonElement>("#show-world")?.addEventListener("click", () => {
     selectView("world", () => map?.fitBounds([[-179, -70], [179, 75]], { padding: 20, duration: matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 650 }));
   });
+  operatorSelector.addEventListener("change", () => {
+    const destination = new URL(window.location.href);
+    destination.searchParams.set("operator", operatorSelector.value);
+    window.location.assign(destination);
+  });
+  operatorContextElement.addEventListener("toggle", () => {
+    if (operatorContextElement.open && !operatorSelectorField.hidden) operatorSelector.focus({ preventScroll: true });
+  });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       selectionMenu.hidden = true;
@@ -551,6 +671,7 @@ async function boot(): Promise<void> {
     if (accessToken === "") return;
     const tokenProvider = (forceRefresh?: boolean) => ensureAccessToken(runtime, forceRefresh);
     api = new LivemapApiClient(runtime.gameApiUrl, tokenProvider);
+    void api.playerContext(worldId).then(renderPlayerContext).catch(renderPlayerContextUnavailable);
     void api.mailbox(worldId)
       .then((messages) => renderAttentionRail(
         attentionRail,

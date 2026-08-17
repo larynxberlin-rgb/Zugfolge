@@ -8,6 +8,7 @@ import { loadOperationsRuntimeConfiguration, operationsAccessToken } from "./aut
 import { addRule, moveRule, removeCondition, removeRule, reorderRules, updateCondition, updateRule } from "./model.js";
 import { renderApp, type ViewState } from "./view.js";
 import "./styles.css";
+import "./workspace.css";
 
 const rootElement = document.querySelector<HTMLDivElement>("#root");
 if (rootElement === null) throw new Error("App-Wurzel fehlt.");
@@ -17,10 +18,27 @@ mountGlossaryLayer(document.body);
 const parameters = new URLSearchParams(location.search);
 const worldId = parameters.get("world") ?? "";
 const operatorId = parameters.get("operator") ?? "";
+const requestedPanel = parameters.get("panel");
+const activePanel = requestedPanel === "program" || requestedPanel === "reports" ? requestedPanel : "operations";
 const runtime = loadOperationsRuntimeConfiguration();
 let api: OperationsApi | undefined;
 
-let state: ViewState = { templates: [], versions: [], reports: [], loading: true, saving: false, message: "", messageTone: "status", selectedDecisionId: "" };
+let state: ViewState = {
+  worldId,
+  operatorId,
+  activePanel,
+  pageUrl: window.location.href,
+  gameWebUrl: runtime.gameWebUrl,
+  livemapUrl: runtime.livemapUrl,
+  templates: [],
+  versions: [],
+  reports: [],
+  loading: true,
+  saving: false,
+  message: "",
+  messageTone: "status",
+  selectedDecisionId: "",
+};
 let dragRuleId = "";
 let streamController: AbortController | undefined;
 
@@ -115,8 +133,8 @@ function bind(): void {
 async function refresh(): Promise<void> {
   if (api === undefined) return;
   try {
-    const [versions, operations, reports] = await Promise.all([api.versions(), api.operations(), api.reports()]);
-    setState({ versions, operations, reports, message: "Betriebslage aktualisiert.", messageTone: "status" });
+    const [versions, operations, reports, operatorContext] = await Promise.all([api.versions(), api.operations(), api.reports(), api.context()]);
+    setState({ versions, operations, reports, operatorContext, message: "Betriebslage aktualisiert.", messageTone: "status" });
   } catch (error) { setState({ message: error instanceof Error ? error.message : "Aktualisierung fehlgeschlagen.", messageTone: "error" }); }
 }
 
@@ -179,11 +197,12 @@ async function boot(): Promise<void> {
     const accessToken = await operationsAccessToken(runtime);
     if (accessToken === "") return;
     api = new OperationsApi(runtime.gameApiUrl, (forceRefresh) => operationsAccessToken(runtime, forceRefresh), worldId, operatorId);
-    const [templates, versions, operations, reports] = await Promise.all([api.templates(), api.versions(), api.operations(), api.reports()]);
+    const [templates, versions, operations, reports, operatorContext] = await Promise.all([api.templates(), api.versions(), api.operations(), api.reports(), api.context()]);
     const source: OperatingProgram | undefined = versions.find((version) => version.status === "active")?.canonicalProgram ?? versions[0]?.canonicalProgram ?? templates[0]?.program;
     if (source === undefined) throw new Error("Server lieferte weder Betriebsprogramm noch Vorlage.");
     const nextVersion = Math.max(0, ...versions.map((version: ProgramVersion) => version.version)) + 1;
-    state = { ...state, templates, versions, operations, reports, program: { ...source, version: nextVersion }, loading: false };
+    if (!operatorContext.operators.some((operator) => operator.id === operatorId)) throw new Error("EVU-Kontext stimmt nicht mit der geöffneten Betriebszentrale überein.");
+    state = { ...state, templates, versions, operations, reports, operatorContext, program: { ...source, version: nextVersion }, loading: false };
     render();
     startStream();
   } catch (error) { setState({ loading: false, message: error instanceof Error ? error.message : "Betriebszentrale konnte nicht geladen werden.", messageTone: "error" }); }

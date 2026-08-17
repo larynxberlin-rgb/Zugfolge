@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import mainSource from "./main.ts?raw";
-import { livemapNavigationDestinations, mailboxDecisionDestination } from "./navigation.js";
+import { livemapNavigationDestinations, mailboxDecisionDestination, operationsCenterDestination } from "./navigation.js";
 import journeySource from "../../game-web/src/journey.ts?raw";
 import cooperationSource from "../../game-web/src/cooperation.ts?raw";
 
@@ -12,11 +12,11 @@ describe("weltbewusste Hauptnavigation der Live-Lage", () => {
     expect(livemapNavigationDestinations("https://spiel.example/game/", "https://spiel.example/live/?world=welt-b&focus=train%3A7", "welt-b"))
       .toEqual({
         live: "https://spiel.example/live/?world=welt-b",
-        journey: "https://spiel.example/game/?view=journey&world=welt-b#world-contract-title",
-        markets: "https://spiel.example/game/?view=journey&world=welt-b#vehicle-market",
+        journey: "https://spiel.example/game/?view=journey&world=welt-b&section=world",
+        markets: "https://spiel.example/game/?view=journey&world=welt-b&section=markets",
         planner: "https://spiel.example/game/?view=diagram&world=welt-b",
-        operations: "https://spiel.example/game/?view=journey&world=welt-b#betrieb",
-        mailbox: "https://spiel.example/game/?view=journey&world=welt-b#postfach",
+        operations: "https://spiel.example/game/?view=journey&world=welt-b&section=operations",
+        mailbox: "https://spiel.example/game/?view=journey&world=welt-b&section=mailbox",
       });
   });
 
@@ -24,6 +24,17 @@ describe("weltbewusste Hauptnavigation der Live-Lage", () => {
     const links = Object.values(livemapNavigationDestinations("", "https://spiel.example/live/", "welt-a"));
     expect(links).toHaveLength(6);
     expect(links.every((link) => link !== "#" && new URL(link).searchParams.get("world") === "welt-a")).toBe(true);
+  });
+
+  it("öffnet die fertige Betriebszentrale mit atomarem Welt- und EVU-Kontext", () => {
+    expect(livemapNavigationDestinations(
+      "https://spiel.example/game/",
+      "https://spiel.example/live/?world=welt-b&operator=evu-7",
+      "welt-b",
+      "https://spiel.example/operations/",
+    ).operations).toBe("https://spiel.example/operations/?world=welt-b&operator=evu-7&panel=operations");
+    expect(operationsCenterDestination("", "/game/", "https://spiel.example/live/", "welt-b", "evu-7"))
+      .toBe("https://spiel.example/game/?view=journey&world=welt-b&operator=evu-7&section=operations");
   });
 
   it("entfernt kurzlebige OIDC-Rückgabeparameter aus allen internen Links", () => {
@@ -38,13 +49,13 @@ describe("weltbewusste Hauptnavigation der Live-Lage", () => {
     })).toBe("https://spiel.example/game/?view=diagram&world=welt-a&train=zug-1#diagram-card");
   });
 
-  it("verweist nur auf im Spieler-Markup vorhandene Hauptziele", () => {
+  it("verweist auf echte viewportfuellende Spieler-Arbeitsraeume", () => {
     const destinations = livemapNavigationDestinations("/", "https://spiel.example/live/", "welt-a");
     const source = `${journeySource}\n${cooperationSource}`;
     for (const key of ["journey", "markets", "operations", "mailbox"] as const) {
-      const target = new URL(destinations[key]).hash.slice(1);
-      expect(target).not.toBe("");
-      expect(source).toContain(`id=\"${target}\"`);
+      const section = new URL(destinations[key]).searchParams.get("section");
+      expect(section).not.toBeNull();
+      expect(source).toContain(`case \"${section}\"`);
     }
   });
 
@@ -67,17 +78,25 @@ describe("weltbewusste Hauptnavigation der Live-Lage", () => {
       worldId: "welt-b",
       messageType: "cooperation.contract-offer",
       payload: { contractId: "vertrag-7" },
-    })).toBe("https://spiel.example/game/?view=journey&world=welt-b&contractView=actionable#contract-vertrag-7");
+    })).toBe("https://spiel.example/game/?view=journey&world=welt-b&section=markets&contractView=actionable#contract-vertrag-7");
     expect(mailboxDecisionDestination(game, page, "welt-b", {
       worldId: "welt-b",
       messageType: "vehicle-market.reserved",
       payload: { listingId: "angebot-2" },
-    })).toBe("https://spiel.example/game/?view=journey&world=welt-b&listingView=actionable#listing-angebot-2");
+    })).toBe("https://spiel.example/game/?view=journey&world=welt-b&section=markets&listingView=actionable#listing-angebot-2");
     expect(mailboxDecisionDestination(game, page, "welt-b", {
       worldId: "welt-b",
       messageType: "planning.path-offered",
       payload: { trainId: "zug-9" },
     })).toBe("https://spiel.example/game/?view=diagram&world=welt-b&train=zug-9#diagram-card");
+  });
+
+  it("erhält den aktiven EVU-Kontext auch in Aufgaben-Deep-Links", () => {
+    expect(mailboxDecisionDestination("/game/", "https://spiel.example/live/?operator=evu-7", "welt-b", {
+      worldId: "welt-b",
+      messageType: "cooperation.contract-offer",
+      payload: { contractId: "vertrag-7" },
+    })).toBe("https://spiel.example/game/?view=journey&world=welt-b&operator=evu-7&section=markets&contractView=actionable#contract-vertrag-7");
   });
 
   it("oeffnet beendete Vertraege und Marktuebertragungen mit konkreter ID im Archiv", () => {
@@ -92,14 +111,14 @@ describe("weltbewusste Hauptnavigation der Live-Lage", () => {
         worldId: "welt-b",
         messageType,
         payload: { contractId: "vertrag-archiv" },
-      })).toBe("https://spiel.example/game/?view=journey&world=welt-b&contractView=archive#contract-vertrag-archiv");
+      })).toBe("https://spiel.example/game/?view=journey&world=welt-b&section=markets&contractView=archive#contract-vertrag-archiv");
     }
     for (const messageType of ["vehicle-market.transferred", "vehicle-market.reversed"]) {
       expect(mailboxDecisionDestination(game, page, "welt-b", {
         worldId: "welt-b",
         messageType,
         payload: { listingId: "angebot-archiv" },
-      })).toBe("https://spiel.example/game/?view=journey&world=welt-b&listingView=archive#listing-angebot-archiv");
+      })).toBe("https://spiel.example/game/?view=journey&world=welt-b&section=markets&listingView=archive#listing-angebot-archiv");
     }
   });
 

@@ -28,9 +28,12 @@ wirtschaftlichem Realismus.
 
 ## 2. Zentrale Benutzeroberflächen
 
-- **Live-Lage** — selbst gehostete, dunkle Weltkarte mit vollständigem
-  Deutschland-Infrastruktur-Layer, allen fahrenden Zügen, Verspätungen,
-  Sperrungen und Belegungen. **Hauptseite und räumliches Spielzentrum.**
+- **Live-Lage** — selbst gehostete, dunkle Weltkarte mit dem vollständigen
+  Deutschland-Infrastrukturrelease im Hintergrund und einem bewusst
+  reduzierten Spielerprofil aus fahrenden Zügen, A-/B-Strecken, gruppierten
+  Bahnhöfen, belegten Werkstätten, Verspätungen, Sperrungen und Belegungen.
+  **Hauptseite und räumliches Spielzentrum:** Hier wird sichtbar, dass die
+  gemeinsame Welt lebt und andere EVU gleichzeitig handeln.
 - **Fahrplan und Trassen** — Laufwegsuche, Bildfahrplan, Sperrzeitentreppe,
   Konflikterklärung, Alternativangebote.
 - **Betriebszentrale** — laufende Zugfahrten, Anschlüsse, Umläufe, Störungen,
@@ -52,15 +55,43 @@ Tablet unterstützt Livemap, Meldungen, Freigaben und begrenzte Disposition;
 komplexe Fahrplanarbeit bleibt desktop-first. Oberflächensprache ist zunächst
 ausschließlich Deutsch.
 
-Die Welt bleibt überall navigierbar; der eigene Deutschland-Korpus liegt als
-semantischer Layer darüber. Aktive Infrastruktur ist hervorgehoben, während
-nur die weltgebundene `playable`-Maske Bestellung und Disposition freigibt.
-Mit steigendem Zoom erscheinen Korridore, Betriebsstellen, Einzelgleise,
-Bahnsteige, Blöcke, Weichen, Signale und Anlagen. Alle sichtbaren Fachobjekte
-sind anklickbar und besitzen releasegebundene Details. Bahnhöfe öffnen eine
-aktuelle, generische Fallblattanzeige; Züge eine öffentliche Betriebssicht und
-einen FIS-Monitor. Das eigene EVU erhält zusätzlich autorisierte interne
-Zugdaten. → [ADR-0026](adr/0026-karte-als-spielzentrum.md)
+Die Welt bleibt überall navigierbar; der vollständige Deutschland-Korpus liegt
+releasegebunden dahinter. Das normale Spielerprofil ist jedoch kein
+Infrastruktur-Editor: Es zeigt nur A-/B-Strecken, pro Stationsgruppe einen
+Bahnhof mit RIL-100-Kürzel, neutrale Signalicons, betriebliche Overlays und die
+bewegten Züge der EVU. Klasse C, einzelne Bahnsteigpunkte, Weichen,
+`operating_points`, Blöcke, Konfliktressourcen, Anlagen und `rail_context`
+bleiben im Datenartefakt und in Simulation oder Diagnose erhalten, sind auf
+der Spielerkarte aber verborgen. Nur die weltgebundene `playable`-Maske gibt
+Bestellung und Disposition frei. Werkstätten sind dagegen markante Spielerorte
+und erhalten ein eigenes Symbol, sobald der Kartenrelease einen autoritativen
+Werkstattdatensatz mit Name, Lage, Leistungen und Zugangsstatus enthält. Die
+heutigen generischen `conflict_resources` werden nicht als Werkstätten
+umgedeutet.
+
+Die OSM-Basiskarte ist dabei räumlicher und atmosphärischer Kontext, keine
+fachliche Infrastrukturwahrheit und kein klickbarer Objektbestand. Sie wird als
+statisches, stark gecachtes PMTiles-Artefakt progressiv geladen. Züge,
+Störungen, Zeit und Details bleiben getrennte serverautoritative Projektionen.
+Der Speicher- und Transferaufwand ist bewusst akzeptiert, weil gerade der
+geografische Zusammenhang Weltpräsenz, Zugehörigkeit und Lageverständnis
+erzeugt.
+
+Ein Bahnhof öffnet die aktuelle, generische Fallblattanzeige aller Fahrten der
+Stationsgruppe; der konkrete Bahnsteig ist dort eine relevante Zeilenangabe,
+kein weiterer Kartenpunkt. Dazu stehen Name, RIL 100, EVA/UIC und
+Betriebsstellenart. Fahrgastaufkommen, Pünktlichkeit, Zugzahl und EVU-Anteile
+folgen erst aus einem versionierten, zeitgebundenen Bahnhofssummary; sie werden
+nicht aus einem einzelnen Tafelzeitfenster geschätzt. Ein Zug öffnet die
+öffentliche Betriebssicht und einen FIS-Monitor; das eigene EVU erhält
+zusätzlich autorisierte interne Zugdaten. Ein Streckenklick zeigt zunächst nur
+amtliche VzG-Streckennummer, Streckenkurzbezeichnung, Vzul, Elektrifizierung
+und Gleiszahl; Modell- und Releasedaten liegen unter „Technische Details“. Der
+aktuelle Release enthält
+keine belastbare KBS-Bezeichnung. VzG- und Streckenkurzname werden daher nicht
+als KBS ausgegeben; eine KBS-Anzeige folgt erst mit einer versionierten,
+autoritativen Zuordnung. → [ADR-0026](adr/0026-karte-als-spielzentrum.md),
+[ADR-0031](adr/0031-spielerkarte-als-lebendige-welt.md)
 
 ## 3. Onboarding
 

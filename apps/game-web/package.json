@@ -10,6 +10,7 @@
     "@zugfolge/browser-identity": "workspace:*",
     "@zugfolge/design-system": "workspace:*",
     "@zugfolge/glossary": "workspace:*",
+    "@zugfolge/player-context": "workspace:*",
     "@zugfolge/planning-projection": "workspace:*"
   },
   "devDependencies": { "typescript": "^7.0.2", "vite": "^8.2.1", "vitest": "^4.1.10" }

@@ -27,6 +27,7 @@
     "@zugfolge/livemap-stream": "workspace:*",
     "@zugfolge/mailbox": "workspace:*",
     "@zugfolge/operators": "workspace:*",
+    "@zugfolge/player-context": "workspace:*",
     "@zugfolge/planning-projection": "workspace:*",
     "@zugfolge/planning-runtime-native": "workspace:*",
     "@zugfolge/planning-worker": "workspace:*",

@@ -6,6 +6,7 @@ export interface BrowserRuntimeConfiguration {
   readonly keycloakRealm: string;
   readonly publicWorldId: string;
   readonly livemapUrl: string;
+  readonly operationsCenterUrl: string;
 }
 
 export class RuntimeConfigurationError extends Error {
@@ -24,6 +25,7 @@ export function loadRuntimeConfiguration(): BrowserRuntimeConfiguration {
     keycloakRealm: configured.keycloakRealm ?? "zugfolge",
     publicWorldId: configured.publicWorldId ?? "",
     livemapUrl: configured.livemapUrl ?? "",
+    operationsCenterUrl: configured.operationsCenterUrl ?? "",
   };
 }
 

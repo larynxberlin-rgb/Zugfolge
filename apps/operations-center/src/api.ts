@@ -1,4 +1,8 @@
 import type { OperatingProgram } from "@zugfolge/dispatch";
+import {
+  parsePlayerOperatorContext,
+  type PlayerOperatorContextV1,
+} from "@zugfolge/player-context";
 
 export interface ProgramVersion {
   readonly version: number;
@@ -105,6 +109,15 @@ export class OperationsApi {
   override(decisionId: string, action: string, reason: string): Promise<unknown> { return this.#request(`/operations/decisions/${encodeURIComponent(decisionId)}/override`, { method: "POST", body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), action, reason, at: Math.floor(Date.now() / 1_000) }) }); }
   reports(): Promise<readonly DailyReportRow[]> { return this.#request("/operations/reports"); }
   generateReport(serviceDay: string): Promise<DailyReportRow> { return this.#request(`/operations/reports/${serviceDay}/generate`, { method: "POST", body: "{}" }); }
+  context(): Promise<PlayerOperatorContextV1> {
+    const path = `${this.#base}/worlds/${encodeURIComponent(this.#worldId)}/me/operator-context`;
+    const request = async (forceRefresh = false): Promise<Response> => fetch(path, { headers: { authorization: `Bearer ${await this.#accessToken(forceRefresh)}` } });
+    return request().then(async (initial) => {
+      const response = (initial.status === 401 || initial.status === 403) && typeof this.#token !== "string" ? await request(true) : initial;
+      if (!response.ok) throw new Error(`EVU-Kontext nicht verfügbar (HTTP ${response.status}).`);
+      return parsePlayerOperatorContext(await response.json(), this.#worldId);
+    });
+  }
 
   async stream(signal: AbortSignal, after: number, onDecision: (decision: OperationsDecision) => void): Promise<void> {
     const response = await fetch(`${this.path}/operations/events`, { headers: { authorization: `Bearer ${await this.#accessToken()}`, accept: "text/event-stream", "last-event-id": String(after) }, signal });

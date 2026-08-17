@@ -16,6 +16,25 @@ export interface CooperationPageViews {
   readonly listingPageView: "actionable" | "archive";
 }
 
+export type JourneySection = "world" | "operations" | "markets" | "company" | "mailbox";
+
+/**
+ * Alte Hash-Deep-Links bleiben gueltig, waehlen aber zuerst den passenden
+ * viewportfuellenden Arbeitsraum statt eine lange Ankerseite zu erzeugen.
+ */
+export function resolveJourneySection(parameters: URLSearchParams, hash: string): JourneySection {
+  const requested = parameters.get("section");
+  if (requested === "world" || requested === "operations" || requested === "markets" || requested === "company" || requested === "mailbox") {
+    return requested;
+  }
+  const target = hash.startsWith("#") ? hash.slice(1) : hash;
+  if (target === "postfach") return "mailbox";
+  if (target === "betrieb" || target === "betriebsplanung") return "operations";
+  if (target === "vehicle-market" || target === "cooperation-contracts" || target === "ausschreibungen"
+    || target.startsWith("listing-") || target.startsWith("contract-")) return "markets";
+  return "world";
+}
+
 /**
  * Archiv-Deep-Links duerfen nicht erst nach dem ersten Rendern auf die
  * abgeschlossene Sicht umschalten: der erste autoritative Abruf muss bereits

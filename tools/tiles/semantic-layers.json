@@ -1,12 +1,74 @@
 {
-  "version": 1,
+  "version": 2,
   "interactionContract": {
-    "visibleFeatureMustBeClickable": true,
+    "visibleFeatureMustBeClickable": false,
     "requiredProperties": ["feature_id", "feature_type", "quality_class", "model_state"],
     "detailsResolvedByApi": true,
     "tileCarriesFullObjectDetails": false,
-    "overlapSelection": "ordered-feature-picker",
+    "overlapSelection": "train-station-or-workshop-route",
+    "technicalDetailsCollapsedByDefault": true,
     "minimumPointerHitboxPx": 12
+  },
+  "playerProfile": {
+    "purpose": "living-shared-world",
+    "baseMap": {
+      "role": "atmospheric-geographic-context-only",
+      "interactionSource": false,
+      "authoritativeGameState": false,
+      "delivery": "static-hash-named-pmtiles-progressive-cache"
+    },
+    "qualityClasses": ["A", "B"],
+    "visibleArtifactLayers": ["rail_corridors", "stations", "tracks", "signals"],
+    "interactiveArtifactLayers": ["rail_corridors", "stations"],
+    "hiddenArtifactLayers": [
+      "operating_points",
+      "platforms",
+      "switches",
+      "blocks",
+      "conflict_resources",
+      "rail_context"
+    ],
+    "runtimeLayers": ["trains", "restrictions", "closures", "construction"],
+    "interactiveRuntimeLayers": ["trains", "restrictions", "closures", "construction"],
+    "stationPresentation": {
+      "aggregation": "release-bound-station-group",
+      "symbol": "distinct-station-icon",
+      "labelFields": ["name", "ril100"],
+      "platforms": "station-board-rows-only",
+      "primaryDetail": ["name", "ril100", "eva_uic", "operating_point_kind", "current_board"],
+      "statisticsContract": "station-summary-read-model-versioned"
+    },
+    "routePresentation": {
+      "primaryDetail": ["route_number_vzg", "route_name", "vzul", "electrification", "track_count"],
+      "kbs": "hidden-until-authoritative-versioned-mapping"
+    },
+    "signalPresentation": {
+      "symbol": "neutral-achromatic-signal-icon",
+      "interactive": false,
+      "assertsLiveAspect": false
+    },
+    "workshopPresentation": {
+      "status": "blocked-until-authoritative-read-model",
+      "mustNotDeriveFrom": ["conflict_resources"],
+      "requiredFields": ["feature_id", "name", "position", "services", "operator_access", "release_id"],
+      "symbol": "distinct-workshop-icon"
+    }
+  },
+  "technicalProfile": {
+    "visibleArtifactLayers": [
+      "rail_corridors",
+      "operating_points",
+      "stations",
+      "tracks",
+      "platforms",
+      "switches",
+      "signals",
+      "blocks",
+      "conflict_resources",
+      "rail_context"
+    ],
+    "qualityClasses": ["A", "B", "C"],
+    "access": "support-quality-assurance-only"
   },
   "layers": {
     "rail_corridors": { "minZoom": 4, "maxZoom": 9, "clickable": true },

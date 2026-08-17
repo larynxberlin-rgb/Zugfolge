@@ -242,7 +242,7 @@ function detailForLayer(layer, properties) {
       kind,
       name: optionalString(properties.name) ?? "Bahnhof",
       facts: compactFacts([
-        fact("RL100-Kuerzel", optionalString(properties.rl100)),
+        fact("RIL-100-Kürzel", optionalString(properties.rl100)),
         fact("EVA-/UIC-Nummer", optionalString(properties.uic)),
         ...base,
       ]),
@@ -276,7 +276,7 @@ function detailForLayer(layer, properties) {
       kind,
       name: optionalString(properties.name) ?? `Betriebsstelle ${properties.rl100 ?? ""}`.trim(),
       facts: compactFacts([
-        fact("RL100-Kuerzel", optionalString(properties.rl100)),
+        fact("RIL-100-Kürzel", optionalString(properties.rl100)),
         fact("Betriebsstellenart", typeNames.join(", ") || undefined),
         fact("Streckennummern", routeNumbers.join(", ") || undefined),
         fact("Elektrifiziert", properties.tf_electrified === undefined ? undefined : humanBoolean(properties.tf_electrified === true)),

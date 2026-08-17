@@ -21,9 +21,18 @@ const program: OperatingProgram = {
   ],
 };
 
+const viewContext = {
+  worldId: "world",
+  operatorId: "operator",
+  activePanel: "operations" as const,
+  pageUrl: "https://spiel.example/operations/?world=world&operator=operator",
+  gameWebUrl: "https://spiel.example/game/",
+  livemapUrl: "https://spiel.example/live/",
+};
+
 describe("zugängliche Editor-Operationen", () => {
   it("bietet im Fehlerzustand Wiederholung und einen Rückweg zur Spielwelt", () => {
-    const html = renderApp({ templates: [], versions: [], reports: [], loading: false, saving: false, message: "Failed to fetch", messageTone: "error", selectedDecisionId: "" });
+    const html = renderApp({ ...viewContext, templates: [], versions: [], reports: [], loading: false, saving: false, message: "Failed to fetch", messageTone: "error", selectedDecisionId: "" });
     expect(html).toContain('id="refresh"');
     expect(html).toContain('href="../"');
     expect(html).toContain("Zur Spielwelt");
@@ -59,10 +68,39 @@ describe("zugängliche Editor-Operationen", () => {
         assessment: { nextLevers: ["Ausfallregeln im Rücktest vergleichen."] },
       },
     } satisfies DailyReportRow;
-    const html = renderApp({ program, templates: [], versions: [], reports: [report], loading: false, saving: false, message: "", messageTone: "status", selectedDecisionId: "" });
+    const html = renderApp({ ...viewContext, activePanel: "reports", program, templates: [], versions: [], reports: [report], loading: false, saving: false, message: "", messageTone: "status", selectedDecisionId: "" });
     expect(html).toContain('href="#event-11"');
     expect(html).toContain("closure-short-turn");
     expect(html).toContain("capacity");
     expect(html).toContain("Nächste Hebel");
+  });
+
+  it("trennt globale Navigation, feste Betriebstabs und lokal scrollenden Inhalt", () => {
+    const html = renderApp({
+      ...viewContext,
+      activePanel: "program",
+      program,
+      templates: [],
+      versions: [],
+      reports: [],
+      loading: false,
+      saving: false,
+      message: "",
+      messageTone: "status",
+      selectedDecisionId: "",
+      operatorContext: {
+        schemaVersion: "zugfolge-operator-context/v1",
+        worldId: "world",
+        operators: [{ id: "operator", name: "Saale-Sprinter", finance: { mode: "finite", ledgerBalanceCents: "10000", pendingDebitCents: "2500", availableCents: "7500" } }],
+      },
+    });
+    expect(html).toContain('aria-label="Hauptnavigation"');
+    expect(html).toContain('aria-label="Betriebszentrale"');
+    expect(html).toContain('class="operations-workspace" data-scroll-region');
+    expect(html).toContain("Saale-Sprinter");
+    expect(html).toContain("75,00 €");
+    expect(html).toContain("https://spiel.example/live/?world=world&amp;operator=operator");
+    expect(html).not.toContain('id="operations" class="panel"');
+    expect(html).not.toContain('id="reports" class="panel"');
   });
 });

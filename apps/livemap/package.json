@@ -13,6 +13,7 @@
     "@zugfolge/design-system": "workspace:*",
     "@zugfolge/glossary": "workspace:*",
     "@zugfolge/livemap-stream": "workspace:*",
+    "@zugfolge/player-context": "workspace:*",
     "maplibre-gl": "6.3.0",
     "pmtiles": "4.5.0"
   },

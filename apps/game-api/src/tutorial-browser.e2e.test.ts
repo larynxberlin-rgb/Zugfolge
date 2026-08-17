@@ -278,6 +278,20 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
       if (url.pathname === "/me/operators") return json([
         { id: ownA, worldId: PUBLIC_WORLD, name: "EVU A" }, { id: ownB, worldId: SECOND_WORLD, name: "EVU B" },
       ]);
+      if (url.pathname === `/worlds/${SECOND_WORLD}/me/operator-context`) return json({
+        schemaVersion: "zugfolge-operator-context/v1",
+        worldId: SECOND_WORLD,
+        operators: [{
+          id: ownB,
+          name: "EVU B",
+          finance: {
+            mode: "finite",
+            ledgerBalanceCents: "1250000",
+            pendingDebitCents: "50000",
+            availableCents: "1200000",
+          },
+        }],
+      });
       if (url.pathname === `/worlds/${SECOND_WORLD}/simulation-time`) return json({ atS: 100 });
       if (url.pathname === `/worlds/${SECOND_WORLD}/operators`) return json([
         { id: ownB, worldId: SECOND_WORLD, name: "EVU B" }, { id: sellerB, worldId: SECOND_WORLD, name: "Verkäufer B" },
@@ -313,35 +327,62 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
       return json({ error: `Unerwarteter E2E-Pfad ${request.method()} ${url.pathname}` }, 500);
     });
 
-    await page.goto(`${origin}/?view=journey&world=${SECOND_WORLD}`, { waitUntil: "networkidle" });
-    await page.getByText("Handelndes EVU in Welt B").waitFor();
-    expect(await page.locator(".m12-toolbar").innerText()).toContain("EVU B");
+    await page.goto(`${origin}/?view=journey&world=${SECOND_WORLD}&section=world`, { waitUntil: "networkidle" });
+    const shellOperator = page.locator(".shell-operator");
+    const shellOperatorName = shellOperator.locator("summary > span:first-child > strong");
+    await shellOperatorName.waitFor();
+    expect(await shellOperatorName.textContent()).toBe("EVU B");
+    expect(await shellOperator.locator(".shell-balance").innerText()).toContain("12.000,00");
+    await shellOperator.locator("summary").click();
+    const financeSummary = await shellOperator.locator(".shell-operator__popover").innerText();
+    expect(financeSummary).toContain("Kontostand");
+    expect(financeSummary).toContain("12.500,00");
+    expect(financeSummary).toContain("Vorgemerkt");
+    expect(financeSummary).toContain("500,00");
+    expect(financeSummary).toContain("Verfügbar");
+    expect(financeSummary).toContain("12.000,00");
+    await shellOperator.locator("summary").click();
     const worldSnapshot = await page.locator(".world-contracts").ariaSnapshot();
     for (const text of ["Welt A", "Welt B", "Dauerhaft, keine Wipes", "Fahrplanperiode", "Startkapital", "Eintrittsfenster"]) expect(worldSnapshot).toContain(text);
+    const term = page.getByRole("button", { name: "Trasse", exact: true }).first();
+    await term.click();
+    expect(await page.locator(".zf-glossary__dialog").ariaSnapshot()).toContain("Trasse");
+    await page.getByRole("button", { name: "Schließen" }).click();
+    expect(await term.evaluate((element) => document.activeElement === element)).toBe(true);
+    await page.getByRole("navigation", { name: "Hauptnavigation" }).getByRole("link", { name: "Märkte", exact: true }).click();
+    await page.waitForURL((url) => url.searchParams.get("section") === "markets");
+    expect(new URL(page.url()).searchParams.get("world")).toBe(SECOND_WORLD);
+    expect(new URL(page.url()).searchParams.get("operator")).toBe(ownB);
+    await page.locator(".comparison-scroll").waitFor();
     const comparison = page.locator(".comparison-scroll");
     await tabUntil(page, ".comparison-scroll");
     expect(await comparison.evaluate((element) => document.activeElement === element)).toBe(true);
     expect(await comparison.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
     await page.keyboard.press("ArrowRight");
     await expect.poll(() => comparison.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
-    const term = page.getByRole("button", { name: "Trasse", exact: true }).first();
-    await term.click();
-    expect(await page.locator(".zf-glossary__dialog").ariaSnapshot()).toContain("Trasse");
-    await page.getByRole("button", { name: "Schließen" }).click();
-    expect(await term.evaluate((element) => document.activeElement === element)).toBe(true);
     for (const width of [320, 390, 768, 1280]) {
       await page.setViewportSize({ width, height: 900 });
       expect(await page.locator("body").evaluate((body) => body.scrollWidth <= window.innerWidth)).toBe(true);
       expect(await page.getByRole("navigation", { name: "Hauptnavigation" }).isVisible()).toBe(true);
     }
     await page.setViewportSize({ width: 390, height: 844 });
+    const reserveTrigger = page.getByRole("button", { name: "10 Minuten reservieren" });
+    await reserveTrigger.scrollIntoViewIfNeeded();
     const [actionBox, glossaryBox] = await Promise.all([
-      page.getByRole("button", { name: "10 Minuten reservieren" }).boundingBox(),
+      reserveTrigger.boundingBox(),
       page.locator(".zf-glossary__opener").boundingBox(),
     ]);
     expect(actionBox).not.toBeNull();
     expect(glossaryBox).not.toBeNull();
-    expect(glossaryBox!.y).toBeGreaterThanOrEqual(actionBox!.y + actionBox!.height);
+    expect(glossaryBox!.y).toBeGreaterThanOrEqual(0);
+    expect(glossaryBox!.y + glossaryBox!.height).toBeLessThanOrEqual(844);
+    expect(actionBox!.y).toBeGreaterThanOrEqual(0);
+    expect(actionBox!.y + actionBox!.height).toBeLessThanOrEqual(844);
+    const boxesOverlap = actionBox!.x < glossaryBox!.x + glossaryBox!.width
+      && actionBox!.x + actionBox!.width > glossaryBox!.x
+      && actionBox!.y < glossaryBox!.y + glossaryBox!.height
+      && actionBox!.y + actionBox!.height > glossaryBox!.y;
+    expect(boxesOverlap).toBe(false);
     await page.locator('input[name="trainRunIds"]').check();
     await page.locator('input[name="formationIds"]').check();
     await page.locator('input[name="personnelDutyIds"]').check();
@@ -356,7 +397,6 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
       expect(await page.locator('input[name="termsSummary"]').inputValue()).toBe("Browserentwurf bleibt erhalten");
     }
     expect(new Set(contractMutationKeys).size).toBe(1);
-    const reserveTrigger = page.getByRole("button", { name: "10 Minuten reservieren" });
     await reserveTrigger.click();
     const detail = await page.locator("#confirmation-detail").innerText();
     for (const label of ["Welt:", "Parteien:", "Objekt:", "Betrag:", "Frist:", "Folgen:"]) expect(detail).toContain(label);
@@ -384,7 +424,9 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
     expect(mutationPaths.some((path) => path.includes(PUBLIC_WORLD))).toBe(false);
     expect(await page.locator("body").evaluate((body) => body.scrollWidth <= window.innerWidth)).toBe(true);
     authenticationExpired = true;
-    await page.getByRole("button", { name: "Kooperation und Markt aktualisieren" }).click();
+    const refreshWorkspace = page.locator("#m12-refresh");
+    expect(await refreshWorkspace.innerText()).toBe("Arbeitsraum aktualisieren");
+    await refreshWorkspace.click();
     const authenticationError = page.locator(".journey-message--error");
     await expect.poll(() => authenticationError.innerText()).toContain("Anmeldung erforderlich");
     await expect.poll(() => authenticationError.evaluate((element) => document.activeElement === element)).toBe(true);

@@ -2234,6 +2234,105 @@ describe("EVU (M2.3)", () => {
   });
 });
 
+describe("Spieler-Shell-Kontext", () => {
+  const FINITE_WORLD = "55555555-5555-5555-5555-555555555555";
+  const UNLIMITED_WORLD = "66666666-6666-6666-6666-666666666666";
+
+  async function joinAndFound(
+    worldId: string,
+    subject: string,
+    name: string,
+    startingCapitalPolicy: AlphaWorldBlueprintV2["startingCapitalPolicy"],
+  ): Promise<{ readonly token: string; readonly operatorId: string }> {
+    const blueprint = await insertStartedPublicWorld(
+      worldId,
+      BigInt(worldId === FINITE_WORLD ? 55 : 66),
+      startingCapitalPolicy,
+      "9".repeat(64),
+    );
+    const token = await sign(subject, name);
+    await app.inject({
+      method: "POST",
+      url: `/worlds/${worldId}/access`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { displayName: name, acceptedWorldContractHash: validateWorldBlueprint(blueprint) },
+    });
+    const founded = await app.inject({
+      method: "POST",
+      url: `/worlds/${worldId}/operators`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name },
+    });
+    expect(founded.statusCode).toBe(201);
+    return { token, operatorId: founded.json<{ id: string }>().id };
+  }
+
+  it("liefert den autoritativen Kassensaldo nur fuer eigene EVU der aktiven Welt", async () => {
+    const { token, operatorId } = await joinAndFound(
+      FINITE_WORLD,
+      "kc-shell-finite",
+      "Saale-Sprinter",
+      { mode: "finite", amountCents: "284050000" },
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/worlds/${FINITE_WORLD}/me/operator-context`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      schemaVersion: "zugfolge-operator-context/v1",
+      worldId: FINITE_WORLD,
+      operators: [{
+        id: operatorId,
+        name: "Saale-Sprinter",
+        finance: {
+          mode: "finite",
+          ledgerBalanceCents: "284050000",
+          pendingDebitCents: "0",
+          availableCents: "284050000",
+        },
+      }],
+    });
+  });
+
+  it("liefert bei unbegrenztem Kapital einen expliziten Zustand statt 0 Euro", async () => {
+    const { token, operatorId } = await joinAndFound(
+      UNLIMITED_WORLD,
+      "kc-shell-unlimited",
+      "Unendlich Bahn",
+      { mode: "unlimited" },
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/worlds/${UNLIMITED_WORLD}/me/operator-context`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      schemaVersion: "zugfolge-operator-context/v1",
+      worldId: UNLIMITED_WORLD,
+      operators: [{ id: operatorId, name: "Unendlich Bahn", finance: { mode: "unlimited" } }],
+    });
+    expect(JSON.stringify(response.json())).not.toContain("balanceCents");
+  });
+
+  it("legt weder Weltzugang noch EVU-Kontext durch den Read-Pfad offen", async () => {
+    await insertStartedPublicWorld(FINITE_WORLD, 55n, { mode: "finite", amountCents: "1" }, "9".repeat(64));
+    const token = await sign("kc-shell-foreign", "Fremdes Konto");
+    const response = await app.inject({
+      method: "GET",
+      url: `/worlds/${FINITE_WORLD}/me/operator-context`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(response.statusCode).toBe(403);
+  });
+});
+
 describe("Ledger-Kern (M2.4)", () => {
   async function gruendeElbtalbahn(): Promise<{ token: string; operatorId: string }> {
     const token = await sign("kc-ledger", "Ledger-Anna");

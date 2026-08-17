@@ -61,6 +61,48 @@ a { color: inherit; }
 }
 .world-context { display: grid; gap: 1px; min-width: 0; }
 .world-context strong { overflow: hidden; max-width: 340px; text-overflow: ellipsis; font-size: 13px; }
+.operator-context { position: relative; flex: 0 0 auto; }
+.operator-context summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--raised);
+  cursor: pointer;
+  list-style: none;
+}
+.operator-context summary::-webkit-details-marker { display: none; }
+.operator-context summary::after { content: "⌄"; color: var(--muted); font-size: 12px; }
+.operator-context[open] summary { border-color: var(--zf-line-strong); }
+.operator-context__company, .operator-context__finance { min-width: 0; display: grid; gap: 1px; }
+.operator-context__company strong { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.operator-context__finance { padding-left: 14px; border-left: 1px solid var(--border); }
+.operator-context__finance strong { font: 700 12px "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.operator-context__popover {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(330px, calc(100vw - 24px));
+  padding: 14px;
+  border: 1px solid var(--zf-line-strong);
+  border-radius: 5px;
+  background: #11141bfa;
+  box-shadow: 0 18px 54px #000b;
+}
+.operator-context__popover label { display: grid; gap: 5px; margin-bottom: 12px; color: var(--muted); font-size: 11px; }
+.operator-context__popover select { min-height: 40px; padding: 7px 9px; border: 1px solid var(--zf-line-strong); background: var(--raised); color: #f1f3f7; }
+.operator-context__popover dl { display: grid; gap: 7px; margin: 0 0 12px; }
+.operator-context__popover dl div { display: flex; justify-content: space-between; gap: 16px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.operator-context__popover dt { color: var(--muted); font-size: 11px; }
+.operator-context__popover dd { margin: 0; font: 700 12px "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; text-align: right; }
+.operator-context__popover .operator-context__available { padding-top: 9px; border-bottom: 0; color: #f1f3f7; }
+.operator-context__note { margin: 0 0 12px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.operator-context__popover a { min-height: 40px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--zf-line-strong); color: #f1f3f7; text-decoration: none; font-size: 12px; font-weight: 700; }
+.operator-context__popover a:hover { background: var(--raised-hover); }
 .eyebrow { margin: 0; color: #8f98a5; font-size: 10px; font-weight: 700; letter-spacing: .17em; text-transform: uppercase; }
 .topbar nav { min-width: 0; display: flex; gap: 5px; margin-left: auto; overflow-x: auto; scrollbar-width: thin; }
 .topbar nav a {
@@ -216,7 +258,6 @@ a { color: inherit; }
 .legend-line.restriction { background: repeating-linear-gradient(90deg, var(--amber) 0 5px, transparent 5px 8px); }
 .legend-line.closure { background: repeating-linear-gradient(90deg, var(--red) 0 3px, transparent 3px 5px); }
 .legend-line.construction { background: repeating-linear-gradient(120deg, var(--red) 0 4px, #f1f3f7 4px 8px); }
-.legend-line.quality-c { background: repeating-linear-gradient(90deg, #737b88 0 4px, transparent 4px 8px); }
 .legend-train-estimated {
   width: 17px;
   height: 17px;
@@ -314,6 +355,10 @@ a { color: inherit; }
   font-size: 12px;
   line-height: 1.45;
 }
+.technical-object-details { margin-top: 20px; border-top: 1px solid var(--border); color: var(--muted); }
+.technical-object-details > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-size: 12px; font-weight: 700; }
+.technical-object-details[open] > summary { color: var(--text); }
+.technical-object-details dl { margin-top: 8px !important; }
 .position-estimate-note {
   padding: 11px 12px;
   border: 1px dashed #68717e;
@@ -323,6 +368,11 @@ a { color: inherit; }
   line-height: 1.5;
 }
 .panel-divider { margin: 28px 0; border: 0; border-top: 1px solid var(--border); }
+.station-snapshot h2 { margin-top: 0 !important; }
+#details .station-statistics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 12px 0 22px; padding: 0; border: 0; }
+.station-statistics > div { min-width: 0; display: grid; gap: 3px; padding: 9px 10px; border: 1px solid var(--border); background: var(--raised); }
+.station-statistics dt { font-size: 9px; line-height: 1.25; text-transform: uppercase; }
+#details .station-statistics dd { overflow: hidden; color: var(--text); font: 700 13px/1.25 ui-monospace, "IBM Plex Mono", monospace; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 
 .board-brand {
   display: flex;
@@ -400,11 +450,14 @@ a { color: inherit; }
 }
 
 @media (max-width: 900px) {
-  .topbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 7px 12px; padding: 8px 12px; }
+  .topbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 7px 12px; padding: 8px 12px; }
   .world-context strong { max-width: 170px; }
   .topbar nav { grid-column: 1 / -1; width: 100%; display: flex; margin-left: 0; padding-bottom: 2px; }
   .topbar nav a, .topbar .zf-glossary__opener { min-height: 44px; white-space: nowrap; }
   .topbar time { min-width: 0; margin-left: 0; }
+  .operator-context summary { min-height: 40px; gap: 8px; padding: 4px 8px; }
+  .operator-context__company strong { max-width: 105px; }
+  .operator-context__finance { padding-left: 8px; }
   .attention-rail { grid-template-columns: 1fr; gap: 5px; padding: 7px 9px; }
   .attention-heading h2 { font-size: 12px; }
   .attention-card { min-height: 76px; }
@@ -429,9 +482,15 @@ a { color: inherit; }
 }
 
 @media (max-width: 560px) {
-  .world-context .eyebrow { display: none; }
-  .world-context strong { max-width: 110px; font-size: 11px; }
+  .topbar { grid-template-columns: minmax(0, 1fr) auto; }
+  .wordmark, .world-context { display: none; }
+  .operator-context { justify-self: stretch; }
+  .operator-context summary { justify-content: space-between; }
+  .operator-context__company strong { max-width: 92px; font-size: 10px; }
   .topbar time { max-width: 92px; font-size: 10px; }
+  .operator-context summary::after { display: none; }
+  .operator-context__finance .eyebrow { font-size: 8px; letter-spacing: .08em; }
+  .operator-context__finance strong { max-width: 104px; overflow: hidden; text-overflow: ellipsis; font-size: 10px; }
   .legend { font-size: 9px; }
   #details-content { padding: 24px 16px 42px; }
   .split-flap-board { font-size: 9px; }

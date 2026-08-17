@@ -6,6 +6,7 @@ interface ZugfolgeRuntimeConfiguration {
   readonly publicWorldId?: string;
   readonly gameWebUrl?: string;
   readonly livemapUrl?: string;
+  readonly operationsCenterUrl?: string;
   readonly mapBasemapStyleUrl?: string;
   readonly mapGermanyPmtilesUrl?: string;
   readonly mapAttribution?: string;
