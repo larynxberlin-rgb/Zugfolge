@@ -3,11 +3,11 @@ import type {
   OwnerTrainDetailV1,
   PublicTrain,
   PublicTrainDetailV1,
-  StationBoardCall,
   StationBoardV1,
 } from "@zugfolge/livemap-stream";
 import { externalStatusLabel, operatingStatusLabel, railwayPlaceLabel } from "./presentation.js";
 import type { OperatingStatus, PublicExternalTrain } from "./protocol.js";
+import { renderFisDisplay, renderStationSplitFlapDisplays } from "./railway-displays.js";
 
 function element<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -180,14 +180,6 @@ export function objectDetailPanel(detail: LivemapObjectDetailV1): DocumentFragme
   return fragment;
 }
 
-const BOARD_STATUS_LABEL: Readonly<Record<StationBoardCall["status"], string>> = Object.freeze({
-  scheduled: "planmäßig",
-  boarding: "Einstieg",
-  arrived: "angekommen",
-  departed: "abgefahren",
-  cancelled: "fällt aus",
-});
-
 export interface StationBoardSummary {
   readonly definitions: readonly { readonly term: string; readonly value: string }[];
 }
@@ -221,44 +213,6 @@ export function stationBoardSummary(board: StationBoardV1): StationBoardSummary 
   });
 }
 
-function boardTable(calls: readonly StationBoardCall[], movement: "Ankunft" | "Abfahrt"): HTMLElement {
-  const wrapper = element("section", undefined, "board-section");
-  wrapper.setAttribute("aria-labelledby", `board-${movement.toLowerCase()}`);
-  const heading = element("h2", movement, "board-heading");
-  heading.id = `board-${movement.toLowerCase()}`;
-  const table = element("table", undefined, "split-flap-board");
-  const caption = element("caption", `${movement} · aktuelle Bahnhofsinformation`, "zf-sr-only");
-  const head = document.createElement("thead");
-  const row = document.createElement("tr");
-  ["Zeit", "Zug", movement === "Ankunft" ? "Von" : "Nach", "Gleis", "Hinweis"].forEach((label) => row.append(element("th", label)));
-  head.append(row);
-  const body = document.createElement("tbody");
-  for (const call of calls) {
-    const current = document.createElement("tr");
-    if (call.status === "cancelled") current.className = "cancelled";
-    const time = element("td", clockLabel(call.expectedTimeS), "flip-cell time-cell");
-    if (call.expectedTimeS !== call.scheduledTimeS) {
-      time.append(element("span", ` Plan ${clockLabel(call.scheduledTimeS)}`, "scheduled-time"));
-    }
-    const train = element("td", `${call.category} ${call.trainNumber}`, "flip-cell train-cell");
-    const route = element("td", movement === "Ankunft" ? (call.origin ?? "—") : (call.destination ?? "—"), "flip-cell route-cell");
-    const platform = element("td", call.platform ?? "—", "flip-cell platform-cell");
-    const status = element("td", BOARD_STATUS_LABEL[call.status], "flip-cell status-cell");
-    current.append(time, train, route, platform, status);
-    body.append(current);
-  }
-  if (calls.length === 0) {
-    const empty = document.createElement("tr");
-    const cell = element("td", "Keine aktuellen Fahrten", "board-empty");
-    cell.colSpan = 5;
-    empty.append(cell);
-    body.append(empty);
-  }
-  table.append(caption, head, body);
-  wrapper.append(heading, table);
-  return wrapper;
-}
-
 export function stationPanel(detail: LivemapObjectDetailV1, board: StationBoardV1): DocumentFragment {
   const fragment = objectDetailPanel(detail);
   fragment.append(element("hr", undefined, "panel-divider"));
@@ -273,28 +227,8 @@ export function stationPanel(detail: LivemapObjectDetailV1, board: StationBoardV
   snapshot.append(statistics);
   const boardHeader = element("div", undefined, "board-brand");
   boardHeader.append(element("span", board.stationName), element("time", `Stand ${clockLabel(board.atS)}`));
-  fragment.append(snapshot, boardHeader, boardTable(board.departures, "Abfahrt"), boardTable(board.arrivals, "Ankunft"));
+  fragment.append(snapshot, boardHeader, renderStationSplitFlapDisplays(board));
   return fragment;
-}
-
-function fisPanel(detail: PublicTrainDetailV1): HTMLElement {
-  const fis = element("section", undefined, "fis-monitor");
-  fis.setAttribute("aria-labelledby", "fis-title");
-  const top = element("div", undefined, "fis-topline");
-  const title = element("h2", `${detail.fis.category} ${detail.fis.trainNumber}`, "fis-train");
-  title.id = "fis-title";
-  top.append(title, element("span", minuteLabel(detail.fis.delaySeconds), detail.fis.delaySeconds > 60 ? "fis-delay" : "fis-ontime"));
-  fis.append(top);
-  if (detail.fis.destination !== undefined) fis.append(element("p", `Fahrtziel ${detail.fis.destination}`, "fis-destination"));
-  fis.append(element("p", detail.fis.nextStop === undefined ? "Nächster Halt wird noch nicht projiziert" : `Nächster Halt ${detail.fis.nextStop}`, "fis-next"));
-  if (detail.fis.followingStops.length > 0) {
-    const heading = element("h3", "Weitere Halte");
-    const list = document.createElement("ol");
-    detail.fis.followingStops.forEach((stop) => list.append(element("li", stop)));
-    fis.append(heading, list);
-  }
-  detail.fis.messages.forEach((message) => fis.append(element("p", message, "fis-message")));
-  return fis;
 }
 
 export function trainPanel(detail: PublicTrainDetailV1, owner: OwnerTrainDetailV1 | undefined): DocumentFragment {
@@ -322,7 +256,7 @@ export function trainPanel(detail: PublicTrainDetailV1, owner: OwnerTrainDetailV
   }
   fragment.append(list);
   if (estimateNote !== undefined) fragment.append(estimateNote);
-  fragment.append(fisPanel(detail));
+  fragment.append(renderFisDisplay(detail.fis));
   if (owner !== undefined) {
     const privateSection = element("section", undefined, "owner-details");
     privateSection.append(element("h2", "Eigener Zug · interne Betriebsdaten"));
