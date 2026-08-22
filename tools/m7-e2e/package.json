@@ -7,7 +7,7 @@
   "license": "LicenseRef-PolyForm-Shield-1.0.0",
   "scripts": { "build": "tsc", "typecheck": "tsc --noEmit", "test:e2e": "node dist/run.js" },
   "dependencies": {
-    "@electric-sql/pglite": "^0.5.4",
+    "@electric-sql/pglite": "^0.5.5",
     "@zugfolge/alpha": "workspace:*",
     "@zugfolge/db": "workspace:*",
     "@zugfolge/dispatch": "workspace:*",
