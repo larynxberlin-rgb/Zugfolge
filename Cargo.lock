@@ -439,6 +439,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "zugfolge-determinism",
+ "zugfolge-sim",
 ]
 
 [[package]]
@@ -540,6 +541,8 @@ dependencies = [
 name = "zugfolge-sim"
 version = "0.0.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "zugfolge-determinism",
 ]
 
@@ -550,6 +553,5 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "zugfolge-disruption",
  "zugfolge-sim",
 ]

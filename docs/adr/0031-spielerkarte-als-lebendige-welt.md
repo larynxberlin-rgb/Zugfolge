@@ -4,7 +4,7 @@
 - **Bezug:** [../entscheidungen.md](../entscheidungen.md) · [../produkt.md](../produkt.md) · [../design.md](../design.md) · [../livemap-detailkatalog.md](../livemap-detailkatalog.md) · [../ux-spieler-shell.md](../ux-spieler-shell.md)
 - **Betrifft Milestones:** M9.3, M9.10, M10, M11, M13.5, M14.2
 - **Verwandte ADRs:** [ADR-0009](0009-vollstaendige-transparenz-livemap.md), [ADR-0017](0017-design-domaenensprache-achromatisch-dunkel.md), [ADR-0019](0019-realismus-dient-dem-spiel.md), [ADR-0026](0026-karte-als-spielzentrum.md), [ADR-0027](0027-geschaetzte-zugkartenposition-nur-visuell.md)
-- **Teilablösung:** Ersetzt für das normale Spielerprofil die Aussagen aus ADR-0026, nach denen Klasse C sichtbar und jedes sichtbare Fachobjekt anklickbar sein muss. Vollständigkeit, Releasebindung, Selbsthosting, Spielbarkeitsmaske und Datenqualität des Deutschland-Korpus bleiben unverändert.
+- **Teilablösung:** Ersetzt für das normale Spielerprofil die Aussagen aus ADR-0026, nach denen jedes sichtbare Fachobjekt anklickbar sein muss. Präzisiert E26 zugleich auf einen A-/B-only-Releasevertrag: Unvollständige Pflichtdimensionen bleiben interne Builddiagnose und blockieren den Kandidaten. Vollständigkeit, Releasebindung, Selbsthosting und Spielbarkeitsmaske des Deutschland-Korpus bleiben unverändert.
 
 ## Kontext
 
@@ -21,8 +21,9 @@ Das bisherige Darstellungsmodell setzte dagegen die Vollständigkeit des
 Datenartefakts mit der benötigten Spielerinformation gleich. Einzelne
 Bahnsteige, Weichen, Blöcke, technische Betriebsstellen und andere
 Importobjekte erzeugten überlagerte Punkte und einen kryptischen
-Objektwähler. Klasse C war sichtbar, obwohl sie nie bestellbar ist. Der Klick
-auf eine Strecke konfrontierte den Spieler mit internen Modell- und
+Objektwähler. Selbst unzureichend qualifizierte Objekte wurden früher als
+sichtbare dritte Kategorie behandelt. Der Klick auf eine Strecke
+konfrontierte den Spieler mit internen Modell- und
 Evidenzdaten statt mit einer verständlichen Streckenauskunft. Das ist die
 Perspektive eines Infrastrukturprüfers, nicht die eines EVU.
 
@@ -52,8 +53,9 @@ Im normalen Spielerprofil gelten folgende Ebenen:
 | Signale der Klassen A/B | kleines, achromatisches Signalicon ohne behaupteten Signalzustand | reine Orientierung; kein Objektwähler, solange keine verständliche, autoritative Signalauskunft vorliegt |
 | Sperrung, Einschränkung, Baustelle | Muster, Symbol und Betriebsfarbe über dem betroffenen A/B-Netz | führt in Störungs- beziehungsweise Betriebsdetail |
 
-Klasse C erscheint nicht im normalen Spielerprofil: weder Strecke noch Signal
-noch davon abgeleitete Überlagerung. Ebenso werden Bahnsteigpunkte, Weichen,
+Der freigegebene Release enthält ausschließlich A/B. Offene Pflichtdimensionen
+erscheinen daher weder als Strecke noch als Signal oder Überlagerung, sondern
+blockieren bereits den Jahreskandidaten. Ebenso werden Bahnsteigpunkte, Weichen,
 `operating_points`, Blöcke, `conflict_resources`, Anlagen und `rail_context`
 nicht als auswählbare Kartenobjekte dargestellt. Bahnsteige bleiben fachlich
 erhalten und erscheinen dort, wo sie eine Spielerfrage beantworten — etwa als
@@ -153,11 +155,11 @@ Realismus einer interessanten Spielerentscheidung dienen muss.
   Dieser Aufwand wird akzeptiert, weil der räumliche Kontext Weltpräsenz,
   soziale Zugehörigkeit und Lageverständnis erzeugt. Statisches Caching und
   progressives Laden begrenzen den Payload, ohne Spielzustand auszulagern.
-- **Invarianten:** Sichtbarkeit bedeutet nicht Spielbarkeit. Klasse C bleibt
-  im Korpus, aber außerhalb des normalen Spielerprofils und unverändert nicht
-  bestellbar. Simulation und Planner lesen weiterhin das vollständige,
-  releasegebundene Modell.
-- **Abnahme:** Standardprofil enthält keine Klasse-C-Geometrie und keine
+- **Invarianten:** Sichtbarkeit bedeutet nicht Spielbarkeit. Freigegebener
+  Korpus und Spielerartefakte enthalten nur A/B; Simulation und Planner lesen
+  dasselbe vollständige, releasegebundene Modell. Ein offener Pflichtbefund
+  darf keine dritte öffentliche Objektklasse erzeugen.
+- **Abnahme:** Standardprofil enthält ausschließlich A-/B-Geometrie und keine
   technischen Punktlayer; Signalicons bleiben achromatisch; ein Stationsklick
   öffnet Grunddaten und eine gruppierte Tafel mit RIL 100, ein Zugklick das
   FIS, und eine Strecke zeigt höchstens die fünf genannten Hauptfakten.
@@ -172,8 +174,9 @@ Realismus einer interessanten Spielerentscheidung dienen muss.
 2. **Die Karte zur Nebenansicht machen:** verworfen, weil damit die gemeinsame,
    weiterlaufende Welt und die räumliche Störungslage ihren stärksten Ausdruck
    verlieren.
-3. **Klasse C nur visuell abschwächen:** verworfen, weil sie keine bestellbare
-   Handlung eröffnet und dennoch Aufmerksamkeit sowie Klickziele beansprucht.
+3. **Unvollständige Objekte nur visuell abschwächen:** verworfen, weil ein
+   ungeklärter Pflichtbefund kein Spielerartefakt sein darf und stattdessen die
+   Releasefreigabe blockiert.
 4. **Bahnhöfe im Browser heuristisch zusammenfassen:** verworfen, weil Namen
    und räumliche Nähe keine belastbare Betriebsstellenbeziehung beweisen.
 5. **VzG- oder Streckenkurzname als KBS ausgeben:** verworfen, weil damit

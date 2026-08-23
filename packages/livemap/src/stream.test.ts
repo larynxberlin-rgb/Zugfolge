@@ -7,6 +7,8 @@ import {
   LivemapRegistry,
   PUBLIC_OPERATION_MARKER,
   type PublicInfrastructureDisruption,
+  type PublicOperationalRegionFrame,
+  type PublicTrain,
 } from "./stream.js";
 
 const train = {
@@ -73,6 +75,73 @@ const infrastructureDisruption = {
   publishedAtS: 1,
   startsAtS: 1,
 };
+
+function operationalFrame(
+  commitSequence: number,
+  simulationTimeMs: number,
+): PublicOperationalRegionFrame {
+  return {
+    regionId: "east",
+    infrastructureReleaseId: "infra:v2",
+    commitSequence,
+    simulationTimeMs,
+    staleAfterMs: simulationTimeMs + 60_000,
+    routeLocks: [{
+      id: `lock:${commitSequence}`,
+      templateId: "route-lock:1",
+      trainId: "operational:1",
+      resources: ["block:1"],
+      releaseAfterTailRouteMm: 20_000,
+      lockedAtMs: simulationTimeMs,
+    }],
+    signals: { "signal:1": "proceed" },
+    activeDisruptions: [{
+      disruptionId: `disruption:${commitSequence}`,
+      effect: { "resource-closed": { resourceId: "block:1" } },
+    }],
+  };
+}
+
+function operationalTrain(
+  commitSequence: number,
+  simulationTimeMs: number,
+  headRouteMm = 10_000,
+): PublicTrain {
+  return {
+    id: "operational:1",
+    operatorId: "operator:1",
+    operator: "operator:1",
+    trainNumber: "RE 1",
+    category: "train",
+    positionMm: headRouteMm,
+    speedMmPerSecond: 0,
+    status: "waiting",
+    operational: {
+      regionId: "east",
+      commitSequence,
+      simulationTimeMs,
+      routeVersionId: "route:v2",
+      formationVersionId: "formation:v2",
+      movementKind: "train",
+      headRouteMm,
+      tailRouteMm: headRouteMm - 2_000,
+      direction: "along",
+      occupiedIntervals: [{ trackId: "edge:1", fromMm: 8_000, toMm: headRouteMm, direction: "along" }],
+      occupiedBlocks: ["block:1"],
+      authorityEndRouteMm: 20_000,
+      waitingReason: "Fahrstrasse",
+    },
+    mapPosition: {
+      infrastructureReleaseId: "infra:v2",
+      resourceId: "block:1",
+      trackId: "edge:1",
+      offsetMm: headRouteMm,
+      latitudeE7: 510_000_000,
+      longitudeE7: 120_000_000,
+      bearingMilliDegrees: 90_000,
+    },
+  };
+}
 
 describe("LivemapFeed", () => {
   it("ordnet nicht-ASCII-Zugkennungen wie Rust nach UTF-8-Bytes", () => {
@@ -163,37 +232,6 @@ describe("LivemapFeed", () => {
     expect(feed.snapshot().objectStates).toEqual([]);
   });
 
-  it("publiziert eine Kartenschaetzung getrennt von der bestaetigten Gleisposition", () => {
-    const feed = new LivemapFeed("welt-a");
-    feed.publish({
-      at: 10,
-      changed: [{
-        ...train,
-        mapEstimate: {
-          infrastructureReleaseId: "infra-de-2026",
-          resourceId: "block-track-7",
-          method: "route-corridor",
-          displayPathId: "corridor-re7",
-          displayOffsetMm: 25_000,
-          latitudeE7: 515_000_000,
-          longitudeE7: 120_000_000,
-          bearingMilliDegrees: 90_000,
-          uncertaintyMm: 750_000,
-        },
-      }],
-      removed: [],
-    });
-
-    expect(feed.snapshot().trains[0]).toMatchObject({
-      mapEstimate: {
-        method: "route-corridor",
-        displayPathId: "corridor-re7",
-        uncertaintyMm: 750_000,
-      },
-    });
-    expect(feed.snapshot().trains[0]).not.toHaveProperty("mapPosition");
-  });
-
   it("weist ungueltige Kartenpositionen und nicht-sparse Normalzustaende zurueck", () => {
     const feed = new LivemapFeed("welt-a");
     expect(() => feed.publish({
@@ -213,41 +251,6 @@ describe("LivemapFeed", () => {
       } as never],
       removedObjectStateIds: [],
     })).toThrow(/sparsamen v1-Vertrag/);
-  });
-
-  it("weist widerspruechliche oder ungueltige Kartenschaetzungen zurueck", () => {
-    const feed = new LivemapFeed("welt-a");
-    const mapEstimate = {
-      infrastructureReleaseId: "infra-de-2026",
-      resourceId: "block-track-7",
-      method: "anchor-hold" as const,
-      displayPathId: "anchor-track-7",
-      displayOffsetMm: 1,
-      latitudeE7: 515_000_000,
-      longitudeE7: 120_000_000,
-      uncertaintyMm: 500_000,
-    };
-    expect(() => feed.publish({
-      at: 1,
-      changed: [{
-        ...train,
-        mapPosition: {
-          infrastructureReleaseId: "infra-de-2026",
-          resourceId: "block-track-7",
-          trackId: "track-7",
-          offsetMm: 1,
-          latitudeE7: 515_000_000,
-          longitudeE7: 120_000_000,
-        },
-        mapEstimate,
-      }],
-      removed: [],
-    })).toThrow(/nicht zugleich/);
-    expect(() => feed.publish({
-      at: 1,
-      changed: [{ ...train, mapEstimate: { ...mapEstimate, uncertaintyMm: -1 } }],
-      removed: [],
-    })).toThrow(/Kartenschaetzung/);
   });
 
   it("liefert begrenztes Delta-Replay und erkennt einen zu alten Client", () => {
@@ -444,6 +447,103 @@ describe("LivemapFeed", () => {
 });
 
 describe("LivemapRegistry", () => {
+  it("publiziert v2-Zug und Regionsframe atomar und umgeht den Legacy-Zugprojektor", () => {
+    const project = vi.fn(() => {
+      throw new Error("Legacy-Projektor darf v2 nicht sehen");
+    });
+    const registry = new LivemapRegistry({ trainMapProjector: { project } });
+    const frame = operationalFrame(7, 1_000);
+    const exact = operationalTrain(7, 1_000);
+
+    const delta = registry.initializeRegion("a", "east", {
+      at: 1,
+      trains: [exact],
+      operationalRegions: [frame],
+    });
+
+    expect(project).not.toHaveBeenCalled();
+    expect(delta.changed).toEqual([exact]);
+    expect(delta.changedOperationalRegions).toEqual([frame]);
+    expect(registry.initializedWorld("a")?.snapshot()).toMatchObject({
+      trains: [exact],
+      operationalRegions: [frame],
+    });
+  });
+
+  it("sendet jeden v2-Zug erneut und bindet ihn strikt an den neuen Regionscommit", () => {
+    const registry = new LivemapRegistry();
+    registry.initializeRegion("a", "east", {
+      at: 1,
+      trains: [operationalTrain(7, 1_000)],
+      operationalRegions: [operationalFrame(7, 1_000)],
+    });
+
+    const next = registry.publishOperationalRegionSnapshot("a", "east", {
+      at: 2,
+      trains: [operationalTrain(8, 2_000)],
+      operationalRegions: [operationalFrame(8, 2_000)],
+    });
+
+    expect(next?.changed).toEqual([operationalTrain(8, 2_000)]);
+    expect(next?.removed).toEqual([]);
+    expect(next?.changedOperationalRegions?.[0]).toMatchObject({
+      regionId: "east",
+      commitSequence: 8,
+      simulationTimeMs: 2_000,
+      activeDisruptions: [{ disruptionId: "disruption:8" }],
+    });
+    expect(registry.initializedWorld("a")?.snapshot().operationalRegions?.[0]?.commitSequence).toBe(8);
+    expect(registry.initializedWorld("a")?.snapshot().trains[0]?.operational?.commitSequence).toBe(8);
+  });
+
+  it("verwirft einen Zug, dessen Commit oder Release nicht zum Regionsframe gehoert", () => {
+    const registry = new LivemapRegistry();
+    expect(() => registry.initializeRegion("a", "east", {
+      at: 1,
+      trains: [operationalTrain(6, 1_000)],
+      operationalRegions: [operationalFrame(7, 1_000)],
+    })).toThrow(/Regionscommit/);
+
+    expect(() => registry.initializeRegion("b", "east", {
+      at: 1,
+      trains: [{
+        ...operationalTrain(7, 1_000),
+        mapPosition: {
+          ...operationalTrain(7, 1_000).mapPosition!,
+          infrastructureReleaseId: "infra:fremd",
+        },
+      }],
+      operationalRegions: [operationalFrame(7, 1_000)],
+    })).toThrow(/committed Regionsframe/);
+  });
+
+  it("verwirft einen neuen Regionscommit ohne alle zugehoerigen v2-Zuege", () => {
+    const registry = new LivemapRegistry();
+    registry.initializeRegion("a", "east", {
+      at: 1,
+      trains: [operationalTrain(7, 1_000)],
+      operationalRegions: [operationalFrame(7, 1_000)],
+    });
+
+    expect(() => registry.publishRegionDelta("a", "east", {
+      at: 2,
+      changed: [],
+      removed: [],
+      changedOperationalRegions: [operationalFrame(8, 2_000)],
+      removedOperationalRegionIds: [],
+    })).toThrow(/committed Regionsframe/);
+    expect(registry.initializedWorld("a")?.snapshot()).toMatchObject({
+      sequence: 1,
+      operationalRegions: [{ commitSequence: 7 }],
+      trains: [{ operational: { commitSequence: 7 } }],
+    });
+    expect(() => registry.publishOperationalRegionSnapshot("a", "east", {
+      at: 3,
+      trains: [operationalTrain(9, 3_000)],
+      operationalRegions: [operationalFrame(9, 3_000)],
+    })).toThrow(/lueckenlos/);
+  });
+
   it("leitet Gleisfarben aus Ressourcenstoerungen ab und entfernt sie wieder", () => {
     const projectDisruption = vi.fn((_worldId: string, disruption: PublicInfrastructureDisruption) =>
       disruption.effect === "closure"
@@ -552,8 +652,15 @@ describe("LivemapRegistry", () => {
     expect(registry.forWorld("a").snapshot().trains[0]?.operationMarker).toEqual(
       PUBLIC_OPERATION_MARKER,
     );
+    const feed = registry.initializedWorld("a")!;
+    const reset = vi.fn();
+    const cursor = feed.snapshot();
+    const subscription = feed.subscribeAfter(cursor, vi.fn(), reset);
+    expect(subscription.kind).toBe("resume");
     registry.markUnavailable("a");
     expect(registry.isInitialized("a")).toBe(false);
+    expect(reset).toHaveBeenCalledOnce();
+    expect(feed.subscriberCount).toBe(0);
   });
 
   it("entfernt eine archivierte Welt samt Betriebsmarkern idempotent", () => {

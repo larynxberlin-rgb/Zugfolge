@@ -27,6 +27,14 @@ export const regionalSimulationStates = pgTable(
     regionId: text("region_id").notNull(),
     stateSchema: text("state_schema").notNull(),
     state: jsonb("state").notNull(),
+    /**
+     * Kanonischer Hash der signierten OperationalSimulationInitialization.
+     *
+     * Die Migration laesst ausschliesslich bereits vorhandene Altzustaende
+     * physisch ohne Wert stehen. Neue Schreibvorgaenge muessen den Hash immer
+     * liefern; der Restore-Pfad verwirft einen Legacy-NULL-Wert fail-closed.
+     */
+    initializationHash: text("initialization_hash").notNull(),
     stateHash: text("state_hash").notNull(),
     revision: bigint("revision", { mode: "number" }).notNull(),
     publisherSequence: bigint("publisher_sequence", { mode: "number" }).notNull(),
@@ -53,6 +61,10 @@ export const regionalSimulationStates = pgTable(
     check(
       "regional_simulation_states_sequences_equal",
       sql`${table.revision} = ${table.publisherSequence}`,
+    ),
+    check(
+      "regional_simulation_states_initialization_hash_sha256",
+      sql`${table.initializationHash} ~ '^[a-f0-9]{64}$'`,
     ),
   ],
 );

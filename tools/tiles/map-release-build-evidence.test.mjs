@@ -866,7 +866,7 @@ test("verifiziert leeren Cache-Restore und verweigert Preflight bei fehlendem Ro
     );
 
     const deployment = {
-      schema: "zugfolge-alpha-world-deployment/v1",
+      schema: "zugfolge-alpha-world-deployment/v2",
       worldId: "00000000-0000-4000-8000-000000000014",
       worldDefinition: { epoch: "2026-08-10T00:00:00.000Z" },
       repeatEveryS: 86400,

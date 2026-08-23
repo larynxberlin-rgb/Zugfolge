@@ -171,9 +171,9 @@ export function projectStationBoardWithLiveState(
   });
 }
 
-function livePassengerMessages(delaySeconds: number, status: string): readonly string[] {
+function livePassengerMessages(delaySeconds: number | undefined, status: string): readonly string[] {
   if (status === "cancelled") return Object.freeze(["Diese Fahrt faellt aus."]);
-  if (delaySeconds === 0) return Object.freeze([]);
+  if (delaySeconds === undefined || delaySeconds === 0) return Object.freeze([]);
   const minutes = Math.max(1, Math.round(Math.abs(delaySeconds) / 60));
   const unit = minutes === 1 ? "Minute" : "Minuten";
   return Object.freeze([`Voraussichtlich ${minutes} ${unit} ${delaySeconds > 0 ? "spaeter" : "frueher"}.`]);
@@ -365,9 +365,13 @@ export function registerLivemapReadRoutes(
           trainNumber: found.train.trainNumber,
           category: found.train.category,
           ...(plan?.destination === undefined ? {} : { destination: plan.destination }),
-          ...(networkTrain === undefined ? {} : { nextStop: networkTrain.nextOperatingPoint }),
+          ...(networkTrain?.nextOperatingPoint === undefined
+            ? {}
+            : { nextStop: networkTrain.nextOperatingPoint }),
           followingStops: remainingFollowingStops(plan?.followingStops ?? [], networkTrain?.nextOperatingPoint),
-          delaySeconds: found.train.delaySeconds,
+          ...(found.train.delaySeconds === undefined
+            ? {}
+            : { delaySeconds: found.train.delaySeconds }),
           status: found.train.status,
           messages: passengerMessages,
         },

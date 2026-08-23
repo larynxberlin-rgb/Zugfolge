@@ -9,7 +9,8 @@ use std::io::{self, Read};
 use serde_json::Value;
 use zugfolge_infra::{
     build_annual_infra_plan, build_mitteldeutschland_infra_release, build_public_infra_release,
-    build_qualified_reference_release, build_reference_report, verify_reference_artifact_chain,
+    build_qualified_reference_release, build_reference_report,
+    validate_operational_infrastructure_v2, verify_reference_artifact_chain,
 };
 
 fn read_json(path: &str) -> Result<Value, Box<dyn Error>> {
@@ -57,6 +58,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             let input = envelope.get("input").ok_or("Compiler-Eingabe fehlt.")?;
             let verified = verify_reference_artifact_chain(input)?;
             println!("{}", serde_json::to_string(&verified)?);
+        }
+        [command, candidate, expected_release_id]
+            if command == "validate-operational-infrastructure-v2" =>
+        {
+            let validated = validate_operational_infrastructure_v2(
+                &read_json(candidate)?,
+                expected_release_id,
+            )?;
+            println!("{}", serde_json::to_string(&validated)?);
         }
         [command, config, source_root, artifact_root, output] if command == "regional-manifest" => {
             let workspace_root = env::current_dir()?;
@@ -118,7 +128,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         _ => {
             return Err(
-                "Aufruf: zugfolge-infra-release reference-report|qualified-reference-manifest|verify-reference-chain < INPUT | regional-manifest CONFIG SOURCE_ROOT ARTIFACT_ROOT OUTPUT | plan CONFIG CATALOG RIGHTS | manifest CONFIG CATALOG RIGHTS CAPTURE ARTIFACTS QUALITY OUTPUT"
+                "Aufruf: zugfolge-infra-release reference-report|qualified-reference-manifest|verify-reference-chain < INPUT | validate-operational-infrastructure-v2 CANDIDATE EXPECTED_RELEASE_ID | regional-manifest CONFIG SOURCE_ROOT ARTIFACT_ROOT OUTPUT | plan CONFIG CATALOG RIGHTS | manifest CONFIG CATALOG RIGHTS CAPTURE ARTIFACTS QUALITY OUTPUT"
                     .into(),
             );
         }

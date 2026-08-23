@@ -170,7 +170,7 @@ Alle drei sind mit M3.1 bis M3.4 abgearbeitet; die Zuordnung steht bei M3.
 | 1.3 | **Netzfilter**: nur `railway=rail` in 1435 mm; Tram, Stadtbahn, U-Bahn, Schmalspur, Standseil- und Einschienenbahnen verwerfen; Stromschienennetze über Netzausschlussliste. **Betriebs-, Abstell- und Anschlussgleise bleiben erhalten** | M | erledigt |
 | 1.4 | **Abdeckungsmessung**: Coverage-Report je Attribut und Streckenabschnitt. Entscheidet *vor* dem Bau, welche Strecke Klasse A erreichen kann | M | erledigt |
 | 1.5 | **Neigungsprofil aus Höhenmodell** — aus einem DEM entlang der Gleisgeometrie abgeleitet und geglättet | M | erledigt |
-| 1.6 | **Blockableitung** aus Signalpositionen, Zugbeeinflussung und Topologie; virtuelle Blöcke bei Lücken; reine LZB-/ETCS-Blöcke bei durchgehender Überwachung; Qualitätsklassifizierung A/B/C | L | erledigt |
+| 1.6 | **Blockableitung** aus Signalpositionen, Zugbeeinflussung und Topologie; virtuelle Blöcke bei vollständig konservativ schließbaren Lücken; reine LZB-/ETCS-Blöcke bei durchgehender Überwachung; Qualitätsklassifizierung A/B, offene Pflichtbefunde als Releaseblocker | L | erledigt |
 | 1.7 | **Fahrstraßen- und Durchrutschwegableitung** im Bahnhofskopf — aus Weichenlage und Signalstandort erzeugt | **XL** | erledigt |
 | 1.8 | Stationsdaten-Anreicherung — ausschließlich freigegebene Quellen | M | erledigt |
 | 1.9 | **Zugcharakteristik** als eigenes Konzept: Masse, Länge, Vmax, Anfahr- und Bremsvermögen, Antriebsart, Zugsicherung. Entkoppelt Fahrzeitrechnung und Trassenplanung vom Fahrzeugkatalog (M5) | M | erledigt |
@@ -250,7 +250,9 @@ LZB- oder ETCS-geführte Strecke ist ein **realer, führerraumsignalisierter
 Block** ohne ortsfestes Signal — der reine LZB- und der reine ETCS-Block, gerade
 keine Datenlücke. Nur wo weder ein Kennzeichen noch die durchgehende Überwachung
 einspringt, füllt das Verfahren eine zu lange Lücke mit **virtuellen Blöcken**.
-Jeder Block trägt eine Qualitätsklasse A/B/C. Siehe `betriebsgraph.md`
+Jeder freigegebene Block trägt Qualitätsklasse A oder ein vollständig
+konservativ geschlossenes B. Ein offener Pflichtbefund erzeugt keinen
+Releaseblock, sondern blockiert den Kandidaten. Siehe `betriebsgraph.md`
 Abschnitt 11.
 
 **M1.7 trägt:** Die Fahrstraßen- und Durchrutschwegableitung

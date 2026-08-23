@@ -73,7 +73,7 @@ try {
     .onConflictDoNothing();
 
   const fleetRuntime = runtimeModule.loadOperatingRuntime(nativeAddonPath);
-  const regionalRuntime = runtimeModule.loadRegionalSimulationRuntime(nativeAddonPath);
+  const regionalRuntime = runtimeModule.loadOperationalSimulationRuntime(nativeAddonPath);
   const livemap = new livemapModule.LivemapRegistry({
     maxFeeds: 4,
     idleTtlMs: 60_000,

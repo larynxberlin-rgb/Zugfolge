@@ -25,12 +25,13 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 
 | Begriff | Bezeichner | Bedeutung | Quelle |
 |---------|------------|-----------|--------|
-| Abdeckungsmessung | `CoverageReport` | Bericht je Attribut und Streckenabschnitt, wie viel Länge welchen Vertrauensgrad trägt und welche Qualitätsklasse ein Abschnitt datenseitig höchstens erreichen kann | `betriebsgraph.md` 9 |
+| Abdeckungsmessung | `CoverageReport` | Bericht je Attribut und Streckenabschnitt, wie viel Länge welchen Vertrauensgrad trägt und ob der Abschnitt A erreicht, vollständig konservativ als B geschlossen ist oder als interner Pflichtbefund den Releasekandidaten blockiert | `betriebsgraph.md` 9 |
 | Abstellgleis | `StablingTrack` | Gleis zum Abstellen nicht eingesetzter Fahrzeuge; Konfliktressource wie jedes andere Gleis | `betrieb.md` 4 |
 | Abweichungsreport | `DeviationReport` | stellt je Referenzlauf die aus dem Release berechnete Fahrzeit der realen gegenüber und prüft sie gegen die Toleranz | `betriebsgraph.md` 18 |
 | Ad-hoc-Trasse | `AdHocPath` | Trasse aus der Restkapazität einer laufenden Fahrplanperiode | `infrastruktur.md` 12 |
 | Administrationsantrag | `AdminCommandPayload` | typisierter, begründeter und korrelierter Antrag aus Odoo; das Game prüft und auditiert ihn erneut, bevor irgendeine Wirkung entsteht | `adr/0023-odoo-als-administrativer-kontrollpunkt.md` |
 | Alpha-Feedbackprojektion | `AlphaFeedbackProjectionPort` | atomare, bereits pseudonymisierte Outbox-Grenze vom autoritativen Game-Feedback zur bearbeitbaren Odoo-Triage; enthält kein Keycloak-Subject | `alpha-betrieb.md` |
+| Analytischer Bewegungsabschnitt | `MotionSegment` | unveränderliche ganzzahlige Bewegungsfunktion mit Startzeit/-position/-geschwindigkeit, Beschleunigung, Gültigkeitsende, Laufwegversion und Fahrberechtigungsende | `betriebsengine.md` 3 |
 | Anlage | `Facility` | Werkstatt, Behandlungs- oder Waschanlage, Tankstelle, Entsorgungsanlage oder als Anlage geführtes Abstellgleis mit Kapazität, Öffnungszeit, Nutzlänge und Baureihenkompetenz | `betrieb.md` 4 |
 | Anlagenkataster | `FacilityCatalog` | geprüfte Sammlung aller Anlagen einer Welt, gegen den Betriebsgraphen validiert — welches Gleis, welche Kapazität, welche Baureihenkompetenz | `betriebsgraph.md` 14 |
 | Annäherungsabschnitt | `ApproachSection` | Abschnitt vor einem Hauptsignal — der Vorsignalabstand; seine Durchfahrzeit gehört zur Sperrzeit des folgenden Abschnitts | `infrastruktur.md` 1 |
@@ -80,6 +81,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Ersatzkonzept | `ReplacementPlan` | eigener kleiner Planungslauf gegen die Restkapazität einer Baustelle | `betrieb.md` 6 |
 | Event-Log | `DomainEvent` | append-only Eintrag im Ereignisprotokoll einer Welt (`domain_events`); Wahrheit des Betriebsverlaufs, Träger von Replay und Audit | `architektur.md` 2 |
 | Exakte Zugkartenposition | `PublicMapPosition` | releasegebundene Kartenlage mit bestätigter Ressource, `trackId`, gleisscharfem ganzzahligem Offset und daraus abgeleiteter E7-Koordinate; bleibt die einzige betriebliche Positionswahrheit | `zugkartenprojektion.md`, `adr/0027-geschaetzte-zugkartenposition-nur-visuell.md` |
+| Fahrberechtigung | `MovementAuthority` | harte, zug- und laufweggebundene Grenze, bis zu der die gemeinsame Bewegungsengine eine Zug- oder Rangierbewegung führen darf | `betriebsengine.md` 4 |
 | Fahrgastinformationsanzeige | `PassengerInformationDisplay` | öffentliche, zuggebundene Projektion von Ziel, nächstem Halt, Folgehalten, Verspätung und Meldungen; Grundlage des generischen FIS-Monitors | `adr/0026-karte-als-spielzentrum.md` |
 | Fahrgastkontrollfall | `FareInspectionCaseV1` | persistenter, pseudonymer Kontrollvorgang eines materialisierten Manifestfahrgasts mit Dialog-, Feststellungs- und Forderungszustand | `schaffnermodus.md` 3.1, 8 |
 | Fahrgastmanifest | `PassengerManifestV1` | revisionierte M10-Projektion der tatsächlich reisenden Fahrgäste eines Zuglaufabschnitts einschließlich Ein-/Ausstieg und verdecktem Fahrberechtigungsstatus | `schaffnermodus.md` 3.1 |
@@ -100,21 +102,21 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Fahrzeuglebenslauf | `VehicleLifeEvent` | unveränderliche, zeitlich geordnete Historie eines konkreten Fahrzeugs: Welteintritt, Halter/Nutzer, Leasing, Wartung, Umbau, Schaden, Marktwechsel und Ausmusterung | `betrieb.md` 3.6 |
 | Fahrzeugmarktstatus | `VehicleMarketStatus` | autoritativer Zustand eines konkreten Fahrzeugs: Eigentum, Leasing, serverseitiges Leasingangebot, Gebrauchtangebot oder Ausmusterung | `betrieb.md` 3.6 |
 | Fahrzeugzustand | `VehicleCondition` | mehrdimensionaler, ganzzahliger Zustand für Mechanik, Antrieb, Bremsen, Betrieb und Innenraum; wird im Lebenslauf fortgeschrieben | `betrieb.md` 3.6 |
+| Flankenschutz | `flank_resources` | zusätzlich zum Fahrweg verriegelte Ressourcen, die unbeabsichtigte seitliche Einfahrten in eine eingestellte Fahrstraße verhindern | `betriebsengine.md` 4 |
 | Formation | `Formation` | konkrete Zusammenstellung von Fahrzeugen für eine Zugfahrt | `betrieb.md` 2 |
 | Frist | `deadlineAt` | Zeitpunkt, bis zu dem eine Reaktion auf eine Postfach-Nachricht erwartet wird; optional, nicht jede Nachricht trägt eine | `weltgeruest.md` 9 |
 | Game-Verwaltungsfähigkeit | `GameAdminCapabilityProjection` | signierte, weltbezogene Projektion, ob eine typisierte Odoo-Administration im Game tatsächlich einen fachlichen Handler besitzt; ohne sie bleibt der Antrag vorbereitet und wirkungslos | `adr/0023-odoo-als-administrativer-kontrollpunkt.md` |
 | Gegenfahrt | `OpposingMove` | Belegungskonflikt zweier Zugfahrten entgegengesetzter Richtung auf demselben eingleisigen Abschnitt | `infrastruktur.md` 1 |
-| Geschätzte Zugkartenposition | `PublicMapEstimate` | rein visuelle, releasegebundene Lage mit bestätigter Ressourcenbindung, aber ohne behauptete `trackId` oder gleisscharfen Offset; wird als `≈` mit neutralem Ring gekennzeichnet und nie betrieblich verwendet | `zugkartenprojektion.md`, `adr/0027-geschaetzte-zugkartenposition-nur-visuell.md` |
 | Gleichstand | `Tie` | exakte Punktgleichheit im Planungslauf; wird über den veröffentlichten Seed aufgelöst | `infrastruktur.md` 10 |
 | Gleis | `Track` | das, worauf gefahren wird; liegt auf einer Kante oder in einer Betriebsstelle und trägt Vmax, Neigung, Elektrifizierung und Zugsicherung | `betriebsgraph.md` 2 |
 | Grenzportal | `BoundaryPortal` | benannte, versionierte Schnittstelle am Rand des spielbaren Netzes; trägt die serverseitigen Ein- oder Ausfahrfenster einer Fahrtkette | `infrastruktur.md` 10.4 |
 | Herkunft | `Provenance` | Quelle und Vertrauensgrad eines importierten Attributwertes; hängt am einzelnen Band, nicht am Gleis | `daten.md` 2 |
 | Höhenstichprobe | `ElevationSample` | Position-Höhe-Paar eines Höhenmodells entlang der Gleisgeometrie; Eingabe der Neigungsableitung | `betriebsgraph.md` 10 |
-| Infrastruktur-Release | `InfraRelease` | unveränderliches, versioniertes Netzartefakt mit Herkunft, Lizenz, Prüfsumme und Confidence je Attribut | `architektur.md` 3 |
+| Infrastruktur-Release | `InfraRelease` | unveränderliches, versioniertes Netz- und Betriebsartefakt mit Graph, gerichteten Kanten, Sicherungselementen, Laufwegvorlagen, RZÜ-Layout, Herkunft, Lizenz, Prüfsumme und Confidence | `betriebsengine.md` 2 |
 | Insolvenz | `Insolvency` | Stufe 5 der Eskalationsleiter; das EVU endet vollständig, der Account bleibt | `wirtschaft.md` 5 |
 | Kante | `TrackEdge` | Verbindung zweier Betriebsstellen im Betriebsgraph; trägt die Gleise und die Kilometrierung, aber selbst keine Fahrt | `betriebsgraph.md` 2 |
 | Kartenobjektdetail | `LivemapObjectDetail` | releasegebundene, beim Klick geladene öffentliche Fachsicht auf Gleis, Betriebsstelle, Bahnsteig, Weiche, Signal, Block oder Anlage | `adr/0026-karte-als-spielzentrum.md` |
-| Kartenposition | `mapPosition` / `mapEstimate` | gegenseitig exklusive öffentliche Kartendarstellung eines Zuges: entweder nachgewiesenes Exact, ausdrücklich gekennzeichnetes Estimate oder keine Lage | `zugkartenprojektion.md` |
+| Kartenposition | `mapPosition` | ausschließlich exakte öffentliche Kartenlage der autoritativen Zugspitze; Unsicherheit führt zu sicherem Halt und Freeze statt Schätzung | `zugkartenprojektion.md` |
 | Konfliktbericht | `ConflictReport` | geordnete, durchnummerierte Menge der Befunde einer Prüfung, maschinenlesbar und als deutscher Text erklärbar | `infrastruktur.md` 8 |
 | Konfliktressource | `ConflictResource` | alles, worum zwei Zugfahrten konkurrieren können — Block, Fahrstraße, Bahnsteig, Anlage | `infrastruktur.md` 1 |
 | Konto | `Account` | Spielkonto, das ein Keycloak-Subject aus einem Weltzugang heraus in genau einer Welt führt; Anzeigename ist eine Angabe des Spielsystems, nicht der Identität bei Keycloak | `weltgeruest.md` 2 |
@@ -122,6 +124,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Kündigungsvormerkung | `termination-pending` | serverautoritiver Zwischenzustand eines EVU-Vertrags: Die Kündigung ist angenommen, Leistung und Fahrzeughaltung bleiben aber bis zum berechneten Fristende wirksam | `wirtschaft.md` 6 |
 | Längsneigung | `Gradient` | Steigung oder Gefälle eines Gleisabschnitts in Zehntel Promille, bezogen auf die Kilometrierung; kehrt sich in der Gegenrichtung um | `betriebsgraph.md` 4 |
 | Laufweg | `Itinerary` | die Folge von Betriebsstellen und Kanten, die eine Zugfahrt befährt | `infrastruktur.md` 2 |
+| Laufwegversion | `RouteVersion` | unveränderliche lückenlose Folge konkreter gerichteter Gleiskanten; eine Umleitung erzeugt ab einem sicheren Übergabepunkt eine Nachfolgeversion | `betriebsengine.md` 2 |
 | Ledger-Buchung | `LedgerEntry` | einzelner, unveränderlicher Posten einer Ledger-Transaktion, in Integer-Cent | `weltgeruest.md` 8 |
 | Ledger-Konto | `LedgerAccount` | benanntes Konto in den Büchern genau eines EVU | `weltgeruest.md` 8 |
 | Ledger-Transaktion | `LedgerTransaction` | unveränderliche Hülle einer doppelten Buchung; die Summe ihrer Ledger-Buchungen ist zwingend null | `weltgeruest.md` 8 |
@@ -147,11 +150,11 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Postfach | `mailboxMessages` | Grundgerüst für Nachrichten, Fristen und Quittierung eines Kontos in einer Welt | `weltgeruest.md` 9 |
 | Präqualifikation | `Prequalification` | Eignungsnachweis eines Spielers aus seiner Betriebshistorie in dieser Welt | `wirtschaft.md` 5 |
 | Prüfhorizont | `horizon_days` | wie viele Tage ein Verkehrsangebot vorausschauend materialisiert und geprüft wird; eine Woche deckt jedes Verkehrstagemuster genau einmal ab | `infrastruktur.md` 9 |
-| Qualitätsklasse | `QualityClass` | A (validiert), B (konservativ) oder C (unzureichend); die höchste Klasse, die ein Vertrauensgrad datenseitig trägt | `daten.md` 5 |
+| Qualitätsklasse | `QualityClass` | ausschließlich A (validiert) oder B (in allen Pflichtdimensionen konservativ geschlossen); ein ungelöster Pflichtbefund ist keine Releaseklasse und blockiert den Kandidaten | `daten.md` 5 |
 | Quellenregister | `SourceRegister` | maschinenlesbares Verzeichnis aller Datenquellen mit Freigabestatus, Lizenz und Bereitstellungsweg; die geprüfte Wahrheit des Rechte-Gates | `rechte.md` 1 |
 | Quittierung | `acknowledgeMessage` | Bestätigung des Empfängers, eine Postfach-Nachricht gesehen zu haben; nur der Empfänger selbst quittiert | `weltgeruest.md` 9 |
 | Rahmenvertrag | `FrameworkAgreement` | mehrperiodige Kapazitätszusage, gedeckelt zum Schutz gegen Landgrab | `infrastruktur.md` 13 |
-| Rangieren | `Shunting` | Fahrzeugbewegung ohne Zugfahrt; ausschließlich automatisiert, als Zeitbedarf und kurze Belegung verrechnet | `betrieb.md` 4 |
+| Rangieren | `Shunting` | ausschließlich automatisch beauftragte physische Fahrzeugbewegung mit eigener Fahrberechtigung, Geschwindigkeit und exakten Gleisintervallen | `betriebsengine.md` 6 |
 | Räumfahrzeit | `ClearingTime` | Anteil der Sperrzeit, in dem der Zug mit voller Länge den Abschnitt und den Durchrutschweg räumt | `infrastruktur.md` 1 |
 | Rechte-Gate | `RightsGate` | Durchsetzung von Invariante 8: kein Import ohne dokumentierte Freigabe der Datenquelle | `rechte.md` 1 |
 | Reconciliation-Aufgabe | `ReconciliationTask` | auditierte Korrekturaufgabe aus dem nächtlichen Abgleich stabiler Bridge-IDs und Hashes; überschreibt keine Daten still | `odoo-betrieb.md` |
@@ -172,7 +175,7 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Server-Leasingangebot | `ServerLeaseQuote` | deterministisches Angebot eines fiktiven servereigenen Vermieters für ein konkretes Fahrzeug; der Preis liegt strikt über dem vergleichbaren Marktpreis | `betrieb.md` 3.6 |
 | Signal | `Signal` | Haupt-, Vor- oder Blockkennzeichen an einer Position entlang eines Gleises; nur blockbegrenzende Kennzeichen gehen in die Blockableitung ein | `betriebsgraph.md` 11 |
 | Signalsichtzeit | `SignalSightingTime` | Anteil der Sperrzeit zwischen dem Erkennen des Vorsignals und dem Vorsignal selbst | `infrastruktur.md` 1 |
-| Simulationszeit | `SimTime` | Sekunden seit Weltepoche; expliziter Wert, niemals aus der Systemuhr gelesen | `architektur.md` 4 |
+| Simulationszeit | `SimTime` / `SimMillis` | explizite Zeit seit Weltepoche; Fahrplanverträge verwenden Sekunden, die autoritative Betriebsengine intern ganzzahlige Millisekunden, niemals die Systemuhr | `betriebsengine.md` 3 |
 | Sperrzeit | `BlockingTime` | Zeitspanne, in der eine Konfliktressource für eine Zugfahrt gesperrt ist — Fahrstraßenbildung, Annäherung, Fahrzeit, Räumung, Auflösung | `infrastruktur.md` 1 |
 | Sperrzeitentreppe | `BlockingTimeStaircase` | die treppenförmige Darstellung aufeinanderfolgender Sperrzeiten im Bildfahrplan | `milestones.md` M0.3 |
 | Sperrzeitparameter | `SignallingParameters` | Signalsichtzeit, Vorsignalabstand, Durchrutschweg und Stellwerksbauart einer Betriebsstelle — die Werte, aus denen die sechs Anteile der Sperrzeit entstehen | `infrastruktur.md` 6 |
@@ -201,9 +204,10 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Vermieterprofil | `LessorProfile` | weltgebundenes, veröffentlichtes Profil eines fiktiven servereigenen Vermieters mit Präferenzen und deterministischer Preiskalkulation | `betrieb.md` 3.6 |
 | Verspätung | `Delay` | Abweichung von der Soll-Zeitlage; propagiert regelbasiert über Anschlüsse und Umläufe | `infrastruktur.md` 5 |
 | Verspätungsursachencode | `DelayCauseCode` | zweistellige Hauptkennung mit Kurztext, Ursachentyp und spielmechanischer Verantwortungsgruppe; getrennt von RIS-Abweichungscodes | `stoerungen.md` 3 |
-| Vertrauensgrad | `Confidence` | wie belastbar ein Attributwert ist — erfasst, abgeleitet oder angenommen; Grundlage der Qualitätsklassen | `daten.md` 5 |
+| Vertrauensgrad | `Confidence` | wie belastbar ein Attributwert ist — erfasst, abgeleitet oder angenommen; Grundlage für A beziehungsweise ein vollständig geschlossenes B, andernfalls interner Releaseblocker | `daten.md` 5 |
 | Vier-Augen-Prinzip | `FourEyesApproval` | Hochrisikoaktion mit getrennten Personen für Antrag und Freigabe; das Game prüft die Trennung vor der Wirkung erneut | `adr/0023-odoo-als-administrativer-kontrollpunkt.md` |
 | Virtueller Fahrdienstleiter | `VirtualDispatcher` | regionale serverautoritative Dispositionslogik über gemeinsame Konfliktressourcen mit erklärbarer lexikographischer Reihenfolge | `stoerungen.md` 5 |
+| Virtueller Lokführer | `VirtualDriver` | deterministische automatische Ableitung analytischer Fahr- und Bremsabschnitte aus Formation, Strecke, Halt und Fahrberechtigung | `betriebsengine.md` 5 |
 | Vmax-Band | `SpeedLimit` | die zulässigen Geschwindigkeiten eines Gleisabschnitts — Regel, Neigetechnik, Güterzug; als Band eines Bandprofils geführt | `betriebsgraph.md` 2 |
 | Wagenpark | `UnpoweredFormation` | Formation ohne eigene Traktion; bleibt in Werkstatt oder Abstellung und wird für Überführungen von einer Lok bewegt | `betrieb.md` 2.3 |
 | Weiche | `Switch` | Fahrwegverzweigung; Konfliktressource, weil kreuzende Bewegungen sich ausschließen | `infrastruktur.md` 1 |
@@ -221,12 +225,14 @@ nicht prüfen, ob ein Eintrag stimmt — dafür steht die Quelle daneben.
 | Zugfahrt | `TrainRun` | die einzelne, materialisierte Fahrt eines Zuges an einem Verkehrstag | `infrastruktur.md` 5 |
 | Zugfolgefall | `Headway` | Belegungskonflikt zweier Zugfahrten derselben Richtung auf demselben Abschnitt; die Mindestzugfolgezeit ist unterschritten | `infrastruktur.md` 8 |
 | Zuggattung | `TrainCategory` | Fernverkehr, S-Bahn, Regionalverkehr, Güterverkehr oder Dienstzug; bestimmt den Nummernbereich der Zugnummer | `infrastruktur.md` 7 |
-| Zugkartenprojektion | `SQLiteTrainMapProjector` | read-only, releasegebundene Laufzeitprojektion: liefert Exact nur auf eindeutig nachgewiesenem Gleis und Estimate getrennt auf einem erlaubten Darstellungspfad; kein Rückfluss in Betrieb, Bestellbarkeit oder Qualität | `zugkartenprojektion.md` |
+| Zugkartenprojektion | `PublicOperationalTrainState` | read-only Übersetzung der autoritativen Laufwegposition auf die exakte Releasegeometrie; LiveMap und RZÜ tragen denselben Commit und es gibt keinen Estimate-Pfad | `zugkartenprojektion.md` |
 | Zugkilometer | `TrainKilometre` | Leistungseinheit der Verkehrsverträge und Bezugsgröße des Bestellerentgelts | `wirtschaft.md` 3.5 |
 | Zugkreuzung | `TrainCrossing` | Begegnung zweier Zugfahrten entgegengesetzter Richtung auf eingleisiger Strecke; nur in einer Betriebsstelle mit Kreuzungsmöglichkeit zulässig | `infrastruktur.md` 1 |
 | Zugnummer | `TrainNumber` | die Nummer einer Zugfahrt; nennt über ihren Bereich die Zuggattung und über ihre Parität die Richtung — gerade mit, ungerade gegen die Kilometrierung | `infrastruktur.md` 7 |
+| Zugschluss | `tail_route_mm` | hinteres Ende der Formation als exakter Laufwegmillimeter; maßgeblich für Intervallbelegung und Ressourcenfreigabe | `betriebsengine.md` 3, 4 |
 | Zugsicherung | `TrainProtection` | streckenseitige und fahrzeugseitige Sicherungstechnik; begrenzt, welche Formation wo fahren darf | `infrastruktur.md` 1 |
 | Zugsicherungsoption | `ProtectionOption` | am exakten Fahrzeugtyp belegte, zeitgebundene Werksoption oder Werkstattnachrüstung; Serienausrüstung ist keine Option | `betrieb.md` 2.2 |
+| Zugspitze | `head_route_mm` | vorderes Ende der Formation als exakter Laufwegmillimeter; darf niemals die Fahrberechtigung überschreiten | `betriebsengine.md` 3, 4 |
 | Zulässige Abweichung | `PathTolerances` | wie weit ein Trassenantrag sich verschieben, wie viel Fahrzeit er verlieren und wie viele Betriebshalte er vertragen darf | `infrastruktur.md` 9 |
 | Zusatzfahrt | `SupplementaryRun` | Zuführungs-, Werkstatt-, Versorgungs- oder Abstellfahrt; ein echter Zug mit Trasse, Personal und Kosten | `betrieb.md` 4 |
 | Zuschlag | `Award` | Entscheidung über eine Ausschreibung; fällt deterministisch sofort bei Fristende | `wirtschaft.md` 3.5 |

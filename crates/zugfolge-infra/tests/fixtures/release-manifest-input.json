@@ -43,6 +43,9 @@
       { "id": "internal-evidence", "version": "1", "file": "internal.zip", "bytes": 5, "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" }
     ]
   },
-  "artifacts": [{ "id": "infracorpus", "file": "de.jsonseq", "bytes": 123, "sha256": "9999999999999999999999999999999999999999999999999999999999999999", "kind": "infrastructure" }],
+  "artifacts": [
+    { "id": "infracorpus", "file": "de.jsonseq", "bytes": 123, "sha256": "9999999999999999999999999999999999999999999999999999999999999999", "kind": "infrastructure" },
+    { "id": "operational-infrastructure-2027.1", "file": "operational-infrastructure-v2.json", "bytes": 456, "sha256": "8888888888888888888888888888888888888888888888888888888888888888", "kind": "operational-infrastructure-v2", "infraReleaseId": "infra-deutschland-2027.1", "stateHash": "7777777777777777777777777777777777777777777777777777777777777777" }
+  ],
   "quality": { "schema": "zugfolge-infrastructure-quality-report/v2", "totalLengthMm": 999, "byClassLengthMm": { "A": 100, "B": 899, "C": 0 } }
 }

@@ -1,13 +1,20 @@
+import type { OperationalSimulationCommandPayload } from "@zugfolge/runtime-native";
+
 import type {
   RegionalSimulationWorker,
   RegionalSimulationWorkBatch,
 } from "./regional-simulation-worker.js";
-import type { RegionalScheduledCommand } from "./boundary-transition-scheduler.js";
 import { compareUtf8 } from "./utf8.js";
 
+export interface OperationalScheduledCommand {
+  readonly commandId: string;
+  readonly atMs: number;
+  readonly command: OperationalSimulationCommandPayload;
+}
+
 export interface RegionalScheduledCommandCatalog {
-  at(worldId: string, regionId: string, atS: number): readonly RegionalScheduledCommand[];
-  due(worldId: string, regionId: string, afterS: number, throughS: number): readonly RegionalScheduledCommand[];
+  at(worldId: string, regionId: string, atMs: number): readonly OperationalScheduledCommand[];
+  due(worldId: string, regionId: string, afterMs: number, throughMs: number): readonly OperationalScheduledCommand[];
 }
 
 type RegionalSimulationAdvancer = Pick<
@@ -18,13 +25,15 @@ type RegionalSimulationAdvancer = Pick<
 const TARGET_BATCH_COMMANDS = 2_000;
 
 interface TimedRegionalSimulationWork {
-  readonly atS: number;
+  readonly atMs: number;
   readonly command: RegionalSimulationWorkBatch["commands"][number];
 }
 
 export interface RegionalRealtimeRegistration {
   readonly worldId: string;
   readonly regionId: string;
+  /** Aus dem signierten Deployment kanonisch abgeleitete Restore-Bindung. */
+  readonly initializationHash: string;
 }
 
 function registrationKey(registration: RegionalRealtimeRegistration): string {
@@ -42,9 +51,9 @@ function chunkWithoutSplittingBoundary(
   let current: TimedRegionalSimulationWork[] = [];
   let index = 0;
   while (index < commands.length) {
-    const atS = commands[index]!.atS;
+    const atMs = commands[index]!.atMs;
     let groupEnd = index + 1;
-    while (groupEnd < commands.length && commands[groupEnd]!.atS === atS) groupEnd += 1;
+    while (groupEnd < commands.length && commands[groupEnd]!.atMs === atMs) groupEnd += 1;
     const group = commands.slice(index, groupEnd);
     if (current.length > 0 && current.length + group.length > targetSize) {
       chunks.push(current);
@@ -61,11 +70,8 @@ function chunkWithoutSplittingBoundary(
   return chunks;
 }
 
-/** Explizite Weltsekunde aus Welt-Epoche und Plattformzeit. */
-export function regionalSimulationSecond(
-  epoch: Date,
-  at: Date,
-): number | undefined {
+/** Explizite Weltmillisekunde aus Weltepoche und Plattformzeit. */
+export function regionalSimulationMillisecond(epoch: Date, at: Date): number | undefined {
   const epochMs = epoch.getTime();
   const atMs = at.getTime();
   if (Number.isNaN(epochMs) || Number.isNaN(atMs)) {
@@ -73,25 +79,29 @@ export function regionalSimulationSecond(
   }
   const elapsedMs = atMs - epochMs;
   if (elapsedMs < 0) return undefined;
-  const atS = Math.floor(elapsedMs / 1_000);
-  if (!Number.isSafeInteger(atS)) {
-    throw new RangeError("Explizite Weltsekunde liegt ausserhalb des sicheren Bereichs.");
+  if (!Number.isSafeInteger(elapsedMs)) {
+    throw new RangeError("Explizite Weltmillisekunde liegt ausserhalb des sicheren Bereichs.");
   }
-  return atS;
+  return elapsedMs;
+}
+
+/** Beibehaltene öffentliche Hilfsfunktion an der Fahrplan-Sekundengrenze. */
+export function regionalSimulationSecond(epoch: Date, at: Date): number | undefined {
+  const atMs = regionalSimulationMillisecond(epoch, at);
+  return atMs === undefined ? undefined : Math.floor(atMs / 1_000);
 }
 
 /**
- * Ein deterministischer 1:1-Takt ausschliesslich ueber explizit registrierte
- * Echtzeitregionen. Restaurierte Tutorial- oder Testregionen bleiben inert.
- * Fehler einer Region werden gesammelt, nachdem alle anderen Regionen ihren
- * Takt erhalten haben; ein fehlender Weltvertrag bleibt damit trotzdem hart.
+ * Deterministischer 1:1-Takt der operativen v2-Single-Writer. Der Scheduler
+ * übergibt ausschließlich explizite Millisekunden; alle Bewegungsgrenzen werden
+ * im Rust-Kern ereignisgesteuert verarbeitet.
  */
 export async function advanceRegionalSimulations(
   worker: RegionalSimulationAdvancer,
   registrations: readonly RegionalRealtimeRegistration[],
   worldEpochs: ReadonlyMap<string, Date>,
   at: Date,
-  boundaryTransitions?: RegionalScheduledCommandCatalog,
+  scheduledCommands?: RegionalScheduledCommandCatalog,
 ): Promise<number> {
   let advanced = 0;
   const readyByKey = new Map(
@@ -100,100 +110,90 @@ export async function advanceRegionalSimulations(
   const registered = [...new Map(
     registrations.map((registration) => [registrationKey(registration), registration] as const),
   ).values()].sort(
-    (left, right) =>
-      compareUtf8(left.worldId, right.worldId) ||
-      compareUtf8(left.regionId, right.regionId),
+    (left, right) => compareUtf8(left.worldId, right.worldId)
+      || compareUtf8(left.regionId, right.regionId),
   );
   const failures: unknown[] = [];
 
   for (const registration of registered) {
     try {
       const key = registrationKey(registration);
-      const region = readyByKey.get(key) ?? await worker.recover(
-        registration.worldId,
-        registration.regionId,
-      );
-      if (registrationKey(region) !== key) {
+      const ready = readyByKey.get(key);
+      const region = ready?.initializationHash === registration.initializationHash
+        ? ready
+        : await worker.recover(
+          registration.worldId,
+          registration.regionId,
+          registration.initializationHash,
+        );
+      if (
+        registrationKey(region) !== key
+        || region.initializationHash !== registration.initializationHash
+      ) {
         throw new Error(
-          `Recovery lieferte eine fremde regionale Simulation fuer '${registration.worldId}/${registration.regionId}'.`,
+          `Recovery lieferte eine fremde oder falsch gebundene regionale Simulation fuer '${registration.worldId}/${registration.regionId}'.`,
         );
       }
       readyByKey.set(key, region);
       const epoch = worldEpochs.get(region.worldId);
       if (epoch === undefined) {
-        throw new Error(
-          `Welt-Epoche fuer regionale Simulation '${region.worldId}' fehlt.`,
-        );
+        throw new Error(`Welt-Epoche fuer regionale Simulation '${region.worldId}' fehlt.`);
       }
-      const atS = regionalSimulationSecond(epoch, at);
-      if (atS === undefined) continue;
+      const atMs = regionalSimulationMillisecond(epoch, at);
+      if (atMs === undefined || atMs < region.nowMs) continue;
 
-      // Replays bei `nowS` schliessen das Commitfenster alter Einzelbefehle.
-      // Neue Chunks schneiden niemals innerhalb einer atS-Gruppe: Advance und
-      // alle fachlichen Befehle derselben Grenze committen dadurch atomar.
       const pending: TimedRegionalSimulationWork[] = [];
-      for (const transition of boundaryTransitions?.at(
+      for (const scheduled of scheduledCommands?.at(
         region.worldId,
         region.regionId,
-        region.nowS,
+        region.nowMs,
       ) ?? []) {
         pending.push({
-          atS: transition.atS,
-          command: {
-            commandId: transition.transitionId,
-            command: transition.command,
-          },
+          atMs: scheduled.atMs,
+          command: { commandId: scheduled.commandId, command: scheduled.command },
         });
       }
-      let cursorS = region.nowS;
-      if (atS > region.nowS) {
-        for (const transition of boundaryTransitions?.due(
+      let cursorMs = region.nowMs;
+      if (atMs > region.nowMs) {
+        for (const scheduled of scheduledCommands?.due(
           region.worldId,
           region.regionId,
-          region.nowS,
-          atS,
+          region.nowMs,
+          atMs,
         ) ?? []) {
-          if (transition.atS > cursorS) {
+          if (scheduled.atMs > cursorMs) {
             pending.push({
-              atS: transition.atS,
+              atMs: scheduled.atMs,
               command: {
-                commandId: `advance-to:${transition.atS}`,
-                command: { type: "advance-to", atS: transition.atS },
+                commandId: `advance-to-ms:${scheduled.atMs}`,
+                command: { type: "advance-to", atMs: scheduled.atMs },
               },
             });
-            cursorS = transition.atS;
+            cursorMs = scheduled.atMs;
           }
           pending.push({
-            atS: transition.atS,
-            command: {
-            commandId: transition.transitionId,
-            command: transition.command,
-          },
+            atMs: scheduled.atMs,
+            command: { commandId: scheduled.commandId, command: scheduled.command },
           });
         }
-        if (cursorS < atS) {
+        if (cursorMs < atMs) {
           pending.push({
-            atS,
+            atMs,
             command: {
-              commandId: `advance-to:${atS}`,
-              command: { type: "advance-to", atS },
+              commandId: `advance-to-ms:${atMs}`,
+              command: { type: "advance-to", atMs },
             },
           });
         }
       }
       for (const chunk of chunkWithoutSplittingBoundary(pending)) {
-        await worker.applyBatch(
-          {
-            worldId: region.worldId,
-            regionId: region.regionId,
-            commands: chunk.map((item) => item.command),
-          },
-          at,
-        );
+        await worker.applyBatch({
+          worldId: region.worldId,
+          regionId: region.regionId,
+          commands: chunk.map((item) => item.command),
+        }, at);
       }
-      if (atS > region.nowS) {
-        advanced += 1;
-      }
+      if (atMs > region.nowMs) advanced += 1;
     } catch (error) {
       failures.push(error);
     }

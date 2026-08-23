@@ -68,7 +68,7 @@ import { purgeExpiredAccountData } from "@zugfolge/privacy";
 import {
   FLEET_INITIALIZE_SCHEMA,
   loadOperatingRuntime,
-  loadRegionalSimulationRuntime,
+  loadOperationalSimulationRuntime,
   type OperatingRuntimeEvent,
 } from "@zugfolge/runtime-native";
 import { and, asc, eq } from "drizzle-orm";
@@ -297,7 +297,7 @@ const operatingRuntime = loadOperatingRuntime();
 const configuredFleetAuthorityReleases = await loadFleetAuthorityReleaseCatalog(
   requireEnv("ZUGFOLGE_FLEET_AUTHORITY_RELEASE_PATH"),
 );
-const regionalSimulationRuntime = loadRegionalSimulationRuntime();
+const operationalSimulationRuntime = loadOperationalSimulationRuntime();
 const planningRuntime = loadPlanningRuntime();
 const configuredPlanningInfrastructureReleases = parsePlanningInfrastructureReleasesJson(
   requireEnv("PLANNING_INFRASTRUCTURE_RELEASES_JSON"),
@@ -307,7 +307,7 @@ const configuredPlanningAuthorityAccountIds = parsePlanningAuthorityAccountIdsJs
 );
 const regionalSimulation = new RegionalSimulationWorker(
   db,
-  regionalSimulationRuntime,
+  operationalSimulationRuntime,
   livemap,
   operations,
 );
@@ -366,7 +366,6 @@ if (trainMapProjector !== undefined) {
   }
 }
 const {
-  boundaryTransitions,
   fleetAuthorityReleases,
   planningAuthorityAccountIds,
   planningInfrastructureReleases,
@@ -490,7 +489,11 @@ for (const region of deploymentRuntime.realtimeRegions()) {
     ))
     .limit(1);
   if (persistedRegion !== undefined) {
-    await regionalSimulation.restore(region.worldId, region.regionId);
+    await regionalSimulation.restore(
+      region.worldId,
+      region.regionId,
+      region.initializationHash,
+    );
   }
 }
 
@@ -782,8 +785,8 @@ app.addHook("onClose", async () => {
   await alphaPeriodCycle;
 });
 
-// Erster expliziter 1:1-Takt noch vor dem Listener: Ein restaurierter Zustand
-// wird nicht fuer einen kurzen Zeitraum mit alter Weltzeit ausgeliefert.
+// Erster expliziter v2-Millisekundentakt noch vor dem Listener: Ein
+// restaurierter Zustand wird nicht kurzzeitig mit alter Weltzeit ausgeliefert.
 const firstRegionalAdvanceAt = new Date();
 await runMonitoredRegionalSimulationCycle(
   regionalSimulationMonitor,
@@ -793,7 +796,7 @@ await runMonitoredRegionalSimulationCycle(
     deploymentRuntime.realtimeRegions(),
     worldEpochs,
     firstRegionalAdvanceAt,
-    boundaryTransitions,
+    deploymentRuntime,
   ),
 );
 let regionalAdvanceCycle: Promise<void> | undefined;
@@ -808,7 +811,7 @@ const runRegionalAdvance = () => {
       deploymentRuntime.realtimeRegions(),
       worldEpochs,
       at,
-      boundaryTransitions,
+      deploymentRuntime,
     ),
   )
     .then(() => undefined)
@@ -819,11 +822,10 @@ const runRegionalAdvance = () => {
       regionalAdvanceCycle = undefined;
     });
 };
-// Variante B liefert bis zu 1.634 Tageslaeufe. Autoritative 60-Sekunden-
-// Samples halten das replaybare Kommandolog betriebsfaehig; der Livemap-
-// Client interpoliert ausschliesslich zwischen diesen echten Samples.
-// Fachkommandos (Grenze, Stoerung, Disposition) bleiben davon unberuehrt und
-// tragen weiterhin ihre exakte Simulationssekunde.
+// Der Plattformtakt uebergibt die exakte Weltzeit in Millisekunden. Der
+// Rust-v2-Kern verarbeitet betriebliche Ereignisgrenzen und publiziert einen
+// autorisierten analytischen Bewegungsabschnitt; der Client wertet ihn nur bis
+// validUntilMs aus. Fachkommandos tragen ebenfalls ihre explizite Weltzeit.
 const regionalAdvanceInterval = setInterval(
   runRegionalAdvance,
   REGIONAL_SIMULATION_SCHEDULER_INTERVAL_MS,

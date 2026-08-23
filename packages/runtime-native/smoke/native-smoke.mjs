@@ -10,9 +10,9 @@ import {
   OPERATING_INITIALIZE_SCHEMA,
   OPERATING_RESULT_SCHEMA,
   OPERATING_TRANSITION_SCHEMA,
-  REGIONAL_SIMULATION_COMMAND_SCHEMA,
-  REGIONAL_SIMULATION_INITIALIZE_SCHEMA,
-  loadRegionalSimulationRuntime,
+  OPERATIONAL_SIMULATION_COMMAND_SCHEMA,
+  OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
+  loadOperationalSimulationRuntime,
   loadOperatingRuntime,
 } from "../dist/index.js";
 
@@ -22,8 +22,22 @@ const timetableBoundaryS = 604_800;
 const addonPath = process.env.ZUGFOLGE_RUNTIME_NATIVE_PATH;
 assert.ok(addonPath, "ZUGFOLGE_RUNTIME_NATIVE_PATH fehlt");
 const nativeAddon = createRequire(import.meta.url)(addonPath);
+for (const legacyExport of [
+  "initializeRegionalSimulation",
+  "restoreRegionalSimulation",
+  "applyRegionalSimulationCommand",
+  "applyRegionalSimulationCommandAsync",
+  "applyRegionalSimulationCommandBatch",
+  "applyRegionalSimulationCommandBatchAsync",
+]) {
+  assert.equal(
+    nativeAddon[legacyExport],
+    undefined,
+    `Der harte v2-Wechsel darf '${legacyExport}' nicht mehr exportieren`,
+  );
+}
 const runtime = loadOperatingRuntime();
-const regionalRuntime = loadRegionalSimulationRuntime();
+const operationalRuntime = loadOperationalSimulationRuntime();
 
 function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
@@ -118,51 +132,137 @@ assert.match(fleetInitialized.state.authorityReleaseHash, /^[a-f0-9]{64}$/);
 assert.equal(Object.hasOwn(fleetInitialized.state, "processedCommands"), false);
 assert.deepEqual(fleetInitialized.snapshot.formations, []);
 
-const regionalTrain = (trainRunId) => ({
-  trainRunId,
-  operator: "operator-native",
-  trainNumber: "RE 1",
-  category: "regional",
-  route: [
-    {
-      operatingPoint: "Leipzig Hbf",
-      positionMm: 0,
-      arrivalS: 100,
-      minimumDwellSeconds: 30,
-      departureS: 130,
-    },
-    {
-      operatingPoint: "Halle Hbf",
-      positionMm: 3_600_000,
-      arrivalS: 3_700,
-      minimumDwellSeconds: 30,
-      departureS: 3_730,
-    },
-  ],
-});
-const regionalInitialized = regionalRuntime.initialize({
-  schemaVersion: REGIONAL_SIMULATION_INITIALIZE_SCHEMA,
+const operationalInitialization = {
+  schemaVersion: OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
   worldId,
   regionId: "leipzig",
-  materializationWindowHours: 48,
-  nowS: 0,
-  trains: [regionalTrain("native-regional-1")],
-});
-assert.equal(regionalInitialized.state.revision, 0);
-assert.equal(regionalInitialized.snapshot.producerSequence, 0);
+  nowMs: 0,
+  infraRelease: {
+    id: "infra:native-smoke:v2",
+    directedEdges: { "edge:1": 100_000 },
+    edgeGeometries: {
+      "edge:1": [
+        {
+          edgeOffsetMm: 0,
+          latitudeE7: 510_000_000,
+          longitudeE7: 120_000_000,
+          bearingMilliDegrees: 90_000,
+        },
+        {
+          edgeOffsetMm: 100_000,
+          latitudeE7: 510_000_000,
+          longitudeE7: 120_100_000,
+          bearingMilliDegrees: null,
+        },
+      ],
+    },
+    routeVersions: {
+      "route:v1": {
+        id: "route:v1",
+        templateId: "template:v1",
+        predecessorId: null,
+        transitionRouteMm: null,
+        legs: [{
+          edgeId: "edge:1",
+          direction: "along",
+          edgeEntryMm: 0,
+          edgeExitMm: 100_000,
+          routeStartMm: 0,
+          blockIds: ["block:1"],
+          speedLimitMmps: 20_000,
+          gradientPerMille: 0,
+          requiredProtectionSystems: ["pzb"],
+        }],
+      },
+    },
+    interlockingRoutes: {
+      "interlocking:1": {
+        id: "interlocking:1",
+        routeTemplateId: "template:v1",
+        signalId: "signal:1",
+        movementKind: "train",
+        pathResources: ["block:1"],
+        overlapResources: ["overlap:1"],
+        flankResources: ["flank:1"],
+        switchPositions: { "switch:1": "straight" },
+        authorityEndRouteMm: 90_000,
+        releaseAfterTailRouteMm: 80_000,
+      },
+    },
+    signals: ["signal:1"],
+    switches: ["switch:1"],
+    blockResources: ["block:1", "overlap:1", "flank:1"],
+    platformIntervals: {
+      "platform:1": {
+        edgeId: "edge:1",
+        fromMm: 10_000,
+        toMm: 30_000,
+        direction: "along",
+      },
+    },
+    regionBoundaries: ["boundary:1"],
+    rzueLayoutId: "rzue:native-smoke:v1",
+  },
+  vehicleTypes: [{
+    powered: true,
+    vehicleType: {
+      id: "type:1",
+      lengthMm: 10_000,
+      massKg: 80_000,
+      maximumSpeedMmps: 20_000,
+      powerWatts: 4_000_000,
+      startingTractiveForceNewtons: 200_000,
+      maximumAccelerationMmps2: 1_000,
+      serviceBrakeMmps2: 1_000,
+      emergencyBrakeMmps2: 1_500,
+      protectionSystems: ["pzb"],
+    },
+  }],
+  vehicles: [{
+    id: "vehicle:1",
+    typeId: "type:1",
+    powered: true,
+    orientation: "along",
+    condition: {
+      mechanicsBasisPoints: 9_500,
+      driveBasisPoints: 9_500,
+      brakesBasisPoints: 9_500,
+      kilometresSinceMaintenance: 0,
+      operatingHoursSinceMaintenance: 0,
+      openObservations: 0,
+    },
+    restrictions: {},
+    history: [],
+  }],
+  formations: [{
+    id: "formation:1",
+    predecessorId: null,
+    vehicleIds: ["vehicle:1"],
+  }],
+  trains: [{
+    id: "train:1",
+    trainNumber: "RB 1",
+    operatorId: "operator:1",
+    movementKind: "train",
+    routeVersionId: "route:v1",
+    formationVersionId: "formation:1",
+    headRouteMm: 20_000,
+    scheduledDepartureMs: null,
+    publicPassengerStop: false,
+  }],
+};
+const operationalInitialized = operationalRuntime.initialize(operationalInitialization);
+assert.equal(operationalInitialized.state.revision, 0);
+assert.equal(operationalInitialized.state.publisherSequence, 0);
+assert.equal(operationalInitialized.liveMap.commitSequence, 0);
+assert.equal(operationalInitialized.rzue.commitSequence, 0);
 assert.deepEqual(
-  regionalInitialized.snapshot.trains.map((train) => train.id),
-  ["native-regional-1"],
+  operationalInitialized.liveMap.trains.map((train) => train.trainId),
+  ["train:1"],
 );
-assert.deepEqual(regionalInitialized.snapshot.disruptions, []);
-assert.ok(
-  regionalInitialized.events.some(
-    (event) => event.eventType === "simulation.train-materialized",
-  ),
-  "die Initialisierung muss echte Rust-Materialisierungsereignisse liefern",
-);
-const regionalCommand = (head, commandId, command) => ({
-  schemaVersion: REGIONAL_SIMULATION_COMMAND_SCHEMA,
+
+const operationalCommand = (head, commandId, command) => ({
+  schemaVersion: OPERATIONAL_SIMULATION_COMMAND_SCHEMA,
   worldId,
   regionId: "leipzig",
   commandId,
@@ -171,114 +271,96 @@ const regionalCommand = (head, commandId, command) => ({
   expectedPublisherSequence: head.state.publisherSequence,
   command,
 });
-const regionalRegistered = await regionalRuntime.apply(
-  regionalInitialized.state,
-  regionalCommand(regionalInitialized, "native-regional-register-disruption", {
-    type: "register-disruption",
-    disruption: {
-      disruptionId: "native-planned-closure",
-      kind: "planned",
-      publishedAtS: 0,
-      startsAtS: 100,
-      validUntilS: 3_600,
-      positionMm: 1_200_000,
-      causeCode: 25,
-      fineCauseId: "signalling.interlocking",
-      effect: "closure",
-      affectedResource: "block:A:B:1",
-      affectedTrainRunIds: [],
-      delaySeconds: 0,
-    },
-  }),
-);
-assert.equal(regionalRegistered.delta.producerSequence, 1);
-assert.equal(regionalRegistered.events.length, 0);
-assert.deepEqual(
-  regionalRegistered.delta.changedDisruptions.map((item) => [item.disruptionId, item.kind]),
-  [["native-planned-closure", "planned"]],
-);
-const regionalAtDisruptionStart = await regionalRuntime.apply(
-  regionalRegistered.state,
-  regionalCommand(regionalRegistered, "native-regional-advance-to-disruption", {
-    type: "advance-to",
-    atS: 100,
-  }),
-);
-const regionalActivated = await regionalRuntime.apply(
-  regionalAtDisruptionStart.state,
-  regionalCommand(regionalAtDisruptionStart, "native-regional-activate-disruption", {
-    type: "activate-disruption",
-    disruptionId: "native-planned-closure",
-    affectedTrainRunIds: ["native-regional-1"],
-    delaySeconds: 300,
-  }),
-);
-assert.equal(regionalActivated.delta.producerSequence, 3);
-assert.ok(
-  regionalActivated.events.some(
-    (event) => event.eventType === "disruption.applied"
-      && event.payload.fineCauseId === "signalling.interlocking",
+
+await assert.rejects(
+  operationalRuntime.apply(
+    operationalInitialized.state,
+    operationalCommand(operationalInitialized, "native-operational-forbidden-add-delay", {
+      type: "add-delay",
+      trainId: "train:1",
+      seconds: 300,
+    }),
   ),
-  "die geplante Einschränkung muss erst am Startzeitpunkt im Rust-Single-Writer wirken",
+  /add-delay|unknown variant|invalid_json/i,
+  "AddDelay darf die v2-Grenze nicht passieren",
 );
-assert.equal(
-  regionalActivated.delta.changed.find((train) => train.id === "native-regional-1")?.delaySeconds,
-  300,
+await assert.rejects(
+  operationalRuntime.apply(
+    operationalInitialized.state,
+    operationalCommand(operationalInitialized, "native-operational-forbidden-register", {
+      type: "register-disruption",
+      disruption: { disruptionId: "legacy-disruption", delaySeconds: 300 },
+    }),
+  ),
+  /register-disruption|unknown variant|invalid_json/i,
+  "register-disruption darf die v2-Grenze nicht passieren",
 );
-assert.equal(
-  regionalRuntime.restore(regionalActivated.state).snapshot.disruptions[0].disruptionId,
-  "native-planned-closure",
-);
-const regionalMaterializeCommand = regionalCommand(
-  regionalActivated,
-  "native-regional-materialize",
-  { type: "materialize", train: regionalTrain("native-regional-2") },
-);
-const regionalMaterialized = await regionalRuntime.apply(
-  regionalActivated.state,
-  regionalMaterializeCommand,
-);
-assert.equal(regionalMaterialized.delta.producerSequence, 4);
-assert.deepEqual(
-  regionalMaterialized.delta.changed.map((train) => train.id),
-  ["native-regional-2"],
-);
-const regionalAdvanced = await regionalRuntime.apply(
-  regionalMaterialized.state,
-  regionalCommand(regionalMaterialized, "native-regional-advance", {
-    type: "advance-to",
-    atS: 5_000,
+
+const operationalActivated = await operationalRuntime.apply(
+  operationalInitialized.state,
+  operationalCommand(operationalInitialized, "native-operational-activate", {
+    type: "activate-disruption",
+    disruptionId: "native-block-closure",
+    effect: { "resource-closed": { resourceId: "block:1" } },
   }),
 );
-assert.equal(regionalAdvanced.delta.producerSequence, 5);
-assert.ok(regionalAdvanced.events.length > 0);
-assert.deepEqual(regionalAdvanced.delta.removedDisruptionIds, ["native-planned-closure"]);
-const regionalRemoveCommand = regionalCommand(
-  regionalAdvanced,
-  "native-regional-remove",
-  { type: "dematerialize-before", beforeS: 5_000 },
+assert.equal(operationalActivated.state.revision, 1);
+assert.equal(operationalActivated.state.publisherSequence, 1);
+assert.ok(
+  operationalActivated.events.some(
+    (event) => event.kind === "disruption-activated"
+      && event.subjectId === "native-block-closure",
+  ),
+  "die v2-Ressourcenwirkung muss als echtes Rust-Ereignis sichtbar sein",
 );
-const regionalRemoved = await regionalRuntime.apply(
-  regionalAdvanced.state,
-  regionalRemoveCommand,
+const operationalClearCommand = operationalCommand(
+  operationalActivated,
+  "native-operational-clear",
+  {
+    type: "clear-disruption",
+    disruptionId: "native-block-closure",
+    releaseReference: "provider:native-smoke:revision-2",
+  },
 );
-assert.equal(regionalRemoved.delta.producerSequence, 6);
-assert.deepEqual(regionalRemoved.delta.removed, [
-  "native-regional-1",
-  "native-regional-2",
-]);
-const regionalRestored = regionalRuntime.restore(regionalRemoved.state);
-assert.equal(regionalRestored.stateHash, regionalRemoved.stateHash);
-assert.equal(regionalRestored.snapshot.producerSequence, 6);
-assert.deepEqual(regionalRestored.snapshot.trains, []);
-assert.deepEqual(regionalRestored.snapshot.disruptions, []);
-const regionalRetry = await regionalRuntime.apply(
-  regionalRemoved.state,
-  regionalRemoveCommand,
+const operationalCleared = await operationalRuntime.apply(
+  operationalActivated.state,
+  operationalClearCommand,
 );
-assert.equal(regionalRetry.idempotentReplay, true);
-assert.equal(regionalRetry.stateHash, regionalRemoved.stateHash);
-assert.deepEqual(regionalRetry.delta, regionalRemoved.delta);
+assert.equal(operationalCleared.state.revision, 2);
+assert.equal(operationalCleared.state.publisherSequence, 2);
+assert.ok(
+  operationalCleared.events.some(
+    (event) => event.kind === "disruption-cleared"
+      && event.detail === "provider:native-smoke:revision-2",
+  ),
+  "die v2-Aufhebung muss den technischen Freigabebeleg tragen",
+);
+const operationalRestored = operationalRuntime.restore(
+  operationalCleared.state,
+  operationalCleared.initializationHash,
+);
+assert.equal(operationalRestored.stateHash, operationalCleared.stateHash);
+assert.equal(
+  operationalRestored.initializationHash,
+  operationalCleared.initializationHash,
+);
+const mismatchedInitializationHash = `${
+  operationalCleared.initializationHash.startsWith("0") ? "1" : "0"
+}${operationalCleared.initializationHash.slice(1)}`;
+assert.throws(
+  () => operationalRuntime.restore(
+    operationalCleared.state,
+    mismatchedInitializationHash,
+  ),
+  /initialization_hash_mismatch/,
+  "Restore muss einen fremden Initialisierungshash fail-closed ablehnen",
+);
+const operationalRetry = await operationalRuntime.apply(
+  operationalCleared.state,
+  operationalClearCommand,
+);
+assert.equal(operationalRetry.idempotentReplay, true);
+assert.equal(operationalRetry.stateHash, operationalCleared.stateHash);
 
 const formationCommand = {
   schemaVersion: FLEET_FORMATION_COMMAND_SCHEMA,
@@ -476,10 +558,10 @@ process.stdout.write(
     fleetSnapshotHash: fleetRetry.snapshotHash,
     fleetRevision: fleetRetry.state.revision,
     fleetIdempotentReplay: fleetRetry.idempotentReplay,
-    regionalStateHash: regionalRetry.stateHash,
-    regionalRevision: regionalRetry.state.revision,
-    regionalPublisherSequence: regionalRetry.state.publisherSequence,
-    regionalIdempotentReplay: regionalRetry.idempotentReplay,
+    operationalStateHash: operationalRetry.stateHash,
+    operationalRevision: operationalRetry.state.revision,
+    operationalPublisherSequence: operationalRetry.state.publisherSequence,
+    operationalIdempotentReplay: operationalRetry.idempotentReplay,
     initialStateHash: firstInitialization.stateHash,
     resultingStateHash: retry.stateHash,
     resultingRevision: retry.state.revision,

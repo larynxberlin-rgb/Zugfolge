@@ -112,7 +112,8 @@ export interface PassengerInformationDisplayV1 {
   readonly destination?: string;
   readonly nextStop?: string;
   readonly followingStops: readonly string[];
-  readonly delaySeconds: number;
+  /** Nur vorhanden, wenn ein autoritativer Fahrplanvergleich vorliegt. */
+  readonly delaySeconds?: number;
   readonly status: string;
   readonly messages: readonly string[];
 }

@@ -14,6 +14,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true
 zugfolge-determinism = { workspace = true }
+zugfolge-sim = { workspace = true }
 
 [dev-dependencies]
 # Nur für den PBF-Fixture-Bau in Integrationstests — der Leser selbst

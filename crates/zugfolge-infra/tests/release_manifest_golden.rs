@@ -362,7 +362,15 @@ fn widerspruechliche_summen_und_doppelte_ids_schliessen_fail_closed() {
             .is_err()
     );
 
+    quality["byClassLengthMm"]["B"] = Value::from(898);
+    quality["byClassLengthMm"]["C"] = Value::from(1);
+    let error =
+        build_public_infra_release(&config, &catalog, &rights, &capture, &artifacts, &quality)
+            .expect_err("Klasse C darf nicht freigegeben werden");
+    assert!(error.to_string().contains("Klasse-C-Abschnitte"));
+
     quality["byClassLengthMm"]["B"] = Value::from(899);
+    quality["byClassLengthMm"]["C"] = Value::from(0);
     let duplicate_artifact = artifacts[0].clone();
     artifacts
         .as_array_mut()
@@ -379,6 +387,94 @@ fn widerspruechliche_summen_und_doppelte_ids_schliessen_fail_closed() {
         .expect("Rechtequellen")
         .push(duplicate_rights);
     assert!(build_annual_infra_plan(&config, &catalog, &rights).is_err());
+}
+
+#[test]
+fn oeffentlicher_release_transportiert_genau_eine_getrennte_statische_v2_bindung() {
+    let (config, catalog, rights, capture, artifacts, quality) = fixture();
+
+    let mut missing = artifacts.clone();
+    missing
+        .as_array_mut()
+        .expect("Artefakte")
+        .retain(|artifact| artifact["kind"] != "operational-infrastructure-v2");
+    let error =
+        build_public_infra_release(&config, &catalog, &rights, &capture, &missing, &quality)
+            .expect_err("fehlende Operational-v2-Infrastruktur muss scheitern");
+    assert!(error.to_string().contains("genau eine statische"));
+
+    let mut conflated_hashes = artifacts.clone();
+    let artifact = conflated_hashes
+        .as_array_mut()
+        .expect("Artefakte")
+        .iter_mut()
+        .find(|artifact| artifact["kind"] == "operational-infrastructure-v2")
+        .expect("Operational-v2-Infrastruktur");
+    artifact["stateHash"] = artifact["sha256"].clone();
+    let error = build_public_infra_release(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &conflated_hashes,
+        &quality,
+    )
+    .expect_err("gleichgesetzte Hashes muessen scheitern");
+    assert!(error.to_string().contains("duerfen nicht gleichgesetzt"));
+
+    let mut wrong_release_id = artifacts.clone();
+    let artifact = wrong_release_id
+        .as_array_mut()
+        .expect("Artefakte")
+        .iter_mut()
+        .find(|artifact| artifact["kind"] == "operational-infrastructure-v2")
+        .expect("Operational-v2-Infrastruktur");
+    artifact["infraReleaseId"] = json!("infra-deutschland-foreign");
+    let error = build_public_infra_release(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &wrong_release_id,
+        &quality,
+    )
+    .expect_err("fremde InfraRelease-ID muss scheitern");
+    assert!(error.to_string().contains("InfraRelease-ID-Bindung"));
+
+    let mut world_bound = artifacts;
+    let artifact = world_bound
+        .as_array_mut()
+        .expect("Artefakte")
+        .iter_mut()
+        .find(|artifact| artifact["kind"] == "operational-infrastructure-v2")
+        .expect("Operational-v2-Infrastruktur");
+    artifact["worldId"] = json!("world-must-not-enter-infra-release");
+    let error =
+        build_public_infra_release(&config, &catalog, &rights, &capture, &world_bound, &quality)
+            .expect_err("weltbezogene Manifestfelder muessen scheitern");
+    assert!(error.to_string().contains("weltbezogene Manifestfelder"));
+
+    let mut dynamic_projection = fixture().4;
+    dynamic_projection
+        .as_array_mut()
+        .expect("Artefakte")
+        .push(json!({
+            "id": "world-train-projection",
+            "file": "train-map-projection.sqlite",
+            "bytes": 1,
+            "sha256": "6".repeat(64),
+            "kind": "train-map-projection"
+        }));
+    let error = build_public_infra_release(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &dynamic_projection,
+        &quality,
+    )
+    .expect_err("weltbezogene Zugprojektion muss ausserhalb des InfraRelease bleiben");
+    assert!(error.to_string().contains("Zugprojektionen"));
 }
 
 fn write(path: &Path, bytes: &[u8]) {
@@ -437,20 +533,104 @@ fn regionaler_v1_release_wird_aus_explizitem_versioniertem_buildvertrag_gebildet
                 "validUntil": "2026-12-12",
                 "metrics": {
                     "qualityBSegmentCount": 2,
-                    "qualityCSegmentCount": 1,
+                    "qualityCSegmentCount": 0,
                     "orderableJourneyChainCount": 3,
                     "conflictResourceCount": 4,
                 },
-                "segmentQualifications": [{ "qualityClass": "C", "orderable": false }],
+                "segmentQualifications": [{ "qualityClass": "B", "orderable": true }],
             },
         }))
         .expect("JSON")
         .as_bytes(),
     );
+    let operational_infrastructure = serde_json::json!({
+        "id": "infra-mitteldeutschland-b-2026.2",
+        "directedEdges": { "edge-1": 1_000 },
+        "edgeGeometries": {
+            "edge-1": [
+                { "edgeOffsetMm": 0, "latitudeE7": 510_000_000, "longitudeE7": 120_000_000, "bearingMilliDegrees": 90_000 },
+                { "edgeOffsetMm": 1_000, "latitudeE7": 510_000_000, "longitudeE7": 120_001_000, "bearingMilliDegrees": null }
+            ]
+        },
+        "routeVersions": {
+            "route-1": {
+                "id": "route-1",
+                "templateId": "template-1",
+                "predecessorId": null,
+                "transitionRouteMm": null,
+                "legs": [{
+                    "edgeId": "edge-1",
+                    "direction": "along",
+                    "edgeEntryMm": 0,
+                    "edgeExitMm": 1_000,
+                    "routeStartMm": 0,
+                    "blockIds": ["block-1"],
+                    "speedLimitMmps": 20_000,
+                    "gradientPerMille": 0,
+                    "requiredProtectionSystems": ["pzb"]
+                }]
+            }
+        },
+        "interlockingRoutes": {
+            "interlocking-1": {
+                "id": "interlocking-1",
+                "routeTemplateId": "template-1",
+                "signalId": "signal-1",
+                "movementKind": "train",
+                "pathResources": ["block-1"],
+                "overlapResources": [],
+                "flankResources": [],
+                "switchPositions": {},
+                "authorityEndRouteMm": 1_000,
+                "releaseAfterTailRouteMm": 1_000
+            }
+        },
+        "signals": ["signal-1"],
+        "switches": [],
+        "blockResources": ["block-1"],
+        "platformIntervals": {},
+        "regionBoundaries": [],
+        "rzueLayoutId": "rzue-layout-1"
+    });
+    write(
+        &artifact_root.join("operational-infrastructure-v2.json"),
+        serde_json::to_string_pretty(&operational_infrastructure)
+            .expect("Operational-v2-Infrastruktur")
+            .as_bytes(),
+    );
+    let native_validation = Command::new(env!("CARGO_BIN_EXE_zugfolge-infra-release"))
+        .arg("validate-operational-infrastructure-v2")
+        .arg(artifact_root.join("operational-infrastructure-v2.json"))
+        .arg("infra-mitteldeutschland-b-2026.2")
+        .output()
+        .expect("native Operational-v2-Validierung starten");
+    assert!(
+        native_validation.status.success(),
+        "native Operational-v2-Validierung muss gelingen: {}",
+        String::from_utf8_lossy(&native_validation.stderr)
+    );
+    let native_receipt: Value = serde_json::from_slice(&native_validation.stdout)
+        .expect("nativer Operational-v2-Bindungsbeleg");
+    assert_eq!(native_receipt["schema"], "operational-infrastructure-v2");
+    assert!(
+        native_receipt["stateHash"]
+            .as_str()
+            .is_some_and(|hash| hash.len() == 64)
+    );
+    let wrong_release_validation = Command::new(env!("CARGO_BIN_EXE_zugfolge-infra-release"))
+        .arg("validate-operational-infrastructure-v2")
+        .arg(artifact_root.join("operational-infrastructure-v2.json"))
+        .arg("infra-foreign")
+        .status()
+        .expect("negative native Operational-v2-Validierung starten");
+    assert!(
+        !wrong_release_validation.success(),
+        "fremde InfraRelease-ID muss scheitern"
+    );
     write(
         &artifact_root.join("pbf-release-report.json"),
         serde_json::to_string(&serde_json::json!({
-            "quality": { "classes": { "A": 0, "B": 2, "C": 1 } },
+            "quality": { "classes": { "A": 0, "B": 3, "C": 0 } },
             "derivations": {
                 "blocksHash": "c".repeat(64),
                 "interlockingRoutesHash": "d".repeat(64),
@@ -495,6 +675,8 @@ fn regionaler_v1_release_wird_aus_explizitem_versioniertem_buildvertrag_gebildet
         "tools/region-import/build-validation-set.mjs",
         "tools/region-import/build-infra-release.mjs",
         "tools/region-import/regional-release-contract.mjs",
+        "tools/region-import/operational-infrastructure-binding.mjs",
+        "tools/region-import/materialize-operational-infrastructure-v2.mjs",
         "tools/region-import/release-crypto.mjs",
         "tools/region-import/sign-release.mjs",
         "tools/region-import/verify-release.mjs",
@@ -504,13 +686,14 @@ fn regionaler_v1_release_wird_aus_explizitem_versioniertem_buildvertrag_gebildet
     }
 
     let build_config = json!({
-        "schema": "zugfolge-regional-infra-release-build/v1",
+        "schema": "zugfolge-regional-infra-release-build/v2",
         "releaseId": "infra-mitteldeutschland-b-2026.2",
         "regionId": "mitteldeutschland-b",
         "regionVariant": "B",
         "timetableYear": 2026,
         "serviceDate": "20260810",
         "gtfsArtifact": "gtfs-region-20260810-v2.json",
+        "operationalInfrastructureArtifact": "operational-infrastructure-v2.json",
         "releaseApproval": {
             "releaseResponsible": "Sebastian Barowski",
             "responsibilityGrantedBy": "user-approval-2026-08-13-evaluation",
@@ -539,8 +722,41 @@ fn regionaler_v1_release_wird_aus_explizitem_versioniertem_buildvertrag_gebildet
             .as_array()
             .expect("Pipelineskripte")
             .len(),
-        16,
+        18,
     );
+    let operational_binding = release["artifacts"]
+        .as_array()
+        .expect("Artefakte")
+        .iter()
+        .find(|artifact| artifact["kind"] == "operational-infrastructure-v2")
+        .expect("statische Operational-v2-Bindung");
+    assert_eq!(
+        operational_binding["file"],
+        "operational-infrastructure-v2.json"
+    );
+    assert_eq!(
+        operational_binding["infraReleaseId"],
+        "infra-mitteldeutschland-b-2026.2"
+    );
+    assert!(
+        operational_binding["sha256"]
+            .as_str()
+            .is_some_and(|hash| hash.len() == 64)
+    );
+    assert!(
+        operational_binding["stateHash"]
+            .as_str()
+            .is_some_and(|hash| hash.len() == 64)
+    );
+    assert_eq!(
+        operational_binding["stateHash"],
+        native_receipt["stateHash"]
+    );
+    assert_ne!(
+        operational_binding["sha256"],
+        operational_binding["stateHash"]
+    );
+    assert_eq!(release["quality"]["classCVisible"], false);
 
     let config_path = root.join("regional-build.json");
     write(
@@ -573,6 +789,105 @@ fn regionaler_v1_release_wird_aus_explizitem_versioniertem_buildvertrag_gebildet
         build_mitteldeutschland_infra_release(&unknown_field, &root, &source_root, &artifact_root)
             .expect_err("unbekanntes Konfigurationsfeld muss scheitern");
     assert!(error.to_string().contains("unknown field"));
+
+    let operational_infrastructure_path = artifact_root.join("operational-infrastructure-v2.json");
+    let mut non_canonical_infrastructure = operational_infrastructure.clone();
+    non_canonical_infrastructure["signals"] = json!(["signal-1", "signal-1"]);
+    write(
+        &operational_infrastructure_path,
+        serde_json::to_string(&non_canonical_infrastructure)
+            .expect("nichtkanonische Operational-v2-Infrastruktur")
+            .as_bytes(),
+    );
+    let error =
+        build_mitteldeutschland_infra_release(&build_config, &root, &source_root, &artifact_root)
+            .expect_err("nichtkanonische Set-Darstellung muss scheitern");
+    assert!(
+        error
+            .to_string()
+            .contains("kanonischen nativen Darstellung")
+    );
+    write(
+        &operational_infrastructure_path,
+        serde_json::to_string_pretty(&operational_infrastructure)
+            .expect("Operational-v2-Infrastruktur wiederherstellen")
+            .as_bytes(),
+    );
+
+    let mut unsafe_integer_infrastructure = operational_infrastructure.clone();
+    unsafe_integer_infrastructure["directedEdges"]["edge-1"] = json!(9_007_199_254_740_992_i64);
+    write(
+        &operational_infrastructure_path,
+        serde_json::to_string(&unsafe_integer_infrastructure)
+            .expect("Operational-v2-Infrastruktur mit unsicherer Ganzzahl")
+            .as_bytes(),
+    );
+    let error =
+        build_mitteldeutschland_infra_release(&build_config, &root, &source_root, &artifact_root)
+            .expect_err("unsichere kanonische Ganzzahl muss scheitern");
+    assert!(error.to_string().contains("sichere kanonische Ganzzahl"));
+    write(
+        &operational_infrastructure_path,
+        serde_json::to_string_pretty(&operational_infrastructure)
+            .expect("Operational-v2-Infrastruktur erneut wiederherstellen")
+            .as_bytes(),
+    );
+
+    let pbf_report_path = artifact_root.join("pbf-release-report.json");
+    let mut released_pbf_class_c: Value =
+        serde_json::from_slice(&fs::read(&pbf_report_path).expect("PBF-Bericht lesen"))
+            .expect("PBF-Bericht-JSON");
+    released_pbf_class_c["quality"]["classes"]["B"] = json!(2);
+    released_pbf_class_c["quality"]["classes"]["C"] = json!(1);
+    write(
+        &pbf_report_path,
+        serde_json::to_string(&released_pbf_class_c)
+            .expect("Klasse-C-PBF-Bericht")
+            .as_bytes(),
+    );
+    let error =
+        build_mitteldeutschland_infra_release(&build_config, &root, &source_root, &artifact_root)
+            .expect_err("Klasse C im PBF-Bericht darf nicht in den Regionalrelease gelangen");
+    assert!(error.to_string().contains("Klasse-C-Abschnitte"));
+    released_pbf_class_c["quality"]["classes"]["B"] = json!(3);
+    released_pbf_class_c["quality"]["classes"]["C"] = json!(0);
+    write(
+        &pbf_report_path,
+        serde_json::to_string(&released_pbf_class_c)
+            .expect("PBF-Bericht wiederherstellen")
+            .as_bytes(),
+    );
+
+    let operational_network_path = artifact_root.join("operational-network.json");
+    let mut released_class_c: Value =
+        serde_json::from_slice(&fs::read(&operational_network_path).expect("Betriebsnetz lesen"))
+            .expect("Betriebsnetz-JSON");
+    released_class_c["network"]["metrics"]["qualityCSegmentCount"] = json!(1);
+    released_class_c["network"]["segmentQualifications"] =
+        json!([{ "qualityClass": "C", "orderable": false }]);
+    write(
+        &operational_network_path,
+        serde_json::to_string(&released_class_c)
+            .expect("Klasse-C-Betriebsnetz")
+            .as_bytes(),
+    );
+    let error =
+        build_mitteldeutschland_infra_release(&build_config, &root, &source_root, &artifact_root)
+            .expect_err("Klasse C darf nicht in den Regionalrelease gelangen");
+    assert!(error.to_string().contains("Klasse-C-Abschnitte"));
+
+    let mut world_bound_infrastructure = operational_infrastructure;
+    world_bound_infrastructure["worldId"] = json!("world-must-not-enter-infra-release");
+    write(
+        &operational_infrastructure_path,
+        serde_json::to_string(&world_bound_infrastructure)
+            .expect("weltbezogene Operational-v2-Infrastruktur")
+            .as_bytes(),
+    );
+    let error =
+        build_mitteldeutschland_infra_release(&build_config, &root, &source_root, &artifact_root)
+            .expect_err("weltbezogene Infrastruktur muss scheitern");
+    assert!(error.to_string().contains("unknown field `worldId`"));
 
     let mut wrong_date = build_config;
     wrong_date["serviceDate"] = json!("20260812");

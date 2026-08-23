@@ -13,10 +13,11 @@ import {
   NORMALIZED_SCHEDULE_REPEAT_EVERY_S,
   NORMALIZED_SCHEDULE_TIME_ZONE,
 } from "./regional-release-contract.mjs";
+import { assertOperationalInfrastructureV2ReleaseBinding } from "./operational-infrastructure-binding.mjs";
 
-const [gtfsPath, networkPath, fleetCatalogPath, infraReleasePath, economySpecPath, outputPath, publicConfigurationPath] = process.argv.slice(2);
-if (!gtfsPath || !networkPath || !fleetCatalogPath || !infraReleasePath || !economySpecPath || !outputPath || !publicConfigurationPath) {
-  throw new Error("Aufruf: node build-alpha-world.mjs GTFS.json NETWORK.json FLEET-CATALOG.json INFRA-RELEASE.json ECONOMY.json OUTPUT.json PUBLIC-ODOO-CONFIG.json");
+const [gtfsPath, networkPath, fleetCatalogPath, infraReleasePath, economySpecPath, outputPath, publicConfigurationPath, operationalV2Path] = process.argv.slice(2);
+if (!gtfsPath || !networkPath || !fleetCatalogPath || !infraReleasePath || !economySpecPath || !outputPath || !publicConfigurationPath || !operationalV2Path) {
+  throw new Error("Aufruf: node build-alpha-world.mjs GTFS.json NETWORK.json FLEET-CATALOG.json INFRA-RELEASE.json ECONOMY.json OUTPUT.json PUBLIC-ODOO-CONFIG.json OPERATIONAL-V2.json");
 }
 
 const WORLD_ID = "00000000-0000-4000-8000-000000000014";
@@ -139,14 +140,15 @@ function parseEconomySpec(specification) {
   return convert(specification);
 }
 
-const [gtfsBytes, networkBytes, fleetBytes, infraBytes, economyBytes, generatorBytes] = await Promise.all([
-  readFile(gtfsPath), readFile(networkPath), readFile(fleetCatalogPath), readFile(infraReleasePath), readFile(economySpecPath), readFile(new URL(import.meta.url)),
+const [gtfsBytes, networkBytes, fleetBytes, infraBytes, economyBytes, operationalV2Bytes, generatorBytes] = await Promise.all([
+  readFile(gtfsPath), readFile(networkPath), readFile(fleetCatalogPath), readFile(infraReleasePath), readFile(economySpecPath), readFile(operationalV2Path), readFile(new URL(import.meta.url)),
 ]);
 const gtfsEnvelope = JSON.parse(gtfsBytes);
 const networkEnvelope = JSON.parse(networkBytes);
 const fleetCatalog = JSON.parse(fleetBytes);
 const infraRelease = JSON.parse(infraBytes);
 const economySpecification = parseEconomySpec(JSON.parse(economyBytes));
+const operationalSimulation = JSON.parse(operationalV2Bytes);
 const gtfs = gtfsEnvelope.snapshot;
 const network = networkEnvelope.network;
 
@@ -202,7 +204,6 @@ const formations = [];
 const personnelDuties = [];
 const pathReservations = [];
 const regionalTrains = [];
-const boundaryTransitions = [];
 const blueprintLots = [];
 const publicVehiclePoolByLot = {};
 let numericAssetId = 10_000;
@@ -340,47 +341,6 @@ for (const [lotIndex, lot] of lotRecords.entries()) {
       route: initialRoute,
     });
 
-    for (const [legIndex, leg] of chain.legs.entries()) {
-      if (leg.kind !== "external") continue;
-      const nextPlayable = chain.legs.slice(legIndex + 1).find((candidate) => candidate.kind === "playable") ?? null;
-      const nextRoute = nextPlayable === null ? [] : routeForLeg(nextPlayable);
-      const entryWindow = nextPlayable?.planningWindows.find((window) => window.direction === "entry") ?? null;
-      const reentryAt = nextPlayable === null ? null : Math.max(leg.scheduledEndS, entryWindow?.targetS ?? nextPlayable.stops[0].arrivalS);
-      const fromPortalId = leg.fromPortalId ?? `external-origin:${leg.legId}`;
-      const enterId = `external-enter-${chain.journeyChainId}-${leg.legId}`;
-      boundaryTransitions.push({
-        transitionId: enterId,
-        worldId: WORLD_ID,
-        regionId: REGION_ID,
-        atS: leg.scheduledStartS,
-        command: {
-          type: "enter-external-zone",
-          trainRunId: chain.journeyChainId,
-          externalLeg: {
-            journeyChainId: chain.journeyChainId,
-            externalLegId: leg.legId,
-            fromPortalId,
-            toPortalId: leg.toPortalId,
-            scheduledStartS: leg.scheduledStartS,
-            scheduledEndS: leg.scheduledEndS,
-            reentryEarliestS: nextPlayable === null ? null : Math.max(leg.scheduledEndS, entryWindow?.earliestS ?? nextPlayable.stops[0].arrivalS),
-            reentryLatestS: nextPlayable === null ? null : Math.max(reentryAt, entryWindow?.latestS ?? nextPlayable.stops[0].departureS),
-            fixedCostCents: leg.fixedCostCents,
-            boundVehicleIds: [assetId],
-            boundPersonnelDutyIds: [dutyId],
-            reentryRoute: nextRoute,
-            firstResources: nextPlayable === null ? [] : qualificationBySegment.get(nextPlayable.legId).resourceIds.slice(0, 1),
-          },
-        },
-      });
-      if (reentryAt !== null) boundaryTransitions.push({
-        transitionId: `external-reenter-${chain.journeyChainId}-${leg.legId}`,
-        worldId: WORLD_ID,
-        regionId: REGION_ID,
-        atS: reentryAt,
-        command: { type: "reenter-from-external", trainRunId: chain.journeyChainId },
-      });
-    }
   }
   publicVehiclePoolByLot[lot.lotId] = vehicleIds;
   blueprintLots.push({
@@ -394,34 +354,6 @@ for (const [lotIndex, lot] of lotRecords.entries()) {
     operatingProgramIds: [`operating-program-${lot.lotId}-daily`],
   });
 }
-
-function scheduleReentries(transitions) {
-  const enterByReentryId = new Map();
-  for (const transition of transitions) {
-    if (transition.command.type !== "enter-external-zone" || transition.command.externalLeg.reentryEarliestS === null) continue;
-    enterByReentryId.set(
-      `external-reenter-${transition.command.trainRunId}-${transition.command.externalLeg.externalLegId}`,
-      transition,
-    );
-  }
-  const occupiedUntilByResource = new Map();
-  for (const transition of transitions
-    .filter((entry) => entry.command.type === "reenter-from-external")
-    .sort((left, right) => left.atS - right.atS || left.transitionId.localeCompare(right.transitionId))) {
-    const enter = enterByReentryId.get(transition.transitionId);
-    if (enter === undefined) throw new Error(`Eintrittsvertrag fuer ${transition.transitionId} fehlt.`);
-    const contract = enter.command.externalLeg;
-    const resource = contract.firstResources[0] ?? null;
-    const firstPoint = contract.reentryRoute[0];
-    const dwellS = Math.max(1, firstPoint.departureS - firstPoint.arrivalS);
-    const earliest = Math.max(transition.atS, resource === null ? 0 : occupiedUntilByResource.get(resource) ?? 0);
-    if (earliest > contract.reentryLatestS) throw new Error(`Kein konfliktfreies Grenzfenster fuer ${transition.transitionId}.`);
-    transition.atS = earliest;
-    if (resource !== null) occupiedUntilByResource.set(resource, earliest + dwellS);
-  }
-}
-
-scheduleReentries(boundaryTransitions);
 
 const fleet = {
   schemaVersion: "zugfolge-fleet-world-initialize/v2",
@@ -526,8 +458,73 @@ const planningInfrastructureRelease = {
     };
   }),
 };
+
+function assertOperationalV2Initialization(value) {
+  const infra = value?.infraRelease;
+  const expectedTrains = new Map(regionalTrains.map((train) => [train.trainRunId, train]));
+  if (
+    value?.schemaVersion !== "zugfolge-operational-simulation-initialize/v2"
+    || value.worldId !== WORLD_ID
+    || value.regionId !== REGION_ID
+    || value.nowMs !== 0
+    || typeof infra !== "object"
+    || infra === null
+    || Array.isArray(infra)
+    || infra.id !== infraRelease.releaseId
+    || typeof infra.routeVersions !== "object"
+    || infra.routeVersions === null
+    || typeof infra.interlockingRoutes !== "object"
+    || infra.interlockingRoutes === null
+    || !Array.isArray(infra.blockResources)
+    || !Array.isArray(value.vehicleTypes)
+    || value.vehicleTypes.length === 0
+    || !Array.isArray(value.vehicles)
+    || value.vehicles.length === 0
+    || !Array.isArray(value.formations)
+    || value.formations.length === 0
+    || !Array.isArray(value.trains)
+    || value.trains.length !== expectedTrains.size
+  ) throw new Error("Operatives v2-Initialisierungsartefakt ist unvollstaendig oder nicht releasegebunden.");
+  const resources = new Set(infra.blockResources);
+  const routeTemplates = new Set(Object.values(infra.routeVersions).map((route) => route?.templateId));
+  for (const template of Object.values(infra.interlockingRoutes)) {
+    const declared = [
+      ...(template?.pathResources ?? []),
+      ...(template?.overlapResources ?? []),
+      ...(template?.flankResources ?? []),
+    ];
+    if (
+      typeof template?.routeTemplateId !== "string"
+      || !routeTemplates.has(template.routeTemplateId)
+      || declared.length === 0
+      || declared.some((resourceId) => !resources.has(resourceId))
+    ) throw new Error("Operatives v2-Artefakt besitzt eine fremde Laufweg- oder Ressourcenbindung.");
+  }
+  const seen = new Set();
+  for (const train of value.trains) {
+    const expected = expectedTrains.get(train?.id);
+    if (
+      expected === undefined
+      || seen.has(train.id)
+      || train.operatorId !== OPERATOR_ID
+      || train.trainNumber !== expected.trainNumber
+      || train.movementKind !== "train"
+      || !Object.hasOwn(infra.routeVersions, train.routeVersionId)
+    ) throw new Error("Operatives v2-Artefakt verletzt Fahrt-, Betreiber- oder Laufwegbindung.");
+    seen.add(train.id);
+  }
+  assertOperationalInfrastructureV2ReleaseBinding({
+    initialization: value,
+    infraReleaseManifest: infraRelease,
+    expectedWorldId: WORLD_ID,
+    expectedRegionId: REGION_ID,
+  });
+}
+
+assertOperationalV2Initialization(operationalSimulation);
+const operationalSimulationSourceSha256 = sha256(operationalV2Bytes);
 const deployment = {
-  schema: "zugfolge-alpha-world-deployment/v1",
+  schema: "zugfolge-alpha-world-deployment/v2",
   worldId: WORLD_ID,
   deploymentRevision: publicDeployConfiguration.deploymentRevision,
   worldDefinition: publicDeployConfiguration.worldDefinition,
@@ -561,16 +558,8 @@ const deployment = {
     publicVehiclePoolByLot,
   },
   fleet,
-  regionalSimulation: {
-    schemaVersion: "zugfolge-regional-simulation-initialize/v1",
-    worldId: WORLD_ID,
-    regionId: REGION_ID,
-    materializationWindowHours: 48,
-    nowS: 0,
-    trains: regionalTrains.sort((left, right) => left.trainRunId.localeCompare(right.trainRunId)),
-  },
+  regionalSimulation: operationalSimulation,
   repeatEveryS: scheduleTimeContract.repeatEveryS,
-  boundaryTransitions: boundaryTransitions.sort((left, right) => left.atS - right.atS || left.transitionId.localeCompare(right.transitionId)),
   planning: {
     authority: {
       accountId: PUBLIC_PLANNING_AUTHORITY_ACCOUNT_ID,
@@ -584,6 +573,7 @@ const deployment = {
     operationalNetworkHash: networkEnvelope.networkHash,
     gtfsSnapshotHash: gtfsEnvelope.snapshotHash,
     fleetSourceSha256: sha256(fleetBytes),
+    operationalSimulationSourceSha256,
     generationScriptSha256: sha256(generatorBytes),
   },
 };
@@ -599,7 +589,7 @@ console.log(JSON.stringify({
   vehicleCount: fleet.authorityRelease.assets.length,
   personnelDutyCount: fleet.personnelDuties.length,
   pathReservationCount: fleet.pathReservations.length,
-  boundaryTransitionCount: boundaryTransitions.length,
+  operationalTrainCount: operationalSimulation.trains.length,
   fleetReleaseHash: fleetEvidence.authorityReleaseHash,
   economyReleaseHash: economyRelease.checksum,
   timetableReleaseHash: gtfsEnvelope.snapshotHash,

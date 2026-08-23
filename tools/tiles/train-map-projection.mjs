@@ -348,7 +348,7 @@ function unwrapDeployment(value) {
     decodeEconomyValue(root.deployment),
     "alpha-world-deployment.deployment",
   );
-  invariant(deployment.schema === "zugfolge-alpha-world-deployment/v1", "Alpha-Deployment besitzt nicht das v1-Schema.");
+  invariant(deployment.schema === "zugfolge-alpha-world-deployment/v2", "Alpha-Deployment besitzt nicht das Betriebsengine-v2-Schema.");
   const deploymentHash = alphaHash(deployment.schema, deployment);
   invariant(
     root.deploymentHash === undefined || root.deploymentHash === deploymentHash,

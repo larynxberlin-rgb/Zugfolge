@@ -25,7 +25,7 @@ function context(): ManualDisruptionAdminContext {
       approverReference: "approver-2",
       reason: "Akute Weichenstoerung mit betrieblicher Wirkung",
       manualDisruption: {
-        startsAt: "2026-08-11T12:05:00.000Z",
+        startsAt: "2026-08-11T11:55:00.000Z",
         endsAt: "2026-08-11T13:00:00.000Z",
         cause: "Weichenantrieb gestoert",
         affectedResourceIds: ["track:4"],
@@ -34,12 +34,9 @@ function context(): ManualDisruptionAdminContext {
           kind: "traffic-hold",
           causeCode: 26,
           fineCauseId: "switch.drive",
-          delaySeconds: 600,
           targets: [{
             resourceId: "track:4",
             regionId: "leipzig",
-            positionMm: 1_200_000,
-            affectedTrainRunIds: ["run-1"],
           }],
         },
       },
@@ -71,16 +68,9 @@ describe("M8.3 Odoo-Administrationshandler", () => {
         regionId: "leipzig",
         commandId: "odoo-manual-disruption:odoo-event-0001:0",
         command: {
-          type: "register-disruption",
-          disruption: expect.objectContaining({
-            kind: "planned",
-            causeCode: 26,
-            fineCauseId: "switch.drive",
-            effect: "traffic-hold",
-            affectedResource: "track:4",
-            affectedTrainRunIds: ["run-1"],
-            delaySeconds: 600,
-          }),
+          type: "activate-disruption",
+          disruptionId: "admin:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:0",
+          effect: { "resource-closed": { resourceId: "track:4" } },
         },
       }),
       now,
@@ -121,5 +111,32 @@ describe("M8.3 Odoo-Administrationshandler", () => {
         },
       },
     })).rejects.toMatchObject({ code: "resources" });
+
+    const future = context();
+    await expect(handler({
+      ...future,
+      payload: {
+        ...future.payload,
+        manualDisruption: {
+          ...future.payload.manualDisruption!,
+          startsAt: "2026-08-11T12:05:00.000Z",
+        },
+      },
+    })).rejects.toMatchObject({ code: "time" });
+
+    const inventedSpeed = context();
+    await expect(handler({
+      ...inventedSpeed,
+      payload: {
+        ...inventedSpeed.payload,
+        manualDisruption: {
+          ...inventedSpeed.payload.manualDisruption!,
+          declaredEffect: {
+            ...inventedSpeed.payload.manualDisruption!.declaredEffect,
+            kind: "speed-restriction",
+          },
+        },
+      },
+    })).rejects.toMatchObject({ code: "effect" });
   });
 });

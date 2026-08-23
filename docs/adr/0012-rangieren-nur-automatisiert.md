@@ -1,9 +1,15 @@
 # ADR-0012: Rangieren ist ausschließlich automatisiert
 
-- **Status:** Angenommen — bindend (entspricht E12)
+Dieses ADR entspricht E12.
+
+- **Status:** Teilabgelöst durch ADR-0032; die automatische Spielerführung bleibt bindend
 - **Bezug:** [../entscheidungen.md](../entscheidungen.md) · [../betrieb.md](../betrieb.md)
 - **Betrifft Milestones:** M5.9 (Rangieraufwand), M11.2 (Zugbildung im SGV)
-- **Verwandte ADRs:** [ADR-0019](0019-realismus-dient-dem-spiel.md)
+- **Verwandte ADRs:** [ADR-0019](0019-realismus-dient-dem-spiel.md), [ADR-0032](0032-eine-autoritative-betriebswirklichkeit.md)
+
+> ADR-0032 ersetzt nur die Abstraktion als pauschale Zeit/kurze Belegung durch
+> vollständige physische automatische Rangierbewegungen. Spieler geben
+> weiterhin keine einzelnen Rangierschritte vor.
 
 ## Kontext
 

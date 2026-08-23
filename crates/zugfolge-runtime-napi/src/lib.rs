@@ -11,9 +11,8 @@ mod regional_simulation;
 
 #[cfg(feature = "node-addon")]
 pub use regional_simulation::{
-    apply_regional_simulation_command, apply_regional_simulation_command_async,
-    apply_regional_simulation_command_batch, apply_regional_simulation_command_batch_async,
-    initialize_regional_simulation, restore_regional_simulation,
+    apply_operational_simulation_command, apply_operational_simulation_command_async,
+    initialize_operational_simulation, restore_operational_simulation,
 };
 
 /// Initializes the authoritative, revisioned M5 fleet state.

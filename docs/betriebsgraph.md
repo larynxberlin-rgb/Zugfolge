@@ -267,9 +267,12 @@ Umsetzung: [`crates/zugfolge-infra/src/network_filter.rs`](../crates/zugfolge-in
 
 Jedes Band eines Gleisattributs trägt seinen Vertrauensgrad (`Confidence`,
 Abschnitt 1). Die Abdeckungsmessung liest ihn und bildet ihn unmittelbar auf
-die Qualitätsklassen aus `docs/daten.md` 5 ab: erfasst trägt Klasse A,
-abgeleitet höchstens B, angenommen höchstens C. Das ist die einfachste
-Abbildung, die sich heute begründen lässt (E19) — die eigentliche Klasse A
+die Qualitätsklassen aus `docs/daten.md` 5 ab: erfasst kann Klasse A tragen;
+abgeleitete oder angenommene Werte können höchstens ein konservatives B
+begründen, wenn die versionierte Sicherheitsregel jede Pflichtdimension
+vollständig schließt. Andernfalls entsteht ein interner Releaseblocker statt
+einer dritten Klasse. Das ist die einfachste Abbildung, die sich heute
+begründen lässt (E19) — die eigentliche Klasse A
 setzt zusätzlich geprüfte Blöcke und Fahrstraßen voraus (M1.6, M1.7), die
 noch fehlen. Was diese Stufe liefert, ist die datenseitige Obergrenze, auf
 der jene Stufen aufsetzen.
@@ -277,9 +280,10 @@ der jene Stufen aufsetzen.
 **Je Attribut und Streckenabschnitt**, wie der Milestone verlangt: Der
 Bericht summiert Länge je Vertrauensgrad für jedes der vier Attribute
 getrennt und zerlegt jedes Gleis an jeder Bandgrenze seiner vier Profile neu
-— jeder entstehende Abschnitt trägt die Klasse seines schwächsten Attributs
-an dieser Stelle, dieselbe Regel wie `Track::confidence`, nur ortsaufgelöst
-statt gleisweit. Alle Anteile sind ganzzahlig in Promille (Invariante 3).
+— jeder entstehende Abschnitt trägt A oder ein vollständig geschlossenes B.
+Bleibt das schwächste Pflichtattribut offen, meldet der Bericht stattdessen
+einen Releaseblocker. Die Confidence-Regel bleibt ortsaufgelöst statt
+gleisweit. Alle Anteile sind ganzzahlig in Promille (Invariante 3).
 
 Umsetzung: [`crates/zugfolge-infra/src/coverage.rs`](../crates/zugfolge-infra/src/coverage.rs).
 
@@ -332,16 +336,19 @@ Topologie** abgeleitet werden. M1.6 liefert das Verfahren —
   (`BlockKind::CabSignalled`) — ein realer Block, auch ohne ein ortsfestes
   Signal und auch über große Länge. Das ist der reine LZB- und der reine
   ETCS-Block, und er wird gerade **nicht** als Datenlücke behandelt. Ein
-  ungesicherter Abschnitt dagegen trägt keine Zugfahrten und erreicht Klasse C.
+  ungesicherter Abschnitt dagegen wird nicht als Block veröffentlicht und
+  blockiert den Releasekandidaten.
 - **Lücken werden zu virtuellen Blöcken.** Nur wo weder ein Kennzeichen noch die
   durchgehende Überwachung einspringt, gilt ein zu langer Abschnitt als
   Datenlücke und wird konservativ in gleich lange virtuelle Blöcke zerlegt
   (`BlockKind::Virtual`, Klasse B).
 
-Die **Qualitätsklassifizierung A/B/C** je Block folgt daraus: ein realer Block
+Die **Qualitätsklassifizierung A/B** je Block folgt daraus: ein realer Block
 — signalisiert oder führerraumsignalisiert — auf erfasster, durchgehend
-gesicherter Strecke ist Klasse A; ein virtueller Block Klasse B; ein Block über
-einem ungesicherten Abschnitt Klasse C. Das setzt die Abbildung aus M1.4 fort,
+gesicherter Strecke ist Klasse A; ein vollständig konservativ geschlossener
+virtueller Block Klasse B. Ein ungesicherter Abschnitt erzeugt keinen
+Releaseblock, sondern einen internen Pflichtbefund und verhindert die
+Freigabe. Das setzt die Abbildung aus M1.4 fort,
 in der die geprüften Blöcke noch fehlten. Ein Block ist **kein Gleis**: Er
 entsteht neben dem Modell, nicht als Baustein darin (Abschnitt 5). Wie M1.5 ist
 das Verfahren **kein Import** — es rechnet mit Signalpositionen, gleich woher

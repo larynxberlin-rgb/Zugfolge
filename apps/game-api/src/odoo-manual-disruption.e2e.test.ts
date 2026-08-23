@@ -56,7 +56,7 @@ describe("PR 198/199 Odoo-Game-Produktionsgrenze", () => {
         reason: "Bestaetigte Weichenstoerung mit erheblicher betrieblicher Wirkung",
         effectPreview: { affectedTrainRuns: 1, maximumDelaySeconds: 600 },
         manualDisruption: {
-          startsAt: "2026-08-11T12:05:00.000Z",
+          startsAt: "2026-08-11T11:55:00.000Z",
           endsAt: "2026-08-11T13:00:00.000Z",
           cause: "Weichenantrieb gestoert",
           affectedResourceIds: ["track:4"],
@@ -65,10 +65,8 @@ describe("PR 198/199 Odoo-Game-Produktionsgrenze", () => {
             kind: "traffic-hold",
             causeCode: 26,
             fineCauseId: "switch.drive",
-            delaySeconds: 600,
             targets: [{
               resourceId: "track:4", regionId: "mitteldeutschland-b:leipzig",
-              positionMm: 1_200_000, affectedTrainRunIds: ["run-1"],
             }],
           },
         },
@@ -88,7 +86,11 @@ describe("PR 198/199 Odoo-Game-Produktionsgrenze", () => {
     expect(apply).toHaveBeenCalledWith(expect.objectContaining({
       worldId: WORLD,
       regionId: "mitteldeutschland-b:leipzig",
-      command: { type: "register-disruption", disruption: expect.objectContaining({ affectedResource: "track:4", causeCode: 26 }) },
+      command: {
+        type: "activate-disruption",
+        disruptionId: expect.stringContaining("admin:"),
+        effect: { "resource-closed": { resourceId: "track:4" } },
+      },
     }), NOW);
     const [queue] = await db.select().from(odooCommandQueue).where(eq(odooCommandQueue.eventId, envelope.eventId));
     expect(queue).toMatchObject({ status: "completed" });

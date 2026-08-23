@@ -171,7 +171,7 @@ pub use release::{InfraRelease, InfraReleaseBuilder, ReleaseSource, ReleaseVersi
 pub use release_manifest::{
     ReleaseManifestError, build_annual_infra_plan, build_mitteldeutschland_infra_release,
     build_public_infra_release, build_qualified_reference_release, build_reference_report,
-    verify_reference_artifact_chain,
+    validate_operational_infrastructure_v2, verify_reference_artifact_chain,
 };
 pub use semantic_export::{SemanticExportError, SemanticExportSummary, export_semantic_geojsonseq};
 pub use speed::{SpeedCategory, SpeedLimit};

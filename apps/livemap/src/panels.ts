@@ -30,21 +30,6 @@ function minuteLabel(seconds: number): string {
   return `${sign}${Math.floor(Math.abs(seconds) / 60)} min`;
 }
 
-const ESTIMATE_METHOD_LABEL = Object.freeze({
-  "topological-track": "Fahrtfortschritt auf einem Darstellungsgleis",
-  "route-corridor": "Fahrtfortschritt im geplanten Streckenkorridor",
-  "anchor-hold": "Letzte belastbare Kartenlage",
-});
-
-function uncertaintyLabel(uncertaintyMm: number): string {
-  const metres = Math.ceil(uncertaintyMm / 1_000);
-  if (metres < 1_000) {
-    const roundedMetres = Math.max(100, Math.ceil(metres / 100) * 100);
-    return `ungefähr ± ${roundedMetres} m`;
-  }
-  return `ungefähr ± ${Math.ceil(metres / 1_000)} km`;
-}
-
 export interface TrainMapPositionSummary {
   readonly definitions: readonly { readonly term: string; readonly value: string }[];
   readonly note?: string;
@@ -62,21 +47,9 @@ export function trainMapPositionSummary(train: PublicTrain): TrainMapPositionSum
       ]),
     });
   }
-  const estimate = train.mapEstimate;
-  if (estimate === undefined) return Object.freeze({ definitions: Object.freeze([]) });
   return Object.freeze({
-    definitions: Object.freeze([
-      Object.freeze({
-        term: "Kartenlage",
-        value: estimate.method === "anchor-hold" ? "letzte Lage (?)" : "geschätzt (≈)",
-      }),
-      Object.freeze({ term: "Infrastrukturstand", value: estimate.infrastructureReleaseId }),
-      Object.freeze({ term: "Ableitung", value: ESTIMATE_METHOD_LABEL[estimate.method] }),
-      Object.freeze({ term: "Unsicherheitsbereich", value: uncertaintyLabel(estimate.uncertaintyMm) }),
-    ]),
-    note: estimate.method === "anchor-hold"
-      ? "Der Marker bleibt an der letzten belastbaren Stelle. Die Fahrt läuft im System weiter; das Fragezeichen ist kein Stillstandssignal."
-      : "Der Marker folgt dem bekannten Fahrtverlauf. Die graue Schätzung dient nur der Orientierung und hat keine Wirkung auf Fahrweg, Konflikte oder Fahrdienstleitung.",
+    definitions: Object.freeze([Object.freeze({ term: "Kartenlage", value: "sicher eingefroren" })]),
+    note: "Ohne exakte releasegebundene Position wird keine Kartenlage geschätzt.",
   });
 }
 
@@ -283,7 +256,10 @@ function fisPanel(detail: PublicTrainDetailV1): HTMLElement {
   const top = element("div", undefined, "fis-topline");
   const title = element("h2", `${detail.fis.category} ${detail.fis.trainNumber}`, "fis-train");
   title.id = "fis-title";
-  top.append(title, element("span", minuteLabel(detail.fis.delaySeconds), detail.fis.delaySeconds > 60 ? "fis-delay" : "fis-ontime"));
+  top.append(title);
+  if (detail.fis.delaySeconds !== undefined) {
+    top.append(element("span", minuteLabel(detail.fis.delaySeconds), detail.fis.delaySeconds > 60 ? "fis-delay" : "fis-ontime"));
+  }
   fis.append(top);
   if (detail.fis.destination !== undefined) fis.append(element("p", `Fahrtziel ${detail.fis.destination}`, "fis-destination"));
   fis.append(element("p", detail.fis.nextStop === undefined ? "Nächster Halt wird noch nicht projiziert" : `Nächster Halt ${detail.fis.nextStop}`, "fis-next"));
@@ -306,11 +282,15 @@ export function trainPanel(detail: PublicTrainDetailV1, owner: OwnerTrainDetailV
   addDefinition(list, "Status", "progressBasisPoints" in train
     ? externalStatusLabel(train.status as PublicExternalTrain["status"])
     : operatingStatusLabel(train.status as OperatingStatus));
-  addDefinition(list, "Verspätung", minuteLabel(train.delaySeconds), train.delaySeconds > 60 ? "warn" : undefined);
+  if (train.delaySeconds !== undefined) {
+    addDefinition(list, "Verspätung", minuteLabel(train.delaySeconds), train.delaySeconds > 60 ? "warn" : undefined);
+  }
   if (detail.movement === "network" && "speedMmPerSecond" in detail.train) {
     const networkTrain = detail.train;
     addDefinition(list, "Geschwindigkeit", `${Math.round((networkTrain.speedMmPerSecond * 36) / 10_000)} km/h`);
-    addDefinition(list, "Nächster Betriebspunkt", networkTrain.nextOperatingPoint);
+    if (networkTrain.nextOperatingPoint !== undefined) {
+      addDefinition(list, "Nächster Betriebspunkt", networkTrain.nextOperatingPoint);
+    }
     const mapSummary = trainMapPositionSummary(networkTrain);
     mapSummary.definitions.forEach(({ term, value }) => addDefinition(list, term, value));
     if (mapSummary.note !== undefined) estimateNote = element("p", mapSummary.note, "position-estimate-note");

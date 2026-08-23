@@ -3,14 +3,14 @@ import { MIGRATIONS_FOLDER, worlds } from "@zugfolge/db";
 import * as schema from "@zugfolge/db/schema";
 import type { IdentityDatabase } from "@zugfolge/identity";
 import {
-  REGIONAL_LIVEMAP_DELTA_SCHEMA,
-  REGIONAL_LIVEMAP_SNAPSHOT_SCHEMA,
-  REGIONAL_SIMULATION_INITIALIZED_SCHEMA,
-  REGIONAL_SIMULATION_INITIALIZE_SCHEMA,
-  REGIONAL_SIMULATION_RESULT_SCHEMA,
-  REGIONAL_SIMULATION_STATE_SCHEMA,
-  type RegionalSimulationInitialized,
-  type RegionalSimulationResult,
+  OPERATIONAL_SIMULATION_INITIALIZED_SCHEMA,
+  OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
+  OPERATIONAL_SIMULATION_RESULT_SCHEMA,
+  OPERATIONAL_SIMULATION_STATE_SCHEMA,
+  type OperationalProjection,
+  type OperationalSimulationInitialized,
+  type OperationalSimulationResult,
+  type OperationalSimulationState,
 } from "@zugfolge/runtime-native";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
@@ -27,30 +27,57 @@ const token = "regional-simulation-test-token";
 const worldA = "11111111-1111-4111-8111-111111111111";
 const worldB = "22222222-2222-4222-8222-222222222222";
 const regionId = "leipzig";
+const infraReleaseId = "infra-operational-v2";
 
-function initialized(worldId: string): RegionalSimulationInitialized {
-  const state = {
-    schemaVersion: REGIONAL_SIMULATION_STATE_SCHEMA,
-    worldId,
-    regionId,
-    initialNowS: 0,
-    nowS: 0,
-    revision: 0,
-    publisherSequence: 0,
-    commands: [],
-  } as const;
+function state(
+  worldId: string,
+  revision: number,
+  nowMs: number,
+): OperationalSimulationState {
+  const stateHash = (revision + 10).toString(16).padStart(64, "0");
   return {
-    schemaVersion: REGIONAL_SIMULATION_INITIALIZED_SCHEMA,
-    state,
-    stateHash: "a".repeat(64),
-    snapshot: {
-      schemaVersion: REGIONAL_LIVEMAP_SNAPSHOT_SCHEMA,
+    schemaVersion: OPERATIONAL_SIMULATION_STATE_SCHEMA,
+    world: {
       worldId,
       regionId,
-      producerSequence: 0,
-      atS: 0,
-      trains: [],
+      infraReleaseId,
+      nowMs,
+      commitSequence: revision,
+      events: [],
     },
+    revision,
+    publisherSequence: revision,
+    stateHash,
+    commandReceipts: revision === 0 ? {} : { "advance-to-ms:1000": "receipt" },
+  } as OperationalSimulationState;
+}
+
+function projection(
+  source: OperationalSimulationState,
+  kind: OperationalProjection["kind"],
+): OperationalProjection {
+  return {
+    kind,
+    worldId: source.world.worldId,
+    regionId: source.world.regionId,
+    infraReleaseId: source.world.infraReleaseId,
+    commitSequence: source.world.commitSequence,
+    atMs: source.world.nowMs,
+    staleAfterMs: source.world.nowMs + 75_000,
+    trains: [],
+    routeLocks: [],
+    signals: {},
+  };
+}
+
+function initialized(worldId: string): OperationalSimulationInitialized {
+  const initializedState = state(worldId, 0, 0);
+  return {
+    schemaVersion: OPERATIONAL_SIMULATION_INITIALIZED_SCHEMA,
+    state: initializedState,
+    stateHash: initializedState.stateHash,
+    liveMap: projection(initializedState, "live-map"),
+    rzue: projection(initializedState, "rzue"),
     events: [],
   };
 }
@@ -59,54 +86,37 @@ function result(
   worldId: string,
   commandId: string,
   idempotentReplay: boolean,
-): RegionalSimulationResult {
-  const state = {
-    schemaVersion: REGIONAL_SIMULATION_STATE_SCHEMA,
-    worldId,
-    regionId,
-    initialNowS: 0,
-    nowS: 1,
-    revision: 1,
-    publisherSequence: 1,
-    commands: [{}],
-  } as const;
+): OperationalSimulationResult {
+  const resultState = state(worldId, 1, 1_000);
   return {
-    schemaVersion: REGIONAL_SIMULATION_RESULT_SCHEMA,
-    state,
-    stateHash: "b".repeat(64),
+    schemaVersion: OPERATIONAL_SIMULATION_RESULT_SCHEMA,
+    state: resultState,
+    stateHash: resultState.stateHash,
+    liveMap: projection(resultState, "live-map"),
+    rzue: projection(resultState, "rzue"),
     events: [],
-    delta: {
-      schemaVersion: REGIONAL_LIVEMAP_DELTA_SCHEMA,
-      worldId,
-      regionId,
-      producerSequence: 1,
-      atS: 1,
-      changed: [],
-      removed: [],
-    },
     appliedCommandId: commandId,
     idempotentReplay,
   };
 }
 
 const initializationBody = {
-  materializationWindowHours: 48,
-  nowS: 0,
+  nowMs: 0,
+  infraRelease: { id: infraReleaseId },
+  vehicleTypes: [],
+  vehicles: [],
+  formations: [],
   trains: [
     {
-      trainRunId: "run-1",
-      operator: "operator-1",
+      id: "run-1",
+      operatorId: "operator-1",
       trainNumber: "RE 1",
-      category: "regional",
-      route: [
-        {
-          operatingPoint: "Leipzig Hbf",
-          positionMm: 0,
-          arrivalS: 0,
-          minimumDwellSeconds: 30,
-          departureS: 30,
-        },
-      ],
+      movementKind: "train",
+      routeVersionId: "route-v2",
+      formationVersionId: "formation-v2",
+      headRouteMm: 10_000,
+      scheduledDepartureMs: null,
+      publicPassengerStop: true,
     },
   ],
 } as const;
@@ -173,7 +183,7 @@ describe("interne regionale M4-Routen", () => {
       expect(accepted.statusCode).toBe(201);
       expect(initialize).toHaveBeenCalledWith(
         {
-          schemaVersion: REGIONAL_SIMULATION_INITIALIZE_SCHEMA,
+          schemaVersion: OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
           worldId: worldA,
           regionId,
           ...initializationBody,
@@ -204,19 +214,19 @@ describe("interne regionale M4-Routen", () => {
     });
     await app.ready();
     const url =
-      `/internal/worlds/${worldA}/regional-simulations/${regionId}/commands/advance-to:1`;
+      `/internal/worlds/${worldA}/regional-simulations/${regionId}/commands/advance-to-ms:1000`;
     try {
       const first = await app.inject({
         method: "POST",
         url,
         headers: { authorization: `Bearer ${token}` },
-        payload: { type: "advance-to", atS: 1 },
+        payload: { type: "advance-to", atMs: 1_000 },
       });
       const retry = await app.inject({
         method: "POST",
         url,
         headers: { authorization: `Bearer ${token}` },
-        payload: { type: "advance-to", atS: 1 },
+        payload: { type: "advance-to", atMs: 1_000 },
       });
       expect(first.statusCode).toBe(200);
       expect(first.json()).toMatchObject({ idempotentReplay: false });
@@ -226,8 +236,8 @@ describe("interne regionale M4-Routen", () => {
         {
           worldId: worldA,
           regionId,
-          commandId: "advance-to:1",
-          command: { type: "advance-to", atS: 1 },
+          commandId: "advance-to-ms:1000",
+          command: { type: "advance-to", atMs: 1_000 },
         },
         expect.any(Date),
       );
@@ -236,7 +246,7 @@ describe("interne regionale M4-Routen", () => {
         method: "POST",
         url,
         headers: { authorization: `Bearer ${token}` },
-        payload: { type: "advance-to", atS: 1, regionId: "halle" },
+        payload: { type: "advance-to", atMs: 1_000, regionId: "halle" },
       });
       expect(foreignField.statusCode).toBe(400);
       expect(apply).toHaveBeenCalledTimes(2);
@@ -245,7 +255,7 @@ describe("interne regionale M4-Routen", () => {
         method: "POST",
         url: `/internal/worlds/99999999-9999-4999-8999-999999999999/regional-simulations/${regionId}/commands/missing`,
         headers: { authorization: `Bearer ${token}` },
-        payload: { type: "advance-to", atS: 1 },
+        payload: { type: "advance-to", atMs: 1_000 },
       });
       expect(missingWorld.statusCode).toBe(404);
       expect(missingWorld.json()).toMatchObject({ code: "world_not_found" });
@@ -255,7 +265,7 @@ describe("interne regionale M4-Routen", () => {
     }
   });
 
-  it("reicht einen vollstaendigen Aussenlaufvertrag nur ueber die interne Single-Writer-Route weiter", async () => {
+  it("weist AddDelay und alte Aussenlaufkommandos am harten v2-Vertrag zurueck", async () => {
     const apply = vi.fn(async (work) => result(work.worldId, work.commandId, false));
     const app = buildApp({
       db,
@@ -269,7 +279,7 @@ describe("interne regionale M4-Routen", () => {
       } as Pick<RegionalSimulationWorker, "initialize" | "apply">,
     });
     await app.ready();
-    const command = {
+    const legacyExternalCommand = {
       type: "enter-external-zone",
       trainRunId: "run-1",
       externalLeg: {
@@ -297,22 +307,23 @@ describe("interne regionale M4-Routen", () => {
       },
     } as const;
     try {
-      const response = await app.inject({
+      const addDelay = await app.inject({
+        method: "POST",
+        url: `/internal/worlds/${worldA}/regional-simulations/${regionId}/commands/legacy-delay`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { type: "add-delay", trainRunId: "run-1", seconds: 60 },
+      });
+      const external = await app.inject({
         method: "POST",
         url: `/internal/worlds/${worldA}/regional-simulations/${regionId}/commands/external:run-1`,
         headers: { authorization: `Bearer ${token}` },
-        payload: command,
+        payload: legacyExternalCommand,
       });
-      expect(response.statusCode).toBe(200);
-      expect(apply).toHaveBeenCalledWith(
-        {
-          worldId: worldA,
-          regionId,
-          commandId: "external:run-1",
-          command,
-        },
-        expect.any(Date),
-      );
+      expect(addDelay.statusCode).toBe(400);
+      expect(addDelay.json()).toMatchObject({ code: "regional_simulation_invalid_request" });
+      expect(external.statusCode).toBe(400);
+      expect(external.json()).toMatchObject({ code: "regional_simulation_invalid_request" });
+      expect(apply).not.toHaveBeenCalled();
     } finally {
       await app.close();
     }
@@ -342,7 +353,7 @@ describe("interne regionale M4-Routen", () => {
         method: "POST",
         url: `/internal/worlds/${worldA}/regional-simulations/${regionId}/commands/conflict`,
         headers: { authorization: `Bearer ${token}` },
-        payload: { type: "advance-to", atS: 1 },
+        payload: { type: "advance-to", atMs: 1_000 },
       });
       expect(conflict.statusCode).toBe(409);
       expect(conflict.json()).toMatchObject({ code: "regional_simulation_conflict" });
@@ -351,7 +362,7 @@ describe("interne regionale M4-Routen", () => {
         method: "POST",
         url: `/internal/worlds/${worldB}/regional-simulations/${regionId}/commands/unavailable`,
         headers: { authorization: `Bearer ${token}` },
-        payload: { type: "advance-to", atS: 1 },
+        payload: { type: "advance-to", atMs: 1_000 },
       });
       expect(unavailable.statusCode).toBe(503);
       expect(unavailable.json()).toMatchObject({

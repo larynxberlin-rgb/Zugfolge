@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PublicMapEstimate } from "@zugfolge/livemap-stream";
 
 import {
   appendRenderSample,
@@ -243,34 +242,6 @@ describe("Livemap-Projektion", () => {
     expect(updated?.objectStates.size).toBe(0);
   });
 
-  it("uebernimmt eine releasegebundene Kartenschaetzung ohne sie zur Gleisposition umzudeuten", () => {
-    const initial = initialState(parseSnapshot({
-      ...snapshot(4, 100, {
-        ...baseTrain,
-        mapEstimate: {
-          infrastructureReleaseId: "infra-de-2026",
-          resourceId: "block-track-1",
-          method: "route-corridor",
-          displayPathId: "corridor-rv-1",
-          displayOffsetMm: 25_000,
-          latitudeE7: 515_000_000,
-          longitudeE7: 120_000_000,
-          bearingMilliDegrees: 90_000,
-          uncertaintyMm: 750_000,
-        },
-      }),
-    }));
-
-    expect(initial.trains.get("1")).toMatchObject({
-      mapEstimate: {
-        method: "route-corridor",
-        displayPathId: "corridor-rv-1",
-        uncertaintyMm: 750_000,
-      },
-    });
-    expect(initial.trains.get("1")).not.toHaveProperty("mapPosition");
-  });
-
   it("weist Kartenpositionen ohne Release- oder Ressourcenbindung zurueck", () => {
     const position = {
       infrastructureReleaseId: "infra-de-2026",
@@ -288,39 +259,6 @@ describe("Livemap-Projektion", () => {
       ...baseTrain,
       mapPosition: { ...position, resourceId: "" },
     }))).toThrow(/resourceId/);
-  });
-
-  it("weist unbekannte, unvollstaendige oder widerspruechliche Kartenschaetzungen zurueck", () => {
-    const estimate = {
-      infrastructureReleaseId: "infra-de-2026",
-      resourceId: "block-track-1",
-      method: "anchor-hold" as const,
-      displayPathId: "anchor-track-1",
-      displayOffsetMm: 1_000,
-      latitudeE7: 515_000_000,
-      longitudeE7: 120_000_000,
-      uncertaintyMm: 750_000,
-    };
-    expect(() => parseSnapshot(snapshot(4, 100, {
-      ...baseTrain,
-      mapEstimate: { ...estimate, method: "guess" },
-    } as never))).toThrow(/Schaetzmethode/);
-    expect(() => parseSnapshot(snapshot(4, 100, {
-      ...baseTrain,
-      mapEstimate: { ...estimate, displayPathId: "" },
-    }))).toThrow(/displayPathId/);
-    expect(() => parseSnapshot(snapshot(4, 100, {
-      ...baseTrain,
-      mapPosition: {
-        infrastructureReleaseId: "infra-de-2026",
-        resourceId: "block-track-1",
-        trackId: "track-1",
-        offsetMm: 1_000,
-        latitudeE7: 515_000_000,
-        longitudeE7: 120_000_000,
-      },
-      mapEstimate: estimate,
-    }))).toThrow(/nicht zugleich/);
   });
 
   it("akzeptiert nur den versionierten Eigenbetriebsmarker und beschriftet ihn eindeutig", () => {
@@ -474,97 +412,6 @@ describe("Livemap-Projektion", () => {
     expect(renderTrains(samples, 105)[0]?.mapPosition).toEqual(current.trains.get("1")?.mapPosition);
   });
 
-  it("interpoliert kompatible visuelle Schätzlagen zwischen autoritativen Samples", () => {
-    const estimate = (overrides: Partial<PublicMapEstimate> = {}): PublicMapEstimate => ({
-      infrastructureReleaseId: "infra",
-      resourceId: "resource",
-      method: "route-corridor",
-      displayPathId: "corridor",
-      displayOffsetMm: 1_000,
-      latitudeE7: 500_000_000,
-      longitudeE7: 100_000_000,
-      bearingMilliDegrees: 350_000,
-      uncertaintyMm: 100_000,
-      ...overrides,
-    });
-    const previous = initialState(snapshot(4, 100, {
-      ...baseTrain,
-      positionMm: 1_000,
-      mapEstimate: estimate(),
-    }));
-    const current = initialState(snapshot(5, 110, {
-      ...baseTrain,
-      positionMm: 1_200,
-      mapEstimate: estimate({
-        displayOffsetMm: 1_200,
-        latitudeE7: 500_000_200,
-        longitudeE7: 100_000_400,
-        bearingMilliDegrees: 10_000,
-        uncertaintyMm: 120_000,
-      }),
-    }));
-    const samples = appendRenderSample(appendRenderSample(undefined, previous), current);
-
-    expect(renderTrains(samples, 105)[0]).toMatchObject({
-      positionMm: 1_100,
-      mapEstimate: {
-        displayOffsetMm: 1_100,
-        latitudeE7: 500_000_100,
-        longitudeE7: 100_000_200,
-        bearingMilliDegrees: 0,
-        uncertaintyMm: 110_000,
-      },
-    });
-    expect(previous.trains.get("1")?.mapEstimate?.displayOffsetMm).toBe(1_000);
-    expect(current.trains.get("1")?.mapEstimate?.displayOffsetMm).toBe(1_200);
-  });
-
-  it.each([
-    ["Ankerlage", { method: "anchor-hold" as const }],
-    ["Methodenwechsel", { method: "topological-track" as const }],
-    ["Pfadwechsel", { displayPathId: "anderer-korridor" }],
-    ["Ressourcenwechsel", { resourceId: "andere-resource" }],
-    ["Releasewechsel", { infrastructureReleaseId: "andere-infra" }],
-  ])("springt bei %s fail-closed auf die aktuelle Schätzlage", (_case, override) => {
-    const estimate: PublicMapEstimate = {
-      infrastructureReleaseId: "infra",
-      resourceId: "resource",
-      method: "route-corridor",
-      displayPathId: "corridor",
-      displayOffsetMm: 1_000,
-      latitudeE7: 500_000_000,
-      longitudeE7: 100_000_000,
-      uncertaintyMm: 100_000,
-    };
-    const previous = initialState(snapshot(4, 100, { ...baseTrain, mapEstimate: estimate }));
-    const current = initialState(snapshot(5, 110, {
-      ...baseTrain,
-      mapEstimate: { ...estimate, displayOffsetMm: 2_000, longitudeE7: 100_001_000, ...override },
-    }));
-    const samples = appendRenderSample(appendRenderSample(undefined, previous), current);
-    expect(renderTrains(samples, 105)[0]?.mapEstimate).toEqual(current.trains.get("1")?.mapEstimate);
-  });
-
-  it("springt bei einem Statuswechsel fail-closed auf die aktuelle Schätzlage", () => {
-    const estimate: PublicMapEstimate = {
-      infrastructureReleaseId: "infra",
-      resourceId: "resource",
-      method: "route-corridor",
-      displayPathId: "corridor",
-      displayOffsetMm: 1_000,
-      latitudeE7: 500_000_000,
-      longitudeE7: 100_000_000,
-      uncertaintyMm: 100_000,
-    };
-    const previous = initialState(snapshot(4, 100, { ...baseTrain, mapEstimate: estimate }));
-    const current = initialState(snapshot(5, 110, {
-      ...baseTrain,
-      status: "waiting",
-      mapEstimate: { ...estimate, displayOffsetMm: 2_000, longitudeE7: 100_001_000 },
-    }));
-    const samples = appendRenderSample(appendRenderSample(undefined, previous), current);
-    expect(renderTrains(samples, 105)[0]?.mapEstimate).toEqual(current.trains.get("1")?.mapEstimate);
-  });
 });
 
 describe("LivemapConnection", () => {
@@ -596,29 +443,33 @@ describe("LivemapConnection", () => {
     expect(channel.cancelled).toBe(true);
   });
 
-  it("setzt nach Verbindungsabbruch ohne zusätzlichen Snapshot an der letzten Sequenz fort", async () => {
+  it("friert bei Verbindungsabbruch sofort ein und setzt erst nach einem Re-Snapshot fort", async () => {
     const first = new SseChannel();
-    const resumed = new SseChannel();
-    const fetchMock = fetchHarness([jsonResponse(snapshot(1))], [first.response, resumed.response]);
+    const replacement = new SseChannel();
+    const authoritative = snapshot(2, 20, { ...baseTrain, positionMm: 2_222 });
+    const fetchMock = fetchHarness(
+      [jsonResponse(snapshot(1)), jsonResponse(authoritative)],
+      [first.response, replacement.response],
+    );
     const changes = vi.fn();
+    const freezes = vi.fn();
     const connection = new LivemapConnection("", WORLD_ID, TOKEN, changes, {
       fetch: fetchMock,
       retryDelayMs: 25,
+      onFreeze: freezes,
     });
     await connection.connect();
 
     first.close();
     await settle();
+    expect(freezes).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(25);
     await settle();
 
-    expect(snapshotCalls(fetchMock)).toBe(1);
+    expect(snapshotCalls(fetchMock)).toBe(2);
     expect(streamCalls(fetchMock)).toBe(2);
-    const resumeHeaders = new Headers(fetchMock.mock.calls.at(-1)?.[1]?.headers);
-    expect(resumeHeaders.get("last-event-id")).toBe(`${STREAM_ID}:1`);
-    resumed.sendDelta(delta(2));
-    await settle();
     expect(changes.mock.calls.at(-1)?.[0]).toMatchObject({ sequence: 2 });
+    expect(changes.mock.calls.at(-1)?.[0].trains.get("1")?.positionMm).toBe(2_222);
     connection.close();
   });
 
@@ -627,7 +478,7 @@ describe("LivemapConnection", () => {
     closedImmediately.close();
     const resumed = new SseChannel();
     const fetchMock = fetchHarness(
-      [jsonResponse(snapshot(1))],
+      [jsonResponse(snapshot(1)), jsonResponse(snapshot(1))],
       [closedImmediately.response, resumed.response],
     );
     const connection = new LivemapConnection("", WORLD_ID, TOKEN, vi.fn(), {
@@ -640,7 +491,7 @@ describe("LivemapConnection", () => {
     await vi.advanceTimersByTimeAsync(25);
     await settle();
 
-    expect(snapshotCalls(fetchMock)).toBe(1);
+    expect(snapshotCalls(fetchMock)).toBe(2);
     expect(streamCalls(fetchMock)).toBe(2);
     connection.close();
   });
@@ -654,14 +505,17 @@ describe("LivemapConnection", () => {
       [first.response, replacement.response],
     );
     const changes = vi.fn();
+    const freezes = vi.fn();
     const connection = new LivemapConnection("", WORLD_ID, TOKEN, changes, {
       fetch: fetchMock,
       retryDelayMs: 10,
+      onFreeze: freezes,
     });
     await connection.connect();
 
     first.sendDelta(delta(3));
     await settle();
+    expect(freezes).toHaveBeenCalledOnce();
     first.sendDelta(delta(4));
     await settle();
     expect(snapshotCalls(fetchMock)).toBe(2);
@@ -783,18 +637,20 @@ describe("LivemapConnection", () => {
     connection.close();
   });
 
-  it("eskaliert einen fehlgeschlagenen Resume-Versuch garantiert zum Re-Snapshot", async () => {
+  it("bleibt bei fehlgeschlagenem Ersatzstream eingefroren und lädt erneut vollständig", async () => {
     const first = new SseChannel();
     const recovered = new SseChannel();
     const authoritative = snapshot(9, 90, { ...baseTrain, positionMm: 9_999 });
     const fetchMock = fetchHarness(
-      [jsonResponse(snapshot(1)), jsonResponse(authoritative)],
+      [jsonResponse(snapshot(1)), jsonResponse(authoritative), jsonResponse(authoritative)],
       [first.response, new Error("Resume fehlgeschlagen"), recovered.response],
     );
     const changes = vi.fn();
+    const freezes = vi.fn();
     const connection = new LivemapConnection("", WORLD_ID, TOKEN, changes, {
       fetch: fetchMock,
       retryDelayMs: 20,
+      onFreeze: freezes,
     });
     await connection.connect();
 
@@ -802,11 +658,13 @@ describe("LivemapConnection", () => {
     await settle();
     await vi.advanceTimersByTimeAsync(20);
     await settle();
-    expect(snapshotCalls(fetchMock)).toBe(1);
+    expect(snapshotCalls(fetchMock)).toBe(2);
+    expect(changes).toHaveBeenCalledTimes(1);
+    expect(freezes).toHaveBeenCalledTimes(3);
     await vi.advanceTimersByTimeAsync(20);
     await settle(20);
 
-    expect(snapshotCalls(fetchMock)).toBe(2);
+    expect(snapshotCalls(fetchMock)).toBe(3);
     expect(changes.mock.calls.at(-1)?.[0]).toMatchObject({ sequence: 9 });
     expect(changes.mock.calls.at(-1)?.[0].trains.get("1")?.positionMm).toBe(9_999);
     connection.close();

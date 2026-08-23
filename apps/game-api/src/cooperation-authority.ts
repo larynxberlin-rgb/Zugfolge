@@ -26,7 +26,7 @@ import {
 } from "@zugfolge/economy";
 import type { IdentityDatabase } from "@zugfolge/identity";
 import type { FleetAuthorityRelease } from "@zugfolge/runtime-native";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
 export interface CooperationResourceOption {
   readonly id: string;
@@ -76,6 +76,30 @@ function record(value: unknown): Readonly<Record<string, unknown>> | undefined {
 
 function strings(value: unknown): readonly string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string") ? value : [];
+}
+
+interface DisruptionLogRow {
+  readonly sequence: number;
+  readonly eventType: string;
+  readonly payload: unknown;
+}
+
+function disruptionIdentifier(payload: unknown): string | undefined {
+  const value = record(payload);
+  const id = value?.["disruptionId"] ?? value?.["disruption_id"] ?? value?.["id"];
+  return typeof id === "string" && id.length > 0 ? id : undefined;
+}
+
+/** Letztes apply/clear je Kennung; eine Freigabe darf nicht als aktive Hilfeleistung fortleben. */
+function activeDisruptionRows(rows: readonly DisruptionLogRow[]): readonly DisruptionLogRow[] {
+  const active = new Map<string, DisruptionLogRow>();
+  for (const row of [...rows].sort((left, right) => left.sequence - right.sequence)) {
+    const id = disruptionIdentifier(row.payload);
+    if (id === undefined) continue;
+    if (row.eventType === "disruption.applied") active.set(id, row);
+    else if (row.eventType === "disruption.cleared") active.delete(id);
+  }
+  return [...active.values()].sort((left, right) => left.sequence - right.sequence);
 }
 
 function containsIdentifier(value: unknown, names: readonly string[], expected: string): boolean {
@@ -229,8 +253,13 @@ export class GameCooperationAuthority implements CooperationAuthority {
         .orderBy(desc(fleetWorldCheckpoints.revision)).limit(1),
       this.db.select({ state: regionalSimulationStates.state }).from(regionalSimulationStates)
         .where(eq(regionalSimulationStates.worldId, worldId)),
-      this.db.select({ payload: domainEvents.payload }).from(domainEvents).where(and(
-        eq(domainEvents.worldId, worldId), eq(domainEvents.eventType, "disruption.applied"),
+      this.db.select({
+        sequence: domainEvents.sequence,
+        eventType: domainEvents.eventType,
+        payload: domainEvents.payload,
+      }).from(domainEvents).where(and(
+        eq(domainEvents.worldId, worldId),
+        inArray(domainEvents.eventType, ["disruption.applied", "disruption.cleared"]),
       )),
       this.db.select().from(vehicleAssets).where(and(
         eq(vehicleAssets.worldId, worldId), eq(vehicleAssets.holderOperatorId, operatorId),
@@ -295,7 +324,7 @@ export class GameCooperationAuthority implements CooperationAuthority {
       `Trasse ${receipt.serviceLineIds.join(" / ") || "ohne Linienkennung"}`,
       `bestätigt · ${readableWindow(receipt.validFrom, receipt.validUntil)}`,
     ));
-    const disruptions = disruptionRows.flatMap(({ payload }) => {
+    const disruptions = activeDisruptionRows(disruptionRows).flatMap(({ payload }) => {
       const value = record(payload);
       const id = value?.["disruptionId"] ?? value?.["disruption_id"] ?? value?.["id"];
       const operatorIds = strings(value?.["operatorIds"]);
@@ -371,10 +400,17 @@ export class GameCooperationAuthority implements CooperationAuthority {
     if (input.contractType === "disruption-assistance") {
       const disruptionId = subject["disruptionId"];
       if (typeof disruptionId !== "string") return denied("disruption_missing", "Störungskennung fehlt.");
-      const events = await this.db.select({ payload: domainEvents.payload }).from(domainEvents).where(and(
-        eq(domainEvents.worldId, input.worldId), eq(domainEvents.eventType, "disruption.applied"),
+      const events = await this.db.select({
+        sequence: domainEvents.sequence,
+        eventType: domainEvents.eventType,
+        payload: domainEvents.payload,
+      }).from(domainEvents).where(and(
+        eq(domainEvents.worldId, input.worldId),
+        inArray(domainEvents.eventType, ["disruption.applied", "disruption.cleared"]),
       ));
-      if (!events.some((event) => containsIdentifier(event.payload, ["disruptionId", "disruption_id", "id"], disruptionId))) {
+      if (!activeDisruptionRows(events).some(
+        (event) => containsIdentifier(event.payload, ["disruptionId", "disruption_id", "id"], disruptionId),
+      )) {
         return denied("disruption_missing", `Störung '${disruptionId}' ist nicht im autoritativen Event-Log aktiv.`);
       }
       if (strings(subject["trainRunIds"]).some((trainId) => !trains.has(trainId))) {

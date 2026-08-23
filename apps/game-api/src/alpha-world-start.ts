@@ -42,18 +42,19 @@ import {
   parsePlanningInfrastructureRelease,
   type PlanningInfrastructureRelease,
 } from "@zugfolge/planning-worker";
-import type {
-  FleetRuntime,
-  FleetWorldInitialization,
-  RegionalSimulationInitialization,
+import {
+  OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
+  type OperationalSimulationInitialization,
+  type FleetRuntime,
+  type FleetWorldInitialization,
 } from "@zugfolge/runtime-native";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 
-import { RegionalServiceCatalog, type RegionalBoundaryTransition } from "./boundary-transition-scheduler.js";
 import { projectLivemapOperationEvent } from "./livemap-operation-projection.js";
+import { operationalSimulationInitializationHash } from "./operational-initialization-hash.js";
 import type { RegionalSimulationWorker } from "./regional-simulation-worker.js";
 
-export const ALPHA_WORLD_DEPLOYMENT_SCHEMA = "zugfolge-alpha-world-deployment/v1" as const;
+export const ALPHA_WORLD_DEPLOYMENT_SCHEMA = "zugfolge-alpha-world-deployment/v2" as const;
 
 export interface AlphaDeploymentWorldDefinition {
   readonly name: string;
@@ -96,9 +97,8 @@ export interface AlphaWorldDeployment {
     readonly publicVehiclePoolByLot: Readonly<Record<string, readonly string[]>>;
   };
   readonly fleet: FleetWorldInitialization;
-  readonly regionalSimulation: RegionalSimulationInitialization;
+  readonly regionalSimulation: OperationalSimulationInitialization;
   readonly repeatEveryS: number;
-  readonly boundaryTransitions: readonly RegionalBoundaryTransition[];
   /**
    * Kein Prozess- oder Env-Geheimnis: Konto und Release sind Bestandteil des
    * signierten, gehashten Weltvertrags und werden nur fuer aktive Welten
@@ -113,6 +113,7 @@ export interface AlphaWorldDeployment {
     readonly operationalNetworkHash: string;
     readonly gtfsSnapshotHash: string;
     readonly fleetSourceSha256: string;
+    readonly operationalSimulationSourceSha256: string;
     readonly generationScriptSha256: string;
   };
 }
@@ -214,6 +215,34 @@ function validatePlanningBinding(deployment: AlphaWorldDeployment): void {
   }
 }
 
+function validateOperationalSimulationBinding(deployment: AlphaWorldDeployment): void {
+  const initialization = record(
+    deployment.regionalSimulation,
+    "Alpha-Deployment-Betriebsengine",
+  );
+  const infraRelease = record(
+    initialization["infraRelease"],
+    "Alpha-Deployment-Betriebsengine-InfraRelease",
+  );
+  if (
+    initialization["schemaVersion"] !== OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA
+    || initialization["worldId"] !== deployment.worldId
+    || initialization["regionId"] !== deployment.blueprint.regionId
+    || !Number.isSafeInteger(initialization["nowMs"])
+    || (initialization["nowMs"] as number) < 0
+    || infraRelease["id"] !== deployment.provenance.infraReleaseId
+    || !Array.isArray(initialization["vehicleTypes"])
+    || !Array.isArray(initialization["vehicles"])
+    || !Array.isArray(initialization["formations"])
+    || !Array.isArray(initialization["trains"])
+    || !/^[a-f0-9]{64}$/u.test(deployment.provenance.operationalSimulationSourceSha256)
+  ) {
+    throw new Error(
+      "Alpha-Deployment besitzt keinen vollstaendigen gebundenen Betriebsengine-v2-Vertrag.",
+    );
+  }
+}
+
 export function validateDeploymentWorldDefinition(
   value: unknown,
   profileKind: AlphaWorldBlueprint["profileKind"],
@@ -265,6 +294,7 @@ export function parseSignedAlphaWorldDeployment(
   validateWorldBlueprint(deployment.blueprint);
   validateDeploymentWorldDefinition(deployment.worldDefinition, deployment.blueprint.profileKind);
   validatePlanningBinding(deployment);
+  validateOperationalSimulationBinding(deployment);
   if (
     deployment.infraReleaseHash !== deployment.blueprint.releases.infra
     || deployment.provenance.operationalNetworkHash !== deployment.blueprint.conflictCheckHash
@@ -487,8 +517,6 @@ function publicStartDecision(sequence: number, worldId: string, occurredAt: Date
 }
 
 export class ProductionWorldStartPort implements WorldStartPort {
-  readonly boundaryTransitions: RegionalServiceCatalog;
-
   constructor(
     private readonly db: AlphaDatabase,
     private readonly signed: SignedAlphaWorldDeployment,
@@ -497,15 +525,7 @@ export class ProductionWorldStartPort implements WorldStartPort {
     private readonly livemap: LivemapRegistry,
     private readonly operations: OperationsRegistry,
     private readonly economyQueueClock: () => Date = () => new Date(),
-  ) {
-    this.boundaryTransitions = new RegionalServiceCatalog(
-      signed.deployment.worldId,
-      signed.deployment.regionalSimulation.regionId,
-      signed.deployment.repeatEveryS,
-      signed.deployment.regionalSimulation.trains,
-      signed.deployment.boundaryTransitions,
-    );
-  }
+  ) {}
 
   #deployment(worldId: string, blueprint: AlphaWorldBlueprint): AlphaWorldDeployment {
     const deployment = this.signed.deployment;
@@ -637,20 +657,23 @@ export class ProductionWorldStartPort implements WorldStartPort {
 
   async initializeRegionalSimulation(worldId: string, blueprint: AlphaWorldBlueprint): Promise<void> {
     const deployment = this.#deployment(worldId, blueprint);
-    if (!this.regionalSimulation.isReady(worldId, deployment.regionalSimulation.regionId)) {
+    const expectedInitializationHash = operationalSimulationInitializationHash(
+      deployment.regionalSimulation,
+    );
+    if (!this.regionalSimulation.isReady(
+      worldId,
+      deployment.regionalSimulation.regionId,
+      expectedInitializationHash,
+    )) {
       try {
         await this.regionalSimulation.initialize(deployment.regionalSimulation, new Date(0));
       } catch (error) {
-        await this.regionalSimulation.restore(worldId, deployment.regionalSimulation.regionId).catch(() => { throw error; });
+        await this.regionalSimulation.restore(
+          worldId,
+          deployment.regionalSimulation.regionId,
+          expectedInitializationHash,
+        ).catch(() => { throw error; });
       }
-    }
-    for (const transition of this.boundaryTransitions.at(worldId, deployment.regionalSimulation.regionId, deployment.regionalSimulation.nowS)) {
-      await this.regionalSimulation.apply({
-        worldId,
-        regionId: deployment.regionalSimulation.regionId,
-        commandId: transition.transitionId,
-        command: transition.command,
-      }, new Date(0));
     }
     await this.#ensureOperationsEvent(worldId, blueprint);
     const correlationId = `alpha-world-start:${worldId}:${this.signed.deploymentHash}`;
@@ -715,7 +738,11 @@ export class ProductionWorldStartPort implements WorldStartPort {
         && Object.keys(fleet.state.formations).length > 0
         && Object.keys(fleet.state.personnelDuties).length > 0
         && Object.keys(fleet.state.pathReservations).length > 0,
-      regionalSimulationReady: this.regionalSimulation.isReady(worldId, deployment.regionalSimulation.regionId),
+      regionalSimulationReady: this.regionalSimulation.isReady(
+        worldId,
+        deployment.regionalSimulation.regionId,
+        operationalSimulationInitializationHash(deployment.regionalSimulation),
+      ),
       livemapReady: publicOperation.livemapReady,
       operationsCenterReady: operationsEvent.length === 1,
       odooProjectionQueued: projection.length === 1,

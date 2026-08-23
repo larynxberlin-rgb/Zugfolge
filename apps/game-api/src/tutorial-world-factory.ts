@@ -76,14 +76,16 @@ import {
   FLEET_PERSONNEL_DUTY_COMMAND_SCHEMA,
   OPERATING_INITIALIZE_SCHEMA,
   OPERATING_TRANSITION_SCHEMA,
-  REGIONAL_SIMULATION_INITIALIZE_SCHEMA,
+  OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
   type FleetAuthorityRelease,
   type NativeRuntime,
+  type OperationalSimulationInitialization,
   type OperatingDispatchCase,
 } from "@zugfolge/runtime-native";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { GameFleetAssetTransferWriter } from "./fleet-market-writer.js";
+import { operationalSimulationInitializationHash } from "./operational-initialization-hash.js";
 import { RegionalSimulationWorker } from "./regional-simulation-worker.js";
 
 const COST_TYPES: readonly CostType[] = ["track", "station", "facility", "energy", "personnel", "administration", "vehicle", "penalty", "interest"];
@@ -455,6 +457,162 @@ export function tutorialPlanningCommand(
       },
     ],
   };
+}
+
+/**
+ * Vollstaendige, fiktive Betriebsgrundlage des privaten Tutorialkorridors.
+ * Auch das Tutorial durchlaeuft damit denselben operativen v2-Single-Writer;
+ * es gibt keinen vereinfachten Positions- oder Stoerungskern daneben.
+ */
+function tutorialOperationalInitialization(
+  session: Pick<TutorialSession, "tutorialWorldId" | "tutorialOperatorId">,
+  template: TutorialTemplate,
+): OperationalSimulationInitialization {
+  const stations = new Map(template.region.stations.map((station) => [
+    textValue(station["id"], "Tutorialbetriebsstelle"),
+    station,
+  ] as const));
+  let routeStartMm = 0;
+  const routeLegs = template.region.segments.map((segment) => {
+    const edgeId = textValue(segment["id"], "Tutorialkante");
+    const lengthMm = integer(segment["lengthMm"], "Tutorialkantenlaenge");
+    const leg = Object.freeze({
+      edgeId,
+      direction: "along" as const,
+      edgeEntryMm: 0,
+      edgeExitMm: lengthMm,
+      routeStartMm,
+      blockIds: Object.freeze([`track:${edgeId}`]),
+      speedLimitMmps: Math.floor(integer(segment["maximumSpeedKph"], "Tutorialgeschwindigkeit") * 1_000_000 / 3_600),
+      gradientPerMille: 0,
+      requiredProtectionSystems: Object.freeze(["pzb"]),
+    });
+    routeStartMm += lengthMm;
+    return leg;
+  });
+  const directedEdges = Object.fromEntries(routeLegs.map((leg) => [
+    leg.edgeId,
+    leg.edgeExitMm,
+  ]));
+  const edgeGeometries = Object.fromEntries(template.region.segments.map((segment) => {
+    const edgeId = textValue(segment["id"], "Tutorialkante");
+    const from = stations.get(textValue(segment["fromStationId"], "Tutorialkantenanfang"));
+    const to = stations.get(textValue(segment["toStationId"], "Tutorialkantenende"));
+    if (from === undefined || to === undefined) {
+      throw new AlphaValidationError("Tutorialkante besitzt keine vollstaendige releasegebundene Geometrie.");
+    }
+    const lengthMm = integer(segment["lengthMm"], "Tutorialkantenlaenge");
+    return [edgeId, Object.freeze([
+      Object.freeze({
+        edgeOffsetMm: 0,
+        latitudeE7: integer(from["latitudeE7"], "Tutorialbreitengrad"),
+        longitudeE7: integer(from["longitudeE7"], "Tutoriallaengengrad"),
+        bearingMilliDegrees: 90_000,
+      }),
+      Object.freeze({
+        edgeOffsetMm: lengthMm,
+        latitudeE7: integer(to["latitudeE7"], "Tutorialbreitengrad"),
+        longitudeE7: integer(to["longitudeE7"], "Tutoriallaengengrad"),
+        bearingMilliDegrees: null,
+      }),
+    ])] as const;
+  }));
+  const routeVersionId = `${template.version}:route:v1`;
+  const routeTemplateId = `${template.version}:route-template:v1`;
+  const interlockingRouteId = `${template.version}:interlocking:v1`;
+  const signalId = `${template.version}:signal:entry`;
+  const switchId = `${template.version}:switch:muehlenbrueck`;
+  const vehicleTypeId = `${template.version}:vehicle-type`;
+  const vehicleId = `${template.version}:operational-vehicle`;
+  const formationId = `${template.version}:formation:v1`;
+  const blockResources = routeLegs.map((leg) => leg.blockIds[0]!);
+  return Object.freeze({
+    schemaVersion: OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
+    worldId: session.tutorialWorldId,
+    regionId: template.region.id,
+    nowMs: 0,
+    infraRelease: Object.freeze({
+      id: `${template.version}:operational-infra`,
+      directedEdges,
+      edgeGeometries,
+      routeVersions: Object.freeze({
+        [routeVersionId]: Object.freeze({
+          id: routeVersionId,
+          templateId: routeTemplateId,
+          predecessorId: null,
+          transitionRouteMm: null,
+          legs: Object.freeze(routeLegs),
+        }),
+      }),
+      interlockingRoutes: Object.freeze({
+        [interlockingRouteId]: Object.freeze({
+          id: interlockingRouteId,
+          routeTemplateId,
+          signalId,
+          movementKind: "train",
+          pathResources: Object.freeze(blockResources),
+          overlapResources: Object.freeze([]),
+          flankResources: Object.freeze([]),
+          switchPositions: Object.freeze({ [switchId]: "straight" }),
+          authorityEndRouteMm: routeStartMm,
+          releaseAfterTailRouteMm: routeStartMm,
+        }),
+      }),
+      signals: Object.freeze([signalId]),
+      switches: Object.freeze([switchId]),
+      blockResources: Object.freeze(blockResources),
+      platformIntervals: Object.freeze({}),
+      regionBoundaries: Object.freeze([]),
+      rzueLayoutId: `${template.version}:rzue-layout`,
+    }),
+    vehicleTypes: Object.freeze([Object.freeze({
+      powered: true,
+      vehicleType: Object.freeze({
+        id: vehicleTypeId,
+        lengthMm: 74_000,
+        massKg: 118_000,
+        maximumSpeedMmps: 38_888,
+        powerWatts: 2_400_000,
+        startingTractiveForceNewtons: 160_000,
+        maximumAccelerationMmps2: 850,
+        serviceBrakeMmps2: 900,
+        emergencyBrakeMmps2: 1_300,
+        protectionSystems: Object.freeze(["pzb"]),
+      }),
+    })]),
+    vehicles: Object.freeze([Object.freeze({
+      id: vehicleId,
+      typeId: vehicleTypeId,
+      powered: true,
+      orientation: "along",
+      condition: Object.freeze({
+        mechanicsBasisPoints: 9_500,
+        driveBasisPoints: 9_500,
+        brakesBasisPoints: 9_500,
+        kilometresSinceMaintenance: 0,
+        operatingHoursSinceMaintenance: 0,
+        openObservations: 0,
+      }),
+      restrictions: Object.freeze({}),
+      history: Object.freeze([]),
+    })]),
+    formations: Object.freeze([Object.freeze({
+      id: formationId,
+      predecessorId: null,
+      vehicleIds: Object.freeze([vehicleId]),
+    })]),
+    trains: Object.freeze([Object.freeze({
+      id: "tutorial-run-1",
+      trainNumber: "T 7101",
+      operatorId: session.tutorialOperatorId,
+      movementKind: "train",
+      routeVersionId,
+      formationVersionId: formationId,
+      headRouteMm: 0,
+      scheduledDepartureMs: TUTORIAL_TIMELINE.operatingFromS * 1_000,
+      publicPassengerStop: true,
+    })]),
+  });
 }
 
 function fleetRelease(
@@ -908,28 +1066,25 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
     const [regionalState] = await this.db.select({ worldId: regionalSimulationStates.worldId }).from(regionalSimulationStates).where(and(
       eq(regionalSimulationStates.worldId, session.tutorialWorldId), eq(regionalSimulationStates.regionId, template.region.id),
     )).limit(1);
+    const operationalInitialization = tutorialOperationalInitialization(session, template);
+    const expectedInitializationHash = operationalSimulationInitializationHash(
+      operationalInitialization,
+    );
     if (regionalState === undefined) {
-      await this.regional.initialize({
-        schemaVersion: REGIONAL_SIMULATION_INITIALIZE_SCHEMA,
-        worldId: session.tutorialWorldId,
-        regionId: template.region.id,
-        materializationWindowHours: 48,
-        nowS: 0,
-        trains: [{
-          trainRunId: "tutorial-run-1",
-          operator: session.tutorialOperatorId,
-          trainNumber: "T 7101",
-          category: "regional",
-          route: [
-            { operatingPoint: "TKG", positionMm: 0, arrivalS: TUTORIAL_TIMELINE.operatingFromS, minimumDwellSeconds: 30, departureS: TUTORIAL_TIMELINE.operatingFromS + 30 },
-            { operatingPoint: "TMB", positionMm: 9_000_000, arrivalS: TUTORIAL_TIMELINE.operatingFromS + 190, minimumDwellSeconds: 30, departureS: TUTORIAL_TIMELINE.disruptionAtS },
-            { operatingPoint: "TWR", positionMm: 18_000_000, arrivalS: TUTORIAL_TIMELINE.operatingFromS + 380, minimumDwellSeconds: 30, departureS: TUTORIAL_TIMELINE.operatingFromS + 410 },
-            { operatingPoint: "TFH", positionMm: 28_000_000, arrivalS: TUTORIAL_TIMELINE.operatingFromS + 590, minimumDwellSeconds: 30, departureS: TUTORIAL_TIMELINE.operatingFromS + 620 },
-          ],
-        }],
-      }, session.startedAt);
-    } else if (!this.regional.isReady(session.tutorialWorldId, template.region.id)) {
-      await this.regional.restore(session.tutorialWorldId, template.region.id);
+      await this.regional.initialize(
+        operationalInitialization,
+        session.startedAt,
+      );
+    } else if (!this.regional.isReady(
+      session.tutorialWorldId,
+      template.region.id,
+      expectedInitializationHash,
+    )) {
+      await this.regional.restore(
+        session.tutorialWorldId,
+        template.region.id,
+        expectedInitializationHash,
+      );
     }
     return {
       lessorAccountId: actors.lessorAccountId,
@@ -1219,27 +1374,19 @@ export class GameTutorialWorldFactory implements TutorialWorldFactory {
         worldId: session.tutorialWorldId,
         regionId: template.region.id,
         commandId: `${session.reference}:advance-disruption`,
-        command: { type: "advance-to", atS: TUTORIAL_TIMELINE.disruptionAtS },
+        command: { type: "advance-to", atMs: TUTORIAL_TIMELINE.disruptionAtS * 1_000 },
       }, instant(session, TUTORIAL_TIMELINE.disruptionAtS));
       await this.regional.apply({
         worldId: session.tutorialWorldId,
         regionId: template.region.id,
         commandId: `${session.reference}:disruption`,
         command: {
-          type: "register-disruption",
-          disruption: {
-            disruptionId: textValue(template.disruption["id"], "Stoerungs-ID"),
-            kind: "unplanned",
-            publishedAtS: TUTORIAL_TIMELINE.disruptionAtS,
-            startsAtS: TUTORIAL_TIMELINE.disruptionAtS,
-            validUntilS: integer(template.disruption["validUntilS"], "Stoerungsende"),
-            positionMm: 12_000_000,
-            causeCode: integer(template.disruption["causeCode"], "Ursachencode"),
-            fineCauseId: textValue(template.disruption["fineCauseId"], "Feinursache"),
-            effect: "closure",
-            affectedResource: textValue(template.disruption["resourceId"], "Konfliktressource"),
-            affectedTrainRunIds: [textValue(template.disruption["trainRunId"], "Zuglauf")],
-            delaySeconds: integer(template.disruption["delaySeconds"], "Stoerungsverspaetung"),
+          type: "activate-disruption",
+          disruptionId: textValue(template.disruption["id"], "Stoerungs-ID"),
+          effect: {
+            "resource-closed": {
+              resourceId: textValue(template.disruption["resourceId"], "Konfliktressource"),
+            },
           },
         },
       }, instant(session, TUTORIAL_TIMELINE.disruptionAtS));

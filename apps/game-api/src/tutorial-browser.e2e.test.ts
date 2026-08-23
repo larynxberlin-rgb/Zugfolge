@@ -14,7 +14,7 @@ import { OperationsRegistry } from "@zugfolge/dispatch";
 import { requestWorldAccess } from "@zugfolge/identity";
 import { LivemapRegistry } from "@zugfolge/livemap-stream";
 import { loadPlanningRuntime } from "@zugfolge/planning-runtime-native";
-import { loadOperatingRuntime, loadRegionalSimulationRuntime } from "@zugfolge/runtime-native";
+import { loadOperatingRuntime, loadOperationalSimulationRuntime } from "@zugfolge/runtime-native";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
@@ -116,7 +116,7 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
     await db.insert(worlds).values({ id: PUBLIC_WORLD, name: "Alpha", schedulePeriodWeeks: 4, epoch: TEST_NOW, worldKind: "public", rankingStatus: "ranked", lifecycleStatus: "active" });
     await requestWorldAccess(db, { worldId: PUBLIC_WORLD, keycloakSubject: "kc-browser-player", displayName: "Browser-Spieler" });
 
-    const regional = new RegionalSimulationWorker(db, loadRegionalSimulationRuntime(), new LivemapRegistry(), new OperationsRegistry());
+    const regional = new RegionalSimulationWorker(db, loadOperationalSimulationRuntime(), new LivemapRegistry(), new OperationsRegistry());
     const clock = () => TEST_NOW;
     const sessions = new TutorialSessionService(db, new GameTutorialWorldFactory(db, loadOperatingRuntime(), loadPlanningRuntime(), regional), { clock });
     app = Fastify({ logger: false });

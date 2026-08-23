@@ -12,6 +12,15 @@
         "id": "infracorpus",
         "kind": "infrastructure",
         "sha256": "9999999999999999999999999999999999999999999999999999999999999999"
+      },
+      {
+        "bytes": 456,
+        "file": "operational-infrastructure-v2.json",
+        "id": "operational-infrastructure-2027.1",
+        "infraReleaseId": "infra-deutschland-2027.1",
+        "kind": "operational-infrastructure-v2",
+        "sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+        "stateHash": "7777777777777777777777777777777777777777777777777777777777777777"
       }
     ],
     "corpus": {
@@ -41,5 +50,5 @@
       "rawValidationMaterialShipped": false
     }
   },
-  "releaseHash": "d115056d36330978ba615843957b348166a1afda31fa4f35485baba6618dcedc"
+  "releaseHash": "296f21506ac7bd1d62379dea2c397a88aee0f6415beeb112af6859a5539844fd"
 }

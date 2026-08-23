@@ -12,8 +12,11 @@ use std::path::Path;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
+use zugfolge_sim::operational::OperationalInfraRelease;
 
 const SHA256_LENGTH: usize = 64;
+const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
+const OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA: &str = "operational-infrastructure-v2";
 
 /// Fehler einer autoritativen Manifestentscheidung.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -97,6 +100,78 @@ fn sha256(value: &Value) -> String {
     canonical(value, &mut serialized);
     let digest = Sha256::digest(serialized.as_bytes());
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn domain_separated_sha256(schema: &str, value: &Value) -> String {
+    sha256(&json!({ "schema": schema, "value": value }))
+}
+
+fn require_safe_integers(value: &Value) -> Result<()> {
+    match value {
+        Value::Number(number) => require(
+            number
+                .as_i64()
+                .is_some_and(|value| (-MAX_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&value)),
+            "Statische Operational-v2-Infrastruktur enthält keine sichere kanonische Ganzzahl.",
+        ),
+        Value::Array(values) => values.iter().try_for_each(require_safe_integers),
+        Value::Object(values) => values.values().try_for_each(require_safe_integers),
+        _ => Ok(()),
+    }
+}
+
+fn operational_infrastructure_v2_state_hash(
+    value: &Value,
+    expected_release_id: &str,
+) -> Result<String> {
+    require_safe_integers(value)?;
+    let infrastructure: OperationalInfraRelease =
+        serde_json::from_value(value.clone()).map_err(|error| {
+            ReleaseManifestError::new(format!(
+                "Statische Operational-v2-Infrastruktur ist ungueltig: {error}"
+            ))
+        })?;
+    require(
+        infrastructure.id == expected_release_id,
+        "Statische Operational-v2-Infrastruktur verletzt die InfraRelease-ID-Bindung.",
+    )?;
+    infrastructure.validate().map_err(|error| {
+        ReleaseManifestError::new(format!(
+            "Statische Operational-v2-Infrastruktur verletzt den nativen Runtimevertrag: {error}"
+        ))
+    })?;
+    let canonical_infrastructure = serde_json::to_value(&infrastructure).map_err(|error| {
+        ReleaseManifestError::new(format!(
+            "Statische Operational-v2-Infrastruktur kann nicht kanonisiert werden: {error}"
+        ))
+    })?;
+    require(
+        &canonical_infrastructure == value,
+        "Statische Operational-v2-Infrastruktur ist nicht in der kanonischen nativen Darstellung.",
+    )?;
+    Ok(domain_separated_sha256(
+        OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA,
+        &canonical_infrastructure,
+    ))
+}
+
+/// Validiert einen weltfreien Operational-v2-Infrastrukturkandidaten mit dem
+/// identischen typisierten Vertrag wie die Runtime und liefert seine
+/// domänengetrennte kanonische Bindung.
+pub fn validate_operational_infrastructure_v2(
+    value: &Value,
+    expected_release_id: &str,
+) -> Result<Value> {
+    require(
+        non_empty(expected_release_id),
+        "Erwartete InfraRelease-ID fehlt.",
+    )?;
+    let state_hash = operational_infrastructure_v2_state_hash(value, expected_release_id)?;
+    Ok(json!({
+        "schema": OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA,
+        "infraReleaseId": expected_release_id,
+        "stateHash": state_hash,
+    }))
 }
 
 fn sha256_bytes(bytes: &[u8]) -> String {
@@ -326,6 +401,51 @@ struct Artifact {
     extra: Map<String, Value>,
 }
 
+fn validate_operational_infrastructure_artifact_binding(
+    artifacts: &[Artifact],
+    expected_release_id: &str,
+) -> Result<()> {
+    let bindings: Vec<_> = artifacts
+        .iter()
+        .filter(|artifact| {
+            artifact.extra.get("kind").and_then(Value::as_str)
+                == Some(OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA)
+        })
+        .collect();
+    require(
+        bindings.len() == 1,
+        "Oeffentliches InfraRelease muss genau eine statische Operational-v2-Infrastruktur binden.",
+    )?;
+    let artifact = bindings[0];
+    let allowed: BTreeSet<&str> = BTreeSet::from(["infraReleaseId", "kind", "stateHash"]);
+    let actual: BTreeSet<&str> = artifact.extra.keys().map(String::as_str).collect();
+    require(
+        actual == allowed,
+        "Operational-v2-Infrastrukturartefakt besitzt unbekannte oder weltbezogene Manifestfelder.",
+    )?;
+    require(
+        artifact.file == "operational-infrastructure-v2.json",
+        "Operational-v2-Infrastrukturartefakt besitzt keinen kanonischen Dateinamen.",
+    )?;
+    require(
+        artifact.extra.get("infraReleaseId").and_then(Value::as_str) == Some(expected_release_id),
+        "Operational-v2-Infrastrukturartefakt verletzt die InfraRelease-ID-Bindung.",
+    )?;
+    let state_hash = artifact
+        .extra
+        .get("stateHash")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    require(
+        is_sha256(state_hash),
+        "Operational-v2-Infrastrukturartefakt besitzt keinen kanonischen Zustandshash.",
+    )?;
+    require(
+        state_hash != artifact.sha256,
+        "Byte-SHA-256 und kanonischer Operational-v2-Zustandshash duerfen nicht gleichgesetzt werden.",
+    )
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RegionalInfraReleaseBuildConfig {
@@ -336,6 +456,7 @@ struct RegionalInfraReleaseBuildConfig {
     timetable_year: i64,
     service_date: String,
     gtfs_artifact: String,
+    operational_infrastructure_artifact: String,
     release_approval: RegionalReleaseApproval,
 }
 
@@ -377,7 +498,7 @@ fn regional_build_config(input: &Value) -> Result<RegionalInfraReleaseBuildConfi
             ReleaseManifestError::new(format!("Regionaler Buildvertrag ist ungueltig: {error}"))
         })?;
     require(
-        config.schema == "zugfolge-regional-infra-release-build/v1",
+        config.schema == "zugfolge-regional-infra-release-build/v2",
         "Regionaler Buildvertrag hat ein unbekanntes Schema.",
     )?;
     require(
@@ -412,6 +533,11 @@ fn regional_build_config(input: &Value) -> Result<RegionalInfraReleaseBuildConfi
         format!("gtfsArtifact muss exakt {expected_gtfs} sein."),
     )?;
     require(
+        config.operational_infrastructure_artifact == "operational-infrastructure-v2.json"
+            && safe_relative_path(&config.operational_infrastructure_artifact),
+        "operationalInfrastructureArtifact muss exakt operational-infrastructure-v2.json sein.",
+    )?;
+    require(
         non_empty(&config.release_approval.release_responsible)
             && non_empty(&config.release_approval.responsibility_granted_by)
             && config.release_approval.activation_allowed
@@ -421,7 +547,7 @@ fn regional_build_config(input: &Value) -> Result<RegionalInfraReleaseBuildConfi
     Ok(config)
 }
 
-const LEGACY_PIPELINE_FILES: [&str; 16] = [
+const LEGACY_PIPELINE_FILES: [&str; 18] = [
     "tools/region-import/import-mitteldeutschland-b.sh",
     "tools/region-import/import-mitteldeutschland-b.ps1",
     "tools/region-import/build-gtfs-region.mjs",
@@ -434,13 +560,15 @@ const LEGACY_PIPELINE_FILES: [&str; 16] = [
     "tools/region-import/build-validation-set.mjs",
     "tools/region-import/build-infra-release.mjs",
     "tools/region-import/regional-release-contract.mjs",
+    "tools/region-import/operational-infrastructure-binding.mjs",
+    "tools/region-import/materialize-operational-infrastructure-v2.mjs",
     "tools/region-import/release-crypto.mjs",
     "tools/region-import/sign-release.mjs",
     "tools/region-import/verify-release.mjs",
     "crates/zugfolge-infra/examples/pbf_release_report.rs",
 ];
 
-/// Baut den von der Alpha-Laufzeit konsumierten regionalen v1-Release.
+/// Baut den von der Alpha-Laufzeit konsumierten regionalen Release.
 ///
 /// Releasekennung, Verkehrstag, GTFS-Artefakt und Freigabe kommen aus einem
 /// expliziten, strikt dekodierten Buildvertrag. Die Pfade sind reine Eingaben
@@ -460,6 +588,32 @@ pub fn build_mitteldeutschland_infra_release(
     let operational = read_json(
         &artifact_root.join("operational-network.json"),
         "Betriebsnetz",
+    )?;
+    let operational_infrastructure_path =
+        artifact_root.join(&config.operational_infrastructure_artifact);
+    let operational_infrastructure_metadata =
+        fs::symlink_metadata(&operational_infrastructure_path).map_err(|error| {
+            ReleaseManifestError::new(format!(
+                "Statische Operational-v2-Infrastruktur {} kann nicht geprüft werden: {error}",
+                operational_infrastructure_path.display()
+            ))
+        })?;
+    require(
+        operational_infrastructure_metadata.file_type().is_file()
+            && !operational_infrastructure_metadata.file_type().is_symlink()
+            && operational_infrastructure_metadata.len() > 0,
+        "Statische Operational-v2-Infrastruktur ist keine nichtleere reguläre Datei.",
+    )?;
+    let operational_infrastructure = read_json(
+        &operational_infrastructure_path,
+        "statische Operational-v2-Infrastruktur",
+    )?;
+    let operational_infrastructure_state_hash =
+        operational_infrastructure_v2_state_hash(&operational_infrastructure, &config.release_id)?;
+    let operational_infrastructure_byte_hash = sha256_file(&operational_infrastructure_path)?;
+    require(
+        operational_infrastructure_byte_hash != operational_infrastructure_state_hash,
+        "Byte-SHA-256 und kanonischer Operational-v2-Zustandshash duerfen nicht gleichgesetzt werden.",
     )?;
     let pbf = read_json(
         &artifact_root.join("pbf-release-report.json"),
@@ -517,6 +671,7 @@ pub fn build_mitteldeutschland_infra_release(
         "/network/metrics/qualityCSegmentCount",
         "Klasse-C-Segmentzahl",
     )?;
+    let pbf_quality_c = pointer_i64(&pbf, "/quality/classes/C", "PBF-Klasse-C-Abschnittszahl")?;
     let segment_qualifications = pointer(
         &operational,
         "/network/segmentQualifications",
@@ -525,12 +680,12 @@ pub fn build_mitteldeutschland_infra_release(
     .as_array()
     .ok_or_else(|| ReleaseManifestError::new("Segmentqualifikationen sind ungueltig."))?;
     require(
-        quality_c >= 1
-            && !segment_qualifications.iter().any(|segment| {
-                segment.get("qualityClass").and_then(Value::as_str) == Some("C")
-                    && segment.get("orderable").and_then(Value::as_bool) == Some(true)
-            }),
-        "Klasse C ist nicht sichtbar oder faelschlich bestellbar.",
+        quality_c == 0
+            && pbf_quality_c == 0
+            && !segment_qualifications
+                .iter()
+                .any(|segment| segment.get("qualityClass").and_then(Value::as_str) == Some("C")),
+        "Klasse-C-Abschnitte duerfen nur in interner Diagnose, nicht im freigegebenen Regionalrelease vorkommen.",
     )?;
 
     let source_specs = [
@@ -612,6 +767,14 @@ pub fn build_mitteldeutschland_infra_release(
             }),
         ),
         (
+            config.operational_infrastructure_artifact.as_str(),
+            json!({
+                "kind": OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA,
+                "infraReleaseId": config.release_id,
+                "stateHash": operational_infrastructure_state_hash,
+            }),
+        ),
+        (
             "pbf-release-report.json",
             json!({
                 "kind": "blocks-routes-quality",
@@ -635,6 +798,19 @@ pub fn build_mitteldeutschland_infra_release(
         .into_iter()
         .map(|(file, extra)| file_descriptor(artifact_root, file, extra))
         .collect::<Result<Vec<_>>>()?;
+    let manifested_operational_infrastructure_hash = artifacts
+        .iter()
+        .find(|artifact| {
+            artifact.get("kind").and_then(Value::as_str)
+                == Some(OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA)
+        })
+        .and_then(|artifact| artifact.get("sha256"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    require(
+        manifested_operational_infrastructure_hash == operational_infrastructure_byte_hash,
+        "Operational-v2-Infrastruktur änderte sich während der Manifestbildung.",
+    )?;
     let pipeline_scripts = LEGACY_PIPELINE_FILES
         .iter()
         .map(|path| repository_file_descriptor(workspace_root, path))
@@ -701,7 +877,7 @@ pub fn build_mitteldeutschland_infra_release(
                 "B": pointer_i64(&operational, "/network/metrics/qualityBSegmentCount", "Klasse-B-Segmentzahl")?,
                 "C": quality_c,
             },
-            "classCVisible": true,
+            "classCVisible": false,
             "classCOrderable": false,
             "orderableJourneyChains": pointer_i64(&operational, "/network/metrics/orderableJourneyChainCount", "bestellbare Fahrtketten")?,
             "conflictResources": pointer_i64(&operational, "/network/metrics/conflictResourceCount", "Konfliktressourcen")?,
@@ -2031,6 +2207,13 @@ fn quality_summary(report: &Value, config: &GermanyConfig) -> Result<Value> {
             sum == total,
             "Klassenlaengen des Qualitaetsberichts ergeben nicht die Gesamtlaenge.",
         )?;
+        require(
+            classes
+                .and_then(|values| values.get("C"))
+                .and_then(Value::as_i64)
+                == Some(0),
+            "Klasse-C-Abschnitte duerfen nur in interner Diagnose, nicht im freigegebenen InfraRelease vorkommen.",
+        )?;
         return Ok(json!({
             "totalLengthMm": total,
             "byClassLengthMm": report["byClassLengthMm"].clone(),
@@ -2117,6 +2300,10 @@ fn quality_summary(report: &Value, config: &GermanyConfig) -> Result<Value> {
         sum == total,
         "Gleislängen des Deutschland-Qualitätsberichts sind nicht vollständig.",
     )?;
+    require(
+        class_lengths.get("C").and_then(Value::as_i64) == Some(0),
+        "Klasse-C-Abschnitte duerfen nur in interner Diagnose, nicht im freigegebenen InfraRelease vorkommen.",
+    )?;
     let feature_classes = report
         .pointer("/summary/qualityClassFeatureCount")
         .cloned()
@@ -2142,6 +2329,10 @@ fn quality_summary(report: &Value, config: &GermanyConfig) -> Result<Value> {
     require(
         feature_sum == visible_features,
         "Objektklassen des Deutschland-Qualitaetsberichts ergeben nicht die sichtbaren Objekte.",
+    )?;
+    require(
+        feature_classes.get("C").and_then(Value::as_i64) == Some(0),
+        "Klasse-C-Objekte duerfen nur in interner Diagnose, nicht im freigegebenen InfraRelease vorkommen.",
     )?;
     Ok(json!({
         "totalLengthMm": total,
@@ -2197,7 +2388,12 @@ pub fn build_public_infra_release(
             is_sha256(&artifact.sha256),
             format!("Artefakt {} ohne SHA-256.", artifact.id),
         )?;
+        require(
+            artifact.extra.get("kind").and_then(Value::as_str) != Some("train-map-projection"),
+            "Weltbezogene Zugprojektionen gehoeren nicht in den statischen InfraRelease-Artefaktvertrag.",
+        )?;
     }
+    validate_operational_infrastructure_artifact_binding(&artifacts, &config.release.release_id)?;
     let quality = quality_summary(quality_report, &config)?;
     let captured: BTreeMap<_, _> = capture
         .sources
