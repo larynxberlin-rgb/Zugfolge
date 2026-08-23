@@ -65,4 +65,55 @@ describe("Simulationsevent-Spielerprojektion", () => {
     expect(first).toEqual(replay);
     expect(first).toMatchObject({ after: 10, nextAfter: 12, events: [] });
   });
+
+  it("projiziert Aktivierung und technische Freigabe einer v2-Stoerung ohne interne Wirkungspayload", () => {
+    const raw = [
+      event(20, "disruption.applied", {
+        schemaVersion: "zugfolge-operational-disruption-event/v2",
+        disruptionId: "disruption:1",
+        effect: "closure",
+        operationalEffect: { "resource-closed": { resourceId: "block:1" } },
+        affectedResource: "block:1",
+        affectedTrainRunIds: ["train:1"],
+        operatorIds: ["operator-a"],
+      }),
+      event(21, "disruption.cleared", {
+        schemaVersion: "zugfolge-operational-disruption-event/v2",
+        disruptionId: "disruption:1",
+        effect: "closure",
+        operationalEffect: { "resource-closed": { resourceId: "block:1" } },
+        affectedResource: "block:1",
+        releaseReference: "repair-order:42",
+        operatorIds: ["operator-a"],
+      }),
+    ];
+
+    const projected = projectSimulationEventBatch(raw, new Set(["operator-a"]), 19);
+    expect(projected.events).toEqual([
+      expect.objectContaining({
+        sequence: 20,
+        eventType: "disruption.applied",
+        visibility: "public",
+        payload: {
+          disruptionId: "disruption:1",
+          effect: "closure",
+          affectedResource: "block:1",
+          affectedTrainRunIds: ["train:1"],
+        },
+      }),
+      expect.objectContaining({
+        sequence: 21,
+        eventType: "disruption.cleared",
+        visibility: "public",
+        payload: {
+          disruptionId: "disruption:1",
+          effect: "closure",
+          affectedResource: "block:1",
+          releaseReference: "repair-order:42",
+        },
+      }),
+    ]);
+    expect(JSON.stringify(projected)).not.toContain("operationalEffect");
+    expect(JSON.stringify(projected)).not.toContain("operatorIds");
+  });
 });

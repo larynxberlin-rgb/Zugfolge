@@ -13,6 +13,8 @@ use std::error::Error;
 use std::fmt;
 use zugfolge_determinism::{StateHash, StateHasher};
 
+pub mod operational;
+
 /// Stabile Kennung einer Welt.
 pub type WorldId = u64;
 /// Stabile Kennung einer Region.

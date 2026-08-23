@@ -68,26 +68,103 @@ export interface PublicMapPosition {
   readonly bearingMilliDegrees?: number;
 }
 
-export type PublicMapEstimateMethod =
-  | "topological-track"
-  | "route-corridor"
-  | "anchor-hold";
+export interface PublicTrackInterval {
+  readonly trackId: string;
+  readonly fromMm: number;
+  readonly toMm: number;
+  readonly direction: "along" | "against";
+}
 
-/**
- * Ausschliesslich visuelle, releasegebundene Lageableitung. Sie ist keine
- * Gleisbelegung und darf nie als Fahrweg- oder Konfliktnachweis verwendet
- * werden.
- */
-export interface PublicMapEstimate {
-  readonly infrastructureReleaseId: string;
-  readonly resourceId: string;
-  readonly method: PublicMapEstimateMethod;
-  readonly displayPathId: string;
-  readonly displayOffsetMm: number;
+export interface PublicRouteGeometryPoint {
+  readonly routeMm: number;
+  readonly trackId: string;
+  readonly offsetMm: number;
   readonly latitudeE7: number;
   readonly longitudeE7: number;
   readonly bearingMilliDegrees?: number;
-  readonly uncertaintyMm: number;
+}
+
+/** Vom Server autorisierter, unveraenderlicher analytischer Bewegungsabschnitt. */
+export interface PublicMotionSegment {
+  readonly startedAtMs: number;
+  readonly validUntilMs: number;
+  readonly startRouteMm: number;
+  readonly startSpeedMmPerSecond: number;
+  readonly accelerationMmPerSecondSquared: number;
+  readonly authorityEndRouteMm: number;
+  readonly segmentEndRouteMm: number;
+  readonly geometry: readonly PublicRouteGeometryPoint[];
+}
+
+/** Exakte betriebliche v2-Sicht; LiveMap und RZUE verwenden dieselbe Instanz. */
+export interface PublicOperationalTrainState {
+  readonly regionId: string;
+  readonly commitSequence: number;
+  readonly simulationTimeMs: number;
+  readonly routeVersionId: string;
+  readonly formationVersionId: string;
+  readonly movementKind: "train" | "shunting";
+  readonly headRouteMm: number;
+  readonly tailRouteMm: number;
+  readonly direction: "along" | "against";
+  readonly occupiedIntervals: readonly PublicTrackInterval[];
+  readonly occupiedBlocks: readonly string[];
+  readonly authorityEndRouteMm?: number;
+  readonly motionSegment?: PublicMotionSegment;
+  readonly waitingReason?: string;
+}
+
+export type PublicOperationalSignalAspect = "stop" | "proceed" | "shunting-proceed" | "failed";
+
+export type PublicOperationalVehicleRestriction =
+  | Readonly<{ "power-basis-points": number }>
+  | Readonly<{ "maximum-speed": number }>
+  | Readonly<{ "service-brake": number }>
+  | Readonly<{ "emergency-brake": number }>
+  | Readonly<{ "protection-unavailable": string }>
+  | Readonly<{ "door-availability-basis-points": number }>
+  | "immobilized";
+
+export type PublicOperationalDisruptionEffect =
+  | Readonly<{ "resource-closed": Readonly<{ resourceId: string }> }>
+  | Readonly<{ "speed-restriction": Readonly<{ edgeId: string; maximumSpeedMmps: number }> }>
+  | Readonly<{ "signal-failed": Readonly<{ signalId: string }> }>
+  | Readonly<{ "switch-failed": Readonly<{ switchId: string }> }>
+  | Readonly<{ "track-detection-failed": Readonly<{ resourceId: string }> }>
+  | Readonly<{
+      "vehicle-restricted": Readonly<{
+        vehicleId: string;
+        restriction: PublicOperationalVehicleRestriction;
+      }>;
+    }>;
+
+export interface PublicOperationalDisruption {
+  readonly disruptionId: string;
+  readonly effect: PublicOperationalDisruptionEffect;
+}
+
+export interface PublicOperationalRouteLock {
+  readonly id: string;
+  readonly templateId: string;
+  readonly trainId: string;
+  readonly resources: readonly string[];
+  readonly releaseAfterTailRouteMm: number;
+  readonly lockedAtMs: number;
+}
+
+/**
+ * Gemeinsamer committed Regionskopf fuer LiveMap und RZUE. Der Frame wird im
+ * selben Feed-Delta wie die zugehoerigen Zugzustaende ersetzt.
+ */
+export interface PublicOperationalRegionFrame {
+  readonly regionId: string;
+  readonly infrastructureReleaseId: string;
+  readonly commitSequence: number;
+  readonly simulationTimeMs: number;
+  readonly staleAfterMs: number;
+  readonly routeLocks: readonly PublicOperationalRouteLock[];
+  readonly signals: Readonly<Record<string, PublicOperationalSignalAspect>>;
+  readonly activeDisruptions: readonly PublicOperationalDisruption[];
 }
 
 export type LivemapObjectKind =
@@ -129,19 +206,21 @@ export interface PublicTrain {
   readonly category: string;
   readonly positionMm: number;
   readonly speedMmPerSecond: number;
-  readonly delaySeconds: number;
-  readonly nextOperatingPoint: string;
+  /** Nur vorhanden, wenn aus dem autoritativen Fahrplanvergleich abgeleitet. */
+  readonly delaySeconds?: number;
+  /** Nur vorhanden, wenn ein autoritativer naechster Betriebspunkt feststeht. */
+  readonly nextOperatingPoint?: string;
   readonly status: string;
+  readonly operational?: PublicOperationalTrainState;
   readonly mapPosition?: PublicMapPosition;
-  readonly mapEstimate?: PublicMapEstimate;
   readonly operationMarker?: PublicOperationMarker;
   readonly disruption?: PublicDisruptionMarker;
 }
 
 /**
- * Reine, synchrone Releaseprojektion an der Fanout-Grenze. Sie darf entweder
- * eine nachgewiesene `mapPosition` oder eine explizite `mapEstimate`
- * ergaenzen. Beide Darstellungen sind gegenseitig exklusiv.
+ * Reine, synchrone Exact-Projektion an der Fanout-Grenze. Ohne beweisbare
+ * `mapPosition` bleibt der sichere letzte Zustand stehen; es gibt keinen
+ * Schaetzvertrag.
  */
 export interface PublicTrainMapProjector {
   project(worldId: string, train: PublicTrain): PublicTrain;
@@ -226,28 +305,231 @@ function validateMapProjection(train: PublicTrain): void {
     throw new RangeError(`Zug '${train.id}' besitzt keine gueltige ganzzahlige Kartenposition.`);
   }
 
-  const estimate = train.mapEstimate;
-  if (position !== undefined && estimate !== undefined) {
-    throw new RangeError(`Zug '${train.id}' darf nicht zugleich bestaetigte und geschaetzte Kartenlage besitzen.`);
-  }
-  if (estimate === undefined) return;
+}
+
+function validateOperationalState(train: PublicTrain): void {
+  const state = train.operational;
+  if (state === undefined) return;
+  const integer = (value: number) => Number.isSafeInteger(value);
   if (
-    estimate.infrastructureReleaseId.length === 0 ||
-    estimate.resourceId.length === 0 ||
-    estimate.displayPathId.length === 0 ||
-    !(["topological-track", "route-corridor", "anchor-hold"] as const).includes(estimate.method) ||
-    !integer(estimate.displayOffsetMm) || estimate.displayOffsetMm < 0 ||
-    !integer(estimate.uncertaintyMm) || estimate.uncertaintyMm < 0 ||
-    !integer(estimate.latitudeE7) || estimate.latitudeE7 < -900_000_000 || estimate.latitudeE7 > 900_000_000 ||
-    !integer(estimate.longitudeE7) || estimate.longitudeE7 < -1_800_000_000 || estimate.longitudeE7 > 1_800_000_000 ||
-    (estimate.bearingMilliDegrees !== undefined && (
-      !integer(estimate.bearingMilliDegrees) ||
-      estimate.bearingMilliDegrees < 0 ||
-      estimate.bearingMilliDegrees >= 360_000
-    ))
+    state.regionId.length === 0 ||
+    !integer(state.commitSequence) || state.commitSequence < 0 ||
+    !integer(state.simulationTimeMs) || state.simulationTimeMs < 0 ||
+    state.routeVersionId.length === 0 || state.formationVersionId.length === 0 ||
+    !integer(state.headRouteMm) || !integer(state.tailRouteMm) ||
+    state.tailRouteMm > state.headRouteMm ||
+    state.occupiedIntervals.some((interval) =>
+      interval.trackId.length === 0 || !integer(interval.fromMm) || !integer(interval.toMm) ||
+      interval.fromMm < 0 || interval.fromMm >= interval.toMm
+    ) ||
+    state.occupiedBlocks.some((block) => block.length === 0)
   ) {
-    throw new RangeError(`Zug '${train.id}' besitzt keine gueltige ganzzahlige Kartenschaetzung.`);
+    throw new RangeError(`Zug '${train.id}' besitzt keinen gueltigen exakten Betriebszustand.`);
   }
+  const segment = state.motionSegment;
+  if (segment === undefined) return;
+  if (
+    !integer(segment.startedAtMs) || !integer(segment.validUntilMs) ||
+    segment.validUntilMs < segment.startedAtMs ||
+    !integer(segment.startRouteMm) || !integer(segment.startSpeedMmPerSecond) ||
+    !integer(segment.accelerationMmPerSecondSquared) ||
+    !integer(segment.authorityEndRouteMm) ||
+    !integer(segment.segmentEndRouteMm) ||
+    segment.startRouteMm > segment.authorityEndRouteMm ||
+    segment.startRouteMm > segment.segmentEndRouteMm ||
+    segment.segmentEndRouteMm > segment.authorityEndRouteMm ||
+    segment.geometry.length < 2 ||
+    segment.geometry.some((point, index) =>
+      !integer(point.routeMm) || !integer(point.offsetMm) || point.trackId.length === 0 ||
+      !integer(point.latitudeE7) || !integer(point.longitudeE7) ||
+      (index > 0 && point.routeMm <= segment.geometry[index - 1]!.routeMm)
+    )
+  ) {
+    throw new RangeError(`Zug '${train.id}' besitzt keinen gueltigen autorisierten Bewegungsabschnitt.`);
+  }
+}
+
+function objectRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function exactObjectKeys(
+  value: Readonly<Record<string, unknown>>,
+  keys: readonly string[],
+): boolean {
+  const actual = Object.keys(value).sort(compareUtf8);
+  const expected = [...keys].sort(compareUtf8);
+  return actual.length === expected.length
+    && actual.every((key, index) => key === expected[index]);
+}
+
+function publicOperationalRestriction(value: unknown): PublicOperationalVehicleRestriction {
+  if (value === "immobilized") return value;
+  if (!objectRecord(value) || Object.keys(value).length !== 1) {
+    throw new TypeError("Operative Fahrzeugstoerung besitzt keine eindeutige Wirkung.");
+  }
+  const [kind] = Object.keys(value);
+  const amount = value[kind!];
+  if (kind === "protection-unavailable") {
+    if (typeof amount !== "string" || amount.length === 0) {
+      throw new TypeError("Operative Zugsicherungseinschraenkung ist ungueltig.");
+    }
+  } else if (
+    ![
+      "power-basis-points",
+      "maximum-speed",
+      "service-brake",
+      "emergency-brake",
+      "door-availability-basis-points",
+    ].includes(kind!)
+    || !Number.isSafeInteger(amount)
+    || (amount as number) < 0
+    || ((kind === "power-basis-points" || kind === "door-availability-basis-points")
+      && (amount as number) > 65_535)
+  ) {
+    throw new TypeError("Operative Fahrzeugeinschraenkung ist ungueltig.");
+  }
+  return Object.freeze({ [kind!]: amount }) as PublicOperationalVehicleRestriction;
+}
+
+function publicOperationalDisruption(
+  disruption: PublicOperationalDisruption,
+): PublicOperationalDisruption {
+  if (disruption.disruptionId.length === 0 || !objectRecord(disruption.effect)) {
+    throw new TypeError("Operative Stoerung besitzt keine gueltige Kennung oder Wirkung.");
+  }
+  const effect = disruption.effect as unknown as Readonly<Record<string, unknown>>;
+  const [kind] = Object.keys(effect);
+  if (Object.keys(effect).length !== 1 || kind === undefined || !objectRecord(effect[kind])) {
+    throw new TypeError("Operative Stoerung besitzt keine eindeutige Wirkung.");
+  }
+  const detail = effect[kind];
+  let projectedDetail: Readonly<Record<string, unknown>>;
+  switch (kind) {
+    case "resource-closed":
+    case "track-detection-failed":
+      if (!exactObjectKeys(detail, ["resourceId"]) || typeof detail["resourceId"] !== "string" || detail["resourceId"].length === 0) {
+        throw new TypeError("Operative Ressourcenstoerung ist ungueltig.");
+      }
+      projectedDetail = Object.freeze({ resourceId: detail["resourceId"] });
+      break;
+    case "signal-failed":
+      if (!exactObjectKeys(detail, ["signalId"]) || typeof detail["signalId"] !== "string" || detail["signalId"].length === 0) {
+        throw new TypeError("Operativer Signalausfall ist ungueltig.");
+      }
+      projectedDetail = Object.freeze({ signalId: detail["signalId"] });
+      break;
+    case "switch-failed":
+      if (!exactObjectKeys(detail, ["switchId"]) || typeof detail["switchId"] !== "string" || detail["switchId"].length === 0) {
+        throw new TypeError("Operativer Weichenausfall ist ungueltig.");
+      }
+      projectedDetail = Object.freeze({ switchId: detail["switchId"] });
+      break;
+    case "speed-restriction":
+      if (
+        !exactObjectKeys(detail, ["edgeId", "maximumSpeedMmps"])
+        || typeof detail["edgeId"] !== "string"
+        || detail["edgeId"].length === 0
+        || !Number.isSafeInteger(detail["maximumSpeedMmps"])
+        || (detail["maximumSpeedMmps"] as number) <= 0
+      ) {
+        throw new TypeError("Operative Langsamfahrstelle ist ungueltig.");
+      }
+      projectedDetail = Object.freeze({
+        edgeId: detail["edgeId"],
+        maximumSpeedMmps: detail["maximumSpeedMmps"],
+      });
+      break;
+    case "vehicle-restricted":
+      if (
+        !exactObjectKeys(detail, ["vehicleId", "restriction"])
+        || typeof detail["vehicleId"] !== "string"
+        || detail["vehicleId"].length === 0
+      ) {
+        throw new TypeError("Operative Fahrzeugstoerung ist ungueltig.");
+      }
+      projectedDetail = Object.freeze({
+        vehicleId: detail["vehicleId"],
+        restriction: publicOperationalRestriction(detail["restriction"]),
+      });
+      break;
+    default:
+      throw new TypeError("Operative Stoerung besitzt eine unbekannte Wirkung.");
+  }
+  return Object.freeze({
+    disruptionId: disruption.disruptionId,
+    effect: Object.freeze({ [kind]: projectedDetail }) as PublicOperationalDisruptionEffect,
+  });
+}
+
+function publicOperationalRegionFrame(
+  frame: PublicOperationalRegionFrame,
+): PublicOperationalRegionFrame {
+  const integer = (value: number) => Number.isSafeInteger(value);
+  if (
+    frame.regionId.length === 0 ||
+    frame.infrastructureReleaseId.length === 0 ||
+    !integer(frame.commitSequence) || frame.commitSequence < 0 ||
+    !integer(frame.simulationTimeMs) || frame.simulationTimeMs < 0 ||
+    !integer(frame.staleAfterMs) || frame.staleAfterMs < frame.simulationTimeMs
+  ) {
+    throw new RangeError("Operativer Regionsframe verletzt Commit-, Zeit- oder Releasebindung.");
+  }
+  const lockIds = new Set<string>();
+  const routeLocks = frame.routeLocks.map((lock) => {
+    if (
+      lock.id.length === 0 || lock.templateId.length === 0 || lock.trainId.length === 0 ||
+      lock.resources.length === 0 || lock.resources.some((resource) => resource.length === 0) ||
+      new Set(lock.resources).size !== lock.resources.length ||
+      !integer(lock.releaseAfterTailRouteMm) || lock.releaseAfterTailRouteMm < 0 ||
+      !integer(lock.lockedAtMs) || lock.lockedAtMs < 0 || lock.lockedAtMs > frame.simulationTimeMs ||
+      lockIds.has(lock.id)
+    ) {
+      throw new RangeError("Operativer Regionsframe besitzt keine gueltige eindeutige Fahrstrassenverriegelung.");
+    }
+    lockIds.add(lock.id);
+    return Object.freeze({
+      id: lock.id,
+      templateId: lock.templateId,
+      trainId: lock.trainId,
+      resources: Object.freeze([...lock.resources]),
+      releaseAfterTailRouteMm: lock.releaseAfterTailRouteMm,
+      lockedAtMs: lock.lockedAtMs,
+    });
+  });
+  const signals = Object.fromEntries(
+    Object.entries(frame.signals)
+      .sort(([left], [right]) => compareUtf8(left, right))
+      .map(([signalId, aspect]) => {
+        if (
+          signalId.length === 0 ||
+          !["stop", "proceed", "shunting-proceed", "failed"].includes(aspect)
+        ) {
+          throw new RangeError("Operativer Regionsframe besitzt einen unbekannten Signalbegriff.");
+        }
+        return [signalId, aspect] as const;
+      }),
+  );
+  const activeDisruptions = [...frame.activeDisruptions]
+    .sort((left, right) => compareUtf8(left.disruptionId, right.disruptionId))
+    .map(publicOperationalDisruption);
+  if (new Set(activeDisruptions.map((disruption) => disruption.disruptionId)).size !== activeDisruptions.length) {
+    throw new RangeError("Operativer Regionsframe besitzt doppelte aktive Stoerungen.");
+  }
+  return Object.freeze({
+    regionId: frame.regionId,
+    infrastructureReleaseId: frame.infrastructureReleaseId,
+    commitSequence: frame.commitSequence,
+    simulationTimeMs: frame.simulationTimeMs,
+    staleAfterMs: frame.staleAfterMs,
+    routeLocks: Object.freeze(routeLocks),
+    signals: Object.freeze(signals),
+    activeDisruptions: Object.freeze(activeDisruptions),
+  });
+}
+
+function sameTrainProjection(left: PublicTrain, right: PublicTrain): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function publicObjectState(state: PublicObjectState): PublicObjectState {
@@ -280,6 +562,7 @@ export interface LiveSnapshot {
   readonly externalTrains?: readonly PublicExternalTrain[];
   readonly disruptions?: readonly PublicInfrastructureDisruption[];
   readonly objectStates?: readonly PublicObjectState[];
+  readonly operationalRegions?: readonly PublicOperationalRegionFrame[];
 }
 
 export interface LiveDelta {
@@ -295,9 +578,12 @@ export interface LiveDelta {
   readonly removedDisruptionIds?: readonly string[];
   readonly changedObjectStates?: readonly PublicObjectState[];
   readonly removedObjectStateIds?: readonly string[];
+  readonly changedOperationalRegions?: readonly PublicOperationalRegionFrame[];
+  readonly removedOperationalRegionIds?: readonly string[];
 }
 
 export type DeltaListener = (delta: LiveDelta) => void;
+export type ResetListener = () => void;
 
 export interface LivemapCursor {
   readonly streamId: string;
@@ -355,9 +641,13 @@ export class LivemapFeed {
   readonly #externalTrains = new Map<string, PublicExternalTrain>();
   readonly #disruptions = new Map<string, PublicInfrastructureDisruption>();
   readonly #objectStates = new Map<string, PublicObjectState>();
+  readonly #operationalRegions = new Map<string, PublicOperationalRegionFrame>();
   readonly #operationMarkerTimelines = new Map<string, OperationMarkerChange[]>();
   readonly #latestOperationMarkers = new Map<string, OperationMarkerChange>();
-  readonly #listeners = new Set<DeltaListener>();
+  readonly #listeners = new Set<Readonly<{
+    delta: DeltaListener;
+    reset?: ResetListener;
+  }>>();
   readonly #history: LiveDelta[] = [];
 
   constructor(
@@ -397,11 +687,61 @@ export class LivemapFeed {
       externalTrains: [...this.#externalTrains.values()].sort((a, b) => compareUtf8(a.id, b.id)),
       disruptions: [...this.#disruptions.values()].sort((a, b) => compareUtf8(a.disruptionId, b.disruptionId)),
       objectStates: [...this.#objectStates.values()].sort((a, b) => compareUtf8(a.id, b.id)),
+      operationalRegions: [...this.#operationalRegions.values()].sort((a, b) => compareUtf8(a.regionId, b.regionId)),
     };
   }
 
   #emit(input: Omit<LiveDelta, "worldId" | "streamId" | "sequence">): LiveDelta {
-    input.changed.forEach(validateMapProjection);
+    input.changed.forEach((train) => {
+      validateMapProjection(train);
+      validateOperationalState(train);
+    });
+    const changedOperationalRegions = (input.changedOperationalRegions ?? [])
+      .map(publicOperationalRegionFrame);
+    const changedOperationalRegionIds = new Set(
+      changedOperationalRegions.map((frame) => frame.regionId),
+    );
+    const removedOperationalRegionIds = input.removedOperationalRegionIds ?? [];
+    if (
+      changedOperationalRegionIds.size !== changedOperationalRegions.length ||
+      new Set(removedOperationalRegionIds).size !== removedOperationalRegionIds.length ||
+      removedOperationalRegionIds.some((regionId) => regionId.length === 0) ||
+      removedOperationalRegionIds.some((regionId) => changedOperationalRegionIds.has(regionId))
+    ) {
+      throw new RangeError("Geaenderte und entfernte operative Regionsframes muessen eindeutig und disjunkt sein.");
+    }
+    const nextOperationalRegions = new Map(this.#operationalRegions);
+    changedOperationalRegions.forEach((frame) => nextOperationalRegions.set(frame.regionId, frame));
+    removedOperationalRegionIds.forEach((regionId) => nextOperationalRegions.delete(regionId));
+    const nextTrains = new Map(this.#trains);
+    input.changed.forEach((train) => nextTrains.set(train.id, train));
+    input.removed.forEach((id) => nextTrains.delete(id));
+    for (const train of input.changed) {
+      const state = train.operational;
+      if (state === undefined) continue;
+      const frame = nextOperationalRegions.get(state.regionId);
+      if (
+        frame === undefined ||
+        frame.commitSequence !== state.commitSequence ||
+        frame.simulationTimeMs !== state.simulationTimeMs
+      ) {
+        throw new RangeError(`Geaenderter Zug '${train.id}' gehoert nicht zum publizierten Regionscommit.`);
+      }
+    }
+    for (const train of nextTrains.values()) {
+      const state = train.operational;
+      if (state === undefined) continue;
+      const frame = nextOperationalRegions.get(state.regionId);
+      if (
+        frame === undefined ||
+        frame.commitSequence !== state.commitSequence ||
+        frame.simulationTimeMs !== state.simulationTimeMs ||
+        (train.mapPosition !== undefined
+          && train.mapPosition.infrastructureReleaseId !== frame.infrastructureReleaseId)
+      ) {
+        throw new RangeError(`Zug '${train.id}' ist nicht an denselben committed Regionsframe gebunden.`);
+      }
+    }
     const changedObjectStates = input.changedObjectStates?.map(publicObjectState) ?? [];
     const changedObjectStateIds = new Set(changedObjectStates.map((state) => state.id));
     if (changedObjectStateIds.size !== changedObjectStates.length) {
@@ -424,6 +764,8 @@ export class LivemapFeed {
     input.removedDisruptionIds?.forEach((id) => this.#disruptions.delete(id));
     changedObjectStates.forEach((state) => this.#objectStates.set(state.id, state));
     removedObjectStateIds.forEach((id) => this.#objectStates.delete(id));
+    changedOperationalRegions.forEach((frame) => this.#operationalRegions.set(frame.regionId, frame));
+    removedOperationalRegionIds.forEach((regionId) => this.#operationalRegions.delete(regionId));
     this.#sequence += 1;
     this.#at = input.at;
     this.#lastPublishedAtMs = this.#now();
@@ -435,13 +777,15 @@ export class LivemapFeed {
       removedExternalTrainIds: input.removedExternalTrainIds ?? [],
       changedObjectStates,
       removedObjectStateIds,
+      changedOperationalRegions,
+      removedOperationalRegionIds,
       worldId: this.#worldId,
       streamId: this.#streamId,
       sequence: this.#sequence,
     };
     this.#history.push(delta);
     if (this.#history.length > this.#historyLimit) this.#history.shift();
-    this.#listeners.forEach((listener) => listener(delta));
+    this.#listeners.forEach((listener) => listener.delta(delta));
     return delta;
   }
 
@@ -591,8 +935,16 @@ export class LivemapFeed {
   }
 
   subscribe(listener: DeltaListener): () => void {
-    this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
+    const subscription = Object.freeze({ delta: listener });
+    this.#listeners.add(subscription);
+    return () => { this.#listeners.delete(subscription); };
+  }
+
+  /** Invalidiert alle bestehenden Transporte sofort und genau einmal. */
+  invalidate(): void {
+    const listeners = [...this.#listeners];
+    this.#listeners.clear();
+    listeners.forEach((listener) => listener.reset?.());
   }
 
   /**
@@ -603,7 +955,11 @@ export class LivemapFeed {
    * Ringpuffer nicht zurück, wird kein Listener eingetragen; der Transport
    * muss genau ein `reset` senden und schließen.
    */
-  subscribeAfter(cursor: LivemapCursor, listener: DeltaListener): LivemapSubscription {
+  subscribeAfter(
+    cursor: LivemapCursor,
+    listener: DeltaListener,
+    reset?: ResetListener,
+  ): LivemapSubscription {
     if (cursor.streamId !== this.#streamId) {
       return { kind: "reset", unsubscribe: () => undefined };
     }
@@ -612,7 +968,8 @@ export class LivemapFeed {
       return { kind: "reset", unsubscribe: () => undefined };
     }
 
-    this.#listeners.add(listener);
+    const subscription = Object.freeze({ delta: listener, ...(reset === undefined ? {} : { reset }) });
+    this.#listeners.add(subscription);
     let subscribed = true;
     return {
       kind: "resume",
@@ -620,7 +977,7 @@ export class LivemapFeed {
       unsubscribe: () => {
         if (!subscribed) return;
         subscribed = false;
-        this.#listeners.delete(listener);
+        this.#listeners.delete(subscription);
       },
     };
   }
@@ -634,6 +991,12 @@ export interface LivemapRegistryOptions {
   readonly createStreamId?: () => string;
   readonly trainMapProjector?: PublicTrainMapProjector;
   readonly objectStateProjector?: PublicObjectStateProjector;
+}
+
+export interface OperationalLivemapRegionSnapshot {
+  readonly at: number;
+  readonly trains: readonly PublicTrain[];
+  readonly operationalRegions: readonly PublicOperationalRegionFrame[];
 }
 
 export class LivemapCapacityError extends Error {
@@ -684,6 +1047,10 @@ export class LivemapRegistry {
   #projectTrains(worldId: string, trains: readonly PublicTrain[]): readonly PublicTrain[] {
     if (this.#trainMapProjector === undefined) return trains;
     return trains.map((train) => {
+      // E31: Die v2-Engine liefert Releasegeometrie und Betriebsposition
+      // gemeinsam. Der kumulative v1-Projektor darf diesen Beweis weder
+      // entfernen noch auf einen historischen Laufweg umdeuten.
+      if (train.operational !== undefined) return train;
       const projected = this.#trainMapProjector!.project(worldId, train);
       if (projected.id !== train.id || projected.positionMm !== train.positionMm) {
         throw new TypeError("Livemap-Kartenprojektor darf Zugidentitaet oder Betriebsposition nicht veraendern.");
@@ -890,6 +1257,13 @@ export class LivemapRegistry {
       throw new RangeError("regionId muss 1 bis 200 Zeichen besitzen.");
     }
     const entry = this.#entryForWorld(worldId);
+    const operationalRegions = snapshot.operationalRegions;
+    if (
+      operationalRegions !== undefined &&
+      (operationalRegions.length > 1 || operationalRegions.some((frame) => frame.regionId !== regionId))
+    ) {
+      throw new RangeError("Ein Regionssnapshot darf nur seinen eigenen operativen Regionsframe enthalten.");
+    }
     const projectedTrains = this.#projectTrains(worldId, snapshot.trains);
     const nextIds = new Set(projectedTrains.map((train) => train.id));
     if (nextIds.size !== projectedTrains.length) {
@@ -946,6 +1320,9 @@ export class LivemapRegistry {
       removedDisruptionIds: [],
       changedObjectStates: objectStates,
       removedObjectStateIds,
+      changedOperationalRegions: operationalRegions ?? [],
+      removedOperationalRegionIds:
+        operationalRegions !== undefined && operationalRegions.length === 0 ? [regionId] : [],
     });
     for (const trainRunId of nextIds) {
       for (const [otherRegionId, identifiers] of entry.trainIdsByRegion) {
@@ -978,6 +1355,12 @@ export class LivemapRegistry {
     if (feed === undefined) return undefined;
     const entry = this.#feeds.get(worldId);
     if (entry === undefined) return undefined;
+    if (
+      (input.changedOperationalRegions ?? []).some((frame) => frame.regionId !== regionId) ||
+      (input.removedOperationalRegionIds ?? []).some((identifier) => identifier !== regionId)
+    ) {
+      throw new RangeError("Ein Regionsdelta darf keinen fremden operativen Regionsframe veraendern.");
+    }
     const identifiers = entry.trainIdsByRegion.get(regionId) ?? new Set<string>();
     const externalIdentifiers = entry.externalTrainIdsByRegion.get(regionId) ?? new Set<string>();
     const objectStateIdentifiers = entry.objectStateIdsByRegion.get(regionId) ?? new Set<string>();
@@ -1056,10 +1439,70 @@ export class LivemapRegistry {
     return delta;
   }
 
+  /**
+   * Uebernimmt einen vollstaendigen nativen v2-Regionssnapshot. Bei jedem
+   * neuen Regionscommit werden alle v2-Zuege derselben Region zusammen mit
+   * dem Frame in genau einem `#emit` publiziert; alte per-train Commits sind
+   * damit auch in einem spaeter gelesenen Vollsnapshot ausgeschlossen.
+   */
+  publishOperationalRegionSnapshot(
+    worldId: string,
+    regionId: string,
+    snapshot: OperationalLivemapRegionSnapshot,
+  ): LiveDelta | undefined {
+    if (
+      snapshot.operationalRegions.length !== 1 ||
+      snapshot.operationalRegions[0]?.regionId !== regionId
+    ) {
+      throw new RangeError("Operativer Regionssnapshot braucht genau seinen committed Regionsframe.");
+    }
+    if (snapshot.trains.some((train) =>
+      train.operational?.regionId !== regionId || train.mapPosition === undefined
+    )) {
+      throw new RangeError("Operativer Regionssnapshot darf nur exakt georeferenzierte Zuege seiner Region enthalten.");
+    }
+    const feed = this.initializedWorld(worldId);
+    if (feed === undefined) return undefined;
+    const entry = this.#feeds.get(worldId);
+    if (entry === undefined) return undefined;
+    const previousFrame = feed.snapshot().operationalRegions?.find((frame) => frame.regionId === regionId);
+    const nextFrame = snapshot.operationalRegions[0]!;
+    if (
+      previousFrame !== undefined && (
+        nextFrame.commitSequence !== previousFrame.commitSequence + 1 ||
+        nextFrame.simulationTimeMs < previousFrame.simulationTimeMs
+      )
+    ) {
+      throw new RangeError("Operative Regionscommits muessen lueckenlos und zeitlich monoton sein.");
+    }
+    const previousIds = entry.trainIdsByRegion.get(regionId) ?? new Set<string>();
+    const previousTrains = new Map(feed.snapshot().trains.map((train) => [train.id, train] as const));
+    const nextIds = new Set(snapshot.trains.map((train) => train.id));
+    if (nextIds.size !== snapshot.trains.length) {
+      throw new RangeError("Operativer Regionssnapshot darf keine doppelten Zugkennungen besitzen.");
+    }
+    const changed = snapshot.trains.filter((train) => {
+      const previous = previousTrains.get(train.id);
+      return previous === undefined || !sameTrainProjection(previous, train);
+    });
+    const removed = [...previousIds]
+      .filter((trainId) => !nextIds.has(trainId))
+      .sort(compareUtf8);
+    return this.publishRegionDelta(worldId, regionId, {
+      at: snapshot.at,
+      changed,
+      removed,
+      changedOperationalRegions: snapshot.operationalRegions,
+      removedOperationalRegionIds: [],
+    });
+  }
+
   /** Sperrt die oeffentlichen Routen nach einem fehlgeschlagenen Fanout. */
   markUnavailable(worldId: string): void {
     const entry = this.#feeds.get(worldId);
-    if (entry !== undefined) entry.initialized = false;
+    if (entry === undefined) return;
+    entry.initialized = false;
+    entry.feed.invalidate();
   }
 
   /**

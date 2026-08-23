@@ -449,3 +449,20 @@ Das eigene tagesaktuelle La-Modell bleibt auch in `REALISTIC` zusätzlich
 notwendig, weil der öffentliche Feed nicht die vollständige Tages-La ersetzt.
 Es ist kein Provider-Fallback, sondern eine offen ausgewiesene,
 versionierte Simulationsschicht aus eigenen aggregierten Regeln.
+
+## 10. Konkrete Wirkung in der Betriebsengine v2 (E31)
+
+Policies, Ursachen-/Feincodes, Provider-Normalisierung, Kalibrierung und Audit
+bleiben bestehen. Ersetzt ist ausschließlich die Wirkungsschicht:
+`delay_seconds`, `ApplyDisruption` als Verspätungsaufschlag und angelieferte
+Sicherheits-Booleans sind keine Betriebswirkung mehr. Ein aktivierter Vorfall
+ändert eine konkrete Infrastrukturressource oder ein konkretes physisches
+Fahrzeug. Die Formation wird danach neu bewertet; Verspätung entsteht nur aus
+dem folgenden realen Lauf.
+
+Der nächste Fahrzeugereigniskandidat wird ereignisbasiert aus der einmaligen
+Grundquote, Zustand, Laufleistung, Betriebsstunden, Beobachtungen, Wartung und
+Beanspruchung terminiert. Sofortmaßnahme, technischer Endzustand und erst danach
+die Spielerregel sind getrennte Ereignisse. Aufhebung verlangt eine konkrete
+Providerrevision oder technische Freigabe. Der vollständige Vertrag steht in
+[`betriebsengine.md`](betriebsengine.md) 7.

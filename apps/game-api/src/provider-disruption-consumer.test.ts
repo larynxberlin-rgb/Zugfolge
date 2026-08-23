@@ -20,29 +20,84 @@ import {
 
 const WORLD_ID = "77777777-7777-4777-8777-777777777777";
 
+function operationalState(
+  trainId: string,
+  routeNumber: number,
+  operatingPoint: string,
+): Readonly<Record<string, unknown>> {
+  const routeId = `route:${routeNumber}:${operatingPoint}`;
+  const templateId = `route-template:${routeNumber}:${operatingPoint}`;
+  const edgeId = `edge:${routeNumber}:${operatingPoint}`;
+  const blockId = `block:${routeNumber}:${operatingPoint}`;
+  const signalId = `signal:${routeNumber}:${operatingPoint}`;
+  const switchId = `switch:${routeNumber}:${operatingPoint}`;
+  return {
+    schemaVersion: "zugfolge-operational-simulation-state/v2",
+    world: {
+      trains: {
+        [trainId]: { id: trainId, routeVersionId: routeId },
+      },
+      infra: {
+        blockResources: [blockId],
+        signals: [signalId],
+        switches: [switchId],
+        routeVersions: {
+          [routeId]: {
+            id: routeId,
+            templateId,
+            legs: [{ edgeId, blockIds: [blockId] }],
+          },
+        },
+        interlockingRoutes: {
+          [`interlocking:${routeNumber}:${operatingPoint}`]: {
+            routeTemplateId: templateId,
+            signalId,
+            switchPositions: { [switchId]: "normal" },
+          },
+        },
+        platformIntervals: {
+          [`platform:${routeNumber}:${operatingPoint}`]: { edgeId },
+        },
+      },
+    },
+  };
+}
+
 describe("Provider-Snapshot in regionalen Single-Writer", () => {
-  it("bindet nur passende Betriebsstellen und erzeugt eine betriebswirksame Kartenstörung", () => {
+  it("bindet nur passende v2-Laufwege und erzeugt eine konkrete Infra-Wirkung", () => {
     const restrictions: ProviderSnapshot["restrictions"] = [{
       id: "restriction-a", kind: "unplanned", effect: "single-track", causeCode: 26, fineCauseId: "switch.drive", sourceRecordId: "source-a",
       location: { routeNumbers: [6053], operatingPointCodes: ["LL"], operatingPointNames: ["Leipzig Hbf"], coordinateMillimetres: [] },
       schedule: [], continuousInterval: { startsAtMs: Date.parse("2026-08-11T15:00:00Z"), endsAtMs: Date.parse("2026-08-11T17:00:00Z") },
     }];
     const result = providerRegistrations([
-      { regionId: "leipzig", state: { initialTrains: [{ trainRunId: "train-1", route: [{ operatingPoint: "LL", positionMm: 1_200_000 }] }] } },
-      { regionId: "erfurt", state: { initialTrains: [{ trainRunId: "train-2", route: [{ operatingPoint: "UEF", positionMm: 2_000_000 }] }] } },
-    ], { restrictions }, new Date("2026-01-01T00:00:00Z"), new Date("2026-08-11T15:30:00Z"));
+      { regionId: "leipzig", state: operationalState("train-1", 6053, "LL") },
+      { regionId: "erfurt", state: operationalState("train-2", 6300, "UEF") },
+    ], { restrictions }, new Date("2026-08-11T15:30:00Z"));
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
       regionId: "leipzig",
-      disruption: {
-        disruptionId: expect.stringContaining("restriction-a"),
-        effect: "single-track",
-        affectedResource: "track:6053:LL",
-        affectedTrainRunIds: ["train-1"],
-        delaySeconds: 300,
-        positionMm: 1_200_000,
-      },
+      disruptionId: expect.stringContaining("restriction-a"),
+      effect: { "switch-failed": { switchId: "switch:6053:LL" } },
     });
+    expect(JSON.stringify(result)).not.toContain("delaySeconds");
+  });
+
+  it("aktiviert weder künftige noch auf keine echte Infra-Ressource auflösbare Providerziele", () => {
+    const base: ProviderSnapshot["restrictions"][number] = {
+      id: "restriction-fail-closed", kind: "planned", effect: "closure", causeCode: 31, fineCauseId: "construction.temporary-speed", sourceRecordId: "source-fail-closed",
+      location: { routeNumbers: [6053], operatingPointCodes: ["LL"], operatingPointNames: [], coordinateMillimetres: [] },
+      schedule: [], continuousInterval: { startsAtMs: Date.parse("2026-08-11T16:00:00Z"), endsAtMs: Date.parse("2026-08-11T17:00:00Z") },
+    };
+    const rows = [{ regionId: "leipzig", state: operationalState("train-1", 6053, "LL") }];
+    expect(providerRegistrations(rows, { restrictions: [base] }, new Date("2026-08-11T15:30:00Z"))).toEqual([]);
+    expect(providerRegistrations(rows, {
+      restrictions: [{
+        ...base,
+        location: { ...base.location, operatingPointCodes: ["ZZ"] },
+        continuousInterval: { startsAtMs: Date.parse("2026-08-11T15:00:00Z"), endsAtMs: Date.parse("2026-08-11T17:00:00Z") },
+      }],
+    }, new Date("2026-08-11T15:30:00Z"))).toEqual([]);
   });
 
   it("schiebt ein unverändertes Snapshot-Fenster weiter und entfernt entfallene Einträge", async () => {
@@ -68,13 +123,9 @@ describe("Provider-Snapshot in regionalen Single-Writer", () => {
     await pglite.insert(regionalSimulationStates).values({
       worldId: WORLD_ID,
       regionId: "leipzig",
-      stateSchema: "zugfolge-regional-state/v1",
-      state: {
-        initialTrains: [{
-          trainRunId: "train-1",
-          route: [{ operatingPoint: "LL", positionMm: 1_200_000 }],
-        }],
-      },
+      stateSchema: "zugfolge-operational-simulation-state/v2",
+      state: operationalState("train-1", 6053, "LL"),
+      initializationHash: "f".repeat(64),
       stateHash: "0".repeat(64),
       revision: 0,
       publisherSequence: 0,
@@ -94,13 +145,11 @@ describe("Provider-Snapshot in regionalen Single-Writer", () => {
         operatingPointNames: ["Leipzig Hbf"],
         coordinateMillimetres: [],
       },
-      schedule: [{
-        fromDate: "2026-08-26",
-        untilDate: "2026-08-26",
-        weekdays: ["MITTWOCH"],
-        startsAtLocal: "18:00:00",
-        endsAtLocal: "19:00:00",
-      }],
+      schedule: [],
+      continuousInterval: {
+        startsAtMs: Date.parse("2026-08-11T15:00:00Z"),
+        endsAtMs: Date.parse("2026-08-11T17:00:00Z"),
+      },
     };
     const snapshot = (hash: string, restrictions: ProviderSnapshot["restrictions"]): ProviderSnapshot => ({
       schemaVersion: "zugfolge-provider-snapshot/v1",
@@ -122,23 +171,25 @@ describe("Provider-Snapshot in regionalen Single-Writer", () => {
 
     try {
       await consume({ worldId: WORLD_ID, epoch }, snapshot("a".repeat(64), [restriction]), firstRun);
-      expect(apply).not.toHaveBeenCalled();
-
-      const shiftedRun = new Date("2026-08-11T16:30:00Z");
-      await consume({ worldId: WORLD_ID, epoch }, snapshot("a".repeat(64), [restriction]), shiftedRun);
       expect(apply).toHaveBeenCalledTimes(1);
       expect(apply.mock.calls[0]?.[0]).toMatchObject({
-        command: { type: "register-disruption" },
+        command: {
+          type: "activate-disruption",
+          effect: { "resource-closed": { resourceId: "block:6053:LL" } },
+        },
       });
       expect(await pglite.select().from(disruptionProviderApplications)).toHaveLength(1);
 
-      await consume({ worldId: WORLD_ID, epoch }, snapshot("a".repeat(64), [restriction]), shiftedRun);
+      await consume({ worldId: WORLD_ID, epoch }, snapshot("a".repeat(64), [restriction]), firstRun);
       expect(apply).toHaveBeenCalledTimes(1);
 
-      await consume({ worldId: WORLD_ID, epoch }, snapshot("b".repeat(64), []), shiftedRun);
+      await consume({ worldId: WORLD_ID, epoch }, snapshot("b".repeat(64), []), firstRun);
       expect(apply).toHaveBeenCalledTimes(2);
       expect(apply.mock.calls[1]?.[0]).toMatchObject({
-        command: { type: "clear-disruption" },
+        command: {
+          type: "clear-disruption",
+          releaseReference: `provider:public-infrastructure-restrictions/de-v1:${"b".repeat(64)}`,
+        },
       });
       expect(await pglite.select().from(disruptionProviderApplications)).toHaveLength(0);
     } finally {

@@ -1,4 +1,4 @@
-import type { RegionalSimulationCommandPayload } from "@zugfolge/runtime-native";
+import type { OperationalSimulationCommandPayload } from "@zugfolge/runtime-native";
 
 const EFFECT_SCHEMA = "zugfolge-manual-disruption-effect/v1" as const;
 const EFFECTS = new Set([
@@ -12,10 +12,10 @@ const EFFECTS = new Set([
   "platform-usable-length",
 ]);
 
-type RegisterDisruption = Extract<
-  RegionalSimulationCommandPayload,
-  { readonly type: "register-disruption" }
->["disruption"];
+type ActivateDisruption = Extract<
+  OperationalSimulationCommandPayload,
+  { readonly type: "activate-disruption" }
+>;
 
 /** Strukturell kompatibler M13-Handlerkontext ohne Abhaengigkeit auf Commerce. */
 export interface ManualDisruptionAdminContext {
@@ -52,7 +52,7 @@ export interface ManualDisruptionAdminWorker {
       readonly worldId: string;
       readonly regionId: string;
       readonly commandId: string;
-      readonly command: RegionalSimulationCommandPayload;
+      readonly command: OperationalSimulationCommandPayload;
     },
     persistedAt: Date,
   ) => Promise<unknown>;
@@ -74,15 +74,14 @@ export class ManualDisruptionAdminError extends Error {
 interface Target {
   readonly resourceId: string;
   readonly regionId: string;
-  readonly positionMm: number;
-  readonly affectedTrainRunIds: readonly string[];
+  readonly maximumSpeedMmps?: number;
+  readonly vehicleRestriction?: unknown;
 }
 
 interface DecodedEffect {
-  readonly effect: RegisterDisruption["effect"];
+  readonly effect: string;
   readonly causeCode: number;
   readonly fineCauseId: string;
-  readonly delaySeconds: number;
   readonly targets: readonly Target[];
 }
 
@@ -101,24 +100,29 @@ function decodeTarget(value: unknown): Target {
   const target = record(value);
   if (
     !nonempty(target["resourceId"]) ||
-    !nonempty(target["regionId"]) ||
-    !Number.isSafeInteger(target["positionMm"]) ||
-    (target["positionMm"] as number) < 0 ||
-    !Array.isArray(target["affectedTrainRunIds"]) ||
-    target["affectedTrainRunIds"].length === 0 ||
-    !target["affectedTrainRunIds"].every(nonempty)
+    !nonempty(target["regionId"])
   ) {
     throw new ManualDisruptionAdminError("resources");
   }
-  const trainRunIds = [...new Set(target["affectedTrainRunIds"] as string[])].sort();
-  if (trainRunIds.length !== target["affectedTrainRunIds"].length) {
+  if (
+    target["maximumSpeedMmps"] !== undefined
+    && (
+      !Number.isSafeInteger(target["maximumSpeedMmps"])
+      || (target["maximumSpeedMmps"] as number) <= 0
+      || (target["maximumSpeedMmps"] as number) > 0xffff_ffff
+    )
+  ) {
     throw new ManualDisruptionAdminError("resources");
   }
   return {
     resourceId: target["resourceId"],
     regionId: target["regionId"],
-    positionMm: target["positionMm"] as number,
-    affectedTrainRunIds: trainRunIds,
+    ...(target["maximumSpeedMmps"] === undefined
+      ? {}
+      : { maximumSpeedMmps: target["maximumSpeedMmps"] as number }),
+    ...(target["vehicleRestriction"] === undefined
+      ? {}
+      : { vehicleRestriction: target["vehicleRestriction"] }),
   };
 }
 
@@ -132,9 +136,6 @@ function decodeEffect(value: Readonly<Record<string, unknown>>): DecodedEffect {
     (value["causeCode"] as number) > 90 ||
     !nonempty(value["fineCauseId"]) ||
     !/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(value["fineCauseId"]) ||
-    !Number.isSafeInteger(value["delaySeconds"]) ||
-    (value["delaySeconds"] as number) < 1 ||
-    (value["delaySeconds"] as number) > 604_800 ||
     !Array.isArray(value["targets"]) ||
     value["targets"].length === 0
   ) {
@@ -146,12 +147,51 @@ function decodeEffect(value: Readonly<Record<string, unknown>>): DecodedEffect {
     throw new ManualDisruptionAdminError("resources");
   }
   return {
-    effect: value["kind"] as RegisterDisruption["effect"],
+    effect: value["kind"],
     causeCode: value["causeCode"] as number,
     fineCauseId: value["fineCauseId"],
-    delaySeconds: value["delaySeconds"] as number,
     targets,
   };
+}
+
+function concreteEffect(effect: DecodedEffect, target: Target): ActivateDisruption["effect"] {
+  if (target.resourceId.startsWith("signal:")) {
+    return { "signal-failed": { signalId: target.resourceId } };
+  }
+  if (target.resourceId.startsWith("switch:")) {
+    return { "switch-failed": { switchId: target.resourceId } };
+  }
+  if (effect.fineCauseId === "signalling.track-occupation") {
+    return { "track-detection-failed": { resourceId: target.resourceId } };
+  }
+  switch (effect.effect) {
+    case "closure":
+    case "single-track":
+    case "traffic-hold":
+    case "route-deviation":
+      return { "resource-closed": { resourceId: target.resourceId } };
+    case "speed-restriction":
+      if (target.maximumSpeedMmps === undefined) throw new ManualDisruptionAdminError("effect");
+      return {
+        "speed-restriction": {
+          edgeId: target.resourceId,
+          maximumSpeedMmps: target.maximumSpeedMmps,
+        },
+      };
+    case "vehicle-restriction":
+      if (target.vehicleRestriction === undefined) throw new ManualDisruptionAdminError("effect");
+      return {
+        "vehicle-restricted": {
+          vehicleId: target.resourceId,
+          restriction: target.vehicleRestriction,
+        },
+      };
+    case "platform-change":
+    case "platform-usable-length":
+      throw new ManualDisruptionAdminError("effect");
+    default:
+      throw new ManualDisruptionAdminError("effect");
+  }
 }
 
 function secondsSinceEpoch(value: Date, epoch: Date): number {
@@ -224,29 +264,19 @@ export function createManualDisruptionAdminHandler(
     const nowS = secondsSinceEpoch(context.now, epoch);
     const requestedStartS = secondsSinceEpoch(startsAt, epoch);
     const validUntilS = secondsSinceEpoch(endsAt, epoch);
-    const startsAtS = Math.max(nowS, requestedStartS);
-    if (validUntilS <= startsAtS) throw new ManualDisruptionAdminError("time");
+    if (requestedStartS > nowS || validUntilS <= nowS) throw new ManualDisruptionAdminError("time");
 
     for (const [index, target] of effect.targets.entries()) {
-      const disruption: RegisterDisruption = {
-        disruptionId: `admin:${context.commandId}:${index}`,
-        kind: requestedStartS > nowS ? "planned" : "unplanned",
-        publishedAtS: nowS,
-        startsAtS,
-        validUntilS,
-        positionMm: target.positionMm,
-        causeCode: effect.causeCode,
-        fineCauseId: effect.fineCauseId,
-        effect: effect.effect,
-        affectedResource: target.resourceId,
-        affectedTrainRunIds: target.affectedTrainRunIds,
-        delaySeconds: effect.delaySeconds,
-      };
+      const disruptionId = `admin:${context.commandId}:${index}`;
       await dependencies.worker.apply({
         worldId: payload.worldId,
         regionId: target.regionId,
         commandId: `odoo-manual-disruption:${context.eventId}:${index}`,
-        command: { type: "register-disruption", disruption },
+        command: {
+          type: "activate-disruption",
+          disruptionId,
+          effect: concreteEffect(effect, target),
+        },
       }, context.now);
     }
     return {

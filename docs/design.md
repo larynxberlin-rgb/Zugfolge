@@ -91,12 +91,12 @@ lesbar.
 
 ### 2.6 Qualitätsklassen
 
-A, B und C tragen in Qualitätsreport, Planung und technischem Diagnoseprofil
-immer ihren Buchstaben. Farbe ist hier nur Unterstützung, nie Träger. Klasse C
-ist dort zusätzlich gestrichelt dargestellt und als nicht bestellbar
-bezeichnet. Im normalen Spielerprofil der Live-Karte wird Klasse C nach E30
-gar nicht gezeichnet; das ist eine Präsentationsregel und ändert weder Korpus
-noch Qualitätsklasse.
+A und B tragen in Qualitätsreport, Planung und technischem Diagnoseprofil
+immer ihren Buchstaben. Farbe ist hier nur Unterstützung, nie Träger. Ein
+ungelöster Pflichtbefund besitzt keine öffentliche Darstellungsform: Er bleibt
+in der internen Builddiagnose und blockiert den Releasekandidaten. Weder Karte,
+Readmodel noch technisches Spielerprofil dürfen daraus eine dritte
+Qualitätsklasse zeichnen.
 
 ### 2.7 Konkrete Werte (M3.9)
 
@@ -256,8 +256,8 @@ in den darüberliegenden, getrennten Projektionen.
 
 Die Kartenfolge ist verbindlich: Basiskontext → aktive Gebietsgrenze →
 A-/B-Infrastruktur → Betriebszustände → Züge → Auswahl. Aktive Infrastruktur
-ist neutral hell, inaktive modellierte A-/B-Infrastruktur gedämpft. Klasse C
-bleibt im normalen Spielerprofil vollständig verborgen.
+ist neutral hell, inaktive modellierte A-/B-Infrastruktur gedämpft. Andere
+Qualitätszustände sind in einem freigegebenen Kartenartefakt unzulässig.
 
 | Zoom | sichtbare Fachobjekte im Spielerprofil |
 |------|-----------------------|
@@ -302,29 +302,17 @@ Bahnanmutung entsteht aus der UX: verlässliche Weltzeit, bewegte Züge,
 Soll-/Ist-Zustände, RIL 100, Bahnhofstafel, FIS und konsistente
 Störungsauswirkungen. Eisenbahndekor ohne Zustandsbedeutung wird nicht ergänzt.
 
-### Zugpositionsgenauigkeit (E27)
+### Zugpositionsgenauigkeit (E27, abgelöst durch E31)
 
-Exact und Estimate verwenden dieselbe Markerform, Größe, Zuggattungskennung
-und Klickfläche. Damit bleibt derselbe Zug bei einem Wechsel der
-Projektionsgenauigkeit visuell derselbe Gegenstand. Die Genauigkeit wird als
-zusätzliche Ebene kommuniziert:
+Die LiveMap zeigt ausschließlich die exakte, releasegebundene Zugspitze.
+`PublicMapEstimate`, Genauigkeitsring, `≈`, `?`, Korridor- und
+Ankerprojektion entfallen. Ist eine Lage nicht sicher beweisbar, bleibt der Zug
+am letzten garantierten Punkt stehen; nach `valid_until` friert derselbe Marker
+ein. Das Detailpanel nennt Infrastruktur- und Laufwegversion sowie den
+Wartegrund. `ExternalLeg` bleibt ohne erfundene Kartenposition in der
+erklärenden Liste.
 
-| Kartenposition | Markerzusatz | zugänglicher Text |
-|---|---|---|
-| Exact | kein Genauigkeitsring | „Position exakt“ im Detailpanel |
-| Estimate auf orientiertem Korridor | `≈` und neutraler achromatischer Ring | „Position geschätzt: amtlicher Korridor“ |
-| Estimate am resourcegebundenen Ankerhalt | `?` und derselbe neutrale Ring | „Letzte belastbare Lage; Fahrt läuft weiter“ |
-| `ExternalLeg` oder keine eindeutige Projektion | kein Kartenmarker | Außenlauf beziehungsweise fehlende Kartenposition bleibt in Liste und Fahrtkette erklärt |
-
-Der Ring ist weder gelb/bernsteinfarben noch rot und verwendet auch nicht die
-Schraffur einer Qualitätsklasse. Diese Farben und Muster bleiben
-Einschränkung, Sperrung, Baustelle und Infrastrukturqualität vorbehalten.
-`≈` beziehungsweise `?`, Ring und Text treten gemeinsam auf; Farbe trägt die Aussage nie allein.
-Das Detailpanel nennt außerdem den gebundenen Infrastruktur-Release. Sobald
-Exact verfügbar ist, verschwinden Ring und Genauigkeitszeichen, ohne Markeridentität oder
-Auswahlzustand zu wechseln.
-
-Markeridentität, Layerreihenfolge, Genauigkeitszeichen, Detailtext und
+Markeridentität, Layerreihenfolge, Freeze-Zustand, Detailtext und
 `prefers-reduced-motion` sind automatisiert abgedeckt. Die manuelle
 Browserabnahme für Kontrast, mehrere Zoomstufen, Tastatur und Screenreader
 bleibt vor der produktiven Freigabe erforderlich.
@@ -365,3 +353,18 @@ Tastaturreihenfolge bleibt logisch, Screenreader erhalten eine Live-Region und
 `prefers-reduced-motion` schaltet jede Textenthüllungsanimation ab. Lange
 deutsche Texte, Umlaute und kleine Viewports sind Pflichtfälle. Details:
 [`schaffnermodus.md`](schaffnermodus.md) 5 bis 7.
+
+## 12. LiveMap/RZÜ-Umschalter (E31)
+
+Die bestehende LiveMap bleibt als GPS-artige Weltkarte optisch unverändert.
+Ein kompakter Umschalter `LiveMap | RZÜ` ergänzt eine lesende, dunkel gehaltene
+schematische Betriebssicht. Die Übersicht zeigt Gleisband, Betriebsstellen,
+Zugnummer, Zugspitze/-schluss, Belegung und grüne erteilte
+Fahrstraße/Fahrberechtigung; die Expertenebene ergänzt Blockkennungen,
+Signal-/Weichenzustände, Wartegrund und erwartete Freigabe. Die Formensprache
+ist fachlich generisch und kein Nachbau einer geschützten Produktoberfläche.
+
+RZÜ-Farbe bleibt Betriebsfarbe: Grün bedeutet eine tatsächlich committed
+Fahrberechtigung, Gelb Aufmerksamkeit, Rot Gefahr/Sperrung. Unbekannte oder
+stale Lage wird nicht geschätzt, sondern sichtbar eingefroren. Beide Sichten
+verwenden dieselbe Commit-Sequenz und denselben Zugdatensatz.

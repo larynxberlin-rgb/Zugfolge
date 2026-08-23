@@ -165,7 +165,7 @@ Damit ist der integrierte Alpha-Abnahmefall als Ganzes **nicht bestanden**.
 | Action-Tag-Prüfung per offiziellem Git-Remote | checkout/setup-node/upload-artifact v7, pnpm/setup v6, cargo-deny-action v2.1.1, rust-cache v2.9.2 und rust-toolchain stable vorhanden |
 | Odoo-19-Add-on-Testdienst | nicht lokal ausführbar; neuer CI-Job noch nicht gelaufen |
 | echter Linux-NAPI-Smoke | Release-Build und Smoke unter Ubuntu 24.04/Node 24.14.0 grün; Fleet-, Regional- und Betriebsruntime samt idempotentem Replay |
-| `node tools/alpha-ops/verify-alpha-recurrence.mjs` | 1.634 Materialisierungen, 909 Grenzkommandos, 1 Cleanup und 2.544 eindeutige Kommandos im ersten Wiederholungsfenster |
+| Historischer v1-Rekurrenznachweis (mit dem harten E31-Cutover entfernt) | 1.634 Materialisierungen, 909 Grenzkommandos, 1 Cleanup und 2.544 eindeutige Kommandos im damaligen ersten Wiederholungsfenster; kein v2-Abnahmebeleg |
 | M14-Tageslauf | 909 Grenzübergänge ohne Ressourcenkonflikt; Restore-Hash `25b65c6f…da6be` bitgleich |
 | Phase-2-Paketläufe | Economy 42, Alpha 6, Game API 103 und Game Web 23 Tests grün; darunter beide PGlite-E2Es, OIDC-PKCE, Reset/Späteinladung und Projektion nach Commit |
 | Phase-4-Paketläufe | Game Web 40 Tests grün; Kooperation 7 Tests grün; Game-API-M12-E2E 4 Tests grün, darunter Zwei-Spieler-Ledger/Postfach/Audit und 20 parallele Fahrzeugübertragungen |

@@ -11,7 +11,6 @@ import type {
   LivemapConfigV2,
   PublicInfrastructureDisruption,
   PublicExternalTrain,
-  PublicMapEstimate,
   PublicMapPosition,
   PublicObjectState,
   PublicObjectStateProjector,
@@ -207,16 +206,9 @@ function positionOnGeometry(geometry: CachedGeometry, offsetMm: number, reverseB
   });
 }
 
-function estimateMethod(value: unknown): PublicMapEstimate["method"] {
-  if (value !== "topological-track" && value !== "route-corridor" && value !== "anchor-hold") {
-    throw new TypeError("Darstellungspfad besitzt eine unbekannte Schaetzmethode.");
-  }
-  return value;
-}
-
 function withoutUnprovenPosition(train: PublicTrain): PublicTrain {
-  if (train.mapPosition === undefined && train.mapEstimate === undefined) return train;
-  const { mapPosition: _mapPosition, mapEstimate: _mapEstimate, ...plain } = train;
+  if (train.mapPosition === undefined) return train;
+  const { mapPosition: _mapPosition, ...plain } = train;
   return Object.freeze(plain);
 }
 
@@ -258,13 +250,10 @@ export class SQLiteTrainMapProjector implements PublicTrainMapProjector, PublicO
   readonly #database: DatabaseSync;
   readonly #trainSpan: StatementSync;
   readonly #resourceSpan: StatementSync;
-  readonly #resourceDisplaySpan: StatementSync;
   readonly #geometry: StatementSync;
-  readonly #displayGeometry: StatementSync;
   readonly #resourceTracks: StatementSync;
   readonly #publicTrainNumbers: ReadonlyMap<string, number>;
   readonly #geometryCache = new Map<string, CachedGeometry>();
-  readonly #displayGeometryCache = new Map<string, CachedGeometry>();
   readonly worldId: string;
   readonly infrastructureReleaseId: string;
   readonly deploymentHash: string;
@@ -311,17 +300,8 @@ export class SQLiteTrainMapProjector implements PublicTrainMapProjector, PublicO
           AND resource_start_mm <= ?
           AND (resource_end_mm > ? OR (is_resource_end = 1 AND resource_end_mm = ?))
         ORDER BY resource_start_mm DESC, track_id LIMIT 2`);
-      this.#resourceDisplaySpan = this.#database.prepare(`SELECT resource_start_mm, resource_end_mm, method, display_path_id,
-          display_start_offset_mm, display_end_offset_mm, uncertainty_start_mm, uncertainty_end_mm, is_resource_end
-        FROM resource_display_spans
-        WHERE world_id = ? AND infrastructure_release_id = ? AND resource_id = ?
-          AND resource_start_mm <= ?
-          AND (resource_end_mm > ? OR (is_resource_end = 1 AND resource_end_mm = ?))
-        ORDER BY resource_start_mm DESC, method, display_path_id LIMIT 2`);
       this.#geometry = this.#database.prepare(`SELECT length_mm, geometry_json FROM track_geometries
         WHERE world_id = ? AND infrastructure_release_id = ? AND track_id = ?`);
-      this.#displayGeometry = this.#database.prepare(`SELECT length_mm, geometry_json FROM display_path_geometries
-        WHERE world_id = ? AND infrastructure_release_id = ? AND display_path_id = ?`);
       this.#resourceTracks = this.#database.prepare(`SELECT DISTINCT track_id FROM resource_track_spans
         WHERE world_id = ? AND infrastructure_release_id = ? AND resource_id = ?
         ORDER BY track_id`);
@@ -350,20 +330,6 @@ export class SQLiteTrainMapProjector implements PublicTrainMapProjector, PublicO
     if (row === undefined) throw new TypeError(`Nachgewiesenes Gleis '${trackId}' besitzt keine Geometrie.`);
     const geometry = parseGeometry(text(row["geometry_json"], "track_geometries.geometry_json"), integer(row["length_mm"], "track_geometries.length_mm", 1));
     this.#geometryCache.set(trackId, geometry);
-    return geometry;
-  }
-
-  #displayPathGeometry(displayPathId: string): CachedGeometry {
-    const cached = this.#displayGeometryCache.get(displayPathId);
-    if (cached !== undefined) return cached;
-    const row = sqliteRow(this.#displayGeometry.get(this.worldId, this.infrastructureReleaseId, displayPathId), "Darstellungspfadgeometrie");
-    if (row === undefined) throw new TypeError(`Darstellungspfad '${displayPathId}' besitzt keine Geometrie.`);
-    const geometry = parseGeometry(
-      text(row["geometry_json"], "display_path_geometries.geometry_json"),
-      integer(row["length_mm"], "display_path_geometries.length_mm"),
-      true,
-    );
-    this.#displayGeometryCache.set(displayPathId, geometry);
     return geometry;
   }
 
@@ -413,40 +379,10 @@ export class SQLiteTrainMapProjector implements PublicTrainMapProjector, PublicO
         });
       }
     }
-    const displayRows = sqliteRows(this.#resourceDisplaySpan, worldId, this.infrastructureReleaseId, resourceId, resourceOffsetMm, resourceOffsetMm, resourceOffsetMm);
-    if (displayRows.length === 0) return plain;
-    if (displayRows.length !== 1) throw new TypeError(`Ressource '${resourceId}' besitzt mehrdeutige Darstellungspfade.`);
-    const displaySpan = displayRows[0]!;
-    const resourceStartMm = integer(displaySpan["resource_start_mm"], "resource_display_spans.resource_start_mm");
-    const resourceEndMm = integer(displaySpan["resource_end_mm"], "resource_display_spans.resource_end_mm", resourceStartMm + 1);
-    if (resourceOffsetMm > resourceEndMm) return plain;
-    const method = estimateMethod(displaySpan["method"]);
-    const displayPathId = text(displaySpan["display_path_id"], "resource_display_spans.display_path_id");
-    const displayStartOffsetMm = integer(displaySpan["display_start_offset_mm"], "resource_display_spans.display_start_offset_mm");
-    const displayEndOffsetMm = integer(displaySpan["display_end_offset_mm"], "resource_display_spans.display_end_offset_mm");
-    const uncertaintyStartMm = integer(displaySpan["uncertainty_start_mm"], "resource_display_spans.uncertainty_start_mm");
-    const uncertaintyEndMm = integer(displaySpan["uncertainty_end_mm"], "resource_display_spans.uncertainty_end_mm");
-    const numerator = resourceOffsetMm - resourceStartMm;
-    const denominator = resourceEndMm - resourceStartMm;
-    const displayOffsetMm = interpolate(displayStartOffsetMm, displayEndOffsetMm, numerator, denominator);
-    const uncertaintyMm = interpolate(uncertaintyStartMm, uncertaintyEndMm, numerator, denominator);
-    const mapGeometry = positionOnGeometry(
-      this.#displayPathGeometry(displayPathId),
-      displayOffsetMm,
-      displayEndOffsetMm < displayStartOffsetMm,
-    );
-    return Object.freeze({
-      ...plain,
-      mapEstimate: Object.freeze({
-        infrastructureReleaseId: this.infrastructureReleaseId,
-        resourceId,
-        method,
-        displayPathId,
-        displayOffsetMm,
-        ...mapGeometry,
-        uncertaintyMm,
-      }),
-    });
+    // E31: historische Darstellungspfade sind keine v2-Laufzeiteingabe.
+    // Ohne eindeutige Ressource-zu-Gleis-Spanne bleibt der Zug exakt
+    // unprojiziert; es gibt weder Korridor- noch Anker-Fallback.
+    return plain;
   }
 
   projectExternal(worldId: string, train: PublicExternalTrain): PublicExternalTrain {
@@ -492,7 +428,6 @@ export class SQLiteTrainMapProjector implements PublicTrainMapProjector, PublicO
     if (this.#closed) return;
     this.#closed = true;
     this.#geometryCache.clear();
-    this.#displayGeometryCache.clear();
     this.#database.close();
   }
 }

@@ -45,13 +45,24 @@ async function currentMainMigrationsFolder(): Promise<string> {
   return folder;
 }
 
-it("migriert ein aktuelles 0022-Schema vorwaerts bis 0027", async () => {
+it("migriert ein aktuelles 0022-Schema vorwaerts bis 0029 und erhaelt Legacy-Koepfe fail-closed", async () => {
   const previousMigrationsFolder = await currentMainMigrationsFolder();
   const client = new PGlite();
   const db = drizzle(client);
 
   try {
     await migrate(db, { migrationsFolder: previousMigrationsFolder });
+    const legacyWorldId = "00000000-0000-4000-8000-000000000029";
+    await client.query(
+      "insert into worlds (id, name, schedule_period_weeks, epoch) values ($1, 'Legacy', 4, '1970-01-01T00:00:00Z')",
+      [legacyWorldId],
+    );
+    await client.query(
+      `insert into regional_simulation_states
+        (world_id, region_id, state_schema, state, state_hash, revision, publisher_sequence, created_at, updated_at)
+       values ($1, 'legacy', 'zugfolge-regional-simulation-state/v1', '{}', $2, 0, 0, '1970-01-01T00:00:00Z', '1970-01-01T00:00:00Z')`,
+      [legacyWorldId, "a".repeat(64)],
+    );
     const before = await client.query<{ migration_count: number }>(
       "select count(*)::int as migration_count from drizzle.__drizzle_migrations",
     );
@@ -68,6 +79,16 @@ it("migriert ein aktuelles 0022-Schema vorwaerts bis 0027", async () => {
       .resolves.toBeDefined();
     await expect(client.query("select world_id, account_id, train_number from planning_train_numbers limit 0"))
       .resolves.toBeDefined();
+    await expect(client.query<{ initialization_hash: string | null }>(
+      "select initialization_hash from regional_simulation_states where world_id = $1 and region_id = 'legacy'",
+      [legacyWorldId],
+    )).resolves.toMatchObject({ rows: [{ initialization_hash: null }] });
+    await expect(client.query(
+      `insert into regional_simulation_states
+        (world_id, region_id, state_schema, state, state_hash, revision, publisher_sequence, created_at, updated_at)
+       values ($1, 'new-without-binding', 'zugfolge-operational-simulation-state/v2', '{}', $2, 0, 0, '1970-01-01T00:00:00Z', '1970-01-01T00:00:00Z')`,
+      [legacyWorldId, "b".repeat(64)],
+    )).rejects.toThrow();
     await expect(client.query<{ definition: string }>(
       "select pg_get_constraintdef(oid) as definition from pg_constraint where conname = 'planning_train_numbers_category_range_check'",
     )).resolves.toMatchObject({ rows: [{ definition: expect.stringContaining("34999") }] });

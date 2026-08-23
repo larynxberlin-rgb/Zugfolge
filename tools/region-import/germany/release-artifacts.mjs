@@ -3,7 +3,15 @@ import { createReadStream } from "node:fs";
 import { lstat, readFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 
+import {
+  operationalInfrastructureV2StateHash,
+  OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA,
+} from "../operational-infrastructure-binding.mjs";
+import { validateOperationalInfrastructureV2Native } from "../materialize-operational-infrastructure-v2.mjs";
+
 const SAFE_ID = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/;
+const ARTIFACT_SPEC_V1 = "zugfolge-infra-release-artifact-spec/v1";
+const ARTIFACT_SPEC_V2 = "zugfolge-infra-release-artifact-spec/v2";
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
@@ -30,26 +38,83 @@ async function fileProof(path) {
   return { bytes, sha256: digest.digest("hex") };
 }
 
-export async function buildReleaseArtifactInventory(spec, sourceRoot) {
-  invariant(spec?.schema === "zugfolge-infra-release-artifact-spec/v1", "Unbekanntes Releaseartefakt-Schema.");
+async function operationalInfrastructureProof(path, expectedReleaseId, validateNative) {
+  const metadata = await lstat(path);
+  invariant(metadata.isFile() && !metadata.isSymbolicLink() && metadata.size > 0, `${path} ist kein reguläres Releaseartefakt.`);
+  const bytes = await readFile(path);
+  invariant(bytes.length === metadata.size, `${path} änderte sich während der Hashbildung.`);
+  let infrastructure;
+  try {
+    infrastructure = JSON.parse(bytes);
+  } catch (error) {
+    throw new Error(`${path} ist kein gültiges statisches Operational-v2-JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  invariant(infrastructure.id === expectedReleaseId, "Statische Operational-v2-Infrastruktur verletzt die InfraRelease-ID-Bindung.");
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const stateHash = operationalInfrastructureV2StateHash(infrastructure);
+  const nativeReceipt = await validateNative(path, expectedReleaseId);
+  invariant(nativeReceipt?.stateHash === stateHash, "JavaScript- und native Rust-Kanonisierung der Operational-v2-Infrastruktur laufen auseinander.");
+  const unchangedBytes = await readFile(path);
+  invariant(bytes.equals(unchangedBytes), `${path} änderte sich während der nativen Operational-v2-Validierung.`);
+  invariant(sha256 !== stateHash, "Byte-SHA-256 und kanonischer Operational-v2-Zustandshash dürfen nicht gleichgesetzt werden.");
+  return { bytes: bytes.length, sha256, stateHash };
+}
+
+export async function buildReleaseArtifactInventory(
+  spec,
+  sourceRoot,
+  { validateOperationalInfrastructure = validateOperationalInfrastructureV2Native } = {},
+) {
+  invariant(spec?.schema === ARTIFACT_SPEC_V1 || spec?.schema === ARTIFACT_SPEC_V2, "Unbekanntes Releaseartefakt-Schema.");
   invariant(Array.isArray(spec.artifacts) && spec.artifacts.length > 0, "Releaseartefakt-Spezifikation ist leer.");
+  const operationalDescriptors = spec.artifacts.filter((descriptor) => descriptor?.kind === OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA);
+  if (spec.schema === ARTIFACT_SPEC_V2) {
+    invariant(operationalDescriptors.length === 1, "Releaseartefakt-Spezifikation v2 muss genau eine statische Operational-v2-Infrastruktur enthalten.");
+  } else {
+    invariant(operationalDescriptors.length === 0, "Operational-v2-Infrastruktur verlangt die Releaseartefakt-Spezifikation v2.");
+  }
   const ids = new Set();
   const publicFiles = new Set();
   const artifacts = [];
   for (const descriptor of [...spec.artifacts].sort((left, right) => left.id.localeCompare(right.id, "en"))) {
+    if (spec.schema === ARTIFACT_SPEC_V2) {
+      const expectedKeys = descriptor?.kind === OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA
+        ? ["file", "id", "infraReleaseId", "kind", "sourceFile"]
+        : ["file", "id", "kind", "sourceFile"];
+      invariant(
+        Object.keys(descriptor).sort().join("\u0000") === expectedKeys.join("\u0000"),
+        `Releaseartefakt ${String(descriptor?.id)} besitzt unbekannte oder manuell gesetzte Bindungsfelder.`,
+      );
+    }
     invariant(typeof descriptor?.id === "string" && SAFE_ID.test(descriptor.id) && !ids.has(descriptor.id), "Releaseartefakt-ID ist ungültig oder doppelt.");
     invariant(typeof descriptor.kind === "string" && descriptor.kind !== "", `Releaseartefakt ${descriptor.id} besitzt keine Art.`);
+    if (spec.schema === ARTIFACT_SPEC_V2) {
+      invariant(descriptor.kind !== "train-map-projection", "Weltbezogene Zugprojektionen gehören nicht in den statischen InfraRelease-Artefaktvertrag.");
+    }
     invariant(typeof descriptor.file === "string" && descriptor.file !== "" && !descriptor.file.includes("/") && !descriptor.file.includes("\\") && !publicFiles.has(descriptor.file), `Releaseartefakt ${descriptor.id} besitzt keinen eindeutigen öffentlichen Dateinamen.`);
+    if (descriptor.kind === OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA) {
+      invariant(descriptor.file === "operational-infrastructure-v2.json", "Statische Operational-v2-Infrastruktur besitzt keinen kanonischen Dateinamen.");
+      invariant(typeof descriptor.infraReleaseId === "string" && SAFE_ID.test(descriptor.infraReleaseId), "Statische Operational-v2-Infrastruktur besitzt keine gültige InfraRelease-ID-Bindung.");
+    }
     ids.add(descriptor.id);
     publicFiles.add(descriptor.file);
+    const path = contained(sourceRoot, descriptor.sourceFile, `${descriptor.id}.sourceFile`);
     artifacts.push({
       id: descriptor.id,
       kind: descriptor.kind,
       file: descriptor.file,
-      ...await fileProof(contained(sourceRoot, descriptor.sourceFile, `${descriptor.id}.sourceFile`)),
+      ...(descriptor.kind === OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA
+        ? { infraReleaseId: descriptor.infraReleaseId }
+        : {}),
+      ...await (descriptor.kind === OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA
+        ? operationalInfrastructureProof(path, descriptor.infraReleaseId, validateOperationalInfrastructure)
+        : fileProof(path)),
     });
   }
-  return { schema: "zugfolge-infra-release-artifacts/v1", artifacts };
+  return {
+    schema: spec.schema === ARTIFACT_SPEC_V2 ? "zugfolge-infra-release-artifacts/v2" : "zugfolge-infra-release-artifacts/v1",
+    artifacts,
+  };
 }
 
 export async function readReleaseArtifactSpec(path) {

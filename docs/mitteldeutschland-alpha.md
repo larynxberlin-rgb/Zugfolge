@@ -20,15 +20,17 @@ Hbf, Lutherstadt Wittenberg Hbf, Riesa, Chemnitz Hbf, Zwickau Hbf und Saalfeld
 (Saale) festgeschrieben. Innerhalb liegen ausschließlich zusammenhängende
 EBO-SPNV-Strecken. Grenzüberschreitende Fahrten wechseln ausschließlich an
 einem im Release benannten Grenzportal in die deterministische `ExternalZone`;
-ein nur am ersten Außenknoten erkannter Schnitt bleibt Klasse C und ist nicht
-bestellbar. Eine nachträgliche Erweiterung dieses Polygons ist ein eigener
-Scope- und Release-Wechsel und nicht Teil derselben Freigabe.
+ein nur am ersten Außenknoten erkannter Schnitt bleibt in der internen Diagnose
+Klasse C und blockiert den Releasekandidaten. Eine nachträgliche Erweiterung
+dieses Polygons ist ein eigener Scope- und Release-Wechsel und nicht Teil
+derselben Freigabe.
 
 ## Gemeinsame Regeln
 
 Unabhängig von der Variante gelten E14, E22 und E25: ausschließlich EBO-Netz, ein
-jährlich gepinnter Offline-Import, Klasse C sichtbar aber nicht bestellbar und
-keine externe Quelle im heißen Pfad. Der GTFS-Compiler erhält den vollständigen
+jährlich gepinnter Offline-Import, Klasse C ausschließlich in der internen
+Diagnose und keine externe Quelle im heißen Pfad. Jeder freizugebende Candidate
+enthält nur Klasse A/B. Der GTFS-Compiler erhält den vollständigen
 Zuglauf und erzeugt eine `JourneyChain` aus regionalen Abschnitten,
 Grenzportalen und Außenläufen. Fahrzeug, Personaldienst, Zugfahrt, Anschluss,
 Trasse und Event behalten dabei `world_id` und einen eindeutigen
@@ -141,8 +143,8 @@ Bayern, Tschechien und Polen.
   geraten und kein Abschnitt als Klasse A behauptet.
 - Qualitätsklasse A/B/C wird abschnittsweise aus Quellenübereinstimmung,
   Pflichtattributen, Topologie-, Coverage- und Fahrplanprüfung abgeleitet.
-  Keine Variante erhält pauschal eine bessere Klasse. Klasse C bleibt sichtbar,
-  aber nicht bestellbar.
+  Keine Variante erhält pauschal eine bessere Klasse. Klasse C bleibt in der
+  internen Diagnose sichtbar und blockiert einen freizugebenden Candidate.
 
 ## Umsetzung von Linien über die Spielgrenze
 
@@ -165,10 +167,10 @@ Für den Spieler ist die Planung damit logisch:
    bleibt aber als Außenlauf in Livemap und Betriebszentrale sichtbar. Die
    Rückkehr reserviert zuerst die benannte Übergaberessource und wird erst
    danach materialisiert.
-4. Ist ein Portal nicht eindeutig oder nur Klasse C, bleibt die Fahrt sichtbar,
-   aber nicht bestellbar. Eine Verspätung außerhalb verschiebt die Rückkehr
-   erklärbar innerhalb des Release-Fensters; sie erzeugt niemals heimlich
-   Kapazität im Spielbereich.
+4. Ist ein Portal nicht eindeutig oder nur Klasse C, bleibt die Fahrt in der
+   internen Diagnose sichtbar und der Releasekandidat gesperrt. Eine Verspätung
+   außerhalb verschiebt die Rückkehr erklärbar innerhalb des Release-Fensters;
+   sie erzeugt niemals heimlich Kapazität im Spielbereich.
 
 Der Tageskatalog wiederholt für jeden Betriebstag 1.634 Materialisierungen,
 909 Grenzkommandos und genau einen Bereinigungspunkt mit eindeutigen
@@ -208,24 +210,81 @@ Großbuchstaben sind absolute, bereits gepinnte Eingabepfade):
 
 ```sh
 pnpm build
+node tools/region-import/materialize-operational-infrastructure-v2.mjs REGIONAL_OPERATIONAL_INFRASTRUCTURE_CANDIDATE infra-mitteldeutschland-b-2026.2 ARTIFACT_ROOT/operational-infrastructure-v2.json
 node tools/region-import/build-infra-release.mjs tools/region-import/releases/mitteldeutschland-b-2026.2.build.json SOURCE_ROOT ARTIFACT_ROOT ARTIFACT_ROOT/infra-mitteldeutschland-b-2026.2.unsigned.json
 node tools/region-import/sign-release.mjs ARTIFACT_ROOT/infra-mitteldeutschland-b-2026.2.unsigned.json PRIVATE_KEY zugfolge-alpha-2026 ARTIFACT_ROOT/infra-mitteldeutschland-b-2026.2.release.json
-node tools/region-import/build-alpha-world.mjs ARTIFACT_ROOT/gtfs-region-20260810-v2.json ARTIFACT_ROOT/operational-network.json FLEET_CATALOG ARTIFACT_ROOT/infra-mitteldeutschland-b-2026.2.release.json tools/region-import/specifications/economy-release-alpha-2026.1.json ARTIFACT_ROOT/alpha-world-deployment.2026.2.json PUBLIC_ODOO_CONFIG
+node tools/region-import/build-alpha-world.mjs ARTIFACT_ROOT/gtfs-region-20260810-v2.json ARTIFACT_ROOT/operational-network.json FLEET_CATALOG ARTIFACT_ROOT/infra-mitteldeutschland-b-2026.2.release.json tools/region-import/specifications/economy-release-alpha-2026.1.json ARTIFACT_ROOT/alpha-world-deployment.2026.2.json PUBLIC_ODOO_CONFIG ARTIFACT_ROOT/operational-simulation-v2.json
 ```
+
+Vor `build-infra-release.mjs` muss
+`ARTIFACT_ROOT/operational-infrastructure-v2.json` als reines statisches
+`OperationalInfraRelease` vorliegen. Der regionale Buildvertrag
+`zugfolge-regional-infra-release-build/v2` benennt dieses Artefakt explizit.
+Der Materialisierer akzeptiert nur einen bereits fachlich abgeleiteten,
+weltfreien Candidate, validiert ihn mit demselben nativen Rust-Vertrag wie die
+Betriebsengine und schreibt die kanonischen Artefaktbytes ohne Überschreiben.
+Er ist ausdrücklich kein fachlicher Infrastrukturableiter. Solange der echte
+jährliche Deutschland-Ableiter noch keinen vollständigen statischen Candidate
+aus den gepinnten Infrastrukturdaten erzeugt hat, bleibt der Release damit
+gesperrt. Für den Deutschland-Jahreslauf ist
+`var/derived/germany-2026.2/operational-infrastructure-v2.json` die Ausgabe
+dieses Materialisierungsschritts und keine vorausgesetzte Fremddatei.
+
+Erst wenn dieser echte Candidate vorliegt, ist der statische Deutschlandpfad
+ausführbar:
+
+```sh
+node tools/region-import/materialize-operational-infrastructure-v2.mjs GERMANY_OPERATIONAL_INFRASTRUCTURE_CANDIDATE infra-deutschland-2026.2 var/derived/germany-2026.2/operational-infrastructure-v2.json
+node tools/region-import/germany/run-release-artifacts.mjs tools/region-import/germany/release-artifacts.annual-2026.2.json . var/derived/germany-2026.2/release-artifacts.v2.json
+```
+
+Der zweite Schritt scheitert, solange der erste kein nativ validiertes Artefakt
+materialisiert hat.
+
+Der native Releasecompiler berechnet den Byte-`sha256` der materialisierten
+Datei und getrennt davon den kanonischen, domänengetrennten `stateHash`. Die
+Deutschland-Artefaktpipeline transportiert dieselben beiden Bindungen über
+`zugfolge-infra-release-artifact-spec/v2` zusammen mit der expliziten
+`infraReleaseId`; beide Pfade lehnen unbekannte, weltbezogene oder manuell
+gesetzte Bindungsfelder ab.
+Weltbezogene `train-map-projection`-Artefakte bleiben im getrennten
+Map-Delivery-Paket und sind im statischen InfraRelease-Vertrag verboten.
+Klasse-C-Abschnitte dürfen weiterhin intern diagnostiziert werden, blockieren
+aber jeden regionalen oder Deutschland-Releasekandidaten, bis nur freigegebene
+Klasse-A/B-Infrastruktur verbleibt.
 
 `PUBLIC_ODOO_CONFIG` muss als Weltepoche exakt
 `2026-08-10T00:00:00.000Z` enthalten. Der Weltgenerator prüft zusätzlich
 den Dateihash und Zustandshash des GTFS-Artefakts gegen den signierten
 InfraRelease und leitet die Fleet-ID
 `fleet-alpha-mitteldeutschland-b-2026.2` aus dessen Releaseversion ab.
+`operational-simulation-v2.json` ist der vollständige, weltgebundene
+Initialisierungsvertrag der Betriebsengine mit exakter Kanten-Geometrie,
+Laufwegversionen, Fahrstraßenressourcen, Fahrzeugen, Formationen und Zügen. Im
+InfraRelease wird davon ausschließlich das statische Teilobjekt
+`initialization.infraRelease` gebunden: Sein Zustandshash ist
+`alphaHash("operational-infrastructure-v2", initialization.infraRelease)` und
+das Manifest muss genau ein Artefakt mit `kind=operational-infrastructure-v2`
+und diesem `stateHash` enthalten. Dessen `sha256` bindet unabhängig davon die
+unveränderten Bytes von `operational-infrastructure-v2.json`. Welt, Fahrzeuge,
+Formationen und Züge gehören nicht in diesen Infrastrukturhash. Der
+Byte-SHA-256 der vollständigen
+`operational-simulation-v2.json` bleibt separat als
+`provenance.operationalSimulationSourceSha256` im signierten Weltdeployment
+gebunden. Der Weltgenerator erzeugt weder Geraden noch Schätzpositionen und
+bricht bei abweichender Welt, Region, InfraRelease-ID, Ressourcenbindung oder
+einem fehlenden, mehrfachen beziehungsweise falschen Infrastrukturhash
+geschlossen ab.
 
-Der EBO-Filter enthält 45.440 Knoten und 47.614 konservative Blöcke. Aus
-51.066 Fahrstraßen und 1.654 Konfliktressourcen entstehen 2.373 betriebliche
-Klasse-B- und 107 sichtbare, nicht bestellbare Klasse-C-Segmente. Die rohe
-Abschnittsklassifikation umfasst 27.315 B- und 20.299 C-Abschnitte; Klasse A
-bleibt wegen des bewusst fehlenden Höhen-/Neigungsnachweises null. 18.732
-nicht-EBO- oder unzulässige Kanten, darunter 11.932 Straßenbahnobjekte, wurden
-ausgeschlossen.
+Der bisherige interne Vorabfilter enthält 45.440 Knoten und 47.614
+konservative Blöcke. Aus 51.066 Fahrstraßen und 1.654 Konfliktressourcen
+entstehen in dieser Diagnose 2.373 betriebliche Klasse-B- und 107
+Klasse-C-Segmente. Die rohe Abschnittsklassifikation umfasst 27.315 B- und
+20.299 C-Abschnitte; Klasse A bleibt wegen des bewusst fehlenden
+Höhen-/Neigungsnachweises null. 18.732 nicht-EBO- oder unzulässige Kanten,
+darunter 11.932 Straßenbahnobjekte, wurden ausgeschlossen. Diese Diagnose ist
+kein freigabefähiger 2026.2-Candidate; die Klasse-C-Befunde müssen vor dessen
+Materialisierung geklärt oder aus dem Releaseumfang entfernt sein.
 
 Der signierte öffentliche Weltentwurf besitzt den Hash
 `15037068cebd8997346d27c79fdbfc8e5367e86c2516683cb358632b73a9b6b4`.
@@ -263,7 +322,8 @@ aus M9.9.
   Stammdatennutzung; kein Zugriff im heißen Pfad.
 - Kein Höhenartefakt im Release, daher keine behauptete Klasse A.
 - 12 Stationszuordnungen bleiben außerhalb der Matching-Toleranz; 107
-  betroffene betriebliche Segmente sind deshalb Klasse C und nicht bestellbar.
+  betroffene betriebliche Segmente sind deshalb im internen Vorabbericht
+  Klasse C und blockieren die Freigabe dieses Kandidaten.
 - 1.157 GTFS-Grenzfälle bleiben im Planungssnapshot sichtbar, werden aber
   nicht in die 1.634 bestellbaren Fahrtketten übernommen.
 - Der ODbL-abgeleitete Datenbestand und die proprietäre Fleet-Quelle liegen

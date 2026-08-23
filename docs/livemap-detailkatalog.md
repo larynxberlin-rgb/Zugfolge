@@ -47,8 +47,11 @@ signierten Runtime-Deployment abweichende Werte blockieren den Start.
 
 ## Vollständiges Artefakt und Spielerprofil
 
-Der Builder liest weiterhin alle zehn semantischen Ebenen des
-Deutschlandkorpus in das vollständige Artefakt.
+Der Builder liest weiterhin alle zehn semantischen Ebenen des freigegebenen
+A-/B-Deutschlandkorpus in das vollständige Artefakt. Ein ungelöster
+Pflichtbefund bleibt ausschließlich in der internen Builddiagnose und
+blockiert das gesamte Release; er darf nicht durch Weglassen eines Objekts
+kaschiert werden.
 `rail_corridors` und `tracks` werden beide als `track` aufgelöst; ihre stabilen
 Feature-IDs überschneiden sich nicht. `conflict_resources` erscheinen als
 `facility`. Auch `rail_context` besitzt als `rail-context` ein anklickbares,
@@ -59,10 +62,10 @@ zur Betriebswahrheit zu machen.
 Das normale Spielerprofil ist eine davon getrennte Projektion. Es zeichnet nur
 A-/B-Korridore beziehungsweise -Gleise, gruppierte Bahnhöfe, achromatische
 Signalicons, betriebliche Overlays und Züge. Interaktiv sind Zug, gruppierter
-Bahnhof und Strecke. Klasse C sowie `operating_points`, einzelne Bahnsteige,
-Weichen, Blöcke, `conflict_resources`, Anlagen und `rail_context` werden dort
-nicht abgefragt und nicht gezeichnet. Der vollständige Objektkatalog wird
-dadurch weder gekürzt noch in ein zweites Artefakt aufgeteilt.
+Bahnhof und Strecke. `operating_points`, einzelne Bahnsteige, Weichen, Blöcke,
+`conflict_resources`, Anlagen und `rail_context` werden trotz ihrer
+A-/B-Qualifizierung dort nicht abgefragt und nicht gezeichnet. Der vollständige
+Objektkatalog wird dadurch weder gekürzt noch in ein zweites Artefakt aufgeteilt.
 
 Ein sichtbarer Bahnhof steht für eine releasegebundene Stationsgruppe, nicht
 für einen Bahnsteig. Der Compiler liefert eine stabile Gruppenkennung und
@@ -169,9 +172,11 @@ node tools/tiles/inspect-livemap-read-model.mjs \
   var/derived/germany-2026.2/map-release/public/read-model.sqlite
 ```
 
-Der reale Deutschlandlauf 2026 umfasst 1.600.662 Objektdetails, 189.097
+Der historische Deutschlandlauf 2026 umfasst 1.600.662 Objektdetails, 189.097
 Stationsaufrufe, 42.567 FIS-Zugläufe und 679 Stationen mit belastbar
 zugeordnetem Fahrplan. Die Datei hat 1.291.001.856 Byte und den SHA-256
 `c7e56cecb3db9aaae7994877894312ade91c536e7c5027e10e63045d7303ad21`.
 Ein zweiter Vollauf mit denselben Eingaben erzeugte bytegleich denselben Hash.
-Die Datei und der Bericht bleiben als Releaseartefakte außerhalb von Git.
+Die Datei und der Bericht bleiben als historische Buildartefakte außerhalb von
+Git, sind nach dem heutigen A-/B-only-Vertrag aber nicht aktivierbar. Der
+freigabefähige Neubau braucht `unresolvedRequired=0` und erzeugt neue Hashes.

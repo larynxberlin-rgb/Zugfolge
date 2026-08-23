@@ -3,7 +3,7 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
   {
     "term": "Abdeckungsmessung",
     "code": "CoverageReport",
-    "definition": "Bericht je Attribut und Streckenabschnitt, wie viel Länge welchen Vertrauensgrad trägt und welche Qualitätsklasse ein Abschnitt datenseitig höchstens erreichen kann"
+    "definition": "Bericht je Attribut und Streckenabschnitt, wie viel Länge welchen Vertrauensgrad trägt und ob der Abschnitt A erreicht, vollständig konservativ als B geschlossen ist oder als interner Pflichtbefund den Releasekandidaten blockiert"
   },
   {
     "term": "Abstellgleis",
@@ -29,6 +29,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Alpha-Feedbackprojektion",
     "code": "AlphaFeedbackProjectionPort",
     "definition": "atomare, bereits pseudonymisierte Outbox-Grenze vom autoritativen Game-Feedback zur bearbeitbaren Odoo-Triage; enthält kein Keycloak-Subject"
+  },
+  {
+    "term": "Analytischer Bewegungsabschnitt",
+    "code": "MotionSegment",
+    "definition": "unveränderliche ganzzahlige Bewegungsfunktion mit Startzeit/-position/-geschwindigkeit, Beschleunigung, Gültigkeitsende, Laufwegversion und Fahrberechtigungsende"
   },
   {
     "term": "Anlage",
@@ -271,6 +276,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "releasegebundene Kartenlage mit bestätigter Ressource, trackId, gleisscharfem ganzzahligem Offset und daraus abgeleiteter E7-Koordinate; bleibt die einzige betriebliche Positionswahrheit"
   },
   {
+    "term": "Fahrberechtigung",
+    "code": "MovementAuthority",
+    "definition": "harte, zug- und laufweggebundene Grenze, bis zu der die gemeinsame Bewegungsengine eine Zug- oder Rangierbewegung führen darf"
+  },
+  {
     "term": "Fahrgastinformationsanzeige",
     "code": "PassengerInformationDisplay",
     "definition": "öffentliche, zuggebundene Projektion von Ziel, nächstem Halt, Folgehalten, Verspätung und Meldungen; Grundlage des generischen FIS-Monitors"
@@ -371,6 +381,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "mehrdimensionaler, ganzzahliger Zustand für Mechanik, Antrieb, Bremsen, Betrieb und Innenraum; wird im Lebenslauf fortgeschrieben"
   },
   {
+    "term": "Flankenschutz",
+    "code": "flank_resources",
+    "definition": "zusätzlich zum Fahrweg verriegelte Ressourcen, die unbeabsichtigte seitliche Einfahrten in eine eingestellte Fahrstraße verhindern"
+  },
+  {
     "term": "Formation",
     "code": "Formation",
     "definition": "konkrete Zusammenstellung von Fahrzeugen für eine Zugfahrt"
@@ -389,11 +404,6 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Gegenfahrt",
     "code": "OpposingMove",
     "definition": "Belegungskonflikt zweier Zugfahrten entgegengesetzter Richtung auf demselben eingleisigen Abschnitt"
-  },
-  {
-    "term": "Geschätzte Zugkartenposition",
-    "code": "PublicMapEstimate",
-    "definition": "rein visuelle, releasegebundene Lage mit bestätigter Ressourcenbindung, aber ohne behauptete trackId oder gleisscharfen Offset; wird als ≈ mit neutralem Ring gekennzeichnet und nie betrieblich verwendet"
   },
   {
     "term": "Gleichstand",
@@ -423,7 +433,7 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
   {
     "term": "Infrastruktur-Release",
     "code": "InfraRelease",
-    "definition": "unveränderliches, versioniertes Netzartefakt mit Herkunft, Lizenz, Prüfsumme und Confidence je Attribut"
+    "definition": "unveränderliches, versioniertes Netz- und Betriebsartefakt mit Graph, gerichteten Kanten, Sicherungselementen, Laufwegvorlagen, RZÜ-Layout, Herkunft, Lizenz, Prüfsumme und Confidence"
   },
   {
     "term": "Insolvenz",
@@ -442,8 +452,8 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
   },
   {
     "term": "Kartenposition",
-    "code": "mapPosition` / `mapEstimate",
-    "definition": "gegenseitig exklusive öffentliche Kartendarstellung eines Zuges: entweder nachgewiesenes Exact, ausdrücklich gekennzeichnetes Estimate oder keine Lage"
+    "code": "mapPosition",
+    "definition": "ausschließlich exakte öffentliche Kartenlage der autoritativen Zugspitze; Unsicherheit führt zu sicherem Halt und Freeze statt Schätzung"
   },
   {
     "term": "Konfliktbericht",
@@ -479,6 +489,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Laufweg",
     "code": "Itinerary",
     "definition": "die Folge von Betriebsstellen und Kanten, die eine Zugfahrt befährt"
+  },
+  {
+    "term": "Laufwegversion",
+    "code": "RouteVersion",
+    "definition": "unveränderliche lückenlose Folge konkreter gerichteter Gleiskanten; eine Umleitung erzeugt ab einem sicheren Übergabepunkt eine Nachfolgeversion"
   },
   {
     "term": "Ledger-Buchung",
@@ -608,7 +623,7 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
   {
     "term": "Qualitätsklasse",
     "code": "QualityClass",
-    "definition": "A (validiert), B (konservativ) oder C (unzureichend); die höchste Klasse, die ein Vertrauensgrad datenseitig trägt"
+    "definition": "ausschließlich A (validiert) oder B (in allen Pflichtdimensionen konservativ geschlossen); ein ungelöster Pflichtbefund ist keine Releaseklasse und blockiert den Kandidaten"
   },
   {
     "term": "Quellenregister",
@@ -628,7 +643,7 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
   {
     "term": "Rangieren",
     "code": "Shunting",
-    "definition": "Fahrzeugbewegung ohne Zugfahrt; ausschließlich automatisiert, als Zeitbedarf und kurze Belegung verrechnet"
+    "definition": "ausschließlich automatisch beauftragte physische Fahrzeugbewegung mit eigener Fahrberechtigung, Geschwindigkeit und exakten Gleisintervallen"
   },
   {
     "term": "Räumfahrzeit",
@@ -732,8 +747,8 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
   },
   {
     "term": "Simulationszeit",
-    "code": "SimTime",
-    "definition": "Sekunden seit Weltepoche; expliziter Wert, niemals aus der Systemuhr gelesen"
+    "code": "SimTime` / `SimMillis",
+    "definition": "explizite Zeit seit Weltepoche; Fahrplanverträge verwenden Sekunden, die autoritative Betriebsengine intern ganzzahlige Millisekunden, niemals die Systemuhr"
   },
   {
     "term": "Sperrzeit",
@@ -878,7 +893,7 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
   {
     "term": "Vertrauensgrad",
     "code": "Confidence",
-    "definition": "wie belastbar ein Attributwert ist — erfasst, abgeleitet oder angenommen; Grundlage der Qualitätsklassen"
+    "definition": "wie belastbar ein Attributwert ist — erfasst, abgeleitet oder angenommen; Grundlage für A beziehungsweise ein vollständig geschlossenes B, andernfalls interner Releaseblocker"
   },
   {
     "term": "Vier-Augen-Prinzip",
@@ -889,6 +904,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Virtueller Fahrdienstleiter",
     "code": "VirtualDispatcher",
     "definition": "regionale serverautoritative Dispositionslogik über gemeinsame Konfliktressourcen mit erklärbarer lexikographischer Reihenfolge"
+  },
+  {
+    "term": "Virtueller Lokführer",
+    "code": "VirtualDriver",
+    "definition": "deterministische automatische Ableitung analytischer Fahr- und Bremsabschnitte aus Formation, Strecke, Halt und Fahrberechtigung"
   },
   {
     "term": "Vmax-Band",
@@ -977,8 +997,8 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
   },
   {
     "term": "Zugkartenprojektion",
-    "code": "SQLiteTrainMapProjector",
-    "definition": "read-only, releasegebundene Laufzeitprojektion: liefert Exact nur auf eindeutig nachgewiesenem Gleis und Estimate getrennt auf einem erlaubten Darstellungspfad; kein Rückfluss in Betrieb, Bestellbarkeit oder Qualität"
+    "code": "PublicOperationalTrainState",
+    "definition": "read-only Übersetzung der autoritativen Laufwegposition auf die exakte Releasegeometrie; LiveMap und RZÜ tragen denselben Commit und es gibt keinen Estimate-Pfad"
   },
   {
     "term": "Zugkilometer",
@@ -996,6 +1016,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "definition": "die Nummer einer Zugfahrt; nennt über ihren Bereich die Zuggattung und über ihre Parität die Richtung — gerade mit, ungerade gegen die Kilometrierung"
   },
   {
+    "term": "Zugschluss",
+    "code": "tail_route_mm",
+    "definition": "hinteres Ende der Formation als exakter Laufwegmillimeter; maßgeblich für Intervallbelegung und Ressourcenfreigabe"
+  },
+  {
     "term": "Zugsicherung",
     "code": "TrainProtection",
     "definition": "streckenseitige und fahrzeugseitige Sicherungstechnik; begrenzt, welche Formation wo fahren darf"
@@ -1004,6 +1029,11 @@ export const GENERATED_GLOSSARY_ENTRIES = Object.freeze([
     "term": "Zugsicherungsoption",
     "code": "ProtectionOption",
     "definition": "am exakten Fahrzeugtyp belegte, zeitgebundene Werksoption oder Werkstattnachrüstung; Serienausrüstung ist keine Option"
+  },
+  {
+    "term": "Zugspitze",
+    "code": "head_route_mm",
+    "definition": "vorderes Ende der Formation als exakter Laufwegmillimeter; darf niemals die Fahrberechtigung überschreiten"
   },
   {
     "term": "Zulässige Abweichung",

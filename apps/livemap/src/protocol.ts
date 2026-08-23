@@ -1,8 +1,14 @@
 import type {
   LivemapObjectKind,
-  PublicMapEstimate,
   PublicMapPosition,
   PublicObjectState,
+  PublicOperationalDisruption,
+  PublicOperationalDisruptionEffect,
+  PublicOperationalRegionFrame,
+  PublicOperationalSignalAspect,
+  PublicOperationalTrainState,
+  PublicOperationalVehicleRestriction,
+  PublicRouteGeometryPoint,
 } from "@zugfolge/livemap-stream";
 
 export type OperatingStatus =
@@ -49,11 +55,11 @@ export interface PublicTrain {
   readonly category: string;
   readonly positionMm: number;
   readonly speedMmPerSecond: number;
-  readonly delaySeconds: number;
-  readonly nextOperatingPoint: string;
+  readonly delaySeconds?: number;
+  readonly nextOperatingPoint?: string;
   readonly status: OperatingStatus;
+  readonly operational?: PublicOperationalTrainState;
   readonly mapPosition?: PublicMapPosition;
-  readonly mapEstimate?: PublicMapEstimate;
   readonly operationMarker?: PublicOperationMarker;
   readonly disruption?: PublicDisruptionMarker;
 }
@@ -84,6 +90,7 @@ export interface Snapshot {
   readonly externalTrains?: readonly PublicExternalTrain[];
   readonly disruptions?: readonly PublicInfrastructureDisruption[];
   readonly objectStates?: readonly PublicObjectState[];
+  readonly operationalRegions?: readonly PublicOperationalRegionFrame[];
 }
 
 export interface Delta {
@@ -99,6 +106,8 @@ export interface Delta {
   readonly removedDisruptionIds?: readonly string[];
   readonly changedObjectStates?: readonly PublicObjectState[];
   readonly removedObjectStateIds?: readonly string[];
+  readonly changedOperationalRegions?: readonly PublicOperationalRegionFrame[];
+  readonly removedOperationalRegionIds?: readonly string[];
 }
 
 export interface LiveState {
@@ -110,6 +119,7 @@ export interface LiveState {
   readonly externalTrains: ReadonlyMap<string, PublicExternalTrain>;
   readonly disruptions: ReadonlyMap<string, PublicInfrastructureDisruption>;
   readonly objectStates: ReadonlyMap<string, PublicObjectState>;
+  readonly operationalRegions: ReadonlyMap<string, PublicOperationalRegionFrame>;
 }
 
 export interface RenderSamples {
@@ -189,43 +199,6 @@ function parseMapPosition(value: unknown): PublicMapPosition | undefined {
     latitudeE7,
     longitudeE7,
     ...(bearingMilliDegrees === undefined ? {} : { bearingMilliDegrees }),
-  });
-}
-
-const MAP_ESTIMATE_METHODS = new Set<PublicMapEstimate["method"]>([
-  "topological-track",
-  "route-corridor",
-  "anchor-hold",
-]);
-
-function parseMapEstimate(value: unknown): PublicMapEstimate | undefined {
-  if (value === undefined) return undefined;
-  if (!isRecord(value)) throw new TypeError("Livemap-Kartenschaetzung muss ein Objekt sein.");
-  const method = stringField(value, "method");
-  if (!MAP_ESTIMATE_METHODS.has(method as PublicMapEstimate["method"])) {
-    throw new TypeError(`Unbekannte Livemap-Schaetzmethode '${method}'.`);
-  }
-  const latitudeE7 = integerField(value, "latitudeE7", -900_000_000);
-  const longitudeE7 = integerField(value, "longitudeE7", -1_800_000_000);
-  if (latitudeE7 > 900_000_000 || longitudeE7 > 1_800_000_000) {
-    throw new TypeError("Livemap-Kartenschaetzung liegt ausserhalb des gueltigen Koordinatenraums.");
-  }
-  const bearingMilliDegrees = value["bearingMilliDegrees"] === undefined
-    ? undefined
-    : integerField(value, "bearingMilliDegrees", 0);
-  if (bearingMilliDegrees !== undefined && bearingMilliDegrees >= 360_000) {
-    throw new TypeError("Livemap-Schaetzrichtung muss kleiner als 360 Grad sein.");
-  }
-  return Object.freeze({
-    infrastructureReleaseId: stringField(value, "infrastructureReleaseId"),
-    resourceId: stringField(value, "resourceId"),
-    method: method as PublicMapEstimate["method"],
-    displayPathId: stringField(value, "displayPathId"),
-    displayOffsetMm: integerField(value, "displayOffsetMm", 0),
-    latitudeE7,
-    longitudeE7,
-    ...(bearingMilliDegrees === undefined ? {} : { bearingMilliDegrees }),
-    uncertaintyMm: integerField(value, "uncertaintyMm", 0),
   });
 }
 
@@ -344,11 +317,12 @@ function parseTrain(value: unknown): PublicTrain {
   const operationMarker = parseOperationMarker(value["operationMarker"]);
   const disruption = parseDisruptionMarker(value["disruption"]);
   const mapPosition = parseMapPosition(value["mapPosition"]);
-  const mapEstimate = parseMapEstimate(value["mapEstimate"]);
-  if (mapPosition !== undefined && mapEstimate !== undefined) {
-    throw new TypeError("Ein Livemap-Zug darf nicht zugleich bestaetigte und geschaetzte Kartenlage besitzen.");
-  }
   const operatorId = optionalStringField(value, "operatorId");
+  const operational = parseOperationalState(value["operational"]);
+  const delaySeconds = value["delaySeconds"] === undefined
+    ? undefined
+    : integerField(value, "delaySeconds");
+  const nextOperatingPoint = optionalStringField(value, "nextOperatingPoint");
   return Object.freeze({
     id: stringField(value, "id"),
     ...(operatorId === undefined ? {} : { operatorId }),
@@ -357,14 +331,316 @@ function parseTrain(value: unknown): PublicTrain {
     category: stringField(value, "category"),
     positionMm: integerField(value, "positionMm", 0),
     speedMmPerSecond: integerField(value, "speedMmPerSecond", 0),
-    delaySeconds: integerField(value, "delaySeconds"),
-    nextOperatingPoint: stringField(value, "nextOperatingPoint"),
+    ...(delaySeconds === undefined ? {} : { delaySeconds }),
+    ...(nextOperatingPoint === undefined ? {} : { nextOperatingPoint }),
     status: status as OperatingStatus,
+    ...(operational === undefined ? {} : { operational }),
     ...(mapPosition === undefined ? {} : { mapPosition }),
-    ...(mapEstimate === undefined ? {} : { mapEstimate }),
     ...(operationMarker === undefined ? {} : { operationMarker }),
     ...(disruption === undefined ? {} : { disruption }),
   });
+}
+
+function parseOperationalState(value: unknown): PublicOperationalTrainState | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new TypeError("Exakter Betriebszustand muss ein Objekt sein.");
+  const movementKind = stringField(value, "movementKind");
+  const direction = stringField(value, "direction");
+  if (movementKind !== "train" && movementKind !== "shunting") {
+    throw new TypeError("Unbekannte Bewegungsart im Betriebszustand.");
+  }
+  if (direction !== "along" && direction !== "against") {
+    throw new TypeError("Unbekannte Fahrtrichtung im Betriebszustand.");
+  }
+  if (!Array.isArray(value["occupiedIntervals"]) || !Array.isArray(value["occupiedBlocks"])) {
+    throw new TypeError("Exakter Betriebszustand besitzt keine Belegungsmenge.");
+  }
+  const occupiedIntervals = value["occupiedIntervals"].map((item) => {
+    if (!isRecord(item)) throw new TypeError("Gleisintervall muss ein Objekt sein.");
+    const intervalDirection = stringField(item, "direction");
+    if (intervalDirection !== "along" && intervalDirection !== "against") {
+      throw new TypeError("Gleisintervall besitzt keine Richtung.");
+    }
+    const fromMm = integerField(item, "fromMm", 0);
+    const toMm = integerField(item, "toMm", 1);
+    if (fromMm >= toMm) throw new TypeError("Gleisintervall ist leer oder umgekehrt.");
+    return Object.freeze({
+      trackId: stringField(item, "trackId"),
+      fromMm,
+      toMm,
+      direction: intervalDirection,
+    });
+  });
+  const occupiedBlocks = value["occupiedBlocks"].map((item) => {
+    if (typeof item !== "string" || item.length === 0) throw new TypeError("Blockkennung fehlt.");
+    return item;
+  });
+  const motionSegment = value["motionSegment"] === undefined
+    ? undefined
+    : parseMotionSegment(value["motionSegment"]);
+  const authorityEndRouteMm = value["authorityEndRouteMm"] === undefined
+    ? undefined
+    : integerField(value, "authorityEndRouteMm", 0);
+  const waitingReason = optionalStringField(value, "waitingReason");
+  const result: PublicOperationalTrainState = Object.freeze({
+    regionId: stringField(value, "regionId"),
+    commitSequence: integerField(value, "commitSequence", 0),
+    simulationTimeMs: integerField(value, "simulationTimeMs", 0),
+    routeVersionId: stringField(value, "routeVersionId"),
+    formationVersionId: stringField(value, "formationVersionId"),
+    movementKind,
+    headRouteMm: integerField(value, "headRouteMm", 0),
+    tailRouteMm: integerField(value, "tailRouteMm"),
+    direction,
+    occupiedIntervals: Object.freeze(occupiedIntervals),
+    occupiedBlocks: Object.freeze(occupiedBlocks),
+    ...(authorityEndRouteMm === undefined ? {} : { authorityEndRouteMm }),
+    ...(motionSegment === undefined ? {} : { motionSegment }),
+    ...(waitingReason === undefined ? {} : { waitingReason }),
+  });
+  if (result.tailRouteMm > result.headRouteMm) throw new TypeError("Zugschluss liegt vor der Zugspitze.");
+  return result;
+}
+
+function parseMotionSegment(value: unknown): NonNullable<PublicOperationalTrainState["motionSegment"]> {
+  if (!isRecord(value) || !Array.isArray(value["geometry"])) {
+    throw new TypeError("Bewegungsabschnitt ist unvollstaendig.");
+  }
+  const geometry: PublicRouteGeometryPoint[] = value["geometry"].map((point) => {
+    if (!isRecord(point)) throw new TypeError("Laufweggeometriepunkt muss ein Objekt sein.");
+    const bearing = point["bearingMilliDegrees"] === undefined
+      ? undefined
+      : integerField(point, "bearingMilliDegrees", 0);
+    return Object.freeze({
+      routeMm: integerField(point, "routeMm", 0),
+      trackId: stringField(point, "trackId"),
+      offsetMm: integerField(point, "offsetMm", 0),
+      latitudeE7: integerField(point, "latitudeE7", -900_000_000),
+      longitudeE7: integerField(point, "longitudeE7", -1_800_000_000),
+      ...(bearing === undefined ? {} : { bearingMilliDegrees: bearing }),
+    });
+  });
+  if (geometry.length < 2 || geometry.some((point, index) => index > 0 && point.routeMm <= geometry[index - 1]!.routeMm)) {
+    throw new TypeError("Laufweggeometrie ist nicht streng geordnet.");
+  }
+  const startedAtMs = integerField(value, "startedAtMs", 0);
+  const validUntilMs = integerField(value, "validUntilMs", 0);
+  const startRouteMm = integerField(value, "startRouteMm", 0);
+  const authorityEndRouteMm = integerField(value, "authorityEndRouteMm", 0);
+  const segmentEndRouteMm = integerField(value, "segmentEndRouteMm", 0);
+  if (validUntilMs < startedAtMs) throw new TypeError("Bewegungsabschnitt endet vor seinem Beginn.");
+  if (startRouteMm > segmentEndRouteMm || segmentEndRouteMm > authorityEndRouteMm) {
+    throw new TypeError("Bewegungsabschnitt verletzt Abschnitts- oder Fahrberechtigungsende.");
+  }
+  return Object.freeze({
+    startedAtMs,
+    validUntilMs,
+    startRouteMm,
+    startSpeedMmPerSecond: integerField(value, "startSpeedMmPerSecond", 0),
+    accelerationMmPerSecondSquared: integerField(value, "accelerationMmPerSecondSquared"),
+    authorityEndRouteMm,
+    segmentEndRouteMm,
+    geometry: Object.freeze(geometry),
+  });
+}
+
+const OPERATIONAL_SIGNAL_ASPECTS = new Set<PublicOperationalSignalAspect>([
+  "stop",
+  "proceed",
+  "shunting-proceed",
+  "failed",
+]);
+
+function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const actual = Object.keys(value).sort();
+  const keys = [...expected].sort();
+  return actual.length === keys.length && actual.every((key, index) => key === keys[index]);
+}
+
+function parseOperationalVehicleRestriction(value: unknown): PublicOperationalVehicleRestriction {
+  if (value === "immobilized") return value;
+  if (!isRecord(value) || Object.keys(value).length !== 1) {
+    throw new TypeError("Operative Fahrzeugstoerung besitzt keine eindeutige Wirkung.");
+  }
+  const [kind] = Object.keys(value);
+  const amount = value[kind!];
+  if (kind === "protection-unavailable") {
+    if (typeof amount !== "string" || amount.length === 0) {
+      throw new TypeError("Operative Zugsicherungseinschraenkung ist ungueltig.");
+    }
+  } else if (
+    ![
+      "power-basis-points",
+      "maximum-speed",
+      "service-brake",
+      "emergency-brake",
+      "door-availability-basis-points",
+    ].includes(kind!)
+    || !Number.isSafeInteger(amount)
+    || (amount as number) < 0
+    || ((kind === "power-basis-points" || kind === "door-availability-basis-points")
+      && (amount as number) > 65_535)
+  ) {
+    throw new TypeError("Operative Fahrzeugeinschraenkung ist ungueltig.");
+  }
+  return Object.freeze({ [kind!]: amount }) as PublicOperationalVehicleRestriction;
+}
+
+function parseOperationalDisruptionEffect(value: unknown): PublicOperationalDisruptionEffect {
+  if (!isRecord(value) || Object.keys(value).length !== 1) {
+    throw new TypeError("Operative Stoerung besitzt keine eindeutige Wirkung.");
+  }
+  const [kind] = Object.keys(value);
+  const detail = value[kind!];
+  if (!isRecord(detail)) throw new TypeError("Operative Stoerungswirkung muss ein Objekt sein.");
+  let projected: Readonly<Record<string, unknown>>;
+  switch (kind) {
+    case "resource-closed":
+    case "track-detection-failed":
+      if (!hasExactKeys(detail, ["resourceId"])) throw new TypeError("Operative Ressourcenstoerung ist ungueltig.");
+      projected = Object.freeze({ resourceId: stringField(detail, "resourceId") });
+      break;
+    case "signal-failed":
+      if (!hasExactKeys(detail, ["signalId"])) throw new TypeError("Operativer Signalausfall ist ungueltig.");
+      projected = Object.freeze({ signalId: stringField(detail, "signalId") });
+      break;
+    case "switch-failed":
+      if (!hasExactKeys(detail, ["switchId"])) throw new TypeError("Operativer Weichenausfall ist ungueltig.");
+      projected = Object.freeze({ switchId: stringField(detail, "switchId") });
+      break;
+    case "speed-restriction":
+      if (!hasExactKeys(detail, ["edgeId", "maximumSpeedMmps"])) throw new TypeError("Operative Langsamfahrstelle ist ungueltig.");
+      projected = Object.freeze({
+        edgeId: stringField(detail, "edgeId"),
+        maximumSpeedMmps: integerField(detail, "maximumSpeedMmps", 1),
+      });
+      break;
+    case "vehicle-restricted":
+      if (!hasExactKeys(detail, ["vehicleId", "restriction"])) throw new TypeError("Operative Fahrzeugstoerung ist ungueltig.");
+      projected = Object.freeze({
+        vehicleId: stringField(detail, "vehicleId"),
+        restriction: parseOperationalVehicleRestriction(detail["restriction"]),
+      });
+      break;
+    default:
+      throw new TypeError("Operative Stoerung besitzt eine unbekannte Wirkung.");
+  }
+  return Object.freeze({ [kind!]: projected }) as PublicOperationalDisruptionEffect;
+}
+
+function parseOperationalDisruption(value: unknown): PublicOperationalDisruption {
+  if (!isRecord(value) || !hasExactKeys(value, ["disruptionId", "effect"])) {
+    throw new TypeError("Aktive operative Stoerung ist unvollstaendig.");
+  }
+  return Object.freeze({
+    disruptionId: stringField(value, "disruptionId"),
+    effect: parseOperationalDisruptionEffect(value["effect"]),
+  });
+}
+
+function parseOperationalRegionFrame(value: unknown): PublicOperationalRegionFrame {
+  if (
+    !isRecord(value)
+    || !Array.isArray(value["routeLocks"])
+    || !isRecord(value["signals"])
+    || !Array.isArray(value["activeDisruptions"])
+  ) {
+    throw new TypeError("Operativer Regionsframe ist unvollstaendig.");
+  }
+  const simulationTimeMs = integerField(value, "simulationTimeMs", 0);
+  const staleAfterMs = integerField(value, "staleAfterMs", 0);
+  if (staleAfterMs < simulationTimeMs) {
+    throw new TypeError("Operativer Regionsframe ist bereits bei Veroeffentlichung veraltet.");
+  }
+  const routeLocks = value["routeLocks"].map((lock) => {
+    if (!isRecord(lock) || !Array.isArray(lock["resources"])) {
+      throw new TypeError("Fahrstrassenverriegelung ist unvollstaendig.");
+    }
+    const resources = lock["resources"].map((resource) => {
+      if (typeof resource !== "string" || resource.length === 0) {
+        throw new TypeError("Fahrstrassenverriegelung besitzt eine leere Ressource.");
+      }
+      return resource;
+    });
+    if (resources.length === 0 || new Set(resources).size !== resources.length) {
+      throw new TypeError("Fahrstrassenverriegelung besitzt keine eindeutige Ressourcenmenge.");
+    }
+    const lockedAtMs = integerField(lock, "lockedAtMs", 0);
+    if (lockedAtMs > simulationTimeMs) {
+      throw new TypeError("Fahrstrassenverriegelung liegt nach dem Regionscommit.");
+    }
+    return Object.freeze({
+      id: stringField(lock, "id"),
+      templateId: stringField(lock, "templateId"),
+      trainId: stringField(lock, "trainId"),
+      resources: Object.freeze(resources),
+      releaseAfterTailRouteMm: integerField(lock, "releaseAfterTailRouteMm", 0),
+      lockedAtMs,
+    });
+  });
+  if (new Set(routeLocks.map((lock) => lock.id)).size !== routeLocks.length) {
+    throw new TypeError("Operativer Regionsframe besitzt doppelte Fahrstrassenverriegelungen.");
+  }
+  const signals: Record<string, PublicOperationalSignalAspect> = {};
+  for (const [signalId, aspect] of Object.entries(value["signals"])) {
+    if (signalId.length === 0 || !OPERATIONAL_SIGNAL_ASPECTS.has(aspect as PublicOperationalSignalAspect)) {
+      throw new TypeError("Operativer Regionsframe besitzt einen unbekannten Signalbegriff.");
+    }
+    signals[signalId] = aspect as PublicOperationalSignalAspect;
+  }
+  const activeDisruptions = value["activeDisruptions"].map(parseOperationalDisruption);
+  if (new Set(activeDisruptions.map((disruption) => disruption.disruptionId)).size !== activeDisruptions.length) {
+    throw new TypeError("Operativer Regionsframe besitzt doppelte aktive Stoerungen.");
+  }
+  return Object.freeze({
+    regionId: stringField(value, "regionId"),
+    infrastructureReleaseId: stringField(value, "infrastructureReleaseId"),
+    commitSequence: integerField(value, "commitSequence", 0),
+    simulationTimeMs,
+    staleAfterMs,
+    routeLocks: Object.freeze(routeLocks),
+    signals: Object.freeze(signals),
+    activeDisruptions: Object.freeze(activeDisruptions),
+  });
+}
+
+function parseOperationalRegions(value: unknown, field: string): readonly PublicOperationalRegionFrame[] {
+  if (value === undefined) return Object.freeze([]);
+  if (!Array.isArray(value)) throw new TypeError(`Livemap-Feld '${field}' muss eine Liste sein.`);
+  const frames = value.map(parseOperationalRegionFrame);
+  if (new Set(frames.map((frame) => frame.regionId)).size !== frames.length) {
+    throw new TypeError(`Livemap-Feld '${field}' enthaelt doppelte operative Regionen.`);
+  }
+  return Object.freeze(frames);
+}
+
+function assertOperationalBindings(
+  trains: ReadonlyMap<string, PublicTrain>,
+  regions: ReadonlyMap<string, PublicOperationalRegionFrame>,
+): void {
+  for (const train of trains.values()) {
+    const operational = train.operational;
+    if (operational === undefined) continue;
+    const frame = regions.get(operational.regionId);
+    const mapPosition = train.mapPosition;
+    if (
+      frame === undefined ||
+      mapPosition === undefined ||
+      mapPosition.infrastructureReleaseId !== frame.infrastructureReleaseId ||
+      operational.commitSequence !== frame.commitSequence ||
+      operational.simulationTimeMs !== frame.simulationTimeMs
+    ) {
+      throw new TypeError(`Zug '${train.id}' ist nicht atomar an seinen operativen Regionsframe gebunden.`);
+    }
+  }
+  for (const frame of regions.values()) {
+    for (const lock of frame.routeLocks) {
+      const train = trains.get(lock.trainId);
+      if (train?.operational?.regionId !== frame.regionId) {
+        throw new TypeError(`Fahrstrasse '${lock.id}' ist nicht an einen Zug ihres Regionsframes gebunden.`);
+      }
+    }
+  }
 }
 
 export function operatorLabel(train: PublicTrain): string {
@@ -428,15 +704,22 @@ function parseExternalTrains(value: unknown, field: string): readonly PublicExte
 
 export function parseSnapshot(value: unknown): Snapshot {
   if (!isRecord(value)) throw new TypeError("Livemap-Snapshot muss ein Objekt sein.");
+  const trains = parseTrains(value["trains"], "trains");
+  const operationalRegions = parseOperationalRegions(value["operationalRegions"], "operationalRegions");
+  assertOperationalBindings(
+    new Map(trains.map((train) => [train.id, train] as const)),
+    new Map(operationalRegions.map((frame) => [frame.regionId, frame] as const)),
+  );
   return Object.freeze({
     worldId: stringField(value, "worldId"),
     streamId: streamIdField(value),
     sequence: integerField(value, "sequence", 0),
     at: integerField(value, "at", 0),
-    trains: parseTrains(value["trains"], "trains"),
+    trains,
     externalTrains: parseExternalTrains(value["externalTrains"], "externalTrains"),
     disruptions: parseDisruptions(value["disruptions"], "disruptions"),
     objectStates: parseObjectStates(value["objectStates"], "objectStates"),
+    operationalRegions,
   });
 }
 
@@ -458,6 +741,21 @@ export function parseDelta(value: unknown): Delta {
   if (!Array.isArray(removedObjectStateIds) || removedObjectStateIds.some((id) => typeof id !== "string" || id.length === 0)) {
     throw new TypeError("Livemap-Feld 'removedObjectStateIds' muss eine Liste nichtleerer Kennungen sein.");
   }
+  const changedOperationalRegions = parseOperationalRegions(
+    value["changedOperationalRegions"],
+    "changedOperationalRegions",
+  );
+  const removedOperationalRegionIds = value["removedOperationalRegionIds"] ?? [];
+  if (
+    !Array.isArray(removedOperationalRegionIds) ||
+    removedOperationalRegionIds.some((id) => typeof id !== "string" || id.length === 0) ||
+    new Set(removedOperationalRegionIds).size !== removedOperationalRegionIds.length ||
+    removedOperationalRegionIds.some((id) =>
+      changedOperationalRegions.some((frame) => frame.regionId === id)
+    )
+  ) {
+    throw new TypeError("Operative Regionsframes muessen eindeutig und disjunkt geaendert oder entfernt werden.");
+  }
   return Object.freeze({
     worldId: stringField(value, "worldId"),
     streamId: streamIdField(value),
@@ -471,6 +769,8 @@ export function parseDelta(value: unknown): Delta {
     removedDisruptionIds: Object.freeze([...removedDisruptionIds] as string[]),
     changedObjectStates: parseObjectStates(value["changedObjectStates"], "changedObjectStates"),
     removedObjectStateIds: Object.freeze([...removedObjectStateIds] as string[]),
+    changedOperationalRegions,
+    removedOperationalRegionIds: Object.freeze([...removedOperationalRegionIds] as string[]),
   });
 }
 
@@ -486,6 +786,14 @@ export function initialState(snapshot: Snapshot): LiveState {
   snapshot.externalTrains?.forEach((train) => externalTrains.set(train.id, train));
   const objectStates = new Map<string, PublicObjectState>();
   snapshot.objectStates?.forEach((state) => objectStates.set(state.id, state));
+  const operationalRegions = new Map<string, PublicOperationalRegionFrame>();
+  snapshot.operationalRegions?.forEach((frame) => {
+    if (operationalRegions.has(frame.regionId)) {
+      throw new TypeError(`Snapshot enthaelt Region '${frame.regionId}' doppelt.`);
+    }
+    operationalRegions.set(frame.regionId, frame);
+  });
+  assertOperationalBindings(trains, operationalRegions);
   return Object.freeze({
     worldId: snapshot.worldId,
     streamId: snapshot.streamId,
@@ -495,6 +803,7 @@ export function initialState(snapshot: Snapshot): LiveState {
     externalTrains,
     disruptions,
     objectStates,
+    operationalRegions,
   });
 }
 
@@ -519,6 +828,25 @@ export function applyDelta(state: LiveState, delta: Delta): LiveState | undefine
   const objectStates = new Map(state.objectStates);
   delta.changedObjectStates?.forEach((item) => objectStates.set(item.id, item));
   delta.removedObjectStateIds?.forEach((id) => objectStates.delete(id));
+  const operationalRegions = new Map(state.operationalRegions);
+  for (const frame of delta.changedOperationalRegions ?? []) {
+    const previous = operationalRegions.get(frame.regionId);
+    if (
+      previous !== undefined && (
+        frame.commitSequence !== previous.commitSequence + 1 ||
+        frame.simulationTimeMs < previous.simulationTimeMs
+      )
+    ) {
+      return undefined;
+    }
+    operationalRegions.set(frame.regionId, frame);
+  }
+  delta.removedOperationalRegionIds?.forEach((regionId) => operationalRegions.delete(regionId));
+  try {
+    assertOperationalBindings(trains, operationalRegions);
+  } catch {
+    return undefined;
+  }
   return Object.freeze({
     worldId: state.worldId,
     streamId: state.streamId,
@@ -528,6 +856,7 @@ export function applyDelta(state: LiveState, delta: Delta): LiveState | undefine
     externalTrains,
     disruptions,
     objectStates,
+    operationalRegions,
   });
 }
 
@@ -617,50 +946,117 @@ function interpolatedMapPosition(
   });
 }
 
-function interpolatedMapEstimate(
-  previous: PublicTrain,
-  current: PublicTrain,
-  previousAt: number,
-  currentAt: number,
-  renderAt: number,
-): PublicMapEstimate | undefined {
-  const from = previous.mapEstimate;
-  const to = current.mapEstimate;
-  if (
-    previous.status !== "running"
-    || current.status !== "running"
-    || from === undefined
-    || to === undefined
-    || from.method === "anchor-hold"
-    || to.method === "anchor-hold"
-    || from.infrastructureReleaseId !== to.infrastructureReleaseId
-    || from.resourceId !== to.resourceId
-    || from.method !== to.method
-    || from.displayPathId !== to.displayPathId
-    || currentAt <= previousAt
-  ) return to;
-  if (renderAt <= previousAt) return from;
-  if (renderAt >= currentAt) return to;
-  const elapsed = renderAt - previousAt;
-  const duration = currentAt - previousAt;
+function operationalPositionAt(
+  state: PublicOperationalTrainState,
+  renderAtMs: number,
+): { readonly routeMm: number; readonly speedMmPerSecond: number } {
+  const segment = state.motionSegment;
+  if (segment === undefined || renderAtMs <= segment.startedAtMs) {
+    return { routeMm: state.headRouteMm, speedMmPerSecond: 0 };
+  }
+  const atMs = Math.min(renderAtMs, segment.validUntilMs);
+  const elapsedMs = atMs - segment.startedAtMs;
+  const elapsed = BigInt(elapsedMs);
+  const velocityDistance = divideRoundHalfAway(
+    BigInt(segment.startSpeedMmPerSecond) * elapsed,
+    1_000n,
+  );
+  const accelerationDistance = divideRoundHalfAway(
+    BigInt(segment.accelerationMmPerSecondSquared) * elapsed * elapsed,
+    2_000_000n,
+  );
+  const distance = safeBigIntNumber(
+    velocityDistance + accelerationDistance,
+    "operativer Bewegungsweg",
+  );
+  const routeMm = Math.min(
+    segment.authorityEndRouteMm,
+    segment.segmentEndRouteMm,
+    Math.max(segment.startRouteMm, segment.startRouteMm + distance),
+  );
+  const speedMmPerSecond = routeMm >= Math.min(segment.authorityEndRouteMm, segment.segmentEndRouteMm)
+    ? 0
+    : Math.max(0, safeBigIntNumber(
+      BigInt(segment.startSpeedMmPerSecond) + divideRoundHalfAway(
+        BigInt(segment.accelerationMmPerSecondSquared) * elapsed,
+        1_000n,
+      ),
+      "operative Geschwindigkeit",
+    ));
+  return { routeMm, speedMmPerSecond };
+}
+
+/** Identische Ganzzahlrundung wie der Rust-Kern: exakte Halbe von null weg. */
+function divideRoundHalfAway(numerator: bigint, denominator: bigint): bigint {
+  if (denominator <= 0n) throw new RangeError("Rundungsnenner muss positiv sein.");
+  return numerator >= 0n
+    ? (numerator + denominator / 2n) / denominator
+    : (numerator - denominator / 2n) / denominator;
+}
+
+function safeBigIntNumber(value: bigint, name: string): number {
+  const result = Number(value);
+  if (!Number.isSafeInteger(result)) throw new RangeError(`${name} liegt ausserhalb des sicheren Ganzzahlbereichs.`);
+  return result;
+}
+
+function operationalMapPosition(
+  train: PublicTrain,
+  routeMm: number,
+): PublicMapPosition | undefined {
+  const segment = train.operational?.motionSegment;
+  const infrastructureReleaseId = train.mapPosition?.infrastructureReleaseId;
+  if (segment === undefined || infrastructureReleaseId === undefined) return train.mapPosition;
+  const after = segment.geometry.find((point) => point.routeMm >= routeMm) ?? segment.geometry.at(-1);
+  if (after === undefined) return train.mapPosition;
+  const afterIndex = segment.geometry.indexOf(after);
+  const before = segment.geometry[Math.max(0, afterIndex - 1)] ?? after;
+  const duration = after.routeMm - before.routeMm;
+  const elapsed = Math.max(0, routeMm - before.routeMm);
   const bearingMilliDegrees = interpolateBearing(
-    from.bearingMilliDegrees,
-    to.bearingMilliDegrees,
+    before.bearingMilliDegrees,
+    after.bearingMilliDegrees,
     elapsed,
-    duration,
+    duration || 1,
   );
   return Object.freeze({
-    ...to,
-    displayOffsetMm: interpolateInteger(from.displayOffsetMm, to.displayOffsetMm, elapsed, duration),
-    latitudeE7: interpolateInteger(from.latitudeE7, to.latitudeE7, elapsed, duration),
-    longitudeE7: interpolateInteger(from.longitudeE7, to.longitudeE7, elapsed, duration),
-    uncertaintyMm: interpolateInteger(from.uncertaintyMm, to.uncertaintyMm, elapsed, duration),
+    infrastructureReleaseId,
+    resourceId: train.operational?.occupiedBlocks[0] ?? train.mapPosition?.resourceId ?? after.trackId,
+    trackId: duration === 0 ? after.trackId : before.trackId,
+    offsetMm: interpolateInteger(before.offsetMm, after.offsetMm, elapsed, duration || 1),
+    latitudeE7: interpolateInteger(before.latitudeE7, after.latitudeE7, elapsed, duration || 1),
+    longitudeE7: interpolateInteger(before.longitudeE7, after.longitudeE7, elapsed, duration || 1),
     ...(bearingMilliDegrees === undefined ? {} : { bearingMilliDegrees }),
   });
 }
 
 export function renderTrains(samples: RenderSamples, renderAt: number): readonly PublicTrain[] {
   return [...samples.current.trains.values()].map((current) => {
+    const operational = current.operational;
+    if (operational !== undefined) {
+      const frame = samples.current.operationalRegions.get(operational.regionId);
+      if (frame === undefined) return current;
+      const renderAtMs = Math.min(Math.round(renderAt * 1_000), frame.staleAfterMs);
+      const position = operationalPositionAt(operational, renderAtMs);
+      const travelledMm = position.routeMm - operational.headRouteMm;
+      const projectedOperational = Object.freeze({
+        ...operational,
+        simulationTimeMs: Math.min(
+          renderAtMs,
+          operational.motionSegment?.validUntilMs ?? operational.simulationTimeMs,
+        ),
+        headRouteMm: position.routeMm,
+        tailRouteMm: operational.tailRouteMm + travelledMm,
+      });
+      const mapPosition = operationalMapPosition(current, position.routeMm);
+      return Object.freeze({
+        ...current,
+        positionMm: position.routeMm,
+        speedMmPerSecond: position.speedMmPerSecond,
+        operational: projectedOperational,
+        ...(mapPosition === undefined ? {} : { mapPosition }),
+      });
+    }
     const previous = samples.previous.trains.get(current.id);
     if (previous === undefined) return current;
     const positionMm = interpolatedPosition(
@@ -677,23 +1073,14 @@ export function renderTrains(samples: RenderSamples, renderAt: number): readonly
       samples.current.at,
       renderAt,
     );
-    const mapEstimate = interpolatedMapEstimate(
-      previous,
-      current,
-      samples.previous.at,
-      samples.current.at,
-      renderAt,
-    );
     if (
       positionMm === current.positionMm
       && mapPosition === current.mapPosition
-      && mapEstimate === current.mapEstimate
     ) return current;
     return Object.freeze({
       ...current,
       positionMm,
       ...(mapPosition === undefined ? {} : { mapPosition }),
-      ...(mapEstimate === undefined ? {} : { mapEstimate }),
     });
   });
 }
@@ -787,9 +1174,11 @@ export interface LivemapConnectionDependencies {
   readonly retryDelayMs?: number;
   readonly maximumPendingDeltas?: number;
   readonly onError?: (error: unknown) => void;
+  /** Stoppt jede visuelle Fortschreibung bis ein atomarer Re-Snapshot eintrifft. */
+  readonly onFreeze?: () => void;
 }
 
-type RecoveryMode = "resume" | "resnapshot";
+type RecoveryMode = "resnapshot";
 
 function abortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
@@ -797,15 +1186,16 @@ function abortError(error: unknown): boolean {
 
 /**
  * Authentifizierter Snapshot-/SSE-Client. Jeder Stream beginnt beim zuletzt
- * angewendeten Generation-/Sequenz-Cursor. Lücken, Generationwechsel, Reset
- * und Pufferüberlauf führen zu genau einem laufenden Re-Snapshot; ein
- * fehlgeschlagener Resume-Versuch eskaliert immer zu einem Re-Snapshot.
+ * angewendeten Generation-/Sequenz-Cursor. Lücken, Verbindungsende,
+ * Generationwechsel, Reset und Pufferüberlauf frieren die Darstellung sofort
+ * ein und führen zu genau einem laufenden Re-Snapshot.
  */
 export class LivemapConnection {
   readonly #fetch: typeof fetch;
   readonly #retryDelayMs: number;
   readonly #maximumPendingDeltas: number;
   readonly #onError: (error: unknown) => void;
+  readonly #onFreeze: () => void;
   readonly #accessToken: string | ((forceRefresh?: boolean) => Promise<string>);
   readonly #baseUrl: string;
   #state: LiveState | undefined;
@@ -818,7 +1208,6 @@ export class LivemapConnection {
   #pendingReset = false;
   #pendingOverflow = false;
   #resnapshotAfterCurrent = false;
-  #resumeAfterSynchronization = false;
   #retryTimer: ReturnType<typeof setTimeout> | undefined;
   #scheduledRecovery: RecoveryMode | undefined;
   #closed = true;
@@ -838,6 +1227,7 @@ export class LivemapConnection {
     this.#retryDelayMs = dependencies.retryDelayMs ?? 1_000;
     this.#maximumPendingDeltas = dependencies.maximumPendingDeltas ?? 256;
     this.#onError = dependencies.onError ?? (() => undefined);
+    this.#onFreeze = dependencies.onFreeze ?? (() => undefined);
     if (!Number.isSafeInteger(this.#retryDelayMs) || this.#retryDelayMs < 0) {
       throw new RangeError("retryDelayMs muss eine nichtnegative Ganzzahl sein.");
     }
@@ -890,8 +1280,8 @@ export class LivemapConnection {
     this.#pendingReset = false;
     this.#pendingOverflow = false;
     this.#resnapshotAfterCurrent = false;
-    this.#resumeAfterSynchronization = false;
     this.#cancelRetry();
+    this.#onFreeze();
     this.#snapshotController?.abort();
     this.#snapshotController = undefined;
     this.#streamGeneration += 1;
@@ -938,11 +1328,8 @@ export class LivemapConnection {
     tracked = operation.finally(() => {
       if (this.#synchronization === tracked) this.#synchronization = undefined;
       const followup = this.#resnapshotAfterCurrent;
-      const resume = this.#resumeAfterSynchronization;
       this.#resnapshotAfterCurrent = false;
-      this.#resumeAfterSynchronization = false;
       if (!this.#closed && completed && followup) this.#requestResnapshot();
-      else if (!this.#closed && completed && resume) this.#scheduleRecovery("resume");
     });
     this.#synchronization = tracked;
     return tracked;
@@ -950,18 +1337,32 @@ export class LivemapConnection {
 
   async #reloadAndResume(): Promise<void> {
     let state = await this.#fetchSnapshot();
-    const drain = this.#drainPending(state);
+    let drain = this.#drainPending(state);
     state = drain.state;
     this.#state = state;
-    this.changed(state);
 
     if (drain.needsResnapshot) {
       this.#resnapshotAfterCurrent = true;
       return;
     }
 
-    this.#bufferIncoming = false;
     await this.#replaceStream(state.streamId, state.sequence);
+    if (this.#closed || this.#resnapshotAfterCurrent || this.#streamController === undefined) {
+      return;
+    }
+
+    // Deltas des alten oder gerade etablierten Streams bleiben bis zum
+    // erfolgreichen Handshake gepuffert. Erst ein lückenloser Snapshot-
+    // Stream-Verbund darf die eingefrorene Darstellung wieder freigeben.
+    drain = this.#drainPending(state);
+    state = drain.state;
+    this.#state = state;
+    if (drain.needsResnapshot) {
+      this.#resnapshotAfterCurrent = true;
+      return;
+    }
+    this.#bufferIncoming = false;
+    this.changed(state);
   }
 
   #drainPending(snapshot: LiveState): { readonly state: LiveState; readonly needsResnapshot: boolean } {
@@ -990,6 +1391,7 @@ export class LivemapConnection {
 
   #requestResnapshot(): void {
     if (this.#closed) return;
+    this.#onFreeze();
     this.#bufferIncoming = true;
     this.#cancelRetry();
     const operation = this.#resynchronize();
@@ -1090,11 +1492,12 @@ export class LivemapConnection {
     if (this.#closed || generation !== this.#streamGeneration) return;
     this.#streamController = undefined;
     if (error !== undefined && !abortError(error)) this.#onError(error);
+    this.#onFreeze();
     if (this.#bufferIncoming || this.#synchronization !== undefined) {
-      if (!this.#bufferIncoming) this.#resumeAfterSynchronization = true;
+      this.#resnapshotAfterCurrent = true;
       return;
     }
-    this.#scheduleRecovery("resume");
+    this.#scheduleRecovery("resnapshot");
   }
 
   #scheduleRecovery(mode: RecoveryMode): void {
@@ -1109,18 +1512,13 @@ export class LivemapConnection {
       const scheduled = this.#scheduledRecovery;
       this.#scheduledRecovery = undefined;
       if (this.#closed || scheduled === undefined) return;
-      if (scheduled === "resnapshot" || this.#state === undefined) {
-        this.#requestResnapshot();
-        return;
-      }
-      void this.#replaceStream(this.#state.streamId, this.#state.sequence).catch((error: unknown) => {
-        this.#handleRecoveryFailure(error, "resnapshot");
-      });
+      this.#requestResnapshot();
     }, this.#retryDelayMs);
   }
 
   #handleRecoveryFailure(error: unknown, next: RecoveryMode): void {
     if (this.#closed || abortError(error)) return;
+    this.#onFreeze();
     this.#onError(error);
     this.#scheduleRecovery(next);
   }

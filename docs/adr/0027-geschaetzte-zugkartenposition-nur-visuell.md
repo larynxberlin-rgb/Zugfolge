@@ -1,10 +1,15 @@
 # ADR-0027: Geschätzte Zugkartenpositionen bleiben rein visuell und von der Betriebswahrheit getrennt
 
-- **Status:** Angenommen — bindend (entspricht E27)
+Dieses ADR entspricht E27 und ist als historischer, abgelöster Vertrag erhalten.
+
+- **Status:** Abgelöst durch ADR-0032; historischer Entscheidungsstand
 - **Bezug:** [../entscheidungen.md](../entscheidungen.md) · [../zugkartenprojektion.md](../zugkartenprojektion.md) · [../architektur.md](../architektur.md) · [../design.md](../design.md)
 - **Betrifft Milestones:** M4.8, M9.3, M14.2
-- **Verwandte ADRs:** [ADR-0009](0009-vollstaendige-transparenz-livemap.md), [ADR-0017](0017-design-domaenensprache-achromatisch-dunkel.md), [ADR-0019](0019-realismus-dient-dem-spiel.md), [ADR-0025](0025-gebietsueberschreitende-fahrtketten.md), [ADR-0026](0026-karte-als-spielzentrum.md)
+- **Verwandte ADRs:** [ADR-0009](0009-vollstaendige-transparenz-livemap.md), [ADR-0017](0017-design-domaenensprache-achromatisch-dunkel.md), [ADR-0019](0019-realismus-dient-dem-spiel.md), [ADR-0025](0025-gebietsueberschreitende-fahrtketten.md), [ADR-0026](0026-karte-als-spielzentrum.md), [ADR-0032](0032-eine-autoritative-betriebswirklichkeit.md)
 - **Ersetzt:** ausschließlich den Exact-only-Satz zur sichtbaren Zugposition in ADR-0026; alle übrigen Teile von E26 und ADR-0026 bleiben bindend
+
+> Seit E31 gilt wieder Exact-only: Korridor- und Anker-Estimates sind kein
+> v2-Laufzeitvertrag. Dieses ADR bleibt nur zur Nachvollziehbarkeit erhalten.
 
 ## Kontext
 
@@ -67,7 +72,7 @@ keine Kartenposition.
 Eine geschätzte Position ist für Fahrdienstleitung, Fahrstraßen,
 Konfliktressourcen, Sperrzeiten, Laufwegsuche, Trassenbestellung,
 Bestellbarkeit und Infrastrukturqualität unsichtbar. Sie darf weder eine
-Qualitätsklasse verändern noch Klasse C aufwerten oder fehlende
+Qualitätsklasse verändern noch einen unzureichenden Infrastrukturbefund aufwerten oder fehlende
 Gleiszuordnung kaschieren. Diese Verbraucher erhalten weiterhin ausschließlich
 den autoritativen Simulationszustand und nachgewiesene Exact-Daten.
 

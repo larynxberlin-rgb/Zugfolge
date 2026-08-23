@@ -197,6 +197,13 @@
       "when": 1786810800000,
       "tag": "0028_public_train_number_capacity",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1787590800000,
+      "tag": "0029_operational_initialization_binding",
+      "breakpoints": true
     }
   ]
 }

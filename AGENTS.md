@@ -15,14 +15,16 @@ lesen, nicht raten.
 
 | Datei | Inhalt | Lesen wenn |
 |-------|--------|------------|
-| `docs/entscheidungen.md` | E1–E30 mit voller Begründung | eine Entscheidung infrage steht oder geändert werden soll |
-| `docs/adr/` | E1–E30 als Architecture Decision Records: Kontext, Konsequenzen, Querverweise | eine Grundsatzentscheidung ausführlich nachschlagen oder eine neue festhalten |
+| `docs/entscheidungen.md` | E1–E31 mit voller Begründung | eine Entscheidung infrage steht oder geändert werden soll |
+| `docs/adr/` | E1–E31 als Architecture Decision Records: Kontext, Konsequenzen, Querverweise | eine Grundsatzentscheidung ausführlich nachschlagen oder eine neue festhalten |
 | `docs/monorepo.md` | Verzeichnisaufbau, Domänengrenzen, Werkzeugkette, Durchsetzung der Invarianten | Code beitragen, neues Paket oder Crate anlegen, CI verstehen |
 | `docs/glossar.md` | Domänenglossar: deutscher Fachbegriff → Bezeichner im Code → Bedeutung → Quelle | jede Benennung im Code, jeder neue Fachbegriff |
 | `docs/produkt.md` | Produktdefinition, Oberflächen, Onboarding, Netzabgrenzung, Spielertypen, Anti-Monokultur | Produktfragen, UI, Zielgruppe, Was-gehört-dazu |
 | `docs/infrastruktur.md` | Konfliktressourcen, Trassenvergabe, Fahrplanperiode, Kapazitätsschutz, Simulation, Livemap | Solver, Sperrzeiten, Planner, Livemap |
 | `docs/betrieb.md` | Betriebsprogramm, Fahrzeuge, Personal, Versorgung, Zusatzfahrten, Störungen, Baustellenfahrplan | Disposition, Flotte, Umläufe, Wartung, Baustellen |
 | `docs/stoerungen.md` | M8-Fachvertrag: Policies, Ursachenkennungen, Abfahrtsrechte, virtuelle Fahrdienstleiter, Ersatzplanung | Störungen, Baustellen, Ersatzverkehr, Verspätungsursachen |
+| `docs/betriebsengine.md` | Exakte Betriebswirklichkeit: Bewegung, Belegung, Stellwerk, FDL, Lokführer, Rangieren, Projektionen und Cutover | Simulationskern, LiveMap, RZÜ, operative InfraRelease-Artefakte |
+| `docs/betriebsengine-lastnachweis.md` | Reproduzierbarer E31-Kernbenchmark, Messergebnis und offene Systemlast-Gates | Lasttest oder Cutover-Abnahme der Betriebsengine |
 | `docs/wirtschaft.md` | Spielkreislauf, Geschäftsfelder, Nachfrage, Ausschreibung, Eigenbetrieb, Insolvenz, Kooperation | Verträge, Märkte, Geld, Ausschreibungen |
 | `docs/daten.md` | Datenlage OSM/ORM, Quellen, Rechte, Qualitätsklassen | Import-Pipeline, InfraRelease, Lizenzfragen zu Daten |
 | `docs/architektur.md` | Systemarchitektur, Lastgrößen, irreversible Entscheidungen, Determinismus, Sicherheit | Technischer Entwurf, Skalierung, Persistenz |
@@ -71,7 +73,7 @@ Begründungen: `docs/entscheidungen.md`. Änderungen dort eintragen und begründ
 | E9 | Vollständige Transparenz auf der Livemap |
 | E10 | Trassenfinder ist Kalibrierwerkzeug der Entwicklung, keine Laufzeitabhängigkeit |
 | E11 | Kein einzelner Optimierungswert |
-| E12 | Rangieren ist ausschließlich automatisiert |
+| E12 | Rangieren ist ausschließlich automatisiert und wird als vollständige physische Bewegung simuliert |
 | E13 | Der Automatikmodus bleibt in öffentlichen Welten kostenlos |
 | E14 | Netzabgrenzung: ausschließlich EBO, ohne Übergang zu BOStrab |
 | E15 | Baustellen sind ein eigenes Planungsverfahren, kein bloßer Schaden |
@@ -86,10 +88,11 @@ Begründungen: `docs/entscheidungen.md`. Änderungen dort eintragen und begründ
 | E24 | Der Alpha-Schnitt wird gezielt um M12.1, M12.2 und M14.1 erweitert |
 | E25 | Gebietsüberschreitende Fahrten bleiben eine Fahrtkette mit deterministischem Außenlauf |
 | E26 | Die selbst gehostete Weltkarte ist das Spielzentrum; der Deutschland-Korpus bleibt vollständig |
-| E27 | Exact bleibt die betriebliche Zugposition; gekennzeichnete Estimates sind nur visuelle, releasegebundene Kartenhilfen |
+| E27 | Nur die exakte releasegebundene Zugposition darf öffentlich dargestellt werden; Unsicherheit friert die letzte garantierte Lage ein |
 | E28 | Tutorialstart und öffentlicher Markteintritt sind getrennte Weltverträge |
 | E29 | Der Schaffnermodus vertieft den serverautoritativen Betrieb |
 | E30 | Die Spielerkarte zeigt die lebendige gemeinsame Welt, nicht den Infrastruktur-Editor |
+| E31 | Bewegung, Belegung, Stellwerk, FDL, Rangieren, LiveMap und RZÜ bilden eine einzige autoritative Betriebswirklichkeit |
 
 ---
 
@@ -133,7 +136,7 @@ Lastgrößen: `docs/architektur.md`.
 
 ## Stand
 
-Konzeption abgeschlossen, E1–E30 entschieden, Milestones auf Reihenfolge und
+Konzeption abgeschlossen, E1–E31 entschieden, Milestones auf Reihenfolge und
 Vollständigkeit geprüft. **M0 bis M8 sind fachlich abgenommen und
 reproduzierbar nachgewiesen.** M1.13 akzeptiert die Trassenfinder-Kalibrierung
 innerhalb der definierten Toleranz und den getrennten GTFS-Fahrplan-Holdout als

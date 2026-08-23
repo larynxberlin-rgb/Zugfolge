@@ -10,9 +10,10 @@ ohne ungeprüfte Konfliktressourcen bestellbar zu machen.
 
 Die drei Mengen dürfen nicht vermischt werden:
 
-1. **sichtbar:** das gesamte deutschlandweite EBO-Netz im `InfraCorpus`;
-2. **betrieblich modelliert:** alle `orderable`-Abschnitte der
-   Qualitätsklasse A oder B;
+1. **sichtbar:** das gesamte freigegebene deutschlandweite EBO-Netz der
+   Qualitätsklasse A oder B im `InfraCorpus`;
+2. **betrieblich modelliert:** alle vollständig konservativ geschlossenen
+   `orderable`-Abschnitte dieses Korpus;
 3. **spielbar:** die Schnittmenge aus modelliertem Netz und der vom jeweiligen
    `WorldRelease` gepinnten Spielbarkeitsmaske.
 
@@ -28,9 +29,10 @@ Elektrifizierung, Gleisanzahl, Signale, Blöcke und Konfliktressourcen. Klasse B
 besitzt ein geschlossenes, konservatives Betriebsmodell, verwendet aber für
 mindestens eine Dimension einen beobachteten, abgeleiteten oder ausdrücklich
 angenommenen Wert. Spielbar wird A oder B erst zusammen mit `orderable=true`
-und der Weltmaske. Klasse C bleibt sichtbar und ist nie bestellbar;
-`rail_context` bleibt unabhängig von seiner Darstellungsqualität immer
-Kontext und nicht bestellbar.
+und der Weltmaske. Eine dritte Releaseklasse gibt es nicht. Bleibt eine
+Pflichtdimension ungelöst, bleibt das Objekt ausschließlich als interner
+Buildbefund erhalten und blockiert den gesamten Kandidaten. `rail_context`
+bleibt unabhängig von seiner A-/B-Qualität immer Kontext und nicht bestellbar.
 
 Fehlende Werte werden nur durch benannte, versionierte Sicherheitsregeln
 geschlossen. Der erste Regelsatz begrenzt unbekannte Hauptgleise auf 20 km/h,
@@ -42,12 +44,11 @@ angezeigt werden.
 
 Der Qualitätsbericht wird je Release erzeugt und weist mindestens aus:
 
-- Länge und Abschnittszahl je Klasse A/B/C;
+- Länge und Abschnittszahl je Klasse A/B;
 - Länge je Qualitätsdimension und Evidenzzustand;
 - Länge und Abschnittszahl je Abwertungsursache;
-- Klasse-C-Länge sowie den Beweis, dass jedes C-Objekt
-  `orderable=false` trägt; die Releasekonfiguration hält zusätzlich
-  `classCPlayable=false` fest;
+- `unresolvedRequired=0` für sämtliche Objekte und Pflichtdimensionen des
+  verbindlichen Korpusscopes; jeder positive Wert blockiert den Kandidaten;
 - Hash von Korpus und Qualitätsbericht. Der Hash des internen Evidenzledgers
   bleibt ausschließlich im nicht auszuliefernden Buildnachweis.
 
@@ -80,7 +81,7 @@ weder direkt noch indirekt in das öffentliche Manifest.
 APN-Skizzen sind ausschließlich interne Validierungsevidenz. PDFs, OCR-Text,
 Bildkoordinaten, Abrufadresse und der Quellenname gelangen nicht in
 `InfraCorpus`, `InfraRelease`, PMTiles oder Client-API. Ein ausgelieferter
-Abschnitt trägt nur Qualitätsklasse und Modellzustand, aber weder Beleg-ID noch
+Abschnitt trägt nur Qualitätsklasse A oder B und Modellzustand, aber weder Beleg-ID noch
 Beleg-Hash. Andere Quellen behalten ihre
 jeweils vorgeschriebene Attribution; die APN-Ausnahme ist keine allgemeine
 Unterdrückung von Quellenangaben. Ein APN-Beleg kann Unsicherheit reduzieren,
@@ -135,26 +136,31 @@ Bytezahlen und SHA-256-Werten. Dieses Inventar ist die einzige Eingabe für den
 öffentlichen Artefaktabschnitt des `InfraRelease`; manuell übertragene
 Prüfsummen sind nicht zulässig.
 
-## Realer Jahreskandidat 2026.1
+## Historischer Jahreskandidat 2026.1
 
 Der vollständige Deutschlandlauf wurde mit den gepinnten Großquellen
-ausgeführt. Sein öffentlicher Qualitätsbericht umfasst zehn semantische Layer
-und 1.600.662 sichtbare Objekte:
+ausgeführt. Sein damaliger Qualitätsbericht umfasst zehn semantische Layer und
+1.600.662 Objekte:
 
-| Klasse | Objekte | Bedeutung im Kandidaten |
+| Befund | Objekte | Bedeutung im historischen Kandidaten |
 |---|---:|---|
 | A | 0 | keine pauschale oder nur automatisch begründete Hochstufung |
-| B | 1.489.960 | beobachtet, abgeleitet oder durch eine versionierte konservative Regel geschlossen |
-| C | 110.702 | sichtbar, aber nicht bestellbar |
+| vollständig konservativ geschlossen | 1.489.960 | beobachtet, abgeleitet oder durch eine versionierte konservative Regel geschlossen |
+| ungelöste Pflichtdimension | 110.702 | nach heutigem Vertrag ein Releaseblocker |
 
 Der Gleislayer enthält 609.242 Abschnitte und 83.491.261.974 mm. Davon sind
 609.237 Abschnitte mit 83.491.089.540 mm B; fünf Abschnitte mit insgesamt
-172.434 mm bleiben wegen ungültiger Topologie C. Der Bericht weist Annahmen und
+172.434 mm hatten eine ungültige Topologie. Der Bericht weist Annahmen und
 Widersprüche dimensionsweise aus: Beispielsweise werden fehlende
 Geschwindigkeiten auf 20 km/h am Hauptgleis beziehungsweise 10 km/h am
 Nebengleis begrenzt, fehlende Elektrifizierung als nicht elektrifiziert
 behandelt, Neigungslücken mit dem konservativen Korridor geschlossen und
 unbelegte Signalgrenzen nicht erfunden.
+
+Dieser historische Kandidat erfüllt den heutigen A-/B-only-Vertrag nicht und
+bleibt `activationEligible=false`. Die folgenden Hashes dokumentieren nur den
+damaligen Build; ein freigabefähiger Neubau muss alle Pflichtdimensionen
+schließen und erzeugt neue Artefakte mit neuen Hashes.
 
 Die interne Planvalidierung erfasste alle 7.667 bekannten
 Betriebsstellenkennungen: 3.296 Pläne waren verfügbar, 4.371 nicht. Für alle

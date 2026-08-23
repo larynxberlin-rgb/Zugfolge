@@ -10,19 +10,20 @@ import { MIGRATIONS_FOLDER } from "./migrations.js";
 import * as schema from "./schema/index.js";
 import { regionalSimulationStates, worlds } from "./schema/index.js";
 
-function row(worldId: string, stateHash: string) {
+function row(worldId: string, stateHash: string, initializationHash = "f".repeat(64)) {
   return {
     worldId,
     regionId: "leipzig",
-    stateSchema: "zugfolge-regional-simulation-state/v1",
+    stateSchema: "zugfolge-operational-simulation-state/v2",
     state: {
-      schemaVersion: "zugfolge-regional-simulation-state/v1",
+      schemaVersion: "zugfolge-operational-simulation-state/v2",
       worldId,
       regionId: "leipzig",
       revision: 0,
       publisherSequence: 0,
       commands: [],
     },
+    initializationHash,
     stateHash,
     revision: 0,
     publisherSequence: 0,
@@ -53,6 +54,9 @@ describe("regionale Simulationszustaende", () => {
       await expect(
         db.insert(regionalSimulationStates).values(row(worldA, "c".repeat(64))),
       ).rejects.toThrow();
+      await expect(
+        db.insert(regionalSimulationStates).values(row(worldA, "d".repeat(64), "ungueltig")),
+      ).rejects.toThrow();
 
       const selected = await db
         .select()
@@ -67,6 +71,7 @@ describe("regionale Simulationszustaende", () => {
         expect.objectContaining({
           worldId: worldA,
           regionId: "leipzig",
+          initializationHash: "f".repeat(64),
           stateHash: "a".repeat(64),
         }),
       ]);

@@ -13,8 +13,8 @@ umgeschrieben — ihre Historie ist der Wert.
 
 ## Verhältnis zu den anderen Dokumenten
 
-- `AGENTS.md` — die bindende Kurztabelle E1–E30. Wird jede Sitzung geladen.
-- `../entscheidungen.md` — E1–E30 mit einzeiliger Begründung, die maßgebliche
+- `AGENTS.md` — die bindende Kurztabelle E1–E31. Wird jede Sitzung geladen.
+- `../entscheidungen.md` — E1–E31 mit einzeiliger Begründung, die maßgebliche
   Quelle für Wortlaut und Nummerierung.
 - **`docs/adr/`** (dieser Ordner) — dieselben Entscheidungen ausführlich: mit
   Kontext, Konsequenzen und Querverweisen. Ein ADR je Entscheidung.
@@ -42,7 +42,7 @@ Statuswerte: `Angenommen` (bindend), `Vorgeschlagen`, `Abgelöst durch ADR-XXXX`
 ## Index
 
 Die folgenden ADRs wurden aus den zuvor in der Konzeptionsphase getroffenen
-Grundsatzentscheidungen schriftlich festgehalten; E21 bis E30 kamen später als
+Grundsatzentscheidungen schriftlich festgehalten; E21 bis E31 kamen später als
 eigene Entscheidungen hinzu. Alle einer E-Nummer zugeordneten ADRs sind
 **angenommen und bindend**; der zusätzliche ADR-0030 ist ausdrücklich erst
 vorgeschlagen.
@@ -80,15 +80,23 @@ vorgeschlagen.
 | [0029](0029-schaffnermodus-als-serverautoritative-betriebsvertiefung.md) | E29 | Der Schaffnermodus vertieft den serverautoritativen Betrieb |
 | [0030](0030-odoo-weltkatalog-und-kommerzielle-teilnahme.md) | – | Odoo-Weltkatalog und kommerzielle Teilnahme an Game-autoritativen Welten (vorgeschlagen) |
 | [0031](0031-spielerkarte-als-lebendige-welt.md) | E30 | Die Spielerkarte zeigt die lebendige gemeinsame Welt, nicht den Infrastruktur-Editor |
+| [0032](0032-eine-autoritative-betriebswirklichkeit.md) | E31 | LiveMap, RZÜ und Betrieb bilden eine autoritative Wirklichkeit |
 
 > **Teilablösung:** ADR-0027 ersetzt ausschließlich den Exact-only-Satz zur
 > sichtbaren Zugposition in ADR-0026. Der historische Wortlaut bleibt dort
 > erhalten; E26 und alle übrigen Teile von ADR-0026 bleiben bindend.
 
 > **Weitere Teilablösung:** ADR-0031 ersetzt für das normale Spielerprofil die
-> Vorgaben aus ADR-0026, Klasse C zu zeigen und jedes sichtbare Fachobjekt
-> anklickbar zu machen. Der vollständige, selbst gehostete Deutschland-Korpus
-> und alle übrigen E26-Verträge bleiben erhalten.
+> Vorgabe aus ADR-0026, jedes sichtbare Fachobjekt anklickbar zu machen, und
+> präzisiert E26 auf einen A-/B-only-Releasevertrag. Unvollständige
+> Pflichtdimensionen bleiben interne Builddiagnose und blockieren den gesamten
+> Kandidaten. Der vollständige, selbst gehostete Deutschland-Korpus und alle
+> übrigen E26-Verträge bleiben erhalten.
+
+> **Laufzeitablösung:** ADR-0032 ersetzt die pauschale Rangierabstraktion aus
+> ADR-0012 und den visuellen Estimate-Vertrag aus ADR-0027. Automatische
+> Spielerführung und Kartenrolle bleiben bestehen; Bewegung und öffentliche
+> Position sind ab v2 ausschließlich exakt.
 
 > **Nummerierung:** ADR-0030 dokumentiert eine vorgeschlagene Ausgestaltung
 > ohne eigene E-Nummer und behält seine historische Nummer. Deshalb entspricht

@@ -20,7 +20,7 @@ import * as schema from "@zugfolge/db/schema";
 import { OperationsRegistry } from "@zugfolge/dispatch";
 import { LivemapRegistry } from "@zugfolge/livemap-stream";
 import { loadPlanningRuntime } from "@zugfolge/planning-runtime-native";
-import { loadOperatingRuntime, loadRegionalSimulationRuntime } from "@zugfolge/runtime-native";
+import { loadOperatingRuntime, loadOperationalSimulationRuntime } from "@zugfolge/runtime-native";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
@@ -52,7 +52,7 @@ const nativeAvailable = process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"] !== undefine
     const operating = loadOperatingRuntime();
     const planning = loadPlanningRuntime();
     const livemap = new LivemapRegistry();
-    const regional = new RegionalSimulationWorker(db, loadRegionalSimulationRuntime(), livemap, new OperationsRegistry());
+    const regional = new RegionalSimulationWorker(db, loadOperationalSimulationRuntime(), livemap, new OperationsRegistry());
     let current = new Date("2026-08-13T10:00:00.000Z");
     const clock = () => { current = new Date(current.getTime() + 30_000); return current; };
     const service = new TutorialSessionService(

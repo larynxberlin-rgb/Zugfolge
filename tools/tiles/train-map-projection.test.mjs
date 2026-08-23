@@ -111,7 +111,7 @@ function operationalNetwork() {
 function deployment() {
   return {
     deployment: {
-      schema: "zugfolge-alpha-world-deployment/v1",
+      schema: "zugfolge-alpha-world-deployment/v2",
       worldId: WORLD_ID,
       infraReleaseHash: "a".repeat(64),
       fleet: {
@@ -193,7 +193,7 @@ test("kompiliert eine releasegebundene Position ohne Fliesskomma-Laufzeitvertrag
   assert.equal(firstReport.trains.provenTrainCount, 1);
   const deploymentValue = deployment().deployment;
   const expectedDeploymentHash = alphaHash(
-    "zugfolge-alpha-world-deployment/v1",
+    "zugfolge-alpha-world-deployment/v2",
     decodeEconomyValue(deploymentValue),
   );
   assert.equal(firstReport.binding.deploymentHash, expectedDeploymentHash);

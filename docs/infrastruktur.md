@@ -126,8 +126,10 @@ Korridore, Neulinge kommen nie hinein. Alle Gegenmittel sind real begründbar:
 - Verspätungen, Fahrzeugstörungen und Infrastrukturrestriktionen propagieren
   regelbasiert. Die *Entstehung* von Störungsursachen ist davon getrennt
   (→ `betrieb.md`).
-- Der Browser erhält einen Initialsnapshot und anschließend Sequenz-Deltas;
-  Positionen werden entlang der Gleisgeometrie interpoliert.
+- Der Browser erhält einen Initialsnapshot und anschließend lückenlose
+  Sequenz-Deltas; er wertet ausschließlich den serverautorisierten
+  analytischen Bewegungsabschnitt entlang der Releasegeometrie bis
+  `valid_until` aus und friert danach ein.
 - **Dispositionsschnittstelle:** Der Kern besitzt einen definierten
   Entscheidungspunkt je Ereignis. Zunächst greift ein konservatives
   Standardverhalten; später hängt dort die Regel-Engine des Betriebsprogramms.
@@ -148,10 +150,12 @@ serverseitig autorisierten Projektion. Statische Infrastruktur wird nicht in
 jede Sequenz kopiert. Der Stream trägt nur Züge sowie geänderte Sperrungs-,
 Baustellen- und Einschränkungszustände.
 
-`positionMm` allein ist keine Kartenkoordinate. Eine Fahrt erscheint erst auf
-dem Gleis, wenn der bestätigte Fahrweg sie auf `trackId`, Offset und eine aus
-der Releasegeometrie abgeleitete E7-Koordinate projiziert. Andernfalls bleibt
-sie in einer erklärten Liste sichtbar. Derselbe Grundsatz gilt für die
+`positionMm` allein ist keine Kartenkoordinate. Eine Fahrt darf nur mit
+vollständig bestätigtem Laufweg materialisiert werden und projiziert ihre
+exakte Zugspitze auf `trackId`, Offset und eine aus der Releasegeometrie
+abgeleitete E7-Koordinate. Kann diese Bindung im Betrieb nicht mehr bewiesen
+werden, hält die Fahrt am letzten sicheren Punkt und die Anzeige friert ein;
+sie wechselt nicht in eine Schätzung. Derselbe Grundsatz gilt für die
 virtuelle Fahrdienstleitung: Sie verwendet ausschließlich releasegebundene
 Konfliktressourcen und versionierte Regeln. Eine hundertprozentige
 Nachbildung jedes realen Stellwerks ist kein Freigabekriterium; eine solide,
@@ -458,8 +462,10 @@ Quellregion entfernt den Zug erst nach bestätigter Annahme. Vor einer
 Wiedereinfahrt prüft die Zielregion die ersten realen Konfliktressourcen. Sind
 sie belegt, bleibt der Zug sichtbar am Portal außerhalb und wartet, statt eine
 Belegung zu erzwingen. Nur vollständig qualifizierte Ketten mit benannten
-Portalen sind bestellbar; ein bloß erkannter Schnitt ist Klasse C und bleibt
-sichtbar, aber nicht bestellbar. Der vollständige Vertrag und seine
+Portalen sind bestellbar; ein bloß erkannter Schnitt ist nur interne
+Builddiagnose. Gehört er zu einer erforderlichen Fahrtkette des Korpusscopes,
+blockiert er den Releasekandidaten und wird weder ausgeliefert noch sichtbar.
+Der vollständige Vertrag und seine
 Konsequenzen stehen in [ADR-0025](adr/0025-gebietsueberschreitende-fahrtketten.md).
 
 ---
@@ -557,3 +563,21 @@ Der Rahmenvertragsabgleich selbst — welcher `PathRequest` einem
 Fahrplanperiode (Abschnitt 11) und zu den Game-Services, die Rahmenverträge
 als Vertragsobjekt führen (`wirtschaft.md`); der Kern liefert mit diesem
 Modul nur den Deckel und seine Durchsetzung.
+
+## 14. Operatives InfraRelease und laufende Sicherungslogik (E31)
+
+Planungsbelegung und laufende Belegung sind getrennte Sichten derselben
+Konfliktfachlichkeit. Für den Weltbetrieb friert der Releasecompiler gerichtete
+Gleiskanten, Block-/Freimeldegrenzen, Signalrichtungen, Weichenlagen,
+Fahrstraßenvorlagen, Durchrutschwege, Flankenschutz, Grenzzeichen,
+Rangiergrenzen, Profile, Bahnsteigintervalle, Regionsgrenzen und RZÜ-Layout in
+das operative `InfraRelease` ein. Laufzeitannahmen für fehlende Elemente sind
+unzulässig; deterministische Ergänzung geschieht ausschließlich offline und
+trägt interne Herkunft. Der freigegebene Release enthält ausschließlich A oder
+ein in jeder Pflichtdimension vollständig konservativ geschlossenes B; jeder
+offene Pflichtbefund blockiert den Kandidaten.
+
+Die Sicherungslogik leitet jede Fahrstraßenbedingung aus diesem Release und
+dem autoritativen `OperationalWorld` ab. Ressourcen lösen erst nach der
+jeweiligen Zugschlussgrenze auf. Der vollständige Vertrag steht in
+[`betriebsengine.md`](betriebsengine.md) 2 bis 5.

@@ -273,12 +273,13 @@ describe("M12 HTTP-Integration", () => {
       stateHash: "d".repeat(64), snapshotHash: "e".repeat(64), producedAt: EPOCH, ingestedAt: EPOCH,
     });
     await db.insert(regionalSimulationStates).values({
-      worldId: WORLD, regionId: "md", stateSchema: "zugfolge-regional-simulation-state/v1",
+      worldId: WORLD, regionId: "md", stateSchema: "zugfolge-operational-simulation-state/v2",
       state: { trains: [
         { id: "run-seller", operator: sellerOperatorId, trainNumber: "RE 12", category: "regional", status: "planned", nextOperatingPoint: "Halle Hbf" },
         { id: "run-buyer", operator: buyerOperatorId, trainNumber: "S 5", category: "regional", status: "running", nextOperatingPoint: "Leipzig Hbf" },
         { id: "run-third", operator: thirdOperator!.id, trainNumber: "IC 9", category: "long-distance", status: "planned", nextOperatingPoint: "Erfurt Hbf" },
       ] },
+      initializationHash: "e".repeat(64),
       stateHash: "f".repeat(64), revision: 0, publisherSequence: 0, createdAt: EPOCH, updatedAt: EPOCH,
     });
     await db.insert(domainEvents).values({
@@ -335,6 +336,30 @@ describe("M12 HTTP-Integration", () => {
     await expect(authority.verifyContract(offer("disruption-assistance", {
       disruptionId: "disruption-1", trainRunIds: ["run-third"], vehicleIds: ["vehicle-1"],
     }))).resolves.toMatchObject({ permitted: false, code: "train_run_ownership" });
+
+    await db.insert(domainEvents).values({
+      worldId: WORLD,
+      sequence: 10_001,
+      eventType: "disruption.cleared",
+      occurredAt: new Date(EPOCH.getTime() + 1_000),
+      payload: {
+        schemaVersion: "zugfolge-operational-disruption-event/v2",
+        disruptionId: "disruption-1",
+        operatorIds: [sellerOperatorId],
+        action: "clear_disruption",
+        releaseReference: "repair-order:42",
+      },
+    });
+    const afterClear = await app.inject({
+      method: "GET",
+      url: `/worlds/${WORLD}/operators/${sellerOperatorId}/cooperation-resources`,
+      headers: auth("seller"),
+    });
+    expect(afterClear.statusCode).toBe(200);
+    expect(afterClear.json().disruptions).toEqual([]);
+    await expect(authority.verifyContract(offer("disruption-assistance", {
+      disruptionId: "disruption-1", trainRunIds: ["run-seller"], vehicleIds: ["vehicle-1"],
+    }))).resolves.toMatchObject({ permitted: false, code: "disruption_missing" });
   });
 
   it("verwirft clientseitige Aktionszeiten und persistiert ausschließlich die injizierte Weltzeit", async () => {

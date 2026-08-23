@@ -1,6 +1,6 @@
 [package]
 name = "zugfolge-sim-runtime"
-description = "Versionierte, persistierbare Produktionsgrenze fuer den regionalen Rust-Single-Writer"
+description = "Versionierte, persistierbare Produktionsgrenze fuer die autoritative Operational-v2-Runtime"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,7 +13,6 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 zugfolge-sim.workspace = true
-zugfolge-disruption.workspace = true
 
 [lints]
 workspace = true

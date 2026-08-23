@@ -63,11 +63,10 @@ import {
   type PlanningProjectionV1,
 } from "@zugfolge/planning-projection";
 import {
-  REGIONAL_LIVEMAP_DELTA_SCHEMA,
-  REGIONAL_SIMULATION_RESULT_SCHEMA,
-  REGIONAL_SIMULATION_STATE_SCHEMA,
+  OPERATIONAL_SIMULATION_RESULT_SCHEMA,
+  OPERATIONAL_SIMULATION_STATE_SCHEMA,
   type OperatingRuntime,
-  type RegionalSimulationResult,
+  type OperationalSimulationResult,
 } from "@zugfolge/runtime-native";
 import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
@@ -758,8 +757,7 @@ describe("M8 Störungsrichtlinie und manueller Spielleitermodus", () => {
       affectedResources: [{ kind: "track", id: 4 }],
       affectedResource: "track:4",
       affectedTrainRunIds: [],
-      delaySeconds: 0,
-      effect: { kind: "closure" },
+      effect: { "resource-closed": { resourceId: "track:4" } },
     };
     const denied = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/disruptions/manual`, headers: { authorization: `Bearer ${playerToken}` }, payload: body });
     expect(denied.statusCode).toBe(403);
@@ -767,7 +765,7 @@ describe("M8 Störungsrichtlinie und manueller Spielleitermodus", () => {
       method: "POST",
       url: `/worlds/${WORLD_LHE}/disruptions/manual`,
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: { ...body, idempotencyKey: "manual-m8-effectless", effect: { kind: "radio-unavailable" } },
+      payload: { ...body, idempotencyKey: "manual-m8-effectless", effect: { "radio-unavailable": {} } },
     });
     expect(effectless.statusCode).toBe(400);
     const queued = await app.inject({ method: "POST", url: `/worlds/${WORLD_LHE}/disruptions/manual`, headers: { authorization: `Bearer ${adminToken}` }, payload: body });
@@ -780,30 +778,46 @@ describe("M8 Störungsrichtlinie und manueller Spielleitermodus", () => {
       readonly worldId: string;
       readonly regionId: string;
       readonly commandId: string;
-    }): Promise<RegionalSimulationResult> => ({
-      schemaVersion: REGIONAL_SIMULATION_RESULT_SCHEMA,
+    }): Promise<OperationalSimulationResult> => ({
+      schemaVersion: OPERATIONAL_SIMULATION_RESULT_SCHEMA,
       state: {
-        schemaVersion: REGIONAL_SIMULATION_STATE_SCHEMA,
-        worldId: work.worldId,
-        regionId: work.regionId,
-        initialNowS: 0,
-        nowS: boundary,
+        schemaVersion: OPERATIONAL_SIMULATION_STATE_SCHEMA,
+        world: {
+          worldId: work.worldId,
+          regionId: work.regionId,
+          infraReleaseId: "infra:test",
+          nowMs: boundary * 1_000,
+          commitSequence: 1,
+        },
         revision: 1,
         publisherSequence: 1,
-        commands: [{}],
+        stateHash: "d".repeat(64),
       },
       stateHash: "d".repeat(64),
       events: [],
-      delta: {
-        schemaVersion: REGIONAL_LIVEMAP_DELTA_SCHEMA,
+      liveMap: {
+        kind: "live-map",
         worldId: work.worldId,
         regionId: work.regionId,
-        producerSequence: 1,
-        atS: boundary,
-        changed: [],
-        removed: [],
-        changedDisruptions: [],
-        removedDisruptionIds: [],
+        infraReleaseId: "infra:test",
+        commitSequence: 1,
+        atMs: boundary * 1_000,
+        staleAfterMs: boundary * 1_000 + 75_000,
+        trains: [],
+        routeLocks: [],
+        signals: {},
+      },
+      rzue: {
+        kind: "rzue",
+        worldId: work.worldId,
+        regionId: work.regionId,
+        infraReleaseId: "infra:test",
+        commitSequence: 1,
+        atMs: boundary * 1_000,
+        staleAfterMs: boundary * 1_000 + 75_000,
+        trains: [],
+        routeLocks: [],
+        signals: {},
       },
       appliedCommandId: work.commandId,
       idempotentReplay: false,
@@ -830,12 +844,9 @@ describe("M8 Störungsrichtlinie und manueller Spielleitermodus", () => {
           worldId: WORLD_LHE,
           regionId: "leipzig",
           command: expect.objectContaining({
-            type: "register-disruption",
-            disruption: expect.objectContaining({
-              kind: "planned",
-              effect: "closure",
-              fineCauseId: "signalling.interlocking",
-            }),
+            type: "activate-disruption",
+            disruptionId: expect.any(String),
+            effect: { "resource-closed": { resourceId: "track:4" } },
           }),
         }),
         expect.any(Date),
@@ -1615,7 +1626,7 @@ describe("Livemap (M4.6)", () => {
     expect(feed.subscriberCount).toBe(0);
   });
 
-  it("liefert Replay und laufenden Fanout lückenlos und bereinigt bei Clientabbruch", async () => {
+  it("liefert Replay lückenlos und beendet bestehende Clients bei Fanout-Unverfügbarkeit mit Reset", async () => {
     const token = await grantWorldAccess(WORLD_LHE, "kc-livemap-resume");
     livemap.initializeWorld(WORLD_LHE, { at: 1, trains: [] });
     const feed = livemap.forWorld(WORLD_LHE);
@@ -1659,6 +1670,9 @@ describe("Livemap (M4.6)", () => {
     expect(feed.subscriberCount).toBe(1);
     feed.publish({ at: 3, changed: [], removed: [] });
     await readUntil('"sequence":3');
+    livemap.markUnavailable(WORLD_LHE);
+    await readUntil("event: reset");
+    expect(livemap.isInitialized(WORLD_LHE)).toBe(false);
 
     controller.abort();
     await reader.cancel().catch(() => undefined);

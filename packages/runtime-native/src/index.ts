@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { isAbsolute } from "node:path";
 
-export * from "./regional-simulation.js";
+export * from "./operational-simulation.js";
 
 export const OPERATING_INITIALIZE_SCHEMA = "zugfolge-operating-world-initialize/v1" as const;
 export const OPERATING_STATE_SCHEMA = "zugfolge-operating-world-state/v1" as const;

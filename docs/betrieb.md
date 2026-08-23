@@ -500,3 +500,20 @@ sicheres, teures Standardkonzept auf, meist Taktausdünnung plus Ersatzverkehr.
 
 Dasselbe Prinzip wie bei der Versorgung: Wer nichts tut, spielt weiter — nur
 teurer. Wer sich hineinkniet, gewinnt spürbar.
+
+## 7. Exakte Formationen und automatischer physischer Rangierbetrieb (E12, E31)
+
+Die frühere Rangierabstraktion als pauschale Zeit plus kurzzeitige
+Anlagenbelegung ist ab Betriebsengine v2 aufgehoben. Der Spieler beauftragt
+weiterhin nur das Ergebnis. Intern erzeugt der Rangierplaner daraus konkrete
+`shunting`-Bewegungen; Sicherungslogik/FDL erteilen eine eigene
+Rangierfahrberechtigung und der virtuelle Lokführer fährt sie auf denselben
+gerichteten Kanten und Millimeterintervallen wie Zugfahrten.
+
+Kuppeln, Trennen, Teilen, Vereinigen, Verstärken, Schwächen, Lokwechsel,
+Richtungs-/Führerstandswechsel, Umsetzen sowie Werkstatt- und
+Abstellzuführungen sind echte Bewegungsfolgen. Jede Änderung ist im Stillstand
+atomar, erhält die Fahrzeugidentitäten und veröffentlicht eine unveränderliche
+Formation mit neu berechneter Leistung, Bremsung, Spitze, Schluss und Belegung.
+Pflichtdaten, Rangierablauf und Kurzbahnsteigformel stehen kanonisch in
+[`betriebsengine.md`](betriebsengine.md) 2 und 6.

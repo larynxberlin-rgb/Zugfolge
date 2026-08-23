@@ -58,8 +58,10 @@ Präqualifikationsfolge oder versteckte Optimierung zugunsten eines Spielers.
 Nur Fahrtketten mit benannten Portalen, monotonen Zeiten, qualifiziertem
 innerem Abschnitt und vollständiger Außenbindung sind in einem Spielerlos
 bestellbar. Ein lediglich als `first-outside` erkannter Schnitt bleibt als
-Qualitätsklasse C sichtbar, aber nicht bestellbar. Frei geplante neue Linien
-dürfen am Portal enden; einen Außenlauf kann der Spieler nur aus einer
+interne Builddiagnose erhalten und gelangt weder in den freigegebenen
+InfraRelease noch in Spielerartefakte. Gehört er zu einer erforderlichen
+Fahrtkette des Korpusscopes, blockiert er den Kandidaten. Frei geplante neue
+Linien dürfen am Portal enden; einen Außenlauf kann der Spieler nur aus einer
 qualifizierten, im Fahrplanrelease enthaltenen Fortsetzung auswählen.
 
 ## Begründung
@@ -79,8 +81,8 @@ nutzt eine `ExternalZone`.
   Wartezustand klar unterscheiden.
 - **Kostet / schränkt ein:** Der jährliche Releasebau braucht Portalkatalog,
   Außenzeitprüfung, Umlauf-/Bindungsnachweis und einen eigenen
-  Qualifizierungsbericht. Nicht nachweisbare Durchbindungen bleiben
-  Eigenbetrieb oder Klasse C.
+  Qualifizierungsbericht. Nicht nachweisbare Durchbindungen bleiben interne
+  Buildbefunde; im verbindlichen Korpusscope verhindern sie die Freigabe.
 - **Invarianten:** `world_id`, Releasekennung und Fahrtkettenkennung begleiten
   jedes Leg und jedes Ereignis. Zeiten, Kosten und Fortschritt bleiben
   Ganzzahlen. Keine externe Quelle liegt im heißen Pfad. Die Zielregion

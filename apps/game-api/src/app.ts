@@ -177,14 +177,14 @@ import {
   FLEET_MAINTENANCE_COMMAND_SCHEMA,
   FLEET_PATH_RESERVATION_COMMAND_SCHEMA,
   FLEET_PERSONNEL_DUTY_COMMAND_SCHEMA,
-  REGIONAL_SIMULATION_INITIALIZE_SCHEMA,
+  OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
   type FleetAuthorityRelease,
   type FleetCommandResult,
   type FleetRuntime,
   type FleetWorldInitialized,
   type NativeFleetCommand,
-  type RegionalSimulationCommandPayload,
-  type RegionalSimulationInitialization,
+  type OperationalSimulationCommandPayload,
+  type OperationalSimulationInitialization,
 } from "@zugfolge/runtime-native";
 import { and, asc, desc, eq, lte, notInArray, sql } from "drizzle-orm";
 import Fastify, {
@@ -437,60 +437,183 @@ const regionalSimulationCommandParams = {
   },
 } as const;
 
-const regionalWaypointSchema = {
+const operationalTrainSchema = {
   type: "object",
   required: [
-    "operatingPoint",
-    "positionMm",
-    "arrivalS",
-    "minimumDwellSeconds",
-    "departureS",
+    "id",
+    "trainNumber",
+    "operatorId",
+    "movementKind",
+    "routeVersionId",
+    "formationVersionId",
+    "headRouteMm",
+    "scheduledDepartureMs",
+    "publicPassengerStop",
   ],
   additionalProperties: false,
   properties: {
-    operatingPoint: { type: "string", minLength: 1, maxLength: 200 },
-    positionMm: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
-    arrivalS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
-    minimumDwellSeconds: { type: "integer", minimum: 0, maximum: 4_294_967_295 },
-    departureS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
-  },
-} as const;
-
-const regionalTrainSchema = {
-  type: "object",
-  required: ["trainRunId", "operator", "trainNumber", "category", "route"],
-  additionalProperties: false,
-  properties: {
-    trainRunId: { type: "string", minLength: 1, maxLength: 200 },
-    operator: { type: "string", minLength: 1, maxLength: 200 },
+    id: { type: "string", minLength: 1, maxLength: 200 },
     trainNumber: { type: "string", minLength: 1, maxLength: 200 },
-    category: {
-      type: "string",
-      enum: ["regional", "long-distance", "freight", "empty-stock", "engineering"],
+    operatorId: { type: "string", minLength: 1, maxLength: 200 },
+    movementKind: { type: "string", enum: ["train", "shunting"] },
+    routeVersionId: { type: "string", minLength: 1, maxLength: 200 },
+    formationVersionId: { type: "string", minLength: 1, maxLength: 200 },
+    headRouteMm: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+    scheduledDepartureMs: {
+      anyOf: [
+        { type: "null" },
+        { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+      ],
     },
-    route: {
-      type: "array",
-      minItems: 1,
-      maxItems: 10_000,
-      items: regionalWaypointSchema,
-    },
+    publicPassengerStop: { type: "boolean" },
   },
 } as const;
 
 const regionalInitializationSchema = {
   type: "object",
-  required: ["materializationWindowHours", "nowS", "trains"],
+  required: ["nowMs", "infraRelease", "vehicleTypes", "vehicles", "formations", "trains"],
   additionalProperties: false,
   properties: {
-    materializationWindowHours: { type: "integer", minimum: 48, maximum: 72 },
-    nowS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+    nowMs: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+    infraRelease: { type: "object", minProperties: 1 },
+    vehicleTypes: {
+      type: "array",
+      maxItems: 100_000,
+      items: {
+        type: "object",
+        required: ["vehicleType", "powered"],
+        additionalProperties: false,
+        properties: {
+          vehicleType: { type: "object", minProperties: 1 },
+          powered: { type: "boolean" },
+        },
+      },
+    },
+    vehicles: {
+      type: "array",
+      maxItems: 200_000,
+      items: { type: "object", minProperties: 1 },
+    },
+    formations: {
+      type: "array",
+      maxItems: 200_000,
+      items: {
+        type: "object",
+        required: ["id", "predecessorId", "vehicleIds"],
+        additionalProperties: false,
+        properties: {
+          id: { type: "string", minLength: 1, maxLength: 200 },
+          predecessorId: {
+            anyOf: [
+              { type: "null" },
+              { type: "string", minLength: 1, maxLength: 200 },
+            ],
+          },
+          vehicleIds: {
+            type: "array",
+            minItems: 1,
+            maxItems: 1_000,
+            uniqueItems: true,
+            items: { type: "string", minLength: 1, maxLength: 200 },
+          },
+        },
+      },
+    },
     trains: {
       type: "array",
       maxItems: 200_000,
-      items: regionalTrainSchema,
+      items: operationalTrainSchema,
     },
   },
 } as const;
+
+const operationalDisruptionEffectSchema = {
+  oneOf: [
+    {
+      type: "object",
+      required: ["resource-closed"],
+      additionalProperties: false,
+      properties: {
+        "resource-closed": {
+          type: "object",
+          required: ["resourceId"],
+          additionalProperties: false,
+          properties: { resourceId: { type: "string", minLength: 1, maxLength: 500 } },
+        },
+      },
+    },
+    {
+      type: "object",
+      required: ["speed-restriction"],
+      additionalProperties: false,
+      properties: {
+        "speed-restriction": {
+          type: "object",
+          required: ["edgeId", "maximumSpeedMmps"],
+          additionalProperties: false,
+          properties: {
+            edgeId: { type: "string", minLength: 1, maxLength: 500 },
+            maximumSpeedMmps: { type: "integer", minimum: 1, maximum: 4_294_967_295 },
+          },
+        },
+      },
+    },
+    ...["signal-failed", "switch-failed", "track-detection-failed"].map((kind) => ({
+      type: "object" as const,
+      required: [kind],
+      additionalProperties: false,
+      properties: {
+        [kind]: {
+          type: "object" as const,
+          required: [kind === "signal-failed" ? "signalId" : kind === "switch-failed" ? "switchId" : "resourceId"],
+          additionalProperties: false,
+          properties: {
+            ...(kind === "signal-failed" ? { signalId: { type: "string" as const, minLength: 1, maxLength: 500 } } : {}),
+            ...(kind === "switch-failed" ? { switchId: { type: "string" as const, minLength: 1, maxLength: 500 } } : {}),
+            ...(kind === "track-detection-failed" ? { resourceId: { type: "string" as const, minLength: 1, maxLength: 500 } } : {}),
+          },
+        },
+      },
+    })),
+    {
+      type: "object",
+      required: ["vehicle-restricted"],
+      additionalProperties: false,
+      properties: {
+        "vehicle-restricted": {
+          type: "object",
+          required: ["vehicleId", "restriction"],
+          additionalProperties: false,
+          properties: {
+            vehicleId: { type: "string", minLength: 1, maxLength: 200 },
+            restriction: { anyOf: [{ type: "string" }, { type: "object", minProperties: 1 }] },
+          },
+        },
+      },
+    },
+  ],
+} as const;
+
+const operationalDispatchRequestSchema = {
+  type: "object",
+  required: [
+    "trainId", "interlockingRouteId", "committedRank", "timetableDeviationMs",
+    "passengerImpact", "contractualImpact", "networkImpact", "resourceConsequence",
+    "recoveryRank", "waitingSinceMs",
+  ],
+  additionalProperties: false,
+  properties: Object.fromEntries([
+    "committedRank", "timetableDeviationMs", "passengerImpact", "contractualImpact",
+    "networkImpact", "resourceConsequence", "recoveryRank", "waitingSinceMs",
+  ].map((field) => [field, { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER }])),
+} as const;
+
+(operationalDispatchRequestSchema.properties as Record<string, unknown>)["trainId"] = {
+  type: "string", minLength: 1, maxLength: 200,
+};
+(operationalDispatchRequestSchema.properties as Record<string, unknown>)["interlockingRouteId"] = {
+  type: "string", minLength: 1, maxLength: 200,
+};
 
 const regionalCommandSchema = {
   oneOf: [
@@ -500,77 +623,104 @@ const regionalCommandSchema = {
       additionalProperties: false,
       properties: {
         type: { const: "materialize" },
-        train: regionalTrainSchema,
+        train: operationalTrainSchema,
       },
     },
     {
       type: "object",
-      required: ["type", "atS"],
+      required: ["type", "atMs"],
       additionalProperties: false,
       properties: {
         type: { const: "advance-to" },
-        atS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+        atMs: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
       },
     },
     {
       type: "object",
-      required: ["type", "trainRunId", "seconds"],
+      required: ["type", "requests"],
       additionalProperties: false,
       properties: {
-        type: { const: "add-delay" },
-        trainRunId: { type: "string", minLength: 1, maxLength: 200 },
-        seconds: { type: "integer", minimum: 0, maximum: 4_294_967_295 },
+        type: { const: "dispatch" },
+        requests: { type: "array", maxItems: 100_000, items: operationalDispatchRequestSchema },
       },
     },
     {
       type: "object",
-      required: ["type", "beforeS"],
+      required: ["type", "trainId"],
       additionalProperties: false,
       properties: {
-        type: { const: "dematerialize-before" },
-        beforeS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+        type: { const: "plan-motion" },
+        trainId: { type: "string", minLength: 1, maxLength: 200 },
       },
     },
     {
       type: "object",
-      required: ["type", "trainRunId", "externalLeg"],
+      required: ["type", "trainId", "reason"],
       additionalProperties: false,
       properties: {
-        type: { const: "enter-external-zone" },
-        trainRunId: { type: "string", minLength: 1, maxLength: 200 },
-        externalLeg: {
+        type: { const: "safe-stop" },
+        trainId: { type: "string", minLength: 1, maxLength: 200 },
+        reason: { type: "string", minLength: 1, maxLength: 500 },
+      },
+    },
+    {
+      type: "object",
+      required: ["type", "trainId", "formationId", "vehicleIds"],
+      additionalProperties: false,
+      properties: {
+        type: { const: "change-formation" },
+        trainId: { type: "string", minLength: 1, maxLength: 200 },
+        formationId: { type: "string", minLength: 1, maxLength: 200 },
+        vehicleIds: { type: "array", minItems: 1, maxItems: 1_000, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 200 } },
+      },
+    },
+    {
+      type: "object",
+      required: ["type", "trainId", "routeVersionId"],
+      additionalProperties: false,
+      properties: {
+        type: { const: "reroute" },
+        trainId: { type: "string", minLength: 1, maxLength: 200 },
+        routeVersionId: { type: "string", minLength: 1, maxLength: 200 },
+      },
+    },
+    {
+      type: "object",
+      required: ["type", "need"],
+      additionalProperties: false,
+      properties: {
+        type: { const: "automatic-shunting" },
+        need: {
           type: "object",
-          required: [
-            "journeyChainId", "externalLegId", "fromPortalId", "toPortalId",
-            "scheduledStartS", "scheduledEndS", "reentryEarliestS", "reentryLatestS",
-            "fixedCostCents", "boundVehicleIds", "boundPersonnelDutyIds", "reentryRoute", "firstResources",
-          ],
+          required: ["id", "trainId", "purpose", "minimumAuthorityEndRouteMm"],
           additionalProperties: false,
           properties: {
-            journeyChainId: { type: "string", minLength: 1, maxLength: 200 },
-            externalLegId: { type: "string", minLength: 1, maxLength: 200 },
-            fromPortalId: { type: "string", minLength: 1, maxLength: 200 },
-            toPortalId: { anyOf: [{ type: "null" }, { type: "string", minLength: 1, maxLength: 200 }] },
-            scheduledStartS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
-            scheduledEndS: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
-            reentryEarliestS: { anyOf: [{ type: "null" }, { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER }] },
-            reentryLatestS: { anyOf: [{ type: "null" }, { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER }] },
-            fixedCostCents: { type: "string", pattern: "^(0|[1-9][0-9]*)$", maxLength: 19 },
-            boundVehicleIds: { type: "array", minItems: 1, maxItems: 100, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 200 } },
-            boundPersonnelDutyIds: { type: "array", maxItems: 100, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 200 } },
-            reentryRoute: { type: "array", maxItems: 10_000, items: regionalWaypointSchema },
-            firstResources: { type: "array", maxItems: 10_000, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 200 } },
+            id: { type: "string", minLength: 1, maxLength: 200 },
+            trainId: { type: "string", minLength: 1, maxLength: 200 },
+            purpose: { type: "string", enum: ["formation", "locomotive-run-around", "direction-change", "stabling", "supply", "workshop"] },
+            minimumAuthorityEndRouteMm: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
           },
         },
       },
     },
     {
       type: "object",
-      required: ["type", "trainRunId"],
+      required: ["type", "disruptionId", "effect"],
       additionalProperties: false,
       properties: {
-        type: { const: "reenter-from-external" },
-        trainRunId: { type: "string", minLength: 1, maxLength: 200 },
+        type: { const: "activate-disruption" },
+        disruptionId: { type: "string", minLength: 1, maxLength: 500 },
+        effect: operationalDisruptionEffectSchema,
+      },
+    },
+    {
+      type: "object",
+      required: ["type", "disruptionId", "releaseReference"],
+      additionalProperties: false,
+      properties: {
+        type: { const: "clear-disruption" },
+        disruptionId: { type: "string", minLength: 1, maxLength: 500 },
+        releaseReference: { type: "string", minLength: 1, maxLength: 500 },
       },
     },
   ],
@@ -899,6 +1049,7 @@ function supportedPublicEntryPolicy(policy: StartingCapitalPolicy | null): boole
  * weder einen fremden Zugang freigeben noch ein Slot-Limit umgehen.
  */
 const PUBLIC_WORLD_SLOT_LOCK_NAMESPACE = 1_515_674_707;
+const LIVEMAP_HEARTBEAT_INTERVAL_MS = 5_000;
 
 async function requestPublicWorldAccessAtomically(
   db: IdentityDatabase,
@@ -1942,7 +2093,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     app.post<{
       Params: { worldId: string; regionId: string };
       Body: Omit<
-        RegionalSimulationInitialization,
+        OperationalSimulationInitialization,
         "schemaVersion" | "worldId" | "regionId"
       >;
     }>(
@@ -1977,7 +2128,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           const initialized = await deps.regionalSimulation.initialize(
             {
               ...request.body,
-              schemaVersion: REGIONAL_SIMULATION_INITIALIZE_SCHEMA,
+              schemaVersion: OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
               worldId: request.params.worldId,
               regionId: request.params.regionId,
             },
@@ -1992,7 +2143,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
 
     app.post<{
       Params: { worldId: string; regionId: string; commandId: string };
-      Body: RegionalSimulationCommandPayload;
+      Body: OperationalSimulationCommandPayload;
     }>(
       "/internal/worlds/:worldId/regional-simulations/:regionId/commands/:commandId",
       {
@@ -2630,10 +2781,15 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         queue.push(payload);
         flush();
       };
+      const resetAndClose = () => {
+        if (closed) return;
+        cleanup();
+        reply.raw.end("event: reset\ndata: {}\n\n");
+      };
 
       const subscription = feed.subscribeAfter(cursor, (delta) => {
         enqueue(`id: ${livemapEventId(delta)}\ndata: ${JSON.stringify(delta)}\n\n`);
-      });
+      }, resetAndClose);
       unsubscribe = subscription.unsubscribe;
       request.raw.once("aborted", cleanup);
       request.raw.once("close", cleanup);
@@ -2641,16 +2797,14 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       reply.raw.once("error", cleanup);
 
       if (subscription.kind === "reset") {
-        enqueue("event: reset\ndata: {}\n\n");
-        cleanup();
-        reply.raw.end();
+        resetAndClose();
         return undefined;
       }
       subscription.replay.forEach((delta) => {
         enqueue(`id: ${livemapEventId(delta)}\ndata: ${JSON.stringify(delta)}\n\n`);
       });
       if (closed) return undefined;
-      heartbeat = setInterval(() => enqueue(": heartbeat\n\n"), 15_000);
+      heartbeat = setInterval(() => enqueue(": heartbeat\n\n"), LIVEMAP_HEARTBEAT_INTERVAL_MS);
       heartbeat.unref();
       enqueue("retry: 3000\n: verbunden\n\n");
       return undefined;
@@ -3218,10 +3372,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       readonly affectedResources: readonly Record<string, unknown>[];
       readonly affectedResource: string;
       readonly affectedTrainRunIds: readonly string[];
-      readonly delaySeconds: number;
-      readonly effect: {
-        readonly kind: "closure" | "single-track" | "speed-restriction" | "platform-change" | "traffic-hold" | "route-deviation" | "vehicle-restriction" | "platform-usable-length";
-      };
+      readonly effect: Readonly<Record<string, unknown>>;
     };
   }>(
     "/worlds/:worldId/disruptions/manual",
@@ -3231,7 +3382,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         params: worldIdParam,
         body: {
           type: "object",
-          required: ["idempotencyKey", "regionId", "kind", "publishedAtS", "startsAtS", "endsAtS", "positionMm", "causeCode", "fineCauseId", "cause", "affectedResources", "affectedResource", "affectedTrainRunIds", "delaySeconds", "effect"],
+          required: ["idempotencyKey", "regionId", "kind", "publishedAtS", "startsAtS", "endsAtS", "positionMm", "causeCode", "fineCauseId", "cause", "affectedResources", "affectedResource", "affectedTrainRunIds", "effect"],
           additionalProperties: false,
           properties: {
             idempotencyKey: { type: "string", minLength: 1, maxLength: 200 },
@@ -3247,15 +3398,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
             affectedResources: { type: "array", minItems: 1, maxItems: 1_000, items: { type: "object" } },
             affectedResource: { type: "string", minLength: 1, maxLength: 500 },
             affectedTrainRunIds: { type: "array", maxItems: 10_000, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 200 } },
-            delaySeconds: { type: "integer", minimum: 0, maximum: 604_800 },
-            effect: {
-              type: "object",
-              required: ["kind"],
-              additionalProperties: true,
-              properties: {
-                kind: { type: "string", enum: ["closure", "single-track", "speed-restriction", "platform-change", "traffic-hold", "route-deviation", "vehicle-restriction", "platform-usable-length"] },
-              },
-            },
+            effect: operationalDisruptionEffectSchema,
           },
         },
       },
@@ -3293,21 +3436,9 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
             regionId: request.body.regionId,
             commandId: `manual-disruption:${command.id}`,
             command: {
-              type: "register-disruption",
-              disruption: {
-                disruptionId: command.id,
-                kind: request.body.kind,
-                publishedAtS: request.body.publishedAtS,
-                startsAtS: request.body.startsAtS,
-                validUntilS: request.body.endsAtS,
-                positionMm: request.body.positionMm,
-                causeCode: request.body.causeCode,
-                fineCauseId: request.body.fineCauseId,
-                effect: request.body.effect.kind,
-                affectedResource: request.body.affectedResource,
-                affectedTrainRunIds: request.body.affectedTrainRunIds,
-                delaySeconds: request.body.delaySeconds,
-              },
+              type: "activate-disruption",
+              disruptionId: command.id,
+              effect: request.body.effect,
             },
           },
           command.submittedAt,

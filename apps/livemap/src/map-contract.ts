@@ -390,21 +390,6 @@ export const trainLayers: readonly LayerSpecification[] = Object.freeze([
     paint: { "circle-radius": ["case", ["boolean", ["feature-state", "selected"], false], 12, 0], "circle-color": "#9fb8e8", "circle-opacity": 0.34 },
   },
   {
-    id: "train-estimates",
-    type: "circle",
-    source: TRAIN_SOURCE_ID,
-    minzoom: 5,
-    filter: ["==", ["get", "positionKind"], "estimated"],
-    paint: {
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 6.5, 12, 10],
-      "circle-color": "#aeb6c3",
-      "circle-opacity": 0.08,
-      "circle-stroke-color": "#aeb6c3",
-      "circle-stroke-opacity": 0.92,
-      "circle-stroke-width": 2,
-    },
-  },
-  {
     id: "trains",
     type: "circle",
     source: TRAIN_SOURCE_ID,
@@ -414,26 +399,6 @@ export const trainLayers: readonly LayerSpecification[] = Object.freeze([
       "circle-color": ["match", ["get", "status"], "cancelled", "#ff715f", "waiting", "#f0b75a", ["case", [">", ["get", "delaySeconds"], 900], "#ff715f", [">", ["get", "delaySeconds"], 60], "#f0b75a", "#e4e8ed"]],
       "circle-stroke-color": "#090b10",
       "circle-stroke-width": 2,
-    },
-  },
-  {
-    id: "train-estimate-glyphs",
-    type: "symbol",
-    source: TRAIN_SOURCE_ID,
-    minzoom: 5,
-    filter: ["==", ["get", "positionKind"], "estimated"],
-    layout: {
-      "text-field": ["case", ["==", ["get", "estimateMethod"], "anchor-hold"], "?", "\u2248"],
-      "text-font": ["Noto Sans Regular"],
-      "text-size": ["interpolate", ["linear"], ["zoom"], 5, 8, 12, 12],
-      "text-offset": [0.75, -0.75],
-      "text-allow-overlap": true,
-      "text-ignore-placement": true,
-    },
-    paint: {
-      "text-color": "#e1e5eb",
-      "text-halo-color": "#090b10",
-      "text-halo-width": 1,
     },
   },
   {
@@ -459,11 +424,8 @@ export function trainFeatureCollection(
 ): GeoJsonFeatureCollection {
   const features: GeoJsonPointFeature[] = [];
   for (const train of trains) {
-    if (train.mapPosition !== undefined && train.mapEstimate !== undefined) continue;
-    const projection = train.mapPosition ?? train.mapEstimate;
+    const projection = train.mapPosition;
     if (projection === undefined || projection.infrastructureReleaseId !== infrastructureReleaseId) continue;
-    const exact = train.mapPosition;
-    const estimate = train.mapEstimate;
     features.push(Object.freeze({
       type: "Feature",
       id: train.id,
@@ -482,20 +444,12 @@ export function trainFeatureCollection(
         operator: train.operator,
         category: train.category,
         status: train.status,
-        delaySeconds: train.delaySeconds,
+        ...(train.delaySeconds === undefined ? {} : { delaySeconds: train.delaySeconds }),
         resourceId: projection.resourceId,
-        positionKind: exact === undefined ? "estimated" : "exact",
+        positionKind: "exact",
         bearing: (projection.bearingMilliDegrees ?? 0) / 1_000,
-        ...(exact === undefined ? {} : {
-          trackId: exact.trackId,
-          offsetMm: exact.offsetMm,
-        }),
-        ...(estimate === undefined ? {} : {
-          estimateMethod: estimate.method,
-          displayPathId: estimate.displayPathId,
-          displayOffsetMm: estimate.displayOffsetMm,
-          uncertaintyMm: estimate.uncertaintyMm,
-        }),
+        trackId: projection.trackId,
+        offsetMm: projection.offsetMm,
       }),
     }));
   }

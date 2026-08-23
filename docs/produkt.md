@@ -59,11 +59,13 @@ Die Welt bleibt überall navigierbar; der vollständige Deutschland-Korpus liegt
 releasegebunden dahinter. Das normale Spielerprofil ist jedoch kein
 Infrastruktur-Editor: Es zeigt nur A-/B-Strecken, pro Stationsgruppe einen
 Bahnhof mit RIL-100-Kürzel, neutrale Signalicons, betriebliche Overlays und die
-bewegten Züge der EVU. Klasse C, einzelne Bahnsteigpunkte, Weichen,
+bewegten Züge der EVU. Freigegebene Daten- und Spielerartefakte enthalten
+ausschließlich A/B; ungelöste Pflichtdimensionen bleiben interne Builddiagnose
+und blockieren den Kandidaten. Einzelne Bahnsteigpunkte, Weichen,
 `operating_points`, Blöcke, Konfliktressourcen, Anlagen und `rail_context`
-bleiben im Datenartefakt und in Simulation oder Diagnose erhalten, sind auf
-der Spielerkarte aber verborgen. Nur die weltgebundene `playable`-Maske gibt
-Bestellung und Disposition frei. Werkstätten sind dagegen markante Spielerorte
+können fachlich A/B sein, bleiben auf der Spielerkarte aber verborgen. Nur die
+weltgebundene `playable`-Maske gibt Bestellung und Disposition frei.
+Werkstätten sind dagegen markante Spielerorte
 und erhalten ein eigenes Symbol, sobald der Kartenrelease einen autoritativen
 Werkstattdatensatz mit Name, Lage, Leistungen und Zugangsstatus enthält. Die
 heutigen generischen `conflict_resources` werden nicht als Werkstätten

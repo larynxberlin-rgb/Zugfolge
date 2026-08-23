@@ -31,9 +31,11 @@ nur exportiert, wenn ihre Knotenkennung zu mindestens einem nach dem
 Netzfilter erhaltenen EBO-Weg gehört. Isolierte Punktobjekte bleiben ebenso
 draußen wie Knoten mit eindeutigen BOStrab-/Nicht-EBO-Tags. Gehört derselbe
 Knoten zugleich zu einem erhaltenen EBO-Weg und einem ausgeschlossenen
-Bahnweg, gilt er fail-closed als nicht freigegeben. Qualitätsklasse C
-beschreibt nur unzureichende Daten **innerhalb** dieses EBO-Ausschnitts und
-erweitert den Produktscope nicht.
+Bahnweg, gilt er fail-closed als nicht freigegeben. Der Compiler führt diesen
+Befund ausschließlich in der internen Builddiagnose. Betrifft er eine
+Pflichtdimension des freizugebenden EBO-Korpus, blockiert er den Kandidaten;
+ein unvollständiges Objekt gelangt nicht in `InfraRelease`, PMTiles oder
+Spieler-Readmodels und erweitert den Produktscope nicht.
 
 Der vorgelagerte PBF-Ausschnitt bewahrt deshalb ausgeschlossene Tram-,
 Stadtbahn-, U-Bahn-, Schmalspur-, Standseil- und Einschienenbahnwege als reine
@@ -131,10 +133,15 @@ versionierten `EconomyRelease`.
 - **A — validiert:** Jede für den konkreten Objekttyp erforderliche Dimension
   ist unabhängig und fachlich geprüft; vollständige Simulation.
 - **B — konservativ:** Datenlücken werden durch sichtbare virtuelle Blöcke und
-  versionierte sichere Annahmen geschlossen. Das Objekt kann betrieblich
-  modelliert werden, wenn zusätzlich `orderable=true` gilt.
-- **C — unzureichend:** Darstellung auf der Karte, aber keine
-  Trassenbestellung.
+  versionierte sichere Annahmen in **jeder** Pflichtdimension geschlossen. Das
+  Objekt kann betrieblich modelliert werden, wenn zusätzlich `orderable=true`
+  gilt.
+
+Weitere Releaseklassen gibt es nicht. Bleibt eine Pflichtdimension offen, ist
+das kein auslieferbares Objekt, sondern ein interner Buildbefund. Schon ein
+solcher Befund im verbindlichen Korpusscope setzt
+`activationEligible=false` und blockiert Signatur, Veröffentlichung und
+Weltaktivierung des gesamten Kandidaten.
 
 Jede Welt pinnt einen vollständigen Release-Satz aus Infrastruktur, Tarifen,
 Nachfrage, Fahrzeugkatalog und Regeln. Updates erfolgen ausschließlich zu
@@ -148,9 +155,9 @@ Konfliktressourcen getrennt. Die öffentliche Objektklasse ist das Minimum der
 für den jeweiligen Layertyp erforderlichen Dimensionen, ergänzt um Ursache und
 betroffene Länge. A verlangt vollständige dimensionsbezogene Evidenz und
 Review; B darf eine Lücke mit einer dokumentierten, sicheren Regel schließen;
-C bleibt sichtbar, aber nicht bestellbar. Ein Tag wie
-`zugfolge:validated=yes`, eine einzelne Quelle oder ein KI-Urteil darf A nie
-pauschal setzen.
+bleibt eine Pflichtdimension danach offen, blockiert sie den Kandidaten. Ein
+Tag wie `zugfolge:validated=yes`, eine einzelne Quelle oder ein KI-Urteil darf
+A nie pauschal setzen.
 
 APN-Skizzen werden gemäß Projektentscheidung nur im internen Jahreslauf zur
 Plausibilisierung von Bahnhofstopologien automatisiert ausgewertet. Sie helfen
@@ -160,29 +167,41 @@ werden nicht ausgeliefert und sind allein nicht A-fähig. Vollständiger Prozess
 Artefaktvertrag und Abnahmegrenze: [`deutschland-infracorpus.md`](deutschland-infracorpus.md)
 und der feste [`Jahres-Prompt`](prompts/infrarelease-deutschland-jahreslauf.md).
 
-### 5.2 Messstand des Jahreskandidaten 2026.1
+### 5.2 Messstand des historischen Jahreskandidaten 2026.1
 
-Der reale Deutschlandlauf verarbeitet 1.600.662 sichtbare Fachobjekte in zehn
-semantischen Layern. Der öffentliche Qualitätsbericht weist 0 Objekte als A,
-1.489.960 als B und 110.702 als C aus. Das ist beabsichtigt ehrlich: Keine
-Dimension wurde allein aufgrund einer Quelle, einer automatischen Ableitung
-oder einer internen Planprüfung zu A hochgestuft.
+Der ausgeführte Deutschlandlauf verarbeitete 1.600.662 Fachobjekte in zehn
+semantischen Layern. Nach dem damaligen Drei-Zustands-Schema waren 1.489.960
+Objekte konservativ geschlossen und 110.702 Objekte unzureichend; darunter
+fünf Gleisabschnitte mit zusammen 172.434 mm sowie zahlreiche Bahnsteige,
+Weichen, Signale und Konfliktressourcen. Dieser Messstand bleibt als
+Buildnachweis erhalten, erfüllt den heutigen A-/B-only-Vertrag aber
+ausdrücklich **nicht** und darf nicht signiert, veröffentlicht oder aktiviert
+werden.
 
-Für den betrieblich wichtigsten Gleislayer ergeben sich 609.242 Abschnitte mit
-83.491.261.974 mm Gesamtlänge. Davon sind 609.237 Abschnitte beziehungsweise
-83.491.089.540 mm als konservatives B-Modell geschlossen; fünf Abschnitte mit
-zusammen 172.434 mm bleiben C. Weitere C-Objekte sind insbesondere 21.109
-Bahnsteige, 30.088 Weichen, 28.603 Signale und 30.098
-Konfliktressourcen. `classCPlayable=false` bleibt ein hart geprüftes Gate.
-
-Damit ist der Kandidat keine Behauptung hundertprozentiger Realitätsgleichheit.
-Er ist ein deutschlandweit sichtbarer Bestand, in dem bestellbare Bereiche
-über versionierte Regeln vollständig und konservativ modelliert werden. Der
-maschinenlesbare Bericht wird im Kartenpaket als `manifests/quality.json`
-ausgeliefert; Herleitung und Abnahmegrenze stehen in
-[`deutschland-infracorpus.md`](deutschland-infracorpus.md).
+Ein neuer Kandidat muss alle Objekte seines verbindlichen Korpusscopes als A
+oder vollständig geschlossenes B erzeugen. Der öffentliche Qualitätsbericht
+weist ausschließlich A/B sowie `unresolvedRequired=0` aus; die detaillierten
+offenen Befunde bleiben im internen Buildnachweis. Erst ein neu gebautes
+Artefakt mit neuem Hash kann den bisherigen Messstand ablösen.
 
 **Lizenzhinweis:** Die ODbL kann die Projektlizenz nicht überschreiben — ist der
 `InfraRelease` eine abgeleitete Datenbank im Sinne der ODbL, greifen deren
 Share-alike-Pflichten unabhängig vom Lizenztext. Das ist zugleich ein Daten- und
 ein Lizenzthema und braucht eine gemeinsame Antwort (→ `geschaeft.md`).
+
+## 6. Betriebliche Releaseartefakte (E31)
+
+Signal, Weiche, Block, Freimeldegrenze, Fahrstraßenvorlage, Durchrutschweg,
+Flankenschutz, Rangiergrenze, Bahnsteigintervall, Regionsgrenze und RZÜ-Layout
+tragen im operativen `InfraRelease` dieselbe interne Herkunfts- und
+Rechtekette wie vorhandene Attribute. Fehlt ein rechtlich freigegebener oder
+fachlich vollständiger Wert, darf der Offline-Compiler ihn nur nach einer
+versionierten deterministischen Generierungsregel ergänzen. Eine laufende Welt
+erfindet nichts. Kann diese Regel eine Pflichtdimension nicht vollständig und
+konservativ schließen, blockiert der Befund den ganzen Releasekandidaten.
+
+Die öffentliche Projektion enthält ausschließlich A/B und unterscheidet
+fachlich weiterhin Signal, Block, Weiche und Gleis, zeigt aber niemals, ob das
+einzelne Element verifiziert oder konservativ generiert wurde. Diagnose-,
+Releasepflege- und Migrationswerkzeuge behalten diese Herkunft intern.
+Details: [`betriebsengine.md`](betriebsengine.md) 2.

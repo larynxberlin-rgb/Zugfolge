@@ -44,6 +44,7 @@ export const OPERATIONS_DECISION_EVENT_TYPES = [
   "disruption.construction-published",
   "disruption.provider-failed",
   "disruption.applied",
+  "disruption.cleared",
 ] as const;
 
 const DECISION_EVENT_TYPES = new Set<string>(OPERATIONS_DECISION_EVENT_TYPES);

@@ -20,7 +20,7 @@ const TUTORIAL_WORLD_ID = "00000000-0000-4000-8000-000000000083";
 
 function minimalPublicDeployment() {
   return {
-    schema: "zugfolge-alpha-world-deployment/v1",
+    schema: "zugfolge-alpha-world-deployment/v2",
     worldId: PUBLIC_WORLD_ID,
     deploymentRevision: 2,
     worldDefinition: {
@@ -65,8 +65,7 @@ function minimalPublicDeployment() {
       tenderCalendarHash: "f".repeat(64),
     },
     fleet: { worldId: PUBLIC_WORLD_ID, authorityRelease: { assets: [{ id: "public-vehicle-1", operatorId: "public" }] } },
-    regionalSimulation: { worldId: PUBLIC_WORLD_ID },
-    boundaryTransitions: [{ transitionId: "external-reenter-1", worldId: PUBLIC_WORLD_ID }],
+    regionalSimulation: { schemaVersion: "zugfolge-operational-simulation-initialize/v2", worldId: PUBLIC_WORLD_ID },
   };
 }
 
@@ -91,8 +90,8 @@ test("Tutorialvariante bindet jedes eingebettete worldId und laesst das Public-D
   assertEmbeddedWorldIds(tutorialDeployment, TUTORIAL_WORLD_ID);
   assert.doesNotThrow(() => validateWorldBlueprint(publicDeployment.blueprint));
   assert.doesNotThrow(() => validateWorldBlueprint(tutorialDeployment.blueprint));
-  assert.equal(publicDeployment.boundaryTransitions[0].worldId, PUBLIC_WORLD_ID);
-  assert.equal(tutorialDeployment.boundaryTransitions[0].worldId, TUTORIAL_WORLD_ID);
+  assert.equal(publicDeployment.regionalSimulation.worldId, PUBLIC_WORLD_ID);
+  assert.equal(tutorialDeployment.regionalSimulation.worldId, TUTORIAL_WORLD_ID);
   assert.equal(tutorialDeployment.blueprint.profileKind, "tutorial");
   assert.equal(tutorialDeployment.blueprint.accelerationFactor, 60);
   assert.deepEqual(tutorialDeployment.blueprint.entryFacilityPolicy, {
@@ -116,7 +115,7 @@ test("Weltbindung und reservierte Tutorialkennungen werden fail-closed geprueft"
     /unerwartete Welt/,
   );
   assert.throws(
-    () => assertEmbeddedWorldIds({ boundaryTransitions: [{ worldId: PUBLIC_WORLD_ID }] }, TUTORIAL_WORLD_ID),
+    () => assertEmbeddedWorldIds({ regionalSimulation: { worldId: PUBLIC_WORLD_ID } }, TUTORIAL_WORLD_ID),
     /verletzt die Weltbindung/,
   );
 });
@@ -140,6 +139,9 @@ test("Generatorvertrag erzeugt nur das signierbare Public-Artefakt; Tutorialwelt
   assert.doesNotMatch(source, /startPackageSlots/);
   assert.doesNotMatch(source, /const phase2Configuration\s*=/);
   assert.doesNotMatch(source, /writeFile\([^\n]*\.phase2\.json/);
+  assert.match(source, /assertOperationalInfrastructureV2ReleaseBinding/);
+  assert.match(source, /const operationalSimulationSourceSha256 = sha256\(operationalV2Bytes\)/);
+  assert.doesNotMatch(source, /artifact\.kind === "operational-simulation-v2"/);
 });
 
 test("bestehender Ed25519-Signierer signiert Public und Tutorial als getrennte Hüllen", async () => {
@@ -178,7 +180,7 @@ test("bestehender Ed25519-Signierer signiert Public und Tutorial als getrennte H
 
       const signed = JSON.parse(await readFile(signedPath, "utf8"));
       const decoded = decodeEconomyValue(signed.deployment);
-      const expectedHash = alphaHash("zugfolge-alpha-world-deployment/v1", decoded);
+      const expectedHash = alphaHash("zugfolge-alpha-world-deployment/v2", decoded);
       assert.equal(signed.deploymentHash, expectedHash);
       assert.equal(signed.signature.algorithm, "Ed25519");
       assert.equal(

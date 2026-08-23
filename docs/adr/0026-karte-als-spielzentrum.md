@@ -1,9 +1,16 @@
 # ADR-0026: Die selbst gehostete Weltkarte ist das Spielzentrum; der Deutschland-Korpus ist vollständig sichtbar
 
-- **Status:** Angenommen — bindend (entspricht E26); der Exact-only-Satz zur sichtbaren Zugposition ist teilweise durch [ADR-0027](0027-geschaetzte-zugkartenposition-nur-visuell.md) abgelöst
+- **Status:** Angenommen — bindend (entspricht E26); der Spielerprofilvertrag ist teilweise durch [ADR-0031](0031-spielerkarte-als-lebendige-welt.md), der Zugpositionsvertrag vollständig durch [ADR-0032](0032-eine-autoritative-betriebswirklichkeit.md) abgelöst
 - **Bezug:** [../entscheidungen.md](../entscheidungen.md) · [../produkt.md](../produkt.md) · [../design.md](../design.md) · [../daten.md](../daten.md) · [../deutschland-infracorpus.md](../deutschland-infracorpus.md)
 - **Betrifft Milestones:** M4.7, M4.8, M9.3, M9.10, M14.2
-- **Verwandte ADRs:** [ADR-0009](0009-vollstaendige-transparenz-livemap.md), [ADR-0014](0014-netzabgrenzung-nur-ebo.md), [ADR-0017](0017-design-domaenensprache-achromatisch-dunkel.md), [ADR-0019](0019-realismus-dient-dem-spiel.md), [ADR-0022](0022-jaehrliche-infrastrukturaktualisierung.md), [ADR-0025](0025-gebietsueberschreitende-fahrtketten.md), [ADR-0027](0027-geschaetzte-zugkartenposition-nur-visuell.md)
+- **Verwandte ADRs:** [ADR-0009](0009-vollstaendige-transparenz-livemap.md), [ADR-0014](0014-netzabgrenzung-nur-ebo.md), [ADR-0017](0017-design-domaenensprache-achromatisch-dunkel.md), [ADR-0019](0019-realismus-dient-dem-spiel.md), [ADR-0022](0022-jaehrliche-infrastrukturaktualisierung.md), [ADR-0025](0025-gebietsueberschreitende-fahrtketten.md), [ADR-0027](0027-geschaetzte-zugkartenposition-nur-visuell.md), [ADR-0031](0031-spielerkarte-als-lebendige-welt.md), [ADR-0032](0032-eine-autoritative-betriebswirklichkeit.md)
+
+> **Aktuelle Teilablösung:** Ein freigegebener `InfraRelease` und jedes
+> Spielerartefakt enthalten ausschließlich A oder ein in allen
+> Pflichtdimensionen konservativ geschlossenes B. Unvollständige Objekte sind
+> nur interne Builddiagnose und blockieren den gesamten Kandidaten. ADR-0031
+> ersetzt außerdem die historische Pflicht, jedes Fachobjekt im normalen
+> Spielerprofil zu zeichnen und anklickbar zu machen.
 
 ## Kontext
 
@@ -39,13 +46,14 @@ demselben Ursprung wie die Anwendung; es gibt keinen stillen Rückfall auf
 Cacheheader. OSM-Attribution bleibt sichtbar.
 
 Der Deutschland-Korpus umfasst das EBO-Netz vollständig, auch außerhalb der
-aktuellen Weltregion. Ein Objekt kann sichtbar, aber nicht betrieblich
-modelliert sein; ein modelliertes Objekt kann sichtbar und simuliert, aber in
-der aktuellen Welt nicht spielbar sein. Nur `playable=true`, vollständige
-Konfliktressourcen und eine Qualität A oder B erlauben Bestellung und
+aktuellen Weltregion. Jeder veröffentlichte Abschnitt besitzt Qualität A oder
+ein in allen Pflichtdimensionen geschlossenes B. Nur `playable=true` und
+vollständige Konfliktressourcen erlauben zusätzlich Bestellung und
 Fahrdienstleitung. Klasse B ist eine regelkonforme, konservative Nachbildung
 und kein Makel. Klasse A verlangt dimensionsbezogene Evidenz; eine einzelne
-Quelle, ein KI-Ergebnis oder ein Tag darf A nie allein erzeugen.
+Quelle, ein KI-Ergebnis oder ein Tag darf A nie allein erzeugen. Kann der
+Jahresbau ein Objekt nicht bis A oder B schließen, bleibt der Befund intern und
+der gesamte Kandidat ist nicht signier- oder aktivierbar.
 
 Die Karte zeigt mit dem Zoom zunehmend Korridore, Betriebsstellen,
 Einzelgleise, Bahnsteige, Blöcke, Weichen, Signale und Anlagen. Jedes sichtbare
@@ -87,8 +95,9 @@ Die Karte wird damit tatsächlich zum Dreh- und Angelpunkt: dieselbe räumliche
 Sprache verbindet Orientierung, Fahrplan, Betrieb, Störung und Detailwissen.
 Die Dreiteilung verhindert zugleich, dass Vollständigkeit mit Spielbarkeit
 verwechselt wird. Deutschland kann vollständig geladen und erkundet werden,
-ohne Klasse C oder eine noch nicht freigegebene Region zu betrieblicher
-Wahrheit zu erklären.
+ohne eine noch nicht freigegebene Region zu spielbarer Betriebswahrheit zu
+erklären. Datenlücken werden nicht als sichtbare dritte Objektklasse
+veröffentlicht, sondern blockieren den Jahreskandidaten.
 
 Selbsthosting gibt Zugfolge einen unveränderlichen Kartenstand je Welt,
 kontrollierbare Gestaltung und einen ausfallfreien Replaypfad. Der jährliche

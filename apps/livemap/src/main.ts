@@ -67,6 +67,7 @@ import {
 } from "./protocol.js";
 import { livemapNavigationDestinations, mailboxDecisionDestination, operationsCenterDestination } from "./navigation.js";
 import { externalStatusLabel, localizeMapControls, operatingStatusLabel, railwayPlaceLabel, setMapViewButtons, visibleExternalTrains, type MapView } from "./presentation.js";
+import { rzueMarkup } from "./rzue.js";
 import "./style.css";
 import "./external-runs.css";
 
@@ -113,7 +114,13 @@ root.innerHTML = `
     <section class="workspace">
       <section class="map-frame" aria-labelledby="live-map-title">
         <h1 id="live-map-title" class="sr-only">Interaktive Live-Lage</h1>
+        <div class="mode-switch" role="group" aria-label="Lagedarstellung">
+          <button id="mode-livemap" type="button" aria-pressed="true">LiveMap</button>
+          <button id="mode-rzue" type="button" aria-pressed="false">RZÜ</button>
+          <button id="rzue-level" type="button" aria-pressed="false" hidden>Expertenebene</button>
+        </div>
         <div id="map" role="application" aria-label="Weltkarte mit deutscher Eisenbahninfrastruktur und Live-Betrieb"></div>
+        <section id="rzue" class="rzue" aria-label="Lesende schematische Betriebsübersicht" hidden></section>
         <div id="map-state" class="map-state" role="status" aria-live="polite">Kartenstand wird geprüft …</div>
         <div class="map-tools" aria-label="Kartenwerkzeuge">
           <button id="fit-playable" data-map-view="playable" type="button" aria-pressed="true">Spielgebiet</button>
@@ -128,7 +135,6 @@ root.innerHTML = `
           <span><i class="legend-line restriction"></i> Langsamfahrt/Störung</span>
           <span><i class="legend-line closure"></i> gesperrt</span>
           <span><i class="legend-line construction"></i> Bauarbeiten</span>
-          <span><i class="legend-train-estimated">≈</i> <button type="button" class="zf-glossary-term" data-glossary-code="PublicMapEstimate">Zugposition geschätzt</button></span>
         </div>
       </section>
       <aside id="details" aria-label="Details zum ausgewählten Kartenobjekt">
@@ -179,6 +185,11 @@ const externalRuns = document.querySelector<HTMLElement>("#external-runs")!;
 const objectList = document.querySelector<HTMLElement>("#object-list-content")!;
 const selectionMenu = document.querySelector<HTMLElement>("#selection-menu")!;
 const mapViewButtons = [...document.querySelectorAll<HTMLButtonElement>("[data-map-view]")];
+const modeLivemap = document.querySelector<HTMLButtonElement>("#mode-livemap")!;
+const modeRzue = document.querySelector<HTMLButtonElement>("#mode-rzue")!;
+const rzueLevel = document.querySelector<HTMLButtonElement>("#rzue-level")!;
+const rzue = document.querySelector<HTMLElement>("#rzue")!;
+const mapElement = document.querySelector<HTMLElement>("#map")!;
 
 let map: MapLibreMap | undefined;
 let api: LivemapApiClient | undefined;
@@ -190,6 +201,39 @@ let selected: MapSelection | undefined;
 let previousSelected: MapSelection | undefined;
 let appliedObjectStates = new Map<string, PublicObjectState>();
 let renderFrame: number | undefined;
+let liveRenderingFrozen = false;
+let currentLiveState: LiveState | undefined;
+let rzueExpert = false;
+
+function setOperatingView(view: "livemap" | "rzue"): void {
+  const isRzue = view === "rzue";
+  modeLivemap.setAttribute("aria-pressed", String(!isRzue));
+  modeRzue.setAttribute("aria-pressed", String(isRzue));
+  rzue.hidden = !isRzue;
+  mapElement.hidden = isRzue;
+  rzueLevel.hidden = !isRzue;
+  document.querySelector<HTMLElement>(".map-tools")!.hidden = isRzue;
+  document.querySelector<HTMLElement>(".legend")!.hidden = isRzue;
+  mapState.hidden = isRzue;
+  if (isRzue && currentLiveState !== undefined) {
+    rzue.innerHTML = rzueMarkup(
+      [...currentLiveState.trains.values()],
+      [...currentLiveState.operationalRegions.values()],
+      rzueExpert,
+    );
+  } else if (!isRzue) {
+    map?.resize();
+  }
+}
+
+modeLivemap.addEventListener("click", () => setOperatingView("livemap"));
+modeRzue.addEventListener("click", () => setOperatingView("rzue"));
+rzueLevel.addEventListener("click", () => {
+  rzueExpert = !rzueExpert;
+  rzueLevel.setAttribute("aria-pressed", String(rzueExpert));
+  rzueLevel.textContent = rzueExpert ? "Übersicht" : "Expertenebene";
+  setOperatingView("rzue");
+});
 
 function gameWebDestination(section: "world" | "company", operatorId?: string): string {
   const destination = new URL(runtime.gameWebUrl.trim() === "" ? "/" : runtime.gameWebUrl, window.location.href);
@@ -461,9 +505,7 @@ function applyLiveObjectStates(currentMap: MapLibreMap, states: ReadonlyMap<stri
 }
 
 function renderExternalRuns(state: LiveState): void {
-  const positionless = [...state.trains.values()].filter((train) =>
-    train.mapPosition === undefined && train.mapEstimate === undefined
-  );
+  const positionless = [...state.trains.values()].filter((train) => train.mapPosition === undefined);
   const external = [...visibleExternalTrains(state.externalTrains.values())];
   if (positionless.length === 0 && external.length === 0) {
     externalRuns.replaceChildren();
@@ -473,7 +515,7 @@ function renderExternalRuns(state: LiveState): void {
   if (positionless.length > 0) {
     nodes.push(
       text("p", "OHNE KARTENLAGE", "eyebrow"),
-      text("p", "Hier fehlt auch eine belastbare Schätzlage. Die Fahrt bleibt anklickbar, ohne einen Kartenpunkt zu erfinden.", "position-note"),
+      text("p", "Ohne exakte releasegebundene Lage wird kein Kartenpunkt erfunden. Der sichere Zustand bleibt in der Liste sichtbar.", "position-note"),
     );
     positionless.sort((a, b) => a.trainNumber.localeCompare(b.trainNumber, "de")).forEach((train) => {
       const button = document.createElement("button");
@@ -511,13 +553,8 @@ function renderObjectList(state: LiveState): void {
       const item = document.createElement("li");
       const button = document.createElement("button");
       button.type = "button";
-      const positionLabel = train.mapPosition !== undefined
-        ? train.nextOperatingPoint
-        : train.mapEstimate?.method === "anchor-hold"
-          ? "letzte belastbare Lage"
-          : train.mapEstimate !== undefined
-            ? "Position geschätzt"
-            : "ohne Kartenlage";
+      const positionLabel = train.nextOperatingPoint
+        ?? (train.mapPosition === undefined ? "sicher eingefroren" : "exakte Position");
       button.append(text("strong", train.trainNumber), text("span", `${operatorLabel(train)} · ${operatingStatusLabel(train.status)} · ${positionLabel}`));
       button.addEventListener("click", () => void selectObject({ kind: "train", id: train.id, label: train.trainNumber }));
       item.append(button);
@@ -527,12 +564,15 @@ function renderObjectList(state: LiveState): void {
 }
 
 function scheduleLiveRender(state: LiveState): void {
+  liveRenderingFrozen = false;
+  currentLiveState = state;
   renderSamples = appendRenderSample(renderSamples, state);
   renderSampleStartedAtMs = performance.now();
   sequenceLabel.textContent = `Sequenz ${state.sequence}`;
   sequenceLabel.classList.remove("connection-error");
   renderExternalRuns(state);
   renderObjectList(state);
+  if (!rzue.hidden) setOperatingView("rzue");
   const currentMap = map;
   if (currentMap !== undefined && currentMap.isStyleLoaded()) {
     applyLiveObjectStates(currentMap, state.objectStates);
@@ -541,23 +581,33 @@ function scheduleLiveRender(state: LiveState): void {
   if (renderFrame === undefined) renderFrame = requestAnimationFrame(renderLiveMapFrame);
 }
 
+function freezeLiveRender(): void {
+  liveRenderingFrozen = true;
+  if (renderFrame !== undefined) cancelAnimationFrame(renderFrame);
+  renderFrame = undefined;
+}
+
 function renderLiveMapFrame(nowMs: number): void {
   renderFrame = undefined;
   const samples = renderSamples;
   const currentMap = map;
   const currentConfig = mapConfig;
-  if (samples === undefined || currentMap === undefined || currentConfig === undefined || !currentMap.isStyleLoaded()) return;
+  if (liveRenderingFrozen || samples === undefined || currentMap === undefined || currentConfig === undefined || !currentMap.isStyleLoaded()) return;
   const elapsedS = Math.max(0, (nowMs - renderSampleStartedAtMs) / 1_000);
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const latestAuthorizedAt = Math.max(
+    samples.current.at,
+    ...[...samples.current.operationalRegions.values()].map((frame) => frame.staleAfterMs / 1_000),
+  );
   const renderAt = reduceMotion
     ? samples.current.at
-    : Math.min(samples.current.at, samples.previous.at + elapsedS);
+    : Math.min(latestAuthorizedAt, samples.current.at + elapsedS);
   const source = currentMap.getSource(TRAIN_SOURCE_ID) as GeoJSONSource | undefined;
   source?.setData(trainFeatureCollection(
     renderTrains(samples, renderAt),
     currentConfig.infrastructureReleaseId,
   ) as never);
-  if (!reduceMotion && renderAt < samples.current.at) {
+  if (!liveRenderingFrozen && !reduceMotion && renderAt < latestAuthorizedAt) {
     renderFrame = requestAnimationFrame(renderLiveMapFrame);
   }
 }
@@ -685,6 +735,7 @@ async function boot(): Promise<void> {
     const focus = parseFocusParameter(parameters.get("focus"));
     if (focus !== undefined) void selectObject(focus);
     connection = new LivemapConnection(runtime.gameApiUrl, worldId, tokenProvider, scheduleLiveRender, {
+      onFreeze: freezeLiveRender,
       onError: () => {
         sequenceLabel.textContent = "Verbindung unterbrochen · neuer Versuch";
         sequenceLabel.classList.add("connection-error");

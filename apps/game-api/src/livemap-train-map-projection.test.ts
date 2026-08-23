@@ -271,36 +271,16 @@ describe("releasegebundene Zugkartenprojektion", () => {
     projector.close();
   });
 
-  it("liefert bei fehlender exakter Gleisspanne eine explizite Korridorschaetzung", () => {
+  it("friert bei fehlender exakter Gleisspanne ohne erfundene Kartenposition ein", () => {
     const projector = new SQLiteTrainMapProjector(fixture({ exact: false }));
     const projected = projector.project(WORLD, train);
     expect(projected.mapPosition).toBeUndefined();
-    expect(projected.mapEstimate).toEqual({
-      infrastructureReleaseId: RELEASE,
-      resourceId: "resource-1",
-      method: "route-corridor",
-      displayPathId: "corridor-1",
-      displayOffsetMm: 250_000,
-      latitudeE7: 500_000_000,
-      longitudeE7: 100_005_000,
-      bearingMilliDegrees: 90_000,
-      uncertaintyMm: 40_000,
-    });
     projector.close();
   });
 
-  it("haelt ohne eindeutige Achse einen releasegebundenen Anker mit wachsender Unsicherheit", () => {
+  it("ignoriert historische Anzeigeanker im operativen Pfad", () => {
     const projector = new SQLiteTrainMapProjector(fixture({ exact: false, method: "anchor-hold" }));
-    expect(projector.project(WORLD, train).mapEstimate).toEqual({
-      infrastructureReleaseId: RELEASE,
-      resourceId: "resource-1",
-      method: "anchor-hold",
-      displayPathId: "corridor-1",
-      displayOffsetMm: 0,
-      latitudeE7: 500_000_000,
-      longitudeE7: 100_000_000,
-      uncertaintyMm: 290_000,
-    });
+    expect(projector.project(WORLD, train).mapPosition).toBeUndefined();
     projector.close();
   });
 
@@ -316,20 +296,9 @@ describe("releasegebundene Zugkartenprojektion", () => {
         latitudeE7: 0,
         longitudeE7: 0,
       },
-      mapEstimate: {
-        infrastructureReleaseId: "forged",
-        resourceId: "forged",
-        method: "anchor-hold",
-        displayPathId: "forged",
-        displayOffsetMm: 0,
-        latitudeE7: 0,
-        longitudeE7: 0,
-        uncertaintyMm: 1,
-      },
     } satisfies PublicTrain;
     expect(projector.project("other-world", forged).mapPosition).toBeUndefined();
     expect(projector.project(WORLD, { ...forged, id: "unknown" }).mapPosition).toBeUndefined();
-    expect(projector.project(WORLD, { ...forged, id: "unknown" }).mapEstimate).toBeUndefined();
     projector.close();
   });
 

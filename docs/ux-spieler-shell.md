@@ -136,8 +136,11 @@ Das tägliche Spielerprofil ist kein Infrastruktur-Editor:
 | A-/B-Strecke | VzG-Streckennummer/-kurzname, Vzul | kurze Streckenauskunft; Elektrifizierung und Gleiszahl ergänzend |
 | A-/B-Signal | neutrales Signalicon | keine technische Auswahl ohne verständliche autoritative Auskunft |
 
-Klasse C, Bahnsteigpunkte, Weichen, technische Betriebsstellen, Blöcke,
-Konfliktressourcen, Anlagen und `rail_context` bleiben im Default verborgen.
+Freigegebene Spielerartefakte enthalten nur A/B. Bahnsteigpunkte, Weichen,
+technische Betriebsstellen, Blöcke, Konfliktressourcen, Anlagen und
+`rail_context` bleiben unabhängig von ihrer A-/B-Qualität im Default verborgen.
+Ungelöste Pflichtbefunde gelangen nicht bis in die Shell, weil sie bereits den
+Releasekandidaten blockieren.
 Der Bahnhof bündelt seine Bahnsteige; der konkrete Bahnsteig erscheint in der
 Tafelzeile. Technische ID, Release, Qualität und Modellzustand liegen
 geschlossen unter „Technische Details“. Der heutige Release hat keine
