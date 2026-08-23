@@ -216,6 +216,22 @@ node tools/region-import/sign-release.mjs ARTIFACT_ROOT/infra-mitteldeutschland-
 node tools/region-import/build-alpha-world.mjs ARTIFACT_ROOT/gtfs-region-20260810-v2.json ARTIFACT_ROOT/operational-network.json FLEET_CATALOG ARTIFACT_ROOT/infra-mitteldeutschland-b-2026.2.release.json tools/region-import/specifications/economy-release-alpha-2026.1.json ARTIFACT_ROOT/alpha-world-deployment.2026.2.json PUBLIC_ODOO_CONFIG ARTIFACT_ROOT/operational-simulation-v2.json
 ```
 
+Die gezeigte Form bleibt ausschließlich für einen Legacy-Authority-v1-Katalog
+zulässig. Ein Authority-v2-Katalog muss aus demselben Compilerlauf stammen und
+übergibt dessen fünf zusätzlichen Beweise am Ende des Aufrufs:
+
+```sh
+node tools/region-import/build-alpha-world.mjs ARTIFACT_ROOT/gtfs-region-20260810-v2.json ARTIFACT_ROOT/operational-network.json FLEET_AUTHORITY_WRAPPER_V1 ARTIFACT_ROOT/infra-mitteldeutschland-b-2026.2.release.json tools/region-import/specifications/economy-release-alpha-2026.1.json ARTIFACT_ROOT/alpha-world-deployment.2026.2.json PUBLIC_ODOO_CONFIG ARTIFACT_ROOT/operational-simulation-v2.json VEHICLE_COMPILE_RECEIPT_V4 OPERATIONAL_VEHICLE_INVENTORY_V2 VEHICLE_SOURCE_CATALOG_V2 VEHICLE_WORLD_SEED_V3 VEHICLE_COMPILED_CATALOG_V3
+```
+
+Der Builder kompiliert Source und Seed in einem frischen temporären Verzeichnis
+erneut, vergleicht alle fünf Compiler-Ausgaben bytegenau mit den vorgelegten
+Artefakten, bindet EconomyRelease, Fleet Authority, Blueprint-Fleet-Hash sowie
+Fleet- und Operational-Formationen und schreibt Receipt, Inventory und die
+Hashes der tatsächlich gelesenen Compiler-Eingabedateien vor der bestehenden
+Deployment-Signatur in `vehicleCatalogBinding`. Fehlende oder gemischte
+v1/v2-Eingaben brechen den Build ab.
+
 Vor `build-infra-release.mjs` muss
 `ARTIFACT_ROOT/operational-infrastructure-v2.json` als reines statisches
 `OperationalInfraRelease` vorliegen. Der regionale Buildvertrag

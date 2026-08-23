@@ -9,10 +9,12 @@ export const OPERATING_STATE_SCHEMA = "zugfolge-operating-world-state/v1" as con
 export const OPERATING_TRANSITION_SCHEMA = "zugfolge-operating-transition-command/v1" as const;
 export const OPERATING_RESULT_SCHEMA = "zugfolge-operating-transition-result/v1" as const;
 export const FLEET_MOBILIZATION_VERIFICATION_SCHEMA = "zugfolge-fleet-mobilization-verification/v1" as const;
+export const FLEET_STATE_VERIFICATION_SCHEMA = "zugfolge-fleet-world-state-verification/v1" as const;
 export const FLEET_INITIALIZE_SCHEMA = "zugfolge-fleet-world-initialize/v2" as const;
 export const FLEET_INITIALIZED_SCHEMA = "zugfolge-fleet-world-initialized/v2" as const;
 export const FLEET_STATE_SCHEMA = "zugfolge-fleet-world-state/v2" as const;
 export const FLEET_AUTHORITY_RELEASE_SCHEMA = "zugfolge-fleet-authority-release/v1" as const;
+export const FLEET_AUTHORITY_RELEASE_SCHEMA_V2 = "zugfolge-fleet-authority-release/v2" as const;
 export const FLEET_FORMATION_COMMAND_SCHEMA = "zugfolge-fleet-form-vehicles-command/v2" as const;
 export const FLEET_PERSONNEL_DUTY_COMMAND_SCHEMA = "zugfolge-fleet-assign-duty-command/v2" as const;
 export const FLEET_PATH_RESERVATION_COMMAND_SCHEMA = "zugfolge-fleet-attach-path-command/v2" as const;
@@ -25,6 +27,16 @@ export interface FleetMobilizationVerification {
   readonly schemaVersion: typeof FLEET_MOBILIZATION_VERIFICATION_SCHEMA;
   readonly worldId: string;
   readonly fleetRevision: number;
+  readonly snapshotHash: string;
+}
+
+export interface FleetWorldStateVerification {
+  readonly schemaVersion: typeof FLEET_STATE_VERIFICATION_SCHEMA;
+  readonly worldId: string;
+  readonly revision: number;
+  readonly producedAt: number;
+  readonly authorityReleaseHash: string;
+  readonly stateHash: string;
   readonly snapshotHash: string;
 }
 
@@ -93,13 +105,47 @@ export interface FleetAuthorityMaintenanceDeadline {
   readonly dueAt: number;
 }
 
-export interface FleetAuthorityTechnicalData {
+type FleetAuthorityTraction = "unpowered" | "electric" | "diesel" | "battery";
+type FleetAuthorityPowerSystem = "ac15kv" | "ac25kv" | "dc750v" | "dc1500v" | "dc3000v";
+type FleetAuthorityVehicleRole = "locomotive" | "powered-unit" | "coach" | "control-car";
+type FleetAuthorityOrientation = "along" | "against";
+
+export type FleetAuthorityVehicleRestriction =
+  | Readonly<{ "power-basis-points": number }>
+  | Readonly<{ "maximum-speed": number }>
+  | Readonly<{ "service-brake": number }>
+  | Readonly<{ "emergency-brake": number }>
+  | Readonly<{ "protection-unavailable": "pzb" | "lzb" | "etcs-level1" | "etcs-level2" }>
+  | Readonly<{ "door-availability-basis-points": number }>
+  | "immobilized";
+
+export interface FleetAuthorityControlStands {
+  readonly front: boolean;
+  readonly rear: boolean;
+}
+
+export interface FleetAuthorityVehicleCondition {
+  readonly mechanicsBasisPoints: number;
+  readonly driveBasisPoints: number;
+  readonly brakesBasisPoints: number;
+  readonly kilometresSinceMaintenance: number;
+  readonly operatingHoursSinceMaintenance: number;
+  readonly openObservations: number;
+}
+
+interface FleetAuthorityTechnicalDataBase {
   readonly lengthMm: number;
   readonly massKg: number;
   readonly maximumSpeedKph: number;
+  readonly traction: FleetAuthorityTraction;
+  readonly electricSystems: readonly FleetAuthorityPowerSystem[];
+}
+
+export interface FleetAuthorityTechnicalDataV1 extends FleetAuthorityTechnicalDataBase {
+  readonly maximumSpeedMmps?: number;
   /**
    * Altes Referenzprofil. Bei einer Lok ist die wirksame Beschleunigung
-   * formationsabhängig und wird deshalb heute beim Formation-Intent geführt.
+   * formationsabhängig; Authority v2 leitet sie serverseitig aus Rohwerten ab.
    */
   readonly accelerationMmPerS2?: number;
   /** Siehe `accelerationMmPerS2`. */
@@ -110,14 +156,26 @@ export interface FleetAuthorityTechnicalData {
   readonly startingTractiveEffortKn?: number;
   /** Bremsgewicht in kg; Legacy-Releases dürfen ihn noch auslassen. */
   readonly brakeWeightKg?: number;
-  readonly traction: "unpowered" | "electric" | "diesel" | "battery";
-  readonly electricSystems: readonly ("ac15kv" | "ac25kv" | "dc750v" | "dc1500v" | "dc3000v")[];
-  readonly role?: "locomotive" | "powered-unit" | "coach" | "control-car";
-  readonly controlStands?: {
-    readonly front: boolean;
-    readonly rear: boolean;
-  };
+  readonly role?: FleetAuthorityVehicleRole;
+  readonly controlStands?: FleetAuthorityControlStands;
 }
+
+/** Vollstaendige technische Compilerprojektion eines Authority-v2-Assets. */
+export interface FleetAuthorityTechnicalDataV2 extends FleetAuthorityTechnicalDataBase {
+  readonly maximumSpeedMmps: number;
+  readonly accelerationMmPerS2: number;
+  readonly decelerationMmPerS2: number;
+  readonly continuousPowerKw: number;
+  readonly startingTractiveEffortKn: number;
+  readonly brakeWeightKg: number;
+  readonly maximumAccelerationCapMmps2: number;
+  readonly serviceBrakeCapMmps2: number;
+  readonly emergencyBrakeMultiplierBasisPoints: number;
+  readonly role: FleetAuthorityVehicleRole;
+  readonly controlStands: FleetAuthorityControlStands;
+}
+
+export type FleetAuthorityTechnicalData = FleetAuthorityTechnicalDataV1 | FleetAuthorityTechnicalDataV2;
 
 export interface FleetAuthorityPassengerData {
   readonly seats: number;
@@ -130,7 +188,7 @@ export interface FleetAuthorityPassengerData {
   readonly replacementPlan: boolean;
 }
 
-export interface FleetAuthorityVehicleAsset {
+interface FleetAuthorityVehicleAssetBase<TTechnical extends FleetAuthorityTechnicalData> {
   readonly id: string;
   readonly numericId: number;
   readonly operatorId: string;
@@ -143,11 +201,24 @@ export interface FleetAuthorityVehicleAsset {
   readonly approvedLineIds: readonly string[];
   readonly maintenanceDeadlines: readonly FleetAuthorityMaintenanceDeadline[];
   readonly installedProtection: readonly ("pzb" | "lzb" | "etcs-level1" | "etcs-level2")[];
-  readonly technical: FleetAuthorityTechnicalData;
+  readonly technical: TTechnical;
   readonly passenger: FleetAuthorityPassengerData;
   readonly deliveredAt: number;
   readonly retiredAt: number;
 }
+
+export interface FleetAuthorityVehicleAssetV1 extends FleetAuthorityVehicleAssetBase<FleetAuthorityTechnicalDataV1> {
+  readonly orientation?: FleetAuthorityOrientation;
+}
+
+export interface FleetAuthorityVehicleAssetV2 extends FleetAuthorityVehicleAssetBase<FleetAuthorityTechnicalDataV2> {
+  readonly orientation: FleetAuthorityOrientation;
+  readonly condition: FleetAuthorityVehicleCondition;
+  readonly restrictions: Readonly<Record<string, FleetAuthorityVehicleRestriction>>;
+  readonly history: readonly string[];
+}
+
+export type FleetAuthorityVehicleAsset = FleetAuthorityVehicleAssetV1 | FleetAuthorityVehicleAssetV2;
 
 export interface FleetAuthorityPersonnelPool {
   readonly id: string;
@@ -182,15 +253,29 @@ export interface FleetAuthorityPathReceipt {
   readonly conflictCheckHash: string;
 }
 
-/** Serververtrauenswuerdige, fuer eine Welt eingefrorene M5-Quellfakten. */
-export interface FleetAuthorityRelease {
-  readonly schemaVersion: typeof FLEET_AUTHORITY_RELEASE_SCHEMA;
+interface FleetAuthorityReleaseBase<TAsset extends FleetAuthorityVehicleAsset> {
   readonly releaseId: string;
   readonly referenceYear: number;
-  readonly assets: readonly FleetAuthorityVehicleAsset[];
+  readonly assets: readonly TAsset[];
   readonly personnelPools: readonly FleetAuthorityPersonnelPool[];
   readonly pathReceipts: readonly FleetAuthorityPathReceipt[];
 }
+
+/** Rueckwaertskompatible Authority-v1-Quellfakten. */
+export interface FleetAuthorityReleaseV1 extends FleetAuthorityReleaseBase<FleetAuthorityVehicleAssetV1> {
+  readonly schemaVersion: typeof FLEET_AUTHORITY_RELEASE_SCHEMA;
+  readonly economyReleaseId?: string;
+  readonly economyReleaseSha256?: string;
+}
+
+/** Serververtrauenswuerdige, vollstaendige Authority-v2-Compilerprojektion. */
+export interface FleetAuthorityReleaseV2 extends FleetAuthorityReleaseBase<FleetAuthorityVehicleAssetV2> {
+  readonly schemaVersion: typeof FLEET_AUTHORITY_RELEASE_SCHEMA_V2;
+  readonly economyReleaseId: string;
+  readonly economyReleaseSha256: string;
+}
+
+export type FleetAuthorityRelease = FleetAuthorityReleaseV1 | FleetAuthorityReleaseV2;
 
 export interface FleetWorldInitialization {
   readonly schemaVersion: typeof FLEET_INITIALIZE_SCHEMA;
@@ -203,7 +288,7 @@ export interface FleetWorldInitialization {
   readonly pathReservations?: readonly NativeFleetPathReservationIntent[];
 }
 
-/** Signiertes, ganzzahliges Fahrprofil einer tatsächlich gebildeten Formation. */
+/** Serverautoritativ abgeleitetes Ganzzahlprofil einer konkreten Formation. */
 export interface NativeFleetFormationDynamics {
   readonly accelerationMmPerS2: number;
   readonly decelerationMmPerS2: number;
@@ -476,6 +561,10 @@ export interface OperatingDecisionExplanation extends Readonly<Record<string, un
 
 export interface FleetRuntime {
   readonly initializeFleet: (input: FleetWorldInitialization) => FleetWorldInitialized;
+  readonly verifyFleetWorldState: (
+    state: NativeFleetWorldState,
+    expectedStateHash: string,
+  ) => FleetWorldStateVerification;
   readonly applyFleetCommand: (
     state: NativeFleetWorldState,
     command: NativeFleetCommand,
@@ -501,6 +590,7 @@ export type NativeRuntime = FleetRuntime & OperatingRuntime;
 
 interface NativeAddon {
   readonly initializeFleetWorld: (inputJson: string) => string;
+  readonly verifyFleetWorldState: (stateJson: string, expectedStateHash: string) => string;
   readonly applyFleetCommand: (stateJson: string, commandJson: string, replayReceiptJson?: string) => string;
   readonly verifyFleetMobilizationSnapshot: (inputJson: string) => string;
   readonly initializeOperatingWorld: (inputJson: string) => string;
@@ -551,6 +641,17 @@ function canonicalStringSet(value: unknown, name: string): readonly string[] {
     `${name} enthaelt doppelte Kennungen.`,
   );
   return sorted;
+}
+
+function orderedUniqueStringList(value: unknown, name: string): readonly string[] {
+  invariant(Array.isArray(value) && value.length > 0, `${name} ist keine nichtleere Kennungsliste.`);
+  const seen = new Set<string>();
+  return value.map((item, index) => {
+    nonEmptyString(item, `${name}[${index}]`);
+    invariant(!seen.has(item), `${name} enthaelt doppelte Kennungen.`);
+    seen.add(item);
+    return item;
+  });
 }
 
 function exactFleetCommandFields(command: Record<string, unknown>, specificFields: readonly string[]): void {
@@ -631,7 +732,7 @@ function normalizeFleetCommand(command: NativeFleetCommand): NativeFleetCommand 
         expectedRevision: command.expectedRevision,
         atS: command.atS,
         formationId: command.formationId,
-        vehicleIds: canonicalStringSet(command.vehicleIds, "M5-Fahrzeug-IDs"),
+        vehicleIds: orderedUniqueStringList(command.vehicleIds, "M5-Fahrzeug-IDs"),
         pathReceiptId: command.pathReceiptId,
         ...(dynamics === undefined ? {} : { dynamics }),
       };
@@ -782,9 +883,25 @@ function canonicalJson(value: unknown, name: string, ancestors = new Set<object>
   return JSON.stringify(value);
 }
 
-/** Normalisiert mengenartige IDs und erzeugt ein von der Eingabereihenfolge unabhaengiges Kommando. */
+/** Normalisiert mengenartige IDs, bewahrt aber die fachliche Fahrzeugreihenfolge Spitze -> Schluss. */
 export function canonicalizeFleetCommand(command: NativeFleetCommand): NativeFleetCommand {
   return JSON.parse(canonicalJson(normalizeFleetCommand(command), "M5-Kommando")) as NativeFleetCommand;
+}
+
+/**
+ * Bindet die Formation-Kanonisierung an das im Zustand gepinnte Authority-Schema:
+ * v1 behandelt Fahrzeug-IDs weiterhin als historische Menge, v2 als fachliche
+ * Reihenfolge von Zugspitze nach Zugschluss.
+ */
+export function canonicalizeFleetCommandForState(
+  state: Pick<NativeFleetWorldState, "authorityRelease">,
+  command: NativeFleetCommand,
+): NativeFleetCommand {
+  const authorityCompatibleCommand = state.authorityRelease.schemaVersion === FLEET_AUTHORITY_RELEASE_SCHEMA
+    && command.schemaVersion === FLEET_FORMATION_COMMAND_SCHEMA
+    ? { ...command, vehicleIds: canonicalStringSet(command.vehicleIds, "M5-Fahrzeug-IDs") }
+    : command;
+  return canonicalizeFleetCommand(authorityCompatibleCommand);
 }
 
 /** Entspricht bytegenau der rekursiv schluesselsortierten Rust-Kanonform. */
@@ -815,31 +932,603 @@ export function fleetCommandEntity(command: NativeFleetCommand): {
   }
 }
 
-function fleetAuthorityRelease(value: unknown, name: string): asserts value is FleetAuthorityRelease {
-  record(value, name);
-  invariant(value["schemaVersion"] === FLEET_AUTHORITY_RELEASE_SCHEMA, `${name} hat ein unbekanntes Schema.`);
-  nonEmptyString(value["releaseId"], `${name}-ID`);
-  safeInteger(value["referenceYear"], `${name}-Referenzjahr`);
-  invariant(Array.isArray(value["assets"]) && value["assets"].length > 0, `${name} besitzt keine Assets.`);
-  invariant(Array.isArray(value["personnelPools"]), `${name} besitzt keine Personalpools.`);
-  invariant(Array.isArray(value["pathReceipts"]), `${name} besitzt keine Trassenbelege.`);
-  for (const [index, rawPool] of value["personnelPools"].entries()) {
-    record(rawPool, `${name}-Personalpool ${index}`);
-    sha256(rawPool["qualificationHash"], `${name}-Personalpool-Qualifikationshash`);
-  }
-  for (const [index, rawReceipt] of value["pathReceipts"].entries()) {
-    record(rawReceipt, `${name}-Trassenbeleg ${index}`);
-    sha256(rawReceipt["plannerStateHash"], `${name}-Planerzustandshash`);
-    sha256(rawReceipt["conflictCheckHash"], `${name}-Konfliktpruefungshash`);
+const AUTHORITY_TRACTIONS = ["unpowered", "electric", "diesel", "battery"] as const;
+const AUTHORITY_POWER_SYSTEMS = ["ac15kv", "ac25kv", "dc750v", "dc1500v", "dc3000v"] as const;
+const AUTHORITY_ROLES = ["locomotive", "powered-unit", "coach", "control-car"] as const;
+const AUTHORITY_ORIENTATIONS = ["along", "against"] as const;
+const AUTHORITY_PROTECTION_SYSTEMS = ["pzb", "lzb", "etcs-level1", "etcs-level2"] as const;
+const AUTHORITY_PROCUREMENT_CHANNELS = ["new-build", "leasing", "used"] as const;
+const AUTHORITY_PATH_DECISIONS = ["confirmed", "requested", "rejected"] as const;
+const AUTHORITY_ELECTRIFICATIONS = [
+  "unelectrified",
+  "overhead-ac15kv",
+  "overhead-ac25kv",
+  "overhead-dc1500v",
+  "overhead-dc3000v",
+] as const;
+
+function exactAuthorityFields(
+  value: Record<string, unknown>,
+  required: readonly string[],
+  optional: readonly string[],
+  name: string,
+): void {
+  const missing = required.filter((field) => !Object.hasOwn(value, field));
+  invariant(missing.length === 0, `${name} fehlt Pflichtfeld '${missing[0]}'.`);
+  const allowed = new Set([...required, ...optional]);
+  const ownKeys = Reflect.ownKeys(value);
+  invariant(
+    ownKeys.every((key) => typeof key === "string" && allowed.has(key))
+      && ownKeys.length === Object.keys(value).length,
+    `${name} enthaelt unbekannte oder nicht serialisierbare Felder.`,
+  );
+}
+
+function authorityBoolean(value: unknown, name: string): asserts value is boolean {
+  invariant(typeof value === "boolean", `${name} ist kein boolescher Wert.`);
+}
+
+function authorityEnum(value: unknown, allowed: readonly string[], name: string): asserts value is string {
+  invariant(typeof value === "string" && allowed.includes(value), `${name} besitzt einen unbekannten Wert.`);
+}
+
+function authorityStringList(
+  value: unknown,
+  name: string,
+  requireNonEmpty: boolean,
+): asserts value is readonly string[] {
+  invariant(Array.isArray(value), `${name} ist keine Kennungsliste.`);
+  invariant(!requireNonEmpty || value.length > 0, `${name} darf nicht leer sein.`);
+  const seen = new Set<string>();
+  for (const [index, item] of value.entries()) {
+    nonEmptyString(item, `${name}[${index}]`);
+    invariant(!seen.has(item), `${name} enthaelt doppelte Eintraege.`);
+    seen.add(item);
   }
 }
 
+function authorityEnumList(
+  value: unknown,
+  allowed: readonly string[],
+  name: string,
+  requireNonEmpty: boolean,
+): asserts value is readonly string[] {
+  invariant(Array.isArray(value), `${name} ist keine Werteliste.`);
+  invariant(!requireNonEmpty || value.length > 0, `${name} darf nicht leer sein.`);
+  const seen = new Set<string>();
+  for (const [index, item] of value.entries()) {
+    authorityEnum(item, allowed, `${name}[${index}]`);
+    invariant(!seen.has(item), `${name} enthaelt doppelte Eintraege.`);
+    seen.add(item);
+  }
+}
+
+function positiveSafeInteger(value: unknown, name: string): asserts value is number {
+  safeInteger(value, name);
+  invariant(value > 0, `${name} ist nicht positiv.`);
+}
+
+function boundedSafeInteger(value: unknown, maximum: number, name: string): asserts value is number {
+  safeInteger(value, name);
+  invariant(value <= maximum, `${name} liegt ausserhalb des zulaessigen Ganzzahlbereichs.`);
+}
+
+function authorityControlStands(value: unknown, name: string): asserts value is FleetAuthorityControlStands {
+  record(value, name);
+  exactAuthorityFields(value, ["front", "rear"], [], name);
+  authorityBoolean(value["front"], `${name}.front`);
+  authorityBoolean(value["rear"], `${name}.rear`);
+}
+
+function authorityTechnicalData(value: unknown, name: string, authorityV2: boolean): void {
+  record(value, name);
+  const legacyOptionalFields = [
+    "maximumSpeedMmps",
+    "accelerationMmPerS2",
+    "decelerationMmPerS2",
+    "continuousPowerKw",
+    "startingTractiveEffortKn",
+    "brakeWeightKg",
+    "role",
+    "controlStands",
+  ] as const;
+  const rawV2Fields = [
+    "maximumAccelerationCapMmps2",
+    "serviceBrakeCapMmps2",
+    "emergencyBrakeMultiplierBasisPoints",
+  ] as const;
+  const v2Fields = [...legacyOptionalFields, ...rawV2Fields] as const;
+  exactAuthorityFields(
+    value,
+    ["lengthMm", "massKg", "maximumSpeedKph", "traction", "electricSystems", ...(authorityV2 ? v2Fields : [])],
+    authorityV2 ? [] : legacyOptionalFields,
+    name,
+  );
+  positiveSafeInteger(value["lengthMm"], `${name}.lengthMm`);
+  positiveSafeInteger(value["massKg"], `${name}.massKg`);
+  positiveSafeInteger(value["maximumSpeedKph"], `${name}.maximumSpeedKph`);
+  invariant((value["maximumSpeedKph"] as number) <= 65_535, `${name}.maximumSpeedKph liegt ausserhalb von u16.`);
+  authorityEnum(value["traction"], AUTHORITY_TRACTIONS, `${name}.traction`);
+  authorityEnumList(value["electricSystems"], AUTHORITY_POWER_SYSTEMS, `${name}.electricSystems`, false);
+  for (const field of [
+    "maximumSpeedMmps",
+    "accelerationMmPerS2",
+    "decelerationMmPerS2",
+    "continuousPowerKw",
+    "startingTractiveEffortKn",
+    "brakeWeightKg",
+    "maximumAccelerationCapMmps2",
+    "serviceBrakeCapMmps2",
+    "emergencyBrakeMultiplierBasisPoints",
+  ] as const) {
+    if (Object.hasOwn(value, field)) safeInteger(value[field], `${name}.${field}`);
+  }
+  if (Object.hasOwn(value, "role")) authorityEnum(value["role"], AUTHORITY_ROLES, `${name}.role`);
+  if (Object.hasOwn(value, "controlStands")) authorityControlStands(value["controlStands"], `${name}.controlStands`);
+  const acceleration = Object.hasOwn(value, "accelerationMmPerS2") ? value["accelerationMmPerS2"] as number : 0;
+  const deceleration = Object.hasOwn(value, "decelerationMmPerS2") ? value["decelerationMmPerS2"] as number : 0;
+  const continuousPower = Object.hasOwn(value, "continuousPowerKw") ? value["continuousPowerKw"] as number : 0;
+  const startingEffort = Object.hasOwn(value, "startingTractiveEffortKn")
+    ? value["startingTractiveEffortKn"] as number
+    : 0;
+  const traction = value["traction"] as string;
+  const unpowered = traction === "unpowered";
+  const hasLegacyDynamics = acceleration > 0 && deceleration > 0;
+  const omitsLegacyDynamics = acceleration === 0 && deceleration === 0;
+  invariant(
+    unpowered
+      ? omitsLegacyDynamics
+      : authorityV2
+        ? continuousPower > 0 && startingEffort > 0 && (hasLegacyDynamics || omitsLegacyDynamics)
+        : hasLegacyDynamics || (omitsLegacyDynamics && continuousPower > 0 && startingEffort > 0),
+    `${name} besitzt keine konsistente Fahrdynamik oder Rohtraktion.`,
+  );
+  if (authorityV2) {
+    const brakeWeight = value["brakeWeightKg"] as number;
+    const accelerationCap = value["maximumAccelerationCapMmps2"] as number;
+    const serviceBrakeCap = value["serviceBrakeCapMmps2"] as number;
+    const emergencyMultiplier = value["emergencyBrakeMultiplierBasisPoints"] as number;
+    positiveSafeInteger(brakeWeight, `${name}.brakeWeightKg`);
+    boundedSafeInteger(accelerationCap, 10_000, `${name}.maximumAccelerationCapMmps2`);
+    boundedSafeInteger(serviceBrakeCap, 20_000, `${name}.serviceBrakeCapMmps2`);
+    invariant(serviceBrakeCap > 0, `${name}.serviceBrakeCapMmps2 ist nicht positiv.`);
+    boundedSafeInteger(
+      emergencyMultiplier,
+      30_000,
+      `${name}.emergencyBrakeMultiplierBasisPoints`,
+    );
+    invariant(
+      emergencyMultiplier > 10_000,
+      `${name}.emergencyBrakeMultiplierBasisPoints muss ueber 10000 liegen.`,
+    );
+    invariant(
+      unpowered
+        ? continuousPower === 0 && startingEffort === 0 && accelerationCap === 0
+        : continuousPower > 0 && startingEffort > 0 && accelerationCap > 0,
+      `${name} bindet Rohtraktion und Beschleunigungs-Cap nicht an die Fahrzeugrolle.`,
+    );
+    const accelerationNumerator = startingEffort * 1_000_000;
+    const serviceNumerator = brakeWeight * 9_806;
+    invariant(
+      Number.isSafeInteger(accelerationNumerator) && Number.isSafeInteger(serviceNumerator),
+      `${name} laesst die ganzzahlige Rohdynamik ueberlaufen.`,
+    );
+    const expectedAcceleration = unpowered
+      ? 0
+      : Math.min(accelerationCap, Math.floor(accelerationNumerator / (value["massKg"] as number)));
+    const expectedServiceBrake = Math.min(
+      serviceBrakeCap,
+      Math.floor(serviceNumerator / (value["massKg"] as number)),
+    );
+    const emergencyNumerator = expectedServiceBrake * emergencyMultiplier;
+    invariant(
+      Number.isSafeInteger(emergencyNumerator),
+      `${name} laesst die Schnellbremsableitung ueberlaufen.`,
+    );
+    const expectedEmergencyBrake = Math.floor(emergencyNumerator / 10_000);
+    invariant(
+      (unpowered || expectedAcceleration > 0)
+        && expectedServiceBrake > 0
+        && expectedEmergencyBrake > expectedServiceBrake
+        && expectedEmergencyBrake <= 20_000,
+      `${name} besitzt keine sichere Rohdynamikableitung.`,
+    );
+    invariant(
+      !hasLegacyDynamics
+        || (acceleration === expectedAcceleration && deceleration === expectedServiceBrake),
+      `${name} besitzt ein nicht reproduzierbares Referenzprofil.`,
+    );
+  }
+  const electricSystems = value["electricSystems"] as readonly string[];
+  const requiresElectricSystems = traction === "electric" || (authorityV2 && traction === "battery");
+  invariant(
+    requiresElectricSystems === (electricSystems.length > 0),
+    `${name}.electricSystems ist zur Traktion inkonsistent.`,
+  );
+  const role = Object.hasOwn(value, "role") ? value["role"] as string : "powered-unit";
+  const controlStands = Object.hasOwn(value, "controlStands")
+    ? value["controlStands"] as FleetAuthorityControlStands
+    : { front: true, rear: true };
+  switch (role) {
+    case "coach":
+      invariant(
+        unpowered && !controlStands.front && !controlStands.rear,
+        `${name} beschreibt keinen konsistenten Reisezugwagen.`,
+      );
+      break;
+    case "control-car":
+      invariant(
+        unpowered && (controlStands.front || controlStands.rear),
+        `${name} beschreibt keinen konsistenten Steuerwagen.`,
+      );
+      break;
+    case "locomotive":
+    case "powered-unit":
+      invariant(
+        !unpowered && (!authorityV2 || controlStands.front || controlStands.rear),
+        `${name} beschreibt kein konsistentes angetriebenes Fahrzeug.`,
+      );
+      break;
+  }
+  if (authorityV2) {
+    const expectedMmps = Math.floor((value["maximumSpeedKph"] as number) * 1_000_000 / 3_600);
+    invariant(
+      value["maximumSpeedMmps"] === expectedMmps,
+      `${name}.maximumSpeedMmps ist nicht die exakte abgerundete v2-Geschwindigkeit.`,
+    );
+  }
+}
+
+function authorityPassengerData(value: unknown, name: string): void {
+  record(value, name);
+  exactAuthorityFields(value, [
+    "seats",
+    "firstClassSeats",
+    "accessible",
+    "bicyclePlaces",
+    "wheelchairPlaces",
+    "equipment",
+    "operatingCostCentsPerTrainKm",
+    "replacementPlan",
+  ], [], name);
+  boundedSafeInteger(value["seats"], 4_294_967_295, `${name}.seats`);
+  boundedSafeInteger(value["firstClassSeats"], 4_294_967_295, `${name}.firstClassSeats`);
+  boundedSafeInteger(value["bicyclePlaces"], 65_535, `${name}.bicyclePlaces`);
+  boundedSafeInteger(value["wheelchairPlaces"], 65_535, `${name}.wheelchairPlaces`);
+  boundedSafeInteger(
+    value["operatingCostCentsPerTrainKm"],
+    4_294_967_295,
+    `${name}.operatingCostCentsPerTrainKm`,
+  );
+  invariant(
+    (value["firstClassSeats"] as number) <= (value["seats"] as number),
+    `${name}.firstClassSeats uebersteigt die Sitzplatzzahl.`,
+  );
+  authorityBoolean(value["accessible"], `${name}.accessible`);
+  authorityBoolean(value["replacementPlan"], `${name}.replacementPlan`);
+  authorityStringList(value["equipment"], `${name}.equipment`, false);
+}
+
+function authorityRestrictions(value: unknown, name: string): void {
+  record(value, name);
+  for (const [restrictionId, rawRestriction] of Object.entries(value)) {
+    nonEmptyString(restrictionId, `${name} key`);
+    if (rawRestriction === "immobilized") continue;
+    record(rawRestriction, `${name}.${restrictionId}`);
+    const keys = Object.keys(rawRestriction);
+    invariant(keys.length === 1, `${name}.${restrictionId} besitzt keine eindeutige Variante.`);
+    const variant = keys[0];
+    invariant(variant !== undefined, `${name}.${restrictionId} besitzt keine Variante.`);
+    const detail = rawRestriction[variant];
+    switch (variant) {
+      case "power-basis-points":
+        boundedSafeInteger(detail, 10_000, `${name}.${restrictionId}.${variant}`);
+        invariant((detail as number) > 0, `${name}.${restrictionId}.${variant} muss positiv sein.`);
+        break;
+      case "door-availability-basis-points":
+        boundedSafeInteger(detail, 10_000, `${name}.${restrictionId}.${variant}`);
+        invariant((detail as number) >= 0, `${name}.${restrictionId}.${variant} ist negativ.`);
+        break;
+      case "maximum-speed":
+      case "service-brake":
+      case "emergency-brake":
+        positiveSafeInteger(detail, `${name}.${restrictionId}.${variant}`);
+        invariant((detail as number) <= 4_294_967_295, `${name}.${restrictionId}.${variant} liegt ausserhalb von u32.`);
+        break;
+      case "protection-unavailable":
+        authorityEnum(detail, AUTHORITY_PROTECTION_SYSTEMS, `${name}.${restrictionId}.${variant}`);
+        break;
+      default:
+        invariant(false, `${name}.${restrictionId} besitzt eine unbekannte Variante.`);
+    }
+  }
+}
+
+function authorityCondition(value: unknown, name: string): void {
+  record(value, name);
+  exactAuthorityFields(
+    value,
+    [
+      "mechanicsBasisPoints",
+      "driveBasisPoints",
+      "brakesBasisPoints",
+      "kilometresSinceMaintenance",
+      "operatingHoursSinceMaintenance",
+      "openObservations",
+    ],
+    [],
+    name,
+  );
+  for (const field of ["mechanicsBasisPoints", "driveBasisPoints", "brakesBasisPoints"] as const) {
+    boundedSafeInteger(value[field], 10_000, `${name}.${field}`);
+  }
+  safeInteger(value["kilometresSinceMaintenance"], `${name}.kilometresSinceMaintenance`);
+  safeInteger(value["operatingHoursSinceMaintenance"], `${name}.operatingHoursSinceMaintenance`);
+  boundedSafeInteger(value["openObservations"], 65_535, `${name}.openObservations`);
+}
+
+function authorityHistory(value: unknown, name: string): void {
+  invariant(Array.isArray(value), `${name} ist keine geordnete Historienliste.`);
+  for (const [index, entry] of value.entries()) {
+    nonEmptyString(entry, `${name}[${index}]`);
+    invariant(entry.trim() === entry, `${name}[${index}] ist nicht randfrei.`);
+  }
+}
+
+function authorityVehicleAsset(
+  value: unknown,
+  name: string,
+  authorityV2: boolean,
+  referenceYear: number,
+): void {
+  record(value, name);
+  const commonFields = [
+    "id",
+    "numericId",
+    "operatorId",
+    "vehicleTypeId",
+    "classDesignation",
+    "tradeName",
+    "buildYear",
+    "acquisitionYear",
+    "procurementChannel",
+    "approvedLineIds",
+    "maintenanceDeadlines",
+    "installedProtection",
+    "technical",
+    "passenger",
+    "deliveredAt",
+    "retiredAt",
+  ] as const;
+  exactAuthorityFields(
+    value,
+    [...commonFields, ...(authorityV2 ? ["orientation", "condition", "restrictions", "history"] : [])],
+    authorityV2 ? [] : ["orientation"],
+    name,
+  );
+  for (const field of ["id", "operatorId", "classDesignation", "tradeName"] as const) {
+    nonEmptyString(value[field], `${name}.${field}`);
+  }
+  positiveSafeInteger(value["numericId"], `${name}.numericId`);
+  positiveSafeInteger(value["vehicleTypeId"], `${name}.vehicleTypeId`);
+  boundedSafeInteger(value["buildYear"], 65_535, `${name}.buildYear`);
+  boundedSafeInteger(value["acquisitionYear"], 65_535, `${name}.acquisitionYear`);
+  invariant(
+    (value["buildYear"] as number) > 0 && (value["acquisitionYear"] as number) > 0,
+    `${name} besitzt kein positives Jahr.`,
+  );
+  invariant(
+    (value["buildYear"] as number) <= (value["acquisitionYear"] as number)
+      && (value["buildYear"] as number) <= referenceYear
+      && (!authorityV2 || (value["acquisitionYear"] as number) <= referenceYear),
+    `${name} besitzt inkonsistente Bau- oder Beschaffungsjahre.`,
+  );
+  authorityEnum(value["procurementChannel"], AUTHORITY_PROCUREMENT_CHANNELS, `${name}.procurementChannel`);
+  authorityStringList(value["approvedLineIds"], `${name}.approvedLineIds`, true);
+  invariant(
+    Array.isArray(value["maintenanceDeadlines"]) && value["maintenanceDeadlines"].length > 0,
+    `${name}.maintenanceDeadlines darf nicht leer sein.`,
+  );
+  const deadlineKinds = new Set<string>();
+  for (const [index, rawDeadline] of value["maintenanceDeadlines"].entries()) {
+    const deadlineName = `${name}.maintenanceDeadlines[${index}]`;
+    record(rawDeadline, deadlineName);
+    exactAuthorityFields(rawDeadline, ["kind", "dueAt"], [], deadlineName);
+    nonEmptyString(rawDeadline["kind"], `${deadlineName}.kind`);
+    invariant(!deadlineKinds.has(rawDeadline["kind"]), `${name}.maintenanceDeadlines enthaelt doppelte Arten.`);
+    deadlineKinds.add(rawDeadline["kind"]);
+    safeInteger(rawDeadline["dueAt"], `${deadlineName}.dueAt`);
+  }
+  authorityEnumList(value["installedProtection"], AUTHORITY_PROTECTION_SYSTEMS, `${name}.installedProtection`, false);
+  if (Object.hasOwn(value, "orientation")) {
+    authorityEnum(value["orientation"], AUTHORITY_ORIENTATIONS, `${name}.orientation`);
+  }
+  if (authorityV2) {
+    authorityCondition(value["condition"], `${name}.condition`);
+    authorityRestrictions(value["restrictions"], `${name}.restrictions`);
+    authorityHistory(value["history"], `${name}.history`);
+  }
+  authorityTechnicalData(value["technical"], `${name}.technical`, authorityV2);
+  authorityPassengerData(value["passenger"], `${name}.passenger`);
+  const technical = value["technical"] as Record<string, unknown>;
+  const passenger = value["passenger"] as Record<string, unknown>;
+  const role = Object.hasOwn(technical, "role") ? technical["role"] as string : "powered-unit";
+  const installedProtection = value["installedProtection"] as readonly string[];
+  invariant(
+    !installedProtection.includes("lzb") || installedProtection.includes("pzb"),
+    `${name}.installedProtection darf LZB nur mit PZB enthalten.`,
+  );
+  invariant(
+    role === "coach"
+      || installedProtection.some((system) => ["pzb", "etcs-level1", "etcs-level2"].includes(system)),
+    `${name} besitzt fuer seine Fahrzeugrolle weder PZB noch ETCS.`,
+  );
+  invariant(
+    role === "locomotive" || (passenger["seats"] as number) > 0,
+    `${name}.passenger.seats ist fuer die Fahrzeugrolle nicht positiv.`,
+  );
+  safeInteger(value["deliveredAt"], `${name}.deliveredAt`);
+  safeInteger(value["retiredAt"], `${name}.retiredAt`);
+  invariant((value["retiredAt"] as number) > (value["deliveredAt"] as number), `${name} besitzt kein positives Zeitfenster.`);
+}
+
+function authorityPersonnelPool(value: unknown, name: string): void {
+  record(value, name);
+  exactAuthorityFields(value, [
+    "id",
+    "numericId",
+    "operatorId",
+    "capacitySeconds",
+    "minimumRestSeconds",
+    "classDesignations",
+    "pathReceiptIds",
+    "qualificationHash",
+  ], [], name);
+  nonEmptyString(value["id"], `${name}.id`);
+  positiveSafeInteger(value["numericId"], `${name}.numericId`);
+  nonEmptyString(value["operatorId"], `${name}.operatorId`);
+  boundedSafeInteger(value["capacitySeconds"], 4_294_967_295, `${name}.capacitySeconds`);
+  invariant((value["capacitySeconds"] as number) > 0, `${name}.capacitySeconds ist nicht positiv.`);
+  boundedSafeInteger(value["minimumRestSeconds"], 4_294_967_295, `${name}.minimumRestSeconds`);
+  authorityStringList(value["classDesignations"], `${name}.classDesignations`, true);
+  authorityStringList(value["pathReceiptIds"], `${name}.pathReceiptIds`, true);
+  sha256(value["qualificationHash"], `${name}.qualificationHash`);
+}
+
+function authorityPathReceipt(value: unknown, name: string): void {
+  record(value, name);
+  exactAuthorityFields(value, [
+    "id",
+    "numericRouteId",
+    "operatorId",
+    "serviceLineIds",
+    "decision",
+    "validFrom",
+    "validUntil",
+    "platformLengthsMm",
+    "electrifications",
+    "requiredProtection",
+    "approvedClasses",
+    "plannerStateHash",
+    "conflictCheckHash",
+  ], [], name);
+  nonEmptyString(value["id"], `${name}.id`);
+  positiveSafeInteger(value["numericRouteId"], `${name}.numericRouteId`);
+  nonEmptyString(value["operatorId"], `${name}.operatorId`);
+  authorityStringList(value["serviceLineIds"], `${name}.serviceLineIds`, true);
+  authorityEnum(value["decision"], AUTHORITY_PATH_DECISIONS, `${name}.decision`);
+  safeInteger(value["validFrom"], `${name}.validFrom`);
+  safeInteger(value["validUntil"], `${name}.validUntil`);
+  invariant((value["validUntil"] as number) > (value["validFrom"] as number), `${name} besitzt kein positives Zeitfenster.`);
+  invariant(Array.isArray(value["platformLengthsMm"]) && value["platformLengthsMm"].length > 0, `${name}.platformLengthsMm darf nicht leer sein.`);
+  for (const [index, length] of value["platformLengthsMm"].entries()) {
+    positiveSafeInteger(length, `${name}.platformLengthsMm[${index}]`);
+  }
+  authorityEnumList(value["electrifications"], AUTHORITY_ELECTRIFICATIONS, `${name}.electrifications`, true);
+  authorityEnumList(value["requiredProtection"], AUTHORITY_PROTECTION_SYSTEMS, `${name}.requiredProtection`, false);
+  authorityStringList(value["approvedClasses"], `${name}.approvedClasses`, true);
+  sha256(value["plannerStateHash"], `${name}.plannerStateHash`);
+  sha256(value["conflictCheckHash"], `${name}.conflictCheckHash`);
+}
+
+function fleetAuthorityRelease(value: unknown, name: string): asserts value is FleetAuthorityRelease {
+  record(value, name);
+  const authorityV2 = value["schemaVersion"] === FLEET_AUTHORITY_RELEASE_SCHEMA_V2;
+  invariant(
+    authorityV2 || value["schemaVersion"] === FLEET_AUTHORITY_RELEASE_SCHEMA,
+    `${name} hat ein unbekanntes Schema.`,
+  );
+  const commonFields = ["schemaVersion", "releaseId", "referenceYear", "assets", "personnelPools", "pathReceipts"] as const;
+  exactAuthorityFields(
+    value,
+    [...commonFields, ...(authorityV2 ? ["economyReleaseId", "economyReleaseSha256"] : [])],
+    authorityV2 ? [] : ["economyReleaseId", "economyReleaseSha256"],
+    name,
+  );
+  nonEmptyString(value["releaseId"], `${name}.releaseId`);
+  boundedSafeInteger(value["referenceYear"], 65_535, `${name}.referenceYear`);
+  invariant((value["referenceYear"] as number) > 0, `${name}.referenceYear ist nicht positiv.`);
+  if (Object.hasOwn(value, "economyReleaseId")) nonEmptyString(value["economyReleaseId"], `${name}.economyReleaseId`);
+  if (Object.hasOwn(value, "economyReleaseSha256")) sha256(value["economyReleaseSha256"], `${name}.economyReleaseSha256`);
+  invariant(Array.isArray(value["assets"]) && value["assets"].length > 0, `${name} besitzt keine Assets.`);
+  invariant(Array.isArray(value["personnelPools"]), `${name} besitzt keine Personalpools.`);
+  invariant(Array.isArray(value["pathReceipts"]), `${name} besitzt keine Trassenbelege.`);
+  const assetIds = new Set<string>();
+  const assetNumericIds = new Set<number>();
+  for (const [index, rawAsset] of value["assets"].entries()) {
+    authorityVehicleAsset(rawAsset, `${name}.assets[${index}]`, authorityV2, value["referenceYear"]);
+    const asset = rawAsset as Record<string, unknown>;
+    invariant(!assetIds.has(asset["id"] as string), `${name}.assets enthaelt doppelte IDs.`);
+    invariant(!assetNumericIds.has(asset["numericId"] as number), `${name}.assets enthaelt doppelte numerische IDs.`);
+    assetIds.add(asset["id"] as string);
+    assetNumericIds.add(asset["numericId"] as number);
+  }
+  const poolIds = new Set<string>();
+  const poolNumericIds = new Set<number>();
+  for (const [index, rawPool] of value["personnelPools"].entries()) {
+    authorityPersonnelPool(rawPool, `${name}.personnelPools[${index}]`);
+    const pool = rawPool as Record<string, unknown>;
+    invariant(!poolIds.has(pool["id"] as string), `${name}.personnelPools enthaelt doppelte IDs.`);
+    invariant(!poolNumericIds.has(pool["numericId"] as number), `${name}.personnelPools enthaelt doppelte numerische IDs.`);
+    poolIds.add(pool["id"] as string);
+    poolNumericIds.add(pool["numericId"] as number);
+  }
+  const receiptIds = new Set<string>();
+  const routeIds = new Set<number>();
+  for (const [index, rawReceipt] of value["pathReceipts"].entries()) {
+    authorityPathReceipt(rawReceipt, `${name}.pathReceipts[${index}]`);
+    const receipt = rawReceipt as Record<string, unknown>;
+    invariant(!receiptIds.has(receipt["id"] as string), `${name}.pathReceipts enthaelt doppelte IDs.`);
+    invariant(!routeIds.has(receipt["numericRouteId"] as number), `${name}.pathReceipts enthaelt doppelte Routen-IDs.`);
+    receiptIds.add(receipt["id"] as string);
+    routeIds.add(receipt["numericRouteId"] as number);
+  }
+  const receiptsById = new Map(
+    value["pathReceipts"].map((rawReceipt) => {
+      const receipt = rawReceipt as Record<string, unknown>;
+      return [receipt["id"] as string, receipt] as const;
+    }),
+  );
+  for (const [index, rawPool] of value["personnelPools"].entries()) {
+    const pool = rawPool as Record<string, unknown>;
+    for (const receiptId of pool["pathReceiptIds"] as readonly string[]) {
+      const receipt = receiptsById.get(receiptId);
+      invariant(
+        receipt !== undefined,
+        `${name}.personnelPools[${index}] verweist auf einen unbekannten Trassenbeleg.`,
+      );
+      invariant(
+        receipt["operatorId"] === pool["operatorId"],
+        `${name}.personnelPools[${index}] verweist auf einen Trassenbeleg eines fremden Betreibers.`,
+      );
+    }
+  }
+}
+
+/**
+ * Gemeinsamer strikt diskriminierter Authority-v1/v2-Vertragsvalidator fuer
+ * Server-Lader und die native Runtime-Grenze.
+ */
+export function validateFleetAuthorityRelease(
+  value: unknown,
+  name = "Fleet-Authority-Release",
+): asserts value is FleetAuthorityRelease {
+  fleetAuthorityRelease(value, name);
+}
+
 function fleetStateIntents(state: Record<string, unknown>, name: string): void {
+  record(state["authorityRelease"], `${name}-Authority-Release`);
+  const legacyAuthority = state["authorityRelease"]["schemaVersion"] === FLEET_AUTHORITY_RELEASE_SCHEMA;
+  const authorityAssets = state["authorityRelease"]["assets"] as readonly Record<string, unknown>[];
   record(state["formations"], `${name}-Formationen`);
   for (const [id, rawIntent] of Object.entries(state["formations"])) {
     record(rawIntent, `${name}-Formation '${id}'`);
     invariant(rawIntent["id"] === id, `${name}-Formation besitzt eine fremde ID.`);
-    canonicalStringSet(rawIntent["vehicleIds"], `${name}-Formation-Fahrzeuge`);
+    if (legacyAuthority) {
+      canonicalStringSet(rawIntent["vehicleIds"], `${name}-Formation-Fahrzeuge`);
+    } else {
+      orderedUniqueStringList(rawIntent["vehicleIds"], `${name}-Formation-Fahrzeuge`);
+    }
     nonEmptyString(rawIntent["pathReceiptId"], `${name}-Formation-Trassenbeleg`);
     if (Object.hasOwn(rawIntent, "dynamics")) {
       formationDynamics(rawIntent["dynamics"], `${name}-Formation-Fahrprofil`);
@@ -861,10 +1550,34 @@ function fleetStateIntents(state: Record<string, unknown>, name: string): void {
     invariant(rawIntent["id"] === id, `${name}-Trassenreservierung besitzt eine fremde ID.`);
     nonEmptyString(rawIntent["pathReceiptId"], `${name}-Trassenreservierungsbeleg`);
   }
+  if (!legacyAuthority) {
+    invariant(Object.hasOwn(state, "assetHoldings"), `${name}-Authority-v2-Zustand besitzt keine Asset-Halter.`);
+  }
   if (Object.hasOwn(state, "assetHoldings")) {
     record(state["assetHoldings"], `${name}-Asset-Halter`);
+    if (!legacyAuthority) {
+      const authorityIds = new Set(authorityAssets.map((asset) => asset["id"] as string));
+      const holdingIds = Object.keys(state["assetHoldings"]);
+      invariant(
+        holdingIds.length === authorityIds.size && holdingIds.every((id) => authorityIds.has(id)),
+        `${name}-Authority-v2-Zustand muss fuer jedes und nur jedes Asset einen Halterzustand enthalten.`,
+      );
+    }
     for (const [id, rawHolding] of Object.entries(state["assetHoldings"])) {
       record(rawHolding, `${name}-Asset-Halter '${id}'`);
+      exactAuthorityFields(
+        rawHolding,
+        [
+          "ownerOperatorId",
+          "holderOperatorId",
+          "lessorOperatorId",
+          "contractId",
+          "validUntilS",
+          "historyHash",
+        ],
+        [],
+        `${name}-Asset-Halter '${id}'`,
+      );
       nonEmptyString(id, `${name}-Asset-ID`);
       nonEmptyString(rawHolding["ownerOperatorId"], `${name}-Asset-Eigentuemer`);
       nonEmptyString(rawHolding["holderOperatorId"], `${name}-Asset-Halter`);
@@ -997,6 +1710,22 @@ function decodeFleetVerification(json: string): FleetMobilizationVerification {
   return value as unknown as FleetMobilizationVerification;
 }
 
+function decodeFleetStateVerification(json: string): FleetWorldStateVerification {
+  const value: unknown = parseNativeJson(json, "Rust-M5-Zustandsverifikation");
+  record(value, "Rust-M5-Zustandsverifikation");
+  invariant(
+    value["schemaVersion"] === FLEET_STATE_VERIFICATION_SCHEMA,
+    "Rust-M5-Zustandsverifikation hat ein unbekanntes Schema.",
+  );
+  nonEmptyString(value["worldId"], "Rust-M5-Zustandsverifikation-Welt");
+  safeInteger(value["revision"], "Rust-M5-Zustandsverifikation-Revision");
+  safeInteger(value["producedAt"], "Rust-M5-Zustandsverifikation-Zustandszeit");
+  sha256(value["authorityReleaseHash"], "Rust-M5-Zustandsverifikation-Authority-Release-Hash");
+  sha256(value["stateHash"], "Rust-M5-Zustandsverifikation-Zustandshash");
+  sha256(value["snapshotHash"], "Rust-M5-Zustandsverifikation-Snapshothash");
+  return value as unknown as FleetWorldStateVerification;
+}
+
 function decodeTransition(json: string): OperatingTransitionResult {
   const value: unknown = parseNativeJson(json, "Rust-Uebergang");
   record(value, "Rust-Uebergang");
@@ -1031,14 +1760,47 @@ export function operatingRuntimeFromAddon(addon: NativeAddon): NativeRuntime {
       nonEmptyString(input.worldId, "M5-Initialisierungswelt");
       safeInteger(input.producedAt, "M5-Initialisierungszeit");
       fleetAuthorityRelease(input.authorityRelease, "M5-Authority-Release");
+      if (input.authorityRelease.schemaVersion === FLEET_AUTHORITY_RELEASE_SCHEMA_V2) {
+        invariant(
+          input.authorityRelease.assets.every((asset) =>
+            asset.deliveredAt <= input.producedAt
+              && input.producedAt < asset.retiredAt
+              && asset.maintenanceDeadlines.every((deadline) => deadline.dueAt > input.producedAt)
+          ),
+          "M5-Authority-v2 enthaelt am Initialisierungsstichtag ein nicht verfuegbares Asset.",
+        );
+      }
       const initialized = decodeFleetInitialized(addon.initializeFleetWorld(JSON.stringify(input)));
       invariant(initialized.state.worldId === input.worldId, "Rust-M5-Initialisierung verletzte die Weltisolation.");
       invariant(initialized.state.revision === 0, "Rust-M5-Initialisierung begann nicht bei Revision 0.");
       invariant(initialized.state.producedAt === input.producedAt, "Rust-M5-Initialisierung veraenderte die Zustandszeit.");
       return initialized;
     },
+    verifyFleetWorldState(state: NativeFleetWorldState, expectedStateHash: string) {
+      record(state, "M5-Zustand");
+      invariant(state["schemaVersion"] === FLEET_STATE_SCHEMA, "M5-Zustand hat ein unbekanntes Schema.");
+      nonEmptyString(state["worldId"], "M5-Zustandswelt");
+      safeInteger(state["revision"], "M5-Zustandsrevision");
+      safeInteger(state["producedAt"], "M5-Zustandszeit");
+      sha256(state["authorityReleaseHash"], "M5-Authority-Release-Hash");
+      fleetAuthorityRelease(state["authorityRelease"], "M5-Zustand-Authority-Release");
+      fleetStateIntents(state, "M5-Zustand");
+      sha256(expectedStateHash, "M5-erwarteter Zustandshash");
+      const verified = decodeFleetStateVerification(
+        addon.verifyFleetWorldState(JSON.stringify(state), expectedStateHash),
+      );
+      invariant(verified.worldId === state.worldId, "Rust-M5-Zustandsverifikation verletzte die Weltisolation.");
+      invariant(verified.revision === state.revision, "Rust-M5-Zustandsverifikation lieferte eine fremde Revision.");
+      invariant(verified.producedAt === state.producedAt, "Rust-M5-Zustandsverifikation lieferte eine fremde Zustandszeit.");
+      invariant(verified.authorityReleaseHash === state.authorityReleaseHash, "Rust-M5-Zustandsverifikation bindet einen fremden Authority-Release-Hash.");
+      invariant(verified.stateHash === expectedStateHash, "Rust-M5-Zustandsverifikation bindet nicht den erwarteten Zustandshash.");
+      return verified;
+    },
     applyFleetCommand(state: NativeFleetWorldState, command: NativeFleetCommand, replayReceipt?: FleetCommandReceipt) {
-      const canonicalCommand = canonicalizeFleetCommand(command);
+      record(state, "M5-Zustand");
+      fleetAuthorityRelease(state["authorityRelease"], "M5-Zustand-Authority-Release");
+      fleetStateIntents(state, "M5-Zustand");
+      const canonicalCommand = canonicalizeFleetCommandForState(state, command);
       const commandJson = canonicalFleetCommandJson(canonicalCommand);
       const commandHash = canonicalFleetCommandHash(canonicalCommand);
       invariant(state.worldId === canonicalCommand.worldId, "M5-Kommando verletzt die Weltisolation.");
@@ -1134,6 +1896,7 @@ export function loadOperatingRuntime(addonPath = process.env["ZUGFOLGE_RUNTIME_N
   const required: unknown = createRequire(import.meta.url)(addonPath);
   record(required, "napi-rs-Addon");
   invariant(typeof required["initializeFleetWorld"] === "function", "napi-rs-Addon exportiert initializeFleetWorld nicht.");
+  invariant(typeof required["verifyFleetWorldState"] === "function", "napi-rs-Addon exportiert verifyFleetWorldState nicht.");
   invariant(typeof required["applyFleetCommand"] === "function", "napi-rs-Addon exportiert applyFleetCommand nicht.");
   invariant(typeof required["verifyFleetMobilizationSnapshot"] === "function", "napi-rs-Addon exportiert verifyFleetMobilizationSnapshot nicht.");
   invariant(typeof required["initializeOperatingWorld"] === "function", "napi-rs-Addon exportiert initializeOperatingWorld nicht.");

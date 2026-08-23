@@ -10,11 +10,16 @@ publish.workspace = true
 
 [dependencies]
 serde = { version = "=1.0.229", features = ["derive"] }
+serde_json.workspace = true
 sha2.workspace = true
 zugfolge-determinism.workspace = true
 zugfolge-infra.workspace = true
 zugfolge-conflict.workspace = true
 zugfolge-sim.workspace = true
+
+[[bin]]
+name = "zugfolge-vehicle-catalog"
+path = "src/bin/zugfolge-vehicle-catalog.rs"
 
 [lints]
 workspace = true

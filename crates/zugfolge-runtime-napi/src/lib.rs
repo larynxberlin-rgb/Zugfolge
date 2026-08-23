@@ -39,6 +39,17 @@ pub fn apply_fleet_command(
     .map_err(|error| napi::Error::from_reason(error.to_string()))
 }
 
+/// Revalidates a persisted M5 state and its expected canonical hash in Rust.
+#[cfg(feature = "node-addon")]
+#[napi(js_name = "verifyFleetWorldState")]
+pub fn verify_fleet_world_state(
+    state_json: String,
+    expected_state_hash: String,
+) -> napi::Result<String> {
+    zugfolge_runtime::verify_fleet_world_state(&state_json, &expected_state_hash)
+        .map_err(|error| napi::Error::from_reason(error.to_string()))
+}
+
 /// Verifies and hashes a canonical M5 mobilization snapshot in Rust.
 #[cfg(feature = "node-addon")]
 #[napi(js_name = "verifyFleetMobilizationSnapshot")]

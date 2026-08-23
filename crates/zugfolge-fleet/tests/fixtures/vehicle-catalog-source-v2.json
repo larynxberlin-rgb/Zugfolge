@@ -1,0 +1,238 @@
+{
+  "schemaVersion": "zugfolge-vehicle-catalog-source/v2",
+  "releaseId": "fixture-vehicle-catalog-2026-v2",
+  "referenceYear": 2026,
+  "sources": [
+    {
+      "id": "fixture-manufacturer-sheet",
+      "title": "Fiktives Herstellerdatenblatt fuer Compilertests",
+      "url": "https://example.invalid/fixture-vehicle-sheet",
+      "license": "LicenseRef-PolyForm-Shield-1.0.0",
+      "retrievedAt": "2026-08-23",
+      "contentSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "rightsDecision": {
+        "status": "freigegeben",
+        "decidedAt": "2026-08-23",
+        "reviewer": "fixture-reviewer",
+        "reference": "fixture-rights-1"
+      }
+    }
+  ],
+  "vehicleTypes": [
+    {
+      "typeId": "fixture.et.100",
+      "numericId": 100,
+      "classDesignation": {
+        "value": "ET100",
+        "kind": "published-fact",
+        "confidenceBasisPoints": 10000,
+        "method": "Direkte Angabe im fiktiven Datenblatt",
+        "sourceIds": ["fixture-manufacturer-sheet"]
+      },
+      "tradeName": {
+        "value": "Morgenstern",
+        "kind": "game-assumption",
+        "confidenceBasisPoints": 10000,
+        "method": "Fiktiver Zugfolge-Handelsname gemaess E6",
+        "sourceIds": []
+      },
+      "constructionYears": {
+        "value": { "from": 2020, "to": 2026 },
+        "kind": "published-fact",
+        "confidenceBasisPoints": 10000,
+        "method": "Direkte Angabe im fiktiven Datenblatt",
+        "sourceIds": ["fixture-manufacturer-sheet"]
+      },
+      "role": {
+        "value": "powered-unit",
+        "kind": "published-fact",
+        "confidenceBasisPoints": 10000,
+        "method": "Fahrzeugbauart im fiktiven Datenblatt",
+        "sourceIds": ["fixture-manufacturer-sheet"]
+      },
+      "traction": {
+        "value": "electric",
+        "kind": "published-fact",
+        "confidenceBasisPoints": 10000,
+        "method": "Antriebsart im fiktiven Datenblatt",
+        "sourceIds": ["fixture-manufacturer-sheet"]
+      },
+      "controlStands": {
+        "value": { "front": true, "rear": true },
+        "kind": "published-fact",
+        "confidenceBasisPoints": 10000,
+        "method": "Fuehrerstaende im fiktiven Datenblatt",
+        "sourceIds": ["fixture-manufacturer-sheet"]
+      },
+      "electricSystems": {
+        "value": ["ac15kv"],
+        "kind": "published-fact",
+        "confidenceBasisPoints": 10000,
+        "method": "Stromsystem im fiktiven Datenblatt",
+        "sourceIds": ["fixture-manufacturer-sheet"]
+      },
+      "standardProtection": {
+        "value": ["pzb"],
+        "kind": "published-fact",
+        "confidenceBasisPoints": 10000,
+        "method": "Serienausruestung im fiktiven Datenblatt",
+        "sourceIds": ["fixture-manufacturer-sheet"]
+      },
+      "protectionOptions": [
+        {
+          "system": "lzb",
+          "fitment": "factory-option",
+          "years": { "from": 2020, "to": 2026 },
+          "evidence": {
+            "kind": "published-fact",
+            "confidenceBasisPoints": 10000,
+            "method": "Werksoption im fiktiven Datenblatt",
+            "sourceIds": ["fixture-manufacturer-sheet"]
+          }
+        }
+      ],
+      "markets": {
+        "newBuild": {
+          "value": { "from": 2020, "to": 2026 },
+          "kind": "published-fact",
+          "confidenceBasisPoints": 10000,
+          "method": "Fertigungsfenster im fiktiven Datenblatt",
+          "sourceIds": ["fixture-manufacturer-sheet"]
+        },
+        "leasing": {
+          "value": { "from": 2020, "to": 2035 },
+          "kind": "game-assumption",
+          "confidenceBasisPoints": 8000,
+          "method": "Versionierte Spielannahme fuer den Leasingmarkt",
+          "sourceIds": []
+        },
+        "used": {
+          "value": { "from": 2022, "to": 2040 },
+          "kind": "game-assumption",
+          "confidenceBasisPoints": 8000,
+          "method": "Versionierte Spielannahme fuer den Gebrauchtmarkt",
+          "sourceIds": []
+        }
+      },
+      "technical": {
+        "lengthMm": {
+          "value": 70000,
+          "kind": "published-fact",
+          "confidenceBasisPoints": 10000,
+          "method": "Laenge im fiktiven Datenblatt",
+          "sourceIds": ["fixture-manufacturer-sheet"]
+        },
+        "massKg": {
+          "value": 120000,
+          "kind": "published-fact",
+          "confidenceBasisPoints": 10000,
+          "method": "Masse im fiktiven Datenblatt",
+          "sourceIds": ["fixture-manufacturer-sheet"]
+        },
+        "maximumSpeedKph": {
+          "value": 160,
+          "kind": "published-fact",
+          "confidenceBasisPoints": 10000,
+          "method": "Vmax im fiktiven Datenblatt",
+          "sourceIds": ["fixture-manufacturer-sheet"]
+        },
+        "continuousPowerKw": {
+          "value": 3000,
+          "kind": "published-fact",
+          "confidenceBasisPoints": 10000,
+          "method": "Dauerleistung im fiktiven Datenblatt",
+          "sourceIds": ["fixture-manufacturer-sheet"]
+        },
+        "startingTractiveEffortKn": {
+          "value": 200,
+          "kind": "published-fact",
+          "confidenceBasisPoints": 10000,
+          "method": "Anfahrzugkraft im fiktiven Datenblatt",
+          "sourceIds": ["fixture-manufacturer-sheet"]
+        },
+        "brakeWeightKg": {
+          "value": 130000,
+          "kind": "published-fact",
+          "confidenceBasisPoints": 10000,
+          "method": "Bremsgewicht im fiktiven Datenblatt",
+          "sourceIds": ["fixture-manufacturer-sheet"]
+        }
+      },
+      "operationalProfile": {
+        "schemaVersion": "zugfolge-derived-operational-profile/v2",
+        "maximumAccelerationCapMmps2": {
+          "value": 1000,
+          "kind": "game-assumption",
+          "confidenceBasisPoints": 10000,
+          "method": "Versionierte Obergrenze der ganzzahligen v2-Ableitung",
+          "sourceIds": []
+        },
+        "serviceBrakeCapMmps2": {
+          "value": 900,
+          "kind": "game-assumption",
+          "confidenceBasisPoints": 10000,
+          "method": "Versionierte Obergrenze der ganzzahligen v2-Ableitung",
+          "sourceIds": []
+        },
+        "emergencyBrakeMultiplierBasisPoints": {
+          "value": 13334,
+          "kind": "game-assumption",
+          "confidenceBasisPoints": 10000,
+          "method": "Versionierter ganzzahliger Schnellbremsmultiplikator",
+          "sourceIds": []
+        }
+      },
+      "passenger": {
+        "seats": {
+          "value": 200,
+          "kind": "published-fact",
+          "confidenceBasisPoints": 10000,
+          "method": "Sitzplaetze im fiktiven Datenblatt",
+          "sourceIds": ["fixture-manufacturer-sheet"]
+        },
+        "firstClassSeats": {
+          "value": 16,
+          "kind": "published-fact",
+          "confidenceBasisPoints": 10000,
+          "method": "Erste-Klasse-Sitzplaetze im fiktiven Datenblatt",
+          "sourceIds": ["fixture-manufacturer-sheet"]
+        },
+        "accessible": {
+          "value": true,
+          "kind": "published-fact",
+          "confidenceBasisPoints": 10000,
+          "method": "Barrierefreiheit im fiktiven Datenblatt",
+          "sourceIds": ["fixture-manufacturer-sheet"]
+        },
+        "bicyclePlaces": {
+          "value": 12,
+          "kind": "published-fact",
+          "confidenceBasisPoints": 10000,
+          "method": "Fahrradplaetze im fiktiven Datenblatt",
+          "sourceIds": ["fixture-manufacturer-sheet"]
+        },
+        "wheelchairPlaces": {
+          "value": 2,
+          "kind": "published-fact",
+          "confidenceBasisPoints": 10000,
+          "method": "Rollstuhlplaetze im fiktiven Datenblatt",
+          "sourceIds": ["fixture-manufacturer-sheet"]
+        },
+        "equipment": {
+          "value": ["air-conditioning", "passenger-information"],
+          "kind": "published-fact",
+          "confidenceBasisPoints": 10000,
+          "method": "Ausstattung im fiktiven Datenblatt",
+          "sourceIds": ["fixture-manufacturer-sheet"]
+        },
+        "replacementPlan": {
+          "value": false,
+          "kind": "game-assumption",
+          "confidenceBasisPoints": 10000,
+          "method": "Fixture besitzt keinen Ersatzplan",
+          "sourceIds": []
+        }
+      }
+    }
+  ]
+}

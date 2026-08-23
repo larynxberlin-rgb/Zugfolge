@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { PGlite } from "@electric-sql/pglite";
 import {
   domainEvents,
@@ -15,8 +17,13 @@ import {
   PLANNING_COORDINATE_AUTHORITY_SCHEMA,
   PLANNING_PLAYER_PATH_REQUEST_SCHEMA,
 } from "@zugfolge/planning-worker";
-import type { FleetAuthorityRelease, NativeFleetWorldState } from "@zugfolge/runtime-native";
-import { inArray } from "drizzle-orm";
+import type {
+  FleetAuthorityRelease,
+  FleetAuthorityVehicleRestriction,
+  FleetRuntime,
+  NativeFleetWorldState,
+} from "@zugfolge/runtime-native";
+import { eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import type { FastifyInstance } from "fastify";
@@ -30,6 +37,48 @@ const unknownWorld = "99999999-9999-4999-8999-999999999999";
 const internalToken = "planning-route-internal-token";
 const operatorA = "aaaaaaaa-0000-4000-8000-000000000001";
 const operatorB = "bbbbbbbb-0000-4000-8000-000000000002";
+let persistedFleetStateHash = "";
+let persistedFleetSnapshotHash = "";
+
+function canonicalTestValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalTestValue);
+  if (typeof value !== "object" || value === null) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+      .map(([key, item]) => [key, canonicalTestValue(item)]),
+  );
+}
+
+function testFleetStateHash(state: NativeFleetWorldState): string {
+  return createHash("sha256")
+    .update(JSON.stringify(canonicalTestValue(state)), "utf8")
+    .digest("hex");
+}
+
+const planningFleetRuntime: FleetRuntime = {
+  initializeFleet() {
+    throw new Error("Planning-Test nutzt keine Fleet-Initialisierung.");
+  },
+  applyFleetCommand() {
+    throw new Error("Planning-Test nutzt keine Fleet-Kommandos.");
+  },
+  verifyFleetWorldState(state, expectedStateHash) {
+    const actualStateHash = testFleetStateHash(state);
+    if (actualStateHash !== expectedStateHash) {
+      throw new Error("state_hash_mismatch: manipulierter Planning-Checkpoint");
+    }
+    return {
+      schemaVersion: "zugfolge-fleet-world-state-verification/v1",
+      worldId: state.worldId,
+      revision: state.revision,
+      producedAt: state.producedAt,
+      authorityReleaseHash: state.authorityReleaseHash,
+      stateHash: actualStateHash,
+      snapshotHash: persistedFleetSnapshotHash,
+    };
+  },
+};
 
 function pathRequest(requestId: string, _trainId: string, _trainNumber: number, formationId = "formation-a") {
   return {
@@ -56,18 +105,24 @@ function authorityRelease(): FleetAuthorityRelease {
     operatorId: string,
     input: {
       readonly classDesignation: string;
-      readonly traction: "electric" | "diesel";
+      readonly traction: "unpowered" | "electric" | "diesel" | "battery";
       readonly electricSystems: readonly ("ac15kv" | "ac25kv")[];
-      readonly installedProtection: readonly ("pzb" | "lzb")[];
+      readonly installedProtection: readonly ("pzb" | "lzb" | "etcs-level1")[];
       readonly lengthMm?: number;
       readonly massKg?: number;
       readonly maximumSpeedKph?: number;
+      readonly maximumSpeedMmps?: number;
+      readonly continuousPowerKw?: number;
+      readonly role?: "locomotive" | "powered-unit" | "coach" | "control-car";
+      readonly controlStands?: Readonly<{ front: boolean; rear: boolean }>;
+      readonly orientation?: "along" | "against";
+      readonly restrictions?: Readonly<Record<string, FleetAuthorityVehicleRestriction>>;
     },
   ) => ({
     id,
     numericId: Number(id.replace(/\D/g, "").slice(-4) || "1") + 1,
     operatorId,
-    vehicleTypeId: 100,
+    vehicleTypeId: Number(id.replace(/\D/g, "").slice(-4) || "1") + 100,
     classDesignation: input.classDesignation,
     tradeName: id,
     buildYear: 2024,
@@ -80,10 +135,24 @@ function authorityRelease(): FleetAuthorityRelease {
       lengthMm: input.lengthMm ?? 70_000,
       massKg: input.massKg ?? 120_000,
       maximumSpeedKph: input.maximumSpeedKph ?? 160,
-      accelerationMmPerS2: 800,
-      decelerationMmPerS2: 900,
+      maximumSpeedMmps: input.maximumSpeedMmps
+        ?? Math.floor((input.maximumSpeedKph ?? 160) * 1_000_000 / 3_600),
+      accelerationMmPerS2: input.traction === "unpowered" ? 0 : 800,
+      decelerationMmPerS2: input.traction === "unpowered" ? 0 : 900,
+      continuousPowerKw: input.continuousPowerKw
+        ?? (input.traction === "unpowered" ? 0 : 2_000),
+      startingTractiveEffortKn: input.traction === "unpowered" ? 0 : 250,
+      brakeWeightKg: 100_000,
+      maximumAccelerationCapMmps2: input.traction === "unpowered" ? 0 : 800,
+      serviceBrakeCapMmps2: 900,
+      emergencyBrakeMultiplierBasisPoints: 15_000,
       traction: input.traction,
       electricSystems: input.electricSystems,
+      role: input.role ?? (input.traction === "unpowered" ? "coach" : "powered-unit"),
+      controlStands: input.controlStands
+        ?? (input.traction === "unpowered"
+          ? { front: false, rear: false }
+          : { front: true, rear: true }),
     },
     passenger: {
       seats: 120,
@@ -95,6 +164,17 @@ function authorityRelease(): FleetAuthorityRelease {
       operatingCostCentsPerTrainKm: 700,
       replacementPlan: true,
     },
+    orientation: input.orientation ?? "along",
+    condition: {
+      mechanicsBasisPoints: 10_000,
+      driveBasisPoints: 10_000,
+      brakesBasisPoints: 10_000,
+      kilometresSinceMaintenance: 0,
+      operatingHoursSinceMaintenance: 0,
+      openObservations: 0,
+    },
+    restrictions: input.restrictions ?? {},
+    history: [],
     deliveredAt: 0,
     retiredAt: 100_000,
   });
@@ -105,7 +185,7 @@ function authorityRelease(): FleetAuthorityRelease {
     electrifications: FleetAuthorityRelease["pathReceipts"][number]["electrifications"],
   ) => ({
     id,
-    numericRouteId: id === "path-a" ? 1 : 2,
+    numericRouteId: Number(id.replace(/\D/g, "").slice(-4) || "1") + id.length,
     operatorId: owner,
     serviceLineIds: ["S1"],
     decision: "confirmed" as const,
@@ -122,17 +202,99 @@ function authorityRelease(): FleetAuthorityRelease {
     schemaVersion: "zugfolge-fleet-authority-release/v2",
     releaseId: "fleet-lhe-2026",
     referenceYear: 2026,
+    economyReleaseId: "economy-lhe-2026",
+    economyReleaseSha256: "f".repeat(64),
     assets: [
-      asset("asset-a-1", operatorA, { classDesignation: "ET1", traction: "electric", electricSystems: ["ac15kv"], installedProtection: ["pzb"], massKg: 123_000, lengthMm: 71_000, maximumSpeedKph: 155 }),
+      asset("asset-a-1", operatorA, { classDesignation: "ET1", traction: "electric", electricSystems: ["ac15kv"], installedProtection: ["pzb"], massKg: 123_000, lengthMm: 71_000, maximumSpeedKph: 100 }),
       asset("asset-b-2", operatorB, { classDesignation: "VT1", traction: "diesel", electricSystems: [], installedProtection: ["pzb"] }),
       asset("asset-clearance-3", operatorA, { classDesignation: "TOO-WIDE", traction: "electric", electricSystems: ["ac15kv"], installedProtection: ["pzb"] }),
       asset("asset-electric-4", operatorA, { classDesignation: "ET1", traction: "electric", electricSystems: ["ac25kv"], installedProtection: ["pzb"] }),
       asset("asset-unprotected-5", operatorA, { classDesignation: "ET1", traction: "electric", electricSystems: ["ac15kv"], installedProtection: [] }),
+      asset("asset-control-6", operatorA, {
+        classDesignation: "CTRL",
+        traction: "unpowered",
+        electricSystems: [],
+        installedProtection: ["pzb"],
+        role: "control-car",
+        controlStands: { front: false, rear: true },
+        orientation: "against",
+      }),
+      asset("asset-loco-7", operatorA, {
+        classDesignation: "LOCO",
+        traction: "electric",
+        electricSystems: ["ac15kv"],
+        installedProtection: ["etcs-level1"],
+        role: "locomotive",
+      }),
+      asset("asset-protection-8", operatorA, {
+        classDesignation: "ET1",
+        traction: "electric",
+        electricSystems: ["ac15kv"],
+        installedProtection: ["pzb"],
+        restrictions: { unavailable: { "protection-unavailable": "pzb" } },
+      }),
+      asset("asset-speed-9", operatorA, {
+        classDesignation: "ET1",
+        traction: "electric",
+        electricSystems: ["ac15kv"],
+        installedProtection: ["pzb"],
+        maximumSpeedKph: 100,
+        restrictions: {
+          brake: { "service-brake": 650 },
+          speed: { "maximum-speed": 20_001 },
+        },
+      }),
+      asset("asset-bemu-10", operatorA, {
+        classDesignation: "BEMU",
+        traction: "battery",
+        electricSystems: ["ac15kv"],
+        installedProtection: ["pzb"],
+      }),
+      asset("asset-bemu-bad-11", operatorA, {
+        classDesignation: "BEMU",
+        traction: "battery",
+        electricSystems: ["ac15kv"],
+        installedProtection: ["pzb"],
+      }),
+      asset("asset-immobilized-12", operatorA, {
+        classDesignation: "ET1",
+        traction: "electric",
+        electricSystems: ["ac15kv"],
+        installedProtection: ["pzb"],
+        restrictions: { unavailable: "immobilized" },
+      }),
+      asset("asset-zero-power-13", operatorA, {
+        classDesignation: "ET1",
+        traction: "electric",
+        electricSystems: ["ac15kv"],
+        installedProtection: ["pzb"],
+        continuousPowerKw: 1,
+        restrictions: { derated: { "power-basis-points": 1 } },
+      }),
+      asset("asset-utf8-power-14", operatorA, {
+        classDesignation: "ET1",
+        traction: "electric",
+        electricSystems: ["ac15kv"],
+        installedProtection: ["pzb"],
+        continuousPowerKw: 3,
+        restrictions: {
+          "\uE000": { "power-basis-points": 5_070 },
+          "\u{10000}": { "power-basis-points": 6_748 },
+        },
+      }),
     ],
     personnelPools: [],
     pathReceipts: [
       receipt("path-a", operatorA, ["ET1"], ["overhead-ac15kv"]),
       receipt("path-b", operatorB, ["VT1"], ["unelectrified", "overhead-ac15kv"]),
+      receipt("path-control-6", operatorA, ["CTRL", "LOCO"], ["overhead-ac15kv"]),
+      receipt("path-protection-8", operatorA, ["ET1"], ["overhead-ac15kv"]),
+      receipt("path-speed-9", operatorA, ["ET1"], ["overhead-ac15kv"]),
+      receipt("path-bemu-good-10", operatorA, ["BEMU"], ["unelectrified", "overhead-ac15kv"]),
+      receipt("path-bemu-bad-11", operatorA, ["BEMU"], ["overhead-ac25kv"]),
+      receipt("path-immobilized-12", operatorA, ["ET1"], ["overhead-ac15kv"]),
+      receipt("path-zero-power-13", operatorA, ["ET1"], ["overhead-ac15kv"]),
+      receipt("path-utf8-power-14", operatorA, ["ET1"], ["overhead-ac15kv"]),
     ],
   };
 }
@@ -142,11 +304,19 @@ async function persistFleetFixture(
 ): Promise<void> {
   const release = authorityRelease();
   const formations = {
-    "formation-a": { id: "formation-a", vehicleIds: ["asset-a-1"], pathReceiptId: "path-a", dynamics: { accelerationMmPerS2: 610, decelerationMmPerS2: 820 } },
-    "formation-b": { id: "formation-b", vehicleIds: ["asset-b-2"], pathReceiptId: "path-b", dynamics: { accelerationMmPerS2: 590, decelerationMmPerS2: 810 } },
-    "formation-clearance": { id: "formation-clearance", vehicleIds: ["asset-clearance-3"], pathReceiptId: "path-a", dynamics: { accelerationMmPerS2: 600, decelerationMmPerS2: 800 } },
-    "formation-electric": { id: "formation-electric", vehicleIds: ["asset-electric-4"], pathReceiptId: "path-a", dynamics: { accelerationMmPerS2: 600, decelerationMmPerS2: 800 } },
-    "formation-unprotected": { id: "formation-unprotected", vehicleIds: ["asset-unprotected-5"], pathReceiptId: "path-a", dynamics: { accelerationMmPerS2: 600, decelerationMmPerS2: 800 } },
+    "formation-a": { id: "formation-a", vehicleIds: ["asset-a-1"], pathReceiptId: "path-a", dynamics: { accelerationMmPerS2: 800, decelerationMmPerS2: 900 } },
+    "formation-b": { id: "formation-b", vehicleIds: ["asset-b-2"], pathReceiptId: "path-b", dynamics: { accelerationMmPerS2: 800, decelerationMmPerS2: 900 } },
+    "formation-clearance": { id: "formation-clearance", vehicleIds: ["asset-clearance-3"], pathReceiptId: "path-a", dynamics: { accelerationMmPerS2: 800, decelerationMmPerS2: 900 } },
+    "formation-electric": { id: "formation-electric", vehicleIds: ["asset-electric-4"], pathReceiptId: "path-a", dynamics: { accelerationMmPerS2: 800, decelerationMmPerS2: 900 } },
+    "formation-unprotected": { id: "formation-unprotected", vehicleIds: ["asset-unprotected-5"], pathReceiptId: "path-a", dynamics: { accelerationMmPerS2: 800, decelerationMmPerS2: 900 } },
+    "formation-control": { id: "formation-control", vehicleIds: ["asset-control-6", "asset-loco-7"], pathReceiptId: "path-control-6", dynamics: { accelerationMmPerS2: 800, decelerationMmPerS2: 900 } },
+    "formation-protection": { id: "formation-protection", vehicleIds: ["asset-protection-8"], pathReceiptId: "path-protection-8", dynamics: { accelerationMmPerS2: 800, decelerationMmPerS2: 900 } },
+    "formation-speed": { id: "formation-speed", vehicleIds: ["asset-speed-9"], pathReceiptId: "path-speed-9", dynamics: { accelerationMmPerS2: 800, decelerationMmPerS2: 650 } },
+    "formation-bemu-good": { id: "formation-bemu-good", vehicleIds: ["asset-bemu-10"], pathReceiptId: "path-bemu-good-10", dynamics: { accelerationMmPerS2: 800, decelerationMmPerS2: 900 } },
+    "formation-bemu-bad": { id: "formation-bemu-bad", vehicleIds: ["asset-bemu-bad-11"], pathReceiptId: "path-bemu-bad-11", dynamics: { accelerationMmPerS2: 800, decelerationMmPerS2: 900 } },
+    "formation-immobilized": { id: "formation-immobilized", vehicleIds: ["asset-immobilized-12"], pathReceiptId: "path-immobilized-12" },
+    "formation-zero-power": { id: "formation-zero-power", vehicleIds: ["asset-zero-power-13"], pathReceiptId: "path-zero-power-13" },
+    "formation-utf8-power": { id: "formation-utf8-power", vehicleIds: ["asset-utf8-power-14"], pathReceiptId: "path-utf8-power-14" },
   } as const;
   const assetHoldings = Object.fromEntries(release.assets.map((asset) => [asset.id, {
     ownerOperatorId: asset.operatorId,
@@ -156,6 +326,61 @@ async function persistFleetFixture(
     validUntilS: null,
     historyHash: "d".repeat(64),
   }]));
+  const assetsById = new Map(release.assets.map((asset) => [asset.id, asset] as const));
+  const receiptsById = new Map(release.pathReceipts.map((receipt) => [receipt.id, receipt] as const));
+  const snapshotFormations: FleetMobilizationSnapshot["formations"] = Object.values(formations)
+    .map((formation) => {
+      const assets = formation.vehicleIds.map((vehicleId) => assetsById.get(vehicleId)!);
+      const receipt = receiptsById.get(formation.pathReceiptId)!;
+      const seats = assets.reduce((sum, asset) => sum + asset.passenger.seats, 0);
+      const firstClassSeats = assets.reduce(
+        (sum, asset) => sum + asset.passenger.firstClassSeats,
+        0,
+      );
+      const powered = assets.find((asset) => asset.technical.traction !== "unpowered");
+      const availableUntil = Math.min(
+        receipt.validUntil,
+        ...assets.flatMap((asset) => [
+          asset.retiredAt,
+          ...asset.maintenanceDeadlines.map((deadline) => deadline.dueAt),
+        ]),
+      );
+      return {
+        id: formation.id,
+        operatorId: receipt.operatorId,
+        vehicleIds: formation.vehicleIds,
+        pathReceiptId: formation.pathReceiptId,
+        serviceLineIds: receipt.serviceLineIds,
+        availability: powered !== undefined && formation.dynamics === undefined
+          ? "maintenance" as const
+          : "available" as const,
+        procurement: "delivered" as const,
+        availableFrom: Math.max(...assets.map((asset) => asset.deliveredAt)),
+        availableUntil,
+        characteristics: {
+          seats,
+          firstClassBasisPoints: Math.floor(firstClassSeats * 10_000 / seats),
+          accessible: assets.every((asset) => asset.passenger.accessible),
+          bicyclePlaces: assets.reduce((sum, asset) => sum + asset.passenger.bicyclePlaces, 0),
+          wheelchairPlaces: assets.reduce(
+            (sum, asset) => sum + asset.passenger.wheelchairPlaces,
+            0,
+          ),
+          equipment: ["pis"],
+          vehicleAgeYears: Math.max(...assets.map((asset) => release.referenceYear - asset.buildYear)),
+          maximumSpeedKph: Math.min(...assets.map((asset) => asset.technical.maximumSpeedKph)),
+          operatingCostCentsPerTrainKm: assets.reduce(
+            (sum, asset) => sum + asset.passenger.operatingCostCentsPerTrainKm,
+            0,
+          ),
+          homologatedLineIds: receipt.serviceLineIds,
+          maintenanceValidUntil: availableUntil,
+          traction: powered?.technical.traction ?? "unpowered",
+          replacementPlan: assets.every((asset) => asset.passenger.replacementPlan),
+        },
+      };
+    })
+    .sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
   const state = {
     schemaVersion: "zugfolge-fleet-world-state/v2",
     worldId: worldA,
@@ -173,11 +398,13 @@ async function persistFleetFixture(
     worldId: worldA,
     revision: 0,
     producedAt: 0,
-    formations: [],
+    formations: snapshotFormations,
     personnelDuties: [],
     pathReservations: [],
   };
   const envelope = createFleetMobilizationEnvelope(snapshot);
+  persistedFleetStateHash = testFleetStateHash(state);
+  persistedFleetSnapshotHash = envelope.snapshotHash;
   await db.insert(fleetMobilizationSnapshots).values({
     worldId: worldA,
     revision: 0,
@@ -191,7 +418,7 @@ async function persistFleetFixture(
     revision: 0,
     stateSchema: state.schemaVersion,
     state,
-    stateHash: "e".repeat(64),
+    stateHash: persistedFleetStateHash,
     snapshotHash: envelope.snapshotHash,
     commandId: null,
     commandSchema: null,
@@ -200,6 +427,50 @@ async function persistFleetFixture(
     producedAt: new Date(0),
     ingestedAt: new Date(0),
   });
+}
+
+async function replaceFleetFixture(
+  db: ReturnType<typeof drizzle<typeof schema>>,
+  transform: (current: {
+    readonly state: NativeFleetWorldState;
+    readonly snapshot: FleetMobilizationSnapshot;
+  }) => {
+    readonly state: NativeFleetWorldState;
+    readonly snapshot: FleetMobilizationSnapshot;
+  },
+  options: { readonly preserveStateHash?: boolean } = {},
+): Promise<void> {
+  const [checkpoint] = await db
+    .select({ state: fleetWorldCheckpoints.state })
+    .from(fleetWorldCheckpoints)
+    .where(eq(fleetWorldCheckpoints.worldId, worldA))
+    .limit(1);
+  const [snapshotRow] = await db
+    .select({ payload: fleetMobilizationSnapshots.payload })
+    .from(fleetMobilizationSnapshots)
+    .where(eq(fleetMobilizationSnapshots.worldId, worldA))
+    .limit(1);
+  if (checkpoint === undefined || snapshotRow === undefined) {
+    throw new Error("Fleet-Testfixture ist unvollstaendig.");
+  }
+  const next = transform({
+    state: structuredClone(checkpoint.state) as NativeFleetWorldState,
+    snapshot: structuredClone(snapshotRow.payload) as FleetMobilizationSnapshot,
+  });
+  const envelope = createFleetMobilizationEnvelope(next.snapshot);
+  persistedFleetSnapshotHash = envelope.snapshotHash;
+  await db
+    .update(fleetMobilizationSnapshots)
+    .set({ payload: next.snapshot, snapshotHash: envelope.snapshotHash })
+    .where(eq(fleetMobilizationSnapshots.worldId, worldA));
+  await db
+    .update(fleetWorldCheckpoints)
+    .set({
+      state: next.state,
+      snapshotHash: envelope.snapshotHash,
+      ...(options.preserveStateHash ? {} : { stateHash: testFleetStateHash(next.state) }),
+    })
+    .where(eq(fleetWorldCheckpoints.worldId, worldA));
 }
 
 describe("produktive M3-Planning-Routen", () => {
@@ -253,6 +524,7 @@ describe("produktive M3-Planning-Routen", () => {
       },
       simulationIngestToken: internalToken,
       planningAuthorityAccountIds: { [worldA]: authority.id },
+      fleetRuntime: planningFleetRuntime,
     });
     await app.ready();
   });
@@ -323,7 +595,7 @@ describe("produktive M3-Planning-Routen", () => {
           formationId: "formation-a",
           operatorId: operatorA,
           fleetRevision: 0,
-          fleetStateHash: "e".repeat(64),
+          fleetStateHash: persistedFleetStateHash,
           fleetAuthorityReleaseId: "fleet-lhe-2026",
           trainId: expect.stringMatching(/^player-/),
           trainNumber: expect.any(Number),
@@ -332,9 +604,9 @@ describe("produktive M3-Planning-Routen", () => {
             name: "formation-a",
             massKg: 123_000,
             lengthMm: 71_000,
-            maximumSpeedKph: 155,
-            accelerationMmPerS2: 610,
-            decelerationMmPerS2: 820,
+            maximumSpeedMmps: 27_777,
+            accelerationMmPerS2: 800,
+            decelerationMmPerS2: 900,
           },
         }),
       }),
@@ -400,12 +672,267 @@ describe("produktive M3-Planning-Routen", () => {
           name: "formation-b",
           massKg: 120_000,
           lengthMm: 70_000,
-          maximumSpeedKph: 160,
-          accelerationMmPerS2: 590,
-          decelerationMmPerS2: 810,
+          maximumSpeedMmps: 44_444,
+          accelerationMmPerS2: 800,
+          decelerationMmPerS2: 900,
         },
       },
     });
+  });
+
+  it("verwirft manipulierte v2-Stromsysteme bei unveraendertem Fleet-Zustandshash fail-closed", async () => {
+    await replaceFleetFixture(
+      db,
+      ({ state, snapshot }) => ({
+        state: {
+          ...state,
+          authorityRelease: {
+            ...state.authorityRelease,
+            assets: state.authorityRelease.assets.map((asset) => asset.id === "asset-electric-4"
+              ? {
+                  ...asset,
+                  technical: { ...asset.technical, electricSystems: ["ac15kv" as const] },
+                }
+              : asset),
+          },
+        } as NativeFleetWorldState,
+        snapshot,
+      }),
+      { preserveStateHash: true },
+    );
+
+    const manipulated = await submitPath(
+      "account-a",
+      pathRequest("forged-electric-system", "ignored", 1, "formation-electric"),
+    );
+    expect(manipulated.statusCode).toBe(503);
+    expect(manipulated.json()).toMatchObject({ code: "planning_fleet_state_invalid" });
+    expect(await db.select().from(simulationCommands)).toEqual([]);
+  });
+
+  it("wertet v2-Orientierung und Zugsicherungsrestriktionen nur an der aktiven Spitze aus", async () => {
+    const rotatedControlCar = await submitPath(
+      "account-a",
+      pathRequest("rotated-control-car", "ignored", 1, "formation-control"),
+    );
+    expect(rotatedControlCar.statusCode).toBe(202);
+    expect(rotatedControlCar.json()).toMatchObject({
+      payload: {
+        formationId: "formation-control",
+        train: {
+          name: "formation-control",
+          massKg: 240_000,
+          lengthMm: 140_000,
+        },
+      },
+    });
+
+    const unavailableAtTip = await submitPath(
+      "account-a",
+      pathRequest("unavailable-protection", "ignored", 1, "formation-protection"),
+    );
+    expect(unavailableAtTip.statusCode).toBe(409);
+    expect(unavailableAtTip.json()).toMatchObject({
+      code: "planning_formation_incompatible",
+    });
+  });
+
+  it("wendet v2-Vmax- und Servicebremsrestriktionen ohne Einheitenverlust an", async () => {
+    const accepted = await submitPath(
+      "account-a",
+      pathRequest("restricted-performance", "ignored", 1, "formation-speed"),
+    );
+    expect(accepted.statusCode).toBe(202);
+    expect(accepted.json()).toMatchObject({
+      payload: {
+        train: {
+          maximumSpeedMmps: 20_001,
+          accelerationMmPerS2: 800,
+          decelerationMmPerS2: 650,
+        },
+      },
+    });
+  });
+
+  it("laesst AC15-BEMU nur unelektrifiziert oder am passenden Oberleitungssystem fahren", async () => {
+    const compatibleBattery = await submitPath(
+      "account-a",
+      pathRequest("bemu-compatible", "ignored", 1, "formation-bemu-good"),
+    );
+    expect(compatibleBattery.statusCode).toBe(202);
+
+    const incompatibleBattery = await submitPath(
+      "account-a",
+      pathRequest("bemu-incompatible", "ignored", 1, "formation-bemu-bad"),
+    );
+    expect(incompatibleBattery.statusCode).toBe(409);
+    expect(incompatibleBattery.json()).toMatchObject({
+      code: "planning_formation_incompatible",
+    });
+  });
+
+  it("behandelt Immobilized und auf null gerasterte v2-Leistung als nicht nutzbaren Antrieb", async () => {
+    for (const formationId of [
+      "formation-immobilized",
+      "formation-zero-power",
+      // U+E000 sortiert in UTF-8 vor U+10000, in JavaScript-UTF-16 aber
+      // dahinter. Nur die Rust-paritaetische Reihenfolge rastert 3 kW hier
+      // nach zwei Restriktionen auf null.
+      "formation-utf8-power",
+    ]) {
+      const denied = await submitPath(
+        "account-a",
+        pathRequest(`unusable-${formationId}`, "ignored", 1, formationId),
+      );
+      expect(denied.statusCode).toBe(409);
+      expect(denied.json()).toMatchObject({ code: "planning_formation_incompatible" });
+    }
+  });
+
+  it("laesst Zukunftsplanung nach aktiver Instandhaltung zu und sperrt jedes ueberlappende Fenster", async () => {
+    await replaceFleetFixture(db, ({ state, snapshot }) => ({
+      state: {
+        ...state,
+        maintenanceAssignments: {
+          "formation-a": {
+            formationId: "formation-a",
+            facilityId: "workshop:leipzig",
+            startsAtS: 0,
+            endsAtS: 30_000,
+          },
+        },
+      },
+      snapshot: {
+        ...snapshot,
+        formations: snapshot.formations.map((formation) => formation.id === "formation-a"
+          ? { ...formation, availability: "maintenance" as const }
+          : formation),
+      },
+    }));
+
+    const afterMaintenance = await submitPath(
+      "account-a",
+      {
+        ...pathRequest("maintenance-finished", "ignored", 1),
+        desiredDepartureS: 40_000,
+      },
+    );
+    expect(afterMaintenance.statusCode).toBe(202);
+
+    const denied = await submitPath(
+      "account-a",
+      pathRequest("maintenance-active", "ignored", 1),
+    );
+    expect(denied.statusCode).toBe(409);
+    expect(denied.json()).toMatchObject({ code: "planning_formation_incompatible" });
+    expect(await db.select().from(simulationCommands)).toHaveLength(1);
+  });
+
+  it("verwirft widerspruechliche Instandhaltungsstatus als manipulierten Fleet-Zustand", async () => {
+    await replaceFleetFixture(db, ({ state, snapshot }) => ({
+      state: {
+        ...state,
+        maintenanceAssignments: {
+          "formation-a": {
+            formationId: "formation-a",
+            facilityId: "workshop:leipzig",
+            startsAtS: 0,
+            endsAtS: 30_000,
+          },
+        },
+      },
+      snapshot,
+    }));
+    const activeButAvailable = await submitPath(
+      "account-a",
+      pathRequest("maintenance-status-forged-available", "ignored", 1),
+    );
+    expect(activeButAvailable.statusCode).toBe(503);
+    expect(activeButAvailable.json()).toMatchObject({ code: "planning_fleet_state_invalid" });
+
+    await replaceFleetFixture(db, ({ state, snapshot }) => ({
+      state: { ...state, maintenanceAssignments: {} },
+      snapshot: {
+        ...snapshot,
+        formations: snapshot.formations.map((formation) => formation.id === "formation-a"
+          ? { ...formation, availability: "maintenance" as const }
+          : formation),
+      },
+    }));
+    const maintenanceWithoutCause = await submitPath(
+      "account-a",
+      pathRequest("maintenance-status-forged-maintenance", "ignored", 1),
+    );
+    expect(maintenanceWithoutCause.statusCode).toBe(503);
+    expect(maintenanceWithoutCause.json()).toMatchObject({ code: "planning_fleet_state_invalid" });
+    expect(await db.select().from(simulationCommands)).toEqual([]);
+  });
+
+  it("verweigert fehlende und manipulierte v2-Formationsdynamik fail-closed", async () => {
+    await replaceFleetFixture(db, ({ state, snapshot }) => ({
+      state: {
+        ...state,
+        formations: {
+          ...state.formations,
+          "formation-a": {
+            ...state.formations["formation-a"]!,
+            dynamics: undefined,
+          },
+        },
+      },
+      snapshot,
+    }));
+    const missing = await submitPath(
+      "account-a",
+      pathRequest("formation-dynamics-missing", "ignored", 1),
+    );
+    expect(missing.statusCode).toBe(503);
+    expect(missing.json()).toMatchObject({ code: "planning_fleet_state_invalid" });
+
+    await replaceFleetFixture(db, ({ state, snapshot }) => ({
+      state: {
+        ...state,
+        formations: {
+          ...state.formations,
+          "formation-a": {
+            ...state.formations["formation-a"]!,
+            dynamics: { accelerationMmPerS2: 801, decelerationMmPerS2: 900 },
+          },
+        },
+      },
+      snapshot,
+    }));
+    const manipulated = await submitPath(
+      "account-a",
+      pathRequest("formation-dynamics-manipulated", "ignored", 1),
+    );
+    expect(manipulated.statusCode).toBe(503);
+    expect(manipulated.json()).toMatchObject({ code: "planning_fleet_state_invalid" });
+    expect(await db.select().from(simulationCommands)).toEqual([]);
+  });
+
+  it("verwirft einen weltfremden oder fehlenden Mobilisierungssnapshot fail-closed", async () => {
+    await replaceFleetFixture(db, ({ state, snapshot }) => ({
+      state,
+      snapshot: { ...snapshot, worldId: worldB },
+    }));
+    const manipulated = await submitPath(
+      "account-a",
+      pathRequest("snapshot-world-forged", "ignored", 1),
+    );
+    expect(manipulated.statusCode).toBe(503);
+    expect(manipulated.json()).toMatchObject({ code: "planning_fleet_state_invalid" });
+
+    await db
+      .delete(fleetMobilizationSnapshots)
+      .where(eq(fleetMobilizationSnapshots.worldId, worldA));
+    const missing = await submitPath(
+      "account-a",
+      pathRequest("snapshot-missing", "ignored", 1),
+    );
+    expect(missing.statusCode).toBe(503);
+    expect(missing.json()).toMatchObject({ code: "planning_fleet_unavailable" });
+    expect(await db.select().from(simulationCommands)).toEqual([]);
   });
 
   it("behandelt fachliche Antrags-ID-Kollisionen stabil als 409", async () => {

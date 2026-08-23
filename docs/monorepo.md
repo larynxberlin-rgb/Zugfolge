@@ -105,7 +105,13 @@ versionierte `VehicleCatalogRelease` beschreibt Typen, Quellen, Bau-/Marktzeiten
 und belegte Zugsicherungsoptionen; `VehicleAsset` und `FleetSnapshot` halten
 den individuellen, weltgebundenen Zustand. Die echte redaktionelle
 Katalogdatei bleibt als proprietäres Weltdatum außerhalb dieses öffentlichen
-Baums (E16). Im Crate liegen nur Schema, Regeln und fiktive Testdaten.
+Baums (E16). Im Crate liegen nur Schema, Regeln und fiktive Testdaten. Der
+Offline-Compiler in `zugfolge-fleet::release_catalog` ist die einzige Grenze,
+die einen belegten Quellkatalog und konkreten Welt-Seed in den
+Fleet-Authority-Release sowie das Operational-v2-Fahrzeuginventar projiziert.
+Seine Receipt bindet beide Eingaben und alle Ausgaben; ein JavaScript-Werkzeug
+darf diese fachliche Projektion nicht nachbauen. Vollständiger Vertrag:
+[`fahrzeugkatalog.md`](fahrzeugkatalog.md).
 
 Der produktive M5-Pfad liegt in `zugfolge-runtime`: Ein serververtrauenswürdiger,
 weltgebundener Authority-Release wird beim Start geprüft und beim Initialisieren

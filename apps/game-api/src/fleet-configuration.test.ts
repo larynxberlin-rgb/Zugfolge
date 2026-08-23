@@ -1,6 +1,7 @@
-import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -9,6 +10,10 @@ import {
 } from "./fleet-configuration.js";
 
 const WORLD_ID = "11111111-1111-4111-8111-111111111111";
+const COMPILER_AUTHORITY_CATALOG_PATH = fileURLToPath(new URL(
+  "../../../crates/zugfolge-fleet/tests/fixtures/fleet-authority-release-catalog-v1.json",
+  import.meta.url,
+));
 
 function authorityRelease() {
   return {
@@ -104,21 +109,50 @@ afterEach(async () => {
 });
 
 describe("M5-Authority-Release-Konfiguration", () => {
+  it("laedt die bytegesperrte deploybare Ausgabe des Fahrzeugkatalog-Compilers", async () => {
+    const loaded = await loadFleetAuthorityReleaseCatalog(COMPILER_AUTHORITY_CATALOG_PATH);
+
+    expect(Object.keys(loaded)).toEqual(["00000000-0000-4000-8000-000000000387"]);
+    expect(loaded["00000000-0000-4000-8000-000000000387"]).toMatchObject({
+      producedAt: 100,
+      authorityRelease: {
+        schemaVersion: "zugfolge-fleet-authority-release/v2",
+        releaseId: "fixture-fleet-authority-1",
+        economyReleaseId: "fixture-economy-release-1",
+      },
+    });
+  });
+
+  it("verlangt producedAt fuer Authority-v2 und begrenzt Legacy-v1 explizit auf null", async () => {
+    const compiled = JSON.parse(await readFile(COMPILER_AUTHORITY_CATALOG_PATH, "utf8")) as {
+      entries: Array<Record<string, unknown>>;
+    };
+    delete compiled.entries[0]!["producedAt"];
+    await expect(loadFleetAuthorityReleaseCatalog(await temporaryFile(compiled)))
+      .rejects.toThrow(/producedAt/);
+
+    await expect(loadFleetAuthorityReleaseCatalog(await temporaryFile(catalog([{
+      worldId: WORLD_ID,
+      producedAt: 1,
+      authorityRelease: authorityRelease(),
+    }])))).rejects.toThrow(/Legacy.*0/);
+  });
+
   it("laedt eine Weltbindung als tief geklonten und tief eingefrorenen Katalog", async () => {
     const source = authorityRelease();
     const path = await temporaryFile(catalog([{ worldId: WORLD_ID, authorityRelease: source }]));
 
     const loaded = await loadFleetAuthorityReleaseCatalog(path);
 
-    expect(loaded[WORLD_ID]).toEqual(source);
+    expect(loaded[WORLD_ID]).toEqual({ producedAt: 0, authorityRelease: source });
     expect(Object.isFrozen(loaded)).toBe(true);
     expect(Object.isFrozen(loaded[WORLD_ID])).toBe(true);
-    expect(Object.isFrozen(loaded[WORLD_ID]?.assets)).toBe(true);
-    expect(Object.isFrozen(loaded[WORLD_ID]?.assets[0]?.technical)).toBe(true);
+    expect(Object.isFrozen(loaded[WORLD_ID]?.authorityRelease.assets)).toBe(true);
+    expect(Object.isFrozen(loaded[WORLD_ID]?.authorityRelease.assets[0]?.technical)).toBe(true);
     source.assets[0]!.tradeName = "Manipuliert";
-    expect(loaded[WORLD_ID]?.assets[0]?.tradeName).toBe("Testzug");
+    expect(loaded[WORLD_ID]?.authorityRelease.assets[0]?.tradeName).toBe("Testzug");
     expect(() => {
-      (loaded[WORLD_ID]!.assets as unknown[]).push({});
+      (loaded[WORLD_ID]!.authorityRelease.assets as unknown[]).push({});
     }).toThrow(TypeError);
   });
 
@@ -182,9 +216,9 @@ describe("M5-Authority-Release-Konfiguration", () => {
       await temporaryFile(catalog([{ worldId: WORLD_ID, authorityRelease: source }])),
     );
 
-    expect(loaded[WORLD_ID]?.assets).toHaveLength(2);
-    expect(loaded[WORLD_ID]?.assets[0]?.technical.continuousPowerKw).toBe(5_600);
-    expect(loaded[WORLD_ID]?.assets[1]?.technical.traction).toBe("unpowered");
+    expect(loaded[WORLD_ID]?.authorityRelease.assets).toHaveLength(2);
+    expect(loaded[WORLD_ID]?.authorityRelease.assets[0]?.technical.continuousPowerKw).toBe(5_600);
+    expect(loaded[WORLD_ID]?.authorityRelease.assets[1]?.technical.traction).toBe("unpowered");
   });
 
   it("erzwingt PZB bei LZB, erlaubt aber reine ETCS-Ausstattung", async () => {
@@ -194,7 +228,7 @@ describe("M5-Authority-Release-Konfiguration", () => {
       loadFleetAuthorityReleaseCatalog(
         await temporaryFile(catalog([{ worldId: WORLD_ID, authorityRelease: lzbOhnePzb }])),
       ),
-    ).rejects.toThrow(/LZB nur zusammen mit PZB/);
+    ).rejects.toThrow(/LZB nur mit PZB/);
 
     const etcsOnly = authorityRelease();
     etcsOnly.assets[0]!.installedProtection = ["etcs-level2"];
@@ -248,7 +282,7 @@ describe("M5-Authority-Release-Konfiguration", () => {
       loadFleetAuthorityReleaseCatalog(
         await temporaryFile(catalog([{ worldId: WORLD_ID, authorityRelease: withoutReferenceYear }])),
       ),
-    ).rejects.toThrow(/fehlend: referenceYear/);
+    ).rejects.toThrow(/fehlt Pflichtfeld 'referenceYear'/);
 
     const nested = authorityRelease();
     const passenger = nested.assets[0]!.passenger as Record<string, unknown>;
@@ -257,7 +291,7 @@ describe("M5-Authority-Release-Konfiguration", () => {
       loadFleetAuthorityReleaseCatalog(
         await temporaryFile(catalog([{ worldId: WORLD_ID, authorityRelease: nested }])),
       ),
-    ).rejects.toThrow(/unbekannt: availability/);
+    ).rejects.toThrow(/enthaelt unbekannte oder nicht serialisierbare Felder/);
   });
 
   it("verweigert doppelte Welten sowie nicht kanonische Welt-UUIDs", async () => {
@@ -295,7 +329,7 @@ describe("M5-Authority-Release-Konfiguration", () => {
       loadFleetAuthorityReleaseCatalog(
         await temporaryFile(catalog([{ worldId: WORLD_ID, authorityRelease: badEnum }])),
       ),
-    ).rejects.toThrow(/Enum-Wert/);
+    ).rejects.toThrow(/unbekannten Wert/);
 
     const badInteger = authorityRelease();
     badInteger.assets[0]!.numericId = Number.MAX_SAFE_INTEGER + 1;
@@ -313,7 +347,7 @@ describe("M5-Authority-Release-Konfiguration", () => {
       loadFleetAuthorityReleaseCatalog(
         await temporaryFile(catalog([{ worldId: WORLD_ID, authorityRelease: duplicate }])),
       ),
-    ).rejects.toThrow(/doppelten Wert 'vehicle-1'/);
+    ).rejects.toThrow(/doppelte IDs/);
 
     const dangling = authorityRelease();
     dangling.personnelPools[0]!.pathReceiptIds = ["unknown-path"];

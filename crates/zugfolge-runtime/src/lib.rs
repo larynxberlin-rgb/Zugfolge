@@ -6,7 +6,7 @@
 
 mod fleet;
 
-pub use fleet::{apply_fleet_command, initialize_fleet_world};
+pub use fleet::{apply_fleet_command, initialize_fleet_world, verify_fleet_world_state};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;

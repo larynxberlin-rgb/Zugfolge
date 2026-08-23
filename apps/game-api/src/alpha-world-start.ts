@@ -43,6 +43,7 @@ import {
   type PlanningInfrastructureRelease,
 } from "@zugfolge/planning-worker";
 import {
+  FLEET_AUTHORITY_RELEASE_SCHEMA_V2,
   OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
   type OperationalSimulationInitialization,
   type FleetRuntime,
@@ -52,6 +53,10 @@ import { and, asc, desc, eq, sql } from "drizzle-orm";
 
 import { projectLivemapOperationEvent } from "./livemap-operation-projection.js";
 import { operationalSimulationInitializationHash } from "./operational-initialization-hash.js";
+import {
+  type VehicleCatalogDeploymentBindingV1,
+  validateVehicleCatalogDeploymentBinding,
+} from "./vehicle-catalog-deployment-binding.js";
 import type { RegionalSimulationWorker } from "./regional-simulation-worker.js";
 
 export const ALPHA_WORLD_DEPLOYMENT_SCHEMA = "zugfolge-alpha-world-deployment/v2" as const;
@@ -97,6 +102,8 @@ export interface AlphaWorldDeployment {
     readonly publicVehiclePoolByLot: Readonly<Record<string, readonly string[]>>;
   };
   readonly fleet: FleetWorldInitialization;
+  /** Pflichtbeweis fuer neue Authority-v2-Kataloge; Legacy-v1 besitzt ihn nicht. */
+  readonly vehicleCatalogBinding?: VehicleCatalogDeploymentBindingV1;
   readonly regionalSimulation: OperationalSimulationInitialization;
   readonly repeatEveryS: number;
   /**
@@ -126,6 +133,35 @@ export interface SignedAlphaWorldDeployment {
     readonly keyId: string;
     readonly valueBase64: string;
   };
+}
+
+/** Defense-in-depth fuer Loader und aktive Registry: v2 nie ohne Receipt-Beweis. */
+export function validateAlphaVehicleCatalogBinding(deployment: AlphaWorldDeployment): void {
+  if (deployment.fleet.authorityRelease.schemaVersion !== FLEET_AUTHORITY_RELEASE_SCHEMA_V2) {
+    validateVehicleCatalogDeploymentBinding(deployment.vehicleCatalogBinding, {
+      worldId: deployment.worldId,
+      economyReleaseId: "",
+      economyReleaseSha256: "",
+      blueprintFleetHash: "",
+      fleet: deployment.fleet,
+      regionalSimulation: deployment.regionalSimulation,
+    });
+    return;
+  }
+  const economyRelease = buildEconomyRelease({
+    version: deployment.economy.release.version,
+    rates: deployment.economy.release.rates,
+    rules: deployment.economy.release.rules,
+    tenderProfiles: deployment.economy.release.tenderProfiles,
+  });
+  validateVehicleCatalogDeploymentBinding(deployment.vehicleCatalogBinding, {
+    worldId: deployment.worldId,
+    economyReleaseId: economyRelease.version,
+    economyReleaseSha256: economyRelease.checksum,
+    blueprintFleetHash: deployment.blueprint.releases.fleet,
+    fleet: deployment.fleet,
+    regionalSimulation: deployment.regionalSimulation,
+  });
 }
 
 export function signedDeploymentRevision(deployment: AlphaWorldDeployment): number {
@@ -295,19 +331,21 @@ export function parseSignedAlphaWorldDeployment(
   validateDeploymentWorldDefinition(deployment.worldDefinition, deployment.blueprint.profileKind);
   validatePlanningBinding(deployment);
   validateOperationalSimulationBinding(deployment);
+  const economyRelease = buildEconomyRelease({
+    version: deployment.economy.release.version,
+    rates: deployment.economy.release.rates,
+    rules: deployment.economy.release.rules,
+    tenderProfiles: deployment.economy.release.tenderProfiles,
+  });
   if (
     deployment.infraReleaseHash !== deployment.blueprint.releases.infra
     || deployment.provenance.operationalNetworkHash !== deployment.blueprint.conflictCheckHash
     || deployment.provenance.gtfsSnapshotHash !== deployment.blueprint.releases.timetable
-    || buildEconomyRelease({
-      version: deployment.economy.release.version,
-      rates: deployment.economy.release.rates,
-      rules: deployment.economy.release.rules,
-      tenderProfiles: deployment.economy.release.tenderProfiles,
-    }).checksum !== deployment.blueprint.releases.economy
+    || economyRelease.checksum !== deployment.blueprint.releases.economy
   ) {
     throw new Error("Alpha-Deployment besitzt widerspruechliche interne Release-Hashbindungen.");
   }
+  validateAlphaVehicleCatalogBinding(deployment);
   const deploymentHash = alphaHash(ALPHA_WORLD_DEPLOYMENT_SCHEMA, deployment);
   if (parsed["deploymentHash"] !== deploymentHash) throw new Error("Alpha-Deployment-Hash stimmt nicht mit dem Inhalt ueberein.");
   const signatureBytes = Buffer.from(signature["valueBase64"], "base64");

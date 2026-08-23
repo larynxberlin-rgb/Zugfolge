@@ -29,7 +29,13 @@ function signed(): SignedAlphaWorldDeployment {
         schedulePeriodWeeks: 4,
         epoch: EPOCH.toISOString(),
       },
-      fleet: { authorityRelease: { releaseId: "fleet-test" } },
+      fleet: {
+        producedAt: 0,
+        authorityRelease: {
+          schemaVersion: "zugfolge-fleet-authority-release/v1",
+          releaseId: "fleet-test",
+        },
+      },
       planning: {
         authority: {
           accountId: AUTHORITY_ID,
@@ -162,6 +168,7 @@ describe("aktive World-Deployment-Runtime", () => {
     const runtime = new ActiveWorldDeploymentRuntime({ activeWorlds: [] });
 
     runtime.register(signed(), EPOCH);
+    expect(() => runtime.assertVehicleCatalogDeploymentBindings(new Map())).not.toThrow();
 
     expect(runtime.worldIds()).toEqual([WORLD_ID]);
     expect(runtime.worldEpochs.get(WORLD_ID)).toEqual(EPOCH);
@@ -212,6 +219,24 @@ describe("aktive World-Deployment-Runtime", () => {
       type: "dispatch",
       requests: [{ trainId: "run-1:day-1", waitingSinceMs: 86_400_000 }],
     });
+  });
+
+  it("registriert Authority-v2 nicht ohne signierten Fahrzeugkatalog-Beweis produktiv", () => {
+    const runtime = new ActiveWorldDeploymentRuntime({
+      activeWorlds: [],
+      fleetAuthorityConfigurations: {
+        [WORLD_ID]: {
+          producedAt: 100,
+          authorityRelease: {
+            schemaVersion: "zugfolge-fleet-authority-release/v2",
+          } as never,
+        },
+      },
+    });
+
+    expect(() => runtime.assertVehicleCatalogDeploymentBindings(new Map())).toThrow(
+      /kein verifiziertes signiertes Fahrzeugkatalog-Deployment/u,
+    );
   });
 
   it("rekonstruiert nach Neustart exakt dieselben Capabilities und laesst nicht registrierte Provisionierung inert", () => {

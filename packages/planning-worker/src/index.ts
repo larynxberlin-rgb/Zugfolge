@@ -11,12 +11,15 @@ export {
   PLANNING_PLAYER_PATH_REQUEST_SCHEMA,
   PLANNING_PATH_REQUEST_BODY_SCHEMA,
   PLANNING_PATH_REQUEST_SCHEMA,
+  PLANNING_PATH_REQUEST_SCHEMA_V3,
+  type AnyPlanningPathRequestBody,
   type BoundPlanningPathRequest,
   type PlanningCoordinateAuthorityBody,
   type PlanningCoordinateAuthorityCommand,
   type PlanningInfrastructureRelease,
   type PlanningPlayerPathRequestBody,
   type PlanningPathRequestBody,
+  type PlanningPathRequestBodyV3,
 } from "./contract.js";
 export {
   consumePendingPlanningCommands,

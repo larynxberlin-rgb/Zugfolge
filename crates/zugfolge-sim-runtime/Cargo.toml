@@ -14,5 +14,9 @@ serde_json.workspace = true
 sha2.workspace = true
 zugfolge-sim.workspace = true
 
+[dev-dependencies]
+zugfolge-fleet = { path = "../zugfolge-fleet", version = "0.0.0" }
+zugfolge-runtime = { path = "../zugfolge-runtime", version = "0.0.0" }
+
 [lints]
 workspace = true

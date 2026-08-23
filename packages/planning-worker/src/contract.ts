@@ -2,17 +2,19 @@ import {
   PLANNING_APPLY_ALTERNATIVE_SCHEMA,
   type PlanningApplyAlternativePayload,
   type PlanningCoordinateBoundaryWindow,
-  type PlanningCoordinateRequest,
+  type PlanningCoordinateRequestV1,
+  type PlanningCoordinateRequestV2,
   type PlanningCoordinateSegment,
   type PlanningCoordinateStation,
 } from "@zugfolge/planning-runtime-native";
 
 export const PLANNING_PLAYER_PATH_REQUEST_SCHEMA = "planning.player-path-request/v2" as const;
-export const PLANNING_PATH_REQUEST_SCHEMA = "planning.path-request/v3" as const;
+export const PLANNING_PATH_REQUEST_SCHEMA_V3 = "planning.path-request/v3" as const;
+export const PLANNING_PATH_REQUEST_SCHEMA = "planning.path-request/v4" as const;
 export const PLANNING_COORDINATE_AUTHORITY_SCHEMA = "planning.coordinate/v1" as const;
 export const PLANNING_INFRASTRUCTURE_RELEASE_SCHEMA = "planning.infrastructure-release/v1" as const;
 
-export interface PlanningPlayerPathRequestBody extends Omit<PlanningCoordinateRequest, "requestNumericId" | "boundaryWindows" | "train" | "trainId" | "trainNumber"> {
+export interface PlanningPlayerPathRequestBody extends Omit<PlanningCoordinateRequestV2, "requestNumericId" | "boundaryWindows" | "train" | "trainId" | "trainNumber"> {
   readonly schemaVersion: typeof PLANNING_PLAYER_PATH_REQUEST_SCHEMA;
   readonly requestId: string;
   readonly formationId: string;
@@ -25,8 +27,7 @@ export interface PlanningPlayerPathRequestBody extends Omit<PlanningCoordinateRe
  * Flottenreferenz bindet die abgeleitete Physik an genau den geprüften
  * Single-Writer-Zustand; kein Feld davon stammt aus dem Spielerrequest.
  */
-export interface PlanningPathRequestBody extends Omit<PlanningCoordinateRequest, "requestNumericId" | "boundaryWindows"> {
-  readonly schemaVersion: typeof PLANNING_PATH_REQUEST_SCHEMA;
+interface PlanningPathAuthorityFacts {
   readonly requestId: string;
   readonly formationId: string;
   /** Serverseitig aus dem Flotten-/Trassenbeleg abgeleitete EVU-Bindung. */
@@ -38,11 +39,26 @@ export interface PlanningPathRequestBody extends Omit<PlanningCoordinateRequest,
   readonly boundaryPlanningWindowId?: string;
 }
 
-/** Persisted form. World and account are always bound by the authenticated route. */
-export interface BoundPlanningPathRequest extends PlanningPathRequestBody {
-  readonly worldId: string;
-  readonly requestingAccountId: string;
+/** Persistierter v3-Altvertrag mit ganzzahliger km/h-Vmax. */
+export interface PlanningPathRequestBodyV3
+  extends Omit<PlanningCoordinateRequestV1, "requestNumericId" | "boundaryWindows">,
+    PlanningPathAuthorityFacts {
+  readonly schemaVersion: typeof PLANNING_PATH_REQUEST_SCHEMA_V3;
 }
+
+export interface PlanningPathRequestBody
+  extends Omit<PlanningCoordinateRequestV2, "requestNumericId" | "boundaryWindows">,
+    PlanningPathAuthorityFacts {
+  readonly schemaVersion: typeof PLANNING_PATH_REQUEST_SCHEMA;
+}
+
+export type AnyPlanningPathRequestBody = PlanningPathRequestBodyV3 | PlanningPathRequestBody;
+
+/** Persisted form. World and account are always bound by the authenticated route. */
+export type BoundPlanningPathRequest = AnyPlanningPathRequestBody & Readonly<{
+  worldId: string;
+  requestingAccountId: string;
+}>;
 
 /**
  * Internal coordination command. It contains references only: neither a player
@@ -157,7 +173,11 @@ function validatePlayerRequestFacts(input: Record<string, unknown>, name: string
   }
 }
 
-function validateRequestFacts(input: Record<string, unknown>, name: string): void {
+function validateRequestFacts(
+  input: Record<string, unknown>,
+  name: string,
+  schemaVersion: typeof PLANNING_PATH_REQUEST_SCHEMA_V3 | typeof PLANNING_PATH_REQUEST_SCHEMA,
+): void {
   validatePlayerRequestFacts(input, name);
   text(input["trainId"], `${name}.trainId`);
   integer(input["trainNumber"], `${name}.trainNumber`, 1);
@@ -166,18 +186,21 @@ function validateRequestFacts(input: Record<string, unknown>, name: string): voi
   text(input["fleetStateHash"], `${name}.fleetStateHash`);
   invariant(/^[a-f0-9]{64}$/.test(input["fleetStateHash"] as string), `${name}.fleetStateHash ist kein SHA-256.`);
   text(input["fleetAuthorityReleaseId"], `${name}.fleetAuthorityReleaseId`);
+  const speedField = schemaVersion === PLANNING_PATH_REQUEST_SCHEMA_V3
+    ? "maximumSpeedKph"
+    : "maximumSpeedMmps";
   const train = exactRecord(input["train"], `${name}.train`, [
     "numericId",
     "name",
     "massKg",
     "lengthMm",
-    "maximumSpeedKph",
+    speedField,
     "accelerationMmPerS2",
     "decelerationMmPerS2",
   ]);
   text(train["name"], `${name}.train.name`);
   integer(train["numericId"], `${name}.train.numericId`);
-  for (const key of ["massKg", "lengthMm", "maximumSpeedKph", "accelerationMmPerS2", "decelerationMmPerS2"] as const) {
+  for (const key of ["massKg", "lengthMm", speedField, "accelerationMmPerS2", "decelerationMmPerS2"] as const) {
     integer(train[key], `${name}.train.${key}`, 1);
   }
 }
@@ -202,11 +225,11 @@ export function bindPlanningPlayerPathRequest(value: unknown): PlanningPlayerPat
   return input as unknown as PlanningPlayerPathRequestBody;
 }
 
-/** Binds one player's path request to the authenticated world and account. */
-export function bindPlanningPathRequest(
+function bindPlanningPathRequestForRead(
   worldId: string,
   requestingAccountId: string,
   value: unknown,
+  allowLegacyV3: boolean,
 ): BoundPlanningPathRequest {
   text(worldId, "worldId");
   text(requestingAccountId, "requestingAccountId");
@@ -217,10 +240,36 @@ export function bindPlanningPathRequest(
     ...REQUEST_KEYS,
     ...(withBoundaryReference ? ["boundaryPlanningWindowId"] : []),
   ]);
-  invariant(input["schemaVersion"] === PLANNING_PATH_REQUEST_SCHEMA, "planning.path-request hat ein unbekanntes Schema.");
-  validateRequestFacts(input, "planning.path-request");
+  invariant(
+    input["schemaVersion"] === PLANNING_PATH_REQUEST_SCHEMA
+      || (allowLegacyV3 && input["schemaVersion"] === PLANNING_PATH_REQUEST_SCHEMA_V3),
+    "planning.path-request hat ein unbekanntes Schema.",
+  );
+  validateRequestFacts(
+    input,
+    "planning.path-request",
+    input["schemaVersion"] as typeof PLANNING_PATH_REQUEST_SCHEMA | typeof PLANNING_PATH_REQUEST_SCHEMA_V3,
+  );
   if (withBoundaryReference) text(input["boundaryPlanningWindowId"], "planning.path-request.boundaryPlanningWindowId");
   return { worldId, requestingAccountId, ...input } as unknown as BoundPlanningPathRequest;
+}
+
+/** Binds a new request; legacy v3 is deliberately not writable anymore. */
+export function bindPlanningPathRequest(
+  worldId: string,
+  requestingAccountId: string,
+  value: unknown,
+): BoundPlanningPathRequest {
+  return bindPlanningPathRequestForRead(worldId, requestingAccountId, value, false);
+}
+
+/** Migration adapter for immutable persisted v3/v4 command payloads only. */
+export function bindPersistedPlanningPathRequest(
+  worldId: string,
+  requestingAccountId: string,
+  value: unknown,
+): BoundPlanningPathRequest {
+  return bindPlanningPathRequestForRead(worldId, requestingAccountId, value, true);
 }
 
 /**
@@ -384,10 +433,10 @@ const pathRequestProperties = {
   maxOperationalStops: nonNegativeInteger,
   train: {
     type: "object", additionalProperties: false,
-    required: ["numericId", "name", "massKg", "lengthMm", "maximumSpeedKph", "accelerationMmPerS2", "decelerationMmPerS2"],
+    required: ["numericId", "name", "massKg", "lengthMm", "maximumSpeedMmps", "accelerationMmPerS2", "decelerationMmPerS2"],
     properties: {
       numericId: nonNegativeInteger, name: nonEmptyString, massKg: positiveInteger, lengthMm: positiveInteger,
-      maximumSpeedKph: positiveInteger, accelerationMmPerS2: positiveInteger, decelerationMmPerS2: positiveInteger,
+      maximumSpeedMmps: positiveInteger, accelerationMmPerS2: positiveInteger, decelerationMmPerS2: positiveInteger,
     },
   },
 } as const;

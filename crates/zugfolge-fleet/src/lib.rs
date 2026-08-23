@@ -12,6 +12,7 @@ mod catalog;
 mod market;
 mod mobilization;
 mod operations;
+pub mod release_catalog;
 
 pub use assets::{
     AssetError, FleetSnapshot, MaintenanceDeadline, OwnershipStatus, VehicleApproval, VehicleAsset,

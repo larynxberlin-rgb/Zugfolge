@@ -13,6 +13,7 @@ import {
   canonicalFleetCommandHash,
   canonicalFleetCommandJson,
   canonicalizeFleetCommand,
+  canonicalizeFleetCommandForState,
   fleetCommandEntity,
 } from "@zugfolge/runtime-native";
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -184,11 +185,11 @@ export async function loadFleetProducerCommand(
   return parsed;
 }
 
-function exactCommand(command: NativeFleetCommand): {
+function exactCommand(state: NativeFleetWorldState, command: NativeFleetCommand): {
   readonly command: NativeFleetCommand;
   readonly json: string;
 } {
-  const canonical = canonicalizeFleetCommand(command);
+  const canonical = canonicalizeFleetCommandForState(state, command);
   return { command: canonical, json: canonicalFleetCommandJson(canonical) };
 }
 
@@ -274,14 +275,15 @@ export async function applyFleetProducerCommand(
 export async function applyFleetProducerCommandInTransaction(
   input: ApplyFleetProducerCommandInput,
 ): Promise<FleetCommandResult> {
-  const exact = exactCommand(input.command);
-  const exactCommandHash = canonicalFleetCommandHash(exact.command);
+  const submitted = canonicalizeFleetCommand(input.command);
   const tx = input.db;
-    await lockWorld(tx, exact.command.worldId);
-    const current = await latestCheckpoint(tx, exact.command.worldId);
-    conflictInvariant(current !== undefined, "M5-Flottenwelt wurde noch nicht initialisiert.");
+  await lockWorld(tx, submitted.worldId);
+  const current = await latestCheckpoint(tx, submitted.worldId);
+  conflictInvariant(current !== undefined, "M5-Flottenwelt wurde noch nicht initialisiert.");
+  const exact = exactCommand(current.state, submitted);
+  const exactCommandHash = canonicalFleetCommandHash(exact.command);
 
-    const [priorCommand] = await tx
+  const [priorCommand] = await tx
       .select({
         revision: fleetWorldCheckpoints.revision,
         stateHash: fleetWorldCheckpoints.stateHash,

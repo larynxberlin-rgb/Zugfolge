@@ -122,7 +122,12 @@ describe("persistente M5→M6-Snapshot-Grenze", () => {
     expect(() => resolveVehicleConcept(unapproved, { fleetRevision: 8, snapshotHash: fleetSnapshotHash(unapproved), formationId: "formation-1" }, { operatorId: "operator-1", serviceLineIds: ["S1"], operatingFrom: AT })).toThrow(/keine Zulassung/);
     const overdue = snapshot({ formations: [{ ...current.formations[0]!, characteristics: { ...current.formations[0]!.characteristics, maintenanceValidUntil: AT - 1 } }] });
     expect(() => resolveVehicleConcept(overdue, { fleetRevision: 8, snapshotHash: fleetSnapshotHash(overdue), formationId: "formation-1" }, { operatorId: "operator-1", serviceLineIds: ["S1"], operatingFrom: AT })).toThrow(/Instandhaltungsfreigabe/);
-    expect(() => validateFleetMobilizationSnapshot(snapshot({ formations: [{ ...current.formations[0]!, vehicleIds: ["vehicle-2", "vehicle-1"] }] }))).toThrow(/kanonisch sortiert/);
+    expect(validateFleetMobilizationSnapshot(snapshot({
+      formations: [{ ...current.formations[0]!, vehicleIds: ["vehicle-2", "vehicle-1"] }],
+    }))).toBeDefined();
+    expect(() => validateFleetMobilizationSnapshot(snapshot({
+      formations: [{ ...current.formations[0]!, vehicleIds: ["vehicle-1", "vehicle-1"] }],
+    }))).toThrow(/doppelte IDs/);
   });
 
   it("akzeptiert nur durch M5 belegte Formation, Personal und Trasse derselben Revision", () => {
@@ -315,7 +320,7 @@ describe("persistente M5→M6-Snapshot-Grenze", () => {
     expect(canonicalFleetJson(fromRust)).toBe(canonical);
   });
 
-  it("verwendet dieselbe UTF-8-Byteordnung wie Rust statt localeCompare oder UTF-16", () => {
+  it("verwendet UTF-8 fuer Mengen und Schluessel, bewahrt aber die fachliche Fahrzeugreihenfolge", () => {
     const privateUse = "id-\u{e000}";
     const supplementary = "id-\u{10000}";
     expect(compareFleetUtf8(privateUse, supplementary)).toBeLessThan(0);
@@ -324,9 +329,9 @@ describe("persistente M5→M6-Snapshot-Grenze", () => {
     expect(validateFleetMobilizationSnapshot(snapshot({
       formations: [{ ...current.formations[0]!, vehicleIds: [privateUse, supplementary] }],
     }))).toBeDefined();
-    expect(() => validateFleetMobilizationSnapshot(snapshot({
+    expect(validateFleetMobilizationSnapshot(snapshot({
       formations: [{ ...current.formations[0]!, vehicleIds: [supplementary, privateUse] }],
-    }))).toThrow(/kanonisch sortiert/);
+    }))).toBeDefined();
     expect(canonicalFleetJson({ [supplementary]: 2, [privateUse]: 1 }))
       .toBe(`{"${privateUse}":1,"${supplementary}":2}`);
   });

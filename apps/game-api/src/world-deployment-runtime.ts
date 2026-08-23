@@ -4,15 +4,20 @@ import {
   type PlanningInfrastructureRelease,
   type PlanningInfrastructureReleaseCatalog,
 } from "@zugfolge/planning-worker";
-import type {
-  FleetAuthorityRelease,
-  OperationalDispatchRequest,
-  OperationalSimulationInitialization,
-  OperationalTrainInitialization,
+import {
+  FLEET_AUTHORITY_RELEASE_SCHEMA_V2,
+  type FleetAuthorityRelease,
+  type OperationalDispatchRequest,
+  type OperationalSimulationInitialization,
+  type OperationalTrainInitialization,
 } from "@zugfolge/runtime-native";
 
-import type { SignedAlphaWorldDeployment } from "./alpha-world-start.js";
+import {
+  validateAlphaVehicleCatalogBinding,
+  type SignedAlphaWorldDeployment,
+} from "./alpha-world-start.js";
 import { operationalSimulationInitializationHash } from "./operational-initialization-hash.js";
+import type { FleetAuthorityWorldConfiguration } from "./fleet-configuration.js";
 import type {
   OperationalScheduledCommand,
   RegionalRealtimeRegistration,
@@ -323,6 +328,8 @@ class PlanningInfrastructureReleaseRegistry implements PlanningInfrastructureRel
 
 export interface ActiveWorldRuntimeSeed {
   readonly activeWorlds: readonly { readonly worldId: string; readonly epoch: Date }[];
+  readonly fleetAuthorityConfigurations?: Readonly<Record<string, FleetAuthorityWorldConfiguration>>;
+  /** Legacy-Test-/Bootstrap-Pfad: fehlende Zeitbindung bedeutet ausschliesslich t=0. */
   readonly fleetAuthorityReleases?: Readonly<Record<string, FleetAuthorityRelease>>;
   readonly planningAuthorityAccountIds?: Readonly<Record<string, string>>;
   readonly planningInfrastructureReleases?: readonly unknown[];
@@ -334,6 +341,7 @@ export interface ActiveWorldRuntimeSeed {
  * Startkonfiguration; die Registry erfindet keine Authority-Fakten.
  */
 export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCatalog {
+  readonly fleetAuthorityConfigurations: Record<string, FleetAuthorityWorldConfiguration>;
   readonly fleetAuthorityReleases: Record<string, FleetAuthorityRelease>;
   readonly planningAuthorityAccountIds: Record<string, string>;
   readonly planningInfrastructureReleases: PlanningInfrastructureReleaseCatalog;
@@ -347,7 +355,18 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
   readonly #planningRegistry: PlanningInfrastructureReleaseRegistry;
 
   constructor(seed: ActiveWorldRuntimeSeed) {
-    this.fleetAuthorityReleases = { ...(seed.fleetAuthorityReleases ?? {}) };
+    this.fleetAuthorityConfigurations = { ...(seed.fleetAuthorityConfigurations ?? {}) };
+    for (const [worldId, authorityRelease] of Object.entries(seed.fleetAuthorityReleases ?? {})) {
+      if (this.fleetAuthorityConfigurations[worldId] === undefined) {
+        this.fleetAuthorityConfigurations[worldId] = { producedAt: 0, authorityRelease };
+      }
+    }
+    this.fleetAuthorityReleases = Object.fromEntries(
+      Object.entries(this.fleetAuthorityConfigurations).map(([worldId, configuration]) => [
+        worldId,
+        configuration.authorityRelease,
+      ]),
+    );
     this.planningAuthorityAccountIds = { ...(seed.planningAuthorityAccountIds ?? {}) };
     this.#planningRegistry = new PlanningInfrastructureReleaseRegistry(seed.planningInfrastructureReleases ?? []);
     this.planningInfrastructureReleases = this.#planningRegistry;
@@ -361,6 +380,7 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
   /** Idempotente Live- oder Restart-Projektion eines bereits aktiven Deployments. */
   register(signed: SignedAlphaWorldDeployment, epoch: Date): void {
     const { deployment, deploymentHash } = signed;
+    validateAlphaVehicleCatalogBinding(deployment);
     const signedEpoch = new Date(deployment.worldDefinition.epoch);
     if (Number.isNaN(epoch.getTime()) || epoch.getTime() !== signedEpoch.getTime()) {
       throw new Error(`Weltepoche fuer '${deployment.worldId}' weicht vom signierten Deployment ab.`);
@@ -371,9 +391,12 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
     }
     const operationalProgram = deploymentOperationalProgram(signed);
     const fleetHash = alphaHash("zugfolge-fleet-authority-runtime/v1", deployment.fleet.authorityRelease);
-    const existingFleet = this.fleetAuthorityReleases[deployment.worldId];
-    if (existingFleet !== undefined && alphaHash("zugfolge-fleet-authority-runtime/v1", existingFleet) !== fleetHash) {
-      throw new Error(`Fleet-Authority fuer '${deployment.worldId}' steht im Konflikt zum signierten Deployment.`);
+    const existingFleet = this.fleetAuthorityConfigurations[deployment.worldId];
+    if (existingFleet !== undefined && (
+      alphaHash("zugfolge-fleet-authority-runtime/v1", existingFleet.authorityRelease) !== fleetHash
+      || existingFleet.producedAt !== deployment.fleet.producedAt
+    )) {
+      throw new Error(`Fleet-Authority oder Seed-Zeit fuer '${deployment.worldId}' steht im Konflikt zum signierten Deployment.`);
     }
     const authorityId = deployment.planning.authority.accountId;
     const existingAuthority = this.planningAuthorityAccountIds[deployment.worldId];
@@ -381,6 +404,10 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
       throw new Error(`Planning-Authority fuer '${deployment.worldId}' steht im Konflikt zum signierten Deployment.`);
     }
     this.#planningRegistry.register(deployment.planning.infrastructureRelease);
+    this.fleetAuthorityConfigurations[deployment.worldId] = {
+      producedAt: deployment.fleet.producedAt,
+      authorityRelease: deployment.fleet.authorityRelease,
+    };
     this.fleetAuthorityReleases[deployment.worldId] = deployment.fleet.authorityRelease;
     this.planningAuthorityAccountIds[deployment.worldId] = authorityId;
     this.worldEpochs.set(deployment.worldId, new Date(epoch));
@@ -402,6 +429,34 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
     this.#realtimeWorldIds.add(deployment.worldId);
     this.#activeWorldIds.add(deployment.worldId);
     this.#deploymentHashes.set(deployment.worldId, deploymentHash);
+  }
+
+  /** Authority v2 darf erst nach erfolgreicher Signatur- und Binderpruefung starten. */
+  assertVehicleCatalogDeploymentBindings(
+    signedDeployments: ReadonlyMap<string, SignedAlphaWorldDeployment>,
+  ): void {
+    for (const [worldId, configuration] of Object.entries(this.fleetAuthorityConfigurations)) {
+      if (configuration.authorityRelease.schemaVersion !== FLEET_AUTHORITY_RELEASE_SCHEMA_V2) {
+        continue;
+      }
+      const signed = signedDeployments.get(worldId);
+      if (signed === undefined) {
+        throw new Error(
+          `Authority-v2 fuer '${worldId}' besitzt kein verifiziertes signiertes Fahrzeugkatalog-Deployment.`,
+        );
+      }
+      validateAlphaVehicleCatalogBinding(signed.deployment);
+      if (
+        signed.deployment.worldId !== worldId
+        || signed.deployment.fleet.producedAt !== configuration.producedAt
+        || alphaHash("zugfolge-fleet-authority-runtime/v1", signed.deployment.fleet.authorityRelease)
+          !== alphaHash("zugfolge-fleet-authority-runtime/v1", configuration.authorityRelease)
+      ) {
+        throw new Error(
+          `Authority-v2 fuer '${worldId}' steht im Konflikt zum verifizierten signierten Deployment.`,
+        );
+      }
+    }
   }
 
   worldIds(): readonly string[] {

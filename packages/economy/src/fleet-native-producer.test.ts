@@ -8,13 +8,16 @@ import {
 } from "@zugfolge/db";
 import {
   FLEET_AUTHORITY_RELEASE_SCHEMA,
+  FLEET_AUTHORITY_RELEASE_SCHEMA_V2,
   FLEET_COMMAND_RECEIPT_SCHEMA,
   FLEET_FORMATION_COMMAND_SCHEMA,
   FLEET_INITIALIZE_SCHEMA,
   canonicalFleetCommandHash,
   canonicalFleetCommandJson,
-  canonicalizeFleetCommand,
+  canonicalizeFleetCommandForState,
   type FleetAuthorityRelease,
+  type FleetAuthorityReleaseV1,
+  type FleetAuthorityReleaseV2,
   type FleetCommandResult,
   type FleetRuntime,
   type FleetWorldInitialized,
@@ -40,7 +43,7 @@ import type { EconomyDatabase } from "./ledger.js";
 const WORLD = "55555555-5555-4555-8555-555555555555";
 const AUTHORITY_HASH = "d".repeat(64);
 
-function authorityRelease(): FleetAuthorityRelease {
+function authorityRelease(): FleetAuthorityReleaseV1 {
   return {
     schemaVersion: FLEET_AUTHORITY_RELEASE_SCHEMA,
     releaseId: "producer-authority-v1",
@@ -99,7 +102,39 @@ function authorityRelease(): FleetAuthorityRelease {
   };
 }
 
-function snapshot(revision: number): FleetMobilizationSnapshot {
+function authorityReleaseV2(): FleetAuthorityReleaseV2 {
+  const legacy = authorityRelease();
+  return {
+    ...legacy,
+    schemaVersion: FLEET_AUTHORITY_RELEASE_SCHEMA_V2,
+    releaseId: "producer-authority-v2",
+    economyReleaseId: "economy-test-v1",
+    economyReleaseSha256: "e".repeat(64),
+    assets: legacy.assets.map((asset) => ({
+      ...asset,
+      orientation: "along",
+      technical: {
+        ...asset.technical,
+        maximumSpeedMmps: 44_444,
+        accelerationMmPerS2: 800,
+        decelerationMmPerS2: 900,
+        continuousPowerKw: 4_000,
+        startingTractiveEffortKn: 200,
+        brakeWeightKg: 80_000,
+        maximumAccelerationCapMmps2: 800,
+        serviceBrakeCapMmps2: 900,
+        emergencyBrakeMultiplierBasisPoints: 15_000,
+        role: "powered-unit",
+        controlStands: { front: true, rear: true },
+      },
+    })),
+  };
+}
+
+function snapshot(
+  revision: number,
+  vehicleIds: readonly string[] = ["vehicle-a", "vehicle-b"],
+): FleetMobilizationSnapshot {
   return {
     schema: "zugfolge-fleet-mobilization/v1",
     worldId: WORLD,
@@ -108,7 +143,7 @@ function snapshot(revision: number): FleetMobilizationSnapshot {
     formations: revision === 0 ? [] : [{
       id: "formation-1",
       operatorId: "operator-1",
-      vehicleIds: ["vehicle-a", "vehicle-b"],
+      vehicleIds,
       serviceLineIds: ["S1"],
       availability: "available",
       procurement: "delivered",
@@ -135,7 +170,7 @@ function snapshot(revision: number): FleetMobilizationSnapshot {
   };
 }
 
-function initialized(): FleetWorldInitialized {
+function initialized(authority: FleetAuthorityRelease = authorityRelease()): FleetWorldInitialized {
   const projection = snapshot(0);
   return {
     schemaVersion: "zugfolge-fleet-world-initialized/v2",
@@ -145,7 +180,7 @@ function initialized(): FleetWorldInitialized {
       revision: 0,
       producedAt: 0,
       authorityReleaseHash: AUTHORITY_HASH,
-      authorityRelease: authorityRelease(),
+      authorityRelease: authority,
       formations: {},
       personnelDuties: {},
       pathReservations: {},
@@ -170,9 +205,15 @@ function command(current: FleetWorldInitialized): NativeFleetCommand {
   };
 }
 
-function applied(input: NativeFleetCommand): FleetCommandResult {
-  const exact = canonicalizeFleetCommand(input);
-  const projection = snapshot(1);
+function applied(
+  input: NativeFleetCommand,
+  current: FleetWorldInitialized = initialized(),
+): FleetCommandResult {
+  const exact = canonicalizeFleetCommandForState(current.state, input);
+  const vehicleIds = exact.schemaVersion === FLEET_FORMATION_COMMAND_SCHEMA
+    ? exact.vehicleIds
+    : ["vehicle-a", "vehicle-b"];
+  const projection = snapshot(1, vehicleIds);
   const stateHash = "c".repeat(64);
   const snapshotHash = fleetSnapshotHash(projection);
   return {
@@ -183,9 +224,9 @@ function applied(input: NativeFleetCommand): FleetCommandResult {
       revision: 1,
       producedAt: 1,
       authorityReleaseHash: AUTHORITY_HASH,
-      authorityRelease: authorityRelease(),
+      authorityRelease: current.state.authorityRelease,
       formations: {
-        "formation-1": { id: "formation-1", vehicleIds: ["vehicle-a", "vehicle-b"], pathReceiptId: "path-1" },
+        "formation-1": { id: "formation-1", vehicleIds, pathReceiptId: "path-1" },
       },
       personnelDuties: {},
       pathReservations: {},
@@ -308,7 +349,7 @@ describe("Rust-autoritatives M5-Producer-Gateway", () => {
       ingestedAt: new Date(1_000),
     });
 
-    const canonicalCommand = canonicalizeFleetCommand(versionedCommand);
+    const canonicalCommand = canonicalizeFleetCommandForState(nativeInitialized.state, versionedCommand);
     expect(result).toBe(nativeApplied);
     expect(applyFleetCommand).toHaveBeenCalledWith(nativeInitialized.state, canonicalCommand, undefined);
     expect(await loadFleetMobilizationSnapshot(db, WORLD, {
@@ -320,8 +361,8 @@ describe("Rust-autoritatives M5-Producer-Gateway", () => {
       snapshotHash: nativeApplied.snapshotHash,
       commandId: versionedCommand.commandId,
       commandSchema: versionedCommand.schemaVersion,
-      commandJson: canonicalFleetCommandJson(versionedCommand),
-      commandHash: canonicalFleetCommandHash(versionedCommand),
+      commandJson: canonicalFleetCommandJson(canonicalCommand),
+      commandHash: canonicalFleetCommandHash(canonicalCommand),
     });
 
     const reorderedRetry = { ...versionedCommand, vehicleIds: ["vehicle-a", "vehicle-b"] } as const;
@@ -337,6 +378,69 @@ describe("Rust-autoritatives M5-Producer-Gateway", () => {
       canonicalCommand,
       nativeApplied.commandReceipt,
     );
+    expect(await db.select().from(fleetWorldCheckpoints)).toHaveLength(2);
+    expect(await db.select().from(fleetMobilizationSnapshots)).toHaveLength(2);
+  });
+
+  it("bewahrt fuer Authority v2 die nichtlexikographische Reihenfolge von Zugspitze bis Zugschluss", async () => {
+    const authority = authorityReleaseV2();
+    const nativeInitialized = initialized(authority);
+    const versionedCommand = command(nativeInitialized);
+    const nativeApplied = applied(versionedCommand, nativeInitialized);
+    const applyFleetCommand = vi.fn((state, exactCommand, receipt) => receipt === undefined
+      ? nativeApplied
+      : { ...nativeApplied, state, commandReceipt: receipt, idempotentReplay: true });
+    const runtime: FleetRuntime = { initializeFleet: () => nativeInitialized, applyFleetCommand };
+    await initializeFleetProducer({
+      db,
+      runtime,
+      initialization: {
+        schemaVersion: FLEET_INITIALIZE_SCHEMA,
+        worldId: WORLD,
+        producedAt: 0,
+        authorityRelease: authority,
+      },
+      ingestedAt: new Date(0),
+    });
+
+    const exact = canonicalizeFleetCommandForState(nativeInitialized.state, versionedCommand);
+    const result = await applyFleetProducerCommand({
+      db,
+      runtime,
+      command: versionedCommand,
+      ingestedAt: new Date(1_000),
+    });
+    expect(exact).toMatchObject({ vehicleIds: ["vehicle-b", "vehicle-a"] });
+    expect(applyFleetCommand).toHaveBeenCalledWith(nativeInitialized.state, exact, undefined);
+    expect(result.state.formations["formation-1"]?.vehicleIds).toEqual(["vehicle-b", "vehicle-a"]);
+    expect(result.snapshot.formations[0]?.vehicleIds).toEqual(["vehicle-b", "vehicle-a"]);
+    expect(await loadFleetProducerCheckpoint(db, WORLD)).toMatchObject({
+      commandJson: canonicalFleetCommandJson(exact),
+      commandHash: canonicalFleetCommandHash(exact),
+      state: {
+        formations: {
+          "formation-1": { vehicleIds: ["vehicle-b", "vehicle-a"] },
+        },
+      },
+      snapshot: {
+        formations: [{ vehicleIds: ["vehicle-b", "vehicle-a"] }],
+      },
+    });
+
+    await expect(applyFleetProducerCommand({
+      db,
+      runtime,
+      command: versionedCommand,
+      ingestedAt: new Date(2_000),
+    })).resolves.toMatchObject({ idempotentReplay: true });
+    const callsAfterExactReplay = applyFleetCommand.mock.calls.length;
+    await expect(applyFleetProducerCommand({
+      db,
+      runtime,
+      command: { ...versionedCommand, vehicleIds: ["vehicle-a", "vehicle-b"] },
+      ingestedAt: new Date(3_000),
+    })).rejects.toThrow(/kanonisch persistierte/);
+    expect(applyFleetCommand).toHaveBeenCalledTimes(callsAfterExactReplay);
     expect(await db.select().from(fleetWorldCheckpoints)).toHaveLength(2);
     expect(await db.select().from(fleetMobilizationSnapshots)).toHaveLength(2);
   });

@@ -6,6 +6,7 @@ import {
   canonicalizeFleetCommand,
   FLEET_ASSET_TRANSFER_COMMAND_SCHEMA,
   FLEET_AUTHORITY_RELEASE_SCHEMA,
+  FLEET_AUTHORITY_RELEASE_SCHEMA_V2,
   FLEET_COMMAND_RECEIPT_SCHEMA,
   FLEET_FORMATION_COMMAND_SCHEMA,
   FLEET_INITIALIZE_SCHEMA,
@@ -14,6 +15,7 @@ import {
   operatingRuntimeFromAddon,
   type FleetAuthorityRelease,
   type NativeFleetCommand,
+  type NativeFleetWorldState,
 } from "./index.js";
 
 const worldId = "11111111-1111-4111-8111-111111111111";
@@ -83,6 +85,109 @@ const authorityRelease = {
   }],
 } satisfies FleetAuthorityRelease;
 
+const authorityReleaseV2 = {
+  ...authorityRelease,
+  schemaVersion: FLEET_AUTHORITY_RELEASE_SCHEMA_V2,
+  releaseId: "authority-test-v2",
+  economyReleaseId: "economy-test-v1",
+  economyReleaseSha256: "e".repeat(64),
+  assets: authorityRelease.assets.map((asset) => ({
+    ...asset,
+    orientation: "along" as const,
+    condition: {
+      mechanicsBasisPoints: 10_000,
+      driveBasisPoints: 9_500,
+      brakesBasisPoints: 9_000,
+      kilometresSinceMaintenance: 12_345,
+      operatingHoursSinceMaintenance: 678,
+      openObservations: 1,
+    },
+    restrictions: {
+      "power-derate": { "power-basis-points": 3_333 },
+      "speed-limit": { "maximum-speed": 30_000 },
+      "service-brake-limit": { "service-brake": 600 },
+      "emergency-brake-limit": { "emergency-brake": 700 },
+      "protection-failure": { "protection-unavailable": "pzb" as const },
+      "door-failure": { "door-availability-basis-points": 0 },
+      immobilized: "immobilized" as const,
+    },
+    history: ["2025-01 delivered"],
+    technical: {
+      ...asset.technical,
+      maximumSpeedMmps: 44_444,
+      accelerationMmPerS2: 800,
+      decelerationMmPerS2: 900,
+      continuousPowerKw: 4_000,
+      startingTractiveEffortKn: 200,
+      brakeWeightKg: 120_000,
+      maximumAccelerationCapMmps2: 800,
+      serviceBrakeCapMmps2: 900,
+      emergencyBrakeMultiplierBasisPoints: 15_000,
+      role: "powered-unit" as const,
+      controlStands: { front: true, rear: true },
+    },
+    passenger: {
+      ...asset.passenger,
+      firstClassSeats: 0,
+    },
+  })),
+} satisfies FleetAuthorityRelease;
+
+const authorityV2AssetHoldings = {
+  "vehicle-1": {
+    ownerOperatorId: "operator-1",
+    holderOperatorId: "operator-1",
+    lessorOperatorId: null,
+    contractId: null,
+    validUntilS: null,
+    historyHash: "f".repeat(64),
+  },
+} as const;
+
+function cloneWithoutField(value: unknown, path: readonly (string | number)[]): unknown {
+  const cloned: unknown = structuredClone(value);
+  let current = cloned;
+  for (const segment of path.slice(0, -1)) {
+    if (typeof segment === "number") {
+      if (!Array.isArray(current)) throw new Error("Testpfad verweist nicht auf eine Liste.");
+      current = current[segment];
+    } else {
+      if (typeof current !== "object" || current === null || Array.isArray(current)) {
+        throw new Error("Testpfad verweist nicht auf ein Objekt.");
+      }
+      current = (current as Record<string, unknown>)[segment];
+    }
+  }
+  const field = path.at(-1);
+  if (typeof field !== "string" || typeof current !== "object" || current === null || Array.isArray(current)) {
+    throw new Error("Testpfad endet nicht in einem Objektfeld.");
+  }
+  delete (current as Record<string, unknown>)[field];
+  return cloned;
+}
+
+function cloneWithField(value: unknown, path: readonly (string | number)[], replacement: unknown): unknown {
+  const cloned: unknown = structuredClone(value);
+  let current = cloned;
+  for (const segment of path.slice(0, -1)) {
+    if (typeof segment === "number") {
+      if (!Array.isArray(current)) throw new Error("Testpfad verweist nicht auf eine Liste.");
+      current = current[segment];
+    } else {
+      if (typeof current !== "object" || current === null || Array.isArray(current)) {
+        throw new Error("Testpfad verweist nicht auf ein Objekt.");
+      }
+      current = (current as Record<string, unknown>)[segment];
+    }
+  }
+  const field = path.at(-1);
+  if (typeof field !== "string" || typeof current !== "object" || current === null || Array.isArray(current)) {
+    throw new Error("Testpfad endet nicht in einem Objektfeld.");
+  }
+  (current as Record<string, unknown>)[field] = replacement;
+  return cloned;
+}
+
 const initialFleetState = {
   schemaVersion: "zugfolge-fleet-world-state/v2",
   worldId,
@@ -105,6 +210,18 @@ const fleetAddon = {
     snapshot: { schema: "zugfolge-fleet-mobilization/v1", worldId, revision: 0, producedAt: 0, formations: [], personnelDuties: [], pathReservations: [] },
     snapshotHash: "e".repeat(64),
   }),
+  verifyFleetWorldState: (stateJson: string, expectedStateHash: string) => {
+    const state = JSON.parse(stateJson) as NativeFleetWorldState;
+    return JSON.stringify({
+      schemaVersion: "zugfolge-fleet-world-state-verification/v1",
+      worldId: state.worldId,
+      revision: state.revision,
+      producedAt: state.producedAt,
+      authorityReleaseHash: state.authorityReleaseHash,
+      stateHash: expectedStateHash,
+      snapshotHash: "e".repeat(64),
+    });
+  },
   applyFleetCommand: (stateJson: string, commandJson: string, replayReceiptJson?: string) => {
     fleetAddonCalls.push({ stateJson, commandJson, ...(replayReceiptJson === undefined ? {} : { replayReceiptJson }) });
     const state = JSON.parse(stateJson) as typeof initialFleetState & { revision: number; producedAt: number; formations: Record<string, unknown> };
@@ -184,7 +301,45 @@ const fleetAddon = {
 };
 
 describe("native runtime ABI contract", () => {
-  it("initializes authoritative M5 and forwards only a canonical v2 formation intent", () => {
+  it("binds persisted Fleet state verification to the exact state and expected hash", () => {
+    let forwardedState: unknown;
+    let forwardedHash: string | undefined;
+    const runtime = operatingRuntimeFromAddon({
+      ...fleetAddon,
+      verifyFleetWorldState: (stateJson, expectedStateHash) => {
+        forwardedState = JSON.parse(stateJson) as unknown;
+        forwardedHash = expectedStateHash;
+        return fleetAddon.verifyFleetWorldState(stateJson, expectedStateHash);
+      },
+      verifyFleetMobilizationSnapshot: () => "{}",
+      initializeOperatingWorld: () => "{}",
+      applyOperatingTransition: () => "{}",
+    });
+
+    expect(runtime.verifyFleetWorldState(initialFleetState, "d".repeat(64))).toEqual({
+      schemaVersion: "zugfolge-fleet-world-state-verification/v1",
+      worldId,
+      revision: 0,
+      producedAt: 0,
+      authorityReleaseHash: "c".repeat(64),
+      stateHash: "d".repeat(64),
+      snapshotHash: "e".repeat(64),
+    });
+    expect(forwardedState).toEqual(initialFleetState);
+    expect(forwardedHash).toBe("d".repeat(64));
+
+    const forgedResultRuntime = operatingRuntimeFromAddon({
+      ...fleetAddon,
+      verifyFleetWorldState: (stateJson) => fleetAddon.verifyFleetWorldState(stateJson, "f".repeat(64)),
+      verifyFleetMobilizationSnapshot: () => "{}",
+      initializeOperatingWorld: () => "{}",
+      applyOperatingTransition: () => "{}",
+    });
+    expect(() => forgedResultRuntime.verifyFleetWorldState(initialFleetState, "d".repeat(64)))
+      .toThrow(/erwarteten Zustandshash/);
+  });
+
+  it("initializes compatible Authority-v1 and forwards only a canonical v2 formation intent", () => {
     fleetAddonCalls.length = 0;
     const runtime = operatingRuntimeFromAddon({
       ...fleetAddon,
@@ -234,7 +389,375 @@ describe("native runtime ABI contract", () => {
     expect(JSON.parse(fleetAddonCalls[1]!.replayReceiptJson!)).toEqual(result.commandReceipt);
   });
 
-  it("canonicalizes key and set order by UTF-8 bytes and rejects duplicate IDs", () => {
+  it("accepts and forwards a complete Authority-v2 compiler projection unchanged", () => {
+    let forwardedInitialization: unknown;
+    const runtime = operatingRuntimeFromAddon({
+      ...fleetAddon,
+      initializeFleetWorld: (inputJson) => {
+        forwardedInitialization = JSON.parse(inputJson) as unknown;
+        return JSON.stringify({
+          schemaVersion: "zugfolge-fleet-world-initialized/v2",
+          state: {
+            ...initialFleetState,
+            authorityRelease: authorityReleaseV2,
+            assetHoldings: authorityV2AssetHoldings,
+          },
+          stateHash: "d".repeat(64),
+          snapshot: {
+            schema: "zugfolge-fleet-mobilization/v1",
+            worldId,
+            revision: 0,
+            producedAt: 0,
+            formations: [],
+            personnelDuties: [],
+            pathReservations: [],
+          },
+          snapshotHash: "e".repeat(64),
+        });
+      },
+      verifyFleetMobilizationSnapshot: () => "{}",
+      initializeOperatingWorld: () => "{}",
+      applyOperatingTransition: () => "{}",
+    });
+    const input = {
+      schemaVersion: FLEET_INITIALIZE_SCHEMA,
+      worldId,
+      producedAt: 0,
+      authorityRelease: authorityReleaseV2,
+    } as const;
+
+    const initialized = runtime.initializeFleet(input);
+
+    expect(forwardedInitialization).toEqual(input);
+    expect(initialized.state.authorityRelease).toEqual(authorityReleaseV2);
+  });
+
+  it("rejects incomplete Authority-v2 projections before calling Rust", () => {
+    const cases = [
+      { path: ["economyReleaseId"], field: "economyReleaseId" },
+      { path: ["economyReleaseSha256"], field: "economyReleaseSha256" },
+      { path: ["assets", 0, "orientation"], field: "orientation" },
+      { path: ["assets", 0, "condition"], field: "condition" },
+      { path: ["assets", 0, "restrictions"], field: "restrictions" },
+      { path: ["assets", 0, "history"], field: "history" },
+      { path: ["assets", 0, "technical", "maximumSpeedMmps"], field: "maximumSpeedMmps" },
+      { path: ["assets", 0, "technical", "accelerationMmPerS2"], field: "accelerationMmPerS2" },
+      { path: ["assets", 0, "technical", "decelerationMmPerS2"], field: "decelerationMmPerS2" },
+      { path: ["assets", 0, "technical", "continuousPowerKw"], field: "continuousPowerKw" },
+      {
+        path: ["assets", 0, "technical", "startingTractiveEffortKn"],
+        field: "startingTractiveEffortKn",
+      },
+      { path: ["assets", 0, "technical", "brakeWeightKg"], field: "brakeWeightKg" },
+      {
+        path: ["assets", 0, "technical", "maximumAccelerationCapMmps2"],
+        field: "maximumAccelerationCapMmps2",
+      },
+      {
+        path: ["assets", 0, "technical", "serviceBrakeCapMmps2"],
+        field: "serviceBrakeCapMmps2",
+      },
+      {
+        path: ["assets", 0, "technical", "emergencyBrakeMultiplierBasisPoints"],
+        field: "emergencyBrakeMultiplierBasisPoints",
+      },
+      { path: ["assets", 0, "technical", "role"], field: "role" },
+      { path: ["assets", 0, "technical", "controlStands"], field: "controlStands" },
+    ] as const;
+
+    for (const testCase of cases) {
+      let addonCalls = 0;
+      const runtime = operatingRuntimeFromAddon({
+        ...fleetAddon,
+        initializeFleetWorld: () => {
+          addonCalls += 1;
+          return "{}";
+        },
+        verifyFleetMobilizationSnapshot: () => "{}",
+        initializeOperatingWorld: () => "{}",
+        applyOperatingTransition: () => "{}",
+      });
+      const invalidAuthority = cloneWithoutField(authorityReleaseV2, testCase.path);
+
+      expect(
+        () => runtime.initializeFleet({
+          schemaVersion: FLEET_INITIALIZE_SCHEMA,
+          worldId,
+          producedAt: 0,
+          authorityRelease: invalidAuthority as FleetAuthorityRelease,
+        }),
+        `fehlendes v2-Feld ${testCase.field}`,
+      ).toThrow(new RegExp(`Pflichtfeld '${testCase.field}'`));
+      expect(addonCalls).toBe(0);
+    }
+  });
+
+  it("rejects semantically inconsistent Authority-v2 projections before calling Rust", () => {
+    const cases = [
+      {
+        path: ["assets", 0, "technical", "decelerationMmPerS2"],
+        replacement: 0,
+        error: /Fahrdynamik/,
+      },
+      {
+        path: ["assets", 0, "technical", "accelerationMmPerS2"],
+        replacement: 799,
+        error: /nicht reproduzierbares Referenzprofil/,
+      },
+      {
+        path: ["assets", 0, "technical", "maximumAccelerationCapMmps2"],
+        replacement: 0,
+        error: /Rohtraktion und Beschleunigungs-Cap/,
+      },
+      {
+        path: ["assets", 0, "technical", "serviceBrakeCapMmps2"],
+        replacement: 0,
+        error: /nicht positiv/,
+      },
+      {
+        path: ["assets", 0, "technical", "emergencyBrakeMultiplierBasisPoints"],
+        replacement: 10_000,
+        error: /muss ueber 10000/,
+      },
+      {
+        path: ["assets", 0, "technical", "brakeWeightKg"],
+        replacement: 0,
+        error: /nicht positiv/,
+      },
+      {
+        path: ["assets", 0, "technical", "massKg"],
+        replacement: 300_000_000,
+        error: /keine sichere Rohdynamikableitung/,
+      },
+      {
+        path: ["assets", 0, "technical", "electricSystems"],
+        replacement: [],
+        error: /electricSystems.*inkonsistent/,
+      },
+      {
+        path: ["assets", 0, "technical", "role"],
+        replacement: "coach",
+        error: /Reisezugwagen/,
+      },
+      {
+        path: ["assets", 0, "installedProtection"],
+        replacement: ["lzb"],
+        error: /LZB nur mit PZB/,
+      },
+      {
+        path: ["assets", 0, "installedProtection"],
+        replacement: [],
+        error: /weder PZB noch ETCS/,
+      },
+      {
+        path: ["assets", 0, "passenger", "seats"],
+        replacement: 0,
+        error: /passenger\.seats/,
+      },
+      {
+        path: ["assets", 0, "technical", "maximumSpeedKph"],
+        replacement: 65_536,
+        error: /ausserhalb von u16/,
+      },
+      {
+        path: ["assets", 0, "numericId"],
+        replacement: Number.MAX_SAFE_INTEGER + 1,
+        error: /sichere Ganzzahl/,
+      },
+      {
+        path: ["assets", 0, "acquisitionYear"],
+        replacement: 2027,
+        error: /Beschaffungsjahre/,
+      },
+      {
+        path: ["assets", 0, "condition", "mechanicsBasisPoints"],
+        replacement: 10_001,
+        error: /Ganzzahlbereich/,
+      },
+      {
+        path: ["assets", 0, "condition", "kilometresSinceMaintenance"],
+        replacement: Number.MAX_SAFE_INTEGER + 1,
+        error: /sichere Ganzzahl/,
+      },
+      {
+        path: ["assets", 0, "condition", "openObservations"],
+        replacement: 65_536,
+        error: /Ganzzahlbereich/,
+      },
+      {
+        path: ["assets", 0, "history"],
+        replacement: [" nicht randfrei"],
+        error: /randfrei/,
+      },
+      {
+        path: ["assets", 0, "restrictions"],
+        replacement: { invalid: { "power-basis-points": 0 } },
+        error: /muss positiv/,
+      },
+      {
+        path: ["assets", 0, "restrictions"],
+        replacement: { invalid: { "power-basis-points": 10_001 } },
+        error: /Ganzzahlbereich/,
+      },
+      {
+        path: ["assets", 0, "restrictions"],
+        replacement: { invalid: { "maximum-speed": 0 } },
+        error: /nicht positiv/,
+      },
+      {
+        path: ["assets", 0, "restrictions"],
+        replacement: { invalid: { "protection-unavailable": "atb" } },
+        error: /unbekannten Wert/,
+      },
+      {
+        path: ["assets", 0, "restrictions"],
+        replacement: { invalid: { "unknown-effect": 1 } },
+        error: /unbekannte Variante/,
+      },
+      {
+        path: ["assets", 0, "restrictions"],
+        replacement: { invalid: { "maximum-speed": 30_000, extra: 1 } },
+        error: /keine eindeutige Variante/,
+      },
+      {
+        path: ["assets", 0, "restrictions"],
+        replacement: { "": "immobilized" },
+        error: /nichtleere Zeichenkette/,
+      },
+    ] as const;
+    let addonCalls = 0;
+    const runtime = operatingRuntimeFromAddon({
+      ...fleetAddon,
+      initializeFleetWorld: () => {
+        addonCalls += 1;
+        return "{}";
+      },
+      verifyFleetMobilizationSnapshot: () => "{}",
+      initializeOperatingWorld: () => "{}",
+      applyOperatingTransition: () => "{}",
+    });
+
+    for (const testCase of cases) {
+      const invalidAuthority = cloneWithField(
+        authorityReleaseV2,
+        testCase.path,
+        testCase.replacement,
+      );
+      expect(() => runtime.initializeFleet({
+        schemaVersion: FLEET_INITIALIZE_SCHEMA,
+        worldId,
+        producedAt: 0,
+        authorityRelease: invalidAuthority as FleetAuthorityRelease,
+      })).toThrow(testCase.error);
+    }
+    expect(addonCalls).toBe(0);
+  });
+
+  it("rejects v2-only Authority asset fields and unknown nested fields in v1", () => {
+    const v2OnlyFields = {
+      condition: authorityReleaseV2.assets[0]!.condition,
+      restrictions: authorityReleaseV2.assets[0]!.restrictions,
+      history: authorityReleaseV2.assets[0]!.history,
+    } as const;
+    for (const [field, value] of Object.entries(v2OnlyFields)) {
+      const invalidV1 = cloneWithField(authorityRelease, ["assets", 0, field], value);
+      expect(() => operatingRuntimeFromAddon({
+        ...fleetAddon,
+        verifyFleetMobilizationSnapshot: () => "{}",
+        initializeOperatingWorld: () => "{}",
+        applyOperatingTransition: () => "{}",
+      }).initializeFleet({
+        schemaVersion: FLEET_INITIALIZE_SCHEMA,
+        worldId,
+        producedAt: 0,
+        authorityRelease: invalidV1 as FleetAuthorityRelease,
+      })).toThrow(/unbekannte oder nicht serialisierbare Felder/);
+    }
+    for (const field of [
+      "maximumAccelerationCapMmps2",
+      "serviceBrakeCapMmps2",
+      "emergencyBrakeMultiplierBasisPoints",
+    ] as const) {
+      const invalidV1 = cloneWithField(
+        authorityRelease,
+        ["assets", 0, "technical", field],
+        authorityReleaseV2.assets[0]!.technical[field],
+      );
+      expect(() => operatingRuntimeFromAddon({
+        ...fleetAddon,
+        verifyFleetMobilizationSnapshot: () => "{}",
+        initializeOperatingWorld: () => "{}",
+        applyOperatingTransition: () => "{}",
+      }).initializeFleet({
+        schemaVersion: FLEET_INITIALIZE_SCHEMA,
+        worldId,
+        producedAt: 0,
+        authorityRelease: invalidV1 as FleetAuthorityRelease,
+      })).toThrow(/unbekannte oder nicht serialisierbare Felder/);
+    }
+
+    const invalidCondition = cloneWithField(
+      authorityReleaseV2,
+      ["assets", 0, "condition", "unknown"],
+      1,
+    );
+    expect(() => operatingRuntimeFromAddon({
+      ...fleetAddon,
+      verifyFleetMobilizationSnapshot: () => "{}",
+      initializeOperatingWorld: () => "{}",
+      applyOperatingTransition: () => "{}",
+    }).initializeFleet({
+      schemaVersion: FLEET_INITIALIZE_SCHEMA,
+      worldId,
+      producedAt: 0,
+      authorityRelease: invalidCondition as FleetAuthorityRelease,
+    })).toThrow(/unbekannte oder nicht serialisierbare Felder/);
+  });
+
+  it("requires an exact complete Authority-v2 asset-holding map before calling Rust", () => {
+    const state = {
+      ...initialFleetState,
+      authorityRelease: authorityReleaseV2,
+      assetHoldings: authorityV2AssetHoldings,
+    } as NativeFleetWorldState;
+    const command = {
+      schemaVersion: FLEET_FORMATION_COMMAND_SCHEMA,
+      worldId,
+      commandId: "formation:v2-holdings",
+      expectedStateHash: "d".repeat(64),
+      expectedRevision: 0,
+      atS: 1,
+      formationId: "formation-v2",
+      vehicleIds: ["vehicle-1"],
+      pathReceiptId: "path-confirmed",
+    } satisfies NativeFleetCommand;
+    let addonCalls = 0;
+    const runtime = operatingRuntimeFromAddon({
+      ...fleetAddon,
+      applyFleetCommand: () => {
+        addonCalls += 1;
+        return "{}";
+      },
+      verifyFleetMobilizationSnapshot: () => "{}",
+      initializeOperatingWorld: () => "{}",
+      applyOperatingTransition: () => "{}",
+    });
+    const cases = [
+      cloneWithoutField(state, ["assetHoldings"]),
+      cloneWithField(state, ["assetHoldings"], {}),
+      cloneWithField(state, ["assetHoldings"], {
+        ...authorityV2AssetHoldings,
+        foreign: authorityV2AssetHoldings["vehicle-1"],
+      }),
+    ];
+    for (const invalidState of cases) {
+      expect(() => runtime.applyFleetCommand(invalidState as NativeFleetWorldState, command))
+        .toThrow(/Asset-Halter|jedes Asset/);
+    }
+    expect(addonCalls).toBe(0);
+  });
+
+  it("canonicalizes key order but preserves the unique head-to-tail vehicle order", () => {
     const privateUseId = "vehicle-\u{e000}";
     const supplementaryId = "vehicle-\u{10000}";
     const first = {
@@ -260,11 +783,40 @@ describe("native runtime ABI contract", () => {
       schemaVersion: FLEET_FORMATION_COMMAND_SCHEMA,
     } satisfies NativeFleetCommand;
 
-    expect(canonicalFleetCommandJson(first)).toBe(canonicalFleetCommandJson(reordered));
-    expect(canonicalFleetCommandHash(first)).toBe(canonicalFleetCommandHash(reordered));
-    expect(canonicalFleetCommandHash(first)).toBe("8f85a082a134e3785918f998b90e8e34c784b163c2ecdf3005a7269aa549da82");
-    expect(canonicalizeFleetCommand(first).vehicleIds).toEqual([privateUseId, supplementaryId]);
+    expect(canonicalFleetCommandJson(first)).not.toBe(canonicalFleetCommandJson(reordered));
+    expect(canonicalFleetCommandHash(first)).not.toBe(canonicalFleetCommandHash(reordered));
+    expect(canonicalFleetCommandHash(first)).toBe("2a98a0cfbd0eaf9204466da423b36a4207e5f96c8c545e5e854ded55161699ee");
+    expect(canonicalizeFleetCommand(first).vehicleIds).toEqual([supplementaryId, privateUseId]);
     expect(() => canonicalizeFleetCommand({ ...first, vehicleIds: [privateUseId, privateUseId] })).toThrow(/doppelte Kennungen/);
+  });
+
+  it("keeps Authority-v1 command canonicalization compatible with sorted vehicle sets", () => {
+    fleetAddonCalls.length = 0;
+    const runtime = operatingRuntimeFromAddon({
+      ...fleetAddon,
+      verifyFleetMobilizationSnapshot: () => "{}",
+      initializeOperatingWorld: () => "{}",
+      applyOperatingTransition: () => "{}",
+    });
+    const privateUseId = "vehicle-\u{e000}";
+    const supplementaryId = "vehicle-\u{10000}";
+    const command = {
+      schemaVersion: FLEET_FORMATION_COMMAND_SCHEMA,
+      worldId,
+      commandId: "legacy-canonical",
+      expectedStateHash: "d".repeat(64),
+      expectedRevision: 0,
+      atS: 1,
+      formationId: "formation-legacy",
+      vehicleIds: [supplementaryId, privateUseId],
+      pathReceiptId: "path-confirmed",
+    } satisfies NativeFleetCommand;
+
+    runtime.applyFleetCommand(initialFleetState, command);
+
+    expect(JSON.parse(fleetAddonCalls[0]!.commandJson)).toMatchObject({
+      vehicleIds: [privateUseId, supplementaryId],
+    });
   });
 
   it("binds a secondary-market transfer to the same Rust/TypeScript command hash", () => {

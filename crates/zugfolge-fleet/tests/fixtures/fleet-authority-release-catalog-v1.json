@@ -1,0 +1,137 @@
+{
+  "schemaVersion": "zugfolge-fleet-authority-release-catalog/v1",
+  "entries": [
+    {
+      "worldId": "00000000-0000-4000-8000-000000000387",
+      "producedAt": 100,
+      "authorityRelease": {
+        "schemaVersion": "zugfolge-fleet-authority-release/v2",
+        "releaseId": "fixture-fleet-authority-1",
+        "referenceYear": 2026,
+        "economyReleaseId": "fixture-economy-release-1",
+        "economyReleaseSha256": "35b5199c3949ec7af65762f38184462d23fc23c584aaf5f02e35da44ae9e9857",
+        "assets": [
+          {
+            "id": "fixture-vehicle-1",
+            "numericId": 1001,
+            "operatorId": "fixture-operator",
+            "vehicleTypeId": 100,
+            "classDesignation": "ET100",
+            "tradeName": "Morgenstern",
+            "buildYear": 2024,
+            "acquisitionYear": 2025,
+            "procurementChannel": "leasing",
+            "approvedLineIds": [
+              "fixture-line-1"
+            ],
+            "maintenanceDeadlines": [
+              {
+                "kind": "revision",
+                "dueAt": 500
+              }
+            ],
+            "installedProtection": [
+              "pzb"
+            ],
+            "orientation": "along",
+            "condition": {
+              "mechanicsBasisPoints": 10000,
+              "driveBasisPoints": 10000,
+              "brakesBasisPoints": 10000,
+              "kilometresSinceMaintenance": 0,
+              "operatingHoursSinceMaintenance": 0,
+              "openObservations": 0
+            },
+            "restrictions": {
+              "catalog-protection-unavailable:lzb": {
+                "protection-unavailable": "lzb"
+              }
+            },
+            "history": [],
+            "technical": {
+              "lengthMm": 70000,
+              "massKg": 120000,
+              "maximumSpeedKph": 160,
+              "maximumSpeedMmps": 44444,
+              "accelerationMmPerS2": 1000,
+              "decelerationMmPerS2": 900,
+              "continuousPowerKw": 3000,
+              "startingTractiveEffortKn": 200,
+              "brakeWeightKg": 130000,
+              "maximumAccelerationCapMmps2": 1000,
+              "serviceBrakeCapMmps2": 900,
+              "emergencyBrakeMultiplierBasisPoints": 13334,
+              "traction": "electric",
+              "electricSystems": [
+                "ac15kv"
+              ],
+              "role": "powered-unit",
+              "controlStands": {
+                "front": true,
+                "rear": true
+              }
+            },
+            "passenger": {
+              "seats": 200,
+              "firstClassSeats": 16,
+              "accessible": true,
+              "bicyclePlaces": 12,
+              "wheelchairPlaces": 2,
+              "equipment": [
+                "air-conditioning",
+                "passenger-information"
+              ],
+              "operatingCostCentsPerTrainKm": 750,
+              "replacementPlan": false
+            },
+            "deliveredAt": 50,
+            "retiredAt": 1000
+          }
+        ],
+        "personnelPools": [
+          {
+            "id": "fixture-personnel-1",
+            "numericId": 2001,
+            "operatorId": "fixture-operator",
+            "capacitySeconds": 28800,
+            "minimumRestSeconds": 39600,
+            "classDesignations": [
+              "ET100"
+            ],
+            "pathReceiptIds": [
+              "fixture-path-1"
+            ],
+            "qualificationHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          }
+        ],
+        "pathReceipts": [
+          {
+            "id": "fixture-path-1",
+            "numericRouteId": 3001,
+            "operatorId": "fixture-operator",
+            "serviceLineIds": [
+              "fixture-line-1"
+            ],
+            "decision": "confirmed",
+            "validFrom": 0,
+            "validUntil": 1000,
+            "platformLengthsMm": [
+              100000
+            ],
+            "electrifications": [
+              "overhead-ac15kv"
+            ],
+            "requiredProtection": [
+              "pzb"
+            ],
+            "approvedClasses": [
+              "ET100"
+            ],
+            "plannerStateHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "conflictCheckHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          }
+        ]
+      }
+    }
+  ]
+}

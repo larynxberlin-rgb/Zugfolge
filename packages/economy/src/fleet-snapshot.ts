@@ -159,6 +159,12 @@ function validStringList(values: unknown, name: string, allowEmpty = false): ass
   invariant(values.every((value, index) => index === 0 || compareFleetUtf8(values[index - 1]!, value) < 0), `${name} ist nicht kanonisch sortiert.`);
 }
 
+function validOrderedStringList(values: unknown, name: string): asserts values is readonly string[] {
+  invariant(Array.isArray(values) && values.length > 0, `${name} fehlt oder ist leer.`);
+  values.forEach((value, index) => nonEmpty(value, `${name}[${index}]`));
+  invariant(new Set(values).size === values.length, `${name} enthält doppelte IDs.`);
+}
+
 /** Kanonisches JSON: identische M5-Nutzdaten ergeben sprachübergreifend denselben SHA-256. */
 export function canonicalFleetJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalFleetJson).join(",")}]`;
@@ -198,7 +204,7 @@ export function validateFleetMobilizationSnapshot(snapshot: FleetMobilizationSna
   for (const [index, formation] of snapshot.formations.entries()) {
     const name = `formations[${index}]`;
     nonEmpty(formation.operatorId, `${name}.operatorId`);
-    validStringList(formation.vehicleIds, `${name}.vehicleIds`);
+    validOrderedStringList(formation.vehicleIds, `${name}.vehicleIds`);
     if (formation.pathReceiptId !== undefined) nonEmpty(formation.pathReceiptId, `${name}.pathReceiptId`);
     validStringList(formation.serviceLineIds, `${name}.serviceLineIds`);
     invariant(["available", "committed", "maintenance", "retired"].includes(formation.availability), `${name}.availability ist unbekannt.`);
