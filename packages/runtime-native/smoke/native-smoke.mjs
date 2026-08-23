@@ -340,6 +340,21 @@ const operationalRestored = operationalRuntime.restore(
   operationalCleared.initializationHash,
 );
 assert.equal(operationalRestored.stateHash, operationalCleared.stateHash);
+assert.equal(
+  operationalRestored.initializationHash,
+  operationalCleared.initializationHash,
+);
+const mismatchedInitializationHash = `${
+  operationalCleared.initializationHash.startsWith("0") ? "1" : "0"
+}${operationalCleared.initializationHash.slice(1)}`;
+assert.throws(
+  () => operationalRuntime.restore(
+    operationalCleared.state,
+    mismatchedInitializationHash,
+  ),
+  /initialization_hash_mismatch/,
+  "Restore muss einen fremden Initialisierungshash fail-closed ablehnen",
+);
 const operationalRetry = await operationalRuntime.apply(
   operationalCleared.state,
   operationalClearCommand,
