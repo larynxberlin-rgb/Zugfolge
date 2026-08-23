@@ -2036,8 +2036,8 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
             error: "Authority-v2 besitzt keine bindende serverseitige Seed-Zeit.",
           });
         }
-        const producedAt = configured?.producedAt ?? 0;
-        if (request.body.producedAt !== producedAt) {
+        const producedAt = configured?.producedAt ?? request.body.producedAt;
+        if (configured !== undefined && request.body.producedAt !== producedAt) {
           return reply.code(409).send({
             code: "fleet_seed_time_conflict",
             error: "Initialisierungszeit weicht vom serverseitig gebundenen Welt-Seed ab.",

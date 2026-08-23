@@ -419,6 +419,30 @@ describe("produktive M5-HTTP-Single-Writer-Grenze", () => {
     expect(response.json()).toMatchObject({ code: "fleet_seed_time_conflict" });
   });
 
+  it("bewahrt die explizite Initialisierungszeit des historischen release-only-v1-Pfads", async () => {
+    const legacy = buildApp({
+      db,
+      verifyToken: async () => {
+        throw new Error("nicht verwendet");
+      },
+      fleetIngestToken: TOKEN,
+      fleetRuntime: testRuntime(),
+      fleetAuthorityReleases: { [WORLD]: authorityRelease() },
+      logger: false,
+    });
+    await legacy.ready();
+    const response = await legacy.inject({
+      method: "POST",
+      url: `/internal/worlds/${WORLD}/fleet/initialize`,
+      headers: { authorization: `Bearer ${TOKEN}` },
+      payload: { producedAt: 50 },
+    });
+
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json()).toMatchObject({ snapshot: { producedAt: 50 } });
+    await legacy.close();
+  });
+
   it("fuehrt Init, Formation, Dienst und Trasse atomar aus und replayt A nach B historisch", async () => {
     const initializedResponse = await post(WORLD, "initialize", { producedAt: 0 });
     expect(initializedResponse.statusCode).toBe(200);

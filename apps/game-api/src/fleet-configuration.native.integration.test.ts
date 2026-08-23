@@ -37,5 +37,5 @@ nativeIt("laedt den echten CLI-Wrapper und initialisiert damit die native Fleet"
     worldId: WORLD_ID,
     producedAt: 0,
     authorityRelease: configuration!.authorityRelease,
-  })).toThrow(/nicht aktiv|deliveredAt|Liefer|Seed|Zeit/i);
+  })).toThrow(/nicht aktiv|nicht verfuegbar|deliveredAt|Liefer|Seed|Zeit|Stichtag/i);
 });
