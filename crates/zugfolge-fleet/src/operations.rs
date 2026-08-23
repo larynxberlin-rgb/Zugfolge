@@ -41,6 +41,16 @@ pub enum VehicleRole {
     ControlCar,
 }
 
+/// Physische Ausrichtung eines Assets innerhalb der autoritativen Reihung.
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+pub enum VehicleOrientation {
+    /// Die physische Front zeigt in Richtung Zugspitze.
+    #[default]
+    Along,
+    /// Die physische Front zeigt in Richtung Zugschluss.
+    Against,
+}
+
 /// Steuerstände an den beiden Enden eines Fahrzeugs.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ControlStandConfiguration {
@@ -136,10 +146,15 @@ pub struct FormationVehicle {
     pub traction: TractionType,
     pub role: VehicleRole,
     pub control_stands: ControlStandConfiguration,
+    pub orientation: VehicleOrientation,
     pub protection: TrainProtection,
     pub continuous_power: Power,
     pub starting_tractive_effort: Force,
     pub brake_weight: Mass,
+    /// Temporäre assetlokale Betriebssperre. Die physische Rolle und Traktion
+    /// bleiben erhalten; nur die nutzbare Antriebsleistung der Formation fällt
+    /// weg.
+    pub immobilized: bool,
 }
 
 impl FormationVehicle {
@@ -148,6 +163,16 @@ impl FormationVehicle {
     pub fn from_asset(
         asset: &VehicleAsset,
         technical: &VehicleTechnicalData,
+    ) -> Result<Self, OperationsError> {
+        Self::from_asset_with_orientation(asset, technical, VehicleOrientation::Along)
+    }
+
+    /// V2-Ableitung mit der am konkreten Authority-Asset gebundenen
+    /// physischen Ausrichtung.
+    pub fn from_asset_with_orientation(
+        asset: &VehicleAsset,
+        technical: &VehicleTechnicalData,
+        orientation: VehicleOrientation,
     ) -> Result<Self, OperationsError> {
         if asset.vehicle_type_id() != technical.vehicle_type_id {
             return Err(OperationsError::TechnicalDataMismatch);
@@ -170,11 +195,35 @@ impl FormationVehicle {
             traction: technical.traction.clone(),
             role: technical.role,
             control_stands: technical.control_stands,
+            orientation,
             protection: asset.installed_protection().clone(),
             continuous_power: technical.continuous_power,
             starting_tractive_effort: technical.starting_tractive_effort,
             brake_weight: technical.brake_weight,
+            immobilized: false,
         })
+    }
+
+    fn has_usable_drive(&self) -> bool {
+        self.has_physical_drive() && !self.immobilized
+    }
+
+    fn has_physical_drive(&self) -> bool {
+        self.traction != TractionType::Unpowered
+    }
+
+    fn has_outward_front_control_stand(&self) -> bool {
+        match self.orientation {
+            VehicleOrientation::Along => self.control_stands.front,
+            VehicleOrientation::Against => self.control_stands.rear,
+        }
+    }
+
+    fn has_outward_rear_control_stand(&self) -> bool {
+        match self.orientation {
+            VehicleOrientation::Along => self.control_stands.rear,
+            VehicleOrientation::Against => self.control_stands.front,
+        }
     }
 }
 
@@ -184,6 +233,10 @@ pub struct Formation {
     pub world_id: WorldId,
     pub id: u64,
     vehicles: Vec<FormationVehicle>,
+    /// Nur Authority-v2 bindet die Fahrzeugliste semantisch von Zugspitze zu
+    /// Zugschluss. Legacy-v1 behandelt dieselbe Liste als richtungslose Menge
+    /// und muss deshalb beide moeglichen Spitzen konservativ pruefen.
+    authoritative_vehicle_order: bool,
 }
 
 impl Formation {
@@ -191,6 +244,16 @@ impl Formation {
         world_id: WorldId,
         id: u64,
         vehicles: Vec<FormationVehicle>,
+    ) -> Result<Self, OperationsError> {
+        Self::build(world_id, id, vehicles, true, false)
+    }
+
+    fn build(
+        world_id: WorldId,
+        id: u64,
+        vehicles: Vec<FormationVehicle>,
+        require_static_baseline_protection: bool,
+        authoritative_vehicle_order: bool,
     ) -> Result<Self, OperationsError> {
         if vehicles.is_empty() {
             return Err(OperationsError::EmptyFormation);
@@ -204,17 +267,21 @@ impl Formation {
         }
         for vehicle in &vehicles {
             validate_vehicle_role(vehicle.role, &vehicle.traction, vehicle.control_stands)?;
-            if vehicle.role != VehicleRole::Coach && !has_baseline_protection(&vehicle.protection) {
+            if require_static_baseline_protection
+                && vehicle.role != VehicleRole::Coach
+                && !has_baseline_protection(&vehicle.protection)
+            {
                 return Err(OperationsError::MissingProtection);
             }
         }
-        let first_powered = vehicles
-            .iter()
-            .find(|vehicle| vehicle.traction != TractionType::Unpowered);
+        // Die statische Mischtraktionspruefung bleibt von temporaeren
+        // Restriktionen unabhaengig. Immobilized oder auf null gerasterte
+        // Leistung darf keine physisch inkompatible Formation legitimieren.
+        let first_powered = vehicles.iter().find(|vehicle| vehicle.has_physical_drive());
         if first_powered.is_some_and(|first| {
-            vehicles.iter().any(|vehicle| {
-                vehicle.traction != TractionType::Unpowered && vehicle.traction != first.traction
-            })
+            vehicles
+                .iter()
+                .any(|vehicle| vehicle.has_physical_drive() && vehicle.traction != first.traction)
         }) {
             return Err(OperationsError::IncompatibleTraction);
         }
@@ -222,7 +289,27 @@ impl Formation {
             world_id,
             id,
             vehicles,
+            authoritative_vehicle_order,
         })
+    }
+
+    /// Baut eine V2-Formation, deren Reihenfolge von Zugspitze nach
+    /// Zugschluss autoritativ ist. Ein eigenfahrfaehiger Verband braucht am
+    /// aeusseren Ende des ersten Assets einen nutzbaren Fuehrerstand.
+    pub fn new_authoritative(
+        world_id: WorldId,
+        id: u64,
+        vehicles: Vec<FormationVehicle>,
+    ) -> Result<Self, OperationsError> {
+        // Authority-v2 hat die statische Baseline-Ausrüstung bereits am Asset
+        // validiert. Temporäre ProtectionUnavailable-Restriktionen wirken erst
+        // hier am konkreten Verband und dürfen deshalb den Typcheck nicht
+        // rückwirkend ungültig machen.
+        let formation = Self::build(world_id, id, vehicles, false, true)?;
+        if formation.can_move_under_own_power() && !formation.has_front_control_stand() {
+            return Err(OperationsError::MissingLeadingControlStand);
+        }
+        Ok(formation)
     }
 
     pub fn vehicles(&self) -> &[FormationVehicle] {
@@ -231,9 +318,17 @@ impl Formation {
 
     /// Ob mindestens ein Fahrzeug den Wagenpark aus eigener Kraft bewegen kann.
     pub fn can_move_under_own_power(&self) -> bool {
+        self.vehicles.iter().any(FormationVehicle::has_usable_drive)
+    }
+
+    /// Physische Traktion des nach dem statischen Mischtraktionsvertrag
+    /// kompatiblen Verbands. Temporäre Restriktionen beeinflussen nur die
+    /// Dienstfähigkeit, nicht die Fahrzeugart.
+    pub fn physical_traction(&self) -> Option<&TractionType> {
         self.vehicles
             .iter()
-            .any(|vehicle| vehicle.traction != TractionType::Unpowered)
+            .find(|vehicle| vehicle.has_physical_drive())
+            .map(|vehicle| &vehicle.traction)
     }
 
     /// Ein ausschließlich aus Wagen bestehender Park kann nur geschleppt,
@@ -242,15 +337,23 @@ impl Formation {
         !self.can_move_under_own_power()
     }
 
-    /// Ob an beiden Enden der Formation ein Führerstand vorhanden ist.
-    pub fn has_control_stands_at_both_ends(&self) -> bool {
+    /// Ob das aeussere Ende der autoritativen Zugspitze einen Fuehrerstand hat.
+    pub fn has_front_control_stand(&self) -> bool {
         self.vehicles
             .first()
-            .is_some_and(|vehicle| vehicle.control_stands.front)
-            && self
-                .vehicles
-                .last()
-                .is_some_and(|vehicle| vehicle.control_stands.rear)
+            .is_some_and(FormationVehicle::has_outward_front_control_stand)
+    }
+
+    /// Ob das aeussere Ende des autoritativen Zugschlusses einen Fuehrerstand hat.
+    pub fn has_rear_control_stand(&self) -> bool {
+        self.vehicles
+            .last()
+            .is_some_and(FormationVehicle::has_outward_rear_control_stand)
+    }
+
+    /// Ob an beiden Enden der Formation ein Führerstand vorhanden ist.
+    pub fn has_control_stands_at_both_ends(&self) -> bool {
+        self.has_front_control_stand() && self.has_rear_control_stand()
     }
 
     /// Ob ein Richtungswechsel ohne Umsetzen einer Lok möglich ist.
@@ -263,23 +366,21 @@ impl Formation {
         self.can_move_under_own_power() && !self.has_control_stands_at_both_ends()
     }
 
-    /// Fahrzeuge, die bei der aktuellen Reihung einen Führerstand am
-    /// jeweiligen Zugende stellen. Reisezugwagen tragen keine eigene
-    /// Zugsicherung; bei einem Wendezug müssen aber Lok und Steuerwagen ihre
-    /// jeweils aktive Zugspitze ausrüsten.
+    /// Fahrzeuge, deren Zugsicherung fuer die Formation gelten muss.
+    /// Authority-v2 bindet eine aktive Zugspitze und prueft nur diese. Die
+    /// sortierte Legacy-v1-Liste traegt dagegen keine Richtung; bei direkter
+    /// Wende muessen deshalb weiterhin beide moeglichen Spitzen ausgeruestet
+    /// sein. Der Antriebsfallback bleibt fuer Legacy-Formationen ohne
+    /// expliziten Spitzenfuehrerstand erhalten.
     fn driving_vehicles(&self) -> Vec<&FormationVehicle> {
+        if self.authoritative_vehicle_order && self.has_front_control_stand() {
+            return vec![&self.vehicles[0]];
+        }
         let mut driving = Vec::new();
-        if self
-            .vehicles
-            .first()
-            .is_some_and(|vehicle| vehicle.control_stands.front)
-        {
+        if self.has_front_control_stand() {
             driving.push(&self.vehicles[0]);
         }
-        if self
-            .vehicles
-            .last()
-            .is_some_and(|vehicle| vehicle.control_stands.rear)
+        if self.has_rear_control_stand()
             && self.vehicles.last().map(|vehicle| vehicle.id)
                 != self.vehicles.first().map(|vehicle| vehicle.id)
         {
@@ -289,7 +390,7 @@ impl Formation {
             if let Some(vehicle) = self
                 .vehicles
                 .iter()
-                .find(|vehicle| vehicle.traction != TractionType::Unpowered)
+                .find(|vehicle| vehicle.has_usable_drive())
             {
                 driving.push(vehicle);
             }
@@ -301,10 +402,10 @@ impl Formation {
     /// Referenzprofil.
     ///
     /// Neue Authority-Releases sollen stattdessen
-    /// [`Self::characteristics_with_dynamics`] mit einem zur tatsächlichen
-    /// Formation passenden, signierten Fahrprofil verwenden. Das verhindert,
-    /// dass eine Lokomotive fälschlich eine vom Wagenpark unabhängige
-    /// Beschleunigung erhält.
+    /// [`Self::characteristics_with_dynamics`] mit dem serverseitig aus den
+    /// Rohwerten der tatsächlichen Formation abgeleiteten Fahrprofil verwenden.
+    /// Das verhindert, dass eine Lokomotive fälschlich eine vom Wagenpark
+    /// unabhängige Beschleunigung erhält.
     pub fn characteristics(
         &self,
         id: TrainCharacteristicsId,
@@ -313,7 +414,7 @@ impl Formation {
         let acceleration = self
             .vehicles
             .iter()
-            .filter(|vehicle| vehicle.traction != TractionType::Unpowered)
+            .filter(|vehicle| vehicle.has_usable_drive())
             .map(|v| v.acceleration)
             .min()
             .ok_or(OperationsError::NoPropulsion)?;
@@ -323,7 +424,7 @@ impl Formation {
         let deceleration = self
             .vehicles
             .iter()
-            .filter(|vehicle| vehicle.traction != TractionType::Unpowered)
+            .filter(|vehicle| vehicle.has_usable_drive())
             .map(|v| v.deceleration)
             .min()
             .ok_or(OperationsError::NoPropulsion)?;
@@ -350,7 +451,7 @@ impl Formation {
         let first = self
             .vehicles
             .iter()
-            .find(|vehicle| vehicle.traction != TractionType::Unpowered)
+            .find(|vehicle| vehicle.has_usable_drive())
             .ok_or(OperationsError::NoPropulsion)?;
         let mass = Mass::from_kilograms(
             self.vehicles
@@ -375,6 +476,7 @@ impl Formation {
         let continuous_power = Power::from_kilowatts(
             self.vehicles
                 .iter()
+                .filter(|vehicle| vehicle.has_usable_drive())
                 .map(|vehicle| vehicle.continuous_power.kilowatts())
                 .try_fold(0_i64, i64::checked_add)
                 .ok_or(OperationsError::Overflow)?,
@@ -382,6 +484,7 @@ impl Formation {
         let starting_tractive_effort = Force::from_kilonewtons(
             self.vehicles
                 .iter()
+                .filter(|vehicle| vehicle.has_usable_drive())
                 .map(|vehicle| vehicle.starting_tractive_effort.kilonewtons())
                 .try_fold(0_i64, i64::checked_add)
                 .ok_or(OperationsError::Overflow)?,
@@ -394,11 +497,16 @@ impl Formation {
                 .ok_or(OperationsError::Overflow)?,
         );
         let driving = self.driving_vehicles();
-        let common = first.protection.systems().filter(|system| {
-            driving
-                .iter()
-                .all(|vehicle| vehicle.protection.contains(*system))
-        });
+        let common_protection = driving
+            .first()
+            .map(|vehicle| {
+                TrainProtection::from_systems(vehicle.protection.systems().filter(|system| {
+                    driving
+                        .iter()
+                        .all(|driving_vehicle| driving_vehicle.protection.contains(*system))
+                }))
+            })
+            .unwrap_or_else(|| first.protection.clone());
         TrainCharacteristics::new_with_performance(
             id,
             name,
@@ -409,7 +517,7 @@ impl Formation {
             dynamics.acceleration,
             dynamics.deceleration,
             first.traction.clone(),
-            TrainProtection::from_systems(common),
+            common_protection,
             continuous_power,
             starting_tractive_effort,
             brake_weight,
@@ -423,7 +531,12 @@ impl Formation {
         required: &TrainProtection,
         approved_classes: &BTreeSet<FleetClass>,
     ) -> Result<(), OperationsError> {
-        let length: i64 = self.vehicles.iter().map(|v| v.length.millimetres()).sum();
+        let length = self
+            .vehicles
+            .iter()
+            .map(|vehicle| vehicle.length.millimetres())
+            .try_fold(0_i64, i64::checked_add)
+            .ok_or(OperationsError::Overflow)?;
         if length > platform_length.millimetres() {
             return Err(OperationsError::PlatformTooShort);
         }
@@ -461,8 +574,7 @@ impl Formation {
         self.check_route(shortest_platform, required, approved_classes)?;
         if electrifications.iter().any(|electrification| {
             self.vehicles.iter().any(|vehicle| {
-                vehicle.traction != TractionType::Unpowered
-                    && !vehicle.traction.can_use(*electrification)
+                vehicle.has_usable_drive() && !vehicle.traction.can_use(*electrification)
             })
         }) {
             return Err(OperationsError::IncompatibleElectrification);
@@ -1622,6 +1734,7 @@ pub enum OperationsError {
     InvalidVehicleRole,
     NoPropulsion,
     MissingFormationDynamics,
+    MissingLeadingControlStand,
     MissingPlatform,
     IncompatibleElectrification,
     MaintenanceNotDue,
@@ -1682,6 +1795,7 @@ mod tests {
             traction,
             role,
             control_stands,
+            orientation: VehicleOrientation::Along,
             continuous_power: if powered {
                 Power::from_kilowatts(2_000)
             } else {
@@ -1694,6 +1808,7 @@ mod tests {
             },
             brake_weight: Mass::from_tonnes(45),
             protection: TrainProtection::single(ProtectionSystem::Pzb),
+            immobilized: false,
         }
     }
 
@@ -1784,6 +1899,148 @@ mod tests {
     }
 
     #[test]
+    fn autoritative_formation_lehnt_fuehrenden_wagen_ohne_fuehrerstand_ab() {
+        let coach = formation_vehicle(
+            1,
+            TractionType::Unpowered,
+            VehicleRole::Coach,
+            ControlStandConfiguration::none(),
+        );
+        let locomotive = formation_vehicle(
+            2,
+            TractionType::Diesel,
+            VehicleRole::Locomotive,
+            ControlStandConfiguration::both_ends(),
+        );
+
+        assert_eq!(
+            Formation::new_authoritative(1, 20, vec![coach, locomotive])
+                .expect_err("Wagen ohne Fuehrerstand darf keine fahrfaehige Spitze sein"),
+            OperationsError::MissingLeadingControlStand
+        );
+    }
+
+    #[test]
+    fn gegenorientierter_steuerwagen_stellt_seinen_physischen_frontstand_am_zugschluss() {
+        let locomotive = formation_vehicle(
+            1,
+            TractionType::Diesel,
+            VehicleRole::Locomotive,
+            ControlStandConfiguration {
+                front: true,
+                rear: false,
+            },
+        );
+        let mut control_car = formation_vehicle(
+            2,
+            TractionType::Unpowered,
+            VehicleRole::ControlCar,
+            ControlStandConfiguration {
+                front: true,
+                rear: false,
+            },
+        );
+        control_car.orientation = VehicleOrientation::Against;
+
+        let formation = Formation::new_authoritative(1, 21, vec![locomotive, control_car])
+            .expect("physische Steuerwagenfront liegt am Zugschluss");
+        assert!(formation.has_front_control_stand());
+        assert!(formation.has_rear_control_stand());
+        assert!(formation.supports_direct_reversal());
+    }
+
+    #[test]
+    fn autoritative_zugsicherung_stammt_von_der_aktiven_steuerwagenspitze() {
+        let mut control_car = formation_vehicle(
+            1,
+            TractionType::Unpowered,
+            VehicleRole::ControlCar,
+            ControlStandConfiguration {
+                front: false,
+                rear: true,
+            },
+        );
+        control_car.orientation = VehicleOrientation::Against;
+        control_car.protection = TrainProtection::single(ProtectionSystem::EtcsLevel2);
+        let locomotive = formation_vehicle(
+            2,
+            TractionType::Diesel,
+            VehicleRole::Locomotive,
+            ControlStandConfiguration::both_ends(),
+        );
+        let formation = Formation::new_authoritative(1, 22, vec![control_car, locomotive])
+            .expect("gedrehter Steuerwagen stellt die aktive Spitze");
+        let approved = BTreeSet::from([FleetClass::new("ET1").expect("Testbaureihe")]);
+
+        formation
+            .check_route(
+                Length::from_metres(100),
+                &TrainProtection::single(ProtectionSystem::EtcsLevel2),
+                &approved,
+            )
+            .expect("aktive Steuerwagenspitze stellt ETCS");
+        let characteristics = formation
+            .characteristics(TrainCharacteristicsId::new(22), "Wendezug mit ETCS-Spitze")
+            .expect("Zugcharakteristik stammt aus aktiver Spitze");
+        assert!(
+            characteristics
+                .protection()
+                .contains(ProtectionSystem::EtcsLevel2)
+        );
+        assert!(!characteristics.protection().contains(ProtectionSystem::Pzb));
+    }
+
+    #[test]
+    fn legacy_wendeverband_verlangt_zugsicherung_an_beiden_richtungslosen_spitzen() {
+        let mut first = formation_vehicle(
+            1,
+            TractionType::Diesel,
+            VehicleRole::PoweredUnit,
+            ControlStandConfiguration::both_ends(),
+        );
+        first.protection = TrainProtection::single(ProtectionSystem::EtcsLevel2);
+        let second = formation_vehicle(
+            2,
+            TractionType::Diesel,
+            VehicleRole::PoweredUnit,
+            ControlStandConfiguration::both_ends(),
+        );
+        let formation = Formation::new(1, 23, vec![first, second])
+            .expect("Legacy-Triebzug mit zwei Spitzen ist statisch gueltig");
+        let approved = BTreeSet::from([FleetClass::new("ET1").expect("Testbaureihe")]);
+
+        assert!(formation.supports_direct_reversal());
+        assert_eq!(
+            formation.check_route(
+                Length::from_metres(100),
+                &TrainProtection::single(ProtectionSystem::EtcsLevel2),
+                &approved,
+            ),
+            Err(OperationsError::MissingProtection),
+            "die richtungslose v1-Liste darf ETCS nicht nur von einem Ende uebernehmen"
+        );
+
+        let dynamics = FormationDynamics::new(
+            Acceleration::from_millimetres_per_second_squared(500),
+            Acceleration::from_millimetres_per_second_squared(700),
+        )
+        .expect("positives Testfahrprofil");
+        let characteristics = formation
+            .characteristics_with_dynamics(
+                TrainCharacteristicsId::new(23),
+                "Legacy-Wendeverband",
+                dynamics,
+            )
+            .expect("Legacy-Zugcharakteristik bleibt materialisierbar");
+        assert!(
+            !characteristics
+                .protection()
+                .contains(ProtectionSystem::EtcsLevel2)
+        );
+        assert!(!characteristics.protection().contains(ProtectionSystem::Pzb));
+    }
+
+    #[test]
     fn reisezugwagen_benoetigen_keine_eigene_zugsicherung() {
         let locomotive = formation_vehicle(
             1,
@@ -1807,6 +2064,35 @@ mod tests {
                 &approved,
             )
             .expect("Die Lok stellt die Zugsicherung fuer den Wagenpark");
+    }
+
+    #[test]
+    fn trassenpruefung_lehnt_formationslaengen_overflow_fail_closed_ab() {
+        let mut first = formation_vehicle(
+            1,
+            TractionType::Diesel,
+            VehicleRole::Locomotive,
+            ControlStandConfiguration::both_ends(),
+        );
+        first.length = Length::from_millimetres(i64::MAX);
+        let mut second = formation_vehicle(
+            2,
+            TractionType::Diesel,
+            VehicleRole::Locomotive,
+            ControlStandConfiguration::both_ends(),
+        );
+        second.length = Length::from_millimetres(1);
+        let formation =
+            Formation::new(1, 40, vec![first, second]).expect("statische Formation ist gueltig");
+        let approved = BTreeSet::from([FleetClass::new("ET1").expect("Testbaureihe")]);
+        assert_eq!(
+            formation.check_route(
+                Length::from_millimetres(i64::MAX),
+                &TrainProtection::single(ProtectionSystem::Pzb),
+                &approved,
+            ),
+            Err(OperationsError::Overflow)
+        );
     }
 
     #[test]

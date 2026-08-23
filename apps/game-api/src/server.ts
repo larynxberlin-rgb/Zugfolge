@@ -294,7 +294,7 @@ const disruptionProviderMonitor = new DisruptionProviderMonitor(Date.now());
 const disruptionProviderClient = new PublicInfrastructureRestrictionsClient();
 const disruptionProviderStore = createDisruptionProviderStore(db);
 const operatingRuntime = loadOperatingRuntime();
-const configuredFleetAuthorityReleases = await loadFleetAuthorityReleaseCatalog(
+const configuredFleetAuthorityConfigurations = await loadFleetAuthorityReleaseCatalog(
   requireEnv("ZUGFOLGE_FLEET_AUTHORITY_RELEASE_PATH"),
 );
 const operationalSimulationRuntime = loadOperationalSimulationRuntime();
@@ -334,7 +334,7 @@ const deploymentRuntime = new ActiveWorldDeploymentRuntime({
   // Produktionsruntime. Dynamische Tutorialwelten besitzen bewusst weder
   // statische Planning-Authority noch einen globalen Echtzeittakt.
   activeWorlds: [],
-  fleetAuthorityReleases: configuredFleetAuthorityReleases,
+  fleetAuthorityConfigurations: configuredFleetAuthorityConfigurations,
   planningAuthorityAccountIds: configuredPlanningAuthorityAccountIds,
   planningInfrastructureReleases: configuredPlanningInfrastructureReleases,
 });
@@ -351,6 +351,7 @@ for (const alphaWorldReleasePath of alphaWorldReleasePaths()) {
   }
   signedDeployments.set(signedDeployment.deployment.worldId, signedDeployment);
 }
+deploymentRuntime.assertVehicleCatalogDeploymentBindings(signedDeployments);
 if (trainMapProjector !== undefined) {
   try {
     const config = await livemapReadModel!.getConfig(trainMapProjector.worldId);
@@ -366,6 +367,7 @@ if (trainMapProjector !== undefined) {
   }
 }
 const {
+  fleetAuthorityConfigurations,
   fleetAuthorityReleases,
   planningAuthorityAccountIds,
   planningInfrastructureReleases,
@@ -418,7 +420,7 @@ const worldCloseAdminHandler = createWorldCloseAdminHandler(worldEnd);
 const infraReleaseAdoptionAdminHandler = createInfraReleaseAdoptionAdminHandler(infraUpdate);
 const configuredWorldIds = new Set(activeWorldRows.map((world) => world.worldId));
 const configuredWorlds = new Map(activeWorldRows.map((world) => [world.worldId, world] as const));
-for (const [worldId, authorityRelease] of Object.entries(fleetAuthorityReleases)) {
+for (const [worldId, configuration] of Object.entries(fleetAuthorityConfigurations)) {
   if (!configuredWorldIds.has(worldId)) {
     throw new Error(`M5-Authority-Release ist an die unbekannte Welt '${worldId}' gebunden.`);
   }
@@ -428,8 +430,8 @@ for (const [worldId, authorityRelease] of Object.entries(fleetAuthorityReleases)
   operatingRuntime.initializeFleet({
     schemaVersion: FLEET_INITIALIZE_SCHEMA,
     worldId,
-    producedAt: 0,
-    authorityRelease,
+    producedAt: configuration.producedAt,
+    authorityRelease: configuration.authorityRelease,
   });
 }
 const configuredEconomyAdapters = createEconomyPlatformAdapters({
@@ -587,6 +589,7 @@ const app = buildApp({
   fleetIngestToken: requireEnv("FLEET_INGEST_TOKEN"),
   fleetRuntime: operatingRuntime,
   fleetAuthorityReleases,
+  fleetAuthorityConfigurations,
   adminControl: "odoo",
   alpha: {
     tutorialSessions,

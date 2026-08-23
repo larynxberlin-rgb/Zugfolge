@@ -17,11 +17,15 @@ use zugfolge_fleet::{
     MobilizationPathStatus, MobilizationPersonnelDuty, MobilizationProcurement,
     MobilizationSnapshot, NeedLimits, PersonnelPool, PlannedService, ProcurementChannel,
     RotationActivity, RotationLeg, RotationPlan, VehicleApproval, VehicleAsset, VehicleNeeds,
-    VehicleReadiness, VehicleTechnicalData, validate_timetable_release,
+    VehicleOrientation, VehicleReadiness, VehicleTechnicalData, validate_timetable_release,
 };
 use zugfolge_infra::{
     Acceleration, ElectricSystems, Electrification, FleetClass, Force, Length, Mass, Power,
     PowerSystem, ProtectionSystem, Speed, TractionType, TrainCharacteristicsId, TrainProtection,
+};
+use zugfolge_sim::operational::{
+    FORMATION_DYNAMICS_BASIS_POINTS, FormationDynamicsDerivationInput,
+    MAX_FORMATION_ACCELERATION_MMPS2, MAX_FORMATION_BRAKE_MMPS2, derive_formation_dynamics,
 };
 
 use super::{RuntimeError, parse_json, sha256_json, to_json};
@@ -29,7 +33,9 @@ use super::{RuntimeError, parse_json, sha256_json, to_json};
 const FLEET_INITIALIZE_SCHEMA: &str = "zugfolge-fleet-world-initialize/v2";
 const FLEET_INITIALIZED_SCHEMA: &str = "zugfolge-fleet-world-initialized/v2";
 const FLEET_STATE_SCHEMA: &str = "zugfolge-fleet-world-state/v2";
-const AUTHORITY_RELEASE_SCHEMA: &str = "zugfolge-fleet-authority-release/v1";
+const FLEET_STATE_VERIFICATION_SCHEMA: &str = "zugfolge-fleet-world-state-verification/v1";
+const AUTHORITY_RELEASE_SCHEMA_V1: &str = "zugfolge-fleet-authority-release/v1";
+const AUTHORITY_RELEASE_SCHEMA_V2: &str = "zugfolge-fleet-authority-release/v2";
 const FORMATION_COMMAND_SCHEMA: &str = "zugfolge-fleet-form-vehicles-command/v2";
 const PERSONNEL_DUTY_COMMAND_SCHEMA: &str = "zugfolge-fleet-assign-duty-command/v2";
 const PATH_RESERVATION_COMMAND_SCHEMA: &str = "zugfolge-fleet-attach-path-command/v2";
@@ -38,6 +44,7 @@ const MAINTENANCE_COMMAND_SCHEMA: &str = "zugfolge-fleet-schedule-maintenance-co
 const FLEET_RESULT_SCHEMA: &str = "zugfolge-fleet-command-result/v2";
 const FLEET_RECEIPT_SCHEMA: &str = "zugfolge-fleet-command-receipt/v1";
 const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
+const BASIS_POINTS_MAX: u16 = FORMATION_DYNAMICS_BASIS_POINTS;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -108,6 +115,20 @@ enum AuthorityTraction {
     Battery,
 }
 
+/// Assetlokale, versionierte Betriebseinschraenkung aus Fleet Authority v2.
+/// Die externe Darstellung entspricht bewusst dem Operational-Vertrag.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum AuthorityVehicleRestriction {
+    PowerBasisPoints(u16),
+    MaximumSpeed(u32),
+    ServiceBrake(u32),
+    EmergencyBrake(u32),
+    ProtectionUnavailable(AuthorityProtectionSystem),
+    DoorAvailabilityBasisPoints(u16),
+    Immobilized,
+}
+
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum AuthorityVehicleRole {
@@ -123,6 +144,14 @@ enum AuthorityVehicleRole {
 struct AuthorityControlStands {
     front: bool,
     rear: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum AuthorityOrientation {
+    #[default]
+    Along,
+    Against,
 }
 
 impl Default for AuthorityControlStands {
@@ -177,6 +206,10 @@ struct AuthorityTechnicalData {
     length_mm: i64,
     mass_kg: i64,
     maximum_speed_kph: u16,
+    /// V2 bindet die technische Ganzzahlgeschwindigkeit explizit. V1 wird
+    /// weiterhin aus km/h mit der historischen Aufrundung materialisiert.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    maximum_speed_mmps: Option<i64>,
     /// Legacy-Referenzprofil. Neue Katalogdaten dürfen die Werte auslassen
     /// und liefern die Fahrdynamik erst für die konkrete Formation.
     #[serde(default)]
@@ -190,12 +223,18 @@ struct AuthorityTechnicalData {
     starting_tractive_effort_kn: i64,
     #[serde(default)]
     brake_weight_kg: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    maximum_acceleration_cap_mmps2: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    service_brake_cap_mmps2: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    emergency_brake_multiplier_basis_points: Option<u16>,
     traction: AuthorityTraction,
     electric_systems: Vec<AuthorityPowerSystem>,
-    #[serde(default)]
-    role: AuthorityVehicleRole,
-    #[serde(default)]
-    control_stands: AuthorityControlStands,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    role: Option<AuthorityVehicleRole>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    control_stands: Option<AuthorityControlStands>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -209,6 +248,19 @@ struct AuthorityPassengerData {
     equipment: Vec<String>,
     operating_cost_cents_per_train_km: u32,
     replacement_plan: bool,
+}
+
+/// Operativer Zustandsvektor des Katalog-Seeds. Er ist absichtlich nicht mit
+/// dem anders geschnittenen fuenfteiligen Fahrzeugmarkt-Zustand gleichgesetzt.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AuthorityVehicleCondition {
+    mechanics_basis_points: u16,
+    drive_basis_points: u16,
+    brakes_basis_points: u16,
+    kilometres_since_maintenance: u64,
+    operating_hours_since_maintenance: u64,
+    open_observations: u16,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -226,6 +278,14 @@ struct AuthorityVehicleAsset {
     approved_line_ids: Vec<String>,
     maintenance_deadlines: Vec<AuthorityMaintenanceDeadline>,
     installed_protection: Vec<AuthorityProtectionSystem>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    orientation: Option<AuthorityOrientation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    condition: Option<AuthorityVehicleCondition>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    restrictions: Option<BTreeMap<String, AuthorityVehicleRestriction>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    history: Option<Vec<String>>,
     technical: AuthorityTechnicalData,
     passenger: AuthorityPassengerData,
     delivered_at: u64,
@@ -269,6 +329,10 @@ struct FleetAuthorityRelease {
     schema_version: String,
     release_id: String,
     reference_year: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    economy_release_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    economy_release_sha256: Option<String>,
     assets: Vec<AuthorityVehicleAsset>,
     personnel_pools: Vec<AuthorityPersonnelPool>,
     path_receipts: Vec<AuthorityPathReceipt>,
@@ -301,9 +365,10 @@ struct FormationIntent {
     dynamics: Option<AuthorityFormationDynamics>,
 }
 
-/// Das signierte, formationsbezogene Bewegungsprofil. Es gehört nicht in den
-/// Stammdatensatz einer Lokomotive, weil deren wirksame Beschleunigung und
-/// Bremsung von der gekuppelten Gesamtmasse und Bremsstellung abhängen.
+/// Das serverautoritativ abgeleitete, formationsbezogene Bewegungsprofil. Es
+/// gehört nicht in den Stammdatensatz einer Lokomotive, weil deren wirksame
+/// Beschleunigung und Bremsung von der gekuppelten Gesamtmasse und
+/// Bremsstellung abhängen.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AuthorityFormationDynamics {
@@ -459,11 +524,23 @@ enum FleetCommand {
 impl FleetCommand {
     fn normalize(&mut self) {
         match self {
-            Self::Formation(command) => command.vehicle_ids.sort(),
+            // Die v2-Reihung ist semantisch und bleibt Zugspitze -> Zugschluss.
+            // V1 wird erst mit Kenntnis des gebundenen Authority-Releases im
+            // Single-Writer kompatibel sortiert.
+            Self::Formation(_) => {}
             Self::PersonnelDuty(command) => command.formation_ids.sort(),
             Self::PathReservation(_) => {}
             Self::AssetTransfer(_) => {}
             Self::Maintenance(_) => {}
+        }
+    }
+
+    fn normalize_for_authority(&mut self, authority_v2: bool) {
+        self.normalize();
+        if !authority_v2 {
+            if let Self::Formation(command) = self {
+                command.vehicle_ids.sort();
+            }
         }
     }
 
@@ -583,6 +660,18 @@ struct FleetWorldInitialized {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct FleetWorldStateVerification {
+    schema_version: &'static str,
+    world_id: String,
+    revision: u64,
+    produced_at: u64,
+    authority_release_hash: String,
+    state_hash: String,
+    snapshot_hash: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct FleetCommandResult {
     schema_version: &'static str,
     state: FleetWorldState,
@@ -599,6 +688,7 @@ struct FleetCommandResult {
 struct MaterializedFormation {
     snapshot: MobilizationFormation,
     formation: Formation,
+    authoritative_dynamics: Option<AuthorityFormationDynamics>,
 }
 
 fn invalid(detail: impl Into<String>) -> RuntimeError {
@@ -621,6 +711,37 @@ fn safe_integer(value: u64, field: &'static str) -> Result<(), RuntimeError> {
     Ok(())
 }
 
+fn validate_authority_condition(condition: &AuthorityVehicleCondition) -> Result<(), RuntimeError> {
+    if condition.mechanics_basis_points > BASIS_POINTS_MAX
+        || condition.drive_basis_points > BASIS_POINTS_MAX
+        || condition.brakes_basis_points > BASIS_POINTS_MAX
+    {
+        return Err(invalid(format!(
+            "Authority-v2-Assetzustand ueberschreitet {BASIS_POINTS_MAX} Basispunkte"
+        )));
+    }
+    safe_integer(
+        condition.kilometres_since_maintenance,
+        "authorityRelease.assets[].condition.kilometresSinceMaintenance",
+    )?;
+    safe_integer(
+        condition.operating_hours_since_maintenance,
+        "authorityRelease.assets[].condition.operatingHoursSinceMaintenance",
+    )?;
+    Ok(())
+}
+
+fn validate_authority_history(history: &[String]) -> Result<(), RuntimeError> {
+    for entry in history {
+        if entry.trim().is_empty() || entry.trim() != entry {
+            return Err(invalid(
+                "authorityRelease.assets[].history[] muss nichtleer und randfrei sein",
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn sim_time(value: u64, field: &'static str) -> Result<i64, RuntimeError> {
     safe_integer(value, field)?;
     i64::try_from(value).map_err(|_| invalid(format!("{field} ist keine Simulationszeit")))
@@ -635,6 +756,18 @@ fn sha256(value: &str, field: &'static str) -> Result<(), RuntimeError> {
         return Err(invalid(format!("{field} ist kein SHA-256")));
     }
     Ok(())
+}
+
+fn maximum_speed_mmps_floor(maximum_speed_kph: u16) -> i64 {
+    i64::from(maximum_speed_kph).saturating_mul(1_000_000) / 3_600
+}
+
+const fn display_km_h_ceil(speed: Speed) -> i64 {
+    speed
+        .millimetres_per_second()
+        .saturating_mul(3_600)
+        .saturating_add(999_999)
+        / 1_000_000
 }
 
 fn stable_numeric_id(value: &str) -> u64 {
@@ -669,6 +802,31 @@ fn canonical_hash<T: Serialize>(value: &T) -> Result<String, RuntimeError> {
     Ok(hex)
 }
 
+fn initial_asset_holding_history_hash(
+    release_id: &str,
+    asset: &AuthorityVehicleAsset,
+) -> Result<String, RuntimeError> {
+    match (&asset.condition, &asset.history) {
+        (Some(condition), Some(history)) => canonical_hash(&(
+            "fleet-asset-holding-initial/v2",
+            release_id,
+            &asset.id,
+            &asset.operator_id,
+            condition,
+            history,
+        )),
+        (None, None) => canonical_hash(&(
+            "fleet-asset-holding/v1",
+            release_id,
+            &asset.id,
+            &asset.operator_id,
+        )),
+        _ => Err(invalid(
+            "Authority-Asset muss condition und history gemeinsam liefern",
+        )),
+    }
+}
+
 fn ensure_unique_strings(values: &[String], field: &'static str) -> Result<(), RuntimeError> {
     if values.is_empty() {
         return Err(invalid(format!("{field} darf nicht leer sein")));
@@ -680,6 +838,23 @@ fn ensure_unique_strings(values: &[String], field: &'static str) -> Result<(), R
         return Err(invalid(format!(
             "{field} enthaelt Duplikate oder ist nicht kanonisch UTF-8-sortiert"
         )));
+    }
+    Ok(())
+}
+
+fn ensure_unique_strings_preserving_order(
+    values: &[String],
+    field: &'static str,
+) -> Result<(), RuntimeError> {
+    if values.is_empty() {
+        return Err(invalid(format!("{field} darf nicht leer sein")));
+    }
+    let mut seen = BTreeSet::new();
+    for value in values {
+        non_empty(value, field)?;
+        if !seen.insert(value) {
+            return Err(invalid(format!("{field} enthaelt Duplikate")));
+        }
     }
     Ok(())
 }
@@ -715,13 +890,32 @@ fn normalize_release(release: &mut FleetAuthorityRelease) {
 }
 
 fn validate_release(release: &FleetAuthorityRelease) -> Result<(), RuntimeError> {
-    if release.schema_version != AUTHORITY_RELEASE_SCHEMA {
-        return Err(RuntimeError::new(
-            "unsupported_schema",
-            release.schema_version.clone(),
-        ));
-    }
+    let authority_v2 = match release.schema_version.as_str() {
+        AUTHORITY_RELEASE_SCHEMA_V1 => false,
+        AUTHORITY_RELEASE_SCHEMA_V2 => true,
+        _ => {
+            return Err(RuntimeError::new(
+                "unsupported_schema",
+                release.schema_version.clone(),
+            ));
+        }
+    };
     non_empty(&release.release_id, "authorityRelease.releaseId")?;
+    if authority_v2 {
+        let economy_release_id = release
+            .economy_release_id
+            .as_deref()
+            .ok_or_else(|| invalid("Authority-v2-Release besitzt keine EconomyRelease-ID"))?;
+        non_empty(economy_release_id, "authorityRelease.economyReleaseId")?;
+        let economy_release_sha256 = release
+            .economy_release_sha256
+            .as_deref()
+            .ok_or_else(|| invalid("Authority-v2-Release besitzt keinen EconomyRelease-SHA-256"))?;
+        sha256(
+            economy_release_sha256,
+            "authorityRelease.economyReleaseSha256",
+        )?;
+    }
     if release.reference_year == 0 || release.assets.is_empty() {
         return Err(invalid(
             "Authority-Release besitzt keine Referenzepoche oder Assets",
@@ -748,8 +942,16 @@ fn validate_release(release: &FleetAuthorityRelease) -> Result<(), RuntimeError>
             || asset.vehicle_type_id == 0
             || asset.build_year > asset.acquisition_year
             || asset.build_year > release.reference_year
+            || (authority_v2 && asset.acquisition_year > release.reference_year)
         {
             return Err(invalid("Authority-Asset besitzt ungueltige IDs oder Jahre"));
+        }
+        if authority_v2 {
+            safe_integer(asset.numeric_id, "authorityRelease.assets[].numericId")?;
+            safe_integer(
+                asset.vehicle_type_id,
+                "authorityRelease.assets[].vehicleTypeId",
+            )?;
         }
         safe_integer(asset.delivered_at, "authorityRelease.assets[].deliveredAt")?;
         safe_integer(asset.retired_at, "authorityRelease.assets[].retiredAt")?;
@@ -822,6 +1024,18 @@ fn validate_release(release: &FleetAuthorityRelease) -> Result<(), RuntimeError>
             && asset.technical.deceleration_mm_per_s2 == 0;
         let has_raw_propulsion = asset.technical.continuous_power_kw > 0
             && asset.technical.starting_tractive_effort_kn > 0;
+        let has_complete_raw_caps = asset.technical.maximum_acceleration_cap_mmps2.is_some()
+            && asset.technical.service_brake_cap_mmps2.is_some()
+            && asset
+                .technical
+                .emergency_brake_multiplier_basis_points
+                .is_some();
+        let omits_raw_caps = asset.technical.maximum_acceleration_cap_mmps2.is_none()
+            && asset.technical.service_brake_cap_mmps2.is_none()
+            && asset
+                .technical
+                .emergency_brake_multiplier_basis_points
+                .is_none();
         if asset.technical.length_mm <= 0
             || asset.technical.mass_kg <= 0
             || asset.technical.maximum_speed_kph == 0
@@ -833,23 +1047,113 @@ fn validate_release(release: &FleetAuthorityRelease) -> Result<(), RuntimeError>
             || asset.technical.continuous_power_kw < 0
             || asset.technical.starting_tractive_effort_kn < 0
             || asset.technical.brake_weight_kg < 0
+            || (authority_v2
+                && (asset.technical.brake_weight_kg == 0
+                    || !has_complete_raw_caps
+                    || (!unpowered && !has_raw_propulsion)
+                    || (unpowered
+                        && (asset.technical.continuous_power_kw != 0
+                            || asset.technical.starting_tractive_effort_kn != 0
+                            || asset.technical.maximum_acceleration_cap_mmps2 != Some(0)))))
+            || (!authority_v2 && !omits_raw_caps)
         {
             return Err(invalid(
                 "Authority-Asset besitzt ungueltige technische Daten",
             ));
         }
-        if matches!(asset.technical.traction, AuthorityTraction::Electric)
-            != !asset.technical.electric_systems.is_empty()
+        if authority_v2
+            && asset.technical.maximum_speed_mmps
+                != Some(maximum_speed_mmps_floor(asset.technical.maximum_speed_kph))
         {
             return Err(invalid(
-                "Authority-Asset besitzt inkonsistente elektrische Systeme",
+                "Authority-v2-Asset besitzt keine exakt abgerundete maximumSpeedMmps",
             ));
         }
-        if !matches!(asset.technical.traction, AuthorityTraction::Electric)
-            && !asset.technical.electric_systems.is_empty()
-        {
+        if authority_v2 {
+            let reference = authority_type_reference_dynamics(&asset.technical)?;
+            if has_legacy_dynamics
+                && (asset.technical.acceleration_mm_per_s2
+                    != i64::from(reference.acceleration_mmps2)
+                    || asset.technical.deceleration_mm_per_s2
+                        != i64::from(reference.service_brake_mmps2))
+            {
+                return Err(invalid(
+                    "Authority-v2-Referenzprofil weicht von seinen gebundenen Rohwerten ab",
+                ));
+            }
+        }
+        let role = authority_role(&asset.technical, authority_v2)?;
+        let control_stands = authority_control_stands(&asset.technical, authority_v2)?;
+        authority_orientation(asset, authority_v2)?;
+        match (&asset.condition, &asset.history) {
+            (Some(condition), Some(history)) if authority_v2 => {
+                validate_authority_condition(condition)?;
+                validate_authority_history(history)?;
+            }
+            (Some(_), Some(_)) => {
+                return Err(invalid(
+                    "Authority-v1-Asset darf condition und history nicht vorwegnehmen",
+                ));
+            }
+            (None, None) if authority_v2 => {
+                return Err(invalid(
+                    "Authority-v2-Asset besitzt keine expliziten condition und history",
+                ));
+            }
+            (None, None) => {}
+            _ => {
+                return Err(invalid(
+                    "Authority-Asset muss condition und history gemeinsam liefern",
+                ));
+            }
+        }
+        if authority_v2 {
+            let restrictions = asset.restrictions.as_ref().ok_or_else(|| {
+                invalid("Authority-v2-Asset besitzt keine expliziten restrictions")
+            })?;
+            for (restriction_id, restriction) in restrictions {
+                non_empty(restriction_id, "authorityRelease.assets[].restrictions key")?;
+                match restriction {
+                    AuthorityVehicleRestriction::PowerBasisPoints(value) => {
+                        if *value == 0 || *value > BASIS_POINTS_MAX {
+                            return Err(invalid(format!(
+                                "Authority-v2-Leistungsrestriktion '{restriction_id}' liegt nicht in 1..={BASIS_POINTS_MAX} Basispunkten"
+                            )));
+                        }
+                    }
+                    AuthorityVehicleRestriction::DoorAvailabilityBasisPoints(value) => {
+                        if *value > BASIS_POINTS_MAX {
+                            return Err(invalid(format!(
+                                "Authority-v2-Restriktion '{restriction_id}' ueberschreitet {BASIS_POINTS_MAX} Basispunkte"
+                            )));
+                        }
+                    }
+                    AuthorityVehicleRestriction::MaximumSpeed(value)
+                    | AuthorityVehicleRestriction::ServiceBrake(value)
+                    | AuthorityVehicleRestriction::EmergencyBrake(value) => {
+                        if *value == 0 {
+                            return Err(invalid(format!(
+                                "Authority-v2-Restriktion '{restriction_id}' besitzt einen Nullwert"
+                            )));
+                        }
+                    }
+                    AuthorityVehicleRestriction::ProtectionUnavailable(_)
+                    | AuthorityVehicleRestriction::Immobilized => {}
+                }
+            }
+        } else if asset.restrictions.is_some() {
             return Err(invalid(
-                "Nur elektrische Assets duerfen elektrische Systeme tragen",
+                "Authority-v1-Asset darf keine v2-restrictions vorwegnehmen",
+            ));
+        }
+        let requires_electric_systems = match asset.technical.traction {
+            AuthorityTraction::Electric => true,
+            AuthorityTraction::Battery => authority_v2,
+            AuthorityTraction::Diesel | AuthorityTraction::Unpowered => false,
+        };
+        if requires_electric_systems == asset.technical.electric_systems.is_empty() {
+            return Err(invalid(
+                "Authority-Asset besitzt zur Traktion inkonsistente elektrische Systeme",
             ));
         }
         if asset
@@ -871,17 +1175,16 @@ fn validate_release(release: &FleetAuthorityRelease) -> Result<(), RuntimeError>
                     | AuthorityProtectionSystem::EtcsLevel2
             )
         });
-        if !matches!(asset.technical.role, AuthorityVehicleRole::Coach) && !has_baseline_protection
-        {
+        if role != AuthorityVehicleRole::Coach && !has_baseline_protection {
             return Err(invalid(
                 "Fuehrendes oder angetriebenes Authority-Asset besitzt weder PZB noch ETCS",
             ));
         }
-        match asset.technical.role {
+        match role {
             AuthorityVehicleRole::Coach => {
                 if asset.technical.traction != AuthorityTraction::Unpowered
-                    || asset.technical.control_stands.front
-                    || asset.technical.control_stands.rear
+                    || control_stands.front
+                    || control_stands.rear
                 {
                     return Err(invalid(
                         "Reisezugwagen muss nicht angetrieben und ohne Fuehrerstand sein",
@@ -890,8 +1193,7 @@ fn validate_release(release: &FleetAuthorityRelease) -> Result<(), RuntimeError>
             }
             AuthorityVehicleRole::ControlCar => {
                 if asset.technical.traction != AuthorityTraction::Unpowered
-                    || (!asset.technical.control_stands.front
-                        && !asset.technical.control_stands.rear)
+                    || (!control_stands.front && !control_stands.rear)
                 {
                     return Err(invalid(
                         "Steuerwagen braucht mindestens einen Fuehrerstand und keine Traktion",
@@ -899,14 +1201,16 @@ fn validate_release(release: &FleetAuthorityRelease) -> Result<(), RuntimeError>
                 }
             }
             AuthorityVehicleRole::Locomotive | AuthorityVehicleRole::PoweredUnit => {
-                if asset.technical.traction == AuthorityTraction::Unpowered {
+                if asset.technical.traction == AuthorityTraction::Unpowered
+                    || (authority_v2 && !control_stands.front && !control_stands.rear)
+                {
                     return Err(invalid(
-                        "Angetriebenes Authority-Asset besitzt keine Traktion",
+                        "Angetriebenes Authority-v2-Asset braucht Traktion und Fuehrerstand",
                     ));
                 }
             }
         }
-        if (asset.technical.role != AuthorityVehicleRole::Locomotive && asset.passenger.seats == 0)
+        if (role != AuthorityVehicleRole::Locomotive && asset.passenger.seats == 0)
             || asset.passenger.first_class_seats > asset.passenger.seats
         {
             return Err(invalid("Authority-Asset besitzt ungueltige Fahrgastdaten"));
@@ -946,6 +1250,12 @@ fn validate_release(release: &FleetAuthorityRelease) -> Result<(), RuntimeError>
         )?;
         if pool.numeric_id == 0 || pool.capacity_seconds == 0 {
             return Err(invalid("Authority-Personalpool besitzt keine Kapazitaet"));
+        }
+        if authority_v2 {
+            safe_integer(
+                pool.numeric_id,
+                "authorityRelease.personnelPools[].numericId",
+            )?;
         }
     }
     if release
@@ -1018,6 +1328,22 @@ fn validate_release(release: &FleetAuthorityRelease) -> Result<(), RuntimeError>
                 "Authority-Trassenbeleg ist technisch unvollstaendig",
             ));
         }
+        if authority_v2 {
+            safe_integer(
+                receipt.numeric_route_id,
+                "authorityRelease.pathReceipts[].numericRouteId",
+            )?;
+            for length in &receipt.platform_lengths_mm {
+                safe_integer(
+                    u64::try_from(*length).map_err(|_| {
+                        invalid(
+                            "authorityRelease.pathReceipts[].platformLengthsMm[] muss positiv sein",
+                        )
+                    })?,
+                    "authorityRelease.pathReceipts[].platformLengthsMm[]",
+                )?;
+            }
+        }
     }
     Ok(())
 }
@@ -1067,7 +1393,10 @@ fn confirmed_receipt<'a>(
     Ok(receipt)
 }
 
-fn traction(technical: &AuthorityTechnicalData) -> Result<TractionType, RuntimeError> {
+fn traction(
+    technical: &AuthorityTechnicalData,
+    authority_v2: bool,
+) -> Result<TractionType, RuntimeError> {
     match technical.traction {
         AuthorityTraction::Unpowered => Ok(TractionType::Unpowered),
         AuthorityTraction::Electric => ElectricSystems::from_systems(
@@ -1076,6 +1405,11 @@ fn traction(technical: &AuthorityTechnicalData) -> Result<TractionType, RuntimeE
         .map(TractionType::Electric)
         .map_err(|error| invalid(format!("ungueltige elektrische Systeme: {error}"))),
         AuthorityTraction::Diesel => Ok(TractionType::Diesel),
+        AuthorityTraction::Battery if authority_v2 => ElectricSystems::from_systems(
+            technical.electric_systems.iter().copied().map(Into::into),
+        )
+        .map(TractionType::BatteryElectricWithSystems)
+        .map_err(|error| invalid(format!("ungueltige Batterie-Ladesysteme: {error}"))),
         AuthorityTraction::Battery => Ok(TractionType::BatteryElectric),
     }
 }
@@ -1086,6 +1420,43 @@ fn vehicle_role(role: AuthorityVehicleRole) -> zugfolge_fleet::VehicleRole {
         AuthorityVehicleRole::PoweredUnit => zugfolge_fleet::VehicleRole::PoweredUnit,
         AuthorityVehicleRole::Coach => zugfolge_fleet::VehicleRole::Coach,
         AuthorityVehicleRole::ControlCar => zugfolge_fleet::VehicleRole::ControlCar,
+    }
+}
+
+fn authority_role(
+    technical: &AuthorityTechnicalData,
+    authority_v2: bool,
+) -> Result<AuthorityVehicleRole, RuntimeError> {
+    technical
+        .role
+        .or_else(|| (!authority_v2).then(AuthorityVehicleRole::default))
+        .ok_or_else(|| invalid("Authority-v2-Asset besitzt keine explizite Fahrzeugrolle"))
+}
+
+fn authority_control_stands(
+    technical: &AuthorityTechnicalData,
+    authority_v2: bool,
+) -> Result<AuthorityControlStands, RuntimeError> {
+    technical
+        .control_stands
+        .or_else(|| (!authority_v2).then(AuthorityControlStands::default))
+        .ok_or_else(|| invalid("Authority-v2-Asset besitzt keine expliziten Fuehrerstaende"))
+}
+
+fn authority_orientation(
+    asset: &AuthorityVehicleAsset,
+    authority_v2: bool,
+) -> Result<AuthorityOrientation, RuntimeError> {
+    asset
+        .orientation
+        .or_else(|| (!authority_v2).then(AuthorityOrientation::default))
+        .ok_or_else(|| invalid("Authority-v2-Asset besitzt keine explizite orientation"))
+}
+
+const fn vehicle_orientation(orientation: AuthorityOrientation) -> VehicleOrientation {
+    match orientation {
+        AuthorityOrientation::Along => VehicleOrientation::Along,
+        AuthorityOrientation::Against => VehicleOrientation::Against,
     }
 }
 
@@ -1138,12 +1509,27 @@ fn fleet_snapshot(
         .map_err(|error| invalid(format!("ungueltiger Authority-Flottensnapshot: {error}")))
 }
 
-fn technical_data(source: &AuthorityVehicleAsset) -> Result<VehicleTechnicalData, RuntimeError> {
+fn technical_data(
+    source: &AuthorityVehicleAsset,
+    authority_v2: bool,
+) -> Result<VehicleTechnicalData, RuntimeError> {
+    let max_speed = if authority_v2 {
+        Speed::from_millimetres_per_second(
+            source
+                .technical
+                .maximum_speed_mmps
+                .ok_or_else(|| invalid("Authority-v2-Asset besitzt keine maximumSpeedMmps"))?,
+        )
+    } else {
+        Speed::from_km_h(i64::from(source.technical.maximum_speed_kph))
+    };
+    let role = authority_role(&source.technical, authority_v2)?;
+    let control_stands = authority_control_stands(&source.technical, authority_v2)?;
     Ok(VehicleTechnicalData {
         vehicle_type_id: source.vehicle_type_id,
         length: Length::from_millimetres(source.technical.length_mm),
         mass: Mass::from_kilograms(source.technical.mass_kg),
-        max_speed: Speed::from_km_h(i64::from(source.technical.maximum_speed_kph)),
+        max_speed,
         acceleration: Acceleration::from_millimetres_per_second_squared(
             source.technical.acceleration_mm_per_s2,
         ),
@@ -1155,13 +1541,86 @@ fn technical_data(source: &AuthorityVehicleAsset) -> Result<VehicleTechnicalData
             source.technical.starting_tractive_effort_kn,
         ),
         brake_weight: Mass::from_kilograms(source.technical.brake_weight_kg),
-        traction: traction(&source.technical)?,
-        role: vehicle_role(source.technical.role),
+        traction: traction(&source.technical, authority_v2)?,
+        role: vehicle_role(role),
         control_stands: ControlStandConfiguration {
-            front: source.technical.control_stands.front,
-            rear: source.technical.control_stands.rear,
+            front: control_stands.front,
+            rear: control_stands.rear,
         },
     })
+}
+
+fn apply_vehicle_restrictions(
+    source: &AuthorityVehicleAsset,
+    authority_v2: bool,
+    vehicle: &mut FormationVehicle,
+) -> Result<(), RuntimeError> {
+    if !authority_v2 {
+        return Ok(());
+    }
+    let restrictions = source
+        .restrictions
+        .as_ref()
+        .ok_or_else(|| invalid("Authority-v2-Asset besitzt keine expliziten restrictions"))?;
+    for restriction in restrictions.values() {
+        match restriction {
+            AuthorityVehicleRestriction::PowerBasisPoints(basis_points) => {
+                let scaled = vehicle
+                    .continuous_power
+                    .kilowatts()
+                    .checked_mul(i64::from(*basis_points))
+                    .ok_or_else(|| invalid("Leistungsrestriktion ist uebergelaufen"))?
+                    / i64::from(BASIS_POINTS_MAX);
+                vehicle.continuous_power = Power::from_kilowatts(scaled);
+            }
+            AuthorityVehicleRestriction::MaximumSpeed(maximum_speed_mmps) => {
+                vehicle.max_speed =
+                    vehicle
+                        .max_speed
+                        .min(Speed::from_millimetres_per_second(i64::from(
+                            *maximum_speed_mmps,
+                        )));
+            }
+            AuthorityVehicleRestriction::ServiceBrake(brake_mmps2) => {
+                vehicle.deceleration =
+                    vehicle
+                        .deceleration
+                        .min(Acceleration::from_millimetres_per_second_squared(
+                            i64::from(*brake_mmps2),
+                        ));
+            }
+            AuthorityVehicleRestriction::ProtectionUnavailable(system) => {
+                let unavailable: ProtectionSystem = (*system).into();
+                let available = vehicle
+                    .protection
+                    .systems()
+                    .filter(|candidate| *candidate != unavailable)
+                    .collect::<Vec<_>>();
+                vehicle.protection = TrainProtection::from_systems(available);
+            }
+            AuthorityVehicleRestriction::Immobilized => {
+                vehicle.immobilized = true;
+                if vehicle.traction != TractionType::Unpowered {
+                    vehicle.protection = TrainProtection::from_systems([]);
+                }
+            }
+            // Fleet fuehrt heute kein separates Schnellbremsfeld. Die
+            // Restriktion bleibt im Authority-Asset erhalten; das
+            // serverautoritativ abgeleitete Formationsprofil transportiert den
+            // wirksamen Servicebremswert.
+            AuthorityVehicleRestriction::EmergencyBrake(_)
+            | AuthorityVehicleRestriction::DoorAvailabilityBasisPoints(_) => {}
+        }
+    }
+    if vehicle.traction != TractionType::Unpowered && vehicle.continuous_power.kilowatts() == 0 {
+        // Authority-v1 durfte seine Leistung auslassen und blieb historisch
+        // dennoch eigenfahrfaehig. Nur v2 kann hierher gelangen: Dort ist die
+        // Rohleistung positiv verpflichtend, null entsteht also erst durch
+        // eine wirksame PowerBasisPoints-Restriktion.
+        vehicle.immobilized = true;
+        vehicle.protection = TrainProtection::from_systems([]);
+    }
+    Ok(())
 }
 
 fn formation_dynamics(
@@ -1174,11 +1633,183 @@ fn formation_dynamics(
     .map_err(|_| invalid("Formations-Fahrprofil besitzt keine positiven Werte"))
 }
 
+fn authority_type_reference_dynamics(
+    technical: &AuthorityTechnicalData,
+) -> Result<zugfolge_sim::operational::DerivedFormationDynamics, RuntimeError> {
+    let total_mass_kg = u64::try_from(technical.mass_kg)
+        .map_err(|_| invalid("Authority-v2-Masse ist nicht positiv darstellbar"))?;
+    let total_brake_weight_kg = u64::try_from(technical.brake_weight_kg)
+        .map_err(|_| invalid("Authority-v2-Bremsgewicht ist nicht positiv darstellbar"))?;
+    let starting_tractive_effort_kn = u64::try_from(technical.starting_tractive_effort_kn)
+        .map_err(|_| invalid("Authority-v2-Anfahrzugkraft ist nicht positiv darstellbar"))?;
+    let effective_starting_tractive_force_newtons = starting_tractive_effort_kn
+        .checked_mul(1_000)
+        .ok_or_else(|| invalid("Authority-v2-Anfahrzugkraft ist uebergelaufen"))?;
+    let maximum_acceleration_cap_mmps2 = u32::try_from(
+        technical
+            .maximum_acceleration_cap_mmps2
+            .ok_or_else(|| invalid("Authority-v2-Asset besitzt keinen Beschleunigungs-Cap"))?,
+    )
+    .map_err(|_| invalid("Authority-v2-Beschleunigungs-Cap ist ungueltig"))?;
+    let service_brake_cap_mmps2 = u32::try_from(
+        technical
+            .service_brake_cap_mmps2
+            .ok_or_else(|| invalid("Authority-v2-Asset besitzt keinen Betriebsbrems-Cap"))?,
+    )
+    .map_err(|_| invalid("Authority-v2-Betriebsbrems-Cap ist ungueltig"))?;
+    derive_formation_dynamics(FormationDynamicsDerivationInput {
+        total_mass_kg,
+        effective_starting_tractive_force_newtons,
+        total_brake_weight_kg,
+        maximum_acceleration_cap_mmps2,
+        service_brake_cap_mmps2,
+        emergency_brake_multiplier_basis_points: technical
+            .emergency_brake_multiplier_basis_points
+            .ok_or_else(|| {
+                invalid("Authority-v2-Asset besitzt keinen Schnellbremsmultiplikator")
+            })?,
+    })
+    .map_err(|error| invalid(format!("Authority-v2-Rohdynamik ist ungueltig: {error:?}")))
+}
+
+fn authoritative_formation_dynamics(
+    sources: &[&AuthorityVehicleAsset],
+    formation: &Formation,
+) -> Result<Option<AuthorityFormationDynamics>, RuntimeError> {
+    if sources.len() != formation.vehicles().len() || sources.is_empty() {
+        return Err(invalid(
+            "Authority-v2-Formation besitzt keine eindeutige Rohwertzuordnung",
+        ));
+    }
+    let mut total_mass_kg = 0_u64;
+    let mut total_brake_weight_kg = 0_u64;
+    let mut effective_starting_tractive_force_newtons = 0_u64;
+    let mut maximum_acceleration_cap_mmps2 = u32::MAX;
+    let mut service_brake_cap_mmps2 = u32::MAX;
+    let mut emergency_brake_multiplier_basis_points = u16::MAX;
+    let mut restricted_service_brake_mmps2 = u32::MAX;
+    let mut restricted_emergency_brake_mmps2 = u32::MAX;
+    let mut has_usable_drive = false;
+
+    for (source, vehicle) in sources.iter().zip(formation.vehicles()) {
+        let technical = &source.technical;
+        let mass_kg = u64::try_from(technical.mass_kg)
+            .map_err(|_| invalid("Authority-v2-Formationsmasse ist ungueltig"))?;
+        let brake_weight_kg = u64::try_from(technical.brake_weight_kg)
+            .map_err(|_| invalid("Authority-v2-Formationsbremsgewicht ist ungueltig"))?;
+        total_mass_kg = total_mass_kg
+            .checked_add(mass_kg)
+            .ok_or_else(|| invalid("Authority-v2-Formationsmasse ist uebergelaufen"))?;
+        total_brake_weight_kg = total_brake_weight_kg
+            .checked_add(brake_weight_kg)
+            .ok_or_else(|| invalid("Authority-v2-Formationsbremsgewicht ist uebergelaufen"))?;
+        let service_cap = u32::try_from(
+            technical
+                .service_brake_cap_mmps2
+                .ok_or_else(|| invalid("Authority-v2-Asset besitzt keinen Betriebsbrems-Cap"))?,
+        )
+        .map_err(|_| invalid("Authority-v2-Betriebsbrems-Cap ist ungueltig"))?;
+        service_brake_cap_mmps2 = service_brake_cap_mmps2.min(service_cap);
+        emergency_brake_multiplier_basis_points = emergency_brake_multiplier_basis_points.min(
+            technical
+                .emergency_brake_multiplier_basis_points
+                .ok_or_else(|| {
+                    invalid("Authority-v2-Asset besitzt keinen Schnellbremsmultiplikator")
+                })?,
+        );
+        if vehicle.traction != TractionType::Unpowered
+            && !vehicle.immobilized
+            && vehicle.continuous_power.kilowatts() > 0
+        {
+            has_usable_drive = true;
+            let force_newtons = u64::try_from(technical.starting_tractive_effort_kn)
+                .map_err(|_| invalid("Authority-v2-Anfahrzugkraft ist ungueltig"))?
+                .checked_mul(1_000)
+                .ok_or_else(|| invalid("Authority-v2-Anfahrzugkraft ist uebergelaufen"))?;
+            effective_starting_tractive_force_newtons = effective_starting_tractive_force_newtons
+                .checked_add(force_newtons)
+                .ok_or_else(|| {
+                    invalid("Authority-v2-Formationsanfahrzugkraft ist uebergelaufen")
+                })?;
+            let acceleration_cap =
+                u32::try_from(technical.maximum_acceleration_cap_mmps2.ok_or_else(|| {
+                    invalid("Authority-v2-Asset besitzt keinen Beschleunigungs-Cap")
+                })?)
+                .map_err(|_| invalid("Authority-v2-Beschleunigungs-Cap ist ungueltig"))?;
+            maximum_acceleration_cap_mmps2 = maximum_acceleration_cap_mmps2.min(acceleration_cap);
+        }
+        for restriction in source
+            .restrictions
+            .as_ref()
+            .into_iter()
+            .flat_map(|restrictions| restrictions.values())
+        {
+            match restriction {
+                AuthorityVehicleRestriction::ServiceBrake(limit) => {
+                    restricted_service_brake_mmps2 = restricted_service_brake_mmps2.min(*limit);
+                }
+                AuthorityVehicleRestriction::EmergencyBrake(limit) => {
+                    restricted_emergency_brake_mmps2 = restricted_emergency_brake_mmps2.min(*limit);
+                }
+                _ => {}
+            }
+        }
+    }
+    let maximum_acceleration_cap_mmps2 = if has_usable_drive {
+        maximum_acceleration_cap_mmps2
+    } else {
+        0
+    };
+    let derived = derive_formation_dynamics(FormationDynamicsDerivationInput {
+        total_mass_kg,
+        effective_starting_tractive_force_newtons,
+        total_brake_weight_kg,
+        maximum_acceleration_cap_mmps2,
+        service_brake_cap_mmps2,
+        emergency_brake_multiplier_basis_points,
+    })
+    .map_err(|error| {
+        invalid(format!(
+            "Authority-v2-Formationsrohdynamik ist ungueltig: {error:?}"
+        ))
+    })?;
+    let service_brake_mmps2 = derived
+        .service_brake_mmps2
+        .min(restricted_service_brake_mmps2);
+    let emergency_brake_mmps2 = derived
+        .emergency_brake_mmps2
+        .min(restricted_emergency_brake_mmps2);
+    if service_brake_mmps2 == 0
+        || emergency_brake_mmps2 == 0
+        || emergency_brake_mmps2 <= service_brake_mmps2
+        || emergency_brake_mmps2 > MAX_FORMATION_BRAKE_MMPS2
+        || (has_usable_drive
+            && (derived.acceleration_mmps2 == 0
+                || derived.acceleration_mmps2 > MAX_FORMATION_ACCELERATION_MMPS2))
+    {
+        return Err(invalid(
+            "Authority-v2-Restriktionen erzeugen keine sichere Formationsdynamik",
+        ));
+    }
+    if !has_usable_drive {
+        return Ok(None);
+    }
+    Ok(Some(AuthorityFormationDynamics {
+        acceleration_mm_per_s2: i64::from(derived.acceleration_mmps2),
+        deceleration_mm_per_s2: i64::from(service_brake_mmps2),
+    }))
+}
+
 fn materialize_formation(
     state: &FleetWorldState,
     intent: &FormationIntent,
 ) -> Result<MaterializedFormation, RuntimeError> {
-    ensure_unique_strings(&intent.vehicle_ids, "formation.vehicleIds")?;
+    let authority_v2 = state.authority_release.schema_version == AUTHORITY_RELEASE_SCHEMA_V2;
+    if authority_v2 {
+        ensure_unique_strings_preserving_order(&intent.vehicle_ids, "formation.vehicleIds")?;
+    } else {
+        ensure_unique_strings(&intent.vehicle_ids, "formation.vehicleIds")?;
+    }
     let receipt = confirmed_receipt(&state.authority_release, &intent.path_receipt_id)?;
     if state.produced_at < receipt.valid_from || state.produced_at >= receipt.valid_until {
         return Err(invalid(
@@ -1241,15 +1872,41 @@ fn materialize_formation(
                 "Authority-Asset '{vehicle_id}' fehlt im FleetSnapshot"
             ))
         })?;
-        vehicles.push(
-            FormationVehicle::from_asset(asset, &technical_data(source)?).map_err(|error| {
-                invalid(format!("technische Asset-Ableitung scheiterte: {error}"))
-            })?,
-        );
+        let technical = technical_data(source, authority_v2)?;
+        let mut vehicle = if authority_v2 {
+            FormationVehicle::from_asset_with_orientation(
+                asset,
+                &technical,
+                vehicle_orientation(authority_orientation(source, true)?),
+            )
+        } else {
+            FormationVehicle::from_asset(asset, &technical)
+        }
+        .map_err(|error| invalid(format!("technische Asset-Ableitung scheiterte: {error}")))?;
+        apply_vehicle_restrictions(source, authority_v2, &mut vehicle)?;
+        vehicles.push(vehicle);
         sources.push(source);
     }
-    let formation = Formation::new(numeric_world_id, stable_numeric_id(&intent.id), vehicles)
-        .map_err(|error| invalid(format!("inkompatible Formation: {error}")))?;
+    let formation = if authority_v2 {
+        Formation::new_authoritative(numeric_world_id, stable_numeric_id(&intent.id), vehicles)
+    } else {
+        Formation::new(numeric_world_id, stable_numeric_id(&intent.id), vehicles)
+    }
+    .map_err(|error| invalid(format!("inkompatible Formation: {error}")))?;
+    let authoritative_dynamics = if authority_v2 {
+        let expected = authoritative_formation_dynamics(&sources, &formation)?;
+        if intent
+            .dynamics
+            .is_some_and(|provided| Some(provided) != expected)
+        {
+            return Err(invalid(
+                "caller-supplied FormationDynamics weicht von der Authority-Rohableitung ab",
+            ));
+        }
+        expected
+    } else {
+        intent.dynamics
+    };
     let platform_lengths = receipt
         .platform_lengths_mm
         .iter()
@@ -1286,7 +1943,7 @@ fn materialize_formation(
                 ))
             })?;
         let characteristics_id = TrainCharacteristicsId::new(stable_numeric_u32(&intent.id));
-        let characteristics = match intent.dynamics {
+        let characteristics = match authoritative_dynamics {
             Some(dynamics) => formation.characteristics_with_dynamics(
                 characteristics_id,
                 intent.id.clone(),
@@ -1374,11 +2031,14 @@ fn materialize_formation(
     let traction = match train_characteristics
         .as_ref()
         .map(|characteristics| characteristics.traction())
+        .or_else(|| formation.physical_traction())
     {
         None | Some(TractionType::Unpowered) => zugfolge_fleet::MobilizationTraction::Unpowered,
         Some(TractionType::Electric(_)) => zugfolge_fleet::MobilizationTraction::Electric,
         Some(TractionType::Diesel) => zugfolge_fleet::MobilizationTraction::Diesel,
-        Some(TractionType::BatteryElectric) => zugfolge_fleet::MobilizationTraction::Battery,
+        Some(TractionType::BatteryElectric | TractionType::BatteryElectricWithSystems(_)) => {
+            zugfolge_fleet::MobilizationTraction::Battery
+        }
     };
     let vehicle_age_years = sources
         .iter()
@@ -1397,7 +2057,19 @@ fn materialize_formation(
             vehicle_ids: intent.vehicle_ids.clone(),
             path_receipt_id: Some(intent.path_receipt_id.clone()),
             service_line_ids: receipt.service_line_ids.clone(),
-            availability: MobilizationAvailability::Available,
+            // Mobilization-v1 besitzt noch keinen eigenen "immobilized"-
+            // Status. Maintenance ist deshalb der konservative technische
+            // Sperrstatus fuer einen physisch angetriebenen, aber vollstaendig
+            // gesperrten/auf 0 kW gerasterten Verband; er behauptet hier
+            // keinen bereits geplanten Werkstattauftrag. Ein reiner Wagenpark
+            // bleibt dagegen Available + Unpowered.
+            availability: if formation.can_move_under_own_power()
+                || formation.physical_traction().is_none()
+            {
+                MobilizationAvailability::Available
+            } else {
+                MobilizationAvailability::Maintenance
+            },
             procurement: MobilizationProcurement::Delivered,
             available_from,
             available_until,
@@ -1412,12 +2084,27 @@ fn materialize_formation(
                 maximum_speed_kph: u16::try_from(
                     train_characteristics
                         .as_ref()
-                        .map(|characteristics| characteristics.max_speed().km_h())
+                        .map(|characteristics| {
+                            if state.authority_release.schema_version == AUTHORITY_RELEASE_SCHEMA_V2
+                            {
+                                display_km_h_ceil(characteristics.max_speed())
+                            } else {
+                                characteristics.max_speed().km_h()
+                            }
+                        })
                         .unwrap_or_else(|| {
-                            sources
+                            formation
+                                .vehicles()
                                 .iter()
-                                .map(|source| i64::from(source.technical.maximum_speed_kph))
+                                .map(|vehicle| vehicle.max_speed)
                                 .min()
+                                .map(|speed| {
+                                    if authority_v2 {
+                                        display_km_h_ceil(speed)
+                                    } else {
+                                        speed.km_h()
+                                    }
+                                })
                                 .unwrap_or(0)
                         }),
                 )
@@ -1432,6 +2119,7 @@ fn materialize_formation(
             },
         },
         formation,
+        authoritative_dynamics,
     })
 }
 
@@ -1656,7 +2344,15 @@ fn snapshot(state: &FleetWorldState) -> Result<MobilizationSnapshot, RuntimeErro
                     "Formation stimmt nicht mit ihrem Zustandsschluessel ueberein",
                 ));
             }
-            materialize_formation(state, intent).map(|materialized| materialized.snapshot)
+            let materialized = materialize_formation(state, intent)?;
+            if state.authority_release.schema_version == AUTHORITY_RELEASE_SCHEMA_V2
+                && intent.dynamics != materialized.authoritative_dynamics
+            {
+                return Err(invalid(
+                    "persistierte Authority-v2-Formation besitzt nicht ihre Rohwertableitung",
+                ));
+            }
+            Ok(materialized.snapshot)
         })
         .collect::<Result<Vec<_>, _>>()?;
     for formation in &mut formations {
@@ -1724,8 +2420,24 @@ fn initialized(mut input: InitializeFleetWorld) -> Result<FleetWorldInitialized,
     safe_integer(input.produced_at, "producedAt")?;
     normalize_release(&mut input.authority_release);
     validate_release(&input.authority_release)?;
-    for formation in &mut input.formations {
-        formation.vehicle_ids.sort();
+    if input.authority_release.schema_version == AUTHORITY_RELEASE_SCHEMA_V2
+        && input.authority_release.assets.iter().any(|asset| {
+            asset.delivered_at > input.produced_at
+                || input.produced_at >= asset.retired_at
+                || asset
+                    .maintenance_deadlines
+                    .iter()
+                    .any(|deadline| deadline.due_at <= input.produced_at)
+        })
+    {
+        return Err(invalid(
+            "Authority-v2 enthaelt am Initialisierungsstichtag ein noch nicht geliefertes, ausgemustertes oder ueberfaelliges Asset",
+        ));
+    }
+    if input.authority_release.schema_version == AUTHORITY_RELEASE_SCHEMA_V1 {
+        for formation in &mut input.formations {
+            formation.vehicle_ids.sort();
+        }
     }
     input
         .formations
@@ -1753,12 +2465,10 @@ fn initialized(mut input: InitializeFleetWorld) -> Result<FleetWorldInitialized,
                     lessor_operator_id: None,
                     contract_id: None,
                     valid_until_s: None,
-                    history_hash: canonical_hash(&(
-                        "fleet-asset-holding/v1",
+                    history_hash: initial_asset_holding_history_hash(
                         &input.authority_release.release_id,
-                        &asset.id,
-                        &asset.operator_id,
-                    ))?,
+                        asset,
+                    )?,
                 },
             ))
         })
@@ -1776,7 +2486,7 @@ fn initialized(mut input: InitializeFleetWorld) -> Result<FleetWorldInitialized,
         asset_holdings,
         maintenance_assignments: BTreeMap::new(),
     };
-    for intent in input.formations {
+    for mut intent in input.formations {
         if state.formations.contains_key(&intent.id) {
             return Err(invalid("doppelte initiale Formation"));
         }
@@ -1784,13 +2494,16 @@ fn initialized(mut input: InitializeFleetWorld) -> Result<FleetWorldInitialized,
             existing
                 .vehicle_ids
                 .iter()
-                .any(|vehicle| intent.vehicle_ids.binary_search(vehicle).is_ok())
+                .any(|vehicle| intent.vehicle_ids.contains(vehicle))
         }) {
             return Err(invalid(
                 "Authority-Asset ist mehreren initialen Formationen zugeordnet",
             ));
         }
-        materialize_formation(&state, &intent)?;
+        let materialized = materialize_formation(&state, &intent)?;
+        if state.authority_release.schema_version == AUTHORITY_RELEASE_SCHEMA_V2 {
+            intent.dynamics = materialized.authoritative_dynamics;
+        }
         state.formations.insert(intent.id.clone(), intent);
     }
     for intent in input.personnel_duties {
@@ -1899,12 +2612,11 @@ fn apply_asset_transfer(
             command.vehicle_id
         )));
     }
-    if state.formations.values().any(|formation| {
-        formation
-            .vehicle_ids
-            .binary_search(&command.vehicle_id)
-            .is_ok()
-    }) {
+    if state
+        .formations
+        .values()
+        .any(|formation| formation.vehicle_ids.contains(&command.vehicle_id))
+    {
         return Err(invalid("Authority-Asset ist in einer Formation gebunden"));
     }
     let current = state
@@ -2057,6 +2769,28 @@ fn apply_maintenance(
 }
 
 fn hydrate_legacy_asset_holdings(state: &mut FleetWorldState) -> Result<(), RuntimeError> {
+    if state.authority_release.schema_version == AUTHORITY_RELEASE_SCHEMA_V2 {
+        let authority_ids = state
+            .authority_release
+            .assets
+            .iter()
+            .map(|asset| asset.id.as_str())
+            .collect::<BTreeSet<_>>();
+        let holding_ids = state
+            .asset_holdings
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        if holding_ids != authority_ids {
+            return Err(invalid(
+                "Authority-v2-Zustand muss fuer jedes und nur jedes Asset einen Halterzustand bewahren",
+            ));
+        }
+        for holding in state.asset_holdings.values() {
+            sha256(&holding.history_hash, "state.assetHoldings[].historyHash")?;
+        }
+        return Ok(());
+    }
     if !state.asset_holdings.is_empty() {
         return Ok(());
     }
@@ -2069,21 +2803,135 @@ fn hydrate_legacy_asset_holdings(state: &mut FleetWorldState) -> Result<(), Runt
                 lessor_operator_id: None,
                 contract_id: None,
                 valid_until_s: None,
-                history_hash: canonical_hash(&(
-                    "fleet-asset-holding/v1",
+                history_hash: initial_asset_holding_history_hash(
                     &state.authority_release.release_id,
-                    &asset.id,
-                    &asset.operator_id,
-                ))?,
+                    asset,
+                )?,
             },
         );
     }
     Ok(())
 }
 
+fn validate_persisted_state_relations(state: &FleetWorldState) -> Result<(), RuntimeError> {
+    let mut bound_vehicle_ids = BTreeSet::new();
+    for formation in state.formations.values() {
+        for vehicle_id in &formation.vehicle_ids {
+            if !bound_vehicle_ids.insert(vehicle_id) {
+                return Err(invalid(
+                    "Authority-Asset ist mehreren persistierten Formationen zugeordnet",
+                ));
+            }
+        }
+    }
+
+    for (vehicle_id, holding) in &state.asset_holdings {
+        non_empty(vehicle_id, "state.assetHoldings[].vehicleId")?;
+        non_empty(
+            &holding.owner_operator_id,
+            "state.assetHoldings[].ownerOperatorId",
+        )?;
+        non_empty(
+            &holding.holder_operator_id,
+            "state.assetHoldings[].holderOperatorId",
+        )?;
+        sha256(&holding.history_hash, "state.assetHoldings[].historyHash")?;
+        if let Some(valid_until_s) = holding.valid_until_s {
+            safe_integer(valid_until_s, "state.assetHoldings[].validUntilS")?;
+        }
+        match (
+            holding.lessor_operator_id.as_deref(),
+            holding.contract_id.as_deref(),
+            holding.valid_until_s,
+        ) {
+            (None, None, None) => {}
+            (Some(lessor), Some(contract_id), Some(_)) => {
+                non_empty(lessor, "state.assetHoldings[].lessorOperatorId")?;
+                non_empty(contract_id, "state.assetHoldings[].contractId")?;
+                if lessor != holding.owner_operator_id
+                    || holding.holder_operator_id == holding.owner_operator_id
+                {
+                    return Err(invalid(
+                        "persistierte Mietbindung besitzt widerspruechliche Eigentuemer- oder Halterdaten",
+                    ));
+                }
+            }
+            _ => {
+                return Err(invalid("persistierte Mietbindung ist unvollstaendig"));
+            }
+        }
+    }
+
+    for (formation_id, assignment) in &state.maintenance_assignments {
+        if formation_id != &assignment.formation_id || !state.formations.contains_key(formation_id)
+        {
+            return Err(invalid(
+                "Instandhaltungsauftrag stimmt nicht mit seiner Formation oder seinem Zustandsschluessel ueberein",
+            ));
+        }
+        non_empty(
+            &assignment.facility_id,
+            "state.maintenanceAssignments[].facilityId",
+        )?;
+        safe_integer(
+            assignment.starts_at_s,
+            "state.maintenanceAssignments[].startsAtS",
+        )?;
+        safe_integer(
+            assignment.ends_at_s,
+            "state.maintenanceAssignments[].endsAtS",
+        )?;
+        if assignment.ends_at_s <= assignment.starts_at_s {
+            return Err(invalid(
+                "persistierter Instandhaltungsauftrag besitzt kein gueltiges Zeitfenster",
+            ));
+        }
+    }
+    let assignments = state.maintenance_assignments.values().collect::<Vec<_>>();
+    for (index, left) in assignments.iter().enumerate() {
+        if assignments.iter().skip(index + 1).any(|right| {
+            left.facility_id == right.facility_id
+                && left.starts_at_s < right.ends_at_s
+                && right.starts_at_s < left.ends_at_s
+        }) {
+            return Err(invalid(
+                "persistierte Instandhaltungsauftraege belegen dieselbe Werkstatt ueberlappend",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn verify_world_state(
+    mut state: FleetWorldState,
+    expected_state_hash: &str,
+) -> Result<FleetWorldStateVerification, RuntimeError> {
+    sha256(expected_state_hash, "expectedStateHash")?;
+    let actual_state_hash = state_hash(&state)?;
+    if actual_state_hash != expected_state_hash {
+        return Err(RuntimeError::new(
+            "state_hash_mismatch",
+            "persistierter Flottenzustand passt nicht zum erwarteten Hash",
+        ));
+    }
+    hydrate_legacy_asset_holdings(&mut state)?;
+    validate_persisted_state_relations(&state)?;
+    let snapshot = snapshot(&state)?;
+    let actual_snapshot_hash = snapshot_hash(&snapshot)?;
+    Ok(FleetWorldStateVerification {
+        schema_version: FLEET_STATE_VERIFICATION_SCHEMA,
+        world_id: state.world_id,
+        revision: state.revision,
+        produced_at: state.produced_at,
+        authority_release_hash: state.authority_release_hash,
+        state_hash: actual_state_hash,
+        snapshot_hash: actual_snapshot_hash,
+    })
+}
+
 fn apply(
     mut state: FleetWorldState,
-    command: FleetCommand,
+    mut command: FleetCommand,
     replay_receipt: Option<FleetCommandReceipt>,
 ) -> Result<FleetCommandResult, RuntimeError> {
     if state.schema_version != FLEET_STATE_SCHEMA {
@@ -2098,6 +2946,9 @@ fn apply(
             "Flottenkommando und Zustand gehoeren nicht derselben Welt",
         ));
     }
+    command.normalize_for_authority(
+        state.authority_release.schema_version == AUTHORITY_RELEASE_SCHEMA_V2,
+    );
     non_empty(command.command_id(), "commandId")?;
     non_empty(command.entity_id(), "entityId")?;
     safe_integer(command.expected_revision(), "expectedRevision")?;
@@ -2141,7 +2992,7 @@ fn apply(
     hydrate_legacy_asset_holdings(&mut state)?;
     match &command {
         FleetCommand::Formation(command) => {
-            let intent = FormationIntent {
+            let mut intent = FormationIntent {
                 id: command.formation_id.clone(),
                 vehicle_ids: command.vehicle_ids.clone(),
                 path_receipt_id: command.path_receipt_id.clone(),
@@ -2152,13 +3003,16 @@ fn apply(
                     && existing
                         .vehicle_ids
                         .iter()
-                        .any(|vehicle| intent.vehicle_ids.binary_search(vehicle).is_ok())
+                        .any(|vehicle| intent.vehicle_ids.contains(vehicle))
             }) {
                 return Err(invalid(
                     "Authority-Asset ist bereits einer anderen Formation zugeordnet",
                 ));
             }
-            materialize_formation(&state, &intent)?;
+            let materialized = materialize_formation(&state, &intent)?;
+            if state.authority_release.schema_version == AUTHORITY_RELEASE_SCHEMA_V2 {
+                intent.dynamics = materialized.authoritative_dynamics;
+            }
             state.formations.insert(intent.id.clone(), intent);
         }
         FleetCommand::PersonnelDuty(command) => {
@@ -2211,6 +3065,16 @@ pub fn initialize_fleet_world(input_json: &str) -> Result<String, RuntimeError> 
     to_json(&initialized(parse_json(input_json)?)?)
 }
 
+/// Revalidiert einen persistierten M5-Checkpoint samt eingebettetem Release,
+/// allen Intent-Beziehungen und seinem erwarteten Zustandshash.
+pub fn verify_fleet_world_state(
+    state_json: &str,
+    expected_state_hash: &str,
+) -> Result<String, RuntimeError> {
+    let state: FleetWorldState = parse_json(state_json)?;
+    to_json(&verify_world_state(state, expected_state_hash)?)
+}
+
 /// Wendet ein Intent-Kommando an; eine persistierte Receipt autorisiert Replay.
 pub fn apply_fleet_command(
     state_json: &str,
@@ -2228,8 +3092,10 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{
-        FleetWorldState, apply_fleet_command, canonical_hash, canonical_json,
-        initialize_fleet_world, parse_command, state_hash,
+        FleetWorldState, FormationIntent, MAX_SAFE_JSON_INTEGER, apply_fleet_command,
+        canonical_hash, canonical_json, initialize_fleet_world, materialize_formation,
+        maximum_speed_mmps_floor, parse_command, state_hash, technical_data,
+        verify_fleet_world_state,
     };
 
     const WORLD: &str = "11111111-1111-4111-8111-111111111111";
@@ -2288,6 +3154,49 @@ mod tests {
         })
     }
 
+    fn authority_release_v2() -> Value {
+        let mut release = authority_release();
+        release["schemaVersion"] = json!("zugfolge-fleet-authority-release/v2");
+        release["releaseId"] = json!("synthetic-m5-authority-v2");
+        release["economyReleaseId"] = json!("synthetic-economy-v1");
+        release["economyReleaseSha256"] = json!("2".repeat(64));
+        for asset in release["assets"]
+            .as_array_mut()
+            .expect("synthetischer Release besitzt Assets")
+        {
+            let maximum_speed_kph = u16::try_from(
+                asset["technical"]["maximumSpeedKph"]
+                    .as_u64()
+                    .expect("synthetisches Asset besitzt Vmax"),
+            )
+            .expect("synthetische Vmax passt in u16");
+            asset["technical"]["maximumSpeedMmps"] =
+                json!(maximum_speed_mmps_floor(maximum_speed_kph));
+            asset["technical"]["role"] = json!("powered-unit");
+            asset["technical"]["controlStands"] = json!({"front": true, "rear": true});
+            asset["technical"]["continuousPowerKw"] = json!(3_000);
+            asset["technical"]["startingTractiveEffortKn"] = json!(200);
+            asset["technical"]["brakeWeightKg"] = asset["technical"]["massKg"].clone();
+            asset["technical"]["maximumAccelerationCapMmps2"] =
+                asset["technical"]["accelerationMmPerS2"].clone();
+            asset["technical"]["serviceBrakeCapMmps2"] =
+                asset["technical"]["decelerationMmPerS2"].clone();
+            asset["technical"]["emergencyBrakeMultiplierBasisPoints"] = json!(15_000);
+            asset["orientation"] = json!("along");
+            asset["condition"] = json!({
+                "mechanicsBasisPoints": 10_000,
+                "driveBasisPoints": 10_000,
+                "brakesBasisPoints": 10_000,
+                "kilometresSinceMaintenance": 0,
+                "operatingHoursSinceMaintenance": 0,
+                "openObservations": 0
+            });
+            asset["restrictions"] = json!({});
+            asset["history"] = json!([]);
+        }
+        release
+    }
+
     fn initialize() -> Value {
         serde_json::from_str(
             &initialize_fleet_world(
@@ -2329,6 +3238,970 @@ mod tests {
             .expect("Flottenkommando gelingt"),
         )
         .expect("gueltiges Kommandoergebnis")
+    }
+
+    #[test]
+    fn fleet_authority_v1_bleibt_ohne_v2_felder_und_mit_legacy_vmax_gueltig() {
+        let initialized = initialize();
+        assert_eq!(
+            initialized["state"]["authorityRelease"]["schemaVersion"],
+            "zugfolge-fleet-authority-release/v1"
+        );
+        assert!(
+            initialized["state"]["authorityRelease"]
+                .get("economyReleaseId")
+                .is_none()
+        );
+        assert!(
+            initialized["state"]["authorityRelease"]["assets"][0]["technical"]
+                .get("maximumSpeedMmps")
+                .is_none()
+        );
+        assert!(
+            initialized["state"]["authorityRelease"]["assets"][0]["technical"]
+                .get("role")
+                .is_none()
+        );
+        assert!(
+            initialized["state"]["authorityRelease"]["assets"][0]["technical"]
+                .get("controlStands")
+                .is_none()
+        );
+        assert!(
+            initialized["state"]["authorityRelease"]["assets"][0]
+                .get("orientation")
+                .is_none()
+        );
+        let state: FleetWorldState =
+            serde_json::from_value(initialized["state"].clone()).expect("v1-Zustand bleibt lesbar");
+        assert_eq!(
+            technical_data(&state.authority_release.assets[0], false)
+                .expect("v1-Technik wird abgeleitet")
+                .max_speed
+                .millimetres_per_second(),
+            44_445
+        );
+
+        let mut battery = authority_release();
+        battery["assets"][0]["technical"]["traction"] = json!("battery");
+        battery["assets"][0]["technical"]["electricSystems"] = json!([]);
+        let battery: Value = serde_json::from_str(
+            &initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 10,
+                    "authorityRelease": battery
+                })
+                .to_string(),
+            )
+            .expect("v1-Batterie ohne Netzsystem bleibt rueckwaertskompatibel"),
+        )
+        .expect("gueltiges v1-Batterie-Ergebnis");
+        let result = apply(
+            &battery["state"],
+            &formation_command(&battery, "formation:v1-battery"),
+            None,
+        );
+        assert_eq!(
+            result["snapshot"]["formations"][0]["characteristics"]["traction"],
+            "battery"
+        );
+    }
+
+    #[test]
+    fn fleet_authority_v2_nutzt_floor_mmps_und_zeigt_volle_kmh_an() {
+        let initialized: Value = serde_json::from_str(
+            &initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 10,
+                    "authorityRelease": authority_release_v2()
+                })
+                .to_string(),
+            )
+            .expect("v2-Authority-Release wird initialisiert"),
+        )
+        .expect("gueltiges v2-Initialisierungsergebnis");
+        assert_eq!(
+            initialized["state"]["authorityRelease"]["economyReleaseId"],
+            "synthetic-economy-v1"
+        );
+        let state: FleetWorldState =
+            serde_json::from_value(initialized["state"].clone()).expect("v2-Zustand ist lesbar");
+        assert_eq!(
+            technical_data(&state.authority_release.assets[0], true)
+                .expect("v2-Technik wird abgeleitet")
+                .max_speed
+                .millimetres_per_second(),
+            44_444
+        );
+
+        let result = apply(
+            &initialized["state"],
+            &formation_command(&initialized, "formation:v2-speed"),
+            None,
+        );
+        assert_eq!(
+            result["snapshot"]["formations"][0]["characteristics"]["maximumSpeedKph"],
+            160
+        );
+    }
+
+    #[test]
+    fn fleet_authority_v2_verlangt_economy_bindung_und_exakte_floor_vmax() {
+        let initialize_error = |release: Value| {
+            initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 10,
+                    "authorityRelease": release
+                })
+                .to_string(),
+            )
+            .expect_err("ungueltiger v2-Release muss scheitern")
+            .to_string()
+        };
+
+        let mut missing_economy_id = authority_release_v2();
+        missing_economy_id
+            .as_object_mut()
+            .expect("Release ist ein Objekt")
+            .remove("economyReleaseId");
+        assert!(initialize_error(missing_economy_id).contains("EconomyRelease-ID"));
+
+        let mut missing_economy_sha = authority_release_v2();
+        missing_economy_sha
+            .as_object_mut()
+            .expect("Release ist ein Objekt")
+            .remove("economyReleaseSha256");
+        assert!(initialize_error(missing_economy_sha).contains("EconomyRelease-SHA-256"));
+
+        let mut invalid_economy_sha = authority_release_v2();
+        invalid_economy_sha["economyReleaseSha256"] = json!("A".repeat(64));
+        assert!(initialize_error(invalid_economy_sha).contains("kein SHA-256"));
+
+        let mut missing_mmps = authority_release_v2();
+        missing_mmps["assets"][0]["technical"]
+            .as_object_mut()
+            .expect("Technik ist ein Objekt")
+            .remove("maximumSpeedMmps");
+        assert!(initialize_error(missing_mmps).contains("maximumSpeedMmps"));
+
+        let mut rounded_up_mmps = authority_release_v2();
+        rounded_up_mmps["assets"][0]["technical"]["maximumSpeedMmps"] = json!(44_445);
+        assert!(initialize_error(rounded_up_mmps).contains("maximumSpeedMmps"));
+
+        let mut missing_role = authority_release_v2();
+        missing_role["assets"][0]["technical"]
+            .as_object_mut()
+            .expect("Technik ist ein Objekt")
+            .remove("role");
+        assert!(initialize_error(missing_role).contains("Fahrzeugrolle"));
+
+        let mut missing_control_stands = authority_release_v2();
+        missing_control_stands["assets"][0]["technical"]
+            .as_object_mut()
+            .expect("Technik ist ein Objekt")
+            .remove("controlStands");
+        assert!(initialize_error(missing_control_stands).contains("Fuehrerstaende"));
+
+        let mut missing_orientation = authority_release_v2();
+        missing_orientation["assets"][0]
+            .as_object_mut()
+            .expect("Asset ist ein Objekt")
+            .remove("orientation");
+        assert!(initialize_error(missing_orientation).contains("orientation"));
+    }
+
+    #[test]
+    fn fleet_v2_bewahrt_nichtlexikographische_reihung_von_spitze_bis_schluss() {
+        let initialized: Value = serde_json::from_str(
+            &initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 10,
+                    "authorityRelease": authority_release_v2()
+                })
+                .to_string(),
+            )
+            .expect("v2-Authority-Release wird initialisiert"),
+        )
+        .expect("gueltige v2-Flottenwelt");
+        let mut command = formation_command(&initialized, "formation:v2-order");
+        command["vehicleIds"] = json!(["vehicle-2", "vehicle-1"]);
+
+        let result = apply(&initialized["state"], &command, None);
+        assert_eq!(
+            result["state"]["formations"]["formation-1"]["vehicleIds"],
+            json!(["vehicle-2", "vehicle-1"])
+        );
+        assert_eq!(
+            result["snapshot"]["formations"][0]["vehicleIds"],
+            json!(["vehicle-2", "vehicle-1"])
+        );
+        assert!(
+            result["commandReceipt"]["canonicalCommandJson"]
+                .as_str()
+                .expect("Receipt besitzt kanonisches Kommando")
+                .contains("\"vehicleIds\":[\"vehicle-2\",\"vehicle-1\"]")
+        );
+    }
+
+    #[test]
+    fn fleet_v2_lehnt_fuehrenden_reisezugwagen_vor_lokomotive_ab() {
+        let mut release = authority_release_v2();
+        let leading = &mut release["assets"][0];
+        leading["technical"]["traction"] = json!("unpowered");
+        leading["technical"]["electricSystems"] = json!([]);
+        leading["technical"]["accelerationMmPerS2"] = json!(0);
+        leading["technical"]["decelerationMmPerS2"] = json!(0);
+        leading["technical"]["continuousPowerKw"] = json!(0);
+        leading["technical"]["startingTractiveEffortKn"] = json!(0);
+        leading["technical"]["maximumAccelerationCapMmps2"] = json!(0);
+        leading["technical"]["role"] = json!("coach");
+        leading["technical"]["controlStands"] = json!({"front": false, "rear": false});
+        leading["installedProtection"] = json!([]);
+        release["assets"][1]["technical"]["role"] = json!("locomotive");
+
+        let initialized: Value = serde_json::from_str(
+            &initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 10,
+                    "authorityRelease": release
+                })
+                .to_string(),
+            )
+            .expect("v2-Lok-Wagen-Release wird initialisiert"),
+        )
+        .expect("gueltige v2-Flottenwelt");
+        let mut command = formation_command(&initialized, "formation:leading-coach");
+        command["vehicleIds"] = json!(["vehicle-1", "vehicle-2"]);
+
+        let error = apply_fleet_command(
+            &initialized["state"].to_string(),
+            &command.to_string(),
+            None,
+        )
+        .expect_err("fahrfaehige v2-Formation braucht Fuehrerstand an der Spitze");
+        assert!(error.to_string().contains("MissingLeadingControlStand"));
+    }
+
+    #[test]
+    fn fleet_v2_wertet_gegenorientierten_steuerwagen_am_zugschluss_physisch_aus() {
+        let mut release = authority_release_v2();
+        release["assets"][0]["technical"]["role"] = json!("locomotive");
+        release["assets"][0]["technical"]["controlStands"] = json!({"front": true, "rear": false});
+        let control_car = &mut release["assets"][1];
+        control_car["technical"]["traction"] = json!("unpowered");
+        control_car["technical"]["electricSystems"] = json!([]);
+        control_car["technical"]["accelerationMmPerS2"] = json!(0);
+        control_car["technical"]["decelerationMmPerS2"] = json!(0);
+        control_car["technical"]["continuousPowerKw"] = json!(0);
+        control_car["technical"]["startingTractiveEffortKn"] = json!(0);
+        control_car["technical"]["maximumAccelerationCapMmps2"] = json!(0);
+        control_car["technical"]["role"] = json!("control-car");
+        control_car["technical"]["controlStands"] = json!({"front": true, "rear": false});
+        control_car["orientation"] = json!("against");
+
+        let initialized: Value = serde_json::from_str(
+            &initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 10,
+                    "authorityRelease": release
+                })
+                .to_string(),
+            )
+            .expect("v2-Wendezug-Release wird initialisiert"),
+        )
+        .expect("gueltige v2-Flottenwelt");
+        let state: FleetWorldState =
+            serde_json::from_value(initialized["state"].clone()).expect("v2-Zustand ist lesbar");
+        let materialized = materialize_formation(
+            &state,
+            &FormationIntent {
+                id: "formation:against-control-car".to_owned(),
+                vehicle_ids: vec!["vehicle-1".to_owned(), "vehicle-2".to_owned()],
+                path_receipt_id: "path-confirmed".to_owned(),
+                dynamics: None,
+            },
+        )
+        .expect("gegenorientierter Steuerwagen ist ein gueltiger Wendezugschluss");
+        assert!(materialized.formation.has_front_control_stand());
+        assert!(materialized.formation.has_rear_control_stand());
+        assert!(materialized.formation.supports_direct_reversal());
+    }
+
+    #[test]
+    fn fleet_authority_v2_validiert_elektrische_systeme_nach_traktion() {
+        let initialize_result = |release: Value| {
+            initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 10,
+                    "authorityRelease": release
+                })
+                .to_string(),
+            )
+        };
+
+        let mut battery = authority_release_v2();
+        battery["assets"][0]["technical"]["traction"] = json!("battery");
+        initialize_result(battery).expect("v2-Batterie mit elektrischem System ist gueltig");
+
+        let mut battery_without_system = authority_release_v2();
+        battery_without_system["assets"][0]["technical"]["traction"] = json!("battery");
+        battery_without_system["assets"][0]["technical"]["electricSystems"] = json!([]);
+        assert!(
+            initialize_result(battery_without_system)
+                .expect_err("v2-Batterie braucht ein elektrisches System")
+                .to_string()
+                .contains("elektrische Systeme")
+        );
+
+        let mut electric_without_system = authority_release_v2();
+        electric_without_system["assets"][0]["technical"]["electricSystems"] = json!([]);
+        assert!(
+            initialize_result(electric_without_system)
+                .expect_err("E-Traktion braucht ein elektrisches System")
+                .to_string()
+                .contains("elektrische Systeme")
+        );
+
+        let mut diesel_with_system = authority_release_v2();
+        diesel_with_system["assets"][2]["technical"]["electricSystems"] = json!(["ac15kv"]);
+        assert!(
+            initialize_result(diesel_with_system)
+                .expect_err("Diesel darf kein elektrisches System tragen")
+                .to_string()
+                .contains("elektrische Systeme")
+        );
+
+        let mut unpowered_with_system = authority_release_v2();
+        let technical = &mut unpowered_with_system["assets"][2]["technical"];
+        technical["traction"] = json!("unpowered");
+        technical["electricSystems"] = json!(["ac15kv"]);
+        technical["accelerationMmPerS2"] = json!(0);
+        technical["decelerationMmPerS2"] = json!(0);
+        technical["continuousPowerKw"] = json!(0);
+        technical["startingTractiveEffortKn"] = json!(0);
+        technical["maximumAccelerationCapMmps2"] = json!(0);
+        technical["role"] = json!("coach");
+        technical["controlStands"] = json!({"front": false, "rear": false});
+        assert!(
+            initialize_result(unpowered_with_system)
+                .expect_err("unpowered Asset darf kein elektrisches System tragen")
+                .to_string()
+                .contains("elektrische Systeme")
+        );
+    }
+
+    #[test]
+    fn fleet_authority_v2_batterie_prueft_systeme_bis_zur_strecke() {
+        let initialize_release = |release: Value| -> Value {
+            serde_json::from_str(
+                &initialize_fleet_world(
+                    &json!({
+                        "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                        "worldId": WORLD,
+                        "producedAt": 10,
+                        "authorityRelease": release
+                    })
+                    .to_string(),
+                )
+                .expect("v2-Batterie-Release wird initialisiert"),
+            )
+            .expect("gueltiges Initialisierungsergebnis")
+        };
+
+        let mut compatible = authority_release_v2();
+        compatible["assets"][0]["technical"]["traction"] = json!("battery");
+        compatible["pathReceipts"][0]["electrifications"] =
+            json!(["unelectrified", "overhead-ac15kv"]);
+        let compatible = initialize_release(compatible);
+        let result = apply(
+            &compatible["state"],
+            &formation_command(&compatible, "formation:battery-compatible"),
+            None,
+        );
+        assert_eq!(
+            result["snapshot"]["formations"][0]["characteristics"]["traction"],
+            "battery"
+        );
+
+        let mut incompatible = authority_release_v2();
+        incompatible["assets"][0]["technical"]["traction"] = json!("battery");
+        incompatible["pathReceipts"][0]["electrifications"] = json!(["overhead-ac25kv"]);
+        let incompatible = initialize_release(incompatible);
+        let command = formation_command(&incompatible, "formation:battery-incompatible");
+        let error = apply_fleet_command(
+            &incompatible["state"].to_string(),
+            &command.to_string(),
+            None,
+        )
+        .expect_err("AC15-Batterie darf nicht unter AC25 als kompatibel gelten");
+        assert!(error.to_string().contains("IncompatibleElectrification"));
+    }
+
+    #[test]
+    fn fleet_authority_v2_verlangt_vollstaendige_typisierte_restriktionen() {
+        let mut release = authority_release_v2();
+        release["assets"][0]
+            .as_object_mut()
+            .expect("Asset ist ein Objekt")
+            .remove("restrictions");
+        let error = initialize_fleet_world(
+            &json!({
+                "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                "worldId": WORLD,
+                "producedAt": 10,
+                "authorityRelease": release
+            })
+            .to_string(),
+        )
+        .expect_err("Authority-v2 ohne restrictions muss fail-closed scheitern");
+        assert!(error.to_string().contains("restrictions"));
+    }
+
+    #[test]
+    fn fleet_authority_v2_restriktionen_und_beschaffungsjahr_sind_fail_closed() {
+        let initialize_error = |release: Value| {
+            initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 10,
+                    "authorityRelease": release
+                })
+                .to_string(),
+            )
+            .expect_err("ungueltiger v2-Vertrag muss scheitern")
+            .to_string()
+        };
+
+        for restriction in [
+            json!({"invalid": {"power-basis-points": 0}}),
+            json!({"invalid": {"power-basis-points": 10_001}}),
+            json!({"invalid": {"maximum-speed": 0}}),
+            json!({"invalid": {"service-brake": 0}}),
+            json!({"invalid": {"emergency-brake": 0}}),
+            json!({"invalid": {"door-availability-basis-points": 10_001}}),
+        ] {
+            let mut release = authority_release_v2();
+            release["assets"][0]["restrictions"] = restriction;
+            let _error = initialize_error(release);
+        }
+
+        let mut unknown = authority_release_v2();
+        unknown["assets"][0]["restrictions"] = json!({"invalid": {"unknown-effect": 1}});
+        assert!(initialize_error(unknown).contains("invalid_json"));
+
+        let mut future_acquisition = authority_release_v2();
+        future_acquisition["assets"][0]["acquisitionYear"] = json!(2027);
+        assert!(initialize_error(future_acquisition).contains("Jahre"));
+    }
+
+    #[test]
+    fn fleet_authority_v2_prueft_auch_unformierte_assets_am_stichtag() {
+        let initialize_error = |release: Value| {
+            initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 10,
+                    "authorityRelease": release
+                })
+                .to_string(),
+            )
+            .expect_err("nicht verfuegbares unformiertes Asset muss scheitern")
+            .to_string()
+        };
+
+        let mut not_delivered = authority_release_v2();
+        not_delivered["assets"][2]["deliveredAt"] = json!(11);
+        assert!(initialize_error(not_delivered).contains("Initialisierungsstichtag"));
+
+        let mut retired = authority_release_v2();
+        retired["assets"][2]["retiredAt"] = json!(10);
+        assert!(initialize_error(retired).contains("Initialisierungsstichtag"));
+
+        let mut overdue = authority_release_v2();
+        overdue["assets"][2]["maintenanceDeadlines"][0]["dueAt"] = json!(10);
+        assert!(initialize_error(overdue).contains("Initialisierungsstichtag"));
+    }
+
+    #[test]
+    fn fleet_authority_v2_wertet_restriktionen_assetlokal_aus() {
+        let mut release = authority_release_v2();
+        release["assets"][0]["restrictions"] = json!({
+            "doors": {"door-availability-basis-points": 1000},
+            "emergency": {"emergency-brake": 1000},
+            "third-power": {"power-basis-points": 3333},
+            "service": {"service-brake": 600},
+            "speed": {"maximum-speed": 30000}
+        });
+        release["assets"][0]["technical"]["continuousPowerKw"] = json!(3000);
+        release["assets"][1]["restrictions"] = json!({"immobilized": "immobilized"});
+        release["assets"][1]["technical"]["continuousPowerKw"] = json!(3000);
+        release["assets"][2]["restrictions"] = json!({});
+        let initialized: Value = serde_json::from_str(
+            &initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 10,
+                    "authorityRelease": release
+                })
+                .to_string(),
+            )
+            .expect("typisierte v2-Restriktionen werden akzeptiert"),
+        )
+        .expect("gueltige initialisierte Restriktionswelt");
+        let state: FleetWorldState =
+            serde_json::from_value(initialized["state"].clone()).expect("v2-Zustand ist lesbar");
+        let materialized = materialize_formation(
+            &state,
+            &FormationIntent {
+                id: "formation:restricted".to_owned(),
+                vehicle_ids: vec!["vehicle-1".to_owned(), "vehicle-2".to_owned()],
+                path_receipt_id: "path-confirmed".to_owned(),
+                dynamics: None,
+            },
+        )
+        .expect("ein gesunder Antrieb haelt die Formation mobil");
+        let characteristics = materialized
+            .formation
+            .characteristics(
+                zugfolge_infra::TrainCharacteristicsId::new(77),
+                "restricted formation",
+            )
+            .expect("Restriktionen ergeben gueltige Zugcharakteristik");
+        assert_eq!(characteristics.max_speed().millimetres_per_second(), 30_000);
+        assert_eq!(characteristics.continuous_power().kilowatts(), 999);
+        assert_eq!(
+            characteristics
+                .acceleration()
+                .millimetres_per_second_squared(),
+            800,
+            "Power-BP darf Beschleunigung nicht faelschlich skalieren"
+        );
+        assert_eq!(
+            characteristics
+                .deceleration()
+                .millimetres_per_second_squared(),
+            600
+        );
+    }
+
+    #[test]
+    fn fleet_authority_v2_behandelt_vollgesperrten_antrieb_und_wagenpark_getrennt() {
+        let initialize_release = |release: Value| -> Value {
+            serde_json::from_str(
+                &initialize_fleet_world(
+                    &json!({
+                        "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                        "worldId": WORLD,
+                        "producedAt": 10,
+                        "authorityRelease": release
+                    })
+                    .to_string(),
+                )
+                .expect("v2-Release wird initialisiert"),
+            )
+            .expect("gueltiges Initialisierungsergebnis")
+        };
+
+        let mut immobilized = authority_release_v2();
+        immobilized["assets"][0]["restrictions"] = json!({
+            "immobilized": "immobilized",
+            "speed": {"maximum-speed": 30_000}
+        });
+        let immobilized = initialize_release(immobilized);
+        let immobilized_result = apply(
+            &immobilized["state"],
+            &formation_command(&immobilized, "formation:immobilized"),
+            None,
+        );
+        let immobilized_snapshot = &immobilized_result["snapshot"]["formations"][0];
+        assert_eq!(immobilized_snapshot["availability"], "maintenance");
+        assert_eq!(
+            immobilized_snapshot["characteristics"]["traction"], "electric",
+            "temporaere Immobilisierung darf die physische Traktion nicht umschreiben"
+        );
+        assert_eq!(
+            immobilized_snapshot["characteristics"]["maximumSpeedKph"],
+            108
+        );
+        assert!(
+            immobilized_result["state"]["formations"]["formation-1"]
+                .get("dynamics")
+                .is_none()
+        );
+
+        let mut wagon = authority_release_v2();
+        wagon["assets"][0]["installedProtection"] = json!([]);
+        wagon["assets"][0]["technical"]["traction"] = json!("unpowered");
+        wagon["assets"][0]["technical"]["electricSystems"] = json!([]);
+        wagon["assets"][0]["technical"]["accelerationMmPerS2"] = json!(0);
+        wagon["assets"][0]["technical"]["decelerationMmPerS2"] = json!(0);
+        wagon["assets"][0]["technical"]["continuousPowerKw"] = json!(0);
+        wagon["assets"][0]["technical"]["startingTractiveEffortKn"] = json!(0);
+        wagon["assets"][0]["technical"]["maximumAccelerationCapMmps2"] = json!(0);
+        wagon["assets"][0]["technical"]["role"] = json!("coach");
+        wagon["assets"][0]["technical"]["controlStands"] = json!({"front": false, "rear": false});
+        let wagon = initialize_release(wagon);
+        let wagon_result = apply(
+            &wagon["state"],
+            &formation_command(&wagon, "formation:wagon"),
+            None,
+        );
+        let wagon_snapshot = &wagon_result["snapshot"]["formations"][0];
+        assert_eq!(wagon_snapshot["availability"], "available");
+        assert_eq!(wagon_snapshot["characteristics"]["traction"], "unpowered");
+    }
+
+    #[test]
+    fn nullgerasterter_antrieb_ist_gesperrt_und_umgeht_keine_mischtraktion() {
+        let mut release = authority_release_v2();
+        release["assets"][0]["technical"]["continuousPowerKw"] = json!(1);
+        release["assets"][0]["restrictions"] =
+            json!({"near-total-power-loss": {"power-basis-points": 1}});
+        let initialized: Value = serde_json::from_str(
+            &initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 10,
+                    "authorityRelease": release
+                })
+                .to_string(),
+            )
+            .expect("Nullraster-Release wird initialisiert"),
+        )
+        .unwrap();
+        let state: FleetWorldState = serde_json::from_value(initialized["state"].clone()).unwrap();
+        let materialized = materialize_formation(
+            &state,
+            &FormationIntent {
+                id: "formation:null-power".to_owned(),
+                vehicle_ids: vec!["vehicle-1".to_owned()],
+                path_receipt_id: "path-confirmed".to_owned(),
+                dynamics: None,
+            },
+        )
+        .expect("vollgesperrte Formation bleibt als Wagenpark materialisierbar");
+        assert!(!materialized.formation.can_move_under_own_power());
+        assert_eq!(
+            materialized.snapshot.availability,
+            zugfolge_fleet::MobilizationAvailability::Maintenance
+        );
+        assert_eq!(
+            materialized.snapshot.characteristics.traction,
+            zugfolge_fleet::MobilizationTraction::Electric
+        );
+
+        let mut mixed_intent = formation_command(&initialized, "formation:mixed-immobilized");
+        mixed_intent["vehicleIds"] = json!(["vehicle-1", "vehicle-diesel"]);
+        let error = apply_fleet_command(
+            &initialized["state"].to_string(),
+            &mixed_intent.to_string(),
+            None,
+        )
+        .expect_err("gesperrte E-Traktion darf Diesel-Mischtraktion nicht kaschieren");
+        assert!(error.to_string().contains("IncompatibleTraction"));
+    }
+
+    #[test]
+    fn protection_unavailable_wirkt_nur_an_der_aktiven_spitze() {
+        let mut release = authority_release_v2();
+        release["assets"][0]["restrictions"] =
+            json!({"pzb-failure": {"protection-unavailable": "pzb"}});
+        let initialized: Value = serde_json::from_str(
+            &initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 10,
+                    "authorityRelease": release
+                })
+                .to_string(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        let mut failed_tip = formation_command(&initialized, "formation:failed-tip");
+        failed_tip["vehicleIds"] = json!(["vehicle-1", "vehicle-2"]);
+        let error = apply_fleet_command(
+            &initialized["state"].to_string(),
+            &failed_tip.to_string(),
+            None,
+        )
+        .expect_err("ausgefallene Zugsicherung an der aktiven Spitze muss scheitern");
+        assert!(error.to_string().contains("MissingProtection"));
+
+        let mut healthy_tip = formation_command(&initialized, "formation:healthy-tip");
+        healthy_tip["vehicleIds"] = json!(["vehicle-2", "vehicle-1"]);
+        apply_fleet_command(
+            &initialized["state"].to_string(),
+            &healthy_tip.to_string(),
+            None,
+        )
+        .expect("hintere ausgefallene Zugsicherung ist an der gesunden Spitze nicht aktiv");
+    }
+
+    #[test]
+    fn immobilized_entfernt_nicht_den_schutz_eines_unpowered_steuerwagens() {
+        let mut release = authority_release_v2();
+        let control_car = &mut release["assets"][0];
+        control_car["technical"]["traction"] = json!("unpowered");
+        control_car["technical"]["electricSystems"] = json!([]);
+        control_car["technical"]["accelerationMmPerS2"] = json!(0);
+        control_car["technical"]["decelerationMmPerS2"] = json!(0);
+        control_car["technical"]["continuousPowerKw"] = json!(0);
+        control_car["technical"]["startingTractiveEffortKn"] = json!(0);
+        control_car["technical"]["maximumAccelerationCapMmps2"] = json!(0);
+        control_car["technical"]["role"] = json!("control-car");
+        control_car["technical"]["controlStands"] = json!({"front": true, "rear": false});
+        control_car["restrictions"] = json!({"availability": "immobilized"});
+        release["assets"][1]["technical"]["role"] = json!("locomotive");
+
+        let initialized: Value = serde_json::from_str(
+            &initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 10,
+                    "authorityRelease": release
+                })
+                .to_string(),
+            )
+            .expect("unpowered Steuerwagen darf seine Zugsicherung behalten"),
+        )
+        .expect("gueltiger v2-Zustand");
+
+        let mut command = formation_command(&initialized, "formation:immobilized-control-car");
+        command["vehicleIds"] = json!(["vehicle-1", "vehicle-2"]);
+        apply_fleet_command(
+            &initialized["state"].to_string(),
+            &command.to_string(),
+            None,
+        )
+        .expect("Immobilized am unpowered Steuerwagen darf die aktive PZB nicht entfernen");
+    }
+
+    #[test]
+    fn authority_v2_hydriert_keine_fehlenden_halterzustaende() {
+        let initialized: Value = serde_json::from_str(
+            &initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 10,
+                    "authorityRelease": authority_release_v2()
+                })
+                .to_string(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        for tamper in ["missing", "partial", "foreign", "bad-hash"] {
+            let mut state = initialized["state"].clone();
+            match tamper {
+                "missing" => {
+                    state.as_object_mut().unwrap().remove("assetHoldings");
+                }
+                "partial" => {
+                    state["assetHoldings"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("vehicle-2");
+                }
+                "foreign" => {
+                    state["assetHoldings"]["foreign"] = state["assetHoldings"]["vehicle-1"].clone();
+                }
+                "bad-hash" => state["assetHoldings"]["vehicle-1"]["historyHash"] = json!("bad"),
+                _ => unreachable!(),
+            }
+            let decoded: FleetWorldState = serde_json::from_value(state.clone()).unwrap();
+            let mut command = formation_command(&initialized, &format!("formation:{tamper}"));
+            command["expectedStateHash"] = json!(state_hash(&decoded).unwrap());
+            let error = apply_fleet_command(&state.to_string(), &command.to_string(), None)
+                .expect_err("manipulierter v2-Halterzustand muss fail-closed scheitern");
+            assert!(
+                error.to_string().contains("Halterzustand")
+                    || error.to_string().contains("SHA-256")
+            );
+        }
+
+        let legacy = initialize();
+        let mut legacy_state = legacy["state"].clone();
+        legacy_state
+            .as_object_mut()
+            .unwrap()
+            .remove("assetHoldings");
+        let decoded: FleetWorldState = serde_json::from_value(legacy_state.clone()).unwrap();
+        let mut command = formation_command(&legacy, "formation:legacy-hydration");
+        command["expectedStateHash"] = json!(state_hash(&decoded).unwrap());
+        apply_fleet_command(&legacy_state.to_string(), &command.to_string(), None)
+            .expect("Authority-v1 ohne persistierte Holdings bleibt kompatibel");
+    }
+
+    #[test]
+    fn fleet_authority_v2_begrenzt_alle_externen_numerischen_ids() {
+        let initialize_error = |release: Value| {
+            initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 10,
+                    "authorityRelease": release
+                })
+                .to_string(),
+            )
+            .expect_err("unsichere numerische ID muss scheitern")
+            .to_string()
+        };
+        let unsafe_id = MAX_SAFE_JSON_INTEGER + 1;
+
+        let mut asset_id = authority_release_v2();
+        asset_id["assets"][0]["numericId"] = json!(unsafe_id);
+        assert!(initialize_error(asset_id).contains("sicherer JSON-Ganzzahlen"));
+
+        let mut type_id = authority_release_v2();
+        type_id["assets"][0]["vehicleTypeId"] = json!(unsafe_id);
+        assert!(initialize_error(type_id).contains("sicherer JSON-Ganzzahlen"));
+
+        let mut pool_id = authority_release_v2();
+        pool_id["personnelPools"][0]["numericId"] = json!(unsafe_id);
+        assert!(initialize_error(pool_id).contains("sicherer JSON-Ganzzahlen"));
+
+        let mut route_id = authority_release_v2();
+        route_id["pathReceipts"][0]["numericRouteId"] = json!(unsafe_id);
+        assert!(initialize_error(route_id).contains("sicherer JSON-Ganzzahlen"));
+
+        let mut platform_length = authority_release_v2();
+        platform_length["pathReceipts"][0]["platformLengthsMm"] = json!([unsafe_id]);
+        assert!(initialize_error(platform_length).contains("sicherer JSON-Ganzzahlen"));
+    }
+
+    #[test]
+    fn fleet_authority_v2_verlangt_und_validiert_condition_und_history() {
+        let initialize_error = |release: Value| {
+            initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 10,
+                    "authorityRelease": release
+                })
+                .to_string(),
+            )
+            .expect_err("ungueltiger v2-Assetzustand muss scheitern")
+            .to_string()
+        };
+
+        let mut missing_condition = authority_release_v2();
+        missing_condition["assets"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("condition");
+        assert!(initialize_error(missing_condition).contains("condition und history"));
+
+        let mut missing_history = authority_release_v2();
+        missing_history["assets"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("history");
+        assert!(initialize_error(missing_history).contains("condition und history"));
+
+        let mut invalid_condition = authority_release_v2();
+        invalid_condition["assets"][0]["condition"]["driveBasisPoints"] = json!(10_001);
+        assert!(initialize_error(invalid_condition).contains("10000 Basispunkte"));
+
+        let mut unsafe_counter = authority_release_v2();
+        unsafe_counter["assets"][0]["condition"]["kilometresSinceMaintenance"] =
+            json!(MAX_SAFE_JSON_INTEGER + 1);
+        assert!(initialize_error(unsafe_counter).contains("sicherer JSON-Ganzzahlen"));
+
+        let mut invalid_history = authority_release_v2();
+        invalid_history["assets"][0]["history"] = json!([" entered-world"]);
+        assert!(initialize_error(invalid_history).contains("nichtleer und randfrei"));
+
+        let mut premature_v1 = authority_release();
+        premature_v1["assets"][0]["condition"] = json!({
+            "mechanicsBasisPoints": 10_000,
+            "driveBasisPoints": 10_000,
+            "brakesBasisPoints": 10_000,
+            "kilometresSinceMaintenance": 0,
+            "operatingHoursSinceMaintenance": 0,
+            "openObservations": 0
+        });
+        premature_v1["assets"][0]["history"] = json!([]);
+        assert!(initialize_error(premature_v1).contains("darf condition und history nicht"));
+
+        initialize_fleet_world(
+            &json!({
+                "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                "worldId": WORLD,
+                "producedAt": 10,
+                "authorityRelease": authority_release()
+            })
+            .to_string(),
+        )
+        .expect("Authority-v1 bleibt ohne condition und history ladbar");
+    }
+
+    #[test]
+    fn initialer_halterhash_bindet_seed_zustand_und_lebenslauf() {
+        let initialize_release = |release: Value| -> Value {
+            serde_json::from_str(
+                &initialize_fleet_world(
+                    &json!({
+                        "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                        "worldId": WORLD,
+                        "producedAt": 10,
+                        "authorityRelease": release
+                    })
+                    .to_string(),
+                )
+                .expect("Authority-v2 wird initialisiert"),
+            )
+            .expect("Initialisierung liefert JSON")
+        };
+
+        let mut base = authority_release_v2();
+        base["assets"][0]["history"] = json!(["entered-world", "condition-recorded"]);
+        let first = initialize_release(base.clone());
+        let repeated = initialize_release(base.clone());
+        assert_eq!(
+            first["state"]["assetHoldings"]["vehicle-1"]["historyHash"],
+            repeated["state"]["assetHoldings"]["vehicle-1"]["historyHash"]
+        );
+
+        let mut changed_condition = base.clone();
+        changed_condition["assets"][0]["condition"]["driveBasisPoints"] = json!(9_999);
+        let changed_condition = initialize_release(changed_condition);
+        assert_ne!(
+            first["state"]["assetHoldings"]["vehicle-1"]["historyHash"],
+            changed_condition["state"]["assetHoldings"]["vehicle-1"]["historyHash"]
+        );
+
+        base["assets"][0]["history"] = json!(["condition-recorded", "entered-world"]);
+        let changed_history = initialize_release(base);
+        assert_ne!(
+            first["state"]["assetHoldings"]["vehicle-1"]["historyHash"],
+            changed_history["state"]["assetHoldings"]["vehicle-1"]["historyHash"]
+        );
     }
 
     #[test]
@@ -2404,6 +4277,164 @@ mod tests {
         assert_eq!(
             result["snapshot"]["formations"][0]["characteristics"]["maximumSpeedKph"],
             160
+        );
+    }
+
+    #[test]
+    fn authority_v2_leitet_lok_wagen_und_doppeltraktion_serverseitig_ab() {
+        let prepare_locomotive = |technical: &mut Value| {
+            technical["accelerationMmPerS2"] = json!(0);
+            technical["decelerationMmPerS2"] = json!(0);
+            technical["continuousPowerKw"] = json!(4_000);
+            technical["startingTractiveEffortKn"] = json!(200);
+            technical["brakeWeightKg"] = json!(60_000);
+            technical["maximumAccelerationCapMmps2"] = json!(2_000);
+            technical["serviceBrakeCapMmps2"] = json!(8_000);
+            technical["emergencyBrakeMultiplierBasisPoints"] = json!(15_000);
+            technical["role"] = json!("locomotive");
+            technical["controlStands"] = json!({"front": true, "rear": true});
+        };
+        let initialize_release = |release: Value, formations: Value| -> Value {
+            serde_json::from_str(
+                &initialize_fleet_world(
+                    &json!({
+                        "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                        "worldId": WORLD,
+                        "producedAt": 10,
+                        "authorityRelease": release,
+                        "formations": formations
+                    })
+                    .to_string(),
+                )
+                .expect("Authority-v2-Rohformation wird initialisiert"),
+            )
+            .expect("Initialisierung liefert JSON")
+        };
+
+        let mut locomotive_only_release = authority_release_v2();
+        prepare_locomotive(&mut locomotive_only_release["assets"][0]["technical"]);
+        let locomotive_only = initialize_release(locomotive_only_release, json!([]));
+        let locomotive_only_result = apply(
+            &locomotive_only["state"],
+            &formation_command(&locomotive_only, "raw-v2:locomotive-only"),
+            None,
+        );
+        assert_eq!(
+            locomotive_only_result["state"]["formations"]["formation-1"]["dynamics"],
+            json!({"accelerationMmPerS2": 1_666, "decelerationMmPerS2": 4_903})
+        );
+
+        let mut loaded_release = authority_release_v2();
+        prepare_locomotive(&mut loaded_release["assets"][0]["technical"]);
+        let coach = &mut loaded_release["assets"][1];
+        coach["installedProtection"] = json!([]);
+        coach["technical"]["traction"] = json!("unpowered");
+        coach["technical"]["electricSystems"] = json!([]);
+        coach["technical"]["accelerationMmPerS2"] = json!(0);
+        coach["technical"]["decelerationMmPerS2"] = json!(0);
+        coach["technical"]["continuousPowerKw"] = json!(0);
+        coach["technical"]["startingTractiveEffortKn"] = json!(0);
+        coach["technical"]["brakeWeightKg"] = json!(120_000);
+        coach["technical"]["maximumAccelerationCapMmps2"] = json!(0);
+        coach["technical"]["serviceBrakeCapMmps2"] = json!(8_000);
+        coach["technical"]["emergencyBrakeMultiplierBasisPoints"] = json!(15_000);
+        coach["technical"]["role"] = json!("coach");
+        coach["technical"]["controlStands"] = json!({"front": false, "rear": false});
+
+        let loaded_initial = initialize_release(loaded_release.clone(), json!([]));
+        let mut loaded_command = formation_command(&loaded_initial, "raw-v2:loaded-command");
+        loaded_command["vehicleIds"] = json!(["vehicle-1", "vehicle-2"]);
+        let loaded_result = apply(&loaded_initial["state"], &loaded_command, None);
+        let expected_loaded = json!({"accelerationMmPerS2": 833, "decelerationMmPerS2": 7_354});
+        assert_eq!(
+            loaded_result["state"]["formations"]["formation-1"]["dynamics"],
+            expected_loaded
+        );
+        assert!(
+            loaded_result["state"]["formations"]["formation-1"]["dynamics"]
+                ["accelerationMmPerS2"]
+                .as_i64()
+                < locomotive_only_result["state"]["formations"]["formation-1"]["dynamics"]
+                    ["accelerationMmPerS2"]
+                    .as_i64()
+        );
+
+        let initialized_with_formation = initialize_release(
+            loaded_release,
+            json!([{
+                "id": "formation:initial-loaded",
+                "vehicleIds": ["vehicle-1", "vehicle-2"],
+                "pathReceiptId": "path-confirmed"
+            }]),
+        );
+        assert_eq!(
+            initialized_with_formation["state"]["formations"]["formation:initial-loaded"]["dynamics"],
+            expected_loaded
+        );
+
+        let mut manipulated = formation_command(&loaded_initial, "raw-v2:manipulated");
+        manipulated["vehicleIds"] = json!(["vehicle-1", "vehicle-2"]);
+        manipulated["dynamics"] = json!({"accelerationMmPerS2": 834, "decelerationMmPerS2": 7_354});
+        assert!(
+            apply_fleet_command(
+                &loaded_initial["state"].to_string(),
+                &manipulated.to_string(),
+                None,
+            )
+            .expect_err("Caller darf Authority-Dynamik nicht manipulieren")
+            .to_string()
+            .contains("caller-supplied FormationDynamics")
+        );
+
+        let mut double_release = authority_release_v2();
+        prepare_locomotive(&mut double_release["assets"][0]["technical"]);
+        prepare_locomotive(&mut double_release["assets"][1]["technical"]);
+        let double_initial = initialize_release(double_release, json!([]));
+        let mut double_command = formation_command(&double_initial, "raw-v2:double");
+        double_command["vehicleIds"] = json!(["vehicle-1", "vehicle-2"]);
+        let double_result = apply(&double_initial["state"], &double_command, None);
+        assert_eq!(
+            double_result["state"]["formations"]["formation-1"]["dynamics"],
+            json!({"accelerationMmPerS2": 1_666, "decelerationMmPerS2": 4_903})
+        );
+    }
+
+    #[test]
+    fn authority_v2_rohdynamikfelder_sind_vollstaendig_und_reproduzierbar() {
+        let initialize_result = |release: Value| {
+            initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 10,
+                    "authorityRelease": release
+                })
+                .to_string(),
+            )
+        };
+        let mut missing = authority_release_v2();
+        missing["assets"][0]["technical"]
+            .as_object_mut()
+            .unwrap()
+            .remove("serviceBrakeCapMmps2");
+        assert!(
+            initialize_result(missing)
+                .expect_err("partieller Rohblock ist ungueltig")
+                .to_string()
+                .contains("technische Daten")
+        );
+
+        let mut zero_brake_weight = authority_release_v2();
+        zero_brake_weight["assets"][0]["technical"]["brakeWeightKg"] = json!(0);
+        assert!(initialize_result(zero_brake_weight).is_err());
+
+        let mut manipulated_reference = authority_release_v2();
+        manipulated_reference["assets"][0]["technical"]["accelerationMmPerS2"] = json!(799);
+        assert!(
+            initialize_result(manipulated_reference)
+                .expect_err("Referenzprofil muss aus Rohwerten folgen")
+                .to_string()
+                .contains("Referenzprofil")
         );
     }
 
@@ -2587,6 +4618,48 @@ mod tests {
             .to_string()
             .contains("Formation gebunden")
         );
+    }
+
+    #[test]
+    fn sekundaermarkt_erkennt_gebundenes_asset_auch_in_unsortierter_v2_formation() {
+        let initialized: Value = serde_json::from_str(
+            &initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 10,
+                    "authorityRelease": authority_release_v2()
+                })
+                .to_string(),
+            )
+            .expect("v2-Authority-Release wird initialisiert"),
+        )
+        .expect("gueltige v2-Flottenwelt");
+        let mut formation = formation_command(&initialized, "formation:unsorted-transfer");
+        formation["vehicleIds"] = json!(["vehicle-2", "vehicle-1"]);
+        let formed = apply(&initialized["state"], &formation, None);
+        let transfer = json!({
+            "schemaVersion": "zugfolge-fleet-transfer-asset-command/v1",
+            "worldId": WORLD,
+            "commandId": "market:unsorted-bound",
+            "expectedStateHash": formed["stateHash"],
+            "expectedRevision": 1,
+            "atS": 12,
+            "vehicleId": "vehicle-2",
+            "transferType": "sale",
+            "fromOwnerOperatorId": "operator-1",
+            "toOwnerOperatorId": "operator-2",
+            "fromHolderOperatorId": "operator-1",
+            "toHolderOperatorId": "operator-2",
+            "lessorOperatorId": null,
+            "contractId": null,
+            "validUntilS": null,
+            "transferReceiptHash": "7".repeat(64)
+        });
+
+        let error = apply_fleet_command(&formed["state"].to_string(), &transfer.to_string(), None)
+            .expect_err("auch ein unsortiert gebundenes v2-Asset bleibt unverkaeuflich");
+        assert!(error.to_string().contains("Formation gebunden"));
     }
 
     #[test]
@@ -2913,11 +4986,11 @@ mod tests {
         assert!(
             canonical_json(&command)
                 .expect("Kanonform")
-                .contains("\"vehicleIds\":[\"vehicle-\u{e000}\",\"vehicle-\u{10000}\"]")
+                .contains("\"vehicleIds\":[\"vehicle-\u{10000}\",\"vehicle-\u{e000}\"]")
         );
         assert_eq!(
             canonical_hash(&command).expect("Kommando-Hash"),
-            "8f85a082a134e3785918f998b90e8e34c784b163c2ecdf3005a7269aa549da82"
+            "2a98a0cfbd0eaf9204466da423b36a4207e5f96c8c545e5e854ded55161699ee"
         );
 
         let transfer = parse_command(
@@ -2972,6 +5045,64 @@ mod tests {
         let error = apply_fleet_command(&initial["state"].to_string(), &foreign.to_string(), None)
             .expect_err("fremde Welt wird abgewiesen");
         assert!(error.to_string().starts_with("world_mismatch:"));
+    }
+
+    #[test]
+    fn persistierter_fleet_zustand_wird_vollstaendig_und_hashgebunden_revalidiert() {
+        let initialized: Value = serde_json::from_str(
+            &initialize_fleet_world(
+                &json!({
+                    "schemaVersion": "zugfolge-fleet-world-initialize/v2",
+                    "worldId": WORLD,
+                    "producedAt": 10,
+                    "authorityRelease": authority_release_v2(),
+                    "formations": [{
+                        "id": "formation-verified",
+                        "vehicleIds": ["vehicle-1"],
+                        "pathReceiptId": "path-confirmed"
+                    }]
+                })
+                .to_string(),
+            )
+            .expect("v2-Zustand wird initialisiert"),
+        )
+        .expect("gueltige Initialisierung");
+        let verified: Value = serde_json::from_str(
+            &verify_fleet_world_state(
+                &initialized["state"].to_string(),
+                initialized["stateHash"].as_str().expect("Zustandshash"),
+            )
+            .expect("unveraenderter Checkpoint wird verifiziert"),
+        )
+        .expect("gueltige Verifikation");
+        assert_eq!(
+            verified["schemaVersion"],
+            "zugfolge-fleet-world-state-verification/v1"
+        );
+        assert_eq!(verified["worldId"], WORLD);
+        assert_eq!(verified["stateHash"], initialized["stateHash"]);
+        assert_eq!(verified["snapshotHash"], initialized["snapshotHash"]);
+        assert_eq!(
+            verified["authorityReleaseHash"],
+            initialized["state"]["authorityReleaseHash"]
+        );
+
+        let mut tampered = initialized["state"].clone();
+        tampered["authorityRelease"]["assets"][0]["technical"]["electricSystems"] =
+            json!(["ac25kv"]);
+        let error = verify_fleet_world_state(
+            &tampered.to_string(),
+            initialized["stateHash"].as_str().expect("Zustandshash"),
+        )
+        .expect_err("unveraenderter Hash darf manipulierte Stromsysteme nicht decken");
+        assert!(error.to_string().starts_with("state_hash_mismatch:"));
+
+        let decoded: FleetWorldState =
+            serde_json::from_value(tampered.clone()).expect("syntaktischer Zustand");
+        let forged_hash = state_hash(&decoded).expect("manipulierter Zustand ist hashbar");
+        let error = verify_fleet_world_state(&tampered.to_string(), &forged_hash)
+            .expect_err("Neuhashen darf den eingebetteten Release-Hash nicht umgehen");
+        assert!(error.to_string().contains("manipuliert"));
     }
 
     #[test]

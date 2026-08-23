@@ -173,6 +173,7 @@ import {
 import { eraseAccountData, exportAccountData, PersonalDataNotFoundError } from "@zugfolge/privacy";
 import {
   FLEET_FORMATION_COMMAND_SCHEMA,
+  FLEET_AUTHORITY_RELEASE_SCHEMA_V2,
   FLEET_INITIALIZE_SCHEMA,
   FLEET_MAINTENANCE_COMMAND_SCHEMA,
   FLEET_PATH_RESERVATION_COMMAND_SCHEMA,
@@ -199,6 +200,7 @@ import { guardAlphaAction, registerAlphaRoutes, type AlphaAbuseServices, type Al
 import { registerCooperationRoutes } from "./cooperation-routes.js";
 import { GameCooperationAuthority } from "./cooperation-authority.js";
 import { GameFleetAssetTransferWriter } from "./fleet-market-writer.js";
+import type { FleetAuthorityWorldConfiguration } from "./fleet-configuration.js";
 import { registerInfraPackageUploadRoutes } from "./infra-package-routes.js";
 import type { InfraPackageStaging, InfraUploadSigningKey } from "./infra-package-staging.js";
 import { registerLivemapReadRoutes } from "./livemap-read-routes.js";
@@ -242,6 +244,8 @@ export interface AppDependencies {
   readonly fleetRuntime?: FleetRuntime;
   /** Serverseitig eingefrorener Authority-Release je Welt. */
   readonly fleetAuthorityReleases?: Readonly<Record<string, FleetAuthorityRelease>>;
+  /** Verlustfreie Loader-Konfiguration inklusive bindendem Seed-Zeitpunkt. */
+  readonly fleetAuthorityConfigurations?: Readonly<Record<string, FleetAuthorityWorldConfiguration>>;
   /** Hartes Zeitbudget jedes Readiness-Checks. */
   readonly healthCheckTimeoutMs?: number;
   /** Produktion protokolliert strukturiert; Tests dürfen den Logger abschalten. */
@@ -2008,17 +2012,35 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         if (!(await worldExists(deps.db, request.params.worldId))) {
           return reply.code(404).send({ code: "world_not_found", error: "Welt existiert nicht." });
         }
-        if (deps.fleetRuntime === undefined || deps.fleetAuthorityReleases === undefined) {
+        if (deps.fleetRuntime === undefined || (
+          deps.fleetAuthorityReleases === undefined
+          && deps.fleetAuthorityConfigurations === undefined
+        )) {
           return reply.code(503).send({
             code: "fleet_unavailable",
             error: "Autoritativer M5-Flottenzustand ist nicht konfiguriert.",
           });
         }
-        const authorityRelease = deps.fleetAuthorityReleases[request.params.worldId];
+        const configured = deps.fleetAuthorityConfigurations?.[request.params.worldId];
+        const authorityRelease = configured?.authorityRelease
+          ?? deps.fleetAuthorityReleases?.[request.params.worldId];
         if (authorityRelease === undefined) {
           return reply.code(404).send({
             code: "fleet_authority_release_not_found",
             error: "Fuer diese Welt ist kein M5-Authority-Release konfiguriert.",
+          });
+        }
+        if (configured === undefined && authorityRelease.schemaVersion === FLEET_AUTHORITY_RELEASE_SCHEMA_V2) {
+          return reply.code(503).send({
+            code: "fleet_seed_time_unavailable",
+            error: "Authority-v2 besitzt keine bindende serverseitige Seed-Zeit.",
+          });
+        }
+        const producedAt = configured?.producedAt ?? request.body.producedAt;
+        if (configured !== undefined && request.body.producedAt !== producedAt) {
+          return reply.code(409).send({
+            code: "fleet_seed_time_conflict",
+            error: "Initialisierungszeit weicht vom serverseitig gebundenen Welt-Seed ab.",
           });
         }
         try {
@@ -2028,7 +2050,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
             initialization: {
               schemaVersion: FLEET_INITIALIZE_SCHEMA,
               worldId: request.params.worldId,
-              producedAt: request.body.producedAt,
+              producedAt,
               authorityRelease,
             },
             ingestedAt: new Date(),
@@ -2062,13 +2084,19 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         if (!(await worldExists(deps.db, request.params.worldId))) {
           return reply.code(404).send({ code: "world_not_found", error: "Welt existiert nicht." });
         }
-        if (deps.fleetRuntime === undefined || deps.fleetAuthorityReleases === undefined) {
+        if (deps.fleetRuntime === undefined || (
+          deps.fleetAuthorityReleases === undefined
+          && deps.fleetAuthorityConfigurations === undefined
+        )) {
           return reply.code(503).send({
             code: "fleet_unavailable",
             error: "Autoritativer M5-Flottenzustand ist nicht konfiguriert.",
           });
         }
-        if (deps.fleetAuthorityReleases[request.params.worldId] === undefined) {
+        if (
+          deps.fleetAuthorityConfigurations?.[request.params.worldId] === undefined
+          && deps.fleetAuthorityReleases?.[request.params.worldId] === undefined
+        ) {
           return reply.code(404).send({
             code: "fleet_authority_release_not_found",
             error: "Fuer diese Welt ist kein M5-Authority-Release konfiguriert.",
@@ -2350,6 +2378,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
             worldId: request.params.worldId,
             accountId: account.id,
             body: request.body,
+            fleetRuntime: deps.fleetRuntime,
           },
         );
         const command = await queuePlanningPathRequest(deps.db, {

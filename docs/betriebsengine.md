@@ -49,9 +49,26 @@ Wiederkehrende Läufe teilen eine Vorlage. Eine Abweichung erzeugt am sicheren
 Weg bleibt historisch und geometrisch unverändert. Ohne vollständigen Laufweg
 keine Materialisierung.
 
-Fahrzeugtypen benötigen Länge, Masse, Vmax, Betriebs- und Schnellbremswert;
-angetriebene Typen zusätzlich Leistung, Anfahrzugkraft und/oder belegte
-Maximalbeschleunigung. Es gibt keine Laufzeit-Fallbacks.
+Neue explizite Fahrzeugtypen benötigen Länge, Masse, Vmax und den vollständigen
+Rohdynamikblock aus `brakeWeightKg`, `maximumAccelerationCapMmps2`,
+`serviceBrakeCapMmps2` und `emergencyBrakeMultiplierBasisPoints`; angetriebene
+Typen zusätzlich Leistung und Anfahrzugkraft. Die typbezogenen
+Beschleunigungs-, Betriebs- und Schnellbremswerte bleiben nur reproduzierbare
+Referenzwerte. Bei einer konkreten Formation entstehen die wirksamen Werte
+stattdessen aus Gesamtmasse, wirksamer Gesamt-Anfahrzugkraft und
+Gesamtbremsgewicht. Ein teilweise vorhandener Rohblock oder eine Abweichung des
+Referenzwerts scheitert fail-closed; nur vollständig alte Typmetadaten bleiben
+im geschlossenen Legacy-Pfad lesbar. Diese Pflichtfelder werden nicht als
+zweite Betriebsdatenbank gepflegt: Der Offline-Compiler aus
+[`fahrzeugkatalog.md`](fahrzeugkatalog.md) projiziert denselben belegten Typ-
+und Assetbestand sowohl in den Fleet-Authority-Release als auch in das
+`zugfolge-operational-vehicle-inventory/v2`. Eine Receipt bindet beide
+Projektionen; Fleet und Operational leiten Formationswerte erneut ab und
+müssen jeden beigelegten Prüfwert reproduzieren. Neue Typen tragen Rolle und physische
+Führerstände explizit; die geordnete Formation bestimmt daraus aktive
+Zugspitze, Wendezugfähigkeit und wirksame Zugsicherung. Ein ausschließlich aus
+nicht angetriebenen Fahrzeugen bestehender Wagenpark bleibt als immobile
+Formation zulässig.
 
 ## 3. Weltzustand und Einheiten
 

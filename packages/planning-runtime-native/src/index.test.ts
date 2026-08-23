@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   PLANNING_APPLY_ALTERNATIVE_SCHEMA,
   PLANNING_COORDINATE_SCHEMA,
+  PLANNING_COORDINATE_SCHEMA_V1,
   planningRuntimeFromAddon,
   type PlanningCoordinateCommand,
   type PlanningRuntimeState,
@@ -51,6 +52,109 @@ function result(worldId: string, revision = 1): string {
 }
 
 describe("native M3 ABI boundary", () => {
+  it("transports v2 mm/s exactly and keeps the v1 KPH path explicit", () => {
+    const seen: unknown[] = [];
+    const runtime = planningRuntimeFromAddon({
+      coordinatePlanningRun: (json) => {
+        seen.push(JSON.parse(json));
+        return result(input.worldId);
+      },
+      applyPlanningAlternative: () => result(input.worldId, 2),
+    });
+    const requestFacts = {
+      requestNumericId: 1,
+      trainId: "train-1",
+      trainCategory: "regional" as const,
+      trainNumber: 26_802,
+      originStationId: "a",
+      destinationStationId: "b",
+      desiredDepartureS: 1,
+      operatingDays: "daily" as const,
+      stops: [],
+      earlierS: 0,
+      laterS: 0,
+      stepS: 1,
+      extraRunningTimeS: 0,
+      maxOperationalStops: 0,
+    };
+    runtime.coordinate({
+      ...input,
+      requests: [{
+        ...requestFacts,
+        train: {
+          numericId: 1,
+          name: "Exakt",
+          massKg: 1,
+          lengthMm: 1,
+          maximumSpeedMmps: 27_777,
+          accelerationMmPerS2: 1,
+          decelerationMmPerS2: 1,
+        },
+      }],
+    });
+    runtime.coordinate({
+      ...input,
+      schemaVersion: PLANNING_COORDINATE_SCHEMA_V1,
+      requests: [{
+        ...requestFacts,
+        train: {
+          numericId: 1,
+          name: "Legacy",
+          massKg: 1,
+          lengthMm: 1,
+          maximumSpeedKph: 100,
+          accelerationMmPerS2: 1,
+          decelerationMmPerS2: 1,
+        },
+      }],
+    });
+
+    expect((seen[0] as any).requests[0].train).toMatchObject({ maximumSpeedMmps: 27_777 });
+    expect((seen[1] as any).requests[0].train).toMatchObject({ maximumSpeedKph: 100 });
+  });
+
+  it("rejects missing or legacy speed fields in a new v2 coordinate", () => {
+    let called = false;
+    const runtime = planningRuntimeFromAddon({
+      coordinatePlanningRun: () => {
+        called = true;
+        return result(input.worldId);
+      },
+      applyPlanningAlternative: () => result(input.worldId, 2),
+    });
+    const base = {
+      ...input,
+      requests: [{
+        requestNumericId: 1,
+        trainId: "train-1",
+        trainCategory: "regional",
+        trainNumber: 26_802,
+        originStationId: "a",
+        destinationStationId: "b",
+        desiredDepartureS: 1,
+        operatingDays: "daily",
+        stops: [],
+        earlierS: 0,
+        laterS: 0,
+        stepS: 1,
+        extraRunningTimeS: 0,
+        maxOperationalStops: 0,
+        train: {
+          numericId: 1,
+          name: "Fehlt",
+          massKg: 1,
+          lengthMm: 1,
+          accelerationMmPerS2: 1,
+          decelerationMmPerS2: 1,
+        },
+      }],
+    };
+    expect(() => runtime.coordinate(base as unknown as PlanningCoordinateCommand)).toThrow(/Pflichtfelder/);
+    (base.requests[0]!.train as Record<string, unknown>)["maximumSpeedKph"] = 100;
+    expect(() => runtime.coordinate(base as unknown as PlanningCoordinateCommand)).toThrow(/Pflichtfelder|unbekannte/);
+    expect(called).toBe(false);
+  });
+
   it("rejects a cross-world Rust result", () => {
     const runtime = planningRuntimeFromAddon({
       coordinatePlanningRun: () => result("other-world"),

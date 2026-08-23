@@ -423,6 +423,7 @@ name = "zugfolge-fleet"
 version = "0.0.0"
 dependencies = [
  "serde",
+ "serde_json",
  "sha2",
  "zugfolge-conflict",
  "zugfolge-determinism",
@@ -522,6 +523,7 @@ dependencies = [
  "sha2",
  "zugfolge-fleet",
  "zugfolge-infra",
+ "zugfolge-sim",
 ]
 
 [[package]]
@@ -553,5 +555,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "zugfolge-fleet",
+ "zugfolge-runtime",
  "zugfolge-sim",
 ]

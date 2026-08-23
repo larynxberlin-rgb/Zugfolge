@@ -816,6 +816,27 @@ describe("Game world_deploy: signierte Weltanlage", () => {
     expect(registerStartedWorld).not.toHaveBeenCalled();
   });
 
+  it("registriert auch korrekt signierte Authority-v2 niemals ohne Compiler-Binding", async () => {
+    const unsigned = deployment();
+    const authorityV2WithoutBinding = {
+      ...unsigned,
+      fleet: {
+        ...unsigned.fleet,
+        authorityRelease: {
+          ...unsigned.fleet.authorityRelease,
+          schemaVersion: "zugfolge-fleet-authority-release/v2",
+        },
+      },
+    } as unknown as AlphaWorldDeployment;
+    const { run, fleet, registerStartedWorld } = handler();
+
+    await expect(run(context(commandFor(signedDeployment(authorityV2WithoutBinding)))))
+      .rejects.toThrow(/Compilerbeweis/);
+    expect(await db.select().from(worlds)).toHaveLength(0);
+    expect(fleet.initializeFleet).not.toHaveBeenCalled();
+    expect(registerStartedWorld).not.toHaveBeenCalled();
+  });
+
   it("erzeugt und startet eine vollstaendig gebundene Welt und wiederholt exakt idempotent", async () => {
     const unsigned = deployment();
     const signed = signedDeployment(unsigned);

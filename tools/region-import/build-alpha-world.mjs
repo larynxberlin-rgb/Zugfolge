@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
-import { alphaHash } from "../../packages/alpha/dist/index.js";
+import { alphaCanonicalJson, alphaHash } from "../../packages/alpha/dist/index.js";
 import { buildEconomyRelease, encodeEconomyValue, parseStartingCapitalPolicy, serializeStartingCapitalPolicy, startEconomyWorld } from "../../packages/economy/dist/index.js";
 import { allocatePublicRegionalTrainNumbers, publicRegionalTrainNumber } from "../../packages/livemap/dist/index.js";
 import { assertEmbeddedWorldIds, assertNoStarterIdentifiers } from "./alpha-world-variants.mjs";
@@ -14,10 +14,32 @@ import {
   NORMALIZED_SCHEDULE_TIME_ZONE,
 } from "./regional-release-contract.mjs";
 import { assertOperationalInfrastructureV2ReleaseBinding } from "./operational-infrastructure-binding.mjs";
+import {
+  alphaWorldGenerationSourcesSha256,
+  assertVehicleCatalogProofInputs,
+  bindVehicleCatalogDeploymentArtifacts,
+  compilerFleetFormations,
+  selectVehicleCatalogAuthority,
+  verifyVehicleCatalogCompilerReplay,
+} from "./vehicle-catalog-deployment-binding.mjs";
 
-const [gtfsPath, networkPath, fleetCatalogPath, infraReleasePath, economySpecPath, outputPath, publicConfigurationPath, operationalV2Path] = process.argv.slice(2);
+const [
+  gtfsPath,
+  networkPath,
+  fleetCatalogPath,
+  infraReleasePath,
+  economySpecPath,
+  outputPath,
+  publicConfigurationPath,
+  operationalV2Path,
+  vehicleReceiptPath,
+  vehicleInventoryPath,
+  vehicleSourceCatalogPath,
+  vehicleWorldSeedPath,
+  vehicleCompiledCatalogPath,
+] = process.argv.slice(2);
 if (!gtfsPath || !networkPath || !fleetCatalogPath || !infraReleasePath || !economySpecPath || !outputPath || !publicConfigurationPath || !operationalV2Path) {
-  throw new Error("Aufruf: node build-alpha-world.mjs GTFS.json NETWORK.json FLEET-CATALOG.json INFRA-RELEASE.json ECONOMY.json OUTPUT.json PUBLIC-ODOO-CONFIG.json OPERATIONAL-V2.json");
+  throw new Error("Aufruf: node build-alpha-world.mjs GTFS.json NETWORK.json FLEET-CATALOG.json INFRA-RELEASE.json ECONOMY.json OUTPUT.json PUBLIC-ODOO-CONFIG.json OPERATIONAL-V2.json [VEHICLE-RECEIPT-V4.json VEHICLE-INVENTORY-V2.json VEHICLE-SOURCE-V2.json VEHICLE-WORLD-SEED-V3.json VEHICLE-CATALOG-V3.json]");
 }
 
 const WORLD_ID = "00000000-0000-4000-8000-000000000014";
@@ -140,8 +162,34 @@ function parseEconomySpec(specification) {
   return convert(specification);
 }
 
-const [gtfsBytes, networkBytes, fleetBytes, infraBytes, economyBytes, operationalV2Bytes, generatorBytes] = await Promise.all([
-  readFile(gtfsPath), readFile(networkPath), readFile(fleetCatalogPath), readFile(infraReleasePath), readFile(economySpecPath), readFile(operationalV2Path), readFile(new URL(import.meta.url)),
+const [
+  gtfsBytes,
+  networkBytes,
+  fleetBytes,
+  infraBytes,
+  economyBytes,
+  operationalV2Bytes,
+  generatorBytes,
+  vehicleBinderBytes,
+  vehicleReceiptBytes,
+  vehicleInventoryBytes,
+  vehicleSourceCatalogBytes,
+  vehicleWorldSeedBytes,
+  vehicleCompiledCatalogBytes,
+] = await Promise.all([
+  readFile(gtfsPath),
+  readFile(networkPath),
+  readFile(fleetCatalogPath),
+  readFile(infraReleasePath),
+  readFile(economySpecPath),
+  readFile(operationalV2Path),
+  readFile(new URL(import.meta.url)),
+  readFile(new URL("./vehicle-catalog-deployment-binding.mjs", import.meta.url)),
+  vehicleReceiptPath === undefined ? undefined : readFile(vehicleReceiptPath),
+  vehicleInventoryPath === undefined ? undefined : readFile(vehicleInventoryPath),
+  vehicleSourceCatalogPath === undefined ? undefined : readFile(vehicleSourceCatalogPath),
+  vehicleWorldSeedPath === undefined ? undefined : readFile(vehicleWorldSeedPath),
+  vehicleCompiledCatalogPath === undefined ? undefined : readFile(vehicleCompiledCatalogPath),
 ]);
 const gtfsEnvelope = JSON.parse(gtfsBytes);
 const networkEnvelope = JSON.parse(networkBytes);
@@ -149,6 +197,20 @@ const fleetCatalog = JSON.parse(fleetBytes);
 const infraRelease = JSON.parse(infraBytes);
 const economySpecification = parseEconomySpec(JSON.parse(economyBytes));
 const operationalSimulation = JSON.parse(operationalV2Bytes);
+const {
+  schemaVersion: fleetAuthoritySchema,
+  entry: fleetCatalogEntry,
+} = selectVehicleCatalogAuthority(fleetCatalog, WORLD_ID);
+const vehicleCatalogV2 = assertVehicleCatalogProofInputs(
+  fleetAuthoritySchema,
+  vehicleReceiptBytes,
+  vehicleInventoryBytes,
+  vehicleSourceCatalogBytes,
+  vehicleWorldSeedBytes,
+  vehicleCompiledCatalogBytes,
+);
+const vehicleReceipt = vehicleReceiptBytes === undefined ? undefined : JSON.parse(vehicleReceiptBytes);
+const vehicleInventory = vehicleInventoryBytes === undefined ? undefined : JSON.parse(vehicleInventoryBytes);
 const gtfs = gtfsEnvelope.snapshot;
 const network = networkEnvelope.network;
 
@@ -192,7 +254,9 @@ const lotRecords = [...lotsByRoute].map(([key, values]) => {
 }).sort((left, right) => left.lotId.localeCompare(right.lotId));
 if (lotRecords.length < 8) throw new Error("Der Vergabekalender braucht mindestens acht getrennte SPNV-Lose.");
 
-const catalogAssets = fleetCatalog.entries.flatMap((entry) => entry.authorityRelease.assets);
+const catalogAssets = vehicleCatalogV2
+  ? fleetCatalogEntry.authorityRelease.assets
+  : fleetCatalog.entries.flatMap((entry) => entry.authorityRelease.assets);
 const electricTemplate = catalogAssets.find((asset) => asset.classDesignation === "463.0");
 const batteryTemplate = catalogAssets.find((asset) => asset.classDesignation === "563.0");
 if (!electricTemplate || !batteryTemplate) throw new Error("Freigegebene elektrische oder Akkutriebzug-Konfiguration fehlt.");
@@ -355,22 +419,54 @@ for (const [lotIndex, lot] of lotRecords.entries()) {
   });
 }
 
-const fleet = {
-  schemaVersion: "zugfolge-fleet-world-initialize/v2",
-  worldId: WORLD_ID,
-  producedAt: 0,
-  authorityRelease: {
-    schemaVersion: "zugfolge-fleet-authority-release/v1",
-    releaseId: regionalReleaseContract.fleetReleaseId,
-    referenceYear: regionalReleaseContract.timetableYear,
-    assets: assets.sort((left, right) => left.id.localeCompare(right.id)),
-    personnelPools: personnelPools.sort((left, right) => left.id.localeCompare(right.id)),
-    pathReceipts: pathReceipts.sort((left, right) => left.id.localeCompare(right.id)),
-  },
-  formations: formations.sort((left, right) => left.id.localeCompare(right.id)),
-  personnelDuties: personnelDuties.sort((left, right) => left.id.localeCompare(right.id)),
-  pathReservations: pathReservations.sort((left, right) => left.id.localeCompare(right.id)),
-};
+const sortedAssets = assets.sort((left, right) => left.id.localeCompare(right.id));
+const sortedPersonnelPools = personnelPools.sort((left, right) => left.id.localeCompare(right.id));
+const sortedPathReceipts = pathReceipts.sort((left, right) => left.id.localeCompare(right.id));
+const sortedFormations = formations.sort((left, right) => left.id.localeCompare(right.id));
+const sortedPersonnelDuties = personnelDuties.sort((left, right) => left.id.localeCompare(right.id));
+const sortedPathReservations = pathReservations.sort((left, right) => left.id.localeCompare(right.id));
+let fleet;
+if (vehicleCatalogV2) {
+  if (
+    alphaCanonicalJson(sortedAssets) !== alphaCanonicalJson(fleetCatalogEntry.authorityRelease.assets)
+    || alphaCanonicalJson(sortedPersonnelPools) !== alphaCanonicalJson(fleetCatalogEntry.authorityRelease.personnelPools)
+    || alphaCanonicalJson(sortedPathReceipts) !== alphaCanonicalJson(fleetCatalogEntry.authorityRelease.pathReceipts)
+  ) {
+    throw new Error("Authority-v2 stammt nicht aus demselben Welt-Seed wie der deterministische Alpha-Build.");
+  }
+  const compiledFormations = compilerFleetFormations(vehicleInventory);
+  const generatedFormationBindings = sortedFormations.map(({ id, vehicleIds, pathReceiptId }) => ({ id, vehicleIds, pathReceiptId }));
+  const compiledFormationBindings = compiledFormations.map(({ id, vehicleIds, pathReceiptId }) => ({ id, vehicleIds, pathReceiptId }));
+  if (alphaCanonicalJson(generatedFormationBindings) !== alphaCanonicalJson(compiledFormationBindings)) {
+    throw new Error("Authority-v2 und Alpha-Build besitzen verschiedene initiale Formationen.");
+  }
+  fleet = {
+    schemaVersion: "zugfolge-fleet-world-initialize/v2",
+    worldId: WORLD_ID,
+    producedAt: fleetCatalogEntry.producedAt,
+    authorityRelease: fleetCatalogEntry.authorityRelease,
+    formations: compiledFormations,
+    personnelDuties: sortedPersonnelDuties,
+    pathReservations: sortedPathReservations,
+  };
+} else {
+  fleet = {
+    schemaVersion: "zugfolge-fleet-world-initialize/v2",
+    worldId: WORLD_ID,
+    producedAt: 0,
+    authorityRelease: {
+      schemaVersion: "zugfolge-fleet-authority-release/v1",
+      releaseId: regionalReleaseContract.fleetReleaseId,
+      referenceYear: regionalReleaseContract.timetableYear,
+      assets: sortedAssets,
+      personnelPools: sortedPersonnelPools,
+      pathReceipts: sortedPathReceipts,
+    },
+    formations: sortedFormations,
+    personnelDuties: sortedPersonnelDuties,
+    pathReservations: sortedPathReservations,
+  };
+}
 const fleetPath = `${resolve(outputPath)}.fleet.json`;
 await writeFile(fleetPath, `${JSON.stringify(fleet, null, 2)}\n`);
 const fleetProbe = spawnSync("cargo", ["run", "-q", "-p", "zugfolge-runtime", "--example", "fleet_release_hash", "--", fleetPath], { encoding: "utf8" });
@@ -523,6 +619,29 @@ function assertOperationalV2Initialization(value) {
 
 assertOperationalV2Initialization(operationalSimulation);
 const operationalSimulationSourceSha256 = sha256(operationalV2Bytes);
+const vehicleCompilerEvidence = vehicleCatalogV2
+  ? await verifyVehicleCatalogCompilerReplay({
+      sourceCatalogPath: vehicleSourceCatalogPath,
+      worldSeedPath: vehicleWorldSeedPath,
+      compiledCatalogPath: vehicleCompiledCatalogPath,
+      fleetCatalogPath,
+      operationalInventoryPath: vehicleInventoryPath,
+      receiptPath: vehicleReceiptPath,
+      fleetAuthority: fleet.authorityRelease,
+    })
+  : undefined;
+const vehicleCatalogBinding = vehicleCatalogV2
+  ? bindVehicleCatalogDeploymentArtifacts({
+      fleetCatalog,
+      receipt: vehicleReceipt,
+      operationalInventory: vehicleInventory,
+      fleet,
+      regionalSimulation: operationalSimulation,
+      economyRelease,
+      blueprintFleetHash: fleetEvidence.authorityReleaseHash,
+      compilerEvidence: vehicleCompilerEvidence,
+    })
+  : undefined;
 const deployment = {
   schema: "zugfolge-alpha-world-deployment/v2",
   worldId: WORLD_ID,
@@ -558,6 +677,7 @@ const deployment = {
     publicVehiclePoolByLot,
   },
   fleet,
+  ...(vehicleCatalogBinding === undefined ? {} : { vehicleCatalogBinding }),
   regionalSimulation: operationalSimulation,
   repeatEveryS: scheduleTimeContract.repeatEveryS,
   planning: {
@@ -574,7 +694,7 @@ const deployment = {
     gtfsSnapshotHash: gtfsEnvelope.snapshotHash,
     fleetSourceSha256: sha256(fleetBytes),
     operationalSimulationSourceSha256,
-    generationScriptSha256: sha256(generatorBytes),
+    generationScriptSha256: alphaWorldGenerationSourcesSha256(generatorBytes, vehicleBinderBytes),
   },
 };
 assertEmbeddedWorldIds(deployment, WORLD_ID);

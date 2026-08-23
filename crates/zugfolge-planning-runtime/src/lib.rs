@@ -31,7 +31,8 @@ use zugfolge_planner::{
     enumerate_itineraries,
 };
 
-const COORDINATE_SCHEMA: &str = "planning-coordinate/v1";
+const COORDINATE_SCHEMA_V1: &str = "planning-coordinate/v1";
+const COORDINATE_SCHEMA: &str = "planning-coordinate/v2";
 const APPLY_SCHEMA: &str = "planning-apply-alternative/v1";
 const PROJECTION_SCHEMA: &str = "planning-projection/v1";
 const STATE_SCHEMA: &str = "zugfolge-planning-runtime-state/v1";
@@ -172,8 +173,12 @@ pub struct CoordinateTrainCharacteristicsInput {
     pub mass_kg: i64,
     /// Laenge in Millimetern.
     pub length_mm: i64,
-    /// Fahrzeug-Vmax.
-    pub maximum_speed_kph: i64,
+    /// Legacy-v1-Fahrzeug-Vmax; nur `planning-coordinate/v1` darf sie setzen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub maximum_speed_kph: Option<i64>,
+    /// Verlustfreie Fahrzeug-Vmax; `planning-coordinate/v2` muss sie setzen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub maximum_speed_mmps: Option<i64>,
     /// Anfahrvermoegen in Millimetern je Quadratsekunde.
     pub acceleration_mm_per_s2: i64,
     /// Bremsvermoegen in Millimetern je Quadratsekunde.
@@ -241,7 +246,7 @@ pub struct CoordinateBoundaryWindowInput {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PlanningCoordinateInput {
-    /// Vertrag `planning-coordinate/v1`.
+    /// Vertrag `planning-coordinate/v1` (Legacy-KPH) oder v2 (exakte mm/s).
     pub schema_version: String,
     /// Weltbindung.
     pub world_id: String,
@@ -563,8 +568,51 @@ fn uniform_track(
         .map_err(map_domain)
 }
 
+fn coordinate_train_speed(
+    schema_version: &str,
+    train: &CoordinateTrainCharacteristicsInput,
+) -> Result<Speed, PlanningRuntimeError> {
+    let (value, field, speed) = match (
+        schema_version,
+        train.maximum_speed_kph,
+        train.maximum_speed_mmps,
+    ) {
+        (COORDINATE_SCHEMA_V1, Some(value), None) => (
+            value,
+            "requests[].train.maximumSpeedKph",
+            Speed::from_km_h(value),
+        ),
+        (COORDINATE_SCHEMA, None, Some(value)) => (
+            value,
+            "requests[].train.maximumSpeedMmps",
+            Speed::from_millimetres_per_second(value),
+        ),
+        (COORDINATE_SCHEMA_V1, _, _) => {
+            return Err(invalid(
+                "planning-coordinate/v1 verlangt exakt maximumSpeedKph",
+            ));
+        }
+        (COORDINATE_SCHEMA, _, _) => {
+            return Err(invalid(
+                "planning-coordinate/v2 verlangt exakt maximumSpeedMmps",
+            ));
+        }
+        (unknown, _, _) => {
+            return Err(PlanningRuntimeError::new(
+                "unsupported_schema",
+                unknown.to_owned(),
+            ));
+        }
+    };
+    safe_non_negative(value, field)?;
+    if value == 0 {
+        return Err(invalid(format!("{field} muss positiv sein")));
+    }
+    Ok(speed)
+}
+
 fn materialize(input: &PlanningCoordinateInput) -> Result<MaterializedRun, PlanningRuntimeError> {
-    if input.schema_version != COORDINATE_SCHEMA {
+    if input.schema_version != COORDINATE_SCHEMA && input.schema_version != COORDINATE_SCHEMA_V1 {
         return Err(PlanningRuntimeError::new(
             "unsupported_schema",
             input.schema_version.clone(),
@@ -860,7 +908,7 @@ fn materialize(input: &PlanningCoordinateInput) -> Result<MaterializedRun, Plann
             &request.train.name,
             Mass::from_kilograms(request.train.mass_kg),
             Length::from_millimetres(request.train.length_mm),
-            Speed::from_km_h(request.train.maximum_speed_kph),
+            coordinate_train_speed(&input.schema_version, &request.train)?,
             if category == TrainCategory::Freight {
                 SpeedCategory::Freight
             } else {
@@ -1536,7 +1584,47 @@ mod tests {
 
     use serde_json::{Value, json};
 
-    use super::{apply_planning_alternative, coordinate_planning_run};
+    use super::{
+        COORDINATE_SCHEMA, COORDINATE_SCHEMA_V1, CoordinateTrainCharacteristicsInput,
+        apply_planning_alternative, coordinate_planning_run, coordinate_train_speed,
+    };
+
+    #[test]
+    fn v2_fahrzeug_vmax_bleibt_exakt_und_v1_hat_einen_getrennten_kph_pfad() {
+        let train = |maximum_speed_kph, maximum_speed_mmps| CoordinateTrainCharacteristicsInput {
+            numeric_id: 1,
+            name: "Vmax-Test".to_owned(),
+            mass_kg: 1,
+            length_mm: 1,
+            maximum_speed_kph,
+            maximum_speed_mmps,
+            acceleration_mm_per_s2: 1,
+            deceleration_mm_per_s2: 1,
+        };
+
+        assert_eq!(
+            coordinate_train_speed(COORDINATE_SCHEMA, &train(None, Some(27_777)))
+                .unwrap()
+                .millimetres_per_second(),
+            27_777
+        );
+        assert_eq!(
+            coordinate_train_speed(COORDINATE_SCHEMA, &train(None, Some(27_000)))
+                .unwrap()
+                .millimetres_per_second(),
+            27_000
+        );
+        assert_eq!(
+            coordinate_train_speed(COORDINATE_SCHEMA_V1, &train(Some(100), None))
+                .unwrap()
+                .millimetres_per_second(),
+            27_778,
+            "Legacy-v1 behaelt die historische KPH-Aufrundung"
+        );
+        assert!(coordinate_train_speed(COORDINATE_SCHEMA, &train(None, None)).is_err());
+        assert!(coordinate_train_speed(COORDINATE_SCHEMA, &train(Some(100), None)).is_err());
+        assert!(coordinate_train_speed(COORDINATE_SCHEMA, &train(None, Some(0))).is_err());
+    }
 
     fn coordinate_input(requests_reversed: bool) -> Value {
         let first = json!({
@@ -1644,6 +1732,43 @@ mod tests {
             }],
             "requests": requests
         })
+    }
+
+    fn coordinate_input_v2() -> Value {
+        let mut input = coordinate_input(false);
+        input["schemaVersion"] = json!(COORDINATE_SCHEMA);
+        for (request, speed) in input["requests"]
+            .as_array_mut()
+            .expect("Antragsliste")
+            .iter_mut()
+            .zip([27_777, 27_000])
+        {
+            let train = request["train"].as_object_mut().expect("Zugdaten");
+            train.remove("maximumSpeedKph");
+            train.insert("maximumSpeedMmps".to_owned(), json!(speed));
+        }
+        input
+    }
+
+    #[test]
+    fn v2_coordinate_verlangt_das_exakte_mmps_feld_fail_closed() {
+        let valid = coordinate_input_v2();
+        coordinate_planning_run(&valid.to_string()).expect("v2 mit exakten mm/s gelingt");
+
+        let mut missing = valid.clone();
+        missing["requests"][0]["train"]
+            .as_object_mut()
+            .expect("Zugdaten")
+            .remove("maximumSpeedMmps");
+        assert!(coordinate_planning_run(&missing.to_string()).is_err());
+
+        let mut legacy_field = missing.clone();
+        legacy_field["requests"][0]["train"]["maximumSpeedKph"] = json!(100);
+        assert!(coordinate_planning_run(&legacy_field.to_string()).is_err());
+
+        let mut unknown_field = valid;
+        unknown_field["requests"][0]["train"]["maximumSpeedMps"] = json!(27);
+        assert!(coordinate_planning_run(&unknown_field.to_string()).is_err());
     }
 
     fn coordinate_value(reversed: bool) -> Value {

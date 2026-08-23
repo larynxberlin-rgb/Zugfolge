@@ -131,10 +131,13 @@ pub enum TractionType {
     /// Verbrennungsantrieb — unabhängig vom Fahrdraht, fährt auf jedem
     /// Abschnitt.
     Diesel,
-    /// Akkubetrieb — ebenfalls unabhängig vom Fahrdraht. Ohne
-    /// Reichweitenmodell: Das gehört zum Bedarfsmodell (M5.6), nicht zur
-    /// Zugcharakteristik.
+    /// Legacy-Akkubetrieb ohne hinterlegte Ladesysteme. Ohne Reichweitenmodell:
+    /// Das gehört zum Bedarfsmodell (M5.6), nicht zur Zugcharakteristik.
     BatteryElectric,
+    /// Akkubetrieb mit den elektrischen Systemen, unter denen das Fahrzeug
+    /// während der Fahrt Strom aufnehmen kann. Unelektrifizierte Abschnitte
+    /// bleiben aus dem Akku befahrbar; unter Fahrdraht gilt die Systemmenge.
+    BatteryElectricWithSystems(ElectricSystems),
     /// Elektrischer Antrieb unter einem oder mehreren Bahnstromsystemen.
     Electric(ElectricSystems),
 }
@@ -145,7 +148,7 @@ impl TractionType {
         match self {
             Self::Unpowered => "unpowered",
             Self::Diesel => "diesel",
-            Self::BatteryElectric => "battery-electric",
+            Self::BatteryElectric | Self::BatteryElectricWithSystems(_) => "battery-electric",
             Self::Electric(_) => "electric",
         }
     }
@@ -155,7 +158,7 @@ impl TractionType {
         match self {
             Self::Unpowered => "nicht angetrieben",
             Self::Diesel => "Diesel",
-            Self::BatteryElectric => "Akku",
+            Self::BatteryElectric | Self::BatteryElectricWithSystems(_) => "Akku",
             Self::Electric(_) => "elektrisch",
         }
     }
@@ -163,13 +166,20 @@ impl TractionType {
     /// Ob ein Fahrzeug dieser Antriebsart einen Abschnitt mit dieser
     /// Elektrifizierung befahren kann.
     ///
-    /// Diesel- und Akkubetrieb sind vom Fahrdraht unabhängig — sie fahren
-    /// überall, elektrifiziert oder nicht. Ein elektrischer Antrieb braucht
-    /// ein gemeinsames System mit dem Abschnitt.
+    /// Diesel und Legacy-Akkubetrieb fahren unabhängig vom Fahrdraht. Ein
+    /// systemgebundener Akku fährt ohne Fahrdraht sowie unter einem passenden
+    /// System; ein rein elektrischer Antrieb braucht immer ein gemeinsames
+    /// System mit dem Abschnitt.
     pub fn can_use(&self, electrification: Electrification) -> bool {
         match self {
             Self::Unpowered => false,
             Self::Diesel | Self::BatteryElectric => true,
+            Self::BatteryElectricWithSystems(systems) => {
+                electrification == Electrification::Unelectrified
+                    || electrification
+                        .system()
+                        .is_some_and(|system| systems.contains(system))
+            }
             Self::Electric(systems) => electrification
                 .system()
                 .is_some_and(|system| systems.contains(system)),
@@ -182,6 +192,9 @@ impl fmt::Display for TractionType {
         match self {
             Self::Unpowered => formatter.write_str(self.label()),
             Self::Diesel | Self::BatteryElectric => formatter.write_str(self.label()),
+            Self::BatteryElectricWithSystems(systems) => {
+                write!(formatter, "Akku ({systems})")
+            }
             Self::Electric(systems) => write!(formatter, "elektrisch ({systems})"),
         }
     }
@@ -491,6 +504,15 @@ mod tests {
         assert!(TractionType::Diesel.can_use(Electrification::Unelectrified));
         assert!(TractionType::Diesel.can_use(Electrification::Overhead(PowerSystem::Ac15kV)));
         assert!(TractionType::BatteryElectric.can_use(Electrification::Unelectrified));
+    }
+
+    #[test]
+    fn batterie_mit_ladesystem_faehrt_ohne_fahrdraht_und_nur_unter_passendem_system() {
+        let batterie =
+            TractionType::BatteryElectricWithSystems(ElectricSystems::single(PowerSystem::Ac15kV));
+        assert!(batterie.can_use(Electrification::Unelectrified));
+        assert!(batterie.can_use(Electrification::Overhead(PowerSystem::Ac15kV)));
+        assert!(!batterie.can_use(Electrification::Overhead(PowerSystem::Ac25kV)));
     }
 
     #[test]

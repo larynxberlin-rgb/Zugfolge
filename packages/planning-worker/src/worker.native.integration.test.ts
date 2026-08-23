@@ -83,7 +83,7 @@ function requestBody(input: {
       name: input.reverse ? "Regionaltriebwagen West" : "Regionaltriebwagen Ost",
       massKg: 120_000,
       lengthMm: 140_000,
-      maximumSpeedKph: 140,
+      maximumSpeedMmps: 38_888,
       accelerationMmPerS2: 600,
       decelerationMmPerS2: 800,
     },

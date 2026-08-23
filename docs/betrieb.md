@@ -50,12 +50,15 @@ Die Regel-Engine hängt an der Dispositionsschnittstelle des Simulationskerns
   Lebenslauf. Ein in die Welt eingebrachtes Fahrzeug wird nicht erneut erzeugt:
   Es wechselt nur zwischen Betrieb, Abstellung, Werkstatt, Vermietern,
   Gebrauchtmarkt und endgültiger Ausmusterung.
-- Formationen werden aus Fahrzeugen gebildet. Für eine Zugfahrt erhalten sie
-  aus ihrer tatsächlichen Masse und Bremsstellung ein signiertes,
-  ganzzahliges **Fahrprofil**; erst damit werden sie auf eine
-  **Zugcharakteristik** abgebildet (→ `infrastruktur.md`) und gegen Strecke,
-  Bahnsteig, Elektrifizierung und Zugsicherung geprüft. Eine Lokomotive hat
-  dabei keine pauschale Beschleunigung unabhängig von ihrem Wagenpark.
+- Formationen werden aus Fahrzeugen gebildet. Für eine Zugfahrt leitet der
+  serverautoritative Single Writer ihr ganzzahliges **Fahrprofil** aus der
+  tatsächlichen Gesamtmasse, der wirksamen Summe der Anfahrzugkräfte, der Summe
+  der Bremsgewichte und den veröffentlichten Obergrenzen ab; erst damit werden
+  sie auf eine **Zugcharakteristik** abgebildet (→ `infrastruktur.md`) und gegen
+  Strecke, Bahnsteig, Elektrifizierung und Zugsicherung geprüft. Ein
+  mitgeliefertes oder persistiertes Fahrprofil ist nur ein exakt zu
+  reproduzierender Prüfwert, nie die Source of Truth. Eine Lokomotive hat damit
+  keine pauschale Beschleunigung unabhängig von ihrem Wagenpark.
 - Personal wird als regionaler Qualifikations- und Dienstkapazitätspool
   modelliert; einzelne Mitarbeiterbiografien sind nicht Teil der ersten Version.
 - Dienst-, Wartungs-, Abstell- und Fahrzeugumlaufkonflikte verhindern die
@@ -112,26 +115,22 @@ Einzelfahrzeug Welt, Typ, Bau- und Beschaffungsjahr, Marktkanal, Eigentum oder
 Leasing, Zulassungen, Wartungsfristen und die tatsächlich eingebaute
 Zugsicherung.
 
-Ein früher dokumentierter redaktioneller Arbeitsstand vom 8. August 2026
-nannte 48 Fahrzeugtypen und 63 Quellen. Dieser Datenbestand ist im öffentlichen
-Checkout nicht reproduzierbar: PR #25 liefert das Katalogschema, individuelle
-Assets und fiktive Testtypen, aber keine reale Fahrzeug-Seeddatei. Die reale
-Katalogdatei bleibt als proprietäres Weltdatum außerhalb des öffentlichen Baums
-(E16). Öffentlich sind nur Schema, Prüfregeln und rein fiktive Testdaten. Die
-geprüfte Quellenübergabe liegt lokal im ignorierten
-`data/fahrzeugkatalog/alpha-2026-recherche.md`; ihre **Freigegebene
-Alpha-Liste** enthält ausschließlich konkrete Varianten mit vollständigen
-Engine-Werten. Der anschließende Kandidatenkorpus ist ausdrücklich nicht
-freigabefähig.
+Der reale Katalog bleibt als proprietäres Weltdatum außerhalb des öffentlichen
+Baums (E16). Öffentlich sind nur Schema, Compiler, Prüfregeln und rein fiktive
+Testdaten. Der private Recherchekorpus außerhalb des Git-Worktrees darf
+unvollständige Kandidaten enthalten und ist ausdrücklich nicht startfähig.
 
-Die Engine lädt dagegen ausschließlich die ignorierte,
-maschinenlesbare Datei
-`data/fahrzeugkatalog/alpha-2026-authority-assets.json`. Sie ist ein
-`zugfolge-fleet-authority-release-catalog/v1`, bindet die kanonische
-Mitteldeutschland-Alpha-Welt an konkrete Einzelassets und wird über
-`ZUGFOLGE_FLEET_AUTHORITY_RELEASE_PATH` fail-closed eingelesen. Die
-Recherchedatei ist damit Nachweis und Freigabebasis; die Authority-Datei ist
-der tatsächlich ausführbare Startbestand.
+Ein freigegebener `zugfolge-vehicle-catalog-source/v2` und ein konkreter
+`zugfolge-vehicle-world-seed/v3` werden dagegen gemeinsam offline kompiliert.
+Aus derselben Eingabe entstehen der Fleet-Authority-Release **und** das
+Operational-v2-Fahrzeuginventar; eine Hash-Receipt bindet beide Projektionen.
+Damit können Markt und Betriebsengine keine unabhängig gepflegten Längen,
+Massen, Leistungen, Bremswerte oder Zugsicherungen verwenden. Die
+weltabhängigen Fahrzeugkosten stammen ausschließlich aus der im Seed
+reproduzierbar an den vollständigen, gepinnten `EconomyRelease` gebundenen
+Projektion. Der vollständige
+Feld-, Rechte-, Granularitäts- und Freigabevertrag steht in
+[`fahrzeugkatalog.md`](fahrzeugkatalog.md).
 
 ### 2.2 Funktionsentscheidung: optionale Zugsicherung
 

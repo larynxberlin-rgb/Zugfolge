@@ -114,11 +114,16 @@ fn release() -> OperationalInfraRelease {
 fn vehicle_type() -> VehicleType {
     VehicleType {
         id: "type:load".to_owned(),
+        role: None,
+        control_stands: None,
+        traction: None,
+        electric_systems: None,
         length_mm: 10_000,
         mass_kg: 80_000,
         maximum_speed_mmps: 20_000,
         power_watts: 4_000_000,
         starting_tractive_force_newtons: 240_000,
+        raw_formation_dynamics: None,
         maximum_acceleration_mmps2: 1_000,
         service_brake_mmps2: 1_000,
         emergency_brake_mmps2: 1_500,

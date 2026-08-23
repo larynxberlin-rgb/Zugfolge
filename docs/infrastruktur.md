@@ -423,6 +423,19 @@ Die produktive Koordinierung besteht aus drei strikt getrennten Verträgen:
    `zugfolge-planning-runtime` auf und schreibt Commandstatus,
    `planning.runtime-state` und `planning.diagram` in derselben Transaktion.
 
+Der serverseitig vervollständigte Neuantrag `planning.path-request/v4` bindet
+die Fahrzeug-Vmax als positive sichere Ganzzahl `maximumSpeedMmps`. Der Worker
+übernimmt sie ohne Einheitenwechsel in `planning-coordinate/v2`; Rust erzeugt
+daraus unmittelbar `Speed::from_millimetres_per_second`. Damit bleibt zum
+Beispiel die im Fahrzeugcompiler konservativ abgeleitete Vmax von 100 km/h als
+exakte 27.777 mm/s erhalten, und auch eine betriebliche Kappung auf 27.000 mm/s
+wird nicht über ganzzahlige km/h zurückgerundet. Persistierte
+`planning.path-request/v3`-Anträge und direkte `planning-coordinate/v1`-Eingänge
+bleiben ausschließlich als Legacy-Verträge lesbar: nur dieser klar getrennte
+Pfad rechnet ganzzahlige km/h mit der historischen Aufrundung in mm/s um. Neue
+v4/v2-Eingänge mit fehlendem, nichtpositivem, unsicherem oder fremdem
+Geschwindigkeitsfeld werden vor dem Rust-Aufruf fail-closed verworfen.
+
 Der generische Event-/Commandadapter weist diese Single-Writer-Typen ab. Eine
 angebotene Alternative trägt eine stabile, an die Projektionsrevision
 gebundene ID; `planning.apply-alternative/v1` wird erneut durch Rust angewandt.

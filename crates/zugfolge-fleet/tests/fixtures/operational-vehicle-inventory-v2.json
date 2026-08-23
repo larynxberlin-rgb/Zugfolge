@@ -1,0 +1,87 @@
+{
+  "schemaVersion": "zugfolge-operational-vehicle-inventory/v2",
+  "releaseId": "fixture-operational-inventory-1",
+  "worldId": "00000000-0000-4000-8000-000000000387",
+  "catalogReleaseId": "fixture-vehicle-catalog-2026-v2",
+  "vehicleTypes": [
+    {
+      "powered": true,
+      "vehicleType": {
+        "id": "fixture.et.100",
+        "role": "powered-unit",
+        "controlStands": {
+          "front": true,
+          "rear": true
+        },
+        "traction": "electric",
+        "electricSystems": [
+          "ac15kv"
+        ],
+        "lengthMm": 70000,
+        "massKg": 120000,
+        "maximumSpeedMmps": 44444,
+        "powerWatts": 3000000,
+        "startingTractiveForceNewtons": 200000,
+        "rawFormationDynamics": {
+          "brakeWeightKg": 130000,
+          "maximumAccelerationCapMmps2": 1000,
+          "serviceBrakeCapMmps2": 900,
+          "emergencyBrakeMultiplierBasisPoints": 13334
+        },
+        "maximumAccelerationMmps2": 1000,
+        "serviceBrakeMmps2": 900,
+        "emergencyBrakeMmps2": 1200,
+        "protectionSystems": [
+          "lzb",
+          "pzb"
+        ]
+      }
+    }
+  ],
+  "vehicles": [
+    {
+      "id": "fixture-vehicle-1",
+      "typeId": "fixture.et.100",
+      "powered": true,
+      "orientation": "along",
+      "condition": {
+        "mechanicsBasisPoints": 10000,
+        "driveBasisPoints": 10000,
+        "brakesBasisPoints": 10000,
+        "kilometresSinceMaintenance": 0,
+        "operatingHoursSinceMaintenance": 0,
+        "openObservations": 0
+      },
+      "restrictions": {
+        "catalog-protection-unavailable:lzb": {
+          "protection-unavailable": "lzb"
+        }
+      },
+      "history": []
+    }
+  ],
+  "formations": [
+    {
+      "id": "fixture-formation-1",
+      "vehicleIds": [
+        "fixture-vehicle-1"
+      ],
+      "pathReceiptId": "fixture-path-1",
+      "performance": {
+        "lengthMm": 70000,
+        "massKg": 120000,
+        "maximumSpeedMmps": 44444,
+        "powerWatts": 3000000,
+        "accelerationMmps2": 1000,
+        "serviceBrakeMmps2": 900,
+        "emergencyBrakeMmps2": 1200,
+        "frontControlStandAvailable": true,
+        "rearControlStandAvailable": true,
+        "protectionSystems": [
+          "pzb"
+        ],
+        "mobile": true
+      }
+    }
+  ]
+}

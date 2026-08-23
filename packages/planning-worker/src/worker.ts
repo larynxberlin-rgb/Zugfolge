@@ -9,8 +9,9 @@ import { parsePlanningProjection } from "@zugfolge/planning-projection";
 import {
   PLANNING_COORDINATE_SCHEMA,
   PLANNING_RUNTIME_STATE_SCHEMA,
-  type PlanningCoordinateCommand,
-  type PlanningCoordinateRequest,
+  type PlanningCoordinateCommandV2,
+  type PlanningCoordinateRequestV1,
+  type PlanningCoordinateRequestV2,
   type PlanningRuntime,
   type PlanningRuntimeResult,
   type PlanningRuntimeState,
@@ -22,6 +23,8 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import {
   bindPlanningCoordinateAuthorityCommand,
   bindPlanningPathRequest,
+  bindPersistedPlanningPathRequest,
+  PLANNING_PATH_REQUEST_SCHEMA_V3,
   parsePlanningApplyAlternativePayload,
   parsePlanningInfrastructureRelease,
   type BoundPlanningPathRequest,
@@ -308,7 +311,22 @@ export async function queuePlanningCoordinate(
 
 interface ResolvedPathRequests {
   readonly commandIds: readonly [string, string];
-  readonly requests: readonly [PlanningCoordinateRequest, PlanningCoordinateRequest];
+  readonly requests: readonly [PlanningCoordinateRequestV2, PlanningCoordinateRequestV2];
+}
+
+function legacyMaximumSpeedMmps(maximumSpeedKph: number): number {
+  const i64Maximum = 9_223_372_036_854_775_807n;
+  const multiplied = BigInt(maximumSpeedKph) * 1_000_000n;
+  const saturatedProduct = multiplied > i64Maximum ? i64Maximum : multiplied;
+  const rounded = saturatedProduct > i64Maximum - 3_599n
+    ? i64Maximum
+    : saturatedProduct + 3_599n;
+  const converted = rounded / 3_600n;
+  invariant(
+    converted > 0n && converted <= BigInt(Number.MAX_SAFE_INTEGER),
+    "Persistierte Legacy-Vmax ist nicht als sichere positive mm/s-Zahl darstellbar.",
+  );
+  return Number(converted);
 }
 
 function parsePersistedPathRequest(row: {
@@ -322,7 +340,7 @@ function parsePersistedPathRequest(row: {
   );
   let rebound: BoundPlanningPathRequest;
   try {
-    rebound = bindPlanningPathRequest(row.worldId, row.requestingAccountId, body);
+    rebound = bindPersistedPlanningPathRequest(row.worldId, row.requestingAccountId, body);
   } catch (error) {
     if (error instanceof TypeError) throw new PlanningWorkerConflictError(error.message);
     throw error;
@@ -384,6 +402,17 @@ async function resolvePathRequests(
   invariant(new Set(parsed.map(({ request }) => request.trainId)).size === 2, "planning.coordinate besitzt doppelte Zug-IDs.");
   parsed.sort((left, right) => compareUtf8(left.request.requestId, right.request.requestId));
   const requests = parsed.map(({ request }, index) => {
+    const coordinateTrain: PlanningCoordinateRequestV2["train"] = request.schemaVersion
+      === PLANNING_PATH_REQUEST_SCHEMA_V3
+      ? (() => {
+          const legacy = request.train as PlanningCoordinateRequestV1["train"];
+          const { maximumSpeedKph, ...common } = legacy;
+          return {
+            ...common,
+            maximumSpeedMmps: legacyMaximumSpeedMmps(maximumSpeedKph),
+          } as PlanningCoordinateRequestV2["train"];
+        })()
+      : request.train as PlanningCoordinateRequestV2["train"];
     const {
       schemaVersion: _schemaVersion,
       worldId: _worldId,
@@ -395,8 +424,13 @@ async function resolvePathRequests(
       fleetStateHash: _fleetStateHash,
       fleetAuthorityReleaseId: _fleetAuthorityReleaseId,
       boundaryPlanningWindowId,
-      ...facts
+      train: _train,
+      ...commonFacts
     } = request;
+    const facts: Omit<PlanningCoordinateRequestV2, "requestNumericId" | "boundaryWindows"> = {
+      ...commonFacts,
+      train: coordinateTrain,
+    };
     if (boundaryPlanningWindowId === undefined) {
       return { requestNumericId: index + 1, ...facts };
     }
@@ -408,7 +442,7 @@ async function resolvePathRequests(
       `Grenzfenster '${boundaryPlanningWindowId}' gehoert zu einem anderen regionalen Fahrtabschnitt.`,
     );
     return { requestNumericId: index + 1, ...facts, boundaryWindows: boundary.windows };
-  }) as [PlanningCoordinateRequest, PlanningCoordinateRequest];
+  }) as [PlanningCoordinateRequestV2, PlanningCoordinateRequestV2];
   return { commandIds: commandIds as [string, string], requests };
 }
 
@@ -425,7 +459,7 @@ function runtimeCoordinate(
   coordinate: PlanningCoordinateAuthorityCommand,
   release: PlanningInfrastructureRelease,
   requests: ResolvedPathRequests["requests"],
-): PlanningCoordinateCommand {
+): PlanningCoordinateCommandV2 {
   return {
     schemaVersion: PLANNING_COORDINATE_SCHEMA,
     worldId: coordinate.worldId,

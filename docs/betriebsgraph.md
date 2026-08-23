@@ -491,11 +491,14 @@ Bremsvermögen** sind die zwei Kennwerte, die M1.10 in Bewegung setzt.
 
 Bei Lokomotiven und Wagenparks dürfen diese beiden Kennwerte jedoch nicht als
 statische Fahrzeugwerte ausgegeben werden: Sie entstehen erst aus der
-tatsächlich gekuppelten Masse und Bremsstellung. Der Authority-Katalog enthält
-dafür die Rohwerte; das signierte `FormationDynamics`-Profil liefert die
-ganzzahligen, für M1.10 wirksamen Werte erst beim Bilden der konkreten
-Formation. Ein vorhandenes Altfeld pro Fahrzeug ist lediglich ein
-rückwärtskompatibles Referenzprofil.
+tatsächlich gekuppelten Gesamtmasse, der wirksamen Summe ihrer
+Anfahrzugkräfte und der Summe ihrer Bremsgewichte. Der Authority-Katalog
+enthält dafür die Rohwerte und sichtbaren Obergrenzen; Fleet und Operational
+leiten daraus als serverautoritative Single Writer die ganzzahligen, für M1.10
+wirksamen Werte erst beim Bilden der konkreten Formation ab. Ein empfangenes
+oder persistiertes `FormationDynamics` muss diese Ableitung exakt
+reproduzieren und ist nie deren Source of Truth. Ein vorhandenes Altfeld pro
+Fahrzeug ist lediglich ein rückwärtskompatibles Referenzprofil.
 **Antriebsart** (`TractionType`) entscheidet, welche Elektrifizierung nutzbar
 ist — Diesel- und Akkubetrieb sind vom Fahrdraht unabhängig, ein elektrischer
 Antrieb braucht ein gemeinsames Bahnstromsystem. **Zugsicherung** ist

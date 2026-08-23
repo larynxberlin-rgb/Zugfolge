@@ -1,0 +1,133 @@
+{
+  "schemaVersion": "zugfolge-vehicle-world-seed/v3",
+  "seedId": "fixture-world-seed-v3-1",
+  "catalogReleaseId": "fixture-vehicle-catalog-2026-v2",
+  "authorityReleaseId": "fixture-fleet-authority-1",
+  "operationalReleaseId": "fixture-operational-inventory-1",
+  "worldId": "00000000-0000-4000-8000-000000000387",
+  "producedAt": 100,
+  "economy": {
+    "schemaVersion": "zugfolge-vehicle-economy-projection/v2",
+    "release": {
+      "schema": "economy-release/v1",
+      "version": "fixture-economy-release-1",
+      "rates": {
+        "trackPerTrainKmCents": "100",
+        "stationPerStopCents": "200",
+        "facilityPerHourCents": "300",
+        "energyPerKwhCents": "40",
+        "personnelPerHourCents": "4000",
+        "administrationPerPeriodCents": "50000",
+        "vehiclePerPeriodCents": "100000",
+        "overnightStablingPerPeriodCents": "20000",
+        "protectionEquipmentPerPeriodCents": "10000",
+        "lateInterestBasisPoints": 500
+      },
+      "rules": {
+        "qualityBaselinePunctualityBasisPoints": 8500,
+        "pointsPerExtraSeat": 40,
+        "pointsPerPunctualityBasisPoint": 1,
+        "pointsPerAdditionalStop": 300,
+        "requirementFocusMaximumPoints": 1500,
+        "contractBonusCentsPerPeriod": "100000",
+        "penaltyRates": {
+          "punctuality": "10",
+          "cancellation": "10000",
+          "seats": "100",
+          "connections": "1000"
+        },
+        "penaltyFocusMultiplierBasisPoints": 20000,
+        "publicOperationSurchargeBasisPoints": 2000,
+        "failedPackageFeeStepBasisPoints": 500,
+        "failedPackageReductionStepBasisPoints": 400
+      },
+      "tenderProfiles": [
+        {
+          "id": "price",
+          "weights": { "price": 7000, "quality": 3000 },
+          "requirementFocus": "capacity",
+          "penaltyFocus": "punctuality",
+          "viabilitySurchargeBasisPoints": 1000
+        },
+        {
+          "id": "quality",
+          "weights": { "price": 3000, "quality": 7000 },
+          "requirementFocus": "accessibility",
+          "penaltyFocus": "connections",
+          "viabilitySurchargeBasisPoints": 1500
+        }
+      ],
+      "checksum": "35b5199c3949ec7af65762f38184462d23fc23c584aaf5f02e35da44ae9e9857"
+    },
+    "operatingCosts": [
+      { "typeId": "fixture.et.100", "centsPerTrainKm": 750 }
+    ],
+    "projectionSha256": "d73e443923d8e373a68cf1a352d527d0cb95a4366ee2e521cf6caf8b4f74f414"
+  },
+  "assets": [
+    {
+      "id": "fixture-vehicle-1",
+      "numericId": 1001,
+      "operatorId": "fixture-operator",
+      "typeId": "fixture.et.100",
+      "buildYear": 2024,
+      "acquisitionYear": 2025,
+      "procurementChannel": "leasing",
+      "approvedLineIds": ["fixture-line-1"],
+      "maintenanceDeadlines": [
+        { "kind": "revision", "dueAt": 500 }
+      ],
+      "installedProtection": ["pzb"],
+      "deliveredAt": 50,
+      "retiredAt": 1000,
+      "orientation": "along",
+      "condition": {
+        "mechanicsBasisPoints": 10000,
+        "driveBasisPoints": 10000,
+        "brakesBasisPoints": 10000,
+        "kilometresSinceMaintenance": 0,
+        "operatingHoursSinceMaintenance": 0,
+        "openObservations": 0
+      },
+      "restrictions": {},
+      "history": []
+    }
+  ],
+  "formations": [
+    {
+      "id": "fixture-formation-1",
+      "predecessorId": null,
+      "vehicleIds": ["fixture-vehicle-1"],
+      "pathReceiptId": "fixture-path-1"
+    }
+  ],
+  "personnelPools": [
+    {
+      "id": "fixture-personnel-1",
+      "numericId": 2001,
+      "operatorId": "fixture-operator",
+      "capacitySeconds": 28800,
+      "minimumRestSeconds": 39600,
+      "classDesignations": ["ET100"],
+      "pathReceiptIds": ["fixture-path-1"],
+      "qualificationHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+  ],
+  "pathReceipts": [
+    {
+      "id": "fixture-path-1",
+      "numericRouteId": 3001,
+      "operatorId": "fixture-operator",
+      "serviceLineIds": ["fixture-line-1"],
+      "decision": "confirmed",
+      "validFrom": 0,
+      "validUntil": 1000,
+      "platformLengthsMm": [100000],
+      "electrifications": ["overhead-ac15kv"],
+      "requiredProtection": ["pzb"],
+      "approvedClasses": ["ET100"],
+      "plannerStateHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "conflictCheckHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    }
+  ]
+}

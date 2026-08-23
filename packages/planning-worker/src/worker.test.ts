@@ -24,6 +24,7 @@ import {
   PLANNING_COORDINATE_AUTHORITY_SCHEMA,
   PLANNING_INFRASTRUCTURE_RELEASE_SCHEMA,
   PLANNING_PATH_REQUEST_SCHEMA,
+  PLANNING_PATH_REQUEST_SCHEMA_V3,
 } from "./contract.js";
 import {
   consumePendingPlanningCommands,
@@ -151,7 +152,7 @@ function requestBody(input: { readonly requestId: string; readonly trainId: stri
       name: input.reverse ? "B" : "A",
       massKg: 100_000,
       lengthMm: 100_000,
-      maximumSpeedKph: 120,
+      maximumSpeedMmps: 33_333,
       accelerationMmPerS2: 600,
       decelerationMmPerS2: 800,
     },
@@ -213,6 +214,32 @@ async function queueTwoPathRequests() {
 }
 
 describe("planning worker transaction", () => {
+  it("requires an exact positive mm/s speed in every new v4 request", async () => {
+    const body = requestBody({ requestId: "request-mmps", trainId: "train-mmps", trainNumber: 26_802 });
+    const { maximumSpeedMmps: _speed, ...trainWithoutSpeed } = body.train;
+
+    for (const train of [
+      trainWithoutSpeed,
+      { ...trainWithoutSpeed, maximumSpeedKph: 100 },
+      { ...trainWithoutSpeed, maximumSpeedMmps: 0 },
+      { ...trainWithoutSpeed, maximumSpeedMmps: Number.MAX_SAFE_INTEGER + 1 },
+    ]) {
+      await expect(queuePlanningPathRequest(db, {
+        worldId: WORLD,
+        requestingAccountId: ACCOUNT_A,
+        body: { ...body, train },
+        submittedAt: new Date(999),
+      })).rejects.toThrow(/maximumSpeedMmps|exakt die Felder/);
+    }
+    await expect(queuePlanningPathRequest(db, {
+      worldId: WORLD,
+      requestingAccountId: ACCOUNT_A,
+      body: { ...body, schemaVersion: PLANNING_PATH_REQUEST_SCHEMA_V3 },
+      submittedAt: new Date(999),
+    })).rejects.toThrow(/unbekanntes Schema/);
+    expect(await db.select().from(simulationCommands)).toEqual([]);
+  });
+
   it("binds one request to each authenticated account and keeps each retry idempotent", async () => {
     const [first, second] = await queueTwoPathRequests();
     const retry = await queuePlanningPathRequest(db, {
@@ -248,14 +275,22 @@ describe("planning worker transaction", () => {
     const coordinated = await processPlanningCommand(db, runtime, infrastructureReleases, WORLD, coordinate.id, new Date(3_000));
     expect(coordinated).toMatchObject({ projectionRevision: 1, resultEventSequence: 2, idempotentReplay: false });
     expect(capturedCoordinate).toMatchObject({
-      schemaVersion: "planning-coordinate/v1",
+      schemaVersion: "planning-coordinate/v2",
       worldId: WORLD,
       sourceId: release.sourceId,
       stations: release.stations,
       segments: release.segments,
       requests: [
-        expect.objectContaining({ requestNumericId: 1, trainId: "train-a" }),
-        expect.objectContaining({ requestNumericId: 2, trainId: "train-b" }),
+        expect.objectContaining({
+          requestNumericId: 1,
+          trainId: "train-a",
+          train: expect.objectContaining({ maximumSpeedMmps: 33_333 }),
+        }),
+        expect.objectContaining({
+          requestNumericId: 2,
+          trainId: "train-b",
+          train: expect.objectContaining({ maximumSpeedMmps: 33_333 }),
+        }),
       ],
     });
 
@@ -305,6 +340,49 @@ describe("planning worker transaction", () => {
     const coordinateReplay = await processPlanningCommand(db, runtime, infrastructureReleases, WORLD, coordinate.id, new Date(7_000));
     expect(coordinateReplay).toMatchObject({ projectionRevision: 1, stateHash: "a".repeat(64), resultEventSequence: 2, idempotentReplay: true });
     expect(await db.select().from(domainEvents).where(eq(domainEvents.worldId, WORLD))).toHaveLength(4);
+  });
+
+  it("reads persisted v3 KPH requests through the explicit legacy conversion", async () => {
+    const current = requestBody({ requestId: "request-a", trainId: "train-a", trainNumber: 26_802 });
+    const { maximumSpeedMmps: _newSpeed, ...legacyTrain } = current.train;
+    const legacy = {
+      ...current,
+      schemaVersion: PLANNING_PATH_REQUEST_SCHEMA_V3,
+      train: { ...legacyTrain, maximumSpeedKph: 120 },
+    };
+    const legacyCommandId = "11111111-2222-4222-8222-111111111111";
+    await db.insert(simulationCommands).values({
+      id: legacyCommandId,
+      worldId: WORLD,
+      requestingAccountId: ACCOUNT_A,
+      idempotencyKey: "planning-path-request:request-a",
+      commandType: "planning.path-request",
+      payload: { worldId: WORLD, requestingAccountId: ACCOUNT_A, ...legacy },
+      submittedAt: new Date(1_000),
+    });
+    const second = await queuePlanningPathRequest(db, {
+      worldId: WORLD,
+      requestingAccountId: ACCOUNT_B,
+      body: requestBody({ requestId: "request-b", trainId: "train-b", trainNumber: 26_804, reverse: true }),
+      submittedAt: new Date(1_001),
+    });
+    const coordinate = await queuePlanningCoordinate(db, {
+      worldId: WORLD,
+      authorityAccountId: AUTHORITY,
+      body: coordinateBody([legacyCommandId, second.id]),
+      submittedAt: new Date(2_000),
+    });
+
+    await processPlanningCommand(db, runtime, infrastructureReleases, WORLD, coordinate.id, new Date(3_000));
+
+    expect(capturedCoordinate?.schemaVersion).toBe("planning-coordinate/v2");
+    expect(capturedCoordinate?.requests[0]?.train).toEqual(expect.objectContaining({
+      maximumSpeedMmps: 33_334,
+    }));
+    expect(capturedCoordinate?.requests[0]?.train).not.toHaveProperty("maximumSpeedKph");
+    expect(capturedCoordinate?.requests[1]?.train).toEqual(expect.objectContaining({
+      maximumSpeedMmps: 33_333,
+    }));
   });
 
   it("findet ein Kommando nur mit der explizit gebundenen Welt", async () => {

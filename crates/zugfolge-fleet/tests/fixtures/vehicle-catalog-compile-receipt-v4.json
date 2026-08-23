@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "zugfolge-vehicle-catalog-compile-receipt/v4",
+  "compilerVersion": "zugfolge-vehicle-catalog-compiler/v4",
+  "sourceCatalogReleaseId": "fixture-vehicle-catalog-2026-v2",
+  "worldSeedId": "fixture-world-seed-v3-1",
+  "worldId": "00000000-0000-4000-8000-000000000387",
+  "producedAt": 100,
+  "economyReleaseId": "fixture-economy-release-1",
+  "economyReleaseSha256": "35b5199c3949ec7af65762f38184462d23fc23c584aaf5f02e35da44ae9e9857",
+  "economyProjectionSha256": "d73e443923d8e373a68cf1a352d527d0cb95a4366ee2e521cf6caf8b4f74f414",
+  "sourceCatalogSha256": "e3beef68a7a99347701788fe750deeab527fb54be2f5f5a89c79557092cbf20d",
+  "worldSeedSha256": "2e9f9342f2d82e1444e7f4734b44dc9573724c3f1e1b25cdb8ec72ce7c922df6",
+  "compiledCatalogSha256": "622978ce039979834dc506cdd3e62626d5ad4baaa0fc88e5c818a1d699c08a47",
+  "fleetAuthoritySha256": "798ae853d081d0f353328f2c43083488e5224ead569321a3b1de56535045488a",
+  "fleetAuthorityCatalogSha256": "5a3fd2cf03372daede3a70edd15ab5810674e41fbe7e7bfc35f20f3f8aa6dc1f",
+  "operationalInventorySha256": "7e638e5614f9860e02cae536eb892e38153f2086930246f37cc92cb793e137ca",
+  "outputSetSha256": "495662eed4e97355b3b312ce7df8e2537649e63c82e12d2c9a6dd162930bfb84"
+}

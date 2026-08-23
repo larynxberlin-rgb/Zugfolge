@@ -3,12 +3,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use zugfolge_sim::operational::{
-    AutomaticShuntingNeed, Direction, DispatchRequest, EdgeGeometryPoint, FormationVersion,
+    AutomaticShuntingNeed, Direction, DispatchRequest, EdgeGeometryPoint,
+    FormationDynamicsDerivationError, FormationDynamicsDerivationInput, FormationVersion,
     InterlockingRouteTemplate, MotionState, MovementKind, OPERATIONAL_PROJECTION_VALIDITY_MS,
-    OperationalDisruption, OperationalInfraRelease, OperationalWorld, PhysicalVehicle,
-    ProjectedMotionState, ProjectionKind, ResourceLifecycle, RouteLeg, RouteVersion,
-    ShuntingPurpose, SignalAspect, TrackInterval, VehicleCondition, VehicleRestriction,
-    VehicleType,
+    OperationalControlStands, OperationalDisruption, OperationalError, OperationalInfraRelease,
+    OperationalPowerSystem, OperationalVehicleRole, OperationalVehicleTraction, OperationalWorld,
+    PhysicalVehicle, ProjectedMotionState, ProjectionKind, ResourceLifecycle, RouteLeg,
+    RouteVersion, ShuntingPurpose, SignalAspect, TrackInterval, VehicleCondition,
+    VehicleRestriction, VehicleType, VehicleTypeRawFormationDynamics, derive_formation_dynamics,
 };
 
 fn set(values: &[&str]) -> BTreeSet<String> {
@@ -170,11 +172,16 @@ fn release() -> OperationalInfraRelease {
 fn vehicle_type(id: &str, length_mm: u32) -> VehicleType {
     VehicleType {
         id: id.to_owned(),
+        role: None,
+        control_stands: None,
+        traction: None,
+        electric_systems: None,
         length_mm,
         mass_kg: 80_000,
         maximum_speed_mmps: 20_000,
         power_watts: 4_000_000,
         starting_tractive_force_newtons: 240_000,
+        raw_formation_dynamics: None,
         maximum_acceleration_mmps2: 1_000,
         service_brake_mmps2: 1_000,
         emergency_brake_mmps2: 1_500,
@@ -199,6 +206,84 @@ fn vehicle(id: &str, type_id: &str) -> PhysicalVehicle {
         restrictions: BTreeMap::new(),
         history: Vec::new(),
     }
+}
+
+fn explicit_vehicle_type(
+    id: &str,
+    role: OperationalVehicleRole,
+    control_stands: OperationalControlStands,
+) -> VehicleType {
+    let mut kind = vehicle_type(id, 10_000);
+    kind.role = Some(role);
+    kind.control_stands = Some(control_stands);
+    let powered = matches!(
+        role,
+        OperationalVehicleRole::PoweredUnit | OperationalVehicleRole::Locomotive
+    );
+    kind.traction = Some(if powered {
+        OperationalVehicleTraction::Electric
+    } else {
+        OperationalVehicleTraction::Unpowered
+    });
+    kind.electric_systems = Some(if powered {
+        vec![OperationalPowerSystem::Ac15kv]
+    } else {
+        Vec::new()
+    });
+    kind.raw_formation_dynamics = Some(VehicleTypeRawFormationDynamics {
+        brake_weight_kg: kind.mass_kg,
+        maximum_acceleration_cap_mmps2: if powered { 1_000 } else { 0 },
+        service_brake_cap_mmps2: 1_000,
+        emergency_brake_multiplier_basis_points: 15_000,
+    });
+    if matches!(
+        role,
+        OperationalVehicleRole::Coach | OperationalVehicleRole::ControlCar
+    ) {
+        kind.power_watts = 0;
+        kind.starting_tractive_force_newtons = 0;
+        kind.maximum_acceleration_mmps2 = 0;
+    }
+    kind
+}
+
+fn bind_raw_reference(
+    kind: &mut VehicleType,
+    brake_weight_kg: u64,
+    maximum_acceleration_cap_mmps2: u32,
+    service_brake_cap_mmps2: u32,
+    emergency_brake_multiplier_basis_points: u16,
+) {
+    let derived = derive_formation_dynamics(FormationDynamicsDerivationInput {
+        total_mass_kg: kind.mass_kg,
+        effective_starting_tractive_force_newtons: u64::from(kind.starting_tractive_force_newtons),
+        total_brake_weight_kg: brake_weight_kg,
+        maximum_acceleration_cap_mmps2,
+        service_brake_cap_mmps2,
+        emergency_brake_multiplier_basis_points,
+    })
+    .expect("Test-Rohwerte sind ableitbar");
+    kind.raw_formation_dynamics = Some(VehicleTypeRawFormationDynamics {
+        brake_weight_kg,
+        maximum_acceleration_cap_mmps2,
+        service_brake_cap_mmps2,
+        emergency_brake_multiplier_basis_points,
+    });
+    kind.maximum_acceleration_mmps2 = derived.acceleration_mmps2;
+    kind.service_brake_mmps2 = derived.service_brake_mmps2;
+    kind.emergency_brake_mmps2 = derived.emergency_brake_mmps2;
+}
+
+fn explicit_vehicle(
+    id: &str,
+    type_id: &str,
+    powered: bool,
+    orientation: Direction,
+) -> PhysicalVehicle {
+    let mut asset = vehicle(id, type_id);
+    asset.powered = powered;
+    asset.orientation = orientation;
+    asset
 }
 
 fn world_with_release(infra_release: OperationalInfraRelease) -> OperationalWorld {
@@ -415,6 +500,914 @@ fn separated_vehicle_groups_can_share_a_long_track_and_coupling_is_atomic() {
     assert_eq!(formation.performance.length_mm, 30_000);
     assert_eq!(train.head_route_mm - train.tail_route_mm, 30_000);
     world.verify_invariants().unwrap();
+}
+
+#[test]
+fn explicit_traction_metadata_is_complete_and_type_consistent() {
+    let mut world =
+        OperationalWorld::new("world:traction-types", "region:a", 0, release()).unwrap();
+    let mut missing_system = explicit_vehicle_type(
+        "type:electric-without-system",
+        OperationalVehicleRole::PoweredUnit,
+        OperationalControlStands {
+            front: true,
+            rear: true,
+        },
+    );
+    missing_system.electric_systems = Some(Vec::new());
+    assert!(matches!(
+        world.register_vehicle_type(missing_system, true),
+        Err(OperationalError::IncompleteVehicleType(_))
+    ));
+
+    let mut partial_metadata = explicit_vehicle_type(
+        "type:partial-metadata",
+        OperationalVehicleRole::PoweredUnit,
+        OperationalControlStands {
+            front: true,
+            rear: true,
+        },
+    );
+    partial_metadata.traction = None;
+    partial_metadata.electric_systems = None;
+    assert!(matches!(
+        world.register_vehicle_type(partial_metadata, true),
+        Err(OperationalError::IncompleteVehicleType(_))
+    ));
+
+    let mut duplicate_system = explicit_vehicle_type(
+        "type:duplicate-system",
+        OperationalVehicleRole::PoweredUnit,
+        OperationalControlStands {
+            front: true,
+            rear: true,
+        },
+    );
+    duplicate_system.electric_systems = Some(vec![
+        OperationalPowerSystem::Ac15kv,
+        OperationalPowerSystem::Ac15kv,
+    ]);
+    assert!(matches!(
+        world.register_vehicle_type(duplicate_system, true),
+        Err(OperationalError::IncompleteVehicleType(_))
+    ));
+}
+
+#[test]
+fn explizite_formationsdynamik_entsteht_aus_rohsummen_statt_typprofilen() {
+    let mut world = OperationalWorld::new("world:raw-dynamics", "region:a", 0, release()).unwrap();
+    let mut locomotive = explicit_vehicle_type(
+        "type:raw-locomotive",
+        OperationalVehicleRole::Locomotive,
+        OperationalControlStands {
+            front: true,
+            rear: true,
+        },
+    );
+    bind_raw_reference(&mut locomotive, 40_000, 4_000, 8_000, 15_000);
+    let mut coach = explicit_vehicle_type(
+        "type:raw-coach",
+        OperationalVehicleRole::Coach,
+        OperationalControlStands {
+            front: false,
+            rear: false,
+        },
+    );
+    coach.protection_systems.clear();
+    bind_raw_reference(&mut coach, 80_000, 0, 8_000, 15_000);
+    world.register_vehicle_type(locomotive, true).unwrap();
+    world.register_vehicle_type(coach, false).unwrap();
+    for id in ["single", "loaded", "double-a", "double-b"] {
+        world
+            .register_vehicle(explicit_vehicle(
+                &format!("vehicle:{id}"),
+                "type:raw-locomotive",
+                true,
+                Direction::Along,
+            ))
+            .unwrap();
+    }
+    world
+        .register_vehicle(explicit_vehicle(
+            "vehicle:raw-coach",
+            "type:raw-coach",
+            false,
+            Direction::Along,
+        ))
+        .unwrap();
+
+    let single = world
+        .create_formation(
+            "formation:raw-single",
+            None,
+            vec!["vehicle:single".to_owned()],
+        )
+        .unwrap();
+    let loaded = world
+        .create_formation(
+            "formation:raw-loaded",
+            None,
+            vec!["vehicle:loaded".to_owned(), "vehicle:raw-coach".to_owned()],
+        )
+        .unwrap();
+    let double = world
+        .create_formation(
+            "formation:raw-double",
+            None,
+            vec!["vehicle:double-a".to_owned(), "vehicle:double-b".to_owned()],
+        )
+        .unwrap();
+
+    assert_eq!(single.performance.acceleration_mmps2, 3_000);
+    assert_eq!(loaded.performance.acceleration_mmps2, 1_500);
+    assert_eq!(double.performance.acceleration_mmps2, 3_000);
+    assert_eq!(single.performance.service_brake_mmps2, 4_903);
+    assert_eq!(loaded.performance.service_brake_mmps2, 7_354);
+    assert_eq!(double.performance.service_brake_mmps2, 4_903);
+    assert_eq!(loaded.performance.emergency_brake_mmps2, 11_031);
+}
+
+#[test]
+fn raw_dynamics_block_referenz_und_overflow_sind_fail_closed() {
+    let mut missing = explicit_vehicle_type(
+        "type:raw-missing",
+        OperationalVehicleRole::Locomotive,
+        OperationalControlStands {
+            front: true,
+            rear: true,
+        },
+    );
+    missing.raw_formation_dynamics = None;
+    assert!(matches!(
+        missing.validate(true),
+        Err(OperationalError::IncompleteVehicleType(_))
+    ));
+
+    let mut manipulated = explicit_vehicle_type(
+        "type:raw-manipulated",
+        OperationalVehicleRole::Locomotive,
+        OperationalControlStands {
+            front: true,
+            rear: true,
+        },
+    );
+    manipulated.maximum_acceleration_mmps2 += 1;
+    assert!(matches!(
+        manipulated.validate(true),
+        Err(OperationalError::IncompleteVehicleType(_))
+    ));
+
+    let mut partial_json = serde_json::to_value(explicit_vehicle_type(
+        "type:raw-partial-json",
+        OperationalVehicleRole::Locomotive,
+        OperationalControlStands {
+            front: true,
+            rear: true,
+        },
+    ))
+    .unwrap();
+    partial_json["rawFormationDynamics"]
+        .as_object_mut()
+        .unwrap()
+        .remove("serviceBrakeCapMmps2");
+    assert!(serde_json::from_value::<VehicleType>(partial_json).is_err());
+
+    assert_eq!(
+        derive_formation_dynamics(FormationDynamicsDerivationInput {
+            total_mass_kg: 1,
+            effective_starting_tractive_force_newtons: u64::MAX,
+            total_brake_weight_kg: 1,
+            maximum_acceleration_cap_mmps2: 1,
+            service_brake_cap_mmps2: 1,
+            emergency_brake_multiplier_basis_points: 20_000,
+        }),
+        Err(FormationDynamicsDerivationError::ArithmeticOverflow)
+    );
+
+    let mut world = OperationalWorld::new("world:raw-overflow", "region:a", 0, release()).unwrap();
+    let mut huge_power = explicit_vehicle_type(
+        "type:raw-overflow",
+        OperationalVehicleRole::PoweredUnit,
+        OperationalControlStands {
+            front: true,
+            rear: true,
+        },
+    );
+    huge_power.power_watts = u64::MAX;
+    world.register_vehicle_type(huge_power, true).unwrap();
+    let mut vehicle = explicit_vehicle(
+        "vehicle:raw-overflow",
+        "type:raw-overflow",
+        true,
+        Direction::Along,
+    );
+    vehicle.restrictions.insert(
+        "power-a".to_owned(),
+        VehicleRestriction::PowerBasisPoints(10_000),
+    );
+    vehicle.restrictions.insert(
+        "power-b".to_owned(),
+        VehicleRestriction::PowerBasisPoints(9_999),
+    );
+    world.register_vehicle(vehicle).unwrap();
+    assert_eq!(
+        world.create_formation(
+            "formation:raw-overflow",
+            None,
+            vec!["vehicle:raw-overflow".to_owned()],
+        ),
+        Err(OperationalError::ArithmeticOverflow)
+    );
+}
+
+#[test]
+fn initiale_und_geaenderte_formationen_sind_traktionskompatibel() {
+    let mut world = world();
+    let powered_type = |id: &str,
+                        traction: OperationalVehicleTraction,
+                        electric_systems: Vec<OperationalPowerSystem>| {
+        let mut kind = explicit_vehicle_type(
+            id,
+            OperationalVehicleRole::PoweredUnit,
+            OperationalControlStands {
+                front: true,
+                rear: true,
+            },
+        );
+        kind.traction = Some(traction);
+        kind.electric_systems = Some(electric_systems);
+        kind
+    };
+    world
+        .register_vehicle_type(
+            powered_type(
+                "type:electric-ac15",
+                OperationalVehicleTraction::Electric,
+                vec![OperationalPowerSystem::Ac15kv],
+            ),
+            true,
+        )
+        .unwrap();
+    world
+        .register_vehicle_type(
+            powered_type(
+                "type:diesel",
+                OperationalVehicleTraction::Diesel,
+                Vec::new(),
+            ),
+            true,
+        )
+        .unwrap();
+    world
+        .register_vehicle_type(
+            powered_type(
+                "type:electric-multi",
+                OperationalVehicleTraction::Electric,
+                vec![
+                    OperationalPowerSystem::Ac15kv,
+                    OperationalPowerSystem::Ac25kv,
+                ],
+            ),
+            true,
+        )
+        .unwrap();
+    world
+        .register_vehicle_type(
+            powered_type(
+                "type:bemu-ac15",
+                OperationalVehicleTraction::Battery,
+                vec![OperationalPowerSystem::Ac15kv],
+            ),
+            true,
+        )
+        .unwrap();
+    for (id, type_id) in [
+        ("vehicle:electric-1", "type:electric-ac15"),
+        ("vehicle:diesel-1", "type:diesel"),
+        ("vehicle:multi-1", "type:electric-multi"),
+        ("vehicle:bemu-1", "type:bemu-ac15"),
+        ("vehicle:bemu-2", "type:bemu-ac15"),
+        ("vehicle:bemu-3", "type:bemu-ac15"),
+        ("vehicle:bemu-4", "type:bemu-ac15"),
+    ] {
+        world
+            .register_vehicle(explicit_vehicle(id, type_id, true, Direction::Along))
+            .unwrap();
+    }
+
+    assert!(matches!(
+        world.create_formation(
+            "formation:mixed-traction",
+            None,
+            vec![
+                "vehicle:electric-1".to_owned(),
+                "vehicle:diesel-1".to_owned(),
+            ],
+        ),
+        Err(OperationalError::InvalidFormation(_))
+    ));
+    assert!(matches!(
+        world.create_formation(
+            "formation:mixed-systems",
+            None,
+            vec![
+                "vehicle:electric-1".to_owned(),
+                "vehicle:multi-1".to_owned(),
+            ],
+        ),
+        Err(OperationalError::InvalidFormation(_))
+    ));
+    let initial_bemu = world
+        .create_formation(
+            "formation:bemu-compatible",
+            None,
+            vec!["vehicle:bemu-1".to_owned(), "vehicle:bemu-2".to_owned()],
+        )
+        .expect("gleichartige BEMU-Doppeltraktion ist kompatibel");
+    assert!(initial_bemu.performance.mobile);
+
+    world
+        .materialize_train(
+            "shunt:traction-change",
+            "R 90",
+            "operator:1",
+            MovementKind::Shunting,
+            "route:v1",
+            "formation:1",
+            20_000,
+            None,
+            false,
+        )
+        .unwrap();
+    assert!(matches!(
+        world.change_formation(
+            "shunt:traction-change",
+            "formation:changed-mixed-traction",
+            vec![
+                "vehicle:electric-1".to_owned(),
+                "vehicle:diesel-1".to_owned(),
+            ],
+        ),
+        Err(OperationalError::InvalidFormation(_))
+    ));
+    assert!(matches!(
+        world.change_formation(
+            "shunt:traction-change",
+            "formation:changed-mixed-systems",
+            vec![
+                "vehicle:electric-1".to_owned(),
+                "vehicle:multi-1".to_owned(),
+            ],
+        ),
+        Err(OperationalError::InvalidFormation(_))
+    ));
+    world
+        .change_formation(
+            "shunt:traction-change",
+            "formation:changed-bemu-compatible",
+            vec!["vehicle:bemu-3".to_owned(), "vehicle:bemu-4".to_owned()],
+        )
+        .expect("changeFormation akzeptiert gleichartige BEMU-Doppeltraktion");
+    assert_eq!(
+        world.trains["shunt:traction-change"].formation_version_id,
+        "formation:changed-bemu-compatible"
+    );
+}
+
+#[test]
+fn power_restriction_is_applied_per_asset_before_order_independent_summation() {
+    let mut world = world();
+    let mut restricted = vehicle("vehicle:power-restricted", "type:short");
+    restricted.restrictions.insert(
+        "restriction:third-power".to_owned(),
+        VehicleRestriction::PowerBasisPoints(3_333),
+    );
+    world.register_vehicle(restricted).unwrap();
+    world
+        .register_vehicle(vehicle("vehicle:power-healthy", "type:short"))
+        .unwrap();
+
+    let restricted_first = world
+        .create_formation(
+            "formation:power-restricted-first",
+            None,
+            vec![
+                "vehicle:power-restricted".to_owned(),
+                "vehicle:power-healthy".to_owned(),
+            ],
+        )
+        .unwrap();
+    let restricted_last = world
+        .create_formation(
+            "formation:power-restricted-last",
+            None,
+            vec![
+                "vehicle:power-healthy".to_owned(),
+                "vehicle:power-restricted".to_owned(),
+            ],
+        )
+        .unwrap();
+
+    assert_eq!(restricted_first.performance, restricted_last.performance);
+    assert_eq!(restricted_first.performance.power_watts, 5_333_000);
+    assert_eq!(restricted_first.performance.acceleration_mmps2, 2_000);
+}
+
+#[test]
+fn power_restriction_rounded_to_zero_removes_drive_and_acceleration() {
+    let mut world = world();
+    let mut tiny_type = vehicle_type("type:tiny-power", 10_000);
+    tiny_type.power_watts = 1_000;
+    world.register_vehicle_type(tiny_type, true).unwrap();
+    let mut tiny = vehicle("vehicle:tiny-power", "type:tiny-power");
+    tiny.restrictions.insert(
+        "restriction:near-total-power-loss".to_owned(),
+        VehicleRestriction::PowerBasisPoints(1),
+    );
+    world.register_vehicle(tiny).unwrap();
+
+    let formation = world
+        .create_formation(
+            "formation:tiny-power",
+            None,
+            vec!["vehicle:tiny-power".to_owned()],
+        )
+        .unwrap();
+
+    assert_eq!(formation.performance.power_watts, 0);
+    assert_eq!(formation.performance.acceleration_mmps2, 0);
+    assert!(!formation.performance.mobile);
+}
+
+#[test]
+fn immobilized_powered_asset_contributes_no_drive_or_protection() {
+    let mut world = world();
+    let mut healthy_type = vehicle_type("type:healthy-protected", 10_000);
+    healthy_type.protection_systems = set(&["lzb", "pzb"]);
+    world.register_vehicle_type(healthy_type, true).unwrap();
+    world
+        .register_vehicle(vehicle(
+            "vehicle:healthy-protected",
+            "type:healthy-protected",
+        ))
+        .unwrap();
+    let mut immobilized = vehicle("vehicle:immobilized", "type:short");
+    immobilized.restrictions.insert(
+        "restriction:immobilized".to_owned(),
+        VehicleRestriction::Immobilized,
+    );
+    world.register_vehicle(immobilized).unwrap();
+
+    let immobilized_first = world
+        .create_formation(
+            "formation:immobilized-first",
+            None,
+            vec![
+                "vehicle:immobilized".to_owned(),
+                "vehicle:healthy-protected".to_owned(),
+            ],
+        )
+        .unwrap();
+    let immobilized_last = world
+        .create_formation(
+            "formation:immobilized-last",
+            None,
+            vec![
+                "vehicle:healthy-protected".to_owned(),
+                "vehicle:immobilized".to_owned(),
+            ],
+        )
+        .unwrap();
+
+    assert_eq!(immobilized_first.performance, immobilized_last.performance);
+    assert!(immobilized_first.performance.mobile);
+    assert_eq!(immobilized_first.performance.power_watts, 4_000_000);
+    assert_eq!(immobilized_first.performance.acceleration_mmps2, 1_000);
+    assert_eq!(
+        immobilized_first.performance.protection_systems,
+        set(&["lzb", "pzb"])
+    );
+
+    let immobilized_only = world
+        .create_formation(
+            "formation:immobilized-only",
+            None,
+            vec!["vehicle:immobilized".to_owned()],
+        )
+        .unwrap();
+    assert!(!immobilized_only.performance.mobile);
+    assert_eq!(immobilized_only.performance.power_watts, 0);
+    assert_eq!(immobilized_only.performance.acceleration_mmps2, 0);
+    assert!(immobilized_only.performance.protection_systems.is_empty());
+}
+
+#[test]
+fn unpowered_restrictions_cannot_remove_powered_asset_protection() {
+    let mut world = world();
+    let mut powered_type = vehicle_type("type:protected-power", 10_000);
+    powered_type.protection_systems = set(&["lzb", "pzb"]);
+    world.register_vehicle_type(powered_type, true).unwrap();
+    world
+        .register_vehicle(vehicle("vehicle:protected-power", "type:protected-power"))
+        .unwrap();
+
+    let mut trailer_type = vehicle_type("type:restricted-trailer", 20_000);
+    trailer_type.power_watts = 0;
+    trailer_type.starting_tractive_force_newtons = 0;
+    trailer_type.maximum_acceleration_mmps2 = 0;
+    trailer_type.protection_systems.clear();
+    world.register_vehicle_type(trailer_type, false).unwrap();
+    let mut trailer = vehicle("vehicle:restricted-trailer", "type:restricted-trailer");
+    trailer.powered = false;
+    trailer.restrictions.insert(
+        "restriction:trailer-pzb-unavailable".to_owned(),
+        VehicleRestriction::ProtectionUnavailable("pzb".to_owned()),
+    );
+    world.register_vehicle(trailer).unwrap();
+
+    let powered_first = world
+        .create_formation(
+            "formation:powered-first",
+            None,
+            vec![
+                "vehicle:protected-power".to_owned(),
+                "vehicle:restricted-trailer".to_owned(),
+            ],
+        )
+        .unwrap();
+    let powered_last = world
+        .create_formation(
+            "formation:powered-last",
+            None,
+            vec![
+                "vehicle:restricted-trailer".to_owned(),
+                "vehicle:protected-power".to_owned(),
+            ],
+        )
+        .unwrap();
+
+    assert_eq!(powered_first.performance, powered_last.performance);
+    assert_eq!(
+        powered_first.performance.protection_systems,
+        set(&["lzb", "pzb"])
+    );
+}
+
+#[test]
+fn locomotive_coach_control_car_formation_exposes_control_stands_at_both_ends() {
+    let mut world = world();
+    let locomotive = explicit_vehicle_type(
+        "type:locomotive",
+        OperationalVehicleRole::Locomotive,
+        OperationalControlStands {
+            front: true,
+            rear: true,
+        },
+    );
+    let mut coach = explicit_vehicle_type(
+        "type:coach",
+        OperationalVehicleRole::Coach,
+        OperationalControlStands {
+            front: false,
+            rear: false,
+        },
+    );
+    coach.protection_systems.clear();
+    let mut control_car = explicit_vehicle_type(
+        "type:control-car",
+        OperationalVehicleRole::ControlCar,
+        OperationalControlStands {
+            front: true,
+            rear: false,
+        },
+    );
+    control_car.protection_systems = set(&["etcs-level2", "pzb"]);
+    world.register_vehicle_type(locomotive, true).unwrap();
+    world.register_vehicle_type(coach, false).unwrap();
+    world.register_vehicle_type(control_car, false).unwrap();
+    world
+        .register_vehicle(explicit_vehicle(
+            "vehicle:locomotive",
+            "type:locomotive",
+            true,
+            Direction::Along,
+        ))
+        .unwrap();
+    world
+        .register_vehicle(explicit_vehicle(
+            "vehicle:coach",
+            "type:coach",
+            false,
+            Direction::Along,
+        ))
+        .unwrap();
+    world
+        .register_vehicle(explicit_vehicle(
+            "vehicle:control-car",
+            "type:control-car",
+            false,
+            // Die physische Front des Steuerwagens liegt am Zugschluss.
+            Direction::Against,
+        ))
+        .unwrap();
+
+    let formation = world
+        .create_formation(
+            "formation:reversible-push-pull",
+            None,
+            vec![
+                "vehicle:locomotive".to_owned(),
+                "vehicle:coach".to_owned(),
+                "vehicle:control-car".to_owned(),
+            ],
+        )
+        .unwrap();
+
+    assert!(formation.performance.mobile);
+    assert!(formation.performance.front_control_stand_available);
+    assert!(formation.performance.rear_control_stand_available);
+    assert_eq!(formation.performance.protection_systems, set(&["pzb"]));
+    assert_eq!(
+        formation.vehicle_ids,
+        vec![
+            "vehicle:locomotive".to_owned(),
+            "vehicle:coach".to_owned(),
+            "vehicle:control-car".to_owned(),
+        ]
+    );
+}
+
+#[test]
+fn unpowered_control_car_at_train_head_is_authoritative_for_protection() {
+    let mut world = world();
+    let mut control_car = explicit_vehicle_type(
+        "type:protected-control-car",
+        OperationalVehicleRole::ControlCar,
+        OperationalControlStands {
+            front: true,
+            rear: false,
+        },
+    );
+    control_car.protection_systems = set(&["etcs-level2", "pzb"]);
+    let mut coach = explicit_vehicle_type(
+        "type:middle-coach",
+        OperationalVehicleRole::Coach,
+        OperationalControlStands {
+            front: false,
+            rear: false,
+        },
+    );
+    coach.protection_systems.clear();
+    let mut locomotive = explicit_vehicle_type(
+        "type:rear-locomotive",
+        OperationalVehicleRole::Locomotive,
+        OperationalControlStands {
+            front: true,
+            rear: true,
+        },
+    );
+    locomotive.protection_systems = set(&["lzb", "pzb"]);
+    world.register_vehicle_type(control_car, false).unwrap();
+    world.register_vehicle_type(coach, false).unwrap();
+    world.register_vehicle_type(locomotive, true).unwrap();
+    let mut control_asset = explicit_vehicle(
+        "vehicle:protected-control-car",
+        "type:protected-control-car",
+        false,
+        Direction::Along,
+    );
+    control_asset.restrictions.insert(
+        "restriction:control-car-pzb-unavailable".to_owned(),
+        VehicleRestriction::ProtectionUnavailable("pzb".to_owned()),
+    );
+    world.register_vehicle(control_asset).unwrap();
+    world
+        .register_vehicle(explicit_vehicle(
+            "vehicle:middle-coach",
+            "type:middle-coach",
+            false,
+            Direction::Along,
+        ))
+        .unwrap();
+    world
+        .register_vehicle(explicit_vehicle(
+            "vehicle:rear-locomotive",
+            "type:rear-locomotive",
+            true,
+            Direction::Along,
+        ))
+        .unwrap();
+
+    let formation = world
+        .create_formation(
+            "formation:control-car-leading",
+            None,
+            vec![
+                "vehicle:protected-control-car".to_owned(),
+                "vehicle:middle-coach".to_owned(),
+                "vehicle:rear-locomotive".to_owned(),
+            ],
+        )
+        .unwrap();
+
+    assert!(formation.performance.mobile);
+    assert!(formation.performance.front_control_stand_available);
+    assert!(formation.performance.rear_control_stand_available);
+    assert_eq!(
+        formation.performance.protection_systems,
+        set(&["etcs-level2"])
+    );
+}
+
+#[test]
+fn powered_formation_rejects_vehicle_without_control_stand_at_train_head() {
+    let mut world = world();
+    let mut coach = explicit_vehicle_type(
+        "type:leading-coach",
+        OperationalVehicleRole::Coach,
+        OperationalControlStands {
+            front: false,
+            rear: false,
+        },
+    );
+    coach.protection_systems.clear();
+    let locomotive = explicit_vehicle_type(
+        "type:trailing-locomotive",
+        OperationalVehicleRole::Locomotive,
+        OperationalControlStands {
+            front: true,
+            rear: true,
+        },
+    );
+    world.register_vehicle_type(coach, false).unwrap();
+    world.register_vehicle_type(locomotive, true).unwrap();
+    world
+        .register_vehicle(explicit_vehicle(
+            "vehicle:leading-coach",
+            "type:leading-coach",
+            false,
+            Direction::Along,
+        ))
+        .unwrap();
+    world
+        .register_vehicle(explicit_vehicle(
+            "vehicle:trailing-locomotive",
+            "type:trailing-locomotive",
+            true,
+            Direction::Along,
+        ))
+        .unwrap();
+
+    let error = world
+        .create_formation(
+            "formation:invalid-leading-coach",
+            None,
+            vec![
+                "vehicle:leading-coach".to_owned(),
+                "vehicle:trailing-locomotive".to_owned(),
+            ],
+        )
+        .unwrap_err();
+    assert_eq!(
+        error,
+        OperationalError::InvalidFormation("formation:invalid-leading-coach".to_owned())
+    );
+}
+
+#[test]
+fn unpowered_coach_stock_remains_valid_but_immobile() {
+    let mut world = world();
+    let mut coach = explicit_vehicle_type(
+        "type:unpowered-coach",
+        OperationalVehicleRole::Coach,
+        OperationalControlStands {
+            front: false,
+            rear: false,
+        },
+    );
+    coach.protection_systems.clear();
+    let control_car = explicit_vehicle_type(
+        "type:unpowered-control-car",
+        OperationalVehicleRole::ControlCar,
+        OperationalControlStands {
+            front: true,
+            rear: false,
+        },
+    );
+    world.register_vehicle_type(coach, false).unwrap();
+    world.register_vehicle_type(control_car, false).unwrap();
+    world
+        .register_vehicle(explicit_vehicle(
+            "vehicle:unpowered-coach",
+            "type:unpowered-coach",
+            false,
+            Direction::Along,
+        ))
+        .unwrap();
+    world
+        .register_vehicle(explicit_vehicle(
+            "vehicle:unpowered-control-car",
+            "type:unpowered-control-car",
+            false,
+            Direction::Against,
+        ))
+        .unwrap();
+
+    let formation = world
+        .create_formation(
+            "formation:unpowered-stock",
+            None,
+            vec![
+                "vehicle:unpowered-coach".to_owned(),
+                "vehicle:unpowered-control-car".to_owned(),
+            ],
+        )
+        .unwrap();
+
+    assert!(!formation.performance.mobile);
+    assert!(!formation.performance.front_control_stand_available);
+    assert!(formation.performance.rear_control_stand_available);
+    assert_eq!(formation.performance.power_watts, 0);
+    assert_eq!(formation.performance.acceleration_mmps2, 0);
+}
+
+#[test]
+fn explicit_vehicle_metadata_is_strict_and_cannot_mix_with_legacy_formation() {
+    let legacy = vehicle_type("type:legacy-validation", 10_000);
+    legacy.validate(true).unwrap();
+
+    let mut partial = legacy.clone();
+    partial.id = "type:partial-metadata".to_owned();
+    partial.role = Some(OperationalVehicleRole::Locomotive);
+    assert_eq!(
+        partial.validate(true),
+        Err(OperationalError::IncompleteVehicleType(
+            "type:partial-metadata".to_owned()
+        ))
+    );
+
+    let invalid_control_car = explicit_vehicle_type(
+        "type:control-car-without-stand",
+        OperationalVehicleRole::ControlCar,
+        OperationalControlStands {
+            front: false,
+            rear: false,
+        },
+    );
+    assert!(matches!(
+        invalid_control_car.validate(false),
+        Err(OperationalError::IncompleteVehicleType(_))
+    ));
+
+    let mut powered_control_car = legacy.clone();
+    powered_control_car.id = "type:control-car-with-drive-values".to_owned();
+    powered_control_car.role = Some(OperationalVehicleRole::ControlCar);
+    powered_control_car.control_stands = Some(OperationalControlStands {
+        front: true,
+        rear: false,
+    });
+    assert!(matches!(
+        powered_control_car.validate(false),
+        Err(OperationalError::IncompleteVehicleType(_))
+    ));
+
+    let locomotive = explicit_vehicle_type(
+        "type:explicit-mixed-locomotive",
+        OperationalVehicleRole::Locomotive,
+        OperationalControlStands {
+            front: true,
+            rear: true,
+        },
+    );
+    assert!(matches!(
+        locomotive.validate(false),
+        Err(OperationalError::IncompleteVehicleType(_))
+    ));
+
+    let mut world = world();
+    world.register_vehicle_type(locomotive, true).unwrap();
+    world
+        .register_vehicle(explicit_vehicle(
+            "vehicle:explicit-mixed-locomotive",
+            "type:explicit-mixed-locomotive",
+            true,
+            Direction::Along,
+        ))
+        .unwrap();
+    let error = world
+        .create_formation(
+            "formation:mixed-explicit-legacy",
+            None,
+            vec![
+                "vehicle:explicit-mixed-locomotive".to_owned(),
+                "vehicle:1".to_owned(),
+            ],
+        )
+        .unwrap_err();
+    assert_eq!(
+        error,
+        OperationalError::InvalidFormation("formation:mixed-explicit-legacy".to_owned())
+    );
 }
 
 #[test]

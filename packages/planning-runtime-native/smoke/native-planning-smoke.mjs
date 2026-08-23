@@ -32,7 +32,7 @@ const request = (id, trainId, number, origin, destination) => ({
     name: `Regionaltriebwagen ${trainId}`,
     massKg: 120_000,
     lengthMm: 140_000,
-    maximumSpeedKph: 140,
+    maximumSpeedMmps: 38_888,
     accelerationMmPerS2: 600,
     decelerationMmPerS2: 800,
   },
@@ -41,7 +41,7 @@ const request = (id, trainId, number, origin, destination) => ({
 const firstRequest = request(1, "train-east", 26_802, "west", "east");
 const secondRequest = request(2, "train-west", 26_804, "east", "west");
 const input = {
-  schemaVersion: "planning-coordinate/v1",
+  schemaVersion: "planning-coordinate/v2",
   worldId: "11111111-1111-4111-8111-111111111111",
   runId: "period-2026-window-1",
   expectedProjectionRevision: null,

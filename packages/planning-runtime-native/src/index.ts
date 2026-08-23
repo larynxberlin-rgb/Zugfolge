@@ -6,7 +6,8 @@ import {
   type PlanningProjectionV1,
 } from "@zugfolge/planning-projection";
 
-export const PLANNING_COORDINATE_SCHEMA = "planning-coordinate/v1" as const;
+export const PLANNING_COORDINATE_SCHEMA_V1 = "planning-coordinate/v1" as const;
+export const PLANNING_COORDINATE_SCHEMA = "planning-coordinate/v2" as const;
 export const PLANNING_APPLY_ALTERNATIVE_SCHEMA = "planning-apply-alternative/v1" as const;
 export const PLANNING_RUNTIME_STATE_SCHEMA = "zugfolge-planning-runtime-state/v1" as const;
 export const PLANNING_RUNTIME_RESULT_SCHEMA = "zugfolge-planning-runtime-result/v1" as const;
@@ -37,7 +38,26 @@ export interface PlanningCoordinateSegment {
   readonly maximumVirtualBlockLengthMm: number;
 }
 
-export interface PlanningCoordinateRequest {
+interface PlanningCoordinateTrainBase {
+  readonly numericId: number;
+  readonly name: string;
+  readonly massKg: number;
+  readonly lengthMm: number;
+  readonly accelerationMmPerS2: number;
+  readonly decelerationMmPerS2: number;
+}
+
+export interface PlanningCoordinateTrainV1 extends PlanningCoordinateTrainBase {
+  /** Legacy-v1: Rust rechnet wie bisher mit `Speed::from_km_h` auf. */
+  readonly maximumSpeedKph: number;
+}
+
+export interface PlanningCoordinateTrainV2 extends PlanningCoordinateTrainBase {
+  /** Serverseitig abgeleitete, verlustfreie Fahrzeug-Vmax in mm/s. */
+  readonly maximumSpeedMmps: number;
+}
+
+interface PlanningCoordinateRequestBase<TTrain extends PlanningCoordinateTrainBase> {
   readonly requestNumericId: number;
   readonly trainId: string;
   readonly trainCategory: "long-distance" | "suburban" | "regional" | "freight" | "supplementary";
@@ -55,18 +75,14 @@ export interface PlanningCoordinateRequest {
   readonly stepS: number;
   readonly extraRunningTimeS: number;
   readonly maxOperationalStops: number;
-  readonly train: {
-    readonly numericId: number;
-    readonly name: string;
-    readonly massKg: number;
-    readonly lengthMm: number;
-    readonly maximumSpeedKph: number;
-    readonly accelerationMmPerS2: number;
-    readonly decelerationMmPerS2: number;
-  };
+  readonly train: TTrain;
   /** Ausschliesslich serverseitig aus dem gepinnten Release aufgeloest. */
   readonly boundaryWindows?: readonly PlanningCoordinateBoundaryWindow[];
 }
+
+export type PlanningCoordinateRequestV1 = PlanningCoordinateRequestBase<PlanningCoordinateTrainV1>;
+export type PlanningCoordinateRequestV2 = PlanningCoordinateRequestBase<PlanningCoordinateTrainV2>;
+export type PlanningCoordinateRequest = PlanningCoordinateRequestV1 | PlanningCoordinateRequestV2;
 
 export interface PlanningCoordinateBoundaryWindow {
   readonly windowId: string;
@@ -77,9 +93,11 @@ export interface PlanningCoordinateBoundaryWindow {
   readonly latestS: number;
 }
 
-/** Productive input for one deterministic PlanningRun over a complete window. */
-export interface PlanningCoordinateCommand {
-  readonly schemaVersion: typeof PLANNING_COORDINATE_SCHEMA;
+interface PlanningCoordinateCommandBase<
+  TSchema extends typeof PLANNING_COORDINATE_SCHEMA_V1 | typeof PLANNING_COORDINATE_SCHEMA,
+  TRequest extends PlanningCoordinateRequest,
+> {
+  readonly schemaVersion: TSchema;
   readonly worldId: string;
   readonly runId: string;
   readonly expectedProjectionRevision: number | null;
@@ -91,8 +109,23 @@ export interface PlanningCoordinateCommand {
   readonly corridorName: string;
   readonly stations: readonly PlanningCoordinateStation[];
   readonly segments: readonly PlanningCoordinateSegment[];
-  readonly requests: readonly PlanningCoordinateRequest[];
+  readonly requests: readonly TRequest[];
 }
+
+/** Persistierter Legacy-Eingang; KPH wird ausschließlich in diesem Pfad aufgerundet. */
+export type PlanningCoordinateCommandV1 = PlanningCoordinateCommandBase<
+  typeof PLANNING_COORDINATE_SCHEMA_V1,
+  PlanningCoordinateRequestV1
+>;
+
+/** Produktiver Eingang mit verlustfreier, serverautoritativ abgeleiteter mm/s-Vmax. */
+export type PlanningCoordinateCommandV2 = PlanningCoordinateCommandBase<
+  typeof PLANNING_COORDINATE_SCHEMA,
+  PlanningCoordinateRequestV2
+>;
+
+/** Productive input for one deterministic PlanningRun over a complete window. */
+export type PlanningCoordinateCommand = PlanningCoordinateCommandV1 | PlanningCoordinateCommandV2;
 
 /** Exact payload persisted by game-api for `planning.apply-alternative`. */
 export interface PlanningApplyAlternativePayload {
@@ -151,6 +184,134 @@ function safeInteger(value: unknown, name: string): asserts value is number {
   invariant(Number.isSafeInteger(value) && (value as number) >= 0, `${name} ist keine nichtnegative sichere Ganzzahl.`);
 }
 
+function positiveSafeInteger(value: unknown, name: string): asserts value is number {
+  safeInteger(value, name);
+  invariant(value > 0, `${name} ist nicht positiv.`);
+}
+
+function nonEmptyString(value: unknown, name: string): asserts value is string {
+  invariant(typeof value === "string" && value.trim().length > 0, `${name} ist keine nichtleere Zeichenkette.`);
+}
+
+function exactKeys(
+  value: Record<string, unknown>,
+  required: readonly string[],
+  optional: readonly string[],
+  name: string,
+): void {
+  const keys = Object.keys(value);
+  invariant(required.every((key) => Object.hasOwn(value, key)), `${name} besitzt nicht alle Pflichtfelder.`);
+  const allowed = new Set([...required, ...optional]);
+  invariant(keys.every((key) => allowed.has(key)), `${name} besitzt unbekannte Felder.`);
+}
+
+function validateCoordinateRequest(
+  value: unknown,
+  schemaVersion: PlanningCoordinateCommand["schemaVersion"],
+  name: string,
+): void {
+  record(value, name);
+  exactKeys(value, [
+    "requestNumericId",
+    "trainId",
+    "trainCategory",
+    "trainNumber",
+    "originStationId",
+    "destinationStationId",
+    "desiredDepartureS",
+    "operatingDays",
+    "stops",
+    "earlierS",
+    "laterS",
+    "stepS",
+    "extraRunningTimeS",
+    "maxOperationalStops",
+    "train",
+  ], ["boundaryWindows"], name);
+  safeInteger(value["requestNumericId"], `${name}.requestNumericId`);
+  for (const key of ["trainId", "originStationId", "destinationStationId"] as const) {
+    nonEmptyString(value[key], `${name}.${key}`);
+  }
+  positiveSafeInteger(value["trainNumber"], `${name}.trainNumber`);
+  for (const key of [
+    "desiredDepartureS",
+    "earlierS",
+    "laterS",
+    "extraRunningTimeS",
+    "maxOperationalStops",
+  ] as const) {
+    safeInteger(value[key], `${name}.${key}`);
+  }
+  positiveSafeInteger(value["stepS"], `${name}.stepS`);
+  invariant(Array.isArray(value["stops"]), `${name}.stops ist keine Liste.`);
+  if (Object.hasOwn(value, "boundaryWindows")) {
+    invariant(Array.isArray(value["boundaryWindows"]), `${name}.boundaryWindows ist keine Liste.`);
+  }
+
+  record(value["train"], `${name}.train`);
+  const train = value["train"];
+  const speedField = schemaVersion === PLANNING_COORDINATE_SCHEMA_V1
+    ? "maximumSpeedKph"
+    : "maximumSpeedMmps";
+  exactKeys(train, [
+    "numericId",
+    "name",
+    "massKg",
+    "lengthMm",
+    speedField,
+    "accelerationMmPerS2",
+    "decelerationMmPerS2",
+  ], [], `${name}.train`);
+  safeInteger(train["numericId"], `${name}.train.numericId`);
+  nonEmptyString(train["name"], `${name}.train.name`);
+  for (const key of [
+    "massKg",
+    "lengthMm",
+    speedField,
+    "accelerationMmPerS2",
+    "decelerationMmPerS2",
+  ] as const) {
+    positiveSafeInteger(train[key], `${name}.train.${key}`);
+  }
+}
+
+function validateCoordinateInput(input: PlanningCoordinateCommand): void {
+  record(input, "PlanningRun-Eingang");
+  invariant(
+    input.schemaVersion === PLANNING_COORDINATE_SCHEMA
+      || input.schemaVersion === PLANNING_COORDINATE_SCHEMA_V1,
+    "PlanningRun-Eingang hat ein unbekanntes Schema.",
+  );
+  exactKeys(input, [
+    "schemaVersion",
+    "worldId",
+    "runId",
+    "expectedProjectionRevision",
+    "seedWorld",
+    "seedPeriod",
+    "sourceId",
+    "corridorId",
+    "corridorName",
+    "stations",
+    "segments",
+    "requests",
+  ], [], "PlanningRun-Eingang");
+  for (const key of ["worldId", "runId", "sourceId", "corridorId", "corridorName"] as const) {
+    nonEmptyString(input[key], `PlanningRun-Eingang.${key}`);
+  }
+  invariant(/^[0-9]+$/u.test(input.seedWorld), "PlanningRun-Eingang.seedWorld ist keine u64-Dezimalzahl.");
+  safeInteger(input.seedPeriod, "PlanningRun-Eingang.seedPeriod");
+  if (input.expectedProjectionRevision !== null) {
+    safeInteger(input.expectedProjectionRevision, "PlanningRun-Eingang.expectedProjectionRevision");
+  }
+  invariant(Array.isArray(input.stations), "PlanningRun-Eingang.stations ist keine Liste.");
+  invariant(Array.isArray(input.segments), "PlanningRun-Eingang.segments ist keine Liste.");
+  invariant(Array.isArray(input.requests), "PlanningRun-Eingang.requests ist keine Liste.");
+  input.requests.forEach((request, index) => {
+    validateCoordinateRequest(request, input.schemaVersion, `PlanningRun-Eingang.requests[${index}]`);
+  });
+}
+
 function nativeResultJson(value: unknown, operation: string): string {
   if (value instanceof Error) throw value;
   invariant(typeof value === "string", `${operation} lieferte weder JSON noch einen JavaScript-Fehler.`);
@@ -179,7 +340,7 @@ function decodeResult(nativeResult: unknown, expectedWorldId: string, operation:
 export function planningRuntimeFromAddon(addon: PlanningNativeAddon): PlanningRuntime {
   return Object.freeze({
     coordinate(input: PlanningCoordinateCommand) {
-      invariant(input.schemaVersion === PLANNING_COORDINATE_SCHEMA, "PlanningRun-Eingang hat ein unbekanntes Schema.");
+      validateCoordinateInput(input);
       const result = decodeResult(
         addon.coordinatePlanningRun(JSON.stringify(input)),
         input.worldId,

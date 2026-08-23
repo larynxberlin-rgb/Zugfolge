@@ -200,16 +200,205 @@ impl TrackInterval {
     }
 }
 
+/// Betriebliche Rolle eines physischen Fahrzeugtyps.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OperationalVehicleRole {
+    PoweredUnit,
+    Locomotive,
+    Coach,
+    ControlCar,
+}
+
+/// Antriebsart eines Operational-v2-Fahrzeugtyps.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OperationalVehicleTraction {
+    /// Nicht angetriebenes Fahrzeug.
+    Unpowered,
+    /// Rein elektrischer Antrieb.
+    Electric,
+    /// Dieselantrieb.
+    Diesel,
+    /// Batterieantrieb mit den angegebenen Oberleitungs-Ladesystemen.
+    Battery,
+}
+
+/// Vom Fahrzeug beherrschtes elektrisches Stromsystem.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OperationalPowerSystem {
+    Ac15kv,
+    Ac25kv,
+    Dc750v,
+    Dc1500v,
+    Dc3000v,
+}
+
+impl OperationalVehicleRole {
+    fn is_powered(self) -> bool {
+        matches!(self, Self::PoweredUnit | Self::Locomotive)
+    }
+}
+
+/// Physische Fuehrerstaende eines Fahrzeugtyps vor Einbaurichtung im Verband.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OperationalControlStands {
+    pub front: bool,
+    pub rear: bool,
+}
+
+impl OperationalControlStands {
+    fn at_formation_front(self, orientation: Direction) -> bool {
+        match orientation {
+            Direction::Along => self.front,
+            Direction::Against => self.rear,
+        }
+    }
+
+    fn at_formation_rear(self, orientation: Direction) -> bool {
+        match orientation {
+            Direction::Along => self.rear,
+            Direction::Against => self.front,
+        }
+    }
+}
+
+/// Nenner fuer alle Basispunktwerte der gemeinsamen Fahrdynamikableitung.
+pub const FORMATION_DYNAMICS_BASIS_POINTS: u16 = 10_000;
+/// Obergrenze einer sichtbaren Anfahrbeschleunigungsannahme.
+pub const MAX_FORMATION_ACCELERATION_MMPS2: u32 = 10_000;
+/// Obergrenze eines abgeleiteten Bremswerts.
+pub const MAX_FORMATION_BRAKE_MMPS2: u32 = 20_000;
+
+/// Vollstaendige Rohparameter eines Fahrzeugtyps fuer die spaetere
+/// formationsbezogene Fahrdynamikableitung.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct VehicleTypeRawFormationDynamics {
+    pub brake_weight_kg: u64,
+    pub maximum_acceleration_cap_mmps2: u32,
+    pub service_brake_cap_mmps2: u32,
+    pub emergency_brake_multiplier_basis_points: u16,
+}
+
+/// Rein ganzzahlige Eingabe fuer eine konkrete, bereits gekuppelte Formation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FormationDynamicsDerivationInput {
+    pub total_mass_kg: u64,
+    pub effective_starting_tractive_force_newtons: u64,
+    pub total_brake_weight_kg: u64,
+    pub maximum_acceleration_cap_mmps2: u32,
+    pub service_brake_cap_mmps2: u32,
+    pub emergency_brake_multiplier_basis_points: u16,
+}
+
+/// Deterministisches Ergebnis der gemeinsamen Fahrdynamikableitung.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DerivedFormationDynamics {
+    pub acceleration_mmps2: u32,
+    pub service_brake_mmps2: u32,
+    pub emergency_brake_mmps2: u32,
+}
+
+/// Fail-closed-Fehler des gemeinsamen Fahrdynamikvertrags.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FormationDynamicsDerivationError {
+    InvalidInput,
+    ArithmeticOverflow,
+    InvalidOutput,
+}
+
+/// Leitet das Fahrprofil ausschliesslich aus den Rohwerten des tatsaechlich
+/// gekuppelten Verbands ab. Die Rechnung verwendet weder Gleitkommazahlen noch
+/// Uhr- oder Umgebungswerte und rundet bei jeder Division konservativ ab.
+pub fn derive_formation_dynamics(
+    input: FormationDynamicsDerivationInput,
+) -> Result<DerivedFormationDynamics, FormationDynamicsDerivationError> {
+    let powered = input.effective_starting_tractive_force_newtons > 0;
+    if input.total_mass_kg == 0
+        || input.total_brake_weight_kg == 0
+        || (powered
+            && !(1..=MAX_FORMATION_ACCELERATION_MMPS2)
+                .contains(&input.maximum_acceleration_cap_mmps2))
+        || (!powered && input.maximum_acceleration_cap_mmps2 != 0)
+        || !(1..=MAX_FORMATION_BRAKE_MMPS2).contains(&input.service_brake_cap_mmps2)
+        || !(FORMATION_DYNAMICS_BASIS_POINTS + 1..=30_000)
+            .contains(&input.emergency_brake_multiplier_basis_points)
+    {
+        return Err(FormationDynamicsDerivationError::InvalidInput);
+    }
+
+    let acceleration_mmps2 = if powered {
+        let theoretical = input
+            .effective_starting_tractive_force_newtons
+            .checked_mul(1_000)
+            .ok_or(FormationDynamicsDerivationError::ArithmeticOverflow)?
+            / input.total_mass_kg;
+        input.maximum_acceleration_cap_mmps2.min(
+            u32::try_from(theoretical)
+                .map_err(|_| FormationDynamicsDerivationError::ArithmeticOverflow)?,
+        )
+    } else {
+        0
+    };
+    let theoretical_service = input
+        .total_brake_weight_kg
+        .checked_mul(9_806)
+        .ok_or(FormationDynamicsDerivationError::ArithmeticOverflow)?
+        / input.total_mass_kg;
+    let service_brake_mmps2 = input.service_brake_cap_mmps2.min(
+        u32::try_from(theoretical_service)
+            .map_err(|_| FormationDynamicsDerivationError::ArithmeticOverflow)?,
+    );
+    let emergency_brake_mmps2 = u64::from(service_brake_mmps2)
+        .checked_mul(u64::from(input.emergency_brake_multiplier_basis_points))
+        .ok_or(FormationDynamicsDerivationError::ArithmeticOverflow)?
+        / u64::from(FORMATION_DYNAMICS_BASIS_POINTS);
+    let emergency_brake_mmps2 = u32::try_from(emergency_brake_mmps2)
+        .map_err(|_| FormationDynamicsDerivationError::ArithmeticOverflow)?;
+
+    if (powered && acceleration_mmps2 == 0)
+        || service_brake_mmps2 == 0
+        || emergency_brake_mmps2 <= service_brake_mmps2
+        || emergency_brake_mmps2 > MAX_FORMATION_BRAKE_MMPS2
+    {
+        return Err(FormationDynamicsDerivationError::InvalidOutput);
+    }
+    Ok(DerivedFormationDynamics {
+        acceleration_mmps2,
+        service_brake_mmps2,
+        emergency_brake_mmps2,
+    })
+}
+
 /// Physische Pflichtdaten eines Fahrzeugtyps. Nullwerte sind unzulaessig.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct VehicleType {
     pub id: String,
+    /// `None` ist ausschliesslich der rueckwaertskompatible Operational-v2-Altpfad.
+    /// Neue Releases muessen Rolle und Fuehrerstaende gemeinsam explizit setzen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<OperationalVehicleRole>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control_stands: Option<OperationalControlStands>,
+    /// `None` ist nur zusammen mit allen uebrigen Metadaten-Optionen der
+    /// rueckwaertskompatible Legacy-Pfad.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub traction: Option<OperationalVehicleTraction>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub electric_systems: Option<Vec<OperationalPowerSystem>>,
     pub length_mm: u32,
     pub mass_kg: u64,
     pub maximum_speed_mmps: u32,
     pub power_watts: u64,
     pub starting_tractive_force_newtons: u32,
+    /// Neue explizite Typmetadaten tragen diesen Rohblock vollstaendig. Sein
+    /// Fehlen kennzeichnet ausschliesslich den unveraenderten Legacy-Pfad.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_formation_dynamics: Option<VehicleTypeRawFormationDynamics>,
     pub maximum_acceleration_mmps2: u32,
     pub service_brake_mmps2: u32,
     pub emergency_brake_mmps2: u32,
@@ -228,7 +417,72 @@ impl VehicleType {
             || (self.power_watts > 0
                 && self.starting_tractive_force_newtons > 0
                 && self.maximum_acceleration_mmps2 > 0);
-        if complete && powered_complete {
+        let role_complete = match (
+            self.role,
+            self.control_stands,
+            self.traction,
+            self.electric_systems.as_deref(),
+            self.raw_formation_dynamics,
+        ) {
+            // Ein rein alter v2-Datensatz bleibt ladbar. Die Formation darf
+            // diesen Altpfad nicht mit expliziten Fahrzeugtypen mischen.
+            (None, None, None, None, None) => true,
+            (
+                Some(role),
+                Some(control_stands),
+                Some(traction),
+                Some(electric_systems),
+                Some(raw),
+            ) => {
+                let has_control_stand = control_stands.front || control_stands.rear;
+                let control_stands_match_role = match role {
+                    OperationalVehicleRole::Coach => !has_control_stand,
+                    OperationalVehicleRole::PoweredUnit
+                    | OperationalVehicleRole::Locomotive
+                    | OperationalVehicleRole::ControlCar => has_control_stand,
+                };
+                let drive_values_match_role = role.is_powered()
+                    || (self.power_watts == 0
+                        && self.starting_tractive_force_newtons == 0
+                        && self.maximum_acceleration_mmps2 == 0);
+                let systems_are_canonical =
+                    electric_systems.windows(2).all(|items| items[0] < items[1]);
+                let traction_matches_powered = match traction {
+                    OperationalVehicleTraction::Unpowered => {
+                        !powered && electric_systems.is_empty()
+                    }
+                    OperationalVehicleTraction::Diesel => powered && electric_systems.is_empty(),
+                    OperationalVehicleTraction::Electric | OperationalVehicleTraction::Battery => {
+                        powered && !electric_systems.is_empty()
+                    }
+                };
+                let reference_matches_raw =
+                    derive_formation_dynamics(FormationDynamicsDerivationInput {
+                        total_mass_kg: self.mass_kg,
+                        effective_starting_tractive_force_newtons: u64::from(
+                            self.starting_tractive_force_newtons,
+                        ),
+                        total_brake_weight_kg: raw.brake_weight_kg,
+                        maximum_acceleration_cap_mmps2: raw.maximum_acceleration_cap_mmps2,
+                        service_brake_cap_mmps2: raw.service_brake_cap_mmps2,
+                        emergency_brake_multiplier_basis_points: raw
+                            .emergency_brake_multiplier_basis_points,
+                    })
+                    .is_ok_and(|expected| {
+                        expected.acceleration_mmps2 == self.maximum_acceleration_mmps2
+                            && expected.service_brake_mmps2 == self.service_brake_mmps2
+                            && expected.emergency_brake_mmps2 == self.emergency_brake_mmps2
+                    });
+                role.is_powered() == powered
+                    && control_stands_match_role
+                    && drive_values_match_role
+                    && systems_are_canonical
+                    && traction_matches_powered
+                    && reference_matches_raw
+            }
+            _ => false,
+        };
+        if complete && powered_complete && role_complete {
             Ok(())
         } else {
             Err(OperationalError::IncompleteVehicleType(self.id.clone()))
@@ -285,6 +539,10 @@ pub struct FormationPerformance {
     pub acceleration_mmps2: u32,
     pub service_brake_mmps2: u32,
     pub emergency_brake_mmps2: u32,
+    /// Nutzbarer Fuehrerstand am aeusseren Ende der Zugspitze.
+    pub front_control_stand_available: bool,
+    /// Nutzbarer Fuehrerstand am aeusseren Ende des Zugschlusses.
+    pub rear_control_stand_available: bool,
     pub protection_systems: BTreeSet<String>,
     pub mobile: bool,
 }
@@ -295,6 +553,7 @@ pub struct FormationPerformance {
 pub struct FormationVersion {
     pub id: String,
     pub predecessor_id: Option<String>,
+    /// Autoritative Reihenfolge von Zugspitze nach Zugschluss.
     pub vehicle_ids: Vec<String>,
     pub performance: FormationPerformance,
 }
@@ -952,10 +1211,25 @@ impl OperationalWorld {
         let mut acceleration = 0_u32;
         let mut service_brake = u32::MAX;
         let mut emergency_brake = u32::MAX;
-        let mut protection: Option<BTreeSet<String>> = None;
-        let mut mobile = false;
+        let mut raw_starting_tractive_force = 0_u64;
+        let mut raw_brake_weight = 0_u64;
+        let mut raw_acceleration_cap = u32::MAX;
+        let mut raw_service_brake_cap = u32::MAX;
+        let mut raw_emergency_brake_multiplier = u16::MAX;
+        let mut restricted_service_brake = u32::MAX;
+        let mut restricted_emergency_brake = u32::MAX;
+        let mut legacy_powered_protection: Option<BTreeSet<String>> = None;
+        let mut front_tip_protection = BTreeSet::new();
+        let mut front_control_stand_available = false;
+        let mut rear_control_stand_available = false;
+        let mut explicit_metadata: Option<bool> = None;
+        let mut powered_configuration: Option<(
+            OperationalVehicleTraction,
+            &[OperationalPowerSystem],
+        )> = None;
+        let mut has_usable_drive = false;
         let mut seen = BTreeSet::new();
-        for vehicle_id in &vehicle_ids {
+        for (index, vehicle_id) in vehicle_ids.iter().enumerate() {
             if !seen.insert(vehicle_id) {
                 return Err(OperationalError::InvalidFormation(id));
             }
@@ -967,45 +1241,194 @@ impl OperationalWorld {
                 .vehicle_types
                 .get(&vehicle.type_id)
                 .ok_or_else(|| OperationalError::UnknownVehicleType(vehicle.type_id.clone()))?;
-            length = length.saturating_add(u64::from(kind.length_mm));
-            mass = mass.saturating_add(kind.mass_kg);
+            let vehicle_has_explicit_metadata = kind.role.is_some();
+            match explicit_metadata {
+                None => explicit_metadata = Some(vehicle_has_explicit_metadata),
+                Some(expected) if expected != vehicle_has_explicit_metadata => {
+                    // Der Legacy-Pfad darf explizite Fuehrerstandsdaten nicht
+                    // teilweise ueberstimmen oder umgehen.
+                    return Err(OperationalError::InvalidFormation(id));
+                }
+                Some(_) => {}
+            }
+            if vehicle_has_explicit_metadata && vehicle.powered {
+                let traction = kind
+                    .traction
+                    .expect("validierter expliziter Typ besitzt Traktion");
+                let electric_systems = kind
+                    .electric_systems
+                    .as_deref()
+                    .expect("validierter expliziter Typ besitzt Stromsysteme");
+                if let Some((expected_traction, expected_systems)) = powered_configuration {
+                    if traction != expected_traction || electric_systems != expected_systems {
+                        return Err(OperationalError::InvalidFormation(id));
+                    }
+                } else {
+                    powered_configuration = Some((traction, electric_systems));
+                }
+            }
+            if vehicle_has_explicit_metadata {
+                length = length
+                    .checked_add(u64::from(kind.length_mm))
+                    .ok_or(OperationalError::ArithmeticOverflow)?;
+                mass = mass
+                    .checked_add(kind.mass_kg)
+                    .ok_or(OperationalError::ArithmeticOverflow)?;
+                let raw = kind
+                    .raw_formation_dynamics
+                    .expect("validierter expliziter Typ besitzt Rohdynamik");
+                raw_brake_weight = raw_brake_weight
+                    .checked_add(raw.brake_weight_kg)
+                    .ok_or(OperationalError::ArithmeticOverflow)?;
+                raw_service_brake_cap = raw_service_brake_cap.min(raw.service_brake_cap_mmps2);
+                raw_emergency_brake_multiplier =
+                    raw_emergency_brake_multiplier.min(raw.emergency_brake_multiplier_basis_points);
+            } else {
+                length = length.saturating_add(u64::from(kind.length_mm));
+                mass = mass.saturating_add(kind.mass_kg);
+            }
             maximum_speed = maximum_speed.min(kind.maximum_speed_mmps);
             service_brake = service_brake.min(kind.service_brake_mmps2);
             emergency_brake = emergency_brake.min(kind.emergency_brake_mmps2);
-            if vehicle.powered {
-                mobile = true;
-                power = power.saturating_add(kind.power_watts);
-                acceleration = acceleration.saturating_add(kind.maximum_acceleration_mmps2);
-                protection = Some(match protection {
-                    None => kind.protection_systems.clone(),
-                    Some(existing) => existing
-                        .intersection(&kind.protection_systems)
-                        .cloned()
-                        .collect(),
-                });
-            }
+            let mut vehicle_power = kind.power_watts;
+            let mut vehicle_protection = kind.protection_systems.clone();
+            let mut immobilized = false;
             for restriction in vehicle.restrictions.values() {
                 match restriction {
                     VehicleRestriction::PowerBasisPoints(bp) => {
-                        power = power.saturating_mul(u64::from(*bp)) / 10_000;
+                        if vehicle.powered {
+                            if vehicle_has_explicit_metadata
+                                && (*bp == 0 || *bp > FORMATION_DYNAMICS_BASIS_POINTS)
+                            {
+                                return Err(OperationalError::InvalidFormation(id));
+                            }
+                            // Fleet Authority fuehrt Leistung in ganzen kW.
+                            // Deshalb ist das kW-Raster Teil des gemeinsamen
+                            // Vertrags und wird vor jeder assetlokalen
+                            // Basispunktrestriktion angewandt.
+                            vehicle_power = if vehicle_has_explicit_metadata {
+                                (vehicle_power / 1_000)
+                                    .checked_mul(u64::from(*bp))
+                                    .ok_or(OperationalError::ArithmeticOverflow)?
+                                    / u64::from(FORMATION_DYNAMICS_BASIS_POINTS)
+                                    * 1_000
+                            } else {
+                                ((vehicle_power / 1_000).saturating_mul(u64::from(*bp)) / 10_000)
+                                    .saturating_mul(1_000)
+                            };
+                        }
                     }
                     VehicleRestriction::MaximumSpeed(speed) => {
                         maximum_speed = maximum_speed.min(*speed)
                     }
                     VehicleRestriction::ServiceBrake(brake) => {
-                        service_brake = service_brake.min(*brake)
+                        service_brake = service_brake.min(*brake);
+                        restricted_service_brake = restricted_service_brake.min(*brake);
                     }
                     VehicleRestriction::EmergencyBrake(brake) => {
-                        emergency_brake = emergency_brake.min(*brake)
+                        emergency_brake = emergency_brake.min(*brake);
+                        restricted_emergency_brake = restricted_emergency_brake.min(*brake);
                     }
                     VehicleRestriction::ProtectionUnavailable(system) => {
-                        if let Some(systems) = &mut protection {
-                            systems.remove(system);
-                        }
+                        vehicle_protection.remove(system);
                     }
-                    VehicleRestriction::Immobilized => mobile = false,
+                    VehicleRestriction::Immobilized => immobilized = true,
                     VehicleRestriction::DoorAvailabilityBasisPoints(_) => {}
                 }
+            }
+            if vehicle.powered && (immobilized || vehicle_power == 0) {
+                vehicle_protection.clear();
+            }
+            if let Some(control_stands) = kind.control_stands {
+                if index == 0 {
+                    front_control_stand_available =
+                        control_stands.at_formation_front(vehicle.orientation);
+                    front_tip_protection = vehicle_protection.clone();
+                }
+                if index + 1 == vehicle_ids.len() {
+                    rear_control_stand_available =
+                        control_stands.at_formation_rear(vehicle.orientation);
+                }
+            }
+            if vehicle.powered && !immobilized && vehicle_power > 0 {
+                has_usable_drive = true;
+                power = if vehicle_has_explicit_metadata {
+                    power
+                        .checked_add(vehicle_power)
+                        .ok_or(OperationalError::ArithmeticOverflow)?
+                } else {
+                    power.saturating_add(vehicle_power)
+                };
+                if vehicle_has_explicit_metadata {
+                    // PowerBasisPoints schraenkt die kontinuierliche Leistung
+                    // auf dem Authority-kW-Raster ein. Die belegte
+                    // Anfahrzugkraft bleibt bei positiver Restleistung
+                    // unveraendert; erst null kW oder Immobilized nimmt den
+                    // Antrieb vollstaendig aus der Rohsumme.
+                    raw_starting_tractive_force = raw_starting_tractive_force
+                        .checked_add(u64::from(kind.starting_tractive_force_newtons))
+                        .ok_or(OperationalError::ArithmeticOverflow)?;
+                    raw_acceleration_cap = raw_acceleration_cap.min(
+                        kind.raw_formation_dynamics
+                            .expect("validierter expliziter Typ besitzt Rohdynamik")
+                            .maximum_acceleration_cap_mmps2,
+                    );
+                } else {
+                    acceleration = acceleration.saturating_add(kind.maximum_acceleration_mmps2);
+                }
+                legacy_powered_protection = Some(match legacy_powered_protection {
+                    None => vehicle_protection,
+                    Some(existing) => existing
+                        .intersection(&vehicle_protection)
+                        .cloned()
+                        .collect(),
+                });
+            }
+        }
+        let explicit_metadata = explicit_metadata.unwrap_or(false);
+        let protection_systems = if explicit_metadata {
+            if has_usable_drive && !front_control_stand_available {
+                return Err(OperationalError::InvalidFormation(id));
+            }
+            if front_control_stand_available {
+                front_tip_protection
+            } else {
+                BTreeSet::new()
+            }
+        } else {
+            // Rueckwaertskompatibler Operational-v2-Altpfad: Alte Typen
+            // kannten weder Rolle noch Fuehrerstaende und bleiben deshalb in
+            // beiden Richtungen fahrbar, sobald ein nutzbarer Antrieb besteht.
+            front_control_stand_available = has_usable_drive;
+            rear_control_stand_available = has_usable_drive;
+            legacy_powered_protection.unwrap_or_default()
+        };
+        if explicit_metadata {
+            let raw_acceleration_cap = if has_usable_drive {
+                raw_acceleration_cap
+            } else {
+                0
+            };
+            let derived = derive_formation_dynamics(FormationDynamicsDerivationInput {
+                total_mass_kg: mass,
+                effective_starting_tractive_force_newtons: raw_starting_tractive_force,
+                total_brake_weight_kg: raw_brake_weight,
+                maximum_acceleration_cap_mmps2: raw_acceleration_cap,
+                service_brake_cap_mmps2: raw_service_brake_cap,
+                emergency_brake_multiplier_basis_points: raw_emergency_brake_multiplier,
+            })
+            .map_err(|_| OperationalError::InvalidFormation(id.clone()))?;
+            acceleration = derived.acceleration_mmps2;
+            service_brake = derived.service_brake_mmps2.min(restricted_service_brake);
+            emergency_brake = derived
+                .emergency_brake_mmps2
+                .min(restricted_emergency_brake);
+            if service_brake == 0
+                || emergency_brake == 0
+                || emergency_brake <= service_brake
+                || (has_usable_drive && acceleration == 0)
+            {
+                return Err(OperationalError::InvalidFormation(id));
             }
         }
         let length_mm = u32::try_from(length).map_err(|_| OperationalError::ArithmeticOverflow)?;
@@ -1018,11 +1441,13 @@ impl OperationalWorld {
                 mass_kg: mass,
                 maximum_speed_mmps: maximum_speed,
                 power_watts: power,
-                acceleration_mmps2: acceleration.max(1),
+                acceleration_mmps2: acceleration,
                 service_brake_mmps2: service_brake,
                 emergency_brake_mmps2: emergency_brake,
-                protection_systems: protection.unwrap_or_default(),
-                mobile,
+                front_control_stand_available,
+                rear_control_stand_available,
+                protection_systems,
+                mobile: has_usable_drive,
             },
         })
     }

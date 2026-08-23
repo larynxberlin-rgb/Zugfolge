@@ -324,6 +324,9 @@ describe("produktive M5-HTTP-Single-Writer-Grenze", () => {
       fleetIngestToken: TOKEN,
       fleetRuntime: testRuntime(),
       fleetAuthorityReleases: { [WORLD]: authorityRelease() },
+      fleetAuthorityConfigurations: {
+        [WORLD]: { producedAt: 0, authorityRelease: authorityRelease() },
+      },
       logger: false,
     });
     await app.ready();
@@ -407,6 +410,37 @@ describe("produktive M5-HTTP-Single-Writer-Grenze", () => {
       expect(response.statusCode, JSON.stringify(forged)).toBe(400);
       expect(response.json()).toMatchObject({ code: "fleet_invalid_request" });
     }
+  });
+
+  it("verweigert eine Initialisierungszeit abweichend von der Loader-Konfiguration", async () => {
+    const response = await post(WORLD, "initialize", { producedAt: 1 });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ code: "fleet_seed_time_conflict" });
+  });
+
+  it("bewahrt die explizite Initialisierungszeit des historischen release-only-v1-Pfads", async () => {
+    const legacy = buildApp({
+      db,
+      verifyToken: async () => {
+        throw new Error("nicht verwendet");
+      },
+      fleetIngestToken: TOKEN,
+      fleetRuntime: testRuntime(),
+      fleetAuthorityReleases: { [WORLD]: authorityRelease() },
+      logger: false,
+    });
+    await legacy.ready();
+    const response = await legacy.inject({
+      method: "POST",
+      url: `/internal/worlds/${WORLD}/fleet/initialize`,
+      headers: { authorization: `Bearer ${TOKEN}` },
+      payload: { producedAt: 50 },
+    });
+
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json()).toMatchObject({ snapshot: { producedAt: 50 } });
+    await legacy.close();
   });
 
   it("fuehrt Init, Formation, Dienst und Trasse atomar aus und replayt A nach B historisch", async () => {
