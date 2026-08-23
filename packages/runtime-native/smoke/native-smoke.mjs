@@ -335,7 +335,10 @@ assert.ok(
   ),
   "die v2-Aufhebung muss den technischen Freigabebeleg tragen",
 );
-const operationalRestored = operationalRuntime.restore(operationalCleared.state);
+const operationalRestored = operationalRuntime.restore(
+  operationalCleared.state,
+  operationalCleared.initializationHash,
+);
 assert.equal(operationalRestored.stateHash, operationalCleared.stateHash);
 const operationalRetry = await operationalRuntime.apply(
   operationalCleared.state,
