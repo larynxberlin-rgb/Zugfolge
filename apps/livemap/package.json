@@ -14,12 +14,12 @@
     "@zugfolge/glossary": "workspace:*",
     "@zugfolge/livemap-stream": "workspace:*",
     "@zugfolge/player-context": "workspace:*",
-    "maplibre-gl": "6.3.0",
+    "maplibre-gl": "6.4.1",
     "pmtiles": "4.5.0"
   },
   "devDependencies": {
     "typescript": "7.0.2",
-    "vite": "8.2.1",
-    "vitest": "4.1.10"
+    "vite": "8.2.2",
+    "vitest": "4.1.11"
   }
 }
