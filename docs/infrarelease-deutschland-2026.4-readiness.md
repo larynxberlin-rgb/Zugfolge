@@ -225,7 +225,7 @@ Evidence-Ziele bleiben davon unberührt. Der
 SHA-256 des explizit erwarteten NAPI-Addons sowie der tatsächlich geladenen
 TypeScript-Runtimemodule. Der harte Lauf verifiziert zusätzlich deren
 kanonischen Gesamt-Hash
-`be94232030f8f7cc4995dcc1e4c78f386ab4396967ec18a3d7cf6a6e5db648f2`;
+`2540fcc5eedf7f6a76283d2922ff31d3d244d3bfb5dd15da9af92f05fa78628d`;
 ein lediglich vorhandener, aber nicht exakt gepinnter Build bleibt rot. Unter Linux muss cgroup-v2
 exakt 512 MiB `memory.max`, `memory.swap.max=0` und einen Peak innerhalb der
 Grenze belegen. Zusätzlich müssen `oom` und `oom_kill` in `memory.events` vor

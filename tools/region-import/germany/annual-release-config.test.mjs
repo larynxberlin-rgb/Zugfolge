@@ -610,7 +610,7 @@ test("2026.4-Dokumente und Real-Audits enthalten keine verworfenen oder ueberzog
     assert.match(documentation, /08c15a206f643d904151f50b6697c8e691329839a97baf0582c3d07586c60da7/u);
     assert.match(documentation, /d181d47a6ee09e9e462e440f4fba7e732130854d34fabdc19f910c66f70cb709/u);
     assert.match(documentation, /b773792afbe1bc4d487e3465f02f415d2e1fe9137559d4560ff785c3f6f74d1b/u);
-    assert.match(documentation, /be94232030f8f7cc4995dcc1e4c78f386ab4396967ec18a3d7cf6a6e5db648f2/u);
+    assert.match(documentation, /2540fcc5eedf7f6a76283d2922ff31d3d244d3bfb5dd15da9af92f05fa78628d/u);
     assert.doesNotMatch(documentation, /f118cee9211a5e0a725d6fcbaab4eac84179d7218e12ed9d3810a9dc848c0fde/u);
     assert.doesNotMatch(documentation, /338f57829a88209249125e73cc10bdd88b1c7453d3304472359a5f7790b02090/u);
     assert.doesNotMatch(documentation, /e42d190811a00f615ed7be20d97b2201e696148915aedd0bd8ba8401fd33d67e/u);
@@ -652,13 +652,13 @@ test("2026.4-Dokumente und Real-Audits enthalten keine verworfenen oder ueberzog
   assert.match(ci, /ZUGFOLGE_REAL_GERMANY_EXPECTED_SIGNED_DEPLOYMENT_SHA256=228d7c7cef743536f3b2621db200da898b4a1d30ec2cfe3b19d57fdea55c00c0/u);
   assert.match(ci, /ZUGFOLGE_REAL_GERMANY_EXPECTED_DEPLOYMENT_HASH=4d9627d85ceab1c893a0fe3366e4d5f14f6173c58e164728d92825b81eb87098/u);
   assert.match(ci, /ZUGFOLGE_REAL_GERMANY_EXPECTED_TYPESCRIPT_BUILD_SET_SHA256/u);
-  assert.match(ci, /be94232030f8f7cc4995dcc1e4c78f386ab4396967ec18a3d7cf6a6e5db648f2/u);
+  assert.match(ci, /2540fcc5eedf7f6a76283d2922ff31d3d244d3bfb5dd15da9af92f05fa78628d/u);
   assert.match(ci, /--message-format=json-render-diagnostics[\s\S]*compiler-artifact[\s\S]*ZUGFOLGE_OPERATIONAL_STREAMING_REAL_BINARY/u);
   assert.doesNotMatch(ci, /find target\/release\/deps[\s\S]*operational_streaming_real/u);
   assert.match(runtimeAudit, /git-rev-parse-head-and-status-porcelain-including-untracked\/v1/u);
   assert.match(runtimeAudit, /zugfolge-germany-runtime-build-proof\/v1/u);
   assert.match(runtimeAudit, /ZUGFOLGE_REAL_GERMANY_EXPECTED_TYPESCRIPT_BUILD_SET_SHA256/u);
-  assert.match(runtimeAudit, /be94232030f8f7cc4995dcc1e4c78f386ab4396967ec18a3d7cf6a6e5db648f2/u);
+  assert.match(runtimeAudit, /2540fcc5eedf7f6a76283d2922ff31d3d244d3bfb5dd15da9af92f05fa78628d/u);
   assert.match(runtimeAudit, /zugfolge-germany-alpha-release-candidate-proof\/v1/u);
   assert.match(runtimeAudit, /acceptanceEligible: acceptance\.eligible/u);
   assert.match(runtimeAudit, /unsignedDocument\.deployment[\s\S]*signedDocument\.deployment/u);

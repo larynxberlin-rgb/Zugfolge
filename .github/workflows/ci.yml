@@ -306,7 +306,7 @@ jobs:
           addon_sha256="$(sha256sum "${addon_path}" | awk '{print $1}')"
           printf 'ZUGFOLGE_REAL_GERMANY_EXPECTED_NAPI_SHA256=%s\n' "${addon_sha256}" >> "${GITHUB_ENV}"
           printf 'ZUGFOLGE_REAL_GERMANY_EXPECTED_TYPESCRIPT_BUILD_SET_SHA256=%s\n' \
-            'be94232030f8f7cc4995dcc1e4c78f386ab4396967ec18a3d7cf6a6e5db648f2' >> "${GITHUB_ENV}"
+            '2540fcc5eedf7f6a76283d2922ff31d3d244d3bfb5dd15da9af92f05fa78628d' >> "${GITHUB_ENV}"
           cargo_artifacts="${RUNNER_TEMP}/operational-streaming-real.cargo.jsonl"
           cargo test --release --locked -p zugfolge-infra --test operational_streaming_real \
             --no-run --message-format=json-render-diagnostics | tee "${cargo_artifacts}"

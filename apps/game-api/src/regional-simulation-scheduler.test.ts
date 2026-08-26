@@ -428,7 +428,7 @@ describe("regionaler 1:1-Scheduler", () => {
     }));
   });
 
-  it("teilt lange Luecken an absoluten Fuenf-Minuten-Marken und verschmilzt Kataloggrenzen", async () => {
+  it("teilt lange Luecken an absoluten Minutenmarken und verschmilzt Kataloggrenzen", async () => {
     const epoch = new Date("2026-08-11T00:00:00.000Z");
     const targetMs = 1_000_123;
     let persistedNowMs = 125_000;
@@ -476,11 +476,38 @@ describe("regionaler 1:1-Scheduler", () => {
       (entry) => progress.push(entry),
     )).resolves.toBe(1);
 
-    expect(batchStarts).toEqual([125_000, 300_000, 600_000, 900_000]);
+    expect(batchStarts).toEqual([
+      125_000,
+      180_000,
+      240_000,
+      300_000,
+      360_000,
+      420_000,
+      480_000,
+      540_000,
+      600_000,
+      660_000,
+      720_000,
+      780_000,
+      840_000,
+      900_000,
+      960_000,
+    ]);
     expect(applied.map(({ commands }) => commands.map(({ commandId }) => commandId))).toEqual([
+      ["advance-to-ms:180000"],
+      ["advance-to-ms:240000"],
       ["advance-to-ms:300000", "clear:300000"],
+      ["advance-to-ms:360000"],
+      ["advance-to-ms:420000"],
+      ["advance-to-ms:480000"],
+      ["advance-to-ms:540000"],
       ["advance-to-ms:600000"],
-      ["advance-to-ms:750000", "clear:750000", "advance-to-ms:900000"],
+      ["advance-to-ms:660000"],
+      ["advance-to-ms:720000"],
+      ["advance-to-ms:750000", "clear:750000", "advance-to-ms:780000"],
+      ["advance-to-ms:840000"],
+      ["advance-to-ms:900000"],
+      ["advance-to-ms:960000"],
       [`advance-to-ms:${targetMs}`, `clear:${targetMs}`],
     ]);
     expect(persistedNowMs).toBe(targetMs);
@@ -488,14 +515,14 @@ describe("regionaler 1:1-Scheduler", () => {
       phase: "region-completed",
       currentNowMs: targetMs,
       targetNowMs: targetMs,
-      commandCount: 8,
+      commandCount: 19,
     }));
   });
 
   it("setzt nach einem committeten Checkpoint mit denselben IDs nur am persistierten Suffix fort", async () => {
     const epoch = new Date("2026-08-11T00:00:00.000Z");
     const targetMs = 650_000;
-    let persistedNowMs = 100_000;
+    let persistedNowMs = 240_000;
     let failAfterFirstCommit = true;
     const committed = new Set<string>();
     const effects: string[] = [];
@@ -563,12 +590,16 @@ describe("regionaler 1:1-Scheduler", () => {
     expect(calls).toEqual([
       ["advance-to-ms:300000", "clear:300000"],
       ["clear:300000"],
+      ["advance-to-ms:360000"],
+      ["advance-to-ms:420000"],
+      ["advance-to-ms:480000"],
+      ["advance-to-ms:540000"],
       ["advance-to-ms:600000", "clear:600000"],
       [`advance-to-ms:${targetMs}`],
     ]);
 
     await expect(advance()).resolves.toBe(0);
-    expect(calls).toHaveLength(4);
+    expect(calls).toHaveLength(8);
   });
 
   it("verweigert einen in mehrere Streamteile gespaltenen atomaren Zeitpunkt vor dem Commit", async () => {

@@ -20,7 +20,7 @@ const MAX_NODE_RSS_BYTES = 512 * 1024 * 1024;
 const COLD_CATCH_UP_DAYS = 16;
 const COLD_CATCH_UP_MINIMUM_COMMANDS = 60_000;
 const MAX_SCHEDULER_BATCH_COMMANDS = 256;
-const MAX_SCHEDULER_BATCH_SPAN_MS = 5 * 60 * 1_000;
+const MAX_SCHEDULER_BATCH_SPAN_MS = 60 * 1_000;
 const MAX_NATIVE_BATCH_EVENTS = 16_384;
 const POSTGRES_BOUNDARY = "external-postgresql-process-outside-measured-app-cgroup";
 const POSTGRES_DATABASE_NAME = /^zugfolge_germany_e2e_[a-z0-9_]+$/u;
@@ -33,7 +33,7 @@ const EXPECTED_ALPHA_SIGNED_DEPLOYMENT = Object.freeze({
   bytes: 7_058_016,
   sha256: "228d7c7cef743536f3b2621db200da898b4a1d30ec2cfe3b19d57fdea55c00c0",
 });
-const EXPECTED_ALPHA_TYPESCRIPT_BUILD_SET_SHA256 = "be94232030f8f7cc4995dcc1e4c78f386ab4396967ec18a3d7cf6a6e5db648f2";
+const EXPECTED_ALPHA_TYPESCRIPT_BUILD_SET_SHA256 = "2540fcc5eedf7f6a76283d2922ff31d3d244d3bfb5dd15da9af92f05fa78628d";
 const RUNTIME_BUILD_FILES = Object.freeze([
   "packages/planning-worker/dist/index.js",
   "packages/runtime-native/dist/index.js",
