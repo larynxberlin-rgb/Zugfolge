@@ -393,11 +393,17 @@ assert.deepEqual(
   operationalBatch.commandResults.map((result) => result.idempotentReplay),
   [false, true, false],
 );
-assert.equal(operationalBatch.events.length, 2);
+assert.deepEqual(
+  operationalBatch.events.map((event) => event.kind),
+  ["safe-stop", "disruption-activated", "disruption-cleared"],
+  "eine betroffene Zugfahrt darf im atomaren Stoerungsbatch ein zusaetzliches Fachdomaenenereignis erzeugen",
+);
 assert.deepEqual(
   operationalBatch.eventContexts.map((context) => context.commandIndex),
   [0, 2],
 );
+assert.deepEqual(operationalBatch.eventContexts[0].affectedTrainRunIds, ["train:1"]);
+assert.deepEqual(operationalBatch.eventContexts[1].affectedTrainRunIds, []);
 assert.deepEqual(
   operationalBatch.eventContexts[1].disruptionEffectBefore,
   nativeBatchEffect,
