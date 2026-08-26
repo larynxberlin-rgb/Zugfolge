@@ -17,10 +17,20 @@
 //! cargo test --release --locked -p zugfolge-infra --test operational_streaming_real -- --ignored --exact realer_korpus_ab_900_mib_bleibt_unter_fester_rss_grenze --nocapture
 //! ```
 //!
-//! Der davon getrennte, archivierte und nicht aktivierbare 2026.3-Korpus
-//! belegt mit exakt 1.455.920.792 Bytes den >1-GiB-Pfad. Sein manueller Aufruf
-//! und sein noch ausstehender Laufstatus sind im 2026.4-Readiness-Bericht
-//! dokumentiert.
+//! Die davon getrennte, archivierte und nicht aktivierbare 2026.3-Legacyquelle
+//! ist mit exakt 1.455.920.792 Bytes groesser als 1 GiB, verwendet im Route-Leg
+//! aber noch `requiredProtectionSystems`. Vor dem Robustheitslauf muss deshalb
+//! das dokumentierte create-new Build-Werkzeug eine getrennte Arbeitskopie mit
+//! dem aktuellen V2-Feldpaar erzeugen. Es verwirft 25.321 generische
+//! ETCS-Angaben, ohne ein Level zu erfinden, und wendet den in der historischen
+//! synthetischen Policy gepinnten PZB-Fallback nur auf die 368 danach leeren
+//! Mengen an. Explizite Legacy-Byte-/SHA-Pins, CLI-Zaehler und der aktuelle
+//! native Validator muessen vor dem create-new Link gruen sein. Migration und
+//! native Validierung sind bestanden; der archivierte Realtestvertrag bindet
+//! nun die getrennte aktuelle-V2-Arbeitskopie unter
+//! `var/derived/germany-2026.3/protection-fields-v2/operational-infrastructure-v2.json`.
+//! Nur ihr Linux-cgroup-v2-RSS-Lauf ist noch ausstehend. Pin- und Laufstatus
+//! stehen im 2026.4-Readiness-Bericht.
 //!
 //! Linux-CI setzt zusaetzlich
 //! `ZUGFOLGE_OPERATIONAL_V2_REAL_REQUIRE_CGROUP_LIMIT=1` und fuehrt den Test in
@@ -75,9 +85,9 @@ const CURRENT_2026_4_CONTRACT: RealCorpusContract = RealCorpusContract {
 const ARCHIVED_2026_3_OVER_ONE_GIB_CONTRACT: RealCorpusContract = RealCorpusContract {
     profile: "archived-2026.3-over-one-gib-robustness-only",
     release_id: "infra-deutschland-2026.3",
-    expected_source_bytes: 1_455_920_792,
-    expected_source_sha256: "64bcc5a750c0667526baf95a5ae8f9fa9c6ff64e63b24462090cc1c36c6abb4c",
-    expected_state_hash: "5972ef9d4897e5dc225ff463620745913846a6b16dba813f5fd12598c768399f",
+    expected_source_bytes: 1_485_411_153,
+    expected_source_sha256: "89a2584b9eec170b7b12797611f72d77008f839453fac64969d8744345c0ec3e",
+    expected_state_hash: "6f8a0c2368e732a4decdf4d2b61d4bca58eb91530b92f36ce8e9c777c691b5ed",
     minimum_source_bytes: MINIMUM_OVER_ONE_GIB_CORPUS_BYTES,
     minimum_description: "mehr als 1 GiB",
     input_environment_variable: "ZUGFOLGE_OPERATIONAL_V2_ARCHIVED_2026_3_INPUT",

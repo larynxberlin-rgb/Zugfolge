@@ -238,29 +238,74 @@ behaupten; die harte 512-MiB-cgroup-Grenze bleibt unverändert.
 
 Davon getrennt existiert der eindeutig benannte Robustheitspfad
 `archivierter_2026_3_korpus_ueber_1_gib_bleibt_unter_fester_rss_grenze`.
-Er verwendet ausschließlich den archivierten, nicht aktivierbaren Korpus
+Seine archivierte, nicht aktivierbare Quellfassung liegt unter
 `var/derived/germany-2026.3/operational-infrastructure-v2.json`: exakt
 1.455.920.792 Bytes, Datei-SHA-256
 `64bcc5a750c0667526baf95a5ae8f9fa9c6ff64e63b24462090cc1c36c6abb4c`
 und State-Hash
 `5972ef9d4897e5dc225ff463620745913846a6b16dba813f5fd12598c768399f`.
-Der Test teilt sich Validator, RSS-Messung, cgroup-v2-/No-Swap-Prüfung und
-create-new Evidence-Writer mit dem aktuellen `.4`-Test, verlangt aber strikt
-mehr als 1 GiB und schreibt ein eigenes Profil und einen eigenen Belegpfad.
+Diese Quellfassung verwendet im Route-Leg noch den abgelösten Build-Feldnamen
+`requiredProtectionSystems` und darf deshalb nicht direkt in den heutigen
+Loader gelangen. Das ist keine Laufzeitkompatibilität: Vor dem Robustheitstest
+erzeugt das einmalige Build-Werkzeug ausschließlich create-new eine getrennte
+Arbeitskopie mit `availableProtectionSystems` und leerem
+`simultaneouslyRequiredProtectionSystems`. Der Legacy-Korpus enthält exakt
+644.900 betroffene Fahrwegbeine: 569.133 mit `pzb`, 50.446 mit `lzb,pzb`,
+24.953 mit dem mehrdeutigen `etcs,pzb` und 368 nur mit `etcs`. Insgesamt werden
+25.321 generische ETCS-Werte entfernt; davon benötigen genau die genannten 368
+Fälle den Fallback. Der generische ETCS-Wert wird niemals als Level 1 oder 2
+behauptet. Neben einer kanonischen
+Beobachtung wird er verworfen; bleibt danach kein System übrig, greift exakt
+der bereits in der `.3`-Policy `synthetic-operational-b/v2` gepinnte
+`defaultProtectionSystem=pzb`-Fallback. Der Korpusdrift wird über alle drei
+expliziten Zähler geschlossen. Vor dem atomaren Link prüft außerdem der
+aktuelle native Loader die vollständig migrierten Bytes:
 
-Der >1-GiB-Realtest ist an diesem Stand **noch nicht ausgeführt** und daher
-noch kein Abnahmebeleg für #398. Für den echten Lauf werden in einer frischen
-Linux-cgroup-v2 mit exakt 512 MiB `memory.max` und
-`memory.swap.max=0` gesetzt:
+```bash
+cargo build --release --locked -p zugfolge-infra --bin zugfolge-infra-release
+export ZUGFOLGE_INFRA_RELEASE_VALIDATOR_PATH="$(realpath target/release/zugfolge-infra-release)"
+mkdir -p var/derived/germany-2026.3/protection-fields-v2
+node tools/region-import/migrate-operational-v2-protection-fields.mjs \
+  var/derived/germany-2026.3/operational-infrastructure-v2.json \
+  var/derived/germany-2026.3/protection-fields-v2/operational-infrastructure-v2.json \
+  --expected-release-id infra-deutschland-2026.3 \
+  --expected-source-bytes 1455920792 \
+  --expected-source-sha256 64bcc5a750c0667526baf95a5ae8f9fa9c6ff64e63b24462090cc1c36c6abb4c \
+  --expected-replacements 644900 \
+  --expected-generic-etcs-dropped 25321 \
+  --expected-pzb-fallback-applied 368
+```
+
+Das Werkzeug prüft die beiden historischen Quell-Pins vor dem Anlegen seiner
+temporären Ausgabe. Migration und native Validierung sind bestanden. Die
+create-new Arbeitskopie unter
+`var/derived/germany-2026.3/protection-fields-v2/operational-infrastructure-v2.json`
+besitzt exakt 1.485.411.153 Bytes; ihr Quell-/Output-SHA-256 ist
+`89a2584b9eec170b7b12797611f72d77008f839453fac64969d8744345c0ec3e`.
+Der native Receipt bindet dazu den kanonischen SHA-256
+`9e378f65b528699609312e792965d9deb52276c12198609bb005b3356fe7d1bb`
+und den State-Hash
+`6f8a0c2368e732a4decdf4d2b61d4bca58eb91530b92f36ce8e9c777c691b5ed`.
+Alle drei Korpuszähler entsprachen 644.900 / 25.321 / 368. Der noch ausstehende
+Test teilt sich Validator, RSS-Messung,
+cgroup-v2-/No-Swap-Prüfung und create-new Evidence-Writer mit dem aktuellen
+`.4`-Test, verlangt aber strikt mehr als 1 GiB und schreibt ein eigenes Profil
+und einen eigenen Belegpfad.
+
+Der >1-GiB-RSS-Realtest ist an diesem Stand **noch nicht ausgeführt** und daher
+noch kein Abnahmebeleg für #398. Migration und native Schema-/Hashprüfung sind
+davon getrennt bereits grün. Der folgende Block ist nun an die gemessenen Pins
+gebunden und muss noch in einer frischen Linux-cgroup-v2 mit exakt 512 MiB
+`memory.max` und `memory.swap.max=0` ausgeführt werden:
 
 ```bash
 export ZUGFOLGE_RUN_OPERATIONAL_V2_REAL_RSS=1
 export ZUGFOLGE_OPERATIONAL_V2_REAL_REQUIRE_CGROUP_LIMIT=1
-export ZUGFOLGE_OPERATIONAL_V2_ARCHIVED_2026_3_INPUT="$(realpath var/derived/germany-2026.3/operational-infrastructure-v2.json)"
+export ZUGFOLGE_OPERATIONAL_V2_ARCHIVED_2026_3_INPUT="$(realpath var/derived/germany-2026.3/protection-fields-v2/operational-infrastructure-v2.json)"
 export ZUGFOLGE_OPERATIONAL_V2_ARCHIVED_2026_3_RELEASE_ID=infra-deutschland-2026.3
-export ZUGFOLGE_OPERATIONAL_V2_ARCHIVED_2026_3_EXPECTED_BYTES=1455920792
-export ZUGFOLGE_OPERATIONAL_V2_ARCHIVED_2026_3_EXPECTED_SOURCE_SHA256=64bcc5a750c0667526baf95a5ae8f9fa9c6ff64e63b24462090cc1c36c6abb4c
-export ZUGFOLGE_OPERATIONAL_V2_ARCHIVED_2026_3_EXPECTED_STATE_HASH=5972ef9d4897e5dc225ff463620745913846a6b16dba813f5fd12598c768399f
+export ZUGFOLGE_OPERATIONAL_V2_ARCHIVED_2026_3_EXPECTED_BYTES=1485411153
+export ZUGFOLGE_OPERATIONAL_V2_ARCHIVED_2026_3_EXPECTED_SOURCE_SHA256=89a2584b9eec170b7b12797611f72d77008f839453fac64969d8744345c0ec3e
+export ZUGFOLGE_OPERATIONAL_V2_ARCHIVED_2026_3_EXPECTED_STATE_HASH=6f8a0c2368e732a4decdf4d2b61d4bca58eb91530b92f36ce8e9c777c691b5ed
 export ZUGFOLGE_OPERATIONAL_V2_ARCHIVED_2026_3_RSS_PROOF_OUTPUT="$(realpath -m test-results/operational-v2/archived-2026.3-over-one-gib-rss-proof.json)"
 cargo test --release --locked -p zugfolge-infra --test operational_streaming_real -- --ignored --exact archivierter_2026_3_korpus_ueber_1_gib_bleibt_unter_fester_rss_grenze --nocapture
 ```

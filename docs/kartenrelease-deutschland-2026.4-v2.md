@@ -264,15 +264,36 @@ als 1 GiB zu behaupten.
 
 Der echte >1-GiB-Robustheitspfad ist bewusst separat: Der ignorierte Test
 `archivierter_2026_3_korpus_ueber_1_gib_bleibt_unter_fester_rss_grenze`
-bindet den archivierten, nicht aktivierbaren `.3`-Korpus auf exakt
+bindet nach einer einmaligen, create-new Build-Migration die archivierte,
+nicht aktivierbare `.3`-Arbeitskopie. Die unveränderte Legacy-Quelle besitzt
+exakt
 1.455.920.792 Bytes, SHA-256
 `64bcc5a750c0667526baf95a5ae8f9fa9c6ff64e63b24462090cc1c36c6abb4c`
 und State-Hash
 `5972ef9d4897e5dc225ff463620745913846a6b16dba813f5fd12598c768399f`.
-Er teilt denselben nativen Streaming-/RSS-Runner, verlangt aber strikt mehr als
-1 GiB und hat einen eigenen create-new Evidence-Pfad. Dieser manuelle Lauf ist
-noch ausstehend und macht `.3` weder vertrauenswürdig noch aktivierbar. Der
-vollständige Aufruf steht im
+Sie enthält noch `requiredProtectionSystems` und ist kein gültiger Eingang für
+den aktuellen Loader. Das Build-Werkzeug migriert dieses Feld streaming in
+`availableProtectionSystems` plus leeres
+`simultaneouslyRequiredProtectionSystems`; Runtime und Loader erhalten keine
+Legacy-Kompatibilität. Der generische Legacy-Wert `etcs` wird nicht auf ein
+erfundenes ETCS-Level erweitert: Von 644.900 Feldern verwerfen 25.321 diese
+mehrdeutige Angabe; nur die 368 dadurch leeren Mengen erhalten den bereits in
+der historischen synthetischen `.3`-Policy gepinnten PZB-Fallback. Explizite
+Legacy-Byte-/SHA-Pins und CLI-Zähler sowie die native Prüfung der vollständig
+migrierten Bytes laufen vor dem create-new Link. Migration und native
+Validierung sind bestanden: Die Arbeitskopie unter
+`var/derived/germany-2026.3/protection-fields-v2/operational-infrastructure-v2.json`
+hat 1.485.411.153 Bytes, den Quell-/Output-SHA-256
+`89a2584b9eec170b7b12797611f72d77008f839453fac64969d8744345c0ec3e`,
+den nativen kanonischen SHA-256
+`9e378f65b528699609312e792965d9deb52276c12198609bb005b3356fe7d1bb`
+und den State-Hash
+`6f8a0c2368e732a4decdf4d2b61d4bca58eb91530b92f36ce8e9c777c691b5ed`.
+Nur der separate Linux-cgroup-v2-RSS-Lauf ist noch ausstehend. Er teilt
+denselben nativen Streaming-/RSS-Runner, verlangt aber strikt mehr als 1 GiB
+und hat einen eigenen create-new Evidence-Pfad. Dieser Robustheitsbeleg macht
+`.3` weder vertrauenswürdig noch aktivierbar. Migration und vollständiger
+Aufruf stehen im
 [`2026.4-Readiness-Bericht`](infrarelease-deutschland-2026.4-readiness.md).
 
 Der Alpha-Real-E2E muss Build, Signaturprüfung, nativen Start, mindestens eine

@@ -553,9 +553,9 @@ test("aktueller 900-MiB-Kandidat und archivierter >1-GiB-Robustheitspfad bleiben
   ]);
 
   assert.match(rustRealTest, /CURRENT_2026_4_CONTRACT[\s\S]*expected_source_bytes: 983_736_272[\s\S]*minimum_source_bytes: MINIMUM_CURRENT_2026_4_CORPUS_BYTES/u);
-  assert.match(rustRealTest, /ARCHIVED_2026_3_OVER_ONE_GIB_CONTRACT[\s\S]*expected_source_bytes: 1_455_920_792[\s\S]*minimum_source_bytes: MINIMUM_OVER_ONE_GIB_CORPUS_BYTES/u);
-  assert.match(rustRealTest, /64bcc5a750c0667526baf95a5ae8f9fa9c6ff64e63b24462090cc1c36c6abb4c/u);
-  assert.match(rustRealTest, /5972ef9d4897e5dc225ff463620745913846a6b16dba813f5fd12598c768399f/u);
+  assert.match(rustRealTest, /ARCHIVED_2026_3_OVER_ONE_GIB_CONTRACT[\s\S]*expected_source_bytes: 1_485_411_153[\s\S]*minimum_source_bytes: MINIMUM_OVER_ONE_GIB_CORPUS_BYTES/u);
+  assert.match(rustRealTest, /89a2584b9eec170b7b12797611f72d77008f839453fac64969d8744345c0ec3e/u);
+  assert.match(rustRealTest, /6f8a0c2368e732a4decdf4d2b61d4bca58eb91530b92f36ce8e9c777c691b5ed/u);
   assert.equal((rustRealTest.match(/fn run_real_corpus\(/gu) ?? []).length, 1);
   assert.match(rustRealTest, /fn realer_korpus_ab_900_mib_bleibt_unter_fester_rss_grenze\(\)[\s\S]{0,120}run_real_corpus\(CURRENT_2026_4_CONTRACT\)/u);
   assert.match(rustRealTest, /fn archivierter_2026_3_korpus_ueber_1_gib_bleibt_unter_fester_rss_grenze\(\)[\s\S]{0,120}run_real_corpus\(ARCHIVED_2026_3_OVER_ONE_GIB_CONTRACT\)/u);
@@ -568,11 +568,29 @@ test("aktueller 900-MiB-Kandidat und archivierter >1-GiB-Robustheitspfad bleiben
     assert.match(documentation, /archiviert(?:e|en)[\s\S]{0,240}1\.455\.920\.792/u);
     assert.match(documentation, /64bcc5a750c0667526baf95a5ae8f9fa9c6ff64e63b24462090cc1c36c6abb4c/u);
     assert.match(documentation, /5972ef9d4897e5dc225ff463620745913846a6b16dba813f5fd12598c768399f/u);
+    assert.match(documentation, /1\.485\.411\.153/u);
+    assert.match(documentation, /89a2584b9eec170b7b12797611f72d77008f839453fac64969d8744345c0ec3e/u);
+    assert.match(documentation, /9e378f65b528699609312e792965d9deb52276c12198609bb005b3356fe7d1bb/u);
+    assert.match(documentation, /6f8a0c2368e732a4decdf4d2b61d4bca58eb91530b92f36ce8e9c777c691b5ed/u);
+    assert.match(documentation, /Migration und native[\s\S]{0,80}Validierung sind bestanden/u);
     assert.match(documentation, /(?:noch nicht ausgeführt|noch ausstehend)/u);
     assert.match(documentation, /nicht aktivierbar/u);
   }
   assert.match(readiness, /--exact archivierter_2026_3_korpus_ueber_1_gib_bleibt_unter_fester_rss_grenze/u);
   assert.match(readiness, /ZUGFOLGE_OPERATIONAL_V2_ARCHIVED_2026_3_RSS_PROOF_OUTPUT/u);
+  assert.match(readiness, /migrate-operational-v2-protection-fields\.mjs[\s\S]{0,320}protection-fields-v2\/operational-infrastructure-v2\.json/u);
+  assert.match(readiness, /--expected-source-bytes 1455920792[\s\S]{0,160}--expected-source-sha256 64bcc5a750c0667526baf95a5ae8f9fa9c6ff64e63b24462090cc1c36c6abb4c/u);
+  assert.match(readiness, /--expected-replacements 644900[\s\S]{0,160}--expected-generic-etcs-dropped 25321[\s\S]{0,160}--expected-pzb-fallback-applied 368/u);
+  assert.match(readiness, /ARCHIVED_2026_3_EXPECTED_BYTES=1485411153/u);
+  assert.match(readiness, /ARCHIVED_2026_3_EXPECTED_SOURCE_SHA256=89a2584b9eec170b7b12797611f72d77008f839453fac64969d8744345c0ec3e/u);
+  assert.match(readiness, /ARCHIVED_2026_3_EXPECTED_STATE_HASH=6f8a0c2368e732a4decdf4d2b61d4bca58eb91530b92f36ce8e9c777c691b5ed/u);
+  assert.doesNotMatch(readiness, /MIGRATED_(?:OUTPUT|NATIVE)_/u);
+  assert.match(readiness, /25\.321[\s\S]{0,240}368[\s\S]{0,320}defaultProtectionSystem=pzb/u);
+  assert.match(readiness, /Vor dem atomaren Link[\s\S]{0,120}aktuelle native Loader/u);
+  assert.match(readiness, /keine Laufzeitkompatibilität/u);
+  assert.match(rustRealTest, /requiredProtectionSystems[\s\S]{0,720}Migration und[\s\S]{0,80}native Validierung sind bestanden/u);
+  assert.match(rustRealTest, /25\.321 generische[\s\S]{0,180}PZB-Fallback[\s\S]{0,80}368/u);
+  assert.match(rustRealTest, /Legacy-Byte-\/SHA-Pins[\s\S]{0,100}CLI-Zaehler[\s\S]{0,100}native Validator/u);
 });
 
 test("2026.4-Dokumente und Real-Audits enthalten keine verworfenen oder ueberzogenen Ergebnisbindungen", async () => {

@@ -372,7 +372,7 @@ test("echtes PostgreSQL qualifiziert V1 zu neuer V2-Welt und sperrt dieselbe Kan
       from world_cutover_receipts
       where candidate_world_id = $1::uuid
     `, [candidate.deployment.worldId]);
-    assert.deepEqual(receipts, [{
+    assert.deepEqual([...receipts], [{
       mode: "authorized-v1-to-v2-cutover",
       predecessor_world_id: contract.predecessor.deployment.worldId,
       candidate_world_id: candidate.deployment.worldId,
