@@ -286,17 +286,22 @@ Der native Receipt bindet dazu den kanonischen SHA-256
 `9e378f65b528699609312e792965d9deb52276c12198609bb005b3356fe7d1bb`
 und den State-Hash
 `6f8a0c2368e732a4decdf4d2b61d4bca58eb91530b92f36ce8e9c777c691b5ed`.
-Alle drei Korpuszähler entsprachen 644.900 / 25.321 / 368. Der noch ausstehende
-Test teilt sich Validator, RSS-Messung,
-cgroup-v2-/No-Swap-Prüfung und create-new Evidence-Writer mit dem aktuellen
-`.4`-Test, verlangt aber strikt mehr als 1 GiB und schreibt ein eigenes Profil
-und einen eigenen Belegpfad.
+Alle drei Korpuszähler entsprachen 644.900 / 25.321 / 368. Der getrennte Test
+teilt sich Validator, RSS-Messung, cgroup-v2-/No-Swap-Prüfung und create-new
+Evidence-Writer mit dem aktuellen `.4`-Test, verlangt aber strikt mehr als
+1 GiB und schreibt ein eigenes Profil und einen eigenen Belegpfad.
 
-Der >1-GiB-RSS-Realtest ist an diesem Stand **noch nicht ausgeführt** und daher
-noch kein Abnahmebeleg für #398. Migration und native Schema-/Hashprüfung sind
-davon getrennt bereits grün. Der folgende Block ist nun an die gemessenen Pins
-gebunden und muss noch in einer frischen Linux-cgroup-v2 mit exakt 512 MiB
-`memory.max` und `memory.swap.max=0` ausgeführt werden:
+Der >1-GiB-RSS-Realtest ist auf Linux für Commit
+`3105d452beb1b56eeca8b220794dc7d3b50e169a` bestanden. Die frische cgroup-v2
+band `memory.max` an 536.870.912 Bytes und `memory.swap.max` an 0; der native
+Streaming-/redb-Lauf validierte 1.485.411.153 Quellbytes in 546,92 Sekunden bei
+49.147.904 Bytes Prozess-Peak-RSS. Der cgroup-Peak erreichte die harte Grenze,
+ohne Swap oder OOM. Der create-new Beleg
+`test-results/germany-2026.4/20260826T1828Z-3105d45/archived-2026.3-over-1gib-streaming-rss-proof.json`
+hat 784 Bytes und SHA-256
+`f7990fc4317f170cfe79618842b45bd504f3b08311e3497c928aff7387de3fb2`.
+Damit ist der lokale Robustheitsbeleg für #398 grün; die `.3`-Arbeitskopie
+bleibt ausdrücklich nicht aktivierbar. Der reproduzierbare Aufruf lautet:
 
 ```bash
 export ZUGFOLGE_RUN_OPERATIONAL_V2_REAL_RSS=1

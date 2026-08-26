@@ -289,10 +289,11 @@ den nativen kanonischen SHA-256
 `9e378f65b528699609312e792965d9deb52276c12198609bb005b3356fe7d1bb`
 und den State-Hash
 `6f8a0c2368e732a4decdf4d2b61d4bca58eb91530b92f36ce8e9c777c691b5ed`.
-Nur der separate Linux-cgroup-v2-RSS-Lauf ist noch ausstehend. Er teilt
-denselben nativen Streaming-/RSS-Runner, verlangt aber strikt mehr als 1 GiB
-und hat einen eigenen create-new Evidence-Pfad. Dieser Robustheitsbeleg macht
-`.3` weder vertrauenswürdig noch aktivierbar. Migration und vollständiger
+Der separate Linux-cgroup-v2-RSS-Lauf ist für Commit
+`3105d452beb1b56eeca8b220794dc7d3b50e169a` bestanden: exakt 512 MiB
+`memory.max`, kein Swap, 49.147.904 Bytes Prozess-Peak-RSS und vollständige
+native Validierung der 1.485.411.153 Bytes. Dieser Robustheitsbeleg macht `.3`
+weder vertrauenswürdig noch aktivierbar. Migration, Beleg und vollständiger
 Aufruf stehen im
 [`2026.4-Readiness-Bericht`](infrarelease-deutschland-2026.4-readiness.md).
 

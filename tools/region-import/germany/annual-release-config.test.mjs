@@ -573,7 +573,8 @@ test("aktueller 900-MiB-Kandidat und archivierter >1-GiB-Robustheitspfad bleiben
     assert.match(documentation, /9e378f65b528699609312e792965d9deb52276c12198609bb005b3356fe7d1bb/u);
     assert.match(documentation, /6f8a0c2368e732a4decdf4d2b61d4bca58eb91530b92f36ce8e9c777c691b5ed/u);
     assert.match(documentation, /Migration und native[\s\S]{0,80}Validierung sind bestanden/u);
-    assert.match(documentation, /(?:noch nicht ausgeführt|noch ausstehend)/u);
+    assert.match(documentation, /(?:Linux-cgroup-v2-RSS-Lauf|>1-GiB-RSS-Realtest)[\s\S]{0,200}bestanden/u);
+    assert.match(documentation, /49\.147\.904 Bytes Prozess-Peak-RSS/u);
     assert.match(documentation, /nicht aktivierbar/u);
   }
   assert.match(readiness, /--exact archivierter_2026_3_korpus_ueber_1_gib_bleibt_unter_fester_rss_grenze/u);
@@ -584,6 +585,8 @@ test("aktueller 900-MiB-Kandidat und archivierter >1-GiB-Robustheitspfad bleiben
   assert.match(readiness, /ARCHIVED_2026_3_EXPECTED_BYTES=1485411153/u);
   assert.match(readiness, /ARCHIVED_2026_3_EXPECTED_SOURCE_SHA256=89a2584b9eec170b7b12797611f72d77008f839453fac64969d8744345c0ec3e/u);
   assert.match(readiness, /ARCHIVED_2026_3_EXPECTED_STATE_HASH=6f8a0c2368e732a4decdf4d2b61d4bca58eb91530b92f36ce8e9c777c691b5ed/u);
+  assert.match(readiness, /f7990fc4317f170cfe79618842b45bd504f3b08311e3497c928aff7387de3fb2/u);
+  assert.match(readiness, /memory\.max` an 536\.870\.912 Bytes[\s\S]{0,80}memory\.swap\.max` an 0/u);
   assert.doesNotMatch(readiness, /MIGRATED_(?:OUTPUT|NATIVE)_/u);
   assert.match(readiness, /25\.321[\s\S]{0,240}368[\s\S]{0,320}defaultProtectionSystem=pzb/u);
   assert.match(readiness, /Vor dem atomaren Link[\s\S]{0,120}aktuelle native Loader/u);
