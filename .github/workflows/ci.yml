@@ -305,6 +305,8 @@ jobs:
           printf 'ZUGFOLGE_RUNTIME_NATIVE_PATH=%s\n' "${addon_path}" >> "${GITHUB_ENV}"
           addon_sha256="$(sha256sum "${addon_path}" | awk '{print $1}')"
           printf 'ZUGFOLGE_REAL_GERMANY_EXPECTED_NAPI_SHA256=%s\n' "${addon_sha256}" >> "${GITHUB_ENV}"
+          printf 'ZUGFOLGE_REAL_GERMANY_EXPECTED_TYPESCRIPT_BUILD_SET_SHA256=%s\n' \
+            'be94232030f8f7cc4995dcc1e4c78f386ab4396967ec18a3d7cf6a6e5db648f2' >> "${GITHUB_ENV}"
           cargo_artifacts="${RUNNER_TEMP}/operational-streaming-real.cargo.jsonl"
           cargo test --release --locked -p zugfolge-infra --test operational_streaming_real \
             --no-run --message-format=json-render-diagnostics | tee "${cargo_artifacts}"
@@ -368,6 +370,7 @@ jobs:
               ZUGFOLGE_REAL_GERMANY_POSTGRES_BOUNDARY="${ZUGFOLGE_REAL_GERMANY_POSTGRES_BOUNDARY}" \
               ZUGFOLGE_RUNTIME_NATIVE_PATH="${ZUGFOLGE_RUNTIME_NATIVE_PATH}" \
               ZUGFOLGE_REAL_GERMANY_EXPECTED_NAPI_SHA256="${ZUGFOLGE_REAL_GERMANY_EXPECTED_NAPI_SHA256}" \
+              ZUGFOLGE_REAL_GERMANY_EXPECTED_TYPESCRIPT_BUILD_SET_SHA256="${ZUGFOLGE_REAL_GERMANY_EXPECTED_TYPESCRIPT_BUILD_SET_SHA256}" \
               ZUGFOLGE_REAL_GERMANY_REUSE_DEPLOYMENTS=1 \
               ZUGFOLGE_REAL_GERMANY_ALPHA_UNSIGNED_DEPLOYMENT="${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/alpha-world-deployment.2026.4.json" \
               ZUGFOLGE_REAL_GERMANY_ALPHA_SIGNED_DEPLOYMENT="${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/alpha-world-deployment.2026.4.signed.json" \

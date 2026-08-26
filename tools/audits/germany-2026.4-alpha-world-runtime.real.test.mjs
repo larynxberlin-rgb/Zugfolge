@@ -33,6 +33,7 @@ const EXPECTED_ALPHA_SIGNED_DEPLOYMENT = Object.freeze({
   bytes: 7_058_016,
   sha256: "228d7c7cef743536f3b2621db200da898b4a1d30ec2cfe3b19d57fdea55c00c0",
 });
+const EXPECTED_ALPHA_TYPESCRIPT_BUILD_SET_SHA256 = "be94232030f8f7cc4995dcc1e4c78f386ab4396967ec18a3d7cf6a6e5db648f2";
 const RUNTIME_BUILD_FILES = Object.freeze([
   "packages/planning-worker/dist/index.js",
   "packages/runtime-native/dist/index.js",
@@ -235,6 +236,7 @@ async function fileProof(path) {
 async function runtimeBuildProof(
   addonPath,
   expectedAddonSha256,
+  expectedTypescriptBuildSetSha256,
   runtimeFiles = RUNTIME_BUILD_FILES.map((file) => Object.freeze({
     file,
     path: join(REPOSITORY_ROOT, file),
@@ -258,6 +260,20 @@ async function runtimeBuildProof(
   const typescriptBuildSetSha256 = createHash("sha256")
     .update(JSON.stringify(typescriptModules))
     .digest("hex");
+  let expectedTypescriptBuildSetSha256Verified = false;
+  if (expectedTypescriptBuildSetSha256 !== undefined) {
+    assert.match(
+      expectedTypescriptBuildSetSha256,
+      /^[a-f0-9]{64}$/u,
+      "Erwarteter TypeScript-Build-Set-SHA-256 ist ungueltig.",
+    );
+    assert.equal(
+      typescriptBuildSetSha256,
+      expectedTypescriptBuildSetSha256,
+      "TypeScript-Runtime weicht vom expliziten Expected-Build-Set-SHA-256 ab.",
+    );
+    expectedTypescriptBuildSetSha256Verified = true;
+  }
   return Object.freeze({
     schema: "zugfolge-germany-runtime-build-proof/v1",
     nativeAddon: Object.freeze({
@@ -268,6 +284,8 @@ async function runtimeBuildProof(
     }),
     typescriptModules: Object.freeze(typescriptModules),
     typescriptBuildSetSha256,
+    expectedTypescriptBuildSetSha256: expectedTypescriptBuildSetSha256 ?? null,
+    expectedTypescriptBuildSetSha256Verified,
   });
 }
 
@@ -315,6 +333,7 @@ function acceptanceDecision({
     exactSourceCheckout: sourceCheckout.acceptanceEligible === true,
     exactSignedReleaseCandidate: reuseCandidate?.exactCandidateVerified === true,
     expectedNativeAddon: runtimeBuild.nativeAddon.expectedSha256Verified === true,
+    expectedTypescriptBuildSet: runtimeBuild.expectedTypescriptBuildSetSha256Verified === true,
     linuxCgroupV2: platform === "linux" && requireCgroupLimit === true,
     exactMemoryMax: cgroupMemoryMaxBytes === MAX_NODE_RSS_BYTES,
     noSwap: cgroupSwapMaxBytes === 0,
@@ -922,16 +941,31 @@ test("Runtime-Build-Proof bindet NAPI- und TypeScript-Bytes und prueft Expected-
     await writeFile(addonPath, "native-runtime-bytes\n", { encoding: "utf8", flag: "wx" });
     await writeFile(modulePath, "export const runtime = true;\n", { encoding: "utf8", flag: "wx" });
     const expectedAddonSha256 = (await fileProof(addonPath)).sha256;
-    const proof = await runtimeBuildProof(addonPath, expectedAddonSha256, [{
+    const runtimeFiles = [{
       file: "dist/runtime.js",
       path: modulePath,
-    }]);
+    }];
+    const moduleProof = await fileProof(modulePath);
+    const expectedTypescriptBuildSetSha256 = createHash("sha256")
+      .update(JSON.stringify([{ file: "dist/runtime.js", ...moduleProof }]))
+      .digest("hex");
+    const proof = await runtimeBuildProof(
+      addonPath,
+      expectedAddonSha256,
+      expectedTypescriptBuildSetSha256,
+      runtimeFiles,
+    );
     assert.equal(proof.nativeAddon.expectedSha256Verified, true);
     assert.equal(proof.typescriptModules.length, 1);
     assert.match(proof.typescriptBuildSetSha256, /^[a-f0-9]{64}$/u);
+    assert.equal(proof.expectedTypescriptBuildSetSha256Verified, true);
     await assert.rejects(
-      runtimeBuildProof(addonPath, "f".repeat(64), [{ file: "dist/runtime.js", path: modulePath }]),
+      runtimeBuildProof(addonPath, "f".repeat(64), expectedTypescriptBuildSetSha256, runtimeFiles),
       /weicht vom expliziten Expected-SHA-256 ab/u,
+    );
+    await assert.rejects(
+      runtimeBuildProof(addonPath, expectedAddonSha256, "f".repeat(64), runtimeFiles),
+      /weicht vom expliziten Expected-Build-Set-SHA-256 ab/u,
     );
   } finally {
     await rm(outputRoot, { recursive: true, force: true });
@@ -942,7 +976,10 @@ test("Top-level-Akzeptanz bleibt ohne exakten Linux-cgroup-v2-No-Swap-Beleg rot"
   const base = {
     sourceCheckout: { acceptanceEligible: true },
     reuseCandidate: { exactCandidateVerified: true },
-    runtimeBuild: { nativeAddon: { expectedSha256Verified: true } },
+    runtimeBuild: {
+      nativeAddon: { expectedSha256Verified: true },
+      expectedTypescriptBuildSetSha256Verified: true,
+    },
     platform: "linux",
     requireCgroupLimit: true,
     cgroupMemoryMaxBytes: MAX_NODE_RSS_BYTES,
@@ -956,6 +993,16 @@ test("Top-level-Akzeptanz bleibt ohne exakten Linux-cgroup-v2-No-Swap-Beleg rot"
   assert.equal(acceptanceDecision({ ...base, platform: "win32" }).eligible, false);
   assert.equal(acceptanceDecision({ ...base, cgroupSwapMaxBytes: 1 }).eligible, false);
   assert.equal(acceptanceDecision({ ...base, cgroupMemoryEventsAfter: { oom: 1, oom_kill: 0 } }).eligible, false);
+  assert.equal(
+    acceptanceDecision({
+      ...base,
+      runtimeBuild: {
+        ...base.runtimeBuild,
+        expectedTypescriptBuildSetSha256Verified: false,
+      },
+    }).eligible,
+    false,
+  );
 });
 
 test("operative Batchdiagnose ergaenzt Ursache und exakte Command-Metadaten ohne den Lauf zu veraendern", async () => {
@@ -1074,6 +1121,12 @@ test("baut, signiert, startet, revisioniert und restored Deutschland-2026.4 mit 
     "Signed- und Unsigned-Wiederverwendung sind gegenseitig ausschliessende Debugpfade.",
   );
   const requireCgroupLimit = process.env.ZUGFOLGE_REAL_GERMANY_REQUIRE_CGROUP_LIMIT === "1";
+  const expectedTypescriptBuildSetSha256 = requireCgroupLimit
+    ? requiredCanonicalEnvironmentPin(
+        "ZUGFOLGE_REAL_GERMANY_EXPECTED_TYPESCRIPT_BUILD_SET_SHA256",
+        EXPECTED_ALPHA_TYPESCRIPT_BUILD_SET_SHA256,
+      )
+    : process.env.ZUGFOLGE_REAL_GERMANY_EXPECTED_TYPESCRIPT_BUILD_SET_SHA256;
   const releaseCandidatePins = reuseDeployments
     ? Object.freeze({
         deploymentHash: requiredCanonicalEnvironmentPin(
@@ -1127,6 +1180,7 @@ test("baut, signiert, startet, revisioniert und restored Deutschland-2026.4 mit 
     const runtimeBuild = await runtimeBuildProof(
       nativeAddonPath,
       process.env.ZUGFOLGE_REAL_GERMANY_EXPECTED_NAPI_SHA256,
+      expectedTypescriptBuildSetSha256,
     );
     const cgroupMemoryMaxBytes = await cgroupV2MemoryMetric("memory.max");
     const cgroupSwapMaxBytes = await cgroupV2MemoryMetric("memory.swap.max");
@@ -1138,6 +1192,11 @@ test("baut, signiert, startet, revisioniert und restored Deutschland-2026.4 mit 
         runtimeBuild.nativeAddon.expectedSha256Verified,
         true,
         "Harter Deutschland-E2E braucht einen explizit verifizierten NAPI-Expected-SHA-256.",
+      );
+      assert.equal(
+        runtimeBuild.expectedTypescriptBuildSetSha256Verified,
+        true,
+        "Harter Deutschland-E2E braucht einen explizit verifizierten TypeScript-Build-Set-SHA-256.",
       );
       assert.equal(cgroupMemoryMaxBytes, MAX_NODE_RSS_BYTES, "Deutschland-E2E braucht exakt 512 MiB cgroup-v2-memory.max.");
       assert.equal(cgroupSwapMaxBytes, 0, "Deutschland-E2E darf die feste Speichergrenze nicht durch Swap umgehen.");
@@ -1337,6 +1396,7 @@ test("baut, signiert, startet, revisioniert und restored Deutschland-2026.4 mit 
     const runtimeBuildAfter = await runtimeBuildProof(
       nativeAddonPath,
       process.env.ZUGFOLGE_REAL_GERMANY_EXPECTED_NAPI_SHA256,
+      expectedTypescriptBuildSetSha256,
     );
     assert.deepEqual(
       runtimeBuildAfter,

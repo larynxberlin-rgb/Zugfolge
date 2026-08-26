@@ -223,12 +223,16 @@ Er bindet vor und nach dem Lauf denselben echten Git-HEAD und verlangt
 Evidence-Ziele bleiben davon unberührt. Der
 `zugfolge-germany-runtime-build-proof/v1` erfasst zusätzlich Bytezahl und
 SHA-256 des explizit erwarteten NAPI-Addons sowie der tatsächlich geladenen
-TypeScript-Runtimemodule. Unter Linux muss cgroup-v2
+TypeScript-Runtimemodule. Der harte Lauf verifiziert zusätzlich deren
+kanonischen Gesamt-Hash
+`be94232030f8f7cc4995dcc1e4c78f386ab4396967ec18a3d7cf6a6e5db648f2`;
+ein lediglich vorhandener, aber nicht exakt gepinnter Build bleibt rot. Unter Linux muss cgroup-v2
 exakt 512 MiB `memory.max`, `memory.swap.max=0` und einen Peak innerhalb der
 Grenze belegen. Zusätzlich müssen `oom` und `oom_kill` in `memory.events` vor
 und nach dem Lauf null bleiben. Debug-Läufe aus einem dirty Checkout sind
 ausdrücklich nicht akzeptanzfähig. Dasselbe gilt für ephemer signierte
-Debug-Deployments oder einen Lauf ohne expliziten NAPI-Expected-SHA. Nur die
+Debug-Deployments oder einen Lauf ohne expliziten NAPI-Expected-SHA und
+TypeScript-Build-Set-Expected-SHA. Nur die
 gemeinsame Top-level-Entscheidung darf `acceptanceEligible=true` setzen.
 Der separate Operational-Streaming-RSS-Test bindet den 983.736.272-Byte-Korpus
 exakt per Datei-SHA-256 und State-Hash und verlangt zusätzlich mindestens
