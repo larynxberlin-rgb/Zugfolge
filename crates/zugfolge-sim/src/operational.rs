@@ -20,6 +20,8 @@ pub type RouteMillimetres = i64;
 
 /// Projektionsgueltigkeit fuer den produktiven 60-s-Scheduler plus 15-s-Marge.
 pub const OPERATIONAL_PROJECTION_VALIDITY_MS: SimMillis = 75_000;
+/// Harte Obergrenze fuer noch nicht von der Runtime abgenommene Fachereignisse.
+pub const MAX_PENDING_OPERATIONAL_EVENTS: usize = 16_384;
 
 /// Deterministische Rundung fuer die analytische Bewegung.
 ///
@@ -1364,6 +1366,168 @@ pub struct OperationalWorld {
     pending_dispatch_requests: BTreeMap<String, DispatchRequest>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct IntervalOwnerEnd {
+    owner: usize,
+    to_mm: i64,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct TwoOwnerMaximum {
+    highest: Option<IntervalOwnerEnd>,
+    second_highest: Option<IntervalOwnerEnd>,
+}
+
+impl TwoOwnerMaximum {
+    fn insert(&mut self, candidate: IntervalOwnerEnd) {
+        if self
+            .highest
+            .is_some_and(|entry| entry.owner == candidate.owner)
+        {
+            if self
+                .highest
+                .is_some_and(|entry| candidate.to_mm > entry.to_mm)
+            {
+                self.highest = Some(candidate);
+            }
+            return;
+        }
+        if self
+            .second_highest
+            .is_some_and(|entry| entry.owner == candidate.owner)
+        {
+            if self
+                .second_highest
+                .is_some_and(|entry| candidate.to_mm > entry.to_mm)
+            {
+                self.second_highest = Some(candidate);
+                if self
+                    .highest
+                    .zip(self.second_highest)
+                    .is_some_and(|(highest, second)| second.to_mm > highest.to_mm)
+                {
+                    std::mem::swap(&mut self.highest, &mut self.second_highest);
+                }
+            }
+            return;
+        }
+        match self.highest {
+            None => self.highest = Some(candidate),
+            Some(highest) if candidate.to_mm > highest.to_mm => {
+                self.second_highest = Some(highest);
+                self.highest = Some(candidate);
+            }
+            Some(_) => {
+                if self
+                    .second_highest
+                    .is_none_or(|second| candidate.to_mm > second.to_mm)
+                {
+                    self.second_highest = Some(candidate);
+                }
+            }
+        }
+    }
+
+    fn merge(&mut self, other: Self) {
+        if let Some(highest) = other.highest {
+            self.insert(highest);
+        }
+        if let Some(second_highest) = other.second_highest {
+            self.insert(second_highest);
+        }
+    }
+
+    fn highest_except(self, owner: usize) -> Option<i64> {
+        self.highest
+            .filter(|entry| entry.owner != owner)
+            .or_else(|| self.second_highest.filter(|entry| entry.owner != owner))
+            .map(|entry| entry.to_mm)
+    }
+}
+
+fn cross_train_interval_overlap<'a>(
+    intervals: impl IntoIterator<Item = (usize, &'a TrackInterval)>,
+) -> bool {
+    let mut indexed: Vec<(usize, &TrackInterval)> = intervals.into_iter().collect();
+    indexed.sort_unstable_by(|left, right| {
+        left.1
+            .edge_id
+            .cmp(&right.1.edge_id)
+            .then_with(|| left.1.from_mm.cmp(&right.1.from_mm))
+            .then_with(|| left.1.to_mm.cmp(&right.1.to_mm))
+            .then_with(|| left.0.cmp(&right.0))
+    });
+
+    let mut edge_start = 0;
+    while edge_start < indexed.len() {
+        let mut edge_end = edge_start + 1;
+        while edge_end < indexed.len()
+            && indexed[edge_end].1.edge_id == indexed[edge_start].1.edge_id
+        {
+            edge_end += 1;
+        }
+
+        let mut starts: Vec<i64> = indexed[edge_start..edge_end]
+            .iter()
+            .map(|(_, interval)| interval.from_mm)
+            .collect();
+        starts.dedup();
+        let mut prefix_maxima = vec![TwoOwnerMaximum::default(); starts.len() + 1];
+
+        for (owner, interval) in &indexed[edge_start..edge_end] {
+            // Fuer ein zuvor einsortiertes Intervall `left` gilt exakt dann
+            // `left.overlaps(interval)`, wenn beide strikten Bedingungen
+            // `left.from_mm < interval.to_mm` und
+            // `interval.from_mm < left.to_mm` erfuellt sind. Der Fenwick-Index
+            // liefert dafuer das groesste `to_mm` eines anderen Zuges aus dem
+            // passenden Praefix der Startkoordinaten.
+            let mut prefix_index = starts.partition_point(|from_mm| *from_mm < interval.to_mm);
+            let mut maximum = TwoOwnerMaximum::default();
+            while prefix_index > 0 {
+                maximum.merge(prefix_maxima[prefix_index]);
+                prefix_index &= prefix_index - 1;
+            }
+            if maximum
+                .highest_except(*owner)
+                .is_some_and(|to_mm| interval.from_mm < to_mm)
+            {
+                return true;
+            }
+
+            let mut update_index = starts
+                .binary_search(&interval.from_mm)
+                .expect("Intervallstart stammt aus dem komprimierten Index")
+                + 1;
+            while update_index < prefix_maxima.len() {
+                prefix_maxima[update_index].insert(IntervalOwnerEnd {
+                    owner: *owner,
+                    to_mm: interval.to_mm,
+                });
+                update_index += update_index & update_index.wrapping_neg();
+            }
+        }
+
+        edge_start = edge_end;
+    }
+    false
+}
+
+fn cross_train_route_lock_overlap<'a>(locks: impl IntoIterator<Item = &'a RouteLock>) -> bool {
+    let mut owner_by_resource: BTreeMap<&str, &str> = BTreeMap::new();
+    for lock in locks {
+        for resource in &lock.resources {
+            if let Some(owner) = owner_by_resource.get(resource.as_str()) {
+                if *owner != lock.train_id {
+                    return true;
+                }
+            } else {
+                owner_by_resource.insert(resource, &lock.train_id);
+            }
+        }
+    }
+    false
+}
+
 impl OperationalWorld {
     pub fn new(
         world_id: impl Into<String>,
@@ -1460,6 +1624,9 @@ impl OperationalWorld {
         subject_id: &str,
         detail: impl Into<String>,
     ) -> Result<(), OperationalError> {
+        if self.events.len() >= MAX_PENDING_OPERATIONAL_EVENTS {
+            return Err(OperationalError::EventBudgetExceeded);
+        }
         self.event_sequence = self
             .event_sequence
             .checked_add(1)
@@ -3257,7 +3424,8 @@ impl OperationalWorld {
     }
 
     pub fn verify_invariants(&self) -> Result<(), OperationalError> {
-        if self.events.last().map_or(0, |event| event.event_sequence) > self.event_sequence
+        if self.events.len() > MAX_PENDING_OPERATIONAL_EVENTS
+            || self.events.last().map_or(0, |event| event.event_sequence) > self.event_sequence
             || self
                 .events
                 .windows(2)
@@ -3278,45 +3446,38 @@ impl OperationalWorld {
         {
             return Err(OperationalError::UnsafeState);
         }
-        let trains: Vec<&OperationalTrain> = self.trains.values().collect();
-        for (index, left) in trains.iter().enumerate() {
-            if operational_train_number_numeric_part(&left.train_number).is_none()
-                || left.tail_route_mm > left.head_route_mm
-                || left
+        let mut train_numbers = BTreeSet::new();
+        for train in self.trains.values() {
+            let Some(train_number) = operational_train_number_numeric_part(&train.train_number)
+            else {
+                return Err(OperationalError::UnsafeState);
+            };
+            if train.tail_route_mm > train.head_route_mm
+                || train
                     .authority
                     .as_ref()
-                    .is_some_and(|a| left.head_route_mm > a.end_route_mm)
-                || (matches!(left.motion_state, MotionState::Moving)
-                    != left.motion_segment.is_some())
+                    .is_some_and(|authority| train.head_route_mm > authority.end_route_mm)
+                || (matches!(train.motion_state, MotionState::Moving)
+                    != train.motion_segment.is_some())
             {
                 return Err(OperationalError::UnsafeState);
             }
-            for right in trains.iter().skip(index + 1) {
-                if operational_train_number_numeric_part(&left.train_number)
-                    == operational_train_number_numeric_part(&right.train_number)
-                {
-                    return Err(OperationalError::DuplicateTrainNumber(
-                        operational_train_number_numeric_part(&left.train_number)
-                            .expect("left train number was validated"),
-                    ));
-                }
-                if left
-                    .occupied_intervals
-                    .iter()
-                    .any(|a| right.occupied_intervals.iter().any(|b| a.overlaps(b)))
-                {
-                    return Err(OperationalError::OccupiedTrack);
-                }
+            if !train_numbers.insert(train_number) {
+                return Err(OperationalError::DuplicateTrainNumber(train_number));
             }
         }
-        let locks: Vec<&RouteLock> = self.route_locks.values().collect();
-        for (index, left) in locks.iter().enumerate() {
-            for right in locks.iter().skip(index + 1) {
-                if left.train_id != right.train_id && !left.resources.is_disjoint(&right.resources)
-                {
-                    return Err(OperationalError::UnsafeState);
-                }
-            }
+        if cross_train_interval_overlap(self.trains.values().enumerate().flat_map(
+            |(owner, train)| {
+                train
+                    .occupied_intervals
+                    .iter()
+                    .map(move |interval| (owner, interval))
+            },
+        )) {
+            return Err(OperationalError::OccupiedTrack);
+        }
+        if cross_train_route_lock_overlap(self.route_locks.values()) {
+            return Err(OperationalError::UnsafeState);
         }
         Ok(())
     }
@@ -3665,6 +3826,7 @@ fn first_boundary_or_event_ms(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OperationalError {
     ArithmeticOverflow,
+    EventBudgetExceeded,
     OutsideMotionValidity,
     IncompleteInfraRelease,
     MissingInfrastructureBinding,
@@ -3719,3 +3881,255 @@ impl fmt::Display for OperationalError {
 }
 
 impl Error for OperationalError {}
+
+#[cfg(test)]
+mod invariant_tests {
+    use super::*;
+
+    fn interval(edge_id: &str, from_mm: i64, to_mm: i64, direction: Direction) -> TrackInterval {
+        TrackInterval {
+            edge_id: edge_id.to_owned(),
+            from_mm,
+            to_mm,
+            direction,
+        }
+    }
+
+    fn train(
+        id: &str,
+        train_number: &str,
+        occupied_intervals: Vec<TrackInterval>,
+    ) -> OperationalTrain {
+        OperationalTrain {
+            id: id.to_owned(),
+            train_number: train_number.to_owned(),
+            operator_id: "operator:test".to_owned(),
+            movement_kind: MovementKind::Train,
+            route_version_id: "route:test".to_owned(),
+            formation_version_id: "formation:test".to_owned(),
+            head_route_mm: 0,
+            tail_route_mm: 0,
+            speed_mmps: 0,
+            direction: Direction::Along,
+            motion_state: MotionState::Standing,
+            motion_segment: None,
+            authority: None,
+            occupied_intervals,
+            occupied_blocks: BTreeSet::new(),
+            scheduled_departure_ms: None,
+            public_passenger_stop: false,
+            waiting_reason: None,
+        }
+    }
+
+    fn lock(id: &str, train_id: &str, resources: &[&str]) -> RouteLock {
+        RouteLock {
+            id: id.to_owned(),
+            template_id: "interlocking:test".to_owned(),
+            train_id: train_id.to_owned(),
+            resources: resources
+                .iter()
+                .map(|resource| (*resource).to_owned())
+                .collect(),
+            release_after_tail_route_mm: 0,
+            locked_at_ms: 0,
+        }
+    }
+
+    fn world(trains: Vec<OperationalTrain>, locks: Vec<RouteLock>) -> OperationalWorld {
+        OperationalWorld {
+            world_id: "world:test".to_owned(),
+            region_id: "region:test".to_owned(),
+            infra_release_id: "infra:test".to_owned(),
+            now_ms: 0,
+            commit_sequence: 0,
+            event_sequence: 0,
+            trains: trains
+                .into_iter()
+                .map(|train| (train.id.clone(), train))
+                .collect(),
+            vehicles: BTreeMap::new(),
+            vehicle_types: BTreeMap::new(),
+            formations: BTreeMap::new(),
+            route_locks: locks
+                .into_iter()
+                .map(|lock| (lock.id.clone(), lock))
+                .collect(),
+            signal_aspects: BTreeMap::new(),
+            switch_positions: BTreeMap::new(),
+            resource_lifecycle: BTreeMap::new(),
+            active_disruptions: BTreeMap::new(),
+            events: Vec::new(),
+            processed_command_ids: BTreeSet::new(),
+            infra: None,
+            scheduled_motion_ends: BTreeSet::new(),
+            waiting_by_resource: BTreeMap::new(),
+            pending_dispatch_requests: BTreeMap::new(),
+        }
+    }
+
+    fn quadratic_interval_overlap(intervals: &[(usize, TrackInterval)]) -> bool {
+        intervals.iter().enumerate().any(|(left_index, left)| {
+            intervals
+                .iter()
+                .skip(left_index + 1)
+                .any(|right| left.0 != right.0 && left.1.overlaps(&right.1))
+        })
+    }
+
+    fn indexed_interval_overlap(intervals: &[(usize, TrackInterval)]) -> bool {
+        cross_train_interval_overlap(intervals.iter().map(|(owner, interval)| (*owner, interval)))
+    }
+
+    #[test]
+    fn indexed_interval_check_matches_quadratic_contract_for_all_pair_shapes() {
+        let mut variants = Vec::new();
+        for edge_id in ["edge:a", "edge:b"] {
+            for direction in [Direction::Along, Direction::Against] {
+                for from_mm in -2..=2 {
+                    for to_mm in -2..=2 {
+                        variants.push(interval(edge_id, from_mm, to_mm, direction));
+                    }
+                }
+            }
+        }
+
+        for left in &variants {
+            for right in &variants {
+                for right_owner in [0, 1] {
+                    let intervals = [(0, left.clone()), (right_owner, right.clone())];
+                    assert_eq!(
+                        indexed_interval_overlap(&intervals),
+                        quadratic_interval_overlap(&intervals),
+                        "left={left:?} right={right:?} right_owner={right_owner}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn indexed_interval_check_matches_quadratic_contract_for_owner_mixtures() {
+        let mut variants = Vec::new();
+        for from_mm in -1..=1 {
+            for to_mm in -1..=1 {
+                variants.push(interval("edge:a", from_mm, to_mm, Direction::Along));
+            }
+        }
+
+        for first in &variants {
+            for second in &variants {
+                for third in &variants {
+                    for second_owner in 0..=2 {
+                        for third_owner in 0..=2 {
+                            let intervals = [
+                                (0, first.clone()),
+                                (second_owner, second.clone()),
+                                (third_owner, third.clone()),
+                            ];
+                            assert_eq!(
+                                indexed_interval_overlap(&intervals),
+                                quadratic_interval_overlap(&intervals),
+                                "intervals={intervals:?}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn verify_invariants_allows_one_train_to_overlap_its_own_state() {
+        let train = train(
+            "train:1",
+            "RE 1",
+            vec![
+                interval("edge:a", 0, 20, Direction::Along),
+                interval("edge:a", 10, 30, Direction::Against),
+            ],
+        );
+        let world = world(
+            vec![train],
+            vec![
+                lock("lock:1", "train:1", &["resource:shared"]),
+                lock("lock:2", "train:1", &["resource:shared", "resource:other"]),
+            ],
+        );
+
+        assert_eq!(world.verify_invariants(), Ok(()));
+    }
+
+    #[test]
+    fn verify_invariants_rejects_each_cross_train_conflict() {
+        let left = train(
+            "train:1",
+            "RE 1",
+            vec![interval("edge:a", 0, 20, Direction::Along)],
+        );
+        let overlapping = train(
+            "train:2",
+            "RE 2",
+            vec![interval("edge:a", 10, 30, Direction::Against)],
+        );
+        assert_eq!(
+            world(vec![left.clone(), overlapping], Vec::new()).verify_invariants(),
+            Err(OperationalError::OccupiedTrack)
+        );
+
+        let disjoint = train(
+            "train:2",
+            "RE 2",
+            vec![interval("edge:a", 20, 30, Direction::Along)],
+        );
+        assert_eq!(
+            world(
+                vec![left.clone(), disjoint.clone()],
+                vec![
+                    lock("lock:1", "train:1", &["resource:shared"]),
+                    lock("lock:2", "train:2", &["resource:shared"]),
+                ],
+            )
+            .verify_invariants(),
+            Err(OperationalError::UnsafeState)
+        );
+
+        let mut duplicate_number = disjoint;
+        duplicate_number.train_number = left.train_number.clone();
+        assert_eq!(
+            world(vec![left, duplicate_number], Vec::new()).verify_invariants(),
+            Err(OperationalError::DuplicateTrainNumber(1))
+        );
+    }
+
+    #[test]
+    fn record_enforces_pending_event_budget_without_partial_mutation() {
+        let mut world = world(Vec::new(), Vec::new());
+        world.events = (1..MAX_PENDING_OPERATIONAL_EVENTS)
+            .map(|sequence| OperationalEvent {
+                event_sequence: u64::try_from(sequence).unwrap(),
+                commit_sequence: 0,
+                at_ms: 0,
+                kind: "existing".to_owned(),
+                subject_id: "subject:test".to_owned(),
+                detail: String::new(),
+            })
+            .collect();
+        world.event_sequence = u64::try_from(world.events.len()).unwrap();
+
+        world
+            .record("at-budget", "subject:test", "accepted")
+            .unwrap();
+        assert_eq!(world.events.len(), MAX_PENDING_OPERATIONAL_EVENTS);
+        assert_eq!(world.verify_invariants(), Ok(()));
+        let event_sequence_at_limit = world.event_sequence;
+
+        assert_eq!(
+            world.record("over-budget", "subject:test", "rejected"),
+            Err(OperationalError::EventBudgetExceeded)
+        );
+        assert_eq!(world.events.len(), MAX_PENDING_OPERATIONAL_EVENTS);
+        assert_eq!(world.event_sequence, event_sequence_at_limit);
+        assert_eq!(world.events.last().unwrap().kind, "at-budget");
+    }
+}

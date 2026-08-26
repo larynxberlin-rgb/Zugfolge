@@ -19,6 +19,9 @@ const ALPHA_KEY_ID = "zugfolge-alpha-2026.3";
 const MAX_NODE_RSS_BYTES = 512 * 1024 * 1024;
 const COLD_CATCH_UP_DAYS = 16;
 const COLD_CATCH_UP_MINIMUM_COMMANDS = 60_000;
+const MAX_SCHEDULER_BATCH_COMMANDS = 256;
+const MAX_SCHEDULER_BATCH_SPAN_MS = 5 * 60 * 1_000;
+const MAX_NATIVE_BATCH_EVENTS = 16_384;
 const POSTGRES_BOUNDARY = "external-postgresql-process-outside-measured-app-cgroup";
 const POSTGRES_DATABASE_NAME = /^zugfolge_germany_e2e_[a-z0-9_]+$/u;
 const EXPECTED_ALPHA_DEPLOYMENT_HASH = "4d9627d85ceab1c893a0fe3366e4d5f14f6173c58e164728d92825b81eb87098";
@@ -160,6 +163,7 @@ function scheduledOperationalCommandAtMs(commandId, command) {
 
 function operationalRuntimeWithBatchDiagnostics(runtime) {
   let activeBatch;
+  const completedBatchEventCounts = [];
   const withBatch = async (work, applyBatch) => {
     assert.equal(activeBatch, undefined, "Operative Batchdiagnose darf nicht verschachtelt werden.");
     activeBatch = new Map();
@@ -173,7 +177,15 @@ function operationalRuntimeWithBatchDiagnostics(runtime) {
       }));
     }
     try {
-      return await applyBatch();
+      const result = await applyBatch();
+      assert.ok(
+        result !== null
+          && typeof result === "object"
+          && Array.isArray(result.events),
+        "Operative Batchdiagnose erhielt kein typisiertes Ereignisarray.",
+      );
+      completedBatchEventCounts.push(result.events.length);
+      return result;
     } finally {
       activeBatch = undefined;
     }
@@ -203,7 +215,11 @@ function operationalRuntimeWithBatchDiagnostics(runtime) {
         }
     },
   });
-  return Object.freeze({ runtime: wrappedRuntime, withBatch });
+  return Object.freeze({
+    runtime: wrappedRuntime,
+    withBatch,
+    completedBatchEventCounts,
+  });
 }
 
 async function fileProof(path) {
@@ -548,6 +564,7 @@ async function coldWorkerCatchUp({
     const progressEvents = [];
     let batchCount = 0;
     let maxBatchCommands = 0;
+    let maxBatchSpanMs = 0;
     const advancedRegions = await advanceRegionalSimulations(
       worker,
       deploymentRuntime.realtimeRegions(),
@@ -576,10 +593,18 @@ async function coldWorkerCatchUp({
       assert.equal(completed.regionId, REGION_ID);
       assert.ok(Number.isSafeInteger(started.commandCount) && started.commandCount > 0);
       assert.equal(completed.commandCount, started.commandCount);
+      assert.ok(Number.isSafeInteger(started.currentNowMs) && started.currentNowMs >= 0);
+      assert.ok(Number.isSafeInteger(completed.currentNowMs) && completed.currentNowMs >= started.currentNowMs);
+      const batchSpanMs = completed.currentNowMs - started.currentNowMs;
+      assert.ok(
+        batchSpanMs <= MAX_SCHEDULER_BATCH_SPAN_MS,
+        `Scheduler-Batch ueberschreitet ${MAX_SCHEDULER_BATCH_SPAN_MS} ms: ${batchSpanMs}.`,
+      );
       batchCount += 1;
       batchStartedCommandCount += started.commandCount;
       batchCompletedCommandCount += completed.commandCount;
       maxBatchCommands = Math.max(maxBatchCommands, started.commandCount);
+      maxBatchSpanMs = Math.max(maxBatchSpanMs, batchSpanMs);
     }
     const regionCompleted = progressEvents.filter((progress) => progress.phase === "region-completed");
     assert.equal(regionCompleted.length, 1, "Scheduler muss die erwartete Region genau einmal abschliessen.");
@@ -605,7 +630,18 @@ async function coldWorkerCatchUp({
       `Kalter Deutschland-Catch-up erzeugte nur ${scheduledCommandCount} echte Schedulerkommandos.`,
     );
     assert.ok(batchCount > 1);
-    assert.ok(maxBatchCommands <= 2_000);
+    assert.ok(maxBatchCommands <= MAX_SCHEDULER_BATCH_COMMANDS);
+    assert.ok(maxBatchSpanMs <= MAX_SCHEDULER_BATCH_SPAN_MS);
+    assert.equal(
+      diagnosticRuntime.completedBatchEventCounts.length,
+      batchCount,
+      "Native Batchdiagnose deckt nicht jeden abgeschlossenen Scheduler-Batch ab.",
+    );
+    const maxBatchEvents = Math.max(...diagnosticRuntime.completedBatchEventCounts);
+    assert.ok(
+      maxBatchEvents <= MAX_NATIVE_BATCH_EVENTS,
+      `Nativer Batch ueberschreitet ${MAX_NATIVE_BATCH_EVENTS} Ereignisse: ${maxBatchEvents}.`,
+    );
 
     const rows = await db.select().from(databaseSchema.regionalSimulationStates);
     assert.equal(rows.length, 1);
@@ -676,6 +712,11 @@ async function coldWorkerCatchUp({
         batchCompletedCommandCount,
         batchCount,
         maxBatchCommands,
+        maxBatchSpanMs,
+        maxBatchEvents,
+        maxSchedulerBatchCommands: MAX_SCHEDULER_BATCH_COMMANDS,
+        maxSchedulerBatchSpanMs: MAX_SCHEDULER_BATCH_SPAN_MS,
+        maxNativeBatchEvents: MAX_NATIVE_BATCH_EVENTS,
         workerBoundary: "RegionalSimulationWorker.applyBatch",
         schedulerBoundary: "advanceRegionalSimulations",
       },
@@ -985,6 +1026,12 @@ test("operative Batchdiagnose ergaenzt Ursache und exakte Command-Metadaten ohne
     await diagnostic.runtime.applyBatch(state, Object.freeze({ commands })),
     { state, batch: { commands } },
   );
+  const completedBatch = Object.freeze({ events: Object.freeze([{}, {}]) });
+  assert.strictEqual(
+    await diagnostic.withBatch(work, async () => completedBatch),
+    completedBatch,
+  );
+  assert.deepEqual(diagnostic.completedBatchEventCounts, [2]);
   await assert.rejects(
     diagnostic.withBatch(work, async () => {
       const firstEnvelope = Object.freeze({ commandId: commands[0].commandId, command: commands[0].command });

@@ -6,6 +6,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   OPERATIONAL_SIMULATION_BATCH_RESULT_SCHEMA,
+  OPERATIONAL_SIMULATION_BATCH_STATE_JSON_LIMIT_BYTES,
+  OPERATIONAL_SIMULATION_COMMAND_BATCH_LIMIT,
   OPERATIONAL_SIMULATION_COMMAND_BATCH_SCHEMA,
   OPERATIONAL_SIMULATION_COMMAND_SCHEMA,
   OPERATIONAL_INFRASTRUCTURE_BINDING_SCHEMA,
@@ -288,9 +290,10 @@ describe("operative native v2-Grenze", () => {
 
   it("verwendet die asynchrone native ABI und prueft Revision und Kommando-ID", async () => {
     const next = state(HASH_B, 1, 1);
+    let nativeState: Readonly<Record<string, unknown>> = next;
     const asyncApply = vi.fn(async () => JSON.stringify({
       schemaVersion: OPERATIONAL_SIMULATION_RESULT_SCHEMA,
-      state: next,
+      state: nativeState,
       initializationHash: INITIALIZATION_HASH,
       stateHash: HASH_B,
       liveMap: projection("live-map", 1),
@@ -317,6 +320,37 @@ describe("operative native v2-Grenze", () => {
     });
     expect(result.stateHash).toBe(HASH_B);
     expect(asyncApply).toHaveBeenCalledOnce();
+
+    nativeState = {
+      ...next,
+      padding: "x".repeat(OPERATIONAL_SIMULATION_BATCH_STATE_JSON_LIMIT_BYTES),
+    };
+    await expect(runtime.apply(state(), {
+      schemaVersion: OPERATIONAL_SIMULATION_COMMAND_SCHEMA,
+      worldId: "world:1",
+      regionId: "region:1",
+      commandId: "command:1",
+      expectedStateHash: HASH_A,
+      expectedRevision: 0,
+      expectedPublisherSequence: 0,
+      command: { type: "safe-stop", trainId: "train:1", reason: "test" },
+    })).rejects.toThrow(/state.*UTF-8-Bytes/u);
+    nativeState = next;
+    const oversizedCallerState = {
+      ...state(),
+      padding: "x".repeat(OPERATIONAL_SIMULATION_BATCH_STATE_JSON_LIMIT_BYTES),
+    } as unknown as OperationalSimulationState;
+    await expect(runtime.apply(oversizedCallerState, {
+      schemaVersion: OPERATIONAL_SIMULATION_COMMAND_SCHEMA,
+      worldId: "world:1",
+      regionId: "region:1",
+      commandId: "command:1",
+      expectedStateHash: HASH_A,
+      expectedRevision: 0,
+      expectedPublisherSequence: 0,
+      command: { type: "safe-stop", trainId: "train:1", reason: "test" },
+    })).rejects.toThrow(/Kommandozustand.*UTF-8-Bytes/u);
+    expect(asyncApply).toHaveBeenCalledTimes(2);
   });
 
   it("validiert die atomare Batch-ABI samt Replayreihenfolge und kompaktem Stoerungskontext", async () => {
@@ -431,6 +465,34 @@ describe("operative native v2-Grenze", () => {
       }],
     })).rejects.toThrow(/applyOperationalSimulationCommandBatch nicht/u);
     expect(singleApply).not.toHaveBeenCalled();
+  });
+
+  it("verwirft mehr als 256 Batchkommandos vor dem nativen Aufruf", async () => {
+    const nativeBatch = vi.fn();
+    const runtime = operationalSimulationRuntimeFromAddon({
+      initializeOperationalSimulation: vi.fn(),
+      restoreOperationalSimulation: vi.fn(),
+      applyOperationalSimulationCommand: vi.fn(),
+      applyOperationalSimulationCommandBatch: nativeBatch,
+    });
+    const commands = Array.from(
+      { length: OPERATIONAL_SIMULATION_COMMAND_BATCH_LIMIT + 1 },
+      (_, index) => ({
+        commandId: `batch:advance:${index}`,
+        command: { type: "advance-to" as const, atMs: index + 1 },
+      }),
+    );
+
+    await expect(runtime.applyBatch(state(), {
+      schemaVersion: OPERATIONAL_SIMULATION_COMMAND_BATCH_SCHEMA,
+      worldId: "world:1",
+      regionId: "region:1",
+      expectedStateHash: HASH_A,
+      expectedRevision: 0,
+      expectedPublisherSequence: 0,
+      commands,
+    })).rejects.toThrow(/1 bis 256/u);
+    expect(nativeBatch).not.toHaveBeenCalled();
   });
 
   it("vergleicht die Infrastrukturbindung nach PostgreSQL-JSONB-Roundtrip feldweise und weiterhin fail-closed", async () => {

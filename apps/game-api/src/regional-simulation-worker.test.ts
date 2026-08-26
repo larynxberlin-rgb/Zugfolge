@@ -17,6 +17,7 @@ import { LivemapRegistry } from "@zugfolge/livemap-stream";
 import {
   OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
   OPERATIONAL_SIMULATION_BATCH_RESULT_SCHEMA,
+  OPERATIONAL_SIMULATION_COMMAND_BATCH_LIMIT,
   OPERATIONAL_SIMULATION_COMMAND_SCHEMA,
   OPERATIONAL_SIMULATION_INITIALIZED_SCHEMA,
   OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
@@ -1208,7 +1209,7 @@ describe("operativer v2-Regionalsimulationsworker", () => {
     }
   });
 
-  it("begrenzt transaktionale Batches vor Runtime- oder DB-Arbeit auf 4096 Kommandos", async () => {
+  it("begrenzt transaktionale Batches vor Runtime- oder DB-Arbeit auf 256 Kommandos", async () => {
     const { client, db } = await testDatabase();
     const worldId = "88000000-0000-4000-8000-000000000008";
     const livemap = new LivemapRegistry();
@@ -1220,11 +1221,11 @@ describe("operativer v2-Regionalsimulationsworker", () => {
       await expect(worker.applyBatch({
         worldId,
         regionId: REGION_ID,
-        commands: Array.from({ length: 4_097 }, (_, index) => ({
+        commands: Array.from({ length: OPERATIONAL_SIMULATION_COMMAND_BATCH_LIMIT + 1 }, (_, index) => ({
           commandId: `too-many-${index}`,
           command: { type: "advance-to" as const, atMs: 0 },
         })),
-      }, EPOCH)).rejects.toThrow(/4096/);
+      }, EPOCH)).rejects.toThrow(/256/);
       expect(calls).toHaveLength(0);
       const [row] = await db.select().from(regionalSimulationStates).where(and(
         eq(regionalSimulationStates.worldId, worldId),

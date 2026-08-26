@@ -36,8 +36,10 @@ type RegionalSimulationAdvancer = Pick<
   "applyBatch" | "readyRegions" | "recover"
 >;
 
-const TARGET_BATCH_COMMANDS = 2_000;
-export const REGIONAL_SIMULATION_BOUNDARY_COMMAND_LIMIT = 256;
+export const REGIONAL_SIMULATION_BATCH_COMMAND_LIMIT = 256;
+export const REGIONAL_SIMULATION_BATCH_SPAN_MS = 5 * 60 * 1_000;
+export const REGIONAL_SIMULATION_BOUNDARY_COMMAND_LIMIT =
+  REGIONAL_SIMULATION_BATCH_COMMAND_LIMIT;
 
 export interface TimedRegionalSimulationWork {
   readonly atMs: number;
@@ -93,10 +95,16 @@ function registrationKey(registration: RegionalRealtimeRegistration): string {
 
 export function chunkWithoutSplittingBoundary(
   commands: readonly TimedRegionalSimulationWork[],
-  targetSize = TARGET_BATCH_COMMANDS,
+  targetSize = REGIONAL_SIMULATION_BATCH_COMMAND_LIMIT,
 ): readonly (readonly TimedRegionalSimulationWork[])[] {
-  if (!Number.isSafeInteger(targetSize) || targetSize <= 0) {
-    throw new RangeError("Scheduler-Batchgroesse muss eine positive Ganzzahl sein.");
+  if (
+    !Number.isSafeInteger(targetSize)
+    || targetSize <= 0
+    || targetSize > REGIONAL_SIMULATION_BATCH_COMMAND_LIMIT
+  ) {
+    throw new RangeError(
+      `Scheduler-Batchgroesse muss zwischen 1 und ${REGIONAL_SIMULATION_BATCH_COMMAND_LIMIT} liegen.`,
+    );
   }
   const chunks: TimedRegionalSimulationWork[][] = [];
   let current: TimedRegionalSimulationWork[] = [];
@@ -124,6 +132,15 @@ export function chunkWithoutSplittingBoundary(
   }
   if (current.length > 0) chunks.push(current);
   return chunks;
+}
+
+function nextAbsoluteSimulationCheckpointMs(afterMs: number): number | undefined {
+  const remainder = afterMs % REGIONAL_SIMULATION_BATCH_SPAN_MS;
+  const delta = remainder === 0
+    ? REGIONAL_SIMULATION_BATCH_SPAN_MS
+    : REGIONAL_SIMULATION_BATCH_SPAN_MS - remainder;
+  const checkpointMs = afterMs + delta;
+  return Number.isSafeInteger(checkpointMs) ? checkpointMs : undefined;
 }
 
 function* dueScheduledCommandBoundaries(
@@ -323,12 +340,23 @@ export async function advanceRegionalSimulations(
             `Scheduler-Zeitgrenze ${boundaryAtMs} enthaelt mehr als ${REGIONAL_SIMULATION_BOUNDARY_COMMAND_LIMIT} atomare Kommandos.`,
           );
         }
-        if (pendingBatch.length > 0 && pendingBatch.length + boundary.length > TARGET_BATCH_COMMANDS) {
+        if (
+          pendingBatch.length > 0
+          && (
+            pendingBatch.length + boundary.length > REGIONAL_SIMULATION_BATCH_COMMAND_LIMIT
+            || boundaryAtMs - currentNowMs > REGIONAL_SIMULATION_BATCH_SPAN_MS
+          )
+        ) {
           await flushBatch();
+        }
+        if (boundaryAtMs - currentNowMs > REGIONAL_SIMULATION_BATCH_SPAN_MS) {
+          throw new RangeError(
+            `Scheduler-Zeitgrenze ${boundaryAtMs} ueberschreitet das maximale Simulationsfenster.`,
+          );
         }
         pendingBatch.push(...boundary);
         commandCount += boundary.length;
-        if (pendingBatch.length >= TARGET_BATCH_COMMANDS) await flushBatch();
+        if (pendingBatch.length >= REGIONAL_SIMULATION_BATCH_COMMAND_LIMIT) await flushBatch();
       };
 
       const atBoundary = scheduledCommands?.at(
@@ -347,28 +375,48 @@ export async function advanceRegionalSimulations(
         atMs: scheduled.atMs,
         command: { commandId: scheduled.commandId, command: scheduled.command },
       })));
+      await flushBatch();
 
       let cursorMs = region.nowMs;
       if (atMs > region.nowMs) {
-        for (const boundary of scheduledCommands === undefined ? [] : dueScheduledCommandBoundaries(
-          scheduledCommands,
-          region.worldId,
-          region.regionId,
-          region.nowMs,
-          atMs,
-        )) {
+        const dueIterator = (scheduledCommands === undefined
+          ? [][Symbol.iterator]()
+          : dueScheduledCommandBoundaries(
+            scheduledCommands,
+            region.worldId,
+            region.regionId,
+            region.nowMs,
+            atMs,
+          )[Symbol.iterator]());
+        let due = dueIterator.next();
+        let checkpointMs = nextAbsoluteSimulationCheckpointMs(region.nowMs);
+        while (!due.done || (checkpointMs !== undefined && checkpointMs <= atMs)) {
+          const boundaryAtMs = Math.min(
+            due.done ? Number.POSITIVE_INFINITY : due.value.atMs,
+            checkpointMs !== undefined && checkpointMs <= atMs
+              ? checkpointMs
+              : Number.POSITIVE_INFINITY,
+          );
+          if (!Number.isSafeInteger(boundaryAtMs)) break;
+          const scheduledBoundary = !due.done && due.value.atMs === boundaryAtMs
+            ? due.value
+            : undefined;
           const timedBoundary: TimedRegionalSimulationWork[] = [{
-            atMs: boundary.atMs,
+            atMs: boundaryAtMs,
             command: {
-              commandId: `advance-to-ms:${boundary.atMs}`,
-              command: { type: "advance-to", atMs: boundary.atMs },
+              commandId: `advance-to-ms:${boundaryAtMs}`,
+              command: { type: "advance-to", atMs: boundaryAtMs },
             },
-          }, ...boundary.commands.map((scheduled) => ({
+          }, ...(scheduledBoundary?.commands ?? []).map((scheduled) => ({
             atMs: scheduled.atMs,
             command: { commandId: scheduled.commandId, command: scheduled.command },
           }))];
           await enqueueBoundary(timedBoundary);
-          cursorMs = boundary.atMs;
+          cursorMs = boundaryAtMs;
+          if (scheduledBoundary !== undefined) due = dueIterator.next();
+          if (checkpointMs === boundaryAtMs) {
+            checkpointMs = nextAbsoluteSimulationCheckpointMs(checkpointMs);
+          }
         }
         if (cursorMs < atMs) {
           await enqueueBoundary([{

@@ -8,6 +8,8 @@ import {
 import {
   advanceRegionalSimulations,
   chunkWithoutSplittingBoundary,
+  REGIONAL_SIMULATION_BATCH_COMMAND_LIMIT,
+  REGIONAL_SIMULATION_BATCH_SPAN_MS,
   REGIONAL_SIMULATION_BOUNDARY_COMMAND_LIMIT,
   regionalSimulationMillisecond,
   type RegionalSimulationSchedulerProgress,
@@ -194,6 +196,87 @@ describe("regionaler 1:1-Scheduler", () => {
     expect(applyBatch).not.toHaveBeenCalled();
   });
 
+  it("zaehlt das schedulerseitige Zeitkommando in die atomare 256er-Grenze ein", async () => {
+    const epoch = new Date("2026-08-11T00:00:00.000Z");
+    const applyBatch = vi.fn(async () => batchResult(1_000));
+    const scheduled = Array.from(
+      { length: REGIONAL_SIMULATION_BOUNDARY_COMMAND_LIMIT },
+      (_, index) => ({
+        atMs: 1_000,
+        commandId: `future-boundary:${index}`,
+        command: {
+          type: "clear-disruption" as const,
+          disruptionId: `future-boundary:${index}`,
+        },
+      }),
+    );
+
+    await expect(advanceRegionalSimulations(
+      {
+        readyRegions: () => [{
+          worldId: "public",
+          regionId: "germany",
+          initializationHash: INITIALIZATION_HASH,
+          nowMs: 0,
+        }],
+        recover: vi.fn(),
+        applyBatch,
+      } as never,
+      [{ worldId: "public", regionId: "germany", initializationHash: INITIALIZATION_HASH }],
+      new Map([["public", epoch]]),
+      new Date(epoch.getTime() + 1_000),
+      {
+        at: () => [],
+        dueBoundaries: () => [{ atMs: 1_000, commands: scheduled }],
+      },
+    )).rejects.toThrow(/mehr als 256 atomare Kommandos/u);
+    expect(applyBatch).not.toHaveBeenCalled();
+  });
+
+  it("committet 255 gleichzeitige Fachkommandos mit ihrem Zeitkommando als einen Batch", async () => {
+    const epoch = new Date("2026-08-11T00:00:00.000Z");
+    const applyBatch = vi.fn(async () => batchResult(1_000));
+    const scheduled = Array.from(
+      { length: REGIONAL_SIMULATION_BOUNDARY_COMMAND_LIMIT - 1 },
+      (_, index) => ({
+        atMs: 1_000,
+        commandId: `future-boundary:${index}`,
+        command: {
+          type: "clear-disruption" as const,
+          disruptionId: `future-boundary:${index}`,
+        },
+      }),
+    );
+
+    await expect(advanceRegionalSimulations(
+      {
+        readyRegions: () => [{
+          worldId: "public",
+          regionId: "germany",
+          initializationHash: INITIALIZATION_HASH,
+          nowMs: 0,
+        }],
+        recover: vi.fn(),
+        applyBatch,
+      } as never,
+      [{ worldId: "public", regionId: "germany", initializationHash: INITIALIZATION_HASH }],
+      new Map([["public", epoch]]),
+      new Date(epoch.getTime() + 1_000),
+      {
+        at: () => [],
+        dueBoundaries: () => [{ atMs: 1_000, commands: scheduled }],
+      },
+    )).resolves.toBe(1);
+    expect(applyBatch).toHaveBeenCalledTimes(1);
+    expect(applyBatch.mock.calls[0]![0].commands).toHaveLength(
+      REGIONAL_SIMULATION_BATCH_COMMAND_LIMIT,
+    );
+    expect(applyBatch.mock.calls[0]![0].commands[0]).toEqual({
+      commandId: "advance-to-ms:1000",
+      command: { type: "advance-to", atMs: 1_000 },
+    });
+  });
+
   it("verweigert katalogseitige Zeitkommandos vor dem autoritativen Commit", async () => {
     const epoch = new Date("2026-08-11T00:00:00.000Z");
     const applyBatch = vi.fn(async () => batchResult(1_000));
@@ -286,7 +369,7 @@ describe("regionaler 1:1-Scheduler", () => {
     const progress: RegionalSimulationSchedulerProgress[] = [];
     const applyBatch = vi.fn(async (work: RegionalSimulationWorkBatch) => {
       yieldedAtApply.push(yieldedBoundaries);
-      expect(work.commands.length).toBeLessThanOrEqual(2_000);
+      expect(work.commands.length).toBeLessThanOrEqual(REGIONAL_SIMULATION_BATCH_COMMAND_LIMIT);
       appliedCommandIds.push(...work.commands.map(({ commandId }) => commandId));
       persistedNowMs = resultingNowMs(work, persistedNowMs);
       return batchResult(persistedNowMs);
@@ -325,8 +408,11 @@ describe("regionaler 1:1-Scheduler", () => {
       (entry) => progress.push(entry),
     )).resolves.toBe(1);
 
-    expect(applyBatch.mock.calls.map(([work]) => work.commands.length)).toEqual([2_000, 202]);
-    expect(yieldedAtApply).toEqual([1_001, targetMs]);
+    expect(applyBatch.mock.calls.map(([work]) => work.commands.length)).toEqual([
+      ...Array.from({ length: 8 }, () => REGIONAL_SIMULATION_BATCH_COMMAND_LIMIT),
+      154,
+    ]);
+    expect(yieldedAtApply).toEqual([129, 257, 385, 513, 641, 769, 897, 1_025, targetMs]);
     expect(appliedCommandIds).toEqual(Array.from(
       { length: targetMs },
       (_, index) => [
@@ -342,9 +428,152 @@ describe("regionaler 1:1-Scheduler", () => {
     }));
   });
 
+  it("teilt lange Luecken an absoluten Fuenf-Minuten-Marken und verschmilzt Kataloggrenzen", async () => {
+    const epoch = new Date("2026-08-11T00:00:00.000Z");
+    const targetMs = 1_000_123;
+    let persistedNowMs = 125_000;
+    const batchStarts: number[] = [];
+    const applied: RegionalSimulationWorkBatch[] = [];
+    const progress: RegionalSimulationSchedulerProgress[] = [];
+    const boundaries = [300_000, 750_000, targetMs].map((atMs) => ({
+      atMs,
+      commands: [{
+        atMs,
+        commandId: `clear:${atMs}`,
+        command: { type: "clear-disruption" as const, disruptionId: `d-${atMs}` },
+      }],
+    }));
+    const applyBatch = vi.fn(async (work: RegionalSimulationWorkBatch) => {
+      batchStarts.push(persistedNowMs);
+      applied.push(work);
+      expect(work.commands.length).toBeLessThanOrEqual(REGIONAL_SIMULATION_BATCH_COMMAND_LIMIT);
+      const completedNowMs = resultingNowMs(work, persistedNowMs);
+      expect(completedNowMs - persistedNowMs).toBeLessThanOrEqual(REGIONAL_SIMULATION_BATCH_SPAN_MS);
+      persistedNowMs = completedNowMs;
+      return batchResult(persistedNowMs);
+    });
+
+    await expect(advanceRegionalSimulations(
+      {
+        readyRegions: () => [{
+          worldId: "public",
+          regionId: "germany",
+          initializationHash: INITIALIZATION_HASH,
+          nowMs: persistedNowMs,
+        }],
+        recover: vi.fn(),
+        applyBatch,
+      } as never,
+      [{ worldId: "public", regionId: "germany", initializationHash: INITIALIZATION_HASH }],
+      new Map([["public", epoch]]),
+      new Date(epoch.getTime() + targetMs),
+      {
+        at: () => [],
+        *dueBoundaries(_worldId, _regionId, afterMs, throughMs) {
+          yield* boundaries.filter(({ atMs }) => atMs > afterMs && atMs <= throughMs);
+        },
+      },
+      (entry) => progress.push(entry),
+    )).resolves.toBe(1);
+
+    expect(batchStarts).toEqual([125_000, 300_000, 600_000, 900_000]);
+    expect(applied.map(({ commands }) => commands.map(({ commandId }) => commandId))).toEqual([
+      ["advance-to-ms:300000", "clear:300000"],
+      ["advance-to-ms:600000"],
+      ["advance-to-ms:750000", "clear:750000", "advance-to-ms:900000"],
+      [`advance-to-ms:${targetMs}`, `clear:${targetMs}`],
+    ]);
+    expect(persistedNowMs).toBe(targetMs);
+    expect(progress).toContainEqual(expect.objectContaining({
+      phase: "region-completed",
+      currentNowMs: targetMs,
+      targetNowMs: targetMs,
+      commandCount: 8,
+    }));
+  });
+
+  it("setzt nach einem committeten Checkpoint mit denselben IDs nur am persistierten Suffix fort", async () => {
+    const epoch = new Date("2026-08-11T00:00:00.000Z");
+    const targetMs = 650_000;
+    let persistedNowMs = 100_000;
+    let failAfterFirstCommit = true;
+    const committed = new Set<string>();
+    const effects: string[] = [];
+    const calls: string[][] = [];
+    const scheduled = [300_000, 600_000].map((atMs) => ({
+      atMs,
+      commandId: `clear:${atMs}`,
+      command: { type: "clear-disruption" as const, disruptionId: `d-${atMs}` },
+    }));
+    const applyBatch = vi.fn(async (work: RegionalSimulationWorkBatch) => {
+      calls.push(work.commands.map(({ commandId }) => commandId));
+      for (const item of work.commands) {
+        if (committed.has(item.commandId)) continue;
+        committed.add(item.commandId);
+        if (item.command.type === "advance-to") persistedNowMs = item.command.atMs;
+        else effects.push(item.commandId);
+      }
+      if (failAfterFirstCommit) {
+        failAfterFirstCommit = false;
+        throw new Error("Crash nach Checkpoint-Commit");
+      }
+      return batchResult(persistedNowMs);
+    });
+    const worker = {
+      readyRegions: () => [{
+        worldId: "public",
+        regionId: "germany",
+        initializationHash: INITIALIZATION_HASH,
+        nowMs: persistedNowMs,
+      }],
+      recover: vi.fn(),
+      applyBatch,
+    };
+    const catalog = {
+      at: (_worldId: string, _regionId: string, atMs: number) =>
+        scheduled.filter((command) => command.atMs === atMs),
+      *dueBoundaries(
+        _worldId: string,
+        _regionId: string,
+        afterMs: number,
+        throughMs: number,
+      ) {
+        for (const command of scheduled) {
+          if (command.atMs > afterMs && command.atMs <= throughMs) {
+            yield { atMs: command.atMs, commands: [command] };
+          }
+        }
+      },
+    };
+    const advance = () => advanceRegionalSimulations(
+      worker as never,
+      [{ worldId: "public", regionId: "germany", initializationHash: INITIALIZATION_HASH }],
+      new Map([["public", epoch]]),
+      new Date(epoch.getTime() + targetMs),
+      catalog,
+    );
+
+    await expect(advance()).rejects.toThrow("Crash nach Checkpoint-Commit");
+    expect(persistedNowMs).toBe(300_000);
+    expect(effects).toEqual(["clear:300000"]);
+
+    await expect(advance()).resolves.toBe(1);
+    expect(persistedNowMs).toBe(targetMs);
+    expect(effects).toEqual(["clear:300000", "clear:600000"]);
+    expect(calls).toEqual([
+      ["advance-to-ms:300000", "clear:300000"],
+      ["clear:300000"],
+      ["advance-to-ms:600000", "clear:600000"],
+      [`advance-to-ms:${targetMs}`],
+    ]);
+
+    await expect(advance()).resolves.toBe(0);
+    expect(calls).toHaveLength(4);
+  });
+
   it("verweigert einen in mehrere Streamteile gespaltenen atomaren Zeitpunkt vor dem Commit", async () => {
     const epoch = new Date("2026-08-11T00:00:00.000Z");
-    const applyBatch = vi.fn(async () => batchResult(1_000));
+    const applyBatch = vi.fn(async () => batchResult(128));
 
     await expect(advanceRegionalSimulations(
       {
@@ -359,11 +588,11 @@ describe("regionaler 1:1-Scheduler", () => {
       } as never,
       [{ worldId: "public", regionId: "germany", initializationHash: INITIALIZATION_HASH }],
       new Map([["public", epoch]]),
-      new Date(epoch.getTime() + 1_000),
+      new Date(epoch.getTime() + 128),
       {
         at: () => [],
         *dueBoundaries() {
-          for (let atMs = 1; atMs <= 999; atMs += 1) {
+          for (let atMs = 1; atMs <= 127; atMs += 1) {
             yield {
               atMs,
               commands: [{
@@ -375,9 +604,9 @@ describe("regionaler 1:1-Scheduler", () => {
           }
           for (const commandId of ["first", "split"]) {
             yield {
-              atMs: 1_000,
+              atMs: 128,
               commands: [{
-                atMs: 1_000,
+                atMs: 128,
                 commandId,
                 command: { type: "clear-disruption" as const, disruptionId: commandId },
               }],

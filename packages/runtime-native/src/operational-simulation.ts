@@ -22,7 +22,15 @@ export const OPERATIONAL_SIMULATION_COMMAND_BATCH_SCHEMA =
   "zugfolge-operational-simulation-command-batch/v1" as const;
 export const OPERATIONAL_SIMULATION_BATCH_RESULT_SCHEMA =
   "zugfolge-operational-simulation-batch-result/v1" as const;
-export const OPERATIONAL_SIMULATION_COMMAND_BATCH_LIMIT = 4_096 as const;
+export const OPERATIONAL_SIMULATION_COMMAND_BATCH_LIMIT = 256 as const;
+export const OPERATIONAL_SIMULATION_STATE_JSON_LIMIT_BYTES = 16 * 1024 * 1024;
+export const OPERATIONAL_SIMULATION_BATCH_STATE_JSON_LIMIT_BYTES =
+  OPERATIONAL_SIMULATION_STATE_JSON_LIMIT_BYTES;
+export const OPERATIONAL_SIMULATION_INITIALIZATION_JSON_LIMIT_BYTES = 16 * 1024 * 1024;
+export const OPERATIONAL_SIMULATION_RESTORE_JSON_LIMIT_BYTES =
+  OPERATIONAL_SIMULATION_STATE_JSON_LIMIT_BYTES + 1024 * 1024;
+export const OPERATIONAL_SIMULATION_COMMAND_JSON_LIMIT_BYTES = 8 * 1024 * 1024;
+export const OPERATIONAL_SIMULATION_BATCH_JSON_LIMIT_BYTES = 8 * 1024 * 1024;
 export const OPERATIONAL_INFRASTRUCTURE_BINDING_SCHEMA =
   "zugfolge-operational-infrastructure-binding/v2" as const;
 export const OPERATIONAL_INFRASTRUCTURE_FILE = "operational-infrastructure-v2.json" as const;
@@ -1013,6 +1021,11 @@ function decode<T>(json: string, schema: string, name: string): T {
   record(value, name);
   invariant(value["schemaVersion"] === schema, `${name} hat ein unbekanntes Schema.`);
   record(value["state"], `${name}.state`);
+  invariant(
+    Buffer.byteLength(JSON.stringify(value["state"]), "utf8")
+      <= OPERATIONAL_SIMULATION_STATE_JSON_LIMIT_BYTES,
+    `${name}.state ueberschreitet ${OPERATIONAL_SIMULATION_STATE_JSON_LIMIT_BYTES} UTF-8-Bytes.`,
+  );
   invariant(value["state"]["schemaVersion"] === OPERATIONAL_SIMULATION_STATE_SCHEMA, `${name}.state hat ein unbekanntes Schema.`);
   invariant(
     typeof value["initializationHash"] === "string"
@@ -1266,8 +1279,13 @@ export function operationalSimulationRuntimeFromAddon(
       assertOperationalTrainNumbers(input.trains, "operative Rust-v2-Initialisierung");
       const protectionModeSelectionEvidence = operationalProtectionModeSelectionEvidence(input);
       const infrastructurePath = resolveInfrastructurePath(input.infraRelease);
+      const inputJson = JSON.stringify(input);
+      invariant(
+        Buffer.byteLength(inputJson, "utf8") <= OPERATIONAL_SIMULATION_INITIALIZATION_JSON_LIMIT_BYTES,
+        `Operative Initialisierung ueberschreitet ${OPERATIONAL_SIMULATION_INITIALIZATION_JSON_LIMIT_BYTES} UTF-8-Bytes.`,
+      );
       const result = decode<OperationalSimulationInitialized>(
-        addon.initializeOperationalSimulation(JSON.stringify(input), infrastructurePath),
+        addon.initializeOperationalSimulation(inputJson, infrastructurePath),
         OPERATIONAL_SIMULATION_INITIALIZED_SCHEMA,
         "operative Rust-v2-Initialisierung",
       );
@@ -1285,12 +1303,22 @@ export function operationalSimulationRuntimeFromAddon(
     restore(state: OperationalSimulationState, expectedInitializationHash: string) {
       invariant(/^[a-f0-9]{64}$/u.test(expectedInitializationHash), "Erwarteter operativer Initialisierungshash ist ungueltig.");
       const infrastructurePath = resolveInfrastructurePath(state.infraRelease);
+      const stateBytes = Buffer.byteLength(JSON.stringify(state), "utf8");
+      invariant(
+        stateBytes <= OPERATIONAL_SIMULATION_STATE_JSON_LIMIT_BYTES,
+        `Operativer Restore-Zustand ueberschreitet ${OPERATIONAL_SIMULATION_STATE_JSON_LIMIT_BYTES} UTF-8-Bytes.`,
+      );
+      const restoreJson = JSON.stringify({
+        schemaVersion: OPERATIONAL_SIMULATION_RESTORE_SCHEMA,
+        expectedInitializationHash,
+        state,
+      });
+      invariant(
+        Buffer.byteLength(restoreJson, "utf8") <= OPERATIONAL_SIMULATION_RESTORE_JSON_LIMIT_BYTES,
+        `Operative Wiederherstellung ueberschreitet ${OPERATIONAL_SIMULATION_RESTORE_JSON_LIMIT_BYTES} UTF-8-Bytes.`,
+      );
       const result = decode<OperationalSimulationRestored>(
-        addon.restoreOperationalSimulation(JSON.stringify({
-          schemaVersion: OPERATIONAL_SIMULATION_RESTORE_SCHEMA,
-          expectedInitializationHash,
-          state,
-        }), infrastructurePath),
+        addon.restoreOperationalSimulation(restoreJson, infrastructurePath),
         OPERATIONAL_SIMULATION_RESTORED_SCHEMA,
         "operative Rust-v2-Wiederherstellung",
       );
@@ -1307,6 +1335,14 @@ export function operationalSimulationRuntimeFromAddon(
       const infrastructurePath = resolveInfrastructurePath(state.infraRelease);
       const stateJson = JSON.stringify(state);
       const commandJson = JSON.stringify(command);
+      invariant(
+        Buffer.byteLength(stateJson, "utf8") <= OPERATIONAL_SIMULATION_STATE_JSON_LIMIT_BYTES,
+        `Operativer Kommandozustand ueberschreitet ${OPERATIONAL_SIMULATION_STATE_JSON_LIMIT_BYTES} UTF-8-Bytes.`,
+      );
+      invariant(
+        Buffer.byteLength(commandJson, "utf8") <= OPERATIONAL_SIMULATION_COMMAND_JSON_LIMIT_BYTES,
+        `Operatives Kommando ueberschreitet ${OPERATIONAL_SIMULATION_COMMAND_JSON_LIMIT_BYTES} UTF-8-Bytes.`,
+      );
       const raw = addon.applyOperationalSimulationCommandAsync === undefined
         ? addon.applyOperationalSimulationCommand(stateJson, commandJson, infrastructurePath)
         : await addon.applyOperationalSimulationCommandAsync(stateJson, commandJson, infrastructurePath);
@@ -1340,6 +1376,14 @@ export function operationalSimulationRuntimeFromAddon(
       const infrastructurePath = resolveInfrastructurePath(state.infraRelease);
       const stateJson = JSON.stringify(state);
       const batchJson = JSON.stringify(batch);
+      invariant(
+        Buffer.byteLength(stateJson, "utf8") <= OPERATIONAL_SIMULATION_BATCH_STATE_JSON_LIMIT_BYTES,
+        `Operativer Zustand ueberschreitet ${OPERATIONAL_SIMULATION_BATCH_STATE_JSON_LIMIT_BYTES} UTF-8-Bytes.`,
+      );
+      invariant(
+        Buffer.byteLength(batchJson, "utf8") <= OPERATIONAL_SIMULATION_BATCH_JSON_LIMIT_BYTES,
+        `Operative Kommandogruppe ueberschreitet ${OPERATIONAL_SIMULATION_BATCH_JSON_LIMIT_BYTES} UTF-8-Bytes.`,
+      );
       const raw = addon.applyOperationalSimulationCommandBatchAsync === undefined
         ? addon.applyOperationalSimulationCommandBatch!(stateJson, batchJson, infrastructurePath)
         : await addon.applyOperationalSimulationCommandBatchAsync(stateJson, batchJson, infrastructurePath);

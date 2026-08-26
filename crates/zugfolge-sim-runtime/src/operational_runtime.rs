@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -11,9 +12,10 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use zugfolge_infra::open_operational_infrastructure_v2_store;
 use zugfolge_sim::operational::{
-    AutomaticShuntingNeed, DispatchRequest, MovementKind, OperationalDisruption, OperationalEvent,
-    OperationalInfrastructure, OperationalProgramTemplatePredicates, OperationalProjection,
-    OperationalWorld, PROTECTION_MODE_SELECTION_POLICY_V1, PhysicalVehicle, ProjectionKind,
+    AutomaticShuntingNeed, DispatchRequest, MAX_PENDING_OPERATIONAL_EVENTS, MovementKind,
+    OperationalDisruption, OperationalError, OperationalEvent, OperationalInfrastructure,
+    OperationalProgramTemplatePredicates, OperationalProjection, OperationalWorld,
+    PROTECTION_MODE_SELECTION_POLICY_V1, PhysicalVehicle, ProjectionKind,
     ProtectionModeSelectionRun, TrainMaterialization, VehicleType,
     operational_train_number_numeric_part,
 };
@@ -32,7 +34,16 @@ pub const BATCH_RESULT_SCHEMA: &str = "zugfolge-operational-simulation-batch-res
 pub const INFRASTRUCTURE_BINDING_SCHEMA: &str = "zugfolge-operational-infrastructure-binding/v2";
 pub const INFRASTRUCTURE_FILE: &str = "operational-infrastructure-v2.json";
 pub const MAX_COMMAND_RECEIPTS: usize = 4_096;
-pub const MAX_COMMAND_BATCH_SIZE: usize = 4_096;
+pub const MAX_COMMAND_BATCH_SIZE: usize = 256;
+pub const MAX_BATCH_EVENTS: usize = MAX_PENDING_OPERATIONAL_EVENTS;
+pub const MAX_OPERATIONAL_STATE_JSON_BYTES: usize = 16 * 1024 * 1024;
+pub const MAX_BATCH_STATE_JSON_BYTES: usize = MAX_OPERATIONAL_STATE_JSON_BYTES;
+pub const MAX_INITIALIZATION_JSON_BYTES: usize = 16 * 1024 * 1024;
+pub const MAX_RESTORE_JSON_BYTES: usize = MAX_OPERATIONAL_STATE_JSON_BYTES + 1024 * 1024;
+pub const MAX_COMMAND_JSON_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_BATCH_JSON_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_BATCH_RESULT_JSON_BYTES: usize = 32 * 1024 * 1024;
+const INITIAL_BATCH_RESULT_JSON_CAPACITY: usize = 64 * 1024;
 pub const INITIALIZATION_VALIDATION_RECEIPT_SCHEMA: &str =
     "zugfolge-operational-initialization-validation-receipt/v1";
 pub const INFRASTRUCTURE_VALIDATION_MODE: &str = "native-streaming-redb-v1";
@@ -338,9 +349,154 @@ fn decode<T: for<'de> Deserialize<'de>>(
     })
 }
 
+#[cfg(test)]
 fn encode<T: Serialize>(value: &T) -> Result<String, OperationalRuntimeError> {
     serde_json::to_string(value)
         .map_err(|error| OperationalRuntimeError::new("serialization_failed", error.to_string()))
+}
+
+struct BoundedJsonWriter {
+    bytes: Vec<u8>,
+    limit: usize,
+    budget_exceeded: bool,
+}
+
+impl BoundedJsonWriter {
+    fn new(limit: usize) -> Result<Self, OperationalRuntimeError> {
+        let mut bytes = Vec::new();
+        bytes
+            .try_reserve_exact(limit.min(INITIAL_BATCH_RESULT_JSON_CAPACITY))
+            .map_err(|error| {
+                OperationalRuntimeError::new("serialization_failed", error.to_string())
+            })?;
+        Ok(Self {
+            bytes,
+            limit,
+            budget_exceeded: false,
+        })
+    }
+
+    fn into_string(self) -> Result<String, OperationalRuntimeError> {
+        String::from_utf8(self.bytes).map_err(|error| {
+            OperationalRuntimeError::new("serialization_failed", error.to_string())
+        })
+    }
+}
+
+impl Write for BoundedJsonWriter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        let Some(next_len) = self.bytes.len().checked_add(bytes.len()) else {
+            self.budget_exceeded = true;
+            return Err(io::Error::other("JSON-Ausgabegroesse ist nicht zaehlbar"));
+        };
+        if next_len > self.limit {
+            self.budget_exceeded = true;
+            return Err(io::Error::other("JSON-Ausgabebudget ueberschritten"));
+        }
+        if next_len > self.bytes.capacity() {
+            let target_capacity = self
+                .bytes
+                .capacity()
+                .saturating_mul(2)
+                .max(next_len)
+                .min(self.limit);
+            self.bytes
+                .try_reserve_exact(target_capacity - self.bytes.len())
+                .map_err(|error| io::Error::other(error.to_string()))?;
+        }
+        self.bytes.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+fn encode_with_budget<T: Serialize>(
+    value: &T,
+    limit: usize,
+    budget_error_code: &'static str,
+) -> Result<String, OperationalRuntimeError> {
+    let mut writer = BoundedJsonWriter::new(limit)?;
+    match serde_json::to_writer(&mut writer, value) {
+        Ok(()) => writer.into_string(),
+        Err(_) if writer.budget_exceeded => Err(OperationalRuntimeError::new(
+            budget_error_code,
+            format!("JSON-Ergebnis ueberschreitet {limit} Bytes"),
+        )),
+        Err(error) => Err(OperationalRuntimeError::new(
+            "serialization_failed",
+            error.to_string(),
+        )),
+    }
+}
+
+struct BoundedJsonCounter {
+    bytes: usize,
+    limit: usize,
+    budget_exceeded: bool,
+}
+
+impl Write for BoundedJsonCounter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        let Some(next_len) = self.bytes.checked_add(bytes.len()) else {
+            self.budget_exceeded = true;
+            return Err(io::Error::other("JSON-Groesse ist nicht zaehlbar"));
+        };
+        if next_len > self.limit {
+            self.budget_exceeded = true;
+            return Err(io::Error::other("JSON-Groessenbudget ueberschritten"));
+        }
+        self.bytes = next_len;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+fn ensure_encoded_within_budget<T: Serialize>(
+    value: &T,
+    limit: usize,
+    budget_error_code: &'static str,
+    name: &str,
+) -> Result<usize, OperationalRuntimeError> {
+    let mut counter = BoundedJsonCounter {
+        bytes: 0,
+        limit,
+        budget_exceeded: false,
+    };
+    match serde_json::to_writer(&mut counter, value) {
+        Ok(()) => Ok(counter.bytes),
+        Err(_) if counter.budget_exceeded => Err(OperationalRuntimeError::new(
+            budget_error_code,
+            format!("{name} ueberschreitet {limit} Bytes"),
+        )),
+        Err(error) => Err(OperationalRuntimeError::new(
+            "serialization_failed",
+            error.to_string(),
+        )),
+    }
+}
+
+fn reject_json_over_budget(
+    json: &str,
+    limit: usize,
+    error_code: &'static str,
+    name: &str,
+) -> Result<(), OperationalRuntimeError> {
+    if json.len() > limit {
+        return Err(OperationalRuntimeError::new(
+            error_code,
+            format!(
+                "{name} besitzt {} Bytes; erlaubt sind hoechstens {limit}",
+                json.len()
+            ),
+        ));
+    }
+    Ok(())
 }
 
 fn reject_embedded_static_infrastructure(
@@ -749,25 +905,31 @@ fn materialize(
             if predicates.is_valid() {
                 world.materialize(materialization)
             } else {
-                Err(
-                    zugfolge_sim::operational::OperationalError::InvalidProgramTemplate(
-                        materialization.id.clone(),
-                    ),
-                )
+                Err(OperationalError::InvalidProgramTemplate(
+                    materialization.id.clone(),
+                ))
             }
         })
-        .map_err(|error| {
-            OperationalRuntimeError::new("operational_command_rejected", error.to_string())
-        })
+        .map_err(operational_command_rejection)
+}
+
+fn operational_command_rejection(error: OperationalError) -> OperationalRuntimeError {
+    match error {
+        OperationalError::EventBudgetExceeded => OperationalRuntimeError::new(
+            "operational_event_budget_exceeded",
+            format!(
+                "Kommando erzeugt mehr als {MAX_PENDING_OPERATIONAL_EVENTS} noch nicht abgenommene Fachereignisse"
+            ),
+        ),
+        other => OperationalRuntimeError::new("operational_command_rejected", other.to_string()),
+    }
 }
 
 fn execute(
     world: &mut OperationalWorld,
     command: CommandPayload,
 ) -> Result<(), OperationalRuntimeError> {
-    let rejected = |error: zugfolge_sim::operational::OperationalError| {
-        OperationalRuntimeError::new("operational_command_rejected", error.to_string())
-    };
+    let rejected = operational_command_rejection;
     match command {
         CommandPayload::Materialize { train } => materialize(world, train),
         CommandPayload::Retire { train_id } => world.retire_train(&train_id).map_err(rejected),
@@ -846,6 +1008,12 @@ pub fn initialize_operational_simulation(
     input_json: &str,
     resolved_infrastructure_path: &str,
 ) -> Result<String, OperationalRuntimeError> {
+    reject_json_over_budget(
+        input_json,
+        MAX_INITIALIZATION_JSON_BYTES,
+        "operational_initialization_budget_exceeded",
+        "OperationalInitialization",
+    )?;
     let raw_input: Value = decode(input_json, "OperationalInitialization")?;
     let initialization_hash = operational_initialization_hash(&raw_input).map_err(|detail| {
         OperationalRuntimeError::new("invalid_initialization_hash_input", detail)
@@ -1033,23 +1201,39 @@ pub fn initialize_operational_simulation(
         protection_mode_selections_validated: true,
         validation_mode: INFRASTRUCTURE_VALIDATION_MODE,
     };
+    ensure_encoded_within_budget(
+        &state,
+        MAX_OPERATIONAL_STATE_JSON_BYTES,
+        "operational_initialized_state_budget_exceeded",
+        "OperationalState",
+    )?;
     let (live_map, rzue) = projections(&state.world)?;
-    encode(&InitializedResult {
-        schema_version: INITIALIZED_SCHEMA,
-        events,
-        state,
-        initialization_hash,
-        state_hash: hash,
-        live_map,
-        rzue,
-        validation_receipt,
-    })
+    encode_with_budget(
+        &InitializedResult {
+            schema_version: INITIALIZED_SCHEMA,
+            events,
+            state,
+            initialization_hash,
+            state_hash: hash,
+            live_map,
+            rzue,
+            validation_receipt,
+        },
+        MAX_BATCH_RESULT_JSON_BYTES,
+        "operational_initialized_result_budget_exceeded",
+    )
 }
 
 pub fn restore_operational_simulation(
     input_json: &str,
     resolved_infrastructure_path: &str,
 ) -> Result<String, OperationalRuntimeError> {
+    reject_json_over_budget(
+        input_json,
+        MAX_RESTORE_JSON_BYTES,
+        "operational_restore_budget_exceeded",
+        "OperationalRestore",
+    )?;
     let raw_envelope: Value = decode(input_json, "OperationalRestore")?;
     reject_embedded_static_infrastructure(raw_envelope.pointer("/state/world"))?;
     let envelope: RestoreEnvelope = decode(input_json, "OperationalRestore")?;
@@ -1067,6 +1251,12 @@ pub fn restore_operational_simulation(
     }
     let mut state = envelope.state;
     validate_state(&state)?;
+    ensure_encoded_within_budget(
+        &state,
+        MAX_OPERATIONAL_STATE_JSON_BYTES,
+        "operational_restore_state_budget_exceeded",
+        "OperationalState",
+    )?;
     if envelope.expected_initialization_hash != state.initialization_hash {
         return Err(OperationalRuntimeError::new(
             "initialization_hash_mismatch",
@@ -1082,14 +1272,18 @@ pub fn restore_operational_simulation(
             OperationalRuntimeError::new("infrastructure_attachment_failed", error.to_string())
         })?;
     let (live_map, rzue) = projections(&state.world)?;
-    encode(&RestoredResult {
-        schema_version: RESTORED_SCHEMA,
-        initialization_hash: state.initialization_hash.clone(),
-        state_hash: state.state_hash.clone(),
-        state,
-        live_map,
-        rzue,
-    })
+    encode_with_budget(
+        &RestoredResult {
+            schema_version: RESTORED_SCHEMA,
+            initialization_hash: state.initialization_hash.clone(),
+            state_hash: state.state_hash.clone(),
+            state,
+            live_map,
+            rzue,
+        },
+        MAX_BATCH_RESULT_JSON_BYTES,
+        "operational_restored_result_budget_exceeded",
+    )
 }
 
 pub fn apply_operational_simulation_command(
@@ -1097,6 +1291,18 @@ pub fn apply_operational_simulation_command(
     command_json: &str,
     resolved_infrastructure_path: &str,
 ) -> Result<String, OperationalRuntimeError> {
+    reject_json_over_budget(
+        state_json,
+        MAX_OPERATIONAL_STATE_JSON_BYTES,
+        "operational_command_state_budget_exceeded",
+        "OperationalState",
+    )?;
+    reject_json_over_budget(
+        command_json,
+        MAX_COMMAND_JSON_BYTES,
+        "operational_command_budget_exceeded",
+        "OperationalCommand",
+    )?;
     let raw_state: Value = decode(state_json, "OperationalState")?;
     reject_embedded_static_infrastructure(raw_state.get("world"))?;
     let mut state: RuntimeState = decode(state_json, "OperationalState")?;
@@ -1131,17 +1337,21 @@ pub fn apply_operational_simulation_command(
             ));
         }
         let (live_map, rzue) = projections(&state.world)?;
-        return encode(&CommandResult {
-            schema_version: RESULT_SCHEMA,
-            initialization_hash: state.initialization_hash.clone(),
-            state_hash: state.state_hash.clone(),
-            state,
-            live_map,
-            rzue,
-            events: Vec::new(),
-            applied_command_id: envelope.command_id,
-            idempotent_replay: true,
-        });
+        return encode_with_budget(
+            &CommandResult {
+                schema_version: RESULT_SCHEMA,
+                initialization_hash: state.initialization_hash.clone(),
+                state_hash: state.state_hash.clone(),
+                state,
+                live_map,
+                rzue,
+                events: Vec::new(),
+                applied_command_id: envelope.command_id,
+                idempotent_replay: true,
+            },
+            MAX_BATCH_RESULT_JSON_BYTES,
+            "operational_command_result_budget_exceeded",
+        );
     }
     if envelope.expected_state_hash != state.state_hash
         || envelope.expected_revision != state.revision
@@ -1184,18 +1394,28 @@ pub fn apply_operational_simulation_command(
         &state.command_receipts,
     );
     let events = std::mem::take(&mut state.world.events);
+    ensure_encoded_within_budget(
+        &state,
+        MAX_OPERATIONAL_STATE_JSON_BYTES,
+        "operational_command_result_state_budget_exceeded",
+        "OperationalState",
+    )?;
     let (live_map, rzue) = projections(&state.world)?;
-    encode(&CommandResult {
-        schema_version: RESULT_SCHEMA,
-        initialization_hash: state.initialization_hash.clone(),
-        state_hash: state.state_hash.clone(),
-        state,
-        live_map,
-        rzue,
-        events,
-        applied_command_id: envelope.command_id,
-        idempotent_replay: false,
-    })
+    encode_with_budget(
+        &CommandResult {
+            schema_version: RESULT_SCHEMA,
+            initialization_hash: state.initialization_hash.clone(),
+            state_hash: state.state_hash.clone(),
+            state,
+            live_map,
+            rzue,
+            events,
+            applied_command_id: envelope.command_id,
+            idempotent_replay: false,
+        },
+        MAX_BATCH_RESULT_JSON_BYTES,
+        "operational_command_result_budget_exceeded",
+    )
 }
 
 fn command_batch_failure(
@@ -1210,6 +1430,33 @@ fn command_batch_failure(
             error.code
         ),
     )
+}
+
+fn ensure_batch_event_budget(
+    accumulated_events: usize,
+    command_events: usize,
+    command_index: usize,
+    command_id: &str,
+) -> Result<(), OperationalRuntimeError> {
+    let event_count = accumulated_events
+        .checked_add(command_events)
+        .ok_or_else(|| {
+            OperationalRuntimeError::new(
+                "operational_batch_event_budget_exceeded",
+                format!(
+                    "index={command_index}, commandId={command_id:?}: Ereigniszahl ist nicht zaehlbar"
+                ),
+            )
+        })?;
+    if event_count > MAX_BATCH_EVENTS {
+        return Err(OperationalRuntimeError::new(
+            "operational_batch_event_budget_exceeded",
+            format!(
+                "index={command_index}, commandId={command_id:?}: {event_count} Ereignisse ueberschreiten das Batchlimit {MAX_BATCH_EVENTS}"
+            ),
+        ));
+    }
+    Ok(())
 }
 
 fn command_batch_event_context(
@@ -1278,6 +1525,18 @@ pub fn apply_operational_simulation_command_batch(
     batch_json: &str,
     resolved_infrastructure_path: &str,
 ) -> Result<String, OperationalRuntimeError> {
+    reject_json_over_budget(
+        state_json,
+        MAX_BATCH_STATE_JSON_BYTES,
+        "operational_batch_state_budget_exceeded",
+        "OperationalState",
+    )?;
+    reject_json_over_budget(
+        batch_json,
+        MAX_BATCH_JSON_BYTES,
+        "operational_batch_input_budget_exceeded",
+        "OperationalCommandBatch",
+    )?;
     let raw_state: Value = decode(state_json, "OperationalState")?;
     reject_embedded_static_infrastructure(raw_state.get("world"))?;
     let mut state: RuntimeState = decode(state_json, "OperationalState")?;
@@ -1391,6 +1650,12 @@ pub fn apply_operational_simulation_command_batch(
             state.revision,
         );
         let command_events = std::mem::take(&mut state.world.events);
+        ensure_batch_event_budget(
+            events.len(),
+            command_events.len(),
+            command_index,
+            &item.command_id,
+        )?;
         if let Some(context) = command_batch_event_context(
             command_index,
             &item.command_id,
@@ -1421,18 +1686,28 @@ pub fn apply_operational_simulation_command_batch(
         &state.command_receipts,
     );
     validate_state(&state)?;
+    ensure_encoded_within_budget(
+        &state,
+        MAX_BATCH_STATE_JSON_BYTES,
+        "operational_batch_result_state_budget_exceeded",
+        "OperationalState",
+    )?;
     let (live_map, rzue) = projections(&state.world)?;
-    encode(&CommandBatchResult {
-        schema_version: BATCH_RESULT_SCHEMA,
-        initialization_hash: state.initialization_hash.clone(),
-        state_hash: state.state_hash.clone(),
-        state,
-        live_map,
-        rzue,
-        events,
-        command_results,
-        event_contexts,
-    })
+    encode_with_budget(
+        &CommandBatchResult {
+            schema_version: BATCH_RESULT_SCHEMA,
+            initialization_hash: state.initialization_hash.clone(),
+            state_hash: state.state_hash.clone(),
+            state,
+            live_map,
+            rzue,
+            events,
+            command_results,
+            event_contexts,
+        },
+        MAX_BATCH_RESULT_JSON_BYTES,
+        "operational_batch_result_budget_exceeded",
+    )
 }
 
 #[cfg(test)]
@@ -2204,6 +2479,123 @@ mod tests {
     }
 
     #[test]
+    fn native_batch_input_budgets_are_checked_before_json_decode() {
+        let oversized_state = " ".repeat(MAX_BATCH_STATE_JSON_BYTES + 1);
+        let initialization_error =
+            super::initialize_operational_simulation(&oversized_state, "unused-before-decode")
+                .unwrap_err()
+                .to_string();
+        assert!(initialization_error.starts_with("operational_initialization_budget_exceeded:"));
+
+        let command_state_error = super::apply_operational_simulation_command(
+            &oversized_state,
+            "{}",
+            "unused-before-decode",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(command_state_error.starts_with("operational_command_state_budget_exceeded:"));
+
+        let state_error = super::apply_operational_simulation_command_batch(
+            &oversized_state,
+            "{}",
+            "unused-before-decode",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(state_error.starts_with("operational_batch_state_budget_exceeded:"));
+
+        let oversized_restore = " ".repeat(MAX_RESTORE_JSON_BYTES + 1);
+        let restore_error =
+            super::restore_operational_simulation(&oversized_restore, "unused-before-decode")
+                .unwrap_err()
+                .to_string();
+        assert!(restore_error.starts_with("operational_restore_budget_exceeded:"));
+
+        let oversized_command = " ".repeat(MAX_COMMAND_JSON_BYTES + 1);
+        let command_error = super::apply_operational_simulation_command(
+            "{}",
+            &oversized_command,
+            "unused-before-decode",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(command_error.starts_with("operational_command_budget_exceeded:"));
+
+        let oversized_batch = " ".repeat(MAX_BATCH_JSON_BYTES + 1);
+        let batch_error = super::apply_operational_simulation_command_batch(
+            "{}",
+            &oversized_batch,
+            "unused-before-decode",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(batch_error.starts_with("operational_batch_input_budget_exceeded:"));
+    }
+
+    #[test]
+    fn native_batch_event_budget_is_cumulative_and_fail_closed() {
+        assert!(
+            operational_command_rejection(OperationalError::EventBudgetExceeded)
+                .to_string()
+                .starts_with("operational_event_budget_exceeded:")
+        );
+        ensure_batch_event_budget(MAX_BATCH_EVENTS, 0, 0, "batch:exact").unwrap();
+        ensure_batch_event_budget(MAX_BATCH_EVENTS - 1, 1, 1, "batch:exact-split").unwrap();
+
+        let error = ensure_batch_event_budget(MAX_BATCH_EVENTS, 1, 2, "batch:over")
+            .unwrap_err()
+            .to_string();
+        assert!(error.starts_with("operational_batch_event_budget_exceeded:"));
+        assert!(error.contains("index=2"));
+        assert!(error.contains("commandId=\"batch:over\""));
+
+        assert!(
+            ensure_batch_event_budget(usize::MAX, 1, 3, "batch:overflow")
+                .unwrap_err()
+                .to_string()
+                .starts_with("operational_batch_event_budget_exceeded:")
+        );
+    }
+
+    #[test]
+    fn native_batch_result_writer_never_grows_past_its_budget() {
+        let large_writer = BoundedJsonWriter::new(MAX_BATCH_RESULT_JSON_BYTES).unwrap();
+        assert!(large_writer.bytes.capacity() <= INITIAL_BATCH_RESULT_JSON_CAPACITY);
+        assert!(large_writer.bytes.capacity() < MAX_BATCH_RESULT_JSON_BYTES);
+
+        let mut writer = BoundedJsonWriter::new(8).unwrap();
+        writer.write_all(b"12345678").unwrap();
+        assert!(writer.write_all(b"9").is_err());
+        assert_eq!(writer.bytes.len(), 8);
+        assert!(writer.bytes.capacity() <= 8);
+
+        let mut growing_writer = BoundedJsonWriter::new(100_000).unwrap();
+        growing_writer.write_all(&vec![b'x'; 70_000]).unwrap();
+        assert_eq!(growing_writer.bytes.len(), 70_000);
+        assert!(growing_writer.bytes.capacity() <= 100_000);
+
+        let error = encode_with_budget(&"12345678", 8, "operational_batch_result_budget_exceeded")
+            .unwrap_err()
+            .to_string();
+        assert!(error.starts_with("operational_batch_result_budget_exceeded:"));
+
+        assert_eq!(
+            ensure_encoded_within_budget(&"1234", 6, "state-budget", "OperationalState").unwrap(),
+            6
+        );
+        let state_error = ensure_encoded_within_budget(
+            &"12345",
+            6,
+            "operational_batch_result_state_budget_exceeded",
+            "OperationalState",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(state_error.starts_with("operational_batch_result_state_budget_exceeded:"));
+    }
+
+    #[test]
     fn native_batch_fails_closed_outside_its_bounded_contract() {
         let initialized: Value = serde_json::from_str(
             &initialize_operational_simulation(&encode(&initialization()).unwrap()).unwrap(),
@@ -2240,7 +2632,7 @@ mod tests {
                 .as_object()
                 .unwrap()
                 .len(),
-            MAX_COMMAND_RECEIPTS
+            MAX_COMMAND_BATCH_SIZE.min(MAX_COMMAND_RECEIPTS)
         );
 
         let mut oversized_commands = maximum["commands"].as_array().unwrap().clone();
