@@ -1,0 +1,120 @@
+{
+  "schema": "zugfolge-static-map-release-materialization/v2",
+  "releaseId": "karte-deutschland-2026.3-v2",
+  "corpusId": "infra-deutschland-2026.3",
+  "packageId": "zugfolge-static-map-deutschland",
+  "version": "2026.3-v2-unsigned",
+  "partBytes": 104857600,
+  "claims": {
+    "operationalInfraRelease": false,
+    "productionActivationEligible": false,
+    "signatureStatus": "unsigned"
+  },
+  "cutover": {
+    "legacyTrainMapProjection": false,
+    "waypointFallback": false,
+    "trainPositionEstimates": false,
+    "javascriptOperationalFallback": false
+  },
+  "runtime": {
+    "schema": "zugfolge-map-runtime/v2",
+    "publicBasePath": "/artifacts/maps/infra-deutschland-2026.3",
+    "basemapStyleUrl": "/artifacts/maps/infra-deutschland-2026.3/style.json",
+    "infrastructurePmtilesUrl": "/artifacts/maps/infra-deutschland-2026.3/infra-deutschland-2026.3.pmtiles"
+  },
+  "artifacts": [
+    {
+      "id": "welt-basiskarte",
+      "kind": "basemap",
+      "sourceFile": "var/source-cache/annual-2026-pinned/welt-mit-deutschland-detail-2026-08-12-c766073e55b99b213276328e504cbb7a69b0b65db0546adf484539c3bd319aed.pmtiles",
+      "installPath": "basemap.pmtiles",
+      "expectedVectorLayers": [
+        "boundaries",
+        "buildings",
+        "earth",
+        "landcover",
+        "landuse",
+        "places",
+        "pois",
+        "roads",
+        "water"
+      ]
+    },
+    {
+      "id": "deutschland-infrastruktur",
+      "kind": "infrastructure",
+      "sourceFile": "var/derived/germany-2026.3/map-release-free-v2/infra-deutschland-2026.3.pmtiles",
+      "installPath": "infra-deutschland-2026.3.pmtiles",
+      "expectedVectorLayers": [
+        "blocks",
+        "conflict_resources",
+        "operating_points",
+        "platforms",
+        "rail_context",
+        "rail_corridors",
+        "signals",
+        "stations",
+        "switches",
+        "tracks"
+      ]
+    }
+  ],
+  "auxiliaryFiles": [
+    {
+      "id": "quality-manifest",
+      "kind": "quality-manifest",
+      "visibility": "public",
+      "sourceFile": "var/derived/germany-2026.3/map-release-free-v2/public/static-map-quality-v2.json",
+      "installPath": "manifests/quality.json"
+    },
+    {
+      "id": "public-read-model",
+      "kind": "read-model",
+      "visibility": "public",
+      "sourceFile": "var/derived/germany-2026.3/map-release-free-v2/public/read-model.sqlite",
+      "installPath": "read-model.sqlite"
+    },
+    {
+      "id": "source-manifest",
+      "kind": "source-manifest",
+      "visibility": "public",
+      "sourceFile": "var/derived/germany-2026.3/map-release-free-v2/public/static-map-sources-v2.json",
+      "installPath": "manifests/sources.json"
+    },
+    {
+      "id": "style-dark",
+      "kind": "style",
+      "visibility": "public",
+      "sourceFile": "var/derived/germany-2026.3/map-release-free-v2/style.json",
+      "installPath": "style.json"
+    }
+  ],
+  "auxiliaryTrees": [
+    {
+      "idPrefix": "glyph",
+      "kind": "glyph",
+      "visibility": "public",
+      "sourceDirectory": "var/source-cache/annual-2026-pinned/basemap-assets-2026-08-12/fonts",
+      "installDirectory": "assets/fonts",
+      "expectedInventory": {
+        "Noto Sans Devanagari Regular v1": 256,
+        "Noto Sans Italic": 256,
+        "Noto Sans Medium": 256,
+        "Noto Sans Regular": 256
+      }
+    },
+    {
+      "idPrefix": "sprite",
+      "kind": "sprite",
+      "visibility": "public",
+      "sourceDirectory": "var/source-cache/annual-2026-pinned/basemap-assets-2026-08-12/sprites",
+      "installDirectory": "assets/sprites",
+      "expectedInventory": {
+        "dark.json": 1,
+        "dark.png": 1,
+        "dark@2x.json": 1,
+        "dark@2x.png": 1
+      }
+    }
+  ]
+}

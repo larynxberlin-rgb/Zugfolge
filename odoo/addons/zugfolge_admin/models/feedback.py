@@ -1,9 +1,7 @@
-import hashlib
-import json
-
 from odoo import api, fields, models
 from odoo.exceptions import AccessError, ValidationError
 
+from .canonical_json import canonical_sha256
 from .rfc3339 import rfc3339_utc
 
 
@@ -64,7 +62,7 @@ class ZugfolgeFeedback(models.Model):
         projection = self.env["zugfolge.world.projection"].search([("world_id", "=", world_id)], limit=1)
         if not projection:
             raise ValidationError("Feedbackprojektion verweist auf keine bekannte Weltprojektion.")
-        payload_hash = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")).hexdigest()
+        payload_hash = canonical_sha256(body)
         existing = self.search([("feedback_reference", "=", feedback_reference)], limit=1)
         if existing:
             if existing.payload_hash != payload_hash:

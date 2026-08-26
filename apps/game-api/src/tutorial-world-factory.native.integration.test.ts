@@ -1,4 +1,5 @@
 import { PGlite } from "@electric-sql/pglite";
+import { fileURLToPath } from "node:url";
 import { TutorialSessionService, TUTORIAL_TEMPLATE } from "@zugfolge/alpha";
 import {
   accounts,
@@ -20,7 +21,11 @@ import * as schema from "@zugfolge/db/schema";
 import { OperationsRegistry } from "@zugfolge/dispatch";
 import { LivemapRegistry } from "@zugfolge/livemap-stream";
 import { loadPlanningRuntime } from "@zugfolge/planning-runtime-native";
-import { loadOperatingRuntime, loadOperationalSimulationRuntime } from "@zugfolge/runtime-native";
+import {
+  OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV,
+  loadOperatingRuntime,
+  loadOperationalSimulationRuntime,
+} from "@zugfolge/runtime-native";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
@@ -31,6 +36,12 @@ import { GameTutorialWorldFactory } from "./tutorial-world-factory.js";
 
 const PUBLIC_WORLD = "00000000-0000-4000-8000-000000000111";
 const PUBLIC_ACCOUNT = "00000000-0000-4000-8000-000000000112";
+const TUTORIAL_INFRA_RELEASE_ID = "tutorial-minimal-2026.1:operational-infra";
+const TUTORIAL_INFRASTRUCTURE_ROOT = fileURLToPath(new URL(
+  "../tutorial-infrastructure/tutorial-minimal-2026.1/",
+  import.meta.url,
+));
+const PREVIOUS_INFRASTRUCTURE_ROOTS = process.env[OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV];
 const nativeAvailable = process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"] !== undefined
   && process.env["ZUGFOLGE_PLANNING_RUNTIME_NATIVE_PATH"] !== undefined;
 
@@ -39,6 +50,9 @@ const nativeAvailable = process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"] !== undefine
   let db: ReturnType<typeof drizzle<typeof schema>>;
 
   beforeEach(async () => {
+    process.env[OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV] = JSON.stringify({
+      [TUTORIAL_INFRA_RELEASE_ID]: TUTORIAL_INFRASTRUCTURE_ROOT,
+    });
     client = new PGlite();
     db = drizzle(client, { schema });
     await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
@@ -46,7 +60,14 @@ const nativeAvailable = process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"] !== undefine
     await db.insert(accounts).values({ id: PUBLIC_ACCOUNT, worldId: PUBLIC_WORLD, keycloakSubject: "kc-player", displayName: "Spieler" });
   });
 
-  afterEach(async () => client.close());
+  afterEach(async () => {
+    await client.close();
+    if (PREVIOUS_INFRASTRUCTURE_ROOTS === undefined) {
+      delete process.env[OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV];
+    } else {
+      process.env[OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV] = PREVIOUS_INFRASTRUCTURE_ROOTS;
+    }
+  });
 
   it("durchlaeuft alle fuenf Kapitel ohne vorerfuelltes Inventar und archiviert mit finalem Hash", async () => {
     const operating = loadOperatingRuntime();

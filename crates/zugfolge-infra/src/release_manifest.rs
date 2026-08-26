@@ -267,6 +267,17 @@ struct PipelineConfig {
     version: String,
     official_adapters: OfficialAdapters,
     post_processors: PostProcessors,
+    operational_deriver: Option<OperationalDeriverConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct OperationalDeriverConfig {
+    entrypoint: String,
+    specification: String,
+    candidate: String,
+    report: String,
+    output: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -377,8 +388,11 @@ struct RightsDecision {
 #[serde(rename_all = "camelCase")]
 struct CaptureManifest {
     schema: String,
+    release_id: Option<String>,
+    timetable_year: Option<i64>,
+    capture_plan_sha256: Option<String>,
     captured_at: String,
-    internal_evidence_ledger_sha256: String,
+    internal_evidence_ledger_sha256: Option<String>,
     sources: Vec<CapturedSource>,
 }
 
@@ -1999,6 +2013,64 @@ fn validate_config(config: &GermanyConfig) -> Result<()> {
     require(
         non_empty(&config.pipeline.version),
         "Deutschland-Konfiguration ohne Pipelineversion.",
+    )?;
+
+    let release_prefix = format!("infra-deutschland-{}.", config.release.timetable_year);
+    let release_revision = config
+        .release
+        .release_id
+        .strip_prefix(&release_prefix)
+        .and_then(|revision| {
+            revision
+                .parse::<u64>()
+                .ok()
+                .filter(|parsed| parsed.to_string() == revision)
+        });
+    require(
+        release_revision.is_some_and(|revision| revision > 0),
+        "Deutschland-Release-ID muss Fahrplanjahr und positive Revision exakt binden.",
+    )?;
+    let release_revision = release_revision.expect("zuvor validierte positive Release-Revision");
+    let release_version = config
+        .release
+        .release_id
+        .strip_prefix("infra-deutschland-")
+        .expect("zuvor validierter Deutschland-Release-Präfix");
+    let requires_operational_deriver = config.release.timetable_year > 2026
+        || (config.release.timetable_year == 2026 && release_revision >= 3);
+    require(
+        !requires_operational_deriver || config.pipeline.operational_deriver.is_some(),
+        "Deutschland-Releases ab 2026.3 brauchen den OperationalDeriver-v2-Subvertrag.",
+    )?;
+    let Some(operational_deriver) = &config.pipeline.operational_deriver else {
+        return Ok(());
+    };
+    require(
+        operational_deriver.entrypoint
+            == "tools/region-import/germany/run-operational-infrastructure-v2.mjs",
+        "OperationalDeriver besitzt nicht den festgelegten EntryPoint.",
+    )?;
+    require(
+        operational_deriver.specification
+            == format!(
+                "tools/region-import/germany/operational-infrastructure.annual-{release_version}.json"
+            ),
+        "OperationalDeriver-Spezifikation ist nicht exakt an den Deutschland-Release gebunden.",
+    )?;
+    let derived_root = format!("var/derived/germany-{release_version}");
+    require(
+        operational_deriver.candidate
+            == format!("{derived_root}/operational-infrastructure-v2.candidate.json"),
+        "OperationalDeriver-Candidate ist nicht exakt an den Deutschland-Release gebunden.",
+    )?;
+    require(
+        operational_deriver.report
+            == format!("{derived_root}/operational-infrastructure-v2.derivation-report.json"),
+        "OperationalDeriver-Bericht ist nicht exakt an den Deutschland-Release gebunden.",
+    )?;
+    require(
+        operational_deriver.output == format!("{derived_root}/operational-infrastructure-v2.json"),
+        "OperationalDeriver-Ausgabe ist nicht exakt an den Deutschland-Release gebunden.",
     )
 }
 
@@ -2108,11 +2180,50 @@ fn validate_rights(catalog: &SourceCatalog, registry: &RightsRegistry) -> Result
     Ok(())
 }
 
-fn validate_capture(capture: &CaptureManifest, catalog: &SourceCatalog) -> Result<()> {
+fn validate_capture(
+    capture: &CaptureManifest,
+    catalog: &SourceCatalog,
+    config: &GermanyConfig,
+) -> Result<()> {
     require(
-        capture.schema == "zugfolge-source-capture/v1",
+        capture.schema == "zugfolge-source-capture/v1"
+            || capture.schema == "zugfolge-source-capture/v2",
         "Unbekanntes Capture-Schema.",
     )?;
+    if capture.schema == "zugfolge-source-capture/v2" {
+        require(
+            capture.release_id.as_deref() == Some(config.release.release_id.as_str())
+                && capture.timetable_year == Some(config.release.timetable_year)
+                && capture
+                    .capture_plan_sha256
+                    .as_deref()
+                    .is_some_and(is_sha256),
+            "Capture v2 ist nicht an Jahresrelease, Fahrplanjahr und Capture-Plan gebunden.",
+        )?;
+    } else {
+        let requires_annual_capture_v2 = config
+            .release
+            .release_id
+            .strip_prefix("infra-deutschland-2026.")
+            .and_then(|revision| {
+                revision
+                    .parse::<u64>()
+                    .ok()
+                    .filter(|parsed| parsed.to_string() == revision)
+            })
+            .is_some_and(|revision| revision >= 3);
+        require(
+            !requires_annual_capture_v2,
+            "Deutschland-2026-Releases ab Patch 3 duerfen das historische Source-Capture v1 nicht verwenden.",
+        )?;
+        require(
+            capture
+                .internal_evidence_ledger_sha256
+                .as_deref()
+                .is_some_and(is_sha256),
+            "Capture v1 ohne Hash des internen Evidenzledgers.",
+        )?;
+    }
     require(
         capture.captured_at.as_bytes().get(4) == Some(&b'-')
             && capture.captured_at.as_bytes().get(7) == Some(&b'-')
@@ -2122,10 +2233,6 @@ fn validate_capture(capture: &CaptureManifest, catalog: &SourceCatalog) -> Resul
     require(
         capture.captured_at.ends_with('Z'),
         "Capture-Zeitpunkt ist nicht als UTC gekennzeichnet.",
-    )?;
-    require(
-        is_sha256(&capture.internal_evidence_ledger_sha256),
-        "Capture ohne Hash des internen Evidenzledgers.",
     )?;
     let catalog_ids: BTreeSet<_> = catalog
         .sources
@@ -2343,14 +2450,647 @@ fn quality_summary(report: &Value, config: &GermanyConfig) -> Result<Value> {
     }))
 }
 
-/// Baut nach Schema-, Rechte- und Qualitätsprüfung den öffentlichen Release.
-pub fn build_public_infra_release(
+fn class_count(value: &Value, context: &str) -> Result<(i64, i64, i64)> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| ReleaseManifestError::new(format!("{context} ist kein Objekt.")))?;
+    let actual: BTreeSet<_> = object.keys().map(String::as_str).collect();
+    require(
+        actual == BTreeSet::from(["A", "B", "C"]),
+        format!("{context} besitzt nicht exakt A, B und C."),
+    )?;
+    let read = |class: &str| {
+        object
+            .get(class)
+            .and_then(Value::as_i64)
+            .filter(|value| *value >= 0)
+            .ok_or_else(|| ReleaseManifestError::new(format!("{context}.{class} ist ungueltig.")))
+    };
+    Ok((read("A")?, read("B")?, read("C")?))
+}
+
+fn static_map_quality_summary(report: &Value, config: &GermanyConfig) -> Result<Value> {
+    require(
+        report.get("schema").and_then(Value::as_str) == Some("zugfolge-static-map-quality/v2"),
+        "Getrennter Kartenqualitaetsbericht ist kein Static-Map-Quality-v2.",
+    )?;
+    let release_version = config
+        .release
+        .release_id
+        .strip_prefix("infra-deutschland-")
+        .ok_or_else(|| ReleaseManifestError::new("Deutschland-Release-ID ist ungueltig."))?;
+    require(
+        report.get("releaseId").and_then(Value::as_str)
+            == Some(format!("karte-deutschland-{release_version}-v2").as_str())
+            && report.get("infrastructureCorpusId").and_then(Value::as_str)
+                == Some(config.release.release_id.as_str())
+            && report.get("timetableYear").and_then(Value::as_i64)
+                == Some(config.release.timetable_year),
+        "Static-Map-Quality-v2 verletzt Karten-, Korpus- oder Jahresbindung.",
+    )?;
+    require(
+        report.get("purpose").and_then(Value::as_str) == Some("static-map-visible-quality")
+            && report.get("deterministic").and_then(Value::as_bool) == Some(true),
+        "Static-Map-Quality-v2 ist keine deterministische sichtbare Kartenqualitaet.",
+    )?;
+    require(
+        report
+            .pointer("/claims/detailedSourceReportShipped")
+            .and_then(Value::as_bool)
+            == Some(false)
+            && report
+                .pointer("/claims/operationalInfraRelease")
+                .and_then(Value::as_bool)
+                == Some(false)
+            && report
+                .pointer("/claims/productionActivationEligible")
+                .and_then(Value::as_bool)
+                == Some(false),
+        "Static-Map-Quality-v2 lockert seine nichtbetriebliche Kartengrenze.",
+    )?;
+    for (class, meaning) in [
+        ("A", "complete-evidence"),
+        ("B", "conservative-visible-model"),
+        ("C", "visible-not-operationally-orderable"),
+    ] {
+        require(
+            report
+                .pointer(&format!("/classification/{class}"))
+                .and_then(Value::as_str)
+                == Some(meaning),
+            "Static-Map-Quality-v2 veraendert die oeffentliche A/B/C-Semantik.",
+        )?;
+    }
+    require(
+        report
+            .pointer("/sourceReport/content")
+            .and_then(Value::as_str)
+            == Some("detailed-infrastructure-quality-report")
+            && report
+                .pointer("/sourceReport/binding")
+                .and_then(Value::as_str)
+                == Some("sha256")
+            && report
+                .pointer("/sourceReport/bytes")
+                .and_then(Value::as_i64)
+                .is_some_and(|bytes| bytes > 0)
+            && report
+                .pointer("/sourceReport/sha256")
+                .and_then(Value::as_str)
+                .is_some_and(is_sha256)
+            && report
+                .pointer("/sourceReport/shipped")
+                .and_then(Value::as_bool)
+                == Some(false),
+        "Static-Map-Quality-v2 besitzt keine gueltige Detailberichtbindung.",
+    )?;
+    let visible_layers = report
+        .pointer("/summary/visibleLayers")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    let visible_features = report
+        .pointer("/summary/visibleFeatures")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    let summary_classes = report
+        .pointer("/summary/qualityClassFeatureCount")
+        .ok_or_else(|| ReleaseManifestError::new("Static-Map-Quality-v2 ohne Objektklassen."))?;
+    let (summary_a, summary_b, summary_c) = class_count(
+        summary_classes,
+        "Static-Map-Quality-v2.summary.qualityClassFeatureCount",
+    )?;
+    require(
+        visible_layers == 10
+            && visible_features > 0
+            && summary_a
+                .checked_add(summary_b)
+                .and_then(|sum| sum.checked_add(summary_c))
+                == Some(visible_features),
+        "Static-Map-Quality-v2 besitzt keinen vollstaendigen sichtbaren Zehn-Layer-Korpus.",
+    )?;
+    let expected_layers = [
+        "rail_corridors",
+        "operating_points",
+        "stations",
+        "tracks",
+        "platforms",
+        "switches",
+        "signals",
+        "blocks",
+        "conflict_resources",
+        "rail_context",
+    ];
+    let layers = report
+        .get("layers")
+        .and_then(Value::as_array)
+        .filter(|layers| layers.len() == expected_layers.len())
+        .ok_or_else(|| {
+            ReleaseManifestError::new("Static-Map-Quality-v2 besitzt nicht exakt zehn Layer.")
+        })?;
+    let mut aggregate = (0_i64, 0_i64, 0_i64);
+    let mut aggregate_features = 0_i64;
+    let mut track_summary = None;
+    for (index, layer) in layers.iter().enumerate() {
+        require(
+            layer.get("name").and_then(Value::as_str) == Some(expected_layers[index]),
+            "Static-Map-Quality-v2 verletzt die kanonische Layerreihenfolge.",
+        )?;
+        let features = layer
+            .get("features")
+            .and_then(Value::as_i64)
+            .filter(|features| *features > 0)
+            .ok_or_else(|| ReleaseManifestError::new("Static-Map-Layer ohne Features."))?;
+        let classes = layer
+            .get("qualityClassFeatureCount")
+            .ok_or_else(|| ReleaseManifestError::new("Static-Map-Layer ohne Objektklassen."))?;
+        let count = class_count(classes, "Static-Map-Layer.qualityClassFeatureCount")?;
+        require(
+            count
+                .0
+                .checked_add(count.1)
+                .and_then(|sum| sum.checked_add(count.2))
+                == Some(features),
+            "Static-Map-Layerklassen ergeben nicht seine Features.",
+        )?;
+        aggregate.0 = aggregate
+            .0
+            .checked_add(count.0)
+            .ok_or_else(|| ReleaseManifestError::new("Static-Map-Objektklassen laufen ueber."))?;
+        aggregate.1 = aggregate
+            .1
+            .checked_add(count.1)
+            .ok_or_else(|| ReleaseManifestError::new("Static-Map-Objektklassen laufen ueber."))?;
+        aggregate.2 = aggregate
+            .2
+            .checked_add(count.2)
+            .ok_or_else(|| ReleaseManifestError::new("Static-Map-Objektklassen laufen ueber."))?;
+        aggregate_features = aggregate_features
+            .checked_add(features)
+            .ok_or_else(|| ReleaseManifestError::new("Static-Map-Featurezahl laeuft ueber."))?;
+        if expected_layers[index] == "tracks" {
+            let total = layer
+                .get("totalLengthMm")
+                .and_then(Value::as_i64)
+                .filter(|total| *total > 0)
+                .ok_or_else(|| ReleaseManifestError::new("Static-Map-Gleise ohne Laenge."))?;
+            let lengths = layer.get("qualityClassLengthMm").ok_or_else(|| {
+                ReleaseManifestError::new("Static-Map-Gleise ohne Klassenlaengen.")
+            })?;
+            let (a, b, c) = class_count(lengths, "Static-Map-Gleislaengen")?;
+            require(
+                a.checked_add(b).and_then(|sum| sum.checked_add(c)) == Some(total),
+                "Static-Map-Gleislaengen sind unvollstaendig.",
+            )?;
+            track_summary = Some((total, lengths.clone(), c));
+        }
+    }
+    require(
+        aggregate == (summary_a, summary_b, summary_c) && aggregate_features == visible_features,
+        "Static-Map-Layeraggregation und Gesamtsumme weichen ab.",
+    )?;
+    let (total_length_mm, by_class_length_mm, class_c_length_mm) = track_summary
+        .ok_or_else(|| ReleaseManifestError::new("Static-Map-Quality-v2 ohne Gleislayer."))?;
+    Ok(json!({
+        "totalLengthMm": total_length_mm,
+        "byClassLengthMm": by_class_length_mm,
+        "visibleFeatures": visible_features,
+        "byClassFeatureCount": summary_classes,
+        "visibleLayers": visible_layers,
+        "classCVisible": summary_c > 0 || class_c_length_mm > 0,
+    }))
+}
+
+fn operational_quality_summary(
+    report: &Value,
+    report_bytes: &[u8],
+    config: &GermanyConfig,
+    artifacts: &[Artifact],
+    static_quality: &Value,
+    static_quality_bytes: &[u8],
+) -> Result<Value> {
+    require(
+        report.get("schema").and_then(Value::as_str)
+            == Some("zugfolge-operational-infrastructure-quality-report/v1")
+            && report.get("deterministic").and_then(Value::as_bool) == Some(true),
+        "Operational-v2-Qualitaet besitzt nicht das getrennte Operational-Quality-v1-Schema.",
+    )?;
+    require(
+        report.get("releaseId").and_then(Value::as_str) == Some(config.release.release_id.as_str())
+            && report.get("timetableYear").and_then(Value::as_i64)
+                == Some(config.release.timetable_year)
+            && report.get("scopeId").and_then(Value::as_str)
+                == Some("deutschland-ebo-operational-v2"),
+        "Operational-v2-Qualitaet verletzt Release-, Jahres- oder Scope-Bindung.",
+    )?;
+    for (path, expected) in [
+        ("/separation/mapClassCReclassified", false),
+        ("/separation/mapClassCBlocksOperationalQualityGate", false),
+        ("/separation/mapObjectsRemoved", false),
+        ("/qualityGate/closureReceiptVerified", true),
+        ("/qualityGate/nativeOperationalValidationVerified", true),
+        ("/qualityGate/operationalClassCZero", true),
+        ("/qualityGate/ordinaryAssumptionsPromoted", false),
+        ("/qualityGate/mapClassCReclassified", false),
+        ("/qualityGate/operationalQualityEligible", true),
+        ("/qualityGate/signatureImplied", false),
+        ("/qualityGate/activationImplied", false),
+    ] {
+        require(
+            report.pointer(path).and_then(Value::as_bool) == Some(expected),
+            format!("Operational-v2-Qualitaetsgate verletzt `{path}`."),
+        )?;
+    }
+    require(
+        report
+            .pointer("/separation/mapEvidencePurpose")
+            .and_then(Value::as_str)
+            == Some("visible-map-quality-evidence")
+            && report
+                .pointer("/separation/operationalEvidencePurpose")
+                .and_then(Value::as_str)
+                == Some("closed-operational-v2-model"),
+        "Operational-v2-Qualitaet vermischt Karten- und Betriebszweck.",
+    )?;
+    let map = report
+        .get("mapEvidence")
+        .ok_or_else(|| ReleaseManifestError::new("Operational-v2-Qualitaet ohne Kartenbeleg."))?;
+    let map_object = map
+        .as_object()
+        .ok_or_else(|| ReleaseManifestError::new("Operational-v2-Kartenbeleg ist kein Objekt."))?;
+    let map_keys: BTreeSet<_> = map_object.keys().map(String::as_str).collect();
+    require(
+        map_keys
+            == BTreeSet::from([
+                "bytes",
+                "infrastructureCorpusId",
+                "mapReleaseId",
+                "qualityClassFeatureCount",
+                "schema",
+                "sha256",
+                "sourceReport",
+                "trackLengthMm",
+                "trackQualityClassLengthMm",
+                "visibleFeatures",
+                "visibleLayers",
+            ]),
+        "Operational-v2-Kartenbeleg besitzt nicht exakt den Static-v2-Doppelbindungsvertrag.",
+    )?;
+    let source_report = map.get("sourceReport").ok_or_else(|| {
+        ReleaseManifestError::new("Operational-v2-Kartenbeleg ohne Detailberichtbindung.")
+    })?;
+    let source_report_object = source_report.as_object().ok_or_else(|| {
+        ReleaseManifestError::new("Operational-v2-Detailberichtbindung ist kein Objekt.")
+    })?;
+    let source_report_keys: BTreeSet<_> = source_report_object.keys().map(String::as_str).collect();
+    require(
+        source_report_keys == BTreeSet::from(["bytes", "schema", "sha256", "shipped"]),
+        "Operational-v2-Detailberichtbindung besitzt nicht exakt den v1-SourceReport-Vertrag.",
+    )?;
+    let actual_static_bytes = i64::try_from(static_quality_bytes.len()).map_err(|_| {
+        ReleaseManifestError::new("Static-Map-Quality-v2-Dateigroesse laeuft ueber.")
+    })?;
+    let actual_static_sha256 = sha256_bytes(static_quality_bytes);
+    require(
+        map.get("schema").and_then(Value::as_str) == Some("zugfolge-static-map-quality/v2")
+            && map.get("mapReleaseId") == static_quality.get("releaseId")
+            && map.get("infrastructureCorpusId") == static_quality.get("infrastructureCorpusId")
+            && map.get("bytes").and_then(Value::as_i64) == Some(actual_static_bytes)
+            && map.get("sha256").and_then(Value::as_str) == Some(actual_static_sha256.as_str())
+            && source_report.get("schema").and_then(Value::as_str)
+                == Some("zugfolge-final-infrastructure-quality-report/v1")
+            && source_report.get("bytes") == static_quality.pointer("/sourceReport/bytes")
+            && source_report.get("sha256") == static_quality.pointer("/sourceReport/sha256")
+            && source_report.get("shipped").and_then(Value::as_bool) == Some(false)
+            && source_report.get("shipped") == static_quality.pointer("/sourceReport/shipped")
+            && map.get("visibleFeatures") == static_quality.pointer("/summary/visibleFeatures")
+            && map.get("visibleLayers") == static_quality.pointer("/summary/visibleLayers")
+            && map.get("qualityClassFeatureCount")
+                == static_quality.pointer("/summary/qualityClassFeatureCount"),
+        "Operational-v2-Qualitaet bindet nicht denselben sichtbaren Kartenbeleg wie Static-Map-v2.",
+    )?;
+    let static_tracks = static_quality
+        .get("layers")
+        .and_then(Value::as_array)
+        .and_then(|layers| {
+            layers
+                .iter()
+                .find(|layer| layer.get("name").and_then(Value::as_str) == Some("tracks"))
+        })
+        .ok_or_else(|| ReleaseManifestError::new("Static-Map-v2 ohne Gleislayer."))?;
+    require(
+        map.get("trackLengthMm") == static_tracks.get("totalLengthMm")
+            && map.get("trackQualityClassLengthMm") == static_tracks.get("qualityClassLengthMm"),
+        "Operational-v2-Qualitaet veraendert die sichtbaren Kartengleisklassen.",
+    )?;
+    let model = report.get("operationalModel").ok_or_else(|| {
+        ReleaseManifestError::new("Operational-v2-Qualitaet ohne Betriebsmodell.")
+    })?;
+    let model_object = model.as_object().ok_or_else(|| {
+        ReleaseManifestError::new("Operational-v2-Betriebsmodell ist kein Objekt.")
+    })?;
+    let model_keys: BTreeSet<_> = model_object.keys().map(String::as_str).collect();
+    require(
+        model_keys
+            == BTreeSet::from([
+                "closureReceiptSha256",
+                "coverage",
+                "objectLevelProvenanceShipped",
+                "observedAndSyntheticObjectsShareRuntimeCollections",
+                "operationalArtifact",
+                "policyId",
+                "policySha256",
+                "provenance",
+                "qualityClass",
+                "realGeometry",
+                "realInterlockingFactsClaimed",
+                "simulatedOperationalAssignment",
+                "syntheticOperationalDetailsShipped",
+                "timetableRouteEvidence",
+            ]),
+        "Operational-v2-Betriebsmodell besitzt nicht exakt den ehrlichen v2-Provenienzvertrag.",
+    )?;
+    require(
+        model.get("policyId").and_then(Value::as_str) == Some("synthetic-operational-b/v2")
+            && model
+                .get("policySha256")
+                .and_then(Value::as_str)
+                .is_some_and(is_sha256)
+            && model
+                .get("closureReceiptSha256")
+                .and_then(Value::as_str)
+                .is_some_and(is_sha256)
+            && model.get("qualityClass").and_then(Value::as_str) == Some("B")
+            && model.get("provenance").and_then(Value::as_str) == Some("derived")
+            && model.get("realGeometry").and_then(Value::as_bool) == Some(true)
+            && model
+                .get("simulatedOperationalAssignment")
+                .and_then(Value::as_bool)
+                == Some(true)
+            && model
+                .get("realInterlockingFactsClaimed")
+                .and_then(Value::as_bool)
+                == Some(false)
+            && model
+                .get("syntheticOperationalDetailsShipped")
+                .and_then(Value::as_bool)
+                == Some(true)
+            && model
+                .get("objectLevelProvenanceShipped")
+                .and_then(Value::as_bool)
+                == Some(false)
+            && model
+                .get("observedAndSyntheticObjectsShareRuntimeCollections")
+                .and_then(Value::as_bool)
+                == Some(true),
+        "Operational-v2-Qualitaet besitzt keine ehrliche Derived/B-Simulationsprovenienz.",
+    )?;
+    let timetable_route_evidence = model.get("timetableRouteEvidence").ok_or_else(|| {
+        ReleaseManifestError::new("Operational-v2-Betriebsmodell ohne freien GTFS-Fahrwegbeleg.")
+    })?;
+    let timetable_route_evidence_object = timetable_route_evidence
+        .as_object()
+        .ok_or_else(|| ReleaseManifestError::new("Freier GTFS-Fahrwegbeleg ist kein Objekt."))?;
+    let timetable_route_evidence_keys: BTreeSet<_> = timetable_route_evidence_object
+        .keys()
+        .map(String::as_str)
+        .collect();
+    require(
+        timetable_route_evidence_keys
+            == BTreeSet::from([
+                "archive",
+                "archiveSha256",
+                "completeRouteCount",
+                "derivationRule",
+                "externalOperationalNetworkProvenance",
+                "gtfsSnapshotBytes",
+                "gtfsSnapshotSha256",
+                "policyId",
+                "realGeometry",
+                "realInterlockingFactsClaimed",
+                "reportBytes",
+                "reportSchema",
+                "reportSha256",
+                "routeRecordCount",
+                "routeSetSha256",
+                "routesBytes",
+                "routesSha256",
+                "sameStopTransitionCount",
+                "selectedSegmentCount",
+                "selectionRule",
+                "simulatedOperationalAssignment",
+                "snapshotHash",
+                "sourceLicense",
+                "sourceLicenseAsPublished",
+            ]),
+        "Freier GTFS-Fahrwegbeleg besitzt nicht exakt den v2-Closure-Vertrag.",
+    )?;
+    let selected_segment_count = timetable_route_evidence
+        .get("selectedSegmentCount")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    let complete_route_count = timetable_route_evidence
+        .get("completeRouteCount")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    let route_record_count = timetable_route_evidence
+        .get("routeRecordCount")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    require(
+        timetable_route_evidence
+            .get("reportSchema")
+            .and_then(Value::as_str)
+            == Some("zugfolge-germany-timetable-route-report/v2")
+            && timetable_route_evidence.get("policyId") == model.get("policyId")
+            && timetable_route_evidence
+                .get("derivationRule")
+                .and_then(Value::as_str)
+                == Some("all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2")
+            && timetable_route_evidence
+                .get("selectionRule")
+                .and_then(Value::as_str)
+                == Some(
+                    "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
+                )
+            && timetable_route_evidence
+                .get("sourceLicense")
+                .and_then(Value::as_str)
+                == Some("CC-BY-4.0")
+            && timetable_route_evidence
+                .get("sourceLicenseAsPublished")
+                .and_then(Value::as_str)
+                == Some("CC BY 4.0")
+            && timetable_route_evidence
+                .get("archive")
+                .and_then(Value::as_str)
+                .is_some_and(|archive| !archive.is_empty())
+            && ["reportBytes", "routesBytes", "gtfsSnapshotBytes"]
+                .iter()
+                .all(|field| {
+                    timetable_route_evidence
+                        .get(*field)
+                        .and_then(Value::as_i64)
+                        .is_some_and(|bytes| bytes > 0)
+                })
+            && [
+                "reportSha256",
+                "routesSha256",
+                "gtfsSnapshotSha256",
+                "snapshotHash",
+                "archiveSha256",
+                "routeSetSha256",
+            ]
+            .iter()
+            .all(|field| {
+                timetable_route_evidence
+                    .get(*field)
+                    .and_then(Value::as_str)
+                    .is_some_and(is_sha256)
+            })
+            && timetable_route_evidence.get("routesSha256")
+                == timetable_route_evidence.get("routeSetSha256")
+            && selected_segment_count > 0
+            && selected_segment_count == complete_route_count
+            && complete_route_count == route_record_count
+            && timetable_route_evidence
+                .get("sameStopTransitionCount")
+                .and_then(Value::as_i64)
+                .is_some_and(|count| count >= 0)
+            && timetable_route_evidence
+                .get("realGeometry")
+                .and_then(Value::as_bool)
+                == Some(true)
+            && timetable_route_evidence
+                .get("simulatedOperationalAssignment")
+                .and_then(Value::as_bool)
+                == Some(true)
+            && timetable_route_evidence
+                .get("realInterlockingFactsClaimed")
+                .and_then(Value::as_bool)
+                == Some(false)
+            && timetable_route_evidence
+                .get("externalOperationalNetworkProvenance")
+                .and_then(Value::as_bool)
+                == Some(false),
+        "Freier GTFS-Fahrwegbeleg verletzt Policy, Bytebindung, Vollstaendigkeit oder Provenienz.",
+    )?;
+    for field in [
+        "blockResources",
+        "directedEdges",
+        "edgeGeometries",
+        "interlockingRoutes",
+        "platformIntervals",
+        "regionBoundaries",
+        "routeVersions",
+        "rzueLayouts",
+        "signals",
+        "switches",
+    ] {
+        require(
+            model
+                .pointer(&format!("/coverage/{field}"))
+                .and_then(Value::as_i64)
+                .is_some_and(|count| count > 0),
+            format!("Operational-v2-Qualitaet besitzt keinen positiven `{field}`-Abschluss."),
+        )?;
+    }
+    let (class_a, class_b, class_c) = class_count(
+        report
+            .pointer("/summary/operationalQualityClassArtifactCount")
+            .ok_or_else(|| {
+                ReleaseManifestError::new("Operational-v2-Qualitaet ohne operative Klassenbilanz.")
+            })?,
+        "Operational-v2-Qualitaet.summary.operationalQualityClassArtifactCount",
+    )?;
+    let map_class_c = map
+        .pointer("/qualityClassFeatureCount/C")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    require(
+        class_a == 0
+            && class_b == 1
+            && class_c == 0
+            && report
+                .pointer("/summary/unresolvedRequired")
+                .and_then(Value::as_i64)
+                == Some(0)
+            && report
+                .pointer("/summary/visibleMapClassCFeatureCount")
+                .and_then(Value::as_i64)
+                == Some(map_class_c),
+        "Operational-v2-Qualitaet besitzt keine geschlossene B=1/C=0-Bilanz.",
+    )?;
+    let artifact = artifacts
+        .iter()
+        .find(|artifact| {
+            artifact.extra.get("kind").and_then(Value::as_str)
+                == Some(OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA)
+        })
+        .ok_or_else(|| ReleaseManifestError::new("Operational-v2-Artefakt fehlt."))?;
+    let candidate_bytes = model
+        .pointer("/operationalArtifact/bytes")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    let candidate_sha256 = model
+        .pointer("/operationalArtifact/sha256")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let candidate_state_hash = model
+        .pointer("/operationalArtifact/stateHash")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    require(
+        candidate_bytes == artifact.bytes
+            && candidate_sha256 == artifact.sha256
+            && artifact.extra.get("stateHash").and_then(Value::as_str)
+                == Some(candidate_state_hash)
+            && is_sha256(candidate_sha256)
+            && is_sha256(candidate_state_hash)
+            && candidate_sha256 != candidate_state_hash,
+        "Operational-v2-Qualitaet und natives Artefakt besitzen keine identische Byte-/Zustandsbindung.",
+    )?;
+    Ok(json!({
+        "reportSha256": sha256_bytes(report_bytes),
+        "policyId": model["policyId"],
+        "policySha256": model["policySha256"],
+        "closureReceiptSha256": model["closureReceiptSha256"],
+        "qualityClass": "B",
+        "provenance": "derived",
+        "candidateBytes": candidate_bytes,
+        "candidateSha256": candidate_sha256,
+        "candidateStateHash": candidate_state_hash,
+        "staticMapQualityBytes": actual_static_bytes,
+        "staticMapQualitySha256": actual_static_sha256,
+        "staticMapSourceReportSha256": source_report["sha256"],
+        "realInterlockingFactsClaimed": false,
+        "syntheticOperationalDetailsShipped": true,
+        "objectLevelProvenanceShipped": false,
+        "observedAndSyntheticObjectsShareRuntimeCollections": true,
+        "timetableRouteEvidence": timetable_route_evidence,
+        "operationalQualityEligible": true,
+        "signatureImplied": false,
+        "activationImplied": false,
+        "unresolvedRequired": 0,
+    }))
+}
+
+enum ReleaseQualityInput<'a> {
+    Legacy(&'a Value),
+    Operational {
+        static_report: &'a Value,
+        static_bytes: &'a [u8],
+        operational_report: &'a Value,
+        operational_bytes: &'a [u8],
+    },
+}
+
+fn build_public_infra_release_internal(
     config_value: &Value,
     catalog_value: &Value,
     rights_value: &Value,
     capture_value: &Value,
     artifacts_value: &Value,
-    quality_report: &Value,
+    quality_input: ReleaseQualityInput<'_>,
 ) -> Result<Value> {
     let config: GermanyConfig = decode(config_value, "Deutschland-Konfiguration")?;
     let catalog: SourceCatalog = decode(catalog_value, "Quellenkatalog")?;
@@ -2360,7 +3100,7 @@ pub fn build_public_infra_release(
 
     validate_config(&config)?;
     validate_rights(&catalog, &rights)?;
-    validate_capture(&capture, &catalog)?;
+    validate_capture(&capture, &catalog, &config)?;
     require(!artifacts.is_empty(), "InfraRelease ohne Artefakte.")?;
     let mut artifact_ids = BTreeSet::new();
     for artifact in &artifacts {
@@ -2394,7 +3134,40 @@ pub fn build_public_infra_release(
         )?;
     }
     validate_operational_infrastructure_artifact_binding(&artifacts, &config.release.release_id)?;
-    let quality = quality_summary(quality_report, &config)?;
+    let (quality_report, operational_quality_report, static_quality_bytes) = match quality_input {
+        ReleaseQualityInput::Legacy(report) => (report, None, None),
+        ReleaseQualityInput::Operational {
+            static_report,
+            static_bytes,
+            operational_report,
+            operational_bytes,
+        } => (
+            static_report,
+            Some((operational_report, operational_bytes)),
+            Some(static_bytes),
+        ),
+    };
+    let quality = operational_quality_report.map_or_else(
+        || quality_summary(quality_report, &config),
+        |_| static_map_quality_summary(quality_report, &config),
+    )?;
+    let operational_quality = operational_quality_report
+        .map(|(report, report_bytes)| {
+            let bytes = static_quality_bytes.ok_or_else(|| {
+                ReleaseManifestError::new(
+                    "Operational-v2-Qualitaet besitzt keine bindbaren Static-v2-Dateibytes.",
+                )
+            })?;
+            operational_quality_summary(
+                report,
+                report_bytes,
+                &config,
+                &artifacts,
+                quality_report,
+                bytes,
+            )
+        })
+        .transpose()?;
     let captured: BTreeMap<_, _> = capture
         .sources
         .iter()
@@ -2459,6 +3232,25 @@ pub fn build_public_infra_release(
             object.insert(key.into(), quality[key].clone());
         }
     }
+    if let (Some(object), Some(operational_quality)) =
+        (quality_value.as_object_mut(), operational_quality)
+    {
+        object.insert(
+            "classCVisible".into(),
+            Value::Bool(
+                quality
+                    .get("classCVisible")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            ),
+        );
+        object.insert("operationalClosure".into(), operational_quality);
+    }
+    let modelled_scope = if operational_quality_report.is_some() {
+        "operational-v2-closure-with-visible-static-context"
+    } else {
+        "quality-a-and-b"
+    };
     let release = json!({
         "schema": "zugfolge-infra-release/v2",
         "releaseId": config.release.release_id,
@@ -2467,7 +3259,7 @@ pub fn build_public_infra_release(
             "id": "deutschland-ebo",
             "loadedOnServer": "complete",
             "visibleScope": "complete-germany",
-            "modelledScope": "quality-a-and-b",
+            "modelledScope": modelled_scope,
             "playableScope": "separate-world-mask",
         },
         "sources": public_sources,
@@ -2508,6 +3300,78 @@ pub fn build_public_infra_release(
         }
     }
     Ok(json!({ "releaseHash": sha256(&release), "release": release }))
+}
+
+/// Baut den historischen, einteiligen InfraRelease-Qualitaetsvertrag. Klasse C
+/// bleibt in diesem Legacy-Pfad weiterhin nicht freigabefaehig.
+pub fn build_public_infra_release(
+    config_value: &Value,
+    catalog_value: &Value,
+    rights_value: &Value,
+    capture_value: &Value,
+    artifacts_value: &Value,
+    quality_report: &Value,
+) -> Result<Value> {
+    build_public_infra_release_internal(
+        config_value,
+        catalog_value,
+        rights_value,
+        capture_value,
+        artifacts_value,
+        ReleaseQualityInput::Legacy(quality_report),
+    )
+}
+
+/// Baut einen InfraRelease mit strikt getrennten Qualitaetsgrenzen: Die
+/// Static-Map-v2 darf sichtbare Klasse-C-Kontextobjekte behalten, waehrend nur
+/// der native, closure-basierte Operational-v2-Bericht die Betriebsfreigabe
+/// qualifiziert. Beide Berichte werden gegen ihre tatsaechlichen Dateibytes
+/// gebunden; keine Kartenklasse wird dabei umetikettiert.
+pub fn build_public_infra_release_with_operational_quality(
+    config_value: &Value,
+    catalog_value: &Value,
+    rights_value: &Value,
+    capture_value: &Value,
+    artifacts_value: &Value,
+    static_map_quality_bytes: &[u8],
+    operational_quality_bytes: &[u8],
+) -> Result<Value> {
+    require(
+        !static_map_quality_bytes.is_empty(),
+        "Static-Map-Quality-v2-Datei ist leer.",
+    )?;
+    let static_map_quality_report: Value = serde_json::from_slice(static_map_quality_bytes)
+        .map_err(|error| {
+            ReleaseManifestError::new(format!(
+                "Static-Map-Quality-v2-Datei ist kein gueltiges JSON: {error}"
+            ))
+        })?;
+    require(
+        !operational_quality_bytes.is_empty(),
+        "Operational-v2-Quality-Datei ist leer.",
+    )?;
+    let operational_quality_envelope: Value = serde_json::from_slice(operational_quality_bytes)
+        .map_err(|error| {
+            ReleaseManifestError::new(format!(
+                "Operational-v2-Quality-Datei ist kein gueltiges JSON: {error}"
+            ))
+        })?;
+    let operational_quality_report = operational_quality_envelope
+        .get("report")
+        .unwrap_or(&operational_quality_envelope);
+    build_public_infra_release_internal(
+        config_value,
+        catalog_value,
+        rights_value,
+        capture_value,
+        artifacts_value,
+        ReleaseQualityInput::Operational {
+            static_report: &static_map_quality_report,
+            static_bytes: static_map_quality_bytes,
+            operational_report: operational_quality_report,
+            operational_bytes: operational_quality_bytes,
+        },
+    )
 }
 
 /// Baut nach Quellen- und Adapterprüfung den jährlichen Infrastrukturplan.
@@ -2630,23 +3494,44 @@ pub fn build_annual_infra_plan(
         "DEM-Gleis-Join ohne Hashreport.",
     )?;
 
+    let mut stages = vec![
+        json!({ "id": "rights-gate", "mutatesRelease": false, "proof": "all-source-rights-approved" }),
+        json!({ "id": "capture", "mutatesRelease": false, "proof": "version-size-sha256-for-every-input" }),
+    ];
+    stages.extend([
+        json!({ "id": "official-infrago-normalization", "mutatesRelease": true, "sourceId": infrago.source_id, "entrypoint": infrago.entrypoint, "outputs": infrago.outputs, "proof": "strict-schema-report-and-deterministic-jsonseq-hashes" }),
+        json!({ "id": "openstation-normalization", "mutatesRelease": true, "sourceId": openstation.source_id, "entrypoint": openstation.entrypoint, "outputs": openstation.outputs, "proof": "streamed-netex-report-and-deterministic-station-layer-hashes" }),
+        json!({ "id": "ebo-filter", "mutatesRelease": true, "proof": "filter-report" }),
+        json!({ "id": "copernicus-dem-gradient", "mutatesRelease": true, "sourceId": dem.source_id, "entrypoint": dem.entrypoint, "outputs": dem.outputs, "proof": "pinned-cog-hashes-complete-sampling-and-uncertainty-report" }),
+        json!({ "id": "copernicus-dem-track-merge", "mutatesRelease": true, "entrypoint": merge.entrypoint, "output": merge.output, "report": merge.report, "proof": "strict-feature-id-geometry-count-and-sha256-report" }),
+        json!({ "id": "topology-and-conservative-model", "mutatesRelease": true, "proof": "deterministic-corpus-hash" }),
+        json!({ "id": "internal-validation", "mutatesRelease": true, "proof": "accepted-evidence-receipts" }),
+        json!({ "id": "quality-report", "mutatesRelease": false, "proof": "dimension-cause-length-report" }),
+    ]);
+    if let Some(operational_deriver) = &config.pipeline.operational_deriver {
+        stages.extend([
+            json!({ "id": "operational-v2-derivation", "mutatesRelease": true, "entrypoint": operational_deriver.entrypoint, "proof": "a-b-only-exact-geometry-routes-and-interlocking-report" }),
+            json!({ "id": "operational-v2-native-validation", "mutatesRelease": false, "entrypoint": "tools/region-import/materialize-operational-infrastructure-v2.mjs", "proof": "matching-javascript-and-rust-state-hashes" }),
+        ]);
+    }
+    stages.push(
+        json!({ "id": "tiles", "mutatesRelease": true, "proof": "self-hosted-pmtiles-hashes" }),
+    );
+    if config.pipeline.operational_deriver.is_some() {
+        stages.extend([
+            json!({ "id": "release-artifact-inventory", "mutatesRelease": true, "entrypoint": "tools/region-import/germany/run-release-artifacts.mjs", "proof": "typed-operational-v2-byte-and-state-binding" }),
+            json!({ "id": "public-manifest", "mutatesRelease": true, "proof": "rust-compiler-operational-v2-binding-and-internal-evidence-scan" }),
+            json!({ "id": "operational-v2-acceptance", "mutatesRelease": false, "proof": "native-worker-livemap-rzue-replay-restore-load-and-negative-gates" }),
+        ]);
+    }
+    stages.extend([
+        json!({ "id": "independent-validation", "mutatesRelease": false, "proof": "holdout-pass" }),
+        json!({ "id": "signature", "mutatesRelease": false, "proof": "release-responsible-signature" }),
+    ]);
+
     Ok(json!({
         "schema": "zugfolge-annual-infra-plan/v1",
         "releaseId": config.release.release_id,
-        "stages": [
-            { "id": "rights-gate", "mutatesRelease": false, "proof": "all-source-rights-approved" },
-            { "id": "capture", "mutatesRelease": false, "proof": "version-size-sha256-for-every-input" },
-            { "id": "official-infrago-normalization", "mutatesRelease": true, "sourceId": infrago.source_id, "entrypoint": infrago.entrypoint, "outputs": infrago.outputs, "proof": "strict-schema-report-and-deterministic-jsonseq-hashes" },
-            { "id": "openstation-normalization", "mutatesRelease": true, "sourceId": openstation.source_id, "entrypoint": openstation.entrypoint, "outputs": openstation.outputs, "proof": "streamed-netex-report-and-deterministic-station-layer-hashes" },
-            { "id": "ebo-filter", "mutatesRelease": true, "proof": "filter-report" },
-            { "id": "copernicus-dem-gradient", "mutatesRelease": true, "sourceId": dem.source_id, "entrypoint": dem.entrypoint, "outputs": dem.outputs, "proof": "pinned-cog-hashes-complete-sampling-and-uncertainty-report" },
-            { "id": "copernicus-dem-track-merge", "mutatesRelease": true, "entrypoint": merge.entrypoint, "output": merge.output, "report": merge.report, "proof": "strict-feature-id-geometry-count-and-sha256-report" },
-            { "id": "topology-and-conservative-model", "mutatesRelease": true, "proof": "deterministic-corpus-hash" },
-            { "id": "internal-validation", "mutatesRelease": true, "proof": "accepted-evidence-receipts" },
-            { "id": "quality-report", "mutatesRelease": false, "proof": "dimension-cause-length-report" },
-            { "id": "tiles", "mutatesRelease": true, "proof": "self-hosted-pmtiles-hashes" },
-            { "id": "independent-validation", "mutatesRelease": false, "proof": "holdout-pass" },
-            { "id": "signature", "mutatesRelease": false, "proof": "release-responsible-signature" }
-        ]
+        "stages": stages,
     }))
 }

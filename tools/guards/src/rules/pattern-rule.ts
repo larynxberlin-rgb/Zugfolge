@@ -18,6 +18,8 @@ export interface PatternCheck {
   readonly regex: RegExp;
   /** Was falsch ist und warum. */
   readonly message: string;
+  /** Optional nur Dateien mit diesen Namen prüfen. */
+  readonly fileNames?: readonly string[];
   /** Trifft dieses Muster ebenfalls, gilt die Zeile als zulässig. */
   readonly allowIf?: RegExp;
 }
@@ -44,6 +46,13 @@ function passtAufDatei(datei: SourceFile, spec: PatternRuleSpec): boolean {
   return namen.includes(name) || endungen.some((endung) => datei.path.endsWith(endung));
 }
 
+function passtAufCheck(datei: SourceFile, check: PatternCheck): boolean {
+  const namen = check.fileNames ?? [];
+  if (namen.length === 0) return true;
+  const name = datei.path.slice(datei.path.lastIndexOf("/") + 1);
+  return namen.includes(name);
+}
+
 /** Ob die Zeile — oder die Zeile davor — eine sichtbare Ausnahme trägt. */
 export function isExempt(zeilen: readonly string[], index: number, regelId: string): boolean {
   const marke = `guards:allow ${regelId}`;
@@ -66,6 +75,9 @@ export function patternRule(spec: PatternRuleSpec): Rule {
         for (let index = 0; index < zeilen.length; index += 1) {
           const zeile = zeilen[index] ?? "";
           for (const check of spec.checks) {
+            if (!passtAufCheck(datei, check)) {
+              continue;
+            }
             if (!check.regex.test(zeile)) {
               continue;
             }

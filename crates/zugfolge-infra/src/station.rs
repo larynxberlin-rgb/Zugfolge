@@ -1,14 +1,15 @@
 //! Stationsdaten-Anreicherung — **M1.8**.
 //!
-//! `docs/daten.md` 2 führt OpenStation und StaDa als Stationsdaten-Kandidaten:
-//! Bahnhofskategorie und Ausstattung — Barrierefreiheit, Wetterschutz,
-//! Fahrgastinformation und mehr — liegen dort vor, aber `docs/rechte.md` 3
-//! führt beide Quellen noch auf `pruefung`. Invariante 8 verbietet jeden
-//! Import ohne dokumentierte Freigabe. **M1.8 liefert deshalb das Modell und
-//! das Verfahren, mit dem eine Betriebsstelle angereichert wird — keinen
-//! Import.** Sobald eine der beiden Quellen freigegeben ist, füllt ein
-//! eigener Import [`StationEnrichment`]-Werte; an diesem Modul ändert sich
-//! dann nichts, genau wie bei der Neigung aus dem Höhenmodell (M1.5).
+//! `docs/daten.md` 2 führt OpenStation und StaDa als freigegebene
+//! Stationsdatenquellen: Bahnhofskategorie und Ausstattung — Barrierefreiheit,
+//! Wetterschutz, Fahrgastinformation und mehr — liegen dort vor. Invariante 8
+//! verlangt trotzdem für jeden Import einen konkret gepinnten und
+//! rechtegeprüften Snapshot. **M1.8 liefert das Modell und das Verfahren, mit
+//! dem eine Betriebsstelle angereichert wird — keinen stillen Import.** Der
+//! Deutschlandlauf verwendet OpenStation; StaDa bleibt eine optionale
+//! Alternative oder Ergänzung. Der Adapter füllt [`StationEnrichment`]-Werte;
+//! an diesem Modul ändert sich dann nichts, genau wie bei der Neigung aus dem
+//! Höhenmodell (M1.5).
 //!
 //! ## Warum je Feld eine eigene Herkunft
 //!

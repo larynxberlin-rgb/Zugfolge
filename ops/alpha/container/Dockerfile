@@ -6,7 +6,7 @@ COPY spikes spikes
 COPY tools/load tools/load
 COPY tools/m7-acceptance tools/m7-acceptance
 COPY tools/reference-model tools/reference-model
-RUN cargo build --release --locked -p zugfolge-runtime-napi --features node-addon -p zugfolge-planning-runtime-napi --features node-addon
+RUN cargo build --release --locked -p zugfolge-runtime-napi --features node-addon -p zugfolge-planning-runtime-napi --features node-addon -p zugfolge-infra --bin zugfolge-infra-release
 
 FROM node:24.13.0-bookworm-slim AS nodebuild
 RUN corepack enable
@@ -36,9 +36,11 @@ LABEL org.opencontainers.image.source="https://github.com/larynxberlin-rgb/Zugfo
 RUN printf '%s\n' "${ZUGFOLGE_SOURCE_SHA}" | grep -Eq '^[0-9a-f]{40}$' \
   && test "${ZUGFOLGE_DEPLOY_PATCH_SHA}" = "none"
 WORKDIR /app
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+  INFRA_OPERATIONAL_V2_VALIDATOR_PATH=/app/native/zugfolge-infra-release
 COPY --from=nodebuild /app /app
 COPY --from=native /src/target/release/libzugfolge_runtime_napi.so /app/native/zugfolge-runtime.node
 COPY --from=native /src/target/release/libzugfolge_planning_runtime_napi.so /app/native/zugfolge-planning-runtime.node
+COPY --from=native /src/target/release/zugfolge-infra-release /app/native/zugfolge-infra-release
 USER node
 CMD ["node", "apps/game-api/dist/server.js"]

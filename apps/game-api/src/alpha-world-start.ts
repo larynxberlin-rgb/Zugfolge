@@ -16,6 +16,7 @@ import {
   alphaWorldProfiles,
   domainEvents,
   odooProjectionOutbox,
+  regionalSimulationStates,
   worlds,
 } from "@zugfolge/db";
 import type { OperationsDecision, OperationsRegistry } from "@zugfolge/dispatch";
@@ -44,7 +45,11 @@ import {
 } from "@zugfolge/planning-worker";
 import {
   FLEET_AUTHORITY_RELEASE_SCHEMA_V2,
+  OPERATIONAL_INFRASTRUCTURE_BINDING_SCHEMA,
+  OPERATIONAL_INFRASTRUCTURE_FILE,
+  OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
   OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
+  operationalProtectionModeSelectionEvidence,
   type OperationalSimulationInitialization,
   type FleetRuntime,
   type FleetWorldInitialization,
@@ -53,13 +58,69 @@ import { and, asc, desc, eq, sql } from "drizzle-orm";
 
 import { projectLivemapOperationEvent } from "./livemap-operation-projection.js";
 import { operationalSimulationInitializationHash } from "./operational-initialization-hash.js";
+import { canonicalEd25519SpkiPublicKeyPem } from "./trusted-release-keys.js";
 import {
-  type VehicleCatalogDeploymentBindingV1,
+  type VehicleCatalogDeploymentBindingV2,
   validateVehicleCatalogDeploymentBinding,
 } from "./vehicle-catalog-deployment-binding.js";
 import type { RegionalSimulationWorker } from "./regional-simulation-worker.js";
 
 export const ALPHA_WORLD_DEPLOYMENT_SCHEMA = "zugfolge-alpha-world-deployment/v2" as const;
+export const ACTIVE_WORLD_DEPLOYMENT_CUTOVER_ERROR_CODE =
+  "active_world_requires_operational_v2_cutover" as const;
+
+interface RegionalSimulationBootstrapWorker {
+  initialize(
+    initialization: OperationalSimulationInitialization,
+    persistedAt: Date,
+  ): Promise<unknown>;
+  restore(
+    worldId: string,
+    regionId: string,
+    expectedInitializationHash: string,
+  ): Promise<unknown>;
+}
+
+export async function initializeOrRestoreRegionalSimulation(
+  worker: RegionalSimulationBootstrapWorker,
+  initialization: OperationalSimulationInitialization,
+  persistedInitializationHash: string | null | undefined,
+  persistedAt: Date,
+): Promise<"initialized" | "restored"> {
+  const expectedInitializationHash = operationalSimulationInitializationHash(initialization);
+  if (persistedInitializationHash === undefined) {
+    await worker.initialize(initialization, persistedAt);
+    return "initialized";
+  }
+  if (persistedInitializationHash !== expectedInitializationHash) {
+    throw new Error(
+      `Persistierter operativer Zustand '${initialization.worldId}/${initialization.regionId}' gehoert nicht zum signierten Deployment.`,
+    );
+  }
+  await worker.restore(
+    initialization.worldId,
+    initialization.regionId,
+    expectedInitializationHash,
+  );
+  return "restored";
+}
+
+/**
+ * Stabiler, maschinenlesbarer letzter Schutz am Serverstart, falls das
+ * Vor-Migrations-Preflight umgangen wurde. V1 wird damit nie in der V2-
+ * Runtime interpretiert oder ueber eine Kompatibilitaetsschicht geladen.
+ */
+export class ActiveWorldDeploymentCutoverError extends Error {
+  readonly code = ACTIVE_WORLD_DEPLOYMENT_CUTOVER_ERROR_CODE;
+
+  constructor(readonly worldId: string, cause?: unknown) {
+    super(
+      `[${ACTIVE_WORLD_DEPLOYMENT_CUTOVER_ERROR_CODE}] Aktive Welt '${worldId}' muss vor dem Operational-v2-Start archiviert und durch eine neue V2-Welt ersetzt werden.`,
+      cause === undefined ? undefined : { cause },
+    );
+    this.name = "ActiveWorldDeploymentCutoverError";
+  }
+}
 
 export interface AlphaDeploymentWorldDefinition {
   readonly name: string;
@@ -103,7 +164,7 @@ export interface AlphaWorldDeployment {
   };
   readonly fleet: FleetWorldInitialization;
   /** Pflichtbeweis fuer neue Authority-v2-Kataloge; Legacy-v1 besitzt ihn nicht. */
-  readonly vehicleCatalogBinding?: VehicleCatalogDeploymentBindingV1;
+  readonly vehicleCatalogBinding?: VehicleCatalogDeploymentBindingV2;
   readonly regionalSimulation: OperationalSimulationInitialization;
   readonly repeatEveryS: number;
   /**
@@ -117,7 +178,11 @@ export interface AlphaWorldDeployment {
   };
   readonly provenance: {
     readonly infraReleaseId: string;
-    readonly operationalNetworkHash: string;
+    /** Nur fuer eingebettete Legacy-Infrastruktur; kompakte v2 nutzt den Zustandsbeleg. */
+    readonly operationalNetworkHash?: string;
+    /** Byte- und Zustandshash der extern gehaltenen Operational-v2-Datei. */
+    readonly operationalInfrastructureSha256?: string;
+    readonly operationalInfrastructureStateHash?: string;
     readonly gtfsSnapshotHash: string;
     readonly fleetSourceSha256: string;
     readonly operationalSimulationSourceSha256: string;
@@ -133,6 +198,20 @@ export interface SignedAlphaWorldDeployment {
     readonly keyId: string;
     readonly valueBase64: string;
   };
+}
+
+export interface OperationalProgramRegistration {
+  readonly deploymentHash: string;
+  readonly initializationHash: string;
+  readonly trainRunIds: readonly string[];
+}
+
+/** Read-only Sicht auf tatsaechlich in den Scheduler aufgenommene Programme. */
+export interface OperationalProgramRegistrationCatalog {
+  operationalProgramRegistration(
+    worldId: string,
+    regionId: string,
+  ): OperationalProgramRegistration | undefined;
 }
 
 /** Defense-in-depth fuer Loader und aktive Registry: v2 nie ohne Receipt-Beweis. */
@@ -190,6 +269,10 @@ function verifiedExternalBaseTrainRunId(train: PublicExternalTrain): string | un
 export function publicOperationSnapshotVerification(
   snapshot: LiveSnapshot | undefined,
   expectedTrainRunIds: readonly string[],
+  expectedOperationalRegion?: Readonly<{
+    regionId: string;
+    infrastructureReleaseId: string;
+  }>,
 ): Pick<WorldStartVerification, "livemapReady" | "runningTrainRunIds"> {
   if (snapshot === undefined) return { livemapReady: false, runningTrainRunIds: [] };
   const expected = new Set(expectedTrainRunIds);
@@ -212,6 +295,30 @@ export function publicOperationSnapshotVerification(
     if (base !== undefined && expected.has(base)) visible.add(base);
   }
   const runningTrainRunIds = [...expected].filter((trainRunId) => visible.has(trainRunId));
+  if (expectedOperationalRegion !== undefined) {
+    const frames = snapshot.operationalRegions ?? [];
+    const frame = frames.length === 1 ? frames[0] : undefined;
+    if (
+      frame !== undefined
+      && frame.regionId === expectedOperationalRegion.regionId
+      && frame.infrastructureReleaseId === expectedOperationalRegion.infrastructureReleaseId
+      && Number.isSafeInteger(frame.commitSequence)
+      && frame.commitSequence >= 0
+      && Number.isSafeInteger(frame.simulationTimeMs)
+      && frame.simulationTimeMs >= 0
+      && Number.isSafeInteger(frame.staleAfterMs)
+      && frame.staleAfterMs >= frame.simulationTimeMs
+    ) {
+      // Operational-v2 startet absichtlich mit einem leeren dynamischen
+      // Zugzustand. Der gebundene Frame belegt die Livemap-Hydrierung, darf
+      // aber niemals noch nicht materialisierte Fahrten als laufend erfinden.
+      return {
+        livemapReady: true,
+        runningTrainRunIds,
+      };
+    }
+    return { livemapReady: false, runningTrainRunIds };
+  }
   return {
     livemapReady: runningTrainRunIds.length === expectedTrainRunIds.length,
     runningTrainRunIds,
@@ -260,13 +367,35 @@ function validateOperationalSimulationBinding(deployment: AlphaWorldDeployment):
     initialization["infraRelease"],
     "Alpha-Deployment-Betriebsengine-InfraRelease",
   );
+  const compactInfrastructure = infraRelease["schemaVersion"]
+    === OPERATIONAL_INFRASTRUCTURE_BINDING_SCHEMA;
+  const compactInfrastructureValid = !compactInfrastructure || (
+    Object.keys(infraRelease).sort().join("\u0000")
+      === ["schemaVersion", "infraReleaseId", "file", "bytes", "sha256", "stateHash"]
+        .sort().join("\u0000")
+    && infraRelease["infraReleaseId"] === deployment.provenance.infraReleaseId
+    && infraRelease["file"] === OPERATIONAL_INFRASTRUCTURE_FILE
+    && Number.isSafeInteger(infraRelease["bytes"])
+    && (infraRelease["bytes"] as number) > 0
+    && typeof infraRelease["sha256"] === "string"
+    && /^[a-f0-9]{64}$/u.test(infraRelease["sha256"])
+    && infraRelease["sha256"] === deployment.provenance.operationalInfrastructureSha256
+    && typeof infraRelease["stateHash"] === "string"
+    && /^[a-f0-9]{64}$/u.test(infraRelease["stateHash"])
+    && infraRelease["stateHash"] === deployment.provenance.operationalInfrastructureStateHash
+  );
   if (
     initialization["schemaVersion"] !== OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA
     || initialization["worldId"] !== deployment.worldId
     || initialization["regionId"] !== deployment.blueprint.regionId
     || !Number.isSafeInteger(initialization["nowMs"])
     || (initialization["nowMs"] as number) < 0
-    || infraRelease["id"] !== deployment.provenance.infraReleaseId
+    || initialization["protectionModeSelectionPolicy"]
+      !== OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY
+    || compactInfrastructureValid === false
+    || (compactInfrastructure
+      ? infraRelease["infraReleaseId"] !== deployment.provenance.infraReleaseId
+      : infraRelease["id"] !== deployment.provenance.infraReleaseId)
     || !Array.isArray(initialization["vehicleTypes"])
     || !Array.isArray(initialization["vehicles"])
     || !Array.isArray(initialization["formations"])
@@ -277,6 +406,9 @@ function validateOperationalSimulationBinding(deployment: AlphaWorldDeployment):
       "Alpha-Deployment besitzt keinen vollstaendigen gebundenen Betriebsengine-v2-Vertrag.",
     );
   }
+  operationalProtectionModeSelectionEvidence(
+    initialization as unknown as OperationalSimulationInitialization,
+  );
 }
 
 export function validateDeploymentWorldDefinition(
@@ -337,9 +469,13 @@ export function parseSignedAlphaWorldDeployment(
     rules: deployment.economy.release.rules,
     tenderProfiles: deployment.economy.release.tenderProfiles,
   });
+  const operationalConflictHash = deployment.regionalSimulation.infraRelease.schemaVersion
+    === OPERATIONAL_INFRASTRUCTURE_BINDING_SCHEMA
+    ? deployment.provenance.operationalInfrastructureStateHash
+    : deployment.provenance.operationalNetworkHash;
   if (
     deployment.infraReleaseHash !== deployment.blueprint.releases.infra
-    || deployment.provenance.operationalNetworkHash !== deployment.blueprint.conflictCheckHash
+    || operationalConflictHash !== deployment.blueprint.conflictCheckHash
     || deployment.provenance.gtfsSnapshotHash !== deployment.blueprint.releases.timetable
     || economyRelease.checksum !== deployment.blueprint.releases.economy
   ) {
@@ -352,7 +488,7 @@ export function parseSignedAlphaWorldDeployment(
   if (signatureBytes.length !== 64 || !verifySignature(
     null,
     Buffer.from(deploymentHash, "hex"),
-    createPublicKey(key),
+    createPublicKey(canonicalEd25519SpkiPublicKeyPem(key, signature["keyId"])),
     signatureBytes,
   )) throw new Error("Alpha-Deployment besitzt keine gueltige Ed25519-Signatur.");
   return {
@@ -364,6 +500,31 @@ export function parseSignedAlphaWorldDeployment(
       valueBase64: signature["valueBase64"],
     },
   };
+}
+
+function serializedDeploymentSchema(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const deployment = (value as Record<string, unknown>)["deployment"];
+  if (typeof deployment !== "object" || deployment === null || Array.isArray(deployment)) return undefined;
+  return (deployment as Record<string, unknown>)["schema"];
+}
+
+export function parsePersistedActiveAlphaWorldDeployment(
+  worldId: string,
+  value: unknown,
+  trustedKeys: Readonly<Record<string, string>>,
+): SignedAlphaWorldDeployment {
+  if (serializedDeploymentSchema(value) !== ALPHA_WORLD_DEPLOYMENT_SCHEMA) {
+    throw new ActiveWorldDeploymentCutoverError(worldId);
+  }
+  try {
+    return parseSignedAlphaWorldDeployment(value, trustedKeys);
+  } catch (cause) {
+    if (serializedDeploymentSchema(value) !== ALPHA_WORLD_DEPLOYMENT_SCHEMA) {
+      throw new ActiveWorldDeploymentCutoverError(worldId, cause);
+    }
+    throw cause;
+  }
 }
 
 /** Kanonisch JSON-faehige Huelle fuer die dauerhafte, erneute Signaturpruefung. */
@@ -400,6 +561,40 @@ export async function persistSignedAlphaWorldDeployment(
   ) throw new Error("Persistiertes Alpha-Deployment steht im Konflikt zum signierten Weltvertrag.");
 }
 
+interface PersistedAlphaWorldDeploymentBindingRow {
+  readonly worldId: string;
+  readonly deploymentHash: string;
+  readonly planningAuthorityAccountId: string;
+  readonly signedDeployment: unknown;
+  readonly name: string;
+  readonly schedulePeriodWeeks: number;
+  readonly epoch: Date;
+  readonly worldKind: "public" | "private";
+  readonly rankingStatus: "ranked" | "unranked";
+}
+
+function validatePersistedAlphaWorldDeploymentBinding(
+  row: PersistedAlphaWorldDeploymentBindingRow,
+  trustedKeys: Readonly<Record<string, string>>,
+): SignedAlphaWorldDeployment {
+  const signed = parsePersistedActiveAlphaWorldDeployment(
+    row.worldId,
+    row.signedDeployment,
+    trustedKeys,
+  );
+  if (
+    signed.deployment.worldId !== row.worldId
+    || signed.deploymentHash !== row.deploymentHash
+    || signed.deployment.planning.authority.accountId !== row.planningAuthorityAccountId
+    || signed.deployment.worldDefinition.name !== row.name
+    || signed.deployment.worldDefinition.schedulePeriodWeeks !== row.schedulePeriodWeeks
+    || new Date(signed.deployment.worldDefinition.epoch).getTime() !== row.epoch.getTime()
+    || (signed.deployment.worldDefinition.kind === "public" ? "public" : "private") !== row.worldKind
+    || signed.deployment.worldDefinition.rankingStatus !== row.rankingStatus
+  ) throw new Error(`Persistiertes Alpha-Deployment fuer '${row.worldId}' verletzt seine DB-Bindung.`);
+  return signed;
+}
+
 export async function loadPersistedActiveAlphaWorldDeployments(
   db: AlphaDatabase,
   trustedKeys: Readonly<Record<string, string>>,
@@ -419,18 +614,114 @@ export async function loadPersistedActiveAlphaWorldDeployments(
     eq(worlds.lifecycleStatus, "active"),
   )).orderBy(alphaWorldDeployments.worldId);
   return rows.map((row) => {
-    const signed = parseSignedAlphaWorldDeployment(row.signedDeployment, trustedKeys);
-    if (
-      signed.deployment.worldId !== row.worldId
-      || signed.deploymentHash !== row.deploymentHash
-      || signed.deployment.planning.authority.accountId !== row.planningAuthorityAccountId
-      || signed.deployment.worldDefinition.name !== row.name
-      || signed.deployment.worldDefinition.schedulePeriodWeeks !== row.schedulePeriodWeeks
-      || new Date(signed.deployment.worldDefinition.epoch).getTime() !== row.epoch.getTime()
-      || (signed.deployment.worldDefinition.kind === "public" ? "public" : "private") !== row.worldKind
-      || signed.deployment.worldDefinition.rankingStatus !== row.rankingStatus
-    ) throw new Error(`Persistiertes Alpha-Deployment fuer '${row.worldId}' verletzt seine DB-Bindung.`);
-    return { signed, epoch: row.epoch };
+    return {
+      signed: validatePersistedAlphaWorldDeploymentBinding(row, trustedKeys),
+      epoch: row.epoch,
+    };
+  });
+}
+
+/**
+ * Ein dauerhaft archivierter Deployment-Pfad darf beim Neustart nur ignoriert
+ * werden, wenn seine erneut verifizierte Signaturhuelle exakt dem ebenfalls
+ * erneut verifizierten, DB-gebundenen Archivkopf entspricht. Damit kann eine
+ * unveraenderte Deployment-Umgebung andere aktive Welten nicht blockieren,
+ * ohne einen fremden oder manipulierten Archivpfad stillschweigend zu dulden.
+ */
+export async function assertArchivedAlphaWorldDeploymentHead(
+  db: AlphaDatabase,
+  configured: SignedAlphaWorldDeployment,
+  trustedKeys: Readonly<Record<string, string>>,
+): Promise<void> {
+  const worldId = configured.deployment.worldId;
+  const [row] = await db.select({
+    worldId: alphaWorldDeployments.worldId,
+    deploymentHash: alphaWorldDeployments.deploymentHash,
+    planningAuthorityAccountId: alphaWorldDeployments.planningAuthorityAccountId,
+    signedDeployment: alphaWorldDeployments.signedDeployment,
+    name: worlds.name,
+    schedulePeriodWeeks: worlds.schedulePeriodWeeks,
+    epoch: worlds.epoch,
+    worldKind: worlds.worldKind,
+    rankingStatus: worlds.rankingStatus,
+  }).from(alphaWorldDeployments).innerJoin(worlds, and(
+    eq(worlds.id, alphaWorldDeployments.worldId),
+    eq(worlds.lifecycleStatus, "archived"),
+  )).where(eq(alphaWorldDeployments.worldId, worldId)).limit(1);
+  if (row === undefined) {
+    throw new Error(`Archivierte Welt '${worldId}' besitzt keinen verifizierbaren Deploymentkopf.`);
+  }
+  const persisted = validatePersistedAlphaWorldDeploymentBinding(row, trustedKeys);
+  if (
+    persisted.deploymentHash !== configured.deploymentHash
+    || persisted.signature.algorithm !== configured.signature.algorithm
+    || persisted.signature.keyId !== configured.signature.keyId
+    || persisted.signature.valueBase64 !== configured.signature.valueBase64
+  ) {
+    throw new Error(`Deploymentpfad fuer archivierte Welt '${worldId}' widerspricht dem autoritativen Deploymentkopf.`);
+  }
+}
+
+export interface AlphaWorldStartupDeploymentResolution {
+  readonly persistedActiveDeployments: readonly {
+    readonly signed: SignedAlphaWorldDeployment;
+    readonly epoch: Date;
+  }[];
+  readonly signedDeployments: Map<string, SignedAlphaWorldDeployment>;
+  readonly archivedWorldIds: readonly string[];
+}
+
+/**
+ * Vereint persistierte aktive Koepfe mit statischen Startpfaden. Archivierte
+ * Pfade werden erst nach exakter Archivkopfpruefung ausgesiebt; alle anderen
+ * Lifecycle-Zustaende und widerspruechliche aktive Koepfe bleiben fail-closed.
+ */
+export async function resolveAlphaWorldStartupDeployments(
+  db: AlphaDatabase,
+  trustedKeys: Readonly<Record<string, string>>,
+  configuredDeployments: readonly SignedAlphaWorldDeployment[],
+): Promise<AlphaWorldStartupDeploymentResolution> {
+  const persistedActiveDeployments = await loadPersistedActiveAlphaWorldDeployments(db, trustedKeys);
+  const signedDeployments = new Map(
+    persistedActiveDeployments.map((persisted) => [persisted.signed.deployment.worldId, persisted.signed] as const),
+  );
+  const configuredWorldIds = new Set<string>();
+  const archivedWorldIds: string[] = [];
+  for (const configured of configuredDeployments) {
+    const worldId = configured.deployment.worldId;
+    if (configuredWorldIds.has(worldId)) {
+      throw new Error(`Mehrere Alpha-Deploymentpfade sind an dieselbe Welt '${worldId}' gebunden.`);
+    }
+    configuredWorldIds.add(worldId);
+    const [world] = await db.select({ lifecycleStatus: worlds.lifecycleStatus })
+      .from(worlds)
+      .where(eq(worlds.id, worldId))
+      .limit(1);
+    if (world === undefined) {
+      throw new Error(`Signiertes Alpha-Deployment ist an die unbekannte Welt '${worldId}' gebunden.`);
+    }
+    if (world.lifecycleStatus === "archived") {
+      await assertArchivedAlphaWorldDeploymentHead(db, configured, trustedKeys);
+      signedDeployments.delete(worldId);
+      archivedWorldIds.push(worldId);
+      continue;
+    }
+    if (world.lifecycleStatus !== "active") {
+      throw new Error(`Signiertes Alpha-Deployment ist an die nicht aktive Welt '${worldId}' gebunden.`);
+    }
+    const persisted = signedDeployments.get(worldId);
+    if (persisted !== undefined && persisted.deploymentHash !== configured.deploymentHash) {
+      throw new Error(`Deploymentpfad fuer '${worldId}' widerspricht dem autoritativ persistierten Deployment.`);
+    }
+    signedDeployments.set(worldId, configured);
+  }
+  const archived = new Set(archivedWorldIds);
+  return Object.freeze({
+    persistedActiveDeployments: Object.freeze(
+      persistedActiveDeployments.filter(({ signed }) => !archived.has(signed.deployment.worldId)),
+    ),
+    signedDeployments,
+    archivedWorldIds: Object.freeze(archivedWorldIds),
   });
 }
 
@@ -562,6 +853,7 @@ export class ProductionWorldStartPort implements WorldStartPort {
     private readonly regionalSimulation: RegionalSimulationWorker,
     private readonly livemap: LivemapRegistry,
     private readonly operations: OperationsRegistry,
+    private readonly operationalPrograms: OperationalProgramRegistrationCatalog,
     private readonly economyQueueClock: () => Date = () => new Date(),
   ) {}
 
@@ -703,15 +995,18 @@ export class ProductionWorldStartPort implements WorldStartPort {
       deployment.regionalSimulation.regionId,
       expectedInitializationHash,
     )) {
-      try {
-        await this.regionalSimulation.initialize(deployment.regionalSimulation, new Date(0));
-      } catch (error) {
-        await this.regionalSimulation.restore(
-          worldId,
-          deployment.regionalSimulation.regionId,
-          expectedInitializationHash,
-        ).catch(() => { throw error; });
-      }
+      const [persistedRegion] = await this.db.select({
+        initializationHash: regionalSimulationStates.initializationHash,
+      }).from(regionalSimulationStates).where(and(
+        eq(regionalSimulationStates.worldId, worldId),
+        eq(regionalSimulationStates.regionId, deployment.regionalSimulation.regionId),
+      )).limit(1);
+      await initializeOrRestoreRegionalSimulation(
+        this.regionalSimulation,
+        deployment.regionalSimulation,
+        persistedRegion === undefined ? undefined : persistedRegion.initializationHash,
+        new Date(0),
+      );
     }
     await this.#ensureOperationsEvent(worldId, blueprint);
     const correlationId = `alpha-world-start:${worldId}:${this.signed.deploymentHash}`;
@@ -769,22 +1064,46 @@ export class ProductionWorldStartPort implements WorldStartPort {
     ]);
     const snapshot = this.livemap.initializedWorld(worldId)?.snapshot();
     const expectedTrainRunIds = blueprint.lots.flatMap((lot) => lot.trainRunIds);
-    const publicOperation = publicOperationSnapshotVerification(snapshot, expectedTrainRunIds);
+    const expectedInitializationHash = operationalSimulationInitializationHash(
+      deployment.regionalSimulation,
+    );
+    const operationalProgram = this.operationalPrograms.operationalProgramRegistration(
+      worldId,
+      deployment.regionalSimulation.regionId,
+    );
+    const operationalProgramReady = operationalProgram !== undefined
+      && operationalProgram.deploymentHash === this.signed.deploymentHash
+      && operationalProgram.initializationHash === expectedInitializationHash;
+    const regionalSimulationReady = this.regionalSimulation.isReady(
+      worldId,
+      deployment.regionalSimulation.regionId,
+      expectedInitializationHash,
+    );
+    const publicOperation = publicOperationSnapshotVerification(
+      snapshot,
+      expectedTrainRunIds,
+      regionalSimulationReady
+        && deployment.regionalSimulation.infraRelease.schemaVersion
+          === OPERATIONAL_INFRASTRUCTURE_BINDING_SCHEMA
+        ? {
+            regionId: deployment.regionalSimulation.regionId,
+            infrastructureReleaseId: deployment.provenance.infraReleaseId,
+          }
+        : undefined,
+    );
     return {
       economyReady: economy !== undefined && economy.publicOperations.size === blueprint.lots.length,
       fleetReady: fleet !== undefined
         && Object.keys(fleet.state.formations).length > 0
         && Object.keys(fleet.state.personnelDuties).length > 0
         && Object.keys(fleet.state.pathReservations).length > 0,
-      regionalSimulationReady: this.regionalSimulation.isReady(
-        worldId,
-        deployment.regionalSimulation.regionId,
-        operationalSimulationInitializationHash(deployment.regionalSimulation),
-      ),
+      regionalSimulationReady,
+      operationalProgramReady,
       livemapReady: publicOperation.livemapReady,
       operationsCenterReady: operationsEvent.length === 1,
       odooProjectionQueued: projection.length === 1,
       lotIds: economy === undefined ? [] : [...economy.publicOperations.keys()],
+      scheduledTrainRunIds: operationalProgramReady ? [...operationalProgram.trainRunIds] : [],
       runningTrainRunIds: publicOperation.runningTrainRunIds,
     };
   }

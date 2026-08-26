@@ -9,19 +9,13 @@ use std::io::{self, Read};
 use serde_json::Value;
 use zugfolge_infra::{
     build_annual_infra_plan, build_mitteldeutschland_infra_release, build_public_infra_release,
-    build_qualified_reference_release, build_reference_report,
-    validate_operational_infrastructure_v2, verify_reference_artifact_chain,
+    build_public_infra_release_with_operational_quality, build_qualified_reference_release,
+    build_reference_report, derive_germany_operational_v2,
+    validate_operational_infrastructure_v2_file, verify_reference_artifact_chain,
 };
 
 fn read_json(path: &str) -> Result<Value, Box<dyn Error>> {
     Ok(serde_json::from_slice(&fs::read(path)?)?)
-}
-
-fn write_json(path: &str, value: &Value) -> Result<(), Box<dyn Error>> {
-    let mut serialized = serde_json::to_string_pretty(value)?;
-    serialized.push('\n');
-    fs::write(path, serialized)?;
-    Ok(())
 }
 
 fn write_json_new(path: &str, value: &Value) -> Result<(), Box<dyn Error>> {
@@ -62,11 +56,33 @@ fn main() -> Result<(), Box<dyn Error>> {
         [command, candidate, expected_release_id]
             if command == "validate-operational-infrastructure-v2" =>
         {
-            let validated = validate_operational_infrastructure_v2(
-                &read_json(candidate)?,
+            let validated = validate_operational_infrastructure_v2_file(
+                candidate.as_ref(),
                 expected_release_id,
+                None,
             )?;
             println!("{}", serde_json::to_string(&validated)?);
+        }
+        [command, candidate, expected_release_id, output]
+            if command == "validate-operational-infrastructure-v2" =>
+        {
+            let validated = validate_operational_infrastructure_v2_file(
+                candidate.as_ref(),
+                expected_release_id,
+                Some(output.as_ref()),
+            )?;
+            println!("{}", serde_json::to_string(&validated)?);
+        }
+        [command, spec, source_root, candidate, report]
+            if command == "derive-germany-operational-v2" =>
+        {
+            let receipt = derive_germany_operational_v2(
+                spec.as_ref(),
+                source_root.as_ref(),
+                candidate.as_ref(),
+                report.as_ref(),
+            )?;
+            println!("{}", serde_json::to_string(&receipt)?);
         }
         [command, config, source_root, artifact_root, output] if command == "regional-manifest" => {
             let workspace_root = env::current_dir()?;
@@ -117,7 +133,42 @@ fn main() -> Result<(), Box<dyn Error>> {
                 artifacts,
                 quality,
             )?;
-            write_json(output, &release)?;
+            write_json_new(output, &release)?;
+            println!(
+                "{}",
+                serde_json::to_string(&serde_json::json!({
+                    "releaseId": release["release"]["releaseId"],
+                    "releaseHash": release["releaseHash"],
+                }))?
+            );
+        }
+        [
+            command,
+            config,
+            catalog,
+            rights,
+            capture,
+            artifacts,
+            static_quality,
+            operational_quality,
+            output,
+        ] if command == "manifest" => {
+            let artifacts_envelope = read_json(artifacts)?;
+            let artifacts = artifacts_envelope
+                .get("artifacts")
+                .unwrap_or(&artifacts_envelope);
+            let static_quality_bytes = fs::read(static_quality)?;
+            let operational_quality_bytes = fs::read(operational_quality)?;
+            let release = build_public_infra_release_with_operational_quality(
+                &read_json(config)?,
+                &read_json(catalog)?,
+                &read_json(rights)?,
+                &read_json(capture)?,
+                artifacts,
+                &static_quality_bytes,
+                &operational_quality_bytes,
+            )?;
+            write_json_new(output, &release)?;
             println!(
                 "{}",
                 serde_json::to_string(&serde_json::json!({
@@ -128,7 +179,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         _ => {
             return Err(
-                "Aufruf: zugfolge-infra-release reference-report|qualified-reference-manifest|verify-reference-chain < INPUT | validate-operational-infrastructure-v2 CANDIDATE EXPECTED_RELEASE_ID | regional-manifest CONFIG SOURCE_ROOT ARTIFACT_ROOT OUTPUT | plan CONFIG CATALOG RIGHTS | manifest CONFIG CATALOG RIGHTS CAPTURE ARTIFACTS QUALITY OUTPUT"
+                "Aufruf: zugfolge-infra-release reference-report|qualified-reference-manifest|verify-reference-chain < INPUT | validate-operational-infrastructure-v2 CANDIDATE EXPECTED_RELEASE_ID [OUTPUT] | derive-germany-operational-v2 SPEC SOURCE_ROOT CANDIDATE REPORT | regional-manifest CONFIG SOURCE_ROOT ARTIFACT_ROOT OUTPUT | plan CONFIG CATALOG RIGHTS | manifest CONFIG CATALOG RIGHTS CAPTURE ARTIFACTS QUALITY OUTPUT | manifest CONFIG CATALOG RIGHTS CAPTURE ARTIFACTS STATIC_QUALITY OPERATIONAL_QUALITY OUTPUT"
                     .into(),
             );
         }

@@ -106,12 +106,14 @@ mod elevation;
 mod error;
 mod example;
 mod facility;
+mod germany_operational_v2;
 mod graph;
 mod identity;
 mod import;
 mod interlocking;
 mod network_filter;
 mod operating_point;
+mod operational_streaming;
 mod platform;
 mod protection;
 mod provenance;
@@ -145,6 +147,7 @@ pub use facility::{
     Facility, FacilityCatalog, FacilityCatalogBuilder, FacilityKind, FleetClass, FleetCompetence,
     OpeningHours, TimeOfDay,
 };
+pub use germany_operational_v2::{GermanyOperationalV2Error, derive_germany_operational_v2};
 pub use graph::{OperatingGraph, OperatingGraphBuilder};
 pub use identity::{
     FacilityId, HeadElementId, HeadNodeId, HeadSignalId, InterlockingRouteId, OperatingPointCode,
@@ -163,6 +166,10 @@ pub use network_filter::{
     EXCLUDED_RAILWAY_VALUES, ExclusionReason, NetworkFilterOutcome, classify, filter_network,
 };
 pub use operating_point::{Coordinate, OperatingPoint, OperatingPointKind};
+pub use operational_streaming::{
+    OperationalInfrastructureV2Store, OperationalStreamingError,
+    open_operational_infrastructure_v2_store, validate_operational_infrastructure_v2_file,
+};
 pub use platform::Platform;
 pub use protection::{ProtectionSystem, TrainProtection};
 pub use provenance::{Attributed, Confidence, Provenance, SourceId};
@@ -170,7 +177,8 @@ pub use reference::{DeviationReport, ReferenceCorpus, ReferenceRun, RunDeviation
 pub use release::{InfraRelease, InfraReleaseBuilder, ReleaseSource, ReleaseVersion};
 pub use release_manifest::{
     ReleaseManifestError, build_annual_infra_plan, build_mitteldeutschland_infra_release,
-    build_public_infra_release, build_qualified_reference_release, build_reference_report,
+    build_public_infra_release, build_public_infra_release_with_operational_quality,
+    build_qualified_reference_release, build_reference_report,
     validate_operational_infrastructure_v2, verify_reference_artifact_chain,
 };
 pub use semantic_export::{SemanticExportError, SemanticExportSummary, export_semantic_geojsonseq};

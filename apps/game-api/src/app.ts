@@ -178,7 +178,10 @@ import {
   FLEET_MAINTENANCE_COMMAND_SCHEMA,
   FLEET_PATH_RESERVATION_COMMAND_SCHEMA,
   FLEET_PERSONNEL_DUTY_COMMAND_SCHEMA,
+  OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
+  OPERATIONAL_TRAIN_NUMBER_PATTERN,
   OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
+  assertOperationalTrainNumbers,
   type FleetAuthorityRelease,
   type FleetCommandResult,
   type FleetRuntime,
@@ -453,11 +456,18 @@ const operationalTrainSchema = {
     "headRouteMm",
     "scheduledDepartureMs",
     "publicPassengerStop",
+    "dispatchInterlockingRouteId",
+    "protectionModeSelectionRuns",
   ],
   additionalProperties: false,
   properties: {
     id: { type: "string", minLength: 1, maxLength: 200 },
-    trainNumber: { type: "string", minLength: 1, maxLength: 200 },
+    trainNumber: {
+      type: "string",
+      minLength: 1,
+      maxLength: 200,
+      pattern: OPERATIONAL_TRAIN_NUMBER_PATTERN,
+    },
     operatorId: { type: "string", minLength: 1, maxLength: 200 },
     movementKind: { type: "string", enum: ["train", "shunting"] },
     routeVersionId: { type: "string", minLength: 1, maxLength: 200 },
@@ -470,15 +480,46 @@ const operationalTrainSchema = {
       ],
     },
     publicPassengerStop: { type: "boolean" },
+    dispatchInterlockingRouteId: { type: "string", minLength: 1, maxLength: 200 },
+    protectionModeSelectionRuns: {
+      type: "array",
+      minItems: 1,
+      maxItems: 200_000,
+      items: {
+        type: "object",
+        required: ["throughRouteLegIndex", "selectedProtectionSystem"],
+        additionalProperties: false,
+        properties: {
+          throughRouteLegIndex: {
+            type: "integer",
+            minimum: 0,
+            maximum: Number.MAX_SAFE_INTEGER,
+          },
+          selectedProtectionSystem: {
+            type: "string",
+            enum: ["etcs-level1", "etcs-level2", "lzb", "pzb"],
+          },
+        },
+      },
+    },
   },
 } as const;
 
 const regionalInitializationSchema = {
   type: "object",
-  required: ["nowMs", "infraRelease", "vehicleTypes", "vehicles", "formations", "trains"],
+  required: [
+    "nowMs",
+    "protectionModeSelectionPolicy",
+    "infraRelease",
+    "vehicleTypes",
+    "vehicles",
+    "formations",
+    "trains",
+  ],
   additionalProperties: false,
   properties: {
     nowMs: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+    protectionModeSelectionPolicy: { const: OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY },
     infraRelease: { type: "object", minProperties: 1 },
     vehicleTypes: {
       type: "array",
@@ -2153,6 +2194,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           });
         }
         try {
+          assertOperationalTrainNumbers(request.body.trains, "regionaler Operational-v2-Ingest");
           const initialized = await deps.regionalSimulation.initialize(
             {
               ...request.body,
@@ -2201,6 +2243,9 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           });
         }
         try {
+          if (request.body.type === "materialize") {
+            assertOperationalTrainNumbers([request.body.train], "regionales Operational-v2-Kommando");
+          }
           const result = await deps.regionalSimulation.apply(
             {
               worldId: request.params.worldId,

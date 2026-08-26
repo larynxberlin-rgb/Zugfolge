@@ -48,7 +48,10 @@ impl VehicleApproval {
     /// Prüft und übernimmt eine kurze, stabile Zulassungskennung.
     pub fn new(code: impl Into<String>) -> Result<Self, AssetError> {
         let code = code.into();
-        if code.trim().is_empty() || code.chars().count() > 64 {
+        // Authority-v2 kompiliert stabile Kennungen bis 160 Byte. Dieselbe
+        // Grenze muss auch die Runtime akzeptieren; insbesondere enthalten
+        // releasegebundene Linien-IDs einen vollstaendigen SHA-256-Anteil.
+        if code.trim().is_empty() || code.len() > 160 {
             return Err(AssetError::InvalidApproval);
         }
         Ok(Self(code))
@@ -804,6 +807,17 @@ mod authority_restore_tests {
                 facts.deadlines.push(duplicate);
             },
             AssetError::DuplicateMaintenanceDeadline,
+        );
+    }
+
+    #[test]
+    fn approval_uses_the_same_identifier_limit_as_authority_v2() {
+        let builder_line_id = format!("line-rb-1-{}", "a".repeat(64));
+        assert!(VehicleApproval::new(builder_line_id).is_ok());
+        assert!(VehicleApproval::new("a".repeat(160)).is_ok());
+        assert_eq!(
+            VehicleApproval::new("a".repeat(161)),
+            Err(AssetError::InvalidApproval)
         );
     }
 

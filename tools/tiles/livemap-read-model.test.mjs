@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { gtfsJourneyChainId } from "../../packages/gtfs/dist/index.js";
 import {
   buildLivemapReadModel,
   inspectPublicReadModel,
@@ -177,7 +178,11 @@ describe("oeffentlicher SQLite-Livemap-Katalog", () => {
         repeat_every_s: "86400",
       });
       expect(database.prepare("SELECT train_id, scheduled_time_s FROM station_schedule_calls WHERE call_type = 'departure'").get()).toEqual({
-        train_id: expect.any(String),
+        train_id: gtfsJourneyChainId({
+          regionId: "mitteldeutschland-b",
+          releaseId: firstReport.timetable.releaseId,
+          sourceTripId: "trip-1",
+        }),
         scheduled_time_s: 7_560,
       });
     } finally {

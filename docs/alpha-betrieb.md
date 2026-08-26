@@ -40,13 +40,35 @@ Individuelle Referenzen/UUIDs bleiben aus Prometheus-Labels heraus.
 
 `ops/alpha/backup-game.sh` erzeugt einen PostgreSQL-Custom-Dump samt SHA-256-
 Manifest, Dateigröße und der tatsächlich gesicherten Drizzle-Migrationszahl.
-`restore-game.sh` akzeptiert Dump und Manifest ausschließlich für Datenbanken
-mit Präfix `zugfolge_restore_`, prüft die Artefaktbindung, legt das Ziel neu an
-und verlangt nach dem Restore exakt die im Manifest gebundene Migrationszahl.
-Damit benötigt der Restore-Drill nach einer legitimen neuen Migration keine
-hart codierte Sollwertänderung und bleibt bei Abweichungen fail-closed.
-Der autoritative Vergleich erfolgt mit
-`tools/alpha-ops/authoritative-state-hash.mjs` über alle öffentlichen Tabellen.
+Im explizit quieszierten Rollbackmodus schreibt es zusätzlich create-new einen
+`zugfolge-game-backup-operation/v1`-Beleg mit Dump-abgeleiteter Backup-ID und
+realer WAL-Spanne. `restore-game.sh` akzeptiert Dump und Manifest ausschließlich
+für Datenbanken mit Präfix `zugfolge_restore_`, prüft die Artefaktbindung, legt
+das Ziel neu an und verlangt nach dem Restore exakt die im Manifest gebundene
+Migrationszahl. Sein `zugfolge-game-restore/v2`-Receipt bindet zusätzlich
+Restore-Datenbank sowie Dump- und Manifest-SHA-256 und kann vom Skript selbst
+create-new geschrieben werden; die Keycloak-Schemamigration leitet ihren
+Backup-Identity-Head ausschließlich aus diesem isolierten Restore ab.
+
+Für den produktiven V2-Cutover qualifiziert
+`tools/alpha-ops/create-database-backup-restore-evidence.mjs` genau diese realen
+Dump-/Restore-Ergebnisse. Es vergleicht Quelle und Restore vollständig bis auf
+den Reihenfingerprint jeder autoritativen Schema-32- und Keycloak-Tabelle,
+fordert getrennte Endpunkte und physische Backends und publiziert gemeinsam
+`zugfolge-database-backup-manifest/v1` sowie
+`zugfolge-database-restore-proof/v1`. Erst dieses Paar darf in den
+`zugfolge-database-rollback-proof/v3` eingehen. Damit benötigt der Restore-Drill
+nach einer legitimen neuen Migration keine hart codierte Sollwertänderung und
+bleibt bei jeder Cross-Binding-Abweichung fail-closed.
+
+Keycloak teilt die PostgreSQL-Instanz, liegt aber nach dem versionierten Cutover
+ausschließlich im Schema `keycloak`. Deshalb ist der Custom-Dump vor der
+Schema-Migration immer ein vollständiger Shared-Database-Dump: Ein nur auf Game-
+oder Keycloak-Tabellen gefiltertes Backup ist als Rückweg unzulässig. Up, Down,
+Recover-Receipt, die exakten 100 Tabellen beziehungsweise 544 Tabellen-/Index-/
+Constraint-OIDs und der gepinnte Keycloak-26.7.0-Digest stehen im separaten
+Runbook [`keycloak-schema-migration.md`](keycloak-schema-migration.md). Der
+normale Compose-Start führt keine dieser DDL-Operationen aus.
 
 Odoo wird getrennt gesichert: `backup-odoo.sh` schreibt Datenbankdump,
 Filestore-Archiv, Artefakthashes sowie kanonische Hashes des Zugfolge-
@@ -103,13 +125,34 @@ ist trotzdem die normale Readiness- und Reconciliation-Prüfung Pflicht.
 
 ## Rollback und Wiederanlauf
 
-Applikationsrollback erfolgt auf das vorherige unveränderte Image bei
-vorwärtskompatiblem Schema. Eine Datenbankmigration wird nicht blind
-zurückgerollt: zuerst isolierter Restore, Zustands-Hash und fachliche
-Kompatibilitätsprüfung. InfraRelease-Aktivierungen dürfen nur am vorgesehenen
-Periodenwechsel erfolgen; bei Vorabprüfungsfehler bleibt der alte Release
-aktiv. Der Wiederanlauf erfolgt in der Reihenfolge PostgreSQL, Single-Writer,
-Game API, Worker/Scheduler, Livemap, Bridge, Odoo-Projektion.
+Applikationsrollback erfolgt auf das vorherige unveränderte Image nur bei
+nachgewiesen vorwärtskompatiblem Schema. Migration 0030 hält dafür das
+`initialization_hash`-Feld gegenüber dem v1-Worker optional, erzwingt es aber
+für jeden Operational-v2-Zustand. So kann ein fehlgeschlagener Code-Rollout
+vor der ersten v2-Aktivierung das unveränderte v1-Abbild weiterführen, ohne
+Migration 0029 aus dem Journal oder Schema zu löschen.
+
+Nach dem ersten v2-Schreibvorgang ist ein Rückfall auf v1 verboten: Der
+v2-Zustand wird nicht in v1 transformiert. Der reguläre Betriebsweg ist dann
+ein Forward-Fix auf v2. Ein gemeinsamer Restore von Code, Image und Datenbank
+aus dem vor dem Cutover isoliert geprüften Backup ist ausschließlich
+Disaster-Recovery: Er verwirft alle Änderungen seit diesem Restorepunkt und
+muss dieses RPO vor Ausführung ausdrücklich benennen. Der
+Aktivierungs-Preflight muss deshalb unmittelbar vor dem Cutover belegen, dass
+noch kein v2-Zustand existiert, und den gebundenen Restorepunkt nennen. Eine Datenbankmigration wird nie blind zurückgerollt:
+zuerst isolierter Restore, Zustands-Hash und fachliche Kompatibilitätsprüfung.
+InfraRelease-Aktivierungen dürfen nur am vorgesehenen Periodenwechsel erfolgen;
+bei Vorabprüfungsfehler bleibt der alte Release aktiv. Der Wiederanlauf erfolgt
+in der Reihenfolge PostgreSQL, Single-Writer, Game API, Worker/Scheduler,
+Livemap, Bridge, Odoo-Projektion.
+
+Der Datenbank-Rollbackbeleg verwendet Schema
+`zugfolge-database-rollback-proof/v3`. Quell- und Test-Restore müssen nicht nur
+dieselbe persistente Game-Datenbankidentität, dasselbe Schema-32-Ledger und den
+autoritativen Game-Kopf besitzen, sondern auch denselben vollständigen
+`keycloak-identity-head/v1` über alle 100 Keycloak-Tabellen. Eine nur
+strukturgleiche oder mit abweichenden Benutzern, Clients, Credentials oder
+Sitzungen restaurierte Datenbank ist kein freigegebener Rückweg.
 
 Die versionierten Prometheus-Regeln liegen unter `ops/alpha/alerts.yml`, das
 achromatische Grafana-Dashboard unter `ops/alpha/grafana/`. Farbstufen sind dort

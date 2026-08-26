@@ -79,6 +79,8 @@
               <field name="package_id"/>
               <field name="package_version"/>
               <field name="delivery_release_id"/>
+              <field name="timetable_year"/>
+              <field name="infra_release_hash"/>
               <field name="manifest_bytes"/>
               <field name="manifest_sha256"/>
               <field name="part_count"/>

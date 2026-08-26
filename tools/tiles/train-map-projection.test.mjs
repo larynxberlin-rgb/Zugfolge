@@ -64,6 +64,8 @@ function track(id, start, end) {
       official_from_km_mm: 0,
       official_to_km_mm: 1_000_000,
       official_track_count: 1,
+      from_osm_node_id: Math.round(start * 1_000_000),
+      to_osm_node_id: Math.round(end * 1_000_000),
     },
     geometry: { type: "LineString", coordinates: [[start, 50], [end, 50]] },
   };

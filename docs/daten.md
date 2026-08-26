@@ -55,11 +55,12 @@ Rechtslage das gesamte Projekt.
 - OSM-abgeleitete und unabhängig lizenzierte Fakten bleiben getrennte
   Datenebenen, bis eine qualifizierte ODbL-Prüfung die Derivative-/Collective-
   Database- und Bereitstellungspflichten freigibt.
-- OpenStation und StaDa sind als Stationsdatenquellen freigegeben. Jeder
-  Jahresrelease bindet trotzdem nur den tatsächlich verwendeten Snapshot mit
-  Version, Bereitstellungsweg, Attribution, Hash und Feldmapping. Der Kandidat
-  2026.1 verwendet OpenStation unter CC0; eine allgemeine Freigabe erzwingt
-  keine Vermischung beider Bestände.
+- OpenStation und StaDa sind als Stationsdatenquellen freigegeben. OpenStation
+  ist der kostenfreie Stations- und Bahnsteig-Pflichtinput; StaDa bleibt eine
+  optionale Anreicherung und sein Fehlen blockiert keinen Jahreslauf. Jeder
+  Release bindet nur tatsächlich verwendete Snapshots mit Version,
+  Bereitstellungsweg, Attribution, Hash und Feldmapping. Eine allgemeine
+  Freigabe erzwingt keine Vermischung beider Bestände.
 - RINF bleibt bis zu einer schriftlichen Wiederverwendungsentscheidung
   blockiert. pathOS und TPN sind ohne neue Berechtigung und ausdrücklichen
   Vertrag als Spiel- oder Validierungsbackend ausgeschlossen.
@@ -108,13 +109,11 @@ keine unabhängige Validierung.
 
 **Davon getrennt (E22):** Dieselbe API stellt unter `/infrastrukturen` eine
 reine Stammdatenressource bereit — Betriebsstellen und Streckensegmente,
-gebunden an ein Fahrplanjahr statt an einen laufenden Abruf, öffentlich ohne
-Nutzungsbedingungen zugänglich. Das ist keine „unverbindliche Richtwert"-Werte
-im Sinne von E10, sondern Stammdaten, und wird als eigene, jährlich einmalig
-gezogene Importquelle geführt (`trassenfinder-infrastruktur-api`, Status
-`freigegeben`) — Grundlage der jährlichen Infrastrukturaktualisierung zum
-realen Fahrplanwechsel. Die beiden Grenzen oben gelten unverändert für die
-Routensuche.
+gebunden an ein Fahrplanjahr statt an einen laufenden Abruf. Ihre bestehende
+Rechtefreigabe bleibt unverändert; sie ist im Deutschland-Quellvertrag jedoch
+nur eine optionale Gegenprüfung. OSM-PBF, offizielles DB-InfraGO-Open-Data,
+OpenStation, GTFS und DEM müssen den Jahreslauf ohne diesen Snapshot tragen.
+Die beiden Grenzen oben gelten unverändert für die Routensuche.
 
 ## 4. Trassenpreissystem als Vorbild für den `EconomyRelease`
 
@@ -132,16 +131,42 @@ versionierten `EconomyRelease`.
 
 - **A — validiert:** Jede für den konkreten Objekttyp erforderliche Dimension
   ist unabhängig und fachlich geprüft; vollständige Simulation.
-- **B — konservativ:** Datenlücken werden durch sichtbare virtuelle Blöcke und
-  versionierte sichere Annahmen in **jeder** Pflichtdimension geschlossen. Das
-  Objekt kann betrieblich modelliert werden, wenn zusätzlich `orderable=true`
-  gilt.
+- **B — konservativ abgeleitet:** Datenlücken sind durch einen versionierten,
+  deterministischen Offline-Regelsatz in **jeder** Pflichtdimension
+  vollständig geschlossen. Für `synthetic-operational-b/v2` bindet ein
+  Closure-Receipt Policy, neun Eingabedateien, Candidate, natives Operational-v2-
+  Artefakt und Zustand per SHA-256. Zu den neun Eingaben gehören der freie
+  GTFS-Snapshot, sein qualifizierter v2-Routenbericht und die kanonische
+  `timetableRoutes`-JSONSeq. Der Bericht muss Snapshot- und Archiv-SHA,
+  `CC-BY-4.0`, vollständige 1:1-Abdeckung aller ausgewählten B-Segmente sowie
+  `operationalNetworkUsed=false`, `gtfsShapeGeometryUsed=false` und
+  `inventedGeometryUsed=false` belegen. Das Ergebnis trägt intern `derived`, ist
+  nicht Klasse-A-fähig und kann nur mit `orderable=true` betrieblich verwendet
+  werden.
 
-Weitere Releaseklassen gibt es nicht. Bleibt eine Pflichtdimension offen, ist
-das kein auslieferbares Objekt, sondern ein interner Buildbefund. Schon ein
-solcher Befund im verbindlichen Korpusscope setzt
-`activationEligible=false` und blockiert Signatur, Veröffentlichung und
-Weltaktivierung des gesamten Kandidaten.
+Eine bloße Annahme (`assumed`) ohne diesen vollständigen Schließungsnachweis
+bleibt Klasse C. Ein sicherer Einzelwert wie 20 km/h genügt nicht, wenn
+Fahrstraße, Schutzressourcen, Bahnsteigintervall oder Regionsübergabe offen
+bleiben. Umgekehrt macht eine vollständige synthetische B-Ableitung keinen
+realen Signalstandort, keine reale Weichenlage und keine reale Stellwerkslogik
+geltend.
+
+Das ausgelieferte Operational-v2-Artefakt enthält die synthetisch abgeleiteten
+Betriebsobjekte tatsächlich
+(`syntheticOperationalDetailsShipped=true`). Beobachtete und synthetische
+Objekte teilen dabei dieselben Laufzeit-Collections
+(`observedAndSyntheticObjectsShareRuntimeCollections=true`). Eine objektweise
+Lineage wird nicht mit ausgeliefert
+(`objectLevelProvenanceShipped=false`); diese Grenze ändert weder die
+Derived/B-Klassifikation noch `realInterlockingFactsClaimed=false`.
+
+Weitere betriebliche Releaseklassen gibt es nicht. Bleibt eine Pflichtdimension
+des Operational-v2-Modells offen, setzt das `activationEligible=false` und
+blockiert Signatur, Veröffentlichung und Weltaktivierung des Kandidaten. Davon
+getrennt darf ein sichtbares, nicht bestellbares Karten-Evidenzobjekt C bleiben,
+wenn der Operational-v2-Graph seine Funktion unabhängig vollständig als
+Derived/B schließt. Das C-Objekt wird weder entfernt noch zu B umetikettiert und
+ist selbst niemals betriebliche Source of Truth.
 
 Jede Welt pinnt einen vollständigen Release-Satz aus Infrastruktur, Tarifen,
 Nachfrage, Fahrzeugkatalog und Regeln. Updates erfolgen ausschließlich zu
@@ -154,17 +179,20 @@ Neigung, Elektrifizierung, Gleisanzahl, Signale, Blöcke und
 Konfliktressourcen getrennt. Die öffentliche Objektklasse ist das Minimum der
 für den jeweiligen Layertyp erforderlichen Dimensionen, ergänzt um Ursache und
 betroffene Länge. A verlangt vollständige dimensionsbezogene Evidenz und
-Review; B darf eine Lücke mit einer dokumentierten, sicheren Regel schließen;
-bleibt eine Pflichtdimension danach offen, blockiert sie den Kandidaten. Ein
+Review; B darf eine Lücke nur mit einer dokumentierten, vollständigen
+Derived-Closure schließen; gewöhnliches `assumed` bleibt C. Bleibt eine
+Pflichtdimension danach offen, blockiert sie den Kandidaten. Ein
 Tag wie `zugfolge:validated=yes`, eine einzelne Quelle oder ein KI-Urteil darf
 A nie pauschal setzen.
 
-APN-Skizzen werden gemäß Projektentscheidung nur im internen Jahreslauf zur
-Plausibilisierung von Bahnhofstopologien automatisiert ausgewertet. Sie helfen
-bei Gleisen, Weichen und Signalen in Betriebsstellen, lösen aber weder
-Geschwindigkeitslücken noch die freie Strecke. APN-Rohdaten und -Provenienz
-werden nicht ausgeliefert und sind allein nicht A-fähig. Vollständiger Prozess,
-Artefaktvertrag und Abnahmegrenze: [`deutschland-infracorpus.md`](deutschland-infracorpus.md)
+APN-Skizzen dürfen gemäß Projektentscheidung nur optional im internen
+Jahreslauf zur Plausibilisierung von Bahnhofstopologien ausgewertet werden,
+sofern Zugriff und Rechte im konkreten Lauf bestätigt sind. Ihr Fehlen ist kein
+Release-Blocker. Sie helfen gegebenenfalls bei Gleisen, Weichen und Signalen in
+Betriebsstellen, lösen aber weder Geschwindigkeitslücken noch die freie Strecke.
+APN-Rohdaten und -Provenienz werden nicht ausgeliefert und sind allein nicht
+A-fähig. Vollständiger Prozess, Artefaktvertrag und Abnahmegrenze:
+[`deutschland-infracorpus.md`](deutschland-infracorpus.md)
 und der feste [`Jahres-Prompt`](prompts/infrarelease-deutschland-jahreslauf.md).
 
 ### 5.2 Messstand des historischen Jahreskandidaten 2026.1
@@ -200,8 +228,27 @@ versionierten deterministischen Generierungsregel ergänzen. Eine laufende Welt
 erfindet nichts. Kann diese Regel eine Pflichtdimension nicht vollständig und
 konservativ schließen, blockiert der Befund den ganzen Releasekandidaten.
 
-Die öffentliche Projektion enthält ausschließlich A/B und unterscheidet
-fachlich weiterhin Signal, Block, Weiche und Gleis, zeigt aber niemals, ob das
-einzelne Element verifiziert oder konservativ generiert wurde. Diagnose-,
-Releasepflege- und Migrationswerkzeuge behalten diese Herkunft intern.
+Die öffentliche Projektion darf für einen synthetischen B-Vertrag nur
+`qualityClass=B`, `provenance=derived`, Policy- und Closure-Hash sowie
+`realInterlockingFactsClaimed=false` ausweisen. Synthetische Signal-, Weichen-,
+Fahrstraßen- oder Schutzdetails werden nicht als reale Anlagenobjekte
+veröffentlicht. Diagnose-, Releasepflege- und Migrationswerkzeuge behalten die
+objektgenaue Herkunft intern.
+
+### 6.1 Zwei getrennte Qualitätsartefakte
+
+Der detaillierte sichtbare Kartenbericht
+`zugfolge-final-infrastructure-quality-report/v1` trägt
+`purpose=visible-map-quality-evidence` und `operationalReleaseGate=false`. Die
+öffentliche Projektion `zugfolge-static-map-quality/v2` bindet ihn und weist
+A/B/C unverändert aus. Der separate
+`zugfolge-operational-infrastructure-quality-report/v1` bindet diesen
+Static-Map-Beleg per SHA-256, qualifiziert aber ausschließlich das native,
+vollständig geschlossene Operational-v2-Artefakt. Nur dort muss die operative
+Klassenbilanz C=0 und `unresolvedRequired=0` sein.
+
+Diese Trennung lockert weder Rechte-, Signatur- noch Aktivierungsgates: Der
+Operational-Bericht verlangt ein bytegeprüftes Closure- und natives Receipt,
+setzt `mapClassCReclassified=false` sowie `mapObjectsRemoved=false` und erklärt
+ausdrücklich, dass seine Freigabe weder Signatur noch Aktivierung impliziert.
 Details: [`betriebsengine.md`](betriebsengine.md) 2.

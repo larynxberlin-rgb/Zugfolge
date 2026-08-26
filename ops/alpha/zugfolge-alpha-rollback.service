@@ -10,9 +10,9 @@ Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/zugfolge
 ExecStart=/usr/bin/env bash /opt/zugfolge/tools/alpha-ops/compose-with-map-release-env.sh --attested-rollback -f /opt/zugfolge/compose.yml up --no-build --force-recreate --wait --wait-timeout 600
-ExecStop=/usr/bin/env bash /opt/zugfolge/tools/alpha-ops/compose-with-map-release-env.sh --fixed-stop -f /opt/zugfolge/compose.yml down
-TimeoutStartSec=900
-TimeoutStopSec=300
+ExecStopPost=/usr/bin/env bash /opt/zugfolge/tools/alpha-ops/compose-with-map-release-env.sh --attested-rollback-stop -f /opt/zugfolge/compose.yml down
+TimeoutStartSec=12000
+TimeoutStopSec=900
 
 [Install]
 WantedBy=multi-user.target

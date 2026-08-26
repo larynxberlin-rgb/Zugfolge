@@ -6,8 +6,16 @@ import {
 } from "@zugfolge/planning-worker";
 import {
   FLEET_AUTHORITY_RELEASE_SCHEMA_V2,
+  OPERATIONAL_INFRASTRUCTURE_VALIDATION_MODE,
+  OPERATIONAL_INITIALIZATION_VALIDATION_RECEIPT_SCHEMA,
+  OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
+  assertOperationalTrainNumbers,
+  operationalInfrastructureBindingsEqual,
+  operationalProtectionModeSelectionEvidence,
   type FleetAuthorityRelease,
+  type OperationalInfrastructureBinding,
   type OperationalDispatchRequest,
+  type OperationalInitializationValidationReceipt,
   type OperationalSimulationInitialization,
   type OperationalTrainInitialization,
 } from "@zugfolge/runtime-native";
@@ -18,10 +26,11 @@ import {
 } from "./alpha-world-start.js";
 import { operationalSimulationInitializationHash } from "./operational-initialization-hash.js";
 import type { FleetAuthorityWorldConfiguration } from "./fleet-configuration.js";
-import type {
-  OperationalScheduledCommand,
-  RegionalRealtimeRegistration,
-  RegionalScheduledCommandCatalog,
+import {
+  REGIONAL_SIMULATION_BOUNDARY_COMMAND_LIMIT,
+  type OperationalScheduledCommand,
+  type RegionalRealtimeRegistration,
+  type RegionalScheduledCommandCatalog,
 } from "./regional-simulation-scheduler.js";
 import { compareUtf8 } from "./utf8.js";
 
@@ -39,13 +48,10 @@ interface OperationalDeploymentProgram {
   readonly deploymentHash: string;
   readonly worldId: string;
   readonly regionId: string;
+  readonly initializationHash: string;
+  readonly initialization: OperationalSimulationInitialization;
   readonly repeatEveryMs: number;
   readonly trains: readonly OperationalProgramTrain[];
-}
-
-function object(value: unknown, detail: string): Readonly<Record<string, unknown>> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error(detail);
-  return value as Readonly<Record<string, unknown>>;
 }
 
 function safeNonnegativeInteger(value: unknown, detail: string): number {
@@ -53,95 +59,76 @@ function safeNonnegativeInteger(value: unknown, detail: string): number {
   return value as number;
 }
 
-function routeLengthMm(route: Readonly<Record<string, unknown>>): number {
-  if (!Array.isArray(route["legs"]) || route["legs"].length === 0) {
-    throw new Error("Signiertes Betriebsprogramm besitzt keinen vollstaendigen Laufweg.");
+function validateNativeInitializationReceipt(
+  worldId: string,
+  initialization: OperationalSimulationInitialization,
+  receipt: OperationalInitializationValidationReceipt | undefined,
+): OperationalInitializationValidationReceipt {
+  assertOperationalTrainNumbers(initialization.trains, "signiertes Operational-v2-Programm");
+  const expectedRouteVersionCount = new Set(
+    initialization.trains.map((train) => train.routeVersionId),
+  ).size;
+  const expectedDispatchInterlockingRouteCount = new Set(
+    initialization.trains.map((train) => train.dispatchInterlockingRouteId),
+  ).size;
+  const expectedFormationBindingCount = new Set(
+    initialization.trains.map((train) => train.formationVersionId),
+  ).size;
+  const protectionModeSelectionEvidence = operationalProtectionModeSelectionEvidence(initialization);
+  if (
+    receipt === undefined
+    || receipt.schemaVersion !== OPERATIONAL_INITIALIZATION_VALIDATION_RECEIPT_SCHEMA
+    || receipt.worldId !== worldId
+    || receipt.regionId !== initialization.regionId
+    || receipt.initializationHash !== operationalSimulationInitializationHash(initialization)
+    || !operationalInfrastructureBindingsEqual(receipt.infraRelease, initialization.infraRelease)
+    || receipt.programTrainCount !== initialization.trains.length
+    || receipt.validatedProgramTemplateCount !== initialization.trains.length
+    || receipt.validatedRouteVersionCount !== expectedRouteVersionCount
+    || receipt.validatedDispatchInterlockingRouteCount !== expectedDispatchInterlockingRouteCount
+    || receipt.validatedFormationBindingCount !== expectedFormationBindingCount
+    || receipt.validatedTrainNumberCount !== initialization.trains.length
+    || initialization.protectionModeSelectionPolicy !== OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY
+    || receipt.protectionModeSelectionPolicy !== initialization.protectionModeSelectionPolicy
+    || receipt.validatedProtectionModeSelectionCount !== protectionModeSelectionEvidence.count
+    || receipt.protectionModeSelectionsSha256 !== protectionModeSelectionEvidence.sha256
+    || receipt.protectionModeSelectionsValidated !== true
+    || !/^[a-f0-9]{64}$/u.test(receipt.stateHash)
+    || receipt.dynamicTrainCount !== 0
+    || receipt.resourceBindingsValidated !== true
+    || receipt.formationBindingsValidated !== true
+    || receipt.trainNumbersValidated !== true
+    || receipt.validationMode !== OPERATIONAL_INFRASTRUCTURE_VALIDATION_MODE
+    || (initialization.trains.length > 0 && (
+      receipt.validatedRouteVersionCount <= 0
+      || receipt.validatedDispatchInterlockingRouteCount <= 0
+      || receipt.validatedResourceBindingCount <= 0
+      || receipt.validatedFormationBindingCount <= 0
+    ))
+  ) {
+    throw new Error("Signiertes Betriebsprogramm besitzt keinen passenden nativen Streaming-Pruefbeleg.");
   }
-  const last = object(route["legs"].at(-1), "Signiertes Betriebsprogramm besitzt ein ungueltiges Laufwegende.");
-  const start = safeNonnegativeInteger(last["routeStartMm"], "Laufwegstart ist ungueltig.");
-  const entry = safeNonnegativeInteger(last["edgeEntryMm"], "Laufwegeintritt ist ungueltig.");
-  const exit = safeNonnegativeInteger(last["edgeExitMm"], "Laufwegaustritt ist ungueltig.");
-  const length = start + Math.abs(exit - entry);
-  if (!Number.isSafeInteger(length) || length <= 0) throw new Error("Laufweglaenge ist ungueltig.");
-  return length;
+  return receipt;
 }
 
-function deploymentFormationLengthsMm(
-  initialization: OperationalSimulationInitialization,
-): ReadonlyMap<string, number> {
-  const vehicleTypeLengths = new Map<string, number>();
-  for (const rawEntry of initialization.vehicleTypes) {
-    const entry = object(rawEntry, "Signiertes Betriebsprogramm besitzt einen ungueltigen Fahrzeugtypeintrag.");
-    const vehicleType = object(
-      entry["vehicleType"],
-      "Signiertes Betriebsprogramm besitzt einen ungueltigen Fahrzeugtyp.",
-    );
-    const vehicleTypeId = vehicleType["id"];
-    const lengthMm = safeNonnegativeInteger(
-      vehicleType["lengthMm"],
-      "Signierter Fahrzeugtyp besitzt keine gueltige Laenge.",
-    );
-    if (typeof vehicleTypeId !== "string" || vehicleTypeId.length === 0 || lengthMm === 0) {
-      throw new Error("Signierter Fahrzeugtyp besitzt keine gueltige Kennung oder Laenge.");
-    }
-    if (vehicleTypeLengths.has(vehicleTypeId)) {
-      throw new Error(`Signierter Fahrzeugtyp '${vehicleTypeId}' ist nicht eindeutig.`);
-    }
-    vehicleTypeLengths.set(vehicleTypeId, lengthMm);
-  }
-
-  const vehicleLengths = new Map<string, number>();
-  for (const rawVehicle of initialization.vehicles) {
-    const vehicle = object(rawVehicle, "Signiertes Betriebsprogramm besitzt ein ungueltiges Fahrzeug.");
-    const vehicleId = vehicle["id"];
-    const vehicleTypeId = vehicle["typeId"];
-    if (
-      typeof vehicleId !== "string"
-      || vehicleId.length === 0
-      || typeof vehicleTypeId !== "string"
-      || vehicleTypeId.length === 0
-    ) {
-      throw new Error("Signiertes Fahrzeug besitzt keine gueltige Kennung oder Typbindung.");
-    }
-    const lengthMm = vehicleTypeLengths.get(vehicleTypeId);
-    if (lengthMm === undefined) {
-      throw new Error(`Fahrzeug '${vehicleId}' verweist auf keinen signierten Fahrzeugtyp.`);
-    }
-    if (vehicleLengths.has(vehicleId)) {
-      throw new Error(`Signiertes Fahrzeug '${vehicleId}' ist nicht eindeutig.`);
-    }
-    vehicleLengths.set(vehicleId, lengthMm);
-  }
-
-  const formationLengths = new Map<string, number>();
-  for (const formation of initialization.formations) {
-    if (formation.id.length === 0 || formation.vehicleIds.length === 0) {
-      throw new Error("Signierte Formation besitzt keine gueltige Kennung oder Fahrzeuge.");
-    }
-    if (formationLengths.has(formation.id)) {
-      throw new Error(`Signierte Formation '${formation.id}' ist nicht eindeutig.`);
-    }
-    let lengthMm = 0;
-    for (const vehicleId of formation.vehicleIds) {
-      const vehicleLengthMm = vehicleLengths.get(vehicleId);
-      if (vehicleLengthMm === undefined) {
-        throw new Error(`Formation '${formation.id}' verweist auf kein signiertes Fahrzeug '${vehicleId}'.`);
-      }
-      lengthMm += vehicleLengthMm;
-      if (!Number.isSafeInteger(lengthMm)) {
-        throw new Error(`Formation '${formation.id}' ueberschreitet den sicheren Laengenbereich.`);
-      }
-    }
-    formationLengths.set(formation.id, lengthMm);
-  }
-  return formationLengths;
+export function validateNativeProgramReceipt(
+  signed: SignedAlphaWorldDeployment,
+  receipt: OperationalInitializationValidationReceipt | undefined,
+): OperationalInitializationValidationReceipt {
+  return validateNativeInitializationReceipt(
+    signed.deployment.worldId,
+    signed.deployment.regionalSimulation,
+    receipt,
+  );
 }
 
 function deploymentOperationalProgram(
   signed: SignedAlphaWorldDeployment,
+  receipt: OperationalInitializationValidationReceipt | undefined,
 ): OperationalDeploymentProgram {
   const { deployment, deploymentHash } = signed;
   const initialization: OperationalSimulationInitialization = deployment.regionalSimulation;
+  validateNativeProgramReceipt(signed, receipt);
   const repeatEveryMs = deployment.repeatEveryS * 1_000;
   if (
     !Number.isSafeInteger(deployment.repeatEveryS)
@@ -152,14 +139,8 @@ function deploymentOperationalProgram(
   ) {
     throw new Error("Signiertes Deployment besitzt keinen gueltigen wiederholbaren v2-Betriebstakt.");
   }
-  const infra = object(initialization.infraRelease, "Signiertes Betriebsprogramm besitzt kein operatives InfraRelease.");
-  const routes = object(infra["routeVersions"], "Signiertes Betriebsprogramm besitzt keine Laufwegversionen.");
-  const interlockingRoutes = object(
-    infra["interlockingRoutes"],
-    "Signiertes Betriebsprogramm besitzt keine Fahrstrassenvorlagen.",
-  );
-  const formationLengthsMm = deploymentFormationLengthsMm(initialization);
   const seen = new Set<string>();
+  const formationDepartures = new Set<string>();
   const trains = initialization.trains.map((train): OperationalProgramTrain => {
     const departureOffsetMs = safeNonnegativeInteger(
       train.scheduledDepartureMs,
@@ -173,52 +154,52 @@ function deploymentOperationalProgram(
       throw new Error(`Fahrt '${train.id}' ist fuer die signierte Tageswiederholung ungueltig.`);
     }
     seen.add(train.id);
-    const route = object(routes[train.routeVersionId], `Fahrt '${train.id}' besitzt keinen signierten Laufweg.`);
-    const templateId = route["templateId"];
-    const lengthMm = routeLengthMm(route);
-    const formationLengthMm = formationLengthsMm.get(train.formationVersionId);
-    if (formationLengthMm === undefined) {
-      throw new Error(`Fahrt '${train.id}' besitzt keine signierte Formation.`);
-    }
-    const tailAtRouteEndMm = lengthMm - formationLengthMm;
-    if (tailAtRouteEndMm < 0) {
-      throw new Error(`Fahrt '${train.id}' ist laenger als ihr signierter Laufweg.`);
-    }
-    const completeCandidates = Object.values(interlockingRoutes)
-      .map((value) => object(value, "Signierte Fahrstrassenvorlage ist ungueltig."))
-      .filter((candidate) =>
-        candidate["routeTemplateId"] === templateId
-        && candidate["movementKind"] === train.movementKind
-        && candidate["authorityEndRouteMm"] === lengthMm
-        && typeof candidate["id"] === "string"
-        && candidate["id"].length > 0);
-    if (completeCandidates.length === 0) {
-      throw new Error(`Fahrt '${train.id}' besitzt keine vollstaendige signierte Fahrstrasse bis zum Laufwegende.`);
-    }
-    const candidates = completeCandidates
-      .filter((candidate) => safeNonnegativeInteger(
-        candidate["releaseAfterTailRouteMm"],
-        `Fahrstrasse '${String(candidate["id"])}' besitzt keine gueltige Freigabegrenze.`,
-      ) <= tailAtRouteEndMm)
-      .map((candidate) => candidate["id"] as string)
-      .sort(compareUtf8);
-    if (candidates.length === 0) {
+    const formationDeparture = `${train.formationVersionId}\u0000${departureOffsetMs}`;
+    if (formationDepartures.has(formationDeparture)) {
       throw new Error(
-        `Fahrt '${train.id}' kann ihre signierte Fahrstrasse am Laufwegende mit ihrer Formation nicht freigeben.`,
+        `Formation '${train.formationVersionId}' ist zur Betriebsprogrammgrenze '${departureOffsetMs}' mehrfach verplant.`,
       );
+    }
+    formationDepartures.add(formationDeparture);
+    if (
+      typeof train.dispatchInterlockingRouteId !== "string"
+      || train.dispatchInterlockingRouteId.trim() === ""
+    ) {
+      throw new Error(`Fahrt '${train.id}' besitzt keine nativ validierte signierte Fahrstrasse.`);
     }
     return Object.freeze({
       train: structuredClone(train),
-      interlockingRouteId: candidates[0]!,
+      interlockingRouteId: train.dispatchInterlockingRouteId,
       departureOffsetMs,
     });
   }).sort((left, right) =>
     left.departureOffsetMs - right.departureOffsetMs
     || compareUtf8(left.train.id, right.train.id));
+  const trainsPerBoundary = new Map<number, number>();
+  for (const train of trains) {
+    trainsPerBoundary.set(
+      train.departureOffsetMs,
+      (trainsPerBoundary.get(train.departureOffsetMs) ?? 0) + 1,
+    );
+  }
+  for (const [departureOffsetMs, trainCount] of trainsPerBoundary) {
+    // Im stationaeren Tageszyklus entstehen je Fahrt hoechstens Retire und
+    // Materialize, dazu genau ein Dispatch sowie der Scheduler-Advance auf
+    // dieselbe Millisekunde. Diese atomare Grenze darf spaeter nie aufgrund
+    // einer blossen Speichergrenze geteilt werden muessen.
+    const maximumBoundaryCommands = trainCount * 2 + 2;
+    if (maximumBoundaryCommands > REGIONAL_SIMULATION_BOUNDARY_COMMAND_LIMIT) {
+      throw new Error(
+        `Signierte Betriebsprogrammgrenze '${departureOffsetMs}' ueberschreitet mit ${maximumBoundaryCommands} atomaren Kommandos das Limit ${REGIONAL_SIMULATION_BOUNDARY_COMMAND_LIMIT}.`,
+      );
+    }
+  }
   return Object.freeze({
     deploymentHash,
     worldId: deployment.worldId,
     regionId: initialization.regionId,
+    initializationHash: operationalSimulationInitializationHash(initialization),
+    initialization: structuredClone(initialization),
     repeatEveryMs,
     trains: Object.freeze(trains),
   });
@@ -226,6 +207,21 @@ function deploymentOperationalProgram(
 
 function recurringTrainId(baseId: string, day: number): string {
   return day === 0 ? baseId : `${baseId}:day-${day}`;
+}
+
+function predecessorTrain(
+  program: OperationalDeploymentProgram,
+  train: OperationalProgramTrain,
+  day: number,
+): { readonly train: OperationalProgramTrain; readonly day: number } | undefined {
+  const formationProgram = program.trains.filter(
+    (candidate) => candidate.train.formationVersionId === train.train.formationVersionId,
+  );
+  const index = formationProgram.indexOf(train);
+  if (index < 0) throw new Error(`Fahrt '${train.train.id}' fehlt im signierten Betriebsprogramm.`);
+  if (index > 0) return { train: formationProgram[index - 1]!, day };
+  if (day === 0) return undefined;
+  return { train: formationProgram.at(-1)!, day: day - 1 };
 }
 
 function dispatchRequest(
@@ -257,31 +253,30 @@ function boundaryCommands(
   const trains = program.trains.filter((train) => train.departureOffsetMs === departureOffsetMs);
   const prefix = `${program.deploymentHash}:operational:${program.regionId}:${day}:${departureOffsetMs}`;
   const commands: OperationalScheduledCommand[] = [];
-  if (day > 0) {
-    for (const train of trains) {
+  for (const train of trains) {
+    const predecessor = predecessorTrain(program, train, day);
+    if (predecessor !== undefined) {
       commands.push(Object.freeze({
         commandId: `${prefix}:retire:${train.train.id}`,
         atMs,
         command: Object.freeze({
           type: "retire",
-          trainId: recurringTrainId(train.train.id, day - 1),
+          trainId: recurringTrainId(predecessor.train.train.id, predecessor.day),
         }),
       }));
     }
-    for (const train of trains) {
-      commands.push(Object.freeze({
-        commandId: `${prefix}:materialize:${train.train.id}`,
-        atMs,
-        command: Object.freeze({
-          type: "materialize",
-          train: Object.freeze({
-            ...structuredClone(train.train),
-            id: recurringTrainId(train.train.id, day),
-            scheduledDepartureMs: atMs,
-          }),
+    commands.push(Object.freeze({
+      commandId: `${prefix}:materialize:${train.train.id}`,
+      atMs,
+      command: Object.freeze({
+        type: "materialize",
+        train: Object.freeze({
+          ...structuredClone(train.train),
+          id: recurringTrainId(train.train.id, day),
+          scheduledDepartureMs: atMs,
         }),
-      }));
-    }
+      }),
+    }));
   }
   commands.push(Object.freeze({
     commandId: `${prefix}:dispatch`,
@@ -324,10 +319,23 @@ class PlanningInfrastructureReleaseRegistry implements PlanningInfrastructureRel
   get(worldId: string, releaseId: string): PlanningInfrastructureRelease | undefined {
     return this.#releases.get(`${worldId}\u0000${releaseId}`);
   }
+
+  releaseWorld(worldId: string): void {
+    const prefix = `${worldId}\u0000`;
+    for (const key of this.#releases.keys()) {
+      if (!key.startsWith(prefix)) continue;
+      this.#releases.delete(key);
+      this.#hashes.delete(key);
+    }
+  }
 }
 
 export interface ActiveWorldRuntimeSeed {
   readonly activeWorlds: readonly { readonly worldId: string; readonly epoch: Date }[];
+  /** Reiner nativer Preflight: validiert die externe Operational-v2-Datei und materialisiert keine Zugzustaende. */
+  readonly operationalProgramPreflight: (
+    initialization: OperationalSimulationInitialization,
+  ) => OperationalInitializationValidationReceipt;
   readonly fleetAuthorityConfigurations?: Readonly<Record<string, FleetAuthorityWorldConfiguration>>;
   /** Legacy-Test-/Bootstrap-Pfad: fehlende Zeitbindung bedeutet ausschliesslich t=0. */
   readonly fleetAuthorityReleases?: Readonly<Record<string, FleetAuthorityRelease>>;
@@ -352,9 +360,13 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
   readonly #deploymentHashes = new Map<string, string>();
   readonly #realtimeRegions = new Map<string, RegionalRealtimeRegistration>();
   readonly #operationalPrograms = new Map<string, OperationalDeploymentProgram>();
+  readonly #operationalInfrastructure = new Map<string, OperationalInfrastructureBinding>();
+  readonly #committedOperationalProgramKeys = new Set<string>();
   readonly #planningRegistry: PlanningInfrastructureReleaseRegistry;
+  readonly #operationalProgramPreflight: ActiveWorldRuntimeSeed["operationalProgramPreflight"];
 
   constructor(seed: ActiveWorldRuntimeSeed) {
+    this.#operationalProgramPreflight = seed.operationalProgramPreflight;
     this.fleetAuthorityConfigurations = { ...(seed.fleetAuthorityConfigurations ?? {}) };
     for (const [worldId, authorityRelease] of Object.entries(seed.fleetAuthorityReleases ?? {})) {
       if (this.fleetAuthorityConfigurations[worldId] === undefined) {
@@ -377,6 +389,111 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
     }
   }
 
+  /**
+   * Registriert nur das nativ validierte Schedulerprogramm fuer den harten
+   * Weltstart-Gate. Der Aufrufer muss bei einem vor-dauerhaften Startfehler den
+   * zurueckgegebenen Lease zurueckrollen; `register` vervollstaendigt danach
+   * die aktive Runtimeprojektion idempotent.
+   */
+  prepareOperationalProgram(signed: SignedAlphaWorldDeployment): { readonly rollback: () => void } {
+    validateAlphaVehicleCatalogBinding(signed.deployment);
+    const key = realtimeRegionKey(
+      signed.deployment.worldId,
+      signed.deployment.regionalSimulation.regionId,
+    );
+    const expectedInitializationHash = operationalSimulationInitializationHash(
+      signed.deployment.regionalSimulation,
+    );
+    const existing = this.#operationalPrograms.get(key);
+    if (existing !== undefined) {
+      if (
+        existing.deploymentHash !== signed.deploymentHash
+        || existing.initializationHash !== expectedInitializationHash
+      ) {
+        throw new Error(`Betriebsprogramm fuer '${existing.worldId}/${existing.regionId}' steht im Konflikt.`);
+      }
+      return Object.freeze({ rollback: () => undefined });
+    }
+    const program = deploymentOperationalProgram(
+      signed,
+      this.#operationalProgramPreflight(signed.deployment.regionalSimulation),
+    );
+    this.#operationalPrograms.set(key, program);
+    let owned = true;
+    return Object.freeze({
+      rollback: () => {
+        if (
+          owned
+          && !this.#committedOperationalProgramKeys.has(key)
+          && this.#operationalPrograms.get(key) === program
+        ) {
+          this.#operationalPrograms.delete(key);
+        }
+        owned = false;
+      },
+    });
+  }
+
+  operationalProgramRegistration(
+    worldId: string,
+    regionId: string,
+  ): Readonly<{
+    deploymentHash: string;
+    initializationHash: string;
+    trainRunIds: readonly string[];
+  }> | undefined {
+    const program = this.#operationalPrograms.get(realtimeRegionKey(worldId, regionId));
+    if (program === undefined) return undefined;
+    return Object.freeze({
+      deploymentHash: program.deploymentHash,
+      initializationHash: program.initializationHash,
+      trainRunIds: Object.freeze(program.trains.map(({ train }) => train.id)),
+    });
+  }
+
+  operationalInfrastructureBinding(
+    worldId: string,
+    regionId: string,
+  ): OperationalInfrastructureBinding | undefined {
+    const binding = this.#operationalInfrastructure.get(realtimeRegionKey(worldId, regionId));
+    return binding === undefined ? undefined : Object.freeze(structuredClone(binding));
+  }
+
+  /**
+   * Revalidiert ausschliesslich den bereits signierten, unveraenderten
+   * Deployment-Kopf. Ein anderer Operational-v2-Kopf waere ohne gleichzeitige
+   * Planning- und Livemap-Bindung ein Split-Brain und braucht deshalb ein
+   * vollstaendig neues signiertes Deployment.
+   */
+  revalidateOperationalInfrastructure(
+    worldId: string,
+    expected: OperationalInfrastructureBinding,
+  ): void {
+    const programs = [...this.#operationalPrograms.entries()]
+      .filter(([, program]) => program.worldId === worldId)
+      .sort(([left], [right]) => compareUtf8(left, right));
+    if (programs.length === 0) {
+      throw new Error(`Aktive Welt '${worldId}' besitzt kein signiertes Operational-v2-Programm.`);
+    }
+    for (const [key, program] of programs) {
+      const current = this.#operationalInfrastructure.get(key);
+      if (
+        current === undefined
+        || !operationalInfrastructureBindingsEqual(current, expected)
+        || !operationalInfrastructureBindingsEqual(program.initialization.infraRelease, expected)
+      ) {
+        throw new Error(
+          `Operational-v2-Registry fuer '${program.worldId}/${program.regionId}' weicht vom signierten Deployment ab; eine Aenderung erfordert ein vollstaendig signiertes Deployment-Cutover inklusive Planning und Livemap.`,
+        );
+      }
+      validateNativeInitializationReceipt(
+        worldId,
+        program.initialization,
+        this.#operationalProgramPreflight(program.initialization),
+      );
+    }
+  }
+
   /** Idempotente Live- oder Restart-Projektion eines bereits aktiven Deployments. */
   register(signed: SignedAlphaWorldDeployment, epoch: Date): void {
     const { deployment, deploymentHash } = signed;
@@ -389,7 +506,27 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
     if (existingHash !== undefined && existingHash !== deploymentHash) {
       throw new Error(`Aktive Welt '${deployment.worldId}' besitzt bereits ein anderes Deployment.`);
     }
-    const operationalProgram = deploymentOperationalProgram(signed);
+    const operationalProgramKey = realtimeRegionKey(
+      deployment.worldId,
+      deployment.regionalSimulation.regionId,
+    );
+    const expectedInitializationHash = operationalSimulationInitializationHash(
+      deployment.regionalSimulation,
+    );
+    const preparedOperationalProgram = this.#operationalPrograms.get(operationalProgramKey);
+    if (
+      preparedOperationalProgram !== undefined
+      && (
+        preparedOperationalProgram.deploymentHash !== deploymentHash
+        || preparedOperationalProgram.initializationHash !== expectedInitializationHash
+      )
+    ) {
+      throw new Error(`Betriebsprogramm fuer '${deployment.worldId}/${deployment.regionalSimulation.regionId}' steht im Konflikt.`);
+    }
+    const operationalProgram = preparedOperationalProgram ?? deploymentOperationalProgram(
+      signed,
+      this.#operationalProgramPreflight(deployment.regionalSimulation),
+    );
     const fleetHash = alphaHash("zugfolge-fleet-authority-runtime/v1", deployment.fleet.authorityRelease);
     const existingFleet = this.fleetAuthorityConfigurations[deployment.worldId];
     if (existingFleet !== undefined && (
@@ -422,10 +559,14 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
       realtimeRegionKey(region.worldId, region.regionId),
       region,
     );
-    this.#operationalPrograms.set(
-      realtimeRegionKey(region.worldId, region.regionId),
-      operationalProgram,
-    );
+    this.#operationalPrograms.set(operationalProgramKey, operationalProgram);
+    if (!this.#operationalInfrastructure.has(operationalProgramKey)) {
+      this.#operationalInfrastructure.set(
+        operationalProgramKey,
+        structuredClone(deployment.regionalSimulation.infraRelease),
+      );
+    }
+    this.#committedOperationalProgramKeys.add(operationalProgramKey);
     this.#realtimeWorldIds.add(deployment.worldId);
     this.#activeWorldIds.add(deployment.worldId);
     this.#deploymentHashes.set(deployment.worldId, deploymentHash);
@@ -521,6 +662,31 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
 
   isRealtimeWorld(worldId: string): boolean {
     return this.#realtimeWorldIds.has(worldId);
+  }
+
+  /** Entfernt nur die prozesslokale Projektion einer dauerhaft archivierten Welt. */
+  releaseWorld(worldId: string): void {
+    const prefix = `${worldId}\u0000`;
+    this.#activeWorldIds.delete(worldId);
+    this.#realtimeWorldIds.delete(worldId);
+    this.#deploymentHashes.delete(worldId);
+    this.worldEpochs.delete(worldId);
+    delete this.fleetAuthorityConfigurations[worldId];
+    delete this.fleetAuthorityReleases[worldId];
+    delete this.planningAuthorityAccountIds[worldId];
+    this.#planningRegistry.releaseWorld(worldId);
+    for (const key of this.#realtimeRegions.keys()) {
+      if (key.startsWith(prefix)) this.#realtimeRegions.delete(key);
+    }
+    for (const key of this.#operationalPrograms.keys()) {
+      if (key.startsWith(prefix)) this.#operationalPrograms.delete(key);
+    }
+    for (const key of this.#operationalInfrastructure.keys()) {
+      if (key.startsWith(prefix)) this.#operationalInfrastructure.delete(key);
+    }
+    for (const key of this.#committedOperationalProgramKeys) {
+      if (key.startsWith(prefix)) this.#committedOperationalProgramKeys.delete(key);
+    }
   }
 
   /** Global freshness gilt erst ab der signierten Epoche einer Echtzeitwelt. */

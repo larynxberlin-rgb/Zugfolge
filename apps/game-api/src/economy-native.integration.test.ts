@@ -30,7 +30,14 @@ import {
   type CostType,
   type EconomyDatabase,
 } from "@zugfolge/economy";
-import { createGtfsPlanningEnvelope, type GtfsPlanningSnapshot } from "@zugfolge/gtfs";
+import {
+  createGtfsPlanningEnvelope,
+  GTFS_PLANNING_SCHEMA,
+  gtfsPlanningIdentityNamespace,
+  gtfsPlanningLotId,
+  gtfsPlanningPatternId,
+  type GtfsPlanningSnapshot,
+} from "@zugfolge/gtfs";
 import { requestWorldAccess, type IdentityDatabase } from "@zugfolge/identity";
 import { LivemapRegistry } from "@zugfolge/livemap-stream";
 import { foundOperator } from "@zugfolge/operators";
@@ -128,37 +135,54 @@ const release = buildEconomyRelease({
 });
 
 function planning() {
-  const patterns: GtfsPlanningSnapshot["patterns"] = Array.from({ length: 4 }, (_, index) => ({
-    id: `pattern-${index}`,
-    lineId: `S${index + 1}`,
-    directionId: "0",
-    sourceRouteIds: [`route-${index}`],
-    stopIds: [`stop-${index}-a`, `stop-${index}-b`],
-    stopNames: [`Stop ${index} A`, `Stop ${index} B`],
-    nodeIds: [`node-${index}-a`, `node-${index}-b`],
-    edgeIds: [`edge-${index}`],
-    distanceMeters: 10_000,
-    journeys: [{
-      sourceTripId: `trip-${index}`,
-      serviceDate: "20260811",
-      departureServiceSeconds: index * 3_600,
-      arrivalServiceSeconds: index * 3_600 + 1_800,
-      departureEpochSeconds: 1_000 + index * 3_600,
-      arrivalEpochSeconds: 2_800 + index * 3_600,
-    }],
-    metrics: {
-      journeyCount: 1,
-      totalTrainMeters: "10000",
-      totalStops: "2",
-      totalServiceSeconds: "1800",
-      totalEnergyWh: "80000",
-      medianHeadwaySeconds: null,
-      maximumOperatingSpanSeconds: 1_800,
-      peakVehicles: 1,
-    },
-  }));
+  const source = {
+    sourceId: "synthetic-native-m6",
+    feedUrl: "https://example.invalid/native-m6.zip",
+    archiveSha256: "a".repeat(64),
+    capturedAt: "2026-08-11T00:00:00.000Z",
+    timeZone: "Europe/Berlin",
+    sourceLicense: "synthetic-test-data",
+    attribution: "Zugfolge synthetic native integration fixture",
+  };
+  const infrastructureVersion = "native-m6-graph-v1";
+  const rulesVersion = "native-m6-rules-v1";
+  const serviceDates = ["20260811"];
+  const identity = gtfsPlanningIdentityNamespace({ source, infrastructureVersion, rulesVersion, serviceDates });
+  const patterns: GtfsPlanningSnapshot["patterns"] = Array.from({ length: 4 }, (_, index) => {
+    const lineId = `S${index + 1}`;
+    const nodeIds = [`node-${index}-a`, `node-${index}-b`];
+    return {
+      id: gtfsPlanningPatternId(identity, lineId, "0", nodeIds),
+      lineId,
+      directionId: "0",
+      sourceRouteIds: [`route-${index}`],
+      stopIds: [`stop-${index}-a`, `stop-${index}-b`],
+      stopNames: [`Stop ${index} A`, `Stop ${index} B`],
+      nodeIds,
+      edgeIds: [`edge-${index}`],
+      distanceMeters: 10_000,
+      journeys: [{
+        sourceTripId: `trip-${index}`,
+        serviceDate: "20260811",
+        departureServiceSeconds: index * 3_600,
+        arrivalServiceSeconds: index * 3_600 + 1_800,
+        departureEpochSeconds: 1_000 + index * 3_600,
+        arrivalEpochSeconds: 2_800 + index * 3_600,
+      }],
+      metrics: {
+        journeyCount: 1,
+        totalTrainMeters: "10000",
+        totalStops: "2",
+        totalServiceSeconds: "1800",
+        totalEnergyWh: "80000",
+        medianHeadwaySeconds: null,
+        maximumOperatingSpanSeconds: 1_800,
+        peakVehicles: 1,
+      },
+    };
+  });
   const lots: GtfsPlanningSnapshot["lots"] = patterns.map((pattern, index) => ({
-    id: `lot-${index}`,
+    id: gtfsPlanningLotId(identity, [pattern.lineId]),
     lineIds: [pattern.lineId],
     patternIds: [pattern.id],
     connectingNodeIds: [],
@@ -186,22 +210,14 @@ function planning() {
     },
   }));
   return createGtfsPlanningEnvelope({
-    schema: "zugfolge-gtfs-planning/v1",
+    schema: GTFS_PLANNING_SCHEMA,
     worldId: WORLD,
     revision: 1,
     producedAt: 10,
-    source: {
-      sourceId: "synthetic-native-m6",
-      feedUrl: "https://example.invalid/native-m6.zip",
-      archiveSha256: "a".repeat(64),
-      capturedAt: "2026-08-11T00:00:00.000Z",
-      timeZone: "Europe/Berlin",
-      sourceLicense: "synthetic-test-data",
-      attribution: "Zugfolge synthetic native integration fixture",
-    },
-    infrastructureVersion: "native-m6-graph-v1",
-    rulesVersion: "native-m6-rules-v1",
-    serviceDates: ["20260811"],
+    source,
+    infrastructureVersion,
+    rulesVersion,
+    serviceDates,
     patterns,
     lots,
   });

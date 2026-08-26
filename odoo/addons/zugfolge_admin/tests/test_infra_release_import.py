@@ -1,9 +1,12 @@
+import base64
 import hashlib
+import hmac
 import json
+from pathlib import Path
 from unittest.mock import patch
 
 from odoo import Command
-from odoo.exceptions import AccessError, UserError
+from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tests.common import TransactionCase
 
 from .. import services as service_module
@@ -22,59 +25,355 @@ def _canonical(value):
     return (json.dumps(value, sort_keys=True, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
 
 
-def _fixture(raw_data_policy_field="nonPublicSourceRawDataShipped"):
-    quality = _compact({
-        "schema": "zugfolge-final-infrastructure-quality-report/v1",
+OPERATIONAL_STATE_HASH = "d" * 64
+HASH_A = "a" * 64
+HASH_B = "b" * 64
+HASH_C = "c" * 64
+OPERATIONAL_BYTES = b'{"id":"infra-deutschland-2026.1","schema":"zugfolge-operational-infrastructure/v2"}\n'
+OPERATIONAL_SHA256 = _sha256(OPERATIONAL_BYTES)
+UNSIGNED_REASON = "Kein produktiver privater Signaturschluessel vorhanden; Aktivierung bleibt gesperrt."
+FINALIZATION_KEY_ID = "test-key"
+FINALIZATION_TEST_KEY_MATERIAL = "unit-test-only-key-material-0001"
+PRODUCER_GOLDEN_PATH = Path(__file__).with_name("fixtures") / "delivery_v2_producer_golden.json"
+
+
+def _set_path(path, value):
+    def mutate(root):
+        target = root
+        for segment in path[:-1]:
+            target = target[segment]
+        target[path[-1]] = value
+    return mutate
+
+
+def _delete_path(path):
+    def mutate(root):
+        target = root
+        for segment in path[:-1]:
+            target = target[segment]
+        target.pop(path[-1], None)
+    return mutate
+
+
+def _notice(text):
+    raw = text.encode("utf-8")
+    return {"text": text, "bytes": len(raw), "sha256": _sha256(raw)}
+
+
+def _asset_tree(files, kind, install_directory):
+    prefix = "%s/" % install_directory
+    rows = sorted((
+        {
+            "path": entry["installPath"][len(prefix):],
+            "bytes": len(entry["content"]),
+            "sha256": _sha256(entry["content"]),
+        }
+        for entry in files
+        if entry["kind"] == kind and entry["installPath"].startswith(prefix)
+    ), key=lambda row: row["path"])
+    canonical = ("\n".join(
+        "%s\0%s\0%s" % (row["path"], row["bytes"], row["sha256"])
+        for row in rows
+    ) + "\n").encode("utf-8")
+    return {
+        "installDirectory": install_directory,
+        "files": len(rows),
+        "bytes": sum(row["bytes"] for row in rows),
+        "sha256": _sha256(canonical),
+    }
+
+
+def _asset_notices(files):
+    noto_copyright = "Copyright 2022 The Noto Project Authors (https://github.com/notofonts)"
+    sprite_copyright = "Copyright (c) 2017 Mapzen"
+    return {
+        "schema": "zugfolge-map-asset-notices/v2",
+        "assets": [
+            {
+                "id": "noto-glyphs",
+                "rightsSourceId": "noto-glyphs",
+                "kind": "glyph",
+                "license": "OFL-1.1",
+                "copyright": noto_copyright,
+                "modifications": "PBF-Glyphen werden unveraendert selbst gehostet.",
+                "source": {
+                    "repository": "https://github.com/protomaps/basemaps-assets",
+                    "commit": "a" * 40,
+                    "path": "fonts",
+                },
+                "derivedFrom": None,
+                "notice": {
+                    "url": "https://raw.githubusercontent.com/protomaps/basemaps-assets/%s/fonts/OFL.txt" % ("a" * 40),
+                    **_notice("%s\nSIL OPEN FONT LICENSE Version 1.1\n" % noto_copyright),
+                },
+                "tree": _asset_tree(files, "glyph", "assets/fonts"),
+            },
+            {
+                "id": "protomaps-sprites",
+                "rightsSourceId": "protomaps-sprites",
+                "kind": "sprite",
+                "license": "MIT",
+                "copyright": sprite_copyright,
+                "modifications": "Dunkle Sprites werden unveraendert selbst gehostet.",
+                "source": {
+                    "repository": "https://github.com/protomaps/basemaps-assets",
+                    "commit": "a" * 40,
+                    "path": "sprites/v4",
+                },
+                "derivedFrom": {
+                    "repository": "https://github.com/tangrams/icons",
+                    "commit": "b" * 40,
+                    "license": "MIT",
+                },
+                "notice": {
+                    "url": "https://raw.githubusercontent.com/tangrams/icons/%s/LICENSE.md" % ("b" * 40),
+                    **_notice("The MIT License (MIT)\n%s\n" % sprite_copyright),
+                },
+                "tree": _asset_tree(files, "sprite", "assets/sprites"),
+            },
+        ],
+    }
+
+
+def _operational_quality():
+    return {
+        "schema": "zugfolge-operational-infrastructure-quality-report/v1",
         "releaseId": "infra-deutschland-2026.1",
-        "policy": {
-            "classAFromSingleSourceOrAutomatedInference": False,
-            "classC": "visible but not orderable",
-            raw_data_policy_field: False,
+        "timetableYear": 2026,
+        "scopeId": "deutschland-ebo-operational-v2",
+        "deterministic": True,
+        "separation": {
+            "mapEvidencePurpose": "visible-map-quality-evidence",
+            "operationalEvidencePurpose": "closed-operational-v2-model",
+            "mapClassCReclassified": False,
+            "mapClassCBlocksOperationalQualityGate": False,
+            "mapObjectsRemoved": False,
         },
-        "summary": {"visibleLayers": 10, "visibleFeatures": 42},
-    })
-    sources = _compact({
-        "schema": "zugfolge-map-delivery-sources/v1",
-        "releaseId": "infra-deutschland-2026.1",
-        "sources": [{
-            "approved": True,
-            "attribution": "© OpenStreetMap-Mitwirkende; Basemap-Aufbereitung Protomaps",
-            "id": "basemap-protomaps",
-            "license": "ODbL-1.0",
-        }],
-    })
+        "mapEvidence": {
+            "schema": "zugfolge-static-map-quality/v2",
+            "mapReleaseId": "karte-deutschland-2026.1-v2",
+            "infrastructureCorpusId": "infra-deutschland-2026.1",
+            "bytes": 4321,
+            "sha256": HASH_A,
+            "sourceReport": {
+                "schema": "zugfolge-final-infrastructure-quality-report/v1",
+                "bytes": 9876,
+                "sha256": HASH_B,
+                "shipped": False,
+            },
+            "visibleFeatures": 42,
+            "visibleLayers": 10,
+            "qualityClassFeatureCount": {"A": 12, "B": 28, "C": 2},
+            "trackLengthMm": 3000,
+            "trackQualityClassLengthMm": {"A": 1000, "B": 1900, "C": 100},
+        },
+        "operationalModel": {
+            "policyId": "synthetic-operational-b/v2",
+            "policySha256": HASH_A,
+            "closureReceiptSha256": HASH_B,
+            "qualityClass": "B",
+            "provenance": "derived",
+            "realGeometry": True,
+            "simulatedOperationalAssignment": True,
+            "realInterlockingFactsClaimed": False,
+            "syntheticOperationalDetailsShipped": True,
+            "objectLevelProvenanceShipped": False,
+            "observedAndSyntheticObjectsShareRuntimeCollections": True,
+            "timetableRouteEvidence": {
+                "reportSchema": "zugfolge-germany-timetable-route-report/v2",
+                "policyId": "synthetic-operational-b/v2",
+                "derivationRule": "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2",
+                "selectionRule": "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
+                "reportBytes": 1234,
+                "reportSha256": HASH_A,
+                "routesBytes": 5678,
+                "routesSha256": HASH_B,
+                "gtfsSnapshotBytes": 9012,
+                "gtfsSnapshotSha256": HASH_C,
+                "snapshotHash": HASH_A,
+                "archive": "gtfs-free.zip",
+                "archiveSha256": HASH_B,
+                "sourceLicense": "CC-BY-4.0",
+                "sourceLicenseAsPublished": "CC BY 4.0",
+                "selectedSegmentCount": 4,
+                "completeRouteCount": 4,
+                "routeRecordCount": 4,
+                "sameStopTransitionCount": 1,
+                "routeSetSha256": HASH_B,
+                "realGeometry": True,
+                "simulatedOperationalAssignment": True,
+                "realInterlockingFactsClaimed": False,
+                "externalOperationalNetworkProvenance": False,
+            },
+            "operationalArtifact": {
+                "bytes": len(OPERATIONAL_BYTES),
+                "sha256": OPERATIONAL_SHA256,
+                "stateHash": OPERATIONAL_STATE_HASH,
+            },
+            "coverage": {
+                "blockResources": 3,
+                "directedEdges": 2,
+                "edgeGeometries": 2,
+                "interlockingRoutes": 2,
+                "platformIntervals": 1,
+                "regionBoundaries": 1,
+                "routeVersions": 4,
+                "rzueLayouts": 1,
+                "signals": 2,
+                "switches": 1,
+            },
+        },
+        "summary": {
+            "operationalQualityClassArtifactCount": {"A": 0, "B": 1, "C": 0},
+            "unresolvedRequired": 0,
+            "visibleMapClassCFeatureCount": 2,
+        },
+        "qualityGate": {
+            "closureReceiptVerified": True,
+            "nativeOperationalValidationVerified": True,
+            "operationalClassCZero": True,
+            "ordinaryAssumptionsPromoted": False,
+            "mapClassCReclassified": False,
+            "operationalQualityEligible": True,
+            "signatureImplied": False,
+            "activationImplied": False,
+        },
+    }
+
+
+def _fixture(
+    delivery_operational_state_hash=None,
+    operational_infra_release_id=None,
+    signed=False,
+    signature_value_base64=None,
+    release_hash_override=None,
+    sources_mutator=None,
+    quality_mutator=None,
+    delivery_mutator=None,
+    release_mutator=None,
+):
+    quality_value = _operational_quality()
+    if quality_mutator:
+        quality_mutator(quality_value)
+    quality = _canonical(quality_value)
     base_files = [
         {"id": "basemap", "kind": "basemap", "installPath": "basemap.pmtiles", "content": b"basemap"},
         {"id": "glyph", "kind": "glyph", "installPath": "assets/fonts/font.pbf", "content": b"glyph"},
         {"id": "infrastructure", "kind": "infrastructure", "installPath": "infra.pmtiles", "content": b"infra"},
         {"id": "quality", "kind": "quality-manifest", "installPath": "manifests/quality.json", "content": quality},
         {"id": "read-model", "kind": "read-model", "installPath": "read-model.sqlite", "content": b"read-model"},
-        {"id": "sprite", "kind": "sprite", "installPath": "assets/sprites/dark.png", "content": b"sprite"},
-        {"id": "style", "kind": "style", "installPath": "style.json", "content": b"{}"},
-        {"id": "train-projection", "kind": "train-map-projection", "installPath": "train-map-projection.sqlite", "content": b"train-projection"},
+        {"id": "sprite-json", "kind": "sprite", "installPath": "assets/sprites/dark.json", "content": b"{}\n"},
+        {"id": "sprite-png", "kind": "sprite", "installPath": "assets/sprites/dark.png", "content": bytes((0x89, 0x50, 0x4E, 0x47))},
+        {"id": "style", "kind": "style", "installPath": "style.json", "content": b"{}\n"},
+        {
+            "id": "operational-infrastructure-2026.1",
+            "kind": "operational-infrastructure-v2",
+            "installPath": "operational-infrastructure-v2.json",
+            "content": OPERATIONAL_BYTES,
+            "infraReleaseId": operational_infra_release_id or "infra-deutschland-2026.1",
+            "stateHash": OPERATIONAL_STATE_HASH,
+        },
     ]
+    sources_value = {
+        "schema": "zugfolge-map-delivery-sources/v2",
+        "releaseId": "infra-deutschland-2026.1",
+        "sources": [
+            {
+                "id": "basemap-protomaps",
+                "scope": "basemap",
+                "approved": True,
+                "license": "ODbL-1.0 Produced Work",
+                "version": "20260812",
+                "attribution": "© OpenStreetMap-Mitwirkende, ODbL 1.0; Basemap-Aufbereitung Protomaps",
+                "modifications": "Welt und Deutschlanddetail zusammengefuehrt.",
+            },
+            {
+                "id": "infrastructure-official-infrastructure",
+                "scope": "infrastructure",
+                "approved": True,
+                "license": "CC-BY-4.0",
+                "version": "2026-08-12",
+                "attribution": "Datenquelle DB InfraGO, CC BY 4.0; durch Zugfolge bearbeitet.",
+                "modifications": "Normalisiert und konservativ modelliert.",
+            },
+        ],
+        "assetInventoryPlanSha256": "9" * 64,
+        "assetNotices": _asset_notices(base_files),
+    }
+    if sources_mutator:
+        sources_mutator(sources_value)
+    sources = _canonical(sources_value)
     artifacts = sorted([{
         "id": entry["id"], "kind": entry["kind"], "installPath": entry["installPath"],
+        **({
+            "infraReleaseId": entry["infraReleaseId"],
+            "stateHash": delivery_operational_state_hash or entry["stateHash"],
+        } if entry["kind"] == "operational-infrastructure-v2" else {}),
         "bytes": len(entry["content"]), "sha256": _sha256(entry["content"]),
     } for entry in base_files], key=lambda entry: entry["id"])
-    release = _compact({
-        "schema": "zugfolge-map-delivery-release/v1",
+    release_payload = {
+        "schema": "zugfolge-map-delivery-release/v2",
         "releaseId": "infra-deutschland-2026.1",
+        "timetableYear": 2026,
         "packageId": "zugfolge-map-deutschland",
         "packageVersion": "2026.1",
+        "scope": {
+            "basemap": "world-z0-10-and-germany-z11-15",
+            "infrastructure": "germany-ebo-complete-visible-corpus",
+            "playableArea": "configured-separately-by-world",
+        },
         "artifacts": artifacts,
         "bindings": {
-            "packageManifestSchema": "zugfolge-map-package/v1",
+            "packageManifestSchema": "zugfolge-map-package/v2",
+            "infraReleaseSchema": "zugfolge-infra-release/v2",
+            "mapReleaseSchema": "zugfolge-map-release/v1",
+            "infraReleaseHash": HASH_B,
+            "mapReleaseHash": HASH_C,
             "qualitySha256": _sha256(quality),
             "sourcesSha256": _sha256(sources),
         },
         "approvalGates": {
-            "quality": {"status": "passed"},
-            "rights": {"status": "passed"},
-            "signature": {"status": "missing"},
+            "rights": {
+                "status": "passed",
+                "sourceManifestSchema": "zugfolge-map-delivery-sources/v2",
+                "sourceCount": 2,
+                "assetGroupCount": 2,
+                "assetFileCount": 3,
+            },
+            "quality": {
+                "status": "passed",
+                "reportSchema": "zugfolge-operational-infrastructure-quality-report/v1",
+                "visibleLayers": 10,
+                "visibleFeatures": 42,
+                "visibleMapClassCFeatureCount": 2,
+                "operationalClassCArtifactCount": 0,
+                "classCOrderable": False,
+            },
+            "signature": (
+                {"status": "passed", "algorithm": "Ed25519", "keyId": "delivery-2026"}
+                if signed else {"status": "missing", "reason": UNSIGNED_REASON}
+            ),
         },
-        "signature": None,
-    })
+    }
+    if delivery_mutator:
+        delivery_mutator(release_payload)
+    if signed:
+        release_value = {
+            **release_payload,
+            "releaseHash": release_hash_override if release_hash_override is not None else _sha256(_canonical(release_payload)),
+            "signature": {
+                "algorithm": "Ed25519",
+                "keyId": "delivery-2026",
+                "valueBase64": signature_value_base64 or base64.b64encode(
+                    b"not-a-real-ed25519-signature".ljust(64, b"!"),
+                ).decode("ascii"),
+            },
+        }
+    else:
+        release_value = {**release_payload, "releaseHash": None, "signature": None}
+    if release_mutator:
+        release_mutator(release_value)
+    release = _canonical(release_value)
     files = base_files + [
         {"id": "release", "kind": "release-manifest", "installPath": "manifests/release.json", "content": release},
         {"id": "sources", "kind": "source-manifest", "installPath": "manifests/sources.json", "content": sources},
@@ -85,12 +384,16 @@ def _fixture(raw_data_policy_field="nonPublicSourceRawDataShipped"):
         path = "parts/%s.part-00001" % entry["id"]
         descriptors.append({
             "id": entry["id"], "kind": entry["kind"], "installPath": entry["installPath"],
+            **({
+                "infraReleaseId": entry["infraReleaseId"],
+                "stateHash": entry["stateHash"],
+            } if entry["kind"] == "operational-infrastructure-v2" else {}),
             "bytes": len(entry["content"]), "sha256": _sha256(entry["content"]),
             "parts": [{"path": path, "bytes": len(entry["content"]), "sha256": _sha256(entry["content"])}],
         })
         parts.append((path.rsplit("/", 1)[-1], entry["content"]))
     manifest = _canonical({
-        "schema": "zugfolge-map-package/v1",
+        "schema": "zugfolge-map-package/v2",
         "packageId": "zugfolge-map-deutschland",
         "version": "2026.1",
         "format": "directory-parts",
@@ -99,6 +402,76 @@ def _fixture(raw_data_policy_field="nonPublicSourceRawDataShipped"):
         "auxiliaryFiles": [entry for entry in descriptors if entry["kind"] not in ("basemap", "infrastructure")],
     })
     return manifest, parts
+
+
+def _producer_golden_fixture():
+    value = json.loads(PRODUCER_GOLDEN_PATH.read_text(encoding="utf-8"))
+    if value.get("schema") != "zugfolge-delivery-v2-producer-golden/v1":
+        raise AssertionError("Unbekanntes gemeinsames Delivery-v2-Producer-Fixture.")
+    manifest = base64.b64decode(value["manifestBase64"], validate=True)
+    parts = [
+        (
+            part["path"].rsplit("/", 1)[-1],
+            base64.b64decode(part["contentBase64"], validate=True),
+        )
+        for part in value["parts"]
+    ]
+    return value, manifest, parts
+
+
+def _finalization_result(
+    record,
+    native_status="verified",
+    receipt_overrides=None,
+    top_overrides=None,
+    signature_override=None,
+):
+    signature_status = "verified" if record.signature_status == "present" else "missing"
+    if signature_status == "missing":
+        native_status = "missing"
+        operational_state_hash = None
+        blocker = "delivery-signature-missing"
+        eligible = False
+    elif native_status == "missing":
+        operational_state_hash = None
+        blocker = "operational-v2-native-validation-missing"
+        eligible = False
+    else:
+        operational_state_hash = record.expected_operational_state_hash
+        blocker = None
+        eligible = True
+    receipt = {
+        "schema": "zugfolge-infra-package-finalization-receipt/v1",
+        "signatureAlgorithm": "HMAC-SHA256",
+        "keyId": FINALIZATION_KEY_ID,
+        "nonce": record.game_finalization_nonce,
+        "requestedAt": "2026-08-25T12:00:00.000Z",
+        "finalizedAt": "2026-08-25T12:00:01.000Z",
+        "importId": record.import_id,
+        "packageId": record.package_id,
+        "packageVersion": record.package_version,
+        "manifestSha256": record.manifest_sha256,
+        "deliveryReleaseId": record.delivery_release_id,
+        "operationalStateHash": operational_state_hash,
+        "signatureStatus": signature_status,
+        "nativeOperationalValidationStatus": native_status,
+        "activationBlocker": blocker,
+        "activationEligible": eligible,
+        **(receipt_overrides or {}),
+    }
+    result = {
+        "accepted": True,
+        **{key: receipt[key] for key in (
+            "importId", "packageId", "packageVersion", "manifestSha256", "deliveryReleaseId", "operationalStateHash",
+            "signatureStatus", "nativeOperationalValidationStatus", "activationBlocker", "activationEligible",
+        )},
+        "finalizationReceipt": receipt,
+        "finalizationReceiptSignature": signature_override or hmac.new(
+            FINALIZATION_TEST_KEY_MATERIAL.encode("utf-8"), _compact(receipt), hashlib.sha256,
+        ).hexdigest(),
+        **(top_overrides or {}),
+    }
+    return result
 
 
 class _Response:
@@ -136,6 +509,25 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
             "part_attachment_ids": [Command.set(self.part_attachments.ids)],
         })
 
+    def _create_fixture_import(self, **fixture_options):
+        manifest, parts = _fixture(**fixture_options)
+        return self._create_package_import(manifest, parts)
+
+    def _create_package_import(self, manifest, parts):
+        attachments = self.env["ir.attachment"].with_user(self.reviewer)
+        manifest_attachment = attachments.create({
+            "name": "manifest.json", "type": "binary", "raw": manifest, "mimetype": "application/json",
+        })
+        part_attachments = attachments
+        for name, content in parts:
+            part_attachments |= attachments.create({
+                "name": name, "type": "binary", "raw": content, "mimetype": "application/octet-stream",
+            })
+        return self.env["zugfolge.infra.release.import"].with_user(self.reviewer).create({
+            "manifest_attachment_ids": [Command.set(manifest_attachment.ids)],
+            "part_attachment_ids": [Command.set(part_attachments.ids)],
+        })
+
     def _verify(self, record):
         record.action_verify()
         self.assertEqual(record.state, "verifying")
@@ -143,21 +535,46 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
         self.assertEqual(record.state, "verified", record.failure_detail)
         return record
 
+    def _set_finalization_credentials(self):
+        parameters = self.env["ir.config_parameter"].sudo()
+        parameters.set_param("zugfolge_admin.infra_upload_key_id", FINALIZATION_KEY_ID)
+        parameters.set_param("zugfolge_admin.infra_upload_secret", FINALIZATION_TEST_KEY_MATERIAL)
+
     def test_only_infra_reviewer_can_create_import_and_role_does_not_imply_approver(self):
         self.assertFalse(self.reviewer.has_group("zugfolge_admin.group_zugfolge_approver"))
         with self.assertRaises(AccessError):
             self.env["zugfolge.infra.release.import"].with_user(self.outsider).create({})
 
-    def test_streaming_verification_persists_immutable_exact_audit_and_missing_signature_gate(self):
+    def test_producer_shaped_v2_delivery_persists_exact_audit_and_missing_signature_gate(self):
         record = self._verify(self._create_import())
         self.assertEqual(record.delivery_release_id, "infra-deutschland-2026.1")
+        self.assertEqual(record.infra_release_hash, HASH_B)
+        self.assertEqual(record.timetable_year, 2026)
         self.assertEqual(record.signature_status, "missing")
         self.assertFalse(record.activation_eligible)
+        self.assertEqual(record.expected_operational_state_hash, OPERATIONAL_STATE_HASH)
         self.assertEqual(record.part_count, len(self.part_attachments))
         self.assertRegex(record.manifest_sha256, r"^[a-f0-9]{64}$")
         self.assertRegex(record.verification_inventory_sha256, r"^[a-f0-9]{64}$")
         with self.assertRaises(AccessError):
             record.write({"part_attachment_ids": [Command.clear()]})
+        with self.assertRaises(UserError):
+            record.action_create_adoption_request()
+
+    def test_exact_js_builder_golden_is_accepted_by_odoo(self):
+        golden, manifest, parts = _producer_golden_fixture()
+        record = self._verify(self._create_package_import(manifest, parts))
+        self.assertEqual(record.delivery_release_id, golden["release"]["releaseId"])
+        self.assertEqual(record.infra_release_hash, golden["release"]["bindings"]["infraReleaseHash"])
+        self.assertEqual(record.timetable_year, golden["release"]["timetableYear"])
+        self.assertEqual(golden["release"]["schema"], "zugfolge-map-delivery-release/v2")
+        self.assertEqual(golden["sources"]["schema"], "zugfolge-map-delivery-sources/v2")
+        self.assertIsNone(golden["release"]["releaseHash"])
+        self.assertIsNone(golden["release"]["signature"])
+        self.assertEqual(record.signature_status, "missing")
+        self.assertFalse(record.activation_eligible)
+        self.assertEqual(record.expected_operational_state_hash, OPERATIONAL_STATE_HASH)
+        self.assertEqual(record.part_count, len(parts))
         with self.assertRaises(UserError):
             record.action_create_adoption_request()
 
@@ -193,25 +610,48 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
 
     def test_stage_is_non_activating_and_rechecks_attachments(self):
         record = self._verify(self._create_import())
-        result = {
-            "accepted": True,
-            "packageId": record.package_id,
-            "packageVersion": record.package_version,
-            "manifestSha256": record.manifest_sha256,
-            "deliveryReleaseId": record.delivery_release_id,
-            "signatureStatus": "missing",
-            "activationEligible": False,
-        }
+        self._set_finalization_credentials()
+        record.action_stage()
+        result = _finalization_result(record)
         with patch.object(import_module, "stage_infra_package", return_value=result) as staged:
-            record.action_stage()
             self.assertTrue(record.staging_requested_at)
             record._stage_job()
         self.assertEqual(record.state, "staged")
         self.assertFalse(record.activation_eligible)
+        self.assertEqual(record.activation_blocker, "delivery-signature-missing")
         staged.assert_called_once()
+
+    def test_remote_commit_with_lost_response_retries_same_nonce_and_reconciles(self):
+        record = self._verify(self._create_fixture_import(signed=True))
+        self._set_finalization_credentials()
+        record.action_stage()
+        nonce = record.game_finalization_nonce
+        result = _finalization_result(record)
+
+        with patch.object(
+            import_module,
+            "stage_infra_package",
+            side_effect=RuntimeError("client timeout after remote commit"),
+        ):
+            record._stage_job()
+
+        self.assertEqual(record.state, "verified")
+        self.assertEqual(record.failure_code, "staging_retryable")
+        self.assertFalse(record.activation_eligible)
+        self.assertEqual(record.game_finalization_nonce, nonce)
+
+        record.action_stage()
+        self.assertEqual(record.game_finalization_nonce, nonce)
+        with patch.object(import_module, "stage_infra_package", return_value=result):
+            record._stage_job()
+
+        self.assertEqual(record.state, "staged", record.failure_detail)
+        self.assertTrue(record.activation_eligible)
+        self.assertEqual(record.game_finalization_nonce, nonce)
 
     def test_stage_rejects_unauthenticated_verified_activation_claim(self):
         record = self._verify(self._create_import())
+        self._set_finalization_credentials()
         forged_result = {
             "accepted": True,
             "packageId": record.package_id,
@@ -229,6 +669,169 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
         self.assertFalse(record.activation_eligible)
         with self.assertRaises(UserError):
             record.action_create_adoption_request()
+
+    def test_signed_delivery_is_accepted_but_only_marked_present_before_game_verification(self):
+        record = self._verify(self._create_fixture_import(signed=True))
+        self.assertEqual(record.signature_status, "present")
+        self.assertFalse(record.activation_eligible)
+        self.assertEqual(record.expected_operational_state_hash, OPERATIONAL_STATE_HASH)
+        with self.assertRaises(UserError):
+            record.action_create_adoption_request()
+
+    def test_authenticated_game_receipt_promotes_verified_verified_null_true(self):
+        record = self._verify(self._create_fixture_import(signed=True))
+        self._set_finalization_credentials()
+        record.action_stage()
+        result = _finalization_result(record)
+        with patch.object(import_module, "stage_infra_package", return_value=result):
+            record._stage_job()
+        self.assertEqual(record.state, "staged", record.failure_detail)
+        self.assertEqual(record.signature_status, "verified")
+        self.assertEqual(record.native_operational_validation_status, "verified")
+        self.assertFalse(record.activation_blocker)
+        self.assertTrue(record.activation_eligible)
+        self.assertEqual(record.operational_state_hash, OPERATIONAL_STATE_HASH)
+        self.assertEqual(record.game_finalization_key_id, FINALIZATION_KEY_ID)
+        self.assertRegex(record.game_finalization_receipt_sha256, r"^[a-f0-9]{64}$")
+        with self.assertRaisesRegex(ValidationError, "Welt"):
+            record.action_create_adoption_request()
+
+    def test_adoption_request_keeps_package_and_infra_hashes_separate_and_requires_explicit_utc_period(self):
+        projection = self.env["zugfolge.world.projection"].with_context(zugfolge_game_projection=True).create({
+            "world_id": "11111111-1111-4111-8111-111111111111",
+            "world_name": "Infra-Zielwelt",
+            "projection_revision": "infra-adoption-1",
+            "observed_at": "2026-01-01 00:00:00",
+            "freshness": "delayed",
+            "profile_kind": "public",
+            "payload_hash": "e" * 64,
+        })
+        record = self._create_fixture_import(signed=True)
+        record.write({"world_projection_id": projection.id})
+        self._verify(record)
+        self._set_finalization_credentials()
+        record.action_stage()
+        with patch.object(import_module, "stage_infra_package", return_value=_finalization_result(record)):
+            record._stage_job()
+
+        action = record.action_create_adoption_request()
+        request = self.env["zugfolge.admin.request"].browse(action["res_id"])
+        self.assertEqual(request.release_hash, record.infra_release_hash)
+        self.assertNotEqual(request.release_hash, record.manifest_sha256)
+        self.assertFalse(request.requested_period_start)
+        self.assertEqual(request.effect_preview, {
+            "kind": "infra-release",
+            "importId": record.import_id,
+            "deliveryReleaseId": record.delivery_release_id,
+            "manifestSha256": record.manifest_sha256,
+            "infraReleaseHash": record.infra_release_hash,
+        })
+        with self.assertRaisesRegex(ValidationError, "SHA-256"):
+            with self.env.cr.savepoint():
+                request.write({"release_hash": "g" * 64})
+        with self.assertRaisesRegex(ValidationError, "exakten naechsten Periodenwechsel"):
+            request.action_submit()
+
+        request.write({"requested_period_start": "2026-01-22 00:00:00"})
+        self.assertEqual(request._game_command_payload()["requestedPeriodStart"], "2026-01-22T00:00:00Z")
+        request.action_submit()
+        self.assertEqual(request.state, "submitted")
+
+    def test_authenticated_receipt_rejects_false_hmac_replay_wrong_binding_and_tampered_state(self):
+        scenarios = (
+            ("false-hmac", {}, "0" * 64),
+            ("replay", {"nonce": "e" * 64}, None),
+            ("wrong-import-binding", {"importId": "anderer-import"}, None),
+            ("wrong-manifest-binding", {"manifestSha256": "e" * 64}, None),
+            ("wrong-release-binding", {"deliveryReleaseId": "infra-deutschland-fremd"}, None),
+            ("tampered-state", {"operationalStateHash": "e" * 64}, None),
+        )
+        for label, receipt_overrides, signature_override in scenarios:
+            with self.subTest(label=label):
+                record = self._verify(self._create_fixture_import(signed=True))
+                self._set_finalization_credentials()
+                record.action_stage()
+                result = _finalization_result(
+                    record,
+                    receipt_overrides=receipt_overrides,
+                    signature_override=signature_override,
+                )
+                with patch.object(import_module, "stage_infra_package", return_value=result):
+                    record._stage_job()
+                self.assertEqual(record.state, "failed")
+                self.assertEqual(record.failure_code, "staging_failed")
+                self.assertFalse(record.activation_eligible)
+
+    def test_missing_native_receipt_stays_staged_but_fail_closed(self):
+        record = self._verify(self._create_fixture_import(signed=True))
+        self._set_finalization_credentials()
+        record.action_stage()
+        result = _finalization_result(record, native_status="missing")
+        with patch.object(import_module, "stage_infra_package", return_value=result):
+            record._stage_job()
+        self.assertEqual(record.state, "staged", record.failure_detail)
+        self.assertEqual(record.signature_status, "verified")
+        self.assertEqual(record.native_operational_validation_status, "missing")
+        self.assertEqual(record.activation_blocker, "operational-v2-native-validation-missing")
+        self.assertFalse(record.activation_eligible)
+        self.assertFalse(record.operational_state_hash)
+        with self.assertRaises(UserError):
+            record.action_create_adoption_request()
+
+    def test_malformed_signed_delivery_contract_fails_before_upload(self):
+        for fixture_options in (
+            {"signed": True, "signature_value_base64": "not-base64"},
+            {"signed": True, "release_hash_override": "e" * 64},
+            {"signed": True, "release_mutator": _set_path(("approvalGates", "signature", "unexpected"), True)},
+            {"signed": True, "release_mutator": _set_path(("signature", "unexpected"), True)},
+        ):
+            with self.subTest(fixture_options=fixture_options):
+                record = self._create_fixture_import(**fixture_options)
+                record.action_verify()
+                record._verify_job()
+                self.assertEqual(record.state, "failed")
+                self.assertEqual(record.failure_code, "verification_failed")
+                self.assertFalse(record.activation_eligible)
+
+    def test_unknown_or_inconsistent_signed_delivery_v2_metadata_fails_closed(self):
+        scenarios = (
+            (
+                "legacy-delivery-schema",
+                {"signed": True, "delivery_mutator": _set_path(("schema",), "zugfolge-map-delivery-release/v1")},
+            ),
+            (
+                "unknown-signature-gate-status",
+                {"signed": True, "delivery_mutator": _set_path(("approvalGates", "signature", "status"), "pending")},
+            ),
+            (
+                "unsupported-signature-algorithm",
+                {
+                    "signed": True,
+                    "delivery_mutator": _set_path(("approvalGates", "signature", "algorithm"), "RSA-PSS"),
+                    "release_mutator": _set_path(("signature", "algorithm"), "RSA-PSS"),
+                },
+            ),
+            (
+                "signature-key-mismatch",
+                {"signed": True, "release_mutator": _set_path(("signature", "keyId"), "other-delivery-key")},
+            ),
+            (
+                "unsafe-signature-key-id",
+                {"signed": True, "release_mutator": _set_path(("signature", "keyId"), "Unknown Key")},
+            ),
+            (
+                "missing-signature-object",
+                {"signed": True, "release_mutator": _set_path(("signature",), None)},
+            ),
+        )
+        for label, fixture_options in scenarios:
+            with self.subTest(label=label):
+                record = self._create_fixture_import(**fixture_options)
+                record.action_verify()
+                record._verify_job()
+                self.assertEqual(record.state, "failed")
+                self.assertEqual(record.failure_code, "verification_failed")
+                self.assertFalse(record.activation_eligible)
 
     def test_http_begin_body_is_exactly_the_bytes_bound_by_hmac(self):
         record = self._verify(self._create_import())
@@ -249,8 +852,12 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
                 self.assertEqual(kwargs.get("data"), expected_begin)
                 self.assertNotIn("json", kwargs)
                 self.assertEqual(kwargs["headers"]["X-Zugfolge-Infra-Content-Sha256"], _sha256(expected_begin))
-                return _Response({"accepted": True})
-            self.assertEqual(kwargs.get("data"), b"")
+                return _Response({"accepted": True, "status": "created"})
+            finalize_body = json.loads(kwargs.get("data"))
+            self.assertEqual(finalize_body["schema"], "zugfolge-infra-package-finalization-challenge/v1")
+            self.assertEqual(finalize_body["nonce"], "f" * 64)
+            self.assertRegex(finalize_body["requestedAt"], r"Z$")
+            self.assertEqual(kwargs["headers"]["X-Zugfolge-Infra-Content-Sha256"], _sha256(kwargs["data"]))
             return _Response({
                 "accepted": True,
                 "packageId": record.package_id,
@@ -272,9 +879,57 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
             return _Response({"accepted": True})
 
         with patch.object(service_module.requests, "post", side_effect=post), patch.object(service_module.requests, "put", side_effect=put):
-            result = service_module.stage_infra_package(self.env, record.import_id, manifest, parts)
+            result = service_module.stage_infra_package(self.env, record.import_id, manifest, parts, "f" * 64)
         self.assertEqual(result["signatureStatus"], "missing")
         self.assertEqual(len(post_calls), 2)
+
+    def test_lost_finalize_response_is_recovered_from_terminal_begin_without_reupload(self):
+        record = self._verify(self._create_import())
+        _parsed, manifest, parts = record._staging_payload()
+        parameters = self.env["ir.config_parameter"].sudo()
+        parameters.set_param("zugfolge_admin.infra_upload_base_url", "http://game.test/imports")
+        parameters.set_param("zugfolge_admin.infra_upload_key_id", FINALIZATION_KEY_ID)
+        parameters.set_param("zugfolge_admin.infra_upload_secret", FINALIZATION_TEST_KEY_MATERIAL)
+        record._internal_write({"game_finalization_nonce": "f" * 64})
+        terminal = {**_finalization_result(record), "status": "finalized"}
+
+        with patch.object(service_module.requests, "post", return_value=_Response(terminal)) as posted, patch.object(
+            service_module.requests, "put",
+        ) as uploaded:
+            result = service_module.stage_infra_package(self.env, record.import_id, manifest, parts, "f" * 64)
+
+        self.assertEqual(result, terminal)
+        posted.assert_called_once()
+        uploaded.assert_not_called()
+
+    def test_generic_closed_begin_is_rebound_without_reupload_after_restart(self):
+        record = self._verify(self._create_import())
+        _parsed, manifest, parts = record._staging_payload()
+        parameters = self.env["ir.config_parameter"].sudo()
+        parameters.set_param("zugfolge_admin.infra_upload_base_url", "http://game.test/imports")
+        parameters.set_param("zugfolge_admin.infra_upload_key_id", FINALIZATION_KEY_ID)
+        parameters.set_param("zugfolge_admin.infra_upload_secret", FINALIZATION_TEST_KEY_MATERIAL)
+        record._internal_write({"game_finalization_nonce": "f" * 64})
+        terminal = _finalization_result(record)
+        post_calls = []
+
+        def post(url, **kwargs):
+            post_calls.append((url, kwargs))
+            if len(post_calls) == 1:
+                return _Response({"accepted": True, "status": "closed"})
+            self.assertTrue(url.endswith("/finalize"))
+            challenge = json.loads(kwargs["data"])
+            self.assertEqual(challenge["nonce"], "f" * 64)
+            return _Response(terminal)
+
+        with patch.object(service_module.requests, "post", side_effect=post), patch.object(
+            service_module.requests, "put",
+        ) as uploaded:
+            result = service_module.stage_infra_package(self.env, record.import_id, manifest, parts, "f" * 64)
+
+        self.assertEqual(result, terminal)
+        self.assertEqual(len(post_calls), 2)
+        uploaded.assert_not_called()
 
     def test_corrupt_part_fails_closed_and_remains_auditable(self):
         record = self._create_import()
@@ -285,19 +940,130 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
         self.assertEqual(record.failure_code, "verification_failed")
         self.assertFalse(record.activation_eligible)
 
-    def test_legacy_raw_data_policy_field_is_rejected(self):
-        manifest, parts = _fixture("internalStationPlanRawDataShipped")
-        reviewer_attachments = self.env["ir.attachment"].with_user(self.reviewer)
-        manifest_attachment = reviewer_attachments.create({"name": "manifest.json", "type": "binary", "raw": manifest, "mimetype": "application/json"})
-        part_attachments = reviewer_attachments
-        for name, content in parts:
-            part_attachments |= reviewer_attachments.create({"name": name, "type": "binary", "raw": content, "mimetype": "application/octet-stream"})
-        record = self.env["zugfolge.infra.release.import"].with_user(self.reviewer).create({
-            "manifest_attachment_ids": [Command.set(manifest_attachment.ids)],
-            "part_attachment_ids": [Command.set(part_attachments.ids)],
-        })
+    def test_manifest_requires_exact_public_manifests_operational_v2_and_no_legacy_projection(self):
+        manifest, _parts = _fixture()
+        parsed = json.loads(manifest)
+        without_operational = {
+            **parsed,
+            "auxiliaryFiles": [
+                item for item in parsed["auxiliaryFiles"]
+                if item["kind"] != "operational-infrastructure-v2"
+            ],
+        }
+        with_legacy_projection = {
+            **parsed,
+            "auxiliaryFiles": parsed["auxiliaryFiles"] + [{
+                "id": "train-projection",
+                "kind": "train-map-projection",
+                "installPath": "train-map-projection.sqlite",
+                "bytes": 1,
+                "sha256": "a" * 64,
+                "parts": [{
+                    "path": "parts/train-projection.part-00001",
+                    "bytes": 1,
+                    "sha256": "a" * 64,
+                }],
+            }],
+        }
+        missing_or_duplicate_public_manifest = []
+        for kind in ("release-manifest", "source-manifest", "quality-manifest"):
+            descriptor = next(item for item in parsed["auxiliaryFiles"] if item["kind"] == kind)
+            without_kind = {
+                **parsed,
+                "auxiliaryFiles": [item for item in parsed["auxiliaryFiles"] if item["kind"] != kind],
+            }
+            duplicate = json.loads(json.dumps(descriptor))
+            duplicate["id"] = "%s-duplicate" % descriptor["id"]
+            duplicate["installPath"] = "duplicate/%s.json" % kind
+            duplicate["parts"][0]["path"] = "parts/%s-duplicate.part-00001" % kind
+            with_duplicate = {**parsed, "auxiliaryFiles": parsed["auxiliaryFiles"] + [duplicate]}
+            missing_or_duplicate_public_manifest.extend((without_kind, with_duplicate))
+        for candidate in (without_operational, with_legacy_projection, *missing_or_duplicate_public_manifest):
+            with self.assertRaises(ValidationError):
+                import_module._parse_package_manifest(_canonical(candidate))
+
+    def test_delivery_operational_state_binding_must_equal_package_binding(self):
+        record = self._create_fixture_import(delivery_operational_state_hash="e" * 64)
         record.action_verify()
         record._verify_job()
         self.assertEqual(record.state, "failed")
         self.assertEqual(record.failure_code, "verification_failed")
-        self.assertIn("konservativen Zehn-Layer-Vertrag", record.failure_detail)
+        self.assertIn("bindet nicht exakt alle auszuliefernden Artefakte", record.failure_detail)
+
+    def test_operational_infrastructure_must_bind_delivery_release_id(self):
+        record = self._create_fixture_import(operational_infra_release_id="infra-deutschland-fremd")
+        record.action_verify()
+        record._verify_job()
+        self.assertEqual(record.state, "failed")
+        self.assertEqual(record.failure_code, "verification_failed")
+        self.assertIn("nicht an die Delivery-InfraRelease-ID gebunden", record.failure_detail)
+
+    def test_unsigned_delivery_requires_reason_and_explicit_null_release_hash(self):
+        scenarios = (
+            ("missing-reason", {"delivery_mutator": _delete_path(("approvalGates", "signature", "reason"))}),
+            ("empty-reason", {"delivery_mutator": _set_path(("approvalGates", "signature", "reason"), "")}),
+            ("unexpected-signature-gate-field", {"delivery_mutator": _set_path(("approvalGates", "signature", "unexpected"), True)}),
+            ("missing-release-hash", {"release_mutator": _delete_path(("releaseHash",))}),
+            ("claimed-release-hash", {"release_mutator": _set_path(("releaseHash",), HASH_A)}),
+        )
+        for label, fixture_options in scenarios:
+            with self.subTest(label=label):
+                record = self._create_fixture_import(**fixture_options)
+                record.action_verify()
+                record._verify_job()
+                self.assertEqual(record.state, "failed")
+                self.assertEqual(record.failure_code, "verification_failed")
+                self.assertFalse(record.activation_eligible)
+
+    def test_sources_v2_exact_fields_and_asset_notices_fail_closed(self):
+        scenarios = (
+            ("legacy-schema", _set_path(("schema",), "zugfolge-map-delivery-sources/v1")),
+            ("unexpected-top-level-field", _set_path(("legacy",), True)),
+            ("missing-asset-notices", _delete_path(("assetNotices",))),
+            ("unexpected-source-field", _set_path(("sources", 0, "legacy"), True)),
+            ("tampered-asset-tree", _set_path(("assetNotices", "assets", 0, "tree", "sha256"), HASH_A)),
+        )
+        for label, mutator in scenarios:
+            with self.subTest(label=label):
+                record = self._create_fixture_import(sources_mutator=mutator)
+                record.action_verify()
+                record._verify_job()
+                self.assertEqual(record.state, "failed")
+                self.assertEqual(record.failure_code, "verification_failed")
+
+    def test_operational_quality_v1_exact_fields_and_separation_fail_closed(self):
+        scenarios = (
+            ("legacy-schema", _set_path(("schema",), "zugfolge-final-infrastructure-quality-report/v1")),
+            ("unexpected-top-level-field", _set_path(("policy",), {})),
+            ("missing-quality-gate-field", _delete_path(("qualityGate", "activationImplied"))),
+            ("operational-class-c", _set_path(("summary", "operationalQualityClassArtifactCount"), {"A": 0, "B": 0, "C": 1})),
+            ("map-class-c-reclassified", _set_path(("separation", "mapClassCReclassified"), True)),
+            ("wrong-operational-artifact", _set_path(("operationalModel", "operationalArtifact", "sha256"), HASH_A)),
+        )
+        for label, mutator in scenarios:
+            with self.subTest(label=label):
+                record = self._create_fixture_import(quality_mutator=mutator)
+                record.action_verify()
+                record._verify_job()
+                self.assertEqual(record.state, "failed")
+                self.assertEqual(record.failure_code, "verification_failed")
+                self.assertIn("Operational-v2", record.failure_detail)
+
+    def test_delivery_bindings_and_approval_gates_are_exact_and_byte_bound(self):
+        scenarios = (
+            ("unexpected-delivery-field", _set_path(("legacy",), True)),
+            ("missing-delivery-scope", _delete_path(("scope",))),
+            ("missing-map-release-hash", _delete_path(("bindings", "mapReleaseHash"))),
+            ("unexpected-binding", _set_path(("bindings", "legacyHash"), HASH_A)),
+            ("wrong-source-count", _set_path(("approvalGates", "rights", "sourceCount"), 1)),
+            ("wrong-asset-count", _set_path(("approvalGates", "rights", "assetFileCount"), 2)),
+            ("wrong-map-class-c", _set_path(("approvalGates", "quality", "visibleMapClassCFeatureCount"), 0)),
+            ("unexpected-gate-field", _set_path(("approvalGates", "quality", "legacy"), False)),
+        )
+        for label, mutator in scenarios:
+            with self.subTest(label=label):
+                record = self._create_fixture_import(delivery_mutator=mutator)
+                record.action_verify()
+                record._verify_job()
+                self.assertEqual(record.state, "failed")
+                self.assertEqual(record.failure_code, "verification_failed")

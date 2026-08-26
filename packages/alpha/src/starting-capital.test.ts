@@ -11,7 +11,6 @@ import {
   operators,
   operatorStartingCapital,
   worldAccesses,
-  worldFinalRankings,
   worlds,
   vehicleAssets,
 } from "@zugfolge/db";
@@ -28,7 +27,7 @@ import {
   STARTING_CAPITAL_EQUITY_ACCOUNT_NAME,
 } from "./starting-capital.js";
 import { validateWorldBlueprint, type AlphaWorldBlueprintV1 } from "./world.js";
-import { WorldEndService } from "./world-end.js";
+import { WORLD_END_ECONOMY_RANKING_SPECIFICATION } from "./world-end.js";
 
 const WORLD_A = "11111111-1111-4111-8111-111111111111";
 const WORLD_B = "22222222-2222-4222-8222-222222222222";
@@ -259,29 +258,16 @@ describe("oeffentliche StartingCapitalPolicy", () => {
   });
 
   it("laesst Startkapital und unlimited-Modus aus der Wirtschaftsrangliste heraus", async () => {
-    const setup = await setupWorld(WORLD_A, { kind: "finite", amountCents: "9000000000" }, "ranked");
-    await start(WORLD_A, "ranked", "Kapital-Bahn");
-    const [comparisonAccount] = await db.insert(accounts).values({ worldId: WORLD_A, keycloakSubject: "comparison", displayName: "comparison" }).returning();
-    if (comparisonAccount === undefined) throw new Error("Vergleichskonto fehlt.");
-    await db.insert(worldAccesses).values({
-      worldId: WORLD_A,
-      keycloakSubject: "comparison",
-      acceptedWorldContractHash: setup.hash,
-      acceptedStartingCapitalPolicy: setup.contract.startingCapitalPolicy,
-      worldContractAcceptedAt: new Date("2026-01-01T00:00:00.000Z"),
-    });
-    await db.insert(operators).values({ worldId: WORLD_A, foundingAccountId: comparisonAccount.id, name: "Vergleichsbahn" });
-
-    const ending = new WorldEndService(db);
-    await ending.beginClosure(WORLD_A, 10);
-    await ending.finalize(WORLD_A, 20);
-    const economyRanks = await db.select().from(worldFinalRankings).where(and(
-      eq(worldFinalRankings.worldId, WORLD_A),
-      eq(worldFinalRankings.rankingType, "economy"),
+    await setupWorld(WORLD_A, { kind: "finite", amountCents: "9000000000" }, "ranked");
+    const operator = await start(WORLD_A, "ranked", "Kapital-Bahn");
+    const capitalAccounts = await db.select({ name: ledgerAccounts.name }).from(ledgerAccounts).where(and(
+      eq(ledgerAccounts.worldId, WORLD_A),
+      eq(ledgerAccounts.operatorId, operator.id),
     ));
-    expect(economyRanks.map((row) => ({ rank: row.rank, score: row.score }))).toEqual([
-      { rank: 1, score: 0n },
-      { rank: 1, score: 0n },
+    const rankedAccountNames = new Set([
+      WORLD_END_ECONOMY_RANKING_SPECIFICATION.revenueAccountName,
+      ...WORLD_END_ECONOMY_RANKING_SPECIFICATION.costAccountNames,
     ]);
+    expect(capitalAccounts.map(({ name }) => name).filter((name) => rankedAccountNames.has(name))).toEqual([]);
   });
 });

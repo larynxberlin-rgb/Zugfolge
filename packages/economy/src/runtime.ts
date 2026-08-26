@@ -386,9 +386,8 @@ export async function runEconomySchedulerCycle(
         }
       }
     }
-    // Outbox-Recovery ist vom Simulations-Lifecycle getrennt: Auch eine bereits
-    // archivierte Welt darf einen vor dem Archivieren committeten Effekt noch
-    // idempotent zustellen und quittieren.
+    // Die Datenbank-Fence verlangt eine leere Outbox vor der Archivierung.
+    // Der Scheduler bearbeitet deshalb nur weiterhin schreibbare Welten.
     const pendingOutboxWorldIds = await listPendingEconomyOutboxWorldIds(db);
     const dispatchErrors: unknown[] = [];
     for (const worldId of pendingOutboxWorldIds) {

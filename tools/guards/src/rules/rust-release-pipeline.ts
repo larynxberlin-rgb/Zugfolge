@@ -11,7 +11,9 @@ const JAVASCRIPT_OR_TYPESCRIPT = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 function isAllowed(path: string): boolean {
   return path.startsWith("crates/zugfolge-infra/")
     || path.endsWith(".test.mjs")
-    || path.endsWith(".test.ts");
+    || path.endsWith(".test.ts")
+    || path.endsWith(".fixture.mjs")
+    || path.endsWith(".fixture.ts");
 }
 
 function isExplicitLegacyPreview(path: string): boolean {

@@ -8,9 +8,11 @@ use zugfolge_sim::operational::{
     InterlockingRouteTemplate, MotionState, MovementKind, OPERATIONAL_PROJECTION_VALIDITY_MS,
     OperationalControlStands, OperationalDisruption, OperationalError, OperationalInfraRelease,
     OperationalPowerSystem, OperationalVehicleRole, OperationalVehicleTraction, OperationalWorld,
-    PhysicalVehicle, ProjectedMotionState, ProjectionKind, ResourceLifecycle, RouteLeg,
-    RouteVersion, ShuntingPurpose, SignalAspect, TrackInterval, VehicleCondition,
-    VehicleRestriction, VehicleType, VehicleTypeRawFormationDynamics, derive_formation_dynamics,
+    PROTECTION_MODE_SELECTION_POLICY_V1, PhysicalVehicle, ProjectedMotionState, ProjectionKind,
+    ProtectionModeSelectionRun, ResourceLifecycle, RouteLeg, RouteVersion, ShuntingPurpose,
+    SignalAspect, TrackInterval, TrainMaterialization, VehicleCondition, VehicleRestriction,
+    VehicleType, VehicleTypeRawFormationDynamics, derive_formation_dynamics,
+    operational_train_number_numeric_part,
 };
 
 fn set(values: &[&str]) -> BTreeSet<String> {
@@ -33,7 +35,8 @@ fn release() -> OperationalInfraRelease {
                 block_ids: set(&["block:a"]),
                 speed_limit_mmps: 20_000,
                 gradient_per_mille: 0,
-                required_protection_systems: set(&["pzb"]),
+                available_protection_systems: vec!["pzb".to_owned()],
+                simultaneously_required_protection_systems: Vec::new(),
             },
             RouteLeg {
                 edge_id: "edge:b".to_owned(),
@@ -44,7 +47,8 @@ fn release() -> OperationalInfraRelease {
                 block_ids: set(&["block:b"]),
                 speed_limit_mmps: 20_000,
                 gradient_per_mille: -4,
-                required_protection_systems: set(&["pzb"]),
+                available_protection_systems: vec!["pzb".to_owned()],
+                simultaneously_required_protection_systems: Vec::new(),
             },
         ],
     };
@@ -63,7 +67,7 @@ fn release() -> OperationalInfraRelease {
         route_template_id: "route-template".to_owned(),
         signal_id: "signal:train".to_owned(),
         movement_kind: MovementKind::Train,
-        path_resources: set(&["route-resource:common"]),
+        path_resources: set(&["block:a", "block:b", "route-resource:common"]),
         overlap_resources: set(&["overlap:1"]),
         flank_resources: set(&["flank:1"]),
         switch_positions: BTreeMap::from([("switch:1".to_owned(), "left".to_owned())]),
@@ -75,7 +79,7 @@ fn release() -> OperationalInfraRelease {
         route_template_id: "route-template".to_owned(),
         signal_id: "signal:opposing".to_owned(),
         movement_kind: MovementKind::Train,
-        path_resources: set(&["route-resource:common"]),
+        path_resources: set(&["block:a", "block:b", "route-resource:common"]),
         overlap_resources: set(&["overlap:2"]),
         flank_resources: set(&["flank:2"]),
         switch_positions: BTreeMap::from([("switch:1".to_owned(), "right".to_owned())]),
@@ -88,7 +92,7 @@ fn release() -> OperationalInfraRelease {
         signal_id: "signal:shunting".to_owned(),
         movement_kind: MovementKind::Shunting,
         path_resources: set(&["route-resource:yard"]),
-        overlap_resources: BTreeSet::new(),
+        overlap_resources: set(&["overlap:yard"]),
         flank_resources: set(&["flank:yard"]),
         switch_positions: BTreeMap::from([("switch:1".to_owned(), "left".to_owned())]),
         authority_end_route_mm: 50_000,
@@ -151,6 +155,7 @@ fn release() -> OperationalInfraRelease {
             "route-resource:yard",
             "overlap:1",
             "overlap:2",
+            "overlap:yard",
             "flank:1",
             "flank:2",
             "flank:yard",
@@ -319,6 +324,350 @@ fn world() -> OperationalWorld {
     world_with_release(release())
 }
 
+fn program_template(
+    id: &str,
+    movement_kind: MovementKind,
+    head_route_mm: i64,
+) -> TrainMaterialization {
+    TrainMaterialization {
+        id: id.to_owned(),
+        train_number: "RB 1".to_owned(),
+        operator_id: "operator:1".to_owned(),
+        movement_kind,
+        route_version_id: "route:v1".to_owned(),
+        formation_version_id: "formation:1".to_owned(),
+        head_route_mm,
+        scheduled_departure_ms: None,
+        public_passenger_stop: false,
+    }
+}
+
+fn release_with_route_protection(systems: &[&str]) -> OperationalInfraRelease {
+    let mut infra_release = release();
+    for leg in &mut infra_release
+        .route_versions
+        .get_mut("route:v1")
+        .expect("Test-Route")
+        .legs
+    {
+        leg.available_protection_systems =
+            systems.iter().map(|system| (*system).to_owned()).collect();
+        leg.available_protection_systems.sort();
+        leg.simultaneously_required_protection_systems.clear();
+    }
+    let interlocking = infra_release
+        .interlocking_routes
+        .get_mut("interlocking:train")
+        .expect("Test-Fahrstrasse");
+    interlocking.authority_end_route_mm = 120_000;
+    interlocking.release_after_tail_route_mm = 120_000;
+    infra_release
+}
+
+fn release_with_independent_opposing_route() -> OperationalInfraRelease {
+    let mut infra_release = release();
+    infra_release
+        .directed_edges
+        .insert("edge:c".to_owned(), 120_000);
+    infra_release.edge_geometries.insert(
+        "edge:c".to_owned(),
+        vec![
+            EdgeGeometryPoint {
+                edge_offset_mm: 0,
+                latitude_e7: 511_000_000,
+                longitude_e7: 121_000_000,
+                bearing_milli_degrees: Some(90_000),
+            },
+            EdgeGeometryPoint {
+                edge_offset_mm: 120_000,
+                latitude_e7: 511_000_000,
+                longitude_e7: 121_120_000,
+                bearing_milli_degrees: None,
+            },
+        ],
+    );
+    infra_release.block_resources.insert("block:c".to_owned());
+    infra_release.route_versions.insert(
+        "route:opposing".to_owned(),
+        RouteVersion {
+            id: "route:opposing".to_owned(),
+            template_id: "route-template:opposing".to_owned(),
+            predecessor_id: None,
+            transition_route_mm: None,
+            legs: vec![RouteLeg {
+                edge_id: "edge:c".to_owned(),
+                direction: Direction::Along,
+                edge_entry_mm: 0,
+                edge_exit_mm: 120_000,
+                route_start_mm: 0,
+                block_ids: set(&["block:c"]),
+                speed_limit_mmps: 20_000,
+                gradient_per_mille: 0,
+                available_protection_systems: vec!["pzb".to_owned()],
+                simultaneously_required_protection_systems: Vec::new(),
+            }],
+        },
+    );
+    let opposing = infra_release
+        .interlocking_routes
+        .get_mut("interlocking:opposing")
+        .expect("Test-Gegenfahrstrasse");
+    opposing.route_template_id = "route-template:opposing".to_owned();
+    opposing.path_resources = set(&["block:c", "route-resource:common"]);
+    opposing.authority_end_route_mm = 120_000;
+    opposing.release_after_tail_route_mm = 90_000;
+    infra_release
+}
+
+#[test]
+fn zugsicherungsmenge_ist_one_of_in_template_materialize_authority_und_fahrt() {
+    let mut world = world_with_release(release_with_route_protection(&["lzb", "pzb"]));
+    let template = program_template("train:overlaid-protection", MovementKind::Train, 20_000);
+    let selections = [ProtectionModeSelectionRun {
+        through_route_leg_index: 1,
+        selected_protection_system: "pzb".to_owned(),
+    }];
+    let predicates = world
+        .inspect_train_program_template_with_protection_modes(
+            &template,
+            "interlocking:train",
+            PROTECTION_MODE_SELECTION_POLICY_V1,
+            &selections,
+        )
+        .expect("alle Bindungen sind aufloesbar");
+    assert!(predicates.is_valid());
+    assert!(predicates.failed_predicates().is_empty());
+    assert_eq!(
+        predicates.protection_mode_selection_runs.as_slice(),
+        &selections
+    );
+    assert_eq!(predicates.protection_mode_selection_count, 2);
+
+    let wrong_mode = [ProtectionModeSelectionRun {
+        through_route_leg_index: 1,
+        selected_protection_system: "lzb".to_owned(),
+    }];
+    let wrong_mode_predicates = world
+        .inspect_train_program_template_with_protection_modes(
+            &template,
+            "interlocking:train",
+            PROTECTION_MODE_SELECTION_POLICY_V1,
+            &wrong_mode,
+        )
+        .expect("alle Bindungen sind aufloesbar");
+    assert_eq!(
+        wrong_mode_predicates.failed_predicates(),
+        ["protection-mode-selections"]
+    );
+    let wrong_policy_predicates = world
+        .inspect_train_program_template_with_protection_modes(
+            &template,
+            "interlocking:train",
+            "zugfolge-protection-mode-selection/foreign-v1",
+            &selections,
+        )
+        .expect("alle Bindungen sind aufloesbar");
+    assert_eq!(
+        wrong_policy_predicates.failed_predicates(),
+        ["protection-mode-selection-policy"]
+    );
+    world
+        .validate_train_program_template(&template, "interlocking:train")
+        .expect("PZB teilt ein System mit der PZB/LZB-Ueberlagerung");
+    world
+        .materialize(template)
+        .expect("Materialisierung nutzt dieselbe Schnittmengenregel");
+    world
+        .lock_route("train:overlaid-protection", "interlocking:train")
+        .expect("Fahrberechtigung nutzt dieselbe Schnittmengenregel");
+    let segment = world
+        .plan_motion("train:overlaid-protection")
+        .expect("Bewegungsplanung nutzt dieselbe Schnittmengenregel");
+    world
+        .advance_to(segment.valid_until_ms)
+        .expect("der autoritative Fahrtpfad bleibt mit PZB fahrbar");
+}
+
+#[test]
+fn full_route_authority_path_resources_decken_jedes_route_leg_ab() {
+    let complete_world = world_with_release(release_with_route_protection(&["lzb", "pzb"]));
+    let template = program_template("train:full-route-resources", MovementKind::Train, 20_000);
+    let complete = complete_world
+        .inspect_train_program_template(&template, "interlocking:train")
+        .expect("vollstaendige Full-Route-Bindung ist aufloesbar");
+    assert!(complete.authority_path_resources_cover_route);
+    assert!(complete.is_valid());
+    assert!(complete.failed_predicates().is_empty());
+    assert_eq!(complete.resource_binding_count, 5);
+
+    let mut last_leg_only_release = release_with_route_protection(&["lzb", "pzb"]);
+    last_leg_only_release
+        .interlocking_routes
+        .get_mut("interlocking:train")
+        .expect("Test-Fahrstrasse")
+        .path_resources = set(&["block:b", "route-resource:common"]);
+    let last_leg_only_world = world_with_release(last_leg_only_release);
+    let last_leg_only = last_leg_only_world
+        .inspect_train_program_template(&template, "interlocking:train")
+        .expect("alle Referenzen bleiben trotz unvollstaendiger Ressourcenbindung aufloesbar");
+    assert!(!last_leg_only.authority_path_resources_cover_route);
+    assert!(!last_leg_only.is_valid());
+    assert_eq!(
+        last_leg_only.failed_predicates(),
+        ["authority-path-resources-cover-route"]
+    );
+    assert_eq!(last_leg_only.resource_binding_count, 4);
+    assert_eq!(
+        last_leg_only_world.validate_train_program_template(&template, "interlocking:train"),
+        Err(OperationalError::InvalidProgramTemplate(template.id))
+    );
+}
+
+#[test]
+fn disjunkte_und_reine_lzb_etcs_mengen_bleiben_fail_closed() {
+    for exclusive_system in ["lzb", "etcs-level2"] {
+        let mut world = world_with_release(release_with_route_protection(&[exclusive_system]));
+        let template = program_template(
+            &format!("train:pure-{exclusive_system}"),
+            MovementKind::Train,
+            20_000,
+        );
+        let predicates = world
+            .inspect_train_program_template(&template, "interlocking:train")
+            .expect("alle Bindungen ausser der Kompatibilitaet sind aufloesbar");
+        assert!(!predicates.protection_compatible);
+        assert_eq!(
+            predicates.failed_predicates(),
+            ["protection-intersection", "protection-mode-selections"]
+        );
+        assert_eq!(
+            world.validate_train_program_template(&template, "interlocking:train"),
+            Err(OperationalError::InvalidProgramTemplate(
+                template.id.clone()
+            ))
+        );
+        assert_eq!(
+            world.materialize(template.clone()),
+            Err(OperationalError::IncompatibleProtectionSystem(
+                template.id.clone()
+            ))
+        );
+    }
+
+    let mut authority_world = world();
+    authority_world
+        .materialize_train(
+            "train:authority-disjoint",
+            "RB 2",
+            "operator:1",
+            MovementKind::Train,
+            "route:v1",
+            "formation:1",
+            20_000,
+            None,
+            false,
+        )
+        .expect("vor der Einschraenkung kompatibel");
+    authority_world
+        .formations
+        .get_mut("formation:1")
+        .expect("Test-Formation")
+        .performance
+        .protection_systems = set(&["etcs-level2"]);
+    assert_eq!(
+        authority_world.lock_route("train:authority-disjoint", "interlocking:train"),
+        Err(OperationalError::UnsafeRoute(
+            "interlocking:train".to_owned()
+        ))
+    );
+
+    let mut motion_world = world();
+    motion_world
+        .materialize_train(
+            "train:motion-disjoint",
+            "RB 3",
+            "operator:1",
+            MovementKind::Train,
+            "route:v1",
+            "formation:1",
+            20_000,
+            None,
+            false,
+        )
+        .expect("vor der Einschraenkung kompatibel");
+    motion_world
+        .lock_route("train:motion-disjoint", "interlocking:train")
+        .expect("vor der Einschraenkung autorisiert");
+    motion_world
+        .formations
+        .get_mut("formation:1")
+        .expect("Test-Formation")
+        .performance
+        .protection_systems = set(&["etcs-level2"]);
+    assert_eq!(
+        motion_world.plan_motion("train:motion-disjoint"),
+        Err(OperationalError::IncompatibleProtectionSystem(
+            "train:motion-disjoint".to_owned()
+        ))
+    );
+}
+
+#[test]
+fn gleichzeitig_erforderliche_zugsicherung_muss_zusaetzlich_installiert_sein() {
+    let mut infra = release_with_route_protection(&["lzb", "pzb"]);
+    for leg in &mut infra
+        .route_versions
+        .get_mut("route:v1")
+        .expect("Test-Route")
+        .legs
+    {
+        leg.simultaneously_required_protection_systems = vec!["lzb".to_owned()];
+    }
+    let world = world_with_release(infra);
+    let template = program_template("train:simultaneous-protection", MovementKind::Train, 20_000);
+    let predicates = world
+        .inspect_train_program_template_with_protection_modes(
+            &template,
+            "interlocking:train",
+            PROTECTION_MODE_SELECTION_POLICY_V1,
+            &[],
+        )
+        .expect("alle Referenzen bleiben aufloesbar");
+    assert_eq!(
+        predicates.failed_predicates(),
+        ["protection-intersection", "protection-mode-selections"]
+    );
+}
+
+#[test]
+fn programmvorlagen_inspektion_meldet_alle_booleschen_predikate_gemeinsam() {
+    let mut world = world();
+    let formation = world
+        .formations
+        .get_mut("formation:1")
+        .expect("Test-Formation");
+    formation.performance.mobile = false;
+    formation.performance.protection_systems = set(&["etcs-level2"]);
+    let template = program_template("train:all-predicates", MovementKind::Shunting, 130_000);
+    let predicates = world
+        .inspect_train_program_template(&template, "interlocking:train")
+        .expect("Referenzen bleiben aufloesbar");
+    assert_eq!(
+        predicates.failed_predicates(),
+        [
+            "formation-mobile",
+            "head-within-route",
+            "protection-intersection",
+            "protection-mode-selections",
+            "movement-kind",
+            "authority-end",
+        ]
+    );
+    assert!(predicates.route_template_matches);
+    assert!(!predicates.authority_end_matches_route);
+    assert!(predicates.release_after_tail_within_authority);
+}
+
 #[test]
 fn authority_is_a_hard_motion_limit_and_livemap_rzue_share_commit() {
     let mut world = world();
@@ -338,7 +687,9 @@ fn authority_is_a_hard_motion_limit_and_livemap_rzue_share_commit() {
     let authority = world.lock_route("train:1", "interlocking:train").unwrap();
     let segment = world.plan_motion("train:1").unwrap();
     assert_eq!(segment.segment_end_route_mm, 60_000);
-    let moving_projection = world.project(ProjectionKind::LiveMap, &BTreeSet::new());
+    let moving_projection = world
+        .project(ProjectionKind::LiveMap, &BTreeSet::new())
+        .unwrap();
     assert_eq!(moving_projection.trains[0].motion_geometry.len(), 2);
     assert_eq!(
         moving_projection.trains[0].motion_geometry[1].route_mm,
@@ -361,15 +712,74 @@ fn authority_is_a_hard_motion_limit_and_livemap_rzue_share_commit() {
     assert_eq!(stopped.head_route_mm, authority.end_route_mm);
     assert_eq!(stopped.speed_mmps, 0);
     assert_eq!(stopped.motion_state, MotionState::Standing);
-    let map = world.project(ProjectionKind::LiveMap, &BTreeSet::new());
-    let rzue = world.project(ProjectionKind::Rzue, &BTreeSet::new());
+    let map = world
+        .project(ProjectionKind::LiveMap, &BTreeSet::new())
+        .unwrap();
+    let rzue = world
+        .project(ProjectionKind::Rzue, &BTreeSet::new())
+        .unwrap();
     assert_eq!(map.commit_sequence, rzue.commit_sequence);
     assert_eq!(map.trains, rzue.trains);
 }
 
 #[test]
-fn incompatible_routes_never_lock_together_and_protect_overlap_and_flank() {
+fn train_numbers_accept_1_and_99999_and_reject_zero_overlong_or_duplicate_numeric_parts() {
+    assert_eq!(operational_train_number_numeric_part("1"), Some(1));
+    assert_eq!(
+        operational_train_number_numeric_part("ICE 99999"),
+        Some(99_999)
+    );
+    assert_eq!(operational_train_number_numeric_part("0"), None);
+    assert_eq!(operational_train_number_numeric_part("RB 00000"), None);
     let mut world = world();
+    world
+        .materialize_train(
+            "train:boundary",
+            "ICE 99999",
+            "operator:1",
+            MovementKind::Train,
+            "route:v1",
+            "formation:1",
+            10_000,
+            None,
+            false,
+        )
+        .unwrap();
+    assert_eq!(
+        world.materialize_train(
+            "train:overlong",
+            "S4-1667972",
+            "operator:2",
+            MovementKind::Train,
+            "route:v1",
+            "formation:2",
+            50_000,
+            None,
+            false,
+        ),
+        Err(OperationalError::InvalidTrainNumber(
+            "S4-1667972".to_owned()
+        ))
+    );
+    assert_eq!(
+        world.materialize_train(
+            "train:duplicate",
+            "RE-99999",
+            "operator:2",
+            MovementKind::Train,
+            "route:v1",
+            "formation:2",
+            50_000,
+            None,
+            false,
+        ),
+        Err(OperationalError::DuplicateTrainNumber(99_999))
+    );
+}
+
+#[test]
+fn incompatible_routes_never_lock_together_and_protect_overlap_and_flank() {
+    let mut world = world_with_release(release_with_independent_opposing_route());
     world
         .materialize_train(
             "train:1",
@@ -389,7 +799,7 @@ fn incompatible_routes_never_lock_together_and_protect_overlap_and_flank() {
             "RB 2",
             "operator:2",
             MovementKind::Train,
-            "route:v1",
+            "route:opposing",
             "formation:2",
             50_000,
             None,
@@ -434,6 +844,76 @@ fn block_and_route_release_wait_for_tail() {
         world.resource_lifecycle["overlap:1"],
         ResourceLifecycle::Free
     );
+}
+
+#[test]
+fn full_route_lock_is_released_atomically_when_positive_length_train_retires() {
+    let mut world = world_with_release(release_with_route_protection(&["lzb", "pzb"]));
+    world
+        .materialize_train(
+            "train:1",
+            "RB 1",
+            "operator:1",
+            MovementKind::Train,
+            "route:v1",
+            "formation:1",
+            20_000,
+            None,
+            false,
+        )
+        .unwrap();
+    world.lock_route("train:1", "interlocking:train").unwrap();
+    world.plan_motion("train:1").unwrap();
+
+    for _ in 0..16 {
+        let Some(valid_until_ms) = world.trains["train:1"]
+            .motion_segment
+            .as_ref()
+            .map(|segment| segment.valid_until_ms)
+        else {
+            break;
+        };
+        world.advance_to(valid_until_ms).unwrap();
+    }
+
+    let completed = &world.trains["train:1"];
+    assert_eq!(completed.head_route_mm, 120_000);
+    assert_eq!(completed.tail_route_mm, 110_000);
+    assert!(completed.authority.is_none());
+    assert_eq!(completed.speed_mmps, 0);
+    assert_eq!(world.route_locks.len(), 1);
+    assert_eq!(world.signal_aspects["signal:train"], SignalAspect::Proceed);
+
+    world.retire_train("train:1").unwrap();
+
+    assert!(!world.trains.contains_key("train:1"));
+    assert!(world.route_locks.is_empty());
+    assert!(!world.signal_aspects.contains_key("signal:train"));
+    for resource in [
+        "block:a",
+        "block:b",
+        "route-resource:common",
+        "overlap:1",
+        "flank:1",
+    ] {
+        assert!(!world.resource_lifecycle.contains_key(resource));
+    }
+
+    world
+        .materialize_train(
+            "train:2",
+            "RB 2",
+            "operator:2",
+            MovementKind::Train,
+            "route:v1",
+            "formation:2",
+            20_000,
+            None,
+            false,
+        )
+        .unwrap();
+    world.lock_route("train:2", "interlocking:train").unwrap();
+    world.verify_invariants().unwrap();
 }
 
 #[test]
@@ -1737,8 +2217,11 @@ fn region_handover_has_no_duplicate_or_unprotected_gap() {
 
 #[test]
 fn dispatcher_is_stable_and_does_not_accept_caller_safety_booleans() {
-    let mut world = world();
-    for (id, head) in [("train:a", 20_000), ("train:b", 50_000)] {
+    let mut world = world_with_release(release_with_independent_opposing_route());
+    for (index, (id, head)) in [("train:a", 20_000), ("train:b", 50_000)]
+        .into_iter()
+        .enumerate()
+    {
         let formation = if id.ends_with('a') {
             "formation:1"
         } else {
@@ -1747,10 +2230,14 @@ fn dispatcher_is_stable_and_does_not_accept_caller_safety_booleans() {
         world
             .materialize_train(
                 id,
-                id,
+                format!("RB {}", index + 1),
                 "operator",
                 MovementKind::Train,
-                "route:v1",
+                if id.ends_with('a') {
+                    "route:v1"
+                } else {
+                    "route:opposing"
+                },
                 formation,
                 head,
                 None,
@@ -1786,7 +2273,7 @@ fn projection_carries_exact_release_vehicle_and_standing_geometry() {
     world
         .materialize_train(
             "train:standing",
-            "RB 0",
+            "RB 2",
             "operator:standing",
             MovementKind::Train,
             "route:v1",
@@ -1810,7 +2297,9 @@ fn projection_carries_exact_release_vehicle_and_standing_geometry() {
         )
         .unwrap();
 
-    let projection = world.project(ProjectionKind::LiveMap, &BTreeSet::new());
+    let projection = world
+        .project(ProjectionKind::LiveMap, &BTreeSet::new())
+        .unwrap();
     assert_eq!(projection.infra_release_id, "infra:operational:v2");
     assert_eq!(projection.trains.len(), 2);
     assert_eq!(
@@ -1834,7 +2323,7 @@ fn projection_carries_exact_release_vehicle_and_standing_geometry() {
 }
 
 #[test]
-fn state_hash_binds_infra_geometry_and_all_serialized_operational_fields() {
+fn state_hash_excludes_static_infrastructure_and_binds_all_dynamic_fields() {
     let mut world = world();
     world
         .materialize_train(
@@ -1853,13 +2342,12 @@ fn state_hash_binds_infra_geometry_and_all_serialized_operational_fields() {
     world.plan_motion("train:1").unwrap();
     let expected = world.state_hash();
 
-    let mut changed_infra = serde_json::to_value(&world).unwrap();
-    changed_infra["infra"]["edgeGeometries"]["edge:a"][0]["longitudeE7"] =
-        serde_json::json!(120_000_001);
-    let changed_infra: OperationalWorld = serde_json::from_value(changed_infra).unwrap();
-    assert_ne!(expected, changed_infra.state_hash());
+    let serialized = serde_json::to_value(&world).unwrap();
+    assert!(serialized.get("infra").is_none());
+    assert!(serialized.get("routeVersions").is_none());
+    assert!(serialized.get("edgeGeometries").is_none());
 
-    let mut changed_train = serde_json::to_value(&world).unwrap();
+    let mut changed_train = serialized;
     changed_train["trains"]["train:1"]["waitingReason"] =
         serde_json::json!("tampered-public-state");
     let changed_train: OperationalWorld = serde_json::from_value(changed_train).unwrap();
@@ -1867,15 +2355,67 @@ fn state_hash_binds_infra_geometry_and_all_serialized_operational_fields() {
 }
 
 #[test]
+fn interlocking_rejects_empty_overlap_resources() {
+    let mut empty_overlap = release();
+    empty_overlap
+        .interlocking_routes
+        .get_mut("interlocking:train")
+        .unwrap()
+        .overlap_resources
+        .clear();
+    assert_eq!(
+        empty_overlap.validate(),
+        Err(OperationalError::InvalidInterlockingRoute(
+            "interlocking:train".to_owned()
+        ))
+    );
+}
+
+#[test]
+fn interlocking_rejects_empty_flank_resources() {
+    let mut empty_flank = release();
+    empty_flank
+        .interlocking_routes
+        .get_mut("interlocking:train")
+        .unwrap()
+        .flank_resources
+        .clear();
+    assert_eq!(
+        empty_flank.validate(),
+        Err(OperationalError::InvalidInterlockingRoute(
+            "interlocking:train".to_owned()
+        ))
+    );
+}
+
+#[test]
 fn infra_and_interlocking_reject_unknown_resources_and_foreign_route_templates() {
-    let mut unknown_resource = release();
-    unknown_resource
+    let mut unknown_path_resource = release();
+    unknown_path_resource
+        .interlocking_routes
+        .get_mut("interlocking:train")
+        .unwrap()
+        .path_resources
+        .insert("unknown:path".to_owned());
+    assert!(unknown_path_resource.validate().is_err());
+
+    let mut unknown_overlap_resource = release();
+    unknown_overlap_resource
+        .interlocking_routes
+        .get_mut("interlocking:train")
+        .unwrap()
+        .overlap_resources
+        .insert("unknown:overlap".to_owned());
+    assert!(unknown_overlap_resource.validate().is_err());
+
+    let mut unknown_flank_resource = release();
+    unknown_flank_resource
         .interlocking_routes
         .get_mut("interlocking:train")
         .unwrap()
         .flank_resources
         .insert("unknown:flank".to_owned());
-    assert!(unknown_resource.validate().is_err());
+    assert!(unknown_flank_resource.validate().is_err());
 
     let mut bound_release = release();
     let mut foreign_route = bound_release.route_versions["route:v1"].clone();
@@ -1918,7 +2458,7 @@ fn exhaustive_interval_property_never_accepts_overlap() {
             world
                 .materialize_train(
                     "left",
-                    "L",
+                    "L 1",
                     "operator",
                     MovementKind::Shunting,
                     "route:v1",
@@ -1930,7 +2470,7 @@ fn exhaustive_interval_property_never_accepts_overlap() {
                 .unwrap();
             let result = world.materialize_train(
                 "right",
-                "R",
+                "R 2",
                 "operator",
                 MovementKind::Shunting,
                 "route:v1",

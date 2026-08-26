@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { PGlite } from "@electric-sql/pglite";
 import { commerceEntitlements, MIGRATIONS_FOLDER, odooCommandQueue, odooProjectionOutbox, odooReconciliationTasks, worlds } from "@zugfolge/db";
 import * as schema from "@zugfolge/db/schema";
@@ -6,13 +8,54 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { ADMIN_ACTION_TYPES, AdminWorkflowError, assertPublicWorldSlot, COMMAND_TYPES, createHttpOdooProjectionClient, createOdooWebhookReceiptStore, deriveReconciliationTasks, dispatchOdooProjectionOutbox, enqueueAlphaFeedbackProjection, enqueueAuthoritativeWorldStartProjection, enqueueGameAdminCapabilityProjection, enqueueWorldProjection, entitlementFeatures, listPendingOdooProjectionWorldIds, OdooCommandWorkerInterruptedError, processNextOdooCommand, projectionEnvelope, receiveOdooWebhook, reconcileOdooProjectionSnapshot, signPayload, type AdminCommandPayload, type OdooProjectionEnvelope, type OdooWebhookEnvelope, type SigningKey, validateAdminCommand, WebhookSignatureError, WebhookValidationError } from "./index.js";
+import { ADMIN_ACTION_TYPES, AdminWorkflowError, assertPublicWorldSlot, canonicalJson, COMMAND_TYPES, createHttpOdooProjectionClient, createHttpOdooReconciliationClient, createOdooWebhookReceiptStore, deriveReconciliationTasks, dispatchOdooProjectionOutbox, enqueueAlphaFeedbackProjection, enqueueAuthoritativeWorldStartProjection, enqueueGameAdminCapabilityProjection, enqueueWorldProjection, entitlementFeatures, listPendingOdooProjectionWorldIds, ODOO_PROJECTION_ENVELOPE_HASH_SCHEMA, OdooCommandWorkerInterruptedError, processNextOdooCommand, projectionEnvelope, projectionEnvelopeHash, receiveOdooWebhook, reconcileOdooProjectionSnapshot, signPayload, type AdminCommandPayload, type OdooProjectionEnvelope, type OdooWebhookEnvelope, type SigningKey, validateAdminCommand, WebhookSignatureError, WebhookValidationError } from "./index.js";
 
 const NOW = new Date("2026-08-11T12:00:00.000Z");
 const WORLD = "11111111-1111-4111-8111-111111111111";
 const OTHER_WORLD = "22222222-2222-4222-8222-222222222222";
 const NEW_WORLD = "33333333-3333-4333-8333-333333333333";
 const KEY: SigningKey = { id: "2026-08", secret: "test-webhook-secret", activeFrom: new Date("2026-01-01T00:00:00Z") };
+
+interface V1V2PostgresOdooContract {
+  readonly schema: string;
+  readonly candidate: {
+    readonly deployment: {
+      readonly worldId: string;
+      readonly deploymentRevision: number;
+      readonly worldDefinition: {
+        readonly name: string;
+        readonly schedulePeriodWeeks: number;
+        readonly epoch: string;
+      };
+    };
+    readonly deploymentHash: string;
+    readonly signature: {
+      readonly algorithm: "Ed25519";
+      readonly keyId: string;
+      readonly valueBase64: string;
+    };
+  };
+  readonly odooProjection: OdooProjectionEnvelope;
+}
+
+const V1_V2_POSTGRES_ODOO_CONTRACT = JSON.parse(readFileSync(
+  new URL("../../../odoo/addons/zugfolge_admin/tests/fixtures/v1_v2_postgres_odoo_contract.json", import.meta.url),
+  "utf8",
+)) as V1V2PostgresOdooContract;
+
+interface ProjectionEnvelopeUnicodeGolden {
+  readonly envelope: OdooProjectionEnvelope;
+  readonly canonical: string;
+  readonly envelopeSha256: string;
+  readonly timestamp: string;
+  readonly secret: string;
+  readonly hmacSha256: string;
+}
+
+const PROJECTION_ENVELOPE_UNICODE_GOLDEN = JSON.parse(readFileSync(
+  new URL("../../../odoo/addons/zugfolge_admin/tests/fixtures/projection_envelope_unicode_golden.json", import.meta.url),
+  "utf8",
+)) as ProjectionEnvelopeUnicodeGolden;
 
 let client: PGlite;
 let db: ReturnType<typeof drizzle<typeof schema>>;
@@ -215,6 +258,39 @@ describe("Bridge", () => {
       payload: {},
     })).rejects.toThrow(/Welt-/);
     expect(await db.select().from(odooProjectionOutbox).where(eq(odooProjectionOutbox.worldId, OTHER_WORLD))).toHaveLength(0);
+  });
+
+  it("erzeugt fuer den gemeinsamen V1-V2-Postgres/Odoo-Vertrag exakt den Odoo-Weltstart", async () => {
+    const contract = V1_V2_POSTGRES_ODOO_CONTRACT;
+    const signed = contract.candidate;
+    const expected = contract.odooProjection;
+    expect(contract.schema).toBe("zugfolge-v1-v2-postgres-odoo-contract/v1");
+    expect(signed.deployment.deploymentRevision).toBe(1);
+    expect(expected.worldId).toBe(signed.deployment.worldId);
+
+    await db.insert(worlds).values({
+      id: signed.deployment.worldId,
+      name: signed.deployment.worldDefinition.name,
+      schedulePeriodWeeks: signed.deployment.worldDefinition.schedulePeriodWeeks,
+      epoch: new Date(signed.deployment.worldDefinition.epoch),
+    });
+    const payload = structuredClone(expected.payload) as Record<string, unknown>;
+    for (const reserved of ["projectionKind", "deploymentHash", "deploymentRevision", "deploymentAuthorization"]) {
+      delete payload[reserved];
+    }
+    await enqueueAuthoritativeWorldStartProjection(db, {
+      worldId: signed.deployment.worldId,
+      correlationId: expected.correlationId,
+      signedDeployment: signed,
+      deploymentRevision: signed.deployment.deploymentRevision,
+      occurredAt: new Date(expected.occurredAt),
+      payload,
+    });
+
+    const [row] = await db.select().from(odooProjectionOutbox).where(
+      eq(odooProjectionOutbox.worldId, signed.deployment.worldId),
+    );
+    expect({ ...projectionEnvelope(row!), messageId: expected.messageId }).toEqual(expected);
   });
 
   it("legt pseudonymisiertes Alpha-Feedback als weltgebundene Outbox-Projektion ab", async () => {
@@ -898,6 +974,49 @@ describe("Vier-Augen-Validierung", () => {
 });
 
 describe("nächtliche Reconciliation", () => {
+  it("kanonisiert Unicode fuer Signatur und Voll-Envelope-Hash bytegleich mit Odoo", () => {
+    const golden = PROJECTION_ENVELOPE_UNICODE_GOLDEN;
+    const { messageId, ...envelopeWithoutMessageId } = golden.envelope;
+    expect(canonicalJson(golden.envelope)).toBe(golden.canonical);
+    expect(projectionEnvelopeHash({ id: messageId, ...envelopeWithoutMessageId })).toBe(golden.envelopeSha256);
+    expect(signPayload(golden.envelope, {
+      id: "unicode-golden",
+      secret: golden.secret,
+      activeFrom: new Date("2026-01-01T00:00:00.000Z"),
+    }, new Date(golden.timestamp)).signature).toBe(golden.hmacSha256);
+    expect(() => canonicalJson({ fraction: 1e-7 })).toThrow(/sichere Ganzzahlen/u);
+    expect(() => canonicalJson({ unsafe: Number.MAX_SAFE_INTEGER + 1 })).toThrow(/sichere Ganzzahlen/u);
+  });
+
+  it("verlangt im HTTP-Snapshot die explizite Envelope-Bindung und behaelt Legacy-null sichtbar", async () => {
+    const legacyObservation = {
+      messageId: "77777777-7777-4777-8777-777777777777",
+      worldId: WORLD,
+      correlationId: "legacy-reconciliation",
+      payloadHash: "a".repeat(64),
+      envelopeHashSchema: null,
+      envelopeHash: null,
+    };
+    const legacyClient = createHttpOdooReconciliationClient("https://odoo.test/zugfolge/reconciliation/snapshot", KEY, async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ result: [legacyObservation] }),
+    }));
+    await expect(legacyClient.snapshot()).resolves.toEqual([legacyObservation]);
+
+    const oldClient = createHttpOdooReconciliationClient("https://odoo.test/zugfolge/reconciliation/snapshot", KEY, async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ result: [{
+        messageId: legacyObservation.messageId,
+        worldId: WORLD,
+        correlationId: legacyObservation.correlationId,
+        payloadHash: legacyObservation.payloadHash,
+      }] }),
+    }));
+    await expect(oldClient.snapshot()).rejects.toThrow(/ungueltiges Schema/u);
+  });
+
   it("persistiert einen fehlenden globalen world_deploy-Beleg ohne erfundene Welt", async () => {
     const globalScope = "00000000-0000-0000-0000-000000000000";
     const [row] = await db.insert(odooProjectionOutbox).values({
@@ -921,11 +1040,49 @@ describe("nächtliche Reconciliation", () => {
 
   it("erstellt fehlende, doppelte und divergente Befunde statt Daten zu überschreiben", async () => {
     const [row] = await db.insert(odooProjectionOutbox).values({ worldId: WORLD, messageType: "world.projection", schemaVersion: "zugfolge-odoo/v1", correlationId: "correlation-reconcile", payload: { version: 1 }, occurredAt: NOW, enqueuedAt: NOW, deliveredAt: NOW }).returning();
-    const expected = [{ id: row!.id, worldId: WORLD, correlationId: "correlation-reconcile", payload: { version: 1 } }];
+    const expected = [{
+      id: row!.id,
+      schemaVersion: row!.schemaVersion,
+      messageType: row!.messageType,
+      worldId: WORLD,
+      correlationId: "correlation-reconcile",
+      occurredAt: row!.occurredAt,
+      payload: { version: 1 },
+    }];
     expect(deriveReconciliationTasks(expected, [])).toMatchObject([{ issueKind: "missing" }]);
+    const expectedEnvelopeHash = projectionEnvelopeHash(expected[0]!);
+    expect(deriveReconciliationTasks(expected, [{
+      messageId: row!.id,
+      worldId: WORLD,
+      correlationId: "correlation-reconcile",
+      payloadHash: "a".repeat(64),
+      envelopeHashSchema: ODOO_PROJECTION_ENVELOPE_HASH_SCHEMA,
+      envelopeHash: expectedEnvelopeHash,
+    }])).toEqual([]);
+    expect(deriveReconciliationTasks(expected, [{
+      messageId: row!.id,
+      worldId: WORLD,
+      correlationId: "correlation-reconcile",
+      payloadHash: "a".repeat(64),
+      envelopeHashSchema: null,
+      envelopeHash: null,
+    }])).toMatchObject([{ issueKind: "divergent", expectedHash: expectedEnvelopeHash }]);
+    for (const conflicting of [
+      { ...expected[0]!, messageType: "public.world.snapshot" },
+      { ...expected[0]!, occurredAt: new Date(NOW.getTime() + 1_000) },
+    ]) {
+      expect(deriveReconciliationTasks(expected, [{
+        messageId: row!.id,
+        worldId: WORLD,
+        correlationId: "correlation-reconcile",
+        payloadHash: "a".repeat(64),
+        envelopeHashSchema: ODOO_PROJECTION_ENVELOPE_HASH_SCHEMA,
+        envelopeHash: projectionEnvelopeHash(conflicting),
+      }])).toMatchObject([{ issueKind: "divergent", expectedHash: expectedEnvelopeHash }]);
+    }
     const tasks = await reconcileOdooProjectionSnapshot(db, [
-      { messageId: row!.id, worldId: WORLD, correlationId: "wrong", payloadHash: "b".repeat(64) },
-      { messageId: row!.id, worldId: WORLD, correlationId: "wrong", payloadHash: "b".repeat(64) },
+      { messageId: row!.id, worldId: WORLD, correlationId: "wrong", payloadHash: "b".repeat(64), envelopeHashSchema: ODOO_PROJECTION_ENVELOPE_HASH_SCHEMA, envelopeHash: "c".repeat(64) },
+      { messageId: row!.id, worldId: WORLD, correlationId: "wrong", payloadHash: "b".repeat(64), envelopeHashSchema: ODOO_PROJECTION_ENVELOPE_HASH_SCHEMA, envelopeHash: "c".repeat(64) },
     ], NOW);
     expect(tasks.map((task) => task.issueKind).sort()).toEqual(["divergent", "duplicate"]);
     expect(await db.select().from(odooReconciliationTasks)).toHaveLength(2);

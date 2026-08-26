@@ -1,0 +1,49 @@
+{
+  "schema": "zugfolge-livemap-read-model-build-spec/v1",
+  "worldId": "0db56535-a466-44a8-a991-38a8a1f7566c",
+  "infrastructureReleaseId": "infra-deutschland-2026.3",
+  "worldEpoch": "2026-08-10T00:00:00.000Z",
+  "serviceStartOffsetS": 0,
+  "repeatEveryS": 86400,
+  "inputDirectory": "../../var/derived/germany-2026.3/semantic-tile-inputs-free-v2",
+  "gtfs": {
+    "archive": "../../var/source-cache/annual-2026-pinned/gtfs-rv-free-2026-08-10-c0cba1cfdbf6179b18e529b13613644e861f1ea6159fa5788c2045de82bea738.zip",
+    "serviceDate": "20260810",
+    "timeZone": "Europe/Berlin",
+    "trainIdentity": {
+      "regionId": "mitteldeutschland-b",
+      "releaseId": "gtfs-de-rv-20260810-{archiveSha16}"
+    }
+  },
+  "config": {
+    "schemaVersion": "zugfolge-livemap-config/v2",
+    "worldId": "0db56535-a466-44a8-a991-38a8a1f7566c",
+    "worldName": "Mitteldeutschland 2026",
+    "infrastructureReleaseId": "infra-deutschland-2026.3",
+    "basemap": {
+      "styleUrl": "/artifacts/maps/infra-deutschland-2026.3/style.json",
+      "tilesUrl": "/artifacts/maps/infra-deutschland-2026.3/basemap.pmtiles",
+      "attribution": "© OpenStreetMap-Mitwirkende, ODbL 1.0; Basemap-Aufbereitung Protomaps; weitere Bearbeitung durch Zugfolge",
+      "selfHosted": true
+    },
+    "infrastructure": {
+      "pmtilesUrl": "/artifacts/maps/infra-deutschland-2026.3/infra-deutschland-2026.3.pmtiles",
+      "attribution": "Infrastrukturquellen und Bearbeitungen gemaess oeffentlichem InfraRelease-Manifest",
+      "coverage": "DE"
+    },
+    "initialView": {
+      "latitudeE7": 510500000,
+      "longitudeE7": 117500000,
+      "zoomMilli": 6000
+    },
+    "playableArea": {
+      "label": "Alpha-Gebiet Leipzig-Halle-Erfurt",
+      "boundsE7": {
+        "west": 103319740,
+        "south": 506504900,
+        "east": 132877340,
+        "north": 521305120
+      }
+    }
+  }
+}

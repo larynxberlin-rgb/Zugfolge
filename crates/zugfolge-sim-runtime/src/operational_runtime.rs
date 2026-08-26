@@ -1,27 +1,47 @@
 //! Persistierbare v2-Grenze fuer die eine autoritative Betriebswirklichkeit.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use zugfolge_infra::open_operational_infrastructure_v2_store;
 use zugfolge_sim::operational::{
     AutomaticShuntingNeed, DispatchRequest, MovementKind, OperationalDisruption, OperationalEvent,
-    OperationalInfraRelease, OperationalProjection, OperationalWorld, PhysicalVehicle,
-    ProjectionKind, TrainMaterialization, VehicleType,
+    OperationalInfrastructure, OperationalProgramTemplatePredicates, OperationalProjection,
+    OperationalWorld, PROTECTION_MODE_SELECTION_POLICY_V1, PhysicalVehicle, ProjectionKind,
+    ProtectionModeSelectionRun, TrainMaterialization, VehicleType,
+    operational_train_number_numeric_part,
 };
 
 use crate::initialization_hash::operational_initialization_hash;
 
 pub const INITIALIZE_SCHEMA: &str = "zugfolge-operational-simulation-initialize/v2";
 pub const COMMAND_SCHEMA: &str = "zugfolge-operational-simulation-command/v2";
+pub const COMMAND_BATCH_SCHEMA: &str = "zugfolge-operational-simulation-command-batch/v1";
 pub const STATE_SCHEMA: &str = "zugfolge-operational-simulation-state/v2";
 pub const INITIALIZED_SCHEMA: &str = "zugfolge-operational-simulation-initialized/v2";
 pub const RESTORE_SCHEMA: &str = "zugfolge-operational-simulation-restore/v2";
 pub const RESTORED_SCHEMA: &str = "zugfolge-operational-simulation-restored/v2";
 pub const RESULT_SCHEMA: &str = "zugfolge-operational-simulation-result/v2";
+pub const BATCH_RESULT_SCHEMA: &str = "zugfolge-operational-simulation-batch-result/v1";
+pub const INFRASTRUCTURE_BINDING_SCHEMA: &str = "zugfolge-operational-infrastructure-binding/v2";
+pub const INFRASTRUCTURE_FILE: &str = "operational-infrastructure-v2.json";
+pub const MAX_COMMAND_RECEIPTS: usize = 4_096;
+pub const MAX_COMMAND_BATCH_SIZE: usize = 4_096;
+pub const INITIALIZATION_VALIDATION_RECEIPT_SCHEMA: &str =
+    "zugfolge-operational-initialization-validation-receipt/v1";
+pub const INFRASTRUCTURE_VALIDATION_MODE: &str = "native-streaming-redb-v1";
+pub const PROTECTION_MODE_SELECTION_EVIDENCE_SCHEMA: &str =
+    "zugfolge-protection-mode-selections-evidence/v1";
+
+type InfrastructureHandle = Arc<dyn OperationalInfrastructure>;
+static INFRASTRUCTURE_CACHE: OnceLock<Mutex<BTreeMap<String, InfrastructureHandle>>> =
+    OnceLock::new();
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationalRuntimeError {
@@ -73,6 +93,46 @@ struct TrainInput {
     head_route_mm: i64,
     scheduled_departure_ms: Option<i64>,
     public_passenger_stop: bool,
+    dispatch_interlocking_route_id: String,
+    protection_mode_selection_runs: Vec<ProtectionModeSelectionRun>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct InfrastructureBinding {
+    schema_version: String,
+    infra_release_id: String,
+    file: String,
+    bytes: u64,
+    sha256: String,
+    state_hash: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InitializationValidationReceipt {
+    schema_version: &'static str,
+    world_id: String,
+    region_id: String,
+    initialization_hash: String,
+    state_hash: String,
+    infra_release: InfrastructureBinding,
+    program_train_count: usize,
+    validated_program_template_count: usize,
+    validated_route_version_count: usize,
+    validated_dispatch_interlocking_route_count: usize,
+    validated_resource_binding_count: usize,
+    validated_formation_binding_count: usize,
+    validated_train_number_count: usize,
+    protection_mode_selection_policy: &'static str,
+    validated_protection_mode_selection_count: usize,
+    protection_mode_selections_sha256: String,
+    dynamic_train_count: usize,
+    resource_bindings_validated: bool,
+    formation_bindings_validated: bool,
+    train_numbers_validated: bool,
+    protection_mode_selections_validated: bool,
+    validation_mode: &'static str,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -82,7 +142,8 @@ struct Initialization {
     world_id: String,
     region_id: String,
     now_ms: i64,
-    infra_release: OperationalInfraRelease,
+    protection_mode_selection_policy: String,
+    infra_release: InfrastructureBinding,
     vehicle_types: Vec<VehicleTypeInput>,
     vehicles: Vec<PhysicalVehicle>,
     formations: Vec<FormationInput>,
@@ -153,6 +214,25 @@ struct CommandEnvelope {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CommandBatchItem {
+    command_id: String,
+    command: CommandPayload,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CommandBatchEnvelope {
+    schema_version: String,
+    world_id: String,
+    region_id: String,
+    expected_state_hash: String,
+    expected_revision: u64,
+    expected_publisher_sequence: u64,
+    commands: Vec<CommandBatchItem>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RestoreEnvelope {
     schema_version: String,
     expected_initialization_hash: String,
@@ -161,14 +241,22 @@ struct RestoreEnvelope {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CommandReceipt {
+    command_hash: String,
+    applied_revision: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RuntimeState {
     schema_version: String,
     initialization_hash: String,
+    infra_release: InfrastructureBinding,
     world: OperationalWorld,
     revision: u64,
     publisher_sequence: u64,
     state_hash: String,
-    command_receipts: BTreeMap<String, String>,
+    command_receipts: BTreeMap<String, CommandReceipt>,
 }
 
 #[derive(Debug, Serialize)]
@@ -181,6 +269,7 @@ struct InitializedResult {
     live_map: OperationalProjection,
     rzue: OperationalProjection,
     events: Vec<OperationalEvent>,
+    validation_receipt: InitializationValidationReceipt,
 }
 
 #[derive(Debug, Serialize)]
@@ -208,6 +297,38 @@ struct CommandResult {
     idempotent_replay: bool,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CommandBatchItemResult {
+    command_id: String,
+    idempotent_replay: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CommandBatchEventContext {
+    command_index: usize,
+    command_id: String,
+    commit_sequence: u64,
+    affected_train_run_ids: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    disruption_effect_before: Option<OperationalDisruption>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CommandBatchResult {
+    schema_version: &'static str,
+    state: RuntimeState,
+    initialization_hash: String,
+    state_hash: String,
+    live_map: OperationalProjection,
+    rzue: OperationalProjection,
+    events: Vec<OperationalEvent>,
+    command_results: Vec<CommandBatchItemResult>,
+    event_contexts: Vec<CommandBatchEventContext>,
+}
+
 fn decode<T: for<'de> Deserialize<'de>>(
     json: &str,
     name: &str,
@@ -222,6 +343,110 @@ fn encode<T: Serialize>(value: &T) -> Result<String, OperationalRuntimeError> {
         .map_err(|error| OperationalRuntimeError::new("serialization_failed", error.to_string()))
 }
 
+fn reject_embedded_static_infrastructure(
+    world: Option<&Value>,
+) -> Result<(), OperationalRuntimeError> {
+    let Some(world) = world.and_then(Value::as_object) else {
+        return Err(OperationalRuntimeError::new(
+            "invalid_json_contract",
+            "Operational-v2-Zustand besitzt keinen Weltzustand",
+        ));
+    };
+    if [
+        "infra",
+        "directedEdges",
+        "edgeGeometries",
+        "routeVersions",
+        "interlockingRoutes",
+        "platformIntervals",
+    ]
+    .iter()
+    .any(|field| world.contains_key(*field))
+    {
+        return Err(OperationalRuntimeError::new(
+            "embedded_static_infrastructure_forbidden",
+            "dynamischer v2-Zustand enthaelt statische Infrastrukturbytes",
+        ));
+    }
+    Ok(())
+}
+
+impl InfrastructureBinding {
+    fn validate(&self) -> Result<(), OperationalRuntimeError> {
+        if self.schema_version != INFRASTRUCTURE_BINDING_SCHEMA
+            || self.infra_release_id.trim().is_empty()
+            || self.file != INFRASTRUCTURE_FILE
+            || self.bytes == 0
+            || !is_sha256(&self.sha256)
+            || !is_sha256(&self.state_hash)
+            || self.sha256 == self.state_hash
+        {
+            return Err(OperationalRuntimeError::new(
+                "invalid_infrastructure_binding",
+                "Operational-v2-Infrastruktur besitzt keine vollstaendige kompakte Dateibindung",
+            ));
+        }
+        Ok(())
+    }
+
+    fn cache_key(&self, path: &Path) -> String {
+        format!(
+            "{}\0{}\0{}\0{}\0{}",
+            path.display(),
+            self.infra_release_id,
+            self.bytes,
+            self.sha256,
+            self.state_hash
+        )
+    }
+}
+
+fn infrastructure_for_binding(
+    binding: &InfrastructureBinding,
+    resolved_path: &str,
+) -> Result<InfrastructureHandle, OperationalRuntimeError> {
+    binding.validate()?;
+    let path = PathBuf::from(resolved_path);
+    if !path.is_absolute()
+        || path.file_name().and_then(|name| name.to_str()) != Some(binding.file.as_str())
+    {
+        return Err(OperationalRuntimeError::new(
+            "invalid_infrastructure_path",
+            "Operational-v2-Infrastrukturpfad wurde nicht absolut auf die gebundene Datei aufgeloest",
+        ));
+    }
+    let key = binding.cache_key(&path);
+    let cache = INFRASTRUCTURE_CACHE.get_or_init(|| Mutex::new(BTreeMap::new()));
+    let mut cache = cache.lock().map_err(|_| {
+        OperationalRuntimeError::new(
+            "infrastructure_cache_unavailable",
+            "Operational-v2-Infrastrukturcache ist vergiftet",
+        )
+    })?;
+    if let Some(existing) = cache.get(&key) {
+        if existing.release_id() == binding.infra_release_id
+            && existing.binding_identity() == binding.state_hash
+            && existing.validate_attachment().is_ok()
+        {
+            return Ok(Arc::clone(existing));
+        }
+        cache.remove(&key);
+    }
+    let store = open_operational_infrastructure_v2_store(
+        &path,
+        &binding.infra_release_id,
+        binding.bytes,
+        &binding.sha256,
+        &binding.state_hash,
+    )
+    .map_err(|error| {
+        OperationalRuntimeError::new("infrastructure_attachment_failed", error.to_string())
+    })?;
+    let store: InfrastructureHandle = Arc::new(store);
+    cache.insert(key, Arc::clone(&store));
+    Ok(store)
+}
+
 fn command_hash(command: &CommandPayload) -> Result<String, OperationalRuntimeError> {
     let bytes = serde_json::to_vec(command)
         .map_err(|error| OperationalRuntimeError::new("serialization_failed", error.to_string()))?;
@@ -229,16 +454,104 @@ fn command_hash(command: &CommandPayload) -> Result<String, OperationalRuntimeEr
     Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
+fn update_length_prefixed(hash: &mut Sha256, value: &str) -> Result<(), OperationalRuntimeError> {
+    let length = u64::try_from(value.len()).map_err(|_| {
+        OperationalRuntimeError::new(
+            "protection_mode_selection_evidence_overflow",
+            "Zugsicherungsbeleg enthaelt eine unzaehlbare Zeichenkette",
+        )
+    })?;
+    hash.update(length.to_le_bytes());
+    hash.update(value.as_bytes());
+    Ok(())
+}
+
+fn protection_mode_selection_evidence(
+    trains: &[TrainInput],
+) -> Result<(usize, String), OperationalRuntimeError> {
+    let mut ordered = trains.iter().collect::<Vec<_>>();
+    ordered.sort_by(|left, right| {
+        left.id
+            .cmp(&right.id)
+            .then_with(|| left.route_version_id.cmp(&right.route_version_id))
+    });
+    let mut hash = Sha256::new();
+    hash.update(PROTECTION_MODE_SELECTION_EVIDENCE_SCHEMA.as_bytes());
+    hash.update([0]);
+    let mut count = 0_usize;
+    for train in ordered {
+        update_length_prefixed(&mut hash, &train.id)?;
+        update_length_prefixed(&mut hash, &train.route_version_id)?;
+        let mut first_route_leg_index = 0_usize;
+        for run in &train.protection_mode_selection_runs {
+            if run.through_route_leg_index < first_route_leg_index {
+                return Err(OperationalRuntimeError::new(
+                    "invalid_protection_mode_selection_runs",
+                    format!(
+                        "{} besitzt ueberlappende oder leere Auswahl-Laeufe",
+                        train.id
+                    ),
+                ));
+            }
+            for route_leg_index in first_route_leg_index..=run.through_route_leg_index {
+                let route_leg_index = u64::try_from(route_leg_index).map_err(|_| {
+                    OperationalRuntimeError::new(
+                        "protection_mode_selection_evidence_overflow",
+                        "Zugsicherungsbeleg enthaelt einen unzaehlbaren Leg-Index",
+                    )
+                })?;
+                hash.update(route_leg_index.to_le_bytes());
+                update_length_prefixed(&mut hash, &run.selected_protection_system)?;
+                count = count.checked_add(1).ok_or_else(|| {
+                    OperationalRuntimeError::new(
+                        "protection_mode_selection_evidence_overflow",
+                        "Zugsicherungsbeleg enthaelt zu viele Leg-Auswahlen",
+                    )
+                })?;
+            }
+            first_route_leg_index =
+                run.through_route_leg_index.checked_add(1).ok_or_else(|| {
+                    OperationalRuntimeError::new(
+                        "protection_mode_selection_evidence_overflow",
+                        "Zugsicherungsbeleg endet an einem unzaehlbaren Leg-Index",
+                    )
+                })?;
+        }
+    }
+    Ok((
+        count,
+        hash.finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect(),
+    ))
+}
+
+/// Kanonischer nativer Payload-Hash fuer ein dauerhaftes externes
+/// Idempotenzledger. Er verwendet exakt dieselbe typisierte Serde-Kanonform
+/// wie die Receipt-Pruefung beim Anwenden eines Kommandos.
+pub fn hash_operational_simulation_command(
+    command_json: &str,
+) -> Result<String, OperationalRuntimeError> {
+    let command: CommandPayload = decode(command_json, "OperationalCommandPayload")?;
+    command_hash(&command)
+}
+
 fn state_hash(
     initialization_hash: &str,
+    infra_release: &InfrastructureBinding,
     world: &OperationalWorld,
     revision: u64,
     publisher_sequence: u64,
-    command_receipts: &BTreeMap<String, String>,
+    command_receipts: &BTreeMap<String, CommandReceipt>,
 ) -> String {
     let mut hash = Sha256::new();
     hash.update(b"zugfolge-operational-runtime-state/v2\0");
     hash.update(initialization_hash.as_bytes());
+    hash.update(
+        serde_json::to_vec(infra_release)
+            .expect("kompakte Operational-v2-Bindung ist immer serialisierbar"),
+    );
     hash.update(world.state_hash().as_bytes());
     hash.update(revision.to_be_bytes());
     hash.update(publisher_sequence.to_be_bytes());
@@ -249,15 +562,25 @@ fn state_hash(
         .collect()
 }
 
-fn projections(world: &OperationalWorld) -> (OperationalProjection, OperationalProjection) {
+fn projections(
+    world: &OperationalWorld,
+) -> Result<(OperationalProjection, OperationalProjection), OperationalRuntimeError> {
     // Die native Commitgrenze liefert stets den vollstaendigen Regionskopf.
     // Sichtkorridorfilterung erfolgt erst im sequenzierten Streaming-Fanout;
     // aus einem leeren Startintervall darf kein Zug verschwinden.
     let visible_edges = Default::default();
-    (
-        world.project(ProjectionKind::LiveMap, &visible_edges),
-        world.project(ProjectionKind::Rzue, &visible_edges),
-    )
+    Ok((
+        world
+            .project(ProjectionKind::LiveMap, &visible_edges)
+            .map_err(|error| {
+                OperationalRuntimeError::new("projection_failed", error.to_string())
+            })?,
+        world
+            .project(ProjectionKind::Rzue, &visible_edges)
+            .map_err(|error| {
+                OperationalRuntimeError::new("projection_failed", error.to_string())
+            })?,
+    ))
 }
 
 fn validate_state(state: &RuntimeState) -> Result<(), OperationalRuntimeError> {
@@ -273,10 +596,23 @@ fn validate_state(state: &RuntimeState) -> Result<(), OperationalRuntimeError> {
             "persistierter v2-Zustand besitzt keine Initialisierungsbindung",
         ));
     }
+    state.infra_release.validate()?;
+    if state.world.infra_release_id != state.infra_release.infra_release_id {
+        return Err(OperationalRuntimeError::new(
+            "foreign_infrastructure_binding",
+            "persistierter Weltzustand gehoert zu einer anderen Operational-v2-Infrastruktur",
+        ));
+    }
     if !state.world.events.is_empty() {
         return Err(OperationalRuntimeError::new(
             "non_compact_checkpoint",
             "persistierter v2-Zustand enthaelt Ereignislogbytes",
+        ));
+    }
+    if !state.world.processed_command_ids.is_empty() {
+        return Err(OperationalRuntimeError::new(
+            "legacy_command_history_forbidden",
+            "v2-RuntimeState darf keine unbeschraenkte Command-History im Weltzustand tragen",
         ));
     }
     if state.world.commit_sequence != state.revision || state.revision != state.publisher_sequence {
@@ -285,11 +621,18 @@ fn validate_state(state: &RuntimeState) -> Result<(), OperationalRuntimeError> {
             "Commit-, Revisions- und Publishersequenz sind nicht identisch",
         ));
     }
+    if !valid_command_receipt_window(&state.command_receipts, state.revision) {
+        return Err(OperationalRuntimeError::new(
+            "invalid_command_receipt_window",
+            "persistierter v2-Zustand besitzt nicht das exakte begrenzte Idempotenzsuffix",
+        ));
+    }
     state.world.verify_invariants().map_err(|error| {
         OperationalRuntimeError::new("unsafe_persisted_state", error.to_string())
     })?;
     if state_hash(
         &state.initialization_hash,
+        &state.infra_release,
         &state.world,
         state.revision,
         state.publisher_sequence,
@@ -311,21 +654,107 @@ fn is_sha256(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
+fn valid_command_receipt_window(
+    receipts: &BTreeMap<String, CommandReceipt>,
+    revision: u64,
+) -> bool {
+    let expected_count = usize::try_from(revision)
+        .unwrap_or(usize::MAX)
+        .min(MAX_COMMAND_RECEIPTS);
+    if receipts.len() != expected_count {
+        return false;
+    }
+    if expected_count == 0 {
+        return true;
+    }
+    let oldest_revision = revision - u64::try_from(expected_count).unwrap() + 1;
+    let mut revisions = BTreeSet::new();
+    for (command_id, receipt) in receipts {
+        if command_id.is_empty()
+            || !is_sha256(&receipt.command_hash)
+            || receipt.applied_revision < oldest_revision
+            || receipt.applied_revision > revision
+            || !revisions.insert(receipt.applied_revision)
+        {
+            return false;
+        }
+    }
+    revisions.len() == expected_count
+        && revisions.first() == Some(&oldest_revision)
+        && revisions.last() == Some(&revision)
+}
+
+fn insert_bounded_command_receipt(
+    receipts: &mut BTreeMap<String, CommandReceipt>,
+    command_id: String,
+    command_hash: String,
+    applied_revision: u64,
+) {
+    receipts.insert(
+        command_id,
+        CommandReceipt {
+            command_hash,
+            applied_revision,
+        },
+    );
+    while receipts.len() > MAX_COMMAND_RECEIPTS {
+        let oldest = receipts
+            .iter()
+            .min_by(|(left_id, left), (right_id, right)| {
+                (left.applied_revision, left_id.as_str())
+                    .cmp(&(right.applied_revision, right_id.as_str()))
+            })
+            .map(|(command_id, _)| command_id.clone())
+            .expect("uebergrosses Receiptfenster ist nicht leer");
+        receipts.remove(&oldest);
+    }
+}
+
 fn materialize(
     world: &mut OperationalWorld,
     train: TrainInput,
 ) -> Result<(), OperationalRuntimeError> {
+    let TrainInput {
+        id,
+        train_number,
+        operator_id,
+        movement_kind,
+        route_version_id,
+        formation_version_id,
+        head_route_mm,
+        scheduled_departure_ms,
+        public_passenger_stop,
+        dispatch_interlocking_route_id,
+        protection_mode_selection_runs,
+    } = train;
+    let materialization = TrainMaterialization {
+        id,
+        train_number,
+        operator_id,
+        movement_kind,
+        route_version_id,
+        formation_version_id,
+        head_route_mm,
+        scheduled_departure_ms,
+        public_passenger_stop,
+    };
     world
-        .materialize(TrainMaterialization {
-            id: train.id,
-            train_number: train.train_number,
-            operator_id: train.operator_id,
-            movement_kind: train.movement_kind,
-            route_version_id: train.route_version_id,
-            formation_version_id: train.formation_version_id,
-            head_route_mm: train.head_route_mm,
-            scheduled_departure_ms: train.scheduled_departure_ms,
-            public_passenger_stop: train.public_passenger_stop,
+        .inspect_train_program_template_with_protection_modes(
+            &materialization,
+            &dispatch_interlocking_route_id,
+            PROTECTION_MODE_SELECTION_POLICY_V1,
+            &protection_mode_selection_runs,
+        )
+        .and_then(|predicates| {
+            if predicates.is_valid() {
+                world.materialize(materialization)
+            } else {
+                Err(
+                    zugfolge_sim::operational::OperationalError::InvalidProgramTemplate(
+                        materialization.id.clone(),
+                    ),
+                )
+            }
         })
         .map_err(|error| {
             OperationalRuntimeError::new("operational_command_rejected", error.to_string())
@@ -385,8 +814,37 @@ fn execute(
     }
 }
 
+fn inspect_program_template(
+    world: &OperationalWorld,
+    train: &TrainInput,
+    protection_mode_selection_policy: &str,
+) -> Result<OperationalProgramTemplatePredicates, OperationalRuntimeError> {
+    let materialization = TrainMaterialization {
+        id: train.id.clone(),
+        train_number: train.train_number.clone(),
+        operator_id: train.operator_id.clone(),
+        movement_kind: train.movement_kind,
+        route_version_id: train.route_version_id.clone(),
+        formation_version_id: train.formation_version_id.clone(),
+        head_route_mm: train.head_route_mm,
+        scheduled_departure_ms: train.scheduled_departure_ms,
+        public_passenger_stop: train.public_passenger_stop,
+    };
+    world
+        .inspect_train_program_template_with_protection_modes(
+            &materialization,
+            &train.dispatch_interlocking_route_id,
+            protection_mode_selection_policy,
+            &train.protection_mode_selection_runs,
+        )
+        .map_err(|error| {
+            OperationalRuntimeError::new("invalid_train_program_template", error.to_string())
+        })
+}
+
 pub fn initialize_operational_simulation(
     input_json: &str,
+    resolved_infrastructure_path: &str,
 ) -> Result<String, OperationalRuntimeError> {
     let raw_input: Value = decode(input_json, "OperationalInitialization")?;
     let initialization_hash = operational_initialization_hash(&raw_input).map_err(|detail| {
@@ -399,11 +857,20 @@ pub fn initialize_operational_simulation(
             input.schema_version,
         ));
     }
-    let mut world = OperationalWorld::new(
+    if input.protection_mode_selection_policy != PROTECTION_MODE_SELECTION_POLICY_V1 {
+        return Err(OperationalRuntimeError::new(
+            "unknown_protection_mode_selection_policy",
+            input.protection_mode_selection_policy,
+        ));
+    }
+    let infrastructure_binding = input.infra_release.clone();
+    let infrastructure =
+        infrastructure_for_binding(&infrastructure_binding, resolved_infrastructure_path)?;
+    let mut world = OperationalWorld::new_with_infrastructure(
         input.world_id,
         input.region_id,
         input.now_ms,
-        input.infra_release,
+        infrastructure,
     )
     .map_err(|error| {
         OperationalRuntimeError::new("invalid_operational_release", error.to_string())
@@ -431,25 +898,142 @@ pub fn initialize_operational_simulation(
                 OperationalRuntimeError::new("invalid_formation", error.to_string())
             })?;
     }
-    for train in input.trains {
-        materialize(&mut world, train)?;
+    let program_train_count = input.trains.len();
+    let validated_train_numbers = input
+        .trains
+        .iter()
+        .map(|train| {
+            operational_train_number_numeric_part(&train.train_number).ok_or_else(|| {
+                OperationalRuntimeError::new(
+                    "invalid_train_number",
+                    format!("{}: {}", train.id, train.train_number),
+                )
+            })
+        })
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    if validated_train_numbers.len() != program_train_count {
+        return Err(OperationalRuntimeError::new(
+            "duplicate_train_number",
+            "Operational-v2-Zugprogramm enthaelt doppelte numerische Zugnummern",
+        ));
+    }
+    let validated_route_version_count = input
+        .trains
+        .iter()
+        .map(|train| train.route_version_id.as_str())
+        .collect::<BTreeSet<_>>()
+        .len();
+    let validated_dispatch_interlocking_route_count = input
+        .trains
+        .iter()
+        .map(|train| train.dispatch_interlocking_route_id.as_str())
+        .collect::<BTreeSet<_>>()
+        .len();
+    let validated_formation_binding_count = input
+        .trains
+        .iter()
+        .map(|train| train.formation_version_id.as_str())
+        .collect::<BTreeSet<_>>()
+        .len();
+    let mut validated_resource_binding_count = 0_usize;
+    let mut validated_protection_mode_selection_count = 0_usize;
+    let mut invalid_program_templates = Vec::new();
+    for train in &input.trains {
+        match inspect_program_template(&world, train, &input.protection_mode_selection_policy) {
+            Ok(predicates) if predicates.is_valid() => {
+                validated_resource_binding_count = validated_resource_binding_count
+                    .checked_add(predicates.resource_binding_count)
+                    .ok_or_else(|| {
+                        OperationalRuntimeError::new(
+                            "initialization_validation_count_overflow",
+                            "Ressourcenbindungen der Programmvorlagen sind nicht zaehlbar",
+                        )
+                    })?;
+                validated_protection_mode_selection_count =
+                    validated_protection_mode_selection_count
+                        .checked_add(predicates.protection_mode_selection_count)
+                        .ok_or_else(|| {
+                            OperationalRuntimeError::new(
+                                "initialization_validation_count_overflow",
+                                "Zugsicherungsmodus-Auswahlen sind nicht zaehlbar",
+                            )
+                        })?;
+            }
+            Ok(predicates) => invalid_program_templates.push(format!(
+                "{}=[{}]",
+                train.id,
+                predicates.failed_predicates().join(",")
+            )),
+            Err(error) => invalid_program_templates.push(format!("{}=[{error}]", train.id)),
+        }
+    }
+    if !invalid_program_templates.is_empty() {
+        return Err(OperationalRuntimeError::new(
+            "invalid_train_program_template",
+            format!(
+                "{} von {} Programmvorlagen ungueltig: {}",
+                invalid_program_templates.len(),
+                program_train_count,
+                invalid_program_templates.join(";")
+            ),
+        ));
+    }
+    let (protection_mode_selection_count, protection_mode_selections_sha256) =
+        protection_mode_selection_evidence(&input.trains)?;
+    if protection_mode_selection_count != validated_protection_mode_selection_count {
+        return Err(OperationalRuntimeError::new(
+            "protection_mode_selection_evidence_mismatch",
+            "Kanonischer Zugsicherungsbeleg und vollstaendiger Predicate-Scan weichen ab",
+        ));
     }
     world
         .verify_invariants()
         .map_err(|error| OperationalRuntimeError::new("unsafe_initial_state", error.to_string()))?;
     let events = std::mem::take(&mut world.events);
     let command_receipts = BTreeMap::new();
-    let hash = state_hash(&initialization_hash, &world, 0, 0, &command_receipts);
+    let hash = state_hash(
+        &initialization_hash,
+        &infrastructure_binding,
+        &world,
+        0,
+        0,
+        &command_receipts,
+    );
     let state = RuntimeState {
         schema_version: STATE_SCHEMA.to_owned(),
         initialization_hash: initialization_hash.clone(),
+        infra_release: infrastructure_binding,
         world,
         revision: 0,
         publisher_sequence: 0,
         state_hash: hash.clone(),
         command_receipts,
     };
-    let (live_map, rzue) = projections(&state.world);
+    let validation_receipt = InitializationValidationReceipt {
+        schema_version: INITIALIZATION_VALIDATION_RECEIPT_SCHEMA,
+        world_id: state.world.world_id.clone(),
+        region_id: state.world.region_id.clone(),
+        initialization_hash: initialization_hash.clone(),
+        state_hash: hash.clone(),
+        infra_release: state.infra_release.clone(),
+        program_train_count,
+        validated_program_template_count: program_train_count,
+        validated_route_version_count,
+        validated_dispatch_interlocking_route_count,
+        validated_resource_binding_count,
+        validated_formation_binding_count,
+        validated_train_number_count: validated_train_numbers.len(),
+        protection_mode_selection_policy: PROTECTION_MODE_SELECTION_POLICY_V1,
+        validated_protection_mode_selection_count,
+        protection_mode_selections_sha256,
+        dynamic_train_count: state.world.trains.len(),
+        resource_bindings_validated: true,
+        formation_bindings_validated: true,
+        train_numbers_validated: true,
+        protection_mode_selections_validated: true,
+        validation_mode: INFRASTRUCTURE_VALIDATION_MODE,
+    };
+    let (live_map, rzue) = projections(&state.world)?;
     encode(&InitializedResult {
         schema_version: INITIALIZED_SCHEMA,
         events,
@@ -458,10 +1042,16 @@ pub fn initialize_operational_simulation(
         state_hash: hash,
         live_map,
         rzue,
+        validation_receipt,
     })
 }
 
-pub fn restore_operational_simulation(input_json: &str) -> Result<String, OperationalRuntimeError> {
+pub fn restore_operational_simulation(
+    input_json: &str,
+    resolved_infrastructure_path: &str,
+) -> Result<String, OperationalRuntimeError> {
+    let raw_envelope: Value = decode(input_json, "OperationalRestore")?;
+    reject_embedded_static_infrastructure(raw_envelope.pointer("/state/world"))?;
     let envelope: RestoreEnvelope = decode(input_json, "OperationalRestore")?;
     if envelope.schema_version != RESTORE_SCHEMA {
         return Err(OperationalRuntimeError::new(
@@ -475,7 +1065,7 @@ pub fn restore_operational_simulation(input_json: &str) -> Result<String, Operat
             "Restore besitzt keine gueltige erwartete Initialisierungsbindung",
         ));
     }
-    let state = envelope.state;
+    let mut state = envelope.state;
     validate_state(&state)?;
     if envelope.expected_initialization_hash != state.initialization_hash {
         return Err(OperationalRuntimeError::new(
@@ -483,7 +1073,15 @@ pub fn restore_operational_simulation(input_json: &str) -> Result<String, Operat
             "persistierter Zustand gehoert zu einer anderen Initialisierung",
         ));
     }
-    let (live_map, rzue) = projections(&state.world);
+    let infrastructure =
+        infrastructure_for_binding(&state.infra_release, resolved_infrastructure_path)?;
+    state
+        .world
+        .attach_infrastructure(infrastructure)
+        .map_err(|error| {
+            OperationalRuntimeError::new("infrastructure_attachment_failed", error.to_string())
+        })?;
+    let (live_map, rzue) = projections(&state.world)?;
     encode(&RestoredResult {
         schema_version: RESTORED_SCHEMA,
         initialization_hash: state.initialization_hash.clone(),
@@ -497,9 +1095,20 @@ pub fn restore_operational_simulation(input_json: &str) -> Result<String, Operat
 pub fn apply_operational_simulation_command(
     state_json: &str,
     command_json: &str,
+    resolved_infrastructure_path: &str,
 ) -> Result<String, OperationalRuntimeError> {
+    let raw_state: Value = decode(state_json, "OperationalState")?;
+    reject_embedded_static_infrastructure(raw_state.get("world"))?;
     let mut state: RuntimeState = decode(state_json, "OperationalState")?;
     validate_state(&state)?;
+    let infrastructure =
+        infrastructure_for_binding(&state.infra_release, resolved_infrastructure_path)?;
+    state
+        .world
+        .attach_infrastructure(infrastructure)
+        .map_err(|error| {
+            OperationalRuntimeError::new("infrastructure_attachment_failed", error.to_string())
+        })?;
     let envelope: CommandEnvelope = decode(command_json, "OperationalCommand")?;
     if envelope.schema_version != COMMAND_SCHEMA {
         return Err(OperationalRuntimeError::new(
@@ -515,13 +1124,13 @@ pub fn apply_operational_simulation_command(
     }
     let receipt_hash = command_hash(&envelope.command)?;
     if let Some(existing) = state.command_receipts.get(&envelope.command_id) {
-        if existing != &receipt_hash {
+        if existing.command_hash != receipt_hash {
             return Err(OperationalRuntimeError::new(
                 "idempotency_conflict",
                 envelope.command_id,
             ));
         }
-        let (live_map, rzue) = projections(&state.world);
+        let (live_map, rzue) = projections(&state.world)?;
         return encode(&CommandResult {
             schema_version: RESULT_SCHEMA,
             initialization_hash: state.initialization_hash.clone(),
@@ -549,10 +1158,6 @@ pub fn apply_operational_simulation_command(
     })?;
     state
         .world
-        .processed_command_ids
-        .insert(envelope.command_id.clone());
-    state
-        .world
         .verify_invariants()
         .map_err(|error| OperationalRuntimeError::new("unsafe_result_state", error.to_string()))?;
     state.revision = state.revision.checked_add(1).ok_or_else(|| {
@@ -564,18 +1169,22 @@ pub fn apply_operational_simulation_command(
             "operative Publishersequenz ist erschoepft",
         )
     })?;
-    state
-        .command_receipts
-        .insert(envelope.command_id.clone(), receipt_hash);
+    insert_bounded_command_receipt(
+        &mut state.command_receipts,
+        envelope.command_id.clone(),
+        receipt_hash,
+        state.revision,
+    );
     state.state_hash = state_hash(
         &state.initialization_hash,
+        &state.infra_release,
         &state.world,
         state.revision,
         state.publisher_sequence,
         &state.command_receipts,
     );
     let events = std::mem::take(&mut state.world.events);
-    let (live_map, rzue) = projections(&state.world);
+    let (live_map, rzue) = projections(&state.world)?;
     encode(&CommandResult {
         schema_version: RESULT_SCHEMA,
         initialization_hash: state.initialization_hash.clone(),
@@ -589,20 +1198,351 @@ pub fn apply_operational_simulation_command(
     })
 }
 
+fn command_batch_failure(
+    command_index: usize,
+    command_id: &str,
+    error: OperationalRuntimeError,
+) -> OperationalRuntimeError {
+    OperationalRuntimeError::new(
+        "operational_batch_command_failed",
+        format!(
+            "index={command_index}, commandId={command_id:?}, causeCode={}",
+            error.code
+        ),
+    )
+}
+
+fn command_batch_event_context(
+    command_index: usize,
+    command_id: &str,
+    command: &CommandPayload,
+    disruption_effect_before: Option<OperationalDisruption>,
+    events: &[OperationalEvent],
+    world: &OperationalWorld,
+) -> Result<Option<CommandBatchEventContext>, OperationalRuntimeError> {
+    let disruption_events = events
+        .iter()
+        .filter(|event| event.kind == "disruption-activated" || event.kind == "disruption-cleared")
+        .collect::<Vec<_>>();
+    if disruption_events.is_empty() {
+        return Ok(None);
+    }
+    let disruption_id = match command {
+        CommandPayload::ActivateDisruption { disruption_id, .. }
+        | CommandPayload::ClearDisruption { disruption_id, .. } => disruption_id,
+        _ => {
+            return Err(OperationalRuntimeError::new(
+                "batch_event_context_mismatch",
+                "Stoerungsereignis besitzt kein Stoerungskommando",
+            ));
+        }
+    };
+    if disruption_events.iter().any(|event| {
+        event.commit_sequence != world.commit_sequence || event.subject_id != *disruption_id
+    }) {
+        return Err(OperationalRuntimeError::new(
+            "batch_event_context_mismatch",
+            "Stoerungsereignis stimmt nicht mit seinem Batchcommit ueberein",
+        ));
+    }
+    if matches!(command, CommandPayload::ClearDisruption { .. })
+        && disruption_effect_before.is_none()
+    {
+        return Err(OperationalRuntimeError::new(
+            "batch_event_context_mismatch",
+            "Stoerungsfreigabe besitzt keine gebundene Vorwirkung",
+        ));
+    }
+    let affected_train_run_ids = events
+        .iter()
+        .filter(|event| world.trains.contains_key(&event.subject_id))
+        .map(|event| event.subject_id.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    Ok(Some(CommandBatchEventContext {
+        command_index,
+        command_id: command_id.to_owned(),
+        commit_sequence: world.commit_sequence,
+        affected_train_run_ids,
+        disruption_effect_before,
+    }))
+}
+
+/// Wendet eine begrenzte Kommandofolge atomar in genau einer nativen
+/// Zustandsdekodierung und Infrastrukturbindung an. Ein Fehler verwirft den
+/// gesamten lokalen Zwischenzustand; erst der Aufrufer darf den Endkopf per
+/// Datenbank-CAS persistieren.
+pub fn apply_operational_simulation_command_batch(
+    state_json: &str,
+    batch_json: &str,
+    resolved_infrastructure_path: &str,
+) -> Result<String, OperationalRuntimeError> {
+    let raw_state: Value = decode(state_json, "OperationalState")?;
+    reject_embedded_static_infrastructure(raw_state.get("world"))?;
+    let mut state: RuntimeState = decode(state_json, "OperationalState")?;
+    validate_state(&state)?;
+    let infrastructure =
+        infrastructure_for_binding(&state.infra_release, resolved_infrastructure_path)?;
+    state
+        .world
+        .attach_infrastructure(infrastructure)
+        .map_err(|error| {
+            OperationalRuntimeError::new("infrastructure_attachment_failed", error.to_string())
+        })?;
+    let batch: CommandBatchEnvelope = decode(batch_json, "OperationalCommandBatch")?;
+    if batch.schema_version != COMMAND_BATCH_SCHEMA {
+        return Err(OperationalRuntimeError::new(
+            "unknown_command_batch_schema",
+            batch.schema_version,
+        ));
+    }
+    if batch.commands.is_empty() || batch.commands.len() > MAX_COMMAND_BATCH_SIZE {
+        return Err(OperationalRuntimeError::new(
+            "invalid_command_batch_size",
+            format!(
+                "operative Kommandogruppe muss 1 bis {MAX_COMMAND_BATCH_SIZE} Eintraege enthalten"
+            ),
+        ));
+    }
+    if batch.world_id != state.world.world_id || batch.region_id != state.world.region_id {
+        return Err(OperationalRuntimeError::new(
+            "world_region_mismatch",
+            "Kommandogruppe gehoert nicht zu diesem Single-Writer",
+        ));
+    }
+    if batch.expected_state_hash != state.state_hash
+        || batch.expected_revision != state.revision
+        || batch.expected_publisher_sequence != state.publisher_sequence
+    {
+        return Err(OperationalRuntimeError::new(
+            "optimistic_concurrency_conflict",
+            "Batchbasis fuer Hash, Revision oder Publishersequenz ist veraltet",
+        ));
+    }
+
+    let mut events = Vec::new();
+    let mut command_results = Vec::with_capacity(batch.commands.len());
+    let mut event_contexts = Vec::new();
+    for (command_index, item) in batch.commands.into_iter().enumerate() {
+        let receipt_hash = command_hash(&item.command)
+            .map_err(|error| command_batch_failure(command_index, &item.command_id, error))?;
+        if let Some(existing) = state.command_receipts.get(&item.command_id) {
+            if existing.command_hash != receipt_hash {
+                return Err(command_batch_failure(
+                    command_index,
+                    &item.command_id,
+                    OperationalRuntimeError::new("idempotency_conflict", &item.command_id),
+                ));
+            }
+            command_results.push(CommandBatchItemResult {
+                command_id: item.command_id,
+                idempotent_replay: true,
+            });
+            continue;
+        }
+
+        let disruption_effect_before = match &item.command {
+            CommandPayload::ClearDisruption { disruption_id, .. } => {
+                state.world.active_disruptions.get(disruption_id).cloned()
+            }
+            _ => None,
+        };
+        execute(&mut state.world, item.command.clone())
+            .map_err(|error| command_batch_failure(command_index, &item.command_id, error))?;
+        state.world.commit_runtime_command().map_err(|error| {
+            command_batch_failure(
+                command_index,
+                &item.command_id,
+                OperationalRuntimeError::new("commit_sequence_exhausted", error.to_string()),
+            )
+        })?;
+        state.world.verify_invariants().map_err(|error| {
+            command_batch_failure(
+                command_index,
+                &item.command_id,
+                OperationalRuntimeError::new("unsafe_result_state", error.to_string()),
+            )
+        })?;
+        state.revision = state.revision.checked_add(1).ok_or_else(|| {
+            command_batch_failure(
+                command_index,
+                &item.command_id,
+                OperationalRuntimeError::new(
+                    "revision_exhausted",
+                    "operative Revision ist erschoepft",
+                ),
+            )
+        })?;
+        state.publisher_sequence = state.publisher_sequence.checked_add(1).ok_or_else(|| {
+            command_batch_failure(
+                command_index,
+                &item.command_id,
+                OperationalRuntimeError::new(
+                    "publisher_sequence_exhausted",
+                    "operative Publishersequenz ist erschoepft",
+                ),
+            )
+        })?;
+        insert_bounded_command_receipt(
+            &mut state.command_receipts,
+            item.command_id.clone(),
+            receipt_hash,
+            state.revision,
+        );
+        let command_events = std::mem::take(&mut state.world.events);
+        if let Some(context) = command_batch_event_context(
+            command_index,
+            &item.command_id,
+            &item.command,
+            disruption_effect_before,
+            &command_events,
+            &state.world,
+        )
+        .map_err(|error| command_batch_failure(command_index, &item.command_id, error))?
+        {
+            event_contexts.push(context);
+        }
+        events.extend(command_events);
+        command_results.push(CommandBatchItemResult {
+            command_id: item.command_id,
+            idempotent_replay: false,
+        });
+    }
+    // Der Zwischenhash ist innerhalb der atomaren nativen Ausfuehrung nicht
+    // beobachtbar. Ihn erst fuer den finalen CAS-Kopf zu bilden vermeidet bei
+    // einem Catch-up tausende Vollzustands-Serialisierungen.
+    state.state_hash = state_hash(
+        &state.initialization_hash,
+        &state.infra_release,
+        &state.world,
+        state.revision,
+        state.publisher_sequence,
+        &state.command_receipts,
+    );
+    validate_state(&state)?;
+    let (live_map, rzue) = projections(&state.world)?;
+    encode(&CommandBatchResult {
+        schema_version: BATCH_RESULT_SCHEMA,
+        initialization_hash: state.initialization_hash.clone(),
+        state_hash: state.state_hash.clone(),
+        state,
+        live_map,
+        rzue,
+        events,
+        command_results,
+        event_contexts,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     use serde_json::{Value, json};
+    use zugfolge_infra::validate_operational_infrastructure_v2_file;
     use zugfolge_sim::operational::{
-        Direction, EdgeGeometryPoint, InterlockingRouteTemplate, PhysicalVehicle, RouteLeg,
-        RouteVersion, TrackInterval, VehicleCondition,
+        Direction, EdgeGeometryPoint, InterlockingRouteTemplate, OperationalInfraRelease,
+        PhysicalVehicle, RouteLeg, RouteVersion, TrackInterval, VehicleCondition,
     };
 
     use super::*;
 
     fn set(values: &[&str]) -> BTreeSet<String> {
         values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
+    static TEST_INFRASTRUCTURE: OnceLock<(InfrastructureBinding, String)> = OnceLock::new();
+    static NEXT_TEST_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+
+    fn materialize_infrastructure_fixture(
+        release: &OperationalInfraRelease,
+    ) -> (InfrastructureBinding, String) {
+        let directory = loop {
+            let candidate = std::env::temp_dir().join(format!(
+                "zugfolge-sim-runtime-{}-{}",
+                std::process::id(),
+                NEXT_TEST_DIRECTORY.fetch_add(1, Ordering::Relaxed)
+            ));
+            match std::fs::create_dir(&candidate) {
+                Ok(()) => break candidate,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(error) => panic!("Testverzeichnis kann nicht angelegt werden: {error}"),
+            }
+        };
+        let candidate_path = directory.join("candidate.json");
+        let deployed_path = directory.join(INFRASTRUCTURE_FILE);
+        std::fs::write(
+            &candidate_path,
+            serde_json::to_vec(release).expect("Testrelease ist serialisierbar"),
+        )
+        .expect("Testrelease kann geschrieben werden");
+        let evidence = validate_operational_infrastructure_v2_file(
+            &candidate_path,
+            &release.id,
+            Some(&deployed_path),
+        )
+        .expect("Testrelease ist operational-v2-gueltig");
+        (
+            InfrastructureBinding {
+                schema_version: INFRASTRUCTURE_BINDING_SCHEMA.to_owned(),
+                infra_release_id: release.id.clone(),
+                file: INFRASTRUCTURE_FILE.to_owned(),
+                bytes: evidence["bytes"].as_u64().expect("Bytebeleg"),
+                sha256: evidence["sha256"].as_str().expect("SHA-Beleg").to_owned(),
+                state_hash: evidence["stateHash"]
+                    .as_str()
+                    .expect("Zustandshash-Beleg")
+                    .to_owned(),
+            },
+            deployed_path
+                .to_str()
+                .expect("Testpfad ist UTF-8")
+                .to_owned(),
+        )
+    }
+
+    fn infrastructure_fixture(
+        release: &OperationalInfraRelease,
+    ) -> &'static (InfrastructureBinding, String) {
+        TEST_INFRASTRUCTURE.get_or_init(|| materialize_infrastructure_fixture(release))
+    }
+
+    fn infrastructure_path() -> &'static str {
+        TEST_INFRASTRUCTURE
+            .get()
+            .expect("initialization() materialisiert zuerst das Testrelease")
+            .1
+            .as_str()
+    }
+
+    fn initialize_operational_simulation(
+        input_json: &str,
+    ) -> Result<String, OperationalRuntimeError> {
+        super::initialize_operational_simulation(input_json, infrastructure_path())
+    }
+
+    fn restore_operational_simulation(input_json: &str) -> Result<String, OperationalRuntimeError> {
+        super::restore_operational_simulation(input_json, infrastructure_path())
+    }
+
+    fn apply_operational_simulation_command(
+        state_json: &str,
+        command_json: &str,
+    ) -> Result<String, OperationalRuntimeError> {
+        super::apply_operational_simulation_command(state_json, command_json, infrastructure_path())
+    }
+
+    fn apply_operational_simulation_command_batch(
+        state_json: &str,
+        batch_json: &str,
+    ) -> Result<String, OperationalRuntimeError> {
+        super::apply_operational_simulation_command_batch(
+            state_json,
+            batch_json,
+            infrastructure_path(),
+        )
     }
 
     fn initialization() -> Initialization {
@@ -620,7 +1560,8 @@ mod tests {
                 block_ids: set(&["block:1"]),
                 speed_limit_mmps: 20_000,
                 gradient_per_mille: 0,
-                required_protection_systems: set(&["pzb"]),
+                available_protection_systems: vec!["pzb".to_owned()],
+                simultaneously_required_protection_systems: Vec::new(),
             }],
         };
         let interlocking = InterlockingRouteTemplate {
@@ -632,15 +1573,16 @@ mod tests {
             overlap_resources: set(&["overlap:1"]),
             flank_resources: set(&["flank:1"]),
             switch_positions: BTreeMap::from([("switch:1".to_owned(), "straight".to_owned())]),
-            authority_end_route_mm: 90_000,
-            release_after_tail_route_mm: 80_000,
+            authority_end_route_mm: 100_000,
+            release_after_tail_route_mm: 100_000,
         };
         Initialization {
             schema_version: INITIALIZE_SCHEMA.to_owned(),
             world_id: "world:1".to_owned(),
             region_id: "region:1".to_owned(),
             now_ms: 0,
-            infra_release: OperationalInfraRelease {
+            protection_mode_selection_policy: PROTECTION_MODE_SELECTION_POLICY_V1.to_owned(),
+            infra_release: infrastructure_fixture(&OperationalInfraRelease {
                 id: "infra:v2".to_owned(),
                 directed_edges: BTreeMap::from([("edge:1".to_owned(), 100_000)]),
                 edge_geometries: BTreeMap::from([(
@@ -676,7 +1618,9 @@ mod tests {
                 )]),
                 region_boundaries: set(&["boundary:1"]),
                 rzue_layout_id: "rzue:v1".to_owned(),
-            },
+            })
+            .0
+            .clone(),
             vehicle_types: vec![VehicleTypeInput {
                 powered: true,
                 vehicle_type: VehicleType {
@@ -728,6 +1672,11 @@ mod tests {
                 head_route_mm: 20_000,
                 scheduled_departure_ms: None,
                 public_passenger_stop: false,
+                dispatch_interlocking_route_id: "interlocking:1".to_owned(),
+                protection_mode_selection_runs: vec![ProtectionModeSelectionRun {
+                    through_route_leg_index: 0,
+                    selected_protection_system: "pzb".to_owned(),
+                }],
             }],
         }
     }
@@ -771,13 +1720,6 @@ mod tests {
         input.trains[0].head_route_mm = 0;
         input.trains[0].scheduled_departure_ms = Some(0);
         input.trains[0].public_passenger_stop = true;
-        let interlocking = input
-            .infra_release
-            .interlocking_routes
-            .get_mut("interlocking:1")
-            .unwrap();
-        interlocking.authority_end_route_mm = 100_000;
-        interlocking.release_after_tail_route_mm = 90_000;
         let initialized: Value = serde_json::from_str(
             &initialize_operational_simulation(&encode(&input).unwrap()).unwrap(),
         )
@@ -802,22 +1744,46 @@ mod tests {
         let day_ms = 86_400_000_i64;
         let mut result = apply_value(
             &initialized["state"],
-            "day:0:dispatch",
-            request("train:1", 0),
+            "day:0:materialize",
+            json!({
+                "type": "materialize",
+                "train": {
+                    "id": "train:1",
+                    "trainNumber": "RB 1",
+                    "operatorId": "operator:1",
+                    "movementKind": "train",
+                    "routeVersionId": "route:v1",
+                    "formationVersionId": "formation:1",
+                    "headRouteMm": 0,
+                    "scheduledDepartureMs": 0,
+                    "publicPassengerStop": true,
+                    "dispatchInterlockingRouteId": "interlocking:1",
+                    "protectionModeSelectionRuns": [{
+                        "throughRouteLegIndex": 0,
+                        "selectedProtectionSystem": "pzb"
+                    }]
+                }
+            }),
         );
+        result = apply_value(&result["state"], "day:0:dispatch", request("train:1", 0));
         result = apply_value(
             &result["state"],
             "day:0:advance",
             json!({ "type": "advance-to", "atMs": day_ms }),
         );
         assert_eq!(result["liveMap"]["trains"][0]["headRouteMm"], 100_000);
+        assert_eq!(result["liveMap"]["trains"][0]["tailRouteMm"], 90_000);
         assert_eq!(result["liveMap"]["trains"][0]["motionState"], "standing");
-        assert_eq!(result["liveMap"]["routeLocks"], json!([]));
+        assert_eq!(result["liveMap"]["routeLocks"].as_array().unwrap().len(), 1);
+        assert_eq!(result["liveMap"]["signals"]["signal:1"], "proceed");
         result = apply_value(
             &result["state"],
             "day:1:retire",
             json!({ "type": "retire", "trainId": "train:1" }),
         );
+        assert_eq!(result["liveMap"]["trains"], json!([]));
+        assert_eq!(result["liveMap"]["routeLocks"], json!([]));
+        assert_eq!(result["liveMap"]["signals"], json!({}));
         result = apply_value(
             &result["state"],
             "day:1:materialize",
@@ -832,7 +1798,12 @@ mod tests {
                     "formationVersionId": "formation:1",
                     "headRouteMm": 0,
                     "scheduledDepartureMs": day_ms,
-                    "publicPassengerStop": true
+                    "publicPassengerStop": true,
+                    "dispatchInterlockingRouteId": "interlocking:1",
+                    "protectionModeSelectionRuns": [{
+                        "throughRouteLegIndex": 0,
+                        "selectedProtectionSystem": "pzb"
+                    }]
                 }
             }),
         );
@@ -863,7 +1834,13 @@ mod tests {
         assert_eq!(initialized["state"]["revision"], 0);
         assert_eq!(initialized["state"]["publisherSequence"], 0);
         assert_eq!(initialized["state"]["world"]["commitSequence"], 0);
-        assert_eq!(initialized["state"]["world"]["eventSequence"], 2);
+        assert_eq!(initialized["state"]["world"]["eventSequence"], 1);
+        assert_eq!(initialized["liveMap"]["trains"], json!([]));
+        assert!(initialized["state"]["world"].get("infra").is_none());
+        assert_eq!(
+            initialized["state"]["infraRelease"]["schemaVersion"],
+            INFRASTRUCTURE_BINDING_SCHEMA
+        );
         assert!(
             initialized["events"]
                 .as_array()
@@ -892,26 +1869,40 @@ mod tests {
     #[test]
     fn initialization_hash_binds_world_region_infra_and_formation() {
         let base = initialization();
-        let initialized = |input: &Initialization| -> Value {
-            serde_json::from_str(
-                &initialize_operational_simulation(&encode(input).unwrap()).unwrap(),
+        let initialized = |input: &Initialization| -> String {
+            operational_initialization_hash(
+                &serde_json::to_value(input).expect("Initialisierung ist serialisierbar"),
             )
-            .unwrap()
+            .expect("Initialisierung ist kanonisch hashbar")
         };
-        let base_hash = initialized(&base)["initializationHash"].clone();
+        let base_hash = initialized(&base);
 
         let mut other_world = base.clone();
         other_world.world_id = "world:2".to_owned();
         let mut other_region = base.clone();
         other_region.region_id = "region:2".to_owned();
         let mut other_infra = base.clone();
-        other_infra.infra_release.id = "infra:v3".to_owned();
+        other_infra.infra_release.infra_release_id = "infra:v3".to_owned();
+        other_infra.infra_release.state_hash = "e".repeat(64);
         let mut other_formation = base.clone();
         other_formation.formations[0].id = "formation:other".to_owned();
         other_formation.trains[0].formation_version_id = "formation:other".to_owned();
+        let mut other_policy = base.clone();
+        other_policy.protection_mode_selection_policy =
+            "zugfolge-protection-mode-selection/foreign-v1".to_owned();
+        let mut other_selection = base.clone();
+        other_selection.trains[0].protection_mode_selection_runs[0].selected_protection_system =
+            "lzb".to_owned();
 
-        for changed in [other_world, other_region, other_infra, other_formation] {
-            assert_ne!(initialized(&changed)["initializationHash"], base_hash);
+        for changed in [
+            other_world,
+            other_region,
+            other_infra,
+            other_formation,
+            other_policy,
+            other_selection,
+        ] {
+            assert_ne!(initialized(&changed), base_hash);
         }
     }
 
@@ -921,14 +1912,22 @@ mod tests {
             &initialize_operational_simulation(&encode(&initialization()).unwrap()).unwrap(),
         )
         .unwrap();
+        let materialized = apply_value(
+            &initialized["state"],
+            "command:materialize:1",
+            json!({
+                "type": "materialize",
+                "train": serde_json::to_value(&initialization().trains[0]).unwrap(),
+            }),
+        );
         let command = json!({
             "schemaVersion": COMMAND_SCHEMA,
             "worldId": "world:1",
             "regionId": "region:1",
             "commandId": "command:dispatch:1",
-            "expectedStateHash": initialized["stateHash"],
-            "expectedRevision": 0,
-            "expectedPublisherSequence": 0,
+            "expectedStateHash": materialized["stateHash"],
+            "expectedRevision": 1,
+            "expectedPublisherSequence": 1,
             "command": {
                 "type": "dispatch",
                 "requests": [{
@@ -947,22 +1946,22 @@ mod tests {
         });
         let applied: Value = serde_json::from_str(
             &apply_operational_simulation_command(
-                &initialized["state"].to_string(),
+                &materialized["state"].to_string(),
                 &command.to_string(),
             )
             .unwrap(),
         )
         .unwrap();
         assert_eq!(applied["idempotentReplay"], false);
-        assert_eq!(applied["state"]["revision"], 1);
-        assert_eq!(applied["state"]["publisherSequence"], 1);
-        assert_eq!(applied["state"]["world"]["commitSequence"], 1);
+        assert_eq!(applied["state"]["revision"], 2);
+        assert_eq!(applied["state"]["publisherSequence"], 2);
+        assert_eq!(applied["state"]["world"]["commitSequence"], 2);
         let events = applied["events"].as_array().unwrap();
         assert_eq!(events.len(), 3);
         assert_eq!(events[0]["eventSequence"], 3);
         assert_eq!(events[1]["eventSequence"], 4);
         assert_eq!(events[2]["eventSequence"], 5);
-        assert!(events.iter().all(|event| event["commitSequence"] == 1));
+        assert!(events.iter().all(|event| event["commitSequence"] == 2));
         assert_eq!(
             applied["liveMap"]["commitSequence"],
             applied["rzue"]["commitSequence"]
@@ -977,7 +1976,7 @@ mod tests {
         .unwrap();
         assert_eq!(replayed["idempotentReplay"], true);
         assert_eq!(replayed["stateHash"], applied["stateHash"]);
-        assert_eq!(replayed["state"]["world"]["commitSequence"], 1);
+        assert_eq!(replayed["state"]["world"]["commitSequence"], 2);
 
         let forbidden = command
             .as_object()
@@ -989,7 +1988,7 @@ mod tests {
         forbidden["command"] = json!({ "type": "add-delay", "trainId": "train:1", "seconds": 120 });
         assert!(
             apply_operational_simulation_command(
-                &initialized["state"].to_string(),
+                &materialized["state"].to_string(),
                 &forbidden.to_string(),
             )
             .is_err()
@@ -1022,7 +2021,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(applied["state"]["world"]["commitSequence"], 1);
-        assert_eq!(applied["state"]["world"]["eventSequence"], 2);
+        assert_eq!(applied["state"]["world"]["eventSequence"], 1);
         assert_eq!(applied["state"]["revision"], 1);
         assert_eq!(applied["events"], json!([]));
     }
@@ -1068,13 +2067,215 @@ mod tests {
     }
 
     #[test]
+    fn native_batch_is_atomic_and_keeps_idempotent_replays_in_order() {
+        let initialized: Value = serde_json::from_str(
+            &initialize_operational_simulation(&encode(&initialization()).unwrap()).unwrap(),
+        )
+        .unwrap();
+        let activation = json!({
+            "type": "activate-disruption",
+            "disruptionId": "disruption:signal",
+            "effect": { "signal-failed": { "signalId": "signal:1" } }
+        });
+        let batch = json!({
+            "schemaVersion": COMMAND_BATCH_SCHEMA,
+            "worldId": "world:1",
+            "regionId": "region:1",
+            "expectedStateHash": initialized["stateHash"],
+            "expectedRevision": 0,
+            "expectedPublisherSequence": 0,
+            "commands": [
+                { "commandId": "batch:activate", "command": activation },
+                { "commandId": "batch:activate", "command": activation },
+                {
+                    "commandId": "batch:clear",
+                    "command": {
+                        "type": "clear-disruption",
+                        "disruptionId": "disruption:signal",
+                        "releaseReference": "release:test"
+                    }
+                }
+            ]
+        });
+        let applied: Value = serde_json::from_str(
+            &apply_operational_simulation_command_batch(
+                &initialized["state"].to_string(),
+                &batch.to_string(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(applied["schemaVersion"], BATCH_RESULT_SCHEMA);
+        assert_eq!(applied["state"]["revision"], 2);
+        assert_eq!(applied["state"]["publisherSequence"], 2);
+        assert_eq!(applied["state"]["world"]["commitSequence"], 2);
+        assert_eq!(
+            applied["commandResults"],
+            json!([
+                { "commandId": "batch:activate", "idempotentReplay": false },
+                { "commandId": "batch:activate", "idempotentReplay": true },
+                { "commandId": "batch:clear", "idempotentReplay": false }
+            ])
+        );
+        assert_eq!(applied["events"].as_array().unwrap().len(), 2);
+        assert_eq!(applied["eventContexts"].as_array().unwrap().len(), 2);
+        assert_eq!(applied["eventContexts"][0]["commandIndex"], 0);
+        assert_eq!(applied["eventContexts"][1]["commandIndex"], 2);
+        assert_eq!(
+            applied["eventContexts"][1]["disruptionEffectBefore"],
+            json!({ "signal-failed": { "signalId": "signal:1" } })
+        );
+        assert_eq!(applied["liveMap"]["activeDisruptions"], json!([]));
+        assert_eq!(applied["stateHash"], applied["state"]["stateHash"]);
+    }
+
+    #[test]
+    fn native_batch_rejects_the_whole_group_when_a_later_command_fails() {
+        let initialized: Value = serde_json::from_str(
+            &initialize_operational_simulation(&encode(&initialization()).unwrap()).unwrap(),
+        )
+        .unwrap();
+        let batch = json!({
+            "schemaVersion": COMMAND_BATCH_SCHEMA,
+            "worldId": "world:1",
+            "regionId": "region:1",
+            "expectedStateHash": initialized["stateHash"],
+            "expectedRevision": 0,
+            "expectedPublisherSequence": 0,
+            "commands": [
+                { "commandId": "batch:advance:first", "command": { "type": "advance-to", "atMs": 1_000 } },
+                { "commandId": "batch:advance:invalid", "command": { "type": "advance-to", "atMs": 500 } }
+            ]
+        });
+        let error = apply_operational_simulation_command_batch(
+            &initialized["state"].to_string(),
+            &batch.to_string(),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.starts_with("operational_batch_command_failed:"));
+        assert!(error.contains("index=1"));
+        assert!(error.contains("causeCode=operational_command_rejected"));
+
+        let applied = apply_value(
+            &initialized["state"],
+            "batch:advance:first",
+            json!({ "type": "advance-to", "atMs": 1_000 }),
+        );
+        assert_eq!(applied["state"]["revision"], 1);
+        assert_eq!(initialized["state"]["revision"], 0);
+    }
+
+    #[test]
+    fn native_batch_rejects_a_duplicate_id_with_a_different_payload_hash_atomically() {
+        let initialized: Value = serde_json::from_str(
+            &initialize_operational_simulation(&encode(&initialization()).unwrap()).unwrap(),
+        )
+        .unwrap();
+        let batch = json!({
+            "schemaVersion": COMMAND_BATCH_SCHEMA,
+            "worldId": "world:1",
+            "regionId": "region:1",
+            "expectedStateHash": initialized["stateHash"],
+            "expectedRevision": 0,
+            "expectedPublisherSequence": 0,
+            "commands": [
+                { "commandId": "batch:duplicate", "command": { "type": "advance-to", "atMs": 1_000 } },
+                { "commandId": "batch:duplicate", "command": { "type": "advance-to", "atMs": 2_000 } }
+            ]
+        });
+        let error = apply_operational_simulation_command_batch(
+            &initialized["state"].to_string(),
+            &batch.to_string(),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("index=1"));
+        assert!(error.contains("causeCode=idempotency_conflict"));
+
+        let applied = apply_value(
+            &initialized["state"],
+            "batch:duplicate",
+            json!({ "type": "advance-to", "atMs": 2_000 }),
+        );
+        assert_eq!(applied["state"]["revision"], 1);
+        assert_eq!(initialized["state"]["revision"], 0);
+    }
+
+    #[test]
+    fn native_batch_fails_closed_outside_its_bounded_contract() {
+        let initialized: Value = serde_json::from_str(
+            &initialize_operational_simulation(&encode(&initialization()).unwrap()).unwrap(),
+        )
+        .unwrap();
+        let commands = (0..MAX_COMMAND_BATCH_SIZE)
+            .map(|index| {
+                json!({
+                    "commandId": format!("batch:advance:{index}"),
+                    "command": { "type": "advance-to", "atMs": 0 }
+                })
+            })
+            .collect::<Vec<_>>();
+        let maximum = json!({
+            "schemaVersion": COMMAND_BATCH_SCHEMA,
+            "worldId": "world:1",
+            "regionId": "region:1",
+            "expectedStateHash": initialized["stateHash"],
+            "expectedRevision": 0,
+            "expectedPublisherSequence": 0,
+            "commands": commands
+        });
+        let applied: Value = serde_json::from_str(
+            &apply_operational_simulation_command_batch(
+                &initialized["state"].to_string(),
+                &maximum.to_string(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(applied["state"]["revision"], MAX_COMMAND_BATCH_SIZE);
+        assert_eq!(
+            applied["state"]["commandReceipts"]
+                .as_object()
+                .unwrap()
+                .len(),
+            MAX_COMMAND_RECEIPTS
+        );
+
+        let mut oversized_commands = maximum["commands"].as_array().unwrap().clone();
+        oversized_commands.push(json!({
+            "commandId": "batch:advance:oversized",
+            "command": { "type": "advance-to", "atMs": 0 }
+        }));
+        let oversized = json!({
+            "schemaVersion": COMMAND_BATCH_SCHEMA,
+            "worldId": "world:1",
+            "regionId": "region:1",
+            "expectedStateHash": initialized["stateHash"],
+            "expectedRevision": 0,
+            "expectedPublisherSequence": 0,
+            "commands": oversized_commands
+        });
+        assert!(
+            apply_operational_simulation_command_batch(
+                &initialized["state"].to_string(),
+                &oversized.to_string(),
+            )
+            .unwrap_err()
+            .to_string()
+            .starts_with("invalid_command_batch_size:")
+        );
+    }
+
+    #[test]
     fn recurrence_retires_and_rematerializes_safely_across_multiple_days() {
         let (first_hash, first) = two_day_recurrence_hash();
         let (second_hash, second) = two_day_recurrence_hash();
 
         assert_eq!(first_hash, second_hash);
-        assert_eq!(first["state"]["world"]["commitSequence"], 6);
-        assert_eq!(first["state"]["revision"], 6);
+        assert_eq!(first["state"]["world"]["commitSequence"], 7);
+        assert_eq!(first["state"]["revision"], 7);
         assert_eq!(first["liveMap"]["trains"][0]["trainId"], "train:1:day-1");
         assert_eq!(first["liveMap"], second["liveMap"]);
     }
@@ -1150,7 +2351,7 @@ mod tests {
         });
         input.trains.push(TrainInput {
             id: "train:standing".to_owned(),
-            train_number: "RB 0".to_owned(),
+            train_number: "RB 2".to_owned(),
             operator_id: "operator:2".to_owned(),
             movement_kind: MovementKind::Train,
             route_version_id: "route:v1".to_owned(),
@@ -1158,6 +2359,11 @@ mod tests {
             head_route_mm: 0,
             scheduled_departure_ms: None,
             public_passenger_stop: false,
+            dispatch_interlocking_route_id: "interlocking:1".to_owned(),
+            protection_mode_selection_runs: vec![ProtectionModeSelectionRun {
+                through_route_leg_index: 0,
+                selected_protection_system: "pzb".to_owned(),
+            }],
         });
 
         let initialized: Value = serde_json::from_str(
@@ -1165,11 +2371,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(initialized["liveMap"]["infraReleaseId"], "infra:v2");
+        assert_eq!(initialized["liveMap"]["trains"], json!([]));
+        let first = apply_value(
+            &initialized["state"],
+            "standing:materialize:first",
+            json!({ "type": "materialize", "train": input.trains[0] }),
+        );
+        let materialized = apply_value(
+            &first["state"],
+            "standing:materialize:second",
+            json!({ "type": "materialize", "train": input.trains[1] }),
+        );
         assert_eq!(
-            initialized["liveMap"]["trains"].as_array().unwrap().len(),
+            materialized["liveMap"]["trains"].as_array().unwrap().len(),
             2
         );
-        let standing = initialized["liveMap"]["trains"]
+        let standing = materialized["liveMap"]["trains"]
             .as_array()
             .unwrap()
             .iter()
@@ -1182,12 +2399,326 @@ mod tests {
     }
 
     #[test]
+    fn compact_binding_rejects_missing_foreign_and_tampered_infrastructure() {
+        let base = initialization();
+        let input_json = encode(&base).unwrap();
+
+        let mut wrong_id = base.clone();
+        wrong_id.infra_release.infra_release_id = "infra:foreign".to_owned();
+        assert!(
+            super::initialize_operational_simulation(
+                &encode(&wrong_id).unwrap(),
+                infrastructure_path(),
+            )
+            .is_err()
+        );
+
+        let mut wrong_bytes = base.clone();
+        wrong_bytes.infra_release.bytes += 1;
+        assert!(
+            super::initialize_operational_simulation(
+                &encode(&wrong_bytes).unwrap(),
+                infrastructure_path(),
+            )
+            .is_err()
+        );
+
+        let mut wrong_sha = base.clone();
+        wrong_sha.infra_release.sha256 = "f".repeat(64);
+        assert!(
+            super::initialize_operational_simulation(
+                &encode(&wrong_sha).unwrap(),
+                infrastructure_path(),
+            )
+            .is_err()
+        );
+
+        let mut wrong_state_hash = base.clone();
+        wrong_state_hash.infra_release.state_hash = "d".repeat(64);
+        assert!(
+            super::initialize_operational_simulation(
+                &encode(&wrong_state_hash).unwrap(),
+                infrastructure_path(),
+            )
+            .is_err()
+        );
+
+        let missing_directory = std::env::temp_dir().join(format!(
+            "zugfolge-sim-runtime-missing-{}-{}",
+            std::process::id(),
+            NEXT_TEST_DIRECTORY.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir(&missing_directory).unwrap();
+        let missing = missing_directory.join(INFRASTRUCTURE_FILE);
+        assert!(
+            super::initialize_operational_simulation(&input_json, missing.to_str().unwrap(),)
+                .is_err()
+        );
+        let initialized: Value =
+            serde_json::from_str(&initialize_operational_simulation(&input_json).unwrap()).unwrap();
+        let restore = json!({
+            "schemaVersion": RESTORE_SCHEMA,
+            "expectedInitializationHash": initialized["initializationHash"],
+            "state": initialized["state"],
+        });
+        assert!(
+            super::restore_operational_simulation(&restore.to_string(), missing.to_str().unwrap(),)
+                .is_err()
+        );
+        assert!(
+            super::apply_operational_simulation_command(
+                &initialized["state"].to_string(),
+                "{}",
+                missing.to_str().unwrap(),
+            )
+            .is_err()
+        );
+
+        let tampered_directory = std::env::temp_dir().join(format!(
+            "zugfolge-sim-runtime-tampered-{}-{}",
+            std::process::id(),
+            NEXT_TEST_DIRECTORY.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir(&tampered_directory).unwrap();
+        let tampered = tampered_directory.join(INFRASTRUCTURE_FILE);
+        let mut bytes = std::fs::read(infrastructure_path()).unwrap();
+        bytes[0] = if bytes[0] == b'{' { b'[' } else { b'{' };
+        std::fs::write(&tampered, bytes).unwrap();
+        assert!(
+            super::initialize_operational_simulation(&input_json, tampered.to_str().unwrap(),)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn program_templates_require_native_dispatch_binding_and_start_empty() {
+        let mut duplicate = initialization();
+        let mut second = duplicate.trains[0].clone();
+        second.id = "train:2".to_owned();
+        second.train_number = "RB 2".to_owned();
+        duplicate.trains.push(second);
+        let initialized: Value = serde_json::from_str(
+            &initialize_operational_simulation(&encode(&duplicate).unwrap()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(initialized["state"]["world"]["trains"], json!({}));
+        assert_eq!(initialized["liveMap"]["trains"], json!([]));
+        let receipt = &initialized["validationReceipt"];
+        assert_eq!(
+            receipt["schemaVersion"],
+            INITIALIZATION_VALIDATION_RECEIPT_SCHEMA
+        );
+        assert_eq!(receipt["worldId"], "world:1");
+        assert_eq!(receipt["regionId"], "region:1");
+        assert_eq!(
+            receipt["initializationHash"],
+            initialized["initializationHash"]
+        );
+        assert_eq!(receipt["stateHash"], initialized["stateHash"]);
+        assert_eq!(
+            receipt["infraRelease"],
+            initialized["state"]["infraRelease"]
+        );
+        assert_eq!(receipt["programTrainCount"], 2);
+        assert_eq!(receipt["validatedProgramTemplateCount"], 2);
+        assert_eq!(receipt["validatedRouteVersionCount"], 1);
+        assert_eq!(receipt["validatedDispatchInterlockingRouteCount"], 1);
+        assert_eq!(receipt["validatedResourceBindingCount"], 6);
+        assert_eq!(receipt["validatedFormationBindingCount"], 1);
+        assert_eq!(receipt["validatedTrainNumberCount"], 2);
+        assert_eq!(
+            receipt["protectionModeSelectionPolicy"],
+            PROTECTION_MODE_SELECTION_POLICY_V1
+        );
+        assert_eq!(receipt["validatedProtectionModeSelectionCount"], 2);
+        assert_eq!(
+            receipt["protectionModeSelectionsSha256"],
+            "208a9b4217bdf68c054bb78717e5c1ba237c84cbf40b143592fe15a3bb338437"
+        );
+        assert_eq!(receipt["protectionModeSelectionsValidated"], true);
+        assert_eq!(receipt["dynamicTrainCount"], 0);
+        assert_eq!(receipt["resourceBindingsValidated"], true);
+        assert_eq!(receipt["formationBindingsValidated"], true);
+        assert_eq!(receipt["trainNumbersValidated"], true);
+        assert_eq!(receipt["validationMode"], INFRASTRUCTURE_VALIDATION_MODE);
+
+        let mut duplicate_number = initialization();
+        let mut same_number = duplicate_number.trains[0].clone();
+        same_number.id = "train:2".to_owned();
+        same_number.train_number = "IC-1".to_owned();
+        duplicate_number.trains.push(same_number);
+        assert!(
+            super::initialize_operational_simulation(
+                &encode(&duplicate_number).unwrap(),
+                infrastructure_path(),
+            )
+            .unwrap_err()
+            .to_string()
+            .starts_with("duplicate_train_number:")
+        );
+
+        let mut overlong_number = initialization();
+        overlong_number.trains[0].train_number = "S4-1667972".to_owned();
+        assert!(
+            super::initialize_operational_simulation(
+                &encode(&overlong_number).unwrap(),
+                infrastructure_path(),
+            )
+            .unwrap_err()
+            .to_string()
+            .starts_with("invalid_train_number:")
+        );
+
+        let mut missing_dispatch = serde_json::to_value(initialization()).unwrap();
+        missing_dispatch["trains"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("dispatchInterlockingRouteId");
+        assert!(
+            super::initialize_operational_simulation(
+                &missing_dispatch.to_string(),
+                infrastructure_path(),
+            )
+            .is_err()
+        );
+
+        let mut foreign_dispatch = initialization();
+        foreign_dispatch.trains[0].dispatch_interlocking_route_id =
+            "interlocking:foreign".to_owned();
+        assert!(
+            super::initialize_operational_simulation(
+                &encode(&foreign_dispatch).unwrap(),
+                infrastructure_path(),
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn program_template_preflight_scans_every_train_and_all_predicates() {
+        let mut input = initialization();
+        input.trains[0].head_route_mm = 100_001;
+        input.trains[0].protection_mode_selection_runs[0].selected_protection_system =
+            "lzb".to_owned();
+        let mut second = input.trains[0].clone();
+        second.id = "train:2".to_owned();
+        second.train_number = "RB 2".to_owned();
+        second.head_route_mm = 20_000;
+        second.movement_kind = MovementKind::Shunting;
+        second.protection_mode_selection_runs.clear();
+        input.trains.push(second);
+
+        let error = super::initialize_operational_simulation(
+            &encode(&input).expect("Initialisierung serialisieren"),
+            infrastructure_path(),
+        )
+        .expect_err("beide ungueltigen Programmvorlagen muessen gemeinsam scheitern")
+        .to_string();
+        assert!(error.starts_with("invalid_train_program_template:"));
+        assert!(error.contains("2 von 2 Programmvorlagen ungueltig"));
+        assert!(error.contains("train:1=[head-within-route,protection-mode-selections]"));
+        assert!(error.contains("train:2=[protection-mode-selections,movement-kind]"));
+
+        let mut unknown_policy = initialization();
+        unknown_policy.protection_mode_selection_policy =
+            "zugfolge-protection-mode-selection/foreign-v1".to_owned();
+        assert!(
+            super::initialize_operational_simulation(
+                &encode(&unknown_policy).expect("Initialisierung serialisieren"),
+                infrastructure_path(),
+            )
+            .expect_err("unbekannte Policy muss vor der Initialisierung scheitern")
+            .to_string()
+            .starts_with("unknown_protection_mode_selection_policy:")
+        );
+    }
+
+    #[test]
+    fn command_receipts_are_bounded_and_legacy_history_is_rejected() {
+        let mut receipts = BTreeMap::new();
+        for revision in 1..=u64::try_from(MAX_COMMAND_RECEIPTS + 2).unwrap() {
+            insert_bounded_command_receipt(
+                &mut receipts,
+                format!("command:{revision:05}"),
+                format!("{revision:064x}"),
+                revision,
+            );
+        }
+        assert_eq!(receipts.len(), MAX_COMMAND_RECEIPTS);
+        assert!(!receipts.contains_key("command:00001"));
+        assert!(!receipts.contains_key("command:00002"));
+        assert!(receipts.contains_key(&format!("command:{:05}", MAX_COMMAND_RECEIPTS + 2)));
+        assert!(valid_command_receipt_window(
+            &receipts,
+            u64::try_from(MAX_COMMAND_RECEIPTS + 2).unwrap()
+        ));
+
+        let long_running_revision = 52_697_u64;
+        let oldest_retained =
+            long_running_revision - u64::try_from(MAX_COMMAND_RECEIPTS).unwrap() + 1;
+        let long_running_receipts = (oldest_retained..=long_running_revision)
+            .map(|revision| {
+                (
+                    format!("command:{revision:05}"),
+                    CommandReceipt {
+                        command_hash: format!("{revision:064x}"),
+                        applied_revision: revision,
+                    },
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(long_running_receipts.len(), MAX_COMMAND_RECEIPTS);
+        assert!(valid_command_receipt_window(
+            &long_running_receipts,
+            long_running_revision
+        ));
+        let mut gapped_receipts = long_running_receipts.clone();
+        gapped_receipts.remove(&format!("command:{oldest_retained:05}"));
+        assert!(!valid_command_receipt_window(
+            &gapped_receipts,
+            long_running_revision
+        ));
+
+        let initialized: Value = serde_json::from_str(
+            &initialize_operational_simulation(&encode(&initialization()).unwrap()).unwrap(),
+        )
+        .unwrap();
+        let mut legacy = initialized["state"].clone();
+        legacy["world"]["processedCommandIds"] = json!(["legacy:1"]);
+        assert!(restore_value(&legacy, &initialized["initializationHash"]).is_err());
+    }
+
+    #[test]
+    fn external_command_hash_uses_the_native_typed_payload_canonical_form() {
+        let first = hash_operational_simulation_command(
+            r#"{"type":"safe-stop","trainId":"train:1","reason":"signal"}"#,
+        )
+        .unwrap();
+        let reordered = hash_operational_simulation_command(
+            r#"{"reason":"signal","trainId":"train:1","type":"safe-stop"}"#,
+        )
+        .unwrap();
+        let changed = hash_operational_simulation_command(
+            r#"{"type":"safe-stop","trainId":"train:1","reason":"switch"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(first, reordered);
+        assert_ne!(first, changed);
+    }
+
+    #[test]
     fn rejects_a_tampered_persisted_world() {
         let mut initialized: Value = serde_json::from_str(
             &initialize_operational_simulation(&encode(&initialization()).unwrap()).unwrap(),
         )
         .unwrap();
+        let pristine = initialized["state"].clone();
         initialized["state"]["world"]["nowMs"] = json!(1);
         assert!(restore_value(&initialized["state"], &initialized["initializationHash"],).is_err());
+
+        let mut embedded = pristine;
+        embedded["world"]["infra"] = json!({ "routeVersions": {} });
+        assert!(restore_value(&embedded, &initialized["initializationHash"]).is_err());
     }
 }

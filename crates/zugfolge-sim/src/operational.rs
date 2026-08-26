@@ -8,6 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use zugfolge_determinism::{StateHash, StateHasher};
@@ -81,6 +82,22 @@ pub enum Direction {
     Against,
 }
 
+pub const PROTECTION_MODE_SELECTION_POLICY_V1: &str =
+    "zugfolge-protection-mode-selection/conservative-v1";
+
+const KNOWN_PROTECTION_SYSTEMS: [&str; 4] = ["etcs-level1", "etcs-level2", "lzb", "pzb"];
+const CONSERVATIVE_PROTECTION_MODE_PRIORITY_V1: [&str; 4] =
+    ["pzb", "lzb", "etcs-level1", "etcs-level2"];
+
+/// Kanonische Lauflaengencodierung einer Moduswahl. Der erste Lauf beginnt bei
+/// Leg 0, jeder weitere direkt hinter dem vorherigen Ende.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProtectionModeSelectionRun {
+    pub through_route_leg_index: usize,
+    pub selected_protection_system: String,
+}
+
 /// Ein Abschnitt eines vollstaendig validierten, gerichteten Laufwegs.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -93,7 +110,11 @@ pub struct RouteLeg {
     pub block_ids: BTreeSet<String>,
     pub speed_limit_mmps: u32,
     pub gradient_per_mille: i16,
-    pub required_protection_systems: BTreeSet<String>,
+    /// Alternative, auf diesem Leg streckenseitig nutzbare Betriebsmodi.
+    pub available_protection_systems: Vec<String>,
+    /// Systeme, die unabhaengig vom ausgewaehlten Betriebsmodus gemeinsam in
+    /// der aktiven Zugspitze vorhanden sein muessen.
+    pub simultaneously_required_protection_systems: Vec<String>,
 }
 
 impl RouteLeg {
@@ -137,7 +158,15 @@ impl RouteVersion {
                 || leg.route_start_mm != expected
                 || leg.speed_limit_mmps == 0
                 || leg.block_ids.is_empty()
-                || leg.required_protection_systems.is_empty()
+                || !canonical_protection_systems(&leg.available_protection_systems, false)
+                || !canonical_protection_systems(
+                    &leg.simultaneously_required_protection_systems,
+                    true,
+                )
+                || leg
+                    .simultaneously_required_protection_systems
+                    .iter()
+                    .any(|system| !leg.available_protection_systems.contains(system))
             {
                 return Err(OperationalError::IncompleteRoute(self.id.clone()));
             }
@@ -804,7 +833,6 @@ impl OperationalInfraRelease {
                 .values()
                 .filter(|route| route.template_id == template.route_template_id)
                 .collect();
-            let all_resources = template.all_resources();
             if template_id != &template.id
                 || template.route_template_id.is_empty()
                 || matching_routes.is_empty()
@@ -814,7 +842,11 @@ impl OperationalInfraRelease {
                     .keys()
                     .all(|id| self.switches.contains(id))
                 || template.path_resources.is_empty()
-                || !all_resources.is_subset(&self.block_resources)
+                || template.overlap_resources.is_empty()
+                || template.flank_resources.is_empty()
+                || !template.path_resources.is_subset(&self.block_resources)
+                || !template.overlap_resources.is_subset(&self.block_resources)
+                || !template.flank_resources.is_subset(&self.block_resources)
                 || template.authority_end_route_mm <= 0
                 || template.release_after_tail_route_mm < 0
                 || template.release_after_tail_route_mm > template.authority_end_route_mm
@@ -842,6 +874,101 @@ impl OperationalInfraRelease {
         Ok(())
     }
 }
+
+/// Kleiner, dateispeicherfaehiger Zugriff auf die unveraenderliche
+/// Operational-v2-Infrastruktur. Implementierungen muessen ihre komplette
+/// Release-/Hashbindung vor dem Anhaengen an eine Welt validiert haben.
+pub trait OperationalInfrastructure: fmt::Debug + Send + Sync {
+    fn release_id(&self) -> &str;
+    fn binding_identity(&self) -> &str;
+    fn validate_attachment(&self) -> Result<(), OperationalError>;
+    fn route_version(&self, id: &str) -> Result<Option<RouteVersion>, OperationalError>;
+    fn interlocking_route(
+        &self,
+        id: &str,
+    ) -> Result<Option<InterlockingRouteTemplate>, OperationalError>;
+    fn shunting_interlocking_routes(
+        &self,
+        minimum_authority_end_route_mm: RouteMillimetres,
+    ) -> Result<Vec<InterlockingRouteTemplate>, OperationalError>;
+    fn platform_interval(&self, id: &str) -> Result<Option<TrackInterval>, OperationalError>;
+    fn edge_geometry(
+        &self,
+        edge_id: &str,
+    ) -> Result<Option<Vec<EdgeGeometryPoint>>, OperationalError>;
+}
+
+impl OperationalInfrastructure for OperationalInfraRelease {
+    fn release_id(&self) -> &str {
+        &self.id
+    }
+
+    fn binding_identity(&self) -> &str {
+        &self.id
+    }
+
+    fn validate_attachment(&self) -> Result<(), OperationalError> {
+        self.validate()
+    }
+
+    fn route_version(&self, id: &str) -> Result<Option<RouteVersion>, OperationalError> {
+        Ok(self.route_versions.get(id).cloned())
+    }
+
+    fn interlocking_route(
+        &self,
+        id: &str,
+    ) -> Result<Option<InterlockingRouteTemplate>, OperationalError> {
+        Ok(self.interlocking_routes.get(id).cloned())
+    }
+
+    fn shunting_interlocking_routes(
+        &self,
+        minimum_authority_end_route_mm: RouteMillimetres,
+    ) -> Result<Vec<InterlockingRouteTemplate>, OperationalError> {
+        Ok(self
+            .interlocking_routes
+            .values()
+            .filter(|route| {
+                route.movement_kind == MovementKind::Shunting
+                    && route.authority_end_route_mm >= minimum_authority_end_route_mm
+            })
+            .cloned()
+            .collect())
+    }
+
+    fn platform_interval(&self, id: &str) -> Result<Option<TrackInterval>, OperationalError> {
+        Ok(self.platform_intervals.get(id).cloned())
+    }
+
+    fn edge_geometry(
+        &self,
+        edge_id: &str,
+    ) -> Result<Option<Vec<EdgeGeometryPoint>>, OperationalError> {
+        Ok(self.edge_geometries.get(edge_id).cloned())
+    }
+}
+
+#[derive(Clone)]
+struct AttachedOperationalInfrastructure(Arc<dyn OperationalInfrastructure>);
+
+impl fmt::Debug for AttachedOperationalInfrastructure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("AttachedOperationalInfrastructure")
+            .field(&self.0.binding_identity())
+            .finish()
+    }
+}
+
+impl PartialEq for AttachedOperationalInfrastructure {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.release_id() == other.0.release_id()
+            && self.0.binding_identity() == other.0.binding_identity()
+    }
+}
+
+impl Eq for AttachedOperationalInfrastructure {}
 
 /// Laufender exakter Zustand einer Zug- oder Rangierbewegung.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -880,6 +1007,150 @@ pub struct TrainMaterialization {
     pub head_route_mm: i64,
     pub scheduled_departure_ms: Option<i64>,
     pub public_passenger_stop: bool,
+}
+
+/// Kanonischer fachlicher Nummernteil: ASCII-dezimal und niemals laenger als
+/// fuenf Stellen. Linienpraefixe bleiben reine Darstellung.
+pub fn operational_train_number_numeric_part(value: &str) -> Option<u32> {
+    if value.is_empty()
+        || value.chars().count() > 200
+        || value.trim() != value
+        || value.chars().any(char::is_control)
+    {
+        return None;
+    }
+    let digit_count = value
+        .chars()
+        .rev()
+        .take_while(|character| character.is_ascii_digit())
+        .count();
+    if !(1..=5).contains(&digit_count) {
+        return None;
+    }
+    let numeric_part = value[value.len().checked_sub(digit_count)?..]
+        .parse::<u32>()
+        .ok()?;
+    (1..=99_999).contains(&numeric_part).then_some(numeric_part)
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OperationalProgramTemplateValidation {
+    pub resource_binding_count: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OperationalProgramTemplatePredicates {
+    pub formation_mobile: bool,
+    pub head_within_route: bool,
+    pub protection_compatible: bool,
+    pub protection_mode_selection_policy_matches: bool,
+    pub protection_mode_selections_match: bool,
+    pub protection_mode_selection_runs: Vec<ProtectionModeSelectionRun>,
+    pub protection_mode_selection_count: usize,
+    pub movement_kind_matches: bool,
+    pub route_template_matches: bool,
+    pub authority_path_resources_cover_route: bool,
+    pub authority_end_matches_route: bool,
+    pub release_after_tail_within_authority: bool,
+    pub resource_binding_count: usize,
+}
+
+impl OperationalProgramTemplatePredicates {
+    pub fn is_valid(&self) -> bool {
+        self.formation_mobile
+            && self.head_within_route
+            && self.protection_compatible
+            && self.protection_mode_selection_policy_matches
+            && self.protection_mode_selections_match
+            && self.movement_kind_matches
+            && self.route_template_matches
+            && self.authority_path_resources_cover_route
+            && self.authority_end_matches_route
+            && self.release_after_tail_within_authority
+    }
+
+    pub fn failed_predicates(&self) -> Vec<&'static str> {
+        [
+            (!self.formation_mobile).then_some("formation-mobile"),
+            (!self.head_within_route).then_some("head-within-route"),
+            (!self.protection_compatible).then_some("protection-intersection"),
+            (!self.protection_mode_selection_policy_matches)
+                .then_some("protection-mode-selection-policy"),
+            (!self.protection_mode_selections_match).then_some("protection-mode-selections"),
+            (!self.movement_kind_matches).then_some("movement-kind"),
+            (!self.route_template_matches).then_some("route-template"),
+            (!self.authority_path_resources_cover_route)
+                .then_some("authority-path-resources-cover-route"),
+            (!self.authority_end_matches_route).then_some("authority-end"),
+            (!self.release_after_tail_within_authority).then_some("release-after-tail"),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    }
+}
+
+fn canonical_protection_systems(systems: &[String], allow_empty: bool) -> bool {
+    (allow_empty || !systems.is_empty())
+        && systems
+            .iter()
+            .all(|system| KNOWN_PROTECTION_SYSTEMS.contains(&system.as_str()))
+        && systems.windows(2).all(|pair| pair[0] < pair[1])
+}
+
+fn selected_protection_system<'route>(
+    leg: &'route RouteLeg,
+    formation_systems: &BTreeSet<String>,
+) -> Option<&'route str> {
+    if leg
+        .simultaneously_required_protection_systems
+        .iter()
+        .any(|system| !formation_systems.contains(system))
+    {
+        return None;
+    }
+    CONSERVATIVE_PROTECTION_MODE_PRIORITY_V1
+        .iter()
+        .copied()
+        .find(|system| {
+            formation_systems.contains(*system)
+                && leg
+                    .available_protection_systems
+                    .iter()
+                    .any(|available| available == system)
+        })
+}
+
+fn protection_mode_selection_runs(
+    route: &RouteVersion,
+    formation_systems: &BTreeSet<String>,
+) -> Option<Vec<ProtectionModeSelectionRun>> {
+    let mut runs: Vec<ProtectionModeSelectionRun> = Vec::new();
+    for (index, leg) in route.legs.iter().enumerate() {
+        let selected = selected_protection_system(leg, formation_systems)?.to_owned();
+        if let Some(previous) = runs.last_mut()
+            && previous.selected_protection_system == selected
+        {
+            previous.through_route_leg_index = index;
+        } else {
+            runs.push(ProtectionModeSelectionRun {
+                through_route_leg_index: index,
+                selected_protection_system: selected,
+            });
+        }
+    }
+    Some(runs)
+}
+
+fn protection_systems_compatible(leg: &RouteLeg, formation_systems: &BTreeSet<String>) -> bool {
+    selected_protection_system(leg, formation_systems).is_some()
+}
+
+fn route_protection_compatible(route: &RouteVersion, formation: &FormationVersion) -> bool {
+    route
+        .legs
+        .iter()
+        .all(|leg| protection_systems_compatible(leg, &formation.performance.protection_systems))
 }
 
 /// Ein Fahrdienstleiterkandidat. Reihenfolge ist lexikographisch, kein Score.
@@ -1086,7 +1357,8 @@ pub struct OperationalWorld {
     pub active_disruptions: BTreeMap<String, OperationalDisruption>,
     pub events: Vec<OperationalEvent>,
     pub processed_command_ids: BTreeSet<String>,
-    infra: OperationalInfraRelease,
+    #[serde(skip)]
+    infra: Option<AttachedOperationalInfrastructure>,
     scheduled_motion_ends: BTreeSet<ScheduledMotionEnd>,
     waiting_by_resource: BTreeMap<String, BTreeSet<String>>,
     pending_dispatch_requests: BTreeMap<String, DispatchRequest>,
@@ -1100,15 +1372,23 @@ impl OperationalWorld {
         infra: OperationalInfraRelease,
     ) -> Result<Self, OperationalError> {
         infra.validate()?;
-        let signal_aspects = infra
-            .signals
-            .iter()
-            .map(|id| (id.clone(), SignalAspect::Stop))
-            .collect();
+        Self::new_with_infrastructure(world_id, region_id, now_ms, Arc::new(infra))
+    }
+
+    pub fn new_with_infrastructure(
+        world_id: impl Into<String>,
+        region_id: impl Into<String>,
+        now_ms: SimMillis,
+        infra: Arc<dyn OperationalInfrastructure>,
+    ) -> Result<Self, OperationalError> {
+        infra.validate_attachment()?;
+        if infra.release_id().is_empty() {
+            return Err(OperationalError::IncompleteInfraRelease);
+        }
         Ok(Self {
             world_id: world_id.into(),
             region_id: region_id.into(),
-            infra_release_id: infra.id.clone(),
+            infra_release_id: infra.release_id().to_owned(),
             now_ms,
             commit_sequence: 0,
             event_sequence: 0,
@@ -1117,17 +1397,61 @@ impl OperationalWorld {
             vehicle_types: BTreeMap::new(),
             formations: BTreeMap::new(),
             route_locks: BTreeMap::new(),
-            signal_aspects,
+            // Halt ist der statische Grundzustand jedes Signals und wird nicht
+            // millionenfach in dynamischen Checkpoints wiederholt. Diese Map
+            // enthaelt ausschliesslich betriebliche Abweichungen.
+            signal_aspects: BTreeMap::new(),
             switch_positions: BTreeMap::new(),
             resource_lifecycle: BTreeMap::new(),
             active_disruptions: BTreeMap::new(),
             events: Vec::new(),
             processed_command_ids: BTreeSet::new(),
-            infra,
+            infra: Some(AttachedOperationalInfrastructure(infra)),
             scheduled_motion_ends: BTreeSet::new(),
             waiting_by_resource: BTreeMap::new(),
             pending_dispatch_requests: BTreeMap::new(),
         })
+    }
+
+    pub fn attach_infrastructure(
+        &mut self,
+        infra: Arc<dyn OperationalInfrastructure>,
+    ) -> Result<(), OperationalError> {
+        infra.validate_attachment()?;
+        if infra.release_id() != self.infra_release_id {
+            return Err(OperationalError::ForeignInfrastructureBinding);
+        }
+        self.infra = Some(AttachedOperationalInfrastructure(infra));
+        for train in self.trains.values() {
+            if self
+                .infrastructure()?
+                .route_version(&train.route_version_id)?
+                .is_none()
+            {
+                return Err(OperationalError::UnknownRoute(
+                    train.route_version_id.clone(),
+                ));
+            }
+        }
+        for lock in self.route_locks.values() {
+            if self
+                .infrastructure()?
+                .interlocking_route(&lock.template_id)?
+                .is_none()
+            {
+                return Err(OperationalError::UnknownInterlockingRoute(
+                    lock.template_id.clone(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn infrastructure(&self) -> Result<&dyn OperationalInfrastructure, OperationalError> {
+        self.infra
+            .as_ref()
+            .map(|infra| infra.0.as_ref())
+            .ok_or(OperationalError::MissingInfrastructureBinding)
     }
 
     fn record(
@@ -1475,6 +1799,122 @@ impl OperationalWorld {
     }
 
     /// Materialisiert nur eine Fahrt mit lueckenlosem Laufweg und vollstaendiger Formation.
+    pub fn validate_train_program_template(
+        &self,
+        train: &TrainMaterialization,
+        dispatch_interlocking_route_id: &str,
+    ) -> Result<(), OperationalError> {
+        self.validate_train_program_template_with_evidence(train, dispatch_interlocking_route_id)
+            .map(|_| ())
+    }
+
+    pub fn validate_train_program_template_with_evidence(
+        &self,
+        train: &TrainMaterialization,
+        dispatch_interlocking_route_id: &str,
+    ) -> Result<OperationalProgramTemplateValidation, OperationalError> {
+        let predicates =
+            self.inspect_train_program_template(train, dispatch_interlocking_route_id)?;
+        if !predicates.is_valid() {
+            return Err(OperationalError::InvalidProgramTemplate(train.id.clone()));
+        }
+        Ok(OperationalProgramTemplateValidation {
+            resource_binding_count: predicates.resource_binding_count,
+        })
+    }
+
+    /// Prueft alle unabhaengigen Bindungen einer Programmvorlage, ohne beim
+    /// ersten booleschen Predicate abzubrechen. Aufloesungsfehler fuer Route,
+    /// Formation oder Fahrstrasse bleiben harte Fehler.
+    pub fn inspect_train_program_template(
+        &self,
+        train: &TrainMaterialization,
+        dispatch_interlocking_route_id: &str,
+    ) -> Result<OperationalProgramTemplatePredicates, OperationalError> {
+        let route = self
+            .infrastructure()?
+            .route_version(&train.route_version_id)?
+            .ok_or_else(|| OperationalError::UnknownRoute(train.route_version_id.clone()))?;
+        route.validate()?;
+        let formation = self
+            .formations
+            .get(&train.formation_version_id)
+            .ok_or_else(|| {
+                OperationalError::UnknownFormation(train.formation_version_id.clone())
+            })?;
+        let selections =
+            protection_mode_selection_runs(&route, &formation.performance.protection_systems)
+                .unwrap_or_default();
+        self.inspect_train_program_template_with_protection_modes(
+            train,
+            dispatch_interlocking_route_id,
+            PROTECTION_MODE_SELECTION_POLICY_V1,
+            &selections,
+        )
+    }
+
+    /// Prueft die vom Builder signierte, kompakte Moduswahl gegen jede
+    /// Laufwegkante und die aktive Zugspitze. Die Lauflaengencodierung muss
+    /// exakt der deterministischen konservativen v1-Auswahl entsprechen.
+    pub fn inspect_train_program_template_with_protection_modes(
+        &self,
+        train: &TrainMaterialization,
+        dispatch_interlocking_route_id: &str,
+        selection_policy: &str,
+        selection_runs: &[ProtectionModeSelectionRun],
+    ) -> Result<OperationalProgramTemplatePredicates, OperationalError> {
+        if train.id.is_empty()
+            || operational_train_number_numeric_part(&train.train_number).is_none()
+            || train.operator_id.is_empty()
+            || dispatch_interlocking_route_id.is_empty()
+        {
+            return Err(OperationalError::UnsafeMaterialization(train.id.clone()));
+        }
+        let route = self
+            .infrastructure()?
+            .route_version(&train.route_version_id)?
+            .ok_or_else(|| OperationalError::UnknownRoute(train.route_version_id.clone()))?;
+        route.validate()?;
+        let formation = self
+            .formations
+            .get(&train.formation_version_id)
+            .ok_or_else(|| {
+                OperationalError::UnknownFormation(train.formation_version_id.clone())
+            })?;
+        let template = self
+            .infrastructure()?
+            .interlocking_route(dispatch_interlocking_route_id)?
+            .ok_or_else(|| {
+                OperationalError::UnknownInterlockingRoute(
+                    dispatch_interlocking_route_id.to_owned(),
+                )
+            })?;
+        let expected_selections =
+            protection_mode_selection_runs(&route, &formation.performance.protection_systems);
+        Ok(OperationalProgramTemplatePredicates {
+            formation_mobile: formation.performance.mobile,
+            head_within_route: train.head_route_mm >= 0 && train.head_route_mm <= route.length_mm(),
+            protection_compatible: expected_selections.is_some(),
+            protection_mode_selection_policy_matches: selection_policy
+                == PROTECTION_MODE_SELECTION_POLICY_V1,
+            protection_mode_selections_match: expected_selections
+                .as_deref()
+                .is_some_and(|expected| expected == selection_runs),
+            protection_mode_selection_runs: selection_runs.to_vec(),
+            protection_mode_selection_count: route.legs.len(),
+            movement_kind_matches: template.movement_kind == train.movement_kind,
+            route_template_matches: template.route_template_id == route.template_id,
+            authority_path_resources_cover_route: route
+                .legs
+                .iter()
+                .all(|leg| leg.block_ids.is_subset(&template.path_resources)),
+            authority_end_matches_route: template.authority_end_route_mm == route.length_mm(),
+            release_after_tail_within_authority: template.release_after_tail_route_mm >= 0
+                && template.release_after_tail_route_mm <= template.authority_end_route_mm,
+            resource_binding_count: template.all_resources().len(),
+        })
+    }
+
     pub fn materialize(&mut self, input: TrainMaterialization) -> Result<(), OperationalError> {
         let TrainMaterialization {
             id,
@@ -1487,10 +1927,19 @@ impl OperationalWorld {
             scheduled_departure_ms,
             public_passenger_stop,
         } = input;
+        let train_number_numeric_part = operational_train_number_numeric_part(&train_number)
+            .ok_or_else(|| OperationalError::InvalidTrainNumber(train_number.clone()))?;
+        if self.trains.values().any(|train| {
+            operational_train_number_numeric_part(&train.train_number)
+                == Some(train_number_numeric_part)
+        }) {
+            return Err(OperationalError::DuplicateTrainNumber(
+                train_number_numeric_part,
+            ));
+        }
         let route = self
-            .infra
-            .route_versions
-            .get(&route_version_id)
+            .infrastructure()?
+            .route_version(&route_version_id)?
             .ok_or_else(|| OperationalError::UnknownRoute(route_version_id.clone()))?;
         route.validate()?;
         let formation = self
@@ -1500,17 +1949,14 @@ impl OperationalWorld {
         if !formation.performance.mobile || head_route_mm < 0 || head_route_mm > route.length_mm() {
             return Err(OperationalError::UnsafeMaterialization(id));
         }
-        if route.legs.iter().any(|leg| {
-            !leg.required_protection_systems
-                .is_subset(&formation.performance.protection_systems)
-        }) {
+        if !route_protection_compatible(&route, formation) {
             return Err(OperationalError::IncompatibleProtectionSystem(id));
         }
         self.ensure_vehicles_available(&id, &formation.vehicle_ids)?;
         let tail = head_route_mm.saturating_sub(i64::from(formation.performance.length_mm));
-        let intervals = intervals_for(route, tail, head_route_mm)?;
+        let intervals = intervals_for(&route, tail, head_route_mm)?;
         self.ensure_intervals_free(&id, &intervals)?;
-        let occupied_blocks = blocks_for(route, tail, head_route_mm);
+        let occupied_blocks = blocks_for(&route, tail, head_route_mm);
         let direction = route
             .leg_at(head_route_mm)
             .ok_or_else(|| OperationalError::IncompleteRoute(route.id.clone()))?
@@ -1587,20 +2033,48 @@ impl OperationalWorld {
             .get(train_id)
             .ok_or_else(|| OperationalError::UnknownTrain(train_id.to_owned()))?;
         let route = self
-            .infra
-            .route_versions
-            .get(&train.route_version_id)
+            .infrastructure()?
+            .route_version(&train.route_version_id)?
             .ok_or_else(|| OperationalError::UnknownRoute(train.route_version_id.clone()))?;
         if train.head_route_mm != route.length_mm()
             || train.speed_mmps != 0
             || train.motion_segment.is_some()
             || train.authority.is_some()
-            || self
-                .route_locks
-                .values()
-                .any(|lock| lock.train_id == train_id)
         {
             return Err(OperationalError::TrainNotRetirable(train_id.to_owned()));
+        }
+
+        // Eine Fahrstrasse mit Freigabepunkt am Laufwegende kann bei positiver
+        // Zuglaenge nicht mehr durch die Schlussfreigabe erreicht werden: Der
+        // Zugkopf darf das Laufwegende nicht ueberfahren. Solche bis zum Ende
+        // schuetzenden Locks werden deshalb erst hier gemeinsam mit dem
+        // vollstaendig beendeten Zug freigegeben. Alle Signalreferenzen werden
+        // vor der ersten Mutation aufgeloest, damit ein defekter Infra-Anhang
+        // nicht zu einer teilweisen Freigabe fuehren kann.
+        let (retiring_lock_ids, retiring_signal_ids, retained_signal_ids) = {
+            let infrastructure = self.infrastructure()?;
+            let mut retiring_lock_ids = BTreeSet::new();
+            let mut retiring_signal_ids = BTreeSet::new();
+            let mut retained_signal_ids = BTreeSet::new();
+            for lock in self.route_locks.values() {
+                let template = infrastructure
+                    .interlocking_route(&lock.template_id)?
+                    .ok_or_else(|| {
+                        OperationalError::UnknownInterlockingRoute(lock.template_id.clone())
+                    })?;
+                if lock.train_id == train_id {
+                    retiring_lock_ids.insert(lock.id.clone());
+                    retiring_signal_ids.insert(template.signal_id);
+                } else {
+                    retained_signal_ids.insert(template.signal_id);
+                }
+            }
+            (retiring_lock_ids, retiring_signal_ids, retained_signal_ids)
+        };
+        self.route_locks
+            .retain(|lock_id, _| !retiring_lock_ids.contains(lock_id));
+        for signal_id in retiring_signal_ids.difference(&retained_signal_ids) {
+            self.signal_aspects.remove(signal_id);
         }
         self.trains.remove(train_id);
         self.scheduled_motion_ends
@@ -1668,17 +2142,15 @@ impl OperationalWorld {
             .get(train_id)
             .ok_or_else(|| OperationalError::UnknownTrain(train_id.to_owned()))?;
         let template = self
-            .infra
-            .interlocking_routes
-            .get(template_id)
+            .infrastructure()?
+            .interlocking_route(template_id)?
             .ok_or_else(|| OperationalError::UnknownInterlockingRoute(template_id.to_owned()))?;
         if template.movement_kind != train.movement_kind {
             return Err(OperationalError::WrongMovementKind);
         }
         let route = self
-            .infra
-            .route_versions
-            .get(&train.route_version_id)
+            .infrastructure()?
+            .route_version(&train.route_version_id)?
             .ok_or_else(|| OperationalError::UnknownRoute(train.route_version_id.clone()))?;
         let formation = self
             .formations
@@ -1692,9 +2164,7 @@ impl OperationalWorld {
         if route.template_id != template.route_template_id
             || template.authority_end_route_mm <= train.head_route_mm
             || template.authority_end_route_mm > route.length_mm()
-            || !leg
-                .required_protection_systems
-                .is_subset(&formation.performance.protection_systems)
+            || !protection_systems_compatible(leg, &formation.performance.protection_systems)
         {
             return Err(OperationalError::UnsafeRoute(template_id.to_owned()));
         }
@@ -1826,9 +2296,8 @@ impl OperationalWorld {
                 ));
             }
             let template = self
-                .infra
-                .interlocking_routes
-                .get(&request.interlocking_route_id)
+                .infrastructure()?
+                .interlocking_route(&request.interlocking_route_id)?
                 .ok_or_else(|| {
                     OperationalError::UnknownInterlockingRoute(
                         request.interlocking_route_id.clone(),
@@ -1889,9 +2358,8 @@ impl OperationalWorld {
                 OperationalError::UnknownFormation(train.formation_version_id.clone())
             })?;
         let route = self
-            .infra
-            .route_versions
-            .get(&train.route_version_id)
+            .infrastructure()?
+            .route_version(&train.route_version_id)?
             .ok_or_else(|| OperationalError::UnknownRoute(train.route_version_id.clone()))?;
         let authority = train
             .authority
@@ -1914,10 +2382,7 @@ impl OperationalWorld {
         let leg = route
             .leg_at(train.head_route_mm)
             .ok_or_else(|| OperationalError::IncompleteRoute(route.id.clone()))?;
-        if !leg
-            .required_protection_systems
-            .is_subset(&formation.performance.protection_systems)
-        {
+        if !protection_systems_compatible(leg, &formation.performance.protection_systems) {
             self.safe_stop(train_id, "incompatible-protection-system")?;
             return Err(OperationalError::IncompatibleProtectionSystem(
                 train_id.to_owned(),
@@ -2069,9 +2534,8 @@ impl OperationalWorld {
         let head = segment.position_at(self.now_ms)?;
         let speed = segment.speed_at(self.now_ms)?;
         let route = self
-            .infra
-            .route_versions
-            .get(&route_id)
+            .infrastructure()?
+            .route_version(&route_id)?
             .ok_or_else(|| OperationalError::UnknownRoute(route_id.clone()))?;
         let length = self
             .formations
@@ -2080,9 +2544,9 @@ impl OperationalWorld {
             .performance
             .length_mm;
         let tail = head.saturating_sub(i64::from(length));
-        let intervals = intervals_for(route, tail, head)?;
+        let intervals = intervals_for(&route, tail, head)?;
         self.ensure_intervals_free(train_id, &intervals)?;
-        let blocks = blocks_for(route, tail, head);
+        let blocks = blocks_for(&route, tail, head);
         {
             let train = self.trains.get_mut(train_id).expect("train exists");
             if head
@@ -2169,15 +2633,14 @@ impl OperationalWorld {
                 .remove(&lock_id)
                 .expect("selected lock exists");
             let template = self
-                .infra
-                .interlocking_routes
-                .get(&lock.template_id)
-                .expect("release template exists");
-            self.signal_aspects
-                .insert(template.signal_id.clone(), SignalAspect::Stop);
+                .infrastructure()?
+                .interlocking_route(&lock.template_id)?
+                .ok_or_else(|| {
+                    OperationalError::UnknownInterlockingRoute(lock.template_id.clone())
+                })?;
+            self.signal_aspects.remove(&template.signal_id);
             for resource in &lock.resources {
-                self.resource_lifecycle
-                    .insert(resource.clone(), ResourceLifecycle::Free);
+                self.resource_lifecycle.remove(resource);
             }
             if self.trains.get(train_id).is_some_and(|train| {
                 train.authority.as_ref().is_some_and(|authority| {
@@ -2196,12 +2659,9 @@ impl OperationalWorld {
     }
 
     fn rebuild_resource_lifecycle(&mut self) {
-        self.resource_lifecycle = self
-            .infra
-            .block_resources
-            .iter()
-            .map(|resource| (resource.clone(), ResourceLifecycle::Free))
-            .collect();
+        // `Free` ist der statische Grundzustand und wird nicht im dynamischen
+        // Checkpoint materialisiert. Nur aktive Abweichungen werden gespeichert.
+        self.resource_lifecycle.clear();
         for lock in self.route_locks.values() {
             for resource in &lock.resources {
                 self.resource_lifecycle
@@ -2228,11 +2688,8 @@ impl OperationalWorld {
         };
         train.waiting_reason = Some(reason.to_owned());
         train.authority = None;
-        for aspect in self.signal_aspects.values_mut() {
-            if *aspect != SignalAspect::Failed {
-                *aspect = SignalAspect::Stop;
-            }
-        }
+        self.signal_aspects
+            .retain(|_, aspect| *aspect == SignalAspect::Failed);
         self.record("safe-stop", train_id, reason)?;
         Ok(())
     }
@@ -2258,12 +2715,11 @@ impl OperationalWorld {
         let formation =
             self.derive_formation(new_formation_id.into(), Some(predecessor), vehicle_ids)?;
         let route = self
-            .infra
-            .route_versions
-            .get(&route_id)
-            .expect("train route exists");
+            .infrastructure()?
+            .route_version(&route_id)?
+            .ok_or_else(|| OperationalError::UnknownRoute(route_id.clone()))?;
         let tail = head.saturating_sub(i64::from(formation.performance.length_mm));
-        let intervals = intervals_for(route, tail, head)?;
+        let intervals = intervals_for(&route, tail, head)?;
         self.ensure_intervals_free(train_id, &intervals)?;
         self.formations
             .insert(formation.id.clone(), formation.clone());
@@ -2271,7 +2727,7 @@ impl OperationalWorld {
         train.formation_version_id = formation.id.clone();
         train.tail_route_mm = tail;
         train.occupied_intervals = intervals;
-        train.occupied_blocks = blocks_for(route, tail, head);
+        train.occupied_blocks = blocks_for(&route, tail, head);
         self.record("formation-changed", train_id, formation.id)?;
         Ok(())
     }
@@ -2301,20 +2757,18 @@ impl OperationalWorld {
             return Err(OperationalError::RerouteWhileAuthorized);
         }
         let current_route = self
-            .infra
-            .route_versions
-            .get(&train.route_version_id)
+            .infrastructure()?
+            .route_version(&train.route_version_id)?
             .ok_or_else(|| OperationalError::UnknownRoute(train.route_version_id.clone()))?;
         let next_route = self
-            .infra
-            .route_versions
-            .get(route_version_id)
+            .infrastructure()?
+            .route_version(route_version_id)?
             .ok_or_else(|| OperationalError::UnknownRoute(route_version_id.to_owned()))?;
         if next_route.predecessor_id.as_deref() != Some(current_route.id.as_str())
             || next_route
                 .transition_route_mm
                 .is_none_or(|transition| transition < train.head_route_mm)
-            || intervals_for(next_route, train.tail_route_mm, train.head_route_mm)?
+            || intervals_for(&next_route, train.tail_route_mm, train.head_route_mm)?
                 != train.occupied_intervals
         {
             return Err(OperationalError::DiscontinuousReroute(
@@ -2374,13 +2828,9 @@ impl OperationalWorld {
             return Err(OperationalError::WrongMovementKind);
         }
         let candidates: Vec<String> = self
-            .infra
-            .interlocking_routes
-            .values()
-            .filter(|route| {
-                route.movement_kind == MovementKind::Shunting
-                    && route.authority_end_route_mm >= need.minimum_authority_end_route_mm
-            })
+            .infrastructure()?
+            .shunting_interlocking_routes(need.minimum_authority_end_route_mm)?
+            .into_iter()
             .map(|route| route.id.clone())
             .collect();
         for route_id in candidates {
@@ -2431,22 +2881,32 @@ impl OperationalWorld {
                     .route_locks
                     .values()
                     .filter(|lock| lock.train_id == train.id)
-                    .any(|lock| {
-                        self.infra
-                            .interlocking_routes
-                            .get(&lock.template_id)
-                            .is_some_and(|route| &route.signal_id == signal_id)
-                    }),
+                    .try_fold(false, |affected, lock| {
+                        Ok::<_, OperationalError>(
+                            affected
+                                || self
+                                    .infrastructure()?
+                                    .interlocking_route(&lock.template_id)?
+                                    .is_some_and(|route| &route.signal_id == signal_id),
+                        )
+                    })
+                    .unwrap_or(true),
                 OperationalDisruption::SwitchFailed { switch_id } => self
                     .route_locks
                     .values()
                     .filter(|lock| lock.train_id == train.id)
-                    .any(|lock| {
-                        self.infra
-                            .interlocking_routes
-                            .get(&lock.template_id)
-                            .is_some_and(|route| route.switch_positions.contains_key(switch_id))
-                    }),
+                    .try_fold(false, |affected, lock| {
+                        Ok::<_, OperationalError>(
+                            affected
+                                || self
+                                    .infrastructure()?
+                                    .interlocking_route(&lock.template_id)?
+                                    .is_some_and(|route| {
+                                        route.switch_positions.contains_key(switch_id)
+                                    }),
+                        )
+                    })
+                    .unwrap_or(true),
                 OperationalDisruption::VehicleRestricted { .. } => false,
             })
             .map(|train| train.id.clone())
@@ -2563,9 +3023,8 @@ impl OperationalWorld {
             .ok_or_else(|| OperationalError::UnknownTrain(train_id.to_owned()))?;
         let formation = &self.formations[&train.formation_version_id];
         let platform = self
-            .infra
-            .platform_intervals
-            .get(platform_id)
+            .infrastructure()?
+            .platform_interval(platform_id)?
             .ok_or_else(|| OperationalError::UnknownPlatform(platform_id.to_owned()))?;
         let usable = platform.to_mm.saturating_sub(platform.from_mm);
         let length = i64::from(formation.performance.length_mm);
@@ -2589,7 +3048,7 @@ impl OperationalWorld {
         &self,
         kind: ProjectionKind,
         visible_edges: &BTreeSet<String>,
-    ) -> OperationalProjection {
+    ) -> Result<OperationalProjection, OperationalError> {
         let trains = self
             .trains
             .values()
@@ -2600,52 +3059,60 @@ impl OperationalWorld {
                         .iter()
                         .any(|interval| visible_edges.contains(&interval.edge_id))
             })
-            .map(|train| {
-                let route = self
-                    .infra
-                    .route_versions
-                    .get(&train.route_version_id)
-                    .expect("materialized route exists");
-                let motion_geometry =
-                    train
-                        .motion_segment
-                        .as_ref()
-                        .map_or_else(Vec::new, |segment| {
-                            route_geometry_for(
-                                &self.infra,
-                                route,
-                                segment.start_route_mm,
-                                segment.segment_end_route_mm,
-                            )
-                        });
-                OperationalTrainProjection {
-                    train_id: train.id.clone(),
-                    train_number: train.train_number.clone(),
-                    operator_id: train.operator_id.clone(),
-                    movement_kind: train.movement_kind,
-                    route_version_id: train.route_version_id.clone(),
-                    formation_version_id: train.formation_version_id.clone(),
-                    head_route_mm: train.head_route_mm,
-                    tail_route_mm: train.tail_route_mm,
-                    speed_mmps: train.speed_mmps,
-                    direction: train.direction,
-                    motion_state: ProjectedMotionState::from(&train.motion_state),
-                    occupied_intervals: train.occupied_intervals.clone(),
-                    occupied_blocks: train.occupied_blocks.clone(),
-                    authority_end_route_mm: train
-                        .authority
-                        .as_ref()
-                        .map(|authority| authority.end_route_mm),
-                    head_geometry: route_geometry_position(&self.infra, route, train.head_route_mm)
-                        .expect("materialized head remains on route"),
-                    tail_geometry: route_geometry_position(&self.infra, route, train.tail_route_mm),
-                    motion_segment: train.motion_segment.clone(),
-                    motion_geometry,
-                    waiting_reason: train.waiting_reason.clone(),
-                }
-            })
-            .collect();
-        OperationalProjection {
+            .map(
+                |train| -> Result<OperationalTrainProjection, OperationalError> {
+                    let route = self
+                        .infrastructure()?
+                        .route_version(&train.route_version_id)?
+                        .ok_or_else(|| {
+                            OperationalError::UnknownRoute(train.route_version_id.clone())
+                        })?;
+                    let motion_geometry = match &train.motion_segment {
+                        Some(segment) => route_geometry_for(
+                            self.infrastructure()?,
+                            &route,
+                            segment.start_route_mm,
+                            segment.segment_end_route_mm,
+                        )?,
+                        None => Vec::new(),
+                    };
+                    Ok(OperationalTrainProjection {
+                        train_id: train.id.clone(),
+                        train_number: train.train_number.clone(),
+                        operator_id: train.operator_id.clone(),
+                        movement_kind: train.movement_kind,
+                        route_version_id: train.route_version_id.clone(),
+                        formation_version_id: train.formation_version_id.clone(),
+                        head_route_mm: train.head_route_mm,
+                        tail_route_mm: train.tail_route_mm,
+                        speed_mmps: train.speed_mmps,
+                        direction: train.direction,
+                        motion_state: ProjectedMotionState::from(&train.motion_state),
+                        occupied_intervals: train.occupied_intervals.clone(),
+                        occupied_blocks: train.occupied_blocks.clone(),
+                        authority_end_route_mm: train
+                            .authority
+                            .as_ref()
+                            .map(|authority| authority.end_route_mm),
+                        head_geometry: route_geometry_position(
+                            self.infrastructure()?,
+                            &route,
+                            train.head_route_mm,
+                        )?
+                        .ok_or(OperationalError::UnsafeState)?,
+                        tail_geometry: route_geometry_position(
+                            self.infrastructure()?,
+                            &route,
+                            train.tail_route_mm,
+                        )?,
+                        motion_segment: train.motion_segment.clone(),
+                        motion_geometry,
+                        waiting_reason: train.waiting_reason.clone(),
+                    })
+                },
+            )
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(OperationalProjection {
             kind,
             world_id: self.world_id.clone(),
             region_id: self.region_id.clone(),
@@ -2666,7 +3133,7 @@ impl OperationalWorld {
                     effect: effect.clone(),
                 })
                 .collect(),
-        }
+        })
     }
 
     pub fn checkpoint(&self) -> OperationalCheckpoint {
@@ -2735,6 +3202,18 @@ impl OperationalWorld {
         if handover.target_region_id != self.region_id || handover.acknowledged {
             return Err(OperationalError::InvalidHandover);
         }
+        let train_number_numeric_part = operational_train_number_numeric_part(
+            &handover.train.train_number,
+        )
+        .ok_or_else(|| OperationalError::InvalidTrainNumber(handover.train.train_number.clone()))?;
+        if self.trains.values().any(|train| {
+            operational_train_number_numeric_part(&train.train_number)
+                == Some(train_number_numeric_part)
+        }) {
+            return Err(OperationalError::DuplicateTrainNumber(
+                train_number_numeric_part,
+            ));
+        }
         self.formations
             .insert(handover.formation.id.clone(), handover.formation.clone());
         self.ensure_intervals_free(&handover.train.id, &handover.train.occupied_intervals)?;
@@ -2801,7 +3280,8 @@ impl OperationalWorld {
         }
         let trains: Vec<&OperationalTrain> = self.trains.values().collect();
         for (index, left) in trains.iter().enumerate() {
-            if left.tail_route_mm > left.head_route_mm
+            if operational_train_number_numeric_part(&left.train_number).is_none()
+                || left.tail_route_mm > left.head_route_mm
                 || left
                     .authority
                     .as_ref()
@@ -2812,6 +3292,14 @@ impl OperationalWorld {
                 return Err(OperationalError::UnsafeState);
             }
             for right in trains.iter().skip(index + 1) {
+                if operational_train_number_numeric_part(&left.train_number)
+                    == operational_train_number_numeric_part(&right.train_number)
+                {
+                    return Err(OperationalError::DuplicateTrainNumber(
+                        operational_train_number_numeric_part(&left.train_number)
+                            .expect("left train number was validated"),
+                    ));
+                }
                 if left
                     .occupied_intervals
                     .iter()
@@ -2836,12 +3324,12 @@ impl OperationalWorld {
     pub fn state_hash(&self) -> StateHash {
         let mut canonical = self.clone();
         // Ereignisbytes liegen im append-only Tail ausserhalb des Checkpoints.
-        // Alle anderen serialisierten Felder sind autoritativ und werden
-        // einschliesslich des unveraenderlichen InfraRelease gebunden.
+        // Die statische Infrastruktur ist bewusst nicht serialisiert. Ihre
+        // signierte Dateibindung gehoert zur aeusseren RuntimeState-Grenze.
         canonical.events.clear();
         let bytes = serde_json::to_vec(&canonical)
             .expect("OperationalWorld besitzt ausschliesslich serialisierbare Zustandsfelder");
-        let mut hash = StateHasher::new("operational-world/v3");
+        let mut hash = StateHasher::new("operational-world/v4");
         hash.bytes("canonical-json", &bytes);
         hash.finish()
     }
@@ -2896,12 +3384,17 @@ fn blocks_for(route: &RouteVersion, tail_route_mm: i64, head_route_mm: i64) -> B
 }
 
 fn edge_geometry_position(
-    infra: &OperationalInfraRelease,
+    infra: &dyn OperationalInfrastructure,
     edge_id: &str,
     edge_offset_mm: i64,
     direction: Direction,
-) -> OperationalRouteGeometryPoint {
-    let points = &infra.edge_geometries[edge_id];
+) -> Result<OperationalRouteGeometryPoint, OperationalError> {
+    let points = infra
+        .edge_geometry(edge_id)?
+        .ok_or_else(|| OperationalError::UnknownEdge(edge_id.to_owned()))?;
+    if points.len() < 2 {
+        return Err(OperationalError::InvalidEdgeGeometry(edge_id.to_owned()));
+    }
     let mut end_index = points
         .iter()
         .position(|point| point.edge_offset_mm >= edge_offset_mm)
@@ -2924,41 +3417,43 @@ fn edge_geometry_position(
         Direction::Along => bearing,
         Direction::Against => bearing.saturating_add(180_000) % 360_000,
     });
-    OperationalRouteGeometryPoint {
+    Ok(OperationalRouteGeometryPoint {
         route_mm: 0,
         edge_id: edge_id.to_owned(),
         edge_offset_mm,
         latitude_e7: interpolate(start.latitude_e7, end.latitude_e7),
         longitude_e7: interpolate(start.longitude_e7, end.longitude_e7),
         bearing_milli_degrees: bearing,
-    }
+    })
 }
 
 fn route_geometry_position(
-    infra: &OperationalInfraRelease,
+    infra: &dyn OperationalInfrastructure,
     route: &RouteVersion,
     route_mm: i64,
-) -> Option<OperationalRouteGeometryPoint> {
+) -> Result<Option<OperationalRouteGeometryPoint>, OperationalError> {
     if route_mm < 0 || route_mm > route.length_mm() {
-        return None;
+        return Ok(None);
     }
-    let leg = route.leg_at(route_mm)?;
+    let Some(leg) = route.leg_at(route_mm) else {
+        return Ok(None);
+    };
     let distance_on_leg = route_mm.saturating_sub(leg.route_start_mm);
     let edge_offset_mm = match leg.direction {
         Direction::Along => leg.edge_entry_mm.saturating_add(distance_on_leg),
         Direction::Against => leg.edge_entry_mm.saturating_sub(distance_on_leg),
     };
-    let mut point = edge_geometry_position(infra, &leg.edge_id, edge_offset_mm, leg.direction);
+    let mut point = edge_geometry_position(infra, &leg.edge_id, edge_offset_mm, leg.direction)?;
     point.route_mm = route_mm;
-    Some(point)
+    Ok(Some(point))
 }
 
 fn route_geometry_for(
-    infra: &OperationalInfraRelease,
+    infra: &dyn OperationalInfrastructure,
     route: &RouteVersion,
     start_route_mm: i64,
     end_route_mm: i64,
-) -> Vec<OperationalRouteGeometryPoint> {
+) -> Result<Vec<OperationalRouteGeometryPoint>, OperationalError> {
     let mut result = Vec::new();
     for leg in &route.legs {
         let start = start_route_mm.max(leg.route_start_mm);
@@ -2975,7 +3470,10 @@ fn route_geometry_for(
                 .saturating_sub(route_mm.saturating_sub(leg.route_start_mm)),
         };
         let mut candidates = vec![(start, edge_offset(start)), (end, edge_offset(end))];
-        for point in &infra.edge_geometries[&leg.edge_id] {
+        let geometry = infra
+            .edge_geometry(&leg.edge_id)?
+            .ok_or_else(|| OperationalError::UnknownEdge(leg.edge_id.clone()))?;
+        for point in &geometry {
             let route_mm = match leg.direction {
                 Direction::Along => leg
                     .route_start_mm
@@ -2996,12 +3494,12 @@ fn route_geometry_for(
             {
                 continue;
             }
-            let mut point = edge_geometry_position(infra, &leg.edge_id, offset, leg.direction);
+            let mut point = edge_geometry_position(infra, &leg.edge_id, offset, leg.direction)?;
             point.route_mm = route_mm;
             result.push(point);
         }
     }
-    result
+    Ok(result)
 }
 
 fn kinematic_distance_mm(start_speed_mmps: u32, acceleration_mmps2: i32, elapsed_ms: i64) -> i128 {
@@ -3169,6 +3667,9 @@ pub enum OperationalError {
     ArithmeticOverflow,
     OutsideMotionValidity,
     IncompleteInfraRelease,
+    MissingInfrastructureBinding,
+    ForeignInfrastructureBinding,
+    InfrastructureAccess(String),
     IncompleteRoute(String),
     UnknownEdge(String),
     InvalidInterlockingRoute(String),
@@ -3182,8 +3683,11 @@ pub enum OperationalError {
     UnknownInterlockingRoute(String),
     UnknownPlatform(String),
     DuplicateId(String),
+    InvalidTrainNumber(String),
+    DuplicateTrainNumber(u32),
     InvalidFormation(String),
     UnsafeMaterialization(String),
+    InvalidProgramTemplate(String),
     IncompatibleProtectionSystem(String),
     OccupiedTrack,
     UnsafeRoute(String),

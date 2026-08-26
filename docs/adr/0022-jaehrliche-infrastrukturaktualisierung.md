@@ -18,13 +18,12 @@ Mechanismus, der damit mithält, veraltet die Pilotregion sichtbar gegenüber
 ihrem realen Vorbild — ein Widerspruch zum hohen betrieblichen und
 infrastrukturellen Realismus, den das Projekt beansprucht.
 
-Zugleich wurde bei der Prüfung der Trassenfinder-Infrastruktur-API
-(`openapi.trassenfinder.de`, M0.4-Nachtrag) bekannt, dass deren
-`/infrastrukturen`-Ressource Betriebsstellen- und Streckensegment-Stammdaten
-explizit an ein Fahrplanjahr bindet (`fahrplanjahr`, `gueltig_von`,
-`gueltig_bis`) und öffentlich, ohne Nutzungsbedingungen, nutzbar ist. Das legt
-einen jährlichen statt eines laufenden Abgriffs nahe — strukturell wie
-`osm-pbf-lhe`, nicht wie eine Laufzeitabhängigkeit.
+Der Jahreslauf braucht dafür reproduzierbar gepinnte und rechtlich
+freigegebene Eingaben. Öffentliche Erreichbarkeit allein genügt nicht:
+Insbesondere die Trassenfinder-Infrastruktur-API besitzt keine veröffentlichten
+Nutzungsbedingungen und bleibt deshalb interne Lineagereferenz, nicht
+Releaseinput. Der offizielle DB-InfraGO-Open-Data-Datensatz übernimmt die
+amtliche Betriebsstellen- und Streckenattributebene.
 
 ## Entscheidung
 
@@ -34,21 +33,19 @@ versionierten `InfraRelease` verarbeitet. E26 erweitert den ursprünglichen
 Pilotregionsschnitt auf einen vollständig sichtbaren Deutschland-Korpus und
 eine getrennte Welt-Basemap. Welche Quellen einen konkreten Jahresstand tragen,
 entscheidet daher nicht mehr eine fest verdrahtete Zweierliste, sondern der
-geprüfte, versionierte Quellkatalog. Der ursprüngliche Mindestbestand bleibt:
-
-- ein aktualisierter `osm-pbf-lhe`-Extract (wie bisher, M1.2), und
-- die `/infrastrukturen`-Ressource der Trassenfinder-Infrastruktur-API als
-  zusätzliche, ergänzende Importquelle für Betriebsstellen- und
-  Streckensegment-Stammdaten, gebunden an das jeweilige Fahrplanjahr.
+geprüfte, versionierte Quellkatalog. Für 2026.3 bindet der Mindestbestand exakt
+die fünf freigegebenen Pflichtquellen Deutschland-OSM-PBF,
+DB-InfraGO-Open-Data, GTFS.DE, Copernicus DEM und OpenStation. Betriebspunkte
+werden direkt aus dem DB-InfraGO-Adapter materialisiert, ohne
+Trassenfinder-Gegenprüfung oder Fallback.
 
 Ausdrücklich **nicht** erfasst: die von der Trassenfinder-API berechneten
 Fahrzeit- und Trassenpreiswerte (Routensuche). Die bleiben, wie in E10/ADR-0010
 entschieden, reine Kalibrierreferenz der Entwicklung — niemals Import, niemals
 Laufzeitquelle. E10s Laufzeitverbot gilt unverändert für die gesamte
-Trassenfinder-API; diese Entscheidung erweitert es nicht, sondern nutzt
-lediglich eine andere, stammdatenbasierte Ressource derselben API als
-zusätzliche **Importquelle für die Entwicklungs-Pipeline**, genau wie
-`osm-pbf-lhe`.
+Trassenfinder-API. Historische Stammdaten und daraus erzeugte Derivate bleiben
+interne Lineageprüfung und werden nicht als GTFS- oder Open-Data-Ableitung
+umetikettiert.
 
 Ein neues `InfraRelease` ersetzt keine laufende Welt sofort. Es wird zum
 nächsten `Periodenwechsel` (Ende der laufenden Fahrplanperiode, ADR-0003)
@@ -69,12 +66,9 @@ Periodenwechsel getrennt.
 Eine Welt, die niemals zurückgesetzt wird, aber ihr reales Vorbild ignoriert,
 verliert genau den Realismus, der das Projekt trägt (E19: Realismus dient dem
 Spiel). Der jährliche Fahrplanwechsel ist der natürliche, real vorgegebene
-Takt dafür — kein selbst erfundenes Intervall. Dass die Infrastruktur-API des
-Trassenfinders ihre Stammdaten von sich aus an ein Fahrplanjahr bindet und
-ohne Nutzungsbedingungen zugänglich ist, macht einen jährlichen, offline
-gehaltenen Import zu einer risikoarmen Ergänzung zum bestehenden
-OSM-Extract-Verfahren — ohne die in ADR-0010 begründete Ablehnung eines
-Laufzeitdiensts zu berühren.
+Takt dafür — kein selbst erfundenes Intervall. Ein versionierter Quellkatalog,
+Byte-/SHA-Capture und create-new-Ausgaben halten diesen Takt reproduzierbar,
+ohne die in ADR-0010 begründete Ablehnung eines Laufzeitdiensts zu berühren.
 
 ## Konsequenzen
 

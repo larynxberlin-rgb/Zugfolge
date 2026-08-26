@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "zugfolge-alpha-world-identity/v1",
+  "worldId": "0db56535-a466-44a8-a991-38a8a1f7566c",
+  "regionId": "mitteldeutschland-b",
+  "regionVariant": "B",
+  "operatorId": "public",
+  "seed": "2026082501",
+  "fleetReleaseId": "fleet-alpha-mitteldeutschland-b-2026.3",
+  "planningAuthority": {
+    "accountId": "9158446f-70be-46ce-bbfa-7b4cf56215ff",
+    "displayName": "Aufgabenträger Mitteldeutschland Alpha 2026"
+  }
+}

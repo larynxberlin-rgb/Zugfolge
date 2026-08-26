@@ -23,8 +23,9 @@ type RegionalSimulationAdvancer = Pick<
 >;
 
 const TARGET_BATCH_COMMANDS = 2_000;
+export const REGIONAL_SIMULATION_BOUNDARY_COMMAND_LIMIT = 256;
 
-interface TimedRegionalSimulationWork {
+export interface TimedRegionalSimulationWork {
   readonly atMs: number;
   readonly command: RegionalSimulationWorkBatch["commands"][number];
 }
@@ -36,11 +37,47 @@ export interface RegionalRealtimeRegistration {
   readonly initializationHash: string;
 }
 
+export type RegionalSimulationSchedulerPhase =
+  | "region-started"
+  | "recovery-started"
+  | "recovery-completed"
+  | "batch-started"
+  | "batch-completed"
+  | "region-idle"
+  | "region-completed"
+  | "region-failed";
+
+/** Interner Diagnosefortschritt; wird nie Bestandteil oeffentlicher Healthdetails. */
+export interface RegionalSimulationSchedulerProgress {
+  readonly phase: RegionalSimulationSchedulerPhase;
+  readonly worldId: string;
+  readonly regionId: string;
+  readonly currentNowMs?: number;
+  readonly targetNowMs?: number;
+  readonly commandCount?: number;
+}
+
+export type RegionalSimulationSchedulerProgressObserver = (
+  progress: RegionalSimulationSchedulerProgress,
+) => void;
+
+function reportProgress(
+  observer: RegionalSimulationSchedulerProgressObserver | undefined,
+  progress: RegionalSimulationSchedulerProgress,
+): void {
+  if (observer === undefined) return;
+  try {
+    observer(progress);
+  } catch {
+    // Diagnoseausgabe darf den autoritativen Takt niemals beeinflussen.
+  }
+}
+
 function registrationKey(registration: RegionalRealtimeRegistration): string {
   return `${registration.worldId}\u0000${registration.regionId}`;
 }
 
-function chunkWithoutSplittingBoundary(
+export function chunkWithoutSplittingBoundary(
   commands: readonly TimedRegionalSimulationWork[],
   targetSize = TARGET_BATCH_COMMANDS,
 ): readonly (readonly TimedRegionalSimulationWork[])[] {
@@ -55,6 +92,11 @@ function chunkWithoutSplittingBoundary(
     let groupEnd = index + 1;
     while (groupEnd < commands.length && commands[groupEnd]!.atMs === atMs) groupEnd += 1;
     const group = commands.slice(index, groupEnd);
+    if (group.length > REGIONAL_SIMULATION_BOUNDARY_COMMAND_LIMIT) {
+      throw new RangeError(
+        `Scheduler-Zeitgrenze ${atMs} enthaelt mehr als ${REGIONAL_SIMULATION_BOUNDARY_COMMAND_LIMIT} atomare Kommandos.`,
+      );
+    }
     if (current.length > 0 && current.length + group.length > targetSize) {
       chunks.push(current);
       current = [];
@@ -102,6 +144,7 @@ export async function advanceRegionalSimulations(
   worldEpochs: ReadonlyMap<string, Date>,
   at: Date,
   scheduledCommands?: RegionalScheduledCommandCatalog,
+  observeProgress?: RegionalSimulationSchedulerProgressObserver,
 ): Promise<number> {
   let advanced = 0;
   const readyByKey = new Map(
@@ -117,17 +160,35 @@ export async function advanceRegionalSimulations(
 
   for (const registration of registered) {
     try {
+      reportProgress(observeProgress, {
+        phase: "region-started",
+        worldId: registration.worldId,
+        regionId: registration.regionId,
+      });
       const key = registrationKey(registration);
       const ready = readyByKey.get(key);
-      const region = ready?.initializationHash === registration.initializationHash
-        ? ready
-        : await worker.recover(
+      let region = ready;
+      if (region?.initializationHash !== registration.initializationHash) {
+        reportProgress(observeProgress, {
+          phase: "recovery-started",
+          worldId: registration.worldId,
+          regionId: registration.regionId,
+        });
+        region = await worker.recover(
           registration.worldId,
           registration.regionId,
           registration.initializationHash,
         );
+        reportProgress(observeProgress, {
+          phase: "recovery-completed",
+          worldId: registration.worldId,
+          regionId: registration.regionId,
+          currentNowMs: region.nowMs,
+        });
+      }
       if (
-        registrationKey(region) !== key
+        region === undefined
+        || registrationKey(region) !== key
         || region.initializationHash !== registration.initializationHash
       ) {
         throw new Error(
@@ -140,9 +201,20 @@ export async function advanceRegionalSimulations(
         throw new Error(`Welt-Epoche fuer regionale Simulation '${region.worldId}' fehlt.`);
       }
       const atMs = regionalSimulationMillisecond(epoch, at);
-      if (atMs === undefined || atMs < region.nowMs) continue;
+      if (atMs === undefined || atMs < region.nowMs) {
+        reportProgress(observeProgress, {
+          phase: "region-idle",
+          worldId: region.worldId,
+          regionId: region.regionId,
+          currentNowMs: region.nowMs,
+          ...(atMs === undefined ? {} : { targetNowMs: atMs }),
+        });
+        continue;
+      }
 
       const pending: TimedRegionalSimulationWork[] = [];
+      const startedNowMs = region.nowMs;
+      let currentNowMs = region.nowMs;
       for (const scheduled of scheduledCommands?.at(
         region.worldId,
         region.regionId,
@@ -187,14 +259,59 @@ export async function advanceRegionalSimulations(
         }
       }
       for (const chunk of chunkWithoutSplittingBoundary(pending)) {
-        await worker.applyBatch({
+        reportProgress(observeProgress, {
+          phase: "batch-started",
+          worldId: region.worldId,
+          regionId: region.regionId,
+          currentNowMs,
+          targetNowMs: atMs,
+          commandCount: chunk.length,
+        });
+        const batch = await worker.applyBatch({
           worldId: region.worldId,
           regionId: region.regionId,
           commands: chunk.map((item) => item.command),
         }, at);
+        const completedNowMs = batch.state.world.nowMs;
+        if (
+          !Number.isSafeInteger(completedNowMs)
+          || completedNowMs < currentNowMs
+          || completedNowMs > atMs
+        ) {
+          throw new Error(
+            `Regionaler Batch '${region.worldId}/${region.regionId}' lieferte eine ungueltige Weltzeit.`,
+          );
+        }
+        currentNowMs = completedNowMs;
+        reportProgress(observeProgress, {
+          phase: "batch-completed",
+          worldId: region.worldId,
+          regionId: region.regionId,
+          currentNowMs,
+          targetNowMs: atMs,
+          commandCount: chunk.length,
+        });
       }
-      if (atMs > region.nowMs) advanced += 1;
+      if (currentNowMs !== atMs) {
+        throw new Error(
+          `Regionaler Takt '${region.worldId}/${region.regionId}' erreichte die Zielweltzeit ${atMs} nicht exakt.`,
+        );
+      }
+      if (atMs > startedNowMs) advanced += 1;
+      reportProgress(observeProgress, {
+        phase: "region-completed",
+        worldId: region.worldId,
+        regionId: region.regionId,
+        currentNowMs,
+        targetNowMs: atMs,
+        commandCount: pending.length,
+      });
     } catch (error) {
+      reportProgress(observeProgress, {
+        phase: "region-failed",
+        worldId: registration.worldId,
+        regionId: registration.regionId,
+      });
       failures.push(error);
     }
   }

@@ -12,6 +12,7 @@ mod regional_simulation;
 #[cfg(feature = "node-addon")]
 pub use regional_simulation::{
     apply_operational_simulation_command, apply_operational_simulation_command_async,
+    apply_operational_simulation_command_batch, apply_operational_simulation_command_batch_async,
     initialize_operational_simulation, restore_operational_simulation,
 };
 

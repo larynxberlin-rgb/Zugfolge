@@ -531,6 +531,9 @@ async function loadTrackCandidates(path, resources, corridorData) {
       invariant(corridor.fromMm === properties.official_from_km_mm && corridor.toMm === properties.official_to_km_mm, "Gleis und Korridor besitzen verschiedene Kilometrierungsspannen.");
       const trackId = nonEmptyString(properties.feature_id, "track.feature_id");
       const lengthMm = safeInteger(properties.length_mm, `${trackId}.length_mm`, 1);
+      const fromNodeId = safeInteger(properties.from_osm_node_id, `${trackId}.from_osm_node_id`, Number.MIN_SAFE_INTEGER);
+      const toNodeId = safeInteger(properties.to_osm_node_id, `${trackId}.to_osm_node_id`, Number.MIN_SAFE_INTEGER);
+      invariant(fromNodeId !== toNodeId, `${trackId} ist keine gerichtete lineare Kante.`);
       const rawCoordinates = lineCoordinates(feature.geometry, `${trackId}.geometry`);
       const geometry = geometryVertices(rawCoordinates, lengthMm, `${trackId}.geometry`);
       const first = geometry.polyline.projected[0];
@@ -549,8 +552,8 @@ async function loadTrackCandidates(path, resources, corridorData) {
         continue;
       }
       invariant(!geometryByTrack.has(trackId), `Gleis '${trackId}' ist doppelt.`);
-      geometryByTrack.set(trackId, Object.freeze({ trackId, lengthMm, vertices: geometry.vertices }));
-      candidates.push(Object.freeze({ trackId, routeNumber, direction, trackCount, kmFirst, kmLast, lengthMm }));
+      geometryByTrack.set(trackId, Object.freeze({ trackId, fromNodeId, toNodeId, lengthMm, vertices: geometry.vertices }));
+      candidates.push(Object.freeze({ trackId, fromNodeId, toNodeId, routeNumber, direction, trackCount, kmFirst, kmLast, lengthMm }));
     } catch {
       rejected.invalid += 1;
     }
@@ -600,6 +603,33 @@ function buildResourceProjection(resources, trackData) {
     resolution,
     referencedTracks,
   };
+}
+
+/**
+ * Loest die bereits qualifizierten Streckenressourcen eines Operational Network
+ * ausschliesslich auf vorhandene, gerichtete Deutschland-Gleiskanten auf.
+ *
+ * Der Helper teilt den strengen, kilometrierungsgebundenen Pfad mit dem
+ * historischen Kartenprojektor, erzeugt aber weder Welt- noch Zugzustand und
+ * verwendet insbesondere keine Anzeige-Schaetzgeometrie. Er ist damit die
+ * gemeinsame Offline-Grenze fuer einen spaeteren Operational-v2-Laufwegbeleg.
+ */
+export async function projectOperationalResourcesToTracks({ network, tracksPath, corridorsPath }) {
+  const { stations, resources } = buildResources(network);
+  const corridorData = await loadCorridors(corridorsPath, resources, stations);
+  const trackData = await loadTrackCandidates(tracksPath, resources, corridorData);
+  const projection = buildResourceProjection(resources, trackData);
+  return Object.freeze({
+    resources: Object.freeze(resources),
+    spans: Object.freeze(projection.spans),
+    resolution: Object.freeze(projection.resolution),
+    tracks: Object.freeze([...trackData.geometryByTrack.values()].sort((left, right) => compareText(left.trackId, right.trackId))),
+    sourceMetrics: Object.freeze({
+      corridorOrientation: corridorData.orientationCounts,
+      rejectedCorridors: corridorData.rejected,
+      rejectedTracks: trackData.rejected,
+    }),
+  });
 }
 
 function displayGeometryVertices(rawCoordinates, declaredLengthMm, name) {

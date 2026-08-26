@@ -1,23 +1,39 @@
+import base64
+import binascii
 import hashlib
 import json
 import os
 import re
+import secrets
 import uuid
 
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, UserError, ValidationError
 
-from ..services import stage_infra_package
+from ..services import stage_infra_package, verify_infra_finalization_receipt
 
 
 SHA256 = re.compile(r"^[a-f0-9]{64}$")
+FINALIZATION_NONCE = re.compile(r"^[a-f0-9]{64}$")
 SAFE_ID = re.compile(r"^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$")
 PART_BYTES = 100 * 1024 * 1024
 MAX_MANIFEST_BYTES = 16 * 1024 * 1024
-PACKAGE_SCHEMA = "zugfolge-map-package/v1"
-DELIVERY_SCHEMA = "zugfolge-map-delivery-release/v1"
-SOURCES_SCHEMA = "zugfolge-map-delivery-sources/v1"
-QUALITY_SCHEMA = "zugfolge-final-infrastructure-quality-report/v1"
+PACKAGE_SCHEMA = "zugfolge-map-package/v2"
+DELIVERY_SCHEMA = "zugfolge-map-delivery-release/v2"
+SOURCES_SCHEMA = "zugfolge-map-delivery-sources/v2"
+MAP_ASSET_NOTICES_SCHEMA = "zugfolge-map-asset-notices/v2"
+QUALITY_SCHEMA = "zugfolge-operational-infrastructure-quality-report/v1"
+STATIC_MAP_QUALITY_SCHEMA = "zugfolge-static-map-quality/v2"
+STATIC_MAP_SOURCE_QUALITY_SCHEMA = "zugfolge-final-infrastructure-quality-report/v1"
+OPERATIONAL_INFRASTRUCTURE_KIND = "operational-infrastructure-v2"
+QUALITY_CLASSES = ("A", "B", "C")
+OPERATIONAL_COVERAGE_FIELDS = (
+    "blockResources", "directedEdges", "edgeGeometries", "interlockingRoutes", "platformIntervals",
+    "regionBoundaries", "routeVersions", "rzueLayouts", "signals", "switches",
+)
+GIT_COMMIT = re.compile(r"^[a-f0-9]{40}$")
+GITHUB_REPOSITORY = re.compile(r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+MAX_SAFE_INTEGER = (2 ** 53) - 1
 _INTERNAL_WRITE_CONTEXT_KEY = "_zugfolge_infra_import_write_capability"
 # Identity is intentionally not serializable over JSON/XML-RPC.  Only private
 # server-side model code can place this exact capability into an Environment.
@@ -26,6 +42,215 @@ _INTERNAL_WRITE_CAPABILITY = object()
 
 def _canonical(value):
     return (json.dumps(value, sort_keys=True, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+
+
+def _record(value, label):
+    if not isinstance(value, dict):
+        raise ValidationError(_("%s muss ein Objekt sein.") % label)
+    return value
+
+
+def _exact_keys(value, expected, label):
+    record = _record(value, label)
+    if set(record) != set(expected):
+        raise ValidationError(_("%s besitzt unerwartete oder fehlende Felder.") % label)
+    return record
+
+
+def _safe_integer(value, minimum=0):
+    return type(value) is int and minimum <= value <= MAX_SAFE_INTEGER
+
+
+def _quality_error(detail):
+    raise ValidationError(_("Operational-v2-Qualitaetsvertrag verletzt: %s") % detail)
+
+
+def _quality_class_counts(value, label):
+    if not isinstance(value, dict) or sorted(value) != list(QUALITY_CLASSES):
+        _quality_error(_("%s muss exakt A, B und C ausweisen") % label)
+    if any(not _safe_integer(value[quality_class]) for quality_class in QUALITY_CLASSES):
+        _quality_error(_("%s besitzt keine nichtnegativen Ganzzahlen") % label)
+    return value
+
+
+def _validate_timetable_route_evidence(value):
+    evidence = _exact_keys(value, (
+        "reportSchema", "policyId", "derivationRule", "selectionRule", "reportBytes", "reportSha256",
+        "routesBytes", "routesSha256", "gtfsSnapshotBytes", "gtfsSnapshotSha256", "snapshotHash", "archive",
+        "archiveSha256", "sourceLicense", "sourceLicenseAsPublished", "selectedSegmentCount", "completeRouteCount",
+        "routeRecordCount", "sameStopTransitionCount", "routeSetSha256", "realGeometry",
+        "simulatedOperationalAssignment", "realInterlockingFactsClaimed", "externalOperationalNetworkProvenance",
+    ), "Operational-v2.timetableRouteEvidence")
+    if (
+        evidence["reportSchema"] != "zugfolge-germany-timetable-route-report/v2"
+        or evidence["policyId"] != "synthetic-operational-b/v2"
+        or evidence["derivationRule"] != "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2"
+        or evidence["selectionRule"] != "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2"
+    ):
+        _quality_error(_("timetableRouteEvidence verletzt den freien v2-Fahrwegvertrag"))
+    byte_fields = ("reportBytes", "routesBytes", "gtfsSnapshotBytes")
+    hash_fields = ("reportSha256", "routesSha256", "gtfsSnapshotSha256", "snapshotHash", "archiveSha256", "routeSetSha256")
+    if (
+        not all(_safe_integer(evidence[field], 1) for field in byte_fields)
+        or not all(isinstance(evidence[field], str) and SHA256.fullmatch(evidence[field]) for field in hash_fields)
+        or evidence["routesSha256"] != evidence["routeSetSha256"]
+    ):
+        _quality_error(_("timetableRouteEvidence besitzt keine konsistente Datei-/RouteSet-Bindung"))
+    if (
+        not isinstance(evidence["archive"], str) or not evidence["archive"]
+        or evidence["sourceLicense"] != "CC-BY-4.0"
+        or evidence["sourceLicenseAsPublished"] != "CC BY 4.0"
+    ):
+        _quality_error(_("timetableRouteEvidence besitzt keine freie GTFS-Lizenz- und Archivbindung"))
+    if (
+        not _safe_integer(evidence["selectedSegmentCount"], 1)
+        or not _safe_integer(evidence["completeRouteCount"], 1)
+        or not _safe_integer(evidence["routeRecordCount"], 1)
+        or evidence["selectedSegmentCount"] != evidence["completeRouteCount"]
+        or evidence["completeRouteCount"] != evidence["routeRecordCount"]
+        or not _safe_integer(evidence["sameStopTransitionCount"])
+    ):
+        _quality_error(_("timetableRouteEvidence schliesst die ausgewaehlten Segmente nicht vollstaendig 1:1"))
+    if (
+        evidence["realGeometry"] is not True
+        or evidence["simulatedOperationalAssignment"] is not True
+        or evidence["realInterlockingFactsClaimed"] is not False
+        or evidence["externalOperationalNetworkProvenance"] is not False
+    ):
+        _quality_error(_("timetableRouteEvidence verletzt die ehrliche Geometrie-/Provenienzgrenze"))
+    return evidence
+
+
+def _validate_operational_quality(value, release_id, delivered_operational_artifact):
+    quality = _exact_keys(value, (
+        "schema", "releaseId", "timetableYear", "scopeId", "deterministic", "separation", "mapEvidence",
+        "operationalModel", "summary", "qualityGate",
+    ), "Operational-v2-Qualitaetsbericht")
+    year_match = re.match(r"^infra-deutschland-(\d{4})(?:\.|$)", release_id)
+    if (
+        quality["schema"] != QUALITY_SCHEMA
+        or quality["releaseId"] != release_id
+        or not year_match
+        or quality["timetableYear"] != int(year_match.group(1))
+        or quality["scopeId"] != "deutschland-ebo-operational-v2"
+        or quality["deterministic"] is not True
+    ):
+        _quality_error(_("Bericht verletzt Schema, Release, Jahr oder Scope"))
+
+    separation = _exact_keys(quality["separation"], (
+        "mapEvidencePurpose", "operationalEvidencePurpose", "mapClassCReclassified",
+        "mapClassCBlocksOperationalQualityGate", "mapObjectsRemoved",
+    ), "Operational-v2.separation")
+    if (
+        separation["mapEvidencePurpose"] != "visible-map-quality-evidence"
+        or separation["operationalEvidencePurpose"] != "closed-operational-v2-model"
+        or separation["mapClassCReclassified"] is not False
+        or separation["mapClassCBlocksOperationalQualityGate"] is not False
+        or separation["mapObjectsRemoved"] is not False
+    ):
+        _quality_error(_("sichtbare Karten-C werden umdeklariert oder Kartenobjekte entfernt"))
+
+    map_evidence = _exact_keys(quality["mapEvidence"], (
+        "schema", "mapReleaseId", "infrastructureCorpusId", "bytes", "sha256", "sourceReport", "visibleFeatures",
+        "visibleLayers", "qualityClassFeatureCount", "trackLengthMm", "trackQualityClassLengthMm",
+    ), "Operational-v2.mapEvidence")
+    map_classes = _quality_class_counts(map_evidence["qualityClassFeatureCount"], "Operational-v2.mapEvidence.qualityClassFeatureCount")
+    track_classes = _quality_class_counts(map_evidence["trackQualityClassLengthMm"], "Operational-v2.mapEvidence.trackQualityClassLengthMm")
+    source_report = _exact_keys(map_evidence["sourceReport"], ("schema", "bytes", "sha256", "shipped"), "Operational-v2.mapEvidence.sourceReport")
+    if (
+        map_evidence["schema"] != STATIC_MAP_QUALITY_SCHEMA
+        or not isinstance(map_evidence["mapReleaseId"], str) or not map_evidence["mapReleaseId"]
+        or map_evidence["infrastructureCorpusId"] != release_id
+        or not _safe_integer(map_evidence["bytes"], 1)
+        or not isinstance(map_evidence["sha256"], str) or not SHA256.fullmatch(map_evidence["sha256"])
+        or map_evidence["visibleLayers"] != 10
+        or not _safe_integer(map_evidence["visibleFeatures"], 1)
+        or sum(map_classes.values()) != map_evidence["visibleFeatures"]
+        or not _safe_integer(map_evidence["trackLengthMm"], 1)
+        or sum(track_classes.values()) != map_evidence["trackLengthMm"]
+        or source_report["schema"] != STATIC_MAP_SOURCE_QUALITY_SCHEMA
+        or not _safe_integer(source_report["bytes"], 1)
+        or not isinstance(source_report["sha256"], str) or not SHA256.fullmatch(source_report["sha256"])
+        or source_report["shipped"] is not False
+    ):
+        _quality_error(_("mapEvidence besitzt keine ehrliche sichtbare Static-Map-v2-Bindung"))
+
+    model = _exact_keys(quality["operationalModel"], (
+        "policyId", "policySha256", "closureReceiptSha256", "qualityClass", "provenance", "realGeometry",
+        "simulatedOperationalAssignment", "realInterlockingFactsClaimed", "syntheticOperationalDetailsShipped",
+        "objectLevelProvenanceShipped", "observedAndSyntheticObjectsShareRuntimeCollections", "timetableRouteEvidence",
+        "operationalArtifact", "coverage",
+    ), "Operational-v2.operationalModel")
+    if (
+        model["policyId"] != "synthetic-operational-b/v2"
+        or not isinstance(model["policySha256"], str) or not SHA256.fullmatch(model["policySha256"])
+        or not isinstance(model["closureReceiptSha256"], str) or not SHA256.fullmatch(model["closureReceiptSha256"])
+        or model["qualityClass"] != "B" or model["provenance"] != "derived"
+        or model["realGeometry"] is not True or model["simulatedOperationalAssignment"] is not True
+        or model["realInterlockingFactsClaimed"] is not False
+        or model["syntheticOperationalDetailsShipped"] is not True
+        or model["objectLevelProvenanceShipped"] is not False
+        or model["observedAndSyntheticObjectsShareRuntimeCollections"] is not True
+    ):
+        _quality_error(_("operationalModel besitzt keine ehrliche geschlossene Derived/B-Provenienz"))
+    route_evidence = _validate_timetable_route_evidence(model["timetableRouteEvidence"])
+    if route_evidence["policyId"] != model["policyId"]:
+        _quality_error(_("Fahrwegbeleg und Betriebsmodell binden verschiedene Policies"))
+
+    operational_artifact = _exact_keys(model["operationalArtifact"], ("bytes", "sha256", "stateHash"), "Operational-v2.operationalArtifact")
+    if (
+        not _safe_integer(operational_artifact["bytes"], 1)
+        or not isinstance(operational_artifact["sha256"], str) or not SHA256.fullmatch(operational_artifact["sha256"])
+        or not isinstance(operational_artifact["stateHash"], str) or not SHA256.fullmatch(operational_artifact["stateHash"])
+        or operational_artifact["sha256"] == operational_artifact["stateHash"]
+        or operational_artifact["bytes"] != delivered_operational_artifact["bytes"]
+        or operational_artifact["sha256"] != delivered_operational_artifact["sha256"]
+        or operational_artifact["stateHash"] != delivered_operational_artifact["stateHash"]
+    ):
+        _quality_error(_("Qualitaet bindet nicht exakt das ausgelieferte Betriebsartefakt und seinen Zustand"))
+    coverage = _exact_keys(model["coverage"], OPERATIONAL_COVERAGE_FIELDS, "Operational-v2.coverage")
+    if (
+        not all(_safe_integer(coverage[field], 1) for field in OPERATIONAL_COVERAGE_FIELDS)
+        or coverage["directedEdges"] != coverage["edgeGeometries"]
+        or coverage["rzueLayouts"] != 1
+    ):
+        _quality_error(_("coverage ist nicht vollstaendig geschlossen"))
+
+    summary = _exact_keys(quality["summary"], (
+        "operationalQualityClassArtifactCount", "unresolvedRequired", "visibleMapClassCFeatureCount",
+    ), "Operational-v2.summary")
+    operational_classes = _quality_class_counts(summary["operationalQualityClassArtifactCount"], "Operational-v2.summary.operationalQualityClassArtifactCount")
+    if (
+        operational_classes != {"A": 0, "B": 1, "C": 0}
+        or not _safe_integer(summary["unresolvedRequired"])
+        or summary["unresolvedRequired"] != 0
+        or not _safe_integer(summary["visibleMapClassCFeatureCount"])
+        or summary["visibleMapClassCFeatureCount"] != map_classes["C"]
+    ):
+        _quality_error(_("keine getrennte geschlossene B=1/C=0-Bilanz oder sichtbare Karten-C verschwiegen"))
+
+    quality_gate = _exact_keys(quality["qualityGate"], (
+        "closureReceiptVerified", "nativeOperationalValidationVerified", "operationalClassCZero",
+        "ordinaryAssumptionsPromoted", "mapClassCReclassified", "operationalQualityEligible", "signatureImplied",
+        "activationImplied",
+    ), "Operational-v2.qualityGate")
+    if (
+        quality_gate["closureReceiptVerified"] is not True
+        or quality_gate["nativeOperationalValidationVerified"] is not True
+        or quality_gate["operationalClassCZero"] is not True
+        or quality_gate["ordinaryAssumptionsPromoted"] is not False
+        or quality_gate["mapClassCReclassified"] is not False
+        or quality_gate["operationalQualityEligible"] is not True
+        or quality_gate["signatureImplied"] is not False
+        or quality_gate["activationImplied"] is not False
+    ):
+        _quality_error(_("Qualitaetsgate ist offen, klassifiziert Karten-C um oder behauptet Signatur/Aktivierung"))
+    return {
+        "visible_layers": map_evidence["visibleLayers"],
+        "visible_features": map_evidence["visibleFeatures"],
+        "visible_map_class_c_feature_count": map_classes["C"],
+        "operational_class_c_artifact_count": operational_classes["C"],
+    }
 
 
 def _safe_id(value, label):
@@ -42,6 +267,97 @@ def _portable_path(value, label):
     if re.search(r"(?:^|[\s/_.-])apn(?:$|[\s/_.-])|trassenfinder", value, re.I):
         raise ValidationError(_("%s referenziert interne Validierungsdaten.") % label)
     return value
+
+
+def _validate_map_asset_notices(value, files):
+    notices = _exact_keys(value, ("schema", "assets"), "Oeffentliche Asset-Notices")
+    assets = notices["assets"]
+    if notices["schema"] != MAP_ASSET_NOTICES_SCHEMA or not isinstance(assets, list):
+        raise ValidationError(_("sources.json besitzt keinen gueltigen Asset-Notice-Vertrag."))
+    if len(assets) != 2:
+        raise ValidationError(_("Asset-Notices muessen genau Noto-Glyphen und Protomaps-Sprites enthalten."))
+    covered_files = 0
+    previous_id = ""
+    for index, entry in enumerate(assets):
+        asset = _exact_keys(entry, (
+            "id", "rightsSourceId", "kind", "license", "copyright", "modifications", "source", "derivedFrom",
+            "notice", "tree",
+        ), "Asset-Notice[%s]" % index)
+        asset_id = _safe_id(asset["id"], "Asset-Notice[%s].id" % index)
+        if asset_id <= previous_id:
+            raise ValidationError(_("Asset-Notices sind nicht stabil nach ID sortiert."))
+        previous_id = asset_id
+        kind = asset["kind"]
+        expected_id = "noto-glyphs" if kind == "glyph" else "protomaps-sprites" if kind == "sprite" else None
+        expected_license = "OFL-1.1" if kind == "glyph" else "MIT" if kind == "sprite" else None
+        if (
+            asset_id != expected_id or asset["rightsSourceId"] != asset_id or asset["license"] != expected_license
+            or not isinstance(asset["copyright"], str) or len(asset["copyright"]) <= 10
+            or not isinstance(asset["modifications"], str) or len(asset["modifications"]) <= 10
+        ):
+            raise ValidationError(_("%s besitzt keine eindeutige Rechte- und Lizenzbindung.") % asset_id)
+        source = _exact_keys(asset["source"], ("repository", "commit", "path"), "%s.source" % asset_id)
+        if (
+            not isinstance(source["repository"], str) or not GITHUB_REPOSITORY.fullmatch(source["repository"])
+            or not isinstance(source["commit"], str) or not GIT_COMMIT.fullmatch(source["commit"])
+        ):
+            raise ValidationError(_("%s.source ist nicht unveraenderlich gepinnt.") % asset_id)
+        _portable_path(source["path"], "%s.source.path" % asset_id)
+        if kind == "glyph":
+            if asset["derivedFrom"] is not None:
+                raise ValidationError(_("Noto-Glyphen duerfen keine fremde Ableitungsquelle behaupten."))
+        else:
+            derived = _exact_keys(asset["derivedFrom"], ("repository", "commit", "license"), "%s.derivedFrom" % asset_id)
+            if (
+                derived["repository"] != "https://github.com/tangrams/icons"
+                or not isinstance(derived["commit"], str) or not GIT_COMMIT.fullmatch(derived["commit"])
+                or derived["license"] != "MIT"
+            ):
+                raise ValidationError(_("Protomaps-Sprites binden die Tangrams-MIT-Ableitung nicht unveraenderlich."))
+        notice = _exact_keys(asset["notice"], ("url", "bytes", "sha256", "text"), "%s.notice" % asset_id)
+        notice_text = notice["text"]
+        notice_bytes = notice_text.encode("utf-8") if isinstance(notice_text, str) else b""
+        expected_license_text = "SIL OPEN FONT LICENSE Version 1.1" if kind == "glyph" else "The MIT License (MIT)"
+        if (
+            not isinstance(notice["url"], str) or not notice["url"].startswith("https://raw.githubusercontent.com/")
+            or not isinstance(notice_text, str)
+            or not _safe_integer(notice["bytes"], 1) or notice["bytes"] != len(notice_bytes)
+            or not isinstance(notice["sha256"], str) or not SHA256.fullmatch(notice["sha256"])
+            or hashlib.sha256(notice_bytes).hexdigest() != notice["sha256"]
+            or asset["copyright"] not in notice_text or expected_license_text not in notice_text
+        ):
+            raise ValidationError(_("%s.notice bindet nicht den vollstaendigen Lizenztext.") % asset_id)
+        tree = _exact_keys(asset["tree"], ("installDirectory", "files", "bytes", "sha256"), "%s.tree" % asset_id)
+        install_directory = _portable_path(tree["installDirectory"], "%s.tree.installDirectory" % asset_id)
+        prefix = "%s/" % install_directory
+        rows = sorted((
+            {
+                "path": _portable_path(file_entry["installPath"][len(prefix):], "%s.installPath" % asset_id),
+                "bytes": file_entry["bytes"],
+                "sha256": file_entry["sha256"],
+            }
+            for file_entry in files
+            if file_entry["kind"] == kind and file_entry["installPath"].startswith(prefix)
+        ), key=lambda row: row["path"])
+        if not rows or len({row["path"].lower() for row in rows}) != len(rows):
+            raise ValidationError(_("%s.tree ist leer oder enthaelt kollidierende Pfade.") % asset_id)
+        canonical_tree = ("\n".join(
+            "%s\0%s\0%s" % (row["path"], row["bytes"], row["sha256"])
+            for row in rows
+        ) + "\n").encode("utf-8")
+        if (
+            not _safe_integer(tree["files"], 1)
+            or not _safe_integer(tree["bytes"], 1)
+            or tree["files"] != len(rows)
+            or tree["bytes"] != sum(row["bytes"] for row in rows)
+            or tree["sha256"] != hashlib.sha256(canonical_tree).hexdigest()
+        ):
+            raise ValidationError(_("%s weicht vom ausgelieferten Assetbaum ab.") % asset_id)
+        covered_files += len(rows)
+    packaged_asset_files = sum(file_entry["kind"] in ("glyph", "sprite") for file_entry in files)
+    if covered_files != packaged_asset_files:
+        raise ValidationError(_("Glyphen- oder Sprite-Dateien liegen ausserhalb der lizenzierten Assetbaeume."))
+    return {"asset_groups": len(assets), "asset_files": covered_files}
 
 
 def _attachment_path(attachment):
@@ -90,12 +406,17 @@ def _parse_package_manifest(raw):
     auxiliary_kinds = [item.get("kind") for item in auxiliaries if isinstance(item, dict)]
     if auxiliary_kinds.count("read-model") != 1:
         raise ValidationError(_("Paket braucht genau ein oeffentliches ReadModel."))
-    if auxiliary_kinds.count("train-map-projection") != 1:
-        raise ValidationError(_("Paket braucht genau eine eigenstaendige Zugpositionsprojektion."))
+    for required_kind in ("release-manifest", "source-manifest", "quality-manifest"):
+        if auxiliary_kinds.count(required_kind) != 1:
+            raise ValidationError(_("Paket braucht genau ein %s.") % required_kind)
+    if auxiliary_kinds.count(OPERATIONAL_INFRASTRUCTURE_KIND) != 1:
+        raise ValidationError(_("Paket braucht genau eine statische operational-infrastructure-v2.json."))
+    if auxiliary_kinds.count("train-map-projection") != 0:
+        raise ValidationError(_("Operational-v2-Paket darf keine weltgebundene Zugpositionsprojektion als Paketvoraussetzung enthalten."))
     read_model = next(item for item in auxiliaries if isinstance(item, dict) and item.get("kind") == "read-model")
-    train_projection = next(item for item in auxiliaries if isinstance(item, dict) and item.get("kind") == "train-map-projection")
-    if read_model.get("installPath") != "read-model.sqlite" or train_projection.get("installPath") != "train-map-projection.sqlite":
-        raise ValidationError(_("SQLite-Laufzeitdateien muessen direkt in derselben Releasewurzel liegen."))
+    operational_infrastructure = next(item for item in auxiliaries if isinstance(item, dict) and item.get("kind") == OPERATIONAL_INFRASTRUCTURE_KIND)
+    if read_model.get("installPath") != "read-model.sqlite" or operational_infrastructure.get("installPath") != "operational-infrastructure-v2.json":
+        raise ValidationError(_("ReadModel und Operational-v2-Infrastruktur muessen direkt in derselben Releasewurzel liegen."))
 
     files = []
     parts = []
@@ -145,10 +466,18 @@ def _parse_package_manifest(raw):
             byte_sum += part_bytes
         if byte_sum != file_bytes:
             raise ValidationError(_("Summe der Paketteile von %s stimmt nicht.") % file_id)
+        operational_binding = {}
+        if descriptor.get("kind") == OPERATIONAL_INFRASTRUCTURE_KIND:
+            infra_release_id = _safe_id(descriptor.get("infraReleaseId"), "%s.infraReleaseId" % file_id)
+            state_hash = descriptor.get("stateHash")
+            if not isinstance(state_hash, str) or not SHA256.fullmatch(state_hash) or state_hash == file_sha256:
+                raise ValidationError(_("Operational-v2-Artefakt %s besitzt keine getrennte kanonische Zustandsbindung.") % file_id)
+            operational_binding = {"infraReleaseId": infra_release_id, "stateHash": state_hash}
         files.append({
             "id": file_id,
             "kind": descriptor.get("kind"),
             "installPath": install_path,
+            **operational_binding,
             "bytes": file_bytes,
             "sha256": file_sha256,
             "parts": normalized_parts,
@@ -181,46 +510,167 @@ def _read_packaged_json(file_entry, inventory):
     return value, raw
 
 
+def _validate_delivery_sources(value, release_id, files):
+    sources = _exact_keys(value, (
+        "schema", "releaseId", "sources", "assetInventoryPlanSha256", "assetNotices",
+    ), "Delivery-Quellenvertrag")
+    source_entries = sources["sources"]
+    if (
+        sources["schema"] != SOURCES_SCHEMA or sources["releaseId"] != release_id
+        or not isinstance(source_entries, list) or not source_entries
+        or not isinstance(sources["assetInventoryPlanSha256"], str)
+        or not SHA256.fullmatch(sources["assetInventoryPlanSha256"])
+    ):
+        raise ValidationError(_("sources.json hat keinen gebundenen oeffentlichen Quellen- und Asset-Inventarvertrag."))
+    previous_id = ""
+    for index, entry in enumerate(source_entries):
+        source = _exact_keys(entry, (
+            "id", "scope", "approved", "license", "version", "attribution", "modifications",
+        ), "Delivery-Quelle[%s]" % index)
+        source_id = _safe_id(source["id"], "Delivery-Quelle[%s].id" % index)
+        if source_id <= previous_id:
+            raise ValidationError(_("Delivery-Quellen sind nicht stabil nach ID sortiert oder enthalten doppelte IDs."))
+        previous_id = source_id
+        scope = source["scope"]
+        if (
+            scope not in ("basemap", "infrastructure") or not source_id.startswith("%s-" % scope)
+            or source["approved"] is not True
+            or not isinstance(source["license"], str) or not source["license"]
+            or not isinstance(source["version"], str) or not source["version"]
+            or not isinstance(source["attribution"], str) or not source["attribution"].strip()
+            or not isinstance(source["modifications"], str) or not source["modifications"].strip()
+        ):
+            raise ValidationError(_("Oeffentliche Quellenfreigabe ist unvollstaendig."))
+    attributions = " ".join(source["attribution"] for source in source_entries)
+    if not re.search("openstreetmap", attributions, re.I) or not re.search("protomaps", attributions, re.I):
+        raise ValidationError(_("OpenStreetMap- oder Protomaps-Attribution fehlt."))
+    asset_summary = _validate_map_asset_notices(sources["assetNotices"], files)
+    return {"entries": source_entries, **asset_summary}
+
+
 def _qualify_public_delivery(parsed, inventory):
     by_kind = {entry["kind"]: entry for entry in parsed["files"]}
     if not all(kind in by_kind for kind in ("release-manifest", "source-manifest", "quality-manifest")):
         raise ValidationError(_("Oeffentliche Delivery-, Quellen- oder Qualitaetsdatei fehlt."))
-    delivery, _delivery_raw = _read_packaged_json(by_kind["release-manifest"], inventory)
+    delivery_value, _delivery_raw = _read_packaged_json(by_kind["release-manifest"], inventory)
     sources, sources_raw = _read_packaged_json(by_kind["source-manifest"], inventory)
     quality, quality_raw = _read_packaged_json(by_kind["quality-manifest"], inventory)
-    if delivery.get("schema") != DELIVERY_SCHEMA or delivery.get("packageId") != parsed["package_id"] or delivery.get("packageVersion") != parsed["version"]:
+    delivery = _exact_keys(delivery_value, (
+        "schema", "releaseId", "timetableYear", "packageId", "packageVersion", "scope", "artifacts", "bindings",
+        "approvalGates", "releaseHash", "signature",
+    ), "Delivery-Release")
+    if delivery["schema"] != DELIVERY_SCHEMA or delivery["packageId"] != parsed["package_id"] or delivery["packageVersion"] != parsed["version"]:
         raise ValidationError(_("release.json ist kein an dieses Paket gebundener Delivery-Release."))
-    release_id = _safe_id(delivery.get("releaseId"), "Delivery releaseId")
-    bindings = delivery.get("bindings")
-    if not isinstance(bindings, dict) or bindings.get("packageManifestSchema") != PACKAGE_SCHEMA or bindings.get("sourcesSha256") != hashlib.sha256(sources_raw).hexdigest() or bindings.get("qualitySha256") != hashlib.sha256(quality_raw).hexdigest():
-        raise ValidationError(_("Delivery-Release bindet Paket, Quellen oder Qualitaet nicht bytegenau."))
+    release_id = _safe_id(delivery["releaseId"], "Delivery releaseId")
+    year_match = re.match(r"^infra-deutschland-(\d{4})(?:\.|$)", release_id)
+    if not year_match or not _safe_integer(delivery["timetableYear"], 2026) or delivery["timetableYear"] != int(year_match.group(1)):
+        raise ValidationError(_("Delivery-Release bindet kein konsistentes Fahrplanjahr."))
+    scope = _exact_keys(delivery["scope"], ("basemap", "infrastructure", "playableArea"), "Delivery-Scope")
+    if scope != {
+        "basemap": "world-z0-10-and-germany-z11-15",
+        "infrastructure": "germany-ebo-complete-visible-corpus",
+        "playableArea": "configured-separately-by-world",
+    }:
+        raise ValidationError(_("Delivery-Release besitzt keinen Operational-v2-Auslieferungsscope."))
+    bindings = _exact_keys(delivery["bindings"], (
+        "packageManifestSchema", "infraReleaseSchema", "mapReleaseSchema", "infraReleaseHash", "mapReleaseHash",
+        "sourcesSha256", "qualitySha256",
+    ), "Delivery bindings")
+    if (
+        bindings["packageManifestSchema"] != PACKAGE_SCHEMA
+        or bindings["infraReleaseSchema"] != "zugfolge-infra-release/v2"
+        or bindings["mapReleaseSchema"] != "zugfolge-map-release/v1"
+        or not isinstance(bindings["infraReleaseHash"], str) or not SHA256.fullmatch(bindings["infraReleaseHash"])
+        or not isinstance(bindings["mapReleaseHash"], str) or not SHA256.fullmatch(bindings["mapReleaseHash"])
+        or bindings["sourcesSha256"] != hashlib.sha256(sources_raw).hexdigest()
+        or bindings["qualitySha256"] != hashlib.sha256(quality_raw).hexdigest()
+    ):
+        raise ValidationError(_("Delivery-Release bindet Paketvertrag, Infra-/Map-Release-Huellen, Quellen oder Qualitaet nicht bytegenau."))
     expected_artifacts = sorted([
-        {key: entry[key] for key in ("id", "kind", "installPath", "bytes", "sha256")}
+        {
+            **{key: entry[key] for key in ("id", "kind", "installPath", "bytes", "sha256")},
+            **({key: entry[key] for key in ("infraReleaseId", "stateHash")} if entry["kind"] == OPERATIONAL_INFRASTRUCTURE_KIND else {}),
+        }
         for entry in parsed["files"] if entry["kind"] not in ("release-manifest", "source-manifest")
     ], key=lambda item: item["id"])
-    delivered_artifacts = delivery.get("artifacts")
+    delivered_artifacts = delivery["artifacts"]
     if not isinstance(delivered_artifacts, list) or sorted(delivered_artifacts, key=lambda item: item.get("id", "") if isinstance(item, dict) else "") != expected_artifacts:
         raise ValidationError(_("Delivery-Release bindet nicht exakt alle auszuliefernden Artefakte."))
-    source_entries = sources.get("sources")
-    if sources.get("schema") != SOURCES_SCHEMA or sources.get("releaseId") != release_id or not isinstance(source_entries, list) or not source_entries:
-        raise ValidationError(_("sources.json ist nicht an den Delivery-Release gebunden."))
-    if not all(isinstance(source, dict) and source.get("approved") is True and isinstance(source.get("license"), str) and isinstance(source.get("attribution"), str) and source["attribution"].strip() for source in source_entries):
-        raise ValidationError(_("Oeffentliche Quellenfreigabe ist unvollstaendig."))
-    attributions = " ".join(source["attribution"] for source in source_entries)
-    if not re.search("openstreetmap", attributions, re.I) or not re.search("protomaps", attributions, re.I):
-        raise ValidationError(_("OpenStreetMap- oder Protomaps-Attribution fehlt."))
-    policy = quality.get("policy")
-    if quality.get("schema") != QUALITY_SCHEMA or quality.get("releaseId") != release_id or not isinstance(policy, dict):
-        raise ValidationError(_("quality.json ist nicht an den Delivery-Release gebunden."))
-    if "internalStationPlanRawDataShipped" in policy or policy.get("classAFromSingleSourceOrAutomatedInference") is not False or policy.get("nonPublicSourceRawDataShipped") is not False or not re.search("not orderable", str(policy.get("classC", "")), re.I) or quality.get("summary", {}).get("visibleLayers") != 10:
-        raise ValidationError(_("Qualitaetsgate verletzt den konservativen Zehn-Layer-Vertrag."))
-    gates = delivery.get("approvalGates")
-    if not isinstance(gates, dict) or gates.get("rights", {}).get("status") != "passed" or gates.get("quality", {}).get("status") != "passed":
-        raise ValidationError(_("Rechte- oder Qualitaetsgate ist nicht bestanden."))
-    signature_status = gates.get("signature", {}).get("status")
-    if signature_status != "missing" or delivery.get("signature") is not None:
-        raise ValidationError(_("Ohne produktiven Trust-Store darf der Import keine Signatur behaupten."))
-    return {"delivery_release_id": release_id, "signature_status": "missing", "activation_eligible": False}
+    delivered_operational = [item for item in delivered_artifacts if isinstance(item, dict) and item.get("kind") == OPERATIONAL_INFRASTRUCTURE_KIND]
+    if len(delivered_operational) != 1 or delivered_operational[0].get("infraReleaseId") != release_id:
+        raise ValidationError(_("Operational-v2-Artefakt ist nicht an die Delivery-InfraRelease-ID gebunden."))
+    source_summary = _validate_delivery_sources(sources, release_id, parsed["files"])
+    quality_summary = _validate_operational_quality(quality, release_id, delivered_operational[0])
+    gates = _exact_keys(delivery["approvalGates"], ("rights", "quality", "signature"), "Delivery approvalGates")
+    rights_gate = _exact_keys(gates["rights"], (
+        "status", "sourceManifestSchema", "sourceCount", "assetGroupCount", "assetFileCount",
+    ), "Delivery Rechte-Gate")
+    quality_gate = _exact_keys(gates["quality"], (
+        "status", "reportSchema", "visibleLayers", "visibleFeatures", "visibleMapClassCFeatureCount",
+        "operationalClassCArtifactCount", "classCOrderable",
+    ), "Delivery Qualitaets-Gate")
+    if (
+        rights_gate["status"] != "passed"
+        or rights_gate["sourceManifestSchema"] != SOURCES_SCHEMA
+        or rights_gate["sourceCount"] != len(source_summary["entries"])
+        or rights_gate["assetGroupCount"] != source_summary["asset_groups"]
+        or rights_gate["assetFileCount"] != source_summary["asset_files"]
+        or quality_gate["status"] != "passed"
+        or quality_gate["reportSchema"] != QUALITY_SCHEMA
+        or quality_gate["visibleLayers"] != quality_summary["visible_layers"]
+        or quality_gate["visibleFeatures"] != quality_summary["visible_features"]
+        or quality_gate["visibleMapClassCFeatureCount"] != quality_summary["visible_map_class_c_feature_count"]
+        or quality_gate["operationalClassCArtifactCount"] != quality_summary["operational_class_c_artifact_count"]
+        or quality_gate["classCOrderable"] is not False
+    ):
+        raise ValidationError(_("Rechte- oder Qualitaetsgate ist nicht bestanden oder weicht vom Operational-v2-Vertrag ab."))
+    signature_gate = _record(gates["signature"], "Delivery-Signaturgate")
+    if signature_gate.get("status") == "missing":
+        signature_gate = _exact_keys(signature_gate, ("status", "reason"), "Fehlendes Delivery-Signaturgate")
+        if (
+            not isinstance(signature_gate["reason"], str) or not signature_gate["reason"].strip()
+            or delivery["signature"] is not None or delivery["releaseHash"] is not None
+        ):
+            raise ValidationError(_("Unsignierter Delivery-Release darf keine Signatur oder Hashfreigabe behaupten."))
+        return {
+            "delivery_release_id": release_id,
+            "infra_release_hash": bindings["infraReleaseHash"],
+            "timetable_year": delivery["timetableYear"],
+            "signature_status": "missing",
+            "activation_eligible": False,
+        }
+    signature = _record(delivery["signature"], "Delivery-Signatur")
+    if signature_gate.get("status") != "passed":
+        raise ValidationError(_("Delivery-Signaturgate ist weder bestanden noch explizit fehlend."))
+    signature_gate = _exact_keys(signature_gate, ("status", "algorithm", "keyId"), "Bestandenes Delivery-Signaturgate")
+    signature = _exact_keys(signature, ("algorithm", "keyId", "valueBase64"), "Delivery-Signatur")
+    key_id = _safe_id(signature["keyId"], "Delivery-Signaturschluessel")
+    if signature["algorithm"] != "Ed25519" or signature_gate["algorithm"] != "Ed25519" or signature_gate["keyId"] != key_id:
+        raise ValidationError(_("Delivery-Signatur und Freigabegate besitzen keine gemeinsame Ed25519-Bindung."))
+    release_hash = delivery["releaseHash"]
+    if not isinstance(release_hash, str) or not SHA256.fullmatch(release_hash):
+        raise ValidationError(_("Delivery-Release besitzt keinen gueltigen Releasehash."))
+    signing_payload = dict(delivery)
+    signing_payload.pop("releaseHash", None)
+    signing_payload.pop("signature", None)
+    if hashlib.sha256(_canonical(signing_payload)).hexdigest() != release_hash:
+        raise ValidationError(_("Delivery-Releasehash bindet nicht den kanonischen Inhalt."))
+    signature_base64 = signature.get("valueBase64")
+    try:
+        signature_bytes = base64.b64decode(signature_base64, validate=True) if isinstance(signature_base64, str) else b""
+    except (binascii.Error, ValueError) as error:
+        raise ValidationError(_("Delivery-Signatur besitzt keine kanonische Ed25519-Kodierung.")) from error
+    if len(signature_bytes) != 64 or base64.b64encode(signature_bytes).decode("ascii") != signature_base64:
+        raise ValidationError(_("Delivery-Signatur besitzt keine kanonische Ed25519-Kodierung."))
+    # Odoo akzeptiert den strukturell gebundenen Transport, behauptet aber erst
+    # nach der authentifizierten Game-Quittung eine kryptografische Verifikation.
+    return {
+        "delivery_release_id": release_id,
+        "infra_release_hash": bindings["infraReleaseHash"],
+        "timetable_year": delivery["timetableYear"],
+        "signature_status": "present",
+        "activation_eligible": False,
+    }
 
 
 class ZugfolgeInfraReleaseImport(models.Model):
@@ -246,6 +696,8 @@ class ZugfolgeInfraReleaseImport(models.Model):
     package_id = fields.Char(readonly=True, copy=False)
     package_version = fields.Char(readonly=True, copy=False)
     delivery_release_id = fields.Char(readonly=True, copy=False, index=True)
+    infra_release_hash = fields.Char(string="Signierter InfraRelease-Hash", readonly=True, copy=False, index=True)
+    timetable_year = fields.Integer(string="Fahrplanjahr", readonly=True, copy=False)
     part_count = fields.Integer(readonly=True, copy=False)
     # PostgreSQL int4 (fields.Integer) overflows for the real 14+ GiB package.
     # An exact NUMERIC column keeps the byte counter integral and future-proof.
@@ -258,7 +710,18 @@ class ZugfolgeInfraReleaseImport(models.Model):
     staging_requested_at = fields.Datetime(readonly=True, copy=False)
     staged_at = fields.Datetime(readonly=True, copy=False)
     game_stage_result = fields.Json(readonly=True, copy=False)
-    signature_status = fields.Selection([("missing", "Signatur fehlt"), ("verified", "Signatur geprueft")], readonly=True, copy=False)
+    signature_status = fields.Selection([("missing", "Signatur fehlt"), ("present", "Signatur vorhanden"), ("verified", "Signatur geprueft")], readonly=True, copy=False)
+    native_operational_validation_status = fields.Selection([("missing", "Nativer Beleg fehlt"), ("verified", "Nativer Beleg geprueft")], readonly=True, copy=False)
+    activation_blocker = fields.Selection([
+        ("delivery-signature-missing", "Delivery-Signatur fehlt"),
+        ("operational-v2-native-validation-missing", "Native Operational-v2-Pruefung fehlt"),
+    ], readonly=True, copy=False)
+    expected_operational_state_hash = fields.Char(readonly=True, copy=False)
+    operational_state_hash = fields.Char(readonly=True, copy=False)
+    game_finalization_nonce = fields.Char(readonly=True, copy=False)
+    game_finalization_requested_at = fields.Char(readonly=True, copy=False)
+    game_finalization_receipt_sha256 = fields.Char(readonly=True, copy=False)
+    game_finalization_key_id = fields.Char(readonly=True, copy=False)
     activation_eligible = fields.Boolean(readonly=True, copy=False, default=False)
     failure_code = fields.Char(readonly=True, copy=False)
     failure_detail = fields.Text(readonly=True, copy=False)
@@ -273,7 +736,11 @@ class ZugfolgeInfraReleaseImport(models.Model):
     _INTERNAL_FIELDS = frozenset({
         "state", "manifest_bytes", "manifest_sha256", "package_id", "package_version", "delivery_release_id", "part_count",
         "total_part_bytes", "part_inventory", "verification_inventory_sha256", "verification_started_at", "verification_completed_at",
-        "verified_by_id", "staging_requested_at", "staged_at", "game_stage_result", "signature_status", "activation_eligible",
+        "verified_by_id", "staging_requested_at", "staged_at", "game_stage_result", "signature_status",
+        "infra_release_hash", "timetable_year",
+        "native_operational_validation_status", "activation_blocker", "expected_operational_state_hash", "operational_state_hash",
+        "game_finalization_nonce", "game_finalization_requested_at", "game_finalization_receipt_sha256", "game_finalization_key_id",
+        "activation_eligible",
         "failure_code", "failure_detail", "adoption_request_id",
     })
 
@@ -364,6 +831,7 @@ class ZugfolgeInfraReleaseImport(models.Model):
             audit_inventory.append(item)
             inventory[part["package_path"]] = {**item, "attachment": attachment}
         qualification = _qualify_public_delivery(parsed, inventory)
+        operational_file = next(entry for entry in parsed["files"] if entry["kind"] == OPERATIONAL_INFRASTRUCTURE_KIND)
         inventory_bytes = json.dumps(audit_inventory, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
         return parsed, audit_inventory, {
             "manifest_bytes": manifest_proof["bytes"],
@@ -371,17 +839,29 @@ class ZugfolgeInfraReleaseImport(models.Model):
             "package_id": parsed["package_id"],
             "package_version": parsed["version"],
             "delivery_release_id": qualification["delivery_release_id"],
+            "infra_release_hash": qualification["infra_release_hash"],
+            "timetable_year": qualification["timetable_year"],
             "part_count": len(audit_inventory),
             "total_part_bytes": sum(item["bytes"] for item in audit_inventory),
             "part_inventory": audit_inventory,
             "verification_inventory_sha256": hashlib.sha256(inventory_bytes).hexdigest(),
             "signature_status": qualification["signature_status"],
+            "expected_operational_state_hash": operational_file["stateHash"],
             "activation_eligible": qualification["activation_eligible"],
         }
 
     def _mark_failed(self, code, error):
         detail = str(error).replace("\x00", "")[:2000]
         self._internal_write({"state": "failed", "failure_code": code, "failure_detail": detail, "activation_eligible": False})
+
+    def _mark_staging_retryable(self, error):
+        detail = str(error).replace("\x00", "")[:2000]
+        self._internal_write({
+            "state": "verified",
+            "failure_code": "staging_retryable",
+            "failure_detail": detail,
+            "activation_eligible": False,
+        })
 
     def _verify_job(self):
         self.ensure_one()
@@ -419,7 +899,14 @@ class ZugfolgeInfraReleaseImport(models.Model):
         for record in self:
             if record.state != "verified":
                 raise UserError(_("Nur ein geprueftes Paket kann bereitgestellt werden."))
-            record._internal_write({"staging_requested_at": fields.Datetime.now()})
+            values = {
+                "staging_requested_at": fields.Datetime.now(),
+                "failure_code": False,
+                "failure_detail": False,
+            }
+            if not record.game_finalization_nonce:
+                values["game_finalization_nonce"] = secrets.token_hex(32)
+            record._internal_write(values)
             record.with_delay(description="Zugfolge InfraRelease-Paket an Game bereitstellen")._stage_job()
         return True
 
@@ -431,17 +918,42 @@ class ZugfolgeInfraReleaseImport(models.Model):
             raise UserError(_("Import ist nicht geprueft."))
         try:
             _parsed, manifest, parts = self._staging_payload()
-            result = stage_infra_package(self.env, self.import_id, manifest, parts)
-            if result.get("packageId") != self.package_id or result.get("packageVersion") != self.package_version or result.get("manifestSha256") != self.manifest_sha256 or result.get("deliveryReleaseId") != self.delivery_release_id:
-                raise ValidationError(_("Game-Stagingantwort weicht vom geprueften Import ab."))
-            if result.get("signatureStatus") != "missing" or result.get("activationEligible") is not False:
-                raise ValidationError(_("Bis zur implementierten Antwortauthentifizierung akzeptiert Odoo nur den fail-closed Status Signatur fehlt/nicht aktivierbar."))
+            if not self.game_finalization_nonce or not FINALIZATION_NONCE.fullmatch(self.game_finalization_nonce):
+                raise ValidationError(_("Persistierte Game-Finalisierungsnonce fehlt oder ist ungueltig."))
+        except Exception as error:  # lokale Vertragsfehler sind terminal
+            self._mark_failed("staging_failed", error)
+            return True
+        try:
+            result = stage_infra_package(self.env, self.import_id, manifest, parts, self.game_finalization_nonce)
+        except Exception as error:  # Remote-Commit kann trotz verlorener Antwort bereits erfolgt sein
+            self._mark_staging_retryable(error)
+            return True
+        try:
+            receipt = verify_infra_finalization_receipt(self.env, result, {
+                "importId": self.import_id,
+                "packageId": self.package_id,
+                "packageVersion": self.package_version,
+                "manifestSha256": self.manifest_sha256,
+                "deliveryReleaseId": self.delivery_release_id,
+                "operationalStateHash": self.expected_operational_state_hash,
+            }, self.game_finalization_nonce)
+            expected_remote_signature = "verified" if self.signature_status == "present" else "missing"
+            if receipt["signatureStatus"] != expected_remote_signature:
+                raise ValidationError(_("Game-Signaturstatus widerspricht dem lokal geprueften Delivery-Vertrag."))
+            receipt_bytes = json.dumps(receipt, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
             self._internal_write({
                 "state": "staged", "staged_at": fields.Datetime.now(), "game_stage_result": result,
-                "signature_status": result.get("signatureStatus"), "activation_eligible": result.get("activationEligible") is True,
+                "signature_status": receipt["signatureStatus"],
+                "native_operational_validation_status": receipt["nativeOperationalValidationStatus"],
+                "activation_blocker": receipt["activationBlocker"] or False,
+                "operational_state_hash": receipt["operationalStateHash"] or False,
+                "game_finalization_requested_at": receipt["requestedAt"],
+                "game_finalization_receipt_sha256": hashlib.sha256(receipt_bytes).hexdigest(),
+                "game_finalization_key_id": receipt["keyId"],
+                "activation_eligible": receipt["activationEligible"] is True,
                 "failure_code": False, "failure_detail": False,
             })
-        except Exception as error:  # queue_job muss den fehlgeschlagenen Auditdatensatz erhalten
+        except Exception as error:  # eine erhaltene, aber ungueltige Antwort ist terminal
             self._mark_failed("staging_failed", error)
         return True
 
@@ -449,7 +961,22 @@ class ZugfolgeInfraReleaseImport(models.Model):
         self._require_reviewer()
         self._require_importer()
         self.ensure_one()
-        if self.state != "staged" or not self.activation_eligible or self.signature_status != "verified":
+        if (
+            self.state != "staged"
+            or not self.activation_eligible
+            or self.signature_status != "verified"
+            or self.native_operational_validation_status != "verified"
+            or self.activation_blocker
+            or self.operational_state_hash != self.expected_operational_state_hash
+            or not SHA256.fullmatch(self.game_finalization_receipt_sha256 or "")
+            or not FINALIZATION_NONCE.fullmatch(self.game_finalization_nonce or "")
+            or not self.game_finalization_requested_at
+            or not self.game_finalization_key_id
+            or not SHA256.fullmatch(self.infra_release_hash or "")
+            or not isinstance(self.timetable_year, int)
+            or isinstance(self.timetable_year, bool)
+            or self.timetable_year < 2026
+        ):
             raise UserError(_("Nur ein vom Game erneut gepruefter, signierter und bereitgestellter Release darf in die Vier-Augen-Freigabe."))
         if self.adoption_request_id:
             return {"type": "ir.actions.act_window", "res_model": "zugfolge.admin.request", "res_id": self.adoption_request_id.id, "view_mode": "form"}
@@ -460,9 +987,14 @@ class ZugfolgeInfraReleaseImport(models.Model):
             "action_type": "infra_release_adoption",
             "risk_class": "high",
             "reason": _("Jahresimport %s nach separater Game-Qualifikation uebernehmen.") % self.delivery_release_id,
-            "effect_preview": {"kind": "infra-release", "deliveryReleaseId": self.delivery_release_id, "manifestSha256": self.manifest_sha256},
-            "release_hash": self.manifest_sha256,
-            "requested_period_start": fields.Datetime.now(),
+            "effect_preview": {
+                "kind": "infra-release",
+                "importId": self.import_id,
+                "deliveryReleaseId": self.delivery_release_id,
+                "manifestSha256": self.manifest_sha256,
+                "infraReleaseHash": self.infra_release_hash,
+            },
+            "release_hash": self.infra_release_hash,
         })
         self._internal_write({"adoption_request_id": request.id})
         return {"type": "ir.actions.act_window", "res_model": "zugfolge.admin.request", "res_id": request.id, "view_mode": "form"}

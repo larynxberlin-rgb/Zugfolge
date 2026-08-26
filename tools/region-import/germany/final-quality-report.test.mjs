@@ -5,6 +5,10 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { buildFinalQualityReport, writeFinalQualityReport } from "./final-quality-report.mjs";
+import {
+  STATIC_MAP_QUALITY_LAYER_ORDER,
+  buildStaticMapQuality,
+} from "../../tiles/static-map-quality.mjs";
 
 const layerContracts = [
   ["rail_corridors", "rail-corridor"],
@@ -117,7 +121,7 @@ async function fixture(t) {
   return root;
 }
 
-test("z\u00e4hlt sichtbare Klassen und trennt Beobachtung, Ableitung und konservative Behandlung", async (t) => {
+test("Kartenbericht trennt Annahmen und erhebt ausdruecklich kein Operational-Gate", async (t) => {
   const root = await fixture(t);
   const report = await buildFinalQualityReport({ specification: specification(), artifactRoot: root });
   const tracks = report.layers.find(({ name }) => name === "tracks");
@@ -141,8 +145,47 @@ test("z\u00e4hlt sichtbare Klassen und trennt Beobachtung, Ableitung und konserv
   assert.equal(JSON.stringify(report).toLowerCase().includes("trassenfinder.de/apn"), false);
   assert.equal(JSON.stringify(report).toLowerCase().includes("stationplan"), false);
   assert.equal(report.policy.nonPublicSourceRawDataShipped, false);
+  assert.equal(report.policy.ordinaryAssumptionsOperationalClassBEligible, false);
+  assert.equal(report.purpose, "visible-map-quality-evidence");
+  assert.equal(report.operationalReleaseGate, false);
   assert.equal(Object.hasOwn(report, "corpusSha256"), false);
   assert.ok(report.layers.every((layer) => !Object.hasOwn(layer, "file") && !Object.hasOwn(layer, "sha256") && !Object.hasOwn(layer, "sourceIdFeatureCount") && !Object.hasOwn(layer, "modelStateFeatureCount")));
+});
+
+test("der echte Kartenbericht laesst sich nur mit getrenntem Operational-Gate nach Static-Map-v2 projizieren", async (t) => {
+  const root = await fixture(t);
+  const report = await buildFinalQualityReport({ specification: specification(), artifactRoot: root });
+  const staticMap = buildStaticMapQuality({
+    spec: {
+      schema: "zugfolge-static-map-quality-materialization/v2",
+      releaseId: "karte-deutschland-test.1-v2",
+      infrastructureCorpusId: report.releaseId,
+      timetableYear: report.timetableYear,
+      scopeId: report.scopeId,
+      visibleLayerOrder: [...STATIC_MAP_QUALITY_LAYER_ORDER],
+    },
+    detailedReport: report,
+    sourceProof: { bytes: 1234, sha256: "a".repeat(64) },
+  });
+  assert.equal(staticMap.schema, "zugfolge-static-map-quality/v2");
+  assert.equal(staticMap.claims.operationalInfraRelease, false);
+  assert.deepEqual(staticMap.summary.qualityClassFeatureCount, report.summary.qualityClassFeatureCount);
+
+  await assert.rejects(
+    async () => buildStaticMapQuality({
+      spec: {
+        schema: "zugfolge-static-map-quality-materialization/v2",
+        releaseId: "karte-deutschland-test.1-v2",
+        infrastructureCorpusId: report.releaseId,
+        timetableYear: report.timetableYear,
+        scopeId: report.scopeId,
+        visibleLayerOrder: [...STATIC_MAP_QUALITY_LAYER_ORDER],
+      },
+      detailedReport: { ...report, operationalReleaseGate: true },
+      sourceProof: { bytes: 1234, sha256: "a".repeat(64) },
+    }),
+    /darf kein Operational-Release-Gate beanspruchen/,
+  );
 });
 
 test("Vmax-Minimum trennt Quellenkonflikt und uebereinstimmende Beobachtung", async (t) => {

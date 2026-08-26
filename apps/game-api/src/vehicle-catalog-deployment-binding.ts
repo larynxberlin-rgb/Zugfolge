@@ -1,4 +1,4 @@
-import { alphaCanonicalJson, alphaHash } from "@zugfolge/alpha";
+import { alphaCanonicalJson } from "@zugfolge/alpha";
 import {
   FLEET_AUTHORITY_RELEASE_SCHEMA_V2,
   type FleetWorldInitialization,
@@ -7,7 +7,7 @@ import {
 import { createHash } from "node:crypto";
 
 export const VEHICLE_CATALOG_DEPLOYMENT_BINDING_SCHEMA =
-  "zugfolge-vehicle-catalog-deployment-binding/v1" as const;
+  "zugfolge-vehicle-catalog-deployment-binding/v2" as const;
 export const VEHICLE_CATALOG_COMPILE_RECEIPT_SCHEMA =
   "zugfolge-vehicle-catalog-compile-receipt/v4" as const;
 export const VEHICLE_CATALOG_COMPILER_VERSION =
@@ -15,7 +15,7 @@ export const VEHICLE_CATALOG_COMPILER_VERSION =
 export const OPERATIONAL_VEHICLE_INVENTORY_SCHEMA =
   "zugfolge-operational-vehicle-inventory/v2" as const;
 export const VEHICLE_CATALOG_COMPILER_INPUT_FILES_SCHEMA =
-  "zugfolge-vehicle-catalog-compiler-input-files/v1" as const;
+  "zugfolge-vehicle-catalog-compiler-input-files/v2" as const;
 const FLEET_AUTHORITY_CATALOG_SCHEMA =
   "zugfolge-fleet-authority-release-catalog/v1" as const;
 
@@ -50,13 +50,15 @@ export interface OperationalVehicleInventoryV2 {
   readonly formations: readonly unknown[];
 }
 
-export interface VehicleCatalogDeploymentBindingV1 {
+export interface VehicleCatalogDeploymentBindingV2 {
   readonly schemaVersion: typeof VEHICLE_CATALOG_DEPLOYMENT_BINDING_SCHEMA;
   readonly compilerInputFiles: {
     readonly schemaVersion: typeof VEHICLE_CATALOG_COMPILER_INPUT_FILES_SCHEMA;
     readonly sourceCatalogSha256: string;
     readonly worldSeedSha256: string;
     readonly compiledCatalogSha256: string;
+    /** Durch den echten Fleet-Single-Writer aus exakt derselben Authority berechnet. */
+    readonly runtimeAuthorityReleaseHash: string;
   };
   readonly receipt: VehicleCatalogCompileReceiptV4;
   readonly operationalInventory: OperationalVehicleInventoryV2;
@@ -195,12 +197,13 @@ function parseInventory(value: unknown): OperationalVehicleInventoryV2 {
   return inventory as unknown as OperationalVehicleInventoryV2;
 }
 
-function parseCompilerInputFiles(value: unknown): VehicleCatalogDeploymentBindingV1["compilerInputFiles"] {
+function parseCompilerInputFiles(value: unknown): VehicleCatalogDeploymentBindingV2["compilerInputFiles"] {
   const files = exactRecord(value, "compilerInputFiles", [
     "schemaVersion",
     "sourceCatalogSha256",
     "worldSeedSha256",
     "compiledCatalogSha256",
+    "runtimeAuthorityReleaseHash",
   ]);
   if (files["schemaVersion"] !== VEHICLE_CATALOG_COMPILER_INPUT_FILES_SCHEMA) {
     invalid("compilerInputFiles.schemaVersion ist unbekannt.");
@@ -209,8 +212,9 @@ function parseCompilerInputFiles(value: unknown): VehicleCatalogDeploymentBindin
     "sourceCatalogSha256",
     "worldSeedSha256",
     "compiledCatalogSha256",
+    "runtimeAuthorityReleaseHash",
   ] as const) sha256(files[field], `compilerInputFiles.${field}`);
-  return files as unknown as VehicleCatalogDeploymentBindingV1["compilerInputFiles"];
+  return files as unknown as VehicleCatalogDeploymentBindingV2["compilerInputFiles"];
 }
 
 function expectedOperationalFormations(inventory: OperationalVehicleInventoryV2): readonly unknown[] {
@@ -290,7 +294,7 @@ function expectedFleetFormations(inventory: OperationalVehicleInventoryV2): read
 export function validateVehicleCatalogDeploymentBinding(
   value: unknown,
   facts: VehicleCatalogDeploymentFacts,
-): asserts value is VehicleCatalogDeploymentBindingV1 | undefined {
+): asserts value is VehicleCatalogDeploymentBindingV2 | undefined {
   if (facts.fleet.authorityRelease.schemaVersion !== FLEET_AUTHORITY_RELEASE_SCHEMA_V2) {
     if (value !== undefined) invalid("Legacy-Authority-v1 darf keinen v2-Compilerbeweis behaupten.");
     if (facts.fleet.producedAt !== 0) invalid("Legacy-Authority-v1 ist nur mit producedAt 0 kompatibel.");
@@ -308,7 +312,7 @@ export function validateVehicleCatalogDeploymentBinding(
   if (binding["schemaVersion"] !== VEHICLE_CATALOG_DEPLOYMENT_BINDING_SCHEMA) {
     invalid("binding.schemaVersion ist unbekannt.");
   }
-  parseCompilerInputFiles(binding["compilerInputFiles"]);
+  const compilerInputFiles = parseCompilerInputFiles(binding["compilerInputFiles"]);
   const receipt = parseReceipt(binding["receipt"]);
   const inventory = parseInventory(binding["operationalInventory"]);
 
@@ -359,8 +363,7 @@ export function validateVehicleCatalogDeploymentBinding(
     || receipt.fleetAuthorityCatalogSha256 !== fleetAuthorityCatalogHash
     || receipt.operationalInventorySha256 !== operationalInventoryHash
     || receipt.outputSetSha256 !== outputSetHash
-    || alphaHash("zugfolge-fleet-authority-runtime/v1", facts.fleet.authorityRelease)
-      !== facts.blueprintFleetHash
+    || compilerInputFiles.runtimeAuthorityReleaseHash !== facts.blueprintFleetHash
   ) {
     invalid("Receipt- oder Blueprint-Hash bindet nicht die signierten Compilerartefakte.");
   }
@@ -380,7 +383,7 @@ export function bindVehicleCatalogDeployment(
   receipt: unknown,
   operationalInventory: unknown,
   facts: VehicleCatalogDeploymentFacts,
-): VehicleCatalogDeploymentBindingV1 {
+): VehicleCatalogDeploymentBindingV2 {
   const binding = {
     schemaVersion: VEHICLE_CATALOG_DEPLOYMENT_BINDING_SCHEMA,
     compilerInputFiles,
@@ -388,5 +391,5 @@ export function bindVehicleCatalogDeployment(
     operationalInventory,
   };
   validateVehicleCatalogDeploymentBinding(binding, facts);
-  return structuredClone(binding) as VehicleCatalogDeploymentBindingV1;
+  return structuredClone(binding) as VehicleCatalogDeploymentBindingV2;
 }

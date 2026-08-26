@@ -5,6 +5,7 @@ import type { IdentityDatabase } from "@zugfolge/identity";
 import {
   OPERATIONAL_SIMULATION_INITIALIZED_SCHEMA,
   OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
+  OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
   OPERATIONAL_SIMULATION_RESULT_SCHEMA,
   OPERATIONAL_SIMULATION_STATE_SCHEMA,
   type OperationalProjection,
@@ -102,6 +103,7 @@ function result(
 
 const initializationBody = {
   nowMs: 0,
+  protectionModeSelectionPolicy: OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
   infraRelease: { id: infraReleaseId },
   vehicleTypes: [],
   vehicles: [],
@@ -117,6 +119,11 @@ const initializationBody = {
       headRouteMm: 10_000,
       scheduledDepartureMs: null,
       publicPassengerStop: true,
+      dispatchInterlockingRouteId: "interlocking-v2",
+      protectionModeSelectionRuns: [{
+        throughRouteLegIndex: 0,
+        selectedProtectionSystem: "pzb",
+      }],
     },
   ],
 } as const;
@@ -190,6 +197,46 @@ describe("interne regionale M4-Routen", () => {
         },
         expect.any(Date),
       );
+
+      const overlong = await app.inject({
+        method: "POST",
+        url: `/internal/worlds/${worldA}/regional-simulations/${regionId}/initialize`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          ...initializationBody,
+          trains: [{ ...initializationBody.trains[0], trainNumber: "S4-1667972" }],
+        },
+      });
+      expect(overlong.statusCode).toBe(400);
+
+      for (const trainNumber of ["0", "RB 00000"]) {
+        const zero = await app.inject({
+          method: "POST",
+          url: `/internal/worlds/${worldA}/regional-simulations/${regionId}/initialize`,
+          headers: { authorization: `Bearer ${token}` },
+          payload: {
+            ...initializationBody,
+            trains: [{ ...initializationBody.trains[0], trainNumber }],
+          },
+        });
+        expect(zero.statusCode).toBe(400);
+      }
+
+      const duplicate = await app.inject({
+        method: "POST",
+        url: `/internal/worlds/${worldA}/regional-simulations/${regionId}/initialize`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          ...initializationBody,
+          trains: [
+            initializationBody.trains[0],
+            { ...initializationBody.trains[0], id: "run-2", trainNumber: "IC-1" },
+          ],
+        },
+      });
+      expect(duplicate.statusCode).toBe(400);
+      expect(duplicate.json()).toMatchObject({ code: "regional_simulation_invalid_request" });
+      expect(initialize).toHaveBeenCalledTimes(1);
     } finally {
       await app.close();
     }

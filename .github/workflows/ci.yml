@@ -5,6 +5,12 @@ on:
     branches: ["main", "m0.*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      run_germany_2026_4_real_acceptance:
+        description: "Deutschland-2026.4-Realabnahme auf dem vertrauenswuerdigen Self-hosted Runner ausfuehren"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -143,12 +149,14 @@ jobs:
           pnpm --filter @zugfolge/game-api... build
           pnpm --filter @zugfolge/game-web... build
           # Echte NAPI-Registries und PGlite-Welten nicht zwischen Vitest-Worker-Isolates parallelisieren.
-          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/fleet-configuration.native.integration.test.ts src/economy-native.integration.test.ts src/tutorial-world-factory.native.integration.test.ts src/tutorial-browser.e2e.test.ts
+          pnpm --filter @zugfolge/game-api exec vitest run --no-file-parallelism src/world-deployment-runtime.test.ts src/fleet-configuration.native.integration.test.ts src/economy-native.integration.test.ts src/tutorial-world-factory.native.integration.test.ts src/tutorial-browser.e2e.test.ts
+          # Echter Alpha-Builder -> serialisierter Compact-v2-Vertrag -> Serverstart-Registry.
+          node --test tools/region-import/build-alpha-world-runtime.integration.test.mjs
 
   typescript:
     name: TypeScript
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 
@@ -190,10 +198,10 @@ jobs:
       - name: Alpha-Compose auflösen
         env:
           MAP_RELEASE_START_PREFLIGHT_MODE: active-candidate
-          MAP_RELEASE_ID: infra-deutschland-2026.2
-          MAP_RELEASE_HOST_DIR: releases/infra-deutschland-2026.2
-          MAP_BASEMAP_STYLE_URL: /artifacts/maps/infra-deutschland-2026.2/style.json
-          MAP_GERMANY_PMTILES_URL: /artifacts/maps/infra-deutschland-2026.2/infra-deutschland-2026.2.pmtiles
+          MAP_RELEASE_ID: infra-deutschland-2026.4
+          MAP_RELEASE_HOST_DIR: releases/infra-deutschland-2026.4
+          MAP_BASEMAP_STYLE_URL: /artifacts/maps/infra-deutschland-2026.4/style.json
+          MAP_GERMANY_PMTILES_URL: /artifacts/maps/infra-deutschland-2026.4/infra-deutschland-2026.4.pmtiles
         run: |
           cp .env.example .env
           trap 'rm -f .env' EXIT
@@ -203,15 +211,23 @@ jobs:
         run: |
           pnpm -r --stream test
           node --test tools/alpha-ops/*.test.mjs
-          node --test tools/region-import/vehicle-catalog-deployment-binding.test.mjs
+          node --test tools/audits/germany-2026.4-alpha-world-runtime.real.test.mjs
+          node --test tools/audits/keycloak-public-catalog-selection.test.mjs
+          node --test tools/region-import/*.test.mjs
           node --test \
             tools/tiles/gdal-semantic-pmtiles.test.mjs \
+            tools/tiles/map-build-cache-inventory.test.mjs \
             tools/tiles/map-delivery-release.test.mjs \
             tools/tiles/map-package.test.mjs \
+            tools/tiles/map-release-build-evidence.test.mjs \
             tools/tiles/map-release.test.mjs \
             tools/tiles/map-source-capture.test.mjs \
             tools/tiles/offline-basemap-style.test.mjs \
             tools/tiles/semantic-tiles.test.mjs \
+            tools/tiles/signed-map-package-plan.test.mjs \
+            tools/tiles/static-map-quality.test.mjs \
+            tools/tiles/static-map-release.test.mjs \
+            tools/tiles/static-map-sources.test.mjs \
             tools/tiles/train-map-projection.test.mjs
           node --test tools/region-import/germany/*.test.mjs
           node apps/livemap/node_modules/vitest/vitest.mjs run tools/tiles/livemap-read-model.test.mjs
@@ -221,10 +237,159 @@ jobs:
             tools/region-import/germany/copernicus_dem_sample.py \
             tools/region-import/germany/copernicus_dem_sample_test.py
 
+  germany-2026-4-real-acceptance:
+    name: Deutschland 2026.4 Operational-RSS und Worker/PostgreSQL-Catch-up
+    # Nie aus einem Pull Request auf dem privilegierten Self-hosted/Docker-Host
+    # ausfuehren. Der Job ist ausschliesslich eine bewusste manuelle Aktion auf
+    # einem vom Repository-Betreiber ausgewaehlten, bereits geprueften Ref.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_germany_2026_4_real_acceptance == true }}
+    runs-on: [self-hosted, linux, x64, germany-2026-4]
+    timeout-minutes: 180
+    services:
+      postgres:
+        image: postgres:16.14-trixie
+        env:
+          POSTGRES_USER: zugfolge_germany_e2e
+          POSTGRES_PASSWORD: zugfolge-germany-e2e-ci
+          POSTGRES_DB: zugfolge_germany_e2e_ci
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U zugfolge_germany_e2e -d zugfolge_germany_e2e_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      ZUGFOLGE_REAL_GERMANY_2026_4_ROOT: ${{ vars.ZUGFOLGE_REAL_GERMANY_2026_4_ROOT }}
+      ZUGFOLGE_REAL_GERMANY_POSTGRES_BOUNDARY: external-postgresql-process-outside-measured-app-cgroup
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Exakten sauberen Quellcommit binden
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          shared-key: germany-2026-4-real-acceptance
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Reale create-new-Akzeptanzharnische bauen
+        run: |
+          set -euo pipefail
+          case "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}" in /*) ;; *) echo "Artefaktwurzel muss absolut sein." >&2; exit 1;; esac
+          test -f "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/operational-infrastructure-v2.json"
+          test -f "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/gtfs-region-20260810-v2.json"
+          test -f "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/timetable-routes-v2.jsonseq"
+          test -f "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/alpha-world-deployment.2026.4.json"
+          test -f "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/alpha-world-deployment.2026.4.signed.json"
+          pnpm --filter @zugfolge/game-api... build
+          cargo build --release --locked -p zugfolge-runtime-napi --features node-addon
+          addon_path="${RUNNER_TEMP}/zugfolge-runtime-napi-germany-2026.4.node"
+          install -m 0755 target/release/libzugfolge_runtime_napi.so "${addon_path}"
+          printf 'ZUGFOLGE_RUNTIME_NATIVE_PATH=%s\n' "${addon_path}" >> "${GITHUB_ENV}"
+          addon_sha256="$(sha256sum "${addon_path}" | awk '{print $1}')"
+          printf 'ZUGFOLGE_REAL_GERMANY_EXPECTED_NAPI_SHA256=%s\n' "${addon_sha256}" >> "${GITHUB_ENV}"
+          cargo_artifacts="${RUNNER_TEMP}/operational-streaming-real.cargo.jsonl"
+          cargo test --release --locked -p zugfolge-infra --test operational_streaming_real \
+            --no-run --message-format=json-render-diagnostics | tee "${cargo_artifacts}"
+          test_binary="$(node -e '
+            const { readFileSync } = require("node:fs");
+            const paths = new Set(readFileSync(process.argv[1], "utf8").trim().split(/\r?\n/u)
+              .filter(Boolean).map((line) => JSON.parse(line))
+              .filter((entry) => entry.reason === "compiler-artifact"
+                && entry.target?.name === "operational_streaming_real"
+                && typeof entry.executable === "string")
+              .map((entry) => entry.executable));
+            if (paths.size !== 1) throw new Error(`Erwartete exakt ein Operational-Streaming-Testbinary, erhielt ${paths.size}.`);
+            process.stdout.write([...paths][0]);
+          ' "${cargo_artifacts}")"
+          test -x "${test_binary}"
+          test_binary_relative="$(realpath --relative-to="$(realpath .)" "${test_binary}")"
+          case "${test_binary_relative}" in ../*|/*) echo "Testbinary liegt ausserhalb des Checkouts." >&2; exit 1;; esac
+          printf 'ZUGFOLGE_OPERATIONAL_STREAMING_REAL_BINARY=%s\n' "${test_binary_relative}" >> "${GITHUB_ENV}"
+          cargo test --release --locked -p zugfolge-sim-runtime --test germany_alpha_world_runtime_real --no-run
+          mkdir -p test-results/operational-v2 test-results/germany-2026.4
+
+      - name: Operational-v2 in frischer cgroup-v2 auf exakt 512 MiB begrenzen
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x "${ZUGFOLGE_OPERATIONAL_STREAMING_REAL_BINARY}"
+          artifact_root="$(realpath "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}")"
+          workspace="$(realpath .)"
+          docker run --rm --network none \
+            --memory 512m --memory-swap 512m \
+            --volume "${workspace}:/workspace:rw" \
+            --volume "${artifact_root}:/artifacts:ro" \
+            --workdir /workspace \
+            --env ZUGFOLGE_RUN_OPERATIONAL_V2_REAL_RSS=1 \
+            --env ZUGFOLGE_OPERATIONAL_V2_REAL_INPUT=/artifacts/operational-infrastructure-v2.json \
+            --env ZUGFOLGE_OPERATIONAL_V2_REAL_RELEASE_ID=infra-deutschland-2026.4 \
+            --env ZUGFOLGE_OPERATIONAL_V2_REAL_EXPECTED_BYTES=983736272 \
+            --env ZUGFOLGE_OPERATIONAL_V2_REAL_EXPECTED_SOURCE_SHA256=64260fb3aca24d6ed8784c2a6891e1269b8f390c7b7db185bbee3001565f47e6 \
+            --env ZUGFOLGE_OPERATIONAL_V2_REAL_EXPECTED_STATE_HASH=deb038434d53963ba6436d4b6811ffc096374ffd1c75887b4945b4a46ea3c788 \
+            --env ZUGFOLGE_OPERATIONAL_V2_REAL_RSS_PROOF_OUTPUT=/workspace/test-results/operational-v2/streaming-rss-proof.json \
+            --env ZUGFOLGE_OPERATIONAL_V2_REAL_REQUIRE_CGROUP_LIMIT=1 \
+            ubuntu:24.04 "/workspace/${ZUGFOLGE_OPERATIONAL_STREAMING_REAL_BINARY}" \
+            --ignored --exact realer_korpus_ab_900_mib_bleibt_unter_fester_rss_grenze --nocapture
+
+      - name: App-cgroup gegen externes PostgreSQL bis kaltem Worker-Catch-up, Restore und Readiness
+        shell: bash
+        env:
+          ZUGFOLGE_REAL_GERMANY_POSTGRES_URL: postgres://zugfolge_germany_e2e:zugfolge-germany-e2e-ci@127.0.0.1:${{ job.services.postgres.ports[5432] }}/zugfolge_germany_e2e_ci
+        run: |
+          set -euo pipefail
+          systemd-run --user --scope --quiet \
+            --property MemoryMax=536870912 \
+            --property MemorySwapMax=0 \
+            env \
+              NODE_OPTIONS=--max-old-space-size=384 \
+              ZUGFOLGE_RUN_GERMANY_ALPHA_E2E=1 \
+              ZUGFOLGE_REAL_GERMANY_REQUIRE_CGROUP_LIMIT=1 \
+              ZUGFOLGE_REAL_GERMANY_2026_4_ROOT="${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}" \
+              ZUGFOLGE_REAL_GERMANY_ALPHA_E2E_EVIDENCE="${GITHUB_WORKSPACE}/test-results/germany-2026.4/alpha-world-e2e.json" \
+              ZUGFOLGE_REAL_GERMANY_POSTGRES_URL="${ZUGFOLGE_REAL_GERMANY_POSTGRES_URL}" \
+              ZUGFOLGE_REAL_GERMANY_POSTGRES_BOUNDARY="${ZUGFOLGE_REAL_GERMANY_POSTGRES_BOUNDARY}" \
+              ZUGFOLGE_RUNTIME_NATIVE_PATH="${ZUGFOLGE_RUNTIME_NATIVE_PATH}" \
+              ZUGFOLGE_REAL_GERMANY_EXPECTED_NAPI_SHA256="${ZUGFOLGE_REAL_GERMANY_EXPECTED_NAPI_SHA256}" \
+              ZUGFOLGE_REAL_GERMANY_REUSE_DEPLOYMENTS=1 \
+              ZUGFOLGE_REAL_GERMANY_ALPHA_UNSIGNED_DEPLOYMENT="${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/alpha-world-deployment.2026.4.json" \
+              ZUGFOLGE_REAL_GERMANY_ALPHA_SIGNED_DEPLOYMENT="${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/alpha-world-deployment.2026.4.signed.json" \
+              ZUGFOLGE_REAL_GERMANY_EXPECTED_UNSIGNED_DEPLOYMENT_SHA256=7400d56e2109db29050577c42a53f8e223325c4414c39b96cfcc9453f65eefba \
+              ZUGFOLGE_REAL_GERMANY_EXPECTED_SIGNED_DEPLOYMENT_SHA256=228d7c7cef743536f3b2621db200da898b4a1d30ec2cfe3b19d57fdea55c00c0 \
+              ZUGFOLGE_REAL_GERMANY_EXPECTED_DEPLOYMENT_HASH=4d9627d85ceab1c893a0fe3366e4d5f14f6173c58e164728d92825b81eb87098 \
+              node --test tools/audits/germany-2026.4-alpha-world-runtime.real.test.mjs
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: germany-2026-4-real-acceptance-${{ github.run_attempt }}
+          path: |
+            test-results/operational-v2/streaming-rss-proof.json
+            test-results/germany-2026.4/alpha-world-e2e.json
+          if-no-files-found: warn
+          retention-days: 30
+
   integration-api:
     name: API-Integration (Postgres, Auth, Replay, Livemap)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16.14-trixie
@@ -236,6 +401,19 @@ jobs:
           - 5432:5432
         options: >-
           --health-cmd "pg_isready -U zugfolge -d zugfolge_integration"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      postgres_restore:
+        image: postgres:16.14-trixie
+        env:
+          POSTGRES_USER: zugfolge
+          POSTGRES_PASSWORD: zugfolge-test
+          POSTGRES_DB: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U zugfolge -d postgres"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -258,14 +436,44 @@ jobs:
           DATABASE_URL="$TEST_DATABASE_URL" node packages/db/dist/migrate.js
       - name: Echte PostgreSQL-Migration, Readiness und Weltisolation
         run: pnpm --filter @zugfolge/db exec vitest run src/postgres.integration.test.ts
+      - name: Echter Weltabschluss wartet auf offenen Writer und bindet dessen Commit
+        run: pnpm --filter @zugfolge/alpha exec vitest run src/world-end.postgres.integration.test.ts
+      - name: Echter V1-V2-Postgres/Odoo-Cross-Contract (Game-Seite)
+        run: node --test tools/alpha-ops/world-deployment-v1-v2.postgres-odoo.integration.test.mjs
       - run: pnpm --filter @zugfolge/game-api test
       - name: Game-Backup, isolierter Restore und gleicher autoritativer Hash
         run: |
           set -euo pipefail
           mkdir -p test-results/backup
-          sh ops/alpha/backup-game.sh "$TEST_DATABASE_URL" test-results/backup/game.dump test-results/backup/game.manifest.json
-          sh ops/alpha/restore-game.sh 'postgres://zugfolge:zugfolge-test@127.0.0.1:5432/postgres' zugfolge_restore_ci test-results/backup/game.dump test-results/backup/game.manifest.json
-          node tools/alpha-ops/authoritative-state-hash.mjs "$TEST_DATABASE_URL" 'postgres://zugfolge:zugfolge-test@127.0.0.1:5432/zugfolge_restore_ci' | tee test-results/backup/state-hashes.jsonl
+          DATABASE_ROLLBACK_WRITERS_QUIESCED=true sh ops/alpha/backup-game.sh "$TEST_DATABASE_URL" test-results/backup/game.dump test-results/backup/game.manifest.json test-results/backup/game.operation.json
+          restore_url='postgres://zugfolge:zugfolge-test@127.0.0.1:5433/zugfolge_restore_ci'
+          sh ops/alpha/restore-game.sh 'postgres://zugfolge:zugfolge-test@127.0.0.1:5433/postgres' zugfolge_restore_ci test-results/backup/game.dump test-results/backup/game.manifest.json test-results/backup/game.restore.json
+          node tools/alpha-ops/authoritative-state-hash.mjs "$TEST_DATABASE_URL" "$restore_url" | tee test-results/backup/state-hashes.jsonl
+          DATABASE_ROLLBACK_WRITERS_QUIESCED=true \
+          DATABASE_URL="$TEST_DATABASE_URL" \
+          DATABASE_ROLLBACK_RESTORED_DATABASE_URL="$restore_url" \
+          DATABASE_ROLLBACK_GAME_BACKUP_DUMP_PATH=test-results/backup/game.dump \
+          DATABASE_ROLLBACK_GAME_BACKUP_MANIFEST_PATH=test-results/backup/game.manifest.json \
+          DATABASE_ROLLBACK_GAME_BACKUP_OPERATION_PATH=test-results/backup/game.operation.json \
+          DATABASE_ROLLBACK_GAME_RESTORE_RECEIPT_PATH=test-results/backup/game.restore.json \
+          DATABASE_ROLLBACK_BACKUP_MANIFEST_PATH=test-results/backup/database-backup-manifest.json \
+          DATABASE_ROLLBACK_RESTORE_PROOF_PATH=test-results/backup/database-restore-proof.json \
+          node tools/alpha-ops/create-database-backup-restore-evidence.mjs
+          DATABASE_ROLLBACK_WRITERS_QUIESCED=true \
+          DATABASE_URL="$TEST_DATABASE_URL" \
+          DATABASE_ROLLBACK_RESTORED_DATABASE_URL="$restore_url" \
+          DATABASE_ROLLBACK_RELEASE_ID=infra-ci-2026.3 \
+          DATABASE_ROLLBACK_PREVIOUS_RELEASE_ID=infra-ci-2026.2 \
+          DATABASE_ROLLBACK_BACKUP_MANIFEST_PATH=test-results/backup/database-backup-manifest.json \
+          DATABASE_ROLLBACK_RESTORE_PROOF_PATH=test-results/backup/database-restore-proof.json \
+          DATABASE_ROLLBACK_PROOF_OUTPUT_PATH=test-results/backup/database-rollback-proof.json \
+          node tools/alpha-ops/create-database-rollback-proof.mjs
+      - name: Keycloak-26.7.0 Identitaet und Token ueber Schema-Up/Down erhalten
+        run: |
+          set -euo pipefail
+          bash tools/alpha-ops/keycloak-public-to-schema.real-integration.sh \
+            "$TEST_DATABASE_URL" test-results/keycloak-schema-migration \
+            | tee test-results/keycloak-schema-migration.json
 
   odoo-19:
     name: Odoo 19 Add-on (echter getrennter Dienst)

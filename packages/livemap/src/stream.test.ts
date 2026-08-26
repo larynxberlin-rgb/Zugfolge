@@ -858,4 +858,33 @@ describe("LivemapRegistry", () => {
       isExpectedFresh,
     ).check()).resolves.toMatchObject({ status: "ok", code: "livemap_fresh" });
   });
+
+  it("meldet einen erwarteten fehlenden oder invalidierten Feed als down", async () => {
+    let now = 1_000;
+    const registry = new LivemapRegistry({ now: () => now });
+    const health = createLivemapHealthCheck(
+      registry,
+      60_000,
+      () => now,
+      () => true,
+      () => ["running"],
+    );
+
+    await expect(health.check()).resolves.toMatchObject({
+      status: "down",
+      code: "livemap_missing",
+      detail: "1/1 erwartete Feeds fehlen",
+    });
+    registry.initializeWorld("running", { at: 1, trains: [train] });
+    await expect(health.check()).resolves.toMatchObject({
+      status: "ok",
+      code: "livemap_fresh",
+    });
+
+    registry.markUnavailable("running");
+    await expect(health.check()).resolves.toMatchObject({
+      status: "down",
+      code: "livemap_missing",
+    });
+  });
 });

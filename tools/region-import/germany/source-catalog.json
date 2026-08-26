@@ -13,17 +13,6 @@
       "modifications": "Auf EBO-Regelspur gefiltert, topologisch geschnitten, qualifiziert und betrieblich modelliert."
     },
     {
-      "id": "annual-infrastructure-master",
-      "rightsSourceId": "trassenfinder-infrastruktur-api",
-      "role": "release-input",
-      "sourceLicense": "Projektfreigabe laut Rechte-Gate",
-      "acquisition": "Jährlicher Offline-Snapshot der freigegebenen Infrastruktur-Stammdatenressource.",
-      "purpose": "Betriebsstellen, RL100/DS100, Streckensegmente und Fahrplanjahresbindung.",
-      "shipAttribution": true,
-      "attribution": "Betreiber DB InfraGO; Snapshot und Änderungen im Release-Attributionsbericht dokumentiert.",
-      "modifications": "Normalisiert und über stabile Betriebsstellenkennungen mit dem OSM-Graphen verknüpft."
-    },
-    {
       "id": "db-infrago-infrastructure-open-data",
       "rightsSourceId": "db-infrago-infrastrukturdaten-open-data",
       "role": "release-input",
@@ -57,22 +46,11 @@
       "modifications": "Entlang der Gleise abgetastet und in ganzzahlige Promillebänder transformiert."
     },
     {
-      "id": "station-enrichment",
-      "rightsSourceId": "stada",
-      "role": "optional-release-input",
-      "sourceLicense": "CC-BY-4.0",
-      "acquisition": "Optionaler freigegebener API-Snapshot, sofern für den Jahreslauf ein gültiger API-Zugang vorliegt; andernfalls nicht Teil des Capture oder Release.",
-      "purpose": "Stations- und Ausstattungsanreicherung.",
-      "shipAttribution": true,
-      "attribution": "Stationsdatenquelle gemäß jährlichem Attributionsbericht, CC BY 4.0; durch Zugfolge bearbeitet.",
-      "modifications": "Auf stabile Betriebsstellenkennungen normalisiert."
-    },
-    {
       "id": "openstation-enrichment",
       "rightsSourceId": "openstation",
       "role": "release-input",
       "sourceLicense": "CC0-1.0",
-      "acquisition": "Jährlich gepinnter freigegebener OpenStation-Snapshot; Endpunkt, Version und Prüfsumme im Capture-Manifest.",
+      "acquisition": "Jährlich gepinnter OpenStation-NeTEx-Bulkstand über den offiziellen Mobilithek-Weiterleitungsendpunkt https://bahnhof.de/daten/netex; tatsächliche Zieladresse, Abrufzeit, Version, Bytezahl und SHA-256 im Capture-Manifest.",
       "purpose": "Unabhängige Stations- und Bahnsteiganreicherung sowie Widerspruchserkennung gegenüber den übrigen Stationsquellen.",
       "shipAttribution": true,
       "attribution": "OpenStation; Herkunft freiwillig zur Nachvollziehbarkeit genannt (CC0).",

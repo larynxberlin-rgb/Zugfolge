@@ -258,7 +258,8 @@ Trassenvergabe, Audit, Replay-Export und Testbarkeit.
   jeder Ausschreibung (E21) aus `tender_profile` — beide dadurch reproduzierbar
   und im Nachhinein prüfbar.
 - **Keine Floats in zustandsrelevanten Werten.** Geld als `i64` Cent, Zeiten als
-  Sekunden seit Weltepoche, Positionen als Millimeter entlang Kante. Fahrdynamik
+  ganzzahlige Millisekunden seit Weltepoche, Positionen als Millimeter entlang
+  Kante. Fahrdynamik
   rechnet mit Floats — aber **einmalig in der Release-Pipeline**; die Simulation
   liest nur noch ganzzahlige Fahrzeittabellen.
 - **Replay-Invariante:** gleicher `InfraRelease` + `EconomyRelease` + Seed +

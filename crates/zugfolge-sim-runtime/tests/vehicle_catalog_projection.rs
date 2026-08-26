@@ -6,8 +6,12 @@ use zugfolge_fleet::release_catalog::{
     compile_vehicle_catalog, recompute_vehicle_economy_projection_sha256, validate_compilation,
     validate_compilation_against_inputs,
 };
+use zugfolge_infra::validate_operational_infrastructure_v2_file;
 use zugfolge_runtime::initialize_fleet_world;
-use zugfolge_sim_runtime::operational_runtime::initialize_operational_simulation;
+use zugfolge_sim_runtime::operational_runtime::{
+    OperationalRuntimeError,
+    initialize_operational_simulation as initialize_operational_simulation_from_file,
+};
 
 const SOURCE_CATALOG: &str =
     include_str!("../../zugfolge-fleet/tests/fixtures/vehicle-catalog-source-v2.json");
@@ -68,7 +72,7 @@ fn configured_asset(
     asset
 }
 
-fn operational_infra_release() -> Value {
+fn operational_infra_source() -> Value {
     json!({
         "id": "infra:vehicle-catalog-test:v1",
         "directedEdges": { "edge:1": 100_000 },
@@ -103,7 +107,8 @@ fn operational_infra_release() -> Value {
                     "blockIds": ["block:1"],
                     "speedLimitMmps": 20_000,
                     "gradientPerMille": 0,
-                    "requiredProtectionSystems": ["pzb"]
+                    "availableProtectionSystems": ["pzb"],
+                    "simultaneouslyRequiredProtectionSystems": []
                 }]
             }
         },
@@ -123,11 +128,63 @@ fn operational_infra_release() -> Value {
         },
         "signals": ["signal:1"],
         "switches": ["switch:1"],
-        "blockResources": ["block:1", "overlap:1", "flank:1"],
+        "blockResources": ["block:1", "flank:1", "overlap:1"],
         "platformIntervals": {},
         "regionBoundaries": [],
         "rzueLayoutId": "rzue:vehicle-catalog-test:v1"
     })
+}
+
+fn operational_infrastructure_fixture() -> &'static (Value, String) {
+    static FIXTURE: std::sync::OnceLock<(Value, String)> = std::sync::OnceLock::new();
+    FIXTURE.get_or_init(|| {
+        let source = operational_infra_source();
+        let directory = (0_u64..1_024)
+            .find_map(|id| {
+                let path = std::env::temp_dir().join(format!(
+                    "zugfolge-vehicle-catalog-operational-{}-{id}",
+                    std::process::id()
+                ));
+                match std::fs::create_dir(&path) {
+                    Ok(()) => Some(path),
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => None,
+                    Err(error) => panic!("Testverzeichnis kann nicht angelegt werden: {error}"),
+                }
+            })
+            .expect("eindeutiges Operational-v2-Testverzeichnis");
+        let candidate = directory.join("candidate.json");
+        let deployed = directory.join("operational-infrastructure-v2.json");
+        std::fs::write(
+            &candidate,
+            serde_json::to_vec(&source).expect("Operational-v2-Testquelle"),
+        )
+        .expect("Operational-v2-Testquelle kann geschrieben werden");
+        let evidence = validate_operational_infrastructure_v2_file(
+            &candidate,
+            source["id"].as_str().expect("InfraRelease-ID"),
+            Some(&deployed),
+        )
+        .expect("Operational-v2-Testquelle ist gueltig");
+        (
+            json!({
+                "schemaVersion": "zugfolge-operational-infrastructure-binding/v2",
+                "infraReleaseId": source["id"],
+                "file": "operational-infrastructure-v2.json",
+                "bytes": evidence["bytes"],
+                "sha256": evidence["sha256"],
+                "stateHash": evidence["stateHash"],
+            }),
+            deployed.to_str().expect("UTF-8-Testpfad").to_owned(),
+        )
+    })
+}
+
+fn operational_infra_release() -> Value {
+    operational_infrastructure_fixture().0.clone()
+}
+
+fn initialize_operational_simulation(input_json: &str) -> Result<String, OperationalRuntimeError> {
+    initialize_operational_simulation_from_file(input_json, &operational_infrastructure_fixture().1)
 }
 
 fn initialization_formations(formations: &[OperationalFormation]) -> Vec<Value> {
@@ -217,6 +274,7 @@ fn ein_compile_lauf_initialisiert_flotte_und_operational_v2() {
                 "worldId": seed.world_id,
                 "regionId": "region:vehicle-catalog-test",
                 "nowMs": 0,
+                "protectionModeSelectionPolicy": "zugfolge-protection-mode-selection/conservative-v1",
                 "infraRelease": operational_infra_release(),
                 "vehicleTypes": compilation.operational_inventory.vehicle_types,
                 "vehicles": compilation.operational_inventory.vehicles,
@@ -302,6 +360,7 @@ fn markt_seed_ohne_formationen_initialisiert_beide_runtimes() {
                 "worldId": seed.world_id,
                 "regionId": "region:vehicle-catalog-market-test",
                 "nowMs": 0,
+                "protectionModeSelectionPolicy": "zugfolge-protection-mode-selection/conservative-v1",
                 "infraRelease": operational_infra_release(),
                 "vehicleTypes": compilation.operational_inventory.vehicle_types,
                 "vehicles": compilation.operational_inventory.vehicles,
@@ -443,6 +502,7 @@ fn gedrehter_steuerwagen_speist_beide_runtimes_mit_identischer_spitze() {
                 "worldId": seed.world_id,
                 "regionId": "region:vehicle-catalog-wendezug-test",
                 "nowMs": 0,
+                "protectionModeSelectionPolicy": "zugfolge-protection-mode-selection/conservative-v1",
                 "infraRelease": operational_infra_release(),
                 "vehicleTypes": compilation.operational_inventory.vehicle_types,
                 "vehicles": compilation.operational_inventory.vehicles,
@@ -531,6 +591,7 @@ fn gleichartige_bemu_doppeltraktion_initialisiert_beide_runtimes() {
                 "worldId": seed.world_id,
                 "regionId": "region:vehicle-catalog-bemu-test",
                 "nowMs": 0,
+                "protectionModeSelectionPolicy": "zugfolge-protection-mode-selection/conservative-v1",
                 "infraRelease": operational_infra_release(),
                 "vehicleTypes": compilation.operational_inventory.vehicle_types,
                 "vehicles": compilation.operational_inventory.vehicles,
@@ -652,6 +713,7 @@ fn unbespannter_wagenpark_initialisiert_beide_runtimes_ohne_fahrdynamik() {
                 "worldId": seed.world_id,
                 "regionId": "region:vehicle-catalog-wagenpark-test",
                 "nowMs": 0,
+                "protectionModeSelectionPolicy": "zugfolge-protection-mode-selection/conservative-v1",
                 "infraRelease": operational_infra_release(),
                 "vehicleTypes": compilation.operational_inventory.vehicle_types,
                 "vehicles": compilation.operational_inventory.vehicles,
@@ -752,6 +814,7 @@ fn seed_restriktionen_bleiben_vom_compiler_bis_in_beide_runtimes_identisch() {
                 "worldId": seed.world_id,
                 "regionId": "region:vehicle-catalog-restrictions-test",
                 "nowMs": 0,
+                "protectionModeSelectionPolicy": "zugfolge-protection-mode-selection/conservative-v1",
                 "infraRelease": operational_infra_release(),
                 "vehicleTypes": compilation.operational_inventory.vehicle_types,
                 "vehicles": compilation.operational_inventory.vehicles,
@@ -840,6 +903,7 @@ fn voll_immobilisierte_powered_formation_bleibt_physisch_aber_nicht_betrieblich_
                 "worldId": seed.world_id,
                 "regionId": "region:vehicle-catalog-immobilized-test",
                 "nowMs": 0,
+                "protectionModeSelectionPolicy": "zugfolge-protection-mode-selection/conservative-v1",
                 "infraRelease": operational_infra_release(),
                 "vehicleTypes": compilation.operational_inventory.vehicle_types,
                 "vehicles": compilation.operational_inventory.vehicles,

@@ -3,6 +3,8 @@ import { createReadStream } from "node:fs";
 import { open, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 
+import { validateMapAssetNotices } from "./map-asset-notices.mjs";
+
 const SHA256 = /^[a-f0-9]{64}$/;
 
 function invariant(condition, message) {
@@ -70,8 +72,9 @@ export function validateMapReleaseSpec(spec) {
 }
 
 export function validateMapSources(catalog, capture, rightsRegistry) {
-  invariant(catalog?.schema === "zugfolge-map-source-catalog/v1" && Array.isArray(catalog.sources) && catalog.sources.length > 0, "Unbekannter Karten-Quellkatalog.");
-  invariant(capture?.schema === "zugfolge-map-source-capture/v1" && Array.isArray(capture.sources), "Unbekanntes Karten-Capture.");
+  invariant(catalog?.schema === "zugfolge-map-source-catalog/v2" && Array.isArray(catalog.sources) && catalog.sources.length > 0 && Array.isArray(catalog.assetSources), "Unbekannter Karten-Quellkatalog; der Release verlangt v2 mit Kartenasset-Provenienz.");
+  invariant(capture?.schema === "zugfolge-map-source-capture/v2" && Array.isArray(capture.sources), "Unbekanntes Karten-Capture; der Release verlangt v2 mit real erfassten Assetbaeumen.");
+  invariant(SHA256.test(capture.assetInventoryPlanSha256), "Karten-Capture besitzt keinen kanonischen Cache-Inventarplan-SHA fuer die Assets.");
   invariant(Number.isSafeInteger(rightsRegistry?.version) && Array.isArray(rightsRegistry.quellen), "Unbekanntes Rechte-Register.");
   const rightsById = new Map(rightsRegistry.quellen.map((source) => [source.id, source]));
   const capturesById = new Map(capture.sources.map((source) => [source.id, source]));
@@ -97,12 +100,37 @@ export function validateMapSources(catalog, capture, rightsRegistry) {
     });
   }
   invariant(publicSources.length === capture.sources.length, "Karten-Capture enthält eine nicht katalogisierte Quelle.");
-  return publicSources.sort((left, right) => left.id.localeCompare(right.id, "en"));
+  const assetNotices = validateMapAssetNotices(capture.assetNotices);
+  const catalogAssetsById = new Map(catalog.assetSources.map((asset) => [asset?.id, asset]));
+  invariant(catalogAssetsById.size === catalog.assetSources.length && catalogAssetsById.size === assetNotices.assets.length, "Karten-Assetkatalog ist doppelt oder unvollstaendig.");
+  for (const asset of assetNotices.assets) {
+    const catalogAsset = catalogAssetsById.get(asset.id);
+    invariant(catalogAsset !== undefined, `Kartenasset ${asset.id} fehlt im Karten-Quellkatalog.`);
+    const rights = rightsById.get(asset.rightsSourceId);
+    invariant(rights?.status === "freigegeben" && rights.lizenz === asset.license && rights.entscheidung?.datum && rights.entscheidung?.pruefer, `Kartenasset ${asset.id} besitzt keine passende Rechtefreigabe.`);
+    invariant(
+      catalogAsset.kind === asset.kind
+        && catalogAsset.rightsSourceId === asset.rightsSourceId
+        && catalogAsset.sourceLicense === asset.license
+        && catalogAsset.copyright === asset.copyright
+        && catalogAsset.modifications === asset.modifications
+        && typeof catalogAsset.attribution === "string"
+        && catalogAsset.attribution !== ""
+        && canonical(catalogAsset.source) === canonical(asset.source)
+        && canonical(catalogAsset.derivedFrom) === canonical(asset.derivedFrom)
+        && canonical(catalogAsset.notice) === canonical({ url: asset.notice.url, bytes: asset.notice.bytes, sha256: asset.notice.sha256 }),
+      `Kartenasset ${asset.id} weicht zwischen Katalog, Capture oder Lizenz-Notice ab.`,
+    );
+  }
+  return {
+    sources: publicSources.sort((left, right) => left.id.localeCompare(right.id, "en")),
+    assetNotices,
+  };
 }
 
 export async function materializeMapRelease(spec, artifactRoot, sourceProof) {
   validateMapReleaseSpec(spec);
-  const sources = validateMapSources(sourceProof?.catalog, sourceProof?.capture, sourceProof?.rightsRegistry);
+  const sourceBindings = validateMapSources(sourceProof?.catalog, sourceProof?.capture, sourceProof?.rightsRegistry);
   const root = resolve(artifactRoot);
   const artifacts = [];
   for (const descriptor of [...spec.artifacts].sort((left, right) => left.kind.localeCompare(right.kind, "en"))) {
@@ -120,7 +148,9 @@ export async function materializeMapRelease(spec, artifactRoot, sourceProof) {
     cachePolicy: "public,max-age=31536000,immutable",
     rangeRequestsRequired: true,
     runtimeExternalSources: [],
-    sources,
+    sources: sourceBindings.sources,
+    assetInventoryPlanSha256: sourceProof.capture.assetInventoryPlanSha256,
+    assetNotices: sourceBindings.assetNotices,
     artifacts,
   };
   return { release, releaseHash: createHash("sha256").update(canonical(release)).digest("hex") };
@@ -141,5 +171,7 @@ export function validateMaterializedMapRelease(value) {
     invariant(SHA256.test(artifact.sha256), `${artifact.id} ohne SHA-256.`);
     invariant(Number.isSafeInteger(artifact.bytes) && artifact.bytes > 7, `${artifact.id} ohne Bytezahl.`);
   }
+  validateMapAssetNotices(value.release.assetNotices);
+  invariant(SHA256.test(value.release.assetInventoryPlanSha256), "Kartenrelease ohne Cache-Inventarplan-SHA fuer die Assets.");
   return value;
 }

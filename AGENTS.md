@@ -44,7 +44,9 @@ Kein Beitrag darf diese verletzen:
    Konfliktressource besitzen.** Zentrale fachliche Invariante.
 2. **Kein `now()` im Simulationskern.** Simulationszeit ist ein expliziter Wert.
 3. **Keine Gleitkommazahlen im zustandsrelevanten Pfad.** Geld als `i64` Cent,
-   Zeiten als Sekunden seit Weltepoche, Positionen als Millimeter entlang Kante.
+   Zeiten im autoritativen Operational-v2-Zustand als `i64` Millisekunden seit
+   Weltepoche, Positionen als Millimeter entlang Kante. Fahrplansekunden werden
+   an der Deploymentgrenze genau einmal ganzzahlig umgerechnet.
 4. **`world_id` in jeder Abfrage, jedem Index und jedem Event.**
 5. **Kein Payment-Tier-Feld** in Planner, Nachfrage, Wirtschaft, Trassenvergabe
    oder Live-Disposition. CI-Wächter prüft das.

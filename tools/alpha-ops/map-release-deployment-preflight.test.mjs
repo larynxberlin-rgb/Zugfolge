@@ -19,8 +19,13 @@ function result(activeReleaseId, activationState) {
     previousReleaseId: evidence.previousReleaseId,
     activeReleaseId,
     activationState,
+    mapActivationEligible: true,
     activationEligible: true,
     rollbackEligible: true,
+    mapRollbackEligible: true,
+    databaseRollbackEligible: true,
+    writersQuiesced: true,
+    rollbackWindow: "pre-activation-only",
   };
 }
 
@@ -58,7 +63,7 @@ test("manueller Vorlauf akzeptiert ausschliesslich den expliziten .1-Pointer", (
   );
 });
 
-test("falscher Pointerzustand wird verweigert und aktiver Kandidat meldet fehlendes Rollback ehrlich", () => {
+test("falscher Pointerzustand und jeder unvollstaendige Full-Stack-Rollback werden in beiden Modi verweigert", () => {
   assert.throws(
     () => validateMapPreflightResult(
       result(evidence.previousReleaseId, "pre-activation"),
@@ -68,23 +73,41 @@ test("falscher Pointerzustand wird verweigert und aktiver Kandidat meldet fehlen
     ),
     /Pointerzustand/u,
   );
-  assert.equal(
-    validateMapPreflightResult(
-      { ...result(evidence.releaseId, "active-candidate"), rollbackEligible: false, rollbackEligibilityReason: "runtime-tuple-unbound-v1" },
+  assert.throws(
+    () => validateMapPreflightResult(
+      { ...result(evidence.releaseId, "active-candidate"), rollbackEligible: false, mapRollbackEligible: false },
       evidence,
       "active-candidate",
       evidence.releaseId,
-    ).rollbackEligible,
-    false,
+    ),
+    /keinen freigegebenen Map-\/Runtime-Rollback/u,
   );
   assert.throws(
     () => validateMapPreflightResult(
-      { ...result(evidence.previousReleaseId, "pre-activation"), rollbackEligible: false, rollbackEligibilityReason: "runtime-tuple-unbound-v1" },
+      { ...result(evidence.releaseId, "active-candidate"), rollbackEligible: false, databaseRollbackEligible: false },
+      evidence,
+      "active-candidate",
+      evidence.releaseId,
+    ),
+    /keinen freigegebenen Datenbank-Rollback/u,
+  );
+  assert.throws(
+    () => validateMapPreflightResult(
+      { ...result(evidence.previousReleaseId, "pre-activation"), rollbackEligible: false, writersQuiesced: false },
       evidence,
       "pre-activation",
       evidence.previousReleaseId,
     ),
-    /vollständig gekoppeltes Runtime-Tuple/u,
+    /keinen quieszierten Datenbankbeleg/u,
+  );
+  assert.throws(
+    () => validateMapPreflightResult(
+      { ...result(evidence.releaseId, "active-candidate"), rollbackWindow: "active-candidate" },
+      evidence,
+      "active-candidate",
+      evidence.releaseId,
+    ),
+    /Pre-Activation-Rollbackfenster/u,
   );
   assert.throws(
     () => validateMapPreflightResult(
@@ -93,7 +116,7 @@ test("falscher Pointerzustand wird verweigert und aktiver Kandidat meldet fehlen
       "active-candidate",
       evidence.releaseId,
     ),
-    /begründet den fehlenden Rollbackstatus/u,
+    /Full-Stack-Rollbackvertrag/u,
   );
   assert.throws(
     () => expectedReleaseForMapPreflight(evidence, "fallback", evidence.releaseId),
@@ -108,10 +131,24 @@ test("Serverwrapper liest nur die festen Artefaktpfade und reicht den expliziten
     MAP_RELEASE_PREFLIGHT_RESTORE_PROOF_PATH: "/map-preflight/restore-proof.json",
     MAP_RELEASE_PREFLIGHT_RESTORE_ROOT: "/map-restore",
     MAP_RELEASE_PREFLIGHT_TRUSTED_KEYS_PATH: "/map-preflight/trusted-delivery-keys.json",
+    MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH: "/map-preflight/database-rollback-proof.json",
     MAP_RELEASE_PREFLIGHT_EXPECTED_ACTIVE_RELEASE_ID: evidence.releaseId,
+    RELEASE_TRUSTED_KEY_SCOPES_JSON: JSON.stringify({
+      alphaWorldDeployments: ["alpha-world-2026"],
+      mapInfraDeliveries: ["map-delivery-2026"],
+    }),
+    MAP_RELEASE_PREFLIGHT_RUNTIME_SOURCE_COMMIT: "a".repeat(40),
+    MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST: `sha256:${"b".repeat(64)}`,
+    PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST: `sha256:${"c".repeat(64)}`,
+    MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH: "/evidence/world.json",
   };
   const proof = Buffer.from("canonical restore proof");
-  const keys = { "map-delivery-2026": "public-key" };
+  const databaseProof = Buffer.from("canonical database rollback proof");
+  const keys = {
+    "alpha-world-2026": "alpha-public-key",
+    "map-delivery-2026": "map-public-key",
+  };
+  const keyBytes = Buffer.from(`${JSON.stringify(keys)}\n`);
   let observed;
   const loaded = await runMapReleaseDeploymentPreflight({
     mode: "active-candidate",
@@ -126,7 +163,11 @@ test("Serverwrapper liest nur die festen Artefaktpfade und reicht den expliziten
     },
     async loadTrustedKeys(path) {
       assert.equal(path, environment.MAP_RELEASE_PREFLIGHT_TRUSTED_KEYS_PATH);
-      return keys;
+      return { trustedDeliveryKeys: keys, trustedDeliveryKeysBytes: keyBytes };
+    },
+    async loadDatabaseRollbackProof(path) {
+      assert.equal(path, environment.MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH);
+      return databaseProof;
     },
     async preflight(argumentsValue) {
       observed = argumentsValue;
@@ -139,26 +180,66 @@ test("Serverwrapper liest nur die festen Artefaktpfade und reicht den expliziten
     restoreProofBytes: proof,
     restoreRoot: environment.MAP_RELEASE_PREFLIGHT_RESTORE_ROOT,
     trustedDeliveryKeys: keys,
+    trustedDeliveryKeysBytes: keyBytes,
+    trustedAlphaWorldKeys: { "alpha-world-2026": "alpha-public-key" },
+    trustedMapInfraKeys: { "map-delivery-2026": "map-public-key" },
     expectedActiveReleaseId: evidence.releaseId,
-    runtimeIdentity: undefined,
+    runtimeIdentity: {
+      sourceCommit: environment.MAP_RELEASE_PREFLIGHT_RUNTIME_SOURCE_COMMIT,
+      imageDigest: environment.MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST,
+      odooImageDigest: environment.PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST,
+      worldDeploymentPath: environment.MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH,
+      databaseRollbackProofPath: environment.MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH,
+    },
+    databaseRollbackProofBytes: databaseProof,
   });
   assert.equal(loaded.activeReleaseId, evidence.releaseId);
 });
 
-test("Rollbackmodus verlangt die vollständige attestierte Runtime-Identität; Kandidat darf sie ehrlich als fehlend melden", () => {
-  assert.equal(runtimeIdentityFromEnvironment({}, "active-candidate"), undefined);
-  assert.throws(() => runtimeIdentityFromEnvironment({}, "pre-activation"), /vollstaendige Source-\/Image-\/Welt/u);
+test("Serverwrapper verweigert ein fehlendes Scope-Mapping vor jedem Artefaktzugriff", async () => {
+  let artifactReadStarted = false;
+  await assert.rejects(runMapReleaseDeploymentPreflight({
+    mode: "active-candidate",
+    environment: {
+      MAP_RELEASE_PREFLIGHT_EVIDENCE_PATH: "/unused/evidence.json",
+      MAP_RELEASE_PREFLIGHT_DEPLOYMENT_ROOT: "/unused/deployment",
+      MAP_RELEASE_PREFLIGHT_RESTORE_PROOF_PATH: "/unused/restore-proof.json",
+      MAP_RELEASE_PREFLIGHT_RESTORE_ROOT: "/unused/restore",
+      MAP_RELEASE_PREFLIGHT_TRUSTED_KEYS_PATH: "/unused/trusted-keys.json",
+      MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH: "/unused/database-proof.json",
+      MAP_RELEASE_PREFLIGHT_EXPECTED_ACTIVE_RELEASE_ID: evidence.releaseId,
+    },
+    loadEvidence: async () => {
+      artifactReadStarted = true;
+      return evidence;
+    },
+  }), /RELEASE_TRUSTED_KEY_SCOPES_JSON' fehlt/u);
+  assert.equal(artifactReadStarted, false);
+});
+
+test("beide Produktionsmodi verlangen die vollständige attestierte Runtime-Identität", () => {
+  assert.throws(() => runtimeIdentityFromEnvironment({}, "active-candidate"), /vollstaendige .*Runtime-Identitaet/u);
+  assert.throws(() => runtimeIdentityFromEnvironment({}, "pre-activation"), /vollstaendige .*Runtime-Identitaet/u);
   assert.throws(() => runtimeIdentityFromEnvironment({
     MAP_RELEASE_PREFLIGHT_RUNTIME_SOURCE_COMMIT: "a".repeat(40),
-  }, "active-candidate"), /vollstaendige Source-\/Image-\/Welt/u);
-  assert.deepEqual(runtimeIdentityFromEnvironment({
+  }, "active-candidate"), /vollstaendige .*Runtime-Identitaet/u);
+  assert.throws(() => runtimeIdentityFromEnvironment({
     MAP_RELEASE_PREFLIGHT_RUNTIME_SOURCE_COMMIT: "a".repeat(40),
     MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST: `sha256:${"b".repeat(64)}`,
     MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH: "/evidence/world.json",
+  }, "active-candidate"), /vollstaendige .*Runtime-Identitaet/u);
+  assert.deepEqual(runtimeIdentityFromEnvironment({
+    MAP_RELEASE_PREFLIGHT_RUNTIME_SOURCE_COMMIT: "a".repeat(40),
+    MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST: `sha256:${"b".repeat(64)}`,
+    PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST: `sha256:${"c".repeat(64)}`,
+    MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH: "/evidence/world.json",
+    MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH: "/map-preflight/database-rollback-proof.json",
   }, "pre-activation"), {
     sourceCommit: "a".repeat(40),
     imageDigest: `sha256:${"b".repeat(64)}`,
+    odooImageDigest: `sha256:${"c".repeat(64)}`,
     worldDeploymentPath: "/evidence/world.json",
+    databaseRollbackProofPath: "/map-preflight/database-rollback-proof.json",
   });
 });
 

@@ -7,6 +7,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { buildGermanyInfraCorpus } from "./quality-model.mjs";
+import { germanyReleaseManifestCompilerArgs } from "./release-manifest-invocation.mjs";
 
 async function json(path) {
   return JSON.parse(await readFile(resolve(path), "utf8"));
@@ -66,10 +67,7 @@ if (command === "compile") {
   ]);
   process.stdout.write(`${JSON.stringify({ sections: result.corpus.sections.length, corpusHash: result.corpusHash, qualityReportHash: result.qualityReportHash })}\n`);
 } else if (command === "manifest") {
-  const [configPath, catalogPath, rightsPath, capturePath, artifactsPath, qualityPath, outputPath] = args;
-  if (!outputPath) throw new Error("Aufruf: build-germany-release.mjs manifest CONFIG CATALOG RIGHTS CAPTURE ARTIFACTS QUALITY OUTPUT");
-  const paths = [configPath, catalogPath, rightsPath, capturePath, artifactsPath, qualityPath, outputPath];
-  await rustReleaseCompiler(["manifest", ...paths.map((path) => resolve(path))]);
+  await rustReleaseCompiler(germanyReleaseManifestCompilerArgs(args));
 } else if (command === "plan") {
   const [configPath, catalogPath, rightsPath] = args;
   if (!rightsPath) throw new Error("Aufruf: build-germany-release.mjs plan CONFIG CATALOG RIGHTS");

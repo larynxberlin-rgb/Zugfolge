@@ -1,3 +1,4 @@
+from . import canonical_json
 from . import admin_request
 from . import account_move
 from . import admin_capability

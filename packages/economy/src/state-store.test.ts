@@ -128,7 +128,7 @@ describe("persistenter M6-Weltzustand und Outbox", () => {
     expect((await loadEconomyWorldState(db, WORLD_ID))?.revision).toBe(0);
   });
 
-  it("trennt beschleunigte Fachzeit von realer Queuezeit und drainiert archivierte Restzeilen", async () => {
+  it("trennt beschleunigte Fachzeit von realer Queuezeit und verlangt den Drain vor der Archivierungs-Fence", async () => {
     const started = startEconomyWorld({
       worldId: WORLD_ID,
       seed: 9n,
@@ -146,8 +146,6 @@ describe("persistenter M6-Weltzustand und Outbox", () => {
       committedAt: acceleratedSimulationCommit,
       enqueuedAt: queueTime,
     });
-    await db.update(worlds).set({ lifecycleStatus: "archived" }).where(eq(worlds.id, WORLD_ID));
-
     const [queued] = await db.select().from(economyOutbox).where(eq(economyOutbox.worldId, WORLD_ID));
     expect(queued).toMatchObject({
       occurredAt: new Date(0),
@@ -156,13 +154,26 @@ describe("persistenter M6-Weltzustand und Outbox", () => {
       attempts: 0,
     });
     expect(queued!.enqueuedAt.getTime()).toBeLessThan(acceleratedSimulationCommit.getTime());
-    expect(await listEconomyWorldIds(db)).not.toContain(WORLD_ID);
+    await expect(db.update(worlds).set({ lifecycleStatus: "archived" }).where(eq(worlds.id, WORLD_ID)))
+      .rejects.toMatchObject({ cause: { message: expect.stringContaining("pending economy outbox") } });
+    expect(await listEconomyWorldIds(db)).toContain(WORLD_ID);
     expect(await listPendingEconomyOutboxWorldIds(db)).toContain(WORLD_ID);
 
     const sendNotice = vi.fn(async () => undefined);
     await expect(drainEconomyOutbox(db, WORLD_ID, { sendNotice, postJournal: vi.fn() }, queueTime)).resolves.toBe(1);
     expect(sendNotice).toHaveBeenCalledOnce();
     expect(await listPendingEconomyEffects(db, WORLD_ID)).toHaveLength(0);
+    await db.update(worlds).set({ lifecycleStatus: "archived" }).where(eq(worlds.id, WORLD_ID));
+    expect(await listEconomyWorldIds(db)).not.toContain(WORLD_ID);
+    expect(await listPendingEconomyOutboxWorldIds(db)).not.toContain(WORLD_ID);
+    await expect(db.insert(economyOutbox).values({
+      worldId: WORLD_ID,
+      effectId: "after-archive",
+      effectType: "notice",
+      payload: { id: "after-archive", worldId: WORLD_ID },
+      occurredAt: queueTime,
+      enqueuedAt: queueTime,
+    })).rejects.toMatchObject({ cause: { message: expect.stringContaining("world writer is fenced") } });
   });
 
   it("laesst einen fehlgeschlagenen Drain auditierbar offen und quittiert ihn beim Retry", async () => {
@@ -174,8 +185,6 @@ describe("persistenter M6-Weltzustand und Outbox", () => {
       occurredAt: new Date(1_000),
       enqueuedAt: new Date(2_000),
     });
-    await db.update(worlds).set({ lifecycleStatus: "archived" }).where(eq(worlds.id, WORLD_ID));
-
     await expect(drainEconomyOutbox(db, WORLD_ID, {
       sendNotice: async () => { throw new Error("adapter unavailable"); },
       postJournal: async () => undefined,

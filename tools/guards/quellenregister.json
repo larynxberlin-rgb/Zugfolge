@@ -70,6 +70,30 @@
       "milestone": "M14.2"
     },
     {
+      "id": "noto-glyphs",
+      "titel": "Noto-Sans-Glyphen aus Protomaps basemaps-assets",
+      "status": "freigegeben",
+      "lizenz": "OFL-1.1",
+      "bereitstellung": "PBF-Glyphen aus dem auf Commit 028c18f713baecad011301ff7a69acc39bcc2ae7 gepinnten Protomaps-Repository https://github.com/protomaps/basemaps-assets; vollstaendiger OFL-Text, Dateizahl, Bytezahl und kanonischer Baum-SHA-256 werden im oeffentlichen Karten-Quellenmanifest gebunden.",
+      "attribution": "Copyright 2022 The Noto Project Authors (https://github.com/notofonts); SIL Open Font License 1.1",
+      "nutzung": "Vier selbst gehostete Noto-Schriftstapel als 1.024 PBF-Glyphendateien fuer den dunklen Kartenstil.",
+      "entscheidung": { "datum": "2026-08-24", "pruefer": "Sebastian Barowski" },
+      "hinweis": "Die Schriftsoftware bleibt getrennt von der ODbL-Basemap unter OFL-1.1. Jede Auslieferung enthaelt den vollstaendigen Lizenztext maschinenlesbar im oeffentlichen Sources-Manifest; dessen Baumbeleg muss exakt zu den paketierten Glyphen passen.",
+      "milestone": "M14.2"
+    },
+    {
+      "id": "protomaps-sprites",
+      "titel": "Protomaps-v4-Sprites aus MIT-lizenzierten Tangrams-Icons",
+      "status": "freigegeben",
+      "lizenz": "MIT",
+      "bereitstellung": "Dunkle v4-Sprites aus dem auf Commit 028c18f713baecad011301ff7a69acc39bcc2ae7 gepinnten Protomaps-Repository https://github.com/protomaps/basemaps-assets; laut Upstream abgeleitet aus https://github.com/tangrams/icons, hier auf Commit 92510779634f4a006c61ea70e50cb8c52c765a81 gepinnt.",
+      "attribution": "Copyright (c) 2017 Mapzen; MIT License; Sprite-Aufbereitung Protomaps",
+      "nutzung": "Vier selbst gehostete dunkle Sprite-Dateien fuer den Kartenstil.",
+      "entscheidung": { "datum": "2026-08-24", "pruefer": "Sebastian Barowski" },
+      "hinweis": "Die Icon-/Sprite-Lizenz bleibt getrennt von der ODbL-Basemap. Jede Auslieferung enthaelt den vollstaendigen MIT-Text maschinenlesbar im oeffentlichen Sources-Manifest; dessen Baumbeleg muss exakt zu den paketierten Sprites passen.",
+      "milestone": "M14.2"
+    },
+    {
       "id": "apn-validierung",
       "titel": "APN-Skizzen — interne Topologievalidierung",
       "status": "entwicklung",
@@ -110,11 +134,11 @@
       "titel": "OpenStation — Stationsdaten",
       "status": "freigegeben",
       "lizenz": "CC0 1.0 (Creative Commons Zero — gemeinfrei)",
-      "bereitstellung": "Marketplace-Bereitstellung. CC0 stellt keine Bedingung an den Bezugsweg; konkreter Marketplace-Endpunkt, Version und Prüfsumme werden bei Import (M1.8) im InfraRelease festgehalten, wie bei osm-pbf-lhe.",
+      "bereitstellung": "Vollständiger NeTEx-Bulkstand über die Mobilithek ohne Zugangsdaten oder Request-Limit; stabiler DB-Weiterleitungsendpunkt https://bahnhof.de/daten/netex. Tatsächliche Zieladresse, Abrufzeit, Version, Bytezahl und SHA-256 werden je Jahreslauf gepinnt.",
       "attribution": "Durch CC0 keine Namensnennung vorgeschrieben. Herkunft wird trotzdem im InfraRelease vermerkt (Nachvollziehbarkeit, nicht Lizenzpflicht).",
-      "nutzung": "Kandidat für die Stationsdaten-Anreicherung (Bahnsteige, Ausstattung).",
+      "nutzung": "Jährliche Stations- und Bahnsteiganreicherung einschließlich eindeutig referenzierbarer Personenbahnhofs-Infrastruktur und Ausstattung.",
       "entscheidung": { "datum": "2026-08-08", "pruefer": "Sebastian Barowski" },
-      "hinweis": "CC0 erlaubt Nutzung und Import ohne Auflagen. Feldmapping und die konkrete Marketplace-Version werden bei Import in M1.8 festgelegt.",
+      "hinweis": "DB InfraGO bezeichnet OpenStation als offene Referenz für Personenbahnhofs-Infrastruktur und empfiehlt den Mobilithek-Bulkpfad für Produktionssysteme. CC0 erlaubt Nutzung und Import ohne Auflagen; Feldmapping und konkrete Snapshot-Version bleiben im InfraRelease gebunden.",
       "milestone": "M1.8"
     },
     {
@@ -168,13 +192,13 @@
     {
       "id": "trassenfinder-infrastruktur-api",
       "titel": "Trassenfinder-Infrastruktur-API — Betriebsstellen- und Streckensegment-Stammdaten (openapi.trassenfinder.de)",
-      "status": "freigegeben",
-      "lizenz": "Keine veröffentlichten Nutzungsbedingungen; die API (openapi.trassenfinder.de, Betreiber DB InfraGO) ist öffentlich und ohne Zugangsbeschränkung nutzbar.",
+      "status": "entwicklung",
+      "lizenz": "Keine veröffentlichten Nutzungsbedingungen; daraus folgt keine Freigabe fuer Import, Auslieferung oder einen Infrastruktur-Faktenclaim.",
       "bereitstellung": "Öffentliche OpenAPI unter https://openapi.trassenfinder.de (Endpunkt GET /api/v10/infrastrukturen/{infrastrukturId}). Die Ressource ist an ein Fahrplanjahr gebunden (Felder fahrplanjahr, gueltig_von, gueltig_bis) statt an einen laufenden Abruf — ein einmaliger, offline gehaltener Abgriff pro Fahrplanjahr, analog zu osm-pbf-lhe. Konkrete Version und Prüfsumme werden bei Import im InfraRelease festgehalten.",
       "attribution": "Betreiber DB InfraGO (einfachbahn@deutschebahn.com); Herkunft wird im InfraRelease vermerkt.",
-      "nutzung": "Zusätzliche, ergänzende Importquelle für Infrastruktur-Stammdaten (Betriebsstellen mit DS100, Elektrifizierung, Geokoordinaten; Streckensegmente) neben osm-pbf-lhe — Grundlage der jährlichen Infrastrukturaktualisierung (E22). Ausdrücklich NICHT umfasst: die berechneten Fahrzeit- und Trassenpreiswerte der Routensuche (/routen) — die bleiben unter dem bestehenden Eintrag 'trassenfinder' auf Status 'entwicklung', reine Kalibrierreferenz, niemals Import (E10, unverändert).",
+      "nutzung": "Nur interne Lineage- und Altbestandsprüfung. Kein Importmarker, keine ausgelieferte Infrastrukturquelle, keine A-Evidenz und keine Grundlage fuer Betriebspunkte oder Konfliktressourcen.",
       "entscheidung": { "datum": "2026-08-08", "pruefer": "Sebastian Barowski" },
-      "hinweis": "Eng abgegrenzt von der bestehenden Trassenfinder-Kalibrierreferenz: Diese Quelle importiert ausschließlich die Stammdaten-Ressource /infrastrukturen, niemals die berechneten Routensuche-Werte. Keine Nutzungsbedingungen gefunden trotz Suche (OpenAPI-Spezifikation, dbinfrago.com/einfachbahn) — die Freigabe stützt sich auf die uneingeschränkte öffentliche Zugänglichkeit ohne Registrierung oder AGB. E22/ADR-0022 begründet die jährliche Kadenz.",
+      "hinweis": "Oeffentliche Erreichbarkeit ersetzt keine Nutzungs- oder Weiterveroeffentlichungsfreigabe. Der freie 2026.3-Jahresvertrag schliesst die Quelle deshalb fail-closed aus. Historische Derivate mit dieser Lineage duerfen nicht als GTFS-/Open-Data-Ableitung umetikettiert werden.",
       "milestone": "M9"
     },
     {

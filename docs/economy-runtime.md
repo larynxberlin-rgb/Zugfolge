@@ -164,7 +164,7 @@ kritischen Ausfall HTTP 503. Fehlerdetails werden intern protokolliert; die
 |---|---|
 | `database` | Verbindungsfehler und fehlende Pflichttabellen/-spalten |
 | `keycloak-jwks` | nicht erreichbare oder ungültige Signaturschlüssel |
-| `event-log` | fehlenden Fortschritt der Simulation |
+| `simulation-event-log` | nicht lesbares Ereignisjournal; fachliche Ruhe bleibt gesund als `event_log_idle` |
 | `economy-outbox` | alte, wiederholt fehlgeschlagene Ledger-/Postfacheffekte |
 | `economy-scheduler` | Startphase, Laufzeitüberschreitung, letzten Fehler oder zu alten erfolgreichen Lauf |
 | `regional-simulation-scheduler` | fehlgeschlagenen oder über zwei Taktintervalle ausgebliebenen 1:1-Lauf |
@@ -179,10 +179,22 @@ bereit gilt.
 
 Der regionale Monitor wertet auch einen leeren Zyklus als erfolgreichen Takt.
 Der erste Fehler ist `degraded`; zwei aufeinanderfolgende Fehler oder mehr als
-zwei Intervalle ohne Erfolg sind `down` und damit HTTP 503. Seine Metriken
-enthalten nur die begrenzten Labels `success` und `failure`, niemals Welt- oder
+zwei Intervalle ohne Erfolg sind `down` und damit HTTP 503. Überlappende
+Intervallaufrufe werden nicht parallel ausgeführt, sondern als `skipped`
+gezählt. Seine Metriken enthalten nur die begrenzten Ergebnislabels `success`,
+`failure` und `skipped` sowie letzte und maximale Laufzeit, niemals Welt- oder
 Regionskennungen. Noch nicht geöffnete Welten zählen nicht als veralteter
 Livemap-Feed.
+
+Jeder regionale Lauf besitzt intern eine `correlationId`. Start, letzte
+Region-/Recovery-/Batchphase, übersprungene Intervalle, Überschreiten der
+Stillstandsgrenze, Fehler und kontrollierte Erholung werden strukturiert unter
+dieser Kennung protokolliert. Nur dieses interne Log darf Welt und Region zur
+Ursachenkorrelation enthalten. Öffentliche Healthdetails bleiben bei den
+stabilen Codes und generischen Texten ohne Fachkennungen. Das
+`domain_events`-Journal ist ausdrücklich kein Heartbeat: Ein lesbarer, aber
+ruhender Bestand ist `event_log_idle`; ausschließlich der Regionalmonitor
+beurteilt den 1:1-Fortschritt.
 
 Diese Checks schließen die Funktionsüberwachung auf Prozessebene. Externe
 Alarmierung, Dashboards, SLOs sowie Backup-/Restore-Proben bleiben bewusst Teil

@@ -398,6 +398,84 @@ describe("Livemap-Projektion", () => {
     expect(second.trains.get("1")?.positionMm).toBe(1_200);
   });
 
+  it("bewegt einen operativ mit 65 km/h fahrenden Zug innerhalb des autorisierten Frames sichtbar auf der Karte", () => {
+    const state = initialState(parseSnapshot({
+      ...snapshot(42, 10),
+      trains: [{
+        ...baseTrain,
+        trainNumber: "S4 35000",
+        positionMm: 10_000,
+        speedMmPerSecond: 18_056,
+        mapPosition: {
+          infrastructureReleaseId: "infra:v2",
+          resourceId: "block:1",
+          trackId: "edge:1",
+          offsetMm: 10_000,
+          latitudeE7: 510_000_000,
+          longitudeE7: 120_000_000,
+          bearingMilliDegrees: 90_000,
+        },
+        operational: {
+          regionId: "region:1",
+          commitSequence: 42,
+          simulationTimeMs: 10_000,
+          routeVersionId: "route:v2",
+          formationVersionId: "formation:v2",
+          movementKind: "train",
+          headRouteMm: 10_000,
+          tailRouteMm: 8_000,
+          direction: "along",
+          occupiedIntervals: [{ trackId: "edge:1", fromMm: 8_000, toMm: 10_000, direction: "along" }],
+          occupiedBlocks: ["block:1"],
+          authorityEndRouteMm: 100_000,
+          motionSegment: {
+            startedAtMs: 10_000,
+            validUntilMs: 15_000,
+            startRouteMm: 10_000,
+            startSpeedMmPerSecond: 18_056,
+            accelerationMmPerSecondSquared: 0,
+            authorityEndRouteMm: 100_000,
+            segmentEndRouteMm: 100_000,
+            geometry: [{
+              routeMm: 10_000,
+              trackId: "edge:1",
+              offsetMm: 10_000,
+              latitudeE7: 510_000_000,
+              longitudeE7: 120_000_000,
+              bearingMilliDegrees: 90_000,
+            }, {
+              routeMm: 100_000,
+              trackId: "edge:1",
+              offsetMm: 100_000,
+              latitudeE7: 510_009_000,
+              longitudeE7: 120_009_000,
+              bearingMilliDegrees: 90_000,
+            }],
+          },
+        },
+      }],
+      operationalRegions: [{
+        regionId: "region:1",
+        infrastructureReleaseId: "infra:v2",
+        commitSequence: 42,
+        simulationTimeMs: 10_000,
+        staleAfterMs: 15_000,
+        routeLocks: [],
+        signals: {},
+        activeDisruptions: [],
+      }],
+    }));
+    const samples = appendRenderSample(undefined, state);
+
+    const afterOneSecond = renderTrains(samples, 11)[0]!;
+    const afterThreeSeconds = renderTrains(samples, 13)[0]!;
+
+    expect(afterOneSecond.speedMmPerSecond).toBe(18_056);
+    expect(afterThreeSeconds.positionMm).toBeGreaterThan(afterOneSecond.positionMm);
+    expect(afterThreeSeconds.mapPosition?.longitudeE7).toBeGreaterThan(afterOneSecond.mapPosition!.longitudeE7);
+    expect(afterThreeSeconds.mapPosition?.latitudeE7).toBeGreaterThan(afterOneSecond.mapPosition!.latitudeE7);
+  });
+
   it("springt bei einem Gleiswechsel auf den neuen bestaetigten Kartenpunkt", () => {
     const previous = initialState(snapshot(4, 100, {
       ...baseTrain,

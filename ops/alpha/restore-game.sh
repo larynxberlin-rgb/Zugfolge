@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-if [ "$#" -ne 4 ]; then
-  echo "usage: $0 ADMIN_DATABASE_URL TARGET_DATABASE BACKUP.dump MANIFEST.json" >&2
+if [ "$#" -ne 4 ] && [ "$#" -ne 5 ]; then
+  echo "usage: $0 ADMIN_DATABASE_URL TARGET_DATABASE BACKUP.dump MANIFEST.json [RECEIPT.json]" >&2
   exit 64
 fi
 
@@ -10,9 +10,14 @@ ADMIN_DATABASE_URL=$1
 TARGET_DATABASE=$2
 BACKUP=$3
 MANIFEST=$4
+RECEIPT=${5-}
 case "$TARGET_DATABASE" in
+  zugfolge_restore_) echo "Restore target needs a non-empty suffix" >&2; exit 65 ;;
   zugfolge_restore_*) ;;
   *) echo "Restore target must start with zugfolge_restore_: $TARGET_DATABASE" >&2; exit 65 ;;
+esac
+case "$TARGET_DATABASE" in
+  *[!a-z0-9_]*) echo "Restore target must contain only lowercase ASCII letters, digits, and underscores: $TARGET_DATABASE" >&2; exit 65 ;;
 esac
 
 if [ ! -f "$BACKUP" ]; then
@@ -22,6 +27,13 @@ fi
 if [ ! -f "$MANIFEST" ]; then
   echo "Backup manifest not found: $MANIFEST" >&2
   exit 66
+fi
+if [ -n "$RECEIPT" ]; then
+  if [ -e "$RECEIPT" ] || [ -L "$RECEIPT" ]; then
+    echo "Restore receipt already exists: $RECEIPT" >&2
+    exit 66
+  fi
+  mkdir -p "$(dirname "$RECEIPT")"
 fi
 
 grep -Eq '^\{"schema":"zugfolge-game-backup/v2","createdAt":"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z","bytes":[0-9]+,"sha256":"[a-f0-9]{64}","migrationCount":[0-9]+,"rpoSeconds":300\}$' "$MANIFEST" || {
@@ -40,6 +52,7 @@ test -n "$EXPECTED_BYTES" && test ${#EXPECTED_SHA256} -eq 64 && test -n "$EXPECT
 }
 ACTUAL_BYTES=$(wc -c < "$BACKUP" | tr -d ' ')
 ACTUAL_SHA256=$(sha256sum "$BACKUP" | cut -d ' ' -f 1)
+MANIFEST_SHA256=$(sha256sum "$MANIFEST" | cut -d ' ' -f 1)
 test "$ACTUAL_BYTES" = "$EXPECTED_BYTES" && test "$ACTUAL_SHA256" = "$EXPECTED_SHA256" || {
   echo "Game backup does not match its manifest" >&2
   exit 68
@@ -54,5 +67,16 @@ test "$ACTUAL_MIGRATIONS" = "$EXPECTED_MIGRATIONS" || {
   echo "Restored migration count $ACTUAL_MIGRATIONS does not match backup $EXPECTED_MIGRATIONS" >&2
   exit 69
 }
-printf '{"schema":"zugfolge-game-restore/v1","database":"%s","migrationCount":%s,"identical":true}\n' \
-  "$TARGET_DATABASE" "$ACTUAL_MIGRATIONS"
+RECEIPT_JSON=$(printf '{"database":"%s","dumpSha256":"%s","identical":true,"manifestSha256":"%s","migrationCount":%s,"schema":"zugfolge-game-restore/v2"}' \
+  "$TARGET_DATABASE" "$ACTUAL_SHA256" "$MANIFEST_SHA256" "$ACTUAL_MIGRATIONS")
+if [ -n "$RECEIPT" ]; then
+  (
+    set -C
+    umask 077
+    printf '%s\n' "$RECEIPT_JSON" > "$RECEIPT"
+  ) || {
+    echo "Could not create-new restore receipt: $RECEIPT" >&2
+    exit 70
+  }
+fi
+printf '%s\n' "$RECEIPT_JSON"

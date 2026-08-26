@@ -979,6 +979,30 @@ describe("produktive M3-Planning-Routen", () => {
     expect(retry.json<{ payload: { trainNumber: number } }>().payload.trainNumber).toBe(firstNumber);
   });
 
+  it("vergibt 99999 als letzte zulaessige Nummer und lehnt danach kontrolliert ab", async () => {
+    await db.insert(simulationCommands).values({
+      worldId: worldA,
+      requestingAccountId: accountA.id,
+      idempotencyKey: "supplementary-boundary",
+      commandType: "planning.path-request",
+      payload: { trainNumber: 99_998 },
+      submittedAt: new Date(0),
+    });
+    const boundary = await submitPath("account-a", {
+      ...pathRequest("supplementary-99999", "ignored", 0),
+      trainCategory: "supplementary",
+    });
+    expect(boundary.statusCode).toBe(202);
+    expect(boundary.json<{ payload: { trainNumber: number } }>().payload.trainNumber).toBe(99_999);
+
+    const exhausted = await submitPath("account-b", {
+      ...pathRequest("supplementary-exhausted", "ignored", 0, "formation-b"),
+      trainCategory: "supplementary",
+    });
+    expect(exhausted.statusCode).toBe(409);
+    expect(exhausted.json()).toMatchObject({ code: "planning_train_number_range_exhausted" });
+  });
+
   it("koordiniert nur intern ueber den konfigurierten Authority-Principal", async () => {
     const first = await submitPath(
       "account-a",

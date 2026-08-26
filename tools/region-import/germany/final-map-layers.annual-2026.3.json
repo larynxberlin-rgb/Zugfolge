@@ -1,0 +1,14 @@
+{
+  "tracks": "var/derived/germany-2026.3/official-enriched-dem/tracks.geojsonseq",
+  "platforms": [
+    "var/derived/germany-2026.3/semantic/platforms.geojsonseq",
+    "var/derived/openstation-2026/openstation-platform-points.geojsonseq"
+  ],
+  "dependentLayers": {
+    "signals": "var/derived/germany-2026.3/semantic/signals.geojsonseq",
+    "switches": "var/derived/germany-2026.3/semantic/switches.geojsonseq",
+    "blocks": "var/derived/germany-2026.3/semantic/blocks.geojsonseq",
+    "conflict-resources": "var/derived/germany-2026.3/semantic/conflict-resources.geojsonseq"
+  },
+  "outputDirectory": "var/derived/germany-2026.3/final-map-layers-v2"
+}

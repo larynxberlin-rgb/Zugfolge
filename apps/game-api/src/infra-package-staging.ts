@@ -12,23 +12,40 @@ import {
   mkdir,
   open,
   readFile,
-  realpath,
   rename,
   rm,
   writeFile,
 } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
+
+import type { QualifiedInfraPackageCandidate } from "@zugfolge/alpha";
+
+import { canonicalEd25519SpkiPublicKeyPem } from "./trusted-release-keys.js";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const SAFE_ID = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/;
+const FINALIZATION_NONCE = /^[a-f0-9]{64}$/;
 const PART_BYTES = 100 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 16 * 1024 * 1024;
-const PACKAGE_SCHEMA = "zugfolge-map-package/v1";
-const DELIVERY_SCHEMA = "zugfolge-map-delivery-release/v1";
-const SOURCES_SCHEMA = "zugfolge-map-delivery-sources/v1";
-const QUALITY_SCHEMA = "zugfolge-final-infrastructure-quality-report/v1";
+const PACKAGE_SCHEMA = "zugfolge-map-package/v2";
+const DELIVERY_SCHEMA = "zugfolge-map-delivery-release/v2";
+const SOURCES_SCHEMA = "zugfolge-map-delivery-sources/v2";
+const MAP_ASSET_NOTICES_SCHEMA = "zugfolge-map-asset-notices/v2";
+const GIT_COMMIT = /^[a-f0-9]{40}$/;
+const GITHUB_REPOSITORY = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const QUALITY_SCHEMA = "zugfolge-operational-infrastructure-quality-report/v1";
+const STATIC_MAP_QUALITY_SCHEMA = "zugfolge-static-map-quality/v2";
+const STATIC_MAP_SOURCE_QUALITY_SCHEMA = "zugfolge-final-infrastructure-quality-report/v1";
+const OPERATIONAL_INFRASTRUCTURE_KIND = "operational-infrastructure-v2";
+const FINALIZATION_CHALLENGE_SCHEMA = "zugfolge-infra-package-finalization-challenge/v1";
+const FINALIZATION_RECEIPT_SCHEMA = "zugfolge-infra-package-finalization-receipt/v1";
+const FINALIZATION_MAX_DURATION_MS = 65 * 60_000;
+const QUALITY_CLASSES = ["A", "B", "C"] as const;
+const OPERATIONAL_COVERAGE_FIELDS = [
+  "blockResources", "directedEdges", "edgeGeometries", "interlockingRoutes", "platformIntervals",
+  "regionBoundaries", "routeVersions", "rzueLayouts", "signals", "switches",
+] as const;
 
 function invariant(condition: unknown, message: string): asserts condition {
   if (!condition) throw new InfraPackageStagingError(message);
@@ -44,6 +61,198 @@ export class InfraPackageStagingError extends Error {
 function record(value: unknown, label: string): Record<string, unknown> {
   invariant(value !== null && typeof value === "object" && !Array.isArray(value), `${label} muss ein Objekt sein.`);
   return value as Record<string, unknown>;
+}
+
+function exactKeys(value: unknown, expected: readonly string[], label: string): Record<string, unknown> {
+  const object = record(value, label);
+  invariant(
+    Object.keys(object).sort().join("\0") === [...expected].sort().join("\0"),
+    `${label} besitzt unerwartete oder fehlende Felder.`,
+  );
+  return object;
+}
+
+function qualityClassCounts(value: unknown, label: string): Record<(typeof QUALITY_CLASSES)[number], number> {
+  const counts = record(value, label);
+  invariant(Object.keys(counts).sort().join(",") === "A,B,C", `${label} muss exakt A, B und C ausweisen.`);
+  for (const qualityClass of QUALITY_CLASSES) {
+    invariant(Number.isSafeInteger(counts[qualityClass]) && (counts[qualityClass] as number) >= 0, `${label}.${qualityClass} ist keine nichtnegative Ganzzahl.`);
+  }
+  return counts as Record<(typeof QUALITY_CLASSES)[number], number>;
+}
+
+function validateTimetableRouteEvidence(value: unknown): void {
+  const evidence = exactKeys(value, [
+    "reportSchema", "policyId", "derivationRule", "selectionRule", "reportBytes", "reportSha256",
+    "routesBytes", "routesSha256", "gtfsSnapshotBytes", "gtfsSnapshotSha256", "snapshotHash", "archive",
+    "archiveSha256", "sourceLicense", "sourceLicenseAsPublished", "selectedSegmentCount", "completeRouteCount",
+    "routeRecordCount", "sameStopTransitionCount", "routeSetSha256", "realGeometry",
+    "simulatedOperationalAssignment", "realInterlockingFactsClaimed", "externalOperationalNetworkProvenance",
+  ], "Operational-v2.timetableRouteEvidence");
+  invariant(
+    evidence["reportSchema"] === "zugfolge-germany-timetable-route-report/v2"
+      && evidence["policyId"] === "synthetic-operational-b/v2"
+      && evidence["derivationRule"] === "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2"
+      && evidence["selectionRule"] === "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
+    "Operational-v2.timetableRouteEvidence verletzt den freien v2-Fahrwegvertrag.",
+  );
+  invariant(
+    [evidence["reportBytes"], evidence["routesBytes"], evidence["gtfsSnapshotBytes"]]
+      .every((bytes) => Number.isSafeInteger(bytes) && (bytes as number) > 0)
+      && [evidence["reportSha256"], evidence["routesSha256"], evidence["gtfsSnapshotSha256"], evidence["snapshotHash"], evidence["archiveSha256"], evidence["routeSetSha256"]]
+        .every((hash) => SHA256.test(String(hash)))
+      && evidence["routesSha256"] === evidence["routeSetSha256"],
+    "Operational-v2.timetableRouteEvidence besitzt keine konsistente Datei-/RouteSet-Bindung.",
+  );
+  invariant(
+    typeof evidence["archive"] === "string" && evidence["archive"] !== ""
+      && evidence["sourceLicense"] === "CC-BY-4.0"
+      && evidence["sourceLicenseAsPublished"] === "CC BY 4.0",
+    "Operational-v2.timetableRouteEvidence besitzt keine freie GTFS-Lizenz- und Archivbindung.",
+  );
+  invariant(
+    Number.isSafeInteger(evidence["selectedSegmentCount"]) && (evidence["selectedSegmentCount"] as number) > 0
+      && evidence["selectedSegmentCount"] === evidence["completeRouteCount"]
+      && evidence["completeRouteCount"] === evidence["routeRecordCount"]
+      && Number.isSafeInteger(evidence["sameStopTransitionCount"]) && (evidence["sameStopTransitionCount"] as number) >= 0,
+    "Operational-v2.timetableRouteEvidence schließt die ausgewählten Segmente nicht vollständig 1:1.",
+  );
+  invariant(
+    evidence["realGeometry"] === true
+      && evidence["simulatedOperationalAssignment"] === true
+      && evidence["realInterlockingFactsClaimed"] === false
+      && evidence["externalOperationalNetworkProvenance"] === false,
+    "Operational-v2.timetableRouteEvidence verletzt die ehrliche Geometrie-/Provenienzgrenze.",
+  );
+}
+
+function validateOperationalQuality(
+  value: unknown,
+  releaseId: string,
+  deliveredOperationalArtifact: { readonly bytes: number; readonly sha256: string; readonly stateHash?: string },
+): { readonly visibleLayers: number; readonly visibleFeatures: number; readonly visibleMapClassCFeatureCount: number } {
+  const quality = exactKeys(value, [
+    "schema", "releaseId", "timetableYear", "scopeId", "deterministic", "separation", "mapEvidence",
+    "operationalModel", "summary", "qualityGate",
+  ], "Operational-v2-Qualitätsbericht");
+  const yearMatch = /^infra-deutschland-(\d{4})(?:\.|$)/.exec(releaseId);
+  invariant(
+    quality["schema"] === QUALITY_SCHEMA
+      && quality["releaseId"] === releaseId
+      && yearMatch !== null
+      && quality["timetableYear"] === Number(yearMatch[1])
+      && quality["scopeId"] === "deutschland-ebo-operational-v2"
+      && quality["deterministic"] === true,
+    "Operational-v2-Qualitätsbericht verletzt Schema, Release, Jahr oder Scope.",
+  );
+
+  const separation = exactKeys(quality["separation"], [
+    "mapEvidencePurpose", "operationalEvidencePurpose", "mapClassCReclassified",
+    "mapClassCBlocksOperationalQualityGate", "mapObjectsRemoved",
+  ], "Operational-v2.separation");
+  invariant(
+    separation["mapEvidencePurpose"] === "visible-map-quality-evidence"
+      && separation["operationalEvidencePurpose"] === "closed-operational-v2-model"
+      && separation["mapClassCReclassified"] === false
+      && separation["mapClassCBlocksOperationalQualityGate"] === false
+      && separation["mapObjectsRemoved"] === false,
+    "Operational-v2-Qualitätsbericht deklariert sichtbare Karten-C um oder entfernt Kartenobjekte.",
+  );
+
+  const map = exactKeys(quality["mapEvidence"], [
+    "schema", "mapReleaseId", "infrastructureCorpusId", "bytes", "sha256", "sourceReport", "visibleFeatures",
+    "visibleLayers", "qualityClassFeatureCount", "trackLengthMm", "trackQualityClassLengthMm",
+  ], "Operational-v2.mapEvidence");
+  const mapClasses = qualityClassCounts(map["qualityClassFeatureCount"], "Operational-v2.mapEvidence.qualityClassFeatureCount");
+  const trackClasses = qualityClassCounts(map["trackQualityClassLengthMm"], "Operational-v2.mapEvidence.trackQualityClassLengthMm");
+  const sourceReport = exactKeys(map["sourceReport"], ["schema", "bytes", "sha256", "shipped"], "Operational-v2.mapEvidence.sourceReport");
+  invariant(
+    map["schema"] === STATIC_MAP_QUALITY_SCHEMA
+      && typeof map["mapReleaseId"] === "string" && map["mapReleaseId"] !== ""
+      && map["infrastructureCorpusId"] === releaseId
+      && Number.isSafeInteger(map["bytes"]) && (map["bytes"] as number) > 0 && SHA256.test(String(map["sha256"]))
+      && map["visibleLayers"] === 10
+      && Number.isSafeInteger(map["visibleFeatures"]) && (map["visibleFeatures"] as number) > 0
+      && QUALITY_CLASSES.reduce((sum, qualityClass) => sum + mapClasses[qualityClass], 0) === map["visibleFeatures"]
+      && Number.isSafeInteger(map["trackLengthMm"]) && (map["trackLengthMm"] as number) > 0
+      && QUALITY_CLASSES.reduce((sum, qualityClass) => sum + trackClasses[qualityClass], 0) === map["trackLengthMm"]
+      && sourceReport["schema"] === STATIC_MAP_SOURCE_QUALITY_SCHEMA
+      && Number.isSafeInteger(sourceReport["bytes"]) && (sourceReport["bytes"] as number) > 0
+      && SHA256.test(String(sourceReport["sha256"])) && sourceReport["shipped"] === false,
+    "Operational-v2.mapEvidence besitzt keine ehrliche sichtbare Static-Map-v2-Bindung.",
+  );
+
+  const model = exactKeys(quality["operationalModel"], [
+    "policyId", "policySha256", "closureReceiptSha256", "qualityClass", "provenance", "realGeometry",
+    "simulatedOperationalAssignment", "realInterlockingFactsClaimed", "syntheticOperationalDetailsShipped",
+    "objectLevelProvenanceShipped", "observedAndSyntheticObjectsShareRuntimeCollections", "timetableRouteEvidence",
+    "operationalArtifact", "coverage",
+  ], "Operational-v2.operationalModel");
+  invariant(
+    model["policyId"] === "synthetic-operational-b/v2"
+      && SHA256.test(String(model["policySha256"])) && SHA256.test(String(model["closureReceiptSha256"]))
+      && model["qualityClass"] === "B" && model["provenance"] === "derived"
+      && model["realGeometry"] === true && model["simulatedOperationalAssignment"] === true
+      && model["realInterlockingFactsClaimed"] === false
+      && model["syntheticOperationalDetailsShipped"] === true
+      && model["objectLevelProvenanceShipped"] === false
+      && model["observedAndSyntheticObjectsShareRuntimeCollections"] === true,
+    "Operational-v2.operationalModel besitzt keine ehrliche geschlossene Derived/B-Provenienz.",
+  );
+  validateTimetableRouteEvidence(model["timetableRouteEvidence"]);
+  invariant(
+    record(model["timetableRouteEvidence"], "Operational-v2.timetableRouteEvidence")["policyId"] === model["policyId"],
+    "Operational-v2-Fahrwegbeleg und Betriebsmodell binden verschiedene Policies.",
+  );
+  const operationalArtifact = exactKeys(model["operationalArtifact"], ["bytes", "sha256", "stateHash"], "Operational-v2.operationalArtifact");
+  invariant(
+    Number.isSafeInteger(operationalArtifact["bytes"]) && (operationalArtifact["bytes"] as number) > 0
+      && SHA256.test(String(operationalArtifact["sha256"])) && SHA256.test(String(operationalArtifact["stateHash"]))
+      && operationalArtifact["sha256"] !== operationalArtifact["stateHash"]
+      && operationalArtifact["bytes"] === deliveredOperationalArtifact.bytes
+      && operationalArtifact["sha256"] === deliveredOperationalArtifact.sha256
+      && operationalArtifact["stateHash"] === deliveredOperationalArtifact.stateHash,
+    "Operational-v2-Qualität bindet nicht exakt das ausgelieferte Betriebsartefakt und seinen Zustand.",
+  );
+  const coverage = exactKeys(model["coverage"], OPERATIONAL_COVERAGE_FIELDS, "Operational-v2.coverage");
+  invariant(
+    OPERATIONAL_COVERAGE_FIELDS.every((field) => Number.isSafeInteger(coverage[field]) && (coverage[field] as number) > 0)
+      && coverage["directedEdges"] === coverage["edgeGeometries"]
+      && coverage["rzueLayouts"] === 1,
+    "Operational-v2.coverage ist nicht vollständig geschlossen.",
+  );
+
+  const summary = exactKeys(quality["summary"], [
+    "operationalQualityClassArtifactCount", "unresolvedRequired", "visibleMapClassCFeatureCount",
+  ], "Operational-v2.summary");
+  const operationalClasses = qualityClassCounts(summary["operationalQualityClassArtifactCount"], "Operational-v2.summary.operationalQualityClassArtifactCount");
+  invariant(
+    operationalClasses.A === 0 && operationalClasses.B === 1 && operationalClasses.C === 0
+      && summary["unresolvedRequired"] === 0
+      && summary["visibleMapClassCFeatureCount"] === mapClasses.C,
+    "Operational-v2-Qualität besitzt keine getrennte geschlossene B=1/C=0-Bilanz oder verschweigt sichtbare Karten-C.",
+  );
+  const qualityGate = exactKeys(quality["qualityGate"], [
+    "closureReceiptVerified", "nativeOperationalValidationVerified", "operationalClassCZero",
+    "ordinaryAssumptionsPromoted", "mapClassCReclassified", "operationalQualityEligible", "signatureImplied",
+    "activationImplied",
+  ], "Operational-v2.qualityGate");
+  invariant(
+    qualityGate["closureReceiptVerified"] === true
+      && qualityGate["nativeOperationalValidationVerified"] === true
+      && qualityGate["operationalClassCZero"] === true
+      && qualityGate["ordinaryAssumptionsPromoted"] === false
+      && qualityGate["mapClassCReclassified"] === false
+      && qualityGate["operationalQualityEligible"] === true
+      && qualityGate["signatureImplied"] === false
+      && qualityGate["activationImplied"] === false,
+    "Operational-v2-Qualitätsgate ist offen, umklassifiziert Karten-C oder behauptet Signatur/Aktivierung.",
+  );
+  return {
+    visibleLayers: map["visibleLayers"] as number,
+    visibleFeatures: map["visibleFeatures"] as number,
+    visibleMapClassCFeatureCount: mapClasses.C,
+  };
 }
 
 function safeId(value: unknown, label: string): string {
@@ -86,6 +295,8 @@ interface PackageFile {
   readonly installPath: string;
   readonly bytes: number;
   readonly sha256: string;
+  readonly infraReleaseId?: string;
+  readonly stateHash?: string;
   readonly parts: readonly PackagePart[];
 }
 
@@ -95,6 +306,80 @@ interface ParsedPackageManifest {
   readonly version: string;
   readonly files: readonly PackageFile[];
   readonly parts: readonly PackagePart[];
+}
+
+function validateMapAssetNotices(value: unknown, files: readonly PackageFile[]): { readonly assetGroups: number; readonly assetFiles: number } {
+  const notices = exactKeys(value, ["schema", "assets"], "Öffentliche Asset-Notices");
+  invariant(notices["schema"] === MAP_ASSET_NOTICES_SCHEMA && Array.isArray(notices["assets"]), "sources.json besitzt keinen gültigen Asset-Notice-Vertrag.");
+  const assets = notices["assets"] as unknown[];
+  invariant(assets.length === 2, "Asset-Notices müssen genau Noto-Glyphen und Protomaps-Sprites enthalten.");
+  let coveredFiles = 0;
+  let previousId = "";
+  for (const [index, entry] of assets.entries()) {
+    const asset = exactKeys(entry, [
+      "id", "rightsSourceId", "kind", "license", "copyright", "modifications", "source", "derivedFrom", "notice", "tree",
+    ], `Asset-Notice[${index}]`);
+    const id = safeId(asset["id"], `Asset-Notice[${index}].id`);
+    invariant(id.localeCompare(previousId, "en") > 0, "Asset-Notices sind nicht stabil nach ID sortiert.");
+    previousId = id;
+    const kind = asset["kind"];
+    invariant(kind === "glyph" || kind === "sprite", `${id}.kind ist ungültig.`);
+    invariant(
+      id === (kind === "glyph" ? "noto-glyphs" : "protomaps-sprites")
+        && asset["rightsSourceId"] === id
+        && asset["license"] === (kind === "glyph" ? "OFL-1.1" : "MIT")
+        && typeof asset["copyright"] === "string" && asset["copyright"].length > 10
+        && typeof asset["modifications"] === "string" && asset["modifications"].length > 10,
+      `${id} besitzt keine eindeutige Rechte- und Lizenzbindung.`,
+    );
+    const source = exactKeys(asset["source"], ["repository", "commit", "path"], `${id}.source`);
+    invariant(
+      GITHUB_REPOSITORY.test(String(source["repository"]))
+        && GIT_COMMIT.test(String(source["commit"]))
+        && portablePath(source["path"], `${id}.source.path`) !== "",
+      `${id}.source ist nicht unveränderlich gepinnt.`,
+    );
+    if (kind === "glyph") {
+      invariant(asset["derivedFrom"] === null, "Noto-Glyphen dürfen keine fremde Ableitungsquelle behaupten.");
+    } else {
+      const derived = exactKeys(asset["derivedFrom"], ["repository", "commit", "license"], `${id}.derivedFrom`);
+      invariant(
+        derived["repository"] === "https://github.com/tangrams/icons"
+          && GIT_COMMIT.test(String(derived["commit"])) && derived["license"] === "MIT",
+        "Protomaps-Sprites binden die Tangrams-MIT-Ableitung nicht unveränderlich.",
+      );
+    }
+    const notice = exactKeys(asset["notice"], ["url", "bytes", "sha256", "text"], `${id}.notice`);
+    invariant(
+      typeof notice["url"] === "string" && notice["url"].startsWith("https://raw.githubusercontent.com/")
+        && Number.isSafeInteger(notice["bytes"]) && (notice["bytes"] as number) > 0
+        && SHA256.test(String(notice["sha256"])) && typeof notice["text"] === "string"
+        && Buffer.byteLength(notice["text"], "utf8") === notice["bytes"]
+        && sha256(notice["text"] as string) === notice["sha256"]
+        && notice["text"].includes(asset["copyright"] as string)
+        && notice["text"].includes(kind === "glyph" ? "SIL OPEN FONT LICENSE Version 1.1" : "The MIT License (MIT)"),
+      `${id}.notice bindet nicht den vollständigen Lizenztext.`,
+    );
+    const tree = exactKeys(asset["tree"], ["installDirectory", "files", "bytes", "sha256"], `${id}.tree`);
+    const installDirectory = portablePath(tree["installDirectory"], `${id}.tree.installDirectory`);
+    const prefix = `${installDirectory}/`;
+    const rows = files
+      .filter((file) => file.kind === kind && file.installPath.startsWith(prefix))
+      .map((file) => ({ path: portablePath(file.installPath.slice(prefix.length), `${id}.installPath`), bytes: file.bytes, sha256: file.sha256 }))
+      .sort((left, right) => left.path.localeCompare(right.path, "en"));
+    invariant(rows.length > 0 && new Set(rows.map(({ path }) => path.toLowerCase())).size === rows.length, `${id}.tree ist leer oder enthält kollidierende Pfade.`);
+    const canonicalTree = `${rows.map(({ path, bytes, sha256: fileSha256 }) => `${path}\0${bytes}\0${fileSha256}`).join("\n")}\n`;
+    invariant(
+      tree["files"] === rows.length
+        && tree["bytes"] === rows.reduce((sum, row) => sum + row.bytes, 0)
+        && tree["sha256"] === sha256(canonicalTree),
+      `${id} weicht vom ausgelieferten Assetbaum ab.`,
+    );
+    coveredFiles += rows.length;
+  }
+  const packagedAssetFiles = files.filter(({ kind }) => kind === "glyph" || kind === "sprite").length;
+  invariant(coveredFiles === packagedAssetFiles, "Glyphen- oder Sprite-Dateien liegen außerhalb der lizenzierten Assetbäume.");
+  return { assetGroups: assets.length, assetFiles: coveredFiles };
 }
 
 function parsePackageManifest(bytes: Buffer): ParsedPackageManifest {
@@ -113,9 +398,11 @@ function parsePackageManifest(bytes: Buffer): ParsedPackageManifest {
   invariant(artifacts.filter((entry) => record(entry, "Artefakt")["kind"] === "basemap").length === 1, "Paket braucht genau eine Basemap.");
   invariant(artifacts.filter((entry) => record(entry, "Artefakt")["kind"] === "infrastructure").length === 1, "Paket braucht genau eine Infrastrukturdatei.");
   const readModels = auxiliaryFiles.filter((entry) => record(entry, "Hilfsdatei")["kind"] === "read-model");
+  const operationalInfrastructure = auxiliaryFiles.filter((entry) => record(entry, "Hilfsdatei")["kind"] === OPERATIONAL_INFRASTRUCTURE_KIND);
   const trainProjections = auxiliaryFiles.filter((entry) => record(entry, "Hilfsdatei")["kind"] === "train-map-projection");
   invariant(readModels.length === 1 && record(readModels[0], "ReadModel")["installPath"] === "read-model.sqlite", "Paket braucht genau ein öffentliches read-model.sqlite in der Releasewurzel.");
-  invariant(trainProjections.length === 1 && record(trainProjections[0], "Zugpositionsprojektion")["installPath"] === "train-map-projection.sqlite", "Paket braucht genau eine eigenständige train-map-projection.sqlite in der Releasewurzel.");
+  invariant(operationalInfrastructure.length === 1 && record(operationalInfrastructure[0], "Operational-v2-Infrastruktur")["installPath"] === "operational-infrastructure-v2.json", "Paket braucht genau eine statische operational-infrastructure-v2.json in der Releasewurzel.");
+  invariant(trainProjections.length === 0, "Operational-v2-Paket darf keine weltgebundene Zugpositionsprojektion als Paketvoraussetzung enthalten.");
 
   const ids = new Set<string>();
   const paths = new Set<string>();
@@ -150,7 +437,15 @@ function parsePackageManifest(bytes: Buffer): ParsedPackageManifest {
       invariant(Number.isSafeInteger(sum), `${id} ist zu groß.`);
     }
     invariant(sum === fileBytes, `${id}: Summe der Teile stimmt nicht.`);
-    files.push({ id, kind: String(entry["kind"]), installPath, bytes: fileBytes as number, sha256: String(entry["sha256"]), parts });
+    const kind = String(entry["kind"]);
+    let operationalBinding: { readonly infraReleaseId: string; readonly stateHash: string } | undefined;
+    if (kind === OPERATIONAL_INFRASTRUCTURE_KIND) {
+      const infraReleaseId = safeId(entry["infraReleaseId"], `${id}.infraReleaseId`);
+      const stateHash = String(entry["stateHash"] ?? "");
+      invariant(SHA256.test(stateHash) && stateHash !== entry["sha256"], `${id} besitzt keine getrennte kanonische Operational-v2-Zustandsbindung.`);
+      operationalBinding = { infraReleaseId, stateHash };
+    }
+    files.push({ id, kind, installPath, bytes: fileBytes as number, sha256: String(entry["sha256"]), ...operationalBinding, parts });
   }
   return { manifest, packageId, version, files, parts: files.flatMap(({ parts }) => parts) };
 }
@@ -189,9 +484,11 @@ async function writeStream(path: string, source: AsyncIterable<Buffer | string>,
   return { bytes, sha256: hash.digest("hex") };
 }
 
-async function renameAtomic(source: string, destination: string): Promise<void> {
+type InfraPackageRename = (source: string, destination: string) => Promise<void>;
+
+async function renameAtomic(source: string, destination: string, renamePackage: InfraPackageRename): Promise<void> {
   for (let attempt = 0; ; attempt += 1) {
-    try { await rename(source, destination); return; } catch (error) {
+    try { await renamePackage(source, destination); return; } catch (error) {
       const code = error !== null && typeof error === "object" && "code" in error ? String(error.code) : "";
       if (!["EACCES", "EBUSY", "EPERM"].includes(code) || attempt >= 5) throw error;
       await delay(25 * (2 ** attempt));
@@ -229,6 +526,23 @@ interface FinalizationReceipt {
   readonly qualification: InfraPackageQualification;
 }
 
+interface OdooFinalizationBinding {
+  readonly schema: "zugfolge-infra-package-finalization-binding/v1";
+  readonly importId: string;
+  readonly challenge: InfraPackageFinalizationChallenge;
+  readonly finalizedAt: string;
+  readonly qualification: InfraPackageQualification;
+}
+
+export type InfraPackageBeginResult =
+  | { readonly status: "created" | "reused" | "closed" }
+  | {
+      readonly status: "finalized";
+      readonly finalizationChallenge: InfraPackageFinalizationChallenge;
+      readonly finalizedAt: string;
+      readonly qualification: InfraPackageQualification;
+    };
+
 function errorCode(error: unknown): string {
   return error !== null && typeof error === "object" && "code" in error ? String(error.code) : "";
 }
@@ -258,6 +572,36 @@ export interface InfraPackageQualification {
   readonly manifestSha256: string;
   readonly deliveryReleaseId: string;
   readonly signatureStatus: "missing" | "verified";
+  readonly nativeOperationalValidationStatus: "missing" | "verified";
+  readonly operationalStateHash: string | null;
+  readonly activationBlocker: "delivery-signature-missing" | "operational-v2-native-validation-missing" | null;
+  readonly activationEligible: boolean;
+}
+
+export type InfraPackageActivationCandidate = QualifiedInfraPackageCandidate;
+
+export interface InfraPackageFinalizationChallenge {
+  readonly schema: "zugfolge-infra-package-finalization-challenge/v1";
+  readonly nonce: string;
+  readonly requestedAt: string;
+}
+
+export interface InfraPackageFinalizationReceipt {
+  readonly schema: "zugfolge-infra-package-finalization-receipt/v1";
+  readonly signatureAlgorithm: "HMAC-SHA256";
+  readonly keyId: string;
+  readonly nonce: string;
+  readonly requestedAt: string;
+  readonly finalizedAt: string;
+  readonly importId: string;
+  readonly packageId: string;
+  readonly packageVersion: string;
+  readonly manifestSha256: string;
+  readonly deliveryReleaseId: string;
+  readonly operationalStateHash: string | null;
+  readonly signatureStatus: "missing" | "verified";
+  readonly nativeOperationalValidationStatus: "missing" | "verified";
+  readonly activationBlocker: "delivery-signature-missing" | "operational-v2-native-validation-missing" | null;
   readonly activationEligible: boolean;
 }
 
@@ -269,35 +613,123 @@ export interface InfraPackageVerifierResult {
 
 export type InfraPackageVerifier = (packageRoot: string) => Promise<InfraPackageVerifierResult>;
 
-export async function createLocalMapPackageVerifier(modulePath: string): Promise<InfraPackageVerifier> {
-  const trustedModulePath = await realpath(resolve(modulePath));
-  const loaded = await import(pathToFileURL(trustedModulePath).href) as {
-    readonly verifyMapPackage?: (packageRoot: string) => Promise<{
-      readonly manifest: { readonly packageId: string; readonly version: string };
-      readonly manifestSha256: string;
-    }>;
+export { createLocalMapPackageVerifier } from "./infra-package-transport-worker.js";
+
+export interface InfraOperationalV2NativeValidationInput {
+  readonly packageRoot: string;
+  readonly expectedInfraReleaseId: string;
+  readonly artifact: {
+    readonly id: string;
+    readonly installPath: "operational-infrastructure-v2.json";
+    readonly bytes: number;
+    readonly sha256: string;
+    readonly parts: readonly PackagePart[];
   };
-  invariant(typeof loaded.verifyMapPackage === "function", "Konfiguriertes Kartenpaket-Prüfmodul exportiert verifyMapPackage nicht.");
-  return async (packageRoot) => {
-    const verified = await loaded.verifyMapPackage!(packageRoot);
-    return {
-      packageId: verified.manifest.packageId,
-      version: verified.manifest.version,
-      manifestSha256: verified.manifestSha256,
-    };
-  };
+}
+
+export interface InfraOperationalV2NativeValidationReceipt {
+  readonly schema: "operational-infrastructure-v2";
+  readonly infraReleaseId: string;
+  readonly stateHash: string;
+}
+
+/**
+ * Vertrauensgrenze zur nativen Rust-Validierung. Die Implementierung muss die
+ * gelieferten Paketteile selbst zusammensetzen und den Zustandshash aus dem
+ * typisierten Operational-v2-Vertrag berechnen; ein Manifestwert darf nicht
+ * lediglich zurueckgegeben werden.
+ */
+export type InfraOperationalV2NativeVerifier = (
+  input: InfraOperationalV2NativeValidationInput,
+) => Promise<InfraOperationalV2NativeValidationReceipt>;
+
+function canonicalTimestamp(value: unknown, label: string): string {
+  invariant(typeof value === "string", `${label} fehlt.`);
+  const parsed = new Date(value);
+  invariant(!Number.isNaN(parsed.getTime()) && parsed.toISOString() === value, `${label} ist kein kanonischer UTC-Zeitstempel.`);
+  return value;
+}
+
+function validateFinalizationChallenge(
+  value: InfraPackageFinalizationChallenge,
+  now: Date,
+  requireFreshness: boolean,
+): void {
+  invariant(
+    value !== null
+      && typeof value === "object"
+      && Object.keys(value).sort().join(",") === "nonce,requestedAt,schema"
+      && value.schema === FINALIZATION_CHALLENGE_SCHEMA
+      && FINALIZATION_NONCE.test(value.nonce),
+    "Game-Finalisierungschallenge ist ungültig.",
+  );
+  const requestedAt = canonicalTimestamp(value.requestedAt, "Game-Finalisierungschallenge requestedAt");
+  if (requireFreshness) {
+    invariant(Math.abs(now.getTime() - new Date(requestedAt).getTime()) <= 5 * 60_000, "Game-Finalisierungschallenge ist abgelaufen.");
+  }
+}
+
+function validateFinalizationDuration(challenge: InfraPackageFinalizationChallenge, finalizedAt: string): void {
+  const finalizationDuration = new Date(finalizedAt).getTime() - new Date(challenge.requestedAt).getTime();
+  invariant(
+    finalizationDuration >= -5 * 60_000 && finalizationDuration <= FINALIZATION_MAX_DURATION_MS,
+    "Odoo-Finalisierung verletzt das zulässige Zeitfenster.",
+  );
+}
+
+function qualificationIsConsistent(qualification: InfraPackageQualification): boolean {
+  if (
+    qualification === null
+      || typeof qualification !== "object"
+      || Object.keys(qualification).sort().join(",") !== "activationBlocker,activationEligible,deliveryReleaseId,manifestSha256,nativeOperationalValidationStatus,operationalStateHash,packageId,signatureStatus,version"
+      || !SAFE_ID.test(qualification.packageId)
+      || !SAFE_ID.test(qualification.version)
+      || !SHA256.test(qualification.manifestSha256)
+      || !SAFE_ID.test(qualification.deliveryReleaseId)
+  ) return false;
+  if (qualification.signatureStatus === "missing") {
+    return qualification.nativeOperationalValidationStatus === "missing"
+      && qualification.operationalStateHash === null
+      && qualification.activationEligible === false
+      && qualification.activationBlocker === "delivery-signature-missing";
+  }
+  if (qualification.signatureStatus !== "verified") return false;
+  if (qualification.nativeOperationalValidationStatus === "missing") {
+    return qualification.operationalStateHash === null
+      && qualification.activationEligible === false
+      && qualification.activationBlocker === "operational-v2-native-validation-missing";
+  }
+  return qualification.nativeOperationalValidationStatus === "verified"
+    && typeof qualification.operationalStateHash === "string"
+    && SHA256.test(qualification.operationalStateHash)
+    && qualification.activationEligible === true
+    && qualification.activationBlocker === null;
 }
 
 export class InfraPackageStaging {
   readonly #root: string;
   readonly #trustedReleaseKeys: Readonly<Record<string, string>>;
   readonly #packageVerifier: InfraPackageVerifier;
+  readonly #nativeOperationalVerifier: InfraOperationalV2NativeVerifier | undefined;
+  readonly #renamePackage: InfraPackageRename;
+  readonly #now: () => Date;
   readonly #importLocks = new Map<string, Promise<void>>();
 
-  constructor(root: string, options: { readonly packageVerifier: InfraPackageVerifier; readonly trustedReleaseKeys?: Readonly<Record<string, string>> }) {
+  constructor(root: string, options: {
+    readonly packageVerifier: InfraPackageVerifier;
+    readonly trustedReleaseKeys?: Readonly<Record<string, string>>;
+    readonly nativeOperationalVerifier?: InfraOperationalV2NativeVerifier;
+    /** Ausschliesslich fuer fokussierte Dateisystem-Fehlersimulationen. */
+    readonly renamePackage?: InfraPackageRename;
+    /** Kontrollierbare Uhr fuer deterministische Finalisierungsgrenzen. */
+    readonly now?: () => Date;
+  }) {
     this.#root = resolve(root);
     this.#packageVerifier = options.packageVerifier;
     this.#trustedReleaseKeys = options.trustedReleaseKeys ?? {};
+    this.#nativeOperationalVerifier = options.nativeOperationalVerifier;
+    this.#renamePackage = options.renamePackage ?? rename;
+    this.#now = options.now ?? (() => new Date());
   }
 
   async initialize(): Promise<void> {
@@ -306,6 +738,7 @@ export class InfraPackageStaging {
     invariant(metadata.isDirectory() && !metadata.isSymbolicLink(), "Stagingwurzel muss ein reguläres Verzeichnis sein.");
     await ensureRegularDirectory(join(this.#root, ".receiving"));
     await ensureRegularDirectory(join(this.#root, ".receipts"));
+    await ensureRegularDirectory(join(this.#root, ".finalizations"));
     await ensureRegularDirectory(join(this.#root, "staged"));
   }
 
@@ -347,6 +780,10 @@ export class InfraPackageStaging {
     return join(this.#root, ".receipts", `${safeId(importId, "importId")}.json`);
   }
 
+  #odooFinalizationPath(importId: string): string {
+    return join(this.#root, ".finalizations", `${safeId(importId, "importId")}.json`);
+  }
+
   async #readReceipt(importId: string): Promise<FinalizationReceipt | undefined> {
     let value: unknown;
     try { value = await readRegularJson(this.#receiptPath(importId)); } catch (error) {
@@ -363,18 +800,33 @@ export class InfraPackageStaging {
     );
     const expectedStageName = `${receipt.packageId}-${receipt.version}-${receipt.manifestSha256.slice(0, 16)}`;
     invariant(receipt.stageName === expectedStageName, "Finalisierungsbeleg besitzt ein abweichendes Stagingziel.");
-    const signatureQualificationIsConsistent =
-      receipt.qualification.signatureStatus === "missing"
-        ? receipt.qualification.activationEligible === false
-        : receipt.qualification.signatureStatus === "verified"
-          && receipt.qualification.activationEligible === true;
     invariant(
       receipt.qualification.packageId === receipt.packageId && receipt.qualification.version === receipt.version &&
       receipt.qualification.manifestSha256 === receipt.manifestSha256 &&
-      signatureQualificationIsConsistent,
+      qualificationIsConsistent(receipt.qualification),
       "Finalisierungsbeleg besitzt eine unzulässige Qualifikation.",
     );
     return receipt;
+  }
+
+  async #readOdooFinalization(importId: string): Promise<OdooFinalizationBinding | undefined> {
+    let value: unknown;
+    try { value = await readRegularJson(this.#odooFinalizationPath(importId)); } catch (error) {
+      if (errorCode(error) === "ENOENT") return undefined;
+      throw error;
+    }
+    const binding = record(value, "Odoo-Finalisierungsbindung") as unknown as OdooFinalizationBinding;
+    invariant(
+      Object.keys(binding).sort().join(",") === "challenge,finalizedAt,importId,qualification,schema"
+        && binding.schema === "zugfolge-infra-package-finalization-binding/v1"
+        && binding.importId === importId
+        && qualificationIsConsistent(binding.qualification),
+      "Persistierte Odoo-Finalisierungsbindung ist ungültig.",
+    );
+    validateFinalizationChallenge(binding.challenge, this.#now(), false);
+    const finalizedAt = canonicalTimestamp(binding.finalizedAt, "Odoo-Finalisierungsbindung finalizedAt");
+    validateFinalizationDuration(binding.challenge, finalizedAt);
+    return binding;
   }
 
   async #persistReceipt(receipt: FinalizationReceipt): Promise<FinalizationReceipt> {
@@ -389,6 +841,36 @@ export class InfraPackageStaging {
         if (errorCode(error) !== "EEXIST") throw error;
         const existing = await this.#readReceipt(receipt.importId);
         invariant(existing !== undefined && JSON.stringify(existing) === JSON.stringify(receipt), "Parallel persistierter Finalisierungsbeleg weicht ab.");
+        return existing;
+      }
+    } finally {
+      await rm(temporaryPath, { force: true });
+    }
+  }
+
+  async #persistOdooFinalization(binding: OdooFinalizationBinding): Promise<OdooFinalizationBinding> {
+    validateFinalizationChallenge(binding.challenge, this.#now(), false);
+    canonicalTimestamp(binding.finalizedAt, "Odoo-Finalisierungsbindung finalizedAt");
+    validateFinalizationDuration(binding.challenge, binding.finalizedAt);
+    const path = this.#odooFinalizationPath(binding.importId);
+    const temporaryPath = `${path}.${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`;
+    try {
+      await writeFile(temporaryPath, `${JSON.stringify(binding)}\n`, { encoding: "utf8", flag: "wx", flush: true });
+      try {
+        await link(temporaryPath, path);
+        return binding;
+      } catch (error) {
+        if (errorCode(error) !== "EEXIST") throw error;
+        const existing = await this.#readOdooFinalization(binding.importId);
+        invariant(existing !== undefined, "Parallel persistierte Odoo-Finalisierungsbindung fehlt.");
+        invariant(
+          existing.challenge.nonce === binding.challenge.nonce,
+          "Finalisierungsnonce wurde bereits fuer einen anderen Abschluss verwendet.",
+        );
+        invariant(
+          JSON.stringify(existing.qualification) === JSON.stringify(binding.qualification),
+          "Parallel persistierte Odoo-Finalisierungsbindung weicht vom Stagingzustand ab.",
+        );
         return existing;
       }
     } finally {
@@ -460,7 +942,11 @@ export class InfraPackageStaging {
     }
   }
 
-  async begin(importId: string, manifest: { readonly bytes: number; readonly sha256: string }): Promise<{ readonly status: "created" | "reused" }> {
+  async begin(importId: string, manifest: { readonly bytes: number; readonly sha256: string }): Promise<InfraPackageBeginResult> {
+    return this.beginForOdoo(importId, manifest);
+  }
+
+  async beginForOdoo(importId: string, manifest: { readonly bytes: number; readonly sha256: string }): Promise<InfraPackageBeginResult> {
     await this.initialize();
     safeId(importId, "importId");
     invariant(Number.isSafeInteger(manifest.bytes) && manifest.bytes > 0 && manifest.bytes <= MAX_MANIFEST_BYTES && SHA256.test(manifest.sha256), "Manifest-Metadaten sind ungültig.");
@@ -468,7 +954,20 @@ export class InfraPackageStaging {
       const receipt = await this.#readReceipt(importId);
       if (receipt) {
         invariant(receipt.manifestBytes === manifest.bytes && receipt.manifestSha256 === manifest.sha256, "Abgeschlossene Import-ID gehört zu einem anderen Manifest.");
-        return { status: "reused" };
+        const completed = await this.#completeReceipt(receipt);
+        const { stagePath: _stagePath, ...currentQualification } = completed;
+        const finalization = await this.#readOdooFinalization(importId);
+        if (finalization === undefined) return { status: "closed" };
+        invariant(
+          JSON.stringify(finalization.qualification) === JSON.stringify(currentQualification),
+          "Odoo-Finalisierungsbindung weicht von der aktuell requalifizierten Stagingversion ab.",
+        );
+        return {
+          status: "finalized",
+          finalizationChallenge: finalization.challenge,
+          finalizedAt: finalization.finalizedAt,
+          qualification: currentQualification,
+        };
       }
       const sessionRoot = this.#sessionRoot(importId);
       try {
@@ -607,7 +1106,7 @@ export class InfraPackageStaging {
     const stagePath = join(this.#root, "staged", receipt.stageName);
     let qualification: InfraPackageQualification;
     try {
-      qualification = await verifyStagedPackage(stagePath, session, this.#packageVerifier, this.#trustedReleaseKeys);
+      qualification = await verifyStagedPackage(stagePath, session, this.#packageVerifier, this.#trustedReleaseKeys, this.#nativeOperationalVerifier);
     } catch (error) {
       if (errorCode(error) !== "ENOENT") throw error;
       const packageRoot = join(this.#sessionRoot(receipt.importId), "package");
@@ -617,13 +1116,12 @@ export class InfraPackageStaging {
       invariant(parsed.packageId === session.packageId && parsed.version === session.version, "Finalisierungsbeleg und Paketmanifest weichen ab.");
       const verified = await this.#packageVerifier(packageRoot);
       invariant(verified.packageId === parsed.packageId && verified.version === parsed.version && verified.manifestSha256 === session.manifestSha256, "Game-Paketprüfung und Finalisierungsbeleg weichen voneinander ab.");
-      qualification = await qualifyDeliveryPackage(packageRoot, parsed, this.#trustedReleaseKeys, session.manifestSha256);
+      qualification = await qualifyDeliveryPackage(packageRoot, parsed, this.#trustedReleaseKeys, session.manifestSha256, this.#nativeOperationalVerifier);
       invariant(JSON.stringify(qualification) === JSON.stringify(receipt.qualification), "Erneute Paketqualifikation weicht vom Finalisierungsbeleg ab.");
       try {
-        await renameAtomic(packageRoot, stagePath);
+        await renameAtomic(packageRoot, stagePath, this.#renamePackage);
       } catch (renameError) {
-        if (!["EEXIST", "ENOENT", "ENOTEMPTY"].includes(errorCode(renameError))) throw renameError;
-        qualification = await verifyStagedPackage(stagePath, session, this.#packageVerifier, this.#trustedReleaseKeys);
+        await reuseExistingStageAfterRenameCollision(renameError, stagePath, session, this.#packageVerifier);
       }
     }
     invariant(JSON.stringify(qualification) === JSON.stringify(receipt.qualification), "Geprüftes Stagingziel weicht vom Finalisierungsbeleg ab.");
@@ -631,10 +1129,7 @@ export class InfraPackageStaging {
     return { ...qualification, stagePath };
   }
 
-  async finalize(importId: string): Promise<InfraPackageQualification & { readonly stagePath: string }> {
-    await this.initialize();
-    safeId(importId, "importId");
-    return this.#withImportLock(importId, async () => {
+  async #finalizeLocked(importId: string): Promise<InfraPackageQualification & { readonly stagePath: string }> {
       const existingReceipt = await this.#readReceipt(importId);
       if (existingReceipt) return this.#completeReceipt(existingReceipt);
 
@@ -648,7 +1143,7 @@ export class InfraPackageStaging {
       invariant(parsed.packageId === session.packageId && parsed.version === session.version, "Persistierte Sitzung und Paketmanifest weichen ab.");
       const verified = await this.#packageVerifier(packageRoot);
       invariant(verified.packageId === parsed.packageId && verified.version === parsed.version && verified.manifestSha256 === session.manifestSha256, "Game-Paketprüfung und Uploadsitzung weichen voneinander ab.");
-      const qualification = await qualifyDeliveryPackage(packageRoot, parsed, this.#trustedReleaseKeys, session.manifestSha256);
+      const qualification = await qualifyDeliveryPackage(packageRoot, parsed, this.#trustedReleaseKeys, session.manifestSha256, this.#nativeOperationalVerifier);
       const stageName = `${session.packageId}-${session.version}-${session.manifestSha256.slice(0, 16)}`;
       const receipt = await this.#persistReceipt({
         schema: "zugfolge-infra-package-upload-receipt/v1",
@@ -663,16 +1158,197 @@ export class InfraPackageStaging {
         qualification,
       });
       const stagePath = join(this.#root, "staged", stageName);
-      let finalQualification = qualification;
       try {
-        await renameAtomic(packageRoot, stagePath);
+        await renameAtomic(packageRoot, stagePath, this.#renamePackage);
       } catch (error) {
-        if (!["EEXIST", "ENOENT", "ENOTEMPTY"].includes(errorCode(error))) throw error;
-        finalQualification = await verifyStagedPackage(stagePath, session, this.#packageVerifier, this.#trustedReleaseKeys);
+        await reuseExistingStageAfterRenameCollision(error, stagePath, session, this.#packageVerifier);
       }
-      invariant(JSON.stringify(finalQualification) === JSON.stringify(receipt.qualification), "Stagingziel weicht vom terminalen Finalisierungsbeleg ab.");
+      invariant(JSON.stringify(qualification) === JSON.stringify(receipt.qualification), "Stagingziel weicht vom terminalen Finalisierungsbeleg ab.");
       await this.#cleanupSession(importId);
-      return { ...finalQualification, stagePath };
+      return { ...qualification, stagePath };
+  }
+
+  async finalize(importId: string): Promise<InfraPackageQualification & { readonly stagePath: string }> {
+    await this.initialize();
+    safeId(importId, "importId");
+    return this.#withImportLock(importId, () => this.#finalizeLocked(importId));
+  }
+
+  async finalizeForOdoo(
+    importId: string,
+    challenge: InfraPackageFinalizationChallenge,
+  ): Promise<InfraPackageQualification & {
+    readonly stagePath: string;
+    readonly finalizationChallenge: InfraPackageFinalizationChallenge;
+    readonly finalizedAt: string;
+  }> {
+    await this.initialize();
+    safeId(importId, "importId");
+    validateFinalizationChallenge(challenge, this.#now(), true);
+    const pinnedChallenge: InfraPackageFinalizationChallenge = {
+      schema: challenge.schema,
+      nonce: challenge.nonce,
+      requestedAt: challenge.requestedAt,
+    };
+    return this.#withImportLock(importId, async () => {
+      const existing = await this.#readOdooFinalization(importId);
+      if (existing !== undefined) {
+        validateFinalizationChallenge(pinnedChallenge, this.#now(), true);
+        invariant(pinnedChallenge.nonce === existing.challenge.nonce, "Finalisierungsnonce wurde bereits für einen anderen Import verwendet.");
+        const result = await this.#finalizeLocked(importId);
+        const { stagePath: _stagePath, ...qualification } = result;
+        invariant(JSON.stringify(existing.qualification) === JSON.stringify(qualification), "Persistierte Odoo-Finalisierungsbindung weicht vom Stagingzustand ab.");
+        return { ...result, finalizationChallenge: existing.challenge, finalizedAt: existing.finalizedAt };
+      }
+
+      validateFinalizationChallenge(pinnedChallenge, this.#now(), true);
+      const result = await this.#finalizeLocked(importId);
+      const { stagePath: _stagePath, ...qualification } = result;
+      const finalizedAtNow = this.#now();
+      const finalizedAt = finalizedAtNow.toISOString();
+      validateFinalizationChallenge(pinnedChallenge, finalizedAtNow, false);
+      validateFinalizationDuration(pinnedChallenge, finalizedAt);
+      const binding = await this.#persistOdooFinalization({
+        schema: "zugfolge-infra-package-finalization-binding/v1",
+        importId,
+        challenge: pinnedChallenge,
+        finalizedAt,
+        qualification,
+      });
+      return { ...result, finalizationChallenge: binding.challenge, finalizedAt: binding.finalizedAt };
+    });
+  }
+
+  async activationCandidate(importId: string): Promise<InfraPackageActivationCandidate> {
+    await this.initialize();
+    safeId(importId, "importId");
+    return this.#withImportLock(importId, async () => {
+      const finalization = await this.#readOdooFinalization(importId);
+      invariant(finalization !== undefined, "InfraRelease-Paket besitzt keine persistierte Odoo-Finalisierungsbindung.");
+      const result = await this.#finalizeLocked(importId);
+      const { stagePath, ...qualification } = result;
+      invariant(JSON.stringify(finalization.qualification) === JSON.stringify(qualification), "Odoo-Finalisierungsbindung weicht vom erneut qualifizierten Paket ab.");
+      invariant(
+        qualification.signatureStatus === "verified"
+          && qualification.nativeOperationalValidationStatus === "verified"
+          && qualification.operationalStateHash !== null
+          && qualification.activationBlocker === null
+          && qualification.activationEligible === true,
+        "Nur ein signiertes und nativ validiertes Delivery-v2-Paket darf einen Weltkandidaten speisen.",
+      );
+
+      const manifestBytes = await readFile(join(stagePath, "manifest.json"));
+      const parsed = parsePackageManifest(manifestBytes);
+      invariant(sha256(manifestBytes) === qualification.manifestSha256, "Aktivierungskandidat gehoert zu einem anderen Paketmanifest.");
+      const deliveryFile = parsed.files.find(({ kind }) => kind === "release-manifest");
+      const sourcesFile = parsed.files.find(({ kind }) => kind === "source-manifest");
+      const qualityFile = parsed.files.find(({ kind }) => kind === "quality-manifest");
+      const operationalFile = parsed.files.find(({ kind }) => kind === OPERATIONAL_INFRASTRUCTURE_KIND);
+      invariant(
+        deliveryFile !== undefined
+          && sourcesFile !== undefined
+          && qualityFile !== undefined
+          && operationalFile !== undefined
+          && operationalFile.installPath === "operational-infrastructure-v2.json"
+          && operationalFile.infraReleaseId !== undefined
+          && operationalFile.stateHash !== undefined,
+        "Aktivierungskandidat besitzt keinen vollstaendigen Delivery-v2-Vertrag.",
+      );
+      const [delivery, sources, quality] = await Promise.all([
+        readPackagedJson(stagePath, deliveryFile),
+        readPackagedJson(stagePath, sourcesFile),
+        readPackagedJson(stagePath, qualityFile),
+      ]);
+      const bindings = record(delivery.value["bindings"], "Delivery-Aktivierungsbindungen");
+      const signature = record(delivery.value["signature"], "Delivery-Aktivierungssignatur");
+      const infraReleaseHash = String(bindings["infraReleaseHash"] ?? "");
+      const deliveryReleaseHash = String(delivery.value["releaseHash"] ?? "");
+      const timetableYear = delivery.value["timetableYear"];
+      invariant(
+        delivery.value["releaseId"] === qualification.deliveryReleaseId
+          && SHA256.test(infraReleaseHash)
+          && SHA256.test(deliveryReleaseHash)
+          && Number.isSafeInteger(timetableYear)
+          && (timetableYear as number) >= 2026
+          && signature["algorithm"] === "Ed25519"
+          && typeof signature["keyId"] === "string"
+          && typeof signature["valueBase64"] === "string",
+        "Delivery-v2-Aktivierungsbindung ist unvollstaendig.",
+      );
+      const sourceContract = record(sources.value, "Delivery-Aktivierungsquellen");
+      const sourceEntries = sourceContract["sources"];
+      invariant(Array.isArray(sourceEntries) && sourceEntries.length > 0, "Delivery-v2-Aktivierung besitzt keine Rechtequellen.");
+      const sourceIds = sourceEntries.map((entry) => {
+        const source = record(entry, "Delivery-Aktivierungsquelle");
+        invariant(source["approved"] === true, "Delivery-v2-Aktivierung enthaelt eine nicht freigegebene Quelle.");
+        return safeId(source["id"], "Delivery-Aktivierungsquellen-ID");
+      }).sort((left, right) => left.localeCompare(right, "en"));
+      invariant(new Set(sourceIds).size === sourceIds.length, "Delivery-v2-Aktivierung enthaelt doppelte Quellen.");
+
+      const operationalModel = record(quality.value["operationalModel"], "Operational-v2-Aktivierungsmodell");
+      const operationalCoverage = record(operationalModel["coverage"], "Operational-v2-Aktivierungsabdeckung");
+      const summary = record(quality.value["summary"], "Operational-v2-Aktivierungszusammenfassung");
+      const classCounts = qualityClassCounts(summary["operationalQualityClassArtifactCount"], "Operational-v2-Aktivierungsqualitaetsklassen");
+      const coverageReport = {
+        schema: "zugfolge-infra-package-coverage/v1",
+        ...operationalCoverage,
+        classASections: classCounts.A,
+        classBSections: classCounts.B,
+        classCSections: classCounts.C,
+        orderableClassCSections: 0 as const,
+      };
+      const signatureProof: QualifiedInfraPackageCandidate["signatureProof"] = {
+        schema: "zugfolge-infra-package-activation-proof/v1",
+        deliveryReleaseId: qualification.deliveryReleaseId,
+        timetableYear: timetableYear as number,
+        packageManifestSha256: qualification.manifestSha256,
+        deliveryReleaseHash,
+        infraReleaseHash,
+        algorithm: "Ed25519",
+        keyId: signature["keyId"],
+        valueBase64: signature["valueBase64"],
+        signatureStatus: qualification.signatureStatus,
+        nativeOperationalValidationStatus: qualification.nativeOperationalValidationStatus,
+        operationalStateHash: qualification.operationalStateHash,
+      };
+      return Object.freeze({
+        releaseId: qualification.deliveryReleaseId,
+        releaseHash: infraReleaseHash,
+        timetableYear: timetableYear as number,
+        packageManifestSha256: qualification.manifestSha256,
+        signatureProof: Object.freeze(signatureProof),
+        coverageReport: Object.freeze(coverageReport),
+        rightsReport: Object.freeze({
+          schema: "zugfolge-infra-package-rights/v1",
+          approved: true as const,
+          sourceIds: Object.freeze(sourceIds),
+        }),
+        deviationReport: Object.freeze({
+          schema: "zugfolge-infra-package-deviation/v1",
+          packageManifestSha256: qualification.manifestSha256,
+          deliveryReleaseHash,
+          operationalStateHash: qualification.operationalStateHash,
+          visibleMapClassCFeatureCount: summary["visibleMapClassCFeatureCount"],
+          unresolvedRequired: summary["unresolvedRequired"],
+        }),
+        impactPreview: Object.freeze({
+          schema: "zugfolge-infra-package-impact-preview/v1",
+          releaseId: qualification.deliveryReleaseId,
+          releaseHash: infraReleaseHash,
+          packageManifestSha256: qualification.manifestSha256,
+          operationalStateHash: qualification.operationalStateHash,
+          sourceIds: Object.freeze(sourceIds),
+          coverage: Object.freeze({ ...operationalCoverage }),
+        }),
+        operationalInfrastructure: Object.freeze({
+          schemaVersion: "zugfolge-operational-infrastructure-binding/v2" as const,
+          infraReleaseId: operationalFile.infraReleaseId,
+          file: "operational-infrastructure-v2.json" as const,
+          bytes: operationalFile.bytes,
+          sha256: operationalFile.sha256,
+          stateHash: operationalFile.stateHash,
+        }),
+      });
     });
   }
 }
@@ -682,6 +1358,7 @@ async function verifyStagedPackage(
   session: Session,
   packageVerifier: InfraPackageVerifier,
   trustedReleaseKeys: Readonly<Record<string, string>>,
+  nativeOperationalVerifier: InfraOperationalV2NativeVerifier | undefined,
 ): Promise<InfraPackageQualification> {
   const metadata = await lstat(stagePath);
   invariant(metadata.isDirectory() && !metadata.isSymbolicLink(), "Stagingziel ist kein reguläres Paketverzeichnis.");
@@ -691,7 +1368,48 @@ async function verifyStagedPackage(
   invariant(parsed.packageId === session.packageId && parsed.version === session.version, "Stagingziel gehört zu einem anderen Paket.");
   const verified = await packageVerifier(stagePath);
   invariant(verified.packageId === parsed.packageId && verified.version === parsed.version && verified.manifestSha256 === session.manifestSha256, "Wiederverwendetes Stagingziel besteht die Game-Paketprüfung nicht.");
-  return qualifyDeliveryPackage(stagePath, parsed, trustedReleaseKeys, session.manifestSha256);
+  return qualifyDeliveryPackage(stagePath, parsed, trustedReleaseKeys, session.manifestSha256, nativeOperationalVerifier);
+}
+
+async function verifyReusableStageIdentity(
+  stagePath: string,
+  session: Session,
+  packageVerifier: InfraPackageVerifier,
+): Promise<void> {
+  const metadata = await lstat(stagePath);
+  invariant(metadata.isDirectory() && !metadata.isSymbolicLink(), "Vorhandenes Stagingziel ist kein regulaeres Paketverzeichnis.");
+  const manifestBytes = await readFile(join(stagePath, "manifest.json"));
+  invariant(
+    manifestBytes.length === session.manifestBytes && sha256(manifestBytes) === session.manifestSha256,
+    "Vorhandenes Stagingziel gehoert zu einem anderen Paketmanifest.",
+  );
+  const parsed = parsePackageManifest(manifestBytes);
+  invariant(
+    parsed.packageId === session.packageId && parsed.version === session.version,
+    "Vorhandenes Stagingziel gehoert zu einem anderen Paket.",
+  );
+  const verified = await packageVerifier(stagePath);
+  invariant(
+    verified.packageId === parsed.packageId
+      && verified.version === parsed.version
+      && verified.manifestSha256 === session.manifestSha256,
+    "Vorhandenes Stagingziel besteht die vollstaendige Game-Paketpruefung nicht.",
+  );
+}
+
+async function reuseExistingStageAfterRenameCollision(
+  renameError: unknown,
+  stagePath: string,
+  session: Session,
+  packageVerifier: InfraPackageVerifier,
+): Promise<void> {
+  if (!["EEXIST", "ENOENT", "ENOTEMPTY", "EPERM"].includes(errorCode(renameError))) throw renameError;
+  try {
+    await verifyReusableStageIdentity(stagePath, session, packageVerifier);
+  } catch (targetError) {
+    if (errorCode(targetError) === "ENOENT") throw renameError;
+    throw targetError;
+  }
 }
 
 async function readPackagedJson(packageRoot: string, file: PackageFile): Promise<{ readonly value: Record<string, unknown>; readonly bytes: Buffer }> {
@@ -715,6 +1433,7 @@ async function qualifyDeliveryPackage(
   parsed: ParsedPackageManifest,
   trustedKeys: Readonly<Record<string, string>>,
   manifestSha256: string,
+  nativeOperationalVerifier: InfraOperationalV2NativeVerifier | undefined,
 ): Promise<InfraPackageQualification> {
   const deliveryFile = parsed.files.find(({ kind }) => kind === "release-manifest");
   const sourcesFile = parsed.files.find(({ kind }) => kind === "source-manifest");
@@ -723,50 +1442,120 @@ async function qualifyDeliveryPackage(
   const [delivery, sources, quality] = await Promise.all([
     readPackagedJson(packageRoot, deliveryFile), readPackagedJson(packageRoot, sourcesFile), readPackagedJson(packageRoot, qualityFile),
   ]);
-  invariant(delivery.value["schema"] === DELIVERY_SCHEMA, "release.json ist kein vollständiger öffentlicher Delivery-Release.");
-  const releaseId = safeId(delivery.value["releaseId"], "Delivery releaseId");
-  invariant(delivery.value["packageId"] === parsed.packageId && delivery.value["packageVersion"] === parsed.version, "Delivery-Release ist nicht an dieses Paket gebunden.");
-  const bindings = record(delivery.value["bindings"], "Delivery bindings");
-  invariant(bindings["packageManifestSchema"] === PACKAGE_SCHEMA && bindings["sourcesSha256"] === sha256(sources.bytes) && bindings["qualitySha256"] === sha256(quality.bytes), "Delivery-Release bindet Paketvertrag, Quellen oder Qualität nicht bytegenau.");
-  invariant(Array.isArray(delivery.value["artifacts"]), "Delivery-Release besitzt kein vollständiges Artefaktinventar.");
-  const deliveredArtifacts = [...(delivery.value["artifacts"] as unknown[])].map((entry) => {
+  const deliveryContract = exactKeys(delivery.value, [
+    "schema", "releaseId", "timetableYear", "packageId", "packageVersion", "scope", "artifacts", "bindings",
+    "approvalGates", "releaseHash", "signature",
+  ], "Delivery-Release");
+  invariant(deliveryContract["schema"] === DELIVERY_SCHEMA, "release.json ist kein vollständiger öffentlicher Delivery-Release.");
+  const releaseId = safeId(deliveryContract["releaseId"], "Delivery releaseId");
+  const yearMatch = /^infra-deutschland-(\d{4})(?:\.|$)/.exec(releaseId);
+  invariant(
+    yearMatch !== null
+      && Number.isSafeInteger(deliveryContract["timetableYear"])
+      && (deliveryContract["timetableYear"] as number) >= 2026
+      && deliveryContract["timetableYear"] === Number(yearMatch[1]),
+    "Delivery-Release bindet kein konsistentes Fahrplanjahr.",
+  );
+  const scope = exactKeys(deliveryContract["scope"], ["basemap", "infrastructure", "playableArea"], "Delivery-Scope");
+  invariant(
+    scope["basemap"] === "world-z0-10-and-germany-z11-15"
+      && scope["infrastructure"] === "germany-ebo-complete-visible-corpus"
+      && scope["playableArea"] === "configured-separately-by-world",
+    "Delivery-Release besitzt keinen Operational-v2-Auslieferungsscope.",
+  );
+  invariant(deliveryContract["packageId"] === parsed.packageId && deliveryContract["packageVersion"] === parsed.version, "Delivery-Release ist nicht an dieses Paket gebunden.");
+  const bindings = exactKeys(delivery.value["bindings"], [
+    "packageManifestSchema", "infraReleaseSchema", "mapReleaseSchema", "infraReleaseHash", "mapReleaseHash",
+    "sourcesSha256", "qualitySha256",
+  ], "Delivery bindings");
+  invariant(
+    bindings["packageManifestSchema"] === PACKAGE_SCHEMA
+      && bindings["infraReleaseSchema"] === "zugfolge-infra-release/v2"
+      && bindings["mapReleaseSchema"] === "zugfolge-map-release/v1"
+      && SHA256.test(String(bindings["infraReleaseHash"]))
+      && SHA256.test(String(bindings["mapReleaseHash"]))
+      && bindings["sourcesSha256"] === sha256(sources.bytes)
+      && bindings["qualitySha256"] === sha256(quality.bytes),
+    "Delivery-Release bindet Paketvertrag, Infra-/Map-Release-Hüllen, Quellen oder Qualität nicht bytegenau.",
+  );
+  invariant(Array.isArray(deliveryContract["artifacts"]), "Delivery-Release besitzt kein vollständiges Artefaktinventar.");
+  const deliveredArtifacts = [...(deliveryContract["artifacts"] as unknown[])].map((entry) => {
     const artifact = record(entry, "Delivery-Artefakt");
     const id = safeId(artifact["id"], "Delivery-Artefakt-ID");
     const kind = String(artifact["kind"]);
     const installPath = portablePath(artifact["installPath"], `${id}.installPath`);
     invariant(Number.isSafeInteger(artifact["bytes"]) && (artifact["bytes"] as number) > 0 && SHA256.test(String(artifact["sha256"])), `Delivery-Artefakt ${id} hat keinen Byte-SHA-Vertrag.`);
-    invariant(Object.keys(artifact).sort().join(",") === "bytes,id,installPath,kind,sha256", `Delivery-Artefakt ${id} besitzt unerwartete Felder.`);
-    return { id, kind, installPath, bytes: artifact["bytes"] as number, sha256: String(artifact["sha256"]) };
+    const expectedKeys = kind === OPERATIONAL_INFRASTRUCTURE_KIND
+      ? "bytes,id,infraReleaseId,installPath,kind,sha256,stateHash"
+      : "bytes,id,installPath,kind,sha256";
+    invariant(Object.keys(artifact).sort().join(",") === expectedKeys, `Delivery-Artefakt ${id} besitzt unerwartete Felder.`);
+    const operationalBinding = kind === OPERATIONAL_INFRASTRUCTURE_KIND
+      ? { infraReleaseId: safeId(artifact["infraReleaseId"], `${id}.infraReleaseId`), stateHash: String(artifact["stateHash"] ?? "") }
+      : {};
+    if (kind === OPERATIONAL_INFRASTRUCTURE_KIND) invariant(SHA256.test(operationalBinding.stateHash!) && operationalBinding.stateHash !== artifact["sha256"], `Delivery-Artefakt ${id} besitzt keine getrennte Operational-v2-Zustandsbindung.`);
+    return { id, kind, installPath, ...operationalBinding, bytes: artifact["bytes"] as number, sha256: String(artifact["sha256"]) };
   }).sort((left, right) => left.id.localeCompare(right.id, "en"));
   const expectedArtifacts = parsed.files
     .filter(({ kind }) => !["release-manifest", "source-manifest"].includes(kind))
-    .map(({ id, kind, installPath, bytes, sha256: fileSha256 }) => ({ id, kind, installPath, bytes, sha256: fileSha256 }))
+    .map(({ id, kind, installPath, infraReleaseId, stateHash, bytes, sha256: fileSha256 }) => ({
+      id, kind, installPath,
+      ...(kind === OPERATIONAL_INFRASTRUCTURE_KIND ? { infraReleaseId, stateHash } : {}),
+      bytes, sha256: fileSha256,
+    }))
     .sort((left, right) => left.id.localeCompare(right.id, "en"));
   invariant(JSON.stringify(deliveredArtifacts) === JSON.stringify(expectedArtifacts), "Delivery-Release bindet nicht exakt alle ausgelieferten Artefakte.");
-  invariant(sources.value["schema"] === SOURCES_SCHEMA && sources.value["releaseId"] === releaseId && Array.isArray(sources.value["sources"]), "sources.json hat keinen gebundenen öffentlichen Quellenvertrag.");
-  const sourceEntries = sources.value["sources"] as unknown[];
+  const deliveredOperational = deliveredArtifacts.filter(({ kind }) => kind === OPERATIONAL_INFRASTRUCTURE_KIND);
+  invariant(deliveredOperational.length === 1 && deliveredOperational[0]?.infraReleaseId === releaseId, "Operational-v2-Artefakt ist nicht an die Delivery-InfraRelease-ID gebunden.");
+  const sourceContract = exactKeys(sources.value, [
+    "schema", "releaseId", "sources", "assetInventoryPlanSha256", "assetNotices",
+  ], "Delivery-Quellenvertrag");
+  invariant(
+    sourceContract["schema"] === SOURCES_SCHEMA
+      && sourceContract["releaseId"] === releaseId
+      && Array.isArray(sourceContract["sources"])
+      && SHA256.test(String(sourceContract["assetInventoryPlanSha256"])),
+    "sources.json hat keinen gebundenen öffentlichen Quellen- und Asset-Inventarvertrag.",
+  );
+  const sourceEntries = sourceContract["sources"] as unknown[];
   invariant(sourceEntries.length > 0 && sourceEntries.every((entry) => {
     const source = record(entry, "Quelle");
     return source["approved"] === true && typeof source["license"] === "string" && typeof source["attribution"] === "string" && source["attribution"].trim() !== "";
   }), "Öffentliche Quellenfreigabe ist unvollständig.");
   invariant(sourceEntries.some((entry) => /openstreetmap/i.test(String(record(entry, "Quelle")["attribution"]))) && sourceEntries.some((entry) => /protomaps/i.test(String(record(entry, "Quelle")["attribution"]))), "Basemap-Attributionen für OpenStreetMap und Protomaps fehlen.");
-  invariant(quality.value["schema"] === QUALITY_SCHEMA && quality.value["releaseId"] === releaseId, "quality.json ist nicht an den Delivery-Release gebunden.");
-  const policy = record(quality.value["policy"], "Qualitätspolicy");
-  const summary = record(quality.value["summary"], "Qualitätszusammenfassung");
+  const assetNoticeSummary = validateMapAssetNotices(sourceContract["assetNotices"], parsed.files);
+  const qualitySummary = validateOperationalQuality(quality.value, releaseId, deliveredOperational[0]!);
+  const gates = record(deliveryContract["approvalGates"], "Delivery approvalGates");
+  const deliveryQualityGate = exactKeys(gates["quality"], [
+    "status", "reportSchema", "visibleLayers", "visibleFeatures", "visibleMapClassCFeatureCount",
+    "operationalClassCArtifactCount", "classCOrderable",
+  ], "Delivery Qualitäts-Gate");
+  const deliveryRightsGate = exactKeys(gates["rights"], [
+    "status", "sourceManifestSchema", "sourceCount", "assetGroupCount", "assetFileCount",
+  ], "Delivery Rechte-Gate");
   invariant(
-    policy["classAFromSingleSourceOrAutomatedInference"] === false &&
-      policy["nonPublicSourceRawDataShipped"] === false &&
-      !("internalStationPlanRawDataShipped" in policy),
-    "Qualitätspolicy verletzt das öffentliche Sicherheitsmodell.",
+    deliveryRightsGate["status"] === "passed"
+      && deliveryRightsGate["sourceManifestSchema"] === SOURCES_SCHEMA
+      && deliveryRightsGate["sourceCount"] === sourceEntries.length
+      && deliveryRightsGate["assetGroupCount"] === assetNoticeSummary.assetGroups
+      && deliveryRightsGate["assetFileCount"] === assetNoticeSummary.assetFiles
+      && deliveryQualityGate["status"] === "passed"
+      && deliveryQualityGate["reportSchema"] === QUALITY_SCHEMA
+      && deliveryQualityGate["visibleLayers"] === qualitySummary.visibleLayers
+      && deliveryQualityGate["visibleFeatures"] === qualitySummary.visibleFeatures
+      && deliveryQualityGate["visibleMapClassCFeatureCount"] === qualitySummary.visibleMapClassCFeatureCount
+      && deliveryQualityGate["operationalClassCArtifactCount"] === 0
+      && deliveryQualityGate["classCOrderable"] === false,
+    "Rechte- oder Qualitätsgate ist nicht bestanden oder weicht vom Operational-v2-Qualitätsbericht ab.",
   );
-  invariant(summary["visibleLayers"] === 10 && typeof policy["classC"] === "string" && /not orderable/i.test(policy["classC"]), "Klasse C ist nicht ausdrücklich sichtbar und unbestellbar.");
-  const gates = record(delivery.value["approvalGates"], "Delivery approvalGates");
-  invariant(record(gates["rights"], "Rechte-Gate")["status"] === "passed" && record(gates["quality"], "Qualitäts-Gate")["status"] === "passed", "Rechte- oder Qualitätsgate ist nicht bestanden.");
   const signatureGate = record(gates["signature"], "Signatur-Gate");
   if (signatureGate["status"] === "missing") {
+    const unsignedSignatureGate = exactKeys(signatureGate, ["status", "reason"], "Unsigniertes Delivery-Signaturgate");
     invariant(
-      delivery.value["signature"] === null && delivery.value["releaseHash"] === undefined,
-      "Unsignierter Delivery-Release darf keine Signatur oder Hashfreigabe behaupten.",
+      typeof unsignedSignatureGate["reason"] === "string"
+        && unsignedSignatureGate["reason"].trim() !== ""
+        && deliveryContract["signature"] === null
+        && deliveryContract["releaseHash"] === null,
+      "Unsignierter Delivery-Release muss Grund, null-Signatur und null-Releasehash explizit ausweisen.",
     );
     return {
       packageId: parsed.packageId,
@@ -774,11 +1563,14 @@ async function qualifyDeliveryPackage(
       manifestSha256,
       deliveryReleaseId: releaseId,
       signatureStatus: "missing",
+      nativeOperationalValidationStatus: "missing",
+      operationalStateHash: null,
+      activationBlocker: "delivery-signature-missing",
       activationEligible: false,
     };
   }
   invariant(signatureGate["status"] === "passed", "Delivery-Signaturgate ist weder bestanden noch explizit fehlend.");
-  const signature = record(delivery.value["signature"], "Delivery-Signatur");
+  const signature = record(deliveryContract["signature"], "Delivery-Signatur");
   const keyId = safeId(signature["keyId"], "Delivery-Signaturschlüssel");
   invariant(
     signature["algorithm"] === "Ed25519"
@@ -791,9 +1583,9 @@ async function qualifyDeliveryPackage(
       && Object.keys(signatureGate).sort().join(",") === "algorithm,keyId,status",
     "Delivery-Signaturvertrag besitzt unerwartete Felder.",
   );
-  const releaseHash = String(delivery.value["releaseHash"] ?? "");
+  const releaseHash = String(deliveryContract["releaseHash"] ?? "");
   invariant(SHA256.test(releaseHash), "Delivery-Release besitzt keinen gültigen Releasehash.");
-  const signingPayload = { ...delivery.value };
+  const signingPayload = { ...deliveryContract };
   delete signingPayload["releaseHash"];
   delete signingPayload["signature"];
   invariant(releaseHash === sha256(canonicalManifest(signingPayload)), "Delivery-Releasehash bindet nicht den kanonischen Inhalt.");
@@ -804,7 +1596,7 @@ async function qualifyDeliveryPackage(
   invariant(typeof trustedKeyPem === "string" && trustedKeyPem.trim() !== "", `Delivery-Signaturschlüssel '${keyId}' ist nicht vertrauenswürdig.`);
   let publicKey;
   try {
-    publicKey = createPublicKey(trustedKeyPem);
+    publicKey = createPublicKey(canonicalEd25519SpkiPublicKeyPem(trustedKeyPem, keyId));
   } catch {
     throw new InfraPackageStagingError(`Delivery-Signaturschlüssel '${keyId}' ist ungültig.`);
   }
@@ -814,12 +1606,54 @@ async function qualifyDeliveryPackage(
       && verifyEd25519(null, Buffer.from(releaseHash, "hex"), publicKey, signatureBytes),
     "Delivery-Release besitzt keine gültige vertrauenswürdige Ed25519-Signatur.",
   );
+  if (nativeOperationalVerifier === undefined) {
+    return {
+      packageId: parsed.packageId,
+      version: parsed.version,
+      manifestSha256,
+      deliveryReleaseId: releaseId,
+      signatureStatus: "verified",
+      nativeOperationalValidationStatus: "missing",
+      operationalStateHash: null,
+      activationBlocker: "operational-v2-native-validation-missing",
+      activationEligible: false,
+    };
+  }
+  const operationalFile = parsed.files.find(({ kind }) => kind === OPERATIONAL_INFRASTRUCTURE_KIND);
+  invariant(
+    operationalFile !== undefined
+      && operationalFile.installPath === "operational-infrastructure-v2.json"
+      && operationalFile.infraReleaseId === releaseId
+      && operationalFile.stateHash !== undefined,
+    "Operational-v2-Artefakt ist für die native Validierung nicht eindeutig gebunden.",
+  );
+  const nativeReceipt = await nativeOperationalVerifier({
+    packageRoot,
+    expectedInfraReleaseId: releaseId,
+    artifact: {
+      id: operationalFile.id,
+      installPath: "operational-infrastructure-v2.json",
+      bytes: operationalFile.bytes,
+      sha256: operationalFile.sha256,
+      parts: operationalFile.parts,
+    },
+  });
+  invariant(
+    nativeReceipt.schema === "operational-infrastructure-v2"
+      && nativeReceipt.infraReleaseId === releaseId
+      && SHA256.test(nativeReceipt.stateHash)
+      && nativeReceipt.stateHash === operationalFile.stateHash,
+    "Native Operational-v2-Semantikvalidierung stimmt nicht mit der signierten Releasebindung überein.",
+  );
   return {
     packageId: parsed.packageId,
     version: parsed.version,
     manifestSha256,
     deliveryReleaseId: releaseId,
     signatureStatus: "verified",
+    nativeOperationalValidationStatus: "verified",
+    operationalStateHash: nativeReceipt.stateHash,
+    activationBlocker: null,
     activationEligible: true,
   };
 }
@@ -827,6 +1661,17 @@ async function qualifyDeliveryPackage(
 export interface InfraUploadSigningKey {
   readonly id: string;
   readonly secret: string;
+}
+
+export function infraFinalizationReceiptSignature(input: {
+  readonly key: InfraUploadSigningKey;
+  readonly receipt: InfraPackageFinalizationReceipt;
+}): string {
+  invariant(input.receipt.schema === FINALIZATION_RECEIPT_SCHEMA, "Game-Finalisierungsbeleg besitzt ein unbekanntes Schema.");
+  invariant(SAFE_ID.test(input.key.id) && input.receipt.keyId === input.key.id, "Game-Finalisierungsbeleg und Signaturschlüssel weichen ab.");
+  return createHmac("sha256", input.key.secret)
+    .update(JSON.stringify(canonicalValue(input.receipt)), "utf8")
+    .digest("hex");
 }
 
 export function infraUploadSignature(input: {

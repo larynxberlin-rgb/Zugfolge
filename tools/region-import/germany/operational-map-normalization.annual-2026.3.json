@@ -1,0 +1,5 @@
+{
+  "schema": "zugfolge-operational-map-normalization/v1",
+  "sourceDirectory": "var/derived/germany-2026.2/final-map-layers-v2",
+  "outputDirectory": "var/derived/germany-2026.3/final-map-layers-v2"
+}

@@ -159,9 +159,11 @@ sie wechselt nicht in eine Schätzung. Derselbe Grundsatz gilt für die
 virtuelle Fahrdienstleitung: Sie verwendet ausschließlich releasegebundene
 Konfliktressourcen und versionierte Regeln. Eine hundertprozentige
 Nachbildung jedes realen Stellwerks ist kein Freigabekriterium; eine solide,
-regelkonforme konservative B-Logik ist spielbar. Unbelegte Weichenlagen,
-Signalbilder und Fahrstraßen werden aber weder angezeigt noch als Möglichkeit
-erfunden.
+regelkonforme konservative B-Logik ist spielbar. Der Offline-Compiler darf
+fehlende betriebliche Zuordnungen als ausdrücklich synthetisches,
+kapazitätsärmeres Modell vollständig schließen. Unbelegte Weichenlagen,
+Signalbilder und Fahrstraßen werden dabei weder als beobachtete Realität
+angezeigt noch zu realen Anlagenbehauptungen umetikettiert.
 
 Der ausführbare Datenvertrag, die reale Abdeckung 2026.1 und die konservative
 Ableitung von Gleiszuständen aus Störungen stehen in
@@ -586,9 +588,26 @@ Fahrstraßenvorlagen, Durchrutschwege, Flankenschutz, Grenzzeichen,
 Rangiergrenzen, Profile, Bahnsteigintervalle, Regionsgrenzen und RZÜ-Layout in
 das operative `InfraRelease` ein. Laufzeitannahmen für fehlende Elemente sind
 unzulässig; deterministische Ergänzung geschieht ausschließlich offline und
-trägt interne Herkunft. Der freigegebene Release enthält ausschließlich A oder
-ein in jeder Pflichtdimension vollständig konservativ geschlossenes B; jeder
-offene Pflichtbefund blockiert den Kandidaten.
+trägt interne Herkunft. `synthetic-operational-b/v2` erhält dabei die reale
+E7-Gleisgeometrie und simuliert nur die betriebliche Zuordnung. Sein
+Closure-Receipt bindet Policy, neun Eingabedateien, Candidate, native Prüfung,
+Artefakt und Zustand. Der freie Fahrwegspfad besteht aus dem gepinnten
+GTFS-Snapshot, dem qualifizierten v2-Routenbericht und der kanonischen
+`timetableRoutes`-JSONSeq. Er muss alle ausgewählten B-Segmente 1:1 schließen,
+CC-BY-4.0 samt Snapshot-/Datei-/Archivhash binden und externe
+Operational-Network-Provenienz, GTFS-Shape-Geometrie sowie erfundene Geometrie
+verneinen. Das Receipt setzt `realGeometry=true`,
+`simulatedOperationalAssignment=true` und
+`realInterlockingFactsClaimed=false`. Das Operational-v2-Artefakt liefert die
+synthetischen Betriebsdetails aus
+(`syntheticOperationalDetailsShipped=true`) und führt beobachtete und
+synthetische Objekte in denselben Laufzeit-Collections
+(`observedAndSyntheticObjectsShareRuntimeCollections=true`), ohne deren
+objektweise Lineage mitzuliefern (`objectLevelProvenanceShipped=false`). Der
+freigegebene Release enthält
+ausschließlich A oder ein in jeder Pflichtdimension vollständig konservativ
+geschlossenes B; gewöhnliches `assumed` und jeder offene Pflichtbefund bleiben
+C und blockieren den Kandidaten.
 
 Die Sicherungslogik leitet jede Fahrstraßenbedingung aus diesem Release und
 dem autoritativen `OperationalWorld` ab. Ressourcen lösen erst nach der

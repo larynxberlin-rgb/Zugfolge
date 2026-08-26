@@ -54,7 +54,14 @@ import {
   type FleetMobilizationSnapshot,
 } from "@zugfolge/economy";
 import { verifyIdentityToken, type IdentityDatabase } from "@zugfolge/identity";
-import { createGtfsPlanningEnvelope, type GtfsPlanningSnapshot } from "@zugfolge/gtfs";
+import {
+  createGtfsPlanningEnvelope,
+  GTFS_PLANNING_SCHEMA,
+  gtfsPlanningIdentityNamespace,
+  gtfsPlanningLotId,
+  gtfsPlanningPatternId,
+  type GtfsPlanningSnapshot,
+} from "@zugfolge/gtfs";
 import { operatingProgramTemplates } from "@zugfolge/dispatch";
 import { LivemapRegistry } from "@zugfolge/livemap-stream";
 import {
@@ -76,6 +83,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 
 import { buildApp } from "./app.js";
+import {
+  createRegionalSimulationSchedulerHealthCheck,
+  RegionalSimulationSchedulerMonitor,
+} from "./regional-simulation-monitor.js";
 
 const ISSUER = "https://auth.zugfolge.test/realms/lhe";
 const AUDIENCE = "game-api";
@@ -922,57 +933,73 @@ describe("öffentlicher, persistenter M6-Gesamtablauf", () => {
         { id: "b", weights: { price: 5_000, quality: 5_000 }, requirementFocus: "bicycle", penaltyFocus: "connections", viabilitySurchargeBasisPoints: 10_000 },
       ],
     });
-    const planningSnapshot: GtfsPlanningSnapshot = {
-      schema: "zugfolge-gtfs-planning/v1",
-      worldId: WORLD_LHE,
-      revision: 1,
-      producedAt: 10,
-      source: {
-        sourceId: "gtfs-de-rv",
-        feedUrl: "https://download.gtfs.de/germany/rv_free/latest.zip",
-        archiveSha256: "a".repeat(64),
-        capturedAt: "2026-08-09T00:00:00.000Z",
-        timeZone: "Europe/Berlin",
-        sourceLicense: "CC BY 4.0",
-        attribution: "Datenquelle: DELFI e.V. / GTFS.DE",
-      },
-      infrastructureVersion: "api-test-graph-v1",
-      rulesVersion: "api-test-spnv-v1",
-      serviceDates: ["20260810"],
-      patterns: Array.from({ length: 8 }, (_, index) => ({
-        id: `sp-s${index + 1}-test`,
-        lineId: `S${index + 1}`,
+    const planningSource = {
+      sourceId: "gtfs-de-rv",
+      feedUrl: "https://download.gtfs.de/germany/rv_free/latest.zip",
+      archiveSha256: "a".repeat(64),
+      capturedAt: "2026-08-09T00:00:00.000Z",
+      timeZone: "Europe/Berlin",
+      sourceLicense: "CC BY 4.0",
+      attribution: "Datenquelle: DELFI e.V. / GTFS.DE",
+    };
+    const planningInfrastructureVersion = "api-test-graph-v1";
+    const planningRulesVersion = "api-test-spnv-v1";
+    const planningServiceDates = ["20260810"];
+    const planningIdentity = gtfsPlanningIdentityNamespace({
+      source: planningSource,
+      infrastructureVersion: planningInfrastructureVersion,
+      rulesVersion: planningRulesVersion,
+      serviceDates: planningServiceDates,
+    });
+    const planningPatterns: GtfsPlanningSnapshot["patterns"] = Array.from({ length: 8 }, (_, index) => {
+      const lineId = `S${index + 1}`;
+      const nodeIds = [`node-${index}-a`, `node-${index}-b`];
+      return {
+        id: gtfsPlanningPatternId(planningIdentity, lineId, "0", nodeIds),
+        lineId,
         directionId: "0",
         sourceRouteIds: [`source-route-s${index + 1}`],
         stopIds: [`source-stop-${index}-a`, `source-stop-${index}-b`],
         stopNames: [`Alpha ${index}`, `Beta ${index}`],
-        nodeIds: [`node-${index}-a`, `node-${index}-b`],
+        nodeIds,
         edgeIds: [`edge-${index}-ab`],
         distanceMeters: 100_000,
         journeys: [{ sourceTripId: `source-trip-${index + 1}`, serviceDate: "20260810", departureServiceSeconds: 3_600, arrivalServiceSeconds: 7_200, departureEpochSeconds: 1_786_316_400, arrivalEpochSeconds: 1_786_320_000 }],
         metrics: { journeyCount: 1, totalTrainMeters: "100000", totalStops: "2", totalServiceSeconds: "3600", totalEnergyWh: "10000", medianHeadwaySeconds: null, maximumOperatingSpanSeconds: 3_600, peakVehicles: 1 },
-      })),
-      lots: Array.from({ length: 8 }, (_, index) => ({
-        id: `lot-s${index + 1}-test`,
-        lineIds: [`S${index + 1}`],
-        patternIds: [`sp-s${index + 1}-test`],
-        connectingNodeIds: [],
-        size: 100 - index,
-        attractiveness: 120 + index,
-        smallLot: false,
-        specificationBasis: {
-          sampleServiceDays: 1,
-          totalTrainMeters: "100000",
-          totalStops: "2",
-          totalServiceSeconds: "3600",
-          totalEnergyWh: "10000",
-          peakVehicles: 1,
-          facilityMinutesPerDay: 30,
-          overnightUnits: 1,
-          protectionUnits: 1,
-          requirements: { minimumSeats: 100, firstClassBasisPoints: 0, accessible: true, bicyclePlaces: 2, wheelchairPlaces: 1, requiredEquipment: ["pis"] },
-        },
-      })),
+      };
+    });
+    const planningLots: GtfsPlanningSnapshot["lots"] = planningPatterns.map((pattern, index) => ({
+      id: gtfsPlanningLotId(planningIdentity, [pattern.lineId]),
+      lineIds: [pattern.lineId],
+      patternIds: [pattern.id],
+      connectingNodeIds: [],
+      size: 100 - index,
+      attractiveness: 120 + index,
+      smallLot: false,
+      specificationBasis: {
+        sampleServiceDays: 1,
+        totalTrainMeters: "100000",
+        totalStops: "2",
+        totalServiceSeconds: "3600",
+        totalEnergyWh: "10000",
+        peakVehicles: 1,
+        facilityMinutesPerDay: 30,
+        overnightUnits: 1,
+        protectionUnits: 1,
+        requirements: { minimumSeats: 100, firstClassBasisPoints: 0, accessible: true, bicyclePlaces: 2, wheelchairPlaces: 1, requiredEquipment: ["pis"] },
+      },
+    }));
+    const planningSnapshot: GtfsPlanningSnapshot = {
+      schema: GTFS_PLANNING_SCHEMA,
+      worldId: WORLD_LHE,
+      revision: 1,
+      producedAt: 10,
+      source: planningSource,
+      infrastructureVersion: planningInfrastructureVersion,
+      rulesVersion: planningRulesVersion,
+      serviceDates: planningServiceDates,
+      patterns: planningPatterns,
+      lots: planningLots,
     };
     const planningEnvelope = createGtfsPlanningEnvelope(planningSnapshot);
     const start = await app.inject({
@@ -1063,7 +1090,11 @@ describe("öffentlicher, persistenter M6-Gesamtablauf", () => {
       new Date(fleetSnapshot.producedAt * 1_000),
     )).resolves.toMatchObject({ created: true, snapshotHash: fleetEnvelope.snapshotHash });
 
-    const planningReference = { planningRevision: 1, snapshotHash: planningEnvelope.snapshotHash, lotId: "lot-s1-test" };
+    const planningReference = {
+      planningRevision: 1,
+      snapshotHash: planningEnvelope.snapshotHash,
+      lotId: planningLots[0]!.id,
+    };
     const manipulated = await app.inject({
       method: "POST", url: `/worlds/${WORLD_LHE}/economy/tenders`, headers: { authorization: `Bearer ${adminToken}` },
       payload: { expectedRevision: 0, commandId: "api:manipulated", tenderId: "tender-manipulated", planningReference, announcedAt: 0, opensAt: OPEN, closesAt: CLOSE, operatingFrom: OPERATING, specification: { lines: ["FAKE"], trainKmPerPeriod: "1" }, authorityId: "authority", budgetPeriod: 0, vehiclePool: [], failurePenaltyCents: "1000" },
@@ -1995,6 +2026,42 @@ describe("M3.10 Planner-Projektion und Alternativkommando", () => {
 });
 
 describe("GET /health/ready", () => {
+  it("haelt Liveness waehrend eines ueber 230 Sekunden fortschreitenden Cold-Catch-ups gruen", async () => {
+    let now = 1_000;
+    const monitor = new RegionalSimulationSchedulerMonitor(now, () => now);
+    const appMitCatchUp = buildApp({
+      db,
+      verifyToken: (token) => verifyIdentityToken(token, createLocalJWKSet({ keys: [] }), { issuer: ISSUER, audience: AUDIENCE }),
+      extraHealthChecks: [createRegionalSimulationSchedulerHealthCheck(monitor, 60_000, () => now)],
+    });
+    await appMitCatchUp.ready();
+    try {
+      monitor.started(now);
+      now += 119_000;
+      monitor.progress(now);
+      now += 119_000;
+
+      const liveness = await appMitCatchUp.inject({ method: "GET", url: "/health" });
+      expect(liveness.statusCode).toBe(200);
+      expect(liveness.json()).toEqual({ status: "ok" });
+
+      const readiness = await appMitCatchUp.inject({ method: "GET", url: "/health/ready" });
+      expect(readiness.statusCode).toBe(503);
+      expect(readiness.json()).toMatchObject({
+        status: "down",
+        checks: expect.arrayContaining([
+          expect.objectContaining({
+            name: "regional-simulation-scheduler",
+            status: "down",
+            code: "scheduler_catching_up",
+          }),
+        ]),
+      });
+    } finally {
+      await appMitCatchUp.close();
+    }
+  });
+
   it("meldet den aggregierten Zustand aller Health Checks ohne Authentifizierung", async () => {
     const response = await app.inject({ method: "GET", url: "/health/ready" });
     expect(response.statusCode).toBe(200);

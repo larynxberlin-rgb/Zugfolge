@@ -182,7 +182,12 @@ function startStream(): void {
   streamController?.abort();
   streamController = new AbortController();
   const signal = streamController.signal;
-  void api.stream(signal, state.operations?.throughSequence ?? 0, () => { void refresh(); }).catch((error: unknown) => {
+  void api.stream(
+    signal,
+    state.operations?.throughSequence ?? 0,
+    () => { void refresh(); },
+    (operations) => setState({ operations, message: "Betriebslage nach einer Stream-Luecke neu geladen.", messageTone: "status" }),
+  ).catch((error: unknown) => {
     if (!signal.aborted) setState({ message: error instanceof Error ? error.message : "Live-Verbindung unterbrochen.", messageTone: "error" });
   });
 }

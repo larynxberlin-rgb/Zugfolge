@@ -2,7 +2,11 @@ from odoo import Command
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tests.common import TransactionCase
 
-from ..controllers.main import _find_admin_request_for_game_result
+from ..controllers.main import (
+    GLOBAL_ADMIN_PROJECTION_SCOPE_ID,
+    _admin_result_target_world_id,
+    _find_admin_request_for_game_result,
+)
 from ..models.admin_request import format_cents_german, parse_german_currency_to_cents
 from ..models.admin_capability import GLOBAL_WORLD_DEPLOY_CAPABILITY_SCOPE_ID
 from ..upgrade import backfill_legacy_admin_request_worlds, backfill_legacy_deployment_audit
@@ -16,6 +20,46 @@ class TestZugfolgeAdminRequest(TransactionCase):
             "observed_at": "2026-01-01 00:00:00", "freshness": "delayed", "payload_hash": "a" * 64,
             "profile_kind": "public",
         })
+
+    def test_global_world_close_result_resolves_only_its_typed_target_world(self):
+        target_world_id = self.projection.world_id
+        payload = {
+            "worldId": GLOBAL_ADMIN_PROJECTION_SCOPE_ID,
+            "payload": {
+                "projectionScope": "global-admin",
+                "actionType": "world_close",
+                "targetWorldId": target_world_id,
+                "outcome": "accepted",
+                "state": "completed",
+                "authoritative": True,
+                "adminRequestId": "request-1",
+                "gameAuditEventId": "audit-1",
+                "eventId": "event-1",
+                "finalStateHash": "a" * 64,
+                "evidenceHash": "b" * 64,
+                "replayHash": "c" * 64,
+                "archivedAtS": 2419200,
+            },
+        }
+        self.assertEqual(_admin_result_target_world_id(payload), target_world_id)
+        self.assertFalse(_admin_result_target_world_id({
+            **payload,
+            "worldId": target_world_id,
+        }))
+        self.assertFalse(_admin_result_target_world_id({
+            **payload,
+            "payload": {**payload["payload"], "actionType": "world_access_revoke"},
+        }))
+        for invalid_result in (
+            {key: value for key, value in payload["payload"].items() if key != "evidenceHash"},
+            {**payload["payload"], "replayHash": "not-a-sha256"},
+            {**payload["payload"], "archivedAtS": "2419200"},
+            {**payload["payload"], "archivedAtS": True},
+        ):
+            self.assertFalse(_admin_result_target_world_id({
+                **payload,
+                "payload": invalid_result,
+            }))
 
     def _authoritative_world_start_projection(self, world_id, deployment_hash, revision, message_id, blueprint_hash=None):
         blueprint_hash = blueprint_hash or ("b" * 64)

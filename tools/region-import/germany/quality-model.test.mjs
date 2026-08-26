@@ -21,15 +21,30 @@ function feature(id, properties = {}) {
   return { type: "Feature", id: `way/${id}`, geometry: { type: "LineString", coordinates: [[10, 50], [10.01, 50.01]] }, properties: { railway: "rail", ...properties } };
 }
 
-test("konservative Regeln schließen fehlende Attribute zu einem spielbaren B-Modell", () => {
+test("gewoehnliche konservative Annahmen bleiben Klasse C und nicht spielbar", () => {
   const result = buildGermanyInfraCorpus({ pbfReport: report([block(7, 42)]), wayFeatures: [feature(42)], policy });
   const section = result.corpus.sections[0];
-  assert.equal(section.qualityClass, "B");
-  assert.equal(section.playable, true);
+  assert.equal(section.qualityClass, "C");
+  assert.equal(section.playable, false);
   assert.deepEqual(section.dimensions.speed.value, { maximumKmh: 20 });
   assert.equal(section.dimensions.speed.state, "assumed");
   assert.deepEqual(section.dimensions.electrification.value, { system: "none" });
   assert.equal(section.dimensions.signalling.value.model, "virtual-fixed-block");
+});
+
+test("beobachtete und regelgebunden abgeleitete Dimensionen ergeben weiterhin Klasse B", () => {
+  const result = buildGermanyInfraCorpus({
+    pbfReport: report([block(7, 42)]),
+    wayFeatures: [feature(42, {
+      maxspeed: "80",
+      electrified: "contact_line",
+      incline: "12‰",
+      "railway:pzb": "yes",
+    })],
+    policy,
+  });
+  assert.equal(result.corpus.sections[0].qualityClass, "B");
+  assert.equal(result.corpus.sections[0].playable, true);
 });
 
 test("richtungsbezogene Geschwindigkeit wird konservativ gelesen und kein Freitext erraten", () => {

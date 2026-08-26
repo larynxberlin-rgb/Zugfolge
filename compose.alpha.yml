@@ -8,19 +8,41 @@ services:
   postgres:
     image: postgis/postgis:16-3.4
     environment: { POSTGRES_USER: "${POSTGRES_USER}", POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}", POSTGRES_DB: "${POSTGRES_DB}" }
-    volumes: [game-db:/var/lib/postgresql/data]
+    volumes:
+      - game-db:/var/lib/postgresql/data
+      - ./ops/alpha/postgres/010-keycloak-schema.sql:/docker-entrypoint-initdb.d/010-keycloak-schema.sql:ro
     healthcheck: { <<: *health, test: [CMD-SHELL, "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"] }
   odoo-postgres:
     image: postgres:16.14-trixie
     environment: { POSTGRES_USER: odoo, POSTGRES_PASSWORD: "${ODOO_DB_PASSWORD}", POSTGRES_DB: postgres }
     volumes: [odoo-db:/var/lib/postgresql/data]
     healthcheck: { <<: *health, test: [CMD-SHELL, "pg_isready -U odoo -d postgres"] }
+  recovery-verify-postgres:
+    profiles: [production-recovery-preparation]
+    image: postgis/postgis:16-3.4
+    environment: { POSTGRES_USER: "${POSTGRES_USER}", POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}", POSTGRES_DB: postgres }
+    volumes: [recovery-verify-db:/var/lib/postgresql/data]
+    networks: { schema29-recovery: {} }
+    healthcheck: { <<: *health, test: [CMD-SHELL, "pg_isready -U $$POSTGRES_USER -d postgres"] }
+  recovery-verify-odoo-postgres:
+    profiles: [production-recovery-preparation]
+    image: postgres:16.14-trixie
+    environment: { POSTGRES_USER: odoo, POSTGRES_PASSWORD: "${ODOO_DB_PASSWORD}", POSTGRES_DB: postgres }
+    volumes: [recovery-verify-odoo-db:/var/lib/postgresql/data]
+    networks: { schema29-recovery: {} }
+    healthcheck: { <<: *health, test: [CMD-SHELL, "pg_isready -U odoo -d postgres"] }
   odoo-upgrade:
-    image: zugfolge-odoo:alpha
-    build: { context: ., dockerfile: ops/alpha/odoo/Dockerfile }
+    image: "${ZUGFOLGE_ODOO_IMAGE_REFERENCE:?ZUGFOLGE_ODOO_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: ops/alpha/odoo/Dockerfile
+      args:
+        ZUGFOLGE_SOURCE_SHA: "${ZUGFOLGE_SOURCE_SHA:-unversioned}"
+        ZUGFOLGE_DEPLOY_PATCH_SHA: "${ZUGFOLGE_DEPLOY_PATCH_SHA:-unversioned}"
     command:
       - odoo
-      - --database=zugfolge_odoo
+      - "--database=${ODOO_DB_NAME:?ODOO_DB_NAME fehlt}"
       - --db_host=odoo-postgres
       - --db_user=odoo
       - "--db_password=${ODOO_DB_PASSWORD}"
@@ -37,10 +59,81 @@ services:
       USER: odoo
       PASSWORD: "${ODOO_DB_PASSWORD}"
     volumes: [odoo-filestore:/var/lib/odoo]
-    depends_on: { odoo-postgres: { condition: service_healthy } }
+    depends_on: { odoo-postgres: { condition: service_healthy }, production-recovery-action: { condition: service_completed_successfully } }
+    restart: "no"
+  keycloak-schema-migrate:
+    profiles: [keycloak-schema-migration]
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
+    user: "${KEYCLOAK_SCHEMA_OPERATOR_UID:-1000}:${KEYCLOAK_SCHEMA_OPERATOR_GID:-1000}"
+    command: [node, tools/alpha-ops/keycloak-public-to-schema.mjs, "${KEYCLOAK_SCHEMA_ACTION:-inspect}"]
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      KEYCLOAK_SCHEMA_CATALOG_PATH: /keycloak-schema-catalog.json
+      KEYCLOAK_SCHEMA_BACKUP_MANIFEST_PATH: /keycloak-backup/game.manifest.json
+      KEYCLOAK_SCHEMA_BACKUP_DUMP_PATH: /keycloak-backup/game.dump
+      KEYCLOAK_SCHEMA_RESTORED_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${KEYCLOAK_SCHEMA_RESTORE_DATABASE:-zugfolge_restore_keycloak_schema}"
+      KEYCLOAK_SCHEMA_RESTORE_RECEIPT_PATH: "${KEYCLOAK_SCHEMA_RESTORE_RECEIPT_CONTAINER_PATH:-/keycloak-schema/restore-receipt.json}"
+      KEYCLOAK_SCHEMA_BACKUP_BINDING_PATH: "${KEYCLOAK_SCHEMA_BACKUP_BINDING_CONTAINER_PATH:-/keycloak-schema/backup-binding.json}"
+      KEYCLOAK_SCHEMA_BACKUP_BINDING_OUTPUT_PATH: "${KEYCLOAK_SCHEMA_BACKUP_BINDING_CONTAINER_PATH:-/keycloak-schema/backup-binding.json}"
+      KEYCLOAK_SCHEMA_PLAN_PATH: "${KEYCLOAK_SCHEMA_PLAN_CONTAINER_PATH:-/keycloak-schema/plan.json}"
+      KEYCLOAK_SCHEMA_PLAN_OUTPUT_PATH: "${KEYCLOAK_SCHEMA_PLAN_CONTAINER_PATH:-/keycloak-schema/plan.json}"
+      KEYCLOAK_SCHEMA_RECEIPT_PATH: "${KEYCLOAK_SCHEMA_RECEIPT_CONTAINER_PATH:-/keycloak-schema/receipt.json}"
+      KEYCLOAK_SCHEMA_RECEIPT_OUTPUT_PATH: "${KEYCLOAK_SCHEMA_RECEIPT_OUTPUT_CONTAINER_PATH:-/keycloak-schema/receipt.json}"
+      KEYCLOAK_SCHEMA_WRITERS_QUIESCED: "${KEYCLOAK_SCHEMA_WRITERS_QUIESCED:-false}"
+    volumes:
+      - ./ops/alpha/keycloak/keycloak-pg16-object-catalog.26.7.0.json:/keycloak-schema-catalog.json:ro
+      - "${KEYCLOAK_SCHEMA_EVIDENCE_HOST_DIR:?KEYCLOAK_SCHEMA_EVIDENCE_HOST_DIR fehlt}:/keycloak-schema:rw"
+      - "${KEYCLOAK_SCHEMA_BACKUP_HOST_DIR:?KEYCLOAK_SCHEMA_BACKUP_HOST_DIR fehlt}:/keycloak-backup:ro"
+    depends_on: { postgres: { condition: service_healthy }, production-recovery-action: { condition: service_completed_successfully } }
+    restart: "no"
+  keycloak-schema-backup:
+    profiles: [keycloak-schema-migration]
+    image: postgres:16.14-trixie
+    user: "${KEYCLOAK_SCHEMA_OPERATOR_UID:-1000}:${KEYCLOAK_SCHEMA_OPERATOR_GID:-1000}"
+    entrypoint: [sh, -eu, -c]
+    command: ['sh /ops/backup-game.sh "$$DATABASE_URL" /keycloak-backup/game.dump /keycloak-backup/game.manifest.json']
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+    volumes:
+      - ./ops/alpha/backup-game.sh:/ops/backup-game.sh:ro
+      - "${KEYCLOAK_SCHEMA_BACKUP_HOST_DIR:?KEYCLOAK_SCHEMA_BACKUP_HOST_DIR fehlt}:/keycloak-backup:rw"
+    depends_on: { postgres: { condition: service_healthy }, production-recovery-action: { condition: service_completed_successfully } }
+    restart: "no"
+  keycloak-schema-restore:
+    profiles: [keycloak-schema-migration]
+    image: postgres:16.14-trixie
+    user: "${KEYCLOAK_SCHEMA_OPERATOR_UID:-1000}:${KEYCLOAK_SCHEMA_OPERATOR_GID:-1000}"
+    entrypoint: [sh, -eu, -c]
+    command: ['test "$$KEYCLOAK_SCHEMA_RESTORE_DATABASE" != "$$KEYCLOAK_SCHEMA_LIVE_DATABASE"; test ! -e "$$KEYCLOAK_SCHEMA_RESTORE_RECEIPT_PATH"; sh /ops/restore-game.sh "$$DATABASE_ADMIN_URL" "$$KEYCLOAK_SCHEMA_RESTORE_DATABASE" /keycloak-backup/game.dump /keycloak-backup/game.manifest.json "$$KEYCLOAK_SCHEMA_RESTORE_RECEIPT_PATH"']
+    environment:
+      DATABASE_ADMIN_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/postgres"
+      KEYCLOAK_SCHEMA_LIVE_DATABASE: "${POSTGRES_DB}"
+      KEYCLOAK_SCHEMA_RESTORE_DATABASE: "${KEYCLOAK_SCHEMA_RESTORE_DATABASE:-zugfolge_restore_keycloak_schema}"
+      KEYCLOAK_SCHEMA_RESTORE_RECEIPT_PATH: "${KEYCLOAK_SCHEMA_RESTORE_RECEIPT_CONTAINER_PATH:-/keycloak-schema/restore-receipt.json}"
+    volumes:
+      - ./ops/alpha/restore-game.sh:/ops/restore-game.sh:ro
+      - "${KEYCLOAK_SCHEMA_BACKUP_HOST_DIR:?KEYCLOAK_SCHEMA_BACKUP_HOST_DIR fehlt}:/keycloak-backup:ro"
+      - "${KEYCLOAK_SCHEMA_EVIDENCE_HOST_DIR:?KEYCLOAK_SCHEMA_EVIDENCE_HOST_DIR fehlt}:/keycloak-schema:rw"
+    depends_on: { postgres: { condition: service_healthy }, production-recovery-action: { condition: service_completed_successfully } }
+    restart: "no"
+  keycloak-schema-preflight:
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
+    user: "${KEYCLOAK_SCHEMA_OPERATOR_UID:-1000}:${KEYCLOAK_SCHEMA_OPERATOR_GID:-1000}"
+    command: [node, tools/alpha-ops/keycloak-public-to-schema.mjs, preflight]
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      KEYCLOAK_SCHEMA_CATALOG_PATH: /keycloak-schema-catalog.json
+      KEYCLOAK_SCHEMA_RECEIPT_PATH: "${KEYCLOAK_SCHEMA_RECEIPT_CONTAINER_PATH-/keycloak-schema/receipt.json}"
+      KEYCLOAK_SCHEMA_BOOTSTRAP_ALLOWED: "${KEYCLOAK_SCHEMA_BOOTSTRAP_ALLOWED:-false}"
+    volumes:
+      - ./ops/alpha/keycloak/keycloak-pg16-object-catalog.26.7.0.json:/keycloak-schema-catalog.json:ro
+      - "${KEYCLOAK_SCHEMA_EVIDENCE_HOST_DIR:?KEYCLOAK_SCHEMA_EVIDENCE_HOST_DIR fehlt}:/keycloak-schema:ro"
+    depends_on: { postgres: { condition: service_healthy }, production-recovery-action: { condition: service_completed_successfully } }
     restart: "no"
   keycloak:
-    image: quay.io/keycloak/keycloak:26.7.0
+    image: quay.io/keycloak/keycloak:26.7.0@sha256:0f198be292568439d700cdbfb893e69a6009bb43a94a06a945b1d3d506c76b13
     command: [start, --import-realm, --health-enabled=true, --http-enabled=true]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: "${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME}"
@@ -49,6 +142,7 @@ services:
       KC_DB_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB}"
       KC_DB_USERNAME: "${POSTGRES_USER}"
       KC_DB_PASSWORD: "${POSTGRES_PASSWORD}"
+      KC_DB_SCHEMA: keycloak
       KC_HOSTNAME: "${KEYCLOAK_PUBLIC_URL}"
       KC_PROXY_HEADERS: xforwarded
       GAME_WEB_URL: "${GAME_WEB_URL}"
@@ -62,11 +156,28 @@ services:
       default: {}
       proxy: { aliases: [zugfolge-keycloak] }
       mail: {}
-    depends_on: { postgres: { condition: service_healthy } }
+    depends_on: { keycloak-schema-preflight: { condition: service_completed_successfully } }
     healthcheck: { <<: *health, test: [CMD-SHELL, "exec 3<>/dev/tcp/127.0.0.1/9000; echo -e 'GET /health/ready HTTP/1.1\r\nhost: localhost\r\nConnection: close\r\n\r\n' >&3; grep -q UP <&3"] }
     ports: ["${KEYCLOAK_PORT:-8080}:8080"]
+  keycloak-schema-postflight:
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
+    user: "${KEYCLOAK_SCHEMA_OPERATOR_UID:-1000}:${KEYCLOAK_SCHEMA_OPERATOR_GID:-1000}"
+    command: [node, tools/alpha-ops/keycloak-public-to-schema.mjs, postflight]
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      KEYCLOAK_SCHEMA_CATALOG_PATH: /keycloak-schema-catalog.json
+      KEYCLOAK_SCHEMA_RECEIPT_PATH: "${KEYCLOAK_SCHEMA_RECEIPT_CONTAINER_PATH-/keycloak-schema/receipt.json}"
+      KEYCLOAK_SCHEMA_BOOTSTRAP_RECEIPT_OUTPUT_PATH: "${KEYCLOAK_SCHEMA_BOOTSTRAP_RECEIPT_OUTPUT_CONTAINER_PATH:-/keycloak-schema/receipt.json}"
+      KEYCLOAK_SCHEMA_BOOTSTRAP_ALLOWED: "${KEYCLOAK_SCHEMA_BOOTSTRAP_ALLOWED:-false}"
+    volumes:
+      - ./ops/alpha/keycloak/keycloak-pg16-object-catalog.26.7.0.json:/keycloak-schema-catalog.json:ro
+      - "${KEYCLOAK_SCHEMA_EVIDENCE_HOST_DIR:?KEYCLOAK_SCHEMA_EVIDENCE_HOST_DIR fehlt}:/keycloak-schema:rw"
+    depends_on: { keycloak: { condition: service_healthy }, game-migrate: { condition: service_completed_successfully } }
+    restart: "no"
   keycloak-reconcile:
-    image: zugfolge-game-api
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
     command: [node, tools/alpha-ops/reconcile-keycloak-clients.mjs]
     env_file: [.env]
     environment:
@@ -77,9 +188,10 @@ services:
       GAME_WEB_URL: "${GAME_WEB_URL}"
       LIVEMAP_URL: "${LIVEMAP_PUBLIC_URL:-http://localhost:4174}"
       OPERATIONS_CENTER_URL: "${OPERATIONS_CENTER_URL:-http://localhost:4175}"
-    depends_on: { keycloak: { condition: service_healthy } }
+    depends_on: { keycloak-schema-postflight: { condition: service_completed_successfully }, game-bootstrap: { condition: service_completed_successfully } }
   map-release-preflight:
-    image: zugfolge-game-api
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
     command: [node, tools/alpha-ops/map-release-deployment-preflight.mjs, "${MAP_RELEASE_START_PREFLIGHT_MODE:?MAP_RELEASE_START_PREFLIGHT_MODE fehlt}"]
     environment:
       MAP_RELEASE_PREFLIGHT_EVIDENCE_PATH: /map-preflight/evidence.json
@@ -87,31 +199,69 @@ services:
       MAP_RELEASE_PREFLIGHT_RESTORE_PROOF_PATH: /map-preflight/restore-proof.json
       MAP_RELEASE_PREFLIGHT_RESTORE_ROOT: /map-restore
       MAP_RELEASE_PREFLIGHT_TRUSTED_KEYS_PATH: /map-preflight/trusted-delivery-keys.json
+      MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH: "${MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH:?MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH fehlt}"
+      MAP_RELEASE_PREFLIGHT_RUNTIME_SOURCE_COMMIT: "${MAP_RELEASE_PREFLIGHT_RUNTIME_SOURCE_COMMIT:?MAP_RELEASE_PREFLIGHT_RUNTIME_SOURCE_COMMIT fehlt}"
+      MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST: "${MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST:?MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST fehlt}"
+      PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST: "${PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST:?PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST fehlt}"
+      MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH: "${MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH:?MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH fehlt}"
       MAP_RELEASE_PREFLIGHT_EXPECTED_ACTIVE_RELEASE_ID: "${MAP_RELEASE_ID:?MAP_RELEASE_ID muss aus active/map-release.env kommen}"
+      RELEASE_TRUSTED_KEY_SCOPES_JSON: "${RELEASE_TRUSTED_KEY_SCOPES_JSON:?RELEASE_TRUSTED_KEY_SCOPES_JSON fehlt}"
     volumes:
+      - ./var/alpha-evidence:/evidence:ro
       - "${MAP_RELEASE_DEPLOYMENT_HOST_ROOT:?MAP_RELEASE_DEPLOYMENT_HOST_ROOT fehlt}:/map-deployment:ro"
       - "${MAP_RELEASE_PREFLIGHT_HOST_DIR:?MAP_RELEASE_PREFLIGHT_HOST_DIR fehlt}:/map-preflight:ro"
       - "${MAP_RELEASE_RESTORE_HOST_DIR:?MAP_RELEASE_RESTORE_HOST_DIR fehlt}:/map-restore:ro"
+    depends_on: { production-recovery-action: { condition: service_completed_successfully } }
+    restart: "no"
+  world-deployment-cutover-preflight:
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
+    command: [node, tools/alpha-ops/world-deployment-cutover-preflight.mjs]
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      ALPHA_WORLD_RELEASE_PATHS_JSON: "${ALPHA_WORLD_RELEASE_PATHS_JSON}"
+      INFRA_RELEASE_TRUSTED_KEYS_JSON: "${INFRA_RELEASE_TRUSTED_KEYS_JSON}"
+      RELEASE_TRUSTED_KEY_SCOPES_JSON: "${RELEASE_TRUSTED_KEY_SCOPES_JSON:?RELEASE_TRUSTED_KEY_SCOPES_JSON fehlt}"
+      ALPHA_PUBLIC_WORLD_ID: "${ALPHA_PUBLIC_WORLD_ID}"
+      ALPHA_WORLD_V2_CUTOVER_AUTHORIZATION_JSON: "${ALPHA_WORLD_V2_CUTOVER_AUTHORIZATION_JSON:-}"
+      LIVEMAP_READ_MODEL_PATH: /map-release/read-model.sqlite
+    volumes:
+      - ./var/alpha-evidence:/evidence:ro
+      - "${MAP_RELEASE_DEPLOYMENT_HOST_ROOT:?MAP_RELEASE_DEPLOYMENT_HOST_ROOT fehlt}/${MAP_RELEASE_HOST_DIR:?MAP_RELEASE_HOST_DIR muss aus active/map-release.env kommen}:/map-release:ro"
+    depends_on: { postgres: { condition: service_healthy }, map-release-preflight: { condition: service_completed_successfully } }
     restart: "no"
   game-migrate:
-    image: zugfolge-game-api
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
     command: [node, packages/db/dist/migrate.js]
     environment:
       DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
-    depends_on: { postgres: { condition: service_healthy }, map-release-preflight: { condition: service_completed_successfully } }
+    depends_on: { postgres: { condition: service_healthy }, production-recovery-action: { condition: service_completed_successfully }, keycloak-schema-preflight: { condition: service_completed_successfully }, map-release-preflight: { condition: service_completed_successfully }, world-deployment-cutover-preflight: { condition: service_completed_successfully } }
     restart: "no"
   game-bootstrap:
-    image: zugfolge-game-api
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
     command: [node, tools/alpha-ops/production-db-bootstrap.mjs]
     environment:
       DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
       ALPHA_WORLD_RELEASE_PATHS_JSON: "${ALPHA_WORLD_RELEASE_PATHS_JSON}"
       INFRA_RELEASE_TRUSTED_KEYS_JSON: "${INFRA_RELEASE_TRUSTED_KEYS_JSON}"
-    volumes: [./var/alpha-evidence:/evidence:ro]
-    depends_on: { game-migrate: { condition: service_completed_successfully } }
+      RELEASE_TRUSTED_KEY_SCOPES_JSON: "${RELEASE_TRUSTED_KEY_SCOPES_JSON:?RELEASE_TRUSTED_KEY_SCOPES_JSON fehlt}"
+      ALPHA_WORLD_V2_CUTOVER_AUTHORIZATION_JSON: "${ALPHA_WORLD_V2_CUTOVER_AUTHORIZATION_JSON:-}"
+      ALPHA_PUBLIC_WORLD_ID: "${ALPHA_PUBLIC_WORLD_ID}"
+      LIVEMAP_READ_MODEL_PATH: /map-release/read-model.sqlite
+      MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH: /map-preflight/database-rollback-proof.json
+      KEYCLOAK_SCHEMA_CATALOG_PATH: /keycloak-schema-catalog.json
+    volumes:
+      - ./ops/alpha/keycloak/keycloak-pg16-object-catalog.26.7.0.json:/keycloak-schema-catalog.json:ro
+      - ./var/alpha-evidence:/evidence:ro
+      - "${MAP_RELEASE_DEPLOYMENT_HOST_ROOT:?MAP_RELEASE_DEPLOYMENT_HOST_ROOT fehlt}/${MAP_RELEASE_HOST_DIR:?MAP_RELEASE_HOST_DIR muss aus active/map-release.env kommen}:/map-release:ro"
+      - "${MAP_RELEASE_PREFLIGHT_HOST_DIR:?MAP_RELEASE_PREFLIGHT_HOST_DIR fehlt}:/map-preflight:ro"
+    depends_on: { game-migrate: { condition: service_completed_successfully }, keycloak-schema-postflight: { condition: service_completed_successfully } }
     restart: "no"
   game-api:
-    image: zugfolge-game-api
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
     command: [node, tools/alpha-ops/start-after-map-release-preflight.mjs, node, apps/game-api/dist/server.js]
     build:
       context: .
@@ -125,22 +275,28 @@ services:
     env_file: [.env]
     environment:
       DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      RELEASE_TRUSTED_KEY_SCOPES_JSON: "${RELEASE_TRUSTED_KEY_SCOPES_JSON:?RELEASE_TRUSTED_KEY_SCOPES_JSON fehlt}"
       KEYCLOAK_ISSUER: "${KEYCLOAK_PUBLIC_URL}/realms/zugfolge"
       KEYCLOAK_JWKS_URI: "http://keycloak:8080/realms/zugfolge/protocol/openid-connect/certs"
       KEYCLOAK_ADMIN_URL: http://keycloak:8080
       LIVEMAP_READ_MODEL_PATH: /map-release/read-model.sqlite
-      LIVEMAP_TRAIN_PROJECTION_PATH: /map-release/train-map-projection.sqlite
       INFRA_PACKAGE_STAGING_ENABLED: "${INFRA_PACKAGE_STAGING_ENABLED:-false}"
       INFRA_PACKAGE_STAGING_ROOT: /infra-package-staging
       INFRA_PACKAGE_VERIFIER_MODULE: /app/tools/tiles/map-package.mjs
       INFRA_UPLOAD_KEYS_JSON: '[{"id":"${INFRA_UPLOAD_KEY_ID}","secret":"${INFRA_UPLOAD_SECRET}"}]'
       ZUGFOLGE_RUNTIME_NATIVE_PATH: /app/native/zugfolge-runtime.node
+      ZUGFOLGE_OPERATIONAL_INFRASTRUCTURE_ROOTS_JSON: '{"${MAP_RELEASE_ID:?MAP_RELEASE_ID muss aus active/map-release.env kommen}":"/map-release","tutorial-minimal-2026.1:operational-infra":"/app/apps/game-api/tutorial-infrastructure/tutorial-minimal-2026.1"}'
       ZUGFOLGE_PLANNING_RUNTIME_NATIVE_PATH: /app/native/zugfolge-planning-runtime.node
       MAP_RELEASE_PREFLIGHT_EVIDENCE_PATH: /map-preflight/evidence.json
       MAP_RELEASE_PREFLIGHT_DEPLOYMENT_ROOT: /map-deployment
       MAP_RELEASE_PREFLIGHT_RESTORE_PROOF_PATH: /map-preflight/restore-proof.json
       MAP_RELEASE_PREFLIGHT_RESTORE_ROOT: /map-restore
       MAP_RELEASE_PREFLIGHT_TRUSTED_KEYS_PATH: /map-preflight/trusted-delivery-keys.json
+      MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH: "${MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH:?MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH fehlt}"
+      MAP_RELEASE_PREFLIGHT_RUNTIME_SOURCE_COMMIT: "${MAP_RELEASE_PREFLIGHT_RUNTIME_SOURCE_COMMIT:?MAP_RELEASE_PREFLIGHT_RUNTIME_SOURCE_COMMIT fehlt}"
+      MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST: "${MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST:?MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST fehlt}"
+      PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST: "${PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST:?PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST fehlt}"
+      MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH: "${MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH:?MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH fehlt}"
       MAP_RELEASE_PREFLIGHT_EXPECTED_ACTIVE_RELEASE_ID: "${MAP_RELEASE_ID:?MAP_RELEASE_ID muss aus active/map-release.env kommen}"
       MAP_RELEASE_START_PREFLIGHT_MODE: "${MAP_RELEASE_START_PREFLIGHT_MODE:?MAP_RELEASE_START_PREFLIGHT_MODE fehlt}"
     volumes:
@@ -151,10 +307,14 @@ services:
       - "${MAP_RELEASE_RESTORE_HOST_DIR:?MAP_RELEASE_RESTORE_HOST_DIR fehlt}:/map-restore:ro"
       - "${INFRA_PACKAGE_STAGING_HOST_DIR:-./var/infra-package-staging}:/infra-package-staging:rw"
     depends_on: { game-bootstrap: { condition: service_completed_successfully }, keycloak-reconcile: { condition: service_completed_successfully } }
-    healthcheck: { <<: *health, start_period: 15m, test: [CMD, node, -e, "fetch('http://localhost:3000/health/ready').then(async r=>{const body=await r.json();if(!r.ok||body.status==='down')process.exit(1)})"] }
+    # Docker prueft ausschliesslich Prozess-/Event-Loop-Liveness. Der erste
+    # autoritative Cold-Catch-up darf laenger als das Compose-Retryfenster
+    # dauern; /health/ready bleibt das separate Traffic- und Cutover-Gate.
+    healthcheck: { <<: *health, test: [CMD, node, -e, "fetch('http://localhost:3000/health').then(async r=>{const body=await r.json();if(!r.ok||body.status!=='ok')process.exit(1)})"] }
     ports: ["${GAME_API_PORT:-3000}:3000"]
   game-web:
-    image: zugfolge-game-api
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
     command: [node, tools/alpha-ops/static-server.mjs, apps/game-web/dist, "4173"]
     environment:
       GAME_API_INTERNAL_URL: http://game-api:3000
@@ -172,7 +332,8 @@ services:
     healthcheck: { <<: *health, test: [CMD, node, -e, "fetch('http://localhost:4173/').then(async r=>{if(!r.ok||!(await r.text()).includes('content=\"game-web\"'))process.exit(1)})"] }
     ports: ["${GAME_WEB_PORT:-4173}:4173"]
   livemap:
-    image: zugfolge-game-api
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
     command: [node, tools/alpha-ops/start-after-map-release-preflight.mjs, node, tools/alpha-ops/static-server.mjs, apps/livemap/dist, "4174"]
     environment:
       GAME_API_INTERNAL_URL: http://game-api:3000
@@ -193,10 +354,16 @@ services:
       MAP_RELEASE_PREFLIGHT_RESTORE_PROOF_PATH: /map-preflight/restore-proof.json
       MAP_RELEASE_PREFLIGHT_RESTORE_ROOT: /map-restore
       MAP_RELEASE_PREFLIGHT_TRUSTED_KEYS_PATH: /map-preflight/trusted-delivery-keys.json
+      MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH: "${MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH:?MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH fehlt}"
+      MAP_RELEASE_PREFLIGHT_RUNTIME_SOURCE_COMMIT: "${MAP_RELEASE_PREFLIGHT_RUNTIME_SOURCE_COMMIT:?MAP_RELEASE_PREFLIGHT_RUNTIME_SOURCE_COMMIT fehlt}"
+      MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST: "${MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST:?MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST fehlt}"
+      PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST: "${PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST:?PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST fehlt}"
+      MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH: "${MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH:?MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH fehlt}"
       MAP_RELEASE_PREFLIGHT_EXPECTED_ACTIVE_RELEASE_ID: "${MAP_RELEASE_ID:?MAP_RELEASE_ID muss aus active/map-release.env kommen}"
       MAP_RELEASE_START_PREFLIGHT_MODE: "${MAP_RELEASE_START_PREFLIGHT_MODE:?MAP_RELEASE_START_PREFLIGHT_MODE fehlt}"
       MAP_ATTRIBUTION: "${MAP_ATTRIBUTION:-© OpenStreetMap-Mitwirkende, ODbL 1.0; Basemap-Aufbereitung Protomaps; weitere Bearbeitung durch Zugfolge}"
     volumes:
+      - ./var/alpha-evidence:/evidence:ro
       - "${MAP_RELEASE_DEPLOYMENT_HOST_ROOT:?MAP_RELEASE_DEPLOYMENT_HOST_ROOT fehlt}/${MAP_RELEASE_HOST_DIR:?MAP_RELEASE_HOST_DIR muss aus active/map-release.env kommen}:/map-artifacts/maps/${MAP_RELEASE_ID:?MAP_RELEASE_ID muss aus active/map-release.env kommen}:ro"
       - "${MAP_RELEASE_DEPLOYMENT_HOST_ROOT:?MAP_RELEASE_DEPLOYMENT_HOST_ROOT fehlt}:/map-deployment:ro"
       - "${MAP_RELEASE_PREFLIGHT_HOST_DIR:?MAP_RELEASE_PREFLIGHT_HOST_DIR fehlt}:/map-preflight:ro"
@@ -208,7 +375,8 @@ services:
     healthcheck: { <<: *health, test: [CMD, node, -e, "const b='http://localhost:4174';Promise.all([fetch(b),fetch(b+'/runtime-config.js'),fetch(new URL(process.env.MAP_BASEMAP_STYLE_URL,b),{headers:{range:'bytes=0-0'}}),fetch(new URL(process.env.MAP_GERMANY_PMTILES_URL,b),{headers:{range:'bytes=0-126'}})]).then(async([p,c,s,i])=>{if(!p.ok||!(await p.text()).includes('content=\"livemap\"')||!c.ok||s.status!==206||i.status!==206)process.exit(1)})"] }
     ports: ["${LIVEMAP_PORT:-4174}:4174"]
   operations-center:
-    image: zugfolge-game-api
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
     command: [node, tools/alpha-ops/static-server.mjs, apps/operations-center/dist, "4175"]
     environment:
       GAME_API_INTERNAL_URL: http://game-api:3000
@@ -226,16 +394,24 @@ services:
     healthcheck: { <<: *health, test: [CMD, node, -e, "fetch('http://localhost:4175/').then(async r=>{if(!r.ok||!(await r.text()).includes('content=\"operations-center\"'))process.exit(1)})"] }
     ports: ["${OPERATIONS_CENTER_PORT:-4175}:4175"]
   static:
-    image: zugfolge-game-api
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
     command: [node, tools/alpha-ops/static-server.mjs, /evidence/static, "4179"]
     volumes: [./var/alpha-evidence:/evidence:ro]
+    depends_on: { production-recovery-action: { condition: service_completed_successfully } }
     ports: ["${STATIC_PORT:-4179}:4179"]
   odoo:
-    image: zugfolge-odoo:alpha
-    build: { context: ., dockerfile: ops/alpha/odoo/Dockerfile }
+    image: "${ZUGFOLGE_ODOO_IMAGE_REFERENCE:?ZUGFOLGE_ODOO_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: ops/alpha/odoo/Dockerfile
+      args:
+        ZUGFOLGE_SOURCE_SHA: "${ZUGFOLGE_SOURCE_SHA:-unversioned}"
+        ZUGFOLGE_DEPLOY_PATCH_SHA: "${ZUGFOLGE_DEPLOY_PATCH_SHA:-unversioned}"
     command:
       - odoo
-      - --database=zugfolge_odoo
+      - "--database=${ODOO_DB_NAME:?ODOO_DB_NAME fehlt}"
       - --db_host=odoo-postgres
       - --db_user=odoo
       - "--db_password=${ODOO_DB_PASSWORD}"
@@ -273,11 +449,541 @@ services:
       - ./tools/alpha-ops:/tools/alpha-ops:ro
       - "${ALPHA_OPS_HOST_DIR:-./var/alpha-ops}:/work"
       - odoo-filestore:/var/lib/odoo:ro
-    depends_on: { odoo-postgres: { condition: service_healthy } }
+    depends_on: { odoo-postgres: { condition: service_healthy }, production-recovery-action: { condition: service_completed_successfully } }
+  production-recovery-material:
+    profiles: [production-recovery-preparation]
+    image: "${ZUGFOLGE_ODOO_IMAGE_REFERENCE:?ZUGFOLGE_ODOO_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
+    user: "0:0"
+    entrypoint: [/bin/sh]
+    command: [-eu, -c, "echo production-recovery-material ready"]
+    environment:
+      DATABASE_ROLLBACK_WRITERS_QUIESCED: "true"
+      PRODUCTION_RECOVERY_ID: "${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}"
+      PRODUCTION_RECOVERY_EVIDENCE_ROOT: /production-recovery
+      PRODUCTION_RECOVERY_ODOO_FILESTORE_ROOT: /odoo-recovery-filestore
+      PRODUCTION_RECOVERY_ODOO_RUNTIME_UID: "${PRODUCTION_RECOVERY_ODOO_RUNTIME_UID:?PRODUCTION_RECOVERY_ODOO_RUNTIME_UID fehlt}"
+      PRODUCTION_RECOVERY_ODOO_RUNTIME_GID: "${PRODUCTION_RECOVERY_ODOO_RUNTIME_GID:?PRODUCTION_RECOVERY_ODOO_RUNTIME_GID fehlt}"
+      PRODUCTION_COLD_GAME_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      PRODUCTION_COLD_GAME_RESTORE_ADMIN_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@recovery-verify-postgres:5432/postgres"
+      PRODUCTION_COLD_GAME_RESTORE_DATABASE: "${PRODUCTION_COLD_GAME_RESTORE_DATABASE:?PRODUCTION_COLD_GAME_RESTORE_DATABASE fehlt}"
+      PRODUCTION_SCHEMA29_GAME_RESTORE_ADMIN_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@recovery-verify-postgres:5432/postgres"
+      PRODUCTION_SCHEMA29_GAME_RESTORE_DATABASE: "${PRODUCTION_SCHEMA29_GAME_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_GAME_RESTORE_DATABASE fehlt}"
+      PRODUCTION_COLD_ODOO_DATABASE_URL: "postgres://odoo:${ODOO_DB_PASSWORD}@odoo-postgres:5432/${ODOO_DB_NAME:?ODOO_DB_NAME fehlt}"
+      PRODUCTION_COLD_ODOO_ADMIN_DATABASE_URL: "postgres://odoo:${ODOO_DB_PASSWORD}@recovery-verify-odoo-postgres:5432/postgres"
+      PRODUCTION_COLD_ODOO_RESTORE_DATABASE: "${PRODUCTION_COLD_ODOO_RESTORE_DATABASE:?PRODUCTION_COLD_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_SCHEMA29_ODOO_RESTORE_ADMIN_DATABASE_URL: "postgres://odoo:${ODOO_DB_PASSWORD}@recovery-verify-odoo-postgres:5432/postgres"
+      PRODUCTION_SCHEMA29_ODOO_RESTORE_DATABASE: "${PRODUCTION_SCHEMA29_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_DATABASE: "${PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_DATABASE fehlt}"
+      PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE: "${PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_COLD_ODOO_LIVE_FILESTORE_PATH: "/odoo-live-filestore/filestore/${ODOO_DB_NAME:?ODOO_DB_NAME fehlt}"
+      PRODUCTION_RECOVERY_GAME_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      PRODUCTION_RECOVERY_GAME_LIVE_ADMIN_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/postgres"
+      PRODUCTION_RECOVERY_GAME_VERIFY_ADMIN_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@recovery-verify-postgres:5432/postgres"
+      PRODUCTION_RECOVERY_GAME_VERIFY_DATABASE: "${PRODUCTION_RECOVERY_GAME_VERIFY_DATABASE:?PRODUCTION_RECOVERY_GAME_VERIFY_DATABASE fehlt}"
+      PRODUCTION_RECOVERY_GAME_RESTORE_DATABASE: "${PRODUCTION_RECOVERY_GAME_RESTORE_DATABASE:?PRODUCTION_RECOVERY_GAME_RESTORE_DATABASE fehlt}"
+      PRODUCTION_RECOVERY_ODOO_DATABASE_URL: "postgres://odoo:${ODOO_DB_PASSWORD}@odoo-postgres:5432/${ODOO_DB_NAME:?ODOO_DB_NAME fehlt}"
+      PRODUCTION_RECOVERY_ODOO_ADMIN_DATABASE_URL: "postgres://odoo:${ODOO_DB_PASSWORD}@odoo-postgres:5432/postgres"
+      PRODUCTION_RECOVERY_ODOO_RESTORE_DATABASE: "${PRODUCTION_RECOVERY_ODOO_RESTORE_DATABASE:?PRODUCTION_RECOVERY_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_RECOVERY_ODOO_LIVE_FILESTORE_PATH: "/odoo-live-filestore/filestore/${ODOO_DB_NAME:?ODOO_DB_NAME fehlt}"
+    volumes:
+      - ./ops/alpha:/ops/alpha:ro
+      - "${PRODUCTION_RECOVERY_BACKUP_HOST_ROOT:?PRODUCTION_RECOVERY_BACKUP_HOST_ROOT fehlt}:/recovery-material:rw"
+      - "${PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT:?PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT fehlt}:/production-recovery:rw"
+      - "${PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT:?PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT fehlt}:/odoo-recovery-filestore:rw"
+      - odoo-filestore:/odoo-live-filestore:ro
+    networks: { default: {}, schema29-recovery: {} }
+    depends_on: { postgres: { condition: service_healthy }, odoo-postgres: { condition: service_healthy }, recovery-verify-postgres: { condition: service_healthy }, recovery-verify-odoo-postgres: { condition: service_healthy } }
+    restart: "no"
+  production-recovery-schema29-cold-qualify:
+    profiles: [production-recovery-preparation]
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
+    user: "0:0"
+    command: [node, tools/alpha-ops/production-cold-backup.mjs, qualify-schema29]
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      ODOO_DATABASE_URL: "postgres://odoo:${ODOO_DB_PASSWORD}@odoo-postgres:5432/${ODOO_DB_NAME:?ODOO_DB_NAME fehlt}"
+      PRODUCTION_RECOVERY_ID: "${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}"
+      PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID: "${PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID:?PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID fehlt}"
+      PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID: "${PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID:?PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID fehlt}"
+      PRODUCTION_RECOVERY_DOCKER_PROJECT: zugfolge
+      PRODUCTION_RECOVERY_DOCKER_SOCKET_PATH: /var/run/docker.sock
+      PRODUCTION_COLD_CONTROL_SERVICE: production-recovery-schema29-cold-qualify
+      PRODUCTION_RECOVERY_EVIDENCE_ROOT: /production-recovery
+      PRODUCTION_COLD_RECEIPT_OUTPUT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-cold-qualified.json"
+      PRODUCTION_COLD_GAME_DUMP_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29.game.dump"
+      PRODUCTION_COLD_GAME_MANIFEST_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29.game.manifest.json"
+      PRODUCTION_COLD_GAME_OPERATION_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29.game.operation.json"
+      PRODUCTION_COLD_GAME_RESTORE_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29.game-restore.json"
+      PRODUCTION_COLD_GAME_RESTORED_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@recovery-verify-postgres:5432/${PRODUCTION_SCHEMA29_GAME_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_GAME_RESTORE_DATABASE fehlt}"
+      PRODUCTION_COLD_ODOO_DATABASE_DUMP_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29.odoo.database.dump"
+      PRODUCTION_COLD_ODOO_FILESTORE_ARCHIVE_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29.odoo.filestore.tar.gz"
+      PRODUCTION_COLD_ODOO_MANIFEST_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29.odoo.manifest.json"
+      PRODUCTION_COLD_ODOO_OPERATION_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29.odoo.operation.json"
+      PRODUCTION_COLD_ODOO_RESTORE_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29.odoo-restore.json"
+      PRODUCTION_COLD_ODOO_RESTORED_DATABASE_URL: "postgres://odoo:${ODOO_DB_PASSWORD}@recovery-verify-odoo-postgres:5432/${PRODUCTION_SCHEMA29_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_COLD_ODOO_LIVE_FILESTORE_PATH: "/odoo-live-filestore/filestore/${ODOO_DB_NAME:?ODOO_DB_NAME fehlt}"
+      PRODUCTION_COLD_ODOO_RESTORED_FILESTORE_PATH: "/odoo-recovery-filestore/${PRODUCTION_SCHEMA29_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_ODOO_RESTORE_DATABASE fehlt}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - "${PRODUCTION_RECOVERY_BACKUP_HOST_ROOT:?PRODUCTION_RECOVERY_BACKUP_HOST_ROOT fehlt}:/recovery-material:ro"
+      - "${PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT:?PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT fehlt}:/production-recovery:rw"
+      - "${PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT:?PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT fehlt}:/odoo-recovery-filestore:ro"
+      - odoo-filestore:/odoo-live-filestore:ro
+    networks: { default: {}, schema29-recovery: {} }
+    depends_on: { postgres: { condition: service_healthy }, odoo-postgres: { condition: service_healthy }, recovery-verify-postgres: { condition: service_healthy }, recovery-verify-odoo-postgres: { condition: service_healthy } }
+    restart: "no"
+  production-schema29-runtime-snapshot:
+    profiles: [production-recovery-preparation]
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
+    command: [node, tools/alpha-ops/production-schema29-runtime-snapshot.mjs, create]
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@recovery-verify-postgres:5432/${PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_DATABASE fehlt}"
+      ODOO_DATABASE_URL: "postgres://odoo:${ODOO_DB_PASSWORD}@recovery-verify-odoo-postgres:5432/${PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_RECOVERY_ID: "${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}"
+      PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID: "${PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID:?PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID fehlt}"
+      PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID: "${PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID:?PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID fehlt}"
+      PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID: "${PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID:?PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID fehlt}"
+      PRODUCTION_RECOVERY_EVIDENCE_ROOT: /production-recovery
+      PRODUCTION_SCHEMA29_COLD_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-cold-qualified.json"
+      PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-runtime.game-restore.json"
+      PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-runtime.odoo-restore.json"
+      PRODUCTION_SCHEMA29_RUNTIME_BEFORE_OUTPUT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-runtime-before.json"
+      PRODUCTION_SCHEMA29_ODOO_RESTORED_FILESTORE_PATH: "/odoo-recovery-filestore/${PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE fehlt}"
+    volumes:
+      - "${PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT:?PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT fehlt}:/production-recovery:rw"
+      - "${PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT:?PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT fehlt}:/odoo-recovery-filestore:ro"
+    networks: { schema29-recovery: {} }
+    depends_on: { recovery-verify-postgres: { condition: service_healthy }, recovery-verify-odoo-postgres: { condition: service_healthy } }
+    restart: "no"
+  production-schema29-odoo-filestore-access:
+    profiles: [production-recovery-preparation]
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
+    user: "0:0"
+    command: [node, tools/alpha-ops/schema29-odoo-filestore-access.mjs, open]
+    environment:
+      PRODUCTION_RECOVERY_ID: "${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}"
+      PRODUCTION_RECOVERY_EVIDENCE_ROOT: /production-recovery
+      PRODUCTION_RECOVERY_ODOO_RUNTIME_UID: "${PRODUCTION_RECOVERY_ODOO_RUNTIME_UID:?PRODUCTION_RECOVERY_ODOO_RUNTIME_UID fehlt}"
+      PRODUCTION_RECOVERY_ODOO_RUNTIME_GID: "${PRODUCTION_RECOVERY_ODOO_RUNTIME_GID:?PRODUCTION_RECOVERY_ODOO_RUNTIME_GID fehlt}"
+      PRODUCTION_SCHEMA29_ODOO_RESTORE_DATABASE: "${PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_SCHEMA29_ODOO_FILESTORE_ROOT: /odoo-recovery-filestore
+      PRODUCTION_SCHEMA29_ODOO_RESTORED_FILESTORE_PATH: "/odoo-recovery-filestore/${PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_SCHEMA29_RUNTIME_BEFORE_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-runtime-before.json"
+      PRODUCTION_SCHEMA29_ODOO_FILESTORE_OPEN_OUTPUT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-odoo-filestore-open.json"
+      PRODUCTION_SCHEMA29_ODOO_FILESTORE_OPEN_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-odoo-filestore-open.json"
+      PRODUCTION_SCHEMA29_ODOO_LEGACY_PROBE_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-odoo-runtime-write.json"
+      PRODUCTION_SCHEMA29_ODOO_FILESTORE_SEAL_OUTPUT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-odoo-filestore-seal.json"
+    volumes:
+      - "${PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT:?PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT fehlt}:/production-recovery:rw"
+      - "${PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT:?PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT fehlt}/${PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE fehlt}:/odoo-recovery-filestore/${PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE fehlt}:rw"
+    network_mode: none
+    restart: "no"
+  schema29-game-runtime:
+    profiles: [production-recovery-preparation]
+    image: "${MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE:?MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE muss den attestierten Legacy-Digest referenzieren}"
+    pull_policy: never
+    command: [node, apps/game-api/dist/server.js]
+    env_file: [.env]
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@recovery-verify-postgres:5432/${PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_DATABASE fehlt}"
+      ALPHA_PUBLIC_WORLD_ID: "${PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID:?PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID fehlt}"
+      ALPHA_WORLD_RELEASE_PATHS_JSON: '["${MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH:?MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH fehlt}"]'
+      ALPHA_WORLD_V2_CUTOVER_AUTHORIZATION_JSON: ""
+      KEYCLOAK_ISSUER: http://schema29-keycloak-runtime:8080/realms/zugfolge
+      KEYCLOAK_JWKS_URI: http://schema29-keycloak-runtime:8080/realms/zugfolge/protocol/openid-connect/certs
+      KEYCLOAK_ADMIN_URL: http://schema29-keycloak-runtime:8080
+      LIVEMAP_READ_MODEL_PATH: /map-release/read-model.sqlite
+      ZUGFOLGE_RUNTIME_NATIVE_PATH: /app/native/zugfolge-runtime.node
+      ZUGFOLGE_PLANNING_RUNTIME_NATIVE_PATH: /app/native/zugfolge-planning-runtime.node
+    volumes:
+      - ./var/alpha-evidence:/evidence:ro
+      - "${MAP_RELEASE_DEPLOYMENT_HOST_ROOT:?MAP_RELEASE_DEPLOYMENT_HOST_ROOT fehlt}/releases/${PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID:?PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID fehlt}:/map-release:ro"
+    networks: { schema29-recovery: {} }
+    depends_on: { recovery-verify-postgres: { condition: service_healthy }, schema29-keycloak-runtime: { condition: service_healthy } }
+    healthcheck: { <<: *health, start_period: 15m, test: [CMD, node, -e, "fetch('http://localhost:3000/health/ready').then(async r=>{const body=await r.json();if(!r.ok||body.status==='down')process.exit(1)})"] }
+    restart: "no"
+  schema29-keycloak-runtime:
+    profiles: [production-recovery-preparation]
+    image: quay.io/keycloak/keycloak:26.7.0@sha256:0f198be292568439d700cdbfb893e69a6009bb43a94a06a945b1d3d506c76b13
+    command: [start, --import-realm, --health-enabled=true, --http-enabled=true]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: "${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME}"
+      KC_BOOTSTRAP_ADMIN_PASSWORD: "${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD}"
+      KC_DB: postgres
+      KC_DB_URL: "jdbc:postgresql://recovery-verify-postgres:5432/${PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_DATABASE fehlt}"
+      KC_DB_USERNAME: "${POSTGRES_USER}"
+      KC_DB_PASSWORD: "${POSTGRES_PASSWORD}"
+      KC_DB_SCHEMA: public
+      KC_HOSTNAME: http://schema29-keycloak-runtime:8080
+      GAME_WEB_URL: "${GAME_WEB_URL}"
+      LIVEMAP_URL: "${LIVEMAP_PUBLIC_URL:-http://localhost:4174}"
+      OPERATIONS_CENTER_URL: "${OPERATIONS_CENTER_URL}"
+      KEYCLOAK_ADMIN_CLIENT_SECRET: "${KEYCLOAK_ADMIN_CLIENT_SECRET}"
+    volumes:
+      - ./ops/alpha/keycloak/zugfolge-realm.json:/opt/keycloak/data/import/zugfolge-realm.json:ro
+      - ./ops/alpha/keycloak/themes/zugfolge:/opt/keycloak/themes/zugfolge:ro
+    networks: { schema29-recovery: {} }
+    depends_on: { recovery-verify-postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health, test: [CMD-SHELL, "exec 3<>/dev/tcp/127.0.0.1/9000; echo -e 'GET /health/ready HTTP/1.1\r\nhost: localhost\r\nConnection: close\r\n\r\n' >&3; grep -q UP <&3"] }
+    restart: "no"
+  schema29-odoo-runtime:
+    profiles: [production-recovery-preparation]
+    image: "${PRODUCTION_RECOVERY_ODOO_IMAGE_REFERENCE:?PRODUCTION_RECOVERY_ODOO_IMAGE_REFERENCE muss den attestierten Legacy-Odoo-Digest referenzieren}"
+    pull_policy: never
+    user: "${PRODUCTION_RECOVERY_ODOO_RUNTIME_UID:?PRODUCTION_RECOVERY_ODOO_RUNTIME_UID fehlt}:${PRODUCTION_RECOVERY_ODOO_RUNTIME_GID:?PRODUCTION_RECOVERY_ODOO_RUNTIME_GID fehlt}"
+    command:
+      - odoo
+      - "--database=${PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE fehlt}"
+      - --db_host=recovery-verify-odoo-postgres
+      - --db_user=odoo
+      - "--db_password=${ODOO_DB_PASSWORD}"
+      - --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/opt/zugfolge-addons
+      - --load=base,web,queue_job
+      - --workers=0
+      - --max-cron-threads=0
+    environment:
+      HOST: recovery-verify-odoo-postgres
+      USER: odoo
+      PASSWORD: "${ODOO_DB_PASSWORD}"
+      ODOO_QUEUE_JOB_CHANNELS: root:0
+    volumes:
+      - "${PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT:?PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT fehlt}/${PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE fehlt}:/var/lib/odoo/filestore/${PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE fehlt}:rw"
+    networks: { schema29-recovery: {} }
+    depends_on: { recovery-verify-odoo-postgres: { condition: service_healthy } }
+    healthcheck: { <<: *health, test: [CMD-SHELL, "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8069/web/health')\""] }
+    restart: "no"
+  legacy-game-schema29-write-probe:
+    profiles: [production-recovery-preparation]
+    image: "${MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE:?MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE muss den attestierten Legacy-Digest referenzieren}"
+    pull_policy: never
+    command: [node, /schema29-game-probe.mjs]
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@recovery-verify-postgres:5432/${PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_DATABASE fehlt}"
+      PRODUCTION_RECOVERY_ID: "${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}"
+      PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID: "${PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID:?PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID fehlt}"
+      MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST: "${MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST:?MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST fehlt}"
+      PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST: "${PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST:?PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST fehlt}"
+      PRODUCTION_SCHEMA29_GAME_LEGACY_PROBE_OUTPUT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-game-runtime-write.json"
+    volumes:
+      - ./tools/alpha-ops/legacy-schema29-write-probe.mjs:/schema29-game-probe.mjs:ro
+      - "${PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT:?PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT fehlt}:/production-recovery:rw"
+    networks: { schema29-recovery: {} }
+    depends_on: { recovery-verify-postgres: { condition: service_healthy }, schema29-game-runtime: { condition: service_healthy } }
+    restart: "no"
+  legacy-odoo-schema29-write-probe:
+    profiles: [production-recovery-preparation]
+    image: "${PRODUCTION_RECOVERY_ODOO_IMAGE_REFERENCE:?PRODUCTION_RECOVERY_ODOO_IMAGE_REFERENCE muss den attestierten Legacy-Odoo-Digest referenzieren}"
+    pull_policy: never
+    user: "${PRODUCTION_RECOVERY_ODOO_RUNTIME_UID:?PRODUCTION_RECOVERY_ODOO_RUNTIME_UID fehlt}:${PRODUCTION_RECOVERY_ODOO_RUNTIME_GID:?PRODUCTION_RECOVERY_ODOO_RUNTIME_GID fehlt}"
+    entrypoint: [/bin/sh, -eu, -c]
+    command:
+      - 'odoo shell --no-http --database="$$PRODUCTION_SCHEMA29_ODOO_RESTORE_DATABASE" --db_host=recovery-verify-odoo-postgres --db_user=odoo --db_password="$$ODOO_DB_PASSWORD" --addons-path=/usr/lib/python3/dist-packages/odoo/addons,/opt/zugfolge-addons < /schema29-odoo-probe.py'
+    environment:
+      ODOO_DB_PASSWORD: "${ODOO_DB_PASSWORD}"
+      PRODUCTION_RECOVERY_ID: "${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}"
+      PRODUCTION_RECOVERY_EVIDENCE_ROOT: /production-recovery
+      PRODUCTION_RECOVERY_ODOO_RUNTIME_UID: "${PRODUCTION_RECOVERY_ODOO_RUNTIME_UID:?PRODUCTION_RECOVERY_ODOO_RUNTIME_UID fehlt}"
+      PRODUCTION_RECOVERY_ODOO_RUNTIME_GID: "${PRODUCTION_RECOVERY_ODOO_RUNTIME_GID:?PRODUCTION_RECOVERY_ODOO_RUNTIME_GID fehlt}"
+      PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST: "${PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST:?PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST fehlt}"
+      PRODUCTION_SCHEMA29_ODOO_RESTORE_DATABASE: "${PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_SCHEMA29_ODOO_RESTORED_FILESTORE_PATH: "/var/lib/odoo/filestore/${PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_SCHEMA29_ODOO_LEGACY_PROBE_OUTPUT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-odoo-runtime-write.json"
+    volumes:
+      - ./tools/alpha-ops/legacy-schema29-odoo-write-probe.py:/schema29-odoo-probe.py:ro
+      - "${PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT:?PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT fehlt}:/production-recovery:rw"
+      - "${PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT:?PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT fehlt}/${PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE fehlt}:/var/lib/odoo/filestore/${PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE fehlt}:rw"
+    networks: { schema29-recovery: {} }
+    depends_on: { recovery-verify-odoo-postgres: { condition: service_healthy }, schema29-odoo-runtime: { condition: service_healthy } }
+    restart: "no"
+  production-schema29-runtime-qualify:
+    profiles: [production-recovery-preparation]
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
+    user: "0:0"
+    command: [node, tools/alpha-ops/production-schema29-runtime-drill.mjs, qualify]
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@recovery-verify-postgres:5432/${PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_DATABASE fehlt}"
+      ODOO_DATABASE_URL: "postgres://odoo:${ODOO_DB_PASSWORD}@recovery-verify-odoo-postgres:5432/${PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_RECOVERY_ID: "${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}"
+      PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID: "${PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID:?PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID fehlt}"
+      PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID: "${PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID:?PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID fehlt}"
+      PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID: "${PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID:?PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID fehlt}"
+      MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST: "${MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST:?MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST fehlt}"
+      MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE: "${MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE:?MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE fehlt}"
+      PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST: "${PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST:?PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST fehlt}"
+      PRODUCTION_RECOVERY_ODOO_IMAGE_REFERENCE: "${PRODUCTION_RECOVERY_ODOO_IMAGE_REFERENCE:?PRODUCTION_RECOVERY_ODOO_IMAGE_REFERENCE fehlt}"
+      PRODUCTION_SCHEMA29_KEYCLOAK_IMAGE_REFERENCE: quay.io/keycloak/keycloak:26.7.0@sha256:0f198be292568439d700cdbfb893e69a6009bb43a94a06a945b1d3d506c76b13
+      PRODUCTION_RECOVERY_DOCKER_PROJECT: zugfolge
+      PRODUCTION_RECOVERY_DOCKER_SOCKET_PATH: /var/run/docker.sock
+      PRODUCTION_SCHEMA29_RUNTIME_CONTROL_SERVICE: production-schema29-runtime-qualify
+      PRODUCTION_RECOVERY_EVIDENCE_ROOT: /production-recovery
+      MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH: "${MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH:?MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH fehlt}"
+      PRODUCTION_SCHEMA29_COLD_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-cold-qualified.json"
+      PRODUCTION_SCHEMA29_RUNTIME_GAME_RESTORE_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-runtime.game-restore.json"
+      PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-runtime.odoo-restore.json"
+      PRODUCTION_SCHEMA29_RUNTIME_BEFORE_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-runtime-before.json"
+      PRODUCTION_SCHEMA29_GAME_LEGACY_PROBE_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-game-runtime-write.json"
+      PRODUCTION_SCHEMA29_ODOO_LEGACY_PROBE_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-odoo-runtime-write.json"
+      PRODUCTION_SCHEMA29_ODOO_FILESTORE_OPEN_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-odoo-filestore-open.json"
+      PRODUCTION_SCHEMA29_ODOO_FILESTORE_SEAL_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-odoo-filestore-seal.json"
+      PRODUCTION_SCHEMA29_RUNTIME_RECEIPT_OUTPUT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-runtime-drill.json"
+      PRODUCTION_SCHEMA29_ODOO_RESTORED_FILESTORE_PATH: "/odoo-recovery-filestore/${PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_RUNTIME_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_RECOVERY_ODOO_RUNTIME_UID: "${PRODUCTION_RECOVERY_ODOO_RUNTIME_UID:?PRODUCTION_RECOVERY_ODOO_RUNTIME_UID fehlt}"
+      PRODUCTION_RECOVERY_ODOO_RUNTIME_GID: "${PRODUCTION_RECOVERY_ODOO_RUNTIME_GID:?PRODUCTION_RECOVERY_ODOO_RUNTIME_GID fehlt}"
+      PRODUCTION_SCHEMA29_PRISTINE_GAME_RESTORED_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@recovery-verify-postgres:5432/${PRODUCTION_SCHEMA29_GAME_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_GAME_RESTORE_DATABASE fehlt}"
+      PRODUCTION_SCHEMA29_PRISTINE_ODOO_RESTORED_DATABASE_URL: "postgres://odoo:${ODOO_DB_PASSWORD}@recovery-verify-odoo-postgres:5432/${PRODUCTION_SCHEMA29_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_SCHEMA29_PRISTINE_ODOO_RESTORED_FILESTORE_PATH: "/odoo-recovery-filestore/${PRODUCTION_SCHEMA29_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_SCHEMA29_GAME_HEALTH_URL: http://schema29-game-runtime:3000/health/ready
+      PRODUCTION_SCHEMA29_ODOO_HEALTH_URL: http://schema29-odoo-runtime:8069/web/health
+      PRODUCTION_SCHEMA29_KEYCLOAK_HEALTH_URL: http://schema29-keycloak-runtime:9000/health/ready
+      PRODUCTION_SCHEMA29_KEYCLOAK_REALM_URL: http://schema29-keycloak-runtime:8080/realms/zugfolge
+      PRODUCTION_SCHEMA29_KEYCLOAK_OIDC_URL: http://schema29-keycloak-runtime:8080/realms/zugfolge/.well-known/openid-configuration
+      PRODUCTION_SCHEMA29_KEYCLOAK_JWKS_URL: http://schema29-keycloak-runtime:8080/realms/zugfolge/protocol/openid-connect/certs
+      PRODUCTION_SCHEMA29_KEYCLOAK_AUTH_URL: http://schema29-keycloak-runtime:8080/realms/zugfolge/protocol/openid-connect/auth
+      PRODUCTION_SCHEMA29_KEYCLOAK_CLIENT_REDIRECT_URI: "${GAME_WEB_URL}/schema29-recovery-probe"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - "${PRODUCTION_RECOVERY_BACKUP_HOST_ROOT:?PRODUCTION_RECOVERY_BACKUP_HOST_ROOT fehlt}:/recovery-material:ro"
+      - "${PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT:?PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT fehlt}:/production-recovery:rw"
+      - "${PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT:?PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT fehlt}:/odoo-recovery-filestore:ro"
+      - ./var/alpha-evidence:/evidence:ro
+    networks: { schema29-recovery: {} }
+    depends_on: { schema29-game-runtime: { condition: service_healthy }, schema29-keycloak-runtime: { condition: service_healthy }, schema29-odoo-runtime: { condition: service_healthy } }
+    restart: "no"
+  production-recovery-cold-qualify:
+    profiles: [production-recovery-preparation]
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
+    user: "0:0"
+    command: [node, tools/alpha-ops/production-cold-backup.mjs, qualify]
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      ODOO_DATABASE_URL: "postgres://odoo:${ODOO_DB_PASSWORD}@odoo-postgres:5432/${ODOO_DB_NAME:?ODOO_DB_NAME fehlt}"
+      PRODUCTION_RECOVERY_ID: "${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}"
+      PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID: "${PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID:?PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID fehlt}"
+      PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID: "${PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID:?PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID fehlt}"
+      PRODUCTION_RECOVERY_DOCKER_PROJECT: zugfolge
+      PRODUCTION_RECOVERY_DOCKER_SOCKET_PATH: /var/run/docker.sock
+      PRODUCTION_COLD_CONTROL_SERVICE: production-recovery-cold-qualify
+      PRODUCTION_RECOVERY_EVIDENCE_ROOT: /production-recovery
+      PRODUCTION_COLD_RECEIPT_OUTPUT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.cold-qualified.json"
+      PRODUCTION_COLD_GAME_DUMP_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.cold.game.dump"
+      PRODUCTION_COLD_GAME_MANIFEST_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.cold.game.manifest.json"
+      PRODUCTION_COLD_GAME_OPERATION_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.cold.game.operation.json"
+      PRODUCTION_COLD_GAME_RESTORE_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.cold.game-restore.json"
+      PRODUCTION_COLD_GAME_RESTORED_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@recovery-verify-postgres:5432/${PRODUCTION_COLD_GAME_RESTORE_DATABASE:?PRODUCTION_COLD_GAME_RESTORE_DATABASE fehlt}"
+      PRODUCTION_COLD_ODOO_DATABASE_DUMP_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.cold.odoo.database.dump"
+      PRODUCTION_COLD_ODOO_FILESTORE_ARCHIVE_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.cold.odoo.filestore.tar.gz"
+      PRODUCTION_COLD_ODOO_MANIFEST_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.cold.odoo.manifest.json"
+      PRODUCTION_COLD_ODOO_OPERATION_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.cold.odoo.operation.json"
+      PRODUCTION_COLD_ODOO_RESTORE_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.cold.odoo-restore.json"
+      PRODUCTION_COLD_ODOO_RESTORED_DATABASE_URL: "postgres://odoo:${ODOO_DB_PASSWORD}@recovery-verify-odoo-postgres:5432/${PRODUCTION_COLD_ODOO_RESTORE_DATABASE:?PRODUCTION_COLD_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_COLD_ODOO_LIVE_FILESTORE_PATH: "/odoo-live-filestore/filestore/${ODOO_DB_NAME:?ODOO_DB_NAME fehlt}"
+      PRODUCTION_COLD_ODOO_RESTORED_FILESTORE_PATH: "/odoo-recovery-filestore/${PRODUCTION_COLD_ODOO_RESTORE_DATABASE:?PRODUCTION_COLD_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_SCHEMA31_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema31-prepared.json"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - "${PRODUCTION_RECOVERY_BACKUP_HOST_ROOT:?PRODUCTION_RECOVERY_BACKUP_HOST_ROOT fehlt}:/recovery-material:ro"
+      - "${PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT:?PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT fehlt}:/production-recovery:rw"
+      - "${PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT:?PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT fehlt}:/odoo-recovery-filestore:ro"
+      - odoo-filestore:/odoo-live-filestore:ro
+    networks: { default: {}, schema29-recovery: {} }
+    depends_on: { postgres: { condition: service_healthy }, odoo-postgres: { condition: service_healthy }, recovery-verify-postgres: { condition: service_healthy }, recovery-verify-odoo-postgres: { condition: service_healthy } }
+    restart: "no"
+  game-schema31-migrate:
+    profiles: [production-recovery-preparation]
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
+    user: "0:0"
+    command: [node, tools/alpha-ops/production-schema31-preparation.mjs, migrate]
+    environment: &schema31-preparation-environment
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      ODOO_DATABASE_URL: "postgres://odoo:${ODOO_DB_PASSWORD}@odoo-postgres:5432/${ODOO_DB_NAME:?ODOO_DB_NAME fehlt}"
+      PRODUCTION_RECOVERY_ID: "${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}"
+      PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID: "${PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID:?PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID fehlt}"
+      PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID: "${PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID:?PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID fehlt}"
+      PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID: "${PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID:?PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID fehlt}"
+      MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST: "${MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST:?MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST fehlt}"
+      PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST: "${PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST:?PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST fehlt}"
+      PRODUCTION_RECOVERY_DOCKER_PROJECT: zugfolge
+      PRODUCTION_RECOVERY_DOCKER_SOCKET_PATH: /var/run/docker.sock
+      PRODUCTION_COLD_CONTROL_SERVICE: game-schema31-migrate
+      PRODUCTION_SCHEMA29_COLD_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-cold-qualified.json"
+      PRODUCTION_SCHEMA29_GAME_RESTORED_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@recovery-verify-postgres:5432/${PRODUCTION_SCHEMA29_GAME_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_GAME_RESTORE_DATABASE fehlt}"
+      PRODUCTION_SCHEMA29_ODOO_RESTORED_DATABASE_URL: "postgres://odoo:${ODOO_DB_PASSWORD}@recovery-verify-odoo-postgres:5432/${PRODUCTION_SCHEMA29_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_SCHEMA29_RUNTIME_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema29-runtime-drill.json"
+      PRODUCTION_SCHEMA29_ODOO_LIVE_FILESTORE_PATH: "/odoo-live-filestore/filestore/${ODOO_DB_NAME:?ODOO_DB_NAME fehlt}"
+      PRODUCTION_SCHEMA29_ODOO_RESTORED_FILESTORE_PATH: "/odoo-recovery-filestore/${PRODUCTION_SCHEMA29_ODOO_RESTORE_DATABASE:?PRODUCTION_SCHEMA29_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_SCHEMA31_LEGACY_PROBE_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema31-legacy-write.json"
+      PRODUCTION_SCHEMA31_RECEIPT_OUTPUT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema31-prepared.json"
+    volumes: &schema31-preparation-volumes
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - "${PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT:?PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT fehlt}:/production-recovery:rw"
+      - "${PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT:?PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT fehlt}:/odoo-recovery-filestore:ro"
+      - odoo-filestore:/odoo-live-filestore:ro
+    networks: { default: {}, schema29-recovery: {} }
+    depends_on: { postgres: { condition: service_healthy }, odoo-postgres: { condition: service_healthy }, recovery-verify-postgres: { condition: service_healthy }, recovery-verify-odoo-postgres: { condition: service_healthy } }
+    restart: "no"
+  legacy-game-schema31-write-probe:
+    profiles: [production-recovery-preparation]
+    image: "${MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE:?MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_REFERENCE muss den attestierten Legacy-Digest referenzieren}"
+    pull_policy: never
+    command: [node, /schema31-probe.mjs]
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      PRODUCTION_RECOVERY_ID: "${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}"
+      PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID: "${PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID:?PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID fehlt}"
+      MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST: "${MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST:?MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST fehlt}"
+      PRODUCTION_SCHEMA31_LEGACY_PROBE_OUTPUT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema31-legacy-write.json"
+    volumes:
+      - ./tools/alpha-ops/legacy-schema31-write-probe.mjs:/schema31-probe.mjs:ro
+      - "${PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT:?PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT fehlt}:/production-recovery:rw"
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: "no"
+  game-schema31-qualify:
+    profiles: [production-recovery-preparation]
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
+    user: "0:0"
+    command: [node, tools/alpha-ops/production-schema31-preparation.mjs, qualify]
+    environment:
+      <<: *schema31-preparation-environment
+      PRODUCTION_COLD_CONTROL_SERVICE: game-schema31-qualify
+    volumes: *schema31-preparation-volumes
+    networks: { default: {}, schema29-recovery: {} }
+    depends_on: { postgres: { condition: service_healthy }, odoo-postgres: { condition: service_healthy }, recovery-verify-postgres: { condition: service_healthy }, recovery-verify-odoo-postgres: { condition: service_healthy } }
+    restart: "no"
+  game-schema33-migrate:
+    profiles: [production-recovery-preparation]
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
+    user: "0:0"
+    command: [node, tools/alpha-ops/production-cold-backup.mjs, preflight, node, packages/db/dist/migrate.js]
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      ODOO_DATABASE_URL: "postgres://odoo:${ODOO_DB_PASSWORD}@odoo-postgres:5432/${ODOO_DB_NAME:?ODOO_DB_NAME fehlt}"
+      PRODUCTION_RECOVERY_ID: "${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}"
+      PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID: "${PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID:?PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID fehlt}"
+      PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID: "${PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID:?PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID fehlt}"
+      PRODUCTION_RECOVERY_DOCKER_PROJECT: zugfolge
+      PRODUCTION_RECOVERY_DOCKER_SOCKET_PATH: /var/run/docker.sock
+      PRODUCTION_COLD_CONTROL_SERVICE: game-schema33-migrate
+      PRODUCTION_COLD_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.cold-qualified.json"
+      PRODUCTION_COLD_GAME_RESTORED_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@recovery-verify-postgres:5432/${PRODUCTION_COLD_GAME_RESTORE_DATABASE:?PRODUCTION_COLD_GAME_RESTORE_DATABASE fehlt}"
+      PRODUCTION_COLD_ODOO_RESTORED_DATABASE_URL: "postgres://odoo:${ODOO_DB_PASSWORD}@recovery-verify-odoo-postgres:5432/${PRODUCTION_COLD_ODOO_RESTORE_DATABASE:?PRODUCTION_COLD_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_COLD_ODOO_LIVE_FILESTORE_PATH: "/odoo-live-filestore/filestore/${ODOO_DB_NAME:?ODOO_DB_NAME fehlt}"
+      PRODUCTION_COLD_ODOO_RESTORED_FILESTORE_PATH: "/odoo-recovery-filestore/${PRODUCTION_COLD_ODOO_RESTORE_DATABASE:?PRODUCTION_COLD_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_SCHEMA31_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.schema31-prepared.json"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - "${PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT:?PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT fehlt}:/production-recovery:ro"
+      - "${PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT:?PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT fehlt}:/odoo-recovery-filestore:ro"
+      - odoo-filestore:/odoo-live-filestore:ro
+    networks: { default: {}, schema29-recovery: {} }
+    depends_on: { postgres: { condition: service_healthy }, odoo-postgres: { condition: service_healthy }, recovery-verify-postgres: { condition: service_healthy }, recovery-verify-odoo-postgres: { condition: service_healthy } }
+    restart: "no"
+  production-recovery-proof:
+    profiles: [production-recovery-preparation]
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
+    user: "0:0"
+    command: [node, -e, "process.stdout.write('production-recovery-proof ready\\n')"]
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      DATABASE_ROLLBACK_RESTORED_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@recovery-verify-postgres:5432/${PRODUCTION_RECOVERY_GAME_VERIFY_DATABASE:?PRODUCTION_RECOVERY_GAME_VERIFY_DATABASE fehlt}"
+      DATABASE_ROLLBACK_WRITERS_QUIESCED: "true"
+      DATABASE_ROLLBACK_GAME_BACKUP_DUMP_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.hot.game.dump"
+      DATABASE_ROLLBACK_GAME_BACKUP_MANIFEST_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.hot.game.manifest.json"
+      DATABASE_ROLLBACK_GAME_BACKUP_OPERATION_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.hot.game.operation.json"
+      DATABASE_ROLLBACK_GAME_RESTORE_RECEIPT_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.hot.game-verify-restore.json"
+      DATABASE_ROLLBACK_BACKUP_MANIFEST_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.hot.database-backup-manifest.json"
+      DATABASE_ROLLBACK_RESTORE_PROOF_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.hot.database-restore-proof.json"
+      DATABASE_ROLLBACK_RELEASE_ID: "${PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID:?PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID fehlt}"
+      DATABASE_ROLLBACK_PREVIOUS_RELEASE_ID: "${PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID:?PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID fehlt}"
+      DATABASE_ROLLBACK_PROOF_OUTPUT_PATH: "${MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH:?MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH fehlt}"
+      KEYCLOAK_SCHEMA_CATALOG_PATH: /keycloak-schema-catalog.json
+    volumes:
+      - ./ops/alpha/keycloak/keycloak-pg16-object-catalog.26.7.0.json:/keycloak-schema-catalog.json:ro
+      - "${PRODUCTION_RECOVERY_BACKUP_HOST_ROOT:?PRODUCTION_RECOVERY_BACKUP_HOST_ROOT fehlt}:/recovery-material:rw"
+      - "${MAP_RELEASE_PREFLIGHT_HOST_DIR:?MAP_RELEASE_PREFLIGHT_HOST_DIR fehlt}:/map-preflight:rw"
+    networks: { default: {}, schema29-recovery: {} }
+    depends_on: { postgres: { condition: service_healthy }, recovery-verify-postgres: { condition: service_healthy } }
+    restart: "no"
+  production-recovery-action:
+    image: "${ZUGFOLGE_GAME_API_IMAGE_REFERENCE:?ZUGFOLGE_GAME_API_IMAGE_REFERENCE muss ein unveraenderlicher sha256-Imageverweis sein}"
+    pull_policy: never
+    user: "0:0"
+    command: [node, tools/alpha-ops/activate-production-recovery.mjs, prepared]
+    environment:
+      PRODUCTION_RECOVERY_ID: "${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}"
+      PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID: "${PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID:?PRODUCTION_RECOVERY_CANDIDATE_RELEASE_ID fehlt}"
+      PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID: "${PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID:?PRODUCTION_RECOVERY_PREVIOUS_RELEASE_ID fehlt}"
+      PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID: "${PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID:?PRODUCTION_RECOVERY_PREVIOUS_WORLD_ID fehlt}"
+      PRODUCTION_RECOVERY_EVIDENCE_ROOT: /production-recovery
+      PRODUCTION_RECOVERY_RECEIPT_PATH: /production-recovery/recovery.json
+      PRODUCTION_RECOVERY_PROMOTION_PATH: /production-recovery/promotion.json
+      PRODUCTION_RECOVERY_QUIESCENCE_PATH: /production-recovery/quiescence.json
+      PRODUCTION_RECOVERY_QUIESCENCE_OUTPUT_PATH: /production-recovery/quiescence.json
+      PRODUCTION_RECOVERY_GAME_ADMIN_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/postgres"
+      PRODUCTION_RECOVERY_GAME_LIVE_DATABASE: "${POSTGRES_DB}"
+      PRODUCTION_RECOVERY_ODOO_ADMIN_DATABASE_URL: "postgres://odoo:${ODOO_DB_PASSWORD}@odoo-postgres:5432/postgres"
+      PRODUCTION_RECOVERY_ODOO_LIVE_DATABASE: "${ODOO_DB_NAME:?ODOO_DB_NAME fehlt}"
+      PRODUCTION_RECOVERY_ACTION_RECEIPT_OUTPUT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.prepared.json"
+      PRODUCTION_RECOVERY_ACTIVATION_INTENT_OUTPUT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.activate.intent.json"
+      PRODUCTION_RECOVERY_ACTION_TIMEOUT_MS: "${PRODUCTION_RECOVERY_ACTION_TIMEOUT_MS:-60000}"
+      PRODUCTION_RECOVERY_GAME_RESTORE_DATABASE: "${PRODUCTION_RECOVERY_GAME_RESTORE_DATABASE:?PRODUCTION_RECOVERY_GAME_RESTORE_DATABASE fehlt}"
+      PRODUCTION_RECOVERY_ODOO_RESTORE_DATABASE: "${PRODUCTION_RECOVERY_ODOO_RESTORE_DATABASE:?PRODUCTION_RECOVERY_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_RECOVERY_GAME_LIVE_ADMIN_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/postgres"
+      PRODUCTION_RECOVERY_GAME_RESTORE_ADMIN_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/postgres"
+      PRODUCTION_RECOVERY_ODOO_LIVE_ADMIN_DATABASE_URL: "postgres://odoo:${ODOO_DB_PASSWORD}@odoo-postgres:5432/postgres"
+      PRODUCTION_RECOVERY_ODOO_RESTORE_ADMIN_DATABASE_URL: "postgres://odoo:${ODOO_DB_PASSWORD}@odoo-postgres:5432/postgres"
+      PRODUCTION_RECOVERY_GAME_RESTORED_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${PRODUCTION_RECOVERY_GAME_RESTORE_DATABASE:?PRODUCTION_RECOVERY_GAME_RESTORE_DATABASE fehlt}"
+      PRODUCTION_RECOVERY_ODOO_RESTORED_DATABASE_URL: "postgres://odoo:${ODOO_DB_PASSWORD}@odoo-postgres:5432/${PRODUCTION_RECOVERY_ODOO_RESTORE_DATABASE:?PRODUCTION_RECOVERY_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_RECOVERY_ODOO_CONTAINER_FILESTORE_ROOT: /odoo-recovery-filestore
+      PRODUCTION_RECOVERY_ODOO_CONTAINER_FILESTORE_PATH: "/odoo-recovery-filestore/${PRODUCTION_RECOVERY_ODOO_RESTORE_DATABASE:?PRODUCTION_RECOVERY_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_RECOVERY_ODOO_RUNTIME_UID: "${PRODUCTION_RECOVERY_ODOO_RUNTIME_UID:?PRODUCTION_RECOVERY_ODOO_RUNTIME_UID fehlt}"
+      PRODUCTION_RECOVERY_ODOO_RUNTIME_GID: "${PRODUCTION_RECOVERY_ODOO_RUNTIME_GID:?PRODUCTION_RECOVERY_ODOO_RUNTIME_GID fehlt}"
+      PRODUCTION_RECOVERY_GAME_DUMP_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.hot.game.dump"
+      PRODUCTION_RECOVERY_GAME_MANIFEST_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.hot.game.manifest.json"
+      PRODUCTION_RECOVERY_GAME_BACKUP_OPERATION_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.hot.game.operation.json"
+      PRODUCTION_RECOVERY_GAME_BACKUP_MANIFEST_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.hot.database-backup-manifest.json"
+      PRODUCTION_RECOVERY_GAME_RESTORE_PROOF_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.hot.database-restore-proof.json"
+      PRODUCTION_RECOVERY_GAME_RESTORE_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.hot.game-recovery.json"
+      PRODUCTION_RECOVERY_ODOO_DATABASE_DUMP_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.hot.odoo.database.dump"
+      PRODUCTION_RECOVERY_ODOO_FILESTORE_ARCHIVE_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.hot.odoo.filestore.tar.gz"
+      PRODUCTION_RECOVERY_ODOO_BACKUP_MANIFEST_PATH: "/recovery-material/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.hot.odoo.manifest.json"
+      PRODUCTION_RECOVERY_ODOO_RESTORE_RECEIPT_PATH: "/production-recovery/${PRODUCTION_RECOVERY_ID:?PRODUCTION_RECOVERY_ID fehlt}.hot.odoo-recovery.json"
+      PRODUCTION_RECOVERY_ODOO_RESTORED_FILESTORE_PATH: "/odoo-recovery-filestore/${PRODUCTION_RECOVERY_ODOO_RESTORE_DATABASE:?PRODUCTION_RECOVERY_ODOO_RESTORE_DATABASE fehlt}"
+      PRODUCTION_RECOVERY_RECEIPT_OUTPUT_PATH: /production-recovery/recovery.json
+      PRODUCTION_RECOVERY_PROMOTION_OUTPUT_PATH: /production-recovery/promotion.json
+      PRODUCTION_RECOVERY_LEGACY_GAME_SOURCE_COMMIT: "${MAP_RELEASE_PREFLIGHT_RUNTIME_SOURCE_COMMIT:?MAP_RELEASE_PREFLIGHT_RUNTIME_SOURCE_COMMIT fehlt}"
+      PRODUCTION_RECOVERY_LEGACY_GAME_IMAGE_DIGEST: "${MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST:?MAP_RELEASE_PREFLIGHT_RUNTIME_IMAGE_DIGEST fehlt}"
+      PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST: "${PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST:?PRODUCTION_RECOVERY_ODOO_IMAGE_DIGEST fehlt}"
+      PRODUCTION_RECOVERY_RUNTIME_ROLLBACK_ATTESTATION_PATH: /map-preflight/runtime-rollback-attestation.json
+      PRODUCTION_RECOVERY_RUNTIME_ROLLBACK_TRUSTED_KEYS_PATH: /map-preflight/trusted-rollback-keys.json
+      PRODUCTION_RECOVERY_ATTESTED_WORLD_DEPLOYMENT_PATH: "${MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH:?MAP_RELEASE_PREFLIGHT_RUNTIME_WORLD_DEPLOYMENT_PATH fehlt}"
+      PRODUCTION_RECOVERY_DATABASE_ROLLBACK_PROOF_PATH: "${MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH:?MAP_RELEASE_PREFLIGHT_DATABASE_ROLLBACK_PROOF_PATH fehlt}"
+      PRODUCTION_RECOVERY_DOCKER_PROJECT: zugfolge
+      PRODUCTION_RECOVERY_DOCKER_SOCKET_PATH: /var/run/docker.sock
+      PRODUCTION_RECOVERY_CONTROL_SERVICE: production-recovery-action
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - "${PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT:?PRODUCTION_RECOVERY_EVIDENCE_HOST_ROOT fehlt}:/production-recovery:rw"
+      - "${PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT:?PRODUCTION_RECOVERY_ODOO_FILESTORE_HOST_ROOT fehlt}:/odoo-recovery-filestore:rw"
+      - "${PRODUCTION_RECOVERY_BACKUP_HOST_ROOT:?PRODUCTION_RECOVERY_BACKUP_HOST_ROOT fehlt}:/recovery-material:ro"
+      - ./var/alpha-evidence:/evidence:ro
+      - "${MAP_RELEASE_PREFLIGHT_HOST_DIR:?MAP_RELEASE_PREFLIGHT_HOST_DIR fehlt}:/map-preflight:ro"
+    depends_on: { postgres: { condition: service_healthy }, odoo-postgres: { condition: service_healthy } }
+    restart: "no"
   prometheus:
     image: prom/prometheus:v3.5.0
     command: [--config.file=/etc/prometheus/prometheus.yml]
     volumes: [./ops/alpha/prometheus.yml:/etc/prometheus/prometheus.yml:ro, ./ops/alpha/alerts.yml:/etc/prometheus/alerts.yml:ro]
+    depends_on: { production-recovery-action: { condition: service_completed_successfully } }
     ports: ["${PROMETHEUS_PORT:-9090}:9090"]
   grafana:
     image: grafana/grafana:12.1.0
@@ -285,7 +991,8 @@ services:
     volumes: [./ops/alpha/grafana/provisioning:/etc/grafana/provisioning:ro, ./ops/alpha/grafana/zugfolge-alpha.json:/var/lib/grafana/dashboards/zugfolge-alpha.json:ro, grafana-data:/var/lib/grafana]
     depends_on: [prometheus]
     ports: ["${GRAFANA_PORT:-3001}:3000"]
-volumes: { game-db: {}, odoo-db: {}, odoo-filestore: {}, grafana-data: {} }
+volumes: { game-db: {}, odoo-db: {}, odoo-filestore: {}, recovery-verify-db: {}, recovery-verify-odoo-db: {}, grafana-data: {} }
 networks:
+  schema29-recovery: { internal: true, name: zugfolge-schema29-recovery }
   proxy: { external: true, name: zugfolge-proxy }
   mail: { external: true, name: zugfolge-mail }

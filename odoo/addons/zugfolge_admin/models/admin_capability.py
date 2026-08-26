@@ -1,9 +1,7 @@
-import hashlib
-import json
-
 from odoo import api, fields, models
 from odoo.exceptions import AccessError, ValidationError
 
+from .canonical_json import canonical_sha256
 from .rfc3339 import rfc3339_utc
 
 
@@ -52,14 +50,13 @@ class ZugfolgeAdminCapability(models.Model):
         states = dict(CAPABILITY_STATES)
         if not isinstance(body, dict) or not isinstance(payload.get("worldId"), str) or body.get("actionType") not in action_types or body.get("availability") not in states:
             raise ValidationError("Unvollstaendige Game-Verwaltungsfaehigkeit.")
-        body_json = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
         values = {
             "world_id": payload["worldId"],
             "action_type": body["actionType"],
             "availability": body["availability"],
             "detail": body.get("detail"),
             "observed_at": rfc3339_utc(payload.get("occurredAt"), "occurredAt"),
-            "payload_hash": hashlib.sha256(body_json.encode("utf-8")).hexdigest(),
+            "payload_hash": canonical_sha256(body),
         }
         record = self.search([("world_id", "=", values["world_id"]), ("action_type", "=", values["action_type"])], limit=1)
         if record:

@@ -79,6 +79,34 @@ test("builds a deterministic cache inventory sorted by cache path", async (t) =>
   assert.equal((await readFile(firstOutput, "utf8")).at(-1), "\n");
 });
 
+test("builds one inventory from unique paths across current and historical artifact roots", async (t) => {
+  const { root, artifactRoot } = await fixture(t);
+  const historicalRoot = join(root, "historical-artifacts");
+  await mkdir(historicalRoot);
+  await put(artifactRoot, "derived/current.bin", "current");
+  await put(historicalRoot, "sources/pinned.bin", "historical");
+  const input = plan([
+    { sourceFile: "derived/current.bin", cacheFile: "derived/current.bin" },
+    { sourceFile: "sources/pinned.bin", cacheFile: "sources/pinned.bin" },
+  ]);
+
+  const result = await buildMapBuildCacheInventory({
+    releaseId: RELEASE_ID,
+    artifactRoots: [artifactRoot, historicalRoot],
+    plan: input,
+  });
+  assert.deepEqual(result.inventory.files, [
+    { path: "derived/current.bin", bytes: 7, sha256: sha256("current") },
+    { path: "sources/pinned.bin", bytes: 10, sha256: sha256("historical") },
+  ]);
+
+  await put(historicalRoot, "derived/current.bin", "duplicate");
+  await assert.rejects(
+    buildMapBuildCacheInventory({ releaseId: RELEASE_ID, artifactRoots: [artifactRoot, historicalRoot], plan: input }),
+    /mehreren artifactRoots.*mehrdeutig/,
+  );
+});
+
 test("rejects duplicate source and cache paths including case collisions", async (t) => {
   const { artifactRoot } = await fixture(t);
   await put(artifactRoot, "source.bin", "source");
@@ -208,4 +236,30 @@ test("CLI materializes the same deterministic v1 inventory", async (t) => {
     releaseId: RELEASE_ID,
     files: [{ path: "cache/source.bin", bytes: bytes.length, sha256: sha256(bytes) }],
   });
+});
+
+test("CLI materializes an overlay inventory without staging source copies", async (t) => {
+  const { root, artifactRoot } = await fixture(t);
+  const historicalRoot = join(root, "historical-artifacts");
+  await mkdir(historicalRoot);
+  await put(artifactRoot, "derived/current.bin", "current");
+  await put(historicalRoot, "sources/pinned.bin", "historical");
+  const planPath = join(root, "plan-overlay.json");
+  const outputPath = join(root, "out", "inventory-overlay.json");
+  await writeFile(planPath, `${JSON.stringify(plan([
+    { sourceFile: "derived/current.bin", cacheFile: "derived/current.bin" },
+    { sourceFile: "sources/pinned.bin", cacheFile: "sources/pinned.bin" },
+  ]), null, 2)}\n`);
+
+  const result = spawnSync(
+    process.execPath,
+    [CLI, "build-overlay", RELEASE_ID, planPath, outputPath, artifactRoot, historicalRoot],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).files, 2);
+  assert.deepEqual(JSON.parse(await readFile(outputPath, "utf8")).files.map(({ path }) => path), [
+    "derived/current.bin",
+    "sources/pinned.bin",
+  ]);
 });

@@ -7,17 +7,21 @@ import { buildMapDeliveryRelease, writeMapDeliveryRelease } from "./map-delivery
 import { LIVEMAP_READ_MODEL_REPORT_SCHEMA } from "./livemap-read-model.mjs";
 import { TRAIN_MAP_PROJECTION_REPORT_SCHEMA } from "./train-map-projection.mjs";
 
-const [planPath, sourceRootPath, infraReleasePath, mapReleasePath, readModelReportPath, trainProjectionReportPath, outputDirectoryPath, ...extra] = process.argv.slice(2);
-if (!planPath || !sourceRootPath || !infraReleasePath || !mapReleasePath || !readModelReportPath || !trainProjectionReportPath || !outputDirectoryPath || extra.length > 0) {
-  throw new Error("Aufruf: build-map-delivery-release.mjs PACKAGE_PLAN.json QUELLWURZEL INFRA_RELEASE.json MAP_RELEASE.json READ_MODEL_REPORT.json TRAIN_PROJECTION_REPORT.json AUSGABEVERZEICHNIS");
+const arguments_ = process.argv.slice(2);
+if (![6, 7].includes(arguments_.length)) {
+  throw new Error("Aufruf: build-map-delivery-release.mjs PACKAGE_PLAN.json QUELLWURZEL INFRA_RELEASE.json MAP_RELEASE.json READ_MODEL_REPORT.json [LEGACY_TRAIN_PROJECTION_REPORT.json] AUSGABEVERZEICHNIS");
 }
+const [planPath, sourceRootPath, infraReleasePath, mapReleasePath, readModelReportPath] = arguments_;
+const trainProjectionReportPath = arguments_.length === 7 ? arguments_[5] : undefined;
+const outputDirectoryPath = arguments_.at(-1);
 
 async function json(path) {
   return JSON.parse(await readFile(resolve(path), "utf8"));
 }
 
 const [plan, infraRelease, mapRelease, readModelReport, trainProjectionReport] = await Promise.all([
-  json(planPath), json(infraReleasePath), json(mapReleasePath), json(readModelReportPath), json(trainProjectionReportPath),
+  json(planPath), json(infraReleasePath), json(mapReleasePath), json(readModelReportPath),
+  trainProjectionReportPath === undefined ? undefined : json(trainProjectionReportPath),
 ]);
 const sourceRoot = resolve(sourceRootPath);
 const packageSpec = await expandMapPackagePlan(plan, sourceRoot);
@@ -26,8 +30,8 @@ const trainProjection = packageSpec.auxiliaryFiles.find(({ kind }) => kind === "
 if (readModel === undefined || readModelReport?.schema !== LIVEMAP_READ_MODEL_REPORT_SCHEMA || !["read-model.sqlite", "read-model-v2.sqlite"].includes(readModelReport?.artifact?.file)) {
   throw new Error("Öffentlicher SQLite-ReadModel-Beleg fehlt.");
 }
-if (trainProjection === undefined || trainProjectionReport?.schema !== TRAIN_MAP_PROJECTION_REPORT_SCHEMA || trainProjectionReport?.artifact?.file !== "train-map-projection.sqlite") {
-  throw new Error("Eigenständiger SQLite-Zugpositionsprojektionsbeleg fehlt.");
+if (trainProjection === undefined ? trainProjectionReport !== undefined : trainProjectionReport?.schema !== TRAIN_MAP_PROJECTION_REPORT_SCHEMA || trainProjectionReport?.artifact?.file !== "train-map-projection.sqlite") {
+  throw new Error("Legacy-Zugpositionsprojektion und ihr SQLite-Beleg müssen gemeinsam vorhanden oder gemeinsam abwesend sein.");
 }
 const result = await buildMapDeliveryRelease({
   releaseId: infraRelease?.release?.releaseId ?? infraRelease?.releaseId,
@@ -38,7 +42,7 @@ const result = await buildMapDeliveryRelease({
   mapRelease,
   auxiliaryArtifactProofs: [
     { id: readModel.id, bytes: readModelReport.artifact.bytes, sha256: readModelReport.artifact.sha256 },
-    { id: trainProjection.id, bytes: trainProjectionReport.artifact.bytes, sha256: trainProjectionReport.artifact.sha256 },
+    ...(trainProjection === undefined ? [] : [{ id: trainProjection.id, bytes: trainProjectionReport.artifact.bytes, sha256: trainProjectionReport.artifact.sha256 }]),
   ],
 });
 const written = await writeMapDeliveryRelease(result, resolve(outputDirectoryPath));

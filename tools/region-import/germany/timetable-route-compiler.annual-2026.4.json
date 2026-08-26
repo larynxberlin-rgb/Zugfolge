@@ -1,0 +1,30 @@
+{
+  "schema": "zugfolge-germany-timetable-route-compiler/v3",
+  "infraReleaseId": "infra-deutschland-2026.4",
+  "tracks": "var/derived/germany-2026.4/semantic-tile-inputs-free-v2/tracks.geojsonseq",
+  "corridors": "var/derived/germany-2026.4/semantic-tile-inputs-free-v2/rail-corridors.geojsonseq",
+  "gtfsSnapshot": {
+    "path": "var/derived/germany-2026.4/gtfs-region-20260810-v2.json",
+    "expectedBytes": 14797184,
+    "expectedFileSha256": "cbebbcb73e1807df793c26411873b2df442e6ce38d28fd0593a78e5ae93912c5",
+    "expectedSnapshotHash": "811fcafe581e73409b373ec5e2568dbb44048d604be834d1aa998abe4a35a8a7",
+    "expectedSchema": "zugfolge-gtfs-region-snapshot/v2",
+    "expectedRegionId": "mitteldeutschland-b",
+    "expectedRegionVariant": "B",
+    "expectedServiceDate": "20260810",
+    "expectedSourceId": "gtfs-de-rv-free-20260810",
+    "expectedArchiveSha256": "c0cba1cfdbf6179b18e529b13613644e861f1ea6159fa5788c2045de82bea738",
+    "expectedSourceLicense": "CC BY 4.0"
+  },
+  "selection": {
+    "rule": "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
+    "qualityClass": "B",
+    "requireOrderable": true,
+    "minimumStopCount": 2,
+    "expectedSnapshotSegmentCount": 2481,
+    "expectedEligibleSegmentCount": 1679,
+    "permittedProtectionModes": ["pzb"]
+  },
+  "output": "var/derived/germany-2026.4/timetable-routes-v2.jsonseq",
+  "report": "var/derived/germany-2026.4/timetable-routes-v2.derivation-report.json"
+}

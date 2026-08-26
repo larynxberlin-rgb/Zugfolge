@@ -1,0 +1,14 @@
+{
+  "schema": "zugfolge-germany-operational-source-compiler/v1",
+  "infraReleaseId": "infra-deutschland-2026.3",
+  "layers": {
+    "tracks": "var/derived/germany-2026.3/final-map-layers-v2/tracks.geojsonseq",
+    "platforms": "var/derived/germany-2026.3/final-map-layers-v2/platforms.geojsonseq",
+    "switches": "var/derived/germany-2026.3/final-map-layers-v2/switches.geojsonseq",
+    "signals": "var/derived/germany-2026.3/final-map-layers-v2/signals.geojsonseq",
+    "blocks": "var/derived/germany-2026.3/final-map-layers-v2/blocks.geojsonseq",
+    "conflictResources": "var/derived/germany-2026.3/final-map-layers-v2/conflict-resources.geojsonseq"
+  },
+  "eboStopPositions": "var/derived/germany-2026.3/germany-ebo.geojsonseq",
+  "openStationStations": "var/derived/openstation-2026/openstation-stations.jsonseq"
+}

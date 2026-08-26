@@ -1,0 +1,12 @@
+{
+  "schema": "zugfolge-synthetic-operational-closure-inputs/v2",
+  "releaseId": "infra-deutschland-2026.4",
+  "artifactRoot": "var/derived/germany-2026.4",
+  "policyFile": "tools/region-import/germany/synthetic-operational-b.2026.4.policy.json",
+  "annualSpecificationFile": "tools/region-import/germany/operational-infrastructure.annual-2026.4.json",
+  "candidateFile": "operational-infrastructure-v2.candidate.json",
+  "derivationReportFile": "operational-infrastructure-v2.derivation-report.json",
+  "timetableRouteReportFile": "timetable-routes-v2.derivation-report.json",
+  "gtfsSnapshotFile": "gtfs-region-20260810-v2.json",
+  "operationalArtifactFile": "operational-infrastructure-v2.json"
+}

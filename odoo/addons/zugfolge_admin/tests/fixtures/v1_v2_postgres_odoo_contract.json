@@ -1,0 +1,202 @@
+{
+  "schema": "zugfolge-v1-v2-postgres-odoo-contract/v1",
+  "trustedKey": {
+    "keyId": "v1-v2-postgres-odoo-contract",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEANwsl+0UPV5MuMrhVouKM2PIcBOgFZ4JK5tSe2ccMqc8=\n-----END PUBLIC KEY-----\n"
+  },
+  "predecessor": {
+    "deployment": {
+      "schema": "zugfolge-alpha-world-deployment/v1",
+      "worldId": "00000000-0000-4000-8000-000000000014"
+    },
+    "deploymentHash": "36bf987468bd62b429dadd31c86bbbfdd15cfc65d21ec38c6c389fcddf260f33",
+    "signature": {
+      "algorithm": "Ed25519",
+      "keyId": "v1-v2-postgres-odoo-contract",
+      "valueBase64": "kxaYipEQk+IizbrXFNUwEAISZhU7FzV5pICbT9CRfr6WOXdyvxfNP/y5rlziyXSTxps8BWS2HgmPy2nKTwQfDA=="
+    }
+  },
+  "candidate": {
+    "deployment": {
+      "schema": "zugfolge-alpha-world-deployment/v2",
+      "worldId": "0db56535-a466-44a8-a991-38a8a1f7566c",
+      "deploymentRevision": 1,
+      "worldDefinition": {
+        "name": "Mitteldeutschland Alpha 2026",
+        "kind": "public",
+        "rankingStatus": "ranked",
+        "schedulePeriodWeeks": 4,
+        "epoch": "2026-08-10T00:00:00.000Z"
+      },
+      "repeatEveryS": 86400,
+      "infraReleaseHash": "5f9e96249d7525a4fdc52519f08a962619c75571411899e3b182cb2d55237fd9",
+      "blueprint": {
+        "profileKind": "public",
+        "regionId": "mitteldeutschland-b",
+        "releases": {
+          "infra": "5f9e96249d7525a4fdc52519f08a962619c75571411899e3b182cb2d55237fd9",
+          "economy": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "timetable": "1111111111111111111111111111111111111111111111111111111111111111",
+          "fleet": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        }
+      },
+      "regionalSimulation": {
+        "schemaVersion": "zugfolge-operational-simulation-initialize/v2",
+        "worldId": "0db56535-a466-44a8-a991-38a8a1f7566c",
+        "regionId": "mitteldeutschland-b",
+        "nowMs": 0,
+        "protectionModeSelectionPolicy": "zugfolge-protection-mode-selection/conservative-v1",
+        "infraRelease": {
+          "schemaVersion": "zugfolge-operational-infrastructure-binding/v2",
+          "infraReleaseId": "infra-deutschland-2026.4",
+          "file": "operational-infrastructure-v2.json",
+          "bytes": 983736272,
+          "sha256": "64260fb3aca24d6ed8784c2a6891e1269b8f390c7b7db185bbee3001565f47e6",
+          "stateHash": "deb038434d53963ba6436d4b6811ffc096374ffd1c75887b4945b4a46ea3c788"
+        },
+        "vehicleTypes": [
+          {
+            "id": "contract-vehicle-type"
+          }
+        ],
+        "vehicles": [
+          {
+            "id": "contract-vehicle"
+          }
+        ],
+        "formations": [
+          {
+            "id": "contract-formation"
+          }
+        ],
+        "trains": [
+          {
+            "id": "contract-program",
+            "routeVersionId": "contract-route",
+            "formationVersionId": "contract-formation-version",
+            "dispatchInterlockingRouteId": "contract-dispatch-route",
+            "scheduledDepartureMs": 0,
+            "protectionModeSelectionRuns": [
+              {
+                "throughRouteLegIndex": 0,
+                "selectedProtectionSystem": "pzb"
+              }
+            ]
+          }
+        ]
+      },
+      "provenance": {
+        "infraReleaseId": "infra-deutschland-2026.4",
+        "operationalInfrastructureSha256": "64260fb3aca24d6ed8784c2a6891e1269b8f390c7b7db185bbee3001565f47e6",
+        "operationalInfrastructureStateHash": "deb038434d53963ba6436d4b6811ffc096374ffd1c75887b4945b4a46ea3c788",
+        "operationalSimulationSourceSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "planning": {
+        "authority": {
+          "accountId": "9158446f-70be-46ce-bbfa-7b4cf56215ff",
+          "keycloakSubject": "system:planning-authority:mitteldeutschland-alpha-2026",
+          "displayName": "Aufgabenträger Mitteldeutschland Alpha 2026"
+        }
+      }
+    },
+    "deploymentHash": "2e6c523f0f452b0cd9bbf34fd296d5548036edb68a352900603b8d0b9b9f258f",
+    "signature": {
+      "algorithm": "Ed25519",
+      "keyId": "v1-v2-postgres-odoo-contract",
+      "valueBase64": "Uuh1RyZ/e7KpyGgkVCsmKtQv7HCt/a31sQmYDJWPXFOy5T3+qUAGw3lAgguUnCfZRBeulohkA8ADY4GRTJCYBw=="
+    }
+  },
+  "mapBinding": {
+    "worldId": "0db56535-a466-44a8-a991-38a8a1f7566c",
+    "infrastructureReleaseId": "infra-deutschland-2026.4",
+    "scheduleTime": {
+      "worldEpoch": "2026-08-10T00:00:00.000Z",
+      "serviceStartOffsetS": 0,
+      "repeatEveryS": 86400
+    }
+  },
+  "authorization": {
+    "schemaVersion": "zugfolge-world-deployment-v1-v2-cutover-authorization/v1",
+    "predecessorWorldId": "00000000-0000-4000-8000-000000000014",
+    "predecessorDeploymentHash": "36bf987468bd62b429dadd31c86bbbfdd15cfc65d21ec38c6c389fcddf260f33",
+    "candidateWorldId": "0db56535-a466-44a8-a991-38a8a1f7566c",
+    "candidateDeploymentHash": "2e6c523f0f452b0cd9bbf34fd296d5548036edb68a352900603b8d0b9b9f258f"
+  },
+  "odooPredecessorProjection": {
+    "schemaVersion": "zugfolge-odoo/v1",
+    "messageId": "00000000-0000-4000-8000-000000000015",
+    "messageType": "world.projection",
+    "worldId": "00000000-0000-4000-8000-000000000014",
+    "correlationId": "alpha-world-start:00000000-0000-4000-8000-000000000014:36bf987468bd62b429dadd31c86bbbfdd15cfc65d21ec38c6c389fcddf260f33",
+    "occurredAt": "2025-12-14T00:00:00.000Z",
+    "payload": {
+      "worldName": "Mitteldeutschland Alpha 2025",
+      "projectionRevision": "36bf987468bd62b429dadd31c86bbbfdd15cfc65d21ec38c6c389fcddf260f33",
+      "lifecycle": "running",
+      "worldStatus": "running",
+      "operator": "public",
+      "regionId": "mitteldeutschland-b",
+      "profileKind": "public",
+      "blueprintHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "authoritative": true,
+      "freshness": "live",
+      "projectionKind": "zugfolge-authoritative-world-start-projection/v1",
+      "deploymentHash": "36bf987468bd62b429dadd31c86bbbfdd15cfc65d21ec38c6c389fcddf260f33",
+      "deploymentRevision": 1,
+      "deploymentAuthorization": {
+        "schemaVersion": "zugfolge-authoritative-world-start-projection/v1",
+        "deploymentHash": "36bf987468bd62b429dadd31c86bbbfdd15cfc65d21ec38c6c389fcddf260f33",
+        "deploymentRevision": 1,
+        "algorithm": "Ed25519",
+        "keyId": "v1-v2-postgres-odoo-contract",
+        "valueBase64": "kxaYipEQk+IizbrXFNUwEAISZhU7FzV5pICbT9CRfr6WOXdyvxfNP/y5rlziyXSTxps8BWS2HgmPy2nKTwQfDA=="
+      }
+    }
+  },
+  "odooProjection": {
+    "schemaVersion": "zugfolge-odoo/v1",
+    "messageId": "0db56535-a466-44a8-a991-38a8a1f7566d",
+    "messageType": "world.projection",
+    "worldId": "0db56535-a466-44a8-a991-38a8a1f7566c",
+    "correlationId": "alpha-world-start:0db56535-a466-44a8-a991-38a8a1f7566c:2e6c523f0f452b0cd9bbf34fd296d5548036edb68a352900603b8d0b9b9f258f",
+    "occurredAt": "1970-01-01T00:00:00.000Z",
+    "payload": {
+      "worldName": "Mitteldeutschland Alpha 2026",
+      "projectionRevision": "2e6c523f0f452b0cd9bbf34fd296d5548036edb68a352900603b8d0b9b9f258f",
+      "lifecycle": "starting",
+      "worldStatus": "starting",
+      "operator": "public",
+      "regionId": "mitteldeutschland-b",
+      "releases": {
+          "infra": "5f9e96249d7525a4fdc52519f08a962619c75571411899e3b182cb2d55237fd9",
+        "economy": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "timetable": "1111111111111111111111111111111111111111111111111111111111111111",
+        "fleet": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "infraReleaseHash": "5f9e96249d7525a4fdc52519f08a962619c75571411899e3b182cb2d55237fd9",
+      "economyReleaseHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "profileKind": "public",
+      "blueprintHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "lotCount": 1,
+      "trainRunCount": 1,
+      "startingCapitalPolicy": {
+        "mode": "finite",
+        "amountCents": "0"
+      },
+      "schedulePeriod": "4 Wochen",
+      "authoritative": true,
+      "freshness": "live",
+      "projectionKind": "zugfolge-authoritative-world-start-projection/v1",
+      "deploymentHash": "2e6c523f0f452b0cd9bbf34fd296d5548036edb68a352900603b8d0b9b9f258f",
+      "deploymentRevision": 1,
+      "deploymentAuthorization": {
+        "schemaVersion": "zugfolge-authoritative-world-start-projection/v1",
+        "deploymentHash": "2e6c523f0f452b0cd9bbf34fd296d5548036edb68a352900603b8d0b9b9f258f",
+        "deploymentRevision": 1,
+        "algorithm": "Ed25519",
+        "keyId": "v1-v2-postgres-odoo-contract",
+        "valueBase64": "Uuh1RyZ/e7KpyGgkVCsmKtQv7HCt/a31sQmYDJWPXFOy5T3+qUAGw3lAgguUnCfZRBeulohkA8ADY4GRTJCYBw=="
+      }
+    }
+  }
+}

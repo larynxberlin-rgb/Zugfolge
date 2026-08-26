@@ -7,11 +7,26 @@ import {
 } from "./regional-simulation-monitor.js";
 import {
   advanceRegionalSimulations,
+  chunkWithoutSplittingBoundary,
+  REGIONAL_SIMULATION_BOUNDARY_COMMAND_LIMIT,
   regionalSimulationMillisecond,
+  type RegionalSimulationSchedulerProgress,
 } from "./regional-simulation-scheduler.js";
 import type { RegionalSimulationWorkBatch } from "./regional-simulation-worker.js";
 
 const INITIALIZATION_HASH = "a".repeat(64);
+
+function resultingNowMs(work: RegionalSimulationWorkBatch, fallback = 0): number {
+  let nowMs = fallback;
+  for (const item of work.commands) {
+    if (item.command.type === "advance-to") nowMs = item.command.atMs;
+  }
+  return nowMs;
+}
+
+function batchResult(nowMs: number): never {
+  return { state: { world: { nowMs } } } as never;
+}
 
 describe("regionaler 1:1-Scheduler", () => {
   it("berechnet ausschliesslich explizite sichere Weltmillisekunden", () => {
@@ -22,7 +37,8 @@ describe("regionaler 1:1-Scheduler", () => {
   });
 
   it("advanciert jede bereite Region genau einmal mit stabiler Kommando-ID", async () => {
-    const applyBatch = vi.fn(async () => ({}) as never);
+    const applyBatch = vi.fn(async (work: RegionalSimulationWorkBatch) =>
+      batchResult(resultingNowMs(work)));
     const worker = {
       readyRegions: () => [
         { worldId: "world-a", regionId: "leipzig", initializationHash: INITIALIZATION_HASH, nowMs: 2_000 },
@@ -69,6 +85,112 @@ describe("regionaler 1:1-Scheduler", () => {
     );
   });
 
+  it("meldet nach dem Batch die wirklich persistierte neue Weltzeit statt des alten Ready-Snapshots", async () => {
+    const progress: RegionalSimulationSchedulerProgress[] = [];
+    const worker = {
+      readyRegions: () => [{
+        worldId: "public",
+        regionId: "germany",
+        initializationHash: INITIALIZATION_HASH,
+        nowMs: 1_000,
+      }],
+      recover: vi.fn(async () => { throw new Error("unerwartete Recovery"); }),
+      applyBatch: vi.fn(async (work: RegionalSimulationWorkBatch) =>
+        batchResult(resultingNowMs(work, 1_000))),
+    };
+
+    await expect(advanceRegionalSimulations(
+      worker as never,
+      [{ worldId: "public", regionId: "germany", initializationHash: INITIALIZATION_HASH }],
+      new Map([["public", new Date("2026-08-11T00:00:00.000Z")]]),
+      new Date("2026-08-11T00:00:05.000Z"),
+      undefined,
+      (entry) => progress.push(entry),
+    )).resolves.toBe(1);
+
+    expect(progress.filter(({ phase }) => phase.startsWith("batch-") || phase === "region-completed"))
+      .toEqual([{
+        phase: "batch-started",
+        worldId: "public",
+        regionId: "germany",
+        currentNowMs: 1_000,
+        targetNowMs: 5_000,
+        commandCount: 1,
+      }, {
+        phase: "batch-completed",
+        worldId: "public",
+        regionId: "germany",
+        currentNowMs: 5_000,
+        targetNowMs: 5_000,
+        commandCount: 1,
+      }, {
+        phase: "region-completed",
+        worldId: "public",
+        regionId: "germany",
+        currentNowMs: 5_000,
+        targetNowMs: 5_000,
+        commandCount: 1,
+      }]);
+  });
+
+  it.each([
+    ["unveraendert", 1_000],
+    ["nur teilweise", 4_999],
+  ])("verwirft eine %s erreichte Zielweltzeit fail-closed", async (_label, completedNowMs) => {
+    const epoch = new Date("2026-08-11T00:00:00.000Z");
+    const worker = {
+      readyRegions: () => [{
+        worldId: "public",
+        regionId: "germany",
+        initializationHash: INITIALIZATION_HASH,
+        nowMs: 1_000,
+      }],
+      recover: vi.fn(async () => { throw new Error("unerwartete Recovery"); }),
+      applyBatch: vi.fn(async () => batchResult(completedNowMs)),
+    };
+
+    await expect(advanceRegionalSimulations(
+      worker as never,
+      [{ worldId: "public", regionId: "germany", initializationHash: INITIALIZATION_HASH }],
+      new Map([["public", epoch]]),
+      new Date("2026-08-11T00:00:05.000Z"),
+    )).rejects.toThrow(/erreichte die Zielweltzeit 5000 nicht exakt/u);
+  });
+
+  it("weist eine uebergrosse atomare Zeitgrenze vor dem Workeraufruf zurueck", async () => {
+    const epoch = new Date("2026-08-11T00:00:00.000Z");
+    const applyBatch = vi.fn(async () => batchResult(1_000));
+    const scheduled = Array.from(
+      { length: REGIONAL_SIMULATION_BOUNDARY_COMMAND_LIMIT + 1 },
+      (_, index) => ({
+        atMs: 1_000,
+        commandId: `boundary:${index}`,
+        command: { type: "advance-to" as const, atMs: 1_000 },
+      }),
+    );
+
+    await expect(advanceRegionalSimulations(
+      {
+        readyRegions: () => [{
+          worldId: "public",
+          regionId: "germany",
+          initializationHash: INITIALIZATION_HASH,
+          nowMs: 1_000,
+        }],
+        recover: vi.fn(),
+        applyBatch,
+      } as never,
+      [{ worldId: "public", regionId: "germany", initializationHash: INITIALIZATION_HASH }],
+      new Map([["public", epoch]]),
+      new Date("2026-08-11T00:00:01.000Z"),
+      {
+        at: () => scheduled,
+        due: () => [],
+      },
+    )).rejects.toThrow(/mehr als 256 atomare Kommandos/u);
+    expect(applyBatch).not.toHaveBeenCalled();
+  });
+
   it("verwirft beim Start eine bereits bereite Region mit fremder Initialisierungsbindung", async () => {
     const recovered = {
       worldId: "public",
@@ -77,7 +199,8 @@ describe("regionaler 1:1-Scheduler", () => {
       nowMs: 5_000,
     };
     const recover = vi.fn(async () => recovered);
-    const applyBatch = vi.fn(async () => ({}) as never);
+    const applyBatch = vi.fn(async (work: RegionalSimulationWorkBatch) =>
+      batchResult(resultingNowMs(work, recovered.nowMs)));
     const worker = {
       readyRegions: () => [{
         ...recovered,
@@ -97,53 +220,32 @@ describe("regionaler 1:1-Scheduler", () => {
     expect(applyBatch).not.toHaveBeenCalled();
   });
 
-  it("schneidet einen Catch-up-Chunk niemals innerhalb derselben Weltmillisekunde", async () => {
-    const applyBatch = vi.fn(async (
-      _work: RegionalSimulationWorkBatch,
-      _persistedAt: Date,
-    ) => ({}) as never);
-    const worker = {
-      readyRegions: () => [{
-        worldId: "public",
-        regionId: "region",
-        initializationHash: INITIALIZATION_HASH,
-        nowMs: 0,
-      }],
-      applyBatch,
-      recover: vi.fn(async () => { throw new Error("unerwartete Recovery"); }),
-    };
-    const commands = Array.from({ length: 2_001 }, (_, index) => ({
-      commandId: `disruption:${index.toString().padStart(4, "0")}`,
-      atMs: 1_000,
-      command: {
-        type: "activate-disruption" as const,
-        disruptionId: `disruption-${index}`,
-        effect: { kind: "signal-failure" },
+  it("schneidet einen Catch-up-Chunk niemals innerhalb derselben Weltmillisekunde", () => {
+    const commands = [
+      {
+        atMs: 1_000,
+        command: { commandId: "advance:1000", command: { type: "advance-to" as const, atMs: 1_000 } },
       },
-    }));
-    const catalog = {
-      at: () => [],
-      due: () => commands,
-    };
+      {
+        atMs: 2_000,
+        command: { commandId: "advance:2000", command: { type: "advance-to" as const, atMs: 2_000 } },
+      },
+      {
+        atMs: 2_000,
+        command: { commandId: "clear:d-1", command: { type: "clear-disruption" as const, disruptionId: "d-1" } },
+      },
+    ];
 
-    await expect(advanceRegionalSimulations(
-      worker,
-      [{ worldId: "public", regionId: "region", initializationHash: INITIALIZATION_HASH }],
-      new Map([["public", new Date("2026-08-11T00:00:00.000Z")]]),
-      new Date("2026-08-11T00:00:01.000Z"),
-      catalog,
-    )).resolves.toBe(1);
-    expect(applyBatch).toHaveBeenCalledTimes(1);
-    expect(applyBatch.mock.calls[0]![0].commands).toHaveLength(2_002);
-    expect(applyBatch.mock.calls[0]![0].commands[0]).toEqual({
-      commandId: "advance-to-ms:1000",
-      command: { type: "advance-to", atMs: 1_000 },
-    });
-    expect(applyBatch.mock.calls[0]![0].commands.at(-1)?.commandId).toBe("disruption:2000");
+    const chunks = chunkWithoutSplittingBoundary(commands, 2);
+    expect(chunks.map((chunk) => chunk.map(({ command }) => command.commandId))).toEqual([
+      ["advance:1000"],
+      ["advance:2000", "clear:d-1"],
+    ]);
   });
 
   it("ignoriert nach einem Neustart restaurierte Tutorialregionen ohne Echtzeitregistrierung", async () => {
-    const applyBatch = vi.fn(async () => ({}) as never);
+    const applyBatch = vi.fn(async (work: RegionalSimulationWorkBatch) =>
+      batchResult(resultingNowMs(work)));
     const worker = {
       readyRegions: () => [
         {
@@ -188,7 +290,8 @@ describe("regionaler 1:1-Scheduler", () => {
   });
 
   it("meldet eine fehlende Epoche hart, nachdem andere registrierte Regionen fortgeschritten sind", async () => {
-    const applyBatch = vi.fn(async () => ({}) as never);
+    const applyBatch = vi.fn(async (work: RegionalSimulationWorkBatch) =>
+      batchResult(resultingNowMs(work)));
     const worker = {
       readyRegions: () => [
         { worldId: "missing", regionId: "a", initializationHash: INITIALIZATION_HASH, nowMs: 0 },
@@ -215,9 +318,9 @@ describe("regionaler 1:1-Scheduler", () => {
   });
 
   it("isoliert einen Workerfehler und taktet nachfolgende registrierte Regionen weiter", async () => {
-    const applyBatch = vi.fn(async (work: { readonly worldId: string }) => {
+    const applyBatch = vi.fn(async (work: RegionalSimulationWorkBatch) => {
       if (work.worldId === "broken") throw new Error("kaputter Regionstakt");
-      return {} as never;
+      return batchResult(resultingNowMs(work));
     });
     const worker = {
       readyRegions: () => [
@@ -267,7 +370,7 @@ describe("regionaler 1:1-Scheduler", () => {
         failAfterBatchCommit = false;
         throw new Error("Crash nach autoritativem Fachkommando-Batch-Commit");
       }
-      return {} as never;
+      return batchResult(nowMs);
     });
     const worker = {
       readyRegions: () => [{
@@ -348,7 +451,8 @@ describe("regionaler 1:1-Scheduler", () => {
     let monitorNow = 1_000;
     const worker = {
       readyRegions: () => recovered ? [recoveredRegion] : [],
-      applyBatch: vi.fn(async () => ({}) as never),
+      applyBatch: vi.fn(async (work: RegionalSimulationWorkBatch) =>
+        batchResult(resultingNowMs(work, recoveredRegion.nowMs))),
       recover: vi.fn(async () => {
         if (!recoveryAvailable) throw new Error("Livemap-Fanout weiter nicht verfuegbar");
         recovered = true;
@@ -384,5 +488,68 @@ describe("regionaler 1:1-Scheduler", () => {
     expect(worker.recover).toHaveBeenCalledTimes(4);
     expect(worker.applyBatch).not.toHaveBeenCalled();
     await expect(health.check()).resolves.toMatchObject({ status: "ok", code: "scheduler_current" });
+  });
+
+  it("schreitet zehn aufeinanderfolgende Intervalle in Zeit, Revision und Publishersequenz fort", async () => {
+    const epoch = new Date("2026-08-11T00:00:00.000Z");
+    const registration = {
+      worldId: "public",
+      regionId: "germany",
+      initializationHash: INITIALIZATION_HASH,
+    };
+    let nowMs = 0;
+    let revision = 0;
+    let publisherSequence = 0;
+    let wallNow = epoch.getTime();
+    const heads: Array<Readonly<{
+      nowMs: number;
+      revision: number;
+      publisherSequence: number;
+    }>> = [];
+    const worker = {
+      readyRegions: () => [{ ...registration, nowMs }],
+      recover: vi.fn(async () => { throw new Error("unerwartete Recovery"); }),
+      applyBatch: vi.fn(async (work: RegionalSimulationWorkBatch) => {
+        expect(work.commands).toHaveLength(1);
+        const command = work.commands[0]!.command;
+        expect(command.type).toBe("advance-to");
+        if (command.type !== "advance-to") throw new Error("unerwartetes Fachkommando");
+        nowMs = command.atMs;
+        revision += 1;
+        publisherSequence += 1;
+        heads.push({ nowMs, revision, publisherSequence });
+        return batchResult(nowMs);
+      }),
+    };
+    const monitor = new RegionalSimulationSchedulerMonitor(wallNow, () => wallNow);
+    const health = createRegionalSimulationSchedulerHealthCheck(monitor, 60_000, () => wallNow);
+
+    for (let interval = 1; interval <= 10; interval += 1) {
+      wallNow = epoch.getTime() + interval * 60_000;
+      const at = new Date(wallNow);
+      await expect(runMonitoredRegionalSimulationCycle(
+        monitor,
+        at,
+        () => advanceRegionalSimulations(
+          worker as never,
+          [registration],
+          new Map([[registration.worldId, epoch]]),
+          at,
+        ),
+        () => wallNow,
+      )).resolves.toBe(1);
+      await expect(health.check()).resolves.toMatchObject({ status: "ok", code: "scheduler_current" });
+    }
+
+    expect(heads).toEqual(Array.from({ length: 10 }, (_, index) => ({
+      nowMs: (index + 1) * 60_000,
+      revision: index + 1,
+      publisherSequence: index + 1,
+    })));
+    expect(monitor.snapshot()).toMatchObject({
+      successfulCycles: 10,
+      failedCycles: 0,
+      consecutiveFailures: 0,
+    });
   });
 });

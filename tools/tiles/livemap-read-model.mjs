@@ -8,6 +8,7 @@ import { pipeline } from "node:stream/promises";
 import { InflateRaw } from "node:zlib";
 import { DatabaseSync } from "node:sqlite";
 
+import { gtfsJourneyChainId } from "../../packages/gtfs/dist/index.js";
 import { assertNormalizedScheduleTimeContract } from "../region-import/regional-release-contract.mjs";
 
 export const LIVEMAP_READ_MODEL_APPLICATION_ID = 0x5a554746;
@@ -546,18 +547,6 @@ function parseServiceTime(value) {
   return hours * 3_600 + minutes * 60 + seconds;
 }
 
-function canonicalJson(value) {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value !== null && typeof value === "object") {
-    return `{${Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-
-function journeyChainId(identity) {
-  return `jc-${createHash("sha256").update(canonicalJson(identity)).digest("hex").slice(0, 24)}`;
-}
-
 function categoryForRoute(routeShortName) {
   const value = String(routeShortName ?? "").trim().toUpperCase();
   if (value.startsWith("S")) return "S-Bahn";
@@ -773,8 +762,7 @@ async function buildGtfsFoundation(database, directory, spec, stations, schedule
   for await (const row of csvRows(join(directory, "trips.txt"))) {
     const route = routes.get(row.route_id);
     if (route === undefined || !activeServices.has(row.service_id)) continue;
-    const trainId = journeyChainId({
-      worldId: spec.worldId,
+    const trainId = gtfsJourneyChainId({
       regionId: spec.gtfs.trainIdentity.regionId,
       releaseId: gtfsReleaseId,
       sourceTripId: row.trip_id,

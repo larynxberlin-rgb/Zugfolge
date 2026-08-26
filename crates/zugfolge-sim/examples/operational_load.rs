@@ -29,7 +29,8 @@ fn release() -> OperationalInfraRelease {
             block_ids: set(&["block:load"]),
             speed_limit_mmps: 20_000,
             gradient_per_mille: 0,
-            required_protection_systems: set(&["pzb"]),
+            available_protection_systems: vec!["pzb".to_owned()],
+            simultaneously_required_protection_systems: Vec::new(),
         }],
     };
     let route_template =

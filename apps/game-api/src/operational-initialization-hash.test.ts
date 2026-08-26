@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
   OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
   type OperationalSimulationInitialization,
 } from "@zugfolge/runtime-native";
@@ -13,6 +14,7 @@ function initialization(): OperationalSimulationInitialization {
     worldId: "00000000-0000-4000-8000-000000000001",
     regionId: "leipzig-halle-erfurt",
     nowMs: 0,
+    protectionModeSelectionPolicy: OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
     infraRelease: {
       schemaVersion: "zugfolge-operational-infrastructure/v2",
       releaseId: "infra:2026",
@@ -34,6 +36,11 @@ function initialization(): OperationalSimulationInitialization {
       headRouteMm: 0,
       scheduledDepartureMs: null,
       publicPassengerStop: true,
+      dispatchInterlockingRouteId: "interlocking:1",
+      protectionModeSelectionRuns: [{
+        throughRouteLegIndex: 0,
+        selectedProtectionSystem: "pzb",
+      }],
     }],
   };
 }
@@ -65,6 +72,16 @@ describe("OperationalSimulationInitialization-Hash", () => {
     ["andere Formation", (value: OperationalSimulationInitialization) => ({
       ...value,
       formations: [{ ...value.formations[0]!, vehicleIds: ["vehicle:2"] }],
+    })],
+    ["andere Zugsicherungsmodus-Auswahl", (value: OperationalSimulationInitialization) => ({
+      ...value,
+      trains: [{
+        ...value.trains[0]!,
+        protectionModeSelectionRuns: [{
+          throughRouteLegIndex: 0,
+          selectedProtectionSystem: "lzb" as const,
+        }],
+      }],
     })],
   ] as const)("bindet %s", (_label, change) => {
     const original = initialization();

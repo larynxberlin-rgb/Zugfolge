@@ -152,12 +152,14 @@ const sprachregelungen = patternRule({
   checks: [
     {
       regex: /^\s*license\s*=\s*"(?!LicenseRef-PolyForm-Shield-1\.0\.0")/,
+      fileNames: MANIFESTE,
       message:
         "Fremde Lizenzkennung in einem eigenen Manifest (E16). " +
         'Richtig ist "LicenseRef-PolyForm-Shield-1.0.0" oder license.workspace = true.',
     },
     {
       regex: /"license"\s*:\s*"(?!LicenseRef-PolyForm-Shield-1\.0\.0")/,
+      fileNames: MANIFESTE,
       message:
         "Fremde Lizenzkennung in einem eigenen Manifest (E16). " +
         'Richtig ist "LicenseRef-PolyForm-Shield-1.0.0".',

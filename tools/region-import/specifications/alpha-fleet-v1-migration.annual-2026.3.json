@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "zugfolge-alpha-fleet-v1-migration-contract-specification/v1",
+  "legacy": {
+    "file": "alpha-world-deployment.json",
+    "bytes": 9117737,
+    "sha256": "90b6c88ade2797a9e0c562ba7768db5d6e0e9fb39d307361556ade15f83bd137",
+    "worldId": "00000000-0000-4000-8000-000000000014",
+    "authorityReleaseId": "fleet-alpha-mitteldeutschland-b-2026.2",
+    "authorityReleaseSha256": "c7bf3da542eafa52a970214d99ad2002a47a0a5200571579880ca8aac72e02aa",
+    "assetCount": 490
+  },
+  "target": {
+    "sourceCatalogReleaseId": "alpha-vehicle-catalog-mitteldeutschland-b-2026.3-v2",
+    "seedId": "alpha-world-seed-mitteldeutschland-b-2026.3-v3",
+    "authorityReleaseId": "fleet-alpha-mitteldeutschland-b-2026.3",
+    "operationalReleaseId": "operational-fleet-alpha-mitteldeutschland-b-2026.3-v2",
+    "gtfsReleaseId": "gtfs-de-rv-20260810-c0cba1cfdbf6179b",
+    "worldId": "0db56535-a466-44a8-a991-38a8a1f7566c",
+    "producedAt": 0,
+    "referenceYear": 2026
+  },
+  "source": {
+    "id": "approved-alpha-fleet-authority-v1-2026.2",
+    "title": "Freigegebener Alpha-Fahrzeugbestand Mitteldeutschland B 2026.2",
+    "url": "https://github.com/larynxberlin-rgb/Zugfolge/issues/393",
+    "license": "LicenseRef-Zugfolge-Approved-Game-Data",
+    "retrievedAt": "2026-08-25",
+    "contentSha256": "c7bf3da542eafa52a970214d99ad2002a47a0a5200571579880ca8aac72e02aa",
+    "rightsDecision": {
+      "status": "freigegeben",
+      "decidedAt": "2026-08-25",
+      "reviewer": "larynxberlin-rgb",
+      "reference": "Projektinhaber-Freigabe fuer die vorhandenen 490 Alpha-Assets am 2026-08-25"
+    }
+  }
+}

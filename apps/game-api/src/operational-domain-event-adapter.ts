@@ -21,9 +21,10 @@ export interface OperationalNativeEvent {
 
 export interface OperationalCommitEventContext {
   readonly commitSequence: number;
-  readonly command: OperationalSimulationCommandPayload;
-  readonly stateBefore: OperationalSimulationState;
-  readonly projectionAfter: OperationalProjection;
+  readonly command: Extract<OperationalSimulationCommandPayload,
+    { readonly type: "activate-disruption" | "clear-disruption" }>;
+  readonly affectedTrainRunIds: readonly string[];
+  readonly disruptionEffectBefore?: OperationalDisruption;
 }
 
 export interface AdaptedOperationalDomainEvent {
@@ -139,6 +140,44 @@ function activeDisruptionEffect(
   return operationalDisruption(active[disruptionId]);
 }
 
+/**
+ * Verdichtet den nur fuer Stoerungsereignisse benoetigten Commitkontext
+ * unmittelbar nach dem nativen Uebergang. Vollstaendiger Vorzustand und
+ * Vollprojektion duerfen dadurch vor dem DB-Commit freigegeben werden.
+ */
+export function compactOperationalCommitEventContext(
+  commitSequence: number,
+  command: OperationalSimulationCommandPayload,
+  stateBefore: OperationalSimulationState,
+  projectionAfter: OperationalProjection,
+  events: readonly OperationalNativeEvent[],
+): OperationalCommitEventContext | undefined {
+  const disruptionEvents = events.filter((event) =>
+    event.kind === "disruption-activated" || event.kind === "disruption-cleared"
+  );
+  if (disruptionEvents.length === 0) return undefined;
+  if (command.type !== "activate-disruption" && command.type !== "clear-disruption") {
+    throw new TypeError("Operatives Stoerungsereignis besitzt kein Stoerungskommando.");
+  }
+  if (disruptionEvents.some((event) =>
+    event.commitSequence !== commitSequence || event.subjectId !== command.disruptionId
+  )) {
+    throw new TypeError("Operatives Stoerungsereignis stimmt nicht mit seinem Commitkontext ueberein.");
+  }
+  const projectedTrainIds = new Set(projectionAfter.trains.map((train) => train.trainId));
+  const affectedTrainRunIds = [...new Set(events
+    .map((event) => event.subjectId)
+    .filter((subjectId) => projectedTrainIds.has(subjectId)))].sort();
+  return Object.freeze({
+    commitSequence,
+    command: structuredClone(command),
+    affectedTrainRunIds: Object.freeze(affectedTrainRunIds),
+    ...(command.type === "clear-disruption"
+      ? { disruptionEffectBefore: activeDisruptionEffect(stateBefore, command.disruptionId) }
+      : {}),
+  });
+}
+
 function disruptionContext(
   event: OperationalNativeEvent,
   context: OperationalCommitEventContext | undefined,
@@ -169,9 +208,12 @@ function disruptionContext(
   ) {
     throw new TypeError("Operatives Stoerungsereignis stimmt nicht mit seinem Freigabekommando ueberein.");
   }
+  if (context.disruptionEffectBefore === undefined) {
+    throw new TypeError("Operative Stoerungsfreigabe besitzt keine gebundene Vorwirkung.");
+  }
   return {
     action: "clear_disruption",
-    effect: activeDisruptionEffect(context.stateBefore, event.subjectId),
+    effect: operationalDisruption(context.disruptionEffectBefore),
     releaseReference: context.command.releaseReference,
   };
 }
@@ -196,14 +238,6 @@ export function adaptOperationalDomainEvents(
     contextByCommit.set(context.commitSequence, context);
   }
   const recipients = [...new Set(operatorIds.filter((value) => value.length > 0))].sort();
-  const trainIdsByCommit = new Map<number, readonly string[]>();
-  for (const [commitSequence, context] of contextByCommit) {
-    const projectedTrainIds = new Set(context.projectionAfter.trains.map((train) => train.trainId));
-    trainIdsByCommit.set(commitSequence, [...new Set(events
-      .filter((event) => event.commitSequence === commitSequence)
-      .map((event) => event.subjectId)
-      .filter((subjectId) => projectedTrainIds.has(subjectId)))].sort());
-  }
 
   return events.map((event) => {
     const common = {
@@ -224,7 +258,7 @@ export function adaptOperationalDomainEvents(
     const context = contextByCommit.get(event.commitSequence);
     const bound = disruptionContext(event, context);
     const descriptor = disruptionDescriptor(bound.effect);
-    const affectedTrainRunIds = trainIdsByCommit.get(event.commitSequence) ?? [];
+    const affectedTrainRunIds = context?.affectedTrainRunIds ?? [];
     const applied = bound.action === "apply_disruption";
     return Object.freeze({
       eventType: applied ? "disruption.applied" : "disruption.cleared",

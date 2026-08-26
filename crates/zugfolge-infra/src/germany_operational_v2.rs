@@ -1,0 +1,3131 @@
+//! Deterministischer Class-B-Ableiter fuer den Deutschland-Operational-v2-Korpus.
+//!
+//! Beobachtete OSM-Geometrie bleibt erhalten. Fehlende Stellwerksdetails werden
+//! durch eine explizite, kapazitaetsmindernde Stellzonenregel geschlossen. Ohne
+//! gepinnte, bereits auf Gleiskanten gematchte Zuglaeufe bleibt das Ergebnis
+//! absichtlich nicht aktivierbar: lokale Kantenfahrwege sind nur ein belastbarer
+//! Strukturkorpus und kein Ersatz fuer vollstaendige Zuglaeufe.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, BufRead, BufReader, BufWriter, Write};
+use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use redb::{
+    Database, Durability, MultimapTableDefinition, ReadableMultimapTable, ReadableTable,
+    ReadableTableMetadata, TableDefinition,
+};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+
+use crate::validate_operational_infrastructure_v2_file;
+
+const SPEC_SCHEMA: &str = "zugfolge-germany-operational-infrastructure-derivation/v2";
+const MODE: &str = "deterministic-conservative-v1";
+const POLICY_ID: &str = "synthetic-operational-b/v2";
+const REPORT_SCHEMA: &str = "germany-operational-v2-derivation-report-v1";
+const RECEIPT_SCHEMA: &str = "germany-operational-v2-derivation-receipt-v1";
+const DATABASE_CACHE_BYTES: usize = 16 * 1024 * 1024;
+const MAX_GEOJSON_SEQUENCE_RECORD_BYTES: usize = 8 * 1024 * 1024;
+const MAX_PLATFORM_SEARCH_CELLS: u128 = 1_000_000;
+const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
+static NEXT_SCRATCH_ID: AtomicU64 = AtomicU64::new(0);
+
+const TRACKS: TableDefinition<&str, &str> = TableDefinition::new("tracks");
+const NODES: TableDefinition<&str, ()> = TableDefinition::new("nodes");
+const SPATIAL_TRACKS: MultimapTableDefinition<&str, &str> =
+    MultimapTableDefinition::new("spatial_tracks");
+const SWITCH_BY_NODE: TableDefinition<&str, &str> = TableDefinition::new("switch_by_node");
+const SWITCHES: TableDefinition<&str, ()> = TableDefinition::new("switches");
+const SIGNALS: TableDefinition<&str, ()> = TableDefinition::new("signals");
+const BLOCKS_EVIDENCE: TableDefinition<&str, ()> = TableDefinition::new("blocks_evidence");
+const BLOCK_RESOURCES: TableDefinition<&str, ()> = TableDefinition::new("block_resources");
+const TRACK_BLOCKS: MultimapTableDefinition<&str, &str> =
+    MultimapTableDefinition::new("track_blocks");
+const PLATFORMS: TableDefinition<&str, &str> = TableDefinition::new("platforms");
+const TIMETABLE_ROUTES: TableDefinition<&str, &str> = TableDefinition::new("timetable_routes");
+
+/// Stabiler Fehler des Deutschland-Class-B-Ableiters.
+#[derive(Debug)]
+pub struct GermanyOperationalV2Error(String);
+
+impl GermanyOperationalV2Error {
+    fn new(message: impl Into<String>) -> Self {
+        Self(message.into())
+    }
+}
+
+impl fmt::Display for GermanyOperationalV2Error {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for GermanyOperationalV2Error {}
+
+type Result<T> = std::result::Result<T, GermanyOperationalV2Error>;
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DerivationSpec {
+    schema: String,
+    mode: String,
+    infra_release_id: String,
+    layers: LayerSpec,
+    policy: PolicySpec,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LayerSpec {
+    tracks: String,
+    platforms: String,
+    switches: String,
+    signals: String,
+    blocks: String,
+    conflict_resources: String,
+    timetable_routes: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PolicySpec {
+    id: String,
+    quality_class: String,
+    source_id: String,
+    derivation_rule: String,
+    unknown_mainline_speed_kmh: u32,
+    unknown_service_speed_kmh: u32,
+    unknown_gradient_abs_permille: i16,
+    minimum_platform_length_mm: i64,
+    maximum_platform_snap_distance_mm: i64,
+    minimum_overlap_mm: i64,
+    default_protection_system: String,
+    region_boundary_id: String,
+    rzue_layout_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TrackRecord {
+    id: String,
+    from_node_id: i64,
+    to_node_id: i64,
+    length_mm: i64,
+    geometry: Vec<GeometryPoint>,
+    speed_along_mmps: u32,
+    speed_against_mmps: u32,
+    protection_systems: BTreeSet<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct GeometryPoint {
+    edge_offset_mm: i64,
+    latitude_e7: i32,
+    longitude_e7: i32,
+    bearing_milli_degrees: Option<u32>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct StoredPlatform {
+    edge_id: String,
+    from_mm: i64,
+    to_mm: i64,
+    direction: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TimetableRouteInput {
+    route_version_id: String,
+    template_id: String,
+    predecessor_id: Option<String>,
+    transition_route_mm: Option<i64>,
+    legs: Vec<TimetableLegInput>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TimetableLegInput {
+    edge_id: String,
+    direction: String,
+    edge_entry_mm: i64,
+    edge_exit_mm: i64,
+    available_protection_systems: Vec<String>,
+    simultaneously_required_protection_systems: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FileEvidence {
+    path: String,
+    bytes: u64,
+    sha256: String,
+    records: u64,
+}
+
+#[derive(Default)]
+struct Counts {
+    tracks_seen: u64,
+    orderable_tracks: u64,
+    platforms_seen: u64,
+    platform_intervals: u64,
+    excluded_platform_evidence: u64,
+    switches: u64,
+    observed_signals: u64,
+    blocks: u64,
+    conflict_resources: u64,
+    timetable_routes: u64,
+    timetable_legs: u64,
+    observed_forward_speeds: u64,
+    observed_backward_speeds: u64,
+    simulated_speeds: u64,
+    observed_protection: u64,
+    simulated_protection: u64,
+}
+
+struct ScratchDirectory(PathBuf);
+
+impl ScratchDirectory {
+    fn create(parent: &Path) -> Result<Self> {
+        let process_id = std::process::id();
+        for _ in 0..1_024 {
+            let id = NEXT_SCRATCH_ID.fetch_add(1, Ordering::Relaxed);
+            let path = parent.join(format!(".zugfolge-germany-operational-{process_id}-{id}"));
+            match fs::create_dir(&path) {
+                Ok(()) => return Ok(Self(path)),
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(error) => {
+                    return Err(io_error("temporaeres Ableitungsverzeichnis", &path, error));
+                }
+            }
+        }
+        Err(GermanyOperationalV2Error::new(
+            "Kein eindeutiges temporaeres Deutschland-Operational-Verzeichnis verfuegbar.",
+        ))
+    }
+
+    fn join(&self, file: &str) -> PathBuf {
+        self.0.join(file)
+    }
+}
+
+impl Drop for ScratchDirectory {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+struct OutputClaims {
+    files: Vec<File>,
+    acquired_paths: Vec<PathBuf>,
+}
+
+impl OutputClaims {
+    fn acquire(targets: &[&Path]) -> Result<Self> {
+        let mut paths = targets
+            .iter()
+            .map(|target| {
+                let parent = target.parent().unwrap_or_else(|| Path::new("."));
+                let file = target.file_name().ok_or_else(|| {
+                    GermanyOperationalV2Error::new("Ausgabeziel besitzt keinen Dateinamen.")
+                })?;
+                Ok(parent.join(format!(".{}.zugfolge-publish.lock", file.to_string_lossy())))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        paths.sort_by_key(|path| output_identity_key(path));
+        paths.dedup_by(|left, right| output_identity_key(left) == output_identity_key(right));
+        require(
+            paths.len() == targets.len(),
+            "Kandidat und Bericht besitzen keinen eindeutigen Publish-Claim.",
+        )?;
+        for path in &paths {
+            require(
+                targets
+                    .iter()
+                    .all(|target| output_identity_key(target) != output_identity_key(path)),
+                "Ein Ausgabeziel kollidiert mit einem Publish-Claim.",
+            )?;
+        }
+        let mut claims = Self {
+            files: Vec::new(),
+            acquired_paths: Vec::new(),
+        };
+        for path in paths {
+            let file = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+                .map_err(|error| {
+                    io_error("exklusiver Operational-v2-Publish-Claim", &path, error)
+                })?;
+            let claim_path = path.clone();
+            claims.files.push(file);
+            claims.acquired_paths.push(path);
+            let claim = claims
+                .files
+                .last_mut()
+                .expect("Publish-Claim wurde angelegt");
+            writeln!(claim, "pid={}", std::process::id())
+                .and_then(|()| claim.flush())
+                .map_err(|error| io_error("Operational-v2-Publish-Claim", &claim_path, error))?;
+        }
+        Ok(claims)
+    }
+}
+
+impl Drop for OutputClaims {
+    fn drop(&mut self) {
+        self.files.clear();
+        for path in &self.acquired_paths {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
+fn io_error(context: &str, path: &Path, error: io::Error) -> GermanyOperationalV2Error {
+    GermanyOperationalV2Error::new(format!("{context} `{}`: {error}", path.display()))
+}
+
+fn db_error(error: impl fmt::Display) -> GermanyOperationalV2Error {
+    GermanyOperationalV2Error::new(format!("Deutschland-Operational-Index: {error}"))
+}
+
+fn require(condition: bool, message: impl fmt::Display) -> Result<()> {
+    if condition {
+        Ok(())
+    } else {
+        Err(GermanyOperationalV2Error::new(message.to_string()))
+    }
+}
+
+fn digest_hex(digest: impl AsRef<[u8]>) -> String {
+    digest
+        .as_ref()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn sha256(bytes: &[u8]) -> String {
+    digest_hex(Sha256::digest(bytes))
+}
+
+fn canonical_json(value: &Value, output: &mut String) {
+    match value {
+        Value::Null => output.push_str("null"),
+        Value::Bool(value) => output.push_str(if *value { "true" } else { "false" }),
+        Value::Number(value) => output.push_str(&value.to_string()),
+        Value::String(value) => output
+            .push_str(&serde_json::to_string(value).expect("eine Zeichenkette ist serialisierbar")),
+        Value::Array(values) => {
+            output.push('[');
+            for (index, value) in values.iter().enumerate() {
+                if index > 0 {
+                    output.push(',');
+                }
+                canonical_json(value, output);
+            }
+            output.push(']');
+        }
+        Value::Object(values) => {
+            output.push('{');
+            let mut keys: Vec<_> = values.keys().collect();
+            keys.sort_unstable_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
+            for (index, key) in keys.into_iter().enumerate() {
+                if index > 0 {
+                    output.push(',');
+                }
+                canonical_json(&Value::String(key.clone()), output);
+                output.push(':');
+                canonical_json(&values[key], output);
+            }
+            output.push('}');
+        }
+    }
+}
+
+fn stable_id(prefix: &str, parts: &[&str]) -> String {
+    let mut hasher = Sha256::new();
+    for part in parts {
+        hasher.update(u64::try_from(part.len()).unwrap_or(u64::MAX).to_le_bytes());
+        hasher.update(part.as_bytes());
+    }
+    format!("{prefix}{}", digest_hex(hasher.finalize()))
+}
+
+fn is_symlink_or_reparse_point(metadata: &fs::Metadata) -> bool {
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    }
+    #[cfg(not(windows))]
+    false
+}
+
+fn require_symlink_free_existing_path(path: &Path, context: &str) -> Result<PathBuf> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|error| {
+                GermanyOperationalV2Error::new(format!(
+                    "Arbeitsverzeichnis fuer {context} kann nicht gelesen werden: {error}"
+                ))
+            })?
+            .join(path)
+    };
+    for ancestor in absolute.ancestors() {
+        let metadata =
+            fs::symlink_metadata(ancestor).map_err(|error| io_error(context, ancestor, error))?;
+        require(
+            !is_symlink_or_reparse_point(&metadata),
+            format!(
+                "{context} `{}` enthaelt einen Symlink oder Reparse-Point bei `{}`.",
+                path.display(),
+                ancestor.display()
+            ),
+        )?;
+    }
+    fs::canonicalize(&absolute).map_err(|error| io_error(context, &absolute, error))
+}
+
+fn canonical_output_path(path: &Path, context: &str) -> Result<PathBuf> {
+    require(
+        matches!(path.components().next_back(), Some(Component::Normal(_))),
+        format!("{context} muss mit genau einem normalen Dateinamen enden."),
+    )?;
+    let file_name = path.file_name().ok_or_else(|| {
+        GermanyOperationalV2Error::new(format!("{context} besitzt keinen Dateinamen."))
+    })?;
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    require(parent.is_dir(), format!("{context} fehlt."))?;
+    let canonical_parent = require_symlink_free_existing_path(parent, context)?;
+    Ok(canonical_parent.join(file_name))
+}
+
+fn output_identity_key(path: &Path) -> String {
+    let value = path.to_string_lossy();
+    #[cfg(windows)]
+    {
+        value.to_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        value.into_owned()
+    }
+}
+
+fn publish_create_new(staged: &Path, target: &Path, context: &str) -> Result<()> {
+    fs::hard_link(staged, target).map_err(|error| io_error(context, target, error))?;
+    Ok(())
+}
+
+fn remove_owned_published_link(target: &Path, context: &str) -> Result<()> {
+    // Der exklusive sibling-Claim bleibt ueber den gesamten Paar-Publish
+    // gehalten. `target` kann an dieser Stelle deshalb nur der unmittelbar
+    // zuvor von diesem Lauf create-new angelegte Hardlink sein.
+    fs::remove_file(target).map_err(|error| io_error(context, target, error))
+}
+
+fn publish_pair_create_new(
+    staged_candidate: &Path,
+    candidate: &Path,
+    staged_report: &Path,
+    report: &Path,
+) -> Result<()> {
+    publish_create_new(
+        staged_candidate,
+        candidate,
+        "Operational-v2-Kandidat create-new veroeffentlichen",
+    )?;
+    if let Err(publish_error) = publish_create_new(
+        staged_report,
+        report,
+        "Operational-v2-Bericht create-new veroeffentlichen",
+    ) {
+        remove_owned_published_link(
+            candidate,
+            "Partiellen Operational-v2-Kandidaten zuruecknehmen",
+        )
+        .map_err(|rollback_error| {
+            GermanyOperationalV2Error::new(format!(
+                "{publish_error} Der partielle Paar-Publish konnte nicht sicher zurueckgenommen werden: {rollback_error}"
+            ))
+        })?;
+        return Err(GermanyOperationalV2Error::new(format!(
+            "{publish_error} Der partielle Kandidaten-Publish wurde vollstaendig zurueckgenommen."
+        )));
+    }
+    Ok(())
+}
+
+fn regular_file(path: &Path, context: &str) -> Result<u64> {
+    require_symlink_free_existing_path(path, context)?;
+    let metadata = fs::symlink_metadata(path).map_err(|error| io_error(context, path, error))?;
+    require(
+        metadata.file_type().is_file() && !is_symlink_or_reparse_point(&metadata),
+        format!(
+            "{context} `{}` ist keine regulaere, symlinkfreie Datei.",
+            path.display()
+        ),
+    )?;
+    require(
+        metadata.len() > 0,
+        format!("{context} `{}` ist leer.", path.display()),
+    )?;
+    Ok(metadata.len())
+}
+
+fn layer_path(source_root: &Path, relative: &str, name: &str) -> Result<PathBuf> {
+    let path = Path::new(relative);
+    require(
+        !relative.trim().is_empty(),
+        format!("Layerpfad `{name}` fehlt."),
+    )?;
+    require(
+        !path.is_absolute()
+            && path
+                .components()
+                .all(|component| matches!(component, Component::Normal(_))),
+        format!("Layerpfad `{name}` muss relativ und traversal-frei sein."),
+    )?;
+    let resolved = source_root.join(path);
+    regular_file(&resolved, &format!("Layer `{name}`"))?;
+    let canonical_root = fs::canonicalize(source_root)
+        .map_err(|error| io_error("Operational-v2-Quellwurzel", source_root, error))?;
+    let canonical_layer = fs::canonicalize(&resolved)
+        .map_err(|error| io_error(&format!("Layer `{name}`"), &resolved, error))?;
+    require(
+        canonical_layer.starts_with(&canonical_root),
+        format!(
+            "Layer `{name}` liegt nach der Pfadauflosung ausserhalb der Operational-v2-Quellwurzel."
+        ),
+    )?;
+    Ok(resolved)
+}
+
+fn read_spec(path: &Path) -> Result<(DerivationSpec, FileEvidence)> {
+    let expected = regular_file(path, "Ableitungsspezifikation")?;
+    let bytes = fs::read(path).map_err(|error| io_error("Ableitungsspezifikation", path, error))?;
+    require(
+        u64::try_from(bytes.len())
+            .map_err(|_| GermanyOperationalV2Error::new("Spezifikation ist zu gross."))?
+            == expected,
+        "Ableitungsspezifikation aenderte waehrend des Lesens ihre Groesse.",
+    )?;
+    let value: Value = serde_json::from_slice(&bytes).map_err(|error| {
+        GermanyOperationalV2Error::new(format!("Ableitungsspezifikation ist ungueltig: {error}"))
+    })?;
+    exact_keys(
+        &value,
+        &["schema", "mode", "infraReleaseId", "layers", "policy"],
+        "Ableitungsspezifikation",
+    )?;
+    exact_keys(
+        value
+            .get("layers")
+            .ok_or_else(|| GermanyOperationalV2Error::new("layers fehlt."))?,
+        &[
+            "tracks",
+            "platforms",
+            "switches",
+            "signals",
+            "blocks",
+            "conflictResources",
+            "timetableRoutes",
+        ],
+        "Ableitungsspezifikation.layers",
+    )?;
+    exact_keys(
+        value
+            .get("policy")
+            .ok_or_else(|| GermanyOperationalV2Error::new("policy fehlt."))?,
+        &[
+            "id",
+            "qualityClass",
+            "sourceId",
+            "derivationRule",
+            "unknownMainlineSpeedKmh",
+            "unknownServiceSpeedKmh",
+            "unknownGradientAbsPermille",
+            "minimumPlatformLengthMm",
+            "maximumPlatformSnapDistanceMm",
+            "minimumOverlapMm",
+            "defaultProtectionSystem",
+            "regionBoundaryId",
+            "rzueLayoutId",
+        ],
+        "Ableitungsspezifikation.policy",
+    )?;
+    let spec: DerivationSpec = serde_json::from_value(value).map_err(|error| {
+        GermanyOperationalV2Error::new(format!("Ableitungsspezifikation ist ungueltig: {error}"))
+    })?;
+    Ok((
+        spec,
+        FileEvidence {
+            path: path.file_name().map_or_else(
+                || "derivation-spec.json".to_owned(),
+                |name| name.to_string_lossy().into_owned(),
+            ),
+            bytes: expected,
+            sha256: sha256(&bytes),
+            records: 1,
+        },
+    ))
+}
+
+fn exact_keys(value: &Value, expected: &[&str], context: &str) -> Result<()> {
+    let values = object(value, context)?;
+    let actual: BTreeSet<_> = values.keys().map(String::as_str).collect();
+    let expected: BTreeSet<_> = expected.iter().copied().collect();
+    require(
+        actual == expected,
+        format!("{context} besitzt nicht exakt die Pflichtfelder {expected:?}."),
+    )
+}
+
+fn validate_spec(spec: &DerivationSpec) -> Result<()> {
+    require(
+        spec.schema == SPEC_SCHEMA,
+        format!("Schema muss `{SPEC_SCHEMA}` sein."),
+    )?;
+    require(spec.mode == MODE, format!("Mode muss `{MODE}` sein."))?;
+    require(
+        !spec.infra_release_id.trim().is_empty(),
+        "infraReleaseId fehlt.",
+    )?;
+    require(
+        spec.policy.id == POLICY_ID,
+        format!("Policy-ID muss `{POLICY_ID}` sein."),
+    )?;
+    require(
+        spec.policy.derivation_rule == POLICY_ID,
+        format!("derivationRule muss `{POLICY_ID}` sein."),
+    )?;
+    require(
+        spec.policy.quality_class == "B",
+        "qualityClass muss `B` sein.",
+    )?;
+    require(
+        !spec.policy.source_id.trim().is_empty()
+            && !spec.policy.default_protection_system.trim().is_empty()
+            && !spec.policy.region_boundary_id.trim().is_empty()
+            && !spec.policy.rzue_layout_id.trim().is_empty(),
+        "Policy-IDs und Standardsystem muessen nichtleer sein.",
+    )?;
+    require(
+        spec.policy.unknown_mainline_speed_kmh > 0
+            && spec.policy.unknown_service_speed_kmh > 0
+            && (0..=200).contains(&spec.policy.unknown_gradient_abs_permille)
+            && spec.policy.minimum_platform_length_mm > 0
+            && spec.policy.maximum_platform_snap_distance_mm > 0
+            && spec.policy.minimum_overlap_mm > 0,
+        "Numerische Policy-Grenzen sind ungueltig.",
+    )?;
+    Ok(())
+}
+
+fn read_bounded_sequence_record<R: BufRead>(
+    reader: &mut R,
+    record: &mut Vec<u8>,
+) -> io::Result<usize> {
+    let mut read = 0_usize;
+    loop {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            return Ok(read);
+        }
+        let length = available
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map_or(available.len(), |position| position + 1);
+        if record.len().saturating_add(length) > MAX_GEOJSON_SEQUENCE_RECORD_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "GeoJSONSeq-Einzeldatensatz ueberschreitet die native 8-MiB-Grenze",
+            ));
+        }
+        record.extend_from_slice(&available[..length]);
+        reader.consume(length);
+        read = read.checked_add(length).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "Datensatzgroesse laeuft ueber")
+        })?;
+        if record.last() == Some(&b'\n') {
+            return Ok(read);
+        }
+    }
+}
+
+fn scan_sequence<F>(path: &Path, relative: &str, mut consume: F) -> Result<FileEvidence>
+where
+    F: FnMut(Value, u64) -> Result<()>,
+{
+    let expected = regular_file(path, "GeoJSONSeq-Layer")?;
+    let file = File::open(path).map_err(|error| io_error("GeoJSONSeq-Layer", path, error))?;
+    let mut reader = BufReader::new(file);
+    let mut hasher = Sha256::new();
+    let mut bytes = 0_u64;
+    let mut records = 0_u64;
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        let read = read_bounded_sequence_record(&mut reader, &mut line)
+            .map_err(|error| io_error("GeoJSONSeq-Layer", path, error))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&line);
+        bytes = bytes
+            .checked_add(
+                u64::try_from(read)
+                    .map_err(|_| GermanyOperationalV2Error::new("Layergroesse laeuft ueber."))?,
+            )
+            .ok_or_else(|| GermanyOperationalV2Error::new("Layergroesse laeuft ueber."))?;
+        while line
+            .last()
+            .is_some_and(|byte| matches!(byte, b'\n' | b'\r'))
+        {
+            line.pop();
+        }
+        if line.first() == Some(&0x1e) {
+            line.remove(0);
+        }
+        require(
+            !line.is_empty(),
+            format!("Leerer GeoJSONSeq-Datensatz in `{relative}`."),
+        )?;
+        records = records
+            .checked_add(1)
+            .ok_or_else(|| GermanyOperationalV2Error::new("Datensatzzahl laeuft ueber."))?;
+        let value = serde_json::from_slice(&line).map_err(|error| {
+            GermanyOperationalV2Error::new(format!(
+                "`{relative}` Datensatz {records} ist ungueltig: {error}"
+            ))
+        })?;
+        consume(value, records)?;
+    }
+    require(
+        bytes == expected,
+        format!("Layer `{relative}` aenderte beim Lesen seine Groesse."),
+    )?;
+    Ok(FileEvidence {
+        path: relative.to_owned(),
+        bytes,
+        sha256: digest_hex(hasher.finalize()),
+        records,
+    })
+}
+
+fn object<'a>(value: &'a Value, context: &str) -> Result<&'a serde_json::Map<String, Value>> {
+    value
+        .as_object()
+        .ok_or_else(|| GermanyOperationalV2Error::new(format!("{context} ist kein Objekt.")))
+}
+
+fn properties<'a>(feature: &'a Value, context: &str) -> Result<&'a serde_json::Map<String, Value>> {
+    let root = object(feature, context)?;
+    require(
+        root.get("type").and_then(Value::as_str) == Some("Feature"),
+        format!("{context}.type ist nicht `Feature`."),
+    )?;
+    object(
+        root.get("properties").ok_or_else(|| {
+            GermanyOperationalV2Error::new(format!("{context}.properties fehlt."))
+        })?,
+        &format!("{context}.properties"),
+    )
+}
+
+fn string_field<'a>(
+    values: &'a serde_json::Map<String, Value>,
+    key: &str,
+    context: &str,
+) -> Result<&'a str> {
+    values
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| GermanyOperationalV2Error::new(format!("{context}.{key} fehlt.")))
+}
+
+fn i64_field(values: &serde_json::Map<String, Value>, key: &str, context: &str) -> Result<i64> {
+    let value = values
+        .get(key)
+        .and_then(Value::as_i64)
+        .ok_or_else(|| GermanyOperationalV2Error::new(format!("{context}.{key} fehlt.")))?;
+    require(
+        (-MAX_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&value),
+        format!("{context}.{key} ist keine sichere Ganzzahl."),
+    )?;
+    Ok(value)
+}
+
+fn coordinate_e7(value: &Value, context: &str) -> Result<(i32, i32)> {
+    let coordinates = value
+        .as_array()
+        .filter(|coordinates| coordinates.len() >= 2)
+        .ok_or_else(|| {
+            GermanyOperationalV2Error::new(format!("{context} ist keine Koordinate."))
+        })?;
+    let longitude = coordinates[0]
+        .as_f64()
+        .ok_or_else(|| GermanyOperationalV2Error::new(format!("{context}[0] ist ungueltig.")))?;
+    let latitude = coordinates[1]
+        .as_f64()
+        .ok_or_else(|| GermanyOperationalV2Error::new(format!("{context}[1] ist ungueltig.")))?;
+    require(
+        longitude.is_finite() && latitude.is_finite(),
+        format!("{context} ist nicht endlich."),
+    )?;
+    let longitude_text = coordinates[0].to_string();
+    let latitude_text = coordinates[1].to_string();
+    Ok((
+        decimal_degrees_to_e7(&longitude_text, context)?,
+        decimal_degrees_to_e7(&latitude_text, context)?,
+    ))
+}
+
+fn decimal_degrees_to_e7(value: &str, context: &str) -> Result<i32> {
+    let negative = value.starts_with('-');
+    let unsigned = value.trim_start_matches('-');
+    let mut parts = unsigned.split('.');
+    let whole = parts.next().unwrap_or("0").parse::<i64>().map_err(|_| {
+        GermanyOperationalV2Error::new(format!("{context} besitzt ungueltige Gradwerte."))
+    })?;
+    let fraction = parts.next().unwrap_or("");
+    require(
+        parts.next().is_none(),
+        format!("{context} besitzt ungueltige Gradwerte."),
+    )?;
+    let mut digits = fraction
+        .as_bytes()
+        .iter()
+        .take(7)
+        .copied()
+        .collect::<Vec<_>>();
+    while digits.len() < 7 {
+        digits.push(b'0');
+    }
+    let fraction_value = std::str::from_utf8(&digits)
+        .map_err(|_| {
+            GermanyOperationalV2Error::new(format!("{context} besitzt ungueltige Gradwerte."))
+        })?
+        .parse::<i64>()
+        .map_err(|_| {
+            GermanyOperationalV2Error::new(format!("{context} besitzt ungueltige Gradwerte."))
+        })?;
+    let absolute = whole
+        .checked_mul(10_000_000)
+        .and_then(|whole| whole.checked_add(fraction_value))
+        .ok_or_else(|| GermanyOperationalV2Error::new(format!("{context} laeuft ueber.")))?;
+    let signed = if negative { -absolute } else { absolute };
+    i32::try_from(signed)
+        .map_err(|_| GermanyOperationalV2Error::new(format!("{context} liegt ausserhalb E7.")))
+}
+
+fn integer_sqrt(value: u128) -> u128 {
+    if value < 2 {
+        return value;
+    }
+    let mut left = 1_u128;
+    let mut right = value.min(u128::from(u64::MAX));
+    while left <= right {
+        let middle = left + (right - left) / 2;
+        if middle <= value / middle {
+            left = middle.saturating_add(1);
+        } else {
+            right = middle.saturating_sub(1);
+        }
+    }
+    right
+}
+
+fn planar_length(left: (i32, i32), right: (i32, i32)) -> u64 {
+    let dx = i128::from(right.0) - i128::from(left.0);
+    let dy = i128::from(right.1) - i128::from(left.1);
+    let squared = dx.saturating_mul(dx).saturating_add(dy.saturating_mul(dy));
+    u64::try_from(integer_sqrt(u128::try_from(squared).unwrap_or(u128::MAX))).unwrap_or(u64::MAX)
+}
+
+fn bearing_milli_degrees(left: (i32, i32), right: (i32, i32)) -> u32 {
+    let dx = i64::from(right.0) - i64::from(left.0);
+    let dy = i64::from(right.1) - i64::from(left.1);
+    let absolute_x = dx.unsigned_abs();
+    let absolute_y = dy.unsigned_abs();
+    if absolute_x == 0 && absolute_y == 0 {
+        return 0;
+    }
+    let quadrant_angle = if absolute_y >= absolute_x {
+        u32::try_from(45_000_u64.saturating_mul(absolute_x) / absolute_y.max(1)).unwrap_or(45_000)
+    } else {
+        90_000_u32.saturating_sub(
+            u32::try_from(45_000_u64.saturating_mul(absolute_y) / absolute_x.max(1))
+                .unwrap_or(45_000),
+        )
+    };
+    match (dx >= 0, dy >= 0) {
+        (true, true) => quadrant_angle,
+        (true, false) => 180_000_u32.saturating_sub(quadrant_angle),
+        (false, false) => 180_000_u32.saturating_add(quadrant_angle),
+        (false, true) => 360_000_u32.saturating_sub(quadrant_angle) % 360_000,
+    }
+}
+
+fn geometry_points(feature: &Value, length_mm: i64, context: &str) -> Result<Vec<GeometryPoint>> {
+    require(
+        length_mm > 0,
+        format!("{context}.length_mm muss positiv sein."),
+    )?;
+    let geometry = object(
+        object(feature, context)?
+            .get("geometry")
+            .ok_or_else(|| GermanyOperationalV2Error::new(format!("{context}.geometry fehlt.")))?,
+        &format!("{context}.geometry"),
+    )?;
+    require(
+        geometry.get("type").and_then(Value::as_str) == Some("LineString"),
+        format!("{context}.geometry ist keine LineString."),
+    )?;
+    let raw = geometry
+        .get("coordinates")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            GermanyOperationalV2Error::new(format!("{context}.geometry.coordinates fehlt."))
+        })?;
+    let mut coordinates = Vec::new();
+    for (index, coordinate) in raw.iter().enumerate() {
+        let point = coordinate_e7(
+            coordinate,
+            &format!("{context}.geometry.coordinates[{index}]"),
+        )?;
+        if coordinates.last() != Some(&point) {
+            coordinates.push(point);
+        }
+    }
+    require(
+        coordinates.len() >= 2,
+        format!("{context} besitzt weniger als zwei verschiedene Geometriepunkte."),
+    )?;
+    if i64::try_from(coordinates.len().saturating_sub(1)).unwrap_or(i64::MAX) > length_mm {
+        let last = coordinates
+            .last()
+            .copied()
+            .ok_or_else(|| GermanyOperationalV2Error::new(format!("{context}.geometry fehlt.")))?;
+        coordinates = vec![coordinates[0], last];
+    }
+    let mut cumulative = vec![0_u64];
+    for pair in coordinates.windows(2) {
+        let next = cumulative
+            .last()
+            .copied()
+            .unwrap_or(0)
+            .saturating_add(planar_length(pair[0], pair[1]).max(1));
+        cumulative.push(next);
+    }
+    let total = cumulative.last().copied().unwrap_or(1).max(1);
+    let last_index = coordinates.len().saturating_sub(1);
+    let mut points = Vec::with_capacity(coordinates.len());
+    let mut previous = -1_i64;
+    for (index, coordinate) in coordinates.iter().enumerate() {
+        let offset = if index == 0 {
+            0
+        } else if index == last_index {
+            length_mm
+        } else {
+            let raw_offset = i128::from(length_mm).saturating_mul(i128::from(cumulative[index]))
+                / i128::from(total);
+            let remaining = i64::try_from(last_index.saturating_sub(index)).unwrap_or(i64::MAX);
+            i64::try_from(raw_offset).unwrap_or(length_mm).clamp(
+                previous.saturating_add(1),
+                length_mm.saturating_sub(remaining),
+            )
+        };
+        let bearing = coordinates
+            .get(index + 1)
+            .map(|next| bearing_milli_degrees(*coordinate, *next));
+        points.push(GeometryPoint {
+            edge_offset_mm: offset,
+            latitude_e7: coordinate.1,
+            longitude_e7: coordinate.0,
+            bearing_milli_degrees: bearing,
+        });
+        previous = offset;
+    }
+    Ok(points)
+}
+
+fn kmh_to_mmps(speed_kmh: u32) -> u32 {
+    speed_kmh.saturating_mul(1_000_000) / 3_600
+}
+
+fn parse_tags(
+    properties: &serde_json::Map<String, Value>,
+    context: &str,
+) -> Result<BTreeMap<String, String>> {
+    let Some(raw) = properties.get("osm_tags_json").and_then(Value::as_str) else {
+        return Ok(BTreeMap::new());
+    };
+    serde_json::from_str(raw).map_err(|error| {
+        GermanyOperationalV2Error::new(format!("{context}.osm_tags_json ist ungueltig: {error}"))
+    })
+}
+
+fn canonical_protection_systems(tags: &BTreeMap<String, String>) -> BTreeSet<String> {
+    let mut systems = BTreeSet::new();
+    for (key, value) in tags {
+        match (key.as_str(), value.as_str()) {
+            ("railway:pzb", "yes" | "forward" | "backward") => {
+                systems.insert("pzb".to_owned());
+            }
+            ("railway:lzb", "yes") => {
+                systems.insert("lzb".to_owned());
+            }
+            ("railway:etcs" | "railway:etcs:forward" | "railway:etcs:backward", "1") => {
+                systems.insert("etcs-level1".to_owned());
+            }
+            ("railway:etcs" | "railway:etcs:forward" | "railway:etcs:backward", "2") => {
+                systems.insert("etcs-level2".to_owned());
+            }
+            ("railway:etcs" | "railway:etcs:forward" | "railway:etcs:backward", "1;2") => {
+                systems.insert("etcs-level1".to_owned());
+                systems.insert("etcs-level2".to_owned());
+            }
+            _ => {}
+        }
+    }
+    systems
+}
+
+fn track_record(
+    feature: &Value,
+    policy: &PolicySpec,
+    counts: &mut Counts,
+    record: u64,
+) -> Result<Option<TrackRecord>> {
+    let context = format!("tracks Datensatz {record}");
+    let values = properties(feature, &context)?;
+    counts.tracks_seen = counts.tracks_seen.saturating_add(1);
+    if values.get("orderable").and_then(Value::as_bool) != Some(true) {
+        return Ok(None);
+    }
+    let id = string_field(values, "feature_id", &context)?.to_owned();
+    let length_mm = i64_field(values, "length_mm", &context)?;
+    let tags = parse_tags(values, &context)?;
+    let mainline = tags
+        .get("usage")
+        .is_some_and(|usage| matches!(usage.as_str(), "main" | "highspeed"));
+    let fallback = if mainline {
+        policy.unknown_mainline_speed_kmh
+    } else {
+        policy.unknown_service_speed_kmh
+    };
+    let along_kmh = values
+        .get("speed_forward_kmh")
+        .and_then(Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|value| *value > 0);
+    let against_kmh = values
+        .get("speed_backward_kmh")
+        .and_then(Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|value| *value > 0);
+    if along_kmh.is_some() {
+        counts.observed_forward_speeds = counts.observed_forward_speeds.saturating_add(1);
+    } else {
+        counts.simulated_speeds = counts.simulated_speeds.saturating_add(1);
+    }
+    if against_kmh.is_some() {
+        counts.observed_backward_speeds = counts.observed_backward_speeds.saturating_add(1);
+    } else {
+        counts.simulated_speeds = counts.simulated_speeds.saturating_add(1);
+    }
+    let mut protection_systems = canonical_protection_systems(&tags);
+    if protection_systems.is_empty() {
+        protection_systems.insert(policy.default_protection_system.clone());
+        counts.simulated_protection = counts.simulated_protection.saturating_add(1);
+    } else {
+        counts.observed_protection = counts.observed_protection.saturating_add(1);
+    }
+    counts.orderable_tracks = counts.orderable_tracks.saturating_add(1);
+    Ok(Some(TrackRecord {
+        id,
+        from_node_id: i64_field(values, "from_osm_node_id", &context)?,
+        to_node_id: i64_field(values, "to_osm_node_id", &context)?,
+        length_mm,
+        geometry: geometry_points(feature, length_mm, &context)?,
+        speed_along_mmps: kmh_to_mmps(along_kmh.unwrap_or(fallback)).max(1),
+        speed_against_mmps: kmh_to_mmps(against_kmh.unwrap_or(fallback)).max(1),
+        protection_systems,
+    }))
+}
+
+fn grid_cell(value: i32, size: i32) -> i32 {
+    value.div_euclid(size.max(1))
+}
+
+fn grid_key(x: i32, y: i32) -> String {
+    format!("{x:+011}:{y:+011}")
+}
+
+fn snap_e7(distance_mm: i64) -> i32 {
+    let units = distance_mm.saturating_add(10) / 11;
+    i32::try_from(units.clamp(1, i64::from(i32::MAX))).unwrap_or(i32::MAX)
+}
+
+fn initialize_database(database: &Database) -> Result<()> {
+    let transaction = database.begin_write().map_err(db_error)?;
+    for definition in [TRACKS, SWITCH_BY_NODE, PLATFORMS, TIMETABLE_ROUTES] {
+        drop(transaction.open_table(definition).map_err(db_error)?);
+    }
+    for definition in [NODES, SWITCHES, SIGNALS, BLOCKS_EVIDENCE, BLOCK_RESOURCES] {
+        drop(transaction.open_table(definition).map_err(db_error)?);
+    }
+    drop(
+        transaction
+            .open_multimap_table(SPATIAL_TRACKS)
+            .map_err(db_error)?,
+    );
+    drop(
+        transaction
+            .open_multimap_table(TRACK_BLOCKS)
+            .map_err(db_error)?,
+    );
+    transaction.commit().map_err(db_error)
+}
+
+fn track_from_json(value: &str, context: &str) -> Result<TrackRecord> {
+    serde_json::from_str(value)
+        .map_err(|error| GermanyOperationalV2Error::new(format!("{context}: {error}")))
+}
+
+fn node_resource(node: i64) -> String {
+    format!("resource:synthetic-stellzone-node:{node}")
+}
+
+fn edge_resource(edge_id: &str) -> String {
+    stable_id("resource:synthetic-path-edge:", &[edge_id])
+}
+
+fn self_loop_flank_resource(edge_id: &str) -> String {
+    stable_id("resource:synthetic-self-loop-flank:", &[edge_id])
+}
+
+fn local_route_id(track_id: &str, direction: &str) -> String {
+    stable_id("route:synthetic-local:", &[track_id, direction])
+}
+
+fn local_template_id(track_id: &str, direction: &str) -> String {
+    stable_id("template:synthetic-local:", &[track_id, direction])
+}
+
+fn synthetic_signal_id(route_id: &str, leg_index: usize) -> String {
+    stable_id(
+        "signal:synthetic-boundary:",
+        &[route_id, &leg_index.to_string()],
+    )
+}
+
+fn ensure_output_absent(path: &Path, context: &str) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Err(GermanyOperationalV2Error::new(format!(
+            "{context} `{}` existiert bereits.",
+            path.display()
+        ))),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(io_error(context, path, error)),
+    }
+}
+
+fn ingest_tracks(
+    database: &Database,
+    path: &Path,
+    relative: &str,
+    policy: &PolicySpec,
+    local_routes: bool,
+    counts: &mut Counts,
+) -> Result<FileEvidence> {
+    let mut transaction = database.begin_write().map_err(db_error)?;
+    transaction.set_durability(Durability::None);
+    let mut tracks = transaction.open_table(TRACKS).map_err(db_error)?;
+    let mut nodes = transaction.open_table(NODES).map_err(db_error)?;
+    let mut spatial = transaction
+        .open_multimap_table(SPATIAL_TRACKS)
+        .map_err(db_error)?;
+    let mut resources = transaction.open_table(BLOCK_RESOURCES).map_err(db_error)?;
+    let mut signals = transaction.open_table(SIGNALS).map_err(db_error)?;
+    let cell_size = snap_e7(policy.maximum_platform_snap_distance_mm);
+    let evidence = scan_sequence(path, relative, |feature, record| {
+        let Some(track) = track_record(&feature, policy, counts, record)? else {
+            return Ok(());
+        };
+        let serialized = serde_json::to_string(&track).map_err(|error| {
+            GermanyOperationalV2Error::new(format!(
+                "Gleiskante kann nicht serialisiert werden: {error}"
+            ))
+        })?;
+        require(
+            tracks
+                .insert(track.id.as_str(), serialized.as_str())
+                .map_err(db_error)?
+                .is_none(),
+            format!("Doppelte Gleiskante `{}`.", track.id),
+        )?;
+        for node in [track.from_node_id, track.to_node_id] {
+            let key = node.to_string();
+            let _ = nodes.insert(key.as_str(), &()).map_err(db_error)?;
+            let node_mutex = node_resource(node);
+            let _ = resources
+                .insert(node_mutex.as_str(), &())
+                .map_err(db_error)?;
+        }
+        let edge_mutex = edge_resource(&track.id);
+        let _ = resources
+            .insert(edge_mutex.as_str(), &())
+            .map_err(db_error)?;
+        if track.from_node_id == track.to_node_id {
+            let self_flank = self_loop_flank_resource(&track.id);
+            let _ = resources
+                .insert(self_flank.as_str(), &())
+                .map_err(db_error)?;
+        }
+        if local_routes {
+            for direction in ["along", "against"] {
+                let route_id = local_route_id(&track.id, direction);
+                let signal_id = synthetic_signal_id(&route_id, 0);
+                require(
+                    signals
+                        .insert(signal_id.as_str(), &())
+                        .map_err(db_error)?
+                        .is_none(),
+                    format!("Kollidierende synthetische Signal-ID `{signal_id}`."),
+                )?;
+            }
+        }
+        for pair in track.geometry.windows(2) {
+            let left = (pair[0].longitude_e7, pair[0].latitude_e7);
+            let right = (pair[1].longitude_e7, pair[1].latitude_e7);
+            let dx = i64::from(right.0) - i64::from(left.0);
+            let dy = i64::from(right.1) - i64::from(left.1);
+            let span = dx.unsigned_abs().max(dy.unsigned_abs());
+            let steps = (span / u64::try_from(cell_size).unwrap_or(1)).saturating_add(1);
+            for step in 0..=steps {
+                let denominator = i128::from(steps.max(1));
+                let longitude = i128::from(left.0)
+                    .saturating_add(i128::from(dx).saturating_mul(i128::from(step)) / denominator);
+                let latitude = i128::from(left.1)
+                    .saturating_add(i128::from(dy).saturating_mul(i128::from(step)) / denominator);
+                let x = grid_cell(i32::try_from(longitude).unwrap_or(left.0), cell_size);
+                let y = grid_cell(i32::try_from(latitude).unwrap_or(left.1), cell_size);
+                let key = grid_key(x, y);
+                spatial
+                    .insert(key.as_str(), track.id.as_str())
+                    .map_err(db_error)?;
+            }
+        }
+        Ok(())
+    })?;
+    drop(signals);
+    drop(resources);
+    drop(spatial);
+    drop(nodes);
+    drop(tracks);
+    transaction.commit().map_err(db_error)?;
+    require(
+        counts.orderable_tracks > 0,
+        "Tracks-Layer besitzt keine orderable Gleiskante.",
+    )?;
+    Ok(evidence)
+}
+
+fn ingest_switches(
+    database: &Database,
+    path: &Path,
+    relative: &str,
+    counts: &mut Counts,
+) -> Result<FileEvidence> {
+    let mut transaction = database.begin_write().map_err(db_error)?;
+    transaction.set_durability(Durability::None);
+    let tracks = transaction.open_table(TRACKS).map_err(db_error)?;
+    let mut switches = transaction.open_table(SWITCHES).map_err(db_error)?;
+    let mut by_node = transaction.open_table(SWITCH_BY_NODE).map_err(db_error)?;
+    let evidence = scan_sequence(path, relative, |feature, record| {
+        let context = format!("switches Datensatz {record}");
+        let values = properties(&feature, &context)?;
+        let id = string_field(values, "feature_id", &context)?;
+        let node = i64_field(values, "osm_node_id", &context)?.to_string();
+        let incident_track_ids = parse_string_array_json(
+            string_field(values, "incident_track_ids_json", &context)?,
+            &format!("{context}.incident_track_ids_json"),
+            true,
+        )?;
+        for track_id in incident_track_ids {
+            require(
+                tracks.get(track_id.as_str()).map_err(db_error)?.is_some(),
+                format!(
+                    "{context}.incident_track_ids_json referenziert unbekanntes orderable Gleis `{track_id}`."
+                ),
+            )?;
+        }
+        require(
+            switches.insert(id, &()).map_err(db_error)?.is_none(),
+            format!("Doppelte Weiche `{id}`."),
+        )?;
+        require(
+            by_node
+                .insert(node.as_str(), id)
+                .map_err(db_error)?
+                .is_none(),
+            format!("Mehrere Weichen am OSM-Knoten `{node}`."),
+        )?;
+        counts.switches = counts.switches.saturating_add(1);
+        Ok(())
+    })?;
+    drop(by_node);
+    drop(switches);
+    drop(tracks);
+    transaction.commit().map_err(db_error)?;
+    Ok(evidence)
+}
+
+fn ingest_signals(
+    database: &Database,
+    path: &Path,
+    relative: &str,
+    counts: &mut Counts,
+) -> Result<FileEvidence> {
+    let mut transaction = database.begin_write().map_err(db_error)?;
+    transaction.set_durability(Durability::None);
+    let tracks = transaction.open_table(TRACKS).map_err(db_error)?;
+    let mut signals = transaction.open_table(SIGNALS).map_err(db_error)?;
+    let evidence = scan_sequence(path, relative, |feature, record| {
+        let context = format!("signals Datensatz {record}");
+        let values = properties(&feature, &context)?;
+        let id = string_field(values, "feature_id", &context)?;
+        let incident_track_ids = parse_string_array_json(
+            string_field(values, "incident_track_ids_json", &context)?,
+            &format!("{context}.incident_track_ids_json"),
+            true,
+        )?;
+        for track_id in incident_track_ids {
+            require(
+                tracks.get(track_id.as_str()).map_err(db_error)?.is_some(),
+                format!(
+                    "{context}.incident_track_ids_json referenziert unbekanntes orderable Gleis `{track_id}`."
+                ),
+            )?;
+        }
+        require(
+            signals.insert(id, &()).map_err(db_error)?.is_none(),
+            format!("Doppeltes Signal `{id}`."),
+        )?;
+        counts.observed_signals = counts.observed_signals.saturating_add(1);
+        Ok(())
+    })?;
+    drop(signals);
+    drop(tracks);
+    transaction.commit().map_err(db_error)?;
+    Ok(evidence)
+}
+
+fn ingest_blocks(
+    database: &Database,
+    path: &Path,
+    relative: &str,
+    counts: &mut Counts,
+) -> Result<FileEvidence> {
+    let mut transaction = database.begin_write().map_err(db_error)?;
+    transaction.set_durability(Durability::None);
+    let tracks = transaction.open_table(TRACKS).map_err(db_error)?;
+    let signals = transaction.open_table(SIGNALS).map_err(db_error)?;
+    let mut blocks = transaction.open_table(BLOCKS_EVIDENCE).map_err(db_error)?;
+    let evidence = scan_sequence(path, relative, |feature, record| {
+        let context = format!("blocks Datensatz {record}");
+        let values = properties(&feature, &context)?;
+        let id = string_field(values, "feature_id", &context)?.to_owned();
+        let track_ids = parse_string_array_json(
+            string_field(values, "track_ids_json", &context)?,
+            &format!("{context}.track_ids_json"),
+            false,
+        )?;
+        for track_id in track_ids {
+            require(
+                tracks.get(track_id.as_str()).map_err(db_error)?.is_some(),
+                format!(
+                    "{context}.track_ids_json referenziert unbekanntes orderable Gleis `{track_id}`."
+                ),
+            )?;
+        }
+        let boundary_signal_ids = parse_string_array_json(
+            string_field(values, "boundary_signal_ids_json", &context)?,
+            &format!("{context}.boundary_signal_ids_json"),
+            true,
+        )?;
+        for signal_id in boundary_signal_ids {
+            require(
+                signals.get(signal_id.as_str()).map_err(db_error)?.is_some(),
+                format!(
+                    "{context}.boundary_signal_ids_json referenziert unbekanntes Signal `{signal_id}`."
+                ),
+            )?;
+        }
+        require(
+            blocks.insert(id.as_str(), &()).map_err(db_error)?.is_none(),
+            format!("Doppelter Block `{id}`."),
+        )?;
+        counts.blocks = counts.blocks.saturating_add(1);
+        Ok(())
+    })?;
+    drop(blocks);
+    drop(signals);
+    drop(tracks);
+    transaction.commit().map_err(db_error)?;
+    Ok(evidence)
+}
+
+fn parse_string_array_json(raw: &str, context: &str, allow_empty: bool) -> Result<Vec<String>> {
+    let values: Vec<String> = serde_json::from_str(raw).map_err(|error| {
+        GermanyOperationalV2Error::new(format!("{context} ist ungueltig: {error}"))
+    })?;
+    require(
+        (allow_empty || !values.is_empty()) && values.iter().all(|value| !value.is_empty()),
+        format!("{context} ist leer oder enthaelt leere IDs."),
+    )?;
+    Ok(values)
+}
+
+fn ingest_conflict_resources(
+    database: &Database,
+    path: &Path,
+    relative: &str,
+    counts: &mut Counts,
+) -> Result<FileEvidence> {
+    let mut transaction = database.begin_write().map_err(db_error)?;
+    transaction.set_durability(Durability::None);
+    let tracks = transaction.open_table(TRACKS).map_err(db_error)?;
+    let blocks = transaction.open_table(BLOCKS_EVIDENCE).map_err(db_error)?;
+    let switches = transaction.open_table(SWITCHES).map_err(db_error)?;
+    let mut resources = transaction.open_table(BLOCK_RESOURCES).map_err(db_error)?;
+    let mut track_blocks = transaction
+        .open_multimap_table(TRACK_BLOCKS)
+        .map_err(db_error)?;
+    let evidence = scan_sequence(path, relative, |feature, record| {
+        let context = format!("conflictResources Datensatz {record}");
+        let values = properties(&feature, &context)?;
+        let id = string_field(values, "feature_id", &context)?;
+        let resource_kind = string_field(values, "resource_kind", &context)?;
+        require(
+            matches!(resource_kind, "block" | "switch" | "track_section"),
+            format!("{context}.resource_kind `{resource_kind}` ist unbekannt."),
+        )?;
+        match resource_kind {
+            "block" => {
+                let block_id = string_field(values, "block_id", &context)?;
+                require(
+                    blocks.get(block_id).map_err(db_error)?.is_some(),
+                    format!("{context}.block_id referenziert unbekannten Block `{block_id}`."),
+                )?;
+            }
+            "switch" => {
+                let switch_id = string_field(values, "switch_id", &context)?;
+                require(
+                    switches.get(switch_id).map_err(db_error)?.is_some(),
+                    format!("{context}.switch_id referenziert unbekannte Weiche `{switch_id}`."),
+                )?;
+            }
+            "track_section" => {}
+            _ => unreachable!("resource_kind wurde oben vollstaendig validiert"),
+        }
+        require(
+            resources.insert(id, &()).map_err(db_error)?.is_none(),
+            format!("Doppelte Konfliktressource `{id}`."),
+        )?;
+        let track_ids_field = if resource_kind == "switch" {
+            "incident_track_ids_json"
+        } else {
+            "track_ids_json"
+        };
+        let track_ids = parse_string_array_json(
+            string_field(values, track_ids_field, &context)?,
+            &format!("{context}.{track_ids_field}"),
+            false,
+        )?;
+        for track_id in track_ids {
+            require(
+                tracks.get(track_id.as_str()).map_err(db_error)?.is_some(),
+                format!(
+                    "{context}.{track_ids_field} referenziert unbekanntes orderable Gleis `{track_id}`."
+                ),
+            )?;
+            track_blocks
+                .insert(track_id.as_str(), id)
+                .map_err(db_error)?;
+        }
+        counts.conflict_resources = counts.conflict_resources.saturating_add(1);
+        Ok(())
+    })?;
+    drop(track_blocks);
+    drop(resources);
+    drop(switches);
+    drop(blocks);
+    drop(tracks);
+    transaction.commit().map_err(db_error)?;
+    Ok(evidence)
+}
+
+#[derive(Clone, Debug)]
+enum PlatformGeometry {
+    Point((i32, i32)),
+    LineString(Vec<(i32, i32)>),
+    Polygon(Vec<Vec<(i32, i32)>>),
+}
+
+impl PlatformGeometry {
+    fn for_each_point(&self, mut visitor: impl FnMut((i32, i32))) {
+        match self {
+            Self::Point(point) => visitor(*point),
+            Self::LineString(points) => points.iter().copied().for_each(visitor),
+            Self::Polygon(rings) => rings
+                .iter()
+                .flat_map(|ring| ring.iter().copied())
+                .for_each(visitor),
+        }
+    }
+
+    fn for_each_segment(&self, mut visitor: impl FnMut((i32, i32), (i32, i32))) {
+        match self {
+            Self::Point(_) => {}
+            Self::LineString(points) => {
+                for pair in points.windows(2) {
+                    visitor(pair[0], pair[1]);
+                }
+            }
+            Self::Polygon(rings) => {
+                for ring in rings {
+                    for pair in ring.windows(2) {
+                        visitor(pair[0], pair[1]);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn coordinate_sequence(value: &Value, context: &str) -> Result<Vec<(i32, i32)>> {
+    let raw = value
+        .as_array()
+        .ok_or_else(|| GermanyOperationalV2Error::new(format!("{context} ist kein Array.")))?;
+    raw.iter()
+        .enumerate()
+        .map(|(index, coordinate)| coordinate_e7(coordinate, &format!("{context}[{index}]")))
+        .collect()
+}
+
+fn platform_geometry(feature: &Value, context: &str) -> Result<PlatformGeometry> {
+    let geometry = object(
+        object(feature, context)?
+            .get("geometry")
+            .ok_or_else(|| GermanyOperationalV2Error::new(format!("{context}.geometry fehlt.")))?,
+        &format!("{context}.geometry"),
+    )?;
+    let geometry_type = geometry
+        .get("type")
+        .and_then(Value::as_str)
+        .ok_or_else(|| GermanyOperationalV2Error::new(format!("{context}.geometry.type fehlt.")))?;
+    let coordinates = geometry.get("coordinates").ok_or_else(|| {
+        GermanyOperationalV2Error::new(format!("{context}.geometry.coordinates fehlt."))
+    })?;
+    match geometry_type {
+        "Point" => Ok(PlatformGeometry::Point(coordinate_e7(
+            coordinates,
+            &format!("{context}.geometry.coordinates"),
+        )?)),
+        "LineString" => {
+            let points =
+                coordinate_sequence(coordinates, &format!("{context}.geometry.coordinates"))?;
+            require(
+                points.len() >= 2 && points.windows(2).all(|pair| pair[0] != pair[1]),
+                format!(
+                    "{context}.geometry LineString benoetigt mindestens zwei aufeinanderfolgend verschiedene Punkte."
+                ),
+            )?;
+            Ok(PlatformGeometry::LineString(points))
+        }
+        "Polygon" => {
+            let raw_rings = coordinates
+                .as_array()
+                .filter(|rings| !rings.is_empty())
+                .ok_or_else(|| {
+                    GermanyOperationalV2Error::new(format!(
+                        "{context}.geometry Polygon besitzt keine Ringe."
+                    ))
+                })?;
+            let mut rings = Vec::with_capacity(raw_rings.len());
+            for (ring_index, raw_ring) in raw_rings.iter().enumerate() {
+                let ring_context = format!("{context}.geometry.coordinates[{ring_index}]");
+                let ring = coordinate_sequence(raw_ring, &ring_context)?;
+                require(
+                    ring.len() >= 4,
+                    format!("{ring_context} besitzt weniger als vier Positionen."),
+                )?;
+                require(
+                    ring.first() == ring.last(),
+                    format!("{ring_context} ist nicht geschlossen."),
+                )?;
+                require(
+                    ring.windows(2).all(|pair| pair[0] != pair[1]),
+                    format!("{ring_context} besitzt aufeinanderfolgende Doppelpositionen."),
+                )?;
+                let distinct: BTreeSet<_> = ring[..ring.len() - 1].iter().copied().collect();
+                require(
+                    distinct.len() >= 3,
+                    format!("{ring_context} besitzt weniger als drei verschiedene Eckpunkte."),
+                )?;
+                rings.push(ring);
+            }
+            Ok(PlatformGeometry::Polygon(rings))
+        }
+        unsupported => Err(GermanyOperationalV2Error::new(format!(
+            "{context}.geometry Typ `{unsupported}` ist nicht unterstuetzt; erwartet Point, LineString oder Polygon."
+        ))),
+    }
+}
+
+fn point_segment_projection(
+    point: (i32, i32),
+    left: (i32, i32),
+    right: (i32, i32),
+) -> (u128, i128, i128) {
+    let left = (i128::from(left.0), i128::from(left.1));
+    let right = (i128::from(right.0), i128::from(right.1));
+    let vector = (right.0 - left.0, right.1 - left.1);
+    let denominator = vector
+        .0
+        .saturating_mul(vector.0)
+        .saturating_add(vector.1.saturating_mul(vector.1));
+    if denominator == 0 {
+        let dx = i128::from(point.0) - left.0;
+        let dy = i128::from(point.1) - left.1;
+        return (
+            u128::try_from(dx.saturating_mul(dx).saturating_add(dy.saturating_mul(dy)))
+                .unwrap_or(u128::MAX),
+            0,
+            1,
+        );
+    }
+    let relative = (i128::from(point.0) - left.0, i128::from(point.1) - left.1);
+    let numerator = relative
+        .0
+        .saturating_mul(vector.0)
+        .saturating_add(relative.1.saturating_mul(vector.1))
+        .clamp(0, denominator);
+    let projected = (
+        left.0 + vector.0.saturating_mul(numerator) / denominator,
+        left.1 + vector.1.saturating_mul(numerator) / denominator,
+    );
+    let dx = i128::from(point.0) - projected.0;
+    let dy = i128::from(point.1) - projected.1;
+    (
+        u128::try_from(dx.saturating_mul(dx).saturating_add(dy.saturating_mul(dy)))
+            .unwrap_or(u128::MAX),
+        numerator,
+        denominator,
+    )
+}
+
+fn track_offset_at_fraction(
+    left: &GeometryPoint,
+    right: &GeometryPoint,
+    numerator: i128,
+    denominator: i128,
+) -> i64 {
+    let segment_mm = right.edge_offset_mm.saturating_sub(left.edge_offset_mm);
+    left.edge_offset_mm.saturating_add(
+        i64::try_from(i128::from(segment_mm).saturating_mul(numerator) / denominator.max(1))
+            .unwrap_or(0),
+    )
+}
+
+fn nearest_on_track(track: &TrackRecord, point: (i32, i32)) -> (u128, i64) {
+    let mut best = (u128::MAX, 0_i64);
+    for pair in track.geometry.windows(2) {
+        let left = (pair[0].longitude_e7, pair[0].latitude_e7);
+        let right = (pair[1].longitude_e7, pair[1].latitude_e7);
+        let (squared, numerator, denominator) = point_segment_projection(point, left, right);
+        let projected_mm = track_offset_at_fraction(&pair[0], &pair[1], numerator, denominator);
+        best = best.min((squared, projected_mm));
+    }
+    best
+}
+
+fn cross(left: (i128, i128), right: (i128, i128)) -> i128 {
+    left.0
+        .saturating_mul(right.1)
+        .saturating_sub(left.1.saturating_mul(right.0))
+}
+
+fn segment_intersection_track_fraction(
+    track_left: (i32, i32),
+    track_right: (i32, i32),
+    geometry_left: (i32, i32),
+    geometry_right: (i32, i32),
+) -> Option<(i128, i128)> {
+    let track_left = (i128::from(track_left.0), i128::from(track_left.1));
+    let track_vector = (
+        i128::from(track_right.0) - track_left.0,
+        i128::from(track_right.1) - track_left.1,
+    );
+    let geometry_left = (i128::from(geometry_left.0), i128::from(geometry_left.1));
+    let geometry_vector = (
+        i128::from(geometry_right.0) - geometry_left.0,
+        i128::from(geometry_right.1) - geometry_left.1,
+    );
+    let delta = (
+        geometry_left.0 - track_left.0,
+        geometry_left.1 - track_left.1,
+    );
+    let mut denominator = cross(track_vector, geometry_vector);
+    if denominator != 0 {
+        let mut track_numerator = cross(delta, geometry_vector);
+        let mut geometry_numerator = cross(delta, track_vector);
+        if denominator < 0 {
+            denominator = -denominator;
+            track_numerator = -track_numerator;
+            geometry_numerator = -geometry_numerator;
+        }
+        return ((0..=denominator).contains(&track_numerator)
+            && (0..=denominator).contains(&geometry_numerator))
+        .then_some((track_numerator, denominator));
+    }
+    if cross(delta, track_vector) != 0 {
+        return None;
+    }
+    let norm = track_vector
+        .0
+        .saturating_mul(track_vector.0)
+        .saturating_add(track_vector.1.saturating_mul(track_vector.1));
+    if norm == 0 {
+        return None;
+    }
+    let geometry_end = (
+        geometry_left.0 + geometry_vector.0,
+        geometry_left.1 + geometry_vector.1,
+    );
+    let projection = |point: (i128, i128)| {
+        (point.0 - track_left.0)
+            .saturating_mul(track_vector.0)
+            .saturating_add((point.1 - track_left.1).saturating_mul(track_vector.1))
+    };
+    let first = projection(geometry_left);
+    let second = projection(geometry_end);
+    let overlap_start = first.min(second).max(0);
+    let overlap_end = first.max(second).min(norm);
+    (overlap_start <= overlap_end).then_some((overlap_start, norm))
+}
+
+fn point_on_segment(point: (i32, i32), left: (i32, i32), right: (i32, i32)) -> bool {
+    let relative = (
+        i128::from(point.0) - i128::from(left.0),
+        i128::from(point.1) - i128::from(left.1),
+    );
+    let vector = (
+        i128::from(right.0) - i128::from(left.0),
+        i128::from(right.1) - i128::from(left.1),
+    );
+    cross(relative, vector) == 0
+        && point.0 >= left.0.min(right.0)
+        && point.0 <= left.0.max(right.0)
+        && point.1 >= left.1.min(right.1)
+        && point.1 <= left.1.max(right.1)
+}
+
+fn point_in_polygon(point: (i32, i32), rings: &[Vec<(i32, i32)>]) -> bool {
+    let mut inside = false;
+    for ring in rings {
+        for pair in ring.windows(2) {
+            let left = pair[0];
+            let right = pair[1];
+            if point_on_segment(point, left, right) {
+                return true;
+            }
+            if (left.1 > point.1) == (right.1 > point.1) {
+                continue;
+            }
+            let dy = i128::from(right.1) - i128::from(left.1);
+            let left_side = (i128::from(point.0) - i128::from(left.0)).saturating_mul(dy);
+            let right_side = (i128::from(right.0) - i128::from(left.0))
+                .saturating_mul(i128::from(point.1) - i128::from(left.1));
+            if (dy > 0 && left_side < right_side) || (dy < 0 && left_side > right_side) {
+                inside = !inside;
+            }
+        }
+    }
+    inside
+}
+
+fn nearest_on_track_to_geometry(track: &TrackRecord, geometry: &PlatformGeometry) -> (u128, i64) {
+    let mut best = (u128::MAX, 0_i64);
+    geometry.for_each_point(|point| {
+        best = best.min(nearest_on_track(track, point));
+    });
+    geometry.for_each_segment(|geometry_left, geometry_right| {
+        for pair in track.geometry.windows(2) {
+            let track_left = (pair[0].longitude_e7, pair[0].latitude_e7);
+            let track_right = (pair[1].longitude_e7, pair[1].latitude_e7);
+            if let Some((numerator, denominator)) = segment_intersection_track_fraction(
+                track_left,
+                track_right,
+                geometry_left,
+                geometry_right,
+            ) {
+                best = best.min((
+                    0,
+                    track_offset_at_fraction(&pair[0], &pair[1], numerator, denominator),
+                ));
+            }
+            for (track_point, track_offset) in [
+                (track_left, pair[0].edge_offset_mm),
+                (track_right, pair[1].edge_offset_mm),
+            ] {
+                let (distance, _, _) =
+                    point_segment_projection(track_point, geometry_left, geometry_right);
+                best = best.min((distance, track_offset));
+            }
+        }
+    });
+    if let PlatformGeometry::Polygon(rings) = geometry {
+        for point in &track.geometry {
+            if point_in_polygon((point.longitude_e7, point.latitude_e7), rings) {
+                best = best.min((0, point.edge_offset_mm));
+            }
+        }
+    }
+    best
+}
+
+fn insert_segment_search_cells(
+    cells: &mut BTreeSet<(i32, i32)>,
+    left: (i32, i32),
+    right: (i32, i32),
+    cell_size: i32,
+    context: &str,
+) -> Result<()> {
+    let dx = i64::from(right.0) - i64::from(left.0);
+    let dy = i64::from(right.1) - i64::from(left.1);
+    let span = dx.unsigned_abs().max(dy.unsigned_abs());
+    let steps = (span / u64::try_from(cell_size).unwrap_or(1)).saturating_add(1);
+    require(
+        u128::from(steps) <= MAX_PLATFORM_SEARCH_CELLS,
+        format!("{context} ueberschreitet den Plattform-Suchraum."),
+    )?;
+    for step in 0..=steps {
+        let denominator = i128::from(steps.max(1));
+        let longitude = i128::from(left.0)
+            .saturating_add(i128::from(dx).saturating_mul(i128::from(step)) / denominator);
+        let latitude = i128::from(left.1)
+            .saturating_add(i128::from(dy).saturating_mul(i128::from(step)) / denominator);
+        cells.insert((
+            grid_cell(i32::try_from(longitude).unwrap_or(left.0), cell_size),
+            grid_cell(i32::try_from(latitude).unwrap_or(left.1), cell_size),
+        ));
+    }
+    Ok(())
+}
+
+fn platform_search_cells(
+    geometry: &PlatformGeometry,
+    cell_size: i32,
+    context: &str,
+) -> Result<BTreeSet<(i32, i32)>> {
+    let mut cells = BTreeSet::new();
+    geometry.for_each_point(|point| {
+        cells.insert((grid_cell(point.0, cell_size), grid_cell(point.1, cell_size)));
+    });
+    let mut segment_error = None;
+    geometry.for_each_segment(|left, right| {
+        if segment_error.is_none()
+            && let Err(error) =
+                insert_segment_search_cells(&mut cells, left, right, cell_size, context)
+        {
+            segment_error = Some(error);
+        }
+    });
+    if let Some(error) = segment_error {
+        return Err(error);
+    }
+    if let PlatformGeometry::Polygon(rings) = geometry {
+        let mut minimum = (i32::MAX, i32::MAX);
+        let mut maximum = (i32::MIN, i32::MIN);
+        for point in rings.iter().flat_map(|ring| ring.iter().copied()) {
+            minimum.0 = minimum.0.min(grid_cell(point.0, cell_size));
+            minimum.1 = minimum.1.min(grid_cell(point.1, cell_size));
+            maximum.0 = maximum.0.max(grid_cell(point.0, cell_size));
+            maximum.1 = maximum.1.max(grid_cell(point.1, cell_size));
+        }
+        let width = i128::from(maximum.0) - i128::from(minimum.0) + 1;
+        let height = i128::from(maximum.1) - i128::from(minimum.1) + 1;
+        let cell_count = u128::try_from(width.saturating_mul(height)).unwrap_or(u128::MAX);
+        require(
+            cell_count <= MAX_PLATFORM_SEARCH_CELLS,
+            format!("{context}.geometry Polygon ueberschreitet den Plattform-Suchraum."),
+        )?;
+        for x in minimum.0..=maximum.0 {
+            for y in minimum.1..=maximum.1 {
+                cells.insert((x, y));
+            }
+        }
+    }
+    Ok(cells)
+}
+
+fn ingest_platforms(
+    database: &Database,
+    path: &Path,
+    relative: &str,
+    policy: &PolicySpec,
+    counts: &mut Counts,
+) -> Result<FileEvidence> {
+    let mut transaction = database.begin_write().map_err(db_error)?;
+    transaction.set_durability(Durability::None);
+    let tracks = transaction.open_table(TRACKS).map_err(db_error)?;
+    let spatial = transaction
+        .open_multimap_table(SPATIAL_TRACKS)
+        .map_err(db_error)?;
+    let mut platforms = transaction.open_table(PLATFORMS).map_err(db_error)?;
+    let cell_size = snap_e7(policy.maximum_platform_snap_distance_mm);
+    let maximum_squared =
+        u128::from(u32::try_from(cell_size).unwrap_or(u32::MAX)).saturating_pow(2);
+    let evidence = scan_sequence(path, relative, |feature, record| {
+        counts.platforms_seen = counts.platforms_seen.saturating_add(1);
+        let context = format!("platforms Datensatz {record}");
+        let values = properties(&feature, &context)?;
+        let platform_id = string_field(values, "feature_id", &context)?;
+        let geometry = platform_geometry(&feature, &context)?;
+        let mut candidates = BTreeSet::new();
+        for (base_x, base_y) in platform_search_cells(&geometry, cell_size, &context)? {
+            for x in base_x.saturating_sub(1)..=base_x.saturating_add(1) {
+                for y in base_y.saturating_sub(1)..=base_y.saturating_add(1) {
+                    let key = grid_key(x, y);
+                    let mut values = spatial.get(key.as_str()).map_err(db_error)?;
+                    while let Some(value) = values.next().transpose().map_err(db_error)? {
+                        candidates.insert(value.value().to_owned());
+                    }
+                }
+            }
+        }
+        let mut best: Option<(u128, String, i64, i64)> = None;
+        for track_id in candidates {
+            let serialized = tracks
+                .get(track_id.as_str())
+                .map_err(db_error)?
+                .ok_or_else(|| {
+                    GermanyOperationalV2Error::new(format!(
+                        "Raumindex verweist auf unbekannte Kante `{track_id}`."
+                    ))
+                })?;
+            let track = track_from_json(serialized.value(), "Gleiskante im Plattformabgleich")?;
+            let (distance, offset) = nearest_on_track_to_geometry(&track, &geometry);
+            if distance <= maximum_squared
+                && best.as_ref().is_none_or(|current| {
+                    (distance, track_id.as_str(), offset)
+                        < (current.0, current.1.as_str(), current.2)
+                })
+            {
+                best = Some((distance, track_id, offset, track.length_mm));
+            }
+        }
+        let Some((_, edge_id, center_mm, edge_length)) = best else {
+            counts.excluded_platform_evidence = counts.excluded_platform_evidence.saturating_add(1);
+            return Ok(());
+        };
+        let interval_length = policy.minimum_platform_length_mm.min(edge_length).max(1);
+        let mut from_mm = center_mm
+            .saturating_sub(interval_length / 2)
+            .clamp(0, edge_length.saturating_sub(interval_length));
+        let to_mm = from_mm.saturating_add(interval_length).min(edge_length);
+        if from_mm >= to_mm {
+            from_mm = 0;
+        }
+        let interval = StoredPlatform {
+            edge_id,
+            from_mm,
+            to_mm,
+            direction: "along".to_owned(),
+        };
+        let serialized = serde_json::to_string(&interval).map_err(|error| {
+            GermanyOperationalV2Error::new(format!(
+                "Bahnsteigintervall kann nicht serialisiert werden: {error}"
+            ))
+        })?;
+        require(
+            platforms
+                .insert(platform_id, serialized.as_str())
+                .map_err(db_error)?
+                .is_none(),
+            format!("Doppelter Bahnsteig `{platform_id}`."),
+        )?;
+        counts.platform_intervals = counts.platform_intervals.saturating_add(1);
+        Ok(())
+    })?;
+    drop(platforms);
+    drop(spatial);
+    drop(tracks);
+    transaction.commit().map_err(db_error)?;
+    Ok(evidence)
+}
+
+fn boundary_resource(track: &TrackRecord, offset_mm: i64) -> Result<String> {
+    if offset_mm == 0 {
+        Ok(node_resource(track.from_node_id))
+    } else if offset_mm == track.length_mm {
+        Ok(node_resource(track.to_node_id))
+    } else if (0..track.length_mm).contains(&offset_mm) {
+        Ok(stable_id(
+            "resource:synthetic-section-boundary:",
+            &[track.id.as_str(), offset_mm.to_string().as_str()],
+        ))
+    } else {
+        Err(GermanyOperationalV2Error::new(format!(
+            "Kantengrenze {offset_mm} liegt ausserhalb `{}`.",
+            track.id
+        )))
+    }
+}
+
+fn node_at_offset(track: &TrackRecord, offset_mm: i64) -> Option<i64> {
+    if offset_mm == 0 {
+        Some(track.from_node_id)
+    } else if offset_mm == track.length_mm {
+        Some(track.to_node_id)
+    } else {
+        None
+    }
+}
+
+fn validate_timetable_leg(
+    track: &TrackRecord,
+    leg: &TimetableLegInput,
+    context: &str,
+) -> Result<i64> {
+    require(!leg.edge_id.is_empty(), format!("{context}.edgeId fehlt."))?;
+    require(
+        (0..=track.length_mm).contains(&leg.edge_entry_mm)
+            && (0..=track.length_mm).contains(&leg.edge_exit_mm),
+        format!("{context} liegt ausserhalb der Kante `{}`.", track.id),
+    )?;
+    let direction_valid = match leg.direction.as_str() {
+        "along" => leg.edge_exit_mm > leg.edge_entry_mm,
+        "against" => leg.edge_exit_mm < leg.edge_entry_mm,
+        _ => false,
+    };
+    require(
+        direction_valid,
+        format!("{context} besitzt ungueltige Richtung oder Offsets."),
+    )?;
+    let track_protection_systems = track.protection_systems.iter().cloned().collect::<Vec<_>>();
+    require(
+        !leg.available_protection_systems.is_empty()
+            && leg
+                .available_protection_systems
+                .windows(2)
+                .all(|pair| pair[0] < pair[1])
+            && leg.available_protection_systems == track_protection_systems,
+        format!(
+            "{context}.availableProtectionSystems ist nicht die kanonische streckenseitige Alternativenmenge."
+        ),
+    )?;
+    require(
+        leg.simultaneously_required_protection_systems
+            .windows(2)
+            .all(|pair| pair[0] < pair[1])
+            && leg
+                .simultaneously_required_protection_systems
+                .iter()
+                .all(|system| leg.available_protection_systems.contains(system)),
+        format!(
+            "{context}.simultaneouslyRequiredProtectionSystems ist nicht kanonisch oder semantisch unmoeglich."
+        ),
+    )?;
+    Ok(i64::try_from(leg.edge_entry_mm.abs_diff(leg.edge_exit_mm)).unwrap_or(i64::MAX))
+}
+
+fn ingest_timetable_routes(
+    database: &Database,
+    path: &Path,
+    relative: &str,
+    counts: &mut Counts,
+) -> Result<FileEvidence> {
+    let mut transaction = database.begin_write().map_err(db_error)?;
+    transaction.set_durability(Durability::None);
+    let tracks = transaction.open_table(TRACKS).map_err(db_error)?;
+    let mut routes = transaction.open_table(TIMETABLE_ROUTES).map_err(db_error)?;
+    let mut signals = transaction.open_table(SIGNALS).map_err(db_error)?;
+    let mut resources = transaction.open_table(BLOCK_RESOURCES).map_err(db_error)?;
+    let evidence = scan_sequence(path, relative, |value, record| {
+        let context = format!("timetableRoutes Datensatz {record}");
+        exact_keys(
+            &value,
+            &[
+                "routeVersionId",
+                "templateId",
+                "predecessorId",
+                "transitionRouteMm",
+                "legs",
+            ],
+            &context,
+        )?;
+        if let Some(legs) = value.get("legs").and_then(Value::as_array) {
+            for (index, leg) in legs.iter().enumerate() {
+                exact_keys(
+                    leg,
+                    &[
+                        "edgeId",
+                        "direction",
+                        "edgeEntryMm",
+                        "edgeExitMm",
+                        "availableProtectionSystems",
+                        "simultaneouslyRequiredProtectionSystems",
+                    ],
+                    &format!("{context}.legs[{index}]"),
+                )?;
+            }
+        }
+        let route: TimetableRouteInput = serde_json::from_value(value).map_err(|error| {
+            GermanyOperationalV2Error::new(format!("{context} ist ungueltig: {error}"))
+        })?;
+        require(
+            !route.route_version_id.is_empty()
+                && !route.template_id.is_empty()
+                && !route.legs.is_empty(),
+            format!("{context} ist unvollstaendig."),
+        )?;
+        require(
+            route.predecessor_id.is_some() == route.transition_route_mm.is_some(),
+            format!("{context} muss predecessorId und transitionRouteMm gemeinsam setzen."),
+        )?;
+        let mut previous: Option<(TimetableLegInput, TrackRecord)> = None;
+        let mut route_length = 0_i64;
+        for (leg_index, leg) in route.legs.iter().enumerate() {
+            let serialized = tracks
+                .get(leg.edge_id.as_str())
+                .map_err(db_error)?
+                .ok_or_else(|| {
+                    GermanyOperationalV2Error::new(format!(
+                        "{context}.legs[{leg_index}] verweist auf unbekannte Kante `{}`.",
+                        leg.edge_id
+                    ))
+                })?;
+            let track = track_from_json(serialized.value(), "Timetable-Kantenreferenz")?;
+            let length =
+                validate_timetable_leg(&track, leg, &format!("{context}.legs[{leg_index}]"))?;
+            route_length = route_length.checked_add(length).ok_or_else(|| {
+                GermanyOperationalV2Error::new(format!("{context} laeuft in der Laenge ueber."))
+            })?;
+            require(
+                route_length <= MAX_SAFE_INTEGER,
+                format!("{context} ueberschreitet sichere Ganzzahlen."),
+            )?;
+            if let Some((previous_leg, previous_track)) = &previous {
+                if previous_leg.edge_id == leg.edge_id {
+                    require(
+                        previous_leg.edge_exit_mm == leg.edge_entry_mm,
+                        format!(
+                            "{context}.legs[{leg_index}] schliesst auf derselben Kante nicht lueckenlos an."
+                        ),
+                    )?;
+                } else {
+                    let previous_node = node_at_offset(previous_track, previous_leg.edge_exit_mm);
+                    let next_node = node_at_offset(&track, leg.edge_entry_mm);
+                    require(
+                        previous_node.is_some() && previous_node == next_node,
+                        format!(
+                            "{context}.legs[{leg_index}] besitzt keine lueckenlose gemeinsame Knotengrenze."
+                        ),
+                    )?;
+                }
+            }
+            for offset in [leg.edge_entry_mm, leg.edge_exit_mm] {
+                let resource = boundary_resource(&track, offset)?;
+                let _ = resources.insert(resource.as_str(), &()).map_err(db_error)?;
+            }
+            let signal_id = synthetic_signal_id(&route.route_version_id, leg_index);
+            require(
+                signals
+                    .insert(signal_id.as_str(), &())
+                    .map_err(db_error)?
+                    .is_none(),
+                format!("Kollidierende synthetische Signal-ID `{signal_id}`."),
+            )?;
+            previous = Some((leg.clone(), track));
+            counts.timetable_legs = counts.timetable_legs.saturating_add(1);
+        }
+        if let Some(transition) = route.transition_route_mm {
+            require(
+                (0..=route_length).contains(&transition),
+                format!("{context}.transitionRouteMm liegt ausserhalb des Laufwegs."),
+            )?;
+        }
+        let serialized = serde_json::to_string(&route).map_err(|error| {
+            GermanyOperationalV2Error::new(format!(
+                "{context} kann nicht serialisiert werden: {error}"
+            ))
+        })?;
+        require(
+            routes
+                .insert(route.route_version_id.as_str(), serialized.as_str())
+                .map_err(db_error)?
+                .is_none(),
+            format!("Doppelte routeVersionId `{}`.", route.route_version_id),
+        )?;
+        counts.timetable_routes = counts.timetable_routes.saturating_add(1);
+        Ok(())
+    })?;
+    drop(resources);
+    drop(signals);
+    drop(routes);
+    drop(tracks);
+    transaction.commit().map_err(db_error)?;
+    require(
+        counts.timetable_routes > 0,
+        "timetableRoutes-Layer ist leer.",
+    )?;
+
+    let read = database.begin_read().map_err(db_error)?;
+    let routes = read.open_table(TIMETABLE_ROUTES).map_err(db_error)?;
+    for entry in routes.iter().map_err(db_error)? {
+        let (_, serialized) = entry.map_err(db_error)?;
+        let route: TimetableRouteInput =
+            serde_json::from_str(serialized.value()).map_err(|error| {
+                GermanyOperationalV2Error::new(format!("Timetable-Index ist ungueltig: {error}"))
+            })?;
+        if let Some(predecessor) = route.predecessor_id {
+            require(
+                predecessor != route.route_version_id
+                    && routes
+                        .get(predecessor.as_str())
+                        .map_err(db_error)?
+                        .is_some(),
+                format!(
+                    "Laufweg `{}` verweist auf unbekannten oder eigenen Vorgaenger `{predecessor}`.",
+                    route.route_version_id
+                ),
+            )?;
+        }
+    }
+    Ok(evidence)
+}
+
+fn get_track(transaction: &redb::ReadTransaction, edge_id: &str) -> Result<TrackRecord> {
+    let table = transaction.open_table(TRACKS).map_err(db_error)?;
+    let value = table.get(edge_id).map_err(db_error)?.ok_or_else(|| {
+        GermanyOperationalV2Error::new(format!(
+            "Unbekannte Gleiskante `{edge_id}` im Ableitungsindex."
+        ))
+    })?;
+    track_from_json(value.value(), "Gleiskante im Ableitungsindex")
+}
+
+fn track_block_resources(
+    transaction: &redb::ReadTransaction,
+    edge_id: &str,
+) -> Result<BTreeSet<String>> {
+    let table = transaction
+        .open_multimap_table(TRACK_BLOCKS)
+        .map_err(db_error)?;
+    let mut result = BTreeSet::from([edge_resource(edge_id)]);
+    let mut values = table.get(edge_id).map_err(db_error)?;
+    while let Some(value) = values.next().transpose().map_err(db_error)? {
+        result.insert(value.value().to_owned());
+    }
+    Ok(result)
+}
+
+fn switch_positions_for_leg(
+    transaction: &redb::ReadTransaction,
+    track: &TrackRecord,
+    entry_mm: i64,
+    exit_mm: i64,
+    route_id: &str,
+) -> Result<BTreeMap<String, String>> {
+    let table = transaction.open_table(SWITCH_BY_NODE).map_err(db_error)?;
+    let mut result = BTreeMap::new();
+    for node in [
+        node_at_offset(track, entry_mm),
+        node_at_offset(track, exit_mm),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let key = node.to_string();
+        if let Some(switch) = table.get(key.as_str()).map_err(db_error)? {
+            let switch_id = switch.value().to_owned();
+            let position = stable_id("position:synthetic-route:", &[route_id, switch_id.as_str()]);
+            if let Some(previous) = result.insert(switch_id.clone(), position.clone()) {
+                require(
+                    previous == position,
+                    format!(
+                        "Laufweg `{route_id}` verlangt fuer synthetische Weiche `{switch_id}` widerspruechliche Lagen."
+                    ),
+                )?;
+            }
+        }
+    }
+    Ok(result)
+}
+
+fn write_bytes(
+    writer: &mut BufWriter<File>,
+    bytes: &[u8],
+    context: &str,
+    path: &Path,
+) -> Result<()> {
+    writer
+        .write_all(bytes)
+        .map_err(|error| io_error(context, path, error))
+}
+
+fn write_json<T: Serialize + ?Sized>(
+    writer: &mut BufWriter<File>,
+    value: &T,
+    context: &str,
+    path: &Path,
+) -> Result<()> {
+    serde_json::to_writer(writer, value).map_err(|error| {
+        GermanyOperationalV2Error::new(format!("{context} `{}`: {error}", path.display()))
+    })
+}
+
+fn write_map_entry_prefix(
+    writer: &mut BufWriter<File>,
+    first: &mut bool,
+    key: &str,
+    path: &Path,
+) -> Result<()> {
+    if !*first {
+        write_bytes(writer, b",", "Operational-v2-Rohkandidat", path)?;
+    }
+    *first = false;
+    write_json(writer, key, "Operational-v2-Schluessel", path)?;
+    write_bytes(writer, b":", "Operational-v2-Rohkandidat", path)
+}
+
+fn write_set_table(
+    transaction: &redb::ReadTransaction,
+    writer: &mut BufWriter<File>,
+    definition: TableDefinition<&str, ()>,
+    path: &Path,
+) -> Result<()> {
+    let table = transaction.open_table(definition).map_err(db_error)?;
+    write_bytes(writer, b"[", "Operational-v2-Rohkandidat", path)?;
+    let mut first = true;
+    for entry in table.iter().map_err(db_error)? {
+        let (key, _) = entry.map_err(db_error)?;
+        if !first {
+            write_bytes(writer, b",", "Operational-v2-Rohkandidat", path)?;
+        }
+        first = false;
+        write_json(writer, key.value(), "Operational-v2-Set", path)?;
+    }
+    write_bytes(writer, b"]", "Operational-v2-Rohkandidat", path)
+}
+
+fn write_directed_edges(
+    transaction: &redb::ReadTransaction,
+    writer: &mut BufWriter<File>,
+    path: &Path,
+) -> Result<()> {
+    let tracks = transaction.open_table(TRACKS).map_err(db_error)?;
+    write_bytes(writer, b"{", "Operational-v2-Rohkandidat", path)?;
+    let mut first = true;
+    for entry in tracks.iter().map_err(db_error)? {
+        let (edge_id, serialized) = entry.map_err(db_error)?;
+        let track = track_from_json(serialized.value(), "Gleiskante fuer directedEdges")?;
+        write_map_entry_prefix(writer, &mut first, edge_id.value(), path)?;
+        write_json(writer, &track.length_mm, "Kantenlaenge", path)?;
+    }
+    write_bytes(writer, b"}", "Operational-v2-Rohkandidat", path)
+}
+
+fn write_edge_geometries(
+    transaction: &redb::ReadTransaction,
+    writer: &mut BufWriter<File>,
+    path: &Path,
+) -> Result<()> {
+    let tracks = transaction.open_table(TRACKS).map_err(db_error)?;
+    write_bytes(writer, b"{", "Operational-v2-Rohkandidat", path)?;
+    let mut first = true;
+    for entry in tracks.iter().map_err(db_error)? {
+        let (edge_id, serialized) = entry.map_err(db_error)?;
+        let track = track_from_json(serialized.value(), "Gleiskante fuer edgeGeometries")?;
+        write_map_entry_prefix(writer, &mut first, edge_id.value(), path)?;
+        write_json(writer, &track.geometry, "Kantengeometrie", path)?;
+    }
+    write_bytes(writer, b"}", "Operational-v2-Rohkandidat", path)
+}
+
+fn route_leg_value(
+    transaction: &redb::ReadTransaction,
+    track: &TrackRecord,
+    leg: &TimetableLegInput,
+    route_start_mm: i64,
+    policy: &PolicySpec,
+) -> Result<Value> {
+    let block_ids = track_block_resources(transaction, &track.id)?;
+    let speed_limit_mmps = if leg.direction == "along" {
+        track.speed_along_mmps
+    } else {
+        track.speed_against_mmps
+    };
+    Ok(json!({
+        "edgeId": track.id,
+        "direction": leg.direction,
+        "edgeEntryMm": leg.edge_entry_mm,
+        "edgeExitMm": leg.edge_exit_mm,
+        "routeStartMm": route_start_mm,
+        "blockIds": block_ids,
+        "speedLimitMmps": speed_limit_mmps,
+        "gradientPerMille": policy.unknown_gradient_abs_permille,
+        "availableProtectionSystems": &leg.available_protection_systems,
+        "simultaneouslyRequiredProtectionSystems": &leg.simultaneously_required_protection_systems,
+    }))
+}
+
+fn route_value(
+    transaction: &redb::ReadTransaction,
+    route: &TimetableRouteInput,
+    policy: &PolicySpec,
+) -> Result<Value> {
+    let mut route_start_mm = 0_i64;
+    let mut legs = Vec::with_capacity(route.legs.len());
+    for (index, leg) in route.legs.iter().enumerate() {
+        let track = get_track(transaction, &leg.edge_id)?;
+        let length = validate_timetable_leg(
+            &track,
+            leg,
+            &format!("Laufweg `{}` Leg {index}", route.route_version_id),
+        )?;
+        legs.push(route_leg_value(
+            transaction,
+            &track,
+            leg,
+            route_start_mm,
+            policy,
+        )?);
+        route_start_mm = route_start_mm.checked_add(length).ok_or_else(|| {
+            GermanyOperationalV2Error::new(format!(
+                "Laufweg `{}` laeuft ueber.",
+                route.route_version_id
+            ))
+        })?;
+    }
+    Ok(json!({
+        "id": route.route_version_id,
+        "templateId": route.template_id,
+        "predecessorId": route.predecessor_id,
+        "transitionRouteMm": route.transition_route_mm,
+        "legs": legs,
+    }))
+}
+
+fn local_route(track: &TrackRecord, direction: &str) -> TimetableRouteInput {
+    let (entry, exit) = if direction == "along" {
+        (0, track.length_mm)
+    } else {
+        (track.length_mm, 0)
+    };
+    TimetableRouteInput {
+        route_version_id: local_route_id(&track.id, direction),
+        template_id: local_template_id(&track.id, direction),
+        predecessor_id: None,
+        transition_route_mm: None,
+        legs: vec![TimetableLegInput {
+            edge_id: track.id.clone(),
+            direction: direction.to_owned(),
+            edge_entry_mm: entry,
+            edge_exit_mm: exit,
+            available_protection_systems: track.protection_systems.iter().cloned().collect(),
+            simultaneously_required_protection_systems: Vec::new(),
+        }],
+    }
+}
+
+fn write_route_versions(
+    transaction: &redb::ReadTransaction,
+    writer: &mut BufWriter<File>,
+    path: &Path,
+    policy: &PolicySpec,
+    timetable: bool,
+) -> Result<()> {
+    write_bytes(writer, b"{", "Operational-v2-Rohkandidat", path)?;
+    let mut first = true;
+    if timetable {
+        let routes = transaction.open_table(TIMETABLE_ROUTES).map_err(db_error)?;
+        for entry in routes.iter().map_err(db_error)? {
+            let (route_id, serialized) = entry.map_err(db_error)?;
+            let route: TimetableRouteInput =
+                serde_json::from_str(serialized.value()).map_err(|error| {
+                    GermanyOperationalV2Error::new(format!(
+                        "Timetable-Index ist ungueltig: {error}"
+                    ))
+                })?;
+            write_map_entry_prefix(writer, &mut first, route_id.value(), path)?;
+            write_json(
+                writer,
+                &route_value(transaction, &route, policy)?,
+                "Laufwegversion",
+                path,
+            )?;
+        }
+    } else {
+        let tracks = transaction.open_table(TRACKS).map_err(db_error)?;
+        for entry in tracks.iter().map_err(db_error)? {
+            let (_, serialized) = entry.map_err(db_error)?;
+            let track = track_from_json(serialized.value(), "Gleiskante fuer lokale Laufwege")?;
+            for direction in ["along", "against"] {
+                let route = local_route(&track, direction);
+                write_map_entry_prefix(writer, &mut first, &route.route_version_id, path)?;
+                write_json(
+                    writer,
+                    &route_value(transaction, &route, policy)?,
+                    "lokale Laufwegversion",
+                    path,
+                )?;
+            }
+        }
+    }
+    write_bytes(writer, b"}", "Operational-v2-Rohkandidat", path)
+}
+
+fn template_value(
+    transaction: &redb::ReadTransaction,
+    route: &TimetableRouteInput,
+    leg_index: usize,
+) -> Result<(String, Value)> {
+    let mut authority_end = 0_i64;
+    let mut path_resources = BTreeSet::new();
+    let mut flank_resources = BTreeSet::new();
+    let mut switch_positions = BTreeMap::new();
+    let mut overlap = None;
+    let prefix = route
+        .legs
+        .get(..leg_index.saturating_add(1))
+        .ok_or_else(|| GermanyOperationalV2Error::new("Interlocking-Leg fehlt."))?;
+    for (prefix_index, previous) in prefix.iter().enumerate() {
+        let track = get_track(transaction, &previous.edge_id)?;
+        authority_end = authority_end
+            .checked_add(
+                i64::try_from(previous.edge_entry_mm.abs_diff(previous.edge_exit_mm))
+                    .unwrap_or(i64::MAX),
+            )
+            .ok_or_else(|| {
+                GermanyOperationalV2Error::new(format!(
+                    "Fahrstrasse fuer `{}` laeuft ueber.",
+                    route.route_version_id
+                ))
+            })?;
+        path_resources.extend(track_block_resources(transaction, &track.id)?);
+        let entry = boundary_resource(&track, previous.edge_entry_mm)?;
+        let exit = boundary_resource(&track, previous.edge_exit_mm)?;
+        flank_resources.insert(entry.clone());
+        if entry == exit {
+            flank_resources.insert(self_loop_flank_resource(&track.id));
+        }
+        for (switch_id, position) in switch_positions_for_leg(
+            transaction,
+            &track,
+            previous.edge_entry_mm,
+            previous.edge_exit_mm,
+            &route.route_version_id,
+        )? {
+            if let Some(existing) = switch_positions.insert(switch_id.clone(), position.clone()) {
+                require(
+                    existing == position,
+                    format!(
+                        "Laufweg `{}` verlangt bis Leg {prefix_index} fuer synthetische Weiche `{switch_id}` widerspruechliche Lagen.",
+                        route.route_version_id
+                    ),
+                )?;
+            }
+        }
+        overlap = Some(exit);
+    }
+    let overlap =
+        overlap.ok_or_else(|| GermanyOperationalV2Error::new("Interlocking-Prefix ist leer."))?;
+    flank_resources.remove(&overlap);
+    require(
+        !flank_resources.is_empty(),
+        format!(
+            "Fahrstrasse fuer `{}` besitzt keinen eigenstaendigen Flankenschutz.",
+            route.route_version_id
+        ),
+    )?;
+    let template_id = stable_id(
+        "interlocking:synthetic-segment:",
+        &[route.route_version_id.as_str(), &leg_index.to_string()],
+    );
+    Ok((
+        template_id.clone(),
+        json!({
+            "id": template_id,
+            "routeTemplateId": route.template_id,
+            "signalId": synthetic_signal_id(&route.route_version_id, leg_index),
+            "movementKind": "train",
+            "pathResources": path_resources,
+            "overlapResources": BTreeSet::from([overlap]),
+            "flankResources": flank_resources,
+            "switchPositions": switch_positions,
+            "authorityEndRouteMm": authority_end,
+            "releaseAfterTailRouteMm": authority_end,
+        }),
+    ))
+}
+
+fn write_interlocking_routes(
+    transaction: &redb::ReadTransaction,
+    writer: &mut BufWriter<File>,
+    path: &Path,
+    timetable: bool,
+) -> Result<()> {
+    write_bytes(writer, b"{", "Operational-v2-Rohkandidat", path)?;
+    let mut first = true;
+    if timetable {
+        let routes = transaction.open_table(TIMETABLE_ROUTES).map_err(db_error)?;
+        for entry in routes.iter().map_err(db_error)? {
+            let (_, serialized) = entry.map_err(db_error)?;
+            let route: TimetableRouteInput =
+                serde_json::from_str(serialized.value()).map_err(|error| {
+                    GermanyOperationalV2Error::new(format!(
+                        "Timetable-Index ist ungueltig: {error}"
+                    ))
+                })?;
+            // Der Welt-Builder bindet die Fahrberechtigung an den letzten
+            // Laufwegindex und damit an den vollstaendigen Fahrweg. Saemtliche
+            // Praefixvorlagen auszugeben waere nicht nur unbenutzt, sondern
+            // wuerde die kumulativen Ressourcen quadratisch duplizieren. Pro
+            // gepinnter Fahrwegversion wird deshalb genau die vollstaendige,
+            // konservative Fahrstrasse materialisiert.
+            let leg_index = route.legs.len().checked_sub(1).ok_or_else(|| {
+                GermanyOperationalV2Error::new(format!(
+                    "Timetable-Laufweg `{}` ist leer.",
+                    route.route_version_id
+                ))
+            })?;
+            let (template_id, value) = template_value(transaction, &route, leg_index)?;
+            write_map_entry_prefix(writer, &mut first, &template_id, path)?;
+            write_json(writer, &value, "synthetische Gesamtfahrstrasse", path)?;
+        }
+    } else {
+        let tracks = transaction.open_table(TRACKS).map_err(db_error)?;
+        for entry in tracks.iter().map_err(db_error)? {
+            let (_, serialized) = entry.map_err(db_error)?;
+            let track = track_from_json(serialized.value(), "Gleiskante fuer lokale Fahrstrassen")?;
+            for direction in ["along", "against"] {
+                let route = local_route(&track, direction);
+                let (template_id, value) = template_value(transaction, &route, 0)?;
+                write_map_entry_prefix(writer, &mut first, &template_id, path)?;
+                write_json(writer, &value, "lokale synthetische Fahrstrasse", path)?;
+            }
+        }
+    }
+    write_bytes(writer, b"}", "Operational-v2-Rohkandidat", path)
+}
+
+fn write_platforms(
+    transaction: &redb::ReadTransaction,
+    writer: &mut BufWriter<File>,
+    path: &Path,
+) -> Result<()> {
+    let platforms = transaction.open_table(PLATFORMS).map_err(db_error)?;
+    write_bytes(writer, b"{", "Operational-v2-Rohkandidat", path)?;
+    let mut first = true;
+    for entry in platforms.iter().map_err(db_error)? {
+        let (platform_id, serialized) = entry.map_err(db_error)?;
+        write_map_entry_prefix(writer, &mut first, platform_id.value(), path)?;
+        write_bytes(
+            writer,
+            serialized.value().as_bytes(),
+            "Bahnsteigintervall",
+            path,
+        )?;
+    }
+    write_bytes(writer, b"}", "Operational-v2-Rohkandidat", path)
+}
+
+fn write_raw_candidate(
+    database: &Database,
+    path: &Path,
+    spec: &DerivationSpec,
+    timetable: bool,
+) -> Result<()> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|error| io_error("Operational-v2-Rohkandidat", path, error))?;
+    let mut writer = BufWriter::new(file);
+    let transaction = database.begin_read().map_err(db_error)?;
+    write_bytes(
+        &mut writer,
+        b"{\"blockResources\":",
+        "Operational-v2-Rohkandidat",
+        path,
+    )?;
+    write_set_table(&transaction, &mut writer, BLOCK_RESOURCES, path)?;
+    write_bytes(
+        &mut writer,
+        b",\"directedEdges\":",
+        "Operational-v2-Rohkandidat",
+        path,
+    )?;
+    write_directed_edges(&transaction, &mut writer, path)?;
+    write_bytes(
+        &mut writer,
+        b",\"edgeGeometries\":",
+        "Operational-v2-Rohkandidat",
+        path,
+    )?;
+    write_edge_geometries(&transaction, &mut writer, path)?;
+    write_bytes(&mut writer, b",\"id\":", "Operational-v2-Rohkandidat", path)?;
+    write_json(&mut writer, &spec.infra_release_id, "InfraRelease-ID", path)?;
+    write_bytes(
+        &mut writer,
+        b",\"interlockingRoutes\":",
+        "Operational-v2-Rohkandidat",
+        path,
+    )?;
+    write_interlocking_routes(&transaction, &mut writer, path, timetable)?;
+    write_bytes(
+        &mut writer,
+        b",\"platformIntervals\":",
+        "Operational-v2-Rohkandidat",
+        path,
+    )?;
+    write_platforms(&transaction, &mut writer, path)?;
+    write_bytes(
+        &mut writer,
+        b",\"regionBoundaries\":[",
+        "Operational-v2-Rohkandidat",
+        path,
+    )?;
+    write_json(
+        &mut writer,
+        &spec.policy.region_boundary_id,
+        "Regionsgrenze",
+        path,
+    )?;
+    write_bytes(
+        &mut writer,
+        b"],\"routeVersions\":",
+        "Operational-v2-Rohkandidat",
+        path,
+    )?;
+    write_route_versions(&transaction, &mut writer, path, &spec.policy, timetable)?;
+    write_bytes(
+        &mut writer,
+        b",\"rzueLayoutId\":",
+        "Operational-v2-Rohkandidat",
+        path,
+    )?;
+    write_json(
+        &mut writer,
+        &spec.policy.rzue_layout_id,
+        "RZUE-Layout",
+        path,
+    )?;
+    write_bytes(
+        &mut writer,
+        b",\"signals\":",
+        "Operational-v2-Rohkandidat",
+        path,
+    )?;
+    write_set_table(&transaction, &mut writer, SIGNALS, path)?;
+    write_bytes(
+        &mut writer,
+        b",\"switches\":",
+        "Operational-v2-Rohkandidat",
+        path,
+    )?;
+    write_set_table(&transaction, &mut writer, SWITCHES, path)?;
+    write_bytes(&mut writer, b"}\n", "Operational-v2-Rohkandidat", path)?;
+    writer
+        .flush()
+        .map_err(|error| io_error("Operational-v2-Rohkandidat", path, error))
+}
+
+fn table_len(
+    transaction: &redb::ReadTransaction,
+    definition: TableDefinition<&str, ()>,
+) -> Result<u64> {
+    transaction
+        .open_table(definition)
+        .map_err(db_error)?
+        .len()
+        .map_err(db_error)
+}
+
+fn write_report(path: &Path, report: &Value) -> Result<(u64, String)> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|error| io_error("Deutschland-Operational-Bericht", path, error))?;
+    let mut writer = BufWriter::new(file);
+    serde_json::to_writer(&mut writer, report).map_err(|error| {
+        GermanyOperationalV2Error::new(format!(
+            "Deutschland-Operational-Bericht `{}` kann nicht serialisiert werden: {error}",
+            path.display()
+        ))
+    })?;
+    writer
+        .write_all(b"\n")
+        .and_then(|()| writer.flush())
+        .map_err(|error| io_error("Deutschland-Operational-Bericht", path, error))?;
+    drop(writer);
+    let bytes =
+        fs::read(path).map_err(|error| io_error("Deutschland-Operational-Bericht", path, error))?;
+    Ok((
+        u64::try_from(bytes.len())
+            .map_err(|_| GermanyOperationalV2Error::new("Berichtsgroesse laeuft ueber."))?,
+        sha256(&bytes),
+    ))
+}
+
+/// Leitet aus sechs normalisierten Deutschland-Layern sowie optionalen,
+/// bereits auf Kanten gematchten Zuglaeufen einen statischen Operational-v2-
+/// Kandidaten ab. Kandidat und Bericht werden niemals ueberschrieben.
+pub fn derive_germany_operational_v2(
+    spec_path: &Path,
+    source_root: &Path,
+    candidate_path: &Path,
+    report_path: &Path,
+) -> Result<Value> {
+    let candidate_path = canonical_output_path(candidate_path, "Zielverzeichnis des Kandidaten")?;
+    let report_path = canonical_output_path(report_path, "Zielverzeichnis des Berichts")?;
+    require(
+        output_identity_key(&candidate_path) != output_identity_key(&report_path),
+        "Kandidat und Bericht muessen verschiedene Ziele besitzen.",
+    )?;
+    let _output_claims = OutputClaims::acquire(&[&candidate_path, &report_path])?;
+    ensure_output_absent(&candidate_path, "Operational-v2-Kandidat")?;
+    ensure_output_absent(&report_path, "Operational-v2-Bericht")?;
+    let source_metadata = fs::symlink_metadata(source_root)
+        .map_err(|error| io_error("Operational-v2-Quellwurzel", source_root, error))?;
+    require(
+        source_metadata.file_type().is_dir() && !is_symlink_or_reparse_point(&source_metadata),
+        "Operational-v2-Quellwurzel muss ein symlinkfreies Verzeichnis sein.",
+    )?;
+    let candidate_parent = candidate_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let report_parent = report_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    require_symlink_free_existing_path(source_root, "Operational-v2-Quellwurzel")?;
+    require_symlink_free_existing_path(candidate_parent, "Zielverzeichnis des Kandidaten")?;
+    require_symlink_free_existing_path(report_parent, "Zielverzeichnis des Berichts")?;
+    require(
+        candidate_parent.is_dir(),
+        "Zielverzeichnis des Kandidaten fehlt.",
+    )?;
+    require(
+        report_parent.is_dir(),
+        "Zielverzeichnis des Berichts fehlt.",
+    )?;
+
+    let (spec, spec_evidence) = read_spec(spec_path)?;
+    validate_spec(&spec)?;
+    let track_path = layer_path(source_root, &spec.layers.tracks, "tracks")?;
+    let platform_path = layer_path(source_root, &spec.layers.platforms, "platforms")?;
+    let switch_path = layer_path(source_root, &spec.layers.switches, "switches")?;
+    let signal_path = layer_path(source_root, &spec.layers.signals, "signals")?;
+    let block_path = layer_path(source_root, &spec.layers.blocks, "blocks")?;
+    let conflict_path = layer_path(
+        source_root,
+        &spec.layers.conflict_resources,
+        "conflictResources",
+    )?;
+    let timetable_path = spec
+        .layers
+        .timetable_routes
+        .as_deref()
+        .map(|relative| layer_path(source_root, relative, "timetableRoutes"))
+        .transpose()?;
+    let timetable = timetable_path.is_some();
+
+    let scratch = ScratchDirectory::create(candidate_parent)?;
+    let report_scratch = ScratchDirectory::create(report_parent)?;
+    let database_path = scratch.join("derivation.redb");
+    let mut builder = Database::builder();
+    builder.set_cache_size(DATABASE_CACHE_BYTES);
+    let database = builder.create(&database_path).map_err(db_error)?;
+    initialize_database(&database)?;
+
+    let mut counts = Counts::default();
+    let tracks_evidence = ingest_tracks(
+        &database,
+        &track_path,
+        &spec.layers.tracks,
+        &spec.policy,
+        !timetable,
+        &mut counts,
+    )?;
+    let switches_evidence =
+        ingest_switches(&database, &switch_path, &spec.layers.switches, &mut counts)?;
+    let signals_evidence =
+        ingest_signals(&database, &signal_path, &spec.layers.signals, &mut counts)?;
+    let blocks_evidence = ingest_blocks(&database, &block_path, &spec.layers.blocks, &mut counts)?;
+    let conflicts_evidence = ingest_conflict_resources(
+        &database,
+        &conflict_path,
+        &spec.layers.conflict_resources,
+        &mut counts,
+    )?;
+    let platforms_evidence = ingest_platforms(
+        &database,
+        &platform_path,
+        &spec.layers.platforms,
+        &spec.policy,
+        &mut counts,
+    )?;
+    let timetable_evidence = if let (Some(path), Some(relative)) = (
+        timetable_path.as_deref(),
+        spec.layers.timetable_routes.as_deref(),
+    ) {
+        Some(ingest_timetable_routes(
+            &database,
+            path,
+            relative,
+            &mut counts,
+        )?)
+    } else {
+        None
+    };
+
+    let raw_candidate = scratch.join("candidate.raw.json");
+    let staged_candidate = scratch.join("candidate.validated.json");
+    write_raw_candidate(&database, &raw_candidate, &spec, timetable)?;
+    let validation = validate_operational_infrastructure_v2_file(
+        &raw_candidate,
+        &spec.infra_release_id,
+        Some(&staged_candidate),
+    )
+    .map_err(|error| {
+        GermanyOperationalV2Error::new(format!(
+            "Abgeleiteter Operational-v2-Kandidat verletzt den nativen Vertrag: {error}"
+        ))
+    })?;
+
+    let read = database.begin_read().map_err(db_error)?;
+    let total_signals = table_len(&read, SIGNALS)?;
+    let total_switches = table_len(&read, SWITCHES)?;
+    let total_resources = table_len(&read, BLOCK_RESOURCES)?;
+    let route_versions = if timetable {
+        counts.timetable_routes
+    } else {
+        counts.orderable_tracks.saturating_mul(2)
+    };
+    let interlocking_routes = if timetable {
+        counts.timetable_routes
+    } else {
+        counts.orderable_tracks.saturating_mul(2)
+    };
+    let synthetic_boundary_signals = if timetable {
+        counts.timetable_legs
+    } else {
+        interlocking_routes
+    };
+    drop(read);
+
+    let policy_value = serde_json::to_value(&spec.policy).map_err(|error| {
+        GermanyOperationalV2Error::new(format!("Policy kann nicht kanonisiert werden: {error}"))
+    })?;
+    let mut policy_canonical = String::new();
+    canonical_json(&policy_value, &mut policy_canonical);
+    let mut inputs = serde_json::Map::new();
+    for (name, evidence) in [
+        ("spec", Some(&spec_evidence)),
+        ("tracks", Some(&tracks_evidence)),
+        ("platforms", Some(&platforms_evidence)),
+        ("switches", Some(&switches_evidence)),
+        ("signals", Some(&signals_evidence)),
+        ("blocks", Some(&blocks_evidence)),
+        ("conflictResources", Some(&conflicts_evidence)),
+        ("timetableRoutes", timetable_evidence.as_ref()),
+    ] {
+        inputs.insert(
+            name.to_owned(),
+            evidence.map_or(Value::Null, |evidence| {
+                serde_json::to_value(evidence).unwrap_or(Value::Null)
+            }),
+        );
+    }
+    let unresolved_dimensions = if timetable {
+        Vec::<String>::new()
+    } else {
+        vec!["complete-timetable-route-versions".to_owned()]
+    };
+    let unresolved_required = u64::try_from(unresolved_dimensions.len()).unwrap_or(u64::MAX);
+    let route_coverage = if timetable {
+        "complete-pinned-timetable-routes"
+    } else {
+        "local-directed-track-templates"
+    };
+    let report = json!({
+        "schema": REPORT_SCHEMA,
+        "mode": spec.mode,
+        "infraReleaseId": spec.infra_release_id,
+        "policy": {
+            "id": spec.policy.id,
+            "sha256": sha256(policy_canonical.as_bytes()),
+            "spec": spec.policy,
+        },
+        "inputs": inputs,
+        "candidate": {
+            "bytes": validation["bytes"],
+            "sha256": validation["sha256"],
+            "stateHash": validation["stateHash"],
+            "validationMode": validation["validationMode"],
+        },
+        "counts": {
+            "source": {
+                "tracks": counts.tracks_seen,
+                "orderableTracks": counts.orderable_tracks,
+                "platforms": counts.platforms_seen,
+                "switches": counts.switches,
+                "signals": counts.observed_signals,
+                "blocks": counts.blocks,
+                "conflictResources": counts.conflict_resources,
+                "timetableRoutes": counts.timetable_routes,
+                "timetableLegs": counts.timetable_legs,
+            },
+            "candidate": {
+                "directedEdges": counts.orderable_tracks,
+                "edgeGeometries": counts.orderable_tracks,
+                "routeVersions": route_versions,
+                "interlockingRoutes": interlocking_routes,
+                "signals": total_signals,
+                "switches": total_switches,
+                "blockResources": total_resources,
+                "platformIntervals": counts.platform_intervals,
+                "regionBoundaries": 1,
+            },
+            "provenance": {
+                "observedForwardSpeeds": counts.observed_forward_speeds,
+                "observedBackwardSpeeds": counts.observed_backward_speeds,
+                "simulatedSpeeds": counts.simulated_speeds,
+                "observedProtectionAssignments": counts.observed_protection,
+                "simulatedProtectionAssignments": counts.simulated_protection,
+                "matchedPlatformIntervals": counts.platform_intervals,
+                "excludedPlatformEvidence": counts.excluded_platform_evidence,
+                "syntheticBoundarySignals": synthetic_boundary_signals,
+            },
+        },
+        "scope": {
+            "routeModel": route_coverage,
+            "interlockingModel": "deterministic-full-route-node-stellzone-mutex-and-authority/v2",
+            "platformModel": "deterministic-nearest-observed-track-within-policy-radius/v1",
+            "capacityBias": "conservative-under-capacity",
+            "minimumOverlapMmPolicy": spec.policy.minimum_overlap_mm,
+        },
+        "routeCoverage": route_coverage,
+        "activationEligible": timetable,
+        "unresolvedRequired": unresolved_required,
+        "unresolvedRequiredDimensions": unresolved_dimensions,
+        "realInterlockingFactsClaimed": false,
+        "candidateProduced": true,
+    });
+
+    let staged_report = report_scratch.join("derivation.report.json");
+    let (report_bytes, report_sha256) = write_report(&staged_report, &report)?;
+    publish_pair_create_new(
+        &staged_candidate,
+        &candidate_path,
+        &staged_report,
+        &report_path,
+    )?;
+    Ok(json!({
+        "schema": RECEIPT_SCHEMA,
+        "infraReleaseId": spec.infra_release_id,
+        "candidate": {
+            "bytes": validation["bytes"],
+            "sha256": validation["sha256"],
+            "stateHash": validation["stateHash"],
+        },
+        "report": {
+            "bytes": report_bytes,
+            "sha256": report_sha256,
+        },
+        "candidateProduced": true,
+        "activationEligible": timetable,
+        "unresolvedRequired": unresolved_required,
+    }))
+}
+
+#[cfg(test)]
+mod publish_tests {
+    use super::{
+        ScratchDirectory, ensure_output_absent, publish_create_new, publish_pair_create_new,
+    };
+    use std::fs;
+
+    #[test]
+    fn create_new_publish_ueberschreibt_keinen_nachtraeglich_angelegten_target() {
+        let root = ScratchDirectory::create(&std::env::temp_dir()).expect("Testverzeichnis");
+        let staged = root.join("staged.json");
+        let target = root.join("target.json");
+        fs::write(&staged, b"validated").expect("Stagingdatei");
+        ensure_output_absent(&target, "Testziel").expect("Ziel anfangs frei");
+        fs::write(&target, b"foreign").expect("konkurrierendes Ziel");
+
+        publish_create_new(&staged, &target, "Testziel veroeffentlichen")
+            .expect_err("create-new darf ein spaetes Ziel nicht ersetzen");
+        assert_eq!(fs::read(&target).expect("Ziel lesen"), b"foreign");
+        assert_eq!(fs::read(&staged).expect("Staging lesen"), b"validated");
+    }
+
+    #[test]
+    fn fehlgeschlagener_zweiter_publish_hinterlaesst_keinen_eigenen_kandidaten() {
+        let root = ScratchDirectory::create(&std::env::temp_dir()).expect("Testverzeichnis");
+        let staged_candidate = root.join("staged-candidate.json");
+        let staged_report = root.join("staged-report.json");
+        let candidate = root.join("candidate.json");
+        let report = root.join("report.json");
+        fs::write(&staged_candidate, b"validated-candidate").expect("Kandidat im Staging");
+        fs::write(&staged_report, b"validated-report").expect("Bericht im Staging");
+        fs::write(&report, b"foreign-report").expect("konkurrierender Bericht");
+
+        publish_pair_create_new(&staged_candidate, &candidate, &staged_report, &report)
+            .expect_err("zweiter create-new Publish muss scheitern");
+        assert!(
+            !candidate.exists(),
+            "partieller Kandidat muss entfernt sein"
+        );
+        assert_eq!(
+            fs::read(&report).expect("fremder Bericht"),
+            b"foreign-report"
+        );
+        assert_eq!(
+            fs::read(&staged_candidate).expect("Kandidat bleibt nur im privaten Staging"),
+            b"validated-candidate"
+        );
+        assert_eq!(
+            fs::read(&staged_report).expect("Bericht bleibt nur im privaten Staging"),
+            b"validated-report"
+        );
+    }
+}
