@@ -29,6 +29,7 @@ import type { FleetAuthorityWorldConfiguration } from "./fleet-configuration.js"
 import {
   REGIONAL_SIMULATION_BOUNDARY_COMMAND_LIMIT,
   type OperationalScheduledCommand,
+  type OperationalScheduledCommandBoundary,
   type RegionalRealtimeRegistration,
   type RegionalScheduledCommandCatalog,
 } from "./regional-simulation-scheduler.js";
@@ -44,6 +45,16 @@ interface OperationalProgramTrain {
   readonly departureOffsetMs: number;
 }
 
+interface OperationalProgramBoundary {
+  readonly departureOffsetMs: number;
+  readonly trains: readonly OperationalProgramTrain[];
+}
+
+interface OperationalProgramPredecessor {
+  readonly train: OperationalProgramTrain;
+  readonly previousDay: boolean;
+}
+
 interface OperationalDeploymentProgram {
   readonly deploymentHash: string;
   readonly worldId: string;
@@ -52,6 +63,8 @@ interface OperationalDeploymentProgram {
   readonly initialization: OperationalSimulationInitialization;
   readonly repeatEveryMs: number;
   readonly trains: readonly OperationalProgramTrain[];
+  readonly boundaries: readonly OperationalProgramBoundary[];
+  readonly predecessors: ReadonlyMap<string, OperationalProgramPredecessor>;
 }
 
 function safeNonnegativeInteger(value: unknown, detail: string): number {
@@ -127,8 +140,13 @@ function deploymentOperationalProgram(
   receipt: OperationalInitializationValidationReceipt | undefined,
 ): OperationalDeploymentProgram {
   const { deployment, deploymentHash } = signed;
-  const initialization: OperationalSimulationInitialization = deployment.regionalSimulation;
   validateNativeProgramReceipt(signed, receipt);
+  // Eine einzige private Kopie traegt sowohl Revalidation als auch die
+  // wiederholbaren Zugvorlagen. Ein zweiter vollstaendiger Zugkorpus wuerde
+  // gerade beim Deutschland-Catch-up unnoetig die Speichermarge verbrauchen.
+  const initialization: OperationalSimulationInitialization = structuredClone(
+    deployment.regionalSimulation,
+  );
   const repeatEveryMs = deployment.repeatEveryS * 1_000;
   if (
     !Number.isSafeInteger(deployment.repeatEveryS)
@@ -168,30 +186,49 @@ function deploymentOperationalProgram(
       throw new Error(`Fahrt '${train.id}' besitzt keine nativ validierte signierte Fahrstrasse.`);
     }
     return Object.freeze({
-      train: structuredClone(train),
+      train,
       interlockingRouteId: train.dispatchInterlockingRouteId,
       departureOffsetMs,
     });
   }).sort((left, right) =>
     left.departureOffsetMs - right.departureOffsetMs
     || compareUtf8(left.train.id, right.train.id));
-  const trainsPerBoundary = new Map<number, number>();
+  const trainsPerBoundary = new Map<number, OperationalProgramTrain[]>();
   for (const train of trains) {
-    trainsPerBoundary.set(
-      train.departureOffsetMs,
-      (trainsPerBoundary.get(train.departureOffsetMs) ?? 0) + 1,
-    );
+    const boundary = trainsPerBoundary.get(train.departureOffsetMs) ?? [];
+    boundary.push(train);
+    trainsPerBoundary.set(train.departureOffsetMs, boundary);
   }
-  for (const [departureOffsetMs, trainCount] of trainsPerBoundary) {
+  const boundaries = [...trainsPerBoundary].map(([departureOffsetMs, boundaryTrains]) =>
+    Object.freeze({
+      departureOffsetMs,
+      trains: Object.freeze(boundaryTrains),
+    }));
+  for (const { departureOffsetMs, trains: boundaryTrains } of boundaries) {
     // Im stationaeren Tageszyklus entstehen je Fahrt hoechstens Retire und
     // Materialize, dazu genau ein Dispatch sowie der Scheduler-Advance auf
     // dieselbe Millisekunde. Diese atomare Grenze darf spaeter nie aufgrund
     // einer blossen Speichergrenze geteilt werden muessen.
-    const maximumBoundaryCommands = trainCount * 2 + 2;
+    const maximumBoundaryCommands = boundaryTrains.length * 2 + 2;
     if (maximumBoundaryCommands > REGIONAL_SIMULATION_BOUNDARY_COMMAND_LIMIT) {
       throw new Error(
         `Signierte Betriebsprogrammgrenze '${departureOffsetMs}' ueberschreitet mit ${maximumBoundaryCommands} atomaren Kommandos das Limit ${REGIONAL_SIMULATION_BOUNDARY_COMMAND_LIMIT}.`,
       );
+    }
+  }
+  const formations = new Map<string, OperationalProgramTrain[]>();
+  for (const train of trains) {
+    const formation = formations.get(train.train.formationVersionId) ?? [];
+    formation.push(train);
+    formations.set(train.train.formationVersionId, formation);
+  }
+  const predecessors = new Map<string, OperationalProgramPredecessor>();
+  for (const formation of formations.values()) {
+    for (let index = 0; index < formation.length; index += 1) {
+      predecessors.set(formation[index]!.train.id, Object.freeze({
+        train: index === 0 ? formation.at(-1)! : formation[index - 1]!,
+        previousDay: index === 0,
+      }));
     }
   }
   return Object.freeze({
@@ -199,9 +236,11 @@ function deploymentOperationalProgram(
     worldId: deployment.worldId,
     regionId: initialization.regionId,
     initializationHash: operationalSimulationInitializationHash(initialization),
-    initialization: structuredClone(initialization),
+    initialization,
     repeatEveryMs,
     trains: Object.freeze(trains),
+    boundaries: Object.freeze(boundaries),
+    predecessors,
   });
 }
 
@@ -214,14 +253,15 @@ function predecessorTrain(
   train: OperationalProgramTrain,
   day: number,
 ): { readonly train: OperationalProgramTrain; readonly day: number } | undefined {
-  const formationProgram = program.trains.filter(
-    (candidate) => candidate.train.formationVersionId === train.train.formationVersionId,
-  );
-  const index = formationProgram.indexOf(train);
-  if (index < 0) throw new Error(`Fahrt '${train.train.id}' fehlt im signierten Betriebsprogramm.`);
-  if (index > 0) return { train: formationProgram[index - 1]!, day };
-  if (day === 0) return undefined;
-  return { train: formationProgram.at(-1)!, day: day - 1 };
+  const predecessor = program.predecessors.get(train.train.id);
+  if (predecessor === undefined) {
+    throw new Error(`Fahrt '${train.train.id}' fehlt im signierten Betriebsprogramm.`);
+  }
+  if (predecessor.previousDay && day === 0) return undefined;
+  return {
+    train: predecessor.train,
+    day: predecessor.previousDay ? day - 1 : day,
+  };
 }
 
 function dispatchRequest(
@@ -245,12 +285,12 @@ function dispatchRequest(
 
 function boundaryCommands(
   program: OperationalDeploymentProgram,
-  departureOffsetMs: number,
+  boundary: OperationalProgramBoundary,
   day: number,
 ): readonly OperationalScheduledCommand[] {
+  const { departureOffsetMs, trains } = boundary;
   const atMs = departureOffsetMs + day * program.repeatEveryMs;
   if (!Number.isSafeInteger(atMs)) throw new RangeError("Betriebsprogrammgrenze liegt ausserhalb des sicheren Bereichs.");
-  const trains = program.trains.filter((train) => train.departureOffsetMs === departureOffsetMs);
   const prefix = `${program.deploymentHash}:operational:${program.regionId}:${day}:${departureOffsetMs}`;
   const commands: OperationalScheduledCommand[] = [];
   for (const train of trains) {
@@ -618,41 +658,41 @@ export class ActiveWorldDeploymentRuntime implements RegionalScheduledCommandCat
     if (program === undefined) return [];
     safeNonnegativeInteger(atMs, "Betriebsprogrammzeit ist ungueltig.");
     const commands: OperationalScheduledCommand[] = [];
-    for (const departureOffsetMs of new Set(program.trains.map((train) => train.departureOffsetMs))) {
-      if (atMs < departureOffsetMs) continue;
-      const elapsed = atMs - departureOffsetMs;
+    for (const boundary of program.boundaries) {
+      if (atMs < boundary.departureOffsetMs) continue;
+      const elapsed = atMs - boundary.departureOffsetMs;
       if (elapsed % program.repeatEveryMs !== 0) continue;
-      commands.push(...boundaryCommands(program, departureOffsetMs, elapsed / program.repeatEveryMs));
+      commands.push(...boundaryCommands(program, boundary, elapsed / program.repeatEveryMs));
     }
     return Object.freeze(commands);
   }
 
-  due(
+  *dueBoundaries(
     worldId: string,
     regionId: string,
     afterMs: number,
     throughMs: number,
-  ): readonly OperationalScheduledCommand[] {
+  ): IterableIterator<OperationalScheduledCommandBoundary> {
     const program = this.#operationalPrograms.get(realtimeRegionKey(worldId, regionId));
-    if (program === undefined) return [];
+    if (program === undefined) return;
     safeNonnegativeInteger(afterMs, "Betriebsprogrammstart ist ungueltig.");
     safeNonnegativeInteger(throughMs, "Betriebsprogrammende ist ungueltig.");
     if (throughMs < afterMs) throw new RangeError("Betriebsprogrammende liegt vor dem Start.");
-    const boundaries: Array<{ departureOffsetMs: number; day: number; atMs: number }> = [];
-    for (const departureOffsetMs of new Set(program.trains.map((train) => train.departureOffsetMs))) {
-      const firstDay = Math.max(0, Math.floor((afterMs - departureOffsetMs) / program.repeatEveryMs) + 1);
-      const lastDay = Math.floor((throughMs - departureOffsetMs) / program.repeatEveryMs);
-      for (let day = firstDay; day <= lastDay; day += 1) {
-        const atMs = departureOffsetMs + day * program.repeatEveryMs;
-        if (!Number.isSafeInteger(atMs)) throw new RangeError("Betriebsprogrammgrenze liegt ausserhalb des sicheren Bereichs.");
-        boundaries.push({ departureOffsetMs, day, atMs });
+    const firstDay = Math.max(0, Math.floor(afterMs / program.repeatEveryMs));
+    const lastDay = Math.floor(throughMs / program.repeatEveryMs);
+    for (let day = firstDay; day <= lastDay; day += 1) {
+      for (const boundary of program.boundaries) {
+        const atMs = boundary.departureOffsetMs + day * program.repeatEveryMs;
+        if (!Number.isSafeInteger(atMs)) {
+          throw new RangeError("Betriebsprogrammgrenze liegt ausserhalb des sicheren Bereichs.");
+        }
+        if (atMs <= afterMs || atMs > throughMs) continue;
+        yield Object.freeze({
+          atMs,
+          commands: boundaryCommands(program, boundary, day),
+        });
       }
     }
-    boundaries.sort((left, right) =>
-      left.atMs - right.atMs || left.departureOffsetMs - right.departureOffsetMs);
-    const commands = boundaries.flatMap(({ departureOffsetMs, day }) =>
-      boundaryCommands(program, departureOffsetMs, day));
-    return Object.freeze(commands);
   }
 
   /** Weltkennungen mit einem verifizierten, explizit registrierten 1:1-Takt. */

@@ -248,7 +248,20 @@ describe("aktive World-Deployment-Runtime", () => {
         }),
       }),
     ]);
-    const recurrence = runtime.due(WORLD_ID, "mitteldeutschland-b", 0, 172_800_000);
+    const streamedRecurrence = [...runtime.dueBoundaries(
+      WORLD_ID,
+      "mitteldeutschland-b",
+      0,
+      172_800_000,
+    )];
+    expect(streamedRecurrence.map(({ atMs, commands }) => ({
+      atMs,
+      commandCount: commands.length,
+    }))).toEqual([
+      { atMs: 86_400_000, commandCount: 3 },
+      { atMs: 172_800_000, commandCount: 3 },
+    ]);
+    const recurrence = streamedRecurrence.flatMap(({ commands }) => commands);
     expect(recurrence.map((item) => item.command.type)).toEqual([
       "retire", "materialize", "dispatch",
       "retire", "materialize", "dispatch",
@@ -266,6 +279,33 @@ describe("aktive World-Deployment-Runtime", () => {
       type: "dispatch",
       requests: [{ trainId: "run-1:day-1", waitingSinceMs: 86_400_000 }],
     });
+  });
+
+  it("haelt genau eine private Zugvorlagenkopie unabhaengig vom Aufrufer", () => {
+    const deployment = signed();
+    const runtime = deploymentRuntime();
+    runtime.register(deployment, EPOCH);
+    const mutableSource = deployment.deployment.regionalSimulation.trains as Array<{
+      id: string;
+      scheduledDepartureMs: number;
+    }>;
+    mutableSource[0]!.id = "nach-registrierung-mutiert";
+    mutableSource[0]!.scheduledDepartureMs = 1_000;
+
+    expect(runtime.at(WORLD_ID, "mitteldeutschland-b", 0)).toEqual([
+      expect.objectContaining({
+        command: expect.objectContaining({
+          type: "materialize",
+          train: expect.objectContaining({ id: "run-1", scheduledDepartureMs: 0 }),
+        }),
+      }),
+      expect.objectContaining({
+        command: expect.objectContaining({
+          type: "dispatch",
+          requests: [expect.objectContaining({ trainId: "run-1" })],
+        }),
+      }),
+    ]);
   });
 
   it("revalidiert beim Prozessneustart nur den identischen signierten Operational-v2-Kopf als No-op", () => {
@@ -345,7 +385,12 @@ describe("aktive World-Deployment-Runtime", () => {
     expect(runtime.fleetAuthorityConfigurations[WORLD_ID]).toBeUndefined();
     expect(runtime.fleetAuthorityReleases[WORLD_ID]).toBeUndefined();
     expect(runtime.planningAuthorityAccountIds[WORLD_ID]).toBeUndefined();
-    expect(runtime.due(WORLD_ID, "mitteldeutschland-b", 0, 86_400_000)).toEqual([]);
+    expect([...runtime.dueBoundaries(
+      WORLD_ID,
+      "mitteldeutschland-b",
+      0,
+      86_400_000,
+    )]).toEqual([]);
   });
 
   it("stellt den Schedulervertrag vor dem Weltstart pruefbar bereit und rollt nur eine eigene Vorbereitung zurueck", () => {
@@ -498,8 +543,8 @@ describe("aktive World-Deployment-Runtime", () => {
     restarted.register(signed(), EPOCH);
 
     expect(restarted.realtimeRegions()).toEqual(first.realtimeRegions());
-    expect(restarted.due(WORLD_ID, "mitteldeutschland-b", 0, 172_800_000))
-      .toEqual(first.due(WORLD_ID, "mitteldeutschland-b", 0, 172_800_000));
+    expect([...restarted.dueBoundaries(WORLD_ID, "mitteldeutschland-b", 0, 172_800_000)])
+      .toEqual([...first.dueBoundaries(WORLD_ID, "mitteldeutschland-b", 0, 172_800_000)]);
     expect(restarted.planningAuthorityAccountIds).toEqual(first.planningAuthorityAccountIds);
     expect(restarted.fleetAuthorityReleases).toEqual(first.fleetAuthorityReleases);
     expect(restarted.worldIds()).toContain("70000000-0000-4000-8000-000000000002");

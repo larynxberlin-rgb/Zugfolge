@@ -12,9 +12,23 @@ export interface OperationalScheduledCommand {
   readonly command: OperationalSimulationCommandPayload;
 }
 
+export interface OperationalScheduledCommandBoundary {
+  readonly atMs: number;
+  readonly commands: readonly OperationalScheduledCommand[];
+}
+
 export interface RegionalScheduledCommandCatalog {
   at(worldId: string, regionId: string, atMs: number): readonly OperationalScheduledCommand[];
-  due(worldId: string, regionId: string, afterMs: number, throughMs: number): readonly OperationalScheduledCommand[];
+  /**
+   * Speicherbegrenzte Grenze fuer Catch-ups. Jede gelieferte Zeitgrenze muss
+   * vollstaendig, nicht leer und streng aufsteigend sein.
+   */
+  dueBoundaries(
+    worldId: string,
+    regionId: string,
+    afterMs: number,
+    throughMs: number,
+  ): Iterable<OperationalScheduledCommandBoundary>;
 }
 
 type RegionalSimulationAdvancer = Pick<
@@ -110,6 +124,44 @@ export function chunkWithoutSplittingBoundary(
   }
   if (current.length > 0) chunks.push(current);
   return chunks;
+}
+
+function* dueScheduledCommandBoundaries(
+  catalog: RegionalScheduledCommandCatalog,
+  worldId: string,
+  regionId: string,
+  afterMs: number,
+  throughMs: number,
+): IterableIterator<OperationalScheduledCommandBoundary> {
+  const boundaries = catalog.dueBoundaries(worldId, regionId, afterMs, throughMs);
+  const iterator = boundaries[Symbol.iterator]();
+  const validateBoundary = (
+    boundary: OperationalScheduledCommandBoundary,
+    previousAtMs: number,
+  ): void => {
+    if (
+      !Number.isSafeInteger(boundary.atMs)
+      || boundary.atMs <= previousAtMs
+      || boundary.atMs > throughMs
+      || boundary.commands.length === 0
+      || boundary.commands.some((command) => command.atMs !== boundary.atMs)
+      || boundary.commands.some((command) => command.command.type === "advance-to")
+    ) {
+      throw new Error(
+        `Scheduler-Katalog lieferte eine unvollstaendige oder ungeordnete Zeitgrenze fuer '${worldId}/${regionId}'.`,
+      );
+    }
+  };
+  let current = iterator.next();
+  if (current.done) return;
+  validateBoundary(current.value, afterMs);
+  while (true) {
+    const next = iterator.next();
+    if (!next.done) validateBoundary(next.value, current.value.atMs);
+    yield current.value;
+    if (next.done) return;
+    current = next;
+  }
 }
 
 /** Explizite Weltmillisekunde aus Weltepoche und Plattformzeit. */
@@ -212,53 +264,14 @@ export async function advanceRegionalSimulations(
         continue;
       }
 
-      const pending: TimedRegionalSimulationWork[] = [];
       const startedNowMs = region.nowMs;
       let currentNowMs = region.nowMs;
-      for (const scheduled of scheduledCommands?.at(
-        region.worldId,
-        region.regionId,
-        region.nowMs,
-      ) ?? []) {
-        pending.push({
-          atMs: scheduled.atMs,
-          command: { commandId: scheduled.commandId, command: scheduled.command },
-        });
-      }
-      let cursorMs = region.nowMs;
-      if (atMs > region.nowMs) {
-        for (const scheduled of scheduledCommands?.due(
-          region.worldId,
-          region.regionId,
-          region.nowMs,
-          atMs,
-        ) ?? []) {
-          if (scheduled.atMs > cursorMs) {
-            pending.push({
-              atMs: scheduled.atMs,
-              command: {
-                commandId: `advance-to-ms:${scheduled.atMs}`,
-                command: { type: "advance-to", atMs: scheduled.atMs },
-              },
-            });
-            cursorMs = scheduled.atMs;
-          }
-          pending.push({
-            atMs: scheduled.atMs,
-            command: { commandId: scheduled.commandId, command: scheduled.command },
-          });
-        }
-        if (cursorMs < atMs) {
-          pending.push({
-            atMs,
-            command: {
-              commandId: `advance-to-ms:${atMs}`,
-              command: { type: "advance-to", atMs },
-            },
-          });
-        }
-      }
-      for (const chunk of chunkWithoutSplittingBoundary(pending)) {
+      let pendingBatch: TimedRegionalSimulationWork[] = [];
+      let commandCount = 0;
+      const flushBatch = async (): Promise<void> => {
+        if (pendingBatch.length === 0) return;
+        const chunk = pendingBatch;
+        pendingBatch = [];
         reportProgress(observeProgress, {
           phase: "batch-started",
           worldId: region.worldId,
@@ -267,6 +280,12 @@ export async function advanceRegionalSimulations(
           targetNowMs: atMs,
           commandCount: chunk.length,
         });
+        let expectedCompletedNowMs = currentNowMs;
+        for (const item of chunk) {
+          if (item.command.command.type === "advance-to") {
+            expectedCompletedNowMs = item.command.command.atMs;
+          }
+        }
         const batch = await worker.applyBatch({
           worldId: region.worldId,
           regionId: region.regionId,
@@ -275,11 +294,10 @@ export async function advanceRegionalSimulations(
         const completedNowMs = batch.state.world.nowMs;
         if (
           !Number.isSafeInteger(completedNowMs)
-          || completedNowMs < currentNowMs
-          || completedNowMs > atMs
+          || completedNowMs !== expectedCompletedNowMs
         ) {
           throw new Error(
-            `Regionaler Batch '${region.worldId}/${region.regionId}' lieferte eine ungueltige Weltzeit.`,
+            `Regionaler Takt '${region.worldId}/${region.regionId}' erreichte die Zielweltzeit ${expectedCompletedNowMs} nicht exakt.`,
           );
         }
         currentNowMs = completedNowMs;
@@ -291,7 +309,78 @@ export async function advanceRegionalSimulations(
           targetNowMs: atMs,
           commandCount: chunk.length,
         });
+      };
+      const enqueueBoundary = async (
+        boundary: readonly TimedRegionalSimulationWork[],
+      ): Promise<void> => {
+        if (boundary.length === 0) return;
+        const boundaryAtMs = boundary[0]!.atMs;
+        if (
+          boundary.length > REGIONAL_SIMULATION_BOUNDARY_COMMAND_LIMIT
+          || boundary.some((item) => item.atMs !== boundaryAtMs)
+        ) {
+          throw new RangeError(
+            `Scheduler-Zeitgrenze ${boundaryAtMs} enthaelt mehr als ${REGIONAL_SIMULATION_BOUNDARY_COMMAND_LIMIT} atomare Kommandos.`,
+          );
+        }
+        if (pendingBatch.length > 0 && pendingBatch.length + boundary.length > TARGET_BATCH_COMMANDS) {
+          await flushBatch();
+        }
+        pendingBatch.push(...boundary);
+        commandCount += boundary.length;
+        if (pendingBatch.length >= TARGET_BATCH_COMMANDS) await flushBatch();
+      };
+
+      const atBoundary = scheduledCommands?.at(
+        region.worldId,
+        region.regionId,
+        region.nowMs,
+      ) ?? [];
+      if (atBoundary.some((scheduled) =>
+        scheduled.atMs !== region.nowMs
+        || scheduled.command.type === "advance-to")) {
+        throw new Error(
+          `Scheduler-Katalog lieferte eine fremde aktuelle Zeitgrenze fuer '${region.worldId}/${region.regionId}'.`,
+        );
       }
+      await enqueueBoundary(atBoundary.map((scheduled) => ({
+        atMs: scheduled.atMs,
+        command: { commandId: scheduled.commandId, command: scheduled.command },
+      })));
+
+      let cursorMs = region.nowMs;
+      if (atMs > region.nowMs) {
+        for (const boundary of scheduledCommands === undefined ? [] : dueScheduledCommandBoundaries(
+          scheduledCommands,
+          region.worldId,
+          region.regionId,
+          region.nowMs,
+          atMs,
+        )) {
+          const timedBoundary: TimedRegionalSimulationWork[] = [{
+            atMs: boundary.atMs,
+            command: {
+              commandId: `advance-to-ms:${boundary.atMs}`,
+              command: { type: "advance-to", atMs: boundary.atMs },
+            },
+          }, ...boundary.commands.map((scheduled) => ({
+            atMs: scheduled.atMs,
+            command: { commandId: scheduled.commandId, command: scheduled.command },
+          }))];
+          await enqueueBoundary(timedBoundary);
+          cursorMs = boundary.atMs;
+        }
+        if (cursorMs < atMs) {
+          await enqueueBoundary([{
+            atMs,
+            command: {
+              commandId: `advance-to-ms:${atMs}`,
+              command: { type: "advance-to", atMs },
+            },
+          }]);
+        }
+      }
+      await flushBatch();
       if (currentNowMs !== atMs) {
         throw new Error(
           `Regionaler Takt '${region.worldId}/${region.regionId}' erreichte die Zielweltzeit ${atMs} nicht exakt.`,
@@ -304,7 +393,7 @@ export async function advanceRegionalSimulations(
         regionId: region.regionId,
         currentNowMs,
         targetNowMs: atMs,
-        commandCount: pending.length,
+        commandCount,
       });
     } catch (error) {
       reportProgress(observeProgress, {

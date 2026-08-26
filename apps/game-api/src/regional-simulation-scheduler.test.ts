@@ -165,7 +165,10 @@ describe("regionaler 1:1-Scheduler", () => {
       (_, index) => ({
         atMs: 1_000,
         commandId: `boundary:${index}`,
-        command: { type: "advance-to" as const, atMs: 1_000 },
+        command: {
+          type: "clear-disruption" as const,
+          disruptionId: `boundary:${index}`,
+        },
       }),
     );
 
@@ -185,9 +188,39 @@ describe("regionaler 1:1-Scheduler", () => {
       new Date("2026-08-11T00:00:01.000Z"),
       {
         at: () => scheduled,
-        due: () => [],
+        dueBoundaries: () => [],
       },
     )).rejects.toThrow(/mehr als 256 atomare Kommandos/u);
+    expect(applyBatch).not.toHaveBeenCalled();
+  });
+
+  it("verweigert katalogseitige Zeitkommandos vor dem autoritativen Commit", async () => {
+    const epoch = new Date("2026-08-11T00:00:00.000Z");
+    const applyBatch = vi.fn(async () => batchResult(1_000));
+
+    await expect(advanceRegionalSimulations(
+      {
+        readyRegions: () => [{
+          worldId: "public",
+          regionId: "germany",
+          initializationHash: INITIALIZATION_HASH,
+          nowMs: 0,
+        }],
+        recover: vi.fn(),
+        applyBatch,
+      } as never,
+      [{ worldId: "public", regionId: "germany", initializationHash: INITIALIZATION_HASH }],
+      new Map([["public", epoch]]),
+      epoch,
+      {
+        at: () => [{
+          atMs: 0,
+          commandId: "catalog-advance",
+          command: { type: "advance-to", atMs: 1_000 },
+        }],
+        dueBoundaries: () => [],
+      },
+    )).rejects.toThrow(/fremde aktuelle Zeitgrenze/u);
     expect(applyBatch).not.toHaveBeenCalled();
   });
 
@@ -241,6 +274,119 @@ describe("regionaler 1:1-Scheduler", () => {
       ["advance:1000"],
       ["advance:2000", "clear:d-1"],
     ]);
+  });
+
+  it("konsumiert grosse Catch-ups lazily, begrenzt und in exakt deterministischer Reihenfolge", async () => {
+    const epoch = new Date("2026-08-11T00:00:00.000Z");
+    const targetMs = 1_101;
+    let yieldedBoundaries = 0;
+    let persistedNowMs = 0;
+    const yieldedAtApply: number[] = [];
+    const appliedCommandIds: string[] = [];
+    const progress: RegionalSimulationSchedulerProgress[] = [];
+    const applyBatch = vi.fn(async (work: RegionalSimulationWorkBatch) => {
+      yieldedAtApply.push(yieldedBoundaries);
+      expect(work.commands.length).toBeLessThanOrEqual(2_000);
+      appliedCommandIds.push(...work.commands.map(({ commandId }) => commandId));
+      persistedNowMs = resultingNowMs(work, persistedNowMs);
+      return batchResult(persistedNowMs);
+    });
+
+    await expect(advanceRegionalSimulations(
+      {
+        readyRegions: () => [{
+          worldId: "public",
+          regionId: "germany",
+          initializationHash: INITIALIZATION_HASH,
+          nowMs: 0,
+        }],
+        recover: vi.fn(async () => { throw new Error("unerwartete Recovery"); }),
+        applyBatch,
+      },
+      [{ worldId: "public", regionId: "germany", initializationHash: INITIALIZATION_HASH }],
+      new Map([["public", epoch]]),
+      new Date(epoch.getTime() + targetMs),
+      {
+        at: () => [],
+        *dueBoundaries() {
+          for (let atMs = 1; atMs <= targetMs; atMs += 1) {
+            yieldedBoundaries += 1;
+            yield {
+              atMs,
+              commands: [{
+                atMs,
+                commandId: `clear:${atMs}`,
+                command: { type: "clear-disruption" as const, disruptionId: `d-${atMs}` },
+              }],
+            };
+          }
+        },
+      },
+      (entry) => progress.push(entry),
+    )).resolves.toBe(1);
+
+    expect(applyBatch.mock.calls.map(([work]) => work.commands.length)).toEqual([2_000, 202]);
+    expect(yieldedAtApply).toEqual([1_001, targetMs]);
+    expect(appliedCommandIds).toEqual(Array.from(
+      { length: targetMs },
+      (_, index) => [
+        `advance-to-ms:${index + 1}`,
+        `clear:${index + 1}`,
+      ],
+    ).flat());
+    expect(progress).toContainEqual(expect.objectContaining({
+      phase: "region-completed",
+      currentNowMs: targetMs,
+      targetNowMs: targetMs,
+      commandCount: targetMs * 2,
+    }));
+  });
+
+  it("verweigert einen in mehrere Streamteile gespaltenen atomaren Zeitpunkt vor dem Commit", async () => {
+    const epoch = new Date("2026-08-11T00:00:00.000Z");
+    const applyBatch = vi.fn(async () => batchResult(1_000));
+
+    await expect(advanceRegionalSimulations(
+      {
+        readyRegions: () => [{
+          worldId: "public",
+          regionId: "germany",
+          initializationHash: INITIALIZATION_HASH,
+          nowMs: 0,
+        }],
+        recover: vi.fn(),
+        applyBatch,
+      } as never,
+      [{ worldId: "public", regionId: "germany", initializationHash: INITIALIZATION_HASH }],
+      new Map([["public", epoch]]),
+      new Date(epoch.getTime() + 1_000),
+      {
+        at: () => [],
+        *dueBoundaries() {
+          for (let atMs = 1; atMs <= 999; atMs += 1) {
+            yield {
+              atMs,
+              commands: [{
+                atMs,
+                commandId: `prefix:${atMs}`,
+                command: { type: "clear-disruption" as const, disruptionId: `prefix:${atMs}` },
+              }],
+            };
+          }
+          for (const commandId of ["first", "split"]) {
+            yield {
+              atMs: 1_000,
+              commands: [{
+                atMs: 1_000,
+                commandId,
+                command: { type: "clear-disruption" as const, disruptionId: commandId },
+              }],
+            };
+          }
+        },
+      },
+    )).rejects.toThrow(/unvollstaendige oder ungeordnete Zeitgrenze/u);
+    expect(applyBatch).not.toHaveBeenCalled();
   });
 
   it("ignoriert nach einem Neustart restaurierte Tutorialregionen ohne Echtzeitregistrierung", async () => {
@@ -405,8 +551,16 @@ describe("regionaler 1:1-Scheduler", () => {
     const catalog = {
       at: (_worldId: string, _regionId: string, boundaryMs: number) =>
         commands.filter((command) => command.atMs === boundaryMs),
-      due: (_worldId: string, _regionId: string, afterMs: number, throughMs: number) =>
-        commands.filter((command) => command.atMs > afterMs && command.atMs <= throughMs),
+      *dueBoundaries(
+        _worldId: string,
+        _regionId: string,
+        afterMs: number,
+        throughMs: number,
+      ) {
+        const due = commands.filter((command) =>
+          command.atMs > afterMs && command.atMs <= throughMs);
+        if (due.length > 0) yield { atMs: due[0]!.atMs, commands: due };
+      },
     };
 
     await expect(advanceRegionalSimulations(
