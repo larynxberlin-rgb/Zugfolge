@@ -604,10 +604,22 @@ pub struct MotionSegment {
 }
 
 impl MotionSegment {
+    fn validate_bounds(&self) -> Result<(), OperationalError> {
+        if self.start_route_mm < 0
+            || self.segment_end_route_mm < self.start_route_mm
+            || self.segment_end_route_mm > self.authority_end_route_mm
+        {
+            Err(OperationalError::UnsafeState)
+        } else {
+            Ok(())
+        }
+    }
+
     pub fn position_at(&self, at_ms: SimMillis) -> Result<RouteMillimetres, OperationalError> {
         if at_ms < self.started_at_ms || at_ms > self.valid_until_ms {
             return Err(OperationalError::OutsideMotionValidity);
         }
+        self.validate_bounds()?;
         let elapsed = i128::from(at_ms.saturating_sub(self.started_at_ms));
         let velocity = i128::from(self.start_speed_mmps);
         let acceleration = i128::from(self.acceleration_mmps2);
@@ -619,17 +631,31 @@ impl MotionSegment {
         let distance = velocity_distance
             .saturating_add(acceleration_distance)
             .max(0);
-        Ok(
-            checked_i64(i128::from(self.start_route_mm).saturating_add(distance))?
-                .min(self.authority_end_route_mm)
-                .min(self.segment_end_route_mm),
-        )
+        let position = checked_i64(i128::from(self.start_route_mm).saturating_add(distance))?
+            .min(self.authority_end_route_mm)
+            .min(self.segment_end_route_mm);
+        // Ganzzahlige Millimeter koennen am Ende eines kurzen Bremsabschnitts
+        // sowohl Weg als auch Restgeschwindigkeit auf null runden. Genau ein
+        // nicht mehr darstellbares Millimeterquant wird am zeitlichen Ende auf
+        // die bereits validierte Segment-/Authority-Grenze gehoben. Jeder
+        // laengere Nullfortschritt bleibt unveraendert und scheitert danach in
+        // `finish_motion_segment` fail-closed.
+        if at_ms == self.valid_until_ms
+            && self.valid_until_ms > self.started_at_ms
+            && position == self.start_route_mm
+            && self.start_route_mm.checked_add(1) == Some(self.segment_end_route_mm)
+        {
+            Ok(self.segment_end_route_mm)
+        } else {
+            Ok(position)
+        }
     }
 
     pub fn speed_at(&self, at_ms: SimMillis) -> Result<u32, OperationalError> {
         if at_ms < self.started_at_ms || at_ms > self.valid_until_ms {
             return Err(OperationalError::OutsideMotionValidity);
         }
+        self.validate_bounds()?;
         // Die Bremsgrenze wird vorab ereignisgesteuert berechnet. An der
         // harten Authority-Grenze klemmt der diskrete Millisekundenvertrag nur
         // noch den Rundungsrest auf Null; Kantenwechsel innerhalb der
@@ -2700,6 +2726,9 @@ impl OperationalWorld {
         };
         let head = segment.position_at(self.now_ms)?;
         let speed = segment.speed_at(self.now_ms)?;
+        if segment.segment_end_route_mm > segment.start_route_mm && head == segment.start_route_mm {
+            return Err(OperationalError::UnsafeState);
+        }
         let route = self
             .infrastructure()?
             .route_version(&route_id)?
@@ -3968,6 +3997,194 @@ mod invariant_tests {
         }
     }
 
+    fn directed_edge_offsets(direction: Direction, length_mm: i64) -> (i64, i64) {
+        match direction {
+            Direction::Along => (0, length_mm),
+            Direction::Against => (length_mm, 0),
+        }
+    }
+
+    fn edge_geometry(length_mm: i64, longitude_e7: i32) -> Vec<EdgeGeometryPoint> {
+        vec![
+            EdgeGeometryPoint {
+                edge_offset_mm: 0,
+                latitude_e7: 0,
+                longitude_e7,
+                bearing_milli_degrees: Some(0),
+            },
+            EdgeGeometryPoint {
+                edge_offset_mm: length_mm,
+                latitude_e7: 0,
+                longitude_e7: longitude_e7.saturating_add(1),
+                bearing_milli_degrees: None,
+            },
+        ]
+    }
+
+    fn one_millimetre_world(
+        direction: Direction,
+        continuation_direction: Option<Direction>,
+    ) -> OperationalWorld {
+        let (edge_entry_mm, edge_exit_mm) = directed_edge_offsets(direction, 1);
+        let mut legs = vec![RouteLeg {
+            edge_id: "edge:one-millimetre".to_owned(),
+            direction,
+            edge_entry_mm,
+            edge_exit_mm,
+            route_start_mm: 0,
+            block_ids: BTreeSet::from(["block:path:first".to_owned()]),
+            speed_limit_mmps: 20_000,
+            gradient_per_mille: 0,
+            available_protection_systems: vec!["pzb".to_owned()],
+            simultaneously_required_protection_systems: Vec::new(),
+        }];
+        let mut directed_edges = BTreeMap::from([("edge:one-millimetre".to_owned(), 1)]);
+        let mut edge_geometries =
+            BTreeMap::from([("edge:one-millimetre".to_owned(), edge_geometry(1, 0))]);
+        let mut path_resources = BTreeSet::from(["block:path:first".to_owned()]);
+        let mut block_resources = BTreeSet::from([
+            "block:path:first".to_owned(),
+            "block:overlap".to_owned(),
+            "block:flank".to_owned(),
+        ]);
+        let authority_end_route_mm = if let Some(continuation_direction) = continuation_direction {
+            let (edge_entry_mm, edge_exit_mm) =
+                directed_edge_offsets(continuation_direction, 1_000);
+            legs.push(RouteLeg {
+                edge_id: "edge:continuation".to_owned(),
+                direction: continuation_direction,
+                edge_entry_mm,
+                edge_exit_mm,
+                route_start_mm: 1,
+                block_ids: BTreeSet::from(["block:path:continuation".to_owned()]),
+                speed_limit_mmps: 20_000,
+                gradient_per_mille: 0,
+                available_protection_systems: vec!["pzb".to_owned()],
+                simultaneously_required_protection_systems: Vec::new(),
+            });
+            directed_edges.insert("edge:continuation".to_owned(), 1_000);
+            edge_geometries.insert("edge:continuation".to_owned(), edge_geometry(1_000, 1));
+            path_resources.insert("block:path:continuation".to_owned());
+            block_resources.insert("block:path:continuation".to_owned());
+            1_001
+        } else {
+            1
+        };
+        let route = RouteVersion {
+            id: "route:one-millimetre".to_owned(),
+            template_id: "route-template:one-millimetre".to_owned(),
+            predecessor_id: None,
+            transition_route_mm: None,
+            legs,
+        };
+        let interlocking = InterlockingRouteTemplate {
+            id: "interlocking:one-millimetre".to_owned(),
+            route_template_id: route.template_id.clone(),
+            signal_id: "signal:one-millimetre".to_owned(),
+            movement_kind: MovementKind::Train,
+            path_resources,
+            overlap_resources: BTreeSet::from(["block:overlap".to_owned()]),
+            flank_resources: BTreeSet::from(["block:flank".to_owned()]),
+            switch_positions: BTreeMap::new(),
+            authority_end_route_mm,
+            release_after_tail_route_mm: authority_end_route_mm.saturating_sub(1),
+        };
+        let infrastructure = OperationalInfraRelease {
+            id: "infra:one-millimetre".to_owned(),
+            directed_edges,
+            edge_geometries,
+            route_versions: BTreeMap::from([(route.id.clone(), route)]),
+            interlocking_routes: BTreeMap::from([(interlocking.id.clone(), interlocking)]),
+            signals: BTreeSet::from(["signal:one-millimetre".to_owned()]),
+            switches: BTreeSet::new(),
+            block_resources,
+            platform_intervals: BTreeMap::new(),
+            region_boundaries: BTreeSet::new(),
+            rzue_layout_id: "rzue:one-millimetre".to_owned(),
+        };
+        let mut world = OperationalWorld::new(
+            "world:one-millimetre",
+            "region:one-millimetre",
+            0,
+            infrastructure,
+        )
+        .unwrap();
+        world
+            .register_vehicle_type(
+                VehicleType {
+                    id: "type:one-millimetre".to_owned(),
+                    role: Some(OperationalVehicleRole::PoweredUnit),
+                    control_stands: Some(OperationalControlStands {
+                        front: true,
+                        rear: true,
+                    }),
+                    traction: Some(OperationalVehicleTraction::Electric),
+                    electric_systems: Some(vec![OperationalPowerSystem::Ac15kv]),
+                    length_mm: 1,
+                    mass_kg: 1,
+                    maximum_speed_mmps: 20_000,
+                    power_watts: 1,
+                    starting_tractive_force_newtons: 1,
+                    raw_formation_dynamics: Some(VehicleTypeRawFormationDynamics {
+                        brake_weight_kg: 1,
+                        maximum_acceleration_cap_mmps2: 900,
+                        service_brake_cap_mmps2: 900,
+                        emergency_brake_multiplier_basis_points: 13_334,
+                    }),
+                    maximum_acceleration_mmps2: 900,
+                    service_brake_mmps2: 900,
+                    emergency_brake_mmps2: 1_200,
+                    protection_systems: BTreeSet::from(["pzb".to_owned()]),
+                },
+                true,
+            )
+            .unwrap();
+        world
+            .register_vehicle(PhysicalVehicle {
+                id: "vehicle:one-millimetre".to_owned(),
+                type_id: "type:one-millimetre".to_owned(),
+                powered: true,
+                orientation: direction,
+                condition: VehicleCondition {
+                    mechanics_basis_points: 10_000,
+                    drive_basis_points: 10_000,
+                    brakes_basis_points: 10_000,
+                    kilometres_since_maintenance: 0,
+                    operating_hours_since_maintenance: 0,
+                    open_observations: 0,
+                },
+                restrictions: BTreeMap::new(),
+                history: Vec::new(),
+            })
+            .unwrap();
+        world
+            .create_formation(
+                "formation:one-millimetre",
+                None,
+                vec!["vehicle:one-millimetre".to_owned()],
+            )
+            .unwrap();
+        world
+            .materialize_train(
+                "train:one-millimetre",
+                "RB 1",
+                "operator:test",
+                MovementKind::Train,
+                "route:one-millimetre",
+                "formation:one-millimetre",
+                0,
+                None,
+                false,
+            )
+            .unwrap();
+        world
+            .lock_route("train:one-millimetre", "interlocking:one-millimetre")
+            .unwrap();
+        world.plan_motion("train:one-millimetre").unwrap();
+        world.events.clear();
+        world
+    }
+
     fn quadratic_interval_overlap(intervals: &[(usize, TrackInterval)]) -> bool {
         intervals.iter().enumerate().any(|(left_index, left)| {
             intervals
@@ -4099,6 +4316,201 @@ mod invariant_tests {
         assert_eq!(
             world(vec![left, duplicate_number], Vec::new()).verify_invariants(),
             Err(OperationalError::DuplicateTrainNumber(1))
+        );
+    }
+
+    #[test]
+    fn terminal_one_millimetre_rounding_reaches_authority_in_both_edge_directions() {
+        for direction in [Direction::Along, Direction::Against] {
+            let mut world = one_millimetre_world(direction, None);
+
+            world.advance_to(60_000).unwrap();
+
+            let train = &world.trains["train:one-millimetre"];
+            assert_eq!(train.head_route_mm, 1, "direction={direction:?}");
+            assert_eq!(train.tail_route_mm, 0, "direction={direction:?}");
+            assert_eq!(train.speed_mmps, 0, "direction={direction:?}");
+            assert_eq!(train.direction, direction);
+            assert_eq!(train.motion_state, MotionState::Standing);
+            assert!(train.motion_segment.is_none());
+            assert!(train.authority.is_none());
+            assert!(world.scheduled_motion_ends.is_empty());
+            assert!(world.route_locks.is_empty());
+            assert_eq!(world.events.len(), 4);
+            assert_eq!(world.verify_invariants(), Ok(()));
+        }
+    }
+
+    #[test]
+    fn internal_one_millimetre_leg_boundary_keeps_motion_occupation_and_lock() {
+        let mut world = one_millimetre_world(Direction::Along, Some(Direction::Against));
+        let first_segment_end_ms = world.trains["train:one-millimetre"]
+            .motion_segment
+            .as_ref()
+            .unwrap()
+            .valid_until_ms;
+
+        world.advance_to(first_segment_end_ms).unwrap();
+
+        let train = &world.trains["train:one-millimetre"];
+        assert_eq!(train.head_route_mm, 1);
+        assert_eq!(train.tail_route_mm, 0);
+        assert!(train.speed_mmps > 0);
+        assert_eq!(train.direction, Direction::Against);
+        assert_eq!(train.motion_state, MotionState::Moving);
+        let continuation = train.motion_segment.as_ref().unwrap();
+        assert_eq!(continuation.start_route_mm, 1);
+        assert!(continuation.segment_end_route_mm > 1);
+        assert!(continuation.valid_until_ms > first_segment_end_ms);
+        assert_eq!(train.authority.as_ref().unwrap().end_route_mm, 1_001);
+        assert_eq!(
+            train.occupied_intervals,
+            vec![TrackInterval {
+                edge_id: "edge:one-millimetre".to_owned(),
+                from_mm: 0,
+                to_mm: 1,
+                direction: Direction::Along,
+            }]
+        );
+        assert_eq!(
+            train.occupied_blocks,
+            BTreeSet::from(["block:path:first".to_owned()])
+        );
+        assert_eq!(world.route_locks.len(), 1);
+        assert_eq!(world.scheduled_motion_ends.len(), 1);
+        assert_eq!(
+            world.signal_aspects["signal:one-millimetre"],
+            SignalAspect::Proceed
+        );
+        assert_eq!(world.events.len(), 2);
+        assert_eq!(world.verify_invariants(), Ok(()));
+    }
+
+    #[test]
+    fn motion_boundary_snap_is_end_only_and_fail_closed_for_invalid_bounds() {
+        let terminal_braking = MotionSegment {
+            started_at_ms: 0,
+            valid_until_ms: 2,
+            start_route_mm: 0,
+            start_speed_mmps: 1,
+            acceleration_mmps2: -900,
+            route_version_id: "route:test".to_owned(),
+            authority_end_route_mm: 1,
+            segment_end_route_mm: 1,
+        };
+        assert_eq!(terminal_braking.position_at(1), Ok(0));
+        assert_eq!(terminal_braking.position_at(2), Ok(1));
+        assert_eq!(terminal_braking.speed_at(2), Ok(0));
+
+        let zero_length = MotionSegment {
+            segment_end_route_mm: 0,
+            ..terminal_braking.clone()
+        };
+        assert_eq!(zero_length.position_at(2), Ok(0));
+
+        let zero_duration = MotionSegment {
+            started_at_ms: 2,
+            ..terminal_braking.clone()
+        };
+        assert_eq!(zero_duration.position_at(2), Ok(0));
+
+        let two_millimetre_zero_progress = MotionSegment {
+            authority_end_route_mm: 2,
+            segment_end_route_mm: 2,
+            ..terminal_braking.clone()
+        };
+        assert_eq!(two_millimetre_zero_progress.position_at(2), Ok(0));
+
+        let counterrunning = MotionSegment {
+            start_route_mm: 1,
+            segment_end_route_mm: 0,
+            ..terminal_braking.clone()
+        };
+        assert_eq!(
+            counterrunning.position_at(2),
+            Err(OperationalError::UnsafeState)
+        );
+        assert_eq!(
+            counterrunning.speed_at(2),
+            Err(OperationalError::UnsafeState)
+        );
+
+        let beyond_authority = MotionSegment {
+            authority_end_route_mm: 1,
+            segment_end_route_mm: 2,
+            ..terminal_braking.clone()
+        };
+        assert_eq!(
+            beyond_authority.position_at(2),
+            Err(OperationalError::UnsafeState)
+        );
+        assert_eq!(
+            beyond_authority.speed_at(2),
+            Err(OperationalError::UnsafeState)
+        );
+
+        let negative_route_position = MotionSegment {
+            start_route_mm: -1,
+            authority_end_route_mm: 0,
+            segment_end_route_mm: 0,
+            ..terminal_braking
+        };
+        assert_eq!(
+            negative_route_position.position_at(2),
+            Err(OperationalError::UnsafeState)
+        );
+        assert_eq!(
+            negative_route_position.speed_at(2),
+            Err(OperationalError::UnsafeState)
+        );
+    }
+
+    #[test]
+    fn longer_zero_progress_segment_finishes_fail_closed_without_mutation() {
+        let mut world = one_millimetre_world(Direction::Along, Some(Direction::Against));
+        let manipulated = MotionSegment {
+            started_at_ms: 0,
+            valid_until_ms: 2,
+            start_route_mm: 0,
+            start_speed_mmps: 1,
+            acceleration_mmps2: -900,
+            route_version_id: "route:one-millimetre".to_owned(),
+            authority_end_route_mm: 1_001,
+            segment_end_route_mm: 2,
+        };
+        world.now_ms = manipulated.valid_until_ms;
+        world
+            .trains
+            .get_mut("train:one-millimetre")
+            .unwrap()
+            .motion_segment = Some(manipulated);
+        let train_before = world.trains["train:one-millimetre"].clone();
+
+        assert_eq!(
+            world.finish_motion_segment("train:one-millimetre"),
+            Err(OperationalError::UnsafeState)
+        );
+        assert_eq!(world.trains["train:one-millimetre"], train_before);
+        assert!(world.events.is_empty());
+        assert_eq!(world.route_locks.len(), 1);
+    }
+
+    #[test]
+    fn motion_boundary_snap_does_not_mask_position_overflow() {
+        let segment = MotionSegment {
+            started_at_ms: 0,
+            valid_until_ms: 1_000,
+            start_route_mm: i64::MAX - 1,
+            start_speed_mmps: u32::MAX,
+            acceleration_mmps2: 0,
+            route_version_id: "route:test".to_owned(),
+            authority_end_route_mm: i64::MAX,
+            segment_end_route_mm: i64::MAX,
+        };
+
+        assert_eq!(
+            segment.position_at(segment.valid_until_ms),
+            Err(OperationalError::ArithmeticOverflow)
         );
     }
 

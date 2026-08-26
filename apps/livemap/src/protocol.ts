@@ -951,7 +951,7 @@ function operationalPositionAt(
   renderAtMs: number,
 ): { readonly routeMm: number; readonly speedMmPerSecond: number } {
   const segment = state.motionSegment;
-  if (segment === undefined || renderAtMs <= segment.startedAtMs) {
+  if (segment === undefined || renderAtMs < segment.startedAtMs) {
     return { routeMm: state.headRouteMm, speedMmPerSecond: 0 };
   }
   const atMs = Math.min(renderAtMs, segment.validUntilMs);
@@ -969,12 +969,23 @@ function operationalPositionAt(
     velocityDistance + accelerationDistance,
     "operativer Bewegungsweg",
   );
-  const routeMm = Math.min(
+  const analyticalRouteMm = Math.min(
     segment.authorityEndRouteMm,
     segment.segmentEndRouteMm,
     Math.max(segment.startRouteMm, segment.startRouteMm + distance),
   );
-  const speedMmPerSecond = routeMm >= Math.min(segment.authorityEndRouteMm, segment.segmentEndRouteMm)
+  const resolvesTerminalMillimetre = atMs === segment.validUntilMs
+    && segment.validUntilMs > segment.startedAtMs
+    && analyticalRouteMm === segment.startRouteMm
+    && segment.startRouteMm < Number.MAX_SAFE_INTEGER
+    && segment.segmentEndRouteMm === segment.startRouteMm + 1;
+  const routeMm = resolvesTerminalMillimetre
+    ? segment.segmentEndRouteMm
+    : analyticalRouteMm;
+  const reachesAuthorityBoundary = atMs === segment.validUntilMs
+    && segment.segmentEndRouteMm === segment.authorityEndRouteMm
+    && routeMm === segment.authorityEndRouteMm;
+  const speedMmPerSecond = reachesAuthorityBoundary
     ? 0
     : Math.max(0, safeBigIntNumber(
       BigInt(segment.startSpeedMmPerSecond) + divideRoundHalfAway(

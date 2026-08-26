@@ -98,6 +98,16 @@ Abschnitte entstehen nur bei Geschwindigkeits-/Kantengrenze, Halt,
 Fahrberechtigungs-, Fahrstraßen-, Störungs-, Formations- oder Regionsänderung.
 Es gibt weder Sekundentick noch periodischen Vollscan.
 
+Eine einzige diskrete Ausnahme loest den nicht darstellbaren Rest eines
+positiv dauernden Bewegungsabschnitts auf: Liegt die analytische Position genau
+am Start, das Abschnittsende aber exakt einen Millimeter dahinter, wird dieser
+Millimeter ausschließlich bei `valid_until` erreicht. Nullzeitabschnitte und
+groessere positive Nullfortschritte springen nicht und werden beim Abschluss
+fail-closed abgewiesen. An internen Abschnittsenden bleibt die analytische
+Geschwindigkeit erhalten; nur am erreichten Fahrberechtigungsende wird sie auf
+null geklemmt. Rust-Kern und TypeScript-Kartenprojektion wenden diese Regel
+identisch an.
+
 ## 4. Belegung und Stellwerk
 
 Die belegte Formation ist das Laufwegintervall `[tail, head]`, geschnitten an
