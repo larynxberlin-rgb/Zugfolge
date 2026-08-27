@@ -7,7 +7,10 @@ const root = resolve(import.meta.dirname, "../..");
 const text = (path) => readFile(resolve(root, path), "utf8");
 
 test("2026.5 besitzt einen eigenen manuell geschlossenen Builder- und Runtime-Dispatch", async () => {
-  const workflow = await text(".github/workflows/ci.yml");
+  const [workflow, installationGuide] = await Promise.all([
+    text(".github/workflows/ci.yml"),
+    text("docs/kartenartefakte-installation.md"),
+  ]);
   const builderStart = workflow.indexOf("\n  germany-2026-5-real-builder-reproduction:");
   const runtimeStart = workflow.indexOf("\n  germany-2026-5-real-acceptance:", builderStart);
   const integrationStart = workflow.indexOf("\n  integration-api:", runtimeStart);
@@ -27,6 +30,10 @@ test("2026.5 besitzt einen eigenen manuell geschlossenen Builder- und Runtime-Di
   assert.match(builder, /ZUGFOLGE_REAL_GERMANY_2026_5_WINDOWS_ROOT/u);
   assert.match(runtime, /ZUGFOLGE_REAL_GERMANY_2026_5_ROOT/u);
   assert.match(runtime, /needs: germany-2026-5-real-builder-reproduction/u);
+  assert.match(
+    installationGuide,
+    /ausschließlich der Repository-Standardbranch[\s\S]{0,160}Feature- oder Pull-Request-Branch[\s\S]{0,100}Self-hosted Runner/u,
+  );
   for (const job of [builder, runtime]) {
     assert.match(job, /fetch-depth: 0/u);
     assert.match(job, /git worktree add --detach/u);

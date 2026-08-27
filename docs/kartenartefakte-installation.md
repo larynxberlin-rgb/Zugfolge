@@ -998,10 +998,13 @@ Der verbleibende reale Dispatch-Gate ist bewusst zweistufig: Zuerst erzeugt
 und signiert der Jahreslauf den vollständigen Kandidaten auf dem vorgesehenen
 Artefakt-Source-Commit. Erst aus diesen vorhandenen Bytes, den nativen
 Validatorbelegen und den gebauten Runtimebytes wird der strikt validierte
-Pinvertrag in einem späteren Registrierungscommit befüllt. Danach darf genau
-dieser Registrierungsref mit dem Boolean gestartet werden; der Workflow baut
-die Kartenbytes erneut und akzeptiert weder den bloßen Erstbuild noch manuell
-übertragene Vorjahreswerte als Reproduzierbarkeitsbeleg.
+Pinvertrag in einem späteren Registrierungscommit befüllt. Danach darf
+ausschließlich der Repository-Standardbranch auf genau diesem
+Registrierungscommit mit dem Boolean gestartet werden; ein Dispatch von einem
+Feature- oder Pull-Request-Branch bleibt vor jedem Self-hosted Runner
+geschlossen. Der Workflow baut die Kartenbytes erneut und akzeptiert weder den
+bloßen Erstbuild noch manuell übertragene Vorjahreswerte als
+Reproduzierbarkeitsbeleg.
 
 Für `.5` bleiben vier Nachweise getrennt. `pack`/`verify` und die Prüfung des
 frisch installierten Manifests beweisen die Byteintegrität. Die Ed25519-Prüfung
