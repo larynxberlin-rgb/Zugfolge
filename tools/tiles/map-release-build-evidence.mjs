@@ -38,6 +38,14 @@ import {
   deriveSignedReleaseSourceFile,
   serializeSignedMapPackagePlan,
 } from "./signed-map-package-plan.mjs";
+import {
+  gdalRuntimeBundleBinding,
+  loadAndVerifyGdalRuntimeBundle,
+  PINNED_GDAL_RUNTIME_MANIFEST,
+  PINNED_GDAL_RUNTIME_MANIFEST_CACHE,
+  validateGdalRuntimeBundleBinding,
+  validateGdalRuntimeBundleCacheInventory,
+} from "./gdal-runtime-bundle.mjs";
 import { inspectTrainMapProjection } from "./train-map-projection.mjs";
 import {
   assertOperationalInfrastructureV2,
@@ -108,6 +116,7 @@ const INPUT_KINDS = new Set([
   "source-archive",
   "capture-manifest",
   "specification",
+  "repo-contract",
   "derived-input",
   "build-cache-inventory",
 ]);
@@ -170,6 +179,20 @@ const SEMANTIC_LAYERS = Object.freeze([
   "blocks",
   "conflict_resources",
   "rail_context",
+]);
+const CURRENT_ANNUAL_V3_RELEASE_ID = "infra-deutschland-2026.5";
+const CURRENT_ANNUAL_V3_INPUTS = Object.freeze([
+  ["synthetic-operational-policy", "specification", "tools/region-import/germany/synthetic-operational-b.2026.5.policy.json"],
+  ["synthetic-operational-closure-spec", "specification", "tools/region-import/germany/synthetic-operational-closure.annual-2026.5.json"],
+  ["operational-quality-spec", "specification", "tools/region-import/germany/operational-quality.annual-2026.5.json"],
+  ["static-map-sources-spec", "specification", "tools/tiles/static-map-sources.annual-2026.5.json"],
+  ["static-map-quality-spec", "specification", "tools/tiles/static-map-quality.annual-2026.5.json"],
+  ["static-map-release-spec", "specification", "tools/tiles/static-map-release.annual-2026.5.json"],
+  ["map-build-cache-inventory-plan", "specification", "tools/tiles/map-build-cache-inventory.annual-2026.5.plan.json"],
+  ["map-asset-notices-spec", "specification", "tools/tiles/map-asset-notices.annual-2026.5.json"],
+  ["germany-source-catalog", "repo-contract", "tools/region-import/germany/source-catalog.json"],
+  ["rights-registry", "repo-contract", "tools/guards/quellenregister.json"],
+  ["map-source-catalog", "repo-contract", "tools/tiles/map-source-catalog.json"],
 ]);
 
 function invariant(condition, message) {
@@ -1750,6 +1773,24 @@ function inspectReadModelRegression(path, regression) {
   }
 }
 
+function validateCurrentAnnualV3Bindings(spec, version) {
+  if (version !== 3 || spec.releaseId !== CURRENT_ANNUAL_V3_RELEASE_ID) return;
+  for (const [id, kind, file] of CURRENT_ANNUAL_V3_INPUTS) {
+    invariant(
+      spec.inputs.filter((input) => input?.id === id && input.kind === kind && input.file === file && input.version === spec.releaseId).length === 1,
+      `Build-Evidence-v3 für ${spec.releaseId} muss ${id} exakt als ${kind} ${file} binden.`,
+    );
+  }
+  const runtimeTools = spec.tools.filter(({ id, kind }) => id === "gdal-pmtiles" && kind === "runtime-bundle");
+  invariant(runtimeTools.length === 1, `Build-Evidence-v3 für ${spec.releaseId} muss genau ein manifestgebundenes gdal-pmtiles-Runtime-Bundle führen.`);
+  invariant(
+    runtimeTools[0].version === "3.13.2"
+      && runtimeTools[0].manifestFile === PINNED_GDAL_RUNTIME_MANIFEST
+      && runtimeTools[0].manifestCacheFile === PINNED_GDAL_RUNTIME_MANIFEST_CACHE,
+    `Build-Evidence-v3 für ${spec.releaseId} bindet nicht das versionierte GDAL-3.13.2-win32-x64-Runtime-Manifest.`,
+  );
+}
+
 function validateSpecBasics(spec, { requireExpectedInputProofs = false, resolvedCommits = false } = {}) {
   const version = specVersion(spec?.schema);
   const outputKinds = outputKindsForVersion(version);
@@ -1794,12 +1835,18 @@ function validateSpecBasics(spec, { requireExpectedInputProofs = false, resolved
     }
   }
   invariant(Array.isArray(spec.tools) && spec.tools.length > 0, "Build-Evidence besitzt keine gepinnten Werkzeuge.");
+  validateCurrentAnnualV3Bindings(spec, version);
   invariant(Array.isArray(spec.outputs) && spec.outputs.length === outputKinds.length, `Build-Evidence muss exakt ${outputKinds.length} aktivierungsrelevante Ausgaben binden.`);
   invariant(spec.deployment?.activationMode === "atomic-config-swap", "Deployment muss einen atomaren Konfigurationswechsel verlangen.");
   invariant(spec.deployment?.retainPreviousForRollback === true, "Deployment muss den Vorgänger für Rollback behalten.");
   invariant(spec.buildCache?.backupRequired === true && spec.buildCache?.encrypted === true, "Buildcache muss verschlüsselt gesichert werden.");
   invariant(spec.buildCache?.restoreVerification === "empty-path-full-inventory", "Buildcache muss auf einen leeren Pfad vollständig wiederhergestellt werden.");
   return { version, outputKinds };
+}
+
+export function validateMapReleaseBuildEvidenceSpec(spec) {
+  validateSpecBasics(spec);
+  return spec;
 }
 
 export async function materializeMapReleaseBuildEvidence({
@@ -1844,7 +1891,7 @@ export async function materializeMapReleaseBuildEvidence({
     invariant(INPUT_KINDS.has(descriptor.kind), `Eingabe ${id} besitzt eine unbekannte Art.`);
     const inputVersion = pinnedVersion(descriptor.version, `Eingabe ${id}`);
     const file = portablePath(descriptor.file, `Eingabe ${id}.file`);
-    if (descriptor.kind === "specification") invariant(file.startsWith("tools/"), `Spezifikation ${id} muss im belegten Repository-Commit liegen.`);
+    if (["specification", "repo-contract"].includes(descriptor.kind)) invariant(file.startsWith("tools/"), `Repositoryvertrag ${id} muss im belegten Repository-Commit liegen.`);
     const proof = await fileProof(root, { ...descriptor, file }, `Eingabe ${id}`);
     if (operationalEvidenceVersion(version) && descriptor.kind === "specification") {
       await validateSpecificationContentReleaseBinding(root, { ...descriptor, version: inputVersion, file }, `Eingabe ${id}`);
@@ -1888,6 +1935,29 @@ export async function materializeMapReleaseBuildEvidence({
       const cached = inventoryEntry(inventory, cacheFile, `Werkzeug ${id}`);
       invariant(cached.bytes === proof.bytes && cached.sha256 === proof.sha256, `Buildcache-Beleg für Werkzeug ${id} weicht ab.`);
       tools.push({ id, kind: "binary", version, file, cacheFile, ...proof });
+    } else if (descriptor.kind === "runtime-bundle") {
+      const manifestFile = portablePath(descriptor.manifestFile, `Werkzeug ${id}.manifestFile`);
+      const manifestCacheFile = portablePath(descriptor.manifestCacheFile, `Werkzeug ${id}.manifestCacheFile`);
+      invariant(manifestFile.startsWith("tools/tiles/") && manifestFile.endsWith(".manifest.json"), `Werkzeug ${id} besitzt kein versioniertes Runtime-Manifest unter tools/tiles.`);
+      const loaded = await loadAndVerifyGdalRuntimeBundle(
+        await containedRealPath(root, manifestFile, `Werkzeug ${id}.manifestFile`),
+        root,
+      );
+      invariant(loaded.manifest.version === version, `Werkzeug ${id} und Runtime-Manifest besitzen verschiedene Versionen.`);
+      const manifestCached = inventoryEntry(inventory, manifestCacheFile, `Werkzeug ${id}.manifest`);
+      invariant(manifestCached.bytes === loaded.bytes.length && manifestCached.sha256 === loaded.sha256, `Buildcache-Beleg für Runtime-Manifest ${id} weicht ab.`);
+      const bundle = gdalRuntimeBundleBinding(loaded.manifest);
+      validateGdalRuntimeBundleCacheInventory(bundle, inventory);
+      tools.push({
+        id,
+        kind: "runtime-bundle",
+        version,
+        manifestFile,
+        manifestCacheFile,
+        manifestBytes: loaded.bytes.length,
+        manifestSha256: loaded.sha256,
+        bundle,
+      });
     } else {
       throw new Error(`Werkzeug ${id} besitzt eine unbekannte Art.`);
     }
@@ -2015,7 +2085,7 @@ export function validateMapReleaseBuildEvidence(evidence) {
     invariant(INPUT_KINDS.has(entry.kind), `Eingabe ${entry.id} besitzt eine unbekannte Art.`);
     pinnedVersion(entry.version, `Eingabe ${entry.id}`);
     portablePath(entry.file, `Eingabe ${entry.id}.file`);
-    if (entry.kind === "specification") invariant(entry.file.startsWith("tools/"), `Spezifikation ${entry.id} muss im belegten Repository-Commit liegen.`);
+    if (["specification", "repo-contract"].includes(entry.kind)) invariant(entry.file.startsWith("tools/"), `Repositoryvertrag ${entry.id} muss im belegten Repository-Commit liegen.`);
     if (entry.cacheFile !== undefined) portablePath(entry.cacheFile, `Eingabe ${entry.id}.cacheFile`);
     invariant(Number.isSafeInteger(entry.bytes) && entry.bytes > 0 && SHA256.test(entry.sha256), `Eingabe ${entry.id} besitzt keinen Byte-SHA-Beleg.`);
   }
@@ -2032,6 +2102,13 @@ export function validateMapReleaseBuildEvidence(evidence) {
       portablePath(tool.file, `Werkzeug ${tool.id}.file`);
       portablePath(tool.cacheFile, `Werkzeug ${tool.id}.cacheFile`);
       invariant(Number.isSafeInteger(tool.bytes) && tool.bytes > 0 && SHA256.test(tool.sha256), `Werkzeug ${tool.id} besitzt keinen Byte-SHA-Beleg.`);
+    } else if (tool.kind === "runtime-bundle") {
+      exactObjectKeys(tool, ["id", "kind", "version", "manifestFile", "manifestCacheFile", "manifestBytes", "manifestSha256", "bundle"], `Werkzeug ${tool.id}`);
+      portablePath(tool.manifestFile, `Werkzeug ${tool.id}.manifestFile`);
+      portablePath(tool.manifestCacheFile, `Werkzeug ${tool.id}.manifestCacheFile`);
+      invariant(Number.isSafeInteger(tool.manifestBytes) && tool.manifestBytes > 0 && SHA256.test(tool.manifestSha256), `Werkzeug ${tool.id} besitzt keinen Runtime-Manifest-Byte-SHA-Beleg.`);
+      const bundle = validateGdalRuntimeBundleBinding(tool.bundle);
+      invariant(bundle.version === tool.version, `Werkzeug ${tool.id} und Runtime-Bindung besitzen verschiedene Versionen.`);
     } else throw new Error(`Werkzeug ${tool.id} besitzt eine unbekannte Art.`);
   }
 
@@ -2097,6 +2174,11 @@ export function validateMapReleaseBuildEvidence(evidence) {
     const cached = inventoryEntry(inventory, tool.cacheFile, `Werkzeug ${tool.id}`);
     invariant(cached.bytes === tool.bytes && cached.sha256 === tool.sha256, `Buildcache-Beleg für Werkzeug ${tool.id} weicht ab.`);
   }
+  for (const tool of evidence.tools.filter(({ kind }) => kind === "runtime-bundle")) {
+    const manifest = inventoryEntry(inventory, tool.manifestCacheFile, `Werkzeug ${tool.id}.manifest`);
+    invariant(manifest.bytes === tool.manifestBytes && manifest.sha256 === tool.manifestSha256, `Buildcache-Beleg für Runtime-Manifest ${tool.id} weicht ab.`);
+    validateGdalRuntimeBundleCacheInventory(tool.bundle, inventory);
+  }
   portablePath(evidence.buildCache.objectKey, "buildCache.objectKey");
   invariant(evidence.buildCache.objectKey.includes(evidence.releaseId), "Buildcache-Objektschlüssel ist nicht releasegebunden.");
   encryptionScheme(evidence.buildCache.encryptionScheme);
@@ -2146,6 +2228,17 @@ export async function verifyMapReleaseBuildEvidence(
   for (const tool of evidence.tools.filter(({ kind }) => kind === "binary")) {
     const proof = await fileProof(root, { file: tool.file }, `Werkzeug ${tool.id}`);
     invariant(proof.bytes === tool.bytes && proof.sha256 === tool.sha256, `Werkzeug ${tool.id} weicht vom Evidence-Manifest ab.`);
+  }
+  for (const tool of evidence.tools.filter(({ kind }) => kind === "runtime-bundle")) {
+    const loaded = await loadAndVerifyGdalRuntimeBundle(
+      await containedRealPath(root, tool.manifestFile, `Werkzeug ${tool.id}.manifestFile`),
+      root,
+    );
+    invariant(loaded.bytes.length === tool.manifestBytes && loaded.sha256 === tool.manifestSha256, `Runtime-Manifest ${tool.id} weicht vom Evidence-Manifest ab.`);
+    invariant(
+      JSON.stringify(sortedValue(gdalRuntimeBundleBinding(loaded.manifest))) === JSON.stringify(sortedValue(tool.bundle)),
+      `Runtime-Manifest ${tool.id} weicht von der Evidence-Runtime-Bindung ab.`,
+    );
   }
   for (const output of evidence.outputs) {
     const proof = await outputProof(
@@ -2307,6 +2400,18 @@ export async function proveBuildCacheRestore(evidence, restoreRoot) {
     JSON.stringify(sortedValue(restored)) === JSON.stringify(sortedValue(evidence.buildCache.inventory)),
     `Wiederhergestellter Buildcache weicht vom vollständigen Evidence-Inventar ab (ist: ${restored.map(({ path }) => path).join(", ")}; erwartet: ${evidence.buildCache.inventory.map(({ path }) => path).join(", ")}).`,
   );
+  for (const tool of evidence.tools.filter(({ kind }) => kind === "runtime-bundle")) {
+    const loaded = await loadAndVerifyGdalRuntimeBundle(
+      await containedRealPath(root, tool.manifestCacheFile, `Restore-Runtime ${tool.id}.manifest`),
+      root,
+      { layout: "cache" },
+    );
+    invariant(loaded.bytes.length === tool.manifestBytes && loaded.sha256 === tool.manifestSha256, `Wiederhergestelltes Runtime-Manifest ${tool.id} weicht von der Evidence ab.`);
+    invariant(
+      JSON.stringify(sortedValue(gdalRuntimeBundleBinding(loaded.manifest))) === JSON.stringify(sortedValue(tool.bundle)),
+      `Wiederhergestellte Runtime ${tool.id} weicht von der Evidence-Bindung ab.`,
+    );
+  }
   const evidenceSha256 = sha256Bytes(serializeMapReleaseBuildEvidence(evidence));
   const inventorySha256 = sha256Bytes(Buffer.from(`${JSON.stringify(sortedValue(evidence.buildCache.inventory))}\n`, "utf8"));
   const restoreRootSha256 = sha256Bytes(Buffer.from(await realpath(root), "utf8"));

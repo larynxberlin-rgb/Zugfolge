@@ -361,6 +361,72 @@
       "file": "tools/tiles/map-release.annual-2026.5.spec.json"
     },
     {
+      "id": "synthetic-operational-policy",
+      "kind": "specification",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/region-import/germany/synthetic-operational-b.2026.5.policy.json"
+    },
+    {
+      "id": "synthetic-operational-closure-spec",
+      "kind": "specification",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/region-import/germany/synthetic-operational-closure.annual-2026.5.json"
+    },
+    {
+      "id": "operational-quality-spec",
+      "kind": "specification",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/region-import/germany/operational-quality.annual-2026.5.json"
+    },
+    {
+      "id": "static-map-sources-spec",
+      "kind": "specification",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/tiles/static-map-sources.annual-2026.5.json"
+    },
+    {
+      "id": "static-map-quality-spec",
+      "kind": "specification",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/tiles/static-map-quality.annual-2026.5.json"
+    },
+    {
+      "id": "static-map-release-spec",
+      "kind": "specification",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/tiles/static-map-release.annual-2026.5.json"
+    },
+    {
+      "id": "map-build-cache-inventory-plan",
+      "kind": "specification",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/tiles/map-build-cache-inventory.annual-2026.5.plan.json"
+    },
+    {
+      "id": "map-asset-notices-spec",
+      "kind": "specification",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/tiles/map-asset-notices.annual-2026.5.json"
+    },
+    {
+      "id": "germany-source-catalog",
+      "kind": "repo-contract",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/region-import/germany/source-catalog.json"
+    },
+    {
+      "id": "rights-registry",
+      "kind": "repo-contract",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/guards/quellenregister.json"
+    },
+    {
+      "id": "map-source-catalog",
+      "kind": "repo-contract",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/tiles/map-source-catalog.json"
+    },
+    {
       "id": "read-model-build-report",
       "kind": "derived-input",
       "version": "infra-deutschland-2026.5",
@@ -470,12 +536,10 @@
     },
     {
       "id": "gdal-pmtiles",
-      "kind": "binary",
+      "kind": "runtime-bundle",
       "version": "3.13.2",
-      "file": "var/tooling-pinned/gdal-3.13.2/ogr2ogr.exe",
-      "cacheFile": "tools/gdal-3.13.2/ogr2ogr.exe",
-      "expectedBytes": 219136,
-      "expectedSha256": "ee27b7a6a8be8e768381aba520506a75f45549905ac1d3965797aa789a44f8c3"
+      "manifestFile": "tools/tiles/gdal-runtime.3.13.2-win32-x64.manifest.json",
+      "manifestCacheFile": "tools/gdal-runtime-3.13.2-win32-x64/manifest.json"
     },
     {
       "id": "go-pmtiles",

@@ -24,6 +24,11 @@ Für den aktuell konkretisierten Lauf gelten zusätzlich unveränderlich
 `<DELIVERY_KEY_ID>=zugfolge-map-deutschland-2026.5` und ausschließlich
 `zugfolge-map-runtime/v2`. `infra-deutschland-2026.4` ist der bytegleich zu
 erhaltende Vorgängerstand und Vertrauensanker, niemals aktuelles Ausgabeziel.
+Der aktuelle Asset-Notice-Vertrag ist ausschließlich
+`tools/tiles/map-asset-notices.annual-2026.5.json`; Karten-Capture und
+Static-Sources-Builder erhalten genau diesen Pfad. Die ausführbare
+GDAL-Laufzeit ist ausschließlich über
+`tools/tiles/gdal-runtime.3.13.2-win32-x64.manifest.json` gebunden.
 Keine `.4`-Spezifikation, kein `.4`-Artefakt und kein vorhandener `.4`-Public-
 Key oder Scope darf für `.5` überschrieben, umbenannt, neu gepackt oder
 stillschweigend ersetzt werden. Jede aktuelle `.5`-Ausgabe entsteht
@@ -552,6 +557,15 @@ Deterministischer Build und Prüfung:
    `<ARTEFAKTWURZEL>/map-release-free-v2/public/release.json` ist ausschließlich
    dem später genehmigten signierten Deliveryvertrag vorbehalten und bleibt im
    unsigned Lauf absent.
+
+   Baue die Semantik-PMTiles ausschließlich über den manifestverifizierten
+   GDAL-Launcher. Ein frei über `PATH` gefundenes `ogr2ogr`, eine einzelne EXE
+   ohne Runtime-Manifest oder eine Runtime mit fehlender, zusätzlicher oder
+   abweichender Datei ist unzulässig:
+
+   ```sh
+   node tools/tiles/build-gdal-semantic-pmtiles.mjs var/derived/germany-2026.5/semantic-tile-inputs-free-v2/inputs.json var/derived/germany-2026.5/semantic-tile-inputs-free-v2 var/derived/germany-2026.5/map-release-free-v2/infra-deutschland-2026.5.pmtiles tools/tiles/gdal-runtime.3.13.2-win32-x64.manifest.json .
+   ```
 
    Binde nach allen Quellen-, Sidecar- und unsigned Ausgaben den für
    `<INFRARELEASE_ID>` eingecheckten

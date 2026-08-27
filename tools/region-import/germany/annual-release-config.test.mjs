@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { deriveSignedReleaseSourceFile } from "../../tiles/signed-map-package-plan.mjs";
+import { validateMapReleaseBuildEvidenceSpec } from "../../tiles/map-release-build-evidence.mjs";
 
 const root = resolve(fileURLToPath(new URL("../../../", import.meta.url)));
 
@@ -891,4 +892,58 @@ test("Jahresprompt kann den historischen 2026.4-Beleg auflösen, kennzeichnet ih
     assert.match(runbook, new RegExp(path.replaceAll(".", "\\."), "u"));
   }
   assert.match(runbook, /map-asset-notices\.annual-2026\.3\.json/u);
+});
+
+test("Build-Evidence-v3 bindet alle tatsächlich verwendeten 2026.5-Spezifikationen und Repo-Verträge fail-closed", async () => {
+  const specification = await json("tools/tiles/map-release-build-evidence.annual-2026.5.spec.json");
+  assert.doesNotThrow(() => validateMapReleaseBuildEvidenceSpec(specification));
+  const required = [
+    "synthetic-operational-policy",
+    "synthetic-operational-closure-spec",
+    "operational-quality-spec",
+    "static-map-sources-spec",
+    "static-map-quality-spec",
+    "static-map-release-spec",
+    "map-build-cache-inventory-plan",
+    "map-asset-notices-spec",
+    "germany-source-catalog",
+    "rights-registry",
+    "map-source-catalog",
+  ];
+  for (const id of required) {
+    const missing = structuredClone(specification);
+    missing.inputs = missing.inputs.filter((input) => input.id !== id);
+    assert.throws(() => validateMapReleaseBuildEvidenceSpec(missing), new RegExp(id, "u"));
+  }
+  const wrongRepoKind = structuredClone(specification);
+  wrongRepoKind.inputs.find(({ id }) => id === "rights-registry").kind = "specification";
+  assert.throws(() => validateMapReleaseBuildEvidenceSpec(wrongRepoKind), /rights-registry/u);
+  const missingRuntime = structuredClone(specification);
+  missingRuntime.tools = missingRuntime.tools.filter(({ id }) => id !== "gdal-pmtiles");
+  assert.throws(() => validateMapReleaseBuildEvidenceSpec(missingRuntime), /manifestgebundenes gdal-pmtiles/u);
+});
+
+test("2026.5 besitzt einen eigenen Asset-Notice-Vertrag und das vollständige GDAL-Runtime-Cachemapping", async () => {
+  const [currentNotices, historicalNotices, evidence, manifest, cachePlan, prompt] = await Promise.all([
+    json("tools/tiles/map-asset-notices.annual-2026.5.json"),
+    json("tools/tiles/map-asset-notices.annual-2026.3.json"),
+    json("tools/tiles/map-release-build-evidence.annual-2026.5.spec.json"),
+    json("tools/tiles/gdal-runtime.3.13.2-win32-x64.manifest.json"),
+    json("tools/tiles/map-build-cache-inventory.annual-2026.5.plan.json"),
+    text("docs/prompts/infrarelease-deutschland-jahreslauf.md"),
+  ]);
+  assert.deepEqual(currentNotices, historicalNotices);
+  assert.equal(evidence.inputs.find(({ id }) => id === "map-asset-notices-spec").file, "tools/tiles/map-asset-notices.annual-2026.5.json");
+  assert.match(prompt, /map-asset-notices\.annual-2026\.5\.json[\s\S]*Karten-Capture und[\s\S]*Static-Sources-Builder/u);
+  assert.equal(manifest.schema, "zugfolge-gdal-runtime-bundle/v1");
+  assert.deepEqual(manifest.platform, { arch: "x64", os: "win32" });
+  assert.equal(manifest.entryPoint.sourceFile, "var/tooling-pinned/gdal-3.13.2/ogr2ogr.exe");
+  assert.equal(manifest.inventory.files, 514);
+  assert.equal(manifest.inventory.bytes, 790021286);
+  const expectedMappings = new Map(manifest.files.map(({ sourceFile, cacheFile }) => [cacheFile, sourceFile]));
+  expectedMappings.set("tools/gdal-runtime-3.13.2-win32-x64/manifest.json", "tools/tiles/gdal-runtime.3.13.2-win32-x64.manifest.json");
+  const actualMappings = new Map(cachePlan.files.filter(({ cacheFile }) => expectedMappings.has(cacheFile)).map(({ sourceFile, cacheFile }) => [cacheFile, sourceFile]));
+  assert.equal(actualMappings.size, expectedMappings.size);
+  assert.deepEqual(actualMappings, expectedMappings);
+  assert.match(prompt, /build-gdal-semantic-pmtiles\.mjs[\s\S]*gdal-runtime\.3\.13\.2-win32-x64\.manifest\.json \./u);
 });

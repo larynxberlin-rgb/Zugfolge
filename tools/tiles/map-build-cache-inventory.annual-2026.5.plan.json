@@ -11,8 +11,20 @@
       "cacheFile": "captures/germany-source-capture-2026.5.json"
     },
     {
+      "sourceFile": "var/derived/germany-2026.5/map-release-free-v2/public/map-source-capture.json",
+      "cacheFile": "captures/map-source-capture-infra-deutschland-2026.5.json"
+    },
+    {
+      "sourceFile": "var/derived/germany-2026.5/map-release-free-v2/delivery-unsigned/sources.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/delivery-sources.json"
+    },
+    {
       "sourceFile": "var/derived/germany-2026.5/gtfs-region-20260810-v2.json",
       "cacheFile": "derived/infra-deutschland-2026.5/gtfs-region-20260810-v2.json"
+    },
+    {
+      "sourceFile": "var/derived/germany-2026.5/map-release-free-v2/public/infra-release.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/infra-release.json"
     },
     {
       "sourceFile": "var/derived/germany-2026.5/infrago-adapter/db-infrago-adapter-report.json",
@@ -23,6 +35,10 @@
       "cacheFile": "derived/infra-deutschland-2026.5/infrago-adapter/db-infrago-operating-places.jsonseq"
     },
     {
+      "sourceFile": "var/derived/germany-2026.5/map-release-free-v2/public/map-release.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/map-release.json"
+    },
+    {
       "sourceFile": "var/derived/germany-2026.5/operating-points-open-data-v1/official-operating-points-report.json",
       "cacheFile": "derived/infra-deutschland-2026.5/operating-points-open-data-v1/official-operating-points-report.json"
     },
@@ -31,40 +47,20 @@
       "cacheFile": "derived/infra-deutschland-2026.5/operating-points-open-data-v1/operating-points.geojsonseq"
     },
     {
-      "sourceFile": "var/derived/germany-2026.5/timetable-routes-v2.derivation-report-v4.json",
-      "cacheFile": "derived/infra-deutschland-2026.5/timetable-routes-v2.derivation-report-v4.json"
-    },
-    {
-      "sourceFile": "var/derived/germany-2026.5/timetable-routes-v2.jsonseq",
-      "cacheFile": "derived/infra-deutschland-2026.5/timetable-routes-v2.jsonseq"
-    },
-    {
-      "sourceFile": "var/derived/germany-2026.5/map-release-free-v2/public/map-source-capture.json",
-      "cacheFile": "captures/map-source-capture-infra-deutschland-2026.5.json"
-    },
-    {
-      "sourceFile": "var/derived/germany-2026.5/map-release-free-v2/public/infra-release.json",
-      "cacheFile": "derived/infra-deutschland-2026.5/infra-release.json"
-    },
-    {
-      "sourceFile": "var/derived/germany-2026.5/map-release-free-v2/public/map-release.json",
-      "cacheFile": "derived/infra-deutschland-2026.5/map-release.json"
-    },
-    {
-      "sourceFile": "var/derived/germany-2026.5/map-release-free-v2/delivery-unsigned/sources.json",
-      "cacheFile": "derived/infra-deutschland-2026.5/delivery-sources.json"
-    },
-    {
-      "sourceFile": "var/derived/germany-2026.5/map-release-free-v2/public/read-model.sqlite.report.json",
-      "cacheFile": "derived/infra-deutschland-2026.5/read-model.sqlite.report.json"
+      "sourceFile": "var/derived/germany-2026.5/operational-infrastructure-v2.derivation-report.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/operational-infrastructure-v2.derivation-report.json"
     },
     {
       "sourceFile": "var/derived/germany-2026.5/operational-infrastructure-v2.json",
       "cacheFile": "derived/infra-deutschland-2026.5/operational-infrastructure-v2.json"
     },
     {
-      "sourceFile": "var/derived/germany-2026.5/operational-infrastructure-v2.derivation-report.json",
-      "cacheFile": "derived/infra-deutschland-2026.5/operational-infrastructure-v2.derivation-report.json"
+      "sourceFile": "var/derived/germany-2026.5/operational-infrastructure-v2.movement-route-templates-v2.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/operational-infrastructure-v2.movement-route-templates-v2.json"
+    },
+    {
+      "sourceFile": "var/derived/germany-2026.5/map-release-free-v2/public/read-model.sqlite.report.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/read-model.sqlite.report.json"
     },
     {
       "sourceFile": "var/derived/germany-2026.5/release-artifacts.v2.json",
@@ -109,6 +105,18 @@
     {
       "sourceFile": "var/derived/germany-2026.5/semantic-tile-inputs-free-v2/tracks.geojsonseq",
       "cacheFile": "derived/infra-deutschland-2026.5/semantic/tracks.geojsonseq"
+    },
+    {
+      "sourceFile": "var/derived/germany-2026.5/timetable-routes-v2.derivation-report-v4.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/timetable-routes-v2.derivation-report-v4.json"
+    },
+    {
+      "sourceFile": "var/derived/germany-2026.5/timetable-routes-v2.jsonseq",
+      "cacheFile": "derived/infra-deutschland-2026.5/timetable-routes-v2.jsonseq"
+    },
+    {
+      "sourceFile": "var/derived/germany-2026.5/timetable-routes-v2.transfer-demands-v2.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/timetable-routes-v2.transfer-demands-v2.json"
     },
     {
       "sourceFile": "var/source-cache/annual-2026-pinned/basemap-assets-2026-08-12/fonts/Noto Sans Devanagari Regular v1/0-255.pbf",
@@ -4523,8 +4531,2064 @@
       "cacheFile": "sources/osm/germany-260811-5f7bfb9800c74b236b28405453b2e45337ae225c88be2078a7bdc49bd3e945b0.osm.pbf"
     },
     {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/CreateDOMDocument.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/CreateDOMDocument.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/DOMCount.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/DOMCount.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/DOMPrint.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/DOMPrint.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/EnumVal.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/EnumVal.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/Lerc.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/Lerc.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/MemParse.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/MemParse.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/PParse.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/PParse.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/PSVIWriter.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/PSVIWriter.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/Redirect.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/Redirect.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SAX2Count.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SAX2Count.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SAX2Print.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SAX2Print.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SAXCount.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SAXCount.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SAXPrint.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SAXPrint.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SCMPrint.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SCMPrint.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SEnumVal.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/SEnumVal.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/StdInParse.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/StdInParse.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/XInclude.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/XInclude.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-console-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-console-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-console-l1-2-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-console-l1-2-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-datetime-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-datetime-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-debug-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-debug-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-errorhandling-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-errorhandling-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-fibers-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-fibers-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-fibers-l1-1-1.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-fibers-l1-1-1.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-file-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-file-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-file-l1-2-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-file-l1-2-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-file-l2-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-file-l2-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-handle-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-handle-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-heap-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-heap-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-interlocked-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-interlocked-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-kernel32-legacy-l1-1-1.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-kernel32-legacy-l1-1-1.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-libraryloader-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-libraryloader-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-localization-l1-2-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-localization-l1-2-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-memory-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-memory-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-namedpipe-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-namedpipe-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-processenvironment-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-processenvironment-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-processthreads-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-processthreads-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-processthreads-l1-1-1.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-processthreads-l1-1-1.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-profile-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-profile-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-rtlsupport-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-rtlsupport-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-string-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-string-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-synch-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-synch-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-synch-l1-2-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-synch-l1-2-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-sysinfo-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-sysinfo-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-sysinfo-l1-2-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-sysinfo-l1-2-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-timezone-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-timezone-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-util-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-core-util-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-conio-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-conio-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-convert-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-convert-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-environment-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-environment-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-filesystem-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-filesystem-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-heap-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-heap-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-locale-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-locale-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-math-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-math-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-multibyte-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-multibyte-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-private-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-private-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-process-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-process-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-runtime-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-runtime-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-stdio-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-stdio-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-string-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-string-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-time-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-time-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-utility-l1-1-0.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/api-ms-win-crt-utility-l1-1-0.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/archive.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/archive.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/blosc.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/blosc.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/brotlicommon.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/brotlicommon.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/brotlidec.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/brotlidec.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/brotlienc.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/brotlienc.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/bsdcat.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/bsdcat.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/bsdcpio.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/bsdcpio.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/bsdtar.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/bsdtar.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/bsdunzip.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/bsdunzip.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/c_rehash.pl",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/c_rehash.pl"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ccapiserver.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ccapiserver.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/cct.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/cct.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/charset.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/charset.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/cjpeg.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/cjpeg.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/comerr64.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/comerr64.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/concrt140.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/concrt140.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/cs2cs.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/cs2cs.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/deflate.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/deflate.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/derb.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/derb.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/djpeg.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/djpeg.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/escapesrc.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/escapesrc.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/fax2ps.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/fax2ps.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/fax2tiff.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/fax2tiff.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ffi-8.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ffi-8.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/freexl.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/freexl.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal-config",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal-config"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_contour.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_contour.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_create.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_create.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_footprint.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_footprint.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_grid.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_grid.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_rasterize.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_rasterize.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_translate.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_translate.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_viewshed.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdal_viewshed.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdaladdo.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdaladdo.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalbuildvrt.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalbuildvrt.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdaldem.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdaldem.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalenhance.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalenhance.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalinfo.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalinfo.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdallocationinfo.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdallocationinfo.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalmanage.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalmanage.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalmdiminfo.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalmdiminfo.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalmdimtranslate.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalmdimtranslate.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalsrsinfo.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalsrsinfo.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdaltindex.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdaltindex.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdaltransform.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdaltransform.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalwarp.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gdalwarp.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/genbrk.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/genbrk.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/genccode.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/genccode.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gencfu.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gencfu.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gencmn.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gencmn.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gencnval.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gencnval.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gendict.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gendict.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gennorm2.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gennorm2.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/genrb.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/genrb.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gensprep.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gensprep.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/geod.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/geod.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/geos-config",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/geos-config"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/geos.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/geos.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/geos_c.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/geos_c.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/geosop.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/geosop.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gie.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gie.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gnmanalyse.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gnmanalyse.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gnmmanage.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gnmmanage.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gss-client.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gss-client.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gss-server.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gss-server.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gssapi64.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/gssapi64.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-15.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-15.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-annotate.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-annotate.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-bind.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-bind.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-calc.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-calc.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-compress-dir",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-compress-dir"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-diff.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-diff.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-distrib.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-distrib.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-gather-cpuid.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-gather-cpuid.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-info.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-info.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-ls.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-ls.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-patch.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwloc-patch.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwy.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwy.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwy_contrib.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwy_contrib.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwy_test.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/hwy_test.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/iconv.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/iconv.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icu-config",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icu-config"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icudt.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icudt.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icudt78.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icudt78.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuexportdata.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuexportdata.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuin.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuin.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuin78.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuin78.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuinfo.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuinfo.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuio.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuio.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuio78.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuio78.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icupkg.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icupkg.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icutest.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icutest.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icutest78.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icutest78.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icutu.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icutu.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icutu78.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icutu78.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuuc.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuuc.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuuc78.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/icuuc78.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/invgeod.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/invgeod.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/invproj.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/invproj.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/jpeg8.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/jpeg8.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/jpegtran.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/jpegtran.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/jxl.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/jxl.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/jxl_cms.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/jxl_cms.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/jxl_threads.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/jxl_threads.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/k5sprt64.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/k5sprt64.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kcpytkt.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kcpytkt.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kdeltkt.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kdeltkt.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kdestroy.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kdestroy.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kfwcpcc.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kfwcpcc.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kfwlogon.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kfwlogon.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kinit.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kinit.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/klist.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/klist.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kpasswd.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kpasswd.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/krb5_64.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/krb5_64.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/krbcc64.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/krbcc64.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kswitch.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kswitch.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kvno.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/kvno.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/leashw64.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/leashw64.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libblas.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libblas.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libbz2.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libbz2.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libcblas.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libcblas.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libcrypto-3-x64.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libcrypto-3-x64.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libcrypto-3-x64.pdb",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libcrypto-3-x64.pdb"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libcurl.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libcurl.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libdeflate-gunzip.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libdeflate-gunzip.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libdeflate-gzip.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libdeflate-gzip.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libexpat.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libexpat.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libimalloc.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libimalloc.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libiomp5md.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libiomp5md.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/liblapack.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/liblapack.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/liblzma.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/liblzma.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libminizip.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libminizip.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libmpdec-4.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libmpdec-4.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libomp.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libomp.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libpng16.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libpng16.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/librttopo.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/librttopo.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libsharpyuv.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libsharpyuv.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libssh2.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libssh2.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libssl-3-x64.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libssl-3-x64.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libssl-3-x64.pdb",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libssl-3-x64.pdb"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libtiff.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libtiff.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libwebp.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libwebp.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libwebpdecoder.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libwebpdecoder.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libwebpdemux.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libwebpdemux.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libwebpmux.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libwebpmux.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libwinpthread-1.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libwinpthread-1.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libxml2.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libxml2.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libzstd.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/libzstd.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/lstopo-no-graphics.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/lstopo-no-graphics.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/lstopo.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/lstopo.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/lz4.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/lz4.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/lz4.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/lz4.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/lzo2.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/lzo2.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/makeconv.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/makeconv.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mit2ms.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mit2ms.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_avx10.3.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_avx10.3.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_avx2.3.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_avx2.3.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_avx512.3.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_avx512.3.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_ilp64.2.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_ilp64.2.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_intelmpi_ilp64.2.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_intelmpi_ilp64.2.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_intelmpi_lp64.2.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_intelmpi_lp64.2.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_lp64.2.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_lp64.2.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_msmpi_ilp64.2.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_msmpi_ilp64.2.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_msmpi_lp64.2.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_blacs_msmpi_lp64.2.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_cdft_core.2.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_cdft_core.2.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_core.3.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_core.3.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_def.3.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_def.3.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_intel_thread.3.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_intel_thread.3.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_mc3.3.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_mc3.3.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_rt.3.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_rt.3.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_scalapack_ilp64.2.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_scalapack_ilp64.2.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_scalapack_lp64.2.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_scalapack_lp64.2.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_sequential.3.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_sequential.3.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_tbb_thread.3.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_tbb_thread.3.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_avx10.3.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_avx10.3.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_avx2.3.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_avx2.3.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_avx512.3.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_avx512.3.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_cmpt.3.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_cmpt.3.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_def.3.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_def.3.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_mc3.3.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mkl_vml_mc3.3.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mod_spatialite.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/mod_spatialite.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ms2mit.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ms2mit.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/msvcp140.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/msvcp140.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/msvcp140_1.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/msvcp140_1.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/msvcp140_2.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/msvcp140_2.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/msvcp140_atomic_wait.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/msvcp140_atomic_wait.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/msvcp140_codecvt_ids.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/msvcp140_codecvt_ids.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/muparser.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/muparser.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/nearblack.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/nearblack.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ogr2ogr.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ogr2ogr.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ogrinfo.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ogrinfo.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ogrlineref.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ogrlineref.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ogrtindex.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ogrtindex.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/openssl.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/openssl.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/openssl.pdb",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/openssl.pdb"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pal2rgb.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pal2rgb.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2-16.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2-16.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2-32.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2-32.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2-8.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2-8.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2-config",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2-config"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2-posix.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2-posix.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2grep.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2grep.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2test.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pcre2test.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pkgdata.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pkgdata.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/plugins/preauth/spake64.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/plugins/preauth/spake64.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/png-fix-itxt.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/png-fix-itxt.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pngfix.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/pngfix.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ppm2tiff.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ppm2tiff.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/proj.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/proj.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/proj_9.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/proj_9.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/projinfo.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/projinfo.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/projsync.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/projsync.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/psl-5.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/psl-5.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/raw2tiff.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/raw2tiff.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/rdjpgcom.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/rdjpgcom.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/snappy.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/snappy.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/sozip.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/sozip.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/spatialite.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/spatialite.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/sqlite3.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/sqlite3.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/sqlite3.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/sqlite3.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tbb12.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tbb12.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tbbbind_2_5.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tbbbind_2_5.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tbbmalloc.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tbbmalloc.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tbbmalloc_proxy.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tbbmalloc_proxy.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tcl86t.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tcl86t.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tclsh.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tclsh.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tclsh86.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tclsh86.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tclsh86t.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tclsh86t.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiff.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiff.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiff2bw.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiff2bw.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiff2pdf.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiff2pdf.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiff2ps.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiff2ps.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiff2rgba.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiff2rgba.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffcmp.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffcmp.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffcp.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffcp.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffcrop.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffcrop.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffdither.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffdither.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffdump.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffdump.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffinfo.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffinfo.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffmedian.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffmedian.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffset.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffset.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffsplit.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tiffsplit.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tjbench.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tjbench.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tk86t.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/tk86t.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/turbojpeg.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/turbojpeg.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ucrtbase.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/ucrtbase.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/uriparser.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/uriparser.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vcamp140.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vcamp140.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vccorlib140.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vccorlib140.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vcomp140.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vcomp140.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vcruntime140.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vcruntime140.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vcruntime140_1.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vcruntime140_1.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vcruntime140_threads.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/vcruntime140_threads.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/wish.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/wish.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/wish86.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/wish86.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/wish86t.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/wish86t.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/wrjpgcom.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/wrjpgcom.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/xerces-c_3_3.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/xerces-c_3_3.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/xml2-config",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/xml2-config"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/xmlcatalog.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/xmlcatalog.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/xmllint.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/xmllint.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/xpprof64.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/xpprof64.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/zlib.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/zlib.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/zlib1.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/zlib1.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/zstd.dll",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/zstd.dll"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/zstd.exe",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/bin/zstd.exe"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/lib/gdalplugins/drivers.ini",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/lib/gdalplugins/drivers.ini"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/GDALLogoBW.svg",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/GDALLogoBW.svg"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/GDALLogoColor.svg",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/GDALLogoColor.svg"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/GDALLogoGS.svg",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/GDALLogoGS.svg"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/LICENSE.TXT",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/LICENSE.TXT"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/MM_m_idofic.csv",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/MM_m_idofic.csv"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/bag_template.xml",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/bag_template.xml"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/cubewerx_extra.wkt",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/cubewerx_extra.wkt"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/default.rsc",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/default.rsc"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ecw_cs.wkt",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ecw_cs.wkt"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/eedaconf.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/eedaconf.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/epsg.wkt",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/epsg.wkt"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/esri_StatePlane_extra.wkt",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/esri_StatePlane_extra.wkt"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdal_algorithm.schema.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdal_algorithm.schema.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdalg.schema.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdalg.schema.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdalicon.png",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdalicon.png"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdalinfo_output.schema.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdalinfo_output.schema.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdalmdiminfo_output.schema.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdalmdiminfo_output.schema.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdaltileindex.xsd",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdaltileindex.xsd"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdalvrt.xsd",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gdalvrt.xsd"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gfs.xsd",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gfs.xsd"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gml_registry.xml",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gml_registry.xml"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gml_registry.xsd",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gml_registry.xsd"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gmlasconf.xml",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gmlasconf.xml"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gmlasconf.xsd",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gmlasconf.xsd"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gt_datum.csv",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gt_datum.csv"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gt_ellips.csv",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/gt_ellips.csv"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/header.dxf",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/header.dxf"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/inspire_cp_BasicPropertyUnit.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/inspire_cp_BasicPropertyUnit.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/inspire_cp_CadastralBoundary.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/inspire_cp_CadastralBoundary.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/inspire_cp_CadastralParcel.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/inspire_cp_CadastralParcel.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/inspire_cp_CadastralZoning.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/inspire_cp_CadastralZoning.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_AdmArea.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_AdmArea.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_AdmBdry.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_AdmBdry.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_AdmPt.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_AdmPt.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_BldA.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_BldA.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_BldL.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_BldL.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_Cntr.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_Cntr.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_CommBdry.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_CommBdry.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_CommPt.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_CommPt.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_Cstline.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_Cstline.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_ElevPt.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_ElevPt.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_GCP.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_GCP.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_LeveeEdge.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_LeveeEdge.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RailCL.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RailCL.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdASL.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdASL.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdArea.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdArea.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdCompt.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdCompt.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdEdg.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdEdg.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdMgtBdry.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdMgtBdry.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdSgmtA.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RdSgmtA.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RvrMgtBdry.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_RvrMgtBdry.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_SBAPt.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_SBAPt.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_SBArea.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_SBArea.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_SBBdry.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_SBBdry.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_WA.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_WA.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_WL.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_WL.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_WStrA.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_WStrA.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_WStrL.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/jpfgdgml_WStrL.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/leaflet_template.html",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/leaflet_template.html"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/netcdf_config.xsd",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/netcdf_config.xsd"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/nitf_spec.xml",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/nitf_spec.xml"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/nitf_spec.xsd",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/nitf_spec.xsd"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ogr_fields_override.schema.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ogr_fields_override.schema.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ogrinfo_output.schema.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ogrinfo_output.schema.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ogrvrt.xsd",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ogrvrt.xsd"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/osmconf.ini",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/osmconf.ini"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ozi_datum.csv",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ozi_datum.csv"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ozi_ellips.csv",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ozi_ellips.csv"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/pci_datum.txt",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/pci_datum.txt"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/pci_ellips.txt",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/pci_ellips.txt"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/pdfcomposition.xsd",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/pdfcomposition.xsd"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/pds4_template.xml",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/pds4_template.xml"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/plscenesconf.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/plscenesconf.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ruian_vf_ob_v1.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ruian_vf_ob_v1.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ruian_vf_st_uvoh_v1.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ruian_vf_st_uvoh_v1.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ruian_vf_st_v1.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ruian_vf_st_v1.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ruian_vf_v1.gfs",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/ruian_vf_v1.gfs"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/s57agencies.csv",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/s57agencies.csv"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/s57attributes.csv",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/s57attributes.csv"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/s57expectedinput.csv",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/s57expectedinput.csv"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/s57objectclasses.csv",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/s57objectclasses.csv"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/seed_2d.dgn",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/seed_2d.dgn"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/seed_3d.dgn",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/seed_3d.dgn"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/stateplane.csv",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/stateplane.csv"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/template_tiles.mapml",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/template_tiles.mapml"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/tms_LINZAntarticaMapTileGrid.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/tms_LINZAntarticaMapTileGrid.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/tms_MapML_APSTILE.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/tms_MapML_APSTILE.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/tms_MapML_CBMTILE.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/tms_MapML_CBMTILE.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/tms_NZTM2000.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/tms_NZTM2000.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/trailer.dxf",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/trailer.dxf"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/vdv452.xml",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/vdv452.xml"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/vdv452.xsd",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/vdv452.xsd"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/vicar.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/gdal/vicar.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/CH",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/CH"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/GL27",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/GL27"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/ITRF2000",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/ITRF2000"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/ITRF2008",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/ITRF2008"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/ITRF2014",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/ITRF2014"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/ITRF2020",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/ITRF2020"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/deformation_model.schema.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/deformation_model.schema.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/nad.lst",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/nad.lst"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/nad27",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/nad27"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/nad83",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/nad83"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/other.extra",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/other.extra"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/proj.db",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/proj.db"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/proj.ini",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/proj.ini"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/projjson.schema.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/projjson.schema.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/triangulation.schema.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/triangulation.schema.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/world",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/Library/share/proj/world"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/.pixi-environment-fingerprint",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/.pixi-environment-fingerprint"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/blosc-1.21.6-hfd34d9b_1.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/blosc-1.21.6-hfd34d9b_1.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/bzip2-1.0.8-h0ad9c76_10.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/bzip2-1.0.8-h0ad9c76_10.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/ca-certificates-2026.7.22-h4c7d964_0.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/ca-certificates-2026.7.22-h4c7d964_0.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/freexl-2.0.0-hf297d47_2.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/freexl-2.0.0-hf297d47_2.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/gdal-3.13.2-np2py314h4a48668_3.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/gdal-3.13.2-np2py314h4a48668_3.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/geos-3.14.1-hdade9fe_0.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/geos-3.14.1-hdade9fe_0.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/history",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/history"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/icu-78.3-h5112557_2.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/icu-78.3-h5112557_2.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/krb5-1.22.2-h719d79b_2.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/krb5-1.22.2-h719d79b_2.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/lerc-4.2.0-hd936e49_0.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/lerc-4.2.0-hd936e49_0.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libarchive-3.8.9-gpl_h8fdc8af_101.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libarchive-3.8.9-gpl_h8fdc8af_101.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libblas-3.11.0-9_h8455456_mkl.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libblas-3.11.0-9_h8455456_mkl.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libbrotlicommon-1.2.0-hf02afa3_3.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libbrotlicommon-1.2.0-hf02afa3_3.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libbrotlidec-1.2.0-h84f9c24_3.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libbrotlidec-1.2.0-h84f9c24_3.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libbrotlienc-1.2.0-he2a975b_3.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libbrotlienc-1.2.0-he2a975b_3.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libcblas-3.11.0-9_h2a3cdd5_mkl.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libcblas-3.11.0-9_h2a3cdd5_mkl.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libcurl-8.21.0-hdb0ef4a_5.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libcurl-8.21.0-hdb0ef4a_5.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libdeflate-1.25-h1a1d4e4_1.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libdeflate-1.25-h1a1d4e4_1.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libexpat-2.8.1-hac47afa_1.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libexpat-2.8.1-hac47afa_1.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libffi-3.7.0-h3d046cb_0.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libffi-3.7.0-h3d046cb_0.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libgdal-core-3.13.2-hbfeefb7_3.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libgdal-core-3.13.2-hbfeefb7_3.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libhwloc-2.13.0-default_h049141e_1000.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libhwloc-2.13.0-default_h049141e_1000.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libhwy-1.4.0-h2419aca_1.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libhwy-1.4.0-h2419aca_1.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libiconv-1.18-hc1393d2_3.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libiconv-1.18-hc1393d2_3.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libjpeg-turbo-3.2.0-hfd05255_1.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libjpeg-turbo-3.2.0-hfd05255_1.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libjxl-0.12.0-h932607e_2.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libjxl-0.12.0-h932607e_2.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libkml-1.3.0-h68a222c_1023.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libkml-1.3.0-h68a222c_1023.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/liblapack-3.11.0-9_hf9ab0e9_mkl.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/liblapack-3.11.0-9_hf9ab0e9_mkl.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/liblzma-5.8.3-hfd05255_1.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/liblzma-5.8.3-hfd05255_1.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libmpdec-4.0.0-hfd05255_2.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libmpdec-4.0.0-hfd05255_2.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libpng-1.6.58-hdc8cecf_1.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libpng-1.6.58-hdc8cecf_1.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libpsl-0.23.1-h9b16d47_1.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libpsl-0.23.1-h9b16d47_1.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/librttopo-1.1.0-haa95264_20.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/librttopo-1.1.0-haa95264_20.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libspatialite-5.1.0-gpl_h2fc3b25_120.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libspatialite-5.1.0-gpl_h2fc3b25_120.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libsqlite-3.53.4-hf5d6505_1.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libsqlite-3.53.4-hf5d6505_1.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libssh2-1.11.1-h734d217_1.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libssh2-1.11.1-h734d217_1.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libtiff-4.7.2-h8f73337_0.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libtiff-4.7.2-h8f73337_0.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libwebp-base-1.6.0-h4d5522a_1.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libwebp-base-1.6.0-h4d5522a_1.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libwinpthread-12.0.0.r4.gg4f2fc60ca-h57928b3_10.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libwinpthread-12.0.0.r4.gg4f2fc60ca-h57928b3_10.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libxml2-16-2.15.3-h3cfd58e_1.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libxml2-16-2.15.3-h3cfd58e_1.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libxml2-2.15.3-h8ef44ab_1.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libxml2-2.15.3-h8ef44ab_1.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libxml2-devel-2.15.3-h8ef44ab_1.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libxml2-devel-2.15.3-h8ef44ab_1.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libzlib-1.3.2-hfd05255_3.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/libzlib-1.3.2-hfd05255_3.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/llvm-openmp-22.1.8-h4fa8253_1.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/llvm-openmp-22.1.8-h4fa8253_1.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/lz4-c-1.10.0-h6a83c73_2.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/lz4-c-1.10.0-h6a83c73_2.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/lzo-2.10-h6a83c73_1003.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/lzo-2.10-h6a83c73_1003.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/minizip-4.2.2-h0ffbb96_0.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/minizip-4.2.2-h0ffbb96_0.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/mkl-2026.1.0-hac47afa_234.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/mkl-2026.1.0-hac47afa_234.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/muparser-2.3.5-he0c23c2_0.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/muparser-2.3.5-he0c23c2_0.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/numpy-2.5.2-py314hffb9209_0.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/numpy-2.5.2-py314hffb9209_0.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/openssl-3.6.3-hf411b9b_1.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/openssl-3.6.3-hf411b9b_1.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/pcre2-10.47-h8466c1e_1.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/pcre2-10.47-h8466c1e_1.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/pixi",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/pixi"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/pixi_env_prefix",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/pixi_env_prefix"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/proj-9.8.1-hd30e2cd_0.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/proj-9.8.1-hd30e2cd_0.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/python-3.14.7-hb4b0029_0_cp314t.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/python-3.14.7-hb4b0029_0_cp314t.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/python_abi-3.14-8_cp314t.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/python_abi-3.14-8_cp314t.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/snappy-1.2.2-h7fa0ca8_1.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/snappy-1.2.2-h7fa0ca8_1.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/sqlite-3.53.4-hdb435a2_1.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/sqlite-3.53.4-hdb435a2_1.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/tbb-2023.0.0-hd3d4ead_2.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/tbb-2023.0.0-hd3d4ead_2.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/tk-8.6.13-h967ab96_4.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/tk-8.6.13-h967ab96_4.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/tzdata-2026c-h151e31d_0.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/tzdata-2026c-h151e31d_0.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/ucrt-10.0.26100.0-h57928b3_0.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/ucrt-10.0.26100.0-h57928b3_0.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/uriparser-0.9.8-h5a68840_0.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/uriparser-0.9.8-h5a68840_0.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/vc-14.5-ha367084_41.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/vc-14.5-ha367084_41.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/vc14_runtime-14.51.36247-habf1de7_41.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/vc14_runtime-14.51.36247-habf1de7_41.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/vcomp14-14.51.36247-habf1de7_41.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/vcomp14-14.51.36247-habf1de7_41.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/xerces-c-3.3.0-hac47afa_1.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/xerces-c-3.3.0-hac47afa_1.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/zlib-1.3.2-hfd05255_3.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/zlib-1.3.2-hfd05255_3.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/zstd-1.5.7-h534d264_7.json",
+      "cacheFile": "tools/gdal-3.13.2-pixi/.pixi/envs/default/conda-meta/zstd-1.5.7-h534d264_7.json"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/pixi.lock",
+      "cacheFile": "tools/gdal-3.13.2-pixi/pixi.lock"
+    },
+    {
+      "sourceFile": "var/tooling-pinned/gdal-3.13.2-pixi/pixi.toml",
+      "cacheFile": "tools/gdal-3.13.2-pixi/pixi.toml"
+    },
+    {
       "sourceFile": "var/tooling-pinned/gdal-3.13.2/ogr2ogr.exe",
       "cacheFile": "tools/gdal-3.13.2/ogr2ogr.exe"
+    },
+    {
+      "sourceFile": "tools/tiles/gdal-runtime.3.13.2-win32-x64.manifest.json",
+      "cacheFile": "tools/gdal-runtime-3.13.2-win32-x64/manifest.json"
     },
     {
       "sourceFile": "var/tooling-pinned/go-pmtiles-1.31.2/pmtiles.exe",
@@ -4533,14 +6597,6 @@
     {
       "sourceFile": "var/tooling-pinned/osmium-tool-1.19.1/osmium.exe",
       "cacheFile": "tools/osmium-tool-1.19.1/osmium.exe"
-    },
-    {
-      "sourceFile": "var/derived/germany-2026.5/operational-infrastructure-v2.movement-route-templates-v2.json",
-      "cacheFile": "derived/infra-deutschland-2026.5/operational-infrastructure-v2.movement-route-templates-v2.json"
-    },
-    {
-      "sourceFile": "var/derived/germany-2026.5/timetable-routes-v2.transfer-demands-v2.json",
-      "cacheFile": "derived/infra-deutschland-2026.5/timetable-routes-v2.transfer-demands-v2.json"
     }
   ]
 }

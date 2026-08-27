@@ -1,0 +1,61 @@
+{
+  "schema": "zugfolge-map-asset-notice-contract/v1",
+  "assets": [
+    {
+      "id": "noto-glyphs",
+      "rightsSourceId": "noto-glyphs",
+      "kind": "glyph",
+      "license": "OFL-1.1",
+      "copyright": "Copyright 2022 The Noto Project Authors (https://github.com/notofonts)",
+      "modifications": "Die von Protomaps bereitgestellten PBF-Glyphen werden unveraendert selbst gehostet und unter assets/fonts ausgeliefert.",
+      "source": {
+        "repository": "https://github.com/protomaps/basemaps-assets",
+        "commit": "028c18f713baecad011301ff7a69acc39bcc2ae7",
+        "path": "fonts"
+      },
+      "derivedFrom": null,
+      "notice": {
+        "file": "tools/tiles/notices/noto-sans-ofl-1.1.txt",
+        "url": "https://raw.githubusercontent.com/protomaps/basemaps-assets/028c18f713baecad011301ff7a69acc39bcc2ae7/fonts/OFL.txt",
+        "bytes": 4374,
+        "sha256": "a4e64af683b9a5fc0ebcb849e7a2c1759e415f9791764d09b8a241b79fd90dfa"
+      },
+      "tree": {
+        "installDirectory": "assets/fonts",
+        "files": 1024,
+        "bytes": 17711598,
+        "sha256": "638626622de15ad0af800d2b507252ac662724c607f285621ce0bdb4c62047e7"
+      }
+    },
+    {
+      "id": "protomaps-sprites",
+      "rightsSourceId": "protomaps-sprites",
+      "kind": "sprite",
+      "license": "MIT",
+      "copyright": "Copyright (c) 2017 Mapzen",
+      "modifications": "Die dunklen Protomaps-v4-Sprites werden unveraendert selbst gehostet und unter assets/sprites ausgeliefert.",
+      "source": {
+        "repository": "https://github.com/protomaps/basemaps-assets",
+        "commit": "028c18f713baecad011301ff7a69acc39bcc2ae7",
+        "path": "sprites/v4"
+      },
+      "derivedFrom": {
+        "repository": "https://github.com/tangrams/icons",
+        "commit": "92510779634f4a006c61ea70e50cb8c52c765a81",
+        "license": "MIT"
+      },
+      "notice": {
+        "file": "tools/tiles/notices/protomaps-sprites-tangrams-mit.txt",
+        "url": "https://raw.githubusercontent.com/tangrams/icons/92510779634f4a006c61ea70e50cb8c52c765a81/LICENSE.md",
+        "bytes": 1073,
+        "sha256": "5d1eb083c5bf849216176995c7d72545f0d2ad9af469a38cd0ec2c644f20bab2"
+      },
+      "tree": {
+        "installDirectory": "assets/sprites",
+        "files": 4,
+        "bytes": 51589,
+        "sha256": "4e1a82b9983b57a63ec25b37f16ee95c3e5238fc6d51a5d95bfc0492da0ff291"
+      }
+    }
+  ]
+}
