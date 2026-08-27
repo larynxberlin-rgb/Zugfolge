@@ -71,6 +71,12 @@ Gemischte oder partielle Sätze, ein unbekannter Game-Relations-/Routinenkatalog
 fremde Zielrelationen oder Zielroutinen, Enums/Domains, Zielkollisionen, ein
 anderer PostgreSQL-Major, ein unbekannter Drizzle-Stand, abweichende
 Spalten-/Constraint-/Indexhashes und ein aktiver Liquibase-Lock brechen ab.
+Keycloak 26.7.0 verwendet dabei keinen einzelnen generischen Liquibase-Datensatz,
+sondern exakt die beiden Lock-Namespaces `DATABASE` (`1`) und `KEYCLOAK_BOOT`
+(`1000`). Fehlende, zusätzliche oder als aktiv markierte Lockzeilen werden
+abgelehnt. Die `ACCESS EXCLUSIVE`-Sperre auf allen 100 Quelltabellen bleibt der
+entscheidende Live-Nachweis dafür, dass auch kein transaktionaler Keycloak-Lock
+mehr gehalten wird.
 Der Live-Inspector akzeptiert für Extension-Objekte nur zwei explizite Varianten:
 plain PG16 ohne Extension-Relationen/-Routinen oder den Produktions-PostGIS-
 Fußabdruck aus den drei Relationen `geography_columns`, `geometry_columns` und

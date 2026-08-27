@@ -25,6 +25,7 @@ import {
   validateBootstrapReceipt,
   validateGameDatabaseCatalog,
   validateKeycloakObjectCatalog,
+  validateKeycloakLockRows,
   validateKeycloakStateSnapshot,
   validateMigrationPlan,
   validatePublicExtensionContract,
@@ -35,6 +36,21 @@ import { DATABASE_AUTHORITATIVE_TABLES } from "./database-cutover-schema-contrac
 const DATABASE_URL = "postgresql://operator:secret@postgres:5432/zugfolge";
 const RESTORED_DATABASE_URL = "postgresql://operator:secret@postgres:5432/zugfolge_restore_keycloak_schema";
 const NOW = "2026-08-25T12:23:00.000Z";
+
+test("Keycloak-26.7-Lockkatalog verlangt exakt DATABASE und KEYCLOAK_BOOT", () => {
+  assert.deepEqual(
+    validateKeycloakLockRows([{ id: 1, locked: false }, { id: 1000, locked: false }], "public"),
+    [{ id: 1, locked: false }, { id: 1000, locked: false }],
+  );
+  assert.throws(
+    () => validateKeycloakLockRows([{ id: 1, locked: false }], "public"),
+    /Namespaces 1 und 1000/u,
+  );
+  assert.throws(
+    () => validateKeycloakLockRows([{ id: 1, locked: false }, { id: 1000, locked: true }], "public"),
+    /ist aktiv/u,
+  );
+});
 
 function identityHead(catalog, { userCount = "1" } = {}) {
   const payload = Object.freeze({

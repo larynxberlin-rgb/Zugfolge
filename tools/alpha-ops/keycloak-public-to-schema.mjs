@@ -18,6 +18,7 @@ export const KEYCLOAK_GAME_RESTORE_SCHEMA = "zugfolge-game-restore/v2";
 export const KEYCLOAK_BOOTSTRAP_SCHEMA_COMMENT = "zugfolge:keycloak-bootstrap-origin/v1";
 export const KEYCLOAK_SOURCE_SCHEMA = "public";
 export const KEYCLOAK_TARGET_SCHEMA = "keycloak";
+const KEYCLOAK_LOCK_NAMESPACE_IDS = Object.freeze([1, 1000]);
 export const KEYCLOAK_CATALOG_PATH = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../../ops/alpha/keycloak/keycloak-pg16-object-catalog.26.7.0.json",
@@ -529,10 +530,30 @@ export function validatePublicExtensionContract(relations, routines) {
   });
 }
 
+export function validateKeycloakLockRows(rows, schema) {
+  invariant(Array.isArray(rows), `Keycloak-Liquibase-Locks in '${schema}' sind nicht lesbar.`);
+  const locks = rows.map((row, index) => {
+    exactObjectKeys(row, ["id", "locked"], `Keycloak-Liquibase-Lock[${index}]`);
+    return Object.freeze({
+      id: safeInteger(row.id, `Keycloak-Liquibase-Lock[${index}].id`, { positive: true }),
+      locked: row.locked,
+    });
+  });
+  invariant(
+    locks.length === KEYCLOAK_LOCK_NAMESPACE_IDS.length
+      && locks.every(({ id }, index) => id === KEYCLOAK_LOCK_NAMESPACE_IDS[index]),
+    `Keycloak-Liquibase-Locks in '${schema}' besitzen nicht exakt die freigegebenen Namespaces 1 und 1000.`,
+  );
+  invariant(
+    locks.every(({ locked }) => locked === false),
+    `Keycloak-Liquibase-Lock in '${schema}' ist aktiv; Keycloak ist nicht quiesziert.`,
+  );
+  return Object.freeze(locks);
+}
+
 async function ensureLiquibaseUnlocked(sql, schema) {
   const rows = await sql.unsafe(`select id::int as id, locked from ${quoteName(schema)}."databasechangeloglock" order by id`);
-  invariant(rows.length === 1 && rows[0].id === 1, `Keycloak-Liquibase-Lock in '${schema}' besitzt keinen eindeutigen Singleton.`);
-  invariant(rows[0].locked === false, `Keycloak-Liquibase-Lock in '${schema}' ist aktiv; Keycloak ist nicht quiesziert.`);
+  validateKeycloakLockRows(rows, schema);
 }
 
 async function tableFingerprint(sql, schema, table) {
