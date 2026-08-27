@@ -126,10 +126,16 @@ test("Static-Map-Quality-v2 projiziert sichtbare Qualitaet und bindet den nicht 
     });
     const serialized = await readFile(outputPath, "utf8");
     assert.doesNotMatch(serialized, /\/v1\b|trackDimensions|declaredQualityClass|ruleId|evidenceByState|nonPublicSourceRawData/i);
-    assert.equal((await materializeStaticMapQuality(value.spec, sourcePath, outputPath)).status, "reused");
+    await assert.rejects(
+      materializeStaticMapQuality(value.spec, sourcePath, outputPath),
+      (error) => error?.code === "EEXIST" && /weder ersetzt noch wiederverwendet/u.test(error.message),
+    );
 
     await writeFile(sourcePath, Buffer.from(`${JSON.stringify(value.detailedReport)}\n`, "utf8"));
-    await assert.rejects(materializeStaticMapQuality(value.spec, sourcePath, outputPath), /weicht vom bytegebundenen detaillierten Quality-Build-Input ab/);
+    await assert.rejects(
+      materializeStaticMapQuality(value.spec, sourcePath, outputPath),
+      (error) => error?.code === "EEXIST",
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -32,6 +32,7 @@ import {
   serializeMapPackageManifest,
   validateMapPackageManifest,
   validateMapPackageSpec,
+  verifyInstalledMapPackage,
   verifyMapPackage,
   verifyMapPackageTransport,
 } from "./map-package.mjs";
@@ -691,7 +692,7 @@ test("Paketierung liest neue Ergebnisse und byte-identische Altbestände aus ein
   }
 });
 
-test("Installation wird als ganzes Verzeichnis abgeschlossen und danach wiederverwendet", async () => {
+test("Installation wird als ganzes Verzeichnis abgeschlossen; Reinstall und partielle Ziele scheitern create-new", async () => {
   const root = await makeFixtureRoot();
   try {
     const packed = await packMapPackage(fixtureSpec(), root, join(root, "package"));
@@ -714,9 +715,26 @@ test("Installation wird als ganzes Verzeichnis abgeschlossen und danach wiederve
       await readFile(join(installRoot, "manifests", "quality.json")),
       await readFile(join(root, "manifests", "quality.json")),
     );
-    const second = await installMapPackage(packed.packageRoot, installRoot);
-    assert.equal(second.status, "reused");
+    assert.equal((await verifyInstalledMapPackage(packed.packageRoot, installRoot)).status, "verified");
+    const cliVerified = JSON.parse((await execFileAsync(process.execPath, [cliPath, "verify-installed", packed.packageRoot, installRoot])).stdout);
+    assert.equal(cliVerified.action, "verified");
+    await assert.rejects(
+      installMapPackage(packed.packageRoot, installRoot),
+      (error) => error?.code === "EEXIST" && /weder ersetzt noch wiederverwendet/u.test(error.message),
+    );
     assert.deepEqual((await readdir(join(root, "installed"))).sort(), ["2026.1"]);
+
+    const partialRoot = join(root, "partial-install");
+    await mkdir(partialRoot);
+    await writeFile(join(partialRoot, "partial.txt"), "unvollstaendig");
+    await assert.rejects(
+      installMapPackage(packed.packageRoot, partialRoot),
+      (error) => error?.code === "EEXIST",
+    );
+    assert.equal(await readFile(join(partialRoot, "partial.txt"), "utf8"), "unvollstaendig");
+
+    await writeFile(join(installRoot, "style.json"), "{}\n");
+    await assert.rejects(verifyInstalledMapPackage(packed.packageRoot, installRoot), /beschädigt/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -834,12 +852,16 @@ test("Paketvertrag v2 transportiert genau eine statische Operational-v2-Bindung 
     const installed = await installMapPackage(packed.packageRoot, join(root, "installed-v2"), operationalValidation);
     assert.equal(installed.status, "installed");
     assert.deepEqual(await readFile(join(root, "installed-v2", "operational-infrastructure-v2.json")), OPERATIONAL_BYTES);
-    const reused = await installMapPackage(packed.packageRoot, join(root, "installed-v2"), operationalValidation);
-    assert.equal(reused.status, "reused");
+    const verifiedInstalled = await verifyInstalledMapPackage(packed.packageRoot, join(root, "installed-v2"), operationalValidation);
+    assert.equal(verifiedInstalled.status, "verified");
+    await assert.rejects(
+      installMapPackage(packed.packageRoot, join(root, "installed-v2"), operationalValidation),
+      (error) => error?.code === "EEXIST",
+    );
     assert.deepEqual(
       nativeCalls.map(({ expectedReleaseId }) => expectedReleaseId),
       Array(4).fill("infra-deutschland-2026.3"),
-      "Pack, Verify, frische Installation und Reuse muessen jeweils nativ pruefen.",
+      "Pack, Verify, frische Installation und installierte Verify-Operation muessen jeweils nativ pruefen.",
     );
 
     await assert.rejects(
@@ -977,7 +999,11 @@ test("statischer Kartenrelease wird unsigned, nicht aktivierbar und ohne Operati
     await verifyMapPackage(packed.packageRoot);
     const installed = await installMapPackage(packed.packageRoot, join(root, "static-map-installed"));
     assert.equal(installed.status, "installed");
-    assert.equal((await installMapPackage(packed.packageRoot, join(root, "static-map-installed"))).status, "reused");
+    assert.equal((await verifyInstalledMapPackage(packed.packageRoot, join(root, "static-map-installed"))).status, "verified");
+    await assert.rejects(
+      installMapPackage(packed.packageRoot, join(root, "static-map-installed")),
+      (error) => error?.code === "EEXIST",
+    );
     const marker = JSON.parse(await readFile(join(root, "static-map-installed", ".zugfolge-map-package.json"), "utf8"));
     assert.equal(marker.claims.operationalInfraRelease, false);
     assert.equal(marker.claims.productionActivationEligible, false);

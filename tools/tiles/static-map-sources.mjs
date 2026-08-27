@@ -1,7 +1,8 @@
-import { open, lstat, mkdir, mkdtemp, readFile, rename, rm } from "node:fs/promises";
+import { open, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { validateMapAssetNotices } from "./map-asset-notices.mjs";
+import { assertCreateNewTarget, publishFileCreateNew } from "./create-new-output.mjs";
 
 export const STATIC_MAP_SOURCES_MATERIALIZATION_SCHEMA = "zugfolge-static-map-sources-materialization/v3";
 export const STATIC_MAP_SOURCES_SCHEMA = "zugfolge-static-map-sources/v3";
@@ -215,25 +216,15 @@ export async function writeStaticMapSources(value, outputPathInput) {
   const bytes = serializeStaticMapSources(value);
   const outputPath = resolve(outputPathInput);
   const outputParent = dirname(outputPath);
+  await assertCreateNewTarget(outputPath, "Static-Map-Sources-Ziel");
   await mkdir(outputParent, { recursive: true });
-  try {
-    const metadata = await lstat(outputPath);
-    invariant(metadata.isFile() && !metadata.isSymbolicLink(), "Bestehendes Sources-Ziel ist keine regulaere Datei.");
-    invariant((await readFile(outputPath)).equals(bytes), "Bestehendes Sources-Manifest weicht von Katalog, Capture oder Rechteregister ab.");
-    return { status: "reused", outputPath, bytes: bytes.length };
-  } catch (error) {
-    if (!(error !== null && typeof error === "object" && error.code === "ENOENT")) throw error;
-  }
   const temporaryRoot = await mkdtemp(join(outputParent, `.${basename(outputPath)}.materializing-`));
   const temporaryPath = join(temporaryRoot, basename(outputPath));
-  let completed = false;
   try {
     await writeDurable(temporaryPath, bytes);
-    await rename(temporaryPath, outputPath);
-    completed = true;
+    await publishFileCreateNew(temporaryPath, outputPath, "Static-Map-Sources-Ziel");
     return { status: "materialized", outputPath, bytes: bytes.length };
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
-    void completed;
   }
 }

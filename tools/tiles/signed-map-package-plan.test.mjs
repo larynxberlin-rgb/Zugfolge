@@ -588,12 +588,17 @@ test("leitet den Signed-Plan reproduzierbar mit unveraendertem Runtime-v2-Vertra
 
     const output = join(context.root, "derived", "signed-package-plan.json");
     const first = await writeSignedMapPackagePlan(derived.plan, output);
-    const second = await writeSignedMapPackagePlan(derived.plan, output);
     assert.equal(first.status, "written");
-    assert.equal(second.status, "reused");
+    await assert.rejects(
+      writeSignedMapPackagePlan(derived.plan, output),
+      (error) => error?.code === "EEXIST" && /weder ersetzt noch wiederverwendet/u.test(error.message),
+    );
     assert.deepEqual(JSON.parse(await readFile(output, "utf8")), derived.plan);
     await writeFile(output, "{}\n", "utf8");
-    await assert.rejects(writeSignedMapPackagePlan(derived.plan, output), /abweichendem Signed-Paketplan/u);
+    await assert.rejects(
+      writeSignedMapPackagePlan(derived.plan, output),
+      (error) => error?.code === "EEXIST",
+    );
   } finally {
     await context.cleanup();
   }
@@ -782,6 +787,16 @@ test("CLI erzeugt denselben Plan und weist die gebundene Runtime aus", async () 
     assert.equal(receipt.signedReleaseSourceFile, SIGNED_RELEASE);
     assert.equal(receipt.trustedKeyScopesSourceFile, context.trustedKeyScopesSourceFile);
     assert.equal(JSON.parse(await readFile(output, "utf8")).runtime.schema, "zugfolge-map-runtime/v2");
+    const repeated = spawnSync(process.execPath, [
+      fileURLToPath(new URL("./signed-map-package-plan-cli.mjs", import.meta.url)),
+      input,
+      context.root,
+      context.trustedKeysSourceFile,
+      context.trustedKeyScopesSourceFile,
+      output,
+    ], { encoding: "utf8" });
+    assert.notEqual(repeated.status, 0);
+    assert.match(repeated.stderr, /existiert bereits/u);
   } finally {
     await context.cleanup();
   }

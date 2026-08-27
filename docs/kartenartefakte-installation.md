@@ -186,7 +186,8 @@ node tools/tiles/map-package-cli.mjs verify `
 
 Die lokale Installation setzt alle Teile wieder zusammen. Das Ziel ist immer
 ein eigenes, versioniertes Releaseverzeichnis und darf nicht mit einem
-allgemeinen Kartenverzeichnis gleichgesetzt werden:
+allgemeinen Kartenverzeichnis gleichgesetzt werden. Es muss vor dem Aufruf
+vollstaendig fehlen:
 
 ```powershell
 node tools/tiles/map-package-cli.mjs install `
@@ -201,10 +202,16 @@ während zugleich die installierten PMTiles-Dateien entstehen. Es gibt keinen
 anschließenden dritten Vollscan. Dasselbe gilt für große Hilfsdateien. Die
 Installation entsteht vollständig in einem temporären
 Nachbarverzeichnis und wird anschließend atomar umbenannt. Ein bereits
-vorhandenes Ziel wird nur wiederverwendet, wenn Manifest, Bytezahl und SHA-256
-aller installierten Dateien exakt stimmen. Abweichungen führen zum Abbruch;
-beschädigte oder fremde Dateien werden weder überschrieben noch stillschweigend
-akzeptiert.
+vorhandenes Ziel bricht die Erstinstallation auch bei identischen Bytes mit
+`EEXIST` ab; vorhandene, beschädigte oder fremde Dateien werden weder
+überschrieben noch als erfolgreicher Installationslauf akzeptiert. Eine bereits
+installierte Version wird ausschließlich mit der read-only-Operation geprüft:
+
+```powershell
+node tools/tiles/map-package-cli.mjs verify-installed `
+  var/map-package/zugfolge-map-deutschland-2026.1 `
+  var/maps/releases/infra-deutschland-2026.1
+```
 
 Der Jahreskandidat 2026.1 bindet 11.545.162.669 Byte Welt-Basemap,
 1.536.379.722 Byte Deutschland-Infrastruktur, 1.291.001.856 Byte ReadModel und
@@ -221,13 +228,15 @@ Der reale Transportlauf ist erfolgreich ausgeführt:
 | `pack-plan` | Exit 0 in 52,3 s |
 | `verify` | Exit 0; auch nach dem atomaren Austausch am kanonischen Pfad erneut Exit 0 |
 | Erstinstallation | 1.037 installierte Dateien mit 14.420.471.766 Byte; Exit 0 in 28,8 s |
-| zweite Installation | unverändertes Ziel erkannt, Status `reused`; Exit 0 |
+| historischer zweiter Installationslauf (damaliger Vertrag) | unverändertes Ziel erkannt, Status `reused`; Exit 0 |
 
 Paket und Testinstallation liegen außerhalb der Git-Historie unter
 `var/map-package/zugfolge-map-deutschland-2026.1/` beziehungsweise
 `var/maps/releases/infra-deutschland-2026.1/`. Der Lauf beweist Transport,
 vollständige Integritätsprüfung, atomare Installation und idempotente
-Wiederverwendung. Er ist weder Signatur noch produktiver Odoo-Import.
+Wiederverwendung nach dem damaligen Vertrag. Aktuelle Jahresläufe verwenden
+dafür `verify-installed`; `install` bleibt strikt create-new. Der historische
+Lauf ist weder Signatur noch produktiver Odoo-Import.
 
 ## Alpha-Laufzeit an das installierte Paket binden
 

@@ -1,13 +1,14 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { lstat, mkdir, open, readFile, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { lstat, mkdir, mkdtemp, open, readFile, realpath, rm } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import {
   buildMapAssetTreeProof,
   sameMapAssetTreeProof,
   validateMapAssetNotices,
 } from "./map-asset-notices.mjs";
+import { assertCreateNewTarget, publishFileCreateNew } from "./create-new-output.mjs";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const PROTOMAPS_DAILY_URL = /^https:\/\/build-tiles\.protomaps\.dev\/(20\d{6})\.json$/;
@@ -183,20 +184,21 @@ export async function buildMapSourceCapture({
 
 export async function writeMapSourceCapture(result, outputPath) {
   const path = resolve(outputPath);
+  await assertCreateNewTarget(path, "Karten-Source-Capture-Ziel");
   await mkdir(dirname(path), { recursive: true });
+  const temporaryRoot = await mkdtemp(join(dirname(path), `.${basename(path)}.writing-`));
+  const temporaryPath = join(temporaryRoot, basename(path));
   try {
-    const existing = await readFile(path);
-    invariant(existing.equals(result.captureBytes), "Bestehendes Karten-Capture weicht vom reproduzierten Ergebnis ab.");
-    return { path, status: "reused" };
-  } catch (error) {
-    if (!(error !== null && typeof error === "object" && error.code === "ENOENT")) throw error;
-  }
-  const handle = await open(path, "wx");
-  try {
-    await handle.writeFile(result.captureBytes);
-    await handle.sync();
+    const handle = await open(temporaryPath, "wx", 0o600);
+    try {
+      await handle.writeFile(result.captureBytes);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await publishFileCreateNew(temporaryPath, path, "Karten-Source-Capture-Ziel");
+    return { path, status: "written" };
   } finally {
-    await handle.close();
+    await rm(temporaryRoot, { recursive: true, force: true });
   }
-  return { path, status: "written" };
 }

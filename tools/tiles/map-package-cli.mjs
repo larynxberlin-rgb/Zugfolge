@@ -8,6 +8,7 @@ import {
   installMapPackage,
   OPERATIONAL_INFRASTRUCTURE_V2_VALIDATOR_ENV,
   packMapPackage,
+  verifyInstalledMapPackage,
   verifyMapPackage,
 } from "./map-package.mjs";
 
@@ -21,6 +22,7 @@ function usage() {
     "  map-package-cli.mjs pack-overlay SPEC.json AUSGABEVERZEICHNIS QUELLWURZEL [QUELLWURZEL...]",
     "  map-package-cli.mjs pack-plan-overlay PLAN.json AUSGABEVERZEICHNIS QUELLWURZEL [QUELLWURZEL...]",
     "  map-package-cli.mjs verify PAKETVERZEICHNIS",
+    "  map-package-cli.mjs verify-installed PAKETVERZEICHNIS INSTALLATIONSVERZEICHNIS",
     "  map-package-cli.mjs install PAKETVERZEICHNIS INSTALLATIONSVERZEICHNIS",
     `  Operational-v2: ${OPERATIONAL_INFRASTRUCTURE_V2_VALIDATOR_ENV}=PFAD/ZU/zugfolge-infra-release`,
   ].join("\n");
@@ -103,6 +105,19 @@ if (command === "expand") {
     ...(verified.manifest.releaseId === undefined ? {} : { releaseId: verified.manifest.releaseId, claims: verified.manifest.claims, cutover: verified.manifest.cutover }),
     manifestSha256: verified.manifestSha256,
     partBytes: verified.manifest.partBytes,
+    artifacts: verified.manifest.artifacts.length,
+    auxiliaryFiles: verified.manifest.auxiliaryFiles.length,
+  };
+} else if (command === "verify-installed") {
+  if (args.length !== 2) throw new Error(usage());
+  const verified = await verifyInstalledMapPackage(resolve(args[0]), resolve(args[1]), operationalValidation);
+  result = {
+    action: verified.status,
+    installRoot: verified.installRoot,
+    packageId: verified.manifest.packageId,
+    version: verified.manifest.version,
+    schema: verified.manifest.schema,
+    ...(verified.manifest.releaseId === undefined ? {} : { releaseId: verified.manifest.releaseId, claims: verified.manifest.claims, cutover: verified.manifest.cutover }),
     artifacts: verified.manifest.artifacts.length,
     auxiliaryFiles: verified.manifest.auxiliaryFiles.length,
   };

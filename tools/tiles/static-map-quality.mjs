@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdir, mkdtemp, open, readFile, rename, rm } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, open, readFile, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
+
+import { assertCreateNewTarget, publishFileCreateNew } from "./create-new-output.mjs";
 
 export const STATIC_MAP_QUALITY_MATERIALIZATION_SCHEMA = "zugfolge-static-map-quality-materialization/v2";
 export const STATIC_MAP_QUALITY_SCHEMA = "zugfolge-static-map-quality/v2";
@@ -265,20 +267,13 @@ export async function writeStaticMapQuality(value, outputPathInput) {
   const bytes = serializeStaticMapQuality(value);
   const outputPath = resolve(outputPathInput);
   const outputParent = dirname(outputPath);
+  await assertCreateNewTarget(outputPath, "Static-Map-Quality-v2-Ziel");
   await mkdir(outputParent, { recursive: true });
-  try {
-    const metadata = await lstat(outputPath);
-    invariant(metadata.isFile() && !metadata.isSymbolicLink(), "Bestehendes Static-Map-Quality-v2-Ziel ist keine regulaere Datei.");
-    invariant((await readFile(outputPath)).equals(bytes), "Bestehendes Static-Map-Quality-v2-Manifest weicht vom bytegebundenen detaillierten Quality-Build-Input ab.");
-    return { status: "reused", outputPath, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
-  } catch (error) {
-    if (!(error !== null && typeof error === "object" && error.code === "ENOENT")) throw error;
-  }
   const temporaryRoot = await mkdtemp(join(outputParent, `.${basename(outputPath)}.materializing-`));
   const temporaryPath = join(temporaryRoot, basename(outputPath));
   try {
     await writeDurable(temporaryPath, bytes);
-    await rename(temporaryPath, outputPath);
+    await publishFileCreateNew(temporaryPath, outputPath, "Static-Map-Quality-v2-Ziel");
     return { status: "materialized", outputPath, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });

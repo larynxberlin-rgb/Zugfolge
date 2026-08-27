@@ -119,7 +119,11 @@ test("hasht PMTiles und reale Glyph-/Spritebaeume und bindet den oeffentlichen I
     assert.deepEqual(first.capture.assetNotices, assets.assetNotices);
     const output = join(root, "capture.json");
     assert.equal((await writeMapSourceCapture(first, output)).status, "written");
-    assert.equal((await writeMapSourceCapture(first, output)).status, "reused");
+    await assert.rejects(
+      writeMapSourceCapture(first, output),
+      (error) => error?.code === "EEXIST" && /weder ersetzt noch wiederverwendet/u.test(error.message),
+    );
+    assert.deepEqual(await readFile(output), first.captureBytes);
 
     await writeFile(join(root, ...assets.files[0].sourceFile.split("/")), "manipulated-glyph");
     await assert.rejects(buildMapSourceCapture({
@@ -175,6 +179,10 @@ test("Build-CLI laedt Notice-Volltexte und schreibt Capture-v2 aus dem explizite
     assert.equal(result.assetFiles, 3);
     assert.equal(result.assetNoticesSchema, "zugfolge-map-asset-notices/v2");
     assert.equal(JSON.parse(await readFile(output, "utf8")).schema, "zugfolge-map-source-capture/v2");
+    await assert.rejects(
+      execFileAsync(process.execPath, [cli, ...args]),
+      (error) => /EEXIST|existiert bereits/u.test(error?.stderr ?? error?.message ?? ""),
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

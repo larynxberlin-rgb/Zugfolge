@@ -19,6 +19,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import * as zlib from "node:zlib";
 
 import { inspectPublicReadModel } from "./livemap-read-model.mjs";
+import { assertCreateNewTarget, publishDirectoryCreateNew } from "./create-new-output.mjs";
 import { validateMapAssetNoticeBindings, validateMapAssetNotices } from "./map-asset-notices.mjs";
 import { validateStaticMapQuality } from "./static-map-quality.mjs";
 import { inspectTrainMapProjection } from "./train-map-projection.mjs";
@@ -1745,6 +1746,7 @@ async function verifyInstalledPackage(
     ...manifest.artifacts.map((artifact) => artifact.installPath),
     ...manifest.auxiliaryFiles.map((auxiliary) => auxiliary.installPath),
   ], "Installiertes Kartenpaket");
+  let runtimeStyle;
   let staticReleaseDocument;
   let staticSourcesDocument;
   for (const artifact of [...manifest.artifacts, ...manifest.auxiliaryFiles]) {
@@ -1759,7 +1761,11 @@ async function verifyInstalledPackage(
     if (
       AUXILIARY_KINDS.has(artifact.kind)
         && auxiliaryMediaType(artifact) === "application/json"
-        && (isStaticMapPackageSchema(manifest.schema) || ([PACKAGE_MANIFEST_V2].includes(manifest.schema) && ["release-manifest", "source-manifest"].includes(artifact.kind)))
+        && (
+          artifact.kind === "style"
+            || isStaticMapPackageSchema(manifest.schema)
+            || ([PACKAGE_MANIFEST_V2].includes(manifest.schema) && ["release-manifest", "source-manifest"].includes(artifact.kind))
+        )
     ) {
       const metadata = await lstat(artifactPath);
       invariant(metadata.size <= MAX_IN_MEMORY_PUBLIC_JSON_BYTES, `${artifact.id} ist fuer die vollstaendige Zugfolge-v1-Schemapruefung zu gross.`);
@@ -1770,15 +1776,18 @@ async function verifyInstalledPackage(
         throw new Error(`${artifact.id} ist kein gueltiges JSON.`);
       }
       validateStaticAuxiliaryJson(manifest, artifact, value);
+      if (artifact.kind === "style") runtimeStyle = value;
       if (artifact.kind === "release-manifest") staticReleaseDocument = value;
       if (artifact.kind === "source-manifest") staticSourcesDocument = value;
     }
   }
   validateStaticAssetBindings(manifest, staticSourcesDocument);
+  validateRuntimeStyle(runtimeStyle, manifest);
+  validateStaticMapReleaseBinding(manifest, staticReleaseDocument);
   validateDeliveryV2PackageBinding(manifest, staticReleaseDocument);
 }
 
-export async function installMapPackage(
+export async function verifyInstalledMapPackage(
   packageRoot,
   installDirectory,
   { validateOperationalInfrastructure } = {},
@@ -1786,19 +1795,24 @@ export async function installMapPackage(
   const verified = await readAndValidatePackageLayout(packageRoot);
   requireOperationalInfrastructureV2Verifier(verified.manifest.schema, validateOperationalInfrastructure);
   const destination = resolve(installDirectory);
-  try {
-    const destinationMetadata = await lstat(destination);
-    invariant(destinationMetadata.isDirectory() && !destinationMetadata.isSymbolicLink(), "Installationsziel muss ein reguläres Verzeichnis sein.");
-    await verifyInstalledPackage(
-      destination,
-      verified.manifest,
-      verified.manifestSha256,
-      validateOperationalInfrastructure,
-    );
-    return { status: "reused", installRoot: destination, manifest: verified.manifest };
-  } catch (error) {
-    if (!isMissing(error)) throw error;
-  }
+  await verifyInstalledPackage(
+    destination,
+    verified.manifest,
+    verified.manifestSha256,
+    validateOperationalInfrastructure,
+  );
+  return { status: "verified", installRoot: destination, manifest: verified.manifest };
+}
+
+export async function installMapPackage(
+  packageRoot,
+  installDirectory,
+  { validateOperationalInfrastructure } = {},
+) {
+  const destination = resolve(installDirectory);
+  await assertCreateNewTarget(destination, "Kartenpaket-Installationsziel");
+  const verified = await readAndValidatePackageLayout(packageRoot);
+  requireOperationalInfrastructureV2Verifier(verified.manifest.schema, validateOperationalInfrastructure);
 
   const destinationParent = dirname(destination);
   await mkdir(destinationParent, { recursive: true });
@@ -1840,7 +1854,7 @@ export async function installMapPackage(
       ...verified.manifest.artifacts.map((artifact) => artifact.installPath),
       ...verified.manifest.auxiliaryFiles.map((auxiliary) => auxiliary.installPath),
     ], "Temporäre Karteninstallation");
-    await atomicDirectoryRename(temporaryRoot, destination);
+    await publishDirectoryCreateNew(temporaryRoot, destination, "Kartenpaket-Installationsziel");
     completed = true;
     return { status: "installed", installRoot: destination, manifest: verified.manifest };
   } finally {

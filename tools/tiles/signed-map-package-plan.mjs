@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdir, open, readFile, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { lstat, mkdir, mkdtemp, open, readFile, realpath, rm } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import {
   buildMapDeliveryRelease,
@@ -15,6 +15,7 @@ import {
   validateMapPackageSpec,
   validatePortableRelativePath,
 } from "./map-package.mjs";
+import { assertCreateNewTarget, publishFileCreateNew } from "./create-new-output.mjs";
 
 const MAP_PACKAGE_PLAN_V2 = "zugfolge-map-package-plan/v2";
 const MAP_RUNTIME_V2 = "zugfolge-map-runtime/v2";
@@ -587,20 +588,21 @@ export function serializeSignedMapPackagePlan(plan) {
 export async function writeSignedMapPackagePlan(plan, outputPath) {
   const output = resolve(outputPath);
   const bytes = serializeSignedMapPackagePlan(plan);
+  await assertCreateNewTarget(output, "Signed-Paketplan-Ziel");
   await mkdir(dirname(output), { recursive: true });
+  const temporaryRoot = await mkdtemp(join(dirname(output), `.${basename(output)}.writing-`));
+  const temporaryPath = join(temporaryRoot, basename(output));
   try {
-    const existing = await readFile(output);
-    invariant(existing.equals(bytes), `${output} existiert mit abweichendem Signed-Paketplan.`);
-    return { status: "reused", outputPath: output, bytes: bytes.length, sha256: sha256(bytes) };
-  } catch (error) {
-    if (!(error !== null && typeof error === "object" && error.code === "ENOENT")) throw error;
-  }
-  const handle = await open(output, "wx");
-  try {
-    await handle.writeFile(bytes);
-    await handle.sync();
+    const handle = await open(temporaryPath, "wx", 0o600);
+    try {
+      await handle.writeFile(bytes);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await publishFileCreateNew(temporaryPath, output, "Signed-Paketplan-Ziel");
+    return { status: "written", outputPath: output, bytes: bytes.length, sha256: sha256(bytes) };
   } finally {
-    await handle.close();
+    await rm(temporaryRoot, { recursive: true, force: true });
   }
-  return { status: "written", outputPath: output, bytes: bytes.length, sha256: sha256(bytes) };
 }

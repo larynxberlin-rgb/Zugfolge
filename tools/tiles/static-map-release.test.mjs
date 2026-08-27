@@ -274,7 +274,10 @@ test("Materialisierung pinnt reale Kernbytes und liefert einen voll pruef- und f
     assert.equal(first.plan.auxiliaryFiles.some(({ kind }) => kind === "operational-infrastructure-v2"), false);
     assert.equal(first.plan.auxiliaryFiles.some(({ kind }) => kind === "train-map-projection"), false);
     assert.ok([...first.plan.artifacts, ...first.plan.auxiliaryFiles].every(({ expectedBytes, expectedSha256 }) => Number.isSafeInteger(expectedBytes) && /^[a-f0-9]{64}$/.test(expectedSha256)));
-    assert.equal((await materializeStaticMapRelease(value.spec, value.root, output)).status, "reused");
+    await assert.rejects(
+      materializeStaticMapRelease(value.spec, value.root, output),
+      (error) => error?.code === "EEXIST" && /weder ersetzt noch wiederverwendet/u.test(error.message),
+    );
 
     const plan = JSON.parse(await readFile(join(output, "package-plan.json"), "utf8"));
     const expanded = await expandMapPackagePlan(plan, value.root);
@@ -295,7 +298,7 @@ test("Materialisierung pinnt reale Kernbytes und liefert einen voll pruef- und f
   }
 });
 
-test("Materialisierung lehnt interne Evidenz und eine veraenderte Wiederverwendung fail-closed ab", async () => {
+test("Materialisierung lehnt interne Evidenz sowie bestehende und partielle Zielbaeume fail-closed ab", async () => {
   const internal = await fixture();
   try {
     const sourcesPath = join(internal.root, "public", "static-map-sources-v2.json");
@@ -315,9 +318,26 @@ test("Materialisierung lehnt interne Evidenz und eine veraenderte Wiederverwendu
     const output = join(changed.root, "materialized");
     await materializeStaticMapRelease(changed.spec, changed.root, output);
     await writeFile(join(changed.root, "public", "quality.json"), JSON.stringify(fixtureStaticMapQuality(changed.spec.releaseId, changed.spec.corpusId, "b".repeat(64))));
-    await assert.rejects(materializeStaticMapRelease(changed.spec, changed.root, output), /weicht von den realen Eingaben ab/);
+    await assert.rejects(
+      materializeStaticMapRelease(changed.spec, changed.root, output),
+      (error) => error?.code === "EEXIST",
+    );
   } finally {
     await rm(changed.root, { recursive: true, force: true });
+  }
+
+  const partial = await fixture();
+  try {
+    const output = join(partial.root, "materialized");
+    await mkdir(output);
+    await writeFile(join(output, "release.json"), "partial-tree");
+    await assert.rejects(
+      materializeStaticMapRelease(partial.spec, partial.root, output),
+      (error) => error?.code === "EEXIST",
+    );
+    assert.equal(await readFile(join(output, "release.json"), "utf8"), "partial-tree");
+  } finally {
+    await rm(partial.root, { recursive: true, force: true });
   }
 });
 

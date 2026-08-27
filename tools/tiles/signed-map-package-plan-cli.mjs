@@ -6,6 +6,7 @@ import {
   deriveSignedMapPackagePlan,
   writeSignedMapPackagePlan,
 } from "./signed-map-package-plan.mjs";
+import { assertCreateNewTarget } from "./create-new-output.mjs";
 
 const [unsignedPlanPath, sourceRoot, trustedKeysSourceFile, trustedKeyScopesSourceFile, outputPath, ...extra] = process.argv.slice(2);
 if (!unsignedPlanPath || !sourceRoot || !trustedKeysSourceFile || !trustedKeyScopesSourceFile || !outputPath || extra.length > 0) {
@@ -14,6 +15,7 @@ if (!unsignedPlanPath || !sourceRoot || !trustedKeysSourceFile || !trustedKeySco
 const input = resolve(unsignedPlanPath);
 const output = resolve(outputPath);
 if (input === output) throw new Error("Unsigned Jahresplan und abgeleiteter Signed-Paketplan brauchen getrennte unveraenderliche Pfade.");
+await assertCreateNewTarget(output, "Signed-Paketplan-Ziel");
 
 const unsignedPlan = JSON.parse(await readFile(input, "utf8"));
 const derived = await deriveSignedMapPackagePlan(

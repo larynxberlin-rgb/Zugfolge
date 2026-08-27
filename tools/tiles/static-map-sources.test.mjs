@@ -160,7 +160,10 @@ test("Sources-v3 wird deterministisch nur aus wirklich erfassten freigegebenen Q
   try {
     const path = join(root, "sources.json");
     assert.equal((await writeStaticMapSources(result, path)).status, "materialized");
-    assert.equal((await writeStaticMapSources(result, path)).status, "reused");
+    await assert.rejects(
+      writeStaticMapSources(result, path),
+      (error) => error?.code === "EEXIST" && /weder ersetzt noch wiederverwendet/u.test(error.message),
+    );
     assert.deepEqual(JSON.parse(await readFile(path, "utf8")), JSON.parse(serialized));
   } finally {
     await rm(root, { recursive: true, force: true });

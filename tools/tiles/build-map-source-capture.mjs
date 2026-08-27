@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 
 import { loadMapAssetNotices } from "./map-asset-notices.mjs";
 import { buildMapSourceCapture, writeMapSourceCapture } from "./map-source-capture.mjs";
+import { assertCreateNewTarget } from "./create-new-output.mjs";
 
 const [
   stylePath,
@@ -21,6 +22,7 @@ const [
 if ([stylePath, metadataPath, hybridPath, infrastructurePath, infraReleasePath, assetNoticeContractPath, repositoryRoot, cacheInventoryPlanPath, artifactRoot, outputPath].some((value) => value === undefined) || extra.length > 0) {
   throw new Error("Aufruf: build-map-source-capture.mjs UPSTREAM_STYLE.json HYBRID_METADATA.json HYBRID.pmtiles INFRA.pmtiles INFRA_RELEASE.json ASSET_NOTICES.json REPOSITORYWURZEL CACHE_INVENTORY_PLAN.json ARTEFAKTWURZEL CAPTURE.json");
 }
+await assertCreateNewTarget(resolve(outputPath), "Karten-Source-Capture-Ziel");
 async function json(path) {
   return JSON.parse(await readFile(resolve(path), "utf8"));
 }

@@ -189,6 +189,15 @@ describe("oeffentlicher SQLite-Livemap-Katalog", () => {
       database.close();
     }
     expect(sha256(await readFile(first))).toBe(sha256(await readFile(second)));
+    const firstBytes = await readFile(first);
+    await expect(buildLivemapReadModel(spec(inputs), first)).rejects.toMatchObject({ code: "EEXIST" });
+    expect(await readFile(first)).toEqual(firstBytes);
+
+    const partial = join(root, "partial.sqlite");
+    await writeFile(`${partial}.report.json`, "partial-report");
+    await expect(buildLivemapReadModel(spec(inputs), partial)).rejects.toMatchObject({ code: "EEXIST" });
+    expect(await readFile(`${partial}.report.json`, "utf8")).toBe("partial-report");
+    await expect(readFile(partial)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("verweigert Zeitvertraege mit erneutem UTC-Offset oder abweichender Wiederholung", async () => {

@@ -6,14 +6,13 @@ import {
   mkdtemp,
   open,
   readFile,
-  readdir,
   realpath,
-  rename,
   rm,
 } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { inspectPublicReadModel } from "./livemap-read-model.mjs";
+import { assertCreateNewTarget, publishDirectoryCreateNew } from "./create-new-output.mjs";
 import { validateMapAssetNoticeBindings, validateMapAssetNotices } from "./map-asset-notices.mjs";
 import { validateStaticMapQuality } from "./static-map-quality.mjs";
 import {
@@ -183,25 +182,6 @@ async function inspectCoreInputs(spec, sourceRoot) {
   return proofById;
 }
 
-async function exactReusableOutput(outputRoot, expectedFiles) {
-  try {
-    const metadata = await lstat(outputRoot);
-    invariant(metadata.isDirectory() && !metadata.isSymbolicLink(), "Bestehende Materialisierung ist kein regulaeres Verzeichnis.");
-  } catch (error) {
-    if (error !== null && typeof error === "object" && error.code === "ENOENT") return false;
-    throw error;
-  }
-  const names = (await readdir(outputRoot)).sort();
-  invariant(JSON.stringify(names) === JSON.stringify([...expectedFiles.keys()].sort()), "Bestehende Materialisierung besitzt ein unerwartetes Inventar.");
-  for (const [name, bytes] of expectedFiles) {
-    const path = join(outputRoot, name);
-    const metadata = await lstat(path);
-    invariant(metadata.isFile() && !metadata.isSymbolicLink(), `${name} ist keine regulaere Datei.`);
-    invariant((await readFile(path)).equals(bytes), `Bestehende Materialisierung ${name} weicht von den realen Eingaben ab.`);
-  }
-  return true;
-}
-
 async function writeDurable(path, bytes) {
   const handle = await open(path, "wx", 0o600);
   try {
@@ -221,6 +201,7 @@ export async function materializeStaticMapRelease(specInput, sourceRootInput, ou
   const outputRoot = resolve(outputRootInput);
   const outputRemainder = relative(sourceRoot, outputRoot);
   invariant(outputRemainder !== "" && outputRemainder !== ".." && !outputRemainder.startsWith(`..${sep}`) && !isAbsolute(outputRemainder), "Materialisierungsziel muss innerhalb der Quellwurzel liegen.");
+  await assertCreateNewTarget(outputRoot, "Static-Map-Release-Ziel");
   const outputParent = dirname(outputRoot);
   await mkdir(outputParent, { recursive: true });
   const parentMetadata = await lstat(outputParent);
@@ -301,13 +282,7 @@ export async function materializeStaticMapRelease(specInput, sourceRootInput, ou
     validateStaticMapReleaseDocument(releaseDocument, expanded);
     await writeDurable(join(temporaryRoot, "package-plan.json"), planBytes);
 
-    const expectedFiles = new Map([["package-plan.json", planBytes], ["release.json", releaseBytes]]);
-    if (await exactReusableOutput(outputRoot, expectedFiles)) {
-      completed = true;
-      await rm(temporaryRoot, { recursive: true, force: true });
-      return { status: "reused", outputRoot, plan, release: releaseDocument };
-    }
-    await rename(temporaryRoot, outputRoot);
+    await publishDirectoryCreateNew(temporaryRoot, outputRoot, "Static-Map-Release-Ziel");
     completed = true;
     return { status: "materialized", outputRoot, plan, release: releaseDocument };
   } finally {
