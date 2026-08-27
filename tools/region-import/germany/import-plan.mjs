@@ -30,7 +30,7 @@ export function buildGermanyImportPlan({ osmium, cargo, workspace, sourcePbf, ou
         id: "ebo-filter",
         command: osmium,
         args: [
-          "tags-filter", "--overwrite", "-o", eboPbf, resolve(sourcePbf),
+          "tags-filter", "-o", eboPbf, resolve(sourcePbf),
           "w/railway=rail",
           // Die Nicht-EBO-Wege bleiben ausschliesslich als Scope-Evidenz im
           // Roh-PBF. `filter_network` verwirft ihre Kanten weiterhin hart;
@@ -51,7 +51,7 @@ export function buildGermanyImportPlan({ osmium, cargo, workspace, sourcePbf, ou
       {
         id: "geojson-sequence",
         command: osmium,
-        args: ["export", "--overwrite", "--output-format=geojsonseq", "-o", wayFeatures, eboPbf],
+        args: ["export", "--output-format=geojsonseq", "-o", wayFeatures, eboPbf],
         cwd: resolve(workspace),
       },
       {
