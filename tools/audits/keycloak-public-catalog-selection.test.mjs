@@ -3,8 +3,13 @@ import test from "node:test";
 
 import { loadKeycloakObjectCatalog } from "../alpha-ops/keycloak-public-to-schema.mjs";
 import {
+  DATABASE_AUTHORITATIVE_TABLES,
+  DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32,
+} from "../alpha-ops/database-cutover-schema-contract.mjs";
+import {
   auditKeycloakPublicCatalogCapture,
   auditKeycloakPublicCatalogFile,
+  classifyKeycloakProductionCaptureRelations,
   deriveKeycloakSelectionSignatures,
 } from "./keycloak-public-catalog-selection.mjs";
 
@@ -26,6 +31,37 @@ test("catalog selection rejects captures with missing or foreign top-level field
   assert.throws(
     () => auditKeycloakPublicCatalogCapture({ foreign: true }, Buffer.from("{}"), Buffer.from("gzip"), catalog),
     /fremde oder fehlende Felder/u,
+  );
+});
+
+test("catalog selection pins the historical schema-28 relation partition independently from today's schema-33 contract", async () => {
+  const catalog = await loadKeycloakObjectCatalog();
+  const extensionRelations = ["geography_columns", "geometry_columns", "spatial_ref_sys"];
+  const relations = (gameNames) => [...gameNames, ...catalog.objects.tables, ...extensionRelations]
+    .sort()
+    .map((name) => ({ name }));
+
+  const historical = classifyKeycloakProductionCaptureRelations(
+    relations(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32),
+    catalog,
+  );
+  assert.equal(historical.gameNames.length, 51);
+  assert.equal(historical.keycloakNames.length, 100);
+  assert.equal(DATABASE_AUTHORITATIVE_TABLES.length, 52);
+
+  assert.throws(
+    () => classifyKeycloakProductionCaptureRelations(relations(DATABASE_AUTHORITATIVE_TABLES), catalog),
+    /historische Schema-28-Relationenpartition/u,
+  );
+  assert.throws(
+    () => classifyKeycloakProductionCaptureRelations(relations(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32.slice(1)), catalog),
+    /historische Schema-28-Relationenpartition/u,
+  );
+  const foreign = relations(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32);
+  foreign[0] = { name: "foreign_relation" };
+  assert.throws(
+    () => classifyKeycloakProductionCaptureRelations(foreign, catalog),
+    /historische Schema-28-Relationenpartition/u,
   );
 });
 

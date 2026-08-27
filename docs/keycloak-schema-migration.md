@@ -54,6 +54,10 @@ Keycloak-26.7.0-Katalog übereinstimmende Relationen und drei über
 `pg_depend.deptype = 'e'` eindeutig PostGIS gehörende Relationen. Die
 Keycloak-Auswahl wird als vollständige Namensliste eingecheckt; sie beruht
 nicht auf einem Präfix oder einer Heuristik.
+Dieser historische 51er-Satz ist ein eigener, unveränderlicher
+Schema-28-bis-32-Vertrag. Der heutige Schema-33-Laufzeitvertrag umfasst durch
+`regional_simulation_command_receipts` exakt 52 autoritative Game-Tabellen und
+wird nicht rückwirkend zur Klassifikation des Capture vom 25.08.2026 benutzt.
 
 Die Selektion ist mit dem unveränderten Capture reproduzierbar:
 

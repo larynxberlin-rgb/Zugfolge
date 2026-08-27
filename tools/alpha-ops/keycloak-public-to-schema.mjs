@@ -5,7 +5,10 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { DATABASE_AUTHORITATIVE_TABLES } from "./database-cutover-schema-contract.mjs";
+import {
+  DATABASE_AUTHORITATIVE_TABLES,
+  DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32,
+} from "./database-cutover-schema-contract.mjs";
 
 export const KEYCLOAK_SCHEMA_MIGRATION_SCHEMA = "keycloak-public-to-schema/v1";
 export const KEYCLOAK_SCHEMA_STATE_SCHEMA = "keycloak-public-to-schema-state/v1";
@@ -51,7 +54,6 @@ const GAME_ROUTINES_33 = Object.freeze([
   "zugfolge_capture_operational_command_receipts",
   "zugfolge_enforce_operational_initialization_immutability",
 ].sort());
-const OPERATIONAL_COMMAND_RECEIPT_RELATION = "regional_simulation_command_receipts";
 const EMPTY_ARRAY_SHA256 = "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945";
 const ADVISORY_LOCK_KEY = "keycloak-public-to-schema/v1";
 
@@ -505,9 +507,9 @@ export function assertCatalogSignature(actual, catalog, label) {
 
 function gameRelationVariant(names, migrationCount) {
   invariant([28, 29, 30, 31, 32, 33].includes(migrationCount), `Drizzle-Stand ${migrationCount} ist fuer den Keycloak-Cutover nicht freigegeben.`);
-  const authoritative = DATABASE_AUTHORITATIVE_TABLES.filter(
-    (name) => migrationCount >= 33 || name !== OPERATIONAL_COMMAND_RECEIPT_RELATION,
-  );
+  const authoritative = migrationCount >= 33
+    ? DATABASE_AUTHORITATIVE_TABLES
+    : DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32;
   const expected = [
     ...authoritative,
     ...(migrationCount >= 31 ? GAME_SUPPORT_RELATIONS : []),

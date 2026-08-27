@@ -33,7 +33,12 @@ import {
   validatePublicExtensionContract,
   validateReceiptAgainstLive,
 } from "./keycloak-public-to-schema.mjs";
-import { DATABASE_AUTHORITATIVE_TABLES } from "./database-cutover-schema-contract.mjs";
+import {
+  DATABASE_AUTHORITATIVE_TABLES,
+  DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32,
+  DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32_SET_SHA256,
+  DATABASE_AUTHORITATIVE_TABLES_SCHEMA_33_ADDITIONS,
+} from "./database-cutover-schema-contract.mjs";
 
 const DATABASE_URL = "postgresql://operator:secret@postgres:5432/zugfolge";
 const RESTORED_DATABASE_URL = "postgresql://operator:secret@postgres:5432/zugfolge_restore_keycloak_schema";
@@ -226,7 +231,7 @@ function catalogCollisionSql(catalog, {
   publicType = false,
 } = {}) {
   const publicNames = [
-    ...DATABASE_AUTHORITATIVE_TABLES.filter((name) => migrationCount >= 33 || name !== "regional_simulation_command_receipts"),
+    ...(migrationCount >= 33 ? DATABASE_AUTHORITATIVE_TABLES : DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32),
     ...(migrationCount >= 31 ? ["world_cutover_receipts", "zugfolge_database_identity"] : []),
     ...catalog.objects.tables,
   ].sort();
@@ -353,7 +358,7 @@ test("index catalog is search-path independent and mismatch diagnostics bind cou
 
 test("Schema-31 bleibt ohne 0033-Ledger kompatibel und Schema-33 bindet Relation plus Capture-Routine", async () => {
   const schema31Relations = [
-    ...DATABASE_AUTHORITATIVE_TABLES.filter((name) => name !== "regional_simulation_command_receipts"),
+    ...DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32,
     "world_cutover_receipts",
     "zugfolge_database_identity",
   ].sort();
@@ -376,6 +381,13 @@ test("Schema-31 bleibt ohne 0033-Ledger kompatibel und Schema-33 bindet Relation
 
   assert.equal(validateGameDatabaseCatalog(schema31Relations, schema31Routines, 31), "schema-31-to-33");
   assert.equal(validateGameDatabaseCatalog(schema33Relations, schema33Routines, 33), "schema-31-to-33");
+  assert.equal(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32.length, 51);
+  assert.equal(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32_SET_SHA256, "9a16cf2644ff1e457b0b77e8f42451d202bee48a2ebcf61e966708fd5dd952b3");
+  assert.deepEqual(DATABASE_AUTHORITATIVE_TABLES_SCHEMA_33_ADDITIONS, ["regional_simulation_command_receipts"]);
+  assert.deepEqual(
+    DATABASE_AUTHORITATIVE_TABLES,
+    [...DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32, ...DATABASE_AUTHORITATIVE_TABLES_SCHEMA_33_ADDITIONS].sort((left, right) => left.localeCompare(right, "en")),
+  );
   assert.throws(
     () => validateGameDatabaseCatalog(schema31Relations, schema33Routines, 33),
     /Relationssatz|Routinenkatalog/u,

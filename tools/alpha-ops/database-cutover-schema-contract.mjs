@@ -41,7 +41,7 @@ function guard(name, relation, type, functionName, triggerDefinition, functionSo
   return Object.freeze({ ...descriptor, definitionSha256: definitionSha256(descriptor) });
 }
 
-export const DATABASE_AUTHORITATIVE_TABLES = Object.freeze([
+export const DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32 = Object.freeze([
   "abuse_observations",
   "abuse_sanctions",
   "account_roles",
@@ -79,7 +79,6 @@ export const DATABASE_AUTHORITATIVE_TABLES = Object.freeze([
   "operators",
   "planning_train_numbers",
   "rate_limit_buckets",
-  "regional_simulation_command_receipts",
   "regional_simulation_states",
   "simulation_commands",
   "tutorial_progress",
@@ -95,6 +94,18 @@ export const DATABASE_AUTHORITATIVE_TABLES = Object.freeze([
   "world_participations",
   "worlds",
 ]);
+export const DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32_SET_SHA256 = definitionSha256(
+  DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32,
+);
+
+export const DATABASE_AUTHORITATIVE_TABLES_SCHEMA_33_ADDITIONS = Object.freeze([
+  "regional_simulation_command_receipts",
+]);
+
+export const DATABASE_AUTHORITATIVE_TABLES = Object.freeze([
+  ...DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32,
+  ...DATABASE_AUTHORITATIVE_TABLES_SCHEMA_33_ADDITIONS,
+].sort((left, right) => left.localeCompare(right, "en")));
 
 export const DATABASE_AUTHORITATIVE_TABLE_SET_SHA256 = definitionSha256(DATABASE_AUTHORITATIVE_TABLES);
 

@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
 
-import { DATABASE_AUTHORITATIVE_TABLES } from "../alpha-ops/database-cutover-schema-contract.mjs";
+import { DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32 } from "../alpha-ops/database-cutover-schema-contract.mjs";
 import { keycloakColumnSignature, loadKeycloakObjectCatalog } from "../alpha-ops/keycloak-public-to-schema.mjs";
 
 const EXTENSION_RELATIONS = Object.freeze(["geography_columns", "geometry_columns", "spatial_ref_sys"]);
@@ -47,6 +47,25 @@ export function deriveKeycloakSelectionSignatures(selected) {
   ]));
 }
 
+export function classifyKeycloakProductionCaptureRelations(relations, catalog) {
+  invariant(Array.isArray(relations), "PG16-public-Katalogcapture.relations ist keine Liste.");
+  const relationNames = relations.map((relation, index) => {
+    invariant(relation !== null && typeof relation === "object" && !Array.isArray(relation), `PG16-public-Katalogcapture.relations[${index}] ist kein Objekt.`);
+    invariant(typeof relation.name === "string" && relation.name !== "", `PG16-public-Katalogcapture.relations[${index}].name fehlt.`);
+    return relation.name;
+  }).sort();
+  invariant(new Set(relationNames).size === relationNames.length, "PG16-public-Katalogcapture besitzt doppelte Relationen.");
+  const gameNames = [...DATABASE_AUTHORITATIVE_TABLES_SCHEMA_28_TO_32];
+  const keycloakNames = [...catalog.objects.tables];
+  invariant(
+    JSON.stringify([...gameNames, ...keycloakNames, ...EXTENSION_RELATIONS].sort()) === JSON.stringify(relationNames),
+    "PG16-public-Katalogcapture enthaelt keine exakte historische Schema-28-Relationenpartition.",
+  );
+  const selectedNames = relationNames.filter((name) => !gameNames.includes(name) && !EXTENSION_RELATIONS.includes(name));
+  invariant(JSON.stringify(selectedNames) === JSON.stringify(keycloakNames), "PG16-public-Katalogcapture trennt nicht exakt den eingecheckten Keycloak-Satz ab.");
+  return Object.freeze({ gameNames, keycloakNames });
+}
+
 function exactKeys(value, keys, label) {
   invariant(value !== null && typeof value === "object" && !Array.isArray(value), `${label} fehlt.`);
   invariant(JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort()), `${label} besitzt fremde oder fehlende Felder.`);
@@ -63,16 +82,7 @@ export function auditKeycloakPublicCatalogCapture(capture, captureBytes, gzipByt
     invariant(Array.isArray(capture[name]) && capture[name].length === count, `PG16-public-Katalogcapture.${name} besitzt nicht exakt ${count} Eintraege.`);
   }
 
-  const relationNames = capture.relations.map(({ name }) => name).sort();
-  invariant(new Set(relationNames).size === relationNames.length, "PG16-public-Katalogcapture besitzt doppelte Relationen.");
-  const gameNames = [...DATABASE_AUTHORITATIVE_TABLES].sort();
-  const keycloakNames = [...catalog.objects.tables];
-  const selectedNames = relationNames.filter((name) => !gameNames.includes(name) && !EXTENSION_RELATIONS.includes(name));
-  invariant(JSON.stringify(selectedNames) === JSON.stringify(keycloakNames), "PG16-public-Katalogcapture trennt nicht exakt den eingecheckten Keycloak-Satz ab.");
-  invariant(
-    JSON.stringify([...gameNames, ...keycloakNames, ...EXTENSION_RELATIONS].sort()) === JSON.stringify(relationNames),
-    "PG16-public-Katalogcapture enthaelt eine unbekannte oder nicht klassifizierte Relation.",
-  );
+  const { gameNames, keycloakNames } = classifyKeycloakProductionCaptureRelations(capture.relations, catalog);
 
   const selected = {
     relations: capture.relations.filter(({ name }) => keycloakNames.includes(name)),
