@@ -281,6 +281,16 @@ in die eigenen statischen Assets. Style, Glyphen-, Sprite-, Worker- und
 PMTiles-URLs werden auf denselben Ursprung normalisiert; es gibt auch für
 fehlende Basemap-Symbole keinen CDN- oder öffentlichen Kartenfallback.
 
+Der `.4`-Block oben dokumentiert den unveränderlichen Vorgängerstand. Der
+aktuelle Deutschland-V2-Patch ist ausschließlich
+`infra-deutschland-2026.5` mit Paketversion `2026.5`, Delivery-Key-ID
+`zugfolge-map-deutschland-2026.5` und `zugfolge-map-runtime/v2`. Er erhält ein
+neues `releases/infra-deutschland-2026.5` und vier gemeinsam auf `.5` zeigende
+Pointerwerte. `.4`-Verzeichnisse, -Spezifikationen, -Manifeste, -Signaturen und
+Public-Key-Bytes bleiben unverändert. Auch bytegleiche wiederverwendete Daten
+werden ausschließlich create-new in den neuen `.5`-Zielbaum materialisiert;
+ein vorhandenes Ziel blockiert den Lauf.
+
 ## Öffentlicher Deliveryvertrag und Odoo-Jahresimport
 
 `public/release.json` ist der vollständige öffentliche Delivery-Release
@@ -402,7 +412,7 @@ beschrieben.
 
 Das installierte Laufzeitpaket ist kein Buildcache. Jeder neue Deutschland-
 Patchrelease benötigt deshalb zusätzlich ein internes, unveränderliches
-`zugfolge-map-release-build-evidence/v1`. Dieser Beleg wird nicht öffentlich
+`zugfolge-map-release-build-evidence`. Dieser Beleg wird nicht öffentlich
 ausgeliefert. Er bindet bytegenau:
 
 - den vollständigen Git-Commit des Semantikexports und den vollständigen
@@ -412,8 +422,10 @@ ausgeliefert. Er bindet bytegenau:
 - jedes lokale Werkzeug mit Version, Bytezahl und SHA-256 oder jedes
   Containerwerkzeug mit einer Referenz der Form
   `registry/repository@sha256:<64 hex>`,
-- Welt-Basemap-PMTiles, Semantik-PMTiles, ReadModel, Zugkartenprojektion,
-  MapLibre-Style, Deliverymanifest und öffentlichen Qualitätsbericht,
+- Welt-Basemap-PMTiles, Semantik-PMTiles, ReadModel, den autoritativen
+  Betriebsgraphen, MapLibre-Style, Deliverymanifest und öffentlichen
+  Qualitätsbericht; ab Evidence-v3 zusätzlich zwingend die installierbaren
+  `movement-route-templates-v2` und `timetable-transfer-demands-v1`,
 - alle zehn Semantik-Zwischenlayer als Regressionsbeleg.
 
 `latest`, `main`, `master`, `HEAD`, `unversioned`, verkürzte Git-Commits,
@@ -427,13 +439,21 @@ Patchsatzes übereinstimmen. Für den August-2026-Patch ist der Montag
 `20260810` maßgeblich; die unveränderlichen `.2`-Dateien bleiben unangetastet.
 Der bereits signierte Kandidat `infra-deutschland-2026.3` ist verworfen und
 nicht vertrauenswürdig; er darf weder Preflight- noch Aktivierungsquelle sein.
+Die folgenden konkreten `.4`-Beispiele sind historische, unveränderliche
+Vorjahresbelege. Für den aktuellen `.5`-Lauf dürfen sie ausschließlich als
+explizit byte- und hashgebundene Vorjahreseingaben oder als beibehaltener
+Vertrauensanker dienen; kein `.4`-Ziel wird erneut erzeugt oder verändert.
 
-Die interne Build-Evidence-Spezifikation hat das Schema
-`zugfolge-map-release-build-evidence-spec/v1` und liegt selbst versioniert
-unter `tools/tiles/` im belegten Kartenbuild-Commit. Eingaben besitzen stets
-`expectedBytes` und `expectedSha256`. Externe Archive, Capture-Manifeste und
-optionale Derived-Eingaben nennen zusätzlich ihren `cacheFile` im
-verschlüsselten Buildcache.
+Die interne Build-Evidence-Spezifikation liegt selbst versioniert unter
+`tools/tiles/` im belegten Kartenbuild-Commit. Die historischen Schemas v1 und
+v2 bleiben verifizierbar. Neue vollständige Operational-v2-Lieferungen verwenden
+`zugfolge-map-release-build-evidence-spec/v3` und erzeugen
+`zugfolge-map-release-build-evidence/v3`; dieses Schema verlangt alle neun
+aktivierungsrelevanten Ausgaben einschließlich beider Sidecars und bindet sie
+zusätzlich an InfraRelease-Inventar, Delivery-v2-Inventar und signierten
+Paketplan. Eingaben besitzen die jeweils schemageforderten Byte-/SHA-256-Belege.
+Externe Archive, Capture-Manifeste und Derived-Eingaben nennen zusätzlich ihren
+`cacheFile` im verschlüsselten Buildcache.
 
 Das Inventar wird nicht von Hand geschrieben. Ein releasegebundener Plan mit
 dem Schema `zugfolge-map-build-cache-inventory-plan/v1` ordnet jede reguläre
@@ -520,9 +540,12 @@ nennt alle zehn finalen GeoJSONSeq-Semantiklayer, mindestens eine bekannte
 positive EBO-Signal-ID und die verbotenen öffentlichen Tokens einschließlich
 `12472736971`. Der Beleg scheitert, wenn dieses BOStrab-Objekt in irgendeinem
 Layer oder im öffentlichen ReadModel vorkommt oder wenn das positive
-EBO-Signal fehlt. Die sieben aktivierungsrelevanten Ausgaben werden zusätzlich
-auf ihren Grundtyp und ihre Releasebindung geprüft; die Basemap ist dabei eine
-zwingende eigene Ausgabe. Das Evidence-Manifest übernimmt darüber hinaus das
+EBO-Signal fehlt. Der historische v2-Beleg prüft sieben
+aktivierungsrelevante Ausgaben; die Basemap ist dabei eine zwingende eigene
+Ausgabe. Evidence-v3 prüft dagegen exakt neun Ausgaben einschließlich
+`movement-route-templates-v2` und `timetable-transfer-demands-v1` und schließt
+deren Operational-State- und Transfer-Set-Bindungen. Das Evidence-Manifest
+übernimmt darüber hinaus das
 vollständige Artefaktinventar des bytegenau gebundenen Deliverymanifests. Jede
 Kernausgabe außer dem zirkulär ausgeschlossenen Deliverymanifest muss darin
 mit identischem Installationspfad, Artefakttyp, Bytezahl und SHA-256 vorkommen.
@@ -645,16 +668,19 @@ MAP_GERMANY_PMTILES_URL=/artifacts/maps/infra-deutschland-2026.2/infra-deutschla
 
 Der öffentliche Keyring ist ein JSON-Objekt von stabiler `keyId` auf einen
 Ed25519-SPKI-Public-Key im PEM-Format. Private Schlüssel gehören niemals auf
-den Deploymenthost. Die Rollback-Attestation wird deshalb auf einem getrennten
-Signierhost gegen ein byteidentisches Abbild des installierten `.2`-Pakets
-erzeugt und danach an den Evidence-gebundenen externen Pfad übertragen:
+den Deploymenthost, in das Repository, einen Worktree, Buildcache,
+Transportpaket, Evidence oder Laufprotokoll. Die Rollback-Attestation wird
+deshalb auf einem getrennten Signierhost gegen ein byteidentisches Abbild des
+installierten `.2`-Pakets erzeugt. Der nur dort aufgelöste externe Pfad steht
+im Aufruf als `$ROLLBACK_PRIVATE_KEY`; allein die fertige öffentliche
+Attestation wird danach an den Evidence-gebundenen externen Pfad übertragen:
 
 ```powershell
 node tools/tiles/map-release-build-evidence-cli.mjs attest-rollback `
   var/maps `
   releases/infra-deutschland-2026.2 `
   infra-deutschland-2026.2 `
-  var/signing/map-rollback-private.pem `
+  $ROLLBACK_PRIVATE_KEY `
   map-rollback-2026 `
   var/maps/attestations/infra-deutschland-2026.2.rollback.json
 ```
@@ -799,7 +825,7 @@ node tools/tiles/map-release-build-evidence-cli.mjs attest-runtime-rollback `
   sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789 `
   var/legacy-runtime/alpha-world-deployment.json `
   var/legacy-runtime/database-rollback-proof.json `
-  var/signing/map-rollback-private.pem `
+  $ROLLBACK_PRIVATE_KEY `
   map-rollback-2026 `
   var/maps/attestations/infra-deutschland-2026.2.rollback.json
 ```
@@ -824,7 +850,8 @@ muss jede ID des daneben übergebenen Public-Keyrings genau einmal enthalten:
     "zugfolge-alpha-2026.3"
   ],
   "mapInfraDeliveries": [
-    "zugfolge-map-deutschland-2026.4"
+    "zugfolge-map-deutschland-2026.4",
+    "zugfolge-map-deutschland-2026.5"
   ]
 }
 ```
@@ -896,6 +923,40 @@ passen; andernfalls sperrt der Serverstart geschlossen. Evidence-, Restore-
 und Umschaltprotokolle gehören in die
 verschlüsselte Betriebssicherung; eine erfolgreiche Laufzeitprüfung ersetzt
 keinen reproduzierbaren Buildcache-Restore.
+
+### Freigabegrenzen für `infra-deutschland-2026.5` auf STRATO
+
+Für `.5` bleiben vier Nachweise getrennt. `pack`/`verify` und die Prüfung des
+frisch installierten Manifests beweisen die Byteintegrität. Die Ed25519-Prüfung
+von Delivery-v2 gegen `zugfolge-map-deutschland-2026.5` im additiven
+Map-/Infra-Scope beweist das Signervertrauen; dabei müssen
+`zugfolge-map-deutschland-2026.4` und alle übrigen bestehenden Public-Key-Bytes
+und Scopes unverändert erhalten sein. Weder Integrität noch Vertrauen beweisen
+Odoo-Import, Game-Staging oder Produktionsaktivierung.
+
+Vor einer STRATO-Mutation wird lesend der tatsächlich aktive Pointer und das
+tatsächlich installierte, ausführbare Vorgänger-Tuple festgestellt. `.4` ist
+als Trustanker und Buildvorgänger beibehalten, aber allein deshalb weder als
+installiert noch als Rollbackziel anzunehmen. Kandidat und Vorgänger liegen in
+getrennten unveränderlichen Verzeichnissen; `.5` muss vor der Installation
+fehlen. Der Aktivierungs-Preflight bindet den vollständigen 40-stelligen
+Source-Commit, die gepinnten Game-/Odoo-Image-Digests, Release-ID
+`infra-deutschland-2026.5`, Paketmanifest-SHA, den erwarteten alten Pointer und
+das signierte Runtime-Rollback-Tuple samt Datenbank- und
+Keycloak-Restore-Belegen. Jede Abweichung blockiert Installation oder
+Umschaltung.
+
+Unmittelbar vor jeder zustandsändernden Installation oder Aktivierung ist eine
+neue ausdrückliche Freigabe für genau `h3076743.stratoserver.net`, Commit,
+Release-ID, Paketmanifest und Aktion einzuholen; zuvor wird der bestätigte
+Hostschlüssel über den vorgesehenen sicheren Inventarweg geprüft. Ohne diese
+Freigabe bleibt der Status `nicht installiert/aktiviert`. Eine Signatur- oder
+Releasefreigabe, ein Draft-PR oder eine frühere Serverfreigabe ersetzt diese
+unmittelbare Produktionsfreigabe nicht. Nach der Umschaltung werden derselbe
+Preflight im Zustand `active-candidate`, Readiness, Release-ID, Range-Requests
+und die vollständigen V2-Laufzeitbindungen erneut geprüft. Rollback ist nur auf
+das vorher verifizierte vollständige Runtime-Tuple zulässig, nie allein auf
+einen beibehaltenen Kartenstand oder Trustanker.
 
 ## Warum nicht in der Git-Historie?
 

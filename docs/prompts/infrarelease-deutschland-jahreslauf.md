@@ -17,6 +17,18 @@ Beispielkonfiguration darf ihn nicht ersetzen. Führe alle Befehle aus dem
 Repository-Wurzelverzeichnis aus; `<ARTEFAKTWURZEL>` und die `sourceFile`-Pfade
 der Jahresspezifikation müssen darunter liegen.
 
+Für den aktuell konkretisierten Lauf gelten zusätzlich unveränderlich
+`<FAHRPLANJAHR>=2026`,
+`<INFRARELEASE_ID>=infra-deutschland-2026.5`, Paketversion `2026.5`,
+`<DELIVERY_KEY_ID>=zugfolge-map-deutschland-2026.5` und ausschließlich
+`zugfolge-map-runtime/v2`. `infra-deutschland-2026.4` ist der bytegleich zu
+erhaltende Vorgängerstand und Vertrauensanker, niemals aktuelles Ausgabeziel.
+Keine `.4`-Spezifikation, kein `.4`-Artefakt und kein vorhandener `.4`-Public-
+Key oder Scope darf für `.5` überschrieben, umbenannt, neu gepackt oder
+stillschweigend ersetzt werden. Jede aktuelle `.5`-Ausgabe entsteht
+create-new; bytegleiche Vorjahresdaten gelangen nur über den nachfolgend
+geprüften Cross-Release-Vertrag in den neuen `.5`-Zielbaum.
+
 Validiere vor dem ersten Build alle aktiven Jahresbindungen gemeinsam und
 brich bei jeder Abweichung ab:
 
@@ -40,6 +52,44 @@ brich bei jeder Abweichung ab:
   `<INFRARELEASE_ID>` abgeleitete exakte Paketversion und ausschließlich
   `zugfolge-map-runtime/v2`. Paket-ID, Runtimepfade, Release-Descriptor und
   alle aktuellen Ausgabeziele müssen zu demselben Jahreskandidaten gehören.
+- Binde den für `<INFRARELEASE_ID>` eingecheckten Jahresvertrag unter
+  `tools/tiles/` unverändert an `$BUILD_EVIDENCE_SPEC`. Neue vollständige
+  Operational-v2-Lieferungen verlangen
+  `schema=zugfolge-map-release-build-evidence-spec/v3`; v1 und v2 sind nur
+  historische Verifikationsverträge. Der v3-Vertrag muss genau neun
+  aktivierungsrelevante Ausgaben führen: Basemap-PMTiles, Semantik-PMTiles,
+  ReadModel, `operational-infrastructure-v2`,
+  `movement-route-templates-v2`, `timetable-transfer-demands-v1`, Style,
+  signiertes Deliverymanifest und Operational-Qualitätsbericht. Die beiden
+  Sidecars besitzen die kanonischen Installationspfade
+  `operational-infrastructure-v2.movement-route-templates-v2.json` und
+  `timetable-routes-v2.transfer-demands-v1.json`. Binde das neue, vor dem Lauf
+  nicht vorhandene Evidence-Ziel
+  `<ARTEFAKTWURZEL>/map-release-build-evidence.json` an
+  `$BUILD_EVIDENCE_OUTPUT`.
+
+Prüfe Cross-Release-Wiederverwendung, bevor irgendein davon abhängiger
+Jahresbuild startet. Eine Vorjahresdatei darf nur wiederverwendet werden, wenn
+sie in `$BUILD_EVIDENCE_SPEC` unter einer `specification`-Eingabe mit
+`mode=byte-identical-cross-release`, Quell- und Zielrelease sowie Quellpfad,
+kanonischem Zielpfad, Bytezahl und SHA-256 einzeln gebunden ist. Manuelles
+Kopieren, Umbenennen oder Verlinken ist unzulässig. Wenn der v3-Vertrag solche
+Einträge enthält, müssen alle Quellen existieren und alle Ziele fehlen; führe
+dann ausschließlich den sicheren Materialisierer aus:
+
+```sh
+node tools/tiles/materialize-cross-release-reuse.mjs "$BUILD_EVIDENCE_SPEC" .
+```
+
+Der Materialisierer muss vor der ersten Veröffentlichung alle Ziele auf
+Abwesenheit prüfen, Quellbytes und SHA-256 streamend verifizieren, sämtliche
+Dateien zunächst getrennt stagen, atomar create-new veröffentlichen und bei
+einem Teilfehler ausschließlich die von diesem Lauf erzeugten Ziele
+zurücknehmen. Sichere das ausgegebene
+`zugfolge-cross-release-reuse-materialization/v1`-Receipt im Laufprotokoll;
+der spätere Evidence-v3-Build prüft Spezifikation, Quell- und Zielbytes erneut.
+Ohne deklarierte Wiederverwendung wird dieser Aufruf ausgelassen und jede
+aktuelle Ausgabe regulär neu gebaut.
 
 Ersetze Jahreszahlen nicht pauschal in gepinnten Quellen. Ein datierter
 Vorjahresname ist nur innerhalb eines aktuellen Jahresvertrags zulässig, wenn
@@ -241,6 +291,16 @@ Deterministischer Build und Prüfung:
    node tools/region-import/germany/run-operational-infrastructure-v2.mjs "$OPERATIONAL_DERIVER_SPECIFICATION" . <OPERATIONAL_CANDIDATE> "$OPERATIONAL_DERIVER_REPORT" "$OPERATIONAL_DERIVER_OUTPUT"
    ```
 
+   Der erfolgreiche Lauf erzeugt neben Candidate, Bericht und materialisiertem
+   Operational-v2-Artefakt zwingend create-new
+   `<ARTEFAKTWURZEL>/operational-infrastructure-v2.movement-route-templates-v2.json`.
+   Das Sidecar hat `schema=movement-route-templates-v2`, dieselbe
+   InfraRelease-ID, einen eigenen kanonischen `stateHash` und bindet mit
+   `operationalStateHash` exakt den Zustand des materialisierten
+   Operational-v2-Artefakts sowie mit `timetableTransferSetSha256` exakt den
+   `transferSetSha256` aus `$TIMETABLE_TRANSFER_OUTPUT`. Fehlendes, leeres,
+   bereits vorhandenes oder abweichend gebundenes Sidecar blockiert den Lauf.
+
    Der Ableiter erhält die beobachtete, gepinnte E7-Gleisgeometrie unverändert
    (`realGeometry=true`) und simuliert nur fehlende betriebliche Zuordnungen
    (`simulatedOperationalAssignment=true`). Er darf ausschließlich vorhandene
@@ -278,10 +338,12 @@ Deterministischer Build und Prüfung:
    vorhandenen fail-closed Materialisierer intern auf. Dieser prüft den
    strikten JavaScript-Vertrag und den nativen Rust-Vertrag, gleicht beide
    kanonischen Hashes ab, prüft unveränderte Eingabebytes und veröffentlicht
-   Candidate, Bericht und `$OPERATIONAL_DERIVER_OUTPUT` gemeinsam mit
-   Create-new-Semantik. Ein zweiter manueller Materialisierungsaufruf ist
-   unzulässig. Das Ausgabedokument enthält exakt den statischen
-   `OperationalInfraRelease` und keine Deploymenthülle.
+   Candidate, Movement-Route-Templates-v2, Bericht und
+   `$OPERATIONAL_DERIVER_OUTPUT` gemeinsam mit Create-new-Semantik. Ein zweiter
+   manueller Materialisierungsaufruf ist unzulässig. Das Ausgabedokument
+   enthält exakt den statischen `OperationalInfraRelease` und keine
+   Deploymenthülle; das getrennte Movement-Sidecar ist dennoch ein
+   verpflichtendes signiertes Delivery- und Laufzeitartefakt.
 
    `activationEligible=true` ist an dieser Stelle ausschließlich das interne
    Ableitungs-Subgate. Es ersetzt weder Deliverysignatur noch produktive
@@ -348,34 +410,57 @@ Deterministischer Build und Prüfung:
    referenziell geschlossen sein; unbekannte Felder oder weltbezogene Inhalte
    blockieren den Kandidaten.
 7. Aktualisiere und prüfe `<ANNUAL_ARTIFACT_SPEC>` als bindenden Jahresvertrag
-   mit `schema=zugfolge-infra-release-artifact-spec/v2`. Er muss genau einen
-   Operational-Descriptor mit ausschließlich `id`, `kind`, `infraReleaseId`,
-   `sourceFile` und `file` enthalten. Dabei gelten exakt:
+   mit `schema=zugfolge-infra-release-artifact-spec/v2`. Er muss genau je einen
+   Descriptor für `operational-infrastructure-v2`,
+   `movement-route-templates-v2` und `timetable-transfer-demands-v1`
+   enthalten. Für diese drei erstklassigen Operational-v2-Artefakte gelten
+   exakt:
 
-   - `id=<OPERATIONAL_ARTIFACT_ID>`;
-   - `kind=operational-infrastructure-v2`;
-   - `infraReleaseId=<INFRARELEASE_ID>`;
-   - `sourceFile` löst unter der Repository-Wurzel exakt zu
-     `<ARTEFAKTWURZEL>/operational-infrastructure-v2.json` auf;
-   - `file=operational-infrastructure-v2.json`.
+   - Operational: `id=<OPERATIONAL_ARTIFACT_ID>`,
+     `kind=operational-infrastructure-v2`,
+     `infraReleaseId=<INFRARELEASE_ID>`,
+     `sourceFile=<ARTEFAKTWURZEL>/operational-infrastructure-v2.json` und
+     `file=operational-infrastructure-v2.json`; der Descriptor enthält
+     ausschließlich `id`, `kind`, `infraReleaseId`, `sourceFile` und `file`.
+   - Movement: `kind=movement-route-templates-v2`,
+     `sourceFile=<ARTEFAKTWURZEL>/operational-infrastructure-v2.movement-route-templates-v2.json`
+     und
+     `file=operational-infrastructure-v2.movement-route-templates-v2.json`;
+     der Descriptor enthält ausschließlich `id`, `kind`, `sourceFile` und
+     `file`.
+   - Transfers: `kind=timetable-transfer-demands-v1`,
+     `sourceFile=<ARTEFAKTWURZEL>/timetable-routes-v2.transfer-demands-v1.json`
+     und `file=timetable-routes-v2.transfer-demands-v1.json`; der Descriptor
+     enthält ausschließlich `id`, `kind`, `sourceFile` und `file`.
 
-   `bytes`, `sha256` oder `stateHash` dürfen niemals manuell in den Descriptor
-   geschrieben werden. Erzeuge sie ausschließlich über die typisierte
+   Jeder `sourceFile`-Pfad muss relativ zur Repository-Wurzel sein, darunter
+   bleiben und exakt zum aktuellen Jahreskandidaten auflösen. Keine der drei
+   Dateien darf aus einem Vorjahresrelease, einem Candidate-Pfad oder einer
+   Deploymenthülle stammen. `bytes`, `sha256`, `stateHash`,
+   `operationalStateHash`, `timetableTransferSetSha256` oder
+   `transferSetSha256` dürfen niemals manuell in einen Descriptor geschrieben
+   werden. Erzeuge die Dateibindungen ausschließlich über die typisierte
    Inventarpipeline:
 
    ```sh
    node tools/region-import/germany/run-release-artifacts.mjs <ANNUAL_ARTIFACT_SPEC> . <RELEASE_ARTIFACT_INVENTORY>
    ```
 
-   Das erzeugte v2-Inventar muss für `<OPERATIONAL_ARTIFACT_ID>` unverändert
-   `id`, `kind`, `file`, `infraReleaseId`, `bytes`, `sha256` und `stateHash`
-   transportieren. `sha256` hasht die materialisierten kanonischen Dateibytes,
-   niemals die Candidate-Bytes oder die vollständige weltgebundene
-   Initialisierung. `stateHash` ist exakt
+   Das erzeugte `zugfolge-infra-release-artifacts/v2`-Inventar muss alle drei
+   Arten genau einmal mit ihren realen `id`, `kind`, `file`, `bytes` und
+   `sha256` transportieren. Für `<OPERATIONAL_ARTIFACT_ID>` kommen unverändert
+   `infraReleaseId` und `stateHash` hinzu. Sein `sha256` hasht die
+   materialisierten kanonischen Dateibytes, niemals die Candidate-Bytes oder
+   die vollständige weltgebundene Initialisierung; sein `stateHash` ist exakt
    `alphaHash("operational-infrastructure-v2", OperationalInfraRelease)`.
-   Falls die Pipeline diese Bindung nicht erzeugt, stoppe den Lauf, erweitere
-   Pipeline und Positiv-/Negativtests und baue neu. Patche weder Spezifikation
-   noch erzeugtes Inventar oder Manifest mit manuell berechneten Hashes.
+   Der spätere Build-Evidence-v3-Prüfer muss zusätzlich aus den realen
+   Sidecar-Inhalten belegen, dass Movement-`operationalStateHash` diesem
+   Operational-`stateHash` und Movement-`timetableTransferSetSha256` dem
+   Transfer-`transferSetSha256` entspricht. Falls Pipeline oder v3-Evidence
+   diese Bindungen nicht erzeugen, stoppe den Lauf, erweitere Pipeline und
+   Positiv-/Negativtests und baue neu. Patche weder Spezifikation noch
+   erzeugtes Inventar, Wrapper, Deliverymanifest oder Evidence mit manuell
+   berechneten Hashes.
 8. Baue den öffentlichen InfraRelease-Wrapper mit dem Jahresvertrag im
    autoritativen Rust-Compiler. Sein Ziel ist ausschließlich
    `<ARTEFAKTWURZEL>/map-release-free-v2/public/infra-release.json`, nicht die
@@ -395,8 +480,32 @@ Deterministischer Build und Prüfung:
    Suche anschließend
    rekursiv nach verbotenen internen
    Evidenzkennungen. Jeder Treffer, ein fehlendes oder mehrfaches
-   `operational-infrastructure-v2`-Artefakt und jede Abweichung von dessen
-   erwarteter Byte- oder kanonischer Zustandsbindung blockieren den Release.
+   `operational-infrastructure-v2`-, `movement-route-templates-v2`- oder
+   `timetable-transfer-demands-v1`-Artefakt und jede Abweichung von deren
+   erwarteter Byte-, Release-, Transfer- oder kanonischer Zustandsbindung
+   blockieren den Release.
+
+   Alle aktuellen Ausgabeziele dieses Jahreslaufs sind create-new. Das gilt
+   auch dann, wenn ihr Inhalt gegenüber dem Vorjahr gleich wäre. Vor jedem
+   Builder müssen alle seine Ziele fehlen; ein vorhandenes Ziel wird weder
+   gelöscht noch ersetzt, sondern erzwingt einen neuen Kandidatenpfad oder eine
+   neue Release-ID. Binde die gepinnte Basemap-Stylevorlage aus dem
+   Source-Capture, die lokale PMTiles-URL und den öffentlichen Assetwurzelpfad
+   aus `<MAP_PACKAGE_PLAN>` unverändert an `$BASEMAP_UPSTREAM_STYLE`,
+   `$BASEMAP_PMTILES_URL` und `$MAP_PUBLIC_ASSET_ROOT`. Materialisiere den
+   Offline-Stil atomar create-new:
+
+   ```sh
+   node tools/tiles/build-offline-basemap-style.mjs "$BASEMAP_UPSTREAM_STYLE" <ARTEFAKTWURZEL>/map-release-free-v2/style.json <INFRARELEASE_ID> "$BASEMAP_PMTILES_URL" "$MAP_PUBLIC_ASSET_ROOT"
+   ```
+
+   Der Stil muss MapLibre v8, vollständig selbst gehostet und releasegebunden
+   sein. Externe Laufzeit-URLs, `latest`, eine fremde Release-ID oder ein
+   bereits vorhandenes Ziel blockieren den Lauf. Dasselbe create-new-Gate gilt
+   für PMTiles, ReadModel, Quality, Sources, Captures, Wrapper, Inventare und
+   alle Deliverydateien; nur der oben geprüfte
+   Cross-Release-Materialisierer darf ausdrücklich deklarierte historische
+   Bytes in den neuen, vorher leeren Zielbaum übernehmen.
 
    Materialisiere anschließend die übrigen öffentlichen Kartenrollen getrennt.
    Der statische Quellenbeleg muss unter
@@ -411,10 +520,33 @@ Deterministischer Build und Prüfung:
    `build-map-delivery-release.mjs` in
    `<ARTEFAKTWURZEL>/map-release-free-v2/delivery-unsigned/`. Damit sind dessen
    Paketquellen exakt `delivery-unsigned/release.json` und
-   `delivery-unsigned/sources.json`. Die Datei
+   `delivery-unsigned/sources.json`. Sein Inventar muss Operational-v2,
+   Movement-Route-Templates-v2 und Timetable-Transfer-Demands-v1 jeweils genau
+   einmal mit den kanonischen Installationspfaden und den Bindungen aus
+   Qualitätsbericht und InfraRelease-Inventar enthalten. Die Datei
    `<ARTEFAKTWURZEL>/map-release-free-v2/public/release.json` ist ausschließlich
    dem später genehmigten signierten Deliveryvertrag vorbehalten und bleibt im
    unsigned Lauf absent.
+
+   Binde nach allen Quellen-, Sidecar- und unsigned Ausgaben den für
+   `<INFRARELEASE_ID>` eingecheckten
+   `zugfolge-map-build-cache-inventory-plan/v1` an `$BUILD_CACHE_PLAN` und sein
+   vorher nicht vorhandenes, in `$BUILD_EVIDENCE_SPEC` referenziertes Ziel an
+   `$BUILD_CACHE_INVENTORY`. Der Plan muss beide Operational-v2-Sidecars mit
+   ihren aktuellen Quell- und unveränderlichen Cachepfaden enthalten. Da der
+   sichere Cross-Release-Materialisierer deklarierte Wiederverwendungsbytes
+   bereits in ihre aktuellen Zielpfade überführt hat, baut der Jahreslauf das
+   vollständige Inventar aus genau einer Repository-Wurzel:
+
+   ```sh
+   node tools/tiles/map-build-cache-inventory-cli.mjs build <INFRARELEASE_ID> . "$BUILD_CACHE_PLAN" "$BUILD_CACHE_INVENTORY"
+   ```
+
+   Das Inventar ist atomar create-new, vollständig, streamend gehasht und
+   enthält weder Symlinks/Junctions noch zusätzliche Dateien. Ein manuelles
+   Overlay für nicht materialisierte Vorjahrespfade ist im neuen Lauf
+   unzulässig. `$BUILD_EVIDENCE_SPEC` muss exakt dieses Inventar als seine eine
+   `build-cache-inventory`-Eingabe binden.
 9. Führe Unit-, Golden-Master-, Determinismus-, Rechte-, Lizenz-,
    Konfliktinvarianten-, Karten- und unabhängige Holdout-Tests aus. Vergleiche
    Qualitätslängen und Laufzeit/RAM/PMTiles-Größe mit dem Vorjahresrelease und
@@ -423,18 +555,48 @@ Deterministischer Build und Prüfung:
     folgenden Abschnitt vollständig aus. Historische v1-Waypoint-,
     Kartenestimate-, 24-Stunden-Wiederholungs- und synthetische Lastbelege sind
     kein v2-Nachweis.
-11. Lege Kandidat, Hashes, Berichte und Reviewliste zur Freigabe vor. Signiere
-    erst nach namentlicher Releasefreigabe und wenn sämtliche v2-Cutover-Gates
-    grün sind. Dieser kostenlose Clean-v2-Lauf endet ohne eine solche Freigabe
-    beim unsigned Kandidaten und ruft keinen Signer auf. Ein bereits signierter
-    InfraRelease ohne statische
-    Operational-v2-Infrastrukturbindung wird nicht nachträglich erweitert,
-    sondern bleibt unverändert; der v2-qualifizierte Kandidat erhält einen neuen
-    Releasebezeichner und eine neue Signatur. Markiere M14.2 nur dann erledigt,
-    wenn der vollständige Deutschlandlauf und nicht lediglich eine Fixture
-    bestanden hat und alle verbleibenden Abnahmebelege erfüllt sind.
-    Leite nach einer freigegebenen Signatur den Signed-Paketplan ausschließlich
-    reproduzierbar ab; kopiere oder editiere den Jahresplan nicht von Hand:
+11. Lege Kandidat, tatsächliche Hashes, Berichte und Reviewliste zur
+    namentlichen Releasefreigabe vor. Signiere erst, wenn sämtliche
+    v2-Cutover-Gates grün sind. Dieser kostenlose Clean-v2-Lauf endet ohne eine
+    solche Freigabe beim unsigned Kandidaten und ruft keinen Signer auf. Ein
+    bereits signierter InfraRelease wird nicht nachträglich erweitert, sondern
+    bleibt bytegleich unverändert; jeder geänderte v2-Kandidat erhält einen
+    neuen Releasebezeichner, einen neuen Delivery-Key und eine neue Signatur.
+    Markiere M14.2 nur dann erledigt, wenn der vollständige Deutschlandlauf und
+    nicht lediglich eine Fixture bestanden hat und alle verbleibenden
+    Abnahmebelege erfüllt sind.
+
+    Sichere vor der Trust-Änderung die kanonisch sortierte Menge und die
+    öffentlichen PEM-Bytes aller vorhandenen Einträge aus
+    `ops/keys/trusted-delivery-keys.json` sowie ihre Scopes. Erzeuge nach der
+    Freigabe ein neues Ed25519-Keypair; `$DELIVERY_PRIVATE_KEY` liegt außerhalb
+    von Repository, Worktree, Quell- und Artefaktwurzel, Buildcache,
+    Transportpaket, Laufprotokoll und Deploymenthost. Der private Pfad und das
+    private Schlüsselmaterial werden weder in Evidence noch in der
+    Abschlussdokumentation ausgegeben. `$DELIVERY_KEY_ID` ist ausschließlich
+    aus der aktuellen Paketversion abgeleitet und sein öffentlicher Schlüssel
+    wird als eigene PEM-Datei unter `ops/keys/` eingecheckt. Signiere
+    Delivery-v2 create-new am reservierten öffentlichen Ziel:
+
+    ```sh
+    node tools/tiles/sign-map-delivery-release.mjs <MAP_PACKAGE_PLAN> . "$DELIVERY_PRIVATE_KEY" "$DELIVERY_KEY_ID" <ARTEFAKTWURZEL>/map-release-free-v2/public/release.json
+    ```
+
+    Prüfe die erzeugte Ed25519-Signatur zunächst gegen den neuen öffentlichen
+    Schlüssel. Ergänze danach `$DELIVERY_KEY_ID` additiv in
+    `ops/keys/trusted-delivery-keys.json` und ausschließlich im passenden Scope
+    von `ops/keys/trusted-delivery-key-scopes.json`. Jeder zuvor vorhandene
+    Schlüssel, seine PEM-Bytes und seine bisherigen Scopes müssen unverändert
+    erhalten bleiben; Entfernen, Ersetzen, Umsortierungsverlust oder
+    stillschweigendes Widerrufen eines Altankers blockiert den Lauf. Der
+    `candidatePackage.retainedTrustedKeyIds`-Vertrag von
+    `$BUILD_EVIDENCE_SPEC` nennt jeden vor diesem Lauf vorhandenen
+    Vertrauensanker eindeutig und kanonisch sortiert; der neue
+    Kandidatenschlüssel darf darin nicht als Altanker erscheinen.
+
+    Leite erst nach dieser additiven Registrierung den Signed-Paketplan
+    ausschließlich reproduzierbar ab; kopiere oder editiere den Jahresplan
+    nicht von Hand:
 
     ```sh
     node tools/tiles/signed-map-package-plan-cli.mjs <MAP_PACKAGE_PLAN> . ops/keys/trusted-delivery-keys.json ops/keys/trusted-delivery-key-scopes.json <ARTEFAKTWURZEL>/map-release-free-v2/signed-package-plan.json
@@ -454,15 +616,39 @@ Deterministischer Build und Prüfung:
     gepinnten Spezifikation ist ebenfalls zwingend abzulehnen. Der Generator
     und die späteren Paket-/Aktivierungs-Preflights müssen die Signatur jeweils
     gegen den öffentlichen Keyring prüfen.
+
+    Halte die drei Ergebnisse ausdrücklich auseinander: Paket-`verify` beweist
+    die Integrität der inventarisierten Bytes, die erfolgreiche Prüfung von
+    Signatur-Key-ID und Ed25519-Signatur gegen den additiven Keyring beweist das
+    Vertrauen in den Delivery-Signer, und erst ein gesonderter, erfolgreicher
+    Aktivierungs-Preflight samt Freigabe darf eine Zielumgebung umschalten. Ein
+    eingecheckter Public Key, ein gültiger Manifesthash oder eine lokale
+    Installation allein ist niemals ein Aktivierungsbeleg.
     Binde anschließend in der Jahres-Evidence nicht den unsigned Basisplan als
     Kandidaten, sondern den erzeugten `signed-package-plan.json` über den
     verpflichtenden `candidatePackage`-Vertrag. Dieser muss Paketversion,
     signierte `public/release.json`-Bytes, Release-Hash, Signatur-Key-ID und den
     vollständigen additiven `ops/keys/trusted-delivery-keys.json` belegen. Die
     dort benannten bisherigen Vertrauensanker dürfen nicht entfernt oder durch
-    den neuen Karten-Key ersetzt werden. Evidence-Build und Verify müssen die
-    Ed25519-Signatur erneut prüfen; ein privater Schlüssel ist keine
-    Evidence-Eingabe.
+    den neuen Karten-Key ersetzt werden. Erzeuge und prüfe nun erst den
+    unveränderlichen Build-Evidence-v3-Beleg aus den tatsächlichen Bytes und
+    den vollständigen Commit-IDs des Semantikexports und Kartenbuilds:
+
+    ```sh
+    node tools/tiles/map-release-build-evidence-cli.mjs build "$BUILD_EVIDENCE_SPEC" . "$BUILD_EVIDENCE_OUTPUT" "$SEMANTIC_EXPORT_COMMIT" "$MAP_BUILD_COMMIT"
+    node tools/tiles/map-release-build-evidence-cli.mjs verify "$BUILD_EVIDENCE_OUTPUT" .
+    ```
+
+    Build und Verify müssen die Ed25519-Signatur erneut gegen den additiven
+    öffentlichen Keyring prüfen; ein privater Schlüssel ist keine
+    Evidence-Eingabe. Der Beleg muss
+    `schema=zugfolge-map-release-build-evidence/v3` tragen, genau die neun
+    vorab vereinbarten Ausgaben führen und Operational-v2, beide Sidecars,
+    InfraRelease-Inventar, signiertes Delivery-v2-Inventar und Signed-Paketplan
+    auf identische Dateibytes, Release-ID, Operational-State-Hash und
+    Transfer-Set-Hash schließen. Evidence-Ausgabe und alle vorgelagerten
+    Signatur-/Plan-Ziele sind create-new; kein Hash oder Status wird vor einem
+    tatsächlich erfolgreichen Build eingetragen.
 12. Erzeuge kein integriertes Operational-v2-Paket direkt aus dem ungepinnten
    Jahresplan oder dem unsigned Deliveryvertrag. Die unsigned Dateien
    `map-release-free-v2/delivery-unsigned/release.json` und
@@ -472,8 +658,9 @@ Deterministischer Build und Prüfung:
    oder Game-Staging.
 
    Erzeuge das transportneutrale integrierte Paket erst nach freigegebener
-   Signatur ausschließlich aus dem vollständig expandierten und bytegenau
-   gepinnten `signed-package-plan.json`:
+   Signatur und erfolgreich verifiziertem Build-Evidence-v3 ausschließlich aus
+   dem vollständig expandierten und bytegenau gepinnten
+   `signed-package-plan.json`:
 
    ```sh
    node tools/tiles/map-package-cli.mjs pack <ARTEFAKTWURZEL>/map-release-free-v2/signed-package-plan.json <ARTEFAKTWURZEL>/map-package-signed .
@@ -490,6 +677,29 @@ Deterministischer Build und Prüfung:
    Game-Staging, sofern die Zielumgebung verfügbar ist. Es darf weiterhin
    keinen produktiven Übernahmeantrag ohne gesonderte Aktivierungsfreigabe
    erzeugen.
+
+   Signaturfreigabe, lokales Pack/Verify/Install, Odoo-Import, Game-Staging und
+   Produktionsaktivierung sind getrennte Gates. Für STRATO ist der Zielhost
+   `h3076743.stratoserver.net`. Ermittle dort zunächst ausschließlich lesend
+   den aktiven Pointer, die installierten Releases, den exakten Source-Commit,
+   die Image-Digests und den ausführbaren Rollbackstand; prüfe vor jeder
+   Verbindung den bestätigten Hostschlüssel über den vorgesehenen sicheren
+   Inventarweg. Eine Trust-Registry-ID oder ein Buildvorgänger darf nicht als
+   installierter Rollbackstand angenommen werden.
+
+   Vor jeder zustandsändernden Installation oder Aktivierung ist unmittelbar
+   davor eine neue ausdrückliche Freigabe einzuholen. Sie muss Zielhost, vollen
+   40-stelligen Commit, `infra-deutschland-2026.5`, Paketmanifest-SHA und die
+   konkret freigegebene Aktion nennen. Vor der ersten Mutation müssen das neue,
+   bisher fehlende `.5`-Installationsverzeichnis, der unverändert aktive
+   Vorgängerpointer und vollständiges Rollbackmaterial feststehen. Ein
+   ausführbarer Rückweg verlangt das bytegenau installierte Vorgängerpaket,
+   sein signiertes Runtime-Rollback-Tuple, gepinnte Image-Digests sowie
+   bestandene Datenbank- und Keycloak-Restore-Belege; der bloß beibehaltene
+   `.4`-Public-Key genügt nicht. Ohne diese Serverfreigabe und Rollbackbelege
+   endet der Lauf nach den lokalen beziehungsweise Staging-Belegen mit
+   `nicht installiert/aktiviert`; eine frühere Release- oder
+   Signaturfreigabe autorisiert keine Servermutation.
 
 Operational-v2-, LiveMap- und RZÜ-Abnahme:
 
@@ -560,6 +770,14 @@ Liefere am Ende eine knappe Tabelle mit Quelle/Version/Hash, A-/B-Länge,
 offenen Ursachen, Teststatus, Artefaktgrößen, Änderungen zum Vorjahr und
 Signaturstatus. Weise `operational-infrastructure-v2.json` mit
 `infraReleaseId`, Byte-SHA-256 und kanonischem `stateHash` gesondert aus.
+Weise daneben `movement-route-templates-v2` mit Byte-SHA-256, `stateHash` und
+`operationalStateHash` sowie `timetable-transfer-demands-v1` mit Byte-SHA-256,
+DailyPlan-Hash und `transferSetSha256` aus und bestätige die gekreuzte
+Hashbindung. Nenne Cross-Release-Reuse-Receipt und Zahl der ausschließlich
+create-new übernommenen Dateien oder ausdrücklich „keine Wiederverwendung“.
+Dokumentiere Build-Evidence-Schema, -Hash und Verify-Status sowie die additive
+Trust-Änderung mit neuem Key, vollständig beibehaltenen Altankern und
+Signaturprüfung, ohne private Schlüsselpfade oder Schlüsselmaterial offenzulegen.
 Dokumentiere die getrennte Test-Deploymenthülle mit Signaturstatus, Welt,
 Region, Weltepoche, Zugzahl und nativer Initialisierung daneben, aber niemals als
 InfraRelease-Artefakt. Ergänze LiveMap-/RZÜ-Commitgleichheit,
@@ -567,6 +785,9 @@ Sequenz-/Stale-/Freeze-, Replay-/Restore-, Wiederholungs-/Retirement- und
 operativen v1-Negativstatus sowie Paketmanifest-Hash, Teilezahl,
 Verify-/Installstatus,
 Odoo-/Game-Stagingstatus und den ausdrücklich getrennten Aktivierungsstatus.
+Nenne für Produktion zusätzlich den exakten Commit- und Paketmanifeststand
+sowie den Status der gesonderten Serverfreigabe; ohne Freigabe lautet er
+„nicht installiert/aktiviert“.
 Verlinke alle internen Laufbelege, aber keine APN-Rohdateien.
 
 ---
