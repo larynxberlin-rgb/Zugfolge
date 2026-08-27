@@ -38,8 +38,8 @@ function wrapper() {
       },
       {
         id: "timetable-transfer-demands-deutschland-2026.3",
-        kind: "timetable-transfer-demands-v1",
-        file: "timetable-routes-v2.transfer-demands-v1.json",
+        kind: "timetable-transfer-demands-v2",
+        file: "timetable-routes-v2.transfer-demands-v2.json",
         bytes: 72,
         sha256: SHA_D,
       },
@@ -91,7 +91,7 @@ test("Jahreskonfiguration v3 wird ausschliesslich aus Identitaet und signierter 
   assert.deepEqual(result.operationalInfrastructure, { file: "operational-infrastructure-v2.json", bytes: 1_234, sha256: SHA_A, stateHash: SHA_B });
   assert.deepEqual(result.timetableRoutes, { file: "timetable-routes-v2.jsonseq", bytes: 84, sha256: SHA_C });
   assert.deepEqual(result.timetableTransferDemands, {
-    file: "timetable-routes-v2.transfer-demands-v1.json",
+    file: "timetable-routes-v2.transfer-demands-v2.json",
     bytes: 72,
     sha256: SHA_D,
     dailyPlanSha256: SHA_E,
@@ -142,7 +142,17 @@ test("fehlende, doppelte oder um Zusatzfelder erweiterte Sidecar-Artefakte block
   assert.throws(() => deriveAlphaWorldBuildConfiguration(identity(), duplicate), /genau ein movement-route-templates-v2/u);
 
   const manual = wrapper();
-  manual.release.artifacts.find(({ kind }) => kind === "timetable-transfer-demands-v1").transferSetSha256 = SHA_F;
+  manual.release.artifacts.find(({ kind }) => kind === "timetable-transfer-demands-v2").transferSetSha256 = SHA_F;
   manual.releaseHash = createHash("sha256").update(alphaCanonicalJson(manual.release)).digest("hex");
   assert.throws(() => deriveAlphaWorldBuildConfiguration(identity(), manual), /fehlende oder unbekannte Felder/u);
+
+  const legacyTransfer = wrapper();
+  const transfer = legacyTransfer.release.artifacts.find(({ kind }) => kind === "timetable-transfer-demands-v2");
+  transfer.kind = "timetable-transfer-demands-v1";
+  transfer.file = "timetable-routes-v2.transfer-demands-v1.json";
+  legacyTransfer.releaseHash = createHash("sha256").update(alphaCanonicalJson(legacyTransfer.release)).digest("hex");
+  assert.throws(
+    () => deriveAlphaWorldBuildConfiguration(identity(), legacyTransfer),
+    /genau ein timetable-transfer-demands-v2/u,
+  );
 });

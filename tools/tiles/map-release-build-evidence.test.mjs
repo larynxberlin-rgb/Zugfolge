@@ -203,8 +203,8 @@ function movementDispatch(id, predecessorBaseRouteVersionId, resourceIds, contin
 
 function operationalSidecars(stateHash) {
   const dailyPlanBody = {
-    schema: "zugfolge-daily-circulation-plan/v1",
-    rule: "lot-local-playable-path-cover-with-minimum-cross-location-rollover/v1",
+    schema: "zugfolge-daily-circulation-plan/v2",
+    rule: "lot-local-playable-path-cover-with-explicit-physical-transition-partition/v2",
     gtfsReleaseId: "gtfs-fixture-2026.2",
     repeatEveryS: 86_400,
     minimumTurnaroundS: 300,
@@ -213,6 +213,8 @@ function operationalSidecars(stateHash) {
       journeyChainCount: 4,
       circulationCount: 2,
       rolloverAssignmentCount: 2,
+      plannedTransitionCount: 4,
+      turnaroundDemandCount: 3,
       transferDemandCount: 1,
       transferLotCount: 1,
     },
@@ -225,8 +227,8 @@ function operationalSidecars(stateHash) {
         journeyChainIds: ["chain:a:1", "chain:a:2"],
         passengerLegIds: ["leg:a"],
         passengerTrainRunIds: ["run:a"],
-        start: { legId: "leg:a", locationId: "location:a", physicalStopId: "stop:a", timeS: 0 },
-        end: { legId: "leg:a", locationId: "location:a", physicalStopId: "stop:a", timeS: 1_000 },
+        start: { legId: "leg:a", passengerRouteVersionId: "route:gtfs:leg:a:v1", locationId: "location:a", physicalStopId: "stop:a", timeS: 0 },
+        end: { legId: "leg:a", passengerRouteVersionId: "route:gtfs:leg:a:v1", locationId: "location:a", physicalStopId: "stop:a", timeS: 1_000 },
       },
       {
         id: "circulation:b",
@@ -236,24 +238,85 @@ function operationalSidecars(stateHash) {
         journeyChainIds: ["chain:b:1", "chain:b:2"],
         passengerLegIds: ["leg:b"],
         passengerTrainRunIds: ["run:b"],
-        start: { legId: "leg:b", locationId: "location:b", physicalStopId: "stop:b", timeS: 2_000 },
-        end: { legId: "leg:b", locationId: "location:a", physicalStopId: "stop:a", timeS: 3_000 },
+        start: { legId: "leg:b", passengerRouteVersionId: "route:gtfs:leg:b:v1", locationId: "location:b", physicalStopId: "stop:b", timeS: 2_000 },
+        end: { legId: "leg:b", passengerRouteVersionId: "route:gtfs:leg:b:v1", locationId: "location:a", physicalStopId: "stop:a", timeS: 3_000 },
       },
     ],
     rolloverAssignments: [
       { sourceCirculationId: "circulation:a", targetCirculationId: "circulation:b", kind: "transfer" },
       { sourceCirculationId: "circulation:b", targetCirculationId: "circulation:a", kind: "same-location" },
     ],
+    turnaroundDemands: [
+      {
+        id: `turnaround-${"1".repeat(64)}`,
+        lotId: "lot:fixture",
+        assetCompatibilityKey: "lot:fixture",
+        sourceCirculationId: "circulation:a",
+        targetCirculationId: "circulation:a",
+        sourcePassengerLegId: "leg:a",
+        targetPassengerLegId: "leg:a",
+        sourcePassengerRouteVersionId: "route:gtfs:leg:a:v1",
+        targetPassengerRouteVersionId: "route:gtfs:leg:a:v1",
+        sourceLocationId: "location:a",
+        targetLocationId: "location:a",
+        sourcePhysicalStopId: "stop:a",
+        targetPhysicalStopId: "stop:a",
+        earliestDepartureS: 1_000,
+        latestArrivalS: 1_300,
+        availableWindowS: 300,
+        dailyBoundary: false,
+      },
+      {
+        id: `turnaround-${"2".repeat(64)}`,
+        lotId: "lot:fixture",
+        assetCompatibilityKey: "lot:fixture",
+        sourceCirculationId: "circulation:b",
+        targetCirculationId: "circulation:b",
+        sourcePassengerLegId: "leg:b",
+        targetPassengerLegId: "leg:b",
+        sourcePassengerRouteVersionId: "route:gtfs:leg:b:v1",
+        targetPassengerRouteVersionId: "route:gtfs:leg:b:v1",
+        sourceLocationId: "location:b",
+        targetLocationId: "location:b",
+        sourcePhysicalStopId: "stop:b",
+        targetPhysicalStopId: "stop:b",
+        earliestDepartureS: 3_000,
+        latestArrivalS: 3_300,
+        availableWindowS: 300,
+        dailyBoundary: false,
+      },
+      {
+        id: `turnaround-${"3".repeat(64)}`,
+        lotId: "lot:fixture",
+        assetCompatibilityKey: "lot:fixture",
+        sourceCirculationId: "circulation:b",
+        targetCirculationId: "circulation:a",
+        sourcePassengerLegId: "leg:b",
+        targetPassengerLegId: "leg:a",
+        sourcePassengerRouteVersionId: "route:gtfs:leg:b:v1",
+        targetPassengerRouteVersionId: "route:gtfs:leg:a:v1",
+        sourceLocationId: "location:a",
+        targetLocationId: "location:a",
+        sourcePhysicalStopId: "stop:a",
+        targetPhysicalStopId: "stop:a",
+        earliestDepartureS: 3_000,
+        latestArrivalS: 86_400,
+        availableWindowS: 83_400,
+        dailyBoundary: true,
+      },
+    ],
     transferDemands: [],
   };
   const demand = {
-    id: "demand:fixture",
+    id: `transfer-${"1".repeat(64)}`,
     lotId: "lot:fixture",
     assetCompatibilityKey: "lot:fixture",
     sourceCirculationId: "circulation:a",
     targetCirculationId: "circulation:b",
     sourcePassengerLegId: "leg:a",
     targetPassengerLegId: "leg:b",
+    sourcePassengerRouteVersionId: "route:gtfs:leg:a:v1",
+    targetPassengerRouteVersionId: "route:gtfs:leg:b:v1",
     sourceLocationId: "location:a",
     targetLocationId: "location:b",
     sourcePhysicalStopId: "stop:a",
@@ -261,6 +324,7 @@ function operationalSidecars(stateHash) {
     earliestDepartureS: 1_300,
     latestArrivalS: 88_100,
     availableWindowS: 86_800,
+    dailyBoundary: true,
     movementKind: "train",
   };
   dailyPlanBody.transferDemands.push(demand);
@@ -268,11 +332,9 @@ function operationalSidecars(stateHash) {
   const dailyPlan = { ...dailyPlanBody, planSha256: dailyPlanSha256 };
   const transferRoute = {
     ...demand,
-    sourcePassengerRouteVersionId: "route:gtfs:leg:a:v1",
-    targetPassengerRouteVersionId: "route:gtfs:leg:b:v1",
     formationLengthsMm: [100],
-    routeVersionId: "route:demand:fixture:movement:v1",
-    templateId: "template:demand:fixture:movement:v1",
+    routeVersionId: `route:${demand.id}:movement:v1`,
+    templateId: `template:${demand.id}:movement:v1`,
     legs: [
       {
         edgeId: "edge:transfer:a",
@@ -299,7 +361,7 @@ function operationalSidecars(stateHash) {
     .update(`${canonicalSyntheticOperationalValue(transferRoute)}\n`)
     .digest("hex");
   const transfers = {
-    schema: "zugfolge-timetable-transfer-demands/v1",
+    schema: "zugfolge-timetable-transfer-demands/v2",
     infraReleaseId: RELEASE_ID,
     gtfsSnapshotHash: "a".repeat(64),
     dailyPlan,
@@ -454,7 +516,7 @@ function operationalV2Quality(
         timetableTransferSetSha256: transferSetSha256,
       },
       timetableRouteEvidence: {
-        reportSchema: "zugfolge-germany-timetable-route-report/v3",
+      reportSchema: "zugfolge-germany-timetable-route-report/v4",
         policyId: "synthetic-operational-b/v2",
         derivationRule: "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2",
         selectionRule: "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
@@ -464,7 +526,7 @@ function operationalV2Quality(
         routesSha256: timetableRoutesProof.sha256,
         gtfsSnapshotBytes: 9_012,
         gtfsSnapshotSha256: "c".repeat(64),
-        transferDemandsSchema: "zugfolge-timetable-transfer-demands/v1",
+        transferDemandsSchema: "zugfolge-timetable-transfer-demands/v2",
         transferDemandsBytes: transferProof.bytes,
         transferDemandsSha256: transferProof.sha256,
         snapshotHash: "a".repeat(64),
@@ -480,7 +542,16 @@ function operationalV2Quality(
         dailyCirculationPlanSha256: dailyPlanSha256,
         transferSetSha256,
         transferDemandsProduced: true,
-        dailyCirculation: { lotCount: 1, journeyChainCount: 4, circulationCount: 2, rolloverAssignmentCount: 2, transferDemandCount: 1, transferLotCount: 1 },
+        dailyCirculation: {
+          lotCount: 1,
+          journeyChainCount: 4,
+          circulationCount: 2,
+          rolloverAssignmentCount: 2,
+          plannedTransitionCount: 4,
+          turnaroundDemandCount: 3,
+          transferDemandCount: 1,
+          transferLotCount: 1,
+        },
         transferRouteCount: 1,
         transferRouteLegCount: 2,
         transferRouteLengthMm: 1000,
@@ -930,7 +1001,7 @@ async function fixtureV2() {
   const operationalProof = await proof(value.root, operationalFile);
   const stateHash = operationalInfrastructureV2StateHash(infrastructure);
   const movementFile = "outputs/operational-infrastructure-v2.movement-route-templates-v2.json";
-  const transferFile = "outputs/timetable-routes-v2.transfer-demands-v1.json";
+  const transferFile = "outputs/timetable-routes-v2.transfer-demands-v2.json";
   const {
     movement,
     transfers,
@@ -969,8 +1040,8 @@ async function fixtureV2() {
       },
       {
         id: "timetable-transfer-demands-2026.2",
-        kind: "timetable-transfer-demands-v1",
-        file: "timetable-routes-v2.transfer-demands-v1.json",
+        kind: "timetable-transfer-demands-v2",
+        file: "timetable-routes-v2.transfer-demands-v2.json",
         ...transferProof,
       },
     ],
@@ -1075,8 +1146,8 @@ async function fixtureV2() {
   });
   deliveryPayload.artifacts.push({
     id: "timetable-transfer-demands-2026.2",
-    kind: "timetable-transfer-demands-v1",
-    installPath: "timetable-routes-v2.transfer-demands-v1.json",
+    kind: "timetable-transfer-demands-v2",
+    installPath: "timetable-routes-v2.transfer-demands-v2.json",
     ...transferProof,
   });
   deliveryPayload.artifacts.sort((left, right) => left.id.localeCompare(right.id, "en"));
@@ -1148,9 +1219,9 @@ async function fixtureV2() {
   });
   packageDescriptors.push({
     id: "timetable-transfer-demands-2026.2",
-    kind: "timetable-transfer-demands-v1",
+    kind: "timetable-transfer-demands-v2",
     sourceFile: transferFile,
-    installPath: "timetable-routes-v2.transfer-demands-v1.json",
+    installPath: "timetable-routes-v2.transfer-demands-v2.json",
     artifactInventory: artifactInventoryFile,
   });
   const basePlan = {
@@ -1307,9 +1378,9 @@ async function fixtureV2() {
   });
   deliverySources.push({
     id: "timetable-transfer-demands-2026.2",
-    kind: "timetable-transfer-demands-v1",
+    kind: "timetable-transfer-demands-v2",
     sourceFile: transferFile,
-    installPath: "timetable-routes-v2.transfer-demands-v1.json",
+    installPath: "timetable-routes-v2.transfer-demands-v2.json",
   });
   return {
     ...value,
@@ -1365,9 +1436,9 @@ async function fixtureV3() {
     },
     {
       id: "timetable-transfer-demands",
-      kind: "timetable-transfer-demands-v1",
+      kind: "timetable-transfer-demands-v2",
       file: value.transferFile,
-      installFile: "timetable-routes-v2.transfer-demands-v1.json",
+      installFile: "timetable-routes-v2.transfer-demands-v2.json",
     },
   );
   const specFile = "tools/tiles/map-release-build-evidence.operational-sidecars-v3.spec.json";
@@ -1757,9 +1828,9 @@ test("Evidence-v3 bindet Transfer-Demands und Movement-Route-Templates als verpf
     assert.equal(evidence.outputs.length, 9);
     const operational = evidence.outputs.find(({ kind }) => kind === "operational-infrastructure-v2");
     const movement = evidence.outputs.find(({ kind }) => kind === "movement-route-templates-v2");
-    const transfers = evidence.outputs.find(({ kind }) => kind === "timetable-transfer-demands-v1");
+    const transfers = evidence.outputs.find(({ kind }) => kind === "timetable-transfer-demands-v2");
     assert.equal(movement.installFile, "operational-infrastructure-v2.movement-route-templates-v2.json");
-    assert.equal(transfers.installFile, "timetable-routes-v2.transfer-demands-v1.json");
+    assert.equal(transfers.installFile, "timetable-routes-v2.transfer-demands-v2.json");
     assert.equal(movement.operationalStateHash, operational.stateHash);
     assert.equal(movement.timetableTransferSetSha256, transfers.transferSetSha256);
     assert.deepEqual(
@@ -1781,7 +1852,7 @@ test("Evidence-v3 bindet Transfer-Demands und Movement-Route-Templates als verpf
 test("Evidence-v3 verweigert fehlende Sidecars, semantische Entkopplung und nachträgliche Byteänderungen", async () => {
   const missingValue = await fixtureV3();
   try {
-    missingValue.spec.outputs = missingValue.spec.outputs.filter(({ kind }) => kind !== "timetable-transfer-demands-v1");
+    missingValue.spec.outputs = missingValue.spec.outputs.filter(({ kind }) => kind !== "timetable-transfer-demands-v2");
     await rewriteEvidenceSpec(missingValue);
     await assert.rejects(materialized(missingValue), /exakt 9 aktivierungsrelevante Ausgaben/u);
   } finally {
@@ -1814,6 +1885,20 @@ test("Evidence-v3 verweigert fehlende Sidecars, semantische Entkopplung und nach
     );
   } finally {
     await rm(forgedTransferValue.root, { recursive: true, force: true });
+  }
+
+  const legacyTransferValue = await fixtureV3();
+  try {
+    const path = join(legacyTransferValue.root, ...legacyTransferValue.transferFile.split("/"));
+    const legacy = JSON.parse(await readFile(path, "utf8"));
+    legacy.schema = "zugfolge-timetable-transfer-demands/v1";
+    await writeFile(path, `${JSON.stringify(legacy)}\n`);
+    await assert.rejects(
+      materialized(legacyTransferValue),
+      /Timetable-Transfer-Demands verletzt Schema/u,
+    );
+  } finally {
+    await rm(legacyTransferValue.root, { recursive: true, force: true });
   }
 
   const detachedRoutesValue = await fixtureV3();
@@ -1853,7 +1938,7 @@ test("Evidence-v3 verweigert fehlende Sidecars, semantische Entkopplung und nach
     await writeFile(join(mutatedValue.root, ...mutatedValue.transferFile.split("/")), '{"changed":true}\n');
     await assert.rejects(
       verifyMapReleaseBuildEvidence(evidence, mutatedValue.root),
-      /GTFS-Snapshot-Hash|Timetable-Transfer-Demands-v1-Beleg|weicht vom Evidence-Manifest/u,
+      /GTFS-Snapshot-Hash|Timetable-Transfer-Demands-v2-Beleg|weicht vom Evidence-Manifest/u,
     );
   } finally {
     await rm(mutatedValue.root, { recursive: true, force: true });

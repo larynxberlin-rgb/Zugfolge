@@ -9,7 +9,7 @@ const IDENTITY_SCHEMA = "zugfolge-alpha-world-identity/v1";
 const IDENTITY_FIELDS = ["schemaVersion", "worldId", "regionId", "regionVariant", "operatorId", "seed", "fleetReleaseId", "planningAuthority"];
 const SHA256 = /^[a-f0-9]{64}$/u;
 const MOVEMENT_ROUTE_TEMPLATES_KIND = "movement-route-templates-v2";
-const TIMETABLE_TRANSFER_DEMANDS_KIND = "timetable-transfer-demands-v1";
+const TIMETABLE_TRANSFER_DEMANDS_KIND = "timetable-transfer-demands-v2";
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
@@ -69,7 +69,7 @@ export function deriveAlphaWorldBuildConfiguration(identity, releaseWrapper) {
       && Number.isSafeInteger(evidence.routeRecordCount)
       && evidence.routeRecordCount > 0
       && evidence.routeRecordCount === evidence.completeRouteCount
-      && timetableTransferDemands.file === "timetable-routes-v2.transfer-demands-v1.json"
+      && timetableTransferDemands.file === "timetable-routes-v2.transfer-demands-v2.json"
       && timetableTransferDemands.bytes === evidence.transferDemandsBytes
       && timetableTransferDemands.sha256 === evidence.transferDemandsSha256
       && SHA256.test(evidence.dailyCirculationPlanSha256)

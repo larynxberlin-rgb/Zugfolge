@@ -312,7 +312,7 @@ function timetableTransferDemands(gtfs) {
   const transferHasher = createHash("sha256");
   for (const route of transferRoutes) transferHasher.update(`${alphaCanonicalJson(route)}\n`, "utf8");
   return {
-    schema: "zugfolge-timetable-transfer-demands/v1",
+    schema: "zugfolge-timetable-transfer-demands/v2",
     infraReleaseId: INFRA_RELEASE_ID,
     gtfsSnapshotHash: gtfs.snapshotHash,
     dailyPlan,
@@ -589,7 +589,7 @@ export async function buildMinimalAlphaWorldRuntimeFixture(root) {
     infraRelease: join(root, "infra-release-alpha-builder-fixture.json"),
     operationalInfrastructure: join(root, "operational-infrastructure-v2.json"),
     timetableRoutes: join(root, "timetable-routes-v2.jsonseq"),
-    timetableTransferDemands: join(root, "timetable-routes-v2.transfer-demands-v1.json"),
+    timetableTransferDemands: join(root, "timetable-routes-v2.transfer-demands-v2.json"),
     movementRouteTemplates: join(root, "operational-infrastructure-v2.movement-route-templates-v2.json"),
     publicDeployConfiguration: join(root, "public-world-deploy-configuration.json"),
     legacyDeployment: join(legacyDirectory, "alpha-world-deployment.json"),
@@ -616,7 +616,7 @@ export async function buildMinimalAlphaWorldRuntimeFixture(root) {
   const timetableProof = { file: "timetable-routes-v2.jsonseq", bytes: timetableBytes.length, sha256: sha256(timetableBytes) };
   const transferBytes = jsonBytes(transferPlan);
   const transferProof = {
-    file: "timetable-routes-v2.transfer-demands-v1.json",
+    file: "timetable-routes-v2.transfer-demands-v2.json",
     bytes: transferBytes.length,
     sha256: sha256(transferBytes),
     dailyPlanSha256: transferPlan.dailyPlan.planSha256,
@@ -666,7 +666,7 @@ export async function buildMinimalAlphaWorldRuntimeFixture(root) {
       },
       {
         id: "timetable-transfer-demands-alpha-builder-fixture",
-        kind: "timetable-transfer-demands-v1",
+        kind: "timetable-transfer-demands-v2",
         file: transferProof.file,
         bytes: transferProof.bytes,
         sha256: transferProof.sha256,

@@ -137,7 +137,7 @@ function operationalQuality(operationalBytes, operationalSha256, stateHash, move
         timetableTransferSetSha256: HASH_A,
       },
       timetableRouteEvidence: {
-        reportSchema: "zugfolge-germany-timetable-route-report/v3",
+        reportSchema: "zugfolge-germany-timetable-route-report/v4",
         policyId: "synthetic-operational-b/v2",
         derivationRule: "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2",
         selectionRule: "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
@@ -147,7 +147,7 @@ function operationalQuality(operationalBytes, operationalSha256, stateHash, move
         routesSha256: HASH_B,
         gtfsSnapshotBytes: 9012,
         gtfsSnapshotSha256: HASH_C,
-        transferDemandsSchema: "zugfolge-timetable-transfer-demands/v1",
+        transferDemandsSchema: "zugfolge-timetable-transfer-demands/v2",
         transferDemandsBytes,
         transferDemandsSha256,
         snapshotHash: HASH_A,
@@ -168,6 +168,8 @@ function operationalQuality(operationalBytes, operationalSha256, stateHash, move
           journeyChainCount: 4,
           circulationCount: 2,
           rolloverAssignmentCount: 2,
+          plannedTransitionCount: 4,
+          turnaroundDemandCount: 3,
           transferDemandCount: 1,
           transferLotCount: 1,
         },
@@ -276,10 +278,10 @@ function plan(releaseBinding = {}) {
       },
       {
         id: "timetable-transfer-demands-test",
-        kind: "timetable-transfer-demands-v1",
+        kind: "timetable-transfer-demands-v2",
         visibility: "public",
-        sourceFile: "release/timetable-routes-v2.transfer-demands-v1.json",
-        installPath: "timetable-routes-v2.transfer-demands-v1.json",
+        sourceFile: "release/timetable-routes-v2.transfer-demands-v2.json",
+        installPath: "timetable-routes-v2.transfer-demands-v2.json",
         artifactInventory: "release/release-artifacts.v2.json",
       },
       {
@@ -316,7 +318,7 @@ async function fixture({ pinUnsigned = false, transformUnsigned, transformSigned
   const unsignedPlan = plan();
   const operationalBytes = Buffer.from('{"schema":"zugfolge-operational-infrastructure/v2"}\n', "utf8");
   const movementRoutesBytes = Buffer.from('{"infraReleaseId":"infra-test","schema":"movement-route-templates-v2"}\n', "utf8");
-  const transferDemandsBytes = Buffer.from('{"infraReleaseId":"infra-test","schema":"zugfolge-timetable-transfer-demands/v1"}\n', "utf8");
+  const transferDemandsBytes = Buffer.from('{"infraReleaseId":"infra-test","schema":"zugfolge-timetable-transfer-demands/v2"}\n', "utf8");
   const operationalStateHash = "b".repeat(64);
   const qualityReport = operationalQuality(
     operationalBytes.length,
@@ -345,7 +347,7 @@ async function fixture({ pinUnsigned = false, transformUnsigned, transformSigned
     writeFile(join(root, "release", "read-model.sqlite"), Buffer.from("SQLite format 3\0current", "utf8")),
     writeFile(join(root, "release", "operational-infrastructure-v2.json"), operationalBytes),
     writeFile(join(root, "release", "operational-infrastructure-v2.movement-route-templates-v2.json"), movementRoutesBytes),
-    writeFile(join(root, "release", "timetable-routes-v2.transfer-demands-v1.json"), transferDemandsBytes),
+    writeFile(join(root, "release", "timetable-routes-v2.transfer-demands-v2.json"), transferDemandsBytes),
     writeFile(join(root, "release", "style.json"), "{\"version\":8}\n", "utf8"),
     writeFile(join(root, "release", "release-artifacts.v2.json"), `${JSON.stringify({
       schema: "zugfolge-infra-release-artifacts/v2",
@@ -365,8 +367,8 @@ async function fixture({ pinUnsigned = false, transformUnsigned, transformSigned
         sha256: digest(movementRoutesBytes),
       }, {
         id: "timetable-transfer-demands-test",
-        kind: "timetable-transfer-demands-v1",
-        file: "timetable-routes-v2.transfer-demands-v1.json",
+        kind: "timetable-transfer-demands-v2",
+        file: "timetable-routes-v2.transfer-demands-v2.json",
         bytes: transferDemandsBytes.length,
         sha256: digest(transferDemandsBytes),
       }],
@@ -386,7 +388,7 @@ async function fixture({ pinUnsigned = false, transformUnsigned, transformSigned
   const readModel = current("read-model");
   const operational = current("operational-infrastructure-v2");
   const movementRoutes = current("movement-route-templates-v2");
-  const transferDemands = current("timetable-transfer-demands-v1");
+  const transferDemands = current("timetable-transfer-demands-v2");
   const infraWrapper = materialized({
     schema: "zugfolge-infra-release/v2",
     releaseId: "infra-test",
@@ -420,7 +422,7 @@ async function fixture({ pinUnsigned = false, transformUnsigned, transformSigned
       {
         id: transferDemands.id,
         kind: transferDemands.kind,
-        file: "timetable-routes-v2.transfer-demands-v1.json",
+        file: "timetable-routes-v2.transfer-demands-v2.json",
         bytes: transferDemands.bytes,
         sha256: transferDemands.sha256,
       },
@@ -576,6 +578,13 @@ test("leitet den Signed-Plan reproduzierbar mit unveraendertem Runtime-v2-Vertra
     assert.equal(descriptor.expectedSha256, digest(context.signedBytes));
     assert.equal(derived.signedReleaseBytes, context.signedBytes.length);
     assert.equal(derived.signedReleaseSha256, digest(context.signedBytes));
+    const transferDescriptor = derived.plan.auxiliaryFiles.find(({ kind }) => kind === "timetable-transfer-demands-v2");
+    const transferBytes = await readFile(join(context.root, "release", "timetable-routes-v2.transfer-demands-v2.json"));
+    assert.equal(transferDescriptor?.installPath, "timetable-routes-v2.transfer-demands-v2.json");
+    assert.equal(transferDescriptor?.sourceFile, "release/timetable-routes-v2.transfer-demands-v2.json");
+    assert.equal(transferDescriptor?.expectedBytes, transferBytes.length);
+    assert.equal(transferDescriptor?.expectedSha256, digest(transferBytes));
+    assert.equal(JSON.parse(transferBytes).schema, "zugfolge-timetable-transfer-demands/v2");
 
     const output = join(context.root, "derived", "signed-package-plan.json");
     const first = await writeSignedMapPackagePlan(derived.plan, output);
@@ -585,6 +594,22 @@ test("leitet den Signed-Plan reproduzierbar mit unveraendertem Runtime-v2-Vertra
     assert.deepEqual(JSON.parse(await readFile(output, "utf8")), derived.plan);
     await writeFile(output, "{}\n", "utf8");
     await assert.rejects(writeSignedMapPackagePlan(derived.plan, output), /abweichendem Signed-Paketplan/u);
+  } finally {
+    await context.cleanup();
+  }
+});
+
+test("verwirft Transfer-v1-Kind und -Datei im unsigned Plan ohne Fallback", async () => {
+  const context = await fixture();
+  try {
+    const transfer = context.unsignedPlan.auxiliaryFiles.find(({ kind }) => kind === "timetable-transfer-demands-v2");
+    transfer.kind = "timetable-transfer-demands-v1";
+    transfer.sourceFile = "release/timetable-routes-v2.transfer-demands-v1.json";
+    transfer.installPath = "timetable-routes-v2.transfer-demands-v1.json";
+    await assert.rejects(
+      deriveSignedMapPackagePlan(context.unsignedPlan, context.root, context.trustedKeysSourceFile, context.trustedKeyScopesSourceFile),
+      /Timetable-Transfer-Demands-v2/u,
+    );
   } finally {
     await context.cleanup();
   }

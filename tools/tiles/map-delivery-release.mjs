@@ -23,7 +23,7 @@ const OPERATIONAL_QUALITY_SCHEMA = "zugfolge-operational-infrastructure-quality-
 const STATIC_MAP_QUALITY_SCHEMA = "zugfolge-static-map-quality/v2";
 const OPERATIONAL_INFRASTRUCTURE_KIND = "operational-infrastructure-v2";
 const MOVEMENT_ROUTE_TEMPLATES_KIND = "movement-route-templates-v2";
-const TIMETABLE_TRANSFER_DEMANDS_KIND = "timetable-transfer-demands-v1";
+const TIMETABLE_TRANSFER_DEMANDS_KIND = "timetable-transfer-demands-v2";
 const CANONICAL_PUBLIC_KEY_PEM = /^-----BEGIN PUBLIC KEY-----\n(?:[A-Za-z0-9+/=]+\n)+-----END PUBLIC KEY-----\n$/u;
 const QUALITY_LAYER_NAMES = Object.freeze([
   "rail_corridors", "operating_points", "stations", "tracks", "platforms",
@@ -462,12 +462,12 @@ function validateTimetableRouteEvidence(evidence) {
     "simulatedOperationalAssignment", "realInterlockingFactsClaimed", "externalOperationalNetworkProvenance",
   ], "Operational-v2.timetableRouteEvidence");
   invariant(
-    evidence.reportSchema === "zugfolge-germany-timetable-route-report/v3"
+    evidence.reportSchema === "zugfolge-germany-timetable-route-report/v4"
       && evidence.policyId === "synthetic-operational-b/v2"
       && evidence.derivationRule === "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2"
       && evidence.selectionRule === "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2"
-      && evidence.transferDemandsSchema === "zugfolge-timetable-transfer-demands/v1",
-    "Operational-v2.timetableRouteEvidence verletzt den freien v3-Fahrweg-/Transfervertrag.",
+      && evidence.transferDemandsSchema === "zugfolge-timetable-transfer-demands/v2",
+    "Operational-v2.timetableRouteEvidence verletzt den freien v4-Fahrweg-/V2-Transfervertrag.",
   );
   invariant(
     [evidence.reportBytes, evidence.routesBytes, evidence.gtfsSnapshotBytes, evidence.transferDemandsBytes].every((bytes) => Number.isSafeInteger(bytes) && bytes > 0)
@@ -488,11 +488,15 @@ function validateTimetableRouteEvidence(evidence) {
       && Number.isSafeInteger(evidence.sameStopTransitionCount) && evidence.sameStopTransitionCount >= 0,
     "Operational-v2.timetableRouteEvidence schließt die ausgewählten Segmente nicht vollständig 1:1.",
   );
-  exactKeys(evidence.dailyCirculation, ["lotCount", "journeyChainCount", "circulationCount", "rolloverAssignmentCount", "transferDemandCount", "transferLotCount"], "Operational-v2.timetableRouteEvidence.dailyCirculation");
+  exactKeys(evidence.dailyCirculation, [
+    "lotCount", "journeyChainCount", "circulationCount", "rolloverAssignmentCount",
+    "plannedTransitionCount", "turnaroundDemandCount", "transferDemandCount", "transferLotCount",
+  ], "Operational-v2.timetableRouteEvidence.dailyCirculation");
   invariant(
-    ["lotCount", "journeyChainCount", "circulationCount", "rolloverAssignmentCount", "transferDemandCount", "transferLotCount"].every((field) => Number.isSafeInteger(evidence.dailyCirculation[field]) && evidence.dailyCirculation[field] > 0)
+    ["lotCount", "journeyChainCount", "circulationCount", "rolloverAssignmentCount", "plannedTransitionCount"].every((field) => Number.isSafeInteger(evidence.dailyCirculation[field]) && evidence.dailyCirculation[field] > 0)
+      && ["turnaroundDemandCount", "transferDemandCount", "transferLotCount"].every((field) => Number.isSafeInteger(evidence.dailyCirculation[field]) && evidence.dailyCirculation[field] >= 0)
       && evidence.dailyCirculation.rolloverAssignmentCount === evidence.dailyCirculation.circulationCount
-      && evidence.dailyCirculation.transferDemandCount <= evidence.dailyCirculation.circulationCount
+      && evidence.dailyCirculation.turnaroundDemandCount + evidence.dailyCirculation.transferDemandCount === evidence.dailyCirculation.plannedTransitionCount
       && evidence.dailyCirculation.transferLotCount <= evidence.dailyCirculation.lotCount
       && evidence.transferDemandsProduced === true
       && evidence.transferRouteCount === evidence.dailyCirculation.transferDemandCount
@@ -693,8 +697,8 @@ function bindInfraReleaseArtifacts(infraRelease, packageSpec, trustedProofs) {
     },
     {
       kind: TIMETABLE_TRANSFER_DEMANDS_KIND,
-      file: "timetable-routes-v2.transfer-demands-v1.json",
-      label: "Timetable-Transfer-Demands-v1-Paketdatei",
+      file: "timetable-routes-v2.transfer-demands-v2.json",
+      label: "Timetable-Transfer-Demands-v2-Paketdatei",
       bindingKeys: ["id", "kind", "file", "bytes", "sha256"],
     },
   ];

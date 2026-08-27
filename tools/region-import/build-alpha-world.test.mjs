@@ -55,7 +55,7 @@ function buildConfiguration() {
       sha256: SHA_A,
     },
     timetableTransferDemands: {
-      file: "timetable-routes-v2.transfer-demands-v1.json",
+      file: "timetable-routes-v2.transfer-demands-v2.json",
       bytes: 126,
       sha256: SHA_A,
       dailyPlanSha256: SHA_B,
@@ -121,7 +121,7 @@ test("Weltbuild verlangt explizite Welt-, Regions-, Operational-v2- und Routebin
     (value) => { value.seed = "0"; },
     (value) => { value.operationalInfrastructure.file = "../operational-infrastructure-v2.json"; },
     (value) => { value.timetableRoutes.file = "../timetable-routes-v2.jsonseq"; },
-    (value) => { value.timetableTransferDemands.file = "../timetable-routes-v2.transfer-demands-v1.json"; },
+    (value) => { value.timetableTransferDemands.file = "../timetable-routes-v2.transfer-demands-v2.json"; },
     (value) => { value.movementRouteTemplates.operationalStateHash = SHA_A; },
     (value) => { value.unknown = true; },
   ]) {

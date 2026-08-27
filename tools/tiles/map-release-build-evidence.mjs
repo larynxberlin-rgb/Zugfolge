@@ -141,7 +141,7 @@ const OUTPUT_KINDS_V3 = Object.freeze([
   "read-model",
   "operational-infrastructure-v2",
   "movement-route-templates-v2",
-  "timetable-transfer-demands-v1",
+  "timetable-transfer-demands-v2",
   "style",
   "delivery-manifest",
   "quality-report",
@@ -153,7 +153,7 @@ const OUTPUT_TO_DELIVERY_KIND = Object.freeze({
   "train-map-projection": "train-map-projection",
   "operational-infrastructure-v2": "operational-infrastructure-v2",
   "movement-route-templates-v2": "movement-route-templates-v2",
-  "timetable-transfer-demands-v1": "timetable-transfer-demands-v1",
+  "timetable-transfer-demands-v2": "timetable-transfer-demands-v2",
   style: "style",
   "quality-report": "quality-manifest",
 });
@@ -1294,7 +1294,7 @@ async function validateOutputShape(kind, path, releaseId, id, version, expectedP
   if (kind === "delivery-manifest") {
     validateSignedDeliveryContract(value, releaseId, id, version);
   }
-  if (kind === "timetable-transfer-demands-v1") {
+  if (kind === "timetable-transfer-demands-v2") {
     invariant(SHA256.test(value?.gtfsSnapshotHash), `${id} besitzt keinen gebundenen GTFS-Snapshot-Hash.`);
     const passengerSegmentIds = new Set();
     if (Array.isArray(value?.transferRoutes)) {
@@ -1307,7 +1307,7 @@ async function validateOutputShape(kind, path, releaseId, id, version, expectedP
       releaseId,
       transferDemands: value,
       transferDemandsBinding: {
-        file: "timetable-routes-v2.transfer-demands-v1.json",
+        file: "timetable-routes-v2.transfer-demands-v2.json",
         bytes: expectedProof.bytes,
         sha256: expectedProof.sha256,
         role: "timetable-transfer-demands",
@@ -1317,11 +1317,11 @@ async function validateOutputShape(kind, path, releaseId, id, version, expectedP
       timetableRoutesProof: { segmentIds: [...passengerSegmentIds].sort() },
     });
     invariant(
-      value?.schema === "zugfolge-timetable-transfer-demands/v1"
+      value?.schema === "zugfolge-timetable-transfer-demands/v2"
         && value.infraReleaseId === releaseId
         && validated.dailyCirculationPlanSha256 === value.dailyPlan.planSha256
         && validated.transferSetSha256 === value.transferSetSha256,
-      `${id} ist kein release- und hashgebundener Timetable-Transfer-Demands-v1-Beleg.`,
+      `${id} ist kein release- und hashgebundener Timetable-Transfer-Demands-v2-Beleg.`,
     );
     return {
       infraReleaseId: value.infraReleaseId,
@@ -1406,14 +1406,14 @@ function bindOutputsToDeliveryInventory(outputs, inventory) {
 function bindFirstClassOperationalSidecars(outputs, releaseId) {
   const operational = outputs.find(({ kind }) => kind === "operational-infrastructure-v2");
   const movement = outputs.find(({ kind }) => kind === "movement-route-templates-v2");
-  const transfers = outputs.find(({ kind }) => kind === "timetable-transfer-demands-v1");
+  const transfers = outputs.find(({ kind }) => kind === "timetable-transfer-demands-v2");
   invariant(
     operational !== undefined && movement !== undefined && transfers !== undefined,
-    "Build-Evidence-v3 braucht Operational-v2, Movement-Route-Templates-v2 und Timetable-Transfer-Demands-v1 als erstklassige Ausgaben.",
+    "Build-Evidence-v3 braucht Operational-v2, Movement-Route-Templates-v2 und Timetable-Transfer-Demands-v2 als erstklassige Ausgaben.",
   );
   invariant(
     movement.installFile === "operational-infrastructure-v2.movement-route-templates-v2.json"
-      && transfers.installFile === "timetable-routes-v2.transfer-demands-v1.json",
+      && transfers.installFile === "timetable-routes-v2.transfer-demands-v2.json",
     "Erstklassige Operational-v2-Sidecars besitzen keine kanonischen Installationspfade.",
   );
   invariant(
@@ -1428,7 +1428,7 @@ function bindFirstClassOperationalSidecars(outputs, releaseId) {
 async function validateFirstClassOperationalSidecarFiles(root, inputs, outputs, releaseId) {
   const operational = outputs.find(({ kind }) => kind === "operational-infrastructure-v2");
   const movement = outputs.find(({ kind }) => kind === "movement-route-templates-v2");
-  const transfers = outputs.find(({ kind }) => kind === "timetable-transfer-demands-v1");
+  const transfers = outputs.find(({ kind }) => kind === "timetable-transfer-demands-v2");
   bindFirstClassOperationalSidecars(outputs, releaseId);
 
   const readBoundJson = async (output, label) => {
@@ -1445,7 +1445,7 @@ async function validateFirstClassOperationalSidecarFiles(root, inputs, outputs, 
     }
   };
 
-  const transferPlan = await readBoundJson(transfers, "Timetable-Transfer-Demands-v1-Ausgabe");
+  const transferPlan = await readBoundJson(transfers, "Timetable-Transfer-Demands-v2-Ausgabe");
   const movementArtifact = await readBoundJson(movement, "Movement-Route-Templates-v2-Ausgabe");
   const timetableRoutesInput = inputs.find(({ id }) => id === "timetable-routes-v2");
   invariant(
@@ -1482,7 +1482,7 @@ async function validateFirstClassOperationalSidecarFiles(root, inputs, outputs, 
   invariant(
     validatedTransfers.dailyCirculationPlanSha256 === transfers.dailyPlanSha256
       && validatedTransfers.transferSetSha256 === transfers.transferSetSha256,
-    "Timetable-Transfer-Demands-v1-Ausgabe weicht von ihrer kanonisch validierten Routenbindung ab.",
+    "Timetable-Transfer-Demands-v2-Ausgabe weicht von ihrer kanonisch validierten Routenbindung ab.",
   );
   const validated = validateMovementRouteTemplatesV2({
     artifact: movementArtifact,
@@ -1518,7 +1518,7 @@ async function bindOperationalOutputsToArtifactInventory(root, inputs, outputs, 
   }
   invariant(inventory?.schema === "zugfolge-infra-release-artifacts/v2" && Array.isArray(inventory.artifacts), "Operational-v2-Evidence bindet kein typisiertes InfraRelease-Artefaktinventar.");
   const requiredKinds = firstClassOperationalSidecarsVersion(version)
-    ? ["operational-infrastructure-v2", "movement-route-templates-v2", "timetable-transfer-demands-v1"]
+    ? ["operational-infrastructure-v2", "movement-route-templates-v2", "timetable-transfer-demands-v2"]
     : ["operational-infrastructure-v2"];
   for (const kind of requiredKinds) {
     const output = outputs.find((entry) => entry.kind === kind);
@@ -1640,7 +1640,7 @@ async function bindDeliveryToReleaseWrappers(root, inputs, outputs, releaseId, v
   });
   if (firstClassOperationalSidecarsVersion(version)) {
     const movementOutput = outputs.find(({ kind }) => kind === "movement-route-templates-v2");
-    const transferOutput = outputs.find(({ kind }) => kind === "timetable-transfer-demands-v1");
+    const transferOutput = outputs.find(({ kind }) => kind === "timetable-transfer-demands-v2");
     const timetableRoutesInput = inputs.find(({ id }) => id === "timetable-routes-v2");
     const closure = infra.release.quality?.operationalClosure;
     const movement = closure?.movementRouteTemplates;
@@ -1654,7 +1654,7 @@ async function bindDeliveryToReleaseWrappers(root, inputs, outputs, releaseId, v
       "InfraRelease-Hülle bindet die erstklassige Movement-Route-Templates-v2-Ausgabe nicht vollständig.",
     );
     invariant(
-      timetable?.transferDemandsSchema === "zugfolge-timetable-transfer-demands/v1"
+      timetable?.transferDemandsSchema === "zugfolge-timetable-transfer-demands/v2"
         && timetableRoutesInput?.kind === "derived-input"
         && timetable.routesBytes === timetableRoutesInput.bytes
         && timetable.routesSha256 === timetableRoutesInput.sha256
@@ -1663,7 +1663,7 @@ async function bindDeliveryToReleaseWrappers(root, inputs, outputs, releaseId, v
         && timetable.transferDemandsSha256 === transferOutput.sha256
         && timetable.dailyCirculationPlanSha256 === transferOutput.dailyPlanSha256
         && timetable.transferSetSha256 === transferOutput.transferSetSha256,
-      "InfraRelease-Hülle bindet die erstklassige Timetable-Transfer-Demands-v1-Ausgabe nicht vollständig.",
+      "InfraRelease-Hülle bindet die erstklassige Timetable-Transfer-Demands-v2-Ausgabe nicht vollständig.",
     );
   }
 }
@@ -2059,12 +2059,12 @@ export function validateMapReleaseBuildEvidence(evidence) {
         `Ausgabe ${entry.id} besitzt keine releasegebundene Movement-Route-Templates-v2-Zustandsbindung.`,
       );
     }
-    if (entry.kind === "timetable-transfer-demands-v1") {
+    if (entry.kind === "timetable-transfer-demands-v2") {
       invariant(
         entry.infraReleaseId === evidence.releaseId
           && SHA256.test(entry.dailyPlanSha256)
           && SHA256.test(entry.transferSetSha256),
-        `Ausgabe ${entry.id} besitzt keine releasegebundene Timetable-Transfer-Demands-v1-Hashbindung.`,
+        `Ausgabe ${entry.id} besitzt keine releasegebundene Timetable-Transfer-Demands-v2-Hashbindung.`,
       );
     }
   }
@@ -2168,12 +2168,12 @@ export async function verifyMapReleaseBuildEvidence(
         `Ausgabe ${output.id} weicht von ihrer Movement-Route-Templates-v2-Zustandsbindung ab.`,
       );
     }
-    if (output.kind === "timetable-transfer-demands-v1") {
+    if (output.kind === "timetable-transfer-demands-v2") {
       invariant(
         proof.infraReleaseId === output.infraReleaseId
           && proof.dailyPlanSha256 === output.dailyPlanSha256
           && proof.transferSetSha256 === output.transferSetSha256,
-        `Ausgabe ${output.id} weicht von ihrer Timetable-Transfer-Demands-v1-Hashbindung ab.`,
+        `Ausgabe ${output.id} weicht von ihrer Timetable-Transfer-Demands-v2-Hashbindung ab.`,
       );
     }
   }

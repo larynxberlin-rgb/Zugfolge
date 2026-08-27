@@ -134,7 +134,7 @@ export function validateAlphaWorldBuildConfiguration(value) {
     "Alpha-Weltbuildkonfiguration.timetableTransferDemands",
   );
   invariant(
-    value.timetableTransferDemands.file === "timetable-routes-v2.transfer-demands-v1.json"
+    value.timetableTransferDemands.file === "timetable-routes-v2.transfer-demands-v2.json"
       && safePositiveInteger(value.timetableTransferDemands.bytes, "Alpha-Weltbuildkonfiguration.timetableTransferDemands.bytes")
       && SHA256.test(value.timetableTransferDemands.sha256)
       && SHA256.test(value.timetableTransferDemands.dailyPlanSha256)
@@ -691,7 +691,7 @@ const [
   vehicleCompiledCatalogPath,
 ] = argv;
 if (!buildConfigurationPath || !gtfsPath || !fleetCatalogPath || !infraReleasePath || !economySpecPath || !outputPath || !publicConfigurationPath || !operationalV2Path || !timetableRoutesPath || !timetableTransferDemandsPath || !movementRouteTemplatesPath) {
-  throw new Error("Aufruf: node build-alpha-world.mjs BUILD-CONFIG.json GTFS.json FLEET-CATALOG-V2.json INFRA-RELEASE-WRAPPER.json ECONOMY.json OUTPUT.json PUBLIC-ODOO-CONFIG.json OPERATIONAL-INFRASTRUCTURE-V2.json TIMETABLE-ROUTES-V2.jsonseq TIMETABLE-TRANSFER-DEMANDS-V1.json MOVEMENT-ROUTE-TEMPLATES-V2.json VEHICLE-RECEIPT-V4.json VEHICLE-INVENTORY-V2.json VEHICLE-SOURCE-V2.json VEHICLE-WORLD-SEED-V3.json VEHICLE-CATALOG-V3.json");
+  throw new Error("Aufruf: node build-alpha-world.mjs BUILD-CONFIG.json GTFS.json FLEET-CATALOG-V2.json INFRA-RELEASE-WRAPPER.json ECONOMY.json OUTPUT.json PUBLIC-ODOO-CONFIG.json OPERATIONAL-INFRASTRUCTURE-V2.json TIMETABLE-ROUTES-V2.jsonseq TIMETABLE-TRANSFER-DEMANDS-V2.json MOVEMENT-ROUTE-TEMPLATES-V2.json VEHICLE-RECEIPT-V4.json VEHICLE-INVENTORY-V2.json VEHICLE-SOURCE-V2.json VEHICLE-WORLD-SEED-V3.json VEHICLE-CATALOG-V3.json");
 }
 await assertCreateNewTargetMissing(resolve(outputPath), "Alpha-Weltdeployment");
 
@@ -783,7 +783,7 @@ function validateTimetableTransferDemandsArtifact({
     "transferSetSha256",
   ], "Timetable-Transferplan");
   invariant(
-    artifact.schema === "zugfolge-timetable-transfer-demands/v1"
+    artifact.schema === "zugfolge-timetable-transfer-demands/v2"
       && artifact.infraReleaseId === infraReleaseId
       && artifact.gtfsSnapshotHash === gtfsSnapshotHash
       && artifact.transferSetSha256 === binding.transferSetSha256
@@ -805,8 +805,8 @@ function validateTimetableTransferDemandsArtifact({
     gtfsReleaseId,
     repeatEveryS: artifact.dailyPlan.repeatEveryS,
     minimumTurnaroundS: artifact.dailyPlan.minimumTurnaroundS,
-    transferCost: ({ source, target }) => (
-      transferPairs.has(`${source.id}\u0000${target.id}`) ? 0 : null
+    transferCost: ({ sourceCirculation, targetCirculation }) => (
+      transferPairs.has(`${sourceCirculation.id}\u0000${targetCirculation.id}`) ? 0 : null
     ),
   });
   invariant(
@@ -829,7 +829,7 @@ function validateTimetableTransferDemandsArtifact({
       "id", "lotId", "assetCompatibilityKey", "sourceCirculationId", "targetCirculationId",
       "sourcePassengerLegId", "targetPassengerLegId", "sourceLocationId", "targetLocationId",
       "sourcePhysicalStopId", "targetPhysicalStopId", "earliestDepartureS", "latestArrivalS",
-      "availableWindowS", "movementKind", "sourcePassengerRouteVersionId",
+      "availableWindowS", "dailyBoundary", "movementKind", "sourcePassengerRouteVersionId",
       "targetPassengerRouteVersionId", "formationLengthsMm", "routeVersionId", "templateId",
       "legs", "totalLengthMm", "weightedCostMm", "minimumRuntimeMs",
     ], `Timetable-Transferweg[${index}]`);

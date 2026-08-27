@@ -43,7 +43,7 @@ const OPERATIONAL_SHA256 = createHash("sha256").update(OPERATIONAL_BYTES).digest
 const OPERATIONAL_STATE_HASH = "e".repeat(64);
 const MOVEMENT_ROUTES_BYTES = Buffer.from('{"infraReleaseId":"infra-deutschland-2026.3","schema":"movement-route-templates-v2"}\n', "utf8");
 const MOVEMENT_ROUTES_SHA256 = createHash("sha256").update(MOVEMENT_ROUTES_BYTES).digest("hex");
-const TRANSFER_DEMANDS_BYTES = Buffer.from('{"infraReleaseId":"infra-deutschland-2026.3","schema":"zugfolge-timetable-transfer-demands/v1"}\n', "utf8");
+const TRANSFER_DEMANDS_BYTES = Buffer.from('{"infraReleaseId":"infra-deutschland-2026.3","schema":"zugfolge-timetable-transfer-demands/v2"}\n', "utf8");
 const TRANSFER_DEMANDS_SHA256 = createHash("sha256").update(TRANSFER_DEMANDS_BYTES).digest("hex");
 
 function fixtureNotice(text) {
@@ -177,10 +177,10 @@ function operationalV2Spec() {
   });
   spec.auxiliaryFiles.push({
     id: "timetable-transfer-demands-2026.3",
-    kind: "timetable-transfer-demands-v1",
+    kind: "timetable-transfer-demands-v2",
     visibility: "public",
-    sourceFile: "manifests/timetable-routes-v2.transfer-demands-v1.json",
-    installPath: "timetable-routes-v2.transfer-demands-v1.json",
+    sourceFile: "manifests/timetable-routes-v2.transfer-demands-v2.json",
+    installPath: "timetable-routes-v2.transfer-demands-v2.json",
     expectedBytes: TRANSFER_DEMANDS_BYTES.length,
     expectedSha256: TRANSFER_DEMANDS_SHA256,
   });
@@ -395,7 +395,7 @@ async function makeFixtureRoot() {
     writeFile(join(root, "manifests", "quality.json"), JSON.stringify({ schema: "quality-public/v1", classes: { A: 1, B: 2, C: 3 } })),
     writeFile(join(root, "manifests", "operational-infrastructure-v2.json"), OPERATIONAL_BYTES),
     writeFile(join(root, "manifests", "operational-infrastructure-v2.movement-route-templates-v2.json"), MOVEMENT_ROUTES_BYTES),
-    writeFile(join(root, "manifests", "timetable-routes-v2.transfer-demands-v1.json"), TRANSFER_DEMANDS_BYTES),
+    writeFile(join(root, "manifests", "timetable-routes-v2.transfer-demands-v2.json"), TRANSFER_DEMANDS_BYTES),
   ]);
   await writeFile(join(root, "manifests", "sources.json"), JSON.stringify({
     schema: "zugfolge-map-delivery-sources/v2",
@@ -859,8 +859,14 @@ test("Paketvertrag v2 transportiert genau eine statische Operational-v2-Bindung 
     missingMovementRoutes.auxiliaryFiles = missingMovementRoutes.auxiliaryFiles.filter(({ kind }) => kind !== "movement-route-templates-v2");
     assert.throws(() => validateMapPackageSpec(missingMovementRoutes), /genau ein Movement-Route-Templates-v2/);
     const missingTransferDemands = operationalV2Spec();
-    missingTransferDemands.auxiliaryFiles = missingTransferDemands.auxiliaryFiles.filter(({ kind }) => kind !== "timetable-transfer-demands-v1");
-    assert.throws(() => validateMapPackageSpec(missingTransferDemands), /genau ein Timetable-Transfer-Demands-v1/);
+    missingTransferDemands.auxiliaryFiles = missingTransferDemands.auxiliaryFiles.filter(({ kind }) => kind !== "timetable-transfer-demands-v2");
+    assert.throws(() => validateMapPackageSpec(missingTransferDemands), /genau ein Timetable-Transfer-Demands-v2/);
+    const legacyTransferDemands = operationalV2Spec();
+    const legacyTransfer = legacyTransferDemands.auxiliaryFiles.find(({ kind }) => kind === "timetable-transfer-demands-v2");
+    legacyTransfer.kind = "timetable-transfer-demands-v1";
+    legacyTransfer.sourceFile = "manifests/timetable-routes-v2.transfer-demands-v1.json";
+    legacyTransfer.installPath = "timetable-routes-v2.transfer-demands-v1.json";
+    assert.throws(() => validateMapPackageSpec(legacyTransferDemands), /genau ein Timetable-Transfer-Demands-v2/);
     const duplicate = operationalV2Spec();
     duplicate.auxiliaryFiles.push({ ...duplicate.auxiliaryFiles.find(({ kind }) => kind === "operational-infrastructure-v2"), id: "operational-infrastructure-copy" });
     assert.throws(() => validateMapPackageSpec(duplicate), /genau eine statische/);
@@ -1119,8 +1125,8 @@ test("Paketplan v2 leitet Byte- und Zustandshash ausschließlich aus dem typisie
         sha256: MOVEMENT_ROUTES_SHA256,
       }, {
         id: "timetable-transfer-demands-2026.3",
-        kind: "timetable-transfer-demands-v1",
-        file: "timetable-routes-v2.transfer-demands-v1.json",
+        kind: "timetable-transfer-demands-v2",
+        file: "timetable-routes-v2.transfer-demands-v2.json",
         bytes: TRANSFER_DEMANDS_BYTES.length,
         sha256: TRANSFER_DEMANDS_SHA256,
       }],
@@ -1135,7 +1141,7 @@ test("Paketplan v2 leitet Byte- und Zustandshash ausschließlich aus dem typisie
       artifacts: concrete.artifacts,
       auxiliaryFiles: concrete.auxiliaryFiles
         .filter(({ kind }) => ![
-          "glyph", "sprite", "operational-infrastructure-v2", "movement-route-templates-v2", "timetable-transfer-demands-v1",
+          "glyph", "sprite", "operational-infrastructure-v2", "movement-route-templates-v2", "timetable-transfer-demands-v2",
         ].includes(kind))
         .concat([{
           id: "operational-infrastructure-2026.3",
@@ -1153,10 +1159,10 @@ test("Paketplan v2 leitet Byte- und Zustandshash ausschließlich aus dem typisie
           artifactInventory: "manifests/release-artifacts.v2.json",
         }, {
           id: "timetable-transfer-demands-2026.3",
-          kind: "timetable-transfer-demands-v1",
+          kind: "timetable-transfer-demands-v2",
           visibility: "public",
-          sourceFile: "manifests/timetable-routes-v2.transfer-demands-v1.json",
-          installPath: "timetable-routes-v2.transfer-demands-v1.json",
+          sourceFile: "manifests/timetable-routes-v2.transfer-demands-v2.json",
+          installPath: "timetable-routes-v2.transfer-demands-v2.json",
           artifactInventory: "manifests/release-artifacts.v2.json",
         }]),
       auxiliaryTrees: [
@@ -1171,8 +1177,10 @@ test("Paketplan v2 leitet Byte- und Zustandshash ausschließlich aus dem typisie
     assert.equal(operational.stateHash, OPERATIONAL_STATE_HASH);
     assert.equal(Object.hasOwn(operational, "artifactInventory"), false);
     const movement = expanded.auxiliaryFiles.find(({ kind }) => kind === "movement-route-templates-v2");
-    const transfers = expanded.auxiliaryFiles.find(({ kind }) => kind === "timetable-transfer-demands-v1");
+    const transfers = expanded.auxiliaryFiles.find(({ kind }) => kind === "timetable-transfer-demands-v2");
     assert.equal(movement.expectedSha256, MOVEMENT_ROUTES_SHA256);
+    assert.equal(transfers.installPath, "timetable-routes-v2.transfer-demands-v2.json");
+    assert.equal(transfers.expectedBytes, TRANSFER_DEMANDS_BYTES.length);
     assert.equal(transfers.expectedSha256, TRANSFER_DEMANDS_SHA256);
     assert.equal(Object.hasOwn(movement, "artifactInventory"), false);
     assert.equal(Object.hasOwn(transfers, "artifactInventory"), false);

@@ -84,7 +84,7 @@ describe("echter Alpha-Builder bis zur produktiven Scheduler-Registry", () => {
 
   test("serialisiert das reale build-alpha-world-Output als kompakten Operational-v2-Vertrag", () => {
     assert.equal(buildConfiguration.schemaVersion, "zugfolge-alpha-world-build-configuration/v3");
-    assert.equal(timetableTransferDemands.schema, "zugfolge-timetable-transfer-demands/v1");
+    assert.equal(timetableTransferDemands.schema, "zugfolge-timetable-transfer-demands/v2");
     assert.equal(timetableTransferDemands.transferRoutes.length, fixture.routeCount);
     assert.equal(movementRouteTemplates.schema, "movement-route-templates-v2");
     assert.equal(movementRouteTemplates.transferTemplates.length, fixture.routeCount);
@@ -98,7 +98,7 @@ describe("echter Alpha-Builder bis zur produktiven Scheduler-Registry", () => {
     );
     assert.deepEqual(
       infraReleaseWrapper.release.artifacts.map(({ kind }) => kind).sort(),
-      ["movement-route-templates-v2", "operational-infrastructure-v2", "timetable-transfer-demands-v1"],
+      ["movement-route-templates-v2", "operational-infrastructure-v2", "timetable-transfer-demands-v2"],
     );
     assert.deepEqual(Object.keys(serializedBuilderOutput), ["deployment"]);
     assert.equal(signed.deployment.worldId, MINIMAL_BUILDER_WORLD_ID);

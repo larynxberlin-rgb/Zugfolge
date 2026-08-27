@@ -180,13 +180,13 @@ function validateCurrentInfraArtifacts(infraRelease, currentArtifacts, spec, rel
     ["read-model", "read-model"],
     ["operational-infrastructure-v2", "operational-infrastructure-v2"],
     ["movement-route-templates-v2", "movement-route-templates-v2"],
-    ["timetable-transfer-demands-v1", "timetable-transfer-demands-v1"],
+    ["timetable-transfer-demands-v2", "timetable-transfer-demands-v2"],
     ["quality-report", "quality-manifest"],
   ];
   const requiredPackageKinds = new Set([
     "operational-infrastructure-v2",
     "movement-route-templates-v2",
-    "timetable-transfer-demands-v1",
+    "timetable-transfer-demands-v2",
   ]);
   for (const [releaseKind, packageKind] of mappings) {
     const releaseBindings = infraRelease.artifacts.filter((entry) => entry?.kind === releaseKind);

@@ -32,7 +32,7 @@ const OPERATIONAL_BYTES = Buffer.from('{"id":"infra-deutschland-2026.1","schema"
 const OPERATIONAL_SHA256 = createHash("sha256").update(OPERATIONAL_BYTES).digest("hex");
 const MOVEMENT_ROUTES_BYTES = Buffer.from('{"infraReleaseId":"infra-deutschland-2026.1","schema":"movement-route-templates-v2"}\n');
 const MOVEMENT_ROUTES_SHA256 = createHash("sha256").update(MOVEMENT_ROUTES_BYTES).digest("hex");
-const TRANSFER_DEMANDS_BYTES = Buffer.from('{"infraReleaseId":"infra-deutschland-2026.1","schema":"zugfolge-timetable-transfer-demands/v1"}\n');
+const TRANSFER_DEMANDS_BYTES = Buffer.from('{"infraReleaseId":"infra-deutschland-2026.1","schema":"zugfolge-timetable-transfer-demands/v2"}\n');
 const TRANSFER_DEMANDS_SHA256 = createHash("sha256").update(TRANSFER_DEMANDS_BYTES).digest("hex");
 const PRODUCER_GOLDEN_URL = new URL("../../odoo/addons/zugfolge_admin/tests/fixtures/delivery_v2_producer_golden.json", import.meta.url);
 const QUALITY_LAYER_NAMES = [
@@ -128,10 +128,10 @@ function packageSpec() {
       },
       {
         id: "timetable-transfer-demands-2026.1",
-        kind: "timetable-transfer-demands-v1",
+        kind: "timetable-transfer-demands-v2",
         visibility: "public",
-        sourceFile: "public/timetable-routes-v2.transfer-demands-v1.json",
-        installPath: "timetable-routes-v2.transfer-demands-v1.json",
+        sourceFile: "public/timetable-routes-v2.transfer-demands-v2.json",
+        installPath: "timetable-routes-v2.transfer-demands-v2.json",
         expectedBytes: TRANSFER_DEMANDS_BYTES.length,
         expectedSha256: TRANSFER_DEMANDS_SHA256,
       },
@@ -147,7 +147,7 @@ function legacyPackageSpec() {
     .filter(({ kind }) => ![
       "operational-infrastructure-v2",
       "movement-route-templates-v2",
-      "timetable-transfer-demands-v1",
+      "timetable-transfer-demands-v2",
     ].includes(kind))
     .concat([{
       id: "train-projection",
@@ -190,8 +190,8 @@ function infraRelease(report = operationalQuality()) {
       },
       {
         id: "timetable-transfer-demands-2026.1",
-        kind: "timetable-transfer-demands-v1",
-        file: "timetable-routes-v2.transfer-demands-v1.json",
+        kind: "timetable-transfer-demands-v2",
+        file: "timetable-routes-v2.transfer-demands-v2.json",
         bytes: TRANSFER_DEMANDS_BYTES.length,
         sha256: TRANSFER_DEMANDS_SHA256,
       },
@@ -333,7 +333,7 @@ function operationalQuality() {
         timetableTransferSetSha256: HASH_A,
       },
       timetableRouteEvidence: {
-        reportSchema: "zugfolge-germany-timetable-route-report/v3",
+        reportSchema: "zugfolge-germany-timetable-route-report/v4",
         policyId: "synthetic-operational-b/v2",
         derivationRule: "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2",
         selectionRule: "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
@@ -343,7 +343,7 @@ function operationalQuality() {
         routesSha256: HASH_B,
         gtfsSnapshotBytes: 9012,
         gtfsSnapshotSha256: HASH_C,
-        transferDemandsSchema: "zugfolge-timetable-transfer-demands/v1",
+        transferDemandsSchema: "zugfolge-timetable-transfer-demands/v2",
         transferDemandsBytes: TRANSFER_DEMANDS_BYTES.length,
         transferDemandsSha256: TRANSFER_DEMANDS_SHA256,
         snapshotHash: HASH_A,
@@ -359,7 +359,16 @@ function operationalQuality() {
         dailyCirculationPlanSha256: HASH_C,
         transferSetSha256: HASH_A,
         transferDemandsProduced: true,
-        dailyCirculation: { lotCount: 2, journeyChainCount: 4, circulationCount: 2, rolloverAssignmentCount: 2, transferDemandCount: 1, transferLotCount: 1 },
+        dailyCirculation: {
+          lotCount: 2,
+          journeyChainCount: 4,
+          circulationCount: 2,
+          rolloverAssignmentCount: 2,
+          plannedTransitionCount: 4,
+          turnaroundDemandCount: 3,
+          transferDemandCount: 1,
+          transferLotCount: 1,
+        },
         transferRouteCount: 1,
         transferRouteLegCount: 3,
         transferRouteLengthMm: 12_345,
@@ -401,7 +410,7 @@ async function fixture() {
     ["public/train-map-projection.sqlite", SQLITE_BYTES],
     ["public/operational-infrastructure-v2.json", OPERATIONAL_BYTES],
     ["public/operational-infrastructure-v2.movement-route-templates-v2.json", MOVEMENT_ROUTES_BYTES],
-    ["public/timetable-routes-v2.transfer-demands-v1.json", TRANSFER_DEMANDS_BYTES],
+    ["public/timetable-routes-v2.transfer-demands-v2.json", TRANSFER_DEMANDS_BYTES],
     ["assets/dark.json", Buffer.from("{}\n")],
     ["assets/dark.png", Buffer.from([0x89, 0x50, 0x4e, 0x47])],
     ["style.json", Buffer.from("{}\n")],
@@ -468,7 +477,7 @@ async function deliveryV2ProducerGolden(root, result) {
   };
 }
 
-test("kombinierter Deliveryvertrag bindet das vollständige öffentliche Paket ohne Signaturbehauptung", async () => {
+test("kombinierter Deliveryvertrag bindet Transfer-v2 lokal bytegenau ohne Signaturbehauptung", async () => {
   const root = await fixture();
   try {
     const result = await buildMapDeliveryRelease({
@@ -519,14 +528,27 @@ test("kombinierter Deliveryvertrag bindet das vollständige öffentliche Paket o
     ), "Kanonische Sources-v2-Keyordnung darf den feldweise identischen Assetbaum nicht veraendern.");
 
     const producerGolden = await deliveryV2ProducerGolden(root, result);
-    if (process.env.UPDATE_DELIVERY_V2_PRODUCER_GOLDEN === "1") {
-      await writeFile(PRODUCER_GOLDEN_URL, serializeDeliveryJson(producerGolden));
-    }
+    const generatedManifest = JSON.parse(Buffer.from(producerGolden.manifestBase64, "base64").toString("utf8"));
     assert.deepEqual(
-      JSON.parse(await readFile(PRODUCER_GOLDEN_URL, "utf8")),
-      producerGolden,
-      "Das gemeinsame Odoo/Game-Fixture muss bytegenau aus dem echten Delivery-v2-Builder regenerierbar bleiben.",
+      generatedManifest.auxiliaryFiles.find(({ kind }) => kind === "timetable-transfer-demands-v2"),
+      {
+        id: "timetable-transfer-demands-2026.1",
+        kind: "timetable-transfer-demands-v2",
+        installPath: "timetable-routes-v2.transfer-demands-v2.json",
+        bytes: TRANSFER_DEMANDS_BYTES.length,
+        sha256: TRANSFER_DEMANDS_SHA256,
+        parts: [{
+          path: "parts/timetable-transfer-demands-2026.1.part-00001",
+          bytes: TRANSFER_DEMANDS_BYTES.length,
+          sha256: TRANSFER_DEMANDS_SHA256,
+        }],
+      },
     );
+    const legacyOdooGolden = JSON.parse(await readFile(PRODUCER_GOLDEN_URL, "utf8"));
+    const legacyManifest = JSON.parse(Buffer.from(legacyOdooGolden.manifestBase64, "base64").toString("utf8"));
+    const legacyTransfer = legacyManifest.auxiliaryFiles.find(({ kind }) => kind === "timetable-transfer-demands-v1");
+    assert.equal(legacyTransfer?.installPath, "timetable-routes-v2.transfer-demands-v1.json");
+    assert.notDeepEqual(legacyOdooGolden, producerGolden, "Das bewusst ausgeschlossene Odoo-v1-Golden darf nicht als V2-Fallback gelten.");
 
     const output = join(root, "public-output");
     assert.equal((await writeMapDeliveryRelease(result, output)).releaseStatus, "written");
@@ -567,7 +589,7 @@ test("echter Delivery-v2-Builder speist Signatur und Signed-Paketplan mit expliz
     const sourcesDescriptor = plan.auxiliaryFiles.find(({ kind }) => kind === "source-manifest");
     const operationalDescriptor = plan.auxiliaryFiles.find(({ kind }) => kind === "operational-infrastructure-v2");
     const movementDescriptor = plan.auxiliaryFiles.find(({ kind }) => kind === "movement-route-templates-v2");
-    const transferDescriptor = plan.auxiliaryFiles.find(({ kind }) => kind === "timetable-transfer-demands-v1");
+    const transferDescriptor = plan.auxiliaryFiles.find(({ kind }) => kind === "timetable-transfer-demands-v2");
     releaseDescriptor.id = "release-manifest";
     releaseDescriptor.sourceFile = unsignedSourceFile;
     sourcesDescriptor.sourceFile = sourcesSourceFile;
@@ -952,7 +974,7 @@ test("Delivery verwirft abweichende Operational-v2- und Sidecar-Bindungen des In
     );
 
     const forgedTransferPackage = packageSpec();
-    forgedTransferPackage.auxiliaryFiles.find(({ kind }) => kind === "timetable-transfer-demands-v1").expectedSha256 = "e".repeat(64);
+    forgedTransferPackage.auxiliaryFiles.find(({ kind }) => kind === "timetable-transfer-demands-v2").expectedSha256 = "e".repeat(64);
     await assert.rejects(
       buildMapDeliveryRelease({
         releaseId: "infra-deutschland-2026.1",
@@ -963,7 +985,7 @@ test("Delivery verwirft abweichende Operational-v2- und Sidecar-Bindungen des In
         mapRelease: materializedMapRelease(),
         auxiliaryArtifactProofs: [{ id: "readmodel", bytes: SQLITE_BYTES.length, sha256: SQLITE_SHA256 }],
       }),
-      /Timetable-Transfer-Demands-v1-Paketdatei weicht von der Bytebindung des InfraRelease/,
+      /Timetable-Transfer-Demands-v2-Paketdatei weicht von der Bytebindung des InfraRelease/,
     );
   } finally {
     await rm(root, { recursive: true, force: true });

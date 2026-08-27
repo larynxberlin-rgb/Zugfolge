@@ -39,7 +39,7 @@ const STATIC_MAP_RELEASE_SCHEMA_V2 = "zugfolge-static-map-release/v2";
 const DELIVERY_RELEASE_SCHEMA_V2 = "zugfolge-map-delivery-release/v2";
 const OPERATIONAL_INFRASTRUCTURE_KIND = "operational-infrastructure-v2";
 const MOVEMENT_ROUTE_TEMPLATES_KIND = "movement-route-templates-v2";
-const TIMETABLE_TRANSFER_DEMANDS_KIND = "timetable-transfer-demands-v1";
+const TIMETABLE_TRANSFER_DEMANDS_KIND = "timetable-transfer-demands-v2";
 const RELEASE_ARTIFACT_AUXILIARY_KINDS = new Set([
   OPERATIONAL_INFRASTRUCTURE_KIND,
   MOVEMENT_ROUTE_TEMPLATES_KIND,
@@ -292,8 +292,8 @@ function validateStaticAuxiliaryJson(contract, descriptor, value) {
   }
   if (descriptor.kind === TIMETABLE_TRANSFER_DEMANDS_KIND) {
     invariant(
-      value === undefined || (value?.schema === "zugfolge-timetable-transfer-demands/v1" && value.infraReleaseId === operationalReleaseId),
-      `${descriptor.id} ist kein releasegebundenes Timetable-Transfer-Demands-v1-Artefakt.`,
+      value === undefined || (value?.schema === "zugfolge-timetable-transfer-demands/v2" && value.infraReleaseId === operationalReleaseId),
+      `${descriptor.id} ist kein releasegebundenes Timetable-Transfer-Demands-v2-Artefakt.`,
     );
   }
 }
@@ -354,7 +354,7 @@ function validateAuxiliaryComposition(auxiliaryFiles, schema) {
   if ([PACKAGE_SPEC_V2, PACKAGE_MANIFEST_V2].includes(schema)) {
     invariant(count(OPERATIONAL_INFRASTRUCTURE_KIND) === 1, "Operational-v2-Kartenpaket braucht genau eine statische operational-infrastructure-v2.json.");
     invariant(count(MOVEMENT_ROUTE_TEMPLATES_KIND) === 1, "Operational-v2-Kartenpaket braucht genau ein Movement-Route-Templates-v2-Artefakt.");
-    invariant(count(TIMETABLE_TRANSFER_DEMANDS_KIND) === 1, "Operational-v2-Kartenpaket braucht genau ein Timetable-Transfer-Demands-v1-Artefakt.");
+    invariant(count(TIMETABLE_TRANSFER_DEMANDS_KIND) === 1, "Operational-v2-Kartenpaket braucht genau ein Timetable-Transfer-Demands-v2-Artefakt.");
     invariant(count("train-map-projection") === 0, "Operational-v2-Kartenpaket darf keine weltgebundene Zugpositionsprojektion als Paketvoraussetzung führen.");
   } else if (isStaticMapPackageSchema(schema)) {
     invariant(count(OPERATIONAL_INFRASTRUCTURE_KIND) === 0, "Statischer Kartenrelease darf kein Operational-v2-Artefakt vortaeuschen.");

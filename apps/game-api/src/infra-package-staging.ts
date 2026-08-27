@@ -39,7 +39,7 @@ const STATIC_MAP_QUALITY_SCHEMA = "zugfolge-static-map-quality/v2";
 const STATIC_MAP_SOURCE_QUALITY_SCHEMA = "zugfolge-final-infrastructure-quality-report/v1";
 const OPERATIONAL_INFRASTRUCTURE_KIND = "operational-infrastructure-v2";
 const MOVEMENT_ROUTE_TEMPLATES_KIND = "movement-route-templates-v2";
-const TIMETABLE_TRANSFER_DEMANDS_KIND = "timetable-transfer-demands-v1";
+const TIMETABLE_TRANSFER_DEMANDS_KIND = "timetable-transfer-demands-v2";
 const FINALIZATION_CHALLENGE_SCHEMA = "zugfolge-infra-package-finalization-challenge/v1";
 const FINALIZATION_RECEIPT_SCHEMA = "zugfolge-infra-package-finalization-receipt/v1";
 const FINALIZATION_MAX_DURATION_MS = 65 * 60_000;
@@ -95,12 +95,12 @@ function validateTimetableRouteEvidence(value: unknown): void {
     "simulatedOperationalAssignment", "realInterlockingFactsClaimed", "externalOperationalNetworkProvenance",
   ], "Operational-v2.timetableRouteEvidence");
   invariant(
-    evidence["reportSchema"] === "zugfolge-germany-timetable-route-report/v3"
+    evidence["reportSchema"] === "zugfolge-germany-timetable-route-report/v4"
       && evidence["policyId"] === "synthetic-operational-b/v2"
       && evidence["derivationRule"] === "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2"
       && evidence["selectionRule"] === "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2"
-      && evidence["transferDemandsSchema"] === "zugfolge-timetable-transfer-demands/v1",
-    "Operational-v2.timetableRouteEvidence verletzt den freien v3-Fahrweg-/Transfervertrag.",
+      && evidence["transferDemandsSchema"] === "zugfolge-timetable-transfer-demands/v2",
+    "Operational-v2.timetableRouteEvidence verletzt den freien v4-Fahrweg-/V2-Transfervertrag.",
   );
   invariant(
     [evidence["reportBytes"], evidence["routesBytes"], evidence["gtfsSnapshotBytes"], evidence["transferDemandsBytes"]]
@@ -124,13 +124,16 @@ function validateTimetableRouteEvidence(value: unknown): void {
     "Operational-v2.timetableRouteEvidence schließt die ausgewählten Segmente nicht vollständig 1:1.",
   );
   const daily = exactKeys(evidence["dailyCirculation"], [
-    "lotCount", "journeyChainCount", "circulationCount", "rolloverAssignmentCount", "transferDemandCount", "transferLotCount",
+    "lotCount", "journeyChainCount", "circulationCount", "rolloverAssignmentCount",
+    "plannedTransitionCount", "turnaroundDemandCount", "transferDemandCount", "transferLotCount",
   ], "Operational-v2.timetableRouteEvidence.dailyCirculation");
   invariant(
-    ["lotCount", "journeyChainCount", "circulationCount", "rolloverAssignmentCount", "transferDemandCount", "transferLotCount"]
+    ["lotCount", "journeyChainCount", "circulationCount", "rolloverAssignmentCount", "plannedTransitionCount"]
       .every((field) => Number.isSafeInteger(daily[field]) && (daily[field] as number) > 0)
+      && ["turnaroundDemandCount", "transferDemandCount", "transferLotCount"]
+        .every((field) => Number.isSafeInteger(daily[field]) && (daily[field] as number) >= 0)
       && daily["rolloverAssignmentCount"] === daily["circulationCount"]
-      && (daily["transferDemandCount"] as number) <= (daily["circulationCount"] as number)
+      && (daily["turnaroundDemandCount"] as number) + (daily["transferDemandCount"] as number) === daily["plannedTransitionCount"]
       && (daily["transferLotCount"] as number) <= (daily["lotCount"] as number)
       && evidence["transferDemandsProduced"] === true
       && evidence["transferRouteCount"] === daily["transferDemandCount"]
@@ -231,7 +234,7 @@ function validateOperationalQuality(
   invariant(
     timetableRouteEvidence["transferDemandsBytes"] === deliveredTransferDemandsArtifact.bytes
       && timetableRouteEvidence["transferDemandsSha256"] === deliveredTransferDemandsArtifact.sha256,
-    "Operational-v2-Fahrwegbeleg bindet nicht bytegenau das ausgelieferte Timetable-Transfer-Demands-v1-Artefakt.",
+    "Operational-v2-Fahrwegbeleg bindet nicht bytegenau das ausgelieferte Timetable-Transfer-Demands-v2-Artefakt.",
   );
   const movementRouteTemplates = exactKeys(model["movementRouteTemplates"], [
     "bytes", "sha256", "stateHash", "operationalStateHash", "timetableTransferSetSha256",
@@ -451,7 +454,7 @@ function parsePackageManifest(bytes: Buffer): ParsedPackageManifest {
   invariant(readModels.length === 1 && record(readModels[0], "ReadModel")["installPath"] === "read-model.sqlite", "Paket braucht genau ein öffentliches read-model.sqlite in der Releasewurzel.");
   invariant(operationalInfrastructure.length === 1 && record(operationalInfrastructure[0], "Operational-v2-Infrastruktur")["installPath"] === "operational-infrastructure-v2.json", "Paket braucht genau eine statische operational-infrastructure-v2.json in der Releasewurzel.");
   invariant(movementRouteTemplates.length === 1 && record(movementRouteTemplates[0], "Movement-Route-Templates-v2")["installPath"] === "operational-infrastructure-v2.movement-route-templates-v2.json", "Paket braucht genau eine operational-infrastructure-v2.movement-route-templates-v2.json in der Releasewurzel.");
-  invariant(timetableTransferDemands.length === 1 && record(timetableTransferDemands[0], "Timetable-Transfer-Demands-v1")["installPath"] === "timetable-routes-v2.transfer-demands-v1.json", "Paket braucht genau eine timetable-routes-v2.transfer-demands-v1.json in der Releasewurzel.");
+  invariant(timetableTransferDemands.length === 1 && record(timetableTransferDemands[0], "Timetable-Transfer-Demands-v2")["installPath"] === "timetable-routes-v2.transfer-demands-v2.json", "Paket braucht genau eine timetable-routes-v2.transfer-demands-v2.json in der Releasewurzel.");
   invariant(trainProjections.length === 0, "Operational-v2-Paket darf keine weltgebundene Zugpositionsprojektion als Paketvoraussetzung enthalten.");
 
   const ids = new Set<string>();
@@ -1562,7 +1565,7 @@ async function qualifyDeliveryPackage(
     deliveredMovementRoutes.length === 1
       && deliveredMovementRoutes[0]?.installPath === "operational-infrastructure-v2.movement-route-templates-v2.json"
       && deliveredTransferDemands.length === 1
-      && deliveredTransferDemands[0]?.installPath === "timetable-routes-v2.transfer-demands-v1.json",
+      && deliveredTransferDemands[0]?.installPath === "timetable-routes-v2.transfer-demands-v2.json",
     "Delivery-v2 bindet die beiden betrieblichen Sidecars nicht genau einmal an ihre kanonischen Paketpfade.",
   );
   const sourceContract = exactKeys(sources.value, [
