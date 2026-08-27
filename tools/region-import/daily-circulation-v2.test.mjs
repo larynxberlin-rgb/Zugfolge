@@ -11,7 +11,7 @@ import {
 
 const RELEASE_ID = "gtfs-test-release";
 
-function chain(id, origin, destination, startS, endS) {
+function chain(id, origin, destination, startS, endS, { entryPortalId = null, exitPortalId = null } = {}) {
   return {
     journeyChainId: id,
     releaseId: RELEASE_ID,
@@ -24,8 +24,8 @@ function chain(id, origin, destination, startS, endS) {
       sequence: 0,
       qualityClass: "B",
       orderable: true,
-      entryPortalId: null,
-      exitPortalId: null,
+      entryPortalId,
+      exitPortalId,
       stops: [
         { stopId: origin, stopSequence: 0, arrivalS: startS, departureS: startS },
         { stopId: destination, stopSequence: 1, arrivalS: endS, departureS: endS },
@@ -65,6 +65,8 @@ test("minimiert Cross-Location-Rollover und bildet eine vollstaendige Slot-Permu
     journeyChainCount: 3,
     circulationCount: 3,
     rolloverAssignmentCount: 3,
+    plannedTransitionCount: 3,
+    turnaroundDemandCount: 2,
     transferDemandCount: 1,
     transferLotCount: 1,
   });
@@ -100,6 +102,8 @@ test("verkettet gleichortige Folgefahrten innerhalb des Tages vor dem Rollover",
     gtfsReleaseId: RELEASE_ID,
   });
   assert.equal(plan.metrics.circulationCount, 1);
+  assert.equal(plan.metrics.plannedTransitionCount, 2);
+  assert.equal(plan.metrics.turnaroundDemandCount, 1);
   assert.deepEqual(plan.circulations[0].journeyChainIds, ["chain-a-b", "chain-b-c"]);
   assert.deepEqual(plan.circulations[0].passengerTrainRunIds, ["chain-a-b", "chain-b-c"]);
   assert.equal(plan.metrics.transferDemandCount, 1);
@@ -116,13 +120,15 @@ test("waehlt ein vollstaendig laufzeitfaehiges Rollover statt einer lokal kuerze
     ],
     stations,
     gtfsReleaseId: RELEASE_ID,
-    transferCost: ({ source, target, earliestDepartureS, latestArrivalS }) => {
-      calls.push({ source: source.end.locationId, target: target.start.locationId, earliestDepartureS, latestArrivalS });
-      if (source.end.locationId === "C" && target.start.locationId === "A") return null;
-      return source.end.locationId === "C" && target.start.locationId === "B" ? 10 : 20;
+    transferCost: ({ sourceEndpoint, targetEndpoint, earliestDepartureS, latestArrivalS }) => {
+      calls.push({ source: sourceEndpoint.locationId, target: targetEndpoint.locationId, earliestDepartureS, latestArrivalS });
+      if (sourceEndpoint.locationId === "C" && targetEndpoint.locationId === "A") return null;
+      return sourceEndpoint.locationId === "C" && targetEndpoint.locationId === "B" ? 10 : 20;
     },
   });
   assert.equal(plan.metrics.transferDemandCount, 2);
+  assert.equal(plan.metrics.plannedTransitionCount, 2);
+  assert.equal(plan.metrics.turnaroundDemandCount, 0);
   assert.deepEqual(plan.transferDemands.map(({ sourceLocationId, targetLocationId }) => `${sourceLocationId}->${targetLocationId}`).sort(), ["C->B", "D->A"]);
   assert.equal(calls.every(({ earliestDepartureS, latestArrivalS }) => earliestDepartureS === 500 && latestArrivalS === 86_200), true);
 });
@@ -136,6 +142,32 @@ test("bricht bei einer unzulaessigen Transfermatrix geschlossen ab", () => {
   }), /keine zulaessige Kante|kein vollstaendiges physisch zulaessiges Matching/u);
 });
 
+test("akzeptiert die Tagesgrenze exakt auf Mindestwendezeit und verwirft eine Sekunde weniger", () => {
+  const exact = deriveDailyCirculationPlan({
+    journeyChains: [chain("chain-exact-boundary", "A", "A", 0, 86_100)],
+    stations,
+    gtfsReleaseId: RELEASE_ID,
+  });
+  assert.equal(exact.metrics.turnaroundDemandCount, 1);
+  assert.equal(exact.metrics.transferDemandCount, 0);
+  assert.deepEqual({
+    earliestDepartureS: exact.turnaroundDemands[0].earliestDepartureS,
+    latestArrivalS: exact.turnaroundDemands[0].latestArrivalS,
+    availableWindowS: exact.turnaroundDemands[0].availableWindowS,
+    dailyBoundary: exact.turnaroundDemands[0].dailyBoundary,
+  }, {
+    earliestDepartureS: 86_100,
+    latestArrivalS: 86_400,
+    availableWindowS: 300,
+    dailyBoundary: true,
+  });
+  assert.throws(() => deriveDailyCirculationPlan({
+    journeyChains: [chain("chain-short-boundary", "A", "A", 0, 86_101)],
+    stations,
+    gtfsReleaseId: RELEASE_ID,
+  }), /keine zulaessige Kante|kein vollstaendiges physisch zulaessiges Matching/u);
+});
+
 test("leitet die Periodenfortschaltung aus Rohphasen statt aus dem Rollover-Label ab", () => {
   const journeyChains = [
     chain("chain-before-midnight", "A", "B", 85_800, 86_100),
@@ -144,6 +176,7 @@ test("leitet die Periodenfortschaltung aus Rohphasen statt aus dem Rollover-Labe
   const plan = deriveDailyCirculationPlan({ journeyChains, stations, gtfsReleaseId: RELEASE_ID });
   assert.equal(plan.metrics.circulationCount, 1);
   assert.equal(plan.metrics.transferDemandCount, 0);
+  assert.equal(plan.metrics.turnaroundDemandCount, 2);
   const continuities = dailyMovementContinuities({ dailyPlan: plan, journeyChains });
   assert.deepEqual(
     continuities
@@ -170,6 +203,50 @@ test("leitet die Periodenfortschaltung aus Rohphasen statt aus dem Rollover-Labe
     ],
   );
   assert.equal(continuities.reduce((sum, continuity) => sum + continuity.successorDayOffset, 0), 1);
+});
+
+test("trennt einen unmoeglichen internen Portalwechsel und routet ihn erst am Tagesrand", () => {
+  const calls = [];
+  const plan = deriveDailyCirculationPlan({
+    journeyChains: [
+      chain("chain-a-b", "A", "B", 100, 200, { exitPortalId: "chemnitz-hbf" }),
+      chain("chain-c-a", "C", "A", 1_200, 1_300, { entryPortalId: "chemnitz-hbf" }),
+    ],
+    stations,
+    gtfsReleaseId: RELEASE_ID,
+    transferCost: ({ sourceEndpoint, targetEndpoint, dailyBoundary }) => {
+      calls.push({
+        source: sourceEndpoint.physicalStopId,
+        target: targetEndpoint.physicalStopId,
+        dailyBoundary,
+      });
+      return 1;
+    },
+  });
+  assert.equal(plan.metrics.circulationCount, 2);
+  assert.equal(plan.metrics.plannedTransitionCount, 2);
+  assert.equal(plan.metrics.turnaroundDemandCount, 1);
+  assert.equal(plan.metrics.transferDemandCount, 1);
+  const internal = plan.transferDemands[0];
+  assert.equal(internal.dailyBoundary, true);
+  assert.deepEqual({
+    sourceLocationId: internal.sourceLocationId,
+    targetLocationId: internal.targetLocationId,
+    sourcePhysicalStopId: internal.sourcePhysicalStopId,
+    targetPhysicalStopId: internal.targetPhysicalStopId,
+  }, {
+    sourceLocationId: "chemnitz-hbf",
+    targetLocationId: "chemnitz-hbf",
+    sourcePhysicalStopId: "B",
+    targetPhysicalStopId: "C",
+  });
+  assert.equal(internal.sourcePassengerRouteVersionId, "route:gtfs:leg-chain-a-b:v1");
+  assert.equal(internal.targetPassengerRouteVersionId, "route:gtfs:leg-chain-c-a:v1");
+  assert.equal(calls.some((call) => call.source === "B" && call.target === "C" && call.dailyBoundary === true), true);
+  assert.equal(dailyMovementContinuities({ dailyPlan: plan, journeyChains: [
+    chain("chain-a-b", "A", "B", 100, 200, { exitPortalId: "chemnitz-hbf" }),
+    chain("chain-c-a", "C", "A", 1_200, 1_300, { entryPortalId: "chemnitz-hbf" }),
+  ] }).some((continuity) => continuity.sourcePassengerLegId === "leg-chain-a-b" && continuity.relation === "transfer"), true);
 });
 
 test("belegt Rollover-Permutationszyklen getrennt von den taeglichen Slot-Pfaden", () => {

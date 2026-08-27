@@ -79,7 +79,7 @@ function fixture() {
     },
     inputs,
     timetableRouteEvidence: {
-      reportSchema: "zugfolge-germany-timetable-route-report/v3",
+      reportSchema: "zugfolge-germany-timetable-route-report/v4",
       policyId: "synthetic-operational-b/v2",
       derivationRule: "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2",
       selectionRule: "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
@@ -89,7 +89,7 @@ function fixture() {
       routesSha256: timetableRoutes.sha256,
       gtfsSnapshotBytes: gtfsSnapshot.bytes,
       gtfsSnapshotSha256: gtfsSnapshot.sha256,
-      transferDemandsSchema: "zugfolge-timetable-transfer-demands/v1",
+      transferDemandsSchema: "zugfolge-timetable-transfer-demands/v2",
       transferDemandsBytes: transferDemands.bytes,
       transferDemandsSha256: transferDemands.sha256,
       snapshotHash: "d".repeat(64),
@@ -105,7 +105,16 @@ function fixture() {
       dailyCirculationPlanSha256: "a".repeat(64),
       transferSetSha256: "b".repeat(64),
       transferDemandsProduced: true,
-      dailyCirculation: { lotCount: 1, journeyChainCount: 5, circulationCount: 2, rolloverAssignmentCount: 2, transferDemandCount: 2, transferLotCount: 1 },
+      dailyCirculation: {
+        lotCount: 1,
+        journeyChainCount: 5,
+        circulationCount: 2,
+        rolloverAssignmentCount: 2,
+        plannedTransitionCount: 5,
+        turnaroundDemandCount: 3,
+        transferDemandCount: 2,
+        transferLotCount: 1,
+      },
       transferRouteCount: 2,
       transferRouteLegCount: 4,
       transferRouteLengthMm: 12_345,
@@ -192,4 +201,32 @@ test("der v2-Vertrag verlangt ausgelieferte Synthetic-Details, getrennte Objektl
     invalid.publicClaims[field] = !invalid.publicClaims[field];
     assert.throws(() => validateSyntheticOperationalPolicy(invalid), /oeffentliche Fakten und interne Simulation/);
   }
+});
+
+test("die Compilerpolicy bindet beide versionierten Stabling-Suchgrenzen fail-closed", () => {
+  assert.equal(policy.compilerPolicy.maximumStablingPathEdges, 64);
+  assert.equal(policy.compilerPolicy.maximumStablingPathLengthMm, 10_000_000);
+
+  for (const field of ["maximumStablingPathEdges", "maximumStablingPathLengthMm"]) {
+    const missing = structuredClone(policy);
+    delete missing.compilerPolicy[field];
+    assert.throws(
+      () => validateSyntheticOperationalPolicy(missing),
+      /compilerPolicy besitzt unerwartete oder fehlende Felder/,
+    );
+
+    const invalid = structuredClone(policy);
+    invalid.compilerPolicy[field] = 0;
+    assert.throws(
+      () => validateSyntheticOperationalPolicy(invalid),
+      new RegExp(`compilerPolicy\\.${field} ist keine positive sichere Ganzzahl`),
+    );
+  }
+
+  const unknown = structuredClone(policy);
+  unknown.compilerPolicy.maximumStablingPathHops = 8;
+  assert.throws(
+    () => validateSyntheticOperationalPolicy(unknown),
+    /compilerPolicy besitzt unerwartete oder fehlende Felder/,
+  );
 });

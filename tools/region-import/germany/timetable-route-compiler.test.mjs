@@ -16,6 +16,11 @@ import {
   TIMETABLE_ROUTE_SELECTION_RULE,
   validatePinnedGtfsSnapshot,
 } from "./timetable-route-compiler.mjs";
+import {
+  syntheticOperationalSha256,
+  syntheticOperationalTimetableRoutesProof,
+  validateSyntheticOperationalTimetableTransferDemands,
+} from "./synthetic-operational-quality.mjs";
 
 function canonicalJson(value) {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -186,12 +191,14 @@ async function materialize(root, options) {
       permittedProtectionModes: ["pzb"],
     },
     dailyCirculation: {
-      rule: "lot-local-playable-path-cover-with-minimum-cross-location-rollover/v1",
+      rule: "lot-local-playable-path-cover-with-explicit-physical-transition-partition/v2",
       repeatEveryS: 86_400,
       minimumTurnaroundS: 300,
       expectedLotCount: 1,
       expectedJourneyChainCount: 1,
       expectedCirculationCount: 1,
+      expectedPlannedTransitionCount: 1,
+      expectedTurnaroundDemandCount: 0,
       expectedTransferDemandCount: 1,
       expectedTransferLotCount: 1,
       formationLengthsMm: [100],
@@ -203,6 +210,92 @@ async function materialize(root, options) {
     report: "report.json",
   };
   return { ...value, spec };
+}
+
+async function materializeInternalPhysicalTransfer(root) {
+  const base = await materialize(root, { intermediate: true });
+  const snapshot = structuredClone(base.snapshot);
+  const firstChain = snapshot.journeyChains[0];
+  firstChain.legs[0].exitPortalId = "shared-chemnitz-location";
+  const sourceTripId = "trip-2";
+  const journeyChainId = gtfsJourneyChainId({
+    regionId: snapshot.regionId,
+    releaseId: firstChain.releaseId,
+    sourceTripId,
+  });
+  const playableLegId = gtfsPlayableLegId({ journeyChainId, sequence: 0 });
+  const secondStops = [
+    stop("S2", 0, 3_000),
+    stop("S1", 1, 3_300),
+  ];
+  snapshot.journeyChains.push({
+    schemaVersion: "zugfolge-gtfs-journey-chain/v2",
+    journeyChainId,
+    worldId: firstChain.worldId,
+    regionId: snapshot.regionId,
+    releaseId: firstChain.releaseId,
+    sourceTripId,
+    routeId: firstChain.routeId,
+    routeShortName: firstChain.routeShortName,
+    orderable: true,
+    legs: [{
+      kind: "playable",
+      legId: playableLegId,
+      sequence: 0,
+      qualityClass: "B",
+      orderable: true,
+      entryPortalId: "shared-chemnitz-location",
+      exitPortalId: null,
+      planningWindows: [],
+      stops: secondStops,
+    }],
+  });
+  snapshot.segments.push({
+    segmentId: playableLegId,
+    journeyChainId,
+    sourceTripId,
+    serviceId: "service-1",
+    routeId: firstChain.routeId,
+    routeShortName: firstChain.routeShortName,
+    headsign: "",
+    directionId: "",
+    qualityClass: "B",
+    orderable: true,
+    entry: { kind: "named-gateway", gatewayId: "shared-chemnitz-location", insideStopId: "S2", outsideStopId: null },
+    exit: { kind: "named-gateway", gatewayId: "g1", insideStopId: "S1", outsideStopId: null },
+    planningWindows: [],
+    stops: secondStops,
+  });
+  snapshot.metrics.playableSegmentCount = 2;
+  snapshot.metrics.orderableJourneyChainCount = 2;
+  const snapshotHash = sha256(canonicalJson(snapshot));
+  const envelopeText = `${JSON.stringify({ snapshot, snapshotHash })}\n`;
+  await writeFile(join(root, "snapshot.json"), envelopeText);
+  return {
+    snapshot,
+    spec: {
+      ...base.spec,
+      gtfsSnapshot: {
+        ...base.spec.gtfsSnapshot,
+        expectedBytes: Buffer.byteLength(envelopeText),
+        expectedFileSha256: sha256(envelopeText),
+        expectedSnapshotHash: snapshotHash,
+      },
+      selection: {
+        ...base.spec.selection,
+        expectedSnapshotSegmentCount: 2,
+        expectedEligibleSegmentCount: 2,
+      },
+      dailyCirculation: {
+        ...base.spec.dailyCirculation,
+        expectedJourneyChainCount: 2,
+        expectedCirculationCount: 2,
+        expectedPlannedTransitionCount: 2,
+        expectedTurnaroundDemandCount: 1,
+        expectedTransferDemandCount: 1,
+      },
+    },
+  };
 }
 
 test("validiert den gepinnten Snapshot, seine Segmentmenge und seine GTFS-Querverweise", () => {
@@ -266,13 +359,86 @@ test("routet jede Zwischenstation deterministisch auf vorhandenen realen OSM-Kan
       { availableProtectionSystems: ["pzb"], simultaneouslyRequiredProtectionSystems: [] },
     ]);
     const transfers = JSON.parse(await readFile(join(root, "transfer-demands.json"), "utf8"));
-    assert.equal(transfers.schema, "zugfolge-timetable-transfer-demands/v1");
+    assert.equal(transfers.schema, "zugfolge-timetable-transfer-demands/v2");
+    assert.equal(transfers.dailyPlan.schema, "zugfolge-daily-circulation-plan/v2");
+    assert.equal(transfers.dailyPlan.metrics.plannedTransitionCount, 1);
+    assert.equal(transfers.dailyPlan.metrics.turnaroundDemandCount, 0);
     assert.equal(transfers.dailyPlan.metrics.transferDemandCount, 1);
     assert.equal(transfers.transferRoutes.length, 1);
     assert.equal(transfers.transferRoutes[0].sourcePassengerRouteVersionId, routes[0].routeVersionId);
     assert.equal(transfers.transferRoutes[0].targetPassengerRouteVersionId, routes[0].routeVersionId);
     assert.deepEqual(transfers.transferRoutes[0].formationLengthsMm, [100]);
     assert.deepEqual(transfers.transferRoutes[0].legs.map((leg) => leg.edgeId), ["edge-east", "edge-west"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("trennt einen nicht fahrbaren internen Portalwechsel und routet ihn am Tagesrand als echten Transfer", async () => {
+  const root = await mkdtemp(join(tmpdir(), "zugfolge-gtfs-internal-transfer-"));
+  try {
+    const { spec, snapshot } = await materializeInternalPhysicalTransfer(root);
+    const report = await compileGermanyTimetableRoutes(spec, root);
+    assert.equal(report.status, "qualified");
+    assert.deepEqual(report.metrics.dailyCirculation, {
+      lotCount: 1,
+      journeyChainCount: 2,
+      circulationCount: 2,
+      rolloverAssignmentCount: 2,
+      plannedTransitionCount: 2,
+      turnaroundDemandCount: 1,
+      transferDemandCount: 1,
+      transferLotCount: 1,
+    });
+    const sidecarBytes = await readFile(join(root, "transfer-demands.json"));
+    const sidecar = JSON.parse(sidecarBytes.toString("utf8"));
+    const internal = sidecar.dailyPlan.transferDemands[0];
+    assert.equal(internal.dailyBoundary, true);
+    assert.equal(internal.sourceLocationId, "shared-chemnitz-location");
+    assert.equal(internal.targetLocationId, "shared-chemnitz-location");
+    assert.equal(internal.sourcePhysicalStopId, "S3");
+    assert.equal(internal.targetPhysicalStopId, "S2");
+    assert.equal(sidecar.dailyPlan.turnaroundDemands[0].dailyBoundary, true);
+    assert.equal(sidecar.transferRoutes.length, 1);
+    assert.equal(sidecar.transferRoutes[0].id, internal.id);
+    assert.equal(sidecar.transferRoutes[0].legs.length > 0, true);
+    const timetableRoutesProof = await syntheticOperationalTimetableRoutesProof(join(root, "routes.jsonseq"));
+    assert.equal(validateSyntheticOperationalTimetableTransferDemands({
+      releaseId: "infra-test",
+      transferDemands: sidecar,
+      transferDemandsBinding: {
+        file: "transfer-demands.json",
+        bytes: sidecarBytes.length,
+        sha256: sha256(sidecarBytes),
+        role: "timetable-transfer-demands",
+        records: sidecar.transferRoutes.length,
+      },
+      routeReport: { gtfsBinding: { snapshotHash: sidecar.gtfsSnapshotHash } },
+      timetableRoutesProof,
+      gtfsSnapshot: snapshot,
+    }).dailyCirculation.plannedTransitionCount, 2);
+    const unknown = structuredClone(sidecar);
+    unknown.dailyPlan.turnaroundDemands[0].unknown = true;
+    const unknownPlanBody = structuredClone(unknown.dailyPlan);
+    delete unknownPlanBody.planSha256;
+    unknown.dailyPlan.planSha256 = syntheticOperationalSha256({
+      schema: "zugfolge-daily-circulation-plan/v2",
+      value: unknownPlanBody,
+    });
+    assert.throws(() => validateSyntheticOperationalTimetableTransferDemands({
+      releaseId: "infra-test",
+      transferDemands: unknown,
+      transferDemandsBinding: {
+        file: "transfer-demands.json",
+        bytes: sidecarBytes.length,
+        sha256: sha256(sidecarBytes),
+        role: "timetable-transfer-demands",
+        records: unknown.transferRoutes.length,
+      },
+      routeReport: { gtfsBinding: { snapshotHash: unknown.gtfsSnapshotHash } },
+      timetableRoutesProof,
+      gtfsSnapshot: snapshot,
+    }), /unerwartete oder fehlende Felder/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -348,7 +514,7 @@ test("schreibt bei getrennten realen Gleiskomponenten nur einen blocked-Bericht 
   }
 });
 
-test("weist unbekannte v1-Felder und einen falschen gepinnten Datei-Hash fail-closed zurueck", async () => {
+test("weist unbekannte Compilerfelder und einen falschen gepinnten Datei-Hash fail-closed zurueck", async () => {
   const root = await mkdtemp(join(tmpdir(), "zugfolge-gtfs-route-hash-"));
   try {
     const { spec } = await materialize(root);

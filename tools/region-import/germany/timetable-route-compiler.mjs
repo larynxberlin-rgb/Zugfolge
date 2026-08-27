@@ -21,12 +21,13 @@ import {
   DAILY_CIRCULATION_PLAN_SCHEMA,
   DAILY_CIRCULATION_REPEAT_EVERY_S,
   DAILY_CIRCULATION_RULE,
+  dailyPassengerRouteVersionId,
   deriveDailyCirculationPlan,
 } from "../daily-circulation-v2.mjs";
 
-export const GERMANY_TIMETABLE_ROUTE_SPEC_SCHEMA = "zugfolge-germany-timetable-route-compiler/v4";
-export const GERMANY_TIMETABLE_ROUTE_REPORT_SCHEMA = "zugfolge-germany-timetable-route-report/v3";
-export const GERMANY_TIMETABLE_TRANSFER_DEMAND_SCHEMA = "zugfolge-timetable-transfer-demands/v1";
+export const GERMANY_TIMETABLE_ROUTE_SPEC_SCHEMA = "zugfolge-germany-timetable-route-compiler/v5";
+export const GERMANY_TIMETABLE_ROUTE_REPORT_SCHEMA = "zugfolge-germany-timetable-route-report/v4";
+export const GERMANY_TIMETABLE_TRANSFER_DEMAND_SCHEMA = "zugfolge-timetable-transfer-demands/v2";
 export const TIMETABLE_ROUTE_DERIVATION_RULE = "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2";
 export const TIMETABLE_ROUTE_SELECTION_RULE = "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2";
 export const TIMETABLE_ROUTE_POLICY_ID = "synthetic-operational-b/v2";
@@ -113,7 +114,7 @@ function validateSpecification(value) {
     : ["schema", "infraReleaseId", "tracks", "corridors", "gtfsSnapshot", "selection", "output", "report"], "Timetable-Route-Spezifikation");
   invariant(
     current || value.schema === LEGACY_TIMETABLE_ROUTE_SPEC_SCHEMA_V3 || value.schema === LEGACY_TIMETABLE_ROUTE_SPEC_SCHEMA,
-    "Timetable-Route-Spezifikation besitzt weder das aktuelle v4- noch ein historisches v2/v3-Schema.",
+    "Timetable-Route-Spezifikation besitzt weder das aktuelle v5- noch ein historisches v2/v3-Schema.",
   );
   for (const key of ["infraReleaseId", "tracks", "corridors", "output", "report"]) nonEmptyString(value[key], key);
   invariant(value.output !== value.report, "Timetable-Route-Ausgabe und Bericht muessen verschieden sein.");
@@ -164,18 +165,26 @@ function validateSpecification(value) {
   if (current) {
     exactKeys(value.dailyCirculation, [
       "rule", "repeatEveryS", "minimumTurnaroundS", "expectedLotCount", "expectedJourneyChainCount",
-      "expectedCirculationCount", "expectedTransferDemandCount", "expectedTransferLotCount", "formationLengthsMm",
+      "expectedCirculationCount", "expectedPlannedTransitionCount", "expectedTurnaroundDemandCount",
+      "expectedTransferDemandCount", "expectedTransferLotCount", "formationLengthsMm",
       "unknownMainlineSpeedKmh", "unknownServiceSpeedKmh",
     ], "dailyCirculation");
     invariant(value.dailyCirculation.rule === DAILY_CIRCULATION_RULE, "dailyCirculation.rule ist nicht der geschlossene v1-Vertrag.");
     invariant(value.dailyCirculation.repeatEveryS === DAILY_CIRCULATION_REPEAT_EVERY_S, `dailyCirculation.repeatEveryS muss ${DAILY_CIRCULATION_REPEAT_EVERY_S} sein.`);
     invariant(value.dailyCirculation.minimumTurnaroundS === DAILY_CIRCULATION_MINIMUM_TURNAROUND_S, `dailyCirculation.minimumTurnaroundS muss ${DAILY_CIRCULATION_MINIMUM_TURNAROUND_S} sein.`);
-    for (const key of ["expectedLotCount", "expectedJourneyChainCount", "expectedCirculationCount", "expectedTransferDemandCount", "expectedTransferLotCount"]) {
+    for (const key of ["expectedLotCount", "expectedJourneyChainCount", "expectedCirculationCount", "expectedPlannedTransitionCount"]) {
       safeInteger(value.dailyCirculation[key], `dailyCirculation.${key}`, 1);
+    }
+    for (const key of ["expectedTurnaroundDemandCount", "expectedTransferDemandCount", "expectedTransferLotCount"]) {
+      safeInteger(value.dailyCirculation[key], `dailyCirculation.${key}`, 0);
     }
     safeInteger(value.dailyCirculation.unknownMainlineSpeedKmh, "dailyCirculation.unknownMainlineSpeedKmh", 1);
     safeInteger(value.dailyCirculation.unknownServiceSpeedKmh, "dailyCirculation.unknownServiceSpeedKmh", 1);
-    invariant(value.dailyCirculation.expectedTransferDemandCount <= value.dailyCirculation.expectedCirculationCount, "dailyCirculation erwartet mehr Transfers als Umlaeufe.");
+    invariant(
+      value.dailyCirculation.expectedTurnaroundDemandCount + value.dailyCirculation.expectedTransferDemandCount
+        === value.dailyCirculation.expectedPlannedTransitionCount,
+      "dailyCirculation partitioniert die erwarteten geplanten Uebergaenge nicht vollstaendig.",
+    );
     invariant(value.dailyCirculation.expectedTransferLotCount <= value.dailyCirculation.expectedLotCount, "dailyCirculation erwartet mehr Transfer-Lose als Lose.");
     invariant(Array.isArray(value.dailyCirculation.formationLengthsMm) && value.dailyCirculation.formationLengthsMm.length > 0, "dailyCirculation.formationLengthsMm muss eine nichtleere Liste sein.");
     for (const [index, length] of value.dailyCirculation.formationLengthsMm.entries()) safeInteger(length, `dailyCirculation.formationLengthsMm[${index}]`, 1);
@@ -647,8 +656,8 @@ function routingEdges(graph) {
   })]));
 }
 
-function transferPairKey(sourceCirculationId, targetCirculationId) {
-  return `${sourceCirculationId}\u0000${targetCirculationId}`;
+function transferPairKey(sourcePassengerLegId, targetPassengerLegId) {
+  return `${sourcePassengerLegId}\u0000${targetPassengerLegId}`;
 }
 
 function minimumTransferRuntimeMs(legs, graph, context) {
@@ -680,16 +689,18 @@ function deriveDailyTransferRoutes(graph, snapshot, snapshotHash, passengerRoute
   invariant(releaseIds.size === 1, "Bestellbare JourneyChains mischen GTFS-Release-IDs.");
   const router = createDeterministicTrackRouter(routingEdges(graph));
   const routedPairs = new Map();
-  const routeTransferPair = ({ source, target }) => {
-    const key = transferPairKey(source.id, target.id);
+  const routeTransferPair = ({ sourceEndpoint, targetEndpoint }) => {
+    const key = transferPairKey(sourceEndpoint.legId, targetEndpoint.legId);
     if (routedPairs.has(key)) return routedPairs.get(key);
-    const sourcePassenger = routeByPlayableLegId.get(source.end.legId);
-    const targetPassenger = routeByPlayableLegId.get(target.start.legId);
-    invariant(sourcePassenger !== undefined, `${source.end.legId} besitzt keine Passenger-Quellroute.`);
-    invariant(targetPassenger !== undefined, `${target.start.legId} besitzt keine Passenger-Zielroute.`);
+    const sourcePassenger = routeByPlayableLegId.get(sourceEndpoint.legId);
+    const targetPassenger = routeByPlayableLegId.get(targetEndpoint.legId);
+    invariant(sourcePassenger !== undefined, `${sourceEndpoint.legId} besitzt keine Passenger-Quellroute.`);
+    invariant(targetPassenger !== undefined, `${targetEndpoint.legId} besitzt keine Passenger-Zielroute.`);
+    invariant(sourcePassenger.routeVersionId === sourceEndpoint.passengerRouteVersionId, `${sourceEndpoint.legId} driftet von seiner Passenger-Routenidentitaet.`);
+    invariant(targetPassenger.routeVersionId === targetEndpoint.passengerRouteVersionId, `${targetEndpoint.legId} driftet von seiner Passenger-Routenidentitaet.`);
     const sourceLeg = sourcePassenger.legs.at(-1);
     const targetLeg = targetPassenger.legs[0];
-    invariant(sourceLeg !== undefined && targetLeg !== undefined, `${source.id}->${target.id} besitzt eine leere Passenger-Route.`);
+    invariant(sourceLeg !== undefined && targetLeg !== undefined, `${sourceEndpoint.legId}->${targetEndpoint.legId} besitzt eine leere Passenger-Route.`);
     const routed = router.route({
       origins: [publicAnchor({ edgeId: sourceLeg.edgeId, offsetMm: sourceLeg.edgeExitMm })],
       destinations: [publicAnchor({ edgeId: targetLeg.edgeId, offsetMm: targetLeg.edgeEntryMm })],
@@ -699,7 +710,7 @@ function deriveDailyTransferRoutes(graph, snapshot, snapshotHash, passengerRoute
       routed,
       sourcePassenger,
       targetPassenger,
-      minimumRuntimeMs: minimumTransferRuntimeMs(routed.legs, graph, `${source.id}->${target.id}`),
+      minimumRuntimeMs: minimumTransferRuntimeMs(routed.legs, graph, `${sourceEndpoint.legId}->${targetEndpoint.legId}`),
     });
     routedPairs.set(key, value);
     return value;
@@ -710,8 +721,8 @@ function deriveDailyTransferRoutes(graph, snapshot, snapshotHash, passengerRoute
     gtfsReleaseId: [...releaseIds][0],
     repeatEveryS: specification.dailyCirculation.repeatEveryS,
     minimumTurnaroundS: specification.dailyCirculation.minimumTurnaroundS,
-    transferCost: ({ source, target, earliestDepartureS, latestArrivalS }) => {
-      const pair = routeTransferPair({ source, target });
+    transferCost: ({ sourceEndpoint, targetEndpoint, earliestDepartureS, latestArrivalS }) => {
+      const pair = routeTransferPair({ sourceEndpoint, targetEndpoint });
       if (pair === null || pair.minimumRuntimeMs > (latestArrivalS - earliestDepartureS) * 1_000) return null;
       return pair.routed.weightedCostMm;
     },
@@ -720,19 +731,24 @@ function deriveDailyTransferRoutes(graph, snapshot, snapshotHash, passengerRoute
     ["lotCount", "expectedLotCount"],
     ["journeyChainCount", "expectedJourneyChainCount"],
     ["circulationCount", "expectedCirculationCount"],
+    ["plannedTransitionCount", "expectedPlannedTransitionCount"],
+    ["turnaroundDemandCount", "expectedTurnaroundDemandCount"],
     ["transferDemandCount", "expectedTransferDemandCount"],
     ["transferLotCount", "expectedTransferLotCount"],
   ]) invariant(
     dailyPlan.metrics[metric] === specification.dailyCirculation[expectedKey],
     `Daily-Circulation besitzt ${dailyPlan.metrics[metric]} statt ${specification.dailyCirculation[expectedKey]} fuer ${metric}.`,
   );
-  const circulationById = new Map(dailyPlan.circulations.map((circulation) => [circulation.id, circulation]));
   const transferRoutes = dailyPlan.transferDemands.map((demand) => {
-    const source = circulationById.get(demand.sourceCirculationId);
-    const target = circulationById.get(demand.targetCirculationId);
-    invariant(source !== undefined && target !== undefined, `${demand.id} bindet unbekannte Umlaeufe.`);
-    const pair = routedPairs.get(transferPairKey(source.id, target.id));
+    const pair = routedPairs.get(transferPairKey(demand.sourcePassengerLegId, demand.targetPassengerLegId));
     invariant(pair !== undefined && pair !== null, `${demand.id} besitzt keinen nichtleeren realen OSM-Transferlaufweg.`);
+    invariant(
+      pair.sourcePassenger.routeVersionId === demand.sourcePassengerRouteVersionId
+        && pair.targetPassenger.routeVersionId === demand.targetPassengerRouteVersionId
+        && demand.sourcePassengerRouteVersionId === dailyPassengerRouteVersionId(demand.sourcePassengerLegId)
+        && demand.targetPassengerRouteVersionId === dailyPassengerRouteVersionId(demand.targetPassengerLegId),
+      `${demand.id} driftet von seinen Passenger-Routenidentitaeten.`,
+    );
     invariant(pair.minimumRuntimeMs <= demand.availableWindowS * 1_000, `${demand.id} passt mit nativer Mindestlaufzeit nicht in sein Transferfenster.`);
     const legs = mergeLegs(pair.routed.legs).map((leg) => {
       const track = graph.edges.get(leg.edgeId);
@@ -749,8 +765,6 @@ function deriveDailyTransferRoutes(graph, snapshot, snapshotHash, passengerRoute
     invariant(totalLengthMm === pair.routed.totalLengthMm && totalLengthMm > 0, `${demand.id} besitzt eine inkonsistente Transferlaenge.`);
     return Object.freeze({
       ...demand,
-      sourcePassengerRouteVersionId: pair.sourcePassenger.routeVersionId,
-      targetPassengerRouteVersionId: pair.targetPassenger.routeVersionId,
       formationLengthsMm: specification.dailyCirculation.formationLengthsMm,
       routeVersionId,
       templateId: `template:${demand.id}:movement:v1`,

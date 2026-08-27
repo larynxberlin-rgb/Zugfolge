@@ -1,7 +1,7 @@
 import { alphaCanonicalJson, alphaHash } from "../../packages/alpha/dist/index.js";
 
-export const DAILY_CIRCULATION_PLAN_SCHEMA = "zugfolge-daily-circulation-plan/v1";
-export const DAILY_CIRCULATION_RULE = "lot-local-playable-path-cover-with-minimum-cross-location-rollover/v1";
+export const DAILY_CIRCULATION_PLAN_SCHEMA = "zugfolge-daily-circulation-plan/v2";
+export const DAILY_CIRCULATION_RULE = "lot-local-playable-path-cover-with-explicit-physical-transition-partition/v2";
 export const DAILY_CIRCULATION_REPEAT_EVERY_S = 86_400;
 export const DAILY_CIRCULATION_MINIMUM_TURNAROUND_S = 300;
 
@@ -54,9 +54,11 @@ export function dailyPlayableLegs(chain) {
   return legs;
 }
 
-function endpoint(chain, side) {
-  const legs = dailyPlayableLegs(chain);
-  const leg = side === "start" ? legs[0] : legs.at(-1);
+export function dailyPassengerRouteVersionId(passengerLegId) {
+  return `route:gtfs:${nonEmptyString(passengerLegId, "Passenger-Leg-ID")}:v1`;
+}
+
+function legEndpoint(leg, side) {
   const stops = Array.isArray(leg.stops) ? leg.stops : [];
   invariant(stops.length > 0, `${leg?.legId ?? "PlayableLeg"} besitzt keinen Halt.`);
   const stop = side === "start" ? stops[0] : stops.at(-1);
@@ -66,10 +68,24 @@ function endpoint(chain, side) {
   invariant(portalId === null || portalId === undefined || (typeof portalId === "string" && portalId !== ""), `${leg.legId}.${side}PortalId ist ungueltig.`);
   return Object.freeze({
     legId: nonEmptyString(leg.legId, `${side}LegId`),
+    passengerRouteVersionId: dailyPassengerRouteVersionId(leg.legId),
     locationId: portalId ?? nonEmptyString(stop.stopId, `${leg.legId}.${side}StopId`),
     physicalStopId: nonEmptyString(stop.stopId, `${leg.legId}.${side}StopId`),
     timeS,
   });
+}
+
+function endpoint(chain, side) {
+  const legs = dailyPlayableLegs(chain);
+  return legEndpoint(side === "start" ? legs[0] : legs.at(-1), side);
+}
+
+function samePhysicalEndpoint(source, target) {
+  return source.locationId === target.locationId && source.physicalStopId === target.physicalStopId;
+}
+
+function transitionKey(sourcePassengerLegId, targetPassengerLegId, dailyBoundary) {
+  return `${sourcePassengerLegId}\u0000${targetPassengerLegId}\u0000${dailyBoundary ? "1" : "0"}`;
 }
 
 function operationalTrainRunId(chain, leg, playableIndex) {
@@ -87,8 +103,11 @@ function passengerMovements(journeyChains) {
       movements.set(id, Object.freeze({
         trainRunId: id,
         legId: nonEmptyString(leg.legId, `${id}.legId`),
+        passengerRouteVersionId: dailyPassengerRouteVersionId(leg.legId),
         sourceLocationId: leg.entryPortalId ?? nonEmptyString(stops[0].stopId, `${id}.sourceStopId`),
         targetLocationId: leg.exitPortalId ?? nonEmptyString(stops.at(-1).stopId, `${id}.targetStopId`),
+        sourcePhysicalStopId: nonEmptyString(stops[0].stopId, `${id}.sourceStopId`),
+        targetPhysicalStopId: nonEmptyString(stops.at(-1).stopId, `${id}.targetStopId`),
         departureS: safeInteger(stops[0].departureS, `${id}.departureS`, 0),
         arrivalS: safeInteger(stops.at(-1).arrivalS, `${id}.arrivalS`, 0),
       }));
@@ -103,7 +122,7 @@ function passengerMovements(journeyChains) {
  * die Periodenfortschaltung tragen, waehrend ihr Rollover dann Offset 0 hat.
  */
 export function dailyMovementContinuities({ dailyPlan, journeyChains }) {
-  invariant(dailyPlan?.schema === DAILY_CIRCULATION_PLAN_SCHEMA, "Daily-Movement-Continuities brauchen einen v1-DailyPlan.");
+  invariant(dailyPlan?.schema === DAILY_CIRCULATION_PLAN_SCHEMA, "Daily-Movement-Continuities brauchen einen v2-DailyPlan.");
   invariant(Array.isArray(journeyChains) && journeyChains.length > 0, "Daily-Movement-Continuities brauchen JourneyChains.");
   const repeatEveryS = safeInteger(dailyPlan.repeatEveryS, "DailyPlan.repeatEveryS", 1);
   const movements = passengerMovements(journeyChains);
@@ -121,10 +140,16 @@ export function dailyMovementContinuities({ dailyPlan, journeyChains }) {
       && new Set(dailyPlan.rolloverAssignments.map((assignment) => assignment.targetCirculationId)).size === dailyPlan.circulations.length,
     "DailyPlan besitzt keine vollstaendige Rollover-Permutation.",
   );
-  const demandByPair = new Map(dailyPlan.transferDemands.map((demand) => [
-    `${demand.sourceCirculationId}\u0000${demand.targetCirculationId}`,
-    demand,
+  invariant(Array.isArray(dailyPlan.turnaroundDemands) && Array.isArray(dailyPlan.transferDemands), "DailyPlan besitzt keine explizite Uebergangspartition.");
+  const turnaroundByTransition = new Map(dailyPlan.turnaroundDemands.map((demand) => [
+    transitionKey(demand.sourcePassengerLegId, demand.targetPassengerLegId, demand.dailyBoundary), demand,
   ]));
+  const transferByTransition = new Map(dailyPlan.transferDemands.map((demand) => [
+    transitionKey(demand.sourcePassengerLegId, demand.targetPassengerLegId, demand.dailyBoundary), demand,
+  ]));
+  invariant(turnaroundByTransition.size === dailyPlan.turnaroundDemands.length, "DailyPlan besitzt doppelte Turnaround-Uebergaenge.");
+  invariant(transferByTransition.size === dailyPlan.transferDemands.length, "DailyPlan besitzt doppelte Transfer-Uebergaenge.");
+  for (const key of turnaroundByTransition.keys()) invariant(!transferByTransition.has(key), `DailyPlan klassifiziert ${key} doppelt.`);
   const continuities = [];
   const add = ({ source, target, sourceCirculationId, targetCirculationId, relation, targetOccurrenceDepartureS, demandId = null }) => {
     const sourcePhase = Math.floor(source.departureS / repeatEveryS);
@@ -167,14 +192,25 @@ export function dailyMovementContinuities({ dailyPlan, journeyChains }) {
       const source = movements.get(ids[index]);
       const target = movements.get(ids[index + 1]);
       invariant(source !== undefined && target !== undefined, `${circulation.id} referenziert eine unbekannte Passenger-Bewegung.`);
-      invariant(source.targetLocationId === target.sourceLocationId, `${source.trainRunId}->${target.trainRunId} ist nicht ortsgleich.`);
+      const key = transitionKey(source.legId, target.legId, false);
+      const turnaround = turnaroundByTransition.get(key);
+      const transfer = transferByTransition.get(key);
+      invariant((turnaround === undefined) !== (transfer === undefined), `${source.trainRunId}->${target.trainRunId} besitzt keine eindeutige Uebergangsklassifikation.`);
+      invariant(
+        (turnaround !== undefined) === (
+          source.targetLocationId === target.sourceLocationId
+          && source.targetPhysicalStopId === target.sourcePhysicalStopId
+        ),
+        `${source.trainRunId}->${target.trainRunId} klassifiziert den physischen Uebergang falsch.`,
+      );
       add({
         source,
         target,
         sourceCirculationId: circulation.id,
         targetCirculationId: circulation.id,
-        relation: "same-location",
+        relation: turnaround === undefined ? "transfer" : "same-location",
         targetOccurrenceDepartureS: target.departureS,
+        demandId: transfer?.id ?? null,
       });
     }
     const rollover = rolloverBySource.get(circulation.id);
@@ -186,12 +222,16 @@ export function dailyMovementContinuities({ dailyPlan, journeyChains }) {
       rollover.kind === "same-location" || rollover.kind === "transfer",
       `${circulation.id} besitzt eine unbekannte Rollover-Art.`,
     );
-    const demand = rollover.kind === "transfer"
-      ? demandByPair.get(`${circulation.id}\u0000${targetCirculation.id}`)
-      : undefined;
+    const key = transitionKey(source.legId, target.legId, true);
+    const turnaround = turnaroundByTransition.get(key);
+    const demand = transferByTransition.get(key);
     invariant(
-      (rollover.kind === "same-location" && source.targetLocationId === target.sourceLocationId && demand === undefined)
-        || (rollover.kind === "transfer" && source.targetLocationId !== target.sourceLocationId && demand !== undefined),
+      (rollover.kind === "same-location"
+        && source.targetLocationId === target.sourceLocationId
+        && source.targetPhysicalStopId === target.sourcePhysicalStopId
+        && turnaround !== undefined
+        && demand === undefined)
+        || (rollover.kind === "transfer" && turnaround === undefined && demand !== undefined),
       `${circulation.id} driftet zwischen Rollover und Transferanforderung.`,
     );
     add({
@@ -231,7 +271,7 @@ export function dailyMovementContinuities({ dailyPlan, journeyChains }) {
  * durch die Rollover-Permutation zu einem gemeinsamen Zyklus gehoeren.
  */
 export function dailyRolloverCycles(dailyPlan) {
-  invariant(dailyPlan?.schema === DAILY_CIRCULATION_PLAN_SCHEMA, "Daily-Rollover-Cycles brauchen einen v1-DailyPlan.");
+  invariant(dailyPlan?.schema === DAILY_CIRCULATION_PLAN_SCHEMA, "Daily-Rollover-Cycles brauchen einen v2-DailyPlan.");
   invariant(Array.isArray(dailyPlan.circulations) && dailyPlan.circulations.length > 0, "DailyPlan besitzt keine Circulations.");
   invariant(Array.isArray(dailyPlan.rolloverAssignments), "DailyPlan besitzt keine Rollover-Zuordnungen.");
   const circulationIds = new Set(dailyPlan.circulations.map((circulation) => nonEmptyString(circulation.id, "Circulation-ID")));
@@ -284,7 +324,7 @@ function buildLotCirculations(chains, lotId, serviceLineId, minimumTurnaroundS) 
     const start = endpoint(chain, "start");
     const end = endpoint(chain, "end");
     const available = circulations
-      .filter((circulation) => circulation.end.locationId === start.locationId
+      .filter((circulation) => samePhysicalEndpoint(circulation.end, start)
         && circulation.end.timeS + minimumTurnaroundS <= start.timeS)
       .sort((left, right) => right.end.timeS - left.end.timeS || compareText(left.id, right.id))[0];
     const circulation = available ?? {
@@ -375,15 +415,21 @@ function pairRollovers(circulations, stationById, repeatEveryS, minimumTurnaroun
   const sources = [...circulations].sort((left, right) => compareText(left.id, right.id));
   const targets = [...circulations].sort((left, right) => compareText(left.id, right.id));
   const movementCosts = sources.map((source) => targets.map((target) => {
+      const targetOccurrenceS = target.start.timeS + repeatEveryS;
+      if (samePhysicalEndpoint(source.end, target.start)) {
+        return targetOccurrenceS - source.end.timeS >= minimumTurnaroundS ? 0 : Number.POSITIVE_INFINITY;
+      }
       const earliestDepartureS = source.end.timeS + minimumTurnaroundS;
-      const latestArrivalS = target.start.timeS + repeatEveryS - minimumTurnaroundS;
+      const latestArrivalS = targetOccurrenceS - minimumTurnaroundS;
       if (latestArrivalS <= earliestDepartureS) return Number.POSITIVE_INFINITY;
-      if (source.end.locationId === target.start.locationId) return 0;
       const cost = transferCost === undefined ? coordinateCost(source, target, stationById) : transferCost(Object.freeze({
-        source,
-        target,
+        sourceCirculation: source,
+        targetCirculation: target,
+        sourceEndpoint: source.end,
+        targetEndpoint: target.start,
         earliestDepartureS,
         latestArrivalS,
+        dailyBoundary: true,
       }));
       return Number.isSafeInteger(cost) && cost >= 0 ? cost : Number.POSITIVE_INFINITY;
     }));
@@ -394,15 +440,15 @@ function pairRollovers(circulations, stationById, repeatEveryS, minimumTurnaroun
   safeInteger(crossLocationPenalty, `${circulations[0].lotId}-Cross-Location-Penalty`, 1);
   const costs = movementCosts.map((row, sourceIndex) => row.map((movementCost, targetIndex) => {
     if (!Number.isFinite(movementCost)) return movementCost;
-    const crossLocation = sources[sourceIndex].end.locationId !== targets[targetIndex].start.locationId;
-    const cost = movementCost + (crossLocation ? crossLocationPenalty : 0);
+    const crossPhysicalEndpoint = !samePhysicalEndpoint(sources[sourceIndex].end, targets[targetIndex].start);
+    const cost = movementCost + (crossPhysicalEndpoint ? crossLocationPenalty : 0);
     return Number.isSafeInteger(cost) ? cost : Number.POSITIVE_INFINITY;
   }));
   const targetBySource = hungarian(costs, `${circulations[0].lotId}-Rollover`);
   const assignments = targetBySource.map((targetIndex, sourceIndex) => ({
     source: sources[sourceIndex],
     target: targets[targetIndex],
-    transfer: sources[sourceIndex].end.locationId !== targets[targetIndex].start.locationId,
+    transfer: !samePhysicalEndpoint(sources[sourceIndex].end, targets[targetIndex].start),
   }));
   assignments.sort((left, right) => compareText(left.source.id, right.source.id));
   invariant(new Set(assignments.map(({ source }) => source.id)).size === circulations.length, `${circulations[0].lotId} bindet nicht jede Rollover-Quelle genau einmal.`);
@@ -410,34 +456,88 @@ function pairRollovers(circulations, stationById, repeatEveryS, minimumTurnaroun
   return assignments;
 }
 
-function transferDemand(assignment, repeatEveryS, minimumTurnaroundS) {
-  const { source, target } = assignment;
-  const identity = {
-    lotId: source.lotId,
-    sourceCirculationId: source.id,
-    targetCirculationId: target.id,
-    sourcePassengerLegId: source.end.legId,
-    targetPassengerLegId: target.start.legId,
-  };
-  const id = `transfer-${alphaHash("zugfolge-daily-transfer-demand/v1", identity)}`;
-  const earliestDepartureS = source.end.timeS + minimumTurnaroundS;
-  const latestArrivalS = target.start.timeS + repeatEveryS - minimumTurnaroundS;
-  invariant(latestArrivalS > earliestDepartureS, `${id} besitzt kein positives Transferzeitfenster.`);
+function transitionIdentity({ sourceCirculation, targetCirculation, sourceEndpoint, targetEndpoint, dailyBoundary }) {
   return Object.freeze({
+    lotId: sourceCirculation.lotId,
+    sourceCirculationId: sourceCirculation.id,
+    targetCirculationId: targetCirculation.id,
+    sourcePassengerLegId: sourceEndpoint.legId,
+    targetPassengerLegId: targetEndpoint.legId,
+    dailyBoundary,
+  });
+}
+
+function commonTransitionDemand({
+  kind,
+  sourceCirculation,
+  targetCirculation,
+  sourceEndpoint,
+  targetEndpoint,
+  earliestDepartureS,
+  latestArrivalS,
+  dailyBoundary,
+}) {
+  invariant(sourceCirculation.lotId === targetCirculation.lotId, "Ein Daily-Uebergang darf kein Los wechseln.");
+  invariant(sourceCirculation.assetCompatibilityKey === targetCirculation.assetCompatibilityKey, "Ein Daily-Uebergang darf die Asset-Kompatibilitaet nicht wechseln.");
+  const identity = {
+    ...transitionIdentity({ sourceCirculation, targetCirculation, sourceEndpoint, targetEndpoint, dailyBoundary }),
+    kind,
+  };
+  const id = `${kind}-${alphaHash(`zugfolge-daily-${kind}-demand/v2`, identity)}`;
+  invariant(latestArrivalS > earliestDepartureS, `${id} besitzt kein positives Uebergangszeitfenster.`);
+  return {
     id,
-    lotId: source.lotId,
-    assetCompatibilityKey: source.assetCompatibilityKey,
-    sourceCirculationId: source.id,
-    targetCirculationId: target.id,
-    sourcePassengerLegId: source.end.legId,
-    targetPassengerLegId: target.start.legId,
-    sourceLocationId: source.end.locationId,
-    targetLocationId: target.start.locationId,
-    sourcePhysicalStopId: source.end.physicalStopId,
-    targetPhysicalStopId: target.start.physicalStopId,
+    lotId: sourceCirculation.lotId,
+    assetCompatibilityKey: sourceCirculation.assetCompatibilityKey,
+    sourceCirculationId: sourceCirculation.id,
+    targetCirculationId: targetCirculation.id,
+    sourcePassengerLegId: sourceEndpoint.legId,
+    targetPassengerLegId: targetEndpoint.legId,
+    sourcePassengerRouteVersionId: sourceEndpoint.passengerRouteVersionId,
+    targetPassengerRouteVersionId: targetEndpoint.passengerRouteVersionId,
+    sourceLocationId: sourceEndpoint.locationId,
+    targetLocationId: targetEndpoint.locationId,
+    sourcePhysicalStopId: sourceEndpoint.physicalStopId,
+    targetPhysicalStopId: targetEndpoint.physicalStopId,
     earliestDepartureS,
     latestArrivalS,
     availableWindowS: latestArrivalS - earliestDepartureS,
+    dailyBoundary,
+  };
+}
+
+function turnaroundDemand({ sourceCirculation, targetCirculation, sourceEndpoint, targetEndpoint, repeatEveryS, minimumTurnaroundS, dailyBoundary }) {
+  invariant(samePhysicalEndpoint(sourceEndpoint, targetEndpoint), `${sourceEndpoint.legId}->${targetEndpoint.legId} ist kein physisch ortsgleicher Turnaround.`);
+  const earliestDepartureS = sourceEndpoint.timeS;
+  const latestArrivalS = targetEndpoint.timeS + (dailyBoundary ? repeatEveryS : 0);
+  invariant(latestArrivalS - earliestDepartureS >= minimumTurnaroundS, `${sourceEndpoint.legId}->${targetEndpoint.legId} unterschreitet die Mindestwendezeit.`);
+  return Object.freeze(commonTransitionDemand({
+    kind: "turnaround",
+    sourceCirculation,
+    targetCirculation,
+    sourceEndpoint,
+    targetEndpoint,
+    earliestDepartureS,
+    latestArrivalS,
+    dailyBoundary,
+  }));
+}
+
+function transferDemand({ sourceCirculation, targetCirculation, sourceEndpoint, targetEndpoint, repeatEveryS, minimumTurnaroundS, dailyBoundary }) {
+  invariant(!samePhysicalEndpoint(sourceEndpoint, targetEndpoint), `${sourceEndpoint.legId}->${targetEndpoint.legId} ist physisch ortsgleich und darf kein Transfer sein.`);
+  const earliestDepartureS = sourceEndpoint.timeS + minimumTurnaroundS;
+  const latestArrivalS = targetEndpoint.timeS + (dailyBoundary ? repeatEveryS : 0) - minimumTurnaroundS;
+  return Object.freeze({
+    ...commonTransitionDemand({
+      kind: "transfer",
+      sourceCirculation,
+      targetCirculation,
+      sourceEndpoint,
+      targetEndpoint,
+      earliestDepartureS,
+      latestArrivalS,
+      dailyBoundary,
+    }),
     movementKind: "train",
   });
 }
@@ -487,26 +587,100 @@ export function deriveDailyCirculationPlan({
   }
   const circulations = [];
   const rolloverAssignments = [];
+  const turnaroundDemands = [];
   const transferDemands = [];
   const transferLotIds = new Set();
+  const endpointsByJourneyChainId = new Map();
+  for (const chain of journeyChains) {
+    invariant(!endpointsByJourneyChainId.has(chain.journeyChainId), `Daily-Circulation-JourneyChain ${chain.journeyChainId} ist doppelt.`);
+    endpointsByJourneyChainId.set(chain.journeyChainId, Object.freeze({ start: endpoint(chain, "start"), end: endpoint(chain, "end") }));
+  }
+  const addTransition = ({ sourceCirculation, targetCirculation, sourceEndpoint, targetEndpoint, dailyBoundary }) => {
+    if (samePhysicalEndpoint(sourceEndpoint, targetEndpoint)) {
+      turnaroundDemands.push(turnaroundDemand({
+        sourceCirculation,
+        targetCirculation,
+        sourceEndpoint,
+        targetEndpoint,
+        repeatEveryS,
+        minimumTurnaroundS,
+        dailyBoundary,
+      }));
+      return "same-location";
+    }
+    const demand = transferDemand({
+      sourceCirculation,
+      targetCirculation,
+      sourceEndpoint,
+      targetEndpoint,
+      repeatEveryS,
+      minimumTurnaroundS,
+      dailyBoundary,
+    });
+    if (transferCost !== undefined) {
+      const cost = transferCost(Object.freeze({
+        sourceCirculation,
+        targetCirculation,
+        sourceEndpoint,
+        targetEndpoint,
+        earliestDepartureS: demand.earliestDepartureS,
+        latestArrivalS: demand.latestArrivalS,
+        dailyBoundary,
+      }));
+      invariant(
+        Number.isSafeInteger(cost) && cost >= 0,
+        `${demand.id} besitzt fuer ${demand.sourcePassengerLegId}(${demand.sourcePhysicalStopId})->${demand.targetPassengerLegId}(${demand.targetPhysicalStopId}) im Fenster ${demand.earliestDepartureS}..${demand.latestArrivalS} keinen zulaessigen realen Transferlaufweg.`,
+      );
+    }
+    transferDemands.push(demand);
+    transferLotIds.add(sourceCirculation.lotId);
+    return "transfer";
+  };
   for (const lot of [...lots.values()].sort((left, right) => compareText(left.lotId, right.lotId))) {
     const lotCirculations = buildLotCirculations(lot.chains, lot.lotId, lot.serviceLineId, minimumTurnaroundS);
     circulations.push(...lotCirculations);
+    for (const circulation of lotCirculations) {
+      for (let index = 0; index < circulation.journeyChainIds.length - 1; index += 1) {
+        const source = endpointsByJourneyChainId.get(circulation.journeyChainIds[index]);
+        const target = endpointsByJourneyChainId.get(circulation.journeyChainIds[index + 1]);
+        invariant(source !== undefined && target !== undefined, `${circulation.id} referenziert einen unbekannten internen Uebergang.`);
+        addTransition({
+          sourceCirculation: circulation,
+          targetCirculation: circulation,
+          sourceEndpoint: source.end,
+          targetEndpoint: target.start,
+          dailyBoundary: false,
+        });
+      }
+    }
     for (const assignment of pairRollovers(lotCirculations, stationById, repeatEveryS, minimumTurnaroundS, transferCost)) {
+      const kind = addTransition({
+        sourceCirculation: assignment.source,
+        targetCirculation: assignment.target,
+        sourceEndpoint: assignment.source.end,
+        targetEndpoint: assignment.target.start,
+        dailyBoundary: true,
+      });
       rolloverAssignments.push(Object.freeze({
         sourceCirculationId: assignment.source.id,
         targetCirculationId: assignment.target.id,
-        kind: assignment.transfer ? "transfer" : "same-location",
+        kind,
       }));
-      if (assignment.transfer) {
-        transferDemands.push(transferDemand(assignment, repeatEveryS, minimumTurnaroundS));
-        transferLotIds.add(lot.lotId);
-      }
+      invariant((kind === "transfer") === assignment.transfer, `${assignment.source.id}->${assignment.target.id} driftet zwischen Matching und Uebergangsklassifikation.`);
     }
   }
   circulations.sort((left, right) => compareText(left.id, right.id));
   rolloverAssignments.sort((left, right) => compareText(left.sourceCirculationId, right.sourceCirculationId));
+  turnaroundDemands.sort((left, right) => compareText(left.id, right.id));
   transferDemands.sort((left, right) => compareText(left.id, right.id));
+  const plannedTransitionCount = circulations.reduce((sum, circulation) => sum + circulation.journeyChainIds.length, 0);
+  invariant(turnaroundDemands.length + transferDemands.length === plannedTransitionCount, "Daily-Circulation partitioniert nicht jeden geplanten Uebergang genau einmal.");
+  const transitionKeys = [...turnaroundDemands, ...transferDemands].map((demand) => transitionKey(
+    demand.sourcePassengerLegId,
+    demand.targetPassengerLegId,
+    demand.dailyBoundary,
+  ));
+  invariant(new Set(transitionKeys).size === plannedTransitionCount, "Daily-Circulation besitzt doppelte oder fehlende Uebergangsidentitaeten.");
   const planBody = {
     schema: DAILY_CIRCULATION_PLAN_SCHEMA,
     rule: DAILY_CIRCULATION_RULE,
@@ -518,11 +692,14 @@ export function deriveDailyCirculationPlan({
       journeyChainCount: journeyChains.length,
       circulationCount: circulations.length,
       rolloverAssignmentCount: rolloverAssignments.length,
+      plannedTransitionCount,
+      turnaroundDemandCount: turnaroundDemands.length,
       transferDemandCount: transferDemands.length,
       transferLotCount: transferLotIds.size,
     },
     circulations,
     rolloverAssignments,
+    turnaroundDemands,
     transferDemands,
   };
   return Object.freeze({
@@ -530,6 +707,7 @@ export function deriveDailyCirculationPlan({
     metrics: Object.freeze(planBody.metrics),
     circulations: Object.freeze(circulations),
     rolloverAssignments: Object.freeze(rolloverAssignments),
+    turnaroundDemands: Object.freeze(turnaroundDemands),
     transferDemands: Object.freeze(transferDemands),
     planSha256: alphaHash(DAILY_CIRCULATION_PLAN_SCHEMA, JSON.parse(alphaCanonicalJson(planBody))),
   });

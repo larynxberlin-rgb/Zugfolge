@@ -28,7 +28,7 @@ const DERIVATION_REPORT_SCHEMA = "germany-operational-v2-derivation-report-v1";
 const DERIVATION_MODE = "deterministic-conservative-v1";
 const COMPLETE_ROUTE_COVERAGE = "complete-pinned-timetable-routes";
 const FULL_ROUTE_INTERLOCKING_MODEL = "deterministic-linear-segment-node-stellzone-mutex-and-progressive-authority/v3";
-const TURNAROUND_MODEL = "real-osm-simple-bidirectional-siding-path-with-centered-single-berth-per-target-edge/v1";
+const TURNAROUND_MODEL = "real-osm-bounded-bidirectional-access-to-siding-with-centered-single-berth-per-target-edge/v2";
 const MOVEMENT_ROUTE_TEMPLATE_MODEL = "daily-plan-scoped-direct-stabling-transfer-continuity/v2";
 const NATIVE_SCHEMA = "operational-infrastructure-v2";
 const NATIVE_MODE = "native-streaming-redb-v1";
@@ -85,6 +85,9 @@ const COMPILER_POLICY_KEYS = Object.freeze([
   "maximumPlatformSnapDistanceMm",
   "minimumOverlapMm",
   "minimumBerthEndClearanceMm",
+  "maximumStablingPathEdges",
+  "maximumStablingPathLengthMm",
+  "simulatedOperationalBerthFallback",
   "maximumDirectDwellMs",
   "terminalFormationLengthsMm",
   "defaultProtectionSystem",
@@ -177,6 +180,8 @@ const DAILY_CIRCULATION_METRIC_KEYS = Object.freeze([
   "journeyChainCount",
   "circulationCount",
   "rolloverAssignmentCount",
+  "plannedTransitionCount",
+  "turnaroundDemandCount",
   "transferDemandCount",
   "transferLotCount",
 ]);
@@ -290,9 +295,13 @@ function inputBinding(value, label) {
 function validateCompilerPolicy(policy) {
   exactKeys(policy, COMPILER_POLICY_KEYS, "compilerPolicy");
   invariant(policy.id === SYNTHETIC_OPERATIONAL_POLICY_ID && policy.qualityClass === "B", "compilerPolicy verletzt ID oder Klasse.");
-  for (const field of ["sourceId", "derivationRule", "defaultProtectionSystem", "regionBoundaryId", "rzueLayoutId"]) {
+  for (const field of ["sourceId", "derivationRule", "simulatedOperationalBerthFallback", "defaultProtectionSystem", "regionBoundaryId", "rzueLayoutId"]) {
     invariant(typeof policy[field] === "string" && policy[field] !== "", `compilerPolicy.${field} fehlt.`);
   }
+  invariant(
+    policy.simulatedOperationalBerthFallback === "real-osm-service-yard-then-spur-then-unclassified-rail/v1",
+    "compilerPolicy.simulatedOperationalBerthFallback verletzt den versionierten Berth-Fallback-Vertrag.",
+  );
   for (const field of [
     "unknownMainlineSpeedKmh",
     "unknownServiceSpeedKmh",
@@ -300,6 +309,8 @@ function validateCompilerPolicy(policy) {
     "maximumPlatformSnapDistanceMm",
     "minimumOverlapMm",
     "minimumBerthEndClearanceMm",
+    "maximumStablingPathEdges",
+    "maximumStablingPathLengthMm",
     "maximumDirectDwellMs",
   ]) {
     positiveInteger(policy[field], `compilerPolicy.${field}`);
@@ -569,7 +580,8 @@ export function validateSyntheticOperationalDerivationReport(report, { releaseId
   validateNativeTimetableRouteEvidence(report.timetableRouteEvidence, report);
   exactKeys(report.scope, [
     "routeModel", "interlockingModel", "platformModel", "capacityBias", "minimumOverlapMmPolicy",
-    "turnaroundModel", "minimumBerthEndClearanceMmPolicy", "maximumDirectDwellMsPolicy",
+    "turnaroundModel", "minimumBerthEndClearanceMmPolicy", "maximumStablingPathEdgesPolicy",
+    "maximumStablingPathLengthMmPolicy", "maximumDirectDwellMsPolicy",
     "terminalFormationLengthsMm", "movementRouteTemplateModel",
   ], "Nativer Bericht.scope");
   invariant(
@@ -583,10 +595,12 @@ export function validateSyntheticOperationalDerivationReport(report, { releaseId
     report.scope.minimumOverlapMmPolicy === annualSpecification.policy.minimumOverlapMm
       && report.scope.turnaroundModel === TURNAROUND_MODEL
       && report.scope.minimumBerthEndClearanceMmPolicy === annualSpecification.policy.minimumBerthEndClearanceMm
+      && report.scope.maximumStablingPathEdgesPolicy === annualSpecification.policy.maximumStablingPathEdges
+      && report.scope.maximumStablingPathLengthMmPolicy === annualSpecification.policy.maximumStablingPathLengthMm
       && report.scope.maximumDirectDwellMsPolicy === annualSpecification.policy.maximumDirectDwellMs
       && sameCanonical(report.scope.terminalFormationLengthsMm, annualSpecification.policy.terminalFormationLengthsMm)
       && report.scope.movementRouteTemplateModel === MOVEMENT_ROUTE_TEMPLATE_MODEL,
-    "Nativer Bericht wiederholt abweichende Overlap-, Turnaround- oder Movement-Template-Policies.",
+    "Nativer Bericht wiederholt abweichende Overlap-, Turnaround-Such- oder Movement-Template-Policies.",
   );
   invariant(
     report.counts.source.timetableRoutes === report.timetableRouteEvidence.timetableRoutes.records
@@ -671,21 +685,28 @@ function exactNonEmptyStrings(value, label, { allowEmpty = false } = {}) {
 
 function validateDailyCirculationMetrics(value, label) {
   exactKeys(value, DAILY_CIRCULATION_METRIC_KEYS, label);
-  for (const field of DAILY_CIRCULATION_METRIC_KEYS) positiveInteger(value[field], `${label}.${field}`);
-  invariant(value.transferDemandCount <= value.circulationCount, `${label} besitzt mehr Transferanforderungen als Umlaeufe.`);
+  for (const field of ["lotCount", "journeyChainCount", "circulationCount", "rolloverAssignmentCount", "plannedTransitionCount"]) {
+    positiveInteger(value[field], `${label}.${field}`);
+  }
+  for (const field of ["turnaroundDemandCount", "transferDemandCount", "transferLotCount"]) nonNegativeInteger(value[field], `${label}.${field}`);
+  invariant(
+    value.turnaroundDemandCount + value.transferDemandCount === value.plannedTransitionCount,
+    `${label} partitioniert die geplanten Uebergaenge nicht vollstaendig.`,
+  );
   invariant(value.transferLotCount <= value.lotCount, `${label} besitzt mehr Transferlose als Lose.`);
   invariant(value.rolloverAssignmentCount === value.circulationCount, `${label} bindet nicht genau einen Rollover je Umlauf.`);
   return value;
 }
 
 function validateCirculationEndpoint(value, label) {
-  exactKeys(value, ["legId", "locationId", "physicalStopId", "timeS"], label);
-  for (const field of ["legId", "locationId", "physicalStopId"]) nonEmptyString(value[field], `${label}.${field}`);
+  exactKeys(value, ["legId", "passengerRouteVersionId", "locationId", "physicalStopId", "timeS"], label);
+  for (const field of ["legId", "passengerRouteVersionId", "locationId", "physicalStopId"]) nonEmptyString(value[field], `${label}.${field}`);
+  invariant(value.passengerRouteVersionId === `route:gtfs:${value.legId}:v1`, `${label} besitzt keine deterministische Passenger-Routenidentitaet.`);
   nonNegativeInteger(value.timeS, `${label}.timeS`);
   return value;
 }
 
-const DAILY_TRANSFER_DEMAND_KEYS = Object.freeze([
+const DAILY_TRANSITION_DEMAND_KEYS = Object.freeze([
   "id",
   "lotId",
   "assetCompatibilityKey",
@@ -693,6 +714,8 @@ const DAILY_TRANSFER_DEMAND_KEYS = Object.freeze([
   "targetCirculationId",
   "sourcePassengerLegId",
   "targetPassengerLegId",
+  "sourcePassengerRouteVersionId",
+  "targetPassengerRouteVersionId",
   "sourceLocationId",
   "targetLocationId",
   "sourcePhysicalStopId",
@@ -700,12 +723,15 @@ const DAILY_TRANSFER_DEMAND_KEYS = Object.freeze([
   "earliestDepartureS",
   "latestArrivalS",
   "availableWindowS",
+  "dailyBoundary",
+]);
+const DAILY_TURNAROUND_DEMAND_KEYS = DAILY_TRANSITION_DEMAND_KEYS;
+const DAILY_TRANSFER_DEMAND_KEYS = Object.freeze([
+  ...DAILY_TRANSITION_DEMAND_KEYS,
   "movementKind",
 ]);
 const TRANSFER_ROUTE_KEYS = Object.freeze([
   ...DAILY_TRANSFER_DEMAND_KEYS,
-  "sourcePassengerRouteVersionId",
-  "targetPassengerRouteVersionId",
   "formationLengthsMm",
   "routeVersionId",
   "templateId",
@@ -726,7 +752,7 @@ function dailyPlanSha256(plan) {
 }
 
 /**
- * Validiert den kompletten v1-Transfer-Sidecar semantisch. Die Rueckgabe ist
+ * Validiert den kompletten v2-Transfer-Sidecar semantisch. Die Rueckgabe ist
  * absichtlich klein: Closure und Downstream-Gates transportieren nur
  * reproduzierte Hashes, Dateibeweise und gepruefte Zaehler weiter.
  */
@@ -736,6 +762,7 @@ export function validateSyntheticOperationalTimetableTransferDemands({
   transferDemandsBinding,
   routeReport,
   timetableRoutesProof,
+  gtfsSnapshot = null,
 }) {
   exactKeys(transferDemands, [
     "schema",
@@ -773,6 +800,7 @@ export function validateSyntheticOperationalTimetableTransferDemands({
     "metrics",
     "circulations",
     "rolloverAssignments",
+    "turnaroundDemands",
     "transferDemands",
     "planSha256",
   ], "Timetable-Transfer-Demands.dailyPlan");
@@ -788,6 +816,7 @@ export function validateSyntheticOperationalTimetableTransferDemands({
   const metrics = validateDailyCirculationMetrics(plan.metrics, "Timetable-Transfer-Demands.dailyPlan.metrics");
   invariant(Array.isArray(plan.circulations) && plan.circulations.length === metrics.circulationCount, "Daily-Circulation-Umlaufzahl driftet von den Metriken.");
   invariant(Array.isArray(plan.rolloverAssignments) && plan.rolloverAssignments.length === metrics.rolloverAssignmentCount, "Daily-Circulation-Rolloverzahl driftet von den Metriken.");
+  invariant(Array.isArray(plan.turnaroundDemands) && plan.turnaroundDemands.length === metrics.turnaroundDemandCount, "Daily-Circulation-Turnaroundzahl driftet von den Metriken.");
   invariant(Array.isArray(plan.transferDemands) && plan.transferDemands.length === metrics.transferDemandCount, "Daily-Circulation-Transferzahl driftet von den Metriken.");
 
   const circulationById = new Map();
@@ -821,9 +850,81 @@ export function validateSyntheticOperationalTimetableTransferDemands({
   invariant(allJourneyChainIds.size === metrics.journeyChainCount, "Daily-Circulation-JourneyChain-Zahl driftet von den Metriken.");
   invariant(new Set(plan.circulations.map(({ lotId }) => lotId)).size === metrics.lotCount, "Daily-Circulation-Loszahl driftet von den Metriken.");
 
+  invariant(allJourneyChainIds.size === metrics.plannedTransitionCount, "Daily-Circulation-Zahl geplanter Uebergaenge driftet von den JourneyChains.");
+
+  const endpointByLegId = new Map();
+  const endpointByJourneyChainId = new Map();
+  if (gtfsSnapshot !== null) {
+    invariant(Array.isArray(gtfsSnapshot?.journeyChains), "Timetable-Transfer-Demands brauchen fuer die vollstaendige Semantikpruefung den gebundenen GTFS-Snapshot.");
+    for (const chain of gtfsSnapshot.journeyChains) {
+      if (chain?.orderable !== true || !Array.isArray(chain.legs)) continue;
+      const playableLegs = chain.legs.filter((entry) => entry?.kind === "playable");
+      for (const leg of playableLegs) {
+        invariant(Array.isArray(leg.stops) && leg.stops.length > 0, `${leg?.legId ?? "PlayableLeg"} besitzt keine Stopfolge.`);
+        const sourceStop = leg.stops[0];
+        const targetStop = leg.stops.at(-1);
+        const legId = nonEmptyString(leg.legId, "GTFS-PlayableLeg.legId");
+        invariant(!endpointByLegId.has(legId), `GTFS-PlayableLeg ${legId} ist doppelt.`);
+        endpointByLegId.set(legId, Object.freeze({
+          start: Object.freeze({
+            legId,
+            passengerRouteVersionId: `route:gtfs:${legId}:v1`,
+            locationId: leg.entryPortalId ?? sourceStop.stopId,
+            physicalStopId: sourceStop.stopId,
+            timeS: sourceStop.departureS,
+          }),
+          end: Object.freeze({
+            legId,
+            passengerRouteVersionId: `route:gtfs:${legId}:v1`,
+            locationId: leg.exitPortalId ?? targetStop.stopId,
+            physicalStopId: targetStop.stopId,
+            timeS: targetStop.arrivalS,
+          }),
+        }));
+      }
+      invariant(playableLegs.length > 0, `${chain.journeyChainId} besitzt kein spielbares Segment.`);
+      endpointByJourneyChainId.set(chain.journeyChainId, Object.freeze({
+        start: endpointByLegId.get(playableLegs[0].legId).start,
+        end: endpointByLegId.get(playableLegs.at(-1).legId).end,
+      }));
+    }
+    invariant(endpointByLegId.size === allPassengerLegIds.size, "GTFS-Snapshot und DailyPlan besitzen verschiedene Passenger-Leg-Mengen.");
+    for (const legId of allPassengerLegIds) invariant(endpointByLegId.has(legId), `DailyPlan-Leg ${legId} fehlt im gebundenen GTFS-Snapshot.`);
+    invariant(endpointByJourneyChainId.size === allJourneyChainIds.size, "GTFS-Snapshot und DailyPlan besitzen verschiedene JourneyChain-Mengen.");
+    for (const chainId of allJourneyChainIds) invariant(endpointByJourneyChainId.has(chainId), `DailyPlan-JourneyChain ${chainId} fehlt im gebundenen GTFS-Snapshot.`);
+  }
+
+  const expectedTransitions = new Map();
+  const addExpectedTransition = ({ source, target, sourceLegId, targetLegId, dailyBoundary }) => {
+    const key = `${sourceLegId}\u0000${targetLegId}\u0000${dailyBoundary ? "1" : "0"}`;
+    invariant(!expectedTransitions.has(key), `Daily-Circulation-Uebergang ${key} ist doppelt geplant.`);
+    expectedTransitions.set(key, Object.freeze({
+      source,
+      target,
+      sourceEndpoint: endpointByLegId.get(sourceLegId)?.end ?? (dailyBoundary ? source.end : null),
+      targetEndpoint: endpointByLegId.get(targetLegId)?.start ?? (dailyBoundary ? target.start : null),
+      dailyBoundary,
+    }));
+  };
+  if (gtfsSnapshot !== null) {
+    for (const circulation of plan.circulations) {
+      for (let index = 0; index < circulation.journeyChainIds.length - 1; index += 1) {
+        const sourceEndpoint = endpointByJourneyChainId.get(circulation.journeyChainIds[index]);
+        const targetEndpoint = endpointByJourneyChainId.get(circulation.journeyChainIds[index + 1]);
+        invariant(sourceEndpoint !== undefined && targetEndpoint !== undefined, `${circulation.id} referenziert einen unbekannten JourneyChain-Uebergang.`);
+        addExpectedTransition({
+          source: circulation,
+          target: circulation,
+          sourceLegId: sourceEndpoint.end.legId,
+          targetLegId: targetEndpoint.start.legId,
+          dailyBoundary: false,
+        });
+      }
+    }
+  }
+
   const rolloverSources = new Set();
   const rolloverTargets = new Set();
-  const transferPairs = new Set();
   let previousRolloverSource = null;
   for (const [index, rollover] of plan.rolloverAssignments.entries()) {
     const label = `Timetable-Transfer-Demands.dailyPlan.rolloverAssignments[${index}]`;
@@ -840,47 +941,109 @@ export function validateSyntheticOperationalTimetableTransferDemands({
     rolloverTargets.add(targetId);
     invariant(previousRolloverSource === null || compareText(previousRolloverSource, sourceId) < 0, "Daily-Circulation-Rollover sind nicht streng nach Quell-ID sortiert.");
     previousRolloverSource = sourceId;
-    const sameLocation = source.end.locationId === target.start.locationId;
+    const sameLocation = source.end.locationId === target.start.locationId
+      && source.end.physicalStopId === target.start.physicalStopId;
     invariant((rollover.kind === "same-location") === sameLocation, `${label} klassifiziert den physischen Ortswechsel falsch.`);
-    if (!sameLocation) transferPairs.add(`${sourceId}\u0000${targetId}`);
+    addExpectedTransition({
+      source,
+      target,
+      sourceLegId: source.passengerLegIds.at(-1),
+      targetLegId: target.passengerLegIds[0],
+      dailyBoundary: true,
+    });
   }
   invariant(rolloverSources.size === circulationById.size && rolloverTargets.size === circulationById.size, "Daily-Circulation-Rollover ist keine vollstaendige Permutation.");
+  if (gtfsSnapshot !== null) invariant(expectedTransitions.size === metrics.plannedTransitionCount, "Daily-Circulation bildet nicht jeden JourneyChain-Uebergang genau einmal ab.");
 
   const dailyDemandById = new Map();
-  let previousDemandId = null;
-  for (const [index, demand] of plan.transferDemands.entries()) {
-    const label = `Timetable-Transfer-Demands.dailyPlan.transferDemands[${index}]`;
-    exactKeys(demand, DAILY_TRANSFER_DEMAND_KEYS, label);
-    for (const field of DAILY_TRANSFER_DEMAND_KEYS.slice(0, 11)) nonEmptyString(demand[field], `${label}.${field}`);
-    invariant(demand.movementKind === "train", `${label}.movementKind ist kein physischer Zuglauf.`);
+  const classifiedTransitions = new Set();
+  const validateDemand = (demand, { kind, label, previousId }) => {
+    exactKeys(demand, kind === "transfer" ? DAILY_TRANSFER_DEMAND_KEYS : DAILY_TURNAROUND_DEMAND_KEYS, label);
+    for (const field of [
+      "id", "lotId", "assetCompatibilityKey", "sourceCirculationId", "targetCirculationId",
+      "sourcePassengerLegId", "targetPassengerLegId", "sourcePassengerRouteVersionId", "targetPassengerRouteVersionId",
+      "sourceLocationId", "targetLocationId", "sourcePhysicalStopId", "targetPhysicalStopId",
+    ]) nonEmptyString(demand[field], `${label}.${field}`);
+    invariant(typeof demand.dailyBoundary === "boolean", `${label}.dailyBoundary ist nicht boolesch.`);
+    if (kind === "transfer") invariant(demand.movementKind === "train", `${label}.movementKind ist kein physischer Zuglauf.`);
+    invariant(demand.id.startsWith(`${kind}-`) && /^[a-z]+-[a-f0-9]{64}$/u.test(demand.id), `${label}.id verletzt den v2-${kind}-Identitaetsvertrag.`);
     const source = circulationById.get(demand.sourceCirculationId);
     const target = circulationById.get(demand.targetCirculationId);
     invariant(source !== undefined && target !== undefined, `${label} bindet einen unbekannten Umlauf.`);
-    invariant(transferPairs.has(`${source.id}\u0000${target.id}`), `${label} besitzt keine korrespondierende Transfer-Rollover-Kante.`);
     invariant(
-      demand.lotId === source.lotId && demand.lotId === target.lotId
-        && demand.assetCompatibilityKey === source.assetCompatibilityKey && demand.assetCompatibilityKey === target.assetCompatibilityKey
-        && demand.sourcePassengerLegId === source.end.legId && demand.targetPassengerLegId === target.start.legId
-        && demand.sourceLocationId === source.end.locationId && demand.targetLocationId === target.start.locationId
-        && demand.sourcePhysicalStopId === source.end.physicalStopId && demand.targetPhysicalStopId === target.start.physicalStopId,
-      `${label} driftet von den gebundenen Umlaufendpunkten.`,
+      demand.dailyBoundary
+        || (source === target
+          && source.passengerLegIds.includes(demand.sourcePassengerLegId)
+          && source.passengerLegIds.includes(demand.targetPassengerLegId)),
+      `${label} verletzt die interne Umlaufbindung.`,
     );
+    const transitionKey = `${demand.sourcePassengerLegId}\u0000${demand.targetPassengerLegId}\u0000${demand.dailyBoundary ? "1" : "0"}`;
+    const expected = expectedTransitions.get(transitionKey);
+    invariant((expected !== undefined || (gtfsSnapshot === null && demand.dailyBoundary === false)) && !classifiedTransitions.has(transitionKey), `${label} besitzt keinen eindeutigen geplanten Uebergang.`);
+    classifiedTransitions.add(transitionKey);
+    invariant(
+      (expected === undefined || (source === expected.source && target === expected.target))
+        && demand.lotId === source.lotId && demand.lotId === target.lotId
+        && demand.assetCompatibilityKey === source.assetCompatibilityKey && demand.assetCompatibilityKey === target.assetCompatibilityKey
+        && demand.sourcePassengerRouteVersionId === `route:gtfs:${demand.sourcePassengerLegId}:v1`
+        && demand.targetPassengerRouteVersionId === `route:gtfs:${demand.targetPassengerLegId}:v1`,
+      `${label} driftet von seinem geplanten Umlauf- oder Passenger-Routen-Uebergang.`,
+    );
+    const sourceEndpoint = expected?.sourceEndpoint ?? null;
+    const targetEndpoint = expected?.targetEndpoint ?? null;
+    if (sourceEndpoint !== null && targetEndpoint !== null) {
+      invariant(
+        demand.sourceLocationId === sourceEndpoint.locationId && demand.targetLocationId === targetEndpoint.locationId
+          && demand.sourcePhysicalStopId === sourceEndpoint.physicalStopId && demand.targetPhysicalStopId === targetEndpoint.physicalStopId
+          && demand.sourcePassengerRouteVersionId === sourceEndpoint.passengerRouteVersionId
+          && demand.targetPassengerRouteVersionId === targetEndpoint.passengerRouteVersionId,
+        `${label} driftet von den gebundenen physischen Passenger-Endpunkten.`,
+      );
+    }
+    const samePhysicalEndpoint = demand.sourceLocationId === demand.targetLocationId
+      && demand.sourcePhysicalStopId === demand.targetPhysicalStopId;
+    invariant((kind === "turnaround") === samePhysicalEndpoint, `${label} klassifiziert Turnaround und physischen Transfer falsch.`);
     invariant(
       Number.isSafeInteger(demand.earliestDepartureS)
         && Number.isSafeInteger(demand.latestArrivalS)
         && Number.isSafeInteger(demand.availableWindowS)
-        && demand.earliestDepartureS === source.end.timeS + plan.minimumTurnaroundS
-        && demand.latestArrivalS === target.start.timeS + plan.repeatEveryS - plan.minimumTurnaroundS
         && demand.availableWindowS === demand.latestArrivalS - demand.earliestDepartureS
         && demand.availableWindowS > 0,
-      `${label} besitzt kein reproduzierbares positives Transferzeitfenster.`,
+      `${label} besitzt kein positives ganzzahliges Uebergangszeitfenster.`,
     );
-    invariant(previousDemandId === null || compareText(previousDemandId, demand.id) < 0, "Daily-Circulation-Transferanforderungen sind nicht streng nach ID sortiert.");
-    previousDemandId = demand.id;
-    invariant(!dailyDemandById.has(demand.id), `Daily-Circulation-Transferanforderung ${demand.id} ist doppelt.`);
+    if (sourceEndpoint !== null && targetEndpoint !== null) {
+      const targetOccurrenceS = targetEndpoint.timeS + (demand.dailyBoundary ? plan.repeatEveryS : 0);
+      const expectedEarliestS = sourceEndpoint.timeS + (kind === "transfer" ? plan.minimumTurnaroundS : 0);
+      const expectedLatestS = targetOccurrenceS - (kind === "transfer" ? plan.minimumTurnaroundS : 0);
+      invariant(
+        demand.earliestDepartureS === expectedEarliestS && demand.latestArrivalS === expectedLatestS,
+        `${label} besitzt kein aus dem GTFS-Uebergang reproduzierbares Zeitfenster.`,
+      );
+      if (kind === "turnaround") invariant(demand.availableWindowS >= plan.minimumTurnaroundS, `${label} unterschreitet die Mindestwendezeit.`);
+    }
+    invariant(previousId === null || compareText(previousId, demand.id) < 0, `Daily-Circulation-${kind}-Anforderungen sind nicht streng nach ID sortiert.`);
+    invariant(!dailyDemandById.has(demand.id), `Daily-Circulation-Anforderung ${demand.id} ist doppelt.`);
     dailyDemandById.set(demand.id, demand);
+    return demand.id;
+  };
+  let previousTurnaroundId = null;
+  for (const [index, demand] of plan.turnaroundDemands.entries()) {
+    previousTurnaroundId = validateDemand(demand, {
+      kind: "turnaround",
+      label: `Timetable-Transfer-Demands.dailyPlan.turnaroundDemands[${index}]`,
+      previousId: previousTurnaroundId,
+    });
   }
-  invariant(dailyDemandById.size === transferPairs.size, "Daily-Circulation deckt nicht jede Transfer-Rollover-Kante genau einmal ab.");
+  let previousDemandId = null;
+  for (const [index, demand] of plan.transferDemands.entries()) {
+    previousDemandId = validateDemand(demand, {
+      kind: "transfer",
+      label: `Timetable-Transfer-Demands.dailyPlan.transferDemands[${index}]`,
+      previousId: previousDemandId,
+    });
+  }
+  if (gtfsSnapshot !== null) invariant(classifiedTransitions.size === expectedTransitions.size, "Daily-Circulation partitioniert nicht jeden internen und taeglichen Grenzuebergang genau einmal.");
+  invariant(dailyDemandById.size === metrics.plannedTransitionCount, "Daily-Circulation-Anforderungszahl driftet von den geplanten Uebergaengen.");
   invariant(new Set(plan.transferDemands.map(({ lotId }) => lotId)).size === metrics.transferLotCount, "Daily-Circulation-Transferloszahl driftet von den Metriken.");
 
   invariant(Array.isArray(transferDemands.transferRoutes) && transferDemands.transferRoutes.length === metrics.transferDemandCount, "Timetable-Transfer-Routen decken die Anforderungen nicht 1:1 ab.");
@@ -964,10 +1127,10 @@ function containsExternalOperationalNetworkProvenance(value) {
 
 function validateTimetableRouteEvidenceBinding(evidence, inputBindings) {
   exactKeys(evidence, TIMETABLE_ROUTE_EVIDENCE_KEYS, "timetableRouteEvidence");
-  invariant(evidence.reportSchema === GERMANY_TIMETABLE_ROUTE_REPORT_SCHEMA, "timetableRouteEvidence bindet keinen v3-Routenbericht mit physischer Tagesumlaufabdeckung.");
+  invariant(evidence.reportSchema === GERMANY_TIMETABLE_ROUTE_REPORT_SCHEMA, "timetableRouteEvidence bindet keinen v4-Routenbericht mit vollstaendiger physischer Uebergangspartition.");
   invariant(evidence.policyId === TIMETABLE_ROUTE_POLICY_ID && evidence.policyId === SYNTHETIC_OPERATIONAL_POLICY_ID, "timetableRouteEvidence bindet nicht synthetic-operational-b/v2.");
   invariant(evidence.derivationRule === TIMETABLE_ROUTE_DERIVATION_RULE && evidence.selectionRule === TIMETABLE_ROUTE_SELECTION_RULE, "timetableRouteEvidence bindet abweichende GTFS-Fahrwegregeln.");
-  invariant(evidence.transferDemandsSchema === GERMANY_TIMETABLE_TRANSFER_DEMAND_SCHEMA, "timetableRouteEvidence bindet keinen v1-Transfer-Sidecar.");
+  invariant(evidence.transferDemandsSchema === GERMANY_TIMETABLE_TRANSFER_DEMAND_SCHEMA, "timetableRouteEvidence bindet keinen v2-Transfer-Sidecar.");
   for (const field of ["reportBytes", "routesBytes", "gtfsSnapshotBytes", "transferDemandsBytes"]) positiveInteger(evidence[field], `timetableRouteEvidence.${field}`);
   for (const field of [
     "reportSha256", "routesSha256", "gtfsSnapshotSha256", "transferDemandsSha256", "snapshotHash",
@@ -1067,7 +1230,7 @@ export function validateSyntheticOperationalTimetableRouteEvidence({
   tracksBinding,
 }) {
   exactKeys(routeReport, TIMETABLE_ROUTE_REPORT_KEYS, "Timetable-Route-Bericht");
-  invariant(routeReport.schema === GERMANY_TIMETABLE_ROUTE_REPORT_SCHEMA && routeReport.infraReleaseId === releaseId, "Timetable-Route-Bericht verletzt v3-Schema oder Releasebindung.");
+  invariant(routeReport.schema === GERMANY_TIMETABLE_ROUTE_REPORT_SCHEMA && routeReport.infraReleaseId === releaseId, "Timetable-Route-Bericht verletzt v4-Schema oder Releasebindung.");
   invariant(
     routeReport.status === "qualified"
       && routeReport.routesProduced === true
@@ -1145,6 +1308,7 @@ export function validateSyntheticOperationalTimetableRouteEvidence({
     transferDemandsBinding: timetableTransferDemandsBinding,
     routeReport,
     timetableRoutesProof,
+    gtfsSnapshot: validatedSnapshot.snapshot,
   });
   invariant(
     routeReport.dailyCirculationPlanSha256 === transferEvidence.dailyCirculationPlanSha256
