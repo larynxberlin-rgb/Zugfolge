@@ -450,6 +450,7 @@ jobs:
       - name: Keycloak-26.7.0 Identitaet und Token ueber Schema-Up/Down erhalten
         run: |
           set -euo pipefail
+          mkdir -p test-results
           bash tools/alpha-ops/keycloak-public-to-schema.real-integration.sh \
             "$TEST_DATABASE_URL" test-results/keycloak-schema-migration \
             | tee test-results/keycloak-schema-migration.json

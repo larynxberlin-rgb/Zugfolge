@@ -457,6 +457,13 @@ test("CI prueft den gepinnten Keycloak mit echter Identitaet und Token vor, nach
   assert.match(integration, /run_mutating_command recover[^\n]+up\/recover-receipt\.json[\s\S]*run_runtime_gate preflight-up[^\n]+up\/recover-receipt\.json/u);
   assert.match(integration, /create_isolated_restore[^\n]+down[\s\S]*run_mutating_command plan-down[\s\S]*run_mutating_command down[\s\S]*run_mutating_command recover[\s\S]*start_keycloak public/u);
   assert.match(integration, /legacy_subject.*migrated_subject.*rolled_back_subject/u);
+  assert.match(integration, /rolled_back_subject[\s\S]*run_mutating_command up "\$evidence_root\/up" "\$evidence_root\/final-up-receipt\.json"[\s\S]*run_runtime_gate preflight[^\n]+final-up-receipt\.json/u);
+  assert.match(integration, /"finalState":"migrated"/u);
+  assert.ok(
+    workflow.indexOf("keycloak-public-to-schema.real-integration.sh")
+      < workflow.indexOf("Game-Backup, isolierter Restore und gleicher autoritativer Hash"),
+    "der Rollbackbeweis darf erst nach dem final migrierten Keycloak-Zustand laufen",
+  );
   assert.match(integration, /tokenIdentityPreserved/u);
 });
 

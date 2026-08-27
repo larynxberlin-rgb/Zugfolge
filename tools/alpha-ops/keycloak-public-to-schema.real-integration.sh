@@ -213,17 +213,28 @@ if [[ "$legacy_subject" != "$migrated_subject" || "$legacy_subject" != "$rolled_
   exit 70
 fi
 
+# Der nachgelagerte Datenbank-Rollbackbeweis akzeptiert ausschliesslich den
+# produktiven, migrierten Keycloak-Zustand. Der Down-Drill stellt zuvor
+# byte-/identitaetsgleich den Legacy-Zustand wieder her; derselbe freigegebene
+# Up-Plan muss ihn deshalb erneut und ohne neue Planannahmen migrieren koennen.
+run_mutating_command up "$evidence_root/up" "$evidence_root/final-up-receipt.json"
+run_runtime_gate preflight-up "$evidence_root/final-up-receipt.json"
+run_runtime_gate preflight "$evidence_root/final-up-receipt.json"
+
 node -e '
   const fs = require("node:fs");
   const up = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
   const down = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
   const upRecover = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
   const downRecover = JSON.parse(fs.readFileSync(process.argv[4], "utf8"));
+  const finalUp = JSON.parse(fs.readFileSync(process.argv[5], "utf8"));
   if (up.schema !== "keycloak-public-to-schema-receipt/v1" || up.action !== "up") process.exit(1);
   if (down.schema !== "keycloak-public-to-schema-receipt/v1" || down.action !== "down") process.exit(1);
   if (upRecover.schema !== "keycloak-public-to-schema-recover-receipt/v1" || upRecover.action !== "up") process.exit(1);
   if (downRecover.schema !== "keycloak-public-to-schema-recover-receipt/v1" || downRecover.action !== "down") process.exit(1);
+  if (finalUp.schema !== "keycloak-public-to-schema-receipt/v1" || finalUp.action !== "up") process.exit(1);
 ' "$evidence_root/up/receipt.json" "$evidence_root/down/receipt.json" \
-  "$evidence_root/up/recover-receipt.json" "$evidence_root/down/recover-receipt.json"
+  "$evidence_root/up/recover-receipt.json" "$evidence_root/down/recover-receipt.json" \
+  "$evidence_root/final-up-receipt.json"
 
-printf '{"schema":"keycloak-public-to-schema-real-integration/v1","subject":"%s","up":true,"down":true,"tokenIdentityPreserved":true}\n' "$legacy_subject"
+printf '{"schema":"keycloak-public-to-schema-real-integration/v1","subject":"%s","up":true,"down":true,"finalState":"migrated","tokenIdentityPreserved":true}\n' "$legacy_subject"
