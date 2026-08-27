@@ -293,9 +293,12 @@ jobs:
         run: |
           set -euo pipefail
           case "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}" in /*) ;; *) echo "Artefaktwurzel muss absolut sein." >&2; exit 1;; esac
+          test -f "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/alpha-world-build-configuration.json"
           test -f "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/operational-infrastructure-v2.json"
           test -f "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/gtfs-region-20260810-v2.json"
           test -f "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/timetable-routes-v2.jsonseq"
+          test -f "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/timetable-routes-v2.transfer-demands-v1.json"
+          test -f "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/operational-infrastructure-v2.movement-route-templates-v2.json"
           test -f "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/alpha-world-deployment.2026.4.json"
           test -f "${ZUGFOLGE_REAL_GERMANY_2026_4_ROOT}/alpha-world-deployment.2026.4.signed.json"
           pnpm --filter @zugfolge/game-api... build
@@ -444,6 +447,12 @@ jobs:
       - name: Echter V1-V2-Postgres/Odoo-Cross-Contract (Game-Seite)
         run: node --test tools/alpha-ops/world-deployment-v1-v2.postgres-odoo.integration.test.mjs
       - run: pnpm --filter @zugfolge/game-api test
+      - name: Keycloak-26.7.0 Identitaet und Token ueber Schema-Up/Down erhalten
+        run: |
+          set -euo pipefail
+          bash tools/alpha-ops/keycloak-public-to-schema.real-integration.sh \
+            "$TEST_DATABASE_URL" test-results/keycloak-schema-migration \
+            | tee test-results/keycloak-schema-migration.json
       - name: Game-Backup, isolierter Restore und gleicher autoritativer Hash
         run: |
           set -euo pipefail
@@ -471,13 +480,6 @@ jobs:
           DATABASE_ROLLBACK_RESTORE_PROOF_PATH=test-results/backup/database-restore-proof.json \
           DATABASE_ROLLBACK_PROOF_OUTPUT_PATH=test-results/backup/database-rollback-proof.json \
           node tools/alpha-ops/create-database-rollback-proof.mjs
-      - name: Keycloak-26.7.0 Identitaet und Token ueber Schema-Up/Down erhalten
-        run: |
-          set -euo pipefail
-          bash tools/alpha-ops/keycloak-public-to-schema.real-integration.sh \
-            "$TEST_DATABASE_URL" test-results/keycloak-schema-migration \
-            | tee test-results/keycloak-schema-migration.json
-
   odoo-19:
     name: Odoo 19 Add-on (echter getrennter Dienst)
     runs-on: ubuntu-latest
