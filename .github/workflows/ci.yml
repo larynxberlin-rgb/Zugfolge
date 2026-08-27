@@ -406,7 +406,7 @@ jobs:
     name: Deutschland 2026.5 manifestgebundener V2-Kartenbuilder
     # Der Windows-GDAL-Korpus laeuft nur nach einem bewussten Dispatch auf dem
     # dafuer inventarisierten Runner. Pull-Request-Code erreicht diesen Host nie.
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_germany_2026_5_real_acceptance == true }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && inputs.run_germany_2026_5_real_acceptance == true }}
     runs-on: [self-hosted, windows, x64, germany-2026-5-builder]
     timeout-minutes: 480
     env:
@@ -578,7 +578,7 @@ jobs:
     needs: germany-2026-5-real-builder-reproduction
     # Linux-Runtime und PostgreSQL werden erst nach der bytegleichen Windows-
     # Builderreproduktion und nur durch denselben bewussten Dispatch erreicht.
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_germany_2026_5_real_acceptance == true }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && inputs.run_germany_2026_5_real_acceptance == true }}
     runs-on: [self-hosted, linux, x64, germany-2026-5-runtime]
     timeout-minutes: 360
     services:

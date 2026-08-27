@@ -18,6 +18,7 @@ test("2026.5 besitzt einen eigenen manuell geschlossenen Builder- und Runtime-Di
   assert.match(workflow, /run_germany_2026_5_real_acceptance:[\s\S]{0,240}default: false[\s\S]{0,80}type: boolean/u);
   for (const job of [builder, runtime]) {
     assert.match(job, /github\.event_name == 'workflow_dispatch'[\s\S]*inputs\.run_germany_2026_5_real_acceptance == true/u);
+    assert.match(job, /github\.ref == format\('refs\/heads\/\{0\}', github\.event\.repository\.default_branch\)/u);
     assert.doesNotMatch(job, /2026\.4|transfer-demands-v1/u);
     assert.doesNotMatch(job, /PENDING|PLACEHOLDER|DUMMY/u);
   }
