@@ -147,7 +147,9 @@ pub use facility::{
     Facility, FacilityCatalog, FacilityCatalogBuilder, FacilityKind, FleetClass, FleetCompetence,
     OpeningHours, TimeOfDay,
 };
-pub use germany_operational_v2::{GermanyOperationalV2Error, derive_germany_operational_v2};
+pub use germany_operational_v2::{
+    GermanyOperationalV2Error, derive_germany_operational_v2, preflight_germany_turnarounds_v2,
+};
 pub use graph::{OperatingGraph, OperatingGraphBuilder};
 pub use identity::{
     FacilityId, HeadElementId, HeadNodeId, HeadSignalId, InterlockingRouteId, OperatingPointCode,

@@ -538,6 +538,10 @@ const CONNEWITZ_BERTH_EDGE: &str = "track:osm-way-184332926-segment-1-n656930100
 const MULTI_SEGMENT_APPROACH_EDGE: &str =
     "track:osm-way-123131206-segment-3-n9100000001-n8235223466";
 const THROUGH_OUTBOUND_EDGE: &str = "track:osm-way-99112233-segment-1-n4158877934-n9100000002";
+const FIXTURE_INBOUND_LEG_ID: &str = "fixture-turnaround-inbound";
+const FIXTURE_OUTBOUND_LEG_ID: &str = "fixture-turnaround-outbound";
+const FIXTURE_INBOUND_ROUTE_ID: &str = "route:gtfs:fixture-turnaround-inbound:v1";
+const FIXTURE_OUTBOUND_ROUTE_ID: &str = "route:gtfs:fixture-turnaround-outbound:v1";
 
 fn prepare_connewitz_turnaround_layers(
     root: &TestDirectory,
@@ -1040,6 +1044,262 @@ fn write_turnaround_spec(root: &TestDirectory) -> PathBuf {
     path
 }
 
+fn read_sequence_values(path: &Path) -> Vec<Value> {
+    fs::read(path)
+        .expect("GeoJSONSeq-Testlayer lesen")
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| {
+            let payload = line
+                .strip_prefix(&[0x1e])
+                .expect("GeoJSONSeq-Datensatztrenner");
+            serde_json::from_slice(payload).expect("GeoJSONSeq-Testdatensatz")
+        })
+        .collect()
+}
+
+fn reversed_route_legs(route: &Value) -> Vec<Value> {
+    route["legs"]
+        .as_array()
+        .expect("Passenger-Laufweg-Legs")
+        .iter()
+        .rev()
+        .map(|leg| {
+            let direction = match leg["direction"].as_str() {
+                Some("along") => "against",
+                Some("against") => "along",
+                other => panic!("ungueltige Fixture-Richtung {other:?}"),
+            };
+            json!({
+                "edgeId": leg["edgeId"],
+                "direction": direction,
+                "edgeEntryMm": leg["edgeExitMm"],
+                "edgeExitMm": leg["edgeEntryMm"],
+                "availableProtectionSystems": leg["availableProtectionSystems"],
+                "simultaneouslyRequiredProtectionSystems": leg["simultaneouslyRequiredProtectionSystems"]
+            })
+        })
+        .collect()
+}
+
+fn fixture_route_length_and_runtime(legs: &[Value]) -> (i64, i64) {
+    let mut length_mm = 0_u64;
+    let mut runtime_ms = 0_u64;
+    for leg in legs {
+        let entry = leg["edgeEntryMm"].as_i64().expect("Fixture-Einstieg");
+        let exit = leg["edgeExitMm"].as_i64().expect("Fixture-Ausstieg");
+        let movement_mm = entry.abs_diff(exit);
+        let speed_mmps = match leg["direction"].as_str() {
+            Some("along") => 80_u64 * 1_000_000 / 3_600,
+            Some("against") => 70_u64 * 1_000_000 / 3_600,
+            other => panic!("ungueltige Fixture-Richtung {other:?}"),
+        };
+        length_mm = length_mm.checked_add(movement_mm).expect("Fixture-Laenge");
+        runtime_ms = runtime_ms
+            .checked_add((movement_mm * 1_000).div_ceil(speed_mmps))
+            .expect("Fixture-Laufzeit");
+    }
+    (
+        i64::try_from(length_mm).expect("Fixture-Laenge als i64"),
+        i64::try_from(runtime_ms).expect("Fixture-Laufzeit als i64"),
+    )
+}
+
+fn write_daily_plan_v2_turnaround_spec(root: &TestDirectory) -> PathBuf {
+    let timetable_path = root.join("timetable-routes.geojsonseq");
+    let mut timetable_routes = read_sequence_values(&timetable_path);
+    assert!(
+        !timetable_routes.is_empty(),
+        "Turnaround-Fixture braucht eine Passenger-Route"
+    );
+    let original_outbound = timetable_routes.get(1).cloned();
+
+    let mut inbound = timetable_routes[0].clone();
+    inbound["routeVersionId"] = json!(FIXTURE_INBOUND_ROUTE_ID);
+    inbound["templateId"] = json!("template:gtfs:fixture-turnaround-inbound:v1");
+    timetable_routes.push(inbound.clone());
+
+    let outbound = original_outbound.map(|mut route| {
+        route["routeVersionId"] = json!(FIXTURE_OUTBOUND_ROUTE_ID);
+        route["templateId"] = json!("template:gtfs:fixture-turnaround-outbound:v1");
+        timetable_routes.push(route.clone());
+        route
+    });
+    write_sequence(&timetable_path, &timetable_routes);
+
+    let source_route = outbound.as_ref().unwrap_or(&inbound);
+    let source_leg_id = if outbound.is_some() {
+        FIXTURE_OUTBOUND_LEG_ID
+    } else {
+        FIXTURE_INBOUND_LEG_ID
+    };
+    let source_route_id = if outbound.is_some() {
+        FIXTURE_OUTBOUND_ROUTE_ID
+    } else {
+        FIXTURE_INBOUND_ROUTE_ID
+    };
+    let mut transfer_legs = reversed_route_legs(source_route);
+    if outbound.is_some() {
+        transfer_legs.extend(reversed_route_legs(&inbound));
+    }
+    let (transfer_length_mm, transfer_runtime_ms) =
+        fixture_route_length_and_runtime(&transfer_legs);
+
+    let transfer_demand = json!({
+        "id": "transfer:fixture-rollover",
+        "lotId": "lot:fixture",
+        "assetCompatibilityKey": "asset:fixture",
+        "sourceCirculationId": "circulation:fixture",
+        "targetCirculationId": "circulation:fixture",
+        "sourcePassengerLegId": source_leg_id,
+        "targetPassengerLegId": FIXTURE_INBOUND_LEG_ID,
+        "sourcePassengerRouteVersionId": source_route_id,
+        "targetPassengerRouteVersionId": FIXTURE_INBOUND_ROUTE_ID,
+        "sourceLocationId": "location:fixture:end",
+        "targetLocationId": "location:fixture:start",
+        "sourcePhysicalStopId": "stop:fixture:end",
+        "targetPhysicalStopId": "stop:fixture:start",
+        "earliestDepartureS": 2_300,
+        "latestArrivalS": 87_100,
+        "availableWindowS": 84_800,
+        "dailyBoundary": true,
+        "movementKind": "train"
+    });
+    let turnaround_demands = outbound.as_ref().map_or_else(Vec::new, |_| {
+        vec![json!({
+            "id": "turnaround:fixture-inbound-outbound",
+            "lotId": "lot:fixture",
+            "assetCompatibilityKey": "asset:fixture",
+            "sourceCirculationId": "circulation:fixture",
+            "targetCirculationId": "circulation:fixture",
+            "sourcePassengerLegId": FIXTURE_INBOUND_LEG_ID,
+            "targetPassengerLegId": FIXTURE_OUTBOUND_LEG_ID,
+            "sourcePassengerRouteVersionId": FIXTURE_INBOUND_ROUTE_ID,
+            "targetPassengerRouteVersionId": FIXTURE_OUTBOUND_ROUTE_ID,
+            "sourceLocationId": "location:fixture:turnaround",
+            "targetLocationId": "location:fixture:turnaround",
+            "sourcePhysicalStopId": "stop:fixture:turnaround",
+            "targetPhysicalStopId": "stop:fixture:turnaround",
+            "earliestDepartureS": 1_000,
+            "latestArrivalS": 1_300,
+            "availableWindowS": 300,
+            "dailyBoundary": false
+        })]
+    });
+    let passenger_leg_ids = if outbound.is_some() {
+        json!([FIXTURE_INBOUND_LEG_ID, FIXTURE_OUTBOUND_LEG_ID])
+    } else {
+        json!([FIXTURE_INBOUND_LEG_ID])
+    };
+    let passenger_train_run_ids = if outbound.is_some() {
+        json!(["run:fixture:inbound", "run:fixture:outbound"])
+    } else {
+        json!(["run:fixture:inbound"])
+    };
+    let planned_transition_count = if outbound.is_some() { 2 } else { 1 };
+    let turnaround_demand_count = if outbound.is_some() { 1 } else { 0 };
+    let mut plan_body = json!({
+        "schema": "zugfolge-daily-circulation-plan/v2",
+        "rule": "lot-local-playable-path-cover-with-explicit-physical-transition-partition/v2",
+        "gtfsReleaseId": "gtfs:fixture",
+        "repeatEveryS": 86_400,
+        "minimumTurnaroundS": 300,
+        "metrics": {
+            "lotCount": 1,
+            "journeyChainCount": planned_transition_count,
+            "circulationCount": 1,
+            "rolloverAssignmentCount": 1,
+            "plannedTransitionCount": planned_transition_count,
+            "turnaroundDemandCount": turnaround_demand_count,
+            "transferDemandCount": 1,
+            "transferLotCount": 1
+        },
+        "circulations": [{
+            "id": "circulation:fixture",
+            "lotId": "lot:fixture",
+            "serviceLineId": "line:fixture",
+            "assetCompatibilityKey": "asset:fixture",
+            "journeyChainIds": if outbound.is_some() {
+                json!(["journey:fixture:internal", "journey:fixture:rollover"])
+            } else {
+                json!(["journey:fixture:rollover"])
+            },
+            "passengerLegIds": passenger_leg_ids,
+            "passengerTrainRunIds": passenger_train_run_ids,
+            "start": {
+                "legId": FIXTURE_INBOUND_LEG_ID,
+                "locationId": "location:fixture:start",
+                "physicalStopId": "stop:fixture:start",
+                "timeS": 1_000
+            },
+            "end": {
+                "legId": source_leg_id,
+                "locationId": "location:fixture:end",
+                "physicalStopId": "stop:fixture:end",
+                "timeS": 2_000
+            }
+        }],
+        "rolloverAssignments": [{
+            "kind": "transfer",
+            "sourceCirculationId": "circulation:fixture",
+            "targetCirculationId": "circulation:fixture"
+        }],
+        "turnaroundDemands": turnaround_demands,
+        "transferDemands": [transfer_demand.clone()]
+    });
+    let plan_sha256 = alpha_hash("zugfolge-daily-circulation-plan/v2", &plan_body);
+    plan_body["planSha256"] = json!(plan_sha256);
+
+    let mut transfer_route = transfer_demand;
+    let route = transfer_route
+        .as_object_mut()
+        .expect("Fixture-Transferroute");
+    route.insert("formationLengthsMm".to_owned(), json!([46_560, 69_860]));
+    route.insert(
+        "routeVersionId".to_owned(),
+        json!("route:transfer:fixture-rollover:v1"),
+    );
+    route.insert(
+        "templateId".to_owned(),
+        json!("template:transfer:fixture-rollover:v1"),
+    );
+    route.insert("legs".to_owned(), Value::Array(transfer_legs));
+    route.insert("totalLengthMm".to_owned(), json!(transfer_length_mm));
+    route.insert("weightedCostMm".to_owned(), json!(transfer_length_mm));
+    route.insert("minimumRuntimeMs".to_owned(), json!(transfer_runtime_ms));
+    let mut canonical_route = String::new();
+    canonical_json(&transfer_route, &mut canonical_route);
+    let transfer_contract = json!({
+        "schema": "zugfolge-timetable-transfer-demands/v2",
+        "infraReleaseId": "infra-deutschland-test-v2",
+        "gtfsSnapshotHash": "a".repeat(64),
+        "dailyPlan": plan_body,
+        "formationLengthsMm": [46_560, 69_860],
+        "transferRoutes": [transfer_route],
+        "transferSetSha256": sha256(format!("{canonical_route}\n").as_bytes())
+    });
+    let transfer_bytes =
+        serde_json::to_vec(&transfer_contract).expect("DailyPlan-v2-Fixture serialisieren");
+    fs::write(root.join("turnaround-demands-v2.json"), &transfer_bytes)
+        .expect("DailyPlan-v2-Fixture schreiben");
+
+    let spec_path = write_turnaround_spec(root);
+    let mut spec: Value =
+        serde_json::from_slice(&fs::read(&spec_path).expect("Turnaround-Spec mit DailyPlan lesen"))
+            .expect("Turnaround-Spec mit DailyPlan JSON");
+    spec["layers"]["transferDemands"] = json!({
+        "path": "turnaround-demands-v2.json",
+        "expectedBytes": transfer_bytes.len(),
+        "expectedSha256": sha256(&transfer_bytes)
+    });
+    fs::write(
+        &spec_path,
+        serde_json::to_vec_pretty(&spec).expect("Turnaround-Spec mit DailyPlan serialisieren"),
+    )
+    .expect("Turnaround-Spec mit DailyPlan schreiben");
+    spec_path
+}
+
 fn write_spec(root: &TestDirectory, timetable_routes: Option<&str>) -> PathBuf {
     let path = root.join("spec.json");
     fs::write(
@@ -1070,6 +1330,9 @@ fn write_spec(root: &TestDirectory, timetable_routes: Option<&str>) -> PathBuf {
                 "maximumPlatformSnapDistanceMm": 25_000,
                 "minimumOverlapMm": 200_000,
                 "minimumBerthEndClearanceMm": 10_000,
+                "maximumStablingPathEdges": 64,
+                "maximumStablingPathLengthMm": 10_000_000,
+                "simulatedOperationalBerthFallback": "real-osm-service-yard-then-spur-then-unclassified-rail/v1",
                 "maximumDirectDwellMs": 1_200_000,
                 "terminalFormationLengthsMm": [],
                 "defaultProtectionSystem": "pzb",
@@ -1126,7 +1389,7 @@ fn connewitz_abstellung_ist_fuer_beide_formationslaengen_physisch_und_stabil() {
         "\"frequency\":\"16.7\",\"railway:pzb\":\"yes\",\"railway:track_ref\":\"5\"}"
     );
     prepare_connewitz_turnaround_layers(&root, 126_822, berth_tags, true);
-    let spec = write_turnaround_spec(&root);
+    let spec = write_daily_plan_v2_turnaround_spec(&root);
     let first_candidate = root.join("connewitz-first.json");
     let first_report = root.join("connewitz-first-report.json");
     let first_receipt =
@@ -1165,16 +1428,21 @@ fn connewitz_abstellung_ist_fuer_beide_formationslaengen_physisch_und_stabil() {
         2,
         "dieselbe Track-5-Zielkante darf trotz zweier Wege nur einen Berth je Laengenklasse anbieten"
     );
+    assert_eq!(sidecar["metrics"]["observedStablingTemplateCount"], 2);
+    assert_eq!(
+        sidecar["metrics"]["simulatedOperationalStablingTemplateCount"],
+        0
+    );
     assert!(candidate.get("turnaroundTemplates").is_none());
     let direct_templates = sidecar["directTemplates"]
         .as_array()
         .expect("Direct-Templates");
-    assert_eq!(direct_templates.len(), 4);
+    assert_eq!(direct_templates.len(), 2);
     let demanded_direct = direct_templates
         .iter()
         .filter(|template| {
-            template["inboundRouteVersionId"] == "passenger:connewitz:inbound"
-                && template["outboundRouteVersionId"] == "passenger:connewitz:outbound"
+            template["inboundRouteVersionId"] == FIXTURE_INBOUND_ROUTE_ID
+                && template["outboundRouteVersionId"] == FIXTURE_OUTBOUND_ROUTE_ID
         })
         .collect::<Vec<_>>();
     assert_eq!(demanded_direct.len(), 2);
@@ -1202,20 +1470,28 @@ fn connewitz_abstellung_ist_fuer_beide_formationslaengen_physisch_und_stabil() {
             .iter()
             .find(|template| template["formationLengthMm"] == length_mm)
             .expect("formationsspezifisches Template");
-        assert_eq!(
-            template["inboundRouteVersionId"],
-            "passenger:connewitz:inbound"
-        );
+        assert_eq!(template["inboundRouteVersionId"], FIXTURE_INBOUND_ROUTE_ID);
         assert_eq!(
             template["outboundRouteVersionId"],
-            "passenger:connewitz:outbound"
+            FIXTURE_OUTBOUND_ROUTE_ID
         );
         assert_eq!(template["terminalEdgeId"], CONNEWITZ_TERMINAL_EDGE);
         assert_eq!(template["terminalNodeId"], 4_158_877_934_i64);
         assert_eq!(template["inboundDirection"], "against");
         assert_eq!(template["outboundDirection"], "along");
         assert_eq!(template["candidateRank"], 0);
-        assert_eq!(template["stablingPathLengthMm"], 193_596);
+        let observed_assignment = json!({
+            "kind": "observed",
+            "subtype": "osm-service-siding",
+            "geometryProvenance": "real-osm-rail",
+            "operationalAssignmentProvenance": "observed-osm-service"
+        });
+        assert_eq!(template["arrivalBerthAssignment"], observed_assignment);
+        assert_eq!(template["departureBerthAssignment"], observed_assignment);
+        assert_eq!(
+            template["stablingPathLengthMm"], 387_192,
+            "asymmetrische V2-Kosten binden Ankunfts- und Ausgangspfad"
+        );
         assert_eq!(template["shuntIn"]["continuity"], "same-direction");
         assert_eq!(template["shuntOut"]["continuity"], "reverse-direction");
         assert_eq!(template["outbound"]["continuity"], "same-direction");
@@ -1223,16 +1499,15 @@ fn connewitz_abstellung_ist_fuer_beide_formationslaengen_physisch_und_stabil() {
             template["terminalIntervals"],
             json!([{"edgeId": CONNEWITZ_TERMINAL_EDGE, "fromMm": 0, "toMm": length_mm}])
         );
-        assert_eq!(
-            template["berth"],
-            json!({
-                "edgeId": CONNEWITZ_BERTH_EDGE,
-                "fromMm": berth_from_mm,
-                "toMm": berth_to_mm,
-                "leftClearanceMm": berth_from_mm,
-                "rightClearanceMm": 126_822 - berth_to_mm
-            })
-        );
+        let expected_berth = json!({
+            "edgeId": CONNEWITZ_BERTH_EDGE,
+            "fromMm": berth_from_mm,
+            "toMm": berth_to_mm,
+            "leftClearanceMm": berth_from_mm,
+            "rightClearanceMm": 126_822 - berth_to_mm
+        });
+        assert_eq!(template["arrivalBerth"], expected_berth);
+        assert_eq!(template["departureBerth"], expected_berth);
 
         for field in ["shuntIn", "shuntOut", "outbound"] {
             assert_eq!(template[field]["headRouteMm"], length_mm);
@@ -1271,14 +1546,14 @@ fn connewitz_abstellung_ist_fuer_beide_formationslaengen_physisch_und_stabil() {
         let shunt_in = &candidate["routeVersions"][shunt_in_id];
         let shunt_out = &candidate["routeVersions"][shunt_out_id];
         let qualified_outbound = &candidate["routeVersions"][qualified_outbound_id];
-        assert_eq!(shunt_in["predecessorId"], "passenger:connewitz:inbound");
+        assert_eq!(shunt_in["predecessorId"], FIXTURE_INBOUND_ROUTE_ID);
         assert_eq!(shunt_in["transitionRouteMm"], length_mm);
         assert_eq!(route_length_mm(shunt_in), shunt_in_length_mm);
         assert_eq!(shunt_out["predecessorId"], shunt_in_id);
         assert_eq!(shunt_out["transitionRouteMm"], length_mm);
         assert_eq!(qualified_outbound["predecessorId"], shunt_out_id);
         assert_eq!(qualified_outbound["transitionRouteMm"], length_mm);
-        assert_ne!(qualified_outbound_id, "passenger:connewitz:outbound");
+        assert_ne!(qualified_outbound_id, FIXTURE_OUTBOUND_ROUTE_ID);
         assert_eq!(qualified_outbound["legs"][0]["routeStartMm"], 0);
         assert_eq!(qualified_outbound["legs"][1]["routeStartMm"], length_mm);
 
@@ -1325,7 +1600,7 @@ fn connewitz_abstellung_ist_fuer_beide_formationslaengen_physisch_und_stabil() {
 fn mehrkantiges_terminal_bildet_69860_mm_lueckenlos_und_in_fahrtrichtung_ab() {
     let root = TestDirectory::create();
     prepare_multi_segment_terminal_turnaround_layers(&root);
-    let spec = write_turnaround_spec(&root);
+    let spec = write_daily_plan_v2_turnaround_spec(&root);
     let candidate_path = root.join("multi-segment-terminal.json");
     derive_germany_operational_v2(
         &spec,
@@ -1351,8 +1626,8 @@ fn mehrkantiges_terminal_bildet_69860_mm_lueckenlos_und_in_fahrtrichtung_ab() {
         .unwrap()
         .iter()
         .find(|template| {
-            template["inboundRouteVersionId"] == "passenger:multi-segment:inbound"
-                && template["outboundRouteVersionId"] == "passenger:multi-segment:outbound"
+            template["inboundRouteVersionId"] == FIXTURE_INBOUND_ROUTE_ID
+                && template["outboundRouteVersionId"] == FIXTURE_OUTBOUND_ROUTE_ID
                 && template["formationLengthMm"] == 69_860
         })
         .expect("mehrkantiges Direct-Template");
@@ -1375,8 +1650,8 @@ fn mehrkantiges_terminal_bildet_69860_mm_lueckenlos_und_in_fahrtrichtung_ab() {
         .unwrap()
         .iter()
         .find(|template| {
-            template["inboundRouteVersionId"] == "passenger:multi-segment:inbound"
-                && template["outboundRouteVersionId"] == "passenger:multi-segment:outbound"
+            template["inboundRouteVersionId"] == FIXTURE_INBOUND_ROUTE_ID
+                && template["outboundRouteVersionId"] == FIXTURE_OUTBOUND_ROUTE_ID
                 && template["formationLengthMm"] == 69_860
         })
         .expect("mehrkantiges Stabling-Template");
@@ -1401,7 +1676,7 @@ fn mehrkantiges_terminal_bildet_69860_mm_lueckenlos_und_in_fahrtrichtung_ab() {
 fn halt_innerhalb_einer_osm_kante_bleibt_direct_aber_erfindet_keinen_abstellknoten() {
     let root = TestDirectory::create();
     prepare_mid_edge_direct_layers(&root);
-    let spec = write_turnaround_spec(&root);
+    let spec = write_daily_plan_v2_turnaround_spec(&root);
     let candidate_path = root.join("mid-edge-direct.json");
     derive_germany_operational_v2(
         &spec,
@@ -1420,8 +1695,8 @@ fn halt_innerhalb_einer_osm_kante_bleibt_direct_aber_erfindet_keinen_abstellknot
         .unwrap()
         .iter()
         .filter(|template| {
-            template["inboundRouteVersionId"] == "passenger:mid-edge:inbound"
-                && template["outboundRouteVersionId"] == "passenger:mid-edge:outbound"
+            template["inboundRouteVersionId"] == FIXTURE_INBOUND_ROUTE_ID
+                && template["outboundRouteVersionId"] == FIXTURE_OUTBOUND_ROUTE_ID
         })
         .collect::<Vec<_>>();
     assert_eq!(demanded.len(), 2);
@@ -1449,7 +1724,7 @@ fn halt_innerhalb_einer_osm_kante_bleibt_direct_aber_erfindet_keinen_abstellknot
 fn same_direction_direct_nutzt_eigenen_through_und_danach_die_vollstaendige_basisroute() {
     let root = TestDirectory::create();
     prepare_same_direction_through_layers(&root);
-    let spec = write_turnaround_spec(&root);
+    let spec = write_daily_plan_v2_turnaround_spec(&root);
     let candidate_path = root.join("same-direction-through.json");
     derive_germany_operational_v2(
         &spec,
@@ -1473,8 +1748,8 @@ fn same_direction_direct_nutzt_eigenen_through_und_danach_die_vollstaendige_basi
             .unwrap()
             .iter()
             .find(|template| {
-                template["inboundRouteVersionId"] == "passenger:through:inbound"
-                    && template["outboundRouteVersionId"] == "passenger:through:outbound"
+                template["inboundRouteVersionId"] == FIXTURE_INBOUND_ROUTE_ID
+                    && template["outboundRouteVersionId"] == FIXTURE_OUTBOUND_ROUTE_ID
                     && template["formationLengthMm"] == formation_length_mm
             })
             .expect("formationsspezifisches Through-Template");
@@ -1492,7 +1767,7 @@ fn same_direction_direct_nutzt_eigenen_through_und_danach_die_vollstaendige_basi
         assert_eq!(through["continuity"], "same-direction");
         assert_eq!(
             through["predecessorBaseRouteVersionId"],
-            "passenger:through:inbound"
+            FIXTURE_INBOUND_ROUTE_ID
         );
         assert!(
             !through["resourceIds"].as_array().unwrap().is_empty(),
@@ -1500,7 +1775,7 @@ fn same_direction_direct_nutzt_eigenen_through_und_danach_die_vollstaendige_basi
         );
         let through_route_id = through["routeVersionId"].as_str().unwrap();
         let through_route = &candidate["routeVersions"][through_route_id];
-        assert_eq!(through_route["predecessorId"], "passenger:through:inbound");
+        assert_eq!(through_route["predecessorId"], FIXTURE_INBOUND_ROUTE_ID);
         assert_eq!(through_route["transitionRouteMm"], formation_length_mm);
         assert_eq!(through_route["legs"].as_array().unwrap().len(), 2);
         assert_eq!(through_route["legs"][0]["edgeId"], CONNEWITZ_TERMINAL_EDGE);
@@ -1605,6 +1880,8 @@ fn transfer_demands_erzeugen_formationsspezifische_reale_ketten_und_sidecar_bind
         "targetCirculationId": "circulation-test",
         "sourcePassengerLegId": "leg-transfer-loop",
         "targetPassengerLegId": "leg-transfer-loop",
+        "sourcePassengerRouteVersionId": passenger_route_id,
+        "targetPassengerRouteVersionId": passenger_route_id,
         "sourceLocationId": "location-b",
         "targetLocationId": "location-a",
         "sourcePhysicalStopId": "stop-b",
@@ -1612,11 +1889,12 @@ fn transfer_demands_erzeugen_formationsspezifische_reale_ketten_und_sidecar_bind
         "earliestDepartureS": 2_300,
         "latestArrivalS": 87_100,
         "availableWindowS": 84_800,
+        "dailyBoundary": true,
         "movementKind": "train"
     });
     let mut plan_body = json!({
-        "schema": "zugfolge-daily-circulation-plan/v1",
-        "rule": "daily-circulation-permutation-and-real-transfer/v1",
+        "schema": "zugfolge-daily-circulation-plan/v2",
+        "rule": "lot-local-playable-path-cover-with-explicit-physical-transition-partition/v2",
         "gtfsReleaseId": "gtfs-test",
         "repeatEveryS": 86_400,
         "minimumTurnaroundS": 300,
@@ -1625,6 +1903,8 @@ fn transfer_demands_erzeugen_formationsspezifische_reale_ketten_und_sidecar_bind
             "journeyChainCount": 1,
             "circulationCount": 1,
             "rolloverAssignmentCount": 1,
+            "plannedTransitionCount": 1,
+            "turnaroundDemandCount": 0,
             "transferDemandCount": 1,
             "transferLotCount": 1
         },
@@ -1644,9 +1924,10 @@ fn transfer_demands_erzeugen_formationsspezifische_reale_ketten_und_sidecar_bind
             "sourceCirculationId": "circulation-test",
             "targetCirculationId": "circulation-test"
         }],
+        "turnaroundDemands": [],
         "transferDemands": [demand.clone()]
     });
-    let plan_sha256 = alpha_hash("zugfolge-daily-circulation-plan/v1", &plan_body);
+    let plan_sha256 = alpha_hash("zugfolge-daily-circulation-plan/v2", &plan_body);
     plan_body["planSha256"] = json!(plan_sha256);
     let speed_mmps = 70_u64 * 1_000_000 / 3_600;
     let minimum_runtime_ms = (73_204_u64 * 1_000).div_ceil(speed_mmps);
@@ -1687,7 +1968,7 @@ fn transfer_demands_erzeugen_formationsspezifische_reale_ketten_und_sidecar_bind
     canonical_json(&route, &mut canonical_route);
     let transfer_set_sha256 = sha256(format!("{canonical_route}\n").as_bytes());
     let transfer_input = json!({
-        "schema": "zugfolge-timetable-transfer-demands/v1",
+        "schema": "zugfolge-timetable-transfer-demands/v2",
         "infraReleaseId": "infra-deutschland-test-v2",
         "gtfsSnapshotHash": "a".repeat(64),
         "dailyPlan": plan_body,
@@ -1730,6 +2011,7 @@ fn transfer_demands_erzeugen_formationsspezifische_reale_ketten_und_sidecar_bind
     assert!(sidecar["templates"].as_array().unwrap().is_empty());
     for template in sidecar["transferTemplates"].as_array().unwrap() {
         assert_eq!(template["demandId"], "transfer-test-loop");
+        assert_eq!(template["dailyBoundary"], true);
         assert_eq!(template["movementKind"], "train");
         assert_eq!(template["transfer"]["continuity"], "same-direction");
         assert_eq!(template["targetOutbound"]["continuity"], "same-direction");
@@ -1822,7 +2104,7 @@ fn transfer_demands_erzeugen_formationsspezifische_reale_ketten_und_sidecar_bind
 }
 
 #[test]
-fn ungeeignete_abstellgleise_werden_nicht_erfunden_waehrend_direct_erhalten_bleibt() {
+fn berth_fallback_bleibt_explizit_real_geometrisch_und_fail_closed() {
     let valid_tags = concat!(
         "{\"railway\":\"rail\",\"service\":\"siding\",\"gauge\":\"1435\",",
         "\"electrified\":\"contact_line\",\"voltage\":\"15000\",",
@@ -1841,19 +2123,29 @@ fn ungeeignete_abstellgleise_werden_nicht_erfunden_waehrend_direct_erhalten_blei
             "{\"railway\":\"rail\",\"service\":\"siding\",\"gauge\":\"1435\",\"electrified\":\"contact_line\",\"voltage\":\"25000\",\"frequency\":\"50\",\"railway:pzb\":\"yes\"}",
         ),
         (
-            "not-a-siding",
+            "unclassified-real-rail",
             126_822,
             "{\"railway\":\"rail\",\"gauge\":\"1435\",\"electrified\":\"contact_line\",\"voltage\":\"15000\",\"frequency\":\"16.7\",\"railway:pzb\":\"yes\"}",
+        ),
+        (
+            "crossover",
+            126_822,
+            "{\"railway\":\"rail\",\"service\":\"crossover\",\"gauge\":\"1435\",\"electrified\":\"contact_line\",\"voltage\":\"15000\",\"frequency\":\"16.7\",\"railway:pzb\":\"yes\"}",
+        ),
+        (
+            "other-service",
+            126_822,
+            "{\"railway\":\"rail\",\"service\":\"draisine\",\"gauge\":\"1435\",\"electrified\":\"contact_line\",\"voltage\":\"15000\",\"frequency\":\"16.7\",\"railway:pzb\":\"yes\"}",
         ),
     ];
     for (name, berth_length_mm, berth_tags) in cases {
         let root = TestDirectory::create();
         prepare_connewitz_turnaround_layers(&root, berth_length_mm, berth_tags, false);
-        let spec = write_turnaround_spec(&root);
+        let spec = write_daily_plan_v2_turnaround_spec(&root);
         let candidate = root.join(&format!("{name}.json"));
         let report = root.join(&format!("{name}-report.json"));
-        derive_germany_operational_v2(&spec, &root.0, &candidate, &report)
-            .expect("Direct-Kontinuitaet bleibt ohne erfundene Abstellung");
+        let receipt = derive_germany_operational_v2(&spec, &root.0, &candidate, &report)
+            .expect("Direct-Kontinuitaet bleibt ohne erfundene Geometrie");
         let sidecar: Value = serde_json::from_slice(
             &fs::read(root.join(&format!("{name}.movement-route-templates-v2.json")))
                 .expect("Movement-Sidecar"),
@@ -1867,6 +2159,54 @@ fn ungeeignete_abstellgleise_werden_nicht_erfunden_waehrend_direct_erhalten_blei
                         .iter()
                         .all(|template| template["formationLengthMm"] == 46_560),
                 "80-m-Kante darf die kurze, aber nicht die lange Formation aufnehmen"
+            );
+        } else if name == "unclassified-real-rail" {
+            assert!(!stabling.is_empty());
+            for template in stabling {
+                for field in ["arrivalBerthAssignment", "departureBerthAssignment"] {
+                    assert_eq!(template[field]["kind"], "simulated-operational");
+                    assert_eq!(template[field]["subtype"], "osm-unclassified-rail");
+                    assert_eq!(template[field]["geometryProvenance"], "real-osm-rail");
+                    assert_eq!(
+                        template[field]["operationalAssignmentProvenance"],
+                        "synthetic-operational-b-policy"
+                    );
+                }
+                assert_eq!(template["shuntIn"]["continuity"], "same-direction");
+                assert!(matches!(
+                    template["shuntOut"]["continuity"].as_str(),
+                    Some("same-direction" | "reverse-direction")
+                ));
+                assert_eq!(template["outbound"]["continuity"], "same-direction");
+                for dispatch in ["shuntIn", "shuntOut", "outbound"] {
+                    assert!(
+                        !template[dispatch]["resourceIds"]
+                            .as_array()
+                            .expect("Ressourcen")
+                            .is_empty(),
+                        "synthetische Nutzung muss reale Konfliktressourcen fuer {dispatch} binden"
+                    );
+                }
+            }
+            assert_eq!(sidecar["metrics"]["observedStablingTemplateCount"], 0);
+            assert!(
+                sidecar["metrics"]["simulatedOperationalStablingTemplateCount"]
+                    .as_u64()
+                    .unwrap()
+                    > 0
+            );
+            let report_value: Value =
+                serde_json::from_slice(&fs::read(&report).expect("Fallback-Bericht lesen"))
+                    .expect("Fallback-Bericht JSON");
+            assert!(
+                report_value["counts"]["provenance"]["simulatedOperationalStablingTemplates"]
+                    .as_u64()
+                    .unwrap()
+                    > 0
+            );
+            assert_eq!(
+                receipt["movementRouteTemplates"]["berthAssignmentCounts"],
+                sidecar["metrics"]["berthAssignmentCounts"]
             );
         } else {
             assert!(
@@ -1906,7 +2246,7 @@ fn ungenutzte_ankunftsroute_erzeugt_ohne_nachfolger_keine_falsche_kontinuitaet()
             }]
         })],
     );
-    let spec = write_turnaround_spec(&root);
+    let spec = write_daily_plan_v2_turnaround_spec(&root);
     derive_germany_operational_v2(
         &spec,
         &root.0,
@@ -1950,6 +2290,26 @@ fn nativer_compiler_verwirft_v1_policy_id_und_derivation_rule() {
             "{field}: {error}"
         );
     }
+    let mut invalid = valid;
+    invalid["policy"]["simulatedOperationalBerthFallback"] = json!("unbounded-any-track");
+    fs::write(
+        &spec,
+        serde_json::to_vec_pretty(&invalid).expect("Fallback-Drift serialisieren"),
+    )
+    .expect("Fallback-Drift schreiben");
+    let error = derive_germany_operational_v2(
+        &spec,
+        &root.0,
+        &root.join("fallback-drift-candidate.json"),
+        &root.join("fallback-drift-report.json"),
+    )
+    .expect_err("unversionierter Berth-Fallback muss scheitern");
+    assert!(
+        error
+            .to_string()
+            .contains("real-osm-service-yard-then-spur-then-unclassified-rail/v1"),
+        "{error}"
+    );
 }
 
 #[cfg(unix)]

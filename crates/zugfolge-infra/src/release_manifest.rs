@@ -18,7 +18,7 @@ const SHA256_LENGTH: usize = 64;
 const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 const OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA: &str = "operational-infrastructure-v2";
 const MOVEMENT_ROUTE_TEMPLATES_V2_KIND: &str = "movement-route-templates-v2";
-const TIMETABLE_TRANSFER_DEMANDS_V1_KIND: &str = "timetable-transfer-demands-v1";
+const TIMETABLE_TRANSFER_DEMANDS_V2_KIND: &str = "timetable-transfer-demands-v2";
 
 /// Fehler einer autoritativen Manifestentscheidung.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -487,23 +487,23 @@ fn validate_operational_infrastructure_artifact_binding(
         .iter()
         .filter(|artifact| {
             artifact.extra.get("kind").and_then(Value::as_str)
-                == Some(TIMETABLE_TRANSFER_DEMANDS_V1_KIND)
+                == Some(TIMETABLE_TRANSFER_DEMANDS_V2_KIND)
         })
         .collect();
     require(
         transfer_bindings.len() == 1,
-        "Oeffentliches InfraRelease muss genau ein Timetable-Transfer-Demands-v1-Artefakt binden.",
+        "Oeffentliches InfraRelease muss genau ein Timetable-Transfer-Demands-v2-Artefakt binden.",
     )?;
     let transfer = transfer_bindings[0];
     let transfer_allowed: BTreeSet<&str> = BTreeSet::from(["kind"]);
     let transfer_actual: BTreeSet<&str> = transfer.extra.keys().map(String::as_str).collect();
     require(
         transfer_actual == transfer_allowed,
-        "Timetable-Transfer-Demands-v1-Artefakt besitzt unbekannte oder fehlende Manifestfelder.",
+        "Timetable-Transfer-Demands-v2-Artefakt besitzt unbekannte oder fehlende Manifestfelder.",
     )?;
     require(
-        transfer.file == "timetable-routes-v2.transfer-demands-v1.json",
-        "Timetable-Transfer-Demands-v1-Artefakt besitzt keinen kanonischen Dateinamen.",
+        transfer.file == "timetable-routes-v2.transfer-demands-v2.json",
+        "Timetable-Transfer-Demands-v2-Artefakt besitzt keinen kanonischen Dateinamen.",
     )?;
     Ok(())
 }
@@ -2986,7 +2986,7 @@ fn operational_quality_summary(
                 "transferRouteLengthMm",
                 "transferSetSha256",
             ]),
-        "Freier GTFS-Fahrwegbeleg besitzt nicht exakt den v3-Closure-Vertrag mit Transferabdeckung.",
+        "Freier GTFS-Fahrwegbeleg besitzt nicht exakt den v4-Closure-Vertrag mit physischer Uebergangspartition.",
     )?;
     let selected_segment_count = timetable_route_evidence
         .get("selectedSegmentCount")
@@ -3016,7 +3016,9 @@ fn operational_quality_summary(
                 "circulationCount",
                 "journeyChainCount",
                 "lotCount",
+                "plannedTransitionCount",
                 "rolloverAssignmentCount",
+                "turnaroundDemandCount",
                 "transferDemandCount",
                 "transferLotCount",
             ]),
@@ -3028,16 +3030,25 @@ fn operational_quality_summary(
             .and_then(Value::as_i64)
             .filter(|value| *value > 0)
     };
+    let daily_non_negative = |field: &str| {
+        daily_circulation
+            .get(field)
+            .and_then(Value::as_i64)
+            .filter(|value| *value >= 0)
+    };
+    let lot_count = daily_positive("lotCount").unwrap_or_default();
+    let journey_chain_count = daily_positive("journeyChainCount").unwrap_or_default();
     let circulation_count = daily_positive("circulationCount").unwrap_or_default();
     let rollover_assignment_count = daily_positive("rolloverAssignmentCount").unwrap_or_default();
-    let transfer_demand_count = daily_positive("transferDemandCount").unwrap_or_default();
-    let transfer_lot_count = daily_positive("transferLotCount").unwrap_or_default();
-    let lot_count = daily_positive("lotCount").unwrap_or_default();
+    let planned_transition_count = daily_positive("plannedTransitionCount").unwrap_or_default();
+    let turnaround_demand_count = daily_non_negative("turnaroundDemandCount").unwrap_or(-1);
+    let transfer_demand_count = daily_non_negative("transferDemandCount").unwrap_or(-1);
+    let transfer_lot_count = daily_non_negative("transferLotCount").unwrap_or(-1);
     require(
         timetable_route_evidence
             .get("reportSchema")
             .and_then(Value::as_str)
-            == Some("zugfolge-germany-timetable-route-report/v3")
+            == Some("zugfolge-germany-timetable-route-report/v4")
             && timetable_route_evidence.get("policyId") == model.get("policyId")
             && timetable_route_evidence
                 .get("derivationRule")
@@ -3052,7 +3063,7 @@ fn operational_quality_summary(
             && timetable_route_evidence
                 .get("transferDemandsSchema")
                 .and_then(Value::as_str)
-                == Some("zugfolge-timetable-transfer-demands/v1")
+                == Some("zugfolge-timetable-transfer-demands/v2")
             && timetable_route_evidence
                 .get("sourceLicense")
                 .and_then(Value::as_str)
@@ -3105,9 +3116,18 @@ fn operational_quality_summary(
                 .get("sameStopTransitionCount")
                 .and_then(Value::as_i64)
                 .is_some_and(|count| count >= 0)
-            && daily_positive("journeyChainCount").is_some()
+            && lot_count > 0
+            && journey_chain_count > 0
+            && circulation_count > 0
+            && rollover_assignment_count > 0
+            && planned_transition_count > 0
+            && turnaround_demand_count >= 0
+            && transfer_demand_count >= 0
+            && transfer_lot_count >= 0
             && rollover_assignment_count == circulation_count
-            && transfer_demand_count <= circulation_count
+            && turnaround_demand_count.checked_add(transfer_demand_count)
+                == Some(planned_transition_count)
+            && planned_transition_count == journey_chain_count
             && transfer_lot_count <= lot_count
             && timetable_route_evidence
                 .get("transferDemandsProduced")
@@ -3229,10 +3249,10 @@ fn operational_quality_summary(
         .iter()
         .find(|artifact| {
             artifact.extra.get("kind").and_then(Value::as_str)
-                == Some(TIMETABLE_TRANSFER_DEMANDS_V1_KIND)
+                == Some(TIMETABLE_TRANSFER_DEMANDS_V2_KIND)
         })
         .ok_or_else(|| {
-            ReleaseManifestError::new("Timetable-Transfer-Demands-v1-Artefakt fehlt.")
+            ReleaseManifestError::new("Timetable-Transfer-Demands-v2-Artefakt fehlt.")
         })?;
     require(
         timetable_route_evidence
@@ -3243,7 +3263,7 @@ fn operational_quality_summary(
                 .get("transferDemandsSha256")
                 .and_then(Value::as_str)
                 == Some(transfer_artifact.sha256.as_str()),
-        "Operational-v2-Closure und Timetable-Transfer-Demands-v1-Artefakt besitzen keine identische Bytebindung.",
+        "Operational-v2-Closure und Timetable-Transfer-Demands-v2-Artefakt besitzen keine identische Bytebindung.",
     )?;
     require(
         movement_route_templates

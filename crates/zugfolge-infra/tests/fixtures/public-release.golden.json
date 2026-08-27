@@ -31,9 +31,9 @@
       },
       {
         "bytes": 3456,
-        "file": "timetable-routes-v2.transfer-demands-v1.json",
+        "file": "timetable-routes-v2.transfer-demands-v2.json",
         "id": "timetable-transfer-demands-2027.1",
-        "kind": "timetable-transfer-demands-v1",
+        "kind": "timetable-transfer-demands-v2",
         "sha256": "9999999999999999999999999999999999999999999999999999999999999999"
       }
     ],
@@ -64,5 +64,5 @@
       "rawValidationMaterialShipped": false
     }
   },
-  "releaseHash": "b35b953367c576439f519f0a01aeb3c07223ed6efaa455fbf0b20108b02f3d5a"
+  "releaseHash": "8fafb31e9593e6a627d780afb8e1d15425f502e5308b2a7391480ffe675706ed"
 }

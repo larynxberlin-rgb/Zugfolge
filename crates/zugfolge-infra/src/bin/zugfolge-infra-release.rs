@@ -10,7 +10,7 @@ use serde_json::Value;
 use zugfolge_infra::{
     build_annual_infra_plan, build_mitteldeutschland_infra_release, build_public_infra_release,
     build_public_infra_release_with_operational_quality, build_qualified_reference_release,
-    build_reference_report, derive_germany_operational_v2,
+    build_reference_report, derive_germany_operational_v2, preflight_germany_turnarounds_v2,
     validate_operational_infrastructure_v2_file, verify_reference_artifact_chain,
 };
 
@@ -83,6 +83,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                 report.as_ref(),
             )?;
             println!("{}", serde_json::to_string(&receipt)?);
+        }
+        [command, spec, source_root] if command == "preflight-germany-turnarounds-v2" => {
+            let report = preflight_germany_turnarounds_v2(spec.as_ref(), source_root.as_ref())?;
+            println!("{}", serde_json::to_string(&report)?);
         }
         [command, config, source_root, artifact_root, output] if command == "regional-manifest" => {
             let workspace_root = env::current_dir()?;
@@ -179,7 +183,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         _ => {
             return Err(
-                "Aufruf: zugfolge-infra-release reference-report|qualified-reference-manifest|verify-reference-chain < INPUT | validate-operational-infrastructure-v2 CANDIDATE EXPECTED_RELEASE_ID [OUTPUT] | derive-germany-operational-v2 SPEC SOURCE_ROOT CANDIDATE REPORT | regional-manifest CONFIG SOURCE_ROOT ARTIFACT_ROOT OUTPUT | plan CONFIG CATALOG RIGHTS | manifest CONFIG CATALOG RIGHTS CAPTURE ARTIFACTS QUALITY OUTPUT | manifest CONFIG CATALOG RIGHTS CAPTURE ARTIFACTS STATIC_QUALITY OPERATIONAL_QUALITY OUTPUT"
+                "Aufruf: zugfolge-infra-release reference-report|qualified-reference-manifest|verify-reference-chain < INPUT | validate-operational-infrastructure-v2 CANDIDATE EXPECTED_RELEASE_ID [OUTPUT] | preflight-germany-turnarounds-v2 SPEC SOURCE_ROOT | derive-germany-operational-v2 SPEC SOURCE_ROOT CANDIDATE REPORT | regional-manifest CONFIG SOURCE_ROOT ARTIFACT_ROOT OUTPUT | plan CONFIG CATALOG RIGHTS | manifest CONFIG CATALOG RIGHTS CAPTURE ARTIFACTS QUALITY OUTPUT | manifest CONFIG CATALOG RIGHTS CAPTURE ARTIFACTS STATIC_QUALITY OPERATIONAL_QUALITY OUTPUT"
                     .into(),
             );
         }

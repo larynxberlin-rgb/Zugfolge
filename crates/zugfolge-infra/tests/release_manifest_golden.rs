@@ -112,7 +112,7 @@ fn closed_operational_quality(static_quality: &Value, static_quality_bytes: &[u8
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
     let timetable_route_evidence = json!({
-        "reportSchema": "zugfolge-germany-timetable-route-report/v3",
+        "reportSchema": "zugfolge-germany-timetable-route-report/v4",
         "policyId": "synthetic-operational-b/v2",
         "derivationRule": "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2",
         "selectionRule": "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
@@ -122,7 +122,7 @@ fn closed_operational_quality(static_quality: &Value, static_quality_bytes: &[u8
         "routesSha256": "a".repeat(64),
         "gtfsSnapshotBytes": 9012,
         "gtfsSnapshotSha256": "b".repeat(64),
-        "transferDemandsSchema": "zugfolge-timetable-transfer-demands/v1",
+        "transferDemandsSchema": "zugfolge-timetable-transfer-demands/v2",
         "transferDemandsBytes": 3456,
         "transferDemandsSha256": "9".repeat(64),
         "snapshotHash": "c".repeat(64),
@@ -141,12 +141,14 @@ fn closed_operational_quality(static_quality: &Value, static_quality_bytes: &[u8
         "dailyCirculation": {
             "lotCount": 52,
             "journeyChainCount": 1677,
-            "circulationCount": 193,
-            "rolloverAssignmentCount": 193,
-            "transferDemandCount": 79,
-            "transferLotCount": 38
+            "circulationCount": 197,
+            "rolloverAssignmentCount": 197,
+            "plannedTransitionCount": 1677,
+            "turnaroundDemandCount": 1595,
+            "transferDemandCount": 82,
+            "transferLotCount": 39
         },
-        "transferRouteCount": 79,
+        "transferRouteCount": 82,
         "transferRouteLegCount": 1234,
         "transferRouteLengthMm": 3_000_000_000_i64,
         "realGeometry": true,
@@ -711,7 +713,7 @@ fn deutschland_2026_patch_4_verweigert_historisches_source_capture_v1() {
             "operational-movement-routes-2026.4",
         ),
         (
-            "timetable-transfer-demands-v1",
+            "timetable-transfer-demands-v2",
             "timetable-transfer-demands-2026.4",
         ),
     ] {
@@ -869,7 +871,7 @@ fn sichtbare_static_map_klasse_c_bleibt_getrennt_von_operational_v2_signierbar()
     );
     assert_eq!(
         release["quality"]["operationalClosure"]["timetableRouteEvidence"]["transferRouteCount"],
-        79
+        82
     );
     assert_eq!(
         release["quality"]["operationalClosure"]["timetableRouteEvidence"]["externalOperationalNetworkProvenance"],
@@ -1260,7 +1262,7 @@ fn operationaler_gate_verwirft_aufgeweichten_freien_gtfs_fahrwegbeleg() {
         &operational_quality_bytes(&extra_field),
     )
     .expect_err("externe Operational-Network-Provenienz muss am Strict-Key-Vertrag scheitern");
-    assert!(error.to_string().contains("v3-Closure-Vertrag"));
+    assert!(error.to_string().contains("v4-Closure-Vertrag"));
 
     for (label, field, value) in [
         (
@@ -1307,6 +1309,117 @@ fn operationaler_gate_verwirft_aufgeweichten_freien_gtfs_fahrwegbeleg() {
 }
 
 #[test]
+fn operationaler_gate_verlangt_exklusiv_report_v4_transfer_v2_und_daily_partition() {
+    let (config, catalog, rights, capture, artifacts, _) = fixture();
+    let static_quality_value = static_map_quality_with_visible_class_c();
+    let static_quality = static_map_quality_bytes(&static_quality_value);
+
+    for (label, field, value) in [
+        (
+            "Report-v3",
+            "reportSchema",
+            json!("zugfolge-germany-timetable-route-report/v3"),
+        ),
+        (
+            "Transfer-Schema-v1",
+            "transferDemandsSchema",
+            json!("zugfolge-timetable-transfer-demands/v1"),
+        ),
+    ] {
+        let mut report = closed_operational_quality(&static_quality_value, &static_quality);
+        report["operationalModel"]["timetableRouteEvidence"][field] = value;
+        let error = build_public_infra_release_with_operational_quality(
+            &config,
+            &catalog,
+            &rights,
+            &capture,
+            &artifacts,
+            &static_quality,
+            &operational_quality_bytes(&report),
+        )
+        .expect_err(label);
+        assert!(
+            error
+                .to_string()
+                .contains("Policy, Bytebindung, Tagesumlauf-/Transferabdeckung, Vollstaendigkeit oder Provenienz"),
+            "{label}: {error}"
+        );
+    }
+
+    for field in ["plannedTransitionCount", "turnaroundDemandCount"] {
+        let mut report = closed_operational_quality(&static_quality_value, &static_quality);
+        report["operationalModel"]["timetableRouteEvidence"]["dailyCirculation"]
+            .as_object_mut()
+            .expect("Daily-Circulation")
+            .remove(field);
+        let error = build_public_infra_release_with_operational_quality(
+            &config,
+            &catalog,
+            &rights,
+            &capture,
+            &artifacts,
+            &static_quality,
+            &operational_quality_bytes(&report),
+        )
+        .expect_err("alle acht Daily-Plan-Metriken sind Pflicht");
+        assert!(
+            error
+                .to_string()
+                .contains("Daily-Circulation-Metrik besitzt fehlende oder unerwartete Felder"),
+            "{field}: {error}"
+        );
+    }
+
+    let mut report = closed_operational_quality(&static_quality_value, &static_quality);
+    report["operationalModel"]["timetableRouteEvidence"]["dailyCirculation"]["turnaroundPairCount"] =
+        json!(1_595);
+    let error = build_public_infra_release_with_operational_quality(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &artifacts,
+        &static_quality,
+        &operational_quality_bytes(&report),
+    )
+    .expect_err("turnaroundPairCount gehoert nicht in die acht Daily-Plan-Metriken");
+    assert!(
+        error
+            .to_string()
+            .contains("Daily-Circulation-Metrik besitzt fehlende oder unerwartete Felder"),
+        "{error}"
+    );
+
+    for (label, planned, turnaround, rollover) in [
+        ("unvollstaendige Demand-Partition", 1_677, 1_594, 197),
+        ("Planned/JourneyChain-Drift", 1_676, 1_594, 197),
+        ("Rollover/Circulation-Drift", 1_677, 1_595, 196),
+    ] {
+        let mut report = closed_operational_quality(&static_quality_value, &static_quality);
+        let daily = &mut report["operationalModel"]["timetableRouteEvidence"]["dailyCirculation"];
+        daily["plannedTransitionCount"] = json!(planned);
+        daily["turnaroundDemandCount"] = json!(turnaround);
+        daily["rolloverAssignmentCount"] = json!(rollover);
+        let error = build_public_infra_release_with_operational_quality(
+            &config,
+            &catalog,
+            &rights,
+            &capture,
+            &artifacts,
+            &static_quality,
+            &operational_quality_bytes(&report),
+        )
+        .expect_err(label);
+        assert!(
+            error
+                .to_string()
+                .contains("Policy, Bytebindung, Tagesumlauf-/Transferabdeckung, Vollstaendigkeit oder Provenienz"),
+            "{label}: {error}"
+        );
+    }
+}
+
+#[test]
 fn oeffentlicher_release_transportiert_genau_eine_getrennte_v2_paketkomposition() {
     let (config, catalog, rights, capture, artifacts, quality) = fixture();
 
@@ -1326,8 +1439,8 @@ fn oeffentlicher_release_transportiert_genau_eine_getrennte_v2_paketkomposition(
             "genau ein Movement-Route-Templates-v2-Artefakt",
         ),
         (
-            "timetable-transfer-demands-v1",
-            "genau ein Timetable-Transfer-Demands-v1-Artefakt",
+            "timetable-transfer-demands-v2",
+            "genau ein Timetable-Transfer-Demands-v2-Artefakt",
         ),
     ] {
         let mut missing_sidecar = artifacts.clone();
@@ -1377,7 +1490,7 @@ fn oeffentlicher_release_transportiert_genau_eine_getrennte_v2_paketkomposition(
             "unbekannte oder fehlende Manifestfelder",
         ),
         (
-            "timetable-transfer-demands-v1",
+            "timetable-transfer-demands-v2",
             "unbekannte oder fehlende Manifestfelder",
         ),
     ] {
@@ -1400,6 +1513,49 @@ fn oeffentlicher_release_transportiert_genau_eine_getrennte_v2_paketkomposition(
         .unwrap_err();
         assert!(error.to_string().contains(message), "{kind}: {error}");
     }
+
+    let mut legacy_transfer_kind = artifacts.clone();
+    let transfer = legacy_transfer_kind
+        .as_array_mut()
+        .expect("Artefakte")
+        .iter_mut()
+        .find(|artifact| artifact["kind"] == "timetable-transfer-demands-v2")
+        .expect("Transfer-v2-Sidecar");
+    transfer["kind"] = json!("timetable-transfer-demands-v1");
+    transfer["file"] = json!("timetable-routes-v2.transfer-demands-v1.json");
+    let error = build_public_infra_release(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &legacy_transfer_kind,
+        &quality,
+    )
+    .expect_err("Transfer-v1 darf nicht als aktuelles Paketartefakt dienen");
+    assert!(
+        error
+            .to_string()
+            .contains("genau ein Timetable-Transfer-Demands-v2-Artefakt")
+    );
+
+    let mut legacy_transfer_file = artifacts.clone();
+    let transfer = legacy_transfer_file
+        .as_array_mut()
+        .expect("Artefakte")
+        .iter_mut()
+        .find(|artifact| artifact["kind"] == "timetable-transfer-demands-v2")
+        .expect("Transfer-v2-Sidecar");
+    transfer["file"] = json!("timetable-routes-v2.transfer-demands-v1.json");
+    let error = build_public_infra_release(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &legacy_transfer_file,
+        &quality,
+    )
+    .expect_err("Transfer-v2 braucht den kanonischen v2-Dateinamen");
+    assert!(error.to_string().contains("keinen kanonischen Dateinamen"));
 
     let mut conflated_hashes = artifacts.clone();
     let artifact = conflated_hashes
