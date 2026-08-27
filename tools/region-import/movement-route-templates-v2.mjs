@@ -5,6 +5,7 @@ import { alphaCanonicalJson } from "../../packages/alpha/dist/index.js";
 export const MOVEMENT_ROUTE_TEMPLATES_SCHEMA = "movement-route-templates-v2";
 export const MAXIMUM_DIRECT_DWELL_MS = 1_200_000;
 
+const MOVEMENT_ROUTE_TEMPLATES_FILE = "operational-infrastructure-v2.movement-route-templates-v2.json";
 const SHA256 = /^[a-f0-9]{64}$/u;
 const DIRECTIONS = new Set(["along", "against"]);
 const CONTINUITIES = new Set(["same-direction", "reverse-direction"]);
@@ -94,12 +95,14 @@ function berthInterval(value, formationLengthMm, name) {
 }
 
 function berth(value, formationLengthMm, name) {
-  exactKeys(value, ["edgeId", "fromMm", "toMm", "leftClearanceMm", "rightClearanceMm"], name);
+  exactKeys(value, ["edgeId", "edgeLengthMm", "fromMm", "toMm", "leftClearanceMm", "rightClearanceMm"], name);
   const occupied = berthInterval({ edgeId: value.edgeId, fromMm: value.fromMm, toMm: value.toMm }, formationLengthMm, `${name}.interval`);
+  const edgeLengthMm = integer(value.edgeLengthMm, `${name}.edgeLengthMm`, occupied.toMm);
   const leftClearanceMm = integer(value.leftClearanceMm, `${name}.leftClearanceMm`, 0);
   const rightClearanceMm = integer(value.rightClearanceMm, `${name}.rightClearanceMm`, 0);
   invariant(occupied.fromMm === leftClearanceMm, `${name} besitzt eine widerspruechliche linke Freilaenge.`);
-  return Object.freeze({ ...occupied, leftClearanceMm, rightClearanceMm });
+  invariant(Number.isSafeInteger(occupied.toMm + rightClearanceMm) && occupied.toMm + rightClearanceMm === edgeLengthMm, `${name} bindet die rechte Freilaenge nicht an das reale Kantenende.`);
+  return Object.freeze({ ...occupied, edgeLengthMm, leftClearanceMm, rightClearanceMm });
 }
 
 function berthAssignment(value, name) {
@@ -394,6 +397,11 @@ export function validateMovementRouteTemplatesV2({
     "directTemplates", "templates", "transferTemplates", "metrics", "stateHash",
   ], "Movement-Route-Templates-v2");
   exactKeys(binding, ["file", "bytes", "sha256", "stateHash", "operationalStateHash", "timetableTransferSetSha256"], "Movement-Route-Template-Bindung");
+  invariant(binding.file === MOVEMENT_ROUTE_TEMPLATES_FILE, "Movement-Route-Template-Bindung besitzt nicht den kanonischen V2-Dateinamen.");
+  integer(binding.bytes, "Movement-Route-Template-Bindung.bytes", 1);
+  for (const field of ["sha256", "stateHash", "operationalStateHash", "timetableTransferSetSha256"]) {
+    invariant(SHA256.test(binding[field]), `Movement-Route-Template-Bindung.${field} ist kein SHA-256.`);
+  }
   invariant(
     artifact.schema === MOVEMENT_ROUTE_TEMPLATES_SCHEMA
       && artifact.infraReleaseId === infraReleaseId
@@ -464,8 +472,8 @@ export function validateMovementRouteTemplatesV2({
     if (template.stablingKind === "cross-berth-transfer") countAssignment(template.departureBerthAssignment);
   }
   const crossBerthTemplateCount = templates.filter((template) => template.stablingKind === "cross-berth-transfer").length;
-  const observedStablingTemplateCount = berthAssignmentCounts.observedOsmServiceSiding;
-  const simulatedOperationalStablingTemplateCount = berthAssignmentCounts.simulatedOperationalOsmServiceYard + berthAssignmentCounts.simulatedOperationalOsmServiceSpur + berthAssignmentCounts.simulatedOperationalOsmUnclassifiedRail;
+  const observedStablingTemplateCount = templates.filter((template) => template.arrivalBerthAssignment.kind === "observed" && template.departureBerthAssignment.kind === "observed").length;
+  const simulatedOperationalStablingTemplateCount = templates.length - observedStablingTemplateCount;
   const turnaroundDemandCount = turnaroundDemandById.size;
   const plannedTransitionCount = timetableTransferPlan.dailyPlan.metrics.plannedTransitionCount;
   invariant(
@@ -485,7 +493,7 @@ export function validateMovementRouteTemplatesV2({
       && artifact.metrics.observedStablingTemplateCount === observedStablingTemplateCount
       && artifact.metrics.simulatedOperationalStablingTemplateCount === simulatedOperationalStablingTemplateCount
       && artifact.metrics.crossBerthTemplateCount === crossBerthTemplateCount
-      && observedStablingTemplateCount + simulatedOperationalStablingTemplateCount === templates.length + crossBerthTemplateCount
+      && observedStablingTemplateCount + simulatedOperationalStablingTemplateCount === templates.length
       && alphaCanonicalJson(artifact.metrics.berthAssignmentCounts) === alphaCanonicalJson(berthAssignmentCounts),
     "Movement-Route-Templates-v2-Metriken stimmen nicht mit den gebundenen Vorlagen ueberein.",
   );
@@ -497,7 +505,10 @@ export function validateMovementRouteTemplatesV2({
     directTemplates,
     templates,
     transferTemplates,
-    metrics: Object.freeze({ ...artifact.metrics }),
+    metrics: Object.freeze({
+      ...artifact.metrics,
+      berthAssignmentCounts: Object.freeze({ ...artifact.metrics.berthAssignmentCounts }),
+    }),
     stateHash,
   });
 }

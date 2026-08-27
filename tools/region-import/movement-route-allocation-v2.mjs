@@ -63,11 +63,14 @@ function resourceReservation(resourceId, startMs, endMs, allocationId, stage) {
 
 function trackReservation(interval, startMs, endMs, allocationId, stage) {
   invariant(endMs > startMs, `${allocationId}.${stage} besitzt ein leeres Gleisintervall.`);
+  const edgeId = text(interval?.edgeId, `${allocationId}.${stage}.edgeId`);
+  const fromMm = integer(interval?.fromMm, `${allocationId}.${stage}.fromMm`, 0);
+  const toMm = integer(interval?.toMm, `${allocationId}.${stage}.toMm`, fromMm + 1);
   return Object.freeze({
     kind: "track",
-    edgeId: interval.edgeId,
-    fromMm: interval.fromMm,
-    toMm: interval.toMm,
+    edgeId,
+    fromMm,
+    toMm,
     startMs,
     endMs,
     allocationId,
@@ -169,20 +172,77 @@ function directOption({ continuity, source, target, template, sourceArrivalMs, t
 
 function stablingOption({ continuity, source, target, template, sourceArrivalMs, targetDepartureMs }) {
   const allocationId = `${continuity.id}:stabling:${template.id}`;
+  invariant(
+    !Object.prototype.hasOwnProperty.call(template, "berth"),
+    `${template.id} verwendet den entfernten Legacy-Berth statt Arrival-/Departure-Berth V2.`,
+  );
+  invariant(
+    template.stablingKind === "shared-berth" || template.stablingKind === "cross-berth-transfer",
+    `${template.id} besitzt keine bekannte V2-Abstellart.`,
+  );
+  const arrivalBerth = template.arrivalBerth;
+  const departureBerth = template.departureBerth;
+  const sameBerth = arrivalBerth?.edgeId === departureBerth?.edgeId
+    && arrivalBerth?.edgeLengthMm === departureBerth?.edgeLengthMm
+    && arrivalBerth?.fromMm === departureBerth?.fromMm
+    && arrivalBerth?.toMm === departureBerth?.toMm
+    && arrivalBerth?.leftClearanceMm === departureBerth?.leftClearanceMm
+    && arrivalBerth?.rightClearanceMm === departureBerth?.rightClearanceMm;
+  if (template.stablingKind === "shared-berth") {
+    invariant(sameBerth && template.berthTransfer === null, `${template.id} besitzt keinen eindeutigen Shared-Berth.`);
+  } else {
+    invariant(!sameBerth && template.berthTransfer !== null, `${template.id} besitzt keinen expliziten Cross-Berth-Transfer.`);
+  }
   const shuntInDepartureMs = sourceArrivalMs + MOVEMENT_PASSENGER_DWELL_MS;
   const shuntInArrivalMs = shuntInDepartureMs + template.shuntIn.minimumRuntimeMs;
   const shuntOutDepartureMs = targetDepartureMs - template.shuntOut.minimumRuntimeMs;
   const shuntOutArrivalMs = targetDepartureMs;
+  const berthTransferArrivalMs = template.berthTransfer === null
+    ? null
+    : shuntOutDepartureMs;
+  const berthTransferDepartureMs = template.berthTransfer === null
+    ? null
+    : berthTransferArrivalMs - template.berthTransfer.minimumRuntimeMs;
   invariant(
-    shuntInArrivalMs <= shuntOutDepartureMs,
+    shuntInArrivalMs <= (berthTransferDepartureMs ?? shuntOutDepartureMs),
     `${continuity.id} passt mit ${template.id} nicht in das Abstellzeitfenster.`,
   );
   const reservations = [
     ...terminalOccupancy(template.terminalIntervals, sourceArrivalMs, shuntInArrivalMs, allocationId, "terminal-clearance"),
     ...resources(template.shuntIn.resourceIds, shuntInDepartureMs, shuntInArrivalMs, allocationId, "shunt-in"),
-    trackReservation(template.berth, shuntInArrivalMs, shuntOutArrivalMs, allocationId, "berth"),
-    ...resources(template.shuntOut.resourceIds, shuntOutDepartureMs, shuntOutArrivalMs, allocationId, "shunt-out"),
   ];
+  const stages = [dispatchStage(continuity, "shunt-in", "shunting", template.shuntIn, shuntInDepartureMs, source)];
+  if (template.berthTransfer === null) {
+    reservations.push(trackReservation(arrivalBerth, shuntInArrivalMs, shuntOutArrivalMs, allocationId, "berth"));
+  } else {
+    reservations.push(
+      trackReservation(arrivalBerth, shuntInArrivalMs, berthTransferArrivalMs, allocationId, "arrival-berth"),
+      ...resources(
+        template.berthTransfer.resourceIds,
+        berthTransferDepartureMs,
+        berthTransferArrivalMs,
+        allocationId,
+        "berth-transfer",
+      ),
+      trackReservation(departureBerth, berthTransferArrivalMs, shuntOutArrivalMs, allocationId, "departure-berth"),
+    );
+    stages.push(dispatchStage(
+      continuity,
+      "berth-transfer",
+      "shunting",
+      template.berthTransfer,
+      berthTransferDepartureMs,
+      source,
+    ));
+  }
+  reservations.push(...resources(
+    template.shuntOut.resourceIds,
+    shuntOutDepartureMs,
+    shuntOutArrivalMs,
+    allocationId,
+    "shunt-out",
+  ));
+  stages.push(dispatchStage(continuity, "shunt-out", "shunting", template.shuntOut, shuntOutDepartureMs, source));
   return Object.freeze({
     continuity,
     source,
@@ -191,10 +251,7 @@ function stablingOption({ continuity, source, target, template, sourceArrivalMs,
     templateId: template.id,
     candidateRank: template.candidateRank,
     targetDispatch: template.outbound,
-    stages: Object.freeze([
-      dispatchStage(continuity, "shunt-in", "shunting", template.shuntIn, shuntInDepartureMs, source),
-      dispatchStage(continuity, "shunt-out", "shunting", template.shuntOut, shuntOutDepartureMs, source),
-    ]),
+    stages: Object.freeze(stages),
     reservations: Object.freeze(reservations),
   });
 }

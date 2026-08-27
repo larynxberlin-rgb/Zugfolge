@@ -40,6 +40,7 @@ function stabling(id, shuntOutContinuity, candidateRank) {
   const shuntOut = dispatch(`${id}:shunt-out`, undefined, shuntIn.routeVersionId, shuntOutContinuity);
   const sharedBerth = {
     edgeId: `edge:${id}:berth`,
+    edgeLengthMm: 200,
     fromMm: 50,
     toMm: 150,
     leftClearanceMm: 50,
@@ -82,7 +83,7 @@ function crossBerthStabling() {
   value.stablingKind = "cross-berth-transfer";
   value.arrivalBerthAssignment = simulatedBerthAssignment;
   value.departureBerthAssignment = simulatedBerthAssignment;
-  value.departureBerth = { edgeId: "edge:cross:departure", fromMm: 60, toMm: 160, leftClearanceMm: 60, rightClearanceMm: 40 };
+  value.departureBerth = { edgeId: "edge:cross:departure", edgeLengthMm: 200, fromMm: 60, toMm: 160, leftClearanceMm: 60, rightClearanceMm: 40 };
   value.berthTransfer = dispatch("cross:berth-transfer", undefined, value.shuntIn.routeVersionId, "reverse-direction");
   value.berthTransferProvenance = { geometryProvenance: "real-osm-rail", routingRule: "real-osm-rail-bidirectional-bounded-v1", locationId: "A", physicalStopId: "A", maximumPathEdgesPerSide: 64, maximumPathLengthMmPerSide: 10_000_000 };
   value.shuntOut.predecessorBaseRouteVersionId = value.berthTransfer.routeVersionId;
@@ -237,6 +238,21 @@ test("validiert den kombinierten Movement-v2-Sidecar byteunabhaengig aber stateg
   assert.equal(validated.stateHash, input.artifact.stateHash);
   assert.equal(validated.directTemplates.length, 1);
   assert.equal(validated.transferTemplates.length, 1);
+  assert(Object.isFrozen(validated.metrics.berthAssignmentCounts));
+  assert.throws(() => { validated.metrics.berthAssignmentCounts.observedOsmServiceSiding = 1; }, TypeError);
+});
+
+test("bindet den Sidecar-Dateibeweis an kanonischen Pfad, positive Bytes und SHA-256", () => {
+  const scenarios = [
+    { field: "file", value: "nested/operational-infrastructure-v2.movement-route-templates-v2.json", error: /kanonischen V2-Dateinamen/u },
+    { field: "bytes", value: 0, error: /sichere Ganzzahl ab 1/u },
+    { field: "sha256", value: "not-a-sha256", error: /kein SHA-256/u },
+  ];
+  for (const scenario of scenarios) {
+    const input = fixture();
+    input.binding[scenario.field] = scenario.value;
+    assert.throws(() => validateMovementRouteTemplatesV2(input), scenario.error);
+  }
 });
 
 test("verwirft einen manipulierten Movement-Ressourcensatz", () => {
@@ -345,11 +361,18 @@ test("akzeptiert beide nativ belegten Stabling-Fortsetzungen der physischen Enum
   assert.notEqual(validated.templates[1].shuntIn.routeVersionId, validated.templates[1].shuntOut.routeVersionId);
 });
 
+test("bindet beide Berth-Freilaengen an dieselbe reale Kantenlaenge", () => {
+  const input = addStablingContinuityMatrix(fixture());
+  input.artifact.templates[0].arrivalBerth.rightClearanceMm += 1;
+  rebindState(input);
+  assert.throws(() => validateMovementRouteTemplatesV2(input), /rechte Freilaenge nicht an das reale Kantenende/u);
+});
+
 test("bindet einen realgeometrischen Cross-Berth-Transfer mit getrennter Provenienz und Vorgaengerkette", () => {
   const input = fixture();
   input.artifact.templates = [crossBerthStabling()];
   input.artifact.metrics.stablingTemplateCount = 1;
-  input.artifact.metrics.simulatedOperationalStablingTemplateCount = 2;
+  input.artifact.metrics.simulatedOperationalStablingTemplateCount = 1;
   input.artifact.metrics.berthAssignmentCounts.simulatedOperationalOsmUnclassifiedRail = 2;
   input.artifact.metrics.crossBerthTemplateCount = 1;
   rebindState(input);
@@ -378,7 +401,7 @@ test("verwirft erfundene, ortsfremde oder unterbrochene Cross-Berth-Belege", () 
     const input = fixture();
     input.artifact.templates = [crossBerthStabling()];
     input.artifact.metrics.stablingTemplateCount = 1;
-    input.artifact.metrics.simulatedOperationalStablingTemplateCount = 2;
+    input.artifact.metrics.simulatedOperationalStablingTemplateCount = 1;
     input.artifact.metrics.berthAssignmentCounts.simulatedOperationalOsmUnclassifiedRail = 2;
     input.artifact.metrics.crossBerthTemplateCount = 1;
     scenario.mutate(input.artifact.templates[0]);

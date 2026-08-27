@@ -229,6 +229,7 @@ struct TurnaroundTerminalInterval {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct TurnaroundBerth {
     edge_id: String,
+    edge_length_mm: i64,
     from_mm: i64,
     to_mm: i64,
     left_clearance_mm: i64,
@@ -638,16 +639,6 @@ impl BerthAssignmentCounts {
             }
         };
         *count = count.saturating_add(1);
-    }
-
-    fn observed(&self) -> u64 {
-        self.observed_osm_service_siding
-    }
-
-    fn simulated_operational(&self) -> u64 {
-        self.simulated_operational_osm_service_yard
-            .saturating_add(self.simulated_operational_osm_service_spur)
-            .saturating_add(self.simulated_operational_osm_unclassified_rail)
     }
 }
 
@@ -6253,6 +6244,7 @@ fn centered_turnaround_berth(
         .ok_or_else(|| GermanyOperationalV2Error::new(format!("{context}-Ende laeuft ueber.")))?;
     let berth = TurnaroundBerth {
         edge_id: track.id.clone(),
+        edge_length_mm: track.length_mm,
         from_mm,
         to_mm,
         left_clearance_mm: from_mm,
@@ -8379,8 +8371,10 @@ fn string_table_values(
 
 fn stabling_template_provenance_counts(
     templates: &[Value],
-) -> Result<(BerthAssignmentCounts, u64)> {
+) -> Result<(BerthAssignmentCounts, u64, u64, u64)> {
     let mut counts = BerthAssignmentCounts::default();
+    let mut observed_template_count = 0_u64;
+    let mut simulated_operational_template_count = 0_u64;
     let mut cross_berth_template_count = 0_u64;
     for (index, template) in templates.iter().enumerate() {
         let arrival: TurnaroundBerthAssignment = serde_json::from_value(
@@ -8466,8 +8460,21 @@ fn stabling_template_provenance_counts(
                 ),
             )?;
         }
+        if arrival.kind == BerthAssignmentKind::Observed
+            && departure.kind == BerthAssignmentKind::Observed
+        {
+            observed_template_count = observed_template_count.saturating_add(1);
+        } else {
+            simulated_operational_template_count =
+                simulated_operational_template_count.saturating_add(1);
+        }
     }
-    Ok((counts, cross_berth_template_count))
+    Ok((
+        counts,
+        observed_template_count,
+        simulated_operational_template_count,
+        cross_berth_template_count,
+    ))
 }
 
 fn write_movement_route_sidecar(
@@ -8476,12 +8483,16 @@ fn write_movement_route_sidecar(
     infra_release_id: &str,
     operational_state_hash: &str,
     transfer_evidence: Option<&TransferEvidence>,
-) -> Result<(u64, String, String, BerthAssignmentCounts, u64)> {
+) -> Result<(u64, String, String, BerthAssignmentCounts, u64, u64, u64)> {
     let direct_templates = string_table_values(transaction, DIRECT_TEMPLATES, "Direct-Template")?;
     let stabling_templates =
         string_table_values(transaction, TURNAROUND_TEMPLATES, "Stabling-Template")?;
-    let (berth_assignment_counts, cross_berth_template_count) =
-        stabling_template_provenance_counts(&stabling_templates)?;
+    let (
+        berth_assignment_counts,
+        observed_stabling_template_count,
+        simulated_operational_stabling_template_count,
+        cross_berth_template_count,
+    ) = stabling_template_provenance_counts(&stabling_templates)?;
     let transfer_templates =
         string_table_values(transaction, TRANSFER_TEMPLATES, "Transfer-Template")?;
     let transfer_set_sha256 = transfer_evidence
@@ -8503,8 +8514,8 @@ fn write_movement_route_sidecar(
             "turnaroundDemandCount": transfer_evidence.map_or(0, |evidence| evidence.turnaround_demand_count),
             "plannedTransitionCount": transfer_evidence.map_or(0, |evidence| evidence.planned_transition_count),
             "turnaroundPairCount": transfer_evidence.map_or(0, |evidence| evidence.turnaround_pair_count),
-            "observedStablingTemplateCount": berth_assignment_counts.observed(),
-            "simulatedOperationalStablingTemplateCount": berth_assignment_counts.simulated_operational(),
+            "observedStablingTemplateCount": observed_stabling_template_count,
+            "simulatedOperationalStablingTemplateCount": simulated_operational_stabling_template_count,
             "berthAssignmentCounts": berth_assignment_counts.clone(),
             "crossBerthTemplateCount": cross_berth_template_count,
         },
@@ -8562,6 +8573,8 @@ fn write_movement_route_sidecar(
         sha256(&bytes),
         state_hash,
         berth_assignment_counts,
+        observed_stabling_template_count,
+        simulated_operational_stabling_template_count,
         cross_berth_template_count,
     ))
 }
@@ -8909,6 +8922,8 @@ pub fn derive_germany_operational_v2(
         sidecar_sha256,
         sidecar_state_hash,
         berth_assignment_counts,
+        observed_stabling_template_count,
+        simulated_operational_stabling_template_count,
         cross_berth_template_count,
     ) = write_movement_route_sidecar(
         &read,
@@ -9052,8 +9067,8 @@ pub fn derive_germany_operational_v2(
                 "turnaroundInterlockingRoutes": turnaround_interlocking_routes,
                 "transferRouteVersions": transfer_route_versions,
                 "transferInterlockingRoutes": transfer_interlocking_routes,
-                "observedStablingTemplates": berth_assignment_counts.observed(),
-                "simulatedOperationalStablingTemplates": berth_assignment_counts.simulated_operational(),
+                "observedStablingTemplates": observed_stabling_template_count,
+                "simulatedOperationalStablingTemplates": simulated_operational_stabling_template_count,
                 "berthAssignmentCounts": berth_assignment_counts,
                 "crossBerthTemplates": cross_berth_template_count,
             },
@@ -9124,6 +9139,7 @@ mod publish_tests {
         initialize_database, paired_stabling_candidates, paired_stabling_candidates_with_fallback,
         publish_create_new, publish_pair_create_new, read_transfer_demands,
         require_movement_continuity, sha256, stabling_minimum_runtime_ms,
+        stabling_template_provenance_counts,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
@@ -10414,6 +10430,50 @@ mod publish_tests {
         manipulated["continuity"] = json!("sideways");
         serde_json::from_value::<TurnaroundRouteDispatch>(manipulated)
             .expect_err("unbekannte continuity muss fail-closed bleiben");
+    }
+
+    #[test]
+    fn cross_berth_zaehlt_zwei_zuordnungen_aber_nur_ein_stabling_template() {
+        let observed = json!({
+            "kind": "observed",
+            "subtype": "osm-service-siding",
+            "geometryProvenance": "real-osm-rail",
+            "operationalAssignmentProvenance": "observed-osm-service"
+        });
+        let simulated = json!({
+            "kind": "simulated-operational",
+            "subtype": "osm-unclassified-rail",
+            "geometryProvenance": "real-osm-rail",
+            "operationalAssignmentProvenance": "synthetic-operational-b-policy"
+        });
+        let templates = vec![
+            json!({
+                "stablingKind": "shared-berth",
+                "arrivalBerthAssignment": observed,
+                "departureBerthAssignment": observed
+            }),
+            json!({
+                "stablingKind": "cross-berth-transfer",
+                "arrivalBerthAssignment": simulated,
+                "departureBerthAssignment": simulated
+            }),
+        ];
+        let (assignments, observed_templates, simulated_templates, cross_templates) =
+            stabling_template_provenance_counts(&templates).expect("gueltige Provenienz");
+        assert_eq!(assignments.observed_osm_service_siding, 1);
+        assert_eq!(assignments.simulated_operational_osm_unclassified_rail, 2);
+        assert_eq!(observed_templates, 1);
+        assert_eq!(simulated_templates, 1);
+        assert_eq!(cross_templates, 1);
+
+        let mut missing_departure = templates[1].clone();
+        missing_departure
+            .as_object_mut()
+            .expect("Template")
+            .remove("departureBerthAssignment");
+        let error = stabling_template_provenance_counts(&[missing_departure])
+            .expect_err("Cross-Berth ohne Abfahrtsprovenienz muss scheitern");
+        assert!(error.to_string().contains("Abfahrts-Berth-Provenienz"));
     }
 
     #[test]

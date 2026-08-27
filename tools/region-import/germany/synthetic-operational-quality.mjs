@@ -483,9 +483,12 @@ export function coverageFromSyntheticOperationalDerivationReport(report) {
     if (name !== "berthAssignmentCounts") nonNegativeInteger(value, `Nativer Bericht.counts.provenance.${name}`);
   }
   for (const [name, value] of Object.entries(report.counts.provenance.berthAssignmentCounts)) nonNegativeInteger(value, `Nativer Bericht.counts.provenance.berthAssignmentCounts.${name}`);
+  const berthAssignmentTotal = Object.values(report.counts.provenance.berthAssignmentCounts).reduce((sum, count) => sum + count, 0);
   invariant(
     sameCanonical(report.counts.provenance.berthAssignmentCounts, report.candidate.movementRouteTemplates.berthAssignmentCounts)
-      && report.counts.provenance.crossBerthTemplates === report.candidate.movementRouteTemplates.crossBerthTemplateCount,
+      && report.counts.provenance.crossBerthTemplates === report.candidate.movementRouteTemplates.crossBerthTemplateCount
+      && report.counts.provenance.observedStablingTemplates + report.counts.provenance.simulatedOperationalStablingTemplates === report.counts.candidate.stablingTemplates
+      && berthAssignmentTotal === report.counts.candidate.stablingTemplates + report.counts.provenance.crossBerthTemplates,
     "Nativer Bericht zaehlt Berth-Provenienz in Report und Movement-Beleg verschieden.",
   );
   for (const [name, value] of Object.entries(report.counts.candidate)) {

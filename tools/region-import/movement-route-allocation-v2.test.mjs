@@ -54,6 +54,14 @@ function direct(id, inbound, outbound, continuity = "reverse-direction") {
 function stabling(id, inbound, outbound, candidateRank, berthEdge, resourceSuffix = id) {
   const shuntIn = dispatch(`${id}:shunt-in`, inbound, "same-direction", [`resource:${resourceSuffix}:shunt-in`]);
   const shuntOut = dispatch(`${id}:shunt-out`, shuntIn.routeVersionId, "reverse-direction", [`resource:${resourceSuffix}:shunt-out`]);
+  const berth = {
+    edgeId: berthEdge,
+    edgeLengthMm: LENGTH_MM + 20_000,
+    fromMm: 10_000,
+    toMm: 10_000 + LENGTH_MM,
+    leftClearanceMm: 10_000,
+    rightClearanceMm: 10_000,
+  };
   return {
     id,
     inboundRouteVersionId: inbound,
@@ -66,13 +74,69 @@ function stabling(id, inbound, outbound, candidateRank, berthEdge, resourceSuffi
     candidateRank,
     stablingPathLengthMm: 200_000,
     terminalIntervals: [{ edgeId: `terminal:${inbound}`, fromMm: 0, toMm: LENGTH_MM }],
+    stablingKind: "shared-berth",
+    arrivalBerthAssignment: {
+      kind: "observed",
+      subtype: "osm-service-siding",
+      geometryProvenance: "real-osm-rail",
+      operationalAssignmentProvenance: "observed-osm-service",
+    },
+    departureBerthAssignment: {
+      kind: "observed",
+      subtype: "osm-service-siding",
+      geometryProvenance: "real-osm-rail",
+      operationalAssignmentProvenance: "observed-osm-service",
+    },
     shuntIn,
-    berth: {
-      edgeId: berthEdge,
-      fromMm: 10_000,
-      toMm: 10_000 + LENGTH_MM,
-      leftClearanceMm: 10_000,
-      rightClearanceMm: 10_000,
+    arrivalBerth: berth,
+    berthTransfer: null,
+    berthTransferProvenance: null,
+    departureBerth: { ...berth },
+    shuntOut,
+    outbound: dispatch(`${id}:outbound`, shuntOut.routeVersionId, "same-direction"),
+  };
+}
+
+function crossBerthStabling(id, inbound, outbound, candidateRank, resourceSuffix = id) {
+  const template = stabling(id, inbound, outbound, candidateRank, `${id}:arrival`, resourceSuffix);
+  const berthTransfer = dispatch(
+    `${id}:berth-transfer`,
+    template.shuntIn.routeVersionId,
+    "reverse-direction",
+    [`resource:${resourceSuffix}:berth-transfer`],
+    120_000,
+  );
+  const shuntOut = dispatch(
+    `${id}:shunt-out`,
+    berthTransfer.routeVersionId,
+    "reverse-direction",
+    [`resource:${resourceSuffix}:shunt-out`],
+  );
+  return {
+    ...template,
+    stablingKind: "cross-berth-transfer",
+    departureBerthAssignment: {
+      kind: "simulated-operational",
+      subtype: "osm-service-yard",
+      geometryProvenance: "real-osm-rail",
+      operationalAssignmentProvenance: "synthetic-operational-b-policy",
+    },
+    berthTransfer,
+    berthTransferProvenance: {
+      geometryProvenance: "real-osm-rail",
+      routingRule: "real-osm-rail-bidirectional-bounded-v1",
+      locationId: "fixture-location",
+      physicalStopId: "fixture-stop",
+      maximumPathEdgesPerSide: 64,
+      maximumPathLengthMmPerSide: 10_000_000,
+    },
+    departureBerth: {
+      edgeId: `${id}:departure`,
+      edgeLengthMm: LENGTH_MM + 40_000,
+      fromMm: 20_000,
+      toMm: 20_000 + LENGTH_MM,
+      leftClearanceMm: 20_000,
+      rightClearanceMm: 20_000,
     },
     shuntOut,
     outbound: dispatch(`${id}:outbound`, shuntOut.routeVersionId, "same-direction"),
@@ -99,6 +163,35 @@ function protectionSelection({ routeLegCount }) {
 
 function dailyPlan(circulations, rolloverAssignments) {
   return { circulations, rolloverAssignments };
+}
+
+function singleStablingFixture(template) {
+  return {
+    dailyPlan: dailyPlan(
+      [{ id: "c1", passengerTrainRunIds: ["p1"] }],
+      [{ sourceCirculationId: "c1", targetCirculationId: "c1" }],
+    ),
+    continuities: [{
+      id: "continuity:self",
+      sourcePassengerTrainRunId: "p1",
+      targetPassengerTrainRunId: "p1",
+      sourceDepartureS: 0,
+      sourceArrivalS: 600,
+      targetDepartureS: 3_600,
+      sourcePhase: 0,
+      successorDayOffset: 1,
+      relation: "same-location",
+      transferDemandId: null,
+    }],
+    passengerTrains: [passenger("p1", "base:p1", 0)],
+    movementRoutePlan: {
+      directTemplates: [direct("direct:self", "base:p1", "base:p1")],
+      templates: [template],
+      transferTemplates: [],
+    },
+    repeatEveryMs: 3_600_000,
+    selectProtectionModeRuns: protectionSelection,
+  };
 }
 
 test("materialisiert Direct-Through und lange Abstellung als atomaren vollstaendigen Tagesgraphen", () => {
@@ -168,6 +261,75 @@ test("materialisiert Direct-Through und lange Abstellung als atomaren vollstaend
   assert.equal(passengerTwo.routeVersionId, "route:direct:p1-p2:outbound");
   assert.equal(passengerTwo.headRouteMm, LENGTH_MM);
   assert.ok(result.programTrains.filter((train) => !train.publicPassengerStop).every((train) => /^(?:Lt|Rf) [0-9]{1,5}$/u.test(train.trainNumber)));
+});
+
+test("materialisiert Shared-Berth ausschliesslich aus Arrival-/Departure-Berth V2", () => {
+  const template = stabling("stabling:self:shared", "base:p1", "base:p1", 0, "berth:shared");
+  const result = allocateMovementRoutePlanV2(singleStablingFixture(template));
+
+  assert.equal(result.metrics.stablingCount, 1);
+  assert.equal(result.metrics.movementTrainCount, 2);
+  assert.deepEqual(
+    result.reservations.filter((entry) => entry.kind === "track" && entry.stage === "berth").map((entry) => entry.edgeId),
+    ["berth:shared"],
+  );
+  assert.deepEqual(
+    result.programTrains.filter((entry) => !entry.publicPassengerStop).map((entry) => entry.routeVersionId).sort(),
+    ["route:stabling:self:shared:shunt-in", "route:stabling:self:shared:shunt-out"],
+  );
+});
+
+test("materialisiert Cross-Berth als explizite dreistufige Rangierkette", () => {
+  const template = crossBerthStabling("stabling:self:cross", "base:p1", "base:p1", 0);
+  const result = allocateMovementRoutePlanV2(singleStablingFixture(template));
+
+  assert.equal(result.metrics.stablingCount, 1);
+  assert.equal(result.metrics.movementTrainCount, 3);
+  assert.deepEqual(
+    result.programTrains.filter((entry) => !entry.publicPassengerStop).map((entry) => [entry.routeVersionId, entry.scheduledDepartureMs]),
+    [
+      ["route:stabling:self:cross:shunt-in", 900_000],
+      ["route:stabling:self:cross:berth-transfer", 3_420_000],
+      ["route:stabling:self:cross:shunt-out", 3_540_000],
+    ],
+  );
+  assert.deepEqual(
+    result.reservations.filter((entry) => entry.kind === "track" && entry.stage.endsWith("berth")).map((entry) => [entry.stage, entry.edgeId, entry.startMs, entry.endMs]),
+    [
+      ["arrival-berth", "stabling:self:cross:arrival", 960_000, 3_540_000],
+      ["departure-berth", "stabling:self:cross:departure", 3_540_000, 3_600_000],
+    ],
+  );
+  assert.deepEqual(
+    result.reservations.filter((entry) => entry.stage === "berth-transfer").map((entry) => [entry.resourceId, entry.startMs, entry.endMs]),
+    [["resource:stabling:self:cross:berth-transfer", 3_420_000, 3_540_000]],
+  );
+  const movementEdges = result.movementContinuations.filter((entry) => entry.successorTrainId !== "p1");
+  const routeByTrainId = new Map(result.programTrains.map((entry) => [entry.id, entry.routeVersionId]));
+  assert.deepEqual(new Map(movementEdges.map((entry) => [
+    routeByTrainId.get(entry.successorTrainId),
+    [entry.minimumDwellMs, entry.continuity],
+  ])), new Map([
+    ["route:stabling:self:cross:shunt-in", [MOVEMENT_PASSENGER_DWELL_MS, "same-direction"]],
+    ["route:stabling:self:cross:berth-transfer", [0, "reverse-direction"]],
+    ["route:stabling:self:cross:shunt-out", [0, "reverse-direction"]],
+  ]));
+  const passengerEdge = result.movementContinuations.find((entry) => entry.successorTrainId === "p1");
+  assert.equal(passengerEdge.minimumDwellMs, 0);
+  assert.equal(passengerEdge.continuity, "same-direction");
+  assert.equal(passengerEdge.dailyBoundary, true);
+});
+
+test("verwirft die entfernte singulaere Legacy-Berth-Form fail-closed", () => {
+  const template = stabling("stabling:self:legacy", "base:p1", "base:p1", 0, "berth:legacy");
+  template.berth = template.arrivalBerth;
+  delete template.arrivalBerth;
+  delete template.departureBerth;
+
+  assert.throws(
+    () => allocateMovementRoutePlanV2(singleStablingFixture(template)),
+    /entfernten Legacy-Berth/u,
+  );
 });
 
 function overlappingStablingFixture(includeSecondBerth) {

@@ -458,9 +458,12 @@ function validateNativeDerivationReport(report, specification) {
     if (name !== "berthAssignmentCounts") nonNegativeSafeInteger(count, `Nativer Bericht.counts.provenance.${name}`);
   }
   for (const [name, count] of Object.entries(report.counts.provenance.berthAssignmentCounts)) nonNegativeSafeInteger(count, `Nativer Bericht.counts.provenance.berthAssignmentCounts.${name}`);
+  const berthAssignmentTotal = Object.values(report.counts.provenance.berthAssignmentCounts).reduce((sum, count) => sum + count, 0);
   invariant(
     JSON.stringify(canonicalValue(report.counts.provenance.berthAssignmentCounts)) === JSON.stringify(canonicalValue(report.candidate.movementRouteTemplates.berthAssignmentCounts))
-      && report.counts.provenance.crossBerthTemplates === report.candidate.movementRouteTemplates.crossBerthTemplateCount,
+      && report.counts.provenance.crossBerthTemplates === report.candidate.movementRouteTemplates.crossBerthTemplateCount
+      && report.counts.provenance.observedStablingTemplates + report.counts.provenance.simulatedOperationalStablingTemplates === report.counts.candidate.stablingTemplates
+      && berthAssignmentTotal === report.counts.candidate.stablingTemplates + report.counts.provenance.crossBerthTemplates,
     "Nativer Bericht zaehlt Berth-Provenienz in Report und Movement-Beleg verschieden.",
   );
   if (report.timetableRouteEvidence === null) {
@@ -562,11 +565,12 @@ function validateBerthAssignment(value, name) {
 }
 
 function validateBerth(value, formationLengthMm, name) {
-  exactKeys(value, ["edgeId", "fromMm", "toMm", "leftClearanceMm", "rightClearanceMm"], name);
+  exactKeys(value, ["edgeId", "edgeLengthMm", "fromMm", "toMm", "leftClearanceMm", "rightClearanceMm"], name);
   nonEmptyString(value.edgeId, `${name}.edgeId`);
-  for (const field of ["fromMm", "toMm", "leftClearanceMm", "rightClearanceMm"]) nonNegativeSafeInteger(value[field], `${name}.${field}`);
+  for (const field of ["edgeLengthMm", "fromMm", "toMm", "leftClearanceMm", "rightClearanceMm"]) nonNegativeSafeInteger(value[field], `${name}.${field}`);
   invariant(value.toMm - value.fromMm === formationLengthMm, `${name} bildet die Formation nicht exakt ab.`);
   invariant(value.fromMm === value.leftClearanceMm, `${name} besitzt eine widerspruechliche linke Freilaenge.`);
+  invariant(Number.isSafeInteger(value.toMm + value.rightClearanceMm) && value.toMm + value.rightClearanceMm === value.edgeLengthMm, `${name} bindet die rechte Freilaenge nicht an das reale Kantenende.`);
   return value;
 }
 
@@ -626,6 +630,8 @@ function validateMovementRouteTemplatesSidecar(sidecar, specification, proof) {
     }
   }
   const berthAssignmentCounts = { observedOsmServiceSiding: 0, simulatedOperationalOsmServiceYard: 0, simulatedOperationalOsmServiceSpur: 0, simulatedOperationalOsmUnclassifiedRail: 0 };
+  let observedStablingTemplateCount = 0;
+  let simulatedOperationalStablingTemplateCount = 0;
   let crossBerthTemplateCount = 0;
   const countAssignment = (assignment) => {
     const key = assignment.subtype === "osm-service-siding" ? "observedOsmServiceSiding"
@@ -651,6 +657,8 @@ function validateMovementRouteTemplatesSidecar(sidecar, specification, proof) {
     validateTerminalIntervals(template.terminalIntervals, template.formationLengthMm, `${name}.terminalIntervals`, template.terminalEdgeId);
     validateBerthAssignment(template.arrivalBerthAssignment, `${name}.arrivalBerthAssignment`);
     validateBerthAssignment(template.departureBerthAssignment, `${name}.departureBerthAssignment`);
+    if (template.arrivalBerthAssignment.kind === "observed" && template.departureBerthAssignment.kind === "observed") observedStablingTemplateCount += 1;
+    else simulatedOperationalStablingTemplateCount += 1;
     validateBerth(template.arrivalBerth, template.formationLengthMm, `${name}.arrivalBerth`);
     validateBerth(template.departureBerth, template.formationLengthMm, `${name}.departureBerth`);
     for (const field of ["shuntIn", "shuntOut", "outbound"]) validateDispatch(template[field], `${name}.${field}`);
@@ -674,16 +682,14 @@ function validateMovementRouteTemplatesSidecar(sidecar, specification, proof) {
     }
     invariant(template.outbound.predecessorBaseRouteVersionId === template.shuntOut.routeVersionId, `${name}.outbound bindet nicht shuntOut.`);
   }
-  const observedCount = berthAssignmentCounts.observedOsmServiceSiding;
-  const simulatedCount = berthAssignmentCounts.simulatedOperationalOsmServiceYard + berthAssignmentCounts.simulatedOperationalOsmServiceSpur + berthAssignmentCounts.simulatedOperationalOsmUnclassifiedRail;
   invariant(
     JSON.stringify(canonicalValue(sidecar.metrics.berthAssignmentCounts)) === JSON.stringify(canonicalValue(berthAssignmentCounts))
       && JSON.stringify(canonicalValue(proof.berthAssignmentCounts)) === JSON.stringify(canonicalValue(berthAssignmentCounts))
-      && sidecar.metrics.observedStablingTemplateCount === observedCount
-      && sidecar.metrics.simulatedOperationalStablingTemplateCount === simulatedCount
+      && sidecar.metrics.observedStablingTemplateCount === observedStablingTemplateCount
+      && sidecar.metrics.simulatedOperationalStablingTemplateCount === simulatedOperationalStablingTemplateCount
       && sidecar.metrics.crossBerthTemplateCount === crossBerthTemplateCount
       && proof.crossBerthTemplateCount === crossBerthTemplateCount
-      && observedCount + simulatedCount === sidecar.templates.length + crossBerthTemplateCount,
+      && observedStablingTemplateCount + simulatedOperationalStablingTemplateCount === sidecar.templates.length,
     "Movement-Sidecar zaehlt Berth-Provenienz oder Cross-Berth-Templates widerspruechlich.",
   );
   invariant(sidecar.metrics.transferDemandCount + sidecar.metrics.turnaroundDemandCount === sidecar.metrics.plannedTransitionCount && sidecar.metrics.turnaroundPairCount <= sidecar.metrics.turnaroundDemandCount, "Movement-Sidecar partitioniert die geplanten physischen Fortsetzungen nicht vollstaendig.");

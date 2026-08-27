@@ -1501,6 +1501,7 @@ fn connewitz_abstellung_ist_fuer_beide_formationslaengen_physisch_und_stabil() {
         );
         let expected_berth = json!({
             "edgeId": CONNEWITZ_BERTH_EDGE,
+            "edgeLengthMm": 126_822,
             "fromMm": berth_from_mm,
             "toMm": berth_to_mm,
             "leftClearanceMm": berth_from_mm,
