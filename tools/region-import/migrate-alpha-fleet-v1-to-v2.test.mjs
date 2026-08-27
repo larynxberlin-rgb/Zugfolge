@@ -50,7 +50,7 @@ function buildConfiguration(gtfsEnvelopeValue = gtfsEnvelope()) {
     operationalInfrastructure: { file: "operational-infrastructure-v2.json", bytes: 42, sha256: SHA_A, stateHash: SHA_B },
     timetableRoutes: { file: "timetable-routes-v2.jsonseq", bytes: 84, sha256: SHA_A },
     timetableTransferDemands: {
-      file: "timetable-routes-v2.transfer-demands-v1.json",
+      file: "timetable-routes-v2.transfer-demands-v2.json",
       bytes: 126,
       sha256: SHA_A,
       dailyPlanSha256: dailyPlan.planSha256,

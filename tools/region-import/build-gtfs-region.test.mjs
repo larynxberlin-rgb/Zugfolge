@@ -70,7 +70,7 @@ test("GTFS-Region uebernimmt Welt und Region ausschliesslich aus expliziter Buil
       },
       timetableRoutes: { file: "timetable-routes-v2.jsonseq", bytes: 1, sha256: "c".repeat(64) },
       timetableTransferDemands: {
-        file: "timetable-routes-v2.transfer-demands-v1.json",
+        file: "timetable-routes-v2.transfer-demands-v2.json",
         bytes: 1,
         sha256: "d".repeat(64),
         dailyPlanSha256: "e".repeat(64),
