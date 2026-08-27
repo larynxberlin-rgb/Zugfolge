@@ -313,9 +313,7 @@ describe.skipIf(databaseUrl === undefined)("real PostgreSQL integration", () => 
   }, 60_000);
 
   it("archives a running alpha profile only through the guarded closing transition", async () => {
-    const worldId = "00000000-0000-4000-8000-000000000034";
-    await client`delete from alpha_world_profiles where world_id = ${worldId}`;
-    await client`delete from worlds where id = ${worldId}`;
+    const worldId = randomUUID();
     await db.insert(worlds).values({
       id: worldId,
       name: "PG atomic cutover lifecycle",
@@ -365,8 +363,8 @@ describe.skipIf(databaseUrl === undefined)("real PostgreSQL integration", () => 
     await expect(client`update alpha_world_profiles set final_state_hash = ${"8".repeat(64)} where world_id = ${worldId}`)
       .rejects.toMatchObject({ message: expect.stringContaining("final state hash is immutable") });
 
-    await client`delete from alpha_world_profiles where world_id = ${worldId}`;
-    await client`delete from worlds where id = ${worldId}`;
+    await expect(client`delete from alpha_world_profiles where world_id = ${worldId}`)
+      .rejects.toMatchObject({ message: expect.stringContaining("started alpha world profile is immutable") });
   });
 
   it("keeps only v1 writes compatible and rejects a v2-to-v1 downgrade", async () => {
