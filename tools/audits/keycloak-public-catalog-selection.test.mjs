@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadKeycloakObjectCatalog } from "../alpha-ops/keycloak-public-to-schema.mjs";
-import { auditKeycloakPublicCatalogCapture, auditKeycloakPublicCatalogFile } from "./keycloak-public-catalog-selection.mjs";
+import {
+  auditKeycloakPublicCatalogCapture,
+  auditKeycloakPublicCatalogFile,
+  deriveKeycloakSelectionSignatures,
+} from "./keycloak-public-catalog-selection.mjs";
 
 const capturePath = process.env.KEYCLOAK_PUBLIC_CATALOG_CAPTURE_PATH;
 
@@ -22,5 +26,33 @@ test("catalog selection rejects captures with missing or foreign top-level field
   assert.throws(
     () => auditKeycloakPublicCatalogCapture({ foreign: true }, Buffer.from("{}"), Buffer.from("gzip"), catalog),
     /fremde oder fehlende Felder/u,
+  );
+});
+
+test("catalog selection shares the tombstone-neutral live-column contract", () => {
+  const selected = (ordinals) => ({
+    relations: [],
+    columns: ordinals.map((ordinal, index) => ({
+      name: ["id", "enabled", "client_id"][index],
+      type: "character varying(255)",
+      default: null,
+      notNull: false,
+      ordinal,
+      identity: "",
+      relation: "client",
+      collation: "default",
+      generated: "",
+    })),
+    constraints: [],
+    indexes: [],
+    triggers: [],
+    sequences: [],
+    views: [],
+    types: [],
+  });
+
+  assert.deepEqual(
+    deriveKeycloakSelectionSignatures(selected([2, 4, 7])).columns,
+    deriveKeycloakSelectionSignatures(selected([1, 2, 3])).columns,
   );
 });

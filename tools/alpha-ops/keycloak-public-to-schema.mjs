@@ -431,6 +431,33 @@ function signature(values) {
   return Object.freeze({ count: values.length, sha256: schemaNeutralSha256(values) });
 }
 
+export function canonicalizeKeycloakColumnOrdinals(values) {
+  invariant(Array.isArray(values), "Keycloak-Spaltenkatalog ist keine Liste.");
+  let previousRelation = null;
+  let previousPhysicalOrdinal = 0;
+  let liveOrdinal = 0;
+  return values.map((value, index) => {
+    invariant(value !== null && typeof value === "object" && !Array.isArray(value), `Keycloak-Spaltenkatalog[${index}] ist kein Objekt.`);
+    const relation = safeName(value.relation, `Keycloak-Spaltenkatalog[${index}].relation`);
+    safeName(value.name, `Keycloak-Spaltenkatalog[${index}].name`);
+    const physicalOrdinal = safeInteger(value.ordinal, `Keycloak-Spaltenkatalog[${index}].ordinal`, { positive: true });
+    if (relation !== previousRelation) {
+      invariant(previousRelation === null || relation > previousRelation, "Keycloak-Spaltenkatalog ist nicht kanonisch nach Relation sortiert.");
+      previousRelation = relation;
+      previousPhysicalOrdinal = 0;
+      liveOrdinal = 0;
+    }
+    invariant(physicalOrdinal > previousPhysicalOrdinal, `Keycloak-Spaltenkatalog fuer '${relation}' ist nicht kanonisch nach physischer Spaltenposition sortiert.`);
+    previousPhysicalOrdinal = physicalOrdinal;
+    liveOrdinal += 1;
+    return Object.freeze({ ...value, ordinal: liveOrdinal });
+  });
+}
+
+export function keycloakColumnSignature(values) {
+  return signature(canonicalizeKeycloakColumnOrdinals(values));
+}
+
 async function inspectCatalogAtSchema(sql, schema, catalog, relations) {
   const expected = catalog.objects.tables;
   const selectedRelations = relations.filter(({ name }) => expected.includes(name));
@@ -450,7 +477,7 @@ async function inspectCatalogAtSchema(sql, schema, catalog, relations) {
     relationNames: names,
     signatures: Object.freeze({
       relations: signature(selected),
-      columns: signature(columns),
+      columns: keycloakColumnSignature(columns),
       constraints: signature(constraints),
       indexes: signature(indexes),
       triggers: signature(triggers),

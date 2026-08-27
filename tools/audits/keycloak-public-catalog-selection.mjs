@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
 
 import { DATABASE_AUTHORITATIVE_TABLES } from "../alpha-ops/database-cutover-schema-contract.mjs";
-import { loadKeycloakObjectCatalog } from "../alpha-ops/keycloak-public-to-schema.mjs";
+import { keycloakColumnSignature, loadKeycloakObjectCatalog } from "../alpha-ops/keycloak-public-to-schema.mjs";
 
 const EXTENSION_RELATIONS = Object.freeze(["geography_columns", "geometry_columns", "spatial_ref_sys"]);
 const EXPECTED_CAPTURE_COUNTS = Object.freeze({ relations: 154, columns: 1186, constraints: 463, indexes: 407, triggers: 4, sequences: 0, views: 2, types: 0 });
@@ -37,6 +37,14 @@ function sha256(bytes) {
 
 function signature(values) {
   return Object.freeze({ count: values.length, sha256: sha256(Buffer.from(JSON.stringify(schemaNeutralValue(values)), "utf8")) });
+}
+
+export function deriveKeycloakSelectionSignatures(selected) {
+  exactKeys(selected, ["relations", "columns", "constraints", "indexes", "triggers", "sequences", "views", "types"], "Keycloak-Katalogselektion");
+  return Object.fromEntries(Object.entries(selected).map(([name, values]) => [
+    name,
+    name === "columns" ? keycloakColumnSignature(values) : signature(values),
+  ]));
 }
 
 function exactKeys(value, keys, label) {
@@ -76,7 +84,7 @@ export function auditKeycloakPublicCatalogCapture(capture, captureBytes, gzipByt
     views: [],
     types: [],
   };
-  const signatures = Object.fromEntries(Object.entries(selected).map(([name, values]) => [name, signature(values)]));
+  const signatures = deriveKeycloakSelectionSignatures(selected);
   invariant(JSON.stringify(sortedValue(signatures)) === JSON.stringify(sortedValue(catalog.signatures)), "Abgeleitete Keycloak-Signaturen weichen vom eingecheckten Objektkatalog ab.");
   return Object.freeze({
     schema: "keycloak-public-catalog-selection-audit/v1",

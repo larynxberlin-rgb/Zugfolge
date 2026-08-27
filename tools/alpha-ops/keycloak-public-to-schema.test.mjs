@@ -19,6 +19,7 @@ import {
   createMigrationPlan,
   executeMigration,
   inspectKeycloakSchemaState,
+  keycloakColumnSignature,
   loadKeycloakObjectCatalog,
   postgresCatalogIdentifier,
   recoverMigrationReceipt,
@@ -298,6 +299,36 @@ test("committed PG16 catalog pins the exact Keycloak 26.7.0 object contract", as
   assert.throws(
     () => validateKeycloakStateSnapshot({ ...productionLegacy, targetSchemaComment: "forged-bootstrap-origin" }),
     /unbekannten Zielschema-Ursprungsmarker/u,
+  );
+});
+
+test("Spaltenvertrag neutralisiert nur tombstone-bedingte attnum-Luecken", () => {
+  const column = (name, ordinal, type = "character varying(255)") => ({
+    name,
+    type,
+    default: null,
+    notNull: false,
+    ordinal,
+    identity: "",
+    relation: "client",
+    collation: "default",
+    generated: "",
+  });
+  const productionHistory = [column("id", 1), column("enabled", 2), column("client_id", 3)];
+  const freshHistoryWithDroppedSlots = [column("id", 2), column("enabled", 4), column("client_id", 7)];
+
+  assert.deepEqual(keycloakColumnSignature(freshHistoryWithDroppedSlots), keycloakColumnSignature(productionHistory));
+  assert.notEqual(
+    keycloakColumnSignature([column("enabled", 2), column("id", 4), column("client_id", 7)]).sha256,
+    keycloakColumnSignature(productionHistory).sha256,
+  );
+  assert.notEqual(
+    keycloakColumnSignature([column("id", 2), column("enabled", 4, "boolean"), column("client_id", 7)]).sha256,
+    keycloakColumnSignature(productionHistory).sha256,
+  );
+  assert.throws(
+    () => keycloakColumnSignature([column("id", 4), column("enabled", 2)]),
+    /nicht kanonisch nach physischer Spaltenposition/u,
   );
 });
 

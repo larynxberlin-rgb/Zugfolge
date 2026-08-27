@@ -37,6 +37,17 @@ exakten Indexvertrag ab. Die Pretty-Ausgabe ist dafuer ungeeignet, weil sie ein
 im `search_path` sichtbares `public`-Schema aus dem Text auslaesst. Anzahl,
 Name, Relation, Eindeutigkeit, Primary-Flag, Ready-/Valid-Status und kompletter
 Indexausdruck bleiben Bestandteil des SHA-256-Vertrags.
+Die Spaltensignatur verwirft weiterhin keine sichtbare Struktur: Name, Typ,
+Default, Nullregel, Identity-/Generated-Merkmal, Kollation und die relative
+Reihenfolge aller Live-Spalten bleiben gehasht. Nur die physische `attnum` wird
+je Tabelle dicht auf die Live-Reihenfolge abgebildet. Damit beeinflussen bereits
+durch `not attisdropped` ausgeschlossene PostgreSQL-Tombstones den Vertrag nicht
+indirekt ueber Positionsluecken. Der verifizierte Vergleich ergab beim frischen
+Keycloak-26.7.0-Aufbau 55 solche Tombstones in 22 Tabellen und dadurch 143
+abweichende physische Positionen; alle 614 Live-Spaltendeskriptoren waren sonst
+identisch zum produktionshistorischen Capture. Beide Wege ergeben nach dieser
+engen Normalisierung weiterhin dessen unveraenderten Spalten-SHA-256
+`2c24830b5eadc762bbb1d7189fc05e93cab6ce7136099abf1036b4b97f0b8d06`.
 Die Auswahl ist explizit und verlustfrei: 51 bekannte Game-Relationen beim
 Produktionsstand mit 28 Drizzle-Einträgen, 100 exakt mit dem offiziellen
 Keycloak-26.7.0-Katalog übereinstimmende Relationen und drei über
