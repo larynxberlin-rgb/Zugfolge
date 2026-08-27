@@ -7,7 +7,6 @@
   "candidateFile": "operational-infrastructure-v2.candidate.json",
   "derivationReportFile": "operational-infrastructure-v2.derivation-report.json",
   "timetableRouteReportFile": "timetable-routes-v2.derivation-report.json",
-  "timetableTransferDemandsFile": "timetable-routes-v2.transfer-demands-v1.json",
   "gtfsSnapshotFile": "gtfs-region-20260810-v2.json",
   "operationalArtifactFile": "operational-infrastructure-v2.json"
 }

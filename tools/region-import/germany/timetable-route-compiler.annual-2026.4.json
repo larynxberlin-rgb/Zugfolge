@@ -1,5 +1,5 @@
 {
-  "schema": "zugfolge-germany-timetable-route-compiler/v4",
+  "schema": "zugfolge-germany-timetable-route-compiler/v3",
   "infraReleaseId": "infra-deutschland-2026.4",
   "tracks": "var/derived/germany-2026.4/semantic-tile-inputs-free-v2/tracks.geojsonseq",
   "corridors": "var/derived/germany-2026.4/semantic-tile-inputs-free-v2/rail-corridors.geojsonseq",
@@ -25,20 +25,6 @@
     "expectedEligibleSegmentCount": 1679,
     "permittedProtectionModes": ["pzb"]
   },
-  "dailyCirculation": {
-    "rule": "lot-local-playable-path-cover-with-minimum-cross-location-rollover/v1",
-    "repeatEveryS": 86400,
-    "minimumTurnaroundS": 300,
-    "expectedLotCount": 52,
-    "expectedJourneyChainCount": 1677,
-    "expectedCirculationCount": 193,
-    "expectedTransferDemandCount": 79,
-    "expectedTransferLotCount": 38,
-    "formationLengthsMm": [46560, 69860],
-    "unknownMainlineSpeedKmh": 20,
-    "unknownServiceSpeedKmh": 10
-  },
   "output": "var/derived/germany-2026.4/timetable-routes-v2.jsonseq",
-  "transferOutput": "var/derived/germany-2026.4/timetable-routes-v2.transfer-demands-v1.json",
   "report": "var/derived/germany-2026.4/timetable-routes-v2.derivation-report.json"
 }

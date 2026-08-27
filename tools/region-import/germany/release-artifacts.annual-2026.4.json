@@ -4,8 +4,6 @@
     { "id": "infra-deutschland-2026.4", "kind": "infrastructure", "sourceFile": "var/derived/germany-2026.4/map-release-free-v2/infra-deutschland-2026.4.pmtiles", "file": "infra-deutschland-2026.4.pmtiles" },
     { "id": "livemap-read-model-2026.4", "kind": "read-model", "sourceFile": "var/derived/germany-2026.4/map-release-free-v2/public/read-model.sqlite", "file": "read-model.sqlite" },
     { "id": "operational-infrastructure-2026.4", "kind": "operational-infrastructure-v2", "infraReleaseId": "infra-deutschland-2026.4", "sourceFile": "var/derived/germany-2026.4/operational-infrastructure-v2.json", "file": "operational-infrastructure-v2.json" },
-    { "id": "operational-movement-routes-2026.4", "kind": "movement-route-templates-v2", "sourceFile": "var/derived/germany-2026.4/operational-infrastructure-v2.movement-route-templates-v2.json", "file": "operational-infrastructure-v2.movement-route-templates-v2.json" },
-    { "id": "timetable-transfer-demands-2026.4", "kind": "timetable-transfer-demands-v1", "sourceFile": "var/derived/germany-2026.4/timetable-routes-v2.transfer-demands-v1.json", "file": "timetable-routes-v2.transfer-demands-v1.json" },
     { "id": "quality-report-2026.4", "kind": "quality-report", "sourceFile": "var/derived/germany-2026.4/operational-infrastructure-quality.json", "file": "operational-infrastructure-quality.json" }
   ]
 }
