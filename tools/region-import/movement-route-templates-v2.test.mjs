@@ -11,7 +11,7 @@ import {
 
 const HASH = "a".repeat(64);
 
-function dispatch(id, resourceIds = [`resource:${id}`], predecessorBaseRouteVersionId = `base:${id}`) {
+function dispatch(id, resourceIds = [`resource:${id}`], predecessorBaseRouteVersionId = `base:${id}`, continuity = "same-direction") {
   return {
     routeVersionId: `route:${id}`,
     predecessorBaseRouteVersionId,
@@ -25,6 +25,7 @@ function dispatch(id, resourceIds = [`resource:${id}`], predecessorBaseRouteVers
       availableProtectionSystems: ["pzb"],
       simultaneouslyRequiredProtectionSystems: [],
     }],
+    continuity,
   };
 }
 
@@ -51,7 +52,7 @@ function fixture() {
       resourceIds: directResources,
       resourceSetSha256: movementResourceSetSha256(directResources),
       through: null,
-      outbound: dispatch("direct-outbound", undefined, "passenger:in"),
+      outbound: dispatch("direct-outbound", undefined, "passenger:in", "reverse-direction"),
     }],
     templates: [],
     transferTemplates: [{
@@ -198,6 +199,23 @@ test("erzwingt Through nur fuer gleichgerichtete Direct-Fortsetzungen", () => {
   valid.artifact.directTemplates[0].continuity = "same-direction";
   valid.artifact.directTemplates[0].through = dispatch("through", undefined, "passenger:in");
   valid.artifact.directTemplates[0].outbound.predecessorBaseRouteVersionId = "route:through";
+  valid.artifact.directTemplates[0].outbound.continuity = "same-direction";
   rebindState(valid);
   assert.equal(validateMovementRouteTemplatesV2(valid).directTemplates[0].through.routeVersionId, "route:through");
+
+  const wrongThroughContinuity = structuredClone(valid);
+  wrongThroughContinuity.artifact.directTemplates[0].through.continuity = "reverse-direction";
+  rebindState(wrongThroughContinuity);
+  assert.throws(() => validateMovementRouteTemplatesV2(wrongThroughContinuity), /keine gleichgerichtete Through-Kette/u);
+
+  const duplicateBaseTraversal = structuredClone(valid);
+  duplicateBaseTraversal.artifact.directTemplates[0].outbound.predecessorBaseRouteVersionId = "passenger:in";
+  rebindState(duplicateBaseTraversal);
+  assert.throws(() => validateMovementRouteTemplatesV2(duplicateBaseTraversal), /bindet nicht die unmittelbar vorige Through-Route/u);
+});
+
+test("bindet den kanonischen State-Hash auch ohne fachliche Neuberechnung", () => {
+  const input = fixture();
+  input.artifact.directTemplates[0].outbound.routeVersionId = "route:tampered";
+  assert.throws(() => validateMovementRouteTemplatesV2(input), /fremden kanonischen State-Hash/u);
 });

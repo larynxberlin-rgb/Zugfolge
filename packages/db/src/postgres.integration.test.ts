@@ -344,7 +344,9 @@ describe.skipIf(databaseUrl === undefined)("real PostgreSQL integration", () => 
       startedAtS: 0,
     });
 
-    await expect(client`update alpha_world_profiles set state = 'archived' where world_id = ${worldId}`)
+    await expect(client`update alpha_world_profiles
+      set state = 'archived', final_state_hash = ${"9".repeat(64)}
+      where world_id = ${worldId}`)
       .rejects.toMatchObject({ message: expect.stringContaining("alpha world lifecycle cannot move backwards") });
     await client.begin("isolation level serializable", async (tx) => {
       const closing = await tx<{ state: string }[]>`
@@ -395,8 +397,8 @@ describe.skipIf(databaseUrl === undefined)("real PostgreSQL integration", () => 
           state = '{"oldWorkerTriedToDowngrade":true}', revision = revision + 1,
           publisher_sequence = publisher_sequence + 1, updated_at = '1970-01-01T00:01:00Z'
       where world_id = ${legacyWorldId} and region_id = 'v2'`).rejects.toMatchObject({
-      code: "23514",
-      constraint_name: "regional_simulation_states_initialization_hash_present",
+      code: "P0001",
+      message: expect.stringContaining("operational initialization binding is immutable"),
     });
 
     await client`delete from regional_simulation_states where world_id = ${legacyWorldId}`;
@@ -496,7 +498,9 @@ describe.skipIf(databaseUrl === undefined)("real PostgreSQL integration", () => 
       });
       await writerReady;
 
-      const archiveAttempt = archiver`update worlds set lifecycle_status = 'archived' where id = ${worldId}`;
+      const archiveAttempt = Promise.resolve(
+        archiver`update worlds set lifecycle_status = 'archived' where id = ${worldId}`,
+      );
       await waitForAdvisoryLockWait(client, archiveBackend.pid);
       releaseOpenWriter();
       await openAttempt;
@@ -540,7 +544,9 @@ describe.skipIf(databaseUrl === undefined)("real PostgreSQL integration", () => 
       });
       await writerReady;
 
-      const archiveAttempt = archiver`update worlds set lifecycle_status = 'archived' where id = ${worldId}`;
+      const archiveAttempt = Promise.resolve(
+        archiver`update worlds set lifecycle_status = 'archived' where id = ${worldId}`,
+      );
       await waitForAdvisoryLockWait(client, archiveBackend.pid);
       releaseOpenWriter();
       await openAttempt;
@@ -587,8 +593,10 @@ describe.skipIf(databaseUrl === undefined)("real PostgreSQL integration", () => 
       });
       await archiveReady;
 
-      const writerAttempt = waitingWriter`update accounts set display_name = 'Stale writer'
-        where id = ${accountId} and world_id = ${worldId}`;
+      const writerAttempt = Promise.resolve(
+        waitingWriter`update accounts set display_name = 'Stale writer'
+          where id = ${accountId} and world_id = ${worldId}`,
+      );
       await waitForAdvisoryLockWait(client, writerBackend.pid);
       releaseArchive();
       await archiveAttempt;

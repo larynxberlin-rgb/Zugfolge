@@ -26,6 +26,8 @@ QUALITY_SCHEMA = "zugfolge-operational-infrastructure-quality-report/v1"
 STATIC_MAP_QUALITY_SCHEMA = "zugfolge-static-map-quality/v2"
 STATIC_MAP_SOURCE_QUALITY_SCHEMA = "zugfolge-final-infrastructure-quality-report/v1"
 OPERATIONAL_INFRASTRUCTURE_KIND = "operational-infrastructure-v2"
+MOVEMENT_ROUTE_TEMPLATES_KIND = "movement-route-templates-v2"
+TIMETABLE_TRANSFER_DEMANDS_KIND = "timetable-transfer-demands-v1"
 QUALITY_CLASSES = ("A", "B", "C")
 OPERATIONAL_COVERAGE_FIELDS = (
     "blockResources", "directedEdges", "edgeGeometries", "interlockingRoutes", "platformIntervals",
@@ -142,7 +144,13 @@ def _validate_timetable_route_evidence(value):
     return evidence
 
 
-def _validate_operational_quality(value, release_id, delivered_operational_artifact):
+def _validate_operational_quality(
+    value,
+    release_id,
+    delivered_operational_artifact,
+    delivered_movement_route_templates,
+    delivered_transfer_demands,
+):
     quality = _exact_keys(value, (
         "schema", "releaseId", "timetableYear", "scopeId", "deterministic", "separation", "mapEvidence",
         "operationalModel", "summary", "qualityGate",
@@ -199,8 +207,8 @@ def _validate_operational_quality(value, release_id, delivered_operational_artif
     model = _exact_keys(quality["operationalModel"], (
         "policyId", "policySha256", "closureReceiptSha256", "qualityClass", "provenance", "realGeometry",
         "simulatedOperationalAssignment", "realInterlockingFactsClaimed", "syntheticOperationalDetailsShipped",
-        "objectLevelProvenanceShipped", "observedAndSyntheticObjectsShareRuntimeCollections", "timetableRouteEvidence",
-        "operationalArtifact", "coverage",
+        "objectLevelProvenanceShipped", "observedAndSyntheticObjectsShareRuntimeCollections", "movementRouteTemplates",
+        "timetableRouteEvidence", "operationalArtifact", "coverage",
     ), "Operational-v2.operationalModel")
     if (
         model["policyId"] != "synthetic-operational-b/v2"
@@ -217,6 +225,28 @@ def _validate_operational_quality(value, release_id, delivered_operational_artif
     route_evidence = _validate_timetable_route_evidence(model["timetableRouteEvidence"])
     if route_evidence["policyId"] != model["policyId"]:
         _quality_error(_("Fahrwegbeleg und Betriebsmodell binden verschiedene Policies"))
+    if (
+        route_evidence["transferDemandsBytes"] != delivered_transfer_demands["bytes"]
+        or route_evidence["transferDemandsSha256"] != delivered_transfer_demands["sha256"]
+    ):
+        _quality_error(_("Transferbeleg bindet nicht exakt das ausgelieferte timetable-transfer-demands-v1-Artefakt"))
+
+    movement_route_templates = _exact_keys(model["movementRouteTemplates"], (
+        "bytes", "sha256", "stateHash", "operationalStateHash", "timetableTransferSetSha256",
+    ), "Operational-v2.movementRouteTemplates")
+    movement_hash_fields = ("sha256", "stateHash", "operationalStateHash", "timetableTransferSetSha256")
+    if (
+        not _safe_integer(movement_route_templates["bytes"], 1)
+        or not all(
+            isinstance(movement_route_templates[field], str) and SHA256.fullmatch(movement_route_templates[field])
+            for field in movement_hash_fields
+        )
+        or movement_route_templates["sha256"] == movement_route_templates["stateHash"]
+        or movement_route_templates["bytes"] != delivered_movement_route_templates["bytes"]
+        or movement_route_templates["sha256"] != delivered_movement_route_templates["sha256"]
+        or movement_route_templates["timetableTransferSetSha256"] != route_evidence["transferSetSha256"]
+    ):
+        _quality_error(_("movementRouteTemplates bindet nicht exakt Artefakt, Zustand und Transfer-Set"))
 
     operational_artifact = _exact_keys(model["operationalArtifact"], ("bytes", "sha256", "stateHash"), "Operational-v2.operationalArtifact")
     if (
@@ -227,8 +257,9 @@ def _validate_operational_quality(value, release_id, delivered_operational_artif
         or operational_artifact["bytes"] != delivered_operational_artifact["bytes"]
         or operational_artifact["sha256"] != delivered_operational_artifact["sha256"]
         or operational_artifact["stateHash"] != delivered_operational_artifact["stateHash"]
+        or movement_route_templates["operationalStateHash"] != operational_artifact["stateHash"]
     ):
-        _quality_error(_("Qualitaet bindet nicht exakt das ausgelieferte Betriebsartefakt und seinen Zustand"))
+        _quality_error(_("Qualitaet bindet nicht exakt Betriebsartefakt, Bewegungsfahrwege und ihren gemeinsamen Zustand"))
     coverage = _exact_keys(model["coverage"], OPERATIONAL_COVERAGE_FIELDS, "Operational-v2.coverage")
     if (
         not all(_safe_integer(coverage[field], 1) for field in OPERATIONAL_COVERAGE_FIELDS)
@@ -432,12 +463,23 @@ def _parse_package_manifest(raw):
             raise ValidationError(_("Paket braucht genau ein %s.") % required_kind)
     if auxiliary_kinds.count(OPERATIONAL_INFRASTRUCTURE_KIND) != 1:
         raise ValidationError(_("Paket braucht genau eine statische operational-infrastructure-v2.json."))
+    if auxiliary_kinds.count(MOVEMENT_ROUTE_TEMPLATES_KIND) != 1:
+        raise ValidationError(_("Paket braucht genau eine operational-infrastructure-v2.movement-route-templates-v2.json."))
+    if auxiliary_kinds.count(TIMETABLE_TRANSFER_DEMANDS_KIND) != 1:
+        raise ValidationError(_("Paket braucht genau eine timetable-routes-v2.transfer-demands-v1.json."))
     if auxiliary_kinds.count("train-map-projection") != 0:
         raise ValidationError(_("Operational-v2-Paket darf keine weltgebundene Zugpositionsprojektion als Paketvoraussetzung enthalten."))
     read_model = next(item for item in auxiliaries if isinstance(item, dict) and item.get("kind") == "read-model")
     operational_infrastructure = next(item for item in auxiliaries if isinstance(item, dict) and item.get("kind") == OPERATIONAL_INFRASTRUCTURE_KIND)
-    if read_model.get("installPath") != "read-model.sqlite" or operational_infrastructure.get("installPath") != "operational-infrastructure-v2.json":
-        raise ValidationError(_("ReadModel und Operational-v2-Infrastruktur muessen direkt in derselben Releasewurzel liegen."))
+    movement_route_templates = next(item for item in auxiliaries if isinstance(item, dict) and item.get("kind") == MOVEMENT_ROUTE_TEMPLATES_KIND)
+    transfer_demands = next(item for item in auxiliaries if isinstance(item, dict) and item.get("kind") == TIMETABLE_TRANSFER_DEMANDS_KIND)
+    if (
+        read_model.get("installPath") != "read-model.sqlite"
+        or operational_infrastructure.get("installPath") != "operational-infrastructure-v2.json"
+        or movement_route_templates.get("installPath") != "operational-infrastructure-v2.movement-route-templates-v2.json"
+        or transfer_demands.get("installPath") != "timetable-routes-v2.transfer-demands-v1.json"
+    ):
+        raise ValidationError(_("ReadModel und alle Operational-v2-Artefakte muessen an ihren kanonischen Pfaden in derselben Releasewurzel liegen."))
 
     files = []
     parts = []
@@ -620,8 +662,24 @@ def _qualify_public_delivery(parsed, inventory):
     delivered_operational = [item for item in delivered_artifacts if isinstance(item, dict) and item.get("kind") == OPERATIONAL_INFRASTRUCTURE_KIND]
     if len(delivered_operational) != 1 or delivered_operational[0].get("infraReleaseId") != release_id:
         raise ValidationError(_("Operational-v2-Artefakt ist nicht an die Delivery-InfraRelease-ID gebunden."))
+    delivered_movement_route_templates = [
+        item for item in delivered_artifacts
+        if isinstance(item, dict) and item.get("kind") == MOVEMENT_ROUTE_TEMPLATES_KIND
+    ]
+    delivered_transfer_demands = [
+        item for item in delivered_artifacts
+        if isinstance(item, dict) and item.get("kind") == TIMETABLE_TRANSFER_DEMANDS_KIND
+    ]
+    if len(delivered_movement_route_templates) != 1 or len(delivered_transfer_demands) != 1:
+        raise ValidationError(_("Delivery bindet nicht genau je ein Bewegungsfahrweg- und Transfer-Artefakt."))
     source_summary = _validate_delivery_sources(sources, release_id, parsed["files"])
-    quality_summary = _validate_operational_quality(quality, release_id, delivered_operational[0])
+    quality_summary = _validate_operational_quality(
+        quality,
+        release_id,
+        delivered_operational[0],
+        delivered_movement_route_templates[0],
+        delivered_transfer_demands[0],
+    )
     gates = _exact_keys(delivery["approvalGates"], ("rights", "quality", "signature"), "Delivery approvalGates")
     rights_gate = _exact_keys(gates["rights"], (
         "status", "sourceManifestSchema", "sourceCount", "assetGroupCount", "assetFileCount",

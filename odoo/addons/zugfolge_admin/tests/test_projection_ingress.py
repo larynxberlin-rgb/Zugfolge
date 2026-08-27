@@ -153,7 +153,11 @@ class TestProjectionIngress(HttpCase):
         ).create({
             "world_id": target_world_id,
             "world_name": "Abschlussziel",
+            "projection_revision": "world-close-target-1",
+            "observed_at": "2026-08-25 16:00:00",
+            "freshness": "delayed",
             "profile_kind": "public",
+            "payload_hash": canonical_sha256({"worldId": target_world_id, "purpose": "world-close-target"}),
         })
         foreign_request = self.env["zugfolge.admin.request"].sudo().create({
             "world_projection_id": projection.id,

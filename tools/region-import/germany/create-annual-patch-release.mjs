@@ -23,6 +23,11 @@ export const ANNUAL_PATCH_CONTRACT_FILES = Object.freeze([
   "tools/tiles/static-map-sources.annual-{patch}.json",
 ]);
 
+export const ANNUAL_PATCH_TEXT_FILES = Object.freeze([
+  "tools/audits/germany-{patch}-alpha-world-runtime.real.test.mjs",
+  "tools/audits/germany-{patch}-signed-game-staging.real.test.mjs",
+]);
+
 const PATCH = /^(?<year>[0-9]{4})\.(?<patch>[1-9][0-9]*)$/u;
 
 function invariant(condition, message) {
@@ -61,14 +66,14 @@ async function absent(path, label) {
   throw new Error(`${label} existiert bereits; create-new verweigert die Ueberschreibung.`);
 }
 
-async function readContract(path, sourcePatch, targetPatch) {
+async function readContract(path, sourcePatch, targetPatch, format) {
   const info = await stat(path);
   invariant(info.isFile(), `Jahresvertragsquelle ist keine regulaere Datei: ${path}`);
   const source = await readFile(path, "utf8");
   invariant(source.includes(sourcePatch), `Jahresvertragsquelle bindet ${sourcePatch} nicht: ${path}`);
   invariant(!source.includes(targetPatch), `Jahresvertragsquelle enthaelt bereits Zielpatch ${targetPatch}: ${path}`);
   const target = source.replaceAll(sourcePatch, targetPatch);
-  JSON.parse(target);
+  if (format === "json") JSON.parse(target);
   invariant(!target.includes(sourcePatch), `Zielvertrag enthaelt weiterhin Quellpatch ${sourcePatch}: ${path}`);
   return target;
 }
@@ -83,14 +88,20 @@ export async function createAnnualPatchRelease({
   sourcePatch,
   targetPatch,
   files = ANNUAL_PATCH_CONTRACT_FILES,
+  textFiles = ANNUAL_PATCH_TEXT_FILES,
 }) {
   const root = resolve(repositoryRoot);
   const source = parsedPatch(sourcePatch, "Quellpatch");
   const target = parsedPatch(targetPatch, "Zielpatch");
   invariant(source.year === target.year && target.patch === source.patch + 1, "Zielpatch muss der direkte naechste Patch desselben Fahrplanjahres sein.");
   invariant(Array.isArray(files) && files.length > 0 && new Set(files).size === files.length, "Jahresvertragsliste muss eindeutig und nicht leer sein.");
+  invariant(Array.isArray(textFiles) && new Set(textFiles).size === textFiles.length, "Jahres-Textvertragsliste muss eindeutig sein.");
 
-  const contracts = files.map((template) => Object.freeze({
+  const contracts = [
+    ...files.map((template) => Object.freeze({ format: "json", template })),
+    ...textFiles.map((template) => Object.freeze({ format: "text", template })),
+  ].map(({ format, template }) => Object.freeze({
+    format,
     source: pathInside(root, contractPath(template, source.value), "Jahresvertragsquelle"),
     target: pathInside(root, contractPath(template, target.value), "Jahresvertragsziel"),
     template,
@@ -102,7 +113,7 @@ export async function createAnnualPatchRelease({
     await absent(contract.target, `Jahresvertragsziel ${contract.template}`);
     prepared.push(Object.freeze({
       ...contract,
-      content: await readContract(contract.source, source.value, target.value),
+      content: await readContract(contract.source, source.value, target.value, contract.format),
     }));
   }
 

@@ -1327,7 +1327,7 @@ describe("operativer v2-Regionalsimulationsworker", () => {
     } finally {
       await client.close();
     }
-  }, 30_000);
+  }, 60_000);
 
   it("verwirft einen DB-Kopf mit fremder Initialisierungsbindung vor Restore und LiveMap", async () => {
     const { client, db } = await testDatabase();

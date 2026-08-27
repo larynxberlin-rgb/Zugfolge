@@ -286,16 +286,42 @@ await assert.rejects(
   "register-disruption darf die v2-Grenze nicht passieren",
 );
 
-const operationalActivated = await operationalRuntime.apply(
+const operationalDispatched = await operationalRuntime.apply(
   operationalMaterialized.state,
-  operationalCommand(operationalMaterialized, "native-operational-activate", {
+  operationalCommand(operationalMaterialized, "native-operational-dispatch", {
+    type: "dispatch",
+    requests: [{
+      trainId: "train:1",
+      interlockingRouteId: operationalInitialization.trains[0].dispatchInterlockingRouteId,
+      committedRank: 0,
+      timetableDeviationMs: 0,
+      passengerImpact: 0,
+      contractualImpact: 0,
+      networkImpact: 0,
+      resourceConsequence: 0,
+      recoveryRank: 0,
+      waitingSinceMs: 0,
+    }],
+  }),
+);
+assert.equal(operationalDispatched.state.revision, 2);
+
+const operationalActivated = await operationalRuntime.apply(
+  operationalDispatched.state,
+  operationalCommand(operationalDispatched, "native-operational-activate", {
     type: "activate-disruption",
     disruptionId: "native-block-closure",
     effect: { "resource-closed": { resourceId: "track:tut-segment-1" } },
   }),
 );
-assert.equal(operationalActivated.state.revision, 2);
-assert.equal(operationalActivated.state.publisherSequence, 2);
+assert.equal(operationalActivated.state.revision, 3);
+assert.equal(operationalActivated.state.publisherSequence, 3);
+assert.ok(
+  operationalActivated.events.some(
+    (event) => event.kind === "safe-stop" && event.subjectId === "train:1",
+  ),
+  "die gesperrte, zuvor wirklich disponierte Ressource muss den betroffenen Zug sicher anhalten",
+);
 assert.ok(
   operationalActivated.events.some(
     (event) => event.kind === "disruption-activated"
@@ -316,8 +342,8 @@ const operationalCleared = await operationalRuntime.apply(
   operationalActivated.state,
   operationalClearCommand,
 );
-assert.equal(operationalCleared.state.revision, 3);
-assert.equal(operationalCleared.state.publisherSequence, 3);
+assert.equal(operationalCleared.state.revision, 4);
+assert.equal(operationalCleared.state.publisherSequence, 4);
 assert.ok(
   operationalCleared.events.some(
     (event) => event.kind === "disruption-cleared"

@@ -31,6 +31,10 @@ HASH_B = "b" * 64
 HASH_C = "c" * 64
 OPERATIONAL_BYTES = b'{"id":"infra-deutschland-2026.1","schema":"zugfolge-operational-infrastructure/v2"}\n'
 OPERATIONAL_SHA256 = _sha256(OPERATIONAL_BYTES)
+MOVEMENT_ROUTE_TEMPLATES_BYTES = b'{"infraReleaseId":"infra-deutschland-2026.1","schema":"movement-route-templates-v2"}\n'
+MOVEMENT_ROUTE_TEMPLATES_SHA256 = _sha256(MOVEMENT_ROUTE_TEMPLATES_BYTES)
+TRANSFER_DEMANDS_BYTES = b'{"infraReleaseId":"infra-deutschland-2026.1","schema":"zugfolge-timetable-transfer-demands/v1"}\n'
+TRANSFER_DEMANDS_SHA256 = _sha256(TRANSFER_DEMANDS_BYTES)
 UNSIGNED_REASON = "Kein produktiver privater Signaturschluessel vorhanden; Aktivierung bleibt gesperrt."
 FINALIZATION_KEY_ID = "test-key"
 FINALIZATION_TEST_KEY_MATERIAL = "unit-test-only-key-material-0001"
@@ -179,6 +183,13 @@ def _operational_quality():
             "syntheticOperationalDetailsShipped": True,
             "objectLevelProvenanceShipped": False,
             "observedAndSyntheticObjectsShareRuntimeCollections": True,
+            "movementRouteTemplates": {
+                "bytes": len(MOVEMENT_ROUTE_TEMPLATES_BYTES),
+                "sha256": MOVEMENT_ROUTE_TEMPLATES_SHA256,
+                "stateHash": HASH_B,
+                "operationalStateHash": OPERATIONAL_STATE_HASH,
+                "timetableTransferSetSha256": HASH_A,
+            },
             "timetableRouteEvidence": {
                 "reportSchema": "zugfolge-germany-timetable-route-report/v3",
                 "policyId": "synthetic-operational-b/v2",
@@ -191,8 +202,8 @@ def _operational_quality():
                 "gtfsSnapshotBytes": 9012,
                 "gtfsSnapshotSha256": HASH_C,
                 "transferDemandsSchema": "zugfolge-timetable-transfer-demands/v1",
-                "transferDemandsBytes": 3456,
-                "transferDemandsSha256": HASH_A,
+                "transferDemandsBytes": len(TRANSFER_DEMANDS_BYTES),
+                "transferDemandsSha256": TRANSFER_DEMANDS_SHA256,
                 "snapshotHash": HASH_A,
                 "archive": "gtfs-free.zip",
                 "archiveSha256": HASH_B,
@@ -289,6 +300,18 @@ def _fixture(
             "content": OPERATIONAL_BYTES,
             "infraReleaseId": operational_infra_release_id or "infra-deutschland-2026.1",
             "stateHash": OPERATIONAL_STATE_HASH,
+        },
+        {
+            "id": "operational-movement-routes-2026.1",
+            "kind": "movement-route-templates-v2",
+            "installPath": "operational-infrastructure-v2.movement-route-templates-v2.json",
+            "content": MOVEMENT_ROUTE_TEMPLATES_BYTES,
+        },
+        {
+            "id": "timetable-transfer-demands-2026.1",
+            "kind": "timetable-transfer-demands-v1",
+            "installPath": "timetable-routes-v2.transfer-demands-v1.json",
+            "content": TRANSFER_DEMANDS_BYTES,
         },
     ]
     sources_value = {
@@ -957,7 +980,7 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
         self.assertEqual(record.failure_code, "verification_failed")
         self.assertFalse(record.activation_eligible)
 
-    def test_manifest_requires_exact_public_manifests_operational_v2_and_no_legacy_projection(self):
+    def test_manifest_requires_exact_public_manifests_operational_v2_sidecars_and_no_legacy_projection(self):
         manifest, _parts = _fixture()
         parsed = json.loads(manifest)
         without_operational = {
@@ -995,7 +1018,26 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
             duplicate["parts"][0]["path"] = "parts/%s-duplicate.part-00001" % kind
             with_duplicate = {**parsed, "auxiliaryFiles": parsed["auxiliaryFiles"] + [duplicate]}
             missing_or_duplicate_public_manifest.extend((without_kind, with_duplicate))
-        for candidate in (without_operational, with_legacy_projection, *missing_or_duplicate_public_manifest):
+        invalid_sidecars = []
+        for kind in ("movement-route-templates-v2", "timetable-transfer-demands-v1"):
+            descriptor = next(item for item in parsed["auxiliaryFiles"] if item["kind"] == kind)
+            without_kind = {
+                **parsed,
+                "auxiliaryFiles": [item for item in parsed["auxiliaryFiles"] if item["kind"] != kind],
+            }
+            duplicate = json.loads(json.dumps(descriptor))
+            duplicate["id"] = "%s-duplicate" % descriptor["id"]
+            duplicate["installPath"] = "duplicate/%s.json" % kind
+            duplicate["parts"][0]["path"] = "parts/%s-duplicate.part-00001" % kind
+            misplaced = json.loads(json.dumps(parsed))
+            next(item for item in misplaced["auxiliaryFiles"] if item["kind"] == kind)["installPath"] = "wrong/%s.json" % kind
+            invalid_sidecars.extend((without_kind, {**parsed, "auxiliaryFiles": parsed["auxiliaryFiles"] + [duplicate]}, misplaced))
+        for candidate in (
+            without_operational,
+            with_legacy_projection,
+            *missing_or_duplicate_public_manifest,
+            *invalid_sidecars,
+        ):
             with self.assertRaises(ValidationError):
                 import_module._parse_package_manifest(_canonical(candidate))
 
@@ -1056,6 +1098,10 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
             ("operational-class-c", _set_path(("summary", "operationalQualityClassArtifactCount"), {"A": 0, "B": 0, "C": 1})),
             ("map-class-c-reclassified", _set_path(("separation", "mapClassCReclassified"), True)),
             ("wrong-operational-artifact", _set_path(("operationalModel", "operationalArtifact", "sha256"), HASH_A)),
+            ("wrong-movement-artifact", _set_path(("operationalModel", "movementRouteTemplates", "sha256"), HASH_A)),
+            ("wrong-movement-operational-state", _set_path(("operationalModel", "movementRouteTemplates", "operationalStateHash"), HASH_A)),
+            ("wrong-movement-transfer-set", _set_path(("operationalModel", "movementRouteTemplates", "timetableTransferSetSha256"), HASH_B)),
+            ("wrong-transfer-artifact", _set_path(("operationalModel", "timetableRouteEvidence", "transferDemandsSha256"), HASH_A)),
         )
         for label, mutator in scenarios:
             with self.subTest(label=label):

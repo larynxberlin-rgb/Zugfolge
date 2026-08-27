@@ -945,6 +945,88 @@ fn prepare_same_direction_through_layers(root: &TestDirectory) {
     );
 }
 
+fn prepare_mid_edge_direct_layers(root: &TestDirectory) {
+    let main_tags = concat!(
+        "{\"railway\":\"rail\",\"gauge\":\"1435\",",
+        "\"electrified\":\"contact_line\",\"voltage\":\"15000\",",
+        "\"frequency\":\"16.7\",\"railway:pzb\":\"yes\",\"usage\":\"main\"}"
+    );
+    prepare_connewitz_turnaround_layers(root, 126_822, main_tags, false);
+    write_sequence(
+        &root.join("tracks.geojsonseq"),
+        &[track_with_tags(
+            CONNEWITZ_TERMINAL_EDGE,
+            4_158_877_934,
+            8_235_223_466,
+            200_000,
+            [json!(12.37), json!(51.30)],
+            [json!(12.373), json!(51.30)],
+            main_tags,
+        )],
+    );
+    write_sequence(
+        &root.join("switches.geojsonseq"),
+        &[feature(
+            json!({"type": "Point", "coordinates": [12.37, 51.30]}),
+            json!({
+                "feature_id": "switch:mid-edge-fixture",
+                "feature_type": "switch",
+                "osm_node_id": 4_158_877_934_i64,
+                "incident_track_ids_json": serde_json::to_string(&[
+                    CONNEWITZ_TERMINAL_EDGE
+                ]).expect("Mid-edge-Weichenkante")
+            }),
+        )],
+    );
+    write_sequence(
+        &root.join("timetable-routes.geojsonseq"),
+        &[
+            json!({
+                "routeVersionId": "passenger:mid-edge:inbound",
+                "templateId": "passenger-template:mid-edge:inbound",
+                "predecessorId": null,
+                "transitionRouteMm": null,
+                "legs": [{
+                    "edgeId": CONNEWITZ_TERMINAL_EDGE,
+                    "direction": "along",
+                    "edgeEntryMm": 0,
+                    "edgeExitMm": 100_000,
+                    "availableProtectionSystems": ["pzb"],
+                    "simultaneouslyRequiredProtectionSystems": []
+                }]
+            }),
+            json!({
+                "routeVersionId": "passenger:mid-edge:outbound",
+                "templateId": "passenger-template:mid-edge:outbound",
+                "predecessorId": null,
+                "transitionRouteMm": null,
+                "legs": [{
+                    "edgeId": CONNEWITZ_TERMINAL_EDGE,
+                    "direction": "against",
+                    "edgeEntryMm": 100_000,
+                    "edgeExitMm": 0,
+                    "availableProtectionSystems": ["pzb"],
+                    "simultaneouslyRequiredProtectionSystems": []
+                }]
+            }),
+            json!({
+                "routeVersionId": "passenger:mid-edge:outbound-id-only",
+                "templateId": "passenger-template:mid-edge:outbound-id-only",
+                "predecessorId": null,
+                "transitionRouteMm": null,
+                "legs": [{
+                    "edgeId": CONNEWITZ_TERMINAL_EDGE,
+                    "direction": "against",
+                    "edgeEntryMm": 99_999,
+                    "edgeExitMm": 0,
+                    "availableProtectionSystems": ["pzb"],
+                    "simultaneouslyRequiredProtectionSystems": []
+                }]
+            }),
+        ],
+    );
+}
+
 fn write_turnaround_spec(root: &TestDirectory) -> PathBuf {
     let path = write_spec(root, Some("timetable-routes.geojsonseq"));
     let mut value: Value = serde_json::from_slice(&fs::read(&path).expect("Turnaround-Spec lesen"))
@@ -1099,6 +1181,7 @@ fn connewitz_abstellung_ist_fuer_beide_formationslaengen_physisch_und_stabil() {
     assert!(demanded_direct.iter().all(|template| {
         template["continuity"] == "reverse-direction"
             && template["through"].is_null()
+            && template["outbound"]["continuity"] == "reverse-direction"
             && template["maximumDwellMs"] == 1_200_000
             && !template["resourceIds"].as_array().unwrap().is_empty()
     }));
@@ -1133,6 +1216,9 @@ fn connewitz_abstellung_ist_fuer_beide_formationslaengen_physisch_und_stabil() {
         assert_eq!(template["outboundDirection"], "along");
         assert_eq!(template["candidateRank"], 0);
         assert_eq!(template["stablingPathLengthMm"], 193_596);
+        assert_eq!(template["shuntIn"]["continuity"], "same-direction");
+        assert_eq!(template["shuntOut"]["continuity"], "reverse-direction");
+        assert_eq!(template["outbound"]["continuity"], "same-direction");
         assert_eq!(
             template["terminalIntervals"],
             json!([{"edgeId": CONNEWITZ_TERMINAL_EDGE, "fromMm": 0, "toMm": length_mm}])
@@ -1312,6 +1398,54 @@ fn mehrkantiges_terminal_bildet_69860_mm_lueckenlos_und_in_fahrtrichtung_ab() {
 }
 
 #[test]
+fn halt_innerhalb_einer_osm_kante_bleibt_direct_aber_erfindet_keinen_abstellknoten() {
+    let root = TestDirectory::create();
+    prepare_mid_edge_direct_layers(&root);
+    let spec = write_turnaround_spec(&root);
+    let candidate_path = root.join("mid-edge-direct.json");
+    derive_germany_operational_v2(
+        &spec,
+        &root.0,
+        &candidate_path,
+        &root.join("mid-edge-direct-report.json"),
+    )
+    .expect("Direct-Halt innerhalb der OSM-Kante ableiten");
+    let sidecar: Value = serde_json::from_slice(
+        &fs::read(root.join("mid-edge-direct.movement-route-templates-v2.json"))
+            .expect("Mid-edge-Sidecar lesen"),
+    )
+    .expect("Mid-edge-Sidecar JSON");
+    let demanded = sidecar["directTemplates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|template| {
+            template["inboundRouteVersionId"] == "passenger:mid-edge:inbound"
+                && template["outboundRouteVersionId"] == "passenger:mid-edge:outbound"
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(demanded.len(), 2);
+    assert!(demanded.iter().all(|template| {
+        template["continuity"] == "reverse-direction"
+            && template["outbound"]["continuity"] == "reverse-direction"
+            && template["through"].is_null()
+    }));
+    assert!(
+        sidecar["templates"].as_array().unwrap().is_empty(),
+        "ohne reale OSM-Knotengrenze darf kein Abstellpfad erfunden werden"
+    );
+    assert!(
+        sidecar["directTemplates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|template| template["outboundRouteVersionId"]
+                != "passenger:mid-edge:outbound-id-only"),
+        "eine aehnliche ID darf eine um 1 mm abweichende Startposition nicht verdecken"
+    );
+}
+
+#[test]
 fn same_direction_direct_nutzt_eigenen_through_und_danach_die_vollstaendige_basisroute() {
     let root = TestDirectory::create();
     prepare_same_direction_through_layers(&root);
@@ -1355,6 +1489,7 @@ fn same_direction_direct_nutzt_eigenen_through_und_danach_die_vollstaendige_basi
         );
 
         let through = direct["through"].as_object().expect("Through-Dispatch");
+        assert_eq!(through["continuity"], "same-direction");
         assert_eq!(
             through["predecessorBaseRouteVersionId"],
             "passenger:through:inbound"
@@ -1395,6 +1530,7 @@ fn same_direction_direct_nutzt_eigenen_through_und_danach_die_vollstaendige_basi
         );
 
         let outbound = direct["outbound"].as_object().expect("Outbound-Dispatch");
+        assert_eq!(outbound["continuity"], "same-direction");
         assert_eq!(outbound["predecessorBaseRouteVersionId"], through_route_id);
         let outbound_route =
             &candidate["routeVersions"][outbound["routeVersionId"].as_str().unwrap()];
@@ -1595,6 +1731,8 @@ fn transfer_demands_erzeugen_formationsspezifische_reale_ketten_und_sidecar_bind
     for template in sidecar["transferTemplates"].as_array().unwrap() {
         assert_eq!(template["demandId"], "transfer-test-loop");
         assert_eq!(template["movementKind"], "train");
+        assert_eq!(template["transfer"]["continuity"], "same-direction");
+        assert_eq!(template["targetOutbound"]["continuity"], "same-direction");
         assert!(template["transfer"]["minimumRuntimeMs"].as_i64().unwrap() > 0);
         assert!(
             template["targetOutbound"]["minimumRuntimeMs"]

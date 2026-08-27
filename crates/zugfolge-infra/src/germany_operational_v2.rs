@@ -230,12 +230,20 @@ struct TurnaroundBerth {
 struct TurnaroundRouteDispatch {
     route_version_id: String,
     predecessor_base_route_version_id: String,
+    continuity: MovementContinuity,
     dispatch_interlocking_route_id: String,
     head_route_mm: i64,
     minimum_runtime_ms: i64,
     resource_ids: BTreeSet<String>,
     route_leg_count: u32,
     protection_contract_runs: Vec<ProtectionContractRun>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum MovementContinuity {
+    SameDirection,
+    ReverseDirection,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -342,7 +350,7 @@ struct DirectTemplateRecord {
     formation_length_mm: i64,
     terminal_intervals: Vec<TurnaroundTerminalInterval>,
     movement_kind: String,
-    continuity: String,
+    continuity: MovementContinuity,
     maximum_dwell_ms: i64,
     resource_ids: BTreeSet<String>,
     resource_set_sha256: String,
@@ -3672,6 +3680,108 @@ fn canonical_terminal_occupancy(
         .collect()
 }
 
+fn normalized_directed_intervals(
+    legs: &[TimetableLegInput],
+    reverse: bool,
+) -> Result<Vec<(String, String, i64, i64)>> {
+    let directed = if reverse {
+        legs.iter()
+            .rev()
+            .map(|leg| {
+                Ok((
+                    leg.edge_id.clone(),
+                    reverse_direction(&leg.direction)?.to_owned(),
+                    leg.edge_exit_mm,
+                    leg.edge_entry_mm,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?
+    } else {
+        legs.iter()
+            .map(|leg| {
+                (
+                    leg.edge_id.clone(),
+                    leg.direction.clone(),
+                    leg.edge_entry_mm,
+                    leg.edge_exit_mm,
+                )
+            })
+            .collect()
+    };
+    let mut normalized: Vec<(String, String, i64, i64)> = Vec::new();
+    for interval in directed {
+        if let Some(previous) = normalized.last_mut()
+            && previous.0 == interval.0
+            && previous.1 == interval.1
+            && previous.3 == interval.2
+        {
+            previous.3 = interval.3;
+        } else {
+            normalized.push(interval);
+        }
+    }
+    Ok(normalized)
+}
+
+fn movement_continuity(
+    predecessor: &TimetableRouteInput,
+    successor: &TimetableRouteInput,
+    head_route_mm: i64,
+) -> Result<MovementContinuity> {
+    require(
+        successor.predecessor_id.as_deref() == Some(predecessor.route_version_id.as_str())
+            && successor.transition_route_mm == Some(head_route_mm),
+        format!(
+            "Laufweg `{}` bindet nicht exakt den geometrisch geprueften Vorgaenger `{}` bei {head_route_mm} mm.",
+            successor.route_version_id, predecessor.route_version_id
+        ),
+    )?;
+    let predecessor_seed = formation_tail_legs(
+        predecessor,
+        head_route_mm,
+        &format!("Fortsetzungsvorgaenger `{}`", predecessor.route_version_id),
+    )?;
+    let (successor_seed, _) = formation_prefix_and_remainder(
+        successor,
+        head_route_mm,
+        &format!("Fortsetzungsziel `{}`", successor.route_version_id),
+    )?;
+    let successor_intervals = normalized_directed_intervals(&successor_seed, false)?;
+    let same_direction =
+        normalized_directed_intervals(&predecessor_seed, false)? == successor_intervals;
+    let reverse_direction =
+        normalized_directed_intervals(&predecessor_seed, true)? == successor_intervals;
+    require(
+        same_direction != reverse_direction,
+        format!(
+            "Laufweg `{}` besitzt zum Vorgaenger `{}` keine eindeutige physische Fortsetzungsrichtung.",
+            successor.route_version_id, predecessor.route_version_id
+        ),
+    )?;
+    Ok(if same_direction {
+        MovementContinuity::SameDirection
+    } else {
+        MovementContinuity::ReverseDirection
+    })
+}
+
+fn require_movement_continuity(
+    predecessor: &TimetableRouteInput,
+    successor: &TimetableRouteInput,
+    head_route_mm: i64,
+    expected: MovementContinuity,
+) -> Result<MovementContinuity> {
+    let actual = movement_continuity(predecessor, successor, head_route_mm)?;
+    require(
+        actual == expected,
+        format!(
+            "Laufweg `{}` widerspricht mit Fortsetzung {:?} der signierten physischen Richtung {:?}.",
+            successor.route_version_id, expected, actual
+        ),
+    )?;
+    Ok(actual)
+}
+
 fn terminal_occupancies_overlap(left: &[TimetableLegInput], right: &[TimetableLegInput]) -> bool {
     left.iter().any(|left_leg| {
         right.iter().any(|right_leg| {
@@ -4031,13 +4141,19 @@ fn insert_generated<T: Serialize>(
     Ok(())
 }
 
+struct GeneratedMovementArtifacts<'a> {
+    interlocking: &'a mut BTreeMap<String, String>,
+    signals: &'a mut BTreeSet<String>,
+    resources: &'a mut BTreeSet<String>,
+}
+
 fn generate_train_route_artifacts(
     transaction: &redb::ReadTransaction,
+    predecessor: &TimetableRouteInput,
     route: &TimetableRouteInput,
     head_route_mm: i64,
-    generated_interlocking: &mut BTreeMap<String, String>,
-    generated_signals: &mut BTreeSet<String>,
-    generated_resources: &mut BTreeSet<String>,
+    expected_continuity: MovementContinuity,
+    generated: GeneratedMovementArtifacts<'_>,
     context: &str,
 ) -> Result<(TurnaroundRouteDispatch, BTreeSet<String>)> {
     let mut authority_start = 0_i64;
@@ -4053,14 +4169,14 @@ fn generate_train_route_artifacts(
         if authority_start == head_route_mm {
             dispatch = Some((id.clone(), resources.clone()));
         }
-        generated_signals.insert(
+        generated.signals.insert(
             value["signalId"]
                 .as_str()
                 .expect("abgeleitete Signal-ID")
                 .to_owned(),
         );
-        generated_resources.extend(resources);
-        insert_generated(generated_interlocking, id, &value, context)?;
+        generated.resources.extend(resources);
+        insert_generated(&mut *generated.interlocking, id, &value, context)?;
         authority_start = authority_end;
     }
     let (dispatch_interlocking_route_id, resource_ids) = dispatch.ok_or_else(|| {
@@ -4080,6 +4196,12 @@ fn generate_train_route_artifacts(
                     route.route_version_id
                 ))
             })?,
+            continuity: require_movement_continuity(
+                predecessor,
+                route,
+                head_route_mm,
+                expected_continuity,
+            )?,
             dispatch_interlocking_route_id,
             head_route_mm,
             minimum_runtime_ms: minimum_route_runtime_ms(transaction, route, head_route_mm)?,
@@ -4256,8 +4378,8 @@ fn derive_direct_templates(
                 );
             let mut occupancy_resources =
                 occupancy_resources_for_legs(&transaction, &inbound_seed)?;
-            let through = if reverse_continuity {
-                None
+            let (through_route, through) = if reverse_continuity {
+                (None, None)
             } else {
                 let mut legs = inbound_seed.clone();
                 legs.extend(outbound_seed.iter().cloned());
@@ -4271,11 +4393,15 @@ fn derive_direct_templates(
                 validate_derived_route(&transaction, &route)?;
                 let (dispatch, movement_resources) = generate_train_route_artifacts(
                     &transaction,
+                    &inbound,
                     &route,
                     formation_length_mm,
-                    &mut generated_interlocking,
-                    &mut generated_signals,
-                    &mut generated_resources,
+                    MovementContinuity::SameDirection,
+                    GeneratedMovementArtifacts {
+                        interlocking: &mut generated_interlocking,
+                        signals: &mut generated_signals,
+                        resources: &mut generated_resources,
+                    },
                     "Direct-Through-Fahrstrasse",
                 )?;
                 occupancy_resources
@@ -4288,11 +4414,10 @@ fn derive_direct_templates(
                     &route,
                     "Direct-Through-Laufweg",
                 )?;
-                Some(dispatch)
+                (Some(route), Some(dispatch))
             };
-            let predecessor_id = through
-                .as_ref()
-                .map_or_else(|| inbound.route_version_id.clone(), |_| through_route_id);
+            let predecessor = through_route.as_ref().unwrap_or(&inbound);
+            let predecessor_id = predecessor.route_version_id.clone();
             let mut legs = outbound_seed;
             legs.extend(outbound_remainder);
             require(
@@ -4312,11 +4437,19 @@ fn derive_direct_templates(
             validate_derived_route(&transaction, &qualified)?;
             let (dispatch, _) = generate_train_route_artifacts(
                 &transaction,
+                predecessor,
                 &qualified,
                 formation_length_mm,
-                &mut generated_interlocking,
-                &mut generated_signals,
-                &mut generated_resources,
+                if reverse_continuity {
+                    MovementContinuity::ReverseDirection
+                } else {
+                    MovementContinuity::SameDirection
+                },
+                GeneratedMovementArtifacts {
+                    interlocking: &mut generated_interlocking,
+                    signals: &mut generated_signals,
+                    resources: &mut generated_resources,
+                },
                 "Direct-Ausgangsfahrstrasse",
             )?;
             add_generated_route_resources(&transaction, &qualified, &mut generated_resources)?;
@@ -4335,9 +4468,9 @@ fn derive_direct_templates(
                 terminal_intervals: source_intervals,
                 movement_kind: "train".to_owned(),
                 continuity: if reverse_continuity {
-                    "reverse-direction".to_owned()
+                    MovementContinuity::ReverseDirection
                 } else {
-                    "same-direction".to_owned()
+                    MovementContinuity::SameDirection
                 },
                 maximum_dwell_ms: policy.maximum_direct_dwell_ms,
                 resource_set_sha256: resource_set_sha256(&occupancy_resources),
@@ -4418,35 +4551,35 @@ fn transfer_route_ids(
 
 fn generate_movement_route_artifacts(
     transaction: &redb::ReadTransaction,
+    predecessor: &TimetableRouteInput,
     route: &TimetableRouteInput,
     movement_kind: &str,
     head_route_mm: i64,
-    generated_interlocking: &mut BTreeMap<String, String>,
-    generated_signals: &mut BTreeSet<String>,
-    generated_resources: &mut BTreeSet<String>,
+    expected_continuity: MovementContinuity,
+    generated: GeneratedMovementArtifacts<'_>,
 ) -> Result<(TurnaroundRouteDispatch, BTreeSet<String>)> {
     match movement_kind {
         "train" => generate_train_route_artifacts(
             transaction,
+            predecessor,
             route,
             head_route_mm,
-            generated_interlocking,
-            generated_signals,
-            generated_resources,
+            expected_continuity,
+            generated,
             "Transfer-Fahrstrasse",
         ),
         "shunting" => {
             let (id, value) = shunting_template_value(transaction, route, head_route_mm)?;
             let resources = resources_from_template_value(&value)?;
-            generated_signals.insert(
+            generated.signals.insert(
                 value["signalId"]
                     .as_str()
                     .expect("abgeleitete Rangiersignal-ID")
                     .to_owned(),
             );
-            generated_resources.extend(resources.iter().cloned());
+            generated.resources.extend(resources.iter().cloned());
             insert_generated(
-                generated_interlocking,
+                &mut *generated.interlocking,
                 id.clone(),
                 &value,
                 "Transfer-Fahrstrasse",
@@ -4461,6 +4594,12 @@ fn generate_movement_route_artifacts(
                                 route.route_version_id
                             ))
                         },
+                    )?,
+                    continuity: require_movement_continuity(
+                        predecessor,
+                        route,
+                        head_route_mm,
+                        expected_continuity,
                     )?,
                     dispatch_interlocking_route_id: id,
                     head_route_mm,
@@ -4653,20 +4792,28 @@ fn derive_transfer_templates(
 
             let (transfer_dispatch, movement_resources) = generate_movement_route_artifacts(
                 &transaction,
+                &source,
                 &transfer,
                 &input.movement_kind,
                 formation_length_mm,
-                &mut generated_interlocking,
-                &mut generated_signals,
-                &mut generated_resources,
+                MovementContinuity::SameDirection,
+                GeneratedMovementArtifacts {
+                    interlocking: &mut generated_interlocking,
+                    signals: &mut generated_signals,
+                    resources: &mut generated_resources,
+                },
             )?;
             let (target_outbound_dispatch, _) = generate_train_route_artifacts(
                 &transaction,
+                &transfer,
                 &target_outbound,
                 formation_length_mm,
-                &mut generated_interlocking,
-                &mut generated_signals,
-                &mut generated_resources,
+                MovementContinuity::SameDirection,
+                GeneratedMovementArtifacts {
+                    interlocking: &mut generated_interlocking,
+                    signals: &mut generated_signals,
+                    resources: &mut generated_resources,
+                },
                 "Transfer-Zielausgangsfahrstrasse",
             )?;
             let window_ms = input.available_window_s.checked_mul(1_000).ok_or_else(|| {
@@ -4802,13 +4949,14 @@ fn derive_turnaround_templates(
             .last()
             .ok_or_else(|| GermanyOperationalV2Error::new("Ankunftslaufweg ist leer."))?;
         let terminal_track = get_track(&transaction, &inbound_terminal_leg.edge_id)?;
-        let terminal_node_id = node_at_offset(&terminal_track, inbound_terminal_leg.edge_exit_mm)
-            .ok_or_else(|| {
-            GermanyOperationalV2Error::new(format!(
-                "Ankunftslaufweg `{}` endet nicht an einer realen OSM-Knotengrenze.",
-                inbound.route_version_id
-            ))
-        })?;
+        let Some(terminal_node_id) =
+            node_at_offset(&terminal_track, inbound_terminal_leg.edge_exit_mm)
+        else {
+            // Ein Halt innerhalb einer realen Kante kann eine Direct-Kontinuitaet
+            // besitzen. Eine Abstellpfadsuche darf dort jedoch keinen OSM-Knoten
+            // erfinden; fehlt auch Direct, schliesst das gemeinsame Coverage-Gate.
+            continue;
+        };
         if !terminal_has_observed_siding_entry(&transaction, &terminal_track.id, terminal_node_id)?
         {
             continue;
@@ -5127,6 +5275,12 @@ fn derive_turnaround_templates(
                         shunt_in: TurnaroundRouteDispatch {
                             route_version_id: shunt_in_route_id,
                             predecessor_base_route_version_id: inbound.route_version_id.clone(),
+                            continuity: require_movement_continuity(
+                                &inbound,
+                                &shunt_in,
+                                formation_length_mm,
+                                MovementContinuity::SameDirection,
+                            )?,
                             dispatch_interlocking_route_id: shunt_in_interlocking_id,
                             head_route_mm: formation_length_mm,
                             minimum_runtime_ms: shunt_in_runtime_ms,
@@ -5140,6 +5294,12 @@ fn derive_turnaround_templates(
                         shunt_out: TurnaroundRouteDispatch {
                             route_version_id: shunt_out_route_id,
                             predecessor_base_route_version_id: shunt_in.route_version_id.clone(),
+                            continuity: require_movement_continuity(
+                                &shunt_in,
+                                &shunt_out,
+                                formation_length_mm,
+                                MovementContinuity::ReverseDirection,
+                            )?,
                             dispatch_interlocking_route_id: shunt_out_interlocking_id,
                             head_route_mm: formation_length_mm,
                             minimum_runtime_ms: shunt_out_runtime_ms,
@@ -5152,6 +5312,12 @@ fn derive_turnaround_templates(
                         outbound: TurnaroundRouteDispatch {
                             route_version_id: outbound_route_id,
                             predecessor_base_route_version_id: shunt_out.route_version_id.clone(),
+                            continuity: require_movement_continuity(
+                                &shunt_out,
+                                &outbound,
+                                formation_length_mm,
+                                MovementContinuity::SameDirection,
+                            )?,
                             dispatch_interlocking_route_id: outbound_interlocking_id,
                             head_route_mm: formation_length_mm,
                             minimum_runtime_ms: outbound_runtime_ms,
@@ -6320,9 +6486,154 @@ pub fn derive_germany_operational_v2(
 #[cfg(test)]
 mod publish_tests {
     use super::{
-        ScratchDirectory, ensure_output_absent, publish_create_new, publish_pair_create_new,
+        MovementContinuity, ScratchDirectory, TimetableLegInput, TimetableRouteInput,
+        TurnaroundRouteDispatch, ensure_output_absent, publish_create_new, publish_pair_create_new,
+        require_movement_continuity,
     };
     use std::fs;
+
+    use serde_json::json;
+
+    fn continuity_route(
+        route_version_id: &str,
+        predecessor_id: Option<&str>,
+        transition_route_mm: Option<i64>,
+        direction: &str,
+        edge_entry_mm: i64,
+        edge_exit_mm: i64,
+    ) -> TimetableRouteInput {
+        TimetableRouteInput {
+            route_version_id: route_version_id.to_owned(),
+            template_id: format!("template:{route_version_id}"),
+            predecessor_id: predecessor_id.map(str::to_owned),
+            transition_route_mm,
+            legs: vec![
+                TimetableLegInput {
+                    edge_id: "edge:continuity".to_owned(),
+                    direction: direction.to_owned(),
+                    edge_entry_mm,
+                    edge_exit_mm,
+                    available_protection_systems: vec!["pzb".to_owned()],
+                    simultaneously_required_protection_systems: Vec::new(),
+                },
+                TimetableLegInput {
+                    edge_id: "edge:movement".to_owned(),
+                    direction: "along".to_owned(),
+                    edge_entry_mm: 0,
+                    edge_exit_mm: 50,
+                    available_protection_systems: vec!["pzb".to_owned()],
+                    simultaneously_required_protection_systems: Vec::new(),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn dispatch_continuity_ist_required_und_enum_strikt() {
+        let valid = json!({
+            "routeVersionId": "route:successor",
+            "predecessorBaseRouteVersionId": "route:predecessor",
+            "continuity": "same-direction",
+            "dispatchInterlockingRouteId": "interlocking:successor",
+            "headRouteMm": 50,
+            "minimumRuntimeMs": 1,
+            "resourceIds": ["resource:successor"],
+            "routeLegCount": 1,
+            "protectionContractRuns": [{
+                "throughRouteLegIndex": 0,
+                "availableProtectionSystems": ["pzb"],
+                "simultaneouslyRequiredProtectionSystems": []
+            }]
+        });
+        serde_json::from_value::<TurnaroundRouteDispatch>(valid.clone())
+            .expect("gueltige signierte Fortsetzungsrichtung");
+        let mut missing = valid.clone();
+        missing
+            .as_object_mut()
+            .expect("Dispatch-Objekt")
+            .remove("continuity");
+        serde_json::from_value::<TurnaroundRouteDispatch>(missing)
+            .expect_err("fehlende continuity muss fail-closed bleiben");
+        let mut manipulated = valid;
+        manipulated["continuity"] = json!("sideways");
+        serde_json::from_value::<TurnaroundRouteDispatch>(manipulated)
+            .expect_err("unbekannte continuity muss fail-closed bleiben");
+    }
+
+    #[test]
+    fn dispatch_continuity_muss_der_vorgaenger_und_zielgeometrie_entsprechen() {
+        let mut predecessor = continuity_route("route:predecessor", None, None, "along", 0, 100);
+        predecessor.legs.truncate(1);
+        let same = continuity_route(
+            "route:same",
+            Some("route:predecessor"),
+            Some(50),
+            "along",
+            50,
+            100,
+        );
+        assert_eq!(
+            require_movement_continuity(
+                &predecessor,
+                &same,
+                50,
+                MovementContinuity::SameDirection,
+            )
+            .expect("Same-Direction-Geometrie"),
+            MovementContinuity::SameDirection
+        );
+        require_movement_continuity(
+            &predecessor,
+            &same,
+            50,
+            MovementContinuity::ReverseDirection,
+        )
+        .expect_err("manipulierte Richtungsbehauptung muss scheitern");
+
+        let displaced = continuity_route(
+            "route:displaced",
+            Some("route:predecessor"),
+            Some(50),
+            "along",
+            49,
+            99,
+        );
+        require_movement_continuity(
+            &predecessor,
+            &displaced,
+            50,
+            MovementContinuity::SameDirection,
+        )
+        .expect_err("korrekte IDs duerfen eine um 1 mm verschobene Geometrie nicht verdecken");
+
+        let reverse = continuity_route(
+            "route:reverse",
+            Some("route:predecessor"),
+            Some(50),
+            "against",
+            100,
+            50,
+        );
+        assert_eq!(
+            require_movement_continuity(
+                &predecessor,
+                &reverse,
+                50,
+                MovementContinuity::ReverseDirection,
+            )
+            .expect("Reverse-Direction-Geometrie"),
+            MovementContinuity::ReverseDirection
+        );
+        let mut wrong_predecessor = same;
+        wrong_predecessor.predecessor_id = Some("route:foreign".to_owned());
+        require_movement_continuity(
+            &predecessor,
+            &wrong_predecessor,
+            50,
+            MovementContinuity::SameDirection,
+        )
+        .expect_err("falsche statische Vorgaengerbindung muss scheitern");
+    }
 
     #[test]
     fn create_new_publish_ueberschreibt_keinen_nachtraeglich_angelegten_target() {

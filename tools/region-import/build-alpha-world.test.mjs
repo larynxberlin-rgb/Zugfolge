@@ -6,7 +6,10 @@ import test from "node:test";
 import { tmpdir } from "node:os";
 
 import { alphaCanonicalJson, alphaHash } from "../../packages/alpha/dist/index.js";
-import { operationalProtectionModeSelectionEvidence } from "../../packages/runtime-native/dist/index.js";
+import {
+  operationalMovementContinuationsEvidence,
+  operationalProtectionModeSelectionEvidence,
+} from "../../packages/runtime-native/dist/index.js";
 import {
   alphaServiceLotIdentifiers,
   assertSignedGtfsTimetableBinding,
@@ -29,7 +32,7 @@ function sha256(value) {
 
 function buildConfiguration() {
   return {
-    schemaVersion: "zugfolge-alpha-world-build-configuration/v2",
+    schemaVersion: "zugfolge-alpha-world-build-configuration/v3",
     worldId: "e2695e40-3e4c-4e8c-9481-98f6223538d0",
     regionId: "fixture-region-b",
     regionVariant: "B",
@@ -50,6 +53,21 @@ function buildConfiguration() {
       file: "timetable-routes-v2.jsonseq",
       bytes: 84,
       sha256: SHA_A,
+    },
+    timetableTransferDemands: {
+      file: "timetable-routes-v2.transfer-demands-v1.json",
+      bytes: 126,
+      sha256: SHA_A,
+      dailyPlanSha256: SHA_B,
+      transferSetSha256: SHA_A,
+    },
+    movementRouteTemplates: {
+      file: "operational-infrastructure-v2.movement-route-templates-v2.json",
+      bytes: 168,
+      sha256: SHA_B,
+      stateHash: SHA_A,
+      operationalStateHash: SHA_B,
+      timetableTransferSetSha256: SHA_A,
     },
   };
 }
@@ -103,6 +121,8 @@ test("Weltbuild verlangt explizite Welt-, Regions-, Operational-v2- und Routebin
     (value) => { value.seed = "0"; },
     (value) => { value.operationalInfrastructure.file = "../operational-infrastructure-v2.json"; },
     (value) => { value.timetableRoutes.file = "../timetable-routes-v2.jsonseq"; },
+    (value) => { value.timetableTransferDemands.file = "../timetable-routes-v2.transfer-demands-v1.json"; },
+    (value) => { value.movementRouteTemplates.operationalStateHash = SHA_A; },
     (value) => { value.unknown = true; },
   ]) {
     const candidate = structuredClone(buildConfiguration());
@@ -347,6 +367,7 @@ test("nativer Streaming-Preflight muss Routen, Fahrstrassen, Ressourcen und Form
     worldId: "e2695e40-3e4c-4e8c-9481-98f6223538d0",
     regionId: "fixture-region-b",
     nowMs: 0,
+    repeatEveryMs: null,
     protectionModeSelectionPolicy: "zugfolge-protection-mode-selection/conservative-v1",
     infraRelease: {
       schemaVersion: "zugfolge-operational-infrastructure-binding/v2",
@@ -363,8 +384,10 @@ test("nativer Streaming-Preflight muss Routen, Fahrstrassen, Ressourcen und Form
       { id: "train-1", trainNumber: "RE 99998", routeVersionId: "route-1", dispatchInterlockingRouteId: "dispatch-1", formationVersionId: "formation-1", protectionModeSelectionRuns: [{ throughRouteLegIndex: 0, selectedProtectionSystem: "pzb" }] },
       { id: "train-2", trainNumber: "ICE 99999", routeVersionId: "route-1", dispatchInterlockingRouteId: "dispatch-1", formationVersionId: "formation-1", protectionModeSelectionRuns: [{ throughRouteLegIndex: 0, selectedProtectionSystem: "pzb" }] },
     ],
+    movementContinuations: [],
   };
   const protectionEvidence = operationalProtectionModeSelectionEvidence(initialization);
+  const movementEvidence = operationalMovementContinuationsEvidence(initialization);
   const receipt = {
     schemaVersion: "zugfolge-operational-initialization-validation-receipt/v1",
     worldId: initialization.worldId,
@@ -380,6 +403,8 @@ test("nativer Streaming-Preflight muss Routen, Fahrstrassen, Ressourcen und Form
     validatedResourceBindingCount: 6,
     validatedFormationBindingCount: 1,
     validatedTrainNumberCount: 2,
+    validatedMovementContinuationCount: movementEvidence.count,
+    movementContinuationsSha256: movementEvidence.sha256,
     protectionModeSelectionPolicy: initialization.protectionModeSelectionPolicy,
     validatedProtectionModeSelectionCount: protectionEvidence.count,
     protectionModeSelectionsSha256: protectionEvidence.sha256,

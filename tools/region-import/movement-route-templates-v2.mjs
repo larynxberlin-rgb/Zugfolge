@@ -109,10 +109,11 @@ function protectionRuns(value, routeLegCount, name) {
 function dispatch(value, formationLengthMm, name) {
   exactKeys(value, [
     "routeVersionId", "predecessorBaseRouteVersionId", "dispatchInterlockingRouteId", "headRouteMm", "minimumRuntimeMs",
-    "resourceIds", "routeLegCount", "protectionContractRuns",
+    "resourceIds", "routeLegCount", "protectionContractRuns", "continuity",
   ], name);
   const routeLegCount = integer(value.routeLegCount, `${name}.routeLegCount`, 1);
   invariant(value.headRouteMm === formationLengthMm, `${name}.headRouteMm bindet nicht die Formationslaenge.`);
+  invariant(CONTINUITIES.has(value.continuity), `${name}.continuity ist unbekannt.`);
   return Object.freeze({
     routeVersionId: text(value.routeVersionId, `${name}.routeVersionId`),
     predecessorBaseRouteVersionId: text(value.predecessorBaseRouteVersionId, `${name}.predecessorBaseRouteVersionId`),
@@ -122,6 +123,7 @@ function dispatch(value, formationLengthMm, name) {
     resourceIds: canonicalStringSet(value.resourceIds, `${name}.resourceIds`),
     routeLegCount,
     protectionContractRuns: protectionRuns(value.protectionContractRuns, routeLegCount, `${name}.protectionContractRuns`),
+    continuity: value.continuity,
   });
 }
 
@@ -141,10 +143,12 @@ function directTemplate(raw, index) {
   const outbound = dispatch(raw.outbound, formationLengthMm, `${name}.outbound`);
   if (raw.continuity === "same-direction") {
     invariant(through !== null, `${name} besitzt keine physische Through-Bewegung.`);
+    invariant(through.continuity === "same-direction" && outbound.continuity === "same-direction", `${name} besitzt keine gleichgerichtete Through-Kette.`);
     invariant(through.predecessorBaseRouteVersionId === raw.inboundRouteVersionId, `${name}.through bindet nicht die Basisroute des Vorgaengers.`);
     invariant(outbound.predecessorBaseRouteVersionId === through.routeVersionId, `${name}.outbound bindet nicht die unmittelbar vorige Through-Route.`);
   } else {
     invariant(through === null, `${name} darf bei Richtungswechsel keine Through-Doppelbefahrung besitzen.`);
+    invariant(outbound.continuity === "reverse-direction", `${name}.outbound bildet die physische Richtungswende nicht ab.`);
     invariant(outbound.predecessorBaseRouteVersionId === raw.inboundRouteVersionId, `${name}.outbound bindet nicht die Basisroute des Vorgaengers.`);
   }
   return Object.freeze({
@@ -181,6 +185,12 @@ function stablingTemplate(raw, index) {
   const shuntIn = dispatch(raw.shuntIn, formationLengthMm, `${name}.shuntIn`);
   const shuntOut = dispatch(raw.shuntOut, formationLengthMm, `${name}.shuntOut`);
   const outbound = dispatch(raw.outbound, formationLengthMm, `${name}.outbound`);
+  invariant(
+    shuntIn.continuity === "same-direction"
+      && shuntOut.continuity === "reverse-direction"
+      && outbound.continuity === "same-direction",
+    `${name} besitzt keine physische Same-Reverse-Same-Rangierkette.`,
+  );
   invariant(shuntIn.predecessorBaseRouteVersionId === raw.inboundRouteVersionId, `${name}.shuntIn bindet nicht die Basisroute des Vorgaengers.`);
   invariant(shuntOut.predecessorBaseRouteVersionId === shuntIn.routeVersionId, `${name}.shuntOut bindet nicht die unmittelbar vorige Rangierroute.`);
   invariant(outbound.predecessorBaseRouteVersionId === shuntOut.routeVersionId, `${name}.outbound bindet nicht die unmittelbar vorige Rangierroute.`);
@@ -232,6 +242,10 @@ function transferTemplate(raw, index, demandById, routeByDemandId, formationLeng
   const resourceIds = canonicalStringSet(raw.resourceIds, `${name}.resourceIds`);
   const transfer = dispatch(raw.transfer, formationLengthMm, `${name}.transfer`);
   const targetOutbound = dispatch(raw.targetOutbound, formationLengthMm, `${name}.targetOutbound`);
+  invariant(
+    transfer.continuity === "same-direction" && targetOutbound.continuity === "same-direction",
+    `${name} besitzt keine gleichgerichtete Transferkette.`,
+  );
   invariant(transfer.predecessorBaseRouteVersionId === raw.sourcePassengerRouteVersionId, `${name}.transfer bindet nicht die Basisroute des Vorgaengers.`);
   invariant(targetOutbound.predecessorBaseRouteVersionId === transfer.routeVersionId, `${name}.targetOutbound bindet nicht die unmittelbar vorige Transferroute.`);
   invariant(alphaCanonicalJson(resourceIds) === alphaCanonicalJson(transfer.resourceIds), `${name} besitzt verschiedene Transfer-Ressourcenmengen.`);

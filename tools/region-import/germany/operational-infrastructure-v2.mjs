@@ -477,9 +477,10 @@ function validateProtectionRuns(runs, routeLegCount, name) {
 }
 
 function validateDispatch(dispatch, name) {
-  exactKeys(dispatch, ["routeVersionId", "predecessorBaseRouteVersionId", "dispatchInterlockingRouteId", "headRouteMm", "minimumRuntimeMs", "resourceIds", "routeLegCount", "protectionContractRuns"], name);
+  exactKeys(dispatch, ["routeVersionId", "predecessorBaseRouteVersionId", "continuity", "dispatchInterlockingRouteId", "headRouteMm", "minimumRuntimeMs", "resourceIds", "routeLegCount", "protectionContractRuns"], name);
   nonEmptyString(dispatch.routeVersionId, `${name}.routeVersionId`);
   nonEmptyString(dispatch.predecessorBaseRouteVersionId, `${name}.predecessorBaseRouteVersionId`);
+  invariant(["same-direction", "reverse-direction"].includes(dispatch.continuity), `${name}.continuity ist keine signierte physische Fortsetzungsrichtung.`);
   nonEmptyString(dispatch.dispatchInterlockingRouteId, `${name}.dispatchInterlockingRouteId`);
   positiveSafeInteger(dispatch.headRouteMm, `${name}.headRouteMm`);
   positiveSafeInteger(dispatch.minimumRuntimeMs, `${name}.minimumRuntimeMs`);
@@ -539,9 +540,11 @@ function validateMovementRouteTemplatesSidecar(sidecar, specification, proof) {
     validateDispatch(template.outbound, `${name}.outbound`);
     if (template.continuity === "reverse-direction") {
       invariant(template.through === null, `${name}.through muss fuer die physische Richtungswende null sein.`);
+      invariant(template.outbound.continuity === "reverse-direction", `${name}.outbound widerspricht der physischen Richtungswende.`);
       invariant(template.outbound.predecessorBaseRouteVersionId === template.inboundRouteVersionId, `${name}.outbound bindet nicht die Ankunftsbasisroute.`);
     } else {
       validateDispatch(template.through, `${name}.through`);
+      invariant(template.through.continuity === "same-direction" && template.outbound.continuity === "same-direction", `${name} besitzt keine lueckenlose Same-Direction-Through-Kette.`);
       invariant(template.through.predecessorBaseRouteVersionId === template.inboundRouteVersionId, `${name}.through bindet nicht die Ankunftsbasisroute.`);
       invariant(template.outbound.predecessorBaseRouteVersionId === template.through.routeVersionId, `${name}.outbound bindet nicht die Through-Route.`);
     }
@@ -562,6 +565,7 @@ function validateMovementRouteTemplatesSidecar(sidecar, specification, proof) {
     for (const field of ["fromMm", "toMm", "leftClearanceMm", "rightClearanceMm"]) nonNegativeSafeInteger(template.berth[field], `${name}.berth.${field}`);
     invariant(template.berth.fromMm < template.berth.toMm, `${name}.berth ist leer.`);
     for (const field of ["shuntIn", "shuntOut", "outbound"]) validateDispatch(template[field], `${name}.${field}`);
+    invariant(template.shuntIn.continuity === "same-direction" && template.shuntOut.continuity === "reverse-direction" && template.outbound.continuity === "same-direction", `${name} widerspricht der physischen Rangier-Fortsetzungsmatrix.`);
   }
   for (const [index, template] of sidecar.transferTemplates.entries()) {
     const name = `Movement-Sidecar.transferTemplates[${index}]`;
@@ -573,6 +577,7 @@ function validateMovementRouteTemplatesSidecar(sidecar, specification, proof) {
     invariant(template.latestArrivalS - template.earliestDepartureS === template.availableWindowS && ["train", "shunting"].includes(template.movementKind), `${name} besitzt ein ungueltiges Zeitfenster oder movementKind.`);
     validateDispatch(template.transfer, `${name}.transfer`);
     validateDispatch(template.targetOutbound, `${name}.targetOutbound`);
+    invariant(template.transfer.continuity === "same-direction" && template.targetOutbound.continuity === "same-direction", `${name} widerspricht der physischen Transfer-Fortsetzungsmatrix.`);
     sortedUniqueStrings(template.resourceIds, `${name}.resourceIds`);
     invariant(SHA256.test(template.resourceSetSha256), `${name}.resourceSetSha256 ist ungueltig.`);
   }

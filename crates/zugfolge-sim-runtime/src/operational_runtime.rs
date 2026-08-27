@@ -3411,6 +3411,116 @@ mod tests {
     }
 
     #[test]
+    fn dispatched_resource_closure_emits_safe_stop_in_the_atomic_batch() {
+        let initialized: Value = serde_json::from_str(
+            &initialize_operational_simulation(&encode(&initialization()).unwrap()).unwrap(),
+        )
+        .unwrap();
+        let materialized = apply_value(
+            &initialized["state"],
+            "batch-safe-stop:materialize",
+            json!({
+                "type": "materialize",
+                "train": serde_json::to_value(&initialization().trains[0]).unwrap(),
+            }),
+        );
+        let dispatched = apply_value(
+            &materialized["state"],
+            "batch-safe-stop:dispatch",
+            json!({
+                "type": "dispatch",
+                "requests": [{
+                    "trainId": "train:1",
+                    "interlockingRouteId": "interlocking:1",
+                    "committedRank": 0,
+                    "timetableDeviationMs": 0,
+                    "passengerImpact": 0,
+                    "contractualImpact": 0,
+                    "networkImpact": 0,
+                    "resourceConsequence": 0,
+                    "recoveryRank": 0,
+                    "waitingSinceMs": 0
+                }]
+            }),
+        );
+        let first_activation = apply_value(
+            &dispatched["state"],
+            "batch-safe-stop:first-activation",
+            json!({
+                "type": "activate-disruption",
+                "disruptionId": "block:first",
+                "effect": { "resource-closed": { "resourceId": "block:1" } }
+            }),
+        );
+        assert!(
+            first_activation["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|event| event["kind"] == "safe-stop")
+        );
+        let cleared = apply_value(
+            &first_activation["state"],
+            "batch-safe-stop:first-clear",
+            json!({
+                "type": "clear-disruption",
+                "disruptionId": "block:first",
+                "releaseReference": "release:first"
+            }),
+        );
+        let activation = json!({
+            "type": "activate-disruption",
+            "disruptionId": "block:batch",
+            "effect": { "resource-closed": { "resourceId": "block:1" } }
+        });
+        let batch = json!({
+            "schemaVersion": COMMAND_BATCH_SCHEMA,
+            "worldId": "world:1",
+            "regionId": "region:1",
+            "expectedStateHash": cleared["stateHash"],
+            "expectedRevision": cleared["state"]["revision"],
+            "expectedPublisherSequence": cleared["state"]["publisherSequence"],
+            "commands": [
+                { "commandId": "batch-safe-stop:activate", "command": activation },
+                { "commandId": "batch-safe-stop:activate", "command": activation },
+                {
+                    "commandId": "batch-safe-stop:clear",
+                    "command": {
+                        "type": "clear-disruption",
+                        "disruptionId": "block:batch",
+                        "releaseReference": "release:batch"
+                    }
+                }
+            ]
+        });
+        let applied: Value = serde_json::from_str(
+            &apply_operational_simulation_command_batch(
+                &cleared["state"].to_string(),
+                &batch.to_string(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            applied["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|event| event["kind"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["safe-stop", "disruption-activated", "disruption-cleared"]
+        );
+        assert_eq!(
+            applied["eventContexts"][0]["affectedTrainRunIds"],
+            json!(["train:1"])
+        );
+        assert_eq!(
+            applied["eventContexts"][1]["affectedTrainRunIds"],
+            json!([])
+        );
+    }
+
+    #[test]
     fn native_batch_rejects_the_whole_group_when_a_later_command_fails() {
         let initialized: Value = serde_json::from_str(
             &initialize_operational_simulation(&encode(&initialization()).unwrap()).unwrap(),
@@ -3985,7 +4095,7 @@ mod tests {
         assert_eq!(receipt["validatedMovementContinuationCount"], 0);
         assert_eq!(
             receipt["movementContinuationsSha256"],
-            "e28a1c6f319c12a4bcef394ef5d63567ef0c7c72be29974efeb7b8e783dc86a0"
+            "462d0239e9dbd79d82d05b9939675b26fcaee302ddc1f0053db75a1acf774e71"
         );
         assert_eq!(receipt["dynamicTrainCount"], 0);
         assert_eq!(receipt["resourceBindingsValidated"], true);

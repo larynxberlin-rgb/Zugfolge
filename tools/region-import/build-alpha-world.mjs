@@ -24,6 +24,7 @@ import {
   deriveDailyCirculationPlan,
   dailyServiceLotIdentifiers,
 } from "./daily-circulation-v2.mjs";
+import { allocateMovementRoutePlanV2 } from "./movement-route-allocation-v2.mjs";
 import { validateMovementRouteTemplatesV2 } from "./movement-route-templates-v2.mjs";
 import {
   assertNormalizedScheduleTimeContract,
@@ -1225,10 +1226,13 @@ for (const [lotIndex, lot] of lotRecords.entries()) {
         trainNumber,
         category: "regional",
         route: routeForLeg(leg, timetableRoute),
+        baseRouteVersionId: timetableRoute.routeVersionId,
         routeVersionId: timetableRoute.routeVersionId,
         dispatchInterlockingRouteId: timetableRoute.dispatchInterlockingRouteId,
         routeLengthMm: timetableRoute.routeLengthMm,
         formationVersionId: formationId,
+        formationLengthMm: safePositiveInteger(assignedAsset.technical?.lengthMm, `Fahrt '${trainRunId}'.formationLengthMm`),
+        installedProtection: Object.freeze([...assignedAsset.installedProtection]),
         protectionModeSelectionRuns: selectProtectionModeRuns({
           protectionContractRuns: timetableRoute.protectionContractRuns,
           routeLegCount: timetableRoute.routeLegCount,
@@ -1292,6 +1296,30 @@ const fleet = {
   personnelDuties: sortedPersonnelDuties,
   pathReservations: sortedPathReservations,
 };
+const repeatEveryMs = safePositiveInteger(
+  scheduleTimeContract.repeatEveryS * 1_000,
+  "Operational-v2-Wiederholungszeit",
+);
+const dailyContinuities = dailyMovementContinuities({
+  dailyPlan: timetableTransferPlan.dailyPlan,
+  journeyChains: chains,
+});
+const rolloverCycles = dailyRolloverCycles(timetableTransferPlan.dailyPlan);
+const movementAllocation = allocateMovementRoutePlanV2({
+  dailyPlan: timetableTransferPlan.dailyPlan,
+  continuities: dailyContinuities,
+  passengerTrains: regionalTrains,
+  movementRoutePlan,
+  repeatEveryMs,
+  selectProtectionModeRuns,
+});
+invariant(
+  movementAllocation.metrics.passengerTrainCount === regionalTrains.length
+    && movementAllocation.metrics.dailyBoundaryCount === timetableTransferPlan.dailyPlan.circulations.length
+    && movementAllocation.metrics.transferCount === timetableTransferPlan.dailyPlan.transferDemands.length
+    && rolloverCycles.flat().length === timetableTransferPlan.dailyPlan.circulations.length,
+  "Physische Movement-Zuweisung driftet vom vollstaendigen DailyPlan ab.",
+);
 const buildResult = await publishCreateNewFileFromStaging(outputPath, async ({ stagingDirectory, stagedOutputPath }) => {
 const fleetPath = join(stagingDirectory, "fleet-world-initialize-v2.json");
 await writeFile(fleetPath, `${JSON.stringify(fleet, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
@@ -1307,30 +1335,20 @@ const operationalFleet = Object.freeze({
     vehicleIds: Object.freeze([...formation.vehicleIds]),
   }))),
 });
-const operationalProgramTrains = regionalTrains.map((train) => Object.freeze({
-  id: train.trainRunId,
-  trainNumber: train.trainNumber,
-  operatorId: OPERATOR_ID,
-  movementKind: "train",
-  routeVersionId: train.routeVersionId,
-  dispatchInterlockingRouteId: train.dispatchInterlockingRouteId,
-  formationVersionId: train.formationVersionId,
-  headRouteMm: 0,
-  scheduledDepartureMs: train.scheduledDepartureMs,
-  publicPassengerStop: true,
-  protectionModeSelectionRuns: train.protectionModeSelectionRuns,
-})).sort((left, right) => left.scheduledDepartureMs - right.scheduledDepartureMs || left.id.localeCompare(right.id, "en"));
+const operationalProgramTrains = movementAllocation.programTrains;
 const operationalSimulation = Object.freeze({
   schemaVersion: "zugfolge-operational-simulation-initialize/v2",
   worldId: WORLD_ID,
   regionId: REGION_ID,
   nowMs: 0,
+  repeatEveryMs,
   protectionModeSelectionPolicy: OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
   infraRelease: operationalInfrastructureBinding,
   vehicleTypes: operationalFleet.vehicleTypes,
   vehicles: operationalFleet.vehicles,
   formations: operationalFleet.formations,
   trains: Object.freeze(operationalProgramTrains),
+  movementContinuations: movementAllocation.movementContinuations,
 });
 
 const economyRelease = buildEconomyRelease({
@@ -1416,12 +1434,13 @@ const planningInfrastructureRelease = {
 };
 
 function assertOperationalV2Initialization(value, receipt) {
-  const expectedTrains = new Map(regionalTrains.map((train) => [train.trainRunId, train]));
+  const expectedTrains = new Map(operationalProgramTrains.map((train) => [train.id, train]));
   if (
     value?.schemaVersion !== "zugfolge-operational-simulation-initialize/v2"
     || value.worldId !== WORLD_ID
     || value.regionId !== REGION_ID
     || value.nowMs !== 0
+    || value.repeatEveryMs !== repeatEveryMs
     || value.protectionModeSelectionPolicy !== OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY
     || !Array.isArray(value.vehicleTypes)
     || value.vehicleTypes.length === 0
@@ -1431,6 +1450,7 @@ function assertOperationalV2Initialization(value, receipt) {
     || value.formations.length === 0
     || !Array.isArray(value.trains)
     || value.trains.length !== expectedTrains.size
+    || alphaCanonicalJson(value.movementContinuations) !== alphaCanonicalJson(movementAllocation.movementContinuations)
   ) throw new Error("Operatives v2-Initialisierungsartefakt ist unvollstaendig oder nicht releasegebunden.");
   assertOperationalInfrastructureV2ReleaseBinding({
     initialization: value,
@@ -1445,15 +1465,15 @@ function assertOperationalV2Initialization(value, receipt) {
     if (
       expected === undefined
       || seen.has(train.id)
-      || train.operatorId !== OPERATOR_ID
+      || train.operatorId !== expected.operatorId
       || train.trainNumber !== expected.trainNumber
-      || train.movementKind !== "train"
+      || train.movementKind !== expected.movementKind
       || train.routeVersionId !== expected.routeVersionId
       || train.dispatchInterlockingRouteId !== expected.dispatchInterlockingRouteId
       || train.formationVersionId !== expected.formationVersionId
       || train.scheduledDepartureMs !== expected.scheduledDepartureMs
-      || train.headRouteMm !== 0
-      || train.publicPassengerStop !== true
+      || train.headRouteMm !== expected.headRouteMm
+      || train.publicPassengerStop !== expected.publicPassengerStop
       || alphaCanonicalJson(train.protectionModeSelectionRuns) !== alphaCanonicalJson(expected.protectionModeSelectionRuns)
     ) throw new Error("Operatives v2-Artefakt verletzt Fahrt-, Betreiber- oder Laufwegbindung.");
     seen.add(train.id);
