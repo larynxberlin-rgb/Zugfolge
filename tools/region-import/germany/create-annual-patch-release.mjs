@@ -1,7 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { access, mkdir, open, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { access, link, lstat, mkdir, open, readFile, realpath, rmdir, stat, unlink } from "node:fs/promises";
 import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { validateMapBuildCacheInventoryPlan } from "../../tiles/map-build-cache-inventory.mjs";
 
 export const ANNUAL_PATCH_CONTRACT_FILES = Object.freeze([
   "tools/region-import/germany/final-quality-inputs.annual-{patch}.json",
@@ -29,6 +32,60 @@ export const ANNUAL_PATCH_TEXT_FILES = Object.freeze([
 ]);
 
 const PATCH = /^(?<year>[0-9]{4})\.(?<patch>[1-9][0-9]*)$/u;
+const BUILD_CACHE_INVENTORY_TEMPLATE = "tools/tiles/map-build-cache-inventory.annual-{patch}.plan.json";
+const BUILD_EVIDENCE_TEMPLATE = "tools/tiles/map-release-build-evidence.annual-{patch}.spec.json";
+const OPERATIONAL_INFRASTRUCTURE_TEMPLATE = "tools/region-import/germany/operational-infrastructure.annual-{patch}.json";
+const RELEASE_ARTIFACTS_TEMPLATE = "tools/region-import/germany/release-artifacts.annual-{patch}.json";
+const SYNTHETIC_OPERATIONAL_POLICY_TEMPLATE = "tools/region-import/germany/synthetic-operational-b.{patch}.policy.json";
+const SYNTHETIC_OPERATIONAL_CLOSURE_TEMPLATE = "tools/region-import/germany/synthetic-operational-closure.annual-{patch}.json";
+const TIMETABLE_ROUTE_COMPILER_TEMPLATE = "tools/region-import/germany/timetable-route-compiler.annual-{patch}.json";
+const MAP_PACKAGE_TEMPLATE = "tools/tiles/map-package.annual-{patch}.plan.json";
+const ALPHA_WORLD_RUNTIME_AUDIT_TEMPLATE = "tools/audits/germany-{patch}-alpha-world-runtime.real.test.mjs";
+const SIGNED_GAME_STAGING_AUDIT_TEMPLATE = "tools/audits/germany-{patch}-signed-game-staging.real.test.mjs";
+const PENDING_REAL_BUILD = "PENDING_REAL_ANNUAL_RELEASE_BUILD";
+const SHA256 = /^[a-f0-9]{64}$/u;
+const BUILD_EVIDENCE_V2_OUTPUT_KINDS = Object.freeze([
+  "basemap-pmtiles",
+  "semantic-pmtiles",
+  "read-model",
+  "operational-infrastructure-v2",
+  "style",
+  "delivery-manifest",
+  "quality-report",
+]);
+const REQUIRED_OPERATIONAL_CACHE_SIDECARS = Object.freeze([
+  Object.freeze({
+    fileName: "operational-infrastructure-v2.movement-route-templates-v2.json",
+    name: "Operational-Movement-Route-Templates",
+    sourceFile: (patch) => `var/derived/germany-${patch}/operational-infrastructure-v2.movement-route-templates-v2.json`,
+    cacheFile: (patch) => `derived/infra-deutschland-${patch}/operational-infrastructure-v2.movement-route-templates-v2.json`,
+  }),
+  Object.freeze({
+    fileName: "timetable-routes-v2.transfer-demands-v1.json",
+    name: "Timetable-Transfer-Demands",
+    sourceFile: (patch) => `var/derived/germany-${patch}/timetable-routes-v2.transfer-demands-v1.json`,
+    cacheFile: (patch) => `derived/infra-deutschland-${patch}/timetable-routes-v2.transfer-demands-v1.json`,
+  }),
+]);
+const TARGET_ONLY_MIGRATION_TEMPLATES = Object.freeze([
+  BUILD_CACHE_INVENTORY_TEMPLATE,
+  BUILD_EVIDENCE_TEMPLATE,
+  OPERATIONAL_INFRASTRUCTURE_TEMPLATE,
+  RELEASE_ARTIFACTS_TEMPLATE,
+  SYNTHETIC_OPERATIONAL_POLICY_TEMPLATE,
+  SYNTHETIC_OPERATIONAL_CLOSURE_TEMPLATE,
+  TIMETABLE_ROUTE_COMPILER_TEMPLATE,
+  MAP_PACKAGE_TEMPLATE,
+  ALPHA_WORLD_RUNTIME_AUDIT_TEMPLATE,
+  SIGNED_GAME_STAGING_AUDIT_TEMPLATE,
+]);
+const TURNAROUND_POLICY_V2 = Object.freeze({
+  minimumBerthEndClearanceMm: 10_000,
+  maximumStablingPathEdges: 32,
+  maximumStablingPathLengthMm: 5_000_000,
+  maximumDirectDwellMs: 1_200_000,
+  terminalFormationLengthsMm: Object.freeze([46_560, 69_860]),
+});
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
@@ -45,8 +102,42 @@ function parsedPatch(value, label) {
 }
 
 function contractPath(template, patch) {
-  invariant(template.includes("{patch}"), "Jahresvertragspfad besitzt keinen Patch-Platzhalter.");
+  invariant(typeof template === "string" && template.length > 0, "Jahresvertragspfad fehlt.");
+  invariant(template.split("{patch}").length - 1 === 1, "Jahresvertragspfad muss genau einen Patch-Platzhalter besitzen.");
+  invariant(template === template.replaceAll("\\", "/"), "Jahresvertragspfad muss kanonische portable Trenner verwenden.");
+  const segments = template.split("/");
+  invariant(
+    segments.every((segment) => segment.length > 0 && segment !== "." && segment !== ".."),
+    "Jahresvertragspfad muss kanonisch sein und darf keine Alias-Segmente enthalten.",
+  );
   return template.replaceAll("{patch}", patch);
+}
+
+function pathIdentity(path) {
+  return process.platform === "win32" ? path.toLocaleLowerCase("en-US") : path;
+}
+
+function assertNoMigrationTemplateAlias(root, template, targetPatch) {
+  const requestedTarget = pathIdentity(pathInside(root, contractPath(template, targetPatch), "Jahresvertragsziel"));
+  for (const canonical of TARGET_ONLY_MIGRATION_TEMPLATES) {
+    const canonicalTarget = pathIdentity(pathInside(root, contractPath(canonical, targetPatch), "Kanonisches Jahresvertragsziel"));
+    invariant(
+      requestedTarget !== canonicalTarget || template === canonical,
+      `Jahresvertragspfad ist ein Alias des migrationspflichtigen kanonischen Templates ${canonical}.`,
+    );
+  }
+}
+
+async function assertCanonicalSourceResolution(root, contract, sourcePatch) {
+  const [actualRoot, actualSource] = await Promise.all([
+    realpath(root),
+    realpath(contract.source),
+  ]);
+  const expectedSource = resolve(actualRoot, contractPath(contract.template, sourcePatch));
+  invariant(
+    pathIdentity(actualSource) === pathIdentity(expectedSource),
+    `Jahresvertragsquelle verwendet einen symbolischen, Junction- oder sonstigen Dateisystemalias: ${contract.template}`,
+  );
 }
 
 function pathInside(root, path, label) {
@@ -66,16 +157,778 @@ async function absent(path, label) {
   throw new Error(`${label} existiert bereits; create-new verweigert die Ueberschreibung.`);
 }
 
+function patchTokens(patch) {
+  return Object.freeze([patch, patch.replace(".", "_")]);
+}
+
 async function readContract(path, sourcePatch, targetPatch, format) {
   const info = await stat(path);
   invariant(info.isFile(), `Jahresvertragsquelle ist keine regulaere Datei: ${path}`);
   const source = await readFile(path, "utf8");
-  invariant(source.includes(sourcePatch), `Jahresvertragsquelle bindet ${sourcePatch} nicht: ${path}`);
-  invariant(!source.includes(targetPatch), `Jahresvertragsquelle enthaelt bereits Zielpatch ${targetPatch}: ${path}`);
-  const target = source.replaceAll(sourcePatch, targetPatch);
+  const sourceTokens = patchTokens(sourcePatch);
+  const targetTokens = patchTokens(targetPatch);
+  invariant(sourceTokens.some((token) => source.includes(token)), `Jahresvertragsquelle bindet ${sourcePatch} nicht: ${path}`);
+  invariant(targetTokens.every((token) => !source.includes(token)), `Jahresvertragsquelle enthaelt bereits Zielpatch ${targetPatch}: ${path}`);
+  let target = source;
+  for (const [index, token] of sourceTokens.entries()) target = target.replaceAll(token, targetTokens[index]);
   if (format === "json") JSON.parse(target);
-  invariant(!target.includes(sourcePatch), `Zielvertrag enthaelt weiterhin Quellpatch ${sourcePatch}: ${path}`);
+  invariant(sourceTokens.every((token) => !target.includes(token)), `Zielvertrag enthaelt weiterhin Quellpatch ${sourcePatch}: ${path}`);
   return target;
+}
+
+function jsonObject(value, label) {
+  invariant(value !== null && typeof value === "object" && !Array.isArray(value), `${label} fehlt oder ist kein Objekt.`);
+  return value;
+}
+
+function positiveInteger(value, label) {
+  invariant(Number.isSafeInteger(value) && value > 0, `${label} ist kein positiver ganzzahliger Build-Pin.`);
+}
+
+function sha256Pin(value, label) {
+  invariant(typeof value === "string" && SHA256.test(value), `${label} ist kein SHA-256-Build-Pin.`);
+}
+
+function replaceExactlyOnce(content, pattern, replacement, label) {
+  invariant(!pattern.global, `${label}: internes Suchmuster darf nicht global sein.`);
+  const matches = [...content.matchAll(new RegExp(pattern.source, `${pattern.flags}g`))];
+  invariant(matches.length === 1, `${label} wurde nicht exakt einmal gefunden.`);
+  return content.replace(pattern, replacement);
+}
+
+function replaceTextExactlyOnce(content, search, replacement, label) {
+  invariant(typeof search === "string" && search.length > 0, `${label}: interner Suchtext fehlt.`);
+  invariant(content.split(search).length - 1 === 1, `${label} wurde nicht exakt einmal gefunden.`);
+  return content.replace(search, replacement);
+}
+
+function replaceObjectFreeze(content, name, transform) {
+  const pattern = new RegExp(`const ${name} = Object\\.freeze\\(\\{[\\s\\S]*?\\r?\\n\\}\\);`, "u");
+  const matches = [...content.matchAll(new RegExp(pattern.source, "gu"))];
+  invariant(matches.length === 1, `${name} wurde nicht exakt einmal als Object.freeze-Pinblock gefunden.`);
+  return content.replace(pattern, transform(matches[0][0]));
+}
+
+function withPendingAuditGuard(content, auditName, targetPatch) {
+  invariant(
+    !content.includes(`throw new Error("${PENDING_REAL_BUILD}`),
+    `${auditName} besitzt bereits einen ausstehenden Real-Build-Guard.`,
+  );
+  return `${content.trimEnd()}\n\nthrow new Error("${PENDING_REAL_BUILD}: ${auditName} ${targetPatch} muss nach dem realen Jahresrelease-Build neu gepinnt werden.");\n`;
+}
+
+function requireAbsentProperties(value, properties, label) {
+  for (const property of properties) {
+    invariant(!Object.hasOwn(value, property), `${label}.${property} darf in der unveraenderten Quellversion noch nicht existieren.`);
+  }
+}
+
+function insertObjectFieldsBefore(value, beforeProperty, inserted, label) {
+  const entries = Object.entries(value);
+  const index = entries.findIndex(([property]) => property === beforeProperty);
+  invariant(index >= 0, `${label}.${beforeProperty} fehlt als kanonischer Einfuegeanker.`);
+  return Object.fromEntries([
+    ...entries.slice(0, index),
+    ...Object.entries(inserted),
+    ...entries.slice(index),
+  ]);
+}
+
+function migrateOperationalInfrastructure(content, targetPatch) {
+  const value = JSON.parse(content);
+  invariant(value.schema === "zugfolge-germany-operational-infrastructure-derivation/v2", "Operational-v2-Zielvertrag besitzt nicht das erwartete Schema.");
+  invariant(value.infraReleaseId === `infra-deutschland-${targetPatch}`, "Operational-v2-Zielvertrag besitzt nicht die erwartete Release-ID.");
+  const layers = jsonObject(value.layers, "Operational-v2-Layers");
+  invariant(
+    layers.timetableRoutes === `var/derived/germany-${targetPatch}/timetable-routes-v2.jsonseq`,
+    "Operational-v2-Zielvertrag bindet nicht die erwarteten Timetable-Routes.",
+  );
+  requireAbsentProperties(layers, ["transferDemands"], "Operational-v2-Layers");
+  layers.transferDemands = {
+    path: `var/derived/germany-${targetPatch}/timetable-routes-v2.transfer-demands-v1.json`,
+    expectedBytes: 0,
+    expectedSha256: PENDING_REAL_BUILD,
+  };
+
+  const policy = jsonObject(value.policy, "Operational-v2-Policy");
+  requireAbsentProperties(policy, Object.keys(TURNAROUND_POLICY_V2), "Operational-v2-Policy");
+  value.policy = insertObjectFieldsBefore(
+    policy,
+    "defaultProtectionSystem",
+    TURNAROUND_POLICY_V2,
+    "Operational-v2-Policy",
+  );
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function migrateTimetableRouteCompiler(content, targetPatch) {
+  const value = JSON.parse(content);
+  invariant(value.schema === "zugfolge-germany-timetable-route-compiler/v3", "Timetable-Quellvertrag besitzt nicht das erwartete unveraenderte v3-Schema.");
+  invariant(value.infraReleaseId === `infra-deutschland-${targetPatch}`, "Timetable-Zielvertrag besitzt nicht die erwartete Release-ID.");
+  requireAbsentProperties(value, ["dailyCirculation", "transferOutput"], "Timetable-Quellvertrag");
+  const snapshot = jsonObject(value.gtfsSnapshot, "Timetable-GTFS-Snapshot");
+  positiveInteger(snapshot.expectedBytes, "Timetable-GTFS-Snapshot expectedBytes");
+  sha256Pin(snapshot.expectedFileSha256, "Timetable-GTFS-Snapshot expectedFileSha256");
+  sha256Pin(snapshot.expectedSnapshotHash, "Timetable-GTFS-Snapshot expectedSnapshotHash");
+  snapshot.expectedBytes = 0;
+  snapshot.expectedFileSha256 = PENDING_REAL_BUILD;
+  snapshot.expectedSnapshotHash = PENDING_REAL_BUILD;
+
+  const selection = jsonObject(value.selection, "Timetable-Auswahl");
+  const resultCountPins = [
+    [selection, "expectedSnapshotSegmentCount"],
+    [selection, "expectedEligibleSegmentCount"],
+  ];
+  for (const [container, field] of resultCountPins) {
+    positiveInteger(container[field], `Timetable-Ergebnis ${field}`);
+    container[field] = 0;
+  }
+
+  const { output, report, ...prefix } = value;
+  invariant(output === `var/derived/germany-${targetPatch}/timetable-routes-v2.jsonseq`, "Timetable-Ausgabepfad ist nicht kanonisch.");
+  invariant(report === `var/derived/germany-${targetPatch}/timetable-routes-v2.derivation-report.json`, "Timetable-Reportpfad ist nicht kanonisch.");
+  const migrated = {
+    ...prefix,
+    schema: "zugfolge-germany-timetable-route-compiler/v4",
+    dailyCirculation: {
+      rule: "lot-local-playable-path-cover-with-minimum-cross-location-rollover/v1",
+      repeatEveryS: 86_400,
+      minimumTurnaroundS: 300,
+      expectedLotCount: 0,
+      expectedJourneyChainCount: 0,
+      expectedCirculationCount: 0,
+      expectedTransferDemandCount: 0,
+      expectedTransferLotCount: 0,
+      formationLengthsMm: [...TURNAROUND_POLICY_V2.terminalFormationLengthsMm],
+      unknownMainlineSpeedKmh: 20,
+      unknownServiceSpeedKmh: 10,
+    },
+    output,
+    transferOutput: `var/derived/germany-${targetPatch}/timetable-routes-v2.transfer-demands-v1.json`,
+    report,
+  };
+  return `${JSON.stringify(migrated, null, 2)}\n`;
+}
+
+function migrateReleaseArtifacts(content, targetPatch) {
+  const value = JSON.parse(content);
+  invariant(value.schema === "zugfolge-infra-release-artifact-spec/v2", "InfraRelease-Artefaktvertrag besitzt nicht das erwartete v2-Schema.");
+  invariant(Array.isArray(value.artifacts), "InfraRelease-Artefaktvertrag besitzt kein Artefaktinventar.");
+  const operationalIndex = value.artifacts.findIndex(({ id, kind }) => (
+    id === `operational-infrastructure-${targetPatch}` && kind === "operational-infrastructure-v2"
+  ));
+  const qualityIndex = value.artifacts.findIndex(({ id, kind }) => (
+    id === `quality-report-${targetPatch}` && kind === "quality-report"
+  ));
+  invariant(operationalIndex >= 0 && qualityIndex === operationalIndex + 1, "InfraRelease-Artefaktvertrag besitzt nicht die unveraenderte Operational-/Quality-Reihenfolge.");
+  invariant(
+    value.artifacts.every(({ kind }) => !["movement-route-templates-v2", "timetable-transfer-demands-v1"].includes(kind)),
+    "InfraRelease-Artefaktquelle enthaelt bereits target-only Sidecars.",
+  );
+  value.artifacts.splice(qualityIndex, 0,
+    {
+      id: `operational-movement-routes-${targetPatch}`,
+      kind: "movement-route-templates-v2",
+      sourceFile: `var/derived/germany-${targetPatch}/operational-infrastructure-v2.movement-route-templates-v2.json`,
+      file: "operational-infrastructure-v2.movement-route-templates-v2.json",
+    },
+    {
+      id: `timetable-transfer-demands-${targetPatch}`,
+      kind: "timetable-transfer-demands-v1",
+      sourceFile: `var/derived/germany-${targetPatch}/timetable-routes-v2.transfer-demands-v1.json`,
+      file: "timetable-routes-v2.transfer-demands-v1.json",
+    },
+  );
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function migrateSyntheticOperationalPolicy(content, targetPatch) {
+  const value = JSON.parse(content);
+  invariant(value.schema === "zugfolge-synthetic-operational-policy/v2", "Synthetic-Operational-Policy besitzt nicht das erwartete v2-Schema.");
+  invariant(value.id === "synthetic-operational-b/v2", "Synthetic-Operational-Policy besitzt nicht die erwartete ID.");
+  invariant(Array.isArray(value.requiredInputRoles), "Synthetic-Operational-Policy besitzt keine Eingaberollen.");
+  invariant(!value.requiredInputRoles.includes("timetable-transfer-demands"), "Synthetic-Operational-Policy-Quelle enthaelt bereits Transfer-Demands.");
+  const timetableRoutesIndex = value.requiredInputRoles.indexOf("timetable-routes");
+  invariant(timetableRoutesIndex >= 0, "Synthetic-Operational-Policy besitzt keinen Timetable-Routes-Einfuegeanker.");
+  value.requiredInputRoles.splice(timetableRoutesIndex + 1, 0, "timetable-transfer-demands");
+
+  invariant(Array.isArray(value.requiredDimensions), "Synthetic-Operational-Policy besitzt keine Pflichtdimensionen.");
+  invariant(
+    !value.requiredDimensions.includes("daily-physical-circulations")
+      && !value.requiredDimensions.includes("real-transfer-route-coverage"),
+    "Synthetic-Operational-Policy-Quelle enthaelt bereits target-only Transferdimensionen.",
+  );
+  const routeCoverageIndex = value.requiredDimensions.indexOf("complete-pinned-timetable-routes");
+  invariant(routeCoverageIndex >= 0, "Synthetic-Operational-Policy besitzt keinen Routendeckungs-Einfuegeanker.");
+  value.requiredDimensions.splice(
+    routeCoverageIndex + 1,
+    0,
+    "daily-physical-circulations",
+    "real-transfer-route-coverage",
+  );
+
+  invariant(Array.isArray(value.rules), "Synthetic-Operational-Policy besitzt keine Regeln.");
+  invariant(
+    value.rules.every(({ id }) => id !== "daily-physical-circulation-and-transfer-coverage/v1"),
+    "Synthetic-Operational-Policy-Quelle enthaelt bereits die target-only Umlaufregel.",
+  );
+  const pinnedRouteRuleIndex = value.rules.findIndex(({ id }) => id === "pinned-timetable-route-coverage/v1");
+  const provenanceRuleIndex = value.rules.findIndex(({ id }) => id === "free-gtfs-route-provenance/v2");
+  invariant(
+    pinnedRouteRuleIndex >= 0 && provenanceRuleIndex === pinnedRouteRuleIndex + 1,
+    "Synthetic-Operational-Policy besitzt nicht die unveraenderte Routen-/Provenienz-Regelreihenfolge.",
+  );
+  invariant(
+    value.rules[provenanceRuleIndex].effect.includes("v2 derivation report"),
+    "Synthetic-Operational-Policy besitzt nicht den erwarteten unveraenderten v2-Reportbezug.",
+  );
+  value.rules[provenanceRuleIndex].effect = value.rules[provenanceRuleIndex].effect.replace(
+    "v2 derivation report",
+    "v3 derivation report",
+  );
+  value.rules.splice(provenanceRuleIndex, 0, {
+    id: "daily-physical-circulation-and-transfer-coverage/v1",
+    effect: "Bind every daily physical circulation, rollover permutation and unavoidable cross-location transfer to the v1 transfer-demand sidecar; every transfer must have a real directed OSM route and reproducible plan and transfer-set hashes.",
+  });
+
+  const compilerPolicy = jsonObject(value.compilerPolicy, "Synthetic-Operational-Compiler-Policy");
+  requireAbsentProperties(compilerPolicy, Object.keys(TURNAROUND_POLICY_V2), "Synthetic-Operational-Compiler-Policy");
+  value.compilerPolicy = insertObjectFieldsBefore(
+    compilerPolicy,
+    "defaultProtectionSystem",
+    TURNAROUND_POLICY_V2,
+    "Synthetic-Operational-Compiler-Policy",
+  );
+  invariant(
+    value.compilerPolicy.rzueLayoutId === `rzue-deutschland-${targetPatch}-synthetic-b-v2`,
+    "Synthetic-Operational-Policy besitzt nicht die erwartete Zielpatch-RZUE-ID.",
+  );
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function migrateSyntheticOperationalClosure(content, targetPatch) {
+  const value = JSON.parse(content);
+  invariant(value.schema === "zugfolge-synthetic-operational-closure-inputs/v2", "Synthetic-Operational-Closure besitzt nicht das erwartete v2-Schema.");
+  invariant(value.releaseId === `infra-deutschland-${targetPatch}`, "Synthetic-Operational-Closure besitzt nicht die erwartete Release-ID.");
+  requireAbsentProperties(value, ["timetableTransferDemandsFile"], "Synthetic-Operational-Closure");
+  const migrated = insertObjectFieldsBefore(
+    value,
+    "gtfsSnapshotFile",
+    { timetableTransferDemandsFile: "timetable-routes-v2.transfer-demands-v1.json" },
+    "Synthetic-Operational-Closure",
+  );
+  return `${JSON.stringify(migrated, null, 2)}\n`;
+}
+
+function migrateMapPackage(content, targetPatch) {
+  const value = JSON.parse(content);
+  invariant(value.schema === "zugfolge-map-package-plan/v2", "Map-Package-Plan besitzt nicht das erwartete v2-Schema.");
+  invariant(value.version === targetPatch, "Map-Package-Plan besitzt nicht die erwartete Zielversion.");
+  invariant(Array.isArray(value.auxiliaryFiles), "Map-Package-Plan besitzt keine Zusatzdateien.");
+  invariant(
+    value.auxiliaryFiles.every(({ kind }) => !["movement-route-templates-v2", "timetable-transfer-demands-v1"].includes(kind)),
+    "Map-Package-Quelle enthaelt bereits target-only Sidecars.",
+  );
+  const operationalIndex = value.auxiliaryFiles.findIndex(({ id, kind }) => (
+    id === `operational-infrastructure-${targetPatch}` && kind === "operational-infrastructure-v2"
+  ));
+  const styleIndex = value.auxiliaryFiles.findIndex(({ id, kind }) => id === "style-dark" && kind === "style");
+  invariant(operationalIndex >= 0 && styleIndex === operationalIndex + 1, "Map-Package-Plan besitzt nicht die unveraenderte Operational-/Style-Reihenfolge.");
+  const artifactInventory = `var/derived/germany-${targetPatch}/release-artifacts.v2.json`;
+  value.auxiliaryFiles.splice(styleIndex, 0,
+    {
+      id: `operational-movement-routes-${targetPatch}`,
+      kind: "movement-route-templates-v2",
+      visibility: "public",
+      sourceFile: `var/derived/germany-${targetPatch}/operational-infrastructure-v2.movement-route-templates-v2.json`,
+      installPath: "operational-infrastructure-v2.movement-route-templates-v2.json",
+      artifactInventory,
+    },
+    {
+      id: `timetable-transfer-demands-${targetPatch}`,
+      kind: "timetable-transfer-demands-v1",
+      visibility: "public",
+      sourceFile: `var/derived/germany-${targetPatch}/timetable-routes-v2.transfer-demands-v1.json`,
+      installPath: "timetable-routes-v2.transfer-demands-v1.json",
+      artifactInventory,
+    },
+  );
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function migrateBuildEvidence(content, sourcePatch, targetPatch) {
+  const value = JSON.parse(content);
+  invariant(
+    value.schema === "zugfolge-map-release-build-evidence-spec/v2",
+    "Jahrespatch kann nur den vollstaendigen Build-Evidence-v2-Vertrag auf v3 migrieren.",
+  );
+  invariant(
+    value.releaseId === `infra-deutschland-${targetPatch}`,
+    "Build-Evidence-Zielvertrag besitzt nicht die erwartete Deutschland-Release-ID.",
+  );
+  invariant(Array.isArray(value.inputs), "Build-Evidence-Zielvertrag besitzt keine Eingaben.");
+  const gtfsInputs = value.inputs.filter(({ id }) => id === "gtfs-region-snapshot");
+  invariant(gtfsInputs.length === 1, "Build-Evidence-Zielvertrag bindet den GTFS-Region-Snapshot nicht exakt einmal.");
+  const gtfsInput = jsonObject(gtfsInputs[0], "Build-Evidence-GTFS-Region-Snapshot");
+  invariant(gtfsInput.kind === "derived-input", "Build-Evidence-GTFS-Region-Snapshot ist keine abgeleitete Eingabe.");
+  positiveInteger(gtfsInput.expectedBytes, "Build-Evidence-GTFS-Region-Snapshot expectedBytes");
+  sha256Pin(gtfsInput.expectedSha256, "Build-Evidence-GTFS-Region-Snapshot expectedSha256");
+  gtfsInput.expectedBytes = 0;
+  gtfsInput.expectedSha256 = PENDING_REAL_BUILD;
+
+  const candidatePackage = jsonObject(value.candidatePackage, "Build-Evidence-Kandidatenpaket");
+  const retainedKeyIds = candidatePackage.retainedTrustedKeyIds;
+  invariant(Array.isArray(retainedKeyIds) && retainedKeyIds.every((keyId) => typeof keyId === "string" && keyId.length > 0), "Build-Evidence-Retained-Keys sind ungueltig.");
+  invariant(new Set(retainedKeyIds).size === retainedKeyIds.length, "Build-Evidence-Retained-Keys sind nicht eindeutig.");
+  const previousMapKeyId = `zugfolge-map-deutschland-${sourcePatch}`;
+  const targetMapKeyId = `zugfolge-map-deutschland-${targetPatch}`;
+  invariant(!retainedKeyIds.includes(targetMapKeyId), "Der neue Delivery-Key darf nicht als beizubehaltender Alt-Key deklariert werden.");
+  invariant(!retainedKeyIds.includes(previousMapKeyId), "Der vorherige Delivery-Key ist vor der Jahrespatch-Migration bereits eingemischt.");
+  candidatePackage.retainedTrustedKeyIds = [...retainedKeyIds, previousMapKeyId].sort();
+
+  invariant(Array.isArray(value.outputs), "Build-Evidence-Zielvertrag besitzt keine Ausgaben.");
+  invariant(
+    JSON.stringify(value.outputs.map(({ kind }) => kind)) === JSON.stringify(BUILD_EVIDENCE_V2_OUTPUT_KINDS),
+    "Build-Evidence-v2-Zielvertrag besitzt kein exakt migrierbares Ausgabeinventar.",
+  );
+  value.schema = "zugfolge-map-release-build-evidence-spec/v3";
+  value.outputs.push(
+    {
+      id: "operational-movement-routes",
+      kind: "movement-route-templates-v2",
+      file: `var/derived/germany-${targetPatch}/operational-infrastructure-v2.movement-route-templates-v2.json`,
+      installFile: "operational-infrastructure-v2.movement-route-templates-v2.json",
+    },
+    {
+      id: "timetable-transfer-demands",
+      kind: "timetable-transfer-demands-v1",
+      file: `var/derived/germany-${targetPatch}/timetable-routes-v2.transfer-demands-v1.json`,
+      installFile: "timetable-routes-v2.transfer-demands-v1.json",
+    },
+  );
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function migrateAlphaWorldRuntimeStructure(content, targetPatch) {
+  invariant(!content.includes("releaseBoundAlphaWorldBuilderInputs"), "Alpha-Real-Audit-Quelle enthaelt bereits den target-only Sidecar-Harnisch.");
+  let migrated = replaceTextExactlyOnce(
+    content,
+    'import { buildAlphaWorld } from "../region-import/build-alpha-world.mjs";',
+    `import {\n  buildAlphaWorld,\n  validateAlphaWorldBuildConfiguration,\n} from "../region-import/build-alpha-world.mjs";`,
+    "Alpha-Builder-Import",
+  );
+  migrated = replaceTextExactlyOnce(
+    migrated,
+    'const POSTGRES_DATABASE_NAME = /^zugfolge_germany_e2e_[a-z0-9_]+$/u;',
+    `const POSTGRES_DATABASE_NAME = /^zugfolge_germany_e2e_[a-z0-9_]+$/u;\nconst TIMETABLE_TRANSFER_DEMANDS_FILE = "timetable-routes-v2.transfer-demands-v1.json";\nconst MOVEMENT_ROUTE_TEMPLATES_FILE = "operational-infrastructure-v2.movement-route-templates-v2.json";`,
+    "Alpha-Sidecar-Dateikonstanten",
+  );
+
+  const builderInputHelper = `async function releaseBoundAlphaWorldBuilderInputs(artifactRoot, outputPath) {
+  const configurationPath = join(artifactRoot, "alpha-world-build-configuration.json");
+  const configuration = validateAlphaWorldBuildConfiguration(
+    JSON.parse(await readFile(configurationPath, "utf8")),
+  );
+  assert.equal(configuration.timetableTransferDemands.file, TIMETABLE_TRANSFER_DEMANDS_FILE);
+  assert.equal(configuration.movementRouteTemplates.file, MOVEMENT_ROUTE_TEMPLATES_FILE);
+  const timetableTransferDemandsPath = join(
+    artifactRoot,
+    configuration.timetableTransferDemands.file,
+  );
+  const movementRouteTemplatesPath = join(
+    artifactRoot,
+    configuration.movementRouteTemplates.file,
+  );
+  const [timetableTransferDemands, movementRouteTemplates] = await Promise.all([
+    fileProof(timetableTransferDemandsPath),
+    fileProof(movementRouteTemplatesPath),
+  ]);
+  assert.deepEqual(
+    timetableTransferDemands,
+    {
+      bytes: configuration.timetableTransferDemands.bytes,
+      sha256: configuration.timetableTransferDemands.sha256,
+    },
+    "Realer Timetable-Transfer-Demands-v1-Sidecar verletzt seine releasegebundene Byte-/SHA-256-Bindung.",
+  );
+  assert.deepEqual(
+    movementRouteTemplates,
+    {
+      bytes: configuration.movementRouteTemplates.bytes,
+      sha256: configuration.movementRouteTemplates.sha256,
+    },
+    "Realer Movement-Route-Templates-v2-Sidecar verletzt seine releasegebundene Byte-/SHA-256-Bindung.",
+  );
+  return Object.freeze({
+    argv: Object.freeze([
+      configurationPath,
+      join(artifactRoot, "gtfs-region-20260810-v2.json"),
+      join(artifactRoot, "alpha-fleet-v2-migration/compiled/fleet-authority-release-catalog-v1.json"),
+      join(artifactRoot, "map-release-free-v2/public/infra-release.json"),
+      join(REPOSITORY_ROOT, "tools/region-import/specifications/economy-release-alpha-2026.1.json"),
+      outputPath,
+      join(artifactRoot, "public-world-deploy-configuration.json"),
+      join(artifactRoot, configuration.operationalInfrastructure.file),
+      join(artifactRoot, configuration.timetableRoutes.file),
+      timetableTransferDemandsPath,
+      movementRouteTemplatesPath,
+      join(artifactRoot, "alpha-fleet-v2-migration/compiled/vehicle-catalog-compile-receipt-v4.json"),
+      join(artifactRoot, "alpha-fleet-v2-migration/compiled/operational-vehicle-inventory-v2.json"),
+      join(artifactRoot, "alpha-fleet-v2-migration/vehicle-catalog-source-v2.json"),
+      join(artifactRoot, "alpha-fleet-v2-migration/vehicle-world-seed-v3.json"),
+      join(artifactRoot, "alpha-fleet-v2-migration/compiled/vehicle-catalog-v3.json"),
+    ]),
+    sidecars: Object.freeze({
+      timetableTransferDemands: Object.freeze({
+        file: configuration.timetableTransferDemands.file,
+        ...timetableTransferDemands,
+      }),
+      movementRouteTemplates: Object.freeze({
+        file: configuration.movementRouteTemplates.file,
+        ...movementRouteTemplates,
+        stateHash: configuration.movementRouteTemplates.stateHash,
+        operationalStateHash: configuration.movementRouteTemplates.operationalStateHash,
+        timetableTransferSetSha256:
+          configuration.movementRouteTemplates.timetableTransferSetSha256,
+      }),
+    }),
+  });
+}`;
+  migrated = replaceTextExactlyOnce(
+    migrated,
+    "\n\nasync function runtimeBuildProof(",
+    `\n\n${builderInputHelper}\n\nasync function runtimeBuildProof(`,
+    "Alpha-Sidecar-Builder-Helfer",
+  );
+
+  const builderHarnessTest = `test("Alpha-Builder-Harnisch reicht beide realen Sidecars positions- und hashgebunden weiter", async () => {
+  const artifactRoot = await mkdtemp(join(tmpdir(), "zugfolge-germany-builder-sidecars-"));
+  try {
+    const transferPath = join(artifactRoot, TIMETABLE_TRANSFER_DEMANDS_FILE);
+    const movementPath = join(artifactRoot, MOVEMENT_ROUTE_TEMPLATES_FILE);
+    await Promise.all([
+      writeFile(transferPath, '{"schema":"zugfolge-timetable-transfer-demands/v1"}\\n', { flag: "wx" }),
+      writeFile(movementPath, '{"schema":"movement-route-templates-v2"}\\n', { flag: "wx" }),
+    ]);
+    const [transferProof, movementProof] = await Promise.all([
+      fileProof(transferPath),
+      fileProof(movementPath),
+    ]);
+    const operationalStateHash = createHash("sha256").update("operational-state").digest("hex");
+    const dailyPlanSha256 = createHash("sha256").update("daily-plan").digest("hex");
+    const transferSetSha256 = createHash("sha256").update("transfer-set").digest("hex");
+    const movementStateHash = createHash("sha256").update("movement-state").digest("hex");
+    await writeFile(
+      join(artifactRoot, "alpha-world-build-configuration.json"),
+      JSON.stringify({
+        schemaVersion: "zugfolge-alpha-world-build-configuration/v3",
+        worldId: WORLD_ID,
+        regionId: REGION_ID,
+        regionVariant: "B",
+        operatorId: "public",
+        seed: "2026082501",
+        fleetReleaseId: "fleet-alpha-mitteldeutschland-b-2026.3",
+        planningAuthority: {
+          accountId: "9158446f-70be-46ce-bbfa-7b4cf56215ff",
+          displayName: "Aufgabentraeger Mitteldeutschland Alpha 2026",
+        },
+        operationalInfrastructure: {
+          file: "operational-infrastructure-v2.json",
+          bytes: 1,
+          sha256: createHash("sha256").update("operational-file").digest("hex"),
+          stateHash: operationalStateHash,
+        },
+        timetableRoutes: {
+          file: "timetable-routes-v2.jsonseq",
+          bytes: 1,
+          sha256: createHash("sha256").update("timetable-routes").digest("hex"),
+        },
+        timetableTransferDemands: {
+          file: TIMETABLE_TRANSFER_DEMANDS_FILE,
+          ...transferProof,
+          dailyPlanSha256,
+          transferSetSha256,
+        },
+        movementRouteTemplates: {
+          file: MOVEMENT_ROUTE_TEMPLATES_FILE,
+          ...movementProof,
+          stateHash: movementStateHash,
+          operationalStateHash,
+          timetableTransferSetSha256: transferSetSha256,
+        },
+      }, null, 2) + "\\n",
+      { encoding: "utf8", flag: "wx" },
+    );
+    const outputPath = join(artifactRoot, "alpha-world-deployment.${targetPatch}.json");
+    const inputs = await releaseBoundAlphaWorldBuilderInputs(artifactRoot, outputPath);
+    assert.deepEqual(inputs.argv.slice(9, 11), [transferPath, movementPath]);
+    assert.deepEqual(inputs.sidecars.timetableTransferDemands, {
+      file: TIMETABLE_TRANSFER_DEMANDS_FILE,
+      ...transferProof,
+    });
+    assert.equal(inputs.sidecars.movementRouteTemplates.sha256, movementProof.sha256);
+
+    await writeFile(movementPath, '{"schema":"movement-route-templates-v2","tampered":true}\\n');
+    await assert.rejects(
+      releaseBoundAlphaWorldBuilderInputs(artifactRoot, outputPath),
+      /Movement-Route-Templates-v2-Sidecar verletzt/u,
+    );
+  } finally {
+    await rm(artifactRoot, { recursive: true, force: true });
+  }
+});`;
+  migrated = replaceTextExactlyOnce(
+    migrated,
+    '\ntest("Top-level-Akzeptanz bleibt ohne exakten Linux-cgroup-v2-No-Swap-Beleg rot", () => {',
+    `\n${builderHarnessTest}\n\ntest("Top-level-Akzeptanz bleibt ohne exakten Linux-cgroup-v2-No-Swap-Beleg rot", () => {`,
+    "Alpha-Sidecar-Builder-Test",
+  );
+
+  const oldBuilderInvocation = `    const builderResult = reuseDeployments || reuseUnsignedDeployment
+      ? undefined
+      : await buildAlphaWorld([
+        join(artifactRoot, "alpha-world-build-configuration.json"),
+        join(artifactRoot, "gtfs-region-20260810-v2.json"),
+        join(artifactRoot, "alpha-fleet-v2-migration/compiled/fleet-authority-release-catalog-v1.json"),
+        join(artifactRoot, "map-release-free-v2/public/infra-release.json"),
+        join(REPOSITORY_ROOT, "tools/region-import/specifications/economy-release-alpha-2026.1.json"),
+        unsignedPath,
+        join(artifactRoot, "public-world-deploy-configuration.json"),
+        join(artifactRoot, "operational-infrastructure-v2.json"),
+        join(artifactRoot, "timetable-routes-v2.jsonseq"),
+        join(artifactRoot, "alpha-fleet-v2-migration/compiled/vehicle-catalog-compile-receipt-v4.json"),
+        join(artifactRoot, "alpha-fleet-v2-migration/compiled/operational-vehicle-inventory-v2.json"),
+        join(artifactRoot, "alpha-fleet-v2-migration/vehicle-catalog-source-v2.json"),
+        join(artifactRoot, "alpha-fleet-v2-migration/vehicle-world-seed-v3.json"),
+        join(artifactRoot, "alpha-fleet-v2-migration/compiled/vehicle-catalog-v3.json"),
+      ]);`;
+  const newBuilderInvocation = `    const builderInputs = await releaseBoundAlphaWorldBuilderInputs(artifactRoot, unsignedPath);
+    const builderResult = reuseDeployments || reuseUnsignedDeployment
+      ? undefined
+      : await buildAlphaWorld(builderInputs.argv);`;
+  migrated = replaceTextExactlyOnce(
+    migrated,
+    oldBuilderInvocation,
+    newBuilderInvocation,
+    "Alpha-Real-Builder-Aufruf",
+  );
+  migrated = replaceTextExactlyOnce(
+    migrated,
+    "        operationalTrainCount: unsigned.deployment.regionalSimulation.trains.length,\n      },\n      runtimeBuild,\n      authorityRendering,",
+    "        operationalTrainCount: unsigned.deployment.regionalSimulation.trains.length,\n      },\n      builderSidecars: builderInputs.sidecars,\n      runtimeBuild,\n      authorityRendering,",
+    "Alpha-Real-Evidence-Sidecars",
+  );
+  return migrated;
+}
+
+function migrateAlphaWorldRuntimeAudit(content, targetPatch) {
+  let migrated = migrateAlphaWorldRuntimeStructure(content, targetPatch);
+  migrated = replaceExactlyOnce(
+    migrated,
+    /const EXPECTED_ALPHA_DEPLOYMENT_HASH = "[a-f0-9]{64}";/u,
+    `const EXPECTED_ALPHA_DEPLOYMENT_HASH = "${PENDING_REAL_BUILD}";`,
+    "Alpha-Deployment-Hash-Pin",
+  );
+  for (const name of ["EXPECTED_ALPHA_UNSIGNED_DEPLOYMENT", "EXPECTED_ALPHA_SIGNED_DEPLOYMENT"]) {
+    migrated = replaceObjectFreeze(migrated, name, (block) => {
+      let pending = replaceExactlyOnce(block, /  bytes: [1-9][0-9_]*/u, "  bytes: 0", `${name} Byte-Pin`);
+      pending = replaceExactlyOnce(pending, /  sha256: "[a-f0-9]{64}"/u, `  sha256: "${PENDING_REAL_BUILD}"`, `${name} SHA-256-Pin`);
+      return pending;
+    });
+  }
+  migrated = replaceExactlyOnce(
+    migrated,
+    /const EXPECTED_ALPHA_TYPESCRIPT_BUILD_SET_SHA256 = "[a-f0-9]{64}";/u,
+    `const EXPECTED_ALPHA_TYPESCRIPT_BUILD_SET_SHA256 = "${PENDING_REAL_BUILD}";`,
+    "Alpha-TypeScript-Build-Set-Pin",
+  );
+  migrated = replaceObjectFreeze(migrated, "EXPECTED_INFRA_BINDING", (block) => {
+    let pending = replaceExactlyOnce(block, /  bytes: [1-9][0-9_]*/u, "  bytes: 0", "Alpha-Infra-Binding Byte-Pin");
+    pending = replaceExactlyOnce(pending, /  sha256: "[a-f0-9]{64}"/u, `  sha256: "${PENDING_REAL_BUILD}"`, "Alpha-Infra-Binding SHA-256-Pin");
+    pending = replaceExactlyOnce(pending, /  stateHash: "[a-f0-9]{64}"/u, `  stateHash: "${PENDING_REAL_BUILD}"`, "Alpha-Infra-Binding State-Hash-Pin");
+    return pending;
+  });
+  return withPendingAuditGuard(migrated, "Deutschland-Alpha-Real-Audit", targetPatch);
+}
+
+function migrateSignedGameStagingAudit(content, sourcePatch, targetPatch) {
+  let migrated = replaceExactlyOnce(
+    content,
+    /      operationalStateHash: "[a-f0-9]{64}",/u,
+    `      operationalStateHash: "${PENDING_REAL_BUILD}",`,
+    "Signed-Game-Staging Operational-State-Hash-Pin",
+  );
+  const sourceMinor = sourcePatch.split(".").at(-1);
+  const targetMinor = targetPatch.split(".").at(-1);
+  migrated = replaceTextExactlyOnce(
+    migrated,
+    `Erwartete .${sourceMinor}-Manifestbytezahl ist ungueltig.`,
+    `Erwartete .${targetMinor}-Manifestbytezahl ist ungueltig.`,
+    "Signed-Game-Staging Byte-Pin-Meldung",
+  );
+  migrated = replaceTextExactlyOnce(
+    migrated,
+    `Erwarteter .${sourceMinor}-Manifest-SHA-256 ist ungueltig.`,
+    `Erwarteter .${targetMinor}-Manifest-SHA-256 ist ungueltig.`,
+    "Signed-Game-Staging SHA-Pin-Meldung",
+  );
+  invariant(!migrated.includes(`Erwartete .${sourceMinor}-Manifest`), "Signed-Game-Staging enthaelt weiterhin die alte Byte-Pin-Meldung.");
+  invariant(!migrated.includes(`Erwarteter .${sourceMinor}-Manifest`), "Signed-Game-Staging enthaelt weiterhin die alte SHA-Pin-Meldung.");
+
+  const targetMapKeyId = `zugfolge-map-deutschland-${targetPatch}`;
+  const previousMapKeyId = `zugfolge-map-deutschland-${sourcePatch}`;
+  const targetKeyAssertion = `  assert.ok(parsed["${targetMapKeyId}"], "Der Deutschland-${targetPatch}-Delivery-Key fehlt im Trust-Register.");`;
+  const previousKeyAssertion = `${targetKeyAssertion}\n  assert.ok(\n    Object.hasOwn(parsed, "${previousMapKeyId}"),\n    "Der vorherige Deutschland-${sourcePatch}-Delivery-Key muss fuer Rollback und Altartefakte im Trust-Register bleiben.",\n  );`;
+  migrated = replaceTextExactlyOnce(
+    migrated,
+    targetKeyAssertion,
+    previousKeyAssertion,
+    "Signed-Game-Staging Ziel-Key-Assertion",
+  );
+  return withPendingAuditGuard(migrated, "Deutschland-Signed-Game-Staging-Audit", targetPatch);
+}
+
+function migrateTargetContract(content, template, sourcePatch, targetPatch) {
+  if (template === BUILD_CACHE_INVENTORY_TEMPLATE) {
+    const value = JSON.parse(content);
+    const releaseId = `infra-deutschland-${targetPatch}`;
+    validateMapBuildCacheInventoryPlan(value, releaseId);
+    for (const required of REQUIRED_OPERATIONAL_CACHE_SIDECARS) {
+      const sourceFile = required.sourceFile(targetPatch);
+      const cacheFile = required.cacheFile(targetPatch);
+      invariant(
+        value.files.every((entry) => entry.sourceFile.split("/").at(-1) !== required.fileName),
+        `Buildcache-Zielvertrag enthaelt bereits das Sidecar ${required.name}.`,
+      );
+      invariant(
+        value.files.every((entry) => entry.cacheFile.split("/").at(-1) !== required.fileName),
+        `Buildcache-Zielvertrag enthaelt bereits einen Cachepfad fuer ${required.name}.`,
+      );
+      value.files.push({ sourceFile, cacheFile });
+    }
+    validateMapBuildCacheInventoryPlan(value, releaseId);
+    for (const required of REQUIRED_OPERATIONAL_CACHE_SIDECARS) {
+      const expected = {
+        sourceFile: required.sourceFile(targetPatch),
+        cacheFile: required.cacheFile(targetPatch),
+      };
+      invariant(
+        value.files.filter((entry) => entry.sourceFile === expected.sourceFile && entry.cacheFile === expected.cacheFile).length === 1,
+        `Buildcache-Zielvertrag bindet ${required.name} nicht exakt einmal an den kanonischen Cachepfad.`,
+      );
+    }
+    return `${JSON.stringify(value, null, 2)}\n`;
+  }
+  if (template === OPERATIONAL_INFRASTRUCTURE_TEMPLATE) return migrateOperationalInfrastructure(content, targetPatch);
+  if (template === RELEASE_ARTIFACTS_TEMPLATE) return migrateReleaseArtifacts(content, targetPatch);
+  if (template === SYNTHETIC_OPERATIONAL_POLICY_TEMPLATE) return migrateSyntheticOperationalPolicy(content, targetPatch);
+  if (template === SYNTHETIC_OPERATIONAL_CLOSURE_TEMPLATE) return migrateSyntheticOperationalClosure(content, targetPatch);
+  if (template === TIMETABLE_ROUTE_COMPILER_TEMPLATE) return migrateTimetableRouteCompiler(content, targetPatch);
+  if (template === MAP_PACKAGE_TEMPLATE) return migrateMapPackage(content, targetPatch);
+  if (template === BUILD_EVIDENCE_TEMPLATE) return migrateBuildEvidence(content, sourcePatch, targetPatch);
+  if (template === ALPHA_WORLD_RUNTIME_AUDIT_TEMPLATE) return migrateAlphaWorldRuntimeAudit(content, targetPatch);
+  if (template === SIGNED_GAME_STAGING_AUDIT_TEMPLATE) return migrateSignedGameStagingAudit(content, sourcePatch, targetPatch);
+  return content;
+}
+
+function ownedIdentity(metadata, includeSize = false) {
+  const identity = { dev: metadata.dev, ino: metadata.ino };
+  if (includeSize) identity.size = metadata.size;
+  return identity;
+}
+
+function sameOwnedIdentity(metadata, identity) {
+  return metadata.dev === identity.dev
+    && metadata.ino === identity.ino
+    && (!Object.hasOwn(identity, "size") || metadata.size === identity.size);
+}
+
+async function createOwnedFile(path, mode, openCreateNewFile) {
+  const handle = await openCreateNewFile(path, "wx", mode);
+  let metadata;
+  try {
+    metadata = await handle.stat({ bigint: true });
+    invariant(metadata.isFile(), `Create-new-Datei ist keine regulaere Datei: ${path}`);
+  } catch (error) {
+    const cleanupErrors = [];
+    try {
+      const fallbackMetadata = await lstat(path, { bigint: true });
+      await removeOwnedFile({
+        closed: false,
+        handle,
+        identity: ownedIdentity(fallbackMetadata),
+        path,
+      });
+    } catch (cleanupError) {
+      cleanupErrors.push(cleanupError);
+      await handle.close().catch(() => {});
+    }
+    throw combinedOperationError(error, cleanupErrors);
+  }
+  return {
+    closed: false,
+    handle,
+    identity: ownedIdentity(metadata),
+    path,
+  };
+}
+
+async function closeOwnedFile(owned) {
+  if (owned.closed) return;
+  owned.closed = true;
+  await owned.handle.close();
+}
+
+async function writeAndSyncOwnedFile(owned, content) {
+  try {
+    await owned.handle.writeFile(content, "utf8");
+    await owned.handle.sync();
+  } finally {
+    await closeOwnedFile(owned);
+  }
+  const metadata = await lstat(owned.path, { bigint: true });
+  invariant(sameOwnedIdentity(metadata, owned.identity), `Create-new-Datei wechselte waehrend des Schreibens ihre Identitaet: ${owned.path}`);
+  const expectedBytes = BigInt(Buffer.byteLength(content, "utf8"));
+  invariant(metadata.size === expectedBytes, `Create-new-Datei ist nach fsync nicht bytevollstaendig: ${owned.path}`);
+  owned.identity = ownedIdentity(metadata, true);
+}
+
+async function removeOwnedFile(owned) {
+  await closeOwnedFile(owned).catch(() => {});
+  let metadata;
+  try {
+    metadata = await lstat(owned.path, { bigint: true });
+  } catch (error) {
+    if (error?.code === "ENOENT") return;
+    throw error;
+  }
+  invariant(
+    sameOwnedIdentity(metadata, owned.identity),
+    `Identitaetsgebundene Bereinigung verweigert eine fremde oder veraenderte Datei: ${owned.path}`,
+  );
+  await unlink(owned.path);
+}
+
+async function cleanupOwnedFiles(files) {
+  const errors = [];
+  for (const owned of [...files].reverse()) {
+    try {
+      await removeOwnedFile(owned);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  return errors;
+}
+
+function combinedOperationError(operationError, cleanupErrors) {
+  if (operationError === undefined && cleanupErrors.length === 0) return undefined;
+  if (cleanupErrors.length === 0) return operationError;
+  const causes = operationError === undefined ? cleanupErrors : [operationError, ...cleanupErrors];
+  return new AggregateError(
+    causes,
+    `${operationError instanceof Error ? operationError.message : "Jahresrelease-Verarbeitung fehlgeschlagen."} Identitaetsgebundene Bereinigung meldete ${cleanupErrors.length} Fehler.`,
+  );
 }
 
 /**
@@ -89,6 +942,8 @@ export async function createAnnualPatchRelease({
   targetPatch,
   files = ANNUAL_PATCH_CONTRACT_FILES,
   textFiles = ANNUAL_PATCH_TEXT_FILES,
+  openCreateNewFile = open,
+  publishLink = link,
 }) {
   const root = resolve(repositoryRoot);
   const source = parsedPatch(sourcePatch, "Quellpatch");
@@ -96,6 +951,9 @@ export async function createAnnualPatchRelease({
   invariant(source.year === target.year && target.patch === source.patch + 1, "Zielpatch muss der direkte naechste Patch desselben Fahrplanjahres sein.");
   invariant(Array.isArray(files) && files.length > 0 && new Set(files).size === files.length, "Jahresvertragsliste muss eindeutig und nicht leer sein.");
   invariant(Array.isArray(textFiles) && new Set(textFiles).size === textFiles.length, "Jahres-Textvertragsliste muss eindeutig sein.");
+  invariant(typeof openCreateNewFile === "function", "Create-new-Dateioeffner fehlt.");
+  invariant(typeof publishLink === "function", "Atomare create-new-Verlinkung fehlt.");
+  for (const template of [...files, ...textFiles]) assertNoMigrationTemplateAlias(root, template, target.value);
 
   const contracts = [
     ...files.map((template) => Object.freeze({ format: "json", template })),
@@ -107,38 +965,84 @@ export async function createAnnualPatchRelease({
     template,
   }));
   invariant(new Set(contracts.map(({ target: path }) => path)).size === contracts.length, "Jahresvertragsziele sind nicht eindeutig.");
+  for (const contract of contracts) await assertCanonicalSourceResolution(root, contract, source.value);
 
   const prepared = [];
   for (const contract of contracts) {
     await absent(contract.target, `Jahresvertragsziel ${contract.template}`);
     prepared.push(Object.freeze({
       ...contract,
-      content: await readContract(contract.source, source.value, target.value, contract.format),
+      content: migrateTargetContract(
+        await readContract(contract.source, source.value, target.value, contract.format),
+        contract.template,
+        source.value,
+        target.value,
+      ),
     }));
   }
 
   const claimPath = pathInside(root, `tools/region-import/germany/.annual-patch-release-${target.value}.claim`, "Jahresrelease-Claim");
+  const stagingRoot = pathInside(
+    root,
+    `tools/region-import/germany/.annual-patch-release-${target.value}.${process.pid}-${randomUUID()}`,
+    "Jahresrelease-Staging",
+  );
   await absent(claimPath, "Jahresrelease-Claim");
   await mkdir(dirname(claimPath), { recursive: true });
-  const claim = await open(claimPath, "wx", 0o600);
-  const created = [];
+  let claim;
+  let stagingCreated = false;
+  let operationError;
+  const staged = [];
+  const createdTargets = [];
   try {
-    await claim.writeFile(`${source.value}->${target.value}\n`, "utf8");
-    await claim.sync();
-    for (const contract of prepared) {
+    claim = await createOwnedFile(claimPath, 0o600, openCreateNewFile);
+    await writeAndSyncOwnedFile(claim, `${source.value}->${target.value}\n`);
+    await mkdir(stagingRoot, { mode: 0o700 });
+    stagingCreated = true;
+    for (const [index, contract] of prepared.entries()) {
+      const stagingPath = pathInside(
+        stagingRoot,
+        `${String(index).padStart(4, "0")}.stage`,
+        "Jahresvertrags-Stagingdatei",
+      );
+      const owned = await createOwnedFile(stagingPath, 0o644, openCreateNewFile);
+      staged.push(owned);
+      await writeAndSyncOwnedFile(owned, contract.content);
+    }
+    for (const [index, contract] of prepared.entries()) {
       await absent(contract.target, `Jahresvertragsziel ${contract.template}`);
       await mkdir(dirname(contract.target), { recursive: true });
-      await writeFile(contract.target, contract.content, { encoding: "utf8", flag: "wx", mode: 0o644 });
-      created.push(contract.target);
+      await publishLink(staged[index].path, contract.target);
+      const targetOwned = {
+        closed: true,
+        handle: undefined,
+        identity: staged[index].identity,
+        path: contract.target,
+      };
+      createdTargets.push(targetOwned);
+      const targetMetadata = await lstat(contract.target, { bigint: true });
+      invariant(
+        targetMetadata.isFile() && sameOwnedIdentity(targetMetadata, targetOwned.identity),
+        `Atomare create-new-Veroeffentlichung besitzt nicht die gepruefte Stagingidentitaet: ${contract.target}`,
+      );
     }
   } catch (error) {
-    for (const path of created.reverse()) await rm(path, { force: true });
-    throw error;
-  } finally {
-    await claim.close();
-    await unlink(claimPath).catch((error) => {
-      if (error?.code !== "ENOENT") throw error;
-    });
+    operationError = error;
+  }
+
+  const cleanupErrors = await cleanupOwnedFiles(staged);
+  if (stagingCreated) {
+    try {
+      await rmdir(stagingRoot);
+    } catch (error) {
+      if (error?.code !== "ENOENT") cleanupErrors.push(error);
+    }
+  }
+  if (claim !== undefined) cleanupErrors.push(...await cleanupOwnedFiles([claim]));
+  const preliminaryError = combinedOperationError(operationError, cleanupErrors);
+  if (preliminaryError !== undefined) {
+    const rollbackErrors = await cleanupOwnedFiles(createdTargets);
+    throw combinedOperationError(preliminaryError, rollbackErrors);
   }
 
   return Object.freeze({
