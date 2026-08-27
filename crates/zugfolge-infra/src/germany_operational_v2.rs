@@ -531,6 +531,15 @@ enum BerthSearchMode {
     SimulatedOperationalFallback,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct StablingSearchPolicy {
+    formation_length_mm: i64,
+    minimum_clearance_mm: i64,
+    maximum_path_edges: u32,
+    maximum_path_length_mm: i64,
+    search_mode: BerthSearchMode,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum StablingKind {
@@ -563,12 +572,15 @@ enum BerthAssignmentKind {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
 enum BerthAssignmentSubtype {
-    OsmServiceSiding,
-    OsmServiceYard,
-    OsmServiceSpur,
-    OsmUnclassifiedRail,
+    #[serde(rename = "osm-service-siding")]
+    ServiceSiding,
+    #[serde(rename = "osm-service-yard")]
+    ServiceYard,
+    #[serde(rename = "osm-service-spur")]
+    ServiceSpur,
+    #[serde(rename = "osm-unclassified-rail")]
+    UnclassifiedRail,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -596,10 +608,10 @@ struct TurnaroundBerthAssignment {
 impl TurnaroundBerthAssignment {
     fn stable_key(self) -> &'static str {
         match self.subtype {
-            BerthAssignmentSubtype::OsmServiceSiding => "observed:osm-service-siding",
-            BerthAssignmentSubtype::OsmServiceYard => "simulated-operational:osm-service-yard",
-            BerthAssignmentSubtype::OsmServiceSpur => "simulated-operational:osm-service-spur",
-            BerthAssignmentSubtype::OsmUnclassifiedRail => {
+            BerthAssignmentSubtype::ServiceSiding => "observed:osm-service-siding",
+            BerthAssignmentSubtype::ServiceYard => "simulated-operational:osm-service-yard",
+            BerthAssignmentSubtype::ServiceSpur => "simulated-operational:osm-service-spur",
+            BerthAssignmentSubtype::UnclassifiedRail => {
                 "simulated-operational:osm-unclassified-rail"
             }
         }
@@ -618,14 +630,10 @@ struct BerthAssignmentCounts {
 impl BerthAssignmentCounts {
     fn increment(&mut self, assignment: TurnaroundBerthAssignment) {
         let count = match assignment.subtype {
-            BerthAssignmentSubtype::OsmServiceSiding => &mut self.observed_osm_service_siding,
-            BerthAssignmentSubtype::OsmServiceYard => {
-                &mut self.simulated_operational_osm_service_yard
-            }
-            BerthAssignmentSubtype::OsmServiceSpur => {
-                &mut self.simulated_operational_osm_service_spur
-            }
-            BerthAssignmentSubtype::OsmUnclassifiedRail => {
+            BerthAssignmentSubtype::ServiceSiding => &mut self.observed_osm_service_siding,
+            BerthAssignmentSubtype::ServiceYard => &mut self.simulated_operational_osm_service_yard,
+            BerthAssignmentSubtype::ServiceSpur => &mut self.simulated_operational_osm_service_spur,
+            BerthAssignmentSubtype::UnclassifiedRail => {
                 &mut self.simulated_operational_osm_unclassified_rail
             }
         };
@@ -3926,22 +3934,22 @@ fn berth_assignment(
         match (search_mode, track.service.as_deref()) {
             (BerthSearchMode::ObservedSiding, Some("siding")) => (
                 BerthAssignmentKind::Observed,
-                BerthAssignmentSubtype::OsmServiceSiding,
+                BerthAssignmentSubtype::ServiceSiding,
                 BerthOperationalAssignmentProvenance::ObservedOsmService,
             ),
             (BerthSearchMode::SimulatedOperationalFallback, Some("yard")) => (
                 BerthAssignmentKind::SimulatedOperational,
-                BerthAssignmentSubtype::OsmServiceYard,
+                BerthAssignmentSubtype::ServiceYard,
                 BerthOperationalAssignmentProvenance::SyntheticOperationalBPolicy,
             ),
             (BerthSearchMode::SimulatedOperationalFallback, Some("spur")) => (
                 BerthAssignmentKind::SimulatedOperational,
-                BerthAssignmentSubtype::OsmServiceSpur,
+                BerthAssignmentSubtype::ServiceSpur,
                 BerthOperationalAssignmentProvenance::SyntheticOperationalBPolicy,
             ),
             (BerthSearchMode::SimulatedOperationalFallback, None) => (
                 BerthAssignmentKind::SimulatedOperational,
-                BerthAssignmentSubtype::OsmUnclassifiedRail,
+                BerthAssignmentSubtype::UnclassifiedRail,
                 BerthOperationalAssignmentProvenance::SyntheticOperationalBPolicy,
             ),
             _ => return None,
@@ -4014,13 +4022,16 @@ fn stabling_candidates(
     transaction: &redb::ReadTransaction,
     terminal: &TrackRecord,
     terminal_node_id: i64,
-    formation_length_mm: i64,
-    minimum_clearance_mm: i64,
-    maximum_path_edges: u32,
-    maximum_path_length_mm: i64,
-    search_mode: BerthSearchMode,
+    policy: StablingSearchPolicy,
     inbound_route_id: &str,
 ) -> Result<Vec<StablingCandidate>> {
+    let StablingSearchPolicy {
+        formation_length_mm,
+        minimum_clearance_mm,
+        maximum_path_edges,
+        maximum_path_length_mm,
+        search_mode,
+    } = policy;
     require(
         terminal.orderable
             && terminal.railway == "rail"
@@ -4589,40 +4600,41 @@ fn outbound_terminal_access(
     )
 }
 
-fn paired_stabling_path_key(
-    candidate: &PairedStablingCandidate,
-) -> (
-    StablingKind,
-    TurnaroundBerthAssignment,
-    TurnaroundBerthAssignment,
-    i64,
-    Vec<(&str, &str)>,
-    Vec<(&str, &str)>,
-    Vec<(&str, &str)>,
-) {
-    (
-        candidate.stabling_kind,
-        candidate.arrival_berth_assignment,
-        candidate.departure_berth_assignment,
-        candidate.total_length_mm,
-        candidate
+#[derive(Eq, Ord, PartialEq, PartialOrd)]
+struct PairedStablingPathKey<'a> {
+    stabling_kind: StablingKind,
+    arrival_berth_assignment: TurnaroundBerthAssignment,
+    departure_berth_assignment: TurnaroundBerthAssignment,
+    total_length_mm: i64,
+    inbound_path: Vec<(&'a str, &'a str)>,
+    berth_transfer_path: Vec<(&'a str, &'a str)>,
+    outbound_path: Vec<(&'a str, &'a str)>,
+}
+
+fn paired_stabling_path_key(candidate: &PairedStablingCandidate) -> PairedStablingPathKey<'_> {
+    PairedStablingPathKey {
+        stabling_kind: candidate.stabling_kind,
+        arrival_berth_assignment: candidate.arrival_berth_assignment,
+        departure_berth_assignment: candidate.departure_berth_assignment,
+        total_length_mm: candidate.total_length_mm,
+        inbound_path: candidate
             .inbound_path
             .iter()
             .map(|edge| (edge.track.id.as_str(), edge.direction.as_str()))
             .collect(),
-        candidate
+        berth_transfer_path: candidate
             .berth_transfer_path
             .as_deref()
             .unwrap_or_default()
             .iter()
             .map(|edge| (edge.track.id.as_str(), edge.direction.as_str()))
             .collect(),
-        candidate
+        outbound_path: candidate
             .outbound_path
             .iter()
             .map(|edge| (edge.track.id.as_str(), edge.direction.as_str()))
             .collect(),
-    )
+    }
 }
 
 fn stabling_candidate_shortest_cmp(
@@ -4666,11 +4678,7 @@ fn paired_stabling_candidates(
     transaction: &redb::ReadTransaction,
     inbound_access: &TerminalNodeAccess,
     outbound_access: &TerminalNodeAccess,
-    formation_length_mm: i64,
-    minimum_clearance_mm: i64,
-    maximum_path_edges: u32,
-    maximum_path_length_mm: i64,
-    search_mode: BerthSearchMode,
+    policy: StablingSearchPolicy,
     inbound_route_id: &str,
     outbound_route_id: &str,
 ) -> Result<PairedStablingSearch> {
@@ -4678,22 +4686,14 @@ fn paired_stabling_candidates(
         transaction,
         &inbound_access.terminal_track,
         inbound_access.node_id,
-        formation_length_mm,
-        minimum_clearance_mm,
-        maximum_path_edges,
-        maximum_path_length_mm,
-        search_mode,
+        policy,
         inbound_route_id,
     )?;
     let outbound_candidates = stabling_candidates(
         transaction,
         &outbound_access.terminal_track,
         outbound_access.node_id,
-        formation_length_mm,
-        minimum_clearance_mm,
-        maximum_path_edges,
-        maximum_path_length_mm,
-        search_mode,
+        policy,
         outbound_route_id,
     )?;
     let mut outbound_by_berth = BTreeMap::<&str, &StablingCandidate>::new();
@@ -4899,8 +4899,7 @@ fn cross_berth_stabling_candidates(
     transaction: &redb::ReadTransaction,
     inbound_access: &TerminalNodeAccess,
     outbound_access: &TerminalNodeAccess,
-    maximum_path_edges: u32,
-    maximum_path_length_mm: i64,
+    policy: StablingSearchPolicy,
     inbound_candidates: &[StablingCandidate],
     outbound_candidates: &[StablingCandidate],
     demand: &TurnaroundPairDemand,
@@ -4928,8 +4927,8 @@ fn cross_berth_stabling_candidates(
         transaction,
         inbound_access,
         outbound_access,
-        maximum_path_edges,
-        maximum_path_length_mm,
+        policy.maximum_path_edges,
+        policy.maximum_path_length_mm,
     )?;
     let inbound_access_length = inbound_access.connecting_leg.as_ref().map_or(0_i64, |leg| {
         i64::try_from(leg.edge_entry_mm.abs_diff(leg.edge_exit_mm)).unwrap_or(i64::MAX)
@@ -4945,14 +4944,16 @@ fn cross_berth_stabling_candidates(
         routing_rule: BerthTransferRoutingRule::RealOsmRailBidirectionalBoundedV1,
         location_id: demand.source_location_id.clone(),
         physical_stop_id: demand.source_physical_stop_id.clone(),
-        maximum_path_edges_per_side: maximum_path_edges,
-        maximum_path_length_mm_per_side: maximum_path_length_mm,
+        maximum_path_edges_per_side: policy.maximum_path_edges,
+        maximum_path_length_mm_per_side: policy.maximum_path_length_mm,
     };
     let mut proposals = Vec::new();
     for arrival in inbound_candidates {
         for departure in outbound_candidates {
-            for berth_transfer_path in
+            if let Some(berth_transfer_path) =
                 cross_berth_transfer_full_paths(arrival, &connectors, departure)?
+                    .into_iter()
+                    .next()
             {
                 let berth_transfer_path_length_mm =
                     directed_track_path_length_mm(&berth_transfer_path)?;
@@ -4977,7 +4978,6 @@ fn cross_berth_stabling_candidates(
                     berth_transfer_path: Some(berth_transfer_path),
                     berth_transfer_provenance: Some(provenance.clone()),
                 });
-                break;
             }
         }
     }
@@ -5022,30 +5022,33 @@ fn paired_stabling_candidates_with_fallback(
     outbound_route_id: &str,
     demand: &TurnaroundPairDemand,
 ) -> Result<PairedStablingSearch> {
-    let observed = paired_stabling_candidates(
-        transaction,
-        inbound_access,
-        outbound_access,
+    let observed_policy = StablingSearchPolicy {
         formation_length_mm,
         minimum_clearance_mm,
         maximum_path_edges,
         maximum_path_length_mm,
-        BerthSearchMode::ObservedSiding,
+        search_mode: BerthSearchMode::ObservedSiding,
+    };
+    let observed = paired_stabling_candidates(
+        transaction,
+        inbound_access,
+        outbound_access,
+        observed_policy,
         inbound_route_id,
         outbound_route_id,
     )?;
     if !observed.candidates.is_empty() {
         return Ok(observed);
     }
+    let fallback_policy = StablingSearchPolicy {
+        search_mode: BerthSearchMode::SimulatedOperationalFallback,
+        ..observed_policy
+    };
     let mut fallback = paired_stabling_candidates(
         transaction,
         inbound_access,
         outbound_access,
-        formation_length_mm,
-        minimum_clearance_mm,
-        maximum_path_edges,
-        maximum_path_length_mm,
-        BerthSearchMode::SimulatedOperationalFallback,
+        fallback_policy,
         inbound_route_id,
         outbound_route_id,
     )?;
@@ -5055,8 +5058,7 @@ fn paired_stabling_candidates_with_fallback(
             transaction,
             inbound_access,
             outbound_access,
-            maximum_path_edges,
-            maximum_path_length_mm,
+            fallback_policy,
             &fallback.inbound_candidates,
             &fallback.outbound_candidates,
             demand,
@@ -8417,12 +8419,12 @@ fn stabling_template_provenance_counts(
                     (assignment.kind, assignment.subtype),
                     (
                         BerthAssignmentKind::Observed,
-                        BerthAssignmentSubtype::OsmServiceSiding
+                        BerthAssignmentSubtype::ServiceSiding
                     ) | (
                         BerthAssignmentKind::SimulatedOperational,
-                        BerthAssignmentSubtype::OsmServiceYard
-                            | BerthAssignmentSubtype::OsmServiceSpur
-                            | BerthAssignmentSubtype::OsmUnclassifiedRail
+                        BerthAssignmentSubtype::ServiceYard
+                            | BerthAssignmentSubtype::ServiceSpur
+                            | BerthAssignmentSubtype::UnclassifiedRail
                     )
                 ) && assignment.geometry_provenance == BerthGeometryProvenance::RealOsmRail
                     && matches!(
@@ -9115,13 +9117,13 @@ mod publish_tests {
     use super::{
         BLOCK_RESOURCES, BerthAssignmentKind, BerthAssignmentSubtype, BerthSearchMode,
         GeneratedMovementArtifacts, GeometryPoint, MovementContinuity, PinnedInputSpec, PolicySpec,
-        ScratchDirectory, StablingKind, TRACK_BLOCKS, TRACKS, TRACKS_BY_NODE, TerminalNodeAccess,
-        TimetableLegInput, TimetableRouteInput, TrackRecord, TurnaroundPairDemand,
-        TurnaroundRouteDispatch, berth_assignment, build_stabling_routes, canonical_json,
-        ensure_output_absent, generate_movement_route_artifacts, initialize_database,
-        paired_stabling_candidates, paired_stabling_candidates_with_fallback, publish_create_new,
-        publish_pair_create_new, read_transfer_demands, require_movement_continuity, sha256,
-        stabling_minimum_runtime_ms,
+        ScratchDirectory, StablingKind, StablingSearchPolicy, TRACK_BLOCKS, TRACKS, TRACKS_BY_NODE,
+        TerminalNodeAccess, TimetableLegInput, TimetableRouteInput, TrackRecord,
+        TurnaroundPairDemand, TurnaroundRouteDispatch, berth_assignment, build_stabling_routes,
+        canonical_json, ensure_output_absent, generate_movement_route_artifacts,
+        initialize_database, paired_stabling_candidates, paired_stabling_candidates_with_fallback,
+        publish_create_new, publish_pair_create_new, read_transfer_demands,
+        require_movement_continuity, sha256, stabling_minimum_runtime_ms,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
@@ -9661,11 +9663,13 @@ mod publish_tests {
             &read,
             &source_access,
             &target_access,
-            formation_length_mm,
-            10_000,
-            maximum_path_edges,
-            maximum_path_length_mm,
-            search_mode,
+            StablingSearchPolicy {
+                formation_length_mm,
+                minimum_clearance_mm: 10_000,
+                maximum_path_edges,
+                maximum_path_length_mm,
+                search_mode,
+            },
             "passenger:source",
             "passenger:target",
         )
@@ -9928,9 +9932,9 @@ mod publish_tests {
     fn synthetische_betriebszuordnung_bleibt_reale_osm_geometrie_und_strikt_typisiert() {
         let terminal = stabling_test_track("terminal", 100, 101, 100_000, None);
         for (service, subtype) in [
-            (Some("yard"), BerthAssignmentSubtype::OsmServiceYard),
-            (Some("spur"), BerthAssignmentSubtype::OsmServiceSpur),
-            (None, BerthAssignmentSubtype::OsmUnclassifiedRail),
+            (Some("yard"), BerthAssignmentSubtype::ServiceYard),
+            (Some("spur"), BerthAssignmentSubtype::ServiceSpur),
+            (None, BerthAssignmentSubtype::UnclassifiedRail),
         ] {
             let track = stabling_test_track("candidate", 101, 102, 100_000, service);
             let assignment = berth_assignment(
@@ -9985,7 +9989,7 @@ mod publish_tests {
             assert!(first.candidates.iter().all(|candidate| {
                 candidate.arrival_berth_assignment.kind == BerthAssignmentKind::SimulatedOperational
                     && candidate.arrival_berth_assignment.subtype
-                        == BerthAssignmentSubtype::OsmServiceYard
+                        == BerthAssignmentSubtype::ServiceYard
                     && candidate.departure_berth_assignment == candidate.arrival_berth_assignment
             }));
             assert_eq!(
