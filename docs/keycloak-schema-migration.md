@@ -28,6 +28,15 @@ PG16-`public`-Katalog abgeleitet. Das vollständige Quellartefakt bindet
 SHA-256 `2957676c917012447001576138f0e4cafd56276ce8f2fc61b3110581b05d2042`
 und den Gzip-Hash
 `9013db6b6f04a7453cef7873d2a33aa50b68d72fc1f885a06651db695ad9e291`.
+Der Indexfingerabdruck verwendet bewusst die kompakte Ausgabe von
+`pg_get_indexdef(..., false)`. PostgreSQL qualifiziert darin die Tabelle
+unabhaengig vom `search_path` mit ihrem Schema; die anschliessende
+Schema-Neutralisierung bildet daher sowohl den produktionshistorischen
+`public`-Katalog als auch einen frischen Keycloak-26.7.0-Aufbau auf denselben
+exakten Indexvertrag ab. Die Pretty-Ausgabe ist dafuer ungeeignet, weil sie ein
+im `search_path` sichtbares `public`-Schema aus dem Text auslaesst. Anzahl,
+Name, Relation, Eindeutigkeit, Primary-Flag, Ready-/Valid-Status und kompletter
+Indexausdruck bleiben Bestandteil des SHA-256-Vertrags.
 Die Auswahl ist explizit und verlustfrei: 51 bekannte Game-Relationen beim
 Produktionsstand mit 28 Drizzle-Einträgen, 100 exakt mit dem offiziellen
 Keycloak-26.7.0-Katalog übereinstimmende Relationen und drei über

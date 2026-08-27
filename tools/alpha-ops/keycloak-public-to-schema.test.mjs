@@ -12,6 +12,7 @@ import {
   KEYCLOAK_SCHEMA_BOOTSTRAP_RECEIPT_SCHEMA,
   KEYCLOAK_SCHEMA_RECOVER_RECEIPT_SCHEMA,
   KEYCLOAK_SCHEMA_RECEIPT_SCHEMA,
+  assertCatalogSignature,
   canonicalSha256,
   canonicalJsonBytes,
   createBackupBinding,
@@ -273,6 +274,25 @@ test("committed PG16 catalog pins the exact Keycloak 26.7.0 object contract", as
   assert.throws(
     () => validateKeycloakStateSnapshot({ ...productionLegacy, targetSchemaComment: "forged-bootstrap-origin" }),
     /unbekannten Zielschema-Ursprungsmarker/u,
+  );
+});
+
+test("index catalog is search-path independent and mismatch diagnostics bind count plus hash", async () => {
+  const catalog = await loadKeycloakObjectCatalog();
+  const inspectorSource = await readFile(new URL("./keycloak-public-to-schema.mjs", import.meta.url), "utf8");
+  assert.match(inspectorSource, /pg_get_indexdef\(index_row\.indexrelid, 0, false\) as definition/u);
+  assert.doesNotMatch(inspectorSource, /pg_get_indexdef\(index_row\.indexrelid, 0, true\) as definition/u);
+
+  const observed = {
+    relationNames: catalog.objects.tables,
+    signatures: {
+      ...catalog.signatures,
+      indexes: { count: 246, sha256: "0".repeat(64) },
+    },
+  };
+  assert.throws(
+    () => assertCatalogSignature(observed, catalog, "Keycloak-Schema 'public'"),
+    /indexes.*ist count=246, sha256=0{64}; soll count=246, sha256=2524d8c395776aff44096c8918ca912d520be71fd49b3260e49effb6e43fdd6/u,
   );
 });
 

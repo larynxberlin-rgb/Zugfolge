@@ -386,7 +386,7 @@ async function catalogIndexes(sql, schema, names) {
       index_row.indisunique as unique,
       index_row.indisprimary as primary,
       relation.relname as relation,
-      pg_get_indexdef(index_row.indexrelid, 0, true) as definition
+      pg_get_indexdef(index_row.indexrelid, 0, false) as definition
     from pg_index as index_row
     join pg_class as relation on relation.oid = index_row.indrelid
     join pg_namespace as namespace on namespace.oid = relation.relnamespace
@@ -449,13 +449,16 @@ async function inspectCatalogAtSchema(sql, schema, catalog, relations) {
   });
 }
 
-function assertCatalogSignature(actual, catalog, label) {
+export function assertCatalogSignature(actual, catalog, label) {
   invariant(JSON.stringify(actual.relationNames) === JSON.stringify(catalog.objects.tables), `${label} besitzt nicht exakt den Keycloak-26.7.0-Relationssatz.`);
   for (const name of Object.keys(catalog.signatures)) {
+    const observed = actual.signatures[name];
+    const expected = catalog.signatures[name];
     invariant(
-      actual.signatures[name].count === catalog.signatures[name].count
-        && actual.signatures[name].sha256 === catalog.signatures[name].sha256,
-      `${label}.${name} weicht vom eingecheckten PG16-Keycloak-26.7.0-Objektvertrag ab.`,
+      observed.count === expected.count && observed.sha256 === expected.sha256,
+      `${label}.${name} weicht vom eingecheckten PG16-Keycloak-26.7.0-Objektvertrag ab `
+        + `(ist count=${observed.count}, sha256=${observed.sha256}; `
+        + `soll count=${expected.count}, sha256=${expected.sha256}).`,
     );
   }
   return actual;
