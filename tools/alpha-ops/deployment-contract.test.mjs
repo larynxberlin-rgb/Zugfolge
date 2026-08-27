@@ -446,9 +446,10 @@ test("Produktions-Runbooks erzwingen Schema 33, Keycloak-Up und Hot-Drill in die
 });
 
 test("CI prueft den gepinnten Keycloak mit echter Identitaet und Token vor, nach Up und nach Down", async () => {
-  const [workflow, integration] = await Promise.all([
+  const [workflow, integration, migration] = await Promise.all([
     read(".github/workflows/ci.yml"),
     read("tools/alpha-ops/keycloak-public-to-schema.real-integration.sh"),
+    read("tools/alpha-ops/keycloak-public-to-schema.mjs"),
   ]);
   assert.match(workflow, /keycloak-public-to-schema\.real-integration\.sh[\s\\]+\s+"\$TEST_DATABASE_URL"/u);
   assert.match(workflow, /integration-api:[\s\S]*timeout-minutes: 25[\s\S]*keycloak-public-to-schema\.real-integration\.sh/u);
@@ -460,6 +461,9 @@ test("CI prueft den gepinnten Keycloak mit echter Identitaet und Token vor, nach
   assert.match(integration, /firstName.*lastName.*email.*requiredActions/u);
   assert.match(integration, /response\.error_description/u);
   assert.match(integration, /Keycloak player token failed:/u);
+  assert.match(migration, /collation_row\.collname as "collation"/u);
+  assert.match(migration, /pg_collation as collation_row on collation_row\.oid/u);
+  assert.doesNotMatch(migration, /pg_collation as collation on collation\.oid/u);
   assert.match(integration, /rolled_back_subject[\s\S]*run_mutating_command up "\$evidence_root\/up" "\$evidence_root\/final-up-receipt\.json"[\s\S]*run_runtime_gate preflight[^\n]+final-up-receipt\.json/u);
   assert.match(integration, /"finalState":"migrated"/u);
   assert.ok(

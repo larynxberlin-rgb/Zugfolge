@@ -340,14 +340,14 @@ async function catalogColumns(sql, schema, names) {
       attribute.attnum::int as ordinal,
       attribute.attidentity::text as identity,
       relation.relname as relation,
-      collation.collname as collation,
+      collation_row.collname as "collation",
       attribute.attgenerated::text as generated
     from pg_attribute as attribute
     join pg_class as relation on relation.oid = attribute.attrelid
     join pg_namespace as namespace on namespace.oid = relation.relnamespace
     left join pg_attrdef as default_value
       on default_value.adrelid = attribute.attrelid and default_value.adnum = attribute.attnum
-    left join pg_collation as collation on collation.oid = attribute.attcollation
+    left join pg_collation as collation_row on collation_row.oid = attribute.attcollation
     where namespace.nspname = $1
       and relation.relname = any($2::text[])
       and attribute.attnum > 0
