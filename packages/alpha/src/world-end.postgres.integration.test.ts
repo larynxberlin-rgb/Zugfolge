@@ -50,21 +50,33 @@ async function withTemporaryDatabase(run: (client: any, targetUrl: string) => Pr
   }
 }
 
-async function waitForExclusiveWorldLock(observer: any, backendPid: number) {
-  const deadline = Date.now() + 5_000;
-  while (Date.now() < deadline) {
-    const [waiting] = await observer`
-      select exists (
-        select 1 from pg_locks
-        where pid = ${backendPid}
-          and locktype = 'advisory'
-          and mode = 'ExclusiveLock'
-          and not granted
-      ) as waiting`;
-    if (waiting?.waiting === true) return;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error(`WorldEndService-Backend ${backendPid} wartete nicht auf den offenen Welt-Writer.`);
+async function waitForExclusiveWorldLock(
+  observer: any,
+  backendPid: number,
+  closeAttempt: Promise<unknown>,
+) {
+  const lockWait = async () => {
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      const [waiting] = await observer`
+        select exists (
+          select 1 from pg_locks
+          where pid = ${backendPid}
+            and locktype = 'advisory'
+            and mode = 'ExclusiveLock'
+            and not granted
+        ) as waiting`;
+      if (waiting?.waiting === true) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`WorldEndService-Backend ${backendPid} wartete nicht auf den offenen Welt-Writer.`);
+  };
+  await Promise.race([
+    lockWait(),
+    closeAttempt.then(() => {
+      throw new Error(`WorldEndService-Backend ${backendPid} beendete den Abschluss, ohne auf den offenen Welt-Writer zu warten.`);
+    }),
+  ]);
 }
 
 describe.skipIf(databaseUrl === undefined)("WorldEndService mit echtem PostgreSQL-Writer", () => {
@@ -141,6 +153,7 @@ describe.skipIf(databaseUrl === undefined)("WorldEndService mit echtem PostgreSQ
       const observer = postgres(targetUrl, { max: 1 });
       const openWriter = postgres(targetUrl, { max: 1 });
       const closer = postgres(targetUrl, { max: 1 });
+      const closerDb = drizzle(closer, { schema });
       let signalWriterReady!: () => void;
       let releaseWriter!: () => void;
       const writerReady = new Promise<void>((resolve) => { signalWriterReady = resolve; });
@@ -158,8 +171,7 @@ describe.skipIf(databaseUrl === undefined)("WorldEndService mit echtem PostgreSQ
         });
         await writerReady;
 
-        const closeAttempt = closer.begin("isolation level read committed", async (tx: any) => {
-          const transactionDb = drizzle(tx, { schema });
+        const closeAttempt = closerDb.transaction(async (transactionDb) => {
           return new WorldEndService(transactionDb).close({
             db: transactionDb,
             worldId,
@@ -219,9 +231,9 @@ describe.skipIf(databaseUrl === undefined)("WorldEndService mit echtem PostgreSQ
               });
             },
           });
-        });
+        }, { isolationLevel: "read committed" });
 
-        await waitForExclusiveWorldLock(observer, closerBackend.pid);
+        await waitForExclusiveWorldLock(observer, closerBackend.pid, closeAttempt);
         releaseWriter();
         await writerAttempt;
         const closed = await closeAttempt;
