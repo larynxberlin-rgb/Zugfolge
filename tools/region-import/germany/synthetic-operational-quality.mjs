@@ -6,11 +6,18 @@ import { createInterface } from "node:readline";
 
 import {
   GERMANY_TIMETABLE_ROUTE_REPORT_SCHEMA,
+  GERMANY_TIMETABLE_TRANSFER_DEMAND_SCHEMA,
   TIMETABLE_ROUTE_DERIVATION_RULE,
   TIMETABLE_ROUTE_POLICY_ID,
   TIMETABLE_ROUTE_SELECTION_RULE,
   validatePinnedGtfsSnapshot,
 } from "./timetable-route-compiler.mjs";
+import {
+  DAILY_CIRCULATION_MINIMUM_TURNAROUND_S,
+  DAILY_CIRCULATION_PLAN_SCHEMA,
+  DAILY_CIRCULATION_REPEAT_EVERY_S,
+  DAILY_CIRCULATION_RULE,
+} from "../daily-circulation-v2.mjs";
 
 export const SYNTHETIC_OPERATIONAL_POLICY_ID = "synthetic-operational-b/v2";
 export const SYNTHETIC_OPERATIONAL_POLICY_SCHEMA = "zugfolge-synthetic-operational-policy/v2";
@@ -20,7 +27,9 @@ const DERIVATION_SPEC_SCHEMA = "zugfolge-germany-operational-infrastructure-deri
 const DERIVATION_REPORT_SCHEMA = "germany-operational-v2-derivation-report-v1";
 const DERIVATION_MODE = "deterministic-conservative-v1";
 const COMPLETE_ROUTE_COVERAGE = "complete-pinned-timetable-routes";
-const FULL_ROUTE_INTERLOCKING_MODEL = "deterministic-full-route-node-stellzone-mutex-and-authority/v2";
+const FULL_ROUTE_INTERLOCKING_MODEL = "deterministic-linear-segment-node-stellzone-mutex-and-progressive-authority/v3";
+const TURNAROUND_MODEL = "real-osm-simple-bidirectional-siding-path-with-centered-single-berth-per-target-edge/v1";
+const MOVEMENT_ROUTE_TEMPLATE_MODEL = "daily-plan-scoped-direct-stabling-transfer-continuity/v2";
 const NATIVE_SCHEMA = "operational-infrastructure-v2";
 const NATIVE_MODE = "native-streaming-redb-v1";
 const GTFS_SNAPSHOT_SCHEMA = "zugfolge-gtfs-region-snapshot/v2";
@@ -32,6 +41,7 @@ const DERIVATION_INPUT_ROLES = Object.freeze([
   "signals",
   "switches",
   "timetable-routes",
+  "timetable-transfer-demands",
   "tracks",
 ]);
 const REQUIRED_INPUT_ROLES = Object.freeze([
@@ -43,12 +53,15 @@ const REQUIRED_INPUT_ROLES = Object.freeze([
   "switches",
   "timetable-route-report",
   "timetable-routes",
+  "timetable-transfer-demands",
   "tracks",
 ]);
 const REQUIRED_DIMENSIONS = Object.freeze([
   "directed-edge-geometry",
   "route-versions",
   "complete-pinned-timetable-routes",
+  "daily-physical-circulations",
+  "real-transfer-route-coverage",
   "free-gtfs-route-provenance",
   "station-heads",
   "interlocking-routes",
@@ -71,6 +84,9 @@ const COMPILER_POLICY_KEYS = Object.freeze([
   "minimumPlatformLengthMm",
   "maximumPlatformSnapDistanceMm",
   "minimumOverlapMm",
+  "minimumBerthEndClearanceMm",
+  "maximumDirectDwellMs",
+  "terminalFormationLengthsMm",
   "defaultProtectionSystem",
   "regionBoundaryId",
   "rzueLayoutId",
@@ -96,6 +112,7 @@ const REPORT_INPUT_NAMES = Object.freeze([
   "blocks",
   "conflictResources",
   "timetableRoutes",
+  "transferDemands",
 ]);
 const DERIVATION_ROLE_TO_LAYER = Object.freeze({
   blocks: "blocks",
@@ -104,6 +121,7 @@ const DERIVATION_ROLE_TO_LAYER = Object.freeze({
   signals: "signals",
   switches: "switches",
   "timetable-routes": "timetableRoutes",
+  "timetable-transfer-demands": "transferDemands",
   tracks: "tracks",
 });
 const TIMETABLE_ROUTE_REPORT_KEYS = Object.freeze([
@@ -120,6 +138,9 @@ const TIMETABLE_ROUTE_REPORT_KEYS = Object.freeze([
   "sourceMetrics",
   "provenance",
   "routeSetSha256",
+  "dailyCirculationPlanSha256",
+  "transferSetSha256",
+  "transferDemandsProduced",
   "findings",
   "unresolvedRequired",
 ]);
@@ -145,7 +166,19 @@ const TIMETABLE_ROUTE_METRIC_KEYS = Object.freeze([
   "totalRouteLengthMm",
   "maximumAnchorDistanceMm",
   "zeroMovementStopTransitionCount",
+  "dailyCirculation",
+  "transferRouteCount",
+  "transferRouteLegCount",
+  "transferRouteLengthMm",
   "retainedRoutingTrackCount",
+]);
+const DAILY_CIRCULATION_METRIC_KEYS = Object.freeze([
+  "lotCount",
+  "journeyChainCount",
+  "circulationCount",
+  "rolloverAssignmentCount",
+  "transferDemandCount",
+  "transferLotCount",
 ]);
 const TIMETABLE_ROUTE_EVIDENCE_KEYS = Object.freeze([
   "reportSchema",
@@ -158,6 +191,9 @@ const TIMETABLE_ROUTE_EVIDENCE_KEYS = Object.freeze([
   "routesSha256",
   "gtfsSnapshotBytes",
   "gtfsSnapshotSha256",
+  "transferDemandsSchema",
+  "transferDemandsBytes",
+  "transferDemandsSha256",
   "snapshotHash",
   "archive",
   "archiveSha256",
@@ -168,6 +204,13 @@ const TIMETABLE_ROUTE_EVIDENCE_KEYS = Object.freeze([
   "routeRecordCount",
   "sameStopTransitionCount",
   "routeSetSha256",
+  "dailyCirculationPlanSha256",
+  "transferSetSha256",
+  "transferDemandsProduced",
+  "dailyCirculation",
+  "transferRouteCount",
+  "transferRouteLegCount",
+  "transferRouteLengthMm",
   "realGeometry",
   "simulatedOperationalAssignment",
   "realInterlockingFactsClaimed",
@@ -250,10 +293,24 @@ function validateCompilerPolicy(policy) {
   for (const field of ["sourceId", "derivationRule", "defaultProtectionSystem", "regionBoundaryId", "rzueLayoutId"]) {
     invariant(typeof policy[field] === "string" && policy[field] !== "", `compilerPolicy.${field} fehlt.`);
   }
-  for (const field of ["unknownMainlineSpeedKmh", "unknownServiceSpeedKmh", "minimumPlatformLengthMm", "maximumPlatformSnapDistanceMm", "minimumOverlapMm"]) {
+  for (const field of [
+    "unknownMainlineSpeedKmh",
+    "unknownServiceSpeedKmh",
+    "minimumPlatformLengthMm",
+    "maximumPlatformSnapDistanceMm",
+    "minimumOverlapMm",
+    "minimumBerthEndClearanceMm",
+    "maximumDirectDwellMs",
+  ]) {
     positiveInteger(policy[field], `compilerPolicy.${field}`);
   }
   nonNegativeInteger(policy.unknownGradientAbsPermille, "compilerPolicy.unknownGradientAbsPermille");
+  invariant(
+    Array.isArray(policy.terminalFormationLengthsMm)
+      && policy.terminalFormationLengthsMm.length > 0
+      && policy.terminalFormationLengthsMm.every((length, index, values) => Number.isSafeInteger(length) && length > 0 && (index === 0 || values[index - 1] < length)),
+    "compilerPolicy.terminalFormationLengthsMm ist keine nichtleere, streng aufsteigende Formationslaengenliste.",
+  );
   return policy;
 }
 
@@ -287,6 +344,7 @@ export function validateSyntheticOperationalPolicy(policy) {
     invariant(typeof rule.effect === "string" && rule.effect !== "", `Synthetic-Operational-Regel ${rule.id} besitzt keine Wirkung.`);
   }
   invariant(ruleIds.has("pinned-timetable-route-coverage/v1"), "Synthetic-Operational-Policy besitzt keine vollstaendige timetableRoutes-Regel.");
+  invariant(ruleIds.has("daily-physical-circulation-and-transfer-coverage/v1"), "Synthetic-Operational-Policy besitzt keine physisch geschlossene Tagesumlauf- und Transferregel.");
   invariant(ruleIds.has("free-gtfs-route-provenance/v2"), "Synthetic-Operational-Policy besitzt keine freie GTFS-Provenienzregel.");
   validateCompilerPolicy(policy.compilerPolicy);
   exactKeys(policy.publicClaims, [
@@ -338,18 +396,111 @@ function validateReportInputEvidence(value, label) {
   positiveInteger(value.records, `${label}.records`);
 }
 
+function validateMovementRouteTemplatesEvidence(value, { operationalStateHash, transferSetSha256 }, label) {
+  exactKeys(value, ["file", "bytes", "sha256", "stateHash", "operationalStateHash", "timetableTransferSetSha256"], label);
+  const path = regularRelativePath(value.file, `${label}.file`);
+  invariant(
+    basename(path) === path && path.endsWith(".movement-route-templates-v2.json"),
+    `${label}.file ist kein einzelnes Movement-Route-Templates-v2-Sidecar.`,
+  );
+  positiveInteger(value.bytes, `${label}.bytes`);
+  for (const field of ["sha256", "stateHash", "operationalStateHash", "timetableTransferSetSha256"]) {
+    invariant(SHA256.test(value[field]), `${label}.${field} ist ungueltig.`);
+  }
+  invariant(value.sha256 !== value.stateHash, `${label} trennt Datei- und Zustandshash nicht.`);
+  invariant(value.operationalStateHash === operationalStateHash, `${label} bindet einen anderen Operational-v2-Zustand.`);
+  invariant(value.timetableTransferSetSha256 === transferSetSha256, `${label} bindet ein anderes Timetable-Transfer-Set.`);
+  return value;
+}
+
+function validateNativeTimetableRouteEvidence(value, report) {
+  exactKeys(value, [
+    "timetableRoutes", "transferDemands", "dailyPlanSha256", "transferSetSha256", "circulationCount",
+    "transferDemandCount", "transferLotCount", "turnaroundDemandCount", "turnaroundPairCount",
+    "movementRouteTemplates",
+  ], "Nativer Bericht.timetableRouteEvidence");
+  validateReportInputEvidence(value.timetableRoutes, "Nativer Bericht.timetableRouteEvidence.timetableRoutes");
+  validateReportInputEvidence(value.transferDemands, "Nativer Bericht.timetableRouteEvidence.transferDemands");
+  invariant(
+    sameCanonical(value.timetableRoutes, report.inputs.timetableRoutes)
+      && sameCanonical(value.transferDemands, report.inputs.transferDemands),
+    "Nativer Bericht wiederholt abweichende Timetable-Routen- oder Transfer-Dateibindungen.",
+  );
+  invariant(SHA256.test(value.dailyPlanSha256) && SHA256.test(value.transferSetSha256), "Nativer Bericht besitzt keinen Tagesplan- oder Transfer-Set-Hash.");
+  for (const field of ["circulationCount", "transferDemandCount", "transferLotCount"]) {
+    positiveInteger(value[field], `Nativer Bericht.timetableRouteEvidence.${field}`);
+  }
+  for (const field of ["turnaroundDemandCount", "turnaroundPairCount"]) {
+    nonNegativeInteger(value[field], `Nativer Bericht.timetableRouteEvidence.${field}`);
+  }
+  invariant(
+    value.transferDemandCount + value.turnaroundDemandCount === value.circulationCount
+      && value.transferLotCount <= value.transferDemandCount
+      && value.turnaroundPairCount <= value.turnaroundDemandCount,
+    "Nativer Bericht schliesst Tagesumlauf-, Transfer- und Turnaround-Anforderungen nicht widerspruchsfrei.",
+  );
+  const movement = validateMovementRouteTemplatesEvidence(value.movementRouteTemplates, {
+    operationalStateHash: report.candidate.stateHash,
+    transferSetSha256: value.transferSetSha256,
+  }, "Nativer Bericht.timetableRouteEvidence.movementRouteTemplates");
+  invariant(sameCanonical(movement, report.candidate.movementRouteTemplates), "Nativer Bericht bindet im Candidate und Timetable-Nachweis verschiedene Movement-Route-Templates.");
+  return value;
+}
+
 export function coverageFromSyntheticOperationalDerivationReport(report) {
   exactKeys(report.counts, ["source", "candidate", "provenance"], "Nativer Bericht.counts");
-  exactKeys(report.counts.source, ["tracks", "orderableTracks", "platforms", "switches", "signals", "blocks", "conflictResources", "timetableRoutes", "timetableLegs"], "Nativer Bericht.counts.source");
-  exactKeys(report.counts.candidate, ["directedEdges", "edgeGeometries", "routeVersions", "interlockingRoutes", "signals", "switches", "blockResources", "platformIntervals", "regionBoundaries"], "Nativer Bericht.counts.candidate");
-  exactKeys(report.counts.provenance, ["observedForwardSpeeds", "observedBackwardSpeeds", "simulatedSpeeds", "observedProtectionAssignments", "simulatedProtectionAssignments", "matchedPlatformIntervals", "excludedPlatformEvidence", "syntheticBoundarySignals"], "Nativer Bericht.counts.provenance");
+  exactKeys(report.counts.source, [
+    "tracks", "orderableTracks", "platforms", "switches", "signals", "blocks", "conflictResources",
+    "timetableRoutes", "timetableLegs", "transferDemands", "transferLots", "turnaroundDemands", "turnaroundPairs",
+  ], "Nativer Bericht.counts.source");
+  exactKeys(report.counts.candidate, [
+    "directedEdges", "edgeGeometries", "routeVersions", "interlockingRoutes", "signals", "switches",
+    "blockResources", "platformIntervals", "regionBoundaries", "directTemplates", "stablingTemplates", "transferTemplates",
+  ], "Nativer Bericht.counts.candidate");
+  exactKeys(report.counts.provenance, [
+    "observedForwardSpeeds", "observedBackwardSpeeds", "simulatedSpeeds", "observedProtectionAssignments",
+    "simulatedProtectionAssignments", "matchedPlatformIntervals", "excludedPlatformEvidence", "syntheticBoundarySignals",
+    "turnaroundRouteVersions", "turnaroundInterlockingRoutes", "transferRouteVersions", "transferInterlockingRoutes",
+  ], "Nativer Bericht.counts.provenance");
   for (const [name, value] of Object.entries(report.counts.source)) nonNegativeInteger(value, `Nativer Bericht.counts.source.${name}`);
   for (const [name, value] of Object.entries(report.counts.provenance)) nonNegativeInteger(value, `Nativer Bericht.counts.provenance.${name}`);
-  for (const [name, value] of Object.entries(report.counts.candidate)) positiveInteger(value, `Nativer Bericht.counts.candidate.${name}`);
-  invariant(report.counts.source.timetableRoutes > 0 && report.counts.source.timetableLegs > 0, "Nativer Bericht besitzt keine vollstaendige timetableRoutes-Abdeckung.");
-  invariant(report.counts.candidate.routeVersions === report.counts.source.timetableRoutes, "RouteVersions und gepinnte timetableRoutes laufen auseinander.");
-  invariant(report.counts.candidate.interlockingRoutes === report.counts.source.timetableRoutes, "Gesamtfahrstrassen und gepinnte timetableRoutes laufen auseinander.");
+  for (const [name, value] of Object.entries(report.counts.candidate)) {
+    if (["directTemplates", "stablingTemplates"].includes(name)) nonNegativeInteger(value, `Nativer Bericht.counts.candidate.${name}`);
+    else positiveInteger(value, `Nativer Bericht.counts.candidate.${name}`);
+  }
+  invariant(
+    report.counts.source.timetableRoutes > 0
+      && report.counts.source.timetableLegs > 0
+      && report.counts.source.transferDemands > 0
+      && report.counts.source.transferLots > 0,
+    "Nativer Bericht besitzt keine vollstaendige Timetable-/Transfer-Abdeckung.",
+  );
+  invariant(
+    report.counts.candidate.routeVersions
+      === report.counts.source.timetableRoutes
+        + report.counts.provenance.turnaroundRouteVersions
+        + report.counts.provenance.transferRouteVersions,
+    "RouteVersions und gepinnte Timetable-/Turnaround-/Transfer-Routen laufen auseinander.",
+  );
+  invariant(
+    report.counts.candidate.interlockingRoutes
+      === report.counts.source.timetableLegs
+        + report.counts.provenance.turnaroundInterlockingRoutes
+        + report.counts.provenance.transferInterlockingRoutes,
+    "Gesamtfahrstrassen und gepinnte Timetable-/Turnaround-/Transfer-Legs laufen auseinander.",
+  );
   invariant(report.counts.provenance.syntheticBoundarySignals === report.counts.source.timetableLegs, "Synthetische Grenzsignale und gepinnte timetableRoute-Legs laufen auseinander.");
+  invariant(
+    report.counts.provenance.transferRouteVersions === report.counts.source.transferDemands
+      && report.counts.candidate.transferTemplates
+        === report.counts.source.transferDemands * report.policy.spec.terminalFormationLengthsMm.length,
+    "Transfer-Routenversionen oder formationsspezifische Templates laufen von den Transferanforderungen weg.",
+  );
+  invariant(
+    report.counts.candidate.directTemplates + report.counts.candidate.stablingTemplates
+      >= report.counts.source.turnaroundPairs * report.policy.spec.terminalFormationLengthsMm.length,
+    "Nicht jedes Turnaround-Paar besitzt formationsspezifische Direct-/Stabling-Kontinuitaet.",
+  );
   invariant(typeof report.policy?.spec?.rzueLayoutId === "string" && report.policy.spec.rzueLayoutId !== "", "Nativer Bericht besitzt kein gebundenes RZUE-Layout.");
   return {
     blockResources: report.counts.candidate.blockResources,
@@ -366,12 +517,17 @@ export function coverageFromSyntheticOperationalDerivationReport(report) {
 }
 
 export function validateSyntheticOperationalDerivationReport(report, { releaseId, annualSpecification, annualSpecificationProof, inputBindings, candidate }) {
-  exactKeys(report, ["schema", "mode", "infraReleaseId", "policy", "inputs", "candidate", "counts", "scope", "routeCoverage", "activationEligible", "unresolvedRequired", "unresolvedRequiredDimensions", "realInterlockingFactsClaimed", "candidateProduced"], "Nativer Deutschland-Operational-v2-Bericht");
+  exactKeys(report, ["schema", "mode", "infraReleaseId", "policy", "inputs", "candidate", "timetableRouteEvidence", "counts", "scope", "routeCoverage", "activationEligible", "unresolvedRequired", "unresolvedRequiredDimensions", "realInterlockingFactsClaimed", "realGeometry", "simulatedOperationalAssignment", "candidateProduced"], "Nativer Deutschland-Operational-v2-Bericht");
   invariant(report.schema === DERIVATION_REPORT_SCHEMA && report.mode === DERIVATION_MODE, "Nativer Deutschland-Operational-v2-Bericht verletzt Schema oder Modus.");
   invariant(report.infraReleaseId === releaseId, "Nativer Deutschland-Operational-v2-Bericht verletzt die Releasebindung.");
   invariant(report.activationEligible === true && report.unresolvedRequired === 0 && Array.isArray(report.unresolvedRequiredDimensions) && report.unresolvedRequiredDimensions.length === 0, "Nativer Deutschland-Operational-v2-Bericht ist nicht vollstaendig geschlossen.");
   invariant(report.routeCoverage === COMPLETE_ROUTE_COVERAGE && report.candidateProduced === true, "Nativer Deutschland-Operational-v2-Bericht besitzt keine vollstaendige gepinnte Fahrwegabdeckung.");
-  invariant(report.realInterlockingFactsClaimed === false, "Nativer Deutschland-Operational-v2-Bericht behauptet reale Stellwerksfakten.");
+  invariant(
+    report.realInterlockingFactsClaimed === false
+      && report.realGeometry === true
+      && report.simulatedOperationalAssignment === true,
+    "Nativer Deutschland-Operational-v2-Bericht verletzt die ehrliche Geometrie-/Simulationsgrenze.",
+  );
   exactKeys(report.policy, ["id", "sha256", "spec"], "Nativer Bericht.policy");
   invariant(report.policy.id === SYNTHETIC_OPERATIONAL_POLICY_ID && sameCanonical(report.policy.spec, annualSpecification.policy), "Nativer Bericht wiederholt eine abweichende Compilerpolicy.");
   invariant(report.policy.sha256 === syntheticOperationalSha256(annualSpecification.policy), "Nativer Bericht besitzt keinen kanonischen Compilerpolicy-Hash.");
@@ -391,15 +547,18 @@ export function validateSyntheticOperationalDerivationReport(report, { releaseId
     validateReportInputEvidence(evidence, `Nativer Bericht.inputs.${name}`);
     const expected = byRole.get(role);
     invariant(expected !== undefined, `Closure-Input ${role} fehlt.`);
+    const configuredLayer = annualSpecification.layers[name];
+    const configuredPath = name === "transferDemands" ? configuredLayer?.path : configuredLayer;
+    invariant(typeof configuredPath === "string" && configuredPath !== "", `Jahresspezifikation.layers.${name} besitzt keinen geschlossenen Dateipfad.`);
     invariant(
-      evidence.path.replaceAll("\\", "/") === annualSpecification.layers[name].replaceAll("\\", "/")
+      evidence.path.replaceAll("\\", "/") === configuredPath.replaceAll("\\", "/")
         && evidence.bytes === expected.bytes
         && evidence.sha256 === expected.sha256
         && evidence.records === expected.records,
       `Nativer Bericht bindet nicht dieselben Bytes und Records fuer ${role}.`,
     );
   }
-  exactKeys(report.candidate, ["bytes", "sha256", "stateHash", "validationMode"], "Nativer Bericht.candidate");
+  exactKeys(report.candidate, ["bytes", "sha256", "stateHash", "validationMode", "movementRouteTemplates"], "Nativer Bericht.candidate");
   invariant(
     report.candidate.bytes === candidate.bytes
       && report.candidate.sha256 === candidate.sha256
@@ -407,30 +566,87 @@ export function validateSyntheticOperationalDerivationReport(report, { releaseId
       && report.candidate.validationMode === NATIVE_MODE,
     "Nativer Bericht bindet nicht denselben validierten Candidate.",
   );
-  exactKeys(report.scope, ["routeModel", "interlockingModel", "platformModel", "capacityBias", "minimumOverlapMmPolicy"], "Nativer Bericht.scope");
+  validateNativeTimetableRouteEvidence(report.timetableRouteEvidence, report);
+  exactKeys(report.scope, [
+    "routeModel", "interlockingModel", "platformModel", "capacityBias", "minimumOverlapMmPolicy",
+    "turnaroundModel", "minimumBerthEndClearanceMmPolicy", "maximumDirectDwellMsPolicy",
+    "terminalFormationLengthsMm", "movementRouteTemplateModel",
+  ], "Nativer Bericht.scope");
   invariant(
     report.scope.routeModel === COMPLETE_ROUTE_COVERAGE
       && report.scope.interlockingModel === FULL_ROUTE_INTERLOCKING_MODEL
+      && report.scope.platformModel === "deterministic-nearest-observed-track-within-policy-radius/v1"
       && report.scope.capacityBias === "conservative-under-capacity",
     "Nativer Bericht verletzt Fahrweg-, Gesamtfahrstrassen- oder Kapazitaetsscope.",
   );
-  invariant(report.scope.minimumOverlapMmPolicy === annualSpecification.policy.minimumOverlapMm, "Nativer Bericht besitzt eine abweichende Durchrutschweg-Policy.");
+  invariant(
+    report.scope.minimumOverlapMmPolicy === annualSpecification.policy.minimumOverlapMm
+      && report.scope.turnaroundModel === TURNAROUND_MODEL
+      && report.scope.minimumBerthEndClearanceMmPolicy === annualSpecification.policy.minimumBerthEndClearanceMm
+      && report.scope.maximumDirectDwellMsPolicy === annualSpecification.policy.maximumDirectDwellMs
+      && sameCanonical(report.scope.terminalFormationLengthsMm, annualSpecification.policy.terminalFormationLengthsMm)
+      && report.scope.movementRouteTemplateModel === MOVEMENT_ROUTE_TEMPLATE_MODEL,
+    "Nativer Bericht wiederholt abweichende Overlap-, Turnaround- oder Movement-Template-Policies.",
+  );
+  invariant(
+    report.counts.source.timetableRoutes === report.timetableRouteEvidence.timetableRoutes.records
+      && report.counts.source.transferDemands === report.timetableRouteEvidence.transferDemandCount
+      && report.counts.source.transferLots === report.timetableRouteEvidence.transferLotCount
+      && report.counts.source.turnaroundDemands === report.timetableRouteEvidence.turnaroundDemandCount
+      && report.counts.source.turnaroundPairs === report.timetableRouteEvidence.turnaroundPairCount,
+    "Nativer Bericht zaehlt in Inputs, Tagesplan und Source-Coverage verschiedene Fahrplananforderungen.",
+  );
   const coverage = coverageFromSyntheticOperationalDerivationReport(report);
   validateCoverage(coverage);
   return coverage;
 }
 
-function validateDerivationBinding(binding, candidate) {
-  fileBinding(binding, "derivationReport", ["schema", "mode", "routeCoverage", "activationEligible", "unresolvedRequired", "realInterlockingFactsClaimed", "candidate"]);
+function validateDerivationBinding(binding, candidate, timetableRouteEvidence) {
+  fileBinding(binding, "derivationReport", [
+    "schema", "mode", "routeCoverage", "activationEligible", "unresolvedRequired", "realInterlockingFactsClaimed",
+    "realGeometry", "simulatedOperationalAssignment", "candidate", "timetableRouteEvidence",
+  ]);
   invariant(binding.schema === DERIVATION_REPORT_SCHEMA && binding.mode === DERIVATION_MODE && binding.routeCoverage === COMPLETE_ROUTE_COVERAGE, "Closure-Receipt bindet keinen vollstaendigen nativen Ableitungsbericht.");
-  invariant(binding.activationEligible === true && binding.unresolvedRequired === 0 && binding.realInterlockingFactsClaimed === false, "Closure-Receipt bindet keinen geschlossenen ehrlichen Ableitungsbericht.");
-  exactKeys(binding.candidate, ["bytes", "sha256", "stateHash", "validationMode"], "derivationReport.candidate");
+  invariant(
+    binding.activationEligible === true
+      && binding.unresolvedRequired === 0
+      && binding.realInterlockingFactsClaimed === false
+      && binding.realGeometry === true
+      && binding.simulatedOperationalAssignment === true,
+    "Closure-Receipt bindet keinen geschlossenen ehrlichen Ableitungsbericht.",
+  );
+  exactKeys(binding.candidate, ["bytes", "sha256", "stateHash", "validationMode", "movementRouteTemplates"], "derivationReport.candidate");
   invariant(
     binding.candidate.bytes === candidate.bytes
       && binding.candidate.sha256 === candidate.sha256
       && binding.candidate.stateHash === candidate.stateHash
       && binding.candidate.validationMode === NATIVE_MODE,
     "Closure-Receipt und Ableitungsbericht binden verschiedene Candidates.",
+  );
+  exactKeys(binding.timetableRouteEvidence, [
+    "timetableRoutes", "transferDemands", "dailyPlanSha256", "transferSetSha256", "circulationCount",
+    "transferDemandCount", "transferLotCount", "turnaroundDemandCount", "turnaroundPairCount",
+    "movementRouteTemplates",
+  ], "derivationReport.timetableRouteEvidence");
+  validateReportInputEvidence(binding.timetableRouteEvidence.timetableRoutes, "derivationReport.timetableRouteEvidence.timetableRoutes");
+  validateReportInputEvidence(binding.timetableRouteEvidence.transferDemands, "derivationReport.timetableRouteEvidence.transferDemands");
+  for (const field of ["turnaroundDemandCount", "turnaroundPairCount"]) {
+    nonNegativeInteger(binding.timetableRouteEvidence[field], `derivationReport.timetableRouteEvidence.${field}`);
+  }
+  const movement = validateMovementRouteTemplatesEvidence(binding.candidate.movementRouteTemplates, {
+    operationalStateHash: candidate.stateHash,
+    transferSetSha256: binding.timetableRouteEvidence.transferSetSha256,
+  }, "derivationReport.candidate.movementRouteTemplates");
+  invariant(sameCanonical(movement, binding.timetableRouteEvidence.movementRouteTemplates), "Closure-Receipt bindet zwei verschiedene Movement-Route-Templates-Nachweise.");
+  invariant(
+    binding.timetableRouteEvidence.dailyPlanSha256 === timetableRouteEvidence.dailyCirculationPlanSha256
+      && binding.timetableRouteEvidence.transferSetSha256 === timetableRouteEvidence.transferSetSha256
+      && binding.timetableRouteEvidence.transferDemands.bytes === timetableRouteEvidence.transferDemandsBytes
+      && binding.timetableRouteEvidence.transferDemands.sha256 === timetableRouteEvidence.transferDemandsSha256
+      && binding.timetableRouteEvidence.circulationCount === timetableRouteEvidence.dailyCirculation.circulationCount
+      && binding.timetableRouteEvidence.transferDemandCount === timetableRouteEvidence.transferRouteCount
+      && binding.timetableRouteEvidence.transferLotCount === timetableRouteEvidence.dailyCirculation.transferLotCount,
+    "Closure-Receipt und nativer Bericht binden verschiedene Tagesplan-/Transfer-Nachweise.",
   );
 }
 
@@ -439,6 +655,301 @@ function sha256Proof(value, label) {
   positiveInteger(value.bytes, `${label}.bytes`);
   invariant(SHA256.test(value.sha256), `${label}.sha256 ist ungueltig.`);
   return value;
+}
+
+function nonEmptyString(value, label) {
+  invariant(typeof value === "string" && value.trim() === value && value !== "", `${label} ist keine nichtleere randfreie Zeichenkette.`);
+  return value;
+}
+
+function exactNonEmptyStrings(value, label, { allowEmpty = false } = {}) {
+  invariant(Array.isArray(value) && (allowEmpty || value.length > 0), `${label} ist keine ${allowEmpty ? "" : "nichtleere "}Kennungsliste.`);
+  for (const [index, entry] of value.entries()) nonEmptyString(entry, `${label}[${index}]`);
+  invariant(new Set(value).size === value.length, `${label} enthaelt Duplikate.`);
+  return value;
+}
+
+function validateDailyCirculationMetrics(value, label) {
+  exactKeys(value, DAILY_CIRCULATION_METRIC_KEYS, label);
+  for (const field of DAILY_CIRCULATION_METRIC_KEYS) positiveInteger(value[field], `${label}.${field}`);
+  invariant(value.transferDemandCount <= value.circulationCount, `${label} besitzt mehr Transferanforderungen als Umlaeufe.`);
+  invariant(value.transferLotCount <= value.lotCount, `${label} besitzt mehr Transferlose als Lose.`);
+  invariant(value.rolloverAssignmentCount === value.circulationCount, `${label} bindet nicht genau einen Rollover je Umlauf.`);
+  return value;
+}
+
+function validateCirculationEndpoint(value, label) {
+  exactKeys(value, ["legId", "locationId", "physicalStopId", "timeS"], label);
+  for (const field of ["legId", "locationId", "physicalStopId"]) nonEmptyString(value[field], `${label}.${field}`);
+  nonNegativeInteger(value.timeS, `${label}.timeS`);
+  return value;
+}
+
+const DAILY_TRANSFER_DEMAND_KEYS = Object.freeze([
+  "id",
+  "lotId",
+  "assetCompatibilityKey",
+  "sourceCirculationId",
+  "targetCirculationId",
+  "sourcePassengerLegId",
+  "targetPassengerLegId",
+  "sourceLocationId",
+  "targetLocationId",
+  "sourcePhysicalStopId",
+  "targetPhysicalStopId",
+  "earliestDepartureS",
+  "latestArrivalS",
+  "availableWindowS",
+  "movementKind",
+]);
+const TRANSFER_ROUTE_KEYS = Object.freeze([
+  ...DAILY_TRANSFER_DEMAND_KEYS,
+  "sourcePassengerRouteVersionId",
+  "targetPassengerRouteVersionId",
+  "formationLengthsMm",
+  "routeVersionId",
+  "templateId",
+  "legs",
+  "totalLengthMm",
+  "weightedCostMm",
+  "minimumRuntimeMs",
+]);
+
+function sameOrderedStrings(left, right) {
+  return Array.isArray(left) && Array.isArray(right) && JSON.stringify(left) === JSON.stringify(right);
+}
+
+function dailyPlanSha256(plan) {
+  const body = { ...plan };
+  delete body.planSha256;
+  return syntheticOperationalSha256({ schema: DAILY_CIRCULATION_PLAN_SCHEMA, value: body });
+}
+
+/**
+ * Validiert den kompletten v1-Transfer-Sidecar semantisch. Die Rueckgabe ist
+ * absichtlich klein: Closure und Downstream-Gates transportieren nur
+ * reproduzierte Hashes, Dateibeweise und gepruefte Zaehler weiter.
+ */
+export function validateSyntheticOperationalTimetableTransferDemands({
+  releaseId,
+  transferDemands,
+  transferDemandsBinding,
+  routeReport,
+  timetableRoutesProof,
+}) {
+  exactKeys(transferDemands, [
+    "schema",
+    "infraReleaseId",
+    "gtfsSnapshotHash",
+    "dailyPlan",
+    "formationLengthsMm",
+    "transferRoutes",
+    "transferSetSha256",
+  ], "Timetable-Transfer-Demands");
+  invariant(
+    transferDemands.schema === GERMANY_TIMETABLE_TRANSFER_DEMAND_SCHEMA
+      && transferDemands.infraReleaseId === releaseId
+      && transferDemands.gtfsSnapshotHash === routeReport.gtfsBinding?.snapshotHash,
+    "Timetable-Transfer-Demands verletzt Schema, Release- oder GTFS-Snapshot-Bindung.",
+  );
+  fileBinding(transferDemandsBinding, "Timetable-Transfer-Demands-Input", ["role", "records"]);
+  invariant(transferDemandsBinding.role === "timetable-transfer-demands", "Timetable-Transfer-Demands-Input besitzt eine falsche Rolle.");
+
+  const formationLengthsMm = transferDemands.formationLengthsMm;
+  invariant(
+    Array.isArray(formationLengthsMm)
+      && formationLengthsMm.length > 0
+      && formationLengthsMm.every((length, index, values) => Number.isSafeInteger(length) && length > 0 && (index === 0 || values[index - 1] < length)),
+    "Timetable-Transfer-Demands.formationLengthsMm ist nicht streng aufsteigend und positiv.",
+  );
+
+  const plan = transferDemands.dailyPlan;
+  exactKeys(plan, [
+    "schema",
+    "rule",
+    "gtfsReleaseId",
+    "repeatEveryS",
+    "minimumTurnaroundS",
+    "metrics",
+    "circulations",
+    "rolloverAssignments",
+    "transferDemands",
+    "planSha256",
+  ], "Timetable-Transfer-Demands.dailyPlan");
+  invariant(
+    plan.schema === DAILY_CIRCULATION_PLAN_SCHEMA
+      && plan.rule === DAILY_CIRCULATION_RULE
+      && plan.repeatEveryS === DAILY_CIRCULATION_REPEAT_EVERY_S
+      && plan.minimumTurnaroundS === DAILY_CIRCULATION_MINIMUM_TURNAROUND_S
+      && nonEmptyString(plan.gtfsReleaseId, "Timetable-Transfer-Demands.dailyPlan.gtfsReleaseId") !== "",
+    "Timetable-Transfer-Demands.dailyPlan verletzt Schema, Regel oder Tagesperiodenvertrag.",
+  );
+  invariant(SHA256.test(plan.planSha256) && plan.planSha256 === dailyPlanSha256(plan), "Timetable-Transfer-Demands.dailyPlan.planSha256 ist nicht reproduzierbar.");
+  const metrics = validateDailyCirculationMetrics(plan.metrics, "Timetable-Transfer-Demands.dailyPlan.metrics");
+  invariant(Array.isArray(plan.circulations) && plan.circulations.length === metrics.circulationCount, "Daily-Circulation-Umlaufzahl driftet von den Metriken.");
+  invariant(Array.isArray(plan.rolloverAssignments) && plan.rolloverAssignments.length === metrics.rolloverAssignmentCount, "Daily-Circulation-Rolloverzahl driftet von den Metriken.");
+  invariant(Array.isArray(plan.transferDemands) && plan.transferDemands.length === metrics.transferDemandCount, "Daily-Circulation-Transferzahl driftet von den Metriken.");
+
+  const circulationById = new Map();
+  const allJourneyChainIds = new Set();
+  const allPassengerLegIds = new Set();
+  const allPassengerTrainRunIds = new Set();
+  let previousCirculationId = null;
+  for (const [index, circulation] of plan.circulations.entries()) {
+    const label = `Timetable-Transfer-Demands.dailyPlan.circulations[${index}]`;
+    exactKeys(circulation, [
+      "id", "lotId", "serviceLineId", "assetCompatibilityKey", "journeyChainIds", "passengerLegIds",
+      "passengerTrainRunIds", "start", "end",
+    ], label);
+    for (const field of ["id", "lotId", "serviceLineId", "assetCompatibilityKey"]) nonEmptyString(circulation[field], `${label}.${field}`);
+    invariant(circulation.assetCompatibilityKey === circulation.lotId, `${label} driftet zwischen Los und Fahrzeugkompatibilitaet.`);
+    exactNonEmptyStrings(circulation.journeyChainIds, `${label}.journeyChainIds`);
+    exactNonEmptyStrings(circulation.passengerLegIds, `${label}.passengerLegIds`);
+    exactNonEmptyStrings(circulation.passengerTrainRunIds, `${label}.passengerTrainRunIds`);
+    invariant(circulation.passengerLegIds.length === circulation.passengerTrainRunIds.length, `${label} bindet Legs und physische Zuglaeufe nicht 1:1.`);
+    const start = validateCirculationEndpoint(circulation.start, `${label}.start`);
+    const end = validateCirculationEndpoint(circulation.end, `${label}.end`);
+    invariant(start.legId === circulation.passengerLegIds[0] && end.legId === circulation.passengerLegIds.at(-1), `${label} driftet zwischen Passenger-Legs und Endpunkten.`);
+    invariant(previousCirculationId === null || compareText(previousCirculationId, circulation.id) < 0, "Daily-Circulation-Umlaeufe sind nicht streng nach ID sortiert.");
+    previousCirculationId = circulation.id;
+    invariant(!circulationById.has(circulation.id), `Daily-Circulation-Umlauf ${circulation.id} ist doppelt.`);
+    circulationById.set(circulation.id, circulation);
+    for (const journeyChainId of circulation.journeyChainIds) invariant(!allJourneyChainIds.has(journeyChainId) && allJourneyChainIds.add(journeyChainId), `JourneyChain ${journeyChainId} ist mehreren Umlaeufen zugeordnet.`);
+    for (const passengerLegId of circulation.passengerLegIds) invariant(!allPassengerLegIds.has(passengerLegId) && allPassengerLegIds.add(passengerLegId), `Passenger-Leg ${passengerLegId} ist mehreren Umlaeufen zugeordnet.`);
+    for (const trainRunId of circulation.passengerTrainRunIds) invariant(!allPassengerTrainRunIds.has(trainRunId) && allPassengerTrainRunIds.add(trainRunId), `Passenger-TrainRun ${trainRunId} ist mehreren Umlaeufen zugeordnet.`);
+  }
+  invariant(allJourneyChainIds.size === metrics.journeyChainCount, "Daily-Circulation-JourneyChain-Zahl driftet von den Metriken.");
+  invariant(new Set(plan.circulations.map(({ lotId }) => lotId)).size === metrics.lotCount, "Daily-Circulation-Loszahl driftet von den Metriken.");
+
+  const rolloverSources = new Set();
+  const rolloverTargets = new Set();
+  const transferPairs = new Set();
+  let previousRolloverSource = null;
+  for (const [index, rollover] of plan.rolloverAssignments.entries()) {
+    const label = `Timetable-Transfer-Demands.dailyPlan.rolloverAssignments[${index}]`;
+    exactKeys(rollover, ["sourceCirculationId", "targetCirculationId", "kind"], label);
+    const sourceId = nonEmptyString(rollover.sourceCirculationId, `${label}.sourceCirculationId`);
+    const targetId = nonEmptyString(rollover.targetCirculationId, `${label}.targetCirculationId`);
+    invariant(rollover.kind === "same-location" || rollover.kind === "transfer", `${label}.kind ist unbekannt.`);
+    const source = circulationById.get(sourceId);
+    const target = circulationById.get(targetId);
+    invariant(source !== undefined && target !== undefined, `${label} bindet einen unbekannten Umlauf.`);
+    invariant(source.lotId === target.lotId, `${label} ueberschreitet die Losgrenze.`);
+    invariant(!rolloverSources.has(sourceId) && !rolloverTargets.has(targetId), "Daily-Circulation-Rollover ist keine eindeutige Permutation.");
+    rolloverSources.add(sourceId);
+    rolloverTargets.add(targetId);
+    invariant(previousRolloverSource === null || compareText(previousRolloverSource, sourceId) < 0, "Daily-Circulation-Rollover sind nicht streng nach Quell-ID sortiert.");
+    previousRolloverSource = sourceId;
+    const sameLocation = source.end.locationId === target.start.locationId;
+    invariant((rollover.kind === "same-location") === sameLocation, `${label} klassifiziert den physischen Ortswechsel falsch.`);
+    if (!sameLocation) transferPairs.add(`${sourceId}\u0000${targetId}`);
+  }
+  invariant(rolloverSources.size === circulationById.size && rolloverTargets.size === circulationById.size, "Daily-Circulation-Rollover ist keine vollstaendige Permutation.");
+
+  const dailyDemandById = new Map();
+  let previousDemandId = null;
+  for (const [index, demand] of plan.transferDemands.entries()) {
+    const label = `Timetable-Transfer-Demands.dailyPlan.transferDemands[${index}]`;
+    exactKeys(demand, DAILY_TRANSFER_DEMAND_KEYS, label);
+    for (const field of DAILY_TRANSFER_DEMAND_KEYS.slice(0, 11)) nonEmptyString(demand[field], `${label}.${field}`);
+    invariant(demand.movementKind === "train", `${label}.movementKind ist kein physischer Zuglauf.`);
+    const source = circulationById.get(demand.sourceCirculationId);
+    const target = circulationById.get(demand.targetCirculationId);
+    invariant(source !== undefined && target !== undefined, `${label} bindet einen unbekannten Umlauf.`);
+    invariant(transferPairs.has(`${source.id}\u0000${target.id}`), `${label} besitzt keine korrespondierende Transfer-Rollover-Kante.`);
+    invariant(
+      demand.lotId === source.lotId && demand.lotId === target.lotId
+        && demand.assetCompatibilityKey === source.assetCompatibilityKey && demand.assetCompatibilityKey === target.assetCompatibilityKey
+        && demand.sourcePassengerLegId === source.end.legId && demand.targetPassengerLegId === target.start.legId
+        && demand.sourceLocationId === source.end.locationId && demand.targetLocationId === target.start.locationId
+        && demand.sourcePhysicalStopId === source.end.physicalStopId && demand.targetPhysicalStopId === target.start.physicalStopId,
+      `${label} driftet von den gebundenen Umlaufendpunkten.`,
+    );
+    invariant(
+      Number.isSafeInteger(demand.earliestDepartureS)
+        && Number.isSafeInteger(demand.latestArrivalS)
+        && Number.isSafeInteger(demand.availableWindowS)
+        && demand.earliestDepartureS === source.end.timeS + plan.minimumTurnaroundS
+        && demand.latestArrivalS === target.start.timeS + plan.repeatEveryS - plan.minimumTurnaroundS
+        && demand.availableWindowS === demand.latestArrivalS - demand.earliestDepartureS
+        && demand.availableWindowS > 0,
+      `${label} besitzt kein reproduzierbares positives Transferzeitfenster.`,
+    );
+    invariant(previousDemandId === null || compareText(previousDemandId, demand.id) < 0, "Daily-Circulation-Transferanforderungen sind nicht streng nach ID sortiert.");
+    previousDemandId = demand.id;
+    invariant(!dailyDemandById.has(demand.id), `Daily-Circulation-Transferanforderung ${demand.id} ist doppelt.`);
+    dailyDemandById.set(demand.id, demand);
+  }
+  invariant(dailyDemandById.size === transferPairs.size, "Daily-Circulation deckt nicht jede Transfer-Rollover-Kante genau einmal ab.");
+  invariant(new Set(plan.transferDemands.map(({ lotId }) => lotId)).size === metrics.transferLotCount, "Daily-Circulation-Transferloszahl driftet von den Metriken.");
+
+  invariant(Array.isArray(transferDemands.transferRoutes) && transferDemands.transferRoutes.length === metrics.transferDemandCount, "Timetable-Transfer-Routen decken die Anforderungen nicht 1:1 ab.");
+  const passengerRouteIds = new Set(timetableRoutesProof.segmentIds.map((segmentId) => `route:gtfs:${segmentId}:v1`));
+  const transferSet = createHash("sha256");
+  let routeLegCount = 0;
+  let routeLengthMm = 0;
+  let previousTransferId = null;
+  for (const [index, route] of transferDemands.transferRoutes.entries()) {
+    const label = `Timetable-Transfer-Demands.transferRoutes[${index}]`;
+    exactKeys(route, TRANSFER_ROUTE_KEYS, label);
+    const demand = dailyDemandById.get(route.id);
+    invariant(demand !== undefined, `${label} besitzt keine Daily-Plan-Anforderung.`);
+    for (const field of DAILY_TRANSFER_DEMAND_KEYS) invariant(sameCanonical(route[field], demand[field]), `${label}.${field} driftet vom DailyPlan.`);
+    invariant(sameOrderedStrings(route.formationLengthsMm, formationLengthsMm), `${label}.formationLengthsMm driftet vom Sidecar-Vertrag.`);
+    invariant(
+      route.sourcePassengerRouteVersionId === `route:gtfs:${route.sourcePassengerLegId}:v1`
+        && route.targetPassengerRouteVersionId === `route:gtfs:${route.targetPassengerLegId}:v1`
+        && passengerRouteIds.has(route.sourcePassengerRouteVersionId)
+        && passengerRouteIds.has(route.targetPassengerRouteVersionId),
+      `${label} bindet keine existierenden Quell- und Ziel-Passagierfahrwege.`,
+    );
+    invariant(route.routeVersionId === `route:${route.id}:movement:v1` && route.templateId === `template:${route.id}:movement:v1`, `${label} besitzt keine deterministische Transferfahrwegidentitaet.`);
+    invariant(Array.isArray(route.legs) && route.legs.length > 0, `${label} besitzt keinen realen gerichteten Transferfahrweg.`);
+    let totalLengthMm = 0;
+    for (const [legIndex, leg] of route.legs.entries()) {
+      const legLabel = `${label}.legs[${legIndex}]`;
+      exactKeys(leg, ["edgeId", "direction", "edgeEntryMm", "edgeExitMm", "availableProtectionSystems", "simultaneouslyRequiredProtectionSystems"], legLabel);
+      nonEmptyString(leg.edgeId, `${legLabel}.edgeId`);
+      invariant(leg.direction === "along" || leg.direction === "against", `${legLabel}.direction ist ungueltig.`);
+      nonNegativeInteger(leg.edgeEntryMm, `${legLabel}.edgeEntryMm`);
+      nonNegativeInteger(leg.edgeExitMm, `${legLabel}.edgeExitMm`);
+      invariant((leg.direction === "along" && leg.edgeExitMm > leg.edgeEntryMm) || (leg.direction === "against" && leg.edgeEntryMm > leg.edgeExitMm), `${legLabel} besitzt kein positives richtungstreues Intervall.`);
+      exactNonEmptyStrings(leg.availableProtectionSystems, `${legLabel}.availableProtectionSystems`);
+      exactNonEmptyStrings(leg.simultaneouslyRequiredProtectionSystems, `${legLabel}.simultaneouslyRequiredProtectionSystems`, { allowEmpty: true });
+      invariant(leg.simultaneouslyRequiredProtectionSystems.every((system) => leg.availableProtectionSystems.includes(system)), `${legLabel} verlangt ein nicht verfuegbares Zugsicherungssystem.`);
+      totalLengthMm += Math.abs(leg.edgeExitMm - leg.edgeEntryMm);
+      invariant(Number.isSafeInteger(totalLengthMm), `${label}.totalLengthMm ueberschreitet die sichere Ganzzahlgrenze.`);
+    }
+    positiveInteger(route.totalLengthMm, `${label}.totalLengthMm`);
+    positiveInteger(route.weightedCostMm, `${label}.weightedCostMm`);
+    positiveInteger(route.minimumRuntimeMs, `${label}.minimumRuntimeMs`);
+    invariant(
+      route.totalLengthMm === totalLengthMm
+        && route.weightedCostMm >= route.totalLengthMm
+        && route.minimumRuntimeMs <= route.availableWindowS * 1_000,
+      `${label} besitzt eine inkonsistente Laenge, Gewichtung oder Mindestfahrzeit.`,
+    );
+    invariant(previousTransferId === null || compareText(previousTransferId, route.id) < 0, "Timetable-Transfer-Routen sind nicht streng nach ID sortiert.");
+    previousTransferId = route.id;
+    transferSet.update(`${canonicalSyntheticOperationalValue(route)}\n`);
+    routeLegCount += route.legs.length;
+    routeLengthMm += route.totalLengthMm;
+    invariant(Number.isSafeInteger(routeLegCount) && Number.isSafeInteger(routeLengthMm), "Timetable-Transfer-Metriken ueberschreiten die sichere Ganzzahlgrenze.");
+  }
+  const transferSetSha256 = transferSet.digest("hex");
+  invariant(SHA256.test(transferDemands.transferSetSha256) && transferDemands.transferSetSha256 === transferSetSha256, "Timetable-Transfer-Demands.transferSetSha256 ist nicht reproduzierbar.");
+  invariant(transferDemandsBinding.records === transferDemands.transferRoutes.length, "Timetable-Transfer-Demands-Input bindet eine abweichende Recordzahl.");
+  return Object.freeze({
+    schema: transferDemands.schema,
+    bytes: transferDemandsBinding.bytes,
+    sha256: transferDemandsBinding.sha256,
+    dailyCirculationPlanSha256: plan.planSha256,
+    transferSetSha256,
+    dailyCirculation: Object.freeze({ ...metrics }),
+    transferRouteCount: transferDemands.transferRoutes.length,
+    transferRouteLegCount: routeLegCount,
+    transferRouteLengthMm: routeLengthMm,
+  });
 }
 
 function containsExternalOperationalNetworkProvenance(value) {
@@ -453,20 +964,31 @@ function containsExternalOperationalNetworkProvenance(value) {
 
 function validateTimetableRouteEvidenceBinding(evidence, inputBindings) {
   exactKeys(evidence, TIMETABLE_ROUTE_EVIDENCE_KEYS, "timetableRouteEvidence");
-  invariant(evidence.reportSchema === GERMANY_TIMETABLE_ROUTE_REPORT_SCHEMA, "timetableRouteEvidence bindet keinen v2-Routenbericht.");
+  invariant(evidence.reportSchema === GERMANY_TIMETABLE_ROUTE_REPORT_SCHEMA, "timetableRouteEvidence bindet keinen v3-Routenbericht mit physischer Tagesumlaufabdeckung.");
   invariant(evidence.policyId === TIMETABLE_ROUTE_POLICY_ID && evidence.policyId === SYNTHETIC_OPERATIONAL_POLICY_ID, "timetableRouteEvidence bindet nicht synthetic-operational-b/v2.");
   invariant(evidence.derivationRule === TIMETABLE_ROUTE_DERIVATION_RULE && evidence.selectionRule === TIMETABLE_ROUTE_SELECTION_RULE, "timetableRouteEvidence bindet abweichende GTFS-Fahrwegregeln.");
-  for (const field of ["reportBytes", "routesBytes", "gtfsSnapshotBytes"]) positiveInteger(evidence[field], `timetableRouteEvidence.${field}`);
-  for (const field of ["reportSha256", "routesSha256", "gtfsSnapshotSha256", "snapshotHash", "archiveSha256", "routeSetSha256"]) {
+  invariant(evidence.transferDemandsSchema === GERMANY_TIMETABLE_TRANSFER_DEMAND_SCHEMA, "timetableRouteEvidence bindet keinen v1-Transfer-Sidecar.");
+  for (const field of ["reportBytes", "routesBytes", "gtfsSnapshotBytes", "transferDemandsBytes"]) positiveInteger(evidence[field], `timetableRouteEvidence.${field}`);
+  for (const field of [
+    "reportSha256", "routesSha256", "gtfsSnapshotSha256", "transferDemandsSha256", "snapshotHash",
+    "archiveSha256", "routeSetSha256", "dailyCirculationPlanSha256", "transferSetSha256",
+  ]) {
     invariant(SHA256.test(evidence[field]), `timetableRouteEvidence.${field} ist ungueltig.`);
   }
   invariant(typeof evidence.archive === "string" && evidence.archive !== "", "timetableRouteEvidence.archive fehlt.");
   invariant(evidence.sourceLicense === "CC-BY-4.0" && evidence.sourceLicenseAsPublished === "CC BY 4.0", "timetableRouteEvidence besitzt nicht die freie CC-BY-4.0-Bindung.");
   for (const field of ["selectedSegmentCount", "completeRouteCount", "routeRecordCount"]) positiveInteger(evidence[field], `timetableRouteEvidence.${field}`);
   nonNegativeInteger(evidence.sameStopTransitionCount, "timetableRouteEvidence.sameStopTransitionCount");
+  validateDailyCirculationMetrics(evidence.dailyCirculation, "timetableRouteEvidence.dailyCirculation");
+  for (const field of ["transferRouteCount", "transferRouteLegCount", "transferRouteLengthMm"]) positiveInteger(evidence[field], `timetableRouteEvidence.${field}`);
   invariant(
     evidence.selectedSegmentCount === evidence.completeRouteCount && evidence.completeRouteCount === evidence.routeRecordCount,
     "timetableRouteEvidence besitzt keine vollstaendige 1:1-Segmentabdeckung.",
+  );
+  invariant(
+    evidence.transferDemandsProduced === true
+      && evidence.transferRouteCount === evidence.dailyCirculation.transferDemandCount,
+    "timetableRouteEvidence besitzt keine vollstaendig erzeugte 1:1-Transferabdeckung.",
   );
   invariant(
     evidence.realGeometry === true
@@ -479,10 +1001,12 @@ function validateTimetableRouteEvidenceBinding(evidence, inputBindings) {
   const report = byRole.get("timetable-route-report");
   const routes = byRole.get("timetable-routes");
   const snapshot = byRole.get("gtfs-snapshot");
-  invariant(report !== undefined && routes !== undefined && snapshot !== undefined, "timetableRouteEvidence besitzt nicht alle drei freien GTFS-Dateibindungen.");
+  const transfers = byRole.get("timetable-transfer-demands");
+  invariant(report !== undefined && routes !== undefined && snapshot !== undefined && transfers !== undefined, "timetableRouteEvidence besitzt nicht alle vier freien GTFS-/Transfer-Dateibindungen.");
   invariant(report.bytes === evidence.reportBytes && report.sha256 === evidence.reportSha256 && report.records === 1, "timetableRouteEvidence und Routenbericht-Input laufen auseinander.");
   invariant(routes.bytes === evidence.routesBytes && routes.sha256 === evidence.routesSha256 && routes.records === evidence.routeRecordCount, "timetableRouteEvidence und timetableRoutes-Input laufen auseinander.");
   invariant(snapshot.bytes === evidence.gtfsSnapshotBytes && snapshot.sha256 === evidence.gtfsSnapshotSha256 && snapshot.records === 1, "timetableRouteEvidence und GTFS-Snapshot-Input laufen auseinander.");
+  invariant(transfers.bytes === evidence.transferDemandsBytes && transfers.sha256 === evidence.transferDemandsSha256 && transfers.records === evidence.transferRouteCount, "timetableRouteEvidence und Transfer-Demands-Input laufen auseinander.");
   invariant(evidence.routesSha256 === evidence.routeSetSha256, "Die kanonische timetableRoutes-JSONSeq-Datei besitzt nicht den gebundenen routeSetSha256.");
   return evidence;
 }
@@ -538,11 +1062,19 @@ export function validateSyntheticOperationalTimetableRouteEvidence({
   gtfsSnapshot,
   gtfsSnapshotBinding,
   timetableRoutesProof,
+  timetableTransferDemands,
+  timetableTransferDemandsBinding,
   tracksBinding,
 }) {
   exactKeys(routeReport, TIMETABLE_ROUTE_REPORT_KEYS, "Timetable-Route-Bericht");
-  invariant(routeReport.schema === GERMANY_TIMETABLE_ROUTE_REPORT_SCHEMA && routeReport.infraReleaseId === releaseId, "Timetable-Route-Bericht verletzt v2-Schema oder Releasebindung.");
-  invariant(routeReport.status === "qualified" && routeReport.routesProduced === true && routeReport.unresolvedRequired === 0, "Timetable-Route-Bericht ist nicht vollstaendig qualifiziert.");
+  invariant(routeReport.schema === GERMANY_TIMETABLE_ROUTE_REPORT_SCHEMA && routeReport.infraReleaseId === releaseId, "Timetable-Route-Bericht verletzt v3-Schema oder Releasebindung.");
+  invariant(
+    routeReport.status === "qualified"
+      && routeReport.routesProduced === true
+      && routeReport.transferDemandsProduced === true
+      && routeReport.unresolvedRequired === 0,
+    "Timetable-Route-Bericht ist nicht samt Transferanforderungen vollstaendig qualifiziert.",
+  );
   invariant(routeReport.derivationRule === TIMETABLE_ROUTE_DERIVATION_RULE && routeReport.selectionRule === TIMETABLE_ROUTE_SELECTION_RULE && routeReport.policyId === SYNTHETIC_OPERATIONAL_POLICY_ID, "Timetable-Route-Bericht verletzt Policy, Ableitungs- oder Auswahlregel.");
   exactKeys(routeReport.findings, [], "Timetable-Route-Bericht.findings");
   invariant(!containsExternalOperationalNetworkProvenance(routeReport), "Timetable-Route-Bericht enthaelt externe Operational-Network-Provenienz.");
@@ -563,9 +1095,20 @@ export function validateSyntheticOperationalTimetableRouteEvidence({
   invariant(routeReportBinding.records === 1 && gtfsSnapshotBinding.records === 1, "Routenbericht und GTFS-Snapshot muessen genau je ein gebundenes Dokument sein.");
 
   exactKeys(routeReport.metrics, TIMETABLE_ROUTE_METRIC_KEYS, "Timetable-Route-Bericht.metrics");
-  for (const [name, value] of Object.entries(routeReport.metrics)) nonNegativeInteger(value, `Timetable-Route-Bericht.metrics.${name}`);
+  for (const [name, value] of Object.entries(routeReport.metrics)) {
+    if (name !== "dailyCirculation") nonNegativeInteger(value, `Timetable-Route-Bericht.metrics.${name}`);
+  }
+  validateDailyCirculationMetrics(routeReport.metrics.dailyCirculation, "Timetable-Route-Bericht.metrics.dailyCirculation");
   positiveInteger(routeReport.metrics.eligibleSegmentCount, "Timetable-Route-Bericht.metrics.eligibleSegmentCount");
   positiveInteger(routeReport.metrics.retainedRoutingTrackCount, "Timetable-Route-Bericht.metrics.retainedRoutingTrackCount");
+  positiveInteger(routeReport.metrics.transferRouteCount, "Timetable-Route-Bericht.metrics.transferRouteCount");
+  positiveInteger(routeReport.metrics.transferRouteLegCount, "Timetable-Route-Bericht.metrics.transferRouteLegCount");
+  positiveInteger(routeReport.metrics.transferRouteLengthMm, "Timetable-Route-Bericht.metrics.transferRouteLengthMm");
+  invariant(
+    routeReport.metrics.dailyCirculation.journeyChainCount === routeReport.metrics.journeyChainCount
+      && routeReport.metrics.dailyCirculation.transferDemandCount === routeReport.metrics.transferRouteCount,
+    "Timetable-Route-Bericht besitzt keine vollstaendig gekoppelte Tagesumlauf-/Transfermetrik.",
+  );
   const validatedSnapshot = validatePinnedGtfsSnapshot(gtfsSnapshot, {
     expectedSnapshotHash: gtfs.snapshotHash,
     expectedSchema: gtfs.schema,
@@ -596,6 +1139,22 @@ export function validateSyntheticOperationalTimetableRouteEvidence({
   const selectedSegmentIds = validatedSnapshot.selectedSegments.map(({ segmentId }) => segmentId);
   invariant(JSON.stringify(selectedSegmentIds) === JSON.stringify(timetableRoutesProof.segmentIds), "timetableRoutes bilden nicht exakt jedes ausgewaehlte GTFS-Segment 1:1 ab.");
   invariant(routeReport.routeSetSha256 === timetableRoutesProof.routeSetSha256 && timetableRoutesProof.sha256 === routeReport.routeSetSha256, "Timetable-Route-Bericht bindet nicht die kanonischen JSONSeq-Bytes.");
+  const transferEvidence = validateSyntheticOperationalTimetableTransferDemands({
+    releaseId,
+    transferDemands: timetableTransferDemands,
+    transferDemandsBinding: timetableTransferDemandsBinding,
+    routeReport,
+    timetableRoutesProof,
+  });
+  invariant(
+    routeReport.dailyCirculationPlanSha256 === transferEvidence.dailyCirculationPlanSha256
+      && routeReport.transferSetSha256 === transferEvidence.transferSetSha256
+      && sameCanonical(routeReport.metrics.dailyCirculation, transferEvidence.dailyCirculation)
+      && routeReport.metrics.transferRouteCount === transferEvidence.transferRouteCount
+      && routeReport.metrics.transferRouteLegCount === transferEvidence.transferRouteLegCount
+      && routeReport.metrics.transferRouteLengthMm === transferEvidence.transferRouteLengthMm,
+    "Timetable-Route-Bericht und Transfer-Sidecar besitzen verschiedene Plan-/Set-Hashes oder Transfermetriken.",
+  );
 
   exactKeys(routeReport.sourceMetrics, ["gtfsSnapshot", "gtfsTrackGraph"], "Timetable-Route-Bericht.sourceMetrics");
   invariant(sameCanonical(routeReport.sourceMetrics.gtfsSnapshot, validatedSnapshot.metrics), "Timetable-Route-Bericht.sourceMetrics.gtfsSnapshot ist nicht aus demselben Snapshot abgeleitet.");
@@ -624,6 +1183,9 @@ export function validateSyntheticOperationalTimetableRouteEvidence({
     routesSha256: timetableRoutesProof.sha256,
     gtfsSnapshotBytes: gtfsSnapshotBinding.bytes,
     gtfsSnapshotSha256: gtfsSnapshotBinding.sha256,
+    transferDemandsSchema: transferEvidence.schema,
+    transferDemandsBytes: transferEvidence.bytes,
+    transferDemandsSha256: transferEvidence.sha256,
     snapshotHash: gtfs.snapshotHash,
     archive: gtfs.archive,
     archiveSha256: gtfs.archiveSha256,
@@ -634,6 +1196,13 @@ export function validateSyntheticOperationalTimetableRouteEvidence({
     routeRecordCount: routeReport.metrics.routeRecordCount,
     sameStopTransitionCount: routeReport.metrics.sameStopTransitionCount,
     routeSetSha256: routeReport.routeSetSha256,
+    dailyCirculationPlanSha256: transferEvidence.dailyCirculationPlanSha256,
+    transferSetSha256: transferEvidence.transferSetSha256,
+    transferDemandsProduced: true,
+    dailyCirculation: { ...transferEvidence.dailyCirculation },
+    transferRouteCount: transferEvidence.transferRouteCount,
+    transferRouteLegCount: transferEvidence.transferRouteLegCount,
+    transferRouteLengthMm: transferEvidence.transferRouteLengthMm,
     realGeometry: true,
     simulatedOperationalAssignment: true,
     realInterlockingFactsClaimed: false,
@@ -672,11 +1241,11 @@ export function validateSyntheticOperationalClosureReceipt(receipt, { policy, re
   const artifact = fileBinding(receipt.operationalArtifact, "operationalArtifact", ["stateHash"]);
   invariant(SHA256.test(candidate.stateHash) && SHA256.test(artifact.stateHash), "Operational-Candidate oder Artefakt besitzt keinen Zustandshash.");
   invariant(candidate.bytes === artifact.bytes && candidate.sha256 === artifact.sha256 && candidate.stateHash === artifact.stateHash, "Candidate und materialisiertes Operational-v2-Artefakt sind nicht kanonisch identisch.");
-  validateDerivationBinding(receipt.derivationReport, candidate);
-  invariant(Array.isArray(receipt.inputs) && receipt.inputs.length === REQUIRED_INPUT_ROLES.length, "Synthetic-Operational-Closure bindet nicht exakt alle neun Pflichtinputs.");
+  invariant(Array.isArray(receipt.inputs) && receipt.inputs.length === REQUIRED_INPUT_ROLES.length, "Synthetic-Operational-Closure bindet nicht exakt alle zehn Pflichtinputs.");
   exactStrings(receipt.inputs.map(({ role }) => role), REQUIRED_INPUT_ROLES, "Closure-Inputrollen");
   for (const input of receipt.inputs) inputBinding(input, `input:${input.role}`);
   validateTimetableRouteEvidenceBinding(receipt.timetableRouteEvidence, receipt.inputs);
+  validateDerivationBinding(receipt.derivationReport, candidate, receipt.timetableRouteEvidence);
   exactKeys(receipt.closure, ["derivedDimensions", "unresolvedRequired", "ordinaryAssumptionsPromoted", "mapClassCReclassified"], "closure");
   exactStrings(receipt.closure.derivedDimensions, REQUIRED_DIMENSIONS, "derivedDimensions");
   invariant(receipt.closure.unresolvedRequired === 0, "Synthetic-Operational-Closure besitzt offene Pflichtdimensionen.");
@@ -782,12 +1351,16 @@ export async function verifySyntheticOperationalClosureReceipt({ receipt, policy
   const annualSpecification = JSON.parse(await readFile(specificationPath, "utf8"));
   exactKeys(annualSpecification, ["schema", "mode", "infraReleaseId", "layers", "policy"], "Jahresspezifikation");
   invariant(annualSpecification.schema === DERIVATION_SPEC_SCHEMA && annualSpecification.mode === DERIVATION_MODE && annualSpecification.infraReleaseId === releaseId, "Jahresspezifikation verletzt Schema, Modus oder Releasebindung.");
-  exactKeys(annualSpecification.layers, ["tracks", "platforms", "switches", "signals", "blocks", "conflictResources", "timetableRoutes"], "Jahresspezifikation.layers");
+  exactKeys(annualSpecification.layers, ["tracks", "platforms", "switches", "signals", "blocks", "conflictResources", "timetableRoutes", "transferDemands"], "Jahresspezifikation.layers");
   validateCompilerPolicy(annualSpecification.policy);
   invariant(sameCanonical(annualSpecification.policy, policy.compilerPolicy), "Jahresspezifikation und eingecheckte Policy besitzen verschiedene Compilerregeln.");
   const byRole = new Map(receipt.inputs.map((entry) => [entry.role, entry]));
   for (const role of DERIVATION_INPUT_ROLES) {
-    const expectedPath = resolve(repository, annualSpecification.layers[DERIVATION_ROLE_TO_LAYER[role]]);
+    const layer = DERIVATION_ROLE_TO_LAYER[role];
+    const configured = annualSpecification.layers[layer];
+    const configuredPath = layer === "transferDemands" ? configured?.path : configured;
+    invariant(typeof configuredPath === "string" && configuredPath !== "", `Jahresspezifikation.layers.${layer} besitzt keinen geschlossenen Dateipfad.`);
+    const expectedPath = resolve(repository, configuredPath);
     const actualPath = resolve(root, byRole.get(role).file);
     invariant(expectedPath === actualPath && artifactRelativePath(root, actualPath, `Input ${role}`) === byRole.get(role).file, `Jahresspezifikation und Closure binden verschiedene Pfade fuer ${role}.`);
   }
@@ -799,12 +1372,26 @@ export async function verifySyntheticOperationalClosureReceipt({ receipt, policy
     inputBindings: receipt.inputs,
     candidate: receipt.candidate,
   });
+  await verifyProof(root, {
+    file: report.candidate.movementRouteTemplates.file,
+    bytes: report.candidate.movementRouteTemplates.bytes,
+    sha256: report.candidate.movementRouteTemplates.sha256,
+  }, "Movement-Route-Templates-v2-Sidecar");
+  const movementRouteTemplates = Object.freeze({
+    bytes: report.candidate.movementRouteTemplates.bytes,
+    sha256: report.candidate.movementRouteTemplates.sha256,
+    stateHash: report.candidate.movementRouteTemplates.stateHash,
+    operationalStateHash: report.candidate.movementRouteTemplates.operationalStateHash,
+    timetableTransferSetSha256: report.candidate.movementRouteTemplates.timetableTransferSetSha256,
+  });
   invariant(sameCanonical(coverage, receipt.coverage), "Closure-Coverage wurde nicht aus demselben validierten Ableitungsbericht abgeleitet.");
   const routeReportPath = inputPaths.get("timetable-route-report");
   const gtfsSnapshotPath = inputPaths.get("gtfs-snapshot");
   const timetableRoutesPath = inputPaths.get("timetable-routes");
+  const timetableTransferDemandsPath = inputPaths.get("timetable-transfer-demands");
   const routeReport = JSON.parse(await readFile(routeReportPath, "utf8"));
   const gtfsSnapshot = JSON.parse(await readFile(gtfsSnapshotPath, "utf8"));
+  const timetableTransferDemands = JSON.parse(await readFile(timetableTransferDemandsPath, "utf8"));
   const timetableRoutesProof = await syntheticOperationalTimetableRoutesProof(timetableRoutesPath);
   const timetableRouteEvidence = validateSyntheticOperationalTimetableRouteEvidence({
     releaseId,
@@ -813,10 +1400,13 @@ export async function verifySyntheticOperationalClosureReceipt({ receipt, policy
     gtfsSnapshot,
     gtfsSnapshotBinding: byRole.get("gtfs-snapshot"),
     timetableRoutesProof,
+    timetableTransferDemands,
+    timetableTransferDemandsBinding: byRole.get("timetable-transfer-demands"),
     tracksBinding: byRole.get("tracks"),
   });
   await verifyProof(root, byRole.get("timetable-route-report"), "Timetable-Route-Bericht");
   await verifyProof(root, byRole.get("gtfs-snapshot"), "GTFS-Snapshot");
+  await verifyProof(root, byRole.get("timetable-transfer-demands"), "Timetable-Transfer-Demands");
   invariant(sameCanonical(timetableRouteEvidence, receipt.timetableRouteEvidence), "Closure-Timetable-Route-Evidence wurde nicht aus denselben validierten Dateien abgeleitet.");
   const candidate = await syntheticOperationalFileProof(candidatePath, "Synthetic-Operational-Candidate");
   invariant(candidate.bytes === receipt.candidate.bytes && candidate.sha256 === receipt.candidate.sha256, "Candidate aenderte sich waehrend der Closure-Pruefung.");
@@ -829,6 +1419,7 @@ export async function verifySyntheticOperationalClosureReceipt({ receipt, policy
     receiptSha256: receipt.receiptSha256,
     releaseId: receipt.releaseId,
     stateHash: receipt.operationalArtifact.stateHash,
+    movementRouteTemplates,
     timetableRouteEvidence: Object.freeze({ ...receipt.timetableRouteEvidence }),
   });
 }
@@ -851,6 +1442,7 @@ export function publicSyntheticOperationalClosure(verified) {
     syntheticOperationalDetailsShipped: true,
     objectLevelProvenanceShipped: false,
     observedAndSyntheticObjectsShareRuntimeCollections: true,
+    movementRouteTemplates: { ...verified.movementRouteTemplates },
     timetableRouteEvidence: { ...verified.timetableRouteEvidence },
     operationalArtifact: { ...verified.operationalArtifact },
     coverage: { ...verified.coverage },

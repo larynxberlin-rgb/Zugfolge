@@ -16,6 +16,7 @@ import {
   validateAlphaFleetMigrationContract,
   validateAlphaFleetMigrationContractSpecification,
 } from "./migrate-alpha-fleet-v1-to-v2.mjs";
+import { deriveDailyCirculationPlan } from "./daily-circulation-v2.mjs";
 
 const WORLD = "e2695e40-3e4c-4e8c-9481-98f6223538d0";
 const OLD_WORLD = "00000000-0000-4000-8000-000000000014";
@@ -31,9 +32,14 @@ function jsonBytes(value) {
   return Buffer.from(`${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
-function buildConfiguration() {
+function buildConfiguration(gtfsEnvelopeValue = gtfsEnvelope()) {
+  const dailyPlan = deriveDailyCirculationPlan({
+    journeyChains: gtfsEnvelopeValue.snapshot.journeyChains.filter((chain) => chain.orderable === true),
+    stations: gtfsEnvelopeValue.snapshot.stations,
+    gtfsReleaseId: GTFS_RELEASE,
+  });
   return {
-    schemaVersion: "zugfolge-alpha-world-build-configuration/v2",
+    schemaVersion: "zugfolge-alpha-world-build-configuration/v3",
     worldId: WORLD,
     regionId: "fixture-region-b",
     regionVariant: "B",
@@ -43,6 +49,21 @@ function buildConfiguration() {
     planningAuthority: { accountId: "a2a545d2-74f7-40af-908d-1901ba2220bb", displayName: "Fixture-Aufgabentraeger" },
     operationalInfrastructure: { file: "operational-infrastructure-v2.json", bytes: 42, sha256: SHA_A, stateHash: SHA_B },
     timetableRoutes: { file: "timetable-routes-v2.jsonseq", bytes: 84, sha256: SHA_A },
+    timetableTransferDemands: {
+      file: "timetable-routes-v2.transfer-demands-v1.json",
+      bytes: 126,
+      sha256: SHA_A,
+      dailyPlanSha256: dailyPlan.planSha256,
+      transferSetSha256: SHA_B,
+    },
+    movementRouteTemplates: {
+      file: "operational-infrastructure-v2.movement-route-templates-v2.json",
+      bytes: 168,
+      sha256: SHA_A,
+      stateHash: SHA_A,
+      operationalStateHash: SHA_B,
+      timetableTransferSetSha256: SHA_B,
+    },
   };
 }
 
@@ -157,6 +178,10 @@ function gtfsEnvelope(routeId = "1", routeShortName = "RB1") {
     regionId: "fixture-region-b",
     regionVariant: "B",
     metrics: { orderableJourneyChainCount: 1 },
+    stations: [
+      { stopId: "stop-a", latitudeE7: 510_000_000, longitudeE7: 120_000_000 },
+      { stopId: "stop-b", latitudeE7: 511_000_000, longitudeE7: 121_000_000 },
+    ],
     segments: [{ id: "segment-fixture", orderable: true, qualityClass: "B" }],
     journeyChains: [{
       worldId: WORLD,
@@ -246,15 +271,15 @@ function infraReleaseWrapper(buildConfigurationValue, gtfsBytesValue) {
 }
 
 const FIXTURE_FILE_NAMES = Object.freeze({
-  buildConfiguration: "alpha-world-build-configuration-v2.json",
+  buildConfiguration: "alpha-world-build-configuration-v3.json",
   gtfs: "gtfs-region-fixture-v2.json",
   economy: "economy-release-fixture.json",
   infraReleaseWrapper: "infra-release.json",
 });
 
 function migrationFixture(bytes = legacyBytes(), values = {}) {
-  const buildConfigurationValue = values.buildConfigurationValue ?? buildConfiguration();
   const gtfsEnvelopeValue = values.gtfsEnvelopeValue ?? gtfsEnvelope();
+  const buildConfigurationValue = values.buildConfigurationValue ?? buildConfiguration(gtfsEnvelopeValue);
   const economySpecificationValue = values.economySpecificationValue ?? economySpecification();
   const buildConfigurationBytes = jsonBytes(buildConfigurationValue);
   const gtfsBytes = jsonBytes(gtfsEnvelopeValue);
@@ -307,7 +332,21 @@ test("Migration erhaelt konkrete Identitaeten, isoliert die Zielwelt und markier
   assert.equal(migrated.worldSeed.formations.length, 1);
   assert.equal(migrated.worldSeed.pathReceipts.every((receipt) => receipt.plannerStateHash === SHA_B), true);
   assert.equal(JSON.stringify(migrated).includes(OLD_WORLD), false);
-  assert.deepEqual(migrated.allocation, { legacyAssetCount: 2, activeAssetCount: 1, reserveAssetCount: 1, formationCount: 1, minimumTurnaroundS: 300 });
+  const dailyPlan = deriveDailyCirculationPlan({
+    journeyChains: gtfsEnvelope().snapshot.journeyChains,
+    stations: gtfsEnvelope().snapshot.stations,
+    gtfsReleaseId: GTFS_RELEASE,
+  });
+  assert.deepEqual(migrated.allocation, {
+    legacyAssetCount: 2,
+    activeAssetCount: 1,
+    reserveAssetCount: 1,
+    formationCount: 1,
+    minimumTurnaroundS: 300,
+    dailyPlanSha256: dailyPlan.planSha256,
+    rolloverAssignmentCount: 1,
+    transferDemandCount: 1,
+  });
   assert.equal(migrated.sourceCatalog.vehicleTypes[0].technical.brakeWeightKg.kind, "game-assumption");
   assert.equal(migrated.sourceCatalog.vehicleTypes[0].technical.massKg.kind, "published-fact");
 });
@@ -353,7 +392,10 @@ test("Migration faellt bei fremden Bytes, fremder Zielwelt und ungedeckter BEMU-
   const foreignGtfs = gtfsEnvelope();
   foreignGtfs.snapshot.journeyChains[0].releaseId = "gtfs-de-rv-20260812-bbbbbbbbbbbbbbbb";
   foreignGtfs.snapshotHash = sha256(canonicalPlanningJson(foreignGtfs.snapshot));
-  assert.throws(() => migrationFixture(bytes, { gtfsEnvelopeValue: foreignGtfs }), /identisch signiert gebunden/u);
+  assert.throws(() => migrationFixture(bytes, {
+    gtfsEnvelopeValue: foreignGtfs,
+    buildConfigurationValue: buildConfiguration(),
+  }), /identisch signiert gebunden/u);
 
   const collidingAssets = [asset("legacy-collision-1", 10_101), asset("legacy-collision-2", 10_102)];
   for (const candidate of collidingAssets) candidate.approvedLineIds = ["line-a-b-rb1"];

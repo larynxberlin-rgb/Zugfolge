@@ -134,13 +134,15 @@ versionierten `EconomyRelease`.
 - **B — konservativ abgeleitet:** Datenlücken sind durch einen versionierten,
   deterministischen Offline-Regelsatz in **jeder** Pflichtdimension
   vollständig geschlossen. Für `synthetic-operational-b/v2` bindet ein
-  Closure-Receipt Policy, neun Eingabedateien, Candidate, natives Operational-v2-
-  Artefakt und Zustand per SHA-256. Zu den neun Eingaben gehören der freie
-  GTFS-Snapshot, sein qualifizierter v2-Routenbericht und die kanonische
-  `timetableRoutes`-JSONSeq. Der Bericht muss Snapshot- und Archiv-SHA,
+  Closure-Receipt Policy, zehn Eingabedateien, Candidate, natives Operational-v2-
+  Artefakt und Zustand per SHA-256. Zu den zehn Eingaben gehören der freie
+  GTFS-Snapshot, sein qualifizierter v3-Routenbericht, die kanonische
+  `timetableRoutes`-JSONSeq und der bytegebundene
+  `timetable-transfer-demands-v1`-Beleg. Der Bericht muss Snapshot- und Archiv-SHA,
   `CC-BY-4.0`, vollständige 1:1-Abdeckung aller ausgewählten B-Segmente sowie
   `operationalNetworkUsed=false`, `gtfsShapeGeometryUsed=false` und
-  `inventedGeometryUsed=false` belegen. Das Ergebnis trägt intern `derived`, ist
+  `inventedGeometryUsed=false` sowie einen vollständigen physischen
+  Daily-Circulation-/Transfervertrag belegen. Das Ergebnis trägt intern `derived`, ist
   nicht Klasse-A-fähig und kann nur mit `orderable=true` betrieblich verwendet
   werden.
 

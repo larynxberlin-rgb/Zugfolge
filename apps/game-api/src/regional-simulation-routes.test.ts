@@ -103,6 +103,7 @@ function result(
 
 const initializationBody = {
   nowMs: 0,
+  repeatEveryMs: null,
   protectionModeSelectionPolicy: OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
   infraRelease: { id: infraReleaseId },
   vehicleTypes: [],
@@ -126,6 +127,7 @@ const initializationBody = {
       }],
     },
   ],
+  movementContinuations: [],
 } as const;
 
 describe("interne regionale M4-Routen", () => {
@@ -307,6 +309,89 @@ describe("interne regionale M4-Routen", () => {
       expect(missingWorld.statusCode).toBe(404);
       expect(missingWorld.json()).toMatchObject({ code: "world_not_found" });
       expect(apply).toHaveBeenCalledTimes(2);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("akzeptiert nur den minimalen physischen Fortsetzungsvertrag", async () => {
+    const apply = vi.fn(async (work) => result(work.worldId, work.commandId, false));
+    const app = buildApp({
+      db,
+      verifyToken: async () => {
+        throw new Error("nicht verwendet");
+      },
+      simulationIngestToken: token,
+      regionalSimulation: {
+        initialize: vi.fn(),
+        apply,
+      } as Pick<RegionalSimulationWorker, "initialize" | "apply">,
+    });
+    await app.ready();
+    const continuation = {
+      id: "continuation:run-1:run-2:day-0",
+      predecessorTrainId: "run-1:day-0",
+      predecessorBaseRouteVersionId: "route-v1",
+      successor: {
+        id: "run-2:day-0",
+        trainNumber: "RE 2",
+        operatorId: "operator-1",
+        movementKind: "train",
+        routeVersionId: "route-v2",
+        formationVersionId: "formation-v2",
+        headRouteMm: 10_000,
+        scheduledDepartureMs: 2_000,
+        publicPassengerStop: true,
+      },
+      successorDispatch: {
+        trainId: "run-2:day-0",
+        interlockingRouteId: "interlocking-v2",
+        committedRank: 0,
+        timetableDeviationMs: 0,
+        passengerImpact: 0,
+        contractualImpact: 0,
+        networkImpact: 0,
+        resourceConsequence: 0,
+        recoveryRank: 0,
+        waitingSinceMs: 2_000,
+      },
+      notBeforeMs: 2_000,
+      minimumDwellMs: 300_000,
+      continuity: "reverse-direction",
+    } as const;
+    const url = `/internal/worlds/${worldA}/regional-simulations/${regionId}/commands/${continuation.id}`;
+    try {
+      const accepted = await app.inject({
+        method: "POST",
+        url,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { type: "queue-movement-continuation", continuation },
+      });
+      expect(accepted.statusCode).toBe(200);
+      expect(apply).toHaveBeenCalledWith({
+        worldId: worldA,
+        regionId,
+        commandId: continuation.id,
+        command: { type: "queue-movement-continuation", continuation },
+      }, expect.any(Date));
+
+      const inventedSuccessorAuthority = await app.inject({
+        method: "POST",
+        url: `${url}:invalid`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          type: "queue-movement-continuation",
+          continuation: {
+            ...continuation,
+            successor: {
+              ...continuation.successor,
+              dispatchInterlockingRouteId: "must-not-be-duplicated",
+            },
+          },
+        },
+      });
+      expect(inventedSuccessorAuthority.statusCode).toBe(400);
+      expect(apply).toHaveBeenCalledTimes(1);
     } finally {
       await app.close();
     }

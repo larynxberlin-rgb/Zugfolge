@@ -470,12 +470,14 @@ function initialization(
     worldId,
     regionId,
     nowMs,
+    repeatEveryMs: null,
     protectionModeSelectionPolicy: OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
     infraRelease: { id: INFRA_RELEASE_ID },
     vehicleTypes: [],
     vehicles: [],
     formations: [],
     trains: [train(`${regionId}-train-1`)],
+    movementContinuations: [],
   };
 }
 

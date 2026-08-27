@@ -61,6 +61,8 @@ const ROUTES_BY_TEMPLATE: MultimapTableDefinition<&str, &str> =
     MultimapTableDefinition::new("routes_by_template");
 const INTERLOCKING_BY_TEMPLATE: MultimapTableDefinition<&str, &str> =
     MultimapTableDefinition::new("interlocking_by_template");
+const TRAIN_INTERLOCKING_BY_TEMPLATE_START: TableDefinition<(&str, i64), &str> =
+    TableDefinition::new("train_interlocking_by_template_start");
 
 /// Stabiler Fehler der dateibasierten Operational-v2-Validierung.
 #[derive(Debug)]
@@ -576,6 +578,11 @@ impl Store<'_> {
                 .open_multimap_table(INTERLOCKING_BY_TEMPLATE)
                 .map_err(db_message)?,
         );
+        drop(
+            self.transaction
+                .open_table(TRAIN_INTERLOCKING_BY_TEMPLATE_START)
+                .map_err(db_message)?,
+        );
         Ok(())
     }
 
@@ -668,8 +675,7 @@ impl Store<'_> {
 
     fn insert_interlocking(
         self,
-        interlocking_id: &str,
-        template_id: &str,
+        template: &InterlockingRouteTemplate,
         canonical_json: &str,
     ) -> std::result::Result<(), String> {
         {
@@ -678,20 +684,46 @@ impl Store<'_> {
                 .open_table(INTERLOCKING)
                 .map_err(db_message)?;
             if table
-                .insert(interlocking_id, canonical_json)
+                .insert(template.id.as_str(), canonical_json)
                 .map_err(db_message)?
                 .is_some()
             {
-                return Err(format!("doppelte Fahrstrassenvorlage `{interlocking_id}`"));
+                return Err(format!("doppelte Fahrstrassenvorlage `{}`", template.id));
             }
         }
-        let mut index = self
-            .transaction
-            .open_multimap_table(INTERLOCKING_BY_TEMPLATE)
-            .map_err(db_message)?;
-        index
-            .insert(template_id, interlocking_id)
-            .map_err(db_message)?;
+        {
+            let mut index = self
+                .transaction
+                .open_multimap_table(INTERLOCKING_BY_TEMPLATE)
+                .map_err(db_message)?;
+            index
+                .insert(template.route_template_id.as_str(), template.id.as_str())
+                .map_err(db_message)?;
+        }
+        if template.movement_kind == MovementKind::Train {
+            let mut index = self
+                .transaction
+                .open_table(TRAIN_INTERLOCKING_BY_TEMPLATE_START)
+                .map_err(db_message)?;
+            if let Some(existing) = index
+                .insert(
+                    (
+                        template.route_template_id.as_str(),
+                        template.authority_start_route_mm,
+                    ),
+                    template.id.as_str(),
+                )
+                .map_err(db_message)?
+            {
+                return Err(format!(
+                    "doppelter Zugfahrstrassen-Schluessel `{}:{}` fuer `{}` und `{}`",
+                    template.route_template_id,
+                    template.authority_start_route_mm,
+                    existing.value(),
+                    template.id
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -1073,8 +1105,10 @@ impl<'de> Visitor<'de> for InterlockingRoutesVisitor<'_> {
                 || template.path_resources.is_empty()
                 || template.overlap_resources.is_empty()
                 || template.flank_resources.is_empty()
+                || template.authority_start_route_mm < 0
+                || template.authority_start_route_mm >= template.authority_end_route_mm
                 || template.authority_end_route_mm <= 0
-                || template.release_after_tail_route_mm < 0
+                || template.release_after_tail_route_mm < template.authority_start_route_mm
                 || template.release_after_tail_route_mm > template.authority_end_route_mm
             {
                 return Err(A::Error::custom(format!(
@@ -1082,7 +1116,7 @@ impl<'de> Visitor<'de> for InterlockingRoutesVisitor<'_> {
                 )));
             }
             self.store
-                .insert_interlocking(&template.id, &template.route_template_id, &canonical_json)
+                .insert_interlocking(&template, &canonical_json)
                 .map_err(A::Error::custom)?;
         }
         Ok(())
@@ -1244,6 +1278,9 @@ fn validate_semantics(transaction: &ReadTransaction, expected_release_id: &str) 
     let interlocking_by_template = transaction
         .open_multimap_table(INTERLOCKING_BY_TEMPLATE)
         .map_err(database_error)?;
+    let train_interlocking_by_template_start = transaction
+        .open_table(TRAIN_INTERLOCKING_BY_TEMPLATE_START)
+        .map_err(database_error)?;
 
     require(
         !directed_edges.is_empty().map_err(database_error)?
@@ -1285,19 +1322,38 @@ fn validate_semantics(transaction: &ReadTransaction, expected_release_id: &str) 
                 "Laufwegversion `{route_id}` besitzt eine abweichende ID"
             )));
         }
-        let mut templates = interlocking_by_template
+        let templates = interlocking_by_template
             .get(route.template_id.as_str())
             .map_err(database_error)?;
-        if templates
-            .next()
-            .transpose()
-            .map_err(database_error)?
-            .is_none()
-        {
+        let mut template_count = 0_u32;
+        let mut seeded_full_shunting_count = 0_u32;
+        for template_id in templates {
+            template_count = template_count.saturating_add(1);
+            let template_id = template_id.map_err(database_error)?;
+            let serialized = interlocking
+                .get(template_id.value())
+                .map_err(database_error)?
+                .ok_or_else(|| semantic_error("Fahrstrassenindex ist unvollstaendig"))?;
+            let template: InterlockingRouteTemplate =
+                typed_record(serialized.value(), "Fahrstrassenvorlage")?;
+            if template.movement_kind == MovementKind::Shunting
+                && template.authority_start_route_mm > 0
+                && template.authority_end_route_mm == route.length_mm()
+                && template.release_after_tail_route_mm == route.length_mm()
+                && route
+                    .legs
+                    .iter()
+                    .any(|leg| leg.route_start_mm == template.authority_start_route_mm)
+            {
+                seeded_full_shunting_count = seeded_full_shunting_count.saturating_add(1);
+            }
+        }
+        if template_count == 0 || seeded_full_shunting_count > 1 {
             return Err(semantic_error(format!(
-                "Laufwegversion `{route_id}` besitzt keine Fahrstrassenvorlage"
+                "Laufwegversion `{route_id}` besitzt keine eindeutige Fahrstrassenform"
             )));
         }
+        let seeded_full_shunting = seeded_full_shunting_count == 1;
         if let (Some(predecessor_id), Some(transition_route_mm)) =
             (&route.predecessor_id, route.transition_route_mm)
         {
@@ -1331,6 +1387,34 @@ fn validate_semantics(transaction: &ReadTransaction, expected_release_id: &str) 
             {
                 return Err(semantic_error(format!(
                     "Laufwegversion `{route_id}` besitzt einen ungueltigen Kanten- oder Ressourcenbezug"
+                )));
+            }
+            if seeded_full_shunting {
+                continue;
+            }
+            let interlocking_id = train_interlocking_by_template_start
+                .get((route.template_id.as_str(), leg.route_start_mm))
+                .map_err(database_error)?
+                .ok_or_else(|| {
+                    semantic_error(format!(
+                        "Laufwegversion `{route_id}` besitzt bei {} keine Zugfahrstrasse",
+                        leg.route_start_mm
+                    ))
+                })?;
+            let template = interlocking
+                .get(interlocking_id.value())
+                .map_err(database_error)?
+                .ok_or_else(|| semantic_error("Zugfahrstrassenindex ist unvollstaendig"))?;
+            let template: InterlockingRouteTemplate =
+                typed_record(template.value(), "Fahrstrassenvorlage")?;
+            if template.movement_kind != MovementKind::Train
+                || template.authority_start_route_mm != leg.route_start_mm
+                || template.authority_end_route_mm != leg.route_end_mm()
+                || template.path_resources != leg.block_ids
+            {
+                return Err(semantic_error(format!(
+                    "Laufwegversion `{route_id}` besitzt bei {} keine exakte Segmentfahrstrasse",
+                    leg.route_start_mm
                 )));
             }
         }
@@ -1378,9 +1462,16 @@ fn validate_semantics(transaction: &ReadTransaction, expected_release_id: &str) 
                 .map_err(database_error)?
                 .ok_or_else(|| semantic_error("Laufwegindex ist unvollstaendig"))?;
             let route: RouteVersion = typed_record(route.value(), "Laufwegversion")?;
-            if template.authority_end_route_mm > route.length_mm() {
+            if template.authority_end_route_mm > route.length_mm()
+                || template.movement_kind == MovementKind::Train
+                    && route.legs.iter().all(|leg| {
+                        template.authority_start_route_mm != leg.route_start_mm
+                            || template.authority_end_route_mm != leg.route_end_mm()
+                            || template.path_resources != leg.block_ids
+                    })
+            {
                 return Err(semantic_error(format!(
-                    "Fahrstrassenvorlage `{interlocking_id}` ueberschreitet ihren Laufweg"
+                    "Fahrstrassenvorlage `{interlocking_id}` passt nicht auf ihren Laufweg"
                 )));
             }
         }
@@ -1388,6 +1479,20 @@ fn validate_semantics(transaction: &ReadTransaction, expected_release_id: &str) 
             return Err(semantic_error(format!(
                 "Fahrstrassenvorlage `{interlocking_id}` besitzt keinen Laufweg"
             )));
+        }
+        if template.movement_kind == MovementKind::Train {
+            let indexed_id = train_interlocking_by_template_start
+                .get((
+                    template.route_template_id.as_str(),
+                    template.authority_start_route_mm,
+                ))
+                .map_err(database_error)?
+                .ok_or_else(|| semantic_error("Zugfahrstrassenindex ist unvollstaendig"))?;
+            if indexed_id.value() != template.id {
+                return Err(semantic_error(format!(
+                    "Fahrstrassenvorlage `{interlocking_id}` besitzt keinen eindeutigen Startschluessel"
+                )));
+            }
         }
     }
 
@@ -1891,7 +1996,7 @@ pub fn open_operational_infrastructure_v2_store(
         transaction: &binding_transaction,
     };
     binding_store
-        .insert_meta("runtimeIndexFormat", "operational-runtime-redb/v1")
+        .insert_meta("runtimeIndexFormat", "operational-runtime-redb/v2")
         .map_err(OperationalStreamingError::new)?;
     binding_store
         .insert_meta("runtimeSourceBytes", &source_bytes.to_string())
@@ -1957,7 +2062,7 @@ impl OperationalInfrastructure for OperationalInfrastructureV2Store {
             || metadata.file_type().is_symlink()
             || metadata.len() != self.source_bytes
             || metadata.modified().map_err(runtime_access_error)? != self.source_modified
-            || self.read_meta("runtimeIndexFormat")? != "operational-runtime-redb/v1"
+            || self.read_meta("runtimeIndexFormat")? != "operational-runtime-redb/v2"
             || self.read_meta("runtimeSourceBytes")? != self.source_bytes.to_string()
             || self.read_meta("runtimeSourceSha256")? != self.source_sha256
             || self.read_meta("runtimeStateHash")? != self.state_hash
@@ -1980,6 +2085,38 @@ impl OperationalInfrastructure for OperationalInfrastructureV2Store {
         id: &str,
     ) -> std::result::Result<Option<InterlockingRouteTemplate>, OperationalError> {
         self.read_typed(INTERLOCKING, id, "Fahrstrassenvorlage")
+    }
+
+    fn train_interlocking_route(
+        &self,
+        route_template_id: &str,
+        authority_start_route_mm: RouteMillimetres,
+    ) -> std::result::Result<Option<InterlockingRouteTemplate>, OperationalError> {
+        let transaction = self.database.begin_read().map_err(runtime_access_error)?;
+        let index = transaction
+            .open_table(TRAIN_INTERLOCKING_BY_TEMPLATE_START)
+            .map_err(runtime_access_error)?;
+        let Some(interlocking_id) = index
+            .get((route_template_id, authority_start_route_mm))
+            .map_err(runtime_access_error)?
+            .map(|value| value.value().to_owned())
+        else {
+            return Ok(None);
+        };
+        let interlocking = transaction
+            .open_table(INTERLOCKING)
+            .map_err(runtime_access_error)?;
+        let serialized = interlocking
+            .get(interlocking_id.as_str())
+            .map_err(runtime_access_error)?
+            .ok_or_else(|| {
+                runtime_access_error(format!(
+                    "Zugfahrstrassenindex verweist auf unbekannte Fahrstrasse `{interlocking_id}`"
+                ))
+            })?;
+        typed_record(serialized.value(), "Fahrstrassenvorlage")
+            .map(Some)
+            .map_err(runtime_access_error)
     }
 
     fn shunting_interlocking_routes(

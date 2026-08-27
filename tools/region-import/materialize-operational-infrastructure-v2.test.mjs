@@ -53,6 +53,7 @@ function candidate() {
         overlapResources: ["overlap-1"],
         flankResources: ["flank-1"],
         switchPositions: {},
+        authorityStartRouteMm: 0,
         authorityEndRouteMm: 1_000,
         releaseAfterTailRouteMm: 1_000,
       },

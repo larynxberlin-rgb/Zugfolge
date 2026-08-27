@@ -110,7 +110,7 @@ Pflicht muss auch als verfügbar ausgewiesen sein. PZB darf deshalb eine
 PZB/LZB-Überlagerung unter der signalgeführten Rückfallebene befahren; reine
 LZB- und ETCS-Mengen bleiben für disjunkt ausgerüstete Fahrzeuge fail-closed.
 
-Der aktuelle `zugfolge-germany-timetable-route-compiler/v3` bindet diese
+Der aktuelle `zugfolge-germany-timetable-route-compiler/v4` bindet diese
 Kompatibilitätsgrenze bereits bei der simulierten GTFS-Fahrwegwahl explizit an
 `selection.permittedProtectionModes=["pzb"]`. Eine kürzere reine ETCS- oder
 LZB-Kante darf daher keinen PZB-kompatiblen Regionalfahrweg verdrängen; eine
@@ -118,6 +118,12 @@ PZB/ETCS- oder PZB/LZB-Überlagerung bleibt wählbar. Gibt es zwischen zwei
 Halteankern keinen kompatiblen Weg, bleibt der Routenbericht gesperrt und es
 wird kein Routenartefakt veröffentlicht. Der vollständige Programmvorlagen-
 Preflight prüft anschließend jede Formation gegen jedes Fahrwegbein erneut.
+Zusätzlich bindet v4 den reproduzierbaren Daily-Circulation-Plan sowie alle
+erforderlichen Überführungswege als eigenständiges
+`zugfolge-timetable-transfer-demands/v1`-Artefakt. Routenbericht,
+Transfermenge und Movement-v2-Vorlagen müssen dabei dieselben Plan- und
+Set-Hashes ausweisen; eine fehlende physische Tagesfortsetzung sperrt den
+Release.
 
 ## Sichtbare Kartenqualität und ReadModel
 

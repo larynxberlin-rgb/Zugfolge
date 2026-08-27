@@ -77,6 +77,7 @@ function inputs() {
     worldId: entry.worldId,
     regionId: "fixture-region",
     nowMs: 0,
+    repeatEveryMs: null,
     protectionModeSelectionPolicy: OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
     infraRelease: {},
     vehicleTypes: operationalInventory.vehicleTypes,
@@ -87,6 +88,7 @@ function inputs() {
       vehicleIds: (formation as Record<string, unknown>)["vehicleIds"] as readonly string[],
     })),
     trains: [],
+    movementContinuations: [],
   } as const;
   const facts: VehicleCatalogDeploymentFacts = {
     worldId: entry.worldId,

@@ -277,6 +277,86 @@ describe("regionaler 1:1-Scheduler", () => {
     });
   });
 
+  it("queued physische Nachfolger am selben Millisekundenrand vor dem Advance", async () => {
+    const epoch = new Date("2026-08-11T00:00:00.000Z");
+    const applyBatch = vi.fn(async (work: RegionalSimulationWorkBatch) =>
+      batchResult(resultingNowMs(work)));
+    const continuation = {
+      id: "continuation:run-1:run-2",
+      predecessorTrainId: "run-1",
+      predecessorBaseRouteVersionId: "route-v1",
+      successor: {
+        id: "run-2",
+        trainNumber: "RE 2",
+        operatorId: "public",
+        movementKind: "train",
+        routeVersionId: "route:2",
+        formationVersionId: "formation:1",
+        headRouteMm: 80_000,
+        scheduledDepartureMs: 1_000,
+        publicPassengerStop: true,
+      },
+      successorDispatch: {
+        trainId: "run-2",
+        interlockingRouteId: "interlocking:2",
+        committedRank: 0,
+        timetableDeviationMs: 0,
+        passengerImpact: 0,
+        contractualImpact: 0,
+        networkImpact: 0,
+        resourceConsequence: 0,
+        recoveryRank: 0,
+        waitingSinceMs: 1_000,
+      },
+      notBeforeMs: 1_000,
+      minimumDwellMs: 300_000,
+      continuity: "reverse-direction",
+    } as const;
+
+    await expect(advanceRegionalSimulations(
+      {
+        readyRegions: () => [{
+          worldId: "public",
+          regionId: "germany",
+          initializationHash: INITIALIZATION_HASH,
+          nowMs: 0,
+        }],
+        recover: vi.fn(),
+        applyBatch,
+      } as never,
+      [{ worldId: "public", regionId: "germany", initializationHash: INITIALIZATION_HASH }],
+      new Map([["public", epoch]]),
+      new Date(epoch.getTime() + 1_000),
+      {
+        at: () => [],
+        dueBoundaries: () => [{
+          atMs: 1_000,
+          commands: [{
+            atMs: 1_000,
+            commandId: "materialize:root",
+            command: { type: "materialize", train: continuation.successor },
+          }, {
+            atMs: 1_000,
+            commandId: "queue:run-1:run-2",
+            command: { type: "queue-movement-continuation", continuation },
+          }, {
+            atMs: 1_000,
+            commandId: "dispatch:root",
+            command: { type: "dispatch", requests: [continuation.successorDispatch] },
+          }],
+        }],
+      },
+    )).resolves.toBe(1);
+
+    expect(applyBatch).toHaveBeenCalledTimes(1);
+    expect(applyBatch.mock.calls[0]![0].commands.map(({ commandId }) => commandId)).toEqual([
+      "queue:run-1:run-2",
+      "advance-to-ms:1000",
+      "materialize:root",
+      "dispatch:root",
+    ]);
+  });
+
   it("verweigert katalogseitige Zeitkommandos vor dem autoritativen Commit", async () => {
     const epoch = new Date("2026-08-11T00:00:00.000Z");
     const applyBatch = vi.fn(async () => batchResult(1_000));

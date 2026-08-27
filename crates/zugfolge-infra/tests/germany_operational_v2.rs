@@ -11,6 +11,7 @@ use std::thread;
 use std::time::Duration;
 
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use zugfolge_infra::{derive_germany_operational_v2, validate_operational_infrastructure_v2_file};
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
@@ -47,6 +48,54 @@ fn write_sequence(path: &Path, records: &[Value]) {
         bytes.push(b'\n');
     }
     fs::write(path, bytes).expect("GeoJSONSeq-Testlayer schreiben");
+}
+
+fn canonical_json(value: &Value, output: &mut String) {
+    match value {
+        Value::Null => output.push_str("null"),
+        Value::Bool(value) => output.push_str(if *value { "true" } else { "false" }),
+        Value::Number(value) => output.push_str(&value.to_string()),
+        Value::String(value) => {
+            output.push_str(&serde_json::to_string(value).expect("Teststring kanonisieren"));
+        }
+        Value::Array(values) => {
+            output.push('[');
+            for (index, value) in values.iter().enumerate() {
+                if index > 0 {
+                    output.push(',');
+                }
+                canonical_json(value, output);
+            }
+            output.push(']');
+        }
+        Value::Object(values) => {
+            output.push('{');
+            let mut keys = values.keys().collect::<Vec<_>>();
+            keys.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
+            for (index, key) in keys.into_iter().enumerate() {
+                if index > 0 {
+                    output.push(',');
+                }
+                output.push_str(&serde_json::to_string(key).expect("Testschluessel kanonisieren"));
+                output.push(':');
+                canonical_json(&values[key], output);
+            }
+            output.push('}');
+        }
+    }
+}
+
+fn sha256(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn alpha_hash(schema: &str, value: &Value) -> String {
+    let mut canonical = String::new();
+    canonical_json(&json!({"schema": schema, "value": value}), &mut canonical);
+    sha256(canonical.as_bytes())
 }
 
 fn feature(geometry: Value, properties: Value) -> Value {
@@ -90,6 +139,10 @@ fn track_with_tags(
             "to_osm_node_id": to,
             "length_mm": length_mm,
             "orderable": true,
+            "quality_class": "B",
+            "model_state": "observed_osm_topology_with_conservative_defaults",
+            "source_id": "test-osm-source",
+            "osm_way_id": from.abs().max(1),
             "speed_forward_kmh": 80,
             "speed_backward_kmh": 70,
             "osm_tags_json": osm_tags_json
@@ -478,6 +531,433 @@ fn prepare_platform_tie_layers(root: &TestDirectory, reverse: bool) {
     );
 }
 
+const CONNEWITZ_TERMINAL_EDGE: &str = "track:osm-way-885621179-segment-3-n4158877934-n8235223466";
+const CONNEWITZ_CONNECTOR_2: &str = "track:osm-way-885621179-segment-2-n2407262407-n4158877934";
+const CONNEWITZ_CONNECTOR_1: &str = "track:osm-way-885621179-segment-1-n8235223464-n2407262407";
+const CONNEWITZ_BERTH_EDGE: &str = "track:osm-way-184332926-segment-1-n6569301007-n8235223464";
+const MULTI_SEGMENT_APPROACH_EDGE: &str =
+    "track:osm-way-123131206-segment-3-n9100000001-n8235223466";
+const THROUGH_OUTBOUND_EDGE: &str = "track:osm-way-99112233-segment-1-n4158877934-n9100000002";
+
+fn prepare_connewitz_turnaround_layers(
+    root: &TestDirectory,
+    berth_length_mm: i64,
+    berth_tags: &str,
+    include_alternate_path: bool,
+) {
+    let main_tags = concat!(
+        "{\"railway\":\"rail\",\"gauge\":\"1435\",",
+        "\"electrified\":\"contact_line\",\"voltage\":\"15000\",",
+        "\"frequency\":\"16.7\",\"railway:pzb\":\"yes\",\"usage\":\"main\"}"
+    );
+    let siding_tags = concat!(
+        "{\"railway\":\"rail\",\"service\":\"siding\",\"gauge\":\"1435\",",
+        "\"electrified\":\"contact_line\",\"voltage\":\"15000\",",
+        "\"frequency\":\"16.7\",\"railway:pzb\":\"yes\"}"
+    );
+    let mut tracks = vec![
+        track_with_tags(
+            CONNEWITZ_TERMINAL_EDGE,
+            4_158_877_934,
+            8_235_223_466,
+            73_204,
+            [json!(12.37), json!(51.30)],
+            [json!(12.371), json!(51.30)],
+            main_tags,
+        ),
+        track_with_tags(
+            CONNEWITZ_CONNECTOR_2,
+            2_407_262_407,
+            4_158_877_934,
+            35_259,
+            [json!(12.369), json!(51.30)],
+            [json!(12.37), json!(51.30)],
+            siding_tags,
+        ),
+        track_with_tags(
+            CONNEWITZ_CONNECTOR_1,
+            8_235_223_464,
+            2_407_262_407,
+            31_515,
+            [json!(12.368), json!(51.30)],
+            [json!(12.369), json!(51.30)],
+            siding_tags,
+        ),
+        track_with_tags(
+            CONNEWITZ_BERTH_EDGE,
+            6_569_301_007,
+            8_235_223_464,
+            berth_length_mm,
+            [json!(12.366), json!(51.30)],
+            [json!(12.368), json!(51.30)],
+            berth_tags,
+        ),
+    ];
+    if include_alternate_path {
+        tracks.extend([
+            track_with_tags(
+                "track:alternate-siding-terminal-to-mid",
+                9_000_000_001,
+                4_158_877_934,
+                40_000,
+                [json!(12.3688), json!(51.3002)],
+                [json!(12.37), json!(51.30)],
+                siding_tags,
+            ),
+            track_with_tags(
+                "track:alternate-siding-mid-to-berth",
+                8_235_223_464,
+                9_000_000_001,
+                40_000,
+                [json!(12.368), json!(51.30)],
+                [json!(12.3688), json!(51.3002)],
+                siding_tags,
+            ),
+        ]);
+    }
+    write_sequence(&root.join("tracks.geojsonseq"), &tracks);
+    write_sequence(
+        &root.join("platforms.geojsonseq"),
+        &[feature(
+            json!({"type": "Point", "coordinates": [12.3705, 51.30]}),
+            json!({
+                "feature_id": "platform:connewitz:test-evidence",
+                "feature_type": "platform",
+                "quality_class": "C",
+                "orderable": false
+            }),
+        )],
+    );
+    write_sequence(
+        &root.join("switches.geojsonseq"),
+        &[feature(
+            json!({"type": "Point", "coordinates": [12.37, 51.30]}),
+            json!({
+                "feature_id": "switch:connewitz:terminal",
+                "feature_type": "switch",
+                "osm_node_id": 4_158_877_934_i64,
+                "incident_track_ids_json": serde_json::to_string(&[
+                    CONNEWITZ_TERMINAL_EDGE,
+                    CONNEWITZ_CONNECTOR_2
+                ]).expect("Weichenkanten")
+            }),
+        )],
+    );
+    write_sequence(
+        &root.join("signals.geojsonseq"),
+        &[feature(
+            json!({"type": "Point", "coordinates": [12.37, 51.30]}),
+            json!({
+                "feature_id": "signal:connewitz:terminal",
+                "feature_type": "signal",
+                "incident_track_ids_json": serde_json::to_string(&[CONNEWITZ_TERMINAL_EDGE])
+                    .expect("Signalkanten")
+            }),
+        )],
+    );
+    write_sequence(
+        &root.join("blocks.geojsonseq"),
+        &[feature(
+            json!({"type": "LineString", "coordinates": [[12.37, 51.30], [12.371, 51.30]]}),
+            json!({
+                "feature_id": "block:connewitz:terminal",
+                "track_ids_json": serde_json::to_string(&[CONNEWITZ_TERMINAL_EDGE])
+                    .expect("Blockkanten"),
+                "boundary_signal_ids_json": serde_json::to_string(&["signal:connewitz:terminal"])
+                    .expect("Blocksignale")
+            }),
+        )],
+    );
+    write_sequence(
+        &root.join("conflict-resources.geojsonseq"),
+        &[feature(
+            json!({"type": "LineString", "coordinates": [[12.37, 51.30], [12.371, 51.30]]}),
+            json!({
+                "feature_id": "resource:connewitz:terminal",
+                "resource_kind": "track_section",
+                "track_ids_json": serde_json::to_string(&[CONNEWITZ_TERMINAL_EDGE])
+                    .expect("Ressourcenkanten")
+            }),
+        )],
+    );
+    write_sequence(
+        &root.join("timetable-routes.geojsonseq"),
+        &[
+            json!({
+                "routeVersionId": "passenger:connewitz:inbound",
+                "templateId": "passenger-template:connewitz:inbound",
+                "predecessorId": null,
+                "transitionRouteMm": null,
+                "legs": [{
+                    "edgeId": CONNEWITZ_TERMINAL_EDGE,
+                    "direction": "against",
+                    "edgeEntryMm": 73_204,
+                    "edgeExitMm": 0,
+                    "availableProtectionSystems": ["pzb"],
+                    "simultaneouslyRequiredProtectionSystems": []
+                }]
+            }),
+            json!({
+                "routeVersionId": "passenger:connewitz:outbound",
+                "templateId": "passenger-template:connewitz:outbound",
+                "predecessorId": null,
+                "transitionRouteMm": null,
+                "legs": [{
+                    "edgeId": CONNEWITZ_TERMINAL_EDGE,
+                    "direction": "along",
+                    "edgeEntryMm": 0,
+                    "edgeExitMm": 73_204,
+                    "availableProtectionSystems": ["pzb"],
+                    "simultaneouslyRequiredProtectionSystems": []
+                }]
+            }),
+        ],
+    );
+}
+
+fn prepare_multi_segment_terminal_turnaround_layers(root: &TestDirectory) {
+    let siding_tags = concat!(
+        "{\"railway\":\"rail\",\"service\":\"siding\",\"gauge\":\"1435\",",
+        "\"electrified\":\"contact_line\",\"voltage\":\"15000\",",
+        "\"frequency\":\"16.7\",\"railway:pzb\":\"yes\"}"
+    );
+    let main_tags = concat!(
+        "{\"railway\":\"rail\",\"gauge\":\"1435\",",
+        "\"electrified\":\"contact_line\",\"voltage\":\"15000\",",
+        "\"frequency\":\"16.7\",\"railway:pzb\":\"yes\",\"usage\":\"main\"}"
+    );
+    prepare_connewitz_turnaround_layers(root, 126_822, siding_tags, false);
+    write_sequence(
+        &root.join("tracks.geojsonseq"),
+        &[
+            track_with_tags(
+                MULTI_SEGMENT_APPROACH_EDGE,
+                9_100_000_001,
+                8_235_223_466,
+                30_000,
+                [json!(12.372), json!(51.30)],
+                [json!(12.371), json!(51.30)],
+                main_tags,
+            ),
+            track_with_tags(
+                CONNEWITZ_TERMINAL_EDGE,
+                4_158_877_934,
+                8_235_223_466,
+                47_716,
+                [json!(12.37), json!(51.30)],
+                [json!(12.371), json!(51.30)],
+                main_tags,
+            ),
+            track_with_tags(
+                CONNEWITZ_CONNECTOR_2,
+                2_407_262_407,
+                4_158_877_934,
+                35_259,
+                [json!(12.369), json!(51.30)],
+                [json!(12.37), json!(51.30)],
+                siding_tags,
+            ),
+            track_with_tags(
+                CONNEWITZ_CONNECTOR_1,
+                8_235_223_464,
+                2_407_262_407,
+                31_515,
+                [json!(12.368), json!(51.30)],
+                [json!(12.369), json!(51.30)],
+                siding_tags,
+            ),
+            track_with_tags(
+                CONNEWITZ_BERTH_EDGE,
+                6_569_301_007,
+                8_235_223_464,
+                126_822,
+                [json!(12.366), json!(51.30)],
+                [json!(12.368), json!(51.30)],
+                siding_tags,
+            ),
+        ],
+    );
+    write_sequence(
+        &root.join("timetable-routes.geojsonseq"),
+        &[
+            json!({
+                "routeVersionId": "passenger:multi-segment:inbound",
+                "templateId": "passenger-template:multi-segment:inbound",
+                "predecessorId": null,
+                "transitionRouteMm": null,
+                "legs": [
+                    {
+                        "edgeId": MULTI_SEGMENT_APPROACH_EDGE,
+                        "direction": "along",
+                        "edgeEntryMm": 0,
+                        "edgeExitMm": 30_000,
+                        "availableProtectionSystems": ["pzb"],
+                        "simultaneouslyRequiredProtectionSystems": []
+                    },
+                    {
+                        "edgeId": CONNEWITZ_TERMINAL_EDGE,
+                        "direction": "against",
+                        "edgeEntryMm": 47_716,
+                        "edgeExitMm": 0,
+                        "availableProtectionSystems": ["pzb"],
+                        "simultaneouslyRequiredProtectionSystems": []
+                    }
+                ]
+            }),
+            json!({
+                "routeVersionId": "passenger:multi-segment:outbound",
+                "templateId": "passenger-template:multi-segment:outbound",
+                "predecessorId": null,
+                "transitionRouteMm": null,
+                "legs": [
+                    {
+                        "edgeId": CONNEWITZ_TERMINAL_EDGE,
+                        "direction": "along",
+                        "edgeEntryMm": 0,
+                        "edgeExitMm": 47_716,
+                        "availableProtectionSystems": ["pzb"],
+                        "simultaneouslyRequiredProtectionSystems": []
+                    },
+                    {
+                        "edgeId": MULTI_SEGMENT_APPROACH_EDGE,
+                        "direction": "against",
+                        "edgeEntryMm": 30_000,
+                        "edgeExitMm": 0,
+                        "availableProtectionSystems": ["pzb"],
+                        "simultaneouslyRequiredProtectionSystems": []
+                    }
+                ]
+            }),
+        ],
+    );
+}
+
+fn prepare_same_direction_through_layers(root: &TestDirectory) {
+    let siding_tags = concat!(
+        "{\"railway\":\"rail\",\"service\":\"siding\",\"gauge\":\"1435\",",
+        "\"electrified\":\"contact_line\",\"voltage\":\"15000\",",
+        "\"frequency\":\"16.7\",\"railway:pzb\":\"yes\"}"
+    );
+    let main_tags = concat!(
+        "{\"railway\":\"rail\",\"gauge\":\"1435\",",
+        "\"electrified\":\"contact_line\",\"voltage\":\"15000\",",
+        "\"frequency\":\"16.7\",\"railway:pzb\":\"yes\",\"usage\":\"main\"}"
+    );
+    prepare_connewitz_turnaround_layers(root, 126_822, siding_tags, false);
+    write_sequence(
+        &root.join("tracks.geojsonseq"),
+        &[
+            track_with_tags(
+                CONNEWITZ_TERMINAL_EDGE,
+                4_158_877_934,
+                8_235_223_466,
+                73_204,
+                [json!(12.37), json!(51.30)],
+                [json!(12.371), json!(51.30)],
+                main_tags,
+            ),
+            track_with_tags(
+                THROUGH_OUTBOUND_EDGE,
+                4_158_877_934,
+                9_100_000_002,
+                100_000,
+                [json!(12.37), json!(51.30)],
+                [json!(12.372), json!(51.301)],
+                main_tags,
+            ),
+            track_with_tags(
+                CONNEWITZ_CONNECTOR_2,
+                2_407_262_407,
+                4_158_877_934,
+                35_259,
+                [json!(12.369), json!(51.30)],
+                [json!(12.37), json!(51.30)],
+                siding_tags,
+            ),
+            track_with_tags(
+                CONNEWITZ_CONNECTOR_1,
+                8_235_223_464,
+                2_407_262_407,
+                31_515,
+                [json!(12.368), json!(51.30)],
+                [json!(12.369), json!(51.30)],
+                siding_tags,
+            ),
+            track_with_tags(
+                CONNEWITZ_BERTH_EDGE,
+                6_569_301_007,
+                8_235_223_464,
+                126_822,
+                [json!(12.366), json!(51.30)],
+                [json!(12.368), json!(51.30)],
+                siding_tags,
+            ),
+        ],
+    );
+    write_sequence(
+        &root.join("switches.geojsonseq"),
+        &[feature(
+            json!({"type": "Point", "coordinates": [12.37, 51.30]}),
+            json!({
+                "feature_id": "switch:connewitz:through",
+                "feature_type": "switch",
+                "osm_node_id": 4_158_877_934_i64,
+                "incident_track_ids_json": serde_json::to_string(&[
+                    CONNEWITZ_TERMINAL_EDGE,
+                    THROUGH_OUTBOUND_EDGE,
+                    CONNEWITZ_CONNECTOR_2
+                ]).expect("Through-Weichenkanten")
+            }),
+        )],
+    );
+    write_sequence(
+        &root.join("timetable-routes.geojsonseq"),
+        &[
+            json!({
+                "routeVersionId": "passenger:through:inbound",
+                "templateId": "passenger-template:through:inbound",
+                "predecessorId": null,
+                "transitionRouteMm": null,
+                "legs": [{
+                    "edgeId": CONNEWITZ_TERMINAL_EDGE,
+                    "direction": "against",
+                    "edgeEntryMm": 73_204,
+                    "edgeExitMm": 0,
+                    "availableProtectionSystems": ["pzb"],
+                    "simultaneouslyRequiredProtectionSystems": []
+                }]
+            }),
+            json!({
+                "routeVersionId": "passenger:through:outbound",
+                "templateId": "passenger-template:through:outbound",
+                "predecessorId": null,
+                "transitionRouteMm": null,
+                "legs": [{
+                    "edgeId": THROUGH_OUTBOUND_EDGE,
+                    "direction": "along",
+                    "edgeEntryMm": 0,
+                    "edgeExitMm": 100_000,
+                    "availableProtectionSystems": ["pzb"],
+                    "simultaneouslyRequiredProtectionSystems": []
+                }]
+            }),
+        ],
+    );
+}
+
+fn write_turnaround_spec(root: &TestDirectory) -> PathBuf {
+    let path = write_spec(root, Some("timetable-routes.geojsonseq"));
+    let mut value: Value = serde_json::from_slice(&fs::read(&path).expect("Turnaround-Spec lesen"))
+        .expect("Turnaround-Spec JSON");
+    value["policy"]["terminalFormationLengthsMm"] = json!([46_560, 69_860]);
+    fs::write(
+        &path,
+        serde_json::to_vec_pretty(&value).expect("Turnaround-Spec serialisieren"),
+    )
+    .expect("Turnaround-Spec schreiben");
+    path
+}
+
 fn write_spec(root: &TestDirectory, timetable_routes: Option<&str>) -> PathBuf {
     let path = root.join("spec.json");
     fs::write(
@@ -494,6 +974,7 @@ fn write_spec(root: &TestDirectory, timetable_routes: Option<&str>) -> PathBuf {
                 "blocks": "blocks.geojsonseq",
                 "conflictResources": "conflict-resources.geojsonseq",
                 "timetableRoutes": timetable_routes,
+                "transferDemands": null,
             },
             "policy": {
                 "id": "synthetic-operational-b/v2",
@@ -506,6 +987,9 @@ fn write_spec(root: &TestDirectory, timetable_routes: Option<&str>) -> PathBuf {
                 "minimumPlatformLengthMm": 60_000,
                 "maximumPlatformSnapDistanceMm": 25_000,
                 "minimumOverlapMm": 200_000,
+                "minimumBerthEndClearanceMm": 10_000,
+                "maximumDirectDwellMs": 1_200_000,
+                "terminalFormationLengthsMm": [],
                 "defaultProtectionSystem": "pzb",
                 "regionBoundaryId": "region:deutschland-ebo",
                 "rzueLayoutId": "rzue-deutschland-test-synthetic-b-v1"
@@ -531,6 +1015,774 @@ fn resources(template: &Value) -> BTreeSet<&str> {
         .into_iter()
         .flat_map(|field| string_set(template, field))
         .collect()
+}
+
+fn route_length_mm(route: &Value) -> i64 {
+    route["legs"]
+        .as_array()
+        .expect("Laufweg-Legs")
+        .last()
+        .map(|leg| {
+            leg["routeStartMm"].as_i64().expect("Leg-Anfang")
+                + i64::try_from(
+                    leg["edgeEntryMm"]
+                        .as_i64()
+                        .expect("Kanteneintritt")
+                        .abs_diff(leg["edgeExitMm"].as_i64().expect("Kantenaustritt")),
+                )
+                .expect("Leg-Laenge")
+        })
+        .expect("nichtleerer Laufweg")
+}
+
+#[test]
+fn connewitz_abstellung_ist_fuer_beide_formationslaengen_physisch_und_stabil() {
+    let root = TestDirectory::create();
+    let berth_tags = concat!(
+        "{\"railway\":\"rail\",\"service\":\"siding\",\"gauge\":\"1435\",",
+        "\"electrified\":\"contact_line\",\"voltage\":\"15000\",",
+        "\"frequency\":\"16.7\",\"railway:pzb\":\"yes\",\"railway:track_ref\":\"5\"}"
+    );
+    prepare_connewitz_turnaround_layers(&root, 126_822, berth_tags, true);
+    let spec = write_turnaround_spec(&root);
+    let first_candidate = root.join("connewitz-first.json");
+    let first_report = root.join("connewitz-first-report.json");
+    let first_receipt =
+        derive_germany_operational_v2(&spec, &root.0, &first_candidate, &first_report)
+            .expect("Connewitz-Turnaround ableiten");
+    validate_operational_infrastructure_v2_file(
+        &first_candidate,
+        "infra-deutschland-test-v2",
+        None,
+    )
+    .expect("Connewitz-Kandidat nativ validieren");
+
+    let first_sidecar = root.join("connewitz-first.movement-route-templates-v2.json");
+    let candidate: Value =
+        serde_json::from_slice(&fs::read(&first_candidate).expect("Kandidat lesen"))
+            .expect("Kandidat JSON");
+    let sidecar: Value = serde_json::from_slice(&fs::read(&first_sidecar).expect("Sidecar lesen"))
+        .expect("Sidecar JSON");
+    assert_eq!(sidecar["schema"], "movement-route-templates-v2");
+    assert_eq!(sidecar["infraReleaseId"], "infra-deutschland-test-v2");
+    assert_eq!(
+        sidecar["operationalStateHash"],
+        first_receipt["candidate"]["stateHash"]
+    );
+    assert_eq!(
+        first_receipt["movementRouteTemplates"]["file"],
+        "connewitz-first.movement-route-templates-v2.json"
+    );
+    assert_eq!(
+        first_receipt["movementRouteTemplates"]["stateHash"],
+        sidecar["stateHash"]
+    );
+    let templates = sidecar["templates"].as_array().expect("Templates");
+    assert_eq!(
+        templates.len(),
+        2,
+        "dieselbe Track-5-Zielkante darf trotz zweier Wege nur einen Berth je Laengenklasse anbieten"
+    );
+    assert!(candidate.get("turnaroundTemplates").is_none());
+    let direct_templates = sidecar["directTemplates"]
+        .as_array()
+        .expect("Direct-Templates");
+    assert_eq!(direct_templates.len(), 4);
+    let demanded_direct = direct_templates
+        .iter()
+        .filter(|template| {
+            template["inboundRouteVersionId"] == "passenger:connewitz:inbound"
+                && template["outboundRouteVersionId"] == "passenger:connewitz:outbound"
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(demanded_direct.len(), 2);
+    assert!(demanded_direct.iter().all(|template| {
+        template["continuity"] == "reverse-direction"
+            && template["through"].is_null()
+            && template["maximumDwellMs"] == 1_200_000
+            && !template["resourceIds"].as_array().unwrap().is_empty()
+    }));
+    for template in &demanded_direct {
+        let outbound =
+            &candidate["routeVersions"][template["outbound"]["routeVersionId"].as_str().unwrap()];
+        assert_eq!(
+            template["outbound"]["predecessorBaseRouteVersionId"],
+            outbound["predecessorId"]
+        );
+    }
+
+    for (length_mm, berth_from_mm, berth_to_mm, shunt_in_length_mm) in [
+        (46_560, 40_131, 86_691, 200_025),
+        (69_860, 28_481, 98_341, 234_975),
+    ] {
+        let template = templates
+            .iter()
+            .find(|template| template["formationLengthMm"] == length_mm)
+            .expect("formationsspezifisches Template");
+        assert_eq!(
+            template["inboundRouteVersionId"],
+            "passenger:connewitz:inbound"
+        );
+        assert_eq!(
+            template["outboundRouteVersionId"],
+            "passenger:connewitz:outbound"
+        );
+        assert_eq!(template["terminalEdgeId"], CONNEWITZ_TERMINAL_EDGE);
+        assert_eq!(template["terminalNodeId"], 4_158_877_934_i64);
+        assert_eq!(template["inboundDirection"], "against");
+        assert_eq!(template["outboundDirection"], "along");
+        assert_eq!(template["candidateRank"], 0);
+        assert_eq!(template["stablingPathLengthMm"], 193_596);
+        assert_eq!(
+            template["terminalIntervals"],
+            json!([{"edgeId": CONNEWITZ_TERMINAL_EDGE, "fromMm": 0, "toMm": length_mm}])
+        );
+        assert_eq!(
+            template["berth"],
+            json!({
+                "edgeId": CONNEWITZ_BERTH_EDGE,
+                "fromMm": berth_from_mm,
+                "toMm": berth_to_mm,
+                "leftClearanceMm": berth_from_mm,
+                "rightClearanceMm": 126_822 - berth_to_mm
+            })
+        );
+
+        for field in ["shuntIn", "shuntOut", "outbound"] {
+            assert_eq!(template[field]["headRouteMm"], length_mm);
+            let route_id = template[field]["routeVersionId"].as_str().unwrap();
+            assert_eq!(
+                template[field]["predecessorBaseRouteVersionId"],
+                candidate["routeVersions"][route_id]["predecessorId"]
+            );
+            let resource_ids = template[field]["resourceIds"]
+                .as_array()
+                .expect("kompakte Konfliktressourcen");
+            assert!(!resource_ids.is_empty());
+            assert!(resource_ids.windows(2).all(|ids| {
+                ids[0].as_str().expect("Ressourcen-ID").as_bytes()
+                    < ids[1].as_str().expect("Ressourcen-ID").as_bytes()
+            }));
+            assert!(template[field]["minimumRuntimeMs"].as_i64().unwrap_or(0) > 0);
+            assert!(template[field]["routeLegCount"].as_u64().unwrap_or(0) > 0);
+            assert!(
+                !template[field]["protectionContractRuns"]
+                    .as_array()
+                    .expect("Schutzvertragslaeufe")
+                    .is_empty()
+            );
+        }
+
+        let shunt_in_id = template["shuntIn"]["routeVersionId"]
+            .as_str()
+            .expect("Shunt-in-ID");
+        let shunt_out_id = template["shuntOut"]["routeVersionId"]
+            .as_str()
+            .expect("Shunt-out-ID");
+        let qualified_outbound_id = template["outbound"]["routeVersionId"]
+            .as_str()
+            .expect("qualifizierte Ausgangsroute");
+        let shunt_in = &candidate["routeVersions"][shunt_in_id];
+        let shunt_out = &candidate["routeVersions"][shunt_out_id];
+        let qualified_outbound = &candidate["routeVersions"][qualified_outbound_id];
+        assert_eq!(shunt_in["predecessorId"], "passenger:connewitz:inbound");
+        assert_eq!(shunt_in["transitionRouteMm"], length_mm);
+        assert_eq!(route_length_mm(shunt_in), shunt_in_length_mm);
+        assert_eq!(shunt_out["predecessorId"], shunt_in_id);
+        assert_eq!(shunt_out["transitionRouteMm"], length_mm);
+        assert_eq!(qualified_outbound["predecessorId"], shunt_out_id);
+        assert_eq!(qualified_outbound["transitionRouteMm"], length_mm);
+        assert_ne!(qualified_outbound_id, "passenger:connewitz:outbound");
+        assert_eq!(qualified_outbound["legs"][0]["routeStartMm"], 0);
+        assert_eq!(qualified_outbound["legs"][1]["routeStartMm"], length_mm);
+
+        for field in ["shuntIn", "shuntOut"] {
+            let interlocking_id = template[field]["dispatchInterlockingRouteId"]
+                .as_str()
+                .expect("Rangierfahrstrasse");
+            let interlocking = &candidate["interlockingRoutes"][interlocking_id];
+            assert_eq!(interlocking["movementKind"], "shunting");
+            assert_eq!(interlocking["authorityStartRouteMm"], length_mm);
+            let route_id = template[field]["routeVersionId"]
+                .as_str()
+                .expect("Rangierlaufweg");
+            assert_eq!(
+                interlocking["authorityEndRouteMm"],
+                route_length_mm(&candidate["routeVersions"][route_id])
+            );
+        }
+        let outbound_interlocking_id = template["outbound"]["dispatchInterlockingRouteId"]
+            .as_str()
+            .expect("Ausgangsfahrstrasse");
+        assert_eq!(
+            candidate["interlockingRoutes"][outbound_interlocking_id]["authorityStartRouteMm"],
+            length_mm
+        );
+    }
+
+    let second_candidate = root.join("connewitz-second.json");
+    let second_report = root.join("connewitz-second-report.json");
+    derive_germany_operational_v2(&spec, &root.0, &second_candidate, &second_report)
+        .expect("stabile Connewitz-Wiederholung");
+    assert_eq!(
+        fs::read(&first_candidate).expect("erster Kandidat"),
+        fs::read(&second_candidate).expect("zweiter Kandidat")
+    );
+    assert_eq!(
+        fs::read(first_sidecar).expect("erster Sidecar"),
+        fs::read(root.join("connewitz-second.movement-route-templates-v2.json"))
+            .expect("zweiter Sidecar")
+    );
+}
+
+#[test]
+fn mehrkantiges_terminal_bildet_69860_mm_lueckenlos_und_in_fahrtrichtung_ab() {
+    let root = TestDirectory::create();
+    prepare_multi_segment_terminal_turnaround_layers(&root);
+    let spec = write_turnaround_spec(&root);
+    let candidate_path = root.join("multi-segment-terminal.json");
+    derive_germany_operational_v2(
+        &spec,
+        &root.0,
+        &candidate_path,
+        &root.join("multi-segment-terminal-report.json"),
+    )
+    .expect("mehrkantiges Terminal ableiten");
+    let candidate: Value =
+        serde_json::from_slice(&fs::read(&candidate_path).expect("Mehrkanten-Kandidat lesen"))
+            .expect("Mehrkanten-Kandidat JSON");
+    let sidecar: Value = serde_json::from_slice(
+        &fs::read(root.join("multi-segment-terminal.movement-route-templates-v2.json"))
+            .expect("Mehrkanten-Sidecar lesen"),
+    )
+    .expect("Mehrkanten-Sidecar JSON");
+    let expected_intervals = json!([
+        {"edgeId": MULTI_SEGMENT_APPROACH_EDGE, "fromMm": 7_856, "toMm": 30_000},
+        {"edgeId": CONNEWITZ_TERMINAL_EDGE, "fromMm": 0, "toMm": 47_716}
+    ]);
+    let direct = sidecar["directTemplates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|template| {
+            template["inboundRouteVersionId"] == "passenger:multi-segment:inbound"
+                && template["outboundRouteVersionId"] == "passenger:multi-segment:outbound"
+                && template["formationLengthMm"] == 69_860
+        })
+        .expect("mehrkantiges Direct-Template");
+    assert_eq!(direct["terminalIntervals"], expected_intervals);
+    assert_eq!(direct["continuity"], "reverse-direction");
+    assert!(direct["through"].is_null());
+    let direct_route =
+        &candidate["routeVersions"][direct["outbound"]["routeVersionId"].as_str().unwrap()];
+    assert_eq!(direct_route["legs"][0]["edgeId"], CONNEWITZ_TERMINAL_EDGE);
+    assert_eq!(direct_route["legs"][0]["routeStartMm"], 0);
+    assert_eq!(
+        direct_route["legs"][1]["edgeId"],
+        MULTI_SEGMENT_APPROACH_EDGE
+    );
+    assert_eq!(direct_route["legs"][1]["routeStartMm"], 47_716);
+    assert_eq!(direct_route["legs"][2]["routeStartMm"], 69_860);
+
+    let stabling = sidecar["templates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|template| {
+            template["inboundRouteVersionId"] == "passenger:multi-segment:inbound"
+                && template["outboundRouteVersionId"] == "passenger:multi-segment:outbound"
+                && template["formationLengthMm"] == 69_860
+        })
+        .expect("mehrkantiges Stabling-Template");
+    assert_eq!(stabling["terminalIntervals"], expected_intervals);
+    let shunt_in_route =
+        &candidate["routeVersions"][stabling["shuntIn"]["routeVersionId"].as_str().unwrap()];
+    assert_eq!(
+        shunt_in_route["legs"][0]["edgeId"],
+        MULTI_SEGMENT_APPROACH_EDGE
+    );
+    assert_eq!(shunt_in_route["legs"][1]["edgeId"], CONNEWITZ_TERMINAL_EDGE);
+    assert_eq!(shunt_in_route["legs"][2]["routeStartMm"], 69_860);
+    assert_eq!(
+        candidate["interlockingRoutes"][stabling["shuntIn"]["dispatchInterlockingRouteId"]
+            .as_str()
+            .unwrap()]["authorityStartRouteMm"],
+        69_860
+    );
+}
+
+#[test]
+fn same_direction_direct_nutzt_eigenen_through_und_danach_die_vollstaendige_basisroute() {
+    let root = TestDirectory::create();
+    prepare_same_direction_through_layers(&root);
+    let spec = write_turnaround_spec(&root);
+    let candidate_path = root.join("same-direction-through.json");
+    derive_germany_operational_v2(
+        &spec,
+        &root.0,
+        &candidate_path,
+        &root.join("same-direction-through-report.json"),
+    )
+    .expect("Same-Direction-Through ableiten");
+    let candidate: Value =
+        serde_json::from_slice(&fs::read(&candidate_path).expect("Through-Kandidat lesen"))
+            .expect("Through-Kandidat JSON");
+    let sidecar: Value = serde_json::from_slice(
+        &fs::read(root.join("same-direction-through.movement-route-templates-v2.json"))
+            .expect("Through-Sidecar lesen"),
+    )
+    .expect("Through-Sidecar JSON");
+
+    for formation_length_mm in [46_560_i64, 69_860] {
+        let direct = sidecar["directTemplates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|template| {
+                template["inboundRouteVersionId"] == "passenger:through:inbound"
+                    && template["outboundRouteVersionId"] == "passenger:through:outbound"
+                    && template["formationLengthMm"] == formation_length_mm
+            })
+            .expect("formationsspezifisches Through-Template");
+        assert_eq!(direct["continuity"], "same-direction");
+        assert_eq!(
+            direct["terminalIntervals"],
+            json!([{
+                "edgeId": CONNEWITZ_TERMINAL_EDGE,
+                "fromMm": 0,
+                "toMm": formation_length_mm
+            }])
+        );
+
+        let through = direct["through"].as_object().expect("Through-Dispatch");
+        assert_eq!(
+            through["predecessorBaseRouteVersionId"],
+            "passenger:through:inbound"
+        );
+        assert!(
+            !through["resourceIds"].as_array().unwrap().is_empty(),
+            "Through braucht konfliktentscheidende Ressourcen"
+        );
+        let through_route_id = through["routeVersionId"].as_str().unwrap();
+        let through_route = &candidate["routeVersions"][through_route_id];
+        assert_eq!(through_route["predecessorId"], "passenger:through:inbound");
+        assert_eq!(through_route["transitionRouteMm"], formation_length_mm);
+        assert_eq!(through_route["legs"].as_array().unwrap().len(), 2);
+        assert_eq!(through_route["legs"][0]["edgeId"], CONNEWITZ_TERMINAL_EDGE);
+        assert_eq!(through_route["legs"][0]["direction"], "against");
+        assert_eq!(through_route["legs"][0]["edgeEntryMm"], formation_length_mm);
+        assert_eq!(through_route["legs"][0]["edgeExitMm"], 0);
+        assert_eq!(through_route["legs"][0]["routeStartMm"], 0);
+        assert_eq!(through_route["legs"][1]["edgeId"], THROUGH_OUTBOUND_EDGE);
+        assert_eq!(through_route["legs"][1]["direction"], "along");
+        assert_eq!(through_route["legs"][1]["edgeEntryMm"], 0);
+        assert_eq!(through_route["legs"][1]["edgeExitMm"], formation_length_mm);
+        assert_eq!(
+            through_route["legs"][1]["routeStartMm"],
+            formation_length_mm
+        );
+        assert_eq!(route_length_mm(through_route), formation_length_mm * 2);
+        let through_interlocking = &candidate["interlockingRoutes"]
+            [through["dispatchInterlockingRouteId"].as_str().unwrap()];
+        assert_eq!(through_interlocking["movementKind"], "train");
+        assert_eq!(
+            through_interlocking["authorityStartRouteMm"],
+            formation_length_mm
+        );
+        assert_eq!(
+            through_interlocking["authorityEndRouteMm"],
+            formation_length_mm * 2
+        );
+
+        let outbound = direct["outbound"].as_object().expect("Outbound-Dispatch");
+        assert_eq!(outbound["predecessorBaseRouteVersionId"], through_route_id);
+        let outbound_route =
+            &candidate["routeVersions"][outbound["routeVersionId"].as_str().unwrap()];
+        assert_eq!(outbound_route["predecessorId"], through_route_id);
+        assert_eq!(outbound_route["transitionRouteMm"], formation_length_mm);
+        assert_eq!(outbound_route["legs"].as_array().unwrap().len(), 2);
+        assert_eq!(outbound_route["legs"][0]["edgeId"], THROUGH_OUTBOUND_EDGE);
+        assert_eq!(outbound_route["legs"][0]["edgeEntryMm"], 0);
+        assert_eq!(outbound_route["legs"][0]["edgeExitMm"], formation_length_mm);
+        assert_eq!(outbound_route["legs"][0]["routeStartMm"], 0);
+        assert_eq!(outbound_route["legs"][1]["edgeId"], THROUGH_OUTBOUND_EDGE);
+        assert_eq!(
+            outbound_route["legs"][1]["edgeEntryMm"],
+            formation_length_mm
+        );
+        assert_eq!(outbound_route["legs"][1]["edgeExitMm"], 100_000);
+        assert_eq!(
+            outbound_route["legs"][1]["routeStartMm"],
+            formation_length_mm
+        );
+        assert_eq!(route_length_mm(outbound_route), 100_000);
+        let outbound_interlocking = &candidate["interlockingRoutes"]
+            [outbound["dispatchInterlockingRouteId"].as_str().unwrap()];
+        assert_eq!(
+            outbound_interlocking["authorityStartRouteMm"], formation_length_mm,
+            "das bereits durch Through belegte Basisprefix darf nicht erneut befahren werden"
+        );
+        assert_eq!(outbound_interlocking["authorityEndRouteMm"], 100_000);
+
+        let direct_resources = string_set(direct, "resourceIds");
+        for resource in through["resourceIds"].as_array().unwrap() {
+            assert!(
+                direct_resources.contains(resource.as_str().unwrap()),
+                "Through-Ressource muss die Direct-Belegung begrenzen"
+            );
+        }
+    }
+}
+
+#[test]
+fn transfer_demands_erzeugen_formationsspezifische_reale_ketten_und_sidecar_bindung() {
+    let root = TestDirectory::create();
+    let berth_tags = concat!(
+        "{\"railway\":\"rail\",\"service\":\"siding\",\"gauge\":\"1435\",",
+        "\"electrified\":\"contact_line\",\"voltage\":\"15000\",",
+        "\"frequency\":\"16.7\",\"railway:pzb\":\"yes\"}"
+    );
+    prepare_connewitz_turnaround_layers(&root, 126_822, berth_tags, false);
+    let passenger_route_id = "route:gtfs:leg-transfer-loop:v1";
+    write_sequence(
+        &root.join("timetable-routes.geojsonseq"),
+        &[json!({
+            "routeVersionId": passenger_route_id,
+            "templateId": "template:gtfs:leg-transfer-loop:v1",
+            "predecessorId": null,
+            "transitionRouteMm": null,
+            "legs": [{
+                "edgeId": CONNEWITZ_TERMINAL_EDGE,
+                "direction": "along",
+                "edgeEntryMm": 0,
+                "edgeExitMm": 73_204,
+                "availableProtectionSystems": ["pzb"],
+                "simultaneouslyRequiredProtectionSystems": []
+            }]
+        })],
+    );
+    let demand = json!({
+        "id": "transfer-test-loop",
+        "lotId": "lot-test",
+        "assetCompatibilityKey": "asset-test",
+        "sourceCirculationId": "circulation-test",
+        "targetCirculationId": "circulation-test",
+        "sourcePassengerLegId": "leg-transfer-loop",
+        "targetPassengerLegId": "leg-transfer-loop",
+        "sourceLocationId": "location-b",
+        "targetLocationId": "location-a",
+        "sourcePhysicalStopId": "stop-b",
+        "targetPhysicalStopId": "stop-a",
+        "earliestDepartureS": 2_300,
+        "latestArrivalS": 87_100,
+        "availableWindowS": 84_800,
+        "movementKind": "train"
+    });
+    let mut plan_body = json!({
+        "schema": "zugfolge-daily-circulation-plan/v1",
+        "rule": "daily-circulation-permutation-and-real-transfer/v1",
+        "gtfsReleaseId": "gtfs-test",
+        "repeatEveryS": 86_400,
+        "minimumTurnaroundS": 300,
+        "metrics": {
+            "lotCount": 1,
+            "journeyChainCount": 1,
+            "circulationCount": 1,
+            "rolloverAssignmentCount": 1,
+            "transferDemandCount": 1,
+            "transferLotCount": 1
+        },
+        "circulations": [{
+            "id": "circulation-test",
+            "lotId": "lot-test",
+            "serviceLineId": "line-test",
+            "assetCompatibilityKey": "asset-test",
+            "journeyChainIds": ["journey-test"],
+            "passengerLegIds": ["leg-transfer-loop"],
+            "passengerTrainRunIds": ["run-test"],
+            "start": {"legId": "leg-transfer-loop", "locationId": "location-a", "physicalStopId": "stop-a", "timeS": 1_000},
+            "end": {"legId": "leg-transfer-loop", "locationId": "location-b", "physicalStopId": "stop-b", "timeS": 2_000}
+        }],
+        "rolloverAssignments": [{
+            "kind": "transfer",
+            "sourceCirculationId": "circulation-test",
+            "targetCirculationId": "circulation-test"
+        }],
+        "transferDemands": [demand.clone()]
+    });
+    let plan_sha256 = alpha_hash("zugfolge-daily-circulation-plan/v1", &plan_body);
+    plan_body["planSha256"] = json!(plan_sha256);
+    let speed_mmps = 70_u64 * 1_000_000 / 3_600;
+    let minimum_runtime_ms = (73_204_u64 * 1_000).div_ceil(speed_mmps);
+    let mut route = demand.clone();
+    let route_values = route.as_object_mut().expect("Transferroute");
+    route_values.insert(
+        "sourcePassengerRouteVersionId".to_owned(),
+        json!(passenger_route_id),
+    );
+    route_values.insert(
+        "targetPassengerRouteVersionId".to_owned(),
+        json!(passenger_route_id),
+    );
+    route_values.insert("formationLengthsMm".to_owned(), json!([46_560, 69_860]));
+    route_values.insert(
+        "routeVersionId".to_owned(),
+        json!("route:transfer-test-loop:movement:v1"),
+    );
+    route_values.insert(
+        "templateId".to_owned(),
+        json!("template:transfer-test-loop:movement:v1"),
+    );
+    route_values.insert(
+        "legs".to_owned(),
+        json!([{
+            "edgeId": CONNEWITZ_TERMINAL_EDGE,
+            "direction": "against",
+            "edgeEntryMm": 73_204,
+            "edgeExitMm": 0,
+            "availableProtectionSystems": ["pzb"],
+            "simultaneouslyRequiredProtectionSystems": []
+        }]),
+    );
+    route_values.insert("totalLengthMm".to_owned(), json!(73_204));
+    route_values.insert("weightedCostMm".to_owned(), json!(73_204));
+    route_values.insert("minimumRuntimeMs".to_owned(), json!(minimum_runtime_ms));
+    let mut canonical_route = String::new();
+    canonical_json(&route, &mut canonical_route);
+    let transfer_set_sha256 = sha256(format!("{canonical_route}\n").as_bytes());
+    let transfer_input = json!({
+        "schema": "zugfolge-timetable-transfer-demands/v1",
+        "infraReleaseId": "infra-deutschland-test-v2",
+        "gtfsSnapshotHash": "a".repeat(64),
+        "dailyPlan": plan_body,
+        "formationLengthsMm": [46_560, 69_860],
+        "transferRoutes": [route],
+        "transferSetSha256": transfer_set_sha256
+    });
+    let transfer_bytes = serde_json::to_vec(&transfer_input).expect("Transferinput serialisieren");
+    fs::write(root.join("transfer-demands.json"), &transfer_bytes)
+        .expect("Transferinput schreiben");
+    let spec = write_turnaround_spec(&root);
+    let mut spec_value: Value =
+        serde_json::from_slice(&fs::read(&spec).expect("Spec lesen")).expect("Spec JSON");
+    spec_value["layers"]["transferDemands"] = json!({
+        "path": "transfer-demands.json",
+        "expectedBytes": transfer_bytes.len(),
+        "expectedSha256": sha256(&transfer_bytes)
+    });
+    fs::write(
+        &spec,
+        serde_json::to_vec_pretty(&spec_value).expect("Spec serialisieren"),
+    )
+    .expect("Spec schreiben");
+
+    let first_candidate = root.join("transfer-first.json");
+    let first_report = root.join("transfer-first-report.json");
+    let receipt = derive_germany_operational_v2(&spec, &root.0, &first_candidate, &first_report)
+        .expect("Transferketten ableiten");
+    let first_sidecar = root.join("transfer-first.movement-route-templates-v2.json");
+    let sidecar: Value =
+        serde_json::from_slice(&fs::read(&first_sidecar).expect("Movement-Sidecar lesen"))
+            .expect("Movement-Sidecar JSON");
+    let candidate: Value =
+        serde_json::from_slice(&fs::read(&first_candidate).expect("Kandidat lesen"))
+            .expect("Kandidat JSON");
+    assert_eq!(sidecar["timetableTransferSetSha256"], transfer_set_sha256);
+    assert_eq!(sidecar["metrics"]["transferDemandCount"], 1);
+    assert_eq!(sidecar["metrics"]["transferTemplateCount"], 2);
+    assert!(sidecar["directTemplates"].as_array().unwrap().is_empty());
+    assert!(sidecar["templates"].as_array().unwrap().is_empty());
+    for template in sidecar["transferTemplates"].as_array().unwrap() {
+        assert_eq!(template["demandId"], "transfer-test-loop");
+        assert_eq!(template["movementKind"], "train");
+        assert!(template["transfer"]["minimumRuntimeMs"].as_i64().unwrap() > 0);
+        assert!(
+            template["targetOutbound"]["minimumRuntimeMs"]
+                .as_i64()
+                .unwrap()
+                > 0
+        );
+        assert!(!template["resourceIds"].as_array().unwrap().is_empty());
+        for field in ["transfer", "targetOutbound"] {
+            let route_id = template[field]["routeVersionId"].as_str().unwrap();
+            let route = &candidate["routeVersions"][route_id];
+            assert_eq!(route["transitionRouteMm"], template["formationLengthMm"]);
+            assert_eq!(
+                template[field]["predecessorBaseRouteVersionId"],
+                route["predecessorId"]
+            );
+            assert!(
+                !template[field]["protectionContractRuns"]
+                    .as_array()
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+    }
+    assert_eq!(
+        receipt["movementRouteTemplates"]["stateHash"],
+        sidecar["stateHash"]
+    );
+    let report: Value = serde_json::from_slice(&fs::read(&first_report).expect("Report lesen"))
+        .expect("Report JSON");
+    assert_eq!(report["inputs"]["transferDemands"]["records"], 1);
+    assert_eq!(report["timetableRouteEvidence"]["circulationCount"], 1);
+    assert_eq!(report["timetableRouteEvidence"]["transferDemandCount"], 1);
+
+    let second_candidate = root.join("transfer-second.json");
+    derive_germany_operational_v2(
+        &spec,
+        &root.0,
+        &second_candidate,
+        &root.join("transfer-second-report.json"),
+    )
+    .expect("stabile Transfer-Wiederholung");
+    assert_eq!(
+        fs::read(first_candidate).expect("erster Transferkandidat"),
+        fs::read(second_candidate).expect("zweiter Transferkandidat")
+    );
+    assert_eq!(
+        fs::read(first_sidecar).expect("erster Transfer-Sidecar"),
+        fs::read(root.join("transfer-second.movement-route-templates-v2.json"))
+            .expect("zweiter Transfer-Sidecar")
+    );
+
+    let mut invalid_input = transfer_input;
+    invalid_input["transferRoutes"][0]["minimumRuntimeMs"] = json!(minimum_runtime_ms + 1);
+    let mut invalid_canonical_route = String::new();
+    canonical_json(
+        &invalid_input["transferRoutes"][0],
+        &mut invalid_canonical_route,
+    );
+    invalid_input["transferSetSha256"] =
+        json!(sha256(format!("{invalid_canonical_route}\n").as_bytes()));
+    let invalid_bytes = serde_json::to_vec(&invalid_input).expect("Driftinput serialisieren");
+    fs::write(root.join("transfer-demands.json"), &invalid_bytes).expect("Driftinput schreiben");
+    spec_value["layers"]["transferDemands"] = json!({
+        "path": "transfer-demands.json",
+        "expectedBytes": invalid_bytes.len(),
+        "expectedSha256": sha256(&invalid_bytes)
+    });
+    fs::write(
+        &spec,
+        serde_json::to_vec_pretty(&spec_value).expect("Driftspec serialisieren"),
+    )
+    .expect("Driftspec schreiben");
+    let error = derive_germany_operational_v2(
+        &spec,
+        &root.0,
+        &root.join("transfer-runtime-drift.json"),
+        &root.join("transfer-runtime-drift-report.json"),
+    )
+    .expect_err("native Transferlaufzeit muss Inputdrift fail-closed verwerfen");
+    assert!(
+        error
+            .to_string()
+            .contains("driftet in nativer Laenge/Laufzeit"),
+        "{error}"
+    );
+}
+
+#[test]
+fn ungeeignete_abstellgleise_werden_nicht_erfunden_waehrend_direct_erhalten_bleibt() {
+    let valid_tags = concat!(
+        "{\"railway\":\"rail\",\"service\":\"siding\",\"gauge\":\"1435\",",
+        "\"electrified\":\"contact_line\",\"voltage\":\"15000\",",
+        "\"frequency\":\"16.7\",\"railway:pzb\":\"yes\"}"
+    );
+    let cases = [
+        ("too-short", 80_000, valid_tags),
+        (
+            "one-way",
+            126_822,
+            "{\"railway\":\"rail\",\"service\":\"siding\",\"gauge\":\"1435\",\"electrified\":\"contact_line\",\"voltage\":\"15000\",\"frequency\":\"16.7\",\"railway:pzb\":\"yes\",\"oneway\":\"yes\"}",
+        ),
+        (
+            "incompatible-voltage",
+            126_822,
+            "{\"railway\":\"rail\",\"service\":\"siding\",\"gauge\":\"1435\",\"electrified\":\"contact_line\",\"voltage\":\"25000\",\"frequency\":\"50\",\"railway:pzb\":\"yes\"}",
+        ),
+        (
+            "not-a-siding",
+            126_822,
+            "{\"railway\":\"rail\",\"gauge\":\"1435\",\"electrified\":\"contact_line\",\"voltage\":\"15000\",\"frequency\":\"16.7\",\"railway:pzb\":\"yes\"}",
+        ),
+    ];
+    for (name, berth_length_mm, berth_tags) in cases {
+        let root = TestDirectory::create();
+        prepare_connewitz_turnaround_layers(&root, berth_length_mm, berth_tags, false);
+        let spec = write_turnaround_spec(&root);
+        let candidate = root.join(&format!("{name}.json"));
+        let report = root.join(&format!("{name}-report.json"));
+        derive_germany_operational_v2(&spec, &root.0, &candidate, &report)
+            .expect("Direct-Kontinuitaet bleibt ohne erfundene Abstellung");
+        let sidecar: Value = serde_json::from_slice(
+            &fs::read(root.join(&format!("{name}.movement-route-templates-v2.json")))
+                .expect("Movement-Sidecar"),
+        )
+        .expect("Movement-Sidecar JSON");
+        let stabling = sidecar["templates"].as_array().expect("Stabling-Templates");
+        if name == "too-short" {
+            assert!(
+                !stabling.is_empty()
+                    && stabling
+                        .iter()
+                        .all(|template| template["formationLengthMm"] == 46_560),
+                "80-m-Kante darf die kurze, aber nicht die lange Formation aufnehmen"
+            );
+        } else {
+            assert!(
+                stabling.is_empty(),
+                "{name} darf kein Abstellgleis erfinden"
+            );
+        }
+        assert!(
+            sidecar["directTemplates"]
+                .as_array()
+                .expect("Direct-Templates")
+                .len()
+                >= 2
+        );
+    }
+}
+
+#[test]
+fn ungenutzte_ankunftsroute_erzeugt_ohne_nachfolger_keine_falsche_kontinuitaet() {
+    let root = TestDirectory::create();
+    let berth_tags = "{\"railway\":\"rail\",\"service\":\"siding\",\"gauge\":\"1435\",\"electrified\":\"contact_line\",\"voltage\":\"15000\",\"frequency\":\"16.7\",\"railway:pzb\":\"yes\"}";
+    prepare_connewitz_turnaround_layers(&root, 126_822, berth_tags, false);
+    write_sequence(
+        &root.join("timetable-routes.geojsonseq"),
+        &[json!({
+            "routeVersionId": "passenger:connewitz:inbound",
+            "templateId": "passenger-template:connewitz:inbound",
+            "predecessorId": null,
+            "transitionRouteMm": null,
+            "legs": [{
+                "edgeId": CONNEWITZ_TERMINAL_EDGE,
+                "direction": "against",
+                "edgeEntryMm": 73_204,
+                "edgeExitMm": 0,
+                "availableProtectionSystems": ["pzb"],
+                "simultaneouslyRequiredProtectionSystems": []
+            }]
+        })],
+    );
+    let spec = write_turnaround_spec(&root);
+    derive_germany_operational_v2(
+        &spec,
+        &root.0,
+        &root.join("missing-reverse.json"),
+        &root.join("missing-reverse-report.json"),
+    )
+    .expect("irrelevante Route ohne Fahrplanpaar darf keine erfundene Gegenrichtung verlangen");
+    let sidecar: Value = serde_json::from_slice(
+        &fs::read(root.join("missing-reverse.movement-route-templates-v2.json"))
+            .expect("Movement-Sidecar"),
+    )
+    .expect("Movement-Sidecar JSON");
+    assert!(sidecar["directTemplates"].as_array().unwrap().is_empty());
+    assert!(sidecar["templates"].as_array().unwrap().is_empty());
 }
 
 #[test]
@@ -646,7 +1898,7 @@ fn nativer_compiler_verwirft_aliasierende_ausgabeziele_vor_der_ableitung() {
     assert!(
         error
             .to_string()
-            .contains("Kandidat und Bericht muessen verschiedene Ziele"),
+            .contains("Kandidat, Movement-Route-Sidecar und Bericht muessen verschiedene Ziele"),
         "{error}"
     );
     assert!(!candidate.exists());
@@ -873,6 +2125,11 @@ fn lokaler_vollkorpus_ist_deterministisch_aber_fail_closed_und_verriegelt_den_kn
         templates
             .values()
             .all(|template| resources(template).contains(shared))
+    );
+    assert!(
+        templates
+            .values()
+            .all(|template| template["authorityStartRouteMm"] == json!(0))
     );
     for template in templates.values() {
         let path: BTreeSet<_> = template["pathResources"]
@@ -1445,59 +2702,87 @@ fn gepinnter_lueckenloser_zuglauf_schliesst_die_route_dimension() {
         candidate["interlockingRoutes"]
             .as_object()
             .map(serde_json::Map::len),
-        Some(1)
+        Some(2)
     );
     let templates = candidate["interlockingRoutes"]
         .as_object()
         .expect("Fahrstrassenvorlagen");
-    let full = templates
-        .values()
-        .find(|template| template["authorityEndRouteMm"] == json!(2_200))
-        .expect("vollstaendige Gesamtfahrstrasse");
-    assert_eq!(full["releaseAfterTailRouteMm"], json!(2_200));
+    assert!(
+        templates
+            .keys()
+            .all(|id| id.starts_with("interlocking:synthetic-segment:"))
+    );
+    let mut segments: Vec<_> = templates.values().collect();
+    segments.sort_by_key(|template| {
+        template["authorityStartRouteMm"]
+            .as_i64()
+            .expect("Fahrstrassenanfang")
+    });
+    let legs = candidate["routeVersions"]["route-version-full-1"]["legs"]
+        .as_array()
+        .expect("Laufweg-Legs");
+    let mut expected_start = 0_i64;
+    let mut total_segment_path_resources = 0_usize;
+    for (segment, leg) in segments.iter().zip(legs) {
+        assert_eq!(segment["authorityStartRouteMm"], json!(expected_start));
+        assert_eq!(
+            string_set(segment, "pathResources"),
+            string_set(leg, "blockIds")
+        );
+        let authority_end = segment["authorityEndRouteMm"]
+            .as_i64()
+            .expect("Fahrstrassenende");
+        assert!(authority_end > expected_start);
+        assert_eq!(segment["releaseAfterTailRouteMm"], json!(authority_end));
+        expected_start = authority_end;
+        total_segment_path_resources += string_set(segment, "pathResources").len();
 
-    let full_path = string_set(full, "pathResources");
-    assert_eq!(full_path.len(), 5);
-    assert!(full_path.contains("resource-block-1"));
-    assert!(full_path.contains("resource-track-section-2"));
-
+        let path = string_set(segment, "pathResources");
+        let overlap = string_set(segment, "overlapResources");
+        let flank = string_set(segment, "flankResources");
+        assert!(path.is_disjoint(&overlap));
+        assert!(path.is_disjoint(&flank));
+        assert!(overlap.is_disjoint(&flank));
+    }
+    assert_eq!(expected_start, 2_200);
+    assert_eq!(total_segment_path_resources, 6);
     assert_eq!(
-        string_set(full, "flankResources"),
-        BTreeSet::from([
-            "resource:synthetic-stellzone-node:1",
-            "resource:synthetic-stellzone-node:2",
-        ])
+        string_set(segments[0], "flankResources"),
+        BTreeSet::from(["resource:synthetic-stellzone-node:1"])
     );
     assert_eq!(
-        string_set(full, "overlapResources"),
+        string_set(segments[0], "overlapResources"),
+        BTreeSet::from(["resource:synthetic-stellzone-node:2"])
+    );
+    assert_eq!(
+        string_set(segments[1], "flankResources"),
+        BTreeSet::from(["resource:synthetic-stellzone-node:2"])
+    );
+    assert_eq!(
+        string_set(segments[1], "overlapResources"),
         BTreeSet::from(["resource:synthetic-stellzone-node:3"])
     );
-    assert_ne!(full["switchPositions"]["switch-2"], Value::Null);
-
-    let full_overlap = string_set(full, "overlapResources");
-    let full_flank = string_set(full, "flankResources");
-    assert!(full_path.is_disjoint(&full_overlap));
-    assert!(full_path.is_disjoint(&full_flank));
-    assert!(full_overlap.is_disjoint(&full_flank));
+    assert_ne!(segments[0]["switchPositions"]["switch-2"], Value::Null);
+    assert_ne!(segments[1]["switchPositions"]["switch-2"], Value::Null);
     let report: Value =
         serde_json::from_slice(&fs::read(report).expect("Report")).expect("Report JSON");
     assert_eq!(report["routeCoverage"], "complete-pinned-timetable-routes");
     assert_eq!(report["unresolvedRequired"], 0);
     assert_eq!(report["counts"]["source"]["timetableRoutes"], 1);
     assert_eq!(report["counts"]["source"]["timetableLegs"], 2);
-    assert_eq!(report["counts"]["candidate"]["interlockingRoutes"], 1);
+    assert_eq!(report["counts"]["candidate"]["interlockingRoutes"], 2);
     assert_eq!(
         report["counts"]["provenance"]["syntheticBoundarySignals"],
         2
     );
     assert_eq!(
         report["scope"]["interlockingModel"],
-        "deterministic-full-route-node-stellzone-mutex-and-authority/v2"
+        "deterministic-linear-segment-node-stellzone-mutex-and-progressive-authority/v3"
     );
 }
 
 #[test]
-fn kumulative_fahrstrassen_verriegeln_eine_gemeinsame_zwischenkante() {
+fn segmentfahrstrassen_verriegeln_gemeinsame_kante_ohne_kumulative_ressourcen() {
     let root = TestDirectory::create();
     prepare_shared_middle_layers(&root);
     write_sequence(
@@ -1545,36 +2830,105 @@ fn kumulative_fahrstrassen_verriegeln_eine_gemeinsame_zwischenkante() {
     let templates = candidate["interlockingRoutes"]
         .as_object()
         .expect("Fahrstrassen");
-    assert_eq!(templates.len(), 2);
-    let full_template = |route_template_id: &str| {
-        templates
+    assert_eq!(templates.len(), 8);
+    let route_segments = |route_template_id: &str| {
+        let mut segments: Vec<_> = templates
             .values()
-            .find(|template| {
-                template["routeTemplateId"] == json!(route_template_id)
-                    && template["authorityEndRouteMm"] == json!(4_000)
-            })
-            .expect("vollstaendige Fahrstrasse")
+            .filter(|template| template["routeTemplateId"] == json!(route_template_id))
+            .collect();
+        segments.sort_by_key(|template| {
+            template["authorityStartRouteMm"]
+                .as_i64()
+                .expect("Segmentanfang")
+        });
+        segments
     };
-    let full_a = full_template("template-a");
-    let full_b = full_template("template-b");
-    let path_a = string_set(full_a, "pathResources");
-    let path_b = string_set(full_b, "pathResources");
+    let segments_a = route_segments("template-a");
+    let segments_b = route_segments("template-b");
+    for (template_id, segments) in [("template-a", &segments_a), ("template-b", &segments_b)] {
+        assert_eq!(segments.len(), 4);
+        let route = candidate["routeVersions"]
+            .as_object()
+            .expect("Laufwege")
+            .values()
+            .find(|route| route["templateId"] == json!(template_id))
+            .expect("Laufweg zur Vorlage");
+        let legs = route["legs"].as_array().expect("Laufweg-Legs");
+        for (index, (segment, leg)) in segments.iter().zip(legs).enumerate() {
+            let start = i64::try_from(index).expect("Index") * 1_000;
+            assert_eq!(segment["authorityStartRouteMm"], json!(start));
+            assert_eq!(segment["authorityEndRouteMm"], json!(start + 1_000));
+            assert_eq!(
+                string_set(segment, "pathResources"),
+                string_set(leg, "blockIds")
+            );
+        }
+    }
+
+    let shared_a = segments_a[1];
+    let shared_b = segments_b[1];
+    let path_a = string_set(shared_a, "pathResources");
+    let path_b = string_set(shared_b, "pathResources");
     assert!(!path_a.is_disjoint(&path_b));
     for shared_resource in ["resource-switch-2", "resource-switch-3"] {
         assert!(path_a.contains(shared_resource));
         assert!(path_b.contains(shared_resource));
     }
-    assert!(string_set(full_a, "flankResources").contains("resource:synthetic-stellzone-node:2"));
-    assert!(string_set(full_b, "flankResources").contains("resource:synthetic-stellzone-node:3"));
-    assert_ne!(
-        full_a["switchPositions"]["switch-2"],
-        full_b["switchPositions"]["switch-2"]
+    assert_eq!(
+        string_set(shared_a, "flankResources"),
+        BTreeSet::from(["resource:synthetic-stellzone-node:2"])
     );
-    assert!(!resources(full_a).is_disjoint(&resources(full_b)));
+    assert_eq!(
+        string_set(shared_b, "flankResources"),
+        BTreeSet::from(["resource:synthetic-stellzone-node:2"])
+    );
+    assert_eq!(
+        string_set(shared_a, "overlapResources"),
+        BTreeSet::from(["resource:synthetic-stellzone-node:3"])
+    );
+    assert_ne!(
+        shared_a["switchPositions"]["switch-2"],
+        shared_b["switchPositions"]["switch-2"]
+    );
+    assert!(!resources(shared_a).is_disjoint(&resources(shared_b)));
+    assert_eq!(
+        segments_a[0]["switchPositions"]
+            .as_object()
+            .expect("Switchlagen")
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["switch-2"])
+    );
+    assert_eq!(
+        shared_a["switchPositions"]
+            .as_object()
+            .expect("Switchlagen")
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["switch-2", "switch-3"])
+    );
+    assert_eq!(
+        segments_a[2]["switchPositions"]
+            .as_object()
+            .expect("Switchlagen")
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["switch-3"])
+    );
+    assert_eq!(
+        segments_a[3]["switchPositions"]
+            .as_object()
+            .expect("Switchlagen")
+            .len(),
+        0
+    );
 }
 
 #[test]
-fn self_loop_gesamtfahrstrasse_bleibt_kumulativ_getrennt_und_deterministisch() {
+fn self_loop_segmentfahrstrassen_bleiben_getrennt_lueckenlos_und_deterministisch() {
     let root = TestDirectory::create();
     prepare_self_loop_layers(&root);
     write_sequence(
@@ -1617,25 +2971,43 @@ fn self_loop_gesamtfahrstrasse_bleibt_kumulativ_getrennt_und_deterministisch() {
     let templates = candidate["interlockingRoutes"]
         .as_object()
         .expect("Fahrstrassen");
-    assert_eq!(templates.len(), 1);
-    let full = templates
-        .values()
-        .find(|template| template["authorityEndRouteMm"] == json!(2_000))
-        .expect("vollstaendige Self-Loop-Gesamtfahrstrasse");
-    let full_flank = string_set(full, "flankResources");
+    assert_eq!(templates.len(), 2);
+    let mut segments: Vec<_> = templates.values().collect();
+    segments.sort_by_key(|template| {
+        template["authorityStartRouteMm"]
+            .as_i64()
+            .expect("Segmentanfang")
+    });
+    assert_eq!(segments[0]["authorityStartRouteMm"], json!(0));
+    assert_eq!(segments[0]["authorityEndRouteMm"], json!(1_000));
+    assert_eq!(segments[1]["authorityStartRouteMm"], json!(1_000));
+    assert_eq!(segments[1]["authorityEndRouteMm"], json!(2_000));
+    let loop_flank = string_set(segments[0], "flankResources");
     assert!(
-        full_flank
+        loop_flank
             .iter()
             .any(|resource| resource.starts_with("resource:synthetic-self-loop-flank:"))
     );
-    assert!(full_flank.contains("resource:synthetic-stellzone-node:1"));
-    assert_eq!(string_set(full, "pathResources").len(), 3);
-
-    let full_path = string_set(full, "pathResources");
-    let full_overlap = string_set(full, "overlapResources");
-    assert!(full_path.is_disjoint(&full_overlap));
-    assert!(full_path.is_disjoint(&full_flank));
-    assert!(full_overlap.is_disjoint(&full_flank));
+    assert_eq!(loop_flank.len(), 1);
+    assert_eq!(
+        string_set(segments[1], "flankResources"),
+        BTreeSet::from(["resource:synthetic-stellzone-node:1"])
+    );
+    let legs = candidate["routeVersions"]["route-loop"]["legs"]
+        .as_array()
+        .expect("Self-Loop-Legs");
+    for (segment, leg) in segments.iter().zip(legs) {
+        assert_eq!(
+            string_set(segment, "pathResources"),
+            string_set(leg, "blockIds")
+        );
+        let path = string_set(segment, "pathResources");
+        let overlap = string_set(segment, "overlapResources");
+        let flank = string_set(segment, "flankResources");
+        assert!(path.is_disjoint(&overlap));
+        assert!(path.is_disjoint(&flank));
+        assert!(overlap.is_disjoint(&flank));
+    }
 }
 
 #[test]

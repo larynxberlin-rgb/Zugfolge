@@ -30,9 +30,9 @@ Ein operatives `InfraRelease` enthält zusätzlich zum Betriebsgraphen:
 - topologische Knoten, Blöcke und Freimelde-/Freigabegrenzen;
 - Signale mit Richtung, Weichen mit zulässigen Lagen, Grenzzeichen und
   Rangiergrenzen;
-- Fahrstraßenvorlagen mit Fahrweg, Durchrutschweg, Flankenschutz,
-  Schutzabständen, Ausschlüssen, Fahrberechtigungsende und
-  zugschlussbezogener Auflösegrenze;
+- je Laufwegkante genau eine Zugfahrstraßenvorlage mit exaktem
+  Fahrberechtigungsanfang und -ende, Fahrweg, Durchrutschweg, Flankenschutz,
+  Schutzabständen, Ausschlüssen und zugschlussbezogener Auflösegrenze;
 - Geschwindigkeits-, Neigungs-, Elektrifizierungs- und Zugsicherungsprofile;
 - Bahnsteiggleise und nutzbare Intervalle, sichere Halte-/Überholpunkte,
   Regionsgrenzen sowie ein statisches RZÜ-Layout;
@@ -133,7 +133,18 @@ Signalbegriffe sind Ableitungen. Kein Signal kann Bewegung über die interne
 Fahrberechtigung hinaus erlauben. Auflösung erfolgt erst, wenn der Zugschluss
 die vorlagengebundene Grenze passiert hat.
 
-Eine konservative Gesamtfahrstraße darf ihre durchfahrenen Fahrweg- und
+Zugfahrstraßen sind releasegebunden abschnittsweise: Ihr Anfang entspricht
+exakt dem Anfang einer Laufwegkante, ihr Ende exakt deren Ende und ihre
+Fahrwegressourcen exakt den Blockressourcen dieser Kante. Vor dem Anfahren
+sichert der FDL lückenlose Folgefahrstraßen einzeln bis zum ersten Konflikt und
+erweitert die gemeinsame Fahrberechtigung bis dorthin. Dadurch entsteht auf
+einer freien Folge kein künstlicher Zwischenhalt, ohne die einzelnen
+zugschlussbezogenen Locks zu einem Gesamtlock zu verschmelzen. Ist ein späterer
+Abschnitt belegt, endet die Fahrberechtigung am letzten gesicherten
+Abschnittsende; dort wartet der Zug stehend und wird erst ab diesem exakten
+Punkt neu autorisiert.
+
+Die letzte Fahrstraße darf ihre durchfahrenen Fahrweg- und
 Flankenschutzressourcen am exakten Laufwegende auch dann freigeben, wenn ihre
 statische Schlussfreigabe mit dem Fahrberechtigungsende zusammenfällt und
 deshalb von einem positiv langen Zugschluss nicht überfahren werden kann.
@@ -141,7 +152,7 @@ Diese Terminalfreigabe gilt ausschließlich bei Zugspitze gleich Laufwegende,
 Geschwindigkeit null und ohne laufenden Bewegungsabschnitt. Die
 Durchrutschwegressourcen der Fahrstraße wechseln dabei atomar aus dem Lock in
 die belegte Endschutzmenge der stehenden Formation; sie bleiben bis zu deren
-Entfernung gesperrt. Vor diesem Zustand bleibt der vollständige Lock erhalten.
+Entfernung gesperrt.
 
 ## 5. FDL und virtueller Lokführer
 
@@ -153,7 +164,10 @@ Verhungerungsschutz und stabiler Zugkennung. Es entsteht kein gewichteter
 Einzelscore. Begonnene oder verriegelte Bewegungen werden nicht zurückgenommen.
 Nach erfolgreicher Fahrstraßenzuteilung wird die Fahrt atomar aus allen
 Ressourcen-Warteindizes entfernt; diese Indizes dürfen keine bereits
-autorisierten Fahrten enthalten.
+autorisierten Fahrten enthalten. Der `DispatchRequest` bleibt dagegen als
+Programmauftrag über alle Abschnitte erhalten und wird erst am echten
+Laufwegende entfernt. Erneut autorisiert werden ausschließlich stehende Züge
+ohne Fahrberechtigung und ohne laufenden Bewegungsabschnitt.
 
 Der virtuelle Lokführer leitet Beschleunigen, Beharren und Bremsen aus
 Formation, Kantenprofil, Neigung, Fahrberechtigung und Zielhalt ab. Verspätete
@@ -232,6 +246,22 @@ Accept. Die Quelle entfernt erst nach Bestätigung; dadurch existiert während
 des Protokolls eine geschützte, identische Übergabekopie, aber niemals zwei
 bewegliche Autoritäten. Statische Releases werden geteilt, dynamischer Zustand
 nicht.
+
+Physische Bewegungsfortsetzungen sind davon getrennt. Ein signierter
+`MovementContinuation`-Link bindet Vorgänger, Zielzug, Zielroute,
+Ziel-Fahrstraße, frühesten Zeitpunkt, Mindestaufenthalt und die Orientierung
+`same-direction` oder `reverse-direction`. Er wird erst am real erreichten
+Laufwegende bei Stillstand ohne Fahrberechtigung und Bewegungsabschnitt atomar
+aktiviert. Formation, Fahrzeuge und belegte Kantenintervalle bleiben dabei
+dieselben; die Zielroute muss den Vorgängerlaufweg und den exakten Übergabepunkt
+statisch referenzieren. Eine Wende verlangt Führerstände an beiden Enden.
+Vorübergehend belegte Zielressourcen lassen die Quelle sicher stehen und werden
+ressourcenindexiert erneut geprüft; sie lösen weder Teleport noch Retirement
+oder einen fehlgeschlagenen Zeitfortschritt aus. Der kompakte Basisgraph ist an
+die Initialisierung gehasht: `repeatEveryMs: null` verlangt einen leeren Graph,
+eine positive Wiederholung einen vollständigen Ein-/Ausgangszyklus je
+Zugvorlage. Direkte Personenfahrt-zu-Personenfahrt-Links verlangen exakt
+300.000 ms Mindestaufenthalt, alle anderen Links exakt 0 ms.
 
 LiveMap und RZÜ werden aus demselben Commit erzeugt. Snapshot und lückenlose
 Deltas tragen Welt, Region, Commit, Simulationszeit, Laufweg-/Formationsversion,

@@ -109,6 +109,7 @@ function operationalInfrastructure() {
       overlapResources: [OVERLAP_RESOURCE],
       flankResources: [FLANK_RESOURCE],
       switchPositions: {},
+      authorityStartRouteMm: 0,
       authorityEndRouteMm: EDGE_LENGTH_MM,
       releaseAfterTailRouteMm: EDGE_LENGTH_MM,
     };

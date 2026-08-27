@@ -27,6 +27,7 @@ const INPUT_ROLES = Object.freeze([
   ["signals", "signals"],
   ["switches", "switches"],
   ["timetable-routes", "timetableRoutes"],
+  ["timetable-transfer-demands", "transferDemands"],
   ["tracks", "tracks"],
 ]);
 
@@ -56,15 +57,16 @@ function sameValue(left, right) {
 }
 
 function validateInputs(specification) {
-  exactKeys(specification, ["schema", "releaseId", "artifactRoot", "policyFile", "annualSpecificationFile", "candidateFile", "derivationReportFile", "timetableRouteReportFile", "gtfsSnapshotFile", "operationalArtifactFile"], "Synthetic-Operational-Closure-Jahresvertrag");
+  exactKeys(specification, ["schema", "releaseId", "artifactRoot", "policyFile", "annualSpecificationFile", "candidateFile", "derivationReportFile", "timetableRouteReportFile", "timetableTransferDemandsFile", "gtfsSnapshotFile", "operationalArtifactFile"], "Synthetic-Operational-Closure-Jahresvertrag");
   invariant(specification.schema === SYNTHETIC_OPERATIONAL_CLOSURE_INPUTS_SCHEMA, "Synthetic-Operational-Closure-Jahresvertrag besitzt kein v2-Schema.");
   invariant(typeof specification.releaseId === "string" && specification.releaseId !== "", "Synthetic-Operational-Closure-Jahresvertrag besitzt keine Release-ID.");
-  for (const field of ["artifactRoot", "policyFile", "annualSpecificationFile", "candidateFile", "derivationReportFile", "timetableRouteReportFile", "gtfsSnapshotFile", "operationalArtifactFile"]) {
+  for (const field of ["artifactRoot", "policyFile", "annualSpecificationFile", "candidateFile", "derivationReportFile", "timetableRouteReportFile", "timetableTransferDemandsFile", "gtfsSnapshotFile", "operationalArtifactFile"]) {
     specification[field] = relativePath(specification[field], field);
   }
-  invariant(new Set([specification.candidateFile, specification.derivationReportFile, specification.timetableRouteReportFile, specification.gtfsSnapshotFile, specification.operationalArtifactFile]).size === 5, "Candidate, Berichte, GTFS-Snapshot und Artefakt muessen getrennte Dateien sein.");
+  invariant(new Set([specification.candidateFile, specification.derivationReportFile, specification.timetableRouteReportFile, specification.timetableTransferDemandsFile, specification.gtfsSnapshotFile, specification.operationalArtifactFile]).size === 6, "Candidate, Berichte, Transfer-Demands, GTFS-Snapshot und Artefakt muessen getrennte Dateien sein.");
   invariant(basename(specification.operationalArtifactFile) === "operational-infrastructure-v2.json", "Operational-v2-Artefakt besitzt keinen kanonischen Dateinamen.");
   invariant(basename(specification.timetableRouteReportFile) === "timetable-routes-v2.derivation-report.json", "Timetable-Route-Bericht besitzt keinen kanonischen v2-Dateinamen.");
+  invariant(basename(specification.timetableTransferDemandsFile) === "timetable-routes-v2.transfer-demands-v1.json", "Timetable-Transfer-Demands besitzen keinen kanonischen v1-Dateinamen.");
   invariant(/^gtfs-region-.+-v2\.json$/u.test(basename(specification.gtfsSnapshotFile)), "GTFS-Snapshot besitzt keinen kanonischen v2-Dateinamen.");
   return specification;
 }
@@ -173,15 +175,17 @@ export async function writeAnnualSyntheticOperationalClosure({
   const candidatePath = await containedRegularFile(artifactRoot, closureInputs.candidateFile, "candidateFile");
   const derivationReportPath = await containedRegularFile(artifactRoot, closureInputs.derivationReportFile, "derivationReportFile");
   const timetableRouteReportPath = await containedRegularFile(artifactRoot, closureInputs.timetableRouteReportFile, "timetableRouteReportFile");
+  const timetableTransferDemandsPath = await containedRegularFile(artifactRoot, closureInputs.timetableTransferDemandsFile, "timetableTransferDemandsFile");
   const gtfsSnapshotPath = await containedRegularFile(artifactRoot, closureInputs.gtfsSnapshotFile, "gtfsSnapshotFile");
   const operationalArtifactPath = await containedRegularFile(artifactRoot, closureInputs.operationalArtifactFile, "operationalArtifactFile");
 
-  const [policyInput, annualInput, candidateProof, reportInput, timetableRouteReportInput, gtfsSnapshotInput, artifactProof] = await Promise.all([
+  const [policyInput, annualInput, candidateProof, reportInput, timetableRouteReportInput, timetableTransferDemandsInput, gtfsSnapshotInput, artifactProof] = await Promise.all([
     readJsonWithProof(policyPath, "Synthetic-Operational-Policy"),
     readJsonWithProof(annualSpecificationPath, "Operational-v2-Jahresspezifikation"),
     syntheticOperationalFileProof(candidatePath, "Operational-v2-Candidate"),
     readJsonWithProof(derivationReportPath, "Operational-v2-Ableitungsbericht"),
     readJsonWithProof(timetableRouteReportPath, "Timetable-Route-Bericht"),
+    readJsonWithProof(timetableTransferDemandsPath, "Timetable-Transfer-Demands"),
     readJsonWithProof(gtfsSnapshotPath, "GTFS-Snapshot"),
     syntheticOperationalFileProof(operationalArtifactPath, "Operational-v2-Artefakt"),
   ]);
@@ -194,12 +198,20 @@ export async function writeAnnualSyntheticOperationalClosure({
   const inputs = [];
   let timetableRoutesProof;
   for (const [role, layer] of INPUT_ROLES) {
-    const path = await containedRegularFile(repository, annualSpecification.layers[layer], `layers.${layer}`);
+    const configuredLayer = annualSpecification.layers[layer];
+    const configuredPath = layer === "transferDemands" ? configuredLayer?.path : configuredLayer;
+    invariant(typeof configuredPath === "string" && configuredPath !== "", `layers.${layer} besitzt keinen geschlossenen Dateipfad.`);
+    const path = await containedRegularFile(repository, configuredPath, `layers.${layer}`);
+    if (role === "timetable-transfer-demands") invariant(path === timetableTransferDemandsPath, "Closure-Vertrag und Jahresspezifikation binden verschiedene Timetable-Transfer-Demands-Dateien.");
     const relativeFile = artifactRelative(artifactRoot, path, `layers.${layer}`);
     const proof = role === "timetable-routes"
       ? await syntheticOperationalTimetableRoutesProof(path, "Synthetic-Operational-Input timetable-routes")
       : await syntheticOperationalFileProof(path, `Synthetic-Operational-Input ${role}`);
-    const records = role === "timetable-routes" ? proof.records : reportInput.value.inputs?.[layer]?.records;
+    const records = role === "timetable-routes"
+      ? proof.records
+      : role === "timetable-transfer-demands"
+        ? timetableTransferDemandsInput.value.transferRoutes?.length
+        : reportInput.value.inputs?.[layer]?.records;
     inputs.push({ role, file: relativeFile, bytes: proof.bytes, sha256: proof.sha256, records });
     if (role === "timetable-routes") timetableRoutesProof = proof;
   }
@@ -240,6 +252,8 @@ export async function writeAnnualSyntheticOperationalClosure({
     gtfsSnapshot: gtfsSnapshotInput.value,
     gtfsSnapshotBinding: byRole.get("gtfs-snapshot"),
     timetableRoutesProof,
+    timetableTransferDemands: timetableTransferDemandsInput.value,
+    timetableTransferDemandsBinding: byRole.get("timetable-transfer-demands"),
     tracksBinding: byRole.get("tracks"),
   });
   const derivationReport = {
@@ -251,7 +265,10 @@ export async function writeAnnualSyntheticOperationalClosure({
     activationEligible: reportInput.value.activationEligible,
     unresolvedRequired: reportInput.value.unresolvedRequired,
     realInterlockingFactsClaimed: reportInput.value.realInterlockingFactsClaimed,
+    realGeometry: reportInput.value.realGeometry,
+    simulatedOperationalAssignment: reportInput.value.simulatedOperationalAssignment,
     candidate: { ...reportInput.value.candidate },
+    timetableRouteEvidence: structuredClone(reportInput.value.timetableRouteEvidence),
   };
   const receipt = buildSyntheticOperationalClosureReceipt({
     policy,

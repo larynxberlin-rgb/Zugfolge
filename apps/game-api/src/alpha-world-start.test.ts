@@ -50,6 +50,7 @@ describe("harter Operational-v2-Serverstart", () => {
     worldId: "00000000-0000-4000-8000-000000000014",
     regionId: "deutschland",
     nowMs: 0,
+    repeatEveryMs: null,
     protectionModeSelectionPolicy: OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
     infraRelease: {
       schemaVersion: "zugfolge-operational-infrastructure-binding/v2",
@@ -63,6 +64,7 @@ describe("harter Operational-v2-Serverstart", () => {
     vehicles: [],
     formations: [],
     trains: [],
+    movementContinuations: [],
   };
 
   it("initialisiert einen neuen Kopf ohne vorzeitigen Restore", async () => {

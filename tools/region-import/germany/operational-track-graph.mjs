@@ -72,6 +72,22 @@ export function canonicalTrackProtectionSystems(properties, defaultProtectionSys
   return Object.freeze(CANONICAL_PROTECTION_SYSTEMS.filter((system) => systems.has(system)));
 }
 
+function kmhToMmps(speedKmh) {
+  invariant(Number.isSafeInteger(speedKmh) && speedKmh > 0, "Gleisgeschwindigkeit muss eine positive Ganzzahl sein.");
+  return Math.max(1, Math.floor(speedKmh * 1_000_000 / 3_600));
+}
+
+function directionalTrackSpeeds(properties, unknownMainlineSpeedKmh, unknownServiceSpeedKmh) {
+  const tags = osmTags(properties, properties?.feature_id ?? "Gleiskante");
+  const mainline = tags.usage === "main" || tags.usage === "highspeed";
+  const fallback = mainline ? unknownMainlineSpeedKmh : unknownServiceSpeedKmh;
+  const speed = (key) => Number.isSafeInteger(properties[key]) && properties[key] > 0 ? properties[key] : fallback;
+  return Object.freeze({
+    speedAlongMmps: kmhToMmps(speed("speed_forward_kmh")),
+    speedAgainstMmps: kmhToMmps(speed("speed_backward_kmh")),
+  });
+}
+
 function normalizePermittedProtectionModes(value) {
   if (value === null || value === undefined) return null;
   invariant(Array.isArray(value) && value.length > 0, "permittedProtectionModes muss eine nichtleere Liste sein.");
@@ -630,9 +646,18 @@ async function gtfsOfficialCorridorMetrics(corridorsPath, bounds) {
  * Halte und Reihenfolge. Jede Kante bleibt eine beobachtete OSM-Gleisgeometrie;
  * amtliche Korridore werden nur als unabhaengige Raumabdeckungs-Evidenz gelesen.
  */
-export async function buildGtfsTrackGraph({ snapshot, tracksPath, corridorsPath, permittedProtectionModes = null }) {
+export async function buildGtfsTrackGraph({
+  snapshot,
+  tracksPath,
+  corridorsPath,
+  permittedProtectionModes = null,
+  unknownMainlineSpeedKmh = 20,
+  unknownServiceSpeedKmh = 10,
+}) {
   const model = gtfsRoutingModel(snapshot);
   const permittedProtection = normalizePermittedProtectionModes(permittedProtectionModes);
+  safeInteger(unknownMainlineSpeedKmh, "unknownMainlineSpeedKmh", 1);
+  safeInteger(unknownServiceSpeedKmh, "unknownServiceSpeedKmh", 1);
   const bounds = gtfsRoutingBounds(model.stations);
   const corridorMetrics = await gtfsOfficialCorridorMetrics(corridorsPath, bounds);
   const grid = gtfsSeedGrid(model.stations);
@@ -669,6 +694,7 @@ export async function buildGtfsTrackGraph({ snapshot, tracksPath, corridorsPath,
     const lengthMm = safeInteger(properties.length_mm, `${edgeId}.length_mm`, 1);
     invariant(fromNodeId !== toNodeId, `${edgeId} ist keine lineare Kante.`);
     invariant(!edges.has(edgeId), `Gleiskante ${edgeId} ist doppelt.`);
+    const speeds = directionalTrackSpeeds(properties, unknownMainlineSpeedKmh, unknownServiceSpeedKmh);
     edges.set(edgeId, Object.freeze({
       edgeId,
       fromNodeId,
@@ -676,6 +702,7 @@ export async function buildGtfsTrackGraph({ snapshot, tracksPath, corridorsPath,
       lengthMm,
       routeNumber: GTFS_SIMULATED_ROUTE_KEY,
       protectionSystems,
+      ...speeds,
     }));
     components.union(fromNodeId, toNodeId);
     observedOrderableTracksInRoutingBounds += 1;

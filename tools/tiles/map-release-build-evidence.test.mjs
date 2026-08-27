@@ -167,6 +167,7 @@ function operationalInfrastructureV2() {
         overlapResources: ["resource:overlap"],
         flankResources: ["resource:flank"],
         switchPositions: {},
+        authorityStartRouteMm: 0,
         authorityEndRouteMm: 1_000,
         releaseAfterTailRouteMm: 1_000,
       },
@@ -180,7 +181,7 @@ function operationalInfrastructureV2() {
   };
 }
 
-function operationalV2Quality(operationalProof, stateHash) {
+function operationalV2Quality(operationalProof, stateHash, movementProof, movementStateHash, transferProof) {
   return {
     schema: "zugfolge-operational-infrastructure-quality-report/v1",
     releaseId: RELEASE_ID,
@@ -219,8 +220,14 @@ function operationalV2Quality(operationalProof, stateHash) {
       syntheticOperationalDetailsShipped: true,
       objectLevelProvenanceShipped: false,
       observedAndSyntheticObjectsShareRuntimeCollections: true,
+      movementRouteTemplates: {
+        ...movementProof,
+        stateHash: movementStateHash,
+        operationalStateHash: stateHash,
+        timetableTransferSetSha256: "a".repeat(64),
+      },
       timetableRouteEvidence: {
-        reportSchema: "zugfolge-germany-timetable-route-report/v2",
+        reportSchema: "zugfolge-germany-timetable-route-report/v3",
         policyId: "synthetic-operational-b/v2",
         derivationRule: "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2",
         selectionRule: "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
@@ -230,6 +237,9 @@ function operationalV2Quality(operationalProof, stateHash) {
         routesSha256: "b".repeat(64),
         gtfsSnapshotBytes: 9_012,
         gtfsSnapshotSha256: "c".repeat(64),
+        transferDemandsSchema: "zugfolge-timetable-transfer-demands/v1",
+        transferDemandsBytes: transferProof.bytes,
+        transferDemandsSha256: transferProof.sha256,
         snapshotHash: "a".repeat(64),
         archive: "gtfs-free.zip",
         archiveSha256: "b".repeat(64),
@@ -240,6 +250,13 @@ function operationalV2Quality(operationalProof, stateHash) {
         routeRecordCount: 4,
         sameStopTransitionCount: 1,
         routeSetSha256: "b".repeat(64),
+        dailyCirculationPlanSha256: "c".repeat(64),
+        transferSetSha256: "a".repeat(64),
+        transferDemandsProduced: true,
+        dailyCirculation: { lotCount: 1, journeyChainCount: 4, circulationCount: 2, rolloverAssignmentCount: 2, transferDemandCount: 1, transferLotCount: 1 },
+        transferRouteCount: 1,
+        transferRouteLegCount: 2,
+        transferRouteLengthMm: 1000,
         realGeometry: true,
         simulatedOperationalAssignment: true,
         realInterlockingFactsClaimed: false,
@@ -685,19 +702,40 @@ async function fixtureV2() {
   await write(value.root, operationalFile, `${canonicalOperationalInfrastructureV2Json(infrastructure)}\n`);
   const operationalProof = await proof(value.root, operationalFile);
   const stateHash = operationalInfrastructureV2StateHash(infrastructure);
+  const movementFile = "outputs/operational-infrastructure-v2.movement-route-templates-v2.json";
+  const transferFile = "outputs/timetable-routes-v2.transfer-demands-v1.json";
+  await write(value.root, movementFile, '{"infraReleaseId":"infra-deutschland-2026.2","schema":"movement-route-templates-v2"}\n');
+  await write(value.root, transferFile, '{"infraReleaseId":"infra-deutschland-2026.2","schema":"zugfolge-timetable-transfer-demands/v1"}\n');
+  const movementProof = await proof(value.root, movementFile);
+  const movementStateHash = "e".repeat(64);
+  const transferProof = await proof(value.root, transferFile);
 
   const artifactInventoryFile = "inputs/release-artifacts.v2.json";
   const artifactInventoryCacheFile = "cache/derived/release-artifacts.v2.json";
   const artifactInventory = {
     schema: "zugfolge-infra-release-artifacts/v2",
-    artifacts: [{
-      id: "operational-infrastructure-2026.2",
-      kind: "operational-infrastructure-v2",
-      file: "operational-infrastructure-v2.json",
-      infraReleaseId: RELEASE_ID,
-      ...operationalProof,
-      stateHash,
-    }],
+    artifacts: [
+      {
+        id: "operational-infrastructure-2026.2",
+        kind: "operational-infrastructure-v2",
+        file: "operational-infrastructure-v2.json",
+        infraReleaseId: RELEASE_ID,
+        ...operationalProof,
+        stateHash,
+      },
+      {
+        id: "operational-movement-routes-2026.2",
+        kind: "movement-route-templates-v2",
+        file: "operational-infrastructure-v2.movement-route-templates-v2.json",
+        ...movementProof,
+      },
+      {
+        id: "timetable-transfer-demands-2026.2",
+        kind: "timetable-transfer-demands-v1",
+        file: "timetable-routes-v2.transfer-demands-v1.json",
+        ...transferProof,
+      },
+    ],
   };
   await write(value.root, artifactInventoryFile, `${JSON.stringify(artifactInventory, null, 2)}\n`);
   const artifactInventoryProof = await proof(value.root, artifactInventoryFile);
@@ -709,7 +747,13 @@ async function fixtureV2() {
   await write(value.root, cacheInventoryPath, `${JSON.stringify(cacheInventory, null, 2)}\n`);
 
   const qualityFile = "outputs/quality.json";
-  const qualityReport = operationalV2Quality(operationalProof, stateHash);
+  const qualityReport = operationalV2Quality(
+    operationalProof,
+    stateHash,
+    movementProof,
+    movementStateHash,
+    transferProof,
+  );
   await write(value.root, qualityFile, `${JSON.stringify(qualityReport, null, 2)}\n`);
   const qualityProof = await proof(value.root, qualityFile);
 
@@ -719,14 +763,7 @@ async function fixtureV2() {
     schema: "zugfolge-infra-release/v2",
     releaseId: RELEASE_ID,
     timetableYear: 2026,
-    artifacts: [{
-      id: "operational-infrastructure-2026.2",
-      kind: "operational-infrastructure-v2",
-      file: "operational-infrastructure-v2.json",
-      infraReleaseId: RELEASE_ID,
-      ...operationalProof,
-      stateHash,
-    }],
+    artifacts: structuredClone(artifactInventory.artifacts),
     quality: {
       operationalClosure: {
         reportSha256: qualityProof.sha256,
@@ -745,6 +782,7 @@ async function fixtureV2() {
         syntheticOperationalDetailsShipped: true,
         objectLevelProvenanceShipped: false,
         observedAndSyntheticObjectsShareRuntimeCollections: true,
+        movementRouteTemplates: structuredClone(qualityReport.operationalModel.movementRouteTemplates),
         timetableRouteEvidence: structuredClone(qualityReport.operationalModel.timetableRouteEvidence),
         operationalQualityEligible: true,
         signatureImplied: false,
@@ -784,6 +822,18 @@ async function fixtureV2() {
     infraReleaseId: RELEASE_ID,
     stateHash,
     ...operationalProof,
+  });
+  deliveryPayload.artifacts.push({
+    id: "operational-movement-routes-2026.2",
+    kind: "movement-route-templates-v2",
+    installPath: "operational-infrastructure-v2.movement-route-templates-v2.json",
+    ...movementProof,
+  });
+  deliveryPayload.artifacts.push({
+    id: "timetable-transfer-demands-2026.2",
+    kind: "timetable-transfer-demands-v1",
+    installPath: "timetable-routes-v2.transfer-demands-v1.json",
+    ...transferProof,
   });
   deliveryPayload.artifacts.sort((left, right) => left.id.localeCompare(right.id, "en"));
   const v2Sources = {
@@ -843,6 +893,20 @@ async function fixtureV2() {
     kind: "operational-infrastructure-v2",
     sourceFile: operationalFile,
     installPath: "operational-infrastructure-v2.json",
+    artifactInventory: artifactInventoryFile,
+  });
+  packageDescriptors.push({
+    id: "operational-movement-routes-2026.2",
+    kind: "movement-route-templates-v2",
+    sourceFile: movementFile,
+    installPath: "operational-infrastructure-v2.movement-route-templates-v2.json",
+    artifactInventory: artifactInventoryFile,
+  });
+  packageDescriptors.push({
+    id: "timetable-transfer-demands-2026.2",
+    kind: "timetable-transfer-demands-v1",
+    sourceFile: transferFile,
+    installPath: "timetable-routes-v2.transfer-demands-v1.json",
     artifactInventory: artifactInventoryFile,
   });
   const basePlan = {
@@ -984,6 +1048,18 @@ async function fixtureV2() {
     infraReleaseId: RELEASE_ID,
     stateHash,
   });
+  deliverySources.push({
+    id: "operational-movement-routes-2026.2",
+    kind: "movement-route-templates-v2",
+    sourceFile: movementFile,
+    installPath: "operational-infrastructure-v2.movement-route-templates-v2.json",
+  });
+  deliverySources.push({
+    id: "timetable-transfer-demands-2026.2",
+    kind: "timetable-transfer-demands-v1",
+    sourceFile: transferFile,
+    installPath: "timetable-routes-v2.transfer-demands-v1.json",
+  });
   return {
     ...value,
     spec,
@@ -1000,6 +1076,8 @@ async function fixtureV2() {
     deliverySourcesCacheFile,
     cacheInventoryPath,
     operationalFile,
+    movementFile,
+    transferFile,
     basePlanFile,
     signedPlanFile,
     trustedKeysFile,
@@ -1119,6 +1197,7 @@ async function replaceOperationalBindings(value, operationalProof, stateHash) {
   const qualityPath = join(value.root, "outputs", "quality.json");
   const quality = JSON.parse(await readFile(qualityPath, "utf8"));
   quality.operationalModel.operationalArtifact = { ...operationalProof, stateHash };
+  quality.operationalModel.movementRouteTemplates.operationalStateHash = stateHash;
   await writeFile(qualityPath, `${JSON.stringify(quality, null, 2)}\n`);
   const qualityProof = await proof(value.root, "outputs/quality.json");
 
@@ -1130,6 +1209,7 @@ async function replaceOperationalBindings(value, operationalProof, stateHash) {
     candidateBytes: operationalProof.bytes,
     candidateSha256: operationalProof.sha256,
     candidateStateHash: stateHash,
+    movementRouteTemplates: structuredClone(quality.operationalModel.movementRouteTemplates),
   });
   const updatedInfraWrapper = releaseWrapper(infraWrapper.release);
   await writeFile(infraWrapperPath, `${JSON.stringify(updatedInfraWrapper, null, 2)}\n`);

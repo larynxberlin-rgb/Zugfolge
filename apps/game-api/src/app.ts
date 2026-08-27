@@ -505,20 +505,92 @@ const operationalTrainSchema = {
   },
 } as const;
 
+const operationalTrainMaterializationSchema = {
+  type: "object",
+  required: [
+    "id",
+    "trainNumber",
+    "operatorId",
+    "movementKind",
+    "routeVersionId",
+    "formationVersionId",
+    "headRouteMm",
+    "scheduledDepartureMs",
+    "publicPassengerStop",
+  ],
+  additionalProperties: false,
+  properties: {
+    id: { type: "string", minLength: 1, maxLength: 200 },
+    trainNumber: {
+      type: "string",
+      minLength: 1,
+      maxLength: 200,
+      pattern: OPERATIONAL_TRAIN_NUMBER_PATTERN,
+    },
+    operatorId: { type: "string", minLength: 1, maxLength: 200 },
+    movementKind: { type: "string", enum: ["train", "shunting"] },
+    routeVersionId: { type: "string", minLength: 1, maxLength: 200 },
+    formationVersionId: { type: "string", minLength: 1, maxLength: 200 },
+    headRouteMm: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+    scheduledDepartureMs: {
+      anyOf: [
+        { type: "null" },
+        { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+      ],
+    },
+    publicPassengerStop: { type: "boolean" },
+  },
+} as const;
+
+const operationalMovementContinuationTemplateSchema = {
+  type: "object",
+  required: [
+    "id",
+    "predecessorTrainId",
+    "predecessorBaseRouteVersionId",
+    "successorTrainId",
+    "successorDayOffset",
+    "dailyBoundary",
+    "minimumDwellMs",
+    "continuity",
+    "successorFormation",
+  ],
+  additionalProperties: false,
+  properties: {
+    id: { type: "string", minLength: 1, maxLength: 200 },
+    predecessorTrainId: { type: "string", minLength: 1, maxLength: 200 },
+    predecessorBaseRouteVersionId: { type: "string", minLength: 1, maxLength: 200 },
+    successorTrainId: { type: "string", minLength: 1, maxLength: 200 },
+    successorDayOffset: { type: "integer", enum: [0, 1] },
+    dailyBoundary: { type: "boolean" },
+    minimumDwellMs: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+    continuity: { type: "string", enum: ["same-direction", "reverse-direction"] },
+    successorFormation: { const: "inherit-predecessor" },
+  },
+} as const;
+
 const regionalInitializationSchema = {
   type: "object",
   required: [
     "nowMs",
+    "repeatEveryMs",
     "protectionModeSelectionPolicy",
     "infraRelease",
     "vehicleTypes",
     "vehicles",
     "formations",
     "trains",
+    "movementContinuations",
   ],
   additionalProperties: false,
   properties: {
     nowMs: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+    repeatEveryMs: {
+      anyOf: [
+        { type: "null" },
+        { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
+      ],
+    },
     protectionModeSelectionPolicy: { const: OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY },
     infraRelease: { type: "object", minProperties: 1 },
     vehicleTypes: {
@@ -568,6 +640,11 @@ const regionalInitializationSchema = {
       type: "array",
       maxItems: 200_000,
       items: operationalTrainSchema,
+    },
+    movementContinuations: {
+      type: "array",
+      maxItems: 200_000,
+      items: operationalMovementContinuationTemplateSchema,
     },
   },
 } as const;
@@ -687,6 +764,38 @@ const regionalCommandSchema = {
       properties: {
         type: { const: "dispatch" },
         requests: { type: "array", maxItems: 100_000, items: operationalDispatchRequestSchema },
+      },
+    },
+    {
+      type: "object",
+      required: ["type", "continuation"],
+      additionalProperties: false,
+      properties: {
+        type: { const: "queue-movement-continuation" },
+        continuation: {
+          type: "object",
+          required: [
+            "id",
+            "predecessorTrainId",
+            "predecessorBaseRouteVersionId",
+            "successor",
+            "successorDispatch",
+            "notBeforeMs",
+            "minimumDwellMs",
+            "continuity",
+          ],
+          additionalProperties: false,
+          properties: {
+            id: { type: "string", minLength: 1, maxLength: 200 },
+            predecessorTrainId: { type: "string", minLength: 1, maxLength: 200 },
+            predecessorBaseRouteVersionId: { type: "string", minLength: 1, maxLength: 200 },
+            successor: operationalTrainMaterializationSchema,
+            successorDispatch: operationalDispatchRequestSchema,
+            notBeforeMs: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+            minimumDwellMs: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+            continuity: { type: "string", enum: ["same-direction", "reverse-direction"] },
+          },
+        },
       },
     },
     {

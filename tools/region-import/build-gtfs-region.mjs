@@ -10,42 +10,39 @@ import {
   gtfsServiceSeconds,
   parseGtfsCsv,
 } from "../../packages/gtfs/dist/index.js";
+import { validateAlphaWorldBuildConfiguration } from "./build-alpha-world.mjs";
 import { compileServiceScope } from "./service-scope.mjs";
 
 const [buildConfigurationPath, sourceDirectory, serviceDate, archiveSha256, outputPath] = process.argv.slice(2);
 if (!buildConfigurationPath || !sourceDirectory || !/^20[0-9]{6}$/.test(serviceDate ?? "") || !/^[a-f0-9]{64}$/.test(archiveSha256 ?? "") || !outputPath) {
   throw new Error("usage: node build-gtfs-region.mjs BUILD-CONFIG.json SOURCE_DIRECTORY YYYYMMDD ARCHIVE_SHA256 OUTPUT_JSON");
 }
-const buildConfiguration = JSON.parse(readFileSync(buildConfigurationPath, "utf8"));
+const rawBuildConfiguration = JSON.parse(readFileSync(buildConfigurationPath, "utf8"));
 const identityKeys = ["schemaVersion", "worldId", "regionId", "regionVariant", "operatorId", "seed", "fleetReleaseId", "planningAuthority"].sort();
-const buildKeys = [...identityKeys, "operationalInfrastructure", "timetableRoutes"].sort();
-const expectedConfigurationKeys = buildConfiguration?.schemaVersion === "zugfolge-alpha-world-identity/v1" ? identityKeys : buildKeys;
-const actualConfigurationKeys = typeof buildConfiguration === "object" && buildConfiguration !== null && !Array.isArray(buildConfiguration)
-  ? Object.keys(buildConfiguration).sort()
+const actualConfigurationKeys = typeof rawBuildConfiguration === "object" && rawBuildConfiguration !== null && !Array.isArray(rawBuildConfiguration)
+  ? Object.keys(rawBuildConfiguration).sort()
   : [];
-const planningAuthorityKeys = typeof buildConfiguration?.planningAuthority === "object"
-  && buildConfiguration.planningAuthority !== null
-  && !Array.isArray(buildConfiguration.planningAuthority)
-  ? Object.keys(buildConfiguration.planningAuthority).sort()
-  : [];
-const fullBuildConfiguration = buildConfiguration?.schemaVersion === "zugfolge-alpha-world-build-configuration/v2";
-const operationalInfrastructureKeys = fullBuildConfiguration
-  && typeof buildConfiguration.operationalInfrastructure === "object"
-  && buildConfiguration.operationalInfrastructure !== null
-  && !Array.isArray(buildConfiguration.operationalInfrastructure)
-  ? Object.keys(buildConfiguration.operationalInfrastructure).sort()
-  : [];
-const timetableRouteKeys = fullBuildConfiguration
-  && typeof buildConfiguration.timetableRoutes === "object"
-  && buildConfiguration.timetableRoutes !== null
-  && !Array.isArray(buildConfiguration.timetableRoutes)
-  ? Object.keys(buildConfiguration.timetableRoutes).sort()
+const planningAuthorityKeys = typeof rawBuildConfiguration?.planningAuthority === "object"
+  && rawBuildConfiguration.planningAuthority !== null
+  && !Array.isArray(rawBuildConfiguration.planningAuthority)
+  ? Object.keys(rawBuildConfiguration.planningAuthority).sort()
   : [];
 const retiredWorldId = "00000000-0000-4000-8000-000000000014";
+const identityOnly = rawBuildConfiguration?.schemaVersion === "zugfolge-alpha-world-identity/v1";
+let buildConfiguration;
+try {
+  buildConfiguration = identityOnly
+    ? rawBuildConfiguration
+    : validateAlphaWorldBuildConfiguration(rawBuildConfiguration);
+} catch {
+  throw new Error("BUILD-CONFIG besitzt keine explizite UUID-Welt- und Regionsbindung mit vollstaendig gebundenem V3-Artefaktsatz.");
+}
 if (
-  !["zugfolge-alpha-world-identity/v1", "zugfolge-alpha-world-build-configuration/v2"].includes(buildConfiguration?.schemaVersion)
-  || actualConfigurationKeys.length !== expectedConfigurationKeys.length
-  || actualConfigurationKeys.some((key, index) => key !== expectedConfigurationKeys[index])
+  (identityOnly && (
+    actualConfigurationKeys.length !== identityKeys.length
+    || actualConfigurationKeys.some((key, index) => key !== identityKeys[index])
+  ))
+  || !["zugfolge-alpha-world-identity/v1", "zugfolge-alpha-world-build-configuration/v3"].includes(buildConfiguration?.schemaVersion)
   || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(buildConfiguration.worldId ?? "")
   || buildConfiguration.worldId === retiredWorldId
   || typeof buildConfiguration.regionId !== "string"
@@ -65,20 +62,7 @@ if (
   || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(buildConfiguration.planningAuthority?.accountId ?? "")
   || typeof buildConfiguration.planningAuthority?.displayName !== "string"
   || buildConfiguration.planningAuthority.displayName.trim() === ""
-  || (fullBuildConfiguration && (
-    operationalInfrastructureKeys.join("\u0000") !== ["bytes", "file", "sha256", "stateHash"].join("\u0000")
-    || buildConfiguration.operationalInfrastructure.file !== "operational-infrastructure-v2.json"
-    || !Number.isSafeInteger(buildConfiguration.operationalInfrastructure.bytes)
-    || buildConfiguration.operationalInfrastructure.bytes <= 0
-    || !/^[a-f0-9]{64}$/u.test(buildConfiguration.operationalInfrastructure.sha256 ?? "")
-    || !/^[a-f0-9]{64}$/u.test(buildConfiguration.operationalInfrastructure.stateHash ?? "")
-    || timetableRouteKeys.join("\u0000") !== ["bytes", "file", "sha256"].join("\u0000")
-    || buildConfiguration.timetableRoutes.file !== "timetable-routes-v2.jsonseq"
-    || !Number.isSafeInteger(buildConfiguration.timetableRoutes.bytes)
-    || buildConfiguration.timetableRoutes.bytes <= 0
-    || !/^[a-f0-9]{64}$/u.test(buildConfiguration.timetableRoutes.sha256 ?? "")
-  ))
-) throw new Error("BUILD-CONFIG besitzt keine explizite UUID-Welt- und Regionsbindung.");
+) throw new Error("BUILD-CONFIG besitzt keine explizite UUID-Welt- und Regionsbindung mit vollstaendig gebundenem V3-Artefaktsatz.");
 const WORLD_ID = buildConfiguration.worldId;
 const REGION_ID = buildConfiguration.regionId;
 const REGION_VARIANT = buildConfiguration.regionVariant;

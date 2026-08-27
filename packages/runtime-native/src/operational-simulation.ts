@@ -41,6 +41,8 @@ export const OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY =
   "zugfolge-protection-mode-selection/conservative-v1" as const;
 export const OPERATIONAL_PROTECTION_MODE_SELECTION_EVIDENCE_SCHEMA =
   "zugfolge-protection-mode-selections-evidence/v1" as const;
+export const OPERATIONAL_MOVEMENT_CONTINUATIONS_EVIDENCE_SCHEMA =
+  "zugfolge-operational-movement-continuations-evidence/v3" as const;
 export const OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV =
   "ZUGFOLGE_OPERATIONAL_INFRASTRUCTURE_ROOTS_JSON" as const;
 export const OPERATIONAL_TRAIN_NUMBER_PATTERN = "^(?:.*[^0-9])?(?!0{1,5}$)[0-9]{1,5}$" as const;
@@ -195,6 +197,38 @@ export interface OperationalTrainInitialization {
   }>[];
 }
 
+/** Signierter, tagesrelativer Basisgraph; dynamische IDs entstehen erst im Scheduler. */
+export interface OperationalMovementContinuationTemplate {
+  readonly id: string;
+  readonly predecessorTrainId: string;
+  /** Signierte Basisroute, gegen die eine qualifizierte Vorgaengerroute nativ aequivalent sein muss. */
+  readonly predecessorBaseRouteVersionId: string;
+  readonly successorTrainId: string;
+  readonly successorDayOffset: 0 | 1;
+  /** Explizite DailyPlan-Slotgrenze; unabhaengig von der GTFS-Rohphase. */
+  readonly dailyBoundary: boolean;
+  readonly minimumDwellMs: number;
+  readonly continuity: "same-direction" | "reverse-direction";
+  readonly successorFormation: "inherit-predecessor";
+}
+
+/** Exakte Materialisierung innerhalb eines atomaren physischen Identitaetswechsels. */
+export type OperationalTrainMaterialization = Omit<
+  OperationalTrainInitialization,
+  "dispatchInterlockingRouteId" | "protectionModeSelectionRuns"
+>;
+
+export interface OperationalMovementContinuation {
+  readonly id: string;
+  readonly predecessorTrainId: string;
+  readonly predecessorBaseRouteVersionId: string;
+  readonly successor: OperationalTrainMaterialization;
+  readonly successorDispatch: OperationalDispatchRequest;
+  readonly notBeforeMs: number;
+  readonly minimumDwellMs: number;
+  readonly continuity: "same-direction" | "reverse-direction";
+}
+
 export interface OperationalInfrastructureBinding {
   readonly schemaVersion: typeof OPERATIONAL_INFRASTRUCTURE_BINDING_SCHEMA;
   readonly infraReleaseId: string;
@@ -219,6 +253,8 @@ export interface OperationalInitializationValidationReceipt {
   readonly validatedResourceBindingCount: number;
   readonly validatedFormationBindingCount: number;
   readonly validatedTrainNumberCount: number;
+  readonly validatedMovementContinuationCount: number;
+  readonly movementContinuationsSha256: string;
   readonly protectionModeSelectionPolicy: typeof OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY;
   readonly validatedProtectionModeSelectionCount: number;
   readonly protectionModeSelectionsSha256: string;
@@ -235,6 +271,8 @@ export interface OperationalSimulationInitialization {
   readonly worldId: string;
   readonly regionId: string;
   readonly nowMs: number;
+  /** null kennzeichnet ein explizit nicht wiederholtes Programm ohne Fortsetzungsgraph. */
+  readonly repeatEveryMs: number | null;
   readonly protectionModeSelectionPolicy: typeof OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY;
   /** Kompakte signierte Bindung; die grossen Infrastrukturbytes bleiben ausserhalb von Node. */
   readonly infraRelease: OperationalInfrastructureBinding;
@@ -249,6 +287,7 @@ export interface OperationalSimulationInitialization {
     vehicleIds: readonly string[];
   }>[];
   readonly trains: readonly OperationalTrainInitialization[];
+  readonly movementContinuations: readonly OperationalMovementContinuationTemplate[];
 }
 
 export interface OperationalDispatchRequest {
@@ -278,6 +317,10 @@ export type OperationalSimulationCommandPayload =
       readonly vehicleIds: readonly string[];
     }
   | { readonly type: "reroute"; readonly trainId: string; readonly routeVersionId: string }
+  | {
+      readonly type: "queue-movement-continuation";
+      readonly continuation: OperationalMovementContinuation;
+    }
   | {
       readonly type: "automatic-shunting";
       readonly need: Readonly<{
@@ -572,6 +615,83 @@ export function operationalProtectionModeSelectionEvidence(
   return Object.freeze({ count, sha256: hash.digest("hex") });
 }
 
+/** Kanonischer Beleg des vollstaendigen tagesrelativen Fortsetzungsgraphen. */
+export function operationalMovementContinuationsEvidence(
+  initialization: OperationalSimulationInitialization,
+): Readonly<{ count: number; sha256: string }> {
+  invariant(
+    Array.isArray(initialization.movementContinuations),
+    "Operational-v2-Initialisierung besitzt keinen physischen Fortsetzungsgraphen.",
+  );
+  const hash = createHash("sha256");
+  hash.update(OPERATIONAL_MOVEMENT_CONTINUATIONS_EVIDENCE_SCHEMA, "utf8");
+  hash.update(Buffer.from([0]));
+  const ordered = [...initialization.movementContinuations].sort((left, right) =>
+    Buffer.compare(Buffer.from(left.id, "utf8"), Buffer.from(right.id, "utf8")));
+  for (const [index, continuation] of ordered.entries()) {
+    record(continuation, `Operational-v2-Fortsetzung[${index}]`);
+    exactKeys(continuation, [
+      "id",
+      "predecessorTrainId",
+      "predecessorBaseRouteVersionId",
+      "successorTrainId",
+      "successorDayOffset",
+      "dailyBoundary",
+      "minimumDwellMs",
+      "continuity",
+      "successorFormation",
+    ], `Operational-v2-Fortsetzung[${index}]`);
+    nonEmptyString(continuation.id, `Operational-v2-Fortsetzung[${index}].id`);
+    nonEmptyString(
+      continuation.predecessorTrainId,
+      `Operational-v2-Fortsetzung[${index}].predecessorTrainId`,
+    );
+    nonEmptyString(
+      continuation.predecessorBaseRouteVersionId,
+      `Operational-v2-Fortsetzung[${index}].predecessorBaseRouteVersionId`,
+    );
+    nonEmptyString(
+      continuation.successorTrainId,
+      `Operational-v2-Fortsetzung[${index}].successorTrainId`,
+    );
+    invariant(
+      continuation.successorDayOffset === 0 || continuation.successorDayOffset === 1,
+      `Operational-v2-Fortsetzung[${index}].successorDayOffset ist ungueltig.`,
+    );
+    invariant(
+      typeof continuation.dailyBoundary === "boolean",
+      `Operational-v2-Fortsetzung[${index}].dailyBoundary ist ungueltig.`,
+    );
+    nonNegativeInteger(
+      continuation.minimumDwellMs,
+      `Operational-v2-Fortsetzung[${index}].minimumDwellMs`,
+    );
+    invariant(
+      continuation.continuity === "same-direction"
+        || continuation.continuity === "reverse-direction",
+      `Operational-v2-Fortsetzung[${index}].continuity ist ungueltig.`,
+    );
+    invariant(
+      continuation.successorFormation === "inherit-predecessor",
+      `Operational-v2-Fortsetzung[${index}].successorFormation ist ungueltig.`,
+    );
+    updateLengthPrefixed(hash, continuation.id);
+    updateLengthPrefixed(hash, continuation.predecessorTrainId);
+    updateLengthPrefixed(hash, continuation.predecessorBaseRouteVersionId);
+    updateLengthPrefixed(hash, continuation.successorTrainId);
+    const dayOffset = Buffer.alloc(8);
+    dayOffset.writeBigUInt64LE(BigInt(continuation.successorDayOffset));
+    hash.update(dayOffset);
+    hash.update(Buffer.from([continuation.dailyBoundary ? 1 : 0]));
+    const minimumDwellMs = Buffer.alloc(8);
+    minimumDwellMs.writeBigInt64LE(BigInt(continuation.minimumDwellMs));
+    hash.update(minimumDwellMs);
+    updateLengthPrefixed(hash, continuation.continuity);
+    updateLengthPrefixed(hash, continuation.successorFormation);
+  }
+  return Object.freeze({ count: ordered.length, sha256: hash.digest("hex") });
+}
+
 function infrastructureBinding(
   value: unknown,
   name: string,
@@ -622,6 +742,7 @@ function initializationValidationReceipt(
     "infraRelease", "programTrainCount", "validatedProgramTemplateCount",
     "validatedRouteVersionCount", "validatedDispatchInterlockingRouteCount",
     "validatedResourceBindingCount", "validatedFormationBindingCount", "validatedTrainNumberCount",
+    "validatedMovementContinuationCount", "movementContinuationsSha256",
     "protectionModeSelectionPolicy", "validatedProtectionModeSelectionCount",
     "protectionModeSelectionsSha256", "protectionModeSelectionsValidated",
     "dynamicTrainCount", "resourceBindingsValidated", "formationBindingsValidated",
@@ -651,6 +772,7 @@ function initializationValidationReceipt(
   const validatedResourceBindingCount = value["validatedResourceBindingCount"];
   const validatedFormationBindingCount = value["validatedFormationBindingCount"];
   const validatedTrainNumberCount = value["validatedTrainNumberCount"];
+  const validatedMovementContinuationCount = value["validatedMovementContinuationCount"];
   const validatedProtectionModeSelectionCount = value["validatedProtectionModeSelectionCount"];
   const dynamicTrainCount = value["dynamicTrainCount"];
   nonNegativeInteger(programTrainCount, `${name}.programTrainCount`);
@@ -664,6 +786,15 @@ function initializationValidationReceipt(
   nonNegativeInteger(validatedFormationBindingCount, `${name}.validatedFormationBindingCount`);
   nonNegativeInteger(validatedTrainNumberCount, `${name}.validatedTrainNumberCount`);
   nonNegativeInteger(
+    validatedMovementContinuationCount,
+    `${name}.validatedMovementContinuationCount`,
+  );
+  invariant(
+    typeof value["movementContinuationsSha256"] === "string"
+      && /^[a-f0-9]{64}$/u.test(value["movementContinuationsSha256"]),
+    `${name}.movementContinuationsSha256 ist ungueltig.`,
+  );
+  nonNegativeInteger(
     validatedProtectionModeSelectionCount,
     `${name}.validatedProtectionModeSelectionCount`,
   );
@@ -675,6 +806,11 @@ function initializationValidationReceipt(
   invariant(
     validatedTrainNumberCount === programTrainCount,
     `${name} validierte nicht alle Zugnummern eindeutig.`,
+  );
+  invariant(
+    validatedMovementContinuationCount === 0
+      || validatedMovementContinuationCount === programTrainCount,
+    `${name} validierte weder ein einmaliges Programm noch den vollstaendigen physischen Fortsetzungsgraphen.`,
   );
   invariant(
     validatedRouteVersionCount <= validatedProgramTemplateCount,
@@ -1277,7 +1413,20 @@ export function operationalSimulationRuntimeFromAddon(
     },
     initialize(input: OperationalSimulationInitialization) {
       assertOperationalTrainNumbers(input.trains, "operative Rust-v2-Initialisierung");
+      invariant(
+        (input.repeatEveryMs === null && input.movementContinuations.length === 0)
+          || (
+            Number.isSafeInteger(input.repeatEveryMs)
+            && (input.repeatEveryMs as number) > 0
+            && (
+              input.trains.length === 0
+              || input.movementContinuations.length === input.trains.length
+            )
+          ),
+        "Operative Initialisierung bindet Wiederholung und physischen Fortsetzungsgraphen nicht eindeutig.",
+      );
       const protectionModeSelectionEvidence = operationalProtectionModeSelectionEvidence(input);
+      const movementContinuationsEvidence = operationalMovementContinuationsEvidence(input);
       const infrastructurePath = resolveInfrastructurePath(input.infraRelease);
       const inputJson = JSON.stringify(input);
       invariant(
@@ -1297,6 +1446,13 @@ export function operationalSimulationRuntimeFromAddon(
           && result.validationReceipt.protectionModeSelectionsSha256 === protectionModeSelectionEvidence.sha256
           && result.validationReceipt.protectionModeSelectionsValidated === true,
         "Nativer Initialisierungsbeleg bindet die signierte Zugsicherungsmodus-Auswahl nicht.",
+      );
+      invariant(
+        result.validationReceipt.validatedMovementContinuationCount
+          === movementContinuationsEvidence.count
+          && result.validationReceipt.movementContinuationsSha256
+            === movementContinuationsEvidence.sha256,
+        "Nativer Initialisierungsbeleg bindet den physischen Fortsetzungsgraphen nicht.",
       );
       return result;
     },

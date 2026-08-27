@@ -112,7 +112,7 @@ fn closed_operational_quality(static_quality: &Value, static_quality_bytes: &[u8
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
     let timetable_route_evidence = json!({
-        "reportSchema": "zugfolge-germany-timetable-route-report/v2",
+        "reportSchema": "zugfolge-germany-timetable-route-report/v3",
         "policyId": "synthetic-operational-b/v2",
         "derivationRule": "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2",
         "selectionRule": "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
@@ -122,6 +122,9 @@ fn closed_operational_quality(static_quality: &Value, static_quality_bytes: &[u8
         "routesSha256": "a".repeat(64),
         "gtfsSnapshotBytes": 9012,
         "gtfsSnapshotSha256": "b".repeat(64),
+        "transferDemandsSchema": "zugfolge-timetable-transfer-demands/v1",
+        "transferDemandsBytes": 3456,
+        "transferDemandsSha256": "9".repeat(64),
         "snapshotHash": "c".repeat(64),
         "archive": "gtfs-rv-free.zip",
         "archiveSha256": "d".repeat(64),
@@ -132,6 +135,20 @@ fn closed_operational_quality(static_quality: &Value, static_quality_bytes: &[u8
         "routeRecordCount": 1677,
         "sameStopTransitionCount": 2,
         "routeSetSha256": "a".repeat(64),
+        "dailyCirculationPlanSha256": "b".repeat(64),
+        "transferSetSha256": "c".repeat(64),
+        "transferDemandsProduced": true,
+        "dailyCirculation": {
+            "lotCount": 52,
+            "journeyChainCount": 1677,
+            "circulationCount": 193,
+            "rolloverAssignmentCount": 193,
+            "transferDemandCount": 79,
+            "transferLotCount": 38
+        },
+        "transferRouteCount": 79,
+        "transferRouteLegCount": 1234,
+        "transferRouteLengthMm": 3_000_000_000_i64,
         "realGeometry": true,
         "simulatedOperationalAssignment": true,
         "realInterlockingFactsClaimed": false,
@@ -180,6 +197,13 @@ fn closed_operational_quality(static_quality: &Value, static_quality_bytes: &[u8
             "syntheticOperationalDetailsShipped": true,
             "objectLevelProvenanceShipped": false,
             "observedAndSyntheticObjectsShareRuntimeCollections": true,
+            "movementRouteTemplates": {
+                "bytes": 789,
+                "sha256": "5".repeat(64),
+                "stateHash": "6".repeat(64),
+                "operationalStateHash": "7".repeat(64),
+                "timetableTransferSetSha256": "c".repeat(64)
+            },
             "timetableRouteEvidence": timetable_route_evidence,
             "operationalArtifact": {
                 "bytes": 456,
@@ -681,6 +705,24 @@ fn deutschland_2026_patch_4_verweigert_historisches_source_capture_v1() {
         .expect("Operational-v2-Artefakt");
     operational["id"] = Value::String("operational-infrastructure-2026.4".to_owned());
     operational["infraReleaseId"] = Value::String("infra-deutschland-2026.4".to_owned());
+    for (kind, id) in [
+        (
+            "movement-route-templates-v2",
+            "operational-movement-routes-2026.4",
+        ),
+        (
+            "timetable-transfer-demands-v1",
+            "timetable-transfer-demands-2026.4",
+        ),
+    ] {
+        let artifact = artifacts
+            .as_array_mut()
+            .expect("Artefaktliste")
+            .iter_mut()
+            .find(|artifact| artifact["kind"] == kind)
+            .unwrap_or_else(|| panic!("{kind}-Artefakt"));
+        artifact["id"] = Value::String(id.to_owned());
+    }
 
     let error =
         build_public_infra_release(&config, &catalog, &rights, &capture, &artifacts, &quality)
@@ -824,6 +866,10 @@ fn sichtbare_static_map_klasse_c_bleibt_getrennt_von_operational_v2_signierbar()
     assert_eq!(
         release["quality"]["operationalClosure"]["timetableRouteEvidence"]["routeRecordCount"],
         1677
+    );
+    assert_eq!(
+        release["quality"]["operationalClosure"]["timetableRouteEvidence"]["transferRouteCount"],
+        79
     );
     assert_eq!(
         release["quality"]["operationalClosure"]["timetableRouteEvidence"]["externalOperationalNetworkProvenance"],
@@ -1015,6 +1061,103 @@ fn operationaler_zwei_artefakt_gate_verwirft_offene_dimension_und_hashabweichung
     )
     .expect_err("MapEvidence muss den exakten Doppelbindungsvertrag besitzen");
     assert!(error.to_string().contains("Doppelbindungsvertrag"));
+
+    let mut wrong_transfer_bytes =
+        closed_operational_quality(&static_quality_value, &static_quality);
+    wrong_transfer_bytes["operationalModel"]["timetableRouteEvidence"]["transferDemandsBytes"] =
+        json!(3457);
+    let error = build_public_infra_release_with_operational_quality(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &artifacts,
+        &static_quality,
+        &operational_quality_bytes(&wrong_transfer_bytes),
+    )
+    .expect_err("Closure und Transfer-Sidecar muessen dieselben Dateibytes binden");
+    assert!(error.to_string().contains("identische Bytebindung"));
+
+    let mut wrong_transfer_hash =
+        closed_operational_quality(&static_quality_value, &static_quality);
+    wrong_transfer_hash["operationalModel"]["timetableRouteEvidence"]["transferDemandsSha256"] =
+        json!("e".repeat(64));
+    let error = build_public_infra_release_with_operational_quality(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &artifacts,
+        &static_quality,
+        &operational_quality_bytes(&wrong_transfer_hash),
+    )
+    .expect_err("Closure und Transfer-Sidecar muessen denselben SHA-256 binden");
+    assert!(error.to_string().contains("identische Bytebindung"));
+
+    let mut wrong_transfer_binding =
+        closed_operational_quality(&static_quality_value, &static_quality);
+    wrong_transfer_binding["operationalModel"]["timetableRouteEvidence"]["transferSetSha256"] =
+        json!("f".repeat(64));
+    let error = build_public_infra_release_with_operational_quality(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &artifacts,
+        &static_quality,
+        &operational_quality_bytes(&wrong_transfer_binding),
+    )
+    .expect_err("Closure und Movement-Beleg muessen dasselbe Transfer-Set binden");
+    assert!(error.to_string().contains("Transfer-Set-Bindung"));
+
+    for (field, value, message) in [
+        ("bytes", json!(790), "Byte-"),
+        ("sha256", json!("e".repeat(64)), "Byte-"),
+        (
+            "operationalStateHash",
+            json!("e".repeat(64)),
+            "Operational-State-",
+        ),
+        (
+            "timetableTransferSetSha256",
+            json!("e".repeat(64)),
+            "Transfer-Set-",
+        ),
+    ] {
+        let mut wrong_movement = closed_operational_quality(&static_quality_value, &static_quality);
+        wrong_movement["operationalModel"]["movementRouteTemplates"][field] = value;
+        let error = build_public_infra_release_with_operational_quality(
+            &config,
+            &catalog,
+            &rights,
+            &capture,
+            &artifacts,
+            &static_quality,
+            &operational_quality_bytes(&wrong_movement),
+        )
+        .expect_err("Movement-Beleg muss Sidecar, Operational-State und Transfer-Set binden");
+        assert!(error.to_string().contains(message), "{field}: {error}");
+    }
+
+    let mut extra_movement_field =
+        closed_operational_quality(&static_quality_value, &static_quality);
+    extra_movement_field["operationalModel"]["movementRouteTemplates"]["file"] =
+        json!("forbidden-path.json");
+    let error = build_public_infra_release_with_operational_quality(
+        &config,
+        &catalog,
+        &rights,
+        &capture,
+        &artifacts,
+        &static_quality,
+        &operational_quality_bytes(&extra_movement_field),
+    )
+    .expect_err("oeffentlicher Movement-Beleg darf keinen Pfad tragen");
+    assert!(
+        error
+            .to_string()
+            .contains("pfadfreien Byte-/Zustandsvertrag")
+    );
 }
 
 #[test]
@@ -1117,7 +1260,7 @@ fn operationaler_gate_verwirft_aufgeweichten_freien_gtfs_fahrwegbeleg() {
         &operational_quality_bytes(&extra_field),
     )
     .expect_err("externe Operational-Network-Provenienz muss am Strict-Key-Vertrag scheitern");
-    assert!(error.to_string().contains("v2-Closure-Vertrag"));
+    assert!(error.to_string().contains("v3-Closure-Vertrag"));
 
     for (label, field, value) in [
         (
@@ -1134,6 +1277,11 @@ fn operationaler_gate_verwirft_aufgeweichten_freien_gtfs_fahrwegbeleg() {
             "abweichender RouteSet-Hash",
             "routeSetSha256",
             json!("e".repeat(64)),
+        ),
+        (
+            "unvollstaendige Transferabdeckung",
+            "transferRouteCount",
+            json!(78),
         ),
         ("unfreie Lizenz", "sourceLicense", json!("proprietary")),
     ] {
@@ -1152,14 +1300,14 @@ fn operationaler_gate_verwirft_aufgeweichten_freien_gtfs_fahrwegbeleg() {
         assert!(
             error
                 .to_string()
-                .contains("Policy, Bytebindung, Vollstaendigkeit oder Provenienz"),
+                .contains("Policy, Bytebindung, Tagesumlauf-/Transferabdeckung, Vollstaendigkeit oder Provenienz"),
             "{label}: {error}"
         );
     }
 }
 
 #[test]
-fn oeffentlicher_release_transportiert_genau_eine_getrennte_statische_v2_bindung() {
+fn oeffentlicher_release_transportiert_genau_eine_getrennte_v2_paketkomposition() {
     let (config, catalog, rights, capture, artifacts, quality) = fixture();
 
     let mut missing = artifacts.clone();
@@ -1171,6 +1319,87 @@ fn oeffentlicher_release_transportiert_genau_eine_getrennte_statische_v2_bindung
         build_public_infra_release(&config, &catalog, &rights, &capture, &missing, &quality)
             .expect_err("fehlende Operational-v2-Infrastruktur muss scheitern");
     assert!(error.to_string().contains("genau eine statische"));
+
+    for (kind, message) in [
+        (
+            "movement-route-templates-v2",
+            "genau ein Movement-Route-Templates-v2-Artefakt",
+        ),
+        (
+            "timetable-transfer-demands-v1",
+            "genau ein Timetable-Transfer-Demands-v1-Artefakt",
+        ),
+    ] {
+        let mut missing_sidecar = artifacts.clone();
+        missing_sidecar
+            .as_array_mut()
+            .expect("Artefakte")
+            .retain(|artifact| artifact["kind"] != kind);
+        let error = build_public_infra_release(
+            &config,
+            &catalog,
+            &rights,
+            &capture,
+            &missing_sidecar,
+            &quality,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains(message), "{kind}: {error}");
+
+        let mut duplicate_sidecar = artifacts.clone();
+        let mut duplicate = duplicate_sidecar
+            .as_array()
+            .expect("Artefakte")
+            .iter()
+            .find(|artifact| artifact["kind"] == kind)
+            .expect("Sidecar")
+            .clone();
+        duplicate["id"] = json!(format!("duplicate-{kind}"));
+        duplicate_sidecar
+            .as_array_mut()
+            .expect("Artefakte")
+            .push(duplicate);
+        let error = build_public_infra_release(
+            &config,
+            &catalog,
+            &rights,
+            &capture,
+            &duplicate_sidecar,
+            &quality,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains(message), "{kind}: {error}");
+    }
+
+    for (kind, message) in [
+        (
+            "movement-route-templates-v2",
+            "unbekannte oder fehlende Manifestfelder",
+        ),
+        (
+            "timetable-transfer-demands-v1",
+            "unbekannte oder fehlende Manifestfelder",
+        ),
+    ] {
+        let mut extra_field = artifacts.clone();
+        let artifact = extra_field
+            .as_array_mut()
+            .expect("Artefakte")
+            .iter_mut()
+            .find(|artifact| artifact["kind"] == kind)
+            .expect("Sidecar");
+        artifact["worldId"] = json!("world-must-not-enter-infra-release");
+        let error = build_public_infra_release(
+            &config,
+            &catalog,
+            &rights,
+            &capture,
+            &extra_field,
+            &quality,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains(message), "{kind}: {error}");
+    }
 
     let mut conflated_hashes = artifacts.clone();
     let artifact = conflated_hashes
@@ -1341,7 +1570,7 @@ fn regionaler_v1_release_wird_aus_explizitem_versioniertem_buildvertrag_gebildet
                 }]
             }
         },
-        "interlockingRoutes": {
+            "interlockingRoutes": {
             "interlocking-1": {
                 "id": "interlocking-1",
                 "routeTemplateId": "template-1",
@@ -1351,11 +1580,12 @@ fn regionaler_v1_release_wird_aus_explizitem_versioniertem_buildvertrag_gebildet
                 "overlapResources": ["overlap-1"],
                 "flankResources": ["flank-1"],
                 "switchPositions": {},
+                "authorityStartRouteMm": 0,
                 "authorityEndRouteMm": 1_000,
-                "releaseAfterTailRouteMm": 1_000
-            }
-        },
-        "signals": ["signal-1"],
+                    "releaseAfterTailRouteMm": 1_000
+                }
+            },
+            "signals": ["signal-1"],
         "switches": [],
         "blockResources": ["block-1", "flank-1", "overlap-1"],
         "platformIntervals": {},

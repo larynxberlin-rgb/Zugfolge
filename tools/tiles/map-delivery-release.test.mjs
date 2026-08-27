@@ -30,6 +30,10 @@ const SQLITE_SHA256 = createHash("sha256").update(SQLITE_BYTES).digest("hex");
 const OPERATIONAL_STATE_HASH = "d".repeat(64);
 const OPERATIONAL_BYTES = Buffer.from('{"id":"infra-deutschland-2026.1","schema":"zugfolge-operational-infrastructure/v2"}\n');
 const OPERATIONAL_SHA256 = createHash("sha256").update(OPERATIONAL_BYTES).digest("hex");
+const MOVEMENT_ROUTES_BYTES = Buffer.from('{"infraReleaseId":"infra-deutschland-2026.1","schema":"movement-route-templates-v2"}\n');
+const MOVEMENT_ROUTES_SHA256 = createHash("sha256").update(MOVEMENT_ROUTES_BYTES).digest("hex");
+const TRANSFER_DEMANDS_BYTES = Buffer.from('{"infraReleaseId":"infra-deutschland-2026.1","schema":"zugfolge-timetable-transfer-demands/v1"}\n');
+const TRANSFER_DEMANDS_SHA256 = createHash("sha256").update(TRANSFER_DEMANDS_BYTES).digest("hex");
 const PRODUCER_GOLDEN_URL = new URL("../../odoo/addons/zugfolge_admin/tests/fixtures/delivery_v2_producer_golden.json", import.meta.url);
 const QUALITY_LAYER_NAMES = [
   "rail_corridors", "operating_points", "stations", "tracks", "platforms",
@@ -113,6 +117,24 @@ function packageSpec() {
         expectedBytes: OPERATIONAL_BYTES.length,
         expectedSha256: OPERATIONAL_SHA256,
       },
+      {
+        id: "operational-movement-routes-2026.1",
+        kind: "movement-route-templates-v2",
+        visibility: "public",
+        sourceFile: "public/operational-infrastructure-v2.movement-route-templates-v2.json",
+        installPath: "operational-infrastructure-v2.movement-route-templates-v2.json",
+        expectedBytes: MOVEMENT_ROUTES_BYTES.length,
+        expectedSha256: MOVEMENT_ROUTES_SHA256,
+      },
+      {
+        id: "timetable-transfer-demands-2026.1",
+        kind: "timetable-transfer-demands-v1",
+        visibility: "public",
+        sourceFile: "public/timetable-routes-v2.transfer-demands-v1.json",
+        installPath: "timetable-routes-v2.transfer-demands-v1.json",
+        expectedBytes: TRANSFER_DEMANDS_BYTES.length,
+        expectedSha256: TRANSFER_DEMANDS_SHA256,
+      },
     ],
   };
 }
@@ -122,7 +144,11 @@ function legacyPackageSpec() {
   spec.schema = "zugfolge-map-package-spec/v1";
   spec.runtime = { ...spec.runtime, schema: "zugfolge-map-runtime/v1" };
   spec.auxiliaryFiles = spec.auxiliaryFiles
-    .filter(({ kind }) => kind !== "operational-infrastructure-v2")
+    .filter(({ kind }) => ![
+      "operational-infrastructure-v2",
+      "movement-route-templates-v2",
+      "timetable-transfer-demands-v1",
+    ].includes(kind))
     .concat([{
       id: "train-projection",
       kind: "train-map-projection",
@@ -145,15 +171,31 @@ function infraRelease(report = operationalQuality()) {
       attribution: "Datenquelle DB InfraGO, CC BY 4.0; durch Zugfolge bearbeitet.",
       modifications: "Normalisiert und konservativ modelliert.",
     }],
-    artifacts: [{
-      id: "operational-infrastructure-2026.1",
-      kind: "operational-infrastructure-v2",
-      file: "operational-infrastructure-v2.json",
-      infraReleaseId: "infra-deutschland-2026.1",
-      bytes: OPERATIONAL_BYTES.length,
-      sha256: OPERATIONAL_SHA256,
-      stateHash: OPERATIONAL_STATE_HASH,
-    }],
+    artifacts: [
+      {
+        id: "operational-infrastructure-2026.1",
+        kind: "operational-infrastructure-v2",
+        file: "operational-infrastructure-v2.json",
+        infraReleaseId: "infra-deutschland-2026.1",
+        bytes: OPERATIONAL_BYTES.length,
+        sha256: OPERATIONAL_SHA256,
+        stateHash: OPERATIONAL_STATE_HASH,
+      },
+      {
+        id: "operational-movement-routes-2026.1",
+        kind: "movement-route-templates-v2",
+        file: "operational-infrastructure-v2.movement-route-templates-v2.json",
+        bytes: MOVEMENT_ROUTES_BYTES.length,
+        sha256: MOVEMENT_ROUTES_SHA256,
+      },
+      {
+        id: "timetable-transfer-demands-2026.1",
+        kind: "timetable-transfer-demands-v1",
+        file: "timetable-routes-v2.transfer-demands-v1.json",
+        bytes: TRANSFER_DEMANDS_BYTES.length,
+        sha256: TRANSFER_DEMANDS_SHA256,
+      },
+    ],
     quality: {
       operationalClosure: {
         reportSha256: createHash("sha256").update(serializeDeliveryJson(report)).digest("hex"),
@@ -172,6 +214,7 @@ function infraRelease(report = operationalQuality()) {
         syntheticOperationalDetailsShipped: true,
         objectLevelProvenanceShipped: false,
         observedAndSyntheticObjectsShareRuntimeCollections: true,
+        movementRouteTemplates: structuredClone(report.operationalModel.movementRouteTemplates),
         timetableRouteEvidence: structuredClone(report.operationalModel.timetableRouteEvidence),
         operationalQualityEligible: true,
         signatureImplied: false,
@@ -282,8 +325,15 @@ function operationalQuality() {
       syntheticOperationalDetailsShipped: true,
       objectLevelProvenanceShipped: false,
       observedAndSyntheticObjectsShareRuntimeCollections: true,
+      movementRouteTemplates: {
+        bytes: MOVEMENT_ROUTES_BYTES.length,
+        sha256: MOVEMENT_ROUTES_SHA256,
+        stateHash: HASH_B,
+        operationalStateHash: OPERATIONAL_STATE_HASH,
+        timetableTransferSetSha256: HASH_A,
+      },
       timetableRouteEvidence: {
-        reportSchema: "zugfolge-germany-timetable-route-report/v2",
+        reportSchema: "zugfolge-germany-timetable-route-report/v3",
         policyId: "synthetic-operational-b/v2",
         derivationRule: "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2",
         selectionRule: "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
@@ -293,6 +343,9 @@ function operationalQuality() {
         routesSha256: HASH_B,
         gtfsSnapshotBytes: 9012,
         gtfsSnapshotSha256: HASH_C,
+        transferDemandsSchema: "zugfolge-timetable-transfer-demands/v1",
+        transferDemandsBytes: TRANSFER_DEMANDS_BYTES.length,
+        transferDemandsSha256: TRANSFER_DEMANDS_SHA256,
         snapshotHash: HASH_A,
         archive: "gtfs-free.zip",
         archiveSha256: HASH_B,
@@ -303,6 +356,13 @@ function operationalQuality() {
         routeRecordCount: 4,
         sameStopTransitionCount: 1,
         routeSetSha256: HASH_B,
+        dailyCirculationPlanSha256: HASH_C,
+        transferSetSha256: HASH_A,
+        transferDemandsProduced: true,
+        dailyCirculation: { lotCount: 2, journeyChainCount: 4, circulationCount: 2, rolloverAssignmentCount: 2, transferDemandCount: 1, transferLotCount: 1 },
+        transferRouteCount: 1,
+        transferRouteLegCount: 3,
+        transferRouteLengthMm: 12_345,
         realGeometry: true,
         simulatedOperationalAssignment: true,
         realInterlockingFactsClaimed: false,
@@ -340,6 +400,8 @@ async function fixture() {
     ["public/read-model.sqlite", SQLITE_BYTES],
     ["public/train-map-projection.sqlite", SQLITE_BYTES],
     ["public/operational-infrastructure-v2.json", OPERATIONAL_BYTES],
+    ["public/operational-infrastructure-v2.movement-route-templates-v2.json", MOVEMENT_ROUTES_BYTES],
+    ["public/timetable-routes-v2.transfer-demands-v1.json", TRANSFER_DEMANDS_BYTES],
     ["assets/dark.json", Buffer.from("{}\n")],
     ["assets/dark.png", Buffer.from([0x89, 0x50, 0x4e, 0x47])],
     ["style.json", Buffer.from("{}\n")],
@@ -428,7 +490,7 @@ test("kombinierter Deliveryvertrag bindet das vollständige öffentliche Paket o
     assert.equal(result.release.approvalGates.quality.visibleMapClassCFeatureCount, 2);
     assert.equal(result.release.approvalGates.quality.operationalClassCArtifactCount, 0);
     assert.equal(result.release.approvalGates.quality.classCOrderable, false);
-    assert.equal(result.release.artifacts.length, 9);
+    assert.equal(result.release.artifacts.length, 11);
     assert.equal(result.release.artifacts.find(({ id }) => id === "basemap").sha256, BASEMAP_SHA256);
     assert.equal(result.release.artifacts.find(({ id }) => id === "readmodel").sha256, SQLITE_SHA256);
     assert.deepEqual(
@@ -504,10 +566,14 @@ test("echter Delivery-v2-Builder speist Signatur und Signed-Paketplan mit expliz
     const releaseDescriptor = plan.auxiliaryFiles.find(({ kind }) => kind === "release-manifest");
     const sourcesDescriptor = plan.auxiliaryFiles.find(({ kind }) => kind === "source-manifest");
     const operationalDescriptor = plan.auxiliaryFiles.find(({ kind }) => kind === "operational-infrastructure-v2");
+    const movementDescriptor = plan.auxiliaryFiles.find(({ kind }) => kind === "movement-route-templates-v2");
+    const transferDescriptor = plan.auxiliaryFiles.find(({ kind }) => kind === "timetable-transfer-demands-v1");
     releaseDescriptor.id = "release-manifest";
     releaseDescriptor.sourceFile = unsignedSourceFile;
     sourcesDescriptor.sourceFile = sourcesSourceFile;
     operationalDescriptor.artifactInventory = inventorySourceFile;
+    movementDescriptor.artifactInventory = inventorySourceFile;
+    transferDescriptor.artifactInventory = inventorySourceFile;
     plan.auxiliaryFiles = plan.auxiliaryFiles.filter(({ kind }) => !["glyph", "sprite"].includes(kind));
     plan.auxiliaryTrees = [
       {
@@ -852,7 +918,7 @@ test("Delivery verwirft eine gleich grosse Ersetzung zwischen Qualitaetsvalidier
   }
 });
 
-test("Delivery verwirft eine vom InfraRelease abweichende Operational-v2-Zustandsbindung", async () => {
+test("Delivery verwirft abweichende Operational-v2- und Sidecar-Bindungen des InfraRelease", async () => {
   const root = await fixture();
   try {
     const forgedPackage = packageSpec();
@@ -867,7 +933,37 @@ test("Delivery verwirft eine vom InfraRelease abweichende Operational-v2-Zustand
         mapRelease: materializedMapRelease(),
         auxiliaryArtifactProofs: [{ id: "readmodel", bytes: SQLITE_BYTES.length, sha256: SQLITE_SHA256 }],
       }),
-      /Byte-\/Zustandsbindung des InfraRelease/,
+      /Zustandsbindung des InfraRelease/,
+    );
+
+    const forgedMovementBinding = infraRelease();
+    forgedMovementBinding.artifacts.find(({ kind }) => kind === "movement-route-templates-v2").file = "movement-routes-substituted.json";
+    await assert.rejects(
+      buildMapDeliveryRelease({
+        releaseId: "infra-deutschland-2026.1",
+        timetableYear: 2026,
+        packageSpec: packageSpec(),
+        sourceRoot: root,
+        infraRelease: materialized(forgedMovementBinding),
+        mapRelease: materializedMapRelease(),
+        auxiliaryArtifactProofs: [{ id: "readmodel", bytes: SQLITE_BYTES.length, sha256: SQLITE_SHA256 }],
+      }),
+      /Movement-Route-Templates-v2-Paketdatei weicht von der Bytebindung des InfraRelease/,
+    );
+
+    const forgedTransferPackage = packageSpec();
+    forgedTransferPackage.auxiliaryFiles.find(({ kind }) => kind === "timetable-transfer-demands-v1").expectedSha256 = "e".repeat(64);
+    await assert.rejects(
+      buildMapDeliveryRelease({
+        releaseId: "infra-deutschland-2026.1",
+        timetableYear: 2026,
+        packageSpec: forgedTransferPackage,
+        sourceRoot: root,
+        infraRelease: materializedInfraRelease(),
+        mapRelease: materializedMapRelease(),
+        auxiliaryArtifactProofs: [{ id: "readmodel", bytes: SQLITE_BYTES.length, sha256: SQLITE_SHA256 }],
+      }),
+      /Timetable-Transfer-Demands-v1-Paketdatei weicht von der Bytebindung des InfraRelease/,
     );
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -918,8 +1014,19 @@ test("Operational-v2-Delivery lässt sichtbare Karten-C ehrlich stehen und verwi
     await writeFile(qualityPath, serializeDeliveryJson(externalNetwork));
     await assert.rejects(build(externalNetwork), /ehrliche Geometrie-\/Provenienzgrenze/);
 
+    const incompleteTransfers = operationalQuality();
+    incompleteTransfers.operationalModel.timetableRouteEvidence.transferRouteCount = 2;
+    await writeFile(qualityPath, serializeDeliveryJson(incompleteTransfers));
+    await assert.rejects(build(incompleteTransfers), /Tagesumlauf-\/Transferabdeckung/);
+
+    const mismatchedMovement = operationalQuality();
+    mismatchedMovement.operationalModel.movementRouteTemplates.sha256 = "e".repeat(64);
+    await writeFile(qualityPath, serializeDeliveryJson(mismatchedMovement));
+    await assert.rejects(build(mismatchedMovement), /verschiedene Movement-Route-Templates-v2-Bytes/);
+
     const mismatchedArtifact = operationalQuality();
     mismatchedArtifact.operationalModel.operationalArtifact.stateHash = "e".repeat(64);
+    mismatchedArtifact.operationalModel.movementRouteTemplates.operationalStateHash = "e".repeat(64);
     await writeFile(qualityPath, serializeDeliveryJson(mismatchedArtifact));
     await assert.rejects(build(mismatchedArtifact), /verschiedene Operational-Artefaktbytes oder Zustände/);
 

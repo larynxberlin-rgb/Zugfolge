@@ -13,9 +13,18 @@ import { allocatePublicRegionalTrainNumbers, publicRegionalTrainNumber } from ".
 import {
   OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
   assertOperationalTrainNumbers,
+  operationalMovementContinuationsEvidence,
   operationalProtectionModeSelectionEvidence,
 } from "../../packages/runtime-native/dist/index.js";
 import { assertEmbeddedWorldIds, assertNoStarterIdentifiers } from "./alpha-world-variants.mjs";
+import {
+  DAILY_CIRCULATION_PLAN_SCHEMA,
+  dailyMovementContinuities,
+  dailyRolloverCycles,
+  deriveDailyCirculationPlan,
+  dailyServiceLotIdentifiers,
+} from "./daily-circulation-v2.mjs";
+import { validateMovementRouteTemplatesV2 } from "./movement-route-templates-v2.mjs";
 import {
   assertNormalizedScheduleTimeContract,
   NORMALIZED_SCHEDULE_REPEAT_EVERY_S,
@@ -37,7 +46,7 @@ import {
 const SHA256 = /^[a-f0-9]{64}$/u;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const RETIRED_ALPHA_WORLD_IDS = new Set(["00000000-0000-4000-8000-000000000014"]);
-const ALPHA_WORLD_BUILD_CONFIGURATION_SCHEMA = "zugfolge-alpha-world-build-configuration/v2";
+const ALPHA_WORLD_BUILD_CONFIGURATION_SCHEMA = "zugfolge-alpha-world-build-configuration/v3";
 const OPERATIONAL_INITIALIZATION_HASH_SCHEMA = "zugfolge-operational-simulation-initialization/v2";
 const OPERATIONAL_INITIALIZATION_VALIDATION_RECEIPT_SCHEMA = "zugfolge-operational-initialization-validation-receipt/v1";
 const MAX_TIMETABLE_ROUTE_RECORD_BYTES = 16 * 1024 * 1024;
@@ -89,6 +98,8 @@ export function validateAlphaWorldBuildConfiguration(value) {
     "planningAuthority",
     "operationalInfrastructure",
     "timetableRoutes",
+    "timetableTransferDemands",
+    "movementRouteTemplates",
   ], "Alpha-Weltbuildkonfiguration");
   invariant(value.schemaVersion === ALPHA_WORLD_BUILD_CONFIGURATION_SCHEMA, "Alpha-Weltbuildkonfiguration besitzt ein unbekanntes Schema.");
   invariant(UUID.test(value.worldId), "Alpha-Weltbuildkonfiguration besitzt keine neue UUID-v4-Weltkennung.");
@@ -116,6 +127,33 @@ export function validateAlphaWorldBuildConfiguration(value) {
       && SHA256.test(value.timetableRoutes.sha256),
     "Alpha-Weltbuildkonfiguration besitzt keine unveraenderliche Timetable-Route-Bindung.",
   );
+  exactKeys(
+    value.timetableTransferDemands,
+    ["file", "bytes", "sha256", "dailyPlanSha256", "transferSetSha256"],
+    "Alpha-Weltbuildkonfiguration.timetableTransferDemands",
+  );
+  invariant(
+    value.timetableTransferDemands.file === "timetable-routes-v2.transfer-demands-v1.json"
+      && safePositiveInteger(value.timetableTransferDemands.bytes, "Alpha-Weltbuildkonfiguration.timetableTransferDemands.bytes")
+      && SHA256.test(value.timetableTransferDemands.sha256)
+      && SHA256.test(value.timetableTransferDemands.dailyPlanSha256)
+      && SHA256.test(value.timetableTransferDemands.transferSetSha256),
+    "Alpha-Weltbuildkonfiguration besitzt keine vollstaendige Timetable-Transfer-Bindung.",
+  );
+  exactKeys(
+    value.movementRouteTemplates,
+    ["file", "bytes", "sha256", "stateHash", "operationalStateHash", "timetableTransferSetSha256"],
+    "Alpha-Weltbuildkonfiguration.movementRouteTemplates",
+  );
+  invariant(
+    value.movementRouteTemplates.file === "operational-infrastructure-v2.movement-route-templates-v2.json"
+      && safePositiveInteger(value.movementRouteTemplates.bytes, "Alpha-Weltbuildkonfiguration.movementRouteTemplates.bytes")
+      && SHA256.test(value.movementRouteTemplates.sha256)
+      && SHA256.test(value.movementRouteTemplates.stateHash)
+      && value.movementRouteTemplates.operationalStateHash === value.operationalInfrastructure.stateHash
+      && value.movementRouteTemplates.timetableTransferSetSha256 === value.timetableTransferDemands.transferSetSha256,
+    "Alpha-Weltbuildkonfiguration bindet die Movement-Route-Vorlagen nicht an Operational-v2 und den Transferplan.",
+  );
   const seed = BigInt(value.seed);
   invariant(seed <= 0xffff_ffff_ffff_ffffn, "Alpha-Weltbuildkonfiguration.seed liegt ausserhalb von u64.");
   return Object.freeze({
@@ -123,6 +161,8 @@ export function validateAlphaWorldBuildConfiguration(value) {
     planningAuthority: Object.freeze({ ...value.planningAuthority }),
     operationalInfrastructure: Object.freeze({ ...value.operationalInfrastructure }),
     timetableRoutes: Object.freeze({ ...value.timetableRoutes }),
+    timetableTransferDemands: Object.freeze({ ...value.timetableTransferDemands }),
+    movementRouteTemplates: Object.freeze({ ...value.movementRouteTemplates }),
   });
 }
 
@@ -134,10 +174,6 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function alphaIdentifierSlug(value) {
-  return String(value).normalize("NFKD").replaceAll(/\p{Diacritic}/gu, "").replaceAll(/[^a-zA-Z0-9]+/g, "-").replaceAll(/^-|-$/g, "").toLowerCase() || "linie";
-}
-
 /**
  * Fachliche Los- und Linienkennungen sind weltneutral, aber an den exakten
  * signierten GTFS-Release gebunden. Der vollstaendige SHA-256-Anteil wird aus
@@ -145,19 +181,7 @@ function alphaIdentifierSlug(value) {
  * kann daher keine Identitaetskollision verursachen.
  */
 export function alphaServiceLotIdentifiers({ gtfsReleaseId, routeId, routeShortName }) {
-  nonEmptyString(gtfsReleaseId, "GTFS-Release-ID fuer Loskennung");
-  nonEmptyString(routeId, "GTFS-Route-ID fuer Loskennung");
-  nonEmptyString(routeShortName, "GTFS-Routenname fuer Loskennung");
-  const identityHash = alphaHash("zugfolge-alpha-service-lot-identity/v1", {
-    gtfsReleaseId,
-    routeId,
-    routeShortName,
-  });
-  const label = alphaIdentifierSlug(routeShortName);
-  return Object.freeze({
-    lotId: `lot-${label}-${identityHash}`,
-    serviceLineId: `line-${label}-${identityHash}`,
-  });
+  return dailyServiceLotIdentifiers({ gtfsReleaseId, routeId, routeShortName });
 }
 
 async function assertCreateNewTargetMissing(path, label) {
@@ -288,6 +312,18 @@ async function hashFile(path) {
   return Object.freeze({ bytes, sha256: hash.digest("hex") });
 }
 
+async function assertBoundSmallArtifact(path, bytes, binding, name) {
+  const absolute = resolve(path);
+  invariant(basename(absolute) === binding.file, `${name}-Dateipfad verletzt die signierte Dateibindung.`);
+  const metadata = await regularFile(absolute, name);
+  invariant(
+    metadata.size === binding.bytes
+      && bytes.length === binding.bytes
+      && sha256(bytes) === binding.sha256,
+    `${name} verletzt die Byte- oder SHA-256-Bindung.`,
+  );
+}
+
 /** Verifiziert die 1,46-GB-Datei ausschliesslich als Stream gegen das signierte Manifest. */
 export async function verifyOperationalInfrastructureArtifact(path, infraReleaseManifest) {
   invariant(typeof path === "string" && path !== "", "Operational-v2-Dateipfad fehlt.");
@@ -316,6 +352,8 @@ export function validateOperationalInitializationPreflightReceipt(receipt, initi
     "validatedResourceBindingCount",
     "validatedFormationBindingCount",
     "validatedTrainNumberCount",
+    "validatedMovementContinuationCount",
+    "movementContinuationsSha256",
     "protectionModeSelectionPolicy",
     "validatedProtectionModeSelectionCount",
     "protectionModeSelectionsSha256",
@@ -341,6 +379,7 @@ export function validateOperationalInitializationPreflightReceipt(receipt, initi
   const dispatchInterlockingRouteCount = new Set(initialization?.trains?.map((train) => train.dispatchInterlockingRouteId) ?? []).size;
   const formationBindingCount = new Set(initialization?.trains?.map((train) => train.formationVersionId) ?? []).size;
   const protectionModeSelectionEvidence = operationalProtectionModeSelectionEvidence(initialization);
+  const movementContinuationsEvidence = operationalMovementContinuationsEvidence(initialization);
   invariant(
     receipt.schemaVersion === OPERATIONAL_INITIALIZATION_VALIDATION_RECEIPT_SCHEMA
       && receipt.worldId === initialization.worldId
@@ -355,6 +394,8 @@ export function validateOperationalInitializationPreflightReceipt(receipt, initi
       && receipt.validatedDispatchInterlockingRouteCount === dispatchInterlockingRouteCount
       && receipt.validatedFormationBindingCount === formationBindingCount
       && receipt.validatedTrainNumberCount === programTrainCount
+      && receipt.validatedMovementContinuationCount === movementContinuationsEvidence.count
+      && receipt.movementContinuationsSha256 === movementContinuationsEvidence.sha256
       && receipt.protectionModeSelectionPolicy === initialization.protectionModeSelectionPolicy
       && receipt.validatedProtectionModeSelectionCount === protectionModeSelectionEvidence.count
       && receipt.protectionModeSelectionsSha256 === protectionModeSelectionEvidence.sha256
@@ -560,7 +601,7 @@ function timetableRouteSummary(value, requiredPlayableLegIds, seen) {
   invariant(routeLengthMm > 0, `Timetable-Route fuer '${playableLegId}' ist leer.`);
   const dispatchInterlockingRouteId = germanyOperationalStableId(
     "interlocking:synthetic-segment:",
-    [route.routeVersionId, String(route.legs.length - 1)],
+    [route.routeVersionId, "0"],
   );
   seen.add(playableLegId);
   return Object.freeze({
@@ -640,14 +681,16 @@ const [
   publicConfigurationPath,
   operationalV2Path,
   timetableRoutesPath,
+  timetableTransferDemandsPath,
+  movementRouteTemplatesPath,
   vehicleReceiptPath,
   vehicleInventoryPath,
   vehicleSourceCatalogPath,
   vehicleWorldSeedPath,
   vehicleCompiledCatalogPath,
 ] = argv;
-if (!buildConfigurationPath || !gtfsPath || !fleetCatalogPath || !infraReleasePath || !economySpecPath || !outputPath || !publicConfigurationPath || !operationalV2Path || !timetableRoutesPath) {
-  throw new Error("Aufruf: node build-alpha-world.mjs BUILD-CONFIG.json GTFS.json FLEET-CATALOG-V2.json INFRA-RELEASE-WRAPPER.json ECONOMY.json OUTPUT.json PUBLIC-ODOO-CONFIG.json OPERATIONAL-INFRASTRUCTURE-V2.json TIMETABLE-ROUTES-V2.jsonseq VEHICLE-RECEIPT-V4.json VEHICLE-INVENTORY-V2.json VEHICLE-SOURCE-V2.json VEHICLE-WORLD-SEED-V3.json VEHICLE-CATALOG-V3.json");
+if (!buildConfigurationPath || !gtfsPath || !fleetCatalogPath || !infraReleasePath || !economySpecPath || !outputPath || !publicConfigurationPath || !operationalV2Path || !timetableRoutesPath || !timetableTransferDemandsPath || !movementRouteTemplatesPath) {
+  throw new Error("Aufruf: node build-alpha-world.mjs BUILD-CONFIG.json GTFS.json FLEET-CATALOG-V2.json INFRA-RELEASE-WRAPPER.json ECONOMY.json OUTPUT.json PUBLIC-ODOO-CONFIG.json OPERATIONAL-INFRASTRUCTURE-V2.json TIMETABLE-ROUTES-V2.jsonseq TIMETABLE-TRANSFER-DEMANDS-V1.json MOVEMENT-ROUTE-TEMPLATES-V2.json VEHICLE-RECEIPT-V4.json VEHICLE-INVENTORY-V2.json VEHICLE-SOURCE-V2.json VEHICLE-WORLD-SEED-V3.json VEHICLE-CATALOG-V3.json");
 }
 await assertCreateNewTargetMissing(resolve(outputPath), "Alpha-Weltdeployment");
 
@@ -700,53 +743,8 @@ async function loadDeployConfiguration(path, expectedWorldId, expectedKind) {
 
 const publicDeployConfiguration = await loadDeployConfiguration(publicConfigurationPath, WORLD_ID, "public");
 
-function startS(chain) {
-  const leg = chain.legs[0];
-  return leg.kind === "playable" ? leg.stops[0].departureS : leg.scheduledStartS;
-}
-
-function endS(chain) {
-  const leg = chain.legs.at(-1);
-  return leg.kind === "playable" ? leg.stops.at(-1).arrivalS : leg.scheduledEndS;
-}
-
 function playableLegs(chain) {
   return chain.legs.filter((leg) => leg.kind === "playable");
-}
-
-function startLocation(chain) {
-  const leg = chain.legs[0];
-  if (leg.kind === "external") return `external-origin:${leg.legId}`;
-  return leg.entryPortalId ?? leg.stops[0].stopId;
-}
-
-function endLocation(chain) {
-  const leg = chain.legs.at(-1);
-  if (leg.kind === "external") return `external-destination:${leg.legId}`;
-  return leg.exitPortalId ?? leg.stops.at(-1).stopId;
-}
-
-function buildCirculations(chains, lotId) {
-  const circulations = [];
-  const assignment = new Map();
-  for (const chain of [...chains].sort((left, right) => startS(left) - startS(right) || left.journeyChainId.localeCompare(right.journeyChainId))) {
-    const location = startLocation(chain);
-    const available = circulations
-      .filter((circulation) => circulation.location === location && circulation.availableAt + ALPHA_MINIMUM_TURNAROUND_S <= startS(chain))
-      .sort((left, right) => right.availableAt - left.availableAt || left.id.localeCompare(right.id))[0];
-    const circulation = available ?? {
-      id: `circulation-${lotId}-${String(circulations.length + 1).padStart(3, "0")}`,
-      chains: [],
-      location,
-      availableAt: 0,
-    };
-    if (available === undefined) circulations.push(circulation);
-    circulation.chains.push(chain.journeyChainId);
-    circulation.location = endLocation(chain);
-    circulation.availableAt = endS(chain);
-    assignment.set(chain.journeyChainId, circulation.id);
-  }
-  return { circulations, assignment };
 }
 
 function alphaLotRecords(chains, gtfsReleaseId) {
@@ -763,6 +761,112 @@ function alphaLotRecords(chains, gtfsReleaseId) {
   invariant(new Set(records.map(({ lotId }) => lotId)).size === records.length, "GTFS-Loskennungen besitzen eine Identitaetskollision.");
   invariant(new Set(records.map(({ serviceLineId }) => serviceLineId)).size === records.length, "GTFS-Linienkennungen besitzen eine Identitaetskollision.");
   return records;
+}
+
+function validateTimetableTransferDemandsArtifact({
+  artifact,
+  binding,
+  infraReleaseId,
+  gtfsSnapshotHash,
+  journeyChains,
+  stations,
+  gtfsReleaseId,
+}) {
+  exactKeys(artifact, [
+    "schema",
+    "infraReleaseId",
+    "gtfsSnapshotHash",
+    "dailyPlan",
+    "formationLengthsMm",
+    "transferRoutes",
+    "transferSetSha256",
+  ], "Timetable-Transferplan");
+  invariant(
+    artifact.schema === "zugfolge-timetable-transfer-demands/v1"
+      && artifact.infraReleaseId === infraReleaseId
+      && artifact.gtfsSnapshotHash === gtfsSnapshotHash
+      && artifact.transferSetSha256 === binding.transferSetSha256
+      && artifact.dailyPlan?.planSha256 === binding.dailyPlanSha256,
+    "Timetable-Transferplan verletzt seine Release- oder Hashbindung.",
+  );
+  invariant(
+    artifact.dailyPlan?.schema === DAILY_CIRCULATION_PLAN_SCHEMA
+      && Array.isArray(artifact.dailyPlan.rolloverAssignments)
+      && Array.isArray(artifact.dailyPlan.transferDemands),
+    "Timetable-Transferplan besitzt keinen vollstaendigen DailyPlan.",
+  );
+  const transferPairs = new Set(artifact.dailyPlan.rolloverAssignments
+    .filter((assignment) => assignment?.kind === "transfer")
+    .map((assignment) => `${assignment.sourceCirculationId}\u0000${assignment.targetCirculationId}`));
+  const reproduced = deriveDailyCirculationPlan({
+    journeyChains,
+    stations,
+    gtfsReleaseId,
+    repeatEveryS: artifact.dailyPlan.repeatEveryS,
+    minimumTurnaroundS: artifact.dailyPlan.minimumTurnaroundS,
+    transferCost: ({ source, target }) => (
+      transferPairs.has(`${source.id}\u0000${target.id}`) ? 0 : null
+    ),
+  });
+  invariant(
+    reproduced.planSha256 === binding.dailyPlanSha256
+      && alphaCanonicalJson(reproduced) === alphaCanonicalJson(artifact.dailyPlan),
+    "Timetable-Transferplan laesst sich aus dem signierten Fahrplan nicht identisch reproduzieren.",
+  );
+  invariant(
+    Array.isArray(artifact.formationLengthsMm)
+      && artifact.formationLengthsMm.length > 0
+      && artifact.formationLengthsMm.every((lengthMm) => Number.isSafeInteger(lengthMm) && lengthMm > 0)
+      && new Set(artifact.formationLengthsMm).size === artifact.formationLengthsMm.length
+      && Array.isArray(artifact.transferRoutes),
+    "Timetable-Transferplan besitzt keine eindeutigen Formationslaengen oder Transferwege.",
+  );
+  const demandById = new Map(reproduced.transferDemands.map((demand) => [demand.id, demand]));
+  const seen = new Set();
+  for (const [index, route] of artifact.transferRoutes.entries()) {
+    exactKeys(route, [
+      "id", "lotId", "assetCompatibilityKey", "sourceCirculationId", "targetCirculationId",
+      "sourcePassengerLegId", "targetPassengerLegId", "sourceLocationId", "targetLocationId",
+      "sourcePhysicalStopId", "targetPhysicalStopId", "earliestDepartureS", "latestArrivalS",
+      "availableWindowS", "movementKind", "sourcePassengerRouteVersionId",
+      "targetPassengerRouteVersionId", "formationLengthsMm", "routeVersionId", "templateId",
+      "legs", "totalLengthMm", "weightedCostMm", "minimumRuntimeMs",
+    ], `Timetable-Transferweg[${index}]`);
+    const demand = demandById.get(route?.id);
+    if (
+      demand === undefined
+      || seen.has(route.id)
+      || alphaCanonicalJson(Object.fromEntries(Object.keys(demand).map((key) => [key, route[key]])))
+        !== alphaCanonicalJson(demand)
+      || alphaCanonicalJson(route.formationLengthsMm) !== alphaCanonicalJson(artifact.formationLengthsMm)
+      || !nonEmptyString(route.sourcePassengerRouteVersionId, `Transferweg[${index}].sourcePassengerRouteVersionId`)
+      || !nonEmptyString(route.targetPassengerRouteVersionId, `Transferweg[${index}].targetPassengerRouteVersionId`)
+      || !nonEmptyString(route.routeVersionId, `Transferweg[${index}].routeVersionId`)
+      || !nonEmptyString(route.templateId, `Transferweg[${index}].templateId`)
+      || !Array.isArray(route.legs)
+      || route.legs.length === 0
+      || !Number.isSafeInteger(route.minimumRuntimeMs)
+      || route.minimumRuntimeMs <= 0
+      || route.minimumRuntimeMs > demand.availableWindowS * 1_000
+    ) throw new Error(`Timetable-Transferweg '${route?.id ?? index}' ist nicht vollstaendig releasegebunden.`);
+    seen.add(route.id);
+  }
+  invariant(
+    seen.size === demandById.size,
+    "Timetable-Transferplan bildet nicht jede Transferanforderung genau einmal ab.",
+  );
+  const transferHasher = createHash("sha256");
+  for (const route of artifact.transferRoutes) transferHasher.update(`${alphaCanonicalJson(route)}\n`);
+  invariant(
+    transferHasher.digest("hex") === binding.transferSetSha256,
+    "Timetable-Transferwege verletzen ihren kanonischen Set-Hash.",
+  );
+  return Object.freeze({
+    dailyPlan: reproduced,
+    formationLengthsMm: Object.freeze([...artifact.formationLengthsMm]),
+    transferRoutes: Object.freeze([...artifact.transferRoutes]),
+    transferSetSha256: artifact.transferSetSha256,
+  });
 }
 
 function parseEconomySpec(specification) {
@@ -794,6 +898,8 @@ const [
   vehicleSourceCatalogBytes,
   vehicleWorldSeedBytes,
   vehicleCompiledCatalogBytes,
+  timetableTransferDemandsBytes,
+  movementRouteTemplatesBytes,
 ] = await Promise.all([
   readFile(gtfsPath),
   readFile(fleetCatalogPath),
@@ -807,12 +913,30 @@ const [
   vehicleSourceCatalogPath === undefined ? undefined : readFile(vehicleSourceCatalogPath),
   vehicleWorldSeedPath === undefined ? undefined : readFile(vehicleWorldSeedPath),
   vehicleCompiledCatalogPath === undefined ? undefined : readFile(vehicleCompiledCatalogPath),
+  readFile(timetableTransferDemandsPath),
+  readFile(movementRouteTemplatesPath),
 ]);
 const gtfsEnvelope = JSON.parse(gtfsBytes);
 const fleetCatalog = JSON.parse(fleetBytes);
 const infraReleaseWrapper = unwrapInfraReleaseManifest(JSON.parse(infraBytes));
 const infraRelease = infraReleaseWrapper.release;
 const economySpecification = parseEconomySpec(JSON.parse(economyBytes));
+const timetableTransferDemands = JSON.parse(timetableTransferDemandsBytes);
+const movementRouteTemplates = JSON.parse(movementRouteTemplatesBytes);
+await Promise.all([
+  assertBoundSmallArtifact(
+    timetableTransferDemandsPath,
+    timetableTransferDemandsBytes,
+    buildConfiguration.timetableTransferDemands,
+    "Timetable-Transferplan",
+  ),
+  assertBoundSmallArtifact(
+    movementRouteTemplatesPath,
+    movementRouteTemplatesBytes,
+    buildConfiguration.movementRouteTemplates,
+    "Movement-Route-Vorlagen",
+  ),
+]);
 const operationalInfrastructureBinding = await verifyOperationalInfrastructureArtifact(operationalV2Path, infraRelease);
 const {
   schemaVersion: fleetAuthoritySchema,
@@ -877,6 +1001,27 @@ const chains = gtfs.journeyChains.filter((chain) => chain.orderable === true);
 if (chains.some((chain) => playableLegs(chain).length === 0 || playableLegs(chain).some((leg) => leg.orderable !== true || leg.qualityClass !== "B"))) {
   throw new Error("Bestellbarer GTFS-Fahrplan enthaelt keine vollstaendig qualifizierten Klasse-B-Segmente.");
 }
+const timetableTransferPlan = validateTimetableTransferDemandsArtifact({
+  artifact: timetableTransferDemands,
+  binding: buildConfiguration.timetableTransferDemands,
+  infraReleaseId: infraRelease.releaseId,
+  gtfsSnapshotHash: gtfsEnvelope.snapshotHash,
+  journeyChains: chains,
+  stations: gtfs.stations,
+  gtfsReleaseId: gtfsReleaseBinding.releaseId,
+});
+invariant(
+  timetableTransferPlan.transferSetSha256
+    === buildConfiguration.movementRouteTemplates.timetableTransferSetSha256,
+  "Timetable-Transferplan und Movement-Route-Vorlagen besitzen verschiedene Transfermengen.",
+);
+const movementRoutePlan = validateMovementRouteTemplatesV2({
+  artifact: movementRouteTemplates,
+  binding: buildConfiguration.movementRouteTemplates,
+  infraReleaseId: infraRelease.releaseId,
+  operationalStateHash: operationalInfrastructureBinding.stateHash,
+  timetableTransferPlan,
+});
 const timetableRouteBindings = await streamTimetableRouteBindings(
   timetableRoutesPath,
   buildConfiguration.timetableRoutes,
@@ -909,6 +1054,24 @@ const blueprintLots = [];
 const publicVehiclePoolByLot = {};
 let numericPersonnelId = 20_000;
 let numericRouteId = 30_000;
+const circulationsByLot = new Map();
+const circulationAssignmentByJourney = new Map();
+for (const circulation of timetableTransferPlan.dailyPlan.circulations) {
+  const lotCirculations = circulationsByLot.get(circulation.lotId) ?? [];
+  lotCirculations.push(circulation);
+  circulationsByLot.set(circulation.lotId, lotCirculations);
+  for (const journeyChainId of circulation.journeyChainIds) {
+    invariant(
+      !circulationAssignmentByJourney.has(journeyChainId),
+      `JourneyChain '${journeyChainId}' ist mehreren Daily-Circulations zugeordnet.`,
+    );
+    circulationAssignmentByJourney.set(journeyChainId, circulation.id);
+  }
+}
+invariant(
+  circulationAssignmentByJourney.size === chains.length,
+  "Daily-Circulation-Plan bildet nicht jede bestellbare JourneyChain genau einmal ab.",
+);
 
 function routeForLeg(leg, timetableRoute) {
   if (leg?.orderable !== true || leg.qualityClass !== "B") throw new Error(`Spielbares Segment ${leg.legId} ist nicht bestellbar.`);
@@ -931,7 +1094,8 @@ function routeForLeg(leg, timetableRoute) {
 }
 
 for (const [lotIndex, lot] of lotRecords.entries()) {
-  const { circulations, assignment } = buildCirculations(lot.chains, lot.lotId);
+  const circulations = circulationsByLot.get(lot.lotId) ?? [];
+  invariant(circulations.length > 0, `Los '${lot.lotId}' besitzt keinen Daily-Circulation-Slot.`);
   const lotRouteBindings = lot.chains.flatMap((chain) => playableLegs(chain).map((leg) => {
     const binding = timetableRouteBindings.get(leg.legId);
     if (binding === undefined) throw new Error(`Los '${lot.lotId}' besitzt keine signierte Timetable-Route fuer '${leg.legId}'.`);
@@ -1009,7 +1173,7 @@ for (const [lotIndex, lot] of lotRecords.entries()) {
   const lotTrainRunIds = [];
   for (const chain of [...lot.chains].sort((left, right) => left.journeyChainId.localeCompare(right.journeyChainId))) {
     numericRouteId += 1;
-    const circulationId = assignment.get(chain.journeyChainId);
+    const circulationId = circulationAssignmentByJourney.get(chain.journeyChainId);
     const formationId = formationByCirculation.get(circulationId);
     const dutyId = dutyByCirculation.get(circulationId);
     const assetId = formations.find((formation) => formation.id === formationId)?.vehicleIds[0];

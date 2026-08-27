@@ -153,6 +153,7 @@ const operationalInitialization = {
   worldId,
   regionId: "tutorial-korridor",
   nowMs: 0,
+  repeatEveryMs: null,
   protectionModeSelectionPolicy: "zugfolge-protection-mode-selection/conservative-v1",
   infraRelease: tutorialInfrastructureDescriptor.binding,
   vehicleTypes: [{
@@ -198,7 +199,7 @@ const operationalInitialization = {
     movementKind: "train",
     routeVersionId: "tutorial-minimal-2026.1:route:v1",
     formationVersionId: "formation:1",
-    headRouteMm: 20_000,
+    headRouteMm: 0,
     scheduledDepartureMs: null,
     publicPassengerStop: false,
     dispatchInterlockingRouteId: "tutorial-minimal-2026.1:interlocking:v1",
@@ -207,6 +208,7 @@ const operationalInitialization = {
       selectedProtectionSystem: "pzb",
     }],
   }],
+  movementContinuations: [],
 };
 const operationalInitialized = operationalRuntime.initialize(operationalInitialization);
 assert.equal(operationalInitialized.state.revision, 0);
@@ -221,6 +223,8 @@ assert.equal(operationalInitialized.validationReceipt.programTrainCount, 1);
 assert.equal(operationalInitialized.validationReceipt.validatedProgramTemplateCount, 1);
 assert.equal(operationalInitialized.validationReceipt.dynamicTrainCount, 0);
 assert.equal(operationalInitialized.validationReceipt.validatedTrainNumberCount, 1);
+assert.equal(operationalInitialized.validationReceipt.validatedMovementContinuationCount, 0);
+assert.match(operationalInitialized.validationReceipt.movementContinuationsSha256, /^[a-f0-9]{64}$/u);
 assert.equal(operationalInitialized.validationReceipt.trainNumbersValidated, true);
 assert.equal(
   operationalInitialized.validationReceipt.protectionModeSelectionPolicy,

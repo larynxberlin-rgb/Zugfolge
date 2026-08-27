@@ -62,7 +62,7 @@ function conservativeSpecification(timetableRoutes = "var/derived/germany-2026.3
     schema: GERMANY_OPERATIONAL_CONSERVATIVE_SCHEMA,
     mode: GERMANY_OPERATIONAL_CONSERVATIVE_MODE,
     infraReleaseId: RELEASE_ID,
-    layers: { ...mapLayers(), timetableRoutes },
+    layers: { ...mapLayers(), timetableRoutes, transferDemands: null },
     policy: {
       id: GERMANY_OPERATIONAL_CONSERVATIVE_POLICY_ID,
       qualityClass: "B",
@@ -74,10 +74,50 @@ function conservativeSpecification(timetableRoutes = "var/derived/germany-2026.3
       minimumPlatformLengthMm: 60_000,
       maximumPlatformSnapDistanceMm: 25_000,
       minimumOverlapMm: 200_000,
+      minimumBerthEndClearanceMm: 10_000,
+      maximumDirectDwellMs: 1_200_000,
+      terminalFormationLengthsMm: [46_560, 69_860],
       defaultProtectionSystem: "pzb",
       regionBoundaryId: "region:deutschland-ebo",
       rzueLayoutId: "rzue-deutschland-2026.3-synthetic-b-v2",
     },
+  };
+}
+
+function movementSidecar() {
+  const value = {
+    schema: "movement-route-templates-v2",
+    infraReleaseId: RELEASE_ID,
+    operationalStateHash: STATE_HASH,
+    timetableTransferSetSha256: null,
+    directTemplates: [],
+    templates: [],
+    transferTemplates: [],
+    metrics: {
+      directTemplateCount: 0,
+      stablingTemplateCount: 0,
+      transferTemplateCount: 0,
+      transferDemandCount: 0,
+      turnaroundDemandCount: 0,
+      turnaroundPairCount: 0,
+    },
+  };
+  return { ...value, stateHash: canonicalHash({ schema: "movement-route-templates-v2", value }) };
+}
+
+function movementSidecarBytes() {
+  return Buffer.from(`${JSON.stringify(movementSidecar())}\n`, "utf8");
+}
+
+function movementSidecarProof() {
+  const bytes = movementSidecarBytes();
+  return {
+    file: "operational-infrastructure-v2.movement-route-templates-v2.json",
+    bytes: bytes.length,
+    sha256: sha256(bytes),
+    stateHash: movementSidecar().stateHash,
+    operationalStateHash: STATE_HASH,
+    timetableTransferSetSha256: null,
   };
 }
 
@@ -120,6 +160,7 @@ function candidate() {
         overlapResources: ["overlap-1"],
         flankResources: ["flank-1"],
         switchPositions: {},
+        authorityStartRouteMm: 0,
         authorityEndRouteMm: 1_000,
         releaseAfterTailRouteMm: 1_000,
       },
@@ -152,15 +193,23 @@ function derivationReport(specification, { activationEligible = true, mutate = (
       blocks: evidence(specification.layers.blocks),
       conflictResources: evidence(specification.layers.conflictResources),
       timetableRoutes: specification.layers.timetableRoutes === null ? null : evidence(specification.layers.timetableRoutes),
+      transferDemands: null,
     },
-    candidate: { bytes: candidateBytes.length, sha256: sha256(candidateBytes), stateHash: STATE_HASH, validationMode: "native-streaming-redb-v1" },
-    counts: { directedEdges: 1, routeVersions: 1 },
-    scope: { routeModel: routeCoverage, interlockingModel: "synthetic-zone-mutex", platformModel: "conservative-projection", capacityBias: "underestimate", minimumOverlapMmPolicy: specification.policy.minimumOverlapMm },
+    candidate: { bytes: candidateBytes.length, sha256: sha256(candidateBytes), stateHash: STATE_HASH, validationMode: "native-streaming-redb-v1", movementRouteTemplates: movementSidecarProof() },
+    timetableRouteEvidence: null,
+    counts: {
+      source: { tracks: 1, orderableTracks: 1, platforms: 0, switches: 0, signals: 0, blocks: 0, conflictResources: 0, timetableRoutes: activationEligible ? 1 : 0, timetableLegs: activationEligible ? 1 : 0, transferDemands: 0, transferLots: 0, turnaroundDemands: 0, turnaroundPairs: 0 },
+      candidate: { directedEdges: 1, edgeGeometries: 1, routeVersions: 1, interlockingRoutes: 1, signals: 1, switches: 0, blockResources: 3, platformIntervals: 0, regionBoundaries: 1, directTemplates: 0, stablingTemplates: 0, transferTemplates: 0 },
+      provenance: { observedForwardSpeeds: 1, observedBackwardSpeeds: 1, simulatedSpeeds: 0, observedProtectionAssignments: 1, simulatedProtectionAssignments: 0, matchedPlatformIntervals: 0, excludedPlatformEvidence: 0, syntheticBoundarySignals: 1, turnaroundRouteVersions: 0, turnaroundInterlockingRoutes: 0, transferRouteVersions: 0, transferInterlockingRoutes: 0 },
+    },
+    scope: { routeModel: routeCoverage, interlockingModel: "deterministic-linear-segment-node-stellzone-mutex-and-progressive-authority/v3", platformModel: "deterministic-nearest-observed-track-within-policy-radius/v1", capacityBias: "conservative-under-capacity", minimumOverlapMmPolicy: specification.policy.minimumOverlapMm, turnaroundModel: "real-osm-simple-bidirectional-siding-path-with-centered-single-berth-per-target-edge/v1", minimumBerthEndClearanceMmPolicy: specification.policy.minimumBerthEndClearanceMm, maximumDirectDwellMsPolicy: specification.policy.maximumDirectDwellMs, terminalFormationLengthsMm: specification.policy.terminalFormationLengthsMm, movementRouteTemplateModel: "daily-plan-scoped-direct-stabling-transfer-continuity/v2" },
     routeCoverage,
     activationEligible,
     unresolvedRequired: unresolvedRequiredDimensions.length,
     unresolvedRequiredDimensions,
     realInterlockingFactsClaimed: false,
+    realGeometry: true,
+    simulatedOperationalAssignment: true,
     candidateProduced: true,
   });
 }
@@ -168,13 +217,16 @@ function derivationReport(specification, { activationEligible = true, mutate = (
 function fixtureNativeCompiler(specification, options = {}) {
   return async (_specificationPath, _sourceRoot, candidatePath, reportPath) => {
     const candidateBytes = Buffer.from(`${JSON.stringify(candidate())}\n`, "utf8");
+    const sidecarBytes = movementSidecarBytes();
     const reportBytes = Buffer.from(`${JSON.stringify(derivationReport(specification, options))}\n`, "utf8");
     await writeFile(candidatePath, candidateBytes, { flag: "wx" });
+    await writeFile(join(dirname(candidatePath), "operational-infrastructure-v2.movement-route-templates-v2.json"), sidecarBytes, { flag: "wx" });
     await writeFile(reportPath, reportBytes, { flag: "wx" });
     const receipt = {
       schema: GERMANY_OPERATIONAL_NATIVE_RECEIPT_SCHEMA,
       infraReleaseId: RELEASE_ID,
       candidate: { bytes: candidateBytes.length, sha256: sha256(candidateBytes), stateHash: STATE_HASH },
+      movementRouteTemplates: movementSidecarProof(),
       report: { bytes: reportBytes.length, sha256: sha256(reportBytes) },
       candidateProduced: true,
       activationEligible: options.activationEligible ?? true,
@@ -203,6 +255,7 @@ function outputPaths(root) {
     candidatePath: join(root, "candidate.json"),
     reportPath: join(root, "report.json"),
     outputPath: join(root, "release", "operational-infrastructure-v2.json"),
+    movementRouteTemplatesPath: join(root, "release", "operational-infrastructure-v2.movement-route-templates-v2.json"),
   };
 }
 
@@ -461,6 +514,10 @@ test("Node, echter Rust-Ableiter und nativer Materialisierer stimmen Ende-zu-End
       to_osm_node_id: to,
       length_mm: lengthMm,
       orderable: true,
+      quality_class: "B",
+      model_state: "observed_osm_topology_with_conservative_defaults",
+      source_id: "test-osm-source",
+      osm_way_id: from,
       speed_forward_kmh: 80,
       speed_backward_kmh: 70,
       osm_tags_json: JSON.stringify({ railway: "rail", "railway:pzb": "yes", usage: "main" }),
@@ -543,6 +600,7 @@ test("Node, echter Rust-Ableiter und nativer Materialisierer stimmen Ende-zu-End
     blocks: "blocks.geojsonseq",
     conflictResources: "conflict-resources.geojsonseq",
     timetableRoutes: "timetable-routes.geojsonseq",
+    transferDemands: null,
   };
   const specificationPath = join(root, "specification.json");
   await writeFile(specificationPath, `${JSON.stringify(specification)}\n`, "utf8");
@@ -554,10 +612,21 @@ test("Node, echter Rust-Ableiter und nativer Materialisierer stimmen Ende-zu-End
   const materialized = JSON.parse(await readFile(paths.outputPath, "utf8"));
   assert.equal(materialized.id, RELEASE_ID);
   assert.equal(materialized.routeVersions["route-version-full-1"].legs.length, 2);
-  const interlockingRoutes = Object.values(materialized.interlockingRoutes);
-  assert.equal(interlockingRoutes.length, 1);
-  assert.equal(interlockingRoutes[0].pathResources.length, 4);
+  const interlockingRoutes = Object.values(materialized.interlockingRoutes)
+    .sort((left, right) => left.authorityStartRouteMm - right.authorityStartRouteMm);
+  assert.equal(interlockingRoutes.length, 2);
+  assert.deepEqual(
+    interlockingRoutes.map(({ authorityStartRouteMm, authorityEndRouteMm }) => ({
+      authorityStartRouteMm,
+      authorityEndRouteMm,
+    })),
+    [
+      { authorityStartRouteMm: 0, authorityEndRouteMm: 1_000 },
+      { authorityStartRouteMm: 1_000, authorityEndRouteMm: 2_200 },
+    ],
+  );
   assert.ok(interlockingRoutes[0].pathResources.includes("resource-observed-1"));
-  assert.ok(interlockingRoutes[0].pathResources.includes("resource-observed-2"));
-  assert.equal(interlockingRoutes[0].authorityEndRouteMm, 2_200);
+  assert.ok(!interlockingRoutes[0].pathResources.includes("resource-observed-2"));
+  assert.ok(interlockingRoutes[1].pathResources.includes("resource-observed-2"));
+  assert.ok(!interlockingRoutes[1].pathResources.includes("resource-observed-1"));
 });

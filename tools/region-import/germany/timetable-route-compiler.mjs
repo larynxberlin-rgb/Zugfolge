@@ -16,9 +16,17 @@ import {
   GTFS_SIMULATED_ROUTE_KEY,
   GTFS_TRACK_GRAPH_RULE,
 } from "./operational-track-graph.mjs";
+import {
+  DAILY_CIRCULATION_MINIMUM_TURNAROUND_S,
+  DAILY_CIRCULATION_PLAN_SCHEMA,
+  DAILY_CIRCULATION_REPEAT_EVERY_S,
+  DAILY_CIRCULATION_RULE,
+  deriveDailyCirculationPlan,
+} from "../daily-circulation-v2.mjs";
 
-export const GERMANY_TIMETABLE_ROUTE_SPEC_SCHEMA = "zugfolge-germany-timetable-route-compiler/v3";
-export const GERMANY_TIMETABLE_ROUTE_REPORT_SCHEMA = "zugfolge-germany-timetable-route-report/v2";
+export const GERMANY_TIMETABLE_ROUTE_SPEC_SCHEMA = "zugfolge-germany-timetable-route-compiler/v4";
+export const GERMANY_TIMETABLE_ROUTE_REPORT_SCHEMA = "zugfolge-germany-timetable-route-report/v3";
+export const GERMANY_TIMETABLE_TRANSFER_DEMAND_SCHEMA = "zugfolge-timetable-transfer-demands/v1";
 export const TIMETABLE_ROUTE_DERIVATION_RULE = "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2";
 export const TIMETABLE_ROUTE_SELECTION_RULE = "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2";
 export const TIMETABLE_ROUTE_POLICY_ID = "synthetic-operational-b/v2";
@@ -26,6 +34,7 @@ export const TIMETABLE_ROUTE_POLICY_ID = "synthetic-operational-b/v2";
 const GTFS_SNAPSHOT_SCHEMA = "zugfolge-gtfs-region-snapshot/v2";
 const JOURNEY_CHAIN_SCHEMA = "zugfolge-gtfs-journey-chain/v2";
 const LEGACY_TIMETABLE_ROUTE_SPEC_SCHEMA = "zugfolge-germany-timetable-route-compiler/v2";
+const LEGACY_TIMETABLE_ROUTE_SPEC_SCHEMA_V3 = "zugfolge-germany-timetable-route-compiler/v3";
 const CANONICAL_PROTECTION_SYSTEMS = Object.freeze(["etcs-level1", "etcs-level2", "lzb", "pzb"]);
 const SAMPLE_LIMIT = 10;
 
@@ -98,13 +107,20 @@ async function readJson(path, name) {
 }
 
 function validateSpecification(value) {
-  exactKeys(value, ["schema", "infraReleaseId", "tracks", "corridors", "gtfsSnapshot", "selection", "output", "report"], "Timetable-Route-Spezifikation");
+  const current = value?.schema === GERMANY_TIMETABLE_ROUTE_SPEC_SCHEMA;
+  exactKeys(value, current
+    ? ["schema", "infraReleaseId", "tracks", "corridors", "gtfsSnapshot", "selection", "dailyCirculation", "output", "transferOutput", "report"]
+    : ["schema", "infraReleaseId", "tracks", "corridors", "gtfsSnapshot", "selection", "output", "report"], "Timetable-Route-Spezifikation");
   invariant(
-    value.schema === GERMANY_TIMETABLE_ROUTE_SPEC_SCHEMA || value.schema === LEGACY_TIMETABLE_ROUTE_SPEC_SCHEMA,
-    "Timetable-Route-Spezifikation besitzt weder das aktuelle v3- noch das historische v2-Schema.",
+    current || value.schema === LEGACY_TIMETABLE_ROUTE_SPEC_SCHEMA_V3 || value.schema === LEGACY_TIMETABLE_ROUTE_SPEC_SCHEMA,
+    "Timetable-Route-Spezifikation besitzt weder das aktuelle v4- noch ein historisches v2/v3-Schema.",
   );
   for (const key of ["infraReleaseId", "tracks", "corridors", "output", "report"]) nonEmptyString(value[key], key);
   invariant(value.output !== value.report, "Timetable-Route-Ausgabe und Bericht muessen verschieden sein.");
+  if (current) {
+    nonEmptyString(value.transferOutput, "transferOutput");
+    invariant(value.transferOutput !== value.output && value.transferOutput !== value.report, "Transfer-, Timetable-Route-Ausgabe und Bericht muessen verschieden sein.");
+  }
 
   exactKeys(value.gtfsSnapshot, [
     "path", "expectedBytes", "expectedFileSha256", "expectedSnapshotHash", "expectedSchema", "expectedRegionId",
@@ -120,8 +136,8 @@ function validateSpecification(value) {
   }
   sha256(value.gtfsSnapshot.expectedArchiveSha256, "gtfsSnapshot.expectedArchiveSha256");
 
-  const current = value.schema === GERMANY_TIMETABLE_ROUTE_SPEC_SCHEMA;
-  exactKeys(value.selection, current
+  const supportsProtectionModes = value.schema !== LEGACY_TIMETABLE_ROUTE_SPEC_SCHEMA;
+  exactKeys(value.selection, supportsProtectionModes
     ? ["rule", "qualityClass", "requireOrderable", "minimumStopCount", "expectedSnapshotSegmentCount", "expectedEligibleSegmentCount", "permittedProtectionModes"]
     : ["rule", "qualityClass", "requireOrderable", "minimumStopCount", "expectedSnapshotSegmentCount", "expectedEligibleSegmentCount"], "selection");
   invariant(value.selection.rule === TIMETABLE_ROUTE_SELECTION_RULE, "selection.rule ist nicht der geschlossene v2-Auswahlvertrag.");
@@ -131,8 +147,8 @@ function validateSpecification(value) {
   safeInteger(value.selection.expectedSnapshotSegmentCount, "selection.expectedSnapshotSegmentCount", 1);
   safeInteger(value.selection.expectedEligibleSegmentCount, "selection.expectedEligibleSegmentCount", 1);
   invariant(value.selection.expectedEligibleSegmentCount <= value.selection.expectedSnapshotSegmentCount, "selection erwartet mehr geeignete als vorhandene Segmente.");
-  const permittedProtectionModes = current ? value.selection.permittedProtectionModes : null;
-  if (current) {
+  const permittedProtectionModes = supportsProtectionModes ? value.selection.permittedProtectionModes : null;
+  if (supportsProtectionModes) {
     invariant(Array.isArray(permittedProtectionModes) && permittedProtectionModes.length > 0, "selection.permittedProtectionModes muss eine nichtleere Alternativenmenge sein.");
     invariant(
       new Set(permittedProtectionModes).size === permittedProtectionModes.length
@@ -144,9 +160,33 @@ function validateSpecification(value) {
       "selection.permittedProtectionModes muss kanonisch sortiert sein.",
     );
   }
+  let dailyCirculation = null;
+  if (current) {
+    exactKeys(value.dailyCirculation, [
+      "rule", "repeatEveryS", "minimumTurnaroundS", "expectedLotCount", "expectedJourneyChainCount",
+      "expectedCirculationCount", "expectedTransferDemandCount", "expectedTransferLotCount", "formationLengthsMm",
+      "unknownMainlineSpeedKmh", "unknownServiceSpeedKmh",
+    ], "dailyCirculation");
+    invariant(value.dailyCirculation.rule === DAILY_CIRCULATION_RULE, "dailyCirculation.rule ist nicht der geschlossene v1-Vertrag.");
+    invariant(value.dailyCirculation.repeatEveryS === DAILY_CIRCULATION_REPEAT_EVERY_S, `dailyCirculation.repeatEveryS muss ${DAILY_CIRCULATION_REPEAT_EVERY_S} sein.`);
+    invariant(value.dailyCirculation.minimumTurnaroundS === DAILY_CIRCULATION_MINIMUM_TURNAROUND_S, `dailyCirculation.minimumTurnaroundS muss ${DAILY_CIRCULATION_MINIMUM_TURNAROUND_S} sein.`);
+    for (const key of ["expectedLotCount", "expectedJourneyChainCount", "expectedCirculationCount", "expectedTransferDemandCount", "expectedTransferLotCount"]) {
+      safeInteger(value.dailyCirculation[key], `dailyCirculation.${key}`, 1);
+    }
+    safeInteger(value.dailyCirculation.unknownMainlineSpeedKmh, "dailyCirculation.unknownMainlineSpeedKmh", 1);
+    safeInteger(value.dailyCirculation.unknownServiceSpeedKmh, "dailyCirculation.unknownServiceSpeedKmh", 1);
+    invariant(value.dailyCirculation.expectedTransferDemandCount <= value.dailyCirculation.expectedCirculationCount, "dailyCirculation erwartet mehr Transfers als Umlaeufe.");
+    invariant(value.dailyCirculation.expectedTransferLotCount <= value.dailyCirculation.expectedLotCount, "dailyCirculation erwartet mehr Transfer-Lose als Lose.");
+    invariant(Array.isArray(value.dailyCirculation.formationLengthsMm) && value.dailyCirculation.formationLengthsMm.length > 0, "dailyCirculation.formationLengthsMm muss eine nichtleere Liste sein.");
+    for (const [index, length] of value.dailyCirculation.formationLengthsMm.entries()) safeInteger(length, `dailyCirculation.formationLengthsMm[${index}]`, 1);
+    invariant(new Set(value.dailyCirculation.formationLengthsMm).size === value.dailyCirculation.formationLengthsMm.length, "dailyCirculation.formationLengthsMm enthaelt Duplikate.");
+    invariant(value.dailyCirculation.formationLengthsMm.every((length, index, values) => index === 0 || values[index - 1] < length), "dailyCirculation.formationLengthsMm muss streng aufsteigend sein.");
+    dailyCirculation = Object.freeze({ ...value.dailyCirculation, formationLengthsMm: Object.freeze([...value.dailyCirculation.formationLengthsMm]) });
+  }
   return Object.freeze({
     ...value,
     selection: Object.freeze({ ...value.selection, permittedProtectionModes }),
+    dailyCirculation,
   });
 }
 
@@ -597,6 +637,142 @@ function deriveRoutes(graph, selectedSegments) {
   });
 }
 
+function routingEdges(graph) {
+  return new Map([...graph.edges].map(([edgeId, edge]) => [edgeId, Object.freeze({
+    edgeId: edge.edgeId,
+    fromNodeId: edge.fromNodeId,
+    toNodeId: edge.toNodeId,
+    lengthMm: edge.lengthMm,
+    routeNumber: edge.routeNumber,
+  })]));
+}
+
+function transferPairKey(sourceCirculationId, targetCirculationId) {
+  return `${sourceCirculationId}\u0000${targetCirculationId}`;
+}
+
+function minimumTransferRuntimeMs(legs, graph, context) {
+  let runtimeMs = 0;
+  for (const leg of legs) {
+    const track = graph.edges.get(leg.edgeId);
+    invariant(track !== undefined, `${context} verweist auf eine unbekannte Laufzeitkante.`);
+    const speedMmps = leg.direction === "along" ? track.speedAlongMmps : leg.direction === "against" ? track.speedAgainstMmps : null;
+    invariant(Number.isSafeInteger(speedMmps) && speedMmps > 0, `${context} besitzt keine positive richtungsabhaengige Laufzeitgeschwindigkeit.`);
+    const lengthMm = Math.abs(leg.edgeExitMm - leg.edgeEntryMm);
+    const numerator = lengthMm * 1_000 + speedMmps - 1;
+    invariant(Number.isSafeInteger(numerator), `${context} Laufzeit laeuft ueber.`);
+    runtimeMs += Math.floor(numerator / speedMmps);
+    invariant(Number.isSafeInteger(runtimeMs), `${context} Gesamtlaufzeit laeuft ueber.`);
+  }
+  invariant(runtimeMs > 0, `${context} besitzt keine positive Mindestlaufzeit.`);
+  return runtimeMs;
+}
+
+function deriveDailyTransferRoutes(graph, snapshot, snapshotHash, passengerRoutes, specification) {
+  const routeByPlayableLegId = new Map(passengerRoutes.map((route) => {
+    const match = /^route:gtfs:(.+):v1$/u.exec(route.routeVersionId);
+    invariant(match !== null, `${route.routeVersionId} besitzt keine GTFS-PlayableLeg-Identitaet.`);
+    return [match[1], route];
+  }));
+  invariant(routeByPlayableLegId.size === passengerRoutes.length, "Passenger-Routen besitzen eine Identitaetskollision.");
+  const orderableChains = snapshot.journeyChains.filter((chain) => chain.orderable === true);
+  const releaseIds = new Set(orderableChains.map((chain) => chain.releaseId));
+  invariant(releaseIds.size === 1, "Bestellbare JourneyChains mischen GTFS-Release-IDs.");
+  const router = createDeterministicTrackRouter(routingEdges(graph));
+  const routedPairs = new Map();
+  const routeTransferPair = ({ source, target }) => {
+    const key = transferPairKey(source.id, target.id);
+    if (routedPairs.has(key)) return routedPairs.get(key);
+    const sourcePassenger = routeByPlayableLegId.get(source.end.legId);
+    const targetPassenger = routeByPlayableLegId.get(target.start.legId);
+    invariant(sourcePassenger !== undefined, `${source.end.legId} besitzt keine Passenger-Quellroute.`);
+    invariant(targetPassenger !== undefined, `${target.start.legId} besitzt keine Passenger-Zielroute.`);
+    const sourceLeg = sourcePassenger.legs.at(-1);
+    const targetLeg = targetPassenger.legs[0];
+    invariant(sourceLeg !== undefined && targetLeg !== undefined, `${source.id}->${target.id} besitzt eine leere Passenger-Route.`);
+    const routed = router.route({
+      origins: [publicAnchor({ edgeId: sourceLeg.edgeId, offsetMm: sourceLeg.edgeExitMm })],
+      destinations: [publicAnchor({ edgeId: targetLeg.edgeId, offsetMm: targetLeg.edgeEntryMm })],
+      targetRouteNumber: GTFS_SIMULATED_ROUTE_KEY,
+    });
+    const value = routed === null || routed.legs.length === 0 ? null : Object.freeze({
+      routed,
+      sourcePassenger,
+      targetPassenger,
+      minimumRuntimeMs: minimumTransferRuntimeMs(routed.legs, graph, `${source.id}->${target.id}`),
+    });
+    routedPairs.set(key, value);
+    return value;
+  };
+  const dailyPlan = deriveDailyCirculationPlan({
+    journeyChains: orderableChains,
+    stations: snapshot.stations,
+    gtfsReleaseId: [...releaseIds][0],
+    repeatEveryS: specification.dailyCirculation.repeatEveryS,
+    minimumTurnaroundS: specification.dailyCirculation.minimumTurnaroundS,
+    transferCost: ({ source, target, earliestDepartureS, latestArrivalS }) => {
+      const pair = routeTransferPair({ source, target });
+      if (pair === null || pair.minimumRuntimeMs > (latestArrivalS - earliestDepartureS) * 1_000) return null;
+      return pair.routed.weightedCostMm;
+    },
+  });
+  for (const [metric, expectedKey] of [
+    ["lotCount", "expectedLotCount"],
+    ["journeyChainCount", "expectedJourneyChainCount"],
+    ["circulationCount", "expectedCirculationCount"],
+    ["transferDemandCount", "expectedTransferDemandCount"],
+    ["transferLotCount", "expectedTransferLotCount"],
+  ]) invariant(
+    dailyPlan.metrics[metric] === specification.dailyCirculation[expectedKey],
+    `Daily-Circulation besitzt ${dailyPlan.metrics[metric]} statt ${specification.dailyCirculation[expectedKey]} fuer ${metric}.`,
+  );
+  const circulationById = new Map(dailyPlan.circulations.map((circulation) => [circulation.id, circulation]));
+  const transferRoutes = dailyPlan.transferDemands.map((demand) => {
+    const source = circulationById.get(demand.sourceCirculationId);
+    const target = circulationById.get(demand.targetCirculationId);
+    invariant(source !== undefined && target !== undefined, `${demand.id} bindet unbekannte Umlaeufe.`);
+    const pair = routedPairs.get(transferPairKey(source.id, target.id));
+    invariant(pair !== undefined && pair !== null, `${demand.id} besitzt keinen nichtleeren realen OSM-Transferlaufweg.`);
+    invariant(pair.minimumRuntimeMs <= demand.availableWindowS * 1_000, `${demand.id} passt mit nativer Mindestlaufzeit nicht in sein Transferfenster.`);
+    const legs = mergeLegs(pair.routed.legs).map((leg) => {
+      const track = graph.edges.get(leg.edgeId);
+      invariant(track !== undefined, `${demand.id} verweist auf eine unbekannte Transferkante.`);
+      return Object.freeze({
+        ...leg,
+        availableProtectionSystems: Object.freeze([...track.protectionSystems]),
+        simultaneouslyRequiredProtectionSystems: Object.freeze([]),
+      });
+    });
+    const routeVersionId = `route:${demand.id}:movement:v1`;
+    validateRouteContinuity(routeVersionId, legs, graph.edges);
+    const totalLengthMm = legs.reduce((sum, leg) => sum + Math.abs(leg.edgeExitMm - leg.edgeEntryMm), 0);
+    invariant(totalLengthMm === pair.routed.totalLengthMm && totalLengthMm > 0, `${demand.id} besitzt eine inkonsistente Transferlaenge.`);
+    return Object.freeze({
+      ...demand,
+      sourcePassengerRouteVersionId: pair.sourcePassenger.routeVersionId,
+      targetPassengerRouteVersionId: pair.targetPassenger.routeVersionId,
+      formationLengthsMm: specification.dailyCirculation.formationLengthsMm,
+      routeVersionId,
+      templateId: `template:${demand.id}:movement:v1`,
+      legs: Object.freeze(legs),
+      totalLengthMm,
+      weightedCostMm: pair.routed.weightedCostMm,
+      minimumRuntimeMs: pair.minimumRuntimeMs,
+    });
+  }).sort((left, right) => compareText(left.id, right.id));
+  const transferHasher = createHash("sha256");
+  for (const route of transferRoutes) transferHasher.update(`${canonicalJson(route)}\n`);
+  return Object.freeze({
+    schema: GERMANY_TIMETABLE_TRANSFER_DEMAND_SCHEMA,
+    infraReleaseId: specification.infraReleaseId,
+    gtfsSnapshotHash: snapshotHash,
+    dailyPlan,
+    formationLengthsMm: specification.dailyCirculation.formationLengthsMm,
+    transferRoutes: Object.freeze(transferRoutes),
+    transferSetSha256: transferHasher.digest("hex"),
+  });
+}
+
 async function resolveInputs(specification, root) {
   const base = resolve(root);
   const paths = Object.freeze({
@@ -604,9 +780,11 @@ async function resolveInputs(specification, root) {
     corridors: resolve(base, specification.corridors),
     gtfsSnapshot: resolve(base, specification.gtfsSnapshot.path),
     output: resolve(base, specification.output),
+    transferOutput: specification.transferOutput === undefined ? null : resolve(base, specification.transferOutput),
     report: resolve(base, specification.report),
   });
   invariant(paths.output !== paths.report, "Timetable-Route-Ausgabe und Bericht kollidieren.");
+  invariant(paths.transferOutput === null || (paths.transferOutput !== paths.output && paths.transferOutput !== paths.report), "Transfer-, Timetable-Route-Ausgabe und Bericht kollidieren.");
   const [envelope, tracksProof, corridorsProof, gtfsProof] = await Promise.all([
     readJson(paths.gtfsSnapshot, "GTFS-Snapshot"),
     sha256File(paths.tracks),
@@ -627,11 +805,17 @@ export async function analyzeGermanyTimetableRoutes(rawSpecification, root = "."
     tracksPath: inputs.paths.tracks,
     corridorsPath: inputs.paths.corridors,
     permittedProtectionModes: specification.selection.permittedProtectionModes,
+    unknownMainlineSpeedKmh: specification.dailyCirculation?.unknownMainlineSpeedKmh,
+    unknownServiceSpeedKmh: specification.dailyCirculation?.unknownServiceSpeedKmh,
   });
   invariant(graph.eligibleSegments.length === inputs.validatedSnapshot.selectedSegments.length, "GTFS-Graph und validierte Auswahl besitzen verschiedene Segmentmengen.");
   const derived = deriveRoutes(graph, inputs.validatedSnapshot.selectedSegments);
+  const passengerQualified = Object.keys(derived.findings).length === 0 && derived.routes.length === inputs.validatedSnapshot.selectedSegments.length;
+  const transfers = specification.dailyCirculation === null || !passengerQualified
+    ? null
+    : deriveDailyTransferRoutes(graph, inputs.validatedSnapshot.snapshot, inputs.validatedSnapshot.snapshotHash, derived.routes, specification);
   const unresolvedRequired = Object.keys(derived.findings).length;
-  const qualified = unresolvedRequired === 0 && derived.routes.length === inputs.validatedSnapshot.selectedSegments.length;
+  const qualified = passengerQualified && (specification.dailyCirculation === null || transfers?.transferRoutes.length === specification.dailyCirculation.expectedTransferDemandCount);
   const routeHasher = createHash("sha256");
   for (const route of derived.routes) routeHasher.update(`${canonicalJson(route)}\n`);
   const report = Object.freeze({
@@ -661,6 +845,10 @@ export async function analyzeGermanyTimetableRoutes(rawSpecification, root = "."
       incompleteRouteCount: inputs.validatedSnapshot.selectedSegments.length - derived.routes.length,
       routeRecordCount: derived.routes.length,
       ...derived.metrics,
+      dailyCirculation: transfers?.dailyPlan.metrics ?? null,
+      transferRouteCount: transfers?.transferRoutes.length ?? 0,
+      transferRouteLegCount: transfers?.transferRoutes.reduce((sum, route) => sum + route.legs.length, 0) ?? 0,
+      transferRouteLengthMm: transfers?.transferRoutes.reduce((sum, route) => sum + route.totalLengthMm, 0) ?? 0,
       retainedRoutingTrackCount: graph.edges.size,
     }),
     sourceProofs: inputs.proofs,
@@ -677,10 +865,13 @@ export async function analyzeGermanyTimetableRoutes(rawSpecification, root = "."
       simulatedRouteKey: GTFS_SIMULATED_ROUTE_KEY,
     }),
     routeSetSha256: qualified ? routeHasher.digest("hex") : null,
+    dailyCirculationPlanSha256: transfers?.dailyPlan.planSha256 ?? null,
+    transferSetSha256: transfers?.transferSetSha256 ?? null,
+    transferDemandsProduced: qualified && transfers !== null,
     findings: derived.findings,
     unresolvedRequired,
   });
-  return Object.freeze({ report, routes: derived.routes, paths: inputs.paths });
+  return Object.freeze({ report, routes: derived.routes, transfers, paths: inputs.paths });
 }
 
 async function writeJsonSequenceAtomic(path, routes) {
@@ -733,11 +924,28 @@ async function requireAbsent(path) {
 export async function compileGermanyTimetableRoutes(rawSpecification, root = ".") {
   const specification = validateSpecification(rawSpecification);
   const output = resolve(root, specification.output);
+  const transferOutput = specification.transferOutput === undefined ? null : resolve(root, specification.transferOutput);
   const reportPath = resolve(root, specification.report);
-  await Promise.all([requireAbsent(output), requireAbsent(reportPath)]);
+  await Promise.all([requireAbsent(output), requireAbsent(reportPath), ...(transferOutput === null ? [] : [requireAbsent(transferOutput)])]);
   const result = await analyzeGermanyTimetableRoutes(specification, root);
-  await writeJsonAtomic(reportPath, result.report);
-  if (result.report.routesProduced) await writeJsonSequenceAtomic(output, result.routes);
+  if (!result.report.routesProduced) {
+    await writeJsonAtomic(reportPath, result.report);
+    return result.report;
+  }
+  const published = [];
+  try {
+    await writeJsonSequenceAtomic(output, result.routes);
+    published.push(output);
+    if (transferOutput !== null) {
+      invariant(result.transfers !== null, "Qualifizierter v4-Timetable-Build besitzt keine Transferausgabe.");
+      await writeJsonAtomic(transferOutput, result.transfers);
+      published.push(transferOutput);
+    }
+    await writeJsonAtomic(reportPath, result.report);
+  } catch (error) {
+    await Promise.all(published.map((path) => rm(path, { force: true })));
+    throw error;
+  }
   return result.report;
 }
 

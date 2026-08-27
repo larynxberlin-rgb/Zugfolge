@@ -28,6 +28,13 @@ const MODE: &str = "deterministic-conservative-v1";
 const POLICY_ID: &str = "synthetic-operational-b/v2";
 const REPORT_SCHEMA: &str = "germany-operational-v2-derivation-report-v1";
 const RECEIPT_SCHEMA: &str = "germany-operational-v2-derivation-receipt-v1";
+const MOVEMENT_ROUTE_SIDECAR_SCHEMA: &str = "movement-route-templates-v2";
+const TRANSFER_DEMAND_SCHEMA: &str = "zugfolge-timetable-transfer-demands/v1";
+const DAILY_CIRCULATION_PLAN_SCHEMA: &str = "zugfolge-daily-circulation-plan/v1";
+const MAX_TRANSFER_DEMAND_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_STABLING_PATH_EDGES: usize = 8;
+const MAX_STABLING_PATH_LENGTH_MM: i64 = 1_000_000;
+const STANDARD_GAUGE_MM: i64 = 1_435;
 const DATABASE_CACHE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_GEOJSON_SEQUENCE_RECORD_BYTES: usize = 8 * 1024 * 1024;
 const MAX_PLATFORM_SEARCH_CELLS: u128 = 1_000_000;
@@ -36,6 +43,8 @@ static NEXT_SCRATCH_ID: AtomicU64 = AtomicU64::new(0);
 
 const TRACKS: TableDefinition<&str, &str> = TableDefinition::new("tracks");
 const NODES: TableDefinition<&str, ()> = TableDefinition::new("nodes");
+const TRACKS_BY_NODE: MultimapTableDefinition<&str, &str> =
+    MultimapTableDefinition::new("tracks_by_node");
 const SPATIAL_TRACKS: MultimapTableDefinition<&str, &str> =
     MultimapTableDefinition::new("spatial_tracks");
 const SWITCH_BY_NODE: TableDefinition<&str, &str> = TableDefinition::new("switch_by_node");
@@ -47,6 +56,18 @@ const TRACK_BLOCKS: MultimapTableDefinition<&str, &str> =
     MultimapTableDefinition::new("track_blocks");
 const PLATFORMS: TableDefinition<&str, &str> = TableDefinition::new("platforms");
 const TIMETABLE_ROUTES: TableDefinition<&str, &str> = TableDefinition::new("timetable_routes");
+const TIMETABLE_ROUTES_BY_START: MultimapTableDefinition<&str, &str> =
+    MultimapTableDefinition::new("timetable_routes_by_start");
+const TURNAROUND_ROUTES: TableDefinition<&str, &str> = TableDefinition::new("turnaround_routes");
+const TURNAROUND_INTERLOCKING: TableDefinition<&str, &str> =
+    TableDefinition::new("turnaround_interlocking");
+const TURNAROUND_TEMPLATES: TableDefinition<&str, &str> =
+    TableDefinition::new("turnaround_templates");
+const DIRECT_TEMPLATES: TableDefinition<&str, &str> = TableDefinition::new("direct_templates");
+const TRANSFER_ROUTES: TableDefinition<&str, &str> = TableDefinition::new("transfer_routes");
+const TRANSFER_INTERLOCKING: TableDefinition<&str, &str> =
+    TableDefinition::new("transfer_interlocking");
+const TRANSFER_TEMPLATES: TableDefinition<&str, &str> = TableDefinition::new("transfer_templates");
 
 /// Stabiler Fehler des Deutschland-Class-B-Ableiters.
 #[derive(Debug)]
@@ -88,6 +109,15 @@ struct LayerSpec {
     blocks: String,
     conflict_resources: String,
     timetable_routes: Option<String>,
+    transfer_demands: Option<PinnedInputSpec>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PinnedInputSpec {
+    path: String,
+    expected_bytes: u64,
+    expected_sha256: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -103,6 +133,9 @@ struct PolicySpec {
     minimum_platform_length_mm: i64,
     maximum_platform_snap_distance_mm: i64,
     minimum_overlap_mm: i64,
+    minimum_berth_end_clearance_mm: i64,
+    maximum_direct_dwell_ms: i64,
+    terminal_formation_lengths_mm: Vec<i64>,
     default_protection_system: String,
     region_boundary_id: String,
     rzue_layout_id: String,
@@ -119,6 +152,20 @@ struct TrackRecord {
     speed_along_mmps: u32,
     speed_against_mmps: u32,
     protection_systems: BTreeSet<String>,
+    railway: String,
+    service: Option<String>,
+    orderable: bool,
+    gauge_mm: i64,
+    gauge_lineage: String,
+    electrified: Option<String>,
+    voltage: Option<String>,
+    frequency: Option<String>,
+    bidirectional: bool,
+    osm_way_id: i64,
+    track_ref: Option<String>,
+    quality_class: String,
+    source_id: String,
+    geometry_lineage: String,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
@@ -158,6 +205,161 @@ struct TimetableLegInput {
     edge_exit_mm: i64,
     available_protection_systems: Vec<String>,
     simultaneously_required_protection_systems: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TurnaroundTerminalInterval {
+    edge_id: String,
+    from_mm: i64,
+    to_mm: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TurnaroundBerth {
+    edge_id: String,
+    from_mm: i64,
+    to_mm: i64,
+    left_clearance_mm: i64,
+    right_clearance_mm: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TurnaroundRouteDispatch {
+    route_version_id: String,
+    predecessor_base_route_version_id: String,
+    dispatch_interlocking_route_id: String,
+    head_route_mm: i64,
+    minimum_runtime_ms: i64,
+    resource_ids: BTreeSet<String>,
+    route_leg_count: u32,
+    protection_contract_runs: Vec<ProtectionContractRun>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProtectionContractRun {
+    through_route_leg_index: u32,
+    available_protection_systems: Vec<String>,
+    simultaneously_required_protection_systems: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TurnaroundTemplateRecord {
+    id: String,
+    inbound_route_version_id: String,
+    outbound_route_version_id: String,
+    terminal_edge_id: String,
+    terminal_node_id: i64,
+    inbound_direction: String,
+    outbound_direction: String,
+    formation_length_mm: i64,
+    candidate_rank: u32,
+    stabling_path_length_mm: i64,
+    terminal_intervals: Vec<TurnaroundTerminalInterval>,
+    shunt_in: TurnaroundRouteDispatch,
+    berth: TurnaroundBerth,
+    shunt_out: TurnaroundRouteDispatch,
+    outbound: TurnaroundRouteDispatch,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TransferRouteInput {
+    id: String,
+    lot_id: String,
+    asset_compatibility_key: String,
+    source_circulation_id: String,
+    target_circulation_id: String,
+    source_passenger_leg_id: String,
+    target_passenger_leg_id: String,
+    source_location_id: String,
+    target_location_id: String,
+    source_physical_stop_id: String,
+    target_physical_stop_id: String,
+    earliest_departure_s: i64,
+    latest_arrival_s: i64,
+    available_window_s: i64,
+    movement_kind: String,
+    source_passenger_route_version_id: String,
+    target_passenger_route_version_id: String,
+    formation_lengths_mm: Vec<i64>,
+    route_version_id: String,
+    template_id: String,
+    legs: Vec<TimetableLegInput>,
+    total_length_mm: i64,
+    weighted_cost_mm: i64,
+    minimum_runtime_ms: i64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TransferTemplateRecord {
+    id: String,
+    demand_id: String,
+    formation_length_mm: i64,
+    source_passenger_route_version_id: String,
+    target_passenger_route_version_id: String,
+    source_location_id: String,
+    target_location_id: String,
+    earliest_departure_s: i64,
+    latest_arrival_s: i64,
+    available_window_s: i64,
+    movement_kind: String,
+    transfer: TurnaroundRouteDispatch,
+    target_outbound: TurnaroundRouteDispatch,
+    resource_ids: BTreeSet<String>,
+    resource_set_sha256: String,
+}
+
+#[derive(Clone, Debug)]
+struct TransferEvidence {
+    file: FileEvidence,
+    daily_plan_sha256: String,
+    transfer_set_sha256: String,
+    circulation_count: u64,
+    transfer_demand_count: u64,
+    transfer_lot_count: u64,
+    turnaround_demand_count: u64,
+    turnaround_pair_count: u64,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct TurnaroundPairDemand {
+    inbound_route_version_id: String,
+    outbound_route_version_id: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DirectTemplateRecord {
+    id: String,
+    inbound_route_version_id: String,
+    outbound_route_version_id: String,
+    formation_length_mm: i64,
+    terminal_intervals: Vec<TurnaroundTerminalInterval>,
+    movement_kind: String,
+    continuity: String,
+    maximum_dwell_ms: i64,
+    resource_ids: BTreeSet<String>,
+    resource_set_sha256: String,
+    through: Option<TurnaroundRouteDispatch>,
+    outbound: TurnaroundRouteDispatch,
+}
+
+#[derive(Clone, Debug)]
+struct DirectedTrack {
+    track: TrackRecord,
+    direction: String,
+}
+
+#[derive(Clone, Debug)]
+struct StablingCandidate {
+    total_length_mm: i64,
+    path: Vec<DirectedTrack>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -316,6 +518,13 @@ fn sha256(bytes: &[u8]) -> String {
     digest_hex(Sha256::digest(bytes))
 }
 
+fn is_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
 fn canonical_json(value: &Value, output: &mut String) {
     match value {
         Value::Null => output.push_str("null"),
@@ -417,6 +626,17 @@ fn canonical_output_path(path: &Path, context: &str) -> Result<PathBuf> {
     Ok(canonical_parent.join(file_name))
 }
 
+fn movement_route_sidecar_path(candidate: &Path) -> Result<PathBuf> {
+    let file_name = candidate
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            GermanyOperationalV2Error::new("Kandidat besitzt keinen UTF-8-Dateinamen.")
+        })?;
+    let stem = file_name.strip_suffix(".json").unwrap_or(file_name);
+    Ok(candidate.with_file_name(format!("{stem}.movement-route-templates-v2.json")))
+}
+
 fn output_identity_key(path: &Path) -> String {
     let value = path.to_string_lossy();
     #[cfg(windows)]
@@ -441,6 +661,7 @@ fn remove_owned_published_link(target: &Path, context: &str) -> Result<()> {
     fs::remove_file(target).map_err(|error| io_error(context, target, error))
 }
 
+#[cfg(test)]
 fn publish_pair_create_new(
     staged_candidate: &Path,
     candidate: &Path,
@@ -469,6 +690,51 @@ fn publish_pair_create_new(
         return Err(GermanyOperationalV2Error::new(format!(
             "{publish_error} Der partielle Kandidaten-Publish wurde vollstaendig zurueckgenommen."
         )));
+    }
+    Ok(())
+}
+
+fn publish_triplet_create_new(
+    staged_candidate: &Path,
+    candidate: &Path,
+    staged_sidecar: &Path,
+    sidecar: &Path,
+    staged_report: &Path,
+    report: &Path,
+) -> Result<()> {
+    publish_create_new(
+        staged_candidate,
+        candidate,
+        "Operational-v2-Kandidat create-new veroeffentlichen",
+    )?;
+    if let Err(error) = publish_create_new(
+        staged_sidecar,
+        sidecar,
+        "Turnaround-Sidecar create-new veroeffentlichen",
+    ) {
+        remove_owned_published_link(
+            candidate,
+            "Partiellen Operational-v2-Kandidaten zuruecknehmen",
+        )?;
+        return Err(error);
+    }
+    if let Err(error) = publish_create_new(
+        staged_report,
+        report,
+        "Operational-v2-Bericht create-new veroeffentlichen",
+    ) {
+        let sidecar_rollback =
+            remove_owned_published_link(sidecar, "Partiellen Turnaround-Sidecar zuruecknehmen");
+        let candidate_rollback = remove_owned_published_link(
+            candidate,
+            "Partiellen Operational-v2-Kandidaten zuruecknehmen",
+        );
+        if let Err(rollback) = sidecar_rollback.and(candidate_rollback) {
+            return Err(GermanyOperationalV2Error::new(format!(
+                "{error} Der partielle Triplet-Publish konnte nicht sicher zurueckgenommen werden: {rollback}"
+            )));
+        }
+        return Err(error);
     }
     Ok(())
 }
@@ -547,6 +813,7 @@ fn read_spec(path: &Path) -> Result<(DerivationSpec, FileEvidence)> {
             "blocks",
             "conflictResources",
             "timetableRoutes",
+            "transferDemands",
         ],
         "Ableitungsspezifikation.layers",
     )?;
@@ -565,6 +832,9 @@ fn read_spec(path: &Path) -> Result<(DerivationSpec, FileEvidence)> {
             "minimumPlatformLengthMm",
             "maximumPlatformSnapDistanceMm",
             "minimumOverlapMm",
+            "minimumBerthEndClearanceMm",
+            "maximumDirectDwellMs",
+            "terminalFormationLengthsMm",
             "defaultProtectionSystem",
             "regionBoundaryId",
             "rzueLayoutId",
@@ -633,9 +903,31 @@ fn validate_spec(spec: &DerivationSpec) -> Result<()> {
             && (0..=200).contains(&spec.policy.unknown_gradient_abs_permille)
             && spec.policy.minimum_platform_length_mm > 0
             && spec.policy.maximum_platform_snap_distance_mm > 0
-            && spec.policy.minimum_overlap_mm > 0,
+            && spec.policy.minimum_overlap_mm > 0
+            && spec.policy.minimum_berth_end_clearance_mm > 0
+            && spec.policy.maximum_direct_dwell_ms > 0
+            && spec
+                .policy
+                .terminal_formation_lengths_mm
+                .iter()
+                .all(|length| *length > 0 && *length <= MAX_SAFE_INTEGER)
+            && spec
+                .policy
+                .terminal_formation_lengths_mm
+                .windows(2)
+                .all(|pair| pair[0] < pair[1]),
         "Numerische Policy-Grenzen sind ungueltig.",
     )?;
+    if let Some(transfer) = &spec.layers.transfer_demands {
+        require(
+            spec.layers.timetable_routes.is_some()
+                && !transfer.path.trim().is_empty()
+                && transfer.expected_bytes > 0
+                && transfer.expected_bytes <= MAX_TRANSFER_DEMAND_BYTES
+                && is_sha256(&transfer.expected_sha256),
+            "transferDemands verlangt timetableRoutes sowie einen nichtleeren, bytes-/SHA-256-gepinnten Eingabevertrag.",
+        )?;
+    }
     Ok(())
 }
 
@@ -772,6 +1064,32 @@ fn i64_field(values: &serde_json::Map<String, Value>, key: &str, context: &str) 
         format!("{context}.{key} ist keine sichere Ganzzahl."),
     )?;
     Ok(value)
+}
+
+fn optional_tag(tags: &BTreeMap<String, String>, key: &str) -> Option<String> {
+    tags.get(key)
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+fn standard_gauge(tags: &BTreeMap<String, String>, context: &str) -> Result<(i64, String)> {
+    let Some(raw) = optional_tag(tags, "gauge") else {
+        return Ok((
+            STANDARD_GAUGE_MM,
+            "ebo-network-filter-default-standard-gauge".to_owned(),
+        ));
+    };
+    let parsed = raw
+        .split(';')
+        .next()
+        .map(str::trim)
+        .and_then(|value| value.parse::<i64>().ok());
+    require(
+        parsed == Some(STANDARD_GAUGE_MM),
+        format!("{context} besitzt keine freigegebene Regelspurklassifikation."),
+    )?;
+    Ok((STANDARD_GAUGE_MM, "observed-osm-gauge".to_owned()))
 }
 
 fn coordinate_e7(value: &Value, context: &str) -> Result<(i32, i32)> {
@@ -1025,6 +1343,20 @@ fn track_record(
     let id = string_field(values, "feature_id", &context)?.to_owned();
     let length_mm = i64_field(values, "length_mm", &context)?;
     let tags = parse_tags(values, &context)?;
+    let railway = optional_tag(&tags, "railway").ok_or_else(|| {
+        GermanyOperationalV2Error::new(format!(
+            "{context} besitzt keine freigegebene OSM-Betriebsklassifikation."
+        ))
+    })?;
+    require(
+        railway == "rail",
+        format!("{context} ist keine EBO-Gleiskante railway=rail."),
+    )?;
+    let (gauge_mm, gauge_lineage) = standard_gauge(&tags, &context)?;
+    let oneway = optional_tag(&tags, "oneway");
+    let bidirectional = oneway
+        .as_deref()
+        .is_none_or(|value| matches!(value, "no" | "0" | "false"));
     let mainline = tags
         .get("usage")
         .is_some_and(|usage| matches!(usage.as_str(), "main" | "highspeed"));
@@ -1070,6 +1402,20 @@ fn track_record(
         speed_along_mmps: kmh_to_mmps(along_kmh.unwrap_or(fallback)).max(1),
         speed_against_mmps: kmh_to_mmps(against_kmh.unwrap_or(fallback)).max(1),
         protection_systems,
+        railway,
+        service: optional_tag(&tags, "service"),
+        orderable: true,
+        gauge_mm,
+        gauge_lineage,
+        electrified: optional_tag(&tags, "electrified"),
+        voltage: optional_tag(&tags, "voltage"),
+        frequency: optional_tag(&tags, "frequency"),
+        bidirectional,
+        osm_way_id: i64_field(values, "osm_way_id", &context)?,
+        track_ref: optional_tag(&tags, "railway:track_ref"),
+        quality_class: string_field(values, "quality_class", &context)?.to_owned(),
+        source_id: string_field(values, "source_id", &context)?.to_owned(),
+        geometry_lineage: string_field(values, "model_state", &context)?.to_owned(),
     }))
 }
 
@@ -1088,7 +1434,19 @@ fn snap_e7(distance_mm: i64) -> i32 {
 
 fn initialize_database(database: &Database) -> Result<()> {
     let transaction = database.begin_write().map_err(db_error)?;
-    for definition in [TRACKS, SWITCH_BY_NODE, PLATFORMS, TIMETABLE_ROUTES] {
+    for definition in [
+        TRACKS,
+        SWITCH_BY_NODE,
+        PLATFORMS,
+        TIMETABLE_ROUTES,
+        TURNAROUND_ROUTES,
+        TURNAROUND_INTERLOCKING,
+        TURNAROUND_TEMPLATES,
+        DIRECT_TEMPLATES,
+        TRANSFER_ROUTES,
+        TRANSFER_INTERLOCKING,
+        TRANSFER_TEMPLATES,
+    ] {
         drop(transaction.open_table(definition).map_err(db_error)?);
     }
     for definition in [NODES, SWITCHES, SIGNALS, BLOCKS_EVIDENCE, BLOCK_RESOURCES] {
@@ -1102,6 +1460,16 @@ fn initialize_database(database: &Database) -> Result<()> {
     drop(
         transaction
             .open_multimap_table(TRACK_BLOCKS)
+            .map_err(db_error)?,
+    );
+    drop(
+        transaction
+            .open_multimap_table(TRACKS_BY_NODE)
+            .map_err(db_error)?,
+    );
+    drop(
+        transaction
+            .open_multimap_table(TIMETABLE_ROUTES_BY_START)
             .map_err(db_error)?,
     );
     transaction.commit().map_err(db_error)
@@ -1139,6 +1507,14 @@ fn synthetic_signal_id(route_id: &str, leg_index: usize) -> String {
     )
 }
 
+fn turnaround_shunting_signal_id(route_id: &str) -> String {
+    stable_id("signal:synthetic-turnaround-shunting:", &[route_id])
+}
+
+fn turnaround_shunting_interlocking_id(route_id: &str) -> String {
+    stable_id("interlocking:synthetic-turnaround-shunting:", &[route_id])
+}
+
 fn ensure_output_absent(path: &Path, context: &str) -> Result<()> {
     match fs::symlink_metadata(path) {
         Ok(_) => Err(GermanyOperationalV2Error::new(format!(
@@ -1165,6 +1541,9 @@ fn ingest_tracks(
     let mut spatial = transaction
         .open_multimap_table(SPATIAL_TRACKS)
         .map_err(db_error)?;
+    let mut tracks_by_node = transaction
+        .open_multimap_table(TRACKS_BY_NODE)
+        .map_err(db_error)?;
     let mut resources = transaction.open_table(BLOCK_RESOURCES).map_err(db_error)?;
     let mut signals = transaction.open_table(SIGNALS).map_err(db_error)?;
     let cell_size = snap_e7(policy.maximum_platform_snap_distance_mm);
@@ -1187,6 +1566,9 @@ fn ingest_tracks(
         for node in [track.from_node_id, track.to_node_id] {
             let key = node.to_string();
             let _ = nodes.insert(key.as_str(), &()).map_err(db_error)?;
+            tracks_by_node
+                .insert(key.as_str(), track.id.as_str())
+                .map_err(db_error)?;
             let node_mutex = node_resource(node);
             let _ = resources
                 .insert(node_mutex.as_str(), &())
@@ -1241,6 +1623,7 @@ fn ingest_tracks(
     drop(signals);
     drop(resources);
     drop(spatial);
+    drop(tracks_by_node);
     drop(nodes);
     drop(tracks);
     transaction.commit().map_err(db_error)?;
@@ -2015,6 +2398,30 @@ fn node_at_offset(track: &TrackRecord, offset_mm: i64) -> Option<i64> {
     }
 }
 
+fn reverse_direction(direction: &str) -> Result<&'static str> {
+    match direction {
+        "along" => Ok("against"),
+        "against" => Ok("along"),
+        _ => Err(GermanyOperationalV2Error::new(format!(
+            "Unbekannte Gleisrichtung `{direction}`."
+        ))),
+    }
+}
+
+fn timetable_route_start_key(leg: &TimetableLegInput) -> String {
+    timetable_route_start_key_parts(&leg.edge_id, &leg.direction, leg.edge_entry_mm)
+}
+
+fn timetable_route_start_key_parts(edge_id: &str, direction: &str, edge_entry_mm: i64) -> String {
+    format!(
+        "{}:{}:{}:{}",
+        edge_id.len(),
+        edge_id,
+        direction,
+        edge_entry_mm
+    )
+}
+
 fn validate_timetable_leg(
     track: &TrackRecord,
     leg: &TimetableLegInput,
@@ -2072,6 +2479,9 @@ fn ingest_timetable_routes(
     transaction.set_durability(Durability::None);
     let tracks = transaction.open_table(TRACKS).map_err(db_error)?;
     let mut routes = transaction.open_table(TIMETABLE_ROUTES).map_err(db_error)?;
+    let mut routes_by_start = transaction
+        .open_multimap_table(TIMETABLE_ROUTES_BY_START)
+        .map_err(db_error)?;
     let mut signals = transaction.open_table(SIGNALS).map_err(db_error)?;
     let mut resources = transaction.open_table(BLOCK_RESOURCES).map_err(db_error)?;
     let evidence = scan_sequence(path, relative, |value, record| {
@@ -2190,11 +2600,21 @@ fn ingest_timetable_routes(
                 .is_none(),
             format!("Doppelte routeVersionId `{}`.", route.route_version_id),
         )?;
+        let start_key = timetable_route_start_key(
+            route
+                .legs
+                .first()
+                .expect("vollstaendiger Timetable-Laufweg besitzt ein erstes Leg"),
+        );
+        routes_by_start
+            .insert(start_key.as_str(), route.route_version_id.as_str())
+            .map_err(db_error)?;
         counts.timetable_routes = counts.timetable_routes.saturating_add(1);
         Ok(())
     })?;
     drop(resources);
     drop(signals);
+    drop(routes_by_start);
     drop(routes);
     drop(tracks);
     transaction.commit().map_err(db_error)?;
@@ -2228,6 +2648,512 @@ fn ingest_timetable_routes(
     Ok(evidence)
 }
 
+fn required_u64(value: &Value, field: &str, context: &str) -> Result<u64> {
+    value.get(field).and_then(Value::as_u64).ok_or_else(|| {
+        GermanyOperationalV2Error::new(format!(
+            "{context}.{field} ist keine nichtnegative Ganzzahl."
+        ))
+    })
+}
+
+fn read_transfer_demands(
+    path: &Path,
+    relative: &str,
+    expected: &PinnedInputSpec,
+    infra_release_id: &str,
+    policy: &PolicySpec,
+) -> Result<(
+    Vec<TransferRouteInput>,
+    Vec<TurnaroundPairDemand>,
+    TransferEvidence,
+)> {
+    let measured_bytes = regular_file(path, "transferDemands")?;
+    require(
+        measured_bytes == expected.expected_bytes && measured_bytes <= MAX_TRANSFER_DEMAND_BYTES,
+        format!(
+            "transferDemands besitzt {measured_bytes} statt der gepinnten {} Bytes oder ueberschreitet die native Grenze.",
+            expected.expected_bytes
+        ),
+    )?;
+    let bytes = fs::read(path).map_err(|error| io_error("transferDemands", path, error))?;
+    require(
+        u64::try_from(bytes.len()).ok() == Some(measured_bytes),
+        "transferDemands aenderte waehrend des Lesens seine Groesse.",
+    )?;
+    let file_sha256 = sha256(&bytes);
+    require(
+        file_sha256 == expected.expected_sha256,
+        format!(
+            "transferDemands besitzt SHA-256 `{file_sha256}` statt `{}`.",
+            expected.expected_sha256
+        ),
+    )?;
+    let value: Value = serde_json::from_slice(&bytes).map_err(|error| {
+        GermanyOperationalV2Error::new(format!("transferDemands ist ungueltig: {error}"))
+    })?;
+    exact_keys(
+        &value,
+        &[
+            "schema",
+            "infraReleaseId",
+            "gtfsSnapshotHash",
+            "dailyPlan",
+            "formationLengthsMm",
+            "transferRoutes",
+            "transferSetSha256",
+        ],
+        "transferDemands",
+    )?;
+    require(
+        value["schema"] == TRANSFER_DEMAND_SCHEMA
+            && value["infraReleaseId"] == infra_release_id
+            && value["gtfsSnapshotHash"].as_str().is_some_and(is_sha256),
+        "transferDemands besitzt keine gueltige Schema-/Release-/GTFS-Bindung.",
+    )?;
+    let formation_lengths: Vec<i64> = serde_json::from_value(value["formationLengthsMm"].clone())
+        .map_err(|error| {
+        GermanyOperationalV2Error::new(format!(
+            "transferDemands.formationLengthsMm ist ungueltig: {error}"
+        ))
+    })?;
+    require(
+        !formation_lengths.is_empty()
+            && formation_lengths == policy.terminal_formation_lengths_mm
+            && formation_lengths.windows(2).all(|pair| pair[0] < pair[1]),
+        "transferDemands.formationLengthsMm weicht von der kanonischen Terminal-Policy ab.",
+    )?;
+
+    let daily_plan = value
+        .get("dailyPlan")
+        .ok_or_else(|| GermanyOperationalV2Error::new("transferDemands.dailyPlan fehlt."))?;
+    exact_keys(
+        daily_plan,
+        &[
+            "schema",
+            "rule",
+            "gtfsReleaseId",
+            "repeatEveryS",
+            "minimumTurnaroundS",
+            "metrics",
+            "circulations",
+            "rolloverAssignments",
+            "transferDemands",
+            "planSha256",
+        ],
+        "transferDemands.dailyPlan",
+    )?;
+    require(
+        daily_plan["schema"] == DAILY_CIRCULATION_PLAN_SCHEMA
+            && daily_plan["planSha256"].as_str().is_some_and(is_sha256),
+        "transferDemands.dailyPlan besitzt keine gueltige Schema-/Hashbindung.",
+    )?;
+    let mut plan_body = daily_plan.clone();
+    plan_body
+        .as_object_mut()
+        .expect("dailyPlan wurde als Objekt validiert")
+        .remove("planSha256");
+    let plan_envelope = json!({
+        "schema": DAILY_CIRCULATION_PLAN_SCHEMA,
+        "value": plan_body,
+    });
+    let mut canonical_plan = String::new();
+    canonical_json(&plan_envelope, &mut canonical_plan);
+    let daily_plan_sha256 = sha256(canonical_plan.as_bytes());
+    require(
+        daily_plan["planSha256"] == daily_plan_sha256,
+        format!(
+            "transferDemands.dailyPlan besitzt Zustandshash `{}` statt nativ `{daily_plan_sha256}`.",
+            daily_plan["planSha256"]
+        ),
+    )?;
+    let metrics = daily_plan.get("metrics").ok_or_else(|| {
+        GermanyOperationalV2Error::new("transferDemands.dailyPlan.metrics fehlt.")
+    })?;
+    exact_keys(
+        metrics,
+        &[
+            "lotCount",
+            "journeyChainCount",
+            "circulationCount",
+            "rolloverAssignmentCount",
+            "transferDemandCount",
+            "transferLotCount",
+        ],
+        "transferDemands.dailyPlan.metrics",
+    )?;
+    let circulation_count = required_u64(metrics, "circulationCount", "dailyPlan.metrics")?;
+    let transfer_demand_count = required_u64(metrics, "transferDemandCount", "dailyPlan.metrics")?;
+    let transfer_lot_count = required_u64(metrics, "transferLotCount", "dailyPlan.metrics")?;
+    let daily_demands = daily_plan["transferDemands"].as_array().ok_or_else(|| {
+        GermanyOperationalV2Error::new("dailyPlan.transferDemands ist kein Array.")
+    })?;
+    require(
+        u64::try_from(daily_plan["circulations"].as_array().map_or(0, Vec::len)).ok()
+            == Some(circulation_count)
+            && u64::try_from(daily_demands.len()).ok() == Some(transfer_demand_count),
+        "dailyPlan-Metriken stimmen nicht mit den gebundenen Mengen ueberein.",
+    )?;
+    let circulations = daily_plan["circulations"]
+        .as_array()
+        .expect("Circulation-Metrik validierte ein Array");
+    let mut circulation_by_id = BTreeMap::<String, &Value>::new();
+    let mut turnaround_demands = Vec::<TurnaroundPairDemand>::new();
+    let mut circulation_lots = BTreeSet::<String>::new();
+    let mut journey_chains = BTreeSet::<String>::new();
+    for (index, circulation) in circulations.iter().enumerate() {
+        exact_keys(
+            circulation,
+            &[
+                "id",
+                "lotId",
+                "serviceLineId",
+                "assetCompatibilityKey",
+                "journeyChainIds",
+                "passengerLegIds",
+                "passengerTrainRunIds",
+                "start",
+                "end",
+            ],
+            &format!("dailyPlan.circulations[{index}]"),
+        )?;
+        let id = circulation["id"]
+            .as_str()
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| GermanyOperationalV2Error::new("Circulation-ID fehlt."))?;
+        let lot_id = circulation["lotId"]
+            .as_str()
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| GermanyOperationalV2Error::new("Circulation-Lot-ID fehlt."))?;
+        require(
+            circulation["assetCompatibilityKey"]
+                .as_str()
+                .is_some_and(|value| !value.is_empty())
+                && circulation["serviceLineId"]
+                    .as_str()
+                    .is_some_and(|value| !value.is_empty()),
+            format!("Circulation `{id}` besitzt keine Lot-/Asset-Bindung."),
+        )?;
+        circulation_lots.insert(lot_id.to_owned());
+        for journey_chain in circulation["journeyChainIds"]
+            .as_array()
+            .ok_or_else(|| GermanyOperationalV2Error::new("journeyChainIds ist kein Array."))?
+        {
+            journey_chains.insert(
+                journey_chain
+                    .as_str()
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| GermanyOperationalV2Error::new("JourneyChain-ID fehlt."))?
+                    .to_owned(),
+            );
+        }
+        let passenger_leg_ids = circulation["passengerLegIds"]
+            .as_array()
+            .filter(|ids| !ids.is_empty())
+            .ok_or_else(|| {
+                GermanyOperationalV2Error::new(format!(
+                    "Circulation `{id}` besitzt keine Passenger-Legs."
+                ))
+            })?;
+        let leg_ids = passenger_leg_ids
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_owned)
+                    .ok_or_else(|| {
+                        GermanyOperationalV2Error::new(format!(
+                            "Circulation `{id}` besitzt eine ungueltige Passenger-Leg-ID."
+                        ))
+                    })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        require(
+            circulation["start"]["legId"] == leg_ids[0]
+                && circulation["end"]["legId"] == *leg_ids.last().expect("nichtleere Legliste"),
+            format!("Circulation `{id}` driftet zwischen Endpunkten und Passenger-Legs."),
+        )?;
+        for pair in leg_ids.windows(2) {
+            turnaround_demands.push(TurnaroundPairDemand {
+                inbound_route_version_id: format!("route:gtfs:{}:v1", pair[0]),
+                outbound_route_version_id: format!("route:gtfs:{}:v1", pair[1]),
+            });
+        }
+        require(
+            circulation_by_id
+                .insert(id.to_owned(), circulation)
+                .is_none(),
+            format!("Doppelte Circulation-ID `{id}`."),
+        )?;
+    }
+    require(
+        u64::try_from(circulation_lots.len()).ok()
+            == Some(required_u64(metrics, "lotCount", "dailyPlan.metrics")?)
+            && u64::try_from(journey_chains.len()).ok()
+                == Some(required_u64(
+                    metrics,
+                    "journeyChainCount",
+                    "dailyPlan.metrics",
+                )?),
+        "DailyPlan-Lot-/JourneyChain-Metriken sind nicht nativ reproduzierbar.",
+    )?;
+    let rollovers = daily_plan["rolloverAssignments"]
+        .as_array()
+        .ok_or_else(|| GermanyOperationalV2Error::new("rolloverAssignments ist kein Array."))?;
+    require(
+        u64::try_from(rollovers.len()).ok()
+            == Some(required_u64(
+                metrics,
+                "rolloverAssignmentCount",
+                "dailyPlan.metrics",
+            )?),
+        "rolloverAssignmentCount stimmt nicht mit der gebundenen Menge ueberein.",
+    )?;
+    let mut rollover_sources = BTreeSet::new();
+    let mut rollover_targets = BTreeSet::new();
+    let mut transfer_rollover_pairs = BTreeSet::<(String, String)>::new();
+    for (index, rollover) in rollovers.iter().enumerate() {
+        exact_keys(
+            rollover,
+            &["kind", "sourceCirculationId", "targetCirculationId"],
+            &format!("dailyPlan.rolloverAssignments[{index}]"),
+        )?;
+        let kind = rollover["kind"]
+            .as_str()
+            .ok_or_else(|| GermanyOperationalV2Error::new("Rollover-Art fehlt."))?;
+        let source_id = rollover["sourceCirculationId"]
+            .as_str()
+            .ok_or_else(|| GermanyOperationalV2Error::new("Rollover-Quelle fehlt."))?;
+        let target_id = rollover["targetCirculationId"]
+            .as_str()
+            .ok_or_else(|| GermanyOperationalV2Error::new("Rollover-Ziel fehlt."))?;
+        let source = circulation_by_id.get(source_id).ok_or_else(|| {
+            GermanyOperationalV2Error::new(format!("Unbekannte Rollover-Quelle `{source_id}`."))
+        })?;
+        let target = circulation_by_id.get(target_id).ok_or_else(|| {
+            GermanyOperationalV2Error::new(format!("Unbekanntes Rollover-Ziel `{target_id}`."))
+        })?;
+        require(
+            rollover_sources.insert(source_id.to_owned())
+                && rollover_targets.insert(target_id.to_owned()),
+            "Rollover-Permutation bindet eine Quelle oder ein Ziel mehrfach.",
+        )?;
+        require(
+            source["lotId"] == target["lotId"]
+                && source["assetCompatibilityKey"] == target["assetCompatibilityKey"],
+            format!("Rollover `{source_id}` -> `{target_id}` ist nicht Lot-/Asset-kompatibel."),
+        )?;
+        match kind {
+            "same-location" => {
+                require(
+                    source["end"]["locationId"] == target["start"]["locationId"],
+                    "Direct-Rollover ist nicht ortsgleich.",
+                )?;
+                let inbound = source["passengerLegIds"]
+                    .as_array()
+                    .and_then(|ids| ids.last())
+                    .and_then(Value::as_str)
+                    .expect("Circulation-Legs wurden validiert");
+                let outbound = target["passengerLegIds"]
+                    .as_array()
+                    .and_then(|ids| ids.first())
+                    .and_then(Value::as_str)
+                    .expect("Circulation-Legs wurden validiert");
+                turnaround_demands.push(TurnaroundPairDemand {
+                    inbound_route_version_id: format!("route:gtfs:{inbound}:v1"),
+                    outbound_route_version_id: format!("route:gtfs:{outbound}:v1"),
+                });
+            }
+            "transfer" => {
+                require(
+                    source["end"]["locationId"] != target["start"]["locationId"],
+                    "Transfer-Rollover ist bereits ortsgleich.",
+                )?;
+                transfer_rollover_pairs.insert((source_id.to_owned(), target_id.to_owned()));
+            }
+            _ => {
+                return Err(GermanyOperationalV2Error::new(format!(
+                    "Unbekannte Rollover-Art `{kind}`."
+                )));
+            }
+        }
+    }
+    require(
+        rollover_sources.len() == circulation_by_id.len()
+            && rollover_targets.len() == circulation_by_id.len(),
+        "Rollover-Zuordnung ist keine vollstaendige Circulation-Permutation.",
+    )?;
+    let demand_fields = [
+        "id",
+        "lotId",
+        "assetCompatibilityKey",
+        "sourceCirculationId",
+        "targetCirculationId",
+        "sourcePassengerLegId",
+        "targetPassengerLegId",
+        "sourceLocationId",
+        "targetLocationId",
+        "sourcePhysicalStopId",
+        "targetPhysicalStopId",
+        "earliestDepartureS",
+        "latestArrivalS",
+        "availableWindowS",
+        "movementKind",
+    ];
+    let mut daily_demand_by_id = BTreeMap::<String, &Value>::new();
+    let mut daily_demand_pairs = BTreeSet::<(String, String)>::new();
+    let mut transfer_lots = BTreeSet::<String>::new();
+    for (index, demand) in daily_demands.iter().enumerate() {
+        exact_keys(
+            demand,
+            &demand_fields,
+            &format!("dailyPlan.transferDemands[{index}]"),
+        )?;
+        let id = demand["id"]
+            .as_str()
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| GermanyOperationalV2Error::new("Daily-Demand-ID fehlt."))?;
+        require(
+            daily_demand_by_id.insert(id.to_owned(), demand).is_none(),
+            format!("Doppelte Daily-Demand-ID `{id}`."),
+        )?;
+        let source_id = demand["sourceCirculationId"]
+            .as_str()
+            .ok_or_else(|| GermanyOperationalV2Error::new("Demand-Quellumlauf fehlt."))?;
+        let target_id = demand["targetCirculationId"]
+            .as_str()
+            .ok_or_else(|| GermanyOperationalV2Error::new("Demand-Zielumlauf fehlt."))?;
+        let source = circulation_by_id.get(source_id).ok_or_else(|| {
+            GermanyOperationalV2Error::new(format!("Demand `{id}` bindet unbekannte Quelle."))
+        })?;
+        let target = circulation_by_id.get(target_id).ok_or_else(|| {
+            GermanyOperationalV2Error::new(format!("Demand `{id}` bindet unbekanntes Ziel."))
+        })?;
+        require(
+            daily_demand_pairs.insert((source_id.to_owned(), target_id.to_owned()))
+                && demand["lotId"] == source["lotId"]
+                && demand["lotId"] == target["lotId"]
+                && demand["assetCompatibilityKey"] == source["assetCompatibilityKey"]
+                && demand["assetCompatibilityKey"] == target["assetCompatibilityKey"]
+                && demand["sourcePassengerLegId"] == source["end"]["legId"]
+                && demand["targetPassengerLegId"] == target["start"]["legId"]
+                && demand["sourceLocationId"] == source["end"]["locationId"]
+                && demand["targetLocationId"] == target["start"]["locationId"]
+                && demand["sourcePhysicalStopId"] == source["end"]["physicalStopId"]
+                && demand["targetPhysicalStopId"] == target["start"]["physicalStopId"]
+                && demand["movementKind"]
+                    .as_str()
+                    .is_some_and(|kind| matches!(kind, "train" | "shunting"))
+                && demand["availableWindowS"]
+                    .as_i64()
+                    .is_some_and(|value| value > 0)
+                && demand["latestArrivalS"]
+                    .as_i64()
+                    .zip(demand["earliestDepartureS"].as_i64())
+                    .and_then(|(latest, earliest)| latest.checked_sub(earliest))
+                    == demand["availableWindowS"].as_i64(),
+            format!(
+                "Daily-Demand `{id}` driftet von Rollover, Lot, Asset, Endpunkten oder Zeitfenster ab."
+            ),
+        )?;
+        transfer_lots.insert(
+            demand["lotId"]
+                .as_str()
+                .expect("Lot wurde gegen Circulation validiert")
+                .to_owned(),
+        );
+    }
+    require(
+        daily_demand_pairs == transfer_rollover_pairs
+            && u64::try_from(transfer_lots.len()).ok() == Some(transfer_lot_count),
+        "Daily-Transferanforderungen decken die Lot-kompatiblen Transfer-Rollover nicht 1:1 ab.",
+    )?;
+
+    let route_values = value["transferRoutes"]
+        .as_array()
+        .ok_or_else(|| GermanyOperationalV2Error::new("transferRoutes ist kein Array."))?;
+    require(
+        !route_values.is_empty()
+            && u64::try_from(route_values.len()).ok() == Some(transfer_demand_count),
+        "transferRoutes deckt die Daily-Transferanforderungen nicht vollstaendig ab.",
+    )?;
+    let mut transfer_hasher = Sha256::new();
+    let mut previous_id: Option<&str> = None;
+    let mut routes = Vec::with_capacity(route_values.len());
+    for (index, route_value) in route_values.iter().enumerate() {
+        let id = route_value["id"]
+            .as_str()
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| GermanyOperationalV2Error::new("Transferroute-ID fehlt."))?;
+        require(
+            previous_id.is_none_or(|previous| previous.as_bytes() < id.as_bytes()),
+            "transferRoutes ist nicht streng nach UTF-8-ID sortiert oder enthaelt Duplikate.",
+        )?;
+        previous_id = Some(id);
+        let daily_demand = daily_demand_by_id.get(id).ok_or_else(|| {
+            GermanyOperationalV2Error::new(format!(
+                "Transferroute `{id}` besitzt keine Daily-Plan-Anforderung."
+            ))
+        })?;
+        for field in demand_fields {
+            require(
+                route_value.get(field) == daily_demand.get(field),
+                format!("Transferroute `{id}` driftet in `{field}` vom DailyPlan ab."),
+            )?;
+        }
+        let mut canonical = String::new();
+        canonical_json(route_value, &mut canonical);
+        transfer_hasher.update(canonical.as_bytes());
+        transfer_hasher.update(b"\n");
+        let route: TransferRouteInput =
+            serde_json::from_value(route_value.clone()).map_err(|error| {
+                GermanyOperationalV2Error::new(format!(
+                    "transferRoutes[{index}] ist ungueltig: {error}"
+                ))
+            })?;
+        require(
+            route.formation_lengths_mm == formation_lengths,
+            format!("Transferroute `{id}` driftet in formationLengthsMm."),
+        )?;
+        routes.push(route);
+    }
+    let transfer_set_sha256 = digest_hex(transfer_hasher.finalize());
+    require(
+        value["transferSetSha256"] == transfer_set_sha256,
+        format!(
+            "transferSetSha256 ist nicht nativ reproduzierbar: erwartet {}, nativ {transfer_set_sha256}.",
+            value["transferSetSha256"]
+        ),
+    )?;
+    require(
+        daily_demand_by_id.len() == routes.len(),
+        "Nicht jede Daily-Transferanforderung besitzt genau eine reale Transferroute.",
+    )?;
+    let turnaround_demand_count = u64::try_from(turnaround_demands.len()).unwrap_or(u64::MAX);
+    turnaround_demands.sort();
+    turnaround_demands.dedup();
+    let turnaround_pair_count = u64::try_from(turnaround_demands.len()).unwrap_or(u64::MAX);
+    Ok((
+        routes,
+        turnaround_demands,
+        TransferEvidence {
+            file: FileEvidence {
+                path: relative.to_owned(),
+                bytes: measured_bytes,
+                sha256: file_sha256,
+                records: u64::try_from(route_values.len()).unwrap_or(u64::MAX),
+            },
+            daily_plan_sha256,
+            transfer_set_sha256,
+            circulation_count,
+            transfer_demand_count,
+            transfer_lot_count,
+            turnaround_demand_count,
+            turnaround_pair_count,
+        },
+    ))
+}
+
 fn get_track(transaction: &redb::ReadTransaction, edge_id: &str) -> Result<TrackRecord> {
     let table = transaction.open_table(TRACKS).map_err(db_error)?;
     let value = table.get(edge_id).map_err(db_error)?.ok_or_else(|| {
@@ -2249,6 +3175,546 @@ fn track_block_resources(
     let mut values = table.get(edge_id).map_err(db_error)?;
     while let Some(value) = values.next().transpose().map_err(db_error)? {
         result.insert(value.value().to_owned());
+    }
+    Ok(result)
+}
+
+fn route_from_json(value: &str, context: &str) -> Result<TimetableRouteInput> {
+    serde_json::from_str(value)
+        .map_err(|error| GermanyOperationalV2Error::new(format!("{context}: {error}")))
+}
+
+fn directed_track_from_node(track: TrackRecord, node_id: i64) -> Option<(DirectedTrack, i64)> {
+    if track.from_node_id == node_id && track.to_node_id != node_id {
+        let next = track.to_node_id;
+        Some((
+            DirectedTrack {
+                track,
+                direction: "along".to_owned(),
+            },
+            next,
+        ))
+    } else if track.to_node_id == node_id && track.from_node_id != node_id {
+        let next = track.from_node_id;
+        Some((
+            DirectedTrack {
+                track,
+                direction: "against".to_owned(),
+            },
+            next,
+        ))
+    } else {
+        None
+    }
+}
+
+fn stabling_track_compatible(track: &TrackRecord, terminal: &TrackRecord) -> bool {
+    track.id != terminal.id
+        && track.orderable
+        && track.railway == "rail"
+        && track.service.as_deref() == Some("siding")
+        && track.gauge_mm == STANDARD_GAUGE_MM
+        && track.bidirectional
+        && matches!(track.quality_class.as_str(), "A" | "B")
+        && track.osm_way_id > 0
+        && !track.geometry_lineage.is_empty()
+        && track.source_id == terminal.source_id
+        && track.electrified == terminal.electrified
+        && track.voltage == terminal.voltage
+        && track.frequency == terminal.frequency
+        && track.protection_systems == terminal.protection_systems
+}
+
+fn adjacent_directed_tracks(
+    transaction: &redb::ReadTransaction,
+    node_id: i64,
+) -> Result<Vec<(DirectedTrack, i64)>> {
+    let by_node = transaction
+        .open_multimap_table(TRACKS_BY_NODE)
+        .map_err(db_error)?;
+    let tracks = transaction.open_table(TRACKS).map_err(db_error)?;
+    let node_key = node_id.to_string();
+    let mut edge_ids = Vec::new();
+    let mut values = by_node.get(node_key.as_str()).map_err(db_error)?;
+    while let Some(value) = values.next().transpose().map_err(db_error)? {
+        edge_ids.push(value.value().to_owned());
+    }
+    edge_ids.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
+    let mut result = Vec::new();
+    for edge_id in edge_ids {
+        let serialized = tracks
+            .get(edge_id.as_str())
+            .map_err(db_error)?
+            .ok_or_else(|| {
+                GermanyOperationalV2Error::new(format!(
+                    "Knotenindex verweist auf unbekannte Gleiskante `{edge_id}`."
+                ))
+            })?;
+        let track = track_from_json(serialized.value(), "Knotenindex-Gleiskante")?;
+        if let Some(directed) = directed_track_from_node(track, node_id) {
+            result.push(directed);
+        }
+    }
+    Ok(result)
+}
+
+fn terminal_has_observed_siding_entry(
+    transaction: &redb::ReadTransaction,
+    terminal_edge_id: &str,
+    terminal_node_id: i64,
+) -> Result<bool> {
+    let by_node = transaction
+        .open_multimap_table(TRACKS_BY_NODE)
+        .map_err(db_error)?;
+    let tracks = transaction.open_table(TRACKS).map_err(db_error)?;
+    let node_key = terminal_node_id.to_string();
+    let mut values = by_node.get(node_key.as_str()).map_err(db_error)?;
+    while let Some(value) = values.next().transpose().map_err(db_error)? {
+        let edge_id = value.value();
+        if edge_id == terminal_edge_id {
+            continue;
+        }
+        let serialized = tracks.get(edge_id).map_err(db_error)?.ok_or_else(|| {
+            GermanyOperationalV2Error::new(format!(
+                "Knotenindex verweist auf unbekannte Gleiskante `{edge_id}`."
+            ))
+        })?;
+        let track = track_from_json(serialized.value(), "Terminal-Knotenindex-Gleiskante")?;
+        if track.service.as_deref() == Some("siding") {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_stabling_paths(
+    transaction: &redb::ReadTransaction,
+    terminal: &TrackRecord,
+    node_id: i64,
+    formation_length_mm: i64,
+    minimum_clearance_mm: i64,
+    path: &mut Vec<DirectedTrack>,
+    visited_edges: &mut BTreeSet<String>,
+    visited_nodes: &mut BTreeSet<i64>,
+    total_length_mm: i64,
+    candidates: &mut Vec<StablingCandidate>,
+) -> Result<()> {
+    if path.len() >= MAX_STABLING_PATH_EDGES {
+        return Ok(());
+    }
+    for (directed, next_node) in adjacent_directed_tracks(transaction, node_id)? {
+        if !stabling_track_compatible(&directed.track, terminal)
+            || visited_edges.contains(&directed.track.id)
+            || visited_nodes.contains(&next_node)
+        {
+            continue;
+        }
+        let next_total = total_length_mm
+            .checked_add(directed.track.length_mm)
+            .ok_or_else(|| GermanyOperationalV2Error::new("Abstellpfadlaenge laeuft ueber."))?;
+        if next_total > MAX_STABLING_PATH_LENGTH_MM {
+            continue;
+        }
+        visited_edges.insert(directed.track.id.clone());
+        visited_nodes.insert(next_node);
+        path.push(directed);
+        let berth_required = formation_length_mm
+            .checked_add(minimum_clearance_mm.saturating_mul(2))
+            .ok_or_else(|| GermanyOperationalV2Error::new("Berth-Laenge laeuft ueber."))?;
+        if path
+            .last()
+            .is_some_and(|edge| edge.track.length_mm >= berth_required)
+        {
+            candidates.push(StablingCandidate {
+                total_length_mm: next_total,
+                path: path.clone(),
+            });
+        } else {
+            collect_stabling_paths(
+                transaction,
+                terminal,
+                next_node,
+                formation_length_mm,
+                minimum_clearance_mm,
+                path,
+                visited_edges,
+                visited_nodes,
+                next_total,
+                candidates,
+            )?;
+        }
+        let removed = path.pop().expect("soeben angehaengte Abstellkante");
+        visited_edges.remove(&removed.track.id);
+        visited_nodes.remove(&next_node);
+    }
+    Ok(())
+}
+
+fn stabling_path_key(candidate: &StablingCandidate) -> (i64, Vec<&str>) {
+    (
+        candidate.total_length_mm,
+        candidate
+            .path
+            .iter()
+            .map(|edge| edge.track.id.as_str())
+            .collect(),
+    )
+}
+
+fn stabling_candidates(
+    transaction: &redb::ReadTransaction,
+    terminal: &TrackRecord,
+    terminal_node_id: i64,
+    formation_length_mm: i64,
+    minimum_clearance_mm: i64,
+    inbound_route_id: &str,
+) -> Result<Vec<StablingCandidate>> {
+    require(
+        terminal.orderable
+            && terminal.railway == "rail"
+            && terminal.gauge_mm == STANDARD_GAUGE_MM
+            && terminal.osm_way_id > 0
+            && matches!(terminal.quality_class.as_str(), "A" | "B")
+            && !terminal.geometry_lineage.is_empty(),
+        format!(
+            "Terminalkante `{}` von `{inbound_route_id}` besitzt keine freigegebene reale OSM-Klassifikation.",
+            terminal.id
+        ),
+    )?;
+    let mut candidates = Vec::new();
+    let mut path = Vec::new();
+    let mut visited_edges = BTreeSet::from([terminal.id.clone()]);
+    let mut visited_nodes = BTreeSet::from([terminal_node_id]);
+    collect_stabling_paths(
+        transaction,
+        terminal,
+        terminal_node_id,
+        formation_length_mm,
+        minimum_clearance_mm,
+        &mut path,
+        &mut visited_edges,
+        &mut visited_nodes,
+        0,
+        &mut candidates,
+    )?;
+    let _ = inbound_route_id;
+    candidates.sort_by(|left, right| stabling_path_key(left).cmp(&stabling_path_key(right)));
+    let mut by_berth_edge = BTreeMap::<String, StablingCandidate>::new();
+    for candidate in candidates {
+        let berth_edge_id = candidate
+            .path
+            .last()
+            .expect("Abstellkandidat ist nicht leer")
+            .track
+            .id
+            .clone();
+        by_berth_edge.entry(berth_edge_id).or_insert(candidate);
+    }
+    let mut result: Vec<_> = by_berth_edge.into_values().collect();
+    result.sort_by(|left, right| stabling_path_key(left).cmp(&stabling_path_key(right)));
+    Ok(result)
+}
+
+fn directed_offsets(track: &TrackRecord, direction: &str) -> Result<(i64, i64)> {
+    match direction {
+        "along" => Ok((0, track.length_mm)),
+        "against" => Ok((track.length_mm, 0)),
+        _ => Err(GermanyOperationalV2Error::new(format!(
+            "Gleiskante `{}` besitzt ungueltige Richtung `{direction}`.",
+            track.id
+        ))),
+    }
+}
+
+fn derived_leg(
+    track: &TrackRecord,
+    direction: &str,
+    edge_entry_mm: i64,
+    edge_exit_mm: i64,
+) -> TimetableLegInput {
+    TimetableLegInput {
+        edge_id: track.id.clone(),
+        direction: direction.to_owned(),
+        edge_entry_mm,
+        edge_exit_mm,
+        available_protection_systems: track.protection_systems.iter().cloned().collect(),
+        simultaneously_required_protection_systems: Vec::new(),
+    }
+}
+
+fn route_length(route: &TimetableRouteInput) -> Result<i64> {
+    route.legs.iter().try_fold(0_i64, |total, leg| {
+        total
+            .checked_add(
+                i64::try_from(leg.edge_entry_mm.abs_diff(leg.edge_exit_mm)).unwrap_or(i64::MAX),
+            )
+            .ok_or_else(|| {
+                GermanyOperationalV2Error::new(format!(
+                    "Laufweg `{}` laeuft in der Laenge ueber.",
+                    route.route_version_id
+                ))
+            })
+    })
+}
+
+fn minimum_route_runtime_ms(
+    transaction: &redb::ReadTransaction,
+    route: &TimetableRouteInput,
+    authority_start_route_mm: i64,
+) -> Result<i64> {
+    let route_length_mm = route_length(route)?;
+    require(
+        (0..route_length_mm).contains(&authority_start_route_mm),
+        format!(
+            "Laufweg `{}` besitzt keinen Bewegungsabschnitt hinter {authority_start_route_mm} mm.",
+            route.route_version_id
+        ),
+    )?;
+    let mut cursor_mm = 0_i64;
+    let mut runtime_ms = 0_i64;
+    for leg in &route.legs {
+        let leg_length_mm =
+            i64::try_from(leg.edge_entry_mm.abs_diff(leg.edge_exit_mm)).unwrap_or(i64::MAX);
+        let leg_end_mm = cursor_mm.checked_add(leg_length_mm).ok_or_else(|| {
+            GermanyOperationalV2Error::new("Laufzeit-Laufweglaenge laeuft ueber.")
+        })?;
+        if leg_end_mm > authority_start_route_mm {
+            let movement_start_mm = cursor_mm.max(authority_start_route_mm);
+            let movement_length_mm =
+                leg_end_mm.checked_sub(movement_start_mm).ok_or_else(|| {
+                    GermanyOperationalV2Error::new("Laufzeitintervall ist ungueltig.")
+                })?;
+            let track = get_track(transaction, &leg.edge_id)?;
+            let speed_mmps = match leg.direction.as_str() {
+                "along" => track.speed_along_mmps,
+                "against" => track.speed_against_mmps,
+                direction => {
+                    return Err(GermanyOperationalV2Error::new(format!(
+                        "Laufweg `{}` besitzt ungueltige Richtung `{direction}`.",
+                        route.route_version_id
+                    )));
+                }
+            };
+            require(
+                speed_mmps > 0,
+                format!(
+                    "Laufweg `{}` besitzt keine positive native Laufzeitgeschwindigkeit.",
+                    route.route_version_id
+                ),
+            )?;
+            let numerator = movement_length_mm
+                .checked_mul(1_000)
+                .and_then(|value| value.checked_add(i64::from(speed_mmps) - 1))
+                .ok_or_else(|| GermanyOperationalV2Error::new("Laufzeit laeuft ueber."))?;
+            runtime_ms = runtime_ms
+                .checked_add(numerator / i64::from(speed_mmps))
+                .ok_or_else(|| GermanyOperationalV2Error::new("Laufzeit laeuft ueber."))?;
+        }
+        cursor_mm = leg_end_mm;
+    }
+    require(
+        runtime_ms > 0,
+        format!(
+            "Laufweg `{}` besitzt keine positive native Mindestlaufzeit.",
+            route.route_version_id
+        ),
+    )?;
+    Ok(runtime_ms)
+}
+
+fn resource_set_sha256(resources: &BTreeSet<String>) -> String {
+    let mut hasher = Sha256::new();
+    for resource in resources {
+        hasher.update(resource.as_bytes());
+        hasher.update(b"\n");
+    }
+    digest_hex(hasher.finalize())
+}
+
+fn protection_contract_runs(legs: &[TimetableLegInput]) -> Result<Vec<ProtectionContractRun>> {
+    let mut runs = Vec::<ProtectionContractRun>::new();
+    for (index, leg) in legs.iter().enumerate() {
+        let through_route_leg_index = u32::try_from(index)
+            .map_err(|_| GermanyOperationalV2Error::new("Zu viele Laufweg-Legs."))?;
+        if let Some(previous) = runs.last_mut().filter(|previous| {
+            previous.available_protection_systems == leg.available_protection_systems
+                && previous.simultaneously_required_protection_systems
+                    == leg.simultaneously_required_protection_systems
+        }) {
+            previous.through_route_leg_index = through_route_leg_index;
+        } else {
+            runs.push(ProtectionContractRun {
+                through_route_leg_index,
+                available_protection_systems: leg.available_protection_systems.clone(),
+                simultaneously_required_protection_systems: leg
+                    .simultaneously_required_protection_systems
+                    .clone(),
+            });
+        }
+    }
+    require(!runs.is_empty(), "Schutzvertrag besitzt keine Laeufe.")?;
+    Ok(runs)
+}
+
+fn formation_tail_legs(
+    route: &TimetableRouteInput,
+    formation_length_mm: i64,
+    context: &str,
+) -> Result<Vec<TimetableLegInput>> {
+    require(
+        formation_length_mm > 0,
+        format!("{context} besitzt keine positive Formationslaenge."),
+    )?;
+    let mut remaining_mm = formation_length_mm;
+    let mut reversed = Vec::new();
+    for leg in route.legs.iter().rev() {
+        if remaining_mm == 0 {
+            break;
+        }
+        let leg_length_mm =
+            i64::try_from(leg.edge_entry_mm.abs_diff(leg.edge_exit_mm)).unwrap_or(i64::MAX);
+        if remaining_mm >= leg_length_mm {
+            reversed.push(leg.clone());
+            remaining_mm = remaining_mm.checked_sub(leg_length_mm).ok_or_else(|| {
+                GermanyOperationalV2Error::new(format!("{context} laeuft in der Laenge ueber."))
+            })?;
+        } else {
+            let seed_entry = match leg.direction.as_str() {
+                "along" => leg.edge_exit_mm.checked_sub(remaining_mm),
+                "against" => leg.edge_exit_mm.checked_add(remaining_mm),
+                _ => None,
+            }
+            .ok_or_else(|| GermanyOperationalV2Error::new(format!("{context} laeuft ueber.")))?;
+            reversed.push(passenger_leg_slice(leg, seed_entry, leg.edge_exit_mm));
+            remaining_mm = 0;
+        }
+    }
+    require(
+        remaining_mm == 0,
+        format!("{context} deckt die Formation nicht physisch ab."),
+    )?;
+    reversed.reverse();
+    Ok(reversed)
+}
+
+fn formation_prefix_and_remainder(
+    route: &TimetableRouteInput,
+    formation_length_mm: i64,
+    context: &str,
+) -> Result<(Vec<TimetableLegInput>, Vec<TimetableLegInput>)> {
+    require(
+        formation_length_mm > 0,
+        format!("{context} besitzt keine positive Formationslaenge."),
+    )?;
+    let mut remaining_mm = formation_length_mm;
+    let mut prefix = Vec::new();
+    let mut remainder = Vec::new();
+    for leg in &route.legs {
+        if remaining_mm == 0 {
+            remainder.push(leg.clone());
+            continue;
+        }
+        let leg_length_mm =
+            i64::try_from(leg.edge_entry_mm.abs_diff(leg.edge_exit_mm)).unwrap_or(i64::MAX);
+        if remaining_mm >= leg_length_mm {
+            prefix.push(leg.clone());
+            remaining_mm = remaining_mm.checked_sub(leg_length_mm).ok_or_else(|| {
+                GermanyOperationalV2Error::new(format!("{context} laeuft in der Laenge ueber."))
+            })?;
+        } else {
+            let seed_exit = match leg.direction.as_str() {
+                "along" => leg.edge_entry_mm.checked_add(remaining_mm),
+                "against" => leg.edge_entry_mm.checked_sub(remaining_mm),
+                _ => None,
+            }
+            .ok_or_else(|| GermanyOperationalV2Error::new(format!("{context} laeuft ueber.")))?;
+            prefix.push(passenger_leg_slice(leg, leg.edge_entry_mm, seed_exit));
+            remainder.push(passenger_leg_slice(leg, seed_exit, leg.edge_exit_mm));
+            remaining_mm = 0;
+        }
+    }
+    require(
+        remaining_mm == 0 && !remainder.is_empty(),
+        format!("{context} deckt die Formation oder die folgende Bewegung nicht physisch ab."),
+    )?;
+    Ok((prefix, remainder))
+}
+
+fn terminal_intervals(seed: &[TimetableLegInput]) -> Vec<TurnaroundTerminalInterval> {
+    seed.iter()
+        .map(|leg| TurnaroundTerminalInterval {
+            edge_id: leg.edge_id.clone(),
+            from_mm: leg.edge_entry_mm.min(leg.edge_exit_mm),
+            to_mm: leg.edge_entry_mm.max(leg.edge_exit_mm),
+        })
+        .collect()
+}
+
+fn canonical_terminal_occupancy(
+    seed: &[TimetableLegInput],
+    flip_direction: bool,
+) -> BTreeSet<(String, i64, i64, String)> {
+    seed.iter()
+        .map(|leg| {
+            let direction = if flip_direction {
+                reverse_direction(&leg.direction).unwrap_or("invalid")
+            } else {
+                leg.direction.as_str()
+            };
+            (
+                leg.edge_id.clone(),
+                leg.edge_entry_mm.min(leg.edge_exit_mm),
+                leg.edge_entry_mm.max(leg.edge_exit_mm),
+                direction.to_owned(),
+            )
+        })
+        .collect()
+}
+
+fn terminal_occupancies_overlap(left: &[TimetableLegInput], right: &[TimetableLegInput]) -> bool {
+    left.iter().any(|left_leg| {
+        right.iter().any(|right_leg| {
+            if left_leg.edge_id != right_leg.edge_id {
+                return false;
+            }
+            let left_from = left_leg.edge_entry_mm.min(left_leg.edge_exit_mm);
+            let left_to = left_leg.edge_entry_mm.max(left_leg.edge_exit_mm);
+            let right_from = right_leg.edge_entry_mm.min(right_leg.edge_exit_mm);
+            let right_to = right_leg.edge_entry_mm.max(right_leg.edge_exit_mm);
+            left_from < right_to && right_from < left_to
+        })
+    })
+}
+
+fn occupancy_resources_for_legs(
+    transaction: &redb::ReadTransaction,
+    legs: &[TimetableLegInput],
+) -> Result<BTreeSet<String>> {
+    let mut resources = BTreeSet::new();
+    for leg in legs {
+        let track = get_track(transaction, &leg.edge_id)?;
+        resources.extend(track_block_resources(transaction, &track.id)?);
+        resources.insert(boundary_resource(&track, leg.edge_entry_mm)?);
+        resources.insert(boundary_resource(&track, leg.edge_exit_mm)?);
+    }
+    Ok(resources)
+}
+
+fn resources_from_template_value(value: &Value) -> Result<BTreeSet<String>> {
+    let mut result = BTreeSet::new();
+    for field in ["pathResources", "overlapResources", "flankResources"] {
+        let values = value.get(field).and_then(Value::as_array).ok_or_else(|| {
+            GermanyOperationalV2Error::new(format!(
+                "Abgeleitete Fahrstrasse besitzt kein kanonisches `{field}`."
+            ))
+        })?;
+        for value in values {
+            let id = value.as_str().filter(|id| !id.is_empty()).ok_or_else(|| {
+                GermanyOperationalV2Error::new("Abgeleitete Fahrstrassenressource ist ungueltig.")
+            })?;
+            result.insert(id.to_owned());
+        }
     }
     Ok(result)
 }
@@ -2284,6 +3750,1496 @@ fn switch_positions_for_leg(
         }
     }
     Ok(result)
+}
+
+fn shunting_template_value(
+    transaction: &redb::ReadTransaction,
+    route: &TimetableRouteInput,
+    authority_start: i64,
+) -> Result<(String, Value)> {
+    let authority_end = route_length(route)?;
+    require(
+        authority_start > 0 && authority_end > authority_start,
+        format!(
+            "Rangierfahrstrasse fuer `{}` besitzt keinen Fahrweg hinter dem Formation-Seed.",
+            route.route_version_id
+        ),
+    )?;
+    let mut route_cursor = 0_i64;
+    let mut path_resources = BTreeSet::new();
+    let mut switch_positions = BTreeMap::new();
+    let mut entry = None;
+    let mut overlap = None;
+    for leg in &route.legs {
+        let length =
+            i64::try_from(leg.edge_entry_mm.abs_diff(leg.edge_exit_mm)).unwrap_or(i64::MAX);
+        let leg_end = route_cursor.checked_add(length).ok_or_else(|| {
+            GermanyOperationalV2Error::new(format!(
+                "Rangierlaufweg `{}` laeuft ueber.",
+                route.route_version_id
+            ))
+        })?;
+        if route_cursor >= authority_start {
+            let track = get_track(transaction, &leg.edge_id)?;
+            if entry.is_none() {
+                require(
+                    route_cursor == authority_start,
+                    format!(
+                        "Rangierlaufweg `{}` besitzt bei {authority_start} mm keine exakte Leggrenze.",
+                        route.route_version_id
+                    ),
+                )?;
+                entry = Some(boundary_resource(&track, leg.edge_entry_mm)?);
+            }
+            path_resources.extend(track_block_resources(transaction, &track.id)?);
+            overlap = Some(boundary_resource(&track, leg.edge_exit_mm)?);
+            for (switch_id, position) in switch_positions_for_leg(
+                transaction,
+                &track,
+                leg.edge_entry_mm,
+                leg.edge_exit_mm,
+                &route.route_version_id,
+            )? {
+                if let Some(previous) = switch_positions.insert(switch_id.clone(), position.clone())
+                {
+                    require(
+                        previous == position,
+                        format!(
+                            "Rangierlaufweg `{}` verlangt fuer Weiche `{switch_id}` widerspruechliche Lagen.",
+                            route.route_version_id
+                        ),
+                    )?;
+                }
+            }
+        }
+        route_cursor = leg_end;
+    }
+    let entry = entry.ok_or_else(|| {
+        GermanyOperationalV2Error::new(format!(
+            "Rangierlaufweg `{}` besitzt kein erstes Bewegungsleg.",
+            route.route_version_id
+        ))
+    })?;
+    let overlap = overlap.ok_or_else(|| {
+        GermanyOperationalV2Error::new(format!(
+            "Rangierlaufweg `{}` besitzt kein letztes Bewegungsleg.",
+            route.route_version_id
+        ))
+    })?;
+    let mut flank_resources = BTreeSet::from([entry]);
+    if flank_resources.contains(&overlap) {
+        flank_resources.insert(stable_id(
+            "resource:synthetic-turnaround-loop-flank:",
+            &[&route.route_version_id],
+        ));
+    }
+    flank_resources.remove(&overlap);
+    require(
+        !path_resources.is_empty() && !flank_resources.is_empty(),
+        format!(
+            "Rangierfahrstrasse fuer `{}` besitzt keine vollstaendige Ressourcenbindung.",
+            route.route_version_id
+        ),
+    )?;
+    let id = turnaround_shunting_interlocking_id(&route.route_version_id);
+    Ok((
+        id.clone(),
+        json!({
+            "id": id,
+            "routeTemplateId": route.template_id,
+            "signalId": turnaround_shunting_signal_id(&route.route_version_id),
+            "movementKind": "shunting",
+            "pathResources": path_resources,
+            "overlapResources": BTreeSet::from([overlap]),
+            "flankResources": flank_resources,
+            "switchPositions": switch_positions,
+            "authorityStartRouteMm": authority_start,
+            "authorityEndRouteMm": authority_end,
+            "releaseAfterTailRouteMm": authority_end,
+        }),
+    ))
+}
+
+fn passenger_leg_slice(
+    source: &TimetableLegInput,
+    edge_entry_mm: i64,
+    edge_exit_mm: i64,
+) -> TimetableLegInput {
+    let mut result = source.clone();
+    result.edge_entry_mm = edge_entry_mm;
+    result.edge_exit_mm = edge_exit_mm;
+    result
+}
+
+fn validate_derived_route(
+    transaction: &redb::ReadTransaction,
+    route: &TimetableRouteInput,
+) -> Result<()> {
+    require(
+        !route.route_version_id.is_empty()
+            && !route.template_id.is_empty()
+            && !route.legs.is_empty()
+            && route.predecessor_id.is_some() == route.transition_route_mm.is_some(),
+        format!(
+            "Abgeleiteter Laufweg `{}` ist unvollstaendig.",
+            route.route_version_id
+        ),
+    )?;
+    let mut previous: Option<(TimetableLegInput, TrackRecord)> = None;
+    let mut total = 0_i64;
+    for (index, leg) in route.legs.iter().enumerate() {
+        let track = get_track(transaction, &leg.edge_id)?;
+        let length = validate_timetable_leg(
+            &track,
+            leg,
+            &format!(
+                "Abgeleiteter Laufweg `{}` Leg {index}",
+                route.route_version_id
+            ),
+        )?;
+        total = total.checked_add(length).ok_or_else(|| {
+            GermanyOperationalV2Error::new(format!(
+                "Abgeleiteter Laufweg `{}` laeuft ueber.",
+                route.route_version_id
+            ))
+        })?;
+        require(
+            total <= MAX_SAFE_INTEGER,
+            format!(
+                "Abgeleiteter Laufweg `{}` ueberschreitet sichere Ganzzahlen.",
+                route.route_version_id
+            ),
+        )?;
+        if let Some((previous_leg, previous_track)) = &previous {
+            if previous_leg.edge_id == leg.edge_id {
+                require(
+                    previous_leg.edge_exit_mm == leg.edge_entry_mm,
+                    format!(
+                        "Abgeleiteter Laufweg `{}` ist auf derselben Kante nicht lueckenlos.",
+                        route.route_version_id
+                    ),
+                )?;
+            } else {
+                let previous_node = node_at_offset(previous_track, previous_leg.edge_exit_mm);
+                let next_node = node_at_offset(&track, leg.edge_entry_mm);
+                require(
+                    previous_node.is_some() && previous_node == next_node,
+                    format!(
+                        "Abgeleiteter Laufweg `{}` besitzt eine physische Topologieluecke.",
+                        route.route_version_id
+                    ),
+                )?;
+            }
+        }
+        previous = Some((leg.clone(), track));
+    }
+    if let Some(transition) = route.transition_route_mm {
+        require(
+            (0..=total).contains(&transition),
+            format!(
+                "Abgeleiteter Laufweg `{}` besitzt einen ungueltigen Continuity-Anker.",
+                route.route_version_id
+            ),
+        )?;
+    }
+    Ok(())
+}
+
+fn outbound_routes_for_terminal(
+    transaction: &redb::ReadTransaction,
+    inbound: &TimetableRouteInput,
+    terminal_leg: &TimetableLegInput,
+) -> Result<Vec<TimetableRouteInput>> {
+    let direction = reverse_direction(&terminal_leg.direction)?;
+    let key = timetable_route_start_key_parts(
+        &terminal_leg.edge_id,
+        direction,
+        terminal_leg.edge_exit_mm,
+    );
+    let by_start = transaction
+        .open_multimap_table(TIMETABLE_ROUTES_BY_START)
+        .map_err(db_error)?;
+    let routes = transaction.open_table(TIMETABLE_ROUTES).map_err(db_error)?;
+    let mut ids = Vec::new();
+    let mut values = by_start.get(key.as_str()).map_err(db_error)?;
+    while let Some(value) = values.next().transpose().map_err(db_error)? {
+        if value.value() != inbound.route_version_id {
+            ids.push(value.value().to_owned());
+        }
+    }
+    ids.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
+    let mut result = Vec::new();
+    for id in ids {
+        let serialized = routes.get(id.as_str()).map_err(db_error)?.ok_or_else(|| {
+            GermanyOperationalV2Error::new(format!(
+                "Timetable-Startindex verweist auf unbekannten Laufweg `{id}`."
+            ))
+        })?;
+        result.push(route_from_json(
+            serialized.value(),
+            "Ausgangs-Personenlaufweg im Timetable-Index",
+        )?);
+    }
+    Ok(result)
+}
+
+fn generated_route_ids(
+    inbound_route_id: &str,
+    outbound_route_id: &str,
+    formation_length_mm: i64,
+    candidate: &StablingCandidate,
+) -> (String, String, String, String, String, String, String) {
+    let length = formation_length_mm.to_string();
+    let path = candidate
+        .path
+        .iter()
+        .map(|edge| format!("{}:{}", edge.track.id, edge.direction))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let parts = [
+        inbound_route_id,
+        outbound_route_id,
+        length.as_str(),
+        path.as_str(),
+    ];
+    (
+        stable_id("route:synthetic-turnaround-shunt-in:", &parts),
+        stable_id("template:synthetic-turnaround-shunt-in:", &parts),
+        stable_id("route:synthetic-turnaround-shunt-out:", &parts),
+        stable_id("template:synthetic-turnaround-shunt-out:", &parts),
+        stable_id("route:synthetic-turnaround-outbound:", &parts),
+        stable_id("template:synthetic-turnaround-outbound:", &parts),
+        stable_id("turnaround:synthetic-physical:", &parts),
+    )
+}
+
+fn insert_generated<T: Serialize>(
+    values: &mut BTreeMap<String, String>,
+    id: String,
+    value: &T,
+    context: &str,
+) -> Result<()> {
+    let serialized = serde_json::to_string(value).map_err(|error| {
+        GermanyOperationalV2Error::new(format!("{context} kann nicht serialisiert werden: {error}"))
+    })?;
+    if let Some(previous) = values.insert(id.clone(), serialized.clone()) {
+        require(
+            previous == serialized,
+            format!("Kollidierende abgeleitete ID `{id}` fuer {context}."),
+        )?;
+    }
+    Ok(())
+}
+
+fn generate_train_route_artifacts(
+    transaction: &redb::ReadTransaction,
+    route: &TimetableRouteInput,
+    head_route_mm: i64,
+    generated_interlocking: &mut BTreeMap<String, String>,
+    generated_signals: &mut BTreeSet<String>,
+    generated_resources: &mut BTreeSet<String>,
+    context: &str,
+) -> Result<(TurnaroundRouteDispatch, BTreeSet<String>)> {
+    let mut authority_start = 0_i64;
+    let mut dispatch = None;
+    let mut movement_resources = BTreeSet::new();
+    for leg_index in 0..route.legs.len() {
+        let (id, value, authority_end) =
+            template_value(transaction, route, leg_index, authority_start)?;
+        let resources = resources_from_template_value(&value)?;
+        if authority_start >= head_route_mm {
+            movement_resources.extend(resources.iter().cloned());
+        }
+        if authority_start == head_route_mm {
+            dispatch = Some((id.clone(), resources.clone()));
+        }
+        generated_signals.insert(
+            value["signalId"]
+                .as_str()
+                .expect("abgeleitete Signal-ID")
+                .to_owned(),
+        );
+        generated_resources.extend(resources);
+        insert_generated(generated_interlocking, id, &value, context)?;
+        authority_start = authority_end;
+    }
+    let (dispatch_interlocking_route_id, resource_ids) = dispatch.ok_or_else(|| {
+        GermanyOperationalV2Error::new(format!(
+            "Laufweg `{}` besitzt bei {head_route_mm} mm keine exakte erste Fahrstrasse.",
+            route.route_version_id
+        ))
+    })?;
+    let route_leg_count = u32::try_from(route.legs.len())
+        .map_err(|_| GermanyOperationalV2Error::new("Zu viele Laufweg-Legs."))?;
+    Ok((
+        TurnaroundRouteDispatch {
+            route_version_id: route.route_version_id.clone(),
+            predecessor_base_route_version_id: route.predecessor_id.clone().ok_or_else(|| {
+                GermanyOperationalV2Error::new(format!(
+                    "Abgeleiteter Dispatch-Laufweg `{}` besitzt keine statische Vorgaengerbindung.",
+                    route.route_version_id
+                ))
+            })?,
+            dispatch_interlocking_route_id,
+            head_route_mm,
+            minimum_runtime_ms: minimum_route_runtime_ms(transaction, route, head_route_mm)?,
+            resource_ids,
+            route_leg_count,
+            protection_contract_runs: protection_contract_runs(&route.legs)?,
+        },
+        movement_resources,
+    ))
+}
+
+fn add_generated_route_resources(
+    transaction: &redb::ReadTransaction,
+    route: &TimetableRouteInput,
+    generated_resources: &mut BTreeSet<String>,
+) -> Result<()> {
+    for leg in &route.legs {
+        let track = get_track(transaction, &leg.edge_id)?;
+        generated_resources.insert(boundary_resource(&track, leg.edge_entry_mm)?);
+        generated_resources.insert(boundary_resource(&track, leg.edge_exit_mm)?);
+    }
+    Ok(())
+}
+
+fn same_physical_point(
+    left_track: &TrackRecord,
+    left_offset_mm: i64,
+    right_track: &TrackRecord,
+    right_offset_mm: i64,
+) -> bool {
+    (left_track.id == right_track.id && left_offset_mm == right_offset_mm)
+        || node_at_offset(left_track, left_offset_mm).is_some_and(|left_node| {
+            node_at_offset(right_track, right_offset_mm) == Some(left_node)
+        })
+}
+
+fn direct_route_ids(
+    inbound_route_id: &str,
+    outbound_route_id: &str,
+    formation_length_mm: i64,
+) -> (String, String, String, String, String) {
+    let length = formation_length_mm.to_string();
+    let parts = [inbound_route_id, outbound_route_id, length.as_str()];
+    (
+        stable_id("route:synthetic-direct-through:", &parts),
+        stable_id("template:synthetic-direct-through:", &parts),
+        stable_id("route:synthetic-direct-outbound:", &parts),
+        stable_id("template:synthetic-direct-outbound:", &parts),
+        stable_id("direct:synthetic-physical:", &parts),
+    )
+}
+
+fn discover_turnaround_pairs(
+    transaction: &redb::ReadTransaction,
+) -> Result<Vec<TurnaroundPairDemand>> {
+    let routes = transaction.open_table(TIMETABLE_ROUTES).map_err(db_error)?;
+    let mut values = Vec::new();
+    for entry in routes.iter().map_err(db_error)? {
+        let (_, serialized) = entry.map_err(db_error)?;
+        values.push(route_from_json(
+            serialized.value(),
+            "Timetable-Laufweg fuer Paarableitung",
+        )?);
+    }
+    let mut pairs = BTreeSet::new();
+    for inbound in &values {
+        let inbound_leg = inbound.legs.last().expect("validierter Timetable-Laufweg");
+        let inbound_track = get_track(transaction, &inbound_leg.edge_id)?;
+        for outbound in &values {
+            if inbound.route_version_id == outbound.route_version_id {
+                continue;
+            }
+            let outbound_leg = outbound
+                .legs
+                .first()
+                .expect("validierter Timetable-Laufweg");
+            let outbound_track = get_track(transaction, &outbound_leg.edge_id)?;
+            if same_physical_point(
+                &inbound_track,
+                inbound_leg.edge_exit_mm,
+                &outbound_track,
+                outbound_leg.edge_entry_mm,
+            ) {
+                pairs.insert(TurnaroundPairDemand {
+                    inbound_route_version_id: inbound.route_version_id.clone(),
+                    outbound_route_version_id: outbound.route_version_id.clone(),
+                });
+            }
+        }
+    }
+    Ok(pairs.into_iter().collect())
+}
+
+fn derive_direct_templates(
+    database: &Database,
+    policy: &PolicySpec,
+    required_pairs: Option<&[TurnaroundPairDemand]>,
+) -> Result<BTreeSet<(String, String, i64)>> {
+    if policy.terminal_formation_lengths_mm.is_empty() {
+        return Ok(BTreeSet::new());
+    }
+    let transaction = database.begin_read().map_err(db_error)?;
+    let routes = transaction.open_table(TIMETABLE_ROUTES).map_err(db_error)?;
+    let pairs = required_pairs.map_or_else(
+        || discover_turnaround_pairs(&transaction),
+        |pairs| Ok(pairs.to_vec()),
+    )?;
+    let mut generated_routes = BTreeMap::<String, String>::new();
+    let mut generated_interlocking = BTreeMap::<String, String>::new();
+    let mut generated_templates = BTreeMap::<String, String>::new();
+    let mut generated_signals = BTreeSet::<String>::new();
+    let mut generated_resources = BTreeSet::<String>::new();
+    let mut covered = BTreeSet::new();
+
+    for pair in pairs {
+        let inbound_serialized = routes
+            .get(pair.inbound_route_version_id.as_str())
+            .map_err(db_error)?
+            .ok_or_else(|| {
+                GermanyOperationalV2Error::new(format!(
+                    "Turnaround-Paar verweist auf unbekannte Ankunftsroute `{}`.",
+                    pair.inbound_route_version_id
+                ))
+            })?;
+        let outbound_serialized = routes
+            .get(pair.outbound_route_version_id.as_str())
+            .map_err(db_error)?
+            .ok_or_else(|| {
+                GermanyOperationalV2Error::new(format!(
+                    "Turnaround-Paar verweist auf unbekannte Ausgangsroute `{}`.",
+                    pair.outbound_route_version_id
+                ))
+            })?;
+        let inbound = route_from_json(inbound_serialized.value(), "Direct-Ankunftsroute")?;
+        let outbound_base = route_from_json(outbound_serialized.value(), "Direct-Ausgangsroute")?;
+        let inbound_leg = inbound.legs.last().expect("validierte Ankunftsroute");
+        let outbound_leg = outbound_base
+            .legs
+            .first()
+            .expect("validierte Ausgangsroute");
+        let inbound_track = get_track(&transaction, &inbound_leg.edge_id)?;
+        let outbound_track = get_track(&transaction, &outbound_leg.edge_id)?;
+        if !same_physical_point(
+            &inbound_track,
+            inbound_leg.edge_exit_mm,
+            &outbound_track,
+            outbound_leg.edge_entry_mm,
+        ) {
+            continue;
+        }
+        for &formation_length_mm in &policy.terminal_formation_lengths_mm {
+            let inbound_seed = formation_tail_legs(
+                &inbound,
+                formation_length_mm,
+                &format!("Direct-Ankunft `{}`", inbound.route_version_id),
+            )?;
+            let (outbound_seed, outbound_remainder) = formation_prefix_and_remainder(
+                &outbound_base,
+                formation_length_mm,
+                &format!("Direct-Ausgang `{}`", outbound_base.route_version_id),
+            )?;
+            let source_intervals = terminal_intervals(&inbound_seed);
+            let target_occupancy = canonical_terminal_occupancy(&outbound_seed, false);
+            let reverse_continuity =
+                canonical_terminal_occupancy(&inbound_seed, true) == target_occupancy;
+            if !reverse_continuity && terminal_occupancies_overlap(&inbound_seed, &outbound_seed) {
+                continue;
+            }
+            let (through_route_id, through_template_id, route_id, template_id, direct_id) =
+                direct_route_ids(
+                    &inbound.route_version_id,
+                    &outbound_base.route_version_id,
+                    formation_length_mm,
+                );
+            let mut occupancy_resources =
+                occupancy_resources_for_legs(&transaction, &inbound_seed)?;
+            let through = if reverse_continuity {
+                None
+            } else {
+                let mut legs = inbound_seed.clone();
+                legs.extend(outbound_seed.iter().cloned());
+                let route = TimetableRouteInput {
+                    route_version_id: through_route_id.clone(),
+                    template_id: through_template_id,
+                    predecessor_id: Some(inbound.route_version_id.clone()),
+                    transition_route_mm: Some(formation_length_mm),
+                    legs,
+                };
+                validate_derived_route(&transaction, &route)?;
+                let (dispatch, movement_resources) = generate_train_route_artifacts(
+                    &transaction,
+                    &route,
+                    formation_length_mm,
+                    &mut generated_interlocking,
+                    &mut generated_signals,
+                    &mut generated_resources,
+                    "Direct-Through-Fahrstrasse",
+                )?;
+                occupancy_resources
+                    .extend(occupancy_resources_for_legs(&transaction, &outbound_seed)?);
+                occupancy_resources.extend(movement_resources);
+                add_generated_route_resources(&transaction, &route, &mut generated_resources)?;
+                insert_generated(
+                    &mut generated_routes,
+                    through_route_id.clone(),
+                    &route,
+                    "Direct-Through-Laufweg",
+                )?;
+                Some(dispatch)
+            };
+            let predecessor_id = through
+                .as_ref()
+                .map_or_else(|| inbound.route_version_id.clone(), |_| through_route_id);
+            let mut legs = outbound_seed;
+            legs.extend(outbound_remainder);
+            require(
+                legs.len() >= 2,
+                format!(
+                    "Direct-Ausgang `{}` besitzt keine Bewegung hinter dem Formation-Seed.",
+                    outbound_base.route_version_id
+                ),
+            )?;
+            let qualified = TimetableRouteInput {
+                route_version_id: route_id.clone(),
+                template_id,
+                predecessor_id: Some(predecessor_id),
+                transition_route_mm: Some(formation_length_mm),
+                legs,
+            };
+            validate_derived_route(&transaction, &qualified)?;
+            let (dispatch, _) = generate_train_route_artifacts(
+                &transaction,
+                &qualified,
+                formation_length_mm,
+                &mut generated_interlocking,
+                &mut generated_signals,
+                &mut generated_resources,
+                "Direct-Ausgangsfahrstrasse",
+            )?;
+            add_generated_route_resources(&transaction, &qualified, &mut generated_resources)?;
+            insert_generated(
+                &mut generated_routes,
+                route_id,
+                &qualified,
+                "Direct-Ausgangslaufweg",
+            )?;
+            generated_resources.extend(occupancy_resources.iter().cloned());
+            let direct = DirectTemplateRecord {
+                id: direct_id.clone(),
+                inbound_route_version_id: inbound.route_version_id.clone(),
+                outbound_route_version_id: outbound_base.route_version_id.clone(),
+                formation_length_mm,
+                terminal_intervals: source_intervals,
+                movement_kind: "train".to_owned(),
+                continuity: if reverse_continuity {
+                    "reverse-direction".to_owned()
+                } else {
+                    "same-direction".to_owned()
+                },
+                maximum_dwell_ms: policy.maximum_direct_dwell_ms,
+                resource_set_sha256: resource_set_sha256(&occupancy_resources),
+                resource_ids: occupancy_resources,
+                through,
+                outbound: dispatch,
+            };
+            insert_generated(
+                &mut generated_templates,
+                direct_id,
+                &direct,
+                "Direct-Template",
+            )?;
+            covered.insert((
+                inbound.route_version_id.clone(),
+                outbound_base.route_version_id.clone(),
+                formation_length_mm,
+            ));
+        }
+    }
+    drop(routes);
+    drop(transaction);
+
+    let mut write = database.begin_write().map_err(db_error)?;
+    write.set_durability(Durability::None);
+    for (definition, values, context) in [
+        (TURNAROUND_ROUTES, &generated_routes, "Direct-Laufweg"),
+        (
+            TURNAROUND_INTERLOCKING,
+            &generated_interlocking,
+            "Direct-Fahrstrasse",
+        ),
+        (DIRECT_TEMPLATES, &generated_templates, "Direct-Template"),
+    ] {
+        let mut table = write.open_table(definition).map_err(db_error)?;
+        for (id, serialized) in values {
+            require(
+                table
+                    .insert(id.as_str(), serialized.as_str())
+                    .map_err(db_error)?
+                    .is_none(),
+                format!("Doppelte {context}-ID `{id}`."),
+            )?;
+        }
+    }
+    {
+        let mut signals = write.open_table(SIGNALS).map_err(db_error)?;
+        for id in generated_signals {
+            let _ = signals.insert(id.as_str(), &()).map_err(db_error)?;
+        }
+    }
+    {
+        let mut resources = write.open_table(BLOCK_RESOURCES).map_err(db_error)?;
+        for id in generated_resources {
+            let _ = resources.insert(id.as_str(), &()).map_err(db_error)?;
+        }
+    }
+    write.commit().map_err(db_error)?;
+    Ok(covered)
+}
+
+fn transfer_route_ids(
+    demand_id: &str,
+    source_route_id: &str,
+    target_route_id: &str,
+    formation_length_mm: i64,
+) -> (String, String, String, String, String) {
+    let length = formation_length_mm.to_string();
+    let parts = [demand_id, source_route_id, target_route_id, length.as_str()];
+    (
+        stable_id("route:synthetic-transfer-qualified:", &parts),
+        stable_id("template:synthetic-transfer-qualified:", &parts),
+        stable_id("route:synthetic-transfer-target-outbound:", &parts),
+        stable_id("template:synthetic-transfer-target-outbound:", &parts),
+        stable_id("transfer-template:synthetic-physical:", &parts),
+    )
+}
+
+fn generate_movement_route_artifacts(
+    transaction: &redb::ReadTransaction,
+    route: &TimetableRouteInput,
+    movement_kind: &str,
+    head_route_mm: i64,
+    generated_interlocking: &mut BTreeMap<String, String>,
+    generated_signals: &mut BTreeSet<String>,
+    generated_resources: &mut BTreeSet<String>,
+) -> Result<(TurnaroundRouteDispatch, BTreeSet<String>)> {
+    match movement_kind {
+        "train" => generate_train_route_artifacts(
+            transaction,
+            route,
+            head_route_mm,
+            generated_interlocking,
+            generated_signals,
+            generated_resources,
+            "Transfer-Fahrstrasse",
+        ),
+        "shunting" => {
+            let (id, value) = shunting_template_value(transaction, route, head_route_mm)?;
+            let resources = resources_from_template_value(&value)?;
+            generated_signals.insert(
+                value["signalId"]
+                    .as_str()
+                    .expect("abgeleitete Rangiersignal-ID")
+                    .to_owned(),
+            );
+            generated_resources.extend(resources.iter().cloned());
+            insert_generated(
+                generated_interlocking,
+                id.clone(),
+                &value,
+                "Transfer-Fahrstrasse",
+            )?;
+            Ok((
+                TurnaroundRouteDispatch {
+                    route_version_id: route.route_version_id.clone(),
+                    predecessor_base_route_version_id: route.predecessor_id.clone().ok_or_else(
+                        || {
+                            GermanyOperationalV2Error::new(format!(
+                                "Abgeleiteter Rangierlaufweg `{}` besitzt keine statische Vorgaengerbindung.",
+                                route.route_version_id
+                            ))
+                        },
+                    )?,
+                    dispatch_interlocking_route_id: id,
+                    head_route_mm,
+                    minimum_runtime_ms: minimum_route_runtime_ms(
+                        transaction,
+                        route,
+                        head_route_mm,
+                    )?,
+                    resource_ids: resources.clone(),
+                    route_leg_count: u32::try_from(route.legs.len())
+                        .map_err(|_| GermanyOperationalV2Error::new("Zu viele Laufweg-Legs."))?,
+                    protection_contract_runs: protection_contract_runs(&route.legs)?,
+                },
+                resources,
+            ))
+        }
+        other => Err(GermanyOperationalV2Error::new(format!(
+            "Transferlaufweg `{}` besitzt ungueltige Bewegungsart `{other}`.",
+            route.route_version_id
+        ))),
+    }
+}
+
+fn derive_transfer_templates(
+    database: &Database,
+    policy: &PolicySpec,
+    inputs: &[TransferRouteInput],
+) -> Result<()> {
+    if inputs.is_empty() {
+        return Ok(());
+    }
+    let transaction = database.begin_read().map_err(db_error)?;
+    let routes = transaction.open_table(TIMETABLE_ROUTES).map_err(db_error)?;
+    let mut generated_routes = BTreeMap::<String, String>::new();
+    let mut generated_interlocking = BTreeMap::<String, String>::new();
+    let mut generated_templates = BTreeMap::<String, String>::new();
+    let mut generated_signals = BTreeSet::<String>::new();
+    let mut generated_resources = BTreeSet::<String>::new();
+
+    for input in inputs {
+        require(
+            !input.id.is_empty()
+                && !input.lot_id.is_empty()
+                && !input.asset_compatibility_key.is_empty()
+                && !input.source_circulation_id.is_empty()
+                && !input.target_circulation_id.is_empty()
+                && !input.source_passenger_leg_id.is_empty()
+                && !input.target_passenger_leg_id.is_empty()
+                && !input.source_location_id.is_empty()
+                && !input.target_location_id.is_empty()
+                && !input.source_physical_stop_id.is_empty()
+                && !input.target_physical_stop_id.is_empty()
+                && input.source_location_id != input.target_location_id
+                && input.available_window_s > 0
+                && input
+                    .latest_arrival_s
+                    .checked_sub(input.earliest_departure_s)
+                    == Some(input.available_window_s)
+                && matches!(input.movement_kind.as_str(), "train" | "shunting")
+                && input.total_length_mm > 0
+                && input.weighted_cost_mm >= input.total_length_mm
+                && input.minimum_runtime_ms > 0
+                && input.formation_lengths_mm == policy.terminal_formation_lengths_mm,
+            format!(
+                "Transferanforderung `{}` besitzt keinen vollstaendigen fail-closed Vertrag.",
+                input.id
+            ),
+        )?;
+        let source_serialized = routes
+            .get(input.source_passenger_route_version_id.as_str())
+            .map_err(db_error)?
+            .ok_or_else(|| {
+                GermanyOperationalV2Error::new(format!(
+                    "Transferanforderung `{}` verweist auf unbekannte Quell-Personenroute `{}`.",
+                    input.id, input.source_passenger_route_version_id
+                ))
+            })?;
+        let target_serialized = routes
+            .get(input.target_passenger_route_version_id.as_str())
+            .map_err(db_error)?
+            .ok_or_else(|| {
+                GermanyOperationalV2Error::new(format!(
+                    "Transferanforderung `{}` verweist auf unbekannte Ziel-Personenroute `{}`.",
+                    input.id, input.target_passenger_route_version_id
+                ))
+            })?;
+        let source = route_from_json(source_serialized.value(), "Transfer-Quellroute")?;
+        let target = route_from_json(target_serialized.value(), "Transfer-Zielroute")?;
+        let raw = TimetableRouteInput {
+            route_version_id: input.route_version_id.clone(),
+            template_id: input.template_id.clone(),
+            predecessor_id: None,
+            transition_route_mm: None,
+            legs: input.legs.clone(),
+        };
+        validate_derived_route(&transaction, &raw)?;
+        let raw_length_mm = route_length(&raw)?;
+        let raw_runtime_ms = minimum_route_runtime_ms(&transaction, &raw, 0)?;
+        require(
+            raw_length_mm == input.total_length_mm && raw_runtime_ms == input.minimum_runtime_ms,
+            format!(
+                "Transferanforderung `{}` driftet in nativer Laenge/Laufzeit: {} mm/{raw_runtime_ms} ms statt {} mm/{} ms.",
+                input.id, raw_length_mm, input.total_length_mm, input.minimum_runtime_ms
+            ),
+        )?;
+        let source_last = source.legs.last().expect("validierte Quellroute");
+        let target_first = target.legs.first().expect("validierte Zielroute");
+        let source_track = get_track(&transaction, &source_last.edge_id)?;
+        let target_track = get_track(&transaction, &target_first.edge_id)?;
+        let raw_first = raw.legs.first().expect("validierte Transferroute");
+        let raw_last = raw.legs.last().expect("validierte Transferroute");
+        let raw_first_track = get_track(&transaction, &raw_first.edge_id)?;
+        let raw_last_track = get_track(&transaction, &raw_last.edge_id)?;
+        require(
+            same_physical_point(
+                &source_track,
+                source_last.edge_exit_mm,
+                &raw_first_track,
+                raw_first.edge_entry_mm,
+            ) && same_physical_point(
+                &raw_last_track,
+                raw_last.edge_exit_mm,
+                &target_track,
+                target_first.edge_entry_mm,
+            ),
+            format!(
+                "Transferanforderung `{}` schliesst nicht physisch an beide Personenrouten an.",
+                input.id
+            ),
+        )?;
+
+        for &formation_length_mm in &input.formation_lengths_mm {
+            let source_seed = formation_tail_legs(
+                &source,
+                formation_length_mm,
+                &format!("Transferquelle `{}`", input.id),
+            )?;
+            let (target_seed, target_remainder) = formation_prefix_and_remainder(
+                &target,
+                formation_length_mm,
+                &format!("Transferziel `{}`", input.id),
+            )?;
+            let (
+                transfer_route_id,
+                transfer_template_id,
+                target_outbound_route_id,
+                target_outbound_template_id,
+                record_id,
+            ) = transfer_route_ids(
+                &input.id,
+                &source.route_version_id,
+                &target.route_version_id,
+                formation_length_mm,
+            );
+            let mut transfer_legs = Vec::with_capacity(
+                raw.legs
+                    .len()
+                    .saturating_add(source_seed.len())
+                    .saturating_add(target_seed.len()),
+            );
+            transfer_legs.extend(source_seed);
+            transfer_legs.extend(raw.legs.iter().cloned());
+            transfer_legs.extend(target_seed.iter().cloned());
+            let transfer = TimetableRouteInput {
+                route_version_id: transfer_route_id.clone(),
+                template_id: transfer_template_id,
+                predecessor_id: Some(source.route_version_id.clone()),
+                transition_route_mm: Some(formation_length_mm),
+                legs: transfer_legs,
+            };
+            validate_derived_route(&transaction, &transfer)?;
+
+            let mut target_outbound_legs = target_seed;
+            target_outbound_legs.extend(target_remainder);
+            require(
+                target_outbound_legs.len() >= 2,
+                format!(
+                    "Transferzielroute `{}` besitzt keine Bewegung hinter dem Formation-Seed.",
+                    target.route_version_id
+                ),
+            )?;
+            let target_outbound = TimetableRouteInput {
+                route_version_id: target_outbound_route_id.clone(),
+                template_id: target_outbound_template_id,
+                predecessor_id: Some(transfer_route_id.clone()),
+                transition_route_mm: Some(formation_length_mm),
+                legs: target_outbound_legs,
+            };
+            validate_derived_route(&transaction, &target_outbound)?;
+
+            let (transfer_dispatch, movement_resources) = generate_movement_route_artifacts(
+                &transaction,
+                &transfer,
+                &input.movement_kind,
+                formation_length_mm,
+                &mut generated_interlocking,
+                &mut generated_signals,
+                &mut generated_resources,
+            )?;
+            let (target_outbound_dispatch, _) = generate_train_route_artifacts(
+                &transaction,
+                &target_outbound,
+                formation_length_mm,
+                &mut generated_interlocking,
+                &mut generated_signals,
+                &mut generated_resources,
+                "Transfer-Zielausgangsfahrstrasse",
+            )?;
+            let window_ms = input.available_window_s.checked_mul(1_000).ok_or_else(|| {
+                GermanyOperationalV2Error::new("Transfer-Zeitfenster laeuft ueber.")
+            })?;
+            require(
+                transfer_dispatch.minimum_runtime_ms <= window_ms,
+                format!(
+                    "Transferanforderung `{}` braucht {} ms, besitzt aber nur {window_ms} ms.",
+                    input.id, transfer_dispatch.minimum_runtime_ms
+                ),
+            )?;
+            for route in [&transfer, &target_outbound] {
+                add_generated_route_resources(&transaction, route, &mut generated_resources)?;
+                insert_generated(
+                    &mut generated_routes,
+                    route.route_version_id.clone(),
+                    route,
+                    "Transfer-Laufweg",
+                )?;
+            }
+            let record = TransferTemplateRecord {
+                id: record_id.clone(),
+                demand_id: input.id.clone(),
+                formation_length_mm,
+                source_passenger_route_version_id: source.route_version_id.clone(),
+                target_passenger_route_version_id: target.route_version_id.clone(),
+                source_location_id: input.source_location_id.clone(),
+                target_location_id: input.target_location_id.clone(),
+                earliest_departure_s: input.earliest_departure_s,
+                latest_arrival_s: input.latest_arrival_s,
+                available_window_s: input.available_window_s,
+                movement_kind: input.movement_kind.clone(),
+                transfer: transfer_dispatch,
+                target_outbound: target_outbound_dispatch,
+                resource_set_sha256: resource_set_sha256(&movement_resources),
+                resource_ids: movement_resources,
+            };
+            insert_generated(
+                &mut generated_templates,
+                record_id,
+                &record,
+                "Transfer-Template",
+            )?;
+        }
+    }
+    drop(routes);
+    drop(transaction);
+
+    let mut write = database.begin_write().map_err(db_error)?;
+    write.set_durability(Durability::None);
+    for (definition, values, context) in [
+        (TRANSFER_ROUTES, &generated_routes, "Transfer-Laufweg"),
+        (
+            TRANSFER_INTERLOCKING,
+            &generated_interlocking,
+            "Transfer-Fahrstrasse",
+        ),
+        (
+            TRANSFER_TEMPLATES,
+            &generated_templates,
+            "Transfer-Template",
+        ),
+    ] {
+        let mut table = write.open_table(definition).map_err(db_error)?;
+        for (id, serialized) in values {
+            require(
+                table
+                    .insert(id.as_str(), serialized.as_str())
+                    .map_err(db_error)?
+                    .is_none(),
+                format!("Doppelte {context}-ID `{id}`."),
+            )?;
+        }
+    }
+    {
+        let mut signals = write.open_table(SIGNALS).map_err(db_error)?;
+        for id in generated_signals {
+            let _ = signals.insert(id.as_str(), &()).map_err(db_error)?;
+        }
+    }
+    {
+        let mut resources = write.open_table(BLOCK_RESOURCES).map_err(db_error)?;
+        for id in generated_resources {
+            let _ = resources.insert(id.as_str(), &()).map_err(db_error)?;
+        }
+    }
+    write.commit().map_err(db_error)
+}
+
+fn derive_turnaround_templates(
+    database: &Database,
+    policy: &PolicySpec,
+    required_pairs: Option<&[TurnaroundPairDemand]>,
+) -> Result<BTreeSet<(String, String, i64)>> {
+    if policy.terminal_formation_lengths_mm.is_empty() {
+        return Ok(BTreeSet::new());
+    }
+    let transaction = database.begin_read().map_err(db_error)?;
+    let routes = transaction.open_table(TIMETABLE_ROUTES).map_err(db_error)?;
+    require(
+        !routes.is_empty().map_err(db_error)?,
+        "terminalFormationLengthsMm verlangt einen gepinnten timetableRoutes-Layer.",
+    )?;
+    let mut generated_routes = BTreeMap::<String, String>::new();
+    let mut generated_interlocking = BTreeMap::<String, String>::new();
+    let mut generated_templates = BTreeMap::<String, String>::new();
+    let mut generated_signals = BTreeSet::<String>::new();
+    let mut generated_resources = BTreeSet::<String>::new();
+    let mut covered = BTreeSet::new();
+    let required_by_inbound = required_pairs.map(|pairs| {
+        let mut result = BTreeMap::<String, BTreeSet<String>>::new();
+        for pair in pairs {
+            result
+                .entry(pair.inbound_route_version_id.clone())
+                .or_default()
+                .insert(pair.outbound_route_version_id.clone());
+        }
+        result
+    });
+
+    for entry in routes.iter().map_err(db_error)? {
+        let (_, serialized) = entry.map_err(db_error)?;
+        let inbound = route_from_json(serialized.value(), "Ankunfts-Personenlaufweg")?;
+        let required_outbound = required_by_inbound
+            .as_ref()
+            .and_then(|pairs| pairs.get(&inbound.route_version_id));
+        if required_by_inbound.is_some() && required_outbound.is_none() {
+            continue;
+        }
+        let inbound_terminal_leg = inbound
+            .legs
+            .last()
+            .ok_or_else(|| GermanyOperationalV2Error::new("Ankunftslaufweg ist leer."))?;
+        let terminal_track = get_track(&transaction, &inbound_terminal_leg.edge_id)?;
+        let terminal_node_id = node_at_offset(&terminal_track, inbound_terminal_leg.edge_exit_mm)
+            .ok_or_else(|| {
+            GermanyOperationalV2Error::new(format!(
+                "Ankunftslaufweg `{}` endet nicht an einer realen OSM-Knotengrenze.",
+                inbound.route_version_id
+            ))
+        })?;
+        if !terminal_has_observed_siding_entry(&transaction, &terminal_track.id, terminal_node_id)?
+        {
+            continue;
+        }
+        let outbound_routes =
+            outbound_routes_for_terminal(&transaction, &inbound, inbound_terminal_leg)?
+                .into_iter()
+                .filter(|outbound| {
+                    required_outbound.is_none_or(|ids| ids.contains(&outbound.route_version_id))
+                })
+                .collect::<Vec<_>>();
+        if outbound_routes.is_empty() {
+            continue;
+        }
+
+        for &formation_length_mm in &policy.terminal_formation_lengths_mm {
+            let inbound_seed = formation_tail_legs(
+                &inbound,
+                formation_length_mm,
+                &format!(
+                    "Ankunftslaufweg `{}` fuer Formation {formation_length_mm}",
+                    inbound.route_version_id
+                ),
+            )?;
+            let terminal_intervals = terminal_intervals(&inbound_seed);
+            let reversed_inbound_occupancy = canonical_terminal_occupancy(&inbound_seed, true);
+            let candidates = stabling_candidates(
+                &transaction,
+                &terminal_track,
+                terminal_node_id,
+                formation_length_mm,
+                policy.minimum_berth_end_clearance_mm,
+                &inbound.route_version_id,
+            )?;
+            if candidates.is_empty() {
+                continue;
+            }
+
+            for outbound_base in &outbound_routes {
+                let outbound_first = outbound_base
+                    .legs
+                    .first()
+                    .ok_or_else(|| GermanyOperationalV2Error::new("Ausgangslaufweg ist leer."))?;
+                let (outbound_seed, outbound_remainder) = formation_prefix_and_remainder(
+                    outbound_base,
+                    formation_length_mm,
+                    &format!("Ausgangslaufweg `{}`", outbound_base.route_version_id),
+                )?;
+                if outbound_first.edge_id != terminal_track.id
+                    || outbound_first.direction
+                        != reverse_direction(&inbound_terminal_leg.direction)?
+                    || outbound_first.edge_entry_mm != inbound_terminal_leg.edge_exit_mm
+                    || canonical_terminal_occupancy(&outbound_seed, false)
+                        != reversed_inbound_occupancy
+                {
+                    continue;
+                }
+
+                for (candidate_rank, candidate) in candidates.iter().enumerate() {
+                    let (
+                        shunt_in_route_id,
+                        shunt_in_template_id,
+                        shunt_out_route_id,
+                        shunt_out_template_id,
+                        outbound_route_id,
+                        outbound_template_id,
+                        turnaround_id,
+                    ) = generated_route_ids(
+                        &inbound.route_version_id,
+                        &outbound_base.route_version_id,
+                        formation_length_mm,
+                        candidate,
+                    );
+                    let berth_edge = &candidate
+                        .path
+                        .last()
+                        .expect("Abstellpfad besitzt eine Zielkante")
+                        .track;
+                    let berth_from_mm = berth_edge
+                        .length_mm
+                        .checked_sub(formation_length_mm)
+                        .ok_or_else(|| {
+                            GermanyOperationalV2Error::new("Berth-Laenge laeuft ueber.")
+                        })?
+                        / 2;
+                    let berth_to_mm =
+                        berth_from_mm
+                            .checked_add(formation_length_mm)
+                            .ok_or_else(|| {
+                                GermanyOperationalV2Error::new("Berth-Ende laeuft ueber.")
+                            })?;
+                    let berth = TurnaroundBerth {
+                        edge_id: berth_edge.id.clone(),
+                        from_mm: berth_from_mm,
+                        to_mm: berth_to_mm,
+                        left_clearance_mm: berth_from_mm,
+                        right_clearance_mm: berth_edge.length_mm - berth_to_mm,
+                    };
+                    require(
+                        berth.left_clearance_mm >= policy.minimum_berth_end_clearance_mm
+                            && berth.right_clearance_mm >= policy.minimum_berth_end_clearance_mm,
+                        format!("Abstellkante `{}` ist zu kurz.", berth.edge_id),
+                    )?;
+
+                    let mut shunt_in_legs = inbound_seed.clone();
+                    for (index, directed) in candidate.path.iter().enumerate() {
+                        let (entry_mm, full_exit_mm) =
+                            directed_offsets(&directed.track, &directed.direction)?;
+                        let exit_mm = if index + 1 == candidate.path.len() {
+                            if directed.direction == "along" {
+                                berth.to_mm
+                            } else {
+                                berth.from_mm
+                            }
+                        } else {
+                            full_exit_mm
+                        };
+                        shunt_in_legs.push(derived_leg(
+                            &directed.track,
+                            &directed.direction,
+                            entry_mm,
+                            exit_mm,
+                        ));
+                    }
+                    let shunt_in = TimetableRouteInput {
+                        route_version_id: shunt_in_route_id.clone(),
+                        template_id: shunt_in_template_id,
+                        predecessor_id: Some(inbound.route_version_id.clone()),
+                        transition_route_mm: Some(formation_length_mm),
+                        legs: shunt_in_legs,
+                    };
+                    validate_derived_route(&transaction, &shunt_in)?;
+
+                    let berth_direction = candidate
+                        .path
+                        .last()
+                        .expect("Abstellpfad besitzt Zielkante")
+                        .direction
+                        .as_str();
+                    let reverse_berth_direction = reverse_direction(berth_direction)?;
+                    let (shunt_out_seed_entry, shunt_out_seed_exit) =
+                        if reverse_berth_direction == "along" {
+                            (berth.from_mm, berth.to_mm)
+                        } else {
+                            (berth.to_mm, berth.from_mm)
+                        };
+                    let mut shunt_out_legs = vec![derived_leg(
+                        berth_edge,
+                        reverse_berth_direction,
+                        shunt_out_seed_entry,
+                        shunt_out_seed_exit,
+                    )];
+                    let berth_terminal_exit = if reverse_berth_direction == "along" {
+                        berth_edge.length_mm
+                    } else {
+                        0
+                    };
+                    shunt_out_legs.push(derived_leg(
+                        berth_edge,
+                        reverse_berth_direction,
+                        shunt_out_seed_exit,
+                        berth_terminal_exit,
+                    ));
+                    for directed in candidate.path.iter().rev().skip(1) {
+                        let direction = reverse_direction(&directed.direction)?;
+                        let (entry_mm, exit_mm) = directed_offsets(&directed.track, direction)?;
+                        shunt_out_legs.push(derived_leg(
+                            &directed.track,
+                            direction,
+                            entry_mm,
+                            exit_mm,
+                        ));
+                    }
+                    let outbound_direction = outbound_first.direction.as_str();
+                    shunt_out_legs.extend(outbound_seed.iter().cloned());
+                    let shunt_out = TimetableRouteInput {
+                        route_version_id: shunt_out_route_id.clone(),
+                        template_id: shunt_out_template_id,
+                        predecessor_id: Some(shunt_in_route_id.clone()),
+                        transition_route_mm: Some(formation_length_mm),
+                        legs: shunt_out_legs,
+                    };
+                    validate_derived_route(&transaction, &shunt_out)?;
+
+                    let mut outbound_legs = outbound_seed.clone();
+                    outbound_legs.extend(outbound_remainder.iter().cloned());
+                    require(
+                        outbound_legs.len() >= 2,
+                        format!(
+                            "Ausgangslaufweg `{}` endet bereits am Formation-Seed.",
+                            outbound_base.route_version_id
+                        ),
+                    )?;
+                    let outbound = TimetableRouteInput {
+                        route_version_id: outbound_route_id.clone(),
+                        template_id: outbound_template_id,
+                        predecessor_id: Some(shunt_out_route_id.clone()),
+                        transition_route_mm: Some(formation_length_mm),
+                        legs: outbound_legs,
+                    };
+                    validate_derived_route(&transaction, &outbound)?;
+
+                    let (shunt_in_interlocking_id, shunt_in_interlocking) =
+                        shunting_template_value(&transaction, &shunt_in, formation_length_mm)?;
+                    let (shunt_out_interlocking_id, shunt_out_interlocking) =
+                        shunting_template_value(&transaction, &shunt_out, formation_length_mm)?;
+                    let mut outbound_dispatch = None;
+                    for leg_index in 0..outbound.legs.len() {
+                        let authority_start = outbound
+                            .legs
+                            .iter()
+                            .take(leg_index)
+                            .try_fold(0_i64, |total, leg| {
+                                total.checked_add(
+                                    i64::try_from(leg.edge_entry_mm.abs_diff(leg.edge_exit_mm))
+                                        .unwrap_or(i64::MAX),
+                                )
+                            })
+                            .ok_or_else(|| {
+                                GermanyOperationalV2Error::new(
+                                    "Ausgangssegmentanfang laeuft ueber.",
+                                )
+                            })?;
+                        let (id, value, _) =
+                            template_value(&transaction, &outbound, leg_index, authority_start)?;
+                        if authority_start == formation_length_mm {
+                            outbound_dispatch =
+                                Some((id.clone(), resources_from_template_value(&value)?));
+                        }
+                        generated_signals.insert(
+                            value["signalId"]
+                                .as_str()
+                                .expect("synthetische Signal-ID")
+                                .to_owned(),
+                        );
+                        generated_resources.extend(resources_from_template_value(&value)?);
+                        insert_generated(
+                            &mut generated_interlocking,
+                            id,
+                            &value,
+                            "Ausgangs-Segmentfahrstrasse",
+                        )?;
+                    }
+                    let (outbound_interlocking_id, outbound_resources) =
+                        outbound_dispatch.ok_or_else(|| {
+                            GermanyOperationalV2Error::new(format!(
+                                "Ausgangslaufweg `{}` besitzt bei Formationlaenge keine erste Fahrstrasse.",
+                                outbound.route_version_id
+                            ))
+                        })?;
+                    let shunt_in_runtime_ms =
+                        minimum_route_runtime_ms(&transaction, &shunt_in, formation_length_mm)?;
+                    let shunt_out_runtime_ms =
+                        minimum_route_runtime_ms(&transaction, &shunt_out, formation_length_mm)?;
+                    let outbound_runtime_ms =
+                        minimum_route_runtime_ms(&transaction, &outbound, formation_length_mm)?;
+                    let shunt_in_resources = resources_from_template_value(&shunt_in_interlocking)?;
+                    let shunt_out_resources =
+                        resources_from_template_value(&shunt_out_interlocking)?;
+                    generated_resources.extend(shunt_in_resources.iter().cloned());
+                    generated_resources.extend(shunt_out_resources.iter().cloned());
+                    generated_signals.insert(
+                        shunt_in_interlocking["signalId"]
+                            .as_str()
+                            .expect("Rangiersignal-ID")
+                            .to_owned(),
+                    );
+                    generated_signals.insert(
+                        shunt_out_interlocking["signalId"]
+                            .as_str()
+                            .expect("Rangiersignal-ID")
+                            .to_owned(),
+                    );
+                    insert_generated(
+                        &mut generated_interlocking,
+                        shunt_in_interlocking_id.clone(),
+                        &shunt_in_interlocking,
+                        "Rangierfahrstrasse zur Abstellung",
+                    )?;
+                    insert_generated(
+                        &mut generated_interlocking,
+                        shunt_out_interlocking_id.clone(),
+                        &shunt_out_interlocking,
+                        "Rangierfahrstrasse aus der Abstellung",
+                    )?;
+                    for route in [&shunt_in, &shunt_out, &outbound] {
+                        for leg in &route.legs {
+                            let track = get_track(&transaction, &leg.edge_id)?;
+                            generated_resources
+                                .insert(boundary_resource(&track, leg.edge_entry_mm)?);
+                            generated_resources
+                                .insert(boundary_resource(&track, leg.edge_exit_mm)?);
+                        }
+                        insert_generated(
+                            &mut generated_routes,
+                            route.route_version_id.clone(),
+                            route,
+                            "Turnaround-Laufweg",
+                        )?;
+                    }
+                    let candidate_rank = u32::try_from(candidate_rank).map_err(|_| {
+                        GermanyOperationalV2Error::new("Zu viele Abstellkandidaten.")
+                    })?;
+                    let record = TurnaroundTemplateRecord {
+                        id: turnaround_id.clone(),
+                        inbound_route_version_id: inbound.route_version_id.clone(),
+                        outbound_route_version_id: outbound_base.route_version_id.clone(),
+                        terminal_edge_id: terminal_track.id.clone(),
+                        terminal_node_id,
+                        inbound_direction: inbound_terminal_leg.direction.clone(),
+                        outbound_direction: outbound_direction.to_owned(),
+                        formation_length_mm,
+                        candidate_rank,
+                        stabling_path_length_mm: candidate.total_length_mm,
+                        terminal_intervals: terminal_intervals.clone(),
+                        shunt_in: TurnaroundRouteDispatch {
+                            route_version_id: shunt_in_route_id,
+                            predecessor_base_route_version_id: inbound.route_version_id.clone(),
+                            dispatch_interlocking_route_id: shunt_in_interlocking_id,
+                            head_route_mm: formation_length_mm,
+                            minimum_runtime_ms: shunt_in_runtime_ms,
+                            resource_ids: shunt_in_resources,
+                            route_leg_count: u32::try_from(shunt_in.legs.len()).map_err(|_| {
+                                GermanyOperationalV2Error::new("Zu viele Shunt-in-Legs.")
+                            })?,
+                            protection_contract_runs: protection_contract_runs(&shunt_in.legs)?,
+                        },
+                        berth: berth.clone(),
+                        shunt_out: TurnaroundRouteDispatch {
+                            route_version_id: shunt_out_route_id,
+                            predecessor_base_route_version_id: shunt_in.route_version_id.clone(),
+                            dispatch_interlocking_route_id: shunt_out_interlocking_id,
+                            head_route_mm: formation_length_mm,
+                            minimum_runtime_ms: shunt_out_runtime_ms,
+                            resource_ids: shunt_out_resources,
+                            route_leg_count: u32::try_from(shunt_out.legs.len()).map_err(|_| {
+                                GermanyOperationalV2Error::new("Zu viele Shunt-out-Legs.")
+                            })?,
+                            protection_contract_runs: protection_contract_runs(&shunt_out.legs)?,
+                        },
+                        outbound: TurnaroundRouteDispatch {
+                            route_version_id: outbound_route_id,
+                            predecessor_base_route_version_id: shunt_out.route_version_id.clone(),
+                            dispatch_interlocking_route_id: outbound_interlocking_id,
+                            head_route_mm: formation_length_mm,
+                            minimum_runtime_ms: outbound_runtime_ms,
+                            resource_ids: outbound_resources,
+                            route_leg_count: u32::try_from(outbound.legs.len()).map_err(|_| {
+                                GermanyOperationalV2Error::new("Zu viele Ausgangsroute-Legs.")
+                            })?,
+                            protection_contract_runs: protection_contract_runs(&outbound.legs)?,
+                        },
+                    };
+                    insert_generated(
+                        &mut generated_templates,
+                        turnaround_id,
+                        &record,
+                        "Turnaround-Template",
+                    )?;
+                    covered.insert((
+                        inbound.route_version_id.clone(),
+                        outbound_base.route_version_id.clone(),
+                        formation_length_mm,
+                    ));
+                }
+            }
+        }
+    }
+    drop(routes);
+    drop(transaction);
+
+    let mut write = database.begin_write().map_err(db_error)?;
+    write.set_durability(Durability::None);
+    {
+        let mut routes = write.open_table(TURNAROUND_ROUTES).map_err(db_error)?;
+        for (id, serialized) in &generated_routes {
+            require(
+                routes
+                    .insert(id.as_str(), serialized.as_str())
+                    .map_err(db_error)?
+                    .is_none(),
+                format!("Doppelte Turnaround-Laufweg-ID `{id}`."),
+            )?;
+        }
+    }
+    {
+        let mut interlocking = write
+            .open_table(TURNAROUND_INTERLOCKING)
+            .map_err(db_error)?;
+        for (id, serialized) in &generated_interlocking {
+            require(
+                interlocking
+                    .insert(id.as_str(), serialized.as_str())
+                    .map_err(db_error)?
+                    .is_none(),
+                format!("Doppelte Turnaround-Fahrstrassen-ID `{id}`."),
+            )?;
+        }
+    }
+    {
+        let mut templates = write.open_table(TURNAROUND_TEMPLATES).map_err(db_error)?;
+        for (id, serialized) in &generated_templates {
+            require(
+                templates
+                    .insert(id.as_str(), serialized.as_str())
+                    .map_err(db_error)?
+                    .is_none(),
+                format!("Doppelte Turnaround-Template-ID `{id}`."),
+            )?;
+        }
+    }
+    {
+        let mut signals = write.open_table(SIGNALS).map_err(db_error)?;
+        for signal in &generated_signals {
+            require(
+                signals
+                    .insert(signal.as_str(), &())
+                    .map_err(db_error)?
+                    .is_none(),
+                format!("Kollidierende Turnaround-Signal-ID `{signal}`."),
+            )?;
+        }
+    }
+    {
+        let mut resources = write.open_table(BLOCK_RESOURCES).map_err(db_error)?;
+        for resource in &generated_resources {
+            let _ = resources.insert(resource.as_str(), &()).map_err(db_error)?;
+        }
+    }
+    write.commit().map_err(db_error)?;
+    Ok(covered)
 }
 
 fn write_bytes(
@@ -2489,6 +5445,32 @@ fn write_route_versions(
                 path,
             )?;
         }
+        let routes = transaction.open_table(TRANSFER_ROUTES).map_err(db_error)?;
+        for entry in routes.iter().map_err(db_error)? {
+            let (route_id, serialized) = entry.map_err(db_error)?;
+            let route = route_from_json(serialized.value(), "Transfer-Laufwegindex")?;
+            write_map_entry_prefix(writer, &mut first, route_id.value(), path)?;
+            write_json(
+                writer,
+                &route_value(transaction, &route, policy)?,
+                "Transfer-Laufwegversion",
+                path,
+            )?;
+        }
+        let routes = transaction
+            .open_table(TURNAROUND_ROUTES)
+            .map_err(db_error)?;
+        for entry in routes.iter().map_err(db_error)? {
+            let (route_id, serialized) = entry.map_err(db_error)?;
+            let route = route_from_json(serialized.value(), "Turnaround-Laufwegindex")?;
+            write_map_entry_prefix(writer, &mut first, route_id.value(), path)?;
+            write_json(
+                writer,
+                &route_value(transaction, &route, policy)?,
+                "Turnaround-Laufwegversion",
+                path,
+            )?;
+        }
     } else {
         let tracks = transaction.open_table(TRACKS).map_err(db_error)?;
         for entry in tracks.iter().map_err(db_error)? {
@@ -2513,64 +5495,44 @@ fn template_value(
     transaction: &redb::ReadTransaction,
     route: &TimetableRouteInput,
     leg_index: usize,
-) -> Result<(String, Value)> {
-    let mut authority_end = 0_i64;
-    let mut path_resources = BTreeSet::new();
-    let mut flank_resources = BTreeSet::new();
-    let mut switch_positions = BTreeMap::new();
-    let mut overlap = None;
-    let prefix = route
+    authority_start: i64,
+) -> Result<(String, Value, i64)> {
+    let leg = route
         .legs
-        .get(..leg_index.saturating_add(1))
+        .get(leg_index)
         .ok_or_else(|| GermanyOperationalV2Error::new("Interlocking-Leg fehlt."))?;
-    for (prefix_index, previous) in prefix.iter().enumerate() {
-        let track = get_track(transaction, &previous.edge_id)?;
-        authority_end = authority_end
-            .checked_add(
-                i64::try_from(previous.edge_entry_mm.abs_diff(previous.edge_exit_mm))
-                    .unwrap_or(i64::MAX),
-            )
-            .ok_or_else(|| {
-                GermanyOperationalV2Error::new(format!(
-                    "Fahrstrasse fuer `{}` laeuft ueber.",
-                    route.route_version_id
-                ))
-            })?;
-        path_resources.extend(track_block_resources(transaction, &track.id)?);
-        let entry = boundary_resource(&track, previous.edge_entry_mm)?;
-        let exit = boundary_resource(&track, previous.edge_exit_mm)?;
-        flank_resources.insert(entry.clone());
-        if entry == exit {
-            flank_resources.insert(self_loop_flank_resource(&track.id));
-        }
-        for (switch_id, position) in switch_positions_for_leg(
-            transaction,
-            &track,
-            previous.edge_entry_mm,
-            previous.edge_exit_mm,
-            &route.route_version_id,
-        )? {
-            if let Some(existing) = switch_positions.insert(switch_id.clone(), position.clone()) {
-                require(
-                    existing == position,
-                    format!(
-                        "Laufweg `{}` verlangt bis Leg {prefix_index} fuer synthetische Weiche `{switch_id}` widerspruechliche Lagen.",
-                        route.route_version_id
-                    ),
-                )?;
-            }
-        }
-        overlap = Some(exit);
+    let authority_end = authority_start
+        .checked_add(
+            i64::try_from(leg.edge_entry_mm.abs_diff(leg.edge_exit_mm)).unwrap_or(i64::MAX),
+        )
+        .ok_or_else(|| {
+            GermanyOperationalV2Error::new(format!(
+                "Fahrstrasse fuer `{}` laeuft in Leg {leg_index} ueber.",
+                route.route_version_id
+            ))
+        })?;
+    let track = get_track(transaction, &leg.edge_id)?;
+    let path_resources = track_block_resources(transaction, &track.id)?;
+    let entry = boundary_resource(&track, leg.edge_entry_mm)?;
+    let overlap = boundary_resource(&track, leg.edge_exit_mm)?;
+    let mut flank_resources = BTreeSet::from([entry]);
+    if flank_resources.contains(&overlap) {
+        flank_resources.insert(self_loop_flank_resource(&track.id));
     }
-    let overlap =
-        overlap.ok_or_else(|| GermanyOperationalV2Error::new("Interlocking-Prefix ist leer."))?;
     flank_resources.remove(&overlap);
     require(
         !flank_resources.is_empty(),
         format!(
-            "Fahrstrasse fuer `{}` besitzt keinen eigenstaendigen Flankenschutz.",
-            route.route_version_id
+            "Fahrstrasse fuer `{}` Leg {leg_index} besitzt keinen eigenstaendigen Flankenschutz.",
+            route.route_version_id,
         ),
+    )?;
+    let switch_positions = switch_positions_for_leg(
+        transaction,
+        &track,
+        leg.edge_entry_mm,
+        leg.edge_exit_mm,
+        &route.route_version_id,
     )?;
     let template_id = stable_id(
         "interlocking:synthetic-segment:",
@@ -2587,9 +5549,11 @@ fn template_value(
             "overlapResources": BTreeSet::from([overlap]),
             "flankResources": flank_resources,
             "switchPositions": switch_positions,
+            "authorityStartRouteMm": authority_start,
             "authorityEndRouteMm": authority_end,
             "releaseAfterTailRouteMm": authority_end,
         }),
+        authority_end,
     ))
 }
 
@@ -2611,21 +5575,40 @@ fn write_interlocking_routes(
                         "Timetable-Index ist ungueltig: {error}"
                     ))
                 })?;
-            // Der Welt-Builder bindet die Fahrberechtigung an den letzten
-            // Laufwegindex und damit an den vollstaendigen Fahrweg. Saemtliche
-            // Praefixvorlagen auszugeben waere nicht nur unbenutzt, sondern
-            // wuerde die kumulativen Ressourcen quadratisch duplizieren. Pro
-            // gepinnter Fahrwegversion wird deshalb genau die vollstaendige,
-            // konservative Fahrstrasse materialisiert.
-            let leg_index = route.legs.len().checked_sub(1).ok_or_else(|| {
-                GermanyOperationalV2Error::new(format!(
-                    "Timetable-Laufweg `{}` ist leer.",
-                    route.route_version_id
-                ))
-            })?;
-            let (template_id, value) = template_value(transaction, &route, leg_index)?;
-            write_map_entry_prefix(writer, &mut first, &template_id, path)?;
-            write_json(writer, &value, "synthetische Gesamtfahrstrasse", path)?;
+            let mut authority_start = 0_i64;
+            for leg_index in 0..route.legs.len() {
+                let (template_id, value, authority_end) =
+                    template_value(transaction, &route, leg_index, authority_start)?;
+                write_map_entry_prefix(writer, &mut first, &template_id, path)?;
+                write_json(writer, &value, "synthetische Segmentfahrstrasse", path)?;
+                authority_start = authority_end;
+            }
+        }
+        let generated = transaction
+            .open_table(TURNAROUND_INTERLOCKING)
+            .map_err(db_error)?;
+        for entry in generated.iter().map_err(db_error)? {
+            let (template_id, serialized) = entry.map_err(db_error)?;
+            write_map_entry_prefix(writer, &mut first, template_id.value(), path)?;
+            write_bytes(
+                writer,
+                serialized.value().as_bytes(),
+                "Turnaround-Fahrstrasse",
+                path,
+            )?;
+        }
+        let generated = transaction
+            .open_table(TRANSFER_INTERLOCKING)
+            .map_err(db_error)?;
+        for entry in generated.iter().map_err(db_error)? {
+            let (template_id, serialized) = entry.map_err(db_error)?;
+            write_map_entry_prefix(writer, &mut first, template_id.value(), path)?;
+            write_bytes(
+                writer,
+                serialized.value().as_bytes(),
+                "Transfer-Fahrstrasse",
+                path,
+            )?;
         }
     } else {
         let tracks = transaction.open_table(TRACKS).map_err(db_error)?;
@@ -2634,7 +5617,7 @@ fn write_interlocking_routes(
             let track = track_from_json(serialized.value(), "Gleiskante fuer lokale Fahrstrassen")?;
             for direction in ["along", "against"] {
                 let route = local_route(&track, direction);
-                let (template_id, value) = template_value(transaction, &route, 0)?;
+                let (template_id, value, _) = template_value(transaction, &route, 0, 0)?;
                 write_map_entry_prefix(writer, &mut first, &template_id, path)?;
                 write_json(writer, &value, "lokale synthetische Fahrstrasse", path)?;
             }
@@ -2776,6 +5759,17 @@ fn table_len(
         .map_err(db_error)
 }
 
+fn string_table_len(
+    transaction: &redb::ReadTransaction,
+    definition: TableDefinition<&str, &str>,
+) -> Result<u64> {
+    transaction
+        .open_table(definition)
+        .map_err(db_error)?
+        .len()
+        .map_err(db_error)
+}
+
 fn write_report(path: &Path, report: &Value) -> Result<(u64, String)> {
     let file = OpenOptions::new()
         .write(true)
@@ -2803,6 +5797,112 @@ fn write_report(path: &Path, report: &Value) -> Result<(u64, String)> {
     ))
 }
 
+fn string_table_values(
+    transaction: &redb::ReadTransaction,
+    definition: TableDefinition<&str, &str>,
+    context: &str,
+) -> Result<Vec<Value>> {
+    let table = transaction.open_table(definition).map_err(db_error)?;
+    let mut values =
+        Vec::with_capacity(usize::try_from(table.len().map_err(db_error)?).unwrap_or(0));
+    for entry in table.iter().map_err(db_error)? {
+        let (_, serialized) = entry.map_err(db_error)?;
+        values.push(serde_json::from_str(serialized.value()).map_err(|error| {
+            GermanyOperationalV2Error::new(format!(
+                "{context} im Ableitungsindex ist ungueltig: {error}"
+            ))
+        })?);
+    }
+    Ok(values)
+}
+
+fn write_movement_route_sidecar(
+    transaction: &redb::ReadTransaction,
+    path: &Path,
+    infra_release_id: &str,
+    operational_state_hash: &str,
+    transfer_evidence: Option<&TransferEvidence>,
+) -> Result<(u64, String, String)> {
+    let direct_templates = string_table_values(transaction, DIRECT_TEMPLATES, "Direct-Template")?;
+    let stabling_templates =
+        string_table_values(transaction, TURNAROUND_TEMPLATES, "Stabling-Template")?;
+    let transfer_templates =
+        string_table_values(transaction, TRANSFER_TEMPLATES, "Transfer-Template")?;
+    let transfer_set_sha256 = transfer_evidence
+        .map(|evidence| Value::String(evidence.transfer_set_sha256.clone()))
+        .unwrap_or(Value::Null);
+    let body = json!({
+        "schema": MOVEMENT_ROUTE_SIDECAR_SCHEMA,
+        "infraReleaseId": infra_release_id,
+        "operationalStateHash": operational_state_hash,
+        "timetableTransferSetSha256": transfer_set_sha256,
+        "directTemplates": direct_templates,
+        "templates": stabling_templates,
+        "transferTemplates": transfer_templates,
+        "metrics": {
+            "directTemplateCount": direct_templates.len(),
+            "stablingTemplateCount": stabling_templates.len(),
+            "transferTemplateCount": transfer_templates.len(),
+            "transferDemandCount": transfer_evidence.map_or(0, |evidence| evidence.transfer_demand_count),
+            "turnaroundDemandCount": transfer_evidence.map_or(0, |evidence| evidence.turnaround_demand_count),
+            "turnaroundPairCount": transfer_evidence.map_or(0, |evidence| evidence.turnaround_pair_count),
+        },
+    });
+    let envelope = json!({
+        "schema": MOVEMENT_ROUTE_SIDECAR_SCHEMA,
+        "value": body,
+    });
+    let mut canonical_envelope = String::new();
+    canonical_json(&envelope, &mut canonical_envelope);
+    let state_hash = sha256(canonical_envelope.as_bytes());
+    let mut sidecar = body;
+    sidecar
+        .as_object_mut()
+        .expect("Movement-Sidecar-Body ist ein Objekt")
+        .insert("stateHash".to_owned(), Value::String(state_hash.clone()));
+    exact_keys(
+        &sidecar,
+        &[
+            "schema",
+            "infraReleaseId",
+            "operationalStateHash",
+            "timetableTransferSetSha256",
+            "directTemplates",
+            "templates",
+            "transferTemplates",
+            "metrics",
+            "stateHash",
+        ],
+        "movement-route-templates-v2",
+    )?;
+    let mut canonical_sidecar = String::new();
+    canonical_json(&sidecar, &mut canonical_sidecar);
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|error| io_error("Movement-Route-Sidecar", path, error))?;
+    let mut writer = BufWriter::new(file);
+    write_bytes(
+        &mut writer,
+        canonical_sidecar.as_bytes(),
+        "Movement-Route-Sidecar",
+        path,
+    )?;
+    write_bytes(&mut writer, b"\n", "Movement-Route-Sidecar", path)?;
+    writer
+        .flush()
+        .map_err(|error| io_error("Movement-Route-Sidecar", path, error))?;
+    drop(writer);
+    let bytes = fs::read(path).map_err(|error| io_error("Movement-Route-Sidecar", path, error))?;
+    Ok((
+        u64::try_from(bytes.len())
+            .map_err(|_| GermanyOperationalV2Error::new("Sidecargroesse laeuft ueber."))?,
+        sha256(&bytes),
+        state_hash,
+    ))
+}
+
 /// Leitet aus sechs normalisierten Deutschland-Layern sowie optionalen,
 /// bereits auf Kanten gematchten Zuglaeufen einen statischen Operational-v2-
 /// Kandidaten ab. Kandidat und Bericht werden niemals ueberschrieben.
@@ -2814,12 +5914,22 @@ pub fn derive_germany_operational_v2(
 ) -> Result<Value> {
     let candidate_path = canonical_output_path(candidate_path, "Zielverzeichnis des Kandidaten")?;
     let report_path = canonical_output_path(report_path, "Zielverzeichnis des Berichts")?;
+    let sidecar_path = movement_route_sidecar_path(&candidate_path)?;
     require(
-        output_identity_key(&candidate_path) != output_identity_key(&report_path),
-        "Kandidat und Bericht muessen verschiedene Ziele besitzen.",
+        [
+            output_identity_key(&candidate_path),
+            output_identity_key(&report_path),
+            output_identity_key(&sidecar_path),
+        ]
+        .into_iter()
+        .collect::<BTreeSet<_>>()
+        .len()
+            == 3,
+        "Kandidat, Movement-Route-Sidecar und Bericht muessen verschiedene Ziele besitzen.",
     )?;
-    let _output_claims = OutputClaims::acquire(&[&candidate_path, &report_path])?;
+    let _output_claims = OutputClaims::acquire(&[&candidate_path, &sidecar_path, &report_path])?;
     ensure_output_absent(&candidate_path, "Operational-v2-Kandidat")?;
+    ensure_output_absent(&sidecar_path, "Movement-Route-Sidecar")?;
     ensure_output_absent(&report_path, "Operational-v2-Bericht")?;
     let source_metadata = fs::symlink_metadata(source_root)
         .map_err(|error| io_error("Operational-v2-Quellwurzel", source_root, error))?;
@@ -2864,6 +5974,12 @@ pub fn derive_germany_operational_v2(
         .timetable_routes
         .as_deref()
         .map(|relative| layer_path(source_root, relative, "timetableRoutes"))
+        .transpose()?;
+    let transfer_path = spec
+        .layers
+        .transfer_demands
+        .as_ref()
+        .map(|pinned| layer_path(source_root, &pinned.path, "transferDemands"))
         .transpose()?;
     let timetable = timetable_path.is_some();
 
@@ -2915,6 +6031,48 @@ pub fn derive_germany_operational_v2(
     } else {
         None
     };
+    let (transfer_inputs, turnaround_pairs, transfer_evidence) = if let (Some(path), Some(pinned)) = (
+        transfer_path.as_deref(),
+        spec.layers.transfer_demands.as_ref(),
+    ) {
+        let (inputs, pairs, evidence) = read_transfer_demands(
+            path,
+            &pinned.path,
+            pinned,
+            &spec.infra_release_id,
+            &spec.policy,
+        )?;
+        (inputs, pairs, Some(evidence))
+    } else {
+        (Vec::new(), Vec::new(), None)
+    };
+    let required_pairs = transfer_evidence
+        .as_ref()
+        .map(|_| turnaround_pairs.as_slice());
+    let mut covered_turnarounds = derive_direct_templates(&database, &spec.policy, required_pairs)?;
+    covered_turnarounds.extend(derive_turnaround_templates(
+        &database,
+        &spec.policy,
+        required_pairs,
+    )?);
+    if let Some(required_pairs) = required_pairs {
+        for pair in required_pairs {
+            for &formation_length_mm in &spec.policy.terminal_formation_lengths_mm {
+                require(
+                    covered_turnarounds.contains(&(
+                        pair.inbound_route_version_id.clone(),
+                        pair.outbound_route_version_id.clone(),
+                        formation_length_mm,
+                    )),
+                    format!(
+                        "Fahrplan-Turnaround `{}` -> `{}` fuer Formation {formation_length_mm} mm besitzt weder Direct- noch Stabling-Kontinuitaet.",
+                        pair.inbound_route_version_id, pair.outbound_route_version_id
+                    ),
+                )?;
+            }
+        }
+    }
+    derive_transfer_templates(&database, &spec.policy, &transfer_inputs)?;
 
     let raw_candidate = scratch.join("candidate.raw.json");
     let staged_candidate = scratch.join("candidate.validated.json");
@@ -2934,13 +6092,26 @@ pub fn derive_germany_operational_v2(
     let total_signals = table_len(&read, SIGNALS)?;
     let total_switches = table_len(&read, SWITCHES)?;
     let total_resources = table_len(&read, BLOCK_RESOURCES)?;
+    let turnaround_route_versions = string_table_len(&read, TURNAROUND_ROUTES)?;
+    let turnaround_interlocking_routes = string_table_len(&read, TURNAROUND_INTERLOCKING)?;
+    let turnaround_templates = string_table_len(&read, TURNAROUND_TEMPLATES)?;
+    let direct_templates = string_table_len(&read, DIRECT_TEMPLATES)?;
+    let transfer_route_versions = string_table_len(&read, TRANSFER_ROUTES)?;
+    let transfer_interlocking_routes = string_table_len(&read, TRANSFER_INTERLOCKING)?;
+    let transfer_templates = string_table_len(&read, TRANSFER_TEMPLATES)?;
     let route_versions = if timetable {
-        counts.timetable_routes
+        counts
+            .timetable_routes
+            .saturating_add(turnaround_route_versions)
+            .saturating_add(transfer_route_versions)
     } else {
         counts.orderable_tracks.saturating_mul(2)
     };
     let interlocking_routes = if timetable {
-        counts.timetable_routes
+        counts
+            .timetable_legs
+            .saturating_add(turnaround_interlocking_routes)
+            .saturating_add(transfer_interlocking_routes)
     } else {
         counts.orderable_tracks.saturating_mul(2)
     };
@@ -2949,7 +6120,24 @@ pub fn derive_germany_operational_v2(
     } else {
         interlocking_routes
     };
+    let staged_sidecar =
+        scratch.join("operational-infrastructure-v2.movement-route-templates-v2.json");
+    let operational_state_hash = validation["stateHash"].as_str().ok_or_else(|| {
+        GermanyOperationalV2Error::new("Native Validierung lieferte keinen Zustandshash.")
+    })?;
+    let (sidecar_bytes, sidecar_sha256, sidecar_state_hash) = write_movement_route_sidecar(
+        &read,
+        &staged_sidecar,
+        &spec.infra_release_id,
+        operational_state_hash,
+        transfer_evidence.as_ref(),
+    )?;
     drop(read);
+    let sidecar_file = sidecar_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| GermanyOperationalV2Error::new("Sidecar besitzt keinen UTF-8-Dateinamen."))?
+        .to_owned();
 
     let policy_value = serde_json::to_value(&spec.policy).map_err(|error| {
         GermanyOperationalV2Error::new(format!("Policy kann nicht kanonisiert werden: {error}"))
@@ -2966,6 +6154,10 @@ pub fn derive_germany_operational_v2(
         ("blocks", Some(&blocks_evidence)),
         ("conflictResources", Some(&conflicts_evidence)),
         ("timetableRoutes", timetable_evidence.as_ref()),
+        (
+            "transferDemands",
+            transfer_evidence.as_ref().map(|evidence| &evidence.file),
+        ),
     ] {
         inputs.insert(
             name.to_owned(),
@@ -2985,6 +6177,32 @@ pub fn derive_germany_operational_v2(
     } else {
         "local-directed-track-templates"
     };
+    let timetable_transfer_set_sha256 = transfer_evidence
+        .as_ref()
+        .map(|evidence| Value::String(evidence.transfer_set_sha256.clone()))
+        .unwrap_or(Value::Null);
+    let movement_route_evidence = json!({
+        "file": sidecar_file.clone(),
+        "bytes": sidecar_bytes,
+        "sha256": sidecar_sha256.clone(),
+        "stateHash": sidecar_state_hash.clone(),
+        "operationalStateHash": validation["stateHash"],
+        "timetableTransferSetSha256": timetable_transfer_set_sha256,
+    });
+    let timetable_route_evidence = transfer_evidence.as_ref().map(|evidence| {
+        json!({
+            "timetableRoutes": timetable_evidence,
+            "transferDemands": evidence.file,
+            "dailyPlanSha256": evidence.daily_plan_sha256,
+            "transferSetSha256": evidence.transfer_set_sha256,
+            "circulationCount": evidence.circulation_count,
+            "transferDemandCount": evidence.transfer_demand_count,
+            "transferLotCount": evidence.transfer_lot_count,
+            "turnaroundDemandCount": evidence.turnaround_demand_count,
+            "turnaroundPairCount": evidence.turnaround_pair_count,
+            "movementRouteTemplates": movement_route_evidence,
+        })
+    });
     let report = json!({
         "schema": REPORT_SCHEMA,
         "mode": spec.mode,
@@ -3000,7 +6218,9 @@ pub fn derive_germany_operational_v2(
             "sha256": validation["sha256"],
             "stateHash": validation["stateHash"],
             "validationMode": validation["validationMode"],
+            "movementRouteTemplates": movement_route_evidence,
         },
+        "timetableRouteEvidence": timetable_route_evidence,
         "counts": {
             "source": {
                 "tracks": counts.tracks_seen,
@@ -3012,6 +6232,10 @@ pub fn derive_germany_operational_v2(
                 "conflictResources": counts.conflict_resources,
                 "timetableRoutes": counts.timetable_routes,
                 "timetableLegs": counts.timetable_legs,
+                "transferDemands": transfer_evidence.as_ref().map_or(0, |evidence| evidence.transfer_demand_count),
+                "transferLots": transfer_evidence.as_ref().map_or(0, |evidence| evidence.transfer_lot_count),
+                "turnaroundDemands": transfer_evidence.as_ref().map_or(0, |evidence| evidence.turnaround_demand_count),
+                "turnaroundPairs": transfer_evidence.as_ref().map_or(0, |evidence| evidence.turnaround_pair_count),
             },
             "candidate": {
                 "directedEdges": counts.orderable_tracks,
@@ -3023,6 +6247,9 @@ pub fn derive_germany_operational_v2(
                 "blockResources": total_resources,
                 "platformIntervals": counts.platform_intervals,
                 "regionBoundaries": 1,
+                "directTemplates": direct_templates,
+                "stablingTemplates": turnaround_templates,
+                "transferTemplates": transfer_templates,
             },
             "provenance": {
                 "observedForwardSpeeds": counts.observed_forward_speeds,
@@ -3033,28 +6260,41 @@ pub fn derive_germany_operational_v2(
                 "matchedPlatformIntervals": counts.platform_intervals,
                 "excludedPlatformEvidence": counts.excluded_platform_evidence,
                 "syntheticBoundarySignals": synthetic_boundary_signals,
+                "turnaroundRouteVersions": turnaround_route_versions,
+                "turnaroundInterlockingRoutes": turnaround_interlocking_routes,
+                "transferRouteVersions": transfer_route_versions,
+                "transferInterlockingRoutes": transfer_interlocking_routes,
             },
         },
         "scope": {
             "routeModel": route_coverage,
-            "interlockingModel": "deterministic-full-route-node-stellzone-mutex-and-authority/v2",
+            "interlockingModel": "deterministic-linear-segment-node-stellzone-mutex-and-progressive-authority/v3",
             "platformModel": "deterministic-nearest-observed-track-within-policy-radius/v1",
             "capacityBias": "conservative-under-capacity",
             "minimumOverlapMmPolicy": spec.policy.minimum_overlap_mm,
+            "turnaroundModel": "real-osm-simple-bidirectional-siding-path-with-centered-single-berth-per-target-edge/v1",
+            "minimumBerthEndClearanceMmPolicy": spec.policy.minimum_berth_end_clearance_mm,
+            "maximumDirectDwellMsPolicy": spec.policy.maximum_direct_dwell_ms,
+            "terminalFormationLengthsMm": spec.policy.terminal_formation_lengths_mm,
+            "movementRouteTemplateModel": "daily-plan-scoped-direct-stabling-transfer-continuity/v2",
         },
         "routeCoverage": route_coverage,
         "activationEligible": timetable,
         "unresolvedRequired": unresolved_required,
         "unresolvedRequiredDimensions": unresolved_dimensions,
         "realInterlockingFactsClaimed": false,
+        "realGeometry": true,
+        "simulatedOperationalAssignment": true,
         "candidateProduced": true,
     });
 
     let staged_report = report_scratch.join("derivation.report.json");
     let (report_bytes, report_sha256) = write_report(&staged_report, &report)?;
-    publish_pair_create_new(
+    publish_triplet_create_new(
         &staged_candidate,
         &candidate_path,
+        &staged_sidecar,
+        &sidecar_path,
         &staged_report,
         &report_path,
     )?;
@@ -3066,6 +6306,7 @@ pub fn derive_germany_operational_v2(
             "sha256": validation["sha256"],
             "stateHash": validation["stateHash"],
         },
+        "movementRouteTemplates": movement_route_evidence,
         "report": {
             "bytes": report_bytes,
             "sha256": report_sha256,

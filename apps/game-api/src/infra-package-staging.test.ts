@@ -109,6 +109,10 @@ interface PackageFixtureOptions {
   readonly assetInventoryPlanSha256?: string | null;
   readonly assetTreeSha256?: string;
   readonly deliveryOperationalStateHash?: string;
+  readonly deliveryMovementRouteTemplatesBytes?: Buffer;
+  readonly deliveryTransferDemandsBytes?: Buffer;
+  readonly qualityMovementRouteTemplatesSha256?: string;
+  readonly qualityTransferDemandsSha256?: string;
   readonly operationalInfraReleaseId?: string;
   readonly omitUnsignedReleaseHash?: boolean;
   readonly unsignedReleaseHash?: string | null;
@@ -187,6 +191,8 @@ function packageFixture(
   const visibleMapClassC = options.visibleMapClassCFeatures ?? 2;
   const operationalClassC = options.operationalClassCArtifacts ?? 0;
   const operationalBytes = Buffer.from('{"id":"infra-deutschland-2026.1","schema":"zugfolge-operational-infrastructure/v2"}\n');
+  const movementRouteTemplatesBytes = Buffer.from('{"infraReleaseId":"infra-deutschland-2026.1","schema":"movement-route-templates-v2"}\n');
+  const transferDemandsBytes = Buffer.from('{"infraReleaseId":"infra-deutschland-2026.1","schema":"zugfolge-timetable-transfer-demands/v1"}\n');
   const glyphBytes = Buffer.from("glyph");
   const spriteBytes = Buffer.from("sprite");
   const notices = assetNotices(glyphBytes, spriteBytes);
@@ -234,8 +240,15 @@ function packageFixture(
       syntheticOperationalDetailsShipped: true,
       objectLevelProvenanceShipped: false,
       observedAndSyntheticObjectsShareRuntimeCollections: true,
+      movementRouteTemplates: {
+        bytes: movementRouteTemplatesBytes.length,
+        sha256: options.qualityMovementRouteTemplatesSha256 ?? sha256(movementRouteTemplatesBytes),
+        stateHash: HASH_B,
+        operationalStateHash: OPERATIONAL_STATE_HASH,
+        timetableTransferSetSha256: HASH_A,
+      },
       timetableRouteEvidence: {
-        reportSchema: "zugfolge-germany-timetable-route-report/v2",
+        reportSchema: "zugfolge-germany-timetable-route-report/v3",
         policyId: "synthetic-operational-b/v2",
         derivationRule: "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2",
         selectionRule: "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
@@ -245,6 +258,9 @@ function packageFixture(
         routesSha256: HASH_B,
         gtfsSnapshotBytes: 9_012,
         gtfsSnapshotSha256: HASH_C,
+        transferDemandsSchema: "zugfolge-timetable-transfer-demands/v1",
+        transferDemandsBytes: transferDemandsBytes.length,
+        transferDemandsSha256: options.qualityTransferDemandsSha256 ?? sha256(transferDemandsBytes),
         snapshotHash: HASH_A,
         archive: "gtfs-free.zip",
         archiveSha256: HASH_B,
@@ -255,6 +271,13 @@ function packageFixture(
         routeRecordCount: 4,
         sameStopTransitionCount: 1,
         routeSetSha256: HASH_B,
+        dailyCirculationPlanSha256: HASH_C,
+        transferSetSha256: HASH_A,
+        transferDemandsProduced: true,
+        dailyCirculation: { lotCount: 2, journeyChainCount: 4, circulationCount: 2, rolloverAssignmentCount: 2, transferDemandCount: 1, transferLotCount: 1 },
+        transferRouteCount: 1,
+        transferRouteLegCount: 3,
+        transferRouteLengthMm: 12_345,
         realGeometry: true,
         simulatedOperationalAssignment: true,
         realInterlockingFactsClaimed: false,
@@ -330,10 +353,31 @@ function packageFixture(
       infraReleaseId: options.operationalInfraReleaseId ?? "infra-deutschland-2026.1",
       stateHash: OPERATIONAL_STATE_HASH,
     },
+    {
+      id: "operational-movement-routes-2026.1",
+      kind: "movement-route-templates-v2",
+      installPath: "operational-infrastructure-v2.movement-route-templates-v2.json",
+      bytes: movementRouteTemplatesBytes,
+    },
+    {
+      id: "timetable-transfer-demands-2026.1",
+      kind: "timetable-transfer-demands-v1",
+      installPath: "timetable-routes-v2.transfer-demands-v1.json",
+      bytes: transferDemandsBytes,
+    },
   ];
-  const deliveryFiles = baseFiles.map((file) => file.kind === "operational-infrastructure-v2" && options.deliveryOperationalStateHash !== undefined
-    ? { ...file, stateHash: options.deliveryOperationalStateHash }
-    : file);
+  const deliveryFiles = baseFiles.map((file) => {
+    if (file.kind === "operational-infrastructure-v2" && options.deliveryOperationalStateHash !== undefined) {
+      return { ...file, stateHash: options.deliveryOperationalStateHash };
+    }
+    if (file.kind === "movement-route-templates-v2" && options.deliveryMovementRouteTemplatesBytes !== undefined) {
+      return { ...file, bytes: options.deliveryMovementRouteTemplatesBytes };
+    }
+    if (file.kind === "timetable-transfer-demands-v1" && options.deliveryTransferDemandsBytes !== undefined) {
+      return { ...file, bytes: options.deliveryTransferDemandsBytes };
+    }
+    return file;
+  });
   const unsignedRelease = {
     schema: "zugfolge-map-delivery-release/v2",
     releaseId: "infra-deutschland-2026.1",
@@ -1417,7 +1461,7 @@ export function verifyMapPackageTransport() {
     expect(receipt.uploadStatus).toBe("closed");
   }, 15_000);
 
-  it("verlangt genau ein Operational-v2-Artefakt und lehnt die Legacy-Zugprojektion ab", async () => {
+  it("verlangt Operational-v2 und beide betrieblichen Sidecars genau einmal an kanonischen Pfaden", async () => {
     const fixture = packageFixture();
     const parsed = JSON.parse(fixture.manifest.toString("utf8")) as {
       auxiliaryFiles: Array<Record<string, unknown>>;
@@ -1426,6 +1470,18 @@ export function verifyMapPackageTransport() {
       ...parsed,
       auxiliaryFiles: parsed.auxiliaryFiles.filter(({ kind }) => kind !== "operational-infrastructure-v2"),
     };
+    const withoutMovementRoutes = {
+      ...parsed,
+      auxiliaryFiles: parsed.auxiliaryFiles.filter(({ kind }) => kind !== "movement-route-templates-v2"),
+    };
+    const withoutTransferDemands = {
+      ...parsed,
+      auxiliaryFiles: parsed.auxiliaryFiles.filter(({ kind }) => kind !== "timetable-transfer-demands-v1"),
+    };
+    const misplacedMovementRoutes = structuredClone(parsed);
+    misplacedMovementRoutes.auxiliaryFiles.find(({ kind }) => kind === "movement-route-templates-v2")!["installPath"] = "movement-routes.json";
+    const misplacedTransferDemands = structuredClone(parsed);
+    misplacedTransferDemands.auxiliaryFiles.find(({ kind }) => kind === "timetable-transfer-demands-v1")!["installPath"] = "transfer-demands.json";
     const withLegacyProjection = {
       ...parsed,
       auxiliaryFiles: [...parsed.auxiliaryFiles, {
@@ -1441,6 +1497,10 @@ export function verifyMapPackageTransport() {
     };
     for (const [importId, manifest, message] of [
       ["annual-2026-missing-operational", canonical(withoutOperational), "genau eine statische operational-infrastructure-v2.json"],
+      ["annual-2026-missing-movement-routes", canonical(withoutMovementRoutes), "genau eine operational-infrastructure-v2.movement-route-templates-v2.json"],
+      ["annual-2026-missing-transfer-demands", canonical(withoutTransferDemands), "genau eine timetable-routes-v2.transfer-demands-v1.json"],
+      ["annual-2026-misplaced-movement-routes", canonical(misplacedMovementRoutes), "genau eine operational-infrastructure-v2.movement-route-templates-v2.json"],
+      ["annual-2026-misplaced-transfer-demands", canonical(misplacedTransferDemands), "genau eine timetable-routes-v2.transfer-demands-v1.json"],
       ["annual-2026-legacy-projection", canonical(withLegacyProjection), "keine weltgebundene Zugpositionsprojektion"],
     ] as const) {
       const service = await staging();
@@ -1457,6 +1517,42 @@ export function verifyMapPackageTransport() {
     const service = await staging();
     await expect(uploadFixture(service, "annual-2026-forged-operational", fixture))
       .rejects.toThrow("bindet nicht exakt alle ausgelieferten Artefakte");
+  });
+
+  it("verwirft abweichende Transfer-Sidecar-Bytes zwischen Delivery- und Paketinventar", async () => {
+    const fixture = packageFixture("nonPublicSourceRawDataShipped", undefined, {
+      deliveryTransferDemandsBytes: Buffer.from('{"infraReleaseId":"infra-deutschland-2026.1","schema":"zugfolge-timetable-transfer-demands/v1","substituted":true}\n'),
+    });
+    const service = await staging();
+    await expect(uploadFixture(service, "annual-2026-forged-transfer-inventory", fixture))
+      .rejects.toThrow("bindet nicht exakt alle ausgelieferten Artefakte");
+  });
+
+  it("verwirft abweichende Movement-Sidecar-Bytes zwischen Delivery- und Paketinventar", async () => {
+    const fixture = packageFixture("nonPublicSourceRawDataShipped", undefined, {
+      deliveryMovementRouteTemplatesBytes: Buffer.from('{"infraReleaseId":"infra-deutschland-2026.1","schema":"movement-route-templates-v2","substituted":true}\n'),
+    });
+    const service = await staging();
+    await expect(uploadFixture(service, "annual-2026-forged-movement-inventory", fixture))
+      .rejects.toThrow("bindet nicht exakt alle ausgelieferten Artefakte");
+  });
+
+  it("verwirft einen Fahrwegbeleg ohne Bytebindung an das ausgelieferte Transfer-Sidecar", async () => {
+    const fixture = packageFixture("nonPublicSourceRawDataShipped", undefined, {
+      qualityTransferDemandsSha256: "e".repeat(64),
+    });
+    const service = await staging();
+    await expect(uploadFixture(service, "annual-2026-forged-transfer-evidence", fixture))
+      .rejects.toThrow("bindet nicht bytegenau das ausgelieferte Timetable-Transfer-Demands-v1-Artefakt");
+  });
+
+  it("verwirft einen Movement-Beleg ohne Bytebindung an das ausgelieferte Movement-Sidecar", async () => {
+    const fixture = packageFixture("nonPublicSourceRawDataShipped", undefined, {
+      qualityMovementRouteTemplatesSha256: "e".repeat(64),
+    });
+    const service = await staging();
+    await expect(uploadFixture(service, "annual-2026-forged-movement-evidence", fixture))
+      .rejects.toThrow("bindet nicht bytegenau das ausgelieferte Movement-Route-Templates-v2-Artefakt");
   });
 
   it("verwirft eine konsistent gefälschte Operational-v2-InfraRelease-ID", async () => {

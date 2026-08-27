@@ -253,7 +253,7 @@ test("Timetable-JSONSeq wird zeilenweise auf vollstaendige Fahrwege und native F
       playableLegId: "pl-fixture",
       routeVersionId: "route:gtfs:pl-fixture:v1",
       templateId: "template:gtfs:pl-fixture:v1",
-      dispatchInterlockingRouteId: "interlocking:synthetic-segment:0c739e370c1cb8a67fccd2a267bcc93f09f4bd56d565be270c5e0885121fe9b8",
+      dispatchInterlockingRouteId: "interlocking:synthetic-segment:dd5989d48e63372a719b3efaa3cdc1bda3c4172ef7d179a5ec50076ac9fba03d",
       routeLengthMm: 2_500,
       routeLegCount: 2,
       protectionContractRuns: [{
@@ -263,7 +263,7 @@ test("Timetable-JSONSeq wird zeilenweise auf vollstaendige Fahrwege und native F
       }],
     });
     assert.equal(
-      germanyOperationalStableId("interlocking:synthetic-segment:", ["route:gtfs:pl-fixture:v1", "1"]),
+      germanyOperationalStableId("interlocking:synthetic-segment:", ["route:gtfs:pl-fixture:v1", "0"]),
       values.get("pl-fixture").dispatchInterlockingRouteId,
     );
     await assert.rejects(streamTimetableRouteBindings(path, proof, new Set(["pl-missing"])), /fehlt/u);

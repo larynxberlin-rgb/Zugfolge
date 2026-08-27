@@ -14,6 +14,7 @@ function initialization(): OperationalSimulationInitialization {
     worldId: "00000000-0000-4000-8000-000000000001",
     regionId: "leipzig-halle-erfurt",
     nowMs: 0,
+    repeatEveryMs: null,
     protectionModeSelectionPolicy: OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
     infraRelease: {
       schemaVersion: "zugfolge-operational-infrastructure/v2",
@@ -42,6 +43,7 @@ function initialization(): OperationalSimulationInitialization {
         selectedProtectionSystem: "pzb",
       }],
     }],
+    movementContinuations: [],
   };
 }
 
@@ -65,6 +67,7 @@ describe("OperationalSimulationInitialization-Hash", () => {
   it.each([
     ["andere Welt", (value: OperationalSimulationInitialization) => ({ ...value, worldId: `${value.worldId}:fremd` })],
     ["andere Region", (value: OperationalSimulationInitialization) => ({ ...value, regionId: `${value.regionId}:fremd` })],
+    ["andere Wiederholung", (value: OperationalSimulationInitialization) => ({ ...value, repeatEveryMs: 86_400_000 })],
     ["anderes InfraRelease", (value: OperationalSimulationInitialization) => ({
       ...value,
       infraRelease: { ...value.infraRelease, releaseId: "infra:2027" },
@@ -81,6 +84,21 @@ describe("OperationalSimulationInitialization-Hash", () => {
           throughRouteLegIndex: 0,
           selectedProtectionSystem: "lzb" as const,
         }],
+      }],
+    })],
+    ["anderen physischen Fortsetzungsgraphen", (value: OperationalSimulationInitialization) => ({
+      ...value,
+      repeatEveryMs: 86_400_000,
+      movementContinuations: [{
+        id: "continuation:1",
+        predecessorTrainId: "train:1",
+        predecessorBaseRouteVersionId: "route:1",
+        successorTrainId: "train:1",
+        successorDayOffset: 1 as const,
+        dailyBoundary: true,
+        minimumDwellMs: 300_000,
+        continuity: "reverse-direction" as const,
+        successorFormation: "inherit-predecessor" as const,
       }],
     })],
   ] as const)("bindet %s", (_label, change) => {

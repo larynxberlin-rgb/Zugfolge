@@ -488,6 +488,7 @@ function tutorialOperationalInitialization(
     worldId: session.tutorialWorldId,
     regionId: template.region.id,
     nowMs: 0,
+    repeatEveryMs: null,
     protectionModeSelectionPolicy: OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
     infraRelease: TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR.binding,
     vehicleTypes: Object.freeze([Object.freeze({
@@ -542,6 +543,10 @@ function tutorialOperationalInitialization(
         selectedProtectionSystem: "pzb" as const,
       })]),
     })]),
+    // Die private Tutorialfahrt ist kein wiederholtes Tagesprogramm. Eine
+    // spaetere Rueckfahrt braucht wie jede andere Fahrt einen eigenen realen
+    // Laufweg und darf hier nicht als Self-Ring erfunden werden.
+    movementContinuations: Object.freeze([]),
   });
 }
 

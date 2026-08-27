@@ -59,6 +59,56 @@ test("GTFS-Region uebernimmt Welt und Region ausschliesslich aus expliziter Buil
     assert.equal(output.snapshot.journeyChains[0].schemaVersion, "zugfolge-gtfs-journey-chain/v2");
     assert.equal(output.snapshot.journeyChains[0].legs[0].kind, "playable");
 
+    const fullConfiguration = {
+      ...configuration,
+      schemaVersion: "zugfolge-alpha-world-build-configuration/v3",
+      operationalInfrastructure: {
+        file: "operational-infrastructure-v2.json",
+        bytes: 1,
+        sha256: "a".repeat(64),
+        stateHash: "b".repeat(64),
+      },
+      timetableRoutes: { file: "timetable-routes-v2.jsonseq", bytes: 1, sha256: "c".repeat(64) },
+      timetableTransferDemands: {
+        file: "timetable-routes-v2.transfer-demands-v1.json",
+        bytes: 1,
+        sha256: "d".repeat(64),
+        dailyPlanSha256: "e".repeat(64),
+        transferSetSha256: "f".repeat(64),
+      },
+      movementRouteTemplates: {
+        file: "operational-infrastructure-v2.movement-route-templates-v2.json",
+        bytes: 1,
+        sha256: "1".repeat(64),
+        stateHash: "2".repeat(64),
+        operationalStateHash: "b".repeat(64),
+        timetableTransferSetSha256: "f".repeat(64),
+      },
+    };
+    const fullConfigurationPath = join(root, "full-v3.json");
+    const fullOutputPath = join(root, "full-v3-gtfs.json");
+    await writeFile(fullConfigurationPath, `${JSON.stringify(fullConfiguration)}\n`, "utf8");
+    await execute(process.execPath, [
+      fileURLToPath(new URL("./build-gtfs-region.mjs", import.meta.url)),
+      fullConfigurationPath,
+      source,
+      "20260810",
+      "d".repeat(64),
+      fullOutputPath,
+    ]);
+    assert.deepEqual(JSON.parse(await readFile(fullOutputPath, "utf8")), output);
+
+    const legacyFullConfigurationPath = join(root, "legacy-full-v2.json");
+    await writeFile(legacyFullConfigurationPath, `${JSON.stringify({ ...fullConfiguration, schemaVersion: "zugfolge-alpha-world-build-configuration/v2" })}\n`, "utf8");
+    await assert.rejects(execute(process.execPath, [
+      fileURLToPath(new URL("./build-gtfs-region.mjs", import.meta.url)),
+      legacyFullConfigurationPath,
+      source,
+      "20260810",
+      "d".repeat(64),
+      join(root, "legacy-full-v2-gtfs.json"),
+    ]), /V3-Artefaktsatz/u);
+
     const secondConfigurationPath = join(root, "second-world.json");
     const secondWorldId = "22222222-2222-4222-8222-222222222222";
     await writeFile(secondConfigurationPath, `${JSON.stringify({ ...configuration, worldId: secondWorldId })}\n`, "utf8");

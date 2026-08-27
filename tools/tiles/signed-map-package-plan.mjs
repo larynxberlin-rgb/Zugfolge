@@ -179,12 +179,19 @@ function validateCurrentInfraArtifacts(infraRelease, currentArtifacts, spec, rel
     ["infrastructure", "infrastructure"],
     ["read-model", "read-model"],
     ["operational-infrastructure-v2", "operational-infrastructure-v2"],
+    ["movement-route-templates-v2", "movement-route-templates-v2"],
+    ["timetable-transfer-demands-v1", "timetable-transfer-demands-v1"],
     ["quality-report", "quality-manifest"],
   ];
+  const requiredPackageKinds = new Set([
+    "operational-infrastructure-v2",
+    "movement-route-templates-v2",
+    "timetable-transfer-demands-v1",
+  ]);
   for (const [releaseKind, packageKind] of mappings) {
     const releaseBindings = infraRelease.artifacts.filter((entry) => entry?.kind === releaseKind);
-    if (packageKind !== "operational-infrastructure-v2" && releaseBindings.length === 0) continue;
-    invariant(releaseBindings.length === 1, `Aktueller InfraRelease braucht hoechstens eine und fuer Operational-v2 genau eine ${releaseKind}-Bindung.`);
+    if (!requiredPackageKinds.has(packageKind) && releaseBindings.length === 0) continue;
+    invariant(releaseBindings.length === 1, `Aktueller InfraRelease braucht genau eine ${releaseKind}-Bindung.`);
     const descriptor = descriptorForKind(spec, packageKind);
     const current = currentArtifactForDescriptor(currentArtifacts, descriptor);
     const [binding] = releaseBindings;

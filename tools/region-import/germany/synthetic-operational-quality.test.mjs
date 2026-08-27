@@ -9,7 +9,7 @@ import {
 } from "./synthetic-operational-quality.mjs";
 
 const policy = JSON.parse(await readFile(new URL("./synthetic-operational-b.policy.json", import.meta.url), "utf8"));
-const roles = ["blocks", "conflict-resources", "gtfs-snapshot", "platforms", "signals", "switches", "timetable-route-report", "timetable-routes", "tracks"];
+const roles = ["blocks", "conflict-resources", "gtfs-snapshot", "platforms", "signals", "switches", "timetable-route-report", "timetable-routes", "timetable-transfer-demands", "tracks"];
 
 function nativeReceipt(binding, stateHash) {
   return {
@@ -30,12 +30,21 @@ function fixture() {
   const candidate = { file: "candidate.json", bytes: 123, sha256, stateHash };
   const artifact = { file: "operational-infrastructure-v2.json", bytes: 123, sha256, stateHash };
   const coverage = { blockResources: 8, directedEdges: 4, edgeGeometries: 4, interlockingRoutes: 6, platformIntervals: 1, regionBoundaries: 1, routeVersions: 5, rzueLayouts: 1, signals: 6, switches: 1 };
-  const records = { blocks: 2, "conflict-resources": 3, "gtfs-snapshot": 1, platforms: 2, signals: 4, switches: 2, "timetable-route-report": 1, "timetable-routes": 5, tracks: 2 };
+  const records = { blocks: 2, "conflict-resources": 3, "gtfs-snapshot": 1, platforms: 2, signals: 4, switches: 2, "timetable-route-report": 1, "timetable-routes": 5, "timetable-transfer-demands": 2, tracks: 2 };
   const inputs = roles.map((role, index) => ({ role, file: `${role}.jsonseq`, bytes: 100 + index, sha256: (index + 5).toString(16).repeat(64), records: records[role] }));
   const byRole = new Map(inputs.map((entry) => [entry.role, entry]));
   const routeReport = byRole.get("timetable-route-report");
   const timetableRoutes = byRole.get("timetable-routes");
   const gtfsSnapshot = byRole.get("gtfs-snapshot");
+  const transferDemands = byRole.get("timetable-transfer-demands");
+  const movementRouteTemplates = {
+    file: "candidate.movement-route-templates-v2.json",
+    bytes: 321,
+    sha256: "c".repeat(64),
+    stateHash: "f".repeat(64),
+    operationalStateHash: stateHash,
+    timetableTransferSetSha256: "b".repeat(64),
+  };
   const receipt = buildSyntheticOperationalClosureReceipt({
     policy,
     releaseId: "infra-deutschland-test.1",
@@ -52,11 +61,25 @@ function fixture() {
       activationEligible: true,
       unresolvedRequired: 0,
       realInterlockingFactsClaimed: false,
-      candidate: { bytes: candidate.bytes, sha256: candidate.sha256, stateHash, validationMode: "native-streaming-redb-v1" },
+      realGeometry: true,
+      simulatedOperationalAssignment: true,
+      candidate: { bytes: candidate.bytes, sha256: candidate.sha256, stateHash, validationMode: "native-streaming-redb-v1", movementRouteTemplates },
+      timetableRouteEvidence: {
+        timetableRoutes: { path: timetableRoutes.file, bytes: timetableRoutes.bytes, sha256: timetableRoutes.sha256, records: timetableRoutes.records },
+        transferDemands: { path: transferDemands.file, bytes: transferDemands.bytes, sha256: transferDemands.sha256, records: transferDemands.records },
+        dailyPlanSha256: "a".repeat(64),
+        transferSetSha256: "b".repeat(64),
+        circulationCount: 2,
+        transferDemandCount: 2,
+        transferLotCount: 1,
+        turnaroundDemandCount: 0,
+        turnaroundPairCount: 0,
+        movementRouteTemplates,
+      },
     },
     inputs,
     timetableRouteEvidence: {
-      reportSchema: "zugfolge-germany-timetable-route-report/v2",
+      reportSchema: "zugfolge-germany-timetable-route-report/v3",
       policyId: "synthetic-operational-b/v2",
       derivationRule: "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2",
       selectionRule: "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
@@ -66,6 +89,9 @@ function fixture() {
       routesSha256: timetableRoutes.sha256,
       gtfsSnapshotBytes: gtfsSnapshot.bytes,
       gtfsSnapshotSha256: gtfsSnapshot.sha256,
+      transferDemandsSchema: "zugfolge-timetable-transfer-demands/v1",
+      transferDemandsBytes: transferDemands.bytes,
+      transferDemandsSha256: transferDemands.sha256,
       snapshotHash: "d".repeat(64),
       archive: "free-gtfs.zip",
       archiveSha256: "e".repeat(64),
@@ -76,6 +102,13 @@ function fixture() {
       routeRecordCount: 5,
       sameStopTransitionCount: 0,
       routeSetSha256: timetableRoutes.sha256,
+      dailyCirculationPlanSha256: "a".repeat(64),
+      transferSetSha256: "b".repeat(64),
+      transferDemandsProduced: true,
+      dailyCirculation: { lotCount: 1, journeyChainCount: 5, circulationCount: 2, rolloverAssignmentCount: 2, transferDemandCount: 2, transferLotCount: 1 },
+      transferRouteCount: 2,
+      transferRouteLegCount: 4,
+      transferRouteLengthMm: 12_345,
       realGeometry: true,
       simulatedOperationalAssignment: true,
       realInterlockingFactsClaimed: false,
@@ -87,7 +120,7 @@ function fixture() {
   return receipt;
 }
 
-test("Closure-v2 bindet Policy, neun freie Inputs und beide Native-Receipts", () => {
+test("Closure-v2 bindet Policy, zehn freie Inputs samt Transfer-Sidecar und beide Native-Receipts", () => {
   const receipt = fixture();
   assert.equal(receipt.schema, "zugfolge-synthetic-operational-closure-receipt/v2");
   assert.equal(receipt.policyId, "synthetic-operational-b/v2");
@@ -117,7 +150,7 @@ test("v1 oder eine fehlende timetableRoutes-Bindung koennen kein neues Closure e
   missing.inputs = missing.inputs.filter(({ role }) => role !== "timetable-routes");
   assert.throws(
     () => validateSyntheticOperationalClosureReceipt(missing, { policy, releaseId: "infra-deutschland-test.1" }),
-    /nicht exakt alle neun Pflichtinputs/,
+    /nicht exakt alle zehn Pflichtinputs/,
   );
 });
 

@@ -17,6 +17,8 @@ use zugfolge_sim::operational::OperationalInfraRelease;
 const SHA256_LENGTH: usize = 64;
 const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 const OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA: &str = "operational-infrastructure-v2";
+const MOVEMENT_ROUTE_TEMPLATES_V2_KIND: &str = "movement-route-templates-v2";
+const TIMETABLE_TRANSFER_DEMANDS_V1_KIND: &str = "timetable-transfer-demands-v1";
 
 /// Fehler einer autoritativen Manifestentscheidung.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -457,7 +459,53 @@ fn validate_operational_infrastructure_artifact_binding(
     require(
         state_hash != artifact.sha256,
         "Byte-SHA-256 und kanonischer Operational-v2-Zustandshash duerfen nicht gleichgesetzt werden.",
-    )
+    )?;
+
+    let movement_bindings: Vec<_> = artifacts
+        .iter()
+        .filter(|artifact| {
+            artifact.extra.get("kind").and_then(Value::as_str)
+                == Some(MOVEMENT_ROUTE_TEMPLATES_V2_KIND)
+        })
+        .collect();
+    require(
+        movement_bindings.len() == 1,
+        "Oeffentliches InfraRelease muss genau ein Movement-Route-Templates-v2-Artefakt binden.",
+    )?;
+    let movement = movement_bindings[0];
+    let movement_allowed: BTreeSet<&str> = BTreeSet::from(["kind"]);
+    let movement_actual: BTreeSet<&str> = movement.extra.keys().map(String::as_str).collect();
+    require(
+        movement_actual == movement_allowed,
+        "Movement-Route-Templates-v2-Artefakt besitzt unbekannte oder fehlende Manifestfelder.",
+    )?;
+    require(
+        movement.file == "operational-infrastructure-v2.movement-route-templates-v2.json",
+        "Movement-Route-Templates-v2-Artefakt besitzt keinen kanonischen Dateinamen.",
+    )?;
+    let transfer_bindings: Vec<_> = artifacts
+        .iter()
+        .filter(|artifact| {
+            artifact.extra.get("kind").and_then(Value::as_str)
+                == Some(TIMETABLE_TRANSFER_DEMANDS_V1_KIND)
+        })
+        .collect();
+    require(
+        transfer_bindings.len() == 1,
+        "Oeffentliches InfraRelease muss genau ein Timetable-Transfer-Demands-v1-Artefakt binden.",
+    )?;
+    let transfer = transfer_bindings[0];
+    let transfer_allowed: BTreeSet<&str> = BTreeSet::from(["kind"]);
+    let transfer_actual: BTreeSet<&str> = transfer.extra.keys().map(String::as_str).collect();
+    require(
+        transfer_actual == transfer_allowed,
+        "Timetable-Transfer-Demands-v1-Artefakt besitzt unbekannte oder fehlende Manifestfelder.",
+    )?;
+    require(
+        transfer.file == "timetable-routes-v2.transfer-demands-v1.json",
+        "Timetable-Transfer-Demands-v1-Artefakt besitzt keinen kanonischen Dateinamen.",
+    )?;
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
@@ -2805,6 +2853,7 @@ fn operational_quality_summary(
                 "realInterlockingFactsClaimed",
                 "simulatedOperationalAssignment",
                 "syntheticOperationalDetailsShipped",
+                "movementRouteTemplates",
                 "timetableRouteEvidence",
             ]),
         "Operational-v2-Betriebsmodell besitzt nicht exakt den ehrlichen v2-Provenienzvertrag.",
@@ -2844,6 +2893,51 @@ fn operational_quality_summary(
                 == Some(true),
         "Operational-v2-Qualitaet besitzt keine ehrliche Derived/B-Simulationsprovenienz.",
     )?;
+    let movement_route_templates = model.get("movementRouteTemplates").ok_or_else(|| {
+        ReleaseManifestError::new(
+            "Operational-v2-Betriebsmodell ohne Movement-Route-Templates-v2-Beleg.",
+        )
+    })?;
+    let movement_route_templates_object =
+        movement_route_templates.as_object().ok_or_else(|| {
+            ReleaseManifestError::new("Movement-Route-Templates-v2-Beleg ist kein Objekt.")
+        })?;
+    let movement_route_templates_keys: BTreeSet<_> = movement_route_templates_object
+        .keys()
+        .map(String::as_str)
+        .collect();
+    require(
+        movement_route_templates_keys
+            == BTreeSet::from([
+                "bytes",
+                "operationalStateHash",
+                "sha256",
+                "stateHash",
+                "timetableTransferSetSha256",
+            ]),
+        "Movement-Route-Templates-v2-Beleg besitzt nicht exakt den pfadfreien Byte-/Zustandsvertrag.",
+    )?;
+    require(
+        movement_route_templates
+            .get("bytes")
+            .and_then(Value::as_i64)
+            .is_some_and(|bytes| bytes > 0)
+            && [
+                "sha256",
+                "stateHash",
+                "operationalStateHash",
+                "timetableTransferSetSha256",
+            ]
+            .iter()
+            .all(|field| {
+                movement_route_templates
+                    .get(*field)
+                    .and_then(Value::as_str)
+                    .is_some_and(is_sha256)
+            })
+            && movement_route_templates.get("sha256") != movement_route_templates.get("stateHash"),
+        "Movement-Route-Templates-v2-Beleg besitzt keine getrennte Byte-/Zustandsbindung.",
+    )?;
     let timetable_route_evidence = model.get("timetableRouteEvidence").ok_or_else(|| {
         ReleaseManifestError::new("Operational-v2-Betriebsmodell ohne freien GTFS-Fahrwegbeleg.")
     })?;
@@ -2860,6 +2954,8 @@ fn operational_quality_summary(
                 "archive",
                 "archiveSha256",
                 "completeRouteCount",
+                "dailyCirculation",
+                "dailyCirculationPlanSha256",
                 "derivationRule",
                 "externalOperationalNetworkProvenance",
                 "gtfsSnapshotBytes",
@@ -2881,8 +2977,16 @@ fn operational_quality_summary(
                 "snapshotHash",
                 "sourceLicense",
                 "sourceLicenseAsPublished",
+                "transferDemandsBytes",
+                "transferDemandsProduced",
+                "transferDemandsSchema",
+                "transferDemandsSha256",
+                "transferRouteCount",
+                "transferRouteLegCount",
+                "transferRouteLengthMm",
+                "transferSetSha256",
             ]),
-        "Freier GTFS-Fahrwegbeleg besitzt nicht exakt den v2-Closure-Vertrag.",
+        "Freier GTFS-Fahrwegbeleg besitzt nicht exakt den v3-Closure-Vertrag mit Transferabdeckung.",
     )?;
     let selected_segment_count = timetable_route_evidence
         .get("selectedSegmentCount")
@@ -2896,11 +3000,44 @@ fn operational_quality_summary(
         .get("routeRecordCount")
         .and_then(Value::as_i64)
         .unwrap_or_default();
+    let daily_circulation = timetable_route_evidence
+        .get("dailyCirculation")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            ReleaseManifestError::new(
+                "Freier GTFS-Fahrwegbeleg besitzt keine Daily-Circulation-Metrik.",
+            )
+        })?;
+    let daily_circulation_keys: BTreeSet<_> =
+        daily_circulation.keys().map(String::as_str).collect();
+    require(
+        daily_circulation_keys
+            == BTreeSet::from([
+                "circulationCount",
+                "journeyChainCount",
+                "lotCount",
+                "rolloverAssignmentCount",
+                "transferDemandCount",
+                "transferLotCount",
+            ]),
+        "Daily-Circulation-Metrik besitzt fehlende oder unerwartete Felder.",
+    )?;
+    let daily_positive = |field: &str| {
+        daily_circulation
+            .get(field)
+            .and_then(Value::as_i64)
+            .filter(|value| *value > 0)
+    };
+    let circulation_count = daily_positive("circulationCount").unwrap_or_default();
+    let rollover_assignment_count = daily_positive("rolloverAssignmentCount").unwrap_or_default();
+    let transfer_demand_count = daily_positive("transferDemandCount").unwrap_or_default();
+    let transfer_lot_count = daily_positive("transferLotCount").unwrap_or_default();
+    let lot_count = daily_positive("lotCount").unwrap_or_default();
     require(
         timetable_route_evidence
             .get("reportSchema")
             .and_then(Value::as_str)
-            == Some("zugfolge-germany-timetable-route-report/v2")
+            == Some("zugfolge-germany-timetable-route-report/v3")
             && timetable_route_evidence.get("policyId") == model.get("policyId")
             && timetable_route_evidence
                 .get("derivationRule")
@@ -2913,6 +3050,10 @@ fn operational_quality_summary(
                     "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
                 )
             && timetable_route_evidence
+                .get("transferDemandsSchema")
+                .and_then(Value::as_str)
+                == Some("zugfolge-timetable-transfer-demands/v1")
+            && timetable_route_evidence
                 .get("sourceLicense")
                 .and_then(Value::as_str)
                 == Some("CC-BY-4.0")
@@ -2924,21 +3065,29 @@ fn operational_quality_summary(
                 .get("archive")
                 .and_then(Value::as_str)
                 .is_some_and(|archive| !archive.is_empty())
-            && ["reportBytes", "routesBytes", "gtfsSnapshotBytes"]
-                .iter()
-                .all(|field| {
-                    timetable_route_evidence
-                        .get(*field)
-                        .and_then(Value::as_i64)
-                        .is_some_and(|bytes| bytes > 0)
-                })
+            && [
+                "reportBytes",
+                "routesBytes",
+                "gtfsSnapshotBytes",
+                "transferDemandsBytes",
+            ]
+            .iter()
+            .all(|field| {
+                timetable_route_evidence
+                    .get(*field)
+                    .and_then(Value::as_i64)
+                    .is_some_and(|bytes| bytes > 0)
+            })
             && [
                 "reportSha256",
                 "routesSha256",
                 "gtfsSnapshotSha256",
+                "transferDemandsSha256",
                 "snapshotHash",
                 "archiveSha256",
                 "routeSetSha256",
+                "dailyCirculationPlanSha256",
+                "transferSetSha256",
             ]
             .iter()
             .all(|field| {
@@ -2956,6 +3105,26 @@ fn operational_quality_summary(
                 .get("sameStopTransitionCount")
                 .and_then(Value::as_i64)
                 .is_some_and(|count| count >= 0)
+            && daily_positive("journeyChainCount").is_some()
+            && rollover_assignment_count == circulation_count
+            && transfer_demand_count <= circulation_count
+            && transfer_lot_count <= lot_count
+            && timetable_route_evidence
+                .get("transferDemandsProduced")
+                .and_then(Value::as_bool)
+                == Some(true)
+            && timetable_route_evidence
+                .get("transferRouteCount")
+                .and_then(Value::as_i64)
+                == Some(transfer_demand_count)
+            && ["transferRouteLegCount", "transferRouteLengthMm"]
+                .iter()
+                .all(|field| {
+                    timetable_route_evidence
+                        .get(*field)
+                        .and_then(Value::as_i64)
+                        .is_some_and(|value| value > 0)
+                })
             && timetable_route_evidence
                 .get("realGeometry")
                 .and_then(Value::as_bool)
@@ -2972,7 +3141,7 @@ fn operational_quality_summary(
                 .get("externalOperationalNetworkProvenance")
                 .and_then(Value::as_bool)
                 == Some(false),
-        "Freier GTFS-Fahrwegbeleg verletzt Policy, Bytebindung, Vollstaendigkeit oder Provenienz.",
+        "Freier GTFS-Fahrwegbeleg verletzt Policy, Bytebindung, Tagesumlauf-/Transferabdeckung, Vollstaendigkeit oder Provenienz.",
     )?;
     for field in [
         "blockResources",
@@ -3049,6 +3218,54 @@ fn operational_quality_summary(
             && candidate_sha256 != candidate_state_hash,
         "Operational-v2-Qualitaet und natives Artefakt besitzen keine identische Byte-/Zustandsbindung.",
     )?;
+    let movement_artifact = artifacts
+        .iter()
+        .find(|artifact| {
+            artifact.extra.get("kind").and_then(Value::as_str)
+                == Some(MOVEMENT_ROUTE_TEMPLATES_V2_KIND)
+        })
+        .ok_or_else(|| ReleaseManifestError::new("Movement-Route-Templates-v2-Artefakt fehlt."))?;
+    let transfer_artifact = artifacts
+        .iter()
+        .find(|artifact| {
+            artifact.extra.get("kind").and_then(Value::as_str)
+                == Some(TIMETABLE_TRANSFER_DEMANDS_V1_KIND)
+        })
+        .ok_or_else(|| {
+            ReleaseManifestError::new("Timetable-Transfer-Demands-v1-Artefakt fehlt.")
+        })?;
+    require(
+        timetable_route_evidence
+            .get("transferDemandsBytes")
+            .and_then(Value::as_i64)
+            == Some(transfer_artifact.bytes)
+            && timetable_route_evidence
+                .get("transferDemandsSha256")
+                .and_then(Value::as_str)
+                == Some(transfer_artifact.sha256.as_str()),
+        "Operational-v2-Closure und Timetable-Transfer-Demands-v1-Artefakt besitzen keine identische Bytebindung.",
+    )?;
+    require(
+        movement_route_templates
+            .get("bytes")
+            .and_then(Value::as_i64)
+            == Some(movement_artifact.bytes)
+            && movement_route_templates
+                .get("sha256")
+                .and_then(Value::as_str)
+                == Some(movement_artifact.sha256.as_str())
+            && movement_route_templates
+                .get("operationalStateHash")
+                .and_then(Value::as_str)
+                == Some(candidate_state_hash)
+            && timetable_route_evidence
+                .get("transferSetSha256")
+                .and_then(Value::as_str)
+                == movement_route_templates
+                    .get("timetableTransferSetSha256")
+                    .and_then(Value::as_str),
+        "Operational-v2-Closure und Movement-Route-Templates-v2-Artefakt besitzen keine identische Byte-, Operational-State- oder Transfer-Set-Bindung.",
+    )?;
     Ok(json!({
         "reportSha256": sha256_bytes(report_bytes),
         "policyId": model["policyId"],
@@ -3066,6 +3283,7 @@ fn operational_quality_summary(
         "syntheticOperationalDetailsShipped": true,
         "objectLevelProvenanceShipped": false,
         "observedAndSyntheticObjectsShareRuntimeCollections": true,
+        "movementRouteTemplates": movement_route_templates,
         "timetableRouteEvidence": timetable_route_evidence,
         "operationalQualityEligible": true,
         "signatureImplied": false,

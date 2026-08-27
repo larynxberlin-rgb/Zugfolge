@@ -5,13 +5,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use zugfolge_sim::operational::{
     AutomaticShuntingNeed, Direction, DispatchRequest, EdgeGeometryPoint,
     FormationDynamicsDerivationError, FormationDynamicsDerivationInput, FormationVersion,
-    InterlockingRouteTemplate, MotionState, MovementKind, OPERATIONAL_PROJECTION_VALIDITY_MS,
-    OperationalControlStands, OperationalDisruption, OperationalError, OperationalInfraRelease,
-    OperationalPowerSystem, OperationalVehicleRole, OperationalVehicleTraction, OperationalWorld,
-    PROTECTION_MODE_SELECTION_POLICY_V1, PhysicalVehicle, ProjectedMotionState, ProjectionKind,
-    ProtectionModeSelectionRun, ResourceLifecycle, RouteLeg, RouteVersion, ShuntingPurpose,
-    SignalAspect, TrackInterval, TrainMaterialization, VehicleCondition, VehicleRestriction,
-    VehicleType, VehicleTypeRawFormationDynamics, derive_formation_dynamics,
+    InterlockingRouteTemplate, MotionState, MovementContinuation, MovementContinuity, MovementKind,
+    OPERATIONAL_PROJECTION_VALIDITY_MS, OperationalControlStands, OperationalDisruption,
+    OperationalError, OperationalInfraRelease, OperationalPowerSystem, OperationalVehicleRole,
+    OperationalVehicleTraction, OperationalWorld, PROTECTION_MODE_SELECTION_POLICY_V1,
+    PhysicalVehicle, ProjectedMotionState, ProjectionKind, ProtectionModeSelectionRun,
+    ResourceLifecycle, RouteLeg, RouteVersion, ShuntingPurpose, SignalAspect, TrackInterval,
+    TrainMaterialization, VehicleCondition, VehicleRestriction, VehicleType,
+    VehicleTypeRawFormationDynamics, derive_formation_dynamics,
     operational_train_number_numeric_part,
 };
 
@@ -65,30 +66,33 @@ fn release() -> OperationalInfraRelease {
     let train_route = InterlockingRouteTemplate {
         id: "interlocking:train".to_owned(),
         route_template_id: "route-template".to_owned(),
+        authority_start_route_mm: 0,
         signal_id: "signal:train".to_owned(),
         movement_kind: MovementKind::Train,
-        path_resources: set(&["block:a", "block:b", "route-resource:common"]),
+        path_resources: set(&["block:a"]),
         overlap_resources: set(&["overlap:1"]),
-        flank_resources: set(&["flank:1"]),
+        flank_resources: set(&["flank:1", "route-resource:common"]),
         switch_positions: BTreeMap::from([("switch:1".to_owned(), "left".to_owned())]),
-        authority_end_route_mm: 100_000,
-        release_after_tail_route_mm: 90_000,
+        authority_end_route_mm: 60_000,
+        release_after_tail_route_mm: 50_000,
     };
-    let opposing = InterlockingRouteTemplate {
-        id: "interlocking:opposing".to_owned(),
+    let train_route_continuation = InterlockingRouteTemplate {
+        id: "interlocking:train:b".to_owned(),
         route_template_id: "route-template".to_owned(),
-        signal_id: "signal:opposing".to_owned(),
+        authority_start_route_mm: 60_000,
+        signal_id: "signal:train:b".to_owned(),
         movement_kind: MovementKind::Train,
-        path_resources: set(&["block:a", "block:b", "route-resource:common"]),
-        overlap_resources: set(&["overlap:2"]),
-        flank_resources: set(&["flank:2"]),
-        switch_positions: BTreeMap::from([("switch:1".to_owned(), "right".to_owned())]),
-        authority_end_route_mm: 100_000,
-        release_after_tail_route_mm: 90_000,
+        path_resources: set(&["block:b"]),
+        overlap_resources: set(&["overlap:1"]),
+        flank_resources: set(&["flank:train:b"]),
+        switch_positions: BTreeMap::from([("switch:1".to_owned(), "left".to_owned())]),
+        authority_end_route_mm: 120_000,
+        release_after_tail_route_mm: 120_000,
     };
     let shunting = InterlockingRouteTemplate {
         id: "interlocking:shunting".to_owned(),
         route_template_id: "route-template".to_owned(),
+        authority_start_route_mm: 10_000,
         signal_id: "signal:shunting".to_owned(),
         movement_kind: MovementKind::Shunting,
         path_resources: set(&["route-resource:yard"]),
@@ -143,10 +147,18 @@ fn release() -> OperationalInfraRelease {
         route_versions: routes,
         interlocking_routes: BTreeMap::from([
             (train_route.id.clone(), train_route),
-            (opposing.id.clone(), opposing),
+            (
+                train_route_continuation.id.clone(),
+                train_route_continuation,
+            ),
             (shunting.id.clone(), shunting),
         ]),
-        signals: set(&["signal:train", "signal:opposing", "signal:shunting"]),
+        signals: set(&[
+            "signal:train",
+            "signal:train:b",
+            "signal:opposing",
+            "signal:shunting",
+        ]),
         switches: set(&["switch:1"]),
         block_resources: set(&[
             "block:a",
@@ -157,6 +169,7 @@ fn release() -> OperationalInfraRelease {
             "overlap:2",
             "overlap:yard",
             "flank:1",
+            "flank:train:b",
             "flank:2",
             "flank:yard",
         ]),
@@ -342,6 +355,25 @@ fn program_template(
     }
 }
 
+fn dispatch_request(
+    train_id: &str,
+    interlocking_route_id: &str,
+    waiting_since_ms: i64,
+) -> DispatchRequest {
+    DispatchRequest {
+        train_id: train_id.to_owned(),
+        interlocking_route_id: interlocking_route_id.to_owned(),
+        committed_rank: 0,
+        timetable_deviation_ms: 0,
+        passenger_impact: 0,
+        contractual_impact: 0,
+        network_impact: 0,
+        resource_consequence: 0,
+        recovery_rank: 0,
+        waiting_since_ms,
+    }
+}
+
 fn release_with_route_protection(systems: &[&str]) -> OperationalInfraRelease {
     let mut infra_release = release();
     for leg in &mut infra_release
@@ -355,12 +387,6 @@ fn release_with_route_protection(systems: &[&str]) -> OperationalInfraRelease {
         leg.available_protection_systems.sort();
         leg.simultaneously_required_protection_systems.clear();
     }
-    let interlocking = infra_release
-        .interlocking_routes
-        .get_mut("interlocking:train")
-        .expect("Test-Fahrstrasse");
-    interlocking.authority_end_route_mm = 120_000;
-    interlocking.release_after_tail_route_mm = 120_000;
     infra_release
 }
 
@@ -408,21 +434,1221 @@ fn release_with_independent_opposing_route() -> OperationalInfraRelease {
             }],
         },
     );
-    let opposing = infra_release
-        .interlocking_routes
-        .get_mut("interlocking:opposing")
-        .expect("Test-Gegenfahrstrasse");
-    opposing.route_template_id = "route-template:opposing".to_owned();
-    opposing.path_resources = set(&["block:c", "route-resource:common"]);
-    opposing.authority_end_route_mm = 120_000;
-    opposing.release_after_tail_route_mm = 90_000;
+    let opposing = InterlockingRouteTemplate {
+        id: "interlocking:opposing".to_owned(),
+        route_template_id: "route-template:opposing".to_owned(),
+        authority_start_route_mm: 0,
+        signal_id: "signal:opposing".to_owned(),
+        movement_kind: MovementKind::Train,
+        path_resources: set(&["block:c"]),
+        overlap_resources: set(&["overlap:2"]),
+        flank_resources: set(&["flank:2", "route-resource:common"]),
+        switch_positions: BTreeMap::from([("switch:1".to_owned(), "right".to_owned())]),
+        authority_end_route_mm: 120_000,
+        release_after_tail_route_mm: 90_000,
+    };
     infra_release
+        .interlocking_routes
+        .insert(opposing.id.clone(), opposing);
+    infra_release
+}
+
+fn release_with_three_train_segments() -> OperationalInfraRelease {
+    let mut infra_release = release();
+    infra_release
+        .directed_edges
+        .insert("edge:c".to_owned(), 30_000);
+    infra_release.edge_geometries.insert(
+        "edge:c".to_owned(),
+        vec![
+            EdgeGeometryPoint {
+                edge_offset_mm: 0,
+                latitude_e7: 510_060_000,
+                longitude_e7: 120_060_000,
+                bearing_milli_degrees: Some(90_000),
+            },
+            EdgeGeometryPoint {
+                edge_offset_mm: 30_000,
+                latitude_e7: 510_060_000,
+                longitude_e7: 120_090_000,
+                bearing_milli_degrees: None,
+            },
+        ],
+    );
+    infra_release
+        .block_resources
+        .extend(set(&["block:c", "overlap:train:c", "flank:train:c"]));
+    infra_release.signals.insert("signal:train:c".to_owned());
+
+    let route = infra_release
+        .route_versions
+        .get_mut("route:v1")
+        .expect("Test-Laufweg");
+    route.legs[1].edge_exit_mm = 30_000;
+    route.legs.push(RouteLeg {
+        edge_id: "edge:c".to_owned(),
+        direction: Direction::Along,
+        edge_entry_mm: 0,
+        edge_exit_mm: 30_000,
+        route_start_mm: 90_000,
+        block_ids: set(&["block:c"]),
+        speed_limit_mmps: 20_000,
+        gradient_per_mille: 0,
+        available_protection_systems: vec!["pzb".to_owned()],
+        simultaneously_required_protection_systems: Vec::new(),
+    });
+    let legs = route.legs.clone();
+    infra_release
+        .route_versions
+        .get_mut("route:v2")
+        .expect("Test-Umleitung")
+        .legs = legs;
+
+    let middle = infra_release
+        .interlocking_routes
+        .get_mut("interlocking:train:b")
+        .expect("mittlere Test-Fahrstrasse");
+    middle.authority_end_route_mm = 90_000;
+    middle.release_after_tail_route_mm = 80_000;
+    let final_segment = InterlockingRouteTemplate {
+        id: "interlocking:train:c".to_owned(),
+        route_template_id: "route-template".to_owned(),
+        authority_start_route_mm: 90_000,
+        signal_id: "signal:train:c".to_owned(),
+        movement_kind: MovementKind::Train,
+        path_resources: set(&["block:c"]),
+        overlap_resources: set(&["overlap:train:c"]),
+        flank_resources: set(&["flank:train:c"]),
+        switch_positions: BTreeMap::from([("switch:1".to_owned(), "left".to_owned())]),
+        authority_end_route_mm: 120_000,
+        release_after_tail_route_mm: 120_000,
+    };
+    infra_release
+        .interlocking_routes
+        .insert(final_segment.id.clone(), final_segment);
+    infra_release
+}
+
+fn continuation_release(reverse_successor: bool) -> OperationalInfraRelease {
+    let leg = |edge_id: &str,
+               direction: Direction,
+               edge_entry_mm: i64,
+               edge_exit_mm: i64,
+               route_start_mm: i64,
+               block_id: &str| RouteLeg {
+        edge_id: edge_id.to_owned(),
+        direction,
+        edge_entry_mm,
+        edge_exit_mm,
+        route_start_mm,
+        block_ids: set(&[block_id]),
+        speed_limit_mmps: 20_000,
+        gradient_per_mille: 0,
+        available_protection_systems: vec!["pzb".to_owned()],
+        simultaneously_required_protection_systems: Vec::new(),
+    };
+    let successor_direction = if reverse_successor {
+        Direction::Against
+    } else {
+        Direction::Along
+    };
+    let (successor_seed_entry, successor_seed_exit) = if reverse_successor {
+        (20_000, 10_000)
+    } else {
+        (10_000, 20_000)
+    };
+    let successor_exit_entry = if reverse_successor { 30_000 } else { 0 };
+    let successor_exit_exit = if reverse_successor { 0 } else { 30_000 };
+    let (third_seed_entry, third_seed_exit) = if reverse_successor {
+        (10_000, 0)
+    } else {
+        (20_000, 30_000)
+    };
+    let third_exit_entry = if reverse_successor { 20_000 } else { 0 };
+    let third_exit_exit = if reverse_successor { 0 } else { 20_000 };
+
+    let routes = BTreeMap::from([
+        (
+            "route:continuation:source".to_owned(),
+            RouteVersion {
+                id: "route:continuation:source".to_owned(),
+                template_id: "template:continuation:source".to_owned(),
+                predecessor_id: None,
+                transition_route_mm: None,
+                legs: vec![leg(
+                    "edge:continuation:anchor",
+                    Direction::Along,
+                    0,
+                    20_000,
+                    0,
+                    "block:continuation:source",
+                )],
+            },
+        ),
+        (
+            "route:continuation:successor".to_owned(),
+            RouteVersion {
+                id: "route:continuation:successor".to_owned(),
+                template_id: "template:continuation:successor".to_owned(),
+                predecessor_id: Some("route:continuation:source".to_owned()),
+                transition_route_mm: Some(10_000),
+                legs: vec![
+                    leg(
+                        "edge:continuation:anchor",
+                        successor_direction,
+                        successor_seed_entry,
+                        successor_seed_exit,
+                        0,
+                        "block:continuation:target",
+                    ),
+                    leg(
+                        "edge:continuation:exit",
+                        successor_direction,
+                        successor_exit_entry,
+                        successor_exit_exit,
+                        10_000,
+                        "block:continuation:exit",
+                    ),
+                ],
+            },
+        ),
+        (
+            "route:continuation:third".to_owned(),
+            RouteVersion {
+                id: "route:continuation:third".to_owned(),
+                template_id: "template:continuation:third".to_owned(),
+                predecessor_id: Some("route:continuation:successor".to_owned()),
+                transition_route_mm: Some(10_000),
+                legs: vec![
+                    leg(
+                        "edge:continuation:exit",
+                        successor_direction,
+                        third_seed_entry,
+                        third_seed_exit,
+                        0,
+                        "block:continuation:third-seed",
+                    ),
+                    leg(
+                        "edge:continuation:third",
+                        successor_direction,
+                        third_exit_entry,
+                        third_exit_exit,
+                        10_000,
+                        "block:continuation:third-exit",
+                    ),
+                ],
+            },
+        ),
+        (
+            "route:continuation:blocker".to_owned(),
+            RouteVersion {
+                id: "route:continuation:blocker".to_owned(),
+                template_id: "template:continuation:blocker".to_owned(),
+                predecessor_id: None,
+                transition_route_mm: None,
+                legs: vec![
+                    leg(
+                        "edge:continuation:blocker",
+                        Direction::Along,
+                        0,
+                        300_000,
+                        0,
+                        "block:continuation:target",
+                    ),
+                    leg(
+                        "edge:continuation:blocker",
+                        Direction::Along,
+                        300_000,
+                        400_000,
+                        300_000,
+                        "block:continuation:blocker-exit",
+                    ),
+                ],
+            },
+        ),
+    ]);
+    let interlocking = |id: &str,
+                        route_template_id: &str,
+                        authority_start_route_mm: i64,
+                        authority_end_route_mm: i64,
+                        path_resource: &str| InterlockingRouteTemplate {
+        id: id.to_owned(),
+        route_template_id: route_template_id.to_owned(),
+        authority_start_route_mm,
+        signal_id: format!("signal:{id}"),
+        movement_kind: MovementKind::Train,
+        path_resources: set(&[path_resource]),
+        overlap_resources: set(&[&format!("overlap:{id}")]),
+        flank_resources: set(&[&format!("flank:{id}")]),
+        switch_positions: BTreeMap::new(),
+        authority_end_route_mm,
+        release_after_tail_route_mm: authority_end_route_mm,
+    };
+    let templates = [
+        interlocking(
+            "continuation:source",
+            "template:continuation:source",
+            0,
+            20_000,
+            "block:continuation:source",
+        ),
+        interlocking(
+            "continuation:successor:seed",
+            "template:continuation:successor",
+            0,
+            10_000,
+            "block:continuation:target",
+        ),
+        interlocking(
+            "continuation:successor:exit",
+            "template:continuation:successor",
+            10_000,
+            40_000,
+            "block:continuation:exit",
+        ),
+        interlocking(
+            "continuation:third:seed",
+            "template:continuation:third",
+            0,
+            10_000,
+            "block:continuation:third-seed",
+        ),
+        interlocking(
+            "continuation:third:exit",
+            "template:continuation:third",
+            10_000,
+            30_000,
+            "block:continuation:third-exit",
+        ),
+        interlocking(
+            "continuation:blocker:entry",
+            "template:continuation:blocker",
+            0,
+            300_000,
+            "block:continuation:target",
+        ),
+        interlocking(
+            "continuation:blocker:exit",
+            "template:continuation:blocker",
+            300_000,
+            400_000,
+            "block:continuation:blocker-exit",
+        ),
+    ];
+    let mut signals = BTreeSet::new();
+    let mut block_resources = BTreeSet::new();
+    let mut interlocking_routes = BTreeMap::new();
+    for template in templates {
+        signals.insert(template.signal_id.clone());
+        block_resources.extend(template.path_resources.iter().cloned());
+        block_resources.extend(template.overlap_resources.iter().cloned());
+        block_resources.extend(template.flank_resources.iter().cloned());
+        interlocking_routes.insert(template.id.clone(), template);
+    }
+    OperationalInfraRelease {
+        id: "infra:movement-continuation:v2".to_owned(),
+        directed_edges: BTreeMap::from([
+            ("edge:continuation:anchor".to_owned(), 20_000),
+            ("edge:continuation:exit".to_owned(), 30_000),
+            ("edge:continuation:third".to_owned(), 20_000),
+            ("edge:continuation:blocker".to_owned(), 400_000),
+        ]),
+        edge_geometries: BTreeMap::from([
+            (
+                "edge:continuation:anchor".to_owned(),
+                vec![
+                    EdgeGeometryPoint {
+                        edge_offset_mm: 0,
+                        latitude_e7: 510_000_000,
+                        longitude_e7: 120_000_000,
+                        bearing_milli_degrees: Some(90_000),
+                    },
+                    EdgeGeometryPoint {
+                        edge_offset_mm: 20_000,
+                        latitude_e7: 510_000_000,
+                        longitude_e7: 120_020_000,
+                        bearing_milli_degrees: None,
+                    },
+                ],
+            ),
+            (
+                "edge:continuation:exit".to_owned(),
+                vec![
+                    EdgeGeometryPoint {
+                        edge_offset_mm: 0,
+                        latitude_e7: 510_000_000,
+                        longitude_e7: 120_020_000,
+                        bearing_milli_degrees: Some(90_000),
+                    },
+                    EdgeGeometryPoint {
+                        edge_offset_mm: 30_000,
+                        latitude_e7: 510_000_000,
+                        longitude_e7: 120_050_000,
+                        bearing_milli_degrees: None,
+                    },
+                ],
+            ),
+            (
+                "edge:continuation:third".to_owned(),
+                vec![
+                    EdgeGeometryPoint {
+                        edge_offset_mm: 0,
+                        latitude_e7: 510_000_000,
+                        longitude_e7: 120_050_000,
+                        bearing_milli_degrees: Some(90_000),
+                    },
+                    EdgeGeometryPoint {
+                        edge_offset_mm: 20_000,
+                        latitude_e7: 510_000_000,
+                        longitude_e7: 120_070_000,
+                        bearing_milli_degrees: None,
+                    },
+                ],
+            ),
+            (
+                "edge:continuation:blocker".to_owned(),
+                vec![
+                    EdgeGeometryPoint {
+                        edge_offset_mm: 0,
+                        latitude_e7: 511_000_000,
+                        longitude_e7: 121_000_000,
+                        bearing_milli_degrees: Some(90_000),
+                    },
+                    EdgeGeometryPoint {
+                        edge_offset_mm: 400_000,
+                        latitude_e7: 511_000_000,
+                        longitude_e7: 121_400_000,
+                        bearing_milli_degrees: None,
+                    },
+                ],
+            ),
+        ]),
+        route_versions: routes,
+        interlocking_routes,
+        signals,
+        switches: BTreeSet::new(),
+        block_resources,
+        platform_intervals: BTreeMap::new(),
+        region_boundaries: set(&["boundary:continuation"]),
+        rzue_layout_id: "rzue:continuation:v1".to_owned(),
+    }
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Testhelfer bildet den vollstaendigen signierten Fortsetzungsvertrag explizit ab"
+)]
+fn continuation(
+    id: &str,
+    predecessor_train_id: &str,
+    successor_id: &str,
+    successor_number: &str,
+    route_version_id: &str,
+    formation_version_id: &str,
+    head_route_mm: i64,
+    dispatch_interlocking_route_id: &str,
+    not_before_ms: i64,
+    minimum_dwell_ms: i64,
+    continuity: MovementContinuity,
+) -> MovementContinuation {
+    let predecessor_base_route_version_id = match route_version_id {
+        "route:continuation:third" => "route:continuation:successor",
+        _ => "route:continuation:source",
+    };
+    MovementContinuation {
+        id: id.to_owned(),
+        predecessor_train_id: predecessor_train_id.to_owned(),
+        predecessor_base_route_version_id: predecessor_base_route_version_id.to_owned(),
+        successor: TrainMaterialization {
+            id: successor_id.to_owned(),
+            train_number: successor_number.to_owned(),
+            operator_id: "operator:1".to_owned(),
+            movement_kind: MovementKind::Train,
+            route_version_id: route_version_id.to_owned(),
+            formation_version_id: formation_version_id.to_owned(),
+            head_route_mm,
+            scheduled_departure_ms: None,
+            public_passenger_stop: false,
+        },
+        successor_dispatch: dispatch_request(
+            successor_id,
+            dispatch_interlocking_route_id,
+            not_before_ms,
+        ),
+        not_before_ms,
+        minimum_dwell_ms,
+        continuity,
+    }
+}
+
+fn advance_until(world: &mut OperationalWorld, train_id: &str, present: bool) {
+    for _ in 0..128 {
+        if world.trains.contains_key(train_id) == present {
+            return;
+        }
+        let next = world
+            .trains
+            .values()
+            .filter_map(|train| train.motion_segment.as_ref())
+            .map(|segment| segment.valid_until_ms)
+            .min()
+            .expect("mindestens eine Bewegung fuehrt zum erwarteten Zustand");
+        world.advance_to(next).unwrap();
+    }
+    panic!("erwarteter Zugzustand wurde nicht erreicht");
+}
+
+#[test]
+fn movement_continuation_is_atomic_physical_and_replay_deterministic() {
+    let infra_release = continuation_release(false);
+    let mut world = world_with_release(infra_release.clone());
+    world
+        .materialize_train(
+            "train:continuation:source",
+            "RB 101",
+            "operator:1",
+            MovementKind::Train,
+            "route:continuation:source",
+            "formation:1",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+    let link = continuation(
+        "continuation:source-successor",
+        "train:continuation:source",
+        "train:continuation:successor",
+        "RB 102",
+        "route:continuation:successor",
+        "formation:1",
+        10_000,
+        "continuation:successor:exit",
+        0,
+        0,
+        MovementContinuity::SameDirection,
+    );
+    world.queue_movement_continuation(link.clone()).unwrap();
+    world.queue_movement_continuation(link).unwrap();
+
+    let serialized = serde_json::to_value(&world).unwrap();
+    let serialized_restore: OperationalWorld = serde_json::from_value(serialized).unwrap();
+    assert_eq!(world.state_hash(), serialized_restore.state_hash());
+    serialized_restore.verify_invariants().unwrap();
+    let mut replay = OperationalWorld::restore(&world.checkpoint()).unwrap();
+
+    for candidate in [&mut world, &mut replay] {
+        candidate
+            .submit_dispatch_requests(&[dispatch_request(
+                "train:continuation:source",
+                "continuation:source",
+                0,
+            )])
+            .unwrap();
+        advance_until(candidate, "train:continuation:successor", true);
+
+        assert!(!candidate.trains.contains_key("train:continuation:source"));
+        let successor = &candidate.trains["train:continuation:successor"];
+        assert_eq!(successor.formation_version_id, "formation:1");
+        assert_eq!(successor.route_version_id, "route:continuation:successor");
+        assert_eq!(successor.head_route_mm, 10_000);
+        assert_eq!(successor.tail_route_mm, 0);
+        assert!(successor.motion_segment.is_some());
+        assert!(candidate.events.iter().any(|event| {
+            event.kind == "movement-continued" && event.subject_id == "train:continuation:successor"
+        }));
+        let persisted = serde_json::to_value(&*candidate).unwrap();
+        assert_eq!(
+            persisted["pendingMovementContinuations"],
+            serde_json::json!({})
+        );
+        assert!(
+            persisted["completedMovementContinuations"]
+                .get("continuation:source-successor")
+                .is_some()
+        );
+        candidate.verify_invariants().unwrap();
+    }
+    assert_eq!(world.state_hash(), replay.state_hash());
+}
+
+#[test]
+fn movement_continuation_waits_for_real_completion_and_minimum_dwell() {
+    let mut world = world_with_release(continuation_release(false));
+    world
+        .materialize_train(
+            "train:continuation:source",
+            "RB 111",
+            "operator:1",
+            MovementKind::Train,
+            "route:continuation:source",
+            "formation:1",
+            0,
+            Some(0),
+            true,
+        )
+        .unwrap();
+    let mut dwell_continuation = continuation(
+        "continuation:dwell",
+        "train:continuation:source",
+        "train:continuation:successor",
+        "RB 112",
+        "route:continuation:successor",
+        "formation:1",
+        10_000,
+        "continuation:successor:exit",
+        0,
+        300_000,
+        MovementContinuity::SameDirection,
+    );
+    dwell_continuation.successor.scheduled_departure_ms = Some(0);
+    dwell_continuation.successor.public_passenger_stop = false;
+    let mut missing_passenger_dwell = dwell_continuation.clone();
+    missing_passenger_dwell.minimum_dwell_ms = 0;
+    assert_eq!(
+        world.queue_movement_continuation(missing_passenger_dwell),
+        Err(OperationalError::InvalidMovementContinuationTimes(
+            "continuation:dwell".to_owned()
+        ))
+    );
+    world
+        .queue_movement_continuation(dwell_continuation)
+        .unwrap();
+    world
+        .submit_dispatch_requests(&[dispatch_request(
+            "train:continuation:source",
+            "continuation:source",
+            0,
+        )])
+        .unwrap();
+    while let Some(next_ms) = world.trains["train:continuation:source"]
+        .motion_segment
+        .as_ref()
+        .map(|segment| segment.valid_until_ms)
+    {
+        world.advance_to(next_ms).unwrap();
+    }
+    let completed_at_ms = world.now_ms;
+    let source = &world.trains["train:continuation:source"];
+    assert_eq!(source.head_route_mm, 20_000);
+    assert_eq!(source.speed_mmps, 0);
+    assert!(source.authority.is_none());
+    assert_eq!(source.motion_state, MotionState::Standing);
+
+    world.advance_to(completed_at_ms + 299_999).unwrap();
+    assert!(world.trains.contains_key("train:continuation:source"));
+    assert!(!world.trains.contains_key("train:continuation:successor"));
+    world.advance_to(completed_at_ms + 300_000).unwrap();
+    assert!(!world.trains.contains_key("train:continuation:source"));
+    assert!(world.trains.contains_key("train:continuation:successor"));
+    world.verify_invariants().unwrap();
+}
+
+#[test]
+fn reverse_movement_continuation_requires_both_control_stands() {
+    let mut allowed = world_with_release(continuation_release(true));
+    allowed
+        .materialize_train(
+            "train:continuation:source",
+            "RB 121",
+            "operator:1",
+            MovementKind::Train,
+            "route:continuation:source",
+            "formation:1",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+    allowed
+        .queue_movement_continuation(continuation(
+            "continuation:reverse",
+            "train:continuation:source",
+            "train:continuation:successor",
+            "RB 122",
+            "route:continuation:successor",
+            "formation:1",
+            10_000,
+            "continuation:successor:exit",
+            0,
+            0,
+            MovementContinuity::ReverseDirection,
+        ))
+        .unwrap();
+    allowed
+        .submit_dispatch_requests(&[dispatch_request(
+            "train:continuation:source",
+            "continuation:source",
+            0,
+        )])
+        .unwrap();
+    advance_until(&mut allowed, "train:continuation:successor", true);
+    assert_eq!(
+        allowed.trains["train:continuation:successor"].direction,
+        Direction::Against
+    );
+
+    let mut denied = world_with_release(continuation_release(true));
+    denied
+        .formations
+        .get_mut("formation:1")
+        .unwrap()
+        .performance
+        .rear_control_stand_available = false;
+    denied
+        .materialize_train(
+            "train:continuation:source",
+            "RB 123",
+            "operator:1",
+            MovementKind::Train,
+            "route:continuation:source",
+            "formation:1",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+    assert_eq!(
+        denied.queue_movement_continuation(continuation(
+            "continuation:reverse-denied",
+            "train:continuation:source",
+            "train:continuation:successor",
+            "RB 124",
+            "route:continuation:successor",
+            "formation:1",
+            10_000,
+            "continuation:successor:exit",
+            0,
+            0,
+            MovementContinuity::ReverseDirection,
+        )),
+        Err(OperationalError::ReversalWithoutControlStands(
+            "continuation:reverse-denied".to_owned()
+        ))
+    );
+}
+
+#[test]
+fn movement_continuation_graph_and_static_bindings_fail_closed() {
+    let mut world = world_with_release(continuation_release(false));
+    world
+        .materialize_train(
+            "train:continuation:source",
+            "RB 131",
+            "operator:1",
+            MovementKind::Train,
+            "route:continuation:source",
+            "formation:1",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+    let valid = continuation(
+        "continuation:valid",
+        "train:continuation:source",
+        "train:continuation:successor",
+        "RB 132",
+        "route:continuation:successor",
+        "formation:1",
+        10_000,
+        "continuation:successor:exit",
+        0,
+        0,
+        MovementContinuity::SameDirection,
+    );
+    world.queue_movement_continuation(valid.clone()).unwrap();
+    let mut conflicting = valid.clone();
+    conflicting.minimum_dwell_ms = 1;
+    assert_eq!(
+        world.queue_movement_continuation(conflicting),
+        Err(OperationalError::ConflictingMovementContinuationId(
+            "continuation:valid".to_owned()
+        ))
+    );
+    let mut duplicate_link = valid.clone();
+    duplicate_link.id = "continuation:duplicate-link".to_owned();
+    assert_eq!(
+        world.queue_movement_continuation(duplicate_link),
+        Err(OperationalError::DuplicateMovementContinuationLink(
+            "continuation:duplicate-link".to_owned()
+        ))
+    );
+
+    let mut mismatch_world = world_with_release(continuation_release(false));
+    mismatch_world
+        .materialize_train(
+            "train:continuation:source",
+            "RB 141",
+            "operator:1",
+            MovementKind::Train,
+            "route:continuation:source",
+            "formation:1",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+    assert_eq!(
+        mismatch_world.queue_movement_continuation(continuation(
+            "continuation:formation-mismatch",
+            "train:continuation:source",
+            "train:continuation:successor",
+            "RB 142",
+            "route:continuation:successor",
+            "formation:2",
+            10_000,
+            "continuation:successor:exit",
+            0,
+            0,
+            MovementContinuity::SameDirection,
+        )),
+        Err(OperationalError::MovementContinuationFormationMismatch(
+            "continuation:formation-mismatch".to_owned()
+        ))
+    );
+    assert_eq!(
+        mismatch_world.queue_movement_continuation(continuation(
+            "continuation:discontinuous",
+            "train:continuation:source",
+            "train:continuation:third",
+            "RB 143",
+            "route:continuation:third",
+            "formation:1",
+            10_000,
+            "continuation:third:exit",
+            0,
+            0,
+            MovementContinuity::SameDirection,
+        )),
+        Err(OperationalError::DiscontinuousMovementContinuation(
+            "continuation:discontinuous".to_owned()
+        ))
+    );
+    assert_eq!(
+        mismatch_world.queue_movement_continuation(continuation(
+            "continuation:unknown-route",
+            "train:continuation:source",
+            "train:continuation:unknown",
+            "RB 144",
+            "route:continuation:unknown",
+            "formation:1",
+            10_000,
+            "continuation:successor:exit",
+            0,
+            0,
+            MovementContinuity::SameDirection,
+        )),
+        Err(OperationalError::UnknownRoute(
+            "route:continuation:unknown".to_owned()
+        ))
+    );
+
+    let mut occupied = world_with_release(continuation_release(false));
+    occupied
+        .materialize_train(
+            "train:continuation:source",
+            "RB 145",
+            "operator:1",
+            MovementKind::Train,
+            "route:continuation:source",
+            "formation:1",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+    occupied
+        .materialize_train(
+            "train:continuation:successor",
+            "G 146",
+            "operator:2",
+            MovementKind::Train,
+            "route:continuation:blocker",
+            "formation:2",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+    assert_eq!(
+        occupied.queue_movement_continuation(continuation(
+            "continuation:occupied-id",
+            "train:continuation:source",
+            "train:continuation:successor",
+            "RB 147",
+            "route:continuation:successor",
+            "formation:1",
+            10_000,
+            "continuation:successor:exit",
+            0,
+            0,
+            MovementContinuity::SameDirection,
+        )),
+        Err(OperationalError::MovementContinuationTargetOccupied(
+            "train:continuation:successor".to_owned()
+        ))
+    );
+
+    let mut chained = world_with_release(continuation_release(false));
+    chained
+        .queue_movement_continuation(continuation(
+            "continuation:b-c",
+            "train:continuation:successor",
+            "train:continuation:third",
+            "RB 152",
+            "route:continuation:third",
+            "formation:2",
+            10_000,
+            "continuation:third:exit",
+            0,
+            0,
+            MovementContinuity::SameDirection,
+        ))
+        .unwrap();
+    assert_eq!(
+        chained.queue_movement_continuation(continuation(
+            "continuation:a-b",
+            "train:continuation:source",
+            "train:continuation:successor",
+            "RB 151",
+            "route:continuation:successor",
+            "formation:1",
+            10_000,
+            "continuation:successor:exit",
+            0,
+            0,
+            MovementContinuity::SameDirection,
+        )),
+        Err(OperationalError::MovementContinuationFormationMismatch(
+            "continuation:b-c".to_owned()
+        ))
+    );
+
+    let mut cyclic = world_with_release(continuation_release(false));
+    cyclic
+        .queue_movement_continuation(continuation(
+            "continuation:x-y",
+            "train:x",
+            "train:y",
+            "RB 161",
+            "route:continuation:successor",
+            "formation:1",
+            10_000,
+            "continuation:successor:exit",
+            0,
+            0,
+            MovementContinuity::SameDirection,
+        ))
+        .unwrap();
+    assert_eq!(
+        cyclic.queue_movement_continuation(continuation(
+            "continuation:y-x",
+            "train:y",
+            "train:x",
+            "RB 162",
+            "route:continuation:source",
+            "formation:1",
+            0,
+            "continuation:source",
+            0,
+            0,
+            MovementContinuity::SameDirection,
+        )),
+        Err(OperationalError::CyclicMovementContinuation(
+            "continuation:y-x".to_owned()
+        ))
+    );
+}
+
+#[test]
+fn movement_continuation_accepts_only_a_physically_equivalent_qualified_predecessor() {
+    let mut release = continuation_release(false);
+    let mut qualified = release.route_versions["route:continuation:source"].clone();
+    qualified.id = "route:continuation:source-qualified".to_owned();
+    qualified.template_id = "template:continuation:source-qualified".to_owned();
+    let mut first = qualified.legs[0].clone();
+    first.edge_exit_mm = 10_000;
+    let mut second = qualified.legs[0].clone();
+    second.edge_entry_mm = 10_000;
+    second.route_start_mm = 10_000;
+    qualified.legs = vec![first, second];
+    let mut qualified_first_interlocking =
+        release.interlocking_routes["continuation:source"].clone();
+    qualified_first_interlocking.id = "continuation:source-qualified:first".to_owned();
+    qualified_first_interlocking.route_template_id = qualified.template_id.clone();
+    qualified_first_interlocking.authority_end_route_mm = 10_000;
+    qualified_first_interlocking.release_after_tail_route_mm = 10_000;
+    let mut qualified_second_interlocking = qualified_first_interlocking.clone();
+    qualified_second_interlocking.id = "continuation:source-qualified:second".to_owned();
+    qualified_second_interlocking.authority_start_route_mm = 10_000;
+    qualified_second_interlocking.authority_end_route_mm = 20_000;
+    qualified_second_interlocking.release_after_tail_route_mm = 20_000;
+    release.interlocking_routes.insert(
+        qualified_first_interlocking.id.clone(),
+        qualified_first_interlocking,
+    );
+    release.interlocking_routes.insert(
+        qualified_second_interlocking.id.clone(),
+        qualified_second_interlocking,
+    );
+    release
+        .route_versions
+        .insert(qualified.id.clone(), qualified.clone());
+    let mut world = world_with_release(release);
+    world
+        .materialize_train(
+            "train:continuation:qualified-source",
+            "RB 149",
+            "operator:1",
+            MovementKind::Train,
+            &qualified.id,
+            "formation:1",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+    let link = continuation(
+        "continuation:qualified-source-successor",
+        "train:continuation:qualified-source",
+        "train:continuation:qualified-successor",
+        "RB 150",
+        "route:continuation:successor",
+        "formation:1",
+        10_000,
+        "continuation:successor:exit",
+        0,
+        0,
+        MovementContinuity::SameDirection,
+    );
+    assert_eq!(
+        link.predecessor_base_route_version_id,
+        "route:continuation:source"
+    );
+    world.queue_movement_continuation(link).unwrap();
+}
+
+#[test]
+fn movement_continuation_waits_resource_indexed_without_advance_loop() {
+    let mut world = world_with_release(continuation_release(false));
+    world
+        .materialize_train(
+            "train:continuation:blocker",
+            "G 171",
+            "operator:2",
+            MovementKind::Train,
+            "route:continuation:blocker",
+            "formation:2",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+    world
+        .materialize_train(
+            "train:continuation:source",
+            "RB 172",
+            "operator:1",
+            MovementKind::Train,
+            "route:continuation:source",
+            "formation:1",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+    world
+        .queue_movement_continuation(continuation(
+            "continuation:blocked",
+            "train:continuation:source",
+            "train:continuation:successor",
+            "RB 173",
+            "route:continuation:successor",
+            "formation:1",
+            10_000,
+            "continuation:successor:exit",
+            0,
+            0,
+            MovementContinuity::SameDirection,
+        ))
+        .unwrap();
+    world
+        .submit_dispatch_requests(&[dispatch_request(
+            "train:continuation:blocker",
+            "continuation:blocker:entry",
+            0,
+        )])
+        .unwrap();
+    world
+        .submit_dispatch_requests(&[dispatch_request(
+            "train:continuation:source",
+            "continuation:source",
+            0,
+        )])
+        .unwrap();
+
+    for _ in 0..64 {
+        let source = &world.trains["train:continuation:source"];
+        if source.head_route_mm == 20_000 && source.motion_segment.is_none() {
+            break;
+        }
+        let next = world
+            .trains
+            .values()
+            .filter_map(|train| train.motion_segment.as_ref())
+            .map(|segment| segment.valid_until_ms)
+            .min()
+            .unwrap();
+        world.advance_to(next).unwrap();
+    }
+    let source = &world.trains["train:continuation:source"];
+    assert_eq!(source.head_route_mm, 20_000);
+    assert_eq!(
+        source.waiting_reason.as_deref(),
+        Some("waiting-for-movement-continuation"),
+        "{}",
+        serde_json::to_string_pretty(&world).unwrap()
+    );
+    let persisted = serde_json::to_value(&world).unwrap();
+    assert!(
+        persisted["continuationsWaitingByResource"]
+            .get("block:continuation:target")
+            .is_some()
+    );
+    let blocked_at_ms = world.now_ms;
+    world.advance_to(blocked_at_ms).unwrap();
+    assert!(world.trains.contains_key("train:continuation:source"));
+
+    advance_until(&mut world, "train:continuation:successor", true);
+    assert!(!world.trains.contains_key("train:continuation:source"));
+    assert!(
+        world.trains["train:continuation:successor"]
+            .motion_segment
+            .is_some()
+    );
+    assert_eq!(
+        serde_json::to_value(&world).unwrap()["continuationsWaitingByResource"],
+        serde_json::json!({})
+    );
+    world.verify_invariants().unwrap();
+}
+
+#[test]
+fn continuation_activates_atomically_while_outgoing_dispatch_waits_for_its_route() {
+    let mut infra_release = continuation_release(false);
+    infra_release
+        .route_versions
+        .get_mut("route:continuation:blocker")
+        .unwrap()
+        .legs[0]
+        .block_ids = set(&["block:continuation:exit"]);
+    infra_release
+        .interlocking_routes
+        .get_mut("continuation:blocker:entry")
+        .unwrap()
+        .path_resources = set(&["block:continuation:exit"]);
+    let mut world = world_with_release(infra_release);
+    world
+        .materialize_train(
+            "train:continuation:blocker",
+            "G 181",
+            "operator:2",
+            MovementKind::Train,
+            "route:continuation:blocker",
+            "formation:2",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+    world
+        .materialize_train(
+            "train:continuation:source",
+            "RB 182",
+            "operator:1",
+            MovementKind::Train,
+            "route:continuation:source",
+            "formation:1",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+    world
+        .queue_movement_continuation(continuation(
+            "continuation:outgoing-blocked",
+            "train:continuation:source",
+            "train:continuation:successor",
+            "RB 183",
+            "route:continuation:successor",
+            "formation:1",
+            10_000,
+            "continuation:successor:exit",
+            0,
+            0,
+            MovementContinuity::SameDirection,
+        ))
+        .unwrap();
+    world
+        .submit_dispatch_requests(&[dispatch_request(
+            "train:continuation:blocker",
+            "continuation:blocker:entry",
+            0,
+        )])
+        .unwrap();
+    world
+        .submit_dispatch_requests(&[dispatch_request(
+            "train:continuation:source",
+            "continuation:source",
+            0,
+        )])
+        .unwrap();
+    advance_until(&mut world, "train:continuation:successor", true);
+
+    let successor = &world.trains["train:continuation:successor"];
+    assert_eq!(successor.head_route_mm, 10_000);
+    assert_eq!(successor.motion_state, MotionState::Standing);
+    assert!(successor.authority.is_none());
+    assert!(successor.motion_segment.is_none());
+    assert_eq!(
+        successor.waiting_reason.as_deref(),
+        Some("waiting-for-route-lock")
+    );
+    assert!(
+        serde_json::to_value(&world).unwrap()["pendingDispatchRequests"]
+            .get("train:continuation:successor")
+            .is_some()
+    );
+
+    for _ in 0..128 {
+        if world.trains["train:continuation:successor"]
+            .motion_segment
+            .is_some()
+        {
+            break;
+        }
+        let next = world
+            .trains
+            .values()
+            .filter_map(|train| train.motion_segment.as_ref())
+            .map(|segment| segment.valid_until_ms)
+            .min()
+            .unwrap();
+        world.advance_to(next).unwrap();
+    }
+    assert!(
+        world.trains["train:continuation:successor"]
+            .motion_segment
+            .is_some()
+    );
+    world.verify_invariants().unwrap();
 }
 
 #[test]
 fn zugsicherungsmenge_ist_one_of_in_template_materialize_authority_und_fahrt() {
     let mut world = world_with_release(release_with_route_protection(&["lzb", "pzb"]));
-    let template = program_template("train:overlaid-protection", MovementKind::Train, 20_000);
+    let template = program_template("train:overlaid-protection", MovementKind::Train, 0);
     let selections = [ProtectionModeSelectionRun {
         through_route_leg_index: 1,
         selected_protection_system: "pzb".to_owned(),
@@ -491,35 +1717,28 @@ fn zugsicherungsmenge_ist_one_of_in_template_materialize_authority_und_fahrt() {
 #[test]
 fn full_route_authority_path_resources_decken_jedes_route_leg_ab() {
     let complete_world = world_with_release(release_with_route_protection(&["lzb", "pzb"]));
-    let template = program_template("train:full-route-resources", MovementKind::Train, 20_000);
+    let template = program_template("train:full-route-resources", MovementKind::Train, 0);
     let complete = complete_world
         .inspect_train_program_template(&template, "interlocking:train")
         .expect("vollstaendige Full-Route-Bindung ist aufloesbar");
     assert!(complete.authority_path_resources_cover_route);
     assert!(complete.is_valid());
     assert!(complete.failed_predicates().is_empty());
-    assert_eq!(complete.resource_binding_count, 5);
+    assert_eq!(complete.resource_binding_count, 6);
 
-    let mut last_leg_only_release = release_with_route_protection(&["lzb", "pzb"]);
-    last_leg_only_release
+    let mut overreaching_release = release_with_route_protection(&["lzb", "pzb"]);
+    let overreaching = overreaching_release
         .interlocking_routes
         .get_mut("interlocking:train")
-        .expect("Test-Fahrstrasse")
-        .path_resources = set(&["block:b", "route-resource:common"]);
-    let last_leg_only_world = world_with_release(last_leg_only_release);
-    let last_leg_only = last_leg_only_world
-        .inspect_train_program_template(&template, "interlocking:train")
-        .expect("alle Referenzen bleiben trotz unvollstaendiger Ressourcenbindung aufloesbar");
-    assert!(!last_leg_only.authority_path_resources_cover_route);
-    assert!(!last_leg_only.is_valid());
+        .expect("Test-Fahrstrasse");
+    overreaching.path_resources = set(&["block:a", "block:b"]);
+    overreaching.authority_end_route_mm = 120_000;
+    overreaching.release_after_tail_route_mm = 120_000;
     assert_eq!(
-        last_leg_only.failed_predicates(),
-        ["authority-path-resources-cover-route"]
-    );
-    assert_eq!(last_leg_only.resource_binding_count, 4);
-    assert_eq!(
-        last_leg_only_world.validate_train_program_template(&template, "interlocking:train"),
-        Err(OperationalError::InvalidProgramTemplate(template.id))
+        overreaching_release.validate(),
+        Err(OperationalError::InvalidInterlockingRoute(
+            "interlocking:train".to_owned()
+        ))
     );
 }
 
@@ -530,7 +1749,7 @@ fn disjunkte_und_reine_lzb_etcs_mengen_bleiben_fail_closed() {
         let template = program_template(
             &format!("train:pure-{exclusive_system}"),
             MovementKind::Train,
-            20_000,
+            0,
         );
         let predicates = world
             .inspect_train_program_template(&template, "interlocking:train")
@@ -563,7 +1782,7 @@ fn disjunkte_und_reine_lzb_etcs_mengen_bleiben_fail_closed() {
             MovementKind::Train,
             "route:v1",
             "formation:1",
-            20_000,
+            0,
             None,
             false,
         )
@@ -590,7 +1809,7 @@ fn disjunkte_und_reine_lzb_etcs_mengen_bleiben_fail_closed() {
             MovementKind::Train,
             "route:v1",
             "formation:1",
-            20_000,
+            0,
             None,
             false,
         )
@@ -624,7 +1843,7 @@ fn gleichzeitig_erforderliche_zugsicherung_muss_zusaetzlich_installiert_sein() {
         leg.simultaneously_required_protection_systems = vec!["lzb".to_owned()];
     }
     let world = world_with_release(infra);
-    let template = program_template("train:simultaneous-protection", MovementKind::Train, 20_000);
+    let template = program_template("train:simultaneous-protection", MovementKind::Train, 0);
     let predicates = world
         .inspect_train_program_template_with_protection_modes(
             &template,
@@ -660,12 +1879,14 @@ fn programmvorlagen_inspektion_meldet_alle_booleschen_predikate_gemeinsam() {
             "protection-intersection",
             "protection-mode-selections",
             "movement-kind",
+            "route-template",
             "authority-end",
+            "release-after-tail",
         ]
     );
-    assert!(predicates.route_template_matches);
+    assert!(!predicates.route_template_matches);
     assert!(!predicates.authority_end_matches_route);
-    assert!(predicates.release_after_tail_within_authority);
+    assert!(!predicates.release_after_tail_within_authority);
 }
 
 #[test]
@@ -679,37 +1900,37 @@ fn authority_is_a_hard_motion_limit_and_livemap_rzue_share_commit() {
             MovementKind::Train,
             "route:v1",
             "formation:1",
-            20_000,
+            0,
             None,
             false,
         )
         .unwrap();
     let authority = world.lock_route("train:1", "interlocking:train").unwrap();
     let segment = world.plan_motion("train:1").unwrap();
-    assert_eq!(segment.segment_end_route_mm, 60_000);
+    assert!(segment.segment_end_route_mm > 0);
+    assert!(segment.segment_end_route_mm <= authority.end_route_mm);
     let moving_projection = world
         .project(ProjectionKind::LiveMap, &BTreeSet::new())
         .unwrap();
     assert_eq!(moving_projection.trains[0].motion_geometry.len(), 2);
     assert_eq!(
         moving_projection.trains[0].motion_geometry[1].route_mm,
-        60_000
+        segment.segment_end_route_mm
     );
-    world.advance_to(segment.valid_until_ms).unwrap();
-    let train = &world.trains["train:1"];
-    assert_eq!(train.head_route_mm, 60_000);
-    assert_eq!(train.direction, Direction::Against);
-    assert!(train.head_route_mm <= authority.end_route_mm);
-    assert!(train.tail_route_mm <= train.head_route_mm);
-    let braking = train
-        .motion_segment
-        .clone()
-        .expect("Bremsgrenze plant Folgesegment");
-    assert!(braking.acceleration_mmps2 < 0);
-    assert!(braking.start_speed_mmps > 0);
-    world.advance_to(braking.valid_until_ms).unwrap();
+    let mut saw_braking = segment.acceleration_mmps2 < 0;
+    for _ in 0..16 {
+        let Some(active) = world.trains["train:1"].motion_segment.clone() else {
+            break;
+        };
+        saw_braking |= active.acceleration_mmps2 < 0 && active.start_speed_mmps > 0;
+        world.advance_to(active.valid_until_ms).unwrap();
+        assert!(world.trains["train:1"].head_route_mm <= authority.end_route_mm);
+    }
     let stopped = &world.trains["train:1"];
+    assert!(saw_braking);
     assert_eq!(stopped.head_route_mm, authority.end_route_mm);
+    assert_eq!(stopped.direction, Direction::Against);
+    assert!(stopped.tail_route_mm <= stopped.head_route_mm);
     assert_eq!(stopped.speed_mmps, 0);
     assert_eq!(stopped.motion_state, MotionState::Standing);
     let map = world
@@ -788,7 +2009,7 @@ fn incompatible_routes_never_lock_together_and_protect_overlap_and_flank() {
             MovementKind::Train,
             "route:v1",
             "formation:1",
-            20_000,
+            0,
             None,
             false,
         )
@@ -801,7 +2022,7 @@ fn incompatible_routes_never_lock_together_and_protect_overlap_and_flank() {
             MovementKind::Train,
             "route:opposing",
             "formation:2",
-            50_000,
+            0,
             None,
             false,
         )
@@ -830,7 +2051,7 @@ fn block_and_route_release_wait_for_tail() {
             MovementKind::Train,
             "route:v1",
             "formation:3",
-            20_000,
+            0,
             None,
             false,
         )
@@ -838,7 +2059,7 @@ fn block_and_route_release_wait_for_tail() {
     world.lock_route("train:1", "interlocking:train").unwrap();
     let segment = world.plan_motion("train:1").unwrap();
     world.advance_to(segment.valid_until_ms).unwrap();
-    assert!(world.trains["train:1"].tail_route_mm < 90_000);
+    assert!(world.trains["train:1"].tail_route_mm < 50_000);
     assert_eq!(world.route_locks.len(), 1);
     assert_ne!(
         world.resource_lifecycle["overlap:1"],
@@ -857,13 +2078,21 @@ fn full_route_lock_releases_at_terminal_but_keeps_endpoint_protected_until_retir
             MovementKind::Train,
             "route:v1",
             "formation:1",
-            20_000,
+            0,
             None,
             false,
         )
         .unwrap();
-    world.lock_route("train:1", "interlocking:train").unwrap();
-    let first_segment = world.plan_motion("train:1").unwrap();
+    assert_eq!(
+        world
+            .submit_dispatch_requests(&[dispatch_request("train:1", "interlocking:train", 0,)])
+            .unwrap(),
+        ["train:1"]
+    );
+    let first_segment = world.trains["train:1"]
+        .motion_segment
+        .clone()
+        .expect("look-ahead starts motion");
     world.advance_to(first_segment.valid_until_ms).unwrap();
     assert!(world.trains["train:1"].head_route_mm < 120_000);
     assert_eq!(world.route_locks.len(), 1);
@@ -927,7 +2156,7 @@ fn full_route_lock_releases_at_terminal_but_keeps_endpoint_protected_until_retir
             MovementKind::Train,
             "route:v1",
             "formation:2",
-            20_000,
+            0,
             None,
             false,
         )
@@ -954,7 +2183,7 @@ fn full_route_lock_releases_at_terminal_but_keeps_endpoint_protected_until_retir
     world.retire_train("train:1").unwrap();
 
     assert!(!world.trains.contains_key("train:1"));
-    assert_eq!(world.route_locks.len(), 1);
+    assert_eq!(world.route_locks.len(), 2);
     assert_eq!(world.signal_aspects["signal:train"], SignalAspect::Proceed);
     assert!(world.trains["train:2"].authority.is_some());
     assert!(world.trains["train:2"].motion_segment.is_some());
@@ -974,7 +2203,7 @@ fn checkpoint_invariant_rejects_a_foreign_lock_against_occupied_endpoint_protect
             MovementKind::Train,
             "route:v1",
             "formation:1",
-            20_000,
+            0,
             None,
             false,
         )
@@ -987,7 +2216,7 @@ fn checkpoint_invariant_rejects_a_foreign_lock_against_occupied_endpoint_protect
             MovementKind::Train,
             "route:opposing",
             "formation:2",
-            50_000,
+            0,
             None,
             false,
         )
@@ -1008,14 +2237,7 @@ fn checkpoint_invariant_rejects_a_foreign_lock_against_occupied_endpoint_protect
 
 #[test]
 fn terminal_release_dispatches_a_disjoint_waiter_and_clears_its_wait_index() {
-    let mut infra = release_with_independent_opposing_route();
-    let terminal = infra
-        .interlocking_routes
-        .get_mut("interlocking:train")
-        .expect("Test-Fahrstrasse");
-    terminal.authority_end_route_mm = 120_000;
-    terminal.release_after_tail_route_mm = 120_000;
-    let mut world = world_with_release(infra);
+    let mut world = world_with_release(release_with_independent_opposing_route());
     world
         .materialize_train(
             "train:1",
@@ -1024,7 +2246,7 @@ fn terminal_release_dispatches_a_disjoint_waiter_and_clears_its_wait_index() {
             MovementKind::Train,
             "route:v1",
             "formation:1",
-            20_000,
+            0,
             None,
             false,
         )
@@ -1042,8 +2264,9 @@ fn terminal_release_dispatches_a_disjoint_waiter_and_clears_its_wait_index() {
             false,
         )
         .unwrap();
-    world.lock_route("train:1", "interlocking:train").unwrap();
-    world.plan_motion("train:1").unwrap();
+    world
+        .submit_dispatch_requests(&[dispatch_request("train:1", "interlocking:train", 0)])
+        .unwrap();
     assert_eq!(
         world
             .submit_dispatch_requests(&[DispatchRequest {
@@ -1083,6 +2306,306 @@ fn terminal_release_dispatches_a_disjoint_waiter_and_clears_its_wait_index() {
     let checkpoint = serde_json::to_value(&world).unwrap();
     assert_eq!(checkpoint["waitingByResource"], serde_json::json!({}));
     world.verify_invariants().unwrap();
+}
+
+#[test]
+fn three_free_train_segments_are_locked_separately_and_crossed_without_intermediate_stop() {
+    let mut world = world_with_release(release_with_three_train_segments());
+    world
+        .materialize_train(
+            "train:progressive",
+            "RB 10",
+            "operator:1",
+            MovementKind::Train,
+            "route:v1",
+            "formation:1",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+
+    assert_eq!(
+        world
+            .submit_dispatch_requests(&[dispatch_request(
+                "train:progressive",
+                "interlocking:train",
+                0,
+            )])
+            .unwrap(),
+        ["train:progressive"]
+    );
+    assert_eq!(world.route_locks.len(), 3);
+    assert_eq!(
+        world.trains["train:progressive"]
+            .authority
+            .as_ref()
+            .map(|authority| authority.end_route_mm),
+        Some(120_000)
+    );
+
+    let checkpoint = world.checkpoint();
+    let mut replay = OperationalWorld::restore(&checkpoint).unwrap();
+    for candidate in [&mut world, &mut replay] {
+        let mut crossed = BTreeMap::new();
+        for _ in 0..32 {
+            let Some(valid_until_ms) = candidate.trains["train:progressive"]
+                .motion_segment
+                .as_ref()
+                .map(|segment| segment.valid_until_ms)
+            else {
+                break;
+            };
+            candidate.advance_to(valid_until_ms).unwrap();
+            let train = &candidate.trains["train:progressive"];
+            if matches!(train.head_route_mm, 60_000 | 90_000) {
+                crossed.insert(train.head_route_mm, train.speed_mmps);
+            }
+        }
+        assert!(crossed.get(&60_000).is_some_and(|speed| *speed > 0));
+        assert!(crossed.get(&90_000).is_some_and(|speed| *speed > 0));
+        let completed = &candidate.trains["train:progressive"];
+        assert_eq!(completed.head_route_mm, 120_000);
+        assert_eq!(completed.speed_mmps, 0);
+        assert!(completed.authority.is_none());
+        assert!(completed.motion_segment.is_none());
+        let persisted = serde_json::to_value(&*candidate).unwrap();
+        assert_eq!(persisted["pendingDispatchRequests"], serde_json::json!({}));
+        candidate.verify_invariants().unwrap();
+    }
+    assert_eq!(world.state_hash(), replay.state_hash());
+}
+
+#[test]
+fn blocker_in_last_segment_limits_authority_then_waits_and_resumes_at_exact_start() {
+    let mut world = world_with_release(release_with_three_train_segments());
+    world
+        .materialize_train(
+            "blocker",
+            "G 20",
+            "operator:2",
+            MovementKind::Train,
+            "route:v1",
+            "formation:2",
+            120_000,
+            None,
+            false,
+        )
+        .unwrap();
+    world
+        .materialize_train(
+            "train:progressive",
+            "RB 10",
+            "operator:1",
+            MovementKind::Train,
+            "route:v1",
+            "formation:1",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+
+    world
+        .submit_dispatch_requests(&[dispatch_request(
+            "train:progressive",
+            "interlocking:train",
+            0,
+        )])
+        .unwrap();
+    assert_eq!(world.route_locks.len(), 2);
+    assert_eq!(
+        world.trains["train:progressive"]
+            .authority
+            .as_ref()
+            .map(|authority| authority.end_route_mm),
+        Some(90_000)
+    );
+
+    let mut speed_at_first_boundary = None;
+    for _ in 0..32 {
+        let Some(valid_until_ms) = world.trains["train:progressive"]
+            .motion_segment
+            .as_ref()
+            .map(|segment| segment.valid_until_ms)
+        else {
+            break;
+        };
+        world.advance_to(valid_until_ms).unwrap();
+        let train = &world.trains["train:progressive"];
+        if train.head_route_mm == 60_000 {
+            speed_at_first_boundary = Some(train.speed_mmps);
+        }
+    }
+    assert!(speed_at_first_boundary.is_some_and(|speed| speed > 0));
+    let waiting = &world.trains["train:progressive"];
+    assert_eq!(waiting.head_route_mm, 90_000);
+    assert_eq!(waiting.speed_mmps, 0);
+    assert_eq!(waiting.motion_state, MotionState::Standing);
+    assert!(waiting.authority.is_none());
+    assert!(waiting.motion_segment.is_none());
+    assert_eq!(
+        waiting.waiting_reason.as_deref(),
+        Some("waiting-for-route-lock")
+    );
+    let persisted = serde_json::to_value(&world).unwrap();
+    assert_eq!(
+        persisted["waitingByResource"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        set(&["block:c", "overlap:train:c", "flank:train:c"])
+    );
+    assert!(
+        persisted["pendingDispatchRequests"]
+            .get("train:progressive")
+            .is_some()
+    );
+    world.verify_invariants().unwrap();
+
+    world.retire_train("blocker").unwrap();
+    let resumed = &world.trains["train:progressive"];
+    assert_eq!(
+        resumed
+            .authority
+            .as_ref()
+            .map(|authority| authority.end_route_mm),
+        Some(120_000)
+    );
+    assert!(resumed.motion_segment.is_some());
+    assert!(resumed.waiting_reason.is_none());
+    assert_eq!(
+        serde_json::to_value(&world).unwrap()["waitingByResource"],
+        serde_json::json!({})
+    );
+
+    for _ in 0..16 {
+        let Some(valid_until_ms) = world.trains["train:progressive"]
+            .motion_segment
+            .as_ref()
+            .map(|segment| segment.valid_until_ms)
+        else {
+            break;
+        };
+        world.advance_to(valid_until_ms).unwrap();
+    }
+    assert_eq!(world.trains["train:progressive"].head_route_mm, 120_000);
+    assert_eq!(
+        serde_json::to_value(&world).unwrap()["pendingDispatchRequests"],
+        serde_json::json!({})
+    );
+    world.verify_invariants().unwrap();
+}
+
+#[test]
+fn progressive_authority_schema_and_exact_start_fail_closed() {
+    let release = release_with_three_train_segments();
+    let serialized =
+        serde_json::to_value(&release.interlocking_routes["interlocking:train"]).unwrap();
+    assert_eq!(serialized["authorityStartRouteMm"], serde_json::json!(0));
+    let mut missing_start = serialized;
+    missing_start
+        .as_object_mut()
+        .unwrap()
+        .remove("authorityStartRouteMm");
+    assert!(serde_json::from_value::<InterlockingRouteTemplate>(missing_start).is_err());
+
+    let mut duplicate = release.clone();
+    let mut duplicate_template = duplicate.interlocking_routes["interlocking:train"].clone();
+    duplicate_template.id = "interlocking:duplicate-start".to_owned();
+    duplicate
+        .interlocking_routes
+        .insert(duplicate_template.id.clone(), duplicate_template);
+    assert!(matches!(
+        duplicate.validate(),
+        Err(OperationalError::InvalidInterlockingRoute(_))
+    ));
+
+    let mut missing_segment = release.clone();
+    missing_segment
+        .interlocking_routes
+        .remove("interlocking:train:b");
+    assert_eq!(
+        missing_segment.validate(),
+        Err(OperationalError::IncompleteRoute("route:v1".to_owned()))
+    );
+
+    let mut world = world_with_release(release);
+    world
+        .materialize_train(
+            "train:mismatched-start",
+            "RB 30",
+            "operator:1",
+            MovementKind::Train,
+            "route:v1",
+            "formation:1",
+            30_000,
+            None,
+            false,
+        )
+        .unwrap();
+    assert_eq!(
+        world.lock_route("train:mismatched-start", "interlocking:train"),
+        Err(OperationalError::UnsafeRoute(
+            "interlocking:train".to_owned()
+        ))
+    );
+    assert!(world.route_locks.is_empty());
+    assert!(world.signal_aspects.is_empty());
+}
+
+#[test]
+fn progressive_authority_invariants_reject_missing_lock_and_unbacked_signal() {
+    let mut world = world_with_release(release_with_three_train_segments());
+    world
+        .materialize_train(
+            "train:invariants",
+            "RB 40",
+            "operator:1",
+            MovementKind::Train,
+            "route:v1",
+            "formation:1",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+    world
+        .lock_route("train:invariants", "interlocking:train")
+        .unwrap();
+    world.verify_invariants().unwrap();
+
+    let mut missing_source_lock = world.clone();
+    missing_source_lock
+        .trains
+        .get_mut("train:invariants")
+        .unwrap()
+        .authority
+        .as_mut()
+        .unwrap()
+        .source_route_lock_id = "lock:missing".to_owned();
+    assert_eq!(
+        missing_source_lock.verify_invariants(),
+        Err(OperationalError::UnsafeState)
+    );
+
+    let mut missing_signal = world.clone();
+    missing_signal.signal_aspects.remove("signal:train");
+    assert_eq!(
+        missing_signal.verify_invariants(),
+        Err(OperationalError::UnsafeState)
+    );
+
+    let mut unbacked_signal = world_with_release(release_with_three_train_segments());
+    unbacked_signal
+        .signal_aspects
+        .insert("signal:train".to_owned(), SignalAspect::Proceed);
+    assert_eq!(
+        unbacked_signal.verify_invariants(),
+        Err(OperationalError::UnsafeState)
+    );
 }
 
 #[test]
@@ -2111,7 +3634,7 @@ fn passenger_departure_is_hard_but_non_passenger_can_leave_early() {
             MovementKind::Train,
             "route:v1",
             "formation:1",
-            10_000,
+            0,
             Some(60_000),
             true,
         )
@@ -2130,7 +3653,7 @@ fn passenger_departure_is_hard_but_non_passenger_can_leave_early() {
             MovementKind::Train,
             "route:v1",
             "formation:1",
-            10_000,
+            0,
             Some(60_000),
             false,
         )
@@ -2268,7 +3791,7 @@ fn infrastructure_failure_stops_an_authorized_movement_without_freeing_track() {
             MovementKind::Train,
             "route:v1",
             "formation:1",
-            20_000,
+            0,
             None,
             false,
         )
@@ -2337,7 +3860,7 @@ fn reroute_preserves_exact_occupied_geometry_and_rejects_change_while_moving() {
             MovementKind::Train,
             "route:v1",
             "formation:1",
-            20_000,
+            0,
             None,
             false,
         )
@@ -2387,10 +3910,7 @@ fn region_handover_has_no_duplicate_or_unprotected_gap() {
 #[test]
 fn dispatcher_is_stable_and_does_not_accept_caller_safety_booleans() {
     let mut world = world_with_release(release_with_independent_opposing_route());
-    for (index, (id, head)) in [("train:a", 20_000), ("train:b", 50_000)]
-        .into_iter()
-        .enumerate()
-    {
+    for (index, (id, head)) in [("train:a", 0), ("train:b", 0)].into_iter().enumerate() {
         let formation = if id.ends_with('a') {
             "formation:1"
         } else {
@@ -2502,7 +4022,7 @@ fn state_hash_excludes_static_infrastructure_and_binds_all_dynamic_fields() {
             MovementKind::Train,
             "route:v1",
             "formation:1",
-            20_000,
+            0,
             None,
             false,
         )
@@ -2590,15 +4110,20 @@ fn infra_and_interlocking_reject_unknown_resources_and_foreign_route_templates()
     let mut foreign_route = bound_release.route_versions["route:v1"].clone();
     foreign_route.id = "route:foreign".to_owned();
     foreign_route.template_id = "route-template:foreign".to_owned();
-    let mut foreign_interlocking = bound_release.interlocking_routes["interlocking:train"].clone();
-    foreign_interlocking.id = "interlocking:foreign".to_owned();
-    foreign_interlocking.route_template_id = "route-template:foreign".to_owned();
     bound_release
         .route_versions
         .insert(foreign_route.id.clone(), foreign_route);
-    bound_release
-        .interlocking_routes
-        .insert(foreign_interlocking.id.clone(), foreign_interlocking);
+    for (source_id, foreign_id) in [
+        ("interlocking:train", "interlocking:foreign"),
+        ("interlocking:train:b", "interlocking:foreign:b"),
+    ] {
+        let mut foreign_interlocking = bound_release.interlocking_routes[source_id].clone();
+        foreign_interlocking.id = foreign_id.to_owned();
+        foreign_interlocking.route_template_id = "route-template:foreign".to_owned();
+        bound_release
+            .interlocking_routes
+            .insert(foreign_interlocking.id.clone(), foreign_interlocking);
+    }
     bound_release.validate().unwrap();
 
     let mut world = world_with_release(bound_release);
@@ -2610,7 +4135,7 @@ fn infra_and_interlocking_reject_unknown_resources_and_foreign_route_templates()
             MovementKind::Train,
             "route:v1",
             "formation:1",
-            20_000,
+            0,
             None,
             false,
         )

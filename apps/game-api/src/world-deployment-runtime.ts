@@ -10,12 +10,15 @@ import {
   OPERATIONAL_INITIALIZATION_VALIDATION_RECEIPT_SCHEMA,
   OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
   assertOperationalTrainNumbers,
+  operationalMovementContinuationsEvidence,
   operationalInfrastructureBindingsEqual,
   operationalProtectionModeSelectionEvidence,
   type FleetAuthorityRelease,
   type OperationalInfrastructureBinding,
   type OperationalDispatchRequest,
   type OperationalInitializationValidationReceipt,
+  type OperationalMovementContinuation,
+  type OperationalMovementContinuationTemplate,
   type OperationalSimulationInitialization,
   type OperationalTrainInitialization,
 } from "@zugfolge/runtime-native";
@@ -47,12 +50,14 @@ interface OperationalProgramTrain {
 
 interface OperationalProgramBoundary {
   readonly departureOffsetMs: number;
+  /** Nur oeffentliche Personenfahrten loesen das Vorab-Queueing ihrer Kette aus. */
   readonly trains: readonly OperationalProgramTrain[];
 }
 
-interface OperationalProgramPredecessor {
-  readonly train: OperationalProgramTrain;
-  readonly previousDay: boolean;
+interface OperationalProgramContinuation {
+  readonly template: OperationalMovementContinuationTemplate;
+  readonly predecessor: OperationalProgramTrain;
+  readonly successor: OperationalProgramTrain;
 }
 
 interface OperationalDeploymentProgram {
@@ -64,7 +69,15 @@ interface OperationalDeploymentProgram {
   readonly repeatEveryMs: number;
   readonly trains: readonly OperationalProgramTrain[];
   readonly boundaries: readonly OperationalProgramBoundary[];
-  readonly predecessors: ReadonlyMap<string, OperationalProgramPredecessor>;
+  readonly trainsById: ReadonlyMap<string, OperationalProgramTrain>;
+  readonly outgoingContinuations: ReadonlyMap<string, OperationalProgramContinuation>;
+  readonly continuationChains: ReadonlyMap<string, readonly OperationalProgramContinuation[]>;
+  readonly rootByTrainId: ReadonlyMap<string, string>;
+  /** Summe der reinen Zeit-Offsets von der DailyPlan-Wurzel bis zur Vorlage. */
+  readonly rootDayOffsetByTrainId: ReadonlyMap<string, number>;
+  readonly dayZeroRootIds: ReadonlySet<string>;
+  /** Fuer jede Tageswurzel: [sie selbst, ihr physischer Vortagesvorgaenger, ...]. */
+  readonly rolloverPredecessorCycles: ReadonlyMap<string, readonly string[]>;
 }
 
 function safeNonnegativeInteger(value: unknown, detail: string): number {
@@ -88,6 +101,7 @@ function validateNativeInitializationReceipt(
     initialization.trains.map((train) => train.formationVersionId),
   ).size;
   const protectionModeSelectionEvidence = operationalProtectionModeSelectionEvidence(initialization);
+  const movementContinuationsEvidence = operationalMovementContinuationsEvidence(initialization);
   if (
     receipt === undefined
     || receipt.schemaVersion !== OPERATIONAL_INITIALIZATION_VALIDATION_RECEIPT_SCHEMA
@@ -101,6 +115,8 @@ function validateNativeInitializationReceipt(
     || receipt.validatedDispatchInterlockingRouteCount !== expectedDispatchInterlockingRouteCount
     || receipt.validatedFormationBindingCount !== expectedFormationBindingCount
     || receipt.validatedTrainNumberCount !== initialization.trains.length
+    || receipt.validatedMovementContinuationCount !== movementContinuationsEvidence.count
+    || receipt.movementContinuationsSha256 !== movementContinuationsEvidence.sha256
     || initialization.protectionModeSelectionPolicy !== OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY
     || receipt.protectionModeSelectionPolicy !== initialization.protectionModeSelectionPolicy
     || receipt.validatedProtectionModeSelectionCount !== protectionModeSelectionEvidence.count
@@ -147,18 +163,34 @@ function deploymentOperationalProgram(
   const initialization: OperationalSimulationInitialization = structuredClone(
     deployment.regionalSimulation,
   );
-  const repeatEveryMs = deployment.repeatEveryS * 1_000;
+  const repeatEveryMs = initialization.repeatEveryMs;
   if (
     !Number.isSafeInteger(deployment.repeatEveryS)
     || deployment.repeatEveryS <= 0
+    || typeof repeatEveryMs !== "number"
     || !Number.isSafeInteger(repeatEveryMs)
+    || repeatEveryMs <= 0
+    || deployment.repeatEveryS * 1_000 !== repeatEveryMs
     || initialization.nowMs !== 0
     || initialization.trains.length === 0
   ) {
     throw new Error("Signiertes Deployment besitzt keinen gueltigen wiederholbaren v2-Betriebstakt.");
   }
+  const movementContinuations = structuredClone(initialization.movementContinuations);
+  if (
+    !Array.isArray(movementContinuations)
+    || movementContinuations.length === 0
+  ) {
+    throw new Error(
+      "Signiertes Operational-v2-Deployment besitzt keinen vollstaendigen physischen Umlaufvertrag.",
+    );
+  }
   const seen = new Set<string>();
-  const formationDepartures = new Set<string>();
+  const passengerFormationDepartures = new Set<string>();
+  const maximumMovementOffsetMs = repeatEveryMs * 2;
+  if (!Number.isSafeInteger(maximumMovementOffsetMs)) {
+    throw new Error("Signierter v2-Betriebstakt ist fuer eine tagesuebergreifende Bewegungskette zu gross.");
+  }
   const trains = initialization.trains.map((train): OperationalProgramTrain => {
     const departureOffsetMs = safeNonnegativeInteger(
       train.scheduledDepartureMs,
@@ -167,18 +199,22 @@ function deploymentOperationalProgram(
     if (
       seen.has(train.id)
       || /:day-\d+$/u.test(train.id)
-      || departureOffsetMs >= repeatEveryMs
+      || (train.publicPassengerStop
+        ? departureOffsetMs >= repeatEveryMs
+        : departureOffsetMs >= maximumMovementOffsetMs)
     ) {
       throw new Error(`Fahrt '${train.id}' ist fuer die signierte Tageswiederholung ungueltig.`);
     }
     seen.add(train.id);
-    const formationDeparture = `${train.formationVersionId}\u0000${departureOffsetMs}`;
-    if (formationDepartures.has(formationDeparture)) {
-      throw new Error(
-        `Formation '${train.formationVersionId}' ist zur Betriebsprogrammgrenze '${departureOffsetMs}' mehrfach verplant.`,
-      );
+    if (train.publicPassengerStop) {
+      const formationDeparture = `${train.formationVersionId}\u0000${departureOffsetMs}`;
+      if (passengerFormationDepartures.has(formationDeparture)) {
+        throw new Error(
+          `Formation '${train.formationVersionId}' ist zur Personenfahrgrenze '${departureOffsetMs}' mehrfach verplant.`,
+        );
+      }
+      passengerFormationDepartures.add(formationDeparture);
     }
-    formationDepartures.add(formationDeparture);
     if (
       typeof train.dispatchInterlockingRouteId !== "string"
       || train.dispatchInterlockingRouteId.trim() === ""
@@ -193,8 +229,207 @@ function deploymentOperationalProgram(
   }).sort((left, right) =>
     left.departureOffsetMs - right.departureOffsetMs
     || compareUtf8(left.train.id, right.train.id));
+
+  const trainsById = new Map(trains.map((train) => [train.train.id, train]));
+  const continuationIds = new Set<string>();
+  const incomingContinuations = new Map<string, OperationalProgramContinuation>();
+  const outgoingContinuations = new Map<string, OperationalProgramContinuation>();
+  const expectedContinuationKeys = [
+    "continuity",
+    "dailyBoundary",
+    "id",
+    "minimumDwellMs",
+    "predecessorBaseRouteVersionId",
+    "predecessorTrainId",
+    "successorDayOffset",
+    "successorFormation",
+    "successorTrainId",
+  ].sort(compareUtf8).join("\u0000");
+  for (const template of movementContinuations) {
+    if (
+      template === null
+      || typeof template !== "object"
+      || Object.keys(template).sort(compareUtf8).join("\u0000") !== expectedContinuationKeys
+      || typeof template.id !== "string"
+      || template.id.trim() === ""
+      || typeof template.predecessorBaseRouteVersionId !== "string"
+      || template.predecessorBaseRouteVersionId.trim() === ""
+      || /:day-\d+$/u.test(template.id)
+      || continuationIds.has(template.id)
+      || (template.successorDayOffset !== 0 && template.successorDayOffset !== 1)
+      || typeof template.dailyBoundary !== "boolean"
+      || !Number.isSafeInteger(template.minimumDwellMs)
+      || template.minimumDwellMs < 0
+      || (template.continuity !== "same-direction"
+        && template.continuity !== "reverse-direction")
+      || template.successorFormation !== "inherit-predecessor"
+    ) {
+      throw new Error("Signierter physischer Umlaufvertrag enthaelt eine ungueltige Fortsetzung.");
+    }
+    const predecessor = trainsById.get(template.predecessorTrainId);
+    const successor = trainsById.get(template.successorTrainId);
+    const expectedMinimumDwellMs = predecessor?.train.publicPassengerStop === true ? 300_000 : 0;
+    if (
+      predecessor === undefined
+      || successor === undefined
+      || template.minimumDwellMs !== expectedMinimumDwellMs
+      || (predecessor === successor && !template.dailyBoundary)
+      || outgoingContinuations.has(predecessor.train.id)
+      || incomingContinuations.has(successor.train.id)
+    ) {
+      throw new Error(
+        `Fortsetzung '${template.id}' bindet keine eindeutige vollstaendige Bewegungskette.`,
+      );
+    }
+    const successorAbsoluteOffset = successor.departureOffsetMs
+      + template.successorDayOffset * repeatEveryMs;
+    if (
+      !Number.isSafeInteger(successorAbsoluteOffset)
+      || successorAbsoluteOffset < predecessor.departureOffsetMs
+    ) {
+      throw new Error(`Fortsetzung '${template.id}' verletzt die signierte Tageszeitfolge.`);
+    }
+    continuationIds.add(template.id);
+    const continuation = Object.freeze({ template, predecessor, successor });
+    outgoingContinuations.set(predecessor.train.id, continuation);
+    incomingContinuations.set(successor.train.id, continuation);
+  }
+  if (
+    continuationIds.size !== trains.length
+    || outgoingContinuations.size !== trains.length
+    || incomingContinuations.size !== trains.length
+  ) {
+    throw new Error(
+      "Signierter physischer Umlaufvertrag muss jede Programmbewegung genau einmal fortsetzen.",
+    );
+  }
+
+  const dayZeroRootIds = new Set<string>();
+  for (const continuation of outgoingContinuations.values()) {
+    if (!continuation.template.dailyBoundary) continue;
+    if (!continuation.successor.train.publicPassengerStop) {
+      throw new Error(
+        `Tagesfortsetzung '${continuation.template.id}' endet nicht an einer Personenfahrt.`,
+      );
+    }
+    dayZeroRootIds.add(continuation.successor.train.id);
+  }
+  if (dayZeroRootIds.size === 0) {
+    throw new Error("Signierter physischer Umlaufvertrag besitzt keine Tageswurzel.");
+  }
+
+  const rootByTrainId = new Map<string, string>();
+  const rootDayOffsetByTrainId = new Map<string, number>();
+  const rootFormationIds = new Set<string>();
+  for (const rootId of dayZeroRootIds) {
+    const root = trainsById.get(rootId)!;
+    if (!rootFormationIds.add(root.train.formationVersionId)) {
+      throw new Error(
+        `Formation '${root.train.formationVersionId}' besitzt mehrere Day-0-Personenfahrten.`,
+      );
+    }
+    let cursor = rootId;
+    let accumulatedDayOffset = 0;
+    const visited = new Set<string>();
+    while (true) {
+      const train = trainsById.get(cursor)!;
+      if (
+        !visited.add(cursor)
+        || rootByTrainId.has(cursor)
+        || train.train.formationVersionId !== root.train.formationVersionId
+      ) {
+        throw new Error(`Tageswurzel '${rootId}' besitzt keinen eindeutigen statischen Slotpfad.`);
+      }
+      rootByTrainId.set(cursor, rootId);
+      rootDayOffsetByTrainId.set(cursor, accumulatedDayOffset);
+      const outgoing = outgoingContinuations.get(cursor)!;
+      const nextDayOffset = accumulatedDayOffset + outgoing.template.successorDayOffset;
+      if (outgoing.template.dailyBoundary) {
+        if (nextDayOffset !== 1) {
+          throw new Error(`DailyPlan-Pfad '${rootId}' besitzt nicht genau eine Periodenfortschaltung.`);
+        }
+        break;
+      }
+      if (nextDayOffset > 1) {
+        throw new Error(`DailyPlan-Pfad '${rootId}' ueberschreitet eine Periode.`);
+      }
+      accumulatedDayOffset = nextDayOffset;
+      cursor = outgoing.successor.train.id;
+    }
+  }
+  if (rootByTrainId.size !== trains.length) {
+    throw new Error("Explizite DailyPlan-Grenzen decken den Betriebsprogrammgraphen nicht exakt ab.");
+  }
+
+  const rolloverPredecessors = new Map<string, string>();
+  for (const continuation of outgoingContinuations.values()) {
+    if (!continuation.template.dailyBoundary) continue;
+    const successorRootId = rootByTrainId.get(continuation.successor.train.id)!;
+    const predecessorRootId = rootByTrainId.get(continuation.predecessor.train.id)!;
+    if (rolloverPredecessors.has(successorRootId)) {
+      throw new Error(`Tageswurzel '${successorRootId}' besitzt mehrere physische Vorgaenger.`);
+    }
+    rolloverPredecessors.set(successorRootId, predecessorRootId);
+  }
+  if (
+    rolloverPredecessors.size !== dayZeroRootIds.size
+    || new Set(rolloverPredecessors.values()).size !== dayZeroRootIds.size
+    || [...rolloverPredecessors.keys()].some((rootId) => !dayZeroRootIds.has(rootId))
+    || [...rolloverPredecessors.values()].some((rootId) => !dayZeroRootIds.has(rootId))
+  ) {
+    throw new Error("Tagesuebergaben bilden keine kanonische physische Formation-Permutation.");
+  }
+  const rolloverPredecessorCycles = new Map<string, readonly string[]>();
+  for (const rootId of dayZeroRootIds) {
+    const cycle: string[] = [];
+    const visited = new Set<string>();
+    let cursor = rootId;
+    while (!visited.has(cursor)) {
+      visited.add(cursor);
+      cycle.push(cursor);
+      cursor = rolloverPredecessors.get(cursor)!;
+    }
+    if (cursor !== rootId) {
+      throw new Error(`Tageswurzel '${rootId}' liegt nicht in einem geschlossenen Umlauf.`);
+    }
+    rolloverPredecessorCycles.set(rootId, Object.freeze(cycle));
+  }
+
+  const continuationChains = new Map<string, readonly OperationalProgramContinuation[]>();
+  const queuedContinuationIds = new Set<string>();
+  for (const passenger of trains.filter(({ train }) => train.publicPassengerStop)) {
+    const chain: OperationalProgramContinuation[] = [];
+    const visited = new Set<string>();
+    let cursor = passenger.train.id;
+    let accumulatedDayOffset = 0;
+    while (true) {
+      if (!visited.add(cursor)) {
+        throw new Error(`Personenfahrt '${passenger.train.id}' besitzt keine endliche Nachfolgekette.`);
+      }
+      const continuation = outgoingContinuations.get(cursor)!;
+      chain.push(continuation);
+      if (!queuedContinuationIds.add(continuation.template.id)) {
+        throw new Error(`Fortsetzung '${continuation.template.id}' wird an mehreren Grenzen gequeued.`);
+      }
+      accumulatedDayOffset += continuation.template.successorDayOffset;
+      if (accumulatedDayOffset > 1) {
+        throw new Error(
+          `Nachfolgekette von '${passenger.train.id}' ueberschreitet einen Betriebstag.`,
+        );
+      }
+      if (continuation.successor.train.publicPassengerStop) break;
+      cursor = continuation.successor.train.id;
+    }
+    continuationChains.set(passenger.train.id, Object.freeze(chain));
+  }
+  if (queuedContinuationIds.size !== continuationIds.size) {
+    throw new Error(
+      "Signierter physischer Umlaufvertrag enthaelt eine nicht an eine Personenfahrt gebundene Bewegung.",
+    );
+  }
+
   const trainsPerBoundary = new Map<number, OperationalProgramTrain[]>();
-  for (const train of trains) {
+  for (const train of trains.filter(({ train }) => train.publicPassengerStop)) {
     const boundary = trainsPerBoundary.get(train.departureOffsetMs) ?? [];
     boundary.push(train);
     trainsPerBoundary.set(train.departureOffsetMs, boundary);
@@ -203,32 +438,24 @@ function deploymentOperationalProgram(
     Object.freeze({
       departureOffsetMs,
       trains: Object.freeze(boundaryTrains),
-    }));
+  }));
   for (const { departureOffsetMs, trains: boundaryTrains } of boundaries) {
-    // Im stationaeren Tageszyklus entstehen je Fahrt hoechstens Retire und
-    // Materialize, dazu genau ein Dispatch sowie der Scheduler-Advance auf
-    // dieselbe Millisekunde. Diese atomare Grenze darf spaeter nie aufgrund
-    // einer blossen Speichergrenze geteilt werden muessen.
-    const maximumBoundaryCommands = boundaryTrains.length * 2 + 2;
+    const dayZeroRoots = boundaryTrains.filter(({ train }) => dayZeroRootIds.has(train.id));
+    const continuationCount = boundaryTrains.reduce(
+      (count, { train }) => count + continuationChains.get(train.id)!.length,
+      0,
+    );
+    // Day 0 ist die groesste Grenze: Wurzeln materialisieren, alle physischen
+    // Nachfolger bis zur naechsten Personenfahrt vorab queueen, Wurzeln
+    // gemeinsam dispatchen; der Realtime-Scheduler ergaenzt genau ein Advance.
+    const maximumBoundaryCommands = dayZeroRoots.length
+      + continuationCount
+      + (dayZeroRoots.length === 0 ? 0 : 1)
+      + 1;
     if (maximumBoundaryCommands > REGIONAL_SIMULATION_BOUNDARY_COMMAND_LIMIT) {
       throw new Error(
         `Signierte Betriebsprogrammgrenze '${departureOffsetMs}' ueberschreitet mit ${maximumBoundaryCommands} atomaren Kommandos das Limit ${REGIONAL_SIMULATION_BOUNDARY_COMMAND_LIMIT}.`,
       );
-    }
-  }
-  const formations = new Map<string, OperationalProgramTrain[]>();
-  for (const train of trains) {
-    const formation = formations.get(train.train.formationVersionId) ?? [];
-    formation.push(train);
-    formations.set(train.train.formationVersionId, formation);
-  }
-  const predecessors = new Map<string, OperationalProgramPredecessor>();
-  for (const formation of formations.values()) {
-    for (let index = 0; index < formation.length; index += 1) {
-      predecessors.set(formation[index]!.train.id, Object.freeze({
-        train: index === 0 ? formation.at(-1)! : formation[index - 1]!,
-        previousDay: index === 0,
-      }));
     }
   }
   return Object.freeze({
@@ -240,7 +467,13 @@ function deploymentOperationalProgram(
     repeatEveryMs,
     trains: Object.freeze(trains),
     boundaries: Object.freeze(boundaries),
-    predecessors,
+    trainsById,
+    outgoingContinuations,
+    continuationChains,
+    rootByTrainId,
+    rootDayOffsetByTrainId,
+    dayZeroRootIds,
+    rolloverPredecessorCycles,
   });
 }
 
@@ -248,20 +481,32 @@ function recurringTrainId(baseId: string, day: number): string {
   return day === 0 ? baseId : `${baseId}:day-${day}`;
 }
 
-function predecessorTrain(
+function physicalFormationVersionId(
   program: OperationalDeploymentProgram,
   train: OperationalProgramTrain,
   day: number,
-): { readonly train: OperationalProgramTrain; readonly day: number } | undefined {
-  const predecessor = program.predecessors.get(train.train.id);
-  if (predecessor === undefined) {
-    throw new Error(`Fahrt '${train.train.id}' fehlt im signierten Betriebsprogramm.`);
+): string {
+  const rootId = program.rootByTrainId.get(train.train.id);
+  const cycle = rootId === undefined
+    ? undefined
+    : program.rolloverPredecessorCycles.get(rootId);
+  if (rootId === undefined || cycle === undefined || cycle.length === 0) {
+    throw new Error(`Fahrt '${train.train.id}' fehlt im physischen Tagesumlauf.`);
   }
-  if (predecessor.previousDay && day === 0) return undefined;
-  return {
-    train: predecessor.train,
-    day: predecessor.previousDay ? day - 1 : day,
-  };
+  const rootDayOffset = program.rootDayOffsetByTrainId.get(train.train.id);
+  if (rootDayOffset === undefined) {
+    throw new Error(`Fahrt '${train.train.id}' besitzt keinen DailyPlan-Zeitoffset.`);
+  }
+  const logicalDay = day - rootDayOffset;
+  if (logicalDay < 0) {
+    throw new Error(`Fahrt '${train.train.id}' besitzt vor ihrer Day-0-Wurzel keine Instanz.`);
+  }
+  const physicalRootId = cycle[logicalDay % cycle.length]!;
+  const physicalRoot = program.trainsById.get(physicalRootId);
+  if (physicalRoot === undefined) {
+    throw new Error(`Tageswurzel '${physicalRootId}' fehlt im signierten Betriebsprogramm.`);
+  }
+  return physicalRoot.train.formationVersionId;
 }
 
 function dispatchRequest(
@@ -293,18 +538,17 @@ function boundaryCommands(
   if (!Number.isSafeInteger(atMs)) throw new RangeError("Betriebsprogrammgrenze liegt ausserhalb des sicheren Bereichs.");
   const prefix = `${program.deploymentHash}:operational:${program.regionId}:${day}:${departureOffsetMs}`;
   const commands: OperationalScheduledCommand[] = [];
-  for (const train of trains) {
-    const predecessor = predecessorTrain(program, train, day);
-    if (predecessor !== undefined) {
-      commands.push(Object.freeze({
-        commandId: `${prefix}:retire:${train.train.id}`,
-        atMs,
-        command: Object.freeze({
-          type: "retire",
-          trainId: recurringTrainId(predecessor.train.train.id, predecessor.day),
-        }),
-      }));
+  const activeTrains = trains.filter((train) => {
+    const rootDayOffset = program.rootDayOffsetByTrainId.get(train.train.id);
+    if (rootDayOffset === undefined) {
+      throw new Error(`Fahrt '${train.train.id}' besitzt keinen DailyPlan-Zeitoffset.`);
     }
+    return day >= rootDayOffset;
+  });
+  const dayZeroRoots = day === 0
+    ? activeTrains.filter(({ train }) => program.dayZeroRootIds.has(train.id))
+    : [];
+  for (const train of dayZeroRoots) {
     commands.push(Object.freeze({
       commandId: `${prefix}:materialize:${train.train.id}`,
       atMs,
@@ -318,18 +562,91 @@ function boundaryCommands(
       }),
     }));
   }
-  commands.push(Object.freeze({
-    commandId: `${prefix}:dispatch`,
-    atMs,
-    command: Object.freeze({
-      type: "dispatch",
-      requests: Object.freeze(trains.map((train) => dispatchRequest(
-        train,
-        recurringTrainId(train.train.id, day),
+  for (const passenger of activeTrains) {
+    const chain = program.continuationChains.get(passenger.train.id);
+    if (chain === undefined) {
+      throw new Error(`Personenfahrt '${passenger.train.id}' besitzt keine physische Nachfolgekette.`);
+    }
+    let predecessorDay = day;
+    for (const continuation of chain) {
+      const successorDay = predecessorDay + continuation.template.successorDayOffset;
+      const predecessorFormationVersionId = physicalFormationVersionId(
+        program,
+        continuation.predecessor,
+        predecessorDay,
+      );
+      const successorFormationVersionId = physicalFormationVersionId(
+        program,
+        continuation.successor,
+        successorDay,
+      );
+      if (predecessorFormationVersionId !== successorFormationVersionId) {
+        throw new Error(
+          `Fortsetzung '${continuation.template.id}' verletzt die physische Formationspermutation.`,
+        );
+      }
+      const successorAtMs = continuation.successor.departureOffsetMs
+        + successorDay * program.repeatEveryMs;
+      if (!Number.isSafeInteger(successorAtMs)) {
+        throw new RangeError("Fortsetzungszeit liegt ausserhalb des sicheren Bereichs.");
+      }
+      const predecessorTrainId = recurringTrainId(
+        continuation.predecessor.train.id,
+        predecessorDay,
+      );
+      const successorTrainId = recurringTrainId(
+        continuation.successor.train.id,
+        successorDay,
+      );
+      const instantiated: OperationalMovementContinuation = Object.freeze({
+        id: `${program.deploymentHash}:movement-continuation:${program.regionId}:${predecessorDay}:${continuation.template.id}`,
+        predecessorTrainId,
+        predecessorBaseRouteVersionId: continuation.template.predecessorBaseRouteVersionId,
+        successor: Object.freeze({
+          id: successorTrainId,
+          trainNumber: continuation.successor.train.trainNumber,
+          operatorId: continuation.successor.train.operatorId,
+          movementKind: continuation.successor.train.movementKind,
+          routeVersionId: continuation.successor.train.routeVersionId,
+          formationVersionId: predecessorFormationVersionId,
+          headRouteMm: continuation.successor.train.headRouteMm,
+          scheduledDepartureMs: successorAtMs,
+          publicPassengerStop: continuation.successor.train.publicPassengerStop,
+        }),
+        successorDispatch: dispatchRequest(
+          continuation.successor,
+          successorTrainId,
+          successorAtMs,
+        ),
+        notBeforeMs: successorAtMs,
+        minimumDwellMs: continuation.template.minimumDwellMs,
+        continuity: continuation.template.continuity,
+      });
+      commands.push(Object.freeze({
+        commandId: `${prefix}:queue-continuation:${continuation.template.id}`,
         atMs,
-      ))),
-    }),
-  }));
+        command: Object.freeze({
+          type: "queue-movement-continuation",
+          continuation: instantiated,
+        }),
+      }));
+      predecessorDay = successorDay;
+    }
+  }
+  if (dayZeroRoots.length > 0) {
+    commands.push(Object.freeze({
+      commandId: `${prefix}:dispatch`,
+      atMs,
+      command: Object.freeze({
+        type: "dispatch",
+        requests: Object.freeze(dayZeroRoots.map((train) => dispatchRequest(
+          train,
+          train.train.id,
+          atMs,
+        ))),
+      }),
+    }));
+  }
   return Object.freeze(commands);
 }
 

@@ -32,7 +32,7 @@ const annualFiles = [
 
 test("Timetable-Routen-v2 binden nur den lokalen freien GTFS-Snapshot und freie Semantiklayer", async () => {
   const specification = await json("tools/region-import/germany/timetable-route-compiler.annual-2026.4.json");
-  assert.equal(specification.schema, "zugfolge-germany-timetable-route-compiler/v3");
+  assert.equal(specification.schema, "zugfolge-germany-timetable-route-compiler/v4");
   assert.equal(specification.infraReleaseId, "infra-deutschland-2026.4");
   assert.equal(Object.hasOwn(specification, "operationalNetwork"), false);
   assert.equal(specification.tracks, "var/derived/germany-2026.4/semantic-tile-inputs-free-v2/tracks.geojsonseq");
@@ -58,6 +58,20 @@ test("Timetable-Routen-v2 binden nur den lokalen freien GTFS-Snapshot und freie 
     expectedEligibleSegmentCount: 1679,
     permittedProtectionModes: ["pzb"],
   });
+  assert.deepEqual(specification.dailyCirculation, {
+    rule: "lot-local-playable-path-cover-with-minimum-cross-location-rollover/v1",
+    repeatEveryS: 86_400,
+    minimumTurnaroundS: 300,
+    expectedLotCount: 52,
+    expectedJourneyChainCount: 1_677,
+    expectedCirculationCount: 193,
+    expectedTransferDemandCount: 79,
+    expectedTransferLotCount: 38,
+    formationLengthsMm: [46_560, 69_860],
+    unknownMainlineSpeedKmh: 20,
+    unknownServiceSpeedKmh: 10,
+  });
+  assert.equal(specification.transferOutput, "var/derived/germany-2026.4/timetable-routes-v2.transfer-demands-v1.json");
 });
 
 test("Jahreskonfiguration 2026.3 bindet dieselbe Release-ID und keine Zugprojektion", async () => {
@@ -88,7 +102,8 @@ test("Jahreskonfiguration 2026.3 bindet dieselbe Release-ID und keine Zugprojekt
   assert.equal(operationalDerivation.infraReleaseId, "infra-deutschland-2026.3");
   assert.equal(operationalDerivation.schema, "zugfolge-germany-operational-infrastructure-derivation/v2");
   assert.equal(operationalDerivation.mode, "deterministic-conservative-v1");
-  assert.deepEqual(Object.values(operationalDerivation.layers), [
+  assert.equal(operationalDerivation.layers.transferDemands, null);
+  assert.deepEqual(Object.entries(operationalDerivation.layers).filter(([name]) => name !== "transferDemands").map(([, value]) => value), [
     "var/derived/germany-2026.3/final-map-layers-v2/tracks.geojsonseq",
     "var/derived/germany-2026.3/final-map-layers-v2/platforms.geojsonseq",
     "var/derived/germany-2026.3/final-map-layers-v2/switches.geojsonseq",
@@ -108,6 +123,9 @@ test("Jahreskonfiguration 2026.3 bindet dieselbe Release-ID und keine Zugprojekt
     minimumPlatformLengthMm: 60000,
     maximumPlatformSnapDistanceMm: 25000,
     minimumOverlapMm: 200000,
+    minimumBerthEndClearanceMm: 10000,
+    maximumDirectDwellMs: 1200000,
+    terminalFormationLengthsMm: [46560, 69860],
     defaultProtectionSystem: "pzb",
     regionBoundaryId: "region:deutschland-ebo",
     rzueLayoutId: "rzue-deutschland-2026.3-synthetic-b-v2",
@@ -321,6 +339,8 @@ test("Jahrespatch 2026.4 bindet alle neuen Releaseausgaben und kennzeichnet nur 
     "infra-deutschland-2026.4",
     "livemap-read-model-2026.4",
     "operational-infrastructure-2026.4",
+    "operational-movement-routes-2026.4",
+    "timetable-transfer-demands-2026.4",
     "quality-report-2026.4",
   ]);
 
@@ -817,9 +837,10 @@ test("Jahresprompt löst den aktuellen 2026.4-Lauf ohne aktive Vorjahresbindung 
   assert.match(resolved, /build-germany-release\.mjs manifest tools\/region-import\/germany\/release\.annual-2026\.4\.config\.json[\s\S]*var\/derived\/germany-2026\.4\/source-capture\.2026\.4\.json/u);
   assert.match(resolved, /signed-map-package-plan-cli\.mjs tools\/tiles\/map-package\.annual-2026\.4\.plan\.json \./u);
 
-  assert.equal(timetableRouteSpec.schema, "zugfolge-germany-timetable-route-compiler/v3");
+  assert.equal(timetableRouteSpec.schema, "zugfolge-germany-timetable-route-compiler/v4");
   assert.equal(timetableRouteSpec.infraReleaseId, releaseId);
   assert.equal(timetableRouteSpec.output, `${artifactRoot}/timetable-routes-v2.jsonseq`);
+  assert.equal(timetableRouteSpec.transferOutput, `${artifactRoot}/timetable-routes-v2.transfer-demands-v1.json`);
   assert.equal(timetableRouteSpec.report, `${artifactRoot}/timetable-routes-v2.derivation-report.json`);
   assert.equal(closureSpec.schema, "zugfolge-synthetic-operational-closure-inputs/v2");
   assert.equal(closureSpec.releaseId, releaseId);

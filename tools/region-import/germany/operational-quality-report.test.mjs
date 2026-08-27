@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,7 +22,7 @@ import {
 } from "../../tiles/static-map-quality.mjs";
 
 const policy = JSON.parse(await readFile(new URL("./synthetic-operational-b.policy.json", import.meta.url), "utf8"));
-const roleLayers = [["blocks", "blocks"], ["conflict-resources", "conflictResources"], ["platforms", "platforms"], ["signals", "signals"], ["switches", "switches"], ["timetable-routes", "timetableRoutes"], ["tracks", "tracks"]];
+const roleLayers = [["blocks", "blocks"], ["conflict-resources", "conflictResources"], ["platforms", "platforms"], ["signals", "signals"], ["switches", "switches"], ["timetable-routes", "timetableRoutes"], ["timetable-transfer-demands", "transferDemands"], ["tracks", "tracks"]];
 const featureTypes = Object.freeze({
   rail_corridors: "rail-corridor",
   operating_points: "operating-point",
@@ -118,8 +119,8 @@ async function fixture(t) {
   const journeyChainId = gtfsJourneyChainId({ regionId: journeyRegionId, releaseId: journeyReleaseId, sourceTripId: journeySourceTripId });
   const segmentIds = Array.from({ length: 4 }, (_, sequence) => gtfsPlayableLegId({ journeyChainId, sequence }));
   const layers = {};
-  const records = { blocks: 2, conflictResources: 2, platforms: 1, signals: 2, switches: 1, timetableRoutes: 4, tracks: 3 };
-  for (const [, layer] of roleLayers) {
+  const records = { blocks: 2, conflictResources: 2, platforms: 1, signals: 2, switches: 1, timetableRoutes: 4, transferDemands: 1, tracks: 3 };
+  for (const [, layer] of roleLayers.filter(([, layer]) => layer !== "transferDemands")) {
     layers[layer] = `artifacts/${layer}.jsonseq`;
     if (layer !== "timetableRoutes") await writeFile(join(root, layers[layer]), Array.from({ length: records[layer] }, (_, index) => `${layer}-${index}\n`).join(""), "utf8");
   }
@@ -139,8 +140,6 @@ async function fixture(t) {
     policy: structuredClone(policy.compilerPolicy),
   };
   const annualPath = join(root, "annual.json");
-  await writeFile(annualPath, `${JSON.stringify(annualSpecification, null, 2)}\n`, "utf8");
-  const annualProof = await syntheticOperationalFileProof(annualPath);
   const candidatePath = join(artifactRoot, "operational-infrastructure-v2.candidate.json");
   const artifactPath = join(artifactRoot, "operational-infrastructure-v2.json");
   const canonicalBytes = `${JSON.stringify({ schema: "operational-infrastructure-v2", id: annualSpecification.infraReleaseId })}\n`;
@@ -148,7 +147,7 @@ async function fixture(t) {
   const candidate = await syntheticOperationalFileProof(candidatePath);
   const stateHash = candidate.sha256 === "a".repeat(64) ? "b".repeat(64) : "a".repeat(64);
   const evidence = {};
-  for (const [, layer] of roleLayers) evidence[layer] = { path: layers[layer], ...await syntheticOperationalFileProof(join(root, layers[layer])), records: records[layer] };
+  for (const [, layer] of roleLayers.filter(([, layer]) => layer !== "transferDemands")) evidence[layer] = { path: layers[layer], ...await syntheticOperationalFileProof(join(root, layers[layer])), records: records[layer] };
   const stops = [{ stopId: "stop-a", stopSequence: 0, arrivalS: 0, departureS: 0 }, { stopId: "stop-b", stopSequence: 1, arrivalS: 60, departureS: 60 }];
   const segments = Array.from({ length: 4 }, (_, index) => ({
     segmentId: segmentIds[index],
@@ -188,9 +187,100 @@ async function fixture(t) {
   const gtfsSnapshotPath = join(artifactRoot, "gtfs-region-test-v2.json");
   await writeFile(gtfsSnapshotPath, `${JSON.stringify({ snapshot, snapshotHash }, null, 2)}\n`, "utf8");
   const gtfsSnapshotProof = await syntheticOperationalFileProof(gtfsSnapshotPath);
+  const circulationId = "circulation-lot-test-001";
+  const lotId = "lot-test";
+  const transferId = "transfer-test";
+  const formationLengthsMm = [...policy.compilerPolicy.terminalFormationLengthsMm];
+  const circulation = {
+    id: circulationId,
+    lotId,
+    serviceLineId: "line-test",
+    assetCompatibilityKey: lotId,
+    journeyChainIds: [journeyChainId],
+    passengerLegIds: segmentIds,
+    passengerTrainRunIds: segmentIds.map((segmentId, index) => index === 0 ? journeyChainId : `${journeyChainId}:${segmentId}`),
+    start: { legId: segmentIds[0], locationId: "stop-a", physicalStopId: "stop-a", timeS: 0 },
+    end: { legId: segmentIds[3], locationId: "stop-b", physicalStopId: "stop-b", timeS: 60 },
+  };
+  const transferDemand = {
+    id: transferId,
+    lotId,
+    assetCompatibilityKey: lotId,
+    sourceCirculationId: circulationId,
+    targetCirculationId: circulationId,
+    sourcePassengerLegId: segmentIds[3],
+    targetPassengerLegId: segmentIds[0],
+    sourceLocationId: "stop-b",
+    targetLocationId: "stop-a",
+    sourcePhysicalStopId: "stop-b",
+    targetPhysicalStopId: "stop-a",
+    earliestDepartureS: 360,
+    latestArrivalS: 86_100,
+    availableWindowS: 85_740,
+    movementKind: "train",
+  };
+  const dailyPlanBody = {
+    schema: "zugfolge-daily-circulation-plan/v1",
+    rule: "lot-local-playable-path-cover-with-minimum-cross-location-rollover/v1",
+    gtfsReleaseId: journeyReleaseId,
+    repeatEveryS: 86_400,
+    minimumTurnaroundS: 300,
+    metrics: { lotCount: 1, journeyChainCount: 1, circulationCount: 1, rolloverAssignmentCount: 1, transferDemandCount: 1, transferLotCount: 1 },
+    circulations: [circulation],
+    rolloverAssignments: [{ sourceCirculationId: circulationId, targetCirculationId: circulationId, kind: "transfer" }],
+    transferDemands: [transferDemand],
+  };
+  const dailyPlan = { ...dailyPlanBody, planSha256: syntheticOperationalSha256({ schema: "zugfolge-daily-circulation-plan/v1", value: dailyPlanBody }) };
+  const transferRoute = {
+    ...transferDemand,
+    sourcePassengerRouteVersionId: `route:gtfs:${segmentIds[3]}:v1`,
+    targetPassengerRouteVersionId: `route:gtfs:${segmentIds[0]}:v1`,
+    formationLengthsMm,
+    routeVersionId: `route:${transferId}:movement:v1`,
+    templateId: `template:${transferId}:movement:v1`,
+    legs: [{ edgeId: "track-transfer", direction: "along", edgeEntryMm: 0, edgeExitMm: 1_000, availableProtectionSystems: ["pzb"], simultaneouslyRequiredProtectionSystems: [] }],
+    totalLengthMm: 1_000,
+    weightedCostMm: 1_000,
+    minimumRuntimeMs: 1_000,
+  };
+  const transferSetSha256 = createHash("sha256").update(`${canonicalSyntheticOperationalValue(transferRoute)}\n`).digest("hex");
+  const timetableTransferDemands = {
+    schema: "zugfolge-timetable-transfer-demands/v1",
+    infraReleaseId: annualSpecification.infraReleaseId,
+    gtfsSnapshotHash: snapshotHash,
+    dailyPlan,
+    formationLengthsMm,
+    transferRoutes: [transferRoute],
+    transferSetSha256,
+  };
+  const timetableTransferDemandsPath = join(artifactRoot, "timetable-routes-v2.transfer-demands-v1.json");
+  await writeFile(timetableTransferDemandsPath, `${canonicalSyntheticOperationalValue(timetableTransferDemands)}\n`, "utf8");
+  const transferProof = await syntheticOperationalFileProof(timetableTransferDemandsPath);
+  const movementRouteTemplatesBody = {
+    schema: "movement-route-templates-v2",
+    infraReleaseId: annualSpecification.infraReleaseId,
+    operationalStateHash: stateHash,
+    timetableTransferSetSha256: transferSetSha256,
+  };
+  const movementRouteTemplatesStateHash = syntheticOperationalSha256(movementRouteTemplatesBody);
+  const movementRouteTemplatesFile = "operational-infrastructure-v2.candidate.movement-route-templates-v2.json";
+  const movementRouteTemplatesPath = join(artifactRoot, movementRouteTemplatesFile);
+  await writeFile(movementRouteTemplatesPath, `${canonicalSyntheticOperationalValue({ ...movementRouteTemplatesBody, stateHash: movementRouteTemplatesStateHash })}\n`, "utf8");
+  const movementRouteTemplatesProof = await syntheticOperationalFileProof(movementRouteTemplatesPath);
+  const movementRouteTemplates = {
+    file: movementRouteTemplatesFile,
+    ...movementRouteTemplatesProof,
+    stateHash: movementRouteTemplatesStateHash,
+    operationalStateHash: stateHash,
+    timetableTransferSetSha256: transferSetSha256,
+  };
+  layers.transferDemands = { path: "artifacts/timetable-routes-v2.transfer-demands-v1.json", expectedBytes: transferProof.bytes, expectedSha256: transferProof.sha256 };
+  evidence.transferDemands = { path: layers.transferDemands.path, ...transferProof, records: 1 };
+  await writeFile(annualPath, `${JSON.stringify(annualSpecification, null, 2)}\n`, "utf8");
+  const annualProof = await syntheticOperationalFileProof(annualPath);
   const gtfsMetrics = { stationCount: 2, journeyChainCount: 1, playableLegCount: 4, oneStopPlayableLegCount: 0, externalLegCount: 0, snapshotSegmentCount: 4, eligibleSegmentCount: 4, excludedQualityCCount: 0, uniqueDirectedStopPairCount: 1, uniqueRoutableDirectedStopPairCount: 1, sameStopTransitionCount: 0 };
   const timetableRouteReport = {
-    schema: "zugfolge-germany-timetable-route-report/v2",
+    schema: "zugfolge-germany-timetable-route-report/v3",
     infraReleaseId: annualSpecification.infraReleaseId,
     status: "qualified",
     routesProduced: true,
@@ -198,11 +288,14 @@ async function fixture(t) {
     selectionRule: "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
     policyId: "synthetic-operational-b/v2",
     gtfsBinding: { schema: snapshot.schema, regionId: snapshot.regionId, regionVariant: snapshot.regionVariant, serviceDate: snapshot.serviceDate, sourceId: snapshot.source.sourceId, archive: snapshot.source.archive, archiveSha256: snapshot.source.archiveSha256, sourceLicense: "CC-BY-4.0", sourceLicenseAsPublished: snapshot.source.sourceLicense, attribution: snapshot.source.attribution, snapshotHash },
-    metrics: { ...gtfsMetrics, completeRouteCount: 4, incompleteRouteCount: 0, routeRecordCount: 4, routedStopPairCount: 4, reusedStopPairRouteCount: 3, uniqueRouterQueryCount: 1, routeLegCount: 4, totalRouteLengthMm: 4000, maximumAnchorDistanceMm: 0, zeroMovementStopTransitionCount: 0, retainedRoutingTrackCount: 3 },
+    metrics: { ...gtfsMetrics, completeRouteCount: 4, incompleteRouteCount: 0, routeRecordCount: 4, routedStopPairCount: 4, reusedStopPairRouteCount: 3, uniqueRouterQueryCount: 1, routeLegCount: 4, totalRouteLengthMm: 4000, maximumAnchorDistanceMm: 0, zeroMovementStopTransitionCount: 0, dailyCirculation: structuredClone(dailyPlan.metrics), transferRouteCount: 1, transferRouteLegCount: 1, transferRouteLengthMm: 1_000, retainedRoutingTrackCount: 3 },
     sourceProofs: { tracks: { bytes: evidence.tracks.bytes, sha256: evidence.tracks.sha256 }, corridors: { bytes: 1, sha256: "d".repeat(64) }, gtfsSnapshot: gtfsSnapshotProof },
     sourceMetrics: { gtfsSnapshot: gtfsMetrics, gtfsTrackGraph: { retainedRoutingTrackCount: 3 } },
     provenance: { realGeometry: true, simulatedOperationalAssignment: true, realInterlockingFactsClaimed: false, operationalNetworkUsed: false, gtfsShapeGeometryUsed: false, inventedGeometryUsed: false, everyIntermediateStopUsedAsTrackAnchor: true, trackGraphRule: "real-osm-track-graph/v2", simulatedRouteKey: "gtfs-simulated/v2" },
     routeSetSha256: evidence.timetableRoutes.sha256,
+    dailyCirculationPlanSha256: dailyPlan.planSha256,
+    transferSetSha256,
+    transferDemandsProduced: true,
     findings: {},
     unresolvedRequired: 0,
   };
@@ -212,24 +305,49 @@ async function fixture(t) {
     mode: "deterministic-conservative-v1",
     infraReleaseId: annualSpecification.infraReleaseId,
     policy: { id: policy.id, sha256: syntheticOperationalSha256(annualSpecification.policy), spec: structuredClone(annualSpecification.policy) },
-    inputs: { spec: { path: "annual.json", ...annualProof, records: 1 }, tracks: evidence.tracks, platforms: evidence.platforms, switches: evidence.switches, signals: evidence.signals, blocks: evidence.blocks, conflictResources: evidence.conflictResources, timetableRoutes: evidence.timetableRoutes },
-    candidate: { ...candidate, stateHash, validationMode: "native-streaming-redb-v1" },
-    counts: {
-      source: { tracks: 3, orderableTracks: 3, platforms: 1, switches: 1, signals: 2, blocks: 2, conflictResources: 2, timetableRoutes: 4, timetableLegs: 5 },
-      candidate: { directedEdges: 3, edgeGeometries: 3, routeVersions: 4, interlockingRoutes: 4, signals: 5, switches: 1, blockResources: 8, platformIntervals: 1, regionBoundaries: 1 },
-      provenance: { observedForwardSpeeds: 1, observedBackwardSpeeds: 1, simulatedSpeeds: 2, observedProtectionAssignments: 0, simulatedProtectionAssignments: 3, matchedPlatformIntervals: 1, excludedPlatformEvidence: 0, syntheticBoundarySignals: 5 },
+    inputs: { spec: { path: "annual.json", ...annualProof, records: 1 }, tracks: evidence.tracks, platforms: evidence.platforms, switches: evidence.switches, signals: evidence.signals, blocks: evidence.blocks, conflictResources: evidence.conflictResources, timetableRoutes: evidence.timetableRoutes, transferDemands: evidence.transferDemands },
+    candidate: { ...candidate, stateHash, validationMode: "native-streaming-redb-v1", movementRouteTemplates },
+    timetableRouteEvidence: {
+      timetableRoutes: evidence.timetableRoutes,
+      transferDemands: evidence.transferDemands,
+      dailyPlanSha256: dailyPlan.planSha256,
+      transferSetSha256,
+      circulationCount: 1,
+      transferDemandCount: 1,
+      transferLotCount: 1,
+      turnaroundDemandCount: 0,
+      turnaroundPairCount: 0,
+      movementRouteTemplates,
     },
-    scope: { routeModel: "complete-pinned-timetable-routes", interlockingModel: "deterministic-full-route-node-stellzone-mutex-and-authority/v2", platformModel: "deterministic-nearest-observed-track-within-policy-radius/v1", capacityBias: "conservative-under-capacity", minimumOverlapMmPolicy: annualSpecification.policy.minimumOverlapMm },
+    counts: {
+      source: { tracks: 3, orderableTracks: 3, platforms: 1, switches: 1, signals: 2, blocks: 2, conflictResources: 2, timetableRoutes: 4, timetableLegs: 4, transferDemands: 1, transferLots: 1, turnaroundDemands: 0, turnaroundPairs: 0 },
+      candidate: { directedEdges: 3, edgeGeometries: 3, routeVersions: 5, interlockingRoutes: 5, signals: 5, switches: 1, blockResources: 8, platformIntervals: 1, regionBoundaries: 1, directTemplates: 0, stablingTemplates: 0, transferTemplates: 2 },
+      provenance: { observedForwardSpeeds: 1, observedBackwardSpeeds: 1, simulatedSpeeds: 2, observedProtectionAssignments: 0, simulatedProtectionAssignments: 3, matchedPlatformIntervals: 1, excludedPlatformEvidence: 0, syntheticBoundarySignals: 4, turnaroundRouteVersions: 0, turnaroundInterlockingRoutes: 0, transferRouteVersions: 1, transferInterlockingRoutes: 1 },
+    },
+    scope: {
+      routeModel: "complete-pinned-timetable-routes",
+      interlockingModel: "deterministic-linear-segment-node-stellzone-mutex-and-progressive-authority/v3",
+      platformModel: "deterministic-nearest-observed-track-within-policy-radius/v1",
+      capacityBias: "conservative-under-capacity",
+      minimumOverlapMmPolicy: annualSpecification.policy.minimumOverlapMm,
+      turnaroundModel: "real-osm-simple-bidirectional-siding-path-with-centered-single-berth-per-target-edge/v1",
+      minimumBerthEndClearanceMmPolicy: annualSpecification.policy.minimumBerthEndClearanceMm,
+      maximumDirectDwellMsPolicy: annualSpecification.policy.maximumDirectDwellMs,
+      terminalFormationLengthsMm: [...annualSpecification.policy.terminalFormationLengthsMm],
+      movementRouteTemplateModel: "daily-plan-scoped-direct-stabling-transfer-continuity/v2",
+    },
     routeCoverage: "complete-pinned-timetable-routes",
     activationEligible: true,
     unresolvedRequired: 0,
     unresolvedRequiredDimensions: [],
     realInterlockingFactsClaimed: false,
+    realGeometry: true,
+    simulatedOperationalAssignment: true,
     candidateProduced: true,
   };
   await writeFile(join(artifactRoot, "derivation-report.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
   const closureInputsPath = join(root, "closure-inputs.json");
-  await writeFile(closureInputsPath, `${JSON.stringify({ schema: "zugfolge-synthetic-operational-closure-inputs/v2", releaseId: annualSpecification.infraReleaseId, artifactRoot: "artifacts", policyFile: "policy.json", annualSpecificationFile: "annual.json", candidateFile: "operational-infrastructure-v2.candidate.json", derivationReportFile: "derivation-report.json", timetableRouteReportFile: "timetable-routes-v2.derivation-report.json", gtfsSnapshotFile: "gtfs-region-test-v2.json", operationalArtifactFile: "operational-infrastructure-v2.json" }, null, 2)}\n`, "utf8");
+  await writeFile(closureInputsPath, `${JSON.stringify({ schema: "zugfolge-synthetic-operational-closure-inputs/v2", releaseId: annualSpecification.infraReleaseId, artifactRoot: "artifacts", policyFile: "policy.json", annualSpecificationFile: "annual.json", candidateFile: "operational-infrastructure-v2.candidate.json", derivationReportFile: "derivation-report.json", timetableRouteReportFile: "timetable-routes-v2.derivation-report.json", timetableTransferDemandsFile: "timetable-routes-v2.transfer-demands-v1.json", gtfsSnapshotFile: "gtfs-region-test-v2.json", operationalArtifactFile: "operational-infrastructure-v2.json" }, null, 2)}\n`, "utf8");
   const validateNative = async (path, expectedReleaseId) => {
     const proof = await syntheticOperationalFileProof(path);
     return { schema: "operational-infrastructure-v2", infraReleaseId: expectedReleaseId, sourceBytes: proof.bytes, sourceSha256: proof.sha256, bytes: proof.bytes, sha256: proof.sha256, stateHash, validationMode: "native-streaming-redb-v1" };
@@ -248,11 +366,11 @@ async function fixture(t) {
   };
   const specificationPath = join(root, "inputs.json");
   await writeFile(specificationPath, `${JSON.stringify(specification, null, 2)}\n`, "utf8");
-  return { artifactRoot, root, specificationPath };
+  return { artifactRoot, root, specificationPath, movementRouteTemplates };
 }
 
 test("sichtbare Karten-C bleiben erhalten und blockieren den getrennten geschlossenen Operational-Beleg nicht", async (t) => {
-  const { root, specificationPath } = await fixture(t);
+  const { root, specificationPath, movementRouteTemplates } = await fixture(t);
   const result = await writeOperationalQualityReport({
     specificationPath,
     repositoryRoot: root,
@@ -296,12 +414,20 @@ test("sichtbare Karten-C bleiben erhalten und blockieren den getrennten geschlos
   assert.equal(result.report.operationalModel.syntheticOperationalDetailsShipped, true);
   assert.equal(result.report.operationalModel.objectLevelProvenanceShipped, false);
   assert.equal(result.report.operationalModel.observedAndSyntheticObjectsShareRuntimeCollections, true);
+  assert.deepEqual(result.report.operationalModel.movementRouteTemplates, {
+    bytes: movementRouteTemplates.bytes,
+    sha256: movementRouteTemplates.sha256,
+    stateHash: movementRouteTemplates.stateHash,
+    operationalStateHash: movementRouteTemplates.operationalStateHash,
+    timetableTransferSetSha256: movementRouteTemplates.timetableTransferSetSha256,
+  });
   assert.equal(result.report.operationalModel.timetableRouteEvidence.sourceLicense, "CC-BY-4.0");
   assert.equal(result.report.operationalModel.timetableRouteEvidence.selectedSegmentCount, 4);
   assert.equal(result.report.operationalModel.timetableRouteEvidence.externalOperationalNetworkProvenance, false);
   assert.deepEqual(Object.keys(result.report.operationalModel).sort(), [
     "closureReceiptSha256",
     "coverage",
+    "movementRouteTemplates",
     "objectLevelProvenanceShipped",
     "observedAndSyntheticObjectsShareRuntimeCollections",
     "operationalArtifact",
@@ -316,6 +442,7 @@ test("sichtbare Karten-C bleiben erhalten und blockieren den getrennten geschlos
     "timetableRouteEvidence",
   ]);
   assert.equal(JSON.stringify(result.report).includes("candidate.json"), false);
+  assert.equal(Object.hasOwn(result.report.operationalModel.movementRouteTemplates, "file"), false);
   assert.equal(JSON.stringify(result.report).includes("tracks.jsonseq"), false);
 });
 

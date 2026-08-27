@@ -124,6 +124,8 @@ function fixture({ disconnected = false, intermediate = false, sameStop = false 
       regionId: journeyRegionId,
       releaseId: journeyReleaseId,
       sourceTripId: journeySourceTripId,
+      routeId: "route-1",
+      routeShortName: "R1",
       orderable: true,
       legs: [{ kind: "playable", legId: playableLegId, sequence: 0, qualityClass: "B", orderable: true, planningWindows: [], stops }],
     }],
@@ -183,7 +185,21 @@ async function materialize(root, options) {
       expectedEligibleSegmentCount: 1,
       permittedProtectionModes: ["pzb"],
     },
+    dailyCirculation: {
+      rule: "lot-local-playable-path-cover-with-minimum-cross-location-rollover/v1",
+      repeatEveryS: 86_400,
+      minimumTurnaroundS: 300,
+      expectedLotCount: 1,
+      expectedJourneyChainCount: 1,
+      expectedCirculationCount: 1,
+      expectedTransferDemandCount: 1,
+      expectedTransferLotCount: 1,
+      formationLengthsMm: [100],
+      unknownMainlineSpeedKmh: 20,
+      unknownServiceSpeedKmh: 10,
+    },
     output: "routes.jsonseq",
+    transferOutput: "transfer-demands.json",
     report: "report.json",
   };
   return { ...value, spec };
@@ -232,6 +248,8 @@ test("routet jede Zwischenstation deterministisch auf vorhandenen realen OSM-Kan
     assert.equal(report.metrics.completeRouteCount, 1);
     assert.equal(report.metrics.incompleteRouteCount, 0);
     assert.equal(report.metrics.routeRecordCount, 1);
+    assert.equal(report.metrics.dailyCirculation.circulationCount, 1);
+    assert.equal(report.metrics.transferRouteCount, 1);
     assert.equal(report.provenance.simulatedOperationalAssignment, true);
     assert.equal(report.provenance.realInterlockingFactsClaimed, false);
     assert.equal(report.provenance.operationalNetworkUsed, false);
@@ -247,6 +265,14 @@ test("routet jede Zwischenstation deterministisch auf vorhandenen realen OSM-Kan
       { availableProtectionSystems: ["pzb"], simultaneouslyRequiredProtectionSystems: [] },
       { availableProtectionSystems: ["pzb"], simultaneouslyRequiredProtectionSystems: [] },
     ]);
+    const transfers = JSON.parse(await readFile(join(root, "transfer-demands.json"), "utf8"));
+    assert.equal(transfers.schema, "zugfolge-timetable-transfer-demands/v1");
+    assert.equal(transfers.dailyPlan.metrics.transferDemandCount, 1);
+    assert.equal(transfers.transferRoutes.length, 1);
+    assert.equal(transfers.transferRoutes[0].sourcePassengerRouteVersionId, routes[0].routeVersionId);
+    assert.equal(transfers.transferRoutes[0].targetPassengerRouteVersionId, routes[0].routeVersionId);
+    assert.deepEqual(transfers.transferRoutes[0].formationLengthsMm, [100]);
+    assert.deepEqual(transfers.transferRoutes[0].legs.map((leg) => leg.edgeId), ["edge-east", "edge-west"]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

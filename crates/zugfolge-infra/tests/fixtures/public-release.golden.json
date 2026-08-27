@@ -21,6 +21,20 @@
         "kind": "operational-infrastructure-v2",
         "sha256": "8888888888888888888888888888888888888888888888888888888888888888",
         "stateHash": "7777777777777777777777777777777777777777777777777777777777777777"
+      },
+      {
+        "bytes": 789,
+        "file": "operational-infrastructure-v2.movement-route-templates-v2.json",
+        "id": "operational-movement-routes-2027.1",
+        "kind": "movement-route-templates-v2",
+        "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+      },
+      {
+        "bytes": 3456,
+        "file": "timetable-routes-v2.transfer-demands-v1.json",
+        "id": "timetable-transfer-demands-2027.1",
+        "kind": "timetable-transfer-demands-v1",
+        "sha256": "9999999999999999999999999999999999999999999999999999999999999999"
       }
     ],
     "corpus": {
@@ -50,5 +64,5 @@
       "rawValidationMaterialShipped": false
     }
   },
-  "releaseHash": "508cce2290ce07dcc15fc20def30074aa4bf5228d4a1157124eaf3f599a59f36"
+  "releaseHash": "b35b953367c576439f519f0a01aeb3c07223ed6efaa455fbf0b20108b02f3d5a"
 }

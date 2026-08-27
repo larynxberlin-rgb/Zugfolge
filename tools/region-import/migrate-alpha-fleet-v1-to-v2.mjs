@@ -15,6 +15,7 @@ import {
   unwrapInfraReleaseManifest,
   validateAlphaWorldBuildConfiguration,
 } from "./build-alpha-world.mjs";
+import { deriveDailyCirculationPlan } from "./daily-circulation-v2.mjs";
 import { operationalInfrastructureV2Binding } from "./operational-infrastructure-binding.mjs";
 
 const SHA256 = /^[a-f0-9]{64}$/u;
@@ -334,46 +335,6 @@ function legacySlug(value) {
   return String(value).normalize("NFKD").replaceAll(/\p{Diacritic}/gu, "").replaceAll(/[^a-zA-Z0-9]+/g, "-").replaceAll(/^-|-$/g, "").toLowerCase() || "linie";
 }
 
-function startS(chain) {
-  const leg = chain.legs[0];
-  return leg.kind === "playable" ? leg.stops[0].departureS : leg.scheduledStartS;
-}
-
-function endS(chain) {
-  const leg = chain.legs.at(-1);
-  return leg.kind === "playable" ? leg.stops.at(-1).arrivalS : leg.scheduledEndS;
-}
-
-function startLocation(chain) {
-  const leg = chain.legs[0];
-  if (leg.kind === "external") return `external-origin:${leg.legId}`;
-  return leg.entryPortalId ?? leg.stops[0].stopId;
-}
-
-function endLocation(chain) {
-  const leg = chain.legs.at(-1);
-  if (leg.kind === "external") return `external-destination:${leg.legId}`;
-  return leg.exitPortalId ?? leg.stops.at(-1).stopId;
-}
-
-function buildCirculations(chains, lotId) {
-  const circulations = [];
-  const assignment = new Map();
-  for (const chain of [...chains].sort((left, right) => startS(left) - startS(right) || left.journeyChainId.localeCompare(right.journeyChainId, "en"))) {
-    const location = startLocation(chain);
-    const available = circulations
-      .filter((circulation) => circulation.location === location && circulation.availableAt + ALPHA_MINIMUM_TURNAROUND_S <= startS(chain))
-      .sort((left, right) => right.availableAt - left.availableAt || left.id.localeCompare(right.id, "en"))[0];
-    const circulation = available ?? { id: `circulation-${lotId}-${String(circulations.length + 1).padStart(3, "0")}`, chains: [], location, availableAt: 0 };
-    if (available === undefined) circulations.push(circulation);
-    circulation.chains.push(chain.journeyChainId);
-    circulation.location = endLocation(chain);
-    circulation.availableAt = endS(chain);
-    assignment.set(chain.journeyChainId, circulation.id);
-  }
-  return { circulations, assignment };
-}
-
 function alphaLotRecords(chains, gtfsReleaseId) {
   const grouped = new Map();
   for (const chain of chains) {
@@ -480,7 +441,35 @@ function targetLots(gtfs, gtfsReleaseId) {
   invariant(chains.length === gtfs.metrics?.orderableJourneyChainCount && chains.length > 0, "GTFS-Orderable-Zaehler und Fahrtketten laufen auseinander.");
   invariant(gtfs.journeyChains.every((chain) => chain.releaseId === gtfsReleaseId), "GTFS-Fahrtketten verletzen den releasegebundenen Zielnamespace.");
   invariant(chains.every((chain) => playableLegs(chain).length > 0 && playableLegs(chain).every((leg) => leg.orderable === true && leg.qualityClass === "B")), "GTFS enthaelt keine geschlossene Klasse-B-Fahrtkettenmenge.");
-  return alphaLotRecords(chains, gtfsReleaseId).map((lot) => ({ ...lot, ...buildCirculations(lot.chains, lot.lotId) }));
+  const dailyPlan = deriveDailyCirculationPlan({
+    journeyChains: chains,
+    stations: gtfs.stations,
+    gtfsReleaseId,
+    minimumTurnaroundS: ALPHA_MINIMUM_TURNAROUND_S,
+  });
+  const circulationsByLot = new Map();
+  const circulationByJourneyChainId = new Map();
+  for (const circulation of dailyPlan.circulations) {
+    const values = circulationsByLot.get(circulation.lotId) ?? [];
+    values.push(circulation);
+    circulationsByLot.set(circulation.lotId, values);
+    for (const journeyChainId of circulation.journeyChainIds) {
+      invariant(!circulationByJourneyChainId.has(journeyChainId), `JourneyChain '${journeyChainId}' ist mehreren Daily-Circulations zugeordnet.`);
+      circulationByJourneyChainId.set(journeyChainId, circulation.id);
+    }
+  }
+  invariant(circulationByJourneyChainId.size === chains.length, "DailyPlan bildet nicht jede bestellbare JourneyChain genau einmal ab.");
+  const lots = alphaLotRecords(chains, gtfsReleaseId).map((lot) => {
+    const circulations = circulationsByLot.get(lot.lotId) ?? [];
+    invariant(circulations.length > 0, `Los '${lot.lotId}' besitzt keinen Daily-Circulation-Slot.`);
+    const assignment = new Map(lot.chains.map((chain) => {
+      const circulationId = circulationByJourneyChainId.get(chain.journeyChainId);
+      invariant(circulationId !== undefined, `JourneyChain '${chain.journeyChainId}' besitzt keine Daily-Circulation-Zuordnung.`);
+      return [chain.journeyChainId, circulationId];
+    }));
+    return { ...lot, circulations, assignment };
+  });
+  return Object.freeze({ dailyPlan, lots });
 }
 
 function allocateAssets(legacyAssets, lots) {
@@ -597,7 +586,11 @@ export function migrateAlphaFleetV1ToV2({
   invariant(/^20[0-9]{6}$/u.test(serviceDate) && SHA256.test(archiveSha256), "GTFS-Snapshot besitzt keine ableitbare Release-Identitaet.");
   const derivedGtfsReleaseId = `gtfs-de-rv-${serviceDate}-${archiveSha256.slice(0, 16)}`;
   invariant(contract.target.gtfsReleaseId === derivedGtfsReleaseId, "Migrationsvertrag und aus der GTFS-Quelle abgeleiteter Release-Namespace laufen auseinander.");
-  const lots = targetLots(gtfs, contract.target.gtfsReleaseId);
+  const { dailyPlan, lots } = targetLots(gtfs, contract.target.gtfsReleaseId);
+  invariant(
+    dailyPlan.planSha256 === buildConfiguration.timetableTransferDemands.dailyPlanSha256,
+    "Fleet-Migration und gebundener Timetable-Transferplan besitzen verschiedene DailyPlans.",
+  );
   const allPlayableLegIds = new Set(lots.flatMap((lot) => lot.chains.flatMap((chain) => playableLegs(chain).map((leg) => leg.legId))));
   invariant(timetableRouteBindings instanceof Map && timetableRouteBindings.size === allPlayableLegIds.size && [...allPlayableLegIds].every((id) => timetableRouteBindings.has(id)), "Timetable-Route-Bindung deckt die Ziel-Fahrtketten nicht vollstaendig ab.");
 
@@ -714,6 +707,10 @@ export function migrateAlphaFleetV1ToV2({
     invariant(typeId !== undefined, `Reservefahrzeug '${asset.id}' besitzt keine migrierte Typkennung.`);
     seedAssets.push(seedAsset(asset, typeId, ["reserve-pool"], provenance));
   }
+  invariant(
+    formations.length === dailyPlan.metrics.circulationCount,
+    "Fleet-Migration erzeugt nicht genau eine Formation je Daily-Circulation-Slot.",
+  );
 
   const economyInput = parseEconomySpecification(economySpecification);
   const economyRelease = buildEconomyRelease({
@@ -763,6 +760,9 @@ export function migrateAlphaFleetV1ToV2({
       reserveAssetCount: reserve.length,
       formationCount: formations.length,
       minimumTurnaroundS: ALPHA_MINIMUM_TURNAROUND_S,
+      dailyPlanSha256: dailyPlan.planSha256,
+      rolloverAssignmentCount: dailyPlan.metrics.rolloverAssignmentCount,
+      transferDemandCount: dailyPlan.metrics.transferDemandCount,
     }),
   });
 }

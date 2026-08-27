@@ -21,9 +21,10 @@ Operational-Achse bleibt dieselbe gewoehnliche Annahme C. Sie kann dort nur
 dann als Derived/B geschlossen werden, wenn der getrennte Jahresvertrag ein
 bytegeprueftes `zugfolge-synthetic-operational-closure-receipt/v2` bindet.
 Dieses Receipt belegt die gesamte Policy `synthetic-operational-b/v2`, die
-Jahresspezifikation und alle neun Pflichtinputs: sechs operative Layer sowie
-`gtfs-snapshot`, `timetable-route-report` und `timetable-routes`. Der freie
-Routenpfad bindet CC-BY-4.0, Snapshot-/Datei-/Archiv-SHA, vollständige
+Jahresspezifikation und alle zehn Pflichtinputs: sechs operative Layer sowie
+`gtfs-snapshot`, `timetable-route-report`, `timetable-routes` und
+`timetable-transfer-demands`. Der freie Routenpfad bindet CC-BY-4.0,
+Snapshot-/Datei-/Archiv-SHA, vollständige physische Daily-Circulation und vollständige
 ausgewählte Segmentabdeckung und das Verbot externer Operational-Network-
 Provenienz. Das Receipt bindet außerdem Candidate, Ableitungsbericht, natives Operational-v2-
 Artefakt und Zustand; ein einzelner Fallbackwert reicht nicht. Klasse A

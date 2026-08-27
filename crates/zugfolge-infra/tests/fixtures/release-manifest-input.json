@@ -52,7 +52,9 @@
   },
   "artifacts": [
     { "id": "infracorpus", "file": "de.jsonseq", "bytes": 123, "sha256": "9999999999999999999999999999999999999999999999999999999999999999", "kind": "infrastructure" },
-    { "id": "operational-infrastructure-2027.1", "file": "operational-infrastructure-v2.json", "bytes": 456, "sha256": "8888888888888888888888888888888888888888888888888888888888888888", "kind": "operational-infrastructure-v2", "infraReleaseId": "infra-deutschland-2027.1", "stateHash": "7777777777777777777777777777777777777777777777777777777777777777" }
+    { "id": "operational-infrastructure-2027.1", "file": "operational-infrastructure-v2.json", "bytes": 456, "sha256": "8888888888888888888888888888888888888888888888888888888888888888", "kind": "operational-infrastructure-v2", "infraReleaseId": "infra-deutschland-2027.1", "stateHash": "7777777777777777777777777777777777777777777777777777777777777777" },
+    { "id": "operational-movement-routes-2027.1", "file": "operational-infrastructure-v2.movement-route-templates-v2.json", "bytes": 789, "sha256": "5555555555555555555555555555555555555555555555555555555555555555", "kind": "movement-route-templates-v2" },
+    { "id": "timetable-transfer-demands-2027.1", "file": "timetable-routes-v2.transfer-demands-v1.json", "bytes": 3456, "sha256": "9999999999999999999999999999999999999999999999999999999999999999", "kind": "timetable-transfer-demands-v1" }
   ],
   "quality": { "schema": "zugfolge-infrastructure-quality-report/v2", "totalLengthMm": 999, "byClassLengthMm": { "A": 100, "B": 899, "C": 0 } }
 }

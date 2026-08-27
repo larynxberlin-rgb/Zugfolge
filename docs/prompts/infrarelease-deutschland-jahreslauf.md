@@ -21,10 +21,11 @@ Validiere vor dem ersten Build alle aktiven Jahresbindungen gemeinsam und
 brich bei jeder Abweichung ab:
 
 - `<TIMETABLE_ROUTE_SPEC>` hat das Schema
-  `zugfolge-germany-timetable-route-compiler/v3`, bindet
-  `infraReleaseId=<INFRARELEASE_ID>` und nennt mit `output` und `report` zwei
-  verschiedene create-new-Ziele unter `<ARTEFAKTWURZEL>`. Binde diese beiden
-  Werte unverändert an `$TIMETABLE_ROUTE_OUTPUT` und
+  `zugfolge-germany-timetable-route-compiler/v4`, bindet
+  `infraReleaseId=<INFRARELEASE_ID>` und nennt mit `output`, `transferOutput`
+  und `report` drei verschiedene create-new-Ziele unter
+  `<ARTEFAKTWURZEL>`. Binde diese Werte unverändert an
+  `$TIMETABLE_ROUTE_OUTPUT`, `$TIMETABLE_TRANSFER_OUTPUT` und
   `$TIMETABLE_ROUTE_REPORT`.
 - `<SYNTHETIC_CLOSURE_SPEC>` hat das Schema
   `zugfolge-synthetic-operational-closure-inputs/v2`,
@@ -193,8 +194,9 @@ Deterministischer Build und Prüfung:
    node tools/region-import/germany/run-timetable-route-compiler.mjs <TIMETABLE_ROUTE_SPEC> .
    ```
 
-   Der create-new-Lauf muss `$TIMETABLE_ROUTE_OUTPUT` und
-   `$TIMETABLE_ROUTE_REPORT` gemeinsam erzeugen. Der Bericht muss Policy
+   Der create-new-Lauf muss `$TIMETABLE_ROUTE_OUTPUT`,
+   `$TIMETABLE_TRANSFER_OUTPUT` und `$TIMETABLE_ROUTE_REPORT` gemeinsam
+   erzeugen. Der Bericht muss Policy
    `synthetic-operational-b/v2`,
    den Snapshot-Dateihash und internen `snapshotHash`, Archiv-SHA,
    `sourceLicense=CC-BY-4.0`, alle ausgewählten Segmente 1:1 und eine bytegleiche
@@ -203,7 +205,9 @@ Deterministischer Build und Prüfung:
    `operationalNetworkUsed=false`, `gtfsShapeGeometryUsed=false` und
    `inventedGeometryUsed=false` ausweisen. Same-Stop-Übergänge sind nur als
    explizite Nullbewegung zulässig; sie dürfen weder eine erfundene Geometrie
-   noch einen unvollständigen Fahrweg erzeugen.
+   noch einen unvollständigen Fahrweg erzeugen. Der Transferbeleg muss den
+   reproduzierbaren DailyPlan, seine vollständige Rollover-Permutation, alle
+   erforderlichen Überführungswege und deren `transferSetSha256` binden.
 
    Lies anschließend den strikt validierten Subvertrag
    `pipeline.operationalDeriver` aus `<ANNUAL_RELEASE_CONFIG>`. Sein
@@ -217,6 +221,9 @@ Deterministischer Build und Prüfung:
    `conflictResources` müssen aus demselben Jahresstand stammen. Zusätzlich
    muss `layers.timetableRoutes` exakt den aus `<TIMETABLE_ROUTE_SPEC>`
    validierten, gepinnten Pfad `$TIMETABLE_ROUTE_OUTPUT` bezeichnen;
+   `layers.transferDemands.path` muss ebenso exakt
+   `$TIMETABLE_TRANSFER_OUTPUT` bezeichnen und dessen Bytezahl und SHA-256
+   binden;
    `null`, ein fehlender oder ein leerer Pfad ist für einen aktivierbaren
    Jahresrelease unzulässig. `candidate` muss exakt
    `<OPERATIONAL_CANDIDATE>` entsprechen und `output` muss exakt
@@ -297,8 +304,9 @@ Deterministischer Build und Prüfung:
 
    Das Schema `zugfolge-synthetic-operational-closure-receipt/v2` bindet die
    eingecheckte Policy und Jahresspezifikation, die sechs normalisierten
-   Kartenlayer sowie die drei Pflichtinputs `gtfs-snapshot`,
-   `timetable-route-report` und `timetable-routes`, Candidate,
+   Kartenlayer sowie die vier Pflichtinputs `gtfs-snapshot`,
+   `timetable-route-report`, `timetable-routes` und
+   `timetable-transfer-demands`, Candidate,
    materialisiertes Operational-v2-Artefakt, natives Streaming-Receipt und
    den nativen Ableitungsbericht samt kanonischem Zustand per SHA-256. Coverage,
    Records und Native-Hashes werden ausschließlich daraus abgeleitet und sind

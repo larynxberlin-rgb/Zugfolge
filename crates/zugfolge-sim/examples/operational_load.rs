@@ -37,10 +37,11 @@ fn release() -> OperationalInfraRelease {
         |id: &str, signal: &str, movement_kind, authority_end_route_mm| InterlockingRouteTemplate {
             id: id.to_owned(),
             route_template_id: "template:load".to_owned(),
+            authority_start_route_mm: 0,
             signal_id: signal.to_owned(),
             movement_kind,
             path_resources: set(&[if movement_kind == MovementKind::Train {
-                "resource:train"
+                "block:load"
             } else {
                 "resource:shunting"
             }]),
@@ -62,7 +63,7 @@ fn release() -> OperationalInfraRelease {
         "interlocking:train",
         "signal:train",
         MovementKind::Train,
-        100_000,
+        120_000,
     );
     let shunting = route_template(
         "interlocking:shunting",
@@ -177,7 +178,7 @@ fn execute_cycle(index: usize, infra: &OperationalInfraRelease) -> usize {
             movement_kind,
             "route:load:v1",
             "formation:load",
-            10_000,
+            0,
             None,
             false,
         )

@@ -13,6 +13,7 @@ import {
   OPERATIONAL_INITIALIZATION_VALIDATION_RECEIPT_SCHEMA,
   OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
   loadOperationalSimulationRuntime,
+  operationalMovementContinuationsEvidence,
   operationalProtectionModeSelectionEvidence,
   type OperationalInitializationValidationReceipt,
   type OperationalSimulationInitialization,
@@ -45,6 +46,7 @@ function nativeProgramReceipt(
   initialization: OperationalSimulationInitialization,
 ): OperationalInitializationValidationReceipt {
   const protectionEvidence = operationalProtectionModeSelectionEvidence(initialization);
+  const continuationEvidence = operationalMovementContinuationsEvidence(initialization);
   return Object.freeze({
     schemaVersion: OPERATIONAL_INITIALIZATION_VALIDATION_RECEIPT_SCHEMA,
     worldId: initialization.worldId,
@@ -65,6 +67,8 @@ function nativeProgramReceipt(
       initialization.trains.map((train) => train.formationVersionId),
     ).size,
     validatedTrainNumberCount: initialization.trains.length,
+    validatedMovementContinuationCount: continuationEvidence.count,
+    movementContinuationsSha256: continuationEvidence.sha256,
     protectionModeSelectionPolicy: initialization.protectionModeSelectionPolicy,
     validatedProtectionModeSelectionCount: protectionEvidence.count,
     protectionModeSelectionsSha256: protectionEvidence.sha256,
@@ -139,6 +143,7 @@ function signed(): SignedAlphaWorldDeployment {
         worldId: WORLD_ID,
         regionId: "mitteldeutschland-b",
         nowMs: 0,
+        repeatEveryMs: 86_400_000,
         protectionModeSelectionPolicy: OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
         infraRelease: TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR.binding,
         vehicleTypes: [{
@@ -193,6 +198,17 @@ function signed(): SignedAlphaWorldDeployment {
             selectedProtectionSystem: "pzb",
           }],
         }],
+        movementContinuations: [{
+          id: "continuation:run-1:daily",
+          predecessorTrainId: "run-1",
+          predecessorBaseRouteVersionId: "route:base",
+          successorTrainId: "run-1",
+          successorDayOffset: 1,
+          dailyBoundary: true,
+          minimumDwellMs: 300_000,
+          continuity: "reverse-direction",
+          successorFormation: "inherit-predecessor",
+        }],
       },
       repeatEveryS: 86_400,
     },
@@ -239,6 +255,24 @@ describe("aktive World-Deployment-Runtime", () => {
       expect.objectContaining({
         atMs: 0,
         command: expect.objectContaining({
+          type: "queue-movement-continuation",
+          continuation: expect.objectContaining({
+            predecessorTrainId: "run-1",
+            predecessorBaseRouteVersionId: "route:base",
+            successor: expect.objectContaining({
+              id: "run-1:day-1",
+              formationVersionId: "formation:1",
+              scheduledDepartureMs: 86_400_000,
+            }),
+            notBeforeMs: 86_400_000,
+            minimumDwellMs: 300_000,
+            continuity: "reverse-direction",
+          }),
+        }),
+      }),
+      expect.objectContaining({
+        atMs: 0,
+        command: expect.objectContaining({
           type: "dispatch",
           requests: [expect.objectContaining({
             trainId: "run-1",
@@ -258,26 +292,26 @@ describe("aktive World-Deployment-Runtime", () => {
       atMs,
       commandCount: commands.length,
     }))).toEqual([
-      { atMs: 86_400_000, commandCount: 3 },
-      { atMs: 172_800_000, commandCount: 3 },
+      { atMs: 86_400_000, commandCount: 1 },
+      { atMs: 172_800_000, commandCount: 1 },
     ]);
     const recurrence = streamedRecurrence.flatMap(({ commands }) => commands);
     expect(recurrence.map((item) => item.command.type)).toEqual([
-      "retire", "materialize", "dispatch",
-      "retire", "materialize", "dispatch",
+      "queue-movement-continuation",
+      "queue-movement-continuation",
     ]);
     expect(recurrence.map((item) => item.atMs)).toEqual([
-      86_400_000, 86_400_000, 86_400_000,
-      172_800_000, 172_800_000, 172_800_000,
+      86_400_000,
+      172_800_000,
     ]);
-    expect(recurrence[0]!.command).toEqual({ type: "retire", trainId: "run-1" });
-    expect(recurrence[1]!.command).toMatchObject({
-      type: "materialize",
-      train: { id: "run-1:day-1", scheduledDepartureMs: 86_400_000 },
-    });
-    expect(recurrence[2]!.command).toMatchObject({
-      type: "dispatch",
-      requests: [{ trainId: "run-1:day-1", waitingSinceMs: 86_400_000 }],
+    expect(recurrence[0]!.command).toMatchObject({
+      type: "queue-movement-continuation",
+      continuation: {
+        predecessorTrainId: "run-1:day-1",
+        predecessorBaseRouteVersionId: "route:base",
+        successor: { id: "run-1:day-2", scheduledDepartureMs: 172_800_000 },
+        successorDispatch: { trainId: "run-1:day-2", waitingSinceMs: 172_800_000 },
+      },
     });
   });
 
@@ -297,6 +331,12 @@ describe("aktive World-Deployment-Runtime", () => {
         command: expect.objectContaining({
           type: "materialize",
           train: expect.objectContaining({ id: "run-1", scheduledDepartureMs: 0 }),
+        }),
+      }),
+      expect.objectContaining({
+        command: expect.objectContaining({
+          type: "queue-movement-continuation",
+          continuation: expect.objectContaining({ predecessorTrainId: "run-1" }),
         }),
       }),
       expect.objectContaining({
@@ -443,6 +483,30 @@ describe("aktive World-Deployment-Runtime", () => {
             first,
             { ...first, id: "run-2", trainNumber: "RE 2", scheduledDepartureMs: 43_200_000 },
           ],
+          movementContinuations: [
+            {
+              id: "continuation:run-1:run-2",
+              predecessorTrainId: "run-1",
+              predecessorBaseRouteVersionId: "route:base",
+              successorTrainId: "run-2",
+              successorDayOffset: 0,
+              dailyBoundary: false,
+              minimumDwellMs: 300_000,
+              continuity: "reverse-direction",
+              successorFormation: "inherit-predecessor",
+            },
+            {
+              id: "continuation:run-2:run-1",
+              predecessorTrainId: "run-2",
+              predecessorBaseRouteVersionId: "route:base",
+              successorTrainId: "run-1",
+              successorDayOffset: 1,
+              dailyBoundary: true,
+              minimumDwellMs: 300_000,
+              continuity: "reverse-direction",
+              successorFormation: "inherit-predecessor",
+            },
+          ],
         },
       },
     } as SignedAlphaWorldDeployment;
@@ -451,28 +515,404 @@ describe("aktive World-Deployment-Runtime", () => {
 
     expect(runtime.at(WORLD_ID, "mitteldeutschland-b", 43_200_000).map(({ command }) => command))
       .toEqual([
-        { type: "retire", trainId: "run-1" },
         expect.objectContaining({
-          type: "materialize",
-          train: expect.objectContaining({ id: "run-2", scheduledDepartureMs: 43_200_000 }),
-        }),
-        expect.objectContaining({
-          type: "dispatch",
-          requests: [expect.objectContaining({ trainId: "run-2" })],
+          type: "queue-movement-continuation",
+          continuation: expect.objectContaining({
+            predecessorTrainId: "run-2",
+            predecessorBaseRouteVersionId: "route:base",
+            successor: expect.objectContaining({
+              id: "run-1:day-1",
+              scheduledDepartureMs: 86_400_000,
+            }),
+          }),
         }),
       ]);
     expect(runtime.at(WORLD_ID, "mitteldeutschland-b", 86_400_000).map(({ command }) => command))
       .toEqual([
-        { type: "retire", trainId: "run-2" },
         expect.objectContaining({
-          type: "materialize",
-          train: expect.objectContaining({ id: "run-1:day-1", scheduledDepartureMs: 86_400_000 }),
-        }),
-        expect.objectContaining({
-          type: "dispatch",
-          requests: [expect.objectContaining({ trainId: "run-1:day-1" })],
+          type: "queue-movement-continuation",
+          continuation: expect.objectContaining({
+            predecessorTrainId: "run-1:day-1",
+            predecessorBaseRouteVersionId: "route:base",
+            successor: expect.objectContaining({
+              id: "run-2:day-1",
+              scheduledDepartureMs: 129_600_000,
+            }),
+          }),
         }),
       ]);
+  });
+
+  it("queued an der Personenfahrgrenze die vollstaendige physische Abstellkette vorab", () => {
+    const deployment = structuredClone(signed());
+    const passenger = deployment.deployment.regionalSimulation.trains[0]!;
+    deployment.deployment.regionalSimulation.trains = [
+      passenger,
+      {
+        ...passenger,
+        id: "shunt-in",
+        trainNumber: "R 2",
+        movementKind: "shunting",
+        scheduledDepartureMs: 0,
+        publicPassengerStop: false,
+      },
+      {
+        ...passenger,
+        id: "shunt-out",
+        trainNumber: "R 3",
+        movementKind: "shunting",
+        scheduledDepartureMs: 80_000_000,
+        publicPassengerStop: false,
+      },
+      {
+        ...passenger,
+        id: "run-2",
+        trainNumber: "RE 4",
+        scheduledDepartureMs: 82_000_000,
+      },
+    ];
+    deployment.deployment.regionalSimulation.movementContinuations = [
+      {
+        id: "continuation:passenger:shunt-in",
+        predecessorTrainId: "run-1",
+        predecessorBaseRouteVersionId: "route:base",
+        successorTrainId: "shunt-in",
+        successorDayOffset: 0,
+        dailyBoundary: false,
+        minimumDwellMs: 300_000,
+        continuity: "same-direction",
+        successorFormation: "inherit-predecessor",
+      },
+      {
+        id: "continuation:shunt-in:shunt-out",
+        predecessorTrainId: "shunt-in",
+        predecessorBaseRouteVersionId: "route:base",
+        successorTrainId: "shunt-out",
+        successorDayOffset: 0,
+        dailyBoundary: false,
+        minimumDwellMs: 0,
+        continuity: "reverse-direction",
+        successorFormation: "inherit-predecessor",
+      },
+      {
+        id: "continuation:shunt-out:passenger",
+        predecessorTrainId: "shunt-out",
+        predecessorBaseRouteVersionId: "route:base",
+        successorTrainId: "run-2",
+        successorDayOffset: 0,
+        dailyBoundary: false,
+        minimumDwellMs: 0,
+        continuity: "same-direction",
+        successorFormation: "inherit-predecessor",
+      },
+      {
+        id: "continuation:passenger:daily",
+        predecessorTrainId: "run-2",
+        predecessorBaseRouteVersionId: "route:base",
+        successorTrainId: "run-1",
+        successorDayOffset: 1,
+        dailyBoundary: true,
+        minimumDwellMs: 300_000,
+        continuity: "reverse-direction",
+        successorFormation: "inherit-predecessor",
+      },
+    ];
+
+    const runtime = deploymentRuntime();
+    runtime.register(deployment, EPOCH);
+    const dayZero = runtime.at(WORLD_ID, "mitteldeutschland-b", 0);
+
+    expect(dayZero.map(({ command }) => command.type)).toEqual([
+      "materialize",
+      "queue-movement-continuation",
+      "queue-movement-continuation",
+      "queue-movement-continuation",
+      "dispatch",
+    ]);
+    expect(dayZero.slice(1, 4).map(({ command }) =>
+      command.type === "queue-movement-continuation"
+        ? [command.continuation.predecessorTrainId, command.continuation.successor.id]
+        : undefined)).toEqual([
+      ["run-1", "shunt-in"],
+      ["shunt-in", "shunt-out"],
+      ["shunt-out", "run-2"],
+    ]);
+    expect(runtime.at(WORLD_ID, "mitteldeutschland-b", 82_000_000)).toEqual([
+      expect.objectContaining({
+        command: expect.objectContaining({
+          type: "queue-movement-continuation",
+          continuation: expect.objectContaining({
+            predecessorTrainId: "run-2",
+            predecessorBaseRouteVersionId: "route:base",
+            successor: expect.objectContaining({ id: "run-1:day-1" }),
+          }),
+        }),
+      }),
+    ]);
+    expect(dayZero.some(({ command }) => command.type === "retire")).toBe(false);
+  });
+
+  it("traegt eine Abstellkette kanonisch ueber Mitternacht und baut sie identisch wieder auf", () => {
+    const deployment = structuredClone(signed());
+    const passenger = deployment.deployment.regionalSimulation.trains[0]!;
+    deployment.deployment.regionalSimulation.trains = [
+      { ...passenger, id: "run-early", scheduledDepartureMs: 14_000_000 },
+      { ...passenger, id: "run-late", trainNumber: "RE 2", scheduledDepartureMs: 80_000_000 },
+      {
+        ...passenger,
+        id: "shunt-in-overnight",
+        trainNumber: "R 3",
+        movementKind: "shunting",
+        scheduledDepartureMs: 80_100_000,
+        publicPassengerStop: false,
+      },
+      {
+        ...passenger,
+        id: "shunt-out-overnight",
+        trainNumber: "R 4",
+        movementKind: "shunting",
+        scheduledDepartureMs: 100_000_000,
+        publicPassengerStop: false,
+      },
+    ];
+    deployment.deployment.regionalSimulation.movementContinuations = [
+      {
+        id: "continuation:early:late",
+        predecessorTrainId: "run-early",
+        predecessorBaseRouteVersionId: "route:base",
+        successorTrainId: "run-late",
+        successorDayOffset: 0,
+        dailyBoundary: false,
+        minimumDwellMs: 300_000,
+        continuity: "reverse-direction",
+        successorFormation: "inherit-predecessor",
+      },
+      {
+        id: "continuation:late:shunt-in",
+        predecessorTrainId: "run-late",
+        predecessorBaseRouteVersionId: "route:base",
+        successorTrainId: "shunt-in-overnight",
+        successorDayOffset: 0,
+        dailyBoundary: false,
+        minimumDwellMs: 300_000,
+        continuity: "same-direction",
+        successorFormation: "inherit-predecessor",
+      },
+      {
+        id: "continuation:shunt-in:shunt-out:overnight",
+        predecessorTrainId: "shunt-in-overnight",
+        predecessorBaseRouteVersionId: "route:base",
+        successorTrainId: "shunt-out-overnight",
+        successorDayOffset: 0,
+        dailyBoundary: false,
+        minimumDwellMs: 0,
+        continuity: "reverse-direction",
+        successorFormation: "inherit-predecessor",
+      },
+      {
+        id: "continuation:shunt-out:early:next-day",
+        predecessorTrainId: "shunt-out-overnight",
+        predecessorBaseRouteVersionId: "route:base",
+        successorTrainId: "run-early",
+        successorDayOffset: 1,
+        dailyBoundary: true,
+        minimumDwellMs: 0,
+        continuity: "same-direction",
+        successorFormation: "inherit-predecessor",
+      },
+    ];
+
+    const first = deploymentRuntime();
+    const rebuilt = deploymentRuntime();
+    first.register(deployment, EPOCH);
+    rebuilt.register(structuredClone(deployment), EPOCH);
+    const firstCommands = first.at(WORLD_ID, "mitteldeutschland-b", 80_000_000);
+    const rebuiltCommands = rebuilt.at(WORLD_ID, "mitteldeutschland-b", 80_000_000);
+    expect(rebuiltCommands).toEqual(firstCommands);
+    expect(firstCommands.map(({ command }) => command.type)).toEqual([
+      "queue-movement-continuation",
+      "queue-movement-continuation",
+      "queue-movement-continuation",
+    ]);
+    expect(firstCommands.at(-2)?.command).toMatchObject({
+      type: "queue-movement-continuation",
+      continuation: {
+        successor: {
+          id: "shunt-out-overnight",
+          scheduledDepartureMs: 100_000_000,
+        },
+      },
+    });
+    expect(firstCommands.at(-1)?.command).toMatchObject({
+      type: "queue-movement-continuation",
+      continuation: {
+        predecessorTrainId: "shunt-out-overnight",
+        predecessorBaseRouteVersionId: "route:base",
+        successor: {
+          id: "run-early:day-1",
+          scheduledDepartureMs: 100_400_000,
+        },
+      },
+    });
+
+    const outsideSecondWindow = structuredClone(deployment);
+    const shuntOut = outsideSecondWindow.deployment.regionalSimulation.trains
+      .find((train) => train.id === "shunt-out-overnight")!;
+    shuntOut.scheduledDepartureMs = 172_800_000;
+    expect(() => deploymentRuntime().register(outsideSecondWindow, EPOCH))
+      .toThrow(/Tageswiederholung ungueltig/u);
+
+    const multipleDayOffsets = structuredClone(deployment);
+    multipleDayOffsets.deployment.regionalSimulation.movementContinuations[0]!.successorDayOffset = 1;
+    expect(() => deploymentRuntime().register(multipleDayOffsets, EPOCH))
+      .toThrow(/nicht genau eine Periodenfortschaltung|ueberschreitet einen Betriebstag/u);
+  });
+
+  it("vererbt die reale Formation ueber eine mehrtaegige Rollover-Permutation", () => {
+    const deployment = structuredClone(signed());
+    const first = deployment.deployment.regionalSimulation.trains[0]!;
+    deployment.deployment.regionalSimulation.formations = [
+      ...deployment.deployment.regionalSimulation.formations,
+      { id: "formation:2", predecessorId: null, vehicleIds: ["vehicle:1"] },
+    ];
+    deployment.deployment.regionalSimulation.trains = [
+      first,
+      {
+        ...first,
+        id: "run-2",
+        trainNumber: "RE 2",
+        formationVersionId: "formation:2",
+        scheduledDepartureMs: 1_000,
+      },
+    ];
+    deployment.deployment.regionalSimulation.movementContinuations = [
+      {
+        id: "continuation:run-1:run-2-next-day",
+        predecessorTrainId: "run-1",
+        predecessorBaseRouteVersionId: "route:base",
+        successorTrainId: "run-2",
+        successorDayOffset: 1,
+        dailyBoundary: true,
+        minimumDwellMs: 300_000,
+        continuity: "reverse-direction",
+        successorFormation: "inherit-predecessor",
+      },
+      {
+        id: "continuation:run-2:run-1-next-day",
+        predecessorTrainId: "run-2",
+        predecessorBaseRouteVersionId: "route:base",
+        successorTrainId: "run-1",
+        successorDayOffset: 1,
+        dailyBoundary: true,
+        minimumDwellMs: 300_000,
+        continuity: "reverse-direction",
+        successorFormation: "inherit-predecessor",
+      },
+    ];
+
+    const runtime = deploymentRuntime();
+    runtime.register(deployment, EPOCH);
+    const dayZeroRunOne = runtime.at(WORLD_ID, "mitteldeutschland-b", 0)[1]!;
+    const dayZeroRunTwo = runtime.at(WORLD_ID, "mitteldeutschland-b", 1_000)[1]!;
+    const dayOneRunOne = runtime.at(WORLD_ID, "mitteldeutschland-b", 86_400_000)[0]!;
+
+    expect(dayZeroRunOne.command).toMatchObject({
+      type: "queue-movement-continuation",
+      continuation: { successor: { id: "run-2:day-1", formationVersionId: "formation:1" } },
+    });
+    expect(dayZeroRunTwo.command).toMatchObject({
+      type: "queue-movement-continuation",
+      continuation: { successor: { id: "run-1:day-1", formationVersionId: "formation:2" } },
+    });
+    expect(dayOneRunOne.command).toMatchObject({
+      type: "queue-movement-continuation",
+      continuation: { successor: { id: "run-2:day-2", formationVersionId: "formation:2" } },
+    });
+  });
+
+  it("trennt eine interne Mitternachtskante von einem Offset-0-DailyPlan-Rollover", () => {
+    const deployment = structuredClone(signed());
+    const seed = deployment.deployment.regionalSimulation.trains[0]!;
+    deployment.deployment.regionalSimulation.formations = [
+      ...deployment.deployment.regionalSimulation.formations,
+      { id: "formation:2", predecessorId: null, vehicleIds: ["vehicle:1"] },
+    ];
+    deployment.deployment.regionalSimulation.trains = [
+      { ...seed, id: "slot-1-late", trainNumber: "RE 11", scheduledDepartureMs: 80_000_000 },
+      { ...seed, id: "slot-1-after-midnight", trainNumber: "RE 12", scheduledDepartureMs: 1_000_000 },
+      { ...seed, id: "slot-2-early", trainNumber: "RE 21", formationVersionId: "formation:2", scheduledDepartureMs: 2_000_000 },
+      { ...seed, id: "slot-2-late", trainNumber: "RE 22", formationVersionId: "formation:2", scheduledDepartureMs: 3_000_000 },
+    ];
+    deployment.deployment.regionalSimulation.movementContinuations = [
+      {
+        id: "continuation:slot-1:midnight",
+        predecessorTrainId: "slot-1-late",
+        predecessorBaseRouteVersionId: "route:base",
+        successorTrainId: "slot-1-after-midnight",
+        successorDayOffset: 1,
+        dailyBoundary: false,
+        minimumDwellMs: 300_000,
+        continuity: "reverse-direction",
+        successorFormation: "inherit-predecessor",
+      },
+      {
+        id: "continuation:slot-1:rollover-offset-0",
+        predecessorTrainId: "slot-1-after-midnight",
+        predecessorBaseRouteVersionId: "route:base",
+        successorTrainId: "slot-2-early",
+        successorDayOffset: 0,
+        dailyBoundary: true,
+        minimumDwellMs: 300_000,
+        continuity: "reverse-direction",
+        successorFormation: "inherit-predecessor",
+      },
+      {
+        id: "continuation:slot-2:internal",
+        predecessorTrainId: "slot-2-early",
+        predecessorBaseRouteVersionId: "route:base",
+        successorTrainId: "slot-2-late",
+        successorDayOffset: 0,
+        dailyBoundary: false,
+        minimumDwellMs: 300_000,
+        continuity: "reverse-direction",
+        successorFormation: "inherit-predecessor",
+      },
+      {
+        id: "continuation:slot-2:rollover",
+        predecessorTrainId: "slot-2-late",
+        predecessorBaseRouteVersionId: "route:base",
+        successorTrainId: "slot-1-late",
+        successorDayOffset: 1,
+        dailyBoundary: true,
+        minimumDwellMs: 300_000,
+        continuity: "reverse-direction",
+        successorFormation: "inherit-predecessor",
+      },
+    ];
+
+    const runtime = deploymentRuntime();
+    runtime.register(deployment, EPOCH);
+    expect(runtime.at(WORLD_ID, "mitteldeutschland-b", 1_000_000)).toEqual([]);
+    expect(runtime.at(WORLD_ID, "mitteldeutschland-b", 87_400_000)).toEqual([
+      expect.objectContaining({
+        command: expect.objectContaining({
+          type: "queue-movement-continuation",
+          continuation: expect.objectContaining({
+            predecessorTrainId: "slot-1-after-midnight:day-1",
+            predecessorBaseRouteVersionId: "route:base",
+            successor: expect.objectContaining({
+              id: "slot-2-early:day-1",
+              formationVersionId: "formation:1",
+            }),
+          }),
+        }),
+      }),
+    ]);
+
+    const mislabeled = structuredClone(deployment);
+    mislabeled.deployment.regionalSimulation.movementContinuations[0]!.dailyBoundary = true;
+    expect(() => deploymentRuntime().register(mislabeled, EPOCH))
+      .toThrow(/nicht genau eine Periodenfortschaltung|statischen Slotpfad|DailyPlan-Grenzen|mehrere Day-0/u);
   });
 
   it("verweigert zwei gleichzeitige Fahrten derselben Formation", () => {
@@ -504,6 +944,20 @@ describe("aktive World-Deployment-Runtime", () => {
         trainNumber: `RE ${index + 1}`,
         formationVersionId: `formation:${index + 1}`,
         scheduledDepartureMs: 0,
+      }),
+    );
+    deployment.deployment.regionalSimulation.movementContinuations = Array.from(
+      { length: 128 },
+      (_, index) => ({
+        id: `continuation:run-${index + 1}:daily`,
+        predecessorTrainId: `run-${index + 1}`,
+        predecessorBaseRouteVersionId: "route:base",
+        successorTrainId: `run-${index + 1}`,
+        successorDayOffset: 1 as const,
+        dailyBoundary: true,
+        minimumDwellMs: 300_000,
+        continuity: "reverse-direction" as const,
+        successorFormation: "inherit-predecessor" as const,
       }),
     );
 

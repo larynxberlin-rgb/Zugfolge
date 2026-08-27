@@ -401,13 +401,27 @@ export async function advanceRegionalSimulations(
           const scheduledBoundary = !due.done && due.value.atMs === boundaryAtMs
             ? due.value
             : undefined;
-          const timedBoundary: TimedRegionalSimulationWork[] = [{
+          // Fortsetzungsketten muessen bereits vor dem Advance existieren:
+          // genau dieses Advance kann einen verspaeteten Vorgaenger am selben
+          // Millisekundenrand physisch abschliessen. Materialize/Dispatch
+          // bleiben dagegen hinter dem Advance und damit exakt zeitgebunden.
+          const queuedContinuations = (scheduledBoundary?.commands ?? []).filter(
+            ({ command }) => command.type === "queue-movement-continuation",
+          );
+          const commandsAtBoundary = (scheduledBoundary?.commands ?? []).filter(
+            ({ command }) => command.type !== "queue-movement-continuation",
+          );
+          const timedBoundary: TimedRegionalSimulationWork[] = [
+            ...queuedContinuations.map((scheduled) => ({
+              atMs: scheduled.atMs,
+              command: { commandId: scheduled.commandId, command: scheduled.command },
+            })), {
             atMs: boundaryAtMs,
             command: {
               commandId: `advance-to-ms:${boundaryAtMs}`,
               command: { type: "advance-to", atMs: boundaryAtMs },
             },
-          }, ...(scheduledBoundary?.commands ?? []).map((scheduled) => ({
+          }, ...commandsAtBoundary.map((scheduled) => ({
             atMs: scheduled.atMs,
             command: { commandId: scheduled.commandId, command: scheduled.command },
           }))];

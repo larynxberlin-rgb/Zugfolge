@@ -22,7 +22,7 @@ const LEGACY_DERIVATION_SCHEMA = "zugfolge-germany-operational-infrastructure-de
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const SHA256 = /^[a-f0-9]{64}$/u;
 const MAP_LAYER_NAMES = Object.freeze(["tracks", "platforms", "switches", "signals", "blocks", "conflictResources"]);
-const CONSERVATIVE_LAYER_NAMES = Object.freeze([...MAP_LAYER_NAMES, "timetableRoutes"]);
+const CONSERVATIVE_LAYER_NAMES = Object.freeze([...MAP_LAYER_NAMES, "timetableRoutes", "transferDemands"]);
 const CONSERVATIVE_POLICY_KEYS = Object.freeze([
   "id",
   "qualityClass",
@@ -34,6 +34,9 @@ const CONSERVATIVE_POLICY_KEYS = Object.freeze([
   "minimumPlatformLengthMm",
   "maximumPlatformSnapDistanceMm",
   "minimumOverlapMm",
+  "minimumBerthEndClearanceMm",
+  "maximumDirectDwellMs",
+  "terminalFormationLengthsMm",
   "defaultProtectionSystem",
   "regionBoundaryId",
   "rzueLayoutId",
@@ -55,7 +58,7 @@ export const GERMANY_OPERATIONAL_REQUIRED_INPUTS = Object.freeze([
     name: "rustInterlockingRoutes",
     blockerCode: "rust-route-and-interlocking-input-required",
     artifact: "Vom Rust-Vertrag abgeleitete RouteVersionen und InterlockingRouteTemplates",
-    requiredFields: Object.freeze(["derivationPolicyVersion", "stationHeadHash", "routeVersions[].id", "routeVersions[].templateId", "routeVersions[].predecessorId", "routeVersions[].transitionRouteMm", "routeVersions[].legs", "interlockingRoutes[].id", "interlockingRoutes[].routeTemplateId", "interlockingRoutes[].signalId", "interlockingRoutes[].pathResources", "interlockingRoutes[].overlapResources", "interlockingRoutes[].flankResources", "interlockingRoutes[].switchPositions", "interlockingRoutes[].authorityEndRouteMm", "interlockingRoutes[].releaseAfterTailRouteMm", "terminalProtectionBindings[].routeId", "terminalProtectionBindings[].endpointResourceId"]),
+    requiredFields: Object.freeze(["derivationPolicyVersion", "stationHeadHash", "routeVersions[].id", "routeVersions[].templateId", "routeVersions[].predecessorId", "routeVersions[].transitionRouteMm", "routeVersions[].legs", "interlockingRoutes[].id", "interlockingRoutes[].routeTemplateId", "interlockingRoutes[].signalId", "interlockingRoutes[].pathResources", "interlockingRoutes[].overlapResources", "interlockingRoutes[].flankResources", "interlockingRoutes[].switchPositions", "interlockingRoutes[].authorityStartRouteMm", "interlockingRoutes[].authorityEndRouteMm", "interlockingRoutes[].releaseAfterTailRouteMm", "terminalProtectionBindings[].routeId", "terminalProtectionBindings[].endpointResourceId"]),
     constraints: Object.freeze([
       "Fahrweg, Durchrutschweg und Flankenschutz muessen jeweils fachlich belegte Rollen besitzen; Pfadaliasse und Ersatzressourcen blockieren.",
       "Terminale Fahrwege benoetigen einen belegten Endpunktschutz und duerfen keinen Gleisabschnitt als Ersatzflanke wiederverwenden.",
@@ -162,6 +165,14 @@ function validateMapLayerDeclarations(layers, { timetableRoutes = false } = {}) 
   if (timetableRoutes) {
     invariant(layers.timetableRoutes === null || typeof layers.timetableRoutes === "string", "layers.timetableRoutes muss null oder ein relativer Artefaktpfad sein.");
     if (layers.timetableRoutes !== null) relativeArtifactPath(layers.timetableRoutes, "layers.timetableRoutes");
+    invariant(layers.transferDemands === null || isRecord(layers.transferDemands), "layers.transferDemands muss null oder ein gepinnter Eingabevertrag sein.");
+    if (layers.transferDemands !== null) {
+      exactKeys(layers.transferDemands, ["path", "expectedBytes", "expectedSha256"], "layers.transferDemands");
+      relativeArtifactPath(layers.transferDemands.path, "layers.transferDemands.path");
+      positiveSafeInteger(layers.transferDemands.expectedBytes, "layers.transferDemands.expectedBytes");
+      invariant(SHA256.test(layers.transferDemands.expectedSha256), "layers.transferDemands.expectedSha256 ist kein SHA-256.");
+      invariant(layers.timetableRoutes !== null, "layers.transferDemands verlangt timetableRoutes.");
+    }
   }
 }
 
@@ -193,6 +204,14 @@ function validateConservativePolicy(policy) {
   positiveSafeInteger(policy.minimumPlatformLengthMm, "policy.minimumPlatformLengthMm");
   positiveSafeInteger(policy.maximumPlatformSnapDistanceMm, "policy.maximumPlatformSnapDistanceMm");
   positiveSafeInteger(policy.minimumOverlapMm, "policy.minimumOverlapMm");
+  positiveSafeInteger(policy.minimumBerthEndClearanceMm, "policy.minimumBerthEndClearanceMm");
+  positiveSafeInteger(policy.maximumDirectDwellMs, "policy.maximumDirectDwellMs");
+  invariant(policy.maximumDirectDwellMs === 1_200_000, "policy.maximumDirectDwellMs muss die versionierte 20-Minuten-B-Regel binden.");
+  invariant(Array.isArray(policy.terminalFormationLengthsMm) && policy.terminalFormationLengthsMm.length > 0, "policy.terminalFormationLengthsMm fehlt.");
+  for (const [index, lengthMm] of policy.terminalFormationLengthsMm.entries()) {
+    positiveSafeInteger(lengthMm, `policy.terminalFormationLengthsMm[${index}]`);
+    if (index > 0) invariant(policy.terminalFormationLengthsMm[index - 1] < lengthMm, "policy.terminalFormationLengthsMm muss streng aufsteigend und eindeutig sein.");
+  }
   invariant(["pzb", "lzb", "etcs-level1", "etcs-level2"].includes(policy.defaultProtectionSystem), "policy.defaultProtectionSystem ist nicht kanonisch.");
   nonEmptyString(policy.regionBoundaryId, "policy.regionBoundaryId");
   nonEmptyString(policy.rzueLayoutId, "policy.rzueLayoutId");
@@ -328,14 +347,30 @@ function validateProof(value, name, { stateHash = false } = {}) {
   return value;
 }
 
+function validateMovementRouteTemplatesProof(value, name, expectedOperationalStateHash, expectedTransferSetSha256) {
+  exactKeys(value, ["file", "bytes", "sha256", "stateHash", "operationalStateHash", "timetableTransferSetSha256"], name);
+  invariant(value.file === "operational-infrastructure-v2.movement-route-templates-v2.json", `${name}.file besitzt nicht den kanonischen V2-Dateinamen.`);
+  positiveSafeInteger(value.bytes, `${name}.bytes`);
+  for (const field of ["sha256", "stateHash", "operationalStateHash"]) invariant(SHA256.test(value[field]), `${name}.${field} ist kein SHA-256.`);
+  invariant(value.operationalStateHash === expectedOperationalStateHash, `${name} driftet vom Operational-State-Hash.`);
+  invariant(value.timetableTransferSetSha256 === expectedTransferSetSha256, `${name} driftet vom timetableTransferSetSha256.`);
+  return value;
+}
+
 export function validateGermanyOperationalInfrastructureV2NativeReceipt(receipt, expectedReleaseId) {
-  exactKeys(receipt, ["schema", "infraReleaseId", "candidate", "report", "candidateProduced", "activationEligible", "unresolvedRequired"], "Native Deutschland-Operational-v2-Receipt");
+  exactKeys(receipt, ["schema", "infraReleaseId", "candidate", "movementRouteTemplates", "report", "candidateProduced", "activationEligible", "unresolvedRequired"], "Native Deutschland-Operational-v2-Receipt");
   invariant(receipt.schema === GERMANY_OPERATIONAL_NATIVE_RECEIPT_SCHEMA, "Native Deutschland-Operational-v2-Ableitung lieferte ein unbekanntes Receipt-Schema.");
   invariant(receipt.infraReleaseId === expectedReleaseId, "Native Deutschland-Operational-v2-Ableitung verletzte die InfraRelease-ID-Bindung.");
   invariant(receipt.candidateProduced === true, "Native Deutschland-Operational-v2-Ableitung belegte keinen erzeugten Candidate.");
   nonNegativeSafeInteger(receipt.unresolvedRequired, "Native Deutschland-Operational-v2-Receipt.unresolvedRequired");
   invariant(typeof receipt.activationEligible === "boolean" && receipt.activationEligible === (receipt.unresolvedRequired === 0), "Native Deutschland-Operational-v2-Receipt besitzt eine widerspruechliche Aktivierungsentscheidung.");
   validateProof(receipt.candidate, "Native Candidate-Bindung", { stateHash: true });
+  validateMovementRouteTemplatesProof(
+    receipt.movementRouteTemplates,
+    "Native Movement-Route-Templates-Bindung",
+    receipt.candidate.stateHash,
+    receipt.movementRouteTemplates.timetableTransferSetSha256,
+  );
   validateProof(receipt.report, "Native Bericht-Bindung");
   return receipt;
 }
@@ -348,6 +383,7 @@ function validateNativeDerivationReport(report, specification) {
     "policy",
     "inputs",
     "candidate",
+    "timetableRouteEvidence",
     "counts",
     "scope",
     "routeCoverage",
@@ -355,6 +391,8 @@ function validateNativeDerivationReport(report, specification) {
     "unresolvedRequired",
     "unresolvedRequiredDimensions",
     "realInterlockingFactsClaimed",
+    "realGeometry",
+    "simulatedOperationalAssignment",
     "candidateProduced",
   ], "Nativer Deutschland-Operational-v2-Bericht");
   invariant(report.schema === GERMANY_OPERATIONAL_NATIVE_REPORT_SCHEMA, "Nativer Deutschland-Operational-v2-Bericht besitzt ein unbekanntes Schema.");
@@ -374,10 +412,10 @@ function validateNativeDerivationReport(report, specification) {
   invariant(report.policy.id === specification.policy.id, "Nativer Deutschland-Operational-v2-Bericht ist nicht an die Policy-ID gebunden.");
   invariant(report.policy.sha256 === canonicalHash(specification.policy), "Nativer Deutschland-Operational-v2-Bericht ist nicht an die Policy-Bytesemantik gebunden.");
   invariant(JSON.stringify(canonicalValue(report.policy.spec)) === JSON.stringify(canonicalValue(specification.policy)), "Nativer Deutschland-Operational-v2-Bericht wiederholt eine abweichende Policy.");
-  exactKeys(report.inputs, ["spec", "tracks", "platforms", "switches", "signals", "blocks", "conflictResources", "timetableRoutes"], "Nativer Bericht.inputs");
+  exactKeys(report.inputs, ["spec", "tracks", "platforms", "switches", "signals", "blocks", "conflictResources", "timetableRoutes", "transferDemands"], "Nativer Bericht.inputs");
   for (const [name, evidence] of Object.entries(report.inputs)) {
-    if (name === "timetableRoutes" && evidence === null) {
-      invariant(specification.layers.timetableRoutes === null, "Nativer Bericht unterschlaegt deklarierte timetableRoutes.");
+    if ((name === "timetableRoutes" || name === "transferDemands") && evidence === null) {
+      invariant(specification.layers[name] === null, `Nativer Bericht unterschlaegt deklarierte ${name}.`);
       continue;
     }
     exactKeys(evidence, ["path", "bytes", "sha256", "records"], `Nativer Bericht.inputs.${name}`);
@@ -386,15 +424,162 @@ function validateNativeDerivationReport(report, specification) {
     invariant(SHA256.test(evidence.sha256), `Nativer Bericht.inputs.${name}.sha256 ist kein SHA-256.`);
     nonNegativeSafeInteger(evidence.records, `Nativer Bericht.inputs.${name}.records`);
   }
-  exactKeys(report.candidate, ["bytes", "sha256", "stateHash", "validationMode"], "Nativer Bericht.candidate");
+  exactKeys(report.candidate, ["bytes", "sha256", "stateHash", "validationMode", "movementRouteTemplates"], "Nativer Bericht.candidate");
   positiveSafeInteger(report.candidate.bytes, "Nativer Bericht.candidate.bytes");
   invariant(SHA256.test(report.candidate.sha256) && SHA256.test(report.candidate.stateHash), "Nativer Bericht besitzt keine vollstaendige Candidate-Hashbindung.");
   invariant(report.candidate.validationMode === "native-streaming-redb-v1", "Nativer Bericht besitzt keinen nativen Streaming-Validierungsbeleg.");
+  const transferSetSha256 = report.timetableRouteEvidence === null ? null : report.timetableRouteEvidence.transferSetSha256;
+  validateMovementRouteTemplatesProof(report.candidate.movementRouteTemplates, "Nativer Bericht.candidate.movementRouteTemplates", report.candidate.stateHash, transferSetSha256);
   invariant(isRecord(report.counts), "Nativer Deutschland-Operational-v2-Bericht besitzt keinen Zaehlerbeleg.");
-  exactKeys(report.scope, ["routeModel", "interlockingModel", "platformModel", "capacityBias", "minimumOverlapMmPolicy"], "Nativer Bericht.scope");
+  exactKeys(report.counts, ["source", "candidate", "provenance"], "Nativer Bericht.counts");
+  exactKeys(report.counts.source, ["tracks", "orderableTracks", "platforms", "switches", "signals", "blocks", "conflictResources", "timetableRoutes", "timetableLegs", "transferDemands", "transferLots", "turnaroundDemands", "turnaroundPairs"], "Nativer Bericht.counts.source");
+  exactKeys(report.counts.candidate, ["directedEdges", "edgeGeometries", "routeVersions", "interlockingRoutes", "signals", "switches", "blockResources", "platformIntervals", "regionBoundaries", "directTemplates", "stablingTemplates", "transferTemplates"], "Nativer Bericht.counts.candidate");
+  exactKeys(report.counts.provenance, ["observedForwardSpeeds", "observedBackwardSpeeds", "simulatedSpeeds", "observedProtectionAssignments", "simulatedProtectionAssignments", "matchedPlatformIntervals", "excludedPlatformEvidence", "syntheticBoundarySignals", "turnaroundRouteVersions", "turnaroundInterlockingRoutes", "transferRouteVersions", "transferInterlockingRoutes"], "Nativer Bericht.counts.provenance");
+  for (const group of Object.values(report.counts)) for (const [name, count] of Object.entries(group)) nonNegativeSafeInteger(count, `Nativer Bericht.counts.${name}`);
+  if (report.timetableRouteEvidence === null) {
+    invariant(specification.layers.transferDemands === null, "Nativer Bericht unterschlaegt transferDemands-Evidence.");
+  } else {
+    exactKeys(report.timetableRouteEvidence, ["timetableRoutes", "transferDemands", "dailyPlanSha256", "transferSetSha256", "circulationCount", "transferDemandCount", "transferLotCount", "turnaroundDemandCount", "turnaroundPairCount", "movementRouteTemplates"], "Nativer Bericht.timetableRouteEvidence");
+    for (const field of ["dailyPlanSha256", "transferSetSha256"]) invariant(SHA256.test(report.timetableRouteEvidence[field]), `Nativer Bericht.timetableRouteEvidence.${field} ist kein SHA-256.`);
+    for (const field of ["circulationCount", "transferDemandCount", "transferLotCount", "turnaroundDemandCount", "turnaroundPairCount"]) positiveSafeInteger(report.timetableRouteEvidence[field], `Nativer Bericht.timetableRouteEvidence.${field}`);
+    invariant(JSON.stringify(canonicalValue(report.timetableRouteEvidence.timetableRoutes)) === JSON.stringify(canonicalValue(report.inputs.timetableRoutes)), "timetableRouteEvidence driftet vom timetableRoutes-Input.");
+    invariant(JSON.stringify(canonicalValue(report.timetableRouteEvidence.transferDemands)) === JSON.stringify(canonicalValue(report.inputs.transferDemands)), "timetableRouteEvidence driftet vom transferDemands-Input.");
+    invariant(report.timetableRouteEvidence.transferDemands.path === specification.layers.transferDemands.path && report.timetableRouteEvidence.transferDemands.bytes === specification.layers.transferDemands.expectedBytes && report.timetableRouteEvidence.transferDemands.sha256 === specification.layers.transferDemands.expectedSha256, "timetableRouteEvidence driftet vom gepinnten transferDemands-Vertrag.");
+    invariant(JSON.stringify(canonicalValue(report.timetableRouteEvidence.movementRouteTemplates)) === JSON.stringify(canonicalValue(report.candidate.movementRouteTemplates)), "timetableRouteEvidence besitzt eine abweichende Movement-Sidecar-Bindung.");
+  }
+  exactKeys(report.scope, ["routeModel", "interlockingModel", "platformModel", "capacityBias", "minimumOverlapMmPolicy", "turnaroundModel", "minimumBerthEndClearanceMmPolicy", "maximumDirectDwellMsPolicy", "terminalFormationLengthsMm", "movementRouteTemplateModel"], "Nativer Bericht.scope");
   invariant(report.scope.routeModel === report.routeCoverage, "Nativer Deutschland-Operational-v2-Bericht besitzt zwei verschiedene Fahrwegmodelle.");
   invariant(report.scope.minimumOverlapMmPolicy === specification.policy.minimumOverlapMm, "Nativer Bericht besitzt eine abweichende Durchrutschweg-Policy.");
+  invariant(report.scope.minimumBerthEndClearanceMmPolicy === specification.policy.minimumBerthEndClearanceMm && report.scope.maximumDirectDwellMsPolicy === specification.policy.maximumDirectDwellMs, "Nativer Bericht besitzt eine abweichende Turnaround-Policy.");
+  invariant(JSON.stringify(report.scope.terminalFormationLengthsMm) === JSON.stringify(specification.policy.terminalFormationLengthsMm), "Nativer Bericht besitzt abweichende Formationslaengen.");
+  invariant(report.realGeometry === true && report.simulatedOperationalAssignment === true, "Nativer Bericht besitzt keine ehrliche Realgeometrie-/Synthetic-B-Klassifikation.");
   return report;
+}
+
+function sortedUniqueStrings(values, name, { allowEmpty = false } = {}) {
+  invariant(Array.isArray(values) && (allowEmpty || values.length > 0), `${name} muss ein ${allowEmpty ? "" : "nichtleeres "}Array sein.`);
+  for (const [index, value] of values.entries()) nonEmptyString(value, `${name}[${index}]`);
+  invariant(values.every((value, index) => index === 0 || Buffer.from(values[index - 1]).compare(Buffer.from(value)) < 0), `${name} muss UTF-8-sortiert und eindeutig sein.`);
+}
+
+function validateProtectionRuns(runs, routeLegCount, name) {
+  invariant(Array.isArray(runs) && runs.length > 0, `${name} muss nichtleer sein.`);
+  let previous = -1;
+  for (const [index, run] of runs.entries()) {
+    exactKeys(run, ["throughRouteLegIndex", "availableProtectionSystems", "simultaneouslyRequiredProtectionSystems"], `${name}[${index}]`);
+    nonNegativeSafeInteger(run.throughRouteLegIndex, `${name}[${index}].throughRouteLegIndex`);
+    invariant(run.throughRouteLegIndex > previous && run.throughRouteLegIndex < routeLegCount, `${name} besitzt keine streng fortschreitende Lauflaengenbindung.`);
+    sortedUniqueStrings(run.availableProtectionSystems, `${name}[${index}].availableProtectionSystems`);
+    sortedUniqueStrings(run.simultaneouslyRequiredProtectionSystems, `${name}[${index}].simultaneouslyRequiredProtectionSystems`, { allowEmpty: true });
+    previous = run.throughRouteLegIndex;
+  }
+  invariant(previous === routeLegCount - 1, `${name} deckt nicht alle Laufweg-Legs.`);
+}
+
+function validateDispatch(dispatch, name) {
+  exactKeys(dispatch, ["routeVersionId", "predecessorBaseRouteVersionId", "dispatchInterlockingRouteId", "headRouteMm", "minimumRuntimeMs", "resourceIds", "routeLegCount", "protectionContractRuns"], name);
+  nonEmptyString(dispatch.routeVersionId, `${name}.routeVersionId`);
+  nonEmptyString(dispatch.predecessorBaseRouteVersionId, `${name}.predecessorBaseRouteVersionId`);
+  nonEmptyString(dispatch.dispatchInterlockingRouteId, `${name}.dispatchInterlockingRouteId`);
+  positiveSafeInteger(dispatch.headRouteMm, `${name}.headRouteMm`);
+  positiveSafeInteger(dispatch.minimumRuntimeMs, `${name}.minimumRuntimeMs`);
+  positiveSafeInteger(dispatch.routeLegCount, `${name}.routeLegCount`);
+  sortedUniqueStrings(dispatch.resourceIds, `${name}.resourceIds`);
+  validateProtectionRuns(dispatch.protectionContractRuns, dispatch.routeLegCount, `${name}.protectionContractRuns`);
+}
+
+function validateTerminalInterval(interval, name) {
+  exactKeys(interval, ["edgeId", "fromMm", "toMm"], name);
+  nonEmptyString(interval.edgeId, `${name}.edgeId`);
+  nonNegativeSafeInteger(interval.fromMm, `${name}.fromMm`);
+  positiveSafeInteger(interval.toMm, `${name}.toMm`);
+  invariant(interval.fromMm < interval.toMm, `${name} ist leer oder invertiert.`);
+}
+
+function validateTerminalIntervals(intervals, formationLengthMm, name, expectedTerminalEdgeId) {
+  invariant(Array.isArray(intervals) && intervals.length > 0, `${name} muss eine nichtleere Intervallfolge sein.`);
+  let lengthMm = 0;
+  const keys = new Set();
+  for (const [index, interval] of intervals.entries()) {
+    validateTerminalInterval(interval, `${name}[${index}]`);
+    lengthMm += interval.toMm - interval.fromMm;
+    invariant(Number.isSafeInteger(lengthMm), `${name} laeuft in der Laenge ueber.`);
+    const key = `${interval.edgeId}\u0000${interval.fromMm}\u0000${interval.toMm}`;
+    invariant(!keys.has(key), `${name} enthaelt ein doppeltes Intervall.`);
+    keys.add(key);
+  }
+  invariant(lengthMm === formationLengthMm, `${name} bildet die Formation nicht exakt ab.`);
+  if (expectedTerminalEdgeId !== undefined) {
+    invariant(intervals.at(-1).edgeId === expectedTerminalEdgeId, `${name} endet nicht auf der gebundenen Terminalkante.`);
+  }
+}
+
+function validateMovementRouteTemplatesSidecar(sidecar, specification, proof) {
+  exactKeys(sidecar, ["schema", "infraReleaseId", "operationalStateHash", "timetableTransferSetSha256", "directTemplates", "templates", "transferTemplates", "metrics", "stateHash"], "Movement-Route-Templates-v2");
+  invariant(sidecar.schema === "movement-route-templates-v2" && sidecar.infraReleaseId === specification.infraReleaseId, "Movement-Sidecar verletzt Schema-/Release-Bindung.");
+  invariant(sidecar.operationalStateHash === proof.operationalStateHash && sidecar.stateHash === proof.stateHash, "Movement-Sidecar verletzt die Receipt-Zustandsbindung.");
+  invariant(sidecar.timetableTransferSetSha256 === proof.timetableTransferSetSha256, "Movement-Sidecar driftet vom Transfer-Set-Hash.");
+  invariant(sidecar.timetableTransferSetSha256 === null || SHA256.test(sidecar.timetableTransferSetSha256), "Movement-Sidecar besitzt keinen gueltigen Transfer-Set-Hash.");
+  exactKeys(sidecar.metrics, ["directTemplateCount", "stablingTemplateCount", "transferTemplateCount", "transferDemandCount", "turnaroundDemandCount", "turnaroundPairCount"], "Movement-Sidecar.metrics");
+  for (const [name, count] of Object.entries(sidecar.metrics)) nonNegativeSafeInteger(count, `Movement-Sidecar.metrics.${name}`);
+  invariant(Array.isArray(sidecar.directTemplates) && Array.isArray(sidecar.templates) && Array.isArray(sidecar.transferTemplates), "Movement-Sidecar besitzt keine drei Template-Mengen.");
+  invariant(sidecar.metrics.directTemplateCount === sidecar.directTemplates.length && sidecar.metrics.stablingTemplateCount === sidecar.templates.length && sidecar.metrics.transferTemplateCount === sidecar.transferTemplates.length, "Movement-Sidecar-Metriken laufen von den Template-Mengen weg.");
+  const ids = new Set();
+  for (const [index, template] of sidecar.directTemplates.entries()) {
+    const name = `Movement-Sidecar.directTemplates[${index}]`;
+    exactKeys(template, ["id", "inboundRouteVersionId", "outboundRouteVersionId", "formationLengthMm", "terminalIntervals", "movementKind", "continuity", "maximumDwellMs", "resourceIds", "resourceSetSha256", "through", "outbound"], name);
+    for (const field of ["id", "inboundRouteVersionId", "outboundRouteVersionId"]) nonEmptyString(template[field], `${name}.${field}`);
+    invariant(!ids.has(template.id), `Doppelte Movement-Template-ID ${template.id}.`); ids.add(template.id);
+    positiveSafeInteger(template.formationLengthMm, `${name}.formationLengthMm`);
+    invariant(template.movementKind === "train" && ["same-direction", "reverse-direction"].includes(template.continuity), `${name} besitzt keine direkte physische Kontinuitaet.`);
+    invariant(template.maximumDwellMs === specification.policy.maximumDirectDwellMs, `${name} driftet von maximumDirectDwellMs.`);
+    validateTerminalIntervals(template.terminalIntervals, template.formationLengthMm, `${name}.terminalIntervals`);
+    sortedUniqueStrings(template.resourceIds, `${name}.resourceIds`);
+    invariant(SHA256.test(template.resourceSetSha256), `${name}.resourceSetSha256 ist ungueltig.`);
+    validateDispatch(template.outbound, `${name}.outbound`);
+    if (template.continuity === "reverse-direction") {
+      invariant(template.through === null, `${name}.through muss fuer die physische Richtungswende null sein.`);
+      invariant(template.outbound.predecessorBaseRouteVersionId === template.inboundRouteVersionId, `${name}.outbound bindet nicht die Ankunftsbasisroute.`);
+    } else {
+      validateDispatch(template.through, `${name}.through`);
+      invariant(template.through.predecessorBaseRouteVersionId === template.inboundRouteVersionId, `${name}.through bindet nicht die Ankunftsbasisroute.`);
+      invariant(template.outbound.predecessorBaseRouteVersionId === template.through.routeVersionId, `${name}.outbound bindet nicht die Through-Route.`);
+    }
+  }
+  for (const [index, template] of sidecar.templates.entries()) {
+    const name = `Movement-Sidecar.templates[${index}]`;
+    exactKeys(template, ["id", "inboundRouteVersionId", "outboundRouteVersionId", "terminalEdgeId", "terminalNodeId", "inboundDirection", "outboundDirection", "formationLengthMm", "candidateRank", "stablingPathLengthMm", "terminalIntervals", "shuntIn", "berth", "shuntOut", "outbound"], name);
+    for (const field of ["id", "inboundRouteVersionId", "outboundRouteVersionId", "terminalEdgeId"]) nonEmptyString(template[field], `${name}.${field}`);
+    invariant(!ids.has(template.id), `Doppelte Movement-Template-ID ${template.id}.`); ids.add(template.id);
+    invariant(Number.isSafeInteger(template.terminalNodeId), `${name}.terminalNodeId ist keine sichere Ganzzahl.`);
+    invariant(["along", "against"].includes(template.inboundDirection) && ["along", "against"].includes(template.outboundDirection), `${name} besitzt ungueltige Richtungen.`);
+    positiveSafeInteger(template.formationLengthMm, `${name}.formationLengthMm`);
+    nonNegativeSafeInteger(template.candidateRank, `${name}.candidateRank`);
+    positiveSafeInteger(template.stablingPathLengthMm, `${name}.stablingPathLengthMm`);
+    validateTerminalIntervals(template.terminalIntervals, template.formationLengthMm, `${name}.terminalIntervals`, template.terminalEdgeId);
+    exactKeys(template.berth, ["edgeId", "fromMm", "toMm", "leftClearanceMm", "rightClearanceMm"], `${name}.berth`);
+    nonEmptyString(template.berth.edgeId, `${name}.berth.edgeId`);
+    for (const field of ["fromMm", "toMm", "leftClearanceMm", "rightClearanceMm"]) nonNegativeSafeInteger(template.berth[field], `${name}.berth.${field}`);
+    invariant(template.berth.fromMm < template.berth.toMm, `${name}.berth ist leer.`);
+    for (const field of ["shuntIn", "shuntOut", "outbound"]) validateDispatch(template[field], `${name}.${field}`);
+  }
+  for (const [index, template] of sidecar.transferTemplates.entries()) {
+    const name = `Movement-Sidecar.transferTemplates[${index}]`;
+    exactKeys(template, ["id", "demandId", "formationLengthMm", "sourcePassengerRouteVersionId", "targetPassengerRouteVersionId", "sourceLocationId", "targetLocationId", "earliestDepartureS", "latestArrivalS", "availableWindowS", "movementKind", "transfer", "targetOutbound", "resourceIds", "resourceSetSha256"], name);
+    for (const field of ["id", "demandId", "sourcePassengerRouteVersionId", "targetPassengerRouteVersionId", "sourceLocationId", "targetLocationId"]) nonEmptyString(template[field], `${name}.${field}`);
+    invariant(!ids.has(template.id), `Doppelte Movement-Template-ID ${template.id}.`); ids.add(template.id);
+    positiveSafeInteger(template.formationLengthMm, `${name}.formationLengthMm`);
+    for (const field of ["earliestDepartureS", "latestArrivalS", "availableWindowS"]) positiveSafeInteger(template[field], `${name}.${field}`);
+    invariant(template.latestArrivalS - template.earliestDepartureS === template.availableWindowS && ["train", "shunting"].includes(template.movementKind), `${name} besitzt ein ungueltiges Zeitfenster oder movementKind.`);
+    validateDispatch(template.transfer, `${name}.transfer`);
+    validateDispatch(template.targetOutbound, `${name}.targetOutbound`);
+    sortedUniqueStrings(template.resourceIds, `${name}.resourceIds`);
+    invariant(SHA256.test(template.resourceSetSha256), `${name}.resourceSetSha256 ist ungueltig.`);
+  }
+  const { stateHash: ignoredStateHash, ...stateValue } = sidecar;
+  void ignoredStateHash;
+  invariant(canonicalHash({ schema: "movement-route-templates-v2", value: stateValue }) === sidecar.stateHash, "Movement-Sidecar.stateHash ist nicht kanonisch reproduzierbar.");
+  return sidecar;
 }
 
 async function assertTargetMissing(path, label) {
@@ -427,6 +612,7 @@ export async function runGermanyOperationalInfrastructureV2({
   candidatePath,
   reportPath,
   outputPath,
+  movementRouteTemplatesPath,
   deriveNative = spawnGermanyOperationalInfrastructureV2Compiler,
   materialize = materializeOperationalInfrastructureV2,
 }) {
@@ -437,21 +623,28 @@ export async function runGermanyOperationalInfrastructureV2({
   nonEmptyString(candidatePath, "candidatePath");
   nonEmptyString(reportPath, "reportPath");
   if (outputPath !== undefined) nonEmptyString(outputPath, "outputPath");
+  if (movementRouteTemplatesPath !== undefined) nonEmptyString(movementRouteTemplatesPath, "movementRouteTemplatesPath");
   const candidate = resolve(candidatePath);
   const report = resolve(reportPath);
   const output = outputPath === undefined ? undefined : resolve(outputPath);
-  invariant(output === undefined || new Set([candidate, report, output]).size === 3, "Candidate, Ableitungsbericht und materialisiertes Operational-v2-Artefakt muessen getrennte Dateien sein.");
+  const movementRouteTemplates = resolve(movementRouteTemplatesPath ?? join(dirname(output ?? candidate), "operational-infrastructure-v2.movement-route-templates-v2.json"));
+  invariant(basename(movementRouteTemplates) === "operational-infrastructure-v2.movement-route-templates-v2.json", "Movement-Route-Sidecar besitzt keinen kanonischen Dateinamen.");
+  invariant(new Set([candidate, report, movementRouteTemplates, ...(output === undefined ? [] : [output])]).size === (output === undefined ? 3 : 4), "Candidate, Ableitungsbericht, Movement-Sidecar und materialisiertes Operational-v2-Artefakt muessen getrennte Dateien sein.");
   invariant(candidate !== report, "Operational-v2-Candidate und Ableitungsbericht muessen getrennte Dateien sein.");
   if (output !== undefined) invariant(basename(output) === "operational-infrastructure-v2.json", "Operational-v2-Ausgabe besitzt keinen kanonischen Dateinamen.");
 
-  const directories = [dirname(candidate), dirname(report), ...(output === undefined ? [] : [dirname(output)])];
+  const directories = [dirname(candidate), dirname(report), dirname(movementRouteTemplates), ...(output === undefined ? [] : [dirname(output)])];
   for (const directory of new Set(directories)) await mkdir(directory, { recursive: true });
   await assertTargetMissing(candidate, "Operational-v2-Candidate");
   await assertTargetMissing(report, "Operational-v2-Ableitungsbericht");
+  await assertTargetMissing(movementRouteTemplates, "Operational-v2-Movement-Route-Sidecar");
   if (output !== undefined) await assertTargetMissing(output, "Operational-v2-Ausgabe");
 
   const stagingRoot = await mkdtemp(join(dirname(candidate), ".operational-v2-derive-"));
-  const stagedCandidate = join(stagingRoot, "candidate.json");
+  const nativeStaging = join(stagingRoot, "native");
+  await mkdir(nativeStaging, { recursive: true });
+  const stagedCandidate = join(nativeStaging, "operational-infrastructure-v2.json");
+  const stagedMovementRouteTemplates = join(nativeStaging, "operational-infrastructure-v2.movement-route-templates-v2.json");
   const stagedReport = join(stagingRoot, "report.json");
   const stagedOutput = join(stagingRoot, "materialized", "operational-infrastructure-v2.json");
   try {
@@ -459,12 +652,19 @@ export async function runGermanyOperationalInfrastructureV2({
       await deriveNative(resolve(specificationPath), resolve(sourceRoot), stagedCandidate, stagedReport),
       specification.infraReleaseId,
     );
-    const [candidateProof, reportProof] = await Promise.all([
+    const [candidateProof, movementRouteTemplatesProof, reportProof] = await Promise.all([
       fileProof(stagedCandidate, "Nativer Operational-v2-Candidate"),
+      fileProof(stagedMovementRouteTemplates, "Natives Operational-v2-Movement-Route-Sidecar"),
       fileProof(stagedReport, "Nativer Operational-v2-Ableitungsbericht"),
     ]);
     invariant(candidateProof.bytes === nativeReceipt.candidate.bytes && candidateProof.sha256 === nativeReceipt.candidate.sha256, "Native Candidate-Bindung stimmt nicht mit den erzeugten Bytes ueberein.");
     invariant(reportProof.bytes === nativeReceipt.report.bytes && reportProof.sha256 === nativeReceipt.report.sha256, "Native Bericht-Bindung stimmt nicht mit den erzeugten Bytes ueberein.");
+    invariant(movementRouteTemplatesProof.bytes === nativeReceipt.movementRouteTemplates.bytes && movementRouteTemplatesProof.sha256 === nativeReceipt.movementRouteTemplates.sha256, "Native Movement-Sidecar-Bindung stimmt nicht mit den erzeugten Bytes ueberein.");
+    const movementRouteTemplatesValue = validateMovementRouteTemplatesSidecar(
+      JSON.parse(await readFile(stagedMovementRouteTemplates, "utf8")),
+      specification,
+      nativeReceipt.movementRouteTemplates,
+    );
     const nativeReport = validateNativeDerivationReport(JSON.parse(await readFile(stagedReport, "utf8")), specification);
     invariant(
       nativeReceipt.activationEligible === nativeReport.activationEligible
@@ -477,10 +677,15 @@ export async function runGermanyOperationalInfrastructureV2({
         && nativeReport.candidate.stateHash === nativeReceipt.candidate.stateHash,
       "Native Receipt- und Berichtskandidaten laufen auseinander.",
     );
+    invariant(
+      JSON.stringify(canonicalValue(nativeReport.candidate.movementRouteTemplates)) === JSON.stringify(canonicalValue(nativeReceipt.movementRouteTemplates))
+        && movementRouteTemplatesValue.operationalStateHash === nativeReceipt.candidate.stateHash,
+      "Native Receipt-, Bericht- und Movement-Sidecar-Bindungen laufen auseinander.",
+    );
 
     if (!nativeReport.activationEligible) {
-      await publishTogether([{ staged: stagedCandidate, final: candidate }, { staged: stagedReport, final: report }]);
-      throw new OperationalInfrastructureDerivationIncompleteError({ nativeReceipt, nativeReport, paths: { candidate, report, output: null } });
+      await publishTogether([{ staged: stagedCandidate, final: candidate }, { staged: stagedMovementRouteTemplates, final: movementRouteTemplates }, { staged: stagedReport, final: report }]);
+      throw new OperationalInfrastructureDerivationIncompleteError({ nativeReceipt, nativeReport, paths: { candidate, movementRouteTemplates, report, output: null } });
     }
     invariant(output !== undefined, "Aktivierbare Operational-v2-Ableitung verlangt einen materialisierten OUTPUT-Pfad.");
     const materialization = await materialize({ candidatePath: stagedCandidate, expectedReleaseId: specification.infraReleaseId, outputPath: stagedOutput });
@@ -488,12 +693,13 @@ export async function runGermanyOperationalInfrastructureV2({
     invariant(materialization.stateHash === nativeReceipt.candidate.stateHash, "Ableitung und Materialisierung besitzen verschiedene Zustandshashes.");
     const outputProof = await fileProof(stagedOutput, "Materialisiertes Operational-v2-Artefakt");
     invariant(outputProof.bytes === materialization.bytes && outputProof.sha256 === materialization.sha256, "Materialisierungs-Receipt stimmt nicht mit den Ausgabe-Bytes ueberein.");
-    await publishTogether([{ staged: stagedCandidate, final: candidate }, { staged: stagedReport, final: report }, { staged: stagedOutput, final: output }]);
+    await publishTogether([{ staged: stagedCandidate, final: candidate }, { staged: stagedMovementRouteTemplates, final: movementRouteTemplates }, { staged: stagedReport, final: report }, { staged: stagedOutput, final: output }]);
     return {
       ...nativeReceipt,
       reportStatus: { unresolvedRequired: nativeReport.unresolvedRequired, activationEligible: nativeReport.activationEligible, realInterlockingFactsClaimed: nativeReport.realInterlockingFactsClaimed },
       materialized: { bytes: outputProof.bytes, sha256: outputProof.sha256, stateHash: materialization.stateHash },
-      paths: { candidate, report, output },
+      movementRouteTemplates: { ...nativeReceipt.movementRouteTemplates },
+      paths: { candidate, movementRouteTemplates, report, output },
     };
   } finally {
     await rm(stagingRoot, { recursive: true, force: true });

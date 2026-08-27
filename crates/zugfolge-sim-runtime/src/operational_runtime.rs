@@ -12,10 +12,10 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use zugfolge_infra::open_operational_infrastructure_v2_store;
 use zugfolge_sim::operational::{
-    AutomaticShuntingNeed, DispatchRequest, MAX_PENDING_OPERATIONAL_EVENTS, MovementKind,
-    OperationalDisruption, OperationalError, OperationalEvent, OperationalInfrastructure,
-    OperationalProgramTemplatePredicates, OperationalProjection, OperationalWorld,
-    PROTECTION_MODE_SELECTION_POLICY_V1, PhysicalVehicle, ProjectionKind,
+    AutomaticShuntingNeed, DispatchRequest, MAX_PENDING_OPERATIONAL_EVENTS, MovementContinuation,
+    MovementKind, OperationalDisruption, OperationalError, OperationalEvent,
+    OperationalInfrastructure, OperationalProgramTemplatePredicates, OperationalProjection,
+    OperationalWorld, PROTECTION_MODE_SELECTION_POLICY_V1, PhysicalVehicle, ProjectionKind,
     ProtectionModeSelectionRun, TrainMaterialization, VehicleType,
     operational_train_number_numeric_part,
 };
@@ -108,6 +108,34 @@ struct TrainInput {
     protection_mode_selection_runs: Vec<ProtectionModeSelectionRun>,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum SuccessorFormationPolicy {
+    InheritPredecessor,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MovementContinuationTemplateInput {
+    id: String,
+    predecessor_train_id: String,
+    predecessor_base_route_version_id: String,
+    successor_train_id: String,
+    successor_day_offset: u8,
+    daily_boundary: bool,
+    minimum_dwell_ms: i64,
+    continuity: zugfolge_sim::operational::MovementContinuity,
+    successor_formation: SuccessorFormationPolicy,
+}
+
+fn deserialize_required_nullable<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer)
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct InfrastructureBinding {
@@ -138,6 +166,8 @@ struct InitializationValidationReceipt {
     protection_mode_selection_policy: &'static str,
     validated_protection_mode_selection_count: usize,
     protection_mode_selections_sha256: String,
+    validated_movement_continuation_count: usize,
+    movement_continuations_sha256: String,
     dynamic_train_count: usize,
     resource_bindings_validated: bool,
     formation_bindings_validated: bool,
@@ -159,6 +189,9 @@ struct Initialization {
     vehicles: Vec<PhysicalVehicle>,
     formations: Vec<FormationInput>,
     trains: Vec<TrainInput>,
+    #[serde(deserialize_with = "deserialize_required_nullable")]
+    repeat_every_ms: Option<i64>,
+    movement_continuations: Vec<MovementContinuationTemplateInput>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -196,6 +229,9 @@ enum CommandPayload {
     Reroute {
         train_id: String,
         route_version_id: String,
+    },
+    QueueMovementContinuation {
+        continuation: MovementContinuation,
     },
     AutomaticShunting {
         need: AutomaticShuntingNeed,
@@ -683,6 +719,357 @@ fn protection_mode_selection_evidence(
     ))
 }
 
+fn movement_continuation_text(
+    template: &MovementContinuationTemplateInput,
+) -> (&'static str, &'static str) {
+    let continuity = match template.continuity {
+        zugfolge_sim::operational::MovementContinuity::SameDirection => "same-direction",
+        zugfolge_sim::operational::MovementContinuity::ReverseDirection => "reverse-direction",
+    };
+    let successor_formation = match template.successor_formation {
+        SuccessorFormationPolicy::InheritPredecessor => "inherit-predecessor",
+    };
+    (continuity, successor_formation)
+}
+
+fn movement_continuation_evidence(
+    templates: &[MovementContinuationTemplateInput],
+) -> Result<String, OperationalRuntimeError> {
+    let mut ordered = templates.iter().collect::<Vec<_>>();
+    ordered.sort_by(|left, right| left.id.cmp(&right.id));
+    let mut hash = Sha256::new();
+    hash.update(b"zugfolge-operational-movement-continuations-evidence/v3\0");
+    for template in ordered {
+        for value in [
+            template.id.as_str(),
+            template.predecessor_train_id.as_str(),
+            template.predecessor_base_route_version_id.as_str(),
+            template.successor_train_id.as_str(),
+        ] {
+            let length = u64::try_from(value.len()).map_err(|_| {
+                OperationalRuntimeError::new(
+                    "movement_continuation_evidence_overflow",
+                    "Fortsetzungsbeleg enthaelt eine unzaehlbare Zeichenkette",
+                )
+            })?;
+            hash.update(length.to_le_bytes());
+            hash.update(value.as_bytes());
+        }
+        hash.update(u64::from(template.successor_day_offset).to_le_bytes());
+        hash.update([u8::from(template.daily_boundary)]);
+        hash.update(template.minimum_dwell_ms.to_le_bytes());
+        let (continuity, successor_formation) = movement_continuation_text(template);
+        for value in [continuity, successor_formation] {
+            let length = u64::try_from(value.len()).map_err(|_| {
+                OperationalRuntimeError::new(
+                    "movement_continuation_evidence_overflow",
+                    "Fortsetzungsbeleg enthaelt eine unzaehlbare Zeichenkette",
+                )
+            })?;
+            hash.update(length.to_le_bytes());
+            hash.update(value.as_bytes());
+        }
+    }
+    Ok(hash
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
+}
+
+fn materialization_from_train_input(train: &TrainInput) -> TrainMaterialization {
+    TrainMaterialization {
+        id: train.id.clone(),
+        train_number: train.train_number.clone(),
+        operator_id: train.operator_id.clone(),
+        movement_kind: train.movement_kind,
+        route_version_id: train.route_version_id.clone(),
+        formation_version_id: train.formation_version_id.clone(),
+        head_route_mm: train.head_route_mm,
+        scheduled_departure_ms: train.scheduled_departure_ms,
+        public_passenger_stop: train.public_passenger_stop,
+    }
+}
+
+fn validate_movement_continuation_templates(
+    world: &OperationalWorld,
+    trains: &[TrainInput],
+    repeat_every_ms: Option<i64>,
+    templates: &[MovementContinuationTemplateInput],
+) -> Result<(usize, String), OperationalRuntimeError> {
+    let evidence = movement_continuation_evidence(templates)?;
+    let Some(repeat_every_ms) = repeat_every_ms else {
+        return if templates.is_empty() {
+            Ok((0, evidence))
+        } else {
+            Err(OperationalRuntimeError::new(
+                "invalid_movement_continuation_repeat",
+                "ein nicht wiederholtes Betriebsprogramm darf keinen Fortsetzungsgraph besitzen",
+            ))
+        };
+    };
+    if repeat_every_ms <= 0 || (templates.is_empty() != trains.is_empty()) {
+        return Err(OperationalRuntimeError::new(
+            "invalid_movement_continuation_repeat",
+            "ein wiederholtes Betriebsprogramm braucht einen positiven Takt und einen vollstaendigen Fortsetzungsgraph",
+        ));
+    }
+    if templates.is_empty() {
+        return Ok((0, evidence));
+    }
+    let train_by_id: BTreeMap<&str, &TrainInput> = trains
+        .iter()
+        .map(|train| (train.id.as_str(), train))
+        .collect();
+    if train_by_id.len() != trains.len() {
+        return Err(OperationalRuntimeError::new(
+            "invalid_movement_continuation_graph",
+            "Basisgraph besitzt keine eindeutigen Zugvorlagen",
+        ));
+    }
+    let mut template_ids = BTreeSet::new();
+    let mut incoming: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut outgoing: BTreeMap<&str, &MovementContinuationTemplateInput> = BTreeMap::new();
+    let mut boundary_outgoing_by_formation = BTreeMap::<&str, &str>::new();
+    let mut boundary_incoming_by_formation = BTreeMap::<&str, &str>::new();
+    for template in templates {
+        if template.id.is_empty()
+            || template.predecessor_train_id.is_empty()
+            || template.predecessor_base_route_version_id.is_empty()
+            || template.successor_train_id.is_empty()
+            || template.predecessor_train_id.contains(":day-")
+            || template.successor_train_id.contains(":day-")
+            || template.successor_day_offset > 1
+            || template.minimum_dwell_ms < 0
+            || !template_ids.insert(template.id.as_str())
+        {
+            return Err(OperationalRuntimeError::new(
+                "invalid_movement_continuation_graph",
+                template.id.clone(),
+            ));
+        }
+        let predecessor = train_by_id
+            .get(template.predecessor_train_id.as_str())
+            .copied()
+            .ok_or_else(|| {
+                OperationalRuntimeError::new(
+                    "unknown_movement_continuation_train",
+                    template.predecessor_train_id.clone(),
+                )
+            })?;
+        let successor = train_by_id
+            .get(template.successor_train_id.as_str())
+            .copied()
+            .ok_or_else(|| {
+                OperationalRuntimeError::new(
+                    "unknown_movement_continuation_train",
+                    template.successor_train_id.clone(),
+                )
+            })?;
+        let expected_minimum_dwell_ms = if predecessor.public_passenger_stop {
+            300_000
+        } else {
+            0
+        };
+        if template.minimum_dwell_ms != expected_minimum_dwell_ms {
+            return Err(OperationalRuntimeError::new(
+                "invalid_movement_continuation_dwell",
+                template.id.clone(),
+            ));
+        }
+        if outgoing.insert(predecessor.id.as_str(), template).is_some() {
+            return Err(OperationalRuntimeError::new(
+                "duplicate_movement_continuation_edge",
+                predecessor.id.clone(),
+            ));
+        }
+        *incoming.entry(successor.id.as_str()).or_default() += 1;
+        if incoming[successor.id.as_str()] > 1
+            || (template.successor_day_offset == 1 && !successor.public_passenger_stop)
+            || (template.daily_boundary && !successor.public_passenger_stop)
+        {
+            return Err(OperationalRuntimeError::new(
+                "invalid_movement_continuation_graph",
+                template.id.clone(),
+            ));
+        }
+        let predecessor_departure = predecessor.scheduled_departure_ms.ok_or_else(|| {
+            OperationalRuntimeError::new(
+                "invalid_movement_continuation_time",
+                predecessor.id.clone(),
+            )
+        })?;
+        let successor_departure = successor.scheduled_departure_ms.ok_or_else(|| {
+            OperationalRuntimeError::new("invalid_movement_continuation_time", successor.id.clone())
+        })?;
+        let absolute_successor = i128::from(successor_departure)
+            + i128::from(template.successor_day_offset) * i128::from(repeat_every_ms);
+        if absolute_successor < i128::from(predecessor_departure) {
+            return Err(OperationalRuntimeError::new(
+                "invalid_movement_continuation_time",
+                template.id.clone(),
+            ));
+        }
+        let predecessor_formation = world
+            .formations
+            .get(&predecessor.formation_version_id)
+            .ok_or_else(|| {
+                OperationalRuntimeError::new(
+                    "invalid_movement_continuation_formation",
+                    predecessor.formation_version_id.clone(),
+                )
+            })?;
+        let successor_formation = world
+            .formations
+            .get(&successor.formation_version_id)
+            .ok_or_else(|| {
+                OperationalRuntimeError::new(
+                    "invalid_movement_continuation_formation",
+                    successor.formation_version_id.clone(),
+                )
+            })?;
+        // `successor_formation = inherit-predecessor` means that the target
+        // train template is a slot, not an ownership binding.  In particular
+        // an after-midnight rollover can legitimately have day offset 0 while
+        // the physical formation rotates into a different static slot.  The
+        // physical predecessor is validated against the target route below;
+        // only the signed compatibility class represented here by the exact
+        // formation length has to match between both slot templates.
+        if predecessor_formation.performance.length_mm != successor_formation.performance.length_mm
+        {
+            return Err(OperationalRuntimeError::new(
+                "invalid_movement_continuation_formation",
+                template.id.clone(),
+            ));
+        }
+        if template.daily_boundary {
+            if boundary_outgoing_by_formation
+                .insert(
+                    predecessor.formation_version_id.as_str(),
+                    predecessor.id.as_str(),
+                )
+                .is_some()
+                || boundary_incoming_by_formation
+                    .insert(
+                        successor.formation_version_id.as_str(),
+                        successor.id.as_str(),
+                    )
+                    .is_some()
+            {
+                return Err(OperationalRuntimeError::new(
+                    "invalid_movement_continuation_daily_boundary",
+                    template.id.clone(),
+                ));
+            }
+        } else if predecessor.formation_version_id != successor.formation_version_id {
+            return Err(OperationalRuntimeError::new(
+                "invalid_movement_continuation_daily_boundary",
+                template.id.clone(),
+            ));
+        }
+        world
+            .validate_movement_continuation_template(
+                &template.id,
+                &materialization_from_train_input(predecessor),
+                &template.predecessor_base_route_version_id,
+                &materialization_from_train_input(successor),
+                &successor.dispatch_interlocking_route_id,
+                template.continuity,
+            )
+            .map_err(|error| {
+                OperationalRuntimeError::new(
+                    "invalid_movement_continuation_physical_binding",
+                    format!("{}: {error}", template.id),
+                )
+            })?;
+    }
+    if trains.iter().any(|train| {
+        !outgoing.contains_key(train.id.as_str())
+            || incoming.get(train.id.as_str()).copied() != Some(1)
+    }) {
+        return Err(OperationalRuntimeError::new(
+            "incomplete_movement_continuation_graph",
+            "jede Zugvorlage braucht genau eine eingehende und ausgehende Fortsetzung",
+        ));
+    }
+    let used_formations = trains
+        .iter()
+        .map(|train| train.formation_version_id.as_str())
+        .collect::<BTreeSet<_>>();
+    if boundary_outgoing_by_formation.len() != used_formations.len()
+        || boundary_incoming_by_formation.len() != used_formations.len()
+        || used_formations.iter().any(|formation_id| {
+            !boundary_outgoing_by_formation.contains_key(formation_id)
+                || !boundary_incoming_by_formation.contains_key(formation_id)
+        })
+    {
+        return Err(OperationalRuntimeError::new(
+            "invalid_movement_continuation_daily_boundary",
+            "jede statische Slotformation braucht genau eine ein- und ausgehende DailyPlan-Grenze",
+        ));
+    }
+    let mut path_visited = BTreeSet::new();
+    for formation_id in &used_formations {
+        let mut cursor = boundary_incoming_by_formation[formation_id];
+        let mut slot_visited = BTreeSet::new();
+        let mut accumulated_day_offset = 0_u8;
+        let mut has_passenger = false;
+        loop {
+            let current = train_by_id[cursor];
+            if current.formation_version_id != **formation_id || !slot_visited.insert(cursor) {
+                return Err(OperationalRuntimeError::new(
+                    "invalid_movement_continuation_daily_boundary",
+                    current.id.clone(),
+                ));
+            }
+            has_passenger |= current.public_passenger_stop;
+            let edge = outgoing[cursor];
+            accumulated_day_offset = accumulated_day_offset
+                .checked_add(edge.successor_day_offset)
+                .ok_or_else(|| {
+                    OperationalRuntimeError::new(
+                        "invalid_movement_continuation_daily_boundary",
+                        edge.id.clone(),
+                    )
+                })?;
+            if edge.daily_boundary {
+                if boundary_outgoing_by_formation[formation_id] != cursor
+                    || accumulated_day_offset != 1
+                    || !has_passenger
+                {
+                    return Err(OperationalRuntimeError::new(
+                        "invalid_movement_continuation_daily_boundary",
+                        edge.id.clone(),
+                    ));
+                }
+                break;
+            }
+            cursor = edge.successor_train_id.as_str();
+        }
+        if trains
+            .iter()
+            .filter(|train| train.formation_version_id == **formation_id)
+            .count()
+            != slot_visited.len()
+            || slot_visited
+                .iter()
+                .any(|train_id| !path_visited.insert(*train_id))
+        {
+            return Err(OperationalRuntimeError::new(
+                "invalid_movement_continuation_daily_boundary",
+                (*formation_id).to_owned(),
+            ));
+        }
+    }
+    if path_visited.len() != trains.len() {
+        return Err(OperationalRuntimeError::new(
+            "invalid_movement_continuation_daily_boundary",
+            "DailyPlan-Pfade decken den Basisgraphen nicht exakt ab",
+        ));
+    }
+    Ok((templates.len(), evidence))
+}
+
 /// Kanonischer nativer Payload-Hash fuer ein dauerhaftes externes
 /// Idempotenzledger. Er verwendet exakt dieselbe typisierte Serde-Kanonform
 /// wie die Receipt-Pruefung beim Anwenden eines Kommandos.
@@ -957,6 +1344,9 @@ fn execute(
         } => world
             .reroute_train(&train_id, &route_version_id)
             .map_err(rejected),
+        CommandPayload::QueueMovementContinuation { continuation } => world
+            .queue_movement_continuation(continuation)
+            .map_err(rejected),
         CommandPayload::AutomaticShunting { need } => world
             .execute_automatic_shunting(&need)
             .map(|_| ())
@@ -1154,6 +1544,13 @@ pub fn initialize_operational_simulation(
             "Kanonischer Zugsicherungsbeleg und vollstaendiger Predicate-Scan weichen ab",
         ));
     }
+    let (validated_movement_continuation_count, movement_continuations_sha256) =
+        validate_movement_continuation_templates(
+            &world,
+            &input.trains,
+            input.repeat_every_ms,
+            &input.movement_continuations,
+        )?;
     world
         .verify_invariants()
         .map_err(|error| OperationalRuntimeError::new("unsafe_initial_state", error.to_string()))?;
@@ -1194,6 +1591,8 @@ pub fn initialize_operational_simulation(
         protection_mode_selection_policy: PROTECTION_MODE_SELECTION_POLICY_V1,
         validated_protection_mode_selection_count,
         protection_mode_selections_sha256,
+        validated_movement_continuation_count,
+        movement_continuations_sha256,
         dynamic_train_count: state.world.trains.len(),
         resource_bindings_validated: true,
         formation_bindings_validated: true,
@@ -1842,6 +2241,7 @@ mod tests {
         let interlocking = InterlockingRouteTemplate {
             id: "interlocking:1".to_owned(),
             route_template_id: "template:v1".to_owned(),
+            authority_start_route_mm: 0,
             signal_id: "signal:1".to_owned(),
             movement_kind: MovementKind::Train,
             path_resources: set(&["block:1"]),
@@ -1944,7 +2344,7 @@ mod tests {
                 movement_kind: MovementKind::Train,
                 route_version_id: "route:v1".to_owned(),
                 formation_version_id: "formation:1".to_owned(),
-                head_route_mm: 20_000,
+                head_route_mm: 0,
                 scheduled_departure_ms: None,
                 public_passenger_stop: false,
                 dispatch_interlocking_route_id: "interlocking:1".to_owned(),
@@ -1953,7 +2353,333 @@ mod tests {
                     selected_protection_system: "pzb".to_owned(),
                 }],
             }],
+            repeat_every_ms: None,
+            movement_continuations: Vec::new(),
         }
+    }
+
+    fn movement_graph_fixture() -> (
+        OperationalWorld,
+        Vec<TrainInput>,
+        Vec<MovementContinuationTemplateInput>,
+    ) {
+        let leg = |edge_id: &str,
+                   edge_entry_mm: i64,
+                   edge_exit_mm: i64,
+                   route_start_mm: i64,
+                   block_id: &str| RouteLeg {
+            edge_id: edge_id.to_owned(),
+            direction: Direction::Along,
+            edge_entry_mm,
+            edge_exit_mm,
+            route_start_mm,
+            block_ids: set(&[block_id]),
+            speed_limit_mmps: 20_000,
+            gradient_per_mille: 0,
+            available_protection_systems: vec!["pzb".to_owned()],
+            simultaneously_required_protection_systems: Vec::new(),
+        };
+        let routes = BTreeMap::from([
+            (
+                "route:graph:a".to_owned(),
+                RouteVersion {
+                    id: "route:graph:a".to_owned(),
+                    template_id: "template:graph:a".to_owned(),
+                    predecessor_id: Some("route:graph:b".to_owned()),
+                    transition_route_mm: Some(10_000),
+                    legs: vec![
+                        leg("edge:graph:b", 0, 10_000, 0, "block:graph:a-seed"),
+                        leg("edge:graph:a", 10_000, 20_000, 10_000, "block:graph:a-exit"),
+                    ],
+                },
+            ),
+            (
+                "route:graph:b".to_owned(),
+                RouteVersion {
+                    id: "route:graph:b".to_owned(),
+                    template_id: "template:graph:b".to_owned(),
+                    predecessor_id: Some("route:graph:a".to_owned()),
+                    transition_route_mm: Some(10_000),
+                    legs: vec![
+                        leg("edge:graph:a", 10_000, 20_000, 0, "block:graph:b-seed"),
+                        leg("edge:graph:b", 0, 10_000, 10_000, "block:graph:b-exit"),
+                    ],
+                },
+            ),
+        ]);
+        let interlocking =
+            |id: &str,
+             route_template_id: &str,
+             authority_start_route_mm: i64,
+             authority_end_route_mm: i64,
+             path_resource: &str| InterlockingRouteTemplate {
+                id: id.to_owned(),
+                route_template_id: route_template_id.to_owned(),
+                authority_start_route_mm,
+                signal_id: format!("signal:{id}"),
+                movement_kind: MovementKind::Train,
+                path_resources: set(&[path_resource]),
+                overlap_resources: set(&[&format!("overlap:{id}")]),
+                flank_resources: set(&[&format!("flank:{id}")]),
+                switch_positions: BTreeMap::new(),
+                authority_end_route_mm,
+                release_after_tail_route_mm: authority_end_route_mm,
+            };
+        let templates = [
+            interlocking(
+                "graph:a:seed",
+                "template:graph:a",
+                0,
+                10_000,
+                "block:graph:a-seed",
+            ),
+            interlocking(
+                "graph:a:exit",
+                "template:graph:a",
+                10_000,
+                20_000,
+                "block:graph:a-exit",
+            ),
+            interlocking(
+                "graph:b:seed",
+                "template:graph:b",
+                0,
+                10_000,
+                "block:graph:b-seed",
+            ),
+            interlocking(
+                "graph:b:exit",
+                "template:graph:b",
+                10_000,
+                20_000,
+                "block:graph:b-exit",
+            ),
+        ];
+        let mut signals = BTreeSet::new();
+        let mut resources = BTreeSet::new();
+        let mut interlocking_routes = BTreeMap::new();
+        for template in templates {
+            signals.insert(template.signal_id.clone());
+            resources.extend(template.path_resources.iter().cloned());
+            resources.extend(template.overlap_resources.iter().cloned());
+            resources.extend(template.flank_resources.iter().cloned());
+            interlocking_routes.insert(template.id.clone(), template);
+        }
+        let geometry = |longitude_e7: i32| {
+            vec![
+                EdgeGeometryPoint {
+                    edge_offset_mm: 0,
+                    latitude_e7: 510_000_000,
+                    longitude_e7,
+                    bearing_milli_degrees: Some(90_000),
+                },
+                EdgeGeometryPoint {
+                    edge_offset_mm: 20_000,
+                    latitude_e7: 510_000_000,
+                    longitude_e7: longitude_e7 + 20_000,
+                    bearing_milli_degrees: None,
+                },
+            ]
+        };
+        let release = OperationalInfraRelease {
+            id: "infra:movement-graph:v2".to_owned(),
+            directed_edges: BTreeMap::from([
+                ("edge:graph:a".to_owned(), 20_000),
+                ("edge:graph:b".to_owned(), 20_000),
+            ]),
+            edge_geometries: BTreeMap::from([
+                ("edge:graph:a".to_owned(), geometry(120_000_000)),
+                ("edge:graph:b".to_owned(), geometry(121_000_000)),
+            ]),
+            route_versions: routes,
+            interlocking_routes,
+            signals,
+            switches: BTreeSet::new(),
+            block_resources: resources,
+            platform_intervals: BTreeMap::new(),
+            region_boundaries: set(&["boundary:graph"]),
+            rzue_layout_id: "rzue:graph:v1".to_owned(),
+        };
+        let mut world = OperationalWorld::new("world:graph", "region:graph", 0, release).unwrap();
+        let vehicle_type = VehicleType {
+            id: "type:graph".to_owned(),
+            role: None,
+            control_stands: None,
+            traction: None,
+            electric_systems: None,
+            length_mm: 10_000,
+            mass_kg: 80_000,
+            maximum_speed_mmps: 20_000,
+            power_watts: 4_000_000,
+            starting_tractive_force_newtons: 200_000,
+            raw_formation_dynamics: None,
+            maximum_acceleration_mmps2: 1_000,
+            service_brake_mmps2: 1_000,
+            emergency_brake_mmps2: 1_500,
+            protection_systems: set(&["pzb"]),
+        };
+        world
+            .register_vehicle_type(vehicle_type.clone(), true)
+            .unwrap();
+        world
+            .register_vehicle_type(
+                VehicleType {
+                    id: "type:graph:short".to_owned(),
+                    length_mm: 9_000,
+                    ..vehicle_type.clone()
+                },
+                true,
+            )
+            .unwrap();
+        world
+            .register_vehicle_type(
+                VehicleType {
+                    id: "type:graph:incompatible".to_owned(),
+                    protection_systems: set(&["lzb"]),
+                    ..vehicle_type
+                },
+                true,
+            )
+            .unwrap();
+        let vehicle = |id: &str, type_id: &str| PhysicalVehicle {
+            id: id.to_owned(),
+            type_id: type_id.to_owned(),
+            powered: true,
+            orientation: Direction::Along,
+            condition: VehicleCondition {
+                mechanics_basis_points: 10_000,
+                drive_basis_points: 10_000,
+                brakes_basis_points: 10_000,
+                kilometres_since_maintenance: 0,
+                operating_hours_since_maintenance: 0,
+                open_observations: 0,
+            },
+            restrictions: BTreeMap::new(),
+            history: Vec::new(),
+        };
+        for (id, type_id, formation_id) in [
+            ("vehicle:graph", "type:graph", "formation:graph"),
+            ("vehicle:graph:other", "type:graph", "formation:graph:other"),
+            (
+                "vehicle:graph:short",
+                "type:graph:short",
+                "formation:graph:short",
+            ),
+            (
+                "vehicle:graph:incompatible",
+                "type:graph:incompatible",
+                "formation:graph:incompatible",
+            ),
+        ] {
+            world.register_vehicle(vehicle(id, type_id)).unwrap();
+            world
+                .create_formation(formation_id, None, vec![id.to_owned()])
+                .unwrap();
+        }
+        let train = |id: &str,
+                     train_number: &str,
+                     route_version_id: &str,
+                     dispatch_interlocking_route_id: &str,
+                     scheduled_departure_ms: i64,
+                     public_passenger_stop: bool| TrainInput {
+            id: id.to_owned(),
+            train_number: train_number.to_owned(),
+            operator_id: "operator:graph".to_owned(),
+            movement_kind: MovementKind::Train,
+            route_version_id: route_version_id.to_owned(),
+            formation_version_id: "formation:graph".to_owned(),
+            head_route_mm: 10_000,
+            scheduled_departure_ms: Some(scheduled_departure_ms),
+            public_passenger_stop,
+            dispatch_interlocking_route_id: dispatch_interlocking_route_id.to_owned(),
+            protection_mode_selection_runs: vec![ProtectionModeSelectionRun {
+                through_route_leg_index: 1,
+                selected_protection_system: "pzb".to_owned(),
+            }],
+        };
+        let mut trains = vec![
+            train(
+                "train:graph:a-1",
+                "RB 201",
+                "route:graph:a",
+                "graph:a:exit",
+                80_000_000,
+                true,
+            ),
+            train(
+                "train:graph:a-2",
+                "RB 202",
+                "route:graph:b",
+                "graph:b:exit",
+                1_000,
+                true,
+            ),
+            train(
+                "train:graph:b-1",
+                "RB 203",
+                "route:graph:a",
+                "graph:a:exit",
+                2_000,
+                true,
+            ),
+            train(
+                "train:graph:b-2",
+                "RB 204",
+                "route:graph:b",
+                "graph:b:exit",
+                3_000,
+                true,
+            ),
+        ];
+        trains[2].formation_version_id = "formation:graph:other".to_owned();
+        trains[3].formation_version_id = "formation:graph:other".to_owned();
+        let continuations = vec![
+            MovementContinuationTemplateInput {
+                id: "continuation:graph:a-1-a-2".to_owned(),
+                predecessor_train_id: "train:graph:a-1".to_owned(),
+                predecessor_base_route_version_id: "route:graph:a".to_owned(),
+                successor_train_id: "train:graph:a-2".to_owned(),
+                successor_day_offset: 1,
+                daily_boundary: false,
+                minimum_dwell_ms: 300_000,
+                continuity: zugfolge_sim::operational::MovementContinuity::SameDirection,
+                successor_formation: SuccessorFormationPolicy::InheritPredecessor,
+            },
+            MovementContinuationTemplateInput {
+                id: "continuation:graph:a-2-b-1".to_owned(),
+                predecessor_train_id: "train:graph:a-2".to_owned(),
+                predecessor_base_route_version_id: "route:graph:b".to_owned(),
+                successor_train_id: "train:graph:b-1".to_owned(),
+                successor_day_offset: 0,
+                daily_boundary: true,
+                minimum_dwell_ms: 300_000,
+                continuity: zugfolge_sim::operational::MovementContinuity::SameDirection,
+                successor_formation: SuccessorFormationPolicy::InheritPredecessor,
+            },
+            MovementContinuationTemplateInput {
+                id: "continuation:graph:b-1-b-2".to_owned(),
+                predecessor_train_id: "train:graph:b-1".to_owned(),
+                predecessor_base_route_version_id: "route:graph:a".to_owned(),
+                successor_train_id: "train:graph:b-2".to_owned(),
+                successor_day_offset: 0,
+                daily_boundary: false,
+                minimum_dwell_ms: 300_000,
+                continuity: zugfolge_sim::operational::MovementContinuity::SameDirection,
+                successor_formation: SuccessorFormationPolicy::InheritPredecessor,
+            },
+            MovementContinuationTemplateInput {
+                id: "continuation:graph:b-2-a-1".to_owned(),
+                predecessor_train_id: "train:graph:b-2".to_owned(),
+                predecessor_base_route_version_id: "route:graph:b".to_owned(),
+                successor_train_id: "train:graph:a-1".to_owned(),
+                successor_day_offset: 1,
+                daily_boundary: true,
+                minimum_dwell_ms: 300_000,
+                continuity: zugfolge_sim::operational::MovementContinuity::SameDirection,
+                successor_formation: SuccessorFormationPolicy::InheritPredecessor,
+            },
+        ];
+        (world, trains, continuations)
     }
 
     fn apply_value(state: &Value, command_id: &str, command: Value) -> Value {
@@ -2173,6 +2899,8 @@ mod tests {
         let mut other_selection = base.clone();
         other_selection.trains[0].protection_mode_selection_runs[0].selected_protection_system =
             "lzb".to_owned();
+        let mut other_repeat = base.clone();
+        other_repeat.repeat_every_ms = Some(86_400_000);
 
         for changed in [
             other_world,
@@ -2181,9 +2909,281 @@ mod tests {
             other_formation,
             other_policy,
             other_selection,
+            other_repeat,
         ] {
             assert_ne!(initialized(&changed), base_hash);
         }
+    }
+
+    #[test]
+    fn movement_continuation_repeat_contract_and_evidence_are_fail_closed() {
+        let template = MovementContinuationTemplateInput {
+            id: "continuation:a-b".to_owned(),
+            predecessor_train_id: "train:a".to_owned(),
+            predecessor_base_route_version_id: "route:a".to_owned(),
+            successor_train_id: "train:b".to_owned(),
+            successor_day_offset: 0,
+            daily_boundary: false,
+            minimum_dwell_ms: 165_000,
+            continuity: zugfolge_sim::operational::MovementContinuity::ReverseDirection,
+            successor_formation: SuccessorFormationPolicy::InheritPredecessor,
+        };
+        assert_eq!(
+            movement_continuation_evidence(std::slice::from_ref(&template)).unwrap(),
+            "6c1a2cdcab8ecb7f8182d63e7c95beab94f137c5917050981ded619eb2ae43f5"
+        );
+        assert_eq!(
+            movement_continuation_evidence(&[]).unwrap(),
+            "462d0239e9dbd79d82d05b9939675b26fcaee302ddc1f0053db75a1acf774e71"
+        );
+
+        let mut repeated_without_graph = initialization();
+        repeated_without_graph.repeat_every_ms = Some(86_400_000);
+        assert!(
+            super::initialize_operational_simulation(
+                &encode(&repeated_without_graph).unwrap(),
+                infrastructure_path(),
+            )
+            .unwrap_err()
+            .to_string()
+            .starts_with("invalid_movement_continuation_repeat:")
+        );
+
+        let mut graph_without_repeat = initialization();
+        graph_without_repeat.movement_continuations.push(template);
+        assert!(
+            super::initialize_operational_simulation(
+                &encode(&graph_without_repeat).unwrap(),
+                infrastructure_path(),
+            )
+            .unwrap_err()
+            .to_string()
+            .starts_with("invalid_movement_continuation_repeat:")
+        );
+
+        let mut missing_repeat = serde_json::to_value(initialization()).unwrap();
+        missing_repeat
+            .as_object_mut()
+            .unwrap()
+            .remove("repeatEveryMs");
+        assert!(
+            super::initialize_operational_simulation(
+                &missing_repeat.to_string(),
+                infrastructure_path(),
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn native_movement_continuation_preflight_accepts_only_a_complete_physical_day_cycle() {
+        let (world, trains, continuations) = movement_graph_fixture();
+        let expected_hash = movement_continuation_evidence(&continuations).unwrap();
+        assert_eq!(
+            validate_movement_continuation_templates(
+                &world,
+                &trains,
+                Some(86_400_000),
+                &continuations,
+            )
+            .unwrap(),
+            (4, expected_hash.clone())
+        );
+        let mut nonpublic_successor_trains = trains.clone();
+        nonpublic_successor_trains[3].public_passenger_stop = false;
+        let mut nonpublic_successor_continuations = continuations.clone();
+        nonpublic_successor_continuations[3].minimum_dwell_ms = 0;
+        assert!(
+            validate_movement_continuation_templates(
+                &world,
+                &nonpublic_successor_trains,
+                Some(86_400_000),
+                &nonpublic_successor_continuations,
+            )
+            .is_ok()
+        );
+        let mut missing_passenger_dwell = nonpublic_successor_continuations.clone();
+        missing_passenger_dwell[2].minimum_dwell_ms = 0;
+        assert!(
+            validate_movement_continuation_templates(
+                &world,
+                &nonpublic_successor_trains,
+                Some(86_400_000),
+                &missing_passenger_dwell,
+            )
+            .unwrap_err()
+            .to_string()
+            .starts_with("invalid_movement_continuation_dwell:")
+        );
+        let mut movement_to_passenger_dwell = nonpublic_successor_continuations;
+        movement_to_passenger_dwell[3].minimum_dwell_ms = 300_000;
+        assert!(
+            validate_movement_continuation_templates(
+                &world,
+                &nonpublic_successor_trains,
+                Some(86_400_000),
+                &movement_to_passenger_dwell,
+            )
+            .unwrap_err()
+            .to_string()
+            .starts_with("invalid_movement_continuation_dwell:")
+        );
+        let mut wrong_length = trains.clone();
+        wrong_length[2].formation_version_id = "formation:graph:short".to_owned();
+        assert!(
+            validate_movement_continuation_templates(
+                &world,
+                &wrong_length,
+                Some(86_400_000),
+                &continuations,
+            )
+            .unwrap_err()
+            .to_string()
+            .starts_with("invalid_movement_continuation_formation:")
+        );
+        let mut incompatible = trains.clone();
+        incompatible[2].formation_version_id = "formation:graph:incompatible".to_owned();
+        incompatible[3].formation_version_id = "formation:graph:incompatible".to_owned();
+        assert!(
+            validate_movement_continuation_templates(
+                &world,
+                &incompatible,
+                Some(86_400_000),
+                &continuations,
+            )
+            .unwrap_err()
+            .to_string()
+            .starts_with("invalid_movement_continuation_physical_binding:")
+        );
+        let mut reversed = continuations.clone();
+        reversed.reverse();
+        assert_eq!(
+            movement_continuation_evidence(&reversed).unwrap(),
+            expected_hash
+        );
+
+        let mut no_day_edge = continuations.clone();
+        no_day_edge[0].successor_day_offset = 0;
+        assert!(
+            validate_movement_continuation_templates(
+                &world,
+                &trains,
+                Some(86_400_000),
+                &no_day_edge,
+            )
+            .unwrap_err()
+            .to_string()
+            .starts_with("invalid_movement_continuation_time:")
+        );
+
+        let mut missing_daily_boundary = continuations.clone();
+        missing_daily_boundary[1].daily_boundary = false;
+        assert!(
+            validate_movement_continuation_templates(
+                &world,
+                &trains,
+                Some(86_400_000),
+                &missing_daily_boundary,
+            )
+            .unwrap_err()
+            .to_string()
+            .starts_with("invalid_movement_continuation_daily_boundary:")
+        );
+
+        let mut day_edge_to_non_passenger = continuations;
+        let mut non_passenger_trains = trains;
+        non_passenger_trains[1].public_passenger_stop = false;
+        day_edge_to_non_passenger[0].minimum_dwell_ms = 300_000;
+        day_edge_to_non_passenger[1].minimum_dwell_ms = 0;
+        assert!(
+            validate_movement_continuation_templates(
+                &world,
+                &non_passenger_trains,
+                Some(86_400_000),
+                &day_edge_to_non_passenger,
+            )
+            .unwrap_err()
+            .to_string()
+            .starts_with("invalid_movement_continuation_graph:")
+        );
+    }
+
+    #[test]
+    fn queued_source_absent_continuation_survives_runtime_restore_and_conflicts_atomically() {
+        let initialized: Value = serde_json::from_str(
+            &initialize_operational_simulation(&encode(&initialization()).unwrap()).unwrap(),
+        )
+        .unwrap();
+        let continuation = json!({
+            "id": "continuation:future",
+            "predecessorTrainId": "train:future-source",
+            "predecessorBaseRouteVersionId": "route:v1",
+            "successor": {
+                "id": "train:future-successor",
+                "trainNumber": "RB 211",
+                "operatorId": "operator:1",
+                "movementKind": "train",
+                "routeVersionId": "route:v1",
+                "formationVersionId": "formation:1",
+                "headRouteMm": 0,
+                "scheduledDepartureMs": null,
+                "publicPassengerStop": false
+            },
+            "successorDispatch": {
+                "trainId": "train:future-successor",
+                "interlockingRouteId": "interlocking:1",
+                "committedRank": 0,
+                "timetableDeviationMs": 0,
+                "passengerImpact": 0,
+                "contractualImpact": 0,
+                "networkImpact": 0,
+                "resourceConsequence": 0,
+                "recoveryRank": 0,
+                "waitingSinceMs": 0
+            },
+            "notBeforeMs": 0,
+            "minimumDwellMs": 0,
+            "continuity": "same-direction"
+        });
+        let queued = apply_value(
+            &initialized["state"],
+            "continuation:queue",
+            json!({
+                "type": "queue-movement-continuation",
+                "continuation": continuation.clone()
+            }),
+        );
+        assert!(
+            queued["state"]["world"]["pendingMovementContinuations"]
+                .get("continuation:future")
+                .is_some()
+        );
+        let restored = restore_value(&queued["state"], &queued["initializationHash"]).unwrap();
+        assert_eq!(restored["stateHash"], queued["stateHash"]);
+
+        let mut conflicting = continuation.clone();
+        conflicting["minimumDwellMs"] = json!(1);
+        let state_before = queued["state"].clone();
+        let envelope = json!({
+            "schemaVersion": COMMAND_SCHEMA,
+            "worldId": "world:1",
+            "regionId": "region:1",
+            "commandId": "continuation:conflict",
+            "expectedStateHash": state_before["stateHash"],
+            "expectedRevision": state_before["revision"],
+            "expectedPublisherSequence": state_before["publisherSequence"],
+            "command": {
+                "type": "queue-movement-continuation",
+                "continuation": conflicting
+            }
+        });
+        assert!(
+            apply_operational_simulation_command(&state_before.to_string(), &envelope.to_string())
+                .unwrap_err()
+                .to_string()
+                .contains("ConflictingMovementContinuationId")
+        );
+        assert_eq!(queued["state"], state_before);
     }
 
     #[test]
@@ -2733,6 +3733,55 @@ mod tests {
                 effect: OperationalDisruption::SignalFailed { signal_id }
             } if disruption_id == "disruption:signal" && signal_id == "signal:1"
         ));
+
+        let queued: CommandPayload = serde_json::from_value(json!({
+            "type": "queue-movement-continuation",
+            "continuation": {
+                "id": "continuation:day-0",
+                "predecessorTrainId": "train:source:day-0",
+                "predecessorBaseRouteVersionId": "route:v1",
+                "successor": {
+                    "id": "train:successor:day-0",
+                    "trainNumber": "RB 2",
+                    "operatorId": "operator:1",
+                    "movementKind": "train",
+                    "routeVersionId": "route:v1",
+                    "formationVersionId": "formation:1",
+                    "headRouteMm": 0,
+                    "scheduledDepartureMs": null,
+                    "publicPassengerStop": false
+                },
+                "successorDispatch": {
+                    "trainId": "train:successor:day-0",
+                    "interlockingRouteId": "interlocking:1",
+                    "committedRank": 0,
+                    "timetableDeviationMs": 0,
+                    "passengerImpact": 0,
+                    "contractualImpact": 0,
+                    "networkImpact": 0,
+                    "resourceConsequence": 0,
+                    "recoveryRank": 0,
+                    "waitingSinceMs": 0
+                },
+                "notBeforeMs": 0,
+                "minimumDwellMs": 165000,
+                "continuity": "reverse-direction"
+            }
+        }))
+        .unwrap();
+        assert!(matches!(
+            &queued,
+            CommandPayload::QueueMovementContinuation { continuation }
+                if continuation.id == "continuation:day-0"
+                    && continuation.minimum_dwell_ms == 165_000
+                    && continuation.continuity
+                        == zugfolge_sim::operational::MovementContinuity::ReverseDirection
+        ));
+
+        let mut non_minimal = serde_json::to_value(queued).unwrap();
+        non_minimal["continuation"]["successor"]["dispatchInterlockingRouteId"] =
+            json!("interlocking:1");
+        assert!(serde_json::from_value::<CommandPayload>(non_minimal).is_err());
     }
 
     #[test]
@@ -2933,6 +3982,11 @@ mod tests {
             "208a9b4217bdf68c054bb78717e5c1ba237c84cbf40b143592fe15a3bb338437"
         );
         assert_eq!(receipt["protectionModeSelectionsValidated"], true);
+        assert_eq!(receipt["validatedMovementContinuationCount"], 0);
+        assert_eq!(
+            receipt["movementContinuationsSha256"],
+            "e28a1c6f319c12a4bcef394ef5d63567ef0c7c72be29974efeb7b8e783dc86a0"
+        );
         assert_eq!(receipt["dynamicTrainCount"], 0);
         assert_eq!(receipt["resourceBindingsValidated"], true);
         assert_eq!(receipt["formationBindingsValidated"], true);
@@ -3013,8 +4067,18 @@ mod tests {
         .to_string();
         assert!(error.starts_with("invalid_train_program_template:"));
         assert!(error.contains("2 von 2 Programmvorlagen ungueltig"));
-        assert!(error.contains("train:1=[head-within-route,protection-mode-selections]"));
-        assert!(error.contains("train:2=[protection-mode-selections,movement-kind]"));
+        assert!(
+            error.contains(
+                "train:1=[head-within-route,protection-mode-selections,route-template,authority-end,release-after-tail]"
+            ),
+            "{error}"
+        );
+        assert!(
+            error.contains(
+                "train:2=[protection-mode-selections,movement-kind,route-template,authority-end,release-after-tail]"
+            ),
+            "{error}"
+        );
 
         let mut unknown_policy = initialization();
         unknown_policy.protection_mode_selection_policy =

@@ -19,8 +19,8 @@ export const TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR = Object.freeze({
     schemaVersion: OPERATIONAL_INFRASTRUCTURE_BINDING_SCHEMA,
     infraReleaseId: "tutorial-minimal-2026.1:operational-infra",
     file: OPERATIONAL_INFRASTRUCTURE_FILE,
-    bytes: 2_793,
-    sha256: "4fa3b6d829fc9a0ad102e038271901b880f7fd6b89926152ceefadcbb88bcc28",
-    stateHash: "df104ba3bb4d553e75d4c6ac32cb13be070fcf6beb41f359d4b74be5d42306b1",
+    bytes: 4_256,
+    sha256: "3eada8c2882489b109f9e8c6d373dd8ab5f6873b68032fc98ea6fab6dcdd60b3",
+    stateHash: "37b9e412ead217c99b29907b305635e1e0f0985f9dee12d483c1de9c7bd12a21",
   }) satisfies OperationalInfrastructureBinding,
 });

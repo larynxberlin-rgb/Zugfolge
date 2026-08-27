@@ -23,6 +23,7 @@ import {
   OPERATIONAL_SIMULATION_STATE_SCHEMA,
   assertOperationalTrainNumbers,
   operationalInfrastructureBindingsEqual,
+  operationalMovementContinuationsEvidence,
   operationalProtectionModeSelectionEvidence,
   operationalSimulationRuntimeFromAddon,
   type OperationalInfrastructureBinding,
@@ -109,6 +110,7 @@ function projection(kind: "live-map" | "rzue", commitSequence = 0) {
 
 function validationReceipt(overrides: Readonly<Record<string, unknown>> = {}) {
   const protectionEvidence = operationalProtectionModeSelectionEvidence(initialization);
+  const continuationEvidence = operationalMovementContinuationsEvidence(initialization);
   return {
     schemaVersion: OPERATIONAL_INITIALIZATION_VALIDATION_RECEIPT_SCHEMA,
     worldId: "world:1",
@@ -123,6 +125,8 @@ function validationReceipt(overrides: Readonly<Record<string, unknown>> = {}) {
     validatedResourceBindingCount: 0,
     validatedFormationBindingCount: 0,
     validatedTrainNumberCount: 0,
+    validatedMovementContinuationCount: continuationEvidence.count,
+    movementContinuationsSha256: continuationEvidence.sha256,
     protectionModeSelectionPolicy: OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
     validatedProtectionModeSelectionCount: protectionEvidence.count,
     protectionModeSelectionsSha256: protectionEvidence.sha256,
@@ -141,12 +145,14 @@ const initialization: OperationalSimulationInitialization = {
   worldId: "world:1",
   regionId: "region:1",
   nowMs: 0,
+  repeatEveryMs: null,
   protectionModeSelectionPolicy: OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
   infraRelease: infrastructureBinding,
   vehicleTypes: [],
   vehicles: [],
   formations: [],
   trains: [],
+  movementContinuations: [],
 };
 
 describe("operative native v2-Grenze", () => {

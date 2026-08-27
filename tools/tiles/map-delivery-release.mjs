@@ -22,12 +22,20 @@ const LEGACY_QUALITY_SCHEMA = "zugfolge-final-infrastructure-quality-report/v1";
 const OPERATIONAL_QUALITY_SCHEMA = "zugfolge-operational-infrastructure-quality-report/v1";
 const STATIC_MAP_QUALITY_SCHEMA = "zugfolge-static-map-quality/v2";
 const OPERATIONAL_INFRASTRUCTURE_KIND = "operational-infrastructure-v2";
+const MOVEMENT_ROUTE_TEMPLATES_KIND = "movement-route-templates-v2";
+const TIMETABLE_TRANSFER_DEMANDS_KIND = "timetable-transfer-demands-v1";
 const CANONICAL_PUBLIC_KEY_PEM = /^-----BEGIN PUBLIC KEY-----\n(?:[A-Za-z0-9+/=]+\n)+-----END PUBLIC KEY-----\n$/u;
 const QUALITY_LAYER_NAMES = Object.freeze([
   "rail_corridors", "operating_points", "stations", "tracks", "platforms",
   "switches", "signals", "blocks", "conflict_resources", "rail_context",
 ]);
-const LARGE_AUXILIARY_KINDS = new Set(["read-model", "train-map-projection", OPERATIONAL_INFRASTRUCTURE_KIND]);
+const LARGE_AUXILIARY_KINDS = new Set([
+  "read-model",
+  "train-map-projection",
+  OPERATIONAL_INFRASTRUCTURE_KIND,
+  MOVEMENT_ROUTE_TEMPLATES_KIND,
+  TIMETABLE_TRANSFER_DEMANDS_KIND,
+]);
 const FORBIDDEN_PUBLIC_REFERENCE = /(?:trassenfinder|(?:^|[\s/_.-])apn(?:$|[\s/_.-]))/i;
 
 function invariant(condition, message) {
@@ -448,18 +456,22 @@ function validateTimetableRouteEvidence(evidence) {
     "routesBytes", "routesSha256", "gtfsSnapshotBytes", "gtfsSnapshotSha256", "snapshotHash", "archive",
     "archiveSha256", "sourceLicense", "sourceLicenseAsPublished", "selectedSegmentCount", "completeRouteCount",
     "routeRecordCount", "sameStopTransitionCount", "routeSetSha256", "realGeometry",
+    "transferDemandsSchema", "transferDemandsBytes", "transferDemandsSha256", "dailyCirculationPlanSha256",
+    "transferSetSha256", "transferDemandsProduced", "dailyCirculation", "transferRouteCount",
+    "transferRouteLegCount", "transferRouteLengthMm",
     "simulatedOperationalAssignment", "realInterlockingFactsClaimed", "externalOperationalNetworkProvenance",
   ], "Operational-v2.timetableRouteEvidence");
   invariant(
-    evidence.reportSchema === "zugfolge-germany-timetable-route-report/v2"
+    evidence.reportSchema === "zugfolge-germany-timetable-route-report/v3"
       && evidence.policyId === "synthetic-operational-b/v2"
       && evidence.derivationRule === "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2"
-      && evidence.selectionRule === "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
-    "Operational-v2.timetableRouteEvidence verletzt den freien v2-Fahrwegvertrag.",
+      && evidence.selectionRule === "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2"
+      && evidence.transferDemandsSchema === "zugfolge-timetable-transfer-demands/v1",
+    "Operational-v2.timetableRouteEvidence verletzt den freien v3-Fahrweg-/Transfervertrag.",
   );
   invariant(
-    [evidence.reportBytes, evidence.routesBytes, evidence.gtfsSnapshotBytes].every((bytes) => Number.isSafeInteger(bytes) && bytes > 0)
-      && [evidence.reportSha256, evidence.routesSha256, evidence.gtfsSnapshotSha256, evidence.snapshotHash, evidence.archiveSha256, evidence.routeSetSha256].every((hash) => SHA256.test(hash))
+    [evidence.reportBytes, evidence.routesBytes, evidence.gtfsSnapshotBytes, evidence.transferDemandsBytes].every((bytes) => Number.isSafeInteger(bytes) && bytes > 0)
+      && [evidence.reportSha256, evidence.routesSha256, evidence.gtfsSnapshotSha256, evidence.transferDemandsSha256, evidence.snapshotHash, evidence.archiveSha256, evidence.routeSetSha256, evidence.dailyCirculationPlanSha256, evidence.transferSetSha256].every((hash) => SHA256.test(hash))
       && evidence.routesSha256 === evidence.routeSetSha256,
     "Operational-v2.timetableRouteEvidence besitzt keine konsistente Datei-/RouteSet-Bindung.",
   );
@@ -475,6 +487,18 @@ function validateTimetableRouteEvidence(evidence) {
       && evidence.completeRouteCount === evidence.routeRecordCount
       && Number.isSafeInteger(evidence.sameStopTransitionCount) && evidence.sameStopTransitionCount >= 0,
     "Operational-v2.timetableRouteEvidence schließt die ausgewählten Segmente nicht vollständig 1:1.",
+  );
+  exactKeys(evidence.dailyCirculation, ["lotCount", "journeyChainCount", "circulationCount", "rolloverAssignmentCount", "transferDemandCount", "transferLotCount"], "Operational-v2.timetableRouteEvidence.dailyCirculation");
+  invariant(
+    ["lotCount", "journeyChainCount", "circulationCount", "rolloverAssignmentCount", "transferDemandCount", "transferLotCount"].every((field) => Number.isSafeInteger(evidence.dailyCirculation[field]) && evidence.dailyCirculation[field] > 0)
+      && evidence.dailyCirculation.rolloverAssignmentCount === evidence.dailyCirculation.circulationCount
+      && evidence.dailyCirculation.transferDemandCount <= evidence.dailyCirculation.circulationCount
+      && evidence.dailyCirculation.transferLotCount <= evidence.dailyCirculation.lotCount
+      && evidence.transferDemandsProduced === true
+      && evidence.transferRouteCount === evidence.dailyCirculation.transferDemandCount
+      && Number.isSafeInteger(evidence.transferRouteLegCount) && evidence.transferRouteLegCount > 0
+      && Number.isSafeInteger(evidence.transferRouteLengthMm) && evidence.transferRouteLengthMm > 0,
+    "Operational-v2.timetableRouteEvidence besitzt keine vollständige physische Tagesumlauf-/Transferabdeckung.",
   );
   invariant(
     evidence.realGeometry === true
@@ -527,7 +551,7 @@ function validateOperationalQuality(qualityReport, releaseId, timetableYear, inf
   );
 
   const model = qualityReport.operationalModel;
-  exactKeys(model, ["policyId", "policySha256", "closureReceiptSha256", "qualityClass", "provenance", "realGeometry", "simulatedOperationalAssignment", "realInterlockingFactsClaimed", "syntheticOperationalDetailsShipped", "objectLevelProvenanceShipped", "observedAndSyntheticObjectsShareRuntimeCollections", "timetableRouteEvidence", "operationalArtifact", "coverage"], "Operational-v2.operationalModel");
+  exactKeys(model, ["policyId", "policySha256", "closureReceiptSha256", "qualityClass", "provenance", "realGeometry", "simulatedOperationalAssignment", "realInterlockingFactsClaimed", "syntheticOperationalDetailsShipped", "objectLevelProvenanceShipped", "observedAndSyntheticObjectsShareRuntimeCollections", "movementRouteTemplates", "timetableRouteEvidence", "operationalArtifact", "coverage"], "Operational-v2.operationalModel");
   invariant(
     model.policyId === "synthetic-operational-b/v2" && SHA256.test(model.policySha256) && SHA256.test(model.closureReceiptSha256)
       && model.qualityClass === "B" && model.provenance === "derived"
@@ -538,11 +562,25 @@ function validateOperationalQuality(qualityReport, releaseId, timetableYear, inf
   );
   validateTimetableRouteEvidence(model.timetableRouteEvidence);
   invariant(model.timetableRouteEvidence.policyId === model.policyId, "Operational-v2-Fahrwegbeleg und Betriebsmodell binden verschiedene Policies.");
+  exactKeys(model.movementRouteTemplates, ["bytes", "sha256", "stateHash", "operationalStateHash", "timetableTransferSetSha256"], "Operational-v2.movementRouteTemplates");
+  invariant(
+    Number.isSafeInteger(model.movementRouteTemplates.bytes) && model.movementRouteTemplates.bytes > 0
+      && [model.movementRouteTemplates.sha256, model.movementRouteTemplates.stateHash, model.movementRouteTemplates.operationalStateHash, model.movementRouteTemplates.timetableTransferSetSha256].every((hash) => SHA256.test(hash))
+      && model.movementRouteTemplates.sha256 !== model.movementRouteTemplates.stateHash,
+    "Operational-v2.movementRouteTemplates besitzt keine getrennte pfadfreie Byte-/Zustandsbindung.",
+  );
   exactKeys(model.operationalArtifact, ["bytes", "sha256", "stateHash"], "Operational-v2.operationalArtifact");
   invariant(Number.isSafeInteger(model.operationalArtifact.bytes) && model.operationalArtifact.bytes > 0 && SHA256.test(model.operationalArtifact.sha256) && SHA256.test(model.operationalArtifact.stateHash) && model.operationalArtifact.sha256 !== model.operationalArtifact.stateHash, "Operational-v2-Qualität besitzt keine getrennte Operational-Artefakt-/Zustandsbindung.");
+  invariant(
+    model.movementRouteTemplates.operationalStateHash === model.operationalArtifact.stateHash
+      && model.movementRouteTemplates.timetableTransferSetSha256 === model.timetableRouteEvidence.transferSetSha256,
+    "Operational-v2.movementRouteTemplates weicht von Operational-State oder Timetable-Transfer-Set ab.",
+  );
   if (infraRelease !== undefined) {
     invariant(SHA256.test(qualitySha256), "Operational-v2-Qualität besitzt keine Byte-SHA-Bindung an den ausgelieferten Bericht.");
     const operationalBindings = infraRelease.artifacts?.filter(({ kind }) => kind === OPERATIONAL_INFRASTRUCTURE_KIND) ?? [];
+    const movementBindings = infraRelease.artifacts?.filter(({ kind }) => kind === MOVEMENT_ROUTE_TEMPLATES_KIND) ?? [];
+    const transferBindings = infraRelease.artifacts?.filter(({ kind }) => kind === TIMETABLE_TRANSFER_DEMANDS_KIND) ?? [];
     invariant(
       operationalBindings.length === 1
         && model.operationalArtifact.bytes === operationalBindings[0].bytes
@@ -550,12 +588,25 @@ function validateOperationalQuality(qualityReport, releaseId, timetableYear, inf
         && model.operationalArtifact.stateHash === operationalBindings[0].stateHash,
       "Operational-v2-Qualität und InfraRelease binden verschiedene Operational-Artefaktbytes oder Zustände.",
     );
+    invariant(
+      movementBindings.length === 1
+        && model.movementRouteTemplates.bytes === movementBindings[0].bytes
+        && model.movementRouteTemplates.sha256 === movementBindings[0].sha256,
+      "Operational-v2-Qualität und InfraRelease binden verschiedene Movement-Route-Templates-v2-Bytes.",
+    );
+    invariant(
+      transferBindings.length === 1
+        && model.timetableRouteEvidence.transferDemandsBytes === transferBindings[0].bytes
+        && model.timetableRouteEvidence.transferDemandsSha256 === transferBindings[0].sha256,
+      "Operational-v2-Qualität und InfraRelease binden verschiedene Timetable-Transfer-Demands-Bytes.",
+    );
     const closure = infraRelease.quality?.operationalClosure;
     exactKeys(closure, [
       "reportSha256", "policyId", "policySha256", "closureReceiptSha256", "qualityClass", "provenance",
       "candidateBytes", "candidateSha256", "candidateStateHash", "staticMapQualityBytes", "staticMapQualitySha256",
       "staticMapSourceReportSha256", "realInterlockingFactsClaimed", "syntheticOperationalDetailsShipped",
       "objectLevelProvenanceShipped", "observedAndSyntheticObjectsShareRuntimeCollections", "timetableRouteEvidence",
+      "movementRouteTemplates",
       "operationalQualityEligible", "signatureImplied", "activationImplied", "unresolvedRequired",
     ], "InfraRelease.quality.operationalClosure");
     invariant(
@@ -574,6 +625,7 @@ function validateOperationalQuality(qualityReport, releaseId, timetableYear, inf
         && closure.syntheticOperationalDetailsShipped === true
         && closure.objectLevelProvenanceShipped === false
         && closure.observedAndSyntheticObjectsShareRuntimeCollections === true
+        && JSON.stringify(sortedValue(closure.movementRouteTemplates)) === JSON.stringify(sortedValue(model.movementRouteTemplates))
         && JSON.stringify(sortedValue(closure.timetableRouteEvidence)) === JSON.stringify(sortedValue(model.timetableRouteEvidence))
         && closure.operationalQualityEligible === true
         && closure.signatureImplied === false && closure.activationImplied === false
@@ -623,32 +675,61 @@ export function validateMapDeliveryQualityReport({ qualityReport, releaseId, tim
   return validateQuality(qualityReport, releaseId, timetableYear, operationalV2, infraRelease, qualitySha256);
 }
 
-function bindOperationalInfrastructure(infraRelease, packageSpec, trustedProofs) {
+function bindInfraReleaseArtifacts(infraRelease, packageSpec, trustedProofs) {
   if (packageSpec.schema !== PACKAGE_SPEC_V2) return;
   invariant(Array.isArray(infraRelease.artifacts), "InfraRelease besitzt kein gebundenes Artefaktinventar.");
-  const descriptors = packageSpec.auxiliaryFiles.filter(({ kind }) => kind === OPERATIONAL_INFRASTRUCTURE_KIND);
-  const bindings = infraRelease.artifacts.filter(({ kind }) => kind === OPERATIONAL_INFRASTRUCTURE_KIND);
-  invariant(descriptors.length === 1 && bindings.length === 1, "Paket und InfraRelease müssen genau eine statische Operational-v2-Infrastruktur binden.");
-  const descriptor = descriptors[0];
-  const binding = bindings[0];
-  invariant(
-    binding.id === descriptor.id
-      && binding.file === "operational-infrastructure-v2.json"
-      && descriptor.installPath === binding.file
-      && binding.infraReleaseId === infraRelease.releaseId
-      && descriptor.infraReleaseId === binding.infraReleaseId
-      && descriptor.expectedBytes === binding.bytes
-      && descriptor.expectedSha256 === binding.sha256
-      && descriptor.stateHash === binding.stateHash
-      && Number.isSafeInteger(binding.bytes)
-      && binding.bytes > 0
-      && SHA256.test(binding.sha256)
-      && SHA256.test(binding.stateHash)
-      && binding.sha256 !== binding.stateHash,
-    "Operational-v2-Paketdatei weicht von der Byte-/Zustandsbindung des InfraRelease ab.",
-  );
-  invariant(!trustedProofs.has(binding.id), `Operational-v2-Beleg ${binding.id} ist doppelt.`);
-  trustedProofs.set(binding.id, { bytes: binding.bytes, sha256: binding.sha256 });
+  const required = [
+    {
+      kind: OPERATIONAL_INFRASTRUCTURE_KIND,
+      file: "operational-infrastructure-v2.json",
+      label: "Operational-v2-Paketdatei",
+      bindingKeys: ["id", "kind", "file", "infraReleaseId", "bytes", "sha256", "stateHash"],
+    },
+    {
+      kind: MOVEMENT_ROUTE_TEMPLATES_KIND,
+      file: "operational-infrastructure-v2.movement-route-templates-v2.json",
+      label: "Movement-Route-Templates-v2-Paketdatei",
+      bindingKeys: ["id", "kind", "file", "bytes", "sha256"],
+    },
+    {
+      kind: TIMETABLE_TRANSFER_DEMANDS_KIND,
+      file: "timetable-routes-v2.transfer-demands-v1.json",
+      label: "Timetable-Transfer-Demands-v1-Paketdatei",
+      bindingKeys: ["id", "kind", "file", "bytes", "sha256"],
+    },
+  ];
+  for (const requirement of required) {
+    const descriptors = packageSpec.auxiliaryFiles.filter(({ kind }) => kind === requirement.kind);
+    const bindings = infraRelease.artifacts.filter(({ kind }) => kind === requirement.kind);
+    invariant(descriptors.length === 1 && bindings.length === 1, `Paket und InfraRelease müssen genau ein ${requirement.kind}-Artefakt binden.`);
+    const descriptor = descriptors[0];
+    const binding = bindings[0];
+    exactKeys(binding, requirement.bindingKeys, `InfraRelease.artifacts.${requirement.kind}`);
+    invariant(
+      binding.id === descriptor.id
+        && binding.kind === descriptor.kind
+        && binding.file === requirement.file
+        && descriptor.installPath === binding.file
+        && descriptor.expectedBytes === binding.bytes
+        && descriptor.expectedSha256 === binding.sha256
+        && Number.isSafeInteger(binding.bytes)
+        && binding.bytes > 0
+        && SHA256.test(binding.sha256),
+      `${requirement.label} weicht von der Bytebindung des InfraRelease ab.`,
+    );
+    if (requirement.kind === OPERATIONAL_INFRASTRUCTURE_KIND) {
+      invariant(
+        binding.infraReleaseId === infraRelease.releaseId
+          && descriptor.infraReleaseId === binding.infraReleaseId
+          && descriptor.stateHash === binding.stateHash
+          && SHA256.test(binding.stateHash)
+          && binding.sha256 !== binding.stateHash,
+        "Operational-v2-Paketdatei weicht von der Zustandsbindung des InfraRelease ab.",
+      );
+    }
+    invariant(!trustedProofs.has(binding.id), `InfraRelease-Artefaktbeleg ${binding.id} ist doppelt.`);
+    trustedProofs.set(binding.id, { bytes: binding.bytes, sha256: binding.sha256 });
+  }
 }
 
 function artifactProofsFromMapRelease(mapRelease, packageSpec) {
@@ -708,7 +789,7 @@ export async function buildMapDeliveryRelease({
   );
 
   const trustedProofs = normalizeProofs(auxiliaryArtifactProofs);
-  bindOperationalInfrastructure(infraRelease, packageSpec, trustedProofs);
+  bindInfraReleaseArtifacts(infraRelease, packageSpec, trustedProofs);
   for (const [id, proof] of artifactProofsFromMapRelease(mapRelease, packageSpec)) {
     invariant(!trustedProofs.has(id), `Großartefaktbeleg ${id} darf keinen PMTiles-Beleg überschreiben.`);
     trustedProofs.set(id, proof);

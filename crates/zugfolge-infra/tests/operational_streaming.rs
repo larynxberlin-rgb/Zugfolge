@@ -12,6 +12,7 @@ use zugfolge_infra::{
     open_operational_infrastructure_v2_store, validate_operational_infrastructure_v2,
     validate_operational_infrastructure_v2_file,
 };
+use zugfolge_sim::operational::OperationalInfrastructure;
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 
@@ -89,6 +90,7 @@ fn candidate(release_id: &str) -> Value {
                 "overlapResources": ["overlap-1"],
                 "flankResources": ["flank-1"],
                 "switchPositions": {},
+                "authorityStartRouteMm": 0,
                 "authorityEndRouteMm": 1_000,
                 "releaseAfterTailRouteMm": 1_000
             }
@@ -100,6 +102,76 @@ fn candidate(release_id: &str) -> Value {
         "regionBoundaries": [],
         "rzueLayoutId": "rzue-layout-1"
     })
+}
+
+fn segmented_candidate(release_id: &str) -> Value {
+    let mut value = candidate(release_id);
+    value["directedEdges"]["edge-2"] = json!(1_500);
+    value["edgeGeometries"]["edge-2"] = json!([
+        {
+            "edgeOffsetMm": 0,
+            "latitudeE7": 510_000_000,
+            "longitudeE7": 120_001_000,
+            "bearingMilliDegrees": 90_000
+        },
+        {
+            "edgeOffsetMm": 1_500,
+            "latitudeE7": 510_000_000,
+            "longitudeE7": 120_002_500,
+            "bearingMilliDegrees": null
+        }
+    ]);
+    value["routeVersions"]["route-1"]["legs"]
+        .as_array_mut()
+        .expect("Laufweg-Legs")
+        .push(json!({
+            "edgeId": "edge-2",
+            "direction": "along",
+            "edgeEntryMm": 0,
+            "edgeExitMm": 1_500,
+            "routeStartMm": 1_000,
+            "blockIds": ["block-2"],
+            "speedLimitMmps": 20_000,
+            "gradientPerMille": 0,
+            "availableProtectionSystems": ["pzb"],
+            "simultaneouslyRequiredProtectionSystems": []
+        }));
+    value["interlockingRoutes"]["interlocking-2"] = json!({
+        "id": "interlocking-2",
+        "routeTemplateId": "template-1",
+        "signalId": "signal-2",
+        "movementKind": "train",
+        "pathResources": ["block-2"],
+        "overlapResources": ["overlap-2"],
+        "flankResources": ["flank-2"],
+        "switchPositions": {},
+        "authorityStartRouteMm": 1_000,
+        "authorityEndRouteMm": 2_500,
+        "releaseAfterTailRouteMm": 2_500
+    });
+    value["interlockingRoutes"]["interlocking-shunting"] = json!({
+        "id": "interlocking-shunting",
+        "routeTemplateId": "template-1",
+        "signalId": "signal-shunting",
+        "movementKind": "shunting",
+        "pathResources": ["block-1"],
+        "overlapResources": ["overlap-1"],
+        "flankResources": ["flank-1"],
+        "switchPositions": {},
+        "authorityStartRouteMm": 0,
+        "authorityEndRouteMm": 1_000,
+        "releaseAfterTailRouteMm": 1_000
+    });
+    value["signals"] = json!(["signal-1", "signal-2", "signal-shunting"]);
+    value["blockResources"] = json!([
+        "block-1",
+        "block-2",
+        "flank-1",
+        "flank-2",
+        "overlap-1",
+        "overlap-2"
+    ]);
+    value
 }
 
 fn write_json(path: &Path, value: &Value) {
@@ -151,6 +223,68 @@ fn streaming_validator_bindet_quelle_kanonisches_artefakt_und_nativer_hash_ident
         value
     );
     assert_eq!(output.last(), Some(&b'\n'));
+}
+
+#[test]
+fn runtimeindex_liefert_lueckenlose_zugfahrstrassensegmente_ueber_exakten_startschluessel() {
+    let root = TestDirectory::create();
+    let release_id = "infra-deutschland-streaming-segments";
+    let candidate_path = root.join("candidate.json");
+    let artifact_path = root.join("operational-infrastructure-v2.json");
+    write_json(&candidate_path, &segmented_candidate(release_id));
+    let receipt = validate_operational_infrastructure_v2_file(
+        &candidate_path,
+        release_id,
+        Some(&artifact_path),
+    )
+    .expect("lueckenlose Segmentfolge validieren");
+    let store = open_operational_infrastructure_v2_store(
+        &artifact_path
+            .canonicalize()
+            .expect("absoluter Operational-v2-Pfad"),
+        release_id,
+        receipt["bytes"].as_u64().expect("Artefaktbytes"),
+        receipt["sha256"].as_str().expect("Artefakt-SHA"),
+        receipt["stateHash"].as_str().expect("Zustandshash"),
+    )
+    .expect("Runtimeindex oeffnen");
+
+    let first = store
+        .train_interlocking_route("template-1", 0)
+        .expect("erstes Segment lesen")
+        .expect("erstes Segment vorhanden");
+    let second = store
+        .train_interlocking_route("template-1", first.authority_end_route_mm)
+        .expect("zweites Segment lesen")
+        .expect("zweites Segment vorhanden");
+    assert_eq!(first.id, "interlocking-1");
+    assert_eq!(first.authority_start_route_mm, 0);
+    assert_eq!(first.authority_end_route_mm, 1_000);
+    assert_eq!(second.id, "interlocking-2");
+    assert_eq!(
+        second.authority_start_route_mm,
+        first.authority_end_route_mm
+    );
+    assert_eq!(second.authority_end_route_mm, 2_500);
+    assert_eq!(first.path_resources.len() + second.path_resources.len(), 2);
+    let shunting = store
+        .shunting_interlocking_routes(0)
+        .expect("Rangierfahrstrassen lesen");
+    assert_eq!(shunting.len(), 1);
+    assert_eq!(shunting[0].id, "interlocking-shunting");
+    assert_eq!(shunting[0].authority_start_route_mm, 0);
+    assert!(
+        store
+            .train_interlocking_route("template-1", 500)
+            .expect("fehlenden exakten Start lesen")
+            .is_none()
+    );
+    assert!(
+        store
+            .train_interlocking_route("unknown-template", 0)
+            .expect("fremde Vorlage lesen")
+            .is_none()
+    );
 }
 
 #[test]
@@ -237,6 +371,54 @@ fn streaming_validator_verwirft_nichtkanonische_sets_und_gebrochene_referenzen()
     write_json(&candidate_path, &impossible_simultaneous);
     validate_operational_infrastructure_v2_file(&candidate_path, release_id, None)
         .expect_err("gleichzeitige Pflicht ausserhalb der Alternativenmenge muss scheitern");
+
+    let mut segment_gap = segmented_candidate(release_id);
+    segment_gap["interlockingRoutes"]["interlocking-2"]["authorityStartRouteMm"] = json!(999);
+    write_json(&candidate_path, &segment_gap);
+    let error = validate_operational_infrastructure_v2_file(&candidate_path, release_id, None)
+        .expect_err("Luecke in der Zugfahrstrassenfolge muss scheitern");
+    assert!(error.to_string().contains("keine Zugfahrstrasse"));
+
+    let mut foreign_segment_path = segmented_candidate(release_id);
+    foreign_segment_path["interlockingRoutes"]["interlocking-2"]["pathResources"] =
+        json!(["block-1"]);
+    write_json(&candidate_path, &foreign_segment_path);
+    let error = validate_operational_infrastructure_v2_file(&candidate_path, release_id, None)
+        .expect_err("Segmentpfad muss exakt den Leg-Ressourcen entsprechen");
+    assert!(
+        error
+            .to_string()
+            .contains("keine exakte Segmentfahrstrasse")
+    );
+
+    let mut duplicate_train_key = segmented_candidate(release_id);
+    duplicate_train_key["interlockingRoutes"]["interlocking-duplicate"] = json!({
+        "id": "interlocking-duplicate",
+        "routeTemplateId": "template-1",
+        "signalId": "signal-duplicate",
+        "movementKind": "train",
+        "pathResources": ["block-2"],
+        "overlapResources": ["overlap-2"],
+        "flankResources": ["flank-2"],
+        "switchPositions": {},
+        "authorityStartRouteMm": 1_000,
+        "authorityEndRouteMm": 2_500,
+        "releaseAfterTailRouteMm": 2_500
+    });
+    duplicate_train_key["signals"] = json!([
+        "signal-1",
+        "signal-2",
+        "signal-duplicate",
+        "signal-shunting"
+    ]);
+    write_json(&candidate_path, &duplicate_train_key);
+    let error = validate_operational_infrastructure_v2_file(&candidate_path, release_id, None)
+        .expect_err("doppelter Train-Startschluessel muss fail-closed scheitern");
+    assert!(
+        error
+            .to_string()
+            .contains("doppelter Zugfahrstrassen-Schluessel")
+    );
 
     let mut legacy_alias = candidate(release_id);
     legacy_alias["routeVersions"]["route-1"]["legs"][0]

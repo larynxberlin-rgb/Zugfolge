@@ -122,8 +122,9 @@ fn operational_infra_source() -> Value {
                 "overlapResources": ["overlap:1"],
                 "flankResources": ["flank:1"],
                 "switchPositions": { "switch:1": "straight" },
-                "authorityEndRouteMm": 90_000,
-                "releaseAfterTailRouteMm": 80_000
+                "authorityStartRouteMm": 0,
+                "authorityEndRouteMm": 100_000,
+                "releaseAfterTailRouteMm": 100_000
             }
         },
         "signals": ["signal:1"],

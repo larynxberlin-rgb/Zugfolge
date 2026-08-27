@@ -76,20 +76,27 @@ def _quality_class_counts(value, label):
 def _validate_timetable_route_evidence(value):
     evidence = _exact_keys(value, (
         "reportSchema", "policyId", "derivationRule", "selectionRule", "reportBytes", "reportSha256",
-        "routesBytes", "routesSha256", "gtfsSnapshotBytes", "gtfsSnapshotSha256", "snapshotHash", "archive",
+        "routesBytes", "routesSha256", "gtfsSnapshotBytes", "gtfsSnapshotSha256", "transferDemandsSchema",
+        "transferDemandsBytes", "transferDemandsSha256", "snapshotHash", "archive",
         "archiveSha256", "sourceLicense", "sourceLicenseAsPublished", "selectedSegmentCount", "completeRouteCount",
-        "routeRecordCount", "sameStopTransitionCount", "routeSetSha256", "realGeometry",
+        "routeRecordCount", "sameStopTransitionCount", "routeSetSha256", "dailyCirculationPlanSha256",
+        "transferSetSha256", "transferDemandsProduced", "dailyCirculation", "transferRouteCount",
+        "transferRouteLegCount", "transferRouteLengthMm", "realGeometry",
         "simulatedOperationalAssignment", "realInterlockingFactsClaimed", "externalOperationalNetworkProvenance",
     ), "Operational-v2.timetableRouteEvidence")
     if (
-        evidence["reportSchema"] != "zugfolge-germany-timetable-route-report/v2"
+        evidence["reportSchema"] != "zugfolge-germany-timetable-route-report/v3"
         or evidence["policyId"] != "synthetic-operational-b/v2"
         or evidence["derivationRule"] != "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2"
         or evidence["selectionRule"] != "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2"
+        or evidence["transferDemandsSchema"] != "zugfolge-timetable-transfer-demands/v1"
     ):
-        _quality_error(_("timetableRouteEvidence verletzt den freien v2-Fahrwegvertrag"))
-    byte_fields = ("reportBytes", "routesBytes", "gtfsSnapshotBytes")
-    hash_fields = ("reportSha256", "routesSha256", "gtfsSnapshotSha256", "snapshotHash", "archiveSha256", "routeSetSha256")
+        _quality_error(_("timetableRouteEvidence verletzt den freien v3-Fahrweg- und Transfervertrag"))
+    byte_fields = ("reportBytes", "routesBytes", "gtfsSnapshotBytes", "transferDemandsBytes")
+    hash_fields = (
+        "reportSha256", "routesSha256", "gtfsSnapshotSha256", "transferDemandsSha256", "snapshotHash",
+        "archiveSha256", "routeSetSha256", "dailyCirculationPlanSha256", "transferSetSha256",
+    )
     if (
         not all(_safe_integer(evidence[field], 1) for field in byte_fields)
         or not all(isinstance(evidence[field], str) and SHA256.fullmatch(evidence[field]) for field in hash_fields)
@@ -111,6 +118,20 @@ def _validate_timetable_route_evidence(value):
         or not _safe_integer(evidence["sameStopTransitionCount"])
     ):
         _quality_error(_("timetableRouteEvidence schliesst die ausgewaehlten Segmente nicht vollstaendig 1:1"))
+    circulation = _exact_keys(evidence["dailyCirculation"], (
+        "lotCount", "journeyChainCount", "circulationCount", "rolloverAssignmentCount",
+        "transferDemandCount", "transferLotCount",
+    ), "Operational-v2.timetableRouteEvidence.dailyCirculation")
+    if (
+        evidence["transferDemandsProduced"] is not True
+        or not all(_safe_integer(circulation[field], 1) for field in circulation)
+        or circulation["rolloverAssignmentCount"] != circulation["circulationCount"]
+        or not _safe_integer(evidence["transferRouteCount"], 1)
+        or evidence["transferRouteCount"] != circulation["transferDemandCount"]
+        or not _safe_integer(evidence["transferRouteLegCount"], 1)
+        or not _safe_integer(evidence["transferRouteLengthMm"], 1)
+    ):
+        _quality_error(_("timetableRouteEvidence besitzt keinen vollstaendigen physischen Daily-Circulation-/Transferbeleg"))
     if (
         evidence["realGeometry"] is not True
         or evidence["simulatedOperationalAssignment"] is not True

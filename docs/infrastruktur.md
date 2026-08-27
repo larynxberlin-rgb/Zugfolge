@@ -590,10 +590,12 @@ das operative `InfraRelease` ein. Laufzeitannahmen für fehlende Elemente sind
 unzulässig; deterministische Ergänzung geschieht ausschließlich offline und
 trägt interne Herkunft. `synthetic-operational-b/v2` erhält dabei die reale
 E7-Gleisgeometrie und simuliert nur die betriebliche Zuordnung. Sein
-Closure-Receipt bindet Policy, neun Eingabedateien, Candidate, native Prüfung,
+Closure-Receipt bindet Policy, zehn Eingabedateien, Candidate, native Prüfung,
 Artefakt und Zustand. Der freie Fahrwegspfad besteht aus dem gepinnten
-GTFS-Snapshot, dem qualifizierten v2-Routenbericht und der kanonischen
-`timetableRoutes`-JSONSeq. Er muss alle ausgewählten B-Segmente 1:1 schließen,
+GTFS-Snapshot, dem qualifizierten v3-Routenbericht, der kanonischen
+`timetableRoutes`-JSONSeq und dem gebundenen Transfer-Demands-v1-Artefakt. Er
+muss alle ausgewählten B-Segmente 1:1 schließen und die physische
+Daily-Circulation samt Rollover-Permutation und Überführungswegen belegen,
 CC-BY-4.0 samt Snapshot-/Datei-/Archivhash binden und externe
 Operational-Network-Provenienz, GTFS-Shape-Geometrie sowie erfundene Geometrie
 verneinen. Das Receipt setzt `realGeometry=true`,

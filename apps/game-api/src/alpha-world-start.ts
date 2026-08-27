@@ -49,6 +49,7 @@ import {
   OPERATIONAL_INFRASTRUCTURE_FILE,
   OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY,
   OPERATIONAL_SIMULATION_INITIALIZE_SCHEMA,
+  operationalMovementContinuationsEvidence,
   operationalProtectionModeSelectionEvidence,
   type OperationalSimulationInitialization,
   type FleetRuntime,
@@ -390,6 +391,8 @@ function validateOperationalSimulationBinding(deployment: AlphaWorldDeployment):
     || initialization["regionId"] !== deployment.blueprint.regionId
     || !Number.isSafeInteger(initialization["nowMs"])
     || (initialization["nowMs"] as number) < 0
+    || !Number.isSafeInteger(initialization["repeatEveryMs"])
+    || initialization["repeatEveryMs"] !== deployment.repeatEveryS * 1_000
     || initialization["protectionModeSelectionPolicy"]
       !== OPERATIONAL_PROTECTION_MODE_SELECTION_POLICY
     || compactInfrastructureValid === false
@@ -400,6 +403,7 @@ function validateOperationalSimulationBinding(deployment: AlphaWorldDeployment):
     || !Array.isArray(initialization["vehicles"])
     || !Array.isArray(initialization["formations"])
     || !Array.isArray(initialization["trains"])
+    || !Array.isArray(initialization["movementContinuations"])
     || !/^[a-f0-9]{64}$/u.test(deployment.provenance.operationalSimulationSourceSha256)
   ) {
     throw new Error(
@@ -407,6 +411,9 @@ function validateOperationalSimulationBinding(deployment: AlphaWorldDeployment):
     );
   }
   operationalProtectionModeSelectionEvidence(
+    initialization as unknown as OperationalSimulationInitialization,
+  );
+  operationalMovementContinuationsEvidence(
     initialization as unknown as OperationalSimulationInitialization,
   );
 }

@@ -90,7 +90,7 @@ function fixtureAssetNotices(artifacts) {
   };
 }
 
-function operationalQuality(operationalBytes, operationalSha256, stateHash) {
+function operationalQuality(operationalBytes, operationalSha256, stateHash, movementRoutesBytes, movementRoutesSha256, transferDemandsBytes, transferDemandsSha256) {
   return {
     schema: "zugfolge-operational-infrastructure-quality-report/v1",
     releaseId: "infra-test",
@@ -129,8 +129,15 @@ function operationalQuality(operationalBytes, operationalSha256, stateHash) {
       syntheticOperationalDetailsShipped: true,
       objectLevelProvenanceShipped: false,
       observedAndSyntheticObjectsShareRuntimeCollections: true,
+      movementRouteTemplates: {
+        bytes: movementRoutesBytes,
+        sha256: movementRoutesSha256,
+        stateHash: HASH_C,
+        operationalStateHash: stateHash,
+        timetableTransferSetSha256: HASH_A,
+      },
       timetableRouteEvidence: {
-        reportSchema: "zugfolge-germany-timetable-route-report/v2",
+        reportSchema: "zugfolge-germany-timetable-route-report/v3",
         policyId: "synthetic-operational-b/v2",
         derivationRule: "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2",
         selectionRule: "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
@@ -140,6 +147,9 @@ function operationalQuality(operationalBytes, operationalSha256, stateHash) {
         routesSha256: HASH_B,
         gtfsSnapshotBytes: 9012,
         gtfsSnapshotSha256: HASH_C,
+        transferDemandsSchema: "zugfolge-timetable-transfer-demands/v1",
+        transferDemandsBytes,
+        transferDemandsSha256,
         snapshotHash: HASH_A,
         archive: "gtfs-free.zip",
         archiveSha256: HASH_B,
@@ -150,6 +160,20 @@ function operationalQuality(operationalBytes, operationalSha256, stateHash) {
         routeRecordCount: 4,
         sameStopTransitionCount: 1,
         routeSetSha256: HASH_B,
+        dailyCirculationPlanSha256: HASH_C,
+        transferSetSha256: HASH_A,
+        transferDemandsProduced: true,
+        dailyCirculation: {
+          lotCount: 1,
+          journeyChainCount: 4,
+          circulationCount: 2,
+          rolloverAssignmentCount: 2,
+          transferDemandCount: 1,
+          transferLotCount: 1,
+        },
+        transferRouteCount: 1,
+        transferRouteLegCount: 2,
+        transferRouteLengthMm: 1000,
         realGeometry: true,
         simulatedOperationalAssignment: true,
         realInterlockingFactsClaimed: false,
@@ -243,6 +267,22 @@ function plan(releaseBinding = {}) {
         artifactInventory: "release/release-artifacts.v2.json",
       },
       {
+        id: "operational-movement-routes-test",
+        kind: "movement-route-templates-v2",
+        visibility: "public",
+        sourceFile: "release/operational-infrastructure-v2.movement-route-templates-v2.json",
+        installPath: "operational-infrastructure-v2.movement-route-templates-v2.json",
+        artifactInventory: "release/release-artifacts.v2.json",
+      },
+      {
+        id: "timetable-transfer-demands-test",
+        kind: "timetable-transfer-demands-v1",
+        visibility: "public",
+        sourceFile: "release/timetable-routes-v2.transfer-demands-v1.json",
+        installPath: "timetable-routes-v2.transfer-demands-v1.json",
+        artifactInventory: "release/release-artifacts.v2.json",
+      },
+      {
         id: "style",
         kind: "style",
         visibility: "public",
@@ -275,8 +315,18 @@ async function fixture({ pinUnsigned = false, transformUnsigned, transformSigned
   const root = await mkdtemp(join(tmpdir(), "zugfolge-signed-plan-"));
   const unsignedPlan = plan();
   const operationalBytes = Buffer.from('{"schema":"zugfolge-operational-infrastructure/v2"}\n', "utf8");
+  const movementRoutesBytes = Buffer.from('{"infraReleaseId":"infra-test","schema":"movement-route-templates-v2"}\n', "utf8");
+  const transferDemandsBytes = Buffer.from('{"infraReleaseId":"infra-test","schema":"zugfolge-timetable-transfer-demands/v1"}\n', "utf8");
   const operationalStateHash = "b".repeat(64);
-  const qualityReport = operationalQuality(operationalBytes.length, digest(operationalBytes), operationalStateHash);
+  const qualityReport = operationalQuality(
+    operationalBytes.length,
+    digest(operationalBytes),
+    operationalStateHash,
+    movementRoutesBytes.length,
+    digest(movementRoutesBytes),
+    transferDemandsBytes.length,
+    digest(transferDemandsBytes),
+  );
   const qualityBytes = serializeDeliveryJson(qualityReport);
   await Promise.all([
     mkdir(join(root, "artifacts"), { recursive: true }),
@@ -294,6 +344,8 @@ async function fixture({ pinUnsigned = false, transformUnsigned, transformSigned
     writeFile(join(root, "release", "quality.json"), qualityBytes),
     writeFile(join(root, "release", "read-model.sqlite"), Buffer.from("SQLite format 3\0current", "utf8")),
     writeFile(join(root, "release", "operational-infrastructure-v2.json"), operationalBytes),
+    writeFile(join(root, "release", "operational-infrastructure-v2.movement-route-templates-v2.json"), movementRoutesBytes),
+    writeFile(join(root, "release", "timetable-routes-v2.transfer-demands-v1.json"), transferDemandsBytes),
     writeFile(join(root, "release", "style.json"), "{\"version\":8}\n", "utf8"),
     writeFile(join(root, "release", "release-artifacts.v2.json"), `${JSON.stringify({
       schema: "zugfolge-infra-release-artifacts/v2",
@@ -305,6 +357,18 @@ async function fixture({ pinUnsigned = false, transformUnsigned, transformSigned
         bytes: operationalBytes.length,
         sha256: digest(operationalBytes),
         stateHash: operationalStateHash,
+      }, {
+        id: "operational-movement-routes-test",
+        kind: "movement-route-templates-v2",
+        file: "operational-infrastructure-v2.movement-route-templates-v2.json",
+        bytes: movementRoutesBytes.length,
+        sha256: digest(movementRoutesBytes),
+      }, {
+        id: "timetable-transfer-demands-test",
+        kind: "timetable-transfer-demands-v1",
+        file: "timetable-routes-v2.transfer-demands-v1.json",
+        bytes: transferDemandsBytes.length,
+        sha256: digest(transferDemandsBytes),
       }],
     }, null, 2)}\n`, "utf8"),
   ]);
@@ -321,6 +385,8 @@ async function fixture({ pinUnsigned = false, transformUnsigned, transformSigned
   const quality = current("quality-manifest");
   const readModel = current("read-model");
   const operational = current("operational-infrastructure-v2");
+  const movementRoutes = current("movement-route-templates-v2");
+  const transferDemands = current("timetable-transfer-demands-v1");
   const infraWrapper = materialized({
     schema: "zugfolge-infra-release/v2",
     releaseId: "infra-test",
@@ -344,6 +410,20 @@ async function fixture({ pinUnsigned = false, transformUnsigned, transformSigned
         bytes: operational.bytes,
         sha256: operational.sha256,
       },
+      {
+        id: movementRoutes.id,
+        kind: movementRoutes.kind,
+        file: "operational-infrastructure-v2.movement-route-templates-v2.json",
+        bytes: movementRoutes.bytes,
+        sha256: movementRoutes.sha256,
+      },
+      {
+        id: transferDemands.id,
+        kind: transferDemands.kind,
+        file: "timetable-routes-v2.transfer-demands-v1.json",
+        bytes: transferDemands.bytes,
+        sha256: transferDemands.sha256,
+      },
       { id: "infra-release-quality", kind: "quality-report", file: "quality.json", bytes: quality.bytes, sha256: quality.sha256 },
     ],
     quality: {
@@ -364,6 +444,7 @@ async function fixture({ pinUnsigned = false, transformUnsigned, transformSigned
         syntheticOperationalDetailsShipped: true,
         objectLevelProvenanceShipped: false,
         observedAndSyntheticObjectsShareRuntimeCollections: true,
+        movementRouteTemplates: structuredClone(qualityReport.operationalModel.movementRouteTemplates),
         timetableRouteEvidence: structuredClone(qualityReport.operationalModel.timetableRouteEvidence),
         operationalQualityEligible: true,
         signatureImplied: false,

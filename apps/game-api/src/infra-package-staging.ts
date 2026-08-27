@@ -38,6 +38,8 @@ const QUALITY_SCHEMA = "zugfolge-operational-infrastructure-quality-report/v1";
 const STATIC_MAP_QUALITY_SCHEMA = "zugfolge-static-map-quality/v2";
 const STATIC_MAP_SOURCE_QUALITY_SCHEMA = "zugfolge-final-infrastructure-quality-report/v1";
 const OPERATIONAL_INFRASTRUCTURE_KIND = "operational-infrastructure-v2";
+const MOVEMENT_ROUTE_TEMPLATES_KIND = "movement-route-templates-v2";
+const TIMETABLE_TRANSFER_DEMANDS_KIND = "timetable-transfer-demands-v1";
 const FINALIZATION_CHALLENGE_SCHEMA = "zugfolge-infra-package-finalization-challenge/v1";
 const FINALIZATION_RECEIPT_SCHEMA = "zugfolge-infra-package-finalization-receipt/v1";
 const FINALIZATION_MAX_DURATION_MS = 65 * 60_000;
@@ -87,19 +89,23 @@ function validateTimetableRouteEvidence(value: unknown): void {
     "routesBytes", "routesSha256", "gtfsSnapshotBytes", "gtfsSnapshotSha256", "snapshotHash", "archive",
     "archiveSha256", "sourceLicense", "sourceLicenseAsPublished", "selectedSegmentCount", "completeRouteCount",
     "routeRecordCount", "sameStopTransitionCount", "routeSetSha256", "realGeometry",
+    "transferDemandsSchema", "transferDemandsBytes", "transferDemandsSha256", "dailyCirculationPlanSha256",
+    "transferSetSha256", "transferDemandsProduced", "dailyCirculation", "transferRouteCount",
+    "transferRouteLegCount", "transferRouteLengthMm",
     "simulatedOperationalAssignment", "realInterlockingFactsClaimed", "externalOperationalNetworkProvenance",
   ], "Operational-v2.timetableRouteEvidence");
   invariant(
-    evidence["reportSchema"] === "zugfolge-germany-timetable-route-report/v2"
+    evidence["reportSchema"] === "zugfolge-germany-timetable-route-report/v3"
       && evidence["policyId"] === "synthetic-operational-b/v2"
       && evidence["derivationRule"] === "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2"
-      && evidence["selectionRule"] === "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
-    "Operational-v2.timetableRouteEvidence verletzt den freien v2-Fahrwegvertrag.",
+      && evidence["selectionRule"] === "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2"
+      && evidence["transferDemandsSchema"] === "zugfolge-timetable-transfer-demands/v1",
+    "Operational-v2.timetableRouteEvidence verletzt den freien v3-Fahrweg-/Transfervertrag.",
   );
   invariant(
-    [evidence["reportBytes"], evidence["routesBytes"], evidence["gtfsSnapshotBytes"]]
+    [evidence["reportBytes"], evidence["routesBytes"], evidence["gtfsSnapshotBytes"], evidence["transferDemandsBytes"]]
       .every((bytes) => Number.isSafeInteger(bytes) && (bytes as number) > 0)
-      && [evidence["reportSha256"], evidence["routesSha256"], evidence["gtfsSnapshotSha256"], evidence["snapshotHash"], evidence["archiveSha256"], evidence["routeSetSha256"]]
+      && [evidence["reportSha256"], evidence["routesSha256"], evidence["gtfsSnapshotSha256"], evidence["transferDemandsSha256"], evidence["snapshotHash"], evidence["archiveSha256"], evidence["routeSetSha256"], evidence["dailyCirculationPlanSha256"], evidence["transferSetSha256"]]
         .every((hash) => SHA256.test(String(hash)))
       && evidence["routesSha256"] === evidence["routeSetSha256"],
     "Operational-v2.timetableRouteEvidence besitzt keine konsistente Datei-/RouteSet-Bindung.",
@@ -117,6 +123,21 @@ function validateTimetableRouteEvidence(value: unknown): void {
       && Number.isSafeInteger(evidence["sameStopTransitionCount"]) && (evidence["sameStopTransitionCount"] as number) >= 0,
     "Operational-v2.timetableRouteEvidence schließt die ausgewählten Segmente nicht vollständig 1:1.",
   );
+  const daily = exactKeys(evidence["dailyCirculation"], [
+    "lotCount", "journeyChainCount", "circulationCount", "rolloverAssignmentCount", "transferDemandCount", "transferLotCount",
+  ], "Operational-v2.timetableRouteEvidence.dailyCirculation");
+  invariant(
+    ["lotCount", "journeyChainCount", "circulationCount", "rolloverAssignmentCount", "transferDemandCount", "transferLotCount"]
+      .every((field) => Number.isSafeInteger(daily[field]) && (daily[field] as number) > 0)
+      && daily["rolloverAssignmentCount"] === daily["circulationCount"]
+      && (daily["transferDemandCount"] as number) <= (daily["circulationCount"] as number)
+      && (daily["transferLotCount"] as number) <= (daily["lotCount"] as number)
+      && evidence["transferDemandsProduced"] === true
+      && evidence["transferRouteCount"] === daily["transferDemandCount"]
+      && Number.isSafeInteger(evidence["transferRouteLegCount"]) && (evidence["transferRouteLegCount"] as number) > 0
+      && Number.isSafeInteger(evidence["transferRouteLengthMm"]) && (evidence["transferRouteLengthMm"] as number) > 0,
+    "Operational-v2.timetableRouteEvidence besitzt keine vollständige physische Tagesumlauf-/Transferabdeckung.",
+  );
   invariant(
     evidence["realGeometry"] === true
       && evidence["simulatedOperationalAssignment"] === true
@@ -130,6 +151,8 @@ function validateOperationalQuality(
   value: unknown,
   releaseId: string,
   deliveredOperationalArtifact: { readonly bytes: number; readonly sha256: string; readonly stateHash?: string },
+  deliveredMovementRouteTemplatesArtifact: { readonly bytes: number; readonly sha256: string },
+  deliveredTransferDemandsArtifact: { readonly bytes: number; readonly sha256: string },
 ): { readonly visibleLayers: number; readonly visibleFeatures: number; readonly visibleMapClassCFeatureCount: number } {
   const quality = exactKeys(value, [
     "schema", "releaseId", "timetableYear", "scopeId", "deterministic", "separation", "mapEvidence",
@@ -185,7 +208,7 @@ function validateOperationalQuality(
   const model = exactKeys(quality["operationalModel"], [
     "policyId", "policySha256", "closureReceiptSha256", "qualityClass", "provenance", "realGeometry",
     "simulatedOperationalAssignment", "realInterlockingFactsClaimed", "syntheticOperationalDetailsShipped",
-    "objectLevelProvenanceShipped", "observedAndSyntheticObjectsShareRuntimeCollections", "timetableRouteEvidence",
+    "objectLevelProvenanceShipped", "observedAndSyntheticObjectsShareRuntimeCollections", "movementRouteTemplates", "timetableRouteEvidence",
     "operationalArtifact", "coverage",
   ], "Operational-v2.operationalModel");
   invariant(
@@ -200,9 +223,28 @@ function validateOperationalQuality(
     "Operational-v2.operationalModel besitzt keine ehrliche geschlossene Derived/B-Provenienz.",
   );
   validateTimetableRouteEvidence(model["timetableRouteEvidence"]);
+  const timetableRouteEvidence = record(model["timetableRouteEvidence"], "Operational-v2.timetableRouteEvidence");
   invariant(
-    record(model["timetableRouteEvidence"], "Operational-v2.timetableRouteEvidence")["policyId"] === model["policyId"],
+    timetableRouteEvidence["policyId"] === model["policyId"],
     "Operational-v2-Fahrwegbeleg und Betriebsmodell binden verschiedene Policies.",
+  );
+  invariant(
+    timetableRouteEvidence["transferDemandsBytes"] === deliveredTransferDemandsArtifact.bytes
+      && timetableRouteEvidence["transferDemandsSha256"] === deliveredTransferDemandsArtifact.sha256,
+    "Operational-v2-Fahrwegbeleg bindet nicht bytegenau das ausgelieferte Timetable-Transfer-Demands-v1-Artefakt.",
+  );
+  const movementRouteTemplates = exactKeys(model["movementRouteTemplates"], [
+    "bytes", "sha256", "stateHash", "operationalStateHash", "timetableTransferSetSha256",
+  ], "Operational-v2.movementRouteTemplates");
+  invariant(
+    Number.isSafeInteger(movementRouteTemplates["bytes"]) && (movementRouteTemplates["bytes"] as number) > 0
+      && [movementRouteTemplates["sha256"], movementRouteTemplates["stateHash"], movementRouteTemplates["operationalStateHash"], movementRouteTemplates["timetableTransferSetSha256"]]
+        .every((hash) => SHA256.test(String(hash)))
+      && movementRouteTemplates["sha256"] !== movementRouteTemplates["stateHash"]
+      && movementRouteTemplates["bytes"] === deliveredMovementRouteTemplatesArtifact.bytes
+      && movementRouteTemplates["sha256"] === deliveredMovementRouteTemplatesArtifact.sha256
+      && movementRouteTemplates["timetableTransferSetSha256"] === timetableRouteEvidence["transferSetSha256"],
+    "Operational-v2-Movement-Beleg bindet nicht bytegenau das ausgelieferte Movement-Route-Templates-v2-Artefakt und Transfer-Set.",
   );
   const operationalArtifact = exactKeys(model["operationalArtifact"], ["bytes", "sha256", "stateHash"], "Operational-v2.operationalArtifact");
   invariant(
@@ -213,6 +255,10 @@ function validateOperationalQuality(
       && operationalArtifact["sha256"] === deliveredOperationalArtifact.sha256
       && operationalArtifact["stateHash"] === deliveredOperationalArtifact.stateHash,
     "Operational-v2-Qualität bindet nicht exakt das ausgelieferte Betriebsartefakt und seinen Zustand.",
+  );
+  invariant(
+    movementRouteTemplates["operationalStateHash"] === operationalArtifact["stateHash"],
+    "Operational-v2-Movement-Beleg bindet einen anderen Operational-v2-Zustand.",
   );
   const coverage = exactKeys(model["coverage"], OPERATIONAL_COVERAGE_FIELDS, "Operational-v2.coverage");
   invariant(
@@ -399,9 +445,13 @@ function parsePackageManifest(bytes: Buffer): ParsedPackageManifest {
   invariant(artifacts.filter((entry) => record(entry, "Artefakt")["kind"] === "infrastructure").length === 1, "Paket braucht genau eine Infrastrukturdatei.");
   const readModels = auxiliaryFiles.filter((entry) => record(entry, "Hilfsdatei")["kind"] === "read-model");
   const operationalInfrastructure = auxiliaryFiles.filter((entry) => record(entry, "Hilfsdatei")["kind"] === OPERATIONAL_INFRASTRUCTURE_KIND);
+  const movementRouteTemplates = auxiliaryFiles.filter((entry) => record(entry, "Hilfsdatei")["kind"] === MOVEMENT_ROUTE_TEMPLATES_KIND);
+  const timetableTransferDemands = auxiliaryFiles.filter((entry) => record(entry, "Hilfsdatei")["kind"] === TIMETABLE_TRANSFER_DEMANDS_KIND);
   const trainProjections = auxiliaryFiles.filter((entry) => record(entry, "Hilfsdatei")["kind"] === "train-map-projection");
   invariant(readModels.length === 1 && record(readModels[0], "ReadModel")["installPath"] === "read-model.sqlite", "Paket braucht genau ein öffentliches read-model.sqlite in der Releasewurzel.");
   invariant(operationalInfrastructure.length === 1 && record(operationalInfrastructure[0], "Operational-v2-Infrastruktur")["installPath"] === "operational-infrastructure-v2.json", "Paket braucht genau eine statische operational-infrastructure-v2.json in der Releasewurzel.");
+  invariant(movementRouteTemplates.length === 1 && record(movementRouteTemplates[0], "Movement-Route-Templates-v2")["installPath"] === "operational-infrastructure-v2.movement-route-templates-v2.json", "Paket braucht genau eine operational-infrastructure-v2.movement-route-templates-v2.json in der Releasewurzel.");
+  invariant(timetableTransferDemands.length === 1 && record(timetableTransferDemands[0], "Timetable-Transfer-Demands-v1")["installPath"] === "timetable-routes-v2.transfer-demands-v1.json", "Paket braucht genau eine timetable-routes-v2.transfer-demands-v1.json in der Releasewurzel.");
   invariant(trainProjections.length === 0, "Operational-v2-Paket darf keine weltgebundene Zugpositionsprojektion als Paketvoraussetzung enthalten.");
 
   const ids = new Set<string>();
@@ -1505,7 +1555,16 @@ async function qualifyDeliveryPackage(
     .sort((left, right) => left.id.localeCompare(right.id, "en"));
   invariant(JSON.stringify(deliveredArtifacts) === JSON.stringify(expectedArtifacts), "Delivery-Release bindet nicht exakt alle ausgelieferten Artefakte.");
   const deliveredOperational = deliveredArtifacts.filter(({ kind }) => kind === OPERATIONAL_INFRASTRUCTURE_KIND);
+  const deliveredMovementRoutes = deliveredArtifacts.filter(({ kind }) => kind === MOVEMENT_ROUTE_TEMPLATES_KIND);
+  const deliveredTransferDemands = deliveredArtifacts.filter(({ kind }) => kind === TIMETABLE_TRANSFER_DEMANDS_KIND);
   invariant(deliveredOperational.length === 1 && deliveredOperational[0]?.infraReleaseId === releaseId, "Operational-v2-Artefakt ist nicht an die Delivery-InfraRelease-ID gebunden.");
+  invariant(
+    deliveredMovementRoutes.length === 1
+      && deliveredMovementRoutes[0]?.installPath === "operational-infrastructure-v2.movement-route-templates-v2.json"
+      && deliveredTransferDemands.length === 1
+      && deliveredTransferDemands[0]?.installPath === "timetable-routes-v2.transfer-demands-v1.json",
+    "Delivery-v2 bindet die beiden betrieblichen Sidecars nicht genau einmal an ihre kanonischen Paketpfade.",
+  );
   const sourceContract = exactKeys(sources.value, [
     "schema", "releaseId", "sources", "assetInventoryPlanSha256", "assetNotices",
   ], "Delivery-Quellenvertrag");
@@ -1523,7 +1582,13 @@ async function qualifyDeliveryPackage(
   }), "Öffentliche Quellenfreigabe ist unvollständig.");
   invariant(sourceEntries.some((entry) => /openstreetmap/i.test(String(record(entry, "Quelle")["attribution"]))) && sourceEntries.some((entry) => /protomaps/i.test(String(record(entry, "Quelle")["attribution"]))), "Basemap-Attributionen für OpenStreetMap und Protomaps fehlen.");
   const assetNoticeSummary = validateMapAssetNotices(sourceContract["assetNotices"], parsed.files);
-  const qualitySummary = validateOperationalQuality(quality.value, releaseId, deliveredOperational[0]!);
+  const qualitySummary = validateOperationalQuality(
+    quality.value,
+    releaseId,
+    deliveredOperational[0]!,
+    deliveredMovementRoutes[0]!,
+    deliveredTransferDemands[0]!,
+  );
   const gates = record(deliveryContract["approvalGates"], "Delivery approvalGates");
   const deliveryQualityGate = exactKeys(gates["quality"], [
     "status", "reportSchema", "visibleLayers", "visibleFeatures", "visibleMapClassCFeatureCount",
