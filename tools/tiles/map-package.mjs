@@ -9,17 +9,21 @@ import {
   readFile,
   readdir,
   realpath,
-  rename,
   rm,
   stat,
 } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { normalize as normalizePosix } from "node:path/posix";
-import { setTimeout as delay } from "node:timers/promises";
 import * as zlib from "node:zlib";
 
 import { inspectPublicReadModel } from "./livemap-read-model.mjs";
-import { assertCreateNewTarget, publishDirectoryCreateNew } from "./create-new-output.mjs";
+import {
+  CREATE_NEW_DIRECTORY_COMPLETION_FILE,
+  CREATE_NEW_DIRECTORY_COMPLETION_SCHEMA,
+  assertCreateNewTarget,
+  publishDirectoryCreateNew,
+  verifyCreateNewDirectoryCompletion,
+} from "./create-new-output.mjs";
 import { validateMapAssetNoticeBindings, validateMapAssetNotices } from "./map-asset-notices.mjs";
 import { validateStaticMapQuality } from "./static-map-quality.mjs";
 import { inspectTrainMapProjection } from "./train-map-projection.mjs";
@@ -36,6 +40,21 @@ const STATIC_MAP_PACKAGE_SPEC_V2 = "zugfolge-static-map-package-spec/v2";
 const PACKAGE_MANIFEST_V1 = "zugfolge-map-package/v1";
 const PACKAGE_MANIFEST_V2 = "zugfolge-map-package/v2";
 const STATIC_MAP_PACKAGE_MANIFEST_V2 = "zugfolge-static-map-package/v2";
+const ANNUAL_PACKAGE_VERSION = /^(?<year>20\d{2})\.(?<patch>[1-9]\d*)$/u;
+const STATIC_ANNUAL_PACKAGE_VERSION = /^(?<year>20\d{2})\.(?<patch>[1-9]\d*)-v2-unsigned$/u;
+const ANNUAL_PACKAGE_SCHEMAS = new Set([
+  PACKAGE_PLAN_V1,
+  PACKAGE_PLAN_V2,
+  PACKAGE_SPEC_V1,
+  PACKAGE_SPEC_V2,
+  PACKAGE_MANIFEST_V1,
+  PACKAGE_MANIFEST_V2,
+]);
+const STATIC_ANNUAL_PACKAGE_SCHEMAS = new Set([
+  STATIC_MAP_PACKAGE_PLAN_V2,
+  STATIC_MAP_PACKAGE_SPEC_V2,
+  STATIC_MAP_PACKAGE_MANIFEST_V2,
+]);
 const STATIC_MAP_RELEASE_SCHEMA_V2 = "zugfolge-static-map-release/v2";
 const DELIVERY_RELEASE_SCHEMA_V2 = "zugfolge-map-delivery-release/v2";
 const OPERATIONAL_INFRASTRUCTURE_KIND = "operational-infrastructure-v2";
@@ -88,6 +107,30 @@ function invariant(condition, message) {
 
 function isMissing(error) {
   return error !== null && typeof error === "object" && error.code === "ENOENT";
+}
+
+function requiresCreateNewDirectoryCompletion(schema, version) {
+  const versionContract = STATIC_ANNUAL_PACKAGE_SCHEMAS.has(schema)
+    ? STATIC_ANNUAL_PACKAGE_VERSION
+    : ANNUAL_PACKAGE_SCHEMAS.has(schema)
+      ? ANNUAL_PACKAGE_VERSION
+      : undefined;
+  if (versionContract === undefined) return true;
+  const parsed = versionContract.exec(version);
+  if (parsed === null) return true;
+  const year = Number.parseInt(parsed.groups.year, 10);
+  const patch = Number.parseInt(parsed.groups.patch, 10);
+  return year > 2026 || (year === 2026 && patch >= 5);
+}
+
+async function optionalCreateNewDirectoryCompletion(root, expected) {
+  try {
+    await lstat(join(root, CREATE_NEW_DIRECTORY_COMPLETION_FILE));
+  } catch (error) {
+    if (isMissing(error)) return undefined;
+    throw error;
+  }
+  return verifyCreateNewDirectoryCompletion(root, expected);
 }
 
 function validateId(value, label) {
@@ -613,6 +656,21 @@ export async function expandMapPackagePlan(plan, sourceRoot) {
   invariant(Array.isArray(plan.auxiliaryFiles), "Kartenpaket-Plan braucht direkte Hilfsdateien.");
   invariant(Array.isArray(plan.auxiliaryTrees) && plan.auxiliaryTrees.length > 0, "Kartenpaket-Plan braucht lokale Glyphen-/Sprite-Verzeichnisse.");
   const resolvedSourceRoots = await resolveSourceRoots(sourceRoot);
+  if (plan.schema === STATIC_MAP_PACKAGE_PLAN_V2) {
+    const releaseDescriptors = plan.auxiliaryFiles.filter(({ kind }) => kind === "release-manifest");
+    invariant(releaseDescriptors.length === 1, "Statischer Kartenplan braucht genau einen Releasevertrag fuer die Completion-Bindung.");
+    const releasePath = await resolveUniqueSourceEntry(
+      resolvedSourceRoots,
+      releaseDescriptors[0].sourceFile,
+      "Static-Map-Releasevertrag",
+      "file",
+    );
+    const planSha256 = createHash("sha256").update(`${JSON.stringify(sortedValue(plan), null, 2)}\n`, "utf8").digest("hex");
+    await verifyCreateNewDirectoryCompletion(dirname(releasePath), {
+      kind: "static-map-release",
+      bindingSha256: planSha256,
+    });
+  }
   const expandedTrees = [];
   for (const tree of [...plan.auxiliaryTrees].sort((left, right) => String(left.idPrefix).localeCompare(String(right.idPrefix), "en"))) {
     expandedTrees.push(...await inventoryAuxiliaryTree(resolvedSourceRoots, tree));
@@ -1074,19 +1132,6 @@ async function writeDurableFile(path, buffer) {
   }
 }
 
-async function atomicDirectoryRename(source, destination) {
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      await rename(source, destination);
-      return;
-    } catch (error) {
-      const retryable = error !== null && typeof error === "object" && ["EACCES", "EBUSY", "EPERM"].includes(error.code);
-      if (!retryable || attempt >= 5) throw error;
-      await delay(25 * (2 ** attempt));
-    }
-  }
-}
-
 function assertNoExternalStyleUrls(value, allowedPmtilesUrl, path = "style") {
   if (Array.isArray(value)) {
     value.forEach((entry, index) => assertNoExternalStyleUrls(entry, allowedPmtilesUrl, `${path}[${index}]`));
@@ -1451,17 +1496,11 @@ export async function packMapPackage(
   requireOperationalInfrastructureV2Verifier(normalizedSpec.schema, validateOperationalInfrastructure);
   const resolvedSourceRoots = await resolveSourceRoots(sourceRoot);
   const packageOutput = resolve(outputDirectory);
-  try {
-    await lstat(packageOutput);
-    throw new Error(`Ausgabepfad existiert bereits: ${packageOutput}.`);
-  } catch (error) {
-    if (!isMissing(error)) throw error;
-  }
+  await assertCreateNewTarget(packageOutput, "Kartenpaket-Ausgabeziel");
 
   const outputParent = dirname(packageOutput);
   await mkdir(outputParent, { recursive: true });
   const temporaryRoot = await mkdtemp(join(outputParent, `.${basename(packageOutput)}.tmp-`));
-  let completed = false;
   try {
     await mkdir(join(temporaryRoot, "parts"), { recursive: false });
     const artifacts = [];
@@ -1521,19 +1560,23 @@ export async function packMapPackage(
     const manifestSha256 = createHash("sha256").update(manifestText).digest("hex");
     await writeDurableFile(join(temporaryRoot, "manifest.json"), Buffer.from(manifestText, "utf8"));
     await writeDurableFile(join(temporaryRoot, "manifest.sha256"), Buffer.from(`${manifestSha256}  manifest.json\n`, "ascii"));
-    await atomicDirectoryRename(temporaryRoot, packageOutput);
-    completed = true;
+    await publishDirectoryCreateNew(temporaryRoot, packageOutput, {
+      schema: CREATE_NEW_DIRECTORY_COMPLETION_SCHEMA,
+      kind: "map-package",
+      bindingSha256: manifestSha256,
+    }, "Kartenpaket-Ausgabeziel");
     return { packageRoot: packageOutput, manifest, manifestSha256 };
   } finally {
-    if (!completed) await rm(temporaryRoot, { recursive: true, force: true });
+    await rm(temporaryRoot, { recursive: true, force: true });
   }
 }
 
-async function readAndValidateManifest(packageRoot) {
+async function readAndValidateManifest(packageRoot, { requireCompletion = false } = {}) {
   const requestedRoot = resolve(packageRoot);
   const rootMetadata = await lstat(requestedRoot);
   invariant(rootMetadata.isDirectory() && !rootMetadata.isSymbolicLink(), "Kartenpaketwurzel muss ein reguläres Verzeichnis sein.");
   const root = await realpath(requestedRoot);
+  const completion = await optionalCreateNewDirectoryCompletion(root, { kind: "map-package" });
   const manifestPath = resolveContained(root, "manifest.json", "Manifestpfad");
   const checksumPath = resolveContained(root, "manifest.sha256", "Manifest-Prüfsummenpfad");
   const [manifestMetadata, checksumMetadata] = await Promise.all([
@@ -1552,8 +1595,15 @@ async function readAndValidateManifest(packageRoot) {
     throw new Error("manifest.json ist kein gültiges JSON.");
   }
   validateMapPackageManifest(manifest);
+  invariant(
+    (!requireCompletion && !requiresCreateNewDirectoryCompletion(manifest.schema, manifest.version)) || completion !== undefined,
+    "Aktuelles Kartenpaket ist unvollstaendig: create-new-Completion-Marker fehlt.",
+  );
+  if (completion !== undefined) {
+    invariant(completion.completion.bindingSha256 === expectedManifestSha256, "Kartenpaket-Completion-Marker bindet nicht das Manifest.");
+  }
   invariant(manifestBuffer.toString("utf8") === serializeMapPackageManifest(manifest), "manifest.json ist nicht kanonisch serialisiert.");
-  return { root, manifest, manifestSha256: expectedManifestSha256 };
+  return { root, manifest, manifestSha256: expectedManifestSha256, completion };
 }
 
 async function readArtifactRange(packageRoot, artifact, start, length) {
@@ -1585,9 +1635,10 @@ async function readArtifactRange(packageRoot, artifact, start, length) {
   return output;
 }
 
-async function readAndValidatePackageLayout(packageRoot) {
-  const result = await readAndValidateManifest(packageRoot);
+async function readAndValidatePackageLayout(packageRoot, options) {
+  const result = await readAndValidateManifest(packageRoot, options);
   await assertExactFileInventory(result.root, [
+    ...(result.completion === undefined ? [] : [CREATE_NEW_DIRECTORY_COMPLETION_FILE]),
     "manifest.json",
     "manifest.sha256",
     ...result.manifest.artifacts.flatMap((artifact) => artifact.parts.map((part) => part.path)),
@@ -1734,7 +1785,18 @@ async function verifyInstalledPackage(
   manifestSha256,
   validateOperationalInfrastructure,
 ) {
-  const root = await realpath(resolve(installRoot));
+  const requestedRoot = resolve(installRoot);
+  const requestedMetadata = await lstat(requestedRoot);
+  invariant(requestedMetadata.isDirectory() && !requestedMetadata.isSymbolicLink(), "Installationsziel muss ein regulaeres Verzeichnis sein.");
+  const root = await realpath(requestedRoot);
+  const completion = await optionalCreateNewDirectoryCompletion(root, {
+    kind: "map-package-installation",
+    bindingSha256: manifestSha256,
+  });
+  invariant(
+    !requiresCreateNewDirectoryCompletion(manifest.schema, manifest.version) || completion !== undefined,
+    "Aktuelle Karteninstallation ist unvollstaendig: create-new-Completion-Marker fehlt.",
+  );
   const installedManifestPath = resolveContained(root, ".zugfolge-map-package.json", "Installiertes Manifest");
   const installedManifestMetadata = await assertContainedRegularFile(root, ".zugfolge-map-package.json", "Installiertes Manifest");
   invariant(installedManifestMetadata.size > 0 && installedManifestMetadata.size <= MAX_PACKAGE_MANIFEST_BYTES, "Installiertes Manifest hat eine unzulässige Größe.");
@@ -1742,6 +1804,7 @@ async function verifyInstalledPackage(
   invariant(createHash("sha256").update(installedManifest).digest("hex") === manifestSha256, "Installiertes Kartenpaket gehört zu einer anderen Version.");
   invariant(installedManifest === serializeMapPackageManifest(manifest), "Installiertes Kartenpaket hat ein abweichendes Manifest.");
   await assertExactFileInventory(root, [
+    ...(completion === undefined ? [] : [CREATE_NEW_DIRECTORY_COMPLETION_FILE]),
     ".zugfolge-map-package.json",
     ...manifest.artifacts.map((artifact) => artifact.installPath),
     ...manifest.auxiliaryFiles.map((auxiliary) => auxiliary.installPath),
@@ -1811,14 +1874,13 @@ export async function installMapPackage(
 ) {
   const destination = resolve(installDirectory);
   await assertCreateNewTarget(destination, "Kartenpaket-Installationsziel");
-  const verified = await readAndValidatePackageLayout(packageRoot);
+  const verified = await readAndValidatePackageLayout(packageRoot, { requireCompletion: true });
   requireOperationalInfrastructureV2Verifier(verified.manifest.schema, validateOperationalInfrastructure);
 
   const destinationParent = dirname(destination);
   await mkdir(destinationParent, { recursive: true });
   const parentRoot = await realpath(destinationParent);
   const temporaryRoot = await mkdtemp(join(parentRoot, `.${basename(destination)}.installing-`));
-  let completed = false;
   try {
     for (const artifact of verified.manifest.artifacts) {
       await assemblePackagedFile(verified.root, temporaryRoot, artifact);
@@ -1854,10 +1916,13 @@ export async function installMapPackage(
       ...verified.manifest.artifacts.map((artifact) => artifact.installPath),
       ...verified.manifest.auxiliaryFiles.map((auxiliary) => auxiliary.installPath),
     ], "Temporäre Karteninstallation");
-    await publishDirectoryCreateNew(temporaryRoot, destination, "Kartenpaket-Installationsziel");
-    completed = true;
+    await publishDirectoryCreateNew(temporaryRoot, destination, {
+      schema: CREATE_NEW_DIRECTORY_COMPLETION_SCHEMA,
+      kind: "map-package-installation",
+      bindingSha256: verified.manifestSha256,
+    }, "Kartenpaket-Installationsziel");
     return { status: "installed", installRoot: destination, manifest: verified.manifest };
   } finally {
-    if (!completed) await rm(temporaryRoot, { recursive: true, force: true });
+    await rm(temporaryRoot, { recursive: true, force: true });
   }
 }

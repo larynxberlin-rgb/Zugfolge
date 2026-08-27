@@ -2697,6 +2697,24 @@ test("verweigert ein als .1 etikettiertes v2/v1-Mismatch vor der Runtime-Attesta
   }
 });
 
+test("aktueller .5-Zielbaum bleibt ohne create-new-Completion auch fuer Rollback-Attestation unlesbar", async () => {
+  const deploymentRoot = await mkdtemp(join(tmpdir(), "zugfolge-map-release-current-partial-"));
+  try {
+    const releaseId = "infra-deutschland-2026.5";
+    await mkdir(join(deploymentRoot, "releases", releaseId), { recursive: true });
+    await assert.rejects(
+      createMapRollbackAttestation({
+        deploymentRoot,
+        previousInstallPath: `releases/${releaseId}`,
+        previousReleaseId: releaseId,
+      }),
+      /keinen create-new-Completion-Marker/u,
+    );
+  } finally {
+    await rm(deploymentRoot, { recursive: true, force: true });
+  }
+});
+
 test("preflight qualifiziert den v2-Kartenkandidaten, blockiert aber volle Aktivierung mit v1-Rollbackrelease", async () => {
   const value = await fixtureV2();
   const deploymentRoot = join(value.root, "deployment");

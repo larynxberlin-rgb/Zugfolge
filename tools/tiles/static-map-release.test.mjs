@@ -14,6 +14,7 @@ import {
   LIVEMAP_READ_MODEL_USER_VERSION,
   PUBLIC_READ_MODEL_TABLES,
 } from "./livemap-read-model.mjs";
+import { CREATE_NEW_DIRECTORY_COMPLETION_FILE } from "./create-new-output.mjs";
 import { buildMapAssetTreeProof } from "./map-asset-notices.mjs";
 import {
   BASEMAP_ATTRIBUTION,
@@ -169,10 +170,10 @@ function writeReadModel(path, corpusId) {
   }
 }
 
-async function fixture() {
+async function fixture({ patch = 5 } = {}) {
   const root = await mkdtemp(join(tmpdir(), "zugfolge-static-map-release-"));
-  const corpusId = "infra-deutschland-2026.3-fixture";
-  const releaseId = "map-deutschland-2026.3-v2-fixture";
+  const corpusId = `infra-deutschland-2026.${patch}-fixture`;
+  const releaseId = `map-deutschland-2026.${patch}-v2-fixture`;
   await Promise.all([
     mkdir(join(root, "input")),
     mkdir(join(root, "public")),
@@ -222,7 +223,7 @@ async function fixture() {
     writeFile(join(root, "assets", "glyphs", "Inter", "0-255.pbf"), glyph),
     ...Object.entries(sprites).map(([name, bytes]) => writeFile(join(root, "assets", "sprites", name), bytes)),
   ]);
-  const publicBasePath = "/artifacts/static-maps/map-deutschland-2026.3-fixture";
+  const publicBasePath = `/artifacts/static-maps/map-deutschland-2026.${patch}-fixture`;
   await writeFile(join(root, "public", "style.json"), JSON.stringify({
     version: 8,
     sources: { basemap: { type: "vector", url: `pmtiles://${publicBasePath}/basemap.pmtiles`, attribution: BASEMAP_ATTRIBUTION } },
@@ -235,7 +236,7 @@ async function fixture() {
     releaseId,
     corpusId,
     packageId: "zugfolge-static-map-deutschland-fixture",
-    version: "2026.3-v2-unsigned-fixture",
+    version: `2026.${patch}-v2-unsigned`,
     partBytes: 1024,
     claims: { operationalInfraRelease: false, productionActivationEligible: false, signatureStatus: "unsigned" },
     cutover: { legacyTrainMapProjection: false, waypointFallback: false, trainPositionEstimates: false, javascriptOperationalFallback: false },
@@ -280,6 +281,8 @@ test("Materialisierung pinnt reale Kernbytes und liefert einen voll pruef- und f
     );
 
     const plan = JSON.parse(await readFile(join(output, "package-plan.json"), "utf8"));
+    const completion = JSON.parse(await readFile(join(output, CREATE_NEW_DIRECTORY_COMPLETION_FILE), "utf8"));
+    assert.equal(completion.kind, "static-map-release");
     const expanded = await expandMapPackagePlan(plan, value.root);
     const packed = await packMapPackage(expanded, value.root, join(value.root, "package"));
     await verifyMapPackage(packed.packageRoot);
@@ -293,6 +296,21 @@ test("Materialisierung pinnt reale Kernbytes und liefert einen voll pruef- und f
     assert.deepEqual(marker.claims, value.spec.claims);
     assert.deepEqual(marker.cutover, value.spec.cutover);
     await assert.rejects(stat(join(value.root, "installed", "operational-infrastructure-v2.json")), /ENOENT/);
+    await rm(join(output, CREATE_NEW_DIRECTORY_COMPLETION_FILE));
+    await assert.rejects(expandMapPackagePlan(plan, value.root), /unvollstaendig/u);
+  } finally {
+    await rm(value.root, { recursive: true, force: true });
+  }
+});
+
+test("historischer Static-Map-Plan bleibt mit neuer Completion-Bindung materialisierbar", async () => {
+  const value = await fixture({ patch: 4 });
+  try {
+    const output = join(value.root, "materialized");
+    await materializeStaticMapRelease(value.spec, value.root, output);
+    const plan = JSON.parse(await readFile(join(output, "package-plan.json"), "utf8"));
+    const expanded = await expandMapPackagePlan(plan, value.root);
+    assert.equal(expanded.version, value.spec.version);
   } finally {
     await rm(value.root, { recursive: true, force: true });
   }

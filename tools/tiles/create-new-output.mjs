@@ -1,6 +1,11 @@
-import { link, lstat, rename, unlink } from "node:fs/promises";
-import { resolve } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
+import { link, lstat, mkdir, open, readFile, readdir, realpath, unlink } from "node:fs/promises";
+import { join, resolve } from "node:path";
+
+export const CREATE_NEW_DIRECTORY_COMPLETION_FILE = ".zugfolge-create-new-complete.json";
+export const CREATE_NEW_DIRECTORY_COMPLETION_SCHEMA = "zugfolge-create-new-directory-completion/v1";
+
+const SHA256 = /^[a-f0-9]{64}$/;
+const SAFE_KIND = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
 function isMissing(error) {
   return error !== null && typeof error === "object" && error.code === "ENOENT";
@@ -93,21 +98,140 @@ export async function publishFileCreateNew(stagedPath, outputPath, label = "Ausg
   return resolve(outputPath);
 }
 
-export async function publishDirectoryCreateNew(stagedPathInput, outputPathInput, label = "Ausgabeverzeichnis") {
+function validateDirectoryCompletion(completion, label = "Completion-Marker") {
+  if (completion === null || typeof completion !== "object" || Array.isArray(completion)) throw new Error(`${label} muss ein Objekt sein.`);
+  if (Object.keys(completion).sort().join(",") !== "bindingSha256,kind,schema") throw new Error(`${label} besitzt unerwartete oder fehlende Felder.`);
+  if (completion.schema !== CREATE_NEW_DIRECTORY_COMPLETION_SCHEMA) throw new Error(`${label} besitzt ein unbekanntes Schema.`);
+  if (typeof completion.kind !== "string" || !SAFE_KIND.test(completion.kind)) throw new Error(`${label}.kind ist ungueltig.`);
+  if (typeof completion.bindingSha256 !== "string" || !SHA256.test(completion.bindingSha256)) throw new Error(`${label}.bindingSha256 ist ungueltig.`);
+  return completion;
+}
+
+function serializeDirectoryCompletion(completionInput) {
+  const completion = validateDirectoryCompletion(completionInput);
+  return Buffer.from(`${JSON.stringify({
+    schema: completion.schema,
+    kind: completion.kind,
+    bindingSha256: completion.bindingSha256,
+  }, null, 2)}\n`, "utf8");
+}
+
+export async function writeCreateNewDirectoryCompletionMarker(rootInput, completionInput) {
+  const root = resolve(rootInput);
+  const rootMetadata = await lstat(root);
+  if (!rootMetadata.isDirectory() || rootMetadata.isSymbolicLink()) throw new Error("Completion-Staging muss ein regulaeres Verzeichnis sein.");
+  const markerPath = join(root, CREATE_NEW_DIRECTORY_COMPLETION_FILE);
+  await assertCreateNewTarget(markerPath, "Staging-Completion-Marker");
+  const markerHandle = await open(markerPath, "wx", 0o600);
+  try {
+    await markerHandle.writeFile(serializeDirectoryCompletion(completionInput));
+    await markerHandle.sync();
+  } finally {
+    await markerHandle.close();
+  }
+  return markerPath;
+}
+
+async function linkTreeEntryCreateNew(sourceRoot, destinationRoot, entry, label) {
+  const source = join(sourceRoot, entry.name);
+  const destination = join(destinationRoot, entry.name);
+  const metadata = await lstat(source);
+  if (metadata.isSymbolicLink()) throw new Error(`${label} enthaelt den unzulaessigen symbolischen Link ${entry.name}.`);
+  if (metadata.isDirectory()) {
+    try {
+      await mkdir(destination, { recursive: false, mode: 0o700 });
+    } catch (error) {
+      if (error !== null && typeof error === "object" && error.code === "EEXIST") {
+        throw existingTargetError(destination, `${label}-Eintrag`);
+      }
+      throw error;
+    }
+    await linkTreeCreateNew(source, destination, label);
+    return;
+  }
+  if (!metadata.isFile()) throw new Error(`${label} enthaelt den unzulaessigen Spezialdatei-Eintrag ${entry.name}.`);
+  try {
+    await link(source, destination);
+  } catch (error) {
+    if (error !== null && typeof error === "object" && error.code === "EEXIST") {
+      throw existingTargetError(destination, `${label}-Eintrag`);
+    }
+    throw error;
+  }
+}
+
+async function linkTreeCreateNew(sourceRoot, destinationRoot, label, { skipCompletionMarker = false } = {}) {
+  const entries = (await readdir(sourceRoot, { withFileTypes: true }))
+    .filter(({ name }) => !skipCompletionMarker || name !== CREATE_NEW_DIRECTORY_COMPLETION_FILE)
+    .sort((left, right) => left.name.localeCompare(right.name, "en"));
+  for (const entry of entries) await linkTreeEntryCreateNew(sourceRoot, destinationRoot, entry, label);
+}
+
+export async function verifyCreateNewDirectoryCompletion(rootInput, expected = {}) {
+  const requestedRoot = resolve(rootInput);
+  const rootMetadata = await lstat(requestedRoot);
+  if (!rootMetadata.isDirectory() || rootMetadata.isSymbolicLink()) throw new Error("Create-new-Ziel muss ein regulaeres Verzeichnis sein.");
+  const root = await realpath(requestedRoot);
+  const markerPath = join(root, CREATE_NEW_DIRECTORY_COMPLETION_FILE);
+  let markerMetadata;
+  try {
+    markerMetadata = await lstat(markerPath);
+  } catch (error) {
+    if (isMissing(error)) throw new Error(`Create-new-Ziel ist unvollstaendig: ${CREATE_NEW_DIRECTORY_COMPLETION_FILE} fehlt.`);
+    throw error;
+  }
+  if (!markerMetadata.isFile() || markerMetadata.isSymbolicLink() || markerMetadata.size <= 0 || markerMetadata.size > 4096) {
+    throw new Error("Create-new-Completion-Marker ist keine kleine regulaere Datei.");
+  }
+  const bytes = await readFile(markerPath);
+  let completion;
+  try {
+    completion = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    throw new Error("Create-new-Completion-Marker ist kein gueltiges JSON.");
+  }
+  validateDirectoryCompletion(completion);
+  if (!bytes.equals(serializeDirectoryCompletion(completion))) throw new Error("Create-new-Completion-Marker ist nicht kanonisch serialisiert.");
+  if (expected.kind !== undefined && completion.kind !== expected.kind) throw new Error("Create-new-Completion-Marker besitzt eine falsche Zielart.");
+  if (expected.bindingSha256 !== undefined && completion.bindingSha256 !== expected.bindingSha256) throw new Error("Create-new-Completion-Marker bindet nicht den erwarteten Inhalt.");
+  return { root, completion };
+}
+
+/**
+ * Reserviert das sichtbare Ziel atomar mit `mkdir`. Anders als POSIX-`rename`
+ * kann diese Operation kein inzwischen angelegtes leeres Ziel ersetzen. Die
+ * bereits vollstaendig gebauten Eintraege werden erst danach per exklusivem
+ * `mkdir` beziehungsweise create-new-Hardlink in die reservierte Wurzel
+ * uebernommen. Damit kann auch ein nach der Reservierung eingeschobener
+ * Fremdeintrag nie ersetzt werden. Der vorab synchronisierte Marker wird als
+ * letzte Operation per create-new-Hardlink sichtbar. Ein Abbruch hinterlaesst
+ * bewusst einen markerlosen, von allen Lesern abzuweisenden Teilbaum.
+ */
+export async function publishDirectoryCreateNew(stagedPathInput, outputPathInput, completionInput, label = "Ausgabeverzeichnis") {
   const stagedPath = resolve(stagedPathInput);
   const outputPath = resolve(outputPathInput);
-  for (let attempt = 0; ; attempt += 1) {
-    await assertCreateNewTarget(outputPath, label);
-    try {
-      await rename(stagedPath, outputPath);
-      return outputPath;
-    } catch (error) {
-      if (error !== null && typeof error === "object" && ["EEXIST", "ENOTEMPTY"].includes(error.code)) {
-        throw existingTargetError(outputPath, label);
-      }
-      const retryable = error !== null && typeof error === "object" && ["EACCES", "EBUSY", "EPERM"].includes(error.code);
-      if (!retryable || attempt >= 5) throw error;
-      await delay(25 * (2 ** attempt));
-    }
+  const stagedMetadata = await lstat(stagedPath);
+  if (!stagedMetadata.isDirectory() || stagedMetadata.isSymbolicLink()) throw new Error("Create-new-Staging muss ein regulaeres Verzeichnis sein.");
+  const completion = validateDirectoryCompletion(completionInput);
+  const stagedMarker = await writeCreateNewDirectoryCompletionMarker(stagedPath, completion);
+  try {
+    await mkdir(outputPath, { recursive: false, mode: 0o700 });
+  } catch (error) {
+    if (error !== null && typeof error === "object" && error.code === "EEXIST") throw existingTargetError(outputPath, label);
+    throw error;
   }
+  const entries = (await readdir(stagedPath, { withFileTypes: true }))
+    .filter(({ name }) => name !== CREATE_NEW_DIRECTORY_COMPLETION_FILE);
+  if (entries.length === 0) throw new Error("Create-new-Staging besitzt keine Nutzdaten.");
+  await linkTreeCreateNew(stagedPath, outputPath, label, { skipCompletionMarker: true });
+  try {
+    await link(stagedMarker, join(outputPath, CREATE_NEW_DIRECTORY_COMPLETION_FILE));
+  } catch (error) {
+    if (error !== null && typeof error === "object" && error.code === "EEXIST") {
+      throw existingTargetError(join(outputPath, CREATE_NEW_DIRECTORY_COMPLETION_FILE), "Create-new-Completion-Marker");
+    }
+    throw error;
+  }
+  await verifyCreateNewDirectoryCompletion(outputPath, completion);
+  return outputPath;
 }

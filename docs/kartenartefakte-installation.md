@@ -11,6 +11,7 @@ werden. Der Prüfvertrag bleibt dabei identisch.
 
 ```text
 zugfolge-map-deutschland-2026.1/
+  .zugfolge-create-new-complete.json
   manifest.json
   manifest.sha256
   parts/
@@ -29,6 +30,14 @@ zugfolge-map-deutschland-2026.1/
 - sicheren relativen Installationspfad,
 - gesamte Bytezahl und SHA-256,
 - stabile Reihenfolge aller Teile sowie deren Bytezahl und SHA-256.
+
+Der kleine create-new-Completion-Marker wird als letzte Publikationsoperation
+sichtbar und bindet den SHA-256 von `manifest.json`. Für den aktuellen
+Jahresvertrag ab `2026.5` lehnen Paketprüfer jedes Verzeichnis ohne diesen
+Marker, mit falscher Zielart oder abweichender Bindung als unvollständigen
+reservierten Zielbaum ab. Vollständig inventarisierte historische Pakete bis
+`2026.4` bleiben ausschließlich in reinen Verify-/Rollback-Pfaden markerlos
+lesbar; `install` akzeptiert diese Ausnahme nicht.
 
 `sha256` bezeichnet dabei immer den Hash der tatsächlich ausgelieferten
 Dateibytes einschließlich JSON-Formatierung und Abschlusszeilen. Ein eventuell
@@ -164,9 +173,14 @@ den Metadaten führen zum Abbruch. Maßgeblich ist die
 [PMTiles-v3-Spezifikation](https://github.com/protomaps/PMTiles/blob/main/spec/v3/spec.md).
 Anschließend sortiert es alle Artefakte
 stabil, teilt sie an festen Bytegrenzen und schreibt zunächst in
-ein temporäres Nachbarverzeichnis. Erst das vollständige Paket wird mit einer
-Umbenennung sichtbar. Gleiche Eingaben und dieselbe Spezifikation ergeben
-dasselbe Manifest, dieselben Teile und dieselben Hashes. Die ausgegebene
+ein temporäres Nachbarverzeichnis. Danach reserviert ein exklusives `mkdir`
+das endgültige Ziel ohne POSIX-`rename`-Ersetzung, übernimmt jede Datei per
+create-new-Hardlink und jedes Unterverzeichnis per exklusivem `mkdir` und
+publiziert den synchronisierten Completion-Marker als letzte create-new-Datei.
+Ein Abbruch kann damit nur einen markerlosen, unbrauchbaren Teilbaum
+hinterlassen; er wird nie wiederverwendet oder
+überschrieben. Gleiche Eingaben und dieselbe Spezifikation ergeben dasselbe
+Manifest, dieselben Teile und dieselben Hashes. Die ausgegebene
 `manifestSha256` ist zusammen mit dem Paket zu übergeben.
 
 Die Prüfsummendatei schützt gegen beschädigte oder vertauschte Übertragungen.
@@ -200,12 +214,14 @@ vorgeschriebene Hilfsdateisatz geprüft.
 Beim einmaligen Lesen der Paketteile werden Teil- und Gesamtprüfsummen gebildet,
 während zugleich die installierten PMTiles-Dateien entstehen. Es gibt keinen
 anschließenden dritten Vollscan. Dasselbe gilt für große Hilfsdateien. Die
-Installation entsteht vollständig in einem temporären
-Nachbarverzeichnis und wird anschließend atomar umbenannt. Ein bereits
-vorhandenes Ziel bricht die Erstinstallation auch bei identischen Bytes mit
-`EEXIST` ab; vorhandene, beschädigte oder fremde Dateien werden weder
-überschrieben noch als erfolgreicher Installationslauf akzeptiert. Eine bereits
-installierte Version wird ausschließlich mit der read-only-Operation geprüft:
+Installation entsteht vollständig in einem temporären Nachbarverzeichnis. Das
+sichtbare Ziel wird anschließend exklusiv reserviert; erst der abschließende,
+manifestgebundene Completion-Marker macht es für `verify-installed` nutzbar.
+Ein bereits vorhandenes Ziel bricht die Erstinstallation auch bei identischen
+Bytes mit `EEXIST` ab; vorhandene, beschädigte oder fremde Dateien werden weder
+überschrieben noch als erfolgreicher Installationslauf akzeptiert. Eine
+bereits installierte Version wird ausschließlich mit der read-only-Operation
+geprüft:
 
 ```powershell
 node tools/tiles/map-package-cli.mjs verify-installed `

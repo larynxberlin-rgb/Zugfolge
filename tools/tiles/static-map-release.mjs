@@ -8,11 +8,17 @@ import {
   readFile,
   realpath,
   rm,
+  unlink,
 } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { inspectPublicReadModel } from "./livemap-read-model.mjs";
-import { assertCreateNewTarget, publishDirectoryCreateNew } from "./create-new-output.mjs";
+import {
+  CREATE_NEW_DIRECTORY_COMPLETION_SCHEMA,
+  assertCreateNewTarget,
+  publishDirectoryCreateNew,
+  writeCreateNewDirectoryCompletionMarker,
+} from "./create-new-output.mjs";
 import { validateMapAssetNoticeBindings, validateMapAssetNotices } from "./map-asset-notices.mjs";
 import { validateStaticMapQuality } from "./static-map-quality.mjs";
 import {
@@ -257,7 +263,6 @@ export async function materializeStaticMapRelease(specInput, sourceRootInput, ou
   const planBytes = serialize(plan);
 
   const temporaryRoot = await mkdtemp(join(outputParent, `.${basename(outputRoot)}.materializing-`));
-  let completed = false;
   try {
     await writeDurable(join(temporaryRoot, "release.json"), releaseBytes);
     const temporaryReleasePortable = relative(sourceRoot, join(temporaryRoot, "release.json")).replaceAll("\\", "/");
@@ -267,7 +272,17 @@ export async function materializeStaticMapRelease(specInput, sourceRootInput, ou
         ? { ...descriptor, sourceFile: temporaryReleasePortable }
         : descriptor),
     };
-    const expanded = await expandMapPackagePlan(verificationPlan, sourceRoot);
+    const verificationMarker = await writeCreateNewDirectoryCompletionMarker(temporaryRoot, {
+      schema: CREATE_NEW_DIRECTORY_COMPLETION_SCHEMA,
+      kind: "static-map-release",
+      bindingSha256: createHash("sha256").update(serialize(verificationPlan)).digest("hex"),
+    });
+    let expanded;
+    try {
+      expanded = await expandMapPackagePlan(verificationPlan, sourceRoot);
+    } finally {
+      await unlink(verificationMarker);
+    }
     const sourceDescriptor = expanded.auxiliaryFiles.find(({ kind }) => kind === "source-manifest");
     const sources = await readPublicJson(await containedRegularFile(sourceRoot, sourceDescriptor.sourceFile, `${sourceDescriptor.id}.sourceFile`), sourceDescriptor.id);
     const assetDescriptors = [];
@@ -282,10 +297,13 @@ export async function materializeStaticMapRelease(specInput, sourceRootInput, ou
     validateStaticMapReleaseDocument(releaseDocument, expanded);
     await writeDurable(join(temporaryRoot, "package-plan.json"), planBytes);
 
-    await publishDirectoryCreateNew(temporaryRoot, outputRoot, "Static-Map-Release-Ziel");
-    completed = true;
+    await publishDirectoryCreateNew(temporaryRoot, outputRoot, {
+      schema: CREATE_NEW_DIRECTORY_COMPLETION_SCHEMA,
+      kind: "static-map-release",
+      bindingSha256: createHash("sha256").update(planBytes).digest("hex"),
+    }, "Static-Map-Release-Ziel");
     return { status: "materialized", outputRoot, plan, release: releaseDocument };
   } finally {
-    if (!completed) await rm(temporaryRoot, { recursive: true, force: true });
+    await rm(temporaryRoot, { recursive: true, force: true });
   }
 }

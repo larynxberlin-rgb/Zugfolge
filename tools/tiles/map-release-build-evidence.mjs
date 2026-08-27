@@ -17,10 +17,14 @@ import {
   realpath,
   rm,
 } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { inspectPublicReadModel } from "./livemap-read-model.mjs";
+import {
+  CREATE_NEW_DIRECTORY_COMPLETION_FILE,
+  verifyCreateNewDirectoryCompletion,
+} from "./create-new-output.mjs";
 import { validateMapAssetNoticeBindings, validateMapAssetNotices } from "./map-asset-notices.mjs";
 import {
   deliveryReleaseHash,
@@ -2479,6 +2483,14 @@ function releaseVersion(releaseId) {
   return `${parsed.groups.year}.${parsed.groups.patch}`;
 }
 
+function requiresCreateNewDirectoryCompletion(releaseId) {
+  const parsed = RELEASE_ID.exec(releaseId);
+  invariant(parsed !== null, `${releaseId} ist kein Jahres-Patchrelease.`);
+  const year = Number.parseInt(parsed.groups.year, 10);
+  const patch = Number.parseInt(parsed.groups.patch, 10);
+  return year > 2026 || (year === 2026 && patch >= 5);
+}
+
 async function assertExactInstalledInventory(root, expectedFiles, label) {
   const expected = new Set(expectedFiles);
   const observed = new Set();
@@ -2514,6 +2526,18 @@ function installedArtifactInventoryEntry(entry) {
 
 async function inspectInstalledMapPackage(deploymentRoot, installPath, releaseId, label) {
   const root = await assertDirectory(deploymentRoot, installPath, label);
+  let completion;
+  try {
+    const metadata = await lstat(join(root, CREATE_NEW_DIRECTORY_COMPLETION_FILE));
+    invariant(metadata.isFile() && !metadata.isSymbolicLink(), `${label}-Completion-Marker ist keine regulaere Datei.`);
+    completion = await verifyCreateNewDirectoryCompletion(root, { kind: "map-package-installation" });
+  } catch (error) {
+    if (!(error?.code === "ENOENT")) throw error;
+  }
+  invariant(
+    !requiresCreateNewDirectoryCompletion(releaseId) || completion !== undefined,
+    `${label} besitzt keinen create-new-Completion-Marker fuer den aktuellen Jahreslauf.`,
+  );
   let markerPath;
   try {
     markerPath = await containedRealPath(root, INSTALLED_PACKAGE_MANIFEST, `${label}-Paketmarker`);
@@ -2531,6 +2555,9 @@ async function inspectInstalledMapPackage(deploymentRoot, installPath, releaseId
   }
   validateMapPackageManifest(manifest);
   invariant(markerBytes.equals(Buffer.from(serializeMapPackageManifest(manifest), "utf8")), `${label}-Paketmarker ist nicht kanonisch serialisiert.`);
+  if (completion !== undefined) {
+    invariant(completion.completion.bindingSha256 === sha256Bytes(markerBytes), `${label}-Completion-Marker bindet nicht den kanonischen Paketmarker.`);
+  }
   invariant(manifest.version === releaseVersion(releaseId), `${label}-Paketmarker gehört nicht zum Release ${releaseId}.`);
   invariant(manifest.runtime?.publicBasePath === `/artifacts/maps/${releaseId}`, `${label}-Paketmarker besitzt eine fremde Releasewurzel.`);
   invariant(manifest.runtime.basemapStyleUrl === `/artifacts/maps/${releaseId}/style.json`, `${label}-Paketmarker besitzt einen fremden Stylepfad.`);
@@ -2538,7 +2565,11 @@ async function inspectInstalledMapPackage(deploymentRoot, installPath, releaseId
   const inventory = [...manifest.artifacts, ...manifest.auxiliaryFiles]
     .map(installedArtifactInventoryEntry)
     .sort((left, right) => left.id.localeCompare(right.id, "en"));
-  await assertExactInstalledInventory(root, [INSTALLED_PACKAGE_MANIFEST, ...inventory.map(({ installPath: file }) => file)], label);
+  await assertExactInstalledInventory(root, [
+    ...(completion === undefined ? [] : [CREATE_NEW_DIRECTORY_COMPLETION_FILE]),
+    INSTALLED_PACKAGE_MANIFEST,
+    ...inventory.map(({ installPath: file }) => file),
+  ], label);
   for (const artifact of inventory) {
     const observed = await fileProof(root, { file: artifact.installPath }, `${label}-Artefakt ${artifact.id}`);
     invariant(observed.bytes === artifact.bytes && observed.sha256 === artifact.sha256, `${label}-Artefakt ${artifact.id} ist beschädigt.`);

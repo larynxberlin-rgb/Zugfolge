@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { LIVEMAP_READ_MODEL_APPLICATION_ID, LIVEMAP_READ_MODEL_USER_VERSION, PUBLIC_READ_MODEL_TABLES } from "./livemap-read-model.mjs";
+import { CREATE_NEW_DIRECTORY_COMPLETION_FILE } from "./create-new-output.mjs";
 import { buildMapAssetTreeProof } from "./map-asset-notices.mjs";
 import {
   TRAIN_MAP_PROJECTION_PUBLIC_SCHEMA_OBJECTS,
@@ -732,9 +733,53 @@ test("Installation wird als ganzes Verzeichnis abgeschlossen; Reinstall und part
       (error) => error?.code === "EEXIST",
     );
     assert.equal(await readFile(join(partialRoot, "partial.txt"), "utf8"), "unvollstaendig");
+    await assert.rejects(
+      verifyInstalledMapPackage(packed.packageRoot, partialRoot),
+      (error) => error?.code === "ENOENT" || /unvollstaendig/u.test(error?.message ?? ""),
+    );
 
     await writeFile(join(installRoot, "style.json"), "{}\n");
     await assert.rejects(verifyInstalledMapPackage(packed.packageRoot, installRoot), /beschädigt/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("markerloses partielles Kartenpaket wird weder verifiziert noch installiert", async () => {
+  const root = await makeFixtureRoot();
+  try {
+    const spec = await staticMapSpec(root);
+    spec.version = "2026.5-v2-unsigned";
+    spec.partBytes = 1024 * 1024;
+    const packed = await packMapPackage(spec, root, join(root, "package"));
+    const publishedManifest = await readFile(join(packed.packageRoot, "manifest.json"));
+    await assert.rejects(
+      packMapPackage(spec, root, packed.packageRoot),
+      (error) => error?.code === "EEXIST",
+    );
+    assert.deepEqual(await readFile(join(packed.packageRoot, "manifest.json")), publishedManifest);
+    await rm(join(packed.packageRoot, CREATE_NEW_DIRECTORY_COMPLETION_FILE));
+    await assert.rejects(verifyMapPackage(packed.packageRoot), /unvollstaendig/u);
+    const installRoot = join(root, "installed", "2026.5");
+    await assert.rejects(installMapPackage(packed.packageRoot, installRoot), /unvollstaendig/u);
+    await assert.rejects(stat(installRoot), /ENOENT/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("historisches vollstaendiges Kartenpaket bleibt nur im reinen Verify-Pfad markerlos lesbar", async () => {
+  const root = await makeFixtureRoot();
+  try {
+    const spec = await staticMapSpec(root);
+    spec.version = "2026.4-v2-unsigned";
+    spec.partBytes = 1024 * 1024;
+    const packed = await packMapPackage(spec, root, join(root, "package"));
+    await rm(join(packed.packageRoot, CREATE_NEW_DIRECTORY_COMPLETION_FILE));
+    assert.equal((await verifyMapPackage(packed.packageRoot)).manifest.version, "2026.4-v2-unsigned");
+    const installRoot = join(root, "installed", "2026.4");
+    await assert.rejects(installMapPackage(packed.packageRoot, installRoot), /unvollstaendig/u);
+    await assert.rejects(stat(installRoot), /ENOENT/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
