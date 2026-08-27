@@ -279,6 +279,19 @@ test("materialisiert Shared-Berth ausschliesslich aus Arrival-/Departure-Berth V
   );
 });
 
+test("materialisiert einen physisch stabling-only Turnaround ohne erfundenes Direct-Template", () => {
+  const template = stabling("stabling:self:only", "base:p1", "base:p1", 0, "berth:only");
+  const fixture = singleStablingFixture(template);
+  fixture.movementRoutePlan.directTemplates = [];
+
+  const result = allocateMovementRoutePlanV2(fixture);
+
+  assert.equal(result.metrics.directCount, 0);
+  assert.equal(result.metrics.throughCount, 0);
+  assert.equal(result.metrics.stablingCount, 1);
+  assert.ok(result.reservations.some((entry) => entry.stage === "berth" && entry.edgeId === "berth:only"));
+});
+
 test("materialisiert Cross-Berth als explizite dreistufige Rangierkette", () => {
   const template = crossBerthStabling("stabling:self:cross", "base:p1", "base:p1", 0);
   const result = allocateMovementRoutePlanV2(singleStablingFixture(template));

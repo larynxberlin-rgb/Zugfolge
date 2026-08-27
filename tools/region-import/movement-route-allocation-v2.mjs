@@ -314,9 +314,11 @@ function sameLocationOptions({ continuity, source, target, movementRoutePlan, re
       && template.outboundRouteVersionId === outboundRouteVersionId
       && template.formationLengthMm === formationLengthMm
   ));
-  invariant(directs.length === 1, `${continuity.id} besitzt nicht genau ein Direct-Template fuer Paar und Formationslaenge.`);
+  // Ein physisch nicht direkt fortsetzbares Paar bleibt absichtlich stabling-only;
+  // erst die gemeinsame Direct-/Stabling-Menge muss jeden Turnaround schliessen.
+  invariant(directs.length <= 1, `${continuity.id} besitzt mehr als ein Direct-Template fuer Paar und Formationslaenge.`);
   const options = [];
-  if (dwellMs <= MAXIMUM_DIRECT_DWELL_MS) {
+  if (directs.length === 1 && dwellMs <= MAXIMUM_DIRECT_DWELL_MS) {
     options.push(directOption({ continuity, source, target, template: directs[0], sourceArrivalMs, targetDepartureMs }));
   }
   const stabling = movementRoutePlan.templates.filter((template) => (

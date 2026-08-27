@@ -42,6 +42,13 @@ const MAX_STABLING_PATH_EDGES_POLICY: u32 = 64;
 const MAX_STABLING_PATH_LENGTH_MM_POLICY: i64 = 10_000_000;
 const STANDARD_GAUGE_MM: i64 = 1_435;
 const DATABASE_CACHE_BYTES: usize = 16 * 1024 * 1024;
+const GENERATED_BATCH_BYTES: usize = 64 * 1024 * 1024;
+const MAX_GENERATED_UNIT_BYTES: usize = 64 * 1024 * 1024;
+const MAX_GENERATED_RECORD_BYTES: usize = 8 * 1024 * 1024;
+const GENERATED_ENTRY_OVERHEAD_BYTES: usize = 128;
+const MAX_STABLING_SEARCH_LABELS: usize = 250_000;
+const MAX_STABLING_CANDIDATES_PER_CASE: usize = 4_096;
+const MAX_STABLING_SEARCH_RESIDENT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_GEOJSON_SEQUENCE_RECORD_BYTES: usize = 8 * 1024 * 1024;
 const MAX_PLATFORM_SEARCH_CELLS: u128 = 1_000_000;
 const MAX_TURNAROUND_PREFLIGHT_DEMANDS: usize = 100_000;
@@ -539,6 +546,75 @@ struct StablingSearchPolicy {
     maximum_path_edges: u32,
     maximum_path_length_mm: i64,
     search_mode: BerthSearchMode,
+}
+
+fn string_heap_bytes(value: &String) -> usize {
+    value.capacity()
+}
+
+fn optional_string_heap_bytes(value: &Option<String>) -> usize {
+    value.as_ref().map_or(0, string_heap_bytes)
+}
+
+fn track_heap_bytes(track: &TrackRecord) -> usize {
+    track
+        .geometry
+        .capacity()
+        .saturating_mul(std::mem::size_of::<GeometryPoint>())
+        .saturating_add(string_heap_bytes(&track.id))
+        .saturating_add(string_heap_bytes(&track.railway))
+        .saturating_add(optional_string_heap_bytes(&track.service))
+        .saturating_add(string_heap_bytes(&track.gauge_lineage))
+        .saturating_add(optional_string_heap_bytes(&track.electrified))
+        .saturating_add(optional_string_heap_bytes(&track.voltage))
+        .saturating_add(optional_string_heap_bytes(&track.frequency))
+        .saturating_add(optional_string_heap_bytes(&track.track_ref))
+        .saturating_add(string_heap_bytes(&track.quality_class))
+        .saturating_add(string_heap_bytes(&track.source_id))
+        .saturating_add(string_heap_bytes(&track.geometry_lineage))
+        .saturating_add(
+            track
+                .protection_systems
+                .iter()
+                .fold(0_usize, |total, protection| {
+                    total
+                        .saturating_add(string_heap_bytes(protection))
+                        .saturating_add(GENERATED_ENTRY_OVERHEAD_BYTES)
+                }),
+        )
+}
+
+fn directed_path_resident_bytes(path: &[DirectedTrack]) -> usize {
+    std::mem::size_of_val(path).saturating_add(path.iter().fold(0_usize, |total, edge| {
+        total
+            .saturating_add(track_heap_bytes(&edge.track))
+            .saturating_add(string_heap_bytes(&edge.direction))
+    }))
+}
+
+fn stabling_candidate_resident_bytes(candidate: &StablingCandidate) -> usize {
+    std::mem::size_of::<StablingCandidate>()
+        .saturating_add(directed_path_resident_bytes(&candidate.path))
+        .saturating_add(GENERATED_ENTRY_OVERHEAD_BYTES)
+}
+
+fn stabling_label_resident_bytes(label: &StablingSearchLabel) -> usize {
+    std::mem::size_of::<StablingSearchLabel>()
+        .saturating_add(directed_path_resident_bytes(&label.path))
+        .saturating_add(GENERATED_ENTRY_OVERHEAD_BYTES)
+}
+
+fn paired_stabling_candidate_resident_bytes(candidate: &PairedStablingCandidate) -> usize {
+    std::mem::size_of::<PairedStablingCandidate>()
+        .saturating_add(directed_path_resident_bytes(&candidate.inbound_path))
+        .saturating_add(directed_path_resident_bytes(&candidate.outbound_path))
+        .saturating_add(
+            candidate
+                .berth_transfer_path
+                .as_deref()
+                .map_or(0, directed_path_resident_bytes),
+        )
+        .saturating_add(GENERATED_ENTRY_OVERHEAD_BYTES)
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -3873,6 +3949,23 @@ fn route_from_json(value: &str, context: &str) -> Result<TimetableRouteInput> {
         .map_err(|error| GermanyOperationalV2Error::new(format!("{context}: {error}")))
 }
 
+fn timetable_route(
+    transaction: &redb::ReadTransaction,
+    route_version_id: &str,
+    context: &str,
+) -> Result<TimetableRouteInput> {
+    let routes = transaction.open_table(TIMETABLE_ROUTES).map_err(db_error)?;
+    let serialized = routes
+        .get(route_version_id)
+        .map_err(db_error)?
+        .ok_or_else(|| {
+            GermanyOperationalV2Error::new(format!(
+                "{context} verweist auf unbekannten Laufweg `{route_version_id}`."
+            ))
+        })?;
+    route_from_json(serialized.value(), context)
+}
+
 fn directed_track_from_node(track: TrackRecord, node_id: i64) -> Option<(DirectedTrack, i64)> {
     if track.from_node_id == node_id && track.to_node_id != node_id {
         let next = track.to_node_id;
@@ -4041,13 +4134,16 @@ fn stabling_candidates(
     let berth_required = formation_length_mm
         .checked_add(minimum_clearance_mm.saturating_mul(2))
         .ok_or_else(|| GermanyOperationalV2Error::new("Berth-Laenge laeuft ueber."))?;
-    let mut candidates = Vec::new();
+    let mut by_berth_edge = BTreeMap::<String, StablingCandidate>::new();
+    let mut candidate_resident_bytes = 0_usize;
+    let initial_label = StablingSearchLabel {
+        total_length_mm: 0,
+        path: Vec::new(),
+    };
+    let mut label_resident_bytes = stabling_label_resident_bytes(&initial_label);
     let mut labels = BTreeMap::<(i64, usize), StablingSearchLabel>::from([(
         (terminal_node_id, 0),
-        StablingSearchLabel {
-            total_length_mm: 0,
-            path: Vec::new(),
-        },
+        initial_label,
     )]);
     for hop in 0..maximum_path_edges {
         let current_labels: Vec<_> = labels
@@ -4082,11 +4178,64 @@ fn stabling_candidates(
                         .flatten()
                 });
                 if let Some(berth_assignment) = berth_assignment {
-                    candidates.push(StablingCandidate {
+                    let candidate = StablingCandidate {
                         total_length_mm: next_total,
                         path: next_path.clone(),
                         berth_assignment,
-                    });
+                    };
+                    let berth_edge_id = candidate
+                        .path
+                        .last()
+                        .expect("Abstellkandidat ist nicht leer")
+                        .track
+                        .id
+                        .clone();
+                    let candidate_capacity_available =
+                        by_berth_edge.len() < MAX_STABLING_CANDIDATES_PER_CASE;
+                    let next_candidate_bytes = stabling_candidate_resident_bytes(&candidate);
+                    match by_berth_edge.entry(berth_edge_id) {
+                        std::collections::btree_map::Entry::Vacant(entry) => {
+                            require(
+                                candidate_capacity_available,
+                                format!(
+                                    "Abstellkandidatensuche fuer `{inbound_route_id}` ueberschreitet die feste Grenze von {MAX_STABLING_CANDIDATES_PER_CASE} Berths."
+                                ),
+                            )?;
+                            candidate_resident_bytes = candidate_resident_bytes
+                                .checked_add(next_candidate_bytes)
+                                .ok_or_else(|| {
+                                    GermanyOperationalV2Error::new(
+                                        "Abstellkandidatenspeicher laeuft ueber.",
+                                    )
+                                })?;
+                            require(
+                                candidate_resident_bytes <= MAX_STABLING_SEARCH_RESIDENT_BYTES,
+                                format!(
+                                    "Abstellkandidatensuche fuer `{inbound_route_id}` ueberschreitet das feste Speicherbudget von {MAX_STABLING_SEARCH_RESIDENT_BYTES} Bytes."
+                                ),
+                            )?;
+                            entry.insert(candidate);
+                        }
+                        std::collections::btree_map::Entry::Occupied(mut entry) => {
+                            if stabling_path_key(&candidate) < stabling_path_key(entry.get()) {
+                                candidate_resident_bytes = candidate_resident_bytes
+                                    .saturating_sub(stabling_candidate_resident_bytes(entry.get()))
+                                    .checked_add(next_candidate_bytes)
+                                    .ok_or_else(|| {
+                                        GermanyOperationalV2Error::new(
+                                            "Abstellkandidatenspeicher laeuft ueber.",
+                                        )
+                                    })?;
+                                require(
+                                    candidate_resident_bytes <= MAX_STABLING_SEARCH_RESIDENT_BYTES,
+                                    format!(
+                                        "Abstellkandidatensuche fuer `{inbound_route_id}` ueberschreitet das feste Speicherbudget von {MAX_STABLING_SEARCH_RESIDENT_BYTES} Bytes."
+                                    ),
+                                )?;
+                                entry.insert(candidate);
+                            }
+                        }
+                    }
                 }
                 let next_hop = hop + 1;
                 let next_label = StablingSearchLabel {
@@ -4100,23 +4249,36 @@ fn stabling_candidates(
                         .is_some_and(|prior| stabling_search_label_key(prior) <= next_key)
                 });
                 if !dominated {
+                    let previous_label_bytes = labels
+                        .get(&(next_node, next_hop))
+                        .map_or(0, stabling_label_resident_bytes);
+                    let next_label_bytes = stabling_label_resident_bytes(&next_label);
+                    let next_resident_bytes = label_resident_bytes
+                        .saturating_sub(previous_label_bytes)
+                        .checked_add(next_label_bytes)
+                        .ok_or_else(|| {
+                            GermanyOperationalV2Error::new(
+                                "Abstellkandidaten-Suchspeicher laeuft ueber.",
+                            )
+                        })?;
+                    require(
+                        labels.contains_key(&(next_node, next_hop))
+                            || labels.len() < MAX_STABLING_SEARCH_LABELS,
+                        format!(
+                            "Abstellkandidatensuche fuer `{inbound_route_id}` ueberschreitet die feste Grenze von {MAX_STABLING_SEARCH_LABELS} Suchlabels."
+                        ),
+                    )?;
+                    require(
+                        next_resident_bytes <= MAX_STABLING_SEARCH_RESIDENT_BYTES,
+                        format!(
+                            "Abstellkandidatensuche fuer `{inbound_route_id}` ueberschreitet das feste Suchspeicherbudget von {MAX_STABLING_SEARCH_RESIDENT_BYTES} Bytes."
+                        ),
+                    )?;
+                    label_resident_bytes = next_resident_bytes;
                     labels.insert((next_node, next_hop), next_label);
                 }
             }
         }
-    }
-    let _ = inbound_route_id;
-    candidates.sort_by(|left, right| stabling_path_key(left).cmp(&stabling_path_key(right)));
-    let mut by_berth_edge = BTreeMap::<String, StablingCandidate>::new();
-    for candidate in candidates {
-        let berth_edge_id = candidate
-            .path
-            .last()
-            .expect("Abstellkandidat ist nicht leer")
-            .track
-            .id
-            .clone();
-        by_berth_edge.entry(berth_edge_id).or_insert(candidate);
     }
     let mut result: Vec<_> = by_berth_edge.into_values().collect();
     result.sort_by(|left, right| stabling_path_key(left).cmp(&stabling_path_key(right)));
@@ -4234,13 +4396,13 @@ fn bounded_cross_berth_labels(
     let maximum_path_edges = usize::try_from(maximum_path_edges).map_err(|_| {
         GermanyOperationalV2Error::new("Cross-Berth-Hopgrenze ist nicht darstellbar.")
     })?;
-    let mut labels = BTreeMap::<(i64, usize), StablingSearchLabel>::from([(
-        (start_node, 0),
-        StablingSearchLabel {
-            total_length_mm: 0,
-            path: Vec::new(),
-        },
-    )]);
+    let initial_label = StablingSearchLabel {
+        total_length_mm: 0,
+        path: Vec::new(),
+    };
+    let mut label_resident_bytes = stabling_label_resident_bytes(&initial_label);
+    let mut labels =
+        BTreeMap::<(i64, usize), StablingSearchLabel>::from([((start_node, 0), initial_label)]);
     for hop in 0..maximum_path_edges {
         let current_labels: Vec<_> = labels
             .iter()
@@ -4286,6 +4448,30 @@ fn bounded_cross_berth_labels(
                         .is_some_and(|prior| stabling_search_label_key(prior) <= next_key)
                 });
                 if !dominated {
+                    let previous_label_bytes = labels
+                        .get(&(next_node, next_hop))
+                        .map_or(0, stabling_label_resident_bytes);
+                    let next_label_bytes = stabling_label_resident_bytes(&next_label);
+                    let next_resident_bytes = label_resident_bytes
+                        .saturating_sub(previous_label_bytes)
+                        .checked_add(next_label_bytes)
+                        .ok_or_else(|| {
+                            GermanyOperationalV2Error::new("Cross-Berth-Suchspeicher laeuft ueber.")
+                        })?;
+                    require(
+                        labels.contains_key(&(next_node, next_hop))
+                            || labels.len() < MAX_STABLING_SEARCH_LABELS,
+                        format!(
+                            "Cross-Berth-Suche ab Knoten {start_node} ueberschreitet die feste Grenze von {MAX_STABLING_SEARCH_LABELS} Suchlabels."
+                        ),
+                    )?;
+                    require(
+                        next_resident_bytes <= MAX_STABLING_SEARCH_RESIDENT_BYTES,
+                        format!(
+                            "Cross-Berth-Suche ab Knoten {start_node} ueberschreitet das feste Suchspeicherbudget von {MAX_STABLING_SEARCH_RESIDENT_BYTES} Bytes."
+                        ),
+                    )?;
+                    label_resident_bytes = next_resident_bytes;
                     labels.insert((next_node, next_hop), next_label);
                 }
             }
@@ -4350,6 +4536,7 @@ fn cross_berth_connector_paths(
         maximum_path_length_mm,
     )?;
     let mut result = Vec::new();
+    let mut result_resident_bytes = 0_usize;
     for (meeting_node, inbound_values) in &inbound_labels {
         let Some(outbound_values) = outbound_labels.get(meeting_node) else {
             continue;
@@ -4375,10 +4562,31 @@ fn cross_berth_connector_paths(
             .ok_or_else(|| {
                 GermanyOperationalV2Error::new("Cross-Berth-Verbindung laeuft in der Laenge ueber.")
             })?;
-        result.push(CrossBerthConnectorPath {
+        require(
+            result.len() < MAX_STABLING_CANDIDATES_PER_CASE,
+            format!(
+                "Cross-Berth-Verbindungssuche ueberschreitet die feste Grenze von {MAX_STABLING_CANDIDATES_PER_CASE} Pfaden."
+            ),
+        )?;
+        let connector = CrossBerthConnectorPath {
             total_length_mm,
             path,
-        });
+        };
+        result_resident_bytes = result_resident_bytes
+            .checked_add(
+                std::mem::size_of::<CrossBerthConnectorPath>()
+                    .saturating_add(directed_path_resident_bytes(&connector.path)),
+            )
+            .ok_or_else(|| {
+                GermanyOperationalV2Error::new("Cross-Berth-Verbindungsspeicher laeuft ueber.")
+            })?;
+        require(
+            result_resident_bytes <= MAX_STABLING_SEARCH_RESIDENT_BYTES,
+            format!(
+                "Cross-Berth-Verbindungssuche ueberschreitet das feste Speicherbudget von {MAX_STABLING_SEARCH_RESIDENT_BYTES} Bytes."
+            ),
+        )?;
+        result.push(connector);
     }
     result.sort_by(|left, right| {
         cross_berth_connector_path_key(left).cmp(&cross_berth_connector_path_key(right))
@@ -4454,11 +4662,11 @@ fn cross_berth_transfer_path_key(path: &[DirectedTrack]) -> Result<(i64, Vec<(&s
     ))
 }
 
-fn cross_berth_transfer_full_paths(
+fn shortest_cross_berth_transfer_full_path(
     arrival: &StablingCandidate,
     terminal_connectors: &[CrossBerthConnectorPath],
     departure: &StablingCandidate,
-) -> Result<Vec<Vec<DirectedTrack>>> {
+) -> Result<Option<Vec<DirectedTrack>>> {
     let arrival_berth = arrival
         .path
         .last()
@@ -4468,12 +4676,22 @@ fn cross_berth_transfer_full_paths(
         .last()
         .ok_or_else(|| GermanyOperationalV2Error::new("Cross-Berth-Abfahrtspfad ist leer."))?;
     if arrival_berth.track.id == departure_berth.track.id {
-        return Ok(Vec::new());
+        return Ok(None);
     }
 
     let arrival_nodes = directed_path_nodes(&arrival.path)?;
     let departure_nodes = directed_path_nodes(&departure.path)?;
-    let mut paths = Vec::new();
+    let mut shortest: Option<Vec<DirectedTrack>> = None;
+    let mut retain_shortest = |path: Vec<DirectedTrack>| -> Result<()> {
+        let replace = shortest.as_ref().is_none_or(|current| {
+            cross_berth_transfer_path_key(&path).expect("validierte Cross-Berth-Pfadlaenge")
+                < cross_berth_transfer_path_key(current).expect("validierte Cross-Berth-Pfadlaenge")
+        });
+        if replace {
+            shortest = Some(path);
+        }
+        Ok(())
+    };
 
     // Zwei getrennte Berths koennen einen realen gemeinsamen Zugangsknoten besitzen,
     // obwohl ihre Passenger-Terminalknoten verschieden sind. In diesem Fall wird nur
@@ -4496,27 +4714,17 @@ fn cross_berth_transfer_full_paths(
                     GermanyOperationalV2Error::new("Cross-Berth-Pfad ist leer.")
                 })?)?;
             if directed_path_is_simple_from(start_node, &path)? {
-                paths.push(path);
+                retain_shortest(path)?;
             }
         }
     }
 
     for connector in terminal_connectors {
         if let Some(path) = cross_berth_transfer_full_path(arrival, connector, departure)? {
-            paths.push(path);
+            retain_shortest(path)?;
         }
     }
-    paths.sort_by(|left, right| {
-        cross_berth_transfer_path_key(left)
-            .expect("validierte Cross-Berth-Pfadlaenge")
-            .cmp(&cross_berth_transfer_path_key(right).expect("validierte Cross-Berth-Pfadlaenge"))
-    });
-    paths.dedup_by(|left, right| {
-        left.iter()
-            .map(|edge| (&edge.track.id, &edge.direction))
-            .eq(right.iter().map(|edge| (&edge.track.id, &edge.direction)))
-    });
-    Ok(paths)
+    Ok(shortest)
 }
 
 fn terminal_node_access(
@@ -4733,6 +4941,7 @@ fn paired_stabling_candidates(
         .min_by(|left, right| stabling_candidate_shortest_cmp(left, right))
         .cloned();
     let mut result = Vec::new();
+    let mut result_resident_bytes = 0_usize;
     for inbound in &inbound_candidates {
         let inbound_berth = inbound.path.last().expect("Abstellpfad besitzt Zielkante");
         let Some(outbound) = outbound_by_berth.get(inbound_berth.track.id.as_str()) else {
@@ -4746,7 +4955,13 @@ fn paired_stabling_candidates(
             .ok_or_else(|| {
                 GermanyOperationalV2Error::new("Asymmetrische Abstellpfadlaenge laeuft ueber.")
             })?;
-        result.push(PairedStablingCandidate {
+        require(
+            result.len() < MAX_STABLING_CANDIDATES_PER_CASE,
+            format!(
+                "Gemeinsame Abstellkandidatensuche fuer `{inbound_route_id}` -> `{outbound_route_id}` ueberschreitet die feste Grenze von {MAX_STABLING_CANDIDATES_PER_CASE} Kandidaten."
+            ),
+        )?;
+        let candidate = PairedStablingCandidate {
             total_length_mm,
             inbound_path: inbound.path.clone(),
             outbound_path: outbound.path.clone(),
@@ -4755,7 +4970,21 @@ fn paired_stabling_candidates(
             departure_berth_assignment: outbound.berth_assignment,
             berth_transfer_path: None,
             berth_transfer_provenance: None,
-        });
+        };
+        result_resident_bytes = result_resident_bytes
+            .checked_add(paired_stabling_candidate_resident_bytes(&candidate))
+            .ok_or_else(|| {
+                GermanyOperationalV2Error::new(
+                    "Gekoppelter Abstellkandidatenspeicher laeuft ueber.",
+                )
+            })?;
+        require(
+            result_resident_bytes <= MAX_STABLING_SEARCH_RESIDENT_BYTES,
+            format!(
+                "Gemeinsame Abstellkandidatensuche fuer `{inbound_route_id}` -> `{outbound_route_id}` ueberschreitet das feste Speicherbudget von {MAX_STABLING_SEARCH_RESIDENT_BYTES} Bytes."
+            ),
+        )?;
+        result.push(candidate);
     }
     result.sort_by(|left, right| {
         paired_stabling_path_key(left).cmp(&paired_stabling_path_key(right))
@@ -4938,13 +5167,13 @@ fn cross_berth_stabling_candidates(
         maximum_path_edges_per_side: policy.maximum_path_edges,
         maximum_path_length_mm_per_side: policy.maximum_path_length_mm,
     };
-    let mut proposals = Vec::new();
+    let mut used_berth_pairs = BTreeSet::new();
+    let mut result = Vec::new();
+    let mut result_resident_bytes = 0_usize;
     for arrival in inbound_candidates {
         for departure in outbound_candidates {
             if let Some(berth_transfer_path) =
-                cross_berth_transfer_full_paths(arrival, &connectors, departure)?
-                    .into_iter()
-                    .next()
+                shortest_cross_berth_transfer_full_path(arrival, &connectors, departure)?
             {
                 let berth_transfer_path_length_mm =
                     directed_track_path_length_mm(&berth_transfer_path)?;
@@ -4959,7 +5188,31 @@ fn cross_berth_stabling_candidates(
                             "Cross-Berth-Abstellpfadlaenge laeuft ueber.",
                         )
                     })?;
-                proposals.push(PairedStablingCandidate {
+                let arrival_berth_id = arrival
+                    .path
+                    .last()
+                    .expect("Cross-Berth-Ankunftspfad besitzt eine Zielkante")
+                    .track
+                    .id
+                    .clone();
+                let departure_berth_id = departure
+                    .path
+                    .last()
+                    .expect("Cross-Berth-Abfahrtspfad besitzt eine Zielkante")
+                    .track
+                    .id
+                    .clone();
+                if !used_berth_pairs.insert((arrival_berth_id, departure_berth_id)) {
+                    continue;
+                }
+                require(
+                    result.len() < MAX_STABLING_CANDIDATES_PER_CASE,
+                    format!(
+                        "Cross-Berth-Demand `{}` ueberschreitet die feste Grenze von {MAX_STABLING_CANDIDATES_PER_CASE} Kandidaten.",
+                        demand.id
+                    ),
+                )?;
+                let candidate = PairedStablingCandidate {
                     total_length_mm,
                     inbound_path: arrival.path.clone(),
                     outbound_path: departure.path.clone(),
@@ -4968,35 +5221,28 @@ fn cross_berth_stabling_candidates(
                     departure_berth_assignment: departure.berth_assignment,
                     berth_transfer_path: Some(berth_transfer_path),
                     berth_transfer_provenance: Some(provenance.clone()),
-                });
+                };
+                result_resident_bytes = result_resident_bytes
+                    .checked_add(paired_stabling_candidate_resident_bytes(&candidate))
+                    .ok_or_else(|| {
+                        GermanyOperationalV2Error::new(
+                            "Cross-Berth-Kandidatenspeicher laeuft ueber.",
+                        )
+                    })?;
+                require(
+                    result_resident_bytes <= MAX_STABLING_SEARCH_RESIDENT_BYTES,
+                    format!(
+                        "Cross-Berth-Demand `{}` ueberschreitet das feste Speicherbudget von {MAX_STABLING_SEARCH_RESIDENT_BYTES} Bytes.",
+                        demand.id
+                    ),
+                )?;
+                result.push(candidate);
             }
         }
     }
-    proposals.sort_by(|left, right| {
+    result.sort_by(|left, right| {
         paired_stabling_path_key(left).cmp(&paired_stabling_path_key(right))
     });
-    let mut used_berth_pairs = BTreeSet::new();
-    let mut result = Vec::new();
-    for proposal in proposals {
-        let arrival_berth_id = proposal
-            .inbound_path
-            .last()
-            .expect("Cross-Berth-Ankunftspfad besitzt eine Zielkante")
-            .track
-            .id
-            .clone();
-        let departure_berth_id = proposal
-            .outbound_path
-            .last()
-            .expect("Cross-Berth-Abfahrtspfad besitzt eine Zielkante")
-            .track
-            .id
-            .clone();
-        if !used_berth_pairs.insert((arrival_berth_id, departure_berth_id)) {
-            continue;
-        }
-        result.push(proposal);
-    }
     Ok(result)
 }
 
@@ -6626,13 +6872,159 @@ fn insert_generated<T: Serialize>(
     let serialized = serde_json::to_string(value).map_err(|error| {
         GermanyOperationalV2Error::new(format!("{context} kann nicht serialisiert werden: {error}"))
     })?;
-    if let Some(previous) = values.insert(id.clone(), serialized.clone()) {
-        require(
-            previous == serialized,
-            format!("Kollidierende abgeleitete ID `{id}` fuer {context}."),
-        )?;
+    require(
+        serialized.len() <= MAX_GENERATED_RECORD_BYTES,
+        format!(
+            "{context} `{id}` ueberschreitet die feste Einzelrecord-Grenze von {MAX_GENERATED_RECORD_BYTES} Bytes."
+        ),
+    )?;
+    match values.entry(id) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(serialized);
+        }
+        std::collections::btree_map::Entry::Occupied(entry) => {
+            require(
+                entry.get() == &serialized,
+                format!(
+                    "Kollidierende abgeleitete ID `{}` fuer {context}.",
+                    entry.key()
+                ),
+            )?;
+        }
     }
     Ok(())
+}
+
+#[derive(Default)]
+struct GeneratedBatch {
+    routes: BTreeMap<String, String>,
+    interlocking: BTreeMap<String, String>,
+    templates: BTreeMap<String, String>,
+    signals: BTreeSet<String>,
+    resources: BTreeSet<String>,
+}
+
+impl GeneratedBatch {
+    fn is_empty(&self) -> bool {
+        self.routes.is_empty()
+            && self.interlocking.is_empty()
+            && self.templates.is_empty()
+            && self.signals.is_empty()
+            && self.resources.is_empty()
+    }
+
+    fn estimated_resident_bytes(&self) -> usize {
+        let string_map_bytes = |values: &BTreeMap<String, String>| {
+            values.iter().fold(0_usize, |total, (id, serialized)| {
+                total
+                    .saturating_add(id.len())
+                    .saturating_add(serialized.len())
+                    .saturating_add(GENERATED_ENTRY_OVERHEAD_BYTES)
+            })
+        };
+        let string_set_bytes = |values: &BTreeSet<String>| {
+            values.iter().fold(0_usize, |total, id| {
+                total
+                    .saturating_add(id.len())
+                    .saturating_add(GENERATED_ENTRY_OVERHEAD_BYTES)
+            })
+        };
+        string_map_bytes(&self.routes)
+            .saturating_add(string_map_bytes(&self.interlocking))
+            .saturating_add(string_map_bytes(&self.templates))
+            .saturating_add(string_set_bytes(&self.signals))
+            .saturating_add(string_set_bytes(&self.resources))
+    }
+}
+
+fn require_generated_unit_bound(
+    resident_bytes_before: usize,
+    batch: &GeneratedBatch,
+    maximum_unit_bytes: usize,
+    context: &str,
+) -> Result<()> {
+    let unit_bytes = batch
+        .estimated_resident_bytes()
+        .saturating_sub(resident_bytes_before);
+    require(
+        unit_bytes <= maximum_unit_bytes,
+        format!(
+            "{context} ueberschreitet das feste Einzelableitungsbudget von {maximum_unit_bytes} Bytes."
+        ),
+    )
+}
+
+#[derive(Clone, Copy)]
+struct GeneratedBatchTables {
+    routes: TableDefinition<'static, &'static str, &'static str>,
+    interlocking: TableDefinition<'static, &'static str, &'static str>,
+    templates: TableDefinition<'static, &'static str, &'static str>,
+    route_context: &'static str,
+    interlocking_context: &'static str,
+    template_context: &'static str,
+}
+
+fn insert_generated_table(
+    write: &redb::WriteTransaction,
+    definition: TableDefinition<&str, &str>,
+    values: &BTreeMap<String, String>,
+    context: &str,
+) -> Result<()> {
+    let mut table = write.open_table(definition).map_err(db_error)?;
+    for (id, serialized) in values {
+        if let Some(previous) = table
+            .insert(id.as_str(), serialized.as_str())
+            .map_err(db_error)?
+        {
+            require(
+                previous.value() == serialized,
+                format!("Kollidierende {context}-ID `{id}`."),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn flush_generated_batch(
+    database: &Database,
+    batch: &mut GeneratedBatch,
+    tables: GeneratedBatchTables,
+    force: bool,
+    maximum_batch_bytes: usize,
+) -> Result<bool> {
+    if batch.is_empty() || (!force && batch.estimated_resident_bytes() < maximum_batch_bytes) {
+        return Ok(false);
+    }
+    let mut write = database.begin_write().map_err(db_error)?;
+    write.set_durability(Durability::None);
+    insert_generated_table(&write, tables.routes, &batch.routes, tables.route_context)?;
+    insert_generated_table(
+        &write,
+        tables.interlocking,
+        &batch.interlocking,
+        tables.interlocking_context,
+    )?;
+    insert_generated_table(
+        &write,
+        tables.templates,
+        &batch.templates,
+        tables.template_context,
+    )?;
+    {
+        let mut signals = write.open_table(SIGNALS).map_err(db_error)?;
+        for id in &batch.signals {
+            let _ = signals.insert(id.as_str(), &()).map_err(db_error)?;
+        }
+    }
+    {
+        let mut resources = write.open_table(BLOCK_RESOURCES).map_err(db_error)?;
+        for id in &batch.resources {
+            let _ = resources.insert(id.as_str(), &()).map_err(db_error)?;
+        }
+    }
+    write.commit().map_err(db_error)?;
+    *batch = GeneratedBatch::default();
+    Ok(true)
 }
 
 struct GeneratedMovementArtifacts<'a> {
@@ -6756,59 +7148,51 @@ fn derive_direct_templates(
     if policy.terminal_formation_lengths_mm.is_empty() {
         return Ok(BTreeSet::new());
     }
-    let transaction = database.begin_read().map_err(db_error)?;
-    let routes = transaction.open_table(TIMETABLE_ROUTES).map_err(db_error)?;
-    let pairs = required_pairs
-        .ok_or_else(|| {
-            GermanyOperationalV2Error::new(
-                "Direct-Turnaround-Ableitung verlangt die explizite DailyPlan-v2-Partition.",
-            )
-        })?
-        .to_vec();
-    let mut generated_routes = BTreeMap::<String, String>::new();
-    let mut generated_interlocking = BTreeMap::<String, String>::new();
-    let mut generated_templates = BTreeMap::<String, String>::new();
-    let mut generated_signals = BTreeSet::<String>::new();
-    let mut generated_resources = BTreeSet::<String>::new();
+    let pairs = required_pairs.ok_or_else(|| {
+        GermanyOperationalV2Error::new(
+            "Direct-Turnaround-Ableitung verlangt die explizite DailyPlan-v2-Partition.",
+        )
+    })?;
+    let tables = GeneratedBatchTables {
+        routes: TURNAROUND_ROUTES,
+        interlocking: TURNAROUND_INTERLOCKING,
+        templates: DIRECT_TEMPLATES,
+        route_context: "Direct-Laufweg",
+        interlocking_context: "Direct-Fahrstrasse",
+        template_context: "Direct-Template",
+    };
+    let mut batch = GeneratedBatch::default();
     let mut covered = BTreeSet::new();
 
     for pair in pairs {
-        let inbound_serialized = routes
-            .get(pair.inbound_route_version_id.as_str())
-            .map_err(db_error)?
-            .ok_or_else(|| {
-                GermanyOperationalV2Error::new(format!(
-                    "Turnaround-Paar verweist auf unbekannte Ankunftsroute `{}`.",
-                    pair.inbound_route_version_id
-                ))
-            })?;
-        let outbound_serialized = routes
-            .get(pair.outbound_route_version_id.as_str())
-            .map_err(db_error)?
-            .ok_or_else(|| {
-                GermanyOperationalV2Error::new(format!(
-                    "Turnaround-Paar verweist auf unbekannte Ausgangsroute `{}`.",
-                    pair.outbound_route_version_id
-                ))
-            })?;
-        let inbound = route_from_json(inbound_serialized.value(), "Direct-Ankunftsroute")?;
-        let outbound_base = route_from_json(outbound_serialized.value(), "Direct-Ausgangsroute")?;
-        let inbound_leg = inbound.legs.last().expect("validierte Ankunftsroute");
-        let outbound_leg = outbound_base
-            .legs
-            .first()
-            .expect("validierte Ausgangsroute");
-        let inbound_track = get_track(&transaction, &inbound_leg.edge_id)?;
-        let outbound_track = get_track(&transaction, &outbound_leg.edge_id)?;
-        if !same_physical_point(
-            &inbound_track,
-            inbound_leg.edge_exit_mm,
-            &outbound_track,
-            outbound_leg.edge_entry_mm,
-        ) {
-            continue;
-        }
         for &formation_length_mm in &policy.terminal_formation_lengths_mm {
+            let unit_resident_bytes = batch.estimated_resident_bytes();
+            let transaction = database.begin_read().map_err(db_error)?;
+            let inbound = timetable_route(
+                &transaction,
+                &pair.inbound_route_version_id,
+                "Direct-Ankunftsroute",
+            )?;
+            let outbound_base = timetable_route(
+                &transaction,
+                &pair.outbound_route_version_id,
+                "Direct-Ausgangsroute",
+            )?;
+            let inbound_leg = inbound.legs.last().expect("validierte Ankunftsroute");
+            let outbound_leg = outbound_base
+                .legs
+                .first()
+                .expect("validierte Ausgangsroute");
+            let inbound_track = get_track(&transaction, &inbound_leg.edge_id)?;
+            let outbound_track = get_track(&transaction, &outbound_leg.edge_id)?;
+            if !same_physical_point(
+                &inbound_track,
+                inbound_leg.edge_exit_mm,
+                &outbound_track,
+                outbound_leg.edge_entry_mm,
+            ) {
+                continue;
+            }
             let inbound_seed = formation_tail_legs(
                 &inbound,
                 formation_length_mm,
@@ -6854,18 +7238,18 @@ fn derive_direct_templates(
                     formation_length_mm,
                     MovementContinuity::SameDirection,
                     GeneratedMovementArtifacts {
-                        interlocking: &mut generated_interlocking,
-                        signals: &mut generated_signals,
-                        resources: &mut generated_resources,
+                        interlocking: &mut batch.interlocking,
+                        signals: &mut batch.signals,
+                        resources: &mut batch.resources,
                     },
                     "Direct-Through-Fahrstrasse",
                 )?;
                 occupancy_resources
                     .extend(occupancy_resources_for_legs(&transaction, &outbound_seed)?);
                 occupancy_resources.extend(movement_resources);
-                add_generated_route_resources(&transaction, &route, &mut generated_resources)?;
+                add_generated_route_resources(&transaction, &route, &mut batch.resources)?;
                 insert_generated(
-                    &mut generated_routes,
+                    &mut batch.routes,
                     through_route_id.clone(),
                     &route,
                     "Direct-Through-Laufweg",
@@ -6902,20 +7286,20 @@ fn derive_direct_templates(
                     MovementContinuity::SameDirection
                 },
                 GeneratedMovementArtifacts {
-                    interlocking: &mut generated_interlocking,
-                    signals: &mut generated_signals,
-                    resources: &mut generated_resources,
+                    interlocking: &mut batch.interlocking,
+                    signals: &mut batch.signals,
+                    resources: &mut batch.resources,
                 },
                 "Direct-Ausgangsfahrstrasse",
             )?;
-            add_generated_route_resources(&transaction, &qualified, &mut generated_resources)?;
+            add_generated_route_resources(&transaction, &qualified, &mut batch.resources)?;
             insert_generated(
-                &mut generated_routes,
+                &mut batch.routes,
                 route_id,
                 &qualified,
                 "Direct-Ausgangslaufweg",
             )?;
-            generated_resources.extend(occupancy_resources.iter().cloned());
+            batch.resources.extend(occupancy_resources.iter().cloned());
             let direct = DirectTemplateRecord {
                 id: direct_id.clone(),
                 demand_id: pair.id.clone(),
@@ -6941,12 +7325,15 @@ fn derive_direct_templates(
                 through,
                 outbound: dispatch,
             };
-            insert_generated(
-                &mut generated_templates,
-                direct_id,
-                &direct,
-                "Direct-Template",
+            insert_generated(&mut batch.templates, direct_id, &direct, "Direct-Template")?;
+            require_generated_unit_bound(
+                unit_resident_bytes,
+                &batch,
+                MAX_GENERATED_UNIT_BYTES,
+                "Direct-Turnaround-Fall",
             )?;
+            drop(transaction);
+            flush_generated_batch(database, &mut batch, tables, false, GENERATED_BATCH_BYTES)?;
             covered.insert((
                 inbound.route_version_id.clone(),
                 outbound_base.route_version_id.clone(),
@@ -6954,44 +7341,7 @@ fn derive_direct_templates(
             ));
         }
     }
-    drop(routes);
-    drop(transaction);
-
-    let mut write = database.begin_write().map_err(db_error)?;
-    write.set_durability(Durability::None);
-    for (definition, values, context) in [
-        (TURNAROUND_ROUTES, &generated_routes, "Direct-Laufweg"),
-        (
-            TURNAROUND_INTERLOCKING,
-            &generated_interlocking,
-            "Direct-Fahrstrasse",
-        ),
-        (DIRECT_TEMPLATES, &generated_templates, "Direct-Template"),
-    ] {
-        let mut table = write.open_table(definition).map_err(db_error)?;
-        for (id, serialized) in values {
-            require(
-                table
-                    .insert(id.as_str(), serialized.as_str())
-                    .map_err(db_error)?
-                    .is_none(),
-                format!("Doppelte {context}-ID `{id}`."),
-            )?;
-        }
-    }
-    {
-        let mut signals = write.open_table(SIGNALS).map_err(db_error)?;
-        for id in generated_signals {
-            let _ = signals.insert(id.as_str(), &()).map_err(db_error)?;
-        }
-    }
-    {
-        let mut resources = write.open_table(BLOCK_RESOURCES).map_err(db_error)?;
-        for id in generated_resources {
-            let _ = resources.insert(id.as_str(), &()).map_err(db_error)?;
-        }
-    }
-    write.commit().map_err(db_error)?;
+    flush_generated_batch(database, &mut batch, tables, true, GENERATED_BATCH_BYTES)?;
     Ok(covered)
 }
 
@@ -7333,16 +7683,21 @@ fn derive_transfer_templates(
     if inputs.is_empty() {
         return Ok(());
     }
-    let transaction = database.begin_read().map_err(db_error)?;
-    let mut generated_routes = BTreeMap::<String, String>::new();
-    let mut generated_interlocking = BTreeMap::<String, String>::new();
-    let mut generated_templates = BTreeMap::<String, String>::new();
-    let mut generated_signals = BTreeSet::<String>::new();
-    let mut generated_resources = BTreeSet::<String>::new();
+    let tables = GeneratedBatchTables {
+        routes: TRANSFER_ROUTES,
+        interlocking: TRANSFER_INTERLOCKING,
+        templates: TRANSFER_TEMPLATES,
+        route_context: "Transfer-Laufweg",
+        interlocking_context: "Transfer-Fahrstrasse",
+        template_context: "Transfer-Template",
+    };
+    let mut batch = GeneratedBatch::default();
 
     for input in inputs {
-        let validated = validate_transfer_input_base(&transaction, policy, input)?;
         for &formation_length_mm in &input.formation_lengths_mm {
+            let unit_resident_bytes = batch.estimated_resident_bytes();
+            let transaction = database.begin_read().map_err(db_error)?;
+            let validated = validate_transfer_input_base(&transaction, policy, input)?;
             let BuiltTransferRoutes {
                 record_id,
                 transfer,
@@ -7357,9 +7712,9 @@ fn derive_transfer_templates(
                 formation_length_mm,
                 MovementContinuity::SameDirection,
                 GeneratedMovementArtifacts {
-                    interlocking: &mut generated_interlocking,
-                    signals: &mut generated_signals,
-                    resources: &mut generated_resources,
+                    interlocking: &mut batch.interlocking,
+                    signals: &mut batch.signals,
+                    resources: &mut batch.resources,
                 },
             )?;
             let (target_outbound_dispatch, _) = generate_train_route_artifacts(
@@ -7369,16 +7724,16 @@ fn derive_transfer_templates(
                 formation_length_mm,
                 MovementContinuity::SameDirection,
                 GeneratedMovementArtifacts {
-                    interlocking: &mut generated_interlocking,
-                    signals: &mut generated_signals,
-                    resources: &mut generated_resources,
+                    interlocking: &mut batch.interlocking,
+                    signals: &mut batch.signals,
+                    resources: &mut batch.resources,
                 },
                 "Transfer-Zielausgangsfahrstrasse",
             )?;
             for route in [&transfer, &target_outbound] {
-                add_generated_route_resources(&transaction, route, &mut generated_resources)?;
+                add_generated_route_resources(&transaction, route, &mut batch.resources)?;
                 insert_generated(
-                    &mut generated_routes,
+                    &mut batch.routes,
                     route.route_version_id.clone(),
                     route,
                     "Transfer-Laufweg",
@@ -7403,54 +7758,237 @@ fn derive_transfer_templates(
                 resource_ids: movement_resources,
             };
             insert_generated(
-                &mut generated_templates,
+                &mut batch.templates,
                 record_id,
                 &record,
                 "Transfer-Template",
             )?;
+            require_generated_unit_bound(
+                unit_resident_bytes,
+                &batch,
+                MAX_GENERATED_UNIT_BYTES,
+                "Transfer-Fall",
+            )?;
+            drop(transaction);
+            flush_generated_batch(database, &mut batch, tables, false, GENERATED_BATCH_BYTES)?;
         }
     }
+    flush_generated_batch(database, &mut batch, tables, true, GENERATED_BATCH_BYTES)?;
+    Ok(())
+}
+
+fn derive_turnaround_case(
+    database: &Database,
+    policy: &PolicySpec,
+    demand: &TurnaroundPairDemand,
+    formation_length_mm: i64,
+    batch: &mut GeneratedBatch,
+    tables: GeneratedBatchTables,
+) -> Result<bool> {
+    let transaction = database.begin_read().map_err(db_error)?;
+    let inbound = timetable_route(
+        &transaction,
+        &demand.inbound_route_version_id,
+        "Ankunfts-Personenlaufweg aus DailyPlan",
+    )?;
+    let outbound_base = timetable_route(
+        &transaction,
+        &demand.outbound_route_version_id,
+        "Ausgangs-Personenlaufweg aus DailyPlan",
+    )?;
+    let inbound_terminal_leg = inbound
+        .legs
+        .last()
+        .ok_or_else(|| GermanyOperationalV2Error::new("Ankunftslaufweg ist leer."))?;
+    let inbound_direction = inbound_terminal_leg.direction.clone();
+    let inbound_access = inbound_terminal_access(&transaction, &inbound)?;
+    let terminal_edge_id = inbound_access.terminal_track.id.clone();
+    let terminal_node_id = inbound_access.node_id;
+    let outbound_first = outbound_base
+        .legs
+        .first()
+        .ok_or_else(|| GermanyOperationalV2Error::new("Ausgangslaufweg ist leer."))?;
+    let outbound_direction = outbound_first.direction.clone();
+    let outbound_access = outbound_terminal_access(&transaction, &outbound_base)?;
+    let inbound_seed = formation_tail_legs(
+        &inbound,
+        formation_length_mm,
+        &format!(
+            "Ankunftslaufweg `{}` fuer Formation {formation_length_mm}",
+            inbound.route_version_id
+        ),
+    )?;
+    let terminal_intervals = terminal_intervals(&inbound_seed);
+    let candidates = paired_stabling_candidates_with_fallback(
+        &transaction,
+        &inbound_access,
+        &outbound_access,
+        formation_length_mm,
+        policy.minimum_berth_end_clearance_mm,
+        policy.maximum_stabling_path_edges,
+        policy.maximum_stabling_path_length_mm,
+        &inbound.route_version_id,
+        &outbound_base.route_version_id,
+        demand,
+    )?
+    .candidates;
     drop(transaction);
 
-    let mut write = database.begin_write().map_err(db_error)?;
-    write.set_durability(Durability::None);
-    for (definition, values, context) in [
-        (TRANSFER_ROUTES, &generated_routes, "Transfer-Laufweg"),
-        (
-            TRANSFER_INTERLOCKING,
-            &generated_interlocking,
-            "Transfer-Fahrstrasse",
-        ),
-        (
-            TRANSFER_TEMPLATES,
-            &generated_templates,
-            "Transfer-Template",
-        ),
-    ] {
-        let mut table = write.open_table(definition).map_err(db_error)?;
-        for (id, serialized) in values {
-            require(
-                table
-                    .insert(id.as_str(), serialized.as_str())
-                    .map_err(db_error)?
-                    .is_none(),
-                format!("Doppelte {context}-ID `{id}`."),
+    let mut emitted = false;
+    for (candidate_rank, candidate) in candidates.iter().enumerate() {
+        let unit_resident_bytes = batch.estimated_resident_bytes();
+        let transaction = database.begin_read().map_err(db_error)?;
+        let built = build_stabling_routes(
+            &transaction,
+            policy,
+            &inbound,
+            &outbound_base,
+            formation_length_mm,
+            candidate,
+        )?;
+        let stabling_runtime_ms =
+            stabling_minimum_runtime_ms(&transaction, &built, formation_length_mm)?;
+        let available_window_ms =
+            demand
+                .available_window_s
+                .checked_mul(1_000)
+                .ok_or_else(|| {
+                    GermanyOperationalV2Error::new("Turnaround-Zeitfenster laeuft ueber.")
+                })?;
+        if stabling_runtime_ms > available_window_ms {
+            continue;
+        }
+        let BuiltStablingRoutes {
+            ids,
+            arrival_berth,
+            departure_berth,
+            shunt_in,
+            berth_transfer,
+            shunt_out,
+            shunt_out_continuity,
+            outbound,
+        } = built;
+        let shunt_out_predecessor = berth_transfer.as_ref().unwrap_or(&shunt_in);
+        let (shunt_in_dispatch, _) = generate_movement_route_artifacts(
+            &transaction,
+            &inbound,
+            &shunt_in,
+            "shunting",
+            formation_length_mm,
+            MovementContinuity::SameDirection,
+            GeneratedMovementArtifacts {
+                interlocking: &mut batch.interlocking,
+                signals: &mut batch.signals,
+                resources: &mut batch.resources,
+            },
+        )?;
+        let berth_transfer_dispatch = if let Some(route) = &berth_transfer {
+            Some(
+                generate_movement_route_artifacts(
+                    &transaction,
+                    &shunt_in,
+                    route,
+                    "shunting",
+                    formation_length_mm,
+                    MovementContinuity::ReverseDirection,
+                    GeneratedMovementArtifacts {
+                        interlocking: &mut batch.interlocking,
+                        signals: &mut batch.signals,
+                        resources: &mut batch.resources,
+                    },
+                )?
+                .0,
+            )
+        } else {
+            None
+        };
+        let (shunt_out_dispatch, _) = generate_movement_route_artifacts(
+            &transaction,
+            shunt_out_predecessor,
+            &shunt_out,
+            "shunting",
+            formation_length_mm,
+            shunt_out_continuity,
+            GeneratedMovementArtifacts {
+                interlocking: &mut batch.interlocking,
+                signals: &mut batch.signals,
+                resources: &mut batch.resources,
+            },
+        )?;
+        let (outbound_dispatch, _) = generate_movement_route_artifacts(
+            &transaction,
+            &shunt_out,
+            &outbound,
+            "train",
+            formation_length_mm,
+            MovementContinuity::SameDirection,
+            GeneratedMovementArtifacts {
+                interlocking: &mut batch.interlocking,
+                signals: &mut batch.signals,
+                resources: &mut batch.resources,
+            },
+        )?;
+        for route in berth_transfer
+            .iter()
+            .chain([&shunt_in, &shunt_out, &outbound])
+        {
+            add_generated_route_resources(&transaction, route, &mut batch.resources)?;
+            insert_generated(
+                &mut batch.routes,
+                route.route_version_id.clone(),
+                route,
+                "Turnaround-Laufweg",
             )?;
         }
+        let candidate_rank = u32::try_from(candidate_rank)
+            .map_err(|_| GermanyOperationalV2Error::new("Zu viele Abstellkandidaten."))?;
+        let record = TurnaroundTemplateRecord {
+            id: ids.turnaround_id.clone(),
+            demand_id: demand.id.clone(),
+            inbound_route_version_id: inbound.route_version_id.clone(),
+            outbound_route_version_id: outbound_base.route_version_id.clone(),
+            location_id: demand.source_location_id.clone(),
+            physical_stop_id: demand.source_physical_stop_id.clone(),
+            earliest_departure_s: demand.earliest_departure_s,
+            latest_arrival_s: demand.latest_arrival_s,
+            available_window_s: demand.available_window_s,
+            daily_boundary: demand.daily_boundary,
+            terminal_edge_id: terminal_edge_id.clone(),
+            terminal_node_id,
+            inbound_direction: inbound_direction.clone(),
+            outbound_direction: outbound_direction.clone(),
+            formation_length_mm,
+            candidate_rank,
+            stabling_path_length_mm: candidate.total_length_mm,
+            terminal_intervals: terminal_intervals.clone(),
+            stabling_kind: candidate.stabling_kind,
+            arrival_berth_assignment: candidate.arrival_berth_assignment,
+            departure_berth_assignment: candidate.departure_berth_assignment,
+            shunt_in: shunt_in_dispatch,
+            arrival_berth,
+            berth_transfer: berth_transfer_dispatch,
+            berth_transfer_provenance: candidate.berth_transfer_provenance.clone(),
+            departure_berth,
+            shunt_out: shunt_out_dispatch,
+            outbound: outbound_dispatch,
+        };
+        insert_generated(
+            &mut batch.templates,
+            ids.turnaround_id,
+            &record,
+            "Turnaround-Template",
+        )?;
+        require_generated_unit_bound(
+            unit_resident_bytes,
+            batch,
+            MAX_GENERATED_UNIT_BYTES,
+            "Stabling-Turnaround-Kandidat",
+        )?;
+        emitted = true;
+        drop(transaction);
+        flush_generated_batch(database, batch, tables, false, GENERATED_BATCH_BYTES)?;
     }
-    {
-        let mut signals = write.open_table(SIGNALS).map_err(db_error)?;
-        for id in generated_signals {
-            let _ = signals.insert(id.as_str(), &()).map_err(db_error)?;
-        }
-    }
-    {
-        let mut resources = write.open_table(BLOCK_RESOURCES).map_err(db_error)?;
-        for id in generated_resources {
-            let _ = resources.insert(id.as_str(), &()).map_err(db_error)?;
-        }
-    }
-    write.commit().map_err(db_error)
+    Ok(emitted)
 }
 
 fn derive_turnaround_templates(
@@ -7461,337 +7999,58 @@ fn derive_turnaround_templates(
     if policy.terminal_formation_lengths_mm.is_empty() {
         return Ok(BTreeSet::new());
     }
-    let transaction = database.begin_read().map_err(db_error)?;
-    let routes = transaction.open_table(TIMETABLE_ROUTES).map_err(db_error)?;
-    require(
-        !routes.is_empty().map_err(db_error)?,
-        "terminalFormationLengthsMm verlangt einen gepinnten timetableRoutes-Layer.",
-    )?;
-    let mut generated_routes = BTreeMap::<String, String>::new();
-    let mut generated_interlocking = BTreeMap::<String, String>::new();
-    let mut generated_templates = BTreeMap::<String, String>::new();
-    let mut generated_signals = BTreeSet::<String>::new();
-    let mut generated_resources = BTreeSet::<String>::new();
-    let mut covered = BTreeSet::new();
+    {
+        let transaction = database.begin_read().map_err(db_error)?;
+        let routes = transaction.open_table(TIMETABLE_ROUTES).map_err(db_error)?;
+        require(
+            !routes.is_empty().map_err(db_error)?,
+            "terminalFormationLengthsMm verlangt einen gepinnten timetableRoutes-Layer.",
+        )?;
+    }
     let required_pairs = required_pairs.ok_or_else(|| {
         GermanyOperationalV2Error::new(
             "Stabling-Turnaround-Ableitung verlangt die explizite DailyPlan-v2-Partition.",
         )
     })?;
-    let mut required_by_inbound = BTreeMap::<String, BTreeSet<String>>::new();
-    let mut demand_by_pair = BTreeMap::<(String, String), &TurnaroundPairDemand>::new();
+    let tables = GeneratedBatchTables {
+        routes: TURNAROUND_ROUTES,
+        interlocking: TURNAROUND_INTERLOCKING,
+        templates: TURNAROUND_TEMPLATES,
+        route_context: "Turnaround-Laufweg",
+        interlocking_context: "Turnaround-Fahrstrasse",
+        template_context: "Turnaround-Template",
+    };
+    let mut unique_pairs = BTreeSet::new();
     for pair in required_pairs {
-        required_by_inbound
-            .entry(pair.inbound_route_version_id.clone())
-            .or_default()
-            .insert(pair.outbound_route_version_id.clone());
         require(
-            demand_by_pair
-                .insert(
-                    (
-                        pair.inbound_route_version_id.clone(),
-                        pair.outbound_route_version_id.clone(),
-                    ),
-                    pair,
-                )
-                .is_none(),
+            unique_pairs.insert((
+                pair.inbound_route_version_id.clone(),
+                pair.outbound_route_version_id.clone(),
+            )),
             "DailyPlan-v2 bindet ein Turnaround-Routenpaar mehrfach.",
         )?;
     }
-
-    for entry in routes.iter().map_err(db_error)? {
-        let (_, serialized) = entry.map_err(db_error)?;
-        let inbound = route_from_json(serialized.value(), "Ankunfts-Personenlaufweg")?;
-        let required_outbound = required_by_inbound.get(&inbound.route_version_id);
-        if required_outbound.is_none() {
-            continue;
-        }
-        let inbound_terminal_leg = inbound
-            .legs
-            .last()
-            .ok_or_else(|| GermanyOperationalV2Error::new("Ankunftslaufweg ist leer."))?;
-        let inbound_access = inbound_terminal_access(&transaction, &inbound)?;
-        let terminal_track = &inbound_access.terminal_track;
-        let terminal_node_id = inbound_access.node_id;
-        let ids = required_outbound.expect("gepruefter DailyPlan-v2-Ankunftslaufweg");
-        let mut outbound_routes = Vec::with_capacity(ids.len());
-        for id in ids {
-            let serialized = routes.get(id.as_str()).map_err(db_error)?.ok_or_else(|| {
-                GermanyOperationalV2Error::new(format!(
-                    "Turnaround-Anforderung verweist auf unbekannten Ausgangslaufweg `{id}`."
-                ))
-            })?;
-            outbound_routes.push(route_from_json(
-                serialized.value(),
-                "Ausgangs-Personenlaufweg aus DailyPlan",
-            )?);
-        }
-        if outbound_routes.is_empty() {
-            continue;
-        }
-
+    let mut batch = GeneratedBatch::default();
+    let mut covered = BTreeSet::new();
+    for pair in required_pairs {
         for &formation_length_mm in &policy.terminal_formation_lengths_mm {
-            let inbound_seed = formation_tail_legs(
-                &inbound,
+            if derive_turnaround_case(
+                database,
+                policy,
+                pair,
                 formation_length_mm,
-                &format!(
-                    "Ankunftslaufweg `{}` fuer Formation {formation_length_mm}",
-                    inbound.route_version_id
-                ),
-            )?;
-            let terminal_intervals = terminal_intervals(&inbound_seed);
-
-            for outbound_base in &outbound_routes {
-                let demand = demand_by_pair
-                    .get(&(
-                        inbound.route_version_id.clone(),
-                        outbound_base.route_version_id.clone(),
-                    ))
-                    .copied()
-                    .ok_or_else(|| {
-                        GermanyOperationalV2Error::new(
-                            "Turnaround-Laufwegpaar besitzt keine explizite DailyPlan-v2-Anforderung.",
-                        )
-                    })?;
-                let outbound_first = outbound_base
-                    .legs
-                    .first()
-                    .ok_or_else(|| GermanyOperationalV2Error::new("Ausgangslaufweg ist leer."))?;
-                let outbound_access = outbound_terminal_access(&transaction, outbound_base)?;
-                let candidates = paired_stabling_candidates_with_fallback(
-                    &transaction,
-                    &inbound_access,
-                    &outbound_access,
+                &mut batch,
+                tables,
+            )? {
+                covered.insert((
+                    pair.inbound_route_version_id.clone(),
+                    pair.outbound_route_version_id.clone(),
                     formation_length_mm,
-                    policy.minimum_berth_end_clearance_mm,
-                    policy.maximum_stabling_path_edges,
-                    policy.maximum_stabling_path_length_mm,
-                    &inbound.route_version_id,
-                    &outbound_base.route_version_id,
-                    demand,
-                )?
-                .candidates;
-                if candidates.is_empty() {
-                    continue;
-                }
-
-                for (candidate_rank, candidate) in candidates.iter().enumerate() {
-                    let built = build_stabling_routes(
-                        &transaction,
-                        policy,
-                        &inbound,
-                        outbound_base,
-                        formation_length_mm,
-                        candidate,
-                    )?;
-                    let stabling_runtime_ms =
-                        stabling_minimum_runtime_ms(&transaction, &built, formation_length_mm)?;
-                    let BuiltStablingRoutes {
-                        ids,
-                        arrival_berth,
-                        departure_berth,
-                        shunt_in,
-                        berth_transfer,
-                        shunt_out,
-                        shunt_out_continuity,
-                        outbound,
-                    } = built;
-                    let shunt_out_predecessor = berth_transfer.as_ref().unwrap_or(&shunt_in);
-                    let outbound_direction = outbound_first.direction.as_str();
-                    let available_window_ms = demand
-                        .available_window_s
-                        .checked_mul(1_000)
-                        .ok_or_else(|| {
-                            GermanyOperationalV2Error::new("Turnaround-Zeitfenster laeuft ueber.")
-                        })?;
-                    if stabling_runtime_ms > available_window_ms {
-                        continue;
-                    }
-                    let (shunt_in_dispatch, _) = generate_movement_route_artifacts(
-                        &transaction,
-                        &inbound,
-                        &shunt_in,
-                        "shunting",
-                        formation_length_mm,
-                        MovementContinuity::SameDirection,
-                        GeneratedMovementArtifacts {
-                            interlocking: &mut generated_interlocking,
-                            signals: &mut generated_signals,
-                            resources: &mut generated_resources,
-                        },
-                    )?;
-                    let berth_transfer_dispatch = if let Some(route) = &berth_transfer {
-                        Some(
-                            generate_movement_route_artifacts(
-                                &transaction,
-                                &shunt_in,
-                                route,
-                                "shunting",
-                                formation_length_mm,
-                                MovementContinuity::ReverseDirection,
-                                GeneratedMovementArtifacts {
-                                    interlocking: &mut generated_interlocking,
-                                    signals: &mut generated_signals,
-                                    resources: &mut generated_resources,
-                                },
-                            )?
-                            .0,
-                        )
-                    } else {
-                        None
-                    };
-                    let (shunt_out_dispatch, _) = generate_movement_route_artifacts(
-                        &transaction,
-                        shunt_out_predecessor,
-                        &shunt_out,
-                        "shunting",
-                        formation_length_mm,
-                        shunt_out_continuity,
-                        GeneratedMovementArtifacts {
-                            interlocking: &mut generated_interlocking,
-                            signals: &mut generated_signals,
-                            resources: &mut generated_resources,
-                        },
-                    )?;
-                    let (outbound_dispatch, _) = generate_movement_route_artifacts(
-                        &transaction,
-                        &shunt_out,
-                        &outbound,
-                        "train",
-                        formation_length_mm,
-                        MovementContinuity::SameDirection,
-                        GeneratedMovementArtifacts {
-                            interlocking: &mut generated_interlocking,
-                            signals: &mut generated_signals,
-                            resources: &mut generated_resources,
-                        },
-                    )?;
-                    let routes_to_insert = berth_transfer
-                        .iter()
-                        .chain([&shunt_in, &shunt_out, &outbound]);
-                    for route in routes_to_insert {
-                        add_generated_route_resources(
-                            &transaction,
-                            route,
-                            &mut generated_resources,
-                        )?;
-                        insert_generated(
-                            &mut generated_routes,
-                            route.route_version_id.clone(),
-                            route,
-                            "Turnaround-Laufweg",
-                        )?;
-                    }
-                    let candidate_rank = u32::try_from(candidate_rank).map_err(|_| {
-                        GermanyOperationalV2Error::new("Zu viele Abstellkandidaten.")
-                    })?;
-                    let record = TurnaroundTemplateRecord {
-                        id: ids.turnaround_id.clone(),
-                        demand_id: demand.id.clone(),
-                        inbound_route_version_id: inbound.route_version_id.clone(),
-                        outbound_route_version_id: outbound_base.route_version_id.clone(),
-                        location_id: demand.source_location_id.clone(),
-                        physical_stop_id: demand.source_physical_stop_id.clone(),
-                        earliest_departure_s: demand.earliest_departure_s,
-                        latest_arrival_s: demand.latest_arrival_s,
-                        available_window_s: demand.available_window_s,
-                        daily_boundary: demand.daily_boundary,
-                        terminal_edge_id: terminal_track.id.clone(),
-                        terminal_node_id,
-                        inbound_direction: inbound_terminal_leg.direction.clone(),
-                        outbound_direction: outbound_direction.to_owned(),
-                        formation_length_mm,
-                        candidate_rank,
-                        stabling_path_length_mm: candidate.total_length_mm,
-                        terminal_intervals: terminal_intervals.clone(),
-                        stabling_kind: candidate.stabling_kind,
-                        arrival_berth_assignment: candidate.arrival_berth_assignment,
-                        departure_berth_assignment: candidate.departure_berth_assignment,
-                        shunt_in: shunt_in_dispatch,
-                        arrival_berth,
-                        berth_transfer: berth_transfer_dispatch,
-                        berth_transfer_provenance: candidate.berth_transfer_provenance.clone(),
-                        departure_berth,
-                        shunt_out: shunt_out_dispatch,
-                        outbound: outbound_dispatch,
-                    };
-                    insert_generated(
-                        &mut generated_templates,
-                        ids.turnaround_id,
-                        &record,
-                        "Turnaround-Template",
-                    )?;
-                    covered.insert((
-                        inbound.route_version_id.clone(),
-                        outbound_base.route_version_id.clone(),
-                        formation_length_mm,
-                    ));
-                }
+                ));
             }
         }
     }
-    drop(routes);
-    drop(transaction);
-
-    let mut write = database.begin_write().map_err(db_error)?;
-    write.set_durability(Durability::None);
-    {
-        let mut routes = write.open_table(TURNAROUND_ROUTES).map_err(db_error)?;
-        for (id, serialized) in &generated_routes {
-            require(
-                routes
-                    .insert(id.as_str(), serialized.as_str())
-                    .map_err(db_error)?
-                    .is_none(),
-                format!("Doppelte Turnaround-Laufweg-ID `{id}`."),
-            )?;
-        }
-    }
-    {
-        let mut interlocking = write
-            .open_table(TURNAROUND_INTERLOCKING)
-            .map_err(db_error)?;
-        for (id, serialized) in &generated_interlocking {
-            require(
-                interlocking
-                    .insert(id.as_str(), serialized.as_str())
-                    .map_err(db_error)?
-                    .is_none(),
-                format!("Doppelte Turnaround-Fahrstrassen-ID `{id}`."),
-            )?;
-        }
-    }
-    {
-        let mut templates = write.open_table(TURNAROUND_TEMPLATES).map_err(db_error)?;
-        for (id, serialized) in &generated_templates {
-            require(
-                templates
-                    .insert(id.as_str(), serialized.as_str())
-                    .map_err(db_error)?
-                    .is_none(),
-                format!("Doppelte Turnaround-Template-ID `{id}`."),
-            )?;
-        }
-    }
-    {
-        let mut signals = write.open_table(SIGNALS).map_err(db_error)?;
-        for signal in &generated_signals {
-            require(
-                signals
-                    .insert(signal.as_str(), &())
-                    .map_err(db_error)?
-                    .is_none(),
-                format!("Kollidierende Turnaround-Signal-ID `{signal}`."),
-            )?;
-        }
-    }
-    {
-        let mut resources = write.open_table(BLOCK_RESOURCES).map_err(db_error)?;
-        for resource in &generated_resources {
-            let _ = resources.insert(resource.as_str(), &()).map_err(db_error)?;
-        }
-    }
-    write.commit().map_err(db_error)?;
+    flush_generated_batch(database, &mut batch, tables, true, GENERATED_BATCH_BYTES)?;
     Ok(covered)
 }
 
@@ -8350,25 +8609,6 @@ fn write_report(path: &Path, report: &Value) -> Result<(u64, String)> {
     ))
 }
 
-fn string_table_values(
-    transaction: &redb::ReadTransaction,
-    definition: TableDefinition<&str, &str>,
-    context: &str,
-) -> Result<Vec<Value>> {
-    let table = transaction.open_table(definition).map_err(db_error)?;
-    let mut values =
-        Vec::with_capacity(usize::try_from(table.len().map_err(db_error)?).unwrap_or(0));
-    for entry in table.iter().map_err(db_error)? {
-        let (_, serialized) = entry.map_err(db_error)?;
-        values.push(serde_json::from_str(serialized.value()).map_err(|error| {
-            GermanyOperationalV2Error::new(format!(
-                "{context} im Ableitungsindex ist ungueltig: {error}"
-            ))
-        })?);
-    }
-    Ok(values)
-}
-
 fn stabling_template_provenance_counts(
     templates: &[Value],
 ) -> Result<(BerthAssignmentCounts, u64, u64, u64)> {
@@ -8477,6 +8717,214 @@ fn stabling_template_provenance_counts(
     ))
 }
 
+struct CountingHashWriter<W> {
+    inner: W,
+    hasher: Sha256,
+    bytes: u64,
+}
+
+impl<W> CountingHashWriter<W> {
+    fn new(inner: W) -> Self {
+        Self {
+            inner,
+            hasher: Sha256::new(),
+            bytes: 0,
+        }
+    }
+}
+
+impl<W: Write> CountingHashWriter<W> {
+    fn finish(mut self) -> io::Result<(u64, String)> {
+        self.flush()?;
+        Ok((self.bytes, digest_hex(self.hasher.finalize())))
+    }
+}
+
+impl<W: Write> Write for CountingHashWriter<W> {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        let written = self.inner.write(buffer)?;
+        self.hasher.update(&buffer[..written]);
+        self.bytes = self
+            .bytes
+            .checked_add(u64::try_from(written).unwrap_or(u64::MAX))
+            .ok_or_else(|| io::Error::other("Sidecargroesse laeuft ueber."))?;
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+fn write_sidecar_bytes<W: Write>(writer: &mut W, bytes: &[u8], path: &Path) -> Result<()> {
+    writer
+        .write_all(bytes)
+        .map_err(|error| io_error("Movement-Route-Sidecar", path, error))
+}
+
+fn write_canonical_sidecar_value<W: Write>(
+    writer: &mut W,
+    value: &Value,
+    path: &Path,
+) -> Result<()> {
+    let mut canonical = String::new();
+    canonical_json(value, &mut canonical);
+    write_sidecar_bytes(writer, canonical.as_bytes(), path)
+}
+
+fn write_canonical_sidecar_string<W: Write>(
+    writer: &mut W,
+    value: &str,
+    path: &Path,
+) -> Result<()> {
+    let serialized = serde_json::to_string(value).map_err(|error| {
+        GermanyOperationalV2Error::new(format!(
+            "Movement-Route-Sidecar-Zeichenkette kann nicht serialisiert werden: {error}"
+        ))
+    })?;
+    write_sidecar_bytes(writer, serialized.as_bytes(), path)
+}
+
+fn write_string_table_array<W: Write>(
+    transaction: &redb::ReadTransaction,
+    definition: TableDefinition<&str, &str>,
+    context: &str,
+    writer: &mut W,
+    path: &Path,
+) -> Result<()> {
+    let table = transaction.open_table(definition).map_err(db_error)?;
+    write_sidecar_bytes(writer, b"[", path)?;
+    let mut first = true;
+    for entry in table.iter().map_err(db_error)? {
+        let (_, serialized) = entry.map_err(db_error)?;
+        let value: Value = serde_json::from_str(serialized.value()).map_err(|error| {
+            GermanyOperationalV2Error::new(format!(
+                "{context} im Ableitungsindex ist ungueltig: {error}"
+            ))
+        })?;
+        if !first {
+            write_sidecar_bytes(writer, b",", path)?;
+        }
+        first = false;
+        write_canonical_sidecar_value(writer, &value, path)?;
+    }
+    write_sidecar_bytes(writer, b"]", path)
+}
+
+fn stabling_template_provenance_counts_from_table(
+    transaction: &redb::ReadTransaction,
+) -> Result<(BerthAssignmentCounts, u64, u64, u64)> {
+    let table = transaction
+        .open_table(TURNAROUND_TEMPLATES)
+        .map_err(db_error)?;
+    let mut counts = BerthAssignmentCounts::default();
+    let mut observed = 0_u64;
+    let mut simulated = 0_u64;
+    let mut cross_berth = 0_u64;
+    for (index, entry) in table.iter().map_err(db_error)?.enumerate() {
+        let (_, serialized) = entry.map_err(db_error)?;
+        let value: Value = serde_json::from_str(serialized.value()).map_err(|error| {
+            GermanyOperationalV2Error::new(format!(
+                "Stabling-Template {index} im Ableitungsindex ist ungueltig: {error}"
+            ))
+        })?;
+        let (item, item_observed, item_simulated, item_cross_berth) =
+            stabling_template_provenance_counts(std::slice::from_ref(&value)).map_err(|error| {
+                GermanyOperationalV2Error::new(format!("Stabling-Template {index}: {error}"))
+            })?;
+        counts.observed_osm_service_siding = counts
+            .observed_osm_service_siding
+            .saturating_add(item.observed_osm_service_siding);
+        counts.simulated_operational_osm_service_yard = counts
+            .simulated_operational_osm_service_yard
+            .saturating_add(item.simulated_operational_osm_service_yard);
+        counts.simulated_operational_osm_service_spur = counts
+            .simulated_operational_osm_service_spur
+            .saturating_add(item.simulated_operational_osm_service_spur);
+        counts.simulated_operational_osm_unclassified_rail = counts
+            .simulated_operational_osm_unclassified_rail
+            .saturating_add(item.simulated_operational_osm_unclassified_rail);
+        observed = observed.saturating_add(item_observed);
+        simulated = simulated.saturating_add(item_simulated);
+        cross_berth = cross_berth.saturating_add(item_cross_berth);
+    }
+    Ok((counts, observed, simulated, cross_berth))
+}
+
+fn direct_turnaround_pair_count(transaction: &redb::ReadTransaction) -> Result<u64> {
+    let table = transaction.open_table(DIRECT_TEMPLATES).map_err(db_error)?;
+    let mut pairs = BTreeSet::new();
+    for entry in table.iter().map_err(db_error)? {
+        let (_, serialized) = entry.map_err(db_error)?;
+        let value: Value = serde_json::from_str(serialized.value()).map_err(|error| {
+            GermanyOperationalV2Error::new(format!(
+                "Direct-Template im Ableitungsindex ist ungueltig: {error}"
+            ))
+        })?;
+        let inbound = value["inboundRouteVersionId"].as_str().ok_or_else(|| {
+            GermanyOperationalV2Error::new("Direct-Template besitzt keine inboundRouteVersionId.")
+        })?;
+        let outbound = value["outboundRouteVersionId"].as_str().ok_or_else(|| {
+            GermanyOperationalV2Error::new("Direct-Template besitzt keine outboundRouteVersionId.")
+        })?;
+        pairs.insert((inbound.to_owned(), outbound.to_owned()));
+    }
+    u64::try_from(pairs.len())
+        .map_err(|_| GermanyOperationalV2Error::new("Direct-Paarmenge laeuft ueber."))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_movement_route_sidecar_body<W: Write>(
+    transaction: &redb::ReadTransaction,
+    writer: &mut W,
+    path: &Path,
+    infra_release_id: &str,
+    operational_state_hash: &str,
+    transfer_set_sha256: &Value,
+    metrics: &Value,
+    state_hash: Option<&str>,
+) -> Result<()> {
+    write_sidecar_bytes(writer, b"{\"directTemplates\":", path)?;
+    write_string_table_array(
+        transaction,
+        DIRECT_TEMPLATES,
+        "Direct-Template",
+        writer,
+        path,
+    )?;
+    write_sidecar_bytes(writer, b",\"infraReleaseId\":", path)?;
+    write_canonical_sidecar_string(writer, infra_release_id, path)?;
+    write_sidecar_bytes(writer, b",\"metrics\":", path)?;
+    write_canonical_sidecar_value(writer, metrics, path)?;
+    write_sidecar_bytes(writer, b",\"operationalStateHash\":", path)?;
+    write_canonical_sidecar_string(writer, operational_state_hash, path)?;
+    write_sidecar_bytes(writer, b",\"schema\":", path)?;
+    write_canonical_sidecar_string(writer, MOVEMENT_ROUTE_SIDECAR_SCHEMA, path)?;
+    if let Some(state_hash) = state_hash {
+        write_sidecar_bytes(writer, b",\"stateHash\":", path)?;
+        write_canonical_sidecar_string(writer, state_hash, path)?;
+    }
+    write_sidecar_bytes(writer, b",\"templates\":", path)?;
+    write_string_table_array(
+        transaction,
+        TURNAROUND_TEMPLATES,
+        "Stabling-Template",
+        writer,
+        path,
+    )?;
+    write_sidecar_bytes(writer, b",\"timetableTransferSetSha256\":", path)?;
+    write_canonical_sidecar_value(writer, transfer_set_sha256, path)?;
+    write_sidecar_bytes(writer, b",\"transferTemplates\":", path)?;
+    write_string_table_array(
+        transaction,
+        TRANSFER_TEMPLATES,
+        "Transfer-Template",
+        writer,
+        path,
+    )?;
+    write_sidecar_bytes(writer, b"}", path)
+}
+
 fn write_movement_route_sidecar(
     transaction: &redb::ReadTransaction,
     path: &Path,
@@ -8484,93 +8932,75 @@ fn write_movement_route_sidecar(
     operational_state_hash: &str,
     transfer_evidence: Option<&TransferEvidence>,
 ) -> Result<(u64, String, String, BerthAssignmentCounts, u64, u64, u64)> {
-    let direct_templates = string_table_values(transaction, DIRECT_TEMPLATES, "Direct-Template")?;
-    let stabling_templates =
-        string_table_values(transaction, TURNAROUND_TEMPLATES, "Stabling-Template")?;
     let (
         berth_assignment_counts,
         observed_stabling_template_count,
         simulated_operational_stabling_template_count,
         cross_berth_template_count,
-    ) = stabling_template_provenance_counts(&stabling_templates)?;
-    let transfer_templates =
-        string_table_values(transaction, TRANSFER_TEMPLATES, "Transfer-Template")?;
+    ) = stabling_template_provenance_counts_from_table(transaction)?;
+    let direct_template_count = string_table_len(transaction, DIRECT_TEMPLATES)?;
+    let stabling_template_count = string_table_len(transaction, TURNAROUND_TEMPLATES)?;
+    let transfer_template_count = string_table_len(transaction, TRANSFER_TEMPLATES)?;
+    let direct_pair_count = direct_turnaround_pair_count(transaction)?;
     let transfer_set_sha256 = transfer_evidence
         .map(|evidence| Value::String(evidence.transfer_set_sha256.clone()))
         .unwrap_or(Value::Null);
-    let body = json!({
-        "schema": MOVEMENT_ROUTE_SIDECAR_SCHEMA,
-        "infraReleaseId": infra_release_id,
-        "operationalStateHash": operational_state_hash,
-        "timetableTransferSetSha256": transfer_set_sha256,
-        "directTemplates": direct_templates,
-        "templates": stabling_templates,
-        "transferTemplates": transfer_templates,
-        "metrics": {
-            "directTemplateCount": direct_templates.len(),
-            "stablingTemplateCount": stabling_templates.len(),
-            "transferTemplateCount": transfer_templates.len(),
-            "transferDemandCount": transfer_evidence.map_or(0, |evidence| evidence.transfer_demand_count),
-            "turnaroundDemandCount": transfer_evidence.map_or(0, |evidence| evidence.turnaround_demand_count),
-            "plannedTransitionCount": transfer_evidence.map_or(0, |evidence| evidence.planned_transition_count),
-            "turnaroundPairCount": transfer_evidence.map_or(0, |evidence| evidence.turnaround_pair_count),
-            "observedStablingTemplateCount": observed_stabling_template_count,
-            "simulatedOperationalStablingTemplateCount": simulated_operational_stabling_template_count,
-            "berthAssignmentCounts": berth_assignment_counts.clone(),
-            "crossBerthTemplateCount": cross_berth_template_count,
-        },
+    let metrics = json!({
+        "directTemplateCount": direct_template_count,
+        "stablingTemplateCount": stabling_template_count,
+        "transferTemplateCount": transfer_template_count,
+        "transferDemandCount": transfer_evidence.map_or(0, |evidence| evidence.transfer_demand_count),
+        "turnaroundDemandCount": transfer_evidence.map_or(0, |evidence| evidence.turnaround_demand_count),
+        "plannedTransitionCount": transfer_evidence.map_or(0, |evidence| evidence.planned_transition_count),
+        "turnaroundPairCount": direct_pair_count,
+        "observedStablingTemplateCount": observed_stabling_template_count,
+        "simulatedOperationalStablingTemplateCount": simulated_operational_stabling_template_count,
+        "berthAssignmentCounts": berth_assignment_counts.clone(),
+        "crossBerthTemplateCount": cross_berth_template_count,
     });
-    let envelope = json!({
-        "schema": MOVEMENT_ROUTE_SIDECAR_SCHEMA,
-        "value": body,
-    });
-    let mut canonical_envelope = String::new();
-    canonical_json(&envelope, &mut canonical_envelope);
-    let state_hash = sha256(canonical_envelope.as_bytes());
-    let mut sidecar = body;
-    sidecar
-        .as_object_mut()
-        .expect("Movement-Sidecar-Body ist ein Objekt")
-        .insert("stateHash".to_owned(), Value::String(state_hash.clone()));
-    exact_keys(
-        &sidecar,
-        &[
-            "schema",
-            "infraReleaseId",
-            "operationalStateHash",
-            "timetableTransferSetSha256",
-            "directTemplates",
-            "templates",
-            "transferTemplates",
-            "metrics",
-            "stateHash",
-        ],
-        "movement-route-templates-v2",
+
+    let mut state_writer = CountingHashWriter::new(io::sink());
+    write_sidecar_bytes(&mut state_writer, b"{\"schema\":", path)?;
+    write_canonical_sidecar_string(&mut state_writer, MOVEMENT_ROUTE_SIDECAR_SCHEMA, path)?;
+    write_sidecar_bytes(&mut state_writer, b",\"value\":", path)?;
+    write_movement_route_sidecar_body(
+        transaction,
+        &mut state_writer,
+        path,
+        infra_release_id,
+        operational_state_hash,
+        &transfer_set_sha256,
+        &metrics,
+        None,
     )?;
-    let mut canonical_sidecar = String::new();
-    canonical_json(&sidecar, &mut canonical_sidecar);
+    write_sidecar_bytes(&mut state_writer, b"}", path)?;
+    let (_, state_hash) = state_writer
+        .finish()
+        .map_err(|error| io_error("Movement-Route-Sidecar-Zustand", path, error))?;
+
     let file = OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(path)
         .map_err(|error| io_error("Movement-Route-Sidecar", path, error))?;
-    let mut writer = BufWriter::new(file);
-    write_bytes(
+    let mut writer = CountingHashWriter::new(BufWriter::new(file));
+    write_movement_route_sidecar_body(
+        transaction,
         &mut writer,
-        canonical_sidecar.as_bytes(),
-        "Movement-Route-Sidecar",
         path,
+        infra_release_id,
+        operational_state_hash,
+        &transfer_set_sha256,
+        &metrics,
+        Some(&state_hash),
     )?;
-    write_bytes(&mut writer, b"\n", "Movement-Route-Sidecar", path)?;
-    writer
-        .flush()
+    write_sidecar_bytes(&mut writer, b"\n", path)?;
+    let (bytes, sidecar_sha256) = writer
+        .finish()
         .map_err(|error| io_error("Movement-Route-Sidecar", path, error))?;
-    drop(writer);
-    let bytes = fs::read(path).map_err(|error| io_error("Movement-Route-Sidecar", path, error))?;
     Ok((
-        u64::try_from(bytes.len())
-            .map_err(|_| GermanyOperationalV2Error::new("Sidecargroesse laeuft ueber."))?,
-        sha256(&bytes),
+        bytes,
+        sidecar_sha256,
         state_hash,
         berth_assignment_counts,
         observed_stabling_template_count,
@@ -9131,20 +9561,22 @@ pub fn derive_germany_operational_v2(
 mod publish_tests {
     use super::{
         BLOCK_RESOURCES, BerthAssignmentKind, BerthAssignmentSubtype, BerthSearchMode,
-        GeneratedMovementArtifacts, GeometryPoint, MovementContinuity, PinnedInputSpec, PolicySpec,
+        GeneratedBatch, GeneratedBatchTables, GeneratedMovementArtifacts, GeometryPoint,
+        MAX_GENERATED_RECORD_BYTES, MovementContinuity, PinnedInputSpec, PolicySpec,
         ScratchDirectory, StablingKind, StablingSearchPolicy, TRACK_BLOCKS, TRACKS, TRACKS_BY_NODE,
-        TerminalNodeAccess, TimetableLegInput, TimetableRouteInput, TrackRecord,
-        TurnaroundPairDemand, TurnaroundRouteDispatch, berth_assignment, build_stabling_routes,
-        canonical_json, ensure_output_absent, generate_movement_route_artifacts,
-        initialize_database, paired_stabling_candidates, paired_stabling_candidates_with_fallback,
-        publish_create_new, publish_pair_create_new, read_transfer_demands,
-        require_movement_continuity, sha256, stabling_minimum_runtime_ms,
-        stabling_template_provenance_counts,
+        TURNAROUND_INTERLOCKING, TURNAROUND_ROUTES, TURNAROUND_TEMPLATES, TerminalNodeAccess,
+        TimetableLegInput, TimetableRouteInput, TrackRecord, TurnaroundPairDemand,
+        TurnaroundRouteDispatch, berth_assignment, build_stabling_routes, canonical_json,
+        ensure_output_absent, flush_generated_batch, generate_movement_route_artifacts,
+        initialize_database, insert_generated, paired_stabling_candidates,
+        paired_stabling_candidates_with_fallback, publish_create_new, publish_pair_create_new,
+        read_transfer_demands, require_generated_unit_bound, require_movement_continuity, sha256,
+        stabling_minimum_runtime_ms, stabling_template_provenance_counts,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
 
-    use redb::Database;
+    use redb::{Database, ReadableTable};
     use serde_json::{Value, json};
     use sha2::{Digest, Sha256};
 
@@ -10549,6 +10981,136 @@ mod publish_tests {
             MovementContinuity::SameDirection,
         )
         .expect_err("falsche statische Vorgaengerbindung muss scheitern");
+    }
+
+    #[test]
+    fn generated_batches_flushen_mehrfach_deterministisch_und_kollisionen_rollbacken() {
+        let root = ScratchDirectory::create(&std::env::temp_dir()).expect("Testverzeichnis");
+        let database =
+            Database::create(root.join("generated-batches.redb")).expect("Batch-Testdatenbank");
+        initialize_database(&database).expect("Batch-Tabellen");
+        let tables = GeneratedBatchTables {
+            routes: TURNAROUND_ROUTES,
+            interlocking: TURNAROUND_INTERLOCKING,
+            templates: TURNAROUND_TEMPLATES,
+            route_context: "Test-Laufweg",
+            interlocking_context: "Test-Fahrstrasse",
+            template_context: "Test-Template",
+        };
+        let mut batch = GeneratedBatch::default();
+        let mut flushes = 0_u32;
+        for (suffix, value) in [("b", 2), ("a", 1)] {
+            insert_generated(
+                &mut batch.routes,
+                format!("route:{suffix}"),
+                &json!({"value": value}),
+                "Test-Laufweg",
+            )
+            .expect("Laufweg puffern");
+            insert_generated(
+                &mut batch.interlocking,
+                format!("interlocking:{suffix}"),
+                &json!({"value": value}),
+                "Test-Fahrstrasse",
+            )
+            .expect("Fahrstrasse puffern");
+            insert_generated(
+                &mut batch.templates,
+                format!("template:{suffix}"),
+                &json!({"value": value}),
+                "Test-Template",
+            )
+            .expect("Template puffern");
+            batch.signals.insert(format!("signal:{suffix}"));
+            batch.resources.insert(format!("resource:{suffix}"));
+            assert!(batch.estimated_resident_bytes() > 0);
+            if flush_generated_batch(&database, &mut batch, tables, false, 1)
+                .expect("Batch flushen")
+            {
+                flushes += 1;
+            }
+            assert!(batch.is_empty(), "jeder Flush muss den Heap-Batch leeren");
+        }
+        assert_eq!(flushes, 2, "der Test muss mehrere echte Commits erzwingen");
+
+        let read = database.begin_read().expect("Batch lesen");
+        let routes = read.open_table(TURNAROUND_ROUTES).expect("Laufwegtabelle");
+        let rows = routes
+            .iter()
+            .expect("Laufwege iterieren")
+            .map(|entry| {
+                let (id, serialized) = entry.expect("Laufwegeintrag");
+                (id.value().to_owned(), serialized.value().to_owned())
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            rows,
+            vec![
+                ("route:a".to_owned(), "{\"value\":1}".to_owned()),
+                ("route:b".to_owned(), "{\"value\":2}".to_owned()),
+            ],
+            "redb-Ausgabe bleibt unabhaengig von der Batch-Reihenfolge kanonisch sortiert"
+        );
+        drop(routes);
+        drop(read);
+
+        insert_generated(
+            &mut batch.routes,
+            "route:a".to_owned(),
+            &json!({"value": 1}),
+            "Test-Laufweg",
+        )
+        .expect("identisches Duplikat puffern");
+        flush_generated_batch(&database, &mut batch, tables, true, 1)
+            .expect("identisches Duplikat ist idempotent");
+
+        insert_generated(
+            &mut batch.routes,
+            "route:a".to_owned(),
+            &json!({"value": 99}),
+            "Test-Laufweg",
+        )
+        .expect("Kollision puffern");
+        let error = flush_generated_batch(&database, &mut batch, tables, true, 1)
+            .expect_err("abweichende Kollision muss scheitern");
+        assert!(error.to_string().contains("Kollidierende Test-Laufweg-ID"));
+        let read = database.begin_read().expect("Rollback lesen");
+        let routes = read.open_table(TURNAROUND_ROUTES).expect("Laufwegtabelle");
+        assert_eq!(
+            routes
+                .get("route:a")
+                .expect("Laufweg lesen")
+                .expect("Laufweg vorhanden")
+                .value(),
+            "{\"value\":1}",
+            "der fehlgeschlagene Batch darf den zuvor committeten Wert nicht ersetzen"
+        );
+    }
+
+    #[test]
+    fn generated_record_grenze_blockiert_vor_dem_redb_commit() {
+        let mut values = BTreeMap::new();
+        let oversized = "x".repeat(MAX_GENERATED_RECORD_BYTES);
+        let error = insert_generated(
+            &mut values,
+            "route:oversized".to_owned(),
+            &oversized,
+            "Test-Laufweg",
+        )
+        .expect_err("uebergrosser Einzelrecord muss vor Staging scheitern");
+        assert!(error.to_string().contains("Einzelrecord-Grenze"));
+        assert!(values.is_empty());
+
+        let mut batch = GeneratedBatch::default();
+        insert_generated(
+            &mut batch.routes,
+            "route:bounded-unit".to_owned(),
+            &json!({"value": "bounded"}),
+            "Test-Laufweg",
+        )
+        .expect("kleinen Einzelrecord puffern");
+        require_generated_unit_bound(0, &batch, 1, "Test-Fall")
+            .expect_err("das Ableitungsbudget muss die Aggregation vor dem Commit begrenzen");
     }
 
     #[test]
