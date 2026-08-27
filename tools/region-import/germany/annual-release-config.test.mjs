@@ -393,13 +393,14 @@ test("Jahrespatch 2026.4 bindet alle neuen Releaseausgaben und kennzeichnet nur 
 });
 
 test("Signed-Paketplan wird nur reproduzierbar aus dem Runtime-v2-Jahresplan abgeleitet", async () => {
-  const [mapPackage, buildEvidence, trustedKeys, trustedKeyScopes, releaseDocumentation, annualPrompt] = await Promise.all([
+  const [mapPackage, buildEvidence, trustedKeys, trustedKeyScopes, releaseDocumentation, annualPrompt, map2026Dot5PublicKey] = await Promise.all([
     json("tools/tiles/map-package.annual-2026.4.plan.json"),
     json("tools/tiles/map-release-build-evidence.annual-2026.4.spec.json"),
     json("ops/keys/trusted-delivery-keys.json"),
     json("ops/keys/trusted-delivery-key-scopes.json"),
     text("docs/kartenrelease-deutschland-2026.4-v2.md"),
     text("docs/prompts/infrarelease-deutschland-jahreslauf.md"),
+    text("ops/keys/zugfolge-map-deutschland-2026.5-ed25519-public.pem"),
   ]);
   const releases = mapPackage.auxiliaryFiles.filter(({ kind }) => kind === "release-manifest");
   assert.equal(mapPackage.schema, "zugfolge-map-package-plan/v2");
@@ -416,7 +417,10 @@ test("Signed-Paketplan wird nur reproduzierbar aus dem Runtime-v2-Jahresplan abg
   assert.equal(buildEvidence.candidatePackage.basePlanInputId, "map-package-base-plan");
   assert.equal(buildEvidence.candidatePackage.signedPlanFile, "var/derived/germany-2026.4/map-release-free-v2/signed-package-plan.json");
   assert.equal(buildEvidence.candidatePackage.trustedKeysFile, "ops/keys/trusted-delivery-keys.json");
-  assert.deepEqual(trustedKeyScopes.mapInfraDeliveries, ["zugfolge-map-deutschland-2026.4"]);
+  assert.deepEqual(trustedKeyScopes.mapInfraDeliveries, [
+    "zugfolge-map-deutschland-2026.4",
+    "zugfolge-map-deutschland-2026.5",
+  ]);
   assert.deepEqual(trustedKeyScopes.alphaWorldDeployments, buildEvidence.candidatePackage.retainedTrustedKeyIds);
   assert.equal(
     new Set([...trustedKeyScopes.alphaWorldDeployments, ...trustedKeyScopes.mapInfraDeliveries]).size,
@@ -425,6 +429,11 @@ test("Signed-Paketplan wird nur reproduzierbar aus dem Runtime-v2-Jahresplan abg
   assert.deepEqual(
     [...trustedKeyScopes.alphaWorldDeployments, ...trustedKeyScopes.mapInfraDeliveries].sort(),
     Object.keys(trustedKeys).sort(),
+  );
+  assert.equal(
+    trustedKeys["zugfolge-map-deutschland-2026.5"],
+    map2026Dot5PublicKey,
+    "der eingecheckte .5-Public-Key muss bytegleich im Trust-Register stehen",
   );
   assert.deepEqual(
     buildEvidence.candidatePackage.retainedTrustedKeyIds,
@@ -664,6 +673,9 @@ test("2026.4-Dokumente und Real-Audits enthalten keine verworfenen oder ueberzog
   assert.match(ci, /- 5432\/tcp/u);
   assert.match(ci, /job\.services\.postgres\.ports\[5432\]/u);
   assert.doesNotMatch(ci, /55432:5432/u);
+  assert.match(ci, /test -f "\$\{ZUGFOLGE_REAL_GERMANY_2026_4_ROOT\}\/alpha-world-build-configuration\.json"/u);
+  assert.match(ci, /test -f "\$\{ZUGFOLGE_REAL_GERMANY_2026_4_ROOT\}\/timetable-routes-v2\.transfer-demands-v1\.json"/u);
+  assert.match(ci, /test -f "\$\{ZUGFOLGE_REAL_GERMANY_2026_4_ROOT\}\/operational-infrastructure-v2\.movement-route-templates-v2\.json"/u);
   assert.match(ci, /ZUGFOLGE_REAL_GERMANY_POSTGRES_BOUNDARY: external-postgresql-process-outside-measured-app-cgroup/u);
   assert.match(ci, /MemoryMax=536870912[\s\S]*MemorySwapMax=0[\s\S]*ZUGFOLGE_REAL_GERMANY_POSTGRES_URL/u);
   assert.match(ci, /github\.event_name == 'workflow_dispatch'[\s\S]*run_germany_2026_4_real_acceptance == true/u);
@@ -680,6 +692,8 @@ test("2026.4-Dokumente und Real-Audits enthalten keine verworfenen oder ueberzog
   assert.match(runtimeAudit, /ZUGFOLGE_REAL_GERMANY_EXPECTED_TYPESCRIPT_BUILD_SET_SHA256/u);
   assert.match(runtimeAudit, /2540fcc5eedf7f6a76283d2922ff31d3d244d3bfb5dd15da9af92f05fa78628d/u);
   assert.match(runtimeAudit, /zugfolge-germany-alpha-release-candidate-proof\/v1/u);
+  assert.match(runtimeAudit, /releaseBoundAlphaWorldBuilderInputs/u);
+  assert.match(runtimeAudit, /builderSidecars: builderInputs\.sidecars/u);
   assert.match(runtimeAudit, /acceptanceEligible: acceptance\.eligible/u);
   assert.match(runtimeAudit, /unsignedDocument\.deployment[\s\S]*signedDocument\.deployment/u);
   assert.match(runtimeAudit, /ten-consecutive-realtime-intervals/u);
@@ -745,12 +759,13 @@ test("der ergänzende Source-Audit verweist nicht mehr auf 2026.2-Layer", async 
   }
 });
 
-test("Jahresprompt verlangt alle fünfzehn konkreten Platzhalter und den Jahresvertrag in den Befehlen", async () => {
+test("Jahresprompt verlangt alle sechzehn konkreten Platzhalter und den Jahresvertrag in den Befehlen", async () => {
   const prompt = await text("docs/prompts/infrarelease-deutschland-jahreslauf.md");
   const expected = [
     "ANNUAL_ARTIFACT_SPEC",
     "ANNUAL_RELEASE_CONFIG",
     "ARTEFAKTWURZEL",
+    "DELIVERY_KEY_ID",
     "FAHRPLANJAHR",
     "INFRARELEASE_ID",
     "MAP_PACKAGE_PLAN",
@@ -813,6 +828,7 @@ test("Jahresprompt löst den aktuellen 2026.4-Lauf ohne aktive Vorjahresbindung 
     ANNUAL_ARTIFACT_SPEC: "tools/region-import/germany/release-artifacts.annual-2026.4.json",
     ANNUAL_RELEASE_CONFIG: "tools/region-import/germany/release.annual-2026.4.config.json",
     ARTEFAKTWURZEL: artifactRoot,
+    DELIVERY_KEY_ID: "zugfolge-map-deutschland-2026.5",
     FAHRPLANJAHR: String(timetableYear),
     INFRARELEASE_ID: releaseId,
     MAP_PACKAGE_PLAN: "tools/tiles/map-package.annual-2026.4.plan.json",

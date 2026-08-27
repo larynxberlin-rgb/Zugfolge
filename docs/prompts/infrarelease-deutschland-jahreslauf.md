@@ -7,7 +7,8 @@ verwenden. `<FAHRPLANJAHR>`, `<STICHTAG_UTC>`, `<QUELLWURZEL>`,
 `<OPERATIONAL_ARTIFACT_ID>`, `<RELEASE_ARTIFACT_INVENTORY>`,
 `<TIMETABLE_ROUTE_SPEC>`, `<SYNTHETIC_CLOSURE_SPEC>`,
 `<OPERATIONAL_QUALITY_SPEC>`, `<SOURCE_CAPTURE_MANIFEST>` und
-`<MAP_PACKAGE_PLAN>` müssen vor dem Start konkret ersetzt werden; kein
+`<MAP_PACKAGE_PLAN>` sowie `<DELIVERY_KEY_ID>` müssen vor dem Start konkret
+ersetzt werden; kein
 Platzhalter darf in einem Kandidaten verbleiben.
 `<OPERATIONAL_CANDIDATE>` ist der Pfad zu einem fachlich aus den gepinnten
 Deutschlanddaten abgeleiteten, weltfreien `OperationalInfraRelease`, nicht zu

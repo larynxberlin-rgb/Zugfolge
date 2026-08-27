@@ -122,6 +122,13 @@ function operationalQuality(fixture, map, mapBytes) {
       syntheticOperationalDetailsShipped: true,
       objectLevelProvenanceShipped: false,
       observedAndSyntheticObjectsShareRuntimeCollections: true,
+      movementRouteTemplates: {
+        bytes: 1,
+        sha256: "2".repeat(64),
+        stateHash: "3".repeat(64),
+        operationalStateHash: artifact.stateHash,
+        timetableTransferSetSha256: "1".repeat(64),
+      },
       timetableRouteEvidence: {
         reportSchema: "zugfolge-germany-timetable-route-report/v3",
         policyId: "synthetic-operational-b/v2",
@@ -196,9 +203,20 @@ function operationalQuality(fixture, map, mapBytes) {
 
 async function run(args, cwd = root) {
   await new Promise((accept, reject) => {
-    const child = spawn(node, [script, ...args], { cwd, stdio: "ignore", shell: false });
+    const child = spawn(node, [script, ...args], {
+      cwd,
+      stdio: ["ignore", "ignore", "pipe"],
+      shell: false,
+    });
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => {
+      stderr = `${stderr}${chunk}`.slice(-65_536);
+    });
     child.on("error", reject);
-    child.on("exit", (code) => code === 0 ? accept() : reject(new Error(`Orchestrator endete mit ${code}.`)));
+    child.on("exit", (code) => code === 0
+      ? accept()
+      : reject(new Error(`Orchestrator endete mit ${code}: ${stderr.trim() || "keine Fehlerausgabe"}`)));
   });
 }
 
