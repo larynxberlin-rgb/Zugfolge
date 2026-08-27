@@ -81,8 +81,9 @@ const TARGET_ONLY_MIGRATION_TEMPLATES = Object.freeze([
 ]);
 const TURNAROUND_POLICY_V2 = Object.freeze({
   minimumBerthEndClearanceMm: 10_000,
-  maximumStablingPathEdges: 32,
-  maximumStablingPathLengthMm: 5_000_000,
+  maximumStablingPathEdges: 64,
+  maximumStablingPathLengthMm: 10_000_000,
+  simulatedOperationalBerthFallback: "real-osm-service-yard-then-spur-then-unclassified-rail/v1",
   maximumDirectDwellMs: 1_200_000,
   terminalFormationLengthsMm: Object.freeze([46_560, 69_860]),
 });
