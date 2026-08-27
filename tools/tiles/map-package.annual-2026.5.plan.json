@@ -1,0 +1,140 @@
+{
+  "schema": "zugfolge-map-package-plan/v2",
+  "packageId": "zugfolge-map-deutschland",
+  "version": "2026.5",
+  "partBytes": 104857600,
+  "runtime": {
+    "schema": "zugfolge-map-runtime/v2",
+    "publicBasePath": "/artifacts/maps/infra-deutschland-2026.5",
+    "basemapStyleUrl": "/artifacts/maps/infra-deutschland-2026.5/style.json",
+    "infrastructurePmtilesUrl": "/artifacts/maps/infra-deutschland-2026.5/infra-deutschland-2026.5.pmtiles"
+  },
+  "artifacts": [
+    {
+      "id": "welt-basiskarte",
+      "kind": "basemap",
+      "sourceFile": "var/source-cache/annual-2026-pinned/welt-mit-deutschland-detail-2026-08-12-c766073e55b99b213276328e504cbb7a69b0b65db0546adf484539c3bd319aed.pmtiles",
+      "installPath": "basemap.pmtiles",
+      "expectedBytes": 11545162669,
+      "expectedSha256": "c766073e55b99b213276328e504cbb7a69b0b65db0546adf484539c3bd319aed",
+      "expectedVectorLayers": [
+        "boundaries",
+        "buildings",
+        "earth",
+        "landcover",
+        "landuse",
+        "places",
+        "pois",
+        "roads",
+        "water"
+      ]
+    },
+    {
+      "id": "deutschland-infrastruktur",
+      "kind": "infrastructure",
+      "sourceFile": "var/derived/germany-2026.5/map-release-free-v2/infra-deutschland-2026.5.pmtiles",
+      "installPath": "infra-deutschland-2026.5.pmtiles",
+      "expectedVectorLayers": [
+        "blocks",
+        "conflict_resources",
+        "operating_points",
+        "platforms",
+        "rail_context",
+        "rail_corridors",
+        "signals",
+        "stations",
+        "switches",
+        "tracks"
+      ]
+    }
+  ],
+  "auxiliaryFiles": [
+    {
+      "id": "quality-manifest",
+      "kind": "quality-manifest",
+      "visibility": "public",
+      "sourceFile": "var/derived/germany-2026.5/operational-infrastructure-quality.json",
+      "installPath": "manifests/quality.json"
+    },
+    {
+      "id": "public-read-model",
+      "kind": "read-model",
+      "visibility": "public",
+      "sourceFile": "var/derived/germany-2026.5/map-release-free-v2/public/read-model.sqlite",
+      "installPath": "read-model.sqlite"
+    },
+    {
+      "id": "release-manifest",
+      "kind": "release-manifest",
+      "visibility": "public",
+      "sourceFile": "var/derived/germany-2026.5/map-release-free-v2/delivery-unsigned/release.json",
+      "installPath": "manifests/release.json"
+    },
+    {
+      "id": "source-manifest",
+      "kind": "source-manifest",
+      "visibility": "public",
+      "sourceFile": "var/derived/germany-2026.5/map-release-free-v2/delivery-unsigned/sources.json",
+      "installPath": "manifests/sources.json"
+    },
+    {
+      "id": "operational-infrastructure-2026.5",
+      "kind": "operational-infrastructure-v2",
+      "visibility": "public",
+      "sourceFile": "var/derived/germany-2026.5/operational-infrastructure-v2.json",
+      "installPath": "operational-infrastructure-v2.json",
+      "artifactInventory": "var/derived/germany-2026.5/release-artifacts.v2.json"
+    },
+    {
+      "id": "operational-movement-routes-2026.5",
+      "kind": "movement-route-templates-v2",
+      "visibility": "public",
+      "sourceFile": "var/derived/germany-2026.5/operational-infrastructure-v2.movement-route-templates-v2.json",
+      "installPath": "operational-infrastructure-v2.movement-route-templates-v2.json",
+      "artifactInventory": "var/derived/germany-2026.5/release-artifacts.v2.json"
+    },
+    {
+      "id": "timetable-transfer-demands-2026.5",
+      "kind": "timetable-transfer-demands-v2",
+      "visibility": "public",
+      "sourceFile": "var/derived/germany-2026.5/timetable-routes-v2.transfer-demands-v2.json",
+      "installPath": "timetable-routes-v2.transfer-demands-v2.json",
+      "artifactInventory": "var/derived/germany-2026.5/release-artifacts.v2.json"
+    },
+    {
+      "id": "style-dark",
+      "kind": "style",
+      "visibility": "public",
+      "sourceFile": "var/derived/germany-2026.5/map-release-free-v2/style.json",
+      "installPath": "style.json"
+    }
+  ],
+  "auxiliaryTrees": [
+    {
+      "idPrefix": "glyph",
+      "kind": "glyph",
+      "visibility": "public",
+      "sourceDirectory": "var/source-cache/annual-2026-pinned/basemap-assets-2026-08-12/fonts",
+      "installDirectory": "assets/fonts",
+      "expectedInventory": {
+        "Noto Sans Devanagari Regular v1": 256,
+        "Noto Sans Italic": 256,
+        "Noto Sans Medium": 256,
+        "Noto Sans Regular": 256
+      }
+    },
+    {
+      "idPrefix": "sprite",
+      "kind": "sprite",
+      "visibility": "public",
+      "sourceDirectory": "var/source-cache/annual-2026-pinned/basemap-assets-2026-08-12/sprites",
+      "installDirectory": "assets/sprites",
+      "expectedInventory": {
+        "dark.json": 1,
+        "dark.png": 1,
+        "dark@2x.json": 1,
+        "dark@2x.png": 1
+      }
+    }
+  ]
+}

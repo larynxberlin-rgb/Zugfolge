@@ -1,0 +1,42 @@
+{
+  "schema": "zugfolge-infra-release-artifact-spec/v2",
+  "artifacts": [
+    {
+      "id": "infra-deutschland-2026.5",
+      "kind": "infrastructure",
+      "sourceFile": "var/derived/germany-2026.5/map-release-free-v2/infra-deutschland-2026.5.pmtiles",
+      "file": "infra-deutschland-2026.5.pmtiles"
+    },
+    {
+      "id": "livemap-read-model-2026.5",
+      "kind": "read-model",
+      "sourceFile": "var/derived/germany-2026.5/map-release-free-v2/public/read-model.sqlite",
+      "file": "read-model.sqlite"
+    },
+    {
+      "id": "operational-infrastructure-2026.5",
+      "kind": "operational-infrastructure-v2",
+      "infraReleaseId": "infra-deutschland-2026.5",
+      "sourceFile": "var/derived/germany-2026.5/operational-infrastructure-v2.json",
+      "file": "operational-infrastructure-v2.json"
+    },
+    {
+      "id": "operational-movement-routes-2026.5",
+      "kind": "movement-route-templates-v2",
+      "sourceFile": "var/derived/germany-2026.5/operational-infrastructure-v2.movement-route-templates-v2.json",
+      "file": "operational-infrastructure-v2.movement-route-templates-v2.json"
+    },
+    {
+      "id": "timetable-transfer-demands-2026.5",
+      "kind": "timetable-transfer-demands-v2",
+      "sourceFile": "var/derived/germany-2026.5/timetable-routes-v2.transfer-demands-v2.json",
+      "file": "timetable-routes-v2.transfer-demands-v2.json"
+    },
+    {
+      "id": "quality-report-2026.5",
+      "kind": "quality-report",
+      "sourceFile": "var/derived/germany-2026.5/operational-infrastructure-quality.json",
+      "file": "operational-infrastructure-quality.json"
+    }
+  ]
+}

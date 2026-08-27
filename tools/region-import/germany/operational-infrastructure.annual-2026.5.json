@@ -1,0 +1,43 @@
+{
+  "schema": "zugfolge-germany-operational-infrastructure-derivation/v2",
+  "mode": "deterministic-conservative-v1",
+  "infraReleaseId": "infra-deutschland-2026.5",
+  "layers": {
+    "tracks": "var/derived/germany-2026.5/final-map-layers-v2/tracks.geojsonseq",
+    "platforms": "var/derived/germany-2026.5/final-map-layers-v2/platforms.geojsonseq",
+    "switches": "var/derived/germany-2026.5/final-map-layers-v2/switches.geojsonseq",
+    "signals": "var/derived/germany-2026.5/final-map-layers-v2/signals.geojsonseq",
+    "blocks": "var/derived/germany-2026.5/final-map-layers-v2/blocks.geojsonseq",
+    "conflictResources": "var/derived/germany-2026.5/final-map-layers-v2/conflict-resources.geojsonseq",
+    "timetableRoutes": "var/derived/germany-2026.5/timetable-routes-v2.jsonseq",
+    "transferDemands": {
+      "path": "var/derived/germany-2026.5/timetable-routes-v2.transfer-demands-v2.json",
+      "expectedBytes": 6697294,
+      "expectedSha256": "2c8c688a9ce963afbdca75fee526b581bc21be402aabcbaf1abd09ea65418cdf"
+    }
+  },
+  "policy": {
+    "id": "synthetic-operational-b/v2",
+    "qualityClass": "B",
+    "sourceId": "zugfolge-synthetic-operational-model",
+    "derivationRule": "synthetic-operational-b/v2",
+    "unknownMainlineSpeedKmh": 20,
+    "unknownServiceSpeedKmh": 10,
+    "unknownGradientAbsPermille": 40,
+    "minimumPlatformLengthMm": 60000,
+    "maximumPlatformSnapDistanceMm": 25000,
+    "minimumOverlapMm": 200000,
+    "minimumBerthEndClearanceMm": 10000,
+    "maximumStablingPathEdges": 64,
+    "maximumStablingPathLengthMm": 10000000,
+    "simulatedOperationalBerthFallback": "real-osm-service-yard-then-spur-then-unclassified-rail/v1",
+    "maximumDirectDwellMs": 1200000,
+    "terminalFormationLengthsMm": [
+      46560,
+      69860
+    ],
+    "defaultProtectionSystem": "pzb",
+    "regionBoundaryId": "region:deutschland-ebo",
+    "rzueLayoutId": "rzue-deutschland-2026.5-synthetic-b-v2"
+  }
+}
