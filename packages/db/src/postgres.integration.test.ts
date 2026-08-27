@@ -313,59 +313,62 @@ describe.skipIf(databaseUrl === undefined)("real PostgreSQL integration", () => 
   }, 60_000);
 
   it("archives a running alpha profile only through the guarded closing transition", async () => {
-    const worldId = randomUUID();
-    await db.insert(worlds).values({
-      id: worldId,
-      name: "PG atomic cutover lifecycle",
-      epoch: new Date("2026-08-25T00:00:00Z"),
-      schedulePeriodWeeks: 4,
-      worldKind: "public",
-      rankingStatus: "ranked",
-      lifecycleStatus: "active",
-    });
-    await db.insert(alphaWorldProfiles).values({
-      worldId,
-      profileKind: "public",
-      regionId: "mitteldeutschland-b",
-      regionVariant: "B",
-      worldSeed: 2026082501n,
-      accelerationFactor: 1,
-      infraReleaseHash: "a".repeat(64),
-      timetableReleaseHash: "b".repeat(64),
-      fleetReleaseHash: "c".repeat(64),
-      economyReleaseHash: "d".repeat(64),
-      blueprint: { schemaVersion: "zugfolge-alpha-world-blueprint/v2" },
-      blueprintHash: "e".repeat(64),
-      deploymentHash: "f".repeat(64),
-      periodCount: 6,
-      state: "running",
-      startedAtS: 0,
-    });
+    await withTemporaryDatabase("alpha_profile_archive", async (target) => {
+      const targetDb = drizzle(target, { schema });
+      await migrate(targetDb, { migrationsFolder: MIGRATIONS_FOLDER });
+      const worldId = randomUUID();
+      await targetDb.insert(worlds).values({
+        id: worldId,
+        name: "PG atomic cutover lifecycle",
+        epoch: new Date("2026-08-25T00:00:00Z"),
+        schedulePeriodWeeks: 4,
+        worldKind: "public",
+        rankingStatus: "ranked",
+        lifecycleStatus: "active",
+      });
+      await targetDb.insert(alphaWorldProfiles).values({
+        worldId,
+        profileKind: "public",
+        regionId: "mitteldeutschland-b",
+        regionVariant: "B",
+        worldSeed: 2026082501n,
+        accelerationFactor: 1,
+        infraReleaseHash: "a".repeat(64),
+        timetableReleaseHash: "b".repeat(64),
+        fleetReleaseHash: "c".repeat(64),
+        economyReleaseHash: "d".repeat(64),
+        blueprint: { schemaVersion: "zugfolge-alpha-world-blueprint/v2" },
+        blueprintHash: "e".repeat(64),
+        deploymentHash: "f".repeat(64),
+        periodCount: 6,
+        state: "running",
+        startedAtS: 0,
+      });
 
-    await expect(client`update alpha_world_profiles
-      set state = 'archived', final_state_hash = ${"9".repeat(64)}
-      where world_id = ${worldId}`)
-      .rejects.toMatchObject({ message: expect.stringContaining("alpha world final state hash requires the guarded closing transition") });
-    await client.begin("isolation level serializable", async (tx) => {
-      const closing = await tx<{ state: string }[]>`
-        update alpha_world_profiles set state = 'closing'
-        where world_id = ${worldId} and state = 'running'
-        returning state`;
-      expect(closing).toEqual([{ state: "closing" }]);
-      const archived = await tx<{ state: string }[]>`
-        update alpha_world_profiles set state = 'archived', final_state_hash = ${"9".repeat(64)}
-        where world_id = ${worldId} and state = 'closing'
-        returning state`;
-      expect(archived).toEqual([{ state: "archived" }]);
+      await expect(target`update alpha_world_profiles
+        set state = 'archived', final_state_hash = ${"9".repeat(64)}
+        where world_id = ${worldId}`)
+        .rejects.toMatchObject({ message: expect.stringContaining("alpha world final state hash requires the guarded closing transition") });
+      await target.begin("isolation level serializable", async (tx) => {
+        const closing = await tx<{ state: string }[]>`
+          update alpha_world_profiles set state = 'closing'
+          where world_id = ${worldId} and state = 'running'
+          returning state`;
+        expect(closing).toEqual([{ state: "closing" }]);
+        const archived = await tx<{ state: string }[]>`
+          update alpha_world_profiles set state = 'archived', final_state_hash = ${"9".repeat(64)}
+          where world_id = ${worldId} and state = 'closing'
+          returning state`;
+        expect(archived).toEqual([{ state: "archived" }]);
+      });
+      await expect(targetDb.select({ state: alphaWorldProfiles.state }).from(alphaWorldProfiles)
+        .where(eq(alphaWorldProfiles.worldId, worldId))).resolves.toEqual([{ state: "archived" }]);
+      await expect(target`update alpha_world_profiles set final_state_hash = ${"8".repeat(64)} where world_id = ${worldId}`)
+        .rejects.toMatchObject({ message: expect.stringContaining("final state hash is immutable") });
+      await expect(target`delete from alpha_world_profiles where world_id = ${worldId}`)
+        .rejects.toMatchObject({ message: expect.stringContaining("started alpha world profile is immutable") });
     });
-    await expect(db.select({ state: alphaWorldProfiles.state }).from(alphaWorldProfiles)
-      .where(eq(alphaWorldProfiles.worldId, worldId))).resolves.toEqual([{ state: "archived" }]);
-    await expect(client`update alpha_world_profiles set final_state_hash = ${"8".repeat(64)} where world_id = ${worldId}`)
-      .rejects.toMatchObject({ message: expect.stringContaining("final state hash is immutable") });
-
-    await expect(client`delete from alpha_world_profiles where world_id = ${worldId}`)
-      .rejects.toMatchObject({ message: expect.stringContaining("started alpha world profile is immutable") });
-  });
+  }, 60_000);
 
   it("keeps only v1 writes compatible and rejects a v2-to-v1 downgrade", async () => {
     const legacyWorldId = "00000000-0000-4000-8000-000000000030";
