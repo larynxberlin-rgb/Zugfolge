@@ -19,7 +19,8 @@ import {
   syntheticOperationalSha256,
 } from "./synthetic-operational-quality.mjs";
 
-const checkedPolicy = JSON.parse(await readFile(new URL("./synthetic-operational-b.2026.4.policy.json", import.meta.url), "utf8"));
+const checkedPolicy = JSON.parse(await readFile(new URL("./synthetic-operational-b.policy.json", import.meta.url), "utf8"));
+const historicalPolicy = JSON.parse(await readFile(new URL("./synthetic-operational-b.2026.4.policy.json", import.meta.url), "utf8"));
 const annualClosureInputs = JSON.parse(await readFile(new URL("./synthetic-operational-closure.annual-2026.4.json", import.meta.url), "utf8"));
 const annualOperationalSpecification = JSON.parse(await readFile(new URL("./operational-infrastructure.annual-2026.4.json", import.meta.url), "utf8"));
 const execFileAsync = promisify(execFile);
@@ -36,18 +37,21 @@ const roleLayers = Object.freeze([
 ]);
 const requiredRoles = Object.freeze(["blocks", "conflict-resources", "gtfs-snapshot", "platforms", "signals", "switches", "timetable-route-report", "timetable-routes", "timetable-transfer-demands", "tracks"]);
 
-test("eingecheckter Jahresvertrag bindet v2-Policy, freie GTFS-Quellen und timetableRoutes ohne manuelle Coverage oder Hashes", () => {
+test("der forensische 2026.4-Vertrag bleibt unveraendert und wird nicht als aktueller Transition-v2-Beleg verwendet", () => {
   assert.equal(annualClosureInputs.schema, "zugfolge-synthetic-operational-closure-inputs/v2");
   assert.equal(annualClosureInputs.releaseId, annualOperationalSpecification.infraReleaseId);
   assert.equal(annualClosureInputs.annualSpecificationFile, "tools/region-import/germany/operational-infrastructure.annual-2026.4.json");
   assert.equal(annualOperationalSpecification.layers.timetableRoutes, "var/derived/germany-2026.4/timetable-routes-v2.jsonseq");
   assert.equal(annualClosureInputs.timetableRouteReportFile, "timetable-routes-v2.derivation-report.json");
-  assert.equal(annualClosureInputs.timetableTransferDemandsFile, "timetable-routes-v2.transfer-demands-v1.json");
+  assert.equal(Object.hasOwn(annualClosureInputs, "timetableTransferDemandsFile"), false);
   assert.equal(annualClosureInputs.gtfsSnapshotFile, "gtfs-region-20260810-v2.json");
+  assert.equal(historicalPolicy.requiredInputRoles.includes("timetable-transfer-demands"), false);
   assert.deepEqual(checkedPolicy.requiredInputRoles, requiredRoles);
   assert.equal(checkedPolicy.id, "synthetic-operational-b/v2");
   assert.equal(checkedPolicy.schema, "zugfolge-synthetic-operational-policy/v2");
-  assert.deepEqual(checkedPolicy.compilerPolicy, annualOperationalSpecification.policy);
+  assert.notDeepEqual(checkedPolicy.compilerPolicy, annualOperationalSpecification.policy);
+  assert.equal(checkedPolicy.rules.some(({ id }) => id === "daily-physical-circulation-and-transfer-coverage/v2"), true);
+  assert.match(checkedPolicy.rules.find(({ id }) => id === "free-gtfs-route-provenance/v2").effect, /v4 derivation report/u);
   assert.equal(Object.hasOwn(annualClosureInputs, "coverage"), false);
   assert.equal(Object.hasOwn(annualClosureInputs, "nativeValidation"), false);
   assert.equal(JSON.stringify(annualClosureInputs).includes("sha256"), false);
@@ -179,7 +183,7 @@ async function fixture(t) {
   const routeSetSha256 = (await syntheticOperationalFileProof(join(root, layers.timetableRoutes))).sha256;
   const circulationId = "circulation-lot-test-001";
   const lotId = "lot-test";
-  const transferId = "transfer-test";
+  const transferId = `transfer-${"1".repeat(64)}`;
   const formationLengthsMm = [...checkedPolicy.compilerPolicy.terminalFormationLengthsMm];
   const circulation = {
     id: circulationId,
@@ -189,8 +193,8 @@ async function fixture(t) {
     journeyChainIds: [journeyChainId],
     passengerLegIds: segmentIds,
     passengerTrainRunIds: segmentIds.map((segmentId, index) => index === 0 ? journeyChainId : `${journeyChainId}:${segmentId}`),
-    start: { legId: segmentIds[0], locationId: "stop-a", physicalStopId: "stop-a", timeS: 0 },
-    end: { legId: segmentIds[2], locationId: "stop-c", physicalStopId: "stop-c", timeS: 300 },
+    start: { legId: segmentIds[0], passengerRouteVersionId: `route:gtfs:${segmentIds[0]}:v1`, locationId: "stop-a", physicalStopId: "stop-a", timeS: 0 },
+    end: { legId: segmentIds[2], passengerRouteVersionId: `route:gtfs:${segmentIds[2]}:v1`, locationId: "stop-c", physicalStopId: "stop-c", timeS: 300 },
   };
   const transferDemand = {
     id: transferId,
@@ -200,6 +204,8 @@ async function fixture(t) {
     targetCirculationId: circulationId,
     sourcePassengerLegId: segmentIds[2],
     targetPassengerLegId: segmentIds[0],
+    sourcePassengerRouteVersionId: `route:gtfs:${segmentIds[2]}:v1`,
+    targetPassengerRouteVersionId: `route:gtfs:${segmentIds[0]}:v1`,
     sourceLocationId: "stop-c",
     targetLocationId: "stop-a",
     sourcePhysicalStopId: "stop-c",
@@ -207,27 +213,27 @@ async function fixture(t) {
     earliestDepartureS: 600,
     latestArrivalS: 86_100,
     availableWindowS: 85_500,
+    dailyBoundary: true,
     movementKind: "train",
   };
   const dailyPlanBody = {
-    schema: "zugfolge-daily-circulation-plan/v1",
-    rule: "lot-local-playable-path-cover-with-minimum-cross-location-rollover/v1",
+    schema: "zugfolge-daily-circulation-plan/v2",
+    rule: "lot-local-playable-path-cover-with-explicit-physical-transition-partition/v2",
     gtfsReleaseId: journeyReleaseId,
     repeatEveryS: 86_400,
     minimumTurnaroundS: 300,
-    metrics: { lotCount: 1, journeyChainCount: 1, circulationCount: 1, rolloverAssignmentCount: 1, transferDemandCount: 1, transferLotCount: 1 },
+    metrics: { lotCount: 1, journeyChainCount: 1, circulationCount: 1, rolloverAssignmentCount: 1, plannedTransitionCount: 1, turnaroundDemandCount: 0, transferDemandCount: 1, transferLotCount: 1 },
     circulations: [circulation],
     rolloverAssignments: [{ sourceCirculationId: circulationId, targetCirculationId: circulationId, kind: "transfer" }],
+    turnaroundDemands: [],
     transferDemands: [transferDemand],
   };
   const dailyPlan = {
     ...dailyPlanBody,
-    planSha256: syntheticOperationalSha256({ schema: "zugfolge-daily-circulation-plan/v1", value: dailyPlanBody }),
+    planSha256: syntheticOperationalSha256({ schema: "zugfolge-daily-circulation-plan/v2", value: dailyPlanBody }),
   };
   const transferRoute = {
     ...transferDemand,
-    sourcePassengerRouteVersionId: `route:gtfs:${segmentIds[2]}:v1`,
-    targetPassengerRouteVersionId: `route:gtfs:${segmentIds[0]}:v1`,
     formationLengthsMm,
     routeVersionId: `route:${transferId}:movement:v1`,
     templateId: `template:${transferId}:movement:v1`,
@@ -245,7 +251,7 @@ async function fixture(t) {
   };
   const transferSetSha256 = createHash("sha256").update(`${canonicalSyntheticOperationalValue(transferRoute)}\n`).digest("hex");
   const timetableTransferDemands = {
-    schema: "zugfolge-timetable-transfer-demands/v1",
+    schema: "zugfolge-timetable-transfer-demands/v2",
     infraReleaseId: annualSpecification.infraReleaseId,
     gtfsSnapshotHash: snapshotHash,
     dailyPlan,
@@ -253,7 +259,7 @@ async function fixture(t) {
     transferRoutes: [transferRoute],
     transferSetSha256,
   };
-  const timetableTransferDemandsPath = join(artifactRoot, "timetable-routes-v2.transfer-demands-v1.json");
+  const timetableTransferDemandsPath = join(artifactRoot, "timetable-routes-v2.transfer-demands-v2.json");
   await writeFile(timetableTransferDemandsPath, `${canonicalSyntheticOperationalValue(timetableTransferDemands)}\n`, "utf8");
   const timetableTransferDemandsProof = await syntheticOperationalFileProof(timetableTransferDemandsPath);
   const movementRouteTemplatesBody = {
@@ -261,6 +267,22 @@ async function fixture(t) {
     infraReleaseId: annualSpecification.infraReleaseId,
     operationalStateHash: stateHash,
     timetableTransferSetSha256: transferSetSha256,
+    directTemplates: [],
+    templates: [],
+    transferTemplates: [],
+    metrics: {
+      directTemplateCount: 0,
+      stablingTemplateCount: 0,
+      transferTemplateCount: 0,
+      transferDemandCount: 1,
+      turnaroundDemandCount: 0,
+      plannedTransitionCount: 1,
+      turnaroundPairCount: 0,
+      observedStablingTemplateCount: 0,
+      simulatedOperationalStablingTemplateCount: 0,
+      berthAssignmentCounts: { observedOsmServiceSiding: 0, simulatedOperationalOsmServiceYard: 0, simulatedOperationalOsmServiceSpur: 0, simulatedOperationalOsmUnclassifiedRail: 0 },
+      crossBerthTemplateCount: 0,
+    },
   };
   const movementRouteTemplatesStateHash = syntheticOperationalSha256(movementRouteTemplatesBody);
   const movementRouteTemplatesFile = "operational-infrastructure-v2.candidate.movement-route-templates-v2.json";
@@ -273,9 +295,11 @@ async function fixture(t) {
     stateHash: movementRouteTemplatesStateHash,
     operationalStateHash: stateHash,
     timetableTransferSetSha256: transferSetSha256,
+    berthAssignmentCounts: { observedOsmServiceSiding: 0, simulatedOperationalOsmServiceYard: 0, simulatedOperationalOsmServiceSpur: 0, simulatedOperationalOsmUnclassifiedRail: 0 },
+    crossBerthTemplateCount: 0,
   };
   layers.transferDemands = {
-    path: "var/derived/test/timetable-routes-v2.transfer-demands-v1.json",
+    path: "var/derived/test/timetable-routes-v2.transfer-demands-v2.json",
     expectedBytes: timetableTransferDemandsProof.bytes,
     expectedSha256: timetableTransferDemandsProof.sha256,
   };
@@ -300,7 +324,7 @@ async function fixture(t) {
     sameStopTransitionCount: 1,
   };
   const timetableRouteReport = {
-    schema: "zugfolge-germany-timetable-route-report/v3",
+    schema: "zugfolge-germany-timetable-route-report/v4",
     infraReleaseId: annualSpecification.infraReleaseId,
     status: "qualified",
     routesProduced: true,
@@ -362,7 +386,7 @@ async function fixture(t) {
     findings: {},
     unresolvedRequired: 0,
   };
-  const timetableRouteReportPath = join(artifactRoot, "timetable-routes-v2.derivation-report.json");
+  const timetableRouteReportPath = join(artifactRoot, "timetable-routes-v2.derivation-report-v4.json");
   await writeFile(timetableRouteReportPath, `${JSON.stringify(timetableRouteReport, null, 2)}\n`, "utf8");
   const report = {
     schema: "germany-operational-v2-derivation-report-v1",
@@ -391,6 +415,7 @@ async function fixture(t) {
       dailyPlanSha256: dailyPlan.planSha256,
       transferSetSha256,
       circulationCount: 1,
+      plannedTransitionCount: 1,
       transferDemandCount: 1,
       transferLotCount: 1,
       turnaroundDemandCount: 0,
@@ -400,7 +425,7 @@ async function fixture(t) {
     counts: {
       source: { tracks: 2, orderableTracks: 2, platforms: 2, switches: 2, signals: 4, blocks: 2, conflictResources: 3, timetableRoutes: 3, timetableLegs: 2, transferDemands: 1, transferLots: 1, turnaroundDemands: 0, turnaroundPairs: 0 },
       candidate: { directedEdges: 2, edgeGeometries: 2, routeVersions: 4, interlockingRoutes: 3, signals: 8, switches: 2, blockResources: 9, platformIntervals: 2, regionBoundaries: 1, directTemplates: 0, stablingTemplates: 0, transferTemplates: 2 },
-      provenance: { observedForwardSpeeds: 1, observedBackwardSpeeds: 1, simulatedSpeeds: 1, observedProtectionAssignments: 0, simulatedProtectionAssignments: 2, matchedPlatformIntervals: 2, excludedPlatformEvidence: 0, syntheticBoundarySignals: 2, turnaroundRouteVersions: 0, turnaroundInterlockingRoutes: 0, transferRouteVersions: 1, transferInterlockingRoutes: 1 },
+      provenance: { observedForwardSpeeds: 1, observedBackwardSpeeds: 1, simulatedSpeeds: 1, observedProtectionAssignments: 0, simulatedProtectionAssignments: 2, matchedPlatformIntervals: 2, excludedPlatformEvidence: 0, syntheticBoundarySignals: 2, turnaroundRouteVersions: 0, turnaroundInterlockingRoutes: 0, transferRouteVersions: 1, transferInterlockingRoutes: 1, observedStablingTemplates: 0, simulatedOperationalStablingTemplates: 0, berthAssignmentCounts: { observedOsmServiceSiding: 0, simulatedOperationalOsmServiceYard: 0, simulatedOperationalOsmServiceSpur: 0, simulatedOperationalOsmUnclassifiedRail: 0 }, crossBerthTemplates: 0 },
     },
     scope: {
       routeModel: "complete-pinned-timetable-routes",
@@ -408,8 +433,11 @@ async function fixture(t) {
       platformModel: "deterministic-nearest-observed-track-within-policy-radius/v1",
       capacityBias: "conservative-under-capacity",
       minimumOverlapMmPolicy: annualSpecification.policy.minimumOverlapMm,
-      turnaroundModel: "real-osm-simple-bidirectional-siding-path-with-centered-single-berth-per-target-edge/v1",
+      turnaroundModel: "real-osm-bounded-bidirectional-access-with-observed-siding-or-explicit-synthetic-operational-berth/v3",
       minimumBerthEndClearanceMmPolicy: annualSpecification.policy.minimumBerthEndClearanceMm,
+      maximumStablingPathEdgesPolicy: annualSpecification.policy.maximumStablingPathEdges,
+      maximumStablingPathLengthMmPolicy: annualSpecification.policy.maximumStablingPathLengthMm,
+      simulatedOperationalBerthFallbackPolicy: annualSpecification.policy.simulatedOperationalBerthFallback,
       maximumDirectDwellMsPolicy: annualSpecification.policy.maximumDirectDwellMs,
       terminalFormationLengthsMm: [...annualSpecification.policy.terminalFormationLengthsMm],
       movementRouteTemplateModel: "daily-plan-scoped-direct-stabling-transfer-continuity/v2",
@@ -434,8 +462,8 @@ async function fixture(t) {
     annualSpecificationFile: "tools/region-import/germany/annual.json",
     candidateFile: "operational-infrastructure-v2.candidate.json",
     derivationReportFile: "operational-infrastructure-v2.derivation-report.json",
-    timetableRouteReportFile: "timetable-routes-v2.derivation-report.json",
-    timetableTransferDemandsFile: "timetable-routes-v2.transfer-demands-v1.json",
+    timetableRouteReportFile: "timetable-routes-v2.derivation-report-v4.json",
+    timetableTransferDemandsFile: "timetable-routes-v2.transfer-demands-v2.json",
     gtfsSnapshotFile: "gtfs-region-test-v2.json",
     operationalArtifactFile: "operational-infrastructure-v2.json",
   }, null, 2)}\n`, "utf8");
@@ -449,6 +477,16 @@ async function fixture(t) {
 test("Jahres-CLI leitet zehn Inputbindungen samt Transfer-Evidence, Coverage und Native-Receipts ohne manuelle Zahlen ab", async (t) => {
   const value = await fixture(t);
   const result = await writeAnnualSyntheticOperationalClosure({ specificationPath: value.inputsPath, repositoryRoot: value.root, outputPath: value.outputPath, validateNative: value.native });
+  const derivationReport = JSON.parse(await readFile(value.reportPath, "utf8"));
+  assert.deepEqual({
+    turnaroundModel: derivationReport.scope.turnaroundModel,
+    maximumStablingPathEdgesPolicy: derivationReport.scope.maximumStablingPathEdgesPolicy,
+    maximumStablingPathLengthMmPolicy: derivationReport.scope.maximumStablingPathLengthMmPolicy,
+  }, {
+    turnaroundModel: "real-osm-bounded-bidirectional-access-with-observed-siding-or-explicit-synthetic-operational-berth/v3",
+    maximumStablingPathEdgesPolicy: checkedPolicy.compilerPolicy.maximumStablingPathEdges,
+    maximumStablingPathLengthMmPolicy: checkedPolicy.compilerPolicy.maximumStablingPathLengthMm,
+  });
   assert.equal(result.receipt.schema, "zugfolge-synthetic-operational-closure-receipt/v2");
   assert.deepEqual(result.receipt.claims, checkedPolicy.publicClaims);
   assert.deepEqual(result.receipt.inputs.map(({ role }) => role), requiredRoles);
@@ -457,7 +495,7 @@ test("Jahres-CLI leitet zehn Inputbindungen samt Transfer-Evidence, Coverage und
   assert.equal(result.receipt.inputs.find(({ role }) => role === "gtfs-snapshot").records, 1);
   assert.equal(result.receipt.inputs.find(({ role }) => role === "timetable-transfer-demands").records, 1);
   assert.deepEqual(result.receipt.timetableRouteEvidence, {
-    reportSchema: "zugfolge-germany-timetable-route-report/v3",
+    reportSchema: "zugfolge-germany-timetable-route-report/v4",
     policyId: "synthetic-operational-b/v2",
     derivationRule: "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2",
     selectionRule: "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
@@ -467,7 +505,7 @@ test("Jahres-CLI leitet zehn Inputbindungen samt Transfer-Evidence, Coverage und
     routesSha256: result.receipt.inputs.find(({ role }) => role === "timetable-routes").sha256,
     gtfsSnapshotBytes: result.receipt.inputs.find(({ role }) => role === "gtfs-snapshot").bytes,
     gtfsSnapshotSha256: result.receipt.inputs.find(({ role }) => role === "gtfs-snapshot").sha256,
-    transferDemandsSchema: "zugfolge-timetable-transfer-demands/v1",
+    transferDemandsSchema: "zugfolge-timetable-transfer-demands/v2",
     transferDemandsBytes: result.receipt.inputs.find(({ role }) => role === "timetable-transfer-demands").bytes,
     transferDemandsSha256: result.receipt.inputs.find(({ role }) => role === "timetable-transfer-demands").sha256,
     snapshotHash: result.receipt.timetableRouteEvidence.snapshotHash,
@@ -483,7 +521,7 @@ test("Jahres-CLI leitet zehn Inputbindungen samt Transfer-Evidence, Coverage und
     dailyCirculationPlanSha256: result.receipt.timetableRouteEvidence.dailyCirculationPlanSha256,
     transferSetSha256: result.receipt.timetableRouteEvidence.transferSetSha256,
     transferDemandsProduced: true,
-    dailyCirculation: { lotCount: 1, journeyChainCount: 1, circulationCount: 1, rolloverAssignmentCount: 1, transferDemandCount: 1, transferLotCount: 1 },
+    dailyCirculation: { lotCount: 1, journeyChainCount: 1, circulationCount: 1, rolloverAssignmentCount: 1, plannedTransitionCount: 1, turnaroundDemandCount: 0, transferDemandCount: 1, transferLotCount: 1 },
     transferRouteCount: 1,
     transferRouteLegCount: 1,
     transferRouteLengthMm: 1_000,
@@ -570,6 +608,39 @@ test("offener oder manuell aufgeweiteter Ableitungsbericht bleibt fail-closed", 
     () => writeAnnualSyntheticOperationalClosure({ specificationPath: value.inputsPath, repositoryRoot: value.root, outputPath: value.outputPath, validateNative: value.native }),
     /nicht vollstaendig geschlossen/,
   );
+});
+
+test("Turnaroundmodell und beide Stabling-Suchgrenzen bleiben im nativen Bericht exakt gebunden", async (t) => {
+  const scenarios = [
+    {
+      mutate: (scope) => { scope.turnaroundModel = "real-osm-simple-bidirectional-siding-path-with-centered-single-berth-per-target-edge/v1"; },
+      error: /abweichende Overlap-, Turnaround-Such- oder Movement-Template-Policies/,
+    },
+    {
+      mutate: (scope) => { delete scope.maximumStablingPathEdgesPolicy; },
+      error: /Nativer Bericht\.scope besitzt unerwartete oder fehlende Felder/,
+    },
+    {
+      mutate: (scope) => { scope.maximumStablingPathLengthMmPolicy += 1; },
+      error: /abweichende Overlap-, Turnaround-Such- oder Movement-Template-Policies/,
+    },
+    {
+      mutate: (scope) => { scope.maximumStablingPathHopsPolicy = 8; },
+      error: /Nativer Bericht\.scope besitzt unerwartete oder fehlende Felder/,
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    const value = await fixture(t);
+    const report = JSON.parse(await readFile(value.reportPath, "utf8"));
+    scenario.mutate(report.scope);
+    await writeFile(value.reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+    await assert.rejects(
+      () => writeAnnualSyntheticOperationalClosure({ specificationPath: value.inputsPath, repositoryRoot: value.root, outputPath: value.outputPath, validateNative: value.native }),
+      scenario.error,
+    );
+    await assert.rejects(readFile(value.outputPath), /ENOENT/);
+  }
 });
 
 test("abweichender nativer Zustand zwischen Candidate und Artefakt wird verworfen", async (t) => {

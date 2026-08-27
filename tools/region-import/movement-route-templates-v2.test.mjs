@@ -29,6 +29,66 @@ function dispatch(id, resourceIds = [`resource:${id}`], predecessorBaseRouteVers
   };
 }
 
+const observedBerthAssignment = Object.freeze({ kind: "observed", subtype: "osm-service-siding", geometryProvenance: "real-osm-rail", operationalAssignmentProvenance: "observed-osm-service" });
+const simulatedBerthAssignment = Object.freeze({ kind: "simulated-operational", subtype: "osm-unclassified-rail", geometryProvenance: "real-osm-rail", operationalAssignmentProvenance: "synthetic-operational-b-policy" });
+
+function stabling(id, shuntOutContinuity, candidateRank) {
+  const inboundRouteVersionId = "passenger:in";
+  const outboundRouteVersionId = "passenger:out";
+  const terminalEdgeId = `edge:${id}:terminal`;
+  const shuntIn = dispatch(`${id}:shunt-in`, undefined, inboundRouteVersionId);
+  const shuntOut = dispatch(`${id}:shunt-out`, undefined, shuntIn.routeVersionId, shuntOutContinuity);
+  const sharedBerth = {
+    edgeId: `edge:${id}:berth`,
+    fromMm: 50,
+    toMm: 150,
+    leftClearanceMm: 50,
+    rightClearanceMm: 50,
+  };
+  return {
+    id: `stabling:${id}`,
+    demandId: "turnaround:1",
+    inboundRouteVersionId,
+    outboundRouteVersionId,
+    locationId: "A",
+    physicalStopId: "A",
+    earliestDepartureS: 100,
+    latestArrivalS: 1_000,
+    availableWindowS: 900,
+    dailyBoundary: false,
+    terminalEdgeId,
+    terminalNodeId: 1,
+    inboundDirection: "along",
+    outboundDirection: "against",
+    formationLengthMm: 100,
+    candidateRank,
+    stablingPathLengthMm: 300,
+    terminalIntervals: [{ edgeId: terminalEdgeId, fromMm: 0, toMm: 100 }],
+    stablingKind: "shared-berth",
+    arrivalBerthAssignment: observedBerthAssignment,
+    departureBerthAssignment: observedBerthAssignment,
+    shuntIn,
+    arrivalBerth: sharedBerth,
+    berthTransfer: null,
+    berthTransferProvenance: null,
+    departureBerth: sharedBerth,
+    shuntOut,
+    outbound: dispatch(`${id}:outbound`, undefined, shuntOut.routeVersionId),
+  };
+}
+
+function crossBerthStabling() {
+  const value = stabling("cross", "reverse-direction", 0);
+  value.stablingKind = "cross-berth-transfer";
+  value.arrivalBerthAssignment = simulatedBerthAssignment;
+  value.departureBerthAssignment = simulatedBerthAssignment;
+  value.departureBerth = { edgeId: "edge:cross:departure", fromMm: 60, toMm: 160, leftClearanceMm: 60, rightClearanceMm: 40 };
+  value.berthTransfer = dispatch("cross:berth-transfer", undefined, value.shuntIn.routeVersionId, "reverse-direction");
+  value.berthTransferProvenance = { geometryProvenance: "real-osm-rail", routingRule: "real-osm-rail-bidirectional-bounded-v1", locationId: "A", physicalStopId: "A", maximumPathEdgesPerSide: 64, maximumPathLengthMmPerSide: 10_000_000 };
+  value.shuntOut.predecessorBaseRouteVersionId = value.berthTransfer.routeVersionId;
+  return value;
+}
+
 function fixture() {
   const directResources = ["resource:terminal"];
   const transferResources = ["resource:transfer"];
@@ -39,8 +99,15 @@ function fixture() {
     timetableTransferSetSha256: "b".repeat(64),
     directTemplates: [{
       id: "direct:1",
+      demandId: "turnaround:1",
       inboundRouteVersionId: "passenger:in",
       outboundRouteVersionId: "passenger:out",
+      locationId: "A",
+      physicalStopId: "A",
+      earliestDepartureS: 100,
+      latestArrivalS: 1_000,
+      availableWindowS: 900,
+      dailyBoundary: false,
       formationLengthMm: 100,
       terminalIntervals: [
         { edgeId: "edge:approach", fromMm: 20, toMm: 60 },
@@ -66,6 +133,7 @@ function fixture() {
       earliestDepartureS: 1_000,
       latestArrivalS: 2_000,
       availableWindowS: 1_000,
+      dailyBoundary: false,
       movementKind: "train",
       transfer: dispatch("transfer", transferResources, "passenger:source"),
       targetOutbound: dispatch("target-outbound", undefined, "route:transfer"),
@@ -78,7 +146,12 @@ function fixture() {
       transferTemplateCount: 1,
       transferDemandCount: 1,
       turnaroundDemandCount: 1,
+      plannedTransitionCount: 2,
       turnaroundPairCount: 1,
+      observedStablingTemplateCount: 0,
+      simulatedOperationalStablingTemplateCount: 0,
+      berthAssignmentCounts: { observedOsmServiceSiding: 0, simulatedOperationalOsmServiceYard: 0, simulatedOperationalOsmServiceSpur: 0, simulatedOperationalOsmUnclassifiedRail: 0 },
+      crossBerthTemplateCount: 0,
     },
   };
   const stateHash = createHash("sha256")
@@ -101,8 +174,22 @@ function fixture() {
       transferSetSha256: "b".repeat(64),
       formationLengthsMm: [100],
       dailyPlan: {
+        metrics: { plannedTransitionCount: 2 },
         circulations: [{ passengerTrainRunIds: ["run:1", "run:2"] }],
         rolloverAssignments: [{ kind: "transfer" }],
+        turnaroundDemands: [{
+          id: "turnaround:1",
+          sourcePassengerRouteVersionId: "passenger:in",
+          targetPassengerRouteVersionId: "passenger:out",
+          sourceLocationId: "A",
+          targetLocationId: "A",
+          sourcePhysicalStopId: "A",
+          targetPhysicalStopId: "A",
+          earliestDepartureS: 100,
+          latestArrivalS: 1_000,
+          availableWindowS: 900,
+          dailyBoundary: false,
+        }],
         transferDemands: [{
           id: "transfer:1",
           sourceLocationId: "A",
@@ -110,6 +197,7 @@ function fixture() {
           earliestDepartureS: 1_000,
           latestArrivalS: 2_000,
           availableWindowS: 1_000,
+          dailyBoundary: false,
           movementKind: "train",
         }],
       },
@@ -131,6 +219,18 @@ function rebindState(input) {
   input.binding.stateHash = stateHash;
 }
 
+function addStablingContinuityMatrix(input) {
+  input.artifact.templates = [
+    stabling("same-berth-direction", "reverse-direction", 0),
+    stabling("opposite-berth-direction", "same-direction", 1),
+  ];
+  input.artifact.metrics.stablingTemplateCount = input.artifact.templates.length;
+  input.artifact.metrics.observedStablingTemplateCount = 2;
+  input.artifact.metrics.berthAssignmentCounts.observedOsmServiceSiding = 2;
+  rebindState(input);
+  return input;
+}
+
 test("validiert den kombinierten Movement-v2-Sidecar byteunabhaengig aber stategebunden", () => {
   const input = fixture();
   const validated = validateMovementRouteTemplatesV2(input);
@@ -143,7 +243,7 @@ test("verwirft einen manipulierten Movement-Ressourcensatz", () => {
   const input = fixture();
   input.artifact.transferTemplates[0].resourceIds = ["resource:foreign"];
   rebindState(input);
-  assert.throws(() => validateMovementRouteTemplatesV2(input), /verschiedene Transfer-Ressourcen|fremden Ressourcenhash/u);
+  assert.throws(() => validateMovementRouteTemplatesV2(input), /bindet nicht alle Ressourcen|fremden Ressourcenhash/u);
 });
 
 test("verlangt genau ein natives Transfer-Template je Demand und Laenge", () => {
@@ -152,6 +252,23 @@ test("verlangt genau ein natives Transfer-Template je Demand und Laenge", () => 
   input.artifact.metrics.transferTemplateCount = 0;
   rebindState(input);
   assert.throws(() => validateMovementRouteTemplatesV2(input), /nicht jede Transferanforderung/u);
+});
+
+test("bindet Direct- und Transfer-Vorlagen an die autoritativen V2-Anforderungen", () => {
+  const foreignDirectDemand = fixture();
+  foreignDirectDemand.artifact.directTemplates[0].demandId = "turnaround:foreign";
+  rebindState(foreignDirectDemand);
+  assert.throws(() => validateMovementRouteTemplatesV2(foreignDirectDemand), /keine gebundene Turnaround-Anforderung/u);
+
+  const driftedDirectWindow = fixture();
+  driftedDirectWindow.artifact.directTemplates[0].availableWindowS += 1;
+  rebindState(driftedDirectWindow);
+  assert.throws(() => validateMovementRouteTemplatesV2(driftedDirectWindow), /driftet von seiner autoritativen Turnaround-Anforderung/u);
+
+  const driftedTransferBoundary = fixture();
+  driftedTransferBoundary.artifact.transferTemplates[0].dailyBoundary = true;
+  rebindState(driftedTransferBoundary);
+  assert.throws(() => validateMovementRouteTemplatesV2(driftedTransferBoundary), /driftet vom vollstaendigen Timetable-Transfervertrag/u);
 });
 
 test("verlangt mehrkantige terminale Belegung und exakte Basisroutenbindung", () => {
@@ -212,6 +329,92 @@ test("erzwingt Through nur fuer gleichgerichtete Direct-Fortsetzungen", () => {
   duplicateBaseTraversal.artifact.directTemplates[0].outbound.predecessorBaseRouteVersionId = "passenger:in";
   rebindState(duplicateBaseTraversal);
   assert.throws(() => validateMovementRouteTemplatesV2(duplicateBaseTraversal), /bindet nicht die unmittelbar vorige Through-Route/u);
+});
+
+test("akzeptiert beide nativ belegten Stabling-Fortsetzungen der physischen Enum-Matrix", () => {
+  const input = addStablingContinuityMatrix(fixture());
+  const validated = validateMovementRouteTemplatesV2(input);
+  assert.deepEqual(
+    validated.templates.map((template) => [template.shuntIn.continuity, template.shuntOut.continuity, template.outbound.continuity]),
+    [
+      ["same-direction", "reverse-direction", "same-direction"],
+      ["same-direction", "same-direction", "same-direction"],
+    ],
+  );
+  assert.notEqual(validated.templates[0].shuntIn.routeVersionId, validated.templates[0].shuntOut.routeVersionId);
+  assert.notEqual(validated.templates[1].shuntIn.routeVersionId, validated.templates[1].shuntOut.routeVersionId);
+});
+
+test("bindet einen realgeometrischen Cross-Berth-Transfer mit getrennter Provenienz und Vorgaengerkette", () => {
+  const input = fixture();
+  input.artifact.templates = [crossBerthStabling()];
+  input.artifact.metrics.stablingTemplateCount = 1;
+  input.artifact.metrics.simulatedOperationalStablingTemplateCount = 2;
+  input.artifact.metrics.berthAssignmentCounts.simulatedOperationalOsmUnclassifiedRail = 2;
+  input.artifact.metrics.crossBerthTemplateCount = 1;
+  rebindState(input);
+  const [template] = validateMovementRouteTemplatesV2(input).templates;
+  assert.equal(template.stablingKind, "cross-berth-transfer");
+  assert.equal(template.berthTransfer.continuity, "reverse-direction");
+  assert.equal(template.berthTransferProvenance.geometryProvenance, "real-osm-rail");
+});
+
+test("verwirft erfundene, ortsfremde oder unterbrochene Cross-Berth-Belege", () => {
+  const scenarios = [
+    {
+      mutate: (template) => { template.berthTransferProvenance.geometryProvenance = "invented"; },
+      error: /keinen realen, ortsidentischen Cross-Berth-Laufweg/u,
+    },
+    {
+      mutate: (template) => { template.berthTransferProvenance.physicalStopId = "B"; },
+      error: /keinen realen, ortsidentischen Cross-Berth-Laufweg/u,
+    },
+    {
+      mutate: (template) => { template.shuntOut.predecessorBaseRouteVersionId = template.shuntIn.routeVersionId; },
+      error: /unterbrochene Cross-Berth-Vorgaengerkette/u,
+    },
+  ];
+  for (const scenario of scenarios) {
+    const input = fixture();
+    input.artifact.templates = [crossBerthStabling()];
+    input.artifact.metrics.stablingTemplateCount = 1;
+    input.artifact.metrics.simulatedOperationalStablingTemplateCount = 2;
+    input.artifact.metrics.berthAssignmentCounts.simulatedOperationalOsmUnclassifiedRail = 2;
+    input.artifact.metrics.crossBerthTemplateCount = 1;
+    scenario.mutate(input.artifact.templates[0]);
+    rebindState(input);
+    assert.throws(() => validateMovementRouteTemplatesV2(input), scenario.error);
+  }
+});
+
+test("verwirft eine nachtraeglich manipulierte signierte Stabling-Continuity", () => {
+  const input = addStablingContinuityMatrix(fixture());
+  input.artifact.templates[0].shuntOut.continuity = "same-direction";
+  assert.throws(() => validateMovementRouteTemplatesV2(input), /fremden kanonischen State-Hash/u);
+});
+
+test("verwirft Enum-gueltige aber fachlich freie Stabling-Fortsetzungen", () => {
+  const wrongShuntIn = addStablingContinuityMatrix(fixture());
+  wrongShuntIn.artifact.templates[0].shuntIn.continuity = "reverse-direction";
+  rebindState(wrongShuntIn);
+  assert.throws(() => validateMovementRouteTemplatesV2(wrongShuntIn), /keine physisch belegte Rangier-Fortsetzungsmatrix/u);
+
+  const wrongOutbound = addStablingContinuityMatrix(fixture());
+  wrongOutbound.artifact.templates[0].outbound.continuity = "reverse-direction";
+  rebindState(wrongOutbound);
+  assert.throws(() => validateMovementRouteTemplatesV2(wrongOutbound), /keine physisch belegte Rangier-Fortsetzungsmatrix/u);
+});
+
+test("verwirft fehlende und unbekannte Stabling-Continuity-Werte", () => {
+  const missing = addStablingContinuityMatrix(fixture());
+  delete missing.artifact.templates[0].shuntOut.continuity;
+  rebindState(missing);
+  assert.throws(() => validateMovementRouteTemplatesV2(missing), /fehlende oder unbekannte Felder/u);
+
+  const unknown = addStablingContinuityMatrix(fixture());
+  unknown.artifact.templates[0].shuntOut.continuity = "sideways";
+  rebindState(unknown);
+  assert.throws(() => validateMovementRouteTemplatesV2(unknown), /continuity ist unbekannt/u);
 });
 
 test("bindet den kanonischen State-Hash auch ohne fachliche Neuberechnung", () => {

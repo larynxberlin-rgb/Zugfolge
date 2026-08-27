@@ -28,7 +28,7 @@ const DERIVATION_REPORT_SCHEMA = "germany-operational-v2-derivation-report-v1";
 const DERIVATION_MODE = "deterministic-conservative-v1";
 const COMPLETE_ROUTE_COVERAGE = "complete-pinned-timetable-routes";
 const FULL_ROUTE_INTERLOCKING_MODEL = "deterministic-linear-segment-node-stellzone-mutex-and-progressive-authority/v3";
-const TURNAROUND_MODEL = "real-osm-bounded-bidirectional-access-to-siding-with-centered-single-berth-per-target-edge/v2";
+const TURNAROUND_MODEL = "real-osm-bounded-bidirectional-access-with-observed-siding-or-explicit-synthetic-operational-berth/v3";
 const MOVEMENT_ROUTE_TEMPLATE_MODEL = "daily-plan-scoped-direct-stabling-transfer-continuity/v2";
 const NATIVE_SCHEMA = "operational-infrastructure-v2";
 const NATIVE_MODE = "native-streaming-redb-v1";
@@ -355,7 +355,7 @@ export function validateSyntheticOperationalPolicy(policy) {
     invariant(typeof rule.effect === "string" && rule.effect !== "", `Synthetic-Operational-Regel ${rule.id} besitzt keine Wirkung.`);
   }
   invariant(ruleIds.has("pinned-timetable-route-coverage/v1"), "Synthetic-Operational-Policy besitzt keine vollstaendige timetableRoutes-Regel.");
-  invariant(ruleIds.has("daily-physical-circulation-and-transfer-coverage/v1"), "Synthetic-Operational-Policy besitzt keine physisch geschlossene Tagesumlauf- und Transferregel.");
+  invariant(ruleIds.has("daily-physical-circulation-and-transfer-coverage/v2"), "Synthetic-Operational-Policy besitzt keine physisch geschlossene v2-Tagesumlauf- und Transferregel.");
   invariant(ruleIds.has("free-gtfs-route-provenance/v2"), "Synthetic-Operational-Policy besitzt keine freie GTFS-Provenienzregel.");
   validateCompilerPolicy(policy.compilerPolicy);
   exactKeys(policy.publicClaims, [
@@ -408,7 +408,7 @@ function validateReportInputEvidence(value, label) {
 }
 
 function validateMovementRouteTemplatesEvidence(value, { operationalStateHash, transferSetSha256 }, label) {
-  exactKeys(value, ["file", "bytes", "sha256", "stateHash", "operationalStateHash", "timetableTransferSetSha256"], label);
+  exactKeys(value, ["file", "bytes", "sha256", "stateHash", "operationalStateHash", "timetableTransferSetSha256", "berthAssignmentCounts", "crossBerthTemplateCount"], label);
   const path = regularRelativePath(value.file, `${label}.file`);
   invariant(
     basename(path) === path && path.endsWith(".movement-route-templates-v2.json"),
@@ -421,13 +421,16 @@ function validateMovementRouteTemplatesEvidence(value, { operationalStateHash, t
   invariant(value.sha256 !== value.stateHash, `${label} trennt Datei- und Zustandshash nicht.`);
   invariant(value.operationalStateHash === operationalStateHash, `${label} bindet einen anderen Operational-v2-Zustand.`);
   invariant(value.timetableTransferSetSha256 === transferSetSha256, `${label} bindet ein anderes Timetable-Transfer-Set.`);
+  exactKeys(value.berthAssignmentCounts, ["observedOsmServiceSiding", "simulatedOperationalOsmServiceYard", "simulatedOperationalOsmServiceSpur", "simulatedOperationalOsmUnclassifiedRail"], `${label}.berthAssignmentCounts`);
+  for (const [field, count] of Object.entries(value.berthAssignmentCounts)) nonNegativeInteger(count, `${label}.berthAssignmentCounts.${field}`);
+  nonNegativeInteger(value.crossBerthTemplateCount, `${label}.crossBerthTemplateCount`);
   return value;
 }
 
 function validateNativeTimetableRouteEvidence(value, report) {
   exactKeys(value, [
     "timetableRoutes", "transferDemands", "dailyPlanSha256", "transferSetSha256", "circulationCount",
-    "transferDemandCount", "transferLotCount", "turnaroundDemandCount", "turnaroundPairCount",
+    "plannedTransitionCount", "transferDemandCount", "transferLotCount", "turnaroundDemandCount", "turnaroundPairCount",
     "movementRouteTemplates",
   ], "Nativer Bericht.timetableRouteEvidence");
   validateReportInputEvidence(value.timetableRoutes, "Nativer Bericht.timetableRouteEvidence.timetableRoutes");
@@ -438,14 +441,14 @@ function validateNativeTimetableRouteEvidence(value, report) {
     "Nativer Bericht wiederholt abweichende Timetable-Routen- oder Transfer-Dateibindungen.",
   );
   invariant(SHA256.test(value.dailyPlanSha256) && SHA256.test(value.transferSetSha256), "Nativer Bericht besitzt keinen Tagesplan- oder Transfer-Set-Hash.");
-  for (const field of ["circulationCount", "transferDemandCount", "transferLotCount"]) {
+  for (const field of ["circulationCount", "plannedTransitionCount"]) {
     positiveInteger(value[field], `Nativer Bericht.timetableRouteEvidence.${field}`);
   }
-  for (const field of ["turnaroundDemandCount", "turnaroundPairCount"]) {
+  for (const field of ["transferDemandCount", "transferLotCount", "turnaroundDemandCount", "turnaroundPairCount"]) {
     nonNegativeInteger(value[field], `Nativer Bericht.timetableRouteEvidence.${field}`);
   }
   invariant(
-    value.transferDemandCount + value.turnaroundDemandCount === value.circulationCount
+    value.transferDemandCount + value.turnaroundDemandCount === value.plannedTransitionCount
       && value.transferLotCount <= value.transferDemandCount
       && value.turnaroundPairCount <= value.turnaroundDemandCount,
     "Nativer Bericht schliesst Tagesumlauf-, Transfer- und Turnaround-Anforderungen nicht widerspruchsfrei.",
@@ -472,9 +475,19 @@ export function coverageFromSyntheticOperationalDerivationReport(report) {
     "observedForwardSpeeds", "observedBackwardSpeeds", "simulatedSpeeds", "observedProtectionAssignments",
     "simulatedProtectionAssignments", "matchedPlatformIntervals", "excludedPlatformEvidence", "syntheticBoundarySignals",
     "turnaroundRouteVersions", "turnaroundInterlockingRoutes", "transferRouteVersions", "transferInterlockingRoutes",
+    "observedStablingTemplates", "simulatedOperationalStablingTemplates", "berthAssignmentCounts", "crossBerthTemplates",
   ], "Nativer Bericht.counts.provenance");
+  exactKeys(report.counts.provenance.berthAssignmentCounts, ["observedOsmServiceSiding", "simulatedOperationalOsmServiceYard", "simulatedOperationalOsmServiceSpur", "simulatedOperationalOsmUnclassifiedRail"], "Nativer Bericht.counts.provenance.berthAssignmentCounts");
   for (const [name, value] of Object.entries(report.counts.source)) nonNegativeInteger(value, `Nativer Bericht.counts.source.${name}`);
-  for (const [name, value] of Object.entries(report.counts.provenance)) nonNegativeInteger(value, `Nativer Bericht.counts.provenance.${name}`);
+  for (const [name, value] of Object.entries(report.counts.provenance)) {
+    if (name !== "berthAssignmentCounts") nonNegativeInteger(value, `Nativer Bericht.counts.provenance.${name}`);
+  }
+  for (const [name, value] of Object.entries(report.counts.provenance.berthAssignmentCounts)) nonNegativeInteger(value, `Nativer Bericht.counts.provenance.berthAssignmentCounts.${name}`);
+  invariant(
+    sameCanonical(report.counts.provenance.berthAssignmentCounts, report.candidate.movementRouteTemplates.berthAssignmentCounts)
+      && report.counts.provenance.crossBerthTemplates === report.candidate.movementRouteTemplates.crossBerthTemplateCount,
+    "Nativer Bericht zaehlt Berth-Provenienz in Report und Movement-Beleg verschieden.",
+  );
   for (const [name, value] of Object.entries(report.counts.candidate)) {
     if (["directTemplates", "stablingTemplates"].includes(name)) nonNegativeInteger(value, `Nativer Bericht.counts.candidate.${name}`);
     else positiveInteger(value, `Nativer Bericht.counts.candidate.${name}`);
@@ -581,7 +594,7 @@ export function validateSyntheticOperationalDerivationReport(report, { releaseId
   exactKeys(report.scope, [
     "routeModel", "interlockingModel", "platformModel", "capacityBias", "minimumOverlapMmPolicy",
     "turnaroundModel", "minimumBerthEndClearanceMmPolicy", "maximumStablingPathEdgesPolicy",
-    "maximumStablingPathLengthMmPolicy", "maximumDirectDwellMsPolicy",
+    "maximumStablingPathLengthMmPolicy", "simulatedOperationalBerthFallbackPolicy", "maximumDirectDwellMsPolicy",
     "terminalFormationLengthsMm", "movementRouteTemplateModel",
   ], "Nativer Bericht.scope");
   invariant(
@@ -597,6 +610,7 @@ export function validateSyntheticOperationalDerivationReport(report, { releaseId
       && report.scope.minimumBerthEndClearanceMmPolicy === annualSpecification.policy.minimumBerthEndClearanceMm
       && report.scope.maximumStablingPathEdgesPolicy === annualSpecification.policy.maximumStablingPathEdges
       && report.scope.maximumStablingPathLengthMmPolicy === annualSpecification.policy.maximumStablingPathLengthMm
+      && report.scope.simulatedOperationalBerthFallbackPolicy === annualSpecification.policy.simulatedOperationalBerthFallback
       && report.scope.maximumDirectDwellMsPolicy === annualSpecification.policy.maximumDirectDwellMs
       && sameCanonical(report.scope.terminalFormationLengthsMm, annualSpecification.policy.terminalFormationLengthsMm)
       && report.scope.movementRouteTemplateModel === MOVEMENT_ROUTE_TEMPLATE_MODEL,
@@ -639,7 +653,7 @@ function validateDerivationBinding(binding, candidate, timetableRouteEvidence) {
   );
   exactKeys(binding.timetableRouteEvidence, [
     "timetableRoutes", "transferDemands", "dailyPlanSha256", "transferSetSha256", "circulationCount",
-    "transferDemandCount", "transferLotCount", "turnaroundDemandCount", "turnaroundPairCount",
+    "plannedTransitionCount", "transferDemandCount", "transferLotCount", "turnaroundDemandCount", "turnaroundPairCount",
     "movementRouteTemplates",
   ], "derivationReport.timetableRouteEvidence");
   validateReportInputEvidence(binding.timetableRouteEvidence.timetableRoutes, "derivationReport.timetableRouteEvidence.timetableRoutes");
@@ -658,8 +672,10 @@ function validateDerivationBinding(binding, candidate, timetableRouteEvidence) {
       && binding.timetableRouteEvidence.transferDemands.bytes === timetableRouteEvidence.transferDemandsBytes
       && binding.timetableRouteEvidence.transferDemands.sha256 === timetableRouteEvidence.transferDemandsSha256
       && binding.timetableRouteEvidence.circulationCount === timetableRouteEvidence.dailyCirculation.circulationCount
+      && binding.timetableRouteEvidence.plannedTransitionCount === timetableRouteEvidence.dailyCirculation.plannedTransitionCount
       && binding.timetableRouteEvidence.transferDemandCount === timetableRouteEvidence.transferRouteCount
-      && binding.timetableRouteEvidence.transferLotCount === timetableRouteEvidence.dailyCirculation.transferLotCount,
+      && binding.timetableRouteEvidence.transferLotCount === timetableRouteEvidence.dailyCirculation.transferLotCount
+      && binding.timetableRouteEvidence.turnaroundDemandCount === timetableRouteEvidence.dailyCirculation.turnaroundDemandCount,
     "Closure-Receipt und nativer Bericht binden verschiedene Tagesplan-/Transfer-Nachweise.",
   );
 }
@@ -690,7 +706,8 @@ function validateDailyCirculationMetrics(value, label) {
   }
   for (const field of ["turnaroundDemandCount", "transferDemandCount", "transferLotCount"]) nonNegativeInteger(value[field], `${label}.${field}`);
   invariant(
-    value.turnaroundDemandCount + value.transferDemandCount === value.plannedTransitionCount,
+    value.turnaroundDemandCount + value.transferDemandCount === value.plannedTransitionCount
+      && value.plannedTransitionCount === value.journeyChainCount,
     `${label} partitioniert die geplanten Uebergaenge nicht vollstaendig.`,
   );
   invariant(value.transferLotCount <= value.lotCount, `${label} besitzt mehr Transferlose als Lose.`);

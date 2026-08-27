@@ -75,6 +75,9 @@ function conservativeSpecification(timetableRoutes = "var/derived/germany-2026.3
       maximumPlatformSnapDistanceMm: 25_000,
       minimumOverlapMm: 200_000,
       minimumBerthEndClearanceMm: 10_000,
+      maximumStablingPathEdges: 32,
+      maximumStablingPathLengthMm: 5_000_000,
+      simulatedOperationalBerthFallback: "real-osm-service-yard-then-spur-then-unclassified-rail/v1",
       maximumDirectDwellMs: 1_200_000,
       terminalFormationLengthsMm: [46_560, 69_860],
       defaultProtectionSystem: "pzb",
@@ -99,7 +102,12 @@ function movementSidecar() {
       transferTemplateCount: 0,
       transferDemandCount: 0,
       turnaroundDemandCount: 0,
+      plannedTransitionCount: 0,
       turnaroundPairCount: 0,
+      observedStablingTemplateCount: 0,
+      simulatedOperationalStablingTemplateCount: 0,
+      berthAssignmentCounts: { observedOsmServiceSiding: 0, simulatedOperationalOsmServiceYard: 0, simulatedOperationalOsmServiceSpur: 0, simulatedOperationalOsmUnclassifiedRail: 0 },
+      crossBerthTemplateCount: 0,
     },
   };
   return { ...value, stateHash: canonicalHash({ schema: "movement-route-templates-v2", value }) };
@@ -118,6 +126,8 @@ function movementSidecarProof() {
     stateHash: movementSidecar().stateHash,
     operationalStateHash: STATE_HASH,
     timetableTransferSetSha256: null,
+    berthAssignmentCounts: { observedOsmServiceSiding: 0, simulatedOperationalOsmServiceYard: 0, simulatedOperationalOsmServiceSpur: 0, simulatedOperationalOsmUnclassifiedRail: 0 },
+    crossBerthTemplateCount: 0,
   };
 }
 
@@ -200,9 +210,9 @@ function derivationReport(specification, { activationEligible = true, mutate = (
     counts: {
       source: { tracks: 1, orderableTracks: 1, platforms: 0, switches: 0, signals: 0, blocks: 0, conflictResources: 0, timetableRoutes: activationEligible ? 1 : 0, timetableLegs: activationEligible ? 1 : 0, transferDemands: 0, transferLots: 0, turnaroundDemands: 0, turnaroundPairs: 0 },
       candidate: { directedEdges: 1, edgeGeometries: 1, routeVersions: 1, interlockingRoutes: 1, signals: 1, switches: 0, blockResources: 3, platformIntervals: 0, regionBoundaries: 1, directTemplates: 0, stablingTemplates: 0, transferTemplates: 0 },
-      provenance: { observedForwardSpeeds: 1, observedBackwardSpeeds: 1, simulatedSpeeds: 0, observedProtectionAssignments: 1, simulatedProtectionAssignments: 0, matchedPlatformIntervals: 0, excludedPlatformEvidence: 0, syntheticBoundarySignals: 1, turnaroundRouteVersions: 0, turnaroundInterlockingRoutes: 0, transferRouteVersions: 0, transferInterlockingRoutes: 0 },
+      provenance: { observedForwardSpeeds: 1, observedBackwardSpeeds: 1, simulatedSpeeds: 0, observedProtectionAssignments: 1, simulatedProtectionAssignments: 0, matchedPlatformIntervals: 0, excludedPlatformEvidence: 0, syntheticBoundarySignals: 1, turnaroundRouteVersions: 0, turnaroundInterlockingRoutes: 0, transferRouteVersions: 0, transferInterlockingRoutes: 0, observedStablingTemplates: 0, simulatedOperationalStablingTemplates: 0, berthAssignmentCounts: { observedOsmServiceSiding: 0, simulatedOperationalOsmServiceYard: 0, simulatedOperationalOsmServiceSpur: 0, simulatedOperationalOsmUnclassifiedRail: 0 }, crossBerthTemplates: 0 },
     },
-    scope: { routeModel: routeCoverage, interlockingModel: "deterministic-linear-segment-node-stellzone-mutex-and-progressive-authority/v3", platformModel: "deterministic-nearest-observed-track-within-policy-radius/v1", capacityBias: "conservative-under-capacity", minimumOverlapMmPolicy: specification.policy.minimumOverlapMm, turnaroundModel: "real-osm-simple-bidirectional-siding-path-with-centered-single-berth-per-target-edge/v1", minimumBerthEndClearanceMmPolicy: specification.policy.minimumBerthEndClearanceMm, maximumDirectDwellMsPolicy: specification.policy.maximumDirectDwellMs, terminalFormationLengthsMm: specification.policy.terminalFormationLengthsMm, movementRouteTemplateModel: "daily-plan-scoped-direct-stabling-transfer-continuity/v2" },
+    scope: { routeModel: routeCoverage, interlockingModel: "deterministic-linear-segment-node-stellzone-mutex-and-progressive-authority/v3", platformModel: "deterministic-nearest-observed-track-within-policy-radius/v1", capacityBias: "conservative-under-capacity", minimumOverlapMmPolicy: specification.policy.minimumOverlapMm, turnaroundModel: "real-osm-bounded-bidirectional-access-with-observed-siding-or-explicit-synthetic-operational-berth/v3", minimumBerthEndClearanceMmPolicy: specification.policy.minimumBerthEndClearanceMm, maximumStablingPathEdgesPolicy: specification.policy.maximumStablingPathEdges, maximumStablingPathLengthMmPolicy: specification.policy.maximumStablingPathLengthMm, simulatedOperationalBerthFallbackPolicy: specification.policy.simulatedOperationalBerthFallback, maximumDirectDwellMsPolicy: specification.policy.maximumDirectDwellMs, terminalFormationLengthsMm: specification.policy.terminalFormationLengthsMm, movementRouteTemplateModel: "daily-plan-scoped-direct-stabling-transfer-continuity/v2" },
     routeCoverage,
     activationEligible,
     unresolvedRequired: unresolvedRequiredDimensions.length,
@@ -272,13 +282,12 @@ function feature(geometry, properties) {
   return { type: "Feature", geometry, properties };
 }
 
-test("die eingecheckte Jahres-Spezifikation bindet den konservativen Klasse-B-Vertrag und alle 2026.3-Eingaben", async () => {
+test("die historische 2026.3-Spezifikation bleibt forensisch erhalten und ist kein aktueller positiver V2-Vertrag", async () => {
   const specification = JSON.parse(await readFile(CHECKED_IN_SPEC, "utf8"));
-  assert.equal(validateGermanyOperationalInfrastructureV2Specification(specification), "conservative");
-  assert.deepEqual(specification, conservativeSpecification());
+  assert.throws(() => validateGermanyOperationalInfrastructureV2Specification(specification), /unbekannte oder fehlende Felder/u);
   assert.equal(Object.values(specification.layers).filter((value) => typeof value === "string").every((value) => value.includes("germany-2026.3")), true);
   assert.equal(specification.policy.id, GERMANY_OPERATIONAL_CONSERVATIVE_POLICY_ID);
-  assert.equal(specification.policy.qualityClass, "B");
+  assert.equal(Object.hasOwn(specification.policy, "simulatedOperationalBerthFallback"), false);
 });
 
 test("der konservative Vertrag ist exact-key-, Pfad- und Policy-strikt", () => {
@@ -525,8 +534,8 @@ test("Node, echter Rust-Ableiter und nativer Materialisierer stimmen Ende-zu-End
   );
   await Promise.all([
     writeJsonSequence(join(root, "tracks.geojsonseq"), [
-      track("track-1", 1, 2, 1_000, [12, 51], [12.0001, 51]),
-      track("track-2", 2, 3, 1_200, [12.0001, 51], [12.0002, 51]),
+      track("track-1", 1, 2, 100_000, [12, 51], [12.0001, 51]),
+      track("track-2", 2, 3, 120_000, [12.0001, 51], [12.0002, 51]),
     ]),
     writeJsonSequence(join(root, "platforms.geojsonseq"), [feature({ type: "Point", coordinates: [12.00005, 51] }, { feature_id: "platform-1", feature_type: "platform" })]),
     writeJsonSequence(join(root, "switches.geojsonseq"), [feature({ type: "Point", coordinates: [12.0001, 51] }, {
@@ -567,7 +576,7 @@ test("Node, echter Rust-Ableiter und nativer Materialisierer stimmen Ende-zu-End
       }),
     ]),
     writeJsonSequence(join(root, "timetable-routes.geojsonseq"), [{
-      routeVersionId: "route-version-full-1",
+      routeVersionId: "route:gtfs:leg-a:v1",
       templateId: "route-template-full-1",
       predecessorId: null,
       transitionRouteMm: null,
@@ -576,7 +585,7 @@ test("Node, echter Rust-Ableiter und nativer Materialisierer stimmen Ende-zu-End
           edgeId: "track-1",
           direction: "along",
           edgeEntryMm: 0,
-          edgeExitMm: 1_000,
+          edgeExitMm: 100_000,
           availableProtectionSystems: ["pzb"],
           simultaneouslyRequiredProtectionSystems: [],
         },
@@ -584,13 +593,102 @@ test("Node, echter Rust-Ableiter und nativer Materialisierer stimmen Ende-zu-End
           edgeId: "track-2",
           direction: "along",
           edgeEntryMm: 0,
-          edgeExitMm: 1_200,
+          edgeExitMm: 120_000,
           availableProtectionSystems: ["pzb"],
           simultaneouslyRequiredProtectionSystems: [],
         },
       ],
+    }, {
+      routeVersionId: "route:gtfs:leg-b:v1",
+      templateId: "route-template-full-2",
+      predecessorId: null,
+      transitionRouteMm: null,
+      legs: [{
+        edgeId: "track-2",
+        direction: "against",
+        edgeEntryMm: 120_000,
+        edgeExitMm: 0,
+        availableProtectionSystems: ["pzb"],
+        simultaneouslyRequiredProtectionSystems: [],
+      }],
     }]),
   ]);
+  const turnaroundDemand = {
+    id: `turnaround-${"1".repeat(64)}`,
+    lotId: "lot-test",
+    assetCompatibilityKey: "lot-test",
+    sourceCirculationId: "circulation-test",
+    targetCirculationId: "circulation-test",
+    sourcePassengerLegId: "leg-a",
+    targetPassengerLegId: "leg-b",
+    sourcePassengerRouteVersionId: "route:gtfs:leg-a:v1",
+    targetPassengerRouteVersionId: "route:gtfs:leg-b:v1",
+    sourceLocationId: "stop-c",
+    targetLocationId: "stop-c",
+    sourcePhysicalStopId: "stop-c",
+    targetPhysicalStopId: "stop-c",
+    earliestDepartureS: 100,
+    latestArrivalS: 500,
+    availableWindowS: 400,
+    dailyBoundary: false,
+  };
+  const transferDemand = {
+    id: `transfer-${"2".repeat(64)}`,
+    lotId: "lot-test",
+    assetCompatibilityKey: "lot-test",
+    sourceCirculationId: "circulation-test",
+    targetCirculationId: "circulation-test",
+    sourcePassengerLegId: "leg-b",
+    targetPassengerLegId: "leg-a",
+    sourcePassengerRouteVersionId: "route:gtfs:leg-b:v1",
+    targetPassengerRouteVersionId: "route:gtfs:leg-a:v1",
+    sourceLocationId: "stop-b",
+    targetLocationId: "stop-a",
+    sourcePhysicalStopId: "stop-b",
+    targetPhysicalStopId: "stop-a",
+    earliestDepartureS: 900,
+    latestArrivalS: 86_100,
+    availableWindowS: 85_200,
+    dailyBoundary: true,
+    movementKind: "train",
+  };
+  const dailyPlanBody = {
+    schema: "zugfolge-daily-circulation-plan/v2",
+    rule: "lot-local-playable-path-cover-with-explicit-physical-transition-partition/v2",
+    gtfsReleaseId: "gtfs-test-v2",
+    repeatEveryS: 86_400,
+    minimumTurnaroundS: 300,
+    metrics: { lotCount: 1, journeyChainCount: 2, circulationCount: 1, rolloverAssignmentCount: 1, plannedTransitionCount: 2, turnaroundDemandCount: 1, transferDemandCount: 1, transferLotCount: 1 },
+    circulations: [{
+      id: "circulation-test",
+      lotId: "lot-test",
+      serviceLineId: "line-test",
+      assetCompatibilityKey: "lot-test",
+      journeyChainIds: ["journey-a", "journey-b"],
+      passengerLegIds: ["leg-a", "leg-b"],
+      passengerTrainRunIds: ["run-a", "run-b"],
+      start: { legId: "leg-a", passengerRouteVersionId: "route:gtfs:leg-a:v1", locationId: "stop-a", physicalStopId: "stop-a", timeS: 0 },
+      end: { legId: "leg-b", passengerRouteVersionId: "route:gtfs:leg-b:v1", locationId: "stop-b", physicalStopId: "stop-b", timeS: 600 },
+    }],
+    rolloverAssignments: [{ sourceCirculationId: "circulation-test", targetCirculationId: "circulation-test", kind: "transfer" }],
+    turnaroundDemands: [turnaroundDemand],
+    transferDemands: [transferDemand],
+  };
+  const dailyPlan = { ...dailyPlanBody, planSha256: canonicalHash({ schema: "zugfolge-daily-circulation-plan/v2", value: dailyPlanBody }) };
+  const transferRoute = {
+    ...transferDemand,
+    formationLengthsMm: [46_560, 69_860],
+    routeVersionId: `route:${transferDemand.id}:movement:v1`,
+    templateId: `template:${transferDemand.id}:movement:v1`,
+    legs: [{ edgeId: "track-1", direction: "against", edgeEntryMm: 100_000, edgeExitMm: 0, availableProtectionSystems: ["pzb"], simultaneouslyRequiredProtectionSystems: [] }],
+    totalLengthMm: 100_000,
+    weightedCostMm: 100_000,
+    minimumRuntimeMs: 5_143,
+  };
+  const transferSetSha256 = sha256(Buffer.from(`${JSON.stringify(canonicalValue(transferRoute))}\n`, "utf8"));
+  const transferDemands = { schema: "zugfolge-timetable-transfer-demands/v2", infraReleaseId: RELEASE_ID, gtfsSnapshotHash: "9".repeat(64), dailyPlan, formationLengthsMm: [46_560, 69_860], transferRoutes: [transferRoute], transferSetSha256 };
+  const transferBytes = Buffer.from(`${JSON.stringify(canonicalValue(transferDemands))}\n`, "utf8");
+  await writeFile(join(root, "transfer-demands-v2.json"), transferBytes);
   const specification = conservativeSpecification("timetable-routes.geojsonseq");
   specification.layers = {
     tracks: "tracks.geojsonseq",
@@ -600,7 +698,7 @@ test("Node, echter Rust-Ableiter und nativer Materialisierer stimmen Ende-zu-End
     blocks: "blocks.geojsonseq",
     conflictResources: "conflict-resources.geojsonseq",
     timetableRoutes: "timetable-routes.geojsonseq",
-    transferDemands: null,
+    transferDemands: { path: "transfer-demands-v2.json", expectedBytes: transferBytes.length, expectedSha256: sha256(transferBytes) },
   };
   const specificationPath = join(root, "specification.json");
   await writeFile(specificationPath, `${JSON.stringify(specification)}\n`, "utf8");
@@ -611,8 +709,9 @@ test("Node, echter Rust-Ableiter und nativer Materialisierer stimmen Ende-zu-End
   assert.equal(receipt.candidate.stateHash, receipt.materialized.stateHash);
   const materialized = JSON.parse(await readFile(paths.outputPath, "utf8"));
   assert.equal(materialized.id, RELEASE_ID);
-  assert.equal(materialized.routeVersions["route-version-full-1"].legs.length, 2);
+  assert.equal(materialized.routeVersions["route:gtfs:leg-a:v1"].legs.length, 2);
   const interlockingRoutes = Object.values(materialized.interlockingRoutes)
+    .filter(({ routeTemplateId }) => routeTemplateId === "route-template-full-1")
     .sort((left, right) => left.authorityStartRouteMm - right.authorityStartRouteMm);
   assert.equal(interlockingRoutes.length, 2);
   assert.deepEqual(
@@ -621,8 +720,8 @@ test("Node, echter Rust-Ableiter und nativer Materialisierer stimmen Ende-zu-End
       authorityEndRouteMm,
     })),
     [
-      { authorityStartRouteMm: 0, authorityEndRouteMm: 1_000 },
-      { authorityStartRouteMm: 1_000, authorityEndRouteMm: 2_200 },
+      { authorityStartRouteMm: 0, authorityEndRouteMm: 100_000 },
+      { authorityStartRouteMm: 100_000, authorityEndRouteMm: 220_000 },
     ],
   );
   assert.ok(interlockingRoutes[0].pathResources.includes("resource-observed-1"));

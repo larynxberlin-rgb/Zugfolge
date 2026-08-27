@@ -35,6 +35,9 @@ const CONSERVATIVE_POLICY_KEYS = Object.freeze([
   "maximumPlatformSnapDistanceMm",
   "minimumOverlapMm",
   "minimumBerthEndClearanceMm",
+  "maximumStablingPathEdges",
+  "maximumStablingPathLengthMm",
+  "simulatedOperationalBerthFallback",
   "maximumDirectDwellMs",
   "terminalFormationLengthsMm",
   "defaultProtectionSystem",
@@ -159,6 +162,12 @@ function canonicalHash(value) {
   return createHash("sha256").update(JSON.stringify(canonicalValue(value))).digest("hex");
 }
 
+function movementResourceSetSha256(resourceIds) {
+  const hash = createHash("sha256");
+  for (const resourceId of resourceIds) hash.update(`${resourceId}\n`, "utf8");
+  return hash.digest("hex");
+}
+
 function validateMapLayerDeclarations(layers, { timetableRoutes = false } = {}) {
   exactKeys(layers, timetableRoutes ? CONSERVATIVE_LAYER_NAMES : MAP_LAYER_NAMES, "Operational-v2-Layer");
   for (const name of MAP_LAYER_NAMES) relativeArtifactPath(layers[name], `layers.${name}`);
@@ -205,6 +214,11 @@ function validateConservativePolicy(policy) {
   positiveSafeInteger(policy.maximumPlatformSnapDistanceMm, "policy.maximumPlatformSnapDistanceMm");
   positiveSafeInteger(policy.minimumOverlapMm, "policy.minimumOverlapMm");
   positiveSafeInteger(policy.minimumBerthEndClearanceMm, "policy.minimumBerthEndClearanceMm");
+  positiveSafeInteger(policy.maximumStablingPathEdges, "policy.maximumStablingPathEdges");
+  invariant(policy.maximumStablingPathEdges <= 64, "policy.maximumStablingPathEdges ist nicht konservativ begrenzt.");
+  positiveSafeInteger(policy.maximumStablingPathLengthMm, "policy.maximumStablingPathLengthMm");
+  invariant(policy.maximumStablingPathLengthMm <= 10_000_000, "policy.maximumStablingPathLengthMm ist nicht konservativ begrenzt.");
+  invariant(policy.simulatedOperationalBerthFallback === "real-osm-service-yard-then-spur-then-unclassified-rail/v1", "policy.simulatedOperationalBerthFallback verletzt den versionierten Realgeometrie-Vertrag.");
   positiveSafeInteger(policy.maximumDirectDwellMs, "policy.maximumDirectDwellMs");
   invariant(policy.maximumDirectDwellMs === 1_200_000, "policy.maximumDirectDwellMs muss die versionierte 20-Minuten-B-Regel binden.");
   invariant(Array.isArray(policy.terminalFormationLengthsMm) && policy.terminalFormationLengthsMm.length > 0, "policy.terminalFormationLengthsMm fehlt.");
@@ -348,12 +362,15 @@ function validateProof(value, name, { stateHash = false } = {}) {
 }
 
 function validateMovementRouteTemplatesProof(value, name, expectedOperationalStateHash, expectedTransferSetSha256) {
-  exactKeys(value, ["file", "bytes", "sha256", "stateHash", "operationalStateHash", "timetableTransferSetSha256"], name);
+  exactKeys(value, ["file", "bytes", "sha256", "stateHash", "operationalStateHash", "timetableTransferSetSha256", "berthAssignmentCounts", "crossBerthTemplateCount"], name);
   invariant(value.file === "operational-infrastructure-v2.movement-route-templates-v2.json", `${name}.file besitzt nicht den kanonischen V2-Dateinamen.`);
   positiveSafeInteger(value.bytes, `${name}.bytes`);
   for (const field of ["sha256", "stateHash", "operationalStateHash"]) invariant(SHA256.test(value[field]), `${name}.${field} ist kein SHA-256.`);
   invariant(value.operationalStateHash === expectedOperationalStateHash, `${name} driftet vom Operational-State-Hash.`);
   invariant(value.timetableTransferSetSha256 === expectedTransferSetSha256, `${name} driftet vom timetableTransferSetSha256.`);
+  exactKeys(value.berthAssignmentCounts, ["observedOsmServiceSiding", "simulatedOperationalOsmServiceYard", "simulatedOperationalOsmServiceSpur", "simulatedOperationalOsmUnclassifiedRail"], `${name}.berthAssignmentCounts`);
+  for (const [field, count] of Object.entries(value.berthAssignmentCounts)) nonNegativeSafeInteger(count, `${name}.berthAssignmentCounts.${field}`);
+  nonNegativeSafeInteger(value.crossBerthTemplateCount, `${name}.crossBerthTemplateCount`);
   return value;
 }
 
@@ -434,23 +451,39 @@ function validateNativeDerivationReport(report, specification) {
   exactKeys(report.counts, ["source", "candidate", "provenance"], "Nativer Bericht.counts");
   exactKeys(report.counts.source, ["tracks", "orderableTracks", "platforms", "switches", "signals", "blocks", "conflictResources", "timetableRoutes", "timetableLegs", "transferDemands", "transferLots", "turnaroundDemands", "turnaroundPairs"], "Nativer Bericht.counts.source");
   exactKeys(report.counts.candidate, ["directedEdges", "edgeGeometries", "routeVersions", "interlockingRoutes", "signals", "switches", "blockResources", "platformIntervals", "regionBoundaries", "directTemplates", "stablingTemplates", "transferTemplates"], "Nativer Bericht.counts.candidate");
-  exactKeys(report.counts.provenance, ["observedForwardSpeeds", "observedBackwardSpeeds", "simulatedSpeeds", "observedProtectionAssignments", "simulatedProtectionAssignments", "matchedPlatformIntervals", "excludedPlatformEvidence", "syntheticBoundarySignals", "turnaroundRouteVersions", "turnaroundInterlockingRoutes", "transferRouteVersions", "transferInterlockingRoutes"], "Nativer Bericht.counts.provenance");
-  for (const group of Object.values(report.counts)) for (const [name, count] of Object.entries(group)) nonNegativeSafeInteger(count, `Nativer Bericht.counts.${name}`);
+  exactKeys(report.counts.provenance, ["observedForwardSpeeds", "observedBackwardSpeeds", "simulatedSpeeds", "observedProtectionAssignments", "simulatedProtectionAssignments", "matchedPlatformIntervals", "excludedPlatformEvidence", "syntheticBoundarySignals", "turnaroundRouteVersions", "turnaroundInterlockingRoutes", "transferRouteVersions", "transferInterlockingRoutes", "observedStablingTemplates", "simulatedOperationalStablingTemplates", "berthAssignmentCounts", "crossBerthTemplates"], "Nativer Bericht.counts.provenance");
+  exactKeys(report.counts.provenance.berthAssignmentCounts, ["observedOsmServiceSiding", "simulatedOperationalOsmServiceYard", "simulatedOperationalOsmServiceSpur", "simulatedOperationalOsmUnclassifiedRail"], "Nativer Bericht.counts.provenance.berthAssignmentCounts");
+  for (const group of [report.counts.source, report.counts.candidate]) for (const [name, count] of Object.entries(group)) nonNegativeSafeInteger(count, `Nativer Bericht.counts.${name}`);
+  for (const [name, count] of Object.entries(report.counts.provenance)) {
+    if (name !== "berthAssignmentCounts") nonNegativeSafeInteger(count, `Nativer Bericht.counts.provenance.${name}`);
+  }
+  for (const [name, count] of Object.entries(report.counts.provenance.berthAssignmentCounts)) nonNegativeSafeInteger(count, `Nativer Bericht.counts.provenance.berthAssignmentCounts.${name}`);
+  invariant(
+    JSON.stringify(canonicalValue(report.counts.provenance.berthAssignmentCounts)) === JSON.stringify(canonicalValue(report.candidate.movementRouteTemplates.berthAssignmentCounts))
+      && report.counts.provenance.crossBerthTemplates === report.candidate.movementRouteTemplates.crossBerthTemplateCount,
+    "Nativer Bericht zaehlt Berth-Provenienz in Report und Movement-Beleg verschieden.",
+  );
   if (report.timetableRouteEvidence === null) {
     invariant(specification.layers.transferDemands === null, "Nativer Bericht unterschlaegt transferDemands-Evidence.");
   } else {
-    exactKeys(report.timetableRouteEvidence, ["timetableRoutes", "transferDemands", "dailyPlanSha256", "transferSetSha256", "circulationCount", "transferDemandCount", "transferLotCount", "turnaroundDemandCount", "turnaroundPairCount", "movementRouteTemplates"], "Nativer Bericht.timetableRouteEvidence");
+    exactKeys(report.timetableRouteEvidence, ["timetableRoutes", "transferDemands", "dailyPlanSha256", "transferSetSha256", "circulationCount", "plannedTransitionCount", "transferDemandCount", "transferLotCount", "turnaroundDemandCount", "turnaroundPairCount", "movementRouteTemplates"], "Nativer Bericht.timetableRouteEvidence");
     for (const field of ["dailyPlanSha256", "transferSetSha256"]) invariant(SHA256.test(report.timetableRouteEvidence[field]), `Nativer Bericht.timetableRouteEvidence.${field} ist kein SHA-256.`);
-    for (const field of ["circulationCount", "transferDemandCount", "transferLotCount", "turnaroundDemandCount", "turnaroundPairCount"]) positiveSafeInteger(report.timetableRouteEvidence[field], `Nativer Bericht.timetableRouteEvidence.${field}`);
+    for (const field of ["circulationCount", "plannedTransitionCount"]) positiveSafeInteger(report.timetableRouteEvidence[field], `Nativer Bericht.timetableRouteEvidence.${field}`);
+    for (const field of ["transferDemandCount", "transferLotCount", "turnaroundDemandCount", "turnaroundPairCount"]) nonNegativeSafeInteger(report.timetableRouteEvidence[field], `Nativer Bericht.timetableRouteEvidence.${field}`);
+    invariant(
+      report.timetableRouteEvidence.transferDemandCount + report.timetableRouteEvidence.turnaroundDemandCount === report.timetableRouteEvidence.plannedTransitionCount
+        && report.timetableRouteEvidence.turnaroundPairCount <= report.timetableRouteEvidence.turnaroundDemandCount,
+      "Nativer Bericht partitioniert die geplanten physischen Fortsetzungen nicht vollstaendig.",
+    );
     invariant(JSON.stringify(canonicalValue(report.timetableRouteEvidence.timetableRoutes)) === JSON.stringify(canonicalValue(report.inputs.timetableRoutes)), "timetableRouteEvidence driftet vom timetableRoutes-Input.");
     invariant(JSON.stringify(canonicalValue(report.timetableRouteEvidence.transferDemands)) === JSON.stringify(canonicalValue(report.inputs.transferDemands)), "timetableRouteEvidence driftet vom transferDemands-Input.");
     invariant(report.timetableRouteEvidence.transferDemands.path === specification.layers.transferDemands.path && report.timetableRouteEvidence.transferDemands.bytes === specification.layers.transferDemands.expectedBytes && report.timetableRouteEvidence.transferDemands.sha256 === specification.layers.transferDemands.expectedSha256, "timetableRouteEvidence driftet vom gepinnten transferDemands-Vertrag.");
     invariant(JSON.stringify(canonicalValue(report.timetableRouteEvidence.movementRouteTemplates)) === JSON.stringify(canonicalValue(report.candidate.movementRouteTemplates)), "timetableRouteEvidence besitzt eine abweichende Movement-Sidecar-Bindung.");
   }
-  exactKeys(report.scope, ["routeModel", "interlockingModel", "platformModel", "capacityBias", "minimumOverlapMmPolicy", "turnaroundModel", "minimumBerthEndClearanceMmPolicy", "maximumDirectDwellMsPolicy", "terminalFormationLengthsMm", "movementRouteTemplateModel"], "Nativer Bericht.scope");
+  exactKeys(report.scope, ["routeModel", "interlockingModel", "platformModel", "capacityBias", "minimumOverlapMmPolicy", "turnaroundModel", "minimumBerthEndClearanceMmPolicy", "maximumStablingPathEdgesPolicy", "maximumStablingPathLengthMmPolicy", "simulatedOperationalBerthFallbackPolicy", "maximumDirectDwellMsPolicy", "terminalFormationLengthsMm", "movementRouteTemplateModel"], "Nativer Bericht.scope");
   invariant(report.scope.routeModel === report.routeCoverage, "Nativer Deutschland-Operational-v2-Bericht besitzt zwei verschiedene Fahrwegmodelle.");
   invariant(report.scope.minimumOverlapMmPolicy === specification.policy.minimumOverlapMm, "Nativer Bericht besitzt eine abweichende Durchrutschweg-Policy.");
-  invariant(report.scope.minimumBerthEndClearanceMmPolicy === specification.policy.minimumBerthEndClearanceMm && report.scope.maximumDirectDwellMsPolicy === specification.policy.maximumDirectDwellMs, "Nativer Bericht besitzt eine abweichende Turnaround-Policy.");
+  invariant(report.scope.minimumBerthEndClearanceMmPolicy === specification.policy.minimumBerthEndClearanceMm && report.scope.maximumStablingPathEdgesPolicy === specification.policy.maximumStablingPathEdges && report.scope.maximumStablingPathLengthMmPolicy === specification.policy.maximumStablingPathLengthMm && report.scope.simulatedOperationalBerthFallbackPolicy === specification.policy.simulatedOperationalBerthFallback && report.scope.maximumDirectDwellMsPolicy === specification.policy.maximumDirectDwellMs, "Nativer Bericht besitzt eine abweichende Turnaround-Policy.");
   invariant(JSON.stringify(report.scope.terminalFormationLengthsMm) === JSON.stringify(specification.policy.terminalFormationLengthsMm), "Nativer Bericht besitzt abweichende Formationslaengen.");
   invariant(report.realGeometry === true && report.simulatedOperationalAssignment === true, "Nativer Bericht besitzt keine ehrliche Realgeometrie-/Synthetic-B-Klassifikation.");
   return report;
@@ -515,28 +548,71 @@ function validateTerminalIntervals(intervals, formationLengthMm, name, expectedT
   }
 }
 
+function validateBerthAssignment(value, name) {
+  exactKeys(value, ["kind", "subtype", "geometryProvenance", "operationalAssignmentProvenance"], name);
+  invariant(value.geometryProvenance === "real-osm-rail", `${name} bindet keine reale OSM-Gleisgeometrie.`);
+  const observed = value.kind === "observed"
+    && value.subtype === "osm-service-siding"
+    && value.operationalAssignmentProvenance === "observed-osm-service";
+  const simulated = value.kind === "simulated-operational"
+    && ["osm-service-yard", "osm-service-spur", "osm-unclassified-rail"].includes(value.subtype)
+    && value.operationalAssignmentProvenance === "synthetic-operational-b-policy";
+  invariant(observed || simulated, `${name} widerspricht der beobachteten bzw. simulierten Betriebszuordnung.`);
+  return value;
+}
+
+function validateBerth(value, formationLengthMm, name) {
+  exactKeys(value, ["edgeId", "fromMm", "toMm", "leftClearanceMm", "rightClearanceMm"], name);
+  nonEmptyString(value.edgeId, `${name}.edgeId`);
+  for (const field of ["fromMm", "toMm", "leftClearanceMm", "rightClearanceMm"]) nonNegativeSafeInteger(value[field], `${name}.${field}`);
+  invariant(value.toMm - value.fromMm === formationLengthMm, `${name} bildet die Formation nicht exakt ab.`);
+  invariant(value.fromMm === value.leftClearanceMm, `${name} besitzt eine widerspruechliche linke Freilaenge.`);
+  return value;
+}
+
+function validateBerthTransferProvenance(value, template, specification, name) {
+  exactKeys(value, ["geometryProvenance", "routingRule", "locationId", "physicalStopId", "maximumPathEdgesPerSide", "maximumPathLengthMmPerSide"], name);
+  invariant(
+    value.geometryProvenance === "real-osm-rail"
+      && value.routingRule === "real-osm-rail-bidirectional-bounded-v1"
+      && value.locationId === template.locationId
+      && value.physicalStopId === template.physicalStopId
+      && value.maximumPathEdgesPerSide === specification.policy.maximumStablingPathEdges
+      && value.maximumPathLengthMmPerSide === specification.policy.maximumStablingPathLengthMm,
+    `${name} verletzt den realen, ortsidentischen und policybegrenzten Cross-Berth-Vertrag.`,
+  );
+  return value;
+}
+
 function validateMovementRouteTemplatesSidecar(sidecar, specification, proof) {
   exactKeys(sidecar, ["schema", "infraReleaseId", "operationalStateHash", "timetableTransferSetSha256", "directTemplates", "templates", "transferTemplates", "metrics", "stateHash"], "Movement-Route-Templates-v2");
   invariant(sidecar.schema === "movement-route-templates-v2" && sidecar.infraReleaseId === specification.infraReleaseId, "Movement-Sidecar verletzt Schema-/Release-Bindung.");
   invariant(sidecar.operationalStateHash === proof.operationalStateHash && sidecar.stateHash === proof.stateHash, "Movement-Sidecar verletzt die Receipt-Zustandsbindung.");
   invariant(sidecar.timetableTransferSetSha256 === proof.timetableTransferSetSha256, "Movement-Sidecar driftet vom Transfer-Set-Hash.");
   invariant(sidecar.timetableTransferSetSha256 === null || SHA256.test(sidecar.timetableTransferSetSha256), "Movement-Sidecar besitzt keinen gueltigen Transfer-Set-Hash.");
-  exactKeys(sidecar.metrics, ["directTemplateCount", "stablingTemplateCount", "transferTemplateCount", "transferDemandCount", "turnaroundDemandCount", "turnaroundPairCount"], "Movement-Sidecar.metrics");
-  for (const [name, count] of Object.entries(sidecar.metrics)) nonNegativeSafeInteger(count, `Movement-Sidecar.metrics.${name}`);
+  exactKeys(sidecar.metrics, ["directTemplateCount", "stablingTemplateCount", "transferTemplateCount", "transferDemandCount", "turnaroundDemandCount", "plannedTransitionCount", "turnaroundPairCount", "observedStablingTemplateCount", "simulatedOperationalStablingTemplateCount", "berthAssignmentCounts", "crossBerthTemplateCount"], "Movement-Sidecar.metrics");
+  for (const [name, count] of Object.entries(sidecar.metrics)) {
+    if (name !== "berthAssignmentCounts") nonNegativeSafeInteger(count, `Movement-Sidecar.metrics.${name}`);
+  }
+  exactKeys(sidecar.metrics.berthAssignmentCounts, ["observedOsmServiceSiding", "simulatedOperationalOsmServiceYard", "simulatedOperationalOsmServiceSpur", "simulatedOperationalOsmUnclassifiedRail"], "Movement-Sidecar.metrics.berthAssignmentCounts");
+  for (const [name, count] of Object.entries(sidecar.metrics.berthAssignmentCounts)) nonNegativeSafeInteger(count, `Movement-Sidecar.metrics.berthAssignmentCounts.${name}`);
   invariant(Array.isArray(sidecar.directTemplates) && Array.isArray(sidecar.templates) && Array.isArray(sidecar.transferTemplates), "Movement-Sidecar besitzt keine drei Template-Mengen.");
   invariant(sidecar.metrics.directTemplateCount === sidecar.directTemplates.length && sidecar.metrics.stablingTemplateCount === sidecar.templates.length && sidecar.metrics.transferTemplateCount === sidecar.transferTemplates.length, "Movement-Sidecar-Metriken laufen von den Template-Mengen weg.");
   const ids = new Set();
   for (const [index, template] of sidecar.directTemplates.entries()) {
     const name = `Movement-Sidecar.directTemplates[${index}]`;
-    exactKeys(template, ["id", "inboundRouteVersionId", "outboundRouteVersionId", "formationLengthMm", "terminalIntervals", "movementKind", "continuity", "maximumDwellMs", "resourceIds", "resourceSetSha256", "through", "outbound"], name);
-    for (const field of ["id", "inboundRouteVersionId", "outboundRouteVersionId"]) nonEmptyString(template[field], `${name}.${field}`);
+    exactKeys(template, ["id", "demandId", "inboundRouteVersionId", "outboundRouteVersionId", "locationId", "physicalStopId", "earliestDepartureS", "latestArrivalS", "availableWindowS", "dailyBoundary", "formationLengthMm", "terminalIntervals", "movementKind", "continuity", "maximumDwellMs", "resourceIds", "resourceSetSha256", "through", "outbound"], name);
+    for (const field of ["id", "demandId", "inboundRouteVersionId", "outboundRouteVersionId", "locationId", "physicalStopId"]) nonEmptyString(template[field], `${name}.${field}`);
     invariant(!ids.has(template.id), `Doppelte Movement-Template-ID ${template.id}.`); ids.add(template.id);
+    for (const field of ["earliestDepartureS", "latestArrivalS"]) nonNegativeSafeInteger(template[field], `${name}.${field}`);
+    positiveSafeInteger(template.availableWindowS, `${name}.availableWindowS`);
+    invariant(template.latestArrivalS - template.earliestDepartureS === template.availableWindowS && typeof template.dailyBoundary === "boolean", `${name} besitzt kein exaktes Turnaround-Zeitfenster.`);
     positiveSafeInteger(template.formationLengthMm, `${name}.formationLengthMm`);
     invariant(template.movementKind === "train" && ["same-direction", "reverse-direction"].includes(template.continuity), `${name} besitzt keine direkte physische Kontinuitaet.`);
     invariant(template.maximumDwellMs === specification.policy.maximumDirectDwellMs, `${name} driftet von maximumDirectDwellMs.`);
     validateTerminalIntervals(template.terminalIntervals, template.formationLengthMm, `${name}.terminalIntervals`);
     sortedUniqueStrings(template.resourceIds, `${name}.resourceIds`);
-    invariant(SHA256.test(template.resourceSetSha256), `${name}.resourceSetSha256 ist ungueltig.`);
+    invariant(template.resourceSetSha256 === movementResourceSetSha256(template.resourceIds), `${name}.resourceSetSha256 bindet nicht seine Ressourcen.`);
     validateDispatch(template.outbound, `${name}.outbound`);
     if (template.continuity === "reverse-direction") {
       invariant(template.through === null, `${name}.through muss fuer die physische Richtungswende null sein.`);
@@ -549,37 +625,88 @@ function validateMovementRouteTemplatesSidecar(sidecar, specification, proof) {
       invariant(template.outbound.predecessorBaseRouteVersionId === template.through.routeVersionId, `${name}.outbound bindet nicht die Through-Route.`);
     }
   }
+  const berthAssignmentCounts = { observedOsmServiceSiding: 0, simulatedOperationalOsmServiceYard: 0, simulatedOperationalOsmServiceSpur: 0, simulatedOperationalOsmUnclassifiedRail: 0 };
+  let crossBerthTemplateCount = 0;
+  const countAssignment = (assignment) => {
+    const key = assignment.subtype === "osm-service-siding" ? "observedOsmServiceSiding"
+      : assignment.subtype === "osm-service-yard" ? "simulatedOperationalOsmServiceYard"
+        : assignment.subtype === "osm-service-spur" ? "simulatedOperationalOsmServiceSpur"
+          : "simulatedOperationalOsmUnclassifiedRail";
+    berthAssignmentCounts[key] += 1;
+  };
   for (const [index, template] of sidecar.templates.entries()) {
     const name = `Movement-Sidecar.templates[${index}]`;
-    exactKeys(template, ["id", "inboundRouteVersionId", "outboundRouteVersionId", "terminalEdgeId", "terminalNodeId", "inboundDirection", "outboundDirection", "formationLengthMm", "candidateRank", "stablingPathLengthMm", "terminalIntervals", "shuntIn", "berth", "shuntOut", "outbound"], name);
-    for (const field of ["id", "inboundRouteVersionId", "outboundRouteVersionId", "terminalEdgeId"]) nonEmptyString(template[field], `${name}.${field}`);
+    exactKeys(template, ["id", "demandId", "inboundRouteVersionId", "outboundRouteVersionId", "locationId", "physicalStopId", "earliestDepartureS", "latestArrivalS", "availableWindowS", "dailyBoundary", "terminalEdgeId", "terminalNodeId", "inboundDirection", "outboundDirection", "formationLengthMm", "candidateRank", "stablingPathLengthMm", "terminalIntervals", "stablingKind", "arrivalBerthAssignment", "departureBerthAssignment", "shuntIn", "arrivalBerth", "berthTransfer", "berthTransferProvenance", "departureBerth", "shuntOut", "outbound"], name);
+    for (const field of ["id", "demandId", "inboundRouteVersionId", "outboundRouteVersionId", "locationId", "physicalStopId", "terminalEdgeId"]) nonEmptyString(template[field], `${name}.${field}`);
     invariant(!ids.has(template.id), `Doppelte Movement-Template-ID ${template.id}.`); ids.add(template.id);
+    for (const field of ["earliestDepartureS", "latestArrivalS"]) nonNegativeSafeInteger(template[field], `${name}.${field}`);
+    positiveSafeInteger(template.availableWindowS, `${name}.availableWindowS`);
+    invariant(template.latestArrivalS - template.earliestDepartureS === template.availableWindowS, `${name} besitzt kein exaktes Turnaround-Zeitfenster.`);
+    invariant(typeof template.dailyBoundary === "boolean", `${name}.dailyBoundary ist nicht boolesch.`);
     invariant(Number.isSafeInteger(template.terminalNodeId), `${name}.terminalNodeId ist keine sichere Ganzzahl.`);
     invariant(["along", "against"].includes(template.inboundDirection) && ["along", "against"].includes(template.outboundDirection), `${name} besitzt ungueltige Richtungen.`);
     positiveSafeInteger(template.formationLengthMm, `${name}.formationLengthMm`);
     nonNegativeSafeInteger(template.candidateRank, `${name}.candidateRank`);
     positiveSafeInteger(template.stablingPathLengthMm, `${name}.stablingPathLengthMm`);
     validateTerminalIntervals(template.terminalIntervals, template.formationLengthMm, `${name}.terminalIntervals`, template.terminalEdgeId);
-    exactKeys(template.berth, ["edgeId", "fromMm", "toMm", "leftClearanceMm", "rightClearanceMm"], `${name}.berth`);
-    nonEmptyString(template.berth.edgeId, `${name}.berth.edgeId`);
-    for (const field of ["fromMm", "toMm", "leftClearanceMm", "rightClearanceMm"]) nonNegativeSafeInteger(template.berth[field], `${name}.berth.${field}`);
-    invariant(template.berth.fromMm < template.berth.toMm, `${name}.berth ist leer.`);
+    validateBerthAssignment(template.arrivalBerthAssignment, `${name}.arrivalBerthAssignment`);
+    validateBerthAssignment(template.departureBerthAssignment, `${name}.departureBerthAssignment`);
+    validateBerth(template.arrivalBerth, template.formationLengthMm, `${name}.arrivalBerth`);
+    validateBerth(template.departureBerth, template.formationLengthMm, `${name}.departureBerth`);
     for (const field of ["shuntIn", "shuntOut", "outbound"]) validateDispatch(template[field], `${name}.${field}`);
-    invariant(template.shuntIn.continuity === "same-direction" && template.shuntOut.continuity === "reverse-direction" && template.outbound.continuity === "same-direction", `${name} widerspricht der physischen Rangier-Fortsetzungsmatrix.`);
+    invariant(template.shuntIn.continuity === "same-direction" && template.outbound.continuity === "same-direction", `${name} widerspricht der physischen Rangier-Fortsetzungsmatrix.`);
+    invariant(template.shuntIn.predecessorBaseRouteVersionId === template.inboundRouteVersionId, `${name}.shuntIn bindet nicht die Ankunftsbasisroute.`);
+    countAssignment(template.arrivalBerthAssignment);
+    if (template.stablingKind === "shared-berth") {
+      invariant(template.berthTransfer === null && template.berthTransferProvenance === null, `${name} erfindet fuer einen Shared-Berth einen internen Transfer.`);
+      invariant(JSON.stringify(canonicalValue(template.arrivalBerth)) === JSON.stringify(canonicalValue(template.departureBerth)) && JSON.stringify(canonicalValue(template.arrivalBerthAssignment)) === JSON.stringify(canonicalValue(template.departureBerthAssignment)), `${name} besitzt keinen identischen Shared-Berth.`);
+      invariant(["same-direction", "reverse-direction"].includes(template.shuntOut.continuity), `${name}.shuntOut besitzt keine physische Shared-Berth-Continuity.`);
+      invariant(template.shuntOut.predecessorBaseRouteVersionId === template.shuntIn.routeVersionId, `${name}.shuntOut bindet nicht shuntIn.`);
+    } else {
+      invariant(template.stablingKind === "cross-berth-transfer", `${name}.stablingKind ist unbekannt.`);
+      validateDispatch(template.berthTransfer, `${name}.berthTransfer`);
+      validateBerthTransferProvenance(template.berthTransferProvenance, template, specification, `${name}.berthTransferProvenance`);
+      invariant(JSON.stringify(canonicalValue(template.arrivalBerth)) !== JSON.stringify(canonicalValue(template.departureBerth)), `${name} besitzt keinen getrennten Ankunfts-/Abfahrts-Berth.`);
+      invariant(template.berthTransfer.continuity === "reverse-direction" && template.shuntOut.continuity === "reverse-direction", `${name} besitzt keine explizite Cross-Berth-Richtungswechselkette.`);
+      invariant(template.berthTransfer.predecessorBaseRouteVersionId === template.shuntIn.routeVersionId && template.shuntOut.predecessorBaseRouteVersionId === template.berthTransfer.routeVersionId, `${name} besitzt eine unterbrochene Cross-Berth-Vorgaengerkette.`);
+      countAssignment(template.departureBerthAssignment);
+      crossBerthTemplateCount += 1;
+    }
+    invariant(template.outbound.predecessorBaseRouteVersionId === template.shuntOut.routeVersionId, `${name}.outbound bindet nicht shuntOut.`);
   }
+  const observedCount = berthAssignmentCounts.observedOsmServiceSiding;
+  const simulatedCount = berthAssignmentCounts.simulatedOperationalOsmServiceYard + berthAssignmentCounts.simulatedOperationalOsmServiceSpur + berthAssignmentCounts.simulatedOperationalOsmUnclassifiedRail;
+  invariant(
+    JSON.stringify(canonicalValue(sidecar.metrics.berthAssignmentCounts)) === JSON.stringify(canonicalValue(berthAssignmentCounts))
+      && JSON.stringify(canonicalValue(proof.berthAssignmentCounts)) === JSON.stringify(canonicalValue(berthAssignmentCounts))
+      && sidecar.metrics.observedStablingTemplateCount === observedCount
+      && sidecar.metrics.simulatedOperationalStablingTemplateCount === simulatedCount
+      && sidecar.metrics.crossBerthTemplateCount === crossBerthTemplateCount
+      && proof.crossBerthTemplateCount === crossBerthTemplateCount
+      && observedCount + simulatedCount === sidecar.templates.length + crossBerthTemplateCount,
+    "Movement-Sidecar zaehlt Berth-Provenienz oder Cross-Berth-Templates widerspruechlich.",
+  );
+  invariant(sidecar.metrics.transferDemandCount + sidecar.metrics.turnaroundDemandCount === sidecar.metrics.plannedTransitionCount && sidecar.metrics.turnaroundPairCount <= sidecar.metrics.turnaroundDemandCount, "Movement-Sidecar partitioniert die geplanten physischen Fortsetzungen nicht vollstaendig.");
+  invariant(
+    sidecar.metrics.directTemplateCount === sidecar.metrics.turnaroundPairCount * specification.policy.terminalFormationLengthsMm.length
+      && sidecar.metrics.transferTemplateCount === sidecar.metrics.transferDemandCount * specification.policy.terminalFormationLengthsMm.length,
+    "Movement-Sidecar bildet Direct-/Transferanforderungen nicht je Formationslaenge vollstaendig ab.",
+  );
   for (const [index, template] of sidecar.transferTemplates.entries()) {
     const name = `Movement-Sidecar.transferTemplates[${index}]`;
-    exactKeys(template, ["id", "demandId", "formationLengthMm", "sourcePassengerRouteVersionId", "targetPassengerRouteVersionId", "sourceLocationId", "targetLocationId", "earliestDepartureS", "latestArrivalS", "availableWindowS", "movementKind", "transfer", "targetOutbound", "resourceIds", "resourceSetSha256"], name);
+    exactKeys(template, ["id", "demandId", "formationLengthMm", "sourcePassengerRouteVersionId", "targetPassengerRouteVersionId", "sourceLocationId", "targetLocationId", "earliestDepartureS", "latestArrivalS", "availableWindowS", "dailyBoundary", "movementKind", "transfer", "targetOutbound", "resourceIds", "resourceSetSha256"], name);
     for (const field of ["id", "demandId", "sourcePassengerRouteVersionId", "targetPassengerRouteVersionId", "sourceLocationId", "targetLocationId"]) nonEmptyString(template[field], `${name}.${field}`);
     invariant(!ids.has(template.id), `Doppelte Movement-Template-ID ${template.id}.`); ids.add(template.id);
     positiveSafeInteger(template.formationLengthMm, `${name}.formationLengthMm`);
     for (const field of ["earliestDepartureS", "latestArrivalS", "availableWindowS"]) positiveSafeInteger(template[field], `${name}.${field}`);
-    invariant(template.latestArrivalS - template.earliestDepartureS === template.availableWindowS && ["train", "shunting"].includes(template.movementKind), `${name} besitzt ein ungueltiges Zeitfenster oder movementKind.`);
+    invariant(template.latestArrivalS - template.earliestDepartureS === template.availableWindowS && typeof template.dailyBoundary === "boolean" && ["train", "shunting"].includes(template.movementKind), `${name} besitzt ein ungueltiges Zeitfenster oder movementKind.`);
     validateDispatch(template.transfer, `${name}.transfer`);
     validateDispatch(template.targetOutbound, `${name}.targetOutbound`);
     invariant(template.transfer.continuity === "same-direction" && template.targetOutbound.continuity === "same-direction", `${name} widerspricht der physischen Transfer-Fortsetzungsmatrix.`);
+    invariant(template.transfer.predecessorBaseRouteVersionId === template.sourcePassengerRouteVersionId && template.targetOutbound.predecessorBaseRouteVersionId === template.transfer.routeVersionId, `${name} besitzt eine unterbrochene Transfer-Vorgaengerkette.`);
     sortedUniqueStrings(template.resourceIds, `${name}.resourceIds`);
-    invariant(SHA256.test(template.resourceSetSha256), `${name}.resourceSetSha256 ist ungueltig.`);
+    invariant(template.transfer.resourceIds.every((resourceId) => template.resourceIds.includes(resourceId)), `${name} bindet nicht alle Ressourcen seiner ersten Transfer-Fahrstrasse.`);
+    invariant(template.resourceSetSha256 === movementResourceSetSha256(template.resourceIds), `${name}.resourceSetSha256 bindet nicht seine Ressourcen.`);
   }
   const { stateHash: ignoredStateHash, ...stateValue } = sidecar;
   void ignoredStateHash;

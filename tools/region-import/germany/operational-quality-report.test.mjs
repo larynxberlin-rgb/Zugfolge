@@ -263,6 +263,22 @@ async function fixture(t) {
     infraReleaseId: annualSpecification.infraReleaseId,
     operationalStateHash: stateHash,
     timetableTransferSetSha256: transferSetSha256,
+    directTemplates: [],
+    templates: [],
+    transferTemplates: [],
+    metrics: {
+      directTemplateCount: 0,
+      stablingTemplateCount: 0,
+      transferTemplateCount: 0,
+      transferDemandCount: 1,
+      turnaroundDemandCount: 0,
+      plannedTransitionCount: 1,
+      turnaroundPairCount: 0,
+      observedStablingTemplateCount: 0,
+      simulatedOperationalStablingTemplateCount: 0,
+      berthAssignmentCounts: { observedOsmServiceSiding: 0, simulatedOperationalOsmServiceYard: 0, simulatedOperationalOsmServiceSpur: 0, simulatedOperationalOsmUnclassifiedRail: 0 },
+      crossBerthTemplateCount: 0,
+    },
   };
   const movementRouteTemplatesStateHash = syntheticOperationalSha256(movementRouteTemplatesBody);
   const movementRouteTemplatesFile = "operational-infrastructure-v2.candidate.movement-route-templates-v2.json";
@@ -275,6 +291,8 @@ async function fixture(t) {
     stateHash: movementRouteTemplatesStateHash,
     operationalStateHash: stateHash,
     timetableTransferSetSha256: transferSetSha256,
+    berthAssignmentCounts: { observedOsmServiceSiding: 0, simulatedOperationalOsmServiceYard: 0, simulatedOperationalOsmServiceSpur: 0, simulatedOperationalOsmUnclassifiedRail: 0 },
+    crossBerthTemplateCount: 0,
   };
   layers.transferDemands = { path: "artifacts/timetable-routes-v2.transfer-demands-v2.json", expectedBytes: transferProof.bytes, expectedSha256: transferProof.sha256 };
   evidence.transferDemands = { path: layers.transferDemands.path, ...transferProof, records: 1 };
@@ -315,6 +333,7 @@ async function fixture(t) {
       dailyPlanSha256: dailyPlan.planSha256,
       transferSetSha256,
       circulationCount: 1,
+      plannedTransitionCount: 1,
       transferDemandCount: 1,
       transferLotCount: 1,
       turnaroundDemandCount: 0,
@@ -324,7 +343,7 @@ async function fixture(t) {
     counts: {
       source: { tracks: 3, orderableTracks: 3, platforms: 1, switches: 1, signals: 2, blocks: 2, conflictResources: 2, timetableRoutes: 4, timetableLegs: 4, transferDemands: 1, transferLots: 1, turnaroundDemands: 0, turnaroundPairs: 0 },
       candidate: { directedEdges: 3, edgeGeometries: 3, routeVersions: 5, interlockingRoutes: 5, signals: 5, switches: 1, blockResources: 8, platformIntervals: 1, regionBoundaries: 1, directTemplates: 0, stablingTemplates: 0, transferTemplates: 2 },
-      provenance: { observedForwardSpeeds: 1, observedBackwardSpeeds: 1, simulatedSpeeds: 2, observedProtectionAssignments: 0, simulatedProtectionAssignments: 3, matchedPlatformIntervals: 1, excludedPlatformEvidence: 0, syntheticBoundarySignals: 4, turnaroundRouteVersions: 0, turnaroundInterlockingRoutes: 0, transferRouteVersions: 1, transferInterlockingRoutes: 1 },
+      provenance: { observedForwardSpeeds: 1, observedBackwardSpeeds: 1, simulatedSpeeds: 2, observedProtectionAssignments: 0, simulatedProtectionAssignments: 3, matchedPlatformIntervals: 1, excludedPlatformEvidence: 0, syntheticBoundarySignals: 4, turnaroundRouteVersions: 0, turnaroundInterlockingRoutes: 0, transferRouteVersions: 1, transferInterlockingRoutes: 1, observedStablingTemplates: 0, simulatedOperationalStablingTemplates: 0, berthAssignmentCounts: { observedOsmServiceSiding: 0, simulatedOperationalOsmServiceYard: 0, simulatedOperationalOsmServiceSpur: 0, simulatedOperationalOsmUnclassifiedRail: 0 }, crossBerthTemplates: 0 },
     },
     scope: {
       routeModel: "complete-pinned-timetable-routes",
@@ -332,8 +351,11 @@ async function fixture(t) {
       platformModel: "deterministic-nearest-observed-track-within-policy-radius/v1",
       capacityBias: "conservative-under-capacity",
       minimumOverlapMmPolicy: annualSpecification.policy.minimumOverlapMm,
-      turnaroundModel: "real-osm-simple-bidirectional-siding-path-with-centered-single-berth-per-target-edge/v1",
+      turnaroundModel: "real-osm-bounded-bidirectional-access-with-observed-siding-or-explicit-synthetic-operational-berth/v3",
       minimumBerthEndClearanceMmPolicy: annualSpecification.policy.minimumBerthEndClearanceMm,
+      maximumStablingPathEdgesPolicy: annualSpecification.policy.maximumStablingPathEdges,
+      maximumStablingPathLengthMmPolicy: annualSpecification.policy.maximumStablingPathLengthMm,
+      simulatedOperationalBerthFallbackPolicy: annualSpecification.policy.simulatedOperationalBerthFallback,
       maximumDirectDwellMsPolicy: annualSpecification.policy.maximumDirectDwellMs,
       terminalFormationLengthsMm: [...annualSpecification.policy.terminalFormationLengthsMm],
       movementRouteTemplateModel: "daily-plan-scoped-direct-stabling-transfer-continuity/v2",

@@ -12,7 +12,6 @@ import {
   runBuildAlphaFleetMigrationContract,
 } from "./migrate-alpha-fleet-v1-to-v2.mjs";
 import {
-  MAXIMUM_DIRECT_DWELL_MS,
   MOVEMENT_ROUTE_TEMPLATES_SCHEMA,
   movementResourceSetSha256,
 } from "./movement-route-templates-v2.mjs";
@@ -341,30 +340,8 @@ function dispatch({ routeVersionId, predecessorBaseRouteVersionId, continuity })
 }
 
 function movementRouteTemplates(transferPlan, operationalStateHash) {
-  const firstPassengerRouteId = routeIdentity(0).routeVersionId;
   const resourceSetSha256 = movementResourceSetSha256(MOVEMENT_RESOURCE_IDS);
-  const directTemplates = [{
-    id: "movement-template:alpha-builder-fixture:direct-reverse:46560:v1",
-    inboundRouteVersionId: firstPassengerRouteId,
-    outboundRouteVersionId: DIRECT_REVERSE_BASE_ROUTE_ID,
-    formationLengthMm: FORMATION_LENGTH_MM,
-    terminalIntervals: [{
-      edgeId: EDGE_ID,
-      fromMm: EDGE_LENGTH_MM - FORMATION_LENGTH_MM,
-      toMm: EDGE_LENGTH_MM,
-    }],
-    movementKind: "train",
-    continuity: "reverse-direction",
-    maximumDwellMs: MAXIMUM_DIRECT_DWELL_MS,
-    resourceIds: [...MOVEMENT_RESOURCE_IDS],
-    resourceSetSha256,
-    through: null,
-    outbound: dispatch({
-      routeVersionId: DIRECT_OUTBOUND_ROUTE_ID,
-      predecessorBaseRouteVersionId: firstPassengerRouteId,
-      continuity: "reverse-direction",
-    }),
-  }];
+  const directTemplates = [];
   const transferTemplates = transferPlan.transferRoutes.map((route) => {
     const outbound = targetOutboundIdentity(route);
     return {
@@ -378,6 +355,7 @@ function movementRouteTemplates(transferPlan, operationalStateHash) {
       earliestDepartureS: route.earliestDepartureS,
       latestArrivalS: route.latestArrivalS,
       availableWindowS: route.availableWindowS,
+      dailyBoundary: route.dailyBoundary,
       movementKind: route.movementKind,
       transfer: dispatch({
         routeVersionId: route.routeVersionId,
@@ -406,8 +384,18 @@ function movementRouteTemplates(transferPlan, operationalStateHash) {
       stablingTemplateCount: 0,
       transferTemplateCount: transferTemplates.length,
       transferDemandCount: transferPlan.dailyPlan.transferDemands.length,
-      turnaroundDemandCount: 0,
-      turnaroundPairCount: 1,
+      turnaroundDemandCount: transferPlan.dailyPlan.turnaroundDemands.length,
+      plannedTransitionCount: transferPlan.dailyPlan.metrics.plannedTransitionCount,
+      turnaroundPairCount: 0,
+      observedStablingTemplateCount: 0,
+      simulatedOperationalStablingTemplateCount: 0,
+      berthAssignmentCounts: {
+        observedOsmServiceSiding: 0,
+        simulatedOperationalOsmServiceYard: 0,
+        simulatedOperationalOsmServiceSpur: 0,
+        simulatedOperationalOsmUnclassifiedRail: 0,
+      },
+      crossBerthTemplateCount: 0,
     },
   };
   return {

@@ -328,6 +328,7 @@ function operationalSidecars(stateHash) {
     movementKind: "train",
   };
   dailyPlanBody.transferDemands.push(demand);
+  const directDemand = dailyPlanBody.turnaroundDemands[2];
   const dailyPlanSha256 = alphaHash(dailyPlanBody.schema, dailyPlanBody);
   const dailyPlan = { ...dailyPlanBody, planSha256: dailyPlanSha256 };
   const transferRoute = {
@@ -401,9 +402,16 @@ function operationalSidecars(stateHash) {
     timetableTransferSetSha256: transferSetSha256,
     directTemplates: [{
       id: "direct:fixture",
+      demandId: directDemand.id,
       inboundRouteVersionId: "route:gtfs:leg:b:v1",
       outboundRouteVersionId: "route:gtfs:leg:a:v1",
+      locationId: directDemand.sourceLocationId,
+      physicalStopId: directDemand.sourcePhysicalStopId,
       formationLengthMm: 100,
+      earliestDepartureS: directDemand.earliestDepartureS,
+      latestArrivalS: directDemand.latestArrivalS,
+      availableWindowS: directDemand.availableWindowS,
+      dailyBoundary: directDemand.dailyBoundary,
       terminalIntervals: [{ edgeId: "edge:terminal", fromMm: 0, toMm: 100 }],
       movementKind: "train",
       continuity: "reverse-direction",
@@ -430,6 +438,7 @@ function operationalSidecars(stateHash) {
       earliestDepartureS: demand.earliestDepartureS,
       latestArrivalS: demand.latestArrivalS,
       availableWindowS: demand.availableWindowS,
+      dailyBoundary: demand.dailyBoundary,
       movementKind: demand.movementKind,
       transfer: transferDispatch,
       targetOutbound: movementDispatch(
@@ -446,8 +455,18 @@ function operationalSidecars(stateHash) {
       stablingTemplateCount: 0,
       transferTemplateCount: 1,
       transferDemandCount: 1,
-      turnaroundDemandCount: 1,
+      turnaroundDemandCount: dailyPlan.metrics.turnaroundDemandCount,
+      plannedTransitionCount: dailyPlan.metrics.plannedTransitionCount,
       turnaroundPairCount: 1,
+      observedStablingTemplateCount: 0,
+      simulatedOperationalStablingTemplateCount: 0,
+      berthAssignmentCounts: {
+        observedOsmServiceSiding: 0,
+        simulatedOperationalOsmServiceYard: 0,
+        simulatedOperationalOsmServiceSpur: 0,
+        simulatedOperationalOsmUnclassifiedRail: 0,
+      },
+      crossBerthTemplateCount: 0,
     },
   };
   const movementStateHash = alphaHash(movementBody.schema, movementBody);

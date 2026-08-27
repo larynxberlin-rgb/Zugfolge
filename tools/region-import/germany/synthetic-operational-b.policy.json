@@ -48,12 +48,12 @@
       "effect": "Bind every released route version and every directed leg to the complete pinned timetableRoutes input; missing, ambiguous or discontinuous route coverage leaves the closure ineligible."
     },
     {
-      "id": "daily-physical-circulation-and-transfer-coverage/v1",
-      "effect": "Bind every daily physical circulation, rollover permutation and unavoidable cross-location transfer to the v1 transfer-demand sidecar; every transfer must have a real directed OSM route and reproducible plan and transfer-set hashes."
+      "id": "daily-physical-circulation-and-transfer-coverage/v2",
+      "effect": "Bind the complete v2 partition of every daily physical continuation into explicit same-physical-stop turnaround demands or real directed OSM train-transfer demands; require reproducible daily-plan, transfer-set and movement-template hashes with no implicit reclassification."
     },
     {
       "id": "free-gtfs-route-provenance/v2",
-      "effect": "Bind the free GTFS snapshot, its CC BY 4.0 archive proof, the complete selected-segment route set and the v3 derivation report byte-for-byte; reject external operational-network provenance, GTFS shape geometry and invented geometry."
+      "effect": "Bind the free GTFS snapshot, its CC BY 4.0 archive proof, the complete selected-segment route set and the v4 derivation report byte-for-byte; reject external operational-network provenance, GTFS shape geometry and invented geometry."
     },
     {
       "id": "synthetic-junction-node-exclusion/v1",
@@ -88,6 +88,9 @@
     "maximumPlatformSnapDistanceMm": 25000,
     "minimumOverlapMm": 200000,
     "minimumBerthEndClearanceMm": 10000,
+    "maximumStablingPathEdges": 64,
+    "maximumStablingPathLengthMm": 10000000,
+    "simulatedOperationalBerthFallback": "real-osm-service-yard-then-spur-then-unclassified-rail/v1",
     "maximumDirectDwellMs": 1200000,
     "terminalFormationLengthsMm": [46560, 69860],
     "defaultProtectionSystem": "pzb",

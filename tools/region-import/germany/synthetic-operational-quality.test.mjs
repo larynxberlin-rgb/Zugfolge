@@ -24,7 +24,7 @@ function nativeReceipt(binding, stateHash) {
   };
 }
 
-function fixture() {
+function fixture({ nativeTurnaroundDemandCount = 3 } = {}) {
   const sha256 = "1".repeat(64);
   const stateHash = "2".repeat(64);
   const candidate = { file: "candidate.json", bytes: 123, sha256, stateHash };
@@ -44,6 +44,8 @@ function fixture() {
     stateHash: "f".repeat(64),
     operationalStateHash: stateHash,
     timetableTransferSetSha256: "b".repeat(64),
+    berthAssignmentCounts: { observedOsmServiceSiding: 0, simulatedOperationalOsmServiceYard: 0, simulatedOperationalOsmServiceSpur: 0, simulatedOperationalOsmUnclassifiedRail: 0 },
+    crossBerthTemplateCount: 0,
   };
   const receipt = buildSyntheticOperationalClosureReceipt({
     policy,
@@ -70,10 +72,11 @@ function fixture() {
         dailyPlanSha256: "a".repeat(64),
         transferSetSha256: "b".repeat(64),
         circulationCount: 2,
+        plannedTransitionCount: 5,
         transferDemandCount: 2,
         transferLotCount: 1,
-        turnaroundDemandCount: 0,
-        turnaroundPairCount: 0,
+        turnaroundDemandCount: nativeTurnaroundDemandCount,
+        turnaroundPairCount: 2,
         movementRouteTemplates,
       },
     },
@@ -150,11 +153,22 @@ test("Closure-v2 bindet Policy, zehn freie Inputs samt Transfer-Sidecar und beid
   assert.equal(receipt.nativeValidation.operationalArtifact.stateHash, receipt.operationalArtifact.stateHash);
 });
 
+test("bindet die vollstaendige Transition-Partition, ohne Demand- und Pair-Zahl gleichzusetzen", () => {
+  assert.throws(
+    () => fixture({ nativeTurnaroundDemandCount: 2 }),
+    /verschiedene Tagesplan-\/Transfer-Nachweise/,
+  );
+  assert.doesNotThrow(() => fixture({ nativeTurnaroundDemandCount: 3 }));
+});
+
 test("v1 oder eine fehlende timetableRoutes-Bindung koennen kein neues Closure erzeugen", () => {
   assert.throws(
     () => validateSyntheticOperationalPolicy({ ...policy, schema: "zugfolge-synthetic-operational-policy/v1" }),
     /kein v2-Schema mit timetableRoutes-Bindung/,
   );
+  const legacyRule = structuredClone(policy);
+  legacyRule.rules.find(({ id }) => id === "daily-physical-circulation-and-transfer-coverage/v2").id = "daily-physical-circulation-and-transfer-coverage/v1";
+  assert.throws(() => validateSyntheticOperationalPolicy(legacyRule), /keine physisch geschlossene v2-Tagesumlauf- und Transferregel/);
   const missing = structuredClone(fixture());
   missing.inputs = missing.inputs.filter(({ role }) => role !== "timetable-routes");
   assert.throws(

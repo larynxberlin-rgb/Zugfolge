@@ -65,8 +65,8 @@ function validateInputs(specification) {
   }
   invariant(new Set([specification.candidateFile, specification.derivationReportFile, specification.timetableRouteReportFile, specification.timetableTransferDemandsFile, specification.gtfsSnapshotFile, specification.operationalArtifactFile]).size === 6, "Candidate, Berichte, Transfer-Demands, GTFS-Snapshot und Artefakt muessen getrennte Dateien sein.");
   invariant(basename(specification.operationalArtifactFile) === "operational-infrastructure-v2.json", "Operational-v2-Artefakt besitzt keinen kanonischen Dateinamen.");
-  invariant(basename(specification.timetableRouteReportFile) === "timetable-routes-v2.derivation-report.json", "Timetable-Route-Bericht besitzt keinen kanonischen v2-Dateinamen.");
-  invariant(basename(specification.timetableTransferDemandsFile) === "timetable-routes-v2.transfer-demands-v1.json", "Timetable-Transfer-Demands besitzen keinen kanonischen v1-Dateinamen.");
+  invariant(basename(specification.timetableRouteReportFile) === "timetable-routes-v2.derivation-report-v4.json", "Timetable-Route-Bericht besitzt keinen kanonischen v4-Dateinamen.");
+  invariant(basename(specification.timetableTransferDemandsFile) === "timetable-routes-v2.transfer-demands-v2.json", "Timetable-Transfer-Demands besitzen keinen kanonischen v2-Dateinamen.");
   invariant(/^gtfs-region-.+-v2\.json$/u.test(basename(specification.gtfsSnapshotFile)), "GTFS-Snapshot besitzt keinen kanonischen v2-Dateinamen.");
   return specification;
 }
