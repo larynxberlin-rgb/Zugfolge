@@ -94,13 +94,29 @@ admin_token() {
 }
 
 issue_player_token() {
-  curl --fail --silent --show-error \
+  curl --silent --show-error \
     --data-urlencode "client_id=$test_client" \
     --data-urlencode "username=$test_username" \
     --data-urlencode "password=$test_password" \
     --data-urlencode 'grant_type=password' \
     "$keycloak_url/realms/$test_realm/protocol/openid-connect/token" \
-    | node -e 'let value="";process.stdin.on("data",chunk=>value+=chunk);process.stdin.on("end",()=>process.stdout.write(JSON.parse(value).access_token));'
+    | node -e '
+      let body = "";
+      process.stdin.on("data", chunk => body += chunk);
+      process.stdin.on("end", () => {
+        const response = JSON.parse(body);
+        if (typeof response.access_token === "string" && response.access_token.length > 0) {
+          process.stdout.write(response.access_token);
+          return;
+        }
+        const error = typeof response.error === "string" ? response.error : "unknown_error";
+        const description = typeof response.error_description === "string"
+          ? response.error_description
+          : "Keycloak returned no error description";
+        process.stderr.write(`Keycloak player token failed: ${error}: ${description}\n`);
+        process.exitCode = 1;
+      });
+    '
 }
 
 token_subject() {
@@ -120,7 +136,7 @@ initialize_identity_fixture() {
     "$keycloak_url/admin/realms/$test_realm/clients"
   curl --fail --silent --show-error -o /dev/null \
     -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
-    --data "{\"username\":\"$test_username\",\"enabled\":true,\"emailVerified\":true,\"credentials\":[{\"type\":\"password\",\"value\":\"$test_password\",\"temporary\":false}]}" \
+    --data "{\"username\":\"$test_username\",\"firstName\":\"Schema\",\"lastName\":\"Migration\",\"email\":\"schema-migration-player@example.invalid\",\"enabled\":true,\"emailVerified\":true,\"requiredActions\":[],\"credentials\":[{\"type\":\"password\",\"value\":\"$test_password\",\"temporary\":false}]}" \
     "$keycloak_url/admin/realms/$test_realm/users"
 }
 
