@@ -79,6 +79,8 @@ function staticQuality(fixture) {
 
 function operationalQuality(fixture, map, mapBytes) {
   const artifact = fixture.artifacts.find(({ kind }) => kind === "operational-infrastructure-v2");
+  const movementRouteArtifact = fixture.artifacts.find(({ kind }) => kind === "movement-route-templates-v2");
+  const transferDemandArtifact = fixture.artifacts.find(({ kind }) => kind === "timetable-transfer-demands-v1");
   return {
     schema: "zugfolge-operational-infrastructure-quality-report/v1",
     releaseId: fixture.config.release.releaseId,
@@ -123,8 +125,8 @@ function operationalQuality(fixture, map, mapBytes) {
       objectLevelProvenanceShipped: false,
       observedAndSyntheticObjectsShareRuntimeCollections: true,
       movementRouteTemplates: {
-        bytes: 1,
-        sha256: "2".repeat(64),
+        bytes: movementRouteArtifact.bytes,
+        sha256: movementRouteArtifact.sha256,
         stateHash: "3".repeat(64),
         operationalStateHash: artifact.stateHash,
         timetableTransferSetSha256: "1".repeat(64),
@@ -141,8 +143,8 @@ function operationalQuality(fixture, map, mapBytes) {
         gtfsSnapshotBytes: 1,
         gtfsSnapshotSha256: "b".repeat(64),
         transferDemandsSchema: "zugfolge-timetable-transfer-demands/v1",
-        transferDemandsBytes: 1,
-        transferDemandsSha256: "e".repeat(64),
+        transferDemandsBytes: transferDemandArtifact.bytes,
+        transferDemandsSha256: transferDemandArtifact.sha256,
         snapshotHash: "c".repeat(64),
         archive: "gtfs-rv-free.zip",
         archiveSha256: "d".repeat(64),
