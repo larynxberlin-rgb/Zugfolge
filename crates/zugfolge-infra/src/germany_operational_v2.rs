@@ -11,7 +11,10 @@ use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::{Component, Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 
 use redb::{
     Database, Durability, MultimapTableDefinition, ReadableMultimapTable, ReadableTable,
@@ -474,8 +477,10 @@ struct DirectTemplateRecord {
 
 #[derive(Clone, Debug)]
 struct DirectedTrack {
-    track: TrackRecord,
-    direction: String,
+    // Suchlabels teilen die vollstaendige OSM-Geometrie; nur der Arc und die
+    // zweiwertige Richtung werden je Pfadkante kopiert.
+    track: Arc<TrackRecord>,
+    direction: &'static str,
 }
 
 #[derive(Clone, Debug)]
@@ -489,6 +494,49 @@ struct StablingCandidate {
 struct StablingSearchLabel {
     total_length_mm: i64,
     path: Vec<DirectedTrack>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct StablingSearchStats {
+    raw_candidate_count: usize,
+    duplicate_candidate_count: usize,
+    replacement_candidate_count: usize,
+    maximum_candidate_path_edges: usize,
+    maximum_candidate_path_length_mm: i64,
+    maximum_candidate_path_resident_bytes: usize,
+    label_count: usize,
+    cached_track_count: usize,
+    peak_resident_bytes: usize,
+}
+
+impl StablingSearchStats {
+    fn diagnostic(self, unique_candidate_count: usize) -> String {
+        format!(
+            "Suchlabels={}, geladene Gleise={}, rohe Kandidaten={}, eindeutige Berths={}, Duplikate={}, Ersetzungen={}, groesster Einzelpfad={} Kanten/{} mm/{} Bytes, Peak={} Bytes",
+            self.label_count,
+            self.cached_track_count,
+            self.raw_candidate_count,
+            unique_candidate_count,
+            self.duplicate_candidate_count,
+            self.replacement_candidate_count,
+            self.maximum_candidate_path_edges,
+            self.maximum_candidate_path_length_mm,
+            self.maximum_candidate_path_resident_bytes,
+            self.peak_resident_bytes,
+        )
+    }
+}
+
+#[derive(Clone, Debug)]
+struct StablingSearchResult {
+    candidates: Vec<StablingCandidate>,
+    stats: StablingSearchStats,
+}
+
+#[derive(Default)]
+struct DirectedTrackCache {
+    tracks: BTreeMap<String, Arc<TrackRecord>>,
+    resident_bytes: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -585,11 +633,32 @@ fn track_heap_bytes(track: &TrackRecord) -> usize {
 }
 
 fn directed_path_resident_bytes(path: &[DirectedTrack]) -> usize {
-    std::mem::size_of_val(path).saturating_add(path.iter().fold(0_usize, |total, edge| {
-        total
-            .saturating_add(track_heap_bytes(&edge.track))
-            .saturating_add(string_heap_bytes(&edge.direction))
-    }))
+    // Die internen Pfade entstehen ausschliesslich durch clone+push. Zwei
+    // Slots je belegtem Element sind daher eine enge, konservative
+    // Kapazitaetsobergrenze fuer die Vec-Allokation.
+    let estimated_capacity = if path.is_empty() {
+        0
+    } else {
+        path.len().saturating_mul(2).max(4)
+    };
+    estimated_capacity.saturating_mul(std::mem::size_of::<DirectedTrack>())
+}
+
+fn directed_path_standalone_resident_bytes(path: &[DirectedTrack]) -> usize {
+    let mut track_ids = BTreeSet::new();
+    path.iter().fold(
+        directed_path_resident_bytes(path),
+        |resident_bytes, edge| {
+            if track_ids.insert(edge.track.id.as_str()) {
+                resident_bytes
+                    .saturating_add(std::mem::size_of::<TrackRecord>())
+                    .saturating_add(track_heap_bytes(&edge.track))
+                    .saturating_add(GENERATED_ENTRY_OVERHEAD_BYTES)
+            } else {
+                resident_bytes
+            }
+        },
+    )
 }
 
 fn stabling_candidate_resident_bytes(candidate: &StablingCandidate) -> usize {
@@ -602,6 +671,65 @@ fn stabling_label_resident_bytes(label: &StablingSearchLabel) -> usize {
     std::mem::size_of::<StablingSearchLabel>()
         .saturating_add(directed_path_resident_bytes(&label.path))
         .saturating_add(GENERATED_ENTRY_OVERHEAD_BYTES)
+}
+
+fn stabling_search_resident_bytes(
+    track_cache: &DirectedTrackCache,
+    label_resident_bytes: usize,
+    candidate_resident_bytes: usize,
+) -> Result<usize> {
+    track_cache
+        .resident_bytes
+        .checked_add(label_resident_bytes)
+        .and_then(|value| value.checked_add(candidate_resident_bytes))
+        .ok_or_else(|| {
+            GermanyOperationalV2Error::new("Abstellkandidaten-Suchspeicher laeuft ueber.")
+        })
+}
+
+fn require_stabling_search_budget(
+    inbound_route_id: &str,
+    track_cache: &DirectedTrackCache,
+    label_resident_bytes: usize,
+    candidate_resident_bytes: usize,
+    stats: &mut StablingSearchStats,
+    unique_candidate_count: usize,
+) -> Result<()> {
+    require_stabling_search_budget_with_limit(
+        inbound_route_id,
+        track_cache,
+        label_resident_bytes,
+        candidate_resident_bytes,
+        stats,
+        unique_candidate_count,
+        MAX_STABLING_SEARCH_RESIDENT_BYTES,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn require_stabling_search_budget_with_limit(
+    inbound_route_id: &str,
+    track_cache: &DirectedTrackCache,
+    label_resident_bytes: usize,
+    candidate_resident_bytes: usize,
+    stats: &mut StablingSearchStats,
+    unique_candidate_count: usize,
+    maximum_resident_bytes: usize,
+) -> Result<()> {
+    let resident_bytes = stabling_search_resident_bytes(
+        track_cache,
+        label_resident_bytes,
+        candidate_resident_bytes,
+    )?;
+    stats.cached_track_count = track_cache.tracks.len();
+    stats.peak_resident_bytes = stats.peak_resident_bytes.max(resident_bytes);
+    require(
+        resident_bytes <= maximum_resident_bytes,
+        format!(
+            "Abstellkandidatensuche fuer `{inbound_route_id}` ueberschreitet das feste gemeinsame Suchspeicherbudget von {maximum_resident_bytes} Bytes ({}).",
+            stats.diagnostic(unique_candidate_count)
+        ),
+    )
 }
 
 fn paired_stabling_candidate_resident_bytes(candidate: &PairedStablingCandidate) -> usize {
@@ -3966,13 +4094,13 @@ fn timetable_route(
     route_from_json(serialized.value(), context)
 }
 
-fn directed_track_from_node(track: TrackRecord, node_id: i64) -> Option<(DirectedTrack, i64)> {
+fn directed_track_from_node(track: Arc<TrackRecord>, node_id: i64) -> Option<(DirectedTrack, i64)> {
     if track.from_node_id == node_id && track.to_node_id != node_id {
         let next = track.to_node_id;
         Some((
             DirectedTrack {
                 track,
-                direction: "along".to_owned(),
+                direction: "along",
             },
             next,
         ))
@@ -3981,7 +4109,7 @@ fn directed_track_from_node(track: TrackRecord, node_id: i64) -> Option<(Directe
         Some((
             DirectedTrack {
                 track,
-                direction: "against".to_owned(),
+                direction: "against",
             },
             next,
         ))
@@ -4049,6 +4177,7 @@ fn berth_assignment(
 fn adjacent_directed_tracks(
     transaction: &redb::ReadTransaction,
     node_id: i64,
+    cache: &mut DirectedTrackCache,
 ) -> Result<Vec<(DirectedTrack, i64)>> {
     let by_node = transaction
         .open_multimap_table(TRACKS_BY_NODE)
@@ -4063,15 +4192,35 @@ fn adjacent_directed_tracks(
     edge_ids.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
     let mut result = Vec::new();
     for edge_id in edge_ids {
-        let serialized = tracks
-            .get(edge_id.as_str())
-            .map_err(db_error)?
-            .ok_or_else(|| {
-                GermanyOperationalV2Error::new(format!(
-                    "Knotenindex verweist auf unbekannte Gleiskante `{edge_id}`."
-                ))
-            })?;
-        let track = track_from_json(serialized.value(), "Knotenindex-Gleiskante")?;
+        let track = if let Some(track) = cache.tracks.get(edge_id.as_str()) {
+            Arc::clone(track)
+        } else {
+            let serialized = tracks
+                .get(edge_id.as_str())
+                .map_err(db_error)?
+                .ok_or_else(|| {
+                    GermanyOperationalV2Error::new(format!(
+                        "Knotenindex verweist auf unbekannte Gleiskante `{edge_id}`."
+                    ))
+                })?;
+            let track = Arc::new(track_from_json(
+                serialized.value(),
+                "Knotenindex-Gleiskante",
+            )?);
+            let additional_bytes = std::mem::size_of::<TrackRecord>()
+                .saturating_add(track_heap_bytes(&track))
+                .saturating_add(string_heap_bytes(&edge_id))
+                .saturating_add(std::mem::size_of::<Arc<TrackRecord>>())
+                .saturating_add(GENERATED_ENTRY_OVERHEAD_BYTES);
+            cache.resident_bytes = cache
+                .resident_bytes
+                .checked_add(additional_bytes)
+                .ok_or_else(|| {
+                    GermanyOperationalV2Error::new("Gleis-Cache-Speicher laeuft ueber.")
+                })?;
+            cache.tracks.insert(edge_id, Arc::clone(&track));
+            track
+        };
         if let Some(directed) = directed_track_from_node(track, node_id) {
             result.push(directed);
         }
@@ -4108,7 +4257,7 @@ fn stabling_candidates(
     terminal_node_id: i64,
     policy: StablingSearchPolicy,
     inbound_route_id: &str,
-) -> Result<Vec<StablingCandidate>> {
+) -> Result<StablingSearchResult> {
     let StablingSearchPolicy {
         formation_length_mm,
         minimum_clearance_mm,
@@ -4134,6 +4283,8 @@ fn stabling_candidates(
     let berth_required = formation_length_mm
         .checked_add(minimum_clearance_mm.saturating_mul(2))
         .ok_or_else(|| GermanyOperationalV2Error::new("Berth-Laenge laeuft ueber."))?;
+    let mut track_cache = DirectedTrackCache::default();
+    let mut stats = StablingSearchStats::default();
     let mut by_berth_edge = BTreeMap::<String, StablingCandidate>::new();
     let mut candidate_resident_bytes = 0_usize;
     let initial_label = StablingSearchLabel {
@@ -4145,14 +4296,28 @@ fn stabling_candidates(
         (terminal_node_id, 0),
         initial_label,
     )]);
+    stats.label_count = labels.len();
     for hop in 0..maximum_path_edges {
-        let current_labels: Vec<_> = labels
-            .iter()
-            .filter(|((_, label_hop), _)| *label_hop == hop)
-            .map(|((node_id, _), label)| (*node_id, label.clone()))
+        let current_nodes: Vec<_> = labels
+            .keys()
+            .filter(|key| key.1 == hop)
+            .map(|(node_id, _)| *node_id)
             .collect();
-        for (node_id, label) in current_labels {
-            for (directed, next_node) in adjacent_directed_tracks(transaction, node_id)? {
+        for node_id in current_nodes {
+            let label = labels
+                .get(&(node_id, hop))
+                .expect("Hop-Knoten stammt aus dem Labelindex")
+                .clone();
+            let adjacent = adjacent_directed_tracks(transaction, node_id, &mut track_cache)?;
+            require_stabling_search_budget(
+                inbound_route_id,
+                &track_cache,
+                label_resident_bytes,
+                candidate_resident_bytes,
+                &mut stats,
+                by_berth_edge.len(),
+            )?;
+            for (directed, next_node) in adjacent {
                 if !stabling_track_compatible(&directed.track, terminal)
                     || label
                         .path
@@ -4183,6 +4348,15 @@ fn stabling_candidates(
                         path: next_path.clone(),
                         berth_assignment,
                     };
+                    stats.raw_candidate_count = stats.raw_candidate_count.saturating_add(1);
+                    stats.maximum_candidate_path_edges =
+                        stats.maximum_candidate_path_edges.max(candidate.path.len());
+                    stats.maximum_candidate_path_length_mm = stats
+                        .maximum_candidate_path_length_mm
+                        .max(candidate.total_length_mm);
+                    stats.maximum_candidate_path_resident_bytes = stats
+                        .maximum_candidate_path_resident_bytes
+                        .max(directed_path_standalone_resident_bytes(&candidate.path));
                     let berth_edge_id = candidate
                         .path
                         .last()
@@ -4192,9 +4366,15 @@ fn stabling_candidates(
                         .clone();
                     let candidate_capacity_available =
                         by_berth_edge.len() < MAX_STABLING_CANDIDATES_PER_CASE;
-                    let next_candidate_bytes = stabling_candidate_resident_bytes(&candidate);
+                    let current_unique_count = by_berth_edge.len();
+                    let next_candidate_bytes = stabling_candidate_resident_bytes(&candidate)
+                        .saturating_add(string_heap_bytes(&berth_edge_id));
                     match by_berth_edge.entry(berth_edge_id) {
                         std::collections::btree_map::Entry::Vacant(entry) => {
+                            let projected_unique_count = current_unique_count.saturating_add(1);
+                            stats.duplicate_candidate_count = stats
+                                .raw_candidate_count
+                                .saturating_sub(projected_unique_count);
                             require(
                                 candidate_capacity_available,
                                 format!(
@@ -4208,29 +4388,41 @@ fn stabling_candidates(
                                         "Abstellkandidatenspeicher laeuft ueber.",
                                     )
                                 })?;
-                            require(
-                                candidate_resident_bytes <= MAX_STABLING_SEARCH_RESIDENT_BYTES,
-                                format!(
-                                    "Abstellkandidatensuche fuer `{inbound_route_id}` ueberschreitet das feste Speicherbudget von {MAX_STABLING_SEARCH_RESIDENT_BYTES} Bytes."
-                                ),
+                            require_stabling_search_budget(
+                                inbound_route_id,
+                                &track_cache,
+                                label_resident_bytes,
+                                candidate_resident_bytes,
+                                &mut stats,
+                                projected_unique_count,
                             )?;
                             entry.insert(candidate);
                         }
                         std::collections::btree_map::Entry::Occupied(mut entry) => {
+                            stats.duplicate_candidate_count = stats
+                                .raw_candidate_count
+                                .saturating_sub(current_unique_count);
                             if stabling_path_key(&candidate) < stabling_path_key(entry.get()) {
+                                stats.replacement_candidate_count =
+                                    stats.replacement_candidate_count.saturating_add(1);
                                 candidate_resident_bytes = candidate_resident_bytes
-                                    .saturating_sub(stabling_candidate_resident_bytes(entry.get()))
+                                    .saturating_sub(
+                                        stabling_candidate_resident_bytes(entry.get())
+                                            .saturating_add(string_heap_bytes(entry.key())),
+                                    )
                                     .checked_add(next_candidate_bytes)
                                     .ok_or_else(|| {
                                         GermanyOperationalV2Error::new(
                                             "Abstellkandidatenspeicher laeuft ueber.",
                                         )
                                     })?;
-                                require(
-                                    candidate_resident_bytes <= MAX_STABLING_SEARCH_RESIDENT_BYTES,
-                                    format!(
-                                        "Abstellkandidatensuche fuer `{inbound_route_id}` ueberschreitet das feste Speicherbudget von {MAX_STABLING_SEARCH_RESIDENT_BYTES} Bytes."
-                                    ),
+                                require_stabling_search_budget(
+                                    inbound_route_id,
+                                    &track_cache,
+                                    label_resident_bytes,
+                                    candidate_resident_bytes,
+                                    &mut stats,
+                                    current_unique_count,
                                 )?;
                                 entry.insert(candidate);
                             }
@@ -4268,25 +4460,37 @@ fn stabling_candidates(
                             "Abstellkandidatensuche fuer `{inbound_route_id}` ueberschreitet die feste Grenze von {MAX_STABLING_SEARCH_LABELS} Suchlabels."
                         ),
                     )?;
-                    require(
-                        next_resident_bytes <= MAX_STABLING_SEARCH_RESIDENT_BYTES,
-                        format!(
-                            "Abstellkandidatensuche fuer `{inbound_route_id}` ueberschreitet das feste Suchspeicherbudget von {MAX_STABLING_SEARCH_RESIDENT_BYTES} Bytes."
-                        ),
+                    require_stabling_search_budget(
+                        inbound_route_id,
+                        &track_cache,
+                        next_resident_bytes,
+                        candidate_resident_bytes,
+                        &mut stats,
+                        by_berth_edge.len(),
                     )?;
                     label_resident_bytes = next_resident_bytes;
                     labels.insert((next_node, next_hop), next_label);
+                    stats.label_count = labels.len();
                 }
             }
         }
     }
     let mut result: Vec<_> = by_berth_edge.into_values().collect();
     result.sort_by(|left, right| stabling_path_key(left).cmp(&stabling_path_key(right)));
-    Ok(result)
+    stats.duplicate_candidate_count = stats.raw_candidate_count.saturating_sub(result.len());
+    stats.cached_track_count = track_cache.tracks.len();
+    debug_assert_eq!(
+        stats.raw_candidate_count,
+        stats.duplicate_candidate_count + result.len()
+    );
+    Ok(StablingSearchResult {
+        candidates: result,
+        stats,
+    })
 }
 
 fn directed_track_start_node(edge: &DirectedTrack) -> Result<i64> {
-    match edge.direction.as_str() {
+    match edge.direction {
         "along" => Ok(edge.track.from_node_id),
         "against" => Ok(edge.track.to_node_id),
         other => Err(GermanyOperationalV2Error::new(format!(
@@ -4297,7 +4501,7 @@ fn directed_track_start_node(edge: &DirectedTrack) -> Result<i64> {
 }
 
 fn directed_track_end_node(edge: &DirectedTrack) -> Result<i64> {
-    match edge.direction.as_str() {
+    match edge.direction {
         "along" => Ok(edge.track.to_node_id),
         "against" => Ok(edge.track.from_node_id),
         other => Err(GermanyOperationalV2Error::new(format!(
@@ -4331,7 +4535,7 @@ fn reverse_directed_path(path: &[DirectedTrack]) -> Result<Vec<DirectedTrack>> {
         .map(|edge| {
             Ok(DirectedTrack {
                 track: edge.track.clone(),
-                direction: reverse_direction(&edge.direction)?.to_owned(),
+                direction: reverse_direction(edge.direction)?,
             })
         })
         .collect()
@@ -4400,17 +4604,34 @@ fn bounded_cross_berth_labels(
         total_length_mm: 0,
         path: Vec::new(),
     };
+    let search_context = format!("cross-berth:{start_node}");
+    let mut track_cache = DirectedTrackCache::default();
+    let mut stats = StablingSearchStats::default();
     let mut label_resident_bytes = stabling_label_resident_bytes(&initial_label);
     let mut labels =
         BTreeMap::<(i64, usize), StablingSearchLabel>::from([((start_node, 0), initial_label)]);
+    stats.label_count = labels.len();
     for hop in 0..maximum_path_edges {
-        let current_labels: Vec<_> = labels
-            .iter()
-            .filter(|((_, label_hop), _)| *label_hop == hop)
-            .map(|((node_id, _), label)| (*node_id, label.clone()))
+        let current_nodes: Vec<_> = labels
+            .keys()
+            .filter(|key| key.1 == hop)
+            .map(|(node_id, _)| *node_id)
             .collect();
-        for (node_id, label) in current_labels {
-            for (directed, next_node) in adjacent_directed_tracks(transaction, node_id)? {
+        for node_id in current_nodes {
+            let label = labels
+                .get(&(node_id, hop))
+                .expect("Hop-Knoten stammt aus dem Cross-Berth-Labelindex")
+                .clone();
+            let adjacent = adjacent_directed_tracks(transaction, node_id, &mut track_cache)?;
+            require_stabling_search_budget(
+                &search_context,
+                &track_cache,
+                label_resident_bytes,
+                0,
+                &mut stats,
+                0,
+            )?;
+            for (directed, next_node) in adjacent {
                 if !cross_berth_track_compatible(
                     &directed.track,
                     inbound_terminal,
@@ -4465,14 +4686,17 @@ fn bounded_cross_berth_labels(
                             "Cross-Berth-Suche ab Knoten {start_node} ueberschreitet die feste Grenze von {MAX_STABLING_SEARCH_LABELS} Suchlabels."
                         ),
                     )?;
-                    require(
-                        next_resident_bytes <= MAX_STABLING_SEARCH_RESIDENT_BYTES,
-                        format!(
-                            "Cross-Berth-Suche ab Knoten {start_node} ueberschreitet das feste Suchspeicherbudget von {MAX_STABLING_SEARCH_RESIDENT_BYTES} Bytes."
-                        ),
+                    require_stabling_search_budget(
+                        &search_context,
+                        &track_cache,
+                        next_resident_bytes,
+                        0,
+                        &mut stats,
+                        0,
                     )?;
                     label_resident_bytes = next_resident_bytes;
                     labels.insert((next_node, next_hop), next_label);
+                    stats.label_count = labels.len();
                 }
             }
         }
@@ -4494,7 +4718,7 @@ fn cross_berth_connector_path_key(path: &CrossBerthConnectorPath) -> (i64, Vec<(
         path.total_length_mm,
         path.path
             .iter()
-            .map(|edge| (edge.track.id.as_str(), edge.direction.as_str()))
+            .map(|edge| (edge.track.id.as_str(), edge.direction))
             .collect(),
     )
 }
@@ -4594,11 +4818,11 @@ fn cross_berth_connector_paths(
     result.dedup_by(|left, right| {
         left.path
             .iter()
-            .map(|edge| (&edge.track.id, &edge.direction))
+            .map(|edge| (&edge.track.id, edge.direction))
             .eq(right
                 .path
                 .iter()
-                .map(|edge| (&edge.track.id, &edge.direction)))
+                .map(|edge| (&edge.track.id, edge.direction)))
     });
     Ok(result)
 }
@@ -4657,7 +4881,7 @@ fn cross_berth_transfer_path_key(path: &[DirectedTrack]) -> Result<(i64, Vec<(&s
     Ok((
         directed_track_path_length_mm(path)?,
         path.iter()
-            .map(|edge| (edge.track.id.as_str(), edge.direction.as_str()))
+            .map(|edge| (edge.track.id.as_str(), edge.direction))
             .collect(),
     ))
 }
@@ -4819,19 +5043,19 @@ fn paired_stabling_path_key(candidate: &PairedStablingCandidate) -> PairedStabli
         inbound_path: candidate
             .inbound_path
             .iter()
-            .map(|edge| (edge.track.id.as_str(), edge.direction.as_str()))
+            .map(|edge| (edge.track.id.as_str(), edge.direction))
             .collect(),
         berth_transfer_path: candidate
             .berth_transfer_path
             .as_deref()
             .unwrap_or_default()
             .iter()
-            .map(|edge| (edge.track.id.as_str(), edge.direction.as_str()))
+            .map(|edge| (edge.track.id.as_str(), edge.direction))
             .collect(),
         outbound_path: candidate
             .outbound_path
             .iter()
-            .map(|edge| (edge.track.id.as_str(), edge.direction.as_str()))
+            .map(|edge| (edge.track.id.as_str(), edge.direction))
             .collect(),
     }
 }
@@ -4881,20 +5105,30 @@ fn paired_stabling_candidates(
     inbound_route_id: &str,
     outbound_route_id: &str,
 ) -> Result<PairedStablingSearch> {
-    let inbound_candidates = stabling_candidates(
+    let inbound_search = stabling_candidates(
         transaction,
         &inbound_access.terminal_track,
         inbound_access.node_id,
         policy,
         inbound_route_id,
     )?;
-    let outbound_candidates = stabling_candidates(
+    debug_assert_eq!(
+        inbound_search.candidates.len() + inbound_search.stats.duplicate_candidate_count,
+        inbound_search.stats.raw_candidate_count
+    );
+    let inbound_candidates = inbound_search.candidates;
+    let outbound_search = stabling_candidates(
         transaction,
         &outbound_access.terminal_track,
         outbound_access.node_id,
         policy,
         outbound_route_id,
     )?;
+    debug_assert_eq!(
+        outbound_search.candidates.len() + outbound_search.stats.duplicate_candidate_count,
+        outbound_search.stats.raw_candidate_count
+    );
+    let outbound_candidates = outbound_search.candidates;
     let mut outbound_by_berth = BTreeMap::<&str, &StablingCandidate>::new();
     for candidate in &outbound_candidates {
         let berth = candidate
@@ -5686,7 +5920,7 @@ fn preflight_candidate_path(candidate: &StablingCandidate) -> TurnaroundPrefligh
             .iter()
             .map(|edge| TurnaroundPreflightPathLeg {
                 edge_id: edge.track.id.clone(),
-                direction: edge.direction.clone(),
+                direction: edge.direction.to_owned(),
             })
             .collect(),
     }
@@ -6528,19 +6762,19 @@ fn append_path_to_berth(
         "Abstellzugang besitzt keinen realen Gleispfad.",
     )?;
     for (index, directed) in path.iter().enumerate() {
-        let (entry_mm, full_exit_mm) = directed_offsets(&directed.track, &directed.direction)?;
+        let (entry_mm, full_exit_mm) = directed_offsets(&directed.track, directed.direction)?;
         let exit_mm = if index + 1 == path.len() {
             require(
                 directed.track.id == berth.edge_id,
                 "Abstellzugang endet nicht auf seiner gebundenen Berth-Kante.",
             )?;
-            berth_seed_offsets(berth, &directed.direction)?.1
+            berth_seed_offsets(berth, directed.direction)?.1
         } else {
             full_exit_mm
         };
         legs.push(derived_leg(
             &directed.track,
-            &directed.direction,
+            directed.direction,
             entry_mm,
             exit_mm,
         ));
@@ -6574,14 +6808,12 @@ fn berth_transfer_route(
         .inbound_path
         .last()
         .expect("Cross-Berth-Ankunftspfad besitzt eine Zielkante")
-        .direction
-        .as_str();
+        .direction;
     let departure_direction = candidate
         .outbound_path
         .last()
         .expect("Cross-Berth-Abfahrtspfad besitzt eine Zielkante")
-        .direction
-        .as_str();
+        .direction;
     require(
         first.track.id == arrival_berth.edge_id
             && first.direction == reverse_direction(arrival_direction)?
@@ -6599,14 +6831,14 @@ fn berth_transfer_route(
         seed_exit_mm,
     )];
     for (index, directed) in full_path.iter().enumerate() {
-        let (full_entry_mm, full_exit_mm) = directed_offsets(&directed.track, &directed.direction)?;
+        let (full_entry_mm, full_exit_mm) = directed_offsets(&directed.track, directed.direction)?;
         let entry_mm = if index == 0 {
             seed_exit_mm
         } else {
             full_entry_mm
         };
         let exit_mm = if index + 1 == full_path.len() {
-            berth_seed_offsets(departure_berth, &directed.direction)?.1
+            berth_seed_offsets(departure_berth, directed.direction)?.1
         } else {
             full_exit_mm
         };
@@ -6616,7 +6848,7 @@ fn berth_transfer_route(
         )?;
         legs.push(derived_leg(
             &directed.track,
-            &directed.direction,
+            directed.direction,
             entry_mm,
             exit_mm,
         ));
@@ -6750,8 +6982,7 @@ fn build_stabling_routes(
         .outbound_path
         .last()
         .expect("gepruefter Abfahrts-Abstellpfad")
-        .direction
-        .as_str();
+        .direction;
     let reverse_berth_direction = reverse_direction(departure_berth_direction)?;
     let (shunt_out_seed_entry, shunt_out_seed_exit) =
         berth_seed_offsets(&departure_berth, reverse_berth_direction)?;
@@ -6769,7 +7000,7 @@ fn build_stabling_routes(
         berth_terminal_exit,
     ));
     for directed in candidate.outbound_path.iter().rev().skip(1) {
-        let direction = reverse_direction(&directed.direction)?;
+        let direction = reverse_direction(directed.direction)?;
         let (entry_mm, exit_mm) = directed_offsets(&directed.track, direction)?;
         shunt_out_legs.push(derived_leg(&directed.track, direction, entry_mm, exit_mm));
     }
@@ -9561,16 +9792,18 @@ pub fn derive_germany_operational_v2(
 mod publish_tests {
     use super::{
         BLOCK_RESOURCES, BerthAssignmentKind, BerthAssignmentSubtype, BerthSearchMode,
-        GeneratedBatch, GeneratedBatchTables, GeneratedMovementArtifacts, GeometryPoint,
-        MAX_GENERATED_RECORD_BYTES, MovementContinuity, PinnedInputSpec, PolicySpec,
-        ScratchDirectory, StablingKind, StablingSearchPolicy, TRACK_BLOCKS, TRACKS, TRACKS_BY_NODE,
+        DirectedTrackCache, GeneratedBatch, GeneratedBatchTables, GeneratedMovementArtifacts,
+        GeometryPoint, MAX_GENERATED_RECORD_BYTES, MAX_STABLING_SEARCH_RESIDENT_BYTES,
+        MovementContinuity, PinnedInputSpec, PolicySpec, ScratchDirectory, StablingKind,
+        StablingSearchPolicy, StablingSearchStats, TRACK_BLOCKS, TRACKS, TRACKS_BY_NODE,
         TURNAROUND_INTERLOCKING, TURNAROUND_ROUTES, TURNAROUND_TEMPLATES, TerminalNodeAccess,
         TimetableLegInput, TimetableRouteInput, TrackRecord, TurnaroundPairDemand,
         TurnaroundRouteDispatch, berth_assignment, build_stabling_routes, canonical_json,
         ensure_output_absent, flush_generated_batch, generate_movement_route_artifacts,
         initialize_database, insert_generated, paired_stabling_candidates,
         paired_stabling_candidates_with_fallback, publish_create_new, publish_pair_create_new,
-        read_transfer_demands, require_generated_unit_bound, require_movement_continuity, sha256,
+        read_transfer_demands, require_generated_unit_bound, require_movement_continuity,
+        require_stabling_search_budget_with_limit, sha256, stabling_candidates,
         stabling_minimum_runtime_ms, stabling_template_provenance_counts,
     };
     use std::collections::{BTreeMap, BTreeSet};
@@ -10009,6 +10242,112 @@ mod publish_tests {
             source_id: "osm-pbf-deutschland".to_owned(),
             geometry_lineage: "observed-osm-linestring".to_owned(),
         }
+    }
+
+    #[test]
+    fn abstellfront_dedupliziert_berth_vor_aggregation_und_bleibt_deterministisch_begrenzt() {
+        let root = ScratchDirectory::create(&std::env::temp_dir()).expect("Testverzeichnis");
+        let database =
+            Database::create(root.join("stabling-dedup.redb")).expect("Abstell-Testdatenbank");
+        initialize_database(&database).expect("Abstell-Tabellen");
+        let terminal = stabling_test_track("terminal", 1, 2, 100_000, None);
+        let tracks = vec![
+            terminal.clone(),
+            stabling_test_track("access:a", 2, 3, 10_000, None),
+            stabling_test_track("access:b", 3, 5, 10_000, None),
+            stabling_test_track("access:c", 2, 4, 10_000, None),
+            stabling_test_track("access:d", 4, 6, 10_000, None),
+            stabling_test_track("berth:shared", 5, 6, 100_000, Some("siding")),
+        ];
+        let write = database.begin_write().expect("Abstell-Schreibtransaktion");
+        {
+            let mut table = write.open_table(TRACKS).expect("Track-Tabelle");
+            let mut by_node = write
+                .open_multimap_table(TRACKS_BY_NODE)
+                .expect("Knotenindex");
+            for track in &tracks {
+                let serialized = serde_json::to_string(track).expect("Track serialisieren");
+                table
+                    .insert(track.id.as_str(), serialized.as_str())
+                    .expect("Track einfuegen");
+                for node_id in [track.from_node_id, track.to_node_id] {
+                    let node_id = node_id.to_string();
+                    by_node
+                        .insert(node_id.as_str(), track.id.as_str())
+                        .expect("Track indexieren");
+                }
+            }
+        }
+        write.commit().expect("Abstell-Testdaten committen");
+
+        let search = || {
+            let read = database.begin_read().expect("Abstell-Testleser");
+            stabling_candidates(
+                &read,
+                &terminal,
+                2,
+                StablingSearchPolicy {
+                    formation_length_mm: 46_560,
+                    minimum_clearance_mm: 10_000,
+                    maximum_path_edges: 3,
+                    maximum_path_length_mm: 1_000_000,
+                    search_mode: BerthSearchMode::ObservedSiding,
+                },
+                "route:real-regression",
+            )
+            .expect("deduplizierte Abstellfront")
+        };
+        let first = search();
+        let second = search();
+        assert_eq!(first.stats, second.stats);
+        assert_eq!(first.stats.raw_candidate_count, 2);
+        assert_eq!(first.candidates.len(), 1);
+        assert_eq!(first.stats.duplicate_candidate_count, 1);
+        assert_eq!(first.stats.maximum_candidate_path_edges, 3);
+        assert!(first.stats.peak_resident_bytes < MAX_STABLING_SEARCH_RESIDENT_BYTES);
+        let path_ids = |result: &super::StablingSearchResult| {
+            result.candidates[0]
+                .path
+                .iter()
+                .map(|edge| edge.track.id.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(path_ids(&first), path_ids(&second));
+    }
+
+    #[test]
+    fn abstellfront_budget_gilt_gemeinsam_fuer_cache_labels_und_kandidaten() {
+        let cache = DirectedTrackCache {
+            resident_bytes: 40,
+            ..DirectedTrackCache::default()
+        };
+        let mut stats = StablingSearchStats::default();
+        require_stabling_search_budget_with_limit(
+            "route:within-budget",
+            &cache,
+            30,
+            30,
+            &mut stats,
+            0,
+            100,
+        )
+        .expect("exakt gemeinsames Budget");
+        let error = require_stabling_search_budget_with_limit(
+            "route:over-budget",
+            &cache,
+            30,
+            31,
+            &mut stats,
+            0,
+            100,
+        )
+        .expect_err("eine gemeinsame Suchfront ueber dem Budget muss scheitern");
+        assert!(
+            error
+                .to_string()
+                .contains("gemeinsame Suchspeicherbudget von 100 Bytes")
+        );
+        assert!(error.to_string().contains("Peak=101 Bytes"));
     }
 
     fn asymmetric_stabling_search(
