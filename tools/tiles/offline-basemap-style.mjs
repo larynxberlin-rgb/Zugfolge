@@ -3,6 +3,8 @@ import { link, mkdir, open, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 
 const MUTABLE_TOKEN = /(?:^|[./_:@-])(latest|unversioned|main|master|head)(?:$|[./_:@-])/iu;
+const EXTERNAL_RUNTIME_SCHEME = /^(?:about|blob|chrome(?:-extension)?|data|file|ftp|ftps|geo|http|https|javascript|mailto|mapbox|pmtiles|resource|sms|tel|urn|vbscript|ws|wss):/iu;
+const MAPLIBRE_NAMESPACED_TOKEN = /^[a-z_][a-z0-9_.-]*(?::[a-z0-9_.-]+)+$/iu;
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
@@ -37,7 +39,16 @@ function assertLocalUrl(value, label, prefix) {
 
 function isExternalRuntimeUrl(value) {
   if (/^pmtiles:\/\/\/(?!\/)/iu.test(value) || /^\/(?!\/)/u.test(value)) return false;
-  return /^(?:[a-z][a-z0-9+.-]*:|\/\/)/iu.test(value);
+  if (/^\/\//u.test(value)) return true;
+
+  const scheme = /^[a-z][a-z0-9+.-]*:/iu.exec(value);
+  if (scheme === null) return false;
+  if (EXTERNAL_RUNTIME_SCHEME.test(value) || value.startsWith(`${scheme[0]}//`)) return true;
+
+  // MapLibre-Ausdrücke verwenden Namensraum-Propertys und Sprite-Tokens wie
+  // `name:de`, `pgf:name` und `NL:S-road-`. Das sind Bezeichner, keine URLs.
+  // Unbekannte Schemata bleiben bei URL-Syntax fail-closed.
+  return !MAPLIBRE_NAMESPACED_TOKEN.test(value);
 }
 
 function externalUrls(value, path = "$") {

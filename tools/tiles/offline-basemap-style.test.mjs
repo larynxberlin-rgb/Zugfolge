@@ -50,6 +50,28 @@ test("ist byte-deterministisch", () => {
   assert.equal(serializeOfflineBasemapStyle(first.style), serializeOfflineBasemapStyle(second.style));
 });
 
+test("akzeptiert MapLibre-Property- und Sprite-Tokens mit Namensraum", () => {
+  const namespacedTokens = {
+    ...upstream,
+    layers: [
+      ...upstream.layers,
+      {
+        id: "namespaced-label",
+        type: "symbol",
+        source: "protomaps",
+        "source-layer": "places",
+        layout: {
+          "icon-image": ["concat", "NL:S-road-", ["get", "ref:nuts:1"]],
+          "text-field": ["coalesce", ["get", "name:de"], ["get", "pgf:name:en"]],
+        },
+      },
+    ],
+  };
+
+  const { style } = buildOfflineBasemapStyle(namespacedTokens, options);
+  assert.deepEqual(style.layers.at(-1).layout, namespacedTokens.layers.at(-1).layout);
+});
+
 test("lehnt externe oder veränderliche Laufzeitpfade ab", () => {
   assert.throws(() => buildOfflineBasemapStyle(upstream, { ...options, basemapUrl: "https://tiles.example/basemap.pmtiles" }), /pmtiles:\/\/\//);
   assert.throws(() => buildOfflineBasemapStyle(upstream, { ...options, glyphsUrl: "/maps/latest/fonts/{fontstack}/{range}.pbf" }), /latest/);
@@ -60,6 +82,29 @@ test("lehnt externe oder veränderliche Laufzeitpfade ab", () => {
     () => buildOfflineBasemapStyle({ ...upstream, metadata: { documentation: "mapbox://styles/foreign" } }, options),
     /externe URLs/u,
   );
+});
+
+test("lehnt externe URL-Protokolle auch außerhalb der Quellen fail-closed ab", () => {
+  const externalUrls = [
+    "https://tiles.example/style.json",
+    "http:tiles.example/style.json",
+    "//tiles.example/style.json",
+    "data:image/svg+xml;base64,PHN2Zy8+",
+    "blob:https://tiles.example/01234567-89ab-cdef-0123-456789abcdef",
+    "file:///tmp/style.json",
+    "ftp://tiles.example/style.json",
+    "wss://tiles.example/socket",
+    "custom+tiles://tiles.example/style.json",
+    "custom:tiles.example/style.json",
+  ];
+
+  for (const documentation of externalUrls) {
+    assert.throws(
+      () => buildOfflineBasemapStyle({ ...upstream, metadata: { documentation } }, options),
+      /externe URLs/u,
+      documentation,
+    );
+  }
 });
 
 test("lehnt zusätzliche unbekannte Quellen der Vorlage ab", () => {
