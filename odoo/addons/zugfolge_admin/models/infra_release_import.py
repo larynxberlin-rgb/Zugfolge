@@ -27,7 +27,7 @@ STATIC_MAP_QUALITY_SCHEMA = "zugfolge-static-map-quality/v2"
 STATIC_MAP_SOURCE_QUALITY_SCHEMA = "zugfolge-final-infrastructure-quality-report/v1"
 OPERATIONAL_INFRASTRUCTURE_KIND = "operational-infrastructure-v2"
 MOVEMENT_ROUTE_TEMPLATES_KIND = "movement-route-templates-v2"
-TIMETABLE_TRANSFER_DEMANDS_KIND = "timetable-transfer-demands-v1"
+TIMETABLE_TRANSFER_DEMANDS_KIND = "timetable-transfer-demands-v2"
 QUALITY_CLASSES = ("A", "B", "C")
 OPERATIONAL_COVERAGE_FIELDS = (
     "blockResources", "directedEdges", "edgeGeometries", "interlockingRoutes", "platformIntervals",
@@ -87,13 +87,13 @@ def _validate_timetable_route_evidence(value):
         "simulatedOperationalAssignment", "realInterlockingFactsClaimed", "externalOperationalNetworkProvenance",
     ), "Operational-v2.timetableRouteEvidence")
     if (
-        evidence["reportSchema"] != "zugfolge-germany-timetable-route-report/v3"
+        evidence["reportSchema"] != "zugfolge-germany-timetable-route-report/v4"
         or evidence["policyId"] != "synthetic-operational-b/v2"
         or evidence["derivationRule"] != "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2"
         or evidence["selectionRule"] != "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2"
-        or evidence["transferDemandsSchema"] != "zugfolge-timetable-transfer-demands/v1"
+        or evidence["transferDemandsSchema"] != "zugfolge-timetable-transfer-demands/v2"
     ):
-        _quality_error(_("timetableRouteEvidence verletzt den freien v3-Fahrweg- und Transfervertrag"))
+        _quality_error(_("timetableRouteEvidence verletzt den freien v4-Fahrweg-/V2-Transfervertrag"))
     byte_fields = ("reportBytes", "routesBytes", "gtfsSnapshotBytes", "transferDemandsBytes")
     hash_fields = (
         "reportSha256", "routesSha256", "gtfsSnapshotSha256", "transferDemandsSha256", "snapshotHash",
@@ -122,12 +122,21 @@ def _validate_timetable_route_evidence(value):
         _quality_error(_("timetableRouteEvidence schliesst die ausgewaehlten Segmente nicht vollstaendig 1:1"))
     circulation = _exact_keys(evidence["dailyCirculation"], (
         "lotCount", "journeyChainCount", "circulationCount", "rolloverAssignmentCount",
-        "transferDemandCount", "transferLotCount",
+        "plannedTransitionCount", "turnaroundDemandCount", "transferDemandCount", "transferLotCount",
     ), "Operational-v2.timetableRouteEvidence.dailyCirculation")
     if (
         evidence["transferDemandsProduced"] is not True
-        or not all(_safe_integer(circulation[field], 1) for field in circulation)
+        or not all(_safe_integer(circulation[field], 1) for field in (
+            "lotCount", "journeyChainCount", "circulationCount", "rolloverAssignmentCount",
+            "plannedTransitionCount",
+        ))
+        or not all(_safe_integer(circulation[field]) for field in (
+            "turnaroundDemandCount", "transferDemandCount", "transferLotCount",
+        ))
         or circulation["rolloverAssignmentCount"] != circulation["circulationCount"]
+        or circulation["turnaroundDemandCount"] + circulation["transferDemandCount"] != circulation["plannedTransitionCount"]
+        or circulation["plannedTransitionCount"] != circulation["journeyChainCount"]
+        or circulation["transferLotCount"] > circulation["lotCount"]
         or not _safe_integer(evidence["transferRouteCount"], 1)
         or evidence["transferRouteCount"] != circulation["transferDemandCount"]
         or not _safe_integer(evidence["transferRouteLegCount"], 1)
@@ -229,7 +238,7 @@ def _validate_operational_quality(
         route_evidence["transferDemandsBytes"] != delivered_transfer_demands["bytes"]
         or route_evidence["transferDemandsSha256"] != delivered_transfer_demands["sha256"]
     ):
-        _quality_error(_("Transferbeleg bindet nicht exakt das ausgelieferte timetable-transfer-demands-v1-Artefakt"))
+        _quality_error(_("Transferbeleg bindet nicht exakt das ausgelieferte timetable-transfer-demands-v2-Artefakt"))
 
     movement_route_templates = _exact_keys(model["movementRouteTemplates"], (
         "bytes", "sha256", "stateHash", "operationalStateHash", "timetableTransferSetSha256",
@@ -466,7 +475,7 @@ def _parse_package_manifest(raw):
     if auxiliary_kinds.count(MOVEMENT_ROUTE_TEMPLATES_KIND) != 1:
         raise ValidationError(_("Paket braucht genau eine operational-infrastructure-v2.movement-route-templates-v2.json."))
     if auxiliary_kinds.count(TIMETABLE_TRANSFER_DEMANDS_KIND) != 1:
-        raise ValidationError(_("Paket braucht genau eine timetable-routes-v2.transfer-demands-v1.json."))
+        raise ValidationError(_("Paket braucht genau eine timetable-routes-v2.transfer-demands-v2.json."))
     if auxiliary_kinds.count("train-map-projection") != 0:
         raise ValidationError(_("Operational-v2-Paket darf keine weltgebundene Zugpositionsprojektion als Paketvoraussetzung enthalten."))
     read_model = next(item for item in auxiliaries if isinstance(item, dict) and item.get("kind") == "read-model")
@@ -477,7 +486,7 @@ def _parse_package_manifest(raw):
         read_model.get("installPath") != "read-model.sqlite"
         or operational_infrastructure.get("installPath") != "operational-infrastructure-v2.json"
         or movement_route_templates.get("installPath") != "operational-infrastructure-v2.movement-route-templates-v2.json"
-        or transfer_demands.get("installPath") != "timetable-routes-v2.transfer-demands-v1.json"
+        or transfer_demands.get("installPath") != "timetable-routes-v2.transfer-demands-v2.json"
     ):
         raise ValidationError(_("ReadModel und alle Operational-v2-Artefakte muessen an ihren kanonischen Pfaden in derselben Releasewurzel liegen."))
 

@@ -134,6 +134,7 @@ function validateTimetableRouteEvidence(value: unknown): void {
         .every((field) => Number.isSafeInteger(daily[field]) && (daily[field] as number) >= 0)
       && daily["rolloverAssignmentCount"] === daily["circulationCount"]
       && (daily["turnaroundDemandCount"] as number) + (daily["transferDemandCount"] as number) === daily["plannedTransitionCount"]
+      && daily["plannedTransitionCount"] === daily["journeyChainCount"]
       && (daily["transferLotCount"] as number) <= (daily["lotCount"] as number)
       && evidence["transferDemandsProduced"] === true
       && evidence["transferRouteCount"] === daily["transferDemandCount"]

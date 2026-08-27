@@ -544,11 +544,14 @@ test("kombinierter Deliveryvertrag bindet Transfer-v2 lokal bytegenau ohne Signa
         }],
       },
     );
-    const legacyOdooGolden = JSON.parse(await readFile(PRODUCER_GOLDEN_URL, "utf8"));
-    const legacyManifest = JSON.parse(Buffer.from(legacyOdooGolden.manifestBase64, "base64").toString("utf8"));
-    const legacyTransfer = legacyManifest.auxiliaryFiles.find(({ kind }) => kind === "timetable-transfer-demands-v1");
-    assert.equal(legacyTransfer?.installPath, "timetable-routes-v2.transfer-demands-v1.json");
-    assert.notDeepEqual(legacyOdooGolden, producerGolden, "Das bewusst ausgeschlossene Odoo-v1-Golden darf nicht als V2-Fallback gelten.");
+    if (process.env.UPDATE_DELIVERY_V2_PRODUCER_GOLDEN === "1") {
+      await writeFile(PRODUCER_GOLDEN_URL, serializeDeliveryJson(producerGolden));
+    }
+    assert.deepEqual(
+      JSON.parse(await readFile(PRODUCER_GOLDEN_URL, "utf8")),
+      producerGolden,
+      "Das gemeinsame Odoo/Game-API-Golden muss deterministisch dem aktuellen V2-Producer entsprechen.",
+    );
 
     const output = join(root, "public-output");
     assert.equal((await writeMapDeliveryRelease(result, output)).releaseStatus, "written");
@@ -1040,6 +1043,16 @@ test("Operational-v2-Delivery lässt sichtbare Karten-C ehrlich stehen und verwi
     incompleteTransfers.operationalModel.timetableRouteEvidence.transferRouteCount = 2;
     await writeFile(qualityPath, serializeDeliveryJson(incompleteTransfers));
     await assert.rejects(build(incompleteTransfers), /Tagesumlauf-\/Transferabdeckung/);
+
+    const legacyTransferSchema = operationalQuality();
+    legacyTransferSchema.operationalModel.timetableRouteEvidence.transferDemandsSchema = "zugfolge-timetable-transfer-demands/v1";
+    await writeFile(qualityPath, serializeDeliveryJson(legacyTransferSchema));
+    await assert.rejects(build(legacyTransferSchema), /v4-Fahrweg-\/V2-Transfervertrag/);
+
+    const mismatchedJourneyChains = operationalQuality();
+    mismatchedJourneyChains.operationalModel.timetableRouteEvidence.dailyCirculation.journeyChainCount = 5;
+    await writeFile(qualityPath, serializeDeliveryJson(mismatchedJourneyChains));
+    await assert.rejects(build(mismatchedJourneyChains), /Tagesumlauf-\/Transferabdeckung/);
 
     const mismatchedMovement = operationalQuality();
     mismatchedMovement.operationalModel.movementRouteTemplates.sha256 = "e".repeat(64);

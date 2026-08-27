@@ -33,7 +33,7 @@ OPERATIONAL_BYTES = b'{"id":"infra-deutschland-2026.1","schema":"zugfolge-operat
 OPERATIONAL_SHA256 = _sha256(OPERATIONAL_BYTES)
 MOVEMENT_ROUTE_TEMPLATES_BYTES = b'{"infraReleaseId":"infra-deutschland-2026.1","schema":"movement-route-templates-v2"}\n'
 MOVEMENT_ROUTE_TEMPLATES_SHA256 = _sha256(MOVEMENT_ROUTE_TEMPLATES_BYTES)
-TRANSFER_DEMANDS_BYTES = b'{"infraReleaseId":"infra-deutschland-2026.1","schema":"zugfolge-timetable-transfer-demands/v1"}\n'
+TRANSFER_DEMANDS_BYTES = b'{"infraReleaseId":"infra-deutschland-2026.1","schema":"zugfolge-timetable-transfer-demands/v2"}\n'
 TRANSFER_DEMANDS_SHA256 = _sha256(TRANSFER_DEMANDS_BYTES)
 UNSIGNED_REASON = "Kein produktiver privater Signaturschluessel vorhanden; Aktivierung bleibt gesperrt."
 FINALIZATION_KEY_ID = "test-key"
@@ -191,7 +191,7 @@ def _operational_quality():
                 "timetableTransferSetSha256": HASH_A,
             },
             "timetableRouteEvidence": {
-                "reportSchema": "zugfolge-germany-timetable-route-report/v3",
+                "reportSchema": "zugfolge-germany-timetable-route-report/v4",
                 "policyId": "synthetic-operational-b/v2",
                 "derivationRule": "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2",
                 "selectionRule": "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
@@ -201,7 +201,7 @@ def _operational_quality():
                 "routesSha256": HASH_B,
                 "gtfsSnapshotBytes": 9012,
                 "gtfsSnapshotSha256": HASH_C,
-                "transferDemandsSchema": "zugfolge-timetable-transfer-demands/v1",
+                "transferDemandsSchema": "zugfolge-timetable-transfer-demands/v2",
                 "transferDemandsBytes": len(TRANSFER_DEMANDS_BYTES),
                 "transferDemandsSha256": TRANSFER_DEMANDS_SHA256,
                 "snapshotHash": HASH_A,
@@ -222,6 +222,8 @@ def _operational_quality():
                     "journeyChainCount": 4,
                     "circulationCount": 2,
                     "rolloverAssignmentCount": 2,
+                    "plannedTransitionCount": 4,
+                    "turnaroundDemandCount": 3,
                     "transferDemandCount": 1,
                     "transferLotCount": 1,
                 },
@@ -309,8 +311,8 @@ def _fixture(
         },
         {
             "id": "timetable-transfer-demands-2026.1",
-            "kind": "timetable-transfer-demands-v1",
-            "installPath": "timetable-routes-v2.transfer-demands-v1.json",
+            "kind": "timetable-transfer-demands-v2",
+            "installPath": "timetable-routes-v2.transfer-demands-v2.json",
             "content": TRANSFER_DEMANDS_BYTES,
         },
     ]
@@ -603,6 +605,13 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
 
     def test_exact_js_builder_golden_is_accepted_by_odoo(self):
         golden, manifest, parts = _producer_golden_fixture()
+        parsed_manifest = json.loads(manifest)
+        transfer_descriptor = next(
+            item for item in parsed_manifest["auxiliaryFiles"]
+            if item["id"] == "timetable-transfer-demands-2026.1"
+        )
+        self.assertEqual(transfer_descriptor["kind"], "timetable-transfer-demands-v2")
+        self.assertEqual(transfer_descriptor["installPath"], "timetable-routes-v2.transfer-demands-v2.json")
         record = self._verify(self._create_package_import(manifest, parts))
         self.assertEqual(record.delivery_release_id, golden["release"]["releaseId"])
         self.assertEqual(record.infra_release_hash, golden["release"]["bindings"]["infraReleaseHash"])
@@ -617,6 +626,24 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
         self.assertEqual(record.part_count, len(parts))
         with self.assertRaises(UserError):
             record.action_create_adoption_request()
+
+    def test_js_builder_golden_mutated_to_transfer_v1_is_rejected_without_fallback(self):
+        _golden, manifest, parts = _producer_golden_fixture()
+        legacy_manifest = json.loads(manifest)
+        transfer_demands = next(
+            item for item in legacy_manifest["auxiliaryFiles"]
+            if item["kind"] == "timetable-transfer-demands-v2"
+        )
+        transfer_demands["kind"] = "timetable-transfer-demands-v1"
+        transfer_demands["installPath"] = "timetable-routes-v2.transfer-demands-v1.json"
+
+        record = self._create_package_import(_canonical(legacy_manifest), parts)
+        record.action_verify()
+        record._verify_job()
+
+        self.assertEqual(record.state, "failed")
+        self.assertEqual(record.failure_code, "verification_failed")
+        self.assertIn("transfer-demands-v2", record.failure_detail)
 
     def test_rpc_context_cannot_forge_audit_state_or_pass_adoption_gate(self):
         record = self._create_import()
@@ -1019,7 +1046,7 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
             with_duplicate = {**parsed, "auxiliaryFiles": parsed["auxiliaryFiles"] + [duplicate]}
             missing_or_duplicate_public_manifest.extend((without_kind, with_duplicate))
         invalid_sidecars = []
-        for kind in ("movement-route-templates-v2", "timetable-transfer-demands-v1"):
+        for kind in ("movement-route-templates-v2", "timetable-transfer-demands-v2"):
             descriptor = next(item for item in parsed["auxiliaryFiles"] if item["kind"] == kind)
             without_kind = {
                 **parsed,
@@ -1032,11 +1059,19 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
             misplaced = json.loads(json.dumps(parsed))
             next(item for item in misplaced["auxiliaryFiles"] if item["kind"] == kind)["installPath"] = "wrong/%s.json" % kind
             invalid_sidecars.extend((without_kind, {**parsed, "auxiliaryFiles": parsed["auxiliaryFiles"] + [duplicate]}, misplaced))
+        legacy_transfer_demands = json.loads(json.dumps(parsed))
+        legacy_transfer_descriptor = next(
+            item for item in legacy_transfer_demands["auxiliaryFiles"]
+            if item["kind"] == "timetable-transfer-demands-v2"
+        )
+        legacy_transfer_descriptor["kind"] = "timetable-transfer-demands-v1"
+        legacy_transfer_descriptor["installPath"] = "timetable-routes-v2.transfer-demands-v1.json"
         for candidate in (
             without_operational,
             with_legacy_projection,
             *missing_or_duplicate_public_manifest,
             *invalid_sidecars,
+            legacy_transfer_demands,
         ):
             with self.assertRaises(ValidationError):
                 import_module._parse_package_manifest(_canonical(candidate))
@@ -1102,6 +1137,12 @@ class TestZugfolgeInfraReleaseImport(TransactionCase):
             ("wrong-movement-operational-state", _set_path(("operationalModel", "movementRouteTemplates", "operationalStateHash"), HASH_A)),
             ("wrong-movement-transfer-set", _set_path(("operationalModel", "movementRouteTemplates", "timetableTransferSetSha256"), HASH_B)),
             ("wrong-transfer-artifact", _set_path(("operationalModel", "timetableRouteEvidence", "transferDemandsSha256"), HASH_A)),
+            ("legacy-route-report-v3", _set_path(("operationalModel", "timetableRouteEvidence", "reportSchema"), "zugfolge-germany-timetable-route-report/v3")),
+            ("legacy-transfer-schema-v1", _set_path(("operationalModel", "timetableRouteEvidence", "transferDemandsSchema"), "zugfolge-timetable-transfer-demands/v1")),
+            ("missing-planned-transition-count", _delete_path(("operationalModel", "timetableRouteEvidence", "dailyCirculation", "plannedTransitionCount"))),
+            ("rollover-circulation-mismatch", _set_path(("operationalModel", "timetableRouteEvidence", "dailyCirculation", "rolloverAssignmentCount"), 1)),
+            ("transition-partition-mismatch", _set_path(("operationalModel", "timetableRouteEvidence", "dailyCirculation", "turnaroundDemandCount"), 2)),
+            ("planned-journey-chain-mismatch", _set_path(("operationalModel", "timetableRouteEvidence", "dailyCirculation", "journeyChainCount"), 5)),
         )
         for label, mutator in scenarios:
             with self.subTest(label=label):

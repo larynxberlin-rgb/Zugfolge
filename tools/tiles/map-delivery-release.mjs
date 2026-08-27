@@ -497,6 +497,7 @@ function validateTimetableRouteEvidence(evidence) {
       && ["turnaroundDemandCount", "transferDemandCount", "transferLotCount"].every((field) => Number.isSafeInteger(evidence.dailyCirculation[field]) && evidence.dailyCirculation[field] >= 0)
       && evidence.dailyCirculation.rolloverAssignmentCount === evidence.dailyCirculation.circulationCount
       && evidence.dailyCirculation.turnaroundDemandCount + evidence.dailyCirculation.transferDemandCount === evidence.dailyCirculation.plannedTransitionCount
+      && evidence.dailyCirculation.plannedTransitionCount === evidence.dailyCirculation.journeyChainCount
       && evidence.dailyCirculation.transferLotCount <= evidence.dailyCirculation.lotCount
       && evidence.transferDemandsProduced === true
       && evidence.transferRouteCount === evidence.dailyCirculation.transferDemandCount

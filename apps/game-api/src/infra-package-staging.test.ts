@@ -113,6 +113,7 @@ interface PackageFixtureOptions {
   readonly deliveryTransferDemandsBytes?: Buffer;
   readonly qualityMovementRouteTemplatesSha256?: string;
   readonly qualityTransferDemandsSha256?: string;
+  readonly qualityJourneyChainCount?: number;
   readonly operationalInfraReleaseId?: string;
   readonly omitUnsignedReleaseHash?: boolean;
   readonly unsignedReleaseHash?: string | null;
@@ -276,7 +277,7 @@ function packageFixture(
         transferDemandsProduced: true,
         dailyCirculation: {
           lotCount: 2,
-          journeyChainCount: 4,
+          journeyChainCount: options.qualityJourneyChainCount ?? 4,
           circulationCount: 2,
           rolloverAssignmentCount: 2,
           plannedTransitionCount: 4,
@@ -551,17 +552,39 @@ afterEach(async () => {
 });
 
 describe("InfraPackageStaging", () => {
-  it("verwirft das noch auf Transfer-v1 gebundene Odoo-Producer-Golden ohne Fallback", async () => {
-    const { fixture } = await deliveryV2ProducerGoldenFixture();
+  it("akzeptiert das gemeinsame Transfer-v2-Producer-Golden mit exakten Paketbytes und SHA-256", async () => {
+    const { golden, fixture } = await deliveryV2ProducerGoldenFixture();
     const service = await staging();
     const manifest = JSON.parse(fixture.manifest.toString("utf8")) as {
-      readonly auxiliaryFiles: readonly { readonly kind: string; readonly installPath: string }[];
+      readonly auxiliaryFiles: readonly { readonly id: string; readonly kind: string; readonly installPath: string; readonly bytes: number; readonly sha256: string }[];
     };
-    expect(manifest.auxiliaryFiles).toContainEqual(expect.objectContaining({
-      kind: "timetable-transfer-demands-v1",
-      installPath: "timetable-routes-v2.transfer-demands-v1.json",
-    }));
-    await expect(prepareFixtureUpload(service, "annual-2026-legacy-odoo-golden", fixture))
+    const descriptor = manifest.auxiliaryFiles.find(({ kind }) => kind === "timetable-transfer-demands-v2");
+    const part = fixture.parts.find(({ id }) => id === "timetable-transfer-demands-2026.1");
+    expect(descriptor).toMatchObject({ installPath: "timetable-routes-v2.transfer-demands-v2.json" });
+    expect(part).toBeDefined();
+    expect(descriptor).toMatchObject({ bytes: part!.bytes.length, sha256: sha256(part!.bytes) });
+
+    await expect(uploadFixture(service, "annual-2026-shared-v2-producer", fixture)).resolves.toMatchObject({
+      deliveryReleaseId: golden.release.releaseId,
+      signatureStatus: "missing",
+      activationBlocker: "delivery-signature-missing",
+      activationEligible: false,
+    });
+  });
+
+  it("verwirft das gezielt auf Transfer-v1 mutierte gemeinsame Producer-Golden ohne Fallback", async () => {
+    const { fixture } = await deliveryV2ProducerGoldenFixture();
+    const legacyManifest = JSON.parse(fixture.manifest.toString("utf8")) as {
+      auxiliaryFiles: Array<{ kind: string; installPath: string }>;
+    };
+    const transferDemands = legacyManifest.auxiliaryFiles.find(({ kind }) => kind === "timetable-transfer-demands-v2");
+    expect(transferDemands).toBeDefined();
+    transferDemands!.kind = "timetable-transfer-demands-v1";
+    transferDemands!.installPath = "timetable-routes-v2.transfer-demands-v1.json";
+    const legacyFixture = { ...fixture, manifest: canonical(legacyManifest) };
+
+    const service = await staging();
+    await expect(prepareFixtureUpload(service, "annual-2026-legacy-mutated-golden", legacyFixture))
       .rejects.toThrow("genau eine timetable-routes-v2.transfer-demands-v2.json");
   });
 
@@ -1604,6 +1627,7 @@ export function verifyMapPackageTransport() {
     ["betriebliche Klasse C", "operational-class-c", { operationalClassCArtifacts: 1 }, /B=1\/C=0-Bilanz/],
     ["offenes Closure-Gate", "open-closure", { closureReceiptVerified: false }, /Qualitätsgate ist offen/],
     ["Umklassifizierung sichtbarer Karten-C", "map-c-reclassified", { mapClassCReclassified: true }, /deklariert sichtbare Karten-C um/],
+    ["abweichender Fahrtenkettenbilanz", "journey-chain-mismatch", { qualityJourneyChainCount: 5 }, /Tagesumlauf-\/Transferabdeckung/],
   ] as const)("verwirft Operational-v2 bei %s", async (_label, importSuffix, options, expectedMessage) => {
     const fixture = packageFixture("nonPublicSourceRawDataShipped", undefined, options);
     const service = await staging();
