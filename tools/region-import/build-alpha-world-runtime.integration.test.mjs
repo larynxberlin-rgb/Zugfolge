@@ -183,11 +183,68 @@ describe("echter Alpha-Builder bis zur produktiven Scheduler-Registry", () => {
         MINIMAL_BUILDER_REGION_ID,
         firstTrain.scheduledDepartureMs,
       );
-      assert.deepEqual(commands.map(({ command }) => command.type), ["materialize", "dispatch"]);
+      const trainsById = new Map(
+        signed.deployment.regionalSimulation.trains.map((train) => [train.id, train]),
+      );
+      const continuationByPredecessor = new Map(
+        signed.deployment.regionalSimulation.movementContinuations.map((continuation) => [
+          continuation.predecessorTrainId,
+          continuation,
+        ]),
+      );
+      const expectedContinuationChain = [];
+      let predecessorTrainId = firstTrain.id;
+      let predecessorDay = 0;
+      for (;;) {
+        const continuation = continuationByPredecessor.get(predecessorTrainId);
+        assert.ok(continuation, `Fahrt '${predecessorTrainId}' besitzt keine physische Nachfolgekette.`);
+        const successor = trainsById.get(continuation.successorTrainId);
+        assert.ok(successor, `Fortsetzung '${continuation.id}' verweist auf eine unbekannte Fahrt.`);
+        const successorDay = predecessorDay + continuation.successorDayOffset;
+        expectedContinuationChain.push({
+          continuation,
+          predecessorTrainId: predecessorDay === 0
+            ? predecessorTrainId
+            : `${predecessorTrainId}:day-${predecessorDay}`,
+          successorTrainId: successorDay === 0
+            ? successor.id
+            : `${successor.id}:day-${successorDay}`,
+        });
+        if (successor.publicPassengerStop) break;
+        predecessorTrainId = successor.id;
+        predecessorDay = successorDay;
+      }
+      assert.deepEqual(commands.map(({ command }) => command.type), [
+        "materialize",
+        ...expectedContinuationChain.map(() => "queue-movement-continuation"),
+        "dispatch",
+      ]);
       assert.equal(commands[0].command.train.id, firstTrain.id);
-      assert.equal(commands[1].command.requests[0].trainId, firstTrain.id);
+      const queuedContinuations = commands.slice(1, -1).map(({ command }) => {
+        assert.equal(command.type, "queue-movement-continuation");
+        return command.continuation;
+      });
+      assert.deepEqual(
+        queuedContinuations.map((continuation) => ({
+          predecessorTrainId: continuation.predecessorTrainId,
+          predecessorBaseRouteVersionId: continuation.predecessorBaseRouteVersionId,
+          successorTrainId: continuation.successor.id,
+          minimumDwellMs: continuation.minimumDwellMs,
+          continuity: continuation.continuity,
+        })),
+        expectedContinuationChain.map(({ continuation, predecessorTrainId, successorTrainId }) => ({
+          predecessorTrainId,
+          predecessorBaseRouteVersionId: continuation.predecessorBaseRouteVersionId,
+          successorTrainId,
+          minimumDwellMs: continuation.minimumDwellMs,
+          continuity: continuation.continuity,
+        })),
+      );
+      const dispatch = commands.at(-1).command;
+      assert.equal(dispatch.type, "dispatch");
+      assert.equal(dispatch.requests[0].trainId, firstTrain.id);
       assert.equal(
-        commands[1].command.requests[0].interlockingRouteId,
+        dispatch.requests[0].interlockingRouteId,
         firstTrain.dispatchInterlockingRouteId,
       );
     } finally {
