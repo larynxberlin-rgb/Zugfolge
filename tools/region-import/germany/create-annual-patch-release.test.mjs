@@ -7,6 +7,11 @@ import test from "node:test";
 import { createAnnualPatchRelease } from "./create-annual-patch-release.mjs";
 
 const PENDING_REAL_BUILD = "PENDING_REAL_ANNUAL_RELEASE_BUILD";
+const GTFS_SNAPSHOT_BYTES = 14_797_184;
+const GTFS_SNAPSHOT_SHA256 = "cbebbcb73e1807df793c26411873b2df442e6ce38d28fd0593a78e5ae93912c5";
+const GTFS_SNAPSHOT_HASH = "811fcafe581e73409b373ec5e2568dbb44048d604be834d1aa998abe4a35a8a7";
+const TRANSFER_DEMANDS_BYTES = 6_697_294;
+const TRANSFER_DEMANDS_SHA256 = "2c8c688a9ce963afbdca75fee526b581bc21be402aabcbaf1abd09ea65418cdf";
 const CANONICAL_HARDENING_FILES = Object.freeze([
   "tools/region-import/germany/operational-infrastructure.annual-{patch}.json",
   "tools/region-import/germany/release-artifacts.annual-{patch}.json",
@@ -225,10 +230,20 @@ async function baselineHardeningFixture(t) {
     ["tools/region-import/germany/operational-infrastructure.annual-2026.4.json", {
       schema: "zugfolge-germany-operational-infrastructure-derivation/v2",
       infraReleaseId: "infra-deutschland-2026.4",
-      layers: { timetableRoutes: "var/derived/germany-2026.4/timetable-routes-v2.jsonseq" },
+      layers: {
+        timetableRoutes: "var/derived/germany-2026.4/timetable-routes-v2.jsonseq",
+        transferDemands: {
+          path: "var/derived/germany-2026.4/timetable-routes-v2.transfer-demands-v1.json",
+          expectedBytes: 5_046_237,
+          expectedSha256: "2526f3c992f68cf1af3a9da21632991a02e1d94f7e2fcb9d7afddc71489afc76",
+        },
+      },
       policy: {
         id: "synthetic-operational-b/v2",
         minimumOverlapMm: 200_000,
+        minimumBerthEndClearanceMm: 10_000,
+        maximumDirectDwellMs: 1_200_000,
+        terminalFormationLengthsMm: [46_560, 69_860],
         defaultProtectionSystem: "pzb",
         regionBoundaryId: "region:deutschland-ebo",
         rzueLayoutId: "rzue-deutschland-2026.4-synthetic-b-v2",
@@ -238,21 +253,32 @@ async function baselineHardeningFixture(t) {
       schema: "zugfolge-infra-release-artifact-spec/v2",
       artifacts: [
         { id: "operational-infrastructure-2026.4", kind: "operational-infrastructure-v2" },
+        { id: "operational-movement-routes-2026.4", kind: "movement-route-templates-v2" },
+        {
+          id: "timetable-transfer-demands-2026.4",
+          kind: "timetable-transfer-demands-v1",
+          sourceFile: "var/derived/germany-2026.4/timetable-routes-v2.transfer-demands-v1.json",
+          file: "timetable-routes-v2.transfer-demands-v1.json",
+        },
         { id: "quality-report-2026.4", kind: "quality-report" },
       ],
     }],
     ["tools/region-import/germany/synthetic-operational-b.2026.4.policy.json", {
       schema: "zugfolge-synthetic-operational-policy/v2",
       id: "synthetic-operational-b/v2",
-      requiredInputRoles: ["timetable-route-report", "timetable-routes", "tracks"],
-      requiredDimensions: ["route-versions", "complete-pinned-timetable-routes", "free-gtfs-route-provenance"],
+      requiredInputRoles: ["timetable-route-report", "timetable-routes", "timetable-transfer-demands", "tracks"],
+      requiredDimensions: ["route-versions", "complete-pinned-timetable-routes", "daily-physical-circulations", "real-transfer-route-coverage", "free-gtfs-route-provenance"],
       rules: [
         { id: "pinned-timetable-route-coverage/v1", effect: "pinned routes" },
-        { id: "free-gtfs-route-provenance/v2", effect: "Bind the v2 derivation report byte-for-byte." },
+        { id: "daily-physical-circulation-and-transfer-coverage/v1", effect: "Bind every circulation to the v1 transfer-demand sidecar." },
+        { id: "free-gtfs-route-provenance/v2", effect: "Bind the v3 derivation report byte-for-byte." },
       ],
       compilerPolicy: {
         id: "synthetic-operational-b/v2",
         minimumOverlapMm: 200_000,
+        minimumBerthEndClearanceMm: 10_000,
+        maximumDirectDwellMs: 1_200_000,
+        terminalFormationLengthsMm: [46_560, 69_860],
         defaultProtectionSystem: "pzb",
         regionBoundaryId: "region:deutschland-ebo",
         rzueLayoutId: "rzue-deutschland-2026.4-synthetic-b-v2",
@@ -262,11 +288,12 @@ async function baselineHardeningFixture(t) {
       schema: "zugfolge-synthetic-operational-closure-inputs/v2",
       releaseId: "infra-deutschland-2026.4",
       timetableRouteReportFile: "timetable-routes-v2.derivation-report.json",
+      timetableTransferDemandsFile: "timetable-routes-v2.transfer-demands-v1.json",
       gtfsSnapshotFile: "gtfs-region-20260810-v2.json",
       operationalArtifactFile: "operational-infrastructure-v2.json",
     }],
     ["tools/region-import/germany/timetable-route-compiler.annual-2026.4.json", {
-      schema: "zugfolge-germany-timetable-route-compiler/v3",
+      schema: "zugfolge-germany-timetable-route-compiler/v4",
       infraReleaseId: "infra-deutschland-2026.4",
       gtfsSnapshot: {
         path: "var/derived/germany-2026.4/gtfs-region.json",
@@ -275,7 +302,21 @@ async function baselineHardeningFixture(t) {
         expectedSnapshotHash: "b".repeat(64),
       },
       selection: { expectedSnapshotSegmentCount: 2_481, expectedEligibleSegmentCount: 1_679 },
+      dailyCirculation: {
+        rule: "lot-local-playable-path-cover-with-minimum-cross-location-rollover/v1",
+        repeatEveryS: 86_400,
+        minimumTurnaroundS: 300,
+        expectedLotCount: 52,
+        expectedJourneyChainCount: 1_677,
+        expectedCirculationCount: 193,
+        expectedTransferDemandCount: 79,
+        expectedTransferLotCount: 38,
+        formationLengthsMm: [46_560, 69_860],
+        unknownMainlineSpeedKmh: 20,
+        unknownServiceSpeedKmh: 10,
+      },
       output: "var/derived/germany-2026.4/timetable-routes-v2.jsonseq",
+      transferOutput: "var/derived/germany-2026.4/timetable-routes-v2.transfer-demands-v1.json",
       report: "var/derived/germany-2026.4/timetable-routes-v2.derivation-report.json",
     }],
     ["tools/tiles/map-build-cache-inventory.annual-2026.4.plan.json", {
@@ -295,6 +336,16 @@ async function baselineHardeningFixture(t) {
           id: "operational-infrastructure-2026.4",
           kind: "operational-infrastructure-v2",
           artifactInventory: "var/derived/germany-2026.4/release-artifacts.v2.json",
+        },
+        {
+          id: "operational-movement-routes-2026.4",
+          kind: "movement-route-templates-v2",
+        },
+        {
+          id: "timetable-transfer-demands-2026.4",
+          kind: "timetable-transfer-demands-v1",
+          sourceFile: "var/derived/germany-2026.4/timetable-routes-v2.transfer-demands-v1.json",
+          installPath: "timetable-routes-v2.transfer-demands-v1.json",
         },
         { id: "style-dark", kind: "style" },
       ],
@@ -339,6 +390,14 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
   for (const [relativePath, before] of sourceBytes) {
     assert.deepEqual(await readFile(join(root, relativePath)), before, `${relativePath} wurde veraendert.`);
   }
+  for (const relativePath of result.files) {
+    const target = await readFile(join(root, relativePath), "utf8");
+    assert.doesNotMatch(
+      target,
+      /timetable-transfer-demands-v1|timetable-routes-v2\.transfer-demands-v1\.json|zugfolge-timetable-transfer-demands\/v1/u,
+      `${relativePath} enthaelt einen aktuellen V1-Transferfallback.`,
+    );
+  }
 
   const operational = JSON.parse(await readFile(join(root, result.files[0]), "utf8"));
   assert.equal(operational.infraReleaseId, "infra-deutschland-2026.5");
@@ -347,7 +406,7 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
       expectedBytes: operational.layers.transferDemands.expectedBytes,
       expectedSha256: operational.layers.transferDemands.expectedSha256,
     },
-    { expectedBytes: 0, expectedSha256: PENDING_REAL_BUILD },
+    { expectedBytes: TRANSFER_DEMANDS_BYTES, expectedSha256: TRANSFER_DEMANDS_SHA256 },
   );
   assert.deepEqual(
     {
@@ -372,7 +431,7 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
   assert.deepEqual(releaseArtifacts.artifacts.map(({ kind }) => kind), [
     "operational-infrastructure-v2",
     "movement-route-templates-v2",
-    "timetable-transfer-demands-v1",
+    "timetable-transfer-demands-v2",
     "quality-report",
   ]);
 
@@ -390,15 +449,17 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
     "real-transfer-route-coverage",
     "free-gtfs-route-provenance",
   ]);
-  assert.equal(policy.rules[1].id, "daily-physical-circulation-and-transfer-coverage/v1");
-  assert.match(policy.rules[2].effect, /v3 derivation report/u);
+  assert.equal(policy.rules[1].id, "daily-physical-circulation-and-transfer-coverage/v2");
+  assert.match(policy.rules[2].effect, /v4 derivation report/u);
   assert.deepEqual(policy.compilerPolicy.terminalFormationLengthsMm, [46_560, 69_860]);
 
   const closure = JSON.parse(await readFile(join(root, result.files[3]), "utf8"));
-  assert.equal(closure.timetableTransferDemandsFile, "timetable-routes-v2.transfer-demands-v1.json");
+  assert.equal(closure.timetableRouteReportFile, "timetable-routes-v2.derivation-report-v4.json");
+  assert.equal(closure.timetableTransferDemandsFile, "timetable-routes-v2.transfer-demands-v2.json");
 
   const timetable = JSON.parse(await readFile(join(root, result.files[4]), "utf8"));
-  assert.equal(timetable.schema, "zugfolge-germany-timetable-route-compiler/v4");
+  assert.equal(timetable.schema, "zugfolge-germany-timetable-route-compiler/v5");
+  assert.equal(timetable.dailyCirculation.rule, "lot-local-playable-path-cover-with-explicit-physical-transition-partition/v2");
   assert.deepEqual(
     {
       expectedBytes: timetable.gtfsSnapshot.expectedBytes,
@@ -406,9 +467,9 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
       expectedSnapshotHash: timetable.gtfsSnapshot.expectedSnapshotHash,
     },
     {
-      expectedBytes: 0,
-      expectedFileSha256: PENDING_REAL_BUILD,
-      expectedSnapshotHash: PENDING_REAL_BUILD,
+      expectedBytes: GTFS_SNAPSHOT_BYTES,
+      expectedFileSha256: GTFS_SNAPSHOT_SHA256,
+      expectedSnapshotHash: GTFS_SNAPSHOT_HASH,
     },
   );
   assert.deepEqual(
@@ -418,24 +479,27 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
       timetable.dailyCirculation.expectedLotCount,
       timetable.dailyCirculation.expectedJourneyChainCount,
       timetable.dailyCirculation.expectedCirculationCount,
+      timetable.dailyCirculation.expectedPlannedTransitionCount,
+      timetable.dailyCirculation.expectedTurnaroundDemandCount,
       timetable.dailyCirculation.expectedTransferDemandCount,
       timetable.dailyCirculation.expectedTransferLotCount,
     ],
-    [0, 0, 0, 0, 0, 0, 0],
+    [2_481, 1_679, 52, 1_677, 197, 1_677, 1_595, 82, 39],
   );
-  assert.equal(timetable.transferOutput, "var/derived/germany-2026.5/timetable-routes-v2.transfer-demands-v1.json");
+  assert.equal(timetable.report, "var/derived/germany-2026.5/timetable-routes-v2.derivation-report-v4.json");
+  assert.equal(timetable.transferOutput, "var/derived/germany-2026.5/timetable-routes-v2.transfer-demands-v2.json");
 
   const cachePlan = JSON.parse(await readFile(join(root, result.files[5]), "utf8"));
   assert.deepEqual(cachePlan.files.slice(-2).map(({ sourceFile }) => sourceFile.split("/").at(-1)), [
     "operational-infrastructure-v2.movement-route-templates-v2.json",
-    "timetable-routes-v2.transfer-demands-v1.json",
+    "timetable-routes-v2.transfer-demands-v2.json",
   ]);
 
   const mapPackage = JSON.parse(await readFile(join(root, result.files[6]), "utf8"));
   assert.deepEqual(mapPackage.auxiliaryFiles.map(({ kind }) => kind), [
     "operational-infrastructure-v2",
     "movement-route-templates-v2",
-    "timetable-transfer-demands-v1",
+    "timetable-transfer-demands-v2",
     "style",
   ]);
 
@@ -444,8 +508,8 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
   assert.equal(evidence.outputs.length, 9);
   const gtfsEvidence = evidence.inputs.filter(({ id }) => id === "gtfs-region-snapshot");
   assert.equal(gtfsEvidence.length, 1);
-  assert.equal(gtfsEvidence[0].expectedBytes, 0);
-  assert.equal(gtfsEvidence[0].expectedSha256, PENDING_REAL_BUILD);
+  assert.equal(gtfsEvidence[0].expectedBytes, GTFS_SNAPSHOT_BYTES);
+  assert.equal(gtfsEvidence[0].expectedSha256, GTFS_SNAPSHOT_SHA256);
   assert.deepEqual(evidence.candidatePackage.retainedTrustedKeyIds, [
     "zugfolge-alpha-2026",
     "zugfolge-alpha-2026.3",
@@ -454,7 +518,7 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
   assert.equal(evidence.candidatePackage.retainedTrustedKeyIds.includes("zugfolge-map-deutschland-2026.5"), false);
   assert.deepEqual(evidence.outputs.slice(-2).map(({ kind }) => kind), [
     "movement-route-templates-v2",
-    "timetable-transfer-demands-v1",
+    "timetable-transfer-demands-v2",
   ]);
 
   const alphaAudit = await readFile(join(root, result.files[8]), "utf8");
@@ -463,6 +527,8 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
   assert.match(alphaAudit, /buildAlphaWorld\(builderInputs\.argv\)/u);
   assert.match(alphaAudit, /builderSidecars: builderInputs\.sidecars/u);
   assert.match(alphaAudit, /inputs\.argv\.slice\(9, 11\)/u);
+  assert.match(alphaAudit, /timetable-routes-v2\.transfer-demands-v2\.json/u);
+  assert.match(alphaAudit, /zugfolge-timetable-transfer-demands\/v2/u);
   assert.match(alphaAudit, /const EXPECTED_ALPHA_DEPLOYMENT_HASH = "PENDING_REAL_ANNUAL_RELEASE_BUILD";/u);
   assert.match(alphaAudit, /const EXPECTED_ALPHA_TYPESCRIPT_BUILD_SET_SHA256 = "PENDING_REAL_ANNUAL_RELEASE_BUILD";/u);
   for (const blockName of ["EXPECTED_ALPHA_UNSIGNED_DEPLOYMENT", "EXPECTED_ALPHA_SIGNED_DEPLOYMENT", "EXPECTED_INFRA_BINDING"]) {
@@ -514,9 +580,9 @@ test("verweigert eine bereits target-only umgeschriebene forensische .4-Quelle v
   const operationalPath = join(root, "tools/region-import/germany/operational-infrastructure.annual-2026.4.json");
   const operational = JSON.parse(await readFile(operationalPath, "utf8"));
   operational.layers.transferDemands = {
-    path: "var/derived/germany-2026.4/timetable-routes-v2.transfer-demands-v1.json",
-    expectedBytes: 1,
-    expectedSha256: "a".repeat(64),
+    path: "var/derived/germany-2026.4/timetable-routes-v2.transfer-demands-v2.json",
+    expectedBytes: TRANSFER_DEMANDS_BYTES,
+    expectedSha256: TRANSFER_DEMANDS_SHA256,
   };
   await writeFile(operationalPath, `${JSON.stringify(operational, null, 2)}\n`, "utf8");
 
@@ -528,7 +594,7 @@ test("verweigert eine bereits target-only umgeschriebene forensische .4-Quelle v
       files: CANONICAL_HARDENING_FILES,
       textFiles: CANONICAL_HARDENING_TEXT_FILES,
     }),
-    /transferDemands darf in der unveraenderten Quellversion noch nicht existieren/u,
+    /historischen V1-Transfer-Sidecar/u,
   );
   await assert.rejects(
     readFile(join(root, "tools/region-import/germany/operational-infrastructure.annual-2026.5.json")),
@@ -565,13 +631,13 @@ test("erstellt den vollstaendigen direkten Jahrespatch create-new und laesst Que
       cacheFile: "derived/infra-deutschland-2026.5/operational-infrastructure-v2.movement-route-templates-v2.json",
     },
     {
-      sourceFile: "var/derived/germany-2026.5/timetable-routes-v2.transfer-demands-v1.json",
-      cacheFile: "derived/infra-deutschland-2026.5/timetable-routes-v2.transfer-demands-v1.json",
+      sourceFile: "var/derived/germany-2026.5/timetable-routes-v2.transfer-demands-v2.json",
+      cacheFile: "derived/infra-deutschland-2026.5/timetable-routes-v2.transfer-demands-v2.json",
     },
   ]);
   for (const fileName of [
     "operational-infrastructure-v2.movement-route-templates-v2.json",
-    "timetable-routes-v2.transfer-demands-v1.json",
+    "timetable-routes-v2.transfer-demands-v2.json",
   ]) {
     assert.equal(cachePlan.files.filter(({ sourceFile }) => sourceFile.split("/").at(-1) === fileName).length, 1);
     assert.equal(cachePlan.files.filter(({ cacheFile }) => cacheFile.split("/").at(-1) === fileName).length, 1);
@@ -582,8 +648,8 @@ test("erstellt den vollstaendigen direkten Jahrespatch create-new und laesst Que
     id: "gtfs-region-snapshot",
     kind: "derived-input",
     file: "var/derived/germany-2026.5/gtfs-region.json",
-    expectedBytes: 0,
-    expectedSha256: PENDING_REAL_BUILD,
+    expectedBytes: GTFS_SNAPSHOT_BYTES,
+    expectedSha256: GTFS_SNAPSHOT_SHA256,
   });
   assert.deepEqual(buildEvidence.candidatePackage.retainedTrustedKeyIds, [
     "zugfolge-alpha-2026",
@@ -599,9 +665,9 @@ test("erstellt den vollstaendigen direkten Jahrespatch create-new und laesst Que
     },
     {
       id: "timetable-transfer-demands",
-      kind: "timetable-transfer-demands-v1",
-      file: "var/derived/germany-2026.5/timetable-routes-v2.transfer-demands-v1.json",
-      installFile: "timetable-routes-v2.transfer-demands-v1.json",
+      kind: "timetable-transfer-demands-v2",
+      file: "var/derived/germany-2026.5/timetable-routes-v2.transfer-demands-v2.json",
+      installFile: "timetable-routes-v2.transfer-demands-v2.json",
     },
   ]);
   assert.equal(

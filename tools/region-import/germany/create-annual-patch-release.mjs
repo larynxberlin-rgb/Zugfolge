@@ -61,10 +61,10 @@ const REQUIRED_OPERATIONAL_CACHE_SIDECARS = Object.freeze([
     cacheFile: (patch) => `derived/infra-deutschland-${patch}/operational-infrastructure-v2.movement-route-templates-v2.json`,
   }),
   Object.freeze({
-    fileName: "timetable-routes-v2.transfer-demands-v1.json",
+    fileName: "timetable-routes-v2.transfer-demands-v2.json",
     name: "Timetable-Transfer-Demands",
-    sourceFile: (patch) => `var/derived/germany-${patch}/timetable-routes-v2.transfer-demands-v1.json`,
-    cacheFile: (patch) => `derived/infra-deutschland-${patch}/timetable-routes-v2.transfer-demands-v1.json`,
+    sourceFile: (patch) => `var/derived/germany-${patch}/timetable-routes-v2.transfer-demands-v2.json`,
+    cacheFile: (patch) => `derived/infra-deutschland-${patch}/timetable-routes-v2.transfer-demands-v2.json`,
   }),
 ]);
 const TARGET_ONLY_MIGRATION_TEMPLATES = Object.freeze([
@@ -87,9 +87,49 @@ const TURNAROUND_POLICY_V2 = Object.freeze({
   maximumDirectDwellMs: 1_200_000,
   terminalFormationLengthsMm: Object.freeze([46_560, 69_860]),
 });
+const NEW_STABLING_POLICY_FIELDS = Object.freeze({
+  maximumStablingPathEdges: TURNAROUND_POLICY_V2.maximumStablingPathEdges,
+  maximumStablingPathLengthMm: TURNAROUND_POLICY_V2.maximumStablingPathLengthMm,
+  simulatedOperationalBerthFallback: TURNAROUND_POLICY_V2.simulatedOperationalBerthFallback,
+});
+const TIMETABLE_UPSTREAM_V2_2026_5 = Object.freeze({
+  patch: "2026.5",
+  compilerSchema: "zugfolge-germany-timetable-route-compiler/v5",
+  reportSchema: "zugfolge-germany-timetable-route-report/v4",
+  dailyPlanSchema: "zugfolge-daily-circulation-plan/v2",
+  transferDemandsSchema: "zugfolge-timetable-transfer-demands/v2",
+  snapshot: Object.freeze({
+    bytes: 14_797_184,
+    fileSha256: "cbebbcb73e1807df793c26411873b2df442e6ce38d28fd0593a78e5ae93912c5",
+    snapshotHash: "811fcafe581e73409b373ec5e2568dbb44048d604be834d1aa998abe4a35a8a7",
+    segmentCount: 2_481,
+    eligibleSegmentCount: 1_679,
+  }),
+  dailyCirculation: Object.freeze({
+    expectedLotCount: 52,
+    expectedJourneyChainCount: 1_677,
+    expectedCirculationCount: 197,
+    expectedPlannedTransitionCount: 1_677,
+    expectedTurnaroundDemandCount: 1_595,
+    expectedTransferDemandCount: 82,
+    expectedTransferLotCount: 39,
+  }),
+  transferDemands: Object.freeze({
+    bytes: 6_697_294,
+    sha256: "2c8c688a9ce963afbdca75fee526b581bc21be402aabcbaf1abd09ea65418cdf",
+  }),
+});
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+function timetableUpstreamTarget(targetPatch) {
+  invariant(
+    targetPatch === TIMETABLE_UPSTREAM_V2_2026_5.patch,
+    `Fuer ${targetPatch} fehlt ein real gemessener Timetable-Upstream-v2-Zielvertrag.`,
+  );
+  return TIMETABLE_UPSTREAM_V2_2026_5;
 }
 
 function parsedPatch(value, label) {
@@ -236,6 +276,7 @@ function insertObjectFieldsBefore(value, beforeProperty, inserted, label) {
 }
 
 function migrateOperationalInfrastructure(content, targetPatch) {
+  const target = timetableUpstreamTarget(targetPatch);
   const value = JSON.parse(content);
   invariant(value.schema === "zugfolge-germany-operational-infrastructure-derivation/v2", "Operational-v2-Zielvertrag besitzt nicht das erwartete Schema.");
   invariant(value.infraReleaseId === `infra-deutschland-${targetPatch}`, "Operational-v2-Zielvertrag besitzt nicht die erwartete Release-ID.");
@@ -244,160 +285,180 @@ function migrateOperationalInfrastructure(content, targetPatch) {
     layers.timetableRoutes === `var/derived/germany-${targetPatch}/timetable-routes-v2.jsonseq`,
     "Operational-v2-Zielvertrag bindet nicht die erwarteten Timetable-Routes.",
   );
-  requireAbsentProperties(layers, ["transferDemands"], "Operational-v2-Layers");
+  const sourceTransferDemands = jsonObject(layers.transferDemands, "Operational-v2-Layers.transferDemands");
+  invariant(
+    sourceTransferDemands.path === `var/derived/germany-${targetPatch}/timetable-routes-v2.transfer-demands-v1.json`,
+    "Operational-v2-Quellvertrag bindet nicht den historischen V1-Transfer-Sidecar.",
+  );
+  positiveInteger(sourceTransferDemands.expectedBytes, "Historischer Transfer-Sidecar expectedBytes");
+  sha256Pin(sourceTransferDemands.expectedSha256, "Historischer Transfer-Sidecar expectedSha256");
   layers.transferDemands = {
-    path: `var/derived/germany-${targetPatch}/timetable-routes-v2.transfer-demands-v1.json`,
-    expectedBytes: 0,
-    expectedSha256: PENDING_REAL_BUILD,
+    path: `var/derived/germany-${targetPatch}/timetable-routes-v2.transfer-demands-v2.json`,
+    expectedBytes: target.transferDemands.bytes,
+    expectedSha256: target.transferDemands.sha256,
   };
 
   const policy = jsonObject(value.policy, "Operational-v2-Policy");
-  requireAbsentProperties(policy, Object.keys(TURNAROUND_POLICY_V2), "Operational-v2-Policy");
+  invariant(
+    policy.minimumBerthEndClearanceMm === TURNAROUND_POLICY_V2.minimumBerthEndClearanceMm
+      && policy.maximumDirectDwellMs === TURNAROUND_POLICY_V2.maximumDirectDwellMs
+      && JSON.stringify(policy.terminalFormationLengthsMm) === JSON.stringify(TURNAROUND_POLICY_V2.terminalFormationLengthsMm),
+    "Operational-v2-Quellpolicy verletzt die historischen Turnaround-Grundwerte.",
+  );
+  requireAbsentProperties(policy, Object.keys(NEW_STABLING_POLICY_FIELDS), "Operational-v2-Policy");
   value.policy = insertObjectFieldsBefore(
     policy,
-    "defaultProtectionSystem",
-    TURNAROUND_POLICY_V2,
+    "maximumDirectDwellMs",
+    NEW_STABLING_POLICY_FIELDS,
     "Operational-v2-Policy",
   );
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
 function migrateTimetableRouteCompiler(content, targetPatch) {
+  const target = timetableUpstreamTarget(targetPatch);
   const value = JSON.parse(content);
-  invariant(value.schema === "zugfolge-germany-timetable-route-compiler/v3", "Timetable-Quellvertrag besitzt nicht das erwartete unveraenderte v3-Schema.");
+  invariant(value.schema === "zugfolge-germany-timetable-route-compiler/v4", "Timetable-Quellvertrag besitzt nicht das historische v4-Schema.");
   invariant(value.infraReleaseId === `infra-deutschland-${targetPatch}`, "Timetable-Zielvertrag besitzt nicht die erwartete Release-ID.");
-  requireAbsentProperties(value, ["dailyCirculation", "transferOutput"], "Timetable-Quellvertrag");
   const snapshot = jsonObject(value.gtfsSnapshot, "Timetable-GTFS-Snapshot");
   positiveInteger(snapshot.expectedBytes, "Timetable-GTFS-Snapshot expectedBytes");
   sha256Pin(snapshot.expectedFileSha256, "Timetable-GTFS-Snapshot expectedFileSha256");
   sha256Pin(snapshot.expectedSnapshotHash, "Timetable-GTFS-Snapshot expectedSnapshotHash");
-  snapshot.expectedBytes = 0;
-  snapshot.expectedFileSha256 = PENDING_REAL_BUILD;
-  snapshot.expectedSnapshotHash = PENDING_REAL_BUILD;
+  snapshot.expectedBytes = target.snapshot.bytes;
+  snapshot.expectedFileSha256 = target.snapshot.fileSha256;
+  snapshot.expectedSnapshotHash = target.snapshot.snapshotHash;
 
   const selection = jsonObject(value.selection, "Timetable-Auswahl");
-  const resultCountPins = [
-    [selection, "expectedSnapshotSegmentCount"],
-    [selection, "expectedEligibleSegmentCount"],
-  ];
-  for (const [container, field] of resultCountPins) {
-    positiveInteger(container[field], `Timetable-Ergebnis ${field}`);
-    container[field] = 0;
-  }
+  positiveInteger(selection.expectedSnapshotSegmentCount, "Timetable-Ergebnis expectedSnapshotSegmentCount");
+  positiveInteger(selection.expectedEligibleSegmentCount, "Timetable-Ergebnis expectedEligibleSegmentCount");
+  selection.expectedSnapshotSegmentCount = target.snapshot.segmentCount;
+  selection.expectedEligibleSegmentCount = target.snapshot.eligibleSegmentCount;
 
-  const { output, report, ...prefix } = value;
+  const sourceDaily = jsonObject(value.dailyCirculation, "Historische Timetable-Daily-Circulation");
+  invariant(
+    sourceDaily.rule === "lot-local-playable-path-cover-with-minimum-cross-location-rollover/v1"
+      && sourceDaily.repeatEveryS === 86_400
+      && sourceDaily.minimumTurnaroundS === 300,
+    "Historische Timetable-Daily-Circulation verletzt den erwarteten V1-Ausgangsvertrag.",
+  );
+  for (const field of ["expectedLotCount", "expectedJourneyChainCount", "expectedCirculationCount", "expectedTransferDemandCount", "expectedTransferLotCount"]) {
+    positiveInteger(sourceDaily[field], `Historische Timetable-Daily-Circulation ${field}`);
+  }
+  invariant(
+    JSON.stringify(sourceDaily.formationLengthsMm) === JSON.stringify(TURNAROUND_POLICY_V2.terminalFormationLengthsMm),
+    "Historische Timetable-Daily-Circulation besitzt abweichende Formationslaengen.",
+  );
+
+  const { output, transferOutput, report, ...prefix } = value;
   invariant(output === `var/derived/germany-${targetPatch}/timetable-routes-v2.jsonseq`, "Timetable-Ausgabepfad ist nicht kanonisch.");
+  invariant(transferOutput === `var/derived/germany-${targetPatch}/timetable-routes-v2.transfer-demands-v1.json`, "Timetable-Quellvertrag bindet nicht den historischen V1-Transferpfad.");
   invariant(report === `var/derived/germany-${targetPatch}/timetable-routes-v2.derivation-report.json`, "Timetable-Reportpfad ist nicht kanonisch.");
   const migrated = {
     ...prefix,
-    schema: "zugfolge-germany-timetable-route-compiler/v4",
+    schema: target.compilerSchema,
     dailyCirculation: {
-      rule: "lot-local-playable-path-cover-with-minimum-cross-location-rollover/v1",
+      rule: "lot-local-playable-path-cover-with-explicit-physical-transition-partition/v2",
       repeatEveryS: 86_400,
       minimumTurnaroundS: 300,
-      expectedLotCount: 0,
-      expectedJourneyChainCount: 0,
-      expectedCirculationCount: 0,
-      expectedTransferDemandCount: 0,
-      expectedTransferLotCount: 0,
+      ...target.dailyCirculation,
       formationLengthsMm: [...TURNAROUND_POLICY_V2.terminalFormationLengthsMm],
       unknownMainlineSpeedKmh: 20,
       unknownServiceSpeedKmh: 10,
     },
     output,
-    transferOutput: `var/derived/germany-${targetPatch}/timetable-routes-v2.transfer-demands-v1.json`,
-    report,
+    transferOutput: `var/derived/germany-${targetPatch}/timetable-routes-v2.transfer-demands-v2.json`,
+    report: `var/derived/germany-${targetPatch}/timetable-routes-v2.derivation-report-v4.json`,
   };
   return `${JSON.stringify(migrated, null, 2)}\n`;
 }
 
 function migrateReleaseArtifacts(content, targetPatch) {
+  timetableUpstreamTarget(targetPatch);
   const value = JSON.parse(content);
   invariant(value.schema === "zugfolge-infra-release-artifact-spec/v2", "InfraRelease-Artefaktvertrag besitzt nicht das erwartete v2-Schema.");
   invariant(Array.isArray(value.artifacts), "InfraRelease-Artefaktvertrag besitzt kein Artefaktinventar.");
   const operationalIndex = value.artifacts.findIndex(({ id, kind }) => (
     id === `operational-infrastructure-${targetPatch}` && kind === "operational-infrastructure-v2"
   ));
+  const movementIndex = value.artifacts.findIndex(({ id, kind }) => (
+    id === `operational-movement-routes-${targetPatch}` && kind === "movement-route-templates-v2"
+  ));
+  const transferIndex = value.artifacts.findIndex(({ id, kind }) => (
+    id === `timetable-transfer-demands-${targetPatch}` && kind === "timetable-transfer-demands-v1"
+  ));
   const qualityIndex = value.artifacts.findIndex(({ id, kind }) => (
     id === `quality-report-${targetPatch}` && kind === "quality-report"
   ));
-  invariant(operationalIndex >= 0 && qualityIndex === operationalIndex + 1, "InfraRelease-Artefaktvertrag besitzt nicht die unveraenderte Operational-/Quality-Reihenfolge.");
   invariant(
-    value.artifacts.every(({ kind }) => !["movement-route-templates-v2", "timetable-transfer-demands-v1"].includes(kind)),
-    "InfraRelease-Artefaktquelle enthaelt bereits target-only Sidecars.",
+    operationalIndex >= 0
+      && movementIndex === operationalIndex + 1
+      && transferIndex === movementIndex + 1
+      && qualityIndex === transferIndex + 1,
+    "InfraRelease-Artefaktvertrag besitzt nicht die historische Operational-/Movement-/Transfer-v1-/Quality-Reihenfolge.",
   );
-  value.artifacts.splice(qualityIndex, 0,
-    {
-      id: `operational-movement-routes-${targetPatch}`,
-      kind: "movement-route-templates-v2",
-      sourceFile: `var/derived/germany-${targetPatch}/operational-infrastructure-v2.movement-route-templates-v2.json`,
-      file: "operational-infrastructure-v2.movement-route-templates-v2.json",
-    },
-    {
-      id: `timetable-transfer-demands-${targetPatch}`,
-      kind: "timetable-transfer-demands-v1",
-      sourceFile: `var/derived/germany-${targetPatch}/timetable-routes-v2.transfer-demands-v1.json`,
-      file: "timetable-routes-v2.transfer-demands-v1.json",
-    },
+  const transfer = value.artifacts[transferIndex];
+  invariant(
+    transfer.sourceFile === `var/derived/germany-${targetPatch}/timetable-routes-v2.transfer-demands-v1.json`
+      && transfer.file === "timetable-routes-v2.transfer-demands-v1.json",
+    "InfraRelease-Artefaktvertrag bindet nicht die historische V1-Transferdatei.",
   );
+  transfer.kind = "timetable-transfer-demands-v2";
+  transfer.sourceFile = `var/derived/germany-${targetPatch}/timetable-routes-v2.transfer-demands-v2.json`;
+  transfer.file = "timetable-routes-v2.transfer-demands-v2.json";
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
 function migrateSyntheticOperationalPolicy(content, targetPatch) {
+  timetableUpstreamTarget(targetPatch);
   const value = JSON.parse(content);
   invariant(value.schema === "zugfolge-synthetic-operational-policy/v2", "Synthetic-Operational-Policy besitzt nicht das erwartete v2-Schema.");
   invariant(value.id === "synthetic-operational-b/v2", "Synthetic-Operational-Policy besitzt nicht die erwartete ID.");
   invariant(Array.isArray(value.requiredInputRoles), "Synthetic-Operational-Policy besitzt keine Eingaberollen.");
-  invariant(!value.requiredInputRoles.includes("timetable-transfer-demands"), "Synthetic-Operational-Policy-Quelle enthaelt bereits Transfer-Demands.");
-  const timetableRoutesIndex = value.requiredInputRoles.indexOf("timetable-routes");
-  invariant(timetableRoutesIndex >= 0, "Synthetic-Operational-Policy besitzt keinen Timetable-Routes-Einfuegeanker.");
-  value.requiredInputRoles.splice(timetableRoutesIndex + 1, 0, "timetable-transfer-demands");
+  invariant(
+    value.requiredInputRoles.filter((role) => role === "timetable-transfer-demands").length === 1,
+    "Historische Synthetic-Operational-Policy bindet Transfer-Demands nicht exakt einmal.",
+  );
 
   invariant(Array.isArray(value.requiredDimensions), "Synthetic-Operational-Policy besitzt keine Pflichtdimensionen.");
   invariant(
-    !value.requiredDimensions.includes("daily-physical-circulations")
-      && !value.requiredDimensions.includes("real-transfer-route-coverage"),
-    "Synthetic-Operational-Policy-Quelle enthaelt bereits target-only Transferdimensionen.",
-  );
-  const routeCoverageIndex = value.requiredDimensions.indexOf("complete-pinned-timetable-routes");
-  invariant(routeCoverageIndex >= 0, "Synthetic-Operational-Policy besitzt keinen Routendeckungs-Einfuegeanker.");
-  value.requiredDimensions.splice(
-    routeCoverageIndex + 1,
-    0,
-    "daily-physical-circulations",
-    "real-transfer-route-coverage",
+    value.requiredDimensions.filter((dimension) => dimension === "daily-physical-circulations").length === 1
+      && value.requiredDimensions.filter((dimension) => dimension === "real-transfer-route-coverage").length === 1,
+    "Historische Synthetic-Operational-Policy bindet die Transferdimensionen nicht exakt einmal.",
   );
 
   invariant(Array.isArray(value.rules), "Synthetic-Operational-Policy besitzt keine Regeln.");
-  invariant(
-    value.rules.every(({ id }) => id !== "daily-physical-circulation-and-transfer-coverage/v1"),
-    "Synthetic-Operational-Policy-Quelle enthaelt bereits die target-only Umlaufregel.",
-  );
-  const pinnedRouteRuleIndex = value.rules.findIndex(({ id }) => id === "pinned-timetable-route-coverage/v1");
+  const dailyRuleIndex = value.rules.findIndex(({ id }) => id === "daily-physical-circulation-and-transfer-coverage/v1");
   const provenanceRuleIndex = value.rules.findIndex(({ id }) => id === "free-gtfs-route-provenance/v2");
   invariant(
-    pinnedRouteRuleIndex >= 0 && provenanceRuleIndex === pinnedRouteRuleIndex + 1,
-    "Synthetic-Operational-Policy besitzt nicht die unveraenderte Routen-/Provenienz-Regelreihenfolge.",
+    dailyRuleIndex >= 0 && provenanceRuleIndex === dailyRuleIndex + 1,
+    "Synthetic-Operational-Policy besitzt nicht die historische Umlauf-v1-/Provenienz-Regelreihenfolge.",
   );
   invariant(
-    value.rules[provenanceRuleIndex].effect.includes("v2 derivation report"),
-    "Synthetic-Operational-Policy besitzt nicht den erwarteten unveraenderten v2-Reportbezug.",
+    value.rules[dailyRuleIndex].effect.includes("v1 transfer-demand sidecar")
+      && value.rules[provenanceRuleIndex].effect.includes("v3 derivation report"),
+    "Synthetic-Operational-Policy besitzt nicht die historischen V1-Sidecar-/V3-Reportbezuege.",
   );
+  value.rules[dailyRuleIndex] = {
+    id: "daily-physical-circulation-and-transfer-coverage/v2",
+    effect: "Bind every planned passenger continuation to the explicit daily-plan-v2 partition exactly once: identical locationId and physicalStopId are turnarounds, every other transition is a transfer with a real directed OSM route and reproducible plan and transfer-set hashes.",
+  };
   value.rules[provenanceRuleIndex].effect = value.rules[provenanceRuleIndex].effect.replace(
-    "v2 derivation report",
     "v3 derivation report",
+    "v4 derivation report",
   );
-  value.rules.splice(provenanceRuleIndex, 0, {
-    id: "daily-physical-circulation-and-transfer-coverage/v1",
-    effect: "Bind every daily physical circulation, rollover permutation and unavoidable cross-location transfer to the v1 transfer-demand sidecar; every transfer must have a real directed OSM route and reproducible plan and transfer-set hashes.",
-  });
 
   const compilerPolicy = jsonObject(value.compilerPolicy, "Synthetic-Operational-Compiler-Policy");
-  requireAbsentProperties(compilerPolicy, Object.keys(TURNAROUND_POLICY_V2), "Synthetic-Operational-Compiler-Policy");
+  invariant(
+    compilerPolicy.minimumBerthEndClearanceMm === TURNAROUND_POLICY_V2.minimumBerthEndClearanceMm
+      && compilerPolicy.maximumDirectDwellMs === TURNAROUND_POLICY_V2.maximumDirectDwellMs
+      && JSON.stringify(compilerPolicy.terminalFormationLengthsMm) === JSON.stringify(TURNAROUND_POLICY_V2.terminalFormationLengthsMm),
+    "Synthetic-Operational-Quellpolicy verletzt die historischen Turnaround-Grundwerte.",
+  );
+  requireAbsentProperties(compilerPolicy, Object.keys(NEW_STABLING_POLICY_FIELDS), "Synthetic-Operational-Compiler-Policy");
   value.compilerPolicy = insertObjectFieldsBefore(
     compilerPolicy,
-    "defaultProtectionSystem",
-    TURNAROUND_POLICY_V2,
+    "maximumDirectDwellMs",
+    NEW_STABLING_POLICY_FIELDS,
     "Synthetic-Operational-Compiler-Policy",
   );
   invariant(
@@ -408,56 +469,57 @@ function migrateSyntheticOperationalPolicy(content, targetPatch) {
 }
 
 function migrateSyntheticOperationalClosure(content, targetPatch) {
+  timetableUpstreamTarget(targetPatch);
   const value = JSON.parse(content);
   invariant(value.schema === "zugfolge-synthetic-operational-closure-inputs/v2", "Synthetic-Operational-Closure besitzt nicht das erwartete v2-Schema.");
   invariant(value.releaseId === `infra-deutschland-${targetPatch}`, "Synthetic-Operational-Closure besitzt nicht die erwartete Release-ID.");
-  requireAbsentProperties(value, ["timetableTransferDemandsFile"], "Synthetic-Operational-Closure");
-  const migrated = insertObjectFieldsBefore(
-    value,
-    "gtfsSnapshotFile",
-    { timetableTransferDemandsFile: "timetable-routes-v2.transfer-demands-v1.json" },
-    "Synthetic-Operational-Closure",
+  invariant(
+    value.timetableRouteReportFile === "timetable-routes-v2.derivation-report.json"
+      && value.timetableTransferDemandsFile === "timetable-routes-v2.transfer-demands-v1.json",
+    "Synthetic-Operational-Closure besitzt nicht die historischen V3-Report-/V1-Transferdateien.",
   );
-  return `${JSON.stringify(migrated, null, 2)}\n`;
+  value.timetableRouteReportFile = "timetable-routes-v2.derivation-report-v4.json";
+  value.timetableTransferDemandsFile = "timetable-routes-v2.transfer-demands-v2.json";
+  return `${JSON.stringify(value, null, 2)}\n`;
 }
 
 function migrateMapPackage(content, targetPatch) {
+  timetableUpstreamTarget(targetPatch);
   const value = JSON.parse(content);
   invariant(value.schema === "zugfolge-map-package-plan/v2", "Map-Package-Plan besitzt nicht das erwartete v2-Schema.");
   invariant(value.version === targetPatch, "Map-Package-Plan besitzt nicht die erwartete Zielversion.");
   invariant(Array.isArray(value.auxiliaryFiles), "Map-Package-Plan besitzt keine Zusatzdateien.");
-  invariant(
-    value.auxiliaryFiles.every(({ kind }) => !["movement-route-templates-v2", "timetable-transfer-demands-v1"].includes(kind)),
-    "Map-Package-Quelle enthaelt bereits target-only Sidecars.",
-  );
   const operationalIndex = value.auxiliaryFiles.findIndex(({ id, kind }) => (
     id === `operational-infrastructure-${targetPatch}` && kind === "operational-infrastructure-v2"
   ));
+  const movementIndex = value.auxiliaryFiles.findIndex(({ id, kind }) => (
+    id === `operational-movement-routes-${targetPatch}` && kind === "movement-route-templates-v2"
+  ));
+  const transferIndex = value.auxiliaryFiles.findIndex(({ id, kind }) => (
+    id === `timetable-transfer-demands-${targetPatch}` && kind === "timetable-transfer-demands-v1"
+  ));
   const styleIndex = value.auxiliaryFiles.findIndex(({ id, kind }) => id === "style-dark" && kind === "style");
-  invariant(operationalIndex >= 0 && styleIndex === operationalIndex + 1, "Map-Package-Plan besitzt nicht die unveraenderte Operational-/Style-Reihenfolge.");
-  const artifactInventory = `var/derived/germany-${targetPatch}/release-artifacts.v2.json`;
-  value.auxiliaryFiles.splice(styleIndex, 0,
-    {
-      id: `operational-movement-routes-${targetPatch}`,
-      kind: "movement-route-templates-v2",
-      visibility: "public",
-      sourceFile: `var/derived/germany-${targetPatch}/operational-infrastructure-v2.movement-route-templates-v2.json`,
-      installPath: "operational-infrastructure-v2.movement-route-templates-v2.json",
-      artifactInventory,
-    },
-    {
-      id: `timetable-transfer-demands-${targetPatch}`,
-      kind: "timetable-transfer-demands-v1",
-      visibility: "public",
-      sourceFile: `var/derived/germany-${targetPatch}/timetable-routes-v2.transfer-demands-v1.json`,
-      installPath: "timetable-routes-v2.transfer-demands-v1.json",
-      artifactInventory,
-    },
+  invariant(
+    operationalIndex >= 0
+      && movementIndex === operationalIndex + 1
+      && transferIndex === movementIndex + 1
+      && styleIndex === transferIndex + 1,
+    "Map-Package-Plan besitzt nicht die historische Operational-/Movement-/Transfer-v1-/Style-Reihenfolge.",
   );
+  const transfer = value.auxiliaryFiles[transferIndex];
+  invariant(
+    transfer.sourceFile === `var/derived/germany-${targetPatch}/timetable-routes-v2.transfer-demands-v1.json`
+      && transfer.installPath === "timetable-routes-v2.transfer-demands-v1.json",
+    "Map-Package-Plan bindet nicht die historische V1-Transferdatei.",
+  );
+  transfer.kind = "timetable-transfer-demands-v2";
+  transfer.sourceFile = `var/derived/germany-${targetPatch}/timetable-routes-v2.transfer-demands-v2.json`;
+  transfer.installPath = "timetable-routes-v2.transfer-demands-v2.json";
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
 function migrateBuildEvidence(content, sourcePatch, targetPatch) {
+  const target = timetableUpstreamTarget(targetPatch);
   const value = JSON.parse(content);
   invariant(
     value.schema === "zugfolge-map-release-build-evidence-spec/v2",
@@ -474,8 +536,8 @@ function migrateBuildEvidence(content, sourcePatch, targetPatch) {
   invariant(gtfsInput.kind === "derived-input", "Build-Evidence-GTFS-Region-Snapshot ist keine abgeleitete Eingabe.");
   positiveInteger(gtfsInput.expectedBytes, "Build-Evidence-GTFS-Region-Snapshot expectedBytes");
   sha256Pin(gtfsInput.expectedSha256, "Build-Evidence-GTFS-Region-Snapshot expectedSha256");
-  gtfsInput.expectedBytes = 0;
-  gtfsInput.expectedSha256 = PENDING_REAL_BUILD;
+  gtfsInput.expectedBytes = target.snapshot.bytes;
+  gtfsInput.expectedSha256 = target.snapshot.fileSha256;
 
   const candidatePackage = jsonObject(value.candidatePackage, "Build-Evidence-Kandidatenpaket");
   const retainedKeyIds = candidatePackage.retainedTrustedKeyIds;
@@ -502,9 +564,9 @@ function migrateBuildEvidence(content, sourcePatch, targetPatch) {
     },
     {
       id: "timetable-transfer-demands",
-      kind: "timetable-transfer-demands-v1",
-      file: `var/derived/germany-${targetPatch}/timetable-routes-v2.transfer-demands-v1.json`,
-      installFile: "timetable-routes-v2.transfer-demands-v1.json",
+      kind: "timetable-transfer-demands-v2",
+      file: `var/derived/germany-${targetPatch}/timetable-routes-v2.transfer-demands-v2.json`,
+      installFile: "timetable-routes-v2.transfer-demands-v2.json",
     },
   );
   return `${JSON.stringify(value, null, 2)}\n`;
@@ -521,7 +583,7 @@ function migrateAlphaWorldRuntimeStructure(content, targetPatch) {
   migrated = replaceTextExactlyOnce(
     migrated,
     'const POSTGRES_DATABASE_NAME = /^zugfolge_germany_e2e_[a-z0-9_]+$/u;',
-    `const POSTGRES_DATABASE_NAME = /^zugfolge_germany_e2e_[a-z0-9_]+$/u;\nconst TIMETABLE_TRANSFER_DEMANDS_FILE = "timetable-routes-v2.transfer-demands-v1.json";\nconst MOVEMENT_ROUTE_TEMPLATES_FILE = "operational-infrastructure-v2.movement-route-templates-v2.json";`,
+    `const POSTGRES_DATABASE_NAME = /^zugfolge_germany_e2e_[a-z0-9_]+$/u;\nconst TIMETABLE_TRANSFER_DEMANDS_FILE = "timetable-routes-v2.transfer-demands-v2.json";\nconst MOVEMENT_ROUTE_TEMPLATES_FILE = "operational-infrastructure-v2.movement-route-templates-v2.json";`,
     "Alpha-Sidecar-Dateikonstanten",
   );
 
@@ -550,7 +612,7 @@ function migrateAlphaWorldRuntimeStructure(content, targetPatch) {
       bytes: configuration.timetableTransferDemands.bytes,
       sha256: configuration.timetableTransferDemands.sha256,
     },
-    "Realer Timetable-Transfer-Demands-v1-Sidecar verletzt seine releasegebundene Byte-/SHA-256-Bindung.",
+    "Realer Timetable-Transfer-Demands-v2-Sidecar verletzt seine releasegebundene Byte-/SHA-256-Bindung.",
   );
   assert.deepEqual(
     movementRouteTemplates,
@@ -608,7 +670,7 @@ function migrateAlphaWorldRuntimeStructure(content, targetPatch) {
     const transferPath = join(artifactRoot, TIMETABLE_TRANSFER_DEMANDS_FILE);
     const movementPath = join(artifactRoot, MOVEMENT_ROUTE_TEMPLATES_FILE);
     await Promise.all([
-      writeFile(transferPath, '{"schema":"zugfolge-timetable-transfer-demands/v1"}\\n', { flag: "wx" }),
+      writeFile(transferPath, '{"schema":"zugfolge-timetable-transfer-demands/v2"}\\n', { flag: "wx" }),
       writeFile(movementPath, '{"schema":"movement-route-templates-v2"}\\n', { flag: "wx" }),
     ]);
     const [transferProof, movementProof] = await Promise.all([

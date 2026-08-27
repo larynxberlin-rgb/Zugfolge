@@ -34,7 +34,7 @@ Validiere vor dem ersten Build alle aktiven Jahresbindungen gemeinsam und
 brich bei jeder Abweichung ab:
 
 - `<TIMETABLE_ROUTE_SPEC>` hat das Schema
-  `zugfolge-germany-timetable-route-compiler/v4`, bindet
+  `zugfolge-germany-timetable-route-compiler/v5`, bindet
   `infraReleaseId=<INFRARELEASE_ID>` und nennt mit `output`, `transferOutput`
   und `report` drei verschiedene create-new-Ziele unter
   `<ARTEFAKTWURZEL>`. Binde diese Werte unverändert an
@@ -60,11 +60,11 @@ brich bei jeder Abweichung ab:
   historische Verifikationsverträge. Der v3-Vertrag muss genau neun
   aktivierungsrelevante Ausgaben führen: Basemap-PMTiles, Semantik-PMTiles,
   ReadModel, `operational-infrastructure-v2`,
-  `movement-route-templates-v2`, `timetable-transfer-demands-v1`, Style,
+  `movement-route-templates-v2`, `timetable-transfer-demands-v2`, Style,
   signiertes Deliverymanifest und Operational-Qualitätsbericht. Die beiden
   Sidecars besitzen die kanonischen Installationspfade
   `operational-infrastructure-v2.movement-route-templates-v2.json` und
-  `timetable-routes-v2.transfer-demands-v1.json`. Binde das neue, vor dem Lauf
+  `timetable-routes-v2.transfer-demands-v2.json`. Binde das neue, vor dem Lauf
   nicht vorhandene Evidence-Ziel
   `<ARTEFAKTWURZEL>/map-release-build-evidence.json` an
   `$BUILD_EVIDENCE_OUTPUT`.
@@ -258,7 +258,31 @@ Deterministischer Build und Prüfung:
    explizite Nullbewegung zulässig; sie dürfen weder eine erfundene Geometrie
    noch einen unvollständigen Fahrweg erzeugen. Der Transferbeleg muss den
    reproduzierbaren DailyPlan, seine vollständige Rollover-Permutation, alle
-   erforderlichen Überführungswege und deren `transferSetSha256` binden.
+   erforderlichen Überführungswege und deren `transferSetSha256` binden. Der
+   aktuelle Vertrag ist ohne Fallback
+   `zugfolge-germany-timetable-route-report/v4` mit
+   `zugfolge-daily-circulation-plan/v2` und
+   `zugfolge-timetable-transfer-demands/v2`. Jede geplante Fortsetzung muss
+   genau einmal partitioniert sein: nur identische `locationId` **und**
+   `physicalStopId` sind Turnaround; jede andere interne Verkettung und jeder
+   entsprechende Rollover ist ein real gerouteter Zugtransfer. Unbekannte
+   Felder, fehlende Routenbindungen oder ein unvollständiges Cover blockieren
+   den Kandidaten.
+
+   Für den gemessenen `.5`-Zielkorpus gelten als Ergebnis-Pins: 52 Lose, 1.677
+   JourneyChains und geplante Übergänge, 197 Umläufe, 1.595 Turnarounds, 82
+   Transfers in 39 Losen. Der GTFS-Snapshot hat 14.797.184 Byte, Datei-SHA-256
+   `cbebbcb73e1807df793c26411873b2df442e6ce38d28fd0593a78e5ae93912c5`
+   und Snapshot-Hash
+   `811fcafe581e73409b373ec5e2568dbb44048d604be834d1aa998abe4a35a8a7`.
+   Der V2-Transfer-Sidecar hat 6.697.294 Byte und SHA-256
+   `2c8c688a9ce963afbdca75fee526b581bc21be402aabcbaf1abd09ea65418cdf`;
+   sein DailyPlan-Hash ist
+   `b00e03a0af2542ac7f986cc5394b0564893a65ddee24e6ba9abee9f687fb1c7e`
+   und sein `transferSetSha256`
+   `67b2e459fb4a02a91b981a85c18780bc4f16613bbfb89ed393ef54ca935dabfe`.
+   Diese Werte sind reale `.5`-Zielmessungen, keine aus `.4` kopierten oder
+   ausstehend markierten Platzhalter.
 
    Lies anschließend den strikt validierten Subvertrag
    `pipeline.operationalDeriver` aus `<ANNUAL_RELEASE_CONFIG>`. Sein
@@ -413,7 +437,7 @@ Deterministischer Build und Prüfung:
 7. Aktualisiere und prüfe `<ANNUAL_ARTIFACT_SPEC>` als bindenden Jahresvertrag
    mit `schema=zugfolge-infra-release-artifact-spec/v2`. Er muss genau je einen
    Descriptor für `operational-infrastructure-v2`,
-   `movement-route-templates-v2` und `timetable-transfer-demands-v1`
+   `movement-route-templates-v2` und `timetable-transfer-demands-v2`
    enthalten. Für diese drei erstklassigen Operational-v2-Artefakte gelten
    exakt:
 
@@ -429,9 +453,9 @@ Deterministischer Build und Prüfung:
      `file=operational-infrastructure-v2.movement-route-templates-v2.json`;
      der Descriptor enthält ausschließlich `id`, `kind`, `sourceFile` und
      `file`.
-   - Transfers: `kind=timetable-transfer-demands-v1`,
-     `sourceFile=<ARTEFAKTWURZEL>/timetable-routes-v2.transfer-demands-v1.json`
-     und `file=timetable-routes-v2.transfer-demands-v1.json`; der Descriptor
+   - Transfers: `kind=timetable-transfer-demands-v2`,
+     `sourceFile=<ARTEFAKTWURZEL>/timetable-routes-v2.transfer-demands-v2.json`
+     und `file=timetable-routes-v2.transfer-demands-v2.json`; der Descriptor
      enthält ausschließlich `id`, `kind`, `sourceFile` und `file`.
 
    Jeder `sourceFile`-Pfad muss relativ zur Repository-Wurzel sein, darunter
@@ -482,7 +506,7 @@ Deterministischer Build und Prüfung:
    rekursiv nach verbotenen internen
    Evidenzkennungen. Jeder Treffer, ein fehlendes oder mehrfaches
    `operational-infrastructure-v2`-, `movement-route-templates-v2`- oder
-   `timetable-transfer-demands-v1`-Artefakt und jede Abweichung von deren
+   `timetable-transfer-demands-v2`-Artefakt und jede Abweichung von deren
    erwarteter Byte-, Release-, Transfer- oder kanonischer Zustandsbindung
    blockieren den Release.
 
@@ -522,7 +546,7 @@ Deterministischer Build und Prüfung:
    `<ARTEFAKTWURZEL>/map-release-free-v2/delivery-unsigned/`. Damit sind dessen
    Paketquellen exakt `delivery-unsigned/release.json` und
    `delivery-unsigned/sources.json`. Sein Inventar muss Operational-v2,
-   Movement-Route-Templates-v2 und Timetable-Transfer-Demands-v1 jeweils genau
+   Movement-Route-Templates-v2 und Timetable-Transfer-Demands-v2 jeweils genau
    einmal mit den kanonischen Installationspfaden und den Bindungen aus
    Qualitätsbericht und InfraRelease-Inventar enthalten. Die Datei
    `<ARTEFAKTWURZEL>/map-release-free-v2/public/release.json` ist ausschließlich
@@ -772,7 +796,7 @@ offenen Ursachen, Teststatus, Artefaktgrößen, Änderungen zum Vorjahr und
 Signaturstatus. Weise `operational-infrastructure-v2.json` mit
 `infraReleaseId`, Byte-SHA-256 und kanonischem `stateHash` gesondert aus.
 Weise daneben `movement-route-templates-v2` mit Byte-SHA-256, `stateHash` und
-`operationalStateHash` sowie `timetable-transfer-demands-v1` mit Byte-SHA-256,
+`operationalStateHash` sowie `timetable-transfer-demands-v2` mit Byte-SHA-256,
 DailyPlan-Hash und `transferSetSha256` aus und bestätige die gekreuzte
 Hashbindung. Nenne Cross-Release-Reuse-Receipt und Zahl der ausschließlich
 create-new übernommenen Dateien oder ausdrücklich „keine Wiederverwendung“.

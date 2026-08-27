@@ -136,15 +136,22 @@ versionierten `EconomyRelease`.
   vollständig geschlossen. Für `synthetic-operational-b/v2` bindet ein
   Closure-Receipt Policy, zehn Eingabedateien, Candidate, natives Operational-v2-
   Artefakt und Zustand per SHA-256. Zu den zehn Eingaben gehören der freie
-  GTFS-Snapshot, sein qualifizierter v3-Routenbericht, die kanonische
+  GTFS-Snapshot, sein qualifizierter v4-Routenbericht, die kanonische
   `timetableRoutes`-JSONSeq und der bytegebundene
-  `timetable-transfer-demands-v1`-Beleg. Der Bericht muss Snapshot- und Archiv-SHA,
+  `timetable-transfer-demands-v2`-Beleg. Der Bericht muss Snapshot- und Archiv-SHA,
   `CC-BY-4.0`, vollständige 1:1-Abdeckung aller ausgewählten B-Segmente sowie
   `operationalNetworkUsed=false`, `gtfsShapeGeometryUsed=false` und
   `inventedGeometryUsed=false` sowie einen vollständigen physischen
-  Daily-Circulation-/Transfervertrag belegen. Das Ergebnis trägt intern `derived`, ist
-  nicht Klasse-A-fähig und kann nur mit `orderable=true` betrieblich verwendet
-  werden.
+  Daily-Circulation-/Transfervertrag belegen. Im aktuellen V2-Vertrag
+  partitioniert `zugfolge-daily-circulation-plan/v2` jeden geplanten Übergang
+  genau einmal: Nur gleiche `locationId` und `physicalStopId` sind Turnaround;
+  jeder andere Übergang ist ein real gerouteter Zugtransfer. Für den gemessenen
+  2026.5-Zielkorpus sind das 1.595 Turnarounds und 82 Transfers bei insgesamt
+  1.677 geplanten Übergängen. Der historische 2026.4-Beleg mit
+  `timetable-transfer-demands-v1` bleibt bytegleich verifizierbar, ist aber kein
+  Fallback für den aktuellen Erzeugungs- oder Laufzeitpfad. Das Ergebnis trägt
+  intern `derived`, ist nicht Klasse-A-fähig und kann nur mit `orderable=true`
+  betrieblich verwendet werden.
 
 Eine bloße Annahme (`assumed`) ohne diesen vollständigen Schließungsnachweis
 bleibt Klasse C. Ein sicherer Einzelwert wie 20 km/h genügt nicht, wenn

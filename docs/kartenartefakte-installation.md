@@ -425,7 +425,7 @@ ausgeliefert. Er bindet bytegenau:
 - Welt-Basemap-PMTiles, Semantik-PMTiles, ReadModel, den autoritativen
   Betriebsgraphen, MapLibre-Style, Deliverymanifest und öffentlichen
   Qualitätsbericht; ab Evidence-v3 zusätzlich zwingend die installierbaren
-  `movement-route-templates-v2` und `timetable-transfer-demands-v1`,
+  `movement-route-templates-v2` und `timetable-transfer-demands-v2`,
 - alle zehn Semantik-Zwischenlayer als Regressionsbeleg.
 
 `latest`, `main`, `master`, `HEAD`, `unversioned`, verkürzte Git-Commits,
@@ -454,6 +454,19 @@ zusätzlich an InfraRelease-Inventar, Delivery-v2-Inventar und signierten
 Paketplan. Eingaben besitzen die jeweils schemageforderten Byte-/SHA-256-Belege.
 Externe Archive, Capture-Manifeste und Derived-Eingaben nennen zusätzlich ihren
 `cacheFile` im verschlüsselten Buildcache.
+
+Für `infra-deutschland-2026.5` ist der Timetable-Upstream ein harter V2-Schnitt:
+Compiler v5 erzeugt den Bericht v4, `zugfolge-daily-circulation-plan/v2` und die
+installierbare Datei `timetable-routes-v2.transfer-demands-v2.json` mit
+`kind=timetable-transfer-demands-v2`. Der gemessene Sidecar umfasst 6.697.294
+Byte mit SHA-256
+`2c8c688a9ce963afbdca75fee526b581bc21be402aabcbaf1abd09ea65418cdf`.
+Seine vollständige Partition enthält 1.677 geplante Übergänge, davon 1.595
+Turnarounds und 82 real geroutete Transfers in 39 Losen bei 197 Umläufen. Die
+historische `.4`-V1-Datei bleibt unverändert verifizierbar, darf aber weder in
+das `.5`-Paket aufgenommen noch vom aktuellen Validator als Fallback akzeptiert
+werden; es gibt keinen V1-Fallback. Dieser Upstream-Beleg allein beweist noch
+keine Paketsignatur, Installation oder Aktivierung.
 
 Das Inventar wird nicht von Hand geschrieben. Ein releasegebundener Plan mit
 dem Schema `zugfolge-map-build-cache-inventory-plan/v1` ordnet jede reguläre
@@ -543,7 +556,7 @@ Layer oder im öffentlichen ReadModel vorkommt oder wenn das positive
 EBO-Signal fehlt. Der historische v2-Beleg prüft sieben
 aktivierungsrelevante Ausgaben; die Basemap ist dabei eine zwingende eigene
 Ausgabe. Evidence-v3 prüft dagegen exakt neun Ausgaben einschließlich
-`movement-route-templates-v2` und `timetable-transfer-demands-v1` und schließt
+`movement-route-templates-v2` und `timetable-transfer-demands-v2` und schließt
 deren Operational-State- und Transfer-Set-Bindungen. Das Evidence-Manifest
 übernimmt darüber hinaus das
 vollständige Artefaktinventar des bytegenau gebundenen Deliverymanifests. Jede

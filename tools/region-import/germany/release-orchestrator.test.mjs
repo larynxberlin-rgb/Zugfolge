@@ -80,7 +80,8 @@ function staticQuality(fixture) {
 function operationalQuality(fixture, map, mapBytes) {
   const artifact = fixture.artifacts.find(({ kind }) => kind === "operational-infrastructure-v2");
   const movementRouteArtifact = fixture.artifacts.find(({ kind }) => kind === "movement-route-templates-v2");
-  const transferDemandArtifact = fixture.artifacts.find(({ kind }) => kind === "timetable-transfer-demands-v1");
+  const transferDemandArtifact = fixture.artifacts.find(({ kind }) => kind === "timetable-transfer-demands-v2");
+  assert.ok(transferDemandArtifact, "Release-Manifest-Fixture muss den exklusiven timetable-transfer-demands-v2-Vertrag binden.");
   return {
     schema: "zugfolge-operational-infrastructure-quality-report/v1",
     releaseId: fixture.config.release.releaseId,
@@ -132,7 +133,7 @@ function operationalQuality(fixture, map, mapBytes) {
         timetableTransferSetSha256: "1".repeat(64),
       },
       timetableRouteEvidence: {
-        reportSchema: "zugfolge-germany-timetable-route-report/v3",
+        reportSchema: "zugfolge-germany-timetable-route-report/v4",
         policyId: "synthetic-operational-b/v2",
         derivationRule: "all-qualified-gtfs-playable-segments-via-real-osm-stop-anchors/v2",
         selectionRule: "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
@@ -142,7 +143,7 @@ function operationalQuality(fixture, map, mapBytes) {
         routesSha256: "a".repeat(64),
         gtfsSnapshotBytes: 1,
         gtfsSnapshotSha256: "b".repeat(64),
-        transferDemandsSchema: "zugfolge-timetable-transfer-demands/v1",
+        transferDemandsSchema: "zugfolge-timetable-transfer-demands/v2",
         transferDemandsBytes: transferDemandArtifact.bytes,
         transferDemandsSha256: transferDemandArtifact.sha256,
         snapshotHash: "c".repeat(64),
@@ -158,7 +159,16 @@ function operationalQuality(fixture, map, mapBytes) {
         dailyCirculationPlanSha256: "f".repeat(64),
         transferSetSha256: "1".repeat(64),
         transferDemandsProduced: true,
-        dailyCirculation: { lotCount: 1, journeyChainCount: 1, circulationCount: 1, rolloverAssignmentCount: 1, transferDemandCount: 1, transferLotCount: 1 },
+        dailyCirculation: {
+          lotCount: 1,
+          journeyChainCount: 1,
+          circulationCount: 1,
+          rolloverAssignmentCount: 1,
+          plannedTransitionCount: 1,
+          turnaroundDemandCount: 0,
+          transferDemandCount: 1,
+          transferLotCount: 1,
+        },
         transferRouteCount: 1,
         transferRouteLegCount: 1,
         transferRouteLengthMm: 1,

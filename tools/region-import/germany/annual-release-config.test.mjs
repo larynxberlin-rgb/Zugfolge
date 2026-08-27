@@ -30,7 +30,7 @@ const annualFiles = [
   "tools/tiles/map-release-build-evidence.annual-2026.3.spec.json",
 ];
 
-test("Timetable-Routen-v2 binden nur den lokalen freien GTFS-Snapshot und freie Semantiklayer", async () => {
+test("historische 2026.4-Timetable-Routen binden nur den lokalen freien GTFS-Snapshot und freie Semantiklayer", async () => {
   const specification = await json("tools/region-import/germany/timetable-route-compiler.annual-2026.4.json");
   assert.equal(specification.schema, "zugfolge-germany-timetable-route-compiler/v4");
   assert.equal(specification.infraReleaseId, "infra-deutschland-2026.4");
@@ -795,9 +795,35 @@ test("Jahresprompt verlangt alle sechzehn konkreten Platzhalter und den Jahresve
   assert.match(prompt, /OpenRailwayMap(?: \(ORM\))?.*keine ORM-Daten/su);
   assert.match(prompt, /JourneyChain.*PlayableLeg.*BoundaryPortal.*ExternalLeg/su);
   assert.match(prompt, /5\.000 Ereignisse\/s über zehn Minuten/su);
+  assert.match(prompt, /zugfolge-germany-timetable-route-compiler\/v5/u);
+  assert.match(prompt, /zugfolge-germany-timetable-route-report\/v4/u);
+  assert.match(prompt, /zugfolge-daily-circulation-plan\/v2/u);
+  assert.match(prompt, /kind=timetable-transfer-demands-v2/u);
+  assert.match(prompt, /timetable-routes-v2\.transfer-demands-v2\.json/u);
+  assert.match(prompt, /1\.595 Turnarounds, 82[\s\S]*Transfers in 39 Losen/u);
+  assert.match(prompt, /2c8c688a9ce963afbdca75fee526b581bc21be402aabcbaf1abd09ea65418cdf/u);
+  assert.doesNotMatch(prompt, /timetable-transfer-demands-v1|transfer-demands-v1\.json/u);
 });
 
-test("Jahresprompt löst den aktuellen 2026.4-Lauf ohne aktive Vorjahresbindung auf", async () => {
+test("aktuelle Datengrenze und Installationsanleitung verlangen den 2026.5-V2-Upstream ohne Laufzeitfallback", async () => {
+  const [dataContract, installation] = await Promise.all([
+    text("docs/daten.md"),
+    text("docs/kartenartefakte-installation.md"),
+  ]);
+  for (const documentation of [dataContract, installation]) {
+    assert.match(documentation, /timetable-transfer-demands-v2/u);
+    assert.match(documentation, /1\.595\s+Turnarounds[\s\S]*82/u);
+    assert.match(documentation, /historisch/u);
+    assert.match(documentation, /kein(?:en)?[\s\S]{0,10}Fallback|nicht als Fallback/u);
+  }
+  assert.match(dataContract, /zugfolge-daily-circulation-plan\/v2/u);
+  assert.match(dataContract, /1\.677 geplanten Übergängen/u);
+  assert.match(installation, /Compiler v5 erzeugt den Bericht v4/u);
+  assert.match(installation, /timetable-routes-v2\.transfer-demands-v2\.json/u);
+  assert.match(installation, /6\.697\.294[\s\S]*2c8c688a9ce963afbdca75fee526b581bc21be402aabcbaf1abd09ea65418cdf/u);
+});
+
+test("Jahresprompt kann den historischen 2026.4-Beleg auflösen, kennzeichnet ihn aber nicht als aktuelles Ziel", async () => {
   const [
     prompt,
     runbook,
@@ -846,6 +872,7 @@ test("Jahresprompt löst den aktuellen 2026.4-Lauf ohne aktive Vorjahresbindung 
   const placeholder = /<([A-Z_]+)>/gu;
   const resolved = prompt.replace(placeholder, (match, name) => bindings[name] ?? match);
   assert.doesNotMatch(resolved, placeholder);
+  assert.match(prompt, /infra-deutschland-2026\.4.*bytegleich[\s\S]*Vorgängerstand/u);
   assert.doesNotMatch(prompt, /infra-deutschland-2026\.3|germany-2026\.3|annual-2026\.3|source-capture\.2026\.3/u);
   assert.match(resolved, /run-timetable-route-compiler\.mjs tools\/region-import\/germany\/timetable-route-compiler\.annual-2026\.4\.json \./u);
   assert.match(resolved, /run-synthetic-operational-closure\.mjs tools\/region-import\/germany\/synthetic-operational-closure\.annual-2026\.4\.json var\/derived\/germany-2026\.4\/synthetic-operational-closure-receipt\.json/u);

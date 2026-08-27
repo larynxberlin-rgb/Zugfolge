@@ -189,7 +189,7 @@ async function fixture(t) {
   const gtfsSnapshotProof = await syntheticOperationalFileProof(gtfsSnapshotPath);
   const circulationId = "circulation-lot-test-001";
   const lotId = "lot-test";
-  const transferId = "transfer-test";
+  const transferId = `transfer-${"1".repeat(64)}`;
   const formationLengthsMm = [...policy.compilerPolicy.terminalFormationLengthsMm];
   const circulation = {
     id: circulationId,
@@ -199,8 +199,8 @@ async function fixture(t) {
     journeyChainIds: [journeyChainId],
     passengerLegIds: segmentIds,
     passengerTrainRunIds: segmentIds.map((segmentId, index) => index === 0 ? journeyChainId : `${journeyChainId}:${segmentId}`),
-    start: { legId: segmentIds[0], locationId: "stop-a", physicalStopId: "stop-a", timeS: 0 },
-    end: { legId: segmentIds[3], locationId: "stop-b", physicalStopId: "stop-b", timeS: 60 },
+    start: { legId: segmentIds[0], passengerRouteVersionId: `route:gtfs:${segmentIds[0]}:v1`, locationId: "stop-a", physicalStopId: "stop-a", timeS: 0 },
+    end: { legId: segmentIds[3], passengerRouteVersionId: `route:gtfs:${segmentIds[3]}:v1`, locationId: "stop-b", physicalStopId: "stop-b", timeS: 60 },
   };
   const transferDemand = {
     id: transferId,
@@ -210,6 +210,8 @@ async function fixture(t) {
     targetCirculationId: circulationId,
     sourcePassengerLegId: segmentIds[3],
     targetPassengerLegId: segmentIds[0],
+    sourcePassengerRouteVersionId: `route:gtfs:${segmentIds[3]}:v1`,
+    targetPassengerRouteVersionId: `route:gtfs:${segmentIds[0]}:v1`,
     sourceLocationId: "stop-b",
     targetLocationId: "stop-a",
     sourcePhysicalStopId: "stop-b",
@@ -217,24 +219,24 @@ async function fixture(t) {
     earliestDepartureS: 360,
     latestArrivalS: 86_100,
     availableWindowS: 85_740,
+    dailyBoundary: true,
     movementKind: "train",
   };
   const dailyPlanBody = {
-    schema: "zugfolge-daily-circulation-plan/v1",
-    rule: "lot-local-playable-path-cover-with-minimum-cross-location-rollover/v1",
+    schema: "zugfolge-daily-circulation-plan/v2",
+    rule: "lot-local-playable-path-cover-with-explicit-physical-transition-partition/v2",
     gtfsReleaseId: journeyReleaseId,
     repeatEveryS: 86_400,
     minimumTurnaroundS: 300,
-    metrics: { lotCount: 1, journeyChainCount: 1, circulationCount: 1, rolloverAssignmentCount: 1, transferDemandCount: 1, transferLotCount: 1 },
+    metrics: { lotCount: 1, journeyChainCount: 1, circulationCount: 1, rolloverAssignmentCount: 1, plannedTransitionCount: 1, turnaroundDemandCount: 0, transferDemandCount: 1, transferLotCount: 1 },
     circulations: [circulation],
     rolloverAssignments: [{ sourceCirculationId: circulationId, targetCirculationId: circulationId, kind: "transfer" }],
+    turnaroundDemands: [],
     transferDemands: [transferDemand],
   };
-  const dailyPlan = { ...dailyPlanBody, planSha256: syntheticOperationalSha256({ schema: "zugfolge-daily-circulation-plan/v1", value: dailyPlanBody }) };
+  const dailyPlan = { ...dailyPlanBody, planSha256: syntheticOperationalSha256({ schema: "zugfolge-daily-circulation-plan/v2", value: dailyPlanBody }) };
   const transferRoute = {
     ...transferDemand,
-    sourcePassengerRouteVersionId: `route:gtfs:${segmentIds[3]}:v1`,
-    targetPassengerRouteVersionId: `route:gtfs:${segmentIds[0]}:v1`,
     formationLengthsMm,
     routeVersionId: `route:${transferId}:movement:v1`,
     templateId: `template:${transferId}:movement:v1`,
@@ -245,7 +247,7 @@ async function fixture(t) {
   };
   const transferSetSha256 = createHash("sha256").update(`${canonicalSyntheticOperationalValue(transferRoute)}\n`).digest("hex");
   const timetableTransferDemands = {
-    schema: "zugfolge-timetable-transfer-demands/v1",
+    schema: "zugfolge-timetable-transfer-demands/v2",
     infraReleaseId: annualSpecification.infraReleaseId,
     gtfsSnapshotHash: snapshotHash,
     dailyPlan,
@@ -253,7 +255,7 @@ async function fixture(t) {
     transferRoutes: [transferRoute],
     transferSetSha256,
   };
-  const timetableTransferDemandsPath = join(artifactRoot, "timetable-routes-v2.transfer-demands-v1.json");
+  const timetableTransferDemandsPath = join(artifactRoot, "timetable-routes-v2.transfer-demands-v2.json");
   await writeFile(timetableTransferDemandsPath, `${canonicalSyntheticOperationalValue(timetableTransferDemands)}\n`, "utf8");
   const transferProof = await syntheticOperationalFileProof(timetableTransferDemandsPath);
   const movementRouteTemplatesBody = {
@@ -274,13 +276,13 @@ async function fixture(t) {
     operationalStateHash: stateHash,
     timetableTransferSetSha256: transferSetSha256,
   };
-  layers.transferDemands = { path: "artifacts/timetable-routes-v2.transfer-demands-v1.json", expectedBytes: transferProof.bytes, expectedSha256: transferProof.sha256 };
+  layers.transferDemands = { path: "artifacts/timetable-routes-v2.transfer-demands-v2.json", expectedBytes: transferProof.bytes, expectedSha256: transferProof.sha256 };
   evidence.transferDemands = { path: layers.transferDemands.path, ...transferProof, records: 1 };
   await writeFile(annualPath, `${JSON.stringify(annualSpecification, null, 2)}\n`, "utf8");
   const annualProof = await syntheticOperationalFileProof(annualPath);
   const gtfsMetrics = { stationCount: 2, journeyChainCount: 1, playableLegCount: 4, oneStopPlayableLegCount: 0, externalLegCount: 0, snapshotSegmentCount: 4, eligibleSegmentCount: 4, excludedQualityCCount: 0, uniqueDirectedStopPairCount: 1, uniqueRoutableDirectedStopPairCount: 1, sameStopTransitionCount: 0 };
   const timetableRouteReport = {
-    schema: "zugfolge-germany-timetable-route-report/v3",
+    schema: "zugfolge-germany-timetable-route-report/v4",
     infraReleaseId: annualSpecification.infraReleaseId,
     status: "qualified",
     routesProduced: true,
@@ -299,7 +301,7 @@ async function fixture(t) {
     findings: {},
     unresolvedRequired: 0,
   };
-  await writeFile(join(artifactRoot, "timetable-routes-v2.derivation-report.json"), `${JSON.stringify(timetableRouteReport, null, 2)}\n`, "utf8");
+  await writeFile(join(artifactRoot, "timetable-routes-v2.derivation-report-v4.json"), `${JSON.stringify(timetableRouteReport, null, 2)}\n`, "utf8");
   const report = {
     schema: "germany-operational-v2-derivation-report-v1",
     mode: "deterministic-conservative-v1",
@@ -347,7 +349,7 @@ async function fixture(t) {
   };
   await writeFile(join(artifactRoot, "derivation-report.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
   const closureInputsPath = join(root, "closure-inputs.json");
-  await writeFile(closureInputsPath, `${JSON.stringify({ schema: "zugfolge-synthetic-operational-closure-inputs/v2", releaseId: annualSpecification.infraReleaseId, artifactRoot: "artifacts", policyFile: "policy.json", annualSpecificationFile: "annual.json", candidateFile: "operational-infrastructure-v2.candidate.json", derivationReportFile: "derivation-report.json", timetableRouteReportFile: "timetable-routes-v2.derivation-report.json", timetableTransferDemandsFile: "timetable-routes-v2.transfer-demands-v1.json", gtfsSnapshotFile: "gtfs-region-test-v2.json", operationalArtifactFile: "operational-infrastructure-v2.json" }, null, 2)}\n`, "utf8");
+  await writeFile(closureInputsPath, `${JSON.stringify({ schema: "zugfolge-synthetic-operational-closure-inputs/v2", releaseId: annualSpecification.infraReleaseId, artifactRoot: "artifacts", policyFile: "policy.json", annualSpecificationFile: "annual.json", candidateFile: "operational-infrastructure-v2.candidate.json", derivationReportFile: "derivation-report.json", timetableRouteReportFile: "timetable-routes-v2.derivation-report-v4.json", timetableTransferDemandsFile: "timetable-routes-v2.transfer-demands-v2.json", gtfsSnapshotFile: "gtfs-region-test-v2.json", operationalArtifactFile: "operational-infrastructure-v2.json" }, null, 2)}\n`, "utf8");
   const validateNative = async (path, expectedReleaseId) => {
     const proof = await syntheticOperationalFileProof(path);
     return { schema: "operational-infrastructure-v2", infraReleaseId: expectedReleaseId, sourceBytes: proof.bytes, sourceSha256: proof.sha256, bytes: proof.bytes, sha256: proof.sha256, stateHash, validationMode: "native-streaming-redb-v1" };
