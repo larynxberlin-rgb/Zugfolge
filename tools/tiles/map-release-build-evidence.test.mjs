@@ -47,6 +47,8 @@ import {
   canonicalOperationalInfrastructureV2Json,
   operationalInfrastructureV2StateHash,
 } from "../region-import/operational-infrastructure-binding.mjs";
+import { movementResourceSetSha256 } from "../region-import/movement-route-templates-v2.mjs";
+import { canonicalSyntheticOperationalValue } from "../region-import/germany/synthetic-operational-quality.mjs";
 import {
   DATABASE_AUTHORITATIVE_TABLE_COUNT,
   DATABASE_AUTHORITATIVE_TABLE_SET_SHA256,
@@ -181,7 +183,232 @@ function operationalInfrastructureV2() {
   };
 }
 
-function operationalV2Quality(operationalProof, stateHash, movementProof, movementStateHash, transferProof) {
+function movementDispatch(id, predecessorBaseRouteVersionId, resourceIds, continuity) {
+  return {
+    routeVersionId: `route:${id}`,
+    predecessorBaseRouteVersionId,
+    dispatchInterlockingRouteId: `interlocking:${id}`,
+    headRouteMm: 100,
+    minimumRuntimeMs: 1_000,
+    resourceIds,
+    routeLegCount: 1,
+    protectionContractRuns: [{
+      throughRouteLegIndex: 0,
+      availableProtectionSystems: ["pzb"],
+      simultaneouslyRequiredProtectionSystems: [],
+    }],
+    continuity,
+  };
+}
+
+function operationalSidecars(stateHash) {
+  const dailyPlanBody = {
+    schema: "zugfolge-daily-circulation-plan/v1",
+    rule: "lot-local-playable-path-cover-with-minimum-cross-location-rollover/v1",
+    gtfsReleaseId: "gtfs-fixture-2026.2",
+    repeatEveryS: 86_400,
+    minimumTurnaroundS: 300,
+    metrics: {
+      lotCount: 1,
+      journeyChainCount: 4,
+      circulationCount: 2,
+      rolloverAssignmentCount: 2,
+      transferDemandCount: 1,
+      transferLotCount: 1,
+    },
+    circulations: [
+      {
+        id: "circulation:a",
+        lotId: "lot:fixture",
+        serviceLineId: "line:fixture",
+        assetCompatibilityKey: "lot:fixture",
+        journeyChainIds: ["chain:a:1", "chain:a:2"],
+        passengerLegIds: ["leg:a"],
+        passengerTrainRunIds: ["run:a"],
+        start: { legId: "leg:a", locationId: "location:a", physicalStopId: "stop:a", timeS: 0 },
+        end: { legId: "leg:a", locationId: "location:a", physicalStopId: "stop:a", timeS: 1_000 },
+      },
+      {
+        id: "circulation:b",
+        lotId: "lot:fixture",
+        serviceLineId: "line:fixture",
+        assetCompatibilityKey: "lot:fixture",
+        journeyChainIds: ["chain:b:1", "chain:b:2"],
+        passengerLegIds: ["leg:b"],
+        passengerTrainRunIds: ["run:b"],
+        start: { legId: "leg:b", locationId: "location:b", physicalStopId: "stop:b", timeS: 2_000 },
+        end: { legId: "leg:b", locationId: "location:a", physicalStopId: "stop:a", timeS: 3_000 },
+      },
+    ],
+    rolloverAssignments: [
+      { sourceCirculationId: "circulation:a", targetCirculationId: "circulation:b", kind: "transfer" },
+      { sourceCirculationId: "circulation:b", targetCirculationId: "circulation:a", kind: "same-location" },
+    ],
+    transferDemands: [],
+  };
+  const demand = {
+    id: "demand:fixture",
+    lotId: "lot:fixture",
+    assetCompatibilityKey: "lot:fixture",
+    sourceCirculationId: "circulation:a",
+    targetCirculationId: "circulation:b",
+    sourcePassengerLegId: "leg:a",
+    targetPassengerLegId: "leg:b",
+    sourceLocationId: "location:a",
+    targetLocationId: "location:b",
+    sourcePhysicalStopId: "stop:a",
+    targetPhysicalStopId: "stop:b",
+    earliestDepartureS: 1_300,
+    latestArrivalS: 88_100,
+    availableWindowS: 86_800,
+    movementKind: "train",
+  };
+  dailyPlanBody.transferDemands.push(demand);
+  const dailyPlanSha256 = alphaHash(dailyPlanBody.schema, dailyPlanBody);
+  const dailyPlan = { ...dailyPlanBody, planSha256: dailyPlanSha256 };
+  const transferRoute = {
+    ...demand,
+    sourcePassengerRouteVersionId: "route:gtfs:leg:a:v1",
+    targetPassengerRouteVersionId: "route:gtfs:leg:b:v1",
+    formationLengthsMm: [100],
+    routeVersionId: "route:demand:fixture:movement:v1",
+    templateId: "template:demand:fixture:movement:v1",
+    legs: [
+      {
+        edgeId: "edge:transfer:a",
+        direction: "along",
+        edgeEntryMm: 0,
+        edgeExitMm: 400,
+        availableProtectionSystems: ["pzb"],
+        simultaneouslyRequiredProtectionSystems: [],
+      },
+      {
+        edgeId: "edge:transfer:b",
+        direction: "along",
+        edgeEntryMm: 0,
+        edgeExitMm: 600,
+        availableProtectionSystems: ["pzb"],
+        simultaneouslyRequiredProtectionSystems: [],
+      },
+    ],
+    totalLengthMm: 1_000,
+    weightedCostMm: 1_000,
+    minimumRuntimeMs: 1_000,
+  };
+  const transferSetSha256 = createHash("sha256")
+    .update(`${canonicalSyntheticOperationalValue(transferRoute)}\n`)
+    .digest("hex");
+  const transfers = {
+    schema: "zugfolge-timetable-transfer-demands/v1",
+    infraReleaseId: RELEASE_ID,
+    gtfsSnapshotHash: "a".repeat(64),
+    dailyPlan,
+    formationLengthsMm: [100],
+    transferRoutes: [transferRoute],
+    transferSetSha256,
+  };
+  const timetableRoutes = ["leg:a", "leg:b"].map((legId) => ({
+    routeVersionId: `route:gtfs:${legId}:v1`,
+    templateId: `template:gtfs:${legId}:v1`,
+    predecessorId: null,
+    transitionRouteMm: null,
+    legs: [{
+      edgeId: `edge:passenger:${legId}`,
+      direction: "along",
+      edgeEntryMm: 0,
+      edgeExitMm: 100,
+    }],
+  }));
+  const timetableRoutesBytes = Buffer.from(
+    `${timetableRoutes.map(canonicalSyntheticOperationalValue).join("\n")}\n`,
+    "utf8",
+  );
+
+  const directResources = ["resource:direct"];
+  const transferResources = ["resource:transfer"];
+  const transferDispatch = movementDispatch(
+    "fixture-transfer",
+    transferRoute.sourcePassengerRouteVersionId,
+    transferResources,
+    "same-direction",
+  );
+  const movementBody = {
+    schema: "movement-route-templates-v2",
+    infraReleaseId: RELEASE_ID,
+    operationalStateHash: stateHash,
+    timetableTransferSetSha256: transferSetSha256,
+    directTemplates: [{
+      id: "direct:fixture",
+      inboundRouteVersionId: "route:gtfs:leg:b:v1",
+      outboundRouteVersionId: "route:gtfs:leg:a:v1",
+      formationLengthMm: 100,
+      terminalIntervals: [{ edgeId: "edge:terminal", fromMm: 0, toMm: 100 }],
+      movementKind: "train",
+      continuity: "reverse-direction",
+      maximumDwellMs: 1_200_000,
+      resourceIds: directResources,
+      resourceSetSha256: movementResourceSetSha256(directResources),
+      through: null,
+      outbound: movementDispatch(
+        "fixture-direct-outbound",
+        "route:gtfs:leg:b:v1",
+        directResources,
+        "reverse-direction",
+      ),
+    }],
+    templates: [],
+    transferTemplates: [{
+      id: "transfer-template:fixture",
+      demandId: demand.id,
+      formationLengthMm: 100,
+      sourcePassengerRouteVersionId: transferRoute.sourcePassengerRouteVersionId,
+      targetPassengerRouteVersionId: transferRoute.targetPassengerRouteVersionId,
+      sourceLocationId: demand.sourceLocationId,
+      targetLocationId: demand.targetLocationId,
+      earliestDepartureS: demand.earliestDepartureS,
+      latestArrivalS: demand.latestArrivalS,
+      availableWindowS: demand.availableWindowS,
+      movementKind: demand.movementKind,
+      transfer: transferDispatch,
+      targetOutbound: movementDispatch(
+        "fixture-target-outbound",
+        transferDispatch.routeVersionId,
+        ["resource:target-outbound"],
+        "same-direction",
+      ),
+      resourceIds: transferResources,
+      resourceSetSha256: movementResourceSetSha256(transferResources),
+    }],
+    metrics: {
+      directTemplateCount: 1,
+      stablingTemplateCount: 0,
+      transferTemplateCount: 1,
+      transferDemandCount: 1,
+      turnaroundDemandCount: 1,
+      turnaroundPairCount: 1,
+    },
+  };
+  const movementStateHash = alphaHash(movementBody.schema, movementBody);
+  return {
+    movement: { ...movementBody, stateHash: movementStateHash },
+    transfers,
+    timetableRoutesBytes,
+    movementStateHash,
+    transferSetSha256,
+    dailyPlanSha256,
+  };
+}
+
+function operationalV2Quality(
+  operationalProof,
+  stateHash,
+  movementProof,
+  movementStateHash,
+  transferProof,
+  timetableRoutesProof,
+  transferSetSha256,
+  dailyPlanSha256,
+) {
   return {
     schema: "zugfolge-operational-infrastructure-quality-report/v1",
     releaseId: RELEASE_ID,
@@ -224,7 +451,7 @@ function operationalV2Quality(operationalProof, stateHash, movementProof, moveme
         ...movementProof,
         stateHash: movementStateHash,
         operationalStateHash: stateHash,
-        timetableTransferSetSha256: "a".repeat(64),
+        timetableTransferSetSha256: transferSetSha256,
       },
       timetableRouteEvidence: {
         reportSchema: "zugfolge-germany-timetable-route-report/v3",
@@ -233,8 +460,8 @@ function operationalV2Quality(operationalProof, stateHash, movementProof, moveme
         selectionRule: "all-orderable-quality-b-gtfs-playable-segments-with-every-stop-as-anchor/v2",
         reportBytes: 1_234,
         reportSha256: "a".repeat(64),
-        routesBytes: 5_678,
-        routesSha256: "b".repeat(64),
+        routesBytes: timetableRoutesProof.bytes,
+        routesSha256: timetableRoutesProof.sha256,
         gtfsSnapshotBytes: 9_012,
         gtfsSnapshotSha256: "c".repeat(64),
         transferDemandsSchema: "zugfolge-timetable-transfer-demands/v1",
@@ -245,13 +472,13 @@ function operationalV2Quality(operationalProof, stateHash, movementProof, moveme
         archiveSha256: "b".repeat(64),
         sourceLicense: "CC-BY-4.0",
         sourceLicenseAsPublished: "CC BY 4.0",
-        selectedSegmentCount: 4,
-        completeRouteCount: 4,
-        routeRecordCount: 4,
+        selectedSegmentCount: 2,
+        completeRouteCount: 2,
+        routeRecordCount: 2,
         sameStopTransitionCount: 1,
-        routeSetSha256: "b".repeat(64),
-        dailyCirculationPlanSha256: "c".repeat(64),
-        transferSetSha256: "a".repeat(64),
+        routeSetSha256: timetableRoutesProof.sha256,
+        dailyCirculationPlanSha256: dailyPlanSha256,
+        transferSetSha256,
         transferDemandsProduced: true,
         dailyCirculation: { lotCount: 1, journeyChainCount: 4, circulationCount: 2, rolloverAssignmentCount: 2, transferDemandCount: 1, transferLotCount: 1 },
         transferRouteCount: 1,
@@ -704,11 +931,22 @@ async function fixtureV2() {
   const stateHash = operationalInfrastructureV2StateHash(infrastructure);
   const movementFile = "outputs/operational-infrastructure-v2.movement-route-templates-v2.json";
   const transferFile = "outputs/timetable-routes-v2.transfer-demands-v1.json";
-  await write(value.root, movementFile, '{"infraReleaseId":"infra-deutschland-2026.2","schema":"movement-route-templates-v2"}\n');
-  await write(value.root, transferFile, '{"infraReleaseId":"infra-deutschland-2026.2","schema":"zugfolge-timetable-transfer-demands/v1"}\n');
+  const {
+    movement,
+    transfers,
+    timetableRoutesBytes,
+    movementStateHash,
+    transferSetSha256,
+    dailyPlanSha256,
+  } = operationalSidecars(stateHash);
+  await write(value.root, movementFile, `${JSON.stringify(movement)}\n`);
+  await write(value.root, transferFile, `${JSON.stringify(transfers)}\n`);
+  const timetableRoutesFile = "inputs/timetable-routes-v2.jsonseq";
+  const timetableRoutesCacheFile = "cache/derived/timetable-routes-v2.jsonseq";
+  await write(value.root, timetableRoutesFile, timetableRoutesBytes);
   const movementProof = await proof(value.root, movementFile);
-  const movementStateHash = "e".repeat(64);
   const transferProof = await proof(value.root, transferFile);
+  const timetableRoutesProof = await proof(value.root, timetableRoutesFile);
 
   const artifactInventoryFile = "inputs/release-artifacts.v2.json";
   const artifactInventoryCacheFile = "cache/derived/release-artifacts.v2.json";
@@ -742,7 +980,10 @@ async function fixtureV2() {
 
   const cacheInventoryPath = "cache/build-cache-inventory-2026.2.json";
   const cacheInventory = JSON.parse(await readFile(join(value.root, ...cacheInventoryPath.split("/")), "utf8"));
-  cacheInventory.files.push({ path: artifactInventoryCacheFile, ...artifactInventoryProof });
+  cacheInventory.files.push(
+    { path: artifactInventoryCacheFile, ...artifactInventoryProof },
+    { path: timetableRoutesCacheFile, ...timetableRoutesProof },
+  );
   cacheInventory.files.sort((left, right) => left.path.localeCompare(right.path, "en"));
   await write(value.root, cacheInventoryPath, `${JSON.stringify(cacheInventory, null, 2)}\n`);
 
@@ -753,6 +994,9 @@ async function fixtureV2() {
     movementProof,
     movementStateHash,
     transferProof,
+    timetableRoutesProof,
+    transferSetSha256,
+    dailyPlanSha256,
   );
   await write(value.root, qualityFile, `${JSON.stringify(qualityReport, null, 2)}\n`);
   const qualityProof = await proof(value.root, qualityFile);
@@ -991,6 +1235,13 @@ async function fixtureV2() {
     file: artifactInventoryFile,
     cacheFile: artifactInventoryCacheFile,
   });
+  spec.inputs.push({
+    id: "timetable-routes-v2",
+    kind: "derived-input",
+    version: RELEASE_ID,
+    file: timetableRoutesFile,
+    cacheFile: timetableRoutesCacheFile,
+  });
   spec.inputs.push(
     {
       id: "infra-release-wrapper",
@@ -1078,6 +1329,8 @@ async function fixtureV2() {
     operationalFile,
     movementFile,
     transferFile,
+    timetableRoutesFile,
+    timetableRoutesCacheFile,
     basePlanFile,
     signedPlanFile,
     trustedKeysFile,
@@ -1088,6 +1341,7 @@ async function fixtureV2() {
     cached: [
       ...value.cached,
       [artifactInventoryFile, artifactInventoryCacheFile],
+      [timetableRoutesFile, timetableRoutesCacheFile],
       [infraReleaseWrapperFile, infraReleaseWrapperCacheFile],
       [mapReleaseWrapperFile, mapReleaseWrapperCacheFile],
       [deliverySourcesFile, deliverySourcesCacheFile],
@@ -1096,6 +1350,30 @@ async function fixtureV2() {
     deliverySources,
     commits: { semanticExport: "3".repeat(40), mapBuild: "4".repeat(40) },
   };
+}
+
+async function fixtureV3() {
+  const value = await fixtureV2();
+  const spec = structuredClone(value.spec);
+  spec.schema = "zugfolge-map-release-build-evidence-spec/v3";
+  spec.outputs.push(
+    {
+      id: "operational-movement-routes",
+      kind: "movement-route-templates-v2",
+      file: value.movementFile,
+      installFile: "operational-infrastructure-v2.movement-route-templates-v2.json",
+    },
+    {
+      id: "timetable-transfer-demands",
+      kind: "timetable-transfer-demands-v1",
+      file: value.transferFile,
+      installFile: "timetable-routes-v2.transfer-demands-v1.json",
+    },
+  );
+  const specFile = "tools/tiles/map-release-build-evidence.operational-sidecars-v3.spec.json";
+  const specBytes = Buffer.from(`${JSON.stringify(spec, null, 2)}\n`);
+  await write(value.root, specFile, specBytes);
+  return { ...value, spec, specFile, specBytes };
 }
 
 async function materialized(value) {
@@ -1468,6 +1746,117 @@ test("bindet Operational-v2 statt Train-Projektion mit Laufzeit-Commits und typi
     assert.deepEqual(cliEvidence.commits, value.commits);
   } finally {
     await rm(value.root, { recursive: true, force: true });
+  }
+});
+
+test("Evidence-v3 bindet Transfer-Demands und Movement-Route-Templates als verpflichtende installierbare Ausgaben", async () => {
+  const value = await fixtureV3();
+  try {
+    const evidence = await materialized(value);
+    assert.equal(evidence.schema, "zugfolge-map-release-build-evidence/v3");
+    assert.equal(evidence.outputs.length, 9);
+    const operational = evidence.outputs.find(({ kind }) => kind === "operational-infrastructure-v2");
+    const movement = evidence.outputs.find(({ kind }) => kind === "movement-route-templates-v2");
+    const transfers = evidence.outputs.find(({ kind }) => kind === "timetable-transfer-demands-v1");
+    assert.equal(movement.installFile, "operational-infrastructure-v2.movement-route-templates-v2.json");
+    assert.equal(transfers.installFile, "timetable-routes-v2.transfer-demands-v1.json");
+    assert.equal(movement.operationalStateHash, operational.stateHash);
+    assert.equal(movement.timetableTransferSetSha256, transfers.transferSetSha256);
+    assert.deepEqual(
+      evidence.deliveryInventory.find(({ kind }) => kind === "movement-route-templates-v2"),
+      {
+        id: "operational-movement-routes-2026.2",
+        kind: "movement-route-templates-v2",
+        installPath: movement.installFile,
+        bytes: movement.bytes,
+        sha256: movement.sha256,
+      },
+    );
+    assert.equal((await verifyMapReleaseBuildEvidence(evidence, value.root)).outputs, 9);
+  } finally {
+    await rm(value.root, { recursive: true, force: true });
+  }
+});
+
+test("Evidence-v3 verweigert fehlende Sidecars, semantische Entkopplung und nachträgliche Byteänderungen", async () => {
+  const missingValue = await fixtureV3();
+  try {
+    missingValue.spec.outputs = missingValue.spec.outputs.filter(({ kind }) => kind !== "timetable-transfer-demands-v1");
+    await rewriteEvidenceSpec(missingValue);
+    await assert.rejects(materialized(missingValue), /exakt 9 aktivierungsrelevante Ausgaben/u);
+  } finally {
+    await rm(missingValue.root, { recursive: true, force: true });
+  }
+
+  const forgedMovementValue = await fixtureV3();
+  try {
+    const path = join(forgedMovementValue.root, ...forgedMovementValue.movementFile.split("/"));
+    const forged = JSON.parse(await readFile(path, "utf8"));
+    forged.unvalidatedAlias = true;
+    await writeFile(path, `${JSON.stringify(forged)}\n`);
+    await assert.rejects(
+      materialized(forgedMovementValue),
+      /Movement-Route-Templates-v2 besitzt fehlende oder unbekannte Felder/u,
+    );
+  } finally {
+    await rm(forgedMovementValue.root, { recursive: true, force: true });
+  }
+
+  const forgedTransferValue = await fixtureV3();
+  try {
+    const path = join(forgedTransferValue.root, ...forgedTransferValue.transferFile.split("/"));
+    const forged = JSON.parse(await readFile(path, "utf8"));
+    forged.dailyPlan.planSha256 = "f".repeat(64);
+    await writeFile(path, `${JSON.stringify(forged)}\n`);
+    await assert.rejects(
+      materialized(forgedTransferValue),
+      /dailyPlan\.planSha256 ist nicht reproduzierbar/u,
+    );
+  } finally {
+    await rm(forgedTransferValue.root, { recursive: true, force: true });
+  }
+
+  const detachedRoutesValue = await fixtureV3();
+  try {
+    const timetableRoutesPath = join(detachedRoutesValue.root, ...detachedRoutesValue.timetableRoutesFile.split("/"));
+    const firstRoute = (await readFile(timetableRoutesPath, "utf8")).trim().split("\n")[0];
+    await writeFile(timetableRoutesPath, `${firstRoute}\n`);
+    const changedProof = await proof(detachedRoutesValue.root, detachedRoutesValue.timetableRoutesFile);
+    const inventoryPath = join(detachedRoutesValue.root, ...detachedRoutesValue.cacheInventoryPath.split("/"));
+    const inventory = JSON.parse(await readFile(inventoryPath, "utf8"));
+    const cached = inventory.files.find(({ path }) => path === detachedRoutesValue.timetableRoutesCacheFile);
+    Object.assign(cached, changedProof);
+    await writeFile(inventoryPath, `${JSON.stringify(inventory, null, 2)}\n`);
+    await assert.rejects(
+      materialized(detachedRoutesValue),
+      /existierenden Quell- und Ziel-Passagierfahrwege/u,
+    );
+  } finally {
+    await rm(detachedRoutesValue.root, { recursive: true, force: true });
+  }
+
+  const detachedValue = await fixtureV3();
+  try {
+    const evidence = await materialized(detachedValue);
+    evidence.outputs.find(({ kind }) => kind === "movement-route-templates-v2").timetableTransferSetSha256 = "f".repeat(64);
+    assert.throws(
+      () => validateMapReleaseBuildEvidence(evidence),
+      /Release-, Zustands- oder Transferbindung/u,
+    );
+  } finally {
+    await rm(detachedValue.root, { recursive: true, force: true });
+  }
+
+  const mutatedValue = await fixtureV3();
+  try {
+    const evidence = await materialized(mutatedValue);
+    await writeFile(join(mutatedValue.root, ...mutatedValue.transferFile.split("/")), '{"changed":true}\n');
+    await assert.rejects(
+      verifyMapReleaseBuildEvidence(evidence, mutatedValue.root),
+      /GTFS-Snapshot-Hash|Timetable-Transfer-Demands-v1-Beleg|weicht vom Evidence-Manifest/u,
+    );
+  } finally {
+    await rm(mutatedValue.root, { recursive: true, force: true });
   }
 });
 
