@@ -948,6 +948,45 @@ keinen reproduzierbaren Buildcache-Restore.
 
 ### Freigabegrenzen für `infra-deutschland-2026.5` auf STRATO
 
+Die privilegierte lokale Realabnahme ist als eigener manueller CI-Vertrag
+`run_germany_2026_5_real_acceptance=true` angelegt. Sie besteht aus zwei
+getrennten Self-hosted-Grenzen: `germany-2026-5-builder` reproduziert unter
+Windows die Semantik-PMTiles ausschließlich mit dem vollständigen
+GDAL-Runtime-Manifest sowie Karten-Capture und Static Sources jeweils mit
+`map-asset-notices.annual-2026.5.json`; `germany-2026-5-runtime` validiert unter
+Linux den identischen Kandidaten in getrennten Builder-, Validator-,
+512-MiB-RSS- und Worker-cgroups gegen PostgreSQL außerhalb der gemessenen
+App-cgroup. Die Korpuswurzeln kommen ausschließlich aus den Repository-Variablen
+`ZUGFOLGE_REAL_GERMANY_2026_5_WINDOWS_ROOT` und
+`ZUGFOLGE_REAL_GERMANY_2026_5_ROOT`.
+
+Beide Jobs verlangen vor jeder privilegierten Arbeit den getrackten Vertrag
+`tools/audits/germany-2026.5-real-acceptance.pins.json`. Er bindet den vollen
+Source-Commit, alle aktuellen V2-Sidecars, create-new unsigned/signed
+Alpha-Deployments, den signierten Paketmanifesthash und die gebauten
+Runtimebytes. Der Dispatch-Ref ist dabei der getrennte
+Pin-Registrierungscommit: Er muss den gepinnten Artefakt-Source-Commit als
+Vorfahr enthalten, checkt exakt diesen Commit in einen eigenen sauberen Worktree
+unter `RUNNER_TEMP` aus und führt sämtliche Builder, Binaries, Validatoren und
+Runtime-Audits ausschließlich dort aus. Jeder erzeugte Beleg nennt deshalb
+sowohl den Registrierungs- als auch den Artefakt-Source-Commit, ohne einen
+unmöglichen Git-Selbstbezug zu behaupten. Der Pinvertrag wird erst mit den
+tatsächlich erzeugten finalen Bytes eingecheckt; es gibt keine `PENDING`-,
+Null- oder Vorjahreswerte. Solange er fehlt, der Source-Commit nicht vorhanden
+oder kein Vorfahr ist oder irgendein Byte/Hash abweicht, bricht der manuelle
+Dispatch vor beziehungsweise an der betroffenen Grenze geschlossen ab. Ein
+gewöhnlicher Pull Request oder ein übersprungener manueller Job ist deshalb
+ausdrücklich kein Realabnahmebeleg.
+
+Der verbleibende reale Dispatch-Gate ist bewusst zweistufig: Zuerst erzeugt
+und signiert der Jahreslauf den vollständigen Kandidaten auf dem vorgesehenen
+Artefakt-Source-Commit. Erst aus diesen vorhandenen Bytes, den nativen
+Validatorbelegen und den gebauten Runtimebytes wird der strikt validierte
+Pinvertrag in einem späteren Registrierungscommit befüllt. Danach darf genau
+dieser Registrierungsref mit dem Boolean gestartet werden; der Workflow baut
+die Kartenbytes erneut und akzeptiert weder den bloßen Erstbuild noch manuell
+übertragene Vorjahreswerte als Reproduzierbarkeitsbeleg.
+
 Für `.5` bleiben vier Nachweise getrennt. `pack`/`verify` und die Prüfung des
 frisch installierten Manifests beweisen die Byteintegrität. Die Ed25519-Prüfung
 von Delivery-v2 gegen `zugfolge-map-deutschland-2026.5` im additiven

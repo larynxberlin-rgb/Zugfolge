@@ -12,6 +12,7 @@ import {
   buildAlphaWorld,
   validateAlphaWorldBuildConfiguration,
 } from "../region-import/build-alpha-world.mjs";
+import { loadGermany20265RealAcceptancePins } from "./germany-2026.5-real-acceptance-pins.mjs";
 
 const execute = promisify(execFile);
 const REPOSITORY_ROOT = resolve(import.meta.dirname, "../..");
@@ -29,16 +30,6 @@ const POSTGRES_BOUNDARY = "external-postgresql-process-outside-measured-app-cgro
 const POSTGRES_DATABASE_NAME = /^zugfolge_germany_e2e_[a-z0-9_]+$/u;
 const TIMETABLE_TRANSFER_DEMANDS_FILE = "timetable-routes-v2.transfer-demands-v2.json";
 const MOVEMENT_ROUTE_TEMPLATES_FILE = "operational-infrastructure-v2.movement-route-templates-v2.json";
-const EXPECTED_ALPHA_DEPLOYMENT_HASH = "PENDING_REAL_ANNUAL_RELEASE_BUILD";
-const EXPECTED_ALPHA_UNSIGNED_DEPLOYMENT = Object.freeze({
-  bytes: 0,
-  sha256: "PENDING_REAL_ANNUAL_RELEASE_BUILD",
-});
-const EXPECTED_ALPHA_SIGNED_DEPLOYMENT = Object.freeze({
-  bytes: 0,
-  sha256: "PENDING_REAL_ANNUAL_RELEASE_BUILD",
-});
-const EXPECTED_ALPHA_TYPESCRIPT_BUILD_SET_SHA256 = "PENDING_REAL_ANNUAL_RELEASE_BUILD";
 const RUNTIME_BUILD_FILES = Object.freeze([
   "packages/planning-worker/dist/index.js",
   "packages/runtime-native/dist/index.js",
@@ -53,15 +44,6 @@ const RUNTIME_BUILD_FILES = Object.freeze([
   "apps/game-api/dist/regional-simulation-worker.js",
   "apps/game-api/dist/world-deployment-runtime.js",
 ]);
-const EXPECTED_INFRA_BINDING = Object.freeze({
-  schemaVersion: "zugfolge-operational-infrastructure-binding/v2",
-  infraReleaseId: INFRA_RELEASE_ID,
-  file: "operational-infrastructure-v2.json",
-  bytes: 0,
-  sha256: "PENDING_REAL_ANNUAL_RELEASE_BUILD",
-  stateHash: "PENDING_REAL_ANNUAL_RELEASE_BUILD",
-});
-
 function requiredAbsoluteEnvironmentPath(name) {
   const value = process.env[name];
   assert.ok(value, `${name} fehlt.`);
@@ -865,11 +847,11 @@ async function coldWorkerCatchUp({
   }
 }
 
-function assertCompactDeployment(signed) {
+function assertCompactDeployment(signed, expectedInfraBinding) {
   assert.equal(signed.deployment.worldId, WORLD_ID);
   assert.equal(signed.deployment.deploymentRevision, 1);
   assert.equal(signed.signature.keyId, ALPHA_KEY_ID);
-  assert.deepEqual(signed.deployment.regionalSimulation.infraRelease, EXPECTED_INFRA_BINDING);
+  assert.deepEqual(signed.deployment.regionalSimulation.infraRelease, expectedInfraBinding);
   assert.equal(signed.deployment.regionalSimulation.worldId, WORLD_ID);
   assert.equal(signed.deployment.regionalSimulation.regionId, REGION_ID);
   assert.equal(signed.deployment.regionalSimulation.nowMs, 0);
@@ -1266,6 +1248,21 @@ test("baut, signiert, startet, revisioniert und restored Deutschland-2026.5 mit 
 }, async (context) => {
   const artifactRoot = requiredAbsoluteEnvironmentPath("ZUGFOLGE_REAL_GERMANY_2026_5_ROOT");
   const evidencePath = requiredAbsoluteEnvironmentPath("ZUGFOLGE_REAL_GERMANY_ALPHA_E2E_EVIDENCE");
+  requiredAbsoluteEnvironmentPath("ZUGFOLGE_REAL_GERMANY_2026_5_PIN_CONTRACT");
+  const expectedSourceCommit = process.env.ZUGFOLGE_REAL_GERMANY_EXPECTED_SOURCE_COMMIT;
+  assert.match(expectedSourceCommit ?? "", /^[a-f0-9]{40}$/u, "Voller repo-gebundener Source-Commit fehlt.");
+  const pinRegistrationCommit = process.env.ZUGFOLGE_REAL_GERMANY_PIN_REGISTRATION_COMMIT;
+  assert.match(pinRegistrationCommit ?? "", /^[a-f0-9]{40}$/u, "Voller Pin-Registrierungscommit fehlt.");
+  assert.notEqual(pinRegistrationCommit, expectedSourceCommit, "Pin-Registrierung darf keinen unmoeglichen Git-Selbstbezug behaupten.");
+  const realAcceptancePins = await loadGermany20265RealAcceptancePins(expectedSourceCommit);
+  const expectedInfraBinding = Object.freeze({
+    schemaVersion: realAcceptancePins.operationalInfrastructure.schemaVersion,
+    infraReleaseId: INFRA_RELEASE_ID,
+    file: realAcceptancePins.operationalInfrastructure.file,
+    bytes: realAcceptancePins.operationalInfrastructure.bytes,
+    sha256: realAcceptancePins.operationalInfrastructure.sha256,
+    stateHash: realAcceptancePins.operationalInfrastructure.stateHash,
+  });
   const reuseDeployments = process.env.ZUGFOLGE_REAL_GERMANY_REUSE_DEPLOYMENTS === "1";
   const reuseUnsignedDeployment = process.env.ZUGFOLGE_REAL_GERMANY_REUSE_UNSIGNED_DEPLOYMENT === "1";
   assert.equal(
@@ -1274,30 +1271,36 @@ test("baut, signiert, startet, revisioniert und restored Deutschland-2026.5 mit 
     "Signed- und Unsigned-Wiederverwendung sind gegenseitig ausschliessende Debugpfade.",
   );
   const requireCgroupLimit = process.env.ZUGFOLGE_REAL_GERMANY_REQUIRE_CGROUP_LIMIT === "1";
+  const expectedNapiSha256 = requireCgroupLimit
+    ? requiredCanonicalEnvironmentPin(
+        "ZUGFOLGE_REAL_GERMANY_EXPECTED_NAPI_SHA256",
+        realAcceptancePins.runtimeBuild.nativeAddonSha256,
+      )
+    : process.env.ZUGFOLGE_REAL_GERMANY_EXPECTED_NAPI_SHA256;
   const expectedTypescriptBuildSetSha256 = requireCgroupLimit
     ? requiredCanonicalEnvironmentPin(
         "ZUGFOLGE_REAL_GERMANY_EXPECTED_TYPESCRIPT_BUILD_SET_SHA256",
-        EXPECTED_ALPHA_TYPESCRIPT_BUILD_SET_SHA256,
+        realAcceptancePins.runtimeBuild.typescriptBuildSetSha256,
       )
     : process.env.ZUGFOLGE_REAL_GERMANY_EXPECTED_TYPESCRIPT_BUILD_SET_SHA256;
   const releaseCandidatePins = reuseDeployments
     ? Object.freeze({
         deploymentHash: requiredCanonicalEnvironmentPin(
           "ZUGFOLGE_REAL_GERMANY_EXPECTED_DEPLOYMENT_HASH",
-          EXPECTED_ALPHA_DEPLOYMENT_HASH,
+          realAcceptancePins.signedDeployment.deploymentHash,
         ),
         unsigned: Object.freeze({
-          bytes: EXPECTED_ALPHA_UNSIGNED_DEPLOYMENT.bytes,
+          bytes: realAcceptancePins.unsignedDeployment.bytes,
           sha256: requiredCanonicalEnvironmentPin(
             "ZUGFOLGE_REAL_GERMANY_EXPECTED_UNSIGNED_DEPLOYMENT_SHA256",
-            EXPECTED_ALPHA_UNSIGNED_DEPLOYMENT.sha256,
+            realAcceptancePins.unsignedDeployment.sha256,
           ),
         }),
         signed: Object.freeze({
-          bytes: EXPECTED_ALPHA_SIGNED_DEPLOYMENT.bytes,
+          bytes: realAcceptancePins.signedDeployment.bytes,
           sha256: requiredCanonicalEnvironmentPin(
             "ZUGFOLGE_REAL_GERMANY_EXPECTED_SIGNED_DEPLOYMENT_SHA256",
-            EXPECTED_ALPHA_SIGNED_DEPLOYMENT.sha256,
+            realAcceptancePins.signedDeployment.sha256,
           ),
         }),
       })
@@ -1330,9 +1333,10 @@ test("baut, signiert, startet, revisioniert und restored Deutschland-2026.5 mit 
 
   try {
     const sourceCheckout = await sourceCheckoutProof();
+    assert.equal(sourceCheckout.gitHead, realAcceptancePins.sourceCommit, "Realabnahme-Pinvertrag gehoert nicht zum ausgecheckten Commit.");
     const runtimeBuild = await runtimeBuildProof(
       nativeAddonPath,
-      process.env.ZUGFOLGE_REAL_GERMANY_EXPECTED_NAPI_SHA256,
+      expectedNapiSha256,
       expectedTypescriptBuildSetSha256,
     );
     const cgroupMemoryMaxBytes = await cgroupV2MemoryMetric("memory.max");
@@ -1407,7 +1411,7 @@ test("baut, signiert, startet, revisioniert und restored Deutschland-2026.5 mit 
     ]);
     const { parseSignedAlphaWorldDeployment } = await import("../../apps/game-api/dist/alpha-world-start.js");
     const signed = parseSignedAlphaWorldDeployment(signedDocument, trustedKeys);
-    assertCompactDeployment(signed);
+    assertCompactDeployment(signed, expectedInfraBinding);
     const reuseCandidate = releaseCandidatePins === undefined
       ? undefined
       : assertExactReusedReleaseCandidate({
@@ -1534,7 +1538,7 @@ test("baut, signiert, startet, revisioniert und restored Deutschland-2026.5 mit 
     );
     const runtimeBuildAfter = await runtimeBuildProof(
       nativeAddonPath,
-      process.env.ZUGFOLGE_REAL_GERMANY_EXPECTED_NAPI_SHA256,
+      expectedNapiSha256,
       expectedTypescriptBuildSetSha256,
     );
     assert.deepEqual(
@@ -1583,10 +1587,11 @@ test("baut, signiert, startet, revisioniert und restored Deutschland-2026.5 mit 
           ? "ephemeral-debug-only"
           : "registered-local",
       },
-      operationalInfrastructure: EXPECTED_INFRA_BINDING,
+      operationalInfrastructure: expectedInfraBinding,
       acceptanceScope: "local-native-worker-external-postgresql-integration",
       excludedClaims: runtimeEvidence.excludedClaims,
       sourceCheckout,
+      pinRegistrationCommit,
       releaseCandidate: reuseCandidate ?? {
         exactCandidateVerified: false,
         mode: "ephemeral-debug-only",
@@ -1634,5 +1639,3 @@ test("baut, signiert, startet, revisioniert und restored Deutschland-2026.5 mit 
     }
   }
 });
-
-throw new Error("PENDING_REAL_ANNUAL_RELEASE_BUILD: Deutschland-Alpha-Real-Audit 2026.5 muss nach dem realen Jahresrelease-Build neu gepinnt werden.");
