@@ -133,6 +133,16 @@ Signalbegriffe sind Ableitungen. Kein Signal kann Bewegung über die interne
 Fahrberechtigung hinaus erlauben. Auflösung erfolgt erst, wenn der Zugschluss
 die vorlagengebundene Grenze passiert hat.
 
+Eine konservative Gesamtfahrstraße darf ihre durchfahrenen Fahrweg- und
+Flankenschutzressourcen am exakten Laufwegende auch dann freigeben, wenn ihre
+statische Schlussfreigabe mit dem Fahrberechtigungsende zusammenfällt und
+deshalb von einem positiv langen Zugschluss nicht überfahren werden kann.
+Diese Terminalfreigabe gilt ausschließlich bei Zugspitze gleich Laufwegende,
+Geschwindigkeit null und ohne laufenden Bewegungsabschnitt. Die
+Durchrutschwegressourcen der Fahrstraße wechseln dabei atomar aus dem Lock in
+die belegte Endschutzmenge der stehenden Formation; sie bleiben bis zu deren
+Entfernung gesperrt. Vor diesem Zustand bleibt der vollständige Lock erhalten.
+
 ## 5. FDL und virtueller Lokführer
 
 Der FDL bekommt nur Kandidaten, deren benötigte Ressourcen geändert wurden.
@@ -141,6 +151,9 @@ bereits verbindlichem Lock, Fahrplan-/Folgeverspätung, Fahrgast/Anschluss,
 Vertrag, Netzstabilität, Fahrzeug/Personal, Wiederherstellbarkeit,
 Verhungerungsschutz und stabiler Zugkennung. Es entsteht kein gewichteter
 Einzelscore. Begonnene oder verriegelte Bewegungen werden nicht zurückgenommen.
+Nach erfolgreicher Fahrstraßenzuteilung wird die Fahrt atomar aus allen
+Ressourcen-Warteindizes entfernt; diese Indizes dürfen keine bereits
+autorisierten Fahrten enthalten.
 
 Der virtuelle Lokführer leitet Beschleunigen, Beharren und Bremsen aus
 Formation, Kantenprofil, Neigung, Fahrberechtigung und Zielhalt ab. Verspätete

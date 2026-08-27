@@ -2382,11 +2382,13 @@ impl OperationalWorld {
             candidate.id != train_id && !candidate.occupied_blocks.is_disjoint(&resources)
         });
         if disrupted || incompatible_lock || occupied_by_other {
-            for resource in &resources {
-                self.waiting_by_resource
-                    .entry(resource.clone())
-                    .or_default()
-                    .insert(train_id.to_owned());
+            if self.pending_dispatch_requests.contains_key(train_id) {
+                for resource in &resources {
+                    self.waiting_by_resource
+                        .entry(resource.clone())
+                        .or_default()
+                        .insert(train_id.to_owned());
+                }
             }
             return Err(OperationalError::UnsafeRoute(template_id.to_owned()));
         }
@@ -2435,6 +2437,10 @@ impl OperationalWorld {
             .get_mut(train_id)
             .expect("train exists")
             .authority = Some(authority.clone());
+        self.waiting_by_resource.retain(|_, waiting| {
+            waiting.remove(train_id);
+            !waiting.is_empty()
+        });
         self.record("route-locked", train_id, template_id)?;
         Ok(authority)
     }
@@ -2812,28 +2818,59 @@ impl OperationalWorld {
     }
 
     fn release_routes_after_tail(&mut self, train_id: &str) -> Result<(), OperationalError> {
-        let tail = self
-            .trains
-            .get(train_id)
-            .ok_or_else(|| OperationalError::UnknownTrain(train_id.to_owned()))?
-            .tail_route_mm;
-        let release_ids: Vec<String> = self
-            .route_locks
-            .values()
-            .filter(|lock| lock.train_id == train_id && tail >= lock.release_after_tail_route_mm)
-            .map(|lock| lock.id.clone())
-            .collect();
-        for lock_id in release_ids {
+        let (tail, terminal_route_length, terminal_complete) = {
+            let train = self
+                .trains
+                .get(train_id)
+                .ok_or_else(|| OperationalError::UnknownTrain(train_id.to_owned()))?;
+            let route = self
+                .infrastructure()?
+                .route_version(&train.route_version_id)?
+                .ok_or_else(|| OperationalError::UnknownRoute(train.route_version_id.clone()))?;
+            let route_length = route.length_mm();
+            (
+                train.tail_route_mm,
+                route_length,
+                train.head_route_mm == route_length
+                    && train.speed_mmps == 0
+                    && train.motion_segment.is_none(),
+            )
+        };
+        let releases: Vec<(String, InterlockingRouteTemplate, bool)> = {
+            let infrastructure = self.infrastructure()?;
+            let mut releases = Vec::new();
+            for lock in self
+                .route_locks
+                .values()
+                .filter(|lock| lock.train_id == train_id)
+            {
+                let template = infrastructure
+                    .interlocking_route(&lock.template_id)?
+                    .ok_or_else(|| {
+                        OperationalError::UnknownInterlockingRoute(lock.template_id.clone())
+                    })?;
+                let terminal_release = terminal_complete
+                    && template.authority_end_route_mm == terminal_route_length
+                    && lock.release_after_tail_route_mm == terminal_route_length
+                    && tail < lock.release_after_tail_route_mm;
+                if tail >= lock.release_after_tail_route_mm || terminal_release {
+                    releases.push((lock.id.clone(), template, terminal_release));
+                }
+            }
+            releases
+        };
+        for (lock_id, template, terminal_release) in releases {
             let lock = self
                 .route_locks
                 .remove(&lock_id)
                 .expect("selected lock exists");
-            let template = self
-                .infrastructure()?
-                .interlocking_route(&lock.template_id)?
-                .ok_or_else(|| {
-                    OperationalError::UnknownInterlockingRoute(lock.template_id.clone())
-                })?;
+            if terminal_release {
+                self.trains
+                    .get_mut(train_id)
+                    .expect("train exists")
+                    .occupied_blocks
+                    .extend(template.overlap_resources.iter().cloned());
+            }
             self.signal_aspects.remove(&template.signal_id);
             for resource in &lock.resources {
                 self.resource_lifecycle.remove(resource);
@@ -2849,7 +2886,15 @@ impl OperationalWorld {
                     .expect("train exists")
                     .authority = None;
             }
-            self.record("route-released-after-tail", train_id, lock.template_id)?;
+            self.record(
+                if terminal_release {
+                    "route-released-at-terminal"
+                } else {
+                    "route-released-after-tail"
+                },
+                train_id,
+                lock.template_id,
+            )?;
         }
         Ok(())
     }
@@ -2907,6 +2952,8 @@ impl OperationalWorld {
         let predecessor = train.formation_version_id.clone();
         let route_id = train.route_version_id.clone();
         let head = train.head_route_mm;
+        let previous_tail = train.tail_route_mm;
+        let previous_occupied_blocks = train.occupied_blocks.clone();
         self.ensure_vehicles_available(train_id, &vehicle_ids)?;
         let formation =
             self.derive_formation(new_formation_id.into(), Some(predecessor), vehicle_ids)?;
@@ -2917,13 +2964,21 @@ impl OperationalWorld {
         let tail = head.saturating_sub(i64::from(formation.performance.length_mm));
         let intervals = intervals_for(&route, tail, head)?;
         self.ensure_intervals_free(train_id, &intervals)?;
+        let previous_geometric_blocks = blocks_for(&route, previous_tail, head);
+        let retained_protection_resources: BTreeSet<String> = previous_occupied_blocks
+            .difference(&previous_geometric_blocks)
+            .cloned()
+            .collect();
+        let mut occupied_blocks = blocks_for(&route, tail, head);
+        occupied_blocks.extend(retained_protection_resources);
         self.formations
             .insert(formation.id.clone(), formation.clone());
         let train = self.trains.get_mut(train_id).expect("train exists");
         train.formation_version_id = formation.id.clone();
         train.tail_route_mm = tail;
         train.occupied_intervals = intervals;
-        train.occupied_blocks = blocks_for(&route, tail, head);
+        train.occupied_blocks = occupied_blocks;
+        self.rebuild_resource_lifecycle();
         self.record("formation-changed", train_id, formation.id)?;
         Ok(())
     }
@@ -3470,9 +3525,21 @@ impl OperationalWorld {
             .pending_dispatch_requests
             .iter()
             .any(|(train_id, request)| {
-                train_id != &request.train_id || !self.trains.contains_key(train_id)
+                train_id != &request.train_id
+                    || self.trains.get(train_id).is_none_or(|train| {
+                        train.authority.is_some() || train.motion_segment.is_some()
+                    })
             })
         {
+            return Err(OperationalError::UnsafeState);
+        }
+        if self.waiting_by_resource.iter().any(|(resource, waiting)| {
+            resource.is_empty()
+                || waiting.is_empty()
+                || waiting
+                    .iter()
+                    .any(|train_id| !self.pending_dispatch_requests.contains_key(train_id))
+        }) {
             return Err(OperationalError::UnsafeState);
         }
         let mut train_numbers = BTreeSet::new();
@@ -3506,6 +3573,13 @@ impl OperationalWorld {
             return Err(OperationalError::OccupiedTrack);
         }
         if cross_train_route_lock_overlap(self.route_locks.values()) {
+            return Err(OperationalError::UnsafeState);
+        }
+        if self.route_locks.values().any(|lock| {
+            self.trains.values().any(|train| {
+                train.id != lock.train_id && !train.occupied_blocks.is_disjoint(&lock.resources)
+            })
+        }) {
             return Err(OperationalError::UnsafeState);
         }
         Ok(())

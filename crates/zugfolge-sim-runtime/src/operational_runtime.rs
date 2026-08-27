@@ -2049,8 +2049,13 @@ mod tests {
         assert_eq!(result["liveMap"]["trains"][0]["headRouteMm"], 100_000);
         assert_eq!(result["liveMap"]["trains"][0]["tailRouteMm"], 90_000);
         assert_eq!(result["liveMap"]["trains"][0]["motionState"], "standing");
-        assert_eq!(result["liveMap"]["routeLocks"].as_array().unwrap().len(), 1);
-        assert_eq!(result["liveMap"]["signals"]["signal:1"], "proceed");
+        assert_eq!(result["liveMap"]["routeLocks"], json!([]));
+        assert_eq!(result["liveMap"]["signals"], json!({}));
+        assert!(
+            result["state"]["world"]["trains"]["train:1"]["occupiedBlocks"]
+                .as_array()
+                .is_some_and(|resources| resources.contains(&json!("overlap:1")))
+        );
         result = apply_value(
             &result["state"],
             "day:1:retire",

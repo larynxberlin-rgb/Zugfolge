@@ -847,7 +847,7 @@ fn block_and_route_release_wait_for_tail() {
 }
 
 #[test]
-fn full_route_lock_is_released_atomically_when_positive_length_train_retires() {
+fn full_route_lock_releases_at_terminal_but_keeps_endpoint_protected_until_retirement() {
     let mut world = world_with_release(release_with_route_protection(&["lzb", "pzb"]));
     world
         .materialize_train(
@@ -863,7 +863,14 @@ fn full_route_lock_is_released_atomically_when_positive_length_train_retires() {
         )
         .unwrap();
     world.lock_route("train:1", "interlocking:train").unwrap();
-    world.plan_motion("train:1").unwrap();
+    let first_segment = world.plan_motion("train:1").unwrap();
+    world.advance_to(first_segment.valid_until_ms).unwrap();
+    assert!(world.trains["train:1"].head_route_mm < 120_000);
+    assert_eq!(world.route_locks.len(), 1);
+    assert_eq!(
+        world.resource_lifecycle["overlap:1"],
+        ResourceLifecycle::RouteLocked
+    );
 
     for _ in 0..16 {
         let Some(valid_until_ms) = world.trains["train:1"]
@@ -881,23 +888,36 @@ fn full_route_lock_is_released_atomically_when_positive_length_train_retires() {
     assert_eq!(completed.tail_route_mm, 110_000);
     assert!(completed.authority.is_none());
     assert_eq!(completed.speed_mmps, 0);
-    assert_eq!(world.route_locks.len(), 1);
-    assert_eq!(world.signal_aspects["signal:train"], SignalAspect::Proceed);
-
-    world.retire_train("train:1").unwrap();
-
-    assert!(!world.trains.contains_key("train:1"));
     assert!(world.route_locks.is_empty());
     assert!(!world.signal_aspects.contains_key("signal:train"));
-    for resource in [
-        "block:a",
-        "block:b",
-        "route-resource:common",
-        "overlap:1",
-        "flank:1",
-    ] {
+    assert!(completed.occupied_blocks.contains("overlap:1"));
+    assert_eq!(
+        world.resource_lifecycle["overlap:1"],
+        ResourceLifecycle::OccupiedByFormation
+    );
+    for resource in ["block:a", "route-resource:common", "flank:1"] {
         assert!(!world.resource_lifecycle.contains_key(resource));
     }
+    assert_eq!(
+        world.resource_lifecycle["block:b"],
+        ResourceLifecycle::OccupiedByFormation
+    );
+    world
+        .change_formation(
+            "train:1",
+            "formation:terminal-changed",
+            vec!["vehicle:1".to_owned()],
+        )
+        .unwrap();
+    assert!(
+        world.trains["train:1"]
+            .occupied_blocks
+            .contains("overlap:1")
+    );
+    assert_eq!(
+        world.resource_lifecycle["overlap:1"],
+        ResourceLifecycle::OccupiedByFormation
+    );
 
     world
         .materialize_train(
@@ -912,7 +932,156 @@ fn full_route_lock_is_released_atomically_when_positive_length_train_retires() {
             false,
         )
         .unwrap();
-    world.lock_route("train:2", "interlocking:train").unwrap();
+    assert_eq!(
+        world
+            .submit_dispatch_requests(&[DispatchRequest {
+                train_id: "train:2".to_owned(),
+                interlocking_route_id: "interlocking:train".to_owned(),
+                committed_rank: 0,
+                timetable_deviation_ms: 0,
+                passenger_impact: 0,
+                contractual_impact: 0,
+                network_impact: 0,
+                resource_consequence: 0,
+                recovery_rank: 0,
+                waiting_since_ms: world.now_ms,
+            }])
+            .unwrap(),
+        Vec::<String>::new()
+    );
+    assert!(world.trains["train:2"].authority.is_none());
+
+    world.retire_train("train:1").unwrap();
+
+    assert!(!world.trains.contains_key("train:1"));
+    assert_eq!(world.route_locks.len(), 1);
+    assert_eq!(world.signal_aspects["signal:train"], SignalAspect::Proceed);
+    assert!(world.trains["train:2"].authority.is_some());
+    assert!(world.trains["train:2"].motion_segment.is_some());
+    let checkpoint = serde_json::to_value(&world).unwrap();
+    assert_eq!(checkpoint["waitingByResource"], serde_json::json!({}));
+    world.verify_invariants().unwrap();
+}
+
+#[test]
+fn checkpoint_invariant_rejects_a_foreign_lock_against_occupied_endpoint_protection() {
+    let mut world = world_with_release(release_with_independent_opposing_route());
+    world
+        .materialize_train(
+            "train:1",
+            "RB 1",
+            "operator:1",
+            MovementKind::Train,
+            "route:v1",
+            "formation:1",
+            20_000,
+            None,
+            false,
+        )
+        .unwrap();
+    world
+        .materialize_train(
+            "train:2",
+            "RB 2",
+            "operator:2",
+            MovementKind::Train,
+            "route:opposing",
+            "formation:2",
+            50_000,
+            None,
+            false,
+        )
+        .unwrap();
+    world.lock_route("train:1", "interlocking:train").unwrap();
+    world
+        .trains
+        .get_mut("train:2")
+        .expect("zweiter Zug")
+        .occupied_blocks
+        .insert("overlap:1".to_owned());
+
+    assert_eq!(
+        world.verify_invariants(),
+        Err(OperationalError::UnsafeState)
+    );
+}
+
+#[test]
+fn terminal_release_dispatches_a_disjoint_waiter_and_clears_its_wait_index() {
+    let mut infra = release_with_independent_opposing_route();
+    let terminal = infra
+        .interlocking_routes
+        .get_mut("interlocking:train")
+        .expect("Test-Fahrstrasse");
+    terminal.authority_end_route_mm = 120_000;
+    terminal.release_after_tail_route_mm = 120_000;
+    let mut world = world_with_release(infra);
+    world
+        .materialize_train(
+            "train:1",
+            "RB 1",
+            "operator:1",
+            MovementKind::Train,
+            "route:v1",
+            "formation:1",
+            20_000,
+            None,
+            false,
+        )
+        .unwrap();
+    world
+        .materialize_train(
+            "train:2",
+            "RB 2",
+            "operator:2",
+            MovementKind::Train,
+            "route:opposing",
+            "formation:2",
+            0,
+            None,
+            false,
+        )
+        .unwrap();
+    world.lock_route("train:1", "interlocking:train").unwrap();
+    world.plan_motion("train:1").unwrap();
+    assert_eq!(
+        world
+            .submit_dispatch_requests(&[DispatchRequest {
+                train_id: "train:2".to_owned(),
+                interlocking_route_id: "interlocking:opposing".to_owned(),
+                committed_rank: 0,
+                timetable_deviation_ms: 0,
+                passenger_impact: 0,
+                contractual_impact: 0,
+                network_impact: 0,
+                resource_consequence: 0,
+                recovery_rank: 0,
+                waiting_since_ms: 0,
+            }])
+            .unwrap(),
+        Vec::<String>::new()
+    );
+
+    for _ in 0..16 {
+        let Some(valid_until_ms) = world.trains["train:1"]
+            .motion_segment
+            .as_ref()
+            .map(|segment| segment.valid_until_ms)
+        else {
+            break;
+        };
+        world.advance_to(valid_until_ms).unwrap();
+    }
+
+    assert!(
+        world.trains["train:1"]
+            .occupied_blocks
+            .contains("overlap:1")
+    );
+    assert!(world.trains["train:2"].authority.is_some());
+    assert!(world.trains["train:2"].motion_segment.is_some());
+    let checkpoint = serde_json::to_value(&world).unwrap();
+    assert_eq!(checkpoint["waitingByResource"], serde_json::json!({}));
     world.verify_invariants().unwrap();
 }
 
