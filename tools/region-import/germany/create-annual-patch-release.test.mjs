@@ -49,6 +49,10 @@ async function fixture(t) {
             cacheFile: "derived/infra-deutschland-2026.4/timetable-routes-v2.jsonseq",
           },
           {
+            sourceFile: "var/derived/germany-2026.4/timetable-routes-v2.derivation-report.json",
+            cacheFile: "derived/infra-deutschland-2026.4/timetable-routes-v2.derivation-report.json",
+          },
+          {
             sourceFile: "var/derived/germany-2026.4/operational-infrastructure-v2.json",
             cacheFile: "derived/infra-deutschland-2026.4/operational-infrastructure-v2.json",
           },
@@ -65,6 +69,13 @@ async function fixture(t) {
             file: "var/derived/germany-2026.4/gtfs-region.json",
             expectedBytes: 123,
             expectedSha256: "a".repeat(64),
+          },
+          {
+            id: "timetable-routes-v2-report",
+            kind: "derived-input",
+            version: "infra-deutschland-2026.4",
+            file: "var/derived/germany-2026.4/timetable-routes-v2.derivation-report.json",
+            cacheFile: "derived/infra-deutschland-2026.4/timetable-routes-v2.derivation-report.json",
           },
         ],
         candidatePackage: {
@@ -94,13 +105,22 @@ function buildEvidenceBaseline() {
   return {
     schema: "zugfolge-map-release-build-evidence-spec/v2",
     releaseId: "infra-deutschland-2026.4",
-    inputs: [{
-      id: "gtfs-region-snapshot",
-      kind: "derived-input",
-      file: "var/derived/germany-2026.4/gtfs-region.json",
-      expectedBytes: 123,
-      expectedSha256: "a".repeat(64),
-    }],
+    inputs: [
+      {
+        id: "gtfs-region-snapshot",
+        kind: "derived-input",
+        file: "var/derived/germany-2026.4/gtfs-region.json",
+        expectedBytes: 123,
+        expectedSha256: "a".repeat(64),
+      },
+      {
+        id: "timetable-routes-v2-report",
+        kind: "derived-input",
+        version: "infra-deutschland-2026.4",
+        file: "var/derived/germany-2026.4/timetable-routes-v2.derivation-report.json",
+        cacheFile: "derived/infra-deutschland-2026.4/timetable-routes-v2.derivation-report.json",
+      },
+    ],
     candidatePackage: {
       retainedTrustedKeyIds: ["zugfolge-alpha-2026", "zugfolge-alpha-2026.3"],
     },
@@ -322,10 +342,16 @@ async function baselineHardeningFixture(t) {
     ["tools/tiles/map-build-cache-inventory.annual-2026.4.plan.json", {
       schema: "zugfolge-map-build-cache-inventory-plan/v1",
       releaseId: "infra-deutschland-2026.4",
-      files: [{
-        sourceFile: "var/derived/germany-2026.4/timetable-routes-v2.jsonseq",
-        cacheFile: "derived/infra-deutschland-2026.4/timetable-routes-v2.jsonseq",
-      }],
+      files: [
+        {
+          sourceFile: "var/derived/germany-2026.4/timetable-routes-v2.jsonseq",
+          cacheFile: "derived/infra-deutschland-2026.4/timetable-routes-v2.jsonseq",
+        },
+        {
+          sourceFile: "var/derived/germany-2026.4/timetable-routes-v2.derivation-report.json",
+          cacheFile: "derived/infra-deutschland-2026.4/timetable-routes-v2.derivation-report.json",
+        },
+      ],
     }],
     ["tools/tiles/map-package.annual-2026.4.plan.json", {
       schema: "zugfolge-map-package-plan/v2",
@@ -490,6 +516,13 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
   assert.equal(timetable.transferOutput, "var/derived/germany-2026.5/timetable-routes-v2.transfer-demands-v2.json");
 
   const cachePlan = JSON.parse(await readFile(join(root, result.files[5]), "utf8"));
+  assert.deepEqual(
+    cachePlan.files.filter(({ sourceFile }) => sourceFile.includes("timetable-routes-v2.derivation-report")),
+    [{
+      sourceFile: "var/derived/germany-2026.5/timetable-routes-v2.derivation-report-v4.json",
+      cacheFile: "derived/infra-deutschland-2026.5/timetable-routes-v2.derivation-report-v4.json",
+    }],
+  );
   assert.deepEqual(cachePlan.files.slice(-2).map(({ sourceFile }) => sourceFile.split("/").at(-1)), [
     "operational-infrastructure-v2.movement-route-templates-v2.json",
     "timetable-routes-v2.transfer-demands-v2.json",
@@ -510,6 +543,16 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
   assert.equal(gtfsEvidence.length, 1);
   assert.equal(gtfsEvidence[0].expectedBytes, GTFS_SNAPSHOT_BYTES);
   assert.equal(gtfsEvidence[0].expectedSha256, GTFS_SNAPSHOT_SHA256);
+  assert.deepEqual(
+    evidence.inputs.filter(({ id }) => id === "timetable-routes-v2-report"),
+    [{
+      id: "timetable-routes-v2-report",
+      kind: "derived-input",
+      version: "infra-deutschland-2026.5",
+      file: "var/derived/germany-2026.5/timetable-routes-v2.derivation-report-v4.json",
+      cacheFile: "derived/infra-deutschland-2026.5/timetable-routes-v2.derivation-report-v4.json",
+    }],
+  );
   assert.deepEqual(evidence.candidatePackage.retainedTrustedKeyIds, [
     "zugfolge-alpha-2026",
     "zugfolge-alpha-2026.3",
@@ -602,6 +645,54 @@ test("verweigert eine bereits target-only umgeschriebene forensische .4-Quelle v
   );
 });
 
+test("verweigert einen vorab auf v4 vermischten Timetable-Report im historischen Buildcache", async (t) => {
+  const { root } = await baselineHardeningFixture(t);
+  const cachePath = join(root, "tools/tiles/map-build-cache-inventory.annual-2026.4.plan.json");
+  const cachePlan = JSON.parse(await readFile(cachePath, "utf8"));
+  const reportEntry = cachePlan.files.find(({ sourceFile }) => sourceFile.endsWith("timetable-routes-v2.derivation-report.json"));
+  reportEntry.sourceFile = "var/derived/germany-2026.4/timetable-routes-v2.derivation-report-v4.json";
+  reportEntry.cacheFile = "derived/infra-deutschland-2026.4/timetable-routes-v2.derivation-report-v4.json";
+  await writeFile(cachePath, `${JSON.stringify(cachePlan, null, 2)}\n`, "utf8");
+
+  await assert.rejects(
+    createAnnualPatchRelease({
+      repositoryRoot: root,
+      sourcePatch: "2026.4",
+      targetPatch: "2026.5",
+      files: CANONICAL_HARDENING_FILES,
+      textFiles: CANONICAL_HARDENING_TEXT_FILES,
+    }),
+    /Buildcache-Zielvertrag besitzt keine exakt migrierbare historische V3-Reportbindung/u,
+  );
+  await assert.rejects(
+    readFile(join(root, "tools/tiles/map-build-cache-inventory.annual-2026.5.plan.json")),
+    /ENOENT/u,
+  );
+});
+
+test("verweigert einen fehlenden Timetable-Report-Input im historischen Build-Evidence-Vertrag", async (t) => {
+  const { root } = await baselineHardeningFixture(t);
+  const evidencePath = join(root, "tools/tiles/map-release-build-evidence.annual-2026.4.spec.json");
+  const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
+  evidence.inputs = evidence.inputs.filter(({ id }) => id !== "timetable-routes-v2-report");
+  await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
+
+  await assert.rejects(
+    createAnnualPatchRelease({
+      repositoryRoot: root,
+      sourcePatch: "2026.4",
+      targetPatch: "2026.5",
+      files: CANONICAL_HARDENING_FILES,
+      textFiles: CANONICAL_HARDENING_TEXT_FILES,
+    }),
+    /Build-Evidence-Zielvertrag bindet den historischen Timetable-Routenbericht nicht exakt einmal/u,
+  );
+  await assert.rejects(
+    readFile(join(root, "tools/tiles/map-release-build-evidence.annual-2026.5.spec.json")),
+    /ENOENT/u,
+  );
+});
+
 test("erstellt den vollstaendigen direkten Jahrespatch create-new und laesst Quellen bytegleich", async (t) => {
   const { files, root, textFiles } = await fixture(t);
   const sourcePath = join(root, "contracts/release.annual-2026.4.json");
@@ -625,6 +716,13 @@ test("erstellt den vollstaendigen direkten Jahrespatch create-new und laesst Que
     path: "var/derived/germany-2026.5",
   });
   const cachePlan = JSON.parse(await readFile(join(root, result.files[2]), "utf8"));
+  assert.deepEqual(
+    cachePlan.files.filter(({ sourceFile }) => sourceFile.includes("timetable-routes-v2.derivation-report")),
+    [{
+      sourceFile: "var/derived/germany-2026.5/timetable-routes-v2.derivation-report-v4.json",
+      cacheFile: "derived/infra-deutschland-2026.5/timetable-routes-v2.derivation-report-v4.json",
+    }],
+  );
   assert.deepEqual(cachePlan.files.slice(-2), [
     {
       sourceFile: "var/derived/germany-2026.5/operational-infrastructure-v2.movement-route-templates-v2.json",
@@ -650,6 +748,13 @@ test("erstellt den vollstaendigen direkten Jahrespatch create-new und laesst Que
     file: "var/derived/germany-2026.5/gtfs-region.json",
     expectedBytes: GTFS_SNAPSHOT_BYTES,
     expectedSha256: GTFS_SNAPSHOT_SHA256,
+  });
+  assert.deepEqual(buildEvidence.inputs[1], {
+    id: "timetable-routes-v2-report",
+    kind: "derived-input",
+    version: "infra-deutschland-2026.5",
+    file: "var/derived/germany-2026.5/timetable-routes-v2.derivation-report-v4.json",
+    cacheFile: "derived/infra-deutschland-2026.5/timetable-routes-v2.derivation-report-v4.json",
   });
   assert.deepEqual(buildEvidence.candidatePackage.retainedTrustedKeyIds, [
     "zugfolge-alpha-2026",

@@ -44,6 +44,9 @@ const ALPHA_WORLD_RUNTIME_AUDIT_TEMPLATE = "tools/audits/germany-{patch}-alpha-w
 const SIGNED_GAME_STAGING_AUDIT_TEMPLATE = "tools/audits/germany-{patch}-signed-game-staging.real.test.mjs";
 const PENDING_REAL_BUILD = "PENDING_REAL_ANNUAL_RELEASE_BUILD";
 const SHA256 = /^[a-f0-9]{64}$/u;
+const HISTORICAL_TIMETABLE_ROUTE_REPORT_FILE = "timetable-routes-v2.derivation-report.json";
+const TARGET_TIMETABLE_ROUTE_REPORT_FILE = "timetable-routes-v2.derivation-report-v4.json";
+const TIMETABLE_ROUTE_REPORT_INPUT_ID = "timetable-routes-v2-report";
 const BUILD_EVIDENCE_V2_OUTPUT_KINDS = Object.freeze([
   "basemap-pmtiles",
   "semantic-pmtiles",
@@ -230,6 +233,29 @@ function sha256Pin(value, label) {
   invariant(typeof value === "string" && SHA256.test(value), `${label} ist kein SHA-256-Build-Pin.`);
 }
 
+function timetableRouteReportCacheBinding(patch, fileName) {
+  return Object.freeze({
+    sourceFile: `var/derived/germany-${patch}/${fileName}`,
+    cacheFile: `derived/infra-deutschland-${patch}/${fileName}`,
+  });
+}
+
+function timetableRouteReportEvidenceBinding(patch, fileName) {
+  return Object.freeze({
+    id: TIMETABLE_ROUTE_REPORT_INPUT_ID,
+    kind: "derived-input",
+    version: `infra-deutschland-${patch}`,
+    file: `var/derived/germany-${patch}/${fileName}`,
+    cacheFile: `derived/infra-deutschland-${patch}/${fileName}`,
+  });
+}
+
+function isTimetableRouteReportPath(value) {
+  if (typeof value !== "string") return false;
+  const fileName = value.split("/").at(-1);
+  return fileName === HISTORICAL_TIMETABLE_ROUTE_REPORT_FILE || fileName === TARGET_TIMETABLE_ROUTE_REPORT_FILE;
+}
+
 function replaceExactlyOnce(content, pattern, replacement, label) {
   invariant(!pattern.global, `${label}: internes Suchmuster darf nicht global sein.`);
   const matches = [...content.matchAll(new RegExp(pattern.source, `${pattern.flags}g`))];
@@ -352,7 +378,7 @@ function migrateTimetableRouteCompiler(content, targetPatch) {
   const { output, transferOutput, report, ...prefix } = value;
   invariant(output === `var/derived/germany-${targetPatch}/timetable-routes-v2.jsonseq`, "Timetable-Ausgabepfad ist nicht kanonisch.");
   invariant(transferOutput === `var/derived/germany-${targetPatch}/timetable-routes-v2.transfer-demands-v1.json`, "Timetable-Quellvertrag bindet nicht den historischen V1-Transferpfad.");
-  invariant(report === `var/derived/germany-${targetPatch}/timetable-routes-v2.derivation-report.json`, "Timetable-Reportpfad ist nicht kanonisch.");
+  invariant(report === `var/derived/germany-${targetPatch}/${HISTORICAL_TIMETABLE_ROUTE_REPORT_FILE}`, "Timetable-Reportpfad ist nicht kanonisch.");
   const migrated = {
     ...prefix,
     schema: target.compilerSchema,
@@ -367,7 +393,7 @@ function migrateTimetableRouteCompiler(content, targetPatch) {
     },
     output,
     transferOutput: `var/derived/germany-${targetPatch}/timetable-routes-v2.transfer-demands-v2.json`,
-    report: `var/derived/germany-${targetPatch}/timetable-routes-v2.derivation-report-v4.json`,
+    report: `var/derived/germany-${targetPatch}/${TARGET_TIMETABLE_ROUTE_REPORT_FILE}`,
   };
   return `${JSON.stringify(migrated, null, 2)}\n`;
 }
@@ -474,11 +500,11 @@ function migrateSyntheticOperationalClosure(content, targetPatch) {
   invariant(value.schema === "zugfolge-synthetic-operational-closure-inputs/v2", "Synthetic-Operational-Closure besitzt nicht das erwartete v2-Schema.");
   invariant(value.releaseId === `infra-deutschland-${targetPatch}`, "Synthetic-Operational-Closure besitzt nicht die erwartete Release-ID.");
   invariant(
-    value.timetableRouteReportFile === "timetable-routes-v2.derivation-report.json"
+    value.timetableRouteReportFile === HISTORICAL_TIMETABLE_ROUTE_REPORT_FILE
       && value.timetableTransferDemandsFile === "timetable-routes-v2.transfer-demands-v1.json",
     "Synthetic-Operational-Closure besitzt nicht die historischen V3-Report-/V1-Transferdateien.",
   );
-  value.timetableRouteReportFile = "timetable-routes-v2.derivation-report-v4.json";
+  value.timetableRouteReportFile = TARGET_TIMETABLE_ROUTE_REPORT_FILE;
   value.timetableTransferDemandsFile = "timetable-routes-v2.transfer-demands-v2.json";
   return `${JSON.stringify(value, null, 2)}\n`;
 }
@@ -530,6 +556,23 @@ function migrateBuildEvidence(content, sourcePatch, targetPatch) {
     "Build-Evidence-Zielvertrag besitzt nicht die erwartete Deutschland-Release-ID.",
   );
   invariant(Array.isArray(value.inputs), "Build-Evidence-Zielvertrag besitzt keine Eingaben.");
+  const sourceReportBinding = timetableRouteReportEvidenceBinding(targetPatch, HISTORICAL_TIMETABLE_ROUTE_REPORT_FILE);
+  const targetReportBinding = timetableRouteReportEvidenceBinding(targetPatch, TARGET_TIMETABLE_ROUTE_REPORT_FILE);
+  const reportInputs = value.inputs.filter((entry) => (
+    entry?.id === TIMETABLE_ROUTE_REPORT_INPUT_ID
+      || isTimetableRouteReportPath(entry?.file)
+      || isTimetableRouteReportPath(entry?.cacheFile)
+  ));
+  invariant(reportInputs.length === 1, "Build-Evidence-Zielvertrag bindet den historischen Timetable-Routenbericht nicht exakt einmal.");
+  const reportInput = jsonObject(reportInputs[0], "Build-Evidence-Timetable-Routenbericht");
+  invariant(
+    Object.keys(reportInput).length === Object.keys(sourceReportBinding).length
+      && Object.entries(sourceReportBinding).every(([key, expected]) => reportInput[key] === expected),
+    "Build-Evidence-Zielvertrag besitzt keine exakt migrierbare historische V3-Reportbindung.",
+  );
+  reportInput.file = targetReportBinding.file;
+  reportInput.cacheFile = targetReportBinding.cacheFile;
+
   const gtfsInputs = value.inputs.filter(({ id }) => id === "gtfs-region-snapshot");
   invariant(gtfsInputs.length === 1, "Build-Evidence-Zielvertrag bindet den GTFS-Region-Snapshot nicht exakt einmal.");
   const gtfsInput = jsonObject(gtfsInputs[0], "Build-Evidence-GTFS-Region-Snapshot");
@@ -856,6 +899,20 @@ function migrateTargetContract(content, template, sourcePatch, targetPatch) {
     const value = JSON.parse(content);
     const releaseId = `infra-deutschland-${targetPatch}`;
     validateMapBuildCacheInventoryPlan(value, releaseId);
+    const sourceReportBinding = timetableRouteReportCacheBinding(targetPatch, HISTORICAL_TIMETABLE_ROUTE_REPORT_FILE);
+    const targetReportBinding = timetableRouteReportCacheBinding(targetPatch, TARGET_TIMETABLE_ROUTE_REPORT_FILE);
+    const reportEntries = value.files.filter((entry) => (
+      isTimetableRouteReportPath(entry?.sourceFile) || isTimetableRouteReportPath(entry?.cacheFile)
+    ));
+    invariant(reportEntries.length === 1, "Buildcache-Zielvertrag bindet den historischen Timetable-Routenbericht nicht exakt einmal.");
+    const reportEntry = jsonObject(reportEntries[0], "Buildcache-Timetable-Routenbericht");
+    invariant(
+      Object.keys(reportEntry).length === Object.keys(sourceReportBinding).length
+        && Object.entries(sourceReportBinding).every(([key, expected]) => reportEntry[key] === expected),
+      "Buildcache-Zielvertrag besitzt keine exakt migrierbare historische V3-Reportbindung.",
+    );
+    reportEntry.sourceFile = targetReportBinding.sourceFile;
+    reportEntry.cacheFile = targetReportBinding.cacheFile;
     for (const required of REQUIRED_OPERATIONAL_CACHE_SIDECARS) {
       const sourceFile = required.sourceFile(targetPatch);
       const cacheFile = required.cacheFile(targetPatch);
