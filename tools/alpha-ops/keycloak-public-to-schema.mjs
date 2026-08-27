@@ -1099,6 +1099,7 @@ async function lockKeycloakTables(sql, schema, catalog) {
 async function withMigrationSessionLock(client, work) {
   invariant(typeof client?.reserve === "function", "Keycloak-Schema-Migration erfordert eine reservierbare PostgreSQL-Verbindung.");
   const connection = await client.reserve();
+  invariant(typeof connection?.unsafe === "function", "Reservierte PostgreSQL-Verbindung kann keine SQL-Kommandos ausfuehren.");
   invariant(typeof connection?.release === "function", "Reservierte PostgreSQL-Verbindung besitzt keine sichere Freigabe.");
   let locked = false;
   try {
@@ -1115,6 +1116,37 @@ async function withMigrationSessionLock(client, work) {
     } finally {
       connection.release();
     }
+  }
+}
+
+// postgres.js reserve() liefert zur Laufzeit einen ReservedSql ohne begin().
+// BEGIN/COMMIT muessen deshalb auf derselben reservierten Verbindung laufen;
+// client.begin() koennte den Session-Lock von der Transaktion entkoppeln.
+async function withReservedSerializableTransaction(connection, work) {
+  let transactionOpen = false;
+  try {
+    const beginResult = await connection.unsafe("begin isolation level serializable");
+    transactionOpen = true;
+    invariant(beginResult?.command === "BEGIN", "Reservierte Keycloak-Schema-Transaktion konnte nicht sicher gestartet werden.");
+    const result = await work(connection);
+    const commitResult = await connection.unsafe("commit");
+    invariant(commitResult?.command === "COMMIT", "Reservierte Keycloak-Schema-Transaktion wurde nicht committed.");
+    transactionOpen = false;
+    return result;
+  } catch (error) {
+    if (transactionOpen) {
+      try {
+        const rollbackResult = await connection.unsafe("rollback");
+        transactionOpen = false;
+        invariant(rollbackResult?.command === "ROLLBACK", "Reservierte Keycloak-Schema-Transaktion konnte nicht sicher zurueckgerollt werden.");
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [error, rollbackError],
+          "Keycloak-Schema-Transaktion schlug fehl und ihr Rollback konnte nicht bestaetigt werden.",
+        );
+      }
+    }
+    throw error;
   }
 }
 
@@ -1275,7 +1307,7 @@ export async function executeMigration(client, plan, catalog, {
   validateKeycloakObjectCatalog(catalog);
   invariant(plan.objectCatalogSha256 === catalog.catalogSha256, "Keycloak-Schema-Migrationsplan bindet einen anderen Objektkatalog als die Laufzeit.");
   return withMigrationSessionLock(client, async (connection) => {
-    const after = await connection.begin("isolation level serializable", async (sql) => {
+    const after = await withReservedSerializableTransaction(connection, async (sql) => {
       await sql.unsafe("set local lock_timeout = '10s'");
       // PostgreSQL freezes a SERIALIZABLE view at its first SELECT. The
       // advisory lock therefore lives on this reserved session outside the
@@ -1319,7 +1351,7 @@ export async function recoverMigrationReceipt(client, plan, catalog, {
   validateKeycloakObjectCatalog(catalog);
   invariant(plan.objectCatalogSha256 === catalog.catalogSha256, "Recover-Receipt bindet einen anderen Objektkatalog als die Laufzeit.");
   return withMigrationSessionLock(client, async (connection) => {
-    const live = await connection.begin("isolation level serializable", async (sql) => {
+    const live = await withReservedSerializableTransaction(connection, async (sql) => {
       await sql.unsafe("set local lock_timeout = '10s'");
       await lockTables(sql, plan.targetSchema, catalog);
       return inspectState(sql, catalog);

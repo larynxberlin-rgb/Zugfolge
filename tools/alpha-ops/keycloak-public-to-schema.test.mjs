@@ -160,9 +160,20 @@ function backupBinding(catalog, snapshot) {
   });
 }
 
-function migrationClient({ catalog, before, after, afterLock = before, events, migrationLockAcquired = true, lockSchema = "public" }) {
+function migrationClient({
+  catalog,
+  before,
+  after,
+  afterLock = before,
+  events,
+  migrationLockAcquired = true,
+  lockSchema = "public",
+  commitCommand = "COMMIT",
+}) {
   let inspections = 0;
   let tablesLocked = false;
+  let transactionOpen = false;
+  const commandResult = (command) => Object.assign([], { command });
   const sql = {
     async unsafe(statement) {
       const normalized = statement.replace(/\s+/gu, " ").trim().toLowerCase();
@@ -187,28 +198,45 @@ function migrationClient({ catalog, before, after, afterLock = before, events, m
     return after;
   };
   const connection = {
-    async unsafe(statement) {
+    async unsafe(statement, parameters = []) {
       const normalized = statement.replace(/\s+/gu, " ").trim().toLowerCase();
+      if (normalized === "begin isolation level serializable") {
+        assert.equal(transactionOpen, false);
+        transactionOpen = true;
+        tablesLocked = false;
+        events.push("transaction-begin");
+        return commandResult("BEGIN");
+      }
+      if (normalized === "commit") {
+        assert.equal(transactionOpen, true);
+        transactionOpen = false;
+        events.push("transaction-commit");
+        return commandResult(commitCommand);
+      }
+      if (normalized === "rollback") {
+        transactionOpen = false;
+        events.push("transaction-rollback");
+        return commandResult("ROLLBACK");
+      }
       if (normalized.startsWith("select pg_try_advisory_lock")) {
+        assert.equal(transactionOpen, false);
         events.push("session-advisory-lock");
         return [{ locked: migrationLockAcquired }];
       }
       if (normalized.startsWith("select pg_advisory_unlock")) {
+        assert.equal(transactionOpen, false);
         events.push("session-advisory-unlock");
         return [{ unlocked: true }];
       }
+      if (transactionOpen) return sql.unsafe(statement, parameters);
       throw new Error(`unexpected reserved-session SQL: ${normalized}`);
     },
     release() {
       events.push("session-release");
     },
-    async begin(options, callback) {
-      assert.equal(options, "isolation level serializable");
-      tablesLocked = false;
-      return callback(sql);
-    },
   };
   return {
+    connection,
     inspectState,
     client: {
       async reserve() {
@@ -595,7 +623,7 @@ test("public extension gate accepts only plain PG16 or the exact PostGIS relatio
   );
 });
 
-test("migration locks all 100 source tables before its first state or Liquibase read", async () => {
+test("Migration nutzt einen realistischen postgres.js-ReservedSql ohne begin und sperrt vor dem ersten Read", async () => {
   const catalog = await loadKeycloakObjectCatalog();
   const before = stateSnapshot(catalog, "legacy");
   const after = stateSnapshot(catalog, "migrated", before.identityHead);
@@ -609,10 +637,12 @@ test("migration locks all 100 source tables before its first state or Liquibase 
     moveTables: async () => events.push("alter-set-schema"),
   });
 
+  assert.equal(typeof fixture.connection.begin, "undefined");
   assert.equal(receipt.schema, KEYCLOAK_SCHEMA_RECEIPT_SCHEMA);
   assert.deepEqual(events, [
     "session-reserve",
     "session-advisory-lock",
+    "transaction-begin",
     "set-lock-timeout",
     "access-exclusive-lock",
     "inspect-state",
@@ -620,6 +650,7 @@ test("migration locks all 100 source tables before its first state or Liquibase 
     "alter-set-schema",
     'sql:comment on schema "keycloak" is null',
     "inspect-state",
+    "transaction-commit",
     "inspect-state",
     "session-advisory-unlock",
     "session-release",
@@ -646,9 +677,11 @@ test("a writer committed while the migration waited for ACCESS EXCLUSIVE invalid
   assert.deepEqual(events, [
     "session-reserve",
     "session-advisory-lock",
+    "transaction-begin",
     "set-lock-timeout",
     "access-exclusive-lock",
     "inspect-state",
+    "transaction-rollback",
     "session-advisory-unlock",
     "session-release",
   ]);
@@ -698,6 +731,30 @@ test("migration refuses a pool that cannot pin advisory lock and transaction to 
   );
 });
 
+test("Migration verweigert den Receipt, wenn PostgreSQL kein COMMIT auf der reservierten Sitzung bestaetigt", async () => {
+  const catalog = await loadKeycloakObjectCatalog();
+  const before = stateSnapshot(catalog, "legacy");
+  const after = stateSnapshot(catalog, "migrated", before.identityHead);
+  const plan = createMigrationPlan({ action: "up", snapshot: before, backupBinding: backupBinding(catalog, before), databaseUrl: DATABASE_URL, createdAt: NOW });
+  const events = [];
+  const fixture = migrationClient({ catalog, before, after, events, commitCommand: "ROLLBACK" });
+
+  await assert.rejects(
+    executeMigration(fixture.client, plan, catalog, {
+      inspectState: fixture.inspectState,
+      verifyLiquibaseUnlocked: async () => {},
+      moveTables: async () => {},
+    }),
+    /nicht committed/u,
+  );
+  assert.deepEqual(events.slice(-4), [
+    "transaction-commit",
+    "transaction-rollback",
+    "session-advisory-unlock",
+    "session-release",
+  ]);
+});
+
 test("recover reserves the session lock and locks all committed target tables before reading", async () => {
   const catalog = await loadKeycloakObjectCatalog();
   const before = stateSnapshot(catalog, "legacy");
@@ -714,9 +771,11 @@ test("recover reserves the session lock and locks all committed target tables be
   assert.deepEqual(events, [
     "session-reserve",
     "session-advisory-lock",
+    "transaction-begin",
     "set-lock-timeout",
     "access-exclusive-lock",
     "inspect-state",
+    "transaction-commit",
     "session-advisory-unlock",
     "session-release",
   ]);
