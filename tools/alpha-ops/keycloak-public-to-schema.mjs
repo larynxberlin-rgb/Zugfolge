@@ -84,6 +84,7 @@ function schemaNeutralValue(value) {
   }
   if (typeof value === "string") {
     return value
+      .replace(/\bREFERENCES\s+(?:public|keycloak)\./gu, "REFERENCES ")
       .replace(/\b(?:public|keycloak)\./gu, "<schema>.")
       .replace(/\s+/gu, " ")
       .trim();
@@ -431,6 +432,11 @@ async function catalogTriggers(sql, schema, names) {
 
 function signature(values) {
   return Object.freeze({ count: values.length, sha256: schemaNeutralSha256(values) });
+}
+
+export function keycloakCatalogSignature(values) {
+  invariant(Array.isArray(values), "Keycloak-Objektkatalog ist keine Liste.");
+  return signature(values);
 }
 
 export function canonicalizeKeycloakColumnOrdinals(values) {

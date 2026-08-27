@@ -19,6 +19,7 @@ import {
   createMigrationPlan,
   executeMigration,
   inspectKeycloakSchemaState,
+  keycloakCatalogSignature,
   keycloakColumnSignature,
   loadKeycloakObjectCatalog,
   postgresCatalogIdentifier,
@@ -382,6 +383,34 @@ test("index catalog is search-path independent and mismatch diagnostics bind cou
     () => assertCatalogSignature(observed, catalog, "Keycloak-Schema 'public'"),
     /indexes.*ist count=246, sha256=0{64}; soll count=246, sha256=2524d8c395776aff44096c8918ca912d520be71fd49b3260e49effb6e43fdd6/u,
   );
+});
+
+test("Constraint-Signaturen neutralisieren qualifizierte Keycloak-Zielreferenzen", () => {
+  const constraint = {
+    name: "fk_auth_exec_realm",
+    type: "f",
+    relation: "authentication_execution",
+    validated: true,
+    deferrable: false,
+    definition: "FOREIGN KEY (realm_id) REFERENCES realm(id)",
+    initiallyDeferred: false,
+  };
+  const publicQualified = {
+    ...constraint,
+    definition: "FOREIGN KEY (realm_id) REFERENCES public.realm(id)",
+  };
+  const keycloakQualified = {
+    ...constraint,
+    definition: "FOREIGN KEY (realm_id) REFERENCES keycloak.realm(id)",
+  };
+  const foreignQualified = {
+    ...constraint,
+    definition: "FOREIGN KEY (realm_id) REFERENCES fremdschema.realm(id)",
+  };
+
+  assert.deepEqual(keycloakCatalogSignature([publicQualified]), keycloakCatalogSignature([constraint]));
+  assert.deepEqual(keycloakCatalogSignature([keycloakQualified]), keycloakCatalogSignature([constraint]));
+  assert.notDeepEqual(keycloakCatalogSignature([foreignQualified]), keycloakCatalogSignature([constraint]));
 });
 
 test("Schema-31 bleibt ohne 0033-Ledger kompatibel und Schema-33 bindet Relation plus Capture-Routine", async () => {
