@@ -6,7 +6,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import test from "node:test";
-import { promisify } from "node:util";
+import { isDeepStrictEqual, promisify } from "node:util";
 
 import {
   buildAlphaWorld,
@@ -26,6 +26,8 @@ const COLD_CATCH_UP_MINIMUM_COMMANDS = 60_000;
 const MAX_SCHEDULER_BATCH_COMMANDS = 256;
 const MAX_SCHEDULER_BATCH_SPAN_MS = 60 * 1_000;
 const MAX_NATIVE_BATCH_EVENTS = 16_384;
+const REALTIME_INTERVAL_COUNT = 10;
+const REALTIME_INTERVAL_MS = 60 * 1_000;
 const POSTGRES_BOUNDARY = "external-postgresql-process-outside-measured-app-cgroup";
 const POSTGRES_DATABASE_NAME = /^zugfolge_germany_e2e_[a-z0-9_]+$/u;
 const TIMETABLE_TRANSFER_DEMANDS_FILE = "timetable-routes-v2.transfer-demands-v2.json";
@@ -39,6 +41,7 @@ const RUNTIME_BUILD_FILES = Object.freeze([
   "packages/livemap/dist/index.js",
   "packages/dispatch/dist/index.js",
   "apps/game-api/dist/alpha-world-start.js",
+  "apps/game-api/dist/regional-simulation-cycle.js",
   "apps/game-api/dist/regional-simulation-monitor.js",
   "apps/game-api/dist/regional-simulation-scheduler.js",
   "apps/game-api/dist/regional-simulation-worker.js",
@@ -379,6 +382,7 @@ function acceptanceDecision({
   sourceCheckout,
   reuseCandidate,
   runtimeBuild,
+  runtimeEvidence,
   platform,
   requireCgroupLimit,
   cgroupMemoryMaxBytes,
@@ -387,6 +391,55 @@ function acceptanceDecision({
   cgroupMemoryEventsBefore,
   cgroupMemoryEventsAfter,
 }) {
+  const realtimeIntervals = runtimeEvidence?.realtimeIntervals;
+  const intervalHeads = Array.isArray(realtimeIntervals?.intervals)
+    ? realtimeIntervals.intervals
+    : [];
+  const initialRealtimeHead = realtimeIntervals?.initialHead;
+  const validInitialRealtimeHead = initialRealtimeHead !== null
+    && typeof initialRealtimeHead === "object"
+    && Number.isSafeInteger(initialRealtimeHead.nowMs)
+    && Number.isSafeInteger(initialRealtimeHead.revision)
+    && Number.isSafeInteger(initialRealtimeHead.publisherSequence)
+    && Number.isSafeInteger(initialRealtimeHead.commitSequence)
+    && initialRealtimeHead.publisherSequence === initialRealtimeHead.revision
+    && initialRealtimeHead.commitSequence === initialRealtimeHead.revision;
+  const exactRealtimeProgression = validInitialRealtimeHead
+    && intervalHeads.length === REALTIME_INTERVAL_COUNT
+    && intervalHeads.every((interval, index) => {
+      const previous = index === 0
+        ? initialRealtimeHead
+        : intervalHeads[index - 1];
+      return interval !== null
+        && typeof interval === "object"
+        && previous !== null
+        && typeof previous === "object"
+        && interval.interval === index + 1
+        && interval.targetNowMs === initialRealtimeHead.nowMs
+          + (index + 1) * REALTIME_INTERVAL_MS
+        && interval.nowMs === interval.targetNowMs
+        && Number.isSafeInteger(interval.revision)
+        && interval.revision > previous.revision
+        && interval.publisherSequence === interval.revision
+        && interval.commitSequence === interval.revision;
+    });
+  const runtimeIsolation = runtimeEvidence?.runtimeIsolation;
+  const isolationCounts = [
+    runtimeIsolation?.beforeWorldMutation,
+    runtimeIsolation?.afterRealtimeIntervals,
+  ];
+  const emptyEconomyAndOdooQueues = isolationCounts.every((snapshot) => snapshot !== null
+    && typeof snapshot === "object"
+    && snapshot.economyOutboxRows === 0
+    && snapshot.economyPendingRows === 0
+    && snapshot.odooProjectionOutboxRows === 0
+    && snapshot.odooProjectionPendingRows === 0
+    && snapshot.odooCommandQueueRows === 0
+    && snapshot.odooCommandPendingRows === 0);
+  const noTutorialInteraction = isolationCounts.every((snapshot) => snapshot !== null
+    && typeof snapshot === "object"
+    && snapshot.tutorialSessionRows === 0
+    && snapshot.tutorialTelemetryRows === 0);
   const gates = Object.freeze({
     exactSourceCheckout: sourceCheckout.acceptanceEligible === true,
     exactSignedReleaseCandidate: reuseCandidate?.exactCandidateVerified === true,
@@ -399,9 +452,24 @@ function acceptanceDecision({
       && cgroupMemoryPeakBytes <= MAX_NODE_RSS_BYTES,
     noOomBefore: cgroupMemoryEventsBefore?.oom === 0 && cgroupMemoryEventsBefore?.oom_kill === 0,
     noOomAfter: cgroupMemoryEventsAfter?.oom === 0 && cgroupMemoryEventsAfter?.oom_kill === 0,
+    tenConsecutiveRealtimeIntervals: realtimeIntervals?.intervalCount === REALTIME_INTERVAL_COUNT
+      && realtimeIntervals.intervalMs === REALTIME_INTERVAL_MS
+      && exactRealtimeProgression,
+    schedulerCurrentThroughout: intervalHeads.length === REALTIME_INTERVAL_COUNT
+      && intervalHeads.every((interval) =>
+        interval !== null
+        && typeof interval === "object"
+        && isDeepStrictEqual(interval.schedulerReadiness, { status: "ok", code: "scheduler_current" })),
+    livemapFreshThroughout: intervalHeads.length === REALTIME_INTERVAL_COUNT
+      && intervalHeads.every((interval) =>
+        interval !== null
+        && typeof interval === "object"
+        && isDeepStrictEqual(interval.livemapReadiness, { status: "ok", code: "livemap_fresh" })),
+    emptyEconomyAndOdooQueues,
+    noTutorialInteraction,
   });
   return Object.freeze({
-    schema: "zugfolge-germany-alpha-e2e-eligibility/v1",
+    schema: "zugfolge-germany-alpha-e2e-eligibility/v2",
     eligible: Object.values(gates).every(Boolean),
     gates,
   });
@@ -519,6 +587,36 @@ function sampleNodePeakRss(previousPeakBytes) {
   return Math.max(previousPeakBytes, process.memoryUsage.rss(), kernelPeakBytes);
 }
 
+async function postgresRuntimeIsolationSnapshot(client) {
+  const [row] = await client.unsafe(`
+    select
+      (select count(*)::int from economy_outbox) as economy_outbox_rows,
+      (select count(*)::int from economy_outbox where processed_at is null) as economy_pending_rows,
+      (select count(*)::int from odoo_projection_outbox) as odoo_projection_outbox_rows,
+      (select count(*)::int from odoo_projection_outbox where delivered_at is null) as odoo_projection_pending_rows,
+      (select count(*)::int from odoo_command_queue) as odoo_command_queue_rows,
+      (select count(*)::int from odoo_command_queue where status in ('pending', 'processing', 'accepted'))
+        as odoo_command_pending_rows,
+      (select count(*)::int from tutorial_sessions) as tutorial_session_rows,
+      (select count(*)::int from tutorial_telemetry_events) as tutorial_telemetry_rows
+  `);
+  const snapshot = Object.freeze({
+    economyOutboxRows: row.economy_outbox_rows,
+    economyPendingRows: row.economy_pending_rows,
+    odooProjectionOutboxRows: row.odoo_projection_outbox_rows,
+    odooProjectionPendingRows: row.odoo_projection_pending_rows,
+    odooCommandQueueRows: row.odoo_command_queue_rows,
+    odooCommandPendingRows: row.odoo_command_pending_rows,
+    tutorialSessionRows: row.tutorial_session_rows,
+    tutorialTelemetryRows: row.tutorial_telemetry_rows,
+  });
+  for (const [name, value] of Object.entries(snapshot)) {
+    assert.ok(Number.isSafeInteger(value) && value >= 0, `PostgreSQL-Isolationszaehler '${name}' ist ungueltig.`);
+    assert.equal(value, 0, `Frische Deutschland-E2E-Datenbank besitzt unerwartete Zeilen in '${name}'.`);
+  }
+  return snapshot;
+}
+
 async function coldWorkerCatchUp({
   signed,
   runtime,
@@ -539,6 +637,12 @@ async function coldWorkerCatchUp({
     { OperationsRegistry },
     { RegionalSimulationWorker },
     { advanceRegionalSimulations },
+    {
+      createRegionalSimulationSchedulerHealthCheck,
+      REGIONAL_SIMULATION_SCHEDULER_INTERVAL_MS,
+      RegionalSimulationSchedulerMonitor,
+    },
+    { RegionalSimulationCycleCoordinator },
     { ActiveWorldDeploymentRuntime },
   ] = await Promise.all([
     import("../../apps/game-api/node_modules/postgres/src/index.js"),
@@ -551,8 +655,15 @@ async function coldWorkerCatchUp({
     import("../../packages/dispatch/dist/index.js"),
     import("../../apps/game-api/dist/regional-simulation-worker.js"),
     import("../../apps/game-api/dist/regional-simulation-scheduler.js"),
+    import("../../apps/game-api/dist/regional-simulation-monitor.js"),
+    import("../../apps/game-api/dist/regional-simulation-cycle.js"),
     import("../../apps/game-api/dist/world-deployment-runtime.js"),
   ]);
+  assert.equal(
+    REGIONAL_SIMULATION_SCHEDULER_INTERVAL_MS,
+    REALTIME_INTERVAL_MS,
+    "Deutschland-Real-E2E und Produktionsscheduler besitzen verschiedene 1:1-Intervalle.",
+  );
   const client = postgres(database.connectionString, {
     max: 4,
     connect_timeout: 15,
@@ -592,6 +703,7 @@ async function coldWorkerCatchUp({
     assert.deepEqual(databaseReadiness, { status: "ok", code: "schema_current" });
     const [freshDatabase] = await client.unsafe("select count(*)::int as world_count from worlds");
     assert.equal(freshDatabase.world_count, 0, "Dedizierte E2E-Datenbank ist nicht weltleer.");
+    const isolationBeforeWorldMutation = await postgresRuntimeIsolationSnapshot(client);
     const migrationSetSha256 = createHash("sha256")
       .update(JSON.stringify(appliedMigrations))
       .digest("hex");
@@ -730,7 +842,8 @@ async function coldWorkerCatchUp({
     assert.equal(committed.publisherSequence, scheduledCommandCount);
     assert.equal(committed.state.world.commitSequence, scheduledCommandCount);
 
-    const restoredLivemap = new LivemapRegistry({ now: () => targetAt.getTime() });
+    let schedulerWallNowMs = targetAt.getTime();
+    const restoredLivemap = new LivemapRegistry({ now: () => schedulerWallNowMs });
     const restoredWorker = new RegionalSimulationWorker(
       db,
       runtime,
@@ -755,23 +868,169 @@ async function coldWorkerCatchUp({
       expectedRegions,
     );
     assert.equal(readyRegions[0].nowMs, targetNowMs);
-    const livemapReadiness = await createLivemapHealthCheck(
+    const livemapHealth = createLivemapHealthCheck(
       restoredLivemap,
-      60_000,
-      () => targetAt.getTime(),
+      REALTIME_INTERVAL_MS,
+      () => schedulerWallNowMs,
       (worldId, nowMs) => deploymentRuntime.expectsLivemapFreshness(worldId, nowMs),
       (nowMs) => deploymentRuntime.realtimeWorldIds().filter(
         (worldId) => deploymentRuntime.expectsLivemapFreshness(worldId, nowMs),
       ),
-    ).check();
-    assert.deepEqual(livemapReadiness, { status: "ok", code: "livemap_fresh" });
+    );
+    const initialLivemapReadiness = await livemapHealth.check();
+    assert.deepEqual(initialLivemapReadiness, { status: "ok", code: "livemap_fresh" });
+
+    const realtimeMonitor = new RegionalSimulationSchedulerMonitor(
+      schedulerWallNowMs,
+      () => schedulerWallNowMs,
+    );
+    const schedulerHealth = createRegionalSimulationSchedulerHealthCheck(
+      realtimeMonitor,
+      REALTIME_INTERVAL_MS,
+      () => schedulerWallNowMs,
+      () => expectedRegions,
+      () => restoredWorker.readyRegions(),
+    );
+    const structuredCycleRecords = [];
+    const structuredLogger = Object.fromEntries(
+      ["debug", "info", "warn", "error"].map((level) => [
+        level,
+        (bindings) => structuredCycleRecords.push(Object.freeze({ level, ...bindings })),
+      ]),
+    );
+    const realtimeCoordinator = new RegionalSimulationCycleCoordinator({
+      monitor: realtimeMonitor,
+      logger: structuredLogger,
+      intervalMs: REALTIME_INTERVAL_MS,
+      now: () => schedulerWallNowMs,
+      run: ({ at, reportProgress }) => advanceRegionalSimulations(
+        restoredWorker,
+        expectedRegions,
+        deploymentRuntime.worldEpochs,
+        at,
+        deploymentRuntime,
+        reportProgress,
+      ),
+    });
+    const initialHead = Object.freeze({
+      nowMs: committed.state.world.nowMs,
+      revision: committed.revision,
+      publisherSequence: committed.publisherSequence,
+      commitSequence: committed.state.world.commitSequence,
+      stateHash: committed.stateHash,
+    });
+    const realtimeIntervals = [];
+    let previousHead = initialHead;
+    for (let interval = 1; interval <= REALTIME_INTERVAL_COUNT; interval += 1) {
+      const targetIntervalNowMs = targetNowMs + interval * REALTIME_INTERVAL_MS;
+      schedulerWallNowMs = epoch.getTime() + targetIntervalNowMs;
+      const intervalAt = new Date(schedulerWallNowMs);
+      const cycleResult = await realtimeCoordinator.run(intervalAt);
+      assert.deepEqual(
+        {
+          status: cycleResult.status,
+          advancedRegions: cycleResult.advancedRegions,
+          skippedIntervals: cycleResult.skippedIntervals,
+        },
+        { status: "completed", advancedRegions: 1, skippedIntervals: 0 },
+        `Echter Schedulerlauf ${interval}/${REALTIME_INTERVAL_COUNT} wurde nicht exklusiv abgeschlossen.`,
+      );
+
+      const intervalRows = await db.select().from(databaseSchema.regionalSimulationStates);
+      assert.equal(intervalRows.length, 1);
+      const intervalHead = intervalRows[0];
+      assert.equal(intervalHead.worldId, WORLD_ID);
+      assert.equal(intervalHead.regionId, REGION_ID);
+      assert.equal(intervalHead.state.world.nowMs, targetIntervalNowMs);
+      assert.ok(
+        intervalHead.revision > previousHead.revision,
+        `Schedulerintervall ${interval} erhoehte die persistierte Revision nicht.`,
+      );
+      assert.ok(
+        intervalHead.publisherSequence > previousHead.publisherSequence,
+        `Schedulerintervall ${interval} erhoehte die Publisher-Sequenz nicht.`,
+      );
+      assert.ok(
+        intervalHead.state.world.commitSequence > previousHead.commitSequence,
+        `Schedulerintervall ${interval} erhoehte die Commit-Sequenz nicht.`,
+      );
+      assert.equal(intervalHead.publisherSequence, intervalHead.revision);
+      assert.equal(intervalHead.state.world.commitSequence, intervalHead.revision);
+      assert.equal(intervalHead.updatedAt.getTime(), intervalAt.getTime());
+
+      const livemapFrame = restoredLivemap.initializedWorld(WORLD_ID)
+        ?.snapshot().operationalRegions?.find(({ regionId }) => regionId === REGION_ID);
+      assert.ok(livemapFrame, `Schedulerintervall ${interval} publizierte keinen Operational-v2-LiveMap-Frame.`);
+      assert.equal(livemapFrame.commitSequence, intervalHead.revision);
+      const schedulerReadiness = await schedulerHealth.check();
+      const livemapReadiness = await livemapHealth.check();
+      assert.deepEqual(schedulerReadiness, { status: "ok", code: "scheduler_current" });
+      assert.deepEqual(livemapReadiness, { status: "ok", code: "livemap_fresh" });
+
+      const recordedHead = Object.freeze({
+        interval,
+        scheduledAt: intervalAt.toISOString(),
+        targetNowMs: targetIntervalNowMs,
+        nowMs: intervalHead.state.world.nowMs,
+        revision: intervalHead.revision,
+        publisherSequence: intervalHead.publisherSequence,
+        commitSequence: intervalHead.state.world.commitSequence,
+        stateHash: intervalHead.stateHash,
+        persistedAt: intervalHead.updatedAt.toISOString(),
+        correlationId: cycleResult.correlationId,
+        schedulerReadiness,
+        livemapReadiness,
+        livemapCommitSequence: livemapFrame.commitSequence,
+      });
+      realtimeIntervals.push(recordedHead);
+      previousHead = recordedHead;
+      sampleRss();
+    }
+    await realtimeCoordinator.close();
+    const realtimeMonitorSnapshot = realtimeMonitor.snapshot();
+    assert.deepEqual(
+      {
+        successfulCycles: realtimeMonitorSnapshot.successfulCycles,
+        failedCycles: realtimeMonitorSnapshot.failedCycles,
+        skippedCycles: realtimeMonitorSnapshot.skippedCycles,
+        consecutiveFailures: realtimeMonitorSnapshot.consecutiveFailures,
+        running: realtimeMonitorSnapshot.running,
+      },
+      {
+        successfulCycles: REALTIME_INTERVAL_COUNT,
+        failedCycles: 0,
+        skippedCycles: 0,
+        consecutiveFailures: 0,
+        running: false,
+      },
+    );
+    assert.equal(
+      structuredCycleRecords.filter(({ event }) => event === "regional_scheduler_cycle_started").length,
+      REALTIME_INTERVAL_COUNT,
+    );
+    assert.equal(
+      structuredCycleRecords.filter(({ event }) => event === "regional_scheduler_cycle_completed").length,
+      REALTIME_INTERVAL_COUNT,
+    );
+    assert.equal(
+      structuredCycleRecords.some(({ event }) => event === "regional_scheduler_cycle_failed"
+        || event === "regional_scheduler_cycle_stalled"
+        || event === "regional_scheduler_cycle_skipped"),
+      false,
+    );
+    const finalReadyRegions = restoredWorker.readyRegions();
+    assert.equal(finalReadyRegions.length, 1);
+    assert.equal(finalReadyRegions[0].nowMs, targetNowMs + REALTIME_INTERVAL_COUNT * REALTIME_INTERVAL_MS);
+    const finalLivemapReadiness = await livemapHealth.check();
+    assert.deepEqual(finalLivemapReadiness, { status: "ok", code: "livemap_fresh" });
+    const isolationAfterRealtimeIntervals = await postgresRuntimeIsolationSnapshot(client);
     const peakRssBytes = sampleRss();
     assert.ok(peakRssBytes <= MAX_NODE_RSS_BYTES);
 
     const checkpointBytes = Buffer.byteLength(JSON.stringify(restored.state));
     assert.ok(checkpointBytes <= 16 * 1024 * 1024);
     const evidence = Object.freeze({
-      schema: "zugfolge-germany-alpha-runtime-acceptance/v2",
+      schema: "zugfolge-germany-alpha-runtime-acceptance/v3",
       worldId: WORLD_ID,
       regionId: REGION_ID,
       deploymentHash: signed.deploymentHash,
@@ -800,6 +1059,32 @@ async function coldWorkerCatchUp({
       committedRevision: committed.revision,
       committedStateHash: committed.stateHash,
       restoreHashEqual: true,
+      realtimeIntervals: {
+        intervalCount: REALTIME_INTERVAL_COUNT,
+        intervalMs: REALTIME_INTERVAL_MS,
+        clockBoundary: "explicit-world-epoch-derived-platform-instants",
+        schedulerBoundary: "RegionalSimulationCycleCoordinator.run",
+        workerBoundary: "RegionalSimulationWorker.applyBatch",
+        initialHead,
+        intervals: realtimeIntervals,
+        monitor: realtimeMonitorSnapshot,
+        structuredLogSummary: {
+          started: REALTIME_INTERVAL_COUNT,
+          completed: REALTIME_INTERVAL_COUNT,
+          failed: 0,
+          stalled: 0,
+          skipped: 0,
+          existingFailureAndRecoveryCoverage:
+            "apps/game-api/src/regional-simulation-cycle.test.ts",
+        },
+      },
+      runtimeIsolation: {
+        databaseContract: "fresh-dedicated-postgresql-16-database",
+        economyAndOdooContract: "no-queued-or-pending-rows-before-or-after-realtime-intervals",
+        tutorialContract: "no-tutorial-session-or-telemetry-row-and-no-tutorial-service-invocation",
+        beforeWorldMutation: isolationBeforeWorldMutation,
+        afterRealtimeIntervals: isolationAfterRealtimeIntervals,
+      },
       checkpointBytes,
       maxCheckpointBytes: 16 * 1024 * 1024,
       peakRssBytes,
@@ -808,14 +1093,13 @@ async function coldWorkerCatchUp({
       liveMapCommitSequence: restored.liveMap.commitSequence,
       rzueCommitSequence: restored.rzue.commitSequence,
       expectedRealtimeRegions: expectedRegions,
-      restoredReadyRegions: readyRegions,
-      livemapReadiness,
+      restoredReadyRegions: finalReadyRegions,
+      livemapReadiness: finalLivemapReadiness,
       platform: process.platform,
       acceptanceScope: "local-native-worker-external-postgresql-integration",
       excludedClaims: [
         "strato",
         "ready-http-latency",
-        "ten-consecutive-realtime-intervals",
         "full-game-api-process-restart",
         "postgres-process-cgroup-observation",
       ],
@@ -1107,7 +1391,45 @@ test("Alpha-Builder-Harnisch reicht beide realen Sidecars positions- und hashgeb
   }
 });
 
-test("Top-level-Akzeptanz bleibt ohne exakten Linux-cgroup-v2-No-Swap-Beleg rot", () => {
+test("Top-level-Akzeptanz verlangt Speichergrenze und echten Zehn-Intervall-Isolationsbeleg", () => {
+  const emptyIsolation = Object.freeze({
+    economyOutboxRows: 0,
+    economyPendingRows: 0,
+    odooProjectionOutboxRows: 0,
+    odooProjectionPendingRows: 0,
+    odooCommandQueueRows: 0,
+    odooCommandPendingRows: 0,
+    tutorialSessionRows: 0,
+    tutorialTelemetryRows: 0,
+  });
+  const initialHead = Object.freeze({
+    nowMs: 1_000,
+    revision: 100,
+    publisherSequence: 100,
+    commitSequence: 100,
+  });
+  const intervals = Array.from({ length: REALTIME_INTERVAL_COUNT }, (_, index) => Object.freeze({
+    interval: index + 1,
+    targetNowMs: initialHead.nowMs + (index + 1) * REALTIME_INTERVAL_MS,
+    nowMs: initialHead.nowMs + (index + 1) * REALTIME_INTERVAL_MS,
+    revision: initialHead.revision + index + 1,
+    publisherSequence: initialHead.publisherSequence + index + 1,
+    commitSequence: initialHead.commitSequence + index + 1,
+    schedulerReadiness: { status: "ok", code: "scheduler_current" },
+    livemapReadiness: { status: "ok", code: "livemap_fresh" },
+  }));
+  const runtimeEvidence = Object.freeze({
+    realtimeIntervals: Object.freeze({
+      intervalCount: REALTIME_INTERVAL_COUNT,
+      intervalMs: REALTIME_INTERVAL_MS,
+      initialHead,
+      intervals,
+    }),
+    runtimeIsolation: Object.freeze({
+      beforeWorldMutation: emptyIsolation,
+      afterRealtimeIntervals: emptyIsolation,
+    }),
+  });
   const base = {
     sourceCheckout: { acceptanceEligible: true },
     reuseCandidate: { exactCandidateVerified: true },
@@ -1115,6 +1437,7 @@ test("Top-level-Akzeptanz bleibt ohne exakten Linux-cgroup-v2-No-Swap-Beleg rot"
       nativeAddon: { expectedSha256Verified: true },
       expectedTypescriptBuildSetSha256Verified: true,
     },
+    runtimeEvidence,
     platform: "linux",
     requireCgroupLimit: true,
     cgroupMemoryMaxBytes: MAX_NODE_RSS_BYTES,
@@ -1134,6 +1457,95 @@ test("Top-level-Akzeptanz bleibt ohne exakten Linux-cgroup-v2-No-Swap-Beleg rot"
       runtimeBuild: {
         ...base.runtimeBuild,
         expectedTypescriptBuildSetSha256Verified: false,
+      },
+    }).eligible,
+    false,
+  );
+  assert.equal(
+    acceptanceDecision({
+      ...base,
+      runtimeEvidence: {
+        ...runtimeEvidence,
+        realtimeIntervals: {
+          ...runtimeEvidence.realtimeIntervals,
+          intervals: intervals.map((interval, index) => index === 5
+            ? { ...interval, livemapReadiness: { status: "down", code: "livemap_stale" } }
+            : interval),
+        },
+      },
+    }).eligible,
+    false,
+  );
+  assert.equal(
+    acceptanceDecision({
+      ...base,
+      runtimeEvidence: {
+        ...runtimeEvidence,
+        realtimeIntervals: {
+          ...runtimeEvidence.realtimeIntervals,
+          intervals: intervals.map((interval, index) => index === 6
+            ? {
+                ...interval,
+                revision: intervals[index - 1].revision,
+                publisherSequence: intervals[index - 1].publisherSequence,
+                commitSequence: intervals[index - 1].commitSequence,
+              }
+            : interval),
+        },
+      },
+    }).eligible,
+    false,
+  );
+  assert.equal(
+    acceptanceDecision({
+      ...base,
+      runtimeEvidence: {
+        ...runtimeEvidence,
+        realtimeIntervals: {
+          ...runtimeEvidence.realtimeIntervals,
+          intervals: intervals.slice(0, -1),
+        },
+      },
+    }).eligible,
+    false,
+  );
+  assert.equal(
+    acceptanceDecision({
+      ...base,
+      runtimeEvidence: {
+        ...runtimeEvidence,
+        realtimeIntervals: {
+          ...runtimeEvidence.realtimeIntervals,
+          intervals: intervals.map((interval, index) => index === 4
+            ? { ...interval, schedulerReadiness: { status: "down", code: "scheduler_stalled" } }
+            : interval),
+        },
+      },
+    }).eligible,
+    false,
+  );
+  assert.equal(
+    acceptanceDecision({
+      ...base,
+      runtimeEvidence: {
+        ...runtimeEvidence,
+        runtimeIsolation: {
+          ...runtimeEvidence.runtimeIsolation,
+          afterRealtimeIntervals: { ...emptyIsolation, odooCommandPendingRows: 1 },
+        },
+      },
+    }).eligible,
+    false,
+  );
+  assert.equal(
+    acceptanceDecision({
+      ...base,
+      runtimeEvidence: {
+        ...runtimeEvidence,
+        runtimeIsolation: {
+          ...runtimeEvidence.runtimeIsolation,
+          afterRealtimeIntervals: { ...emptyIsolation, tutorialSessionRows: 1 },
+        },
       },
     }).eligible,
     false,
@@ -1515,6 +1927,13 @@ test("baut, signiert, startet, revisioniert und restored Deutschland-2026.5 mit 
     assert.equal(runtimeEvidence.database.databaseProcessIncludedInMeasuredAppCgroup, false);
     assert.equal(runtimeEvidence.database.migrationCount, runtimeEvidence.database.expectedMigrationCount);
     assert.deepEqual(runtimeEvidence.database.schemaReadiness, { status: "ok", code: "schema_current" });
+    assert.equal(runtimeEvidence.realtimeIntervals.intervalCount, REALTIME_INTERVAL_COUNT);
+    assert.equal(runtimeEvidence.realtimeIntervals.intervalMs, REALTIME_INTERVAL_MS);
+    assert.equal(runtimeEvidence.realtimeIntervals.intervals.length, REALTIME_INTERVAL_COUNT);
+    assert.equal(
+      runtimeEvidence.excludedClaims.includes("ten-consecutive-realtime-intervals"),
+      false,
+    );
     nodePeakRssBytes = sampleNodePeakRss(nodePeakRssBytes);
     assert.ok(
       nodePeakRssBytes <= MAX_NODE_RSS_BYTES,
@@ -1556,6 +1975,7 @@ test("baut, signiert, startet, revisioniert und restored Deutschland-2026.5 mit 
       sourceCheckout,
       reuseCandidate,
       runtimeBuild,
+      runtimeEvidence,
       platform: process.platform,
       requireCgroupLimit,
       cgroupMemoryMaxBytes,
@@ -1572,7 +1992,7 @@ test("baut, signiert, startet, revisioniert und restored Deutschland-2026.5 mit 
       );
     }
     const evidence = Object.freeze({
-      schema: "zugfolge-germany-alpha-e2e-acceptance/v1",
+      schema: "zugfolge-germany-alpha-e2e-acceptance/v2",
       acceptanceEligible: acceptance.eligible,
       acceptance,
       worldId: WORLD_ID,
