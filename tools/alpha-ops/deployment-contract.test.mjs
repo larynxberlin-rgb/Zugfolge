@@ -464,7 +464,8 @@ test("CI prueft den gepinnten Keycloak mit echter Identitaet und Token vor, nach
   assert.match(migration, /collation_row\.collname as "collation"/u);
   assert.match(migration, /pg_collation as collation_row on collation_row\.oid/u);
   assert.doesNotMatch(migration, /pg_collation as collation on collation\.oid/u);
-  assert.match(integration, /rolled_back_subject[\s\S]*run_mutating_command up "\$evidence_root\/up" "\$evidence_root\/final-up-receipt\.json"[\s\S]*run_runtime_gate preflight[^\n]+final-up-receipt\.json/u);
+  assert.match(integration, /rolled_back_subject[\s\S]*create_backup "\$evidence_root\/final_up"[\s\S]*create_isolated_restore "\$evidence_root\/final_up" final_up[\s\S]*run_mutating_command bind-backup "\$evidence_root\/final_up"[\s\S]*run_mutating_command plan-up "\$evidence_root\/final_up"[\s\S]*run_mutating_command up "\$evidence_root\/final_up"[\s\S]*run_runtime_gate preflight[^\n]+final_up\/receipt\.json/u);
+  assert.doesNotMatch(integration, /rolled_back_subject[\s\S]*run_mutating_command up "\$evidence_root\/up"/u);
   assert.match(integration, /"finalState":"migrated"/u);
   assert.ok(
     workflow.indexOf("keycloak-public-to-schema.real-integration.sh")

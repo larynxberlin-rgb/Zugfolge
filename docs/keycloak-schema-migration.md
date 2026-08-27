@@ -264,7 +264,12 @@ an, führt Backup, isolierten Restore und `up`/Recover aus, startet mit
 `KC_DB_SCHEMA=keycloak`, fordert erneut
 einen Token an, führt Backup/`down` aus und prüft den Token nochmals in
 `public`. Der `sub` muss in allen drei Tokens identisch sein; zusätzlich prüfen
-die Migrationen alle Reihenhashes und OIDs. Lokal auf Windows wurde dieser
+die Migrationen alle Reihenhashes und OIDs. Weil der echte Login nach `down`
+legitime Sitzungsdaten fortschreiben kann, wird der alte Up-Plan danach bewusst
+nicht wiederverwendet: Ein frisches vollständiges Backup, dessen isolierter
+Restore und ein neuer exakt gebundener Up-Plan stellen den für den
+nachgelagerten Rollbackbeweis benötigten migrierten Endzustand her. Lokal auf
+Windows wurde dieser
 Container-Test nicht ausgeführt, weil in der Arbeitsumgebung keine Docker Engine
 verfügbar war; die Unit-, Negativ- und PGlite-Vertragstests bleiben davon
 getrennt.

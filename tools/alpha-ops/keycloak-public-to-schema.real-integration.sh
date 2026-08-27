@@ -35,11 +35,11 @@ test_password='schema-migration-player-password'
 migration_script='tools/alpha-ops/keycloak-public-to-schema.mjs'
 catalog_path='ops/alpha/keycloak/keycloak-pg16-object-catalog.26.7.0.json'
 
-mkdir -p "$evidence_root/up" "$evidence_root/down"
+mkdir -p "$evidence_root/up" "$evidence_root/down" "$evidence_root/final_up"
 
 cleanup() {
   docker rm --force "$container_name" >/dev/null 2>&1 || true
-  for restore_database in zugfolge_restore_keycloak_up zugfolge_restore_keycloak_down; do
+  for restore_database in zugfolge_restore_keycloak_up zugfolge_restore_keycloak_down zugfolge_restore_keycloak_final_up; do
     dropdb --if-exists --force --maintenance-db="$admin_database_url" "$restore_database" >/dev/null 2>&1 || true
   done
 }
@@ -230,12 +230,18 @@ if [[ "$legacy_subject" != "$migrated_subject" || "$legacy_subject" != "$rolled_
 fi
 
 # Der nachgelagerte Datenbank-Rollbackbeweis akzeptiert ausschliesslich den
-# produktiven, migrierten Keycloak-Zustand. Der Down-Drill stellt zuvor
-# byte-/identitaetsgleich den Legacy-Zustand wieder her; derselbe freigegebene
-# Up-Plan muss ihn deshalb erneut und ohne neue Planannahmen migrieren koennen.
-run_mutating_command up "$evidence_root/up" "$evidence_root/final-up-receipt.json"
-run_runtime_gate preflight-up "$evidence_root/final-up-receipt.json"
-run_runtime_gate preflight "$evidence_root/final-up-receipt.json"
+# produktiven, migrierten Keycloak-Zustand. Der echte Login im zurueckgerollten
+# public-Zustand darf Sitzungsdaten fortschreiben und macht den urspruenglichen
+# Up-Plan deshalb absichtlich ungueltig. Der finale Up-Lauf erfordert ein neues,
+# isoliert wiederhergestelltes Backup und einen daran gebundenen neuen Plan; die
+# exakte Vorzustandspruefung wird nicht umgangen oder gelockert.
+create_backup "$evidence_root/final_up"
+create_isolated_restore "$evidence_root/final_up" final_up
+run_mutating_command bind-backup "$evidence_root/final_up"
+run_mutating_command plan-up "$evidence_root/final_up"
+run_mutating_command up "$evidence_root/final_up"
+run_runtime_gate preflight-up "$evidence_root/final_up/receipt.json"
+run_runtime_gate preflight "$evidence_root/final_up/receipt.json"
 
 node -e '
   const fs = require("node:fs");
@@ -251,6 +257,6 @@ node -e '
   if (finalUp.schema !== "keycloak-public-to-schema-receipt/v1" || finalUp.action !== "up") process.exit(1);
 ' "$evidence_root/up/receipt.json" "$evidence_root/down/receipt.json" \
   "$evidence_root/up/recover-receipt.json" "$evidence_root/down/recover-receipt.json" \
-  "$evidence_root/final-up-receipt.json"
+  "$evidence_root/final_up/receipt.json"
 
 printf '{"schema":"keycloak-public-to-schema-real-integration/v1","subject":"%s","up":true,"down":true,"finalState":"migrated","tokenIdentityPreserved":true}\n' "$legacy_subject"
