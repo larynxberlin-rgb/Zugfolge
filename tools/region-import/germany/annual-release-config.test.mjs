@@ -32,7 +32,7 @@ const annualFiles = [
 
 test("historische 2026.4-Timetable-Routen binden nur den lokalen freien GTFS-Snapshot und freie Semantiklayer", async () => {
   const specification = await json("tools/region-import/germany/timetable-route-compiler.annual-2026.4.json");
-  assert.equal(specification.schema, "zugfolge-germany-timetable-route-compiler/v4");
+  assert.equal(specification.schema, "zugfolge-germany-timetable-route-compiler/v3");
   assert.equal(specification.infraReleaseId, "infra-deutschland-2026.4");
   assert.equal(Object.hasOwn(specification, "operationalNetwork"), false);
   assert.equal(specification.tracks, "var/derived/germany-2026.4/semantic-tile-inputs-free-v2/tracks.geojsonseq");
@@ -58,20 +58,8 @@ test("historische 2026.4-Timetable-Routen binden nur den lokalen freien GTFS-Sna
     expectedEligibleSegmentCount: 1679,
     permittedProtectionModes: ["pzb"],
   });
-  assert.deepEqual(specification.dailyCirculation, {
-    rule: "lot-local-playable-path-cover-with-minimum-cross-location-rollover/v1",
-    repeatEveryS: 86_400,
-    minimumTurnaroundS: 300,
-    expectedLotCount: 52,
-    expectedJourneyChainCount: 1_677,
-    expectedCirculationCount: 193,
-    expectedTransferDemandCount: 79,
-    expectedTransferLotCount: 38,
-    formationLengthsMm: [46_560, 69_860],
-    unknownMainlineSpeedKmh: 20,
-    unknownServiceSpeedKmh: 10,
-  });
-  assert.equal(specification.transferOutput, "var/derived/germany-2026.4/timetable-routes-v2.transfer-demands-v1.json");
+  assert.equal(Object.hasOwn(specification, "dailyCirculation"), false);
+  assert.equal(Object.hasOwn(specification, "transferOutput"), false);
 });
 
 test("Jahreskonfiguration 2026.3 bindet dieselbe Release-ID und keine Zugprojektion", async () => {
@@ -339,8 +327,6 @@ test("Jahrespatch 2026.4 bindet alle neuen Releaseausgaben und kennzeichnet nur 
     "infra-deutschland-2026.4",
     "livemap-read-model-2026.4",
     "operational-infrastructure-2026.4",
-    "operational-movement-routes-2026.4",
-    "timetable-transfer-demands-2026.4",
     "quality-report-2026.4",
   ]);
 
@@ -692,8 +678,8 @@ test("2026.4-Dokumente und Real-Audits enthalten keine verworfenen oder ueberzog
   assert.match(runtimeAudit, /ZUGFOLGE_REAL_GERMANY_EXPECTED_TYPESCRIPT_BUILD_SET_SHA256/u);
   assert.match(runtimeAudit, /2540fcc5eedf7f6a76283d2922ff31d3d244d3bfb5dd15da9af92f05fa78628d/u);
   assert.match(runtimeAudit, /zugfolge-germany-alpha-release-candidate-proof\/v1/u);
-  assert.match(runtimeAudit, /releaseBoundAlphaWorldBuilderInputs/u);
-  assert.match(runtimeAudit, /builderSidecars: builderInputs\.sidecars/u);
+  assert.doesNotMatch(runtimeAudit, /releaseBoundAlphaWorldBuilderInputs/u);
+  assert.doesNotMatch(runtimeAudit, /builderSidecars: builderInputs\.sidecars/u);
   assert.match(runtimeAudit, /acceptanceEligible: acceptance\.eligible/u);
   assert.match(runtimeAudit, /unsignedDocument\.deployment[\s\S]*signedDocument\.deployment/u);
   assert.match(runtimeAudit, /ten-consecutive-realtime-intervals/u);
@@ -880,10 +866,10 @@ test("Jahresprompt kann den historischen 2026.4-Beleg auflösen, kennzeichnet ih
   assert.match(resolved, /build-germany-release\.mjs manifest tools\/region-import\/germany\/release\.annual-2026\.4\.config\.json[\s\S]*var\/derived\/germany-2026\.4\/source-capture\.2026\.4\.json/u);
   assert.match(resolved, /signed-map-package-plan-cli\.mjs tools\/tiles\/map-package\.annual-2026\.4\.plan\.json \./u);
 
-  assert.equal(timetableRouteSpec.schema, "zugfolge-germany-timetable-route-compiler/v4");
+  assert.equal(timetableRouteSpec.schema, "zugfolge-germany-timetable-route-compiler/v3");
   assert.equal(timetableRouteSpec.infraReleaseId, releaseId);
   assert.equal(timetableRouteSpec.output, `${artifactRoot}/timetable-routes-v2.jsonseq`);
-  assert.equal(timetableRouteSpec.transferOutput, `${artifactRoot}/timetable-routes-v2.transfer-demands-v1.json`);
+  assert.equal(Object.hasOwn(timetableRouteSpec, "transferOutput"), false);
   assert.equal(timetableRouteSpec.report, `${artifactRoot}/timetable-routes-v2.derivation-report.json`);
   assert.equal(closureSpec.schema, "zugfolge-synthetic-operational-closure-inputs/v2");
   assert.equal(closureSpec.releaseId, releaseId);
