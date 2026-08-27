@@ -4296,6 +4296,8 @@ impl OperationalWorld {
         };
         train.waiting_reason = Some(reason.to_owned());
         train.authority = None;
+        self.scheduled_motion_ends
+            .retain(|scheduled| scheduled.train_id != train_id);
         self.pending_dispatch_requests.remove(train_id);
         self.waiting_by_resource.retain(|_, waiting| {
             waiting.remove(train_id);
@@ -5205,7 +5207,8 @@ impl OperationalWorld {
                     })?;
                 if template.route_template_id != route.template_id
                     || template.movement_kind != train.movement_kind
-                    || (template.authority_start_route_mm > train.head_route_mm
+                    || (!matches!(train.motion_state, MotionState::SafeStop { .. })
+                        && template.authority_start_route_mm > train.head_route_mm
                         && train.authority.as_ref().is_none_or(|authority| {
                             authority.end_route_mm < template.authority_end_route_mm
                         }))

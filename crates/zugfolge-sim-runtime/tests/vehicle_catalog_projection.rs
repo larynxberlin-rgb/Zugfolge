@@ -275,6 +275,7 @@ fn ein_compile_lauf_initialisiert_flotte_und_operational_v2() {
                 "worldId": seed.world_id,
                 "regionId": "region:vehicle-catalog-test",
                 "nowMs": 0,
+                "repeatEveryMs": null,
                 "protectionModeSelectionPolicy": "zugfolge-protection-mode-selection/conservative-v1",
                 "infraRelease": operational_infra_release(),
                 "vehicleTypes": compilation.operational_inventory.vehicle_types,
@@ -283,6 +284,7 @@ fn ein_compile_lauf_initialisiert_flotte_und_operational_v2() {
                     &compilation.operational_inventory.formations,
                 ),
                 "trains": [],
+                "movementContinuations": [],
             })
             .to_string(),
         )
@@ -361,12 +363,14 @@ fn markt_seed_ohne_formationen_initialisiert_beide_runtimes() {
                 "worldId": seed.world_id,
                 "regionId": "region:vehicle-catalog-market-test",
                 "nowMs": 0,
+                "repeatEveryMs": null,
                 "protectionModeSelectionPolicy": "zugfolge-protection-mode-selection/conservative-v1",
                 "infraRelease": operational_infra_release(),
                 "vehicleTypes": compilation.operational_inventory.vehicle_types,
                 "vehicles": compilation.operational_inventory.vehicles,
                 "formations": [],
                 "trains": [],
+                "movementContinuations": [],
             })
             .to_string(),
         )
@@ -503,6 +507,7 @@ fn gedrehter_steuerwagen_speist_beide_runtimes_mit_identischer_spitze() {
                 "worldId": seed.world_id,
                 "regionId": "region:vehicle-catalog-wendezug-test",
                 "nowMs": 0,
+                "repeatEveryMs": null,
                 "protectionModeSelectionPolicy": "zugfolge-protection-mode-selection/conservative-v1",
                 "infraRelease": operational_infra_release(),
                 "vehicleTypes": compilation.operational_inventory.vehicle_types,
@@ -511,6 +516,7 @@ fn gedrehter_steuerwagen_speist_beide_runtimes_mit_identischer_spitze() {
                     &compilation.operational_inventory.formations,
                 ),
                 "trains": [],
+                "movementContinuations": [],
             })
             .to_string(),
         )
@@ -592,6 +598,7 @@ fn gleichartige_bemu_doppeltraktion_initialisiert_beide_runtimes() {
                 "worldId": seed.world_id,
                 "regionId": "region:vehicle-catalog-bemu-test",
                 "nowMs": 0,
+                "repeatEveryMs": null,
                 "protectionModeSelectionPolicy": "zugfolge-protection-mode-selection/conservative-v1",
                 "infraRelease": operational_infra_release(),
                 "vehicleTypes": compilation.operational_inventory.vehicle_types,
@@ -600,6 +607,7 @@ fn gleichartige_bemu_doppeltraktion_initialisiert_beide_runtimes() {
                     &compilation.operational_inventory.formations,
                 ),
                 "trains": [],
+                "movementContinuations": [],
             })
             .to_string(),
         )
@@ -714,6 +722,7 @@ fn unbespannter_wagenpark_initialisiert_beide_runtimes_ohne_fahrdynamik() {
                 "worldId": seed.world_id,
                 "regionId": "region:vehicle-catalog-wagenpark-test",
                 "nowMs": 0,
+                "repeatEveryMs": null,
                 "protectionModeSelectionPolicy": "zugfolge-protection-mode-selection/conservative-v1",
                 "infraRelease": operational_infra_release(),
                 "vehicleTypes": compilation.operational_inventory.vehicle_types,
@@ -722,6 +731,7 @@ fn unbespannter_wagenpark_initialisiert_beide_runtimes_ohne_fahrdynamik() {
                     &compilation.operational_inventory.formations,
                 ),
                 "trains": [],
+                "movementContinuations": [],
             })
             .to_string(),
         )
@@ -815,6 +825,7 @@ fn seed_restriktionen_bleiben_vom_compiler_bis_in_beide_runtimes_identisch() {
                 "worldId": seed.world_id,
                 "regionId": "region:vehicle-catalog-restrictions-test",
                 "nowMs": 0,
+                "repeatEveryMs": null,
                 "protectionModeSelectionPolicy": "zugfolge-protection-mode-selection/conservative-v1",
                 "infraRelease": operational_infra_release(),
                 "vehicleTypes": compilation.operational_inventory.vehicle_types,
@@ -823,6 +834,7 @@ fn seed_restriktionen_bleiben_vom_compiler_bis_in_beide_runtimes_identisch() {
                     &compilation.operational_inventory.formations,
                 ),
                 "trains": [],
+                "movementContinuations": [],
             })
             .to_string(),
         )
@@ -904,6 +916,7 @@ fn voll_immobilisierte_powered_formation_bleibt_physisch_aber_nicht_betrieblich_
                 "worldId": seed.world_id,
                 "regionId": "region:vehicle-catalog-immobilized-test",
                 "nowMs": 0,
+                "repeatEveryMs": null,
                 "protectionModeSelectionPolicy": "zugfolge-protection-mode-selection/conservative-v1",
                 "infraRelease": operational_infra_release(),
                 "vehicleTypes": compilation.operational_inventory.vehicle_types,
@@ -912,6 +925,7 @@ fn voll_immobilisierte_powered_formation_bleibt_physisch_aber_nicht_betrieblich_
                     &compilation.operational_inventory.formations,
                 ),
                 "trains": [],
+                "movementContinuations": [],
             })
             .to_string(),
         )

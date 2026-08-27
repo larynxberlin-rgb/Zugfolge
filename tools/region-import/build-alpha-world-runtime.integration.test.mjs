@@ -32,12 +32,22 @@ describe("echter Alpha-Builder bis zur produktiven Scheduler-Registry", () => {
   let root;
   let fixture;
   let serializedBuilderOutput;
+  let buildConfiguration;
+  let timetableTransferDemands;
+  let movementRouteTemplates;
+  let infraReleaseWrapper;
   let signed;
 
   before(async () => {
     root = await mkdtemp(join(tmpdir(), "zugfolge-alpha-builder-runtime-"));
     fixture = await buildMinimalAlphaWorldRuntimeFixture(root);
     serializedBuilderOutput = JSON.parse(await readFile(fixture.deployment, "utf8"));
+    [buildConfiguration, timetableTransferDemands, movementRouteTemplates, infraReleaseWrapper] = await Promise.all([
+      readFile(fixture.buildConfiguration, "utf8").then(JSON.parse),
+      readFile(fixture.timetableTransferDemands, "utf8").then(JSON.parse),
+      readFile(fixture.movementRouteTemplates, "utf8").then(JSON.parse),
+      readFile(fixture.infraRelease, "utf8").then(JSON.parse),
+    ]);
 
     const deployment = decodeEconomyValue(serializedBuilderOutput.deployment);
     const deploymentHash = alphaHash(ALPHA_WORLD_DEPLOYMENT_SCHEMA, deployment);
@@ -73,11 +83,35 @@ describe("echter Alpha-Builder bis zur produktiven Scheduler-Registry", () => {
   });
 
   test("serialisiert das reale build-alpha-world-Output als kompakten Operational-v2-Vertrag", () => {
+    assert.equal(buildConfiguration.schemaVersion, "zugfolge-alpha-world-build-configuration/v3");
+    assert.equal(timetableTransferDemands.schema, "zugfolge-timetable-transfer-demands/v1");
+    assert.equal(timetableTransferDemands.transferRoutes.length, fixture.routeCount);
+    assert.equal(movementRouteTemplates.schema, "movement-route-templates-v2");
+    assert.equal(movementRouteTemplates.transferTemplates.length, fixture.routeCount);
+    assert.equal(
+      movementRouteTemplates.timetableTransferSetSha256,
+      timetableTransferDemands.transferSetSha256,
+    );
+    assert.equal(
+      movementRouteTemplates.operationalStateHash,
+      buildConfiguration.operationalInfrastructure.stateHash,
+    );
+    assert.deepEqual(
+      infraReleaseWrapper.release.artifacts.map(({ kind }) => kind).sort(),
+      ["movement-route-templates-v2", "operational-infrastructure-v2", "timetable-transfer-demands-v1"],
+    );
     assert.deepEqual(Object.keys(serializedBuilderOutput), ["deployment"]);
     assert.equal(signed.deployment.worldId, MINIMAL_BUILDER_WORLD_ID);
     assert.equal(signed.deployment.worldDefinition.epoch, MINIMAL_BUILDER_EPOCH);
     assert.equal(signed.deployment.regionalSimulation.regionId, MINIMAL_BUILDER_REGION_ID);
-    assert.equal(signed.deployment.regionalSimulation.trains.length, fixture.routeCount);
+    assert.equal(
+      signed.deployment.regionalSimulation.trains.length,
+      fixture.routeCount + timetableTransferDemands.transferRoutes.length,
+    );
+    assert.equal(
+      signed.deployment.regionalSimulation.trains.filter(({ publicPassengerStop }) => publicPassengerStop).length,
+      fixture.routeCount,
+    );
     assert.deepEqual(
       Object.keys(signed.deployment.regionalSimulation.infraRelease).sort(),
       ["bytes", "file", "infraReleaseId", "schemaVersion", "sha256", "stateHash"].sort(),

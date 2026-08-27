@@ -3521,6 +3521,107 @@ mod tests {
     }
 
     #[test]
+    fn tutorial_resource_closure_preserves_a_safe_runtime_state() {
+        let tutorial_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../apps/game-api/tutorial-infrastructure/tutorial-minimal-2026.1");
+        let infrastructure_path = tutorial_root.join(INFRASTRUCTURE_FILE);
+        let descriptor: Value =
+            serde_json::from_slice(&std::fs::read(tutorial_root.join("descriptor.json")).unwrap())
+                .unwrap();
+        let mut input = serde_json::to_value(initialization()).unwrap();
+        input["regionId"] = json!("tutorial-korridor");
+        input["infraRelease"] = descriptor["binding"].clone();
+        input["trains"][0]["routeVersionId"] = json!("tutorial-minimal-2026.1:route:v1");
+        input["trains"][0]["dispatchInterlockingRouteId"] =
+            json!("tutorial-minimal-2026.1:interlocking:v1");
+        input["trains"][0]["protectionModeSelectionRuns"] = json!([{
+            "throughRouteLegIndex": 2,
+            "selectedProtectionSystem": "pzb"
+        }]);
+        let initialized: Value = serde_json::from_str(
+            &super::initialize_operational_simulation(
+                &input.to_string(),
+                infrastructure_path.to_str().unwrap(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let apply = |head: &Value, command_id: &str, command: Value| -> Value {
+            let envelope = json!({
+                "schemaVersion": COMMAND_SCHEMA,
+                "worldId": head["state"]["world"]["worldId"],
+                "regionId": head["state"]["world"]["regionId"],
+                "commandId": command_id,
+                "expectedStateHash": head["stateHash"],
+                "expectedRevision": head["state"]["revision"],
+                "expectedPublisherSequence": head["state"]["publisherSequence"],
+                "command": command,
+            });
+            serde_json::from_str(
+                &super::apply_operational_simulation_command(
+                    &head["state"].to_string(),
+                    &envelope.to_string(),
+                    infrastructure_path.to_str().unwrap(),
+                )
+                .unwrap_or_else(|error| panic!("{command_id}: {error:?}")),
+            )
+            .unwrap()
+        };
+        let materialized = apply(
+            &initialized,
+            "tutorial-safe-stop:materialize",
+            json!({ "type": "materialize", "train": input["trains"][0] }),
+        );
+        let dispatched = apply(
+            &materialized,
+            "tutorial-safe-stop:dispatch",
+            json!({
+                "type": "dispatch",
+                "requests": [{
+                    "trainId": "train:1",
+                    "interlockingRouteId": "tutorial-minimal-2026.1:interlocking:v1",
+                    "committedRank": 0,
+                    "timetableDeviationMs": 0,
+                    "passengerImpact": 0,
+                    "contractualImpact": 0,
+                    "networkImpact": 0,
+                    "resourceConsequence": 0,
+                    "recoveryRank": 0,
+                    "waitingSinceMs": 0
+                }]
+            }),
+        );
+        let activated = apply(
+            &dispatched,
+            "tutorial-safe-stop:activate",
+            json!({
+                "type": "activate-disruption",
+                "disruptionId": "tutorial-safe-stop:closure",
+                "effect": { "resource-closed": { "resourceId": "track:tut-segment-1" } }
+            }),
+        );
+        assert!(
+            activated["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|event| { event["kind"] == "safe-stop" && event["subjectId"] == "train:1" })
+        );
+        assert_eq!(
+            activated["state"]["world"]["scheduledMotionEnds"],
+            json!([])
+        );
+        assert_eq!(
+            activated["state"]["world"]["routeLocks"]
+                .as_object()
+                .unwrap()
+                .len(),
+            3,
+            "der sichere Halt behaelt die bereits eingestellten Schutzfahrstrassen"
+        );
+    }
+
+    #[test]
     fn native_batch_rejects_the_whole_group_when_a_later_command_fails() {
         let initialized: Value = serde_json::from_str(
             &initialize_operational_simulation(&encode(&initialization()).unwrap()).unwrap(),

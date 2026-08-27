@@ -4,11 +4,18 @@ import { join } from "node:path";
 
 import { alphaCanonicalJson } from "../../packages/alpha/dist/index.js";
 import { canonicalPlanningJson } from "../../packages/gtfs/dist/index.js";
+import { deriveAlphaWorldBuildConfiguration } from "./build-alpha-world-configuration.mjs";
 import { buildAlphaWorld, germanyOperationalStableId } from "./build-alpha-world.mjs";
+import { deriveDailyCirculationPlan } from "./daily-circulation-v2.mjs";
 import {
   runAlphaFleetV1Migration,
   runBuildAlphaFleetMigrationContract,
 } from "./migrate-alpha-fleet-v1-to-v2.mjs";
+import {
+  MAXIMUM_DIRECT_DWELL_MS,
+  MOVEMENT_ROUTE_TEMPLATES_SCHEMA,
+  movementResourceSetSha256,
+} from "./movement-route-templates-v2.mjs";
 import {
   canonicalOperationalInfrastructureV2Json,
   operationalInfrastructureV2StateHash,
@@ -30,10 +37,18 @@ const OPERATIONAL_FLEET_RELEASE_ID = "operational-fleet-alpha-builder-fixture-20
 const ROUTE_COUNT = 8;
 const EDGE_ID = "alpha-builder-fixture-edge";
 const EDGE_LENGTH_MM = 1_000_000;
+const FORMATION_LENGTH_MM = 46_560;
+const SPEED_LIMIT_MMPS = 33_333;
+const MINIMUM_RUNTIME_MS = Math.ceil((EDGE_LENGTH_MM * 1_000) / SPEED_LIMIT_MMPS);
 const PATH_RESOURCE = "alpha-builder-fixture:resource:path";
 const OVERLAP_RESOURCE = "alpha-builder-fixture:resource:overlap";
 const FLANK_RESOURCE = "alpha-builder-fixture:resource:flank";
+const MOVEMENT_RESOURCE_IDS = Object.freeze([FLANK_RESOURCE, OVERLAP_RESOURCE, PATH_RESOURCE]);
 const SIGNAL_ID = "alpha-builder-fixture:signal:entry";
+const DIRECT_REVERSE_BASE_ROUTE_ID = "route:alpha-builder-fixture:reverse-base:v1";
+const DIRECT_REVERSE_BASE_TEMPLATE_ID = "template:alpha-builder-fixture:reverse-base:v1";
+const DIRECT_OUTBOUND_ROUTE_ID = "route:alpha-builder-fixture:direct-outbound:46560:v1";
+const DIRECT_OUTBOUND_TEMPLATE_ID = "template:alpha-builder-fixture:direct-outbound:46560:v1";
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -77,42 +92,163 @@ function timetableRoute(index) {
   };
 }
 
-function operationalInfrastructure() {
-  const routeVersions = {};
-  const interlockingRoutes = {};
-  for (let index = 0; index < ROUTE_COUNT; index += 1) {
-    const identity = routeIdentity(index);
-    routeVersions[identity.routeVersionId] = {
-      id: identity.routeVersionId,
-      templateId: identity.templateId,
-      predecessorId: null,
-      transitionRouteMm: null,
-      legs: [{
+function operationalRouteVersion({
+  id,
+  templateId,
+  predecessorId = null,
+  transitionRouteMm = null,
+  direction = "along",
+}) {
+  const transitionEdgeMm = direction === "along"
+    ? FORMATION_LENGTH_MM
+    : EDGE_LENGTH_MM - FORMATION_LENGTH_MM;
+  return {
+    id,
+    templateId,
+    predecessorId,
+    transitionRouteMm,
+    legs: [
+      {
         edgeId: EDGE_ID,
-        direction: "along",
-        edgeEntryMm: 0,
-        edgeExitMm: EDGE_LENGTH_MM,
+        direction,
+        edgeEntryMm: direction === "along" ? 0 : EDGE_LENGTH_MM,
+        edgeExitMm: transitionEdgeMm,
         routeStartMm: 0,
-        speedLimitMmps: 33_333,
+        speedLimitMmps: SPEED_LIMIT_MMPS,
         gradientPerMille: 0,
         blockIds: [PATH_RESOURCE],
         availableProtectionSystems: ["pzb"],
         simultaneouslyRequiredProtectionSystems: [],
-      }],
-    };
-    interlockingRoutes[identity.interlockingRouteId] = {
-      id: identity.interlockingRouteId,
-      routeTemplateId: identity.templateId,
-      signalId: SIGNAL_ID,
-      movementKind: "train",
-      pathResources: [PATH_RESOURCE],
-      overlapResources: [OVERLAP_RESOURCE],
-      flankResources: [FLANK_RESOURCE],
-      switchPositions: {},
-      authorityStartRouteMm: 0,
-      authorityEndRouteMm: EDGE_LENGTH_MM,
-      releaseAfterTailRouteMm: EDGE_LENGTH_MM,
-    };
+      },
+      {
+        edgeId: EDGE_ID,
+        direction,
+        edgeEntryMm: transitionEdgeMm,
+        edgeExitMm: direction === "along" ? EDGE_LENGTH_MM : 0,
+        routeStartMm: FORMATION_LENGTH_MM,
+        speedLimitMmps: SPEED_LIMIT_MMPS,
+        gradientPerMille: 0,
+        blockIds: [PATH_RESOURCE],
+        availableProtectionSystems: ["pzb"],
+        simultaneouslyRequiredProtectionSystems: [],
+      },
+    ],
+  };
+}
+
+function operationalTransferRouteVersion(transferRoute) {
+  let routeStartMm = 0;
+  return {
+    id: transferRoute.routeVersionId,
+    templateId: transferRoute.templateId,
+    predecessorId: transferRoute.sourcePassengerRouteVersionId,
+    transitionRouteMm: FORMATION_LENGTH_MM,
+    legs: transferRoute.legs.map((leg) => {
+      const operationalLeg = {
+        ...leg,
+        routeStartMm,
+        speedLimitMmps: SPEED_LIMIT_MMPS,
+        gradientPerMille: 0,
+        blockIds: [PATH_RESOURCE],
+      };
+      routeStartMm += Math.abs(leg.edgeExitMm - leg.edgeEntryMm);
+      return operationalLeg;
+    }),
+  };
+}
+
+function interlockingRouteId(routeVersionId) {
+  return germanyOperationalStableId("interlocking:alpha-builder-fixture:", [routeVersionId]);
+}
+
+function operationalInterlockingRoute(
+  routeVersionId,
+  templateId,
+  id,
+  authorityStartRouteMm,
+  authorityEndRouteMm,
+) {
+  return {
+    id,
+    routeTemplateId: templateId,
+    signalId: SIGNAL_ID,
+    movementKind: "train",
+    pathResources: [PATH_RESOURCE],
+    overlapResources: [OVERLAP_RESOURCE],
+    flankResources: [FLANK_RESOURCE],
+    switchPositions: {},
+    authorityStartRouteMm,
+    authorityEndRouteMm,
+    releaseAfterTailRouteMm: authorityEndRouteMm,
+  };
+}
+
+function targetOutboundIdentity(transferRoute) {
+  return Object.freeze({
+    routeVersionId: `route:${transferRoute.id}:target-outbound:${FORMATION_LENGTH_MM}:v1`,
+    templateId: `template:${transferRoute.id}:target-outbound:${FORMATION_LENGTH_MM}:v1`,
+  });
+}
+
+function operationalInfrastructure(transferRoutes) {
+  const routeVersions = {};
+  const interlockingRoutes = {};
+  const addRoute = (route, fullInterlockingRouteId = germanyOperationalStableId(
+    "interlocking:synthetic-segment:",
+    [route.id, "0"],
+  )) => {
+    routeVersions[route.id] = route;
+    for (const leg of route.legs) {
+      const authorityEndRouteMm = leg.routeStartMm + Math.abs(leg.edgeExitMm - leg.edgeEntryMm);
+      const id = leg.routeStartMm === 0
+        ? fullInterlockingRouteId
+        : leg.routeStartMm === FORMATION_LENGTH_MM
+          ? interlockingRouteId(route.id)
+          : germanyOperationalStableId(
+            "interlocking:alpha-builder-fixture-segment:",
+            [route.id, String(leg.routeStartMm)],
+          );
+      const interlocking = operationalInterlockingRoute(
+        route.id,
+        route.templateId,
+        id,
+        leg.routeStartMm,
+        authorityEndRouteMm,
+      );
+      interlockingRoutes[interlocking.id] = interlocking;
+    }
+  };
+  for (let index = 0; index < ROUTE_COUNT; index += 1) {
+    const identity = routeIdentity(index);
+    addRoute(
+      operationalRouteVersion({
+        id: identity.routeVersionId,
+        templateId: identity.templateId,
+      }),
+      identity.interlockingRouteId,
+    );
+  }
+  addRoute(operationalRouteVersion({
+    id: DIRECT_REVERSE_BASE_ROUTE_ID,
+    templateId: DIRECT_REVERSE_BASE_TEMPLATE_ID,
+    direction: "against",
+  }));
+  addRoute(operationalRouteVersion({
+    id: DIRECT_OUTBOUND_ROUTE_ID,
+    templateId: DIRECT_OUTBOUND_TEMPLATE_ID,
+    predecessorId: routeIdentity(0).routeVersionId,
+    transitionRouteMm: FORMATION_LENGTH_MM,
+    direction: "against",
+  }));
+  for (const transferRoute of transferRoutes) {
+    addRoute(operationalTransferRouteVersion(transferRoute));
+    const outbound = targetOutboundIdentity(transferRoute);
+    addRoute(operationalRouteVersion({
+      id: outbound.routeVersionId,
+      templateId: outbound.templateId,
+      predecessorId: transferRoute.routeVersionId,
+      transitionRouteMm: FORMATION_LENGTH_MM,
+    }));
   }
   return {
     blockResources: [FLANK_RESOURCE, OVERLAP_RESOURCE, PATH_RESOURCE],
@@ -131,6 +267,152 @@ function operationalInfrastructure() {
     rzueLayoutId: "alpha-builder-fixture:rzue-layout:v1",
     signals: [SIGNAL_ID],
     switches: [],
+  };
+}
+
+function timetableTransferDemands(gtfs) {
+  const dailyPlan = deriveDailyCirculationPlan({
+    journeyChains: gtfs.snapshot.journeyChains,
+    stations: gtfs.snapshot.stations,
+    gtfsReleaseId: GTFS_RELEASE_ID,
+  });
+  const routeByLegId = new Map(Array.from({ length: ROUTE_COUNT }, (_, index) => {
+    const identity = routeIdentity(index);
+    return [identity.playableLegId, identity.routeVersionId];
+  }));
+  const transferRoutes = dailyPlan.transferDemands.map((demand) => ({
+    ...demand,
+    sourcePassengerRouteVersionId: routeByLegId.get(demand.sourcePassengerLegId),
+    targetPassengerRouteVersionId: routeByLegId.get(demand.targetPassengerLegId),
+    formationLengthsMm: [FORMATION_LENGTH_MM],
+    routeVersionId: `route:${demand.id}:movement:v1`,
+    templateId: `template:${demand.id}:movement:v1`,
+    legs: [
+      {
+        edgeId: EDGE_ID,
+        direction: "along",
+        edgeEntryMm: EDGE_LENGTH_MM - FORMATION_LENGTH_MM,
+        edgeExitMm: EDGE_LENGTH_MM,
+        availableProtectionSystems: ["pzb"],
+        simultaneouslyRequiredProtectionSystems: [],
+      },
+      {
+        edgeId: EDGE_ID,
+        direction: "along",
+        edgeEntryMm: 0,
+        edgeExitMm: FORMATION_LENGTH_MM,
+        availableProtectionSystems: ["pzb"],
+        simultaneouslyRequiredProtectionSystems: [],
+      },
+    ],
+    totalLengthMm: FORMATION_LENGTH_MM * 2,
+    weightedCostMm: FORMATION_LENGTH_MM * 2,
+    minimumRuntimeMs: MINIMUM_RUNTIME_MS,
+  }));
+  const transferHasher = createHash("sha256");
+  for (const route of transferRoutes) transferHasher.update(`${alphaCanonicalJson(route)}\n`, "utf8");
+  return {
+    schema: "zugfolge-timetable-transfer-demands/v1",
+    infraReleaseId: INFRA_RELEASE_ID,
+    gtfsSnapshotHash: gtfs.snapshotHash,
+    dailyPlan,
+    formationLengthsMm: [FORMATION_LENGTH_MM],
+    transferRoutes,
+    transferSetSha256: transferHasher.digest("hex"),
+  };
+}
+
+function dispatch({ routeVersionId, predecessorBaseRouteVersionId, continuity }) {
+  return {
+    routeVersionId,
+    predecessorBaseRouteVersionId,
+    dispatchInterlockingRouteId: interlockingRouteId(routeVersionId),
+    headRouteMm: FORMATION_LENGTH_MM,
+    minimumRuntimeMs: MINIMUM_RUNTIME_MS,
+    resourceIds: [...MOVEMENT_RESOURCE_IDS],
+    routeLegCount: 2,
+    protectionContractRuns: [{
+      throughRouteLegIndex: 1,
+      availableProtectionSystems: ["pzb"],
+      simultaneouslyRequiredProtectionSystems: [],
+    }],
+    continuity,
+  };
+}
+
+function movementRouteTemplates(transferPlan, operationalStateHash) {
+  const firstPassengerRouteId = routeIdentity(0).routeVersionId;
+  const resourceSetSha256 = movementResourceSetSha256(MOVEMENT_RESOURCE_IDS);
+  const directTemplates = [{
+    id: "movement-template:alpha-builder-fixture:direct-reverse:46560:v1",
+    inboundRouteVersionId: firstPassengerRouteId,
+    outboundRouteVersionId: DIRECT_REVERSE_BASE_ROUTE_ID,
+    formationLengthMm: FORMATION_LENGTH_MM,
+    terminalIntervals: [{
+      edgeId: EDGE_ID,
+      fromMm: EDGE_LENGTH_MM - FORMATION_LENGTH_MM,
+      toMm: EDGE_LENGTH_MM,
+    }],
+    movementKind: "train",
+    continuity: "reverse-direction",
+    maximumDwellMs: MAXIMUM_DIRECT_DWELL_MS,
+    resourceIds: [...MOVEMENT_RESOURCE_IDS],
+    resourceSetSha256,
+    through: null,
+    outbound: dispatch({
+      routeVersionId: DIRECT_OUTBOUND_ROUTE_ID,
+      predecessorBaseRouteVersionId: firstPassengerRouteId,
+      continuity: "reverse-direction",
+    }),
+  }];
+  const transferTemplates = transferPlan.transferRoutes.map((route) => {
+    const outbound = targetOutboundIdentity(route);
+    return {
+      id: `movement-template:${route.id}:${FORMATION_LENGTH_MM}:v1`,
+      demandId: route.id,
+      formationLengthMm: FORMATION_LENGTH_MM,
+      sourcePassengerRouteVersionId: route.sourcePassengerRouteVersionId,
+      targetPassengerRouteVersionId: route.targetPassengerRouteVersionId,
+      sourceLocationId: route.sourceLocationId,
+      targetLocationId: route.targetLocationId,
+      earliestDepartureS: route.earliestDepartureS,
+      latestArrivalS: route.latestArrivalS,
+      availableWindowS: route.availableWindowS,
+      movementKind: route.movementKind,
+      transfer: dispatch({
+        routeVersionId: route.routeVersionId,
+        predecessorBaseRouteVersionId: route.sourcePassengerRouteVersionId,
+        continuity: "same-direction",
+      }),
+      targetOutbound: dispatch({
+        routeVersionId: outbound.routeVersionId,
+        predecessorBaseRouteVersionId: route.routeVersionId,
+        continuity: "same-direction",
+      }),
+      resourceIds: [...MOVEMENT_RESOURCE_IDS],
+      resourceSetSha256,
+    };
+  });
+  const body = {
+    schema: MOVEMENT_ROUTE_TEMPLATES_SCHEMA,
+    infraReleaseId: INFRA_RELEASE_ID,
+    operationalStateHash,
+    timetableTransferSetSha256: transferPlan.transferSetSha256,
+    directTemplates,
+    templates: [],
+    transferTemplates,
+    metrics: {
+      directTemplateCount: directTemplates.length,
+      stablingTemplateCount: 0,
+      transferTemplateCount: transferTemplates.length,
+      transferDemandCount: transferPlan.dailyPlan.transferDemands.length,
+      turnaroundDemandCount: 0,
+      turnaroundPairCount: 1,
+    },
+  };
+  return {
+    ...body,
+    stateHash: sha256(alphaCanonicalJson({ schema: MOVEMENT_ROUTE_TEMPLATES_SCHEMA, value: body })),
   };
 }
 
@@ -301,12 +583,14 @@ export async function buildMinimalAlphaWorldRuntimeFixture(root) {
   const legacyDirectory = join(root, "legacy");
   await mkdir(legacyDirectory, { recursive: true });
   const paths = {
-    buildConfiguration: join(root, "alpha-world-build-configuration-v2.json"),
+    buildConfiguration: join(root, "alpha-world-build-configuration-v3.json"),
     gtfs: join(root, "gtfs-alpha-builder-fixture-v2.json"),
     economy: join(root, "economy-alpha-builder-fixture.json"),
     infraRelease: join(root, "infra-release-alpha-builder-fixture.json"),
     operationalInfrastructure: join(root, "operational-infrastructure-v2.json"),
     timetableRoutes: join(root, "timetable-routes-v2.jsonseq"),
+    timetableTransferDemands: join(root, "timetable-routes-v2.transfer-demands-v1.json"),
+    movementRouteTemplates: join(root, "operational-infrastructure-v2.movement-route-templates-v2.json"),
     publicDeployConfiguration: join(root, "public-world-deploy-configuration.json"),
     legacyDeployment: join(legacyDirectory, "alpha-world-deployment.json"),
     migrationSpecification: join(root, "alpha-fleet-migration-specification.json"),
@@ -315,7 +599,9 @@ export async function buildMinimalAlphaWorldRuntimeFixture(root) {
     deployment: join(root, "alpha-world-deployment.json"),
   };
 
-  const infrastructure = operationalInfrastructure();
+  const gtfs = gtfsEnvelope();
+  const transferPlan = timetableTransferDemands(gtfs);
+  const infrastructure = operationalInfrastructure(transferPlan.transferRoutes);
   const operationalBytes = Buffer.from(`${canonicalOperationalInfrastructureV2Json(infrastructure)}\n`, "utf8");
   const operationalProof = {
     file: "operational-infrastructure-v2.json",
@@ -328,12 +614,29 @@ export async function buildMinimalAlphaWorldRuntimeFixture(root) {
     "utf8",
   );
   const timetableProof = { file: "timetable-routes-v2.jsonseq", bytes: timetableBytes.length, sha256: sha256(timetableBytes) };
-  const gtfs = gtfsEnvelope();
+  const transferBytes = jsonBytes(transferPlan);
+  const transferProof = {
+    file: "timetable-routes-v2.transfer-demands-v1.json",
+    bytes: transferBytes.length,
+    sha256: sha256(transferBytes),
+    dailyPlanSha256: transferPlan.dailyPlan.planSha256,
+    transferSetSha256: transferPlan.transferSetSha256,
+  };
+  const movementPlan = movementRouteTemplates(transferPlan, operationalProof.stateHash);
+  const movementBytes = jsonBytes(movementPlan);
+  const movementProof = {
+    file: "operational-infrastructure-v2.movement-route-templates-v2.json",
+    bytes: movementBytes.length,
+    sha256: sha256(movementBytes),
+    stateHash: movementPlan.stateHash,
+    operationalStateHash: operationalProof.stateHash,
+    timetableTransferSetSha256: transferPlan.transferSetSha256,
+  };
   const gtfsBytes = jsonBytes(gtfs);
   const economy = economySpecification();
   const economyBytes = jsonBytes(economy);
-  const buildConfiguration = {
-    schemaVersion: "zugfolge-alpha-world-build-configuration/v2",
+  const identity = {
+    schemaVersion: "zugfolge-alpha-world-identity/v1",
     worldId: MINIMAL_BUILDER_WORLD_ID,
     regionId: MINIMAL_BUILDER_REGION_ID,
     regionVariant: "B",
@@ -341,24 +644,45 @@ export async function buildMinimalAlphaWorldRuntimeFixture(root) {
     seed: "42",
     fleetReleaseId: FLEET_RELEASE_ID,
     planningAuthority: { accountId: PLANNING_AUTHORITY_ID, displayName: "Alpha Builder Fixture-Aufgabentraeger" },
-    operationalInfrastructure: operationalProof,
-    timetableRoutes: timetableProof,
   };
   const infraRelease = {
     schema: "zugfolge-infra-release/v2",
     releaseId: INFRA_RELEASE_ID,
     timetableYear: 2026,
     sources: [{ id: "gtfs-de-regional-rail", sha256: ARCHIVE_SHA256 }],
-    artifacts: [{
-      id: "operational-infrastructure-alpha-builder-fixture",
-      kind: "operational-infrastructure-v2",
-      infraReleaseId: INFRA_RELEASE_ID,
-      ...operationalProof,
-    }],
+    artifacts: [
+      {
+        id: "operational-infrastructure-alpha-builder-fixture",
+        kind: "operational-infrastructure-v2",
+        infraReleaseId: INFRA_RELEASE_ID,
+        ...operationalProof,
+      },
+      {
+        id: "operational-movement-routes-alpha-builder-fixture",
+        kind: "movement-route-templates-v2",
+        file: movementProof.file,
+        bytes: movementProof.bytes,
+        sha256: movementProof.sha256,
+      },
+      {
+        id: "timetable-transfer-demands-alpha-builder-fixture",
+        kind: "timetable-transfer-demands-v1",
+        file: transferProof.file,
+        bytes: transferProof.bytes,
+        sha256: transferProof.sha256,
+      },
+    ],
     quality: {
       operationalClosure: {
         operationalQualityEligible: true,
         unresolvedRequired: 0,
+        movementRouteTemplates: {
+          bytes: movementProof.bytes,
+          sha256: movementProof.sha256,
+          stateHash: movementProof.stateHash,
+          operationalStateHash: movementProof.operationalStateHash,
+          timetableTransferSetSha256: movementProof.timetableTransferSetSha256,
+        },
         timetableRouteEvidence: {
           archive: gtfs.snapshot.source.archive,
           archiveSha256: gtfs.snapshot.source.archiveSha256,
@@ -372,17 +696,24 @@ export async function buildMinimalAlphaWorldRuntimeFixture(root) {
           routeRecordCount: ROUTE_COUNT,
           completeRouteCount: ROUTE_COUNT,
           selectedSegmentCount: ROUTE_COUNT,
+          transferDemandsBytes: transferProof.bytes,
+          transferDemandsSha256: transferProof.sha256,
+          dailyCirculationPlanSha256: transferProof.dailyPlanSha256,
+          transferSetSha256: transferProof.transferSetSha256,
         },
       },
     },
   };
   const infraReleaseWrapper = { release: infraRelease, releaseHash: sha256(alphaCanonicalJson(infraRelease)) };
+  const buildConfiguration = deriveAlphaWorldBuildConfiguration(identity, infraReleaseWrapper);
   const legacy = legacyDeployment();
   const legacyBytes = jsonBytes(legacy);
 
   await Promise.all([
     writeFile(paths.operationalInfrastructure, operationalBytes, { flag: "wx" }),
     writeFile(paths.timetableRoutes, timetableBytes, { flag: "wx" }),
+    writeFile(paths.timetableTransferDemands, transferBytes, { flag: "wx" }),
+    writeFile(paths.movementRouteTemplates, movementBytes, { flag: "wx" }),
     writeFile(paths.gtfs, gtfsBytes, { flag: "wx" }),
     writeFile(paths.economy, economyBytes, { flag: "wx" }),
     writeFile(paths.buildConfiguration, jsonBytes(buildConfiguration), { flag: "wx" }),
@@ -424,6 +755,8 @@ export async function buildMinimalAlphaWorldRuntimeFixture(root) {
     paths.publicDeployConfiguration,
     paths.operationalInfrastructure,
     paths.timetableRoutes,
+    paths.timetableTransferDemands,
+    paths.movementRouteTemplates,
     join(compiled, "vehicle-catalog-compile-receipt-v4.json"),
     join(compiled, "operational-vehicle-inventory-v2.json"),
     join(paths.migrationBundle, "vehicle-catalog-source-v2.json"),

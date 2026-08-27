@@ -347,7 +347,7 @@ describe.skipIf(databaseUrl === undefined)("real PostgreSQL integration", () => 
     await expect(client`update alpha_world_profiles
       set state = 'archived', final_state_hash = ${"9".repeat(64)}
       where world_id = ${worldId}`)
-      .rejects.toMatchObject({ message: expect.stringContaining("alpha world lifecycle cannot move backwards") });
+      .rejects.toMatchObject({ message: expect.stringContaining("alpha world final state hash requires the guarded closing transition") });
     await client.begin("isolation level serializable", async (tx) => {
       const closing = await tx<{ state: string }[]>`
         update alpha_world_profiles set state = 'closing'

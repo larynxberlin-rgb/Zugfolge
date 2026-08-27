@@ -3814,6 +3814,7 @@ fn infrastructure_failure_stops_an_authorized_movement_without_freeing_track() {
     assert_eq!(world.trains["train:1"].occupied_intervals, occupied);
     assert_eq!(world.signal_aspects["signal:train"], SignalAspect::Failed);
     assert_eq!(world.route_locks.len(), 1);
+    assert!(world.verify_invariants().is_ok());
 }
 
 #[test]
