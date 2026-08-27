@@ -36,10 +36,22 @@ const AUTHORITY_ID = "70000000-0000-4000-8000-000000000099";
 const EPOCH = new Date("2026-12-13T00:00:00.000Z");
 const ROUTE_VERSION_ID = "tutorial-minimal-2026.1:route:v1";
 const INTERLOCKING_ROUTE_ID = "tutorial-minimal-2026.1:interlocking:v1";
-const TUTORIAL_INFRASTRUCTURE_ROOT = fileURLToPath(new URL(
-  "../tutorial-infrastructure/tutorial-minimal-2026.1/",
+const NATIVE_RECURRING_INFRASTRUCTURE_ROOT = fileURLToPath(new URL(
+  "../tutorial-infrastructure/native-recurring-v1/",
   import.meta.url,
 ));
+const NATIVE_RECURRING_ROUTE_A = "native-recurring-v1:route:a";
+const NATIVE_RECURRING_ROUTE_B = "native-recurring-v1:route:b";
+const NATIVE_RECURRING_INTERLOCKING_A = "native-recurring-v1:interlocking:a";
+const NATIVE_RECURRING_INTERLOCKING_B = "native-recurring-v1:interlocking:b";
+const NATIVE_RECURRING_INFRASTRUCTURE_BINDING = Object.freeze({
+  schemaVersion: "zugfolge-operational-infrastructure-binding/v2",
+  infraReleaseId: "native-recurring-v1:operational-infra",
+  file: "operational-infrastructure-v2.json",
+  bytes: 4_235,
+  sha256: "90cdb0efb4723ff70901a572f071b48a30f699995f026f1d4f92d949cafa80fa",
+  stateHash: "fc5007da6d9350768c84637d43a7d31f52848ea85e8f6d57db3738e4d4b4cd17",
+}) satisfies OperationalSimulationInitialization["infraRelease"];
 const nativeAvailable = process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"] !== undefined;
 
 function nativeProgramReceipt(
@@ -213,6 +225,73 @@ function signed(): SignedAlphaWorldDeployment {
       repeatEveryS: 86_400,
     },
   } as unknown as SignedAlphaWorldDeployment;
+}
+
+function nativeRecurringSigned(): SignedAlphaWorldDeployment {
+  const deployment = signed();
+  const train = deployment.deployment.regionalSimulation.trains[0]!;
+  return {
+    ...deployment,
+    deployment: {
+      ...deployment.deployment,
+      regionalSimulation: {
+        ...deployment.deployment.regionalSimulation,
+        infraRelease: NATIVE_RECURRING_INFRASTRUCTURE_BINDING,
+        trains: [
+          {
+            ...train,
+            id: "run-outbound",
+            trainNumber: "RE 1",
+            routeVersionId: NATIVE_RECURRING_ROUTE_A,
+            headRouteMm: 74_000,
+            scheduledDepartureMs: 0,
+            dispatchInterlockingRouteId: NATIVE_RECURRING_INTERLOCKING_A,
+            protectionModeSelectionRuns: [{
+              throughRouteLegIndex: 1,
+              selectedProtectionSystem: "pzb",
+            }],
+          },
+          {
+            ...train,
+            id: "run-return",
+            trainNumber: "RE 2",
+            routeVersionId: NATIVE_RECURRING_ROUTE_B,
+            headRouteMm: 74_000,
+            scheduledDepartureMs: 43_200_000,
+            dispatchInterlockingRouteId: NATIVE_RECURRING_INTERLOCKING_B,
+            protectionModeSelectionRuns: [{
+              throughRouteLegIndex: 1,
+              selectedProtectionSystem: "pzb",
+            }],
+          },
+        ],
+        movementContinuations: [
+          {
+            id: "continuation:outbound-return",
+            predecessorTrainId: "run-outbound",
+            predecessorBaseRouteVersionId: NATIVE_RECURRING_ROUTE_A,
+            successorTrainId: "run-return",
+            successorDayOffset: 0,
+            dailyBoundary: false,
+            minimumDwellMs: 300_000,
+            continuity: "reverse-direction",
+            successorFormation: "inherit-predecessor",
+          },
+          {
+            id: "continuation:return-outbound",
+            predecessorTrainId: "run-return",
+            predecessorBaseRouteVersionId: NATIVE_RECURRING_ROUTE_B,
+            successorTrainId: "run-outbound",
+            successorDayOffset: 1,
+            dailyBoundary: true,
+            minimumDwellMs: 300_000,
+            continuity: "reverse-direction",
+            successorFormation: "inherit-predecessor",
+          },
+        ],
+      },
+    },
+  };
 }
 
 describe("aktive World-Deployment-Runtime", () => {
@@ -1149,7 +1228,7 @@ describe("aktive World-Deployment-Runtime", () => {
       };
 
       try {
-        const deployment = structuredClone(signed());
+        const deployment = structuredClone(nativeRecurringSigned());
         expect(Object.keys(deployment.deployment.regionalSimulation.infraRelease).sort()).toEqual([
           "bytes",
           "file",
@@ -1159,8 +1238,8 @@ describe("aktive World-Deployment-Runtime", () => {
           "stateHash",
         ]);
         setRoot(
-          TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR.binding.infraReleaseId,
-          TUTORIAL_INFRASTRUCTURE_ROOT,
+          NATIVE_RECURRING_INFRASTRUCTURE_BINDING.infraReleaseId,
+          NATIVE_RECURRING_INFRASTRUCTURE_ROOT,
         );
         const registered = deploymentRuntime({ activeWorlds: [] }, preflight);
         registered.register(deployment, EPOCH);
@@ -1168,45 +1247,54 @@ describe("aktive World-Deployment-Runtime", () => {
           expect.objectContaining({ command: expect.objectContaining({ type: "materialize" }) }),
           expect.objectContaining({
             command: expect.objectContaining({
+              type: "queue-movement-continuation",
+              continuation: expect.objectContaining({
+                predecessorTrainId: "run-outbound",
+                successor: expect.objectContaining({ id: "run-return" }),
+              }),
+            }),
+          }),
+          expect.objectContaining({
+            command: expect.objectContaining({
               type: "dispatch",
               requests: [expect.objectContaining({
-                interlockingRouteId: INTERLOCKING_ROUTE_ID,
+                interlockingRouteId: NATIVE_RECURRING_INTERLOCKING_A,
               })],
             }),
           }),
         ]);
 
         const missingRoot = await temporaryRoot();
-        setRoot(TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR.binding.infraReleaseId, missingRoot);
+        setRoot(NATIVE_RECURRING_INFRASTRUCTURE_BINDING.infraReleaseId, missingRoot);
         const missing = deploymentRuntime({ activeWorlds: [] }, preflight);
-        expect(() => missing.register(structuredClone(signed()), EPOCH)).toThrow();
+        expect(() => missing.register(structuredClone(nativeRecurringSigned()), EPOCH)).toThrow();
         expectUnregistered(missing);
 
         const tamperedRoot = await temporaryRoot();
         const source = join(
-          TUTORIAL_INFRASTRUCTURE_ROOT,
-          TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR.binding.file,
+          NATIVE_RECURRING_INFRASTRUCTURE_ROOT,
+          NATIVE_RECURRING_INFRASTRUCTURE_BINDING.file,
         );
         const tamperedPath = join(
           tamperedRoot,
-          TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR.binding.file,
+          NATIVE_RECURRING_INFRASTRUCTURE_BINDING.file,
         );
         await cp(source, tamperedPath);
         const tamperedBytes = await readFile(tamperedPath);
         tamperedBytes[0] = tamperedBytes[0] === 0x7b ? 0x5b : 0x7b;
         await writeFile(tamperedPath, tamperedBytes);
-        setRoot(TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR.binding.infraReleaseId, tamperedRoot);
+        setRoot(NATIVE_RECURRING_INFRASTRUCTURE_BINDING.infraReleaseId, tamperedRoot);
         const tampered = deploymentRuntime({ activeWorlds: [] }, preflight);
-        expect(() => tampered.register(structuredClone(signed()), EPOCH)).toThrow();
+        expect(() => tampered.register(structuredClone(nativeRecurringSigned()), EPOCH)).toThrow();
         expectUnregistered(tampered);
 
         const foreignRoot = await temporaryRoot();
         await cp(source, join(
           foreignRoot,
-          TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR.binding.file,
+          NATIVE_RECURRING_INFRASTRUCTURE_BINDING.file,
         ));
-        const foreignReleaseId = "tutorial-minimal-2026.1:foreign-operational-infra";
-        const foreign = structuredClone(signed()) as unknown as {
+        const foreignReleaseId = "native-recurring-v1:foreign-operational-infra";
+        const foreign = structuredClone(nativeRecurringSigned()) as unknown as {
           deployment: {
             regionalSimulation: { infraRelease: { infraReleaseId: string } };
           };
@@ -1220,13 +1308,13 @@ describe("aktive World-Deployment-Runtime", () => {
         )).toThrow();
         expectUnregistered(wrongRelease);
 
-        const wrongStateHashDeployment = structuredClone(signed()) as unknown as {
+        const wrongStateHashDeployment = structuredClone(nativeRecurringSigned()) as unknown as {
           deployment: { regionalSimulation: { infraRelease: { stateHash: string } } };
         };
         wrongStateHashDeployment.deployment.regionalSimulation.infraRelease.stateHash = "1".repeat(64);
         setRoot(
-          TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR.binding.infraReleaseId,
-          TUTORIAL_INFRASTRUCTURE_ROOT,
+          NATIVE_RECURRING_INFRASTRUCTURE_BINDING.infraReleaseId,
+          NATIVE_RECURRING_INFRASTRUCTURE_ROOT,
         );
         const wrongStateHash = deploymentRuntime({ activeWorlds: [] }, preflight);
         expect(() => wrongStateHash.register(

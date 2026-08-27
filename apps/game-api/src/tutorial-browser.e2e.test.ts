@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { extname, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { PGlite } from "@electric-sql/pglite";
 import { AbuseGuard, TutorialSessionService } from "@zugfolge/alpha";
@@ -14,7 +15,11 @@ import { OperationsRegistry } from "@zugfolge/dispatch";
 import { requestWorldAccess } from "@zugfolge/identity";
 import { LivemapRegistry } from "@zugfolge/livemap-stream";
 import { loadPlanningRuntime } from "@zugfolge/planning-runtime-native";
-import { loadOperatingRuntime, loadOperationalSimulationRuntime } from "@zugfolge/runtime-native";
+import {
+  OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV,
+  loadOperatingRuntime,
+  loadOperationalSimulationRuntime,
+} from "@zugfolge/runtime-native";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
@@ -24,12 +29,17 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { registerAlphaRoutes } from "./alpha-routes.js";
 import { RegionalSimulationWorker } from "./regional-simulation-worker.js";
+import { TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR } from "./tutorial-operational-infrastructure.js";
 import { GameTutorialWorldFactory } from "./tutorial-world-factory.js";
 
 const PUBLIC_WORLD = "00000000-0000-4000-8000-000000000121";
 const SECOND_WORLD = "00000000-0000-4000-8000-000000000122";
 const TEST_NOW = new Date("2026-08-13T10:00:00.000Z");
 const WEB_DIST = resolve(import.meta.dirname, "../../game-web/dist");
+const TUTORIAL_INFRASTRUCTURE_ROOT = fileURLToPath(new URL(
+  "../tutorial-infrastructure/tutorial-minimal-2026.1/",
+  import.meta.url,
+));
 
 function browserExecutable(): string {
   const candidates = [
@@ -104,8 +114,10 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
   let origin: string;
   let serverRequests: string[];
   let serverResponses: string[];
+  let previousInfrastructureRoots: string | undefined;
 
   beforeEach(async () => {
+    previousInfrastructureRoots = process.env[OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV];
     if (process.env["ZUGFOLGE_RUNTIME_NATIVE_PATH"] === undefined || process.env["ZUGFOLGE_PLANNING_RUNTIME_NATIVE_PATH"] === undefined) {
       throw new Error("Browser-E2E braucht beide echten NAPI-Runtimes.");
     }
@@ -116,6 +128,10 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
     await db.insert(worlds).values({ id: PUBLIC_WORLD, name: "Alpha", schedulePeriodWeeks: 4, epoch: TEST_NOW, worldKind: "public", rankingStatus: "ranked", lifecycleStatus: "active" });
     await requestWorldAccess(db, { worldId: PUBLIC_WORLD, keycloakSubject: "kc-browser-player", displayName: "Browser-Spieler" });
 
+    process.env[OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV] = JSON.stringify({
+      [TUTORIAL_OPERATIONAL_INFRASTRUCTURE_DESCRIPTOR.binding.infraReleaseId]:
+        TUTORIAL_INFRASTRUCTURE_ROOT,
+    });
     const regional = new RegionalSimulationWorker(db, loadOperationalSimulationRuntime(), new LivemapRegistry(), new OperationsRegistry());
     const clock = () => TEST_NOW;
     const sessions = new TutorialSessionService(db, new GameTutorialWorldFactory(db, loadOperatingRuntime(), loadPlanningRuntime(), regional), { clock });
@@ -135,9 +151,15 @@ async function expectFriendlyTutorialHeader(page: Page, reference: string): Prom
   }, 30_000);
 
   afterEach(async () => {
-    await browser?.close();
-    await app?.close();
-    await client?.close();
+    try {
+      await Promise.all([browser?.close(), app?.close(), client?.close()]);
+    } finally {
+      if (previousInfrastructureRoots === undefined) {
+        delete process.env[OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV];
+      } else {
+        process.env[OPERATIONAL_INFRASTRUCTURE_ROOTS_ENV] = previousInfrastructureRoots;
+      }
+    }
   });
 
   it("meldet an, durchlaeuft alle echten APIs, zeigt die Rechnung und archiviert vor der Rueckkehr", async () => {
