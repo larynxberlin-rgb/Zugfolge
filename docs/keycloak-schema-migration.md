@@ -77,6 +77,10 @@ sondern exakt die beiden Lock-Namespaces `DATABASE` (`1`) und `KEYCLOAK_BOOT`
 abgelehnt. Die `ACCESS EXCLUSIVE`-Sperre auf allen 100 Quelltabellen bleibt der
 entscheidende Live-Nachweis dafür, dass auch kein transaktionaler Keycloak-Lock
 mehr gehalten wird.
+Tabellen- und Schemanamen bleiben auf den eingecheckten einfachen Namensraum
+begrenzt. Index- und Constraintnamen im ausschließlich gehashten OID-Beleg
+dürfen dagegen den vollständigen PostgreSQL-Identifierraum bis 63 UTF-8-Bytes
+nutzen; sie werden niemals als SQL zusammengesetzt.
 Der Live-Inspector akzeptiert für Extension-Objekte nur zwei explizite Varianten:
 plain PG16 ohne Extension-Relationen/-Routinen oder den Produktions-PostGIS-
 Fußabdruck aus den drei Relationen `geography_columns`, `geometry_columns` und

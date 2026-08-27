@@ -116,6 +116,17 @@ function safeName(value, label) {
   return value;
 }
 
+export function postgresCatalogIdentifier(value, label) {
+  invariant(
+    typeof value === "string"
+      && value.length > 0
+      && !value.includes("\u0000")
+      && Buffer.byteLength(value, "utf8") <= 63,
+    `${label} ist kein gueltiger PostgreSQL-Katalogbezeichner.`,
+  );
+  return value;
+}
+
 function quoteName(value) {
   return `"${safeName(value, "PostgreSQL-Bezeichner")}"`;
 }
@@ -695,7 +706,7 @@ export function validateKeycloakStateSnapshot(snapshot) {
     exactObjectKeys(entry, ["kind", "relation", "name", "oid"], `Keycloak-Schema-Zustand.objectOids[${index}]`);
     invariant(["constraint", "index", "table"].includes(entry.kind), `Keycloak-Schema-Zustand.objectOids[${index}].kind ist unbekannt.`);
     const relation = safeName(entry.relation, `Keycloak-Schema-Zustand.objectOids[${index}].relation`);
-    const name = safeName(entry.name, `Keycloak-Schema-Zustand.objectOids[${index}].name`);
+    const name = postgresCatalogIdentifier(entry.name, `Keycloak-Schema-Zustand.objectOids[${index}].name`);
     if (entry.kind === "table") invariant(name === relation, `Keycloak-Schema-Zustand.objectOids[${index}] bindet eine widerspruechliche Tabelle.`);
     decimalCount(entry.oid, `Keycloak-Schema-Zustand.objectOids[${index}].oid`);
     return `${entry.kind}:${relation}:${name}`;

@@ -20,6 +20,7 @@ import {
   executeMigration,
   inspectKeycloakSchemaState,
   loadKeycloakObjectCatalog,
+  postgresCatalogIdentifier,
   recoverMigrationReceipt,
   runKeycloakSchemaCommand,
   validateBootstrapReceipt,
@@ -50,6 +51,13 @@ test("Keycloak-26.7-Lockkatalog verlangt exakt DATABASE und KEYCLOAK_BOOT", () =
     () => validateKeycloakLockRows([{ id: 1, locked: false }, { id: 1000, locked: true }], "public"),
     /ist aktiv/u,
   );
+});
+
+test("OID-Belege bewahren gueltige zitierte PostgreSQL-Katalognamen", () => {
+  assert.equal(postgresCatalogIdentifier("UK-Keycloak.Constraint", "OID-Name"), "UK-Keycloak.Constraint");
+  assert.throws(() => postgresCatalogIdentifier("", "OID-Name"), /Katalogbezeichner/u);
+  assert.throws(() => postgresCatalogIdentifier("x".repeat(64), "OID-Name"), /Katalogbezeichner/u);
+  assert.throws(() => postgresCatalogIdentifier("unsafe\u0000name", "OID-Name"), /Katalogbezeichner/u);
 });
 
 function identityHead(catalog, { userCount = "1" } = {}) {
