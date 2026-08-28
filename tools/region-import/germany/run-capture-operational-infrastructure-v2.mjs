@@ -429,7 +429,11 @@ if (phase === "materialize-annual-plan-evidence-v1") {
   const producerProofs = {
     bundle: runnerProof.bundle,
     entrypoint: runnerProof.entrypoint,
-    executionPins: executionPinsSource.proof,
+    executionPins: {
+      bytes: executionPinsSource.proof.bytes,
+      file: executionPinsSource.proof.file,
+      sha256: executionPinsSource.proof.sha256,
+    },
     implementation,
   };
   const result = await materializeOperationalValidatorRebuildEvidence({

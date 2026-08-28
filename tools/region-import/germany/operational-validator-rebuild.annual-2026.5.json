@@ -179,19 +179,19 @@
   },
   "producer": {
     "bundle": {
-      "bytes": 603191,
+      "bytes": 604178,
       "file": "tools/region-import/germany/run-capture-operational-infrastructure-v2.anchored-bundle.mjs",
-      "sha256": "ece099656bdfdfa5c18f5aa09c74e6d528be034809bc363accf76beaaa21bfa3"
+      "sha256": "a52834b4d04cb0019134fde69b0b66871d3f3acbfd90b3c077b55d15245798b1"
     },
     "entrypoint": {
-      "bytes": 26431,
+      "bytes": 26551,
       "file": "tools/region-import/germany/run-capture-operational-infrastructure-v2.mjs",
-      "sha256": "b14f9c476bf8bb3e0d2a5b44a88d4ed45fa2b5c5df0dca8b6325bf4064237d74"
+      "sha256": "266a142f311b85f38c3c68bbff355e7b38216110a9fb3419b9e3841b58901a32"
     },
     "executionPins": {
       "bytes": 4841,
       "file": "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
-      "sha256": "9596748953442d62223c0e24f526e6a0830dff54021968dbfb69529bc56070b0"
+      "sha256": "ac63fe56ac76116b8650d10e1b9e9106723c5920ebc4ac7f871124719280d278"
     },
     "implementation": {
       "bytes": 223850,

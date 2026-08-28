@@ -26,12 +26,14 @@ import {
   executeGermanyOperationalPinnedValidator,
   GERMANY_OPERATIONAL_EXECUTION_PINS_SCHEMA,
   GERMANY_OPERATIONAL_INTEGRATED_PRODUCER_KIND,
+  GERMANY_OPERATIONAL_REBUILD_AUTHORITY_ENVIRONMENT_KEYS,
   GERMANY_OPERATIONAL_WINDOWS_ANCHOR_HELPER_FILE,
   germanyOperationalSystemLauncherSourceProof,
   integratedGermanyOperationalProvenance,
   loadGermanyOperationalExecutionPins,
   proveGermanyOperationalExecutionContext,
   serializeGermanyOperationalExecutionPins,
+  validateGermanyOperationalRebuildAuthorityEnvironment,
   validateGermanyOperationalExecutionProofAgainstPins,
   validateGermanyOperationalProvenance,
 } from "./operational-infrastructure-v2-execution-pins.mjs";
@@ -65,6 +67,25 @@ function canonicalValue(value) {
   if (Array.isArray(value)) return value.map(canonicalValue);
   if (value === null || typeof value !== "object") return value;
   return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalValue(value[key])]));
+}
+
+function rebuildAuthorityEnvironment() {
+  return {
+    GITHUB_ACTIONS: "true",
+    GITHUB_EVENT_NAME: "workflow_dispatch",
+    GITHUB_REF: "refs/heads/main",
+    GITHUB_REF_PROTECTED: "true",
+    GITHUB_REPOSITORY: "larynxberlin-rgb/Zugfolge",
+    GITHUB_RUN_ATTEMPT: "1",
+    GITHUB_RUN_ID: "424242",
+    GITHUB_SHA: "a".repeat(40),
+    GITHUB_WORKFLOW_REF:
+      "larynxberlin-rgb/Zugfolge/.github/workflows/operational-validator-rebuild-evidence.yml@refs/heads/main",
+    RUNNER_ARCH: "X64",
+    RUNNER_ENVIRONMENT: "github-hosted",
+    RUNNER_OS: "Windows",
+    ZUGFOLGE_REBUILD_RUNNER_IMAGE: "windows-2025",
+  };
 }
 
 function localImportSpecifier(fromFile, toFile) {
@@ -278,8 +299,15 @@ async function executorFixture(t) {
     });
   }
 
-  async function directBundle(prepared, { beforeSpawn, env = {}, nodePath = process.execPath } = {}) {
-    const arguments_ = [
+  async function directBundle(prepared, {
+    beforeSpawn,
+    env = {},
+    nodePath = process.execPath,
+    phase = "derive-and-capture-v1",
+    runnerArguments,
+    workflowAuthorityEnvironment,
+  } = {}) {
+    const arguments_ = runnerArguments ?? [
       paths.pins,
       paths.specification,
       paths.sourceRoot,
@@ -294,6 +322,8 @@ async function executorFixture(t) {
       arguments: arguments_,
       nodePath,
       annualLaunchProofBase64: prepared.annualLaunchProofBase64,
+      phase,
+      workflowAuthorityEnvironment,
     });
     await beforeSpawn?.({ invocation, arguments: arguments_ });
     const result = spawnSync(invocation.command, invocation.arguments, {
@@ -374,6 +404,117 @@ test("eingecheckte OS-Launcher-Datenfiles sind deterministisch und bytegleich zu
     assert.equal(actual.length, sourceProof.sourceBytes);
     assert.equal(sha256(actual), sourceProof.sourceSha256);
   }
+});
+
+test("Rebuild-Authority transportiert nur die exakten begrenzten GitHub-Felder", async () => {
+  const authority = rebuildAuthorityEnvironment();
+  assert.deepEqual(Object.keys(authority), [...GERMANY_OPERATIONAL_REBUILD_AUTHORITY_ENVIRONMENT_KEYS]);
+  assert.deepEqual(validateGermanyOperationalRebuildAuthorityEnvironment(authority), authority);
+  const missing = { ...authority };
+  delete missing.GITHUB_SHA;
+  assert.throws(() => validateGermanyOperationalRebuildAuthorityEnvironment(missing), /fremde oder fehlende Felder/u);
+  assert.throws(
+    () => validateGermanyOperationalRebuildAuthorityEnvironment({ ...authority, AMBIENT_SECRET: "never-forward" }),
+    /fremde oder fehlende Felder/u,
+  );
+  for (const codePoint of [...Array.from({ length: 32 }, (_, index) => index), 0x7f]) {
+    assert.throws(
+      () => validateGermanyOperationalRebuildAuthorityEnvironment({
+        ...authority,
+        GITHUB_RUN_ID: `bad${String.fromCodePoint(codePoint)}value`,
+      }),
+      /kein begrenzter Umgebungswert/u,
+      `ASCII-Steuerzeichen U+${codePoint.toString(16).padStart(4, "0")} muss fail-closed sein`,
+    );
+  }
+  await assert.rejects(
+    createGermanyOperationalAnchoredRunnerInvocation({
+      workspaceRoot: REPOSITORY_ROOT,
+      executionPinsPath: "missing.json",
+      arguments: ["pins", "specification", "receipt"],
+      phase: "materialize-validator-rebuild-v3",
+    }),
+    /muss ein Objekt sein/u,
+  );
+  await assert.rejects(
+    createGermanyOperationalAnchoredRunnerInvocation({
+      workspaceRoot: REPOSITORY_ROOT,
+      executionPinsPath: "missing.json",
+      arguments: Array.from({ length: 7 }, (_, index) => `argument-${index}`),
+      phase: "derive-and-capture-v1",
+      workflowAuthorityEnvironment: authority,
+    }),
+    /nur in der Validator-Rebuild-v3-Phase/u,
+  );
+});
+
+test("Windows-Systemlauncher transportiert Rebuild-Authority exakt bis in den gehaltenen Kindprozess", {
+  skip: process.platform !== "win32",
+}, async (t) => {
+  const value = await executorFixture(t);
+  const authority = rebuildAuthorityEnvironment();
+  const prepared = await value.prepare('process.stdout.write("{}\\n");\n', {
+    bundleSource: `
+      const names = ${JSON.stringify(GERMANY_OPERATIONAL_REBUILD_AUTHORITY_ENVIRONMENT_KEYS)};
+      process.stdout.write(JSON.stringify({
+        authority: Object.fromEntries(names.map((name) => [name, process.env[name] ?? null])),
+        authorityTransportKeys: Object.keys(process.env)
+          .filter((name) => name.startsWith("ZUGFOLGE_OPERATIONAL_RUNNER_AUTHORITY_"))
+          .sort(),
+        githubToken: process.env.GITHUB_TOKEN ?? null,
+        phase: process.env.ZUGFOLGE_OPERATIONAL_RUNNER_PHASE ?? null,
+      }) + "\\n");
+    `,
+  });
+  const direct = await value.directBundle(prepared, {
+    env: {
+      GITHUB_TOKEN: "ambient-secret-must-not-cross",
+      ZUGFOLGE_OPERATIONAL_RUNNER_AUTHORITY_GITHUB_TOKEN: "unlisted-secret-must-not-cross",
+    },
+    phase: "materialize-validator-rebuild-v3",
+    runnerArguments: [value.paths.pins, value.paths.rebuildSpecification, value.paths.rebuildEvidence],
+    workflowAuthorityEnvironment: authority,
+  });
+  const decoded = direct.decode();
+  assert.equal(decoded.status, 0);
+  assert.equal(decoded.signal, null);
+  const receipt = JSON.parse(decoded.stdout.toString("utf8"));
+  assert.deepEqual(receipt.authority, authority);
+  assert.deepEqual(receipt.authorityTransportKeys, []);
+  assert.equal(receipt.githubToken, null);
+  assert.equal(receipt.phase, "materialize-validator-rebuild-v3");
+});
+
+test("Windows-Systemlauncher startet Rebuild ohne vollstaendige gebundene Authority nicht", {
+  skip: process.platform !== "win32",
+}, async (t) => {
+  const value = await executorFixture(t);
+  const marker = join(value.paths.root, "rebuild-child-started.txt");
+  const prepared = await value.prepare('process.stdout.write("{}\\n");\n', {
+    bundleSource: `
+      import { writeFileSync } from "node:fs";
+      writeFileSync(${JSON.stringify(marker)}, "started\\n");
+    `,
+  });
+  const direct = await value.directBundle(prepared, {
+    beforeSpawn: ({ invocation }) => {
+      const context = JSON.parse(Buffer.from(
+        invocation.env.ZUGFOLGE_OPERATIONAL_BOOTSTRAP_CONTEXT_BASE64,
+        "base64",
+      ).toString("utf8"));
+      delete context.ZUGFOLGE_OPERATIONAL_RUNNER_AUTHORITY_GITHUB_SHA;
+      invocation.env.ZUGFOLGE_OPERATIONAL_BOOTSTRAP_CONTEXT_BASE64 = Buffer.from(
+        JSON.stringify(context),
+        "utf8",
+      ).toString("base64");
+    },
+    phase: "materialize-validator-rebuild-v3",
+    runnerArguments: [value.paths.pins, value.paths.rebuildSpecification, value.paths.rebuildEvidence],
+    workflowAuthorityEnvironment: rebuildAuthorityEnvironment(),
+  });
+  assert.notEqual(direct.result.status, 0);
+  assert.match(direct.result.stderr, /AUTHORITY_GITHUB_SHA/u);
+  await assert.rejects(readFile(marker), (error) => error?.code === "ENOENT");
 });
 
 test("direkter Quell-.mjs-Aufruf ist hart noneligible und startet keinen Release-Runner", async (t) => {
@@ -465,6 +606,11 @@ test("direkter Systemlauncher bindet sieben CLI-Werte, Runtime, Bundle und berei
         helperPath: process.env.ZUGFOLGE_OPERATIONAL_RUNNER_ANCHOR_HELPER_PATH ?? null,
         helperSha256: process.env.ZUGFOLGE_OPERATIONAL_RUNNER_ANCHOR_HELPER_SHA256 ?? null,
         psModulePath: process.env.PSModulePath ?? null,
+        githubActions: process.env.GITHUB_ACTIONS ?? null,
+        githubToken: process.env.GITHUB_TOKEN ?? null,
+        authorityTransportKeys: Object.keys(process.env)
+          .filter((name) => name.startsWith("ZUGFOLGE_OPERATIONAL_RUNNER_AUTHORITY_"))
+          .sort(),
         marker: "held-bundle",
       }) + "\\n");
     `,
@@ -479,7 +625,10 @@ test("direkter Systemlauncher bindet sieben CLI-Werte, Runtime, Bundle und berei
     CORECLR_PROFILER: "{11111111-1111-1111-1111-111111111111}",
     CORECLR_PROFILER_PATH: hostileLoader,
     DOTNET_STARTUP_HOOKS: hostileLoader,
+    GITHUB_ACTIONS: "true",
+    GITHUB_TOKEN: "ambient-secret-must-not-cross",
     PSModulePath: dirname(hostileLoader),
+    ZUGFOLGE_OPERATIONAL_RUNNER_AUTHORITY_GITHUB_SHA: "prefixed-secret-must-not-cross",
   } });
   const decoded = direct.decode();
   assert.equal(decoded.status, 0);
@@ -502,6 +651,9 @@ test("direkter Systemlauncher bindet sieben CLI-Werte, Runtime, Bundle und berei
     assert.equal(receipt.helperSha256, null);
   }
   assert.equal(receipt.psModulePath, null);
+  assert.equal(receipt.githubActions, null);
+  assert.equal(receipt.githubToken, null);
+  assert.deepEqual(receipt.authorityTransportKeys, []);
 });
 
 test("Systemlauncher transportiert einen gebundenen Kindprozessfehler ohne den Ankerbeleg zu verlieren", async (t) => {

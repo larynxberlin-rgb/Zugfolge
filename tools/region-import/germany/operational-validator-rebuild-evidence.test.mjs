@@ -21,6 +21,7 @@ const HELPER_BUILDER_PATH = join(HERE, "build-operational-validator-windows-anch
 const HELPER_PATH = join(HERE, "operational-windows-anchor-helper.dll");
 const PREPARATION_PATH = join(HERE, "prepare-operational-validator-rebuild-inputs.mjs");
 const PRODUCTION_SPEC_PATH = join(HERE, "operational-validator-rebuild.annual-2026.5.json");
+const OPERATIONAL_CAPTURE_RUNNER_PATH = join(HERE, "run-capture-operational-infrastructure-v2.mjs");
 const WORKFLOW_RUNNER_PATH = join(HERE, "run-operational-validator-rebuild-workflow.mjs");
 const WORKFLOW_PATH = join(ROOT, ".github", "workflows", "operational-validator-rebuild-evidence.yml");
 const EXECUTION_AUTHORITY_WORKFLOW_PATH = join(ROOT, ".github", "workflows", "operational-v2-execution-authority.yml");
@@ -978,10 +979,11 @@ test("Preparation-only Generator erzeugt Vendor-TAR und Toolchain-Manifest deter
 });
 
 test("Workflow bindet Spec-Pfade, privaten GitHub-Assettransport und Sigstore-Verifikation", async () => {
-  const [workflow, executionAuthorityWorkflow, runner] = await Promise.all([
+  const [workflow, executionAuthorityWorkflow, runner, captureRunner] = await Promise.all([
     readFile(WORKFLOW_PATH, "utf8"),
     readFile(EXECUTION_AUTHORITY_WORKFLOW_PATH, "utf8"),
     readFile(WORKFLOW_RUNNER_PATH, "utf8"),
+    readFile(OPERATIONAL_CAPTURE_RUNNER_PATH, "utf8"),
   ]);
   for (const required of [
     "preserved_validator_release_id:", "preserved_validator_asset_id:",
@@ -1027,6 +1029,31 @@ test("Workflow bindet Spec-Pfade, privaten GitHub-Assettransport und Sigstore-Ve
   );
   assert.doesNotMatch(workflow, /preserved_validator_url/u);
   assert.doesNotMatch(workflow, /zugfolge-infra-release-rebuild-[a-f0-9]{40}-official\.exe/u);
+  assert.match(
+    runner,
+    /bytes\.equals\(serializeGermanyOperationalDirectSystemLaunchContract\(value\)\)/u,
+    "Rebuild-Runner muss den gemeinsamen kanonischen Direct-Contract-Serializer verwenden.",
+  );
+  assert.match(
+    runner,
+    /\.\/build-operational-infrastructure-v2-direct-system-launch-contract\.mjs/u,
+    "Rebuild-Runner importiert den gemeinsamen Direct-Contract-Serializer nicht.",
+  );
+  assert.doesNotMatch(
+    runner,
+    /function canonicalBytes/u,
+    "Rebuild-Runner darf keinen abweichenden lokalen Contract-Canonicalizer besitzen.",
+  );
+  assert.match(
+    captureRunner,
+    /executionPins:\s*\{\s*bytes:\s*executionPinsSource\.proof\.bytes,\s*file:\s*executionPinsSource\.proof\.file,\s*sha256:\s*executionPinsSource\.proof\.sha256,\s*\}/u,
+    "Gehaltene Rebuild-Producer-Proofs muessen interne Schema-Metadaten an der externen Spec-Grenze entfernen.",
+  );
+  assert.doesNotMatch(
+    captureRunner,
+    /executionPins:\s*executionPinsSource\.proof/u,
+    "Der interne schema-gebundene Execution-Pins-Proof darf nicht unveraendert in den exakten Rebuild-Producer-Proof gelangen.",
+  );
   for (const required of [
     "operator-approved-hash-binding-not-source-reexecution-v1",
     "environment: operational-release-approval",

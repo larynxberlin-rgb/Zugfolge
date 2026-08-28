@@ -2201,6 +2201,21 @@ var GERMANY_OPERATIONAL_RUNNER_PHASES = Object.freeze({
   "materialize-annual-plan-evidence-v1": 6,
   "materialize-validator-rebuild-v3": 3
 });
+var GERMANY_OPERATIONAL_REBUILD_AUTHORITY_ENVIRONMENT_KEYS = Object.freeze([
+  "GITHUB_ACTIONS",
+  "GITHUB_EVENT_NAME",
+  "GITHUB_REF",
+  "GITHUB_REF_PROTECTED",
+  "GITHUB_REPOSITORY",
+  "GITHUB_RUN_ATTEMPT",
+  "GITHUB_RUN_ID",
+  "GITHUB_SHA",
+  "GITHUB_WORKFLOW_REF",
+  "RUNNER_ARCH",
+  "RUNNER_ENVIRONMENT",
+  "RUNNER_OS",
+  "ZUGFOLGE_REBUILD_RUNNER_IMAGE"
+]);
 var GERMANY_OPERATIONAL_ANNUAL_PLAN_TIMEOUT_MILLISECONDS = 12e4;
 var GERMANY_OPERATIONAL_ANNUAL_RUN_TIMEOUT_MILLISECONDS = 216e5;
 var GERMANY_OPERATIONAL_EXECUTION_RUNNER_ROOT_FILES = Object.freeze([
@@ -2878,6 +2893,25 @@ try {
     ZUGFOLGE_OPERATIONAL_RUNNER_CLI_COUNT = [String]$cliCount
     ZUGFOLGE_OPERATIONAL_RUNNER_ANNUAL_LAUNCH_PROOF_BASE64 = $annualLaunchProofBase64
     ZUGFOLGE_OPERATIONAL_RUNNER_PHASE = $runnerPhase
+  }
+  if ($runnerPhase -ceq "materialize-validator-rebuild-v3") {
+    foreach ($name in @(
+      "GITHUB_ACTIONS",
+      "GITHUB_EVENT_NAME",
+      "GITHUB_REF",
+      "GITHUB_REF_PROTECTED",
+      "GITHUB_REPOSITORY",
+      "GITHUB_RUN_ATTEMPT",
+      "GITHUB_RUN_ID",
+      "GITHUB_SHA",
+      "GITHUB_WORKFLOW_REF",
+      "RUNNER_ARCH",
+      "RUNNER_ENVIRONMENT",
+      "RUNNER_OS",
+      "ZUGFOLGE_REBUILD_RUNNER_IMAGE"
+    )) {
+      $childEnvironment[$name] = Required ("AUTHORITY_" + $name)
+    }
   }
   for ($index = 0; $index -lt $cliCount; $index += 1) {
     $childEnvironment["ZUGFOLGE_OPERATIONAL_RUNNER_CLI_$index"] = Required "CLI_$index"
@@ -9723,7 +9757,11 @@ if (phase === "materialize-annual-plan-evidence-v1") {
   const producerProofs = {
     bundle: runnerProof.bundle,
     entrypoint: runnerProof.entrypoint,
-    executionPins: executionPinsSource.proof,
+    executionPins: {
+      bytes: executionPinsSource.proof.bytes,
+      file: executionPinsSource.proof.file,
+      sha256: executionPinsSource.proof.sha256
+    },
     implementation
   };
   const result = await materializeOperationalValidatorRebuildEvidence({
