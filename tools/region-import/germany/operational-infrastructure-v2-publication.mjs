@@ -158,6 +158,28 @@ async function assertOwnedRegularFile(path, expectedIdentity, label) {
   return metadata;
 }
 
+async function assertHeldOwnedRegularFile(path, handle, expectedIdentity, label) {
+  let held;
+  let metadata;
+  try {
+    [held, metadata] = await Promise.all([
+      handle.stat({ bigint: true }),
+      lstat(path, { bigint: true }),
+    ]);
+  } catch (error) {
+    throw new Error(`${label} wurde fremd ersetzt oder sein reservierter Handle ist nicht mehr nutzbar.`, { cause: error });
+  }
+  invariant(
+    held.isFile()
+      && metadata.isFile()
+      && !metadata.isSymbolicLink()
+      && matchesExpectedIdentity(held, expectedIdentity)
+      && sameStableMetadata(held, metadata),
+    `${label} wurde fremd ersetzt oder driftet von seinem reservierten Handle.`,
+  );
+  return metadata;
+}
+
 function errorDetail(error) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -1616,8 +1638,9 @@ export async function publishGermanyOperationalInfrastructureV2FromNativeReceipt
     stagedFileIdentities[PUBLICATION_RECEIPT_FILE] = await receiptHandle.stat({ bigint: true });
     await runHook(hooks, "afterReceiptReservation", { parent, paths, staging, stagedReceipt, receiptHandle });
     await assertPinnedParent(parent);
-    await assertOwnedRegularFile(
+    await assertHeldOwnedRegularFile(
       stagedReceipt,
+      receiptHandle,
       stagedFileIdentities[PUBLICATION_RECEIPT_FILE],
       "Reserviertes Operational-v2-Publication-Receipt",
     );
@@ -1720,8 +1743,9 @@ export async function publishGermanyOperationalInfrastructureV2FromNativeReceipt
     }, capture.capture.infraReleaseId);
     await runHook(hooks, "beforeReceiptWrite", { parent, paths, staging, claim, receipt });
     await assertPinnedParent(parent);
-    await assertOwnedRegularFile(
+    await assertHeldOwnedRegularFile(
       stagedReceipt,
+      receiptHandle,
       stagedFileIdentities[PUBLICATION_RECEIPT_FILE],
       "Reserviertes Operational-v2-Publication-Receipt vor dem Schreiben",
     );
@@ -1730,8 +1754,9 @@ export async function publishGermanyOperationalInfrastructureV2FromNativeReceipt
     await writeHandleBytes(receiptHandle, receiptBytes.subarray(0, split), 0);
     await runHook(hooks, "duringReceiptWrite", { parent, paths, staging, claim, receipt, writtenBytes: split });
     await assertPinnedParent(parent);
-    await assertOwnedRegularFile(
+    await assertHeldOwnedRegularFile(
       stagedReceipt,
+      receiptHandle,
       stagedFileIdentities[PUBLICATION_RECEIPT_FILE],
       "Reserviertes Operational-v2-Publication-Receipt waehrend des Schreibens",
     );
@@ -1741,8 +1766,9 @@ export async function publishGermanyOperationalInfrastructureV2FromNativeReceipt
     await receiptHandle.sync();
     await runHook(hooks, "afterReceiptWrite", { parent, paths, staging, claim, receipt });
     await assertPinnedParent(parent);
-    await assertOwnedRegularFile(
+    await assertHeldOwnedRegularFile(
       stagedReceipt,
+      receiptHandle,
       stagedFileIdentities[PUBLICATION_RECEIPT_FILE],
       "Reserviertes Operational-v2-Publication-Receipt nach dem Schreiben",
     );
