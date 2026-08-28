@@ -945,15 +945,15 @@ public static class ZugfolgeMitigatedProcess {
   private const int ERROR_INVALID_HANDLE = 6;
   private const uint HANDLE_FLAG_INHERIT = 0x00000001;
   private const uint DUPLICATE_SAME_ACCESS = 0x00000002;
+  private const uint TOKEN_QUERY = 0x00000008;
+  private const uint LOGON_WITHOUT_PROFILE = 0u;
   private const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
   private const uint WAIT_OBJECT_0 = 0;
   private const uint WAIT_TIMEOUT = 258;
   private const uint WAIT_FAILED = 0xffffffff;
-  private const int LOGON32_LOGON_INTERACTIVE = 2;
-  private const int LOGON32_PROVIDER_DEFAULT = 0;
-  private const uint LOGON_WITHOUT_PROFILE = 0u;
   private static readonly IntPtr PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY = new IntPtr(0x00020007);
   private static readonly IntPtr PROC_THREAD_ATTRIBUTE_HANDLE_LIST = new IntPtr(0x00020002);
+  private static readonly IntPtr PROC_THREAD_ATTRIBUTE_PARENT_PROCESS = new IntPtr(0x00020000);
   private const ulong BUILD_IMAGE_LOAD_POLICY =
     (1UL << 52) | (1UL << 56) | (1UL << 60);
   private const ulong STRICT_IMAGE_LOAD_POLICY =
@@ -990,16 +990,21 @@ public static class ZugfolgeMitigatedProcess {
     public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation; public IO_COUNTERS IoInfo;
     public UIntPtr ProcessMemoryLimit; public UIntPtr JobMemoryLimit; public UIntPtr PeakProcessMemoryUsed; public UIntPtr PeakJobMemoryUsed;
   }
+  [StructLayout(LayoutKind.Sequential)]
+  private struct JOBOBJECT_BASIC_ACCOUNTING_INFORMATION {
+    public long TotalUserTime; public long TotalKernelTime; public long ThisPeriodTotalUserTime; public long ThisPeriodTotalKernelTime;
+    public uint TotalPageFaultCount; public uint TotalProcesses; public uint ActiveProcesses; public uint TotalTerminatedProcesses;
+  }
   private sealed class OutputCounter { public long Value; }
 
   [DllImport("kernel32.dll", SetLastError = true)]
   [return: MarshalAs(UnmanagedType.Bool)]
   private static extern bool CreatePipe(out IntPtr read, out IntPtr write, ref SECURITY_ATTRIBUTES attributes, uint size);
-  [DllImport("kernel32.dll", SetLastError = true)]
-  [return: MarshalAs(UnmanagedType.Bool)]
-  private static extern bool SetHandleInformation(IntPtr handle, uint mask, uint flags);
   [DllImport("kernel32.dll")]
   private static extern IntPtr GetCurrentProcess();
+  [DllImport("kernel32.dll", SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool GetHandleInformation(IntPtr handle, out uint flags);
   [DllImport("kernel32.dll", SetLastError = true)]
   [return: MarshalAs(UnmanagedType.Bool)]
   private static extern bool DuplicateHandle(IntPtr sourceProcess, IntPtr sourceHandle,
@@ -1024,19 +1029,30 @@ public static class ZugfolgeMitigatedProcess {
   [return: MarshalAs(UnmanagedType.Bool)]
   private static extern bool CreateProcessW(string application, StringBuilder commandLine, IntPtr processAttributes, IntPtr threadAttributes,
     [MarshalAs(UnmanagedType.Bool)] bool inheritHandles, uint flags, IntPtr environment, string cwd, ref STARTUPINFOEX startup, out PROCESS_INFORMATION process);
-  [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  [DllImport("kernel32.dll", EntryPoint = "CreateProcessW", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
   [return: MarshalAs(UnmanagedType.Bool)]
-  private static extern bool LogonUser(string username, string domain, string password, int logonType, int logonProvider, out IntPtr token);
+  private static extern bool CreateProcessWBasic(string application, StringBuilder commandLine, IntPtr processAttributes, IntPtr threadAttributes,
+    [MarshalAs(UnmanagedType.Bool)] bool inheritHandles, uint flags, IntPtr environment, string cwd, ref STARTUPINFO startup, out PROCESS_INFORMATION process);
   [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
   [return: MarshalAs(UnmanagedType.Bool)]
-  private static extern bool CreateProcessWithTokenW(IntPtr token, uint logonFlags, string application,
-    StringBuilder commandLine, uint flags, IntPtr environment, string cwd,
-    ref STARTUPINFOEX startup, out PROCESS_INFORMATION process);
+  private static extern bool CreateProcessWithLogonW(string username, string domain, string password, uint logonFlags,
+    string application, StringBuilder commandLine, uint flags, IntPtr environment, string cwd,
+    ref STARTUPINFO startup, out PROCESS_INFORMATION process);
+  [DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool OpenProcessToken(IntPtr process, uint desiredAccess, out IntPtr token);
+  [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool IsProcessInJob(IntPtr process, IntPtr job, [MarshalAs(UnmanagedType.Bool)] out bool result);
   [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
   private static extern IntPtr CreateJobObject(IntPtr attributes, string name);
   [DllImport("kernel32.dll", SetLastError = true)]
   [return: MarshalAs(UnmanagedType.Bool)]
   private static extern bool SetInformationJobObject(IntPtr job, int informationClass, ref JOBOBJECT_EXTENDED_LIMIT_INFORMATION information, uint bytes);
+  [DllImport("kernel32.dll", SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  private static extern bool QueryInformationJobObject(IntPtr job, int informationClass,
+    out JOBOBJECT_BASIC_ACCOUNTING_INFORMATION information, uint bytes, out uint returnedBytes);
   [DllImport("kernel32.dll", SetLastError = true)]
   [return: MarshalAs(UnmanagedType.Bool)]
   private static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
@@ -1073,7 +1089,8 @@ public static class ZugfolgeMitigatedProcess {
     }
     result.Append('\\', slashes * 2); result.Append('\"'); return result.ToString();
   }
-  private static IntPtr EnvironmentBlock(System.Collections.IDictionary environment) {
+  private static SortedDictionary<string, string> NormalizedEnvironment(System.Collections.IDictionary environment) {
+    if (environment == null) throw new ArgumentNullException("environment");
     SortedDictionary<string, string> sorted = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     foreach (System.Collections.DictionaryEntry entry in environment) {
       string key = entry.Key as string; string value = entry.Value as string;
@@ -1081,32 +1098,122 @@ public static class ZugfolgeMitigatedProcess {
         throw new InvalidOperationException("Windows-Kindumgebung enthaelt einen ungueltigen Eintrag.");
       sorted.Add(key, value);
     }
+    return sorted;
+  }
+  private static IntPtr EnvironmentBlock(System.Collections.IDictionary environment) {
+    SortedDictionary<string, string> sorted = NormalizedEnvironment(environment);
     StringBuilder block = new StringBuilder();
     foreach (KeyValuePair<string, string> entry in sorted) block.Append(entry.Key).Append('=').Append(entry.Value).Append('\0');
+    if (sorted.Count == 0) block.Append('\0');
     block.Append('\0'); return Marshal.StringToHGlobalUni(block.ToString());
   }
   private static void Pipe(bool parentReads, out IntPtr child, out IntPtr parent) {
-    SECURITY_ATTRIBUTES attributes = new SECURITY_ATTRIBUTES { nLength = Marshal.SizeOf(typeof(SECURITY_ATTRIBUTES)), bInheritHandle = 1 };
+    SECURITY_ATTRIBUTES attributes = new SECURITY_ATTRIBUTES { nLength = Marshal.SizeOf(typeof(SECURITY_ATTRIBUTES)), bInheritHandle = 0 };
     IntPtr read; IntPtr write;
     if (!CreatePipe(out read, out write, ref attributes, 0)) throw Win32("CreatePipe");
     child = parentReads ? write : read; parent = parentReads ? read : write;
-    if (!SetHandleInformation(parent, HANDLE_FLAG_INHERIT, 0)) {
-      int code = Marshal.GetLastWin32Error(); CloseHandle(read); CloseHandle(write); child = IntPtr.Zero; parent = IntPtr.Zero;
-      throw new System.ComponentModel.Win32Exception(code, "SetHandleInformation");
-    }
   }
-  private static void AssertSentinelNotInherited(IntPtr process, IntPtr sentinel) {
+  private static IntPtr DuplicateInheritableToProcess(IntPtr process, IntPtr source, string label) {
+    IntPtr remote;
+    if (!DuplicateHandle(GetCurrentProcess(), source, process, out remote, 0, true, DUPLICATE_SAME_ACCESS))
+      throw Win32("DuplicateHandle(anchor " + label + ")");
+    return remote;
+  }
+  private static void AssertNotInheritable(IntPtr handle, string label) {
+    uint flags;
+    if (!GetHandleInformation(handle, out flags)) throw Win32("GetHandleInformation(" + label + ")");
+    if ((flags & HANDLE_FLAG_INHERIT) != 0)
+      throw new InvalidOperationException("Lokaler Windows-Handle ist unerwartet vererbbar: " + label);
+  }
+  private static void AssertAllowedHandleInherited(IntPtr process, IntPtr candidate, IntPtr expected, string label) {
     IntPtr duplicate;
-    if (DuplicateHandle(process, sentinel, GetCurrentProcess(), out duplicate, 0, false, DUPLICATE_SAME_ACCESS)) {
+    if (!DuplicateHandle(process, candidate, GetCurrentProcess(), out duplicate, 0, false, DUPLICATE_SAME_ACCESS))
+      throw Win32("DuplicateHandle(inherited " + label + ")");
+    try {
+      if (!CompareObjectHandles(expected, duplicate))
+        throw new InvalidOperationException("Windows-Kindprozess erbte nicht den freigegebenen " + label + "-Handle.");
+    } finally { CloseRequired(ref duplicate, "inherited-" + label + "-verification"); }
+  }
+  private static void AssertSentinelNotInherited(IntPtr process, IntPtr candidate, IntPtr sentinel) {
+    IntPtr duplicate;
+    if (DuplicateHandle(process, candidate, GetCurrentProcess(), out duplicate, 0, false, DUPLICATE_SAME_ACCESS)) {
       bool inheritedSentinel = CompareObjectHandles(sentinel, duplicate);
-      CloseHandle(duplicate);
-      if (inheritedSentinel)
-        throw new InvalidOperationException("Windows-Kindprozess erbte einen nicht freigegebenen Sentinel-Handle.");
+      CloseRequired(ref duplicate, "sentinel-verification");
+      if (inheritedSentinel) throw new InvalidOperationException("Windows-Kindprozess erbte einen nicht freigegebenen Sentinel-Handle.");
       return;
     }
     int status = Marshal.GetLastWin32Error();
     if (status != ERROR_INVALID_HANDLE)
       throw new System.ComponentModel.Win32Exception(status, "DuplicateHandle(non-inherited sentinel)");
+  }
+  private static string ProcessSid(IntPtr process) {
+    IntPtr token = IntPtr.Zero;
+    if (!OpenProcessToken(process, TOKEN_QUERY, out token)) throw Win32("OpenProcessToken(process identity)");
+    try {
+      using (WindowsIdentity identity = new WindowsIdentity(token)) {
+        if (identity.User == null) throw new InvalidOperationException("Windows-Prozess besitzt keine pruefbare SID.");
+        return identity.User.Value;
+      }
+    } finally { CloseRequired(ref token, "process-token"); }
+  }
+  private static void AssertProcessSid(IntPtr process, string expectedSid) {
+    if (!String.Equals(ProcessSid(process), expectedSid, StringComparison.Ordinal))
+      throw new InvalidOperationException("Windows-Prozess verwendet nicht die erwartete Identitaet.");
+  }
+  private static void AssertProcessInJob(IntPtr process, IntPtr job) {
+    bool inJob;
+    if (!IsProcessInJob(process, job, out inJob)) throw Win32("IsProcessInJob(anchor job)");
+    if (!inJob) throw new InvalidOperationException("Windows-Kindprozess erbte den gehaltenen Anker-Job nicht.");
+  }
+  private static void RecordCleanupStatus(List<string> errors, string action, int status) {
+    errors.Add(action + " status=" + unchecked((uint)status).ToString(System.Globalization.CultureInfo.InvariantCulture));
+  }
+  private static void CloseRequired(ref IntPtr handle, string label) {
+    if (handle == IntPtr.Zero) return;
+    IntPtr closing = handle;
+    if (!CloseHandle(closing)) throw Win32("CloseHandle(" + label + ")");
+    handle = IntPtr.Zero;
+  }
+  private static void CloseTracked(ref IntPtr handle, string label, List<string> errors) {
+    if (handle == IntPtr.Zero) return;
+    IntPtr closing = handle; handle = IntPtr.Zero;
+    if (!CloseHandle(closing)) RecordCleanupStatus(errors, "CloseHandle(" + label + ")", Marshal.GetLastWin32Error());
+  }
+  private static void EnsureProcessTerminated(IntPtr process, string label, List<string> errors) {
+    if (process == IntPtr.Zero) return;
+    uint before = WaitForSingleObject(process, 0);
+    if (before == WAIT_OBJECT_0) return;
+    if (before == WAIT_FAILED) RecordCleanupStatus(errors, "WaitForSingleObject(" + label + ",pre)", Marshal.GetLastWin32Error());
+    bool terminated = TerminateProcess(process, 95);
+    int terminateStatus = terminated ? 0 : Marshal.GetLastWin32Error();
+    uint wait = WaitForSingleObject(process, 5000);
+    if (wait == WAIT_OBJECT_0) return;
+    if (!terminated) RecordCleanupStatus(errors, "TerminateProcess(" + label + ")", terminateStatus);
+    if (wait == WAIT_FAILED) RecordCleanupStatus(errors, "WaitForSingleObject(" + label + ",cleanup)", Marshal.GetLastWin32Error());
+    else errors.Add("WaitForSingleObject(" + label + ",cleanup) result=" + wait.ToString(System.Globalization.CultureInfo.InvariantCulture));
+  }
+  private static string WaitForJobEmptyStatus(IntPtr job, int timeoutMilliseconds, string label) {
+    System.Diagnostics.Stopwatch wait = System.Diagnostics.Stopwatch.StartNew();
+    while (true) {
+      JOBOBJECT_BASIC_ACCOUNTING_INFORMATION accounting;
+      uint returnedBytes;
+      if (!QueryInformationJobObject(job, 1, out accounting,
+          (uint)Marshal.SizeOf(typeof(JOBOBJECT_BASIC_ACCOUNTING_INFORMATION)), out returnedBytes))
+        return "QueryInformationJobObject(" + label + ") status="
+          + unchecked((uint)Marshal.GetLastWin32Error()).ToString(System.Globalization.CultureInfo.InvariantCulture);
+      if (returnedBytes != (uint)Marshal.SizeOf(typeof(JOBOBJECT_BASIC_ACCOUNTING_INFORMATION)))
+        return "QueryInformationJobObject(" + label + ") bytes="
+          + returnedBytes.ToString(System.Globalization.CultureInfo.InvariantCulture);
+      if (accounting.ActiveProcesses == 0) return null;
+      long remaining = timeoutMilliseconds - wait.ElapsedMilliseconds;
+      if (remaining <= 0) return "QueryInformationJobObject(" + label + ") active="
+        + accounting.ActiveProcesses.ToString(System.Globalization.CultureInfo.InvariantCulture);
+      System.Threading.Thread.Sleep((int)Math.Min(10L, remaining));
+    }
+  }
+  private static void AssertJobEmpty(IntPtr job, int timeoutMilliseconds, string label) {
+    string failure = WaitForJobEmptyStatus(job, timeoutMilliseconds, label);
+    if (failure != null) throw new InvalidOperationException("Windows-Job wurde nicht vollstaendig leer: " + failure);
   }
   private static void AssertMitigationPolicy(IntPtr process, ulong requested) {
     uint imageLoad;
@@ -1160,66 +1267,109 @@ public static class ZugfolgeMitigatedProcess {
       ulong imageLoadPolicy) {
     if (!Path.IsPathRooted(executable) || maximumBytes <= 0 || timeoutMilliseconds <= 0) throw new InvalidOperationException("Windows-Kindvertrag ist ungueltig.");
     if (arguments == null) arguments = new string[0]; if (stdin == null) stdin = new byte[0];
+    System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
     if (cancelled != null && cancelled()) throw new InvalidOperationException("Windows-Kindstart wurde vor CreateProcess monoton abgebrochen.");
     IntPtr childIn = IntPtr.Zero, parentIn = IntPtr.Zero, childOut = IntPtr.Zero, parentOut = IntPtr.Zero, childErr = IntPtr.Zero, parentErr = IntPtr.Zero;
     IntPtr sentinelChild = IntPtr.Zero, sentinelParent = IntPtr.Zero;
-    IntPtr attributes = IntPtr.Zero, mitigation = IntPtr.Zero, handleList = IntPtr.Zero, env = IntPtr.Zero, job = IntPtr.Zero, token = IntPtr.Zero;
-    bool attributesInitialized = false, processCreated = false, jobAssigned = false, processCompleted = false;
+    IntPtr remoteChildIn = IntPtr.Zero, remoteChildOut = IntPtr.Zero, remoteChildErr = IntPtr.Zero, remoteSentinel = IntPtr.Zero;
+    IntPtr attributes = IntPtr.Zero, mitigation = IntPtr.Zero, handleList = IntPtr.Zero, parentProcess = IntPtr.Zero, env = IntPtr.Zero, job = IntPtr.Zero;
+    bool attributesInitialized = false, processCreated = false, processCompleted = false;
+    bool anchorCreated = false, anchorTerminated = false;
     PROCESS_INFORMATION process = new PROCESS_INFORMATION();
+    PROCESS_INFORMATION anchor = new PROCESS_INFORMATION();
+    Exception primaryError = null;
     try {
       Pipe(false, out childIn, out parentIn); Pipe(true, out childOut, out parentOut); Pipe(true, out childErr, out parentErr);
       Pipe(false, out sentinelChild, out sentinelParent);
-      IntPtr attributeBytes = IntPtr.Zero; InitializeProcThreadAttributeList(IntPtr.Zero, 2, 0, ref attributeBytes);
-      if (attributeBytes == IntPtr.Zero) throw Win32("InitializeProcThreadAttributeList(size)");
-      attributes = Marshal.AllocHGlobal(attributeBytes);
-      if (!InitializeProcThreadAttributeList(attributes, 2, 0, ref attributeBytes)) throw Win32("InitializeProcThreadAttributeList");
-      attributesInitialized = true; mitigation = Marshal.AllocHGlobal(8); Marshal.WriteInt64(mitigation, unchecked((long)imageLoadPolicy));
-      if (!UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY, mitigation, new IntPtr(8), IntPtr.Zero, IntPtr.Zero))
-        throw Win32("UpdateProcThreadAttribute(MITIGATION_POLICY)");
-      handleList = Marshal.AllocHGlobal(IntPtr.Size * 3);
-      Marshal.WriteIntPtr(handleList, 0, childIn); Marshal.WriteIntPtr(handleList, IntPtr.Size, childOut); Marshal.WriteIntPtr(handleList, IntPtr.Size * 2, childErr);
-      if (!UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, handleList, new IntPtr(IntPtr.Size * 3), IntPtr.Zero, IntPtr.Zero))
-        throw Win32("UpdateProcThreadAttribute(HANDLE_LIST)");
-      STARTUPINFOEX startup = new STARTUPINFOEX(); startup.StartupInfo.cb = Marshal.SizeOf(typeof(STARTUPINFOEX));
-      startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES; startup.StartupInfo.hStdInput = childIn; startup.StartupInfo.hStdOutput = childOut; startup.StartupInfo.hStdError = childErr; startup.lpAttributeList = attributes;
+      AssertNotInheritable(childIn, "child-stdin"); AssertNotInheritable(parentIn, "parent-stdin");
+      AssertNotInheritable(childOut, "child-stdout"); AssertNotInheritable(parentOut, "parent-stdout");
+      AssertNotInheritable(childErr, "child-stderr"); AssertNotInheritable(parentErr, "parent-stderr");
+      AssertNotInheritable(sentinelChild, "sentinel-child"); AssertNotInheritable(sentinelParent, "sentinel-parent");
       StringBuilder command = new StringBuilder(Quote(executable));
       foreach (string argument in arguments) { if (argument == null || argument.IndexOf('\0') >= 0) throw new InvalidOperationException("Windows-Kindargument ist ungueltig."); command.Append(' ').Append(Quote(argument)); }
       env = EnvironmentBlock(environment);
       uint flags = CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW;
-      bool created;
-      if (account == null) created = CreateProcessW(executable, command, IntPtr.Zero, IntPtr.Zero, true, flags, env, cwd, ref startup, out process);
-      else {
-        if (!LogonUser(account.Username, account.Domain, account.Password,
-            LOGON32_LOGON_INTERACTIVE, LOGON32_PROVIDER_DEFAULT, out token))
-          throw Win32("LogonUser(ephemeral build principal)");
-        // Microsoft documents STARTUPINFOEX for CreateProcessWithTokenW.  It
-        // preserves the exact mitigation policy and three-handle allow-list,
-        // while requiring only SeImpersonatePrivilege instead of service-only
-        // quota and primary-token privileges.  No weaker logon or
-        // unmitigated fallback is permitted.
-        created = CreateProcessWithTokenW(token, LOGON_WITHOUT_PROFILE, executable, command,
-          flags, env, cwd, ref startup, out process);
-        if (!created) {
+      job = CreateJobObject(IntPtr.Zero, null); if (job == IntPtr.Zero) throw Win32("CreateJobObject(anchor)");
+      JOBOBJECT_EXTENDED_LIMIT_INFORMATION anchorLimit = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
+      anchorLimit.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+      if (!SetInformationJobObject(job, 9, ref anchorLimit, (uint)Marshal.SizeOf(typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION))))
+        throw Win32("SetInformationJobObject(anchor)");
+      string anchorExecutable = "C:\\Windows\\System32\\cmd.exe";
+      StringBuilder anchorCommand = new StringBuilder(Quote(anchorExecutable) + " /D /Q /C exit 0");
+      STARTUPINFO anchorStartup = new STARTUPINFO(); anchorStartup.cb = Marshal.SizeOf(typeof(STARTUPINFO));
+      string expectedSid = account == null ? ProcessSid(GetCurrentProcess()) : account.Sid;
+      bool anchored;
+      if (account == null) {
+        anchored = CreateProcessWBasic(anchorExecutable, anchorCommand, IntPtr.Zero, IntPtr.Zero, false,
+          CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW, env, cwd, ref anchorStartup, out anchor);
+        if (!anchored) throw Win32("CreateProcessW(current identity anchor)");
+      } else {
+        anchored = CreateProcessWithLogonW(account.Username, account.Domain, account.Password, LOGON_WITHOUT_PROFILE,
+          anchorExecutable, anchorCommand, CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
+          env, cwd, ref anchorStartup, out anchor);
+        if (!anchored) {
           uint status = unchecked((uint)Marshal.GetLastWin32Error());
-          throw new InvalidOperationException("ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_TOKEN status="
+          throw new InvalidOperationException("ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_LOGON status="
             + status.ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
       }
-      if (!created) throw Win32("CreateProcessW(mitigated)");
-      processCreated = true;
-      AssertSentinelNotInherited(process.hProcess, sentinelChild);
-      AssertMitigationPolicy(process.hProcess, imageLoadPolicy);
-      CloseHandle(sentinelChild); sentinelChild = IntPtr.Zero;
-      CloseHandle(sentinelParent); sentinelParent = IntPtr.Zero;
-      job = CreateJobObject(IntPtr.Zero, null); if (job == IntPtr.Zero) throw Win32("CreateJobObject");
-      JOBOBJECT_EXTENDED_LIMIT_INFORMATION limit = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION(); limit.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-      if (!SetInformationJobObject(job, 9, ref limit, (uint)Marshal.SizeOf(typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION)))) throw Win32("SetInformationJobObject");
-      if (!AssignProcessToJobObject(job, process.hProcess)) throw Win32("AssignProcessToJobObject");
-      jobAssigned = true;
+      anchorCreated = true;
+      AssertProcessSid(anchor.hProcess, expectedSid);
+      if (!AssignProcessToJobObject(job, anchor.hProcess)) throw Win32("AssignProcessToJobObject(anchor)");
       lock (ActiveLock) { ActiveJob = job; }
+      if (cancelled != null && cancelled()) throw new InvalidOperationException("Windows-Kindstart wurde vor Anker-Duplizierung monoton abgebrochen.");
+      remoteChildIn = DuplicateInheritableToProcess(anchor.hProcess, childIn, "stdin");
+      remoteChildOut = DuplicateInheritableToProcess(anchor.hProcess, childOut, "stdout");
+      remoteChildErr = DuplicateInheritableToProcess(anchor.hProcess, childErr, "stderr");
+      remoteSentinel = DuplicateInheritableToProcess(anchor.hProcess, sentinelChild, "sentinel");
+      if (remoteChildIn == remoteChildOut || remoteChildIn == remoteChildErr || remoteChildIn == remoteSentinel
+          || remoteChildOut == remoteChildErr || remoteChildOut == remoteSentinel || remoteChildErr == remoteSentinel)
+        throw new InvalidOperationException("Windows-Anker erzeugte keine eindeutigen Remote-Handles.");
+      int attributeCount = 3;
+      IntPtr attributeBytes = IntPtr.Zero; InitializeProcThreadAttributeList(IntPtr.Zero, attributeCount, 0, ref attributeBytes);
+      if (attributeBytes == IntPtr.Zero) throw Win32("InitializeProcThreadAttributeList(size)");
+      attributes = Marshal.AllocHGlobal(attributeBytes);
+      if (!InitializeProcThreadAttributeList(attributes, attributeCount, 0, ref attributeBytes)) throw Win32("InitializeProcThreadAttributeList");
+      attributesInitialized = true; mitigation = Marshal.AllocHGlobal(8); Marshal.WriteInt64(mitigation, unchecked((long)imageLoadPolicy));
+      if (!UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY, mitigation, new IntPtr(8), IntPtr.Zero, IntPtr.Zero))
+        throw Win32("UpdateProcThreadAttribute(MITIGATION_POLICY)");
+      handleList = Marshal.AllocHGlobal(IntPtr.Size * 3);
+      Marshal.WriteIntPtr(handleList, 0, remoteChildIn); Marshal.WriteIntPtr(handleList, IntPtr.Size, remoteChildOut); Marshal.WriteIntPtr(handleList, IntPtr.Size * 2, remoteChildErr);
+      if (!UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, handleList, new IntPtr(IntPtr.Size * 3), IntPtr.Zero, IntPtr.Zero))
+        throw Win32("UpdateProcThreadAttribute(HANDLE_LIST)");
+      parentProcess = Marshal.AllocHGlobal(IntPtr.Size); Marshal.WriteIntPtr(parentProcess, anchor.hProcess);
+      if (!UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_PARENT_PROCESS, parentProcess, new IntPtr(IntPtr.Size), IntPtr.Zero, IntPtr.Zero))
+        throw Win32("UpdateProcThreadAttribute(PARENT_PROCESS)");
+      STARTUPINFOEX startup = new STARTUPINFOEX(); startup.StartupInfo.cb = Marshal.SizeOf(typeof(STARTUPINFOEX));
+      startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES; startup.StartupInfo.hStdInput = remoteChildIn; startup.StartupInfo.hStdOutput = remoteChildOut; startup.StartupInfo.hStdError = remoteChildErr; startup.lpAttributeList = attributes;
+      bool created = CreateProcessW(executable, command, IntPtr.Zero, IntPtr.Zero, true, flags, env, cwd, ref startup, out process);
+      if (!created) {
+        if (account == null) throw Win32("CreateProcessW(mitigated)");
+        uint status = unchecked((uint)Marshal.GetLastWin32Error());
+        throw new InvalidOperationException("ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_FROM_ANCHOR status="
+          + status.ToString(System.Globalization.CultureInfo.InvariantCulture));
+      }
+      processCreated = true;
+      AssertAllowedHandleInherited(process.hProcess, remoteChildIn, childIn, "stdin");
+      AssertAllowedHandleInherited(process.hProcess, remoteChildOut, childOut, "stdout");
+      AssertAllowedHandleInherited(process.hProcess, remoteChildErr, childErr, "stderr");
+      AssertSentinelNotInherited(process.hProcess, remoteSentinel, sentinelChild);
+      AssertProcessSid(process.hProcess, expectedSid);
+      AssertMitigationPolicy(process.hProcess, imageLoadPolicy);
+      AssertProcessInJob(process.hProcess, job);
+      CloseRequired(ref sentinelChild, "sentinel-child");
+      CloseRequired(ref sentinelParent, "sentinel-parent");
+      if (!TerminateProcess(anchor.hProcess, 98)) throw Win32("TerminateProcess(suspended identity anchor)");
+      uint anchorWait = WaitForSingleObject(anchor.hProcess, 5000);
+      if (anchorWait == WAIT_FAILED) throw Win32("WaitForSingleObject(suspended identity anchor)");
+      if (anchorWait != WAIT_OBJECT_0)
+        throw new TimeoutException("Suspendierter Windows-Identitaetsanker endete nicht rechtzeitig.");
+      anchorTerminated = true;
+      CloseRequired(ref anchor.hThread, "anchor-thread"); CloseRequired(ref anchor.hProcess, "anchor-process");
       if (cancelled != null && cancelled()) throw new InvalidOperationException("Windows-Kindstart wurde vor ResumeThread monoton abgebrochen.");
+      if (clock.ElapsedMilliseconds > timeoutMilliseconds) throw new TimeoutException("Windows-Kindstart ueberschritt vor ResumeThread das gepinnte Zeitlimit.");
       if (ResumeThread(process.hThread) == 0xffffffff) throw Win32("ResumeThread");
-      CloseHandle(childIn); childIn = IntPtr.Zero; CloseHandle(childOut); childOut = IntPtr.Zero; CloseHandle(childErr); childErr = IntPtr.Zero;
+      CloseRequired(ref childIn, "child-stdin"); CloseRequired(ref childOut, "child-stdout"); CloseRequired(ref childErr, "child-stderr");
       using (FileStream input = new FileStream(new SafeFileHandle(parentIn, true), FileAccess.Write, 4096, false))
       using (FileStream output = new FileStream(new SafeFileHandle(parentOut, true), FileAccess.Read, 4096, false))
       using (FileStream error = new FileStream(new SafeFileHandle(parentErr, true), FileAccess.Read, 4096, false)) {
@@ -1230,14 +1380,17 @@ public static class ZugfolgeMitigatedProcess {
           System.Threading.CancellationToken.None, System.Threading.Tasks.TaskCreationOptions.LongRunning, System.Threading.Tasks.TaskScheduler.Default);
         System.Threading.Tasks.Task<byte[]> stderrTask = System.Threading.Tasks.Task.Factory.StartNew(delegate { return ReadBounded(error, maximumBytes, job, "stderr", total); },
           System.Threading.CancellationToken.None, System.Threading.Tasks.TaskCreationOptions.LongRunning, System.Threading.Tasks.TaskScheduler.Default);
-        System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
         while (true) {
-          uint wait = WaitForSingleObject(process.hProcess, 25);
-          if (wait == WAIT_OBJECT_0) break;
+          long remaining = timeoutMilliseconds - clock.ElapsedMilliseconds;
+          if (remaining <= 0) { TerminateJobObject(job, 92); throw new TimeoutException("Windows-Kindprozessbaum ueberschritt das gepinnte Zeitlimit."); }
+          uint wait = WaitForSingleObject(process.hProcess, (uint)Math.Min(25L, remaining));
+          if (wait == WAIT_OBJECT_0) {
+            if (clock.ElapsedMilliseconds > timeoutMilliseconds) { TerminateJobObject(job, 92); throw new TimeoutException("Windows-Kindprozessbaum ueberschritt das gepinnte Zeitlimit."); }
+            break;
+          }
           if (wait == WAIT_FAILED) throw Win32("WaitForSingleObject");
           if (wait != WAIT_TIMEOUT) throw new InvalidOperationException("Windows-Kindwait lieferte einen unbekannten Zustand.");
           if (cancelled != null && cancelled()) { TerminateJobObject(job, 94); throw new InvalidOperationException("Windows-Kindprozessbaum wurde nach monotoner Inputdrift beendet."); }
-          if (clock.ElapsedMilliseconds > timeoutMilliseconds) { TerminateJobObject(job, 92); throw new TimeoutException("Windows-Kindprozessbaum ueberschritt das gepinnte Zeitlimit."); }
         }
         uint exitCode; if (!GetExitCodeProcess(process.hProcess, out exitCode)) throw Win32("GetExitCodeProcess");
         // The root process may exit while a descendant still holds inherited
@@ -1249,23 +1402,39 @@ public static class ZugfolgeMitigatedProcess {
           TerminateJobObject(job, 97);
           throw new TimeoutException("Windows-Kindprozess-Pipes schlossen nach dem kausalen Job-Tree-Abbruch nicht rechtzeitig.");
         }
+        CloseRequired(ref process.hThread, "payload-thread"); CloseRequired(ref process.hProcess, "payload-process");
+        AssertJobEmpty(job, 5000, "post-root");
         processCompleted = true;
         return new ZugfolgeMitigatedProcessResult(unchecked((int)exitCode), stdoutTask.Result, stderrTask.Result);
       }
+    } catch (Exception error) {
+      primaryError = error;
+      throw;
     } finally {
-      lock (ActiveLock) { if (ActiveJob == job) ActiveJob = IntPtr.Zero; }
-      if (processCreated && !processCompleted && process.hProcess != IntPtr.Zero) {
-        if (jobAssigned && job != IntPtr.Zero) TerminateJobObject(job, 95); else TerminateProcess(process.hProcess, 95);
-        WaitForSingleObject(process.hProcess, 5000);
+      List<string> cleanupErrors = new List<string>();
+      if (!processCompleted && job != IntPtr.Zero && !TerminateJobObject(job, 95))
+        RecordCleanupStatus(cleanupErrors, "TerminateJobObject(cleanup)", Marshal.GetLastWin32Error());
+      if (processCreated && !processCompleted) EnsureProcessTerminated(process.hProcess, "payload", cleanupErrors);
+      if (anchorCreated && !anchorTerminated) EnsureProcessTerminated(anchor.hProcess, "anchor", cleanupErrors);
+      CloseTracked(ref process.hThread, "payload-thread", cleanupErrors); CloseTracked(ref process.hProcess, "payload-process", cleanupErrors);
+      CloseTracked(ref anchor.hThread, "anchor-thread", cleanupErrors); CloseTracked(ref anchor.hProcess, "anchor-process", cleanupErrors);
+      if (!processCompleted && job != IntPtr.Zero) {
+        string jobFailure = WaitForJobEmptyStatus(job, 5000, "cleanup");
+        if (jobFailure != null) cleanupErrors.Add(jobFailure);
       }
-      if (process.hThread != IntPtr.Zero) CloseHandle(process.hThread); if (process.hProcess != IntPtr.Zero) CloseHandle(process.hProcess);
-      if (childIn != IntPtr.Zero) CloseHandle(childIn); if (parentIn != IntPtr.Zero) CloseHandle(parentIn);
-      if (childOut != IntPtr.Zero) CloseHandle(childOut); if (parentOut != IntPtr.Zero) CloseHandle(parentOut);
-      if (childErr != IntPtr.Zero) CloseHandle(childErr); if (parentErr != IntPtr.Zero) CloseHandle(parentErr);
-      if (sentinelChild != IntPtr.Zero) CloseHandle(sentinelChild); if (sentinelParent != IntPtr.Zero) CloseHandle(sentinelParent);
-      if (job != IntPtr.Zero) CloseHandle(job); if (env != IntPtr.Zero) Marshal.FreeHGlobal(env); if (handleList != IntPtr.Zero) Marshal.FreeHGlobal(handleList); if (mitigation != IntPtr.Zero) Marshal.FreeHGlobal(mitigation);
+      lock (ActiveLock) { if (ActiveJob == job) ActiveJob = IntPtr.Zero; }
+      CloseTracked(ref childIn, "child-stdin", cleanupErrors); CloseTracked(ref parentIn, "parent-stdin", cleanupErrors);
+      CloseTracked(ref childOut, "child-stdout", cleanupErrors); CloseTracked(ref parentOut, "parent-stdout", cleanupErrors);
+      CloseTracked(ref childErr, "child-stderr", cleanupErrors); CloseTracked(ref parentErr, "parent-stderr", cleanupErrors);
+      CloseTracked(ref sentinelChild, "sentinel-child", cleanupErrors); CloseTracked(ref sentinelParent, "sentinel-parent", cleanupErrors);
       if (attributesInitialized) DeleteProcThreadAttributeList(attributes); if (attributes != IntPtr.Zero) Marshal.FreeHGlobal(attributes);
-      if (token != IntPtr.Zero) CloseHandle(token);
+      if (parentProcess != IntPtr.Zero) Marshal.FreeHGlobal(parentProcess); if (handleList != IntPtr.Zero) Marshal.FreeHGlobal(handleList); if (mitigation != IntPtr.Zero) Marshal.FreeHGlobal(mitigation);
+      CloseTracked(ref job, "job", cleanupErrors); if (env != IntPtr.Zero) Marshal.FreeHGlobal(env);
+      if (cleanupErrors.Count > 0) {
+        Exception cleanupError = new InvalidOperationException("Windows-Kindcleanup war nicht vollstaendig: " + String.Join(" | ", cleanupErrors.ToArray()));
+        if (primaryError == null) throw cleanupError;
+        throw new AggregateException("Windows-Kindprozess- und Cleanupfehler traten gemeinsam auf.", primaryError, cleanupError);
+      }
     }
   }
 }
@@ -1598,7 +1767,7 @@ function Invoke-Bound([string]$file, [string[]]$arguments, [string]$cwd, [hashta
     }
   } catch {
     $diagnostic = [string]$_.Exception.GetBaseException().Message
-    if ($diagnostic -match '^ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_TOKEN status=[1-9][0-9]{0,9}$') {
+    if ($diagnostic -match '^ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=(PROCESS_WITH_LOGON|PROCESS_FROM_ANCHOR) status=[1-9][0-9]{0,9}$') {
       [Console]::Error.WriteLine($diagnostic)
       exit 125
     }
@@ -2400,7 +2569,7 @@ function windowsBuildAnchorSafeDiagnostic(chunks) {
   const lines = tail.split(/\r?\n/u);
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = lines[index];
-    const match = /^(?:ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=(NET_USER_ADD|NET_USER_DELETE|NET_USER_DELETE_VERIFY) status=([1-9][0-9]{0,9})(?: parameter=(0|[1-9][0-9]{0,9}))?|ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=(PROCESS_WITH_TOKEN) status=([1-9][0-9]{0,9}))$/u.exec(line);
+    const match = /^(?:ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=(NET_USER_ADD|NET_USER_DELETE|NET_USER_DELETE_VERIFY) status=([1-9][0-9]{0,9})(?: parameter=(0|[1-9][0-9]{0,9}))?|ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=(PROCESS_WITH_LOGON|PROCESS_FROM_ANCHOR) status=([1-9][0-9]{0,9}))$/u.exec(line);
     if (match === null) continue;
     const code = match[1] ?? match[4];
     const status = Number(match[2] ?? match[5]);
@@ -2408,7 +2577,7 @@ function windowsBuildAnchorSafeDiagnostic(chunks) {
     if (status > 0 && status <= 0xffff_ffff
       && (parameter === undefined || parameter <= 0xffff_ffff)
       && ((code === "NET_USER_ADD" && (status === 87) === (parameter !== undefined))
-        || ((code === "NET_USER_DELETE" || code === "NET_USER_DELETE_VERIFY" || code === "PROCESS_WITH_TOKEN")
+        || ((code === "NET_USER_DELETE" || code === "NET_USER_DELETE_VERIFY" || code === "PROCESS_WITH_LOGON" || code === "PROCESS_FROM_ANCHOR")
           && parameter === undefined))) return line;
   }
   return "";
@@ -2750,7 +2919,7 @@ function toolchainReceiptFromAnchor(result, spec, manifest, runnerAnchorHelper) 
       inputIsolation: "private-create-new-owner-rights-protected-dacl-read-execute-v1",
       mode: spec.toolchain.anchor.mode,
       mutationMonitoring: "read-directory-changes-monotonic-subtree-v1",
-      processTreeMitigation: "startupinfoex-handle-list-no-remote-no-low-label-prefer-system32-job-v2",
+      processTreeMitigation: "identity-anchor-parent-handle-list-no-local-inherit-no-low-label-prefer-system32-job-empty-v4",
       runnerAnchorHelper,
     },
     cargo: { command: ["cargo", "-vV"], identity: cargoIdentity, output: encodedOutput(result.cargo.stdout), relativePath: spec.toolchain.cargoPath },
@@ -3122,7 +3291,7 @@ function validateToolchainReceipt(toolchain, spec) {
   invariant(toolchain.anchor.inputIsolation === "private-create-new-owner-rights-protected-dacl-read-execute-v1", "Receipt.toolchain.anchor.inputIsolation driftet.");
   invariant(toolchain.anchor.mode === spec.toolchain.anchor.mode, "Receipt.toolchain.anchor.mode driftet.");
   invariant(toolchain.anchor.mutationMonitoring === "read-directory-changes-monotonic-subtree-v1", "Receipt.toolchain.anchor.mutationMonitoring driftet.");
-  invariant(toolchain.anchor.processTreeMitigation === "startupinfoex-handle-list-no-remote-no-low-label-prefer-system32-job-v2", "Receipt.toolchain.anchor.processTreeMitigation driftet.");
+  invariant(toolchain.anchor.processTreeMitigation === "identity-anchor-parent-handle-list-no-local-inherit-no-low-label-prefer-system32-job-empty-v4", "Receipt.toolchain.anchor.processTreeMitigation driftet.");
   invariant(toolchain.platform === spec.toolchain.platform, "Receipt.toolchain.platform driftet.");
   validateSha256(toolchain.rootPathSha256, "Receipt.toolchain.rootPathSha256");
   invariant(toolchain.rootPathSha256 === sha256(Buffer.from(pathKey(spec.toolchain.root), "utf8")), "Receipt.toolchain.rootPathSha256 driftet.");

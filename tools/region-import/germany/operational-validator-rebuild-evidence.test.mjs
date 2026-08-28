@@ -192,7 +192,11 @@ async function exerciseEphemeralBuildAccount(t, mode) {
     "$used = $false",
     "$failureObserved = $false",
     "$startFailureObserved = $false",
+    "$cancellationExact = $false",
+    "$emptyEnvironmentExact = $false",
     "$environmentExact = $false",
+    "$outputLimitExact = $false",
+    "$timeoutExact = $false",
     "$cwdExact = $false",
     "$stdioExact = $false",
     "$treeExact = $false",
@@ -204,6 +208,10 @@ async function exerciseEphemeralBuildAccount(t, mode) {
     "  $environment = @{ SystemRoot='C:\\Windows'; WINDIR='C:\\Windows'; ComSpec='C:\\Windows\\System32\\cmd.exe'; HOMEDRIVE='C:'; HOMEPATH='\\Windows\\System32'; PATH='C:\\Windows\\System32;C:\\Windows'; PATHEXT='.COM;.EXE;.BAT;.CMD'; PROMPT='$P$G'; TEMP='C:\\Windows\\Temp'; TMP='C:\\Windows\\Temp' }",
     "  $never = [Func[bool]] { return $false }",
     "  if ($Mode -ceq 'success') {",
+    "    $emptyEnvironment = @{}",
+    "    $emptyProbe = [ZugfolgeMitigatedProcess]::RunAsStrict('C:\\Windows\\System32\\cmd.exe', [string[]]@('/D','/Q','/C','exit /b 0'), 'C:\\Windows\\System32', $emptyEnvironment, [byte[]]@(), 65536, 15000, $never, $account)",
+    "    $emptyEnvironmentExact = $emptyProbe.ExitCode -eq 0 -and $emptyProbe.Stdout.Length -eq 0 -and $emptyProbe.Stderr.Length -eq 0",
+    "    if (-not $emptyEnvironmentExact) { throw 'Leerer Unicode-Environment-Block war nicht ausfuehrbar.' }",
     "    $probeEnvironment = @{}",
     "    foreach ($key in $environment.Keys) { $probeEnvironment[$key] = $environment[$key] }",
     "    $probeEnvironment['PROMPT'] = '$P$G'",
@@ -229,6 +237,9 @@ async function exerciseEphemeralBuildAccount(t, mode) {
     "    $environmentExact = $actualEnvironment.Count -eq $expectedEnvironment.Count -and $null -eq (Compare-Object $actualNames $expectedNames)",
     "    foreach ($name in $expectedNames) { if (-not $actualEnvironment.ContainsKey($name) -or [string]$actualEnvironment[$name] -cne [string]$expectedEnvironment[$name]) { $environmentExact = $false } }",
     "    if (-not $environmentExact) { throw 'Kindprozessumgebung driftete von der vollstaendig expliziten Allowlist.' }",
+    "    $longArgument = 'x' * 2048",
+    "    $longProbe = [ZugfolgeMitigatedProcess]::RunAsStrict('C:\\Windows\\System32\\cmd.exe', [string[]]@('/D','/Q','/C',('rem ' + $longArgument)), 'C:\\Windows\\System32', $environment, [byte[]]@(), 65536, 15000, $never, $account)",
+    "    if ($longProbe.ExitCode -ne 0 -or $longProbe.Stdout.Length -ne 0 -or $longProbe.Stderr.Length -ne 0) { throw 'Einmalaccount-Payload oberhalb der WithLogon-Kommandogrenze scheiterte.' }",
     "    $ioSource = '$stdin=[Console]::In.ReadToEnd(); $payload=[ordered]@{ identity=[Security.Principal.WindowsIdentity]::GetCurrent().Name; stdin=$stdin }; [Console]::Out.Write(($payload | ConvertTo-Json -Compress)); [Console]::Error.Write(''ephemeral-stderr'')'",
     "    $ioEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($ioSource))",
     "    $stdinText = 'ephemeral-stdin'",
@@ -239,6 +250,37 @@ async function exerciseEphemeralBuildAccount(t, mode) {
     "    if (-not $used) { throw 'Kindprozess verwendete nicht den erzeugten Einmalaccount.' }",
     "    $stdioExact = [string]$payload.stdin -ceq $stdinText -and [Text.Encoding]::ASCII.GetString($result.Stderr) -ceq 'ephemeral-stderr'",
     "    if (-not $stdioExact) { throw 'Kindprozess band stdin/stdout/stderr nicht getrennt und bytegenau.' }",
+    "    $slowSource = 'Start-Sleep -Seconds 30'",
+    "    $slowEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($slowSource))",
+    "    try {",
+    "      $null = [ZugfolgeMitigatedProcess]::RunAsStrict('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', [string[]]@('-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',$slowEncoded), 'C:\\Windows\\System32', $environment, [byte[]]@(), 65536, 5000, $never, $account)",
+    "      throw 'ACCOUNT_TIMEOUT_UNEXPECTEDLY_SUCCEEDED'",
+    "    } catch {",
+    "      $base = $_.Exception.GetBaseException()",
+    "      $timeoutMessages = @('Windows-Kindstart ueberschritt vor ResumeThread das gepinnte Zeitlimit.','Windows-Kindprozessbaum ueberschritt das gepinnte Zeitlimit.')",
+    "      if (-not ($base -is [TimeoutException]) -or [string]$base.Message -notin $timeoutMessages) { throw }",
+    "      $timeoutExact = $true",
+    "    }",
+    "    $cancelState = [pscustomobject]@{ Checks = 0 }",
+    "    $cancelAfterResume = [Func[bool]] { $cancelState.Checks = [int]$cancelState.Checks + 1; return [int]$cancelState.Checks -ge 4 }",
+    "    try {",
+    "      $null = [ZugfolgeMitigatedProcess]::RunAsStrict('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', [string[]]@('-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',$slowEncoded), 'C:\\Windows\\System32', $environment, [byte[]]@(), 65536, 15000, $cancelAfterResume, $account)",
+    "      throw 'ACCOUNT_CANCELLATION_UNEXPECTEDLY_SUCCEEDED'",
+    "    } catch {",
+    "      $base = $_.Exception.GetBaseException()",
+    "      if (-not ($base -is [InvalidOperationException]) -or [string]$base.Message -cne 'Windows-Kindprozessbaum wurde nach monotoner Inputdrift beendet.') { throw }",
+    "      $cancellationExact = $true",
+    "    }",
+    "    $outputSource = \"[Console]::Out.Write(('x' * 4096))\"",
+    "    $outputEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($outputSource))",
+    "    try {",
+    "      $null = [ZugfolgeMitigatedProcess]::RunAsStrict('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', [string[]]@('-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',$outputEncoded), 'C:\\Windows\\System32', $environment, [byte[]]@(), 1024, 15000, $never, $account)",
+    "      throw 'ACCOUNT_OUTPUT_LIMIT_UNEXPECTEDLY_SUCCEEDED'",
+    "    } catch {",
+    "      $base = $_.Exception.GetBaseException()",
+    "      if (-not ($base -is [InvalidOperationException]) -or -not ([string]$base.Message).EndsWith('ueberschritt das kombinierte gepinnte Limit.', [StringComparison]::Ordinal)) { throw }",
+    "      $outputLimitExact = $true",
+    "    }",
     "    $grandchildSource = '$ErrorActionPreference=''Stop''; Start-Sleep -Seconds 30'",
     "    $grandchildEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($grandchildSource))",
     "    $rootSource = '$child=Start-Process -FilePath ''C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'' -ArgumentList @(''-NoLogo'',''-NoProfile'',''-NonInteractive'',''-EncodedCommand'',$env:ZUGFOLGE_GRANDCHILD_ENCODED) -WindowStyle Hidden -PassThru; $child.Refresh(); [Console]::Out.Write(([ordered]@{ pid=$child.Id; startFileTimeUtc=$child.StartTime.ToFileTimeUtc() } | ConvertTo-Json -Compress))'",
@@ -284,7 +326,7 @@ async function exerciseEphemeralBuildAccount(t, mode) {
     "} catch {",
     "  $message = [string]$_.Exception.GetBaseException().Message",
     "  if ($Mode -ceq 'failure' -and $message -ceq 'INTENTIONAL_ACCOUNT_FAILURE_AFTER_USE') { $failureObserved = $true }",
-    "  elseif ($Mode -ceq 'start-failure' -and $message -ceq 'ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_TOKEN status=2') { $startFailureObserved = $true }",
+    "  elseif ($Mode -ceq 'start-failure' -and $message -ceq 'ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_FROM_ANCHOR status=2') { $startFailureObserved = $true }",
     "  else { throw }",
     "} finally {",
     "  if ($null -ne $account) { $account.Dispose() }",
@@ -292,7 +334,7 @@ async function exerciseEphemeralBuildAccount(t, mode) {
     "$afterOwn = if ($null -eq $accountName) { 0 } else { @(Get-LocalUser -Name $accountName -ErrorAction SilentlyContinue).Count }",
     "$afterMatching = @(Get-ZugfolgeBuildAccounts)",
     "if ($afterOwn -ne 0 -or $afterMatching.Count -ne 0) { throw 'Einmalaccount-Cleanup hinterliess einen passenden lokalen Account.' }",
-    "$receipt = [ordered]@{ accountsAfter=$afterMatching.Count; accountsBefore=$before.Count; created=$created; cwdExact=$cwdExact; environmentExact=$environmentExact; failureObserved=$failureObserved; mode=$Mode; startFailureObserved=$startFailureObserved; stdioExact=$stdioExact; treeExact=$treeExact; used=$used }",
+    "$receipt = [ordered]@{ accountsAfter=$afterMatching.Count; accountsBefore=$before.Count; cancellationExact=$cancellationExact; created=$created; cwdExact=$cwdExact; emptyEnvironmentExact=$emptyEnvironmentExact; environmentExact=$environmentExact; failureObserved=$failureObserved; mode=$Mode; outputLimitExact=$outputLimitExact; startFailureObserved=$startFailureObserved; stdioExact=$stdioExact; timeoutExact=$timeoutExact; treeExact=$treeExact; used=$used }",
     "[Console]::Out.WriteLine(($receipt | ConvertTo-Json -Compress))",
     "",
   ].join("\r\n"));
@@ -570,7 +612,8 @@ test("releasefaehige Materialisierung enthaelt weder externes git/tar/rustup noc
   assert.doesNotMatch(source, /git archive|get-tar-commit-id|\btar\.exe\b|\bAdd-Type\b/u);
   for (const required of [
     "NtCreateFile", "CreateProtectedDirectory", "S-1-3-4", "AssertFrozenDirectoryEntry",
-    "ReadDirectoryChangesW-Overflow", "RunAs(", "RunStrict(", "CreateProcessWithTokenW", "PROC_THREAD_ATTRIBUTE_HANDLE_LIST",
+    "ReadDirectoryChangesW-Overflow", "RunAs(", "RunStrict(", "CreateProcessWithLogonW", "PROC_THREAD_ATTRIBUTE_HANDLE_LIST",
+    "PROC_THREAD_ATTRIBUTE_PARENT_PROCESS", "DuplicateInheritableToProcess",
     "JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE", "pending-external-verification", "runnerAnchorHelperProof",
     "PUBLICATION_COMPLETE", "TerminateJobObject(post-root descendants)", "PublishHeldCreateNew",
     "MarkRegularFileDeletePending", "ZugfolgeAnnualArtifactPublisher", "PublishPair(",
@@ -760,28 +803,63 @@ test("USER_INFO_1-Einmalaccount bindet den dokumentierten minimalen normalen Ben
   assert.doesNotMatch(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /UF_PASSWD_CANT_CHANGE|UF_DONT_EXPIRE_PASSWD/u);
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /if \(result == ERROR_INVALID_PARAMETER\) diagnostic \+= " parameter="/u);
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /private const uint LOGON_WITHOUT_PROFILE = 0u;/u);
-  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /private static extern bool CreateProcessWithTokenW\(/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /private static extern bool CreateProcessWithLogonW\(/u);
+  assert.doesNotMatch(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /CreateProcessWithTokenW|CreateProcessAsUserW/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /PROC_THREAD_ATTRIBUTE_PARENT_PROCESS = new IntPtr\(0x00020000\)/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /int attributeCount = 3;/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /bInheritHandle = 0/u);
+  assert.doesNotMatch(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /SetHandleInformation/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /AssertNotInheritable\(childIn, "child-stdin"\);[\s\S]*AssertNotInheritable\(sentinelParent, "sentinel-parent"\);/u);
   assert.match(
     WINDOWS_BUILD_ANCHOR_HELPER_SOURCE,
-    /CreateProcessWithTokenW\(token, LOGON_WITHOUT_PROFILE, executable, command,[\s\S]*flags, env, cwd, ref startup, out process\)/u,
+    /remoteChildIn = DuplicateInheritableToProcess\(anchor\.hProcess, childIn, "stdin"\);[\s\S]*remoteChildOut = DuplicateInheritableToProcess\(anchor\.hProcess, childOut, "stdout"\);[\s\S]*remoteChildErr = DuplicateInheritableToProcess\(anchor\.hProcess, childErr, "stderr"\);[\s\S]*remoteSentinel = DuplicateInheritableToProcess\(anchor\.hProcess, sentinelChild, "sentinel"\);/u,
   );
-  assert.doesNotMatch(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /CreateProcessAsUserW/u);
-  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_TOKEN status=/u);
-  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /AssertSentinelNotInherited\(process\.hProcess, sentinelChild\)/u);
-  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /DuplicateHandle\(process, sentinel, GetCurrentProcess\(\)/u);
+  assert.match(
+    WINDOWS_BUILD_ANCHOR_HELPER_SOURCE,
+    /UpdateProcThreadAttribute\(attributes, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,[\s\S]*new IntPtr\(IntPtr\.Size \* 3\)/u,
+  );
+  assert.match(
+    WINDOWS_BUILD_ANCHOR_HELPER_SOURCE,
+    /Marshal\.WriteIntPtr\(handleList, 0, remoteChildIn\); Marshal\.WriteIntPtr\(handleList, IntPtr\.Size, remoteChildOut\); Marshal\.WriteIntPtr\(handleList, IntPtr\.Size \* 2, remoteChildErr\);/u,
+  );
+  assert.match(
+    WINDOWS_BUILD_ANCHOR_HELPER_SOURCE,
+    /Marshal\.WriteIntPtr\(parentProcess, anchor\.hProcess\);[\s\S]*UpdateProcThreadAttribute\(attributes, 0, PROC_THREAD_ATTRIBUTE_PARENT_PROCESS, parentProcess, new IntPtr\(IntPtr\.Size\)/u,
+  );
+  assert.match(
+    WINDOWS_BUILD_ANCHOR_HELPER_SOURCE,
+    /CreateProcessWithLogonW\(account\.Username, account\.Domain, account\.Password, LOGON_WITHOUT_PROFILE,[\s\S]*CREATE_SUSPENDED[\s\S]*ref anchorStartup, out anchor\)/u,
+  );
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /CreateProcessWBasic\(anchorExecutable, anchorCommand, IntPtr\.Zero, IntPtr\.Zero, false,[\s\S]*ref anchorStartup, out anchor\)/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /CreateProcessW\(executable, command, IntPtr\.Zero, IntPtr\.Zero, true, flags, env, cwd, ref startup, out process\)/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_LOGON status=/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_FROM_ANCHOR status=/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /AssertAllowedHandleInherited\(process\.hProcess, remoteChildIn, childIn, "stdin"\);[\s\S]*AssertAllowedHandleInherited\(process\.hProcess, remoteChildOut, childOut, "stdout"\);[\s\S]*AssertAllowedHandleInherited\(process\.hProcess, remoteChildErr, childErr, "stderr"\);/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /AssertSentinelNotInherited\(process\.hProcess, remoteSentinel, sentinelChild\)/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /DuplicateHandle\(process, candidate, GetCurrentProcess\(\)/u);
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /CompareObjectHandles\(sentinel, duplicate\)/u);
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /status != ERROR_INVALID_HANDLE/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /string expectedSid = account == null \? ProcessSid\(GetCurrentProcess\(\)\) : account\.Sid;/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /AssertProcessSid\(anchor\.hProcess, expectedSid\)/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /AssertProcessSid\(process\.hProcess, expectedSid\)/u);
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /AssertMitigationPolicy\(process\.hProcess, imageLoadPolicy\)/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /AssertProcessInJob\(process\.hProcess, job\)/u);
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /GetProcessMitigationPolicy\(process, 10/u);
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /GetProcessMitigationPolicy\(process, 8/u);
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE,
-    /created = CreateProcessWithTokenW\([\s\S]*AssertSentinelNotInherited\(process\.hProcess, sentinelChild\);[\s\S]*AssertMitigationPolicy\(process\.hProcess, imageLoadPolicy\);[\s\S]*AssignProcessToJobObject\(job, process\.hProcess\)[\s\S]*ResumeThread\(process\.hThread\)/u);
+    /created = CreateProcessW\([\s\S]*AssertSentinelNotInherited\(process\.hProcess, remoteSentinel, sentinelChild\);[\s\S]*AssertMitigationPolicy\(process\.hProcess, imageLoadPolicy\);[\s\S]*AssertProcessInJob\(process\.hProcess, job\);[\s\S]*TerminateProcess\(anchor\.hProcess, 98\)[\s\S]*ResumeThread\(process\.hThread\)/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /List<string> cleanupErrors = new List<string>\(\);[\s\S]*EnsureProcessTerminated\(process\.hProcess, "payload", cleanupErrors\);[\s\S]*EnsureProcessTerminated\(anchor\.hProcess, "anchor", cleanupErrors\);[\s\S]*WaitForJobEmptyStatus\(job, 5000, "cleanup"\)[\s\S]*if \(cleanupErrors\.Count > 0\)/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /TerminateJobObject\(job, 96\)[\s\S]*CloseRequired\(ref process\.hThread, "payload-thread"\); CloseRequired\(ref process\.hProcess, "payload-process"\);[\s\S]*AssertJobEmpty\(job, 5000, "post-root"\);[\s\S]*processCompleted = true;/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /if \(sorted\.Count == 0\) block\.Append\('\\0'\);[\s\S]*block\.Append\('\\0'\)/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /long remaining = timeoutMilliseconds - clock\.ElapsedMilliseconds;[\s\S]*WaitForSingleObject\(process\.hProcess, \(uint\)Math\.Min\(25L, remaining\)\)/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /catch \(Exception error\) \{[\s\S]*primaryError = error;[\s\S]*throw;[\s\S]*throw new AggregateException\("Windows-Kindprozess- und Cleanupfehler traten gemeinsam auf\.", primaryError, cleanupError\)/u);
   assert.match(implementation, /'HOMEDRIVE' = 'C:'/u);
   assert.match(implementation, /'HOMEPATH' = '\\Windows\\System32'/u);
   assert.match(implementation, /'PROMPT' = '\$P\$G'/u);
-  assert.match(implementation, /if \(\$diagnostic -match '\^ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_TOKEN status=/u);
+  assert.match(implementation, /if \(\$diagnostic -match '\^ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=\(PROCESS_WITH_LOGON\|PROCESS_FROM_ANCHOR\) status=/u);
   assert.match(implementation, /const diagnostic = windowsBuildAnchorSafeDiagnostic\(stderr\);/u);
   assert.doesNotMatch(implementation, /const details = Buffer\.concat\(stderr\)[\s\S]{0,160}Windows-Build-Anker lieferte kein Ergebnis/u);
+  assert.equal((implementation.match(/identity-anchor-parent-handle-list-no-local-inherit-no-low-label-prefer-system32-job-empty-v4/gu) ?? []).length, 2);
 });
 
 test("extract-Diagnose gibt nur die begrenzte nicht-geheime Anchor-Allowlist frei", async () => {
@@ -793,10 +871,13 @@ test("extract-Diagnose gibt nur die begrenzte nicht-geheime Anchor-Allowlist fre
   assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_ADD status=5 parameter=0\n", "utf8")]), "");
   assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_DELETE_VERIFY status=5\n", "utf8")]),
     "ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=NET_USER_DELETE_VERIFY status=5");
-  assert.equal(diagnose([Buffer.from("password=Zf!never-surface\nZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_TOKEN status=1314\n", "utf8")]),
-    "ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_TOKEN status=1314");
-  assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_TOKEN status=1314 parameter=0\n", "utf8")]), "");
-  assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=PROCESS_WITH_TOKEN status=1314\n", "utf8")]), "");
+  assert.equal(diagnose([Buffer.from("password=Zf!never-surface\nZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_LOGON status=1314\n", "utf8")]),
+    "ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_LOGON status=1314");
+  assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_FROM_ANCHOR status=2\n", "utf8")]),
+    "ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_FROM_ANCHOR status=2");
+  assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_LOGON status=1314 parameter=0\n", "utf8")]), "");
+  assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_ANCHOR_DIAGNOSTIC code=PROCESS_WITH_LOGON status=1314\n", "utf8")]), "");
+  assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_TOKEN status=1314\n", "utf8")]), "");
   assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=NET_USER_ADD status=87 parameter=0\n", "utf8")]), "");
   assert.equal(diagnose([Buffer.from("ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=NET_USER_DELETE status=5\n", "utf8")]), "");
   assert.equal(diagnose([Buffer.from(`${safe} password=Zf!never-surface\n`, "utf8")]), "");
@@ -883,13 +964,17 @@ test("ephemerer Windows-Build-Account wird erstellt, als Kindidentitaet verwende
   assert.deepEqual(result, {
     accountsAfter: 0,
     accountsBefore: 0,
+    cancellationExact: true,
     created: true,
     cwdExact: true,
+    emptyEnvironmentExact: true,
     environmentExact: true,
     failureObserved: false,
     mode: "success",
+    outputLimitExact: true,
     startFailureObserved: false,
     stdioExact: true,
+    timeoutExact: true,
     treeExact: true,
     used: true,
   });
@@ -901,13 +986,17 @@ test("ephemerer Windows-Build-Account wird nach einem Kindprozessfehler im final
   assert.deepEqual(result, {
     accountsAfter: 0,
     accountsBefore: 0,
+    cancellationExact: false,
     created: true,
     cwdExact: false,
+    emptyEnvironmentExact: false,
     environmentExact: false,
     failureObserved: true,
     mode: "failure",
+    outputLimitExact: false,
     startFailureObserved: false,
     stdioExact: false,
+    timeoutExact: false,
     treeExact: false,
     used: false,
   });
@@ -919,13 +1008,17 @@ test("ephemerer Windows-Build-Account gibt einen sicheren numerischen Startfehle
   assert.deepEqual(result, {
     accountsAfter: 0,
     accountsBefore: 0,
+    cancellationExact: false,
     created: true,
     cwdExact: false,
+    emptyEnvironmentExact: false,
     environmentExact: false,
     failureObserved: false,
     mode: "start-failure",
+    outputLimitExact: false,
     startFailureObserved: true,
     stdioExact: false,
+    timeoutExact: false,
     treeExact: false,
     used: false,
   });
@@ -941,6 +1034,8 @@ test("PowerShell 5.1: Timeout, Cancellation und Root-Exit beenden den gesamten J
   const timeoutMarker = join(root, "timeout-marker.txt");
   const exitStarted = join(root, "exit-started.txt");
   const exitMarker = join(root, "exit-marker.txt");
+  const exitRedirectOut = join(root, "exit-child.stdout.txt");
+  const exitRedirectErr = join(root, "exit-child.stderr.txt");
   await writeFile(grandchild, [
     "param([string] $Marker)",
     "Start-Sleep -Milliseconds 2500",
@@ -955,9 +1050,17 @@ test("PowerShell 5.1: Timeout, Cancellation und Root-Exit beenden den gesamten J
     "[IO.File]::WriteAllText($Started, 'started')",
   ];
   await writeFile(parent, [...spawnLines, "Start-Sleep -Seconds 30", ""].join("\r\n"));
-  await writeFile(parentExit, [...spawnLines, "exit 0", ""].join("\r\n"));
+  await writeFile(parentExit, [
+    "param([string] $ChildScript, [string] $Marker, [string] $Started, [string] $RedirectOut, [string] $RedirectErr)",
+    "$powershell = Join-Path $env:SystemRoot 'System32\\WindowsPowerShell\\v1.0\\powershell.exe'",
+    "$arguments = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $ChildScript, $Marker)",
+    "Start-Process -FilePath $powershell -ArgumentList $arguments -WindowStyle Hidden -RedirectStandardOutput $RedirectOut -RedirectStandardError $RedirectErr",
+    "[IO.File]::WriteAllText($Started, 'started')",
+    "exit 0",
+    "",
+  ].join("\r\n"));
   await writeFile(harness, [
-    "param([string] $Dll, [string] $ParentScript, [string] $ParentExitScript, [string] $ChildScript, [string] $TimeoutMarker, [string] $TimeoutStarted, [string] $ExitMarker, [string] $ExitStarted)",
+    "param([string] $Dll, [string] $ParentScript, [string] $ParentExitScript, [string] $ChildScript, [string] $TimeoutMarker, [string] $TimeoutStarted, [string] $ExitMarker, [string] $ExitStarted, [string] $ExitRedirectOut, [string] $ExitRedirectErr)",
     "$ErrorActionPreference = 'Stop'",
     "$assembly = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes($Dll))",
     "$methods = @([ZugfolgeMitigatedProcess].GetMethods() | Where-Object { $_.IsPublic -and $_.IsStatic } | ForEach-Object Name | Sort-Object -Unique)",
@@ -980,7 +1083,7 @@ test("PowerShell 5.1: Timeout, Cancellation und Root-Exit beenden den gesamten J
     "$oversizeClock.Stop()",
     "$environment = New-ChildEnvironment",
     "$exitClock = [Diagnostics.Stopwatch]::StartNew()",
-    "$exitResult = [ZugfolgeMitigatedProcess]::RunStrict($powershell, [string[]]@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$ParentExitScript,$ChildScript,$ExitMarker,$ExitStarted), (Join-Path $env:SystemRoot 'System32'), $environment, [byte[]]@(), 1048576, 5000, $never)",
+    "$exitResult = [ZugfolgeMitigatedProcess]::RunStrict($powershell, [string[]]@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$ParentExitScript,$ChildScript,$ExitMarker,$ExitStarted,$ExitRedirectOut,$ExitRedirectErr), (Join-Path $env:SystemRoot 'System32'), $environment, [byte[]]@(), 1048576, 5000, $never)",
     "$exitClock.Stop(); Start-Sleep -Milliseconds 3000",
     "$value = @{ cancellationElapsed=$cancelClock.ElapsedMilliseconds; cancellationMessage=$cancelMessage; exitCode=$exitResult.ExitCode; exitElapsed=$exitClock.ElapsedMilliseconds; exitMarker=[IO.File]::Exists($ExitMarker); exitStarted=[IO.File]::Exists($ExitStarted); methods=$methods; oversizeElapsed=$oversizeClock.ElapsedMilliseconds; oversizeMessage=$oversizeMessage; timeoutElapsed=$timeoutClock.ElapsedMilliseconds; timeoutMarker=[IO.File]::Exists($TimeoutMarker); timeoutMessage=$timeoutMessage; timeoutStarted=[IO.File]::Exists($TimeoutStarted) }",
     "[Console]::Out.WriteLine(($value | ConvertTo-Json -Compress))",
@@ -988,7 +1091,7 @@ test("PowerShell 5.1: Timeout, Cancellation und Root-Exit beenden den gesamten J
   ].join("\r\n"));
   const executed = await execute(POWERSHELL_51, [
     "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
-    harness, HELPER_PATH, parent, parentExit, grandchild, timeoutMarker, timeoutStarted, exitMarker, exitStarted,
+    harness, HELPER_PATH, parent, parentExit, grandchild, timeoutMarker, timeoutStarted, exitMarker, exitStarted, exitRedirectOut, exitRedirectErr,
   ], { cwd: "C:\\Windows\\System32" });
   const result = JSON.parse(executed.stdout.toString("utf8").trim().split(/\r?\n/u).at(-1));
   assert.deepEqual(result.methods.filter((name) => ["AbortActive", "Run", "RunAs", "RunAsStrict", "RunStrict"].includes(name)),
@@ -1002,7 +1105,7 @@ test("PowerShell 5.1: Timeout, Cancellation und Root-Exit beenden den gesamten J
   assert.match(result.oversizeMessage, /ueberschritt das kombinierte gepinnte Limit/);
   assert.ok(result.oversizeElapsed < 5000);
   assert.equal(result.exitStarted, true);
-  assert.equal(result.exitMarker, false, "Root-Exit darf keinen pipehaltenden Enkel ueberleben lassen.");
+  assert.equal(result.exitMarker, false, "Root-Exit darf auch keinen von stdout/stderr abgekoppelten Job-Enkel ueberleben lassen.");
   assert.equal(result.exitCode, 0);
   assert.ok(result.exitElapsed < 5000, "Root-Exit darf nicht unbeschraenkt in Pipe-Waits haengen.");
 });
