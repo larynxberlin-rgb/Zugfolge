@@ -4722,7 +4722,7 @@ import {
   readdir as readdir4,
   realpath as realpath5
 } from "node:fs/promises";
-import { dirname as dirname6, isAbsolute as isAbsolute4, relative as relative4, resolve as resolve6, sep as sep4 } from "node:path";
+import { dirname as dirname6, isAbsolute as isAbsolute4, relative as relative4, resolve as resolve6, sep as sep4, win32 } from "node:path";
 var SPEC_SCHEMA = "zugfolge-operational-validator-rebuild-spec/v3";
 var EVIDENCE_SCHEMA = "zugfolge-operational-validator-rebuild-evidence/v3";
 var PROVENANCE_SCHEMA = "zugfolge-operational-validator-rebuild-provenance/v2";
@@ -6633,7 +6633,7 @@ function validateToolchainSpec(value) {
   validateProof2(value.anchor.helperAssembly, "toolchain.anchor.helperAssembly", MAX_PRODUCER_BYTES, { file: true });
   invariant6(value.anchor.helperAssembly.file === WINDOWS_ANCHOR_HELPER, "toolchain.anchor.helperAssembly.file muss das tracked, deterministisch reproduzierbare Helper-Artefakt binden.");
   invariant6(value.platform === WINDOWS_TOOLCHAIN_PLATFORM, "Operational-Validator-Rebuild materialisiert PE32+ ausschliesslich auf win32.");
-  invariant6(typeof value.root === "string" && isAbsolute4(value.root) && /^[A-Za-z]:[\\/]/u.test(value.root), "toolchain.root muss ein expliziter absoluter Windows-Pfad sein.");
+  invariant6(typeof value.root === "string" && win32.isAbsolute(value.root) && /^[A-Za-z]:[\\/]/u.test(value.root), "toolchain.root muss ein expliziter absoluter Windows-Pfad sein.");
   validatePortableFile(value.cargoPath, "toolchain.cargoPath");
   validatePortableFile(value.rustcPath, "toolchain.rustcPath");
   invariant6(value.cargoPath.toLowerCase().endsWith("/cargo.exe") && value.rustcPath.toLowerCase().endsWith("/rustc.exe"), "toolchain cargo/rustc muessen echte relative EXE-Pfade sein.");

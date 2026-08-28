@@ -602,7 +602,9 @@ test("Linux Closure-Parser verwirft einen falschen Runtime-Reexec-Anker fail-clo
   const prepared = await value.prepare('process.stdout.write("{}\\n");\n', { bundleSource: bundle });
   const direct = await value.directBundle(prepared);
   assert.notEqual(direct.result.status, 0);
-  assert.throws(direct.decode, /System-Bundle-Launcher/u);
+  const decoded = direct.decode();
+  assert.notEqual(decoded.status, 0);
+  assert.match(decoded.stderr.toString("utf8"), /ENOENT|no such file|Node-Reexec-Anker/iu);
   await assert.rejects(readFile(marker), (error) => error?.code === "ENOENT");
 });
 
@@ -708,6 +710,8 @@ test("Windows haelt Bundle und Runtime nach Hashbindung bis zum A-Prozessende ge
 test("Linux startet nach held Hashbindung selbst bei Bundle-und-Runtime-A-B-A weiterhin nur versiegelte A-Bytes", { skip: process.platform !== "linux" }, async (t) => {
   const value = await executorFixture(t);
   const marker = join(value.paths.root, "foreign-b-executed.txt");
+  const runtimePath = join(value.paths.root, "runtime-node");
+  await copyFile(process.execPath, runtimePath);
   const prepared = await value.prepare('process.stdout.write("{}\\n");\n', {
     bundleSource: `
       import { readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
@@ -733,7 +737,7 @@ test("Linux startet nach held Hashbindung selbst bei Bundle-und-Runtime-A-B-A we
       }) + "\\n");
     `,
   });
-  const direct = await value.directBundle(prepared);
+  const direct = await value.directBundle(prepared, { nodePath: runtimePath });
   const decoded = direct.decode();
   assert.equal(decoded.status, 0);
   const receipt = JSON.parse(decoded.stdout.toString("utf8"));
