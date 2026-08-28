@@ -3,6 +3,10 @@ name: Operational Validator Rebuild Evidence
 on:
   workflow_dispatch:
     inputs:
+      preserved_validator_release_id:
+        description: Numerische ID des privaten GitHub-Draft-Releases, das exakt das preserved Validator-Asset enthaelt.
+        required: true
+        type: string
       preserved_validator_asset_id:
         description: Numerische Asset-ID eines privaten GitHub-Draft-Releases; dessen Bytes werden vollstaendig per Annual-SHA-256 geprueft.
         required: true
@@ -58,16 +62,75 @@ jobs:
           if ($env:ZUGFOLGE_REBUILD_RUNNER_IMAGE -notin @('windows-2025', 'windows-2022')) { throw 'Nicht gepinntes Windows-Runner-Abbild.' }
           if ((node --version) -cne 'v24.19.0') { throw 'Node-Runtime driftet von 24.19.0.' }
 
-      - name: Materialize Annual-pinned source, vendor, toolchain and helper inputs
+      - name: Download exact preserved validator from private draft release
         shell: powershell
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          PRESERVED_VALIDATOR_RELEASE_ID: ${{ inputs.preserved_validator_release_id }}
           PRESERVED_VALIDATOR_ASSET_ID: ${{ inputs.preserved_validator_asset_id }}
         run: |
           $ErrorActionPreference = 'Stop'
           $specPath = Join-Path $env:GITHUB_WORKSPACE 'tools\region-import\germany\operational-validator-rebuild.annual-2026.5.json'
           $spec = Get-Content -LiteralPath $specPath -Raw | ConvertFrom-Json
+          if ($env:PRESERVED_VALIDATOR_RELEASE_ID -cnotmatch '^[1-9][0-9]*$') { throw 'Preserved-Validator-Release-ID muss numerisch sein.' }
           if ($env:PRESERVED_VALIDATOR_ASSET_ID -cnotmatch '^[1-9][0-9]*$') { throw 'Preserved-Validator-Asset-ID muss numerisch sein.' }
+
+          $releaseMetadataPath = Join-Path $env:RUNNER_TEMP 'zugfolge-preserved-validator-draft-release.json'
+          if (Test-Path -LiteralPath $releaseMetadataPath) { throw 'Draft-Release-Metadatenausgabe kollidiert.' }
+          $releaseUrl = "https://api.github.com/repos/larynxberlin-rgb/Zugfolge/releases/$($env:PRESERVED_VALIDATOR_RELEASE_ID)"
+          & (Join-Path $env:SystemRoot 'System32\curl.exe') `
+            --fail --silent --show-error --location --max-redirs 3 `
+            --proto '=https' --proto-redir '=https' `
+            --header 'Accept: application/vnd.github+json' `
+            --header "Authorization: Bearer $($env:GITHUB_TOKEN)" `
+            --header 'X-GitHub-Api-Version: 2022-11-28' `
+            --output $releaseMetadataPath $releaseUrl
+          if ($LASTEXITCODE -ne 0) { throw 'Private Draft-Release-Metadaten konnten nicht geladen werden.' }
+
+          $release = Get-Content -LiteralPath $releaseMetadataPath -Raw | ConvertFrom-Json
+          $expectedTag = "infra-deutschland-2026.5-validator-input-$($env:GITHUB_SHA.Substring(0, 12))"
+          if ([Int64]$release.id -ne [Int64]$env:PRESERVED_VALIDATOR_RELEASE_ID -or
+              $release.draft -ne $true -or $release.prerelease -ne $false -or $null -ne $release.published_at -or
+              $release.target_commitish -cne $env:GITHUB_SHA -or $release.tag_name -cne $expectedTag) {
+            throw 'Preserved Validator stammt nicht aus dem commitgebundenen privaten Draft-Release.'
+          }
+          $assets = @($release.assets | Where-Object { [Int64]$_.id -eq [Int64]$env:PRESERVED_VALIDATOR_ASSET_ID })
+          $expectedName = Split-Path -Leaf $spec.binaries.preserved.file
+          $expectedDigest = "sha256:$($spec.binaries.preserved.sha256)"
+          $expectedAssetUrl = "https://api.github.com/repos/larynxberlin-rgb/Zugfolge/releases/assets/$($env:PRESERVED_VALIDATOR_ASSET_ID)"
+          if (@($release.assets).Count -ne 1 -or $assets.Count -ne 1 -or
+              $assets[0].name -cne $expectedName -or $assets[0].state -cne 'uploaded' -or
+              [Int64]$assets[0].size -ne [Int64]$spec.binaries.preserved.bytes -or
+              $assets[0].digest -cne $expectedDigest -or $assets[0].url -cne $expectedAssetUrl) {
+            throw 'Draft-Release bindet nicht exakt das Annual-gepinnte Preserved-Validator-Asset.'
+          }
+
+          New-Item -ItemType Directory -Path (Join-Path $env:GITHUB_WORKSPACE 'var\derived\germany-2026.5\toolchain') -Force | Out-Null
+          $preservedPath = Join-Path $env:GITHUB_WORKSPACE ($spec.binaries.preserved.file -replace '/', '\')
+          if (Test-Path -LiteralPath $preservedPath) { throw 'Preserved-Validator-Ausgabe kollidiert.' }
+          & (Join-Path $env:SystemRoot 'System32\curl.exe') `
+            --fail --silent --show-error --location --max-redirs 3 `
+            --proto '=https' --proto-redir '=https' `
+            --header 'Accept: application/octet-stream' `
+            --header "Authorization: Bearer $($env:GITHUB_TOKEN)" `
+            --header 'X-GitHub-Api-Version: 2022-11-28' `
+            --output $preservedPath $expectedAssetUrl
+          if ($LASTEXITCODE -ne 0) { throw 'Privates Preserved-Validator-Asset konnte nicht geladen werden.' }
+          $preservedItem = Get-Item -LiteralPath $preservedPath
+          $preservedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $preservedPath).Hash.ToLowerInvariant()
+          if ($preservedItem.Length -ne [Int64]$spec.binaries.preserved.bytes -or
+              $preservedHash -cne [string]$spec.binaries.preserved.sha256) {
+            throw 'Heruntergeladenes Preserved-Validator-Asset driftet vom Annual-Pin.'
+          }
+
+      - name: Materialize Annual-pinned source, vendor, toolchain and helper inputs
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $specPath = Join-Path $env:GITHUB_WORKSPACE 'tools\region-import\germany\operational-validator-rebuild.annual-2026.5.json'
+          $spec = Get-Content -LiteralPath $specPath -Raw | ConvertFrom-Json
+          $preservedPath = Join-Path $env:GITHUB_WORKSPACE ($spec.binaries.preserved.file -replace '/', '\')
+          if (-not (Test-Path -LiteralPath $preservedPath -PathType Leaf)) { throw 'Preserved-Validator-Eingang fehlt.' }
           $toolchainOutput = $spec.toolchain.root
           $toolchainParent = Split-Path -Parent $toolchainOutput
           $toolchainId = '1.94.1-x86_64-pc-windows-gnu'
@@ -78,19 +141,6 @@ jobs:
           New-Item -ItemType Directory -Path $preparation | Out-Null
           New-Item -ItemType Directory -Path $vendorRoot | Out-Null
           New-Item -ItemType Directory -Path (Join-Path $vendorRoot '.cargo') | Out-Null
-          New-Item -ItemType Directory -Path (Join-Path $env:GITHUB_WORKSPACE 'var\derived\germany-2026.5\toolchain') -Force | Out-Null
-
-          $preservedPath = Join-Path $env:GITHUB_WORKSPACE ($spec.binaries.preserved.file -replace '/', '\')
-          if (Test-Path -LiteralPath $preservedPath) { throw 'Preserved-Validator-Ausgabe kollidiert.' }
-          $preservedAssetUrl = "https://api.github.com/repos/larynxberlin-rgb/Zugfolge/releases/assets/$($env:PRESERVED_VALIDATOR_ASSET_ID)"
-          & (Join-Path $env:SystemRoot 'System32\curl.exe') `
-            --fail --silent --show-error --location --max-redirs 3 `
-            --proto '=https' --proto-redir '=https' `
-            --header 'Accept: application/octet-stream' `
-            --header "Authorization: Bearer $($env:GITHUB_TOKEN)" `
-            --header 'X-GitHub-Api-Version: 2022-11-28' `
-            --output $preservedPath $preservedAssetUrl
-          if ($LASTEXITCODE -ne 0) { throw 'Privates Preserved-Validator-Asset konnte nicht geladen werden.' }
 
           $sourceArchive = Join-Path $env:GITHUB_WORKSPACE ($spec.source.archive.file -replace '/', '\')
           if (Test-Path -LiteralPath $sourceArchive) { throw 'Source-TAR-Ausgabe kollidiert.' }
