@@ -18,7 +18,9 @@ on:
 
 permissions:
   attestations: write
-  contents: read
+  # GitHub exposes unpublished draft releases only to push-capable identities.
+  # The token itself is injected solely into the byte-pinned asset download step.
+  contents: write
   id-token: write
 
 concurrency:

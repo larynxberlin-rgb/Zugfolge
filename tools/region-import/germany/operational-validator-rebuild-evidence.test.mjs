@@ -985,6 +985,7 @@ test("Workflow bindet Spec-Pfade, privaten GitHub-Assettransport und Sigstore-Ve
   ]);
   for (const required of [
     "preserved_validator_asset_id:", "api.github.com/repos/larynxberlin-rgb/Zugfolge/releases/assets",
+    "contents: write", "persist-credentials: false", "GITHUB_TOKEN: ${{ github.token }}",
     "Authorization: Bearer", "--proto '=https' --proto-redir '=https'",
     "subject-path: ${{ steps.evidence-paths.outputs.subjects }}",
     "path: ${{ steps.evidence-paths.outputs.artifact_paths }}",
