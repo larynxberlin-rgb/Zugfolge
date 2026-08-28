@@ -616,7 +616,7 @@ test("echtes Windows PowerShell 5.1 parst den Anchor und alle Workflow-Bloecke",
     "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
     harness, IMPLEMENTATION_PATH, WORKFLOW_PATH,
   ], { cwd: "C:\\Windows\\System32" });
-  assert.equal(parsed.stdout.toString("utf8").trim(), "7");
+  assert.equal(parsed.stdout.toString("utf8").trim(), "8");
 });
 
 test("Helper-Builder reproduziert das tracked PE32+-Artefakt bytegenau", WINDOWS_ONLY, async (t) => {
@@ -984,8 +984,13 @@ test("Workflow bindet Spec-Pfade, privaten GitHub-Assettransport und Sigstore-Ve
     readFile(WORKFLOW_RUNNER_PATH, "utf8"),
   ]);
   for (const required of [
-    "preserved_validator_asset_id:", "api.github.com/repos/larynxberlin-rgb/Zugfolge/releases/assets",
+    "preserved_validator_release_id:", "preserved_validator_asset_id:",
+    "Download exact preserved validator from private draft release",
+    "api.github.com/repos/larynxberlin-rgb/Zugfolge/releases/assets",
+    "contents: write", "persist-credentials: false", "GITHUB_TOKEN: ${{ github.token }}",
     "Authorization: Bearer", "--proto '=https' --proto-redir '=https'",
+    "$release.draft -ne $true", "$release.target_commitish -cne $env:GITHUB_SHA",
+    "$assets[0].digest -cne $expectedDigest",
     "subject-path: ${{ steps.evidence-paths.outputs.subjects }}",
     "path: ${{ steps.evidence-paths.outputs.artifact_paths }}",
     "path: ${{ steps.evidence-paths.outputs.authority_paths }}",
@@ -1004,6 +1009,16 @@ test("Workflow bindet Spec-Pfade, privaten GitHub-Assettransport und Sigstore-Ve
     "Annual-Completion ist nicht bytekanonisch",
     "$subjects",
   ]) assert.ok(workflow.includes(required), `Workflow bindet ${required} nicht.`);
+  assert.equal(workflow.match(/^\s+GITHUB_TOKEN:/gmu)?.length, 1);
+  const downloadStart = workflow.indexOf("- name: Download exact preserved validator from private draft release");
+  const materializeStart = workflow.indexOf("- name: Materialize Annual-pinned source, vendor, toolchain and helper inputs");
+  const materializeEnd = workflow.indexOf("- name: Run materializer through held System32 PowerShell bundle launcher");
+  assert.ok(downloadStart >= 0 && downloadStart < materializeStart && materializeStart < materializeEnd);
+  assert.match(workflow.slice(downloadStart, materializeStart), /GITHUB_TOKEN:/u);
+  assert.doesNotMatch(
+    workflow.slice(materializeStart, materializeEnd),
+    /GITHUB_TOKEN:|PRESERVED_VALIDATOR_(?:RELEASE|ASSET)_ID/u,
+  );
   assert.doesNotMatch(workflow, /preserved_validator_url/u);
   assert.doesNotMatch(workflow, /zugfolge-infra-release-rebuild-[a-f0-9]{40}-official\.exe/u);
   for (const required of [
