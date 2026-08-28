@@ -746,7 +746,7 @@ test("der ergänzende Source-Audit verweist nicht mehr auf 2026.2-Layer", async 
   }
 });
 
-test("Jahresprompt verlangt alle sechzehn konkreten Platzhalter und den Jahresvertrag in den Befehlen", async () => {
+test("Jahresprompt verlangt alle achtzehn konkreten Platzhalter und den Jahresvertrag in den Befehlen", async () => {
   const prompt = await text("docs/prompts/infrarelease-deutschland-jahreslauf.md");
   const expected = [
     "ANNUAL_ARTIFACT_SPEC",
@@ -758,7 +758,9 @@ test("Jahresprompt verlangt alle sechzehn konkreten Platzhalter und den Jahresve
     "MAP_PACKAGE_PLAN",
     "OPERATIONAL_ARTIFACT_ID",
     "OPERATIONAL_CANDIDATE",
+    "OPERATIONAL_CANDIDATE_SIDECAR",
     "OPERATIONAL_QUALITY_SPEC",
+    "OPERATIONAL_VALIDATOR_BUILD_COMMIT",
     "QUELLWURZEL",
     "RELEASE_ARTIFACT_INVENTORY",
     "SOURCE_CAPTURE_MANIFEST",
@@ -847,7 +849,9 @@ test("Jahresprompt kann den historischen 2026.4-Beleg auflösen, kennzeichnet ih
     MAP_PACKAGE_PLAN: "tools/tiles/map-package.annual-2026.4.plan.json",
     OPERATIONAL_ARTIFACT_ID: operationalArtifact.id,
     OPERATIONAL_CANDIDATE: `${artifactRoot}/operational-infrastructure-v2.candidate.json`,
+    OPERATIONAL_CANDIDATE_SIDECAR: `${artifactRoot}/operational-infrastructure-v2.candidate.movement-route-templates-v2.json`,
     OPERATIONAL_QUALITY_SPEC: "tools/region-import/germany/operational-quality.annual-2026.4.json",
+    OPERATIONAL_VALIDATOR_BUILD_COMMIT: "ee6d7081b32277e46cd6ebb28fc65bd45ce55012",
     QUELLWURZEL: "var/source-cache",
     RELEASE_ARTIFACT_INVENTORY: `${artifactRoot}/release-artifacts.v2.json`,
     SOURCE_CAPTURE_MANIFEST: `${artifactRoot}/source-capture.${version}.json`,
@@ -898,6 +902,7 @@ test("Build-Evidence-v3 bindet alle tatsächlich verwendeten 2026.5-Spezifikatio
   const specification = await json("tools/tiles/map-release-build-evidence.annual-2026.5.spec.json");
   assert.doesNotThrow(() => validateMapReleaseBuildEvidenceSpec(specification));
   const required = [
+    "germany-release-spec",
     "synthetic-operational-policy",
     "synthetic-operational-closure-spec",
     "operational-quality-spec",
@@ -906,6 +911,20 @@ test("Build-Evidence-v3 bindet alle tatsächlich verwendeten 2026.5-Spezifikatio
     "static-map-release-spec",
     "map-build-cache-inventory-plan",
     "map-asset-notices-spec",
+    "operational-native-receipt",
+    "operational-publication-receipt",
+    "operational-native-receipt-capture",
+    "operational-recovery-publisher",
+    "operational-recovery-publisher-implementation",
+    "operational-v2-deriver",
+    "operational-v2-materializer",
+    "create-new-output-contract",
+    "operational-v2-binding",
+    "operational-validator-rebuild-evidence",
+    "operational-validator-rebuild-bootstrap",
+    "operational-validator-rebuild-spec",
+    "operational-validator-rebuild-verifier",
+    "operational-validator-rebuild-cli",
     "germany-source-catalog",
     "rights-registry",
     "map-source-catalog",
@@ -918,9 +937,91 @@ test("Build-Evidence-v3 bindet alle tatsächlich verwendeten 2026.5-Spezifikatio
   const wrongRepoKind = structuredClone(specification);
   wrongRepoKind.inputs.find(({ id }) => id === "rights-registry").kind = "specification";
   assert.throws(() => validateMapReleaseBuildEvidenceSpec(wrongRepoKind), /rights-registry/u);
+  const driftedPublisher = structuredClone(specification);
+  driftedPublisher.inputs.find(({ id }) => id === "operational-recovery-publisher").file = "tools/region-import/germany/run-operational-infrastructure-v2.mjs";
+  assert.throws(() => validateMapReleaseBuildEvidenceSpec(driftedPublisher), /operational-recovery-publisher/u);
+  const driftedReceipt = structuredClone(specification);
+  driftedReceipt.inputs.find(({ id }) => id === "operational-publication-receipt").file = "var/derived/germany-2026.5/operational-infrastructure-v2.derivation-report.json";
+  assert.throws(() => validateMapReleaseBuildEvidenceSpec(driftedReceipt), /operational-publication-receipt/u);
+  const driftedImplementation = structuredClone(specification);
+  driftedImplementation.inputs.find(({ id }) => id === "operational-v2-materializer").file = "tools/region-import/germany/operational-infrastructure-v2.mjs";
+  assert.throws(() => validateMapReleaseBuildEvidenceSpec(driftedImplementation), /operational-v2-materializer/u);
+  const driftedBinding = structuredClone(specification);
+  driftedBinding.inputs.find(({ id }) => id === "operational-v2-binding").file = "tools/region-import/materialize-operational-infrastructure-v2.mjs";
+  assert.throws(() => validateMapReleaseBuildEvidenceSpec(driftedBinding), /operational-v2-binding/u);
+  const driftedRebuildBootstrap = structuredClone(specification);
+  driftedRebuildBootstrap.inputs.find(({ id }) => id === "operational-validator-rebuild-bootstrap").file = "tools/region-import/germany/operational-validator-rebuild-evidence.mjs";
+  assert.throws(() => validateMapReleaseBuildEvidenceSpec(driftedRebuildBootstrap), /operational-validator-rebuild-bootstrap/u);
+  const wrongValidator = structuredClone(specification);
+  wrongValidator.tools.find(({ id }) => id === "operational-v2-validator").file = "target/release/anderer-validator.exe";
+  assert.throws(() => validateMapReleaseBuildEvidenceSpec(wrongValidator), /Validator-Binary/u);
+  const relabelledValidator = structuredClone(specification);
+  relabelledValidator.tools.find(({ id }) => id === "operational-v2-validator").version = "map-build-commit";
+  assert.throws(() => validateMapReleaseBuildEvidenceSpec(relabelledValidator), /Validator-Binary/u);
+  const driftedRebuild = structuredClone(specification);
+  driftedRebuild.tools.find(({ id }) => id === "operational-v2-validator-rebuild").file = "target/release/unbound-rebuild.exe";
+  assert.throws(() => validateMapReleaseBuildEvidenceSpec(driftedRebuild), /Rebuild-Binary/u);
   const missingRuntime = structuredClone(specification);
   missingRuntime.tools = missingRuntime.tools.filter(({ id }) => id !== "gdal-pmtiles");
   assert.throws(() => validateMapReleaseBuildEvidenceSpec(missingRuntime), /manifestgebundenes gdal-pmtiles/u);
+});
+
+test("2026.5 trennt den primaeren Operational-v2-Runner vom receiptgebundenen RecoveryPublisher", async () => {
+  const [releaseConfig, cachePlan] = await Promise.all([
+    json("tools/region-import/germany/release.annual-2026.5.config.json"),
+    json("tools/tiles/map-build-cache-inventory.annual-2026.5.plan.json"),
+  ]);
+  assert.deepEqual(releaseConfig.pipeline.operationalDeriver, {
+    primaryRunner: "tools/region-import/germany/run-operational-infrastructure-v2.mjs",
+    primaryRunnerMode: "candidate-triplet",
+    specification: "tools/region-import/germany/operational-infrastructure.annual-2026.5.json",
+    candidate: "var/derived/germany-2026.5/operational-infrastructure-v2.candidate.json",
+    candidateMovementRouteTemplates: "var/derived/germany-2026.5/operational-infrastructure-v2.candidate.movement-route-templates-v2.json",
+    report: "var/derived/germany-2026.5/operational-infrastructure-v2.derivation-report.json",
+    output: "var/derived/germany-2026.5/operational-infrastructure-v2.json",
+    recoveryPublisher: {
+      captureEntrypoint: "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs",
+      entrypoint: "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
+      validatorExecutable: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe",
+      validatorBuildCommit: "ee6d7081b32277e46cd6ebb28fc65bd45ce55012",
+      validatorBytes: 8_283_251,
+      validatorSha256: "69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc",
+      validatorRebuildSpecification: "tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json",
+      validatorRebuildEvidence: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json",
+      validatorRebuildExecutable: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-official.exe",
+      validatorRebuildExpectedBytes: 8_283_251,
+      validatorNormalizedPeSha256: "91e84253399bf8836ec4e6a5688da51f753531a0040831a54b8585e28f1d5363",
+      executionInventory: {
+        wrapper: "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
+        implementation: "tools/region-import/germany/operational-infrastructure-v2-publication.mjs",
+        operationalDeriver: "tools/region-import/germany/operational-infrastructure-v2.mjs",
+        materializer: "tools/region-import/materialize-operational-infrastructure-v2.mjs",
+        createNewOutput: "tools/tiles/create-new-output.mjs",
+        operationalBinding: "tools/region-import/operational-infrastructure-binding.mjs",
+        validatorRebuildBootstrap: "tools/region-import/germany/operational-validator-rebuild-bootstrap.mjs",
+        validatorRebuildVerifier: "tools/region-import/germany/operational-validator-rebuild-evidence.mjs",
+      },
+      nativeReceipt: "var/derived/germany-2026.5/operational-infrastructure-v2.native-receipt.json",
+      publicationReceipt: "var/derived/germany-2026.5/operational-infrastructure-v2.publication-receipt.json",
+    },
+  });
+  for (const file of [
+    "operational-infrastructure-v2.native-receipt.json",
+    "operational-infrastructure-v2.publication-receipt.json",
+    "zugfolge-infra-release-rebuild-evidence.json",
+    "zugfolge-infra-release-source-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-556c906567dd436de091390b66cf9538e82febd237f70b0d353b286480852b2a.tar",
+    "zugfolge-infra-release-rebuild-provenance-ee6d7081b32277e46cd6ebb28fc65bd45ce55012.json",
+  ]) {
+    assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => sourceFile.endsWith(`/${file}`) && cacheFile.endsWith(`/${file}`)), `${file} fehlt im Buildcache-Inventar`);
+  }
+  assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe"
+      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc/zugfolge-infra-release.exe"
+  )), "effektives Validator-Binary fehlt im Buildcache-Inventar");
+  assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-official.exe"
+      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/official/zugfolge-infra-release.exe"
+  )), "immutable Validator-Rebuild-Binary fehlt im Buildcache-Inventar");
 });
 
 test("2026.5 besitzt einen eigenen Asset-Notice-Vertrag und das vollständige GDAL-Runtime-Cachemapping", async () => {

@@ -1,7 +1,7 @@
 {
   "release": {
     "annualBuild": {
-      "configSha256": "d70ae3902a40bbbd17e85c25bd1790d0c42cb8b697645862b43ceb48e2539bdd",
+      "configSha256": "77456d47c1024fabe4b04be49913089da533c964fb135c4af33e78dbac131471",
       "pipelineVersion": "test/1",
       "publicCaptureSha256": "2f4bdb532dac3e56c451fc66c2c61e84b87c80121e3f6bd8c6e68e64133fc514"
     },
@@ -64,5 +64,5 @@
       "rawValidationMaterialShipped": false
     }
   },
-  "releaseHash": "8fafb31e9593e6a627d780afb8e1d15425f502e5308b2a7391480ffe675706ed"
+  "releaseHash": "5a13264727b72e4bd085e901fbeda7f48ea2579cf983e25088d902cfd9a1fbd4"
 }

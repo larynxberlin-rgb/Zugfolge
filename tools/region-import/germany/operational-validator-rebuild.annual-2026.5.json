@@ -1,0 +1,188 @@
+{
+  "binaries": {
+    "preserved": {
+      "bytes": 8283251,
+      "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe",
+      "sha256": "69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc"
+    },
+    "rebuilt": {
+      "expectedBytes": 8283251,
+      "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-official.exe"
+    }
+  },
+  "build": {
+    "command": [
+      "cargo",
+      "build",
+      "--locked",
+      "--release",
+      "-p",
+      "zugfolge-infra",
+      "--bin",
+      "zugfolge-infra-release"
+    ],
+    "environmentPolicy": {
+      "allowedInherited": [
+        "CARGO_HOME",
+        "COMSPEC",
+        "HOME",
+        "HOMEDRIVE",
+        "HOMEPATH",
+        "NUMBER_OF_PROCESSORS",
+        "PATH",
+        "PATHEXT",
+        "PROCESSOR_ARCHITECTURE",
+        "RUSTUP_HOME",
+        "SYSTEMROOT",
+        "TEMP",
+        "TMP",
+        "TMPDIR",
+        "USERPROFILE",
+        "WINDIR"
+      ],
+      "cleared": [
+        "AR",
+        "CARGO_BUILD_RUSTC",
+        "CARGO_BUILD_RUSTC_WRAPPER",
+        "CARGO_BUILD_TARGET",
+        "CARGO_ENCODED_RUSTFLAGS",
+        "CARGO_PROFILE_RELEASE_CODEGEN_UNITS",
+        "CARGO_PROFILE_RELEASE_DEBUG",
+        "CARGO_PROFILE_RELEASE_LTO",
+        "CARGO_PROFILE_RELEASE_OPT_LEVEL",
+        "CARGO_PROFILE_RELEASE_PANIC",
+        "CARGO_TARGET_DIR",
+        "CC",
+        "CFLAGS",
+        "CXX",
+        "CXXFLAGS",
+        "LDFLAGS",
+        "RUSTC",
+        "RUSTC_BOOTSTRAP",
+        "RUSTC_WRAPPER",
+        "RUSTC_WORKSPACE_WRAPPER",
+        "RUSTDOCFLAGS",
+        "RUSTFLAGS",
+        "RUSTUP_TOOLCHAIN",
+        "SOURCE_DATE_EPOCH"
+      ],
+      "fixed": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_NET_OFFLINE": "true",
+        "CARGO_TERM_COLOR": "never"
+      },
+      "targetDirectory": "external-empty-create-new"
+    },
+    "profile": "release",
+    "targetOutputFile": "release/zugfolge-infra-release.exe"
+  },
+  "pe": {
+    "allowedNormalizationFields": [
+      {
+        "bytes": 4,
+        "name": "coff-time-date-stamp",
+        "offset": 136
+      },
+      {
+        "bytes": 4,
+        "name": "optional-header-checksum",
+        "offset": 216
+      }
+    ],
+    "format": "PE32+",
+    "machine": 34404,
+    "maxBinaryBytes": 8388608,
+    "normalizedSha256": "91e84253399bf8836ec4e6a5688da51f753531a0040831a54b8585e28f1d5363",
+    "sections": [
+      {
+        "name": ".text",
+        "rawData": "non-empty"
+      },
+      {
+        "name": ".data",
+        "rawData": "non-empty"
+      },
+      {
+        "name": ".rdata",
+        "rawData": "non-empty"
+      },
+      {
+        "name": ".pdata",
+        "rawData": "non-empty"
+      },
+      {
+        "name": ".xdata",
+        "rawData": "non-empty"
+      },
+      {
+        "name": ".bss",
+        "rawData": "empty"
+      },
+      {
+        "name": ".idata",
+        "rawData": "non-empty"
+      },
+      {
+        "name": ".CRT",
+        "rawData": "non-empty"
+      },
+      {
+        "name": ".tls",
+        "rawData": "non-empty"
+      },
+      {
+        "name": ".reloc",
+        "rawData": "non-empty"
+      }
+    ]
+  },
+  "producer": {
+    "bootstrap": {
+      "bytes": 8031,
+      "file": "tools/region-import/germany/operational-validator-rebuild-bootstrap.mjs",
+      "sha256": "c12364d0b63b6ef3553a0d01ae28fb3fa295e340530304d0c7c578695f98380c"
+    },
+    "entrypoint": {
+      "bytes": 9934,
+      "file": "tools/region-import/germany/operational-validator-rebuild-evidence-cli.mjs",
+      "sha256": "c0d04b6b4e247f3c94f4560c40a922abe40b1870bf88926750afa5daaa0bdec2"
+    },
+    "implementation": {
+      "bytes": 121519,
+      "file": "tools/region-import/germany/operational-validator-rebuild-evidence.mjs",
+      "sha256": "0dcac3ff4a921841922979c0e641716815341131f33105d6b9ed02a2b469d023"
+    }
+  },
+  "provenance": {
+    "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-ee6d7081b32277e46cd6ebb28fc65bd45ce55012.json"
+  },
+  "releaseId": "infra-deutschland-2026.5",
+  "schema": "zugfolge-operational-validator-rebuild-spec/v2",
+  "source": {
+    "archive": {
+      "bytes": 24975360,
+      "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-source-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-556c906567dd436de091390b66cf9538e82febd237f70b0d353b286480852b2a.tar",
+      "format": "tar",
+      "sha256": "556c906567dd436de091390b66cf9538e82febd237f70b0d353b286480852b2a"
+    },
+    "cargoLock": {
+      "bytes": 13125,
+      "file": "Cargo.lock",
+      "sha256": "929fe3fb52098a0e5d234d5b96f5058b7ba7bf4308d1836e8e0b80307af09403"
+    },
+    "commit": "ee6d7081b32277e46cd6ebb28fc65bd45ce55012"
+  },
+  "toolchain": {
+    "cargo": {
+      "commitHash": "29ea6fb6a5db279426f4cc4e17aa385f05a0cfbc",
+      "host": "x86_64-pc-windows-gnu",
+      "release": "1.94.1"
+    },
+    "rustc": {
+      "commitHash": "e408947bfd200af42db322daf0fadfe7e26d3bd1",
+      "host": "x86_64-pc-windows-gnu",
+      "llvmVersion": "21.1.8",
+      "release": "1.94.1"
+    }
+  }
+}

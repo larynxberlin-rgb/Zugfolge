@@ -24,7 +24,7 @@ import { parseTrustedReleaseKeyScopes } from "../../apps/game-api/dist/trusted-r
 function usage() {
   return [
     "Aufruf:",
-    "  map-release-build-evidence-cli.mjs build SPEC.json BUILD_ROOT EVIDENCE.json [SEMANTIC_EXPORT_COMMIT MAP_BUILD_COMMIT]",
+    "  map-release-build-evidence-cli.mjs build SPEC.json BUILD_ROOT EVIDENCE.json [SEMANTIC_EXPORT_COMMIT MAP_BUILD_COMMIT [OPERATIONAL_VALIDATOR_BUILD_COMMIT]]",
     "  map-release-build-evidence-cli.mjs verify EVIDENCE.json BUILD_ROOT",
     "  map-release-build-evidence-cli.mjs prepare-restore LEERES_RESTORE_ZIEL",
     "  map-release-build-evidence-cli.mjs prove-restore EVIDENCE.json RESTORE_ROOT PROOF.json",
@@ -52,8 +52,8 @@ const [command, ...args] = process.argv.slice(2);
 let result;
 
 if (command === "build") {
-  if (![3, 5].includes(args.length)) throw new Error(usage());
-  const [specPathInput, artifactRootInput, outputPath, semanticExport, mapBuild] = args;
+  if (![3, 5, 6].includes(args.length)) throw new Error(usage());
+  const [specPathInput, artifactRootInput, outputPath, semanticExport, mapBuild, operationalValidatorBuild] = args;
   const artifactRoot = resolve(artifactRootInput);
   const specPath = resolve(specPathInput);
   const specFile = relative(artifactRoot, specPath).replaceAll("\\", "/");
@@ -64,7 +64,13 @@ if (command === "build") {
     specBytes,
     specFile,
     artifactRoot,
-    ...(semanticExport === undefined ? {} : { commits: { semanticExport, mapBuild } }),
+    ...(semanticExport === undefined ? {} : {
+      commits: {
+        semanticExport,
+        mapBuild,
+        ...(operationalValidatorBuild === undefined ? {} : { operationalValidatorBuild }),
+      },
+    }),
   });
   const written = await writeMapReleaseBuildEvidence(evidence, outputPath);
   result = {

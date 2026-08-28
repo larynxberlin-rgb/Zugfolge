@@ -11,17 +11,38 @@ import {
   validateGermanyOperationalInfrastructureV2Specification,
 } from "./operational-infrastructure-v2.mjs";
 
-const [specPath, sourceRoot, candidatePath, reportPath, outputPath, ...extra] = process.argv.slice(2);
-if (!specPath || !sourceRoot || !candidatePath || !reportPath || extra.length > 0) {
-  throw new Error("Aufruf: run-operational-infrastructure-v2.mjs SPEC.json SOURCE_ROOT CANDIDATE.json REPORT.json [OUTPUT/operational-infrastructure-v2.json]");
+const USAGE = "Aufruf: run-operational-infrastructure-v2.mjs candidate-triplet SPEC.json SOURCE_ROOT CANDIDATE.json CANDIDATE-SIDECAR.json REPORT.json | materialize SPEC.json SOURCE_ROOT CANDIDATE.json SIDECAR.json REPORT.json OUTPUT/operational-infrastructure-v2.json | readiness SPEC.json SOURCE_ROOT CANDIDATE.json REPORT.json";
+const [mode, ...arguments_] = process.argv.slice(2);
+let specPath;
+let sourceRoot;
+let candidatePath;
+let movementRouteTemplatesPath;
+let reportPath;
+let outputPath;
+let extra;
+if (mode === "candidate-triplet") {
+  [specPath, sourceRoot, candidatePath, movementRouteTemplatesPath, reportPath, ...extra] = arguments_;
+} else if (mode === "materialize") {
+  [specPath, sourceRoot, candidatePath, movementRouteTemplatesPath, reportPath, outputPath, ...extra] = arguments_;
+} else if (mode === "readiness") {
+  [specPath, sourceRoot, candidatePath, reportPath, ...extra] = arguments_;
+} else {
+  throw new Error(USAGE);
+}
+if (!specPath || !sourceRoot || !candidatePath || !reportPath || extra.length > 0
+  || ((mode === "candidate-triplet" || mode === "materialize") && !movementRouteTemplatesPath)
+  || (mode === "materialize" && !outputPath)) {
+  throw new Error(USAGE);
 }
 
 const specificationPath = resolve(specPath);
 const candidate = resolve(candidatePath);
 const report = resolve(reportPath);
+const movementRouteTemplates = movementRouteTemplatesPath === undefined ? undefined : resolve(movementRouteTemplatesPath);
 const output = outputPath === undefined ? undefined : resolve(outputPath);
-if (new Set([candidate, report, ...(output === undefined ? [] : [output])]).size !== (output === undefined ? 2 : 3)) {
-  throw new Error("Operational-v2-Candidate, Bericht und Ausgabe muessen getrennte Dateien sein.");
+const targets = [candidate, report, ...(movementRouteTemplates === undefined ? [] : [movementRouteTemplates]), ...(output === undefined ? [] : [output])];
+if (new Set(targets).size !== targets.length) {
+  throw new Error("Operational-v2-Candidate, Candidate-Sidecar, Bericht und Ausgabe muessen getrennte Dateien sein.");
 }
 
 async function writeJsonExclusiveAtomic(path, value) {
@@ -45,7 +66,7 @@ async function writeJsonExclusiveAtomic(path, value) {
 const specification = await readGermanyOperationalDerivationSpec(specificationPath);
 const kind = validateGermanyOperationalInfrastructureV2Specification(specification);
 if (kind !== "conservative") {
-  if (output !== undefined) throw new Error("Readiness- und Legacy-Modus verwenden exakt vier Argumente und erzeugen kein OUTPUT.");
+  if (mode !== "readiness") throw new Error("Readiness- und Legacy-Spezifikationen verlangen den expliziten Modus readiness und erzeugen keine Artefakte.");
   const readiness = assessGermanyOperationalInfrastructureV2Readiness(specification);
   try {
     await writeJsonExclusiveAtomic(report, readiness);
@@ -62,8 +83,8 @@ if (kind !== "conservative") {
   process.stderr.write(`Operational-v2-Ableitung blockiert: ${readiness.blockers.map(({ code }) => code).join(", ")}\n`);
   process.exitCode = 2;
 } else {
-  if (specification.mode !== GERMANY_OPERATIONAL_CONSERVATIVE_MODE || output === undefined) {
-    throw new Error(`${GERMANY_OPERATIONAL_CONSERVATIVE_MODE} verlangt das fuenfte Argument OUTPUT/operational-infrastructure-v2.json.`);
+  if (specification.mode !== GERMANY_OPERATIONAL_CONSERVATIVE_MODE || mode === "readiness") {
+    throw new Error(`${GERMANY_OPERATIONAL_CONSERVATIVE_MODE} verlangt candidate-triplet oder materialize.`);
   }
   try {
     const receipt = await runGermanyOperationalInfrastructureV2({
@@ -71,10 +92,11 @@ if (kind !== "conservative") {
       specificationPath,
       sourceRoot: resolve(sourceRoot),
       candidatePath: candidate,
+      movementRouteTemplatesPath: movementRouteTemplates,
       reportPath: report,
       outputPath: output,
     });
-    process.stdout.write(`${JSON.stringify({ status: "materialized", ...receipt })}\n`);
+    process.stdout.write(`${JSON.stringify({ status: output === undefined ? "candidate-triplet" : "materialized", ...receipt })}\n`);
   } catch (error) {
     if (!(error instanceof OperationalInfrastructureDerivationIncompleteError)) throw error;
     process.stdout.write(`${JSON.stringify({
@@ -83,6 +105,7 @@ if (kind !== "conservative") {
       activationEligible: false,
       unresolvedRequired: error.result.nativeReport.unresolvedRequired,
       candidate: error.result.paths.candidate,
+      movementRouteTemplates: error.result.paths.movementRouteTemplates,
       report: error.result.paths.report,
       output: null,
     })}\n`);

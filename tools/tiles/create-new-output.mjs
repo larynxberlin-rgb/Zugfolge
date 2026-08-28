@@ -1,5 +1,5 @@
-import { link, lstat, mkdir, open, readFile, readdir, realpath, unlink } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { link, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rmdir, unlink } from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 
 export const CREATE_NEW_DIRECTORY_COMPLETION_FILE = ".zugfolge-create-new-complete.json";
 export const CREATE_NEW_DIRECTORY_COMPLETION_SCHEMA = "zugfolge-create-new-directory-completion/v1";
@@ -41,15 +41,71 @@ export async function assertCreateNewTargets(targets) {
 }
 
 async function removePublishedLink(entry) {
+  let staged;
+  let published;
   try {
-    const [staged, published] = await Promise.all([
+    [staged, published] = await Promise.all([
       lstat(entry.stagedPath, { bigint: true }),
       lstat(entry.outputPath, { bigint: true }),
     ]);
-    if (sameIdentity(staged, published)) await unlink(entry.outputPath);
   } catch (error) {
-    if (!isMissing(error)) throw error;
+    if (isMissing(error)) return;
+    throw error;
   }
+  if (!sameIdentity(staged, published)) return;
+
+  const quarantineRoot = await mkdtemp(join(dirname(entry.outputPath), ".zugfolge-create-new-rollback-"));
+  const quarantined = join(quarantineRoot, basename(entry.outputPath));
+  try {
+    await rename(entry.outputPath, quarantined);
+    const moved = await lstat(quarantined, { bigint: true });
+    if (!sameIdentity(staged, moved)) {
+      try {
+        await link(quarantined, entry.outputPath);
+        await unlink(quarantined);
+        await rmdir(quarantineRoot);
+      } catch (restoreError) {
+        throw new AggregateError(
+          [restoreError],
+          `${entry.label} wurde waehrend des owned-only Rollbacks fremd ersetzt und bleibt im Quarantaeneverzeichnis erhalten.`,
+        );
+      }
+      return;
+    }
+    await unlink(quarantined);
+    await rmdir(quarantineRoot);
+  } catch (error) {
+    try {
+      await rmdir(quarantineRoot);
+    } catch (cleanupError) {
+      if (cleanupError?.code !== "ENOTEMPTY") {
+        throw new AggregateError([error, cleanupError], "Create-new-Rollback-Quarantaene konnte nicht bereinigt werden.");
+      }
+    }
+    throw error;
+  }
+}
+
+/**
+ * Entfernt sichtbare create-new-Hardlinks nur, solange sie noch dieselbe
+ * Dateidentitaet wie das zugehoerige Staging besitzen. Fremde Ersetzungen
+ * bleiben damit auch bei einem spaeten Publikationsfehler unangetastet.
+ */
+export async function rollbackFilesCreateNew(entriesInput) {
+  const entries = entriesInput.map(({ stagedPath, outputPath, label = "Ausgabeziel" }) => ({
+    stagedPath: resolve(stagedPath),
+    outputPath: resolve(outputPath),
+    label,
+  }));
+  const rollbackErrors = [];
+  for (const entry of entries.reverse()) {
+    try {
+      await removePublishedLink(entry);
+    } catch (error) {
+      rollbackErrors.push(error);
+    }
+  }
+  if (rollbackErrors.length > 0) throw new AggregateError(rollbackErrors, "Create-new-Rollback ist fehlgeschlagen.");
 }
 
 /**
@@ -79,15 +135,11 @@ export async function publishFilesCreateNew(entriesInput) {
       published.push(entry);
     }
   } catch (error) {
-    const rollbackErrors = [];
-    for (const entry of published.reverse()) {
-      try {
-        await removePublishedLink(entry);
-      } catch (rollbackError) {
-        rollbackErrors.push(rollbackError);
-      }
+    try {
+      await rollbackFilesCreateNew(published);
+    } catch (rollbackError) {
+      throw new AggregateError([error, rollbackError], "Create-new-Publikation und Rollback sind fehlgeschlagen.");
     }
-    if (rollbackErrors.length > 0) throw new AggregateError([error, ...rollbackErrors], "Create-new-Publikation und Rollback sind fehlgeschlagen.");
     throw error;
   }
   return entries.map(({ outputPath }) => outputPath);

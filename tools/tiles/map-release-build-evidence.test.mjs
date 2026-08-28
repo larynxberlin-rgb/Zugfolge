@@ -18,6 +18,9 @@ import {
   proveBuildCacheRestore,
   serializeMapReleaseBuildEvidence,
   signMapRollbackAttestation,
+  validateCurrentAnnualBuildCachePlanBinding,
+  validateCurrentAnnualOperationalPublicationBinding,
+  validateCurrentAnnualValidatorRebuildCacheArtifacts,
   validateDatabaseRollbackProof,
   validateMapReleaseBuildEvidence,
   verifyMapReleaseBuildEvidence,
@@ -1466,6 +1469,28 @@ async function fixtureV3() {
   return { ...value, spec, specFile, specBytes };
 }
 
+async function configureOperationalValidatorBuild(value, commit = "5".repeat(40)) {
+  const file = `tools/native/zugfolge-infra-release-${commit}.exe`;
+  const cacheFile = `cache/tools/zugfolge-infra-release/${commit}/zugfolge-infra-release.exe`;
+  await write(value.root, file, Buffer.from("pinned operational validator binary\n"));
+  const validatorProof = await proof(value.root, file);
+  value.inventory.files.push({ path: cacheFile, ...validatorProof });
+  value.inventory.files.sort((left, right) => left.path.localeCompare(right.path, "en"));
+  await write(value.root, value.cacheInventoryPath, `${JSON.stringify(value.inventory, null, 2)}\n`);
+  value.spec.tools.push({
+    id: "operational-v2-validator",
+    kind: "binary",
+    version: "operational-validator-build-commit",
+    file,
+    cacheFile,
+    expectedBytes: validatorProof.bytes,
+    expectedSha256: validatorProof.sha256,
+  });
+  value.commits = { ...value.commits, operationalValidatorBuild: commit };
+  await rewriteEvidenceSpec(value);
+  return { commit, file, cacheFile, validatorProof };
+}
+
 async function materialized(value) {
   return materializeMapReleaseBuildEvidence({
     spec: value.spec,
@@ -1863,6 +1888,31 @@ test("Evidence-v3 bindet Transfer-Demands und Movement-Route-Templates als verpf
       },
     );
     assert.equal((await verifyMapReleaseBuildEvidence(evidence, value.root)).outputs, 9);
+  } finally {
+    await rm(value.root, { recursive: true, force: true });
+  }
+});
+
+test("Evidence-v3 materialisiert den effektiven Validator mit seinem getrennten Build-Commit", async () => {
+  const value = await fixtureV3();
+  try {
+    const validator = await configureOperationalValidatorBuild(value);
+    const evidence = await materialized(value);
+    assert.equal(evidence.schema, "zugfolge-map-release-build-evidence/v3");
+    assert.equal(evidence.commits.operationalValidatorBuild, validator.commit);
+    assert.deepEqual(
+      evidence.tools.find(({ id }) => id === "operational-v2-validator"),
+      {
+        id: "operational-v2-validator",
+        kind: "binary",
+        version: validator.commit,
+        file: validator.file,
+        cacheFile: validator.cacheFile,
+        bytes: validator.validatorProof.bytes,
+        sha256: validator.validatorProof.sha256,
+      },
+    );
+    assert.equal((await verifyMapReleaseBuildEvidence(evidence, value.root)).tools, evidence.tools.length);
   } finally {
     await rm(value.root, { recursive: true, force: true });
   }
@@ -2713,6 +2763,175 @@ test("aktueller .5-Zielbaum bleibt ohne create-new-Completion auch fuer Rollback
   } finally {
     await rm(deploymentRoot, { recursive: true, force: true });
   }
+});
+
+test("aktueller .5-Querbindungshelper verweigert ein vom Publication-Receipt entkoppeltes Operational-Ausgabepaar", () => {
+  const releaseId = "infra-deutschland-2026.5";
+  const operationalFile = "var/derived/germany-2026.5/operational-infrastructure-v2.json";
+  const movementFile = "var/derived/germany-2026.5/operational-infrastructure-v2.movement-route-templates-v2.json";
+  const candidateFile = "var/derived/germany-2026.5/operational-infrastructure-v2.candidate.json";
+  const candidateMovementFile = "var/derived/germany-2026.5/operational-infrastructure-v2.candidate.movement-route-templates-v2.json";
+  const reportFile = "var/derived/germany-2026.5/operational-infrastructure-v2.derivation-report.json";
+  const operationalStateHash = "a".repeat(64);
+  const movementStateHash = "b".repeat(64);
+  const transferSetSha256 = "c".repeat(64);
+  const outputs = [{
+    id: "operational-infrastructure",
+    kind: "operational-infrastructure-v2",
+    file: operationalFile,
+    infraReleaseId: releaseId,
+    bytes: 101,
+    sha256: "d".repeat(64),
+    stateHash: operationalStateHash,
+  }, {
+    id: "operational-movement-routes",
+    kind: "movement-route-templates-v2",
+    file: movementFile,
+    infraReleaseId: releaseId,
+    bytes: 202,
+    sha256: "e".repeat(64),
+    stateHash: movementStateHash,
+    operationalStateHash,
+    timetableTransferSetSha256: transferSetSha256,
+  }];
+  const publicationReceipt = {
+    infraReleaseId: releaseId,
+    sources: {
+      candidate: { file: candidateFile },
+      movementRouteTemplates: { file: candidateMovementFile },
+      report: { file: reportFile },
+    },
+    published: {
+      operationalInfrastructure: {
+        file: operationalFile,
+        bytes: 101,
+        sha256: "d".repeat(64),
+        stateHash: operationalStateHash,
+      },
+      movementRouteTemplates: {
+        file: movementFile,
+        bytes: 202,
+        sha256: "e".repeat(64),
+        stateHash: movementStateHash,
+        operationalStateHash,
+        timetableTransferSetSha256: transferSetSha256,
+      },
+    },
+  };
+  const releaseConfig = {
+    pipeline: {
+      operationalDeriver: {
+        candidate: candidateFile,
+        candidateMovementRouteTemplates: candidateMovementFile,
+        report: reportFile,
+        output: operationalFile,
+      },
+    },
+  };
+  const binding = { releaseId, publicationReceipt, outputs, releaseConfig };
+  assert.doesNotThrow(() => validateCurrentAnnualOperationalPublicationBinding(binding));
+
+  for (const mutate of [
+    (value) => { value.outputs[0].file = "var/derived/germany-2026.5/separates-operational-v2.json"; },
+    (value) => { value.outputs[0].bytes += 1; },
+    (value) => { value.outputs[0].sha256 = "f".repeat(64); },
+    (value) => { value.outputs[0].stateHash = "f".repeat(64); },
+    (value) => { value.outputs[1].file = "var/derived/germany-2026.5/separates-movement-v2.json"; },
+    (value) => { value.outputs[1].bytes += 1; },
+    (value) => { value.outputs[1].sha256 = "f".repeat(64); },
+    (value) => { value.outputs[1].stateHash = "f".repeat(64); },
+    (value) => { value.outputs[1].operationalStateHash = "f".repeat(64); },
+    (value) => { value.outputs[1].timetableTransferSetSha256 = "f".repeat(64); },
+    (value) => { value.releaseConfig.pipeline.operationalDeriver.candidateMovementRouteTemplates = "var/derived/germany-2026.5/fremdes-candidate-sidecar.json"; },
+  ]) {
+    const detached = structuredClone(binding);
+    mutate(detached);
+    assert.throws(
+      () => validateCurrentAnnualOperationalPublicationBinding(detached),
+      /Publication-Receipt|Jahresrelease/u,
+    );
+  }
+});
+
+test("aktueller .5-Buildcacheplan-Helper verweigert ein Inventar ohne Rebuild-TAR oder Provenienz", async () => {
+  const root = await mkdtemp(join(tmpdir(), "zugfolge-current-cache-plan-binding-"));
+  try {
+    const releaseId = "infra-deutschland-2026.5";
+    const planFile = "tools/tiles/map-build-cache-inventory.annual-2026.5.plan.json";
+    const files = [{
+      sourceFile: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json",
+      cacheFile: "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json",
+    }, {
+      sourceFile: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-source-commit-sha.tar",
+      cacheFile: "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-source-commit-sha.tar",
+    }, {
+      sourceFile: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-commit.json",
+      cacheFile: "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-commit.json",
+    }, {
+      sourceFile: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-commit-official.exe",
+      cacheFile: "tools/zugfolge-infra-release/infra-deutschland-2026.5/commit/official/zugfolge-infra-release.exe",
+    }];
+    await write(root, planFile, `${JSON.stringify({
+      schema: "zugfolge-map-build-cache-inventory-plan/v1",
+      releaseId,
+      files,
+    }, null, 2)}\n`);
+    const inputs = [{ id: "map-build-cache-inventory-plan", kind: "specification", file: planFile }];
+    const inventory = files
+      .map(({ cacheFile }) => ({ path: cacheFile, bytes: 1, sha256: "a".repeat(64) }))
+      .sort((left, right) => left.path.localeCompare(right.path, "en"));
+    await assert.doesNotReject(validateCurrentAnnualBuildCachePlanBinding(root, inputs, inventory, releaseId));
+    for (const missingToken of ["-source-", "-provenance-"]) {
+      await assert.rejects(
+        validateCurrentAnnualBuildCachePlanBinding(
+          root,
+          inputs,
+          inventory.filter(({ path }) => !path.includes(missingToken)),
+          releaseId,
+        ),
+        /Inventarplan nicht vollstaendig und exakt/u,
+      );
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("aktueller .5-Rebuild-Cachehelper verweigert falsche TAR-/Provenienz-Bytes und -Hashes", () => {
+  const archive = { file: "var/derived/germany-2026.5/toolchain/source.tar", bytes: 10, sha256: "a".repeat(64) };
+  const provenance = { file: "var/derived/germany-2026.5/toolchain/provenance.json", bytes: 20, sha256: "b".repeat(64) };
+  const receipt = { file: "var/derived/germany-2026.5/toolchain/receipt.json", bytes: 30, sha256: "c".repeat(64) };
+  const binary = { file: "var/derived/germany-2026.5/toolchain/rebuilt.exe", bytes: 40, sha256: "d".repeat(64) };
+  const bindings = [archive, provenance, receipt, binary].map((proof, index) => ({
+    sourceFile: proof.file,
+    cacheFile: `cache/rebuild/${index}`,
+  }));
+  const inventory = [archive, provenance, receipt, binary].map((proof, index) => ({
+    path: `cache/rebuild/${index}`,
+    bytes: proof.bytes,
+    sha256: proof.sha256,
+  }));
+  const value = {
+    mappings: bindings,
+    inventory,
+    rebuildSpec: { source: { archive } },
+    rebuildReceipt: { provenance, binaries: { rebuilt: binary } },
+    rebuildReceiptInput: receipt,
+  };
+  assert.doesNotThrow(() => validateCurrentAnnualValidatorRebuildCacheArtifacts(value));
+
+  const wrongArchive = structuredClone(value);
+  wrongArchive.inventory[0].bytes += 1;
+  assert.throws(
+    () => validateCurrentAnnualValidatorRebuildCacheArtifacts(wrongArchive),
+    /Source-TAR driftet/u,
+  );
+  const wrongProvenance = structuredClone(value);
+  wrongProvenance.inventory[1].sha256 = "f".repeat(64);
+  assert.throws(
+    () => validateCurrentAnnualValidatorRebuildCacheArtifacts(wrongProvenance),
+    /Provenienz driftet/u,
+  );
 });
 
 test("preflight qualifiziert den v2-Kartenkandidaten, blockiert aber volle Aktivierung mit v1-Rollbackrelease", async () => {

@@ -20,12 +20,15 @@ import {
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+import { verifyGermanyOperationalInfrastructureV2PublicationReceipt } from "../region-import/germany/operational-infrastructure-v2-publication.mjs";
+import { verifyOperationalValidatorRebuildEvidence } from "../region-import/germany/operational-validator-rebuild-evidence.mjs";
 import { inspectPublicReadModel } from "./livemap-read-model.mjs";
 import {
   CREATE_NEW_DIRECTORY_COMPLETION_FILE,
   verifyCreateNewDirectoryCompletion,
 } from "./create-new-output.mjs";
 import { validateMapAssetNoticeBindings, validateMapAssetNotices } from "./map-asset-notices.mjs";
+import { validateMapBuildCacheInventoryPlan } from "./map-build-cache-inventory.mjs";
 import {
   deliveryReleaseHash,
   serializeDeliveryJson,
@@ -185,7 +188,13 @@ const SEMANTIC_LAYERS = Object.freeze([
   "rail_context",
 ]);
 const CURRENT_ANNUAL_V3_RELEASE_ID = "infra-deutschland-2026.5";
+const CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_BUILD_COMMIT = "ee6d7081b32277e46cd6ebb28fc65bd45ce55012";
+const CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_SHA256 = "69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc";
+const CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_BYTES = 8_283_251;
+const CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_NORMALIZED_PE_SHA256 = "91e84253399bf8836ec4e6a5688da51f753531a0040831a54b8585e28f1d5363";
+const OPERATIONAL_VALIDATOR_BUILD_COMMIT_VERSION = "operational-validator-build-commit";
 const CURRENT_ANNUAL_V3_INPUTS = Object.freeze([
+  ["germany-release-spec", "specification", "tools/region-import/germany/release.annual-2026.5.config.json"],
   ["synthetic-operational-policy", "specification", "tools/region-import/germany/synthetic-operational-b.2026.5.policy.json"],
   ["synthetic-operational-closure-spec", "specification", "tools/region-import/germany/synthetic-operational-closure.annual-2026.5.json"],
   ["operational-quality-spec", "specification", "tools/region-import/germany/operational-quality.annual-2026.5.json"],
@@ -194,10 +203,55 @@ const CURRENT_ANNUAL_V3_INPUTS = Object.freeze([
   ["static-map-release-spec", "specification", "tools/tiles/static-map-release.annual-2026.5.json"],
   ["map-build-cache-inventory-plan", "specification", "tools/tiles/map-build-cache-inventory.annual-2026.5.plan.json"],
   ["map-asset-notices-spec", "specification", "tools/tiles/map-asset-notices.annual-2026.5.json"],
+  ["operational-native-receipt", "derived-input", "var/derived/germany-2026.5/operational-infrastructure-v2.native-receipt.json"],
+  ["operational-publication-receipt", "derived-input", "var/derived/germany-2026.5/operational-infrastructure-v2.publication-receipt.json"],
+  ["operational-validator-rebuild-evidence", "derived-input", "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json"],
+  ["operational-native-receipt-capture", "repo-contract", "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs"],
+  ["operational-recovery-publisher", "repo-contract", "tools/region-import/germany/publish-operational-infrastructure-v2.mjs"],
+  ["operational-recovery-publisher-implementation", "repo-contract", "tools/region-import/germany/operational-infrastructure-v2-publication.mjs"],
+  ["operational-v2-deriver", "repo-contract", "tools/region-import/germany/operational-infrastructure-v2.mjs"],
+  ["operational-v2-materializer", "repo-contract", "tools/region-import/materialize-operational-infrastructure-v2.mjs"],
+  ["create-new-output-contract", "repo-contract", "tools/tiles/create-new-output.mjs"],
+  ["operational-v2-binding", "repo-contract", "tools/region-import/operational-infrastructure-binding.mjs"],
+  ["operational-validator-rebuild-spec", "repo-contract", "tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json"],
+  ["operational-validator-rebuild-verifier", "repo-contract", "tools/region-import/germany/operational-validator-rebuild-evidence.mjs"],
+  ["operational-validator-rebuild-bootstrap", "repo-contract", "tools/region-import/germany/operational-validator-rebuild-bootstrap.mjs"],
+  ["operational-validator-rebuild-cli", "repo-contract", "tools/region-import/germany/operational-validator-rebuild-evidence-cli.mjs"],
   ["germany-source-catalog", "repo-contract", "tools/region-import/germany/source-catalog.json"],
   ["rights-registry", "repo-contract", "tools/guards/quellenregister.json"],
   ["map-source-catalog", "repo-contract", "tools/tiles/map-source-catalog.json"],
 ]);
+const CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_TOOL = Object.freeze({
+  id: "operational-v2-validator",
+  kind: "binary",
+  version: OPERATIONAL_VALIDATOR_BUILD_COMMIT_VERSION,
+  file: `var/derived/germany-2026.5/toolchain/zugfolge-infra-release-${CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_BUILD_COMMIT}-${CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_SHA256}.exe`,
+  cacheFile: `tools/zugfolge-infra-release/infra-deutschland-2026.5/${CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_BUILD_COMMIT}/${CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_SHA256}/zugfolge-infra-release.exe`,
+  expectedBytes: CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_BYTES,
+  expectedSha256: CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_SHA256,
+});
+const CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_REBUILD_TOOL = Object.freeze({
+  id: "operational-v2-validator-rebuild",
+  kind: "binary",
+  version: "operational-validator-rebuild-proof",
+  file: `var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-${CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_BUILD_COMMIT}-official.exe`,
+  cacheFile: `tools/zugfolge-infra-release/infra-deutschland-2026.5/${CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_BUILD_COMMIT}/official/zugfolge-infra-release.exe`,
+});
+const CURRENT_ANNUAL_V3_OPERATIONAL_EXECUTION_INPUTS = Object.freeze({
+  wrapper: "operational-recovery-publisher",
+  implementation: "operational-recovery-publisher-implementation",
+  operationalDeriver: "operational-v2-deriver",
+  materializer: "operational-v2-materializer",
+  createNewOutput: "create-new-output-contract",
+  operationalBinding: "operational-v2-binding",
+  validatorRebuildBootstrap: "operational-validator-rebuild-bootstrap",
+  validatorRebuildVerifier: "operational-validator-rebuild-verifier",
+});
+const CURRENT_ANNUAL_V3_OPERATIONAL_REBUILD_PRODUCER_INPUTS = Object.freeze({
+  bootstrap: "operational-validator-rebuild-bootstrap",
+  entrypoint: "operational-validator-rebuild-cli",
+  implementation: "operational-validator-rebuild-verifier",
+});
 
 function invariant(condition, message) {
   if (!condition) throw new Error(message);
@@ -910,6 +964,51 @@ function inventoryEntry(inventory, cacheFile, label) {
   return entry;
 }
 
+export async function validateCurrentAnnualBuildCachePlanBinding(root, inputs, inventory, releaseId) {
+  if (releaseId !== CURRENT_ANNUAL_V3_RELEASE_ID) return undefined;
+  const planInput = inputs.find(({ id }) => id === "map-build-cache-inventory-plan");
+  invariant(planInput?.kind === "specification", "Aktuelles Build-Evidence besitzt keinen typisierten Buildcache-Inventarplan.");
+  let plan;
+  try {
+    plan = JSON.parse(await readFile(
+      await containedRealPath(root, planInput.file, "Buildcache-Inventarplan"),
+      "utf8",
+    ));
+  } catch (error) {
+    throw new Error("Buildcache-Inventarplan ist kein gueltiges JSON-Artefakt.", { cause: error });
+  }
+  const mappings = validateMapBuildCacheInventoryPlan(plan, releaseId);
+  invariant(
+    JSON.stringify(mappings.map(({ cacheFile }) => cacheFile)) === JSON.stringify(inventory.map(({ path }) => path)),
+    "Buildcache-Inventar bildet den versionierten Inventarplan nicht vollstaendig und exakt ab.",
+  );
+  return mappings;
+}
+
+export function validateCurrentAnnualValidatorRebuildCacheArtifacts({
+  mappings,
+  inventory,
+  rebuildSpec,
+  rebuildReceipt,
+  rebuildReceiptInput,
+}) {
+  const expected = [
+    ["Validator-Rebuild-Source-TAR", rebuildSpec.source.archive.file, rebuildSpec.source.archive],
+    ["Validator-Rebuild-Provenienz", rebuildReceipt.provenance.file, rebuildReceipt.provenance],
+    ["Validator-Rebuild-Receipt", rebuildReceiptInput.file, rebuildReceiptInput],
+    ["Validator-Rebuild-Binary", rebuildReceipt.binaries.rebuilt.file, rebuildReceipt.binaries.rebuilt],
+  ];
+  for (const [label, sourceFile, proof] of expected) {
+    const matches = mappings.filter((mapping) => mapping.sourceFile === sourceFile);
+    invariant(matches.length === 1, `${label} fehlt oder ist nicht exakt einmal im versionierten Buildcache-Inventarplan gebunden.`);
+    const cached = inventoryEntry(inventory, matches[0].cacheFile, label);
+    invariant(
+      cached.bytes === proof.bytes && cached.sha256 === proof.sha256,
+      `${label} driftet zwischen Rebuild-Beleg, Buildcache-Plan und Buildcache-Inventar.`,
+    );
+  }
+}
+
 function deliverySchemaForVersion(version) {
   return operationalEvidenceVersion(version) ? DELIVERY_SCHEMA_V2 : DELIVERY_SCHEMA_V1;
 }
@@ -1571,6 +1670,52 @@ async function bindOperationalOutputsToArtifactInventory(root, inputs, outputs, 
   }
 }
 
+export function validateCurrentAnnualOperationalPublicationBinding({
+  releaseId,
+  publicationReceipt,
+  outputs,
+  releaseConfig,
+}) {
+  invariant(releaseId === CURRENT_ANNUAL_V3_RELEASE_ID, "Operational-Publication-Querbindung gilt nur fuer den aktuellen Jahresrelease.");
+  invariant(publicationReceipt?.infraReleaseId === releaseId, "Operational-v2-Publication-Receipt bindet nicht den aktuellen Jahresrelease.");
+  invariant(Array.isArray(outputs), "Operational-Publication-Querbindung besitzt kein Ausgabeinventar.");
+  const operationalOutputs = outputs.filter(({ kind }) => kind === "operational-infrastructure-v2");
+  const movementOutputs = outputs.filter(({ kind }) => kind === "movement-route-templates-v2");
+  invariant(operationalOutputs.length === 1 && movementOutputs.length === 1,
+    "Operational-Publication-Querbindung braucht genau ein Operational-/Movement-Ausgabepaar.");
+  const [operational] = operationalOutputs;
+  const [movement] = movementOutputs;
+  const publishedOperational = publicationReceipt.published?.operationalInfrastructure;
+  const publishedMovement = publicationReceipt.published?.movementRouteTemplates;
+  invariant(
+    publishedOperational?.file === operational.file
+      && publishedOperational.bytes === operational.bytes
+      && publishedOperational.sha256 === operational.sha256
+      && publishedOperational.stateHash === operational.stateHash
+      && operational.infraReleaseId === releaseId,
+    "Operational-v2-Publication-Receipt bindet nicht Pfad, Bytes, SHA-256 und State-Hash der Build-Evidence-Ausgabe.",
+  );
+  invariant(
+    publishedMovement?.file === movement.file
+      && publishedMovement.bytes === movement.bytes
+      && publishedMovement.sha256 === movement.sha256
+      && publishedMovement.stateHash === movement.stateHash
+      && publishedMovement.operationalStateHash === movement.operationalStateHash
+      && publishedMovement.timetableTransferSetSha256 === movement.timetableTransferSetSha256
+      && movement.infraReleaseId === releaseId,
+    "Operational-v2-Publication-Receipt bindet nicht Pfad, Bytes, SHA-256, State- und Transfer-Hashes der Movement-Ausgabe.",
+  );
+  const operationalDeriver = releaseConfig?.pipeline?.operationalDeriver;
+  invariant(
+    operationalDeriver?.output === operational.file
+      && operationalDeriver.candidate === publicationReceipt.sources?.candidate?.file
+      && operationalDeriver.candidateMovementRouteTemplates === publicationReceipt.sources?.movementRouteTemplates?.file
+      && operationalDeriver.report === publicationReceipt.sources?.report?.file,
+    "Deutschland-Jahresrelease bindet nicht dieselben Operational-v2-Quell- und Zielpfade wie Publication-Receipt und Build-Evidence.",
+  );
+  return { operational, movement };
+}
+
 async function deliveryInventoryFromOutput(root, outputs, releaseId) {
   const delivery = outputs.find(({ kind }) => kind === "delivery-manifest");
   invariant(delivery !== undefined, "Delivery-Manifest-Ausgabe fehlt.");
@@ -1777,7 +1922,7 @@ function inspectReadModelRegression(path, regression) {
   }
 }
 
-function validateCurrentAnnualV3Bindings(spec, version) {
+function validateCurrentAnnualV3Bindings(spec, version, { resolvedCommits = false } = {}) {
   if (version !== 3 || spec.releaseId !== CURRENT_ANNUAL_V3_RELEASE_ID) return;
   for (const [id, kind, file] of CURRENT_ANNUAL_V3_INPUTS) {
     invariant(
@@ -1785,6 +1930,38 @@ function validateCurrentAnnualV3Bindings(spec, version) {
       `Build-Evidence-v3 für ${spec.releaseId} muss ${id} exakt als ${kind} ${file} binden.`,
     );
   }
+  invariant(
+    spec.tools.filter((tool) => (
+      tool?.id === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_TOOL.id
+        && (resolvedCommits
+          ? tool.kind === "binary"
+            && tool.version === spec.commits.operationalValidatorBuild
+            && tool.file === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_TOOL.file
+            && tool.cacheFile === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_TOOL.cacheFile
+            && tool.bytes === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_TOOL.expectedBytes
+            && tool.sha256 === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_TOOL.expectedSha256
+            && Object.keys(tool).length === 7
+          : Object.entries(CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_TOOL).every(([key, expected]) => tool[key] === expected)
+            && Object.keys(tool).length === Object.keys(CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_TOOL).length)
+    )).length === 1,
+    `Build-Evidence-v3 fuer ${spec.releaseId} muss das effektive Operational-v2-Validator-Binary exakt und commitgebunden deklarieren.`,
+  );
+  invariant(
+    spec.tools.filter((tool) => (
+      tool?.id === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_REBUILD_TOOL.id
+        && (resolvedCommits
+          ? tool.kind === "binary"
+            && tool.version === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_REBUILD_TOOL.version
+            && tool.file === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_REBUILD_TOOL.file
+            && tool.cacheFile === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_REBUILD_TOOL.cacheFile
+            && tool.bytes === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_BYTES
+            && SHA256.test(tool.sha256)
+            && Object.keys(tool).length === 7
+          : Object.entries(CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_REBUILD_TOOL).every(([key, expected]) => tool[key] === expected)
+            && Object.keys(tool).length === Object.keys(CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_REBUILD_TOOL).length)
+    )).length === 1,
+    `Build-Evidence-v3 fuer ${spec.releaseId} muss das immutable Operational-v2-Validator-Rebuild-Binary exakt deklarieren.`,
+  );
   const runtimeTools = spec.tools.filter(({ id, kind }) => id === "gdal-pmtiles" && kind === "runtime-bundle");
   invariant(runtimeTools.length === 1, `Build-Evidence-v3 für ${spec.releaseId} muss genau ein manifestgebundenes gdal-pmtiles-Runtime-Bundle führen.`);
   invariant(
@@ -1802,6 +1979,22 @@ function validateSpecBasics(spec, { requireExpectedInputProofs = false, resolved
   if (version === 1 || resolvedCommits) {
     validateCommit(spec.commits?.semanticExport, "commits.semanticExport");
     validateCommit(spec.commits?.mapBuild, "commits.mapBuild");
+    if (version === 3 && spec.releaseId === CURRENT_ANNUAL_V3_RELEASE_ID) {
+      validateCommit(spec.commits?.operationalValidatorBuild, "commits.operationalValidatorBuild");
+      invariant(
+        spec.commits.operationalValidatorBuild === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_BUILD_COMMIT,
+        "Operational-v2-Validator-Build-Commit stimmt nicht mit der belegten 2026.5-Derivation ueberein.",
+      );
+    }
+    if (version === 3 && spec.commits?.operationalValidatorBuild !== undefined) {
+      validateCommit(spec.commits.operationalValidatorBuild, "commits.operationalValidatorBuild");
+      invariant(
+        spec.tools.some((tool) => tool?.id === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_TOOL.id
+          && tool.kind === "binary"
+          && tool.version === spec.commits.operationalValidatorBuild),
+        "Operational-v2-Validator-Werkzeug ist nicht mit seinem separaten Build-Commit etikettiert.",
+      );
+    }
   } else {
     invariant(spec.commits === undefined, "Operational-v2-Vorbereitung darf keine vorab erfundenen Commitbindungen enthalten.");
   }
@@ -1839,7 +2032,7 @@ function validateSpecBasics(spec, { requireExpectedInputProofs = false, resolved
     }
   }
   invariant(Array.isArray(spec.tools) && spec.tools.length > 0, "Build-Evidence besitzt keine gepinnten Werkzeuge.");
-  validateCurrentAnnualV3Bindings(spec, version);
+  validateCurrentAnnualV3Bindings(spec, version, { resolvedCommits });
   invariant(Array.isArray(spec.outputs) && spec.outputs.length === outputKinds.length, `Build-Evidence muss exakt ${outputKinds.length} aktivierungsrelevante Ausgaben binden.`);
   invariant(spec.deployment?.activationMode === "atomic-config-swap", "Deployment muss einen atomaren Konfigurationswechsel verlangen.");
   invariant(spec.deployment?.retainPreviousForRollback === true, "Deployment muss den Vorgänger für Rollback behalten.");
@@ -1863,6 +2056,11 @@ export async function materializeMapReleaseBuildEvidence({
 }) {
   const version = specVersion(spec?.schema);
   const { outputKinds } = validateSpecBasics(spec, { requireExpectedInputProofs: version === 1 });
+  const requiresOperationalValidatorBuild = version === 3 && spec.tools.some((tool) => (
+    tool?.id === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_TOOL.id
+      && tool.kind === "binary"
+      && tool.version === OPERATIONAL_VALIDATOR_BUILD_COMMIT_VERSION
+  ));
   let commitBinding;
   if (version === 1) {
     invariant(commits === undefined, "Legacy-v1 bindet Commits ausschließlich in seiner Spezifikation.");
@@ -1870,7 +2068,12 @@ export async function materializeMapReleaseBuildEvidence({
   } else {
     validateCommit(commits?.semanticExport, "commits.semanticExport");
     validateCommit(commits?.mapBuild, "commits.mapBuild");
-    commitBinding = { semanticExport: commits.semanticExport, mapBuild: commits.mapBuild };
+    if (requiresOperationalValidatorBuild) validateCommit(commits?.operationalValidatorBuild, "commits.operationalValidatorBuild");
+    commitBinding = {
+      semanticExport: commits.semanticExport,
+      mapBuild: commits.mapBuild,
+      ...(requiresOperationalValidatorBuild ? { operationalValidatorBuild: commits.operationalValidatorBuild } : {}),
+    };
   }
   invariant(Buffer.isBuffer(specBytes) && specBytes.length > 0, "Rohbytes der Build-Evidence-Spezifikation fehlen.");
   let parsedSpec;
@@ -1913,10 +2116,160 @@ export async function materializeMapReleaseBuildEvidence({
   for (const kind of REQUIRED_INPUT_KINDS) invariant(inputs.some((entry) => entry.kind === kind), `Build-Evidence benötigt eine Eingabe vom Typ ${kind}.`);
   invariant(inputs.filter(({ kind }) => kind === "build-cache-inventory").length === 1, "Build-Evidence braucht genau ein Buildcache-Inventar.");
 
+  let verifiedOperationalPublication;
+  let verifiedOperationalValidatorRebuild;
+  let currentAnnualReleaseConfig;
+  let currentAnnualValidatorRebuildSpec;
+  if (version === 3 && spec.releaseId === CURRENT_ANNUAL_V3_RELEASE_ID) {
+    const nativeReceipt = inputs.find(({ id }) => id === "operational-native-receipt");
+    const publicationReceipt = inputs.find(({ id }) => id === "operational-publication-receipt");
+    invariant(nativeReceipt?.kind === "derived-input" && publicationReceipt?.kind === "derived-input", "Build-Evidence-v3 braucht beide typisierten Operational-v2-Receipts.");
+    verifiedOperationalPublication = await verifyGermanyOperationalInfrastructureV2PublicationReceipt({
+      workspaceRoot: root,
+      publicationReceiptPath: await containedRealPath(root, publicationReceipt.file, "Operational-v2-Publication-Receipt"),
+      expectedReleaseId: spec.releaseId,
+    });
+    invariant(verifiedOperationalPublication.proof.bytes === publicationReceipt.bytes && verifiedOperationalPublication.proof.sha256 === publicationReceipt.sha256,
+      "Operational-v2-Publication-Receipt driftet von der Build-Evidence-Eingabe.");
+    invariant(verifiedOperationalPublication.receipt.nativeReceipt.file === nativeReceipt.file
+      && verifiedOperationalPublication.receipt.nativeReceipt.bytes === nativeReceipt.bytes
+      && verifiedOperationalPublication.receipt.nativeReceipt.sha256 === nativeReceipt.sha256,
+    "Operational-v2-Publication-Receipt bindet nicht das Build-Evidence-Native-Receipt.");
+    invariant(verifiedOperationalPublication.receipt.publisher.entrypoint === "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
+      "Operational-v2-Publication-Receipt bindet nicht den konfigurierten RecoveryPublisher.");
+    const validatorRebuildSpecInput = inputs.find(({ id }) => id === "operational-validator-rebuild-spec");
+    const validatorRebuildEvidenceInput = inputs.find(({ id }) => id === "operational-validator-rebuild-evidence");
+    invariant(validatorRebuildSpecInput?.kind === "repo-contract" && validatorRebuildEvidenceInput?.kind === "derived-input",
+      "Build-Evidence-v3 braucht Rebuild-Spezifikation und typisiertes Validator-Rebuild-Receipt.");
+    let validatorRebuildSpec;
+    try {
+      validatorRebuildSpec = JSON.parse(await readFile(
+        await containedRealPath(root, validatorRebuildSpecInput.file, "Operational-Validator-Rebuild-Spezifikation"),
+        "utf8",
+      ));
+    } catch (error) {
+      throw new Error("Operational-Validator-Rebuild-Spezifikation ist kein gueltiges JSON.", { cause: error });
+    }
+    currentAnnualValidatorRebuildSpec = validatorRebuildSpec;
+    verifiedOperationalValidatorRebuild = await verifyOperationalValidatorRebuildEvidence({
+      spec: validatorRebuildSpec,
+      receiptPath: await containedRealPath(root, validatorRebuildEvidenceInput.file, "Operational-Validator-Rebuild-Receipt"),
+      workspaceRoot: root,
+    });
+    invariant(
+      verifiedOperationalValidatorRebuild.proof.bytes === validatorRebuildEvidenceInput.bytes
+        && verifiedOperationalValidatorRebuild.proof.sha256 === validatorRebuildEvidenceInput.sha256,
+      "Operational-Validator-Rebuild-Receipt driftet von der Build-Evidence-Eingabe.",
+    );
+    invariant(
+      verifiedOperationalValidatorRebuild.receipt.specification.file === validatorRebuildSpecInput.file
+        && verifiedOperationalValidatorRebuild.receipt.specification.bytes === validatorRebuildSpecInput.bytes
+        && verifiedOperationalValidatorRebuild.receipt.specification.sha256 === validatorRebuildSpecInput.sha256,
+      "Operational-Validator-Rebuild-Receipt bindet nicht den Build-Evidence-Rebuild-Vertrag.",
+    );
+    invariant(
+      verifiedOperationalValidatorRebuild.receipt.releaseId === spec.releaseId
+        && verifiedOperationalValidatorRebuild.receipt.source.git.commit === commitBinding.operationalValidatorBuild,
+      "Operational-Validator-Rebuild-Receipt bindet Release oder tatsaechlichen Validator-Build-Commit falsch.",
+    );
+    for (const [producerId, inputId] of Object.entries(CURRENT_ANNUAL_V3_OPERATIONAL_REBUILD_PRODUCER_INPUTS)) {
+      const input = inputs.find(({ id }) => id === inputId);
+      const producerProof = verifiedOperationalValidatorRebuild.receipt.producer[producerId];
+      invariant(
+        input?.kind === "repo-contract"
+          && input.file === producerProof.file
+          && input.bytes === producerProof.bytes
+          && input.sha256 === producerProof.sha256,
+        `Operational-Validator-Rebuild-Produzent ${producerId} driftet vom Build-Evidence-Repositoryvertrag ${inputId}.`,
+      );
+    }
+    const publicationRebuild = verifiedOperationalPublication.receipt.validatorRebuild;
+    invariant(
+      publicationRebuild.specification.file === validatorRebuildSpecInput.file
+        && publicationRebuild.specification.bytes === validatorRebuildSpecInput.bytes
+        && publicationRebuild.specification.sha256 === validatorRebuildSpecInput.sha256
+        && publicationRebuild.evidence.file === validatorRebuildEvidenceInput.file
+        && publicationRebuild.evidence.bytes === validatorRebuildEvidenceInput.bytes
+        && publicationRebuild.evidence.sha256 === validatorRebuildEvidenceInput.sha256
+        && publicationRebuild.sourceCommit === verifiedOperationalValidatorRebuild.receipt.source.git.commit
+        && publicationRebuild.normalizedPeSha256 === verifiedOperationalValidatorRebuild.receipt.pe.normalized.expectedSha256
+        && JSON.stringify(publicationRebuild.preserved) === JSON.stringify(verifiedOperationalValidatorRebuild.receipt.binaries.preserved)
+        && JSON.stringify(publicationRebuild.rebuilt) === JSON.stringify(verifiedOperationalValidatorRebuild.receipt.binaries.rebuilt),
+      "Operational-v2-Publication-Receipt bindet nicht dieselbe Validator-Rebuild-Evidence wie Build-Evidence-v3.",
+    );
+    const releaseConfigInput = inputs.find(({ id }) => id === "germany-release-spec");
+    const releaseConfig = JSON.parse(await readFile(
+      await containedRealPath(root, releaseConfigInput.file, "Deutschland-Jahresrelease-Konfiguration"),
+      "utf8",
+    ));
+    currentAnnualReleaseConfig = releaseConfig;
+    const recoveryPublisher = releaseConfig.pipeline?.operationalDeriver?.recoveryPublisher;
+    invariant(
+      recoveryPublisher?.validatorBuildCommit === commitBinding.operationalValidatorBuild
+        && recoveryPublisher.validatorBuildCommit === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_BUILD_COMMIT,
+      "Deutschland-Jahresrelease und Build-Evidence binden nicht denselben tatsaechlichen Operational-v2-Validator-Build-Commit.",
+    );
+    invariant(
+      recoveryPublisher.validatorExecutable === verifiedOperationalPublication.receipt.publisher.executionInventory.validatorExecutable.file,
+      "Deutschland-Jahresrelease bindet nicht den vom Capture belegten Operational-v2-Validator-Pfad.",
+    );
+    invariant(
+      recoveryPublisher.validatorBytes === verifiedOperationalPublication.receipt.publisher.executionInventory.validatorExecutable.bytes
+        && recoveryPublisher.validatorSha256 === verifiedOperationalPublication.receipt.publisher.executionInventory.validatorExecutable.sha256,
+      "Deutschland-Jahresrelease bindet nicht die vom Capture belegten Operational-v2-Validator-Bytes.",
+    );
+    invariant(
+      recoveryPublisher.validatorRebuildSpecification === validatorRebuildSpecInput.file
+        && recoveryPublisher.validatorRebuildEvidence === validatorRebuildEvidenceInput.file
+        && recoveryPublisher.validatorRebuildExecutable === verifiedOperationalValidatorRebuild.receipt.binaries.rebuilt.file
+        && recoveryPublisher.validatorRebuildExpectedBytes === verifiedOperationalValidatorRebuild.receipt.binaries.rebuilt.bytes
+        && recoveryPublisher.validatorNormalizedPeSha256 === verifiedOperationalValidatorRebuild.receipt.pe.normalized.expectedSha256,
+      "Deutschland-Jahresrelease bindet nicht den vollstaendig verifizierten Operational-Validator-Rebuild-Beleg.",
+    );
+    invariant(isRecord(recoveryPublisher.executionInventory), "Deutschland-Jahresrelease besitzt kein Operational-v2-Ausfuehrungsinventar.");
+    for (const [inventoryId, executionProof] of Object.entries(verifiedOperationalPublication.receipt.publisher.executionInventory)) {
+      if (inventoryId === "validatorExecutable") continue;
+      invariant(
+        recoveryPublisher.executionInventory[inventoryId] === executionProof.file,
+        `Deutschland-Jahresrelease bindet nicht Operational-v2-Ausfuehrungsinventar ${inventoryId}.`,
+      );
+    }
+    for (const [inventoryId, inputId] of Object.entries(CURRENT_ANNUAL_V3_OPERATIONAL_EXECUTION_INPUTS)) {
+      const input = inputs.find(({ id }) => id === inputId);
+      const executionProof = verifiedOperationalPublication.receipt.publisher.executionInventory[inventoryId];
+      invariant(
+        input?.kind === "repo-contract"
+          && input.file === executionProof.file
+          && input.bytes === executionProof.bytes
+          && input.sha256 === executionProof.sha256,
+        `Operational-v2-Ausfuehrungsinventar ${inventoryId} driftet vom Build-Evidence-Repositoryvertrag ${inputId}.`,
+      );
+    }
+    const captureInput = inputs.find(({ id }) => id === "operational-native-receipt-capture");
+    const captureEntrypoint = verifiedOperationalPublication.captureReceipt.producer.captureEntrypoint;
+    invariant(
+      captureInput?.kind === "repo-contract"
+        && captureInput.file === captureEntrypoint.file
+        && captureInput.bytes === captureEntrypoint.bytes
+        && captureInput.sha256 === captureEntrypoint.sha256,
+      "Native-Receipt-Capture-Entrypoint driftet vom Build-Evidence-Repositoryvertrag.",
+    );
+  }
+
   const inventoryInput = inputs.find(({ id }) => id === spec.buildCache.inventoryInputId);
   invariant(inventoryInput?.kind === "build-cache-inventory", "buildCache.inventoryInputId verweist nicht auf das Buildcache-Inventar.");
   const inventoryPath = await containedRealPath(root, inventoryInput.file, "Buildcache-Inventar");
   const inventory = validateCacheInventory(JSON.parse(await readFile(inventoryPath, "utf8")), spec.releaseId);
+  const currentAnnualCacheMappings = await validateCurrentAnnualBuildCachePlanBinding(root, inputs, inventory, spec.releaseId);
+  if (currentAnnualCacheMappings !== undefined) {
+    validateCurrentAnnualValidatorRebuildCacheArtifacts({
+      mappings: currentAnnualCacheMappings,
+      inventory,
+      rebuildSpec: currentAnnualValidatorRebuildSpec,
+      rebuildReceipt: verifiedOperationalValidatorRebuild.receipt,
+      rebuildReceiptInput: inputs.find(({ id }) => id === "operational-validator-rebuild-evidence"),
+    });
+  }
   for (const input of inputs.filter(({ kind }) => ["source-archive", "capture-manifest", "derived-input"].includes(kind))) {
     invariant(input.cacheFile !== undefined, `Eingabe ${input.id} besitzt keinen wiederherstellbaren cacheFile-Pfad.`);
     const cached = inventoryEntry(inventory, input.cacheFile, `Eingabe ${input.id}`);
@@ -1928,17 +2281,22 @@ export async function materializeMapReleaseBuildEvidence({
     const id = stableId(descriptor?.id, "Werkzeug-ID");
     invariant(!toolIds.has(id), `Werkzeug ${id} ist doppelt.`);
     toolIds.add(id);
-    const version = pinnedVersion(descriptor.version, `Werkzeug ${id}`);
+    const toolVersion = pinnedVersion(descriptor.version, `Werkzeug ${id}`);
     if (descriptor.kind === "oci-image") {
       validateOciTool({ ...descriptor, id });
-      tools.push({ id, kind: "oci-image", version, reference: descriptor.reference, digest: descriptor.digest });
+      tools.push({ id, kind: "oci-image", version: toolVersion, reference: descriptor.reference, digest: descriptor.digest });
     } else if (descriptor.kind === "binary") {
       const file = portablePath(descriptor.file, `Werkzeug ${id}.file`);
       const cacheFile = portablePath(descriptor.cacheFile, `Werkzeug ${id}.cacheFile`);
       const proof = await fileProof(root, { ...descriptor, file }, `Werkzeug ${id}`);
       const cached = inventoryEntry(inventory, cacheFile, `Werkzeug ${id}`);
       invariant(cached.bytes === proof.bytes && cached.sha256 === proof.sha256, `Buildcache-Beleg für Werkzeug ${id} weicht ab.`);
-      tools.push({ id, kind: "binary", version, file, cacheFile, ...proof });
+      const effectiveVersion = version === 3
+          && id === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_TOOL.id
+          && toolVersion === OPERATIONAL_VALIDATOR_BUILD_COMMIT_VERSION
+        ? commitBinding.operationalValidatorBuild
+        : toolVersion;
+      tools.push({ id, kind: "binary", version: effectiveVersion, file, cacheFile, ...proof });
     } else if (descriptor.kind === "runtime-bundle") {
       const manifestFile = portablePath(descriptor.manifestFile, `Werkzeug ${id}.manifestFile`);
       const manifestCacheFile = portablePath(descriptor.manifestCacheFile, `Werkzeug ${id}.manifestCacheFile`);
@@ -1947,7 +2305,7 @@ export async function materializeMapReleaseBuildEvidence({
         await containedRealPath(root, manifestFile, `Werkzeug ${id}.manifestFile`),
         root,
       );
-      invariant(loaded.manifest.version === version, `Werkzeug ${id} und Runtime-Manifest besitzen verschiedene Versionen.`);
+      invariant(loaded.manifest.version === toolVersion, `Werkzeug ${id} und Runtime-Manifest besitzen verschiedene Versionen.`);
       const manifestCached = inventoryEntry(inventory, manifestCacheFile, `Werkzeug ${id}.manifest`);
       invariant(manifestCached.bytes === loaded.bytes.length && manifestCached.sha256 === loaded.sha256, `Buildcache-Beleg für Runtime-Manifest ${id} weicht ab.`);
       const bundle = gdalRuntimeBundleBinding(loaded.manifest);
@@ -1955,7 +2313,7 @@ export async function materializeMapReleaseBuildEvidence({
       tools.push({
         id,
         kind: "runtime-bundle",
-        version,
+        version: toolVersion,
         manifestFile,
         manifestCacheFile,
         manifestBytes: loaded.bytes.length,
@@ -1965,6 +2323,28 @@ export async function materializeMapReleaseBuildEvidence({
     } else {
       throw new Error(`Werkzeug ${id} besitzt eine unbekannte Art.`);
     }
+  }
+  if (verifiedOperationalPublication !== undefined) {
+    const validator = tools.find(({ id }) => id === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_TOOL.id);
+    const executionProof = verifiedOperationalPublication.receipt.publisher.executionInventory.validatorExecutable;
+    invariant(
+      validator?.kind === "binary"
+        && validator.version === commitBinding.operationalValidatorBuild
+        && validator.file === executionProof.file
+        && validator.bytes === executionProof.bytes
+        && validator.sha256 === executionProof.sha256,
+      "Operational-v2-Publication-Receipt bindet nicht das commitgebundene effektive Validator-Binary der Build-Evidence.",
+    );
+    const rebuiltValidator = tools.find(({ id }) => id === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_REBUILD_TOOL.id);
+    const rebuiltProof = verifiedOperationalValidatorRebuild?.receipt?.binaries?.rebuilt;
+    invariant(
+      rebuiltValidator?.kind === "binary"
+        && rebuiltValidator.version === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_REBUILD_TOOL.version
+        && rebuiltValidator.file === rebuiltProof?.file
+        && rebuiltValidator.bytes === rebuiltProof.bytes
+        && rebuiltValidator.sha256 === rebuiltProof.sha256,
+      "Operational-Validator-Rebuild-Receipt bindet nicht das immutable Rebuild-Binary der Build-Evidence.",
+    );
   }
 
   const outputs = [];
@@ -1988,6 +2368,14 @@ export async function materializeMapReleaseBuildEvidence({
   }
   invariant(outputKinds.every((kind) => outputKindsSeen.has(kind)), "Build-Evidence besitzt kein vollständiges Ergebnisinventar.");
   invariant(new Set(outputs.map(({ installFile }) => installFile)).size === outputs.length, "Ausgaben besitzen doppelte Installationspfade.");
+  if (verifiedOperationalPublication !== undefined) {
+    validateCurrentAnnualOperationalPublicationBinding({
+      releaseId: spec.releaseId,
+      publicationReceipt: verifiedOperationalPublication.receipt,
+      outputs,
+      releaseConfig: currentAnnualReleaseConfig,
+    });
+  }
   if (firstClassOperationalSidecarsVersion(version)) {
     await validateFirstClassOperationalSidecarFiles(root, inputs, outputs, spec.releaseId);
   }
@@ -2243,6 +2631,162 @@ export async function verifyMapReleaseBuildEvidence(
       JSON.stringify(sortedValue(gdalRuntimeBundleBinding(loaded.manifest))) === JSON.stringify(sortedValue(tool.bundle)),
       `Runtime-Manifest ${tool.id} weicht von der Evidence-Runtime-Bindung ab.`,
     );
+  }
+  const inventory = validateCacheInventory({
+    schema: CACHE_INVENTORY_SCHEMA,
+    releaseId: evidence.releaseId,
+    files: evidence.buildCache.inventory,
+  }, evidence.releaseId);
+  const currentAnnualCacheMappings = await validateCurrentAnnualBuildCachePlanBinding(
+    root,
+    evidence.inputs,
+    inventory,
+    evidence.releaseId,
+  );
+  if (version === 3 && evidence.releaseId === CURRENT_ANNUAL_V3_RELEASE_ID) {
+    const nativeReceiptInput = evidence.inputs.find(({ id }) => id === "operational-native-receipt");
+    const rebuildSpecInput = evidence.inputs.find(({ id }) => id === "operational-validator-rebuild-spec");
+    const rebuildReceiptInput = evidence.inputs.find(({ id }) => id === "operational-validator-rebuild-evidence");
+    const publicationReceiptInput = evidence.inputs.find(({ id }) => id === "operational-publication-receipt");
+    invariant(nativeReceiptInput !== undefined && rebuildSpecInput !== undefined && rebuildReceiptInput !== undefined && publicationReceiptInput !== undefined,
+      "Build-Evidence-v3 fehlen typisierte Operational-/Validator-Rebuild-Receipts.");
+    const rebuildSpec = JSON.parse(await readFile(
+      await containedRealPath(root, rebuildSpecInput.file, "Operational-Validator-Rebuild-Spezifikation"),
+      "utf8",
+    ));
+    const verifiedRebuild = await verifyOperationalValidatorRebuildEvidence({
+      spec: rebuildSpec,
+      receiptPath: await containedRealPath(root, rebuildReceiptInput.file, "Operational-Validator-Rebuild-Receipt"),
+      workspaceRoot: root,
+    });
+    validateCurrentAnnualValidatorRebuildCacheArtifacts({
+      mappings: currentAnnualCacheMappings,
+      inventory,
+      rebuildSpec,
+      rebuildReceipt: verifiedRebuild.receipt,
+      rebuildReceiptInput,
+    });
+    invariant(verifiedRebuild.proof.bytes === rebuildReceiptInput.bytes && verifiedRebuild.proof.sha256 === rebuildReceiptInput.sha256,
+      "Operational-Validator-Rebuild-Receipt weicht vom Evidence-Manifest ab.");
+    invariant(
+      verifiedRebuild.receipt.specification.file === rebuildSpecInput.file
+        && verifiedRebuild.receipt.specification.bytes === rebuildSpecInput.bytes
+        && verifiedRebuild.receipt.specification.sha256 === rebuildSpecInput.sha256,
+      "Operational-Validator-Rebuild-Receipt bindet nicht den Evidence-Rebuild-Vertrag.",
+    );
+    invariant(
+      verifiedRebuild.receipt.releaseId === evidence.releaseId
+        && verifiedRebuild.receipt.source.git.commit === evidence.commits.operationalValidatorBuild,
+      "Operational-Validator-Rebuild-Receipt wurde als falscher Release- oder Build-Commit umetikettiert.",
+    );
+    for (const [producerId, inputId] of Object.entries(CURRENT_ANNUAL_V3_OPERATIONAL_REBUILD_PRODUCER_INPUTS)) {
+      const input = evidence.inputs.find(({ id }) => id === inputId);
+      const producerProof = verifiedRebuild.receipt.producer[producerId];
+      invariant(input?.file === producerProof.file
+        && input.bytes === producerProof.bytes
+        && input.sha256 === producerProof.sha256,
+      `Operational-Validator-Rebuild-Produzent ${producerId} driftet vom Evidence-Manifest.`);
+    }
+    const verifiedPublication = await verifyGermanyOperationalInfrastructureV2PublicationReceipt({
+      workspaceRoot: root,
+      publicationReceiptPath: await containedRealPath(root, publicationReceiptInput.file, "Operational-v2-Publication-Receipt"),
+      expectedReleaseId: evidence.releaseId,
+    });
+    invariant(verifiedPublication.proof.bytes === publicationReceiptInput.bytes && verifiedPublication.proof.sha256 === publicationReceiptInput.sha256,
+      "Operational-v2-Publication-Receipt weicht vom Evidence-Manifest ab.");
+    invariant(
+      verifiedPublication.receipt.nativeReceipt.file === nativeReceiptInput.file
+        && verifiedPublication.receipt.nativeReceipt.bytes === nativeReceiptInput.bytes
+        && verifiedPublication.receipt.nativeReceipt.sha256 === nativeReceiptInput.sha256,
+      "Operational-v2-Publication-Receipt bindet nicht das Evidence-Native-Receipt.",
+    );
+    invariant(
+      verifiedPublication.receipt.publisher.entrypoint === "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
+      "Operational-v2-Publication-Receipt bindet nicht den festgelegten RecoveryPublisher.",
+    );
+    const publicationRebuild = verifiedPublication.receipt.validatorRebuild;
+    invariant(publicationRebuild.evidence.file === rebuildReceiptInput.file
+      && publicationRebuild.evidence.bytes === rebuildReceiptInput.bytes
+      && publicationRebuild.evidence.sha256 === rebuildReceiptInput.sha256
+      && publicationRebuild.specification.file === rebuildSpecInput.file
+      && publicationRebuild.specification.bytes === rebuildSpecInput.bytes
+      && publicationRebuild.specification.sha256 === rebuildSpecInput.sha256
+      && publicationRebuild.sourceCommit === verifiedRebuild.receipt.source.git.commit
+      && publicationRebuild.normalizedPeSha256 === verifiedRebuild.receipt.pe.normalized.expectedSha256
+      && JSON.stringify(publicationRebuild.preserved) === JSON.stringify(verifiedRebuild.receipt.binaries.preserved)
+      && JSON.stringify(publicationRebuild.rebuilt) === JSON.stringify(verifiedRebuild.receipt.binaries.rebuilt),
+    "Operational-v2-Publication-Receipt bindet nicht die verifizierte Rebuild-Evidence des Evidence-Manifests.");
+    const releaseConfigInput = evidence.inputs.find(({ id }) => id === "germany-release-spec");
+    invariant(releaseConfigInput?.kind === "specification", "Build-Evidence-v3 fehlt die typisierte Deutschland-Jahresrelease-Konfiguration.");
+    const releaseConfig = JSON.parse(await readFile(
+      await containedRealPath(root, releaseConfigInput.file, "Deutschland-Jahresrelease-Konfiguration"),
+      "utf8",
+    ));
+    validateCurrentAnnualOperationalPublicationBinding({
+      releaseId: evidence.releaseId,
+      publicationReceipt: verifiedPublication.receipt,
+      outputs: evidence.outputs,
+      releaseConfig,
+    });
+    const recoveryPublisher = releaseConfig.pipeline?.operationalDeriver?.recoveryPublisher;
+    invariant(
+      recoveryPublisher?.validatorBuildCommit === evidence.commits.operationalValidatorBuild
+        && recoveryPublisher.validatorBuildCommit === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_BUILD_COMMIT,
+      "Deutschland-Jahresrelease und Evidence binden nicht denselben Operational-v2-Validator-Build-Commit.",
+    );
+    const validatorExecution = verifiedPublication.receipt.publisher.executionInventory.validatorExecutable;
+    invariant(
+      recoveryPublisher.validatorExecutable === validatorExecution.file
+        && recoveryPublisher.validatorBytes === validatorExecution.bytes
+        && recoveryPublisher.validatorSha256 === validatorExecution.sha256,
+      "Deutschland-Jahresrelease bindet nicht den vom Capture belegten Operational-v2-Validator.",
+    );
+    invariant(
+      recoveryPublisher.validatorRebuildSpecification === rebuildSpecInput.file
+        && recoveryPublisher.validatorRebuildEvidence === rebuildReceiptInput.file
+        && recoveryPublisher.validatorRebuildExecutable === verifiedRebuild.receipt.binaries.rebuilt.file
+        && recoveryPublisher.validatorRebuildExpectedBytes === verifiedRebuild.receipt.binaries.rebuilt.bytes
+        && recoveryPublisher.validatorNormalizedPeSha256 === verifiedRebuild.receipt.pe.normalized.expectedSha256,
+      "Deutschland-Jahresrelease bindet nicht den vollstaendig verifizierten Operational-Validator-Rebuild-Beleg.",
+    );
+    invariant(isRecord(recoveryPublisher.executionInventory), "Deutschland-Jahresrelease besitzt kein Operational-v2-Ausfuehrungsinventar.");
+    for (const [inventoryId, executionProof] of Object.entries(verifiedPublication.receipt.publisher.executionInventory)) {
+      if (inventoryId === "validatorExecutable") continue;
+      invariant(
+        recoveryPublisher.executionInventory[inventoryId] === executionProof.file,
+        `Deutschland-Jahresrelease bindet nicht Operational-v2-Ausfuehrungsinventar ${inventoryId}.`,
+      );
+    }
+    for (const [inventoryId, inputId] of Object.entries(CURRENT_ANNUAL_V3_OPERATIONAL_EXECUTION_INPUTS)) {
+      const input = evidence.inputs.find(({ id }) => id === inputId);
+      const executionProof = verifiedPublication.receipt.publisher.executionInventory[inventoryId];
+      invariant(
+        input?.kind === "repo-contract"
+          && input.file === executionProof.file
+          && input.bytes === executionProof.bytes
+          && input.sha256 === executionProof.sha256,
+        `Operational-v2-Ausfuehrungsinventar ${inventoryId} driftet vom Evidence-Repositoryvertrag ${inputId}.`,
+      );
+    }
+    const captureInput = evidence.inputs.find(({ id }) => id === "operational-native-receipt-capture");
+    const captureEntrypoint = verifiedPublication.captureReceipt.producer.captureEntrypoint;
+    invariant(
+      captureInput?.kind === "repo-contract"
+        && captureInput.file === captureEntrypoint.file
+        && captureInput.bytes === captureEntrypoint.bytes
+        && captureInput.sha256 === captureEntrypoint.sha256,
+      "Native-Receipt-Capture-Entrypoint driftet vom Evidence-Repositoryvertrag.",
+    );
+    const preservedTool = evidence.tools.find(({ id }) => id === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_TOOL.id);
+    const rebuiltTool = evidence.tools.find(({ id }) => id === CURRENT_ANNUAL_V3_OPERATIONAL_VALIDATOR_REBUILD_TOOL.id);
+    invariant(preservedTool?.file === verifiedRebuild.receipt.binaries.preserved.file
+      && preservedTool.bytes === verifiedRebuild.receipt.binaries.preserved.bytes
+      && preservedTool.sha256 === verifiedRebuild.receipt.binaries.preserved.sha256,
+    "Evidence-Manifest bindet nicht das preserved Validator-Binary des Rebuild-Receipts.");
+    invariant(rebuiltTool?.file === verifiedRebuild.receipt.binaries.rebuilt.file
+      && rebuiltTool.bytes === verifiedRebuild.receipt.binaries.rebuilt.bytes
+      && rebuiltTool.sha256 === verifiedRebuild.receipt.binaries.rebuilt.sha256,
+    "Evidence-Manifest bindet nicht das rebuilt Validator-Binary des Rebuild-Receipts.");
   }
   for (const output of evidence.outputs) {
     const proof = await outputProof(

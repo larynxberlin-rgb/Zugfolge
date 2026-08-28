@@ -11,7 +11,10 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { LIVEMAP_READ_MODEL_APPLICATION_ID, LIVEMAP_READ_MODEL_USER_VERSION, PUBLIC_READ_MODEL_TABLES } from "./livemap-read-model.mjs";
-import { CREATE_NEW_DIRECTORY_COMPLETION_FILE } from "./create-new-output.mjs";
+import {
+  CREATE_NEW_DIRECTORY_COMPLETION_FILE,
+  writeCreateNewDirectoryCompletionMarker,
+} from "./create-new-output.mjs";
 import { buildMapAssetTreeProof } from "./map-asset-notices.mjs";
 import {
   TRAIN_MAP_PROJECTION_PUBLIC_SCHEMA_OBJECTS,
@@ -1018,6 +1021,12 @@ test("Verify verwirft einen transportseitig nachgehashten Delivery-v2-Inventarta
       writeFile(manifestPath, manifestText, "utf8"),
       writeFile(join(packed.packageRoot, "manifest.sha256"), `${manifestSha256}  manifest.json\n`, "ascii"),
     ]);
+    await rm(join(packed.packageRoot, CREATE_NEW_DIRECTORY_COMPLETION_FILE));
+    await writeCreateNewDirectoryCompletionMarker(packed.packageRoot, {
+      schema: "zugfolge-create-new-directory-completion/v1",
+      kind: "map-package",
+      bindingSha256: manifestSha256,
+    });
     await assert.rejects(
       verifyMapPackage(packed.packageRoot, operationalValidation),
       /Delivery-v2-Artefakte weichen vom tatsaechlich gepackten Operational-v2-Inventar ab/u,

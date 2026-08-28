@@ -275,11 +275,34 @@ struct PipelineConfig {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct OperationalDeriverConfig {
-    entrypoint: String,
+    entrypoint: Option<String>,
+    primary_runner: Option<String>,
+    primary_runner_mode: Option<String>,
     specification: String,
     candidate: String,
+    candidate_movement_route_templates: Option<String>,
     report: String,
     output: String,
+    recovery_publisher: Option<OperationalRecoveryPublisherConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct OperationalRecoveryPublisherConfig {
+    capture_entrypoint: String,
+    entrypoint: String,
+    validator_executable: String,
+    validator_build_commit: String,
+    validator_bytes: u64,
+    validator_sha256: String,
+    validator_rebuild_specification: String,
+    validator_rebuild_evidence: String,
+    validator_rebuild_executable: String,
+    validator_rebuild_expected_bytes: u64,
+    validator_normalized_pe_sha256: String,
+    execution_inventory: BTreeMap<String, String>,
+    native_receipt: String,
+    publication_receipt: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2093,11 +2116,25 @@ fn validate_config(config: &GermanyConfig) -> Result<()> {
     let Some(operational_deriver) = &config.pipeline.operational_deriver else {
         return Ok(());
     };
-    require(
-        operational_deriver.entrypoint
-            == "tools/region-import/germany/run-operational-infrastructure-v2.mjs",
-        "OperationalDeriver besitzt nicht den festgelegten EntryPoint.",
-    )?;
+    let requires_recovery_publisher = config.release.timetable_year > 2026
+        || (config.release.timetable_year == 2026 && release_revision >= 5);
+    if requires_recovery_publisher {
+        require(
+            operational_deriver.entrypoint.is_none()
+                && operational_deriver.primary_runner.as_deref()
+                    == Some("tools/region-import/germany/run-operational-infrastructure-v2.mjs")
+                && operational_deriver.primary_runner_mode.as_deref() == Some("candidate-triplet"),
+            "OperationalDeriver besitzt nicht den festgelegten Candidate-Triplet-PrimaryRunner.",
+        )?;
+    } else {
+        require(
+            operational_deriver.primary_runner.is_none()
+                && operational_deriver.primary_runner_mode.is_none()
+                && operational_deriver.entrypoint.as_deref()
+                    == Some("tools/region-import/germany/run-operational-infrastructure-v2.mjs"),
+            "Historischer OperationalDeriver besitzt nicht den festgelegten EntryPoint.",
+        )?;
+    }
     require(
         operational_deriver.specification
             == format!(
@@ -2111,6 +2148,23 @@ fn validate_config(config: &GermanyConfig) -> Result<()> {
             == format!("{derived_root}/operational-infrastructure-v2.candidate.json"),
         "OperationalDeriver-Candidate ist nicht exakt an den Deutschland-Release gebunden.",
     )?;
+    if requires_recovery_publisher {
+        require(
+            operational_deriver.candidate_movement_route_templates.as_deref()
+                == Some(
+                    format!("{derived_root}/operational-infrastructure-v2.candidate.movement-route-templates-v2.json")
+                        .as_str(),
+                ),
+            "OperationalDeriver-Candidate-Sidecar ist nicht exakt an den Deutschland-Release gebunden.",
+        )?;
+    } else {
+        require(
+            operational_deriver
+                .candidate_movement_route_templates
+                .is_none(),
+            "Historischer OperationalDeriver darf keinen Recovery-Candidate-Sidecar behaupten.",
+        )?;
+    }
     require(
         operational_deriver.report
             == format!("{derived_root}/operational-infrastructure-v2.derivation-report.json"),
@@ -2119,7 +2173,121 @@ fn validate_config(config: &GermanyConfig) -> Result<()> {
     require(
         operational_deriver.output == format!("{derived_root}/operational-infrastructure-v2.json"),
         "OperationalDeriver-Ausgabe ist nicht exakt an den Deutschland-Release gebunden.",
-    )
+    )?;
+    if requires_recovery_publisher {
+        let recovery = operational_deriver
+            .recovery_publisher
+            .as_ref()
+            .ok_or_else(|| {
+                ReleaseManifestError::new(
+                    "OperationalDeriver braucht den typisierten RecoveryPublisher-Subvertrag.",
+                )
+            })?;
+        require(
+            recovery.capture_entrypoint
+                == "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs"
+                && recovery.entrypoint
+                    == "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
+            "OperationalDeriver-RecoveryPublisher besitzt nicht die festgelegten EntryPoints.",
+        )?;
+        require(
+            recovery.validator_build_commit.len() == 40
+                && recovery
+                    .validator_build_commit
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                && recovery.validator_bytes > 0
+                && recovery.validator_sha256.len() == 64
+                && recovery
+                    .validator_sha256
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                && recovery.validator_executable
+                    == format!(
+                        "{derived_root}/toolchain/zugfolge-infra-release-{}-{}.exe",
+                        recovery.validator_build_commit, recovery.validator_sha256
+                    ),
+            "OperationalDeriver-RecoveryPublisher besitzt keinen vollstaendigen Validator-Build-Commit oder den falschen Validator-Pfad.",
+        )?;
+        require(
+            recovery.validator_rebuild_specification
+                == format!(
+                    "tools/region-import/germany/operational-validator-rebuild.annual-{release_version}.json"
+                )
+                && recovery.validator_rebuild_evidence
+                    == format!(
+                        "{derived_root}/toolchain/zugfolge-infra-release-rebuild-evidence.json"
+                    )
+                && recovery.validator_rebuild_expected_bytes > 0
+                && recovery.validator_normalized_pe_sha256.len() == 64
+                && recovery
+                    .validator_normalized_pe_sha256
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                && recovery.validator_rebuild_executable
+                    == format!(
+                        "{derived_root}/toolchain/zugfolge-infra-release-rebuild-{}-official.exe",
+                        recovery.validator_build_commit
+                    ),
+            "OperationalDeriver-RecoveryPublisher besitzt keine vollstaendige immutable Validator-Rebuild-Evidence-Bindung.",
+        )?;
+        let expected_execution_inventory = BTreeMap::from([
+            (
+                "wrapper".to_string(),
+                "tools/region-import/germany/publish-operational-infrastructure-v2.mjs".to_string(),
+            ),
+            (
+                "implementation".to_string(),
+                "tools/region-import/germany/operational-infrastructure-v2-publication.mjs"
+                    .to_string(),
+            ),
+            (
+                "operationalDeriver".to_string(),
+                "tools/region-import/germany/operational-infrastructure-v2.mjs".to_string(),
+            ),
+            (
+                "materializer".to_string(),
+                "tools/region-import/materialize-operational-infrastructure-v2.mjs".to_string(),
+            ),
+            (
+                "createNewOutput".to_string(),
+                "tools/tiles/create-new-output.mjs".to_string(),
+            ),
+            (
+                "operationalBinding".to_string(),
+                "tools/region-import/operational-infrastructure-binding.mjs".to_string(),
+            ),
+            (
+                "validatorRebuildBootstrap".to_string(),
+                "tools/region-import/germany/operational-validator-rebuild-bootstrap.mjs"
+                    .to_string(),
+            ),
+            (
+                "validatorRebuildVerifier".to_string(),
+                "tools/region-import/germany/operational-validator-rebuild-evidence.mjs"
+                    .to_string(),
+            ),
+        ]);
+        require(
+            recovery.execution_inventory == expected_execution_inventory,
+            "OperationalDeriver-RecoveryPublisher bindet nicht die vollstaendige lokale Ausfuehrungsclosure.",
+        )?;
+        require(
+            recovery.native_receipt
+                == format!("{derived_root}/operational-infrastructure-v2.native-receipt.json")
+                && recovery.publication_receipt
+                    == format!(
+                        "{derived_root}/operational-infrastructure-v2.publication-receipt.json"
+                    ),
+            "OperationalDeriver-Recovery-Receipts sind nicht exakt an den Deutschland-Release gebunden.",
+        )?;
+    } else {
+        require(
+            operational_deriver.recovery_publisher.is_none(),
+            "Historischer OperationalDeriver darf keinen RecoveryPublisher behaupten.",
+        )?;
+    }
+    Ok(())
 }
 
 fn validate_catalog(catalog: &SourceCatalog) -> Result<()> {
@@ -3747,10 +3915,29 @@ pub fn build_annual_infra_plan(
         json!({ "id": "quality-report", "mutatesRelease": false, "proof": "dimension-cause-length-report" }),
     ]);
     if let Some(operational_deriver) = &config.pipeline.operational_deriver {
-        stages.extend([
-            json!({ "id": "operational-v2-derivation", "mutatesRelease": true, "entrypoint": operational_deriver.entrypoint, "proof": "a-b-only-exact-geometry-routes-and-interlocking-report" }),
-            json!({ "id": "operational-v2-native-validation", "mutatesRelease": false, "entrypoint": "tools/region-import/materialize-operational-infrastructure-v2.mjs", "proof": "matching-javascript-and-rust-state-hashes" }),
-        ]);
+        let primary_runner = operational_deriver
+            .primary_runner
+            .as_deref()
+            .or(operational_deriver.entrypoint.as_deref())
+            .expect("validierter OperationalDeriver-PrimaryRunner");
+        let primary_runner_mode = operational_deriver
+            .primary_runner_mode
+            .as_deref()
+            .unwrap_or("primary-runner");
+        stages.push(
+            json!({ "id": "operational-v2-derivation", "mutatesRelease": true, "entrypoint": primary_runner, "executionMode": primary_runner_mode, "proof": "a-b-only-exact-geometry-routes-and-interlocking-report" }),
+        );
+        if let Some(recovery) = &operational_deriver.recovery_publisher {
+            stages.extend([
+                json!({ "id": "operational-v2-validator-rebuild-evidence", "mutatesRelease": true, "entrypoint": "tools/region-import/germany/operational-validator-rebuild-evidence-cli.mjs", "bootstrap": "tools/region-import/germany/operational-validator-rebuild-bootstrap.mjs", "specification": recovery.validator_rebuild_specification, "specificationSchema": "zugfolge-operational-validator-rebuild-spec/v2", "output": recovery.validator_rebuild_evidence, "receiptSchema": "zugfolge-operational-validator-rebuild-evidence/v2", "preservedValidatorExecutable": recovery.validator_executable, "rebuiltValidatorExecutable": recovery.validator_rebuild_executable, "validatorBuildCommit": recovery.validator_build_commit, "preservedValidatorBytes": recovery.validator_bytes, "preservedValidatorSha256": recovery.validator_sha256, "rebuiltValidatorExpectedBytes": recovery.validator_rebuild_expected_bytes, "rebuiltValidatorRawProof": "from-portable-receipt", "normalizedPeSha256": recovery.validator_normalized_pe_sha256, "executionMode": "git-archive-clean-locked-official-build", "proof": "typed-portable-build-environment-pe-normalization-and-section-equivalence" }),
+                json!({ "id": "operational-v2-native-receipt-capture", "mutatesRelease": true, "entrypoint": recovery.capture_entrypoint, "output": recovery.native_receipt, "validatorExecutable": recovery.validator_executable, "validatorBuildCommit": recovery.validator_build_commit, "validatorBytes": recovery.validator_bytes, "validatorSha256": recovery.validator_sha256, "validatorRebuildSpecification": recovery.validator_rebuild_specification, "validatorRebuildEvidence": recovery.validator_rebuild_evidence, "executionMode": "direct-run-recovery-only", "proof": "canonical-native-receipt-triplet-binary-rebuild-and-script-binding" }),
+                json!({ "id": "operational-v2-recovery-publication", "mutatesRelease": true, "entrypoint": recovery.entrypoint, "output": recovery.publication_receipt, "validatorRebuildSpecification": recovery.validator_rebuild_specification, "validatorRebuildEvidence": recovery.validator_rebuild_evidence, "executionInventory": recovery.execution_inventory, "executionMode": "direct-run-recovery-only", "proof": "create-new-final-pair-and-publication-receipt" }),
+            ]);
+        } else {
+            stages.push(
+                json!({ "id": "operational-v2-native-validation", "mutatesRelease": false, "entrypoint": "tools/region-import/materialize-operational-infrastructure-v2.mjs", "proof": "matching-javascript-and-rust-state-hashes" }),
+            );
+        }
     }
     stages.push(
         json!({ "id": "tiles", "mutatesRelease": true, "proof": "self-hosted-pmtiles-hashes" }),

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { access, lstat, mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises";
+import { access, lstat, mkdtemp, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -256,6 +256,113 @@ test("verwirft eine nach Receipt-Erzeugung manipulierte native Ausgabe", async (
       /Ausgabe-Bytes gebunden/u,
     );
     await assert.rejects(access(outputPath));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("loescht nach dem create-new-Link keine fremd ersetzte Temporausgabe", async () => {
+  const root = await mkdtemp(join(tmpdir(), "zugfolge-materialize-operational-v2-owned-only-"));
+  try {
+    const candidatePath = join(root, "candidate.json");
+    const outputPath = join(root, "operational-infrastructure-v2.json");
+    let foreignTemporaryPath;
+    let preservedOwnedTemporaryPath;
+    await writeFile(candidatePath, JSON.stringify(candidate()));
+    await assert.rejects(
+      materializeOperationalInfrastructureV2({
+        candidatePath,
+        expectedReleaseId: RELEASE_ID,
+        outputPath,
+        validateNative: (path, releaseId, nativeOutputPath) => nativeReceipt(path, releaseId, nativeOutputPath),
+        hooks: {
+          beforeTemporaryCleanup: async ({ temporaryOutput }) => {
+            foreignTemporaryPath = temporaryOutput;
+            preservedOwnedTemporaryPath = `${temporaryOutput}.preserved-owned`;
+            await rename(temporaryOutput, preservedOwnedTemporaryPath);
+            await writeFile(temporaryOutput, "fremde-datei\n", { flag: "wx" });
+          },
+        },
+      }),
+      /fremd ersetzt|identitaetsgebunden|Bereinigung/u,
+    );
+    assert.equal(await readFile(foreignTemporaryPath, "utf8"), "fremde-datei\n");
+    assert.ok((await lstat(preservedOwnedTemporaryPath)).isFile());
+    await assert.rejects(access(outputPath), (error) => error?.code === "ENOENT");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("stellt eine fremde Ersetzung zwischen Identitaetspruefung und Quarantaene am Originalpfad wieder her", async () => {
+  const root = await mkdtemp(join(tmpdir(), "zugfolge-materialize-operational-v2-quarantine-race-"));
+  try {
+    const candidatePath = join(root, "candidate.json");
+    const outputPath = join(root, "operational-infrastructure-v2.json");
+    let foreignTemporaryPath;
+    let preservedOwnedTemporaryPath;
+    let raced = false;
+    await writeFile(candidatePath, JSON.stringify(candidate()));
+    await assert.rejects(
+      materializeOperationalInfrastructureV2({
+        candidatePath,
+        expectedReleaseId: RELEASE_ID,
+        outputPath,
+        validateNative: (path, releaseId, nativeOutputPath) => nativeReceipt(path, releaseId, nativeOutputPath),
+        hooks: {
+          beforeOwnedFileQuarantineRename: async ({ label, originalPath }) => {
+            if (raced || !label.includes("Temporausgabe")) return;
+            raced = true;
+            foreignTemporaryPath = originalPath;
+            preservedOwnedTemporaryPath = `${originalPath}.preserved-owned`;
+            await rename(originalPath, preservedOwnedTemporaryPath);
+            await writeFile(originalPath, "fremde-quarantaene-race-datei\n", { flag: "wx" });
+          },
+        },
+      }),
+      /fremde Ersatzdatei|wiederhergestellt|identitaetsgebunden/u,
+    );
+    assert.equal(raced, true);
+    assert.equal(await readFile(foreignTemporaryPath, "utf8"), "fremde-quarantaene-race-datei\n");
+    assert.ok((await lstat(preservedOwnedTemporaryPath)).isFile());
+    await assert.rejects(access(outputPath), (error) => error?.code === "ENOENT");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("stellt eine fremde Ersetzung nach dem letzten Quarantaenecheck am Originalpfad wieder her", async () => {
+  const root = await mkdtemp(join(tmpdir(), "zugfolge-materialize-operational-v2-final-unlink-race-"));
+  try {
+    const candidatePath = join(root, "candidate.json");
+    const outputPath = join(root, "operational-infrastructure-v2.json");
+    let foreignTemporaryPath;
+    let preservedOwnedTemporaryPath;
+    let raced = false;
+    await writeFile(candidatePath, JSON.stringify(candidate()));
+    await assert.rejects(
+      materializeOperationalInfrastructureV2({
+        candidatePath,
+        expectedReleaseId: RELEASE_ID,
+        outputPath,
+        validateNative: (path, releaseId, nativeOutputPath) => nativeReceipt(path, releaseId, nativeOutputPath),
+        hooks: {
+          afterOwnedFileFinalIdentityCheck: async ({ label, originalPath, quarantinedPath }) => {
+            if (raced || !label.includes("Temporausgabe")) return;
+            raced = true;
+            foreignTemporaryPath = originalPath;
+            preservedOwnedTemporaryPath = `${quarantinedPath}.preserved-owned`;
+            await rename(quarantinedPath, preservedOwnedTemporaryPath);
+            await writeFile(quarantinedPath, "fremde-final-unlink-race-datei\n", { flag: "wx" });
+          },
+        },
+      }),
+      /unmittelbar vor dem Unlink|wiederhergestellt|identitaetsgebunden/u,
+    );
+    assert.equal(raced, true);
+    assert.equal(await readFile(foreignTemporaryPath, "utf8"), "fremde-final-unlink-race-datei\n");
+    assert.ok((await lstat(preservedOwnedTemporaryPath)).isFile());
+    await assert.rejects(access(outputPath), (error) => error?.code === "ENOENT");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

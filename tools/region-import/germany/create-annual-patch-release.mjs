@@ -1,14 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { access, link, lstat, mkdir, open, readFile, realpath, rmdir, stat, unlink } from "node:fs/promises";
-import { dirname, relative, resolve, sep } from "node:path";
+import { access, link, lstat, mkdir, mkdtemp, open, readFile, realpath, rename, rmdir, stat, unlink } from "node:fs/promises";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { validateMapBuildCacheInventoryPlan } from "../../tiles/map-build-cache-inventory.mjs";
+import { validateOperationalValidatorRebuildSpec } from "./operational-validator-rebuild-evidence.mjs";
 
 export const ANNUAL_PATCH_CONTRACT_FILES = Object.freeze([
   "tools/region-import/germany/final-quality-inputs.annual-{patch}.json",
   "tools/region-import/germany/operational-infrastructure.annual-{patch}.json",
+  "tools/region-import/germany/operational-validator-rebuild.annual-{patch}.json",
   "tools/region-import/germany/operational-quality.annual-{patch}.json",
   "tools/region-import/germany/release-artifacts.annual-{patch}.json",
   "tools/region-import/germany/release.annual-{patch}.config.json",
@@ -35,6 +37,8 @@ const PATCH = /^(?<year>[0-9]{4})\.(?<patch>[1-9][0-9]*)$/u;
 const BUILD_CACHE_INVENTORY_TEMPLATE = "tools/tiles/map-build-cache-inventory.annual-{patch}.plan.json";
 const BUILD_EVIDENCE_TEMPLATE = "tools/tiles/map-release-build-evidence.annual-{patch}.spec.json";
 const OPERATIONAL_INFRASTRUCTURE_TEMPLATE = "tools/region-import/germany/operational-infrastructure.annual-{patch}.json";
+const OPERATIONAL_VALIDATOR_REBUILD_TEMPLATE = "tools/region-import/germany/operational-validator-rebuild.annual-{patch}.json";
+const RELEASE_CONFIG_TEMPLATE = "tools/region-import/germany/release.annual-{patch}.config.json";
 const RELEASE_ARTIFACTS_TEMPLATE = "tools/region-import/germany/release-artifacts.annual-{patch}.json";
 const SYNTHETIC_OPERATIONAL_POLICY_TEMPLATE = "tools/region-import/germany/synthetic-operational-b.{patch}.policy.json";
 const SYNTHETIC_OPERATIONAL_CLOSURE_TEMPLATE = "tools/region-import/germany/synthetic-operational-closure.annual-{patch}.json";
@@ -70,10 +74,28 @@ const REQUIRED_OPERATIONAL_CACHE_SIDECARS = Object.freeze([
     cacheFile: (patch) => `derived/infra-deutschland-${patch}/timetable-routes-v2.transfer-demands-v2.json`,
   }),
 ]);
+const REQUIRED_OPERATIONAL_RECOVERY_RECEIPTS = Object.freeze([
+  "operational-infrastructure-v2.native-receipt.json",
+  "operational-infrastructure-v2.publication-receipt.json",
+]);
+const OPERATIONAL_VALIDATOR_BUILD_COMMIT_VERSION = "operational-validator-build-commit";
+const operationalValidatorSourceFile = (patch, buildCommit, sha256) => `var/derived/germany-${patch}/toolchain/zugfolge-infra-release-${buildCommit}-${sha256}.exe`;
+const operationalValidatorCacheFile = (patch, buildCommit, sha256) => `tools/zugfolge-infra-release/infra-deutschland-${patch}/${buildCommit}/${sha256}/zugfolge-infra-release.exe`;
+const operationalValidatorRebuildSourceFile = (patch, buildCommit) => `var/derived/germany-${patch}/toolchain/zugfolge-infra-release-rebuild-${buildCommit}-official.exe`;
+const operationalValidatorRebuildCacheFile = (patch, buildCommit) => `tools/zugfolge-infra-release/infra-deutschland-${patch}/${buildCommit}/official/zugfolge-infra-release.exe`;
+const operationalValidatorRebuildSpecFile = (patch) => `tools/region-import/germany/operational-validator-rebuild.annual-${patch}.json`;
+const operationalValidatorRebuildEvidenceFile = (patch) => `var/derived/germany-${patch}/toolchain/zugfolge-infra-release-rebuild-evidence.json`;
+const operationalValidatorRebuildEvidenceCacheFile = (patch) => `derived/infra-deutschland-${patch}/toolchain/zugfolge-infra-release-rebuild-evidence.json`;
+const operationalValidatorSourceArchiveFile = (patch, buildCommit, sha256) => `var/derived/germany-${patch}/toolchain/zugfolge-infra-release-source-${buildCommit}-${sha256}.tar`;
+const operationalValidatorSourceArchiveCacheFile = (patch, buildCommit, sha256) => `derived/infra-deutschland-${patch}/toolchain/zugfolge-infra-release-source-${buildCommit}-${sha256}.tar`;
+const operationalValidatorRebuildProvenanceFile = (patch, buildCommit) => `var/derived/germany-${patch}/toolchain/zugfolge-infra-release-rebuild-provenance-${buildCommit}.json`;
+const operationalValidatorRebuildProvenanceCacheFile = (patch, buildCommit) => `derived/infra-deutschland-${patch}/toolchain/zugfolge-infra-release-rebuild-provenance-${buildCommit}.json`;
 const TARGET_ONLY_MIGRATION_TEMPLATES = Object.freeze([
   BUILD_CACHE_INVENTORY_TEMPLATE,
   BUILD_EVIDENCE_TEMPLATE,
   OPERATIONAL_INFRASTRUCTURE_TEMPLATE,
+  OPERATIONAL_VALIDATOR_REBUILD_TEMPLATE,
+  RELEASE_CONFIG_TEMPLATE,
   RELEASE_ARTIFACTS_TEMPLATE,
   SYNTHETIC_OPERATIONAL_POLICY_TEMPLATE,
   SYNTHETIC_OPERATIONAL_CLOSURE_TEMPLATE,
@@ -81,6 +103,9 @@ const TARGET_ONLY_MIGRATION_TEMPLATES = Object.freeze([
   MAP_PACKAGE_TEMPLATE,
   ALPHA_WORLD_RUNTIME_AUDIT_TEMPLATE,
   SIGNED_GAME_STAGING_AUDIT_TEMPLATE,
+]);
+const GENERATED_TARGET_ONLY_TEMPLATES = new Set([
+  OPERATIONAL_VALIDATOR_REBUILD_TEMPLATE,
 ]);
 const TURNAROUND_POLICY_V2 = Object.freeze({
   minimumBerthEndClearanceMm: 10_000,
@@ -92,6 +117,49 @@ const TURNAROUND_POLICY_V2 = Object.freeze({
 });
 const TIMETABLE_UPSTREAM_V2_2026_5 = Object.freeze({
   patch: "2026.5",
+  operationalValidatorBuildCommit: "ee6d7081b32277e46cd6ebb28fc65bd45ce55012",
+  operationalValidatorBytes: 8_283_251,
+  operationalValidatorSha256: "69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc",
+  operationalValidatorRebuildExpectedBytes: 8_283_251,
+  operationalValidatorNormalizedPeSha256: "91e84253399bf8836ec4e6a5688da51f753531a0040831a54b8585e28f1d5363",
+  operationalValidatorSourceArchive: Object.freeze({
+    bytes: 24_975_360,
+    sha256: "556c906567dd436de091390b66cf9538e82febd237f70b0d353b286480852b2a",
+  }),
+  cargoLock: Object.freeze({
+    bytes: 13_125,
+    sha256: "929fe3fb52098a0e5d234d5b96f5058b7ba7bf4308d1836e8e0b80307af09403",
+  }),
+  operationalValidatorRebuildProducers: Object.freeze({
+    bootstrap: Object.freeze({
+      bytes: 8_031,
+      file: "tools/region-import/germany/operational-validator-rebuild-bootstrap.mjs",
+      sha256: "c12364d0b63b6ef3553a0d01ae28fb3fa295e340530304d0c7c578695f98380c",
+    }),
+    entrypoint: Object.freeze({
+      bytes: 9_934,
+      file: "tools/region-import/germany/operational-validator-rebuild-evidence-cli.mjs",
+      sha256: "c0d04b6b4e247f3c94f4560c40a922abe40b1870bf88926750afa5daaa0bdec2",
+    }),
+    implementation: Object.freeze({
+      bytes: 121_519,
+      file: "tools/region-import/germany/operational-validator-rebuild-evidence.mjs",
+      sha256: "0dcac3ff4a921841922979c0e641716815341131f33105d6b9ed02a2b469d023",
+    }),
+  }),
+  operationalValidatorToolchain: Object.freeze({
+    cargo: Object.freeze({
+      commitHash: "29ea6fb6a5db279426f4cc4e17aa385f05a0cfbc",
+      host: "x86_64-pc-windows-gnu",
+      release: "1.94.1",
+    }),
+    rustc: Object.freeze({
+      commitHash: "e408947bfd200af42db322daf0fadfe7e26d3bd1",
+      host: "x86_64-pc-windows-gnu",
+      llvmVersion: "21.1.8",
+      release: "1.94.1",
+    }),
+  }),
   compilerSchema: "zugfolge-germany-timetable-route-compiler/v5",
   reportSchema: "zugfolge-germany-timetable-route-report/v4",
   dailyPlanSchema: "zugfolge-daily-circulation-plan/v2",
@@ -128,6 +196,136 @@ function timetableUpstreamTarget(targetPatch) {
     `Fuer ${targetPatch} fehlt ein real gemessener Timetable-Upstream-v2-Zielvertrag.`,
   );
   return TIMETABLE_UPSTREAM_V2_2026_5;
+}
+
+function createOperationalValidatorRebuildSpecification(targetPatch) {
+  const target = timetableUpstreamTarget(targetPatch);
+  const buildCommit = target.operationalValidatorBuildCommit;
+  const archive = target.operationalValidatorSourceArchive;
+  const specification = {
+    binaries: {
+      preserved: {
+        bytes: target.operationalValidatorBytes,
+        file: operationalValidatorSourceFile(targetPatch, buildCommit, target.operationalValidatorSha256),
+        sha256: target.operationalValidatorSha256,
+      },
+      rebuilt: {
+        expectedBytes: target.operationalValidatorRebuildExpectedBytes,
+        file: operationalValidatorRebuildSourceFile(targetPatch, buildCommit),
+      },
+    },
+    build: {
+      command: [
+        "cargo",
+        "build",
+        "--locked",
+        "--release",
+        "-p",
+        "zugfolge-infra",
+        "--bin",
+        "zugfolge-infra-release",
+      ],
+      environmentPolicy: {
+        allowedInherited: [
+          "CARGO_HOME",
+          "COMSPEC",
+          "HOME",
+          "HOMEDRIVE",
+          "HOMEPATH",
+          "NUMBER_OF_PROCESSORS",
+          "PATH",
+          "PATHEXT",
+          "PROCESSOR_ARCHITECTURE",
+          "RUSTUP_HOME",
+          "SYSTEMROOT",
+          "TEMP",
+          "TMP",
+          "TMPDIR",
+          "USERPROFILE",
+          "WINDIR",
+        ],
+        cleared: [
+          "AR",
+          "CARGO_BUILD_RUSTC",
+          "CARGO_BUILD_RUSTC_WRAPPER",
+          "CARGO_BUILD_TARGET",
+          "CARGO_ENCODED_RUSTFLAGS",
+          "CARGO_PROFILE_RELEASE_CODEGEN_UNITS",
+          "CARGO_PROFILE_RELEASE_DEBUG",
+          "CARGO_PROFILE_RELEASE_LTO",
+          "CARGO_PROFILE_RELEASE_OPT_LEVEL",
+          "CARGO_PROFILE_RELEASE_PANIC",
+          "CARGO_TARGET_DIR",
+          "CC",
+          "CFLAGS",
+          "CXX",
+          "CXXFLAGS",
+          "LDFLAGS",
+          "RUSTC",
+          "RUSTC_BOOTSTRAP",
+          "RUSTC_WRAPPER",
+          "RUSTC_WORKSPACE_WRAPPER",
+          "RUSTDOCFLAGS",
+          "RUSTFLAGS",
+          "RUSTUP_TOOLCHAIN",
+          "SOURCE_DATE_EPOCH",
+        ],
+        fixed: {
+          CARGO_INCREMENTAL: "0",
+          CARGO_NET_OFFLINE: "true",
+          CARGO_TERM_COLOR: "never",
+        },
+        targetDirectory: "external-empty-create-new",
+      },
+      profile: "release",
+      targetOutputFile: "release/zugfolge-infra-release.exe",
+    },
+    pe: {
+      allowedNormalizationFields: [
+        { bytes: 4, name: "coff-time-date-stamp", offset: 136 },
+        { bytes: 4, name: "optional-header-checksum", offset: 216 },
+      ],
+      format: "PE32+",
+      machine: 34_404,
+      maxBinaryBytes: 8_388_608,
+      normalizedSha256: target.operationalValidatorNormalizedPeSha256,
+      sections: [
+        { name: ".text", rawData: "non-empty" },
+        { name: ".data", rawData: "non-empty" },
+        { name: ".rdata", rawData: "non-empty" },
+        { name: ".pdata", rawData: "non-empty" },
+        { name: ".xdata", rawData: "non-empty" },
+        { name: ".bss", rawData: "empty" },
+        { name: ".idata", rawData: "non-empty" },
+        { name: ".CRT", rawData: "non-empty" },
+        { name: ".tls", rawData: "non-empty" },
+        { name: ".reloc", rawData: "non-empty" },
+      ],
+    },
+    producer: structuredClone(target.operationalValidatorRebuildProducers),
+    provenance: {
+      file: `var/derived/germany-${targetPatch}/toolchain/zugfolge-infra-release-rebuild-provenance-${buildCommit}.json`,
+    },
+    releaseId: `infra-deutschland-${targetPatch}`,
+    schema: "zugfolge-operational-validator-rebuild-spec/v2",
+    source: {
+      archive: {
+        bytes: archive.bytes,
+        file: `var/derived/germany-${targetPatch}/toolchain/zugfolge-infra-release-source-${buildCommit}-${archive.sha256}.tar`,
+        format: "tar",
+        sha256: archive.sha256,
+      },
+      cargoLock: {
+        bytes: target.cargoLock.bytes,
+        file: "Cargo.lock",
+        sha256: target.cargoLock.sha256,
+      },
+      commit: buildCommit,
+    },
+    toolchain: structuredClone(target.operationalValidatorToolchain),
+  };
+  validateOperationalValidatorRebuildSpec(specification);
+  return `${JSON.stringify(specification, null, 2)}\n`;
 }
 
 function parsedPatch(value, label) {
@@ -576,6 +774,53 @@ function migrateMapPackage(content, targetPatch) {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
+function migrateReleaseConfig(content, targetPatch) {
+  const target = timetableUpstreamTarget(targetPatch);
+  const value = JSON.parse(content);
+  invariant(value.release?.releaseId === `infra-deutschland-${targetPatch}`, "Deutschland-Release-Konfiguration besitzt nicht die erwartete Zielrelease-ID.");
+  const deriver = jsonObject(value.pipeline?.operationalDeriver, "OperationalDeriver");
+  invariant(
+    Object.keys(deriver).sort().join(",") === ["candidate", "entrypoint", "output", "report", "specification"].sort().join(","),
+    "OperationalDeriver-Quellvertrag besitzt nicht die exakt migrierbare historische Form.",
+  );
+  invariant(deriver.entrypoint === "tools/region-import/germany/run-operational-infrastructure-v2.mjs", "OperationalDeriver-Quellvertrag besitzt einen falschen Runner.");
+  value.pipeline.operationalDeriver = {
+    primaryRunner: deriver.entrypoint,
+    primaryRunnerMode: "candidate-triplet",
+    specification: deriver.specification,
+    candidate: deriver.candidate,
+    candidateMovementRouteTemplates: `var/derived/germany-${targetPatch}/operational-infrastructure-v2.candidate.movement-route-templates-v2.json`,
+    report: deriver.report,
+    output: deriver.output,
+    recoveryPublisher: {
+      captureEntrypoint: "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs",
+      entrypoint: "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
+      validatorExecutable: operationalValidatorSourceFile(targetPatch, target.operationalValidatorBuildCommit, target.operationalValidatorSha256),
+      validatorBuildCommit: target.operationalValidatorBuildCommit,
+      validatorBytes: target.operationalValidatorBytes,
+      validatorSha256: target.operationalValidatorSha256,
+      validatorRebuildSpecification: operationalValidatorRebuildSpecFile(targetPatch),
+      validatorRebuildEvidence: operationalValidatorRebuildEvidenceFile(targetPatch),
+      validatorRebuildExecutable: operationalValidatorRebuildSourceFile(targetPatch, target.operationalValidatorBuildCommit),
+      validatorRebuildExpectedBytes: target.operationalValidatorRebuildExpectedBytes,
+      validatorNormalizedPeSha256: target.operationalValidatorNormalizedPeSha256,
+      executionInventory: {
+        wrapper: "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
+        implementation: "tools/region-import/germany/operational-infrastructure-v2-publication.mjs",
+        operationalDeriver: "tools/region-import/germany/operational-infrastructure-v2.mjs",
+        materializer: "tools/region-import/materialize-operational-infrastructure-v2.mjs",
+        createNewOutput: "tools/tiles/create-new-output.mjs",
+        operationalBinding: "tools/region-import/operational-infrastructure-binding.mjs",
+        validatorRebuildBootstrap: "tools/region-import/germany/operational-validator-rebuild-bootstrap.mjs",
+        validatorRebuildVerifier: "tools/region-import/germany/operational-validator-rebuild-evidence.mjs",
+      },
+      nativeReceipt: `var/derived/germany-${targetPatch}/operational-infrastructure-v2.native-receipt.json`,
+      publicationReceipt: `var/derived/germany-${targetPatch}/operational-infrastructure-v2.publication-receipt.json`,
+    },
+  };
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
 function migrateBuildEvidence(content, sourcePatch, targetPatch) {
   const target = timetableUpstreamTarget(targetPatch);
   const value = JSON.parse(content);
@@ -630,6 +875,61 @@ function migrateBuildEvidence(content, sourcePatch, targetPatch) {
     "Build-Evidence-v2-Zielvertrag besitzt kein exakt migrierbares Ausgabeinventar.",
   );
   value.schema = "zugfolge-map-release-build-evidence-spec/v3";
+  for (const [id, file] of [
+    ["operational-native-receipt", "operational-infrastructure-v2.native-receipt.json"],
+    ["operational-publication-receipt", "operational-infrastructure-v2.publication-receipt.json"],
+  ]) {
+    invariant(value.inputs.every((entry) => entry.id !== id), `Build-Evidence-Zielvertrag enthaelt bereits ${id}.`);
+    value.inputs.push({
+      id,
+      kind: "derived-input",
+      version: `infra-deutschland-${targetPatch}`,
+      file: `var/derived/germany-${targetPatch}/${file}`,
+      cacheFile: `derived/infra-deutschland-${targetPatch}/${file}`,
+    });
+  }
+  invariant(value.inputs.every((entry) => entry.id !== "operational-validator-rebuild-evidence"), "Build-Evidence-Zielvertrag enthaelt bereits das Validator-Rebuild-Evidence.");
+  value.inputs.push({
+    id: "operational-validator-rebuild-evidence",
+    kind: "derived-input",
+    version: `infra-deutschland-${targetPatch}`,
+    file: operationalValidatorRebuildEvidenceFile(targetPatch),
+    cacheFile: operationalValidatorRebuildEvidenceCacheFile(targetPatch),
+  });
+  for (const [id, file] of [
+    ["operational-native-receipt-capture", "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs"],
+    ["operational-recovery-publisher", "tools/region-import/germany/publish-operational-infrastructure-v2.mjs"],
+    ["operational-recovery-publisher-implementation", "tools/region-import/germany/operational-infrastructure-v2-publication.mjs"],
+    ["operational-v2-deriver", "tools/region-import/germany/operational-infrastructure-v2.mjs"],
+    ["operational-v2-materializer", "tools/region-import/materialize-operational-infrastructure-v2.mjs"],
+    ["create-new-output-contract", "tools/tiles/create-new-output.mjs"],
+    ["operational-v2-binding", "tools/region-import/operational-infrastructure-binding.mjs"],
+    ["operational-validator-rebuild-bootstrap", "tools/region-import/germany/operational-validator-rebuild-bootstrap.mjs"],
+    ["operational-validator-rebuild-spec", operationalValidatorRebuildSpecFile(targetPatch)],
+    ["operational-validator-rebuild-verifier", "tools/region-import/germany/operational-validator-rebuild-evidence.mjs"],
+    ["operational-validator-rebuild-cli", "tools/region-import/germany/operational-validator-rebuild-evidence-cli.mjs"],
+  ]) {
+    invariant(value.inputs.every((entry) => entry.id !== id), `Build-Evidence-Zielvertrag enthaelt bereits ${id}.`);
+    value.inputs.push({ id, kind: "repo-contract", version: `infra-deutschland-${targetPatch}`, file });
+  }
+  invariant(Array.isArray(value.tools), "Build-Evidence-Zielvertrag besitzt kein Werkzeuginventar.");
+  invariant(value.tools.every(({ id }) => id !== "operational-v2-validator"), "Build-Evidence-Zielvertrag enthaelt bereits den Operational-v2-Validator.");
+  value.tools.unshift({
+    id: "operational-v2-validator",
+    kind: "binary",
+    version: OPERATIONAL_VALIDATOR_BUILD_COMMIT_VERSION,
+    file: operationalValidatorSourceFile(targetPatch, target.operationalValidatorBuildCommit, target.operationalValidatorSha256),
+    cacheFile: operationalValidatorCacheFile(targetPatch, target.operationalValidatorBuildCommit, target.operationalValidatorSha256),
+    expectedBytes: target.operationalValidatorBytes,
+    expectedSha256: target.operationalValidatorSha256,
+  });
+  value.tools.splice(1, 0, {
+    id: "operational-v2-validator-rebuild",
+    kind: "binary",
+    version: "operational-validator-rebuild-proof",
+    file: operationalValidatorRebuildSourceFile(targetPatch, target.operationalValidatorBuildCommit),
+    cacheFile: operationalValidatorRebuildCacheFile(targetPatch, target.operationalValidatorBuildCommit),
+  });
   value.outputs.push(
     {
       id: "operational-movement-routes",
@@ -928,6 +1228,7 @@ function migrateSignedGameStagingAudit(content, sourcePatch, targetPatch) {
 
 function migrateTargetContract(content, template, sourcePatch, targetPatch) {
   if (template === BUILD_CACHE_INVENTORY_TEMPLATE) {
+    const target = timetableUpstreamTarget(targetPatch);
     const value = JSON.parse(content);
     const releaseId = `infra-deutschland-${targetPatch}`;
     validateMapBuildCacheInventoryPlan(value, releaseId);
@@ -958,6 +1259,76 @@ function migrateTargetContract(content, template, sourcePatch, targetPatch) {
       );
       value.files.push({ sourceFile, cacheFile });
     }
+    for (const fileName of REQUIRED_OPERATIONAL_RECOVERY_RECEIPTS) {
+      invariant(value.files.every(({ sourceFile, cacheFile }) => !sourceFile.endsWith(`/${fileName}`) && !cacheFile.endsWith(`/${fileName}`)), `Buildcache-Zielvertrag enthaelt bereits ${fileName}.`);
+      value.files.splice(value.files.length - REQUIRED_OPERATIONAL_CACHE_SIDECARS.length, 0, {
+        sourceFile: `var/derived/germany-${targetPatch}/${fileName}`,
+        cacheFile: `derived/infra-deutschland-${targetPatch}/${fileName}`,
+      });
+    }
+    invariant(
+      value.files.every(({ sourceFile, cacheFile }) => (
+        sourceFile !== operationalValidatorRebuildEvidenceFile(targetPatch)
+          && cacheFile !== operationalValidatorRebuildEvidenceCacheFile(targetPatch)
+      )),
+      "Buildcache-Zielvertrag enthaelt bereits das Validator-Rebuild-Evidence.",
+    );
+    value.files.push({
+      sourceFile: operationalValidatorRebuildEvidenceFile(targetPatch),
+      cacheFile: operationalValidatorRebuildEvidenceCacheFile(targetPatch),
+    });
+    const sourceArchiveFile = operationalValidatorSourceArchiveFile(
+      targetPatch,
+      target.operationalValidatorBuildCommit,
+      target.operationalValidatorSourceArchive.sha256,
+    );
+    const sourceArchiveCacheFile = operationalValidatorSourceArchiveCacheFile(
+      targetPatch,
+      target.operationalValidatorBuildCommit,
+      target.operationalValidatorSourceArchive.sha256,
+    );
+    const rebuildProvenanceFile = operationalValidatorRebuildProvenanceFile(
+      targetPatch,
+      target.operationalValidatorBuildCommit,
+    );
+    const rebuildProvenanceCacheFile = operationalValidatorRebuildProvenanceCacheFile(
+      targetPatch,
+      target.operationalValidatorBuildCommit,
+    );
+    invariant(
+      value.files.every(({ sourceFile, cacheFile }) => (
+        sourceFile !== sourceArchiveFile
+          && cacheFile !== sourceArchiveCacheFile
+          && sourceFile !== rebuildProvenanceFile
+          && cacheFile !== rebuildProvenanceCacheFile
+      )),
+      "Buildcache-Zielvertrag enthaelt bereits ein portables Validator-Rebuild-Artefakt.",
+    );
+    value.files.push({
+      sourceFile: sourceArchiveFile,
+      cacheFile: sourceArchiveCacheFile,
+    });
+    value.files.push({
+      sourceFile: rebuildProvenanceFile,
+      cacheFile: rebuildProvenanceCacheFile,
+    });
+    invariant(
+      value.files.every(({ sourceFile, cacheFile }) => (
+        sourceFile !== operationalValidatorSourceFile(targetPatch, target.operationalValidatorBuildCommit, target.operationalValidatorSha256)
+          && cacheFile !== operationalValidatorCacheFile(targetPatch, target.operationalValidatorBuildCommit, target.operationalValidatorSha256)
+          && sourceFile !== operationalValidatorRebuildSourceFile(targetPatch, target.operationalValidatorBuildCommit)
+          && cacheFile !== operationalValidatorRebuildCacheFile(targetPatch, target.operationalValidatorBuildCommit)
+      )),
+      "Buildcache-Zielvertrag enthaelt bereits ein Operational-v2-Validator-Binary.",
+    );
+    value.files.push({
+      sourceFile: operationalValidatorSourceFile(targetPatch, target.operationalValidatorBuildCommit, target.operationalValidatorSha256),
+      cacheFile: operationalValidatorCacheFile(targetPatch, target.operationalValidatorBuildCommit, target.operationalValidatorSha256),
+    });
+    value.files.push({
+      sourceFile: operationalValidatorRebuildSourceFile(targetPatch, target.operationalValidatorBuildCommit),
+      cacheFile: operationalValidatorRebuildCacheFile(targetPatch, target.operationalValidatorBuildCommit),
+    });
     validateMapBuildCacheInventoryPlan(value, releaseId);
     for (const required of REQUIRED_OPERATIONAL_CACHE_SIDECARS) {
       const expected = {
@@ -972,6 +1343,8 @@ function migrateTargetContract(content, template, sourcePatch, targetPatch) {
     return `${JSON.stringify(value, null, 2)}\n`;
   }
   if (template === OPERATIONAL_INFRASTRUCTURE_TEMPLATE) return migrateOperationalInfrastructure(content, targetPatch);
+  if (template === OPERATIONAL_VALIDATOR_REBUILD_TEMPLATE) return createOperationalValidatorRebuildSpecification(targetPatch);
+  if (template === RELEASE_CONFIG_TEMPLATE) return migrateReleaseConfig(content, targetPatch);
   if (template === RELEASE_ARTIFACTS_TEMPLATE) return migrateReleaseArtifacts(content, targetPatch);
   if (template === SYNTHETIC_OPERATIONAL_POLICY_TEMPLATE) return migrateSyntheticOperationalPolicy(content, targetPatch);
   if (template === SYNTHETIC_OPERATIONAL_CLOSURE_TEMPLATE) return migrateSyntheticOperationalClosure(content, targetPatch);
@@ -1004,16 +1377,9 @@ async function createOwnedFile(path, mode, openCreateNewFile) {
   } catch (error) {
     const cleanupErrors = [];
     try {
-      const fallbackMetadata = await lstat(path, { bigint: true });
-      await removeOwnedFile({
-        closed: false,
-        handle,
-        identity: ownedIdentity(fallbackMetadata),
-        path,
-      });
-    } catch (cleanupError) {
-      cleanupErrors.push(cleanupError);
-      await handle.close().catch(() => {});
+      await handle.close();
+    } catch (closeError) {
+      cleanupErrors.push(closeError);
     }
     throw combinedOperationError(error, cleanupErrors);
   }
@@ -1045,7 +1411,7 @@ async function writeAndSyncOwnedFile(owned, content) {
   owned.identity = ownedIdentity(metadata, true);
 }
 
-async function removeOwnedFile(owned) {
+async function removeOwnedFile(owned, hooks = {}) {
   await closeOwnedFile(owned).catch(() => {});
   let metadata;
   try {
@@ -1058,14 +1424,46 @@ async function removeOwnedFile(owned) {
     sameOwnedIdentity(metadata, owned.identity),
     `Identitaetsgebundene Bereinigung verweigert eine fremde oder veraenderte Datei: ${owned.path}`,
   );
-  await unlink(owned.path);
+  if (hooks.beforeOwnedFileQuarantine !== undefined) await hooks.beforeOwnedFileQuarantine({ owned });
+  const quarantineRoot = await mkdtemp(join(dirname(owned.path), ".annual-patch-owned-cleanup-"));
+  const quarantined = join(quarantineRoot, "owned-file");
+  await rename(owned.path, quarantined);
+  const moved = await lstat(quarantined, { bigint: true });
+  if (!sameOwnedIdentity(moved, owned.identity)) {
+    try {
+      await rename(quarantined, owned.path);
+      await rmdir(quarantineRoot);
+    } catch (restoreError) {
+      throw new AggregateError(
+        [restoreError],
+        `Fremde Ersatzdatei bleibt nach identitaetsabweichender Quarantaene erhalten: ${quarantined}`,
+      );
+    }
+    throw new Error(`Identitaetsgebundene Bereinigung hat eine fremde Ersatzdatei erkannt und wiederhergestellt: ${owned.path}`);
+  }
+  if (hooks.beforeOwnedFileFinalUnlink !== undefined) await hooks.beforeOwnedFileFinalUnlink({ owned, quarantined });
+  const final = await lstat(quarantined, { bigint: true });
+  if (!sameOwnedIdentity(final, owned.identity)) {
+    try {
+      await rename(quarantined, owned.path);
+      await rmdir(quarantineRoot);
+    } catch (restoreError) {
+      throw new AggregateError(
+        [restoreError],
+        `Fremde Ersatzdatei bleibt nach finaler identitaetsabweichender Quarantaene erhalten: ${quarantined}`,
+      );
+    }
+    throw new Error(`Identitaetsgebundene Bereinigung hat eine fremde Ersatzdatei unmittelbar vor dem Unlink erkannt und wiederhergestellt: ${owned.path}`);
+  }
+  await unlink(quarantined);
+  await rmdir(quarantineRoot);
 }
 
-async function cleanupOwnedFiles(files) {
+async function cleanupOwnedFiles(files, hooks = {}) {
   const errors = [];
   for (const owned of [...files].reverse()) {
     try {
-      await removeOwnedFile(owned);
+      await removeOwnedFile(owned, hooks);
     } catch (error) {
       errors.push(error);
     }
@@ -1096,6 +1494,7 @@ export async function createAnnualPatchRelease({
   textFiles = ANNUAL_PATCH_TEXT_FILES,
   openCreateNewFile = open,
   publishLink = link,
+  hooks = {},
 }) {
   const root = resolve(repositoryRoot);
   const source = parsedPatch(sourcePatch, "Quellpatch");
@@ -1112,12 +1511,16 @@ export async function createAnnualPatchRelease({
     ...textFiles.map((template) => Object.freeze({ format: "text", template })),
   ].map(({ format, template }) => Object.freeze({
     format,
-    source: pathInside(root, contractPath(template, source.value), "Jahresvertragsquelle"),
+    source: GENERATED_TARGET_ONLY_TEMPLATES.has(template)
+      ? null
+      : pathInside(root, contractPath(template, source.value), "Jahresvertragsquelle"),
     target: pathInside(root, contractPath(template, target.value), "Jahresvertragsziel"),
     template,
   }));
   invariant(new Set(contracts.map(({ target: path }) => path)).size === contracts.length, "Jahresvertragsziele sind nicht eindeutig.");
-  for (const contract of contracts) await assertCanonicalSourceResolution(root, contract, source.value);
+  for (const contract of contracts) {
+    if (contract.source !== null) await assertCanonicalSourceResolution(root, contract, source.value);
+  }
 
   const prepared = [];
   for (const contract of contracts) {
@@ -1125,7 +1528,9 @@ export async function createAnnualPatchRelease({
     prepared.push(Object.freeze({
       ...contract,
       content: migrateTargetContract(
-        await readContract(contract.source, source.value, target.value, contract.format),
+        contract.source === null
+          ? undefined
+          : await readContract(contract.source, source.value, target.value, contract.format),
         contract.template,
         source.value,
         target.value,
@@ -1182,7 +1587,7 @@ export async function createAnnualPatchRelease({
     operationError = error;
   }
 
-  const cleanupErrors = await cleanupOwnedFiles(staged);
+  const cleanupErrors = await cleanupOwnedFiles(staged, hooks);
   if (stagingCreated) {
     try {
       await rmdir(stagingRoot);
@@ -1190,10 +1595,10 @@ export async function createAnnualPatchRelease({
       if (error?.code !== "ENOENT") cleanupErrors.push(error);
     }
   }
-  if (claim !== undefined) cleanupErrors.push(...await cleanupOwnedFiles([claim]));
+  if (claim !== undefined) cleanupErrors.push(...await cleanupOwnedFiles([claim], hooks));
   const preliminaryError = combinedOperationError(operationError, cleanupErrors);
   if (preliminaryError !== undefined) {
-    const rollbackErrors = await cleanupOwnedFiles(createdTargets);
+    const rollbackErrors = await cleanupOwnedFiles(createdTargets, hooks);
     throw combinedOperationError(preliminaryError, rollbackErrors);
   }
 

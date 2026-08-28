@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
@@ -117,10 +117,10 @@ function movementSidecarBytes() {
   return Buffer.from(`${JSON.stringify(movementSidecar())}\n`, "utf8");
 }
 
-function movementSidecarProof() {
+function movementSidecarProof(file = "operational-infrastructure-v2.movement-route-templates-v2.json") {
   const bytes = movementSidecarBytes();
   return {
-    file: "operational-infrastructure-v2.movement-route-templates-v2.json",
+    file,
     bytes: bytes.length,
     sha256: sha256(bytes),
     stateHash: movementSidecar().stateHash,
@@ -184,18 +184,19 @@ function candidate() {
   };
 }
 
-function derivationReport(specification, { activationEligible = true, mutate = (value) => value } = {}) {
+function derivationReport(specification, { activationEligible = true, movementRouteTemplatesFile = "operational-infrastructure-v2.movement-route-templates-v2.json", mutate = (value) => value } = {}) {
   const unresolvedRequiredDimensions = activationEligible ? [] : ["complete-timetable-route-versions"];
   const routeCoverage = activationEligible ? GERMANY_OPERATIONAL_COMPLETE_ROUTE_COVERAGE : "local-directed-track-templates";
   const candidateBytes = Buffer.from(`${JSON.stringify(candidate())}\n`, "utf8");
   const evidence = (path) => ({ path, bytes: 1, sha256: "2".repeat(64), records: 1 });
+  const specificationBytes = Buffer.from(JSON.stringify(specification), "utf8");
   return mutate({
     schema: GERMANY_OPERATIONAL_NATIVE_REPORT_SCHEMA,
     mode: GERMANY_OPERATIONAL_CONSERVATIVE_MODE,
     infraReleaseId: RELEASE_ID,
     policy: { id: specification.policy.id, sha256: canonicalHash(specification.policy), spec: specification.policy },
     inputs: {
-      spec: evidence("specification.json"),
+      spec: { path: "specification.json", bytes: specificationBytes.length, sha256: sha256(specificationBytes), records: 1 },
       tracks: evidence(specification.layers.tracks),
       platforms: evidence(specification.layers.platforms),
       switches: evidence(specification.layers.switches),
@@ -205,7 +206,7 @@ function derivationReport(specification, { activationEligible = true, mutate = (
       timetableRoutes: specification.layers.timetableRoutes === null ? null : evidence(specification.layers.timetableRoutes),
       transferDemands: null,
     },
-    candidate: { bytes: candidateBytes.length, sha256: sha256(candidateBytes), stateHash: STATE_HASH, validationMode: "native-streaming-redb-v1", movementRouteTemplates: movementSidecarProof() },
+    candidate: { bytes: candidateBytes.length, sha256: sha256(candidateBytes), stateHash: STATE_HASH, validationMode: "native-streaming-redb-v1", movementRouteTemplates: movementSidecarProof(movementRouteTemplatesFile) },
     timetableRouteEvidence: null,
     counts: {
       source: { tracks: 1, orderableTracks: 1, platforms: 0, switches: 0, signals: 0, blocks: 0, conflictResources: 0, timetableRoutes: activationEligible ? 1 : 0, timetableLegs: activationEligible ? 1 : 0, transferDemands: 0, transferLots: 0, turnaroundDemands: 0, turnaroundPairs: 0 },
@@ -228,15 +229,16 @@ function fixtureNativeCompiler(specification, options = {}) {
   return async (_specificationPath, _sourceRoot, candidatePath, reportPath) => {
     const candidateBytes = Buffer.from(`${JSON.stringify(candidate())}\n`, "utf8");
     const sidecarBytes = movementSidecarBytes();
-    const reportBytes = Buffer.from(`${JSON.stringify(derivationReport(specification, options))}\n`, "utf8");
+    const movementRouteTemplatesFile = `${basename(candidatePath).replace(/\.json$/u, "")}.movement-route-templates-v2.json`;
+    const reportBytes = Buffer.from(`${JSON.stringify(derivationReport(specification, { ...options, movementRouteTemplatesFile }))}\n`, "utf8");
     await writeFile(candidatePath, candidateBytes, { flag: "wx" });
-    await writeFile(join(dirname(candidatePath), "operational-infrastructure-v2.movement-route-templates-v2.json"), sidecarBytes, { flag: "wx" });
+    await writeFile(join(dirname(candidatePath), movementRouteTemplatesFile), sidecarBytes, { flag: "wx" });
     await writeFile(reportPath, reportBytes, { flag: "wx" });
     const receipt = {
       schema: GERMANY_OPERATIONAL_NATIVE_RECEIPT_SCHEMA,
       infraReleaseId: RELEASE_ID,
       candidate: { bytes: candidateBytes.length, sha256: sha256(candidateBytes), stateHash: STATE_HASH },
-      movementRouteTemplates: movementSidecarProof(),
+      movementRouteTemplates: movementSidecarProof(movementRouteTemplatesFile),
       report: { bytes: reportBytes.length, sha256: sha256(reportBytes) },
       candidateProduced: true,
       activationEligible: options.activationEligible ?? true,
@@ -323,7 +325,7 @@ test("der Readiness- und alte Sechs-Layer-Vertrag bleiben Status-2-fail-closed",
   const paths = outputPaths(root);
   const specification = readinessSpecification();
   await writeFile(specPath, `${JSON.stringify(specification)}\n`, "utf8");
-  const result = spawnSync(process.execPath, [RUNNER, specPath, root, paths.candidatePath, paths.reportPath], { encoding: "utf8" });
+  const result = spawnSync(process.execPath, [RUNNER, "readiness", specPath, root, paths.candidatePath, paths.reportPath], { encoding: "utf8" });
   assert.equal(result.status, 2, `${result.stderr}\n${result.stdout}`);
   await assertMissing(paths.candidatePath);
   await assertMissing(paths.outputPath);
@@ -340,24 +342,182 @@ test("der Readiness- und alte Sechs-Layer-Vertrag bleiben Status-2-fail-closed",
   );
 });
 
-test("der neue Runner verlangt sein fuenftes OUTPUT-Argument, Legacy verbietet es", async (t) => {
+test("der Runner verlangt explizite Candidate-/Materialize-Modi und Legacy bleibt Readiness-only", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "zugfolge-operational-runner-args-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const paths = outputPaths(root);
   const conservativePath = join(root, "conservative.json");
   await writeFile(conservativePath, JSON.stringify(conservativeSpecification()));
-  const missingOutput = spawnSync(process.execPath, [RUNNER, conservativePath, root, paths.candidatePath, paths.reportPath], { encoding: "utf8" });
-  assert.notEqual(missingOutput.status, 0);
-  assert.match(missingOutput.stderr, /fuenfte Argument OUTPUT/u);
+  const missingSidecar = spawnSync(process.execPath, [RUNNER, "candidate-triplet", conservativePath, root, paths.candidatePath, paths.reportPath], { encoding: "utf8" });
+  assert.notEqual(missingSidecar.status, 0);
+  assert.match(missingSidecar.stderr, /CANDIDATE-SIDECAR/u);
   await assertMissing(paths.candidatePath);
   await assertMissing(paths.reportPath);
 
   const readinessPath = join(root, "readiness.json");
   await writeFile(readinessPath, JSON.stringify(readinessSpecification()));
-  const legacyWithOutput = spawnSync(process.execPath, [RUNNER, readinessPath, root, paths.candidatePath, paths.reportPath, paths.outputPath], { encoding: "utf8" });
+  const legacyWithOutput = spawnSync(process.execPath, [RUNNER, "materialize", readinessPath, root, paths.candidatePath, paths.movementRouteTemplatesPath, paths.reportPath, paths.outputPath], { encoding: "utf8" });
   assert.notEqual(legacyWithOutput.status, 0);
-  assert.match(legacyWithOutput.stderr, /exakt vier Argumente/u);
+  assert.match(legacyWithOutput.stderr, /expliziten Modus readiness/u);
   await assertMissing(paths.outputPath);
+});
+
+test("Candidate-Triplet-Modus publiziert Candidate, Candidate-Sidecar und Bericht ohne finales Paar", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "zugfolge-operational-candidate-triplet-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const specification = conservativeSpecification();
+  const specificationPath = join(root, "specification.json");
+  await writeFile(specificationPath, JSON.stringify(specification));
+  const paths = {
+    ...outputPaths(root),
+    candidatePath: join(root, "operational-infrastructure-v2.candidate.json"),
+  };
+  const candidateMovementRouteTemplatesPath = join(root, "operational-infrastructure-v2.candidate.movement-route-templates-v2.json");
+  let materialized = false;
+  const receipt = await runGermanyOperationalInfrastructureV2({
+    specification,
+    specificationPath,
+    sourceRoot: root,
+    candidatePath: paths.candidatePath,
+    movementRouteTemplatesPath: candidateMovementRouteTemplatesPath,
+    reportPath: paths.reportPath,
+    deriveNative: fixtureNativeCompiler(specification),
+    materialize: async () => { materialized = true; },
+  });
+  assert.equal(materialized, false);
+  assert.equal(receipt.materialized, null);
+  assert.equal(receipt.paths.output, null);
+  assert.deepEqual(JSON.parse(await readFile(paths.candidatePath, "utf8")), candidate());
+  assert.equal(JSON.parse(await readFile(candidateMovementRouteTemplatesPath, "utf8")).schema, "movement-route-templates-v2");
+  assert.equal(JSON.parse(await readFile(paths.reportPath, "utf8")).activationEligible, true);
+  await assertMissing(paths.outputPath);
+  await assertMissing(paths.movementRouteTemplatesPath);
+  await assertMissing(join(root, ".operational-infrastructure-v2.candidate-triplet.claim.json"));
+});
+
+for (const killAfterLink of [1, 2]) {
+  test(`Candidate-Triplet-Claim recovered owned-only nach simuliertem Abbruch hinter Link ${killAfterLink}`, async (t) => {
+    const root = await mkdtemp(join(tmpdir(), `zugfolge-operational-candidate-recovery-${killAfterLink}-`));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const specification = conservativeSpecification();
+    const specificationPath = join(root, "specification.json");
+    await writeFile(specificationPath, JSON.stringify(specification));
+    const basePaths = outputPaths(root);
+    const paths = {
+      candidatePath: join(root, "operational-infrastructure-v2.candidate.json"),
+      movementRouteTemplatesPath: join(root, "operational-infrastructure-v2.candidate.movement-route-templates-v2.json"),
+      reportPath: basePaths.reportPath,
+    };
+    let claimObservedBeforeFirstLink = false;
+    await assert.rejects(
+      runGermanyOperationalInfrastructureV2({
+        specification,
+        specificationPath,
+        sourceRoot: root,
+        ...paths,
+        deriveNative: fixtureNativeCompiler(specification),
+        hooks: {
+          afterCandidateTripletClaim: async () => {
+            claimObservedBeforeFirstLink = true;
+            await assertMissing(paths.candidatePath);
+            await assertMissing(paths.movementRouteTemplatesPath);
+            await assertMissing(paths.reportPath);
+          },
+          afterCandidateTripletLink: ({ index }) => {
+            if (index === killAfterLink) throw new Error(`simulierter Candidate-Triplet-Killpoint ${killAfterLink}`);
+          },
+        },
+      }),
+      new RegExp(`simulierter Candidate-Triplet-Killpoint ${killAfterLink}`, "u"),
+    );
+    assert.equal(claimObservedBeforeFirstLink, true);
+    await access(join(root, ".operational-infrastructure-v2.candidate-triplet.claim.json"));
+    await access(paths.candidatePath);
+    if (killAfterLink === 1) await assertMissing(paths.movementRouteTemplatesPath);
+    else await access(paths.movementRouteTemplatesPath);
+    await assertMissing(paths.reportPath);
+    assert.equal((await readdir(root)).filter((name) => name.startsWith(".operational-v2-derive-")).length, 1);
+
+    const recovered = await runGermanyOperationalInfrastructureV2({
+      specification,
+      specificationPath,
+      sourceRoot: root,
+      ...paths,
+      deriveNative: async () => assert.fail("Recovery darf den Native-Compiler nicht erneut starten."),
+    });
+    assert.equal(recovered.candidateProduced, true);
+    assert.equal(recovered.materialized, null);
+    assert.deepEqual(JSON.parse(await readFile(paths.candidatePath, "utf8")), candidate());
+    assert.equal(JSON.parse(await readFile(paths.movementRouteTemplatesPath, "utf8")).schema, "movement-route-templates-v2");
+    assert.equal(JSON.parse(await readFile(paths.reportPath, "utf8")).activationEligible, true);
+    await assertMissing(join(root, ".operational-infrastructure-v2.candidate-triplet.claim.json"));
+    assert.deepEqual((await readdir(root)).filter((name) => name.startsWith(".operational-v2-derive-")), []);
+  });
+}
+
+test("Candidate-Triplet-Recovery loescht keine fremde Ersatzidentitaet", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "zugfolge-operational-candidate-foreign-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const specification = conservativeSpecification();
+  const specificationPath = join(root, "specification.json");
+  await writeFile(specificationPath, JSON.stringify(specification));
+  const basePaths = outputPaths(root);
+  const paths = {
+    candidatePath: join(root, "operational-infrastructure-v2.candidate.json"),
+    movementRouteTemplatesPath: join(root, "operational-infrastructure-v2.candidate.movement-route-templates-v2.json"),
+    reportPath: basePaths.reportPath,
+  };
+  await assert.rejects(
+    runGermanyOperationalInfrastructureV2({
+      specification,
+      specificationPath,
+      sourceRoot: root,
+      ...paths,
+      deriveNative: fixtureNativeCompiler(specification),
+      hooks: {
+        afterCandidateTripletLink: async ({ id, outputPath }) => {
+          if (id !== "candidate") return;
+          await rm(outputPath);
+          await writeFile(outputPath, "fremde Candidate-Datei\n", { flag: "wx" });
+          throw new Error("simulierter Fremdersatz nach Candidate-Link");
+        },
+      },
+    }),
+    /simulierter Fremdersatz/u,
+  );
+  await assert.rejects(
+    runGermanyOperationalInfrastructureV2({
+      specification,
+      specificationPath,
+      sourceRoot: root,
+      ...paths,
+      deriveNative: async () => assert.fail("Blockiertes Recovery darf den Native-Compiler nicht starten."),
+    }),
+    /fremd ersetzt.*unangetastet/u,
+  );
+  assert.equal(await readFile(paths.candidatePath, "utf8"), "fremde Candidate-Datei\n");
+  await access(join(root, ".operational-infrastructure-v2.candidate-triplet.claim.json"));
+  assert.equal((await readdir(root)).filter((name) => name.startsWith(".operational-v2-derive-")).length, 1);
+  await assertMissing(paths.movementRouteTemplatesPath);
+  await assertMissing(paths.reportPath);
+});
+
+test("Candidate-Triplet-Modus verweigert einen nichtkanonischen Candidate-Namen vor der Ableitung", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "zugfolge-operational-candidate-name-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const specification = conservativeSpecification();
+  await assert.rejects(
+    runGermanyOperationalInfrastructureV2({
+      specification,
+      specificationPath: join(root, "specification.json"),
+      sourceRoot: root,
+      candidatePath: join(root, "candidate.json"),
+      movementRouteTemplatesPath: join(root, "operational-infrastructure-v2.candidate.movement-route-templates-v2.json"),
+      reportPath: join(root, "operational-infrastructure-v2.derivation-report.json"),
+      deriveNative: async () => assert.fail("Nichtkanonischer Candidate darf den Ableiter nicht starten."),
+    }),
+    /keinen kanonischen Dateinamen/u,
+  );
 });
 
 test("publiziert einen nativen vollständigen Candidate erst nach Berichtsgate und Materialisierung", async (t) => {

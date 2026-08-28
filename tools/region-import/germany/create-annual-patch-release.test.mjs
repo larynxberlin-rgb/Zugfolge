@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
-import { link, mkdir, mkdtemp, open, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, mkdtemp, open, readFile, readdir, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { createAnnualPatchRelease } from "./create-annual-patch-release.mjs";
 
 const PENDING_REAL_BUILD = "PENDING_REAL_ANNUAL_RELEASE_BUILD";
+const CHECKED_IN_VALIDATOR_REBUILD_SPEC = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "operational-validator-rebuild.annual-2026.5.json",
+);
 const GTFS_SNAPSHOT_BYTES = 14_797_184;
 const GTFS_SNAPSHOT_SHA256 = "cbebbcb73e1807df793c26411873b2df442e6ce38d28fd0593a78e5ae93912c5";
 const GTFS_SNAPSHOT_HASH = "811fcafe581e73409b373ec5e2568dbb44048d604be834d1aa998abe4a35a8a7";
@@ -21,6 +26,8 @@ const CANONICAL_HARDENING_FILES = Object.freeze([
   "tools/tiles/map-build-cache-inventory.annual-{patch}.plan.json",
   "tools/tiles/map-package.annual-{patch}.plan.json",
   "tools/tiles/map-release-build-evidence.annual-{patch}.spec.json",
+  "tools/region-import/germany/release.annual-{patch}.config.json",
+  "tools/region-import/germany/operational-validator-rebuild.annual-{patch}.json",
 ]);
 const CANONICAL_HARDENING_TEXT_FILES = Object.freeze([
   "tools/audits/germany-{patch}-alpha-world-runtime.real.test.mjs",
@@ -81,6 +88,7 @@ async function fixture(t) {
         candidatePackage: {
           retainedTrustedKeyIds: ["zugfolge-alpha-2026", "zugfolge-alpha-2026.3"],
         },
+        tools: [],
         outputs: [
           "basemap-pmtiles",
           "semantic-pmtiles",
@@ -124,6 +132,7 @@ function buildEvidenceBaseline() {
     candidatePackage: {
       retainedTrustedKeyIds: ["zugfolge-alpha-2026", "zugfolge-alpha-2026.3"],
     },
+    tools: [],
     outputs: [
       "basemap-pmtiles",
       "semantic-pmtiles",
@@ -333,6 +342,18 @@ async function baselineHardeningFixture(t) {
       ],
     }],
     ["tools/tiles/map-release-build-evidence.annual-2026.4.spec.json", buildEvidenceBaseline()],
+    ["tools/region-import/germany/release.annual-2026.4.config.json", {
+      release: { releaseId: "infra-deutschland-2026.4" },
+      pipeline: {
+        operationalDeriver: {
+          entrypoint: "tools/region-import/germany/run-operational-infrastructure-v2.mjs",
+          specification: "tools/region-import/germany/operational-infrastructure.annual-2026.4.json",
+          candidate: "var/derived/germany-2026.4/operational-infrastructure-v2.candidate.json",
+          report: "var/derived/germany-2026.4/operational-infrastructure-v2.derivation-report.json",
+          output: "var/derived/germany-2026.4/operational-infrastructure-v2.json",
+        },
+      },
+    }],
     ["tools/audits/germany-2026.4-alpha-world-runtime.real.test.mjs", baselineAlphaAudit()],
     ["tools/audits/germany-2026.4-signed-game-staging.real.test.mjs", baselineSignedStagingAudit()],
   ]);
@@ -366,6 +387,8 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
     "tools/tiles/map-build-cache-inventory.annual-2026.5.plan.json",
     "tools/tiles/map-package.annual-2026.5.plan.json",
     "tools/tiles/map-release-build-evidence.annual-2026.5.spec.json",
+    "tools/region-import/germany/release.annual-2026.5.config.json",
+    "tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json",
     "tools/audits/germany-2026.5-alpha-world-runtime.real.test.mjs",
     "tools/audits/germany-2026.5-signed-game-staging.real.test.mjs",
   ]);
@@ -479,10 +502,32 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
       cacheFile: "derived/infra-deutschland-2026.5/timetable-routes-v2.derivation-report-v4.json",
     }],
   );
-  assert.deepEqual(cachePlan.files.slice(-2).map(({ sourceFile }) => sourceFile.split("/").at(-1)), [
+  for (const fileName of [
     "operational-infrastructure-v2.movement-route-templates-v2.json",
     "timetable-routes-v2.transfer-demands-v2.json",
-  ]);
+  ]) {
+    assert.equal(cachePlan.files.filter(({ sourceFile }) => sourceFile.endsWith(`/${fileName}`)).length, 1);
+  }
+  assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe"
+      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc/zugfolge-infra-release.exe"
+  )));
+  assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json"
+      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json"
+  )));
+  assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-source-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-556c906567dd436de091390b66cf9538e82febd237f70b0d353b286480852b2a.tar"
+      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-source-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-556c906567dd436de091390b66cf9538e82febd237f70b0d353b286480852b2a.tar"
+  )));
+  assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-ee6d7081b32277e46cd6ebb28fc65bd45ce55012.json"
+      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-ee6d7081b32277e46cd6ebb28fc65bd45ce55012.json"
+  )));
+  assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-official.exe"
+      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/official/zugfolge-infra-release.exe"
+  )));
 
   const mapPackage = JSON.parse(await readFile(join(root, result.files[6]), "utf8"));
   assert.deepEqual(mapPackage.auxiliaryFiles.map(({ kind }) => kind), [
@@ -519,8 +564,116 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
     "movement-route-templates-v2",
     "timetable-transfer-demands-v2",
   ]);
+  assert.deepEqual(
+    evidence.inputs.filter(({ id }) => [
+      "operational-native-receipt-capture",
+      "operational-recovery-publisher",
+      "operational-recovery-publisher-implementation",
+      "operational-v2-deriver",
+      "operational-v2-materializer",
+      "create-new-output-contract",
+      "operational-v2-binding",
+      "operational-validator-rebuild-evidence",
+      "operational-validator-rebuild-bootstrap",
+      "operational-validator-rebuild-spec",
+      "operational-validator-rebuild-verifier",
+      "operational-validator-rebuild-cli",
+    ].includes(id)).map(({ id }) => id),
+    [
+      "operational-validator-rebuild-evidence",
+      "operational-native-receipt-capture",
+      "operational-recovery-publisher",
+      "operational-recovery-publisher-implementation",
+      "operational-v2-deriver",
+      "operational-v2-materializer",
+      "create-new-output-contract",
+      "operational-v2-binding",
+      "operational-validator-rebuild-bootstrap",
+      "operational-validator-rebuild-spec",
+      "operational-validator-rebuild-verifier",
+      "operational-validator-rebuild-cli",
+    ],
+  );
+  assert.deepEqual(evidence.tools[0], {
+    id: "operational-v2-validator",
+    kind: "binary",
+    version: "operational-validator-build-commit",
+    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe",
+    cacheFile: "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc/zugfolge-infra-release.exe",
+    expectedBytes: 8_283_251,
+    expectedSha256: "69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc",
+  });
+  assert.deepEqual(evidence.tools[1], {
+    id: "operational-v2-validator-rebuild",
+    kind: "binary",
+    version: "operational-validator-rebuild-proof",
+    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-official.exe",
+    cacheFile: "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/official/zugfolge-infra-release.exe",
+  });
 
-  const alphaAudit = await readFile(join(root, result.files[8]), "utf8");
+  const releaseConfig = JSON.parse(await readFile(
+    join(root, "tools/region-import/germany/release.annual-2026.5.config.json"),
+    "utf8",
+  ));
+  assert.deepEqual(releaseConfig.pipeline.operationalDeriver, {
+    primaryRunner: "tools/region-import/germany/run-operational-infrastructure-v2.mjs",
+    primaryRunnerMode: "candidate-triplet",
+    specification: "tools/region-import/germany/operational-infrastructure.annual-2026.5.json",
+    candidate: "var/derived/germany-2026.5/operational-infrastructure-v2.candidate.json",
+    candidateMovementRouteTemplates: "var/derived/germany-2026.5/operational-infrastructure-v2.candidate.movement-route-templates-v2.json",
+    report: "var/derived/germany-2026.5/operational-infrastructure-v2.derivation-report.json",
+    output: "var/derived/germany-2026.5/operational-infrastructure-v2.json",
+    recoveryPublisher: {
+      captureEntrypoint: "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs",
+      entrypoint: "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
+      validatorExecutable: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe",
+      validatorBuildCommit: "ee6d7081b32277e46cd6ebb28fc65bd45ce55012",
+      validatorBytes: 8_283_251,
+      validatorSha256: "69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc",
+      validatorRebuildSpecification: "tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json",
+      validatorRebuildEvidence: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json",
+      validatorRebuildExecutable: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-official.exe",
+      validatorRebuildExpectedBytes: 8_283_251,
+      validatorNormalizedPeSha256: "91e84253399bf8836ec4e6a5688da51f753531a0040831a54b8585e28f1d5363",
+      executionInventory: {
+        wrapper: "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
+        implementation: "tools/region-import/germany/operational-infrastructure-v2-publication.mjs",
+        operationalDeriver: "tools/region-import/germany/operational-infrastructure-v2.mjs",
+        materializer: "tools/region-import/materialize-operational-infrastructure-v2.mjs",
+        createNewOutput: "tools/tiles/create-new-output.mjs",
+        operationalBinding: "tools/region-import/operational-infrastructure-binding.mjs",
+        validatorRebuildBootstrap: "tools/region-import/germany/operational-validator-rebuild-bootstrap.mjs",
+        validatorRebuildVerifier: "tools/region-import/germany/operational-validator-rebuild-evidence.mjs",
+      },
+      nativeReceipt: "var/derived/germany-2026.5/operational-infrastructure-v2.native-receipt.json",
+      publicationReceipt: "var/derived/germany-2026.5/operational-infrastructure-v2.publication-receipt.json",
+    },
+  });
+
+  const validatorRebuild = JSON.parse(await readFile(join(root, result.files[9]), "utf8"));
+  assert.deepEqual(
+    await readFile(join(root, result.files[9])),
+    await readFile(CHECKED_IN_VALIDATOR_REBUILD_SPEC),
+    "Generator und eingecheckter Validator-Rebuild-Vertrag muessen byteidentisch sein.",
+  );
+  assert.deepEqual(Object.keys(validatorRebuild).sort(), [
+    "binaries",
+    "build",
+    "pe",
+    "producer",
+    "provenance",
+    "releaseId",
+    "schema",
+    "source",
+    "toolchain",
+  ]);
+  assert.equal(validatorRebuild.releaseId, "infra-deutschland-2026.5");
+  assert.equal(validatorRebuild.source.commit, "ee6d7081b32277e46cd6ebb28fc65bd45ce55012");
+  assert.equal(validatorRebuild.binaries.preserved.sha256, "69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc");
+  assert.equal(validatorRebuild.pe.normalizedSha256, "91e84253399bf8836ec4e6a5688da51f753531a0040831a54b8585e28f1d5363");
+  assert.equal(validatorRebuild.producer.implementation.sha256, "0dcac3ff4a921841922979c0e641716815341131f33105d6b9ed02a2b469d023");
+
+  const alphaAudit = await readFile(join(root, result.files[10]), "utf8");
   assert.match(alphaAudit, /validateAlphaWorldBuildConfiguration/u);
   assert.match(alphaAudit, /releaseBoundAlphaWorldBuilderInputs/u);
   assert.match(alphaAudit, /buildAlphaWorld\(builderInputs\.argv\)/u);
@@ -539,7 +692,7 @@ test("migriert die hermetische 58b2f5c-.4-Form target-only und laesst alle Quell
   assert.match(alphaAudit, /  stateHash: "PENDING_REAL_ANNUAL_RELEASE_BUILD",/u);
   assert.match(alphaAudit, /throw new Error\("PENDING_REAL_ANNUAL_RELEASE_BUILD: Deutschland-Alpha-Real-Audit 2026\.5/u);
 
-  const stagingAudit = await readFile(join(root, result.files[9]), "utf8");
+  const stagingAudit = await readFile(join(root, result.files[11]), "utf8");
   assert.match(stagingAudit, /operationalStateHash: "PENDING_REAL_ANNUAL_RELEASE_BUILD"/u);
   assert.match(stagingAudit, /Erwartete \.5-Manifestbytezahl ist ungueltig\./u);
   assert.match(stagingAudit, /Erwarteter \.5-Manifest-SHA-256 ist ungueltig\./u);
@@ -679,16 +832,6 @@ test("erstellt den vollstaendigen direkten Jahrespatch create-new und laesst Que
       cacheFile: "derived/infra-deutschland-2026.5/timetable-routes-v2.derivation-report-v4.json",
     }],
   );
-  assert.deepEqual(cachePlan.files.slice(-2), [
-    {
-      sourceFile: "var/derived/germany-2026.5/operational-infrastructure-v2.movement-route-templates-v2.json",
-      cacheFile: "derived/infra-deutschland-2026.5/operational-infrastructure-v2.movement-route-templates-v2.json",
-    },
-    {
-      sourceFile: "var/derived/germany-2026.5/timetable-routes-v2.transfer-demands-v2.json",
-      cacheFile: "derived/infra-deutschland-2026.5/timetable-routes-v2.transfer-demands-v2.json",
-    },
-  ]);
   for (const fileName of [
     "operational-infrastructure-v2.movement-route-templates-v2.json",
     "timetable-routes-v2.transfer-demands-v2.json",
@@ -696,6 +839,26 @@ test("erstellt den vollstaendigen direkten Jahrespatch create-new und laesst Que
     assert.equal(cachePlan.files.filter(({ sourceFile }) => sourceFile.split("/").at(-1) === fileName).length, 1);
     assert.equal(cachePlan.files.filter(({ cacheFile }) => cacheFile.split("/").at(-1) === fileName).length, 1);
   }
+  assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe"
+      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc/zugfolge-infra-release.exe"
+  )));
+  assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json"
+      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json"
+  )));
+  assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-source-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-556c906567dd436de091390b66cf9538e82febd237f70b0d353b286480852b2a.tar"
+      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-source-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-556c906567dd436de091390b66cf9538e82febd237f70b0d353b286480852b2a.tar"
+  )));
+  assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-ee6d7081b32277e46cd6ebb28fc65bd45ce55012.json"
+      && cacheFile === "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-ee6d7081b32277e46cd6ebb28fc65bd45ce55012.json"
+  )));
+  assert.ok(cachePlan.files.some(({ sourceFile, cacheFile }) => (
+    sourceFile === "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-official.exe"
+      && cacheFile === "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/official/zugfolge-infra-release.exe"
+  )));
   const buildEvidence = JSON.parse(await readFile(join(root, result.files[3]), "utf8"));
   assert.equal(buildEvidence.schema, "zugfolge-map-release-build-evidence-spec/v3");
   assert.deepEqual(buildEvidence.inputs[0], {
@@ -717,6 +880,22 @@ test("erstellt den vollstaendigen direkten Jahrespatch create-new und laesst Que
     "zugfolge-alpha-2026.3",
     "zugfolge-map-deutschland-2026.4",
   ]);
+  assert.deepEqual(buildEvidence.tools[0], {
+    id: "operational-v2-validator",
+    kind: "binary",
+    version: "operational-validator-build-commit",
+    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe",
+    cacheFile: "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc/zugfolge-infra-release.exe",
+    expectedBytes: 8_283_251,
+    expectedSha256: "69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc",
+  });
+  assert.deepEqual(buildEvidence.tools[1], {
+    id: "operational-v2-validator-rebuild",
+    kind: "binary",
+    version: "operational-validator-rebuild-proof",
+    file: "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-official.exe",
+    cacheFile: "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/official/zugfolge-infra-release.exe",
+  });
   assert.deepEqual(buildEvidence.outputs.slice(-2), [
     {
       id: "operational-movement-routes",
@@ -805,6 +984,42 @@ test("entfernt eine partiell geschriebene eigene Stagingdatei und publiziert kei
   assert.equal(releaseControlFiles.some((name) => name.startsWith(".annual-patch-release-2026.5")), false);
 });
 
+test("uebernimmt bei fehlgeschlagenem Handle-stat keine fremde Pfadidentitaet fuer Cleanup", async (t) => {
+  const { files, root, textFiles } = await fixture(t);
+  let foreignPath;
+  let displacedOwnedPath;
+  const statFailureOpen = async (path, flags, mode) => {
+    const handle = await open(path, flags, mode);
+    if (!path.endsWith("0000.stage")) return handle;
+    return {
+      close: (...args) => handle.close(...args),
+      stat: async () => {
+        foreignPath = path;
+        displacedOwnedPath = `${path}.owned-displaced`;
+        await rename(path, displacedOwnedPath);
+        await writeFile(path, "fremde-stat-race-datei\n", { flag: "wx" });
+        throw new Error("simulierter Handle-stat-Fehler");
+      },
+      sync: (...args) => handle.sync(...args),
+      writeFile: (...args) => handle.writeFile(...args),
+    };
+  };
+
+  await assert.rejects(
+    createAnnualPatchRelease({
+      repositoryRoot: root,
+      sourcePatch: "2026.4",
+      targetPatch: "2026.5",
+      files,
+      textFiles,
+      openCreateNewFile: statFailureOpen,
+    }),
+    /simulierter Handle-stat-Fehler/u,
+  );
+  assert.equal(await readFile(foreignPath, "utf8"), "fremde-stat-race-datei\n");
+  assert.ok((await lstat(displacedOwnedPath)).isFile());
+});
+
 test("loescht beim Rollback nur die selbst publizierte Dateidentitaet", async (t) => {
   const { files, root, textFiles } = await fixture(t);
   let firstTarget;
@@ -834,6 +1049,85 @@ test("loescht beim Rollback nur die selbst publizierte Dateidentitaet", async (t
   );
   assert.equal(await readFile(firstTarget, "utf8"), "fremde-datei-darf-nicht-geloescht-werden\n");
   await assert.rejects(readFile(join(root, "contracts/package.annual-2026.5.plan.json")), /ENOENT/u);
+});
+
+test("erhaelt eine fremde Datei beim Austausch exakt zwischen Identitaetspruefung und Quarantaene", async (t) => {
+  const { files, root, textFiles } = await fixture(t);
+  let firstTarget;
+  let publications = 0;
+  let raced = false;
+  const failSecondPublication = async (source, target) => {
+    publications += 1;
+    if (publications === 1) {
+      await link(source, target);
+      firstTarget = target;
+      return;
+    }
+    throw new Error("simulierter zweiter Publish-Fehler");
+  };
+
+  await assert.rejects(
+    createAnnualPatchRelease({
+      repositoryRoot: root,
+      sourcePatch: "2026.4",
+      targetPatch: "2026.5",
+      files,
+      textFiles,
+      publishLink: failSecondPublication,
+      hooks: {
+        beforeOwnedFileQuarantine: async ({ owned }) => {
+          if (raced || owned.path !== firstTarget) return;
+          raced = true;
+          await rename(firstTarget, `${firstTarget}.owned-displaced`);
+          await writeFile(firstTarget, "fremde-race-datei\n", { flag: "wx" });
+        },
+      },
+    }),
+    /simulierter zweiter Publish-Fehler/u,
+  );
+  assert.equal(raced, true);
+  assert.equal(await readFile(firstTarget, "utf8"), "fremde-race-datei\n");
+});
+
+test("erhaelt eine fremde Datei beim Austausch unmittelbar vor dem finalen Unlink", async (t) => {
+  const { files, root, textFiles } = await fixture(t);
+  let firstTarget;
+  let publications = 0;
+  let preservedOwnedPath;
+  let raced = false;
+  const failSecondPublication = async (source, target) => {
+    publications += 1;
+    if (publications === 1) {
+      await link(source, target);
+      firstTarget = target;
+      return;
+    }
+    throw new Error("simulierter zweiter Publish-Fehler vor Final-Unlink");
+  };
+
+  await assert.rejects(
+    createAnnualPatchRelease({
+      repositoryRoot: root,
+      sourcePatch: "2026.4",
+      targetPatch: "2026.5",
+      files,
+      textFiles,
+      publishLink: failSecondPublication,
+      hooks: {
+        beforeOwnedFileFinalUnlink: async ({ owned, quarantined }) => {
+          if (raced || owned.path !== firstTarget) return;
+          raced = true;
+          preservedOwnedPath = `${quarantined}.owned-displaced`;
+          await rename(quarantined, preservedOwnedPath);
+          await writeFile(quarantined, "fremde-final-unlink-datei\n", { flag: "wx" });
+        },
+      },
+    }),
+    /simulierter zweiter Publish-Fehler vor Final-Unlink/u,
+  );
+  assert.equal(raced, true);
+  assert.equal(await readFile(firstTarget, "utf8"), "fremde-final-unlink-datei\n");
+  assert.ok((await lstat(preservedOwnedPath)).isFile());
 });
 
 test("verweigert vorab eingemischte Operational-Sidecars vor jeder Mutation", async (t) => {

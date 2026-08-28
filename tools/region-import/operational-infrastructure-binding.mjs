@@ -1,4 +1,4 @@
-import { alphaCanonicalJson, alphaHash } from "../../packages/alpha/dist/index.js";
+import { createHash } from "node:crypto";
 
 export const OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA = "operational-infrastructure-v2";
 export const OPERATIONAL_INFRASTRUCTURE_BINDING_SCHEMA = "zugfolge-operational-infrastructure-binding/v2";
@@ -31,6 +31,25 @@ const OPERATIONAL_INFRASTRUCTURE_BINDING_KEYS = Object.freeze([
   "sha256",
   "stateHash",
 ]);
+
+function operationalCanonicalJson(value) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return JSON.stringify(value);
+  if (typeof value === "bigint") return JSON.stringify({ $bigint: value.toString() });
+  if (typeof value === "number") {
+    if (!Number.isSafeInteger(value)) throw new TypeError("Operational-v2-Zustand enthaelt keine sichere Ganzzahl.");
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return `[${value.map(operationalCanonicalJson).join(",")}]`;
+  if (typeof value === "object") {
+    const entries = Object.entries(value).sort(([left], [right]) => Buffer.from(left).compare(Buffer.from(right)));
+    return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${operationalCanonicalJson(item)}`).join(",")}}`;
+  }
+  throw new TypeError("Operational-v2-Zustand enthaelt einen nicht kanonisierbaren Wert.");
+}
+
+function operationalHash(schema, value) {
+  return createHash("sha256").update(operationalCanonicalJson({ schema, value }), "utf8").digest("hex");
+}
 
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -90,12 +109,12 @@ export function assertOperationalInfrastructureV2(infrastructure) {
 
 export function operationalInfrastructureV2StateHash(infrastructure) {
   assertOperationalInfrastructureV2(infrastructure);
-  return alphaHash(OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA, infrastructure);
+  return operationalHash(OPERATIONAL_INFRASTRUCTURE_V2_SCHEMA, infrastructure);
 }
 
 export function canonicalOperationalInfrastructureV2Json(infrastructure) {
   assertOperationalInfrastructureV2(infrastructure);
-  return alphaCanonicalJson(infrastructure);
+  return operationalCanonicalJson(infrastructure);
 }
 
 function operationalInfrastructureArtifact(infraReleaseManifest) {

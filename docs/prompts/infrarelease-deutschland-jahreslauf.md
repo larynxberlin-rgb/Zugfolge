@@ -3,16 +3,20 @@
 Diesen Prompt einmal jährlich in einem neuen, protokollierten Codex-Task
 verwenden. `<FAHRPLANJAHR>`, `<STICHTAG_UTC>`, `<QUELLWURZEL>`,
 `<ARTEFAKTWURZEL>`, `<INFRARELEASE_ID>`, `<OPERATIONAL_CANDIDATE>`,
+`<OPERATIONAL_CANDIDATE_SIDECAR>`,
 `<ANNUAL_RELEASE_CONFIG>`, `<ANNUAL_ARTIFACT_SPEC>`,
 `<OPERATIONAL_ARTIFACT_ID>`, `<RELEASE_ARTIFACT_INVENTORY>`,
 `<TIMETABLE_ROUTE_SPEC>`, `<SYNTHETIC_CLOSURE_SPEC>`,
-`<OPERATIONAL_QUALITY_SPEC>`, `<SOURCE_CAPTURE_MANIFEST>` und
-`<MAP_PACKAGE_PLAN>` sowie `<DELIVERY_KEY_ID>` müssen vor dem Start konkret
+`<OPERATIONAL_QUALITY_SPEC>`, `<SOURCE_CAPTURE_MANIFEST>`,
+`<MAP_PACKAGE_PLAN>`, `<OPERATIONAL_VALIDATOR_BUILD_COMMIT>` sowie
+`<DELIVERY_KEY_ID>` müssen vor dem Start konkret
 ersetzt werden; kein
 Platzhalter darf in einem Kandidaten verbleiben.
 `<OPERATIONAL_CANDIDATE>` ist der Pfad zu einem fachlich aus den gepinnten
 Deutschlanddaten abgeleiteten, weltfreien `OperationalInfraRelease`, nicht zu
-einer Deploymenthülle. `<ANNUAL_RELEASE_CONFIG>` ist der eingecheckte
+einer Deploymenthülle. `<OPERATIONAL_CANDIDATE_SIDECAR>` ist ausschließlich
+der vom nativen Ableiter aus diesem Candidate-Dateinamen erzeugte
+`.movement-route-templates-v2.json`-Pfad. `<ANNUAL_RELEASE_CONFIG>` ist der eingecheckte
 Jahresvertrag für genau `<INFRARELEASE_ID>` und `<FAHRPLANJAHR>`; die generische
 Beispielkonfiguration darf ihn nicht ersetzen. Führe alle Befehle aus dem
 Repository-Wurzelverzeichnis aus; `<ARTEFAKTWURZEL>` und die `sourceFile`-Pfade
@@ -21,6 +25,7 @@ der Jahresspezifikation müssen darunter liegen.
 Für den aktuell konkretisierten Lauf gelten zusätzlich unveränderlich
 `<FAHRPLANJAHR>=2026`,
 `<INFRARELEASE_ID>=infra-deutschland-2026.5`, Paketversion `2026.5`,
+`<OPERATIONAL_VALIDATOR_BUILD_COMMIT>=ee6d7081b32277e46cd6ebb28fc65bd45ce55012`,
 `<DELIVERY_KEY_ID>=zugfolge-map-deutschland-2026.5` und ausschließlich
 `zugfolge-map-runtime/v2`. `infra-deutschland-2026.4` ist der bytegleich zu
 erhaltende Vorgängerstand und Vertrauensanker, niemals aktuelles Ausgabeziel.
@@ -291,7 +296,7 @@ Deterministischer Build und Prüfung:
 
    Lies anschließend den strikt validierten Subvertrag
    `pipeline.operationalDeriver` aus `<ANNUAL_RELEASE_CONFIG>`. Sein
-   `entrypoint` muss exakt
+   `primaryRunner` muss exakt
    `tools/region-import/germany/run-operational-infrastructure-v2.mjs` sein;
    seine `specification` muss
    `schema=zugfolge-germany-operational-infrastructure-derivation/v2`,
@@ -307,19 +312,161 @@ Deterministischer Build und Prüfung:
    `null`, ein fehlender oder ein leerer Pfad ist für einen aktivierbaren
    Jahresrelease unzulässig. `candidate` muss exakt
    `<OPERATIONAL_CANDIDATE>` entsprechen und `output` muss exakt
-   `<ARTEFAKTWURZEL>/operational-infrastructure-v2.json` bezeichnen. Binde
+   `<ARTEFAKTWURZEL>/operational-infrastructure-v2.json` bezeichnen.
+   `candidateMovementRouteTemplates` muss exakt
+   `<OPERATIONAL_CANDIDATE_SIDECAR>` entsprechen. Der getrennte
+   `recoveryPublisher` muss die eingecheckten Capture-/Publisher-EntryPoints
+   sowie die create-new-Ziele
+   `<ARTEFAKTWURZEL>/operational-infrastructure-v2.native-receipt.json` und
+   `<ARTEFAKTWURZEL>/operational-infrastructure-v2.publication-receipt.json`
+   binden. Zusätzlich muss er den tatsächlich ausgeführten Validatorpfad,
+   `<OPERATIONAL_VALIDATOR_BUILD_COMMIT>` und die vollständige lokale
+   Importclosure aus Publisher-Wrapper, Publisher-Implementierung, Deriver,
+   Materializer, Create-new-Vertrag und
+   `operational-infrastructure-binding.mjs` sowie den typisierten
+   Validator-Rebuild-Bootstrap und -Verifier deklarieren. Der Binding-Vertrag
+   darf keine ignorierte `packages/*/dist`-Laufzeitdatei laden. Binde
    `specification`, `report` und `output` unverändert aus diesem Subvertrag an
    `$OPERATIONAL_DERIVER_SPECIFICATION`, `$OPERATIONAL_DERIVER_REPORT` und
-   `$OPERATIONAL_DERIVER_OUTPUT` und führe den echten Fünf-Argument-CLI-Vertrag
-   aus. Baue dafür zuerst das optimierte native Binary und setze den
-   ausführbaren Pfad explizit; Deutschland-Candidate und Closure dürfen nicht
-   versehentlich mehrfach über `cargo run` im Debugprofil validiert werden:
+   `$OPERATIONAL_DERIVER_OUTPUT`. Der Primärlauf verwendet ausschließlich den
+   expliziten `candidate-triplet`-Modus mit dem konfigurierten Candidate-Sidecar;
+   er darf weder das finale Operational-v2-Artefakt noch dessen finales Sidecar
+   veröffentlichen. Nur wenn noch kein natives Candidate-Triplet existiert,
+   materialisiere zuerst das optimierte native Binary create-new unter einem
+   commit- und hashbenannten Pfad, protokolliere dessen vollständigen
+   Build-Commit als `<OPERATIONAL_VALIDATOR_BUILD_COMMIT>` und setze
+   ausschließlich diesen unveränderlichen Pfad explizit; Deutschland-Candidate
+   und Closure dürfen weder aus einem veränderlichen `target/release`-Pfad
+   noch versehentlich mehrfach über `cargo run` im Debugprofil validiert werden:
 
    ```sh
-   cargo build --locked --release -p zugfolge-infra --bin zugfolge-infra-release
-   export ZUGFOLGE_INFRA_RELEASE_VALIDATOR_PATH="$PWD/target/release/zugfolge-infra-release"
-   node tools/region-import/germany/run-operational-infrastructure-v2.mjs "$OPERATIONAL_DERIVER_SPECIFICATION" . <OPERATIONAL_CANDIDATE> "$OPERATIONAL_DERIVER_REPORT" "$OPERATIONAL_DERIVER_OUTPUT"
+   export ZUGFOLGE_INFRA_RELEASE_VALIDATOR_PATH="$PWD/var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe"
+   node tools/region-import/germany/run-operational-infrastructure-v2.mjs candidate-triplet "$OPERATIONAL_DERIVER_SPECIFICATION" . <OPERATIONAL_CANDIDATE> <OPERATIONAL_CANDIDATE_SIDECAR> "$OPERATIONAL_DERIVER_REPORT"
    ```
+
+   Falls eine vorab genehmigte, langlaufende native Ableitung das vollständige
+   Triplet create-new unter dem Candidate-, dem daraus abgeleiteten
+   Candidate-Movement-Sidecar- und dem Berichtspfad erzeugt hat, darf der
+   native Lauf nicht wiederholt und das Sidecar nicht manuell kopiert,
+   umbenannt oder verlinkt werden. Die aktuelle 2026.5-Ableitung läuft noch;
+   Candidate, Candidate-Sidecar und Bericht sind noch nicht atomar publiziert.
+   Bis zu Prozessende, erfolgreichem Exit und allen drei create-new Dateien
+   existiert deshalb weder ein Candidate- noch ein Releasebeleg. Der laufende
+   Prozess wurde aus einem veränderlichen `target/release`-Pfad gestartet;
+   eine später hashgleiche preserved Kopie beweist ohne die noch offene
+   integrierte Runner-Capture-Kopplung nicht, welches Binary das Triplet
+   tatsächlich erzeugt hat. Ein daraus nachträglich gebildetes stdin-Receipt
+   bleibt forensisch und ist nicht releasefähig.
+
+   Für den künftig integrierten Lauf ist ausschließlich die create-new erhaltene Datei
+   `var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe`
+   mit 8.283.251 Bytes und SHA-256
+   `69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc`
+   zulässig. Sie darf bis zur commitbenannten Buildcache-Inventarisierung weder
+   neu gebaut, überschrieben noch als `$MAP_BUILD_COMMIT` umetikettiert werden.
+   Das Buildcache-Inventar führt dieselben Bytes unter
+   `tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc/zugfolge-infra-release.exe`;
+   ein späterer Build unter `target/release` darf diesen unveränderlichen
+   Capture-Pfad nicht ersetzen.
+   Der offizielle Rebuild wird als zweite unveränderliche Datei
+   `var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-official.exe`
+   create-new erzeugt. Sein Raw-SHA-256 wird nicht vor dem Build behauptet,
+   sondern erst aus den tatsächlich publizierten Bytes in das portable
+   Rebuild-Receipt übernommen. Vor Capture und Publikation muss der typisierte
+   Rebuild-Vertrag
+   `tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json`
+   gegen das lokale Quellrepository materialisiert und danach unabhängig
+   verifiziert sein. Der minimale Bootstrap wird durch den aufrufenden,
+   eingecheckten EntryPoint gegen die externen Spec-Pins geprüft, bevor seine
+   lokale Importclosure aus gehaltenen Bytes geladen wird; ein direkt
+   aufgerufener Bootstrap kann seine eigenen bereits laufenden Bytes nicht
+   selbst beglaubigen und ist deshalb kein Releasebeleg. Der Materialisierer
+   erzeugt über `git archive` aus exakt
+   `ee6d7081b32277e46cd6ebb28fc65bd45ce55012` einen privaten sauberen
+   Quellbaum und baut mit leerem externen Target-Verzeichnis und dem exakt
+   spezifizierten `cargo build --locked --release` unter kontrollierter
+   Umgebung. Sein create-new Receipt bindet Source-Archiv und -Baum,
+   `Cargo.lock`, Cargo/Rustc/Target/Profile, Buildumgebung und -logs, beide
+   Raw-Binaries, die PE-Sections und die ausschließlich erlaubten
+   COFF-TimeDateStamp- und OptionalHeader-CheckSum-Normalisierungen. Beide
+   normalisierten Binaries müssen
+   SHA-256 `91e84253399bf8836ec4e6a5688da51f753531a0040831a54b8585e28f1d5363`
+   besitzen:
+
+   ```sh
+   node tools/region-import/germany/operational-validator-rebuild-evidence-cli.mjs materialize tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json "$OPERATIONAL_VALIDATOR_SOURCE_REPOSITORY" var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json .
+   node tools/region-import/germany/operational-validator-rebuild-evidence-cli.mjs verify tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json .
+   ```
+
+   Ein falscher Commit oder `Cargo.lock`, ein abweichender Buildbefehl,
+   Toolchain-/Umgebungsdrift, eine nicht erlaubte PE-Abweichung oder ein bereits
+   vorhandenes Binary- oder Receiptziel blockiert den Lauf. Der preserved
+   Raw-Pin darf nie durch den erst im Receipt belegten Rebuild-SHA ersetzt
+   werden; `verify` muss ohne Quellrepository, Git oder Buildtoolchain aus
+   Spec, Receipt, dem persistierten Quell-TAR, dem persistierten
+   Provenienzbeleg und den beiden unveränderlichen Binaries funktionieren.
+   Publication- und Build-Evidence behalten seine exakten Capture-Bytes und
+   den getrennten Commit `operationalValidatorBuild`; zusätzlich binden sie
+   Rebuild-Spezifikation, Rebuild-Bootstrap, portables Rebuild-Receipt und
+   unveränderliches offizielles Rebuild-Binary.
+   Die kompakte JSON-Zeile des nativen Prozesses muss als **strukturierter
+   Wert** unmittelbar von demselben Runner an den Capture-Schritt übergeben
+   werden, der zuvor das bytegeprüfte preserved Validator-Binary gestartet
+   hat. Die derzeit getrennte stdin-Schnittstelle ist nur ein forensischer
+   Recovery-/Testpfad: Sie kann für sich allein nicht beweisen, dass genau das
+   separat gehashte Binary das gelieferte Receipt erzeugt hat, und darf daher
+   weder Publication noch den finalen Release-Gate grün schalten. Solche
+   Receipts gelten als `releaseEvidenceEligible=false` und
+   `productionActivationEligible=false`; Publisher und Build-Evidence müssen
+   sie fail-closed abweisen. Bis der
+   versionierte Execution-Pins-Vertrag und ein integrierter
+   Runner→preserved-Binary→Capture-Aufruf implementiert und negativ getestet
+   sind, bleibt der folgende Ablauf ausdrücklich gesperrt und dient nur der
+   Beschreibung der noch zu schließenden Schnittstelle:
+
+   ```sh
+   export ZUGFOLGE_INFRA_RELEASE_VALIDATOR_PATH="$PWD/var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe"
+   printf '%s\n' "$NATIVE_RECEIPT_JSON" | node tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs "$OPERATIONAL_DERIVER_SPECIFICATION" <OPERATIONAL_CANDIDATE> <OPERATIONAL_CANDIDATE_SIDECAR> "$OPERATIONAL_DERIVER_REPORT" "$ZUGFOLGE_INFRA_RELEASE_VALIDATOR_PATH" tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json <ARTEFAKTWURZEL>/operational-infrastructure-v2.native-receipt.json
+   node tools/region-import/germany/publish-operational-infrastructure-v2.mjs preflight "$OPERATIONAL_DERIVER_OUTPUT" <ARTEFAKTWURZEL>/operational-infrastructure-v2.publication-receipt.json
+   node tools/region-import/germany/publish-operational-infrastructure-v2.mjs publish "$OPERATIONAL_DERIVER_SPECIFICATION" <OPERATIONAL_CANDIDATE> <OPERATIONAL_CANDIDATE_SIDECAR> "$OPERATIONAL_DERIVER_REPORT" <ARTEFAKTWURZEL>/operational-infrastructure-v2.native-receipt.json tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json "$OPERATIONAL_DERIVER_OUTPUT" <ARTEFAKTWURZEL>/operational-infrastructure-v2.publication-receipt.json
+   ```
+
+   Das kanonische create-new Native-Receipt bindet die strukturierten nativen
+   Receiptfelder quer an Spezifikations-, Candidate-, Candidate-Sidecar- und
+   Berichtbytes sowie an Native-Binary und Capture-Script. Der Publisher liest
+   das große Sidecar nie vollständig in den Speicher, sondern hasht und kopiert
+   es streamend. Im Recoverypfad wird das im Capture gebundene Native-Binary
+   vor und nach der Materialisierung erneut geprüft und dem Materialisierer
+   explizit übergeben; ein inzwischen abweichender Umgebungsvariablenwert darf
+   kein anderes Validator-Binary einschleusen. Sein kanonisches create-new Publication-Receipt bindet
+   Native-Receipt, Quelltriplet, finale Paarbytes, Release-ID,
+   Operational-/Sidecar-State, Transfer-Set, Publisher-Entrypoint und
+   das vollständige Ausführungsinventar aus Wrapper, Publishermodul,
+   Operational-Deriver, Materialisierer, create-new-Helper,
+   `operational-infrastructure-binding.mjs`, Validator-Rebuild-Bootstrap und
+   -Verifier sowie effektivem preserved Validator-Binary. Native- und
+   Publication-Receipt binden denselben typisiert verifizierten Rebuild-Beleg;
+   erst die noch offene integrierte Runner-Capture-Kopplung belegt zusätzlich,
+   dass dieses Binary das native Receipt tatsächlich erzeugt hat.
+   Build-Evidence und Buildcache müssen genau dieselben
+   Repo-Bytes, den tatsächlichen Validator und den Map-Build-Commit binden.
+
+   Ein Prozessabbruch zwischen den beiden finalen Links kann absichtlich einen
+   Sidecar-only-Zustand samt Claim und Staging hinterlassen; ein Abbruch vor
+   dem Claim kann verwaistes Staging hinterlassen. Das ist kein debris-freier
+   Erfolg, sondern ein fail-closed Recovery-Zustand. Führe den Preflight erneut
+   aus. Nur bei `recoverable-prepublication`, `recoverable-partial` oder
+   `complete-cleanup-required` darf der typisierte Recovery-Befehl laufen:
+
+   ```sh
+   node tools/region-import/germany/publish-operational-infrastructure-v2.mjs recover "$OPERATIONAL_DERIVER_OUTPUT" <ARTEFAKTWURZEL>/operational-infrastructure-v2.publication-receipt.json
+   ```
+
+   Recovery entfernt ausschließlich Links und Claim/Staging mit der im Claim
+   gebundenen eigenen `dev`/`ino`-Identität, dabei Operational zuerst und das
+   Sidecar danach. Fremde Ersetzungen, ein ausgetauschtes/Symlink-/Junction-
+   Elternverzeichnis, ein ungültiger Claim, verwaistes Staging ohne Claim oder
+   eine unbesessene Teilpublikation bleiben zur manuellen Prüfung blockiert.
 
    Der erfolgreiche Lauf erzeugt neben Candidate, Bericht und materialisiertem
    Operational-v2-Artefakt zwingend create-new
@@ -369,8 +516,12 @@ Deterministischer Build und Prüfung:
    strikten JavaScript-Vertrag und den nativen Rust-Vertrag, gleicht beide
    kanonischen Hashes ab, prüft unveränderte Eingabebytes und veröffentlicht
    Candidate, Movement-Route-Templates-v2, Bericht und
-   `$OPERATIONAL_DERIVER_OUTPUT` gemeinsam mit Create-new-Semantik. Ein zweiter
-   manueller Materialisierungsaufruf ist unzulässig. Das Ausgabedokument
+   `$OPERATIONAL_DERIVER_OUTPUT` gemeinsam mit Create-new-Semantik. Bei einem
+   bereits vollständig vorhandenen nativen Triplet übernimmt stattdessen
+   ausschließlich der oben benannte receiptgebundene RecoveryPublisher dieselben
+   Gates für die finale Paarung und belegt den tatsächlich benutzten Sonderpfad
+   mit seinem Publication-Receipt. Ein zweiter manueller Materialisierungsaufruf
+   ist in beiden Fällen unzulässig. Das Ausgabedokument
    enthält exakt den statischen `OperationalInfraRelease` und keine
    Deploymenthülle; das getrennte Movement-Sidecar ist dennoch ein
    verpflichtendes signiertes Delivery- und Laufzeitartefakt.
@@ -671,10 +822,11 @@ Deterministischer Build und Prüfung:
     dort benannten bisherigen Vertrauensanker dürfen nicht entfernt oder durch
     den neuen Karten-Key ersetzt werden. Erzeuge und prüfe nun erst den
     unveränderlichen Build-Evidence-v3-Beleg aus den tatsächlichen Bytes und
-    den vollständigen Commit-IDs des Semantikexports und Kartenbuilds:
+    den vollständigen Commit-IDs des Semantikexports, Kartenbuilds und des
+    tatsächlich ausgeführten Operational-v2-Validators:
 
     ```sh
-    node tools/tiles/map-release-build-evidence-cli.mjs build "$BUILD_EVIDENCE_SPEC" . "$BUILD_EVIDENCE_OUTPUT" "$SEMANTIC_EXPORT_COMMIT" "$MAP_BUILD_COMMIT"
+    node tools/tiles/map-release-build-evidence-cli.mjs build "$BUILD_EVIDENCE_SPEC" . "$BUILD_EVIDENCE_OUTPUT" "$SEMANTIC_EXPORT_COMMIT" "$MAP_BUILD_COMMIT" "$OPERATIONAL_VALIDATOR_BUILD_COMMIT"
     node tools/tiles/map-release-build-evidence-cli.mjs verify "$BUILD_EVIDENCE_OUTPUT" .
     ```
 

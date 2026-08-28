@@ -51,6 +51,26 @@
       "cacheFile": "derived/infra-deutschland-2026.5/operational-infrastructure-v2.derivation-report.json"
     },
     {
+      "sourceFile": "var/derived/germany-2026.5/operational-infrastructure-v2.native-receipt.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/operational-infrastructure-v2.native-receipt.json"
+    },
+    {
+      "sourceFile": "var/derived/germany-2026.5/operational-infrastructure-v2.publication-receipt.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/operational-infrastructure-v2.publication-receipt.json"
+    },
+    {
+      "sourceFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json"
+    },
+    {
+      "sourceFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-source-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-556c906567dd436de091390b66cf9538e82febd237f70b0d353b286480852b2a.tar",
+      "cacheFile": "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-source-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-556c906567dd436de091390b66cf9538e82febd237f70b0d353b286480852b2a.tar"
+    },
+    {
+      "sourceFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-ee6d7081b32277e46cd6ebb28fc65bd45ce55012.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-provenance-ee6d7081b32277e46cd6ebb28fc65bd45ce55012.json"
+    },
+    {
       "sourceFile": "var/derived/germany-2026.5/operational-infrastructure-v2.json",
       "cacheFile": "derived/infra-deutschland-2026.5/operational-infrastructure-v2.json"
     },
@@ -6597,6 +6617,14 @@
     {
       "sourceFile": "var/tooling-pinned/osmium-tool-1.19.1/osmium.exe",
       "cacheFile": "tools/osmium-tool-1.19.1/osmium.exe"
+    },
+    {
+      "sourceFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe",
+      "cacheFile": "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc/zugfolge-infra-release.exe"
+    },
+    {
+      "sourceFile": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-official.exe",
+      "cacheFile": "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/official/zugfolge-infra-release.exe"
     }
   ]
 }

@@ -535,13 +535,19 @@ fn jahresplan_endet_mit_holdout_und_signatur() {
     for required in [
         "openstation-normalization",
         "operational-v2-derivation",
-        "operational-v2-native-validation",
+        "operational-v2-validator-rebuild-evidence",
+        "operational-v2-native-receipt-capture",
+        "operational-v2-recovery-publication",
         "release-artifact-inventory",
         "public-manifest",
         "operational-v2-acceptance",
     ] {
         assert!(ids.contains(&required), "Jahresplan fehlt {required}");
     }
+    assert!(
+        !ids.contains(&"operational-v2-native-validation"),
+        "Recovery-Releases duerfen vor dem receiptgebundenen Publisher kein finales Operational-Artefakt materialisieren",
+    );
     assert!(
         !ids.contains(&"stada-capture-gate"),
         "eine optionale StaDa-Quelle darf den Jahresplan nicht blockieren"
@@ -553,6 +559,47 @@ fn jahresplan_endet_mit_holdout_und_signatur() {
                 .position(|id| *id == "release-artifact-inventory"),
         "Ableitung muss vor dem typisierten Inventar liegen",
     );
+    let derivation = stages
+        .iter()
+        .find(|stage| stage["id"] == "operational-v2-derivation")
+        .expect("Operational-v2-Ableitungsstufe");
+    assert_eq!(derivation["executionMode"], "candidate-triplet");
+    for (left, right) in [
+        (
+            "operational-v2-derivation",
+            "operational-v2-validator-rebuild-evidence",
+        ),
+        (
+            "operational-v2-validator-rebuild-evidence",
+            "operational-v2-native-receipt-capture",
+        ),
+        (
+            "operational-v2-native-receipt-capture",
+            "operational-v2-recovery-publication",
+        ),
+        (
+            "operational-v2-recovery-publication",
+            "release-artifact-inventory",
+        ),
+    ] {
+        assert!(
+            ids.iter().position(|id| *id == left) < ids.iter().position(|id| *id == right),
+            "Jahresplan-Reihenfolge muss {left} vor {right} binden",
+        );
+    }
+    let rebuild = stages
+        .iter()
+        .find(|stage| stage["id"] == "operational-v2-validator-rebuild-evidence")
+        .expect("Validator-Rebuild-Stufe");
+    assert_eq!(
+        rebuild["specificationSchema"],
+        "zugfolge-operational-validator-rebuild-spec/v2"
+    );
+    assert_eq!(
+        rebuild["receiptSchema"],
+        "zugfolge-operational-validator-rebuild-evidence/v2"
+    );
+    assert_eq!(rebuild["rebuiltValidatorRawProof"], "from-portable-receipt");
     assert_eq!(stages[stages.len() - 2]["id"], "independent-validation");
     assert_eq!(stages[stages.len() - 1]["id"], "signature");
 }
@@ -562,6 +609,12 @@ fn operational_deriver_subvertrag_ist_exakt_und_releasegebunden() {
     let (config, catalog, rights, ..) = fixture();
     build_annual_infra_plan(&config, &catalog, &rights)
         .expect("exakter OperationalDeriver-Jahresvertrag");
+    let current: Value = serde_json::from_str(include_str!(
+        "../../../tools/region-import/germany/release.annual-2026.5.config.json"
+    ))
+    .expect("gueltige 2026.5-Jahreskonfiguration");
+    build_annual_infra_plan(&current, &catalog, &rights)
+        .expect("2026.5 bindet PrimaryRunner und RecoveryPublisher exakt");
 
     let mut unbekanntes_feld = config.clone();
     unbekanntes_feld["pipeline"]["operationalDeriver"]["stateHash"] = Value::String("0".repeat(64));
@@ -572,6 +625,75 @@ fn operational_deriver_subvertrag_ist_exakt_und_releasegebunden() {
         "tools/region-import/germany/operational-infrastructure.annual-2026.3.json".to_owned(),
     );
     assert!(build_annual_infra_plan(&falsche_spezifikation, &catalog, &rights).is_err());
+
+    let mut fehlender_primary_runner_modus = config.clone();
+    fehlender_primary_runner_modus["pipeline"]["operationalDeriver"]
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("primaryRunnerMode");
+    assert!(build_annual_infra_plan(&fehlender_primary_runner_modus, &catalog, &rights).is_err());
+
+    let mut falscher_primary_runner_modus = config.clone();
+    falscher_primary_runner_modus["pipeline"]["operationalDeriver"]["primaryRunnerMode"] =
+        Value::String("materialize".to_owned());
+    assert!(build_annual_infra_plan(&falscher_primary_runner_modus, &catalog, &rights).is_err());
+
+    let mut fehlendes_native_receipt = config.clone();
+    fehlendes_native_receipt["pipeline"]["operationalDeriver"]["recoveryPublisher"]
+        .as_object_mut()
+        .expect("RecoveryPublisher")
+        .remove("nativeReceipt");
+    assert!(build_annual_infra_plan(&fehlendes_native_receipt, &catalog, &rights).is_err());
+
+    let mut driftendes_publication_receipt = config.clone();
+    driftendes_publication_receipt["pipeline"]["operationalDeriver"]["recoveryPublisher"]["publicationReceipt"] =
+        Value::String("var/derived/germany-2027.1/fremdes-publication-receipt.json".to_owned());
+    assert!(build_annual_infra_plan(&driftendes_publication_receipt, &catalog, &rights).is_err());
+
+    let mut fehlender_validator_commit = config.clone();
+    fehlender_validator_commit["pipeline"]["operationalDeriver"]["recoveryPublisher"]
+        .as_object_mut()
+        .expect("RecoveryPublisher")
+        .remove("validatorBuildCommit");
+    assert!(build_annual_infra_plan(&fehlender_validator_commit, &catalog, &rights).is_err());
+
+    let mut umetikettierter_validator = config.clone();
+    umetikettierter_validator["pipeline"]["operationalDeriver"]["recoveryPublisher"]["validatorBuildCommit"] =
+        Value::String("7777777777777777777777777777777777777777".to_owned());
+    assert!(build_annual_infra_plan(&umetikettierter_validator, &catalog, &rights).is_err());
+
+    let mut fehlende_ausfuehrungsdatei = config.clone();
+    fehlende_ausfuehrungsdatei["pipeline"]["operationalDeriver"]["recoveryPublisher"]
+        ["executionInventory"]
+        .as_object_mut()
+        .expect("Ausfuehrungsinventar")
+        .remove("operationalBinding");
+    assert!(build_annual_infra_plan(&fehlende_ausfuehrungsdatei, &catalog, &rights).is_err());
+
+    let mut fehlendes_rebuild_evidence = config.clone();
+    fehlendes_rebuild_evidence["pipeline"]["operationalDeriver"]["recoveryPublisher"]
+        .as_object_mut()
+        .expect("RecoveryPublisher")
+        .remove("validatorRebuildEvidence");
+    assert!(build_annual_infra_plan(&fehlendes_rebuild_evidence, &catalog, &rights).is_err());
+
+    let mut driftende_ausfuehrungsdatei = config.clone();
+    driftende_ausfuehrungsdatei["pipeline"]["operationalDeriver"]["recoveryPublisher"]["executionInventory"]
+        ["operationalBinding"] = Value::String("packages/alpha/dist/hash.js".to_owned());
+    assert!(build_annual_infra_plan(&driftende_ausfuehrungsdatei, &catalog, &rights).is_err());
+
+    let mut fehlender_rebuild_bootstrap = config.clone();
+    fehlender_rebuild_bootstrap["pipeline"]["operationalDeriver"]["recoveryPublisher"]
+        ["executionInventory"]
+        .as_object_mut()
+        .expect("Ausfuehrungsinventar")
+        .remove("validatorRebuildBootstrap");
+    assert!(build_annual_infra_plan(&fehlender_rebuild_bootstrap, &catalog, &rights).is_err());
+
+    let mut mutable_rebuild_datei = config.clone();
+    mutable_rebuild_datei["pipeline"]["operationalDeriver"]["recoveryPublisher"]["validatorRebuildExecutable"] =
+        Value::String("target/release/zugfolge-infra-release.exe".to_owned());
+    assert!(build_annual_infra_plan(&mutable_rebuild_datei, &catalog, &rights).is_err());
 
     let mut fehlender_subvertrag = config;
     fehlender_subvertrag["pipeline"]
@@ -687,6 +809,23 @@ fn deutschland_2026_patch_4_verweigert_historisches_source_capture_v1() {
     config["release"]["releaseId"] = Value::String("infra-deutschland-2026.4".to_owned());
     config["release"]["timetableYear"] = Value::from(2026);
     let deriver = &mut config["pipeline"]["operationalDeriver"];
+    deriver["entrypoint"] = deriver["primaryRunner"].take();
+    deriver
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("primaryRunner");
+    deriver
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("primaryRunnerMode");
+    deriver
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("candidateMovementRouteTemplates");
+    deriver
+        .as_object_mut()
+        .expect("OperationalDeriver")
+        .remove("recoveryPublisher");
     deriver["specification"] = Value::String(
         "tools/region-import/germany/operational-infrastructure.annual-2026.4.json".to_owned(),
     );

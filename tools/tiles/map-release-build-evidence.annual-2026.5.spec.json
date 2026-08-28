@@ -107,6 +107,27 @@
       "cacheFile": "derived/infra-deutschland-2026.5/timetable-routes-v2.derivation-report-v4.json"
     },
     {
+      "id": "operational-native-receipt",
+      "kind": "derived-input",
+      "version": "infra-deutschland-2026.5",
+      "file": "var/derived/germany-2026.5/operational-infrastructure-v2.native-receipt.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/operational-infrastructure-v2.native-receipt.json"
+    },
+    {
+      "id": "operational-publication-receipt",
+      "kind": "derived-input",
+      "version": "infra-deutschland-2026.5",
+      "file": "var/derived/germany-2026.5/operational-infrastructure-v2.publication-receipt.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/operational-infrastructure-v2.publication-receipt.json"
+    },
+    {
+      "id": "operational-validator-rebuild-evidence",
+      "kind": "derived-input",
+      "version": "infra-deutschland-2026.5",
+      "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json",
+      "cacheFile": "derived/infra-deutschland-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json"
+    },
+    {
       "id": "copernicus-dem-capture",
       "kind": "capture-manifest",
       "version": "COP-DEM-GLO-30-DGED-2021",
@@ -427,6 +448,72 @@
       "file": "tools/tiles/map-source-catalog.json"
     },
     {
+      "id": "operational-native-receipt-capture",
+      "kind": "repo-contract",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs"
+    },
+    {
+      "id": "operational-recovery-publisher",
+      "kind": "repo-contract",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/region-import/germany/publish-operational-infrastructure-v2.mjs"
+    },
+    {
+      "id": "operational-recovery-publisher-implementation",
+      "kind": "repo-contract",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/region-import/germany/operational-infrastructure-v2-publication.mjs"
+    },
+    {
+      "id": "operational-v2-deriver",
+      "kind": "repo-contract",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/region-import/germany/operational-infrastructure-v2.mjs"
+    },
+    {
+      "id": "operational-v2-materializer",
+      "kind": "repo-contract",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/region-import/materialize-operational-infrastructure-v2.mjs"
+    },
+    {
+      "id": "create-new-output-contract",
+      "kind": "repo-contract",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/tiles/create-new-output.mjs"
+    },
+    {
+      "id": "operational-v2-binding",
+      "kind": "repo-contract",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/region-import/operational-infrastructure-binding.mjs"
+    },
+    {
+      "id": "operational-validator-rebuild-spec",
+      "kind": "repo-contract",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json"
+    },
+    {
+      "id": "operational-validator-rebuild-verifier",
+      "kind": "repo-contract",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/region-import/germany/operational-validator-rebuild-evidence.mjs"
+    },
+    {
+      "id": "operational-validator-rebuild-bootstrap",
+      "kind": "repo-contract",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/region-import/germany/operational-validator-rebuild-bootstrap.mjs"
+    },
+    {
+      "id": "operational-validator-rebuild-cli",
+      "kind": "repo-contract",
+      "version": "infra-deutschland-2026.5",
+      "file": "tools/region-import/germany/operational-validator-rebuild-evidence-cli.mjs"
+    },
+    {
       "id": "read-model-build-report",
       "kind": "derived-input",
       "version": "infra-deutschland-2026.5",
@@ -525,6 +612,22 @@
     }
   ],
   "tools": [
+    {
+      "id": "operational-v2-validator",
+      "kind": "binary",
+      "version": "operational-validator-build-commit",
+      "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe",
+      "cacheFile": "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc/zugfolge-infra-release.exe",
+      "expectedBytes": 8283251,
+      "expectedSha256": "69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc"
+    },
+    {
+      "id": "operational-v2-validator-rebuild",
+      "kind": "binary",
+      "version": "operational-validator-rebuild-proof",
+      "file": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-official.exe",
+      "cacheFile": "tools/zugfolge-infra-release/infra-deutschland-2026.5/ee6d7081b32277e46cd6ebb28fc65bd45ce55012/official/zugfolge-infra-release.exe"
+    },
     {
       "id": "osmium-tool",
       "kind": "binary",

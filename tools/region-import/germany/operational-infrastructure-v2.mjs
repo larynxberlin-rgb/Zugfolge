@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createReadStream } from "node:fs";
-import { link, lstat, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, open, readFile, readdir, rm, rmdir, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { publishFilesCreateNew } from "../../tiles/create-new-output.mjs";
 import { materializeOperationalInfrastructureV2 } from "../materialize-operational-infrastructure-v2.mjs";
 
 export const GERMANY_OPERATIONAL_DERIVATION_SCHEMA = "zugfolge-germany-operational-infrastructure-readiness/v2";
@@ -17,9 +18,13 @@ export const GERMANY_OPERATIONAL_NATIVE_REPORT_SCHEMA = "germany-operational-v2-
 export const GERMANY_OPERATIONAL_NATIVE_RECEIPT_SCHEMA = "germany-operational-v2-derivation-receipt-v1";
 export const GERMANY_OPERATIONAL_COMPLETE_ROUTE_COVERAGE = "complete-pinned-timetable-routes";
 export const GERMANY_OPERATIONAL_NATIVE_EXECUTABLE_ENV = "ZUGFOLGE_INFRA_RELEASE_VALIDATOR_PATH";
+export const GERMANY_OPERATIONAL_CANDIDATE_TRIPLET_CLAIM_SCHEMA = "zugfolge-germany-operational-candidate-triplet-claim/v1";
 
 const LEGACY_DERIVATION_SCHEMA = "zugfolge-germany-operational-infrastructure-derivation/v1";
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+const CANDIDATE_TRIPLET_CLAIM_FILE = ".operational-infrastructure-v2.candidate-triplet.claim.json";
+const CANDIDATE_TRIPLET_STAGED_CLAIM_FILE = "candidate-triplet.claim.json";
+const MAX_CANDIDATE_TRIPLET_CLAIM_BYTES = 1024 * 1024;
 const SHA256 = /^[a-f0-9]{64}$/u;
 const MAP_LAYER_NAMES = Object.freeze(["tracks", "platforms", "switches", "signals", "blocks", "conflictResources"]);
 const CONSERVATIVE_LAYER_NAMES = Object.freeze([...MAP_LAYER_NAMES, "timetableRoutes", "transferDemands"]);
@@ -309,15 +314,17 @@ export class OperationalInfrastructureDerivationIncompleteError extends Error {
 }
 
 async function fileProof(path, label) {
-  const metadata = await lstat(path);
-  invariant(metadata.isFile() && !metadata.isSymbolicLink() && metadata.size > 0, `${label} ist keine nichtleere regulaere Datei.`);
+  const before = await lstat(path, { bigint: true });
+  invariant(before.isFile() && !before.isSymbolicLink() && before.size > 0n, `${label} ist keine nichtleere regulaere Datei.`);
+  invariant(before.size <= BigInt(Number.MAX_SAFE_INTEGER), `${label} ist fuer einen sicheren Bytebeleg zu gross.`);
   const digest = createHash("sha256");
   let bytes = 0;
   for await (const chunk of createReadStream(path)) {
     digest.update(chunk);
     bytes += chunk.length;
   }
-  invariant(bytes === metadata.size, `${label} aenderte sich waehrend der Hashbildung.`);
+  const after = await lstat(path, { bigint: true });
+  invariant(sameFileIdentity(before, after) && after.size === before.size && BigInt(bytes) === before.size, `${label} aenderte sich waehrend der Hashbildung.`);
   return { bytes, sha256: digest.digest("hex") };
 }
 
@@ -361,9 +368,15 @@ function validateProof(value, name, { stateHash = false } = {}) {
   return value;
 }
 
-function validateMovementRouteTemplatesProof(value, name, expectedOperationalStateHash, expectedTransferSetSha256) {
+function validateMovementRouteTemplatesProof(
+  value,
+  name,
+  expectedOperationalStateHash,
+  expectedTransferSetSha256,
+  expectedFile = "operational-infrastructure-v2.movement-route-templates-v2.json",
+) {
   exactKeys(value, ["file", "bytes", "sha256", "stateHash", "operationalStateHash", "timetableTransferSetSha256", "berthAssignmentCounts", "crossBerthTemplateCount"], name);
-  invariant(value.file === "operational-infrastructure-v2.movement-route-templates-v2.json", `${name}.file besitzt nicht den kanonischen V2-Dateinamen.`);
+  invariant(value.file === expectedFile, `${name}.file bindet nicht den erwarteten Movement-Route-Sidecar-Dateinamen.`);
   positiveSafeInteger(value.bytes, `${name}.bytes`);
   for (const field of ["sha256", "stateHash", "operationalStateHash"]) invariant(SHA256.test(value[field]), `${name}.${field} ist kein SHA-256.`);
   invariant(value.operationalStateHash === expectedOperationalStateHash, `${name} driftet vom Operational-State-Hash.`);
@@ -374,7 +387,11 @@ function validateMovementRouteTemplatesProof(value, name, expectedOperationalSta
   return value;
 }
 
-export function validateGermanyOperationalInfrastructureV2NativeReceipt(receipt, expectedReleaseId) {
+export function validateGermanyOperationalInfrastructureV2NativeReceipt(
+  receipt,
+  expectedReleaseId,
+  { expectedMovementRouteTemplatesFile = "operational-infrastructure-v2.movement-route-templates-v2.json" } = {},
+) {
   exactKeys(receipt, ["schema", "infraReleaseId", "candidate", "movementRouteTemplates", "report", "candidateProduced", "activationEligible", "unresolvedRequired"], "Native Deutschland-Operational-v2-Receipt");
   invariant(receipt.schema === GERMANY_OPERATIONAL_NATIVE_RECEIPT_SCHEMA, "Native Deutschland-Operational-v2-Ableitung lieferte ein unbekanntes Receipt-Schema.");
   invariant(receipt.infraReleaseId === expectedReleaseId, "Native Deutschland-Operational-v2-Ableitung verletzte die InfraRelease-ID-Bindung.");
@@ -387,12 +404,17 @@ export function validateGermanyOperationalInfrastructureV2NativeReceipt(receipt,
     "Native Movement-Route-Templates-Bindung",
     receipt.candidate.stateHash,
     receipt.movementRouteTemplates.timetableTransferSetSha256,
+    expectedMovementRouteTemplatesFile,
   );
   validateProof(receipt.report, "Native Bericht-Bindung");
   return receipt;
 }
 
-function validateNativeDerivationReport(report, specification) {
+export function validateGermanyOperationalInfrastructureV2NativeReport(
+  report,
+  specification,
+  { expectedMovementRouteTemplatesFile = "operational-infrastructure-v2.movement-route-templates-v2.json" } = {},
+) {
   exactKeys(report, [
     "schema",
     "mode",
@@ -446,7 +468,13 @@ function validateNativeDerivationReport(report, specification) {
   invariant(SHA256.test(report.candidate.sha256) && SHA256.test(report.candidate.stateHash), "Nativer Bericht besitzt keine vollstaendige Candidate-Hashbindung.");
   invariant(report.candidate.validationMode === "native-streaming-redb-v1", "Nativer Bericht besitzt keinen nativen Streaming-Validierungsbeleg.");
   const transferSetSha256 = report.timetableRouteEvidence === null ? null : report.timetableRouteEvidence.transferSetSha256;
-  validateMovementRouteTemplatesProof(report.candidate.movementRouteTemplates, "Nativer Bericht.candidate.movementRouteTemplates", report.candidate.stateHash, transferSetSha256);
+  validateMovementRouteTemplatesProof(
+    report.candidate.movementRouteTemplates,
+    "Nativer Bericht.candidate.movementRouteTemplates",
+    report.candidate.stateHash,
+    transferSetSha256,
+    expectedMovementRouteTemplatesFile,
+  );
   invariant(isRecord(report.counts), "Nativer Deutschland-Operational-v2-Bericht besitzt keinen Zaehlerbeleg.");
   exactKeys(report.counts, ["source", "candidate", "provenance"], "Nativer Bericht.counts");
   exactKeys(report.counts.source, ["tracks", "orderableTracks", "platforms", "switches", "signals", "blocks", "conflictResources", "timetableRoutes", "timetableLegs", "transferDemands", "transferLots", "turnaroundDemands", "turnaroundPairs"], "Nativer Bericht.counts.source");
@@ -731,16 +759,287 @@ async function assertTargetMissing(path, label) {
 }
 
 async function publishTogether(bindings) {
-  const published = [];
   try {
-    for (const { staged, final } of bindings) {
-      await link(staged, final);
-      published.push(final);
-    }
+    await publishFilesCreateNew(bindings.map(({ staged, final }) => ({ stagedPath: staged, outputPath: final, label: "Operational-v2-Artefakt" })));
   } catch (error) {
-    for (const path of published.reverse()) await rm(path, { force: true });
     throw new Error(`Operational-v2-Artefakte konnten nicht kollisionsfrei gemeinsam veroeffentlicht werden: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
+}
+
+function sameFileIdentity(left, right) {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+function candidateTripletIdentity(metadata, { size = false } = {}) {
+  return {
+    dev: metadata.dev.toString(),
+    ino: metadata.ino.toString(),
+    ...(size ? { size: metadata.size.toString() } : {}),
+  };
+}
+
+function validateCandidateTripletIdentity(value, name, { size = false } = {}) {
+  exactKeys(value, size ? ["dev", "ino", "size"] : ["dev", "ino"], name);
+  for (const field of size ? ["dev", "ino", "size"] : ["dev", "ino"]) {
+    invariant(typeof value[field] === "string" && /^\d+$/u.test(value[field]), `${name}.${field} ist keine dezimale Dateisystemidentitaet.`);
+  }
+  return value;
+}
+
+function candidateTripletIdentityMatches(metadata, identity) {
+  return metadata.dev.toString() === identity.dev
+    && metadata.ino.toString() === identity.ino
+    && (!Object.hasOwn(identity, "size") || metadata.size.toString() === identity.size);
+}
+
+async function maybeCandidateTripletMetadata(path) {
+  try {
+    return await lstat(path, { bigint: true });
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+function serializeCandidateTripletClaim(value) {
+  return Buffer.from(`${JSON.stringify(canonicalValue(value))}\n`, "utf8");
+}
+
+function candidateTripletClaimPath(candidate) {
+  return join(dirname(candidate), CANDIDATE_TRIPLET_CLAIM_FILE);
+}
+
+function candidateTripletFileLayout({ candidate, movementRouteTemplates, report, stagingRoot }) {
+  const nativeDirectory = join(stagingRoot, "native");
+  return {
+    candidate: { finalPath: candidate, stagedPath: join(nativeDirectory, basename(candidate)) },
+    movementRouteTemplates: { finalPath: movementRouteTemplates, stagedPath: join(nativeDirectory, basename(movementRouteTemplates)) },
+    report: { finalPath: report, stagedPath: join(stagingRoot, "report.json") },
+  };
+}
+
+async function candidateTripletParentSnapshots(files) {
+  const paths = [...new Set(Object.values(files).map(({ finalPath }) => dirname(finalPath)))].sort((left, right) => left.localeCompare(right, "en"));
+  return Promise.all(paths.map(async (path) => {
+    const metadata = await lstat(path, { bigint: true });
+    invariant(metadata.isDirectory() && !metadata.isSymbolicLink(), `Candidate-Triplet-Elternpfad ist kein regulaeres Verzeichnis: ${path}`);
+    return { path, identity: candidateTripletIdentity(metadata) };
+  }));
+}
+
+async function assertCandidateTripletParents(parents) {
+  for (const parent of parents) {
+    const metadata = await lstat(parent.path, { bigint: true });
+    invariant(metadata.isDirectory() && !metadata.isSymbolicLink() && candidateTripletIdentityMatches(metadata, parent.identity), `Candidate-Triplet-Elternverzeichnis wurde ausgetauscht: ${parent.path}`);
+  }
+}
+
+function validateCandidateTripletClaim(value, { claimMetadata, claimPath, candidate, movementRouteTemplates, report, specification, specificationPath }) {
+  exactKeys(value, ["claim", "files", "infraReleaseId", "nativeReceipt", "parents", "schema", "specification", "staging"], "Candidate-Triplet-Claim");
+  invariant(value.schema === GERMANY_OPERATIONAL_CANDIDATE_TRIPLET_CLAIM_SCHEMA, "Candidate-Triplet-Claim besitzt ein unbekanntes Schema.");
+  invariant(value.infraReleaseId === specification.infraReleaseId, "Candidate-Triplet-Claim bindet eine falsche InfraRelease-ID.");
+  exactKeys(value.specification, ["path", "sha256"], "Candidate-Triplet-Claim.specification");
+  invariant(value.specification.path === resolve(specificationPath) && value.specification.sha256 === canonicalHash(specification), "Candidate-Triplet-Claim driftet von der angeforderten Spezifikation.");
+  exactKeys(value.claim, ["identity", "path", "stagedPath"], "Candidate-Triplet-Claim.claim");
+  validateCandidateTripletIdentity(value.claim.identity, "Candidate-Triplet-Claim.claim.identity");
+  invariant(value.claim.path === claimPath && candidateTripletIdentityMatches(claimMetadata, value.claim.identity), "Candidate-Triplet-Claim bindet nicht seine sichtbare Dateisystemidentitaet.");
+  exactKeys(value.staging, ["identity", "nativeDirectory", "nativeIdentity", "root"], "Candidate-Triplet-Claim.staging");
+  validateCandidateTripletIdentity(value.staging.identity, "Candidate-Triplet-Claim.staging.identity");
+  validateCandidateTripletIdentity(value.staging.nativeIdentity, "Candidate-Triplet-Claim.staging.nativeIdentity");
+  invariant(dirname(value.staging.root) === dirname(candidate) && basename(value.staging.root).startsWith(".operational-v2-derive-"), "Candidate-Triplet-Claim bindet keinen privaten Ableitungsbaum.");
+  invariant(value.staging.nativeDirectory === join(value.staging.root, "native") && value.claim.stagedPath === join(value.staging.root, CANDIDATE_TRIPLET_STAGED_CLAIM_FILE), "Candidate-Triplet-Claim bindet falsche Staging-Pfade.");
+  const expectedFiles = candidateTripletFileLayout({ candidate, movementRouteTemplates, report, stagingRoot: value.staging.root });
+  exactKeys(value.files, ["candidate", "movementRouteTemplates", "report"], "Candidate-Triplet-Claim.files");
+  for (const id of ["candidate", "movementRouteTemplates", "report"]) {
+    const entry = value.files[id];
+    exactKeys(entry, ["finalPath", "identity", "proof", "stagedPath"], `Candidate-Triplet-Claim.files.${id}`);
+    invariant(entry.finalPath === expectedFiles[id].finalPath && entry.stagedPath === expectedFiles[id].stagedPath, `Candidate-Triplet-Claim.files.${id} bindet falsche Pfade.`);
+    validateCandidateTripletIdentity(entry.identity, `Candidate-Triplet-Claim.files.${id}.identity`, { size: true });
+    validateProof(entry.proof, `Candidate-Triplet-Claim.files.${id}.proof`);
+    invariant(entry.identity.size === String(entry.proof.bytes), `Candidate-Triplet-Claim.files.${id} bindet verschiedene Bytezahlen.`);
+  }
+  invariant(Array.isArray(value.parents), "Candidate-Triplet-Claim.parents muss eine Liste sein.");
+  const expectedParents = [...new Set(Object.values(expectedFiles).map(({ finalPath }) => dirname(finalPath)))].sort((left, right) => left.localeCompare(right, "en"));
+  invariant(value.parents.length === expectedParents.length, "Candidate-Triplet-Claim bindet nicht alle Ziel-Elternverzeichnisse.");
+  for (const [index, parent] of value.parents.entries()) {
+    exactKeys(parent, ["identity", "path"], `Candidate-Triplet-Claim.parents[${index}]`);
+    validateCandidateTripletIdentity(parent.identity, `Candidate-Triplet-Claim.parents[${index}].identity`);
+    invariant(parent.path === expectedParents[index], "Candidate-Triplet-Claim bindet ein falsches Ziel-Elternverzeichnis.");
+  }
+  validateGermanyOperationalInfrastructureV2NativeReceipt(value.nativeReceipt, specification.infraReleaseId, { expectedMovementRouteTemplatesFile: basename(movementRouteTemplates) });
+  return value;
+}
+
+async function readCandidateTripletClaim(arguments_) {
+  const before = await lstat(arguments_.claimPath, { bigint: true });
+  invariant(before.isFile() && !before.isSymbolicLink() && before.size > 0n && before.size <= BigInt(MAX_CANDIDATE_TRIPLET_CLAIM_BYTES), "Candidate-Triplet-Claim ist keine kleine regulaere Datei.");
+  const bytes = await readFile(arguments_.claimPath);
+  const after = await lstat(arguments_.claimPath, { bigint: true });
+  invariant(sameFileIdentity(before, after) && after.size === before.size && BigInt(bytes.length) === before.size, "Candidate-Triplet-Claim driftete waehrend des Lesens.");
+  let value;
+  try {
+    value = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    throw new Error("Candidate-Triplet-Claim ist kein gueltiges JSON.");
+  }
+  validateCandidateTripletClaim(value, { ...arguments_, claimMetadata: after });
+  invariant(bytes.equals(serializeCandidateTripletClaim(value)), "Candidate-Triplet-Claim ist nicht kanonisch serialisiert.");
+  return value;
+}
+
+async function createCandidateTripletClaim({ candidate, claimPath, hooks, movementRouteTemplates, nativeReceipt, publicationState, report, specification, specificationPath, stagingRoot }) {
+  const files = candidateTripletFileLayout({ candidate, movementRouteTemplates, report, stagingRoot });
+  for (const id of ["candidate", "movementRouteTemplates", "report"]) {
+    const metadata = await lstat(files[id].stagedPath, { bigint: true });
+    invariant(metadata.isFile() && !metadata.isSymbolicLink(), `Candidate-Triplet-Staging ${id} ist keine regulaere Datei.`);
+    files[id] = { ...files[id], identity: candidateTripletIdentity(metadata, { size: true }), proof: await fileProof(files[id].stagedPath, `Candidate-Triplet-Staging ${id}`) };
+  }
+  const stagingMetadata = await lstat(stagingRoot, { bigint: true });
+  const nativeDirectory = join(stagingRoot, "native");
+  const nativeMetadata = await lstat(nativeDirectory, { bigint: true });
+  invariant(stagingMetadata.isDirectory() && !stagingMetadata.isSymbolicLink() && nativeMetadata.isDirectory() && !nativeMetadata.isSymbolicLink(), "Candidate-Triplet-Staging besitzt keine regulaeren Verzeichnisse.");
+  const parents = await candidateTripletParentSnapshots(files);
+  const stagedClaimPath = join(stagingRoot, CANDIDATE_TRIPLET_STAGED_CLAIM_FILE);
+  const handle = await open(stagedClaimPath, "wx", 0o600);
+  let claim;
+  try {
+    const metadata = await handle.stat({ bigint: true });
+    claim = {
+      schema: GERMANY_OPERATIONAL_CANDIDATE_TRIPLET_CLAIM_SCHEMA,
+      infraReleaseId: specification.infraReleaseId,
+      specification: { path: resolve(specificationPath), sha256: canonicalHash(specification) },
+      claim: { path: claimPath, stagedPath: stagedClaimPath, identity: candidateTripletIdentity(metadata) },
+      staging: { root: stagingRoot, identity: candidateTripletIdentity(stagingMetadata), nativeDirectory, nativeIdentity: candidateTripletIdentity(nativeMetadata) },
+      parents,
+      files,
+      nativeReceipt,
+    };
+    const bytes = serializeCandidateTripletClaim(claim);
+    invariant(bytes.length <= MAX_CANDIDATE_TRIPLET_CLAIM_BYTES, "Candidate-Triplet-Claim ist unerwartet gross.");
+    await handle.writeFile(bytes);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  await assertCandidateTripletParents(parents);
+  await publishFilesCreateNew([{ stagedPath: stagedClaimPath, outputPath: claimPath, label: "Candidate-Triplet-Claim" }]);
+  publicationState.claimActive = true;
+  await assertCandidateTripletParents(parents);
+  await hooks.afterCandidateTripletClaim?.({ claim, claimPath });
+  return claim;
+}
+
+async function ensureCandidateTripletOutputs({ claim, hooks, recovery }) {
+  await assertCandidateTripletParents(claim.parents);
+  let index = 0;
+  for (const id of ["candidate", "movementRouteTemplates", "report"]) {
+    index += 1;
+    const entry = claim.files[id];
+    const existing = await maybeCandidateTripletMetadata(entry.finalPath);
+    if (existing !== null) {
+      invariant(existing.isFile() && !existing.isSymbolicLink() && candidateTripletIdentityMatches(existing, entry.identity), `Candidate-Triplet-Ziel ${id} wurde fremd ersetzt; die fremde Identitaet bleibt unangetastet.`);
+      const proof = await fileProof(entry.finalPath, `Candidate-Triplet-Ziel ${id}`);
+      invariant(proof.bytes === entry.proof.bytes && proof.sha256 === entry.proof.sha256, `Candidate-Triplet-Ziel ${id} driftet vom Claim.`);
+      continue;
+    }
+    const staged = await lstat(entry.stagedPath, { bigint: true });
+    invariant(staged.isFile() && !staged.isSymbolicLink() && candidateTripletIdentityMatches(staged, entry.identity), `Candidate-Triplet-Staging ${id} fehlt oder wurde fremd ersetzt.`);
+    const stagedProof = await fileProof(entry.stagedPath, `Candidate-Triplet-Staging ${id}`);
+    invariant(stagedProof.bytes === entry.proof.bytes && stagedProof.sha256 === entry.proof.sha256, `Candidate-Triplet-Staging ${id} driftet vom Claim.`);
+    await assertCandidateTripletParents(claim.parents);
+    await publishFilesCreateNew([{ stagedPath: entry.stagedPath, outputPath: entry.finalPath, label: `Candidate-Triplet-${id}` }]);
+    const published = await lstat(entry.finalPath, { bigint: true });
+    invariant(candidateTripletIdentityMatches(published, entry.identity), `Candidate-Triplet-Ziel ${id} driftete unmittelbar nach create-new.`);
+    await assertCandidateTripletParents(claim.parents);
+    await hooks.afterCandidateTripletLink?.({ claim, id, index, outputPath: entry.finalPath, recovery });
+  }
+}
+
+async function validatePublishedCandidateTriplet({ claim, movementRouteTemplates, specification }) {
+  const candidateProof = await fileProof(claim.files.candidate.finalPath, "Publizierter Candidate-Triplet-Candidate");
+  const movementProof = await fileProof(claim.files.movementRouteTemplates.finalPath, "Publiziertes Candidate-Triplet-Movement-Sidecar");
+  const reportProof = await fileProof(claim.files.report.finalPath, "Publizierter Candidate-Triplet-Bericht");
+  const nativeReceipt = validateGermanyOperationalInfrastructureV2NativeReceipt(claim.nativeReceipt, specification.infraReleaseId, { expectedMovementRouteTemplatesFile: basename(movementRouteTemplates) });
+  invariant(candidateProof.bytes === nativeReceipt.candidate.bytes && candidateProof.sha256 === nativeReceipt.candidate.sha256, "Publizierter Candidate driftet vom Candidate-Triplet-Claim.");
+  invariant(movementProof.bytes === nativeReceipt.movementRouteTemplates.bytes && movementProof.sha256 === nativeReceipt.movementRouteTemplates.sha256, "Publiziertes Movement-Sidecar driftet vom Candidate-Triplet-Claim.");
+  invariant(reportProof.bytes === nativeReceipt.report.bytes && reportProof.sha256 === nativeReceipt.report.sha256, "Publizierter Bericht driftet vom Candidate-Triplet-Claim.");
+  const movementValue = validateMovementRouteTemplatesSidecar(JSON.parse(await readFile(claim.files.movementRouteTemplates.finalPath, "utf8")), specification, nativeReceipt.movementRouteTemplates);
+  const nativeReport = validateGermanyOperationalInfrastructureV2NativeReport(JSON.parse(await readFile(claim.files.report.finalPath, "utf8")), specification, { expectedMovementRouteTemplatesFile: basename(movementRouteTemplates) });
+  invariant(nativeReceipt.activationEligible === nativeReport.activationEligible && nativeReceipt.unresolvedRequired === nativeReport.unresolvedRequired, "Candidate-Triplet-Receipt und Berichtsgates laufen auseinander.");
+  invariant(nativeReport.candidate.bytes === nativeReceipt.candidate.bytes && nativeReport.candidate.sha256 === nativeReceipt.candidate.sha256 && nativeReport.candidate.stateHash === nativeReceipt.candidate.stateHash, "Candidate-Triplet-Receipt und Berichtskandidaten laufen auseinander.");
+  invariant(JSON.stringify(canonicalValue(nativeReport.candidate.movementRouteTemplates)) === JSON.stringify(canonicalValue(nativeReceipt.movementRouteTemplates)) && movementValue.operationalStateHash === nativeReceipt.candidate.stateHash, "Candidate-Triplet-Receipt, Bericht und Movement-Sidecar laufen auseinander.");
+  return { nativeReceipt, nativeReport };
+}
+
+async function removeOwnedCandidateTripletFile(path, identity, label) {
+  const metadata = await maybeCandidateTripletMetadata(path);
+  if (metadata === null) return;
+  invariant(metadata.isFile() && !metadata.isSymbolicLink() && candidateTripletIdentityMatches(metadata, identity), `${label} wurde fremd ersetzt und bleibt unangetastet.`);
+  await unlink(path);
+}
+
+async function cleanupCandidateTripletStaging(claim) {
+  const rootMetadata = await maybeCandidateTripletMetadata(claim.staging.root);
+  if (rootMetadata === null) return;
+  invariant(rootMetadata.isDirectory() && !rootMetadata.isSymbolicLink() && candidateTripletIdentityMatches(rootMetadata, claim.staging.identity), "Candidate-Triplet-Stagingwurzel wurde fremd ersetzt und bleibt unangetastet.");
+  for (const id of ["report", "movementRouteTemplates", "candidate"]) {
+    await removeOwnedCandidateTripletFile(claim.files[id].stagedPath, claim.files[id].identity, `Candidate-Triplet-Staging ${id}`);
+  }
+  await removeOwnedCandidateTripletFile(claim.claim.stagedPath, claim.claim.identity, "Gestageter Candidate-Triplet-Claim");
+  const nativeMetadata = await maybeCandidateTripletMetadata(claim.staging.nativeDirectory);
+  if (nativeMetadata !== null) {
+    invariant(nativeMetadata.isDirectory() && !nativeMetadata.isSymbolicLink() && candidateTripletIdentityMatches(nativeMetadata, claim.staging.nativeIdentity), "Candidate-Triplet-Native-Staging wurde fremd ersetzt und bleibt unangetastet.");
+    invariant((await readdir(claim.staging.nativeDirectory)).length === 0, "Candidate-Triplet-Native-Staging enthaelt fremde Eintraege und bleibt unangetastet.");
+    await rmdir(claim.staging.nativeDirectory);
+  }
+  const finalRootMetadata = await lstat(claim.staging.root, { bigint: true });
+  invariant(candidateTripletIdentityMatches(finalRootMetadata, claim.staging.identity) && (await readdir(claim.staging.root)).length === 0, "Candidate-Triplet-Stagingwurzel driftete oder enthaelt fremde Eintraege.");
+  await rmdir(claim.staging.root);
+}
+
+async function removeCandidateTripletClaim(claim) {
+  const metadata = await lstat(claim.claim.path, { bigint: true });
+  invariant(metadata.isFile() && !metadata.isSymbolicLink() && candidateTripletIdentityMatches(metadata, claim.claim.identity), "Sichtbarer Candidate-Triplet-Claim wurde fremd ersetzt und bleibt unangetastet.");
+  await unlink(claim.claim.path);
+}
+
+function candidateTripletResult(nativeReceipt, nativeReport, { candidate, movementRouteTemplates, report }) {
+  return {
+    ...nativeReceipt,
+    reportStatus: { unresolvedRequired: nativeReport.unresolvedRequired, activationEligible: nativeReport.activationEligible, realInterlockingFactsClaimed: nativeReport.realInterlockingFactsClaimed },
+    materialized: null,
+    movementRouteTemplates: { ...nativeReceipt.movementRouteTemplates },
+    paths: { candidate, movementRouteTemplates, report, output: null },
+  };
+}
+
+async function finalizeCandidateTripletClaim({ claim, hooks, movementRouteTemplates, recovery, specification }) {
+  await ensureCandidateTripletOutputs({ claim, hooks, recovery });
+  const validated = await validatePublishedCandidateTriplet({ claim, movementRouteTemplates, specification });
+  await hooks.beforeCandidateTripletCleanup?.({ claim, recovery });
+  await cleanupCandidateTripletStaging(claim);
+  await assertCandidateTripletParents(claim.parents);
+  await hooks.beforeCandidateTripletClaimRemoval?.({ claim, recovery });
+  await assertCandidateTripletParents(claim.parents);
+  await removeCandidateTripletClaim(claim);
+  await assertCandidateTripletParents(claim.parents);
+  return validated;
+}
+
+async function recoverCandidateTriplet({ candidate, claimPath, hooks, movementRouteTemplates, report, specification, specificationPath }) {
+  const claim = await readCandidateTripletClaim({ claimPath, candidate, movementRouteTemplates, report, specification, specificationPath });
+  const { nativeReceipt, nativeReport } = await finalizeCandidateTripletClaim({ claim, hooks, movementRouteTemplates, recovery: true, specification });
+  const result = candidateTripletResult(nativeReceipt, nativeReport, { candidate, movementRouteTemplates, report });
+  if (!nativeReport.activationEligible) throw new OperationalInfrastructureDerivationIncompleteError({ nativeReceipt, nativeReport, paths: result.paths });
+  return result;
+}
+
+async function publishCandidateTriplet({ candidate, claimPath, hooks, movementRouteTemplates, nativeReceipt, publicationState, report, specification, specificationPath, stagingRoot }) {
+  const claim = await createCandidateTripletClaim({ candidate, claimPath, hooks, movementRouteTemplates, nativeReceipt, publicationState, report, specification, specificationPath, stagingRoot });
+  const validated = await finalizeCandidateTripletClaim({ claim, hooks, movementRouteTemplates, recovery: false, specification });
+  publicationState.stagingRemoved = true;
+  publicationState.claimActive = false;
+  return validated;
 }
 
 export async function runGermanyOperationalInfrastructureV2({
@@ -753,6 +1052,7 @@ export async function runGermanyOperationalInfrastructureV2({
   movementRouteTemplatesPath,
   deriveNative = spawnGermanyOperationalInfrastructureV2Compiler,
   materialize = materializeOperationalInfrastructureV2,
+  hooks = {},
 }) {
   const kind = validateGermanyOperationalInfrastructureV2Specification(specification);
   if (kind !== "conservative") throw new OperationalInfrastructureDerivationBlockedError(assessGermanyOperationalInfrastructureV2Readiness(specification));
@@ -765,30 +1065,49 @@ export async function runGermanyOperationalInfrastructureV2({
   const candidate = resolve(candidatePath);
   const report = resolve(reportPath);
   const output = outputPath === undefined ? undefined : resolve(outputPath);
-  const movementRouteTemplates = resolve(movementRouteTemplatesPath ?? join(dirname(output ?? candidate), "operational-infrastructure-v2.movement-route-templates-v2.json"));
-  invariant(basename(movementRouteTemplates) === "operational-infrastructure-v2.movement-route-templates-v2.json", "Movement-Route-Sidecar besitzt keinen kanonischen Dateinamen.");
+  const candidateTripletMode = output === undefined;
+  if (candidateTripletMode) {
+    invariant(basename(candidate) === "operational-infrastructure-v2.candidate.json", "Candidate-Triplet-Candidate besitzt keinen kanonischen Dateinamen.");
+  }
+  const expectedMovementRouteTemplatesBasename = output === undefined
+    ? "operational-infrastructure-v2.candidate.movement-route-templates-v2.json"
+    : "operational-infrastructure-v2.movement-route-templates-v2.json";
+  const movementRouteTemplates = resolve(movementRouteTemplatesPath ?? join(dirname(output ?? candidate), expectedMovementRouteTemplatesBasename));
+  invariant(basename(movementRouteTemplates) === expectedMovementRouteTemplatesBasename, "Movement-Route-Sidecar besitzt keinen kanonischen Candidate-/Ausgabedateinamen.");
   invariant(new Set([candidate, report, movementRouteTemplates, ...(output === undefined ? [] : [output])]).size === (output === undefined ? 3 : 4), "Candidate, Ableitungsbericht, Movement-Sidecar und materialisiertes Operational-v2-Artefakt muessen getrennte Dateien sein.");
   invariant(candidate !== report, "Operational-v2-Candidate und Ableitungsbericht muessen getrennte Dateien sein.");
   if (output !== undefined) invariant(basename(output) === "operational-infrastructure-v2.json", "Operational-v2-Ausgabe besitzt keinen kanonischen Dateinamen.");
 
   const directories = [dirname(candidate), dirname(report), dirname(movementRouteTemplates), ...(output === undefined ? [] : [dirname(output)])];
   for (const directory of new Set(directories)) await mkdir(directory, { recursive: true });
+  const tripletClaimPath = candidateTripletMode ? candidateTripletClaimPath(candidate) : undefined;
+  if (candidateTripletMode && await maybeCandidateTripletMetadata(tripletClaimPath) !== null) {
+    return recoverCandidateTriplet({ candidate, claimPath: tripletClaimPath, hooks, movementRouteTemplates, report, specification, specificationPath });
+  }
   await assertTargetMissing(candidate, "Operational-v2-Candidate");
   await assertTargetMissing(report, "Operational-v2-Ableitungsbericht");
   await assertTargetMissing(movementRouteTemplates, "Operational-v2-Movement-Route-Sidecar");
   if (output !== undefined) await assertTargetMissing(output, "Operational-v2-Ausgabe");
+  if (candidateTripletMode) await assertTargetMissing(tripletClaimPath, "Candidate-Triplet-Claim");
 
   const stagingRoot = await mkdtemp(join(dirname(candidate), ".operational-v2-derive-"));
+  const stagingRootIdentity = candidateTripletIdentity(await lstat(stagingRoot, { bigint: true }));
   const nativeStaging = join(stagingRoot, "native");
   await mkdir(nativeStaging, { recursive: true });
-  const stagedCandidate = join(nativeStaging, "operational-infrastructure-v2.json");
-  const stagedMovementRouteTemplates = join(nativeStaging, "operational-infrastructure-v2.movement-route-templates-v2.json");
+  const stagedCandidate = join(nativeStaging, candidateTripletMode
+    ? basename(candidate)
+    : "operational-infrastructure-v2.json");
+  const stagedMovementRouteTemplates = join(nativeStaging, candidateTripletMode
+    ? basename(movementRouteTemplates)
+    : "operational-infrastructure-v2.movement-route-templates-v2.json");
   const stagedReport = join(stagingRoot, "report.json");
   const stagedOutput = join(stagingRoot, "materialized", "operational-infrastructure-v2.json");
+  const candidateTripletPublication = { claimActive: false, stagingRemoved: false };
   try {
     const nativeReceipt = validateGermanyOperationalInfrastructureV2NativeReceipt(
       await deriveNative(resolve(specificationPath), resolve(sourceRoot), stagedCandidate, stagedReport),
       specification.infraReleaseId,
+      { expectedMovementRouteTemplatesFile: basename(stagedMovementRouteTemplates) },
     );
     const [candidateProof, movementRouteTemplatesProof, reportProof] = await Promise.all([
       fileProof(stagedCandidate, "Nativer Operational-v2-Candidate"),
@@ -803,7 +1122,11 @@ export async function runGermanyOperationalInfrastructureV2({
       specification,
       nativeReceipt.movementRouteTemplates,
     );
-    const nativeReport = validateNativeDerivationReport(JSON.parse(await readFile(stagedReport, "utf8")), specification);
+    const nativeReport = validateGermanyOperationalInfrastructureV2NativeReport(
+      JSON.parse(await readFile(stagedReport, "utf8")),
+      specification,
+      { expectedMovementRouteTemplatesFile: basename(stagedMovementRouteTemplates) },
+    );
     invariant(
       nativeReceipt.activationEligible === nativeReport.activationEligible
         && nativeReceipt.unresolvedRequired === nativeReport.unresolvedRequired,
@@ -822,10 +1145,43 @@ export async function runGermanyOperationalInfrastructureV2({
     );
 
     if (!nativeReport.activationEligible) {
+      if (candidateTripletMode) {
+        const validated = await publishCandidateTriplet({
+          candidate,
+          claimPath: tripletClaimPath,
+          hooks,
+          movementRouteTemplates,
+          nativeReceipt,
+          publicationState: candidateTripletPublication,
+          report,
+          specification,
+          specificationPath,
+          stagingRoot,
+        });
+        throw new OperationalInfrastructureDerivationIncompleteError({
+          nativeReceipt: validated.nativeReceipt,
+          nativeReport: validated.nativeReport,
+          paths: { candidate, movementRouteTemplates, report, output: null },
+        });
+      }
       await publishTogether([{ staged: stagedCandidate, final: candidate }, { staged: stagedMovementRouteTemplates, final: movementRouteTemplates }, { staged: stagedReport, final: report }]);
       throw new OperationalInfrastructureDerivationIncompleteError({ nativeReceipt, nativeReport, paths: { candidate, movementRouteTemplates, report, output: null } });
     }
-    invariant(output !== undefined, "Aktivierbare Operational-v2-Ableitung verlangt einen materialisierten OUTPUT-Pfad.");
+    if (output === undefined) {
+      const validated = await publishCandidateTriplet({
+        candidate,
+        claimPath: tripletClaimPath,
+        hooks,
+        movementRouteTemplates,
+        nativeReceipt,
+        publicationState: candidateTripletPublication,
+        report,
+        specification,
+        specificationPath,
+        stagingRoot,
+      });
+      return candidateTripletResult(validated.nativeReceipt, validated.nativeReport, { candidate, movementRouteTemplates, report });
+    }
     const materialization = await materialize({ candidatePath: stagedCandidate, expectedReleaseId: specification.infraReleaseId, outputPath: stagedOutput });
     invariant(materialization.sourceBytes === candidateProof.bytes && materialization.sourceSha256 === candidateProof.sha256, "Materialisierung ist nicht an den abgeleiteten Candidate gebunden.");
     invariant(materialization.stateHash === nativeReceipt.candidate.stateHash, "Ableitung und Materialisierung besitzen verschiedene Zustandshashes.");
@@ -840,7 +1196,13 @@ export async function runGermanyOperationalInfrastructureV2({
       paths: { candidate, movementRouteTemplates, report, output },
     };
   } finally {
-    await rm(stagingRoot, { recursive: true, force: true });
+    if (!candidateTripletPublication.claimActive && !candidateTripletPublication.stagingRemoved) {
+      const currentStaging = await maybeCandidateTripletMetadata(stagingRoot);
+      if (currentStaging !== null) {
+        invariant(currentStaging.isDirectory() && !currentStaging.isSymbolicLink() && candidateTripletIdentityMatches(currentStaging, stagingRootIdentity), "Operational-v2-Stagingwurzel wurde fremd ersetzt und bleibt unangetastet.");
+        await rm(stagingRoot, { recursive: true, force: true });
+      }
+    }
   }
 }
 

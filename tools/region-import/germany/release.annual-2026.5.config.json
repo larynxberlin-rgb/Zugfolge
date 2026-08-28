@@ -56,11 +56,38 @@
       }
     },
     "operationalDeriver": {
-      "entrypoint": "tools/region-import/germany/run-operational-infrastructure-v2.mjs",
+      "primaryRunner": "tools/region-import/germany/run-operational-infrastructure-v2.mjs",
+      "primaryRunnerMode": "candidate-triplet",
       "specification": "tools/region-import/germany/operational-infrastructure.annual-2026.5.json",
       "candidate": "var/derived/germany-2026.5/operational-infrastructure-v2.candidate.json",
+      "candidateMovementRouteTemplates": "var/derived/germany-2026.5/operational-infrastructure-v2.candidate.movement-route-templates-v2.json",
       "report": "var/derived/germany-2026.5/operational-infrastructure-v2.derivation-report.json",
-      "output": "var/derived/germany-2026.5/operational-infrastructure-v2.json"
+      "output": "var/derived/germany-2026.5/operational-infrastructure-v2.json",
+      "recoveryPublisher": {
+        "captureEntrypoint": "tools/region-import/germany/capture-operational-infrastructure-v2-native-receipt.mjs",
+        "entrypoint": "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
+        "validatorExecutable": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc.exe",
+        "validatorBuildCommit": "ee6d7081b32277e46cd6ebb28fc65bd45ce55012",
+        "validatorBytes": 8283251,
+        "validatorSha256": "69f6f13d69cd256464f254804d6d7349acd0f09bbe614ae2b0e38e70664306fc",
+        "validatorRebuildSpecification": "tools/region-import/germany/operational-validator-rebuild.annual-2026.5.json",
+        "validatorRebuildEvidence": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-evidence.json",
+        "validatorRebuildExecutable": "var/derived/germany-2026.5/toolchain/zugfolge-infra-release-rebuild-ee6d7081b32277e46cd6ebb28fc65bd45ce55012-official.exe",
+        "validatorRebuildExpectedBytes": 8283251,
+        "validatorNormalizedPeSha256": "91e84253399bf8836ec4e6a5688da51f753531a0040831a54b8585e28f1d5363",
+        "executionInventory": {
+          "wrapper": "tools/region-import/germany/publish-operational-infrastructure-v2.mjs",
+          "implementation": "tools/region-import/germany/operational-infrastructure-v2-publication.mjs",
+          "operationalDeriver": "tools/region-import/germany/operational-infrastructure-v2.mjs",
+          "materializer": "tools/region-import/materialize-operational-infrastructure-v2.mjs",
+          "createNewOutput": "tools/tiles/create-new-output.mjs",
+          "operationalBinding": "tools/region-import/operational-infrastructure-binding.mjs",
+          "validatorRebuildBootstrap": "tools/region-import/germany/operational-validator-rebuild-bootstrap.mjs",
+          "validatorRebuildVerifier": "tools/region-import/germany/operational-validator-rebuild-evidence.mjs"
+        },
+        "nativeReceipt": "var/derived/germany-2026.5/operational-infrastructure-v2.native-receipt.json",
+        "publicationReceipt": "var/derived/germany-2026.5/operational-infrastructure-v2.publication-receipt.json"
+      }
     },
     "integerUnits": { "distance": "millimetres", "speed": "kilometres-per-hour", "gradient": "permille" },
     "requiredExternalTools": [

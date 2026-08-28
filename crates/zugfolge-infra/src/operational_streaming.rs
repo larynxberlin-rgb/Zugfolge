@@ -12,11 +12,11 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use redb::{
-    Database, Durability, MultimapTableDefinition, ReadTransaction, ReadableTable,
-    ReadableTableMetadata, TableDefinition, WriteTransaction,
+    Database, Durability, ReadTransaction, ReadableTable, ReadableTableMetadata, TableDefinition,
+    WriteTransaction,
 };
-use serde::Serialize;
 use serde::de::{DeserializeOwned, DeserializeSeed, Error as _, MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use zugfolge_sim::operational::{
@@ -57,12 +57,43 @@ const SIGNALS: TableDefinition<&str, ()> = TableDefinition::new("signals");
 const SWITCHES: TableDefinition<&str, ()> = TableDefinition::new("switches");
 const BLOCK_RESOURCES: TableDefinition<&str, ()> = TableDefinition::new("block_resources");
 const REGION_BOUNDARIES: TableDefinition<&str, ()> = TableDefinition::new("region_boundaries");
-const ROUTES_BY_TEMPLATE: MultimapTableDefinition<&str, &str> =
-    MultimapTableDefinition::new("routes_by_template");
-const INTERLOCKING_BY_TEMPLATE: MultimapTableDefinition<&str, &str> =
-    MultimapTableDefinition::new("interlocking_by_template");
+const ROUTE_TEMPLATE_SUMMARIES: TableDefinition<&str, &str> =
+    TableDefinition::new("route_template_summaries");
+const ROUTE_LEG_PROFILES: TableDefinition<(&str, i64), &str> =
+    TableDefinition::new("route_leg_profiles");
+const INTERLOCKING_TEMPLATE_COUNTS: TableDefinition<&str, u64> =
+    TableDefinition::new("interlocking_template_counts");
+const SEEDED_FULL_SHUNTING_COUNTS: TableDefinition<&str, u64> =
+    TableDefinition::new("seeded_full_shunting_counts");
 const TRAIN_INTERLOCKING_BY_TEMPLATE_START: TableDefinition<(&str, i64), &str> =
     TableDefinition::new("train_interlocking_by_template_start");
+const TRAIN_INTERLOCKING_PROFILES_BY_TEMPLATE_START: TableDefinition<(&str, i64), &str> =
+    TableDefinition::new("train_interlocking_profiles_by_template_start");
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RouteTemplateSummary {
+    route_count: u64,
+    minimum_length_mm: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RouteLegProfile {
+    matching_route_count: u64,
+    profile_sha256: String,
+    consistent: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SemanticValidationStats {
+    algorithm: &'static str,
+    route_records_deserialized: u64,
+    interlocking_records_deserialized: u64,
+    train_leg_profile_reads: u64,
+    route_template_cartesian_reads: u64,
+}
 
 /// Stabiler Fehler der dateibasierten Operational-v2-Validierung.
 #[derive(Debug)]
@@ -113,6 +144,45 @@ fn digest_hex(digest: impl AsRef<[u8]>) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+fn route_leg_profile_sha256(
+    authority_end_route_mm: i64,
+    path_resources: &BTreeSet<String>,
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"zugfolge-operational-route-leg-profile-v1\0");
+    hasher.update(authority_end_route_mm.to_le_bytes());
+    for resource_id in path_resources {
+        hasher.update(
+            u64::try_from(resource_id.len())
+                .expect("eine Zeichenkettenlaenge passt in u64")
+                .to_le_bytes(),
+        );
+        hasher.update(resource_id.as_bytes());
+    }
+    digest_hex(hasher.finalize())
+}
+
+fn seeded_full_shunting_key(
+    route_template_id: &str,
+    authority_end_route_mm: i64,
+    authority_start_route_mm: i64,
+) -> String {
+    serde_json::to_string(&(
+        route_template_id,
+        authority_end_route_mm,
+        authority_start_route_mm,
+    ))
+    .expect("eine Shunting-Indexkennung ist immer serialisierbar")
+}
+
+fn temporary_record<T: DeserializeOwned>(serialized: &str, what: &str) -> Result<T> {
+    serde_json::from_str(serialized).map_err(|error| {
+        OperationalStreamingError::new(format!(
+            "Temporaerer Operational-v2-Index enthaelt ungueltige {what}: {error}"
+        ))
+    })
 }
 
 fn canonical(value: &Value, output: &mut String) {
@@ -570,17 +640,32 @@ impl Store<'_> {
         }
         drop(
             self.transaction
-                .open_multimap_table(ROUTES_BY_TEMPLATE)
+                .open_table(ROUTE_TEMPLATE_SUMMARIES)
                 .map_err(db_message)?,
         );
         drop(
             self.transaction
-                .open_multimap_table(INTERLOCKING_BY_TEMPLATE)
+                .open_table(ROUTE_LEG_PROFILES)
+                .map_err(db_message)?,
+        );
+        drop(
+            self.transaction
+                .open_table(INTERLOCKING_TEMPLATE_COUNTS)
+                .map_err(db_message)?,
+        );
+        drop(
+            self.transaction
+                .open_table(SEEDED_FULL_SHUNTING_COUNTS)
                 .map_err(db_message)?,
         );
         drop(
             self.transaction
                 .open_table(TRAIN_INTERLOCKING_BY_TEMPLATE_START)
+                .map_err(db_message)?,
+        );
+        drop(
+            self.transaction
+                .open_table(TRAIN_INTERLOCKING_PROFILES_BY_TEMPLATE_START)
                 .map_err(db_message)?,
         );
         Ok(())
@@ -651,25 +736,86 @@ impl Store<'_> {
 
     fn insert_route(
         self,
-        route_id: &str,
-        template_id: &str,
+        route: &RouteVersion,
         canonical_json: &str,
     ) -> std::result::Result<(), String> {
         {
             let mut table = self.transaction.open_table(ROUTES).map_err(db_message)?;
             if table
-                .insert(route_id, canonical_json)
+                .insert(route.id.as_str(), canonical_json)
                 .map_err(db_message)?
                 .is_some()
             {
-                return Err(format!("doppelte Laufwegversion `{route_id}`"));
+                return Err(format!("doppelte Laufwegversion `{}`", route.id));
             }
         }
-        let mut index = self
+        {
+            let mut summaries = self
+                .transaction
+                .open_table(ROUTE_TEMPLATE_SUMMARIES)
+                .map_err(db_message)?;
+            let existing = summaries
+                .get(route.template_id.as_str())
+                .map_err(db_message)?
+                .map(|value| value.value().to_owned());
+            let mut summary = existing.map_or_else(
+                || {
+                    Ok(RouteTemplateSummary {
+                        route_count: 0,
+                        minimum_length_mm: route.length_mm(),
+                    })
+                },
+                |serialized| {
+                    temporary_record(&serialized, "Laufwegvorlagenzusammenfassung")
+                        .map_err(|error| error.to_string())
+                },
+            )?;
+            summary.route_count = summary
+                .route_count
+                .checked_add(1)
+                .ok_or_else(|| "Laufwegvorlagenzaehler laeuft ueber".to_owned())?;
+            summary.minimum_length_mm = summary.minimum_length_mm.min(route.length_mm());
+            let serialized = serde_json::to_string(&summary)
+                .map_err(|error| format!("Laufwegvorlagenindex ist fehlgeschlagen: {error}"))?;
+            summaries
+                .insert(route.template_id.as_str(), serialized.as_str())
+                .map_err(db_message)?;
+        }
+        let mut profiles = self
             .transaction
-            .open_multimap_table(ROUTES_BY_TEMPLATE)
+            .open_table(ROUTE_LEG_PROFILES)
             .map_err(db_message)?;
-        index.insert(template_id, route_id).map_err(db_message)?;
+        for leg in &route.legs {
+            let key = (route.template_id.as_str(), leg.route_start_mm);
+            let profile_sha256 = route_leg_profile_sha256(leg.route_end_mm(), &leg.block_ids);
+            let existing = profiles
+                .get(key)
+                .map_err(db_message)?
+                .map(|value| value.value().to_owned());
+            let mut profile = existing.map_or_else(
+                || {
+                    Ok(RouteLegProfile {
+                        matching_route_count: 0,
+                        profile_sha256: profile_sha256.clone(),
+                        consistent: true,
+                    })
+                },
+                |serialized| {
+                    temporary_record(&serialized, "Laufwegbeinprofil")
+                        .map_err(|error| error.to_string())
+                },
+            )?;
+            profile.matching_route_count = profile
+                .matching_route_count
+                .checked_add(1)
+                .ok_or_else(|| "Laufwegbeinprofilzaehler laeuft ueber".to_owned())?;
+            profile.consistent &= profile.profile_sha256 == profile_sha256;
+            let serialized = serde_json::to_string(&profile)
+                .map_err(|error| format!("Laufwegbeinprofilindex ist fehlgeschlagen: {error}"))?;
+            profiles
+                .insert(key, serialized.as_str())
+                .map_err(db_message)?;
+        }
         Ok(())
     }
 
@@ -692,13 +838,40 @@ impl Store<'_> {
             }
         }
         {
-            let mut index = self
+            let mut counts = self
                 .transaction
-                .open_multimap_table(INTERLOCKING_BY_TEMPLATE)
+                .open_table(INTERLOCKING_TEMPLATE_COUNTS)
                 .map_err(db_message)?;
-            index
-                .insert(template.route_template_id.as_str(), template.id.as_str())
+            let count = counts
+                .get(template.route_template_id.as_str())
+                .map_err(db_message)?
+                .map_or(0, |value| value.value())
+                .checked_add(1)
+                .ok_or_else(|| "Fahrstrassenvorlagenzaehler laeuft ueber".to_owned())?;
+            counts
+                .insert(template.route_template_id.as_str(), &count)
                 .map_err(db_message)?;
+        }
+        if template.movement_kind == MovementKind::Shunting
+            && template.authority_start_route_mm > 0
+            && template.authority_end_route_mm == template.release_after_tail_route_mm
+        {
+            let key = seeded_full_shunting_key(
+                &template.route_template_id,
+                template.authority_end_route_mm,
+                template.authority_start_route_mm,
+            );
+            let mut counts = self
+                .transaction
+                .open_table(SEEDED_FULL_SHUNTING_COUNTS)
+                .map_err(db_message)?;
+            let count = counts
+                .get(key.as_str())
+                .map_err(db_message)?
+                .map_or(0, |value| value.value())
+                .checked_add(1)
+                .ok_or_else(|| "Seeded-Shunting-Zaehler laeuft ueber".to_owned())?;
+            counts.insert(key.as_str(), &count).map_err(db_message)?;
         }
         if template.movement_kind == MovementKind::Train {
             let mut index = self
@@ -722,6 +895,25 @@ impl Store<'_> {
                     existing.value(),
                     template.id
                 ));
+            }
+            let profile_sha256 =
+                route_leg_profile_sha256(template.authority_end_route_mm, &template.path_resources);
+            let mut profiles = self
+                .transaction
+                .open_table(TRAIN_INTERLOCKING_PROFILES_BY_TEMPLATE_START)
+                .map_err(db_message)?;
+            if profiles
+                .insert(
+                    (
+                        template.route_template_id.as_str(),
+                        template.authority_start_route_mm,
+                    ),
+                    profile_sha256.as_str(),
+                )
+                .map_err(db_message)?
+                .is_some()
+            {
+                return Err("Zugfahrstrassenprofilindex ist widerspruechlich".to_owned());
             }
         }
         Ok(())
@@ -1056,7 +1248,7 @@ impl<'de> Visitor<'de> for RouteVersionsVisitor<'_> {
             }
             route.validate().map_err(A::Error::custom)?;
             self.store
-                .insert_route(&route.id, &route.template_id, &canonical_json)
+                .insert_route(&route, &canonical_json)
                 .map_err(A::Error::custom)?;
         }
         Ok(())
@@ -1239,14 +1431,13 @@ fn semantic_error(message: impl Into<String>) -> OperationalStreamingError {
 }
 
 fn typed_record<T: DeserializeOwned>(serialized: &str, what: &str) -> Result<T> {
-    serde_json::from_str(serialized).map_err(|error| {
-        OperationalStreamingError::new(format!(
-            "Temporaerer Operational-v2-Index enthaelt ungueltige {what}: {error}"
-        ))
-    })
+    temporary_record(serialized, what)
 }
 
-fn validate_semantics(transaction: &ReadTransaction, expected_release_id: &str) -> Result<()> {
+fn validate_semantics(
+    transaction: &ReadTransaction,
+    expected_release_id: &str,
+) -> Result<SemanticValidationStats> {
     require(
         meta_value(transaction, "id")? == expected_release_id,
         "Statische Operational-v2-Infrastruktur verletzt die InfraRelease-ID-Bindung.",
@@ -1272,15 +1463,27 @@ fn validate_semantics(transaction: &ReadTransaction, expected_release_id: &str) 
     let block_resources = transaction
         .open_table(BLOCK_RESOURCES)
         .map_err(database_error)?;
-    let routes_by_template = transaction
-        .open_multimap_table(ROUTES_BY_TEMPLATE)
+    let route_template_summaries = transaction
+        .open_table(ROUTE_TEMPLATE_SUMMARIES)
         .map_err(database_error)?;
-    let interlocking_by_template = transaction
-        .open_multimap_table(INTERLOCKING_BY_TEMPLATE)
+    let route_leg_profiles = transaction
+        .open_table(ROUTE_LEG_PROFILES)
+        .map_err(database_error)?;
+    let interlocking_template_counts = transaction
+        .open_table(INTERLOCKING_TEMPLATE_COUNTS)
+        .map_err(database_error)?;
+    let seeded_full_shunting_counts = transaction
+        .open_table(SEEDED_FULL_SHUNTING_COUNTS)
         .map_err(database_error)?;
     let train_interlocking_by_template_start = transaction
         .open_table(TRAIN_INTERLOCKING_BY_TEMPLATE_START)
         .map_err(database_error)?;
+    let train_interlocking_profiles_by_template_start = transaction
+        .open_table(TRAIN_INTERLOCKING_PROFILES_BY_TEMPLATE_START)
+        .map_err(database_error)?;
+    let route_records_deserialized = routes.len().map_err(database_error)?;
+    let interlocking_records_deserialized = interlocking.len().map_err(database_error)?;
+    let mut train_leg_profile_reads = 0_u64;
 
     require(
         !directed_edges.is_empty().map_err(database_error)?
@@ -1322,31 +1525,22 @@ fn validate_semantics(transaction: &ReadTransaction, expected_release_id: &str) 
                 "Laufwegversion `{route_id}` besitzt eine abweichende ID"
             )));
         }
-        let templates = interlocking_by_template
+        let template_count = interlocking_template_counts
             .get(route.template_id.as_str())
-            .map_err(database_error)?;
-        let mut template_count = 0_u32;
-        let mut seeded_full_shunting_count = 0_u32;
-        for template_id in templates {
-            template_count = template_count.saturating_add(1);
-            let template_id = template_id.map_err(database_error)?;
-            let serialized = interlocking
-                .get(template_id.value())
-                .map_err(database_error)?
-                .ok_or_else(|| semantic_error("Fahrstrassenindex ist unvollstaendig"))?;
-            let template: InterlockingRouteTemplate =
-                typed_record(serialized.value(), "Fahrstrassenvorlage")?;
-            if template.movement_kind == MovementKind::Shunting
-                && template.authority_start_route_mm > 0
-                && template.authority_end_route_mm == route.length_mm()
-                && template.release_after_tail_route_mm == route.length_mm()
-                && route
-                    .legs
-                    .iter()
-                    .any(|leg| leg.route_start_mm == template.authority_start_route_mm)
-            {
-                seeded_full_shunting_count = seeded_full_shunting_count.saturating_add(1);
-            }
+            .map_err(database_error)?
+            .map_or(0, |value| value.value());
+        let mut seeded_full_shunting_count = 0_u64;
+        for leg in &route.legs {
+            let key =
+                seeded_full_shunting_key(&route.template_id, route.length_mm(), leg.route_start_mm);
+            seeded_full_shunting_count = seeded_full_shunting_count
+                .checked_add(
+                    seeded_full_shunting_counts
+                        .get(key.as_str())
+                        .map_err(database_error)?
+                        .map_or(0, |value| value.value()),
+                )
+                .ok_or_else(|| semantic_error("Seeded-Shunting-Zaehler laeuft ueber"))?;
         }
         if template_count == 0 || seeded_full_shunting_count > 1 {
             return Err(semantic_error(format!(
@@ -1392,7 +1586,10 @@ fn validate_semantics(transaction: &ReadTransaction, expected_release_id: &str) 
             if seeded_full_shunting {
                 continue;
             }
-            let interlocking_id = train_interlocking_by_template_start
+            train_leg_profile_reads = train_leg_profile_reads
+                .checked_add(1)
+                .ok_or_else(|| semantic_error("Zugfahrstrassenpruefzaehler laeuft ueber"))?;
+            let template_profile_sha256 = train_interlocking_profiles_by_template_start
                 .get((route.template_id.as_str(), leg.route_start_mm))
                 .map_err(database_error)?
                 .ok_or_else(|| {
@@ -1401,16 +1598,8 @@ fn validate_semantics(transaction: &ReadTransaction, expected_release_id: &str) 
                         leg.route_start_mm
                     ))
                 })?;
-            let template = interlocking
-                .get(interlocking_id.value())
-                .map_err(database_error)?
-                .ok_or_else(|| semantic_error("Zugfahrstrassenindex ist unvollstaendig"))?;
-            let template: InterlockingRouteTemplate =
-                typed_record(template.value(), "Fahrstrassenvorlage")?;
-            if template.movement_kind != MovementKind::Train
-                || template.authority_start_route_mm != leg.route_start_mm
-                || template.authority_end_route_mm != leg.route_end_mm()
-                || template.path_resources != leg.block_ids
+            if template_profile_sha256.value()
+                != route_leg_profile_sha256(leg.route_end_mm(), &leg.block_ids)
             {
                 return Err(semantic_error(format!(
                     "Laufwegversion `{route_id}` besitzt bei {} keine exakte Segmentfahrstrasse",
@@ -1450,34 +1639,43 @@ fn validate_semantics(transaction: &ReadTransaction, expected_release_id: &str) 
                 "Fahrstrassenvorlage `{interlocking_id}` besitzt einen unbekannten Signal-, Weichen- oder Ressourcenbezug"
             )));
         }
-        let matching_routes = routes_by_template
+        let summary = route_template_summaries
             .get(template.route_template_id.as_str())
             .map_err(database_error)?;
-        let mut found_route = false;
-        for route_id in matching_routes {
-            found_route = true;
-            let route_id = route_id.map_err(database_error)?;
-            let route = routes
-                .get(route_id.value())
-                .map_err(database_error)?
-                .ok_or_else(|| semantic_error("Laufwegindex ist unvollstaendig"))?;
-            let route: RouteVersion = typed_record(route.value(), "Laufwegversion")?;
-            if template.authority_end_route_mm > route.length_mm()
-                || template.movement_kind == MovementKind::Train
-                    && route.legs.iter().all(|leg| {
-                        template.authority_start_route_mm != leg.route_start_mm
-                            || template.authority_end_route_mm != leg.route_end_mm()
-                            || template.path_resources != leg.block_ids
-                    })
-            {
-                return Err(semantic_error(format!(
-                    "Fahrstrassenvorlage `{interlocking_id}` passt nicht auf ihren Laufweg"
-                )));
-            }
-        }
-        if !found_route {
+        let Some(summary) = summary else {
             return Err(semantic_error(format!(
                 "Fahrstrassenvorlage `{interlocking_id}` besitzt keinen Laufweg"
+            )));
+        };
+        let summary: RouteTemplateSummary =
+            typed_record(summary.value(), "Laufwegvorlagenzusammenfassung")?;
+        let train_route_mismatch = if template.movement_kind == MovementKind::Train {
+            let profile = route_leg_profiles
+                .get((
+                    template.route_template_id.as_str(),
+                    template.authority_start_route_mm,
+                ))
+                .map_err(database_error)?;
+            match profile {
+                None => true,
+                Some(profile) => {
+                    let profile: RouteLegProfile =
+                        typed_record(profile.value(), "Laufwegbeinprofil")?;
+                    !profile.consistent
+                        || profile.matching_route_count != summary.route_count
+                        || profile.profile_sha256
+                            != route_leg_profile_sha256(
+                                template.authority_end_route_mm,
+                                &template.path_resources,
+                            )
+                }
+            }
+        } else {
+            false
+        };
+        if template.authority_end_route_mm > summary.minimum_length_mm || train_route_mismatch {
+            return Err(semantic_error(format!(
+                "Fahrstrassenvorlage `{interlocking_id}` passt nicht auf ihren Laufweg"
             )));
         }
         if template.movement_kind == MovementKind::Train {
@@ -1514,7 +1712,13 @@ fn validate_semantics(transaction: &ReadTransaction, expected_release_id: &str) 
             )));
         }
     }
-    Ok(())
+    Ok(SemanticValidationStats {
+        algorithm: "route-template-summary-linear-v2",
+        route_records_deserialized,
+        interlocking_records_deserialized,
+        train_leg_profile_reads,
+        route_template_cartesian_reads: 0,
+    })
 }
 
 struct CanonicalSink {
@@ -1820,7 +2024,7 @@ pub fn validate_operational_infrastructure_v2_file(
     write_transaction.commit().map_err(database_error)?;
 
     let read_transaction = database.begin_read().map_err(database_error)?;
-    validate_semantics(&read_transaction, expected_release_id)?;
+    let semantic_validation = validate_semantics(&read_transaction, expected_release_id)?;
     let hashes = canonical_hashes(&read_transaction, output_path)?;
     require(
         hashes.artifact_bytes
@@ -1841,6 +2045,7 @@ pub fn validate_operational_infrastructure_v2_file(
         "sha256": hashes.artifact_sha256,
         "stateHash": hashes.state_hash,
         "validationMode": "native-streaming-redb-v1",
+        "semanticValidation": semantic_validation,
     }))
 }
 

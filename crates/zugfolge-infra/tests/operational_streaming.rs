@@ -174,6 +174,101 @@ fn segmented_candidate(release_id: &str) -> Value {
     value
 }
 
+fn shared_route_stress_candidate(release_id: &str, route_count: usize, leg_count: usize) -> Value {
+    let mut directed_edges = serde_json::Map::new();
+    let mut edge_geometries = serde_json::Map::new();
+    let mut interlocking_routes = serde_json::Map::new();
+    let mut legs = Vec::with_capacity(leg_count);
+    let mut signals = Vec::with_capacity(leg_count);
+    let mut block_resources = Vec::with_capacity(leg_count * 3);
+    for index in 0..leg_count {
+        let edge_id = format!("edge-{index:03}");
+        let block_id = format!("block-{index:03}");
+        let overlap_id = format!("overlap-{index:03}");
+        let flank_id = format!("flank-{index:03}");
+        let signal_id = format!("signal-{index:03}");
+        let interlocking_id = format!("interlocking-{index:03}");
+        let route_start_mm = i64::try_from(index).expect("Index passt in i64") * 1_000;
+        directed_edges.insert(edge_id.clone(), json!(1_000));
+        edge_geometries.insert(
+            edge_id.clone(),
+            json!([
+                {
+                    "edgeOffsetMm": 0,
+                    "latitudeE7": 510_000_000 + i64::try_from(index).expect("Index passt in i64"),
+                    "longitudeE7": 120_000_000,
+                    "bearingMilliDegrees": 90_000
+                },
+                {
+                    "edgeOffsetMm": 1_000,
+                    "latitudeE7": 510_000_000 + i64::try_from(index).expect("Index passt in i64"),
+                    "longitudeE7": 120_001_000,
+                    "bearingMilliDegrees": null
+                }
+            ]),
+        );
+        legs.push(json!({
+            "edgeId": edge_id,
+            "direction": "along",
+            "edgeEntryMm": 0,
+            "edgeExitMm": 1_000,
+            "routeStartMm": route_start_mm,
+            "blockIds": [block_id],
+            "speedLimitMmps": 20_000,
+            "gradientPerMille": 0,
+            "availableProtectionSystems": ["pzb"],
+            "simultaneouslyRequiredProtectionSystems": []
+        }));
+        interlocking_routes.insert(
+            interlocking_id.clone(),
+            json!({
+                "id": interlocking_id,
+                "routeTemplateId": "template-shared",
+                "signalId": signal_id,
+                "movementKind": "train",
+                "pathResources": [block_id.clone()],
+                "overlapResources": [overlap_id.clone()],
+                "flankResources": [flank_id.clone()],
+                "switchPositions": {},
+                "authorityStartRouteMm": route_start_mm,
+                "authorityEndRouteMm": route_start_mm + 1_000,
+                "releaseAfterTailRouteMm": route_start_mm + 1_000
+            }),
+        );
+        signals.push(signal_id);
+        block_resources.extend([block_id, flank_id, overlap_id]);
+    }
+    signals.sort();
+    block_resources.sort();
+    let mut route_versions = serde_json::Map::new();
+    for index in 0..route_count {
+        let route_id = format!("route-{index:03}");
+        route_versions.insert(
+            route_id.clone(),
+            json!({
+                "id": route_id,
+                "templateId": "template-shared",
+                "predecessorId": null,
+                "transitionRouteMm": null,
+                "legs": legs
+            }),
+        );
+    }
+    json!({
+        "id": release_id,
+        "directedEdges": directed_edges,
+        "edgeGeometries": edge_geometries,
+        "routeVersions": route_versions,
+        "interlockingRoutes": interlocking_routes,
+        "signals": signals,
+        "switches": [],
+        "blockResources": block_resources,
+        "platformIntervals": {},
+        "regionBoundaries": [],
+        "rzueLayoutId": "rzue-layout-stress"
+    })
+}
+
 fn write_json(path: &Path, value: &Value) {
     fs::write(
         path,
@@ -449,6 +544,145 @@ fn streaming_validator_verwirft_nichtkanonische_sets_und_gebrochene_referenzen()
     let error = validate_operational_infrastructure_v2_file(&candidate_path, release_id, None)
         .expect_err("zweites JSON-Dokument muss als ungueltiger Nachlauf scheitern");
     assert!(error.to_string().contains("Nachlauf"));
+}
+
+#[test]
+fn streaming_validator_prueft_jede_route_einer_gemeinsamen_vorlage() {
+    let root = TestDirectory::create();
+    let release_id = "infra-deutschland-streaming-shared-template";
+    let candidate_path = root.join("candidate.json");
+    let mut shared_template = segmented_candidate(release_id);
+    let mut second_route = shared_template["routeVersions"]["route-1"].clone();
+    second_route["id"] = json!("route-2");
+    shared_template["routeVersions"]["route-2"] = second_route;
+    write_json(&candidate_path, &shared_template);
+    let evidence = validate_operational_infrastructure_v2_file(&candidate_path, release_id, None)
+        .expect("beide identischen Laufwegversionen derselben Vorlage sind kompatibel");
+    assert_eq!(
+        evidence["semanticValidation"]["algorithm"],
+        "route-template-summary-linear-v2"
+    );
+    assert_eq!(
+        evidence["semanticValidation"]["routeRecordsDeserialized"],
+        2
+    );
+    assert_eq!(
+        evidence["semanticValidation"]["interlockingRecordsDeserialized"],
+        3
+    );
+    assert_eq!(evidence["semanticValidation"]["trainLegProfileReads"], 4);
+    assert_eq!(
+        evidence["semanticValidation"]["routeTemplateCartesianReads"],
+        0
+    );
+
+    shared_template["routeVersions"]["route-2"]["legs"]
+        .as_array_mut()
+        .expect("zweiter Laufweg besitzt Legs")
+        .pop();
+    write_json(&candidate_path, &shared_template);
+    let error = validate_operational_infrastructure_v2_file(&candidate_path, release_id, None)
+        .expect_err("jede Laufwegversion muss gegen alle Vorlagen geprueft werden");
+    assert!(
+        error
+            .to_string()
+            .contains("Fahrstrassenvorlage `interlocking-2` passt nicht auf ihren Laufweg"),
+        "unerwarteter Fehler: {error}"
+    );
+}
+
+#[test]
+fn streaming_validator_belegt_lineare_semantik_am_64x64_stresskorpus() {
+    let root = TestDirectory::create();
+    let release_id = "infra-deutschland-streaming-linear-stress";
+    let candidate_path = root.join("candidate.json");
+    write_json(
+        &candidate_path,
+        &shared_route_stress_candidate(release_id, 64, 64),
+    );
+
+    let evidence = validate_operational_infrastructure_v2_file(&candidate_path, release_id, None)
+        .expect("64 Laufwege mit je 64 Segmenten werden gruppiert validiert");
+    assert_eq!(
+        evidence["semanticValidation"]["routeRecordsDeserialized"],
+        64
+    );
+    assert_eq!(
+        evidence["semanticValidation"]["interlockingRecordsDeserialized"],
+        64
+    );
+    assert_eq!(
+        evidence["semanticValidation"]["trainLegProfileReads"],
+        4_096
+    );
+    assert_eq!(
+        evidence["semanticValidation"]["routeTemplateCartesianReads"],
+        0
+    );
+}
+
+#[test]
+fn streaming_validator_erhaelt_fehlerprioritaet_vor_laufweginkompatibilitaet() {
+    let root = TestDirectory::create();
+    let release_id = "infra-deutschland-streaming-error-priority";
+    let candidate_path = root.join("candidate.json");
+    let mut value = candidate(release_id);
+    value["interlockingRoutes"]["interlocking-shunting-invalid"] = json!({
+        "id": "interlocking-shunting-invalid",
+        "routeTemplateId": "template-1",
+        "signalId": "signal-shunting",
+        "movementKind": "shunting",
+        "pathResources": ["block-1"],
+        "overlapResources": ["unknown-overlap"],
+        "flankResources": ["flank-1"],
+        "switchPositions": {},
+        "authorityStartRouteMm": 0,
+        "authorityEndRouteMm": 2_000,
+        "releaseAfterTailRouteMm": 2_000
+    });
+    value["signals"] = json!(["signal-1", "signal-shunting"]);
+    write_json(&candidate_path, &value);
+
+    let error = validate_operational_infrastructure_v2_file(&candidate_path, release_id, None)
+        .expect_err("der unbekannte Ressourcenbezug muss vor dem Laufwegfehler gemeldet werden");
+    assert!(
+        error.to_string().contains(
+            "Fahrstrassenvorlage `interlocking-shunting-invalid` besitzt einen unbekannten Signal-, Weichen- oder Ressourcenbezug"
+        ),
+        "unerwarteter Fehler: {error}"
+    );
+}
+
+#[test]
+fn streaming_validator_prueft_shunting_gegen_jede_geteilte_laufwegversion() {
+    let root = TestDirectory::create();
+    let release_id = "infra-deutschland-streaming-shared-shunting";
+    let candidate_path = root.join("candidate.json");
+    let mut value = segmented_candidate(release_id);
+    value["interlockingRoutes"]
+        .as_object_mut()
+        .expect("Fahrstrassenkarte")
+        .remove("interlocking-2");
+    value["interlockingRoutes"]["interlocking-shunting"]["authorityStartRouteMm"] = json!(1_000);
+    value["interlockingRoutes"]["interlocking-shunting"]["authorityEndRouteMm"] = json!(2_500);
+    value["interlockingRoutes"]["interlocking-shunting"]["releaseAfterTailRouteMm"] = json!(2_500);
+    let mut short_route = value["routeVersions"]["route-1"].clone();
+    short_route["id"] = json!("route-2");
+    short_route["legs"]
+        .as_array_mut()
+        .expect("zweiter Laufweg besitzt Legs")
+        .pop();
+    value["routeVersions"]["route-2"] = short_route;
+    write_json(&candidate_path, &value);
+
+    let error = validate_operational_infrastructure_v2_file(&candidate_path, release_id, None)
+        .expect_err("Shunting-Ende muss fuer jede geteilte Laufwegversion passen");
+    assert!(
+        error
+            .to_string()
+            .contains("Fahrstrassenvorlage `interlocking-shunting` passt nicht auf ihren Laufweg"),
+        "unerwarteter Fehler: {error}"
+    );
 }
 
 #[test]
