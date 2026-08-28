@@ -6051,9 +6051,11 @@ public static class ZugfolgeMitigatedProcess {
           CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW, env, cwd, ref anchorStartup, out anchor);
         if (!anchored) throw Win32("CreateProcessW(current identity anchor)");
       } else {
+        // The identity anchor is never resumed. Let Windows construct its account
+        // environment; the payload still receives the explicit env block below.
         anchored = CreateProcessWithLogonW(account.Username, account.Domain, account.Password, LOGON_WITHOUT_PROFILE,
           anchorExecutable, anchorCommand, CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
-          env, cwd, ref anchorStartup, out anchor);
+          IntPtr.Zero, cwd, ref anchorStartup, out anchor);
         if (!anchored) {
           uint status = unchecked((uint)Marshal.GetLastWin32Error());
           throw new InvalidOperationException("ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_LOGON status="

@@ -828,9 +828,9 @@ test("USER_INFO_1-Einmalaccount bindet den dokumentierten minimalen normalen Ben
   );
   assert.match(
     WINDOWS_BUILD_ANCHOR_HELPER_SOURCE,
-    /CreateProcessWithLogonW\(account\.Username, account\.Domain, account\.Password, LOGON_WITHOUT_PROFILE,[\s\S]*CREATE_SUSPENDED[\s\S]*ref anchorStartup, out anchor\)/u,
+    /CreateProcessWithLogonW\(account\.Username, account\.Domain, account\.Password, LOGON_WITHOUT_PROFILE,[\s\S]*CREATE_SUSPENDED[\s\S]*IntPtr\.Zero, cwd, ref anchorStartup, out anchor\)/u,
   );
-  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /CreateProcessWBasic\(anchorExecutable, anchorCommand, IntPtr\.Zero, IntPtr\.Zero, false,[\s\S]*ref anchorStartup, out anchor\)/u);
+  assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /CreateProcessWBasic\(anchorExecutable, anchorCommand, IntPtr\.Zero, IntPtr\.Zero, false,[\s\S]*env, cwd, ref anchorStartup, out anchor\)/u);
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /CreateProcessW\(executable, command, IntPtr\.Zero, IntPtr\.Zero, true, flags, env, cwd, ref startup, out process\)/u);
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_WITH_LOGON status=/u);
   assert.match(WINDOWS_BUILD_ANCHOR_HELPER_SOURCE, /ZUGFOLGE_SAFE_PROCESS_DIAGNOSTIC code=PROCESS_FROM_ANCHOR status=/u);
@@ -1069,7 +1069,11 @@ test("PowerShell 5.1: Timeout, Cancellation und Root-Exit beenden den gesamten J
     "}",
     "$environment = New-ChildEnvironment",
     "$powershell = Join-Path $env:SystemRoot 'System32\\WindowsPowerShell\\v1.0\\powershell.exe'",
+    "$cmd = Join-Path $env:SystemRoot 'System32\\cmd.exe'",
     "$never = [Func[bool]] { return $false }",
+    "$emptyCurrentIdentity = @{}",
+    "$emptyResult = [ZugfolgeMitigatedProcess]::RunStrict($cmd, [string[]]@('/D','/Q','/C','exit /b 0'), (Join-Path $env:SystemRoot 'System32'), $emptyCurrentIdentity, [byte[]]@(), 65536, 5000, $never)",
+    "$emptyCurrentIdentityExact = $emptyResult.ExitCode -eq 0 -and $emptyResult.Stdout.Length -eq 0 -and $emptyResult.Stderr.Length -eq 0",
     "$timeoutMessage = ''; $timeoutClock = [Diagnostics.Stopwatch]::StartNew()",
     "try { $null = [ZugfolgeMitigatedProcess]::RunStrict($powershell, [string[]]@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$ParentScript,$ChildScript,$TimeoutMarker,$TimeoutStarted), (Join-Path $env:SystemRoot 'System32'), $environment, [byte[]]@(), 1048576, 1750, $never); $timeoutMessage = 'unexpected-success' } catch { $timeoutMessage = $_.Exception.GetBaseException().Message }",
     "$timeoutClock.Stop(); Start-Sleep -Milliseconds 3000",
@@ -1085,7 +1089,7 @@ test("PowerShell 5.1: Timeout, Cancellation und Root-Exit beenden den gesamten J
     "$exitClock = [Diagnostics.Stopwatch]::StartNew()",
     "$exitResult = [ZugfolgeMitigatedProcess]::RunStrict($powershell, [string[]]@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$ParentExitScript,$ChildScript,$ExitMarker,$ExitStarted,$ExitRedirectOut,$ExitRedirectErr), (Join-Path $env:SystemRoot 'System32'), $environment, [byte[]]@(), 1048576, 5000, $never)",
     "$exitClock.Stop(); Start-Sleep -Milliseconds 3000",
-    "$value = @{ cancellationElapsed=$cancelClock.ElapsedMilliseconds; cancellationMessage=$cancelMessage; exitCode=$exitResult.ExitCode; exitElapsed=$exitClock.ElapsedMilliseconds; exitMarker=[IO.File]::Exists($ExitMarker); exitStarted=[IO.File]::Exists($ExitStarted); methods=$methods; oversizeElapsed=$oversizeClock.ElapsedMilliseconds; oversizeMessage=$oversizeMessage; timeoutElapsed=$timeoutClock.ElapsedMilliseconds; timeoutMarker=[IO.File]::Exists($TimeoutMarker); timeoutMessage=$timeoutMessage; timeoutStarted=[IO.File]::Exists($TimeoutStarted) }",
+    "$value = @{ cancellationElapsed=$cancelClock.ElapsedMilliseconds; cancellationMessage=$cancelMessage; emptyCurrentIdentityExact=$emptyCurrentIdentityExact; exitCode=$exitResult.ExitCode; exitElapsed=$exitClock.ElapsedMilliseconds; exitMarker=[IO.File]::Exists($ExitMarker); exitStarted=[IO.File]::Exists($ExitStarted); methods=$methods; oversizeElapsed=$oversizeClock.ElapsedMilliseconds; oversizeMessage=$oversizeMessage; timeoutElapsed=$timeoutClock.ElapsedMilliseconds; timeoutMarker=[IO.File]::Exists($TimeoutMarker); timeoutMessage=$timeoutMessage; timeoutStarted=[IO.File]::Exists($TimeoutStarted) }",
     "[Console]::Out.WriteLine(($value | ConvertTo-Json -Compress))",
     "",
   ].join("\r\n"));
@@ -1096,6 +1100,7 @@ test("PowerShell 5.1: Timeout, Cancellation und Root-Exit beenden den gesamten J
   const result = JSON.parse(executed.stdout.toString("utf8").trim().split(/\r?\n/u).at(-1));
   assert.deepEqual(result.methods.filter((name) => ["AbortActive", "Run", "RunAs", "RunAsStrict", "RunStrict"].includes(name)),
     ["AbortActive", "Run", "RunAs", "RunAsStrict", "RunStrict"]);
+  assert.equal(result.emptyCurrentIdentityExact, true, JSON.stringify(result));
   assert.equal(result.timeoutStarted, true, JSON.stringify(result));
   assert.equal(result.timeoutMarker, false);
   assert.match(result.timeoutMessage, /ueberschritt das gepinnte Zeitlimit/);

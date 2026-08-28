@@ -78,14 +78,14 @@
         "contract": {
           "file": "tools/region-import/germany/operational-infrastructure-v2-direct-system-launch.annual-2026.5.json",
           "bytes": 22507,
-          "sha256": "327769b0cfaa2ee1a17862251b74847a9d60b6e3977dc9a872dbcc1a9a840f2f",
+          "sha256": "fa162c7fc8e0d3f9c31159db277bfe7eefe7e96be98c3db22f3ff4208163a795",
           "schema": "zugfolge-operational-v2-direct-system-launch-contract/v1",
           "releaseId": "infra-deutschland-2026.5",
           "executionPins": {
             "bytes": 4841,
             "file": "tools/region-import/germany/operational-infrastructure-v2-execution-pins.annual-2026.5.json",
             "schema": "zugfolge-germany-operational-v2-execution-pins/v1",
-            "sha256": "0d18d58df6123b6b6c79b214fa3c8f81e75d0ac75b85397e460a782296e0a477"
+            "sha256": "3dbaa34ef53f9acb2b0e8fa6c90d248215ce7f766d1e1c34cea54853c1e19990"
           },
           "trustedExecutor": {
             "buildCommit": "aba354ec1937452a491087626ec0adea36ef6695",
